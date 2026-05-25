@@ -682,6 +682,66 @@ https://devlog.hexops.org/2024/building-the-directx-shader-compiler-better-than-
 
 ---
 
+---
+
+## 8. WASM / Browser Runtime Path
+
+ShadowDusk must also run inside .NET WASM for use in browser-based tools (XNA Fiddle by Vic). This section documents the constraints and integration approach.
+
+### Why native binaries can't run in WASM
+
+Both Vortice.Dxc and SPIRV-Cross are P/Invoke wrappers around native x64/arm64 binaries. These cannot execute inside a WebAssembly sandbox. P/Invoke itself is unavailable in the .NET WASM runtime unless the native library is itself compiled to WASM.
+
+### WASM builds of DXC and SPIRV-Cross
+
+Both tools have been compiled to WASM and are used in web-based shader playgrounds:
+
+- **DXC WASM:** Exists as `dxc.js` / `dxc.wasm` in various community builds. Powers https://shader-playground.timjones.io/ and similar tools.
+- **SPIRV-Cross WASM:** Official Emscripten build exists in the SPIRV-Cross repo. Used by several online shader conversion tools.
+
+These are NOT available as NuGet packages and must be vendored as static assets bundled with the web app.
+
+### ShadowDusk.Wasm architecture
+
+`ShadowDusk.Wasm` contains a WASM-safe implementation of `IShaderCompiler`:
+
+```csharp
+public sealed class WasmShaderCompiler : IShaderCompiler
+{
+    // Uses [JSImport] to call into WASM-compiled DXC and SPIRV-Cross
+    public Task<Result<CompiledShader, ShaderError[]>> CompileAsync(
+        string hlslSource, CompilerOptions options, CancellationToken ct);
+}
+```
+
+The JS interop layer calls exported functions from the WASM modules. The compiled GLSL is then assembled into a `.mgfx` blob using the same binary writer as the CLI path — KNI and MonoGame use the same `.mgfx` format.
+
+### Output format
+
+KNI uses the same `.mgfx` binary format as MonoGame. For the browser/WebGL target, the GLSL payload is embedded inside the `.mgfx` blob exactly as the desktop OpenGL path does. No special output format is needed — the format difference is transparent to the caller.
+
+### GLSL version for WebGL
+
+WebGL 1.0 requires GLSL ES 1.00 (`#version 100`). WebGL 2.0 requires GLSL ES 3.00 (`#version 300 es`). KNI's WebGL backend targets WebGL 2.0 (ES 3.00). SPIRV-Cross option:
+
+```
+spvc_compiler_options_set_uint(opts, SPVC_COMPILER_OPTION_GLSL_VERSION, 300)
+spvc_compiler_options_set_bool(opts, SPVC_COMPILER_OPTION_GLSL_ES, SPVC_TRUE)
+```
+
+This is different from the desktop OpenGL path which targets `#version 130` (non-ES).
+
+### Key references
+
+| Resource | URL |
+|----------|-----|
+| KNI repo (nkast) | https://github.com/nkast/Kni |
+| .NET WASM JS interop | https://learn.microsoft.com/en-us/aspnet/core/blazor/javascript-interoperability/import-export-interop |
+| Shader Playground (uses DXC WASM) | https://shader-playground.timjones.io/ |
+| SPIRV-Cross Emscripten build | https://github.com/KhronosGroup/SPIRV-Cross/tree/main/wasm |
+
+---
+
 ## Key URL Index
 
 | Resource | URL |

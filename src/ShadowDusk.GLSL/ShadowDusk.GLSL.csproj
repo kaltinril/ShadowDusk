@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>ShadowDusk.GLSL</AssemblyName>
+    <RootNamespace>ShadowDusk.GLSL</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ShadowDusk.Core\ShadowDusk.Core.csproj" />
+  </ItemGroup>
+</Project>

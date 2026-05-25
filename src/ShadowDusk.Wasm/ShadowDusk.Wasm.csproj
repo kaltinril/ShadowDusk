@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>ShadowDusk.Wasm</AssemblyName>
+    <RootNamespace>ShadowDusk.Wasm</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ShadowDusk.Core\ShadowDusk.Core.csproj" />
+  </ItemGroup>
+</Project>

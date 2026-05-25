@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>ShadowDusk.Core</AssemblyName>
+    <RootNamespace>ShadowDusk.Core</RootNamespace>
+  </PropertyGroup>
+</Project>

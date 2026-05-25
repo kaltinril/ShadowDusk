@@ -8,7 +8,7 @@ This document is the top-level index. Each phase is fleshed out in its own docum
 
 | Phase | File | Summary |
 |-------|------|---------|
-| 1 | [PHASE-1-solution-scaffold.md](PHASE-1-solution-scaffold.md) | .NET solution structure, project references, NuGet dependencies, test framework |
+| 1 ✓ | [PHASE-1-solution-scaffold.md](PHASE-1-solution-scaffold.md) | .NET solution structure, project references, NuGet dependencies, test framework — **DONE** |
 | 2 | [PHASE-2-fx9-pre-parser.md](PHASE-2-fx9-pre-parser.md) | Custom parser: extract technique/pass/sampler_state/render-state blocks before DXC sees the file |
 | 3 | [PHASE-3-preprocessor-macro-injection.md](PHASE-3-preprocessor-macro-injection.md) | #include flattening, platform macro injection (MGFX=1, GLSL=1, SM4=1, etc.) |
 | 4 | [PHASE-4-dxc-integration.md](PHASE-4-dxc-integration.md) | Vortice.Dxc wiring, per-platform DXC flags, HLSL → SPIR-V compilation |
@@ -31,7 +31,8 @@ Phase 1  (scaffold)
             └─ Phase 5  (reflection)
             └─ Phase 6  (SPIRV-Cross transpilation)
                  └─ Phase 7  (binary writer)
-                      └─ Phase 8  (CLI)
+                      ├─ Phase 8  (CLI — ShadowDusk.Cli dotnet tool)
+                      └─ Phase 8W (WASM — ShadowDusk.Wasm JS interop impl)
                            └─ Phase 9  (integration tests)
                                 └─ Phase 10 (CI)
 ```
@@ -44,3 +45,5 @@ Phase 1  (scaffold)
 - **Default MGFXVersion:** `10` (MonoGame 3.8.2 stable). Version `11` is opt-in via flag.
 - **Metal scope:** Out of scope until the OpenGL path is working and validated.
 - **MGCB integration:** Tier 1 only (PATH-based drop-in binary named `mgfxc`). Tier 2 content processor plugin is a separate future undertaking.
+- **Dual delivery targets:** CLI (`ShadowDusk.Cli`) and WASM library (`ShadowDusk.Wasm`). Output is always a `.mgfx` blob; `IShaderCompiler.CompileAsync` abstracts the difference. WASM implementation uses JS interop to call WASM-compiled DXC and SPIRV-Cross.
+- **KNI compatibility:** KNI uses the same `.mgfx` format as MonoGame. No special output path needed for KNI.

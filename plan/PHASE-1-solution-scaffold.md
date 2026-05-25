@@ -1,3 +1,6 @@
+> **Status: COMPLETE** — Solution scaffolded, build green (0 warnings), 1 test passing.
+> Notable deviation: `dotnet new sln` under SDK 10.0.300 created `ShadowDusk.slnx` (modern XML format) rather than the legacy `.sln` format. All `dotnet sln` commands work identically. `Vortice.Dxc` pinned to `3.3.4` (3.3.1 was no longer resolvable without a NU1601 warning-as-error). `ShadowDusk.Wasm` project added post-scaffold for WASM/KNI browser target.
+
 # Phase 1 — Solution Scaffold
 
 **Goal:** Create the full .NET 8 solution structure, wire up project references, add NuGet dependencies, configure the test framework, and verify `dotnet build` + `dotnet test` are green on every platform with zero warnings.
