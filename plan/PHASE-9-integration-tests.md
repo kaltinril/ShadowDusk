@@ -748,14 +748,16 @@ It writes `hlslSource` to a temp `.fx` file, calls `CompileFixtureAsync`, then d
 
 ## 10. Implementation Order
 
-1. Create `tests/fixtures/shaders/` directory and author all 9 `.fx` files.
-2. Create `tests/ShadowDusk.Integration.Tests/ShadowDusk.Integration.Tests.csproj` and register in solution.
-3. Implement `TestHelpers.cs` (`FixturePath`, `CompileFixtureAsync`, `CompileViaCliAsync`, `CompileViaPipelineAsync`).
-4. Implement `MgfxBlobReader.cs` (structural parser, referencing Phase 7 MGFX format).
-5. Implement `CliFixture.cs` (`IAsyncLifetime`, binary location logic, skip-on-missing).
-6. Implement `CompileFixtureTests.cs` — universal header theory first, then per-fixture facts.
-7. Implement `DeterminismTests.cs`.
-8. Implement `ErrorCaseTests.cs` — use `CompileSourceAsync` helper for inline source cases.
-9. Run `dotnet test --filter "Category=Integration"` locally; confirm all 9 fixtures pass for OpenGL.
-10. Confirm `dotnet test --filter "Category=Determinism"` passes independently.
-11. Confirm all 6 error-case tests produce `ExitCode == 1` and correct `Stderr` format.
+- [ ] 1. Create `tests/fixtures/shaders/` directory and author all 9 `.fx` files from Section 1.2.
+- [ ] 2. Create `tests/ShadowDusk.Integration.Tests/ShadowDusk.Integration.Tests.csproj` and register in solution (Section 2.1).
+- [ ] 3. Add fixture file embedding `<None Include>` items to the `.csproj` (Section 2.2).
+- [ ] 4. Implement `TestHelpers.cs` — `FixturePath`, `CompileFixtureAsync`, `CompileViaCliAsync`, `CompileViaPipelineAsync` (Section 3.1).
+- [ ] 5. Implement `MgfxBlobReader.cs` — structural parser reading signature, version, profile, technique table, shader blobs, and parameter names (Section 3.2).
+- [ ] 6. Implement `CliFixture.cs` — `IAsyncLifetime`, binary location logic, skip-on-missing (Section 3.3).
+- [ ] 7. Implement `CompileFixtureTests.cs` — universal header `[Theory]` first (Section 4.1), then per-fixture `[Fact]` assertions (Section 4.2).
+- [ ] 8. Implement `DeterminismTests.cs` — compile-twice byte-compare for `minimal.fx`, `cbuffer.fx`, `multitechnique.fx` (Section 5).
+- [ ] 9. Implement `ErrorCaseTests.cs` — 6 error-case tests using `CompileSourceAsync` helper for inline source (Section 6).
+- [ ] 10. Run `dotnet test --filter "Category=Integration"` locally; confirm all 9 fixtures pass for OpenGL.
+- [ ] 11. Run `dotnet test --filter "Category=Integration&Platform=DirectX_11"` — confirm all pass.
+- [ ] 12. Run `dotnet test --filter "Category=Determinism"` — confirm passes independently.
+- [ ] 13. Confirm all 6 error-case tests produce `ExitCode == 1` with correctly formatted `Stderr`.

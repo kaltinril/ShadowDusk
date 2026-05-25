@@ -4,11 +4,21 @@ This document is the top-level index. Each phase is fleshed out in its own docum
 
 ---
 
-## Phase Overview
+## Completed Phases
+
+These phases are fully implemented. Their documents have been moved to `DONE/` with all checklist items ticked.
 
 | Phase | File | Summary |
 |-------|------|---------|
-| 1 ✓ | [PHASE-1-solution-scaffold.md](PHASE-1-solution-scaffold.md) | .NET solution structure, project references, NuGet dependencies, test framework — **DONE** |
+| 0 ✓ | [DONE/phase-0-setup.md](DONE/phase-0-setup.md) | Fixture corpus (39 .fx / 4 .fxh), golden .mgfx reference compilation, ShaderViewer sample — **DONE** |
+| 1 ✓ | [DONE/PHASE-1-solution-scaffold.md](DONE/PHASE-1-solution-scaffold.md) | .NET solution structure, project references, NuGet dependencies, test framework — **DONE** |
+
+---
+
+## Active Phases
+
+| Phase | File | Summary |
+|-------|------|---------|
 | 2 | [PHASE-2-fx9-pre-parser.md](PHASE-2-fx9-pre-parser.md) | Custom parser: extract technique/pass/sampler_state/render-state blocks before DXC sees the file |
 | 3 | [PHASE-3-preprocessor-macro-injection.md](PHASE-3-preprocessor-macro-injection.md) | #include flattening, platform macro injection (MGFX=1, GLSL=1, SM4=1, etc.) |
 | 4 | [PHASE-4-dxc-integration.md](PHASE-4-dxc-integration.md) | Vortice.Dxc wiring, per-platform DXC flags, HLSL → SPIR-V compilation |

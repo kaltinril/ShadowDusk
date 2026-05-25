@@ -617,33 +617,33 @@ coverage/
 
 Execute these steps in order. Each step is independently verifiable.
 
-1. - [ ] Confirm `dotnet --version` reports `8.0.x`.
-2. - [ ] Create `Directory.Build.props` at repo root (Section 3).
-3. - [ ] Create `Directory.Packages.props` at repo root (Section 3).
-4. - [ ] Create `.editorconfig` at repo root (Section 9).
-5. - [ ] Update `.gitignore` (Section 10).
-6. - [ ] Create `src/ShadowDusk.Core/` directory and `.csproj` (Section 4.1).
-7. - [ ] Create stub source files in `ShadowDusk.Core`: `Result.cs`, `ShaderError.cs`, `PlatformTarget.cs`, `ShaderStage.cs`, `ShaderIR.cs`, `CompilerOptions.cs`, `IShaderCompiler.cs` (Section 6).
-8. - [ ] Create `src/ShadowDusk.HLSL/` directory and `.csproj` (Section 4.2).
-9. - [ ] Create `src/ShadowDusk.HLSL/DxcCompiler.cs` and `FxFileParser.cs` (empty stubs).
-10. - [ ] Create `src/ShadowDusk.GLSL/` directory and `.csproj` (Section 4.3).
-11. - [ ] Create `src/ShadowDusk.GLSL/SpirvCrossTranspiler.cs` and `GlslEmitter.cs` (empty stubs).
-12. - [ ] Create `src/ShadowDusk.Metal/` directory and `.csproj` (Section 4.4).
-13. - [ ] Create `src/ShadowDusk.Metal/MslEmitter.cs` (empty stub).
-14. - [ ] Create `src/ShadowDusk.Cli/` directory and `.csproj` (Section 4.5).
-15. - [ ] Create `src/ShadowDusk.Cli/Program.cs` with the not-implemented stub (Section 4.5).
-16. - [ ] Create `src/ShadowDusk.MgcbPlugin/` directory and `.csproj` (Section 4.6).
-17. - [ ] Create `tests/ShadowDusk.Core.Tests/` directory and `.csproj` (Section 5.1).
-18. - [ ] Create `tests/ShadowDusk.HLSL.Tests/` directory and `.csproj` (Section 5.2).
-19. - [ ] Create `tests/ShadowDusk.GLSL.Tests/` directory and `.csproj` (Section 5.3).
-20. - [ ] Create `tests/ShadowDusk.Integration.Tests/` directory and `.csproj` (Section 5.4).
-21. - [ ] Create `tests/ShadowDusk.Integration.Tests/PlaceholderTest.cs` (Section 5.4).
-22. - [ ] Run `dotnet new sln -n ShadowDusk` then all `dotnet sln add` commands (Section 8).
-23. - [ ] Run `dotnet restore` — verify no errors.
-24. - [ ] Generate and commit `packages.lock.json` files by running `dotnet restore`, then `git add **/packages.lock.json` and commit.
-25. - [ ] Run `dotnet build --configuration Release` — verify 0 errors, 0 warnings.
-26. - [ ] Run `dotnet test` — verify 0 failed, at least 1 passed (the placeholder).
-27. - [ ] Commit: `git add -A && git commit -m "Phase 1: solution scaffold"`.
+1. - [x] Confirm `dotnet --version` reports `8.0.x`.
+2. - [x] Create `Directory.Build.props` at repo root (Section 3).
+3. - [x] Create `Directory.Packages.props` at repo root (Section 3).
+4. - [x] Create `.editorconfig` at repo root (Section 9).
+5. - [x] Update `.gitignore` (Section 10).
+6. - [x] Create `src/ShadowDusk.Core/` directory and `.csproj` (Section 4.1).
+7. - [x] Create stub source files in `ShadowDusk.Core`: `Result.cs`, `ShaderError.cs`, `PlatformTarget.cs`, `ShaderStage.cs`, `ShaderIR.cs`, `CompilerOptions.cs`, `IShaderCompiler.cs` (Section 6).
+8. - [x] Create `src/ShadowDusk.HLSL/` directory and `.csproj` (Section 4.2).
+9. - [x] Create `src/ShadowDusk.HLSL/DxcCompiler.cs` and `FxFileParser.cs` (empty stubs).
+10. - [x] Create `src/ShadowDusk.GLSL/` directory and `.csproj` (Section 4.3).
+11. - [x] Create `src/ShadowDusk.GLSL/SpirvCrossTranspiler.cs` and `GlslEmitter.cs` (empty stubs).
+12. - [x] Create `src/ShadowDusk.Metal/` directory and `.csproj` (Section 4.4).
+13. - [x] Create `src/ShadowDusk.Metal/MslEmitter.cs` (empty stub).
+14. - [x] Create `src/ShadowDusk.Cli/` directory and `.csproj` (Section 4.5).
+15. - [x] Create `src/ShadowDusk.Cli/Program.cs` with the not-implemented stub (Section 4.5).
+16. - [x] Create `src/ShadowDusk.MgcbPlugin/` directory and `.csproj` (Section 4.6).
+17. - [x] Create `tests/ShadowDusk.Core.Tests/` directory and `.csproj` (Section 5.1).
+18. - [x] Create `tests/ShadowDusk.HLSL.Tests/` directory and `.csproj` (Section 5.2).
+19. - [x] Create `tests/ShadowDusk.GLSL.Tests/` directory and `.csproj` (Section 5.3).
+20. - [x] Create `tests/ShadowDusk.Integration.Tests/` directory and `.csproj` (Section 5.4).
+21. - [x] Create `tests/ShadowDusk.Integration.Tests/PlaceholderTest.cs` (Section 5.4).
+22. - [x] Run `dotnet new sln -n ShadowDusk` then all `dotnet sln add` commands (Section 8).
+23. - [x] Run `dotnet restore` — verify no errors.
+24. - [x] Generate and commit `packages.lock.json` files by running `dotnet restore`, then `git add **/packages.lock.json` and commit.
+25. - [x] Run `dotnet build --configuration Release` — verify 0 errors, 0 warnings.
+26. - [x] Run `dotnet test` — verify 0 failed, at least 1 passed (the placeholder).
+27. - [x] Commit: `git add -A && git commit -m "Phase 1: solution scaffold"`.
 
 ---
 

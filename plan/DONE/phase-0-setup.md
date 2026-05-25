@@ -273,6 +273,24 @@ original cat image. The viewer never crashes due to a bad shader.
 
 ---
 
+## Task Checklist (all complete)
+
+- [x] 1. Acquire 39 `.fx` shader files from MonoGame, manbeardgames, damian-666/MGShadersXPlatform, and Penumbra source repos.
+- [x] 2. Acquire the 4 shared `.fxh` headers (`Structures.fxh`, `Common.fxh`, `Lighting.fxh`, `Macros.fxh`) from MonoGame/MonoGame `develop` branch.
+- [x] 3. Replace Penumbra's `Macros.fxh` with MonoGame's version (required for `UNROLL` macro used by `Lighting.fxh`).
+- [x] 4. Apply shader-model fixes: upgrade `ps_4_0` → `ps_4_0_level_9_1` on DX11-targeting shaders and fix DX9-era shader models that fail `DirectX_11` profile compilation.
+- [x] 5. Fix bare PS-input bug (register-position mismatch) in `BloomExtract`, `BloomCombine`, `GaussianBlur`, `Bloom`, and related shaders.
+- [x] 6. Fix `VertexAndPixel` SM5 single-blob issue (`vs_5_0`/`ps_5_0` → `vs_4_0_level_9_1`/`ps_4_0_level_9_1`).
+- [x] 7. Run `tools/compile-fixtures.ps1` to generate 39 golden `DirectX_11` `.mgfx` reference files.
+- [x] 8. Run `tools/compile-fixtures.ps1` to generate 38 golden `OpenGL` `.mgfx` reference files (1 known failure: `DeferredLighting` MRT incompatibility — expected and documented).
+- [x] 9. Scaffold `samples/ShaderViewer` using the `mgwindowsdx` MonoGame template.
+- [x] 10. Implement split-screen viewer with shader cycling (Left/Right), `TrySetCommonParameters` auto-wiring, and HUD.
+- [x] 11. Load and validate all 39 DirectX_11 golden `.mgfx` files in the ShaderViewer — confirm Tier 1 (renders correctly) vs Tier 2 (loads but limited) vs Tier 3 (fails) breakdown.
+- [x] 12. Document Tier 1/2 limitations for `BloomCombine`, `GaussianBlur`, `DeferredSprite`, and 3D built-in effects.
+- [x] 13. Confirm zero Tier 3 (load failure) shaders after applying all fixes.
+
+---
+
 ## 4. What Comes Next (Phase 1)
 
 The golden files establish the correctness bar. Phase 1:

@@ -445,7 +445,65 @@ GlslTranspilerTests
 
 ---
 
-## 8. Acceptance Criteria
+## 8. Numbered Task Checklist
+
+### Setup
+
+- [ ] 1. Identify the SPIRV-Cross release version pinned in `tools/restore.sh` / `restore.ps1`.
+- [ ] 2. Download the corresponding `spirv_cross_c.h` header from the SPIRV-Cross GitHub release.
+- [ ] 3. Extract exact integer values for all `SpvcCompilerOption` constants from the header.
+- [ ] 4. Update `SpvcCompilerOption` in `SpvcNative.cs` with the real values; add version + hash comment.
+
+### P/Invoke layer
+
+- [ ] 5. Create `src/ShadowDusk.GLSL/Interop/` directory.
+- [ ] 6. Write `SpvcLoader.cs` with `NativeLibrary.SetDllImportResolver` (RID-aware path logic, single-file fallback).
+- [ ] 7. Write `SpvcNative.cs` with all 11 P/Invoke signatures from Section 4.2.
+
+### MonoGame uniform naming research (required before Task 11)
+
+- [ ] 8. Clone/browse MonoGame `develop` branch; locate `Effect.OpenGL.cs` (or equivalent).
+- [ ] 9. Find `glGetUniformLocation` calls; determine whether HLSL variable names or register-based names (`vs_c0`) are used.
+- [ ] 10. If register-based names are required, implement the uniform-rename post-processing step in `SpirvCrossGlslTranspiler` (regex parse + `spvc_compiler_set_name`).
+- [ ] 11. Write findings to `docs/glsl-uniform-naming.md`.
+
+### Core transpiler
+
+- [ ] 12. Add `GlslSource` value type to `src/ShadowDusk.Core/GlslSource.cs`.
+- [ ] 13. Implement `SpirvCrossGlslTranspiler.Transpile()` with the 12-step call sequence from Section 5 (Task 4).
+- [ ] 14. Ensure `spvc_context_destroy` is called in a `try/finally` on every code path.
+- [ ] 15. Ensure `spvc_compiler_build_combined_image_samplers()` is called before every `spvc_compiler_compile()`.
+- [ ] 16. Set all 5 compiler options (`FlipVertexY`, `GlslDepthZeroToOne`, `GlslVersion=140`, `GlslEs=false`, `GlslVulkanSemantics=false`).
+
+### Wiring
+
+- [ ] 17. Add `SpvcLoader.Register()` call in the `SpirvCrossGlslTranspiler` constructor.
+- [ ] 18. Wire `SpirvCrossGlslTranspiler` into the `ShaderCompiler` orchestrator in `ShadowDusk.Core`; store results as `PassBlob.VertexGlsl` and `PassBlob.PixelGlsl`.
+
+### MSBuild integration
+
+- [ ] 19. Add `<None>` / `<Content>` copy items for all 4 RID × file combinations to `ShadowDusk.GLSL.csproj` (Section 2).
+
+### Integration tests
+
+- [ ] 20. Add `tests/fixtures/shaders/minimal_vs_ps.fx`, `textured_vs_ps.fx`, and `passthrough_vs.fx`.
+- [ ] 21. Implement `Transpile_MinimalShader_OutputContainsVoidMain` — assert GLSL output contains `void main(`.
+- [ ] 22. Implement `Transpile_MinimalShader_OutputContainsVersion140` — assert output starts with `#version 140`.
+- [ ] 23. Implement `Transpile_TexturedShader_OutputContainsSampler2D` — combined samplers applied.
+- [ ] 24. Implement `Transpile_TexturedShader_OutputDoesNotContainSeparateSampler` — no separate `texture2D` + `sampler`.
+- [ ] 25. Implement `Transpile_PassthroughVertex_YFlipIsApplied` — assert `gl_Position.y` is negated.
+- [ ] 26. Implement `Transpile_InvalidSpirv_ReturnsShaderError` — assert error on garbage SPIR-V input.
+- [ ] 27. Implement `Transpile_EmptySpirv_ReturnsShaderError` — assert error on empty word array.
+
+### Verification
+
+- [ ] 28. Run `/build` — zero warnings, zero errors on all three RIDs (requires native binary restore).
+- [ ] 29. Run `/test --filter "Category=Integration"` — all 7 integration tests pass.
+- [ ] 30. Run `/platform-check` — no new platform-specific assumptions introduced.
+
+---
+
+## 9. Acceptance Criteria
 
 - [ ] P/Invoke bindings exist for all 11 SPIRV-Cross C API functions listed in Section 4.2
 - [ ] `SpvcLoader` resolves the correct native library for the current RID at runtime
