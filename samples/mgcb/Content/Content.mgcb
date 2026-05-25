@@ -1,0 +1,218 @@
+
+#----------------------------- Global Properties ----------------------------#
+
+/outputDir:bin/$(Platform)
+/intermediateDir:obj/$(Platform)
+/platform:DesktopGL
+/config:
+/profile:Reach
+/compress:False
+
+#-------------------------------- References --------------------------------#
+
+
+#---------------------------------- Content ---------------------------------#
+
+#begin ../../../tests/fixtures/shaders/BasicEffect.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/BasicEffect.fx;BasicEffect
+
+#begin ../../../tests/fixtures/shaders/AlphaTestEffect.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/AlphaTestEffect.fx;AlphaTestEffect
+
+#begin ../../../tests/fixtures/shaders/DualTextureEffect.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/DualTextureEffect.fx;DualTextureEffect
+
+#begin ../../../tests/fixtures/shaders/EnvironmentMapEffect.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/EnvironmentMapEffect.fx;EnvironmentMapEffect
+
+#begin ../../../tests/fixtures/shaders/SkinnedEffect.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/SkinnedEffect.fx;SkinnedEffect
+
+#begin ../../../tests/fixtures/shaders/SpriteEffect.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/SpriteEffect.fx;SpriteEffect
+
+#begin ../../../tests/fixtures/shaders/BasicShader.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/BasicShader.fx;BasicShader
+
+#begin ../../../tests/fixtures/shaders/TintShader.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/TintShader.fx;TintShader
+
+#begin ../../../tests/fixtures/shaders/BlendShader.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/BlendShader.fx;BlendShader
+
+#begin ../../../tests/fixtures/shaders/ClipShader.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/ClipShader.fx;ClipShader
+
+#begin ../../../tests/fixtures/shaders/ClipShaderSpriteTarget.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/ClipShaderSpriteTarget.fx;ClipShaderSpriteTarget
+
+#begin ../../../tests/fixtures/shaders/ClipShaderNew.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/ClipShaderNew.fx;ClipShaderNew
+
+#begin ../../../tests/fixtures/shaders/Fading.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/Fading.fx;Fading
+
+#begin ../../../tests/fixtures/shaders/ForwardLighting.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/ForwardLighting.fx;ForwardLighting
+
+#begin ../../../tests/fixtures/shaders/Grayscale.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/Grayscale.fx;Grayscale
+
+#begin ../../../tests/fixtures/shaders/Invert.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/Invert.fx;Invert
+
+#begin ../../../tests/fixtures/shaders/Pixelated.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/Pixelated.fx;Pixelated
+
+#begin ../../../tests/fixtures/shaders/Teleport.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/Teleport.fx;Teleport
+
+#begin ../../../tests/fixtures/shaders/Scanlines.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/Scanlines.fx;Scanlines
+
+#begin ../../../tests/fixtures/shaders/Saturate.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/Saturate.fx;Saturate
+
+#begin ../../../tests/fixtures/shaders/Sepia.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/Sepia.fx;Sepia
+
+#begin ../../../tests/fixtures/shaders/Dissolve.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/Dissolve.fx;Dissolve
+
+#begin ../../../tests/fixtures/shaders/Dots.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/Dots.fx;Dots
+
+#begin ../../../tests/fixtures/shaders/MultiTexture.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/MultiTexture.fx;MultiTexture
+
+#begin ../../../tests/fixtures/shaders/MultiTextureOverlay.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/MultiTextureOverlay.fx;MultiTextureOverlay
+
+#begin ../../../tests/fixtures/shaders/SpriteAlphaTest.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/SpriteAlphaTest.fx;SpriteAlphaTest
+
+#begin ../../../tests/fixtures/shaders/PolygonLight.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/PolygonLight.fx;PolygonLight
+
+#begin ../../../tests/fixtures/shaders/VertexAndPixel.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/VertexAndPixel.fx;VertexAndPixel
+
+#begin ../../../tests/fixtures/shaders/DeferredSprite.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/DeferredSprite.fx;DeferredSprite
+
+#begin ../../../tests/fixtures/shaders/SimpleLightShader.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/SimpleLightShader.fx;SimpleLightShader
+
+#begin ../../../tests/fixtures/shaders/PenumbraHull.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/PenumbraHull.fx;PenumbraHull
+
+#begin ../../../tests/fixtures/shaders/PenumbraLight.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/PenumbraLight.fx;PenumbraLight
+
+#begin ../../../tests/fixtures/shaders/PenumbraShadow.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/PenumbraShadow.fx;PenumbraShadow
+
+#begin ../../../tests/fixtures/shaders/PenumbraTexture.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/PenumbraTexture.fx;PenumbraTexture

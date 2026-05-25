@@ -1,0 +1,34 @@
+# Build output
+bin/
+obj/
+
+# NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+
+# Native tool downloads (restored by tools/restore.sh / tools/restore.ps1)
+tools/dxc/
+tools/spirv-cross/
+
+# MGCB compiled content output (XNB wrappers — not the raw .mgfx golden files)
+*.xnb
+*.mgcb.log
+Content/bin/
+Content/obj/
+
+# dotnet local tool cache
+.dotnet/
+
+# Visual Studio / VS Code / Rider
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userprefs
+
+# OS
+.DS_Store
+Thumbs.db

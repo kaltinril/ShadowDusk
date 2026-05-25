@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <RollForward>Major</RollForward>
+    <PublishReadyToRun>false</PublishReadyToRun>
+    <TieredCompilation>false</TieredCompilation>
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+  <PropertyGroup>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Icon.ico</ApplicationIcon>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MonoGame.Framework.WindowsDX" Version="3.8.*" />
+    <PackageReference Include="MonoGame.Content.Builder.Task" Version="3.8.*" />
+  </ItemGroup>
+  <!-- Copy cat image to output -->
+  <ItemGroup>
+    <Content Include="Content\cat.jpg">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <!-- Copy compiled golden shaders to output so the viewer can load them at runtime -->
+  <ItemGroup>
+    <Content Include="..\..\tests\fixtures\golden\DirectX_11\*.mgfx">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Shaders\DirectX_11\%(Filename)%(Extension)</Link>
+    </Content>
+    <Content Include="..\..\tests\fixtures\golden\OpenGL\*.mgfx">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>Shaders\OpenGL\%(Filename)%(Extension)</Link>
+    </Content>
+  </ItemGroup>
+
+  <Target Name="RestoreDotnetTools" BeforeTargets="Restore">
+    <Message Text="Restoring dotnet tools" Importance="High" />
+    <Exec Command="dotnet tool restore" />
+  </Target>
+</Project>
