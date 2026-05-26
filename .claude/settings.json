@@ -1,0 +1,43 @@
+{
+  "permissions": {
+    "defaultMode": "auto",
+    "allow": [
+      "Bash(find *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(ls *)",
+      "Bash(dotnet build *)",
+      "Bash(dotnet test *)",
+      "Bash(dotnet add *)",
+      "Bash(dotnet restore *)",
+      "Bash(dotnet pack *)",
+      "Bash(dotnet run *)",
+      "Bash(ls *)",
+      "Bash(dir *)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Bash(mv *)",
+      "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(wc *)",
+      "Bash(echo *)",
+      "Bash(pwd)",
+      "Bash(which *)",
+      "Bash(where *)",
+      "Bash(test *)",
+      "Bash(git *)",
+      "Bash(for *)",
+      "Bash(cd *)",
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(grep *)",
+      "Read(*)",
+      "Grep(*)",
+      "Glob(*)",
+      "Task(*)",
+      "WebSearch(*)",
+      "WebFetch(*)"
+    ]
+  }
+}

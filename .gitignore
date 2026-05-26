@@ -41,3 +41,6 @@ coverage/
 __pycache__/
 *.pyc
 *.pyo
+
+# Claude Code agent worktrees (temporary, not for source control)
+.claude/worktrees/
