@@ -70,7 +70,7 @@ INPUT
      │   │  • Depth range remap        │
      │   │  • Combined image samplers  │
      │   │  • GLSL version targeting   │
-     │   │    desktop  → #version 130  │
+     │   │    desktop  → #version 140  │
      │   │    WebGL    → #version 300 es│
      │   └──────────────┬──────────────┘
      │                  │
@@ -114,6 +114,6 @@ INPUT
 
 - **FX9 blocks** (`technique`, `pass`, `sampler_state`) are a D3DX legacy format inherited by XNA and MonoGame. DXC cannot parse them — the pre-parser strips them before DXC ever sees the file.
 - **DirectX path** is shorter: DXBC goes straight from DXC to the binary writer with no transpilation step.
-- **OpenGL / WebGL path** has an extra hop through SPIRV-Cross to convert SPIR-V → GLSL. Desktop targets `#version 130`; WebGL (KNI browser) targets `#version 300 es`.
+- **OpenGL / WebGL path** has an extra hop through SPIRV-Cross to convert SPIR-V → GLSL. Desktop targets `#version 140`; WebGL (KNI browser) targets `#version 300 es`.
 - **SPIRV-Cross** runs as native P/Invoke on desktop (CLI) and as a WASM JS interop call in the browser (KNI / XNA Fiddle).
 - **Output** is always a `.mgfx` binary blob — written to disk by the CLI, returned as `byte[]` in-memory by the WASM library.

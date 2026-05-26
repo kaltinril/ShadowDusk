@@ -40,21 +40,33 @@ Both targets share the same `IShaderCompiler` interface and produce byte-identic
 
 ## Status
 
-> **Early development — not yet functional.** The solution scaffold and core types are in place (Phase 1 complete). Full compilation is being implemented phase by phase.
+> **Active development — compilation pipeline through SPIRV-Cross transpilation is implemented.** The `.mgfx` binary writer (Phase 7) is the next milestone before an end-to-end compile is possible.
 
 | Phase | Description | Status |
 |---|---|---|
 | 0 | Fixture corpus + golden reference outputs | Done |
 | 1 | Solution scaffold, core types, project wiring | Done |
-| 2 | FX9 pre-parser (technique/pass/sampler extraction) | Up next |
-| 3 | Preprocessor macro injection + `#include` flattening | Planned |
-| 4 | DXC integration (HLSL → SPIR-V) | Planned |
-| 5 | Shader reflection | Planned |
-| 6 | SPIRV-Cross transpilation (SPIR-V → GLSL/MSL) | Planned |
-| 7 | `.mgfx` binary writer | Planned |
+| 2 | FX9 pre-parser (technique/pass/sampler extraction) | Done |
+| 3 | Preprocessor macro injection + `#include` flattening | Done |
+| 4 | DXC integration (HLSL → SPIR-V / DXBC) | Done |
+| 5 | Shader reflection (cbuffers, parameters, samplers) | Done |
+| 6 | SPIRV-Cross transpilation (SPIR-V → GLSL) | Done |
+| 7 | `.mgfx` binary writer | Up next |
 | 8 | mgfxc-compatible CLI entry point | Planned |
 | 9 | Integration tests | Planned |
 | 10 | Cross-platform CI (Linux / macOS / Windows) | Planned |
+| 11 | Deferred backlog (ShaderCompiler wiring, uniform remapping) | Backlog |
+| 12 | Security hardening (path traversal, binary integrity) | Planned |
+
+**Backend support** (compilation chain complete; `.mgfx` output pending Phase 7):
+
+| Backend | Output | Chain status |
+|---|---|---|
+| DirectX (Windows) | DXBC | DXC → DXBC ✓ |
+| OpenGL / DesktopGL | GLSL | DXC → SPIR-V → SPIRV-Cross → GLSL ✓ |
+| Metal (macOS / iOS) | MSL | Stub — post-Phase 7 |
+| Vulkan | SPIR-V | Future |
+| WebGL (XNA Fiddle / KNI) | GLSL ES | WASM path — future phase |
 
 ## Getting started
 
@@ -123,4 +135,4 @@ ShadowDusk/
 
 ## Contributing
 
-The project is in active early development. See [`plan/plan.md`](plan/plan.md) for the implementation roadmap and [`CLAUDE.md`](CLAUDE.md) for coding conventions and agent guidance.
+The project is in active early development. See [`plan/`](plan/) for the implementation roadmap (active phases) and [`plan/DONE/`](plan/DONE/) for completed phases. [`CLAUDE.md`](CLAUDE.md) covers coding conventions and agent guidance.
