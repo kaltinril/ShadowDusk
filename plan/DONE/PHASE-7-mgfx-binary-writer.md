@@ -668,25 +668,25 @@ All tests live in `tests/ShadowDusk.Core.Tests/MgfxWriterTests.cs`. All tests ar
 
 Execute these steps in order. Each step is independently verifiable.
 
-1. - [ ] Add `MgfxProfile.cs` to `ShadowDusk.Core` (Section 6.1).
-2. - [ ] Add `MgfxWriterOptions.cs` to `ShadowDusk.Core` (Section 6.2).
-3. - [ ] Add `RenderStateBlock.cs` with all render-state enum types to `ShadowDusk.Core` (Section 6.3). Verify enum int values against MonoGame source.
-4. - [ ] Add `ConstantBufferInfo.cs`, `CompiledShaderBlob.cs`, `EffectParameterInfo.cs`, `AnnotationInfo.cs`, `MgfxTechniqueInfo.cs`, `MgfxPassInfo.cs` to `ShadowDusk.Core` (Section 8).
-5. - [ ] Extend `ShaderIR.cs` with `ConstantBuffers`, `Shaders`, `Parameters`, `Techniques` properties (Section 6.4).
-6. - [ ] Add `MgfxWriter.cs` skeleton with all `Write*` methods as `NotImplementedException` stubs (Section 6.5).
+1. - [x] Add `MgfxProfile.cs` to `ShadowDusk.Core` (Section 6.1).
+2. - [x] Add `MgfxWriterOptions.cs` to `ShadowDusk.Core` (Section 6.2).
+3. - [x] Add `RenderStateBlock.cs` with all render-state enum types to `ShadowDusk.Core` (Section 6.3). Verify enum int values against MonoGame source.
+4. - [x] Add `ConstantBufferInfo.cs`, `CompiledShaderBlob.cs`, `EffectParameterInfo.cs`, `AnnotationInfo.cs`, `MgfxTechniqueInfo.cs`, `MgfxPassInfo.cs` to `ShadowDusk.Core` (Section 8).
+5. - [x] Extend `ShaderIR.cs` with `ConstantBuffers`, `Shaders`, `Parameters`, `Techniques` properties (Section 6.4).
+6. - [x] Add `MgfxWriter.cs` skeleton with all `Write*` methods as `NotImplementedException` stubs (Section 6.5).
 6b. - [ ] Add `ShaderIRBuilder` static class (or mapper method) that accepts `FxParseResult`, `ReflectedEffect`, and `IReadOnlyList<CompiledShaderBlob>` and returns a populated `ShaderIR`. Can be a stub that Phase 8's `PipelineRunner` calls. This is the bridge between Phase 5/6 outputs and Phase 7 writer inputs.
-7. - [ ] Add `RenderStateParser.cs` skeleton (Section 6.6).
-8. - [ ] Implement `WriteHeader` in `MgfxWriter` (Section 7). Run `Header_*` tests — all should pass.
-9. - [ ] Implement `WriteConstantBuffers` (Section 7.1). Run `ConstantBuffer_*` tests.
-10. - [ ] Implement `WriteShaders` (Section 7.2). Run `ShaderBlob_*` tests.
-11. - [ ] Implement `WriteAnnotations` helper (Section 7.6).
-12. - [ ] Implement `WriteParameters` (Section 7.3). Run `StringEncoding_*` tests.
-13. - [ ] Implement `WriteTechniques` and `WriteRenderStateBlock` (Sections 7.4, 7.5). Run `TechniqueOrder_*` and `RenderState_*` tests.
-14. - [ ] Implement `RenderStateParser.Parse` with the full D3D9 token mapping table (Sections 4, 7.7). Run `RenderState_*` tests.
-15. - [ ] Write and pass `MinimalEffect_SingleTechniqueSinglePass` round-trip test (Section 9.7).
-16. - [ ] Run `dotnet build --configuration Release` — 0 errors, 0 warnings.
-17. - [ ] Run `dotnet test --filter "FullyQualifiedName~MgfxWriterTests"` — all pass.
-18. - [ ] Commit: `git commit -m "Phase 7: MgfxWriter — MGFX binary serializer"`.
+7. - [x] Add `RenderStateParser.cs` skeleton (Section 6.6).
+8. - [x] Implement `WriteHeader` in `MgfxWriter` (Section 7). Run `Header_*` tests — all should pass.
+9. - [x] Implement `WriteConstantBuffers` (Section 7.1). Run `ConstantBuffer_*` tests.
+10. - [x] Implement `WriteShaders` (Section 7.2). Run `ShaderBlob_*` tests.
+11. - [x] Implement `WriteAnnotations` helper (Section 7.6).
+12. - [x] Implement `WriteParameters` (Section 7.3). Run `StringEncoding_*` tests.
+13. - [x] Implement `WriteTechniques` and `WriteRenderStateBlock` (Sections 7.4, 7.5). Run `TechniqueOrder_*` and `RenderState_*` tests.
+14. - [x] Implement `RenderStateParser.Parse` with the full D3D9 token mapping table (Sections 4, 7.7). Run `RenderState_*` tests.
+15. - [x] Write and pass `MinimalEffect_SingleTechniqueSinglePass` round-trip test (Section 9.7).
+16. - [x] Run `dotnet build --configuration Release` — 0 errors, 0 warnings.
+17. - [x] Run `dotnet test --filter "FullyQualifiedName~MgfxWriterTests"` — all pass.
+18. - [x] Commit: `git commit -m "Phase 7: MgfxWriter — MGFX binary serializer"`.
 
 ---
 

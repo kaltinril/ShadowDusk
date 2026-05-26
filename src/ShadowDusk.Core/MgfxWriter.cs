@@ -18,6 +18,26 @@ public sealed class MgfxWriter
 
     public Result<byte[], ShaderError> Write(ShaderIR ir, MgfxWriterOptions options)
     {
+        foreach (var cb in ir.ConstantBuffers)
+        {
+            if (cb.SizeInBytes > short.MaxValue)
+                return Result<byte[], ShaderError>.Fail(new ShaderError(
+                    File: "", Line: 0, Column: 0, Code: "SD0020",
+                    Message: $"Constant buffer '{cb.Name}' size {cb.SizeInBytes} exceeds MGFX int16 maximum ({short.MaxValue})"));
+        }
+        foreach (var tech in ir.Techniques)
+            foreach (var pass in tech.Passes)
+            {
+                if (pass.VertexShaderIndex > short.MaxValue)
+                    return Result<byte[], ShaderError>.Fail(new ShaderError(
+                        File: "", Line: 0, Column: 0, Code: "SD0021",
+                        Message: $"Pass '{pass.Name}' vertex shader index {pass.VertexShaderIndex} exceeds MGFX int16 maximum"));
+                if (pass.PixelShaderIndex > short.MaxValue)
+                    return Result<byte[], ShaderError>.Fail(new ShaderError(
+                        File: "", Line: 0, Column: 0, Code: "SD0021",
+                        Message: $"Pass '{pass.Name}' pixel shader index {pass.PixelShaderIndex} exceeds MGFX int16 maximum"));
+            }
+
         using var ms = new MemoryStream();
         using var bw = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);
 

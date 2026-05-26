@@ -1,6 +1,7 @@
 #nullable enable
 
 using System.Collections.Generic;
+using System.Linq;
 
 namespace ShadowDusk.Core;
 
@@ -339,7 +340,13 @@ public sealed class RenderStateParser
             Line: 0,
             Column: 0,
             Code: "SD0010",
-            Message: $"Unrecognised value '{value}' for render state key '{key}'"));
+            Message: $"Unrecognised value '{Sanitize(value)}' for render state key '{key}'"));
+
+    private static string Sanitize(string s)
+    {
+        var safe = string.Concat(s.Where(c => !char.IsControl(c)));
+        return safe.Length <= 80 ? safe : string.Concat(safe.AsSpan(0, 80), "…");
+    }
 
     private static Result<bool, ShaderError> Ok()
         => Result<bool, ShaderError>.Ok(true);

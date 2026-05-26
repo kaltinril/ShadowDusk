@@ -467,7 +467,7 @@ public sealed class MgfxWriterTests
             [
                 new ConstantBufferInfo(
                     Name: "BigCB",
-                    SizeInBytes: 65536,
+                    SizeInBytes: 256,
                     ParameterIndices: new[] { 0 },
                     ParameterOffsets: new ushort[] { 65000 })
             ],
@@ -486,6 +486,44 @@ public sealed class MgfxWriterTests
 
         var offset = br.ReadUInt16();
         offset.Should().Be(65000, because: "uint16 can represent values up to 65535");
+    }
+
+    [Fact]
+    public void ConstantBuffer_SizeExceedsInt16_ReturnsError()
+    {
+        var ir = new ShaderIR
+        {
+            ConstantBuffers =
+            [
+                new ConstantBufferInfo(
+                    Name: "TooBig",
+                    SizeInBytes: short.MaxValue + 1,
+                    ParameterIndices: [],
+                    ParameterOffsets: [])
+            ],
+        };
+
+        var result = new MgfxWriter().Write(ir, new MgfxWriterOptions(MgfxProfile.OpenGL));
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("SD0020");
+    }
+
+    [Fact]
+    public void ShaderIndex_ExceedsInt16_ReturnsError()
+    {
+        var ir = new ShaderIR
+        {
+            Techniques =
+            [
+                new MgfxTechniqueInfo("T", [], [
+                    new MgfxPassInfo("P", [], VertexShaderIndex: short.MaxValue + 1, PixelShaderIndex: -1, new RenderStateBlock())
+                ])
+            ],
+        };
+
+        var result = new MgfxWriter().Write(ir, new MgfxWriterOptions(MgfxProfile.OpenGL));
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("SD0021");
     }
 
     // -------------------------------------------------------------------------
