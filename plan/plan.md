@@ -28,6 +28,7 @@ These phases are fully implemented. Their documents have been moved to `DONE/` w
 | Phase | File | Summary |
 |-------|------|---------|
 | 15 | [PHASE-15-integration-tests.md](PHASE-15-integration-tests.md) | End-to-end .fx compilation tests, fixture shaders, per-platform test filters |
+| 16 | [PHASE-16-image-regression-tests.md](PHASE-16-image-regression-tests.md) | Visual regression tests — render golden vs. ShadowDusk .mgfx offscreen, compare pixel output |
 | 20 | [PHASE-20-deferred-backlog.md](PHASE-20-deferred-backlog.md) | Deferred items backlog from phases 2–9; no prerequisites, review before 1.0 |
 | 25 | [PHASE-25-security-hardening.md](PHASE-25-security-hardening.md) | Security hardening for WASM/web path — path traversal, input validation, supply chain |
 | 30 | [PHASE-30-cross-platform-ci.md](PHASE-30-cross-platform-ci.md) | RID matrix, native binary restore, GitHub Actions CI across Linux/macOS/Windows |
