@@ -59,6 +59,7 @@ public sealed class DxilReflectionExtractor
             }
 
             utils.CreateReflection(encodingBlob, out ID3D12ShaderReflection? reflection);
+            encodingBlob.Dispose();
             if (reflection is null)
             {
                 return Result<ReflectedEffect, ShaderError>.Fail(new ShaderError(
@@ -91,8 +92,10 @@ public sealed class DxilReflectionExtractor
     {
         ShaderDescription shaderDesc = reflection.Description;
 
+        Dictionary<string, int> cbufferSlots = BuildCbufferSlots(reflection, shaderDesc);
+
         IReadOnlyList<ConstantBufferReflection> constantBuffers =
-            ExtractConstantBuffers(reflection, shaderDesc);
+            ExtractConstantBuffers(reflection, shaderDesc, cbufferSlots);
 
         (IReadOnlyList<TextureReflection> textures,
          IReadOnlyList<SamplerReflection>  samplers) =
@@ -115,9 +118,24 @@ public sealed class DxilReflectionExtractor
         });
     }
 
-    private static IReadOnlyList<ConstantBufferReflection> ExtractConstantBuffers(
+    private static Dictionary<string, int> BuildCbufferSlots(
         ID3D12ShaderReflection reflection,
         ShaderDescription shaderDesc)
+    {
+        var slots = new Dictionary<string, int>(StringComparer.Ordinal);
+        for (int i = 0; i < shaderDesc.BoundResources; i++)
+        {
+            InputBindingDescription bindDesc = reflection.GetResourceBindingDescription(i);
+            if (bindDesc.Type == ShaderInputType.ConstantBuffer)
+                slots[bindDesc.Name] = bindDesc.BindPoint;
+        }
+        return slots;
+    }
+
+    private static IReadOnlyList<ConstantBufferReflection> ExtractConstantBuffers(
+        ID3D12ShaderReflection reflection,
+        ShaderDescription shaderDesc,
+        Dictionary<string, int> cbufferSlots)
     {
         var cbuffers = new List<ConstantBufferReflection>(shaderDesc.ConstantBuffers);
 
@@ -138,7 +156,9 @@ public sealed class DxilReflectionExtractor
                 {
                     Name           = varDesc.Name,
                     StartOffset    = varDesc.StartOffset,
-                    SizeBytes      = varDesc.Size,
+                    SizeBytes      = typeDesc.ElementCount > 0
+                                       ? (varDesc.Size + 15) & ~15
+                                       : varDesc.Size,
                     ParameterClass = MapClass(typeDesc.Class),
                     ParameterType  = MapType(typeDesc.Type),
                     Rows           = typeDesc.RowCount,
@@ -152,7 +172,7 @@ public sealed class DxilReflectionExtractor
             {
                 Name      = cbDesc.Name,
                 SizeBytes = cbDesc.Size,
-                BindSlot  = 0,
+                BindSlot  = cbufferSlots.TryGetValue(cbDesc.Name, out int slot) ? slot : 0,
                 Variables = variables,
             });
         }

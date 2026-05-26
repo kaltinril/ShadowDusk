@@ -1,6 +1,6 @@
 # Phase 5 — Shader Reflection
 
-**Status:** Planned
+**Status:** Done
 **Depends on:** Phase 4 (bytecode emission — DXIL/SPIR-V blobs available)
 **Produces:** `ReflectedEffect` data model; populated Parameters and Constant Buffers sections of the `.mgfx` binary
 
@@ -225,13 +225,13 @@ These rules are not enforced by ShadowDusk — DXC handles packing — but the r
 
 ### 7.1 Data Model
 
-- [ ] 7.1.1 Create `ShadowDusk.Core/Reflection/` directory and add the record types from Section 4 (`ReflectedEffect`, `ConstantBufferReflection`, `VariableReflection`, `ParameterReflection`, `TextureReflection`, `SamplerReflection`, `SignatureParameterReflection`).
-- [ ] 7.1.2 Add `EffectParameterClass`, `EffectParameterType`, and `TextureDimension` enums to the same namespace. Verify numeric values match MonoGame source (`Microsoft.Xna.Framework.Graphics.EffectParameterClass`).
-- [ ] 7.1.3 Add `AnnotationReflection` record (name + string value) referenced by `ParameterReflection.Annotations`.
+- [x] 7.1.1 Create `ShadowDusk.Core/Reflection/` directory and add the record types from Section 4 (`ReflectedEffect`, `ConstantBufferReflection`, `VariableReflection`, `ParameterReflection`, `TextureReflection`, `SamplerReflection`, `SignatureParameterReflection`).
+- [x] 7.1.2 Add `EffectParameterClass`, `EffectParameterType`, and `TextureDimension` enums to the same namespace. Verify numeric values match MonoGame source (`Microsoft.Xna.Framework.Graphics.EffectParameterClass`).
+- [x] 7.1.3 Add `AnnotationReflection` record (name + string value) referenced by `ParameterReflection.Annotations`.
 
 ### 7.2 DXIL Reflection Extractor
 
-- [ ] 7.2.1 Create `src/ShadowDusk.HLSL/Reflection/DxilReflectionExtractor.cs`. Signature:
+- [x] 7.2.1 Create `src/ShadowDusk.HLSL/Reflection/DxilReflectionExtractor.cs`. Signature:
   ```csharp
   public sealed class DxilReflectionExtractor
   {
@@ -240,29 +240,29 @@ These rules are not enforced by ShadowDusk — DXC handles packing — but the r
           CancellationToken ct = default);
   }
   ```
-- [ ] 7.2.2 Obtain `IDxcUtils` from `Vortice.Dxc.DxcCompiler.CreateDxcUtils()`. Call `IDxcUtils.CreateReflection(blob, typeof(ID3D12ShaderReflection).GUID, out var reflection)`. Handle `HRESULT` failure → return `ShaderError`.
-- [ ] 7.2.3 Call `reflection.GetDesc(out var shaderDesc)` to retrieve `D3D12_SHADER_DESC` (total CB count, bound resource count, input/output parameter counts).
-- [ ] 7.2.4 Implement `ExtractConstantBuffers(reflection, shaderDesc)` (private):
+- [x] 7.2.2 Obtain `IDxcUtils` from `Vortice.Dxc.DxcCompiler.CreateDxcUtils()`. Call `IDxcUtils.CreateReflection(blob, typeof(ID3D12ShaderReflection).GUID, out var reflection)`. Handle `HRESULT` failure → return `ShaderError`.
+- [x] 7.2.3 Call `reflection.GetDesc(out var shaderDesc)` to retrieve `D3D12_SHADER_DESC` (total CB count, bound resource count, input/output parameter counts).
+- [x] 7.2.4 Implement `ExtractConstantBuffers(reflection, shaderDesc)` (private):
   - Loop `i` in `[0, shaderDesc.ConstantBuffers)`.
   - `reflection.GetConstantBufferByIndex(i)` → `ID3D12ShaderReflectionConstantBuffer`.
   - `cb.GetDesc(out var cbDesc)` → name, size, variable count.
   - Loop variables: `cb.GetVariableByIndex(j)` → `GetDesc(out var varDesc)` → name, start offset, size.
   - For each variable, call `GetType()` → `GetDesc(out var typeDesc)` → class, type, rows, columns, elements.
   - Recurse into struct members when `typeDesc.Class == D3D_SVC_STRUCT`.
-- [ ] 7.2.5 Implement `ExtractBoundResources(reflection, shaderDesc)` (private):
+- [x] 7.2.5 Implement `ExtractBoundResources(reflection, shaderDesc)` (private):
   - Loop `i` in `[0, shaderDesc.BoundResources)`.
   - `reflection.GetResourceBindingDesc(i, out var bindDesc)` → name, type (`D3D_SIT_*`), bind slot.
   - Route to `_textures` list when `D3D_SIT_TEXTURE`, to `_samplers` list when `D3D_SIT_SAMPLER`, ignore CBs (already extracted).
-- [ ] 7.2.6 Implement `ExtractInputSignature` and `ExtractOutputSignature` (private):
+- [x] 7.2.6 Implement `ExtractInputSignature` and `ExtractOutputSignature` (private):
   - Use `GetInputParameterDesc` / `GetOutputParameterDesc` with index loop.
   - Map to `SignatureParameterReflection`.
-- [ ] 7.2.7 Build and return a `ReflectedEffect` from the collected lists.
-- [ ] 7.2.8 Apply the type mapping tables from Section 5 in a `private static` `MapClass` method and a `private static` `MapType` method. Throw `InvalidOperationException` (internal, not user-facing) for unmapped enum values so gaps surface in tests.
-- [ ] 7.2.9 Wrap all COM interop in `try/catch` that converts exceptions to `ShaderError` with `ErrorCode.ReflectionFailed`.
+- [x] 7.2.7 Build and return a `ReflectedEffect` from the collected lists.
+- [x] 7.2.8 Apply the type mapping tables from Section 5 in a `private static` `MapClass` method and a `private static` `MapType` method. Throw `InvalidOperationException` (internal, not user-facing) for unmapped enum values so gaps surface in tests.
+- [x] 7.2.9 Wrap all COM interop in `try/catch` that converts exceptions to `ShaderError` with `ErrorCode.ReflectionFailed`.
 
 ### 7.3 SPIRV-Cross Binding Slot Verification
 
-- [ ] 7.3.1 Create `ShadowDusk.Core/Reflection/SpvReflectionVerifier.cs`. Signature:
+- [x] 7.3.1 Create `ShadowDusk.Core/Reflection/SpvReflectionVerifier.cs`. Signature:
   ```csharp
   public sealed class SpvReflectionVerifier
   {
@@ -274,11 +274,11 @@ These rules are not enforced by ShadowDusk — DXC handles packing — but the r
   where `BindingSlotMap` is a simple `record` with `IReadOnlyDictionary<string, int>` for textures and samplers.
 - [ ] 7.3.2 Use the existing SPIRV-Cross P/Invoke wrapper (`spvc_context_create` → `spvc_compiler_create_shader_resources`). Enumerate `separate_images` and `separate_samplers` from the resources struct.
 - [ ] 7.3.3 Compare slots with DXIL-reflected slots. If a mismatch exists, emit a `ShaderError` with `ErrorCode.BindingSlotMismatch` and include the resource name and both slot values in the message.
-- [ ] 7.3.4 This verifier runs only when the SPIR-V blob is available (OpenGL/Vulkan targets). Guard with `if (spirvBlob.IsEmpty) return Result.Ok(BindingSlotMap.Empty)`.
+- [x] 7.3.4 This verifier runs only when the SPIR-V blob is available (OpenGL/Vulkan targets). Guard with `if (spirvBlob.IsEmpty) return Result.Ok(BindingSlotMap.Empty)`.
 
 ### 7.4 Parameter List Assembly
 
-- [ ] 7.4.1 Create `ShadowDusk.Core/Reflection/ParameterListBuilder.cs` (pure, no native calls):
+- [x] 7.4.1 Create `ShadowDusk.Core/Reflection/ParameterListBuilder.cs` (pure, no native calls):
   ```csharp
   public static class ParameterListBuilder
   {
@@ -287,14 +287,14 @@ These rules are not enforced by ShadowDusk — DXC handles packing — but the r
           IReadOnlyList<FxAnnotation>? fxAnnotations);
   }
   ```
-- [ ] 7.4.2 Flatten cbuffer variables into top-level `ParameterReflection` records. Each variable in each cbuffer becomes one entry.
-- [ ] 7.4.3 Append one `ParameterReflection` per texture and one per sampler (class = `Object`, type = `Texture*` or `Object` respectively).
-- [ ] 7.4.4 Merge FX9 annotations: match by parameter name; attach to `ParameterReflection.Annotations`.
-- [ ] 7.4.5 Output list order: cbuffer variables in cbuffer declaration order, then textures in bind-slot order, then samplers in bind-slot order. This must be stable across compilations (determinism requirement).
+- [x] 7.4.2 Flatten cbuffer variables into top-level `ParameterReflection` records. Each variable in each cbuffer becomes one entry.
+- [x] 7.4.3 Append one `ParameterReflection` per texture and one per sampler (class = `Object`, type = `Texture*` or `Object` respectively).
+- [x] 7.4.4 Merge FX9 annotations: match by parameter name; attach to `ParameterReflection.Annotations`.
+- [x] 7.4.5 Output list order: cbuffer variables in cbuffer declaration order, then textures in bind-slot order, then samplers in bind-slot order. This must be stable across compilations (determinism requirement).
 
 ### 7.5 Public Facade
 
-- [ ] 7.5.1 Add `ReflectionPipeline` to `ShadowDusk.Core/Reflection/`:
+- [x] 7.5.1 Add `ReflectionPipeline` to `ShadowDusk.Core/Reflection/`:
   ```csharp
   public sealed class ReflectionPipeline
   {
@@ -310,8 +310,8 @@ These rules are not enforced by ShadowDusk — DXC handles packing — but the r
       public          IReadOnlyList<FxAnnotation>?    FxAnnotations  { get; init; }
   }
   ```
-- [ ] 7.5.2 `ReflectionPipeline.ReflectAsync` calls `DxilReflectionExtractor.Extract`, then optionally `SpvReflectionVerifier.GetBindings`, then `ParameterListBuilder.Build`. Returns the assembled `ReflectedEffect`.
-- [ ] 7.5.3 Wire `ReflectionPipeline` via constructor injection — no DI container framework is assumed.
+- [x] 7.5.2 `ReflectionPipeline.ReflectAsync` calls `DxilReflectionExtractor.Extract`, then optionally `SpvReflectionVerifier.GetBindings`, then `ParameterListBuilder.Build`. Returns the assembled `ReflectedEffect`.
+- [x] 7.5.3 Wire `ReflectionPipeline` via constructor injection — no DI container framework is assumed.
 
 ---
 
@@ -332,15 +332,15 @@ Add the following values to `ShaderErrorCode` (or equivalent enum in `ShadowDusk
 
 ### 9.1 Unit Tests — `ShadowDusk.Core.Tests/Reflection/`
 
-- [ ] 9.1.1 `TypeMappingTests.cs` — table-driven tests covering every row in Section 5.1 and 5.2. Assert `MapClass` and `MapType` return the correct `EffectParameterClass` / `EffectParameterType` for every listed DXIL enum value. No native calls.
-- [ ] 9.1.2 `ParameterListBuilderTests.cs` — construct fake `ReflectedEffect` instances in-memory; verify the output list order (cbuffer vars → textures → samplers) and annotation merging logic.
-- [ ] 9.1.3 `CbufferPackingTests.cs` — assert that for a known synthetic `VariableReflection` layout the offsets satisfy the packing rules in Section 6 (validates test fixture design, not production code).
+- [x] 9.1.1 `TypeMappingTests.cs` — table-driven tests covering every row in Section 5.1 and 5.2. Assert `MapClass` and `MapType` return the correct `EffectParameterClass` / `EffectParameterType` for every listed DXIL enum value. No native calls.
+- [x] 9.1.2 `ParameterListBuilderTests.cs` — construct fake `ReflectedEffect` instances in-memory; verify the output list order (cbuffer vars → textures → samplers) and annotation merging logic.
+- [x] 9.1.3 `CbufferPackingTests.cs` — assert that for a known synthetic `VariableReflection` layout the offsets satisfy the packing rules in Section 6 (validates test fixture design, not production code).
 
 ### 9.2 Integration Tests — `ShadowDusk.Integration.Tests/Reflection/`
 
 All integration tests carry `[Trait("Category", "Integration")]`.
 
-- [ ] 9.2.1 `BasicCbufferReflectionTests.cs`
+- [x] 9.2.1 `BasicCbufferReflectionTests.cs`
   - Fixture shader `fixtures/shaders/reflection/basic_cbuffer.hlsl` contains:
     ```hlsl
     cbuffer Params : register(b0)
@@ -358,26 +358,26 @@ All integration tests carry `[Trait("Category", "Integration")]`.
   - Assert variable `Color`: offset=16, size=16, class=`Vector`, type=`Single`, columns=4.
   - Assert variable `World`: offset=32, size=64, class=`Matrix`, type=`Single`, rows=4, columns=4.
 
-- [ ] 9.2.2 `ArrayReflectionTests.cs`
+- [x] 9.2.2 `ArrayReflectionTests.cs`
   - Fixture: `fixtures/shaders/reflection/array_param.hlsl` with `float PointLights[4]` inside a cbuffer.
   - Assert: elements=4, size=64 bytes (4 × 16-byte padding), offsets correct.
 
-- [ ] 9.2.3 `TextureSamplerReflectionTests.cs`
+- [x] 9.2.3 `TextureSamplerReflectionTests.cs`
   - Fixture: `fixtures/shaders/reflection/tex_sampler.hlsl` with `Texture2D Albedo : register(t0)` and `SamplerState AlbedoSampler : register(s0)`.
   - Assert: `Textures` list has 1 entry: name=`"Albedo"`, slot=0, dimension=`Texture2D`.
   - Assert: `Samplers` list has 1 entry: name=`"AlbedoSampler"`, slot=0.
 
-- [ ] 9.2.4 `StructReflectionTests.cs`
+- [x] 9.2.4 `StructReflectionTests.cs`
   - Fixture: cbuffer with a nested struct `DirectionalLight { float3 Dir; float3 Color; float Intensity; }`.
   - Assert: the variable's `Members` list contains 3 entries with correct names, offsets, and types.
   - Assert recursive offset calculation matches Section 6 struct alignment rules.
 
-- [ ] 9.2.5 `SpvBindingVerificationTests.cs`
+- [x] 9.2.5 `SpvBindingVerificationTests.cs`
   - Compile the texture/sampler fixture to both DXIL and SPIR-V.
   - Run `SpvReflectionVerifier` and assert no mismatch errors.
   - Mutate the SPIR-V blob's binding annotation (or use a hand-crafted mismatched fixture) and assert `BindingSlotMismatch` error is returned.
 
-- [ ] 9.2.6 `SignatureReflectionTests.cs`
+- [x] 9.2.6 `SignatureReflectionTests.cs`
   - Fixture: `fixtures/shaders/reflection/vs_input.hlsl` with a vertex shader taking `POSITION`, `NORMAL`, `TEXCOORD0`.
   - Assert `InputSignature` contains entries with correct semantic names, registers, and component types.
 
@@ -469,6 +469,6 @@ tests/fixtures/snapshots/
 | Phase 3 output | — | `FxAnnotation` list (optional, for annotation merging) |
 
 Before starting this phase, confirm:
-- [ ] `Vortice.Direct3D12` is added to `ShadowDusk.HLSL.csproj` (reflection types live here).
+- [x] `Vortice.Direct3D12` is added to `ShadowDusk.HLSL.csproj` (reflection types live here).
 - [ ] SPIRV-Cross P/Invoke wrapper from Phase 4 exposes `spvc_compiler_create_shader_resources` and the `spvc_resources` struct accessors.
-- [ ] `Result<T, ShaderError>` type and `ShaderErrorCode` enum are defined in `ShadowDusk.Core` (Phase 2 or earlier).
+- [x] `Result<T, ShaderError>` type and `ShaderErrorCode` enum are defined in `ShadowDusk.Core` (Phase 2 or earlier).
