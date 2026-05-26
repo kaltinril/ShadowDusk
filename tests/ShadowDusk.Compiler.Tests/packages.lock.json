@@ -166,13 +166,6 @@
           "xunit.extensibility.core": "[2.9.2]"
         }
       },
-      "shadowdusk.cli": {
-        "type": "Project",
-        "dependencies": {
-          "ShadowDusk.Compiler": "[0.1.0, )",
-          "ShadowDusk.Metal": "[1.0.0, )"
-        }
-      },
       "shadowdusk.compiler": {
         "type": "Project",
         "dependencies": {
@@ -197,12 +190,6 @@
           "ShadowDusk.Core": "[1.0.0, )",
           "Vortice.Direct3D12": "[3.5.0, )",
           "Vortice.Dxc": "[3.3.4, )"
-        }
-      },
-      "shadowdusk.metal": {
-        "type": "Project",
-        "dependencies": {
-          "ShadowDusk.Core": "[1.0.0, )"
         }
       },
       "Silk.NET.SPIRV.Cross.Native": {

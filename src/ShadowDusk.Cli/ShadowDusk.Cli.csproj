@@ -22,9 +22,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\ShadowDusk.Core\ShadowDusk.Core.csproj" />
-    <ProjectReference Include="..\ShadowDusk.HLSL\ShadowDusk.HLSL.csproj" />
-    <ProjectReference Include="..\ShadowDusk.GLSL\ShadowDusk.GLSL.csproj" />
+    <ProjectReference Include="..\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
     <ProjectReference Include="..\ShadowDusk.Metal\ShadowDusk.Metal.csproj" />
   </ItemGroup>
 </Project>

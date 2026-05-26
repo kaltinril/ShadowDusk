@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/ShadowDusk.Cli/ShadowDusk.Cli.csproj" />
+    <Project Path="src/ShadowDusk.Compiler/ShadowDusk.Compiler.csproj" />
     <Project Path="src/ShadowDusk.Core/ShadowDusk.Core.csproj" />
     <Project Path="src/ShadowDusk.GLSL/ShadowDusk.GLSL.csproj" />
     <Project Path="src/ShadowDusk.HLSL/ShadowDusk.HLSL.csproj" />
@@ -9,6 +10,7 @@
     <Project Path="src/ShadowDusk.Wasm/ShadowDusk.Wasm.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/ShadowDusk.Compiler.Tests/ShadowDusk.Compiler.Tests.csproj" />
     <Project Path="tests/ShadowDusk.Core.Tests/ShadowDusk.Core.Tests.csproj" />
     <Project Path="tests/ShadowDusk.GLSL.Tests/ShadowDusk.GLSL.Tests.csproj" />
     <Project Path="tests/ShadowDusk.HLSL.Tests/ShadowDusk.HLSL.Tests.csproj" />
