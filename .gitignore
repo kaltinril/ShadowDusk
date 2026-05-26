@@ -44,3 +44,4 @@ __pycache__/
 
 # Claude Code agent worktrees (temporary, not for source control)
 .claude/worktrees/
+artifacts/
