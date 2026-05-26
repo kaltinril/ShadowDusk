@@ -25,9 +25,12 @@ These phases are fully implemented. Their documents have been moved to `DONE/` w
 | 5 | [PHASE-5-shader-reflection.md](PHASE-5-shader-reflection.md) | Cross-platform parameter metadata extraction via IDxcUtils::CreateReflection and SPIRV-Cross |
 | 6 | [PHASE-6-spirv-cross-glsl-transpilation.md](PHASE-6-spirv-cross-glsl-transpilation.md) | SPIRV-Cross C API P/Invoke, SPIR-V → GLSL/MSL, Y-flip, depth range, combined samplers |
 | 7 | [PHASE-7-mgfx-binary-writer.md](PHASE-7-mgfx-binary-writer.md) | .mgfx binary format serialization: header, constant buffers, shaders, parameters, techniques, passes |
-| 8 | [PHASE-8-cli-entry-point.md](PHASE-8-cli-entry-point.md) | dotnet tool CLI, mgfxc-compatible flags, MGCB error format, stderr routing, exit codes |
-| 9 | [PHASE-9-integration-tests.md](PHASE-9-integration-tests.md) | End-to-end .fx compilation tests, fixture shaders, per-platform test filters |
-| 10 | [PHASE-10-cross-platform-ci.md](PHASE-10-cross-platform-ci.md) | RID matrix, native binary restore, GitHub Actions CI across Linux/macOS/Windows |
+| 8 | [PHASE-8-compiler-library.md](PHASE-8-compiler-library.md) | **`ShadowDusk.Compiler` NuGet library** — `EffectCompiler : IShaderCompiler`, pipeline orchestration, the consumer-facing package |
+| 9 | [PHASE-9-cli-entry-point.md](PHASE-9-cli-entry-point.md) | dotnet tool CLI, mgfxc-compatible flags, MGCB error format, stderr routing, exit codes |
+| 15 | [PHASE-15-integration-tests.md](PHASE-15-integration-tests.md) | End-to-end .fx compilation tests, fixture shaders, per-platform test filters |
+| 20 | [PHASE-20-deferred-backlog.md](PHASE-20-deferred-backlog.md) | Deferred items backlog from phases 2–6; no prerequisites, review before 1.0 |
+| 25 | [PHASE-25-security-hardening.md](PHASE-25-security-hardening.md) | Security hardening for WASM/web path — path traversal, input validation, supply chain |
+| 30 | [PHASE-30-cross-platform-ci.md](PHASE-30-cross-platform-ci.md) | RID matrix, native binary restore, GitHub Actions CI across Linux/macOS/Windows |
 
 ---
 
@@ -41,10 +44,11 @@ Phase 1  (scaffold)
             └─ Phase 5  (reflection)
             └─ Phase 6  (SPIRV-Cross transpilation)
                  └─ Phase 7  (binary writer)
-                      ├─ Phase 8  (CLI — ShadowDusk.Cli dotnet tool)
-                      └─ Phase 8W (WASM — ShadowDusk.Wasm JS interop impl)
-                           └─ Phase 9  (integration tests)
-                                └─ Phase 10 (CI)
+                      └─ Phase 8  (ShadowDusk.Compiler library — EffectCompiler NuGet)
+                           ├─ Phase 9  (CLI — ShadowDusk.Cli dotnet tool)
+                           └─ Phase 9W (WASM — ShadowDusk.Wasm JS interop impl)
+                                └─ Phase 15 (integration tests)
+                                     └─ Phase 30 (CI)
 ```
 
 ## Key Decisions Already Made

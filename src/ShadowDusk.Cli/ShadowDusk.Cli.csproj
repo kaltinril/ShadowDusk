@@ -3,10 +3,23 @@
     <AssemblyName>ShadowDusk.Cli</AssemblyName>
     <RootNamespace>ShadowDusk.Cli</RootNamespace>
     <OutputType>Exe</OutputType>
+
+    <!-- dotnet tool packaging -->
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>mgfxc</ToolCommandName>
     <PackageId>ShadowDusk.Cli</PackageId>
+    <PackageVersion>0.1.0</PackageVersion>
+    <Description>Cross-platform drop-in replacement for MonoGame's mgfxc shader compiler.</Description>
+
+    <!-- Self-contained publish support -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>false</SelfContained>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ShadowDusk.Core.Tests" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\ShadowDusk.Core\ShadowDusk.Core.csproj" />

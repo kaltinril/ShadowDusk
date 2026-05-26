@@ -1,9 +1,9 @@
-# Phase 11 — Deferred Items
+# Phase 11 — Deferred Backlog
 
 **Status:** Backlog  
-**Blocking anything?** No. All items here were explicitly deferred from earlier phases and are not prerequisites for Phases 6–10. Review before a 1.0 release.
+**Blocking anything?** No. All items here were explicitly deferred from earlier phases and are not prerequisites for Phases 8–10. Review before a 1.0 release.
 
-This document collects every unchecked item from completed (`DONE/`) phase plans, organized by source phase. Items that have an existing file in the test suite are marked with `(file exists — verify coverage)`.
+This document collects every unchecked item from completed (`DONE/`) phase plans and items deferred from phases 6+, organized by source phase.
 
 ---
 
@@ -19,7 +19,7 @@ This document collects every unchecked item from completed (`DONE/`) phase plans
 **Tests — not yet written:**
 
 - [ ] `4.4` FileSystemIncludeResolver integration test: resolve a real `.fxh` file from disk.
-  *(deferred to Phase 9 integration suite — add to `ShadowDusk.Integration.Tests/Preprocessor/`)*
+  *(deferred to Phase 10 integration suite — add to `ShadowDusk.Integration.Tests/Preprocessor/`)*
 - [ ] `7.4` DxcIncludeHandler smoke test: construct handler with `InMemoryIncludeResolver`,
   verify `LoadSource` returns the correct blob bytes.
   *(deferred: "requires live DXC COM init; add in Phase 4 DXC integration tests" — add to `ShadowDusk.Integration.Tests/Dxc/DxcShaderCompilerIntegrationTests.cs`)*
@@ -30,7 +30,7 @@ This document collects every unchecked item from completed (`DONE/`) phase plans
 - [ ] `8.3` `PreprocessedSource.DxcMacroFlags` is merged into the DXC compile arguments list.
 - [ ] `8.4` `DxcIncludeHandler` instance is constructed from `IIncludeResolver` and forwarded
   to `IDxcCompiler3.Compile()`.
-  *(All three: verify by reading DxcShaderCompiler.cs — if the wiring is in place, check them off in `DONE/PHASE-3-preprocessor-macro-injection.md`.)*
+  *(All three: verify by reading `CompilationPipeline.cs` once Phase 8 is implemented — if the wiring is in place, check them off.)*
 
 ---
 
@@ -46,8 +46,8 @@ Files: `tests/ShadowDusk.HLSL.Tests/Dxc/DxcFlagBuilderTests.cs`
 - [ ] OpenGL pixel stage: `-spirv`, `-fvk-use-dx-layout`, `-auto-binding-space 1`, `ps_5_0`; no `-fvk-invert-y`
 - [ ] Vulkan vertex stage: all OpenGL vertex flags plus `-fspv-reflect`, `vs_6_0`
 - [ ] Vulkan pixel stage: all OpenGL pixel flags plus `-fspv-reflect`, `ps_6_0`
-- [ ] DirectX_11 vertex stage: `vs_5_0`; no `-spirv`
-- [ ] DirectX_11 pixel stage: `ps_5_0`; no `-spirv`
+- [ ] DirectX_11 vertex stage: `vs_6_0`; no `-spirv`
+- [ ] DirectX_11 pixel stage: `ps_6_0`; no `-spirv`
 - [ ] Macros appended as `-D Name=Value` (keyed) and `-D Name` (flag)
 - [ ] Entry point appears as `-E <entryPoint>` before profile argument
 - [ ] `-Zpr` always present
@@ -67,7 +67,7 @@ File: `tests/ShadowDusk.Integration.Tests/Dxc/DxcShaderCompilerIntegrationTests.
 
 - [ ] Minimal vertex shader → non-empty SPIR-V (OpenGL)
 - [ ] Minimal pixel shader → non-empty SPIR-V (OpenGL)
-- [ ] Minimal vertex shader → non-empty DXBC (DirectX_11)
+- [ ] Minimal vertex shader → non-empty DXIL (DirectX)
 - [ ] Syntax error → `Result.Failure` with `FxcFormattedMessage` containing `(line,col`
 - [ ] Undefined variable in pixel shader → failure with line/col in FXC format
 - [ ] Vulkan target vertex shader → non-empty SPIR-V
@@ -78,24 +78,69 @@ File: `tests/ShadowDusk.Integration.Tests/Dxc/DxcShaderCompilerIntegrationTests.
 
 ## From Phase 5 — Shader Reflection
 
-**SPIRV-Cross binding slot verifier — implement in Phase 6:**
+**SPIRV-Cross binding slot verifier:**
 
 - [ ] `7.3.2` Use SPIRV-Cross P/Invoke (`spvc_context_create` → `spvc_compiler_create_shader_resources`).
   Enumerate `separate_images` and `separate_samplers`.
 - [ ] `7.3.3` Compare DXIL and SPIR-V slots. Emit `ShaderError` with `"SD0101"` on mismatch.
-  *(Pick these up at the start of Phase 6 — SPIRV-Cross P/Invoke will be in place.)*
+  *(Pick these up when Phase 8 wires the full pipeline — SPIRV-Cross P/Invoke will be in place.)*
 
-**Golden snapshot acceptance test — implement in Phase 9:**
+**Golden snapshot acceptance test — implement in Phase 10:**
 
 - [ ] `9.3.1` `MgfxParameterMatchTests.cs` — compile a MonoGame reference shader, run `ReflectionPipeline`,
   compare output against a golden JSON snapshot from MonoGame's own `mgfxc`.
 - [ ] `9.3.2` Snapshot comparison must be exact (name, class, type, rows, columns, elements).
-  *(Add to Phase 9 integration suite once Phase 7 MGFX writer is available.)*
+
+---
+
+## From Phase 6 — SPIRV-Cross GLSL Transpilation
+
+### 11-6-A: Wire `SpirvCrossGlslTranspiler` into `CompilationPipeline`
+
+**Resolved by Phase 8** (`PHASE-8-compiler-library.md`). The `CompilationPipeline` class is where
+this wiring belongs. Verify it is complete when Phase 8 is implemented:
+
+1. After DXC emits SPIR-V for vertex and pixel stages, call `SpirvCrossGlslTranspiler.Transpile()` for each stage.
+2. The `ReadOnlyMemory<byte>` overload handles the `MemoryMarshal.Cast<byte, uint>` conversion internally — no manual conversion needed at the call site.
+3. `GlslSource` results are stored per-pass and forwarded to `ShaderIRBuilder`.
+4. `ShaderError` from transpilation propagates up as a compilation failure.
+
+### 11-6-B: `Transpile_PassthroughVertex_YFlipIsApplied` integration test
+
+**Blocked by:** Requires the SPIRV-Cross native library to be present.
+
+When native library is available:
+1. Compile `tests/fixtures/shaders/passthrough_vs.fx` through `DxcShaderCompiler` targeting OpenGL.
+2. Pass vertex SPIR-V to `SpirvCrossGlslTranspiler.Transpile()`.
+3. Assert that `gl_Position.y` appears negated in the output (check for `-gl_Position.y` or equivalent sign-flip expression emitted by SPIRV-Cross for the `FlipVertexY` option).
+
+### 11-6-C: Run Phase 6 integration tests and platform check
+
+**Blocked by:** SPIRV-Cross native library not yet downloaded on the development machine.
+
+Steps:
+1. Run `.\tools\restore.ps1` (Windows) or `./tools/restore.sh` (Linux/macOS) to populate `tools/spirv-cross/`.
+2. Rebuild so MSBuild copies the native library to the output directory.
+3. Run `dotnet test --filter "Category=Integration&Platform=OpenGL"` — all 6 `GlslTranspilerTests` should pass.
+4. Run `/platform-check` to confirm no new platform-specific assumptions were introduced in Phase 6.
+
+### 11-6-D: Uniform remapping for MonoGame OpenGL runtime compatibility
+
+**Context:** Researched in Phase 6 (see `docs/glsl-uniform-naming.md`).
+
+MonoGame's OpenGL runtime expects uniforms in MojoShader convention (`vs_uniforms_vec4[N]` / `ps_uniforms_vec4[N]` float4 arrays), not the HLSL variable names that SPIRV-Cross produces by default.
+
+Three strategies (evaluate during Phase 8 / Phase 10):
+1. **Post-process GLSL** — parse SPIRV-Cross output, remap individual uniform declarations to `vs_uniforms_vec4[N]` array slots matching SM 3.0 register layout. Most compatible; requires non-trivial GLSL post-processing.
+2. **Patch MonoGame runtime** — emit GLSL with HLSL names; ship a modified MonoGame OpenGL runtime that looks up by name. Breaks drop-in compatibility.
+3. **UBO binding points** — emit GLSL 3.30+ `std140` uniform blocks; requires MonoGame runtime changes.
+
+Strategy 1 is required for the drop-in `mgfxc` replacement design constraint.
 
 ---
 
 ## How to resolve items here
 
 1. **Verify and check off:** For items marked *(file exists — verify coverage)*, run the existing test file, confirm the assertion exists, then check it off in both this document and the originating `DONE/PHASE-X` file.
-2. **Implement in the right phase:** Items tagged *(Phase 6)*, *(Phase 9)*, etc. belong in those phases — pick them up when starting that phase.
+2. **Implement in the right phase:** Items tagged *(Phase 10)*, etc. belong in those phases — pick them up when starting that phase.
 3. **Write missing tests:** Items with no file yet go into the appropriate test project; write them as part of a test sweep before release.

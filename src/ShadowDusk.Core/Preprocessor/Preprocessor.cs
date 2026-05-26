@@ -80,7 +80,7 @@ public sealed class Preprocessor
                     return Result<Unit, ShaderError>.Fail(
                         ShaderError.CircularInclude(filePath, lineNumber, includePath));
 
-                output.AppendLine($"#line 1 \"{resolvedPath}\"");
+                output.AppendLine($"#line 1 \"{resolvedPath.Replace('\\', '/')}\"");
 
                 var recurseResult = FlattenFile(
                     resolveResult.Value.Text,
@@ -93,7 +93,7 @@ public sealed class Preprocessor
                 if (recurseResult.IsFailure)
                     return recurseResult;
 
-                output.AppendLine($"#line {lineNumber + 1} \"{filePath}\"");
+                output.AppendLine($"#line {lineNumber + 1} \"{filePath.Replace('\\', '/')}\"");
                 continue;
             }
 

@@ -12,7 +12,7 @@ public sealed record MacroSet(IReadOnlyList<MacroDefinition> Macros)
         sb.AppendLine("// ShadowDusk platform macros — DO NOT EDIT (generated)");
         foreach (var macro in Macros)
             sb.AppendLine($"#define {macro.Name} {macro.Value}");
-        sb.AppendLine($"#line 1 \"{originalFilePath}\"");
+        sb.AppendLine($"#line 1 \"{originalFilePath.Replace('\\', '/')}\"");
         return sb.ToString();
     }
 
