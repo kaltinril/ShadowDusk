@@ -7,4 +7,23 @@
   <ItemGroup>
     <ProjectReference Include="..\ShadowDusk.Core\ShadowDusk.Core.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)../../tools/spirv-cross/win-x64/spirv-cross-c-shared.dll"
+          Condition="Exists('$(MSBuildThisFileDirectory)../../tools/spirv-cross/win-x64/spirv-cross-c-shared.dll')"
+          CopyToOutputDirectory="PreserveNewest"
+          Link="runtimes/win-x64/native/spirv-cross-c-shared.dll" />
+    <None Include="$(MSBuildThisFileDirectory)../../tools/spirv-cross/linux-x64/libspirv-cross-c-shared.so"
+          Condition="Exists('$(MSBuildThisFileDirectory)../../tools/spirv-cross/linux-x64/libspirv-cross-c-shared.so')"
+          CopyToOutputDirectory="PreserveNewest"
+          Link="runtimes/linux-x64/native/libspirv-cross-c-shared.so" />
+    <None Include="$(MSBuildThisFileDirectory)../../tools/spirv-cross/osx-x64/libspirv-cross-c-shared.dylib"
+          Condition="Exists('$(MSBuildThisFileDirectory)../../tools/spirv-cross/osx-x64/libspirv-cross-c-shared.dylib')"
+          CopyToOutputDirectory="PreserveNewest"
+          Link="runtimes/osx-x64/native/libspirv-cross-c-shared.dylib" />
+    <None Include="$(MSBuildThisFileDirectory)../../tools/spirv-cross/osx-arm64/libspirv-cross-c-shared.dylib"
+          Condition="Exists('$(MSBuildThisFileDirectory)../../tools/spirv-cross/osx-arm64/libspirv-cross-c-shared.dylib')"
+          CopyToOutputDirectory="PreserveNewest"
+          Link="runtimes/osx-arm64/native/libspirv-cross-c-shared.dylib" />
+  </ItemGroup>
 </Project>
