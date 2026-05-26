@@ -25,7 +25,7 @@ internal static class SpvcCompilerOption
     public const uint FixupDepthConvention = 0x1000003u;
     public const uint GlslVersion          = 0x2000008u;
     public const uint GlslEs               = 0x2000009u;
-    public const uint GlslVulkanSemantics  = 0x2000000Au;
+    public const uint GlslVulkanSemantics  = 0x200000Au;
 }
 
 internal static class SpvcNative
