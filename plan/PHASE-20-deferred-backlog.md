@@ -24,13 +24,11 @@ This document collects every unchecked item from completed (`DONE/`) phase plans
   verify `LoadSource` returns the correct blob bytes.
   *(deferred: "requires live DXC COM init; add in Phase 4 DXC integration tests" — add to `ShadowDusk.Integration.Tests/Dxc/DxcShaderCompilerIntegrationTests.cs`)*
 
-**Wiring validation — likely already done by Phase 4, but never explicitly verified:**
+**Wiring validation — verified against `CompilationPipeline.cs` (Phase 8):**
 
-- [ ] `8.2` `Preprocessor.Flatten()` is called after Phase 2 and before DXC invocation.
-- [ ] `8.3` `PreprocessedSource.DxcMacroFlags` is merged into the DXC compile arguments list.
-- [ ] `8.4` `DxcIncludeHandler` instance is constructed from `IIncludeResolver` and forwarded
-  to `IDxcCompiler3.Compile()`.
-  *(All three: verify by reading `CompilationPipeline.cs` once Phase 8 is implemented — if the wiring is in place, check them off.)*
+- [x] `8.2` `Preprocessor.Flatten()` is called after Phase 2 and before DXC invocation. *(Stage 2 in CompilationPipeline)*
+- [x] `8.3` Platform macros are injected into the preprocessed HLSL text via `PlatformMacros.ToTextPrepend`; baked into `PreprocessedSource.Text` rather than passed as separate DXC flags — functionally equivalent.
+- [x] `8.4` Preprocessor flattens all `#include` directives before DXC sees the source; no `DxcIncludeHandler` is needed at the DXC call site. *(Comment in CompilationPipeline.cs confirms this.)*
 
 ---
 
@@ -97,13 +95,7 @@ File: `tests/ShadowDusk.Integration.Tests/Dxc/DxcShaderCompilerIntegrationTests.
 
 ### 11-6-A: Wire `SpirvCrossGlslTranspiler` into `CompilationPipeline`
 
-**Resolved by Phase 8** (`PHASE-8-compiler-library.md`). The `CompilationPipeline` class is where
-this wiring belongs. Verify it is complete when Phase 8 is implemented:
-
-1. After DXC emits SPIR-V for vertex and pixel stages, call `SpirvCrossGlslTranspiler.Transpile()` for each stage.
-2. The `ReadOnlyMemory<byte>` overload handles the `MemoryMarshal.Cast<byte, uint>` conversion internally — no manual conversion needed at the call site.
-3. `GlslSource` results are stored per-pass and forwarded to `ShaderIRBuilder`.
-4. `ShaderError` from transpilation propagates up as a compilation failure.
+**✅ Resolved by Phase 8.** `CompilationPipeline` calls `SpirvCrossGlslTranspiler.Transpile()` for each VS/PS SPIR-V blob (Stage 5), forwards the GLSL text bytes into `CompiledShaderBlob`, and propagates transpilation errors as compilation failures. All 67 integration tests pass.
 
 ### 11-6-B: `Transpile_PassthroughVertex_YFlipIsApplied` integration test
 
@@ -136,6 +128,21 @@ Three strategies (evaluate during Phase 8 / Phase 10):
 3. **UBO binding points** — emit GLSL 3.30+ `std140` uniform blocks; requires MonoGame runtime changes.
 
 Strategy 1 is required for the drop-in `mgfxc` replacement design constraint.
+
+---
+
+## From Phase 8 — Compiler Library
+
+**NuGet packaging verification (not run during Phase 8):**
+
+- [ ] `7.4` Run `dotnet pack src/ShadowDusk.Compiler` — confirm `.nupkg` is produced with `PackageId=ShadowDusk.Compiler` and `PackageVersion=0.1.0`.
+- [ ] `7.5` Create a scratch `ConsoleApp` outside the solution; add a local NuGet `--source` reference to the packed `.nupkg`; call `EffectCompiler.CompileAsync` on `Minimal.fx`; confirm bytes are written to disk successfully.
+
+**ShaderIRBuilder direct unit tests (require `InternalsVisibleTo`):**
+
+- [ ] Add `[assembly: InternalsVisibleTo("ShadowDusk.Compiler.Tests")]` to `ShadowDusk.Compiler.csproj`.
+- [ ] `Build_ShaderIndicesAreZeroBased` — 2-pass technique; assert Pass 0: VertexShaderIndex=0, PixelShaderIndex=1; Pass 1: VertexShaderIndex=2, PixelShaderIndex=3.
+- [ ] `Build_EmptyAnnotationsAllowed` — pass with no annotations; assert `AnnotationInfo` list is empty, no exception thrown.
 
 ---
 

@@ -14,6 +14,12 @@ These phases are fully implemented. Their documents have been moved to `DONE/` w
 | 1 ✓ | [DONE/PHASE-1-solution-scaffold.md](DONE/PHASE-1-solution-scaffold.md) | .NET solution structure, project references, NuGet dependencies, test framework — **DONE** |
 | 2 ✓ | [DONE/PHASE-2-fx9-pre-parser.md](DONE/PHASE-2-fx9-pre-parser.md) | Custom parser: extract technique/pass/sampler_state/render-state blocks before DXC sees the file — **DONE** |
 | 3 ✓ | [DONE/PHASE-3-preprocessor-macro-injection.md](DONE/PHASE-3-preprocessor-macro-injection.md) | #include flattening, platform macro injection (MGFX=1, GLSL=1, SM4=1, etc.) — **DONE** |
+| 4 ✓ | [DONE/PHASE-4-dxc-integration.md](DONE/PHASE-4-dxc-integration.md) | Vortice.Dxc wiring, per-platform DXC flags, HLSL → SPIR-V compilation — **DONE** |
+| 5 ✓ | [DONE/PHASE-5-shader-reflection.md](DONE/PHASE-5-shader-reflection.md) | Cross-platform parameter metadata extraction via IDxcUtils::CreateReflection and SPIRV-Cross — **DONE** |
+| 6 ✓ | [DONE/PHASE-6-spirv-cross-glsl-transpilation.md](DONE/PHASE-6-spirv-cross-glsl-transpilation.md) | SPIRV-Cross C API P/Invoke, SPIR-V → GLSL/MSL, Y-flip, depth range, combined samplers — **DONE** |
+| 7 ✓ | [DONE/PHASE-7-mgfx-binary-writer.md](DONE/PHASE-7-mgfx-binary-writer.md) | .mgfx binary format serialization: header, constant buffers, shaders, parameters, techniques, passes — **DONE** |
+| 8 ✓ | [DONE/PHASE-8-compiler-library.md](DONE/PHASE-8-compiler-library.md) | `ShadowDusk.Compiler` NuGet library — `EffectCompiler : IShaderCompiler`, pipeline orchestration, the consumer-facing package — **DONE** |
+| 9 ✓ | [DONE/PHASE-9-cli-entry-point.md](DONE/PHASE-9-cli-entry-point.md) | dotnet tool CLI, mgfxc-compatible flags, MGCB error format, stderr routing, exit codes — **DONE** |
 
 ---
 
@@ -21,14 +27,8 @@ These phases are fully implemented. Their documents have been moved to `DONE/` w
 
 | Phase | File | Summary |
 |-------|------|---------|
-| 4 | [PHASE-4-dxc-integration.md](PHASE-4-dxc-integration.md) | Vortice.Dxc wiring, per-platform DXC flags, HLSL → SPIR-V compilation |
-| 5 | [PHASE-5-shader-reflection.md](PHASE-5-shader-reflection.md) | Cross-platform parameter metadata extraction via IDxcUtils::CreateReflection and SPIRV-Cross |
-| 6 | [PHASE-6-spirv-cross-glsl-transpilation.md](PHASE-6-spirv-cross-glsl-transpilation.md) | SPIRV-Cross C API P/Invoke, SPIR-V → GLSL/MSL, Y-flip, depth range, combined samplers |
-| 7 | [PHASE-7-mgfx-binary-writer.md](PHASE-7-mgfx-binary-writer.md) | .mgfx binary format serialization: header, constant buffers, shaders, parameters, techniques, passes |
-| 8 | [PHASE-8-compiler-library.md](PHASE-8-compiler-library.md) | **`ShadowDusk.Compiler` NuGet library** — `EffectCompiler : IShaderCompiler`, pipeline orchestration, the consumer-facing package |
-| 9 | [PHASE-9-cli-entry-point.md](PHASE-9-cli-entry-point.md) | dotnet tool CLI, mgfxc-compatible flags, MGCB error format, stderr routing, exit codes |
 | 15 | [PHASE-15-integration-tests.md](PHASE-15-integration-tests.md) | End-to-end .fx compilation tests, fixture shaders, per-platform test filters |
-| 20 | [PHASE-20-deferred-backlog.md](PHASE-20-deferred-backlog.md) | Deferred items backlog from phases 2–6; no prerequisites, review before 1.0 |
+| 20 | [PHASE-20-deferred-backlog.md](PHASE-20-deferred-backlog.md) | Deferred items backlog from phases 2–9; no prerequisites, review before 1.0 |
 | 25 | [PHASE-25-security-hardening.md](PHASE-25-security-hardening.md) | Security hardening for WASM/web path — path traversal, input validation, supply chain |
 | 30 | [PHASE-30-cross-platform-ci.md](PHASE-30-cross-platform-ci.md) | RID matrix, native binary restore, GitHub Actions CI across Linux/macOS/Windows |
 
