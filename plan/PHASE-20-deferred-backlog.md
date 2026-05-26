@@ -139,6 +139,26 @@ Strategy 1 is required for the drop-in `mgfxc` replacement design constraint.
 
 ---
 
+## From Phase 9 — CLI Entry Point
+
+**Manual verification steps not yet run:**
+
+- [ ] `9.4` Run `dotnet pack src/ShadowDusk.Cli` — confirm NuGet package is produced with `ToolCommandName` set to `mgfxc`.
+- [ ] `9.5` Install locally: `dotnet tool install -g ShadowDusk.Cli --add-source ./nupkg`, then run `mgfxc` with no args — confirm usage on stderr with exit 1.
+- [ ] `9.6` Run `dotnet publish src/ShadowDusk.Cli -r win-x64 --self-contained` — confirm single-file binary executes and bundles native DLLs.
+
+**Deferred to integration phase (PHASE-15):**
+
+- [ ] Real `.fx` fixture library beyond `Minimal.fx` — add representative shaders covering textures, constant buffers, multiple techniques.
+- [ ] Per-platform integration test filter: tag tests with `[Trait("Platform","OpenGL")]` so `dotnet test --filter "Category=Integration&Platform=OpenGL"` works.
+
+**Deferred platform work:**
+
+- [ ] Metal/MSL pipeline stage in `PipelineRunner` — currently returns `X0010`; implement once Metal support (post-Phase 6) is complete.
+- [ ] Full MGCB content processor plugin (`ShadowDusk.MgcbPlugin`) — separate undertaking post-Phase 8.
+
+---
+
 ## How to resolve items here
 
 1. **Verify and check off:** For items marked *(file exists — verify coverage)*, run the existing test file, confirm the assertion exists, then check it off in both this document and the originating `DONE/PHASE-X` file.
