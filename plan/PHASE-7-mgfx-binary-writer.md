@@ -345,7 +345,7 @@ public enum StencilOperationValue : int { Keep = 0, Zero = 1, Replace = 2, Incre
                                            IncrementSaturation = 5, DecrementSaturation = 6, Invert = 7 }
 ```
 
-> The enum integer values must match MonoGame's corresponding enum ordinals exactly. Verify against `MonoGame.Framework` source before finalising.
+> **IMPORTANT: MonoGame 3.8.2 enum ordinal verification required.** The integer values in `CullModeValue`, `BlendValue`, etc. MUST match what MonoGame's `BinaryReader`-based effect loader expects in the MGFX binary. Verify each enum value against `MonoGame.Framework/Graphics/Effect/EffectPass.cs` and related files in the MonoGame 3.8.2 source tree. Key values to verify: `CullMode.None` (MonoGame uses 1, not 0, because it mirrors D3D9), `FillMode.Solid = 0`, blend factors. Getting these wrong causes silent rendering corruption.
 
 ### 6.4 Extend `ShaderIR` with writer-facing fields
 
@@ -398,6 +398,10 @@ public sealed class MgfxWriter
     private static void WriteTechniques(BinaryWriter bw, ShaderIR ir)       { /* Section 7.4 */ }
 }
 ```
+
+> **Namespace note:** `MgfxWriter` lives directly in `ShadowDusk.Core` (no `Serialization` subdirectory). Phase 9's `MgfxBlobReader` must reference `src/ShadowDusk.Core/MgfxWriter.cs` — any reference to a `Serialization/` path is incorrect.
+
+> **Prerequisite for Phase 8:** `ShaderError` has a single `Column` field (no `ColumnEnd`). Phase 8's `MgcbErrorFormatter` will emit `Column-Column` (zero-width range) for the MGCB error format. Adding a `ColumnEnd` field to `ShaderError` is a Phase 8 decision.
 
 ### 6.6 `RenderStateParser` class (`RenderStateParser.cs`)
 
@@ -527,6 +531,13 @@ foreach ann in annotations:
 
 The following supporting types are needed to hold the data `MgfxWriter` consumes. Add them to `ShadowDusk.Core`. Use stubs if Phase 5 is not yet complete.
 
+> **Note:** Phase 5 produced `ConstantBufferReflection`, `ParameterReflection`, and `AnnotationReflection` in `ShadowDusk.Core.Reflection`. The writer-facing types below are **separate** from those reflection types — they contain the additional indexing data needed only for MGFX serialization (parameter indices, member indices, etc.). A mapping layer will translate `ReflectedEffect` → the writer types in Phase 8's `PipelineRunner`.
+>
+> Relationship summary:
+> - `ConstantBufferInfo` maps from `ConstantBufferReflection` but adds `ParameterIndices` and `ParameterOffsets` (MGFX-specific indexing not present in the reflection type).
+> - `EffectParameterInfo` maps from `ParameterReflection` but adds `MemberIndices` and `ElementIndices` arrays required for serialization.
+> - `AnnotationInfo` maps from `AnnotationReflection`; keep both — one is for reflection metadata, one is for MGFX serialization.
+
 ### 8.1 `ConstantBufferInfo`
 
 ```csharp
@@ -548,6 +559,8 @@ public sealed record CompiledShaderBlob(
     ShaderStage   Stage    // Vertex or Pixel — ShadowDusk.Core.ShaderStage from Phase 1
 );
 ```
+
+> `CompiledShaderBlob` is intentionally separate from `PlatformBlob` in `ShadowDusk.HLSL.Dxc`. `PlatformBlob` is DXC-specific and includes metadata needed for Phase 6 transpilation. `CompiledShaderBlob` is the writer-facing type that holds the final bytes after all transpilation is complete. `PipelineRunner` (Phase 8) is responsible for converting `PlatformBlob` → `CompiledShaderBlob`.
 
 ### 8.3 `EffectParameterInfo`
 
@@ -661,6 +674,7 @@ Execute these steps in order. Each step is independently verifiable.
 4. - [ ] Add `ConstantBufferInfo.cs`, `CompiledShaderBlob.cs`, `EffectParameterInfo.cs`, `AnnotationInfo.cs`, `MgfxTechniqueInfo.cs`, `MgfxPassInfo.cs` to `ShadowDusk.Core` (Section 8).
 5. - [ ] Extend `ShaderIR.cs` with `ConstantBuffers`, `Shaders`, `Parameters`, `Techniques` properties (Section 6.4).
 6. - [ ] Add `MgfxWriter.cs` skeleton with all `Write*` methods as `NotImplementedException` stubs (Section 6.5).
+6b. - [ ] Add `ShaderIRBuilder` static class (or mapper method) that accepts `FxParseResult`, `ReflectedEffect`, and `IReadOnlyList<CompiledShaderBlob>` and returns a populated `ShaderIR`. Can be a stub that Phase 8's `PipelineRunner` calls. This is the bridge between Phase 5/6 outputs and Phase 7 writer inputs.
 7. - [ ] Add `RenderStateParser.cs` skeleton (Section 6.6).
 8. - [ ] Implement `WriteHeader` in `MgfxWriter` (Section 7). Run `Header_*` tests — all should pass.
 9. - [ ] Implement `WriteConstantBuffers` (Section 7.1). Run `ConstantBuffer_*` tests.

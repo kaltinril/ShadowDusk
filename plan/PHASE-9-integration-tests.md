@@ -34,6 +34,8 @@ This phase adds a comprehensive integration test suite that compiles real `.fx` 
 
 Create each file under `tests/fixtures/shaders/`. Files must be valid HLSL Effect (FX) syntax. No MGCB or MonoGame SDK is required to author them — they are plain text.
 
+> **Note:** The fixture corpus already contains 37 real MonoGame shaders (BasicEffect.fx, SpriteEffect.fx, etc.) from Phase 0. The 9 shaders below are **new, purpose-built** fixtures designed to exercise specific pipeline features. They coexist with the existing corpus and should be authored as additional files.
+
 ### 1.1 Fixture Table
 
 | File | Purpose | Key Features Exercised |
@@ -345,9 +347,11 @@ technique Tech3 { pass P { VertexShader = compile vs_5_0 VS_NoTex(); PixelShader
 
 ## 2. Project Setup
 
+> **Note:** `tests/ShadowDusk.Integration.Tests/` already exists and already contains integration tests from Phases 4–6: `DxcShaderCompilerIntegrationTests.cs`, `GlslTranspilerTests.cs`, and several reflection tests. This phase **adds** to the existing project rather than creating it from scratch. Also remove `PlaceholderTest.cs` (a stub from Phase 1) as part of this phase's setup.
+
 ### 2.1 Create the test project
 
-1. Create `tests/ShadowDusk.Integration.Tests/ShadowDusk.Integration.Tests.csproj` targeting `net8.0`.
+1. The project `tests/ShadowDusk.Integration.Tests/ShadowDusk.Integration.Tests.csproj` already exists. Confirm it targets `net8.0`.
 2. Add project references:
    - `src/ShadowDusk.Core` (for direct pipeline invocation path)
    - `src/ShadowDusk.Cli` (for CLI process invocation path, referenced as a project-level tool)
@@ -356,7 +360,7 @@ technique Tech3 { pass P { VertexShader = compile vs_5_0 VS_NoTex(); PixelShader
    - `xunit.runner.visualstudio`
    - `FluentAssertions`
    - `Microsoft.NET.Test.Sdk`
-4. Add the project to `ShadowDusk.sln` under the `tests/` solution folder.
+4. Add the project to `ShadowDusk.slnx` under the `tests/` solution folder. (The solution file is `ShadowDusk.slnx`, not `ShadowDusk.sln`.)
 5. In `Directory.Build.props`, confirm `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>` applies to this project.
 
 ### 2.2 Fixture file embedding
@@ -451,8 +455,8 @@ public static class TestHelpers
 ```
 
 Implementation notes:
-- `CompileViaCliAsync`: launch the `shadowdusk` CLI binary found at `Path.Combine(AppContext.BaseDirectory, "shadowdusk")` (or `.exe` on Windows), capture stdout/stderr, return when process exits.
-- `CompileViaPipelineAsync`: call `ShadowDusk.Core.CompilerPipeline.CompileAsync(...)` directly; serialize the result to a temp file path, then read the bytes back. Stderr is the `ShaderError.Diagnostics` string on failure, empty on success.
+- `CompileViaCliAsync`: launch the `mgfxc` CLI binary (named per `<ToolCommandName>mgfxc</ToolCommandName>`) found at `Path.Combine(AppContext.BaseDirectory, "mgfxc")` (or `"mgfxc.exe"` on Windows), capture stdout/stderr, return when process exits. Do not search for `"shadowdusk"` — the binary is named `"mgfxc"`.
+- `CompileViaPipelineAsync`: call `ShadowDusk.Cli.PipelineRunner` (Phase 8) directly via `PipelineRunnerFactory.Create(...)` and `RunAsync(...)`. No `ShadowDusk.Core.CompilerPipeline` class exists — the pipeline runner lives in `ShadowDusk.Cli`. Serialize the result to a temp file path, then read the bytes back. Stderr is populated from `ShaderError` diagnostics on failure, empty on success.
 - Both paths write output to `outputPath`, then read the bytes. If the file does not exist (compile failure), return an empty byte array.
 - Never `.Wait()` or `.Result` — all I/O is `async`/`await`.
 
@@ -490,7 +494,7 @@ public sealed class MgfxBlobReader
 public sealed record TechniqueInfo(string Name, int PassCount);
 ```
 
-Implementation note: parse using `BinaryReader` over a `MemoryStream`. Reference the MGFX binary format documented in `src/ShadowDusk.Core/Serialization/MgfxWriter.cs` (Phase 7) for field offsets and encoding. If the blob is malformed, throw `InvalidDataException` with the byte offset.
+Implementation note: parse using `BinaryReader` over a `MemoryStream`. Reference the MGFX binary format documented in `src/ShadowDusk.Core/MgfxWriter.cs` (Phase 7) for field offsets and encoding — `MgfxWriter` is in the root `ShadowDusk.Core` namespace, not a `Serialization/` subfolder. If the blob is malformed, throw `InvalidDataException` with the byte offset.
 
 ### 3.3 `CliFixture`
 
@@ -561,6 +565,8 @@ For each combination assert:
 | `OpenGL`       | `0x00` |
 | `DirectX_11`   | `0x01` |
 | `Vulkan`       | `0x03` |
+
+> **Known limitation for `DirectX_11` fixture tests:** DXC produces SM6 DXIL (not SM5 DXBC) for DirectX targets. The `.mgfx` blob will compile and the header/structure assertions will pass, but the shader blobs contain DXIL — MonoGame's D3D11 backend **cannot load** DXIL at runtime. The MGFX binary format is valid; only the blob content is wrong for D3D11. Full D3D11 support (SM5 DXBC) requires Phase 4.1 (vkd3d-shader integration). Tests should assert structural correctness, not runtime loadability for DirectX_11.
 
 ### 4.2 Per-fixture structural assertions
 
@@ -748,8 +754,9 @@ It writes `hlslSource` to a temp `.fx` file, calls `CompileFixtureAsync`, then d
 
 ## 10. Implementation Order
 
-- [ ] 1. Create `tests/fixtures/shaders/` directory and author all 9 `.fx` files from Section 1.2.
-- [ ] 2. Create `tests/ShadowDusk.Integration.Tests/ShadowDusk.Integration.Tests.csproj` and register in solution (Section 2.1).
+- [ ] 0. Delete `tests/ShadowDusk.Integration.Tests/PlaceholderTest.cs` (stub from Phase 1, no longer needed).
+- [ ] 1. Author all 9 `.fx` fixture files from Section 1.2 under `tests/fixtures/shaders/`. (The directory and project already exist from Phases 4–6.)
+- [ ] 2. Confirm `tests/ShadowDusk.Integration.Tests/ShadowDusk.Integration.Tests.csproj` is registered in `ShadowDusk.slnx` (Section 2.1).
 - [ ] 3. Add fixture file embedding `<None Include>` items to the `.csproj` (Section 2.2).
 - [ ] 4. Implement `TestHelpers.cs` — `FixturePath`, `CompileFixtureAsync`, `CompileViaCliAsync`, `CompileViaPipelineAsync` (Section 3.1).
 - [ ] 5. Implement `MgfxBlobReader.cs` — structural parser reading signature, version, profile, technique table, shader blobs, and parameter names (Section 3.2).

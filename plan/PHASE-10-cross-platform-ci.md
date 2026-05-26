@@ -37,7 +37,7 @@ This phase wires up GitHub Actions CI that builds, tests, and packages ShadowDus
 | `osx-x64` | `macos-latest` | `spirv-cross-osx-x64.tar.gz` | Intel Mac legacy; `.dylib` needs `chmod +x` |
 | `osx-arm64` | `macos-latest` | `spirv-cross-osx-arm64.tar.gz` | M1/M2/M3; cross-publish from Intel runner |
 
-> **Note:** `osx-arm64` self-contained publish runs on the macOS Intel runner with `-r osx-arm64`. GitHub's `macos-latest` is Apple Silicon as of late 2024; if the runner architecture changes, adjust the `macos-latest` annotation but the RID flag stays the same.
+> **Note:** `osx-arm64` self-contained publish runs on the macOS Apple Silicon runner with `-r osx-arm64`. GitHub's `macos-latest` is Apple Silicon (M1/M2) as of 2025. Both `osx-x64` and `osx-arm64` use `macos-latest`; `osx-x64` is a cross-publish. If Intel is required, pin `macos-13`.
 
 ---
 
@@ -60,6 +60,8 @@ tools/native-versions.json
 ```
 
 ### 3.1 `tools/native-versions.json` format
+
+> **IMPORTANT: Verify SPIRV-Cross artifact availability before filling in URLs.** KhronosGroup does not publish pre-built `libspirv-cross-c-shared` binaries for all platforms on every SPIRV-Cross release. The Phase 6 SPIRV-Cross integration used binaries that are already present in `tools/spirv-cross/` — check where those came from (likely the Vulkan SDK or a custom build) and use the same source for the restore scripts. If no suitable prebuilt release exists, the SPIRV-Cross C shared library will need to be compiled from source as part of CI setup, or hosted in a dedicated artifact store (e.g. a GitHub release in this repo). The URLs below are placeholder examples.
 
 ```json
 {
@@ -371,16 +373,16 @@ jobs:
 
       # ── 7. Restore NuGet packages ─────────────────────────────────────────────
       - name: dotnet restore
-        run: dotnet restore --locked-mode
+        run: dotnet restore ShadowDusk.slnx --locked-mode
 
       # ── 8. Build ──────────────────────────────────────────────────────────────
       - name: dotnet build
-        run: dotnet build --no-restore -c Release
+        run: dotnet build ShadowDusk.slnx --no-restore -c Release
 
       # ── 9. Unit tests ─────────────────────────────────────────────────────────
       - name: dotnet test (unit)
         run: >
-          dotnet test --no-build -c Release
+          dotnet test ShadowDusk.slnx --no-build -c Release
           --filter "Category!=Integration"
           --logger "trx;LogFileName=unit-${{ matrix.os }}.trx"
           --results-directory TestResults/
@@ -449,14 +451,14 @@ jobs:
           find tools/spirv-cross \( -name "*.so" -o -name "*.dylib" \) -exec chmod +x {} + 2>/dev/null || true
 
       - name: dotnet restore
-        run: dotnet restore --locked-mode
+        run: dotnet restore ShadowDusk.slnx --locked-mode
 
       - name: dotnet build
-        run: dotnet build --no-restore -c Release
+        run: dotnet build ShadowDusk.slnx --no-restore -c Release
 
       - name: dotnet test (integration)
         run: >
-          dotnet test --no-build -c Release
+          dotnet test ShadowDusk.slnx --no-build -c Release
           --filter "Category=Integration"
           --logger "trx;LogFileName=integration-${{ matrix.os }}.trx"
           --results-directory TestResults/
@@ -540,14 +542,14 @@ jobs:
           find tools/spirv-cross \( -name "*.so" -o -name "*.dylib" \) -exec chmod +x {} + 2>/dev/null || true
 
       - name: dotnet restore
-        run: dotnet restore --locked-mode
+        run: dotnet restore ShadowDusk.slnx --locked-mode
 
       - name: dotnet build
-        run: dotnet build --no-restore -c Release
+        run: dotnet build ShadowDusk.slnx --no-restore -c Release
 
       - name: dotnet test (unit + integration)
         run: >
-          dotnet test --no-build -c Release
+          dotnet test ShadowDusk.slnx --no-build -c Release
           --logger "trx;LogFileName=release-test-${{ matrix.os }}.trx"
           --results-directory TestResults/
 
@@ -604,7 +606,9 @@ jobs:
       - name: Restore native tools (Linux / macOS)
         if: steps.cache-native.outputs.cache-hit != 'true' && runner.os != 'Windows'
         env:
-          SPIRV_CROSS_RID: ${{ matrix.rid == 'osx-x64' && 'osx-x64' || '' }}
+          # Pass the target RID explicitly so restore.sh downloads the correct
+          # SPIRV-Cross artifact when cross-publishing (e.g. osx-arm64 from Apple Silicon).
+          SPIRV_CROSS_RID: ${{ matrix.rid }}
         run: |
           chmod +x tools/restore.sh
           ./tools/restore.sh
@@ -620,7 +624,7 @@ jobs:
           find tools/spirv-cross \( -name "*.so" -o -name "*.dylib" \) -exec chmod +x {} + 2>/dev/null || true
 
       - name: dotnet restore
-        run: dotnet restore --locked-mode
+        run: dotnet restore ShadowDusk.slnx --locked-mode
 
       - name: Publish self-contained (${{ matrix.rid }})
         run: >
@@ -714,7 +718,7 @@ jobs:
           find tools/spirv-cross \( -name "*.so" -o -name "*.dylib" \) -exec chmod +x {} + 2>/dev/null || true
 
       - name: dotnet restore
-        run: dotnet restore --locked-mode
+        run: dotnet restore ShadowDusk.slnx --locked-mode
 
       # Extract version from the tag (strips leading 'v')
       - name: Set package version
@@ -837,7 +841,7 @@ Add this property to `Directory.Build.props` to make lock file generation the de
 
 > **Note:** GitHub Actions sets `CI=true` automatically, so `RestoreLockedMode` activates only in CI. Local `dotnet restore` still updates the lock file when dependencies change.
 
-> **Note:** Lock files (`packages.lock.json`) must be generated and committed as part of Phase 1 before CI can use `--locked-mode`. See Phase 1 checklist.
+> **Note:** Lock files (`packages.lock.json`) must be generated and committed **before the first CI run**. They were not required in Phases 1–9. This phase must generate them as a prerequisite step (checklist task 12.3). Until lock files exist, use `dotnet restore ShadowDusk.slnx` (without `--locked-mode`) for local development. Add `--locked-mode` only after the lock files are committed.
 
 ---
 

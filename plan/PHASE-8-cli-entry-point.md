@@ -150,7 +150,7 @@ internal static class MgcbErrorFormatter
 
 Rules:
 1. Extract `Path.GetFileName(error.File)` for the filename segment.
-2. If `error.Line > 0`: emit `filename(line,col-col): severity X####: message`.
+2. If `error.Line > 0`: emit `filename(line,col-col): severity X####: message`. Note: `ShaderError` currently has a single `Column` field (no `ColumnEnd`); use `Column-Column` (zero-width range) for now. A future `ColumnEnd` field can be added to `ShaderError` to enable proper range output when DXC provides it.
 3. If `error.Line == 0`: emit `severity X####: message` (no location).
 4. `error.Severity == ShaderErrorSeverity.Warning` uses the word `warning` in place of `error`.
 5. The error code must be formatted as `X` + four decimal digits, e.g. `X0001`, `X4502`. If
@@ -244,6 +244,8 @@ Unsupported platforms (exit 1): PlayStation4, XboxOne, Switch
 to an exit code. This separation allows `PipelineRunner` to be tested in isolation without
 subprocess overhead.
 
+> **Note:** The interfaces (`IFxFileParser`, `IPreprocessor`, `IDxcCompiler`, `IShaderReflector`, `ISpirvCrossTranspiler`, `IMgfxWriter`) do not yet exist — only concrete implementations do. Creating these interfaces is an explicit task in this phase's checklist. If the team decides not to create interfaces (and inject concrete types instead), `PipelineRunner`'s constructor signature should be updated accordingly. The test benefit of interfaces is that `PipelineRunner`'s logic can be tested with fakes; if integration tests are the primary test mechanism, interfaces may not be worth the extra layer.
+
 ```csharp
 // src/ShadowDusk.Cli/PipelineRunner.cs
 #nullable enable
@@ -280,8 +282,7 @@ internal sealed class PipelineRunner
 4. **Phase 4:** DXC compilation — compile each pass's vertex and pixel shader entry points.
    Forward `/Debug` as `-Zi`. Forward include paths and macro flags.
 5. **Phase 5:** Shader reflection — extract constant buffers, parameters, and semantics.
-6. **Phase 6:** SPIRV-Cross transpilation — only when `Platform == OpenGL` or `Metal`.
-   Skip for `DirectX_11` (DXBC blob is used directly).
+6. **Phase 6:** SPIRV-Cross transpilation — only when `Platform == PlatformTarget.OpenGL` or `PlatformTarget.Metal`. Skip for `PlatformTarget.DirectX` (DXC's DXIL output is used directly — note: this is SM6 DXIL, not SM5 DXBC; MonoGame's D3D11 backend cannot load DXIL; full D3D11 support requires Phase 4.1). Skip for `PlatformTarget.Vulkan` (raw SPIR-V from Phase 4 is used directly).
 7. **Phase 7:** `.mgfx` binary writer — serialise to bytes using `MgfxVersion` from `CliArguments`.
 8. Write bytes to `OutputFile` (`File.WriteAllBytesAsync`). On `IOException`, return a `ShaderError`
    with code `X0002`.
@@ -322,15 +323,9 @@ if (parseResult.IsFailure)
 
 var cliArgs = parseResult.Value;
 
-// 2. Validate platform.
-if (cliArgs.Platform is PlatformTarget.Unsupported)
-{
-    // MgcbErrorFormatter handles the unsupported-platform error.
-    Console.Error.WriteLine(MgcbErrorFormatter.Format(parseResult.Error));
-    return 1;
-}
-
-// 3. Run pipeline.
+// 2. Run pipeline.
+// (Unsupported platforms like PS4/XboxOne/Switch are already handled by ArgumentParser.Parse
+//  returning Result.Fail — there is no PlatformTarget.Unsupported enum value.)
 using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
 
 var runner = PipelineRunnerFactory.Create(cliArgs);
@@ -343,7 +338,7 @@ if (compileResult.IsFailure)
     return 1;
 }
 
-// 4. Write output file.
+// 3. Write output file.
 // (WriteAllBytesAsync errors are already wrapped as ShaderError inside RunAsync.)
 return 0;
 ```
@@ -351,6 +346,29 @@ return 0;
 `PipelineRunnerFactory.Create(CliArguments)` is a static factory in `ShadowDusk.Cli` that
 constructs the production `PipelineRunner` with real `FileSystemIncludeResolver`, `DxcCompiler`,
 etc. This keeps `Program.cs` free of `new` calls and makes the factory the single composition root.
+
+```csharp
+// src/ShadowDusk.Cli/PipelineRunnerFactory.cs
+#nullable enable
+namespace ShadowDusk.Cli;
+
+internal static class PipelineRunnerFactory
+{
+    public static PipelineRunner Create(CliArguments args)
+    {
+        var includeResolver = new FileSystemIncludeResolver(args.IncludePaths);
+        var fxParser        = new FxFileParser();
+        var preprocessor    = new Preprocessor();
+        var dxcCompiler     = new DxcShaderCompiler();
+        var reflector       = new ShaderReflector();          // Phase 5
+        var transpiler      = new SpirvCrossGlslTranspiler(); // Phase 6; no-op for DirectX
+        var mgfxWriter      = new MgfxWriter();               // Phase 7
+        return new PipelineRunner(includeResolver, fxParser, preprocessor,
+                                  dxcCompiler, reflector, transpiler, mgfxWriter);
+    }
+}
+```
+> Adjust type names to match actual class names in each phase's implementation.
 
 ---
 
@@ -533,7 +551,7 @@ All tests are pure — no disk I/O, no process spawning.
 
 | Test | Input | Expected output string |
 |---|---|---|
-| `Format_FullLocation` | `ShaderError("Foo.fx", line=11, col=44, colEnd=55, "X4502", "bad semantic")` | `Foo.fx(11,44-55): error X4502: bad semantic` |
+| `Format_FullLocation` | `ShaderError("Foo.fx", line=11, col=44, "X4502", "bad semantic")` | `Foo.fx(11,44-44): error X4502: bad semantic` |
 | `Format_NoLocation` | `ShaderError("", line=0, ...)` | `error X0003: message` |
 | `Format_WarningLevel` | `Severity=Warning` | `Foo.fx(3,1-1): warning X1234: message` |
 | `Format_PathStrippedToFilename` | `File="/abs/path/to/Foo.fx"` | filename segment is `Foo.fx` |
@@ -662,14 +680,12 @@ technique Technique1
          `ShadowDusk.Cli.csproj`.
 - [ ] 1.2 Add `<PackageId>`, `<PackageVersion>`, `<Description>` properties.
 - [ ] 1.3 Add `<PublishSingleFile>` and `<IncludeNativeLibrariesForSelfExtract>` properties.
-- [ ] 1.4 Verify all four project references (`Core`, `HLSL`, `GLSL`, `Metal`) are present.
+- [ ] 1.4 Verify all project references are present: Core ✓ (Phase 1), HLSL ✓ (Phase 4), GLSL (add if missing — needed for SPIRV-Cross transpiler), Metal (add if missing — needed for MSL path).
 
 ### 2. Data types
 
 - [ ] 2.1 Define `CliArguments` sealed record in `CliArguments.cs`.
-- [ ] 2.2 Add `PlatformTarget.Unsupported` enum value (or use a separate parse-time sentinel) for
-         out-of-scope platforms. Confirm with the Phase 1 `PlatformTarget` enum — do not break
-         existing usages.
+- [ ] 2.2 For unsupported platforms (PS4, XboxOne, Switch), `ArgumentParser.Parse` returns `Result.Fail(new ShaderError(..., Code: "X0010", ...))` directly — **do NOT add `PlatformTarget.Unsupported` to the enum**. The enum should remain: DirectX, OpenGL, Metal, Vulkan. Unknown profile strings not in the supported/unsupported tables return `X0004`.
 
 ### 3. ArgumentParser
 
@@ -692,6 +708,7 @@ technique Technique1
 
 ### 5. PipelineRunner and factory
 
+- [ ] 5.0 Define interfaces `IFxFileParser`, `IPreprocessor`, `IDxcShaderCompiler` (or reuse concrete types if interfaces are deemed unnecessary). At minimum, `IMgfxWriter` is needed since it's the Phase 7 output boundary.
 - [ ] 5.1 Define `PipelineRunner` class with constructor dependencies.
 - [ ] 5.2 Implement `RunAsync` following the Stage Order in the Pipeline Wiring section.
 - [ ] 5.3 Implement short-circuit: first failing stage returns immediately without executing later
