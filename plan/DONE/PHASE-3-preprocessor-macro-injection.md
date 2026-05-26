@@ -3,6 +3,8 @@
 **Depends on:** Phase 1 (solution scaffold), Phase 2 (FX9 pre-parser)
 **Consumed by:** Phase 4 (DXC integration)
 
+> **Post-completion fix (2026-05-25):** `PreprocessorContext.VisitedFiles` and `PragmaOnceFiles` were using `StringComparer.Ordinal` (case-sensitive). On Windows and macOS (case-insensitive file systems), including the same file with different casing (`Common.fxh` vs `common.fxh`) would bypass circular-include detection. Fixed to use `OperatingSystem.IsLinux() ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase`.
+
 ---
 
 ## Goal
@@ -299,122 +301,123 @@ public static class PlatformMacros
 
 ### 1. Data types and interfaces
 
-- [ ] 1.1 Define `MacroDefinition` record in `ShadowDusk.Core/Preprocessor/MacroDefinition.cs`.
-- [ ] 1.2 Define `MacroSet` record with `ToTextPrepend(string)` and `ToDxcFlags()` methods.
-- [ ] 1.3 Define `IIncludeResolver` interface.
-- [ ] 1.4 Define `IncludeResolvedFile` record.
-- [ ] 1.5 Define `PreprocessedSource` record.
-- [ ] 1.6 Extend `ShaderError` with `IncludeNotFound` and `CircularInclude` kinds and the extra
+- [x] 1.1 Define `MacroDefinition` record in `ShadowDusk.Core/Preprocessor/MacroDefinition.cs`.
+- [x] 1.2 Define `MacroSet` record with `ToTextPrepend(string)` and `ToDxcFlags()` methods.
+- [x] 1.3 Define `IIncludeResolver` interface.
+- [x] 1.4 Define `IncludeResolvedFile` record.
+- [x] 1.5 Define `PreprocessedSource` record.
+- [x] 1.6 Extend `ShaderError` with `IncludeNotFound` and `CircularInclude` kinds and the extra
          fields listed in the Error Model section.
 
 ### 2. PlatformMacros factory
 
-- [ ] 2.1 Implement `PlatformMacros.For(PlatformTarget)` with the macro table from this document.
-- [ ] 2.2 Unit test: assert exact macro names (no extras, no missing) for each platform.
-- [ ] 2.3 Unit test: `ToDxcFlags()` produces correctly interleaved `-D NAME=VALUE` strings.
-- [ ] 2.4 Unit test: `ToTextPrepend("foo.fx")` contains the `#line 1 "foo.fx"` footer and all
+- [x] 2.1 Implement `PlatformMacros.For(PlatformTarget)` with the macro table from this document.
+- [x] 2.2 Unit test: assert exact macro names (no extras, no missing) for each platform.
+- [x] 2.3 Unit test: `ToDxcFlags()` produces correctly interleaved `-D NAME=VALUE` strings.
+- [x] 2.4 Unit test: `ToTextPrepend("foo.fx")` contains the `#line 1 "foo.fx"` footer and all
          `#define` lines in order.
 
 ### 3. InMemoryIncludeResolver
 
-- [ ] 3.1 Implement `InMemoryIncludeResolver` backed by `Dictionary<string, string>`.
-- [ ] 3.2 Apply the same search-order rules as `FileSystemIncludeResolver` (including-file
+- [x] 3.1 Implement `InMemoryIncludeResolver` backed by `Dictionary<string, string>`.
+- [x] 3.2 Apply the same search-order rules as `FileSystemIncludeResolver` (including-file
          directory first, then additional paths).
-- [ ] 3.3 Unit test: resolves a file present in the dictionary.
-- [ ] 3.4 Unit test: returns `IncludeNotFound` error with correct `SearchedPaths` when absent.
+- [x] 3.3 Unit test: resolves a file present in the dictionary.
+- [x] 3.4 Unit test: returns `IncludeNotFound` error with correct `SearchedPaths` when absent.
 
 ### 4. FileSystemIncludeResolver
 
-- [ ] 4.1 Implement `FileSystemIncludeResolver` using `System.IO.File.ReadAllTextAsync`.
-- [ ] 4.2 Respect search order: sibling directory of including file, then `additionalSearchPaths`.
-- [ ] 4.3 Canonicalize resolved paths with `Path.GetFullPath` to ensure OS-independent comparison
+- [x] 4.1 Implement `FileSystemIncludeResolver` using `System.IO.File.ReadAllTextAsync`.
+- [x] 4.2 Respect search order: sibling directory of including file, then `additionalSearchPaths`.
+- [x] 4.3 Canonicalize resolved paths with `Path.GetFullPath` to ensure OS-independent comparison
          in the `visitedFiles` set.
 - [ ] 4.4 Integration test (tagged `[Trait("Category","Integration")]`): resolve a real `.fxh`
-         file from disk.
+         file from disk. *(deferred — add alongside Phase 9 integration suite)*
 
 ### 5. Preprocessor.Flatten()
 
-- [ ] 5.1 Create `PreprocessorContext` internal class to hold `visitedFiles` (HashSet) and
+- [x] 5.1 Create `PreprocessorContext` internal class to hold `visitedFiles` (HashSet) and
          `pragmaOnceSet` (HashSet) — shared across the recursive call tree.
-- [ ] 5.2 Implement recursive `FlattenFile()` method using the algorithm in this document.
-- [ ] 5.3 Emit `#line` directives before each included file and after returning to the including
+- [x] 5.2 Implement recursive `FlattenFile()` method using the algorithm in this document.
+- [x] 5.3 Emit `#line` directives before each included file and after returning to the including
          file.
-- [ ] 5.4 Handle `#pragma once`: consume the directive and add the resolved file path to
+- [x] 5.4 Handle `#pragma once`: consume the directive and add the resolved file path to
          `pragmaOnceSet`; subsequent re-includes of the same file emit nothing.
-- [ ] 5.5 Handle `#pragma warning` and unknown `#pragma`: pass through unchanged.
-- [ ] 5.6 Detect circular includes: if `FlattenFile()` is called for a path already in
+- [x] 5.5 Handle `#pragma warning` and unknown `#pragma`: pass through unchanged.
+- [x] 5.6 Detect circular includes: if `FlattenFile()` is called for a path already in
          `visitedFiles`, return a `CircularInclude` error with file and line attribution.
-- [ ] 5.7 Compose final `PreprocessedSource`: macro prepend + flattened body + `DxcMacroFlags`
+- [x] 5.7 Compose final `PreprocessedSource`: macro prepend + flattened body + `DxcMacroFlags`
          from `MacroSet.ToDxcFlags()`.
 
 ### 6. Preprocessor unit tests
 
-- [ ] 6.1 **Basic macro injection:** verify `PreprocessedSource.Text` starts with the expected
+- [x] 6.1 **Basic macro injection:** verify `PreprocessedSource.Text` starts with the expected
          `#define` block and the `#line 1 "..."` reset for each `PlatformTarget`.
-- [ ] 6.2 **Single #include:** root file includes one header; output contains header text inline
+- [x] 6.2 **Single #include:** root file includes one header; output contains header text inline
          with correct `#line` directives wrapping it.
-- [ ] 6.3 **Nested #include:** header A includes header B; output flattens both in correct order
+- [x] 6.3 **Nested #include:** header A includes header B; output flattens both in correct order
          with correct `#line` directives.
-- [ ] 6.4 **Circular include direct:** file A includes file A; expect `CircularInclude` error
+- [x] 6.4 **Circular include direct:** file A includes file A; expect `CircularInclude` error
          naming file A and the `#include` line.
-- [ ] 6.5 **Circular include transitive:** A includes B, B includes A; expect `CircularInclude`
+- [x] 6.5 **Circular include transitive:** A includes B, B includes A; expect `CircularInclude`
          naming B's `#include` line.
-- [ ] 6.6 **#pragma once:** file included twice; second occurrence produces no duplicate output.
-- [ ] 6.7 **#pragma warning pass-through:** `#pragma warning(disable: 3571)` appears unchanged in
+- [x] 6.6 **#pragma once:** file included twice; second occurrence produces no duplicate output.
+- [x] 6.7 **#pragma warning pass-through:** `#pragma warning(disable: 3571)` appears unchanged in
          output.
-- [ ] 6.8 **Unknown #pragma pass-through:** `#pragma custom_thing` appears unchanged.
-- [ ] 6.9 **Missing include error:** include path not in resolver; `IncludeNotFound` error carries
+- [x] 6.8 **Unknown #pragma pass-through:** `#pragma custom_thing` appears unchanged.
+- [x] 6.9 **Missing include error:** include path not in resolver; `IncludeNotFound` error carries
          `IncludingFilePath`, `IncludingLineNumber`, `RequestedPath`, and non-empty
          `SearchedPaths`.
-- [ ] 6.10 **DxcMacroFlags round-trip:** `PreprocessedSource.DxcMacroFlags` equals the output of
+- [x] 6.10 **DxcMacroFlags round-trip:** `PreprocessedSource.DxcMacroFlags` equals the output of
           `PlatformMacros.For(platform).ToDxcFlags()`.
-- [ ] 6.11 **Line number preservation:** after include expansion, lines in the root file that
+- [x] 6.11 **Line number preservation:** after include expansion, lines in the root file that
           follow an include have a `#line` directive showing the correct line number and the root
           file path.
 
 ### 7. DxcIncludeHandler (ShadowDusk.HLSL)
 
-- [ ] 7.1 Implement `DxcIncludeHandler` delegating `LoadSource` to `IIncludeResolver`.
-- [ ] 7.2 Map `Result.Failure` from the resolver to a DXC `E_FAIL` HRESULT return, setting
+- [x] 7.1 Implement `DxcIncludeHandler` delegating `LoadSource` to `IIncludeResolver`.
+- [x] 7.2 Map `Result.Failure` from the resolver to a DXC `E_FAIL` HRESULT return, setting
          `includeSource` to `null`.
-- [ ] 7.3 Encode included text as UTF-8 via `DxcUtils.CreateBlob` (or equivalent Vortice API).
+- [x] 7.3 Encode included text as UTF-8 via `IDxcUtils.CreateBlobFromPinned` (codepage 65001).
 - [ ] 7.4 Unit/smoke test: construct a `DxcIncludeHandler` with an `InMemoryIncludeResolver`
          containing a known file; verify `LoadSource` returns success and the correct blob bytes.
+         *(deferred — requires live DXC COM init; add in Phase 4 DXC integration tests)*
 
 ### 8. Wiring into the compilation pipeline
 
-- [ ] 8.1 Add `IIncludeResolver` and `IReadOnlyList<string> AdditionalIncludePaths` parameters to
-         `CompileRequest` (or equivalent input record used in Phase 4).
+- [x] 8.1 Add `IIncludeResolver` and `IReadOnlyList<string> AdditionalIncludePaths` parameters to
+         `CompilerOptions` (Phase 4 will wire these into the DXC call).
 - [ ] 8.2 `Preprocessor.Flatten()` is called after Phase 2 and before DXC invocation; its output
-         replaces the raw cleaned HLSL as the text sent to DXC.
+         replaces the raw cleaned HLSL as the text sent to DXC. *(Phase 4)*
 - [ ] 8.3 `PreprocessedSource.DxcMacroFlags` is merged into the DXC compile arguments list in
-         Phase 4 — no duplication guard needed, but document that duplication is harmless.
+         Phase 4 — no duplication guard needed, but document that duplication is harmless. *(Phase 4)*
 - [ ] 8.4 `DxcIncludeHandler` instance is constructed from the same `IIncludeResolver` and
-         forwarded to `IDxcCompiler3.Compile()` in Phase 4.
+         forwarded to `IDxcCompiler3.Compile()` in Phase 4. *(Phase 4)*
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] `PlatformMacros.For(DirectX).Macros` contains exactly `MGFX`, `HLSL`, `SM4` — no extras.
-- [ ] `PlatformMacros.For(OpenGL).Macros` contains exactly `MGFX`, `GLSL`, `OPENGL`.
-- [ ] `PlatformMacros.For(Vulkan).Macros` contains exactly `MGFX`, `HLSL`, `VULKAN`, `SM6`.
-- [ ] `PreprocessedSource.Text` begins with the macro `#define` block and is followed by
+- [x] `PlatformMacros.For(DirectX).Macros` contains exactly `MGFX`, `HLSL`, `SM4` — no extras.
+- [x] `PlatformMacros.For(OpenGL).Macros` contains exactly `MGFX`, `GLSL`, `OPENGL`.
+- [x] `PlatformMacros.For(Vulkan).Macros` contains exactly `MGFX`, `HLSL`, `VULKAN`, `SM6`.
+- [x] `PreprocessedSource.Text` begins with the macro `#define` block and is followed by
       `#line 1 "<original-file-path>"` before any shader source.
-- [ ] `PreprocessedSource.DxcMacroFlags` contains a `-D NAME=VALUE` pair for every macro in the
+- [x] `PreprocessedSource.DxcMacroFlags` contains a `-D NAME=VALUE` pair for every macro in the
       `MacroSet`.
-- [ ] All `#include` directives in the root and any transitively included files are resolved and
+- [x] All `#include` directives in the root and any transitively included files are resolved and
       inlined; no `#include` lines appear in `PreprocessedSource.Text`.
-- [ ] `#line` directives in the flattened output correctly attribute every line back to its source
+- [x] `#line` directives in the flattened output correctly attribute every line back to its source
       file and 1-based line number.
-- [ ] Circular includes (direct and transitive) are detected before any infinite recursion and
+- [x] Circular includes (direct and transitive) are detected before any infinite recursion and
       returned as `CircularInclude` errors with file-and-line attribution.
-- [ ] `#pragma once` prevents duplicate inlining of a file.
-- [ ] Unknown pragmas are preserved verbatim without error.
-- [ ] Missing include errors include `IncludingFilePath`, `IncludingLineNumber`, `RequestedPath`,
+- [x] `#pragma once` prevents duplicate inlining of a file.
+- [x] Unknown pragmas are preserved verbatim without error.
+- [x] Missing include errors include `IncludingFilePath`, `IncludingLineNumber`, `RequestedPath`,
       and `SearchedPaths`.
-- [ ] All unit tests in `ShadowDusk.Core.Tests` covering this phase pass with no disk I/O and no
-      child-process invocations.
+- [x] All unit tests in `ShadowDusk.Core.Tests` covering this phase pass with no disk I/O and no
+      child-process invocations. *(60/60 passing; 52 new Phase 3 tests + 8 pre-existing)*
 
 ---
 

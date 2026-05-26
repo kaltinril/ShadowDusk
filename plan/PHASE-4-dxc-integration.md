@@ -119,14 +119,16 @@ public interface IDxcShaderCompiler
 
 ### 3.1 Flag Table
 
-| Platform | Stage | Profile | Additional flags |
-|----------|-------|---------|-----------------|
-| OpenGL | Vertex | `vs_5_0` | `-spirv -fvk-use-dx-layout -fvk-use-dx-position-w` |
-| OpenGL | Pixel | `ps_5_0` | `-spirv -fvk-use-dx-layout -auto-binding-space 1` |
-| Vulkan | Vertex | `vs_6_0` | `-spirv -fvk-use-dx-layout -fvk-invert-y -fvk-use-dx-position-w -fspv-reflect` |
-| Vulkan | Pixel | `ps_6_0` | `-spirv -fvk-use-dx-layout -auto-binding-space 1 -fspv-reflect` |
-| DirectX_11 | Vertex | `vs_5_0` | _(none beyond `-T` and `-E`)_ |
-| DirectX_11 | Pixel | `ps_5_0` | _(none beyond `-T` and `-E`)_ |
+> **⚠️ Implementation deviation — DirectX profiles:** The original plan specified `vs_5_0`/`ps_5_0` for DirectX. DXC rejects SM5 profiles for non-SPIRV output (`error: invalid profile vs_5_0`). DXC only emits SM6 DXIL. The implemented profiles are `vs_6_0`/`ps_6_0`. See the [DXC SM5 constraint note in plan.md](plan.md#-known-constraint-dxc-cannot-produce-sm5-dxbc) for the full analysis and the `vkd3d-shader` path to true SM5 DXBC support.
+
+| Platform | Stage | Profile (planned) | Profile (implemented) | Additional flags |
+|----------|-------|-------------------|-----------------------|-----------------|
+| OpenGL | Vertex | `vs_5_0` | `vs_5_0` | `-spirv -fvk-use-dx-layout -fvk-use-dx-position-w` |
+| OpenGL | Pixel | `ps_5_0` | `ps_5_0` | `-spirv -fvk-use-dx-layout -auto-binding-space 1` |
+| Vulkan | Vertex | `vs_6_0` | `vs_6_0` | `-spirv -fvk-use-dx-layout -fvk-invert-y -fvk-use-dx-position-w -fspv-reflect` |
+| Vulkan | Pixel | `ps_6_0` | `ps_6_0` | `-spirv -fvk-use-dx-layout -auto-binding-space 1 -fspv-reflect` |
+| DirectX | Vertex | `vs_5_0` ❌ | `vs_6_0` (DXIL) | _(none beyond `-T` and `-E`)_ |
+| DirectX | Pixel | `ps_5_0` ❌ | `ps_6_0` (DXIL) | _(none beyond `-T` and `-E`)_ |
 
 ### 3.2 Flag Rationale
 
@@ -382,44 +384,44 @@ public async Task CompileMinimalVertex_OpenGL_ReturnsSpirvBlob()
 
 ### Setup
 
-- [ ] 1. Add `Vortice.Dxc` NuGet reference to `ShadowDusk.HLSL.csproj`
-- [ ] 2. Pin version in `Directory.Packages.props`
-- [ ] 3. Verify all three RIDs build successfully with `/build`
-- [ ] 4. Remove any conflicting DXC download steps from `tools/restore.sh` / `tools/restore.ps1`
+- [x] 1. Add `Vortice.Dxc` NuGet reference to `ShadowDusk.HLSL.csproj`
+- [x] 2. Pin version in `Directory.Packages.props` — v3.3.4
+- [x] 3. Verify all three RIDs build successfully with `/build`
+- [x] 4. Remove any conflicting DXC download steps from `tools/restore.sh` / `tools/restore.ps1` — no restore scripts existed; DXC ships via NuGet, nothing to conflict
 
 ### Core types
 
-- [ ] 5. Create `BlobKind.cs` and `PlatformBlob.cs`
-- [ ] 6. Create `DxcCompileRequest.cs`
-- [ ] 7. Create `DxcCompileOptions.cs` (AllowWarnings, EmbedDebugInfo booleans)
-- [ ] 8. Create `IDxcShaderCompiler.cs`
-- [ ] 9. Extend `ShaderError` in `ShadowDusk.Core` with `Severity`, `SourceFile`, `Line`, `Column`, `FxcFormattedMessage`
+- [x] 5. Create `BlobKind.cs` and `PlatformBlob.cs`
+- [x] 6. Create `DxcCompileRequest.cs`
+- [x] 7. Create `DxcCompileOptions.cs` (AllowWarnings, EmbedDebugInfo booleans)
+- [x] 8. Create `IDxcShaderCompiler.cs`
+- [x] 9. Extend `ShaderError` in `ShadowDusk.Core` — added `Note` to `ShaderErrorSeverity`; added `FxcFormattedMessage` computed property (`File`, `Line`, `Column` were already present)
 
 ### Flag assembly
 
-- [ ] 10. Implement `DxcFlagBuilder.Build(...)` per the flag table in section 3
-- [ ] 11. Write all `DxcFlagBuilderTests` from checklist 8.1
+- [x] 10. Implement `DxcFlagBuilder.Build(...)` — note: DirectX profiles use `vs_6_0`/`ps_6_0` (not `vs_5_0`) because DXC rejects SM5 for non-SPIRV targets; see constraint note
+- [x] 11. Write all `DxcFlagBuilderTests` from checklist 8.1 — 25 unit tests, all passing
 
 ### Compiler
 
-- [ ] 12. Implement `DxcDiagnosticReformatter.Reformat(...)` per section 5
-- [ ] 13. Write all `DxcDiagnosticReformatterTests` from checklist 8.2
-- [ ] 14. Implement `DxcShaderCompiler.CompileCore(...)` synchronous inner method
-- [ ] 15. Implement `DxcShaderCompiler.CompileAsync(...)` async wrapper
-- [ ] 16. Add thread-safety XML doc comment to `DxcShaderCompiler` and `IDxcShaderCompiler`
+- [x] 12. Implement `DxcDiagnosticReformatter.Reformat(...)` per section 5
+- [x] 13. Write all `DxcDiagnosticReformatterTests` from checklist 8.2 — 8 unit tests, all passing
+- [x] 14. Implement `DxcShaderCompiler.CompileCore(...)` synchronous inner method
+- [x] 15. Implement `DxcShaderCompiler.CompileAsync(...)` async wrapper
+- [x] 16. Add thread-safety XML doc comment to `DxcShaderCompiler` and `IDxcShaderCompiler`
 
 ### Integration tests
 
-- [ ] 17. Scaffold `DxcShaderCompilerIntegrationTests.cs` with `[Trait("Category","Integration")]`
-- [ ] 18. Implement all integration tests from checklist 9.2
-- [ ] 19. Confirm integration tests are excluded from unit-only test runs via filter `Category!=Integration`
+- [x] 17. Scaffold `DxcShaderCompilerIntegrationTests.cs` with `[Trait("Category","Integration")]`
+- [x] 18. Implement all integration tests from checklist 9.2 — 9 integration tests, all passing
+- [x] 19. Confirm integration tests are excluded from unit-only test runs via filter `Category!=Integration` — verified
 
 ### CI / verification
 
-- [ ] 20. Run `/build` — zero warnings, zero errors
-- [ ] 21. Run `/test` — all unit tests pass
-- [ ] 22. Run `/test --filter "Category=Integration"` — all integration tests pass
-- [ ] 23. Run `/platform-check` — no new platform-specific assumptions introduced
+- [x] 20. Run `/build` — zero warnings, zero errors
+- [x] 21. Run `/test` — 60 unit tests pass
+- [x] 22. Run `/test --filter "Category=Integration"` — 9 integration tests pass
+- [x] 23. Run `/platform-check` — no new platform-specific assumptions in Phase 4 code
 
 ---
 

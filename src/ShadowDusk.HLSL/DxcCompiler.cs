@@ -1,5 +1,1 @@
-#nullable enable
-
-namespace ShadowDusk.HLSL;
-
-public sealed class DxcCompiler { }
+// This file intentionally left empty. See Dxc/DxcShaderCompiler.cs.

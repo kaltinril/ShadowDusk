@@ -2,7 +2,12 @@
   <PropertyGroup>
     <AssemblyName>ShadowDusk.HLSL</AssemblyName>
     <RootNamespace>ShadowDusk.HLSL</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ShadowDusk.HLSL.Tests" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\ShadowDusk.Core\ShadowDusk.Core.csproj" />
