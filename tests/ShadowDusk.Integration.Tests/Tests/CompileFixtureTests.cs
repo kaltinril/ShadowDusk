@@ -121,7 +121,7 @@ public sealed class CompileFixtureTests
 
         var reader = MgfxBlobReader.Parse(result.Mgfx);
         reader.ParameterNames.Should().Contain("WorldViewProj");
-        reader.ParameterNames.Should().Contain("Color");
+        reader.ParameterNames.Should().Contain("DiffuseColor");
 
         // WorldViewProj is a float4x4: 4 columns × 4 rows × 4 bytes = 64 bytes.
         reader.ParameterSizes.Should().ContainKey("WorldViewProj");
@@ -184,8 +184,8 @@ public sealed class CompileFixtureTests
         reader.TechniqueCount.Should().Be(1);
         reader.Techniques[0].PassCount.Should().Be(1);
 
-        // CullMode.None = 0 in MonoGame's CullMode enum.
-        reader.CullMode.Should().Be(0, because: "CullMode = None maps to integer value 0");
+        // CullMode.None = 1 in MonoGame's CullMode enum (mirrors D3D9: None=1, CW=2, CCW=3).
+        reader.CullMode.Should().Be(1, because: "CullMode = None maps to integer value 1 (D3D9 convention)");
         reader.AlphaBlendEnable.Should().BeTrue(because: "AlphaBlendEnable = True was declared in the pass");
         reader.DepthBufferEnable.Should().BeFalse(because: "DepthBufferEnable = False was declared in the pass");
     }

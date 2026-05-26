@@ -104,7 +104,7 @@ public sealed class MgfxBlobReader
 
             var offsets = new int[paramCount];
             for (int j = 0; j < paramCount; j++)
-                offsets[j] = br.ReadInt32();
+                offsets[j] = br.ReadUInt16();
 
             for (int j = 0; j < paramCount; j++)
             {

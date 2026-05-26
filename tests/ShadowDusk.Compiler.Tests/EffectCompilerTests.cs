@@ -131,6 +131,19 @@ public sealed class EffectCompilerTests
         result.Value.Data.Should().NotBeEmpty("compiled output must contain bytes");
     }
 
+    [Fact]
+    [Trait("Platform", "Vulkan")]
+    public async Task Compile_Minimal_Vulkan_ReturnsBytes()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+        var result = await CompileFileAsync("Minimal.fx", PlatformTarget.Vulkan, cancellationToken: cts.Token);
+
+        result.IsSuccess.Should().BeTrue(
+            because: result.IsFailure ? FormatErrors(result.Error) : "compilation must succeed");
+        result.Value.Data.Should().NotBeEmpty("compiled output must contain bytes");
+    }
+
     // ---------------------------------------------------------------------------
     // Determinism
     // ---------------------------------------------------------------------------

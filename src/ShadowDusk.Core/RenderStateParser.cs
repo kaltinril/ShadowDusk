@@ -141,7 +141,8 @@ public sealed class RenderStateParser
             return Ok();
         }
 
-        if (key.Equals("ZEnable", StringComparison.OrdinalIgnoreCase))
+        if (key.Equals("ZEnable", StringComparison.OrdinalIgnoreCase) ||
+            key.Equals("DepthBufferEnable", StringComparison.OrdinalIgnoreCase))
         {
             if (!TryParseBool(value, out var v))
                 return UnknownValue(key, value);

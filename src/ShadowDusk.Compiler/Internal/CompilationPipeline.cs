@@ -116,8 +116,11 @@ internal sealed class CompilationPipeline
             {
                 int vsIndex = -1;
                 int psIndex = -1;
-                ReadOnlyMemory<byte> dxilForReflection    = default;
-                ReadOnlyMemory<byte> spirvForTranspilation = default;
+
+                ReadOnlyMemory<byte> vsDxilBlob  = default;
+                ReadOnlyMemory<byte> vsSpirvBlob = default;
+                ReadOnlyMemory<byte> psDxilBlob  = default;
+                ReadOnlyMemory<byte> psSpirvBlob = default;
 
                 if (pass.VertexEntryPoint is not null)
                 {
@@ -134,10 +137,10 @@ internal sealed class CompilationPipeline
                     if (compileOutput.Blob.IsFailure)
                         return Fail(compileOutput.Blob.Error);
 
-                    vsIndex = compiledShaderBlobs.Count;
+                    vsIndex     = compiledShaderBlobs.Count;
+                    vsDxilBlob  = compileOutput.DxilBlob;
+                    vsSpirvBlob = compileOutput.SpirvBlob;
                     compiledShaderBlobs.Add(new CompiledShaderBlob(compileOutput.Blob.Value, ShaderStage.Vertex));
-                    dxilForReflection     = compileOutput.DxilBlob;
-                    spirvForTranspilation = compileOutput.SpirvBlob;
                 }
 
                 if (pass.PixelEntryPoint is not null)
@@ -155,23 +158,28 @@ internal sealed class CompilationPipeline
                     if (compileOutput.Blob.IsFailure)
                         return Fail(compileOutput.Blob.Error);
 
-                    psIndex = compiledShaderBlobs.Count;
+                    psIndex     = compiledShaderBlobs.Count;
+                    psDxilBlob  = compileOutput.DxilBlob;
+                    psSpirvBlob = compileOutput.SpirvBlob;
                     compiledShaderBlobs.Add(new CompiledShaderBlob(compileOutput.Blob.Value, ShaderStage.Pixel));
-
-                    if (dxilForReflection.IsEmpty)
-                    {
-                        dxilForReflection     = compileOutput.DxilBlob;
-                        spirvForTranspilation = compileOutput.SpirvBlob;
-                    }
                 }
 
-                // Stage 4: Reflect — only when we have DXIL to reflect from.
-                if (!dxilForReflection.IsEmpty)
+                // Stage 4: Reflect each shader stage independently so parameters that are
+                // only bound in PS (or only in VS) are not missed. seenParamNames/seenCbufferNames
+                // deduplicate across stages and across passes.
+                foreach (var (dxilBlob, spirvBlob) in new[]
                 {
+                    (vsDxilBlob, vsSpirvBlob),
+                    (psDxilBlob, psSpirvBlob),
+                })
+                {
+                    if (dxilBlob.IsEmpty)
+                        continue;
+
                     var reflectionInput = new ReflectionInput
                     {
-                        DxilBlob      = dxilForReflection,
-                        SpirVBlob     = spirvForTranspilation,
+                        DxilBlob      = dxilBlob,
+                        SpirVBlob     = spirvBlob,
                         FxAnnotations = fxParsed.ParameterAnnotations,
                     };
 
