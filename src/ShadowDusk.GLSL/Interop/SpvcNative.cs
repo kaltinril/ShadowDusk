@@ -30,7 +30,7 @@ internal static class SpvcCompilerOption
 
 internal static class SpvcNative
 {
-    private const string LibName = "spirv-cross-c-shared";
+    private const string LibName = "spirv-cross";
 
     [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
     internal static extern SpvcResult spvc_context_create(out IntPtr context);

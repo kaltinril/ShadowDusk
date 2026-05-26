@@ -135,8 +135,15 @@
       "shadowdusk.glsl": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[1.0.0, )"
+          "ShadowDusk.Core": "[1.0.0, )",
+          "Silk.NET.SPIRV.Cross.Native": "[2.23.0, )"
         }
+      },
+      "Silk.NET.SPIRV.Cross.Native": {
+        "type": "CentralTransitive",
+        "requested": "[2.23.0, )",
+        "resolved": "2.23.0",
+        "contentHash": "pY4LmIE8nYXkfCgExxksYlnYZZ4D3/AW13XNcpyp0jJDTkCpDsXL0nLOX7CM7tPS6xvkiERRd+Do2zegbl7Xtw=="
       }
     }
   }

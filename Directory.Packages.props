@@ -8,6 +8,10 @@
     <PackageVersion Include="Vortice.Direct3D12" Version="3.5.0" />
   </ItemGroup>
 
+  <ItemGroup Label="SPIRV-Cross">
+    <PackageVersion Include="Silk.NET.SPIRV.Cross.Native" Version="2.23.0" />
+  </ItemGroup>
+
   <ItemGroup Label="Test">
     <PackageVersion Include="xunit"                        Version="2.9.2" />
     <PackageVersion Include="xunit.runner.visualstudio"    Version="2.8.2" />

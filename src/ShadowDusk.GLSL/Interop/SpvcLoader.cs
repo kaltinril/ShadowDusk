@@ -45,7 +45,7 @@ internal static class SpvcLoader
         };
 
     private static string GetLibFileName() =>
-        RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "spirv-cross-c-shared.dll"
-        : RuntimeInformation.IsOSPlatform(OSPlatform.OSX)   ? "libspirv-cross-c-shared.dylib"
-        :                                                       "libspirv-cross-c-shared.so";
+        RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "spirv-cross.dll"
+        : RuntimeInformation.IsOSPlatform(OSPlatform.OSX)   ? "libspirv-cross.dylib"
+        :                                                       "libspirv-cross.so";
 }
