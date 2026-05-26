@@ -166,6 +166,14 @@
           "xunit.extensibility.core": "[2.9.2]"
         }
       },
+      "shadowdusk.compiler": {
+        "type": "Project",
+        "dependencies": {
+          "ShadowDusk.Core": "[1.0.0, )",
+          "ShadowDusk.GLSL": "[1.0.0, )",
+          "ShadowDusk.HLSL": "[1.0.0, )"
+        }
+      },
       "shadowdusk.core": {
         "type": "Project"
       },
