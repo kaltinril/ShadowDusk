@@ -7,6 +7,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\ShadowDusk.Core\ShadowDusk.Core.csproj" />
+    <ProjectReference Include="..\..\src\ShadowDusk.HLSL\ShadowDusk.HLSL.csproj" />
   </ItemGroup>
 
   <ItemGroup Label="Test framework">

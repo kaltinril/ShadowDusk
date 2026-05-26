@@ -14,6 +14,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Vortice.Direct3D12" />
     <PackageReference Include="Vortice.Dxc" />
   </ItemGroup>
 </Project>
