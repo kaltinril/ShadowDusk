@@ -166,6 +166,23 @@ Strategy 1 is required for the drop-in `mgfxc` replacement design constraint.
 
 ---
 
+## From Phase 15 — Integration Tests
+
+**CLI-process invocation mode — infrastructure exists, no tests wire it up:**
+
+The Phase 15 plan §3.1 specified two invocation modes: `DirectPipeline` (in-process) and `CliProcess` (out-of-process via the published `mgfxc` binary). All 103 current tests run via `DirectPipeline`. The CLI-process path is fully implemented in `TestHelpers.CompileViaCliAsync`, plus `CliFixture` and `CliBinaryFixture`, but unused.
+
+- [ ] Add a `[Theory]` variant of `CompileFixtureTests.Compile_ProducesValidMgfxHeader` parameterised over both `InvocationMode` values so every fixture × platform also exercises the published CLI binary.
+- [ ] Wire `CliBinaryFixture` as a class fixture so the CLI is published once per test class instead of per test.
+- [ ] Confirm exit codes, stderr formatting, and `.mgfx` output match between the two invocation paths (drop-in equivalence guarantee).
+- [ ] Decide whether `CliFixture` (skip-on-missing) and `CliBinaryFixture` (publish-on-demand) should coexist or be unified — only one of them needs to remain.
+
+**Cross-platform validation:**
+
+- [ ] Tests run unmodified on Linux and macOS — explicitly deferred to Phase 30 (CI). Acceptance criterion from Phase 15 §9: *"Tests run without modification on Windows, Linux, and macOS (validated in Phase 10 CI)"* — Phase 10 was renumbered to Phase 30.
+
+---
+
 ## How to resolve items here
 
 1. **Verify and check off:** For items marked *(file exists — verify coverage)*, run the existing test file, confirm the assertion exists, then check it off in both this document and the originating `DONE/PHASE-X` file.

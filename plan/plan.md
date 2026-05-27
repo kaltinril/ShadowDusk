@@ -20,6 +20,7 @@ These phases are fully implemented. Their documents have been moved to `DONE/` w
 | 7 ✓ | [DONE/PHASE-7-mgfx-binary-writer.md](DONE/PHASE-7-mgfx-binary-writer.md) | .mgfx binary format serialization: header, constant buffers, shaders, parameters, techniques, passes — **DONE** |
 | 8 ✓ | [DONE/PHASE-8-compiler-library.md](DONE/PHASE-8-compiler-library.md) | `ShadowDusk.Compiler` NuGet library — `EffectCompiler : IShaderCompiler`, pipeline orchestration, the consumer-facing package — **DONE** |
 | 9 ✓ | [DONE/PHASE-9-cli-entry-point.md](DONE/PHASE-9-cli-entry-point.md) | dotnet tool CLI, mgfxc-compatible flags, MGCB error format, stderr routing, exit codes — **DONE** |
+| 15 ✓ | [DONE/PHASE-15-integration-tests.md](DONE/PHASE-15-integration-tests.md) | End-to-end .fx compilation tests — 9 fixtures × 3 platforms, determinism, error cases (103 tests, all passing) — **DONE** |
 
 ---
 
@@ -27,7 +28,6 @@ These phases are fully implemented. Their documents have been moved to `DONE/` w
 
 | Phase | File | Summary |
 |-------|------|---------|
-| 15 | [PHASE-15-integration-tests.md](PHASE-15-integration-tests.md) | End-to-end .fx compilation tests, fixture shaders, per-platform test filters |
 | 16 | [PHASE-16-image-regression-tests.md](PHASE-16-image-regression-tests.md) | Visual regression tests — render golden vs. ShadowDusk .mgfx offscreen, compare pixel output |
 | 20 | [PHASE-20-deferred-backlog.md](PHASE-20-deferred-backlog.md) | Deferred items backlog from phases 2–9; no prerequisites, review before 1.0 |
 | 25 | [PHASE-25-security-hardening.md](PHASE-25-security-hardening.md) | Security hardening for WASM/web path — path traversal, input validation, supply chain |

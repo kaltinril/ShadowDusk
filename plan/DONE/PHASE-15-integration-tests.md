@@ -1,4 +1,8 @@
-# Phase 9 — End-to-End Integration Tests
+# Phase 15 — End-to-End Integration Tests
+
+**Status:** ✅ Done. 103 integration tests pass. Two items deferred to Phase 20 backlog:
+CLI-process invocation mode tests (infrastructure built, tests not yet wired up), and
+cross-platform Linux/macOS validation (explicitly scoped to Phase 30 CI).
 
 ## Overview
 
@@ -554,11 +558,11 @@ public async Task Compile_ProducesValidMgfxHeader(string fx, string profile, str
 
 For each combination assert:
 
-- [ ] Exit code is `0`
-- [ ] Output byte array is non-empty
-- [ ] `MgfxBlobReader.Parse(mgfx).Signature == "MGFX"`
-- [ ] `MgfxBlobReader.Parse(mgfx).MgfxVersion == 10`
-- [ ] `MgfxBlobReader.Parse(mgfx).ProfileId` matches the expected value for the given platform:
+- [x] Exit code is `0`
+- [x] Output byte array is non-empty
+- [x] `MgfxBlobReader.Parse(mgfx).Signature == "MGFX"`
+- [x] `MgfxBlobReader.Parse(mgfx).MgfxVersion == 10`
+- [x] `MgfxBlobReader.Parse(mgfx).ProfileId` matches the expected value for the given platform:
 
 | Profile string | Expected `ProfileId` |
 |----------------|----------------------|
@@ -575,53 +579,53 @@ Each assertion is its own `[Fact]` or `[Theory]`. Annotate each with the relevan
 #### Task list
 
 1. **`minimal.fx` — 1 technique, 1 pass, 2 shader blobs**
-   - [ ] `TechniqueCount == 1`
-   - [ ] `Techniques[0].PassCount == 1`
-   - [ ] `TotalShaderBlobCount == 2` (one VS + one PS)
+   - [x] `TechniqueCount == 1`
+   - [x] `Techniques[0].PassCount == 1`
+   - [x] `TotalShaderBlobCount == 2` (one VS + one PS)
 
 2. **`textured.fx` — combined sampler present in GLSL output**
-   - [ ] Compile for `OpenGL` target
-   - [ ] `TotalShaderBlobCount == 2`
-   - [ ] Disassemble the GLSL blob (embedded as UTF-8 source in the MGFX) and assert it contains `sampler2D` (combined texture-sampler, not separate `texture2D` + `sampler`)
+   - [x] Compile for `OpenGL` target
+   - [x] `TotalShaderBlobCount == 2`
+   - [x] Disassemble the GLSL blob (embedded as UTF-8 source in the MGFX) and assert it contains `sampler2D` (combined texture-sampler, not separate `texture2D` + `sampler`)
 
 3. **`cbuffer.fx` — parameter reflection**
-   - [ ] `ParameterNames` contains `"WorldViewProj"`
-   - [ ] `ParameterNames` contains `"Color"`
-   - [ ] The size recorded for `WorldViewProj` in the constant table is `64` bytes (4×4 float matrix)
+   - [x] `ParameterNames` contains `"WorldViewProj"`
+   - [x] `ParameterNames` contains `"Color"`
+   - [x] The size recorded for `WorldViewProj` in the constant table is `64` bytes (4×4 float matrix)
 
 4. **`multipass.fx` — 2 passes, 2 shader blobs each**
-   - [ ] `TechniqueCount == 1`
-   - [ ] `Techniques[0].PassCount == 2`
-   - [ ] `TotalShaderBlobCount == 4` (VS+PS per pass)
+   - [x] `TechniqueCount == 1`
+   - [x] `Techniques[0].PassCount == 2`
+   - [x] `TotalShaderBlobCount == 4` (VS+PS per pass)
 
 5. **`multitechnique.fx` — technique ordering**
-   - [ ] `TechniqueCount == 3`
-   - [ ] `Techniques[0].Name == "TechA"`
-   - [ ] `Techniques[1].Name == "TechB"`
-   - [ ] `Techniques[2].Name == "TechC"`
-   - [ ] Order in blob matches declaration order in source (not alphabetical, not hash-ordered)
+   - [x] `TechniqueCount == 3`
+   - [x] `Techniques[0].Name == "TechA"`
+   - [x] `Techniques[1].Name == "TechB"`
+   - [x] `Techniques[2].Name == "TechC"`
+   - [x] Order in blob matches declaration order in source (not alphabetical, not hash-ordered)
 
 6. **`render-states.fx` — render state round-trip**
-   - [ ] `TechniqueCount == 1`
-   - [ ] `Techniques[0].PassCount == 1`
-   - [ ] `MgfxBlobReader` reports `CullMode = None` in the pass render-state block
-   - [ ] `MgfxBlobReader` reports `AlphaBlendEnable = true`
-   - [ ] `MgfxBlobReader` reports `DepthBufferEnable = false`
+   - [x] `TechniqueCount == 1`
+   - [x] `Techniques[0].PassCount == 1`
+   - [x] `MgfxBlobReader` reports `CullMode = None` in the pass render-state block
+   - [x] `MgfxBlobReader` reports `AlphaBlendEnable = true`
+   - [x] `MgfxBlobReader` reports `DepthBufferEnable = false`
 
 7. **`annotations.fx` — annotation round-trip**
-   - [ ] `ParameterNames` contains `"TintColor"`
-   - [ ] The annotation `UIName` for `TintColor` equals `"Tint Color"` in the serialized annotation table
+   - [x] `ParameterNames` contains `"TintColor"`
+   - [x] The annotation `UIName` for `TintColor` equals `"Tint Color"` in the serialized annotation table
 
 8. **`platform-macros.fx` — macro injection per platform**
-   - [ ] Compile for `OpenGL`: compile succeeds; disassembled GLSL output contains a reference to the green-channel value (the GLSL branch)
-   - [ ] Compile for `DirectX_11`: compile succeeds; the SM4 branch is selected (pipeline does not error on missing `GLSL` branch)
-   - [ ] Verify that injecting an unknown macro does not suppress the `#else` fallback
+   - [x] Compile for `OpenGL`: compile succeeds; disassembled GLSL output contains a reference to the green-channel value (the GLSL branch)
+   - [x] Compile for `DirectX_11`: compile succeeds; the SM4 branch is selected (pipeline does not error on missing `GLSL` branch)
+   - [x] Verify that injecting an unknown macro does not suppress the `#else` fallback
 
 9. **`basiceffect-mini.fx` — 4 distinct techniques by index**
-   - [ ] `TechniqueCount == 4`
-   - [ ] `Techniques[0].Name == "Tech0"` through `Techniques[3].Name == "Tech3"`
-   - [ ] All four techniques are distinct (no deduplication of identical VS sources)
-   - [ ] `Techniques[i].PassCount == 1` for all `i` in `0..3`
+   - [x] `TechniqueCount == 4`
+   - [x] `Techniques[0].Name == "Tech0"` through `Techniques[3].Name == "Tech3"`
+   - [x] All four techniques are distinct (no deduplication of identical VS sources)
+   - [x] `Techniques[i].PassCount == 1` for all `i` in `0..3`
 
 ---
 
@@ -637,20 +641,20 @@ Create `tests/ShadowDusk.Integration.Tests/Tests/DeterminismTests.cs`.
 ### 5.1 Task list
 
 1. **Compile `minimal.fx` twice, same profile, same tool versions**
-   - [ ] Call `CompileFixtureAsync("minimal.fx", "OpenGL")` twice in sequence (not parallel, to eliminate race conditions)
-   - [ ] Assert `result1.Mgfx.SequenceEqual(result2.Mgfx)` — byte-identical output
-   - [ ] Repeat for `DirectX_11` profile
+   - [x] Call `CompileFixtureAsync("minimal.fx", "OpenGL")` twice in sequence (not parallel, to eliminate race conditions)
+   - [x] Assert `result1.Mgfx.SequenceEqual(result2.Mgfx)` — byte-identical output
+   - [x] Repeat for `DirectX_11` profile
 
 2. **Compile `cbuffer.fx` twice for OpenGL**
-   - [ ] Assert byte-identical output
-   - [ ] This exercises SPIR-V emission order determinism (constant buffer offsets must not vary between runs)
+   - [x] Assert byte-identical output
+   - [x] This exercises SPIR-V emission order determinism (constant buffer offsets must not vary between runs)
 
 3. **Compile `multitechnique.fx` twice for OpenGL**
-   - [ ] Assert byte-identical output
-   - [ ] Exercises that technique/pass ordering in the blob is not influenced by dictionary or hash iteration order
+   - [x] Assert byte-identical output
+   - [x] Exercises that technique/pass ordering in the blob is not influenced by dictionary or hash iteration order
 
 4. **Document tool-version caveat**
-   - [ ] Add an XML doc comment on the test class noting that determinism is guaranteed only for the same DXC + SPIRV-Cross binary versions. The test is valid within a single CI run; it does not assert cross-version stability.
+   - [x] Add an XML doc comment on the test class noting that determinism is guaranteed only for the same DXC + SPIRV-Cross binary versions. The test is valid within a single CI run; it does not assert cross-version stability.
 
 ---
 
@@ -673,37 +677,37 @@ It writes `hlslSource` to a temp `.fx` file, calls `CompileFixtureAsync`, then d
 ### 6.1 Task list
 
 1. **Syntax error in HLSL**
-   - [ ] Source: `float4 PS() : SV_TARGET { return SYNTAX ERROR; }`
-   - [ ] Assert `ExitCode == 1`
-   - [ ] Assert `Stderr` matches regex `\(\d+,\d+\)` — the `(line,col)` diagnostic format
-   - [ ] Assert `Stderr` does not contain stack traces or internal exception messages (no swallowed errors)
+   - [x] Source: `float4 PS() : SV_TARGET { return SYNTAX ERROR; }`
+   - [x] Assert `ExitCode == 1`
+   - [x] Assert `Stderr` matches regex `\(\d+,\d+\)` — the `(line,col)` diagnostic format
+   - [x] Assert `Stderr` does not contain stack traces or internal exception messages (no swallowed errors)
 
 2. **Undeclared identifier**
-   - [ ] Source: valid VS + PS that references `UndeclaredVar` in the PS body
-   - [ ] Assert `ExitCode == 1`
-   - [ ] Assert `Stderr` contains the identifier name `"UndeclaredVar"`
-   - [ ] Assert `Stderr` contains a line number
+   - [x] Source: valid VS + PS that references `UndeclaredVar` in the PS body
+   - [x] Assert `ExitCode == 1`
+   - [x] Assert `Stderr` contains the identifier name `"UndeclaredVar"`
+   - [x] Assert `Stderr` contains a line number
 
 3. **Missing `#include`**
-   - [ ] Source: `#include "nonexistent_header.fxh"` at the top of an otherwise-valid shader
-   - [ ] Assert `ExitCode == 1`
-   - [ ] Assert `Stderr` references the source file name (not just the include path)
-   - [ ] Assert `Stderr` contains the line number of the `#include` directive (line 1)
+   - [x] Source: `#include "nonexistent_header.fxh"` at the top of an otherwise-valid shader
+   - [x] Assert `ExitCode == 1`
+   - [x] Assert `Stderr` references the source file name (not just the include path)
+   - [x] Assert `Stderr` contains the line number of the `#include` directive (line 1)
 
 4. **Unknown profile string**
-   - [ ] Call `CompileFixtureAsync("minimal.fx", "PS5_NotAReal_Target")`
-   - [ ] Assert `ExitCode == 1`
-   - [ ] Assert `Stderr` contains the unrecognized profile string
+   - [x] Call `CompileFixtureAsync("minimal.fx", "PS5_NotAReal_Target")`
+   - [x] Assert `ExitCode == 1`
+   - [x] Assert `Stderr` contains the unrecognized profile string
 
 5. **Empty source file**
-   - [ ] Source: empty string
-   - [ ] Assert `ExitCode == 1`
-   - [ ] Assert `Stderr` contains a human-readable message (e.g., "no techniques found" or "empty source")
+   - [x] Source: empty string
+   - [x] Assert `ExitCode == 1`
+   - [x] Assert `Stderr` contains a human-readable message (e.g., "no techniques found" or "empty source")
 
 6. **No techniques declared**
-   - [ ] Source: a valid HLSL function but no `technique` block
-   - [ ] Assert `ExitCode == 1`
-   - [ ] Assert `Stderr` references missing technique
+   - [x] Source: a valid HLSL function but no `technique` block
+   - [x] Assert `ExitCode == 1`
+   - [x] Assert `Stderr` references missing technique
 
 ---
 
@@ -738,33 +742,33 @@ It writes `hlslSource` to a temp `.fx` file, calls `CompileFixtureAsync`, then d
 
 ## 9. Acceptance Criteria
 
-- [ ] All 9 fixture `.fx` files are authored and present under `tests/fixtures/shaders/`
-- [ ] All 9 fixtures compile successfully for the `OpenGL` target (exit code 0, valid MGFX header)
-- [ ] All 9 fixtures compile successfully for the `DirectX_11` target
-- [ ] All 9 fixtures compile successfully for the `Vulkan` target
-- [ ] Per-fixture structural assertions pass for each fixture (technique count, pass count, shader blob count, parameter names)
-- [ ] Determinism test passes for `minimal.fx`, `cbuffer.fx`, and `multitechnique.fx` on OpenGL
-- [ ] All 6 error-case tests produce `ExitCode == 1` with correctly formatted `Stderr`
-- [ ] `dotnet test --filter "Category=Integration&Platform=OpenGL"` runs only OpenGL-tagged tests
-- [ ] Tests run without modification on Windows, Linux, and macOS (validated in Phase 10 CI)
-- [ ] No test uses `Thread.Sleep`, `.Result`, or `.Wait()`
-- [ ] No test writes outside of `Path.GetTempPath()` or the test output directory
+- [x] All 9 fixture `.fx` files are authored and present under `tests/fixtures/shaders/`
+- [x] All 9 fixtures compile successfully for the `OpenGL` target (exit code 0, valid MGFX header)
+- [x] All 9 fixtures compile successfully for the `DirectX_11` target
+- [x] All 9 fixtures compile successfully for the `Vulkan` target
+- [x] Per-fixture structural assertions pass for each fixture (technique count, pass count, shader blob count, parameter names)
+- [x] Determinism test passes for `minimal.fx`, `cbuffer.fx`, and `multitechnique.fx` on OpenGL
+- [x] All 6 error-case tests produce `ExitCode == 1` with correctly formatted `Stderr`
+- [x] `dotnet test --filter "Category=Integration&Platform=OpenGL"` runs only OpenGL-tagged tests
+- [ ] Tests run without modification on Windows, Linux, and macOS — **deferred to Phase 30 CI** (see [PHASE-20-deferred-backlog.md](PHASE-20-deferred-backlog.md))
+- [x] No test uses `Thread.Sleep`, `.Result`, or `.Wait()`
+- [x] No test writes outside of `Path.GetTempPath()` or the test output directory
 
 ---
 
 ## 10. Implementation Order
 
-- [ ] 0. Delete `tests/ShadowDusk.Integration.Tests/PlaceholderTest.cs` (stub from Phase 1, no longer needed).
-- [ ] 1. Author all 9 `.fx` fixture files from Section 1.2 under `tests/fixtures/shaders/`. (The directory and project already exist from Phases 4–6.)
-- [ ] 2. Confirm `tests/ShadowDusk.Integration.Tests/ShadowDusk.Integration.Tests.csproj` is registered in `ShadowDusk.slnx` (Section 2.1).
-- [ ] 3. Add fixture file embedding `<None Include>` items to the `.csproj` (Section 2.2).
-- [ ] 4. Implement `TestHelpers.cs` — `FixturePath`, `CompileFixtureAsync`, `CompileViaCliAsync`, `CompileViaPipelineAsync` (Section 3.1).
-- [ ] 5. Implement `MgfxBlobReader.cs` — structural parser reading signature, version, profile, technique table, shader blobs, and parameter names (Section 3.2).
-- [ ] 6. Implement `CliFixture.cs` — `IAsyncLifetime`, binary location logic, skip-on-missing (Section 3.3).
-- [ ] 7. Implement `CompileFixtureTests.cs` — universal header `[Theory]` first (Section 4.1), then per-fixture `[Fact]` assertions (Section 4.2).
-- [ ] 8. Implement `DeterminismTests.cs` — compile-twice byte-compare for `minimal.fx`, `cbuffer.fx`, `multitechnique.fx` (Section 5).
-- [ ] 9. Implement `ErrorCaseTests.cs` — 6 error-case tests using `CompileSourceAsync` helper for inline source (Section 6).
-- [ ] 10. Run `dotnet test --filter "Category=Integration"` locally; confirm all 9 fixtures pass for OpenGL.
-- [ ] 11. Run `dotnet test --filter "Category=Integration&Platform=DirectX_11"` — confirm all pass.
-- [ ] 12. Run `dotnet test --filter "Category=Determinism"` — confirm passes independently.
-- [ ] 13. Confirm all 6 error-case tests produce `ExitCode == 1` with correctly formatted `Stderr`.
+- [x] 0. Delete `tests/ShadowDusk.Integration.Tests/PlaceholderTest.cs` (stub from Phase 1, no longer needed).
+- [x] 1. Author all 9 `.fx` fixture files from Section 1.2 under `tests/fixtures/shaders/`. (The directory and project already exist from Phases 4–6.)
+- [x] 2. Confirm `tests/ShadowDusk.Integration.Tests/ShadowDusk.Integration.Tests.csproj` is registered in `ShadowDusk.slnx` (Section 2.1).
+- [x] 3. Add fixture file embedding `<None Include>` items to the `.csproj` (Section 2.2).
+- [x] 4. Implement `TestHelpers.cs` — `FixturePath`, `CompileFixtureAsync`, `CompileViaCliAsync`, `CompileViaPipelineAsync` (Section 3.1).
+- [x] 5. Implement `MgfxBlobReader.cs` — structural parser reading signature, version, profile, technique table, shader blobs, and parameter names (Section 3.2).
+- [x] 6. Implement `CliFixture.cs` — `IAsyncLifetime`, binary location logic, skip-on-missing (Section 3.3).
+- [x] 7. Implement `CompileFixtureTests.cs` — universal header `[Theory]` first (Section 4.1), then per-fixture `[Fact]` assertions (Section 4.2).
+- [x] 8. Implement `DeterminismTests.cs` — compile-twice byte-compare for `minimal.fx`, `cbuffer.fx`, `multitechnique.fx` (Section 5).
+- [x] 9. Implement `ErrorCaseTests.cs` — 6 error-case tests using `CompileSourceAsync` helper for inline source (Section 6).
+- [x] 10. Run `dotnet test --filter "Category=Integration"` locally; confirm all 9 fixtures pass for OpenGL.
+- [x] 11. Run `dotnet test --filter "Category=Integration&Platform=DirectX_11"` — confirm all pass.
+- [x] 12. Run `dotnet test --filter "Category=Determinism"` — confirm passes independently.
+- [x] 13. Confirm all 6 error-case tests produce `ExitCode == 1` with correctly formatted `Stderr`.
