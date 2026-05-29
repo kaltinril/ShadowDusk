@@ -55,6 +55,17 @@ public sealed record TextureDescriptor(int Width, int Height, byte[] RgbaPixels)
 /// <see cref="ClearColor"/>, binds <see cref="Uniforms"/> and
 /// <see cref="Textures"/>, draws the standard unit quad, and reads the result
 /// back for comparison with tolerance <see cref="Tolerance"/>.
+///
+/// <para>
+/// <see cref="MojoConstantRegisters"/> is only consulted when rendering
+/// MojoShader-dialect GLSL (the mgfxc cross-validation goldens). That dialect
+/// exposes free uniforms as an unnamed <c>uniform vec4 ps_uniforms_vec4[N]</c>
+/// constant-register array rather than named uniforms, so the renderer can't
+/// bind by name. This map gives each uniform's constant-register index so the
+/// same values drive both the ShadowDusk (named/UBO) and mgfxc (array) programs.
+/// Leave it <c>null</c> for fixtures with no free uniforms or rendered only
+/// from ShadowDusk output.
+/// </para>
 /// </summary>
 public sealed record SceneRender(
     int TechniqueIndex,
@@ -63,7 +74,8 @@ public sealed record SceneRender(
     IReadOnlyDictionary<string, UniformValue> Uniforms,
     IReadOnlyDictionary<string, TextureDescriptor> Textures,
     byte Tolerance,
-    string OutputStemSuffix);
+    string OutputStemSuffix,
+    IReadOnlyDictionary<string, int>? MojoConstantRegisters = null);
 
 /// <summary>
 /// All renders that should be produced for a single fixture shader. A fixture

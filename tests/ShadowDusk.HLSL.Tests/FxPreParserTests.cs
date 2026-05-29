@@ -674,4 +674,268 @@ public sealed class FxPreParserTests
         result.Value.StrippedHlsl.Should().Contain(": SV_Target0");
         result.Value.StrippedHlsl.Should().NotContain("input) : COLOR0");
     }
+
+    // -------------------------------------------------------------------------
+    // Sampler-declaration rewriting (gap #2) + tex2D rewriting (gap #4)
+    //
+    // DXC 6.x rejects the legacy 'sampler2D X = sampler_state {...}' declaration
+    // form and the 'tex2D' intrinsic. The pre-parser rewrites a declaration into
+    // the modern 'Texture2D' + 'SamplerState' pair and 'tex2D(s, uv)' into
+    // '<texture>.Sample(s, uv)' — but only for samplers a tex2D call references,
+    // so already-modern shaders are untouched.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_SamplerStateForm_UsedByTex2D_RewrittenToSamplerStateAndSample()
+    {
+        // Form 1: sampler2D bound to an explicitly-declared Texture2D.
+        const string source = """
+            Texture2D SpriteTexture;
+
+            sampler2D SpriteTextureSampler = sampler_state
+            {
+                Texture = <SpriteTexture>;
+            };
+
+            float4 MainPS(float2 uv : TEXCOORD0) : COLOR
+            {
+                return tex2D(SpriteTextureSampler, uv);
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        string stripped = result.Value.StrippedHlsl;
+
+        // Declaration rewritten: legacy form gone, modern SamplerState left behind.
+        stripped.Should().Contain("SamplerState SpriteTextureSampler;");
+        stripped.Should().NotContain("sampler_state");
+        stripped.Should().NotContain("sampler2D");
+
+        // No synthesized texture — the sampler_state bound an existing Texture2D.
+        stripped.Should().NotContain("_SDTexture");
+
+        // tex2D rewritten to a Sample call on the bound texture; args preserved.
+        stripped.Should().Contain("SpriteTexture.Sample(SpriteTextureSampler, uv)");
+        stripped.Should().NotContain("tex2D");
+
+        // Metadata still extracted as before.
+        result.Value.Samplers.Should().ContainSingle();
+        result.Value.Samplers[0].TextureReference.Should().Be("SpriteTexture");
+    }
+
+    [Fact]
+    public void Parse_BareSampler_UsedByTex2D_SynthesizesTextureAndRewritesSample()
+    {
+        // Form 2: bare 'sampler s0;' with no associated texture in source.
+        const string source = """
+            sampler s0;
+
+            float4 PixelShaderFunction(float2 uv : TEXCOORD0) : COLOR0
+            {
+                return tex2D(s0, uv);
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        string stripped = result.Value.StrippedHlsl;
+
+        // A Texture2D is synthesized and paired with a modern SamplerState.
+        stripped.Should().Contain("Texture2D s0_SDTexture;");
+        stripped.Should().Contain("SamplerState s0;");
+
+        // tex2D rewritten to sample the synthesized texture.
+        stripped.Should().Contain("s0_SDTexture.Sample(s0, uv)");
+        stripped.Should().NotContain("tex2D");
+    }
+
+    [Fact]
+    public void Parse_BareSamplerWithRegister_UsedByTex2D_SynthesizesTextureAndRewritesSample()
+    {
+        // Form 3: bare sampler with an explicit register binding (':' is dropped
+        // by the lexer, so at the token level this is 'sampler X register ( s0 ) ;').
+        const string source = """
+            sampler TextureSampler : register(s0);
+
+            float4 BloomPass(float2 uv : TEXCOORD0) : COLOR
+            {
+                return tex2D(TextureSampler, uv);
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        string stripped = result.Value.StrippedHlsl;
+
+        stripped.Should().Contain("Texture2D TextureSampler_SDTexture;");
+        stripped.Should().Contain("SamplerState TextureSampler;");
+        stripped.Should().Contain("TextureSampler_SDTexture.Sample(TextureSampler, uv)");
+        stripped.Should().NotContain("tex2D");
+        stripped.Should().NotContain("register");
+    }
+
+    [Fact]
+    public void Parse_SamplerRewrite_PreservesLineNumbers()
+    {
+        // The multi-line sampler_state block (lines 3-6) must collapse to a single
+        // declaration on its first line while keeping the source's total line count,
+        // so the MainPS body stays on its original line for DXC diagnostics.
+        const string source =
+            "Texture2D SpriteTexture;\n" +              // line 1
+            "\n" +                                       // line 2
+            "sampler2D SpriteTextureSampler = sampler_state\n" + // line 3
+            "{\n" +                                      // line 4
+            "    Texture = <SpriteTexture>;\n" +         // line 5
+            "};\n" +                                     // line 6
+            "\n" +                                       // line 7
+            "float4 MainPS(float2 uv : TEXCOORD0) : COLOR\n" + // line 8
+            "{\n" +                                      // line 9
+            "    return tex2D(SpriteTextureSampler, uv);\n" +  // line 10
+            "}\n";                                        // line 11
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        var lines = result.Value.StrippedHlsl.Replace("\r\n", "\n").Split('\n');
+
+        // Same number of lines as the source.
+        lines.Length.Should().Be(source.Replace("\r\n", "\n").Split('\n').Length);
+
+        // The rewritten declaration sits on the original first line (line 3 → index 2).
+        lines[2].Should().Contain("SamplerState SpriteTextureSampler;");
+
+        // The MainPS signature and body stay on their original lines.
+        lines[7].Should().Contain("float4 MainPS");
+        lines[9].Should().Contain(".Sample(SpriteTextureSampler, uv)");
+    }
+
+    [Fact]
+    public void Parse_UnusedSamplerStateForm_StillErased_NotRewritten()
+    {
+        // Regression guard: a Form 1 sampler never referenced by tex2D keeps the
+        // pre-existing behavior (erased entirely, not turned into a SamplerState).
+        const string source = """
+            sampler2D UnusedSampler = sampler_state
+            {
+                Texture = <SomeTexture>;
+            };
+
+            float4 PS() : COLOR { return float4(1, 1, 1, 1); }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        string stripped = result.Value.StrippedHlsl;
+
+        stripped.Should().NotContain("sampler_state");
+        stripped.Should().NotContain("SamplerState UnusedSampler;");
+        stripped.Should().NotContain("_SDTexture");
+
+        // Metadata is still extracted regardless of rewriting.
+        result.Value.Samplers.Should().ContainSingle();
+        result.Value.Samplers[0].Name.Should().Be("UnusedSampler");
+    }
+
+    [Fact]
+    public void Parse_UnusedBareSampler_PassedThroughVerbatim()
+    {
+        // Regression guard: a bare sampler no tex2D references is left untouched.
+        const string source = """
+            sampler unusedS;
+
+            float4 PS() : COLOR { return float4(0, 0, 0, 1); }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        string stripped = result.Value.StrippedHlsl;
+
+        stripped.Should().Contain("sampler unusedS;");
+        stripped.Should().NotContain("_SDTexture");
+    }
+
+    [Fact]
+    public void Parse_ModernSamplerStateAndSample_LeftUntouched()
+    {
+        // Regression guard: a shader already using the modern Texture2D +
+        // SamplerState + .Sample() pattern must pass through unchanged — no
+        // synthesized texture, no declaration rewrite.
+        const string source = """
+            Texture2D Texture;
+            SamplerState TextureSampler;
+
+            float4 PS(float2 uv : TEXCOORD0) : SV_TARGET
+            {
+                return Texture.Sample(TextureSampler, uv);
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+
+        // Byte-identical: nothing in this source matches any rewrite rule.
+        result.Value.StrippedHlsl.Should().Be(source);
+        result.Value.Samplers.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Parse_MultipleSamplers_EachBoundToItsOwnTexture()
+    {
+        // A mix of a textured Form 1 sampler and a bare sampler, both used by tex2D.
+        // Each tex2D call must resolve to the correct per-sampler texture.
+        const string source = """
+            Texture2D _secondTexture;
+            sampler2D _secondTextureSampler = sampler_state { Texture = <_secondTexture>; };
+            sampler s0;
+
+            float4 PS(float2 uv : TEXCOORD0) : COLOR
+            {
+                float4 a = tex2D(s0, uv);
+                float4 b = tex2D(_secondTextureSampler, uv);
+                return a * b;
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        string stripped = result.Value.StrippedHlsl;
+
+        stripped.Should().Contain("Texture2D s0_SDTexture;");
+        stripped.Should().Contain("SamplerState s0;");
+        stripped.Should().Contain("SamplerState _secondTextureSampler;");
+
+        stripped.Should().Contain("s0_SDTexture.Sample(s0, uv)");
+        stripped.Should().Contain("_secondTexture.Sample(_secondTextureSampler, uv)");
+        stripped.Should().NotContain("tex2D");
+    }
+
+    [Fact]
+    public void Parse_Tex2DInsideComment_NotTreatedAsIntrinsic()
+    {
+        // A bare sampler mentioned only inside a comment's "tex2D(...)" text must
+        // NOT be rewritten — the lexer emits the comment as one token, so the scan
+        // never sees an intrinsic, and the sampler stays a pass-through bare decl.
+        const string source = """
+            sampler s0;
+
+            // historical note: this used to call tex2D(s0, uv) directly
+            float4 PS() : COLOR { return float4(1, 0, 0, 1); }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        string stripped = result.Value.StrippedHlsl;
+
+        stripped.Should().Contain("sampler s0;");
+        stripped.Should().NotContain("_SDTexture");
+    }
 }

@@ -170,7 +170,7 @@ public sealed class ShaderSceneRenderer
         // a transient UBO bound to a binding point.
         var uboTracker = new UboBindingTracker(_gl, program.Handle);
         foreach (var kv in scene.Uniforms)
-            UploadUniform(_gl, program.Handle, kv.Key, kv.Value, uboTracker);
+            UploadUniform(_gl, program.Handle, kv.Key, kv.Value, uboTracker, scene.MojoConstantRegisters);
 
         // Upload textures and bind to sequential texture units.
         var textureHandles = new List<uint>();
@@ -285,7 +285,13 @@ public sealed class ShaderSceneRenderer
         DiagnosticLogger!($"Program {program}: {activeBlocks} active uniform block(s)");
     }
 
-    private static void UploadUniform(GL gl, uint program, string name, UniformValue value, UboBindingTracker ubo)
+    private static void UploadUniform(
+        GL gl,
+        uint program,
+        string name,
+        UniformValue value,
+        UboBindingTracker ubo,
+        IReadOnlyDictionary<string, int>? mojoConstantRegisters)
     {
         int loc = gl.GetUniformLocation(program, name);
         if (loc >= 0)
@@ -304,6 +310,29 @@ public sealed class ShaderSceneRenderer
                     break;
             }
             return;
+        }
+
+        // MojoShader-dialect program (mgfxc golden): free uniforms live in an
+        // unnamed `uniform vec4 ps_uniforms_vec4[N]` constant-register array, so
+        // there is no uniform named e.g. `TintColor`. Bind by the supplied
+        // constant-register index instead. Each register is a vec4; scalars are
+        // broadcast so `.x` / `.xxxx` reads all see the value, and vec2/vec3/vec4
+        // reads pick up the components they need.
+        if (mojoConstantRegisters is not null &&
+            mojoConstantRegisters.TryGetValue(name, out int register))
+        {
+            int arrLoc = gl.GetUniformLocation(program, $"ps_uniforms_vec4[{register}]");
+            if (arrLoc >= 0)
+            {
+                (float x, float y, float z, float w) = value switch
+                {
+                    UniformValue.FloatValue f => (f.V, f.V, f.V, f.V),
+                    UniformValue.Vec4Value v  => (v.X, v.Y, v.Z, v.W),
+                    _                         => (0f, 0f, 0f, 0f),
+                };
+                gl.Uniform4(arrLoc, x, y, z, w);
+                return;
+            }
         }
 
         // Bare uniform name not found — try the UBO path (SPIRV-Cross wraps
@@ -465,29 +494,28 @@ public sealed class ShaderSceneRenderer
 
         private void WriteMember(UboData ubo, int offset, UniformValue value)
         {
+            // A member may be narrower than the value used to express it:
+            // UniformValue has no vec2/vec3 case, so e.g. a vec2 'ScreenSize' is
+            // supplied as a Vec4Value. In std140 such a member can sit at the tail
+            // of its 16-byte block (vec2 after two floats), so writing a full 16
+            // bytes would overrun the buffer. WriteFloat clamps each component to
+            // the block's actual size; the shader only reads the components that
+            // really exist (.xy for a vec2), so the dropped tail is never sampled.
             switch (value)
             {
                 case UniformValue.FloatValue f:
-                    {
-                        float fv = f.V;
-                        MemoryMarshal.Write(ubo.Cpu.AsSpan(offset), in fv);
-                        break;
-                    }
+                    WriteFloat(ubo.Cpu, offset, f.V);
+                    break;
                 case UniformValue.Vec4Value v:
-                    {
-                        float x = v.X, y = v.Y, z = v.Z, w = v.W;
-                        MemoryMarshal.Write(ubo.Cpu.AsSpan(offset      ),  in x);
-                        MemoryMarshal.Write(ubo.Cpu.AsSpan(offset +  4),  in y);
-                        MemoryMarshal.Write(ubo.Cpu.AsSpan(offset +  8),  in z);
-                        MemoryMarshal.Write(ubo.Cpu.AsSpan(offset + 12),  in w);
-                        break;
-                    }
+                    WriteFloat(ubo.Cpu, offset,      v.X);
+                    WriteFloat(ubo.Cpu, offset +  4, v.Y);
+                    WriteFloat(ubo.Cpu, offset +  8, v.Z);
+                    WriteFloat(ubo.Cpu, offset + 12, v.W);
+                    break;
                 case UniformValue.Mat4Value m:
-                    {
-                        var span = ubo.Cpu.AsSpan(offset, 16 * sizeof(float));
-                        MemoryMarshal.Cast<float, byte>(m.Values.AsSpan()).CopyTo(span);
-                        break;
-                    }
+                    for (int i = 0; i < m.Values.Length; i++)
+                        WriteFloat(ubo.Cpu, offset + (i * sizeof(float)), m.Values[i]);
+                    break;
             }
 
             // Re-upload entire CPU mirror to the UBO. Cheap — buffers are
@@ -500,6 +528,14 @@ public sealed class ShaderSceneRenderer
                     _gl.BufferData(BufferTargetARB.UniformBuffer, (nuint)ubo.Cpu.Length, p, BufferUsageARB.DynamicDraw);
                 }
             }
+        }
+
+        /// <summary>Writes a single float at <paramref name="offset"/>, skipping it if it
+        /// would fall outside the block (a narrower-than-vec4 member at the block tail).</summary>
+        private static void WriteFloat(byte[] buffer, int offset, float value)
+        {
+            if (offset >= 0 && offset + sizeof(float) <= buffer.Length)
+                MemoryMarshal.Write(buffer.AsSpan(offset), in value);
         }
 
         public void Dispose()

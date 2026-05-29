@@ -15,53 +15,52 @@ using Xunit.Abstractions;
 namespace ShadowDusk.ImageTests.Tests;
 
 /// <summary>
-/// Cross-validation suite that aims to render the GLSL embedded in mgfxc-
-/// produced golden <c>.mgfx</c> files alongside ShadowDusk's own GLSL for
-/// the same .fx source and compare the pixel output.
+/// Cross-validation suite that renders the GLSL embedded in mgfxc-produced
+/// golden <c>.mgfx</c> files alongside ShadowDusk's own GLSL for the same .fx
+/// source and compares the pixel output. A match proves ShadowDusk turns the
+/// same FX source into shader logic that renders the same result as MonoGame's
+/// reference <c>mgfxc</c> toolchain.
 ///
 /// <para>
-/// <b>Status (current commit):</b> ShadowDusk's compiler does not yet handle
-/// every SM 3.0 construct used by the production-corpus shaders in
-/// <c>tests/fixtures/golden/OpenGL/</c>. Investigation found that the
-/// 34 production-corpus shaders fail to compile through
-/// <see cref="EffectCompiler"/> with one of these errors:
+/// <b>Status:</b> all nine SM 3.0 postprocess candidates compile and
+/// cross-validate within tolerance. The FxPreParser gaps that previously
+/// blocked them are fixed:
 /// </para>
 /// <list type="bullet">
-///   <item><c>use of undeclared identifier '&lt;Sampler&gt;'</c> — the
-///         FxPreParser erases the entire
-///         <c>sampler2D X = sampler_state {...};</c> declaration instead of
-///         leaving a bare <c>sampler2D X;</c> behind for DXC.</item>
-///   <item><c>Unsupported intrinsic</c> on <c>tex2D</c> — DXC 6.x dropped the
-///         legacy SM 1.x-3.x sampling intrinsics; shaders must use
-///         <c>SamplerState.Sample()</c>.</item>
-///   <item><c>effect object ignored - effect syntax is deprecated</c> — old
-///         effect-framework block-initialiser syntax not yet supported by
-///         ShadowDusk's pre-parser.</item>
+///   <item><c>: COLOR</c> return semantic → rewritten to <c>: SV_Target</c>.</item>
+///   <item><c>sampler2D X = sampler_state {...}</c> → rewritten to a modern
+///         <c>SamplerState X;</c> (gap #2), binding the sampler to the
+///         <c>Texture = &lt;T&gt;</c> texture; bare <c>sampler X;</c> samplers
+///         get a synthesized <c>Texture2D</c>.</item>
+///   <item><c>tex2D(s, uv)</c> → rewritten to <c>&lt;texture&gt;.Sample(s, uv)</c>
+///         (gap #4) so DXC 6.x accepts it.</item>
 /// </list>
 /// <para>
-/// The legacy <c>: COLOR</c> return-semantic gap is fixed: FxPreParser now
-/// rewrites <c>: COLOR&lt;n&gt;?</c> on function returns to
-/// <c>: SV_Target&lt;n&gt;?</c> before handing source to DXC.
+/// <b>Uniform parity:</b> the mgfxc (MojoShader-dialect) GLSL exposes free
+/// uniforms as an unnamed <c>ps_uniforms_vec4[N]</c> constant-register array,
+/// while ShadowDusk's SPIRV-Cross GLSL uses named UBO members. The scenes in
+/// <see cref="MakeSceneFor"/> supply per-shader constant-register indices
+/// (<see cref="SceneRender.MojoConstantRegisters"/>) so the renderer drives
+/// identical constants into both programs — otherwise the mgfxc side would read
+/// default-zero and the comparison would be meaningless.
 /// </para>
 /// <para>
-/// As a consequence, the per-shader cross-validation theory rows below all
-/// currently <b>skip cleanly</b> with a clear "ShadowDusk compile failed"
-/// reason and write the underlying error to the test output. Two
-/// infrastructure-validation tests still run end-to-end against the mgfxc
-/// goldens alone (<see cref="MgfxcGlslExtraction_FindsAtLeastOneShaderBlob"/>
-/// and <see cref="MgfxcGlslRenders_WithPassthroughVertexShader"/>) so the
-/// pipeline (mgfxc-format reader, MojoShader passthrough VS,
-/// Compatibility-profile GL context) is exercised even though the
-/// cross-validation rows can't run.
+/// The one remaining skip is <c>Dissolve</c> (gap #3): it uses legacy
+/// effect-framework <c>texture</c>/<c>sampler</c> block-initialiser syntax that
+/// DXC rejects (<c>effect syntax is deprecated</c>) and the pre-parser does not
+/// yet rewrite. It skips cleanly with the underlying diagnostic in the output.
+/// Two infrastructure-validation tests
+/// (<see cref="MgfxcGlslExtraction_FindsAtLeastOneShaderBlob"/> and
+/// <see cref="MgfxcGlslRenders_WithPassthroughVertexShader"/>) exercise the
+/// mgfxc-reader / passthrough-VS / GL-context pipeline against the goldens alone.
 /// </para>
 /// <para>
-/// <b>To enable cross-validation:</b> teach ShadowDusk's FxPreParser to
-/// preserve the sampler variable declaration when stripping the
-/// <c>sampler_state { ... }</c> block (e.g., emit <c>sampler2D X;</c>), and
-/// rewrite legacy <c>tex2D(s, uv)</c> intrinsics to
-/// <c>s.Sample(samplerState, uv)</c> so DXC accepts them. Once any candidate
-/// shader compiles, the rows in this test class will start rendering and
-/// comparing.
+/// <b>Known fidelity caveat:</b> the sampler rewrite drops the in-shader
+/// <c>sampler_state</c> filter/address settings (Min/Mag/AddressU/…). This test
+/// forces Linear/ClampToEdge on both sides so it doesn't affect the comparison,
+/// and in-engine MonoGame supplies sampler state from
+/// <c>GraphicsDevice.SamplerStates</c>; preserving in-shader sampler state is
+/// future work tracked alongside <see cref="ShadowDusk.HLSL.Ast.SamplerInfo"/>.
 /// </para>
 /// </summary>
 [Trait("Category", "MgfxcCrossValidation")]
@@ -289,22 +288,43 @@ public sealed class MgfxcCrossValidationTests : IClassFixture<GlContextFixture>
 
         var uniforms = new Dictionary<string, UniformValue>();
 
+        // Constant-register indices for the mgfxc (MojoShader-dialect) program,
+        // whose free uniforms are exposed as an unnamed `ps_uniforms_vec4[N]`
+        // array rather than named uniforms. Indices follow each shader's HLSL
+        // declaration order (fxc allocates one constant register per global,
+        // confirmed against the `#define ps_cN ps_uniforms_vec4[N]` lines in the
+        // goldens). Without these, the mgfxc side reads default-zero and the
+        // comparison is meaningless; with them, both programs run on identical
+        // constants so the test truly cross-validates the shader logic.
+        var mojoRegisters = new Dictionary<string, int>(StringComparer.Ordinal);
+
         // Per-shader extra uniforms (kept loose — the renderer skips missing
         // uniforms silently so this is best-effort).
         if (fixtureStem == "TintShader")
-            uniforms["TintColor"] = new UniformValue.Vec4Value(1f, 0.5f, 0.5f, 1f);
+        {
+            uniforms["TintColor"]      = new UniformValue.Vec4Value(1f, 0.5f, 0.5f, 1f);
+            mojoRegisters["TintColor"] = 0;
+        }
         if (fixtureStem == "Sepia")
-            uniforms["_sepiaTone"] = new UniformValue.Vec4Value(1.2f, 1.0f, 0.8f, 0f);
+        {
+            uniforms["_sepiaTone"]      = new UniformValue.Vec4Value(1.2f, 1.0f, 0.8f, 0f);
+            mojoRegisters["_sepiaTone"] = 0;
+        }
         if (fixtureStem == "Saturate")
         {
             uniforms["BloomThreshold"]  = new UniformValue.Vec4Value(0.25f, 0.25f, 0.25f, 0.25f);
             uniforms["BloomIntensity"]  = new UniformValue.FloatValue(2.0f);
             uniforms["BloomSaturation"] = new UniformValue.FloatValue(0.8f);
+            mojoRegisters["BloomThreshold"]  = 0;
+            mojoRegisters["BloomIntensity"]  = 1;
+            mojoRegisters["BloomSaturation"] = 2;
         }
         if (fixtureStem == "Scanlines")
         {
             uniforms["_attenuation"] = new UniformValue.FloatValue(0.05f);
             uniforms["_linesFactor"] = new UniformValue.FloatValue(0.04f);
+            mojoRegisters["_attenuation"] = 0;
+            mojoRegisters["_linesFactor"] = 1;
         }
         if (fixtureStem == "Fading")
             uniforms["_progress"] = new UniformValue.FloatValue(0.5f);
@@ -319,6 +339,9 @@ public sealed class MgfxcCrossValidationTests : IClassFixture<GlContextFixture>
             uniforms["angle"]      = new UniformValue.FloatValue(0.5f);
             uniforms["scale"]      = new UniformValue.FloatValue(0.5f);
             uniforms["ScreenSize"] = new UniformValue.Vec4Value(128f, 128f, 0f, 0f);
+            mojoRegisters["angle"]      = 0;
+            mojoRegisters["scale"]      = 1;
+            mojoRegisters["ScreenSize"] = 2;
         }
 
         // Pick a texture binding name that's likely to resolve. The mgfxc
@@ -338,7 +361,8 @@ public sealed class MgfxcCrossValidationTests : IClassFixture<GlContextFixture>
             Uniforms: uniforms,
             Textures: textures,
             Tolerance: 4,
-            OutputStemSuffix: "");
+            OutputStemSuffix: "",
+            MojoConstantRegisters: mojoRegisters.Count > 0 ? mojoRegisters : null);
     }
 
     private static void SavePng(byte[] rgba, string path)

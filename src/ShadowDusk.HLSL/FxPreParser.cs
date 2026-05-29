@@ -53,6 +53,23 @@ public sealed class FxPreParser
     };
 
     // -------------------------------------------------------------------------
+    // Legacy sampling intrinsics
+    // -------------------------------------------------------------------------
+
+    // SM 1.x–3.x sampling intrinsics that DXC 6.x dropped and that ShadowDusk
+    // rewrites to the modern '<texture>.Sample(<sampler>, uv)' form. Only the
+    // plain 2D sampler→coordinate intrinsic is handled: its argument list aligns
+    // exactly with Texture2D.Sample (sampler first, coordinate second), so the
+    // rewrite is a clean identifier swap. The projection / LOD / bias / gradient
+    // variants (tex2Dlod, tex2Dproj, tex2Dbias, tex2Dgrad, texCUBE, …) restructure
+    // their arguments and are left for future work — they fail loudly in DXC.
+    // Matched case-sensitively because HLSL intrinsic names are case-sensitive.
+    private static readonly HashSet<string> Tex2DIntrinsics = new(StringComparer.Ordinal)
+    {
+        "tex2D",
+    };
+
+    // -------------------------------------------------------------------------
     // Instance state
     // -------------------------------------------------------------------------
 
@@ -67,6 +84,21 @@ public sealed class FxPreParser
 
     // The original source text, needed for verbatim copy in stripped output.
     private readonly string _source;
+
+    // Names of samplers that appear as the first argument of a legacy sampling
+    // intrinsic (currently tex2D). Populated by a pre-scan before the main loop.
+    // A sampler declaration is only rewritten into the modern Texture2D +
+    // SamplerState form when its name is in this set — declarations that no
+    // legacy intrinsic references keep their existing handling (Form 1 erased,
+    // bare passed through verbatim) so already-modern shaders are untouched.
+    private IReadOnlySet<string> _legacyIntrinsicSamplers = new HashSet<string>(StringComparer.Ordinal);
+
+    // Maps a rewritten sampler name to the Texture2D it should sample through in
+    // the rewritten '<texture>.Sample(<sampler>, uv)' call. Populated as sampler
+    // declarations are processed in the main loop; read when a tex2D call is
+    // rewritten. Valid HLSL declares samplers before use, so a sampler is always
+    // in this map by the time its tex2D call is reached.
+    private readonly Dictionary<string, string> _samplerTextureBindings = new(StringComparer.Ordinal);
 
     // -------------------------------------------------------------------------
     // Constructor (private — callers use the static Parse entry point)
@@ -215,9 +247,16 @@ public sealed class FxPreParser
         // We track erased ranges as (start, exclusiveEnd) intervals.
         var erasedRanges = new List<(int Start, int End)>();
 
-        // Token spans we want to substitute (rather than erase). Currently used to
-        // rewrite the legacy SM 3.0 return semantic ': COLOR<n>?' to ': SV_Target<n>?'.
+        // Token spans we want to substitute (rather than erase). Used to rewrite
+        // the legacy SM 3.0 return semantic ': COLOR<n>?' to ': SV_Target<n>?',
+        // legacy sampler declarations to 'SamplerState' (+ a synthesized
+        // 'Texture2D' for bare samplers), and 'tex2D(s, uv)' to 's' sampler's
+        // texture '.Sample(s, uv)'.
         var replacedRanges = new List<(int Start, int End, string Replacement)>();
+
+        // Pre-scan: discover which samplers are sampled through a legacy
+        // intrinsic so the main loop knows which declarations to rewrite.
+        _legacyIntrinsicSamplers = CollectLegacyIntrinsicSamplers();
 
         // Skip comments and preprocessor directives at the start of the token stream
         // (they are always included verbatim in stripped output).
@@ -266,46 +305,92 @@ public sealed class FxPreParser
                 continue;
             }
 
-            // sampler declaration with "= sampler_state" initialiser.
-            // Detection: current token is a sampler-type keyword AND
-            //            next non-comment token at offset+1 is Identifier (name) AND
-            //            next is '=' AND next is "sampler_state".
+            // Sampler declaration. Three legacy forms are recognized:
+            //   Form 1:  samplerNd S = sampler_state { Texture = <T>; ... };
+            //   Form 2:  sampler S;                  (bare)
+            //   Form 3:  sampler S : register(sN);   (bare; ':' is dropped by the lexer)
+            //
+            // A declaration is rewritten into the modern 'Texture2D' + 'SamplerState'
+            // form only when S is sampled through a legacy intrinsic (tex2D); see
+            // _legacyIntrinsicSamplers. Declarations no legacy intrinsic references
+            // keep their previous handling so already-modern shaders are unaffected:
+            //   - Form 1 unused -> erased entirely (as before)
+            //   - bare   unused -> passed through verbatim (as before)
             if (tok.Kind == TokenKind.Identifier && SamplerTypeKeywords.Contains(tok.Text))
             {
-                // Look ahead: name = sampler_state
-                int lookAhead = 1;
-                while (Peek(lookAhead).Kind is TokenKind.LineComment or TokenKind.BlockComment)
-                    lookAhead++;
-
-                var nameTok = Peek(lookAhead);
+                int nameOffset = NextCodeOffset(1);
+                var nameTok = Peek(nameOffset);
                 if (nameTok.Kind == TokenKind.Identifier)
                 {
-                    int la2 = lookAhead + 1;
-                    while (Peek(la2).Kind is TokenKind.LineComment or TokenKind.BlockComment)
-                        la2++;
+                    int afterName = NextCodeOffset(nameOffset + 1);
 
-                    if (Peek(la2).Kind == TokenKind.Equals)
+                    bool isSamplerStateForm =
+                        Peek(afterName).Kind == TokenKind.Equals &&
+                        PeekIsKeywordAt(NextCodeOffset(afterName + 1), "sampler_state");
+
+                    if (isSamplerStateForm)
                     {
-                        int la3 = la2 + 1;
-                        while (Peek(la3).Kind is TokenKind.LineComment or TokenKind.BlockComment)
-                            la3++;
+                        int blockStart = _tokenCharOffset[_pos];
+                        var result = ParseSamplerDecl();
+                        if (result.IsFailure)
+                            return Result<FxParseResult, FxParseError>.Fail(result.Error);
 
-                        if (PeekIsKeywordAt(la3, "sampler_state"))
+                        SamplerInfo info = result.Value;
+                        samplers.Add(info);
+
+                        if (_legacyIntrinsicSamplers.Contains(info.Name))
                         {
-                            int blockStart = _tokenCharOffset[_pos];
-                            var result = ParseSamplerDecl();
-                            if (result.IsFailure)
-                                return Result<FxParseResult, FxParseError>.Fail(result.Error);
+                            // The block's terminating ';' is the last token ParseSamplerDecl
+                            // consumed, so it sits at _pos - 1.
+                            int declEnd = _tokenCharOffset[_pos - 1] + _tokens[_pos - 1].Text.Length;
 
-                            samplers.Add(result.Value);
+                            // Bind to the explicitly-referenced texture if present
+                            // (declared separately as 'Texture2D T;'); otherwise synthesize.
+                            string texture = info.TextureReference ?? SynthTextureName(info.Name);
+                            _samplerTextureBindings[info.Name] = texture;
+                            string newDecl = info.TextureReference is not null
+                                ? $"SamplerState {info.Name};"
+                                : $"Texture2D {texture}; SamplerState {info.Name};";
 
+                            replacedRanges.Add((blockStart, declEnd,
+                                BuildDeclReplacement(blockStart, declEnd, newDecl)));
+                        }
+                        else
+                        {
                             int blockEnd = _pos < _tokens.Count ? _tokenCharOffset[_pos] : _source.Length;
                             erasedRanges.Add((blockStart, blockEnd));
-
-                            SkipNonCodeTokens();
-                            continue;
                         }
+
+                        SkipNonCodeTokens();
+                        continue;
                     }
+
+                    // Bare sampler: 'S ;' (Form 2) or 'S register ( ... ) ;' (Form 3).
+                    bool isBareForm =
+                        Peek(afterName).Kind == TokenKind.Semicolon ||
+                        (Peek(afterName).Kind == TokenKind.Identifier &&
+                         string.Equals(Peek(afterName).Text, "register", StringComparison.OrdinalIgnoreCase));
+
+                    if (isBareForm && _legacyIntrinsicSamplers.Contains(nameTok.Text))
+                    {
+                        int blockStart = _tokenCharOffset[_pos];
+                        (string name, int declEnd) = ConsumeBareSamplerDecl();
+
+                        // A bare sampler binds no texture in source — synthesize one.
+                        string synth = SynthTextureName(name);
+                        _samplerTextureBindings[name] = synth;
+                        string newDecl = $"Texture2D {synth}; SamplerState {name};";
+
+                        replacedRanges.Add((blockStart, declEnd,
+                            BuildDeclReplacement(blockStart, declEnd, newDecl)));
+
+                        SkipNonCodeTokens();
+                        continue;
+                    }
+
+                    // Any other use of a sampler-type keyword (a function parameter,
+                    // an unused bare sampler, an unused Form 1 sampler whose intrinsic
+                    // isn't tex2D) falls through to verbatim copy / existing handling.
                 }
             }
 
@@ -374,6 +459,29 @@ public sealed class FxPreParser
                 // naturally so any subsequent COLOR-return on a non-entry helper is also
                 // caught. (We don't fast-forward past the LBrace because the function
                 // body still needs to be in stripped output.)
+                Consume();
+                SkipNonCodeTokens();
+                continue;
+            }
+
+            // DXC 6.x dropped the legacy 'tex2D(s, uv)' sampling intrinsic. Rewrite
+            // it to '<texture>.Sample(s, uv)', where <texture> is the Texture2D the
+            // sampler 's' was bound to during declaration processing. The argument
+            // list aligns one-to-one with Texture2D.Sample (sampler first, coordinate
+            // second), so only the 'tex2D' identifier itself is replaced; '(s, uv)'
+            // is copied verbatim. A sampler not in the binding map (declaration form
+            // not understood, e.g. effect-framework syntax) is left alone so DXC
+            // surfaces a clear diagnostic rather than ShadowDusk emitting bad HLSL.
+            if (tok.Kind == TokenKind.Identifier && Tex2DIntrinsics.Contains(tok.Text) &&
+                TryMatchTexSampleArgument(out string samplerArg) &&
+                _samplerTextureBindings.TryGetValue(samplerArg, out string? boundTexture))
+            {
+                int texStart = _tokenCharOffset[_pos];
+                int texEnd = texStart + tok.Text.Length;
+                replacedRanges.Add((texStart, texEnd, $"{boundTexture}.Sample"));
+
+                // Consume only the intrinsic identifier; '(', the sampler argument,
+                // and the rest of the call flow through the loop verbatim.
                 Consume();
                 SkipNonCodeTokens();
                 continue;
@@ -925,6 +1033,125 @@ public sealed class FxPreParser
         var t = Peek(offset);
         return t.Kind == TokenKind.Identifier &&
                string.Equals(t.Text, keyword, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Returns the first offset at or after <paramref name="offset"/> (relative to
+    /// the current position) whose token is not a comment, so callers can look
+    /// past interleaved comments when matching a declaration shape.
+    /// </summary>
+    private int NextCodeOffset(int offset)
+    {
+        while (Peek(offset).Kind is TokenKind.LineComment or TokenKind.BlockComment)
+            offset++;
+        return offset;
+    }
+
+    /// <summary>The synthesized <c>Texture2D</c> name bound to a bare/untextured sampler.</summary>
+    private static string SynthTextureName(string samplerName) => samplerName + "_SDTexture";
+
+    /// <summary>
+    /// One-pass scan over the whole token stream collecting the names of samplers
+    /// used as the first argument of a legacy <c>tex2D</c> intrinsic. This drives
+    /// which sampler declarations the main loop rewrites; declarations no intrinsic
+    /// references are left exactly as before. Intrinsic text inside comments and
+    /// preprocessor directives is never seen here because the lexer emits those as
+    /// single comment / preprocessor tokens, not <c>Identifier</c> tokens.
+    /// </summary>
+    private HashSet<string> CollectLegacyIntrinsicSamplers()
+    {
+        var used = new HashSet<string>(StringComparer.Ordinal);
+
+        for (int i = 0; i < _tokens.Count; i++)
+        {
+            if (_tokens[i].Kind != TokenKind.Identifier || !Tex2DIntrinsics.Contains(_tokens[i].Text))
+                continue;
+
+            // Expect 'tex2D' '(' Identifier — comments may sit in between.
+            int j = i + 1;
+            while (j < _tokens.Count && _tokens[j].Kind is TokenKind.LineComment or TokenKind.BlockComment)
+                j++;
+            if (j >= _tokens.Count || _tokens[j].Kind != TokenKind.LParen)
+                continue;
+
+            j++;
+            while (j < _tokens.Count && _tokens[j].Kind is TokenKind.LineComment or TokenKind.BlockComment)
+                j++;
+            if (j < _tokens.Count && _tokens[j].Kind == TokenKind.Identifier)
+                used.Add(_tokens[j].Text);
+        }
+
+        return used;
+    }
+
+    /// <summary>
+    /// At a <c>tex2D</c> identifier token, matches the following <c>'(' Identifier</c>
+    /// and returns the sampler argument name. Comments may appear between tokens.
+    /// </summary>
+    private bool TryMatchTexSampleArgument(out string samplerArg)
+    {
+        samplerArg = string.Empty;
+
+        int lparen = NextCodeOffset(1);
+        if (Peek(lparen).Kind != TokenKind.LParen)
+            return false;
+
+        int arg = NextCodeOffset(lparen + 1);
+        if (Peek(arg).Kind != TokenKind.Identifier)
+            return false;
+
+        samplerArg = Peek(arg).Text;
+        return true;
+    }
+
+    /// <summary>
+    /// Consumes a bare sampler declaration ('<c>sampler S;</c>' or
+    /// '<c>sampler S : register(sN);</c>') starting at the sampler-type keyword and
+    /// ending just past the terminating ';'. Returns the declared name and the
+    /// exclusive character offset of the ';' end so the caller can substitute the span.
+    /// </summary>
+    private (string Name, int DeclEnd) ConsumeBareSamplerDecl()
+    {
+        Consume();              // sampler-type keyword
+        SkipNonCodeTokens();
+        var nameTok = Consume(); // sampler name (caller verified Identifier)
+
+        // Swallow everything up to and including the terminating ';' (covers an
+        // optional ': register(sN)' clause; the lexer already dropped the ':').
+        while (Peek().Kind != TokenKind.Semicolon && Peek().Kind != TokenKind.EOF)
+            Consume();
+
+        int declEnd;
+        if (Peek().Kind == TokenKind.Semicolon)
+        {
+            var semi = Consume();
+            declEnd = _tokenCharOffset[_pos - 1] + semi.Text.Length;
+        }
+        else
+        {
+            declEnd = _source.Length; // malformed (no ';' before EOF)
+        }
+
+        return (nameTok.Text, declEnd);
+    }
+
+    /// <summary>
+    /// Builds the substitution text for a rewritten sampler declaration: the new
+    /// declaration followed by every newline character from the original span, in
+    /// order. This keeps the stripped output's total line count identical to the
+    /// source so DXC diagnostics on later lines still point at the right line.
+    /// </summary>
+    private string BuildDeclReplacement(int spanStart, int spanEnd, string newDecl)
+    {
+        var sb = new StringBuilder(newDecl.Length + 8);
+        sb.Append(newDecl);
+        for (int i = spanStart; i < spanEnd && i < _source.Length; i++)
+        {
+            char c = _source[i];
+            if (c == '\n' || c == '\r')
+                sb.Append(c);
+        }
+        return sb.ToString();
     }
 
     /// <summary>
