@@ -21,23 +21,28 @@ namespace ShadowDusk.ImageTests.Tests;
 ///
 /// <para>
 /// <b>Status (current commit):</b> ShadowDusk's compiler does not yet handle
-/// the SM 3.0 sampler-state-block syntax or the legacy <c>: COLOR</c> output
-/// semantic used by every shader in <c>tests/fixtures/golden/OpenGL/</c>.
-/// Investigation found that all 34 production-corpus shaders fail to compile
-/// through <see cref="EffectCompiler"/> with one of these errors:
+/// every SM 3.0 construct used by the production-corpus shaders in
+/// <c>tests/fixtures/golden/OpenGL/</c>. Investigation found that the
+/// 34 production-corpus shaders fail to compile through
+/// <see cref="EffectCompiler"/> with one of these errors:
 /// </para>
 /// <list type="bullet">
 ///   <item><c>use of undeclared identifier '&lt;Sampler&gt;'</c> — the
 ///         FxPreParser erases the entire
 ///         <c>sampler2D X = sampler_state {...};</c> declaration instead of
 ///         leaving a bare <c>sampler2D X;</c> behind for DXC.</item>
-///   <item><c>invalid semantic 'COLOR' for ps 6.0</c> — DXC 6.x rejects the
-///         legacy SM 3.0 output semantic; shaders must use
-///         <c>: SV_Target</c>.</item>
+///   <item><c>Unsupported intrinsic</c> on <c>tex2D</c> — DXC 6.x dropped the
+///         legacy SM 1.x-3.x sampling intrinsics; shaders must use
+///         <c>SamplerState.Sample()</c>.</item>
 ///   <item><c>effect object ignored - effect syntax is deprecated</c> — old
 ///         effect-framework block-initialiser syntax not yet supported by
 ///         ShadowDusk's pre-parser.</item>
 /// </list>
+/// <para>
+/// The legacy <c>: COLOR</c> return-semantic gap is fixed: FxPreParser now
+/// rewrites <c>: COLOR&lt;n&gt;?</c> on function returns to
+/// <c>: SV_Target&lt;n&gt;?</c> before handing source to DXC.
+/// </para>
 /// <para>
 /// As a consequence, the per-shader cross-validation theory rows below all
 /// currently <b>skip cleanly</b> with a clear "ShadowDusk compile failed"
@@ -53,9 +58,10 @@ namespace ShadowDusk.ImageTests.Tests;
 /// <b>To enable cross-validation:</b> teach ShadowDusk's FxPreParser to
 /// preserve the sampler variable declaration when stripping the
 /// <c>sampler_state { ... }</c> block (e.g., emit <c>sampler2D X;</c>), and
-/// teach DXC to accept <c>: COLOR</c> on PS outputs (or rewrite to
-/// <c>: SV_Target</c> in the pre-parser). Once any candidate shader compiles,
-/// the rows in this test class will start rendering and comparing.
+/// rewrite legacy <c>tex2D(s, uv)</c> intrinsics to
+/// <c>s.Sample(samplerState, uv)</c> so DXC accepts them. Once any candidate
+/// shader compiles, the rows in this test class will start rendering and
+/// comparing.
 /// </para>
 /// </summary>
 [Trait("Category", "MgfxcCrossValidation")]

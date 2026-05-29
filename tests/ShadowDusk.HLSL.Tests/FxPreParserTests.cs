@@ -601,4 +601,77 @@ public sealed class FxPreParserTests
         result.Error.SourceFile.Should().Be("test.fx");
         result.Error.Message.Should().NotBeNullOrEmpty();
     }
+
+    // -------------------------------------------------------------------------
+    // Color return-semantic rewrite — DXC ps_6_0 rejects ': COLOR' so the pre-parser
+    // must rewrite it to ': SV_Target' (with the digit suffix preserved). Struct-field
+    // input semantics must NOT be rewritten because they remain valid HLSL identifiers
+    // for DXC.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_FunctionReturnSemantic_ColorWithoutDigit_RewrittenToSvTarget()
+    {
+        const string source = """
+            float4 PS(float2 uv : TEXCOORD0) : COLOR
+            {
+                return float4(1, 0, 0, 1);
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.StrippedHlsl.Should().Contain(": SV_Target");
+        result.Value.StrippedHlsl.Should().NotContain(": COLOR");
+    }
+
+    [Fact]
+    public void Parse_FunctionReturnSemantic_Color3_DigitPreservedAsSvTarget3()
+    {
+        const string source = """
+            float4 PS(float2 uv : TEXCOORD0) : COLOR3
+            {
+                return float4(0, 1, 0, 1);
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.StrippedHlsl.Should().Contain(": SV_Target3");
+        result.Value.StrippedHlsl.Should().NotContain("COLOR3");
+    }
+
+    [Fact]
+    public void Parse_StructFieldInputSemantic_ColorPreserved_NotRewritten()
+    {
+        // Both forms must coexist correctly: the struct field 'COLOR0' is an
+        // input semantic and stays as-is for DXC; the function return 'COLOR0'
+        // is the SM 3.0 output semantic and must be rewritten.
+        const string source = """
+            struct VsOut
+            {
+                float4 Position : SV_POSITION;
+                float4 Color    : COLOR0;
+                float2 TexCoord : TEXCOORD0;
+            };
+
+            float4 PS(VsOut input) : COLOR0
+            {
+                return input.Color;
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+
+        // The struct member's ': COLOR0;' must survive verbatim.
+        result.Value.StrippedHlsl.Should().Contain("float4 Color    : COLOR0;");
+
+        // The function return ': COLOR0' must be rewritten to ': SV_Target0'.
+        result.Value.StrippedHlsl.Should().Contain(": SV_Target0");
+        result.Value.StrippedHlsl.Should().NotContain("input) : COLOR0");
+    }
 }

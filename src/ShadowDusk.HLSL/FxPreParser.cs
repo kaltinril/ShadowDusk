@@ -215,6 +215,10 @@ public sealed class FxPreParser
         // We track erased ranges as (start, exclusiveEnd) intervals.
         var erasedRanges = new List<(int Start, int End)>();
 
+        // Token spans we want to substitute (rather than erase). Currently used to
+        // rewrite the legacy SM 3.0 return semantic ': COLOR<n>?' to ': SV_Target<n>?'.
+        var replacedRanges = new List<(int Start, int End, string Replacement)>();
+
         // Skip comments and preprocessor directives at the start of the token stream
         // (they are always included verbatim in stripped output).
         SkipNonCodeTokens();
@@ -354,12 +358,33 @@ public sealed class FxPreParser
                 }
             }
 
+            // DXC ps_6_0 rejects the legacy SM 3.0 return semantic ': COLOR<n>?' on
+            // entry functions — rewrite to ': SV_Target<n>?' so production SM 3.0
+            // shaders that use ') : COLOR { ... }' compile. We discriminate against
+            // struct-field input semantics (which are preceded by an identifier, not
+            // ')') by requiring the token before the COLOR identifier to be RParen.
+            if (tok.Kind == TokenKind.RParen && TryMatchColorReturnSemantic(out int colorTokIdx, out string replacement))
+            {
+                int colorStart = _tokenCharOffset[colorTokIdx];
+                var colorTok = _tokens[colorTokIdx];
+                int colorEnd = colorStart + colorTok.Text.Length;
+                replacedRanges.Add((colorStart, colorEnd, replacement));
+
+                // Consume only the RParen; let the loop continue past the COLOR token
+                // naturally so any subsequent COLOR-return on a non-entry helper is also
+                // caught. (We don't fast-forward past the LBrace because the function
+                // body still needs to be in stripped output.)
+                Consume();
+                SkipNonCodeTokens();
+                continue;
+            }
+
             // Everything else: copy verbatim (advance past single token).
             Consume();
             SkipNonCodeTokens();
         }
 
-        string strippedHlsl = BuildStrippedOutput(erasedRanges);
+        string strippedHlsl = BuildStrippedOutput(erasedRanges, replacedRanges);
 
         return Result<FxParseResult, FxParseError>.Ok(new FxParseResult
         {
@@ -814,52 +839,71 @@ public sealed class FxPreParser
     // Stripped output construction
     // -------------------------------------------------------------------------
 
-    private string BuildStrippedOutput(List<(int Start, int End)> erasedRanges)
+    private string BuildStrippedOutput(
+        List<(int Start, int End)> erasedRanges,
+        List<(int Start, int End, string Replacement)> replacedRanges)
     {
-        if (erasedRanges.Count == 0)
+        if (erasedRanges.Count == 0 && replacedRanges.Count == 0)
             return _source;
 
-        // Sort and merge overlapping ranges.
+        // Sort and merge overlapping erasures.
         erasedRanges.Sort((a, b) => a.Start.CompareTo(b.Start));
-
-        var merged = new List<(int Start, int End)>();
+        var mergedErased = new List<(int Start, int End)>();
         foreach (var range in erasedRanges)
         {
-            if (merged.Count > 0 && range.Start <= merged[^1].End)
-                merged[^1] = (merged[^1].Start, Math.Max(merged[^1].End, range.End));
+            if (mergedErased.Count > 0 && range.Start <= mergedErased[^1].End)
+                mergedErased[^1] = (mergedErased[^1].Start, Math.Max(mergedErased[^1].End, range.End));
             else
-                merged.Add(range);
+                mergedErased.Add(range);
         }
+
+        // Combine erasures and replacements into a single ordered edit list.
+        // Replacements (currently only ': COLOR' rewrites) are produced only for
+        // token spans that live outside any erased block, so they cannot overlap.
+        var edits = new List<(int Start, int End, string? Replacement)>(
+            mergedErased.Count + replacedRanges.Count);
+        foreach (var (s, e) in mergedErased)
+            edits.Add((s, e, null));
+        foreach (var (s, e, r) in replacedRanges)
+            edits.Add((s, e, r));
+        edits.Sort((a, b) => a.Start.CompareTo(b.Start));
 
         var sb = new StringBuilder(_source.Length);
         int cursor = 0;
 
-        foreach (var (start, end) in merged)
+        foreach (var (start, end, replacement) in edits)
         {
-            // Copy verbatim up to the erased range.
+            // Copy verbatim up to the edit start.
             if (cursor < start)
                 sb.Append(_source, cursor, start - cursor);
 
-            // Replace erased range with blank lines to preserve line numbers.
-            // Only newlines are preserved; everything else becomes spaces.
-            for (int i = start; i < end && i < _source.Length; i++)
+            if (replacement is null)
             {
-                char c = _source[i];
-                if (c == '\n')
-                    sb.Append('\n');
-                else if (c == '\r')
+                // Erasure: preserve newlines, blank out the rest so line numbers stay aligned.
+                for (int i = start; i < end && i < _source.Length; i++)
                 {
-                    sb.Append('\r');
-                    // If next is \n it will be handled on the next iteration.
+                    char c = _source[i];
+                    if (c == '\n')
+                        sb.Append('\n');
+                    else if (c == '\r')
+                        sb.Append('\r');
+                    else
+                        sb.Append(' ');
                 }
-                else
-                    sb.Append(' ');
+            }
+            else
+            {
+                // Substitution: replace the span with the literal replacement text.
+                // We assume the replacement contains no newlines (true for the
+                // COLOR -> SV_Target rewrite), so column positions on the same line
+                // may shift but line numbers remain accurate.
+                sb.Append(replacement);
             }
 
             cursor = end;
         }
 
-        // Copy any remaining source after the last erased range.
+        // Copy any remaining source after the last edit.
         if (cursor < _source.Length)
             sb.Append(_source, cursor, _source.Length - cursor);
 
@@ -881,5 +925,51 @@ public sealed class FxPreParser
         var t = Peek(offset);
         return t.Kind == TokenKind.Identifier &&
                string.Equals(t.Text, keyword, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Detects the trailing-form pixel-shader return semantic pattern
+    /// '<c>) : COLOR&lt;n&gt;? {</c>' at the current position (which must be RParen).
+    /// The FxLexer drops ':' as an unknown character, so at the token level the
+    /// pattern is simply RParen → Identifier("COLOR"|"COLORn") → LBrace, with
+    /// comments allowed in between. Struct-field input semantics never match
+    /// because they are preceded by an identifier, not by ')'.
+    /// </summary>
+    /// <param name="colorTokenIndex">Absolute index of the COLOR identifier token when matched.</param>
+    /// <param name="replacement">Replacement text ('SV_Target' or 'SV_Targetn') when matched.</param>
+    private bool TryMatchColorReturnSemantic(out int colorTokenIndex, out string replacement)
+    {
+        colorTokenIndex = -1;
+        replacement = string.Empty;
+
+        // Find next non-comment token (the candidate COLOR identifier).
+        int off = 1;
+        while (Peek(off).Kind is TokenKind.LineComment or TokenKind.BlockComment)
+            off++;
+
+        var candidate = Peek(off);
+        if (candidate.Kind != TokenKind.Identifier)
+            return false;
+
+        string text = candidate.Text;
+        if (!text.StartsWith("COLOR", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        string suffix = text.Substring("COLOR".Length);
+        if (suffix.Length > 1)
+            return false;
+        if (suffix.Length == 1 && !char.IsAsciiDigit(suffix[0]))
+            return false;
+
+        // Verify the next non-comment token after COLOR is '{' (function body opener).
+        int off2 = off + 1;
+        while (Peek(off2).Kind is TokenKind.LineComment or TokenKind.BlockComment)
+            off2++;
+        if (Peek(off2).Kind != TokenKind.LBrace)
+            return false;
+
+        colorTokenIndex = _pos + off;
+        replacement = "SV_Target" + suffix;
+        return true;
     }
 }
