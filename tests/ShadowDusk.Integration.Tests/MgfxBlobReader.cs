@@ -4,7 +4,9 @@ using System.Text;
 
 namespace ShadowDusk.Integration.Tests;
 
-public sealed record TechniqueInfo(string Name, int PassCount);
+public sealed record PassInfo(string Name, int VertexShaderIndex, int PixelShaderIndex);
+
+public sealed record TechniqueInfo(string Name, int PassCount, IReadOnlyList<PassInfo> Passes);
 
 public sealed class MgfxBlobReader
 {
@@ -45,6 +47,11 @@ public sealed class MgfxBlobReader
     // paramName -> variable size in bytes computed from constant-buffer offset data.
     public IReadOnlyDictionary<string, int> ParameterSizes { get; }
 
+    // paramName -> constant-buffer byte offset (the value stored verbatim in
+    // the mgfx cbuffer offset table). For uniform-array-indexed dialects like
+    // MojoShader (ps_uniforms_vec4[N]), the array index is Offset / 16.
+    public IReadOnlyDictionary<string, int> ParameterOffsets { get; }
+
     private MgfxBlobReader(
         string signature,
         byte version,
@@ -56,7 +63,8 @@ public sealed class MgfxBlobReader
         bool? depthBufferEnable,
         int? cullMode,
         IReadOnlyDictionary<string, IReadOnlyList<(string, string)>> parameterAnnotations,
-        IReadOnlyDictionary<string, int> parameterSizes)
+        IReadOnlyDictionary<string, int> parameterSizes,
+        IReadOnlyDictionary<string, int> parameterOffsets)
     {
         Signature            = signature;
         MgfxVersion          = version;
@@ -71,6 +79,7 @@ public sealed class MgfxBlobReader
         CullMode             = cullMode;
         ParameterAnnotations = parameterAnnotations;
         ParameterSizes       = parameterSizes;
+        ParameterOffsets     = parameterOffsets;
     }
 
     public static MgfxBlobReader Parse(byte[] blob)
@@ -87,10 +96,11 @@ public sealed class MgfxBlobReader
         byte version   = br.ReadByte();
         byte profileId = br.ReadByte();
 
-        // Constant buffers — parse to build per-variable sizes.
+        // Constant buffers — parse to build per-variable sizes and offsets.
         // Variable size = (nextVariable.offset - thisVariable.offset), or (cbSize - thisVariable.offset) for the last variable.
-        // paramIndex -> sizeInBytes
-        var cbParamIndexToSize = new Dictionary<int, int>();
+        // paramIndex -> sizeInBytes; paramIndex -> startOffset.
+        var cbParamIndexToSize   = new Dictionary<int, int>();
+        var cbParamIndexToOffset = new Dictionary<int, int>();
         int cbCount = br.ReadInt32();
         for (int i = 0; i < cbCount; i++)
         {
@@ -111,7 +121,8 @@ public sealed class MgfxBlobReader
                 int varSize = j < paramCount - 1
                     ? offsets[j + 1] - offsets[j]
                     : cbSize - offsets[j];
-                cbParamIndexToSize[paramIndices[j]] = varSize;
+                cbParamIndexToSize[paramIndices[j]]   = varSize;
+                cbParamIndexToOffset[paramIndices[j]] = offsets[j];
             }
         }
 
@@ -154,12 +165,15 @@ public sealed class MgfxBlobReader
             ReadInt32List(br); // elementIndices
         }
 
-        // Build ParameterSizes from cbParamIndexToSize
-        var paramSizes = new Dictionary<string, int>(StringComparer.Ordinal);
+        // Build ParameterSizes and ParameterOffsets from cb tables.
+        var paramSizes   = new Dictionary<string, int>(StringComparer.Ordinal);
+        var paramOffsets = new Dictionary<string, int>(StringComparer.Ordinal);
         for (int i = 0; i < parameterNames.Count; i++)
         {
             if (cbParamIndexToSize.TryGetValue(i, out int cbSz))
                 paramSizes[parameterNames[i]] = cbSz;
+            if (cbParamIndexToOffset.TryGetValue(i, out int cbOff))
+                paramOffsets[parameterNames[i]] = cbOff;
         }
 
         // Techniques
@@ -176,13 +190,15 @@ public sealed class MgfxBlobReader
             ReadAnnotations(br); // technique annotations (consume)
 
             int passCount = br.ReadInt32();
+            var passes    = new List<PassInfo>(passCount);
             for (int p = 0; p < passCount; p++)
             {
-                br.ReadString(); // pass name
+                string passName = br.ReadString();
                 ReadAnnotations(br); // pass annotations
 
-                br.ReadInt16(); // vsIndex
-                br.ReadInt16(); // psIndex
+                short vsIndex = br.ReadInt16();
+                short psIndex = br.ReadInt16();
+                passes.Add(new PassInfo(passName, vsIndex, psIndex));
 
                 var (ab, db, cm) = ReadRenderStateBlock(br);
                 if (ab.HasValue) alphaBlendEnable  = ab;
@@ -190,7 +206,7 @@ public sealed class MgfxBlobReader
                 if (cm.HasValue) cullMode          = cm;
             }
 
-            techniques.Add(new TechniqueInfo(techName, passCount));
+            techniques.Add(new TechniqueInfo(techName, passCount, passes));
         }
 
         return new MgfxBlobReader(
@@ -204,7 +220,8 @@ public sealed class MgfxBlobReader
             depthBufferEnable: depthBufferEnable,
             cullMode: cullMode,
             parameterAnnotations: paramAnnotationMap,
-            parameterSizes: paramSizes);
+            parameterSizes: paramSizes,
+            parameterOffsets: paramOffsets);
     }
 
     private static (bool? AlphaBlendEnable, bool? DepthBufferEnable, int? CullMode) ReadRenderStateBlock(BinaryReader br)

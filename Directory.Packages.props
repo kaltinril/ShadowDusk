@@ -12,6 +12,12 @@
     <PackageVersion Include="Silk.NET.SPIRV.Cross.Native" Version="2.23.0" />
   </ItemGroup>
 
+  <ItemGroup Label="Rendering">
+    <PackageVersion Include="Silk.NET.OpenGL"          Version="2.23.0" />
+    <PackageVersion Include="Silk.NET.Windowing.Glfw"  Version="2.23.0" />
+    <PackageVersion Include="SixLabors.ImageSharp"     Version="3.1.12" />
+  </ItemGroup>
+
   <ItemGroup Label="Test">
     <PackageVersion Include="xunit"                        Version="2.9.2" />
     <PackageVersion Include="xunit.runner.visualstudio"    Version="2.8.2" />

@@ -14,6 +14,7 @@
     <Project Path="tests/ShadowDusk.Core.Tests/ShadowDusk.Core.Tests.csproj" />
     <Project Path="tests/ShadowDusk.GLSL.Tests/ShadowDusk.GLSL.Tests.csproj" />
     <Project Path="tests/ShadowDusk.HLSL.Tests/ShadowDusk.HLSL.Tests.csproj" />
+    <Project Path="tests/ShadowDusk.ImageTests/ShadowDusk.ImageTests.csproj" />
     <Project Path="tests/ShadowDusk.Integration.Tests/ShadowDusk.Integration.Tests.csproj" />
   </Folder>
 </Solution>

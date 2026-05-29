@@ -21,6 +21,7 @@ These phases are fully implemented. Their documents have been moved to `DONE/` w
 | 8 ✓ | [DONE/PHASE-8-compiler-library.md](DONE/PHASE-8-compiler-library.md) | `ShadowDusk.Compiler` NuGet library — `EffectCompiler : IShaderCompiler`, pipeline orchestration, the consumer-facing package — **DONE** |
 | 9 ✓ | [DONE/PHASE-9-cli-entry-point.md](DONE/PHASE-9-cli-entry-point.md) | dotnet tool CLI, mgfxc-compatible flags, MGCB error format, stderr routing, exit codes — **DONE** |
 | 15 ✓ | [DONE/PHASE-15-integration-tests.md](DONE/PHASE-15-integration-tests.md) | End-to-end .fx compilation tests — 9 fixtures × 3 platforms, determinism, error cases (103 tests, all passing) — **DONE** |
+| 16 ✓ | [DONE/PHASE-16-image-regression-tests.md](DONE/PHASE-16-image-regression-tests.md) | Visual regression tests — offscreen OpenGL rendering of all 9 Phase 15 fixtures, 12 reference PNGs anchored on ShadowDusk's own output, 13 tests passing — **DONE** |
 
 ---
 
@@ -28,7 +29,6 @@ These phases are fully implemented. Their documents have been moved to `DONE/` w
 
 | Phase | File | Summary |
 |-------|------|---------|
-| 16 | [PHASE-16-image-regression-tests.md](PHASE-16-image-regression-tests.md) | Visual regression tests — render golden vs. ShadowDusk .mgfx offscreen, compare pixel output |
 | 20 | [PHASE-20-deferred-backlog.md](PHASE-20-deferred-backlog.md) | Deferred items backlog from phases 2–9; no prerequisites, review before 1.0 |
 | 25 | [PHASE-25-security-hardening.md](PHASE-25-security-hardening.md) | Security hardening for WASM/web path — path traversal, input validation, supply chain |
 | 30 | [PHASE-30-cross-platform-ci.md](PHASE-30-cross-platform-ci.md) | RID matrix, native binary restore, GitHub Actions CI across Linux/macOS/Windows |

@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>ShadowDusk.ImageTests</AssemblyName>
+    <RootNamespace>ShadowDusk.ImageTests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
+    <ProjectReference Include="..\..\src\ShadowDusk.Core\ShadowDusk.Core.csproj" />
+    <ProjectReference Include="..\..\src\ShadowDusk.HLSL\ShadowDusk.HLSL.csproj" />
+    <ProjectReference Include="..\..\src\ShadowDusk.GLSL\ShadowDusk.GLSL.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Label="Shared sources">
+    <Compile Include="..\ShadowDusk.Integration.Tests\MgfxBlobReader.cs" Link="MgfxBlobReader.cs" />
+  </ItemGroup>
+
+  <ItemGroup Label="Fixtures">
+    <None Include="..\..\tests\fixtures\shaders\**\*"
+          CopyToOutputDirectory="PreserveNewest"
+          Link="fixtures\shaders\%(RecursiveDir)%(Filename)%(Extension)" />
+    <None Include="..\..\tests\fixtures\golden\OpenGL\**\*"
+          CopyToOutputDirectory="PreserveNewest"
+          Link="fixtures\golden\OpenGL\%(RecursiveDir)%(Filename)%(Extension)" />
+    <None Include="..\..\tests\fixtures\reference-images\OpenGL\**\*"
+          CopyToOutputDirectory="PreserveNewest"
+          Link="fixtures\reference-images\OpenGL\%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup Label="Test framework">
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="coverlet.collector">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup Label="Rendering">
+    <PackageReference Include="Silk.NET.OpenGL" />
+    <PackageReference Include="Silk.NET.Windowing.Glfw" />
+    <PackageReference Include="SixLabors.ImageSharp" />
+  </ItemGroup>
+</Project>
