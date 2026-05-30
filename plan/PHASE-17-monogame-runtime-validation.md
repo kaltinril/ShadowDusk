@@ -78,6 +78,8 @@ For each shader, on each loadable target:
 
 ## 3. The blockers, in the order they bite
 
+> **✅ STATUS (2026-05-30): blockers #1–#4 are FIXED — see [§3.7](#37-achieved-2026-05-30--in-engine-fidelity-proven-for-the-sm3-corpus).** Everything in §3.1–§3.6 below — the present-tense "cannot load," the 🔴 Blocker rows in the punch-list, the unchecked task boxes, and the §3.6 "0/10 load" measurement — is the **historical analysis that drove the fix**; read it as past tense. The single open item in this section is **Dissolve (gap #3)**, which still fails to *compile* (effect-syntax `texture _t;` / `sampler = sampler_state{…}` declarations) — a `FxPreParser` rewrite, not a runtime issue. See the **▶ PICK UP HERE** banner at the top of this doc.
+
 ### What ShadowDusk must fix, and why (punch-list)
 
 These are **product** defects in ShadowDusk that must change for its output to work in MonoGame — distinct from the test-harness build steps (§4). Each is a reason the drop-in promise (CLAUDE.md constraint #6) is currently *unmet*, not just untested. Ordered by the order they break a real load+render:
