@@ -6,6 +6,8 @@
 
 > The [plan.md dependency graph](plan.md#dependencies) previously placeholdered this as **"Phase 9W (WASM)"** (now renumbered to Phase 19) but no phase document ever defined it. This is that document. The architecture survey is [`monogame_runtime_mgfx_compiler_research.md`](../monogame_runtime_mgfx_compiler_research.md) §8 (WASM considerations), §11 (package structure), and Task I.
 
+> **Scope boundary vs [Phase 22](PHASE-22-wasm-shader-fiddle-sample.md) (avoid overlap):** Phase 19 owns the **compiler capability** — `WasmShaderCompiler` working in WASM (modes 1 & 2) plus a **minimal** harness that proves bytes load and a shader compiles in-browser. The **interactive XNA-Fiddle sample app** — paste-in editor, the cat image, parameter controls, error UI — is **[Phase 22](PHASE-22-wasm-shader-fiddle-sample.md)**, which consumes this. Build the throwaway harness here; build the real app there. Don't build the app twice.
+
 ---
 
 ## Overview
@@ -39,7 +41,7 @@ ShadowDusk earns its existence on **two axes** (CLAUDE.md → *What success actu
 ## Tasks
 
 ### Mode 1 — precompiled bytes load in WASM (do first)
-- [ ] Stand up a minimal MonoGame/KNI **WebGL** sample that calls `new Effect(gd, bytes)` on a Phase-9-compiled OpenGL `.mgfx` (post–Phase 17 format) and draws a known quad.
+- [ ] Stand up a **minimal, throwaway** MonoGame/KNI **WebGL** harness that calls `new Effect(gd, bytes)` on a Phase-9-compiled OpenGL `.mgfx` (post–Phase 17 format) and draws a known quad. *(Just enough to prove load+render in WebGL — the polished interactive app is [Phase 22](PHASE-22-wasm-shader-fiddle-sample.md), not here.)*
 - [ ] Confirm the `.mgfx` that passes Phase 17 in DesktopGL **also** loads + renders in the WebGL runtime; record any DesktopGL-vs-WebGL divergence (research doc §15.2). Reuse the Phase 17 corpus + by-name parameters.
 - [ ] Smoke test: browser console shows **no** shader-compile/link errors for the uniform-free corpus, then the uniform-driven corpus.
 
@@ -67,4 +69,6 @@ ShadowDusk earns its existence on **two axes** (CLAUDE.md → *What success actu
 
 ## Definition of Done
 
-A browser tool (XNA Fiddle–style) takes `.fx` source typed by a user, compiles it with ShadowDusk **entirely client-side in WASM**, and loads the result as a real MonoGame/KNI `Effect` that renders correctly — producing the same bytes ShadowDusk's CLI would on any desktop OS. Combined with Phase 17 (desktop GL fidelity) and Phase 30 (cross-host byte-equality), this delivers the *reach* axis: **the result `mgfxc` gives, produced where `mgfxc` can't run.**
+`ShadowDusk.Wasm` compiles `.fx` to MonoGame-loadable `.mgfx` **entirely client-side in WASM**, byte-identical to the CLI for the same source + OpenGL target, and a **minimal** WebGL harness proves those bytes load via `new Effect(gd, bytes)` and that at least one shader compiles fully in-browser (source → `.mgfx` → `Effect`, no server). Combined with Phase 17 (desktop GL fidelity) and Phase 30 (cross-host byte-equality), this delivers the engine for the *reach* axis: **the result `mgfxc` gives, produced where `mgfxc` can't run.**
+
+> The polished, user-facing demonstration of this capability — the paste-a-shader-and-see-the-cat XNA-Fiddle tool — is **[Phase 22](PHASE-22-wasm-shader-fiddle-sample.md)**. Phase 19 is done when the *capability* exists and is proven minimally; Phase 22 turns it into the app.

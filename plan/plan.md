@@ -44,6 +44,7 @@ These phases are fully implemented. Their documents have been moved to `DONE/` w
 | 19 | Planned | [PHASE-19-wasm-runtime-compilation.md](PHASE-19-wasm-runtime-compilation.md) | WASM in-browser `.fx` → `.mgfx` (precompiled-bytes load first, then in-browser DXC/SPIRV-Cross) — the browser half of *reach*. Builds out the "9W" placeholder |
 | 20 | Backlog | [PHASE-20-deferred-backlog.md](PHASE-20-deferred-backlog.md) | Deferred items backlog from phases 2–9; no prerequisites, review before 1.0 |
 | 21 | Planned | [PHASE-21-test-suite-performance.md](PHASE-21-test-suite-performance.md) | Investigate the 21m43s `ShadowDusk.Integration.Tests` run (same 108 tests ran in ~3s earlier same session) — likely AV-scan / CLI-spawn / a stalling test; diagnostic, correctness unaffected |
+| 22 | Planned | [PHASE-22-wasm-shader-fiddle-sample.md](PHASE-22-wasm-shader-fiddle-sample.md) | KNI Blazor-WASM **sample app**: paste `.fx` → compile in-browser via `ShadowDusk.Wasm` → `new Effect` → cat image with shader applied + error UI. The user-facing XNA-Fiddle demo on top of Phase 19's compiler capability (boundary drawn to avoid overlap) |
 | 25 | Planned | [PHASE-25-security-hardening.md](PHASE-25-security-hardening.md) | Security hardening for WASM/web path — path traversal, input validation, supply chain |
 | 30 | Planned | [PHASE-30-cross-platform-ci.md](PHASE-30-cross-platform-ci.md) | RID matrix, native binary restore, GitHub Actions CI across Linux/macOS/Windows |
 
