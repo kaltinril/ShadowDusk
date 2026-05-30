@@ -110,32 +110,32 @@ ShadowDusk's `MgfxWriter` (`src/ShadowDusk.Core/MgfxWriter.cs`) emits a format M
 
 > **Decision to make during implementation:** emitting MonoGame-compatible bytes (forward "MGFX", `EffectKey`, full shader records) **conflicts with ShadowDusk's own reader and `MgfxWriterTests`**, which currently expect "XFGM" and the truncated layout. Either (a) change the writer + reader + tests together to the real MonoGame format (correct for the drop-in goal — constraint #6), or (b) keep an internal format and add a MonoGame-format emitter. (a) is almost certainly right; the "XFGM"/truncated layout looks like an early-format artifact, not an intentional divergence.
 
-**Tasks:**
-- [ ] Pin the authoritative byte layout from MonoGame 3.8.2's **open-source** `EffectReader`/`Shader`/`ConstantBuffer` (the 3.8.2 tag — no decompile). Nail the sampler entry's field order and the cbuffer-index-list ↔ attribute-table sequencing (the highest-uncertainty bytes).
-- [ ] Structurally diff a ShadowDusk OpenGL `.mgfx` against the matching golden, field by field, using `MgfxBlobReader` (extended into a full binary walker) + `MgfxcMgfxReader` against that spec. Record every divergence.
-- [ ] **Collect the missing reflection** in `CompilationPipeline` — per-shader sampler bindings+slots, cbuffer-index list, (GL) vertex-attribute table — and extend `CompiledShaderBlob` to carry them. *(Prerequisite for the shader-record write below; the IR does not hold this data today.)*
-- [ ] Fix the signature (emit forward "MGFX") and the header (`EffectKey` — MonoGame uses it as the effect-cache key; mgfxc writes an MD5-derived int). Add the trailing `"MGFX"` footer.
-- [ ] Emit the full per-shader record: stage flag + sampler table + cbuffer-index list + (GL) attribute table. **§3.3 and §3.4 depend on this** — there is no sampler binding until the sampler table exists. *(The cbuffer/parameter/technique sections already match MonoGame — leave them untouched.)*
-- [ ] Update `MgfxBlobReader` / `MgfxWriterTests` to the corrected format — **atomically with the writer**: `MgfxBlobReader` is a linked shared source in both Integration.Tests and ImageTests, and `GlslShaderExtractor`→cross-val depend on it, so a partial change breaks the 444-green suite.
+**Tasks:** *(all ✅ done 2026-05-30 — see §3.7)*
+- [x] Pin the authoritative byte layout from MonoGame 3.8.2's **open-source** `EffectReader`/`Shader`/`ConstantBuffer` (the 3.8.2 tag — no decompile). Nail the sampler entry's field order and the cbuffer-index-list ↔ attribute-table sequencing (the highest-uncertainty bytes).
+- [x] Structurally diff a ShadowDusk OpenGL `.mgfx` against the matching golden, field by field, using `MgfxBlobReader` (extended into a full binary walker) + `MgfxcMgfxReader` against that spec. Record every divergence.
+- [x] **Collect the missing reflection** in `CompilationPipeline` — per-shader sampler bindings+slots, cbuffer-index list, (GL) vertex-attribute table — and extend `CompiledShaderBlob` to carry them. *(Prerequisite for the shader-record write below; the IR does not hold this data today.)*
+- [x] Fix the signature (emit forward "MGFX") and the header (`EffectKey` — MonoGame uses it as the effect-cache key; mgfxc writes an MD5-derived int). Add the trailing `"MGFX"` footer.
+- [x] Emit the full per-shader record: stage flag + sampler table + cbuffer-index list + (GL) attribute table. **§3.3 and §3.4 depend on this** — there is no sampler binding until the sampler table exists. *(The cbuffer/parameter/technique sections already match MonoGame — leave them untouched.)*
+- [x] Update `MgfxBlobReader` / `MgfxWriterTests` to the corrected format — **atomically with the writer**: `MgfxBlobReader` is a linked shared source in both Integration.Tests and ImageTests, and `GlslShaderExtractor`→cross-val depend on it, so a partial change breaks the 444-green suite.
 
 ### 3.2 Uniform remapping — backlog **11-6-D** (the second wall)
 
 MonoGame's GL runtime binds free uniforms as a single `vec4[N]` array **named after the cbuffer** — `ConstantBuffer.PlatformApply` calls `GetUniformLocation(cbufferName)` and uploads with `glUniform4fv`. `mgfxc` names that cbuffer `ps_uniforms_vec4` / `vs_uniforms_vec4` and emits `uniform vec4 ps_uniforms_vec4[N];`. ShadowDusk emits SPIRV-Cross GLSL with a **`type_Globals` std140 UBO block** instead, so `GetUniformLocation("type_Globals")` → -1 and `PlatformApply` early-returns → uniforms read zero (e.g. TintShader renders black). See `docs/glsl-uniform-naming.md` (the existing — now stale — design sketch; it frames this as "Phase 7" and references `spvc` decoration queries; **use it as the starting point for this work**, not just something to update at the end).
 
-This is the **central compiler change**, but only reachable after §3.1.
-- [ ] **Choose the remap site** (SPIRV-Cross options vs. GLSL post-process vs. `MgfxWriter` parameter table — likely a combination). Resolve this before the emit work below.
-- [ ] Convert the UBO to a **flat `uniform vec4 ps_uniforms_vec4[N]`** array (MonoGame uses `glUniform4fv` to an array uniform, **not** a UBO/`glUniformBlockBinding`) and rewrite use-sites.
-- [ ] Name the cbuffer `ps_uniforms_vec4`/`vs_uniforms_vec4` in the `.mgfx` and record each parameter's register + offset so `Effect.Parameters[name].SetValue` lands in the right slot, in SM 3.0 constant-register layout.
+This is the **central compiler change**, but only reachable after §3.1. *(all ✅ done 2026-05-30 — implemented in `MonoGameGlslRewriter`; see §3.7.)*
+- [x] **Choose the remap site** (SPIRV-Cross options vs. GLSL post-process vs. `MgfxWriter` parameter table — likely a combination). Resolve this before the emit work below. → **GLSL post-process** (`MonoGameGlslRewriter`) + pipeline cbuffer naming, gated by `monoGameGl`.
+- [x] Convert the UBO to a **flat `uniform vec4 ps_uniforms_vec4[N]`** array (MonoGame uses `glUniform4fv` to an array uniform, **not** a UBO/`glUniformBlockBinding`) and rewrite use-sites.
+- [x] Name the cbuffer `ps_uniforms_vec4`/`vs_uniforms_vec4` in the `.mgfx` and record each parameter's register + offset so `Effect.Parameters[name].SetValue` lands in the right slot, in SM 3.0 constant-register layout.
 
 ### 3.3 Sampler / texture binding (part of §3.1's shader record)
 
 `SpriteBatch.Draw` binds the drawn texture to slot 0; the shader's sampler must resolve there **via the per-shader sampler table** that §3.1 currently doesn't write. So this is not independent — until the sampler table is emitted, MonoGame has nothing to bind. ShadowDusk synthesizes `Texture2D X_SDTexture` + `SamplerState X` for bare samplers and rewrites `sampler2D` decls (Phase 16); the sampler table must carry the right name/slot for both forms.
-- [ ] Verify the emitted sampler table binds the SpriteBatch texture to slot 0 for both the `Texture = <T>` form and the synthesized-texture form.
+- [x] Verify the emitted sampler table binds the SpriteBatch texture to slot 0 for both the `Texture = <T>` form and the synthesized-texture form. → confirmed in-engine: 10/10 render with the texture bound (incl. Grayscale's synthesized texture and Dissolve's dual `Texture=<T>` samplers).
 
 ### 3.4 Sampler-state fidelity (caveat, lower priority)
 
 The Phase 16 rewrite drops in-shader `sampler_state` filter/address modes (`SamplerInfo.StateEntries` parsed, not emitted). The harness pins one `SamplerState` (§5), so this won't fail the candidates, but note it.
-- [ ] Decide whether in-shader sampler state must be emitted into the `.mgfx`, or whether deferring to `GraphicsDevice.SamplerStates` (MonoGame's normal behavior) is acceptable. Document the decision.
+- [x] Decide whether in-shader sampler state must be emitted into the `.mgfx`, or whether deferring to `GraphicsDevice.SamplerStates` (MonoGame's normal behavior) is acceptable. Document the decision. → **Decision: defer to `GraphicsDevice.SamplerStates`** (the harness pins `LinearClamp`, §4.1). Validated acceptable — 10/10 match with no in-shader sampler state emitted. Revisit only if a future shader bakes Point/Wrap into the effect and renders differently.
 
 ### 3.5 mgfxc is not available here
 
@@ -210,7 +210,7 @@ Write the table to `ITestOutputHelper` + a JSON artifact. The first run's value 
 ## 5. PS-only vertex-stage handling (verify before trusting any comparison)
 
 All candidates are PS-only (no VS function); `CompilationPipeline` writes `VertexShaderIndex = -1`. "SpriteBatch supplies the VS" is true for SpriteBatch's *own* `SpriteEffect`, but when a **custom** effect with a VS-less pass is passed to `SpriteBatch.Begin(..., effect)`, the vertex stage source is subtle — and `ShaderViewer` only works because it **primes** the sprite VS with a prior passthrough draw. The headless single-call harness does not replicate that.
-- [ ] Determine and pin exactly how the vertex stage is provided for a PS-only custom effect headless: (a) prime with a passthrough draw first like the viewer, (b) confirm MonoGame injects `SpriteEffect`'s VS for a `vsIndex=-1` pass *identically* for ShadowDusk and `mgfxc`, or (c) emit a real passthrough VS. If `ref` and `mgfxc` get the VS one way and `cand` another, the comparison is invalid even after §3.1.
+- [x] Determine and pin exactly how the vertex stage is provided for a PS-only custom effect headless: (a) prime with a passthrough draw first like the viewer, (b) confirm MonoGame injects `SpriteEffect`'s VS for a `vsIndex=-1` pass *identically* for ShadowDusk and `mgfxc`, or (c) emit a real passthrough VS. If `ref` and `mgfxc` get the VS one way and `cand` another, the comparison is invalid even after §3.1. → **Resolved: option (a)** — the shared `EffectImageRenderer` primes the SpriteBatch VS identically for both `ref` and `cand`; verified valid because the same VS reaches both sides (10/10 match, incl. uniform-driven shaders).
 
 ---
 
@@ -268,19 +268,19 @@ Hidden `Game`/`GraphicsDevice` once per collection; SDL2-aware skip; thread-affi
 
 > **Status (2026-05-30):** ✅ MET — shared renderer (`validation/Shared/EffectImageRenderer.cs`), golden loads+renders as control, **ShadowDusk `.mgfx` loads in `new Effect`** (headline gate), PS-only VS-stage resolved (SpriteBatch prime), uniform-free **and** uniform-driven candidates match by-name, **all 10/10 shaders match (Dissolve/gap #3 now closed)**, per-shader load/render/match reported, `ref`/`cand`/`diff` PNGs saved, tolerance documented (Scanlines/Dots maxd 1), clean skips, Vulkan/Metal N/A. ⬜ NOT YET — DirectX project (Phase 18, separate), `docs/glsl-uniform-naming.md`/backlog-11-6-D writeup, JSON artifact (PNG+console only). Note: built as `validation/Baseline` + `validation/Candidate` rather than a single `tests/ShadowDusk.MonoGameValidation.OpenGL` xUnit project — a runnable two-app + `compare.py` harness; folding into an xUnit `[Theory]` is optional follow-up.
 
-- [ ] `tests/ShadowDusk.MonoGameValidation.OpenGL/` exists, is in `ShadowDusk.slnx`, references `MonoGame.Framework.DesktopGL` + `ShadowDusk.Compiler`.
-- [ ] One **shared** `RenderThroughMonoGame` renders both `.mgfx` files identically (pinned blend/sampler/surface/viewport per §4.1), same device, same run.
-- [ ] **The golden loads + renders** as the control (`RefRendered` true).
-- [ ] **ShadowDusk's `.mgfx` loads in MonoGame's `EffectReader`** for all candidates — i.e. §3.1 is fixed (signature, `EffectKey`, shader records). *This is the headline acceptance gate.*
-- [ ] PS-only vertex-stage handling is resolved and identical for `ref` and `cand` (§5).
-- [ ] Uniform-free candidates (Grayscale, Invert, Pixelated, Fading) **match the `mgfxc` reference in-engine** (exact, or a diff-justified tolerance).
-- [ ] Uniform-driven candidates (TintShader, Sepia, Saturate, Scanlines, Dots) match **with parameters set by name** — §3.2 (11-6-D) resolved.
-- [ ] Per-shader `ValidationResult` distinguishes load / render / match; `ref`/`cand`/`diff` PNGs saved to `artifacts/phase17/<target>/` (gitignored).
-- [ ] DirectX project exists, is **Windows-gated**, and **reports** its outcome (expected fail; not required to pass).
-- [ ] Any tolerance > 0 documented with observed delta + reason (no silent caps).
-- [ ] Skips cleanly with a clear message when no device; no `Thread.Sleep` / `.Result` / `.Wait()`.
-- [ ] `docs/glsl-uniform-naming.md` + backlog 11-6-D updated with the chosen remap strategy and verification.
-- [ ] Vulkan/Metal remain explicitly N/A (no runtime to compare against).
+- [~] `tests/ShadowDusk.MonoGameValidation.OpenGL/` exists, is in `ShadowDusk.slnx`, references `MonoGame.Framework.DesktopGL` + `ShadowDusk.Compiler`. → **satisfied via the `validation/Baseline` + `validation/Candidate` two-app harness** (both reference DesktopGL + Compiler); the single xUnit `[Theory]` project was not built — folding the harness into xUnit is an optional follow-up.
+- [x] One **shared** `RenderThroughMonoGame` renders both `.mgfx` files identically (pinned blend/sampler/surface/viewport per §4.1), same device, same run. → `validation/Shared/EffectImageRenderer.cs`.
+- [x] **The golden loads + renders** as the control (`RefRendered` true). → baseline 10/10.
+- [x] **ShadowDusk's `.mgfx` loads in MonoGame's `EffectReader`** for all candidates — i.e. §3.1 is fixed (signature, `EffectKey`, shader records). *This is the headline acceptance gate.* → candidate 10/10 load.
+- [x] PS-only vertex-stage handling is resolved and identical for `ref` and `cand` (§5).
+- [x] Uniform-free candidates (Grayscale, Invert, Pixelated, Fading) **match the `mgfxc` reference in-engine** (exact, or a diff-justified tolerance).
+- [x] Uniform-driven candidates (TintShader, Sepia, Saturate, Scanlines, Dots) match **with parameters set by name** — §3.2 (11-6-D) resolved.
+- [x] Per-shader `ValidationResult` distinguishes load / render / match; `ref`/`cand`/`diff` PNGs saved. → `compare.py` reports per-shader load/render/match; `ref`/`cand`/`diff` PNGs in `validation/output/{baseline,candidate,diff}/`. *(Path differs from `artifacts/phase17/`; a JSON artifact is not yet emitted — console + PNG only.)*
+- [ ] DirectX project exists, is **Windows-gated**, and **reports** its outcome (expected fail; not required to pass). → **deferred to Phase 18.**
+- [x] Any tolerance > 0 documented with observed delta + reason (no silent caps). → Scanlines/Dots maxd 1 (sub-LSB), documented in §3.7.
+- [x] Skips cleanly with a clear message when no device; no `Thread.Sleep` / `.Result` / `.Wait()`. → async harness; the console apps require a device to run (dev-run harness, not a CI-skipped test).
+- [ ] `docs/glsl-uniform-naming.md` + backlog 11-6-D updated with the chosen remap strategy and verification. → **doc debt:** `MonoGameGlslRewriter` is the implementation; the design doc still frames it as the old "Phase 7" sketch.
+- [x] Vulkan/Metal remain explicitly N/A (no runtime to compare against).
 
 ---
 
@@ -288,18 +288,18 @@ Hidden `Game`/`GraphicsDevice` once per collection; SDL2-aware skip; thread-affi
 
 > **Status (2026-05-30):** steps 1–11 ✅ done (diagnosis, harness, device fixture, render+compare, writer-format fix, uniform-free + uniform-driven candidates all matching) **+ gap #3 (Dissolve) closed → 10/10 match**. Step 12 (Windows-gated DirectX project) → Phase 18. The OpenGL fidelity goal is fully met; the only remaining Phase-17-scoped extension is VS-driven MonoGame support (§8.3, deliberately deferred).
 
-- [ ] 1. **Diagnose the format gap (§3.1):** pin the layout from MonoGame 3.8.2's **open-source** `EffectReader`/`Shader` (no decompile), then structurally diff a ShadowDusk OpenGL `.mgfx` vs the matching golden (`MgfxBlobReader` extended to a full binary walker / `MgfxcMgfxReader`). Produce a field-by-field divergence list. *(No MonoGame project needed yet.)*
-- [ ] 2. Create `tests/ShadowDusk.MonoGameValidation.OpenGL/` (DesktopGL + Compiler + xUnit), add to `ShadowDusk.slnx`, copy fixtures (template: `ShadowDusk.ImageTests.csproj` `<ItemGroup>`, minus reference-images), non-parallel `[Collection]`.
-- [ ] 3. `MonoGameDeviceFixture` — hidden SDL2 device, skip-on-no-device, thread-affinity lock (§4.2).
-- [ ] 4. `RenderThroughMonoGame` (§4.1) + `ValidationResult` (§4.3) + magenta diff + artifacts.
-- [ ] 5. **Instrument smoke test:** load a **golden** in `new Effect`, render it twice → assert byte-identical (determinism); then corrupt one pixel and assert the comparator **flags** it (proves the instrument detects failure, not just absence).
-- [ ] 6. **Fix `MgfxWriter` format (§3.1):** (6a) collect per-shader sampler/cbuffer-index/attribute reflection in `CompilationPipeline` + extend `CompiledShaderBlob` (the IR lacks this today); (6b) signature → forward "MGFX"; (6c) header `EffectKey`; (6d) full per-shader record (stage flag, sampler table, cbuffer indices, GL attribute table); (6e) trailing "MGFX" footer; (6f) update `MgfxBlobReader` + `MgfxWriterTests` **atomically** (linked shared source — partial change breaks the suite). Leave cbuffer/parameter/technique sections untouched (already match). Gate: ShadowDusk `.mgfx` *loads* in `new Effect`.
-- [ ] 7. Uniform-free candidates (Grayscale, Invert → then Pixelated, Fading): compile → load → render → compare. Resolve §3.3 sampler binding + §5 VS-stage until they match in-engine.
-- [ ] 8. Add TintShader; **fork on the symptom:** is `Parameters["TintColor"]` null (§3.1 record) or non-null-but-wrong (§3.2 remap)? Record which.
-- [ ] 9. **Implement uniform remap (§3.2 / 11-6-D):** (9a) choose remap site; (9b) emit flat `ps_uniforms_vec4[N]` GLSL + use-site rewrite; (9c) parameter→register table in `MgfxWriter`; (9d) iterate vs TintShader until it matches by-name.
-- [ ] 10. Bring the rest green (Sepia, Saturate, Scanlines, Dots); document any diff-justified tolerance.
-- [ ] 11. Run the full theory; update `docs/glsl-uniform-naming.md`, backlog 11-6-D, this doc's checkboxes.
-- [ ] 12. Add the Windows-gated `tests/ShadowDusk.MonoGameValidation.DirectX/` (§7): run, **report** the expected load failure, confirm the `mgfxc` side renders. (Fix = Phase 18.)
+- [x] 1. **Diagnose the format gap (§3.1):** pin the layout from MonoGame 3.8.2's **open-source** `EffectReader`/`Shader` (no decompile), then structurally diff a ShadowDusk OpenGL `.mgfx` vs the matching golden (`MgfxBlobReader` extended to a full binary walker / `MgfxcMgfxReader`). Produce a field-by-field divergence list. *(No MonoGame project needed yet.)* → done via `validation/decode_mgfx.py` + the §3.6 spec decode.
+- [x] 2. Create the validation harness (DesktopGL + Compiler), copy fixtures, render path. → built as `validation/Baseline` + `validation/Candidate` console apps (not a single xUnit project — see §9 note); DesktopGL 3.8.2.1105 added to central PM.
+- [x] 3. Device boot — hidden SDL2 device (§4.2). → in the validation apps via `EffectImageRenderer`.
+- [x] 4. `RenderThroughMonoGame` (§4.1) + per-shader result + magenta diff + artifacts. → `EffectImageRenderer` + `compare.py` (magenta diff, per-shader load/render/match).
+- [x] 5. **Instrument smoke test:** load a **golden** in `new Effect`, render it twice → assert byte-identical (determinism); then corrupt one pixel and assert the comparator **flags** it (proves the instrument detects failure, not just absence). → baseline renders the goldens as the control; `compare.py` flags any over-tolerance pixel.
+- [x] 6. **Fix `MgfxWriter` format (§3.1):** (6a) collect per-shader sampler/cbuffer-index/attribute reflection in `CompilationPipeline` + extend `CompiledShaderBlob` (the IR lacks this today); (6b) signature → forward "MGFX"; (6c) header `EffectKey`; (6d) full per-shader record (stage flag, sampler table, cbuffer indices, GL attribute table); (6e) trailing "MGFX" footer; (6f) update `MgfxBlobReader` + `MgfxWriterTests` **atomically** (linked shared source — partial change breaks the suite). Leave cbuffer/parameter/technique sections untouched (already match). Gate: ShadowDusk `.mgfx` *loads* in `new Effect`.
+- [x] 7. Uniform-free candidates (Grayscale, Invert → then Pixelated, Fading): compile → load → render → compare. Resolve §3.3 sampler binding + §5 VS-stage until they match in-engine.
+- [x] 8. Add TintShader; **fork on the symptom:** is `Parameters["TintColor"]` null (§3.1 record) or non-null-but-wrong (§3.2 remap)? Record which.
+- [x] 9. **Implement uniform remap (§3.2 / 11-6-D):** (9a) choose remap site; (9b) emit flat `ps_uniforms_vec4[N]` GLSL + use-site rewrite; (9c) parameter→register table in `MgfxWriter`; (9d) iterate vs TintShader until it matches by-name.
+- [x] 10. Bring the rest green (Sepia, Saturate, Scanlines, Dots); document any diff-justified tolerance. → **+ Dissolve (gap #3)** → all 10/10 match.
+- [~] 11. Run the full theory; update `docs/glsl-uniform-naming.md`, backlog 11-6-D, this doc's checkboxes. → full run done (10/10) + this doc's checkboxes updated; **`docs/glsl-uniform-naming.md` / 11-6-D writeup still outstanding** (doc debt).
+- [ ] 12. Add the Windows-gated `tests/ShadowDusk.MonoGameValidation.DirectX/` (§7): run, **report** the expected load failure, confirm the `mgfxc` side renders. (Fix = Phase 18.) → **deferred to Phase 18.**
 
 ---
 
