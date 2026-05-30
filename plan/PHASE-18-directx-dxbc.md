@@ -4,7 +4,7 @@
 **Depends on:** Phase 4 (DXC integration), [Phase 4.1 SPIKE](PHASE-4.1-SPIKE-wasm-directx-dxbc.md) (cross-platform DXBC backend survey), Phase 7 + Phase 17 (the `MgfxWriter` header/shader-record rework — a DX `.mgfx` needs the same MonoGame-loadable container as the GL one), Phase 17 harness (reuse the same compare-in-engine instrument for DX).
 **Blocks:** A credible "drop-in `mgfxc` replacement" claim for **Windows / `MonoGame.Framework.WindowsDX`** games — the **DirectX half** of the fidelity (Part 2) goal. The OpenGL half is Phase 17.
 
-> This phase is referenced throughout [PHASE-17-monogame-runtime-validation.md](PHASE-17-monogame-runtime-validation.md) (§7, §3 punch-list #8, Definition of Done) as "Fixing DX = Phase 18," but never had its own document. This is that document. The architecture survey for it is [`monogame_runtime_mgfx_compiler_research.md`](../monogame_runtime_mgfx_compiler_research.md) §9.3 (DXC → DXIL) and the [Known Constraint section in plan.md](plan.md#-known-constraint-dxc-cannot-produce-sm5-dxbc).
+> This phase is referenced throughout [PHASE-17-monogame-runtime-validation.md](DONE/PHASE-17-monogame-runtime-validation.md) (§7, §3 punch-list #8, Definition of Done) as "Fixing DX = Phase 18," but never had its own document. This is that document. The architecture survey for it is [`monogame_runtime_mgfx_compiler_research.md`](../monogame_runtime_mgfx_compiler_research.md) §9.3 (DXC → DXIL) and the [Known Constraint section in plan.md](plan.md#-known-constraint-dxc-cannot-produce-sm5-dxbc).
 
 ---
 

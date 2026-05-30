@@ -1,6 +1,8 @@
 # Phase 17 — MonoGame Runtime Cross-Validation (In-Engine Equivalence)
 
-**Status:** ✅ **Core goal achieved (2026-05-30) — full SM3 PS-only corpus, all 10/10 shaders** — ShadowDusk's OpenGL `.mgfx` loads into real MonoGame DesktopGL and renders pixel-equivalent to the mgfxc goldens for **every** shader, **Dissolve included** (gap #3 closed, see §3.7). Full suite green (zero regressions). **Remaining:** only VS-driven MonoGame support (§8.3, deliberately gated out). Branch `phase17-image-validation`.
+**Status:** ✅ **COMPLETE (2026-05-30) — moved to `plan/DONE/`.** In-engine OpenGL fidelity proven for the full SM3 PS-only corpus: ShadowDusk's `.mgfx` loads into real MonoGame DesktopGL and renders pixel-equivalent to the mgfxc goldens for **all 10/10 shaders, Dissolve included** (gap #3 closed, see §3.7). Full suite green (zero regressions); all in-scope checkboxes ticked; backlog 11-6-D resolved; `docs/glsl-uniform-naming.md` updated to the as-built design. Branch `phase17-image-validation`.
+>
+> **Carried forward (out of this phase's scope, tracked elsewhere):** DirectX 11 (DXBC) → **Phase 18**; WASM/in-browser → **Phase 19**; **VS-driven MonoGame effects** (the `monoGameGl` gate is PS-only) → backlog **17-VS** in `plan/PHASE-20-deferred-backlog.md`. Live `mgfxc` invocation remains out of scope (needs Windows + `fxc.exe`; §3.5).
 
 > **✅ DISSOLVE DONE (2026-05-30):** gap #3 is closed. `src/ShadowDusk.HLSL/FxPreParser.cs` now rewrites the legacy effect-framework `texture T;` declaration → `Texture2D T;` (new `LegacyTextureTypeKeywords` map + `ConsumeLegacyTextureDecl`, a sibling to the gap #2 `sampler_state` / #4 `tex2D` rewrites). The `sampler S = sampler_state {…}` form was already handled; the missing piece was making the `_dissolveTex` resource it binds exist as a modern `Texture2D`. Dissolve now compiles (1058 bytes), loads into a real DesktopGL `Effect`, and matches its golden at **0-diff**. `validation/Candidate` + `python validation/compare.py` → **10/10 MATCH**. 5 new `FxPreParserTests` lock in the rewrite; full suite regression-clean.
 
@@ -257,10 +259,10 @@ Add `tests/ShadowDusk.MonoGameValidation.DirectX/` (**`net8.0-windows`**, `MonoG
 ### 8.2 `MonoGameDeviceFixture`
 Hidden `Game`/`GraphicsDevice` once per collection; SDL2-aware skip; thread-affinity lock (§4.2); dispose after.
 
-### 8.3 Later
-- [ ] PS-only-VS resolution generalized to VS-driven shaders (needs `vs_uniforms_vec4` remap too).
-- [ ] Multi-pass / multi-technique.
-- [ ] If `mgfxc` ever gets wired (§3.5): compile the reference live and also assert ShadowDusk-vs-fresh-mgfxc + mgfxc determinism.
+### 8.3 Later — *(carried forward; see backlog **17-VS** in `plan/PHASE-20-deferred-backlog.md`)*
+- [ ] PS-only-VS resolution generalized to VS-driven shaders (needs `vs_uniforms_vec4` remap too). → backlog **17-VS**.
+- [ ] Multi-pass / multi-technique. → backlog **17-VS**.
+- [ ] If `mgfxc` ever gets wired (§3.5): compile the reference live and also assert ShadowDusk-vs-fresh-mgfxc + mgfxc determinism. → out of scope (no `mgfxc` here).
 
 ---
 
@@ -279,7 +281,7 @@ Hidden `Game`/`GraphicsDevice` once per collection; SDL2-aware skip; thread-affi
 - [ ] DirectX project exists, is **Windows-gated**, and **reports** its outcome (expected fail; not required to pass). → **deferred to Phase 18.**
 - [x] Any tolerance > 0 documented with observed delta + reason (no silent caps). → Scanlines/Dots maxd 1 (sub-LSB), documented in §3.7.
 - [x] Skips cleanly with a clear message when no device; no `Thread.Sleep` / `.Result` / `.Wait()`. → async harness; the console apps require a device to run (dev-run harness, not a CI-skipped test).
-- [ ] `docs/glsl-uniform-naming.md` + backlog 11-6-D updated with the chosen remap strategy and verification. → **doc debt:** `MonoGameGlslRewriter` is the implementation; the design doc still frames it as the old "Phase 7" sketch.
+- [x] `docs/glsl-uniform-naming.md` + backlog 11-6-D updated with the chosen remap strategy and verification. → both rewritten to document `MonoGameGlslRewriter` as built (rule table, verification, known limits); backlog 11-6-D marked RESOLVED in `plan/PHASE-20-deferred-backlog.md`.
 - [x] Vulkan/Metal remain explicitly N/A (no runtime to compare against).
 
 ---
@@ -298,7 +300,7 @@ Hidden `Game`/`GraphicsDevice` once per collection; SDL2-aware skip; thread-affi
 - [x] 8. Add TintShader; **fork on the symptom:** is `Parameters["TintColor"]` null (§3.1 record) or non-null-but-wrong (§3.2 remap)? Record which.
 - [x] 9. **Implement uniform remap (§3.2 / 11-6-D):** (9a) choose remap site; (9b) emit flat `ps_uniforms_vec4[N]` GLSL + use-site rewrite; (9c) parameter→register table in `MgfxWriter`; (9d) iterate vs TintShader until it matches by-name.
 - [x] 10. Bring the rest green (Sepia, Saturate, Scanlines, Dots); document any diff-justified tolerance. → **+ Dissolve (gap #3)** → all 10/10 match.
-- [~] 11. Run the full theory; update `docs/glsl-uniform-naming.md`, backlog 11-6-D, this doc's checkboxes. → full run done (10/10) + this doc's checkboxes updated; **`docs/glsl-uniform-naming.md` / 11-6-D writeup still outstanding** (doc debt).
+- [x] 11. Run the full theory; update `docs/glsl-uniform-naming.md`, backlog 11-6-D, this doc's checkboxes. → full run done (10/10); `docs/glsl-uniform-naming.md` + backlog 11-6-D rewritten to the as-built design; this doc's checkboxes updated.
 - [ ] 12. Add the Windows-gated `tests/ShadowDusk.MonoGameValidation.DirectX/` (§7): run, **report** the expected load failure, confirm the `mgfxc` side renders. (Fix = Phase 18.) → **deferred to Phase 18.**
 
 ---

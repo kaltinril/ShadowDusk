@@ -116,18 +116,27 @@ Steps:
 3. Run `dotnet test --filter "Category=Integration&Platform=OpenGL"` — all 6 `GlslTranspilerTests` should pass.
 4. Run `/platform-check` to confirm no new platform-specific assumptions were introduced in Phase 6.
 
-### 11-6-D: Uniform remapping for MonoGame OpenGL runtime compatibility
+### 11-6-D: Uniform remapping for MonoGame OpenGL runtime compatibility — ✅ RESOLVED (Phase 17, 2026-05-30)
 
-**Context:** Researched in Phase 6 (see `docs/glsl-uniform-naming.md`).
+**Context:** Researched in Phase 6, resolved in Phase 17 (see `docs/glsl-uniform-naming.md`).
 
 MonoGame's OpenGL runtime expects uniforms in MojoShader convention (`vs_uniforms_vec4[N]` / `ps_uniforms_vec4[N]` float4 arrays), not the HLSL variable names that SPIRV-Cross produces by default.
 
-Three strategies (evaluate during Phase 8 / Phase 10):
-1. **Post-process GLSL** — parse SPIRV-Cross output, remap individual uniform declarations to `vs_uniforms_vec4[N]` array slots matching SM 3.0 register layout. Most compatible; requires non-trivial GLSL post-processing.
-2. **Patch MonoGame runtime** — emit GLSL with HLSL names; ship a modified MonoGame OpenGL runtime that looks up by name. Breaks drop-in compatibility.
-3. **UBO binding points** — emit GLSL 3.30+ `std140` uniform blocks; requires MonoGame runtime changes.
+**Resolution:** Strategy 1 (post-process GLSL) was implemented as `MonoGameGlslRewriter` (`src/ShadowDusk.GLSL/MonoGameGlslRewriter.cs`), gated to the PS-only OpenGL path via the `monoGameGl` flag in `CompilationPipeline`. The SPIRV-Cross `type_Globals` UBO is rewritten to a flat `uniform vec4 ps_uniforms_vec4[N];` array (+ samplers→`ps_s{slot}`, varyings, `gl_FragColor`, `texture2D`, drop `#version`), and the pipeline names the cbuffer `ps_uniforms_vec4` with one register per free param in SM 3.0 register layout. Verified in-engine: all 10 SM3 shaders load in real MonoGame DesktopGL and match the `mgfxc` goldens with parameters set by name. See `docs/glsl-uniform-naming.md` for the full rule table, verification, and known limitations (VS stage + PS matrix free-uniforms remain future work, Phase 17 §8.3).
 
-Strategy 1 is required for the drop-in `mgfxc` replacement design constraint.
+Strategies 2 (patch MonoGame runtime) and 3 (UBO binding points) were rejected — both break drop-in compatibility with stock `mgfxc`-compiled `.mgfx`.
+
+### 17-VS: VS-driven MonoGame effects (OpenGL)
+
+**Context:** Carried forward from Phase 17 §8.3 (which proved in-engine equivalence for the **PS-only** SM3 corpus). The MonoGame GL path is gated by the `monoGameGl` flag in `CompilationPipeline` to **PS-only** effects; vertex-bearing passes keep the unmodified SPIRV-Cross dialect so their VS↔PS varying contract and the Phase-16 anchor tests don't regress.
+
+To support custom effects with their own vertex shader under the MonoGame GL runtime:
+1. **Symmetric uniform remap for the VS** — `MonoGameGlslRewriter` currently passes `ShaderStage.Vertex` through unchanged; it needs the `vs_uniforms_vec4[N]` equivalent of the PS rewrite, and the pipeline must name/emit the `vs_uniforms_vec4` cbuffer.
+2. **VS-side stage I/O contract** — emit the legacy `attribute`/`varying` declarations MonoGame's GL runtime links against (the VS produces the varyings the PS consumes by name), and the GL vertex-attribute table for `POSITION`/`COLOR0`/`TEXCOORD0`.
+3. **PS matrix free-uniforms** — complete the `mat4` member expansion in `MonoGameGlslRewriter` (today emits `ps_uniforms_vec4[i]/*TODO mat*/`); a VS almost always takes a `float4x4` transform, so this is a prerequisite.
+4. Extend the `validation/` harness to a VS-driven shader and confirm in-engine equivalence vs an `mgfxc` golden.
+
+See `docs/glsl-uniform-naming.md` → *Known limitations*.
 
 ---
 

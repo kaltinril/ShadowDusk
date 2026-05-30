@@ -1,5 +1,11 @@
 # GLSL Uniform Naming: MonoGame / MojoShader Convention
 
+> **Status:** ✅ **Implemented (Phase 17, 2026-05-30).** Strategy 1 below is live as
+> `MonoGameGlslRewriter` (`src/ShadowDusk.GLSL/MonoGameGlslRewriter.cs`), gated to
+> the PS-only OpenGL path. This document records the design as built, not a
+> proposal. Resolves backlog **11-6-D**. (Originally researched in Phase 6 and
+> deferred — that earlier "Phase 6/7" framing is superseded by what follows.)
+
 ## Background
 
 When MonoGame's OpenGL backend loads a compiled `.mgfx` effect, it calls `glGetUniformLocation`
@@ -8,69 +14,84 @@ must exactly match the uniform declarations in the GLSL source.
 
 ## MonoGame's Expected Convention
 
-MonoGame's OpenGL path uses the MojoShader uniform naming convention. The runtime expects
-vertex-shader float4 uniforms to be declared as elements of an array named `vs_uniforms_vec4`,
-and pixel-shader float4 uniforms as `ps_uniforms_vec4`:
+MonoGame's OpenGL path uses the MojoShader uniform naming convention. The runtime binds free
+(non-resource) uniforms as a single `vec4[N]` array **named after the constant buffer** —
+`ConstantBuffer.PlatformApply` calls `GetUniformLocation(cbufferName)` and uploads with
+`glUniform4fv`. `mgfxc` names that cbuffer `ps_uniforms_vec4` / `vs_uniforms_vec4`:
 
 ```glsl
 uniform vec4 vs_uniforms_vec4[N];   // vertex constant buffer
 uniform vec4 ps_uniforms_vec4[N];   // pixel constant buffer
 ```
 
-MonoGame looks up uniforms by these fixed array names, not by the original HLSL variable names
-(`WorldViewProj`, `DiffuseColor`, etc.).
+MonoGame looks up uniforms by these fixed array names, **not** by the original HLSL variable
+names (`WorldViewProj`, `DiffuseColor`, …). It also expects:
+
+- Samplers named `ps_s{slot}` (e.g. `ps_s0`), looked up by slot.
+- Stage I/O carried over legacy `varying` names that match the built-in `SpriteEffect` VS
+  outputs (MonoGame links the VS to the custom PS **by varying name**): `vFrontColor`
+  (`COLOR0`), `vBackColor` (`COLOR1`), `vTexCoord{n}` (`TEXCOORD{n}`).
+- Pixel output via `gl_FragColor` (or `gl_FragData[n]`), legacy `texture2D()` sampling, and
+  **no** `#version` directive (MojoShader GLSL is GLSL 110-era).
 
 ## What SPIRV-Cross Emits by Default
 
-SPIRV-Cross preserves the original HLSL variable names in its GLSL output. A shader that
-declares `float4x4 WorldViewProj : register(c0)` will appear as:
+SPIRV-Cross emits modern GLSL that is **incompatible** with the above: a `#version 140`
+directive, `in`/`out` stage variables (`in_var_TEXCOORD0`, `out_var_SV_Target`), `texture()`
+sampling, an opaque sampler name (`_39`), and free uniforms packed into a **`std140`
+`type_Globals` UBO block**. Loaded as-is, `GetUniformLocation("type_Globals")` returns `-1`,
+`ConstantBuffer.PlatformApply` early-returns, and every parameter reads zero (e.g. a tint
+shader renders black) even though the GLSL itself compiles cleanly.
 
-```glsl
-uniform mat4 WorldViewProj;
-```
+So a byte-correct `.mgfx` container is **necessary but not sufficient** — the embedded GLSL
+must also be in MonoGame's dialect or the custom PS will not link with the built-in VS.
 
-This is **incompatible** with the MonoGame OpenGL runtime, which will not find these uniforms
-via its `vs_uniforms_vec4` / `ps_uniforms_vec4` lookups.
+## Implemented Design — Strategy 1 (GLSL post-process)
 
-## Phase 6 Decision
+`MonoGameGlslRewriter.Rewrite(glsl, stage)` is a **pure string transform** (no SPIRV-Cross /
+native dependency) run over the SPIRV-Cross pixel-shader output. It is invoked from
+`CompilationPipeline` only when the `monoGameGl` gate is set (PS-only OpenGL effects); other
+targets keep the unmodified SPIRV-Cross dialect. The transform, by rule:
 
-Phase 6 produces SPIRV-Cross default GLSL output (HLSL variable names). This is correct
-GLSL that compiles cleanly, but will not bind uniforms at MonoGame runtime.
+| # | SPIRV-Cross input | Rewritten to |
+|---|---|---|
+| 1 | `#version …` line; the `GL_ARB_shading_language_420pack` extension block | dropped; a `precision mediump` `#ifdef GL_ES` header is prepended |
+| 3 | `uniform sampler2D <id>;` | `uniform sampler2D ps_s{slot};` (by declaration order); uses renamed in the body |
+| 4 | `in <type> in_var_<SEM>;` | `varying vec4 <legacy>;` — `COLOR0`→`vFrontColor`, `COLOR1`→`vBackColor`, `TEXCOORD{n}`→`vTexCoord{n}`; uses get a width-truncating swizzle |
+| 5 | `out vec4 out_var_SV_Target<N?>;` | declaration dropped; uses → `gl_FragColor` (or `gl_FragData[N]`) |
+| 6 | `texture()/textureLod()/textureProj()` | `texture2D()/texture2DLod()/texture2DProj()` |
+| 7 | `layout(std140) uniform type_Globals { … }` | `uniform vec4 ps_uniforms_vec4[N];`; member uses `_Globals.<m>` → `ps_uniforms_vec4[i]<swizzle>` |
 
-This is a **known incompatibility** deferred to Phase 7 (binary writer). The Phase 6
-deliverable is a structurally correct SPIRV-Cross transpilation pipeline.
+`Rewrite` returns the rewritten GLSL plus the discovered sampler list (`ps_s{slot}`) and the
+`ps_uniforms_vec4` register count. The pipeline pairs this with the `.mgfx` side:
 
-## Strategies for Resolving the Incompatibility (Phase 7)
+- The cbuffer is **named `ps_uniforms_vec4`**, with one 16-byte register per free parameter,
+  register-aligned by size (SM 3.0 constant-register layout), so `Effect.Parameters[name]
+  .SetValue(…)` lands in the right `vec4` slot.
+- The per-shader sampler table binds slot → `ps_s{slot}` with the texture parameter index, so
+  `SpriteBatch`'s texture reaches the sampler.
 
-Three approaches are available:
+### Rejected alternatives
 
-### Strategy 1 — Post-process GLSL to MojoShader convention (required for drop-in compatibility)
+- **Patch the MonoGame runtime** (look up by HLSL name) — breaks drop-in compatibility with
+  stock `mgfxc`-compiled `.mgfx`; not viable.
+- **Ship a UBO + binding points** — requires MonoGame runtime changes; same problem.
 
-After SPIRV-Cross emits GLSL, a post-processing pass renames individual uniform variables to
-the `vs_uniforms_vec4[N]` / `ps_uniforms_vec4[N]` array form. This requires:
+## Verification
 
-1. Querying SPIRV-Cross for each uniform's register index via `spvc_compiler_get_decoration`
-   with `SpvDecorationBinding` or `SpvDecorationLocation`.
-2. Replacing each uniform declaration in the GLSL text with the corresponding array element.
-3. Replacing all use-sites in the shader body.
+Proven end-to-end in Phase 17: ShadowDusk's OpenGL `.mgfx` (this rewrite + the `MgfxWriter`
+format rework) loads into a **real** `MonoGame.Framework.DesktopGL` `Effect` and renders
+pixel-equivalent to the `mgfxc` goldens for all 10 SM3 PS-only shaders — including the
+uniform-driven ones (TintShader, Sepia, Saturate, Scanlines, Dots) with parameters **set by
+name** (`validation/Candidate` vs `validation/Baseline` + `compare.py`: 8 exact, Scanlines/Dots
+maxd 1). Unit coverage: `tests/ShadowDusk.GLSL.Tests/MonoGameGlslRewriterTests.cs`.
 
-This is the **required strategy** for maintaining drop-in `mgfxc` compatibility, since it
-matches what MonoGame's existing `.mgfx` loader expects.
+## Known limitations (future work)
 
-### Strategy 2 — Patch MonoGame runtime
-
-Modify the MonoGame OpenGL effect loader to use HLSL variable names instead of
-`vs_uniforms_vec4` array lookups. This breaks compatibility with existing `.mgfx` files
-compiled by the stock `mgfxc` tool and is therefore not viable for a drop-in replacement.
-
-### Strategy 3 — UBO binding points
-
-Use SPIRV-Cross's UBO (Uniform Buffer Object) support to pack uniforms into a single
-buffer at a fixed binding point that MonoGame's OpenGL loader can find. This requires
-MonoGame runtime changes to interpret the UBO layout and is a larger undertaking.
-
-## Recommendation
-
-Implement Strategy 1 in Phase 7 as part of the binary writer. The post-processing pass
-should be integrated into `SpirvCrossGlslTranspiler` or added as a separate
-`GlslUniformRemapper` class that runs after transpilation.
+- **Pixel stage only.** For `ShaderStage.Vertex`, `Rewrite` currently passes the GLSL through
+  unchanged. VS-driven MonoGame effects also need the symmetric `vs_uniforms_vec4` remap and
+  the VS-side varying contract — tracked as Phase 17 §8.3 future work.
+- **Matrix free-uniforms in the PS are not fully remapped.** A `mat4` member emits
+  `ps_uniforms_vec4[i]/*TODO mat*/` (a column/row expansion is still owed). The PS-only
+  post-process corpus uses only `float`/`vec` free uniforms, so this is unexercised today; it
+  must be completed before a PS that takes a matrix uniform is supported.
