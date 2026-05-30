@@ -85,6 +85,14 @@ internal sealed class CompilationPipeline
                 Code: "SD0010",
                 Message: "Effect source contains no techniques"));
 
+        // MonoGame-compatible GLSL emission (MojoShader dialect + ps_uniforms_vec4
+        // layout) currently targets the PS-only SpriteBatch post-process shape —
+        // Phase 17's scope. VS-driven effects keep the default SPIRV-Cross output
+        // (their VS<->PS varying contract would otherwise break). Gate on every pass
+        // being pixel-only so VS-driven OpenGL effects are unaffected.
+        bool monoGameGl = options.Target == PlatformTarget.OpenGL
+            && fxParsed.Techniques.All(t => t.Passes.All(p => p.VertexEntryPoint is null));
+
         // Stages 3–5: Compile each pass's entry points, reflect, and transpile.
         // The preprocessor has already flattened all #includes so no include handler is needed for DXC.
         using var dxcCompiler = new DxcShaderCompiler();
@@ -138,6 +146,7 @@ internal sealed class CompilationPipeline
                         ShaderStage.Vertex,
                         options.Target,
                         compileOptions,
+                        applyMonoGameGlsl: false, // VS-bearing pass is never MonoGame-rewritten
                         cancellationToken).ConfigureAwait(false);
 
                     if (compileOutput.Blob.IsFailure)
@@ -159,6 +168,7 @@ internal sealed class CompilationPipeline
                         ShaderStage.Pixel,
                         options.Target,
                         compileOptions,
+                        applyMonoGameGlsl: monoGameGl,
                         cancellationToken).ConfigureAwait(false);
 
                     if (compileOutput.Blob.IsFailure)
@@ -237,7 +247,7 @@ internal sealed class CompilationPipeline
                 Passes: mgfxPasses));
         }
 
-        IReadOnlyList<ConstantBufferInfo>  constantBufferInfoList  = BuildConstantBufferInfoList(allConstantBuffers, allParameters, options.Target);
+        IReadOnlyList<ConstantBufferInfo>  constantBufferInfoList  = BuildConstantBufferInfoList(allConstantBuffers, allParameters, monoGameGl);
         IReadOnlyList<EffectParameterInfo> effectParameterInfoList = BuildEffectParameterInfoList(allParameters);
 
         // Attach each shader's sampler table + constant-buffer-index list so the
@@ -319,6 +329,7 @@ internal sealed class CompilationPipeline
             ShaderStage stage,
             PlatformTarget platform,
             DxcCompileOptions compileOptions,
+            bool applyMonoGameGlsl,
             CancellationToken ct)
     {
         if (platform == PlatformTarget.OpenGL)
@@ -362,9 +373,11 @@ internal sealed class CompilationPipeline
 
             // Rewrite SPIRV-Cross GLSL into MonoGame/MojoShader-compatible GLSL so it
             // links with MonoGame's built-in SpriteEffect VS (varying names, gl_FragColor,
-            // ps_sN samplers, ps_uniforms_vec4, legacy dialect).
-            var rewritten = MonoGameGlslRewriter.Rewrite(transpileResult.Value.Text, stage);
-            byte[] glslBytes = Encoding.UTF8.GetBytes(rewritten.Glsl);
+            // ps_sN samplers, ps_uniforms_vec4, legacy dialect). Only for PS-only effects.
+            string glslText = applyMonoGameGlsl
+                ? MonoGameGlslRewriter.Rewrite(transpileResult.Value.Text, stage).Glsl
+                : transpileResult.Value.Text;
+            byte[] glslBytes = Encoding.UTF8.GetBytes(glslText);
 
             return (
                 Result<byte[], ShaderError>.Ok(glslBytes),
@@ -399,30 +412,34 @@ internal sealed class CompilationPipeline
     private static IReadOnlyList<ConstantBufferInfo> BuildConstantBufferInfoList(
         IReadOnlyList<ConstantBufferReflection> constantBuffers,
         IReadOnlyList<ParameterReflection> parameters,
-        PlatformTarget target)
+        bool monoGameGl)
     {
-        // MonoGame's GL runtime binds free uniforms as a single vec4[] array named
-        // after the cbuffer (ps_uniforms_vec4) via glUniform4fv — each free param
-        // occupies one vec4 register, in declaration order. This matches mgfxc's
-        // MojoShader layout and the ps_uniforms_vec4[i] indexing the GLSL rewriter
-        // emits. DirectX keeps HLSL packing.
-        bool gl = target == PlatformTarget.OpenGL;
+        // For MonoGame's GL runtime, free uniforms bind as a single vec4[] array
+        // named after the cbuffer (ps_uniforms_vec4) via glUniform4fv. Each free
+        // param is register-aligned (16 bytes), occupying ceil(size/16) registers —
+        // scalars padded to a full register, a float4x4 spanning four — matching
+        // mgfxc's MojoShader layout and the ps_uniforms_vec4[reg] indexing the GLSL
+        // rewriter emits. Otherwise (DirectX, or VS-driven GL) keep HLSL packing.
+        bool gl = monoGameGl;
         var result = new List<ConstantBufferInfo>(constantBuffers.Count);
 
         foreach (ConstantBufferReflection cb in constantBuffers)
         {
             var paramIndices = new List<int>();
             var paramOffsets = new List<ushort>();
+            int glByteOffset = 0;
 
-            for (int v = 0; v < cb.Variables.Count; v++)
+            foreach (VariableReflection variable in cb.Variables)
             {
-                VariableReflection variable = cb.Variables[v];
+                int thisOffset = glByteOffset;
+                glByteOffset += Math.Max(1, (variable.SizeBytes + 15) / 16) * 16;
+
                 for (int idx = 0; idx < parameters.Count; idx++)
                 {
                     if (parameters[idx].Name == variable.Name)
                     {
                         paramIndices.Add(idx);
-                        paramOffsets.Add(gl ? (ushort)(v * 16) : (ushort)variable.StartOffset);
+                        paramOffsets.Add(gl ? (ushort)thisOffset : (ushort)variable.StartOffset);
                         break;
                     }
                 }
@@ -430,7 +447,7 @@ internal sealed class CompilationPipeline
 
             result.Add(new ConstantBufferInfo(
                 Name:             gl ? "ps_uniforms_vec4" : cb.Name,
-                SizeInBytes:      gl ? cb.Variables.Count * 16 : cb.SizeBytes,
+                SizeInBytes:      gl ? glByteOffset : cb.SizeBytes,
                 ParameterIndices: paramIndices,
                 ParameterOffsets: paramOffsets));
         }

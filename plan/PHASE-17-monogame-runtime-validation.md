@@ -134,6 +134,14 @@ The Phase 16 rewrite drops in-shader `sampler_state` filter/address modes (`Samp
 
 `mgfxc` is **not installed** (not in `.config/dotnet-tools.json`; `where mgfxc` is empty), requires `fxc.exe`/Windows, and its OpenGL profile only accepts SM 3.0 (see MEMORY: "mgfxc OpenGL profile rejects SM 4.0+"). Therefore **the reference is the checked-in goldens only**; any "regenerate via mgfxc" / fresh-determinism check is out of scope for this phase (revisit in §8.3 if mgfxc is ever wired).
 
+### 3.7 ACHIEVED (2026-05-30) — in-engine fidelity proven for the SM3 corpus
+
+**ShadowDusk's OpenGL `.mgfx`, compiled by our tool, loads into a real `MonoGame.Framework.DesktopGL` `Effect` and renders pixel-equivalent to the mgfxc goldens** through the identical `SpriteBatch` path — the Part-2 fidelity bar, met for all 9 compilable SM3 shaders. `validation/Candidate` vs `validation/Baseline`, `compare.py`: Grayscale/Invert/TintShader/Sepia/Saturate/Pixelated/Fading = **0-diff exact**; Scanlines/Dots = **maxd 1** (sub-LSB, within tolerance). Dissolve still doesn't compile (gap #3). Full suite regression-clean (248 tests). The work landed on branch `phase17-image-validation` (uncommitted):
+- **§3.1 writer rework DONE** — forward "MGFX" + `EffectKey` + footer; pass indices int16→int32; value-param default blob; full per-shader record (stage bool, **byte** sampler/cbuffer/attr counts). **Correction to §3.1: the cbuffer param table is INTERLEAVED (int32 index, uint16 offset per param), not grouped** — only multi-uniform shaders exposed it (Saturate/Dots crashed in `ConstantBuffer.Update`).
+- **§3.2 uniform remap DONE** via `MonoGameGlslRewriter` (new, ShadowDusk.GLSL) — `type_Globals` UBO → `uniform vec4 ps_uniforms_vec4[N]`, plus the full MojoShader dialect (varyings, `gl_FragColor`, `ps_sN`, drop `#version`, `texture2D`). Pipeline names the cbuffer `ps_uniforms_vec4` with one register (16B) per free param, register-aligned by size (a float4x4 spans 4).
+- **§3.3 sampler binding DONE** — per-shader sampler table emitted (slot→`ps_s{slot}`, parameter=texture param index) from reflection.
+- **Scoped via a `monoGameGl` gate** (PS-only OpenGL effects only) so VS-driven effects keep the SPIRV dialect and the §5 VS-stage / anchor tests don't regress. VS-driven MonoGame support stays §8.3 future work.
+
 ### 3.6 EMPIRICAL RESULTS (2026-05-29) — harness built, blockers measured
 
 The comparison harness now exists (`validation/` — `Baseline` + `Candidate` console apps, `compare.py`, `decode_mgfx.py`; DesktopGL 3.8.2.1105). **Real measurements, not predictions:**
