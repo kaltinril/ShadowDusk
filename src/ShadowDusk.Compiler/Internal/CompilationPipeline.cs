@@ -7,8 +7,10 @@ using ShadowDusk.Core.Reflection;
 using ShadowDusk.GLSL;
 using ShadowDusk.HLSL;
 using ShadowDusk.HLSL.Ast;
+using ShadowDusk.HLSL.D3DCompiler;
 using ShadowDusk.HLSL.Dxc;
 using ShadowDusk.HLSL.Reflection;
+using ShadowDusk.HLSL.Vkd3d;
 
 namespace ShadowDusk.Compiler.Internal;
 
@@ -98,6 +100,22 @@ internal sealed class CompilationPipeline
         using var dxcCompiler = new DxcShaderCompiler();
         var glslTranspiler = new SpirvCrossGlslTranspiler();
 
+        // DirectX (DX11) takes a separate backend: DXC only emits SM6 DXIL, which
+        // MonoGame's DX11 runtime rejects. d3dcompiler_47 (the fxc engine) emits the
+        // SM5 DXBC MonoGame loads — and the matching ID3D11ShaderReflection is reflected
+        // here. Windows-only at runtime (guarded inside the backend). A cross-platform
+        // vkd3d backend can replace D3DCompilerShaderCompiler behind IDxbcShaderCompiler.
+        bool directX = options.Target == PlatformTarget.DirectX;
+        // Backend selection (default = the proven d3dcompiler_47 oracle). The
+        // cross-platform vkd3d-shader backend is opt-in via CompilerOptions.DxbcBackend.
+        // Both implement IDxbcShaderCompiler and both feed the SAME DxbcReflectionExtractor.
+        IDxbcShaderCompiler dxbcCompiler = options.DxbcBackend switch
+        {
+            DxbcBackend.Vkd3d => new Vkd3dShaderCompiler(),
+            _                 => new D3DCompilerShaderCompiler(),
+        };
+        var dxbcReflectionPipe  = new DxbcReflectionPipeline(new DxbcReflectionExtractor());
+
         var extractor          = new DxilReflectionExtractor();
         var verifier           = new SpvReflectionVerifier();
         var reflectionPipeline = new ReflectionPipeline(extractor, verifier);
@@ -140,6 +158,7 @@ internal sealed class CompilationPipeline
                 {
                     var compileOutput = await CompileEntryPointAsync(
                         dxcCompiler,
+                        dxbcCompiler,
                         glslTranspiler,
                         preprocessed,
                         pass.VertexEntryPoint,
@@ -162,6 +181,7 @@ internal sealed class CompilationPipeline
                 {
                     var compileOutput = await CompileEntryPointAsync(
                         dxcCompiler,
+                        dxbcCompiler,
                         glslTranspiler,
                         preprocessed,
                         pass.PixelEntryPoint,
@@ -192,14 +212,28 @@ internal sealed class CompilationPipeline
                     if (dxilBlob.IsEmpty)
                         continue;
 
-                    var reflectionInput = new ReflectionInput
+                    Result<ReflectedEffect, ShaderError> reflectResult;
+                    if (directX)
                     {
-                        DxilBlob      = dxilBlob,
-                        SpirVBlob     = spirvBlob,
-                        FxAnnotations = fxParsed.ParameterAnnotations,
-                    };
+                        // DirectX: dxilBlob actually carries SM5 DXBC — reflect via
+                        // ID3D11ShaderReflection (DXC's DXIL reflection can't read DXBC).
+                        reflectResult = await dxbcReflectionPipe.ReflectAsync(
+                            dxilBlob,
+                            fxParsed.ParameterAnnotations,
+                            cancellationToken).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        var reflectionInput = new ReflectionInput
+                        {
+                            DxilBlob      = dxilBlob,
+                            SpirVBlob     = spirvBlob,
+                            FxAnnotations = fxParsed.ParameterAnnotations,
+                        };
 
-                    var reflectResult = await reflectionPipeline.ReflectAsync(reflectionInput, cancellationToken).ConfigureAwait(false);
+                        reflectResult = await reflectionPipeline.ReflectAsync(reflectionInput, cancellationToken).ConfigureAwait(false);
+                    }
+
                     if (reflectResult.IsFailure)
                         return Fail(reflectResult.Error);
 
@@ -247,7 +281,7 @@ internal sealed class CompilationPipeline
                 Passes: mgfxPasses));
         }
 
-        IReadOnlyList<ConstantBufferInfo>  constantBufferInfoList  = BuildConstantBufferInfoList(allConstantBuffers, allParameters, monoGameGl);
+        IReadOnlyList<ConstantBufferInfo>  constantBufferInfoList  = BuildConstantBufferInfoList(allConstantBuffers, allParameters, monoGameGl, directX);
         IReadOnlyList<EffectParameterInfo> effectParameterInfoList = BuildEffectParameterInfoList(allParameters);
 
         // Attach each shader's sampler table + constant-buffer-index list so the
@@ -269,7 +303,9 @@ internal sealed class CompilationPipeline
                         Type:        0, // Sampler2D
                         TextureSlot: (byte)slot,
                         SamplerSlot: (byte)slot,
-                        Name:        $"ps_s{slot}",
+                        // DX binds samplers via the DXBC resource table, not by GLSL
+                        // uniform name, so the sampler name is empty for DirectX.
+                        Name:        directX ? string.Empty : $"ps_s{slot}",
                         Parameter:   paramIndex));
                 }
             }
@@ -323,6 +359,7 @@ internal sealed class CompilationPipeline
     private static async Task<(Result<byte[], ShaderError> Blob, ReadOnlyMemory<byte> DxilBlob, ReadOnlyMemory<byte> SpirvBlob)>
         CompileEntryPointAsync(
             DxcShaderCompiler dxcCompiler,
+            IDxbcShaderCompiler dxbcCompiler,
             SpirvCrossGlslTranspiler glslTranspiler,
             PreprocessedSource preprocessed,
             string entryPoint,
@@ -332,6 +369,30 @@ internal sealed class CompilationPipeline
             bool applyMonoGameGlsl,
             CancellationToken ct)
     {
+        if (platform == PlatformTarget.DirectX)
+        {
+            // DX11: compile SM5 DXBC via d3dcompiler_47 (the fxc oracle). DXC's
+            // DirectX target only emits SM6 DXIL, which MonoGame's DX11 runtime
+            // rejects. The DXBC bytes ARE the shader payload AND the reflection
+            // source (carried in the dxilBlob slot — reflected as DXBC upstream).
+            var dxbcRequest = new D3DCompileRequest
+            {
+                HlslSource     = preprocessed.Text,
+                SourceFileName = preprocessed.OriginalFilePath,
+                EntryPoint     = entryPoint,
+                Stage          = stage,
+                EmbedDebugInfo = compileOptions.EmbedDebugInfo,
+                AllowWarnings  = compileOptions.AllowWarnings,
+            };
+
+            var dxbcResult = await dxbcCompiler.CompileAsync(dxbcRequest, ct).ConfigureAwait(false);
+            if (dxbcResult.IsFailure)
+                return (Result<byte[], ShaderError>.Fail(dxbcResult.Error), default, default);
+
+            ReadOnlyMemory<byte> dxbc = dxbcResult.Value.Bytes;
+            return (Result<byte[], ShaderError>.Ok(dxbc.ToArray()), dxbc, default);
+        }
+
         if (platform == PlatformTarget.OpenGL)
         {
             // Compile with DirectX target to get DXIL for reflection.
@@ -386,7 +447,8 @@ internal sealed class CompilationPipeline
         }
         else
         {
-            // DirectX / Vulkan: single compile.
+            // Vulkan (and any future DX12/KNI SM6 profile): single DXC compile.
+            // DX11 no longer reaches here — it takes the DXBC oracle branch above.
             var request = new DxcCompileRequest
             {
                 HlslSource     = preprocessed.Text,
@@ -412,7 +474,8 @@ internal sealed class CompilationPipeline
     private static IReadOnlyList<ConstantBufferInfo> BuildConstantBufferInfoList(
         IReadOnlyList<ConstantBufferReflection> constantBuffers,
         IReadOnlyList<ParameterReflection> parameters,
-        bool monoGameGl)
+        bool monoGameGl,
+        bool directX)
     {
         // For MonoGame's GL runtime, free uniforms bind as a single vec4[] array
         // named after the cbuffer (ps_uniforms_vec4) via glUniform4fv. Each free
@@ -445,8 +508,13 @@ internal sealed class CompilationPipeline
                 }
             }
 
+            // DX cbuffer record carries an empty name (MonoGame's DX11 runtime binds
+            // the cbuffer by slot, not by name); GL uses ps_uniforms_vec4; both keep
+            // HLSL register-aligned offsets except the GL vec4[] remap above.
+            string cbName = gl ? "ps_uniforms_vec4" : directX ? string.Empty : cb.Name;
+
             result.Add(new ConstantBufferInfo(
-                Name:             gl ? "ps_uniforms_vec4" : cb.Name,
+                Name:             cbName,
                 SizeInBytes:      gl ? glByteOffset : cb.SizeBytes,
                 ParameterIndices: paramIndices,
                 ParameterOffsets: paramOffsets));

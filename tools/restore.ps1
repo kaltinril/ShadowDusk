@@ -41,6 +41,50 @@ EnsureDir (Split-Path $LinuxSo)
 EnsureDir (Split-Path $OsxX64)
 EnsureDir (Split-Path $OsxArm64)
 
+# ---------------------------------------------------------------------------
+# vkd3d-shader (cross-platform DXBC backend, Phase 18 Track A)
+# ---------------------------------------------------------------------------
+# The vkd3d-shader native lib is a RESTORED artifact, not checked into the repo.
+# Today only a locally-built win-x64 binary exists; this step just verifies it is
+# present and documents the build recipe. Hosting per-RID artifacts as a pinned
+# GitHub Releases download is a follow-up (see note below). Invoked up-front so it
+# always runs regardless of the spirv-cross restore state below.
+function Restore-Vkd3dShader {
+    $Vkd3dDir = Join-Path $RepoRoot 'tools' 'vkd3d'
+    $WinVkd3d = Join-Path $Vkd3dDir 'libvkd3d-shader-1.dll'   # win-x64
+    EnsureDir $Vkd3dDir
+
+    if (Test-Path $WinVkd3d) {
+        Write-Host "restore.ps1: vkd3d-shader (libvkd3d-shader-1.dll) present — OK"
+        return
+    }
+
+    Write-Warning @"
+
+vkd3d-shader native library not found at:
+  $WinVkd3d
+
+Build recipe (win-x64, vkd3d-shader 1.17, self-contained — zero non-system deps):
+  1. Install a portable MSYS2 toolchain (mingw-w64 + autotools).
+  2. Download the vkd3d 1.17 release tarball from
+     https://dl.winehq.org/vkd3d/source/ (vkd3d-1.17.tar.xz).
+  3. Configure with Vulkan resolved to the system loader by SONAME and statically
+     linked libgcc/winpthread so the DLL has no external runtime deps:
+        ./configure --host=x86_64-w64-mingw32 \
+            SONAME_LIBVULKAN=vulkan-1.dll \
+            LDFLAGS="-static-libgcc -Wl,-Bstatic -lwinpthread -Wl,-Bdynamic"
+     make
+  4. Copy the resulting libvkd3d-shader-1.dll to:
+        $WinVkd3d
+     (Full recipe is in memory/Track-A report.)
+
+NOTE: This binary is NOT committed (.gitignore ignores tools/vkd3d/*.dll). Hosting
+per-RID artifacts (win-x64 / linux-x64 / osx-*) as a pinned download is a follow-up.
+"@
+}
+
+Restore-Vkd3dShader
+
 if (-not $Force -and (Test-Path $WinDll)) {
     Write-Host "spirv-cross-c-shared.dll already present — skipping restore."
     exit 0

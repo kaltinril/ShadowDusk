@@ -40,7 +40,7 @@ These phases are fully implemented. Their documents have been moved to `DONE/` w
 | Phase | Status | File | Summary |
 |-------|--------|------|---------|
 | 17 | ✅ Done | [DONE/PHASE-17-monogame-runtime-validation.md](DONE/PHASE-17-monogame-runtime-validation.md) | In-engine equivalence **complete (2026-05-30)** for the full SM3 PS-only corpus (all 10/10, Dissolve incl.): ShadowDusk `.mgfx` loads in a real MonoGame `Effect` and renders pixel-equivalent to `mgfxc` (OpenGL) — the fidelity (Part 2) bar. Carried forward: DirectX → Phase 18, VS-driven effects → backlog 17-VS |
-| 18 | Planned | [PHASE-18-directx-dxbc.md](PHASE-18-directx-dxbc.md) | DirectX 11 **DXBC** output (cross-platform, no Wine) so WindowsDX games load ShadowDusk's DX `.mgfx` — the DirectX half of fidelity |
+| 18 | ✅ Done | [DONE/PHASE-18-directx-dxbc.md](DONE/PHASE-18-directx-dxbc.md) | In-engine equivalence **complete (2026-05-30)** for the SM5 PS-only corpus (all 10/10): ShadowDusk's DX `.mgfx` loads in real MonoGame WindowsDX and renders pixel-equivalent to `mgfxc`, via the cross-platform **vkd3d-shader** backend (`d3dcompiler_47` oracle on Windows) — the DirectX half of fidelity. Carried forward: VS-driven → backlog 17-VS, Linux/macOS *run* validation → Phase 30 CI |
 | 19 | Planned | [PHASE-19-wasm-runtime-compilation.md](PHASE-19-wasm-runtime-compilation.md) | WASM in-browser `.fx` → `.mgfx` (precompiled-bytes load first, then in-browser DXC/SPIRV-Cross) — the browser half of *reach*. Builds out the "9W" placeholder |
 | 20 | Backlog | [PHASE-20-deferred-backlog.md](PHASE-20-deferred-backlog.md) | Deferred items backlog from phases 2–9; no prerequisites, review before 1.0 |
 | 21 | Planned | [PHASE-21-test-suite-performance.md](PHASE-21-test-suite-performance.md) | Investigate the 21m43s `ShadowDusk.Integration.Tests` run (same 108 tests ran in ~3s earlier same session) — likely AV-scan / CLI-spawn / a stalling test; diagnostic, correctness unaffected |
@@ -86,9 +86,9 @@ Phase 1  (scaffold)
 
 ---
 
-## ⚠️ Known Constraint: DXC Cannot Produce SM5 DXBC
+## ✅ Resolved Constraint (Phase 18): DXC Cannot Produce SM5 DXBC
 
-Discovered during Phase 4 implementation. **DXC only produces SM6 DXIL** — it rejects `vs_5_0`/`ps_5_0` profiles with `error: invalid profile` for non-SPIRV targets. It has never supported DXBC (SM1–SM5) output.
+Discovered during Phase 4 implementation. **DXC only produces SM6 DXIL** — it rejects `vs_5_0`/`ps_5_0` profiles with `error: invalid profile` for non-SPIRV targets. It has never supported DXBC (SM1–SM5) output. **Phase 18 (done 2026-05-30) resolved this** by routing the DX11 path through a DXBC backend behind `IDxbcShaderCompiler` — the cross-platform **vkd3d-shader** library (HLSL → DXBC_TPF), validated 10/10 in real MonoGame WindowsDX, with `d3dcompiler_47.dll` as a Windows-only correctness oracle. DXC's DXIL path is retained only for DX12/KNI. The historical analysis below is kept for context.
 
 **Impact by target:**
 
@@ -96,7 +96,7 @@ Discovered during Phase 4 implementation. **DXC only produces SM6 DXIL** — it 
 |--------|--------|-------|
 | OpenGL (SPIR-V path) | ✅ Unaffected | DXC compiles `vs_5_0 -spirv` fine; SPIRV-Cross handles the rest |
 | Vulkan (SPIR-V path) | ✅ Unaffected | Same pipeline |
-| DirectX 11 | ⚠️ Degraded | DXC produces SM6 DXIL, not SM5 DXBC; MonoGame's D3D11 backend cannot load DXIL |
+| DirectX 11 | ✅ Resolved (Phase 18) | DXC's SM6 DXIL won't load on D3D11; **Phase 18 routes DX11 through vkd3d-shader → SM5 DXBC** (`d3dcompiler_47` oracle on Windows). 10/10 load + render pixel-equivalent in real WindowsDX |
 | DirectX 12 / KNI | ✅ Works | D3D12 natively accepts DXIL (SM6); `vs_6_0`/`ps_6_0` used in Phase 4 |
 
 **SM6 DXIL on D3D11 is a hard no.** `ID3D11Device::CreateVertexShader` rejects DXIL unconditionally — even on Windows 10. DXIL is a D3D12-only format.
@@ -108,7 +108,7 @@ The only viable cross-platform HLSL→DXBC compiler that does not require Wine:
 **`vkd3d-shader`** (`gitlab.winehq.org/wine/vkd3d`)
 - A standalone C library — **no Wine runtime required**. It is developed under the Wine project umbrella but ships and runs independently; linking against it is identical to linking SPIRV-Cross.
 - Compiles HLSL to SM4/SM5 DXBC via a `vkd3d_shader_compile()` C API; P/Invoke pattern mirrors SPIRV-Cross
-- Cross-platform: Linux, macOS, Windows; prebuilt shared libraries (`libvkd3d-shader.so` / `.dylib` / `.dll`)
+- Cross-platform: Linux, macOS, Windows. **No official prebuilt Windows DLL exists** (Phase 18 finding) — we build `libvkd3d-shader` from WineHQ source (vkd3d-1.17 via MSYS2/autotools, self-contained, zero non-system deps) and host per-RID; Linux/macOS have distro/source builds. `tools/restore.*` carries the recipe.
 - License: **LGPL-2.1+** — safe to use as a dynamically-linked native binary (same model as SPIRV-Cross)
 - Active development; v2.0 released May 2026; adopted by SDL3's `SDL_shadercross` as its non-Windows DXBC backend (no Wine involved there either)
 - Coverage for MonoGame-style effects (cbuffers, Texture2D samplers, VS/PS only): sufficient
@@ -121,7 +121,7 @@ No end-user installation required on any platform:
 
 | Platform | Library | How it's delivered |
 |----------|---------|-------------------|
-| Windows | `d3dcompiler_47.dll` | Ships with Windows since Vista — always present, zero bundling needed |
+| Windows | `libvkd3d-shader.dll` (shipping) + `d3dcompiler_47.dll` (oracle) | vkd3d built/hosted per-RID (the cross-platform shipping backend on every OS); `d3dcompiler_47.dll` ships with Windows and is used only as the correctness oracle |
 | Linux | `libvkd3d-shader.so` | Downloaded by `tools/restore.sh`, bundled into `dotnet publish` output |
 | macOS | `libvkd3d-shader.dylib` | Same as Linux |
 
@@ -129,4 +129,4 @@ This mirrors exactly how SPIRV-Cross is distributed today. Users install ShadowD
 
 > **WASM delivery target: DirectX DXBC is an open problem.** Native P/Invoke is unavailable in the browser, so neither `d3dcompiler_47.dll` nor `libvkd3d-shader` can be called directly from .NET WASM. No prebuilt WASM artifact of vkd3d-shader currently exists. The path forward requires one of: (a) compiling vkd3d-shader to WASM via emscripten and calling it via `[JSImport]` (same pattern as WASM-compiled DXC), or (b) a server-side compilation relay for DXBC. This is unresolved — see [PHASE-4.1-SPIKE-wasm-directx-dxbc.md](PHASE-4.1-SPIKE-wasm-directx-dxbc.md) for the full problem statement and candidate solutions.
 
-Until Phase 4.1 lands, the `PlatformTarget.DirectX` path compiles to SM6 DXIL (usable by D3D12 / KNI). The OpenGL path (the primary cross-platform target) is fully functional.
+**As of Phase 18 (done 2026-05-30), the `PlatformTarget.DirectX` DX11 profile compiles to SM5 DXBC via vkd3d-shader** and loads/renders in real MonoGame WindowsDX (10/10; `d3dcompiler_47` oracle on Windows). DXC's SM6 DXIL path is retained only for DX12/KNI. The OpenGL path (Phase 17) is fully functional. **WASM + DXBC remains the open problem** (Phase 4.1) — no native P/Invoke in the browser.

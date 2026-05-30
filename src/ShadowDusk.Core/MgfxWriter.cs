@@ -128,7 +128,9 @@ public sealed class MgfxWriter
             foreach (var cbi in blob.ConstantBufferIndices)
                 bw.Write((byte)cbi);
 
-            // Vertex-attribute table (GL profile; vertex shaders only).
+            // Vertex-attribute table. Written for BOTH profiles: the count byte is
+            // always emitted (0 for DirectX, which binds vertex inputs via the DXBC
+            // input signature; populated only for GL vertex shaders).
             bw.Write((byte)blob.Attributes.Count);
             foreach (var a in blob.Attributes)
             {

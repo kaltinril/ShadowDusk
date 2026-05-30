@@ -9,7 +9,8 @@ public static class ParameterListBuilder
 {
     public static IReadOnlyList<ParameterReflection> Build(
         ReflectedEffect dxilReflection,
-        IReadOnlyList<ParameterAnnotation>? fxAnnotations)
+        IReadOnlyList<ParameterAnnotation>? fxAnnotations,
+        bool includeSamplerParameters = true)
     {
         var annotationLookup = BuildAnnotationLookup(fxAnnotations);
         var parameters = new List<ParameterReflection>();
@@ -48,6 +49,14 @@ public static class ParameterListBuilder
                               : null,
             });
         }
+
+        // mgfxc folds a sampler+texture into the single texture (Object) parameter
+        // and does NOT emit a standalone parameter for the sampler. The DX path sets
+        // includeSamplerParameters=false to match the golden exactly. (The GL path
+        // keeps emitting them: that output is Phase-17-validated as rendering-correct,
+        // so its behavior is preserved byte-for-byte.)
+        if (!includeSamplerParameters)
+            return parameters;
 
         foreach (SamplerReflection sampler in dxilReflection.Samplers.OrderBy(s => s.BindSlot))
         {

@@ -17,4 +17,31 @@
     <PackageReference Include="Vortice.Direct3D12" />
     <PackageReference Include="Vortice.Dxc" />
   </ItemGroup>
+
+  <!-- DXBC oracle backend (Phase 18). Vortice.D3DCompiler P/Invokes d3dcompiler_47.dll
+       and is Windows-only at RUNTIME; the managed wrappers restore on every OS so the
+       cross-platform build stays green. All usage is guarded by OperatingSystem.IsWindows().
+       Vortice.Direct3D11 supplies ID3D11ShaderReflection for DXBC reflection. -->
+  <ItemGroup>
+    <PackageReference Include="Vortice.D3DCompiler" />
+    <PackageReference Include="Vortice.Direct3D11" />
+  </ItemGroup>
+
+  <!-- Cross-platform DXBC backend (Phase 18 Track A): the vkd3d-shader native lib.
+       It is a RESTORED artifact (tools/restore.ps1), NOT checked into the repo, so the
+       copy is conditional on the file existing — a clean cross-platform build with no
+       restored binary stays green, and Vkd3dShaderCompiler fails loudly (SD0211) at
+       runtime if the lib is absent. Only the Windows binary exists locally today; the
+       Linux/macOS names are added here for the cross-platform path as they appear. -->
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)..\..\tools\vkd3d\libvkd3d-shader-1.dll"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\..\tools\vkd3d\libvkd3d-shader-1.dll')"
+          CopyToOutputDirectory="PreserveNewest" Link="libvkd3d-shader-1.dll" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\tools\vkd3d\libvkd3d-shader.so.1"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\..\tools\vkd3d\libvkd3d-shader.so.1')"
+          CopyToOutputDirectory="PreserveNewest" Link="libvkd3d-shader.so.1" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\tools\vkd3d\libvkd3d-shader.dylib"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\..\tools\vkd3d\libvkd3d-shader.dylib')"
+          CopyToOutputDirectory="PreserveNewest" Link="libvkd3d-shader.dylib" />
+  </ItemGroup>
 </Project>

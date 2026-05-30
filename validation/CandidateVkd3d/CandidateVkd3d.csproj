@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- Windows-only: MonoGame.Framework.WindowsDX is a DX11 (Windows) runtime.
+         The vkd3d backend itself is cross-platform, but the rung-4 LOAD test must
+         run in the REAL WindowsDX Effect path — so this validation host is Windows.
+         Intentionally NOT in ShadowDusk.slnx (mirrors CandidateDx). -->
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RootNamespace>ShadowDusk.Validation.Dx.CandidateVkd3d</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MonoGame.Framework.WindowsDX" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\SharedDx\*.cs" />
+  </ItemGroup>
+</Project>

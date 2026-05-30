@@ -308,6 +308,8 @@
         "type": "Project",
         "dependencies": {
           "ShadowDusk.Core": "[1.0.0, )",
+          "Vortice.D3DCompiler": "[3.3.4, )",
+          "Vortice.Direct3D11": "[3.3.4, )",
           "Vortice.Direct3D12": "[3.5.0, )",
           "Vortice.Dxc": "[3.3.4, )"
         }
@@ -317,6 +319,30 @@
         "requested": "[2.23.0, )",
         "resolved": "2.23.0",
         "contentHash": "pY4LmIE8nYXkfCgExxksYlnYZZ4D3/AW13XNcpyp0jJDTkCpDsXL0nLOX7CM7tPS6xvkiERRd+Do2zegbl7Xtw=="
+      },
+      "Vortice.D3DCompiler": {
+        "type": "CentralTransitive",
+        "requested": "[3.3.4, )",
+        "resolved": "3.3.4",
+        "contentHash": "G0yAN1us091ulIzPfMVJeJf8JX3Tu/Wu0l4zip4HPLfVUWWxsBJF0eaEdwSPrUyz97LEG6zjHruL4sZoNRBHcA==",
+        "dependencies": {
+          "SharpGen.Runtime": "2.1.2-beta",
+          "SharpGen.Runtime.COM": "2.1.2-beta",
+          "Vortice.DirectX": "3.3.4",
+          "Vortice.Mathematics": "1.7.2"
+        }
+      },
+      "Vortice.Direct3D11": {
+        "type": "CentralTransitive",
+        "requested": "[3.3.4, )",
+        "resolved": "3.3.4",
+        "contentHash": "ma8ysRo7WBmJwt+nNpFi0icHKIgNud6Nb0rz6XPN4V/X93nkVZiN3t96cqdy0kC0QtzYlpFccQ2d/JPrvHt6og==",
+        "dependencies": {
+          "SharpGen.Runtime": "2.1.2-beta",
+          "SharpGen.Runtime.COM": "2.1.2-beta",
+          "Vortice.DXGI": "3.3.4",
+          "Vortice.Mathematics": "1.7.2"
+        }
       },
       "Vortice.Direct3D12": {
         "type": "CentralTransitive",

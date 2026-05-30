@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- Windows-only: MonoGame.Framework.WindowsDX is a DX11 (Windows) runtime.
+         This project is intentionally NOT in ShadowDusk.slnx, so cross-platform
+         `dotnet build ShadowDusk.slnx` on Linux/macOS never sees it. -->
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RootNamespace>ShadowDusk.Validation.Dx.Candidate</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MonoGame.Framework.WindowsDX" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\SharedDx\*.cs" />
+  </ItemGroup>
+</Project>
