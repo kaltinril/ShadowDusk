@@ -39,7 +39,7 @@ These phases are fully implemented. Their documents have been moved to `DONE/` w
 
 | Phase | Status | File | Summary |
 |-------|--------|------|---------|
-| 17 | In progress | [PHASE-17-monogame-runtime-validation.md](PHASE-17-monogame-runtime-validation.md) | In-engine equivalence: ShadowDusk `.mgfx` loads in a real MonoGame `Effect` and renders the same image as `mgfxc` (OpenGL) — the fidelity (Part 2) bar |
+| 17 | ✅ SM3 corpus | [PHASE-17-monogame-runtime-validation.md](PHASE-17-monogame-runtime-validation.md) | In-engine equivalence **achieved (2026-05-30)** for the SM3 PS-only corpus: ShadowDusk `.mgfx` loads in a real MonoGame `Effect` and renders pixel-equivalent to `mgfxc` (OpenGL) — the fidelity (Part 2) bar. Remaining: Dissolve (gap #3) + VS-driven effects |
 | 18 | Planned | [PHASE-18-directx-dxbc.md](PHASE-18-directx-dxbc.md) | DirectX 11 **DXBC** output (cross-platform, no Wine) so WindowsDX games load ShadowDusk's DX `.mgfx` — the DirectX half of fidelity |
 | 19 | Planned | [PHASE-19-wasm-runtime-compilation.md](PHASE-19-wasm-runtime-compilation.md) | WASM in-browser `.fx` → `.mgfx` (precompiled-bytes load first, then in-browser DXC/SPIRV-Cross) — the browser half of *reach*. Builds out the "9W" placeholder |
 | 20 | Backlog | [PHASE-20-deferred-backlog.md](PHASE-20-deferred-backlog.md) | Deferred items backlog from phases 2–9; no prerequisites, review before 1.0 |

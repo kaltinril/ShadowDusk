@@ -44,7 +44,7 @@ Almost every "task" in this document already maps to a written phase plan under 
 | §11.2–11.6 Compiler orchestration / library split | [PHASE-8 compiler library](plan/DONE/PHASE-8-compiler-library.md) | ✅ Done |
 | §11.7 CLI tool (`mgfxrt`-style → ShadowDusk's `mgfxc`) | [PHASE-9 CLI entry point](plan/DONE/PHASE-9-cli-entry-point.md) | ✅ Done |
 | §14.1–14.3 Golden-file + reader + runtime-constructor tests | [PHASE-15 integration](plan/DONE/PHASE-15-integration-tests.md), [PHASE-16 image regression](plan/DONE/PHASE-16-image-regression-tests.md) | ✅ Done |
-| §1, §5, §9.1–9.2, **§9.7 MojoShader**, §10.4, §14.4 — real `Effect` load + same-pixels equivalence + GL dialect | [PHASE-17 MonoGame runtime validation](plan/PHASE-17-monogame-runtime-validation.md) | 🚧 Active |
+| §1, §5, §9.1–9.2, **§9.7 MojoShader**, §10.4, §14.4 — real `Effect` load + same-pixels equivalence + GL dialect | [PHASE-17 MonoGame runtime validation](plan/PHASE-17-monogame-runtime-validation.md) | ✅ SM3 corpus done (2026-05-30); Dissolve + VS-driven remain |
 | §9.3 / §13 — DXC emits DXIL, not the SM≤5 **DXBC** MonoGame DX11 loads | [PHASE-18 DirectX DXBC](plan/PHASE-18-directx-dxbc.md) | 🆕 New (this gap) |
 | §8 + §11.x + Task I — **WASM in-browser / runtime compilation** | [PHASE-19 WASM runtime compilation](plan/PHASE-19-wasm-runtime-compilation.md) | 🆕 New (this gap) |
 | §15.4 native-binary distribution across OS | [PHASE-30 cross-platform CI](plan/PHASE-30-cross-platform-ci.md) | 🚧 Active |
@@ -1146,7 +1146,7 @@ Example:
 ```csharp
 byte[] bytes = new MgfxBinaryWriter().Write(model, new MgfxWriteOptions
 {
-    MonoGameVersion = SupportedMonoGameVersion.V3_8_4,
+    MonoGameVersion = SupportedMonoGameVersion.V3_8_2,
     Profile = RuntimeMgfxProfile.OpenGL
 });
 ```
