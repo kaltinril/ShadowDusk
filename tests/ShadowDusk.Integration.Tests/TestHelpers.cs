@@ -27,7 +27,10 @@ public static class TestHelpers
         var inputPath  = FixturePath(fx);
         var outputDir  = Path.Combine(Path.GetTempPath(), $"shadowdusk_test_{Guid.NewGuid():N}");
         Directory.CreateDirectory(outputDir);
-        var outputPath = Path.Combine(outputDir, Path.ChangeExtension(fx, ".mgfx"));
+        // Flatten the output filename so fixtures referenced by a nested path
+        // (e.g. "examples/Foo.fx") still write to the temp dir root rather than a
+        // non-existent sub-directory. Input resolution above keeps the sub-path.
+        var outputPath = Path.Combine(outputDir, Path.ChangeExtension(Path.GetFileName(fx), ".mgfx"));
 
         try
         {

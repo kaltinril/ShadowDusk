@@ -938,4 +938,122 @@ public sealed class FxPreParserTests
         stripped.Should().Contain("sampler s0;");
         stripped.Should().NotContain("_SDTexture");
     }
+
+    // -------------------------------------------------------------------------
+    // Legacy effect-framework 'texture' object declarations (gap #3 / Dissolve).
+    // DXC rejects the FX 'texture T;' type under -Weffects-syntax; the pre-parser
+    // rewrites it to the modern 'Texture2D T;' so the resource a sampler_state
+    // form references actually exists. Modern 'Texture2D'/'Texture3D'/… are
+    // matched case-sensitively and never rewritten.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_LegacyTextureDecl_RewrittenToTexture2D()
+    {
+        const string source = """
+            texture _dissolveTex;
+
+            float4 PS() : COLOR { return float4(1, 1, 1, 1); }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        string stripped = result.Value.StrippedHlsl;
+
+        stripped.Should().Contain("Texture2D _dissolveTex;");
+        // The bare legacy 'texture ' keyword must be gone (Texture2D is fine).
+        stripped.Should().NotContain("texture _dissolveTex");
+    }
+
+    [Fact]
+    public void Parse_LegacyTextureBoundToSamplerState_BothRewritten()
+    {
+        // The Dissolve pattern: a legacy 'texture' bound through a sampler_state
+        // form and sampled with tex2D. The texture becomes a Texture2D, the
+        // sampler a SamplerState, and tex2D a Sample call on the bound texture.
+        const string source = """
+            texture _dissolveTex;
+            sampler _dissolveTexSampler = sampler_state { Texture = <_dissolveTex>; };
+
+            float4 PS(float2 uv : TEXCOORD0) : COLOR
+            {
+                return tex2D(_dissolveTexSampler, uv);
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        string stripped = result.Value.StrippedHlsl;
+
+        stripped.Should().Contain("Texture2D _dissolveTex;");
+        stripped.Should().Contain("SamplerState _dissolveTexSampler;");
+        stripped.Should().Contain("_dissolveTex.Sample(_dissolveTexSampler, uv)");
+        stripped.Should().NotContain("sampler_state");
+        stripped.Should().NotContain("tex2D");
+        // No synthesized texture — the sampler_state bound the explicit texture.
+        stripped.Should().NotContain("_SDTexture");
+    }
+
+    [Fact]
+    public void Parse_LegacyTextureWithAnnotation_AnnotationDropped()
+    {
+        // FX annotations on a texture have no modern equivalent and must be
+        // dropped, leaving a clean 'Texture2D T;'.
+        const string source = """
+            texture Diffuse < string ResourceName = "wall.png"; >;
+
+            float4 PS() : COLOR { return float4(1, 1, 1, 1); }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        string stripped = result.Value.StrippedHlsl;
+
+        stripped.Should().Contain("Texture2D Diffuse;");
+        stripped.Should().NotContain("<");
+        stripped.Should().NotContain("ResourceName");
+    }
+
+    [Fact]
+    public void Parse_LegacyTextureDecl_PreservesLineNumbers()
+    {
+        // The single-line rewrite must not change the source's total line count
+        // so DXC diagnostics on later lines still point at the right line.
+        const string source =
+            "texture _dissolveTex;\n" +                  // line 1
+            "\n" +                                        // line 2
+            "float4 PS() : COLOR { return 0; }\n";        // line 3
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        var lines = result.Value.StrippedHlsl.Replace("\r\n", "\n").Split('\n');
+
+        lines.Length.Should().Be(source.Replace("\r\n", "\n").Split('\n').Length);
+        lines[0].Should().Contain("Texture2D _dissolveTex;");
+        lines[2].Should().Contain("float4 PS");
+    }
+
+    [Fact]
+    public void Parse_ModernTexture2DDecl_LeftUntouched()
+    {
+        // Regression guard: modern 'Texture2D' (capital T, dimension suffix) must
+        // never be rewritten — case-sensitive matching distinguishes it from the
+        // legacy lowercase 'texture'/'texture2D' forms.
+        const string source = """
+            Texture2D Diffuse;
+            Texture3D Volume;
+            TextureCube Sky;
+
+            float4 PS() : SV_TARGET { return float4(0, 0, 0, 1); }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.StrippedHlsl.Should().Be(source);
+    }
 }

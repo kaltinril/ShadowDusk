@@ -351,6 +351,16 @@ spvc_compiler_get_decoration(compiler, id, SpvDecorationBinding)
 
 ## 4. Open Source Projects
 
+> **Test shader provenance:** the links in this section are **toolchain /
+> MonoGame-builtin** references, not the origins of the `.fx` test fixtures.
+> Per-shader fixture provenance (what little is recoverable) and the fresh,
+> project-owned example shaders are documented separately in
+> [`docs/test-shader-corpus.md`](test-shader-corpus.md). Confirmed fixture
+> upstreams: [discosultan/penumbra](https://github.com/discosultan/penumbra)
+> (the `Penumbra*.fx`) and
+> [manbeardgames/monogame-hlsl-examples](https://github.com/manbeardgames/monogame-hlsl-examples)
+> (`BasicShader`/`TintShader`/`BlendShader`/`MultiTexture`/`SimpleLightShader`).
+
 ### MonoGame
 
 | Resource | URL |

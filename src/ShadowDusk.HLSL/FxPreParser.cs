@@ -70,6 +70,31 @@ public sealed class FxPreParser
     };
 
     // -------------------------------------------------------------------------
+    // Legacy effect-framework texture object types
+    // -------------------------------------------------------------------------
+
+    // The FX9 'texture' object type (and its dimensioned variants) declares a
+    // texture resource in effect syntax (e.g. 'texture _dissolveTex;'). DXC
+    // rejects these under -Weffects-syntax, so ShadowDusk rewrites the type
+    // keyword to the modern Resource type it maps to (Texture2D, Texture3D, …).
+    // This is the sibling of the sampler_state (gap #2) and tex2D (gap #4)
+    // rewrites: a 'sampler S = sampler_state { Texture = <T>; }' form binds 'S'
+    // to the texture 'T', which only exists as a modern resource once this
+    // rewrite fires. Matched CASE-SENSITIVELY so the modern types 'Texture2D',
+    // 'Texture3D', 'TextureCube', … (capital 'T', dimension suffix) are never
+    // touched — only the legacy lowercase forms (and bare capital 'Texture')
+    // are rewritten.
+    private static readonly Dictionary<string, string> LegacyTextureTypeKeywords = new(StringComparer.Ordinal)
+    {
+        ["texture"]     = "Texture2D",
+        ["Texture"]     = "Texture2D",
+        ["texture1D"]   = "Texture1D",
+        ["texture2D"]   = "Texture2D",
+        ["texture3D"]   = "Texture3D",
+        ["textureCUBE"] = "TextureCube",
+    };
+
+    // -------------------------------------------------------------------------
     // Instance state
     // -------------------------------------------------------------------------
 
@@ -391,6 +416,33 @@ public sealed class FxPreParser
                     // Any other use of a sampler-type keyword (a function parameter,
                     // an unused bare sampler, an unused Form 1 sampler whose intrinsic
                     // isn't tex2D) falls through to verbatim copy / existing handling.
+                }
+            }
+
+            // Legacy effect-framework texture declaration:
+            //   texture T;                        (bare)
+            //   texture T < annotations >;        (with FX annotations)
+            //   texture T : register(tN);         (':' dropped by lexer -> 'register')
+            // DXC rejects the FX 'texture' object type under -Weffects-syntax. Rewrite
+            // the whole declaration to a modern 'Texture2D T;' so the resource the
+            // sampler_state form references (gap #2) actually exists. Modern types
+            // ('Texture2D', 'Texture3D', …) are matched case-sensitively above and
+            // never reach here. Any trailing annotation block / register clause is
+            // dropped — modern resource declarations carry neither.
+            if (tok.Kind == TokenKind.Identifier &&
+                LegacyTextureTypeKeywords.TryGetValue(tok.Text, out string? modernTextureType))
+            {
+                int nameOffset = NextCodeOffset(1);
+                if (Peek(nameOffset).Kind == TokenKind.Identifier)
+                {
+                    int blockStart = _tokenCharOffset[_pos];
+                    (string texName, int declEnd) = ConsumeLegacyTextureDecl();
+                    string newDecl = $"{modernTextureType} {texName};";
+                    replacedRanges.Add((blockStart, declEnd,
+                        BuildDeclReplacement(blockStart, declEnd, newDecl)));
+
+                    SkipNonCodeTokens();
+                    continue;
                 }
             }
 
@@ -1118,6 +1170,40 @@ public sealed class FxPreParser
 
         // Swallow everything up to and including the terminating ';' (covers an
         // optional ': register(sN)' clause; the lexer already dropped the ':').
+        while (Peek().Kind != TokenKind.Semicolon && Peek().Kind != TokenKind.EOF)
+            Consume();
+
+        int declEnd;
+        if (Peek().Kind == TokenKind.Semicolon)
+        {
+            var semi = Consume();
+            declEnd = _tokenCharOffset[_pos - 1] + semi.Text.Length;
+        }
+        else
+        {
+            declEnd = _source.Length; // malformed (no ';' before EOF)
+        }
+
+        return (nameTok.Text, declEnd);
+    }
+
+    /// <summary>
+    /// Consumes a legacy effect-framework texture declaration ('<c>texture T;</c>',
+    /// '<c>texture T &lt; ... &gt;;</c>', or '<c>texture T : register(tN);</c>')
+    /// starting at the texture-type keyword and ending just past the terminating
+    /// ';'. Returns the declared name and the exclusive character offset of the
+    /// ';' end so the caller can substitute the whole span with a modern resource
+    /// declaration. Any annotation block or register clause between the name and
+    /// the ';' is swallowed (the modern declaration keeps neither).
+    /// </summary>
+    private (string Name, int DeclEnd) ConsumeLegacyTextureDecl()
+    {
+        Consume();              // texture-type keyword
+        SkipNonCodeTokens();
+        var nameTok = Consume(); // texture name (caller verified Identifier)
+
+        // Swallow everything up to and including the terminating ';' (covers an
+        // optional '< ... >' annotation block or ': register(tN)' clause).
         while (Peek().Kind != TokenKind.Semicolon && Peek().Kind != TokenKind.EOF)
             Consume();
 
