@@ -16,6 +16,17 @@ namespace ShadowDusk.Compiler.Internal;
 
 internal sealed class CompilationPipeline
 {
+    private readonly Func<IDxcShaderCompiler> _dxcCompilerFactory;
+    private readonly Func<ISpirvToGlslTranspiler> _glslTranspilerFactory;
+
+    public CompilationPipeline(
+        Func<IDxcShaderCompiler>? dxcCompilerFactory = null,
+        Func<ISpirvToGlslTranspiler>? glslTranspilerFactory = null)
+    {
+        _dxcCompilerFactory    = dxcCompilerFactory    ?? (() => new DxcShaderCompiler());
+        _glslTranspilerFactory = glslTranspilerFactory ?? (() => new SpirvCrossGlslTranspiler());
+    }
+
     public async Task<Result<CompiledShader, ShaderError[]>> RunAsync(
         string hlslSource,
         CompilerOptions options,
@@ -97,8 +108,10 @@ internal sealed class CompilationPipeline
 
         // Stages 3–5: Compile each pass's entry points, reflect, and transpile.
         // The preprocessor has already flattened all #includes so no include handler is needed for DXC.
-        using var dxcCompiler = new DxcShaderCompiler();
-        var glslTranspiler = new SpirvCrossGlslTranspiler();
+        IDxcShaderCompiler dxcCompiler = _dxcCompilerFactory();
+        try
+        {
+        ISpirvToGlslTranspiler glslTranspiler = _glslTranspilerFactory();
 
         // DirectX (DX11) takes a separate backend: DXC only emits SM6 DXIL, which
         // MonoGame's DX11 runtime rejects. d3dcompiler_47 (the fxc engine) emits the
@@ -354,13 +367,18 @@ internal sealed class CompilationPipeline
         byte[] mgfxBytes = writeResult.Value;
 
         return Result<CompiledShader, ShaderError[]>.Ok(new CompiledShader(options.Target, mgfxBytes));
+        }
+        finally
+        {
+            (dxcCompiler as IDisposable)?.Dispose();
+        }
     }
 
     private static async Task<(Result<byte[], ShaderError> Blob, ReadOnlyMemory<byte> DxilBlob, ReadOnlyMemory<byte> SpirvBlob)>
         CompileEntryPointAsync(
-            DxcShaderCompiler dxcCompiler,
+            IDxcShaderCompiler dxcCompiler,
             IDxbcShaderCompiler dxbcCompiler,
-            SpirvCrossGlslTranspiler glslTranspiler,
+            ISpirvToGlslTranspiler glslTranspiler,
             PreprocessedSource preprocessed,
             string entryPoint,
             ShaderStage stage,
