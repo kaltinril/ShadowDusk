@@ -1,13 +1,18 @@
 #nullable enable
 
+using System;
 using System.IO;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace ShadowDusk.Core;
 
 public sealed class MgfxWriter
 {
-    private const uint MgfxSignature      = 0x4D474658u;
+    // On-disk MonoGame signature: the four ASCII bytes "MGFX" (NOT a reversed
+    // uint). MonoGame's EffectReader reads these as an int and rejects anything
+    // else, so byte order matters — this is the literal sequence it expects.
+    private static readonly byte[] MgfxSignatureBytes = { 0x4D, 0x47, 0x46, 0x58 };
     private const byte RenderStateSentinel = 0xFF;
 
     // EffectParameterType byte value for annotation dispatch
@@ -38,24 +43,45 @@ public sealed class MgfxWriter
                         Message: $"Pass '{pass.Name}' pixel shader index {pass.PixelShaderIndex} exceeds MGFX int16 maximum"));
             }
 
+        // Serialize the body first so the header's EffectKey can be derived from it.
+        using var bodyMs = new MemoryStream();
+        using (var bodyBw = new BinaryWriter(bodyMs, Encoding.UTF8, leaveOpen: true))
+        {
+            WriteConstantBuffers(bodyBw, ir);
+            WriteShaders(bodyBw, ir);
+            WriteParameters(bodyBw, ir);
+            WriteTechniques(bodyBw, ir);
+            bodyBw.Flush();
+        }
+        byte[] body = bodyMs.ToArray();
+
         using var ms = new MemoryStream();
         using var bw = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);
 
-        WriteHeader(bw, options);
-        WriteConstantBuffers(bw, ir);
-        WriteShaders(bw, ir);
-        WriteParameters(bw, ir);
-        WriteTechniques(bw, ir);
+        WriteHeader(bw, options, ComputeEffectKey(body));
+        bw.Write(body);
+        bw.Write(MgfxSignatureBytes); // trailing "MGFX" footer MonoGame validates
 
         bw.Flush();
         return Result<byte[], ShaderError>.Ok(ms.ToArray());
     }
 
-    private static void WriteHeader(BinaryWriter bw, MgfxWriterOptions options)
+    private static void WriteHeader(BinaryWriter bw, MgfxWriterOptions options, uint effectKey)
     {
-        bw.Write(MgfxSignature);
-        bw.Write(options.MgfxVersion);
-        bw.Write((byte)options.Profile);
+        bw.Write(MgfxSignatureBytes);    // 4 bytes "MGFX"
+        bw.Write(options.MgfxVersion);   // 1 byte
+        bw.Write((byte)options.Profile); // 1 byte
+        bw.Write(effectKey);             // 4 bytes — MonoGame's effect-cache key
+    }
+
+    // Deterministic per-effect key. MonoGame uses it only as a cache key (mgfxc
+    // writes an MD5-derived int); hashing the body gives distinct effects distinct
+    // keys while keeping identical input -> identical output (constraint #3).
+    private static uint ComputeEffectKey(byte[] body)
+    {
+        Span<byte> hash = stackalloc byte[16];
+        MD5.HashData(body, hash);
+        return BitConverter.ToUInt32(hash);
     }
 
     private static void WriteConstantBuffers(BinaryWriter bw, ShaderIR ir)
@@ -66,10 +92,13 @@ public sealed class MgfxWriter
             bw.Write(cb.Name);
             bw.Write((short)cb.SizeInBytes);
             bw.Write(cb.ParameterIndices.Count);
-            foreach (var idx in cb.ParameterIndices)
-                bw.Write(idx);
-            foreach (var offset in cb.ParameterOffsets)
-                bw.Write(offset);
+            // MonoGame reads these INTERLEAVED: per parameter an int32 index
+            // immediately followed by a uint16 offset (not two grouped arrays).
+            for (int i = 0; i < cb.ParameterIndices.Count; i++)
+            {
+                bw.Write(cb.ParameterIndices[i]);
+                bw.Write(cb.ParameterOffsets[i]);
+            }
         }
     }
 
@@ -78,8 +107,36 @@ public sealed class MgfxWriter
         bw.Write(ir.Shaders.Count);
         foreach (var blob in ir.Shaders)
         {
+            bw.Write(blob.Stage == ShaderStage.Vertex); // isVertexShader (bool)
             bw.Write(blob.Bytes.Length);
             bw.Write(blob.Bytes);
+
+            // Sampler table (count is a byte).
+            bw.Write((byte)blob.Samplers.Count);
+            foreach (var s in blob.Samplers)
+            {
+                bw.Write(s.Type);
+                bw.Write(s.TextureSlot);
+                bw.Write(s.SamplerSlot);
+                bw.Write((byte)0);  // hasState = false — sampler state comes from GraphicsDevice.SamplerStates
+                bw.Write(s.Name);
+                bw.Write((byte)s.Parameter);
+            }
+
+            // Constant-buffer index list (count is a byte; indices are bytes).
+            bw.Write((byte)blob.ConstantBufferIndices.Count);
+            foreach (var cbi in blob.ConstantBufferIndices)
+                bw.Write((byte)cbi);
+
+            // Vertex-attribute table (GL profile; vertex shaders only).
+            bw.Write((byte)blob.Attributes.Count);
+            foreach (var a in blob.Attributes)
+            {
+                bw.Write(a.Name);
+                bw.Write(a.Usage);
+                bw.Write(a.Index);
+                bw.Write(a.Location); // int16
+            }
         }
     }
 
@@ -97,6 +154,18 @@ public sealed class MgfxWriter
             bw.Write(p.ColumnCount);
             WriteInt32List(bw, p.MemberIndices);
             WriteInt32List(bw, p.ElementIndices);
+
+            // MonoGame reads a raw default-value blob for value-typed params
+            // (Scalar/Vector/Matrix) that are neither structs nor arrays:
+            // rows*cols*4 bytes, NO length prefix. Object/Struct/array params
+            // carry none. We emit zeros — the runtime sets values by name.
+            bool isValueType = p.Class <= 2; // Scalar=0, Vector=1, Matrix=2
+            if (isValueType && p.MemberIndices.Count == 0 && p.ElementIndices.Count == 0)
+            {
+                int dataLen = p.RowCount * p.ColumnCount * 4;
+                for (int b = 0; b < dataLen; b++)
+                    bw.Write((byte)0);
+            }
         }
     }
 
@@ -113,8 +182,8 @@ public sealed class MgfxWriter
             {
                 bw.Write(pass.Name);
                 WriteAnnotations(bw, pass.Annotations);
-                bw.Write((short)pass.VertexShaderIndex);
-                bw.Write((short)pass.PixelShaderIndex);
+                bw.Write(pass.VertexShaderIndex); // int32 (MonoGame reads ReadInt32)
+                bw.Write(pass.PixelShaderIndex);  // int32
                 WriteRenderStateBlock(bw, pass.RenderState);
             }
         }

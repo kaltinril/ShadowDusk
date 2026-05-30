@@ -102,6 +102,12 @@ internal sealed class CompilationPipeline
         var seenParamNames      = new HashSet<string>(StringComparer.Ordinal);
         var seenCbufferNames    = new HashSet<string>(StringComparer.Ordinal);
 
+        // Per-shader (by blob index) resource bindings captured during reflection,
+        // used to emit MonoGame's shader record (sampler table + cbuffer-index list).
+        var shaderTextures      = new Dictionary<int, IReadOnlyList<TextureReflection>>();
+        var shaderSamplers      = new Dictionary<int, IReadOnlyList<SamplerReflection>>();
+        var shaderCbufferNames  = new Dictionary<int, IReadOnlyList<string>>();
+
         var compileOptions = new DxcCompileOptions
         {
             EmbedDebugInfo = options.Debug,
@@ -167,10 +173,10 @@ internal sealed class CompilationPipeline
                 // Stage 4: Reflect each shader stage independently so parameters that are
                 // only bound in PS (or only in VS) are not missed. seenParamNames/seenCbufferNames
                 // deduplicate across stages and across passes.
-                foreach (var (dxilBlob, spirvBlob) in new[]
+                foreach (var (blobIndex, dxilBlob, spirvBlob) in new[]
                 {
-                    (vsDxilBlob, vsSpirvBlob),
-                    (psDxilBlob, psSpirvBlob),
+                    (vsIndex, vsDxilBlob, vsSpirvBlob),
+                    (psIndex, psDxilBlob, psSpirvBlob),
                 })
                 {
                     if (dxilBlob.IsEmpty)
@@ -200,6 +206,11 @@ internal sealed class CompilationPipeline
                         if (seenParamNames.Add(param.Name))
                             allParameters.Add(param);
                     }
+
+                    // Capture this shader's resource bindings for its .mgfx record.
+                    shaderTextures[blobIndex]     = reflected.Textures;
+                    shaderSamplers[blobIndex]     = reflected.Samplers;
+                    shaderCbufferNames[blobIndex] = reflected.ConstantBuffers.Select(c => c.Name).ToList();
                 }
 
                 var renderStateKvp = pass.RenderStates
@@ -226,8 +237,50 @@ internal sealed class CompilationPipeline
                 Passes: mgfxPasses));
         }
 
-        IReadOnlyList<ConstantBufferInfo>  constantBufferInfoList  = BuildConstantBufferInfoList(allConstantBuffers, allParameters);
+        IReadOnlyList<ConstantBufferInfo>  constantBufferInfoList  = BuildConstantBufferInfoList(allConstantBuffers, allParameters, options.Target);
         IReadOnlyList<EffectParameterInfo> effectParameterInfoList = BuildEffectParameterInfoList(allParameters);
+
+        // Attach each shader's sampler table + constant-buffer-index list so the
+        // .mgfx shader record is complete and MonoGame can bind textures/uniforms.
+        for (int i = 0; i < compiledShaderBlobs.Count; i++)
+        {
+            var samplers = new List<MgfxSamplerInfo>();
+            if (shaderSamplers.TryGetValue(i, out var samplerRefs) &&
+                shaderTextures.TryGetValue(i, out var textureRefs))
+            {
+                foreach (SamplerReflection samp in samplerRefs)
+                {
+                    int slot = samp.BindSlot;
+                    string? texName = samp.TextureName
+                        ?? textureRefs.FirstOrDefault(t => t.BindSlot == slot)?.Name
+                        ?? textureRefs.FirstOrDefault()?.Name;
+                    int paramIndex = texName is null ? 0 : Math.Max(0, IndexOfParam(allParameters, texName));
+                    samplers.Add(new MgfxSamplerInfo(
+                        Type:        0, // Sampler2D
+                        TextureSlot: (byte)slot,
+                        SamplerSlot: (byte)slot,
+                        Name:        $"ps_s{slot}",
+                        Parameter:   paramIndex));
+                }
+            }
+
+            var cbIndices = new List<int>();
+            if (shaderCbufferNames.TryGetValue(i, out var cbNames))
+            {
+                foreach (string name in cbNames)
+                {
+                    int gi = IndexOfCbuffer(allConstantBuffers, name);
+                    if (gi >= 0)
+                        cbIndices.Add(gi);
+                }
+            }
+
+            compiledShaderBlobs[i] = compiledShaderBlobs[i] with
+            {
+                Samplers              = samplers,
+                ConstantBufferIndices = cbIndices,
+            };
+        }
 
         ShaderIR ir = ShaderIRBuilder.Build(
             compiledShaderBlobs,
@@ -307,7 +360,11 @@ internal sealed class CompilationPipeline
             if (transpileResult.IsFailure)
                 return (Result<byte[], ShaderError>.Fail(transpileResult.Error), default, default);
 
-            byte[] glslBytes = Encoding.UTF8.GetBytes(transpileResult.Value.Text);
+            // Rewrite SPIRV-Cross GLSL into MonoGame/MojoShader-compatible GLSL so it
+            // links with MonoGame's built-in SpriteEffect VS (varying names, gl_FragColor,
+            // ps_sN samplers, ps_uniforms_vec4, legacy dialect).
+            var rewritten = MonoGameGlslRewriter.Rewrite(transpileResult.Value.Text, stage);
+            byte[] glslBytes = Encoding.UTF8.GetBytes(rewritten.Glsl);
 
             return (
                 Result<byte[], ShaderError>.Ok(glslBytes),
@@ -341,8 +398,15 @@ internal sealed class CompilationPipeline
 
     private static IReadOnlyList<ConstantBufferInfo> BuildConstantBufferInfoList(
         IReadOnlyList<ConstantBufferReflection> constantBuffers,
-        IReadOnlyList<ParameterReflection> parameters)
+        IReadOnlyList<ParameterReflection> parameters,
+        PlatformTarget target)
     {
+        // MonoGame's GL runtime binds free uniforms as a single vec4[] array named
+        // after the cbuffer (ps_uniforms_vec4) via glUniform4fv — each free param
+        // occupies one vec4 register, in declaration order. This matches mgfxc's
+        // MojoShader layout and the ps_uniforms_vec4[i] indexing the GLSL rewriter
+        // emits. DirectX keeps HLSL packing.
+        bool gl = target == PlatformTarget.OpenGL;
         var result = new List<ConstantBufferInfo>(constantBuffers.Count);
 
         foreach (ConstantBufferReflection cb in constantBuffers)
@@ -350,27 +414,44 @@ internal sealed class CompilationPipeline
             var paramIndices = new List<int>();
             var paramOffsets = new List<ushort>();
 
-            foreach (VariableReflection variable in cb.Variables)
+            for (int v = 0; v < cb.Variables.Count; v++)
             {
+                VariableReflection variable = cb.Variables[v];
                 for (int idx = 0; idx < parameters.Count; idx++)
                 {
                     if (parameters[idx].Name == variable.Name)
                     {
                         paramIndices.Add(idx);
-                        paramOffsets.Add((ushort)variable.StartOffset);
+                        paramOffsets.Add(gl ? (ushort)(v * 16) : (ushort)variable.StartOffset);
                         break;
                     }
                 }
             }
 
             result.Add(new ConstantBufferInfo(
-                Name: cb.Name,
-                SizeInBytes: cb.SizeBytes,
+                Name:             gl ? "ps_uniforms_vec4" : cb.Name,
+                SizeInBytes:      gl ? cb.Variables.Count * 16 : cb.SizeBytes,
                 ParameterIndices: paramIndices,
                 ParameterOffsets: paramOffsets));
         }
 
         return result;
+    }
+
+    private static int IndexOfParam(IReadOnlyList<ParameterReflection> parameters, string name)
+    {
+        for (int i = 0; i < parameters.Count; i++)
+            if (parameters[i].Name == name)
+                return i;
+        return -1;
+    }
+
+    private static int IndexOfCbuffer(IReadOnlyList<ConstantBufferReflection> cbuffers, string name)
+    {
+        for (int i = 0; i < cbuffers.Count; i++)
+            if (cbuffers[i].Name == name)
+                return i;
+        return -1;
     }
 
     private static IReadOnlyList<EffectParameterInfo> BuildEffectParameterInfoList(

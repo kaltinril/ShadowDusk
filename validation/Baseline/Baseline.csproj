@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <!-- MonoGame/SDL analyzers and our harness trip the repo-wide warnings-as-errors -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RootNamespace>ShadowDusk.Validation.Baseline</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MonoGame.Framework.DesktopGL" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\Shared\*.cs" />
+  </ItemGroup>
+</Project>

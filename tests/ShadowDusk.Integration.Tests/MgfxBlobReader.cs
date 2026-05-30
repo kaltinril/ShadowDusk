@@ -10,7 +10,8 @@ public sealed record TechniqueInfo(string Name, int PassCount, IReadOnlyList<Pas
 
 public sealed class MgfxBlobReader
 {
-    private const uint ExpectedSignature = 0x4D474658u;
+    // The four bytes "MGFX" read little-endian as a uint32.
+    private const uint ExpectedSignature = 0x5846474Du;
 
     private const byte TypeSingle = 3;
     private const byte TypeInt32  = 2;
@@ -95,6 +96,7 @@ public sealed class MgfxBlobReader
 
         byte version   = br.ReadByte();
         byte profileId = br.ReadByte();
+        br.ReadInt32(); // EffectKey (MonoGame effect-cache key)
 
         // Constant buffers — parse to build per-variable sizes and offsets.
         // Variable size = (nextVariable.offset - thisVariable.offset), or (cbSize - thisVariable.offset) for the last variable.
@@ -108,13 +110,14 @@ public sealed class MgfxBlobReader
             short  cbSize     = br.ReadInt16();
             int    paramCount = br.ReadInt32();
 
+            // Interleaved: per parameter int32 index then uint16 offset.
             var paramIndices = new int[paramCount];
+            var offsets      = new int[paramCount];
             for (int j = 0; j < paramCount; j++)
+            {
                 paramIndices[j] = br.ReadInt32();
-
-            var offsets = new int[paramCount];
-            for (int j = 0; j < paramCount; j++)
-                offsets[j] = br.ReadUInt16();
+                offsets[j]      = br.ReadUInt16();
+            }
 
             for (int j = 0; j < paramCount; j++)
             {
@@ -131,8 +134,44 @@ public sealed class MgfxBlobReader
         var shaderBlobs = new List<byte[]>(shaderCount);
         for (int i = 0; i < shaderCount; i++)
         {
+            br.ReadBoolean();          // isVertexShader
             int byteLen = br.ReadInt32();
             shaderBlobs.Add(br.ReadBytes(byteLen));
+
+            // Sampler table.
+            int samplerCount = br.ReadByte();
+            for (int s = 0; s < samplerCount; s++)
+            {
+                br.ReadByte();         // type
+                br.ReadByte();         // textureSlot
+                br.ReadByte();         // samplerSlot
+                if (br.ReadBoolean())  // hasState
+                {
+                    br.ReadBytes(3);   // AddressU/V/W
+                    br.ReadBytes(4);   // BorderColor RGBA
+                    br.ReadByte();     // Filter
+                    br.ReadInt32();    // MaxAnisotropy
+                    br.ReadInt32();    // MaxMipLevel
+                    br.ReadSingle();   // MipMapLevelOfDetailBias
+                }
+                br.ReadString();       // name
+                br.ReadByte();         // parameter index
+            }
+
+            // Constant-buffer index list.
+            int cbIndexCount = br.ReadByte();
+            for (int c = 0; c < cbIndexCount; c++)
+                br.ReadByte();
+
+            // Vertex-attribute table.
+            int attrCount = br.ReadByte();
+            for (int a = 0; a < attrCount; a++)
+            {
+                br.ReadString();       // name
+                br.ReadByte();         // usage
+                br.ReadByte();         // index
+                br.ReadInt16();        // location
+            }
         }
 
         // Parameters
@@ -142,7 +181,7 @@ public sealed class MgfxBlobReader
 
         for (int i = 0; i < parameterCount; i++)
         {
-            br.ReadByte(); // class
+            byte paramClass = br.ReadByte(); // class
             br.ReadByte(); // type
             string name     = br.ReadString();
             string semantic = br.ReadString();
@@ -159,10 +198,15 @@ public sealed class MgfxBlobReader
             if (stringAnnotations.Count > 0)
                 paramAnnotationMap[name] = stringAnnotations;
 
-            br.ReadByte(); // rowCount
-            br.ReadByte(); // columnCount
-            ReadInt32List(br); // memberIndices
-            ReadInt32List(br); // elementIndices
+            byte rowCount    = br.ReadByte();
+            byte columnCount = br.ReadByte();
+            int memberCount  = ReadInt32List(br); // memberIndices
+            int elementCount = ReadInt32List(br); // elementIndices
+
+            // Value-typed params (Scalar/Vector/Matrix, no members/elements) carry
+            // a raw default-value blob of rowCount*columnCount*4 bytes, no prefix.
+            if (paramClass <= 2 && memberCount == 0 && elementCount == 0)
+                br.ReadBytes(rowCount * columnCount * 4);
         }
 
         // Build ParameterSizes and ParameterOffsets from cb tables.
@@ -196,8 +240,8 @@ public sealed class MgfxBlobReader
                 string passName = br.ReadString();
                 ReadAnnotations(br); // pass annotations
 
-                short vsIndex = br.ReadInt16();
-                short psIndex = br.ReadInt16();
+                int vsIndex = br.ReadInt32();
+                int psIndex = br.ReadInt32();
                 passes.Add(new PassInfo(passName, vsIndex, psIndex));
 
                 var (ab, db, cm) = ReadRenderStateBlock(br);
@@ -310,10 +354,11 @@ public sealed class MgfxBlobReader
         return list;
     }
 
-    private static void ReadInt32List(BinaryReader br)
+    private static int ReadInt32List(BinaryReader br)
     {
         int count = br.ReadInt32();
         for (int i = 0; i < count; i++)
             br.ReadInt32();
+        return count;
     }
 }

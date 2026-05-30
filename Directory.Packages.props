@@ -18,6 +18,10 @@
     <PackageVersion Include="SixLabors.ImageSharp"     Version="3.1.12" />
   </ItemGroup>
 
+  <ItemGroup Label="MonoGame runtime validation (Phase 17)">
+    <PackageVersion Include="MonoGame.Framework.DesktopGL" Version="3.8.2.1105" />
+  </ItemGroup>
+
   <ItemGroup Label="Test">
     <PackageVersion Include="xunit"                        Version="2.9.2" />
     <PackageVersion Include="xunit.runner.visualstudio"    Version="2.8.2" />

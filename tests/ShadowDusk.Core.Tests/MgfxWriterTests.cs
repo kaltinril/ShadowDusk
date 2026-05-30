@@ -72,10 +72,11 @@ public sealed class MgfxWriterTests
     {
         var bytes = Write(EmptyIR());
 
-        bytes[0].Should().Be(0x58); // 'X'
-        bytes[1].Should().Be(0x46); // 'F'
-        bytes[2].Should().Be(0x47); // 'G'
-        bytes[3].Should().Be(0x4D); // 'M'  — little-endian 0x4D474658
+        // Forward "MGFX" — the exact byte sequence MonoGame's EffectReader requires.
+        bytes[0].Should().Be(0x4D); // 'M'
+        bytes[1].Should().Be(0x47); // 'G'
+        bytes[2].Should().Be(0x46); // 'F'
+        bytes[3].Should().Be(0x58); // 'X'
     }
 
     [Fact]
@@ -347,6 +348,7 @@ public sealed class MgfxWriterTests
 
         var count = br.ReadInt32();
         count.Should().Be(1);
+        br.ReadBoolean(); // isVertexShader
         var length = br.ReadInt32();
         length.Should().Be(64);
         var blob = br.ReadBytes(64);
@@ -393,14 +395,20 @@ public sealed class MgfxWriterTests
         var count = br.ReadInt32();
         count.Should().Be(3);
 
-        var len1 = br.ReadInt32(); len1.Should().Be(8);
-        var blob1 = br.ReadBytes(8); blob1[0].Should().Be(0xAA);
+        static (int Len, byte First) ReadShaderRecord(BinaryReader r)
+        {
+            r.ReadBoolean();                 // isVertexShader
+            int len = r.ReadInt32();
+            byte first = r.ReadBytes(len)[0];
+            r.ReadByte();                    // samplerCount (0)
+            r.ReadByte();                    // cbufferIndexCount (0)
+            r.ReadByte();                    // attributeCount (0)
+            return (len, first);
+        }
 
-        var len2 = br.ReadInt32(); len2.Should().Be(16);
-        var blob2 = br.ReadBytes(16); blob2[0].Should().Be(0xBB);
-
-        var len3 = br.ReadInt32(); len3.Should().Be(32);
-        var blob3 = br.ReadBytes(32); blob3[0].Should().Be(0xCC);
+        var (len1, first1) = ReadShaderRecord(br); len1.Should().Be(8);  first1.Should().Be(0xAA);
+        var (len2, first2) = ReadShaderRecord(br); len2.Should().Be(16); first2.Should().Be(0xBB);
+        var (len3, first3) = ReadShaderRecord(br); len3.Should().Be(32); first3.Should().Be(0xCC);
     }
 
     // -------------------------------------------------------------------------
@@ -451,10 +459,10 @@ public sealed class MgfxWriterTests
         var paramCount = br.ReadInt32();
         paramCount.Should().Be(2);
 
+        // Interleaved: index(int32) then offset(uint16) per parameter.
         br.ReadInt32().Should().Be(0);
-        br.ReadInt32().Should().Be(1);
-
         br.ReadUInt16().Should().Be(0);
+        br.ReadInt32().Should().Be(1);
         br.ReadUInt16().Should().Be(16);
     }
 
@@ -552,8 +560,8 @@ public sealed class MgfxWriterTests
         br.ReadInt32(); // pass count
         br.ReadString(); // pass name
         ReadAnnotationList(br);
-        br.ReadInt16(); // vs index
-        br.ReadInt16(); // ps index
+        br.ReadInt32(); // vs index
+        br.ReadInt32(); // ps index
 
         // Three presence bytes should all be zero
         br.ReadByte().Should().Be(0, because: "blend state not specified");
@@ -704,20 +712,25 @@ public sealed class MgfxWriterTests
 
         using var br = ReaderFor(bytes);
 
-        // Header
-        br.ReadUInt32().Should().Be(0x4D474658u);
+        // Header — forward "MGFX" reads little-endian as 0x5846474D
+        br.ReadUInt32().Should().Be(0x5846474Du);
         br.ReadByte().Should().Be(10); // version
         br.ReadByte().Should().Be(1);  // DirectX11 profile
+        br.ReadInt32();                // EffectKey (content-derived)
 
         // Constant buffers: count = 0
         br.ReadInt32().Should().Be(0);
 
-        // Shaders: count = 2
+        // Shaders: count = 2 (full per-shader record: stage flag + blob + empty tables)
         br.ReadInt32().Should().Be(2);
-        br.ReadInt32().Should().Be(8);  // VS blob length
+        br.ReadBoolean().Should().BeTrue();  // VS isVertexShader
+        br.ReadInt32().Should().Be(8);       // VS blob length
         br.ReadBytes(8).Should().Equal(vsBytes);
-        br.ReadInt32().Should().Be(8);  // PS blob length
+        br.ReadByte().Should().Be(0); br.ReadByte().Should().Be(0); br.ReadByte().Should().Be(0);
+        br.ReadBoolean().Should().BeFalse(); // PS isVertexShader
+        br.ReadInt32().Should().Be(8);       // PS blob length
         br.ReadBytes(8).Should().Equal(psBytes);
+        br.ReadByte().Should().Be(0); br.ReadByte().Should().Be(0); br.ReadByte().Should().Be(0);
 
         // Parameters: count = 1
         br.ReadInt32().Should().Be(1);
@@ -730,6 +743,7 @@ public sealed class MgfxWriterTests
         br.ReadByte().Should().Be(0);  // ColumnCount
         br.ReadInt32().Should().Be(0); // member count
         br.ReadInt32().Should().Be(0); // element count
+        // (Class 0 / 0x0 rows*cols => zero-length default-value blob)
 
         // Techniques: count = 1
         br.ReadInt32().Should().Be(1);
@@ -740,13 +754,16 @@ public sealed class MgfxWriterTests
         // Pass
         br.ReadString().Should().Be("Pass0");
         br.ReadInt32().Should().Be(0); // pass annotations count
-        br.ReadInt16().Should().Be(0); // VS index
-        br.ReadInt16().Should().Be(1); // PS index
+        br.ReadInt32().Should().Be(0); // VS index (int32)
+        br.ReadInt32().Should().Be(1); // PS index (int32)
 
         // Render state: all three blocks absent
         br.ReadByte().Should().Be(0);
         br.ReadByte().Should().Be(0);
         br.ReadByte().Should().Be(0);
+
+        // Footer: trailing "MGFX"
+        br.ReadUInt32().Should().Be(0x5846474Du);
     }
 
     // -------------------------------------------------------------------------
@@ -758,6 +775,7 @@ public sealed class MgfxWriterTests
         br.ReadUInt32(); // signature
         br.ReadByte();   // version
         br.ReadByte();   // profile
+        br.ReadInt32();  // EffectKey
     }
 
     private static void SkipConstantBuffers(BinaryReader br)
@@ -768,8 +786,7 @@ public sealed class MgfxWriterTests
             br.ReadString(); // name
             br.ReadInt16();  // size
             var paramCount = br.ReadInt32();
-            for (var j = 0; j < paramCount; j++) br.ReadInt32();
-            for (var j = 0; j < paramCount; j++) br.ReadUInt16();
+            for (var j = 0; j < paramCount; j++) { br.ReadInt32(); br.ReadUInt16(); } // interleaved index+offset
         }
     }
 
@@ -778,8 +795,33 @@ public sealed class MgfxWriterTests
         var count = br.ReadInt32();
         for (var i = 0; i < count; i++)
         {
+            br.ReadBoolean();          // isVertexShader
             var len = br.ReadInt32();
             br.ReadBytes(len);
+
+            int samplerCount = br.ReadByte();
+            for (var s = 0; s < samplerCount; s++)
+            {
+                br.ReadByte();         // type
+                br.ReadByte();         // textureSlot
+                br.ReadByte();         // samplerSlot
+                if (br.ReadBoolean())  // hasState
+                {
+                    br.ReadBytes(3); br.ReadBytes(4); br.ReadByte();
+                    br.ReadInt32(); br.ReadInt32(); br.ReadSingle();
+                }
+                br.ReadString();       // name
+                br.ReadByte();         // parameter index
+            }
+
+            int cbIndexCount = br.ReadByte();
+            for (var c = 0; c < cbIndexCount; c++) br.ReadByte();
+
+            int attrCount = br.ReadByte();
+            for (var a = 0; a < attrCount; a++)
+            {
+                br.ReadString(); br.ReadByte(); br.ReadByte(); br.ReadInt16();
+            }
         }
     }
 
@@ -788,17 +830,19 @@ public sealed class MgfxWriterTests
         var count = br.ReadInt32();
         for (var i = 0; i < count; i++)
         {
-            br.ReadByte(); // Class
+            byte paramClass = br.ReadByte(); // Class
             br.ReadByte(); // Type
             br.ReadString(); // name
             br.ReadString(); // semantic
             ReadAnnotationList(br);
-            br.ReadByte(); // RowCount
-            br.ReadByte(); // ColumnCount
+            byte rowCount    = br.ReadByte(); // RowCount
+            byte columnCount = br.ReadByte(); // ColumnCount
             var memberCount = br.ReadInt32();
             for (var j = 0; j < memberCount; j++) br.ReadInt32();
             var elemCount = br.ReadInt32();
             for (var j = 0; j < elemCount; j++) br.ReadInt32();
+            if (paramClass <= 2 && memberCount == 0 && elemCount == 0)
+                br.ReadBytes(rowCount * columnCount * 4); // default-value blob
         }
     }
 
@@ -823,8 +867,8 @@ public sealed class MgfxWriterTests
     {
         br.ReadString(); // name
         ReadAnnotationList(br);
-        br.ReadInt16(); // vs index
-        br.ReadInt16(); // ps index
+        br.ReadInt32(); // vs index
+        br.ReadInt32(); // ps index
         SkipRenderStateBlock(br);
     }
 
@@ -853,8 +897,8 @@ public sealed class MgfxWriterTests
         br.ReadInt32(); // pass count
         br.ReadString(); // pass name
         ReadAnnotationList(br);
-        br.ReadInt16(); // vs index
-        br.ReadInt16(); // ps index
+        br.ReadInt32(); // vs index
+        br.ReadInt32(); // ps index
     }
 
     private static IReadOnlyList<string> ReadTechniqueNames(byte[] bytes)
