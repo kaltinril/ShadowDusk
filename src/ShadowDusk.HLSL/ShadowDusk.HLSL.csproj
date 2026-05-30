@@ -7,6 +7,10 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="ShadowDusk.HLSL.Tests" />
+    <!-- Phase 19: the WASM/browser JsDxcShaderCompiler reuses DxcFlagBuilder to
+         build identical DXC argument lists before handing source+args to the
+         host-provided [JSImport] DXC backend. -->
+    <InternalsVisibleTo Include="ShadowDusk.Wasm" />
   </ItemGroup>
 
   <ItemGroup>

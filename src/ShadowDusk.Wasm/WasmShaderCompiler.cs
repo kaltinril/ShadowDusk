@@ -1,17 +1,36 @@
 #nullable enable
 
+using System.Runtime.Versioning;
+using ShadowDusk.Compiler;
 using ShadowDusk.Core;
+using ShadowDusk.Core.Reflection;
 
 namespace ShadowDusk.Wasm;
 
-// JS interop hooks ([JSImport]) for WASM-compiled DXC and SPIRV-Cross
-// are added in a later phase; throwing here keeps the contract visible
-// without silently returning a failure that callers might mishandle.
+/// <summary>
+/// Browser/WASM <see cref="IShaderCompiler"/>. Composes the real managed compilation
+/// pipeline (<see cref="EffectCompiler"/>) with browser-backed native stages:
+/// <list type="bullet">
+///   <item>HLSL → SPIR-V via <see cref="JsDxcShaderCompiler"/> (host JS, WASM DXC).</item>
+///   <item>SPIR-V → GLSL via <see cref="JsSpirvToGlslTranspiler"/> (host JS, WASM SPIRV-Cross).</item>
+///   <item>SPIR-V reflection via <see cref="SpirvReflector"/> (pure managed — runs in-browser).</item>
+/// </list>
+/// Injecting the reflector makes the OpenGL path reflect SPIR-V directly and skip the
+/// native DXIL reflection oracle, so no Windows-only reflection is ever required.
+/// </summary>
+[SupportedOSPlatform("browser")]
 public sealed class WasmShaderCompiler : IShaderCompiler
 {
     public Task<Result<CompiledShader, ShaderError[]>> CompileAsync(
         string hlslSource,
         CompilerOptions options,
         CancellationToken cancellationToken = default)
-        => throw new NotImplementedException("WASM compiler not yet implemented.");
+    {
+        var compiler = new EffectCompiler(
+            dxcCompilerFactory: () => new JsDxcShaderCompiler(),
+            glslTranspilerFactory: () => new JsSpirvToGlslTranspiler(),
+            reflectorFactory: () => new SpirvReflector());
+
+        return compiler.CompileAsync(hlslSource, options, cancellationToken);
+    }
 }
