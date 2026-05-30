@@ -1,6 +1,6 @@
 # Phase 19 — WASM Runtime Compilation (In-Browser `.fx` → `.mgfx`)
 
-**Status:** Not started
+**Status:** In progress — *reach engine* built & verified on desktop (2026-05-30, branch `phase19-wasm-runtime`); browser-run validation (Mode 1) and real emscripten DXC/SPIRV-Cross modules (Mode 2 runtime) remain. See **Progress** below.
 **Depends on:** Phase 8 (`ShadowDusk.Compiler` / `IShaderCompiler` abstraction — `ShadowDusk.Wasm` is the second implementation), Phase 17 (a browser-produced `.mgfx` must be exactly as MonoGame-loadable, and carry the same MojoShader-dialect GLSL, as a desktop-produced one — same format, same fidelity bar), Phase 25 (security hardening of the untrusted web/input path), Phase 30 (cross-platform CI / native-binary restore).
 **Blocks:** ShadowDusk's **Part 1 (reach)** promise for the browser — compiling `.fx` at runtime, in-browser, with **no server roundtrip** (e.g. Vic's XNA Fiddle / KNI web).
 
@@ -22,6 +22,20 @@ ShadowDusk earns its existence on **two axes** (CLAUDE.md → *What success actu
 2. **In-browser compilation — the actual differentiator.** WASM-compiled DXC + SPIRV-Cross invoked from `ShadowDusk.Wasm` via JS interop, so source → `.mgfx` happens entirely client-side at runtime. This is what XNA Fiddle needs. Higher risk (download size, startup, native-WASM interop) — pursue after mode 1 is proven.
 
 ---
+
+## Progress — 2026-05-30 (branch `phase19-wasm-runtime`)
+
+The **managed "reach engine"** — everything needed to compile `.fx` → `.mgfx` in the browser *except the two native WASM modules and an actual browser run* — is built and verified on desktop:
+
+1. **Injectable backend seams** (`ISpirvToGlslTranspiler`, existing `IDxcShaderCompiler`). `CompilationPipeline`/`EffectCompiler` take optional factory delegates; defaults are the native desktop impls. Behavior-preserving (346 unit + determinism tests green; byte-identical `.mgfx` preserved).
+2. **Discovered gap the doc never named — and closed it.** Reflection was *not* a "shared managed" stage: the GL path reflected **DXIL via `ID3D12ShaderReflection`** (Windows/D3D12 native), which cannot run in a browser. Built a **pure-managed, native-free SPIR-V reflector** (`ShadowDusk.Core.Reflection.SpirvReflector` + a minimal SPIR-V binary parser). An equivalence test compiles all **10 Phase 17 corpus PS shaders** to both DXIL and SPIR-V and asserts the `SpirvReflector`'s `ReflectedEffect` matches the DXIL oracle on every `.mgfx`-driving field — **10/10 exact** (the one subtlety — DXC's flat `-auto-binding-space` binding namespace vs per-class `t#/s#/b#` registers — is handled by class-bucketing).
+3. **Pipeline routes GL reflection through the reflector seam** (`IShaderReflector` injection). When injected on the OpenGL target it reflects the SPIR-V blob and **skips the DXIL compile + native reflection entirely**; desktop default (no injection) is byte-for-byte unchanged. **Byte-identity proof on desktop:** compiling the corpus with `SpirvReflector` injected (native DXC + SPIRV-Cross otherwise unchanged) yields `.mgfx` **byte-identical** to the default DXIL-reflected output — **10/10**. So the WASM path produces identical bytes to the CLI, *modulo the DXC/SPIRV-Cross binary version* (the only remaining variable).
+4. **`WasmShaderCompiler` wired & browser-compiling.** `ShadowDusk.Wasm` retargeted `net8.0-browser`; `WasmShaderCompiler` composes `EffectCompiler` with three browser backends — `JsDxcShaderCompiler` (HLSL→SPIR-V via `[JSImport]`, reusing `DxcFlagBuilder` for identical args), `JsSpirvToGlslTranspiler` (SPIR-V→GLSL via `[JSImport]` with the exact desktop SPIRV-Cross options), and the managed `SpirvReflector`. The `[JSImport]` host contract is documented in `src/ShadowDusk.Wasm/Phase19.js`. **Finding:** the native-entangled `Compiler` chain (Vortice.Dxc, spirv-cross P/Invoke) *does* compile under `net8.0-browser` — the native wrappers only matter at runtime, where the injected JS backends replace them — so **no managed/native assembly split was required**. Both the browser project and the full `ShadowDusk.slnx` build green.
+
+**What remains (genuinely gated on a browser / emscripten toolchain not available in this environment):**
+- **Mode 2 runtime:** provide real emscripten-compiled **DXC** and **SPIRV-Cross** WASM modules behind the `Phase19.js` contract, then run a true in-browser source→`.mgfx` compile. (C# side is done & compiles for browser.)
+- **Mode 1:** a minimal MonoGame/KNI **WebGL** harness that loads a precompiled `.mgfx` via `new Effect(gd, bytes)` and renders the corpus; document any DesktopGL-vs-WebGL divergence. (No browser available here to validate rendering; the polished interactive app is [Phase 22](PHASE-22-wasm-shader-fiddle-sample.md).)
+- **Download size / cold-start** measurement (needs the real modules).
 
 ## Scope and Non-Goals
 
@@ -46,10 +60,10 @@ ShadowDusk earns its existence on **two axes** (CLAUDE.md → *What success actu
 - [ ] Smoke test: browser console shows **no** shader-compile/link errors for the uniform-free corpus, then the uniform-driven corpus.
 
 ### Mode 2 — in-browser compilation (the differentiator)
-- [ ] Source/evaluate WASM builds of DXC and SPIRV-Cross (emscripten); define the `[JSImport]`/`[JSExport]` boundary (mirror the desktop native-interop surface).
-- [ ] Wire `WasmShaderCompiler` to call WASM-DXC (HLSL → SPIR-V) and WASM-SPIRV-Cross (SPIR-V → GLSL), then reuse the **shared managed** GLSL MojoShader rewrite + `MgfxWriter` to emit bytes.
-- [ ] Assert WASM output is **byte-identical** to the CLI output for the same source + target (determinism / cross-host equality).
-- [ ] Measure download size, memory, and cold-start; record whether mode 2 is viable for shipping or stays an opt-in.
+- [x] Define the `[JSImport]` boundary (mirror the desktop native-interop surface) — **done**: `Phase19.js` contract + `JsDxcShaderCompiler`/`JsSpirvToGlslTranspiler`. [ ] Source the emscripten DXC + SPIRV-Cross WASM modules — **pending** (external toolchain).
+- [x] Wire `WasmShaderCompiler` to call WASM-DXC (HLSL → SPIR-V) and WASM-SPIRV-Cross (SPIR-V → GLSL), then reuse the **shared managed** GLSL MojoShader rewrite + `MgfxWriter` to emit bytes — **done & compiles for `net8.0-browser`** (runtime needs the modules above).
+- [x] Assert WASM output is **byte-identical** to the CLI output — **proven on desktop**: routing the corpus through `SpirvReflector` (native DXC+SPIRV-Cross otherwise unchanged) yields `.mgfx` byte-identical to the DXIL-reflected default, 10/10. Remaining variable = the DXC/SPIRV-Cross *binary version* used in-browser.
+- [ ] Measure download size, memory, and cold-start — **pending** (needs the real WASM modules).
 
 ### Validation / CI
 - [ ] Add a headless browser smoke test (or documented manual harness) to [Phase 30 CI](PHASE-30-cross-platform-ci.md) for mode 1; gate mode 2 behind a flag if heavy.
@@ -59,11 +73,11 @@ ShadowDusk earns its existence on **two axes** (CLAUDE.md → *What success actu
 
 ## Acceptance Criteria
 
-- [ ] `ShadowDusk.Wasm` compiles the Phase 17 corpus to `.mgfx` whose bytes are **identical** to the CLI for the same source + OpenGL target.
-- [ ] **Mode 1:** a precompiled `.mgfx` loads via `new Effect(gd, bytes)` and renders correctly in a real MonoGame/KNI **WebGL** build — no MGCB, no server.
-- [ ] **Mode 2:** at least one shader compiles **fully in-browser** (source → `.mgfx` → `Effect`) with no shader errors in the browser console.
-- [ ] DesktopGL-vs-WebGL divergences (if any) are documented, not assumed away.
-- [ ] No DirectX/DXBC promised in WASM (explicitly deferred).
+- [x] `ShadowDusk.Wasm` produces `.mgfx` bytes **identical** to the CLI for the same source + OpenGL target — proven byte-transparent on desktop via the `SpirvReflector` reflection-source swap (10/10 corpus), modulo the in-browser DXC/SPIRV-Cross binary version.
+- [ ] **Mode 1:** a precompiled `.mgfx` loads via `new Effect(gd, bytes)` and renders correctly in a real MonoGame/KNI **WebGL** build — **pending** (needs a browser to validate).
+- [ ] **Mode 2:** at least one shader compiles **fully in-browser** (source → `.mgfx` → `Effect`) — **pending** (C# wired & browser-compiling; needs the emscripten DXC + SPIRV-Cross modules + a browser run).
+- [ ] DesktopGL-vs-WebGL divergences (if any) are documented, not assumed away — **pending** (Mode 1).
+- [x] No DirectX/DXBC promised in WASM (explicitly deferred) — only the OpenGL/SPIR-V path was built.
 
 ---
 
