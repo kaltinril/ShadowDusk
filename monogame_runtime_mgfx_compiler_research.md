@@ -31,6 +31,28 @@ This document was originally written as greenfield research — *"how might one 
 
 The sections below are kept for their architecture survey and reference value; treat the "roadmap" sections as a description of work ShadowDusk has *already done*, not a forward plan.
 
+### 0.1 Where each part lives — map to ShadowDusk's implementation phases
+
+Almost every "task" in this document already maps to a written phase plan under [`plan/`](plan/plan.md). Use this table to jump from a research-doc concept to the phase that actually implements (or will implement) it.
+
+| Research-doc area | ShadowDusk phase | Status |
+|---|---|---|
+| §9.3 DXC — HLSL → SPIR-V / DXIL | [PHASE-4 DXC integration](plan/DONE/PHASE-4-dxc-integration.md) | ✅ Done |
+| §12.6 Reflection (params, CBs, samplers, bindings) | [PHASE-5 shader reflection](plan/DONE/PHASE-5-shader-reflection.md) | ✅ Done |
+| §9.4 SPIRV-Cross — SPIR-V → GLSL/ESSL | [PHASE-6 SPIRV-Cross transpilation](plan/DONE/PHASE-6-spirv-cross-glsl-transpilation.md) | ✅ Done |
+| §6, §10.3, §12.8 MGFX binary writer | [PHASE-7 MGFX binary writer](plan/DONE/PHASE-7-mgfx-binary-writer.md) | ✅ Done |
+| §11.2–11.6 Compiler orchestration / library split | [PHASE-8 compiler library](plan/DONE/PHASE-8-compiler-library.md) | ✅ Done |
+| §11.7 CLI tool (`mgfxrt`-style → ShadowDusk's `mgfxc`) | [PHASE-9 CLI entry point](plan/DONE/PHASE-9-cli-entry-point.md) | ✅ Done |
+| §14.1–14.3 Golden-file + reader + runtime-constructor tests | [PHASE-15 integration](plan/DONE/PHASE-15-integration-tests.md), [PHASE-16 image regression](plan/DONE/PHASE-16-image-regression-tests.md) | ✅ Done |
+| §1, §5, §9.1–9.2, **§9.7 MojoShader**, §10.4, §14.4 — real `Effect` load + same-pixels equivalence + GL dialect | [PHASE-17 MonoGame runtime validation](plan/PHASE-17-monogame-runtime-validation.md) | 🚧 Active |
+| §9.3 / §13 — DXC emits DXIL, not the SM≤5 **DXBC** MonoGame DX11 loads | [PHASE-18 DirectX DXBC](plan/PHASE-18-directx-dxbc.md) | 🆕 New (this gap) |
+| §8 + §11.x + Task I — **WASM in-browser / runtime compilation** | [PHASE-19 WASM runtime compilation](plan/PHASE-19-wasm-runtime-compilation.md) | 🆕 New (this gap) |
+| §15.4 native-binary distribution across OS | [PHASE-30 cross-platform CI](plan/PHASE-30-cross-platform-ci.md) | 🚧 Active |
+| §15.4 / §8 path-safety + untrusted shader-source input validation | [PHASE-25 security hardening](plan/PHASE-25-security-hardening.md) | 🚧 Active |
+| §11.8 MSBuild precompile task | [PHASE-20 deferred backlog](plan/PHASE-20-deferred-backlog.md) | 🗒️ Backlog |
+
+The two **🆕 New** rows are the only substantive areas this document raised that lacked a phase plan — both now have one (created alongside this mapping). Everything else is already planned or built.
+
 ---
 
 ## 1. Executive Summary
@@ -493,6 +515,8 @@ Cons:
 - Reflection output may not map one-to-one to MonoGame's expected MGFX metadata.
 - Need careful handling of uniform buffers, matrix layout, samplers, and bindings.
 
+> **⚠️ Corrected per §0.3 — SPIRV-Cross GLSL does NOT drop into MonoGame's GL runtime.** This is *the* blocker ShadowDusk proved empirically (see [`PHASE-17 §3.6`](plan/PHASE-17-monogame-runtime-validation.md)). SPIRV-Cross emits a **modern** dialect: `#version 140`, `in_var_TEXCOORD0`/`out_var_SV_Target`, `texture()`, a named `type_Globals` UBO, samplers like `uniform sampler2D _39;`. MonoGame's OpenGL runtime instead consumes the **MojoShader** dialect: no `#version` (GLSL 110), `varying vec4 vTexCoord0;` (the runtime links the built-in SpriteEffect VS to the custom PS *by varying name*), `gl_FragColor`, `texture2D()`, `uniform sampler2D ps_s0;`, and free uniforms as `ps_uniforms_vec4[N]` bound via `glUniform4fv`. So SPIRV-Cross output must be **rewritten** to that dialect before it will even link — that is exactly what `src/ShadowDusk.GLSL/MonoGameGlslRewriter.cs` does. Treat "SPIR-V → GLSL via SPIRV-Cross" as *step one of two*; the MojoShader rewrite (§9.7) is the mandatory second step.
+
 ### 9.5 ShaderConductor
 
 **Role:** One-stop HLSL cross-compilation pipeline.
@@ -528,21 +552,21 @@ Recommendation:
 - Do not build a new long-term architecture around glslang's HLSL frontend.
 - glslang may still be useful for GLSL/ESSL validation and SPIR-V workflows.
 
-### 9.7 MojoShader
+### 9.7 MojoShader — **the GLSL dialect ShadowDusk must reproduce (not just "study")**
 
-**Role:** Legacy shader translation historically associated with XNA/MonoGame-style OpenGL shader paths.
+**Role:** Defines the exact GLSL conventions MonoGame's OpenGL runtime consumes. This is **not** an optional legacy tool to evaluate — for the GL target it is the *output specification*.
 
-MonoGame documentation describes GL-platform FX handling using MojoShader-style translation for GL targets.
+> **⚠️ Corrected per §0.3.** `mgfxc` compiles `.fx` to DX bytecode and then runs **MojoShader** to translate that into GLSL at build time. MonoGame's GL runtime is built around the GLSL MojoShader emits, so any drop-in compiler must emit the *same conventions*: GLSL 110 (no `#version`), `varying` names that match the built-in SpriteEffect VS, `gl_FragColor`, `texture2D()`, `ps_s{n}` samplers, and `ps_uniforms_vec4[N]` / `vs_uniforms_vec4[N]` uniform arrays uploaded via `glUniform4fv` (`ConstantBuffer.PlatformApply`). ShadowDusk doesn't *use* MojoShader (it would require Wine/`fxc`), but it must **match MojoShader's output dialect** — which is why `src/ShadowDusk.GLSL/MonoGameGlslRewriter.cs` exists to rewrite SPIRV-Cross GLSL (§9.4) into it. See [`PHASE-17 §3.6`](plan/PHASE-17-monogame-runtime-validation.md) for the full field-by-field dialect diff that proved this.
 
-Potential use:
+Use it as:
 
-- Study existing MonoGame OpenGL effect path.
-- Preserve compatibility with MonoGame's current GL expectations.
+- The **reference for the required GLSL output conventions** (varying names, sampler naming, uniform array layout) — not just "the existing path to study."
+- A check on whether ShadowDusk's rewritten GLSL will link against MonoGame's SpriteEffect VS.
 
-Risks:
+Risks / caveats:
 
-- Legacy shader model limitations.
-- May not align with modern HLSL, DXC, or WebGL2 goals.
+- ShadowDusk deliberately does **not** run MojoShader itself (it depends on `fxc`/Wine). The risk is *failing to match* its dialect, not using it.
+- MojoShader targets legacy shader models; ShadowDusk's DXC→SPIRV-Cross path can express more, so the rewrite must down-convert to what the GL 110 runtime accepts.
 
 ---
 
@@ -885,7 +909,7 @@ mgfxrt inspect MyShader.mgfxo
 Output:
 
 ```text
-MGFX Version: 11
+MGFX Version: 10
 Profile: OpenGL
 Parameters:
   WorldViewProj : Matrix
@@ -1139,7 +1163,8 @@ Example:
 |---|---:|---|---|
 | 3.8.1 | version-specific | Planned | Need source inspection and tests |
 | 3.8.2 | version-specific | Planned | Need source inspection and tests |
-| 3.8.4 | version-specific | First target candidate | Current NuGet/tooling should be evaluated |
+| 3.8.2 | version-specific | **ShadowDusk's actual first target** (MGFX v10, default) | DesktopGL 3.8.2.x; see plan.md "Key Decisions" |
+| 3.8.4 | version-specific | Later candidate | Evaluate after 3.8.2 is green |
 | develop/nightly | may change | Experimental | Avoid promising stable support |
 
 The MGFX format is versioned. A compiler that emits the wrong version can fail at runtime with errors such as older/newer MGFX format or invalid MGFX file.
@@ -1808,14 +1833,16 @@ Common errors:
 6. **Build tooling around inspection and comparison.**
    - The fastest path to correctness is comparing against official MGFXC output.
 
-7. **Separate compiler backends from MGFX writing.**
-   - The MGFX writer is the compatibility core. DXC/ShaderConductor/SPIRV-Cross are replaceable backends.
+7. **Separate compiler backends from MGFX writing — but the GLSL dialect is a co-equal compatibility core (§0.3).**
+   - The MGFX writer is *one* compatibility core; for OpenGL the **MojoShader GLSL dialect** (§9.7) is the other. DXC/ShaderConductor/SPIRV-Cross are replaceable backends, but their GLSL output must be rewritten to MonoGame's dialect regardless of which one you pick.
 
 ---
 
 ## 24. Research Conclusions
 
-The requested project is feasible in concept, but the hard part is not simply shader compilation. The hard part is generating the MonoGame-specific MGFX binary format exactly enough that MonoGame's existing `Effect` class accepts and uses it normally.
+> **⚠️ Corrected per §0.3 — this section's original "hard part" was half right.** ShadowDusk has since built the MGFX writer; the binary container is **largely solved** (see `src/ShadowDusk.Core/MgfxWriter.cs`). The remaining wall for the OpenGL target is **emitting GLSL in MonoGame's MojoShader dialect** (§9.4 / §9.7) with metadata that matches it — not the binary layout. Read the paragraph below as "*two* co-equal hard parts: the MGFX container **and** the GLSL dialect," with the dialect being the one greenfield builders underestimate.
+
+The requested project is feasible in concept, but the hard part is not simply shader compilation. There are **two** hard parts: (1) generating the MonoGame-specific MGFX binary format exactly enough that MonoGame's `Effect` class accepts it, **and** (2) — for OpenGL — emitting GLSL in the MojoShader dialect MonoGame's GL runtime expects so the shader actually links and reads its parameters. A perfect `.mgfx` container is **necessary but not sufficient**: ShadowDusk proved a structurally-correct `.mgfx` still renders wrong (or fails to link) until the GLSL is rewritten to MojoShader conventions ([`PHASE-17 §3.6`](plan/PHASE-17-monogame-runtime-validation.md)).
 
 The most practical path is:
 

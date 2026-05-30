@@ -4,6 +4,14 @@ This document is the top-level index. Each phase is fleshed out in its own docum
 
 ---
 
+## Reference Documents (background, not phase plans)
+
+| Document | What it's good for | ⚠️ Read with |
+|---|---|---|
+| [`monogame_runtime_mgfx_compiler_research.md`](../monogame_runtime_mgfx_compiler_research.md) | Architecture survey of *how one builds a runtime MGFX compiler*: the `new Effect(gd, byte[])` loading path, `.xnb`-vs-raw-bytes, the DXC/SPIRV-Cross/MojoShader tool landscape, and a §0.1 map from its sections to these phases. | Its §0 alignment note — it was written greenfield and **understates** the MojoShader-GLSL-dialect blocker, which Phase 17 §3.6 proves is the real wall. Treat it as context, not a plan; Phases 7/8/17 supersede its roadmap. |
+
+---
+
 ## Completed Phases
 
 These phases are fully implemented. Their documents have been moved to `DONE/` with all checklist items ticked.
@@ -25,13 +33,18 @@ These phases are fully implemented. Their documents have been moved to `DONE/` w
 
 ---
 
-## Active Phases
+## Active & Planned Phases
 
-| Phase | File | Summary |
-|-------|------|---------|
-| 20 | [PHASE-20-deferred-backlog.md](PHASE-20-deferred-backlog.md) | Deferred items backlog from phases 2–9; no prerequisites, review before 1.0 |
-| 25 | [PHASE-25-security-hardening.md](PHASE-25-security-hardening.md) | Security hardening for WASM/web path — path traversal, input validation, supply chain |
-| 30 | [PHASE-30-cross-platform-ci.md](PHASE-30-cross-platform-ci.md) | RID matrix, native binary restore, GitHub Actions CI across Linux/macOS/Windows |
+*(Status per each phase doc's own header. "In progress" = currently being worked; "Planned" = written but not started.)*
+
+| Phase | Status | File | Summary |
+|-------|--------|------|---------|
+| 17 | In progress | [PHASE-17-monogame-runtime-validation.md](PHASE-17-monogame-runtime-validation.md) | In-engine equivalence: ShadowDusk `.mgfx` loads in a real MonoGame `Effect` and renders the same image as `mgfxc` (OpenGL) — the fidelity (Part 2) bar |
+| 18 | Planned | [PHASE-18-directx-dxbc.md](PHASE-18-directx-dxbc.md) | DirectX 11 **DXBC** output (cross-platform, no Wine) so WindowsDX games load ShadowDusk's DX `.mgfx` — the DirectX half of fidelity |
+| 19 | Planned | [PHASE-19-wasm-runtime-compilation.md](PHASE-19-wasm-runtime-compilation.md) | WASM in-browser `.fx` → `.mgfx` (precompiled-bytes load first, then in-browser DXC/SPIRV-Cross) — the browser half of *reach*. Builds out the "9W" placeholder |
+| 20 | Backlog | [PHASE-20-deferred-backlog.md](PHASE-20-deferred-backlog.md) | Deferred items backlog from phases 2–9; no prerequisites, review before 1.0 |
+| 25 | Planned | [PHASE-25-security-hardening.md](PHASE-25-security-hardening.md) | Security hardening for WASM/web path — path traversal, input validation, supply chain |
+| 30 | Planned | [PHASE-30-cross-platform-ci.md](PHASE-30-cross-platform-ci.md) | RID matrix, native binary restore, GitHub Actions CI across Linux/macOS/Windows |
 
 ---
 
@@ -47,10 +60,16 @@ Phase 1  (scaffold)
                  └─ Phase 7  (binary writer)
                       └─ Phase 8  (ShadowDusk.Compiler library — EffectCompiler NuGet)
                            ├─ Phase 9  (CLI — ShadowDusk.Cli dotnet tool)
-                           └─ Phase 9W (WASM — ShadowDusk.Wasm JS interop impl)
-                                └─ Phase 15 (integration tests)
-                                     └─ Phase 30 (CI)
+                           │    └─ Phase 15 (integration tests)
+                           │         ├─ Phase 16 (image regression)
+                           │         │    └─ Phase 17 (MonoGame runtime equivalence — OpenGL)
+                           │         │         ├─ Phase 18 (DirectX DXBC — WindowsDX fidelity)
+                           │         │         └─ Phase 19 (WASM runtime compilation — was "9W")
+                           │         └─ Phase 30 (CI)
+                           └─ Phase 19 (WASM — ShadowDusk.Wasm JS interop impl)
 ```
+
+> Phase 19 intentionally appears twice (a diamond): it depends on **Phase 8** (the `IShaderCompiler` abstraction it implements) *and* on **Phase 17** (the MonoGame-loadable `.mgfx` format + MojoShader-dialect GLSL a browser-produced effect must also carry). Phase 19 additionally depends on Phase 25 (security) and Phase 30 (CI), which the graph omits to keep the build-order spine readable — see the phase doc's "Depends on" line for the full set. Phase 19 supersedes the earlier "9W" placeholder.
 
 ## Key Decisions Already Made
 

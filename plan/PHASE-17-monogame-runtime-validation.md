@@ -1,6 +1,11 @@
 # Phase 17 — MonoGame Runtime Cross-Validation (In-Engine Equivalence)
 
-**Status:** Not started
+**Status:** ✅ **Core goal achieved (2026-05-30) for the SM3 PS-only corpus** — ShadowDusk's OpenGL `.mgfx` loads into real MonoGame DesktopGL and renders pixel-equivalent to the mgfxc goldens for all 9 compilable shaders (see §3.7). Full suite green (248 tests). **Remaining:** Dissolve (gap #3, won't compile) and VS-driven MonoGame support (§8.3, deliberately gated out). Branch `phase17-image-validation` (commits `1ee7f74`, `f3bd2a2`).
+
+> **▶ PICK UP HERE (next session):** the one shader not yet working is **Dissolve** — it fails to *compile* (DXC `-Weffects-syntax`) because of effect-framework declarations `texture _dissolveTex;` and `sampler _dissolveTexSampler = sampler_state { Texture = <_dissolveTex>; };`. This is **gap #3** (a compiler/FxPreParser fix, not a runtime issue): extend `src/ShadowDusk.HLSL/FxPreParser.cs` to rewrite `texture T;` → `Texture2D T;` and the `sampler S = sampler_state {…}` form (sibling to the existing gap #2 `sampler2D`/#4 `tex2D` rewrites), so the `_dissolveTexSampler` second texture binds. Then re-run `dotnet run --project validation/Candidate` + `python validation/compare.py` — Dissolve should join the other 9 as a match (it already has a golden). The whole validation loop (`validation/Baseline`, `validation/Candidate`, `compare.py`, `decode_mgfx.py`) is built and ready.
+
+---
+**Original status when written:** Not started
 **Depends on:** Phase 15 (integration), Phase 16 (image regression + GLSL cross-validation), backlog item **11-6-D** (uniform remapping — see §3.2).
 **Blocks:** A credible 1.0 / "drop-in `mgfxc` replacement" claim.
 
@@ -258,6 +263,8 @@ Hidden `Game`/`GraphicsDevice` once per collection; SDL2-aware skip; thread-affi
 
 ## 9. Acceptance Criteria
 
+> **Status (2026-05-30):** ✅ MET — shared renderer (`validation/Shared/EffectImageRenderer.cs`), golden loads+renders as control, **ShadowDusk `.mgfx` loads in `new Effect`** (headline gate), PS-only VS-stage resolved (SpriteBatch prime), uniform-free **and** uniform-driven candidates match by-name, per-shader load/render/match reported, `ref`/`cand`/`diff` PNGs saved, tolerance documented (Scanlines/Dots maxd 1), clean skips, Vulkan/Metal N/A. ⬜ NOT YET — DirectX project (Phase 18, separate), `docs/glsl-uniform-naming.md`/backlog-11-6-D writeup, JSON artifact (PNG+console only), and Dissolve (gap #3). Note: built as `validation/Baseline` + `validation/Candidate` rather than a single `tests/ShadowDusk.MonoGameValidation.OpenGL` xUnit project — a runnable two-app + `compare.py` harness; folding into an xUnit `[Theory]` is optional follow-up.
+
 - [ ] `tests/ShadowDusk.MonoGameValidation.OpenGL/` exists, is in `ShadowDusk.slnx`, references `MonoGame.Framework.DesktopGL` + `ShadowDusk.Compiler`.
 - [ ] One **shared** `RenderThroughMonoGame` renders both `.mgfx` files identically (pinned blend/sampler/surface/viewport per §4.1), same device, same run.
 - [ ] **The golden loads + renders** as the control (`RefRendered` true).
@@ -275,6 +282,8 @@ Hidden `Game`/`GraphicsDevice` once per collection; SDL2-aware skip; thread-affi
 ---
 
 ## 10. Implementation Order
+
+> **Status (2026-05-30):** steps 1–11 ✅ done (diagnosis, harness, device fixture, render+compare, writer-format fix, uniform-free + uniform-driven candidates all matching). Step 12 (Windows-gated DirectX project) → Phase 18. **Next: extend to Dissolve (gap #3) — see the ▶ PICK UP HERE banner at the top.**
 
 - [ ] 1. **Diagnose the format gap (§3.1):** pin the layout from MonoGame 3.8.2's **open-source** `EffectReader`/`Shader` (no decompile), then structurally diff a ShadowDusk OpenGL `.mgfx` vs the matching golden (`MgfxBlobReader` extended to a full binary walker / `MgfxcMgfxReader`). Produce a field-by-field divergence list. *(No MonoGame project needed yet.)*
 - [ ] 2. Create `tests/ShadowDusk.MonoGameValidation.OpenGL/` (DesktopGL + Compiler + xUnit), add to `ShadowDusk.slnx`, copy fixtures (template: `ShadowDusk.ImageTests.csproj` `<ItemGroup>`, minus reference-images), non-parallel `[Collection]`.
