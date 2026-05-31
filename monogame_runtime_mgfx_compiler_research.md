@@ -49,7 +49,7 @@ Almost every "task" in this document already maps to a written phase plan under 
 | §8 + §11.x + Task I — **WASM in-browser / runtime compilation** | [PHASE-19 WASM runtime compilation](plan/PHASE-19-wasm-runtime-compilation.md) | 🆕 New (this gap) |
 | §15.4 native-binary distribution across OS | [PHASE-30 cross-platform CI](plan/PHASE-30-cross-platform-ci.md) | 🚧 Active |
 | §15.4 / §8 path-safety + untrusted shader-source input validation | [PHASE-25 security hardening](plan/PHASE-25-security-hardening.md) | 🚧 Active |
-| §11.8 MSBuild precompile task | [PHASE-20 deferred backlog](plan/PHASE-20-deferred-backlog.md) | 🗒️ Backlog |
+| §11.8 MSBuild precompile task | [PHASE-20 deferred backlog](plan/PHASE-100-deferred-backlog.md) | 🗒️ Backlog |
 
 The two **🆕 New** rows are the only substantive areas this document raised that lacked a phase plan — both now have one (created alongside this mapping). Everything else is already planned or built.
 
