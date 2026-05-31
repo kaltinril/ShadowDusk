@@ -106,6 +106,13 @@ dotnet test ShadowDusk.slnx --filter "Category=Integration&Platform=OpenGL"
 dotnet pack src/ShadowDusk.Cli/ShadowDusk.Cli.csproj
 ```
 
+### Integration-test performance (Phase 21)
+
+`ShadowDusk.Integration.Tests` is the only project that touches heavyweight external machinery (CLI child-process spawn, native DXC + SPIRV-Cross). If a full run is intermittently very slow (one outlier hit **21m43s** vs the usual single-digit seconds), the cause is **environmental, not algorithmic** — the test logic is identical:
+
+- **Antivirus / Defender on-access scanning** of freshly-built native binaries (`dxcompiler.dll`, SPIRV-Cross) and just-spawned executables is the prime suspect (warm cache → seconds; cold → minutes). **Dev-time mitigation:** add the repo's `**/bin`, `**/obj`, `tools/`, and the test `%TEMP%` paths to the Defender exclusion list (do **not** disable AV globally). Phase 30 CI should account for this.
+- `CliBinaryFixture` now **reuses the CLI binary from the normal build** (the test project has a `ReferenceOutputAssembly=false` ProjectReference to `ShadowDusk.Cli`) instead of running a per-run `dotnet publish -c Release` into a fresh temp dir — that nested cold-Release build + fresh native-binary copy was the dominant structural cost.
+
 ## Coding Conventions
 
 - Prefer `sealed` classes unless inheritance is explicitly required.
