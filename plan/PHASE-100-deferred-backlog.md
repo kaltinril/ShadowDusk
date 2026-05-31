@@ -1,9 +1,9 @@
-# Phase 11 — Deferred Backlog
+# Phase 100 — Deferred Backlog (far-future)
 
-**Status:** Backlog  
-**Blocking anything?** No. All items here were explicitly deferred from earlier phases and are not prerequisites for Phases 8–10. Review before a 1.0 release.
+**Status:** Deferred / Backlog. Numbered 100 to park it well beyond the active roadmap.
+**Blocking anything?** No. Everything here was explicitly deferred from earlier phases and is not a prerequisite for current work. Review before a 1.0 release.
 
-This document collects every unchecked item from completed (`DONE/`) phase plans and items deferred from phases 6+, organized by source phase.
+This document is the single deferred bucket. It collects every unchecked item from completed (`DONE/`) phase plans and items deferred from phases 6+ (organized by source phase), **plus** the Phase 19 *WASM browser-runtime* tail (the part of Phase 19 that needs a browser/emscripten toolchain unavailable in-session) — see the **From Phase 19** section near the end. *(Formerly two docs: "Phase 20 — Deferred Backlog" and a standalone "Phase 100 — WASM Browser-Runtime Validation"; merged into this one Phase 100 on 2026-05-30.)*
 
 ---
 
@@ -189,6 +189,36 @@ The Phase 15 plan §3.1 specified two invocation modes: `DirectPipeline` (in-pro
 **Cross-platform validation:**
 
 - [ ] Tests run unmodified on Linux and macOS — explicitly deferred to Phase 30 (CI). Acceptance criterion from Phase 15 §9: *"Tests run without modification on Windows, Linux, and macOS (validated in Phase 10 CI)"* — Phase 10 was renumbered to Phase 30.
+
+---
+
+## From Phase 19 — WASM Browser-Runtime Validation (emscripten modules + real in-browser run)
+
+*Carved out of [Phase 19](DONE/PHASE-19-wasm-runtime-compilation.md) on 2026-05-30: the managed compile **engine** is done & desktop-verified; this is the **runtime** tail, gated on an external toolchain (emscripten) + an actual browser the dev environment can't exercise.*
+
+**Depends on:** Phase 19 (injectable backends, the pure-managed `SpirvReflector`, the DXIL-free GL reflection path, and the browser-compiling `WasmShaderCompiler` with its `[JSImport]` contract in `src/ShadowDusk.Wasm/Phase19.js`), plus [Phase 25](PHASE-25-security-hardening.md) (untrusted web input) and [Phase 30](PHASE-30-cross-platform-ci.md) (headless-browser CI).
+**Blocks:** the *runtime* half of the Part-1 (reach) promise for the browser — a shader actually compiling + rendering client-side, no server.
+
+Phase 19 is byte-transparent on desktop (the `SpirvReflector` reflection-source swap yields `.mgfx` byte-identical to the DXIL path, 10/10). The only unproven variable is whether the *in-browser* DXC/SPIRV-Cross **binary versions** emit the same SPIR-V/GLSL as the desktop natives — which is what this work pins down.
+
+**Native WASM modules**
+- [ ] Build (or source) **DXC** compiled to WebAssembly (emscripten); export JS `compileToSpirv(hlslSource: string, args: string[]): Uint8Array` matching the `shadowdusk-dxc` contract in `Phase19.js`. Pin to the desktop DXC version.
+- [ ] Build (or source) **SPIRV-Cross** compiled to WebAssembly; export `transpileToGlsl(spirv, flipVertexY, fixupDepthConvention, glslVersion, glslEs, vulkanSemantics): string` matching the `shadowdusk-spirv-cross` contract. Pin to the desktop SPIRV-Cross version.
+- [ ] Measure download size, memory, cold-start; decide whether Mode 2 ships by default or stays opt-in.
+
+**Mode 1 — precompiled bytes load in WebGL**
+- [ ] Minimal MonoGame/KNI **WebGL** harness that calls `new Effect(gd, bytes)` on a Phase-9-compiled OpenGL `.mgfx` and renders a known quad / the corpus.
+- [ ] Confirm the Phase-17 DesktopGL `.mgfx` also loads + renders in WebGL; **document any DesktopGL-vs-WebGL divergence** (research doc §15.2).
+
+**Mode 2 — in-browser compilation (end-to-end)**
+- [ ] With the modules wired, compile ≥1 corpus shader **fully in-browser** (source → `.mgfx` → `Effect`) with no shader-compile/link errors in the console.
+- [ ] Assert the in-browser `.mgfx` bytes are **identical** to the CLI output for the same source + OpenGL target (closes the "modulo binary version" caveat Phase 19 left open).
+
+**Validation / CI**
+- [ ] Headless-browser smoke test in [Phase 30 CI](PHASE-30-cross-platform-ci.md) for Mode 1; gate Mode 2 behind a flag if heavy.
+- [ ] Run untrusted `.fx` through [Phase 25](PHASE-25-security-hardening.md) input validation (browser path takes arbitrary user shader text).
+
+**Definition of done (this section):** a shader compiled **entirely in-browser** by `ShadowDusk.Wasm` renders correctly in a real MonoGame/KNI **WebGL** build via `new Effect(gd, bytes)`, no server, bytes matching the CLI. The polished user-facing demo on top is [Phase 22](PHASE-22-wasm-shader-fiddle-sample.md).
 
 ---
 

@@ -750,7 +750,7 @@ It writes `hlslSource` to a temp `.fx` file, calls `CompileFixtureAsync`, then d
 - [x] Determinism test passes for `minimal.fx`, `cbuffer.fx`, and `multitechnique.fx` on OpenGL
 - [x] All 6 error-case tests produce `ExitCode == 1` with correctly formatted `Stderr`
 - [x] `dotnet test --filter "Category=Integration&Platform=OpenGL"` runs only OpenGL-tagged tests
-- [ ] Tests run without modification on Windows, Linux, and macOS — **deferred to Phase 30 CI** (see [PHASE-20-deferred-backlog.md](PHASE-20-deferred-backlog.md))
+- [ ] Tests run without modification on Windows, Linux, and macOS — **deferred to Phase 30 CI** (see [PHASE-100-deferred-backlog.md](PHASE-100-deferred-backlog.md))
 - [x] No test uses `Thread.Sleep`, `.Result`, or `.Wait()`
 - [x] No test writes outside of `Path.GetTempPath()` or the test output directory
 
