@@ -10,6 +10,13 @@
     <ProjectReference Include="..\..\src\ShadowDusk.Core\ShadowDusk.Core.csproj" />
     <ProjectReference Include="..\..\src\ShadowDusk.HLSL\ShadowDusk.HLSL.csproj" />
     <ProjectReference Include="..\..\src\ShadowDusk.GLSL\ShadowDusk.GLSL.csproj" />
+    <!-- Phase 21: reference the CLI so its binary is built alongside the tests.
+         CliBinaryFixture then reuses that build output instead of running a slow
+         per-run `dotnet publish -c Release` (the dominant, AV/cache-sensitive cost
+         behind the 21-minute integration run). ReferenceOutputAssembly=false: we
+         only want the CLI built + on disk, not linked into the test assembly. -->
+    <ProjectReference Include="..\..\src\ShadowDusk.Cli\ShadowDusk.Cli.csproj"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>

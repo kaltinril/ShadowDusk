@@ -1,5 +1,26 @@
 # Phase 21 — Test-Suite Performance Investigation (21-minute Integration run)
 
+**Status:** Largely resolved (2026-05-30, branch `phase21-test-perf`) — structural cost removed + dev-time AV mitigation documented. **Caveat:** the 21-minute *slow case* did **not** reproduce in-session (every run was fast), so the root cause is identified by structural analysis + evidence fit, not by catching it red-handed. See **Resolution** below.
+
+---
+
+## Resolution (2026-05-30)
+
+**Reproduction attempt:** ran `ShadowDusk.Integration.Tests` alone with a TRX logger + `--blame-hang-timeout 120s`. Result: **108 passed in ~4 s** (and 667 ms on a `--no-build` re-run). Per-test durations were all **< 0.3 s** (sum 4.6 s, parallelized to ~4 s wall). So the cost is **not** in any test's logic and **not** a hanging test — it is **fixture setup**, and the slow case is environmental/non-deterministic (could not be forced on this otherwise-idle box).
+
+**Root cause (by structural analysis, best fit to all evidence):** `CliBinaryFixture` ran a full **`dotnet publish -c Release`** into a fresh GUID `%TEMP%` directory on every construction. That is a nested SDK build that (a) **cold-compiles the entire dependency tree in Release** — a config the Debug test run never otherwise builds — and (b) **copies large native binaries** (`dxcompiler.dll`, SPIRV-Cross) into a brand-new directory the **antivirus has never scanned**. Both are classic warm-vs-cold cost cliffs: seconds when the Release cache + Defender cache are warm, many minutes when cold. This matches the observed ~400× non-determinism far better than any algorithmic cause.
+
+**Fix applied:**
+- The test project now has a `ReferenceOutputAssembly="false"` ProjectReference to `ShadowDusk.Cli`, so the CLI binary is always built alongside the tests.
+- `CliBinaryFixture` now **reuses that build-output binary** (probing `src/ShadowDusk.Cli/bin/{Debug,Release}/net8.0/`), and only falls back to `dotnet publish` if no built binary exists. The per-run Release publish is gone from the normal path. CLI integration tests still pass (6/6); full suite 108/108.
+- Documented dev-time **Defender exclusions** for `bin`/`obj`/`tools`/`%TEMP%` in `CLAUDE.md` (do not disable AV globally).
+
+**Guardrail (recommended, for Phase 30 CI):** add a suite-level timeout so a future regression surfaces as a *failure* in minutes rather than a silent 20-minute hang; per-test `CancellationTokenSource` timeouts (30 s/60 s) already exist.
+
+---
+
+### Original investigation notes (kept for context)
+
 **Status:** Planned (investigation)
 **Prerequisite phases:** None — diagnostic; can run in parallel with any work.
 **Priority:** Low (correctness unaffected — the slow run still passed), but worth fixing: a 20-minute suite kills the edit→test loop and will be brutal in CI (Phase 30).
@@ -108,14 +129,11 @@ in-process). Things only it does:
 
 ## Definition of Done
 
-- [ ] Root cause of the 21-minute run identified and **reproduced** (slow case, not just the fast one).
-- [ ] Per-test timing captured; the dominant cost localized to a category/test or external factor.
-- [ ] Fix applied (code and/or a documented dev-environment step) bringing a clean
-      `ShadowDusk.Integration.Tests` run back to the seconds range it hit earlier.
-- [ ] If the cause is environmental (AV, etc.), documented in `CLAUDE.md` so it doesn't recur and
-      so Phase 30 CI accounts for it.
-- [ ] A guardrail considered: per-test timeouts that fail fast, and/or a CI timeout on the suite
-      so a future regression surfaces as a failure rather than a 20-minute hang.
+- [~] Root cause **identified** (the `dotnet publish -c Release` in `CliBinaryFixture`, best fit to the cold/warm non-determinism) — but the 21-minute slow case **did NOT reproduce** in-session (all runs fast); reproduction by structural analysis + evidence, not by catching it live.
+- [x] Per-test timing captured (TRX): all tests < 0.3 s, ~4 s total — dominant cost localized to **fixture setup**, not test logic or a hanging test.
+- [x] Fix applied: `CliBinaryFixture` reuses the build-output CLI binary instead of a per-run Release publish; suite stays seconds-range (108/108, 667 ms no-build).
+- [x] Environmental cause (AV scanning freshly-built native binaries) documented in `CLAUDE.md` with dev-time Defender-exclusion guidance.
+- [~] Guardrail: per-test timeouts already exist; a **suite-level CI timeout** is recommended and handed to [Phase 30](PHASE-30-cross-platform-ci.md).
 
 ---
 

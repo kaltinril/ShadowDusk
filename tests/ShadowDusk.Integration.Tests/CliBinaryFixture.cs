@@ -6,25 +6,107 @@ using System.Runtime.InteropServices;
 namespace ShadowDusk.Integration.Tests;
 
 /// <summary>
-/// xUnit class fixture that publishes the ShadowDusk.Cli project to a temporary directory
-/// and exposes the path to the produced executable for integration tests.
+/// xUnit class fixture that exposes a runnable ShadowDusk.Cli executable to integration tests.
+///
+/// <para><b>Phase 21 (test-suite performance):</b> this fixture used to run a full
+/// <c>dotnet publish -c Release</c> into a fresh temp directory on every construction. That
+/// nested SDK build — a cold Release compile of the whole dependency tree, plus a copy of
+/// large native binaries (<c>dxcompiler.dll</c>, SPIRV-Cross) into a brand-new directory the
+/// antivirus had never scanned — is the structural cost that best fits the observed ~400×
+/// non-determinism (seconds when the Release cache + AV cache were warm; many minutes when
+/// cold). It now <b>reuses the CLI binary produced by the normal build</b> (the test project
+/// has a <c>ReferenceOutputAssembly=false</c> ProjectReference to ShadowDusk.Cli, so the CLI
+/// is always built alongside the tests). The publish path remains only as a fallback for an
+/// environment where the build output is somehow absent.</para>
 /// </summary>
 public sealed class CliBinaryFixture : IDisposable
 {
-    private readonly string _tempDir;
+    /// <summary>Non-null only when we fell back to publishing; that temp dir is cleaned on dispose.</summary>
+    private readonly string? _publishedTempDir;
 
     public string ExecutablePath { get; }
 
     public CliBinaryFixture()
     {
-        _tempDir = Path.Combine(Path.GetTempPath(), "ShadowDuskCliTests_" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(_tempDir);
+        string repoRoot = FindRepoRoot();
 
-        string cliProjectPath = FindCliProjectPath();
+        string exeName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            ? "ShadowDusk.Cli.exe"
+            : "ShadowDusk.Cli";
+
+        // Fast path: reuse the binary the normal build already produced.
+        string? built = LocateBuiltCli(repoRoot, exeName);
+        if (built is not null)
+        {
+            ExecutablePath = built;
+            _publishedTempDir = null;
+            return;
+        }
+
+        // Fallback: publish (fresh checkout where the CLI wasn't built for some reason).
+        _publishedTempDir = PublishCli(repoRoot);
+        ExecutablePath = Path.Combine(_publishedTempDir, exeName);
+
+        if (!File.Exists(ExecutablePath))
+            throw new FileNotFoundException($"Published CLI binary not found at '{ExecutablePath}'.");
+    }
+
+    public void Dispose()
+    {
+        if (_publishedTempDir is null)
+            return; // We reused build output — nothing to clean.
+
+        try
+        {
+            if (Directory.Exists(_publishedTempDir))
+                Directory.Delete(_publishedTempDir, recursive: true);
+        }
+        catch
+        {
+            // Best-effort cleanup — do not rethrow from Dispose.
+        }
+    }
+
+    /// <summary>
+    /// Probe the CLI project's standard build output for an already-built executable, preferring
+    /// the most recently written across Debug/Release. Returns null if none exists.
+    /// </summary>
+    private static string? LocateBuiltCli(string repoRoot, string exeName)
+    {
+        string cliBin = Path.Combine(repoRoot, "src", "ShadowDusk.Cli", "bin");
+        if (!Directory.Exists(cliBin))
+            return null;
+
+        string? newest = null;
+        DateTime newestStamp = DateTime.MinValue;
+
+        foreach (string config in new[] { "Debug", "Release" })
+        {
+            string candidate = Path.Combine(cliBin, config, "net8.0", exeName);
+            if (File.Exists(candidate))
+            {
+                DateTime stamp = File.GetLastWriteTimeUtc(candidate);
+                if (stamp > newestStamp)
+                {
+                    newestStamp = stamp;
+                    newest = candidate;
+                }
+            }
+        }
+
+        return newest;
+    }
+
+    private static string PublishCli(string repoRoot)
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), "ShadowDuskCliTests_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        string cliProjectPath = Path.Combine(repoRoot, "src", "ShadowDusk.Cli", "ShadowDusk.Cli.csproj");
 
         var psi = new ProcessStartInfo("dotnet")
         {
-            Arguments              = $"publish \"{cliProjectPath}\" -o \"{_tempDir}\" --no-self-contained -c Release",
+            Arguments              = $"publish \"{cliProjectPath}\" -o \"{tempDir}\" --no-self-contained -c Release",
             UseShellExecute        = false,
             RedirectStandardOutput = true,
             RedirectStandardError  = true,
@@ -47,55 +129,24 @@ public sealed class CliBinaryFixture : IDisposable
                 $"stderr: {stderr}");
         }
 
-        string exeName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-            ? "ShadowDusk.Cli.exe"
-            : "ShadowDusk.Cli";
-
-        ExecutablePath = Path.Combine(_tempDir, exeName);
-
-        if (!File.Exists(ExecutablePath))
-            throw new FileNotFoundException($"Published CLI binary not found at '{ExecutablePath}'.");
+        return tempDir;
     }
 
-    public void Dispose()
+    private static string FindRepoRoot()
     {
-        try
-        {
-            if (Directory.Exists(_tempDir))
-                Directory.Delete(_tempDir, recursive: true);
-        }
-        catch
-        {
-            // Best-effort cleanup — do not rethrow from Dispose.
-        }
-    }
-
-    private static string FindCliProjectPath()
-    {
-        // Walk up from the test assembly directory to find the repo root,
-        // then navigate to the CLI project file.
+        // Walk up from the test assembly directory to the repo root (the dir holding the solution).
         DirectoryInfo dir = new(AppContext.BaseDirectory);
 
         while (dir.Parent is not null)
         {
-            string candidate = Path.Combine(dir.FullName, "ShadowDusk.slnx");
-            if (File.Exists(candidate))
-            {
-                string cliProjectPath = Path.Combine(
-                    dir.FullName,
-                    "src",
-                    "ShadowDusk.Cli",
-                    "ShadowDusk.Cli.csproj");
-
-                if (File.Exists(cliProjectPath))
-                    return cliProjectPath;
-            }
+            if (File.Exists(Path.Combine(dir.FullName, "ShadowDusk.slnx")))
+                return dir.FullName;
 
             dir = dir.Parent;
         }
 
         throw new FileNotFoundException(
-            "Could not locate ShadowDusk.Cli.csproj. " +
+            "Could not locate the repository root (ShadowDusk.slnx). " +
             "Ensure the test is running from a directory under the repository root.");
     }
 }
