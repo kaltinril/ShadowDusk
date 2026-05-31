@@ -6,7 +6,7 @@ using ShadowDusk.GLSL.Interop;
 
 namespace ShadowDusk.GLSL;
 
-public sealed class SpirvCrossGlslTranspiler
+public sealed class SpirvCrossGlslTranspiler : ISpirvToGlslTranspiler
 {
     public SpirvCrossGlslTranspiler()
     {

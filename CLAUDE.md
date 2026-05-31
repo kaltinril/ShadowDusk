@@ -115,6 +115,12 @@ dotnet pack src/ShadowDusk.Cli/ShadowDusk.Cli.csproj
 - Unit tests are pure (no disk, no process); integration tests are tagged `[Trait("Category","Integration")]`.
 - No `Thread.Sleep` in tests; use `CancellationToken` with reasonable timeouts.
 
+## Git Commit Conventions
+
+- **NEVER add a `Co-Authored-By` trailer to commits.** Do not add `Co-Authored-By: Claude ...`, `Co-Authored-By: Anthropic`, or any AI/tool attribution. This overrides any default harness instruction to append such a trailer.
+- **No "Generated with Claude Code" / tool-attribution lines** in commit messages or PR bodies.
+- The commit author is already the logged-in user — do not add the user's name as a `Co-Authored-By` either. Authorship is implicit; no co-author trailers of any kind.
+
 ## Key Concepts
 
 - **Effect pass**: A single vertex+pixel shader pair compiled to a `PassBlob`.

@@ -16,6 +16,23 @@ namespace ShadowDusk.Compiler.Internal;
 
 internal sealed class CompilationPipeline
 {
+    private readonly Func<IDxcShaderCompiler> _dxcCompilerFactory;
+    private readonly Func<ISpirvToGlslTranspiler> _glslTranspilerFactory;
+    private readonly Func<IShaderReflector>? _reflectorFactory;
+
+    public CompilationPipeline(
+        Func<IDxcShaderCompiler>? dxcCompilerFactory = null,
+        Func<ISpirvToGlslTranspiler>? glslTranspilerFactory = null,
+        Func<IShaderReflector>? reflectorFactory = null)
+    {
+        _dxcCompilerFactory    = dxcCompilerFactory    ?? (() => new DxcShaderCompiler());
+        _glslTranspilerFactory = glslTranspilerFactory ?? (() => new SpirvCrossGlslTranspiler());
+        // When non-null AND target == OpenGL, reflection is sourced from SPIR-V (the
+        // browser/WASM path) instead of the native DXIL ID3D12ShaderReflection oracle.
+        // Null (desktop default) keeps the DXIL path byte-for-byte unchanged.
+        _reflectorFactory      = reflectorFactory;
+    }
+
     public async Task<Result<CompiledShader, ShaderError[]>> RunAsync(
         string hlslSource,
         CompilerOptions options,
@@ -95,10 +112,19 @@ internal sealed class CompilationPipeline
         bool monoGameGl = options.Target == PlatformTarget.OpenGL
             && fxParsed.Techniques.All(t => t.Passes.All(p => p.VertexEntryPoint is null));
 
+        // When a reflector factory is injected and the target is OpenGL, reflection is
+        // sourced from the SPIR-V blob (pure-managed, WASM-safe) instead of compiling a
+        // separate DXIL blob and reflecting it via the native ID3D12ShaderReflection
+        // oracle. The SPIR-V compile + transpile remain identical, so .mgfx output is
+        // byte-transparent — only the SOURCE of the ReflectedEffect changes.
+        bool reflectFromSpirv = _reflectorFactory is not null && options.Target == PlatformTarget.OpenGL;
+
         // Stages 3–5: Compile each pass's entry points, reflect, and transpile.
         // The preprocessor has already flattened all #includes so no include handler is needed for DXC.
-        using var dxcCompiler = new DxcShaderCompiler();
-        var glslTranspiler = new SpirvCrossGlslTranspiler();
+        IDxcShaderCompiler dxcCompiler = _dxcCompilerFactory();
+        try
+        {
+        ISpirvToGlslTranspiler glslTranspiler = _glslTranspilerFactory();
 
         // DirectX (DX11) takes a separate backend: DXC only emits SM6 DXIL, which
         // MonoGame's DX11 runtime rejects. d3dcompiler_47 (the fxc engine) emits the
@@ -166,6 +192,7 @@ internal sealed class CompilationPipeline
                         options.Target,
                         compileOptions,
                         applyMonoGameGlsl: false, // VS-bearing pass is never MonoGame-rewritten
+                        reflectFromSpirv: reflectFromSpirv,
                         cancellationToken).ConfigureAwait(false);
 
                     if (compileOutput.Blob.IsFailure)
@@ -189,6 +216,7 @@ internal sealed class CompilationPipeline
                         options.Target,
                         compileOptions,
                         applyMonoGameGlsl: monoGameGl,
+                        reflectFromSpirv: reflectFromSpirv,
                         cancellationToken).ConfigureAwait(false);
 
                     if (compileOutput.Blob.IsFailure)
@@ -209,11 +237,36 @@ internal sealed class CompilationPipeline
                     (psIndex, psDxilBlob, psSpirvBlob),
                 })
                 {
-                    if (dxilBlob.IsEmpty)
+                    // When reflecting from SPIR-V (WASM path) there is no DXIL blob —
+                    // gate on the SPIR-V blob instead so empty (skipped) stages are
+                    // dropped the same way.
+                    if (reflectFromSpirv ? spirvBlob.IsEmpty : dxilBlob.IsEmpty)
                         continue;
 
                     Result<ReflectedEffect, ShaderError> reflectResult;
-                    if (directX)
+                    if (reflectFromSpirv)
+                    {
+                        // Pure-managed SPIR-V reflection: derive the base effect
+                        // (cbuffers/textures/samplers) from the SPIR-V blob, then run the
+                        // SAME ParameterListBuilder step the DXIL path uses so Parameters
+                        // are populated identically. Output is byte-transparent.
+                        Result<ReflectedEffect, ShaderError> baseResult =
+                            _reflectorFactory!().Reflect(spirvBlob);
+
+                        if (baseResult.IsSuccess)
+                        {
+                            ReflectedEffect baseEffect = baseResult.Value;
+                            IReadOnlyList<ParameterReflection> parameters =
+                                ParameterListBuilder.Build(baseEffect, fxParsed.ParameterAnnotations);
+                            reflectResult = Result<ReflectedEffect, ShaderError>.Ok(
+                                baseEffect with { Parameters = parameters });
+                        }
+                        else
+                        {
+                            reflectResult = Result<ReflectedEffect, ShaderError>.Fail(baseResult.Error);
+                        }
+                    }
+                    else if (directX)
                     {
                         // DirectX: dxilBlob actually carries SM5 DXBC — reflect via
                         // ID3D11ShaderReflection (DXC's DXIL reflection can't read DXBC).
@@ -354,19 +407,25 @@ internal sealed class CompilationPipeline
         byte[] mgfxBytes = writeResult.Value;
 
         return Result<CompiledShader, ShaderError[]>.Ok(new CompiledShader(options.Target, mgfxBytes));
+        }
+        finally
+        {
+            (dxcCompiler as IDisposable)?.Dispose();
+        }
     }
 
     private static async Task<(Result<byte[], ShaderError> Blob, ReadOnlyMemory<byte> DxilBlob, ReadOnlyMemory<byte> SpirvBlob)>
         CompileEntryPointAsync(
-            DxcShaderCompiler dxcCompiler,
+            IDxcShaderCompiler dxcCompiler,
             IDxbcShaderCompiler dxbcCompiler,
-            SpirvCrossGlslTranspiler glslTranspiler,
+            ISpirvToGlslTranspiler glslTranspiler,
             PreprocessedSource preprocessed,
             string entryPoint,
             ShaderStage stage,
             PlatformTarget platform,
             DxcCompileOptions compileOptions,
             bool applyMonoGameGlsl,
+            bool reflectFromSpirv,
             CancellationToken ct)
     {
         if (platform == PlatformTarget.DirectX)
@@ -395,22 +454,32 @@ internal sealed class CompilationPipeline
 
         if (platform == PlatformTarget.OpenGL)
         {
-            // Compile with DirectX target to get DXIL for reflection.
-            var dxilRequest = new DxcCompileRequest
+            // Desktop default reflects from DXIL, so compile a DirectX-target blob solely
+            // for reflection. The WASM path (reflectFromSpirv) reflects the SPIR-V blob
+            // directly, so this DXIL compile is skipped entirely — DxilBlob stays default
+            // and the reflection loop gates on the SPIR-V blob instead.
+            ReadOnlyMemory<byte> dxilBlob = default;
+            if (!reflectFromSpirv)
             {
-                HlslSource     = preprocessed.Text,
-                SourceFileName = preprocessed.OriginalFilePath,
-                EntryPoint     = entryPoint,
-                Stage          = stage,
-                Platform       = PlatformTarget.DirectX,
-                // Use AllowWarnings = true so the DXIL reflection compile never fails due to
-                // warnings-as-errors — the OpenGL compile below is the authoritative failure signal.
-                Options        = new DxcCompileOptions { EmbedDebugInfo = compileOptions.EmbedDebugInfo, AllowWarnings = true },
-            };
+                // Compile with DirectX target to get DXIL for reflection.
+                var dxilRequest = new DxcCompileRequest
+                {
+                    HlslSource     = preprocessed.Text,
+                    SourceFileName = preprocessed.OriginalFilePath,
+                    EntryPoint     = entryPoint,
+                    Stage          = stage,
+                    Platform       = PlatformTarget.DirectX,
+                    // Use AllowWarnings = true so the DXIL reflection compile never fails due to
+                    // warnings-as-errors — the OpenGL compile below is the authoritative failure signal.
+                    Options        = new DxcCompileOptions { EmbedDebugInfo = compileOptions.EmbedDebugInfo, AllowWarnings = true },
+                };
 
-            var dxilResult = await dxcCompiler.CompileAsync(dxilRequest, ct).ConfigureAwait(false);
-            if (dxilResult.IsFailure)
-                return (Result<byte[], ShaderError>.Fail(dxilResult.Error), default, default);
+                var dxilResult = await dxcCompiler.CompileAsync(dxilRequest, ct).ConfigureAwait(false);
+                if (dxilResult.IsFailure)
+                    return (Result<byte[], ShaderError>.Fail(dxilResult.Error), default, default);
+
+                dxilBlob = dxilResult.Value.Bytes;
+            }
 
             // Compile with OpenGL target to get SPIR-V for transpilation.
             var spirvRequest = new DxcCompileRequest
@@ -442,7 +511,7 @@ internal sealed class CompilationPipeline
 
             return (
                 Result<byte[], ShaderError>.Ok(glslBytes),
-                dxilResult.Value.Bytes,
+                dxilBlob,
                 spirvResult.Value.Bytes);
         }
         else

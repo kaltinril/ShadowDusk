@@ -1,10 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <TargetFramework>net8.0-browser</TargetFramework>
     <AssemblyName>ShadowDusk.Wasm</AssemblyName>
     <RootNamespace>ShadowDusk.Wasm</RootNamespace>
+    <!-- The [JSImport] source generator emits code requiring /unsafe. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\ShadowDusk.Core\ShadowDusk.Core.csproj" />
+    <ProjectReference Include="..\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
   </ItemGroup>
 </Project>
