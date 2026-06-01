@@ -34,22 +34,35 @@ internal sealed partial class JsDxcShaderCompiler : IDxcShaderCompiler
             request.Macros,
             request.Options);
 
+        return CompileCoreAsync(request, arguments.ToArray());
+    }
+
+    private static async Task<Result<PlatformBlob, ShaderError>> CompileCoreAsync(
+        DxcCompileRequest request,
+        string[] arguments)
+    {
         try
         {
-            byte[] spirv = DxcInterop.CompileToSpirv(request.HlslSource, arguments.ToArray());
+            // The compile JS function (compileToSpirv) is SYNCHRONOUS, but its WASM
+            // backend (slang-wasm) loads asynchronously and lazily. Await the one-time
+            // load here before the synchronous compile so the heavy ~21 MB download is
+            // NOT forced at page init (keeping the mode-1 boot instant). Idempotent.
+            await DxcInterop.EnsureReadyAsync().ConfigureAwait(false);
+
+            byte[] spirv = DxcInterop.CompileToSpirv(request.HlslSource, arguments);
             var blob = new PlatformBlob(BlobKind.Spirv, spirv);
-            return Task.FromResult(Result<PlatformBlob, ShaderError>.Ok(blob));
+            return Result<PlatformBlob, ShaderError>.Ok(blob);
         }
         catch (JSException ex)
         {
-            return Task.FromResult(Result<PlatformBlob, ShaderError>.Fail(new ShaderError(
+            return Result<PlatformBlob, ShaderError>.Fail(new ShaderError(
                 File: request.SourceFileName,
                 Line: 0,
                 Column: 0,
                 Code: "SD1900",
                 Message: $"WASM DXC backend failed: {ex.Message}",
                 Severity: ShaderErrorSeverity.Error,
-                RawDiagnostics: ex.Message)));
+                RawDiagnostics: ex.Message));
         }
     }
 }
@@ -103,6 +116,18 @@ internal sealed partial class JsSpirvToGlslTranspiler : ISpirvToGlslTranspiler
 [SupportedOSPlatform("browser")]
 internal static partial class DxcInterop
 {
+    /// <summary>
+    /// Lazily loads and initializes the WASM HLSL→SPIR-V backend (slang-wasm). The
+    /// host must <c>await</c> this once before the first <see cref="CompileToSpirv"/>;
+    /// it is idempotent and resolves immediately once loaded. Awaiting it here (rather
+    /// than blocking the module's evaluation) keeps the ~21 MB WASM off the page-init
+    /// critical path so the mode-1 render boots instantly.
+    /// JS contract: <c>ensureReady(): Promise&lt;void&gt;</c> (rejects on load failure).
+    /// </summary>
+    [JSImport("ensureReady", "shadowdusk-dxc")]
+    [return: JSMarshalAs<JSType.Promise<JSType.Void>>]
+    public static partial Task EnsureReadyAsync();
+
     /// <summary>
     /// Compiles HLSL to a SPIR-V byte stream.
     /// JS contract: <c>compileToSpirv(hlslSource: string, args: string[]): Uint8Array</c>.

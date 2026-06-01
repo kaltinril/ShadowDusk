@@ -1,0 +1,153 @@
+:root {
+    --bg: #1e1e22;
+    --panel: #26262b;
+    --ink: #e6e6e6;
+    --muted: #9a9aa5;
+    --accent: #4ea1ff;
+    --err: #ff6b6b;
+    --ok: #6bd17a;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+}
+
+#loading {
+    padding: 2rem;
+    color: var(--muted);
+}
+
+.fiddle {
+    display: flex;
+    height: 100vh;
+    width: 100vw;
+}
+
+.controls {
+    width: 480px;
+    min-width: 360px;
+    box-sizing: border-box;
+    padding: 16px 18px;
+    background: var(--panel);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow-y: auto;
+}
+
+.controls h1 {
+    font-size: 1.25rem;
+    margin: 0;
+}
+
+.tagline {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--muted);
+}
+
+.tagline a { color: var(--accent); }
+
+.row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.row label { font-size: 0.85rem; color: var(--muted); }
+
+select, button {
+    font: inherit;
+    background: #33333a;
+    color: var(--ink);
+    border: 1px solid #44444c;
+    border-radius: 6px;
+    padding: 6px 10px;
+}
+
+button.primary {
+    background: var(--accent);
+    color: #06203f;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+button:disabled { opacity: 0.5; cursor: default; }
+
+.editor {
+    flex: 1;
+    min-height: 240px;
+    resize: vertical;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.45;
+    background: #1b1b1f;
+    color: #dcdce4;
+    border: 1px solid #3a3a42;
+    border-radius: 8px;
+    padding: 10px;
+    white-space: pre;
+    overflow: auto;
+    tab-size: 4;
+}
+
+.buttons { justify-content: space-between; }
+
+.status { font-size: 0.82rem; }
+.status.ok { color: var(--ok); }
+.status.err { color: var(--err); }
+
+.errors {
+    background: #2c1c1c;
+    border: 1px solid #5a2d2d;
+    border-radius: 8px;
+    padding: 8px 10px;
+    max-height: 30vh;
+    overflow: auto;
+}
+
+.errors-head { color: var(--err); font-size: 0.8rem; margin-bottom: 4px; }
+
+.diag {
+    margin: 2px 0;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    white-space: pre-wrap;
+    color: #ffd0d0;
+}
+
+.note { font-size: 0.8rem; color: var(--muted); }
+.note summary { cursor: pointer; color: var(--accent); }
+.note code { color: #d6d6e0; }
+
+.stage {
+    flex: 1;
+    background: #000;
+    position: relative;
+    overflow: hidden;
+}
+
+#theCanvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+#blazor-error-ui {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    width: 100%;
+    padding: 0.6rem 1.25rem;
+    background: #b32121;
+    color: #fff;
+    z-index: 1000;
+}
+
+#blazor-error-ui .reload, #blazor-error-ui .dismiss { color: #fff; cursor: pointer; }

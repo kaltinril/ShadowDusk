@@ -152,4 +152,106 @@ void main()
         result.Samplers.Should().BeEmpty();
         result.UniformRegisterCount.Should().Be(0);
     }
+
+    // ---- Slang-frontend (browser path) GLSL. SPIRV-Cross names interface vars after
+    // Slang's field/entrypoint identifiers (input_Color, entryPointParam_MainPS,
+    // GlobalParams_default/globalParams) instead of HLSL semantics; the rewriter's
+    // Slang-normalization pre-pass must fold these into the same MojoShader dialect as
+    // the DXC examples above. Captured verbatim from the Slang fidelity spike. ----
+
+    private const string SlangGrayscale = """
+#version 140
+#ifdef GL_ARB_shading_language_420pack
+#extension GL_ARB_shading_language_420pack : require
+#endif
+
+uniform sampler2D SPIRV_Cross_CombinedSpriteTextureSpriteTextureSampler;
+
+in vec2 input_TextureCoordinates;
+in vec4 input_Color;
+out vec4 entryPointParam_MainPS;
+
+void main()
+{
+    vec4 _29 = texture(SPIRV_Cross_CombinedSpriteTextureSpriteTextureSampler, input_TextureCoordinates) * input_Color;
+    float _36 = ((_29.x + _29.y) + _29.z) * 0.3333333432674407958984375;
+    vec4 _59 = _29;
+    _59.x = _36;
+    _59.y = _36;
+    _59.z = _36;
+    entryPointParam_MainPS = _59;
+}
+""";
+
+    private const string SlangTint = """
+#version 140
+#ifdef GL_ARB_shading_language_420pack
+#extension GL_ARB_shading_language_420pack : require
+#endif
+
+layout(binding = 0, std140) uniform GlobalParams_default
+{
+    vec4 TintColor;
+} globalParams;
+
+uniform sampler2D SPIRV_Cross_CombinedSpriteTextureSpriteTextureSampler;
+
+in vec2 input_TextureCoordinates;
+in vec4 input_Color;
+out vec4 entryPointParam_MainPS;
+
+void main()
+{
+    entryPointParam_MainPS = (texture(SPIRV_Cross_CombinedSpriteTextureSpriteTextureSampler, input_TextureCoordinates) * input_Color) * globalParams.TintColor;
+}
+""";
+
+    [Fact]
+    public void SlangGrayscale_NormalizesToLegacyGlsl()
+    {
+        var result = MonoGameGlslRewriter.Rewrite(SlangGrayscale, ShaderStage.Pixel);
+
+        // input_TextureCoordinates -> in_var_TEXCOORD0 -> vTexCoord0; input_Color -> vFrontColor.
+        result.Glsl.Should().Contain("varying vec4 vTexCoord0;");
+        result.Glsl.Should().Contain("varying vec4 vFrontColor;");
+        result.Glsl.Should().Contain("uniform sampler2D ps_s0;");
+        result.Glsl.Should().Contain("texture2D(ps_s0, vTexCoord0.xy)");
+        // entryPointParam_MainPS -> out_var_SV_Target -> gl_FragColor.
+        result.Glsl.Should().Contain("gl_FragColor");
+
+        // No Slang-isms or modern qualifiers survive.
+        result.Glsl.Should().NotContain("input_");
+        result.Glsl.Should().NotContain("entryPointParam_");
+        result.Glsl.Should().NotContain("in_var_");
+        result.Glsl.Should().NotContain("out_var_");
+        result.Glsl.Should().NotContain("#version");
+
+        result.Samplers.Should().ContainSingle();
+        result.Samplers[0].Name.Should().Be("ps_s0");
+        result.UniformRegisterCount.Should().Be(0);
+    }
+
+    [Fact]
+    public void SlangTint_NormalizesUniformBlockAndInterface()
+    {
+        var result = MonoGameGlslRewriter.Rewrite(SlangTint, ShaderStage.Pixel);
+
+        // GlobalParams_default { vec4 TintColor; } globalParams -> ps_uniforms_vec4[].
+        result.Glsl.Should().Contain("uniform vec4 ps_uniforms_vec4[1];");
+        result.Glsl.Should().Contain("ps_uniforms_vec4[0]");
+        result.UniformRegisterCount.Should().Be(1);
+
+        result.Glsl.Should().Contain("varying vec4 vTexCoord0;");
+        result.Glsl.Should().Contain("varying vec4 vFrontColor;");
+        result.Glsl.Should().Contain("uniform sampler2D ps_s0;");
+        result.Glsl.Should().Contain("gl_FragColor");
+
+        // No Slang-isms survive.
+        result.Glsl.Should().NotContain("input_");
+        result.Glsl.Should().NotContain("entryPointParam_");
+        result.Glsl.Should().NotContain("globalParams");
+        result.Glsl.Should().NotContain("GlobalParams_default");
+        result.Glsl.Should().NotContain("type_Globals");
+        result.Glsl.Should().NotContain("_Globals");
+    }
 }

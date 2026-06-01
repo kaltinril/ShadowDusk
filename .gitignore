@@ -18,6 +18,20 @@ tools/vkd3d/*.so
 tools/vkd3d/*.so.*
 tools/vkd3d/*.dylib
 
+# WASM build scratch for the in-browser SPIRV-Cross module: emsdk (~600 MB),
+# the SPIRV-Cross source checkout, the .NET fixture probe, and the generated
+# SPIR-V/GLSL fixtures. All reproducible via .wasm-build/build-spirv-cross-wasm.ps1
+# + .wasm-build/README.md; never committed. The built wasm/js live under
+# samples/ShaderFiddle.Web/wwwroot/spirv-cross/ (those ARE committed).
+.wasm-build/
+
+# The Slang HLSL->SPIR-V WASM module (~21 MB) for samples/ShaderFiddle.Web is a
+# prebuilt official release asset — restored, not committed (see
+# samples/ShaderFiddle.Web/wwwroot/slang/RESTORE.md). Its small loader (.js/.d.ts)
+# IS committed. The SPIRV-Cross wasm under wwwroot/spirv-cross/ IS committed
+# (no prebuilt exists and it's only ~2.1 MB).
+samples/ShaderFiddle.Web/wwwroot/slang/slang-wasm.wasm
+
 # MGCB compiled content output (XNB wrappers — not the raw .mgfx golden files)
 *.xnb
 *.mgcb.log

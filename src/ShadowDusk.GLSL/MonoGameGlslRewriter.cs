@@ -83,6 +83,12 @@ public static class MonoGameGlslRewriter
             return new MonoGameGlslResult(glsl, Array.Empty<MonoGameGlslSampler>(), 0);
         }
 
+        // Normalize Slang-emitted interface names to the DXC convention the rest of
+        // this rewriter is keyed to. No-op for DXC/FXC output. (Browser path uses
+        // Slang as the HLSL→SPIR-V frontend; SPIRV-Cross then names interface vars
+        // after Slang's field/entrypoint identifiers rather than HLSL semantics.)
+        glsl = NormalizeSlangNaming(glsl);
+
         // Normalize newlines to '\n' for processing.
         var lines = glsl.Replace("\r\n", "\n").Replace("\r", "\n").Split('\n');
 
@@ -244,6 +250,64 @@ public static class MonoGameGlslRewriter
         }
 
         return new MonoGameGlslResult(finalGlsl, samplers, uniformMembers.Count);
+    }
+
+    /// <summary>
+    /// Rewrites Slang's GLSL interface names into the DXC convention this rewriter
+    /// expects. Slang (the browser HLSL→SPIR-V frontend) names interface variables
+    /// after the source field / entry-point identifier, whereas DXC names them after
+    /// the HLSL semantic; SPIR-V carries no semantic string, so the mapping is applied
+    /// here by the PS-only SpriteBatch input contract (color:COLOR0 + texcoord:TEXCOORD0).
+    /// Idempotent / no-op for DXC output (those identifier patterns never appear).
+    /// </summary>
+    private static string NormalizeSlangNaming(string glsl)
+    {
+        // (a) PS color output: Slang emits entryPointParam_<Entry>; DXC: out_var_SV_Target.
+        glsl = Regex.Replace(glsl, @"\bentryPointParam_[A-Za-z0-9_]+\b", "out_var_SV_Target");
+
+        // (b) Globals UBO: Slang types the block <Name>_default with instance e.g.
+        // globalParams; DXC uses type_Globals { ... } _Globals. Rename a std140 block
+        // whose type isn't already type_Globals, then point its member uses at _Globals.
+        var ubo = Regex.Match(
+            glsl,
+            @"(layout\s*\([^)]*\bstd140\b[^)]*\)\s*uniform\s+)([A-Za-z_][A-Za-z0-9_]*)(\s*\{[^}]*\}\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*;)",
+            RegexOptions.Singleline);
+        if (ubo.Success && ubo.Groups[2].Value != "type_Globals")
+        {
+            string instance = ubo.Groups[4].Value;
+            glsl = glsl.Remove(ubo.Groups[2].Index, ubo.Groups[2].Length)
+                       .Insert(ubo.Groups[2].Index, "type_Globals");
+            glsl = Regex.Replace(glsl, $@"\b{Regex.Escape(instance)}\b", "_Globals");
+        }
+
+        // (c) PS inputs: Slang emits input_<Field>; map to in_var_<SEM> by convention.
+        foreach (Match m in Regex.Matches(glsl, @"\bin\s+(float|vec2|vec3|vec4)\s+(input_[A-Za-z0-9_]+)\s*;"))
+        {
+            string type  = m.Groups[1].Value;
+            string ident = m.Groups[2].Value;
+            string sem   = SlangInputSemantic(ident, type);
+            glsl = Regex.Replace(glsl, $@"\b{Regex.Escape(ident)}\b", "in_var_" + sem);
+        }
+
+        return glsl;
+    }
+
+    /// <summary>
+    /// Maps a Slang input identifier (<c>input_&lt;Field&gt;</c>) to its HLSL semantic
+    /// under the PS-only SpriteBatch contract: a color (vec4 / name says "color") is
+    /// COLOR0, a texture coordinate (vec2 / name says tex/coord/uv) is TEXCOORD0.
+    /// </summary>
+    private static string SlangInputSemantic(string ident, string type)
+    {
+        const string prefix = "input_";
+        string name  = ident.StartsWith(prefix) ? ident[prefix.Length..] : ident;
+        string lower = name.ToLowerInvariant();
+
+        if (lower.Contains("color")) return "COLOR0";
+        if (lower.Contains("tex") || lower.Contains("coord") || lower.Contains("uv")) return "TEXCOORD0";
+
+        // Fallback by type: SpriteBatch hands the PS a vec4 color + vec2 texcoord.
+        return type == "vec4" ? "COLOR0" : "TEXCOORD0";
     }
 
     private static string SemanticToVaryingName(string identifier)
