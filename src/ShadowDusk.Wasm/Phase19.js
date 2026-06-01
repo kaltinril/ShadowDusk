@@ -18,20 +18,33 @@
 // --------------------------------------------------------------------------
 // Module "shadowdusk-dxc"
 //
+// [JSImport("ensureReady", "shadowdusk-dxc")]
+//   [return: JSMarshalAs<JSType.Promise<JSType.Void>>] static partial Task EnsureReadyAsync();
 // [JSImport("compileToSpirv", "shadowdusk-dxc")]
 //   static partial byte[] CompileToSpirv(string hlslSource, string[] args);
 //
 // args is the EXACT DXC argument list ShadowDusk built via DxcFlagBuilder for the
 // OpenGL/SPIR-V target (e.g. -E <entry> -T ps_5_0 -spirv -fvk-use-dx-layout
-// -auto-binding-space 1 -Zpr -WX ...). The host passes them through to DXC unchanged.
+// -auto-binding-space 1 -Zpr -WX ...). The compile backend (slang-wasm — Slang's
+// prebuilt WebAssembly build, which accepts HLSL syntax) translates the parts with a
+// Slang equivalent and ignores DXC-only flags; the desktop spike proved its SPIR-V
+// reflects identically through ShadowDusk's SpirvReflector. See
+// samples/ShaderFiddle.Web/wwwroot/shadowdusk-dxc.js for the real implementation.
 //
+// ensureReady() lazily loads the ~21 MB WASM exactly once and resolves when ready;
+// JsDxcShaderCompiler.CompileAsync awaits it before the (synchronous) compileToSpirv,
+// so the heavy download stays off the page-init path.
+//
+// @returns {Promise<void>}      ensureReady — rejects (-> SD1900) on load failure.
 // @param {string}   hlslSource  Preprocessed, #include-flattened HLSL.
 // @param {string[]} args        DXC command-line arguments.
 // @returns {Uint8Array}         Compiled SPIR-V module (little-endian word stream).
-// @throws on compile failure (message should carry DXC diagnostics).
+// @throws on compile failure (message should carry compiler diagnostics).
+function ensureReady() {
+    return Promise.reject(new Error('shadowdusk-dxc.ensureReady not wired to a WASM build'));
+}
 function compileToSpirv(hlslSource, args) {
-    // return Module.dxcCompileToSpirv(hlslSource, args);  // host-specific
-    throw new Error('shadowdusk-dxc.compileToSpirv not wired to a WASM DXC build');
+    throw new Error('shadowdusk-dxc.compileToSpirv not wired to a WASM build');
 }
 
 // --------------------------------------------------------------------------
@@ -62,4 +75,4 @@ function transpileToGlsl(spirv, flipVertexY, fixupDepthConvention, glslVersion, 
     throw new Error('shadowdusk-spirv-cross.transpileToGlsl not wired to a WASM SPIRV-Cross build');
 }
 
-export { compileToSpirv, transpileToGlsl };
+export { ensureReady, compileToSpirv, transpileToGlsl };

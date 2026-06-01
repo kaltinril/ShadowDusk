@@ -42,10 +42,11 @@ public partial class Index
         // Register the JS modules that satisfy ShadowDusk.Wasm's [JSImport]
         // contracts (shadowdusk-dxc / shadowdusk-spirv-cross). This MUST happen
         // before any CompileAsync: invoking a [JSImport] whose module is not
-        // registered aborts the .NET WASM runtime (crashing the page). With the
-        // modules registered, the (stubbed) JS functions throw a catchable error
-        // that surfaces as a clean diagnostic instead. They stay stubs until
-        // Phase 100 delivers the emscripten DXC/SPIRV-Cross WASM builds.
+        // registered aborts the .NET WASM runtime (crashing the page). The
+        // shadowdusk-dxc module is a REAL HLSL->SPIR-V compiler (Slang WASM); it
+        // lazy-loads on first compile (JsDxcShaderCompiler awaits its ensureReady),
+        // so registering here does NOT download the ~21 MB WASM at page init. Any
+        // backend failure throws a catchable error surfaced as a clean diagnostic.
         try
         {
             // JSHost.ImportAsync resolves a relative URL against _framework/, so

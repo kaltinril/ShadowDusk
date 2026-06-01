@@ -35,10 +35,10 @@
 
   <ItemGroup Label="ShadowDusk in-browser compiler (Phase 19 mode 2)">
     <!--
-      WasmShaderCompiler : IShaderCompiler. Its JS DXC/SPIRV-Cross backends are
-      stubbed until Phase 100 delivers the emscripten modules, so a real
-      paste->compile surfaces an honest "not wired" error today. The reference
-      is real so the swap to a working mode 2 is a Phase19.js change, not a C# one.
+      WasmShaderCompiler : IShaderCompiler. Its HLSL->SPIR-V backend is now REAL:
+      wwwroot/shadowdusk-dxc.js drives Slang compiled to WebAssembly (wwwroot/slang/).
+      The SPIR-V->GLSL backend (shadowdusk-spirv-cross.js) is wired separately. Both
+      JS modules are registered via JSHost.ImportAsync (Pages/Index.razor.cs).
     -->
     <ProjectReference Include="..\..\src\ShadowDusk.Wasm\ShadowDusk.Wasm.csproj" />
   </ItemGroup>
