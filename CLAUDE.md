@@ -1,5 +1,16 @@
 # ShadowDusk — Cross-Platform MonoGame Shader Compiler
 
+## THE PURPOSE (read this first)
+
+**The product is a drop-in `mgfxc` replacement: a self-contained library** a user adds to their **MonoGame/KNI project on Linux, macOS, or Windows**, that compiles **`.fx` → `.mgfx` in memory at runtime**, requiring **nothing but the library itself** — no `fxc.exe`, no `mgfxc`, no Wine, no Windows SDK, no native toolchain the user has to install separately. Its output **loads and renders identically to `mgfxc`'s** in the **real MonoGame/KNI runtime**. **One faithful compiler; the same `mgfxc`-equivalent result everywhere.**
+
+The load-bearing distinctions — internalize these, they have drifted before:
+
+- **The library *is* the product.** The deliverable is the in-memory compiler a developer references from their own game/app and calls at runtime (`IShaderCompiler.CompileAsync(fx) → .mgfx bytes`). The **CLI** (`dotnet tool` `mgfxc`) and the **MGCB plugin** are *delivery shapes of the same library* for build-time use. The **browser / WASM shader-fiddle app is ONLY a sample / test of reach — never the product.** Do not let sample work redefine the goal.
+- **One pipeline, everywhere — NO substitute compilers.** Every host (desktop, CLI, WASM/browser) runs the **same faithful pipeline**: HLSL →`[DXC]`→ SPIR-V →`[SPIRV-Cross]`→ GLSL →`[managed: reflect + MojoShader-dialect rewrite + MGFX writer]`→ `.mgfx` (or `vkd3d-shader` → DXBC for DirectX). A host **must not** swap in a *different* frontend/compiler (e.g. a different HLSL→SPIR-V tool) to make a platform "work" — a different compiler produces *different output* and silently breaks the "identical to `mgfxc`" promise. If a faithful component can't run on a host yet, that host's runtime-compile is **not done** — that is never a licence to substitute.
+- **"Self-contained" is a hard requirement.** The user gets the NuGet package and it just works on their OS — the native pieces the pipeline needs ride *inside the package* (transitively, as native assets), never as a separate manual install. "Add the package, call the API" is the entire setup.
+- **The bar is the real runtime, not our tests.** See *What success actually means* below — only ShadowDusk's `.mgfx` loading in MonoGame's `Effect` and rendering like `mgfxc`'s proves the promise.
+
 ## Project Overview
 
 ShadowDusk is a cross-platform HLSL shader compiler for MonoGame and KNI. Its five core purposes are:
@@ -8,7 +19,7 @@ ShadowDusk is a cross-platform HLSL shader compiler for MonoGame and KNI. Its fi
 2. **DirectX and OpenGL targets** — produce DXBC (DirectX 11) or GLSL (OpenGL/WebGL) output from a single HLSL source.
 3. **Drop-in `mgfxc` replacement** — transparent substitute for MonoGame's Windows-only `mgfxc` tool; same CLI flags, same `.mgfx` output, same exit codes and error format so existing content pipelines require zero changes.
 4. **CLI tool** — `dotnet tool` named `mgfxc`; usable standalone, from MGCB, or from any build script.
-5. **Web / WASM / in-memory** — runs inside .NET WASM for browser-based tools (e.g. Vic's XNA Fiddle) so users can compile shaders at runtime without a server roundtrip; returns compiled `.mgfx` bytes in-memory.
+5. **In-memory & WASM-capable** — the same library compiles in-process / in-memory at runtime (returns `.mgfx` bytes; no temp files or child process required by the API), and is built to run inside .NET WASM so a KNI/Blazor browser game could compile shaders at runtime without a server roundtrip. **The in-browser shader-fiddle is a *sample* of this reach — not a separate product** (see *THE PURPOSE*).
 
 ### What success actually means (read this first)
 

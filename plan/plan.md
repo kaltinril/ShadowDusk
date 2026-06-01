@@ -4,6 +4,18 @@ This document is the top-level index. Each phase is fleshed out in its own docum
 
 ---
 
+## THE PURPOSE (what every phase serves)
+
+**The product is a drop-in `mgfxc` replacement: a self-contained library** a developer adds to a **MonoGame/KNI project on Linux, macOS, or Windows** that compiles **`.fx` → `.mgfx` in memory at runtime** with **nothing but the library** (no `fxc`, no Wine, no SDK), whose output **loads and renders identically to `mgfxc`'s in the real runtime**. **One faithful compiler — the same `mgfxc`-equivalent result everywhere.**
+
+- The **library is the product**; the **CLI** and **MGCB plugin** are delivery shapes of it; the **browser / WASM shader-fiddle is only a sample of reach**, never the product.
+- **No substitute compilers:** every host runs the *same* faithful pipeline (HLSL→DXC→SPIR-V→SPIRV-Cross→GLSL→MGFX, or vkd3d→DXBC). A host that can't yet run a faithful component is *not done* — never a licence to swap in a different compiler that diverges from `mgfxc`.
+- Full statement + the success/evidence bar: see **`CLAUDE.md` → "THE PURPOSE" / "What success actually means"**.
+
+Every phase below exists to serve that sentence. If a phase or sample starts redefining the goal, it has drifted — stop and re-anchor here.
+
+---
+
 ## Reference Documents (background, not phase plans)
 
 | Document | What it's good for | ⚠️ Read with |
