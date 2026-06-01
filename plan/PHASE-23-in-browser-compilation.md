@@ -8,6 +8,79 @@
 
 ---
 
+## Where this stands (2026-05-31)
+
+A *working* mode-2 chain was built on `phase22-web-inbrowser-compile` (now merged to main) — but it diverges from this doc's original plan in two ways:
+1. It took **Option B (Slang-wasm)** as the HLSL→SPIR-V frontend, not DXC.
+2. It shipped **SPIRV-Cross as a `[JSImport]` module too** (`spirv-cross.wasm`, node-verified byte-identical to desktop), not the `NativeFileReference` static-link planned below.
+
+Every stage is node-verified; **there has been no real browser run.** Per THE PURPOSE the Slang frontend is **sample-only**. What remains is to make WASM *faithful and consumable by a third party* — captured as three gates and milestones M0–M3.
+
+## "Usable to end users on WASM" = three gates
+
+DoD is **not** "compiles in a browser." It is: *a third-party dev adds the NuGet to their KNI/Blazor app and it just works, faithfully, on shaders we have never seen.*
+
+| Gate | Milestone | What it means | Status |
+|---|---|---|---|
+| **1 — Faithful frontend** | M0 | in-browser HLSL→SPIR-V trustworthy on **arbitrary** user shaders | ❓ decision (A/B) |
+| **2 — Turnkey packaging** | M1 | `add package` + `call API`, **zero** consumer `wwwroot`/`JSHost` wiring | buildable now, frontend-agnostic |
+| **3 — Proven render** | M3 | real (headless) browser compiles a corpus `.fx` → renders pixel-equal to `mgfxc` | needs a browser (CI) |
+
+Gates 2 & 3 are unconditional wins. **Gate 1 is the pivotal bet.**
+
+## Does KNI need byte-identical bytes? No — and that reframes Gate 1
+
+KNI/MonoGame `new Effect(gd, bytes)` needs the `.mgfx` **structurally valid and behaviorally correct**, not byte-identical to anything (CLAUDE.md: *"behaviorally equivalent and `Effect`-loadable — NOT byte-identical to `mgfxc`"*). It loads correct bytes from any compiler.
+
+Byte-identity is therefore **ShadowDusk's cheapest cross-host proof, not a runtime need:** if `wasm bytes == desktop bytes` and desktop is render-validated (Phase 17/18), WASM is validated **transitively, for free**. Drop it → you must **independently render-prove** the WASM output. So:
+
+- **Option A — build pinned DXC → WASM (emscripten 3.1.34).** Same compiler+version ⇒ byte-identical ⇒ free transitive proof **and confidence on untested shaders** (it is literally the validated compiler). Best fit for a fiddle's open input. Cost: multi-day LLVM-fork emscripten build; tens-of-MB module (lazy-loaded).
+- **Option B — substitute frontend (Slang-wasm, already built).** Different bytes by nature ⇒ no transitive proof. **Building it showed:** on the 10-shader corpus Slang reflects identically to DXC and (after the managed `NormalizeSlangNaming` shim) yields matching GLSL — *reconcilable for the corpus* — **but** 2 DXC flags don't forward through Slang's API and byte-identity across **arbitrary** shaders can't be proven, so a novel user shader can diverge silently. Viable for the product **only** with a real render-equivalence harness + a documented "validated on corpus X, renders-identically not byte-identical" caveat.
+
+**The bet:** byte-identity isn't sacred, but it is the cheap proof *and* the open-input safety net. A's cost is the build; B's cost is perpetual validation + residual open-input risk. **Recommended: time-box an A spike** (build DXC→WASM, assert byte-identical SPIR-V on the corpus) — its outcome is the only thing that decides A vs B on evidence.
+
+## Gate 2 — turnkey packaging (M1, do now, frontend-agnostic)
+
+Faithfulness is moot if the consumer hand-wires assets. Today the **sample** hand-places the `.js`/`.wasm` in *its own* `wwwroot` and registers via `JSHost.ImportAsync`. For a third-party package that must vanish:
+
+```xml
+<TargetFramework>net8.0-browser</TargetFramework>
+<PackageReference Include="ShadowDusk.Compiler" />
+```
+```csharp
+var mgfx = (await compiler.CompileAsync(fx, ShaderTarget.OpenGL)).Value.MgfxBytes;
+var effect = new Effect(graphicsDevice, mgfx);   // no wwwroot, no JSHost
+```
+
+Two delivery mechanisms, **not** symmetric:
+
+| | **[JSImport] modules as static web assets** ✅ recommended | **NativeFileReference static-link** (original plan, SPIRV-Cross only) |
+|---|---|---|
+| Ship | `.wasm`+`.js` in the NuGet `wwwroot` → auto-served at `_content/ShadowDusk.Wasm/…`; lib self-registers | `libspirv-cross.a` linked into consumer's `dotnet.wasm` |
+| Consumer wiring | none | none |
+| Emscripten | **decoupled** — any version, survives .NET upgrades | **must match the .NET pin**; rebuild every .NET major |
+| Lazy-load | yes (DXC loads on first compile) | no |
+| DXC support | **only option** (DXC isn't static-linkable) | impossible |
+
+**Recommendation:** ship *all* native bits as `[JSImport]` modules packaged as static web assets, **self-registered by `ShadowDusk.Wasm`**. It is the only path DXC allows, it is version-decoupled (no per-.NET rebuild treadmill), lazy-loadable, and already the built pattern. THE PURPOSE's goal is zero *consumer wiring*, not zero JS modules — static web assets deliver that. *Tension to flag for the owner:* this revises the original "C# only / no JS if avoidable" lean for SPIRV-Cross — static-link stays a valid later **download-size** optimization, but it costs the emscripten-pin treadmill and doesn't change the consumer experience (already zero-wiring either way).
+
+**M1 required actions:**
+- [ ] Multi-target `ShadowDusk.Wasm` (and the consumer-facing `ShadowDusk.Compiler`) `net8.0;net8.0-browser`; the browser TFM selects the WASM backends.
+- [ ] Move `shadowdusk-dxc.js`, `shadowdusk-spirv-cross.js`, `spirv-cross.wasm` (+ the chosen frontend `.wasm`) from the sample `wwwroot` into **`ShadowDusk.Wasm`'s packaged `wwwroot`** as static web assets.
+- [ ] `ShadowDusk.Wasm` self-registers the modules via `JSHost.ImportAsync` against its own `_content/ShadowDusk.Wasm/` base path; delete the consumer-side registration the sample does today.
+- [ ] Verify with a scratch consumer **outside the repo**: reference only the package, set `net8.0-browser`, compile a `.fx` with **no manual asset wiring** (mirror the desktop self-contained verification already done for the desktop NuGet).
+
+## Milestones
+
+- **M0 — DXC→WASM spike** — gates Gate 1; decides A vs B on evidence. ❓ owner's call (effort vs fidelity, orders of magnitude apart).
+- **M1 — turnkey packaging** — Gate 2; frontend-agnostic; **do now**.
+- **M2 — wire the chosen faithful frontend** into the package (DXC module if M0 succeeds; else Option B + a render-equivalence harness).
+- **M3 — headless-browser render proof** — Gate 3; Playwright in CI; ties to [Phase 30](PHASE-30-cross-platform-ci.md).
+
+M1 + M3 are unconditional. The detailed compile-seam task tracks (A–E) below remain valid, **except** Track A's "SPIRV-Cross via static-link / delete `JsSpirvToGlslTranspiler`" is **superseded as the default** by the M1 packaging recommendation (static web assets) — kept as a future optimization, not the path.
+
+---
+
 ## The crux: a split seam, because DXC and SPIRV-Cross are not alike
 
 The project owner's requirement is **"C# only — no JS glue if avoidable."** Investigation (three review agents, 2026-05-31) shows *"if avoidable"* is the load-bearing clause: it's avoidable for one of the two native tools and **not** for the other.
@@ -38,7 +111,7 @@ There is **no maintained prebuilt DXC-wasm** (the lone one, `A2K/javascript-hlsl
   - ✅ Cheap & maintained: a real 5 MB in-browser WASM build exists today (v2026.10), HLSL-syntax input, SPIR-V output — no LLVM build.
   - ❌ **Strategic change + fidelity risk:** Slang's SPIR-V conventions (cbuffer byte layout via `-fvk-use-dx-layout`, the `-auto-binding-space 1` flat binding namespace, decorations) likely differ from DXC's, which `SpirvReflector` + the MojoShader GLSL chain depend on. Adopting it means re-proving equivalence and **probably relaxing "bytes identical to CLI" → "renders identically"** (which is, notably, the actual CLAUDE.md bar). Still `[JSImport]` (Slang-wasm is also an emscripten module).
 
-**De-risking B before committing (in flight):** a no-build **Slang fidelity spike** — compile a corpus PS shader with `slangc` and DXC, disassemble both, and diff the cbuffer-offset / binding / decoration invariants `SpirvReflector` reads; then (if feasible) run Slang's SPIR-V through ShadowDusk's actual reflector + SPIRV-Cross and diff the GLSL/`.mgfx` against the DXC golden. The spike's verdict decides A vs B **without building anything**:
+**Update — the spike was effectively run by *building* Option B (2026-05-31):** instead of a no-build disassembly diff, the full Slang path was prototyped (merged `phase22-web-inbrowser-compile`). Result on the corpus: Slang's SPIR-V reflects identically to DXC's and, after the managed `NormalizeSlangNaming` shim, yields matching GLSL — *reconcilable for the corpus* — **but** byte-identity across arbitrary shaders is unprovable (2 DXC flags don't forward), so it is **sample-only** until a render-equivalence harness backs it (see *Does KNI need byte-identical bytes?* above). The remaining diagnostic, if Option B is pursued for the *product*, is the same invariant diff (cbuffer-offset / binding / decoration) generalized beyond the corpus:
 - *Reconcilable* (offsets/bindings match or differ by a cheap, known delta) → **B** (adopt Slang; generalize `SpirvReflector` as needed; cheap reach).
 - *Deep mismatch* → **A** (the multi-day DXC-wasm build is the only fidelity-safe path) — or ship SPIRV-Cross-pure-C# now and leave DXC-wasm as a tracked follow-up.
 
@@ -90,6 +163,8 @@ A (1→4) and B (1→2) are parallel and mostly desktop/CI-verifiable. **C depen
 ---
 
 ## Definition of Done
+
+**Overall — the three gates:** Gate 1, a *faithful* frontend chosen and proven (Option A byte-identical, or Option B + a render-equivalence harness with the documented caveat); Gate 2, a third-party consumer compiles a `.fx` with **only** a `PackageReference` (no `wwwroot`/`JSHost` wiring); Gate 3, a real headless browser renders a corpus `.fx` pixel-equivalent to `mgfxc`. Compile-seam DoD detail:
 
 A corpus shader compiles **entirely in-browser** by `ShadowDusk.Wasm` — DXC via the single `shadowdusk-dxc` JS module; **SPIRV-Cross via the statically-linked `libspirv-cross.a` through the same `[DllImport]` as desktop (no JS)** — and renders correctly in a real MonoGame/KNI **WebGL** build via `new Effect(gd, bytes)`, **no server**, with **≥1 corpus shader's in-browser `.mgfx` bytes identical to the CLI output** for the same source + OpenGL target (Option A) — or, under Option B, **behaviorally equivalent** to the `mgfxc` golden with the byte divergence documented. The polished Fiddle app remains Phase 22.
 
