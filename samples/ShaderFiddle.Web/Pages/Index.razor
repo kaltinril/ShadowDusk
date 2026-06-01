@@ -1,0 +1,64 @@
+@page "/"
+@page "/index.html"
+@inject IJSRuntime JsRuntime
+@inject HttpClient Http
+
+<PageTitle>ShadowDusk — Shader Fiddle (KNI WebGL)</PageTitle>
+
+<div class="fiddle">
+
+    <section class="controls">
+        <h1>ShadowDusk Shader Fiddle</h1>
+        <p class="tagline">
+            Paste HLSL <code>.fx</code>, compile <strong>in the browser</strong>, see it on the cat.
+            <a href="https://github.com/shadowdusk/ShadowDusk" target="_blank">about</a>
+        </p>
+
+        <div class="row">
+            <label for="corpus">Load a precompiled sample (mode&nbsp;1):</label>
+            <select id="corpus" value="@_selected" @onchange="OnCorpusChanged" disabled="@(!_ready)">
+                @foreach (var name in WebShaderInputs.ShaderNames)
+                {
+                    <option value="@name">@name</option>
+                }
+            </select>
+        </div>
+
+        <textarea class="editor" spellcheck="false" @bind="_source" @bind:event="oninput"></textarea>
+
+        <div class="row buttons">
+            <button class="primary" @onclick="CompileAndApplyAsync" disabled="@(!_ready || _compiling)">
+                @(_compiling ? "Compiling…" : "Compile & Apply (mode 2)")
+            </button>
+            <span class="status @(_statusIsError ? "err" : "ok")">@_status</span>
+        </div>
+
+        @if (_errors.Count > 0)
+        {
+            <div class="errors">
+                <div class="errors-head">@_errors.Count diagnostic(s)</div>
+                @foreach (var d in _errors)
+                {
+                    <pre class="diag">@d</pre>
+                }
+            </div>
+        }
+
+        <details class="note">
+            <summary>Why does "Compile & Apply" report a stub error?</summary>
+            <p>
+                In-browser compilation (Phase&nbsp;19 <em>mode&nbsp;2</em>) needs the DXC and
+                SPIRV-Cross WASM modules, which are deferred to Phase&nbsp;100. The compile path
+                is fully wired to the real <code>WasmShaderCompiler</code> — it surfaces the
+                honest "not wired to a WASM DXC build" error rather than faking a result. The
+                <strong>load + render</strong> half (mode&nbsp;1) is live: pick a sample above to
+                see the cat re-rendered through a real KNI <code>Effect</code>.
+            </p>
+        </details>
+    </section>
+
+    <section id="canvasHolder" class="stage">
+        <canvas id="theCanvas" style="touch-action:none;"></canvas>
+    </section>
+
+</div>

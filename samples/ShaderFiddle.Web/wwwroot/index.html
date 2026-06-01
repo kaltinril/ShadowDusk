@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ShadowDusk — Shader Fiddle (KNI WebGL)</title>
+    <base href="./" />
+    <link href="css/app.css" rel="stylesheet" />
+</head>
+
+<body>
+
+    <div id="app">
+        <div id="loading">Loading the WASM runtime…</div>
+    </div>
+
+    <div id="blazor-error-ui">
+        An unhandled error has occurred.
+        <a href="" class="reload">Reload</a>
+        <a class="dismiss">x</a>
+    </div>
+
+    <script src="_framework/blazor.webassembly.js" autostart="false"></script>
+    <script type="module">
+        // Brotli static decompression is disabled (the dev server serves
+        // uncompressed assets); start Blazor directly.
+        Blazor.start();
+    </script>
+
+    <!--
+        KNI (nkast) WebGL JS interop shims, version 8.0.11.
+        NOTE vs the upstream template: in 8.0.11 JSObject.js moved from the
+        nkast.Wasm.Dom package to nkast.Wasm.JSInterop.
+    -->
+    <script src="_content/nkast.Wasm.JSInterop/js/JSObject.8.0.11.js"></script>
+    <script src="_content/nkast.Wasm.Dom/js/Window.8.0.11.js"></script>
+    <script src="_content/nkast.Wasm.Dom/js/Document.8.0.11.js"></script>
+    <script src="_content/nkast.Wasm.Dom/js/Navigator.8.0.11.js"></script>
+    <script src="_content/nkast.Wasm.Dom/js/Gamepad.8.0.11.js"></script>
+    <script src="_content/nkast.Wasm.Dom/js/Media.8.0.11.js"></script>
+    <script src="_content/nkast.Wasm.XHR/js/XHR.8.0.11.js"></script>
+    <script src="_content/nkast.Wasm.Canvas/js/Canvas.8.0.11.js"></script>
+    <script src="_content/nkast.Wasm.Canvas/js/CanvasGLContext.8.0.11.js"></script>
+    <script src="_content/nkast.Wasm.Audio/js/Audio.8.0.11.js"></script>
+    <script src="_content/nkast.Wasm.XR/js/XR.8.0.11.js"></script>
+
+    <script>
+        function tickJS() {
+            window.theInstance.invokeMethod('TickDotNet');
+            window.requestAnimationFrame(tickJS);
+        }
+
+        window.initRenderJS = (instance) => {
+            window.theInstance = instance;
+
+            // Size the canvas to its holder before the game boots.
+            var canvas = document.getElementById('theCanvas');
+            var holder = document.getElementById('canvasHolder');
+            canvas.width = holder.clientWidth;
+            canvas.height = holder.clientHeight;
+            canvas.addEventListener("contextmenu", e => e.preventDefault());
+
+            // Begin the game loop.
+            window.requestAnimationFrame(tickJS);
+        };
+    </script>
+</body>
+
+</html>

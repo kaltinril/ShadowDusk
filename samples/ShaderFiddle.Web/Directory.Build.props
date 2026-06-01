@@ -1,0 +1,11 @@
+<Project>
+  <!--
+    Intentionally empty. MSBuild imports the FIRST Directory.Build.props found
+    walking up from the project, then stops — so this isolates ShaderFiddle.Web
+    from the repo-root Directory.Build.props (which forces net8.0,
+    TreatWarningsAsErrors, and central package management). This sample needs
+    net8.0-browser, the BlazorWebAssembly SDK, and KNI package versions that are
+    not in the root Directory.Packages.props. Matches the upstream KNI sample
+    template's isolation approach (nkast/WebGLxnaProj).
+  -->
+</Project>

@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+
+  <PropertyGroup>
+    <!--
+      net8.0-browser (NOT plain net8.0): required so this project can reference
+      ShadowDusk.Wasm, which targets net8.0-browser for its [JSImport] backends.
+      A plain net8.0 project reference to net8.0-browser fails with NU1201.
+      The BlazorWebAssembly SDK accepts net8.0-browser and a net8.0-browser
+      project can consume the KNI packages (net8.0) fine. Verified by build probe.
+    -->
+    <TargetFramework>net8.0-browser</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>ShadowDusk.ShaderFiddle.Web</RootNamespace>
+    <AssemblyName>ShaderFiddle.Web</AssemblyName>
+    <!-- KNI BlazorGL platform selector + define, per the KNI sample template. -->
+    <DefineConstants>$(DefineConstants);BLAZORGL</DefineConstants>
+    <KniPlatform>BlazorGL</KniPlatform>
+    <!-- The [JSImport] source generator (pulled in via ShadowDusk.Wasm) needs /unsafe. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- This sample is not part of central package management or the core slnx. -->
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <BlazorEnableTimeZoneSupport>false</BlazorEnableTimeZoneSupport>
+  </PropertyGroup>
+
+  <ItemGroup Label="KNI (nkast) — Blazor WebAssembly + WebGL runtime">
+    <!-- Transitively pulls every nkast.Xna.Framework.* and nkast.Wasm.* package. -->
+    <PackageReference Include="nkast.Kni.Platform.Blazor.GL" Version="4.2.9001.*" />
+  </ItemGroup>
+
+  <ItemGroup Label="Blazor WebAssembly host">
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="8.0.17" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="8.0.17" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup Label="ShadowDusk in-browser compiler (Phase 19 mode 2)">
+    <!--
+      WasmShaderCompiler : IShaderCompiler. Its JS DXC/SPIRV-Cross backends are
+      stubbed until Phase 100 delivers the emscripten modules, so a real
+      paste->compile surfaces an honest "not wired" error today. The reference
+      is real so the swap to a working mode 2 is a Phase19.js change, not a C# one.
+    -->
+    <ProjectReference Include="..\..\src\ShadowDusk.Wasm\ShadowDusk.Wasm.csproj" />
+  </ItemGroup>
+
+</Project>

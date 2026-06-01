@@ -1,6 +1,6 @@
 # Phase 22 — WASM Shader Fiddle Sample (KNI, paste-a-shader → live cat)
 
-**Status:** Planned
+**Status:** In progress (2026-05-31) — building on the **Fallback (mode 1)** path. Mode 2 (in-browser compile) is **blocked on Phase 100** (the emscripten DXC/SPIRV-Cross WASM modules do not exist yet; `ShadowDusk.Wasm/Phase19.js` throws by design). In-browser *visual* validation is **not possible in the current dev session** (no browser, no emscripten) — the rendered-cat acceptance bar is a documented **manual run** step, not an in-session check.
 **Depends on:**
 - **Phase 19** (WASM runtime compilation) — *the* prerequisite. This sample is the user-facing realization of Phase 19's **mode 2** (in-browser `.fx` → `.mgfx` via WASM-compiled DXC + SPIRV-Cross from `ShadowDusk.Wasm`). It also exercises mode 1 (loading `.mgfx` bytes via `new Effect` in a WebGL runtime).
 - **Phase 17** (MonoGame-loadable `.mgfx` + MojoShader-dialect GLSL) — the browser-produced effect must load and render exactly like a desktop one.
@@ -9,6 +9,20 @@
 **Blocks:** A live, demonstrable proof of ShadowDusk's *reach* axis — the XNA-Fiddle-style "type a shader, see it run, no server" experience. This is the showcase deliverable that makes the WASM path tangible.
 
 > Phase 19's Definition of Done describes this tool in prose ("A browser tool (XNA Fiddle–style) takes `.fx` source typed by a user, compiles it entirely client-side in WASM, loads the result as a real MonoGame/KNI `Effect` that renders correctly"). **Phase 22 is that tool, built as a concrete, shippable sample project.** Phase 19 delivers the compiler capability; Phase 22 delivers the app.
+
+---
+
+## Review findings (2026-05-31) — three review agents, before implementation
+
+These supersede the original assumptions where they conflict.
+
+1. **Mode 2 is not functional yet (blocked on Phase 100).** `src/ShadowDusk.Wasm` is fully built: `WasmShaderCompiler : IShaderCompiler` composes `EffectCompiler` with `JsDxcShaderCompiler` + `JsSpirvToGlslTranspiler` + the pure-managed `SpirvReflector`, and **compiles for `net8.0-browser`**. But [`Phase19.js`](../src/ShadowDusk.Wasm/Phase19.js) stubs both JS imports to `throw` — the emscripten **DXC** and **SPIRV-Cross** WASM modules behind the `shadowdusk-dxc` / `shadowdusk-spirv-cross` contracts **do not exist in the repo** (Phase 100 tail). So a real paste→compile cannot run client-side today. **→ Build against the Fallback (mode 1); wire the mode-2 call but let it surface the stub error honestly.**
+
+2. **KNI format risk — load side (highest risk).** KNI v4.2 (`nkast.Kni.Platform.Blazor.GL` 4.2.9001, SDK `Microsoft.NET.Sdk.BlazorWebAssembly`, TFM plain `net8.0`) uses its **own KNIFX v11 format** (`dotnet-knifxc`). KNI's `new Effect(gd, byte[])` *also* accepts legacy **MGFX v10** (signature `MGFX`, version byte `10`, profile byte `ShaderProfileType.OpenGL_Mojo = 0`) — which is exactly what ShadowDusk's GL writer emits — via a backward-compat `MGFXReader10`. **But that reader is a fork**: passing the signature+version gate is necessary, not sufficient. Whether ShadowDusk/`mgfxc` MGFX v10 *renders correctly* (GLSL dialect, reflection, PS-only SpriteBatch link) in KNI WebGL is an **unverified hypothesis**, not a fact. If it diverges, Phase 22 needs a **KNIFX-v11 writer** (study `KNIFXReader11.cs` + `dotnet-knifxc` output). This is the load-side unknown the original doc flagged, now with specifics.
+
+3. **In-session validation is impossible.** The dev environment has no browser and no emscripten toolchain. The project can be authored and (workload permitting) `dotnet build`-ed, but the **rendered-cat acceptance bar must be a documented manual run** (`dotnet run` / `dotnet serve` + open in a browser), not an in-session automated check. Headless-browser CI → Phase 30.
+
+4. **Render path to mirror is fully mapped.** `validation/Shared/EffectImageRenderer.cs` + `validation/Shared/ShaderInputs.cs` give the exact recipe: `BlendState.Opaque` + `SamplerState.LinearClamp`, the **SpriteBatch prime** (`Begin(Deferred,Opaque,LinearClamp)` → `Draw(cat)` → `End()`) so the PS-only effect inherits SpriteBatch's VS, then `Begin(Immediate,Opaque,LinearClamp,null,null,effect)` → `Draw(cat)` → `End()`. Parameters are set **by name** (null-conditional). Cat asset: `samples/ShaderViewer/Content/cat.jpg`. The 10 PS-only SM3 corpus shaders + their default params are enumerated in `ShaderInputs.SetParams`; precompiled mode-1 bytes available at `tests/fixtures/golden/OpenGL/*.mgfx`.
 
 ---
 
@@ -76,40 +90,42 @@ Then swap in `WasmShaderCompiler` the moment mode 2 lands. The sample's value is
 
 ## Tasks
 
+> Legend: **✅** code-complete **and** build/publish-verified in-session · **🖥️** done in code but needs an actual browser run to confirm (no browser in the build session) · **⬜** not started / deferred.
+
 ### Project setup
-- [ ] Create `samples/ShaderFiddle.Web/` — KNI Blazor WASM project; confirm KNI WebGL package + version; add to a sample solution filter (keep it out of the core `slnx` build if it complicates cross-platform CI).
-- [ ] Reference `src/ShadowDusk.Wasm`; reference/copy the shared render helper from `validation/Shared` and the `cat.jpg` content asset.
+- [x] ✅ Create `samples/ShaderFiddle.Web/` — KNI Blazor WASM project (`nkast.Kni.Platform.Blazor.GL` 4.2.9001, `Microsoft.NET.Sdk.BlazorWebAssembly`, TFM **net8.0-browser**). Kept **out of `ShadowDusk.slnx`** with its own empty `Directory.Build.props` so it doesn't drag browser-only build machinery into core CI (rationale in README). TFM choice proven by build probe: net8.0 → net8.0-browser ref is NU1201; net8.0-browser references both KNI (net8.0) and Wasm (net8.0-browser).
+- [x] ✅ Reference `src/ShadowDusk.Wasm`; port the render helper + by-name params from `validation/Shared` (`WebShaderInputs.cs`, near-verbatim — KNI keeps the `Microsoft.Xna.Framework` namespace); copy `cat.jpg`.
 
 ### Render path (works against mode 1 first)
-- [ ] Boot a KNI WebGL `GraphicsDevice`; load `cat.jpg` as a `Texture2D`; draw it with `SpriteBatch` to the canvas (no shader) as the baseline.
-- [ ] Load a Phase-17 `.mgfx` (precompiled) via `new Effect(gd, bytes)` and apply it over the cat; confirm it renders in WebGL (this is Phase 19 mode 1 — reuse its findings).
+- [x] 🖥️ Boot a KNI WebGL `GraphicsDevice` (`ShaderFiddleGame`); load `cat.jpg` via `Texture2D.FromStream`; draw with `SpriteBatch` (prime pass) — code-complete, browser-render pending.
+- [x] 🖥️ Load a Phase-17 `.mgfx` (precompiled, bundled in `wwwroot/shaders/OpenGL`) via `new Effect(gd, bytes)` and apply over the cat (dropdown selects 1 of 10) — code-complete; **whether KNI's forked `MGFXReader10` actually renders MonoGame MGFX v10 is the open browser-verified unknown** (see risks).
 
 ### Compile loop (mode 2 — the differentiator)
-- [ ] Wire the textarea → `WasmShaderCompiler.CompileAsync(source, OpenGL)` → bytes → `new Effect` → apply over the cat, all in-browser, on button click.
-- [ ] Prefill the textarea with a working default shader; render it on first load.
-- [ ] Error panel: on `Result` failure, display each `ShaderError` (file/line/col/message) verbatim; keep the last good render; clear on next success.
-- [ ] Handle the "compiling…" state and first-run module-load latency without freezing the UI.
+- [x] 🖥️ Wire the textarea → `WasmShaderCompiler.CompileAsync(source, OpenGL)` → bytes → `new Effect` → apply, all in-browser, on button click. **The real compiler is called**; today it surfaces the honest Phase19.js stub error (mode 2 → Phase 100), never faked.
+- [x] ✅ Prefill the textarea with a working default shader (Grayscale `.fx`); render it via its precompiled bytes on first load.
+- [x] ✅ Error panel: on `Result` failure, display each `ShaderError` via `FxcFormattedMessage` (file/line/col/message) verbatim; keep the last good render; clear on next success/load.
+- [x] ✅ Handle the "compiling…" state (button disabled + label) without blocking; first-run latency note in README.
 
 ### Parameters (demo corpus, then stretch)
-- [ ] For the prefilled/known shaders, set a sensible default parameter set by name (mirror `MakeSceneFor` values used in validation).
-- [ ] **Stretch:** reflect the compiled effect's parameters and auto-generate simple UI controls (float slider, color picker, vector inputs) bound by name.
+- [x] ✅ Default parameter set by name for all 10 corpus shaders (`WebShaderInputs.SetParams`, ported from `validation/Shared/ShaderInputs.cs`).
+- [ ] ⬜ **Stretch:** reflect the compiled effect's parameters and auto-generate UI controls — not done (documented stretch).
 
 ### Validation
-- [ ] Manually verify several shaders (uniform-free: Grayscale/Invert; uniform-driven: Tint/Sepia) render in-browser equivalently to their desktop Phase-17 result; record any WebGL-vs-DesktopGL divergence (research doc §15.2).
-- [ ] Feed deliberately-broken `.fx` (syntax error, unknown intrinsic) and confirm the diagnostics surface cleanly and the page stays usable.
-- [ ] Run the untrusted-input cases past [Phase 25](PHASE-25-security-hardening.md).
-- [ ] Add a documented manual run/smoke step (and, if feasible, a headless-browser check folded into [Phase 30 CI](PHASE-30-cross-platform-ci.md)).
+- [ ] 🖥️ Manually verify several shaders (Grayscale/Invert; Tint/Sepia) render in-browser equivalently to desktop Phase-17; record WebGL-vs-DesktopGL divergence — **pending a browser run** (manual step documented in README; needed to also settle the MGFX-v10-in-KNI question).
+- [x] 🖥️ Feed deliberately-broken `.fx`: the diagnostics path + "keep last good render" is implemented; browser-confirm pending.
+- [ ] ⬜ Run untrusted-input cases past [Phase 25](PHASE-25-security-hardening.md) — deferred to Phase 25.
+- [x] ✅ Documented manual run/smoke step (`README.md` + `run.ps1`); headless-browser check folded into [Phase 30 CI](PHASE-30-cross-platform-ci.md) — Phase 30.
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] `samples/ShaderFiddle.Web/` builds and runs in a browser as a KNI Blazor-WASM app.
-- [ ] A user can paste `.fx` source, click Compile & Apply, and see the **cat** re-rendered with that shader — compiled **in-memory, client-side** (no server roundtrip; via `ShadowDusk.Wasm`).
-- [ ] A compile error shows ShadowDusk's diagnostics (line/col/message) in the UI and does not crash the page; the previous good render remains.
-- [ ] At least the uniform-free Phase-17 shaders render correctly in-browser; uniform-driven shaders render with a default parameter set (interactive controls a documented stretch).
-- [ ] Any WebGL-vs-DesktopGL rendering divergence is documented, not assumed away.
-- [ ] If Phase 19 mode 2 is incomplete, the sample ships against mode 1 with the in-browser-compile path clearly stubbed/flagged — never faked.
+- [x] 🖥️ `samples/ShaderFiddle.Web/` **builds and publishes** as a KNI Blazor-WASM app (`dotnet build` + `dotnet publish -c Release` clean; all `index.html` JS/asset paths resolve in publish output; `ShadowDusk.Wasm.wasm` bundled). *Running* in a browser is the pending manual step.
+- [ ] 🖥️/⬜ Paste `.fx` → Compile & Apply → cat re-rendered, compiled client-side: **path wired to the real `WasmShaderCompiler`, but blocked on Phase 100** (WASM DXC/SPIRV-Cross modules). Surfaces the stub error today; not faked.
+- [x] ✅ A compile/load failure shows ShadowDusk's diagnostics (line/col/message) in the UI, keeps the previous good render, and does not crash the page (implemented; browser-confirm pending).
+- [x] 🖥️ Uniform-free + uniform-driven corpus shaders load with the by-name default parameter set (mode 1); interactive controls a documented stretch.
+- [x] ✅ WebGL-vs-DesktopGL divergence **and** the KNI MGFX-v10/KNIFX-v11 risk are documented (README + risks below), not assumed away.
+- [x] ✅ Phase 19 mode 2 is incomplete, so the sample ships against **mode 1** with the in-browser-compile path clearly flagged and surfacing the real stub error — never faked.
 
 ---
 
@@ -125,11 +141,21 @@ produce, generated where `mgfxc` cannot run — in a browser, with no server.
 
 ## Open questions / risks
 
-- **KNI WebGL custom-`Effect` support** — confirm KNI's WebGL `GraphicsDevice` accepts a raw
-  `byte[]` `.mgfx` via `new Effect(gd, bytes)` and links the SpriteBatch VS to a PS-only custom
-  effect the same way DesktopGL does (Phase 17 §5). This is the load-side unknown.
-- **Phase 19 mode 2 readiness** — the in-browser compile is the whole point and depends on the
-  WASM DXC/SPIRV-Cross interop landing. Sequence accordingly (see *Fallback*).
+- **KNI MGFX-v10 render parity (THE load-side unknown, now with specifics).** KNI v4.2's
+  `new Effect(gd, byte[])` accepts legacy MonoGame **MGFX v10** (`MGFX` signature, version byte 10,
+  profile `OpenGL_Mojo`) via a backward-compat `MGFXReader10` — so ShadowDusk's existing GL output
+  should *load*. But that reader is a **fork** of MonoGame's, and KNI's native format is now
+  **KNIFX v11** (`KNIF`, `dotnet-knifxc`). Passing the signature/version gate ≠ rendering parity in
+  KNI's GLSL-dialect/reflection path. **Must be confirmed by a browser run.** If it diverges, the
+  fix is a ShadowDusk **KNIFX-v11 writer** (study `KNIFXReader11.cs` + `dotnet-knifxc` output) — a
+  follow-up task, deliberately *not* pre-built here (untestable in-session; user-confirmed). The
+  sample reports the `new Effect` failure verbatim if this is the case.
+- **Phase 19 mode 2 readiness — CONFIRMED BLOCKED (Phase 100).** `Phase19.js` throws by design; the
+  emscripten DXC/SPIRV-Cross WASM modules don't exist yet. The sample is built on the Fallback
+  (mode 1) and wires the real `WasmShaderCompiler` for mode 2 so the swap is a `Phase19.js` change,
+  not a C# one.
+- **No in-session browser** — the build session has no browser, so the rendered-cat result is a
+  documented manual run (`README.md`) + a Phase 30 headless-browser CI item, not verified here.
 - **Download size / cold-start** — the WASM compiler stack may be large; measure and report, even
   if optimization is deferred.
 - **Untrusted input** — arbitrary shader text is a security surface (Phase 25): bound compile time
