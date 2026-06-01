@@ -1,6 +1,6 @@
 # Phase 21 — Test-Suite Performance Investigation (21-minute Integration run)
 
-**Status:** Largely resolved (2026-05-30, branch `phase21-test-perf`) — structural cost removed + dev-time AV mitigation documented. **Caveat:** the 21-minute *slow case* did **not** reproduce in-session (every run was fast), so the root cause is identified by structural analysis + evidence fit, not by catching it red-handed. See **Resolution** below.
+**Status:** DONE (2026-05-31, guardrail added on branch `phase21-suite-timeout-guardrail`; structural fix on `phase21-test-perf`, merged PR #2) — structural cost removed, dev-time AV mitigation documented, and the suite-level timeout guardrail now in place (`ShadowDusk.runsettings`). **Caveat:** the 21-minute *slow case* did **not** reproduce in-session (every run was fast), so the root cause is identified by structural analysis + evidence fit, not by catching it red-handed. See **Resolution** below.
 
 ---
 
@@ -15,7 +15,7 @@
 - `CliBinaryFixture` now **reuses that build-output binary** (probing `src/ShadowDusk.Cli/bin/{Debug,Release}/net8.0/`), and only falls back to `dotnet publish` if no built binary exists. The per-run Release publish is gone from the normal path. CLI integration tests still pass (6/6); full suite 108/108.
 - Documented dev-time **Defender exclusions** for `bin`/`obj`/`tools`/`%TEMP%` in `CLAUDE.md` (do not disable AV globally).
 
-**Guardrail (recommended, for Phase 30 CI):** add a suite-level timeout so a future regression surfaces as a *failure* in minutes rather than a silent 20-minute hang; per-test `CancellationTokenSource` timeouts (30 s/60 s) already exist.
+**Guardrail (implemented 2026-05-31):** `ShadowDusk.runsettings` at the repo root sets a VSTest `<TestSessionTimeout>300000</TestSessionTimeout>` (5 min) — ~50× the normal ~6 s full-suite runtime, well under the 21-minute pathological case. Passed via `dotnet test --settings ShadowDusk.runsettings`, a future regression that hangs the suite now surfaces as a *failure* in bounded time rather than a silent 20-minute hang. The `/test` skill commands (`.claude/commands/test.md`) carry the `--settings ShadowDusk.runsettings` flag. Phase 30 CI already references the same 300000 ms value (also expressible inline as `-- RunConfiguration.TestSessionTimeout=300000`). Per-test `CancellationTokenSource` timeouts (30 s/60 s/120 s) remain the first line of defense; this session cap is the complementary backstop for a whole-session hang no per-test timeout catches.
 
 ---
 
@@ -131,9 +131,9 @@ in-process). Things only it does:
 
 - [~] Root cause **identified** (the `dotnet publish -c Release` in `CliBinaryFixture`, best fit to the cold/warm non-determinism) — but the 21-minute slow case **did NOT reproduce** in-session (all runs fast); reproduction by structural analysis + evidence, not by catching it live.
 - [x] Per-test timing captured (TRX): all tests < 0.3 s, ~4 s total — dominant cost localized to **fixture setup**, not test logic or a hanging test.
-- [x] Fix applied: `CliBinaryFixture` reuses the build-output CLI binary instead of a per-run Release publish; suite stays seconds-range (108/108, 667 ms no-build).
+- [x] Fix applied: `CliBinaryFixture` reuses the build-output CLI binary instead of a per-run Release publish; suite stays seconds-range. Re-verified 2026-05-31: full solution 6.29 s green; integration project 128/128 passed (cold 5.03 s, `--no-build` warm 1.71 s / 568 ms), reuse fast-path confirmed taken (built binary used; no publish temp dir created). (Test count grew 108→128 since first writing.)
 - [x] Environmental cause (AV scanning freshly-built native binaries) documented in `CLAUDE.md` with dev-time Defender-exclusion guidance.
-- [~] Guardrail: per-test timeouts already exist; a **suite-level CI timeout** is recommended and handed to [Phase 30](PHASE-30-cross-platform-ci.md).
+- [x] Guardrail implemented: `ShadowDusk.runsettings` sets a 5-min `TestSessionTimeout` (per-test 30 s/60 s/120 s timeouts remain the first line of defense), wired into the `/test` skill commands. Validated: `dotnet test --settings ShadowDusk.runsettings` → 128/128 green (493/493 full solution) with the session cap active. Phase 30 CI inherits the same value.
 
 ---
 
