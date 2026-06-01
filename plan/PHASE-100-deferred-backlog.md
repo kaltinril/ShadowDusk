@@ -194,6 +194,8 @@ The Phase 15 plan §3.1 specified two invocation modes: `DirectPipeline` (in-pro
 
 ## From Phase 19 — WASM Browser-Runtime Validation (emscripten modules + real in-browser run)
 
+> **⏫ PROMOTED to the active [Phase 23 — In-Browser Compilation](PHASE-23-in-browser-compilation.md) on 2026-05-31.** This section is retained for history; the live, sequenced plan (split seam — SPIRV-Cross pure-C# static-link vs DXC `[JSImport]`; the DXC build-vs-Slang fork; emscripten 3.1.34 pin) now lives in the Phase 23 doc. Do new work there.
+
 *Carved out of [Phase 19](DONE/PHASE-19-wasm-runtime-compilation.md) on 2026-05-30: the managed compile **engine** is done & desktop-verified; this is the **runtime** tail, gated on an external toolchain (emscripten) + an actual browser the dev environment can't exercise.*
 
 **Depends on:** Phase 19 (injectable backends, the pure-managed `SpirvReflector`, the DXIL-free GL reflection path, and the browser-compiling `WasmShaderCompiler` with its `[JSImport]` contract in `src/ShadowDusk.Wasm/Phase19.js`), plus [Phase 25](PHASE-25-security-hardening.md) (untrusted web input) and [Phase 30](PHASE-30-cross-platform-ci.md) (headless-browser CI).
