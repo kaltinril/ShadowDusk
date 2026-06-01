@@ -289,9 +289,9 @@
       "shadowdusk.compiler": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[1.0.0, )",
-          "ShadowDusk.GLSL": "[1.0.0, )",
-          "ShadowDusk.HLSL": "[1.0.0, )"
+          "ShadowDusk.Core": "[0.1.0, )",
+          "ShadowDusk.GLSL": "[0.1.0, )",
+          "ShadowDusk.HLSL": "[0.1.0, )"
         }
       },
       "shadowdusk.core": {
@@ -300,14 +300,14 @@
       "shadowdusk.glsl": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[1.0.0, )",
+          "ShadowDusk.Core": "[0.1.0, )",
           "Silk.NET.SPIRV.Cross.Native": "[2.23.0, )"
         }
       },
       "shadowdusk.hlsl": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[1.0.0, )",
+          "ShadowDusk.Core": "[0.1.0, )",
           "Vortice.D3DCompiler": "[3.3.4, )",
           "Vortice.Direct3D11": "[3.3.4, )",
           "Vortice.Direct3D12": "[3.5.0, )",

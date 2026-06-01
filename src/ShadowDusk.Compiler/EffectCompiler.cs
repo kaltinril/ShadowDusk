@@ -21,6 +21,13 @@ public sealed class EffectCompiler : IShaderCompiler
     {
         _dxcCompilerFactory    = dxcCompilerFactory;
         _glslTranspilerFactory = glslTranspilerFactory;
+        // Default reflector is null → the OpenGL path reflects from the native
+        // DXIL oracle (cross-platform: the reflection runs inside dxcompiler,
+        // which Vortice.Dxc bundles per-RID). The WASM/browser path injects
+        // SpirvReflector explicitly (WasmShaderCompiler). Leaving this null is
+        // load-bearing: SpirvReflectionByteIdentityTests uses `new EffectCompiler()`
+        // as its DXIL baseline arm, so defaulting it to SpirvReflector would
+        // silently make that keystone DXIL≡SPIR-V test compare SPIR-V to itself.
         _reflectorFactory      = reflectorFactory;
     }
 

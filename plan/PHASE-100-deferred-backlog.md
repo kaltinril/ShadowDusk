@@ -142,10 +142,10 @@ See `docs/glsl-uniform-naming.md` → *Known limitations*.
 
 ## From Phase 8 — Compiler Library
 
-**NuGet packaging verification (not run during Phase 8):**
+**NuGet packaging verification — ✅ RESOLVED 2026-05-31 (branch `selfcontained-inmemory-nuget`).** Running these surfaced a real drop-in bug and fixed it:
 
-- [ ] `7.4` Run `dotnet pack src/ShadowDusk.Compiler` — confirm `.nupkg` is produced with `PackageId=ShadowDusk.Compiler` and `PackageVersion=0.1.0`.
-- [ ] `7.5` Create a scratch `ConsoleApp` outside the solution; add a local NuGet `--source` reference to the packed `.nupkg`; call `EffectCompiler.CompileAsync` on `Minimal.fx`; confirm bytes are written to disk successfully.
+- [x] `7.4` `dotnet pack` produces `ShadowDusk.Compiler` 0.1.0. **Bug found:** the package declared deps on `ShadowDusk.Core/HLSL/GLSL` **1.0.0 (unpublished)** and bundled **no native DXC/SPIRV-Cross**, so `dotnet add package ShadowDusk.Compiler` would fail to restore and then throw `DllNotFoundException`. **Fix:** made Core/HLSL/GLSL packable + versioned 0.1.0 so the ShadowDusk.* set resolves, and the native-bundling NuGets (`Vortice.Dxc`, `Silk.NET.SPIRV.Cross.Native`) now flow transitively. (The OpenGL DXIL-reflection default is unchanged — it's cross-platform via dxcompiler, and `new EffectCompiler()` is the DXIL baseline of `SpirvReflectionByteIdentityTests`.)
+- [x] `7.5` Verified with a scratch console app **outside the repo**, restoring only from the package feed: `EffectCompiler.CompileAsync` on `Grayscale.fx` produced a valid 519-byte `.mgfx` (`MGFX` header) **in memory**. (Linux/macOS run validation → Phase 30 CI; the native deps are cross-platform via Vortice.Dxc + Silk.NET.)
 
 **ShaderIRBuilder direct unit tests (require `InternalsVisibleTo`):**
 

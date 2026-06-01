@@ -2,6 +2,14 @@
   <PropertyGroup>
     <AssemblyName>ShadowDusk.GLSL</AssemblyName>
     <RootNamespace>ShadowDusk.GLSL</RootNamespace>
+    <!-- Published as part of the ShadowDusk.* set. Its Silk.NET.SPIRV.Cross.Native
+         dependency (the cross-platform SPIR-V to GLSL native) flows transitively to
+         consumers of ShadowDusk.Compiler. -->
+    <IsPackable>true</IsPackable>
+    <PackageId>ShadowDusk.GLSL</PackageId>
+    <PackageVersion>0.1.0</PackageVersion>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <Description>ShadowDusk GLSL back-end: SPIR-V to GLSL transpilation via SPIRV-Cross and the MonoGame/MojoShader GLSL dialect rewriter. Part of the ShadowDusk.Compiler cross-platform MonoGame/KNI shader compiler.</Description>
   </PropertyGroup>
 
   <ItemGroup>

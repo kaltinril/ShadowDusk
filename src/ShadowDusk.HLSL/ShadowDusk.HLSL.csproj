@@ -3,6 +3,15 @@
     <AssemblyName>ShadowDusk.HLSL</AssemblyName>
     <RootNamespace>ShadowDusk.HLSL</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Published as part of the ShadowDusk.* set. Its Vortice.Dxc dependency
+         (the cross-platform DXC native) flows transitively to consumers of
+         ShadowDusk.Compiler — this is what makes the in-memory compile work
+         with no external tools. -->
+    <IsPackable>true</IsPackable>
+    <PackageId>ShadowDusk.HLSL</PackageId>
+    <PackageVersion>0.1.0</PackageVersion>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <Description>ShadowDusk HLSL front-end: FX9 pre-parse, preprocessor, and DXC integration (HLSL to SPIR-V/DXIL via Vortice.Dxc). Part of the ShadowDusk.Compiler cross-platform MonoGame/KNI shader compiler.</Description>
   </PropertyGroup>
 
   <ItemGroup>

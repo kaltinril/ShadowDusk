@@ -2,5 +2,12 @@
   <PropertyGroup>
     <AssemblyName>ShadowDusk.Core</AssemblyName>
     <RootNamespace>ShadowDusk.Core</RootNamespace>
+    <!-- Published as part of the ShadowDusk.* set so ShadowDusk.Compiler's
+         dependency on it resolves on a feed (consumers add only Compiler). -->
+    <IsPackable>true</IsPackable>
+    <PackageId>ShadowDusk.Core</PackageId>
+    <PackageVersion>0.1.0</PackageVersion>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <Description>ShadowDusk core types (IShaderCompiler, Result, ShaderError, CompilerOptions, IR, SPIR-V reflection). Part of the ShadowDusk.Compiler cross-platform MonoGame/KNI shader compiler.</Description>
   </PropertyGroup>
 </Project>

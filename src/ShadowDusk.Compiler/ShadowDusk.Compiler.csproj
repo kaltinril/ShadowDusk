@@ -8,11 +8,19 @@
     <IsPackable>true</IsPackable>
     <PackageId>ShadowDusk.Compiler</PackageId>
     <PackageVersion>0.1.0</PackageVersion>
-    <Description>Cross-platform HLSL Effect compiler for MonoGame and KNI. Compiles .fx shaders to .mgfx binaries for DirectX, OpenGL, and Vulkan targets without requiring Wine, the Windows SDK, or fxc.exe.</Description>
-    <PackageTags>monogame kni hlsl shader compiler mgfx cross-platform</PackageTags>
+    <Description>Cross-platform, self-contained HLSL Effect compiler for MonoGame and KNI. Compiles .fx shaders to .mgfx binaries in memory at runtime — on Linux, macOS, or Windows — with no Wine, Windows SDK, fxc.exe, or mgfxc required. Add the package and call EffectCompiler.CompileAsync; feed the bytes to new Effect(gd, bytes). Pulls the ShadowDusk.* set and the native DXC + SPIRV-Cross binaries transitively.</Description>
+    <PackageTags>monogame kni hlsl shader compiler mgfx cross-platform runtime in-memory</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
+  <!--
+    The first-party projects ship as their own ShadowDusk.* packages (all 0.1.0),
+    so these normal project references become correct package dependencies when
+    packed (no PrivateAssets — that would also sever in-repo transitive flow to the
+    CLI/Wasm/test consumers). A consumer runs `dotnet add package ShadowDusk.Compiler`
+    and NuGet restores the whole ShadowDusk.* set plus the native deps (Vortice.Dxc,
+    Silk.NET.SPIRV.Cross.Native) transitively via ShadowDusk.HLSL/GLSL.
+  -->
   <ItemGroup>
     <ProjectReference Include="..\ShadowDusk.Core\ShadowDusk.Core.csproj" />
     <ProjectReference Include="..\ShadowDusk.HLSL\ShadowDusk.HLSL.csproj" />
