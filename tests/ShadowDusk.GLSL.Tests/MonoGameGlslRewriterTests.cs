@@ -143,6 +143,90 @@ void main()
         result.Glsl.Should().Contain("precision mediump int;");
     }
 
+    // ---- roundEven/round → floor(x+0.5) lowering (WebGL1 reach fix). ----
+    // SPIRV-Cross emits roundEven() for HLSL `round` (DXC maps it to OpRoundEven),
+    // a GLSL ES 3.00 / GL 1.30 builtin WebGL1 (GLSL ES 1.00) lacks. The rewriter
+    // lowers it to floor(x+0.5) — valid everywhere and what mgfxc emits. The PS
+    // below is the verbatim SPIRV-Cross GLSL for Pixelated.fx.
+    private const string PixelatedRoundEven = """
+#version 140
+#ifdef GL_ARB_shading_language_420pack
+#extension GL_ARB_shading_language_420pack : require
+#endif
+
+uniform sampler2D SPIRV_Cross_CombinedSpriteTextureSpriteTextureSampler;
+
+in vec2 in_var_TEXCOORD0;
+in vec4 in_var_COLOR0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    out_var_SV_Target = texture(SPIRV_Cross_CombinedSpriteTextureSpriteTextureSampler, vec2(roundEven(in_var_TEXCOORD0.x * 32.0) * 0.03125, roundEven(in_var_TEXCOORD0.y * 32.0) * 0.03125));
+}
+""";
+
+    [Fact]
+    public void RoundEven_IsLoweredToFloorHalfUp_AndNoRoundEvenRemains()
+    {
+        var result = MonoGameGlslRewriter.Rewrite(PixelatedRoundEven, ShaderStage.Pixel);
+
+        // roundEven() is GLSL ES 3.00+ only and MUST NOT survive — it makes the
+        // shader fail to load in WebGL1 (KNI Reach profile).
+        result.Glsl.Should().NotContain("roundEven", "roundEven is unavailable in GLSL ES 1.00 (WebGL1)");
+
+        // Each roundEven(expr) becomes floor((expr) + 0.5).
+        result.Glsl.Should().Contain("floor((vTexCoord0.x * 32.0) + 0.5)");
+        result.Glsl.Should().Contain("floor((vTexCoord0.y * 32.0) + 0.5)");
+    }
+
+    [Fact]
+    public void BareRound_IsLoweredToFloorHalfUp()
+    {
+        // Defensive: SPIRV-Cross can also emit bare round() (OpRound), also ES-3.00-only.
+        const string src = """
+#version 140
+
+uniform sampler2D _10;
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    out_var_SV_Target = texture(_10, vec2(round(in_var_TEXCOORD0.x), in_var_TEXCOORD0.y));
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        // No round(/roundEven( call survives; only floor( remains.
+        System.Text.RegularExpressions.Regex
+            .IsMatch(result.Glsl, @"\bround(Even)?\s*\(")
+            .Should().BeFalse("round/roundEven are unavailable in GLSL ES 1.00 (WebGL1)");
+        result.Glsl.Should().Contain("floor((vTexCoord0.x) + 0.5)");
+    }
+
+    [Fact]
+    public void Round_NestedArgument_BalancedParensLoweredCorrectly()
+    {
+        // A nested call inside the argument must be captured by the balanced-paren scan.
+        const string src = """
+#version 140
+
+uniform sampler2D _10;
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    out_var_SV_Target = vec4(roundEven(abs(in_var_TEXCOORD0.x) * 8.0));
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        result.Glsl.Should().NotContain("roundEven");
+        result.Glsl.Should().Contain("floor((abs(vTexCoord0.x) * 8.0) + 0.5)");
+    }
+
     [Fact]
     public void VertexStage_ReturnsInputUnchanged()
     {

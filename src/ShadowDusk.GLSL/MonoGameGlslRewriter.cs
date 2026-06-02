@@ -251,6 +251,18 @@ public static class MonoGameGlslRewriter
         body = Regex.Replace(body, @"\btextureProj\s*\(", "texture2DProj(");
         body = Regex.Replace(body, @"\btexture\s*\(", "texture2D(");
 
+        // Rule 8: lower roundEven()/round() to a WebGL1-valid expression.
+        // SPIRV-Cross emits roundEven(x) (for HLSL `round`, which DXC maps to
+        // OpRoundEven) — a GLSL ES 3.00 / desktop-GL 1.30 builtin that GLSL ES 1.00
+        // (WebGL1, KNI's Reach profile) does NOT provide, so the shader fails to
+        // load there ("'roundEven': no matching overloaded function found"). bare
+        // round() is likewise ES-3.00-only. Lower both to floor(x + 0.5), which is
+        // valid in every GLSL profile AND is exactly what mgfxc/MojoShader emits for
+        // the same HLSL `round` (golden Pixelated computes `(x+0.5) - fract(x+0.5)`,
+        // i.e. floor(x+0.5)) — so this stays faithful, same-backend, to the
+        // reference compiler. See ROUNDEVEN-FIX.md.
+        body = LowerRoundToFloorHalfUp(body);
+
         // ---- Assemble final output: precision header + body. ----
         // Trim leading blank lines from the body so the header sits at the top,
         // preserving a single blank line separation.
@@ -378,4 +390,116 @@ public static class MonoGameGlslRewriter
             return followedByDot ? varying.VaryingName : varying.VaryingName + swizzle;
         });
     }
+
+    // roundEven / round identifiers to lower, longest first so "roundEven" is
+    // matched before the "round" prefix.
+    private static readonly string[] RoundFns = { "roundEven", "round" };
+
+    /// <summary>
+    /// Rewrites every <c>roundEven(<i>expr</i>)</c> / <c>round(<i>expr</i>)</c> call
+    /// to <c>floor((<i>expr</i>) + 0.5)</c> (round-half-up), which is valid in all
+    /// GLSL profiles — unlike the ES-3.00/GL-1.30-only <c>roundEven</c>/<c>round</c>
+    /// builtins that WebGL1 (GLSL ES 1.00, KNI's Reach profile) rejects. This matches
+    /// what mgfxc/MojoShader emits for HLSL <c>round</c>, so it preserves same-backend
+    /// render parity. The argument is captured with a balanced-parenthesis scan so a
+    /// nested call (e.g. <c>round(a * f(b))</c>) is lowered correctly.
+    /// </summary>
+    private static string LowerRoundToFloorHalfUp(string body)
+    {
+        foreach (var fn in RoundFns)
+        {
+            int searchFrom = 0;
+            while (true)
+            {
+                int callStart = FindCallStart(body, fn, searchFrom);
+                if (callStart < 0)
+                {
+                    break;
+                }
+
+                int openParen = callStart + fn.Length;
+                int closeParen = FindMatchingParen(body, openParen);
+                if (closeParen < 0)
+                {
+                    // Unbalanced (should not happen in valid GLSL) — stop lowering
+                    // this fn rather than corrupt the source.
+                    break;
+                }
+
+                string arg = body.Substring(openParen + 1, closeParen - openParen - 1);
+                string replacement = $"floor(({arg}) + 0.5)";
+                body = body.Substring(0, callStart) + replacement + body.Substring(closeParen + 1);
+                searchFrom = callStart + replacement.Length;
+            }
+        }
+
+        return body;
+    }
+
+    /// <summary>
+    /// Finds the next whole-identifier occurrence of <paramref name="fn"/> in
+    /// <paramref name="body"/> at or after <paramref name="from"/> that is immediately
+    /// followed (ignoring whitespace) by '(', returning the identifier's start index,
+    /// or -1. "Whole-identifier" rejects matches inside a longer identifier (e.g. the
+    /// "round" inside "roundEven" or a user "myround").
+    /// </summary>
+    private static int FindCallStart(string body, string fn, int from)
+    {
+        int i = from;
+        while ((i = body.IndexOf(fn, i, StringComparison.Ordinal)) >= 0)
+        {
+            bool boundaryBefore = i == 0 || !IsIdentChar(body[i - 1]);
+            int afterId = i + fn.Length;
+            // The identifier must not run into more identifier chars (e.g. "roundEven"
+            // when fn == "round").
+            bool boundaryAfter = afterId >= body.Length || !IsIdentChar(body[afterId]);
+
+            // Skip whitespace between the identifier and the '('.
+            int j = afterId;
+            while (j < body.Length && (body[j] == ' ' || body[j] == '\t'))
+            {
+                j++;
+            }
+            bool isCall = j < body.Length && body[j] == '(';
+
+            if (boundaryBefore && boundaryAfter && isCall)
+            {
+                return i;
+            }
+
+            i = afterId;
+        }
+
+        return -1;
+    }
+
+    /// <summary>
+    /// Given the index of an opening '(' in <paramref name="body"/>, returns the index
+    /// of its matching ')', or -1 if unbalanced.
+    /// </summary>
+    private static int FindMatchingParen(string body, int openIndex)
+    {
+        int depth = 0;
+        for (int i = openIndex; i < body.Length; i++)
+        {
+            char c = body[i];
+            if (c == '(')
+            {
+                depth++;
+            }
+            else if (c == ')')
+            {
+                depth--;
+                if (depth == 0)
+                {
+                    return i;
+                }
+            }
+        }
+
+        return -1;
+    }
+
+    private static bool IsIdentChar(char c) =>
+        c == '_' || char.IsLetterOrDigit(c);
 }
