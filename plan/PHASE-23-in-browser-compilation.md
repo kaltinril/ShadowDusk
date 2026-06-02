@@ -20,12 +20,13 @@ A *working* mode-2 chain was built on `phase22-web-inbrowser-compile` (now merge
 
 Every stage is node-verified; **there has been no real browser run** — Phase 24 closes that gap. What remains for the *product* is: (a) build the faithful DXC→WASM module (M0/M2), and (b) prove it renders in a real browser (M3, via Phase 24's harness).
 
-### Prerequisite surfaced by Phase 24 — `roundEven` is not WebGL1-valid (must fix)
+### Prerequisite surfaced by Phase 24 — `roundEven` not WebGL1-valid — ✅ RESOLVED (2026-06-01)
 
-Phase 24 ran the corpus in real KNI WebGL and proved MGFX **v10 renders 10/10** there (no KNIFX-v11 needed). But it validated the *golden (mgfxc)* bytes; when the corpus is compiled by **ShadowDusk's own** GL pipeline, **`Pixelated.mgfx` fails to load in KNI WebGL** because ShadowDusk emits **`roundEven()`**, which **GLSL ES 1.00 / WebGL1 does not provide** (`'roundEven': no matching overloaded function`). This is a genuine WebGL-reach gap in our emitted GLSL — independent of the DXC→WASM build, and it blocks both mode-1 (our own precompiled bytes) and mode-2.
+Phase 24 ran the corpus in real KNI WebGL and proved MGFX **v10 renders 10/10** there (no KNIFX-v11 needed). But it validated the *golden (mgfxc)* bytes; when the corpus is compiled by **ShadowDusk's own** GL pipeline, **`Pixelated.mgfx` failed to load in KNI WebGL** because ShadowDusk emitted **`roundEven()`** (DXC maps HLSL `round`→`OpRoundEven`→SPIRV-Cross `roundEven()`), which **GLSL ES 1.00 / WebGL1 does not provide**. Desktop GL has it, so no desktop test caught it.
 
-- **Fix:** in the GL/WebGL dialect rewrite (`MonoGameGlslRewriter` / `SpirvCrossGlslTranspiler`), lower `roundEven(x)` → `floor(x + 0.5)` for the OpenGL profile (matches HLSL `round`'s round-half-up and `mojoshader`/`mediump` expectations; confirm same-backend render parity).
-- **Harness gap to close with it:** extend the Phase 24 harness to validate **ShadowDusk's own** `.mgfx` (it currently diffs the golden), so this class of "our output ≠ loadable in WebGL" bug can't hide behind the golden again. The `compile-corpus-sd.mjs` helper added during the Phase 24 investigation is the starting point.
+- **Fixed:** `MonoGameGlslRewriter` "Rule 8" (`LowerRoundToFloorHalfUp`) lowers `roundEven(x)` and bare `round(x)` → `floor((x) + 0.5)` for the GL profile — WebGL1-valid in all profiles and **byte-faithful to mgfxc** (the golden expresses `round` as `floor(x+0.5)`). Balanced-paren arg capture; whole-identifier matching (won't touch `ground`/`myround`).
+- **Harness gap closed:** the Phase 24 harness now has a `--corpus=sd` path (`publish-sample-sd.mjs`, `RESULTS-SD.md`, `references-sd/`) that validates **ShadowDusk's own** `.mgfx` in real KNI WebGL, not just the golden — so this class of "our output ≠ loadable in WebGL" bug can't hide again.
+- **Verified:** ShadowDusk's own `Pixelated` now loads + renders (Δ1 LSB) in real headless KNI WebGL; corpus 10/10 load + render. Desktop cross-validation vs mgfxc still passes (ImageTests 25, byte-identity/determinism 128 incl. 10/10, full solution **498/498**). See `tests/ShadowDusk.BrowserTests/ROUNDEVEN-FIX.md`.
 
 ## "Usable to end users on WASM" = three gates
 

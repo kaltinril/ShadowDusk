@@ -6,5 +6,11 @@ diffs/
 node_modules/
 package-lock.json
 
-# references/*.png ARE committed: small, deterministic desktop renders that the
-# harness diffs against. RESULTS.md IS committed: the Task-1c deliverable.
+# ShadowDusk-OWN-output validation path (--corpus=sd). Same convention as above.
+# Regenerate with: node publish-sample-sd.mjs && node run-harness.mjs --corpus=sd
+.publish-sd/
+captures-sd/
+diffs-sd/
+
+# references[-sd]/*.png ARE committed: small, deterministic desktop renders that
+# the harness diffs against. RESULTS[-SD].md IS committed: the Task-1c deliverable.
