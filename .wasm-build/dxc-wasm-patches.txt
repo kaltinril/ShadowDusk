@@ -1,0 +1,27 @@
+DXC source patches required for the emscripten/WASM SPIR-V build (Phase 23 M0).
+Applied to .wasm-build/dxc-src (the pinned e043f4a1 checkout) by build-dxc-wasm.ps1
+before Stage 1 configure. All are CMake-only (no C++ source changes) and exist solely
+to let DXC's LLVM-fork CMake cross-compile under emscripten on Windows.
+
+PATCH 1 — CMakeLists.txt (~line 406): do not FORCE LLVM_USE_HOST_TOOLS ON when the
+caller already supplied prebuilt host tablegen (-DLLVM_USE_HOST_TOOLS=OFF). emscripten
+sets CMAKE_CROSSCOMPILING, so the stock line forces a NATIVE host LLVM sub-build that
+(a) is redundant once -DLLVM_TABLEGEN/-DCLANG_TABLEGEN are given and (b) wrongly probes
+emcc.bat as the *host* C compiler and fails. Honor an explicit OFF:
+
+  - if(CMAKE_CROSSCOMPILING OR (LLVM_OPTIMIZED_TABLEGEN AND LLVM_ENABLE_ASSERTIONS))
+  -   set(LLVM_USE_HOST_TOOLS ON)
+  - endif()
+  + if((CMAKE_CROSSCOMPILING OR (LLVM_OPTIMIZED_TABLEGEN AND LLVM_ENABLE_ASSERTIONS))
+  +     AND NOT DEFINED LLVM_USE_HOST_TOOLS)
+  +   set(LLVM_USE_HOST_TOOLS ON)
+  + endif()
+
+PATCH 2 — tools/llvm-config/CMakeLists.txt (~line 40): the llvm-config target wires a
+NATIVE-host llvm-config under `if(CMAKE_CROSSCOMPILING)`, referencing the
+CONFIGURE_LLVM_NATIVE target. With PATCH 1 disabling the NATIVE host-tools build, that
+target is absent and CMake *generate* fails (add_dependencies on a missing target).
+llvm-config is a host tool we do not need for the dxcompiler library. Guard the block:
+
+  - if(CMAKE_CROSSCOMPILING)
+  + if(CMAKE_CROSSCOMPILING AND TARGET CONFIGURE_LLVM_NATIVE)
