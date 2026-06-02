@@ -2,7 +2,6 @@
 
 using System;
 using System.IO;
-using System.Security.Cryptography;
 using System.Text;
 
 namespace ShadowDusk.Core;
@@ -77,10 +76,15 @@ public sealed class MgfxWriter
     // Deterministic per-effect key. MonoGame uses it only as a cache key (mgfxc
     // writes an MD5-derived int); hashing the body gives distinct effects distinct
     // keys while keeping identical input -> identical output (constraint #3).
+    //
+    // Uses ManagedMd5 (not System.Security.Cryptography.MD5) because the .NET 8
+    // browser/WASM runtime does NOT provide MD5 — the BCL MD5 throws
+    // Cryptography_UnknownHashAlgorithm there, which broke the faithful in-browser
+    // compile pipeline. ManagedMd5 is byte-identical to the BCL MD5 on every
+    // platform, so desktop output and the cross-host byte-identity are unchanged.
     private static uint ComputeEffectKey(byte[] body)
     {
-        Span<byte> hash = stackalloc byte[16];
-        MD5.HashData(body, hash);
+        byte[] hash = ManagedMd5.HashData(body);
         return BitConverter.ToUInt32(hash);
     }
 

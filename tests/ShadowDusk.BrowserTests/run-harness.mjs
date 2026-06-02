@@ -32,11 +32,20 @@ const SIZE = 512;
 // publish-sample.mjs; SD refs from publish-sample-sd.mjs). See ROUNDEVEN-FIX.md.
 const CORPUS = (process.argv.find((a) => a.startsWith('--corpus=')) ?? '--corpus=golden')
   .slice('--corpus='.length);
-if (CORPUS !== 'golden' && CORPUS !== 'sd') {
-  console.error(`unknown --corpus=${CORPUS} (expected 'golden' or 'sd')`);
+if (CORPUS !== 'golden' && CORPUS !== 'sd' && CORPUS !== 'faithful') {
+  console.error(`unknown --corpus=${CORPUS} (expected 'golden', 'sd', or 'faithful')`);
   process.exit(2);
 }
 const IS_SD = CORPUS === 'sd';
+// --corpus=faithful (Phase 23 M3 / Gate G2): the FAITHFUL in-browser-compile render
+// proof. The served "shadowdusk-dxc" module is the FAITHFUL DXC->WASM shim (swapped
+// in by publish-sample-faithful.mjs), and the harness drives mode-2 (in-browser
+// compile via WasmShaderCompiler) over the FULL 10-shader corpus, pixel-comparing
+// each WebGL render against references-sd/ (the desktop DesktopGL render of
+// ShadowDusk's own bytes). Mode-1 (precompiled load) is still validated as a
+// baseline. This is the real proof the 17.4 MB dxcompiler.wasm LOADS + RUNS in a
+// browser and the end-to-end faithful pipeline renders correctly.
+const IS_FAITHFUL = CORPUS === 'faithful';
 
 // Phase 17 §6.1: start exact (0); any tolerance > 0 is listed with the observed
 // MaxChannelDelta + reason. WebGL (KNI) vs DesktopGL of the SAME bytes is the
@@ -63,13 +72,15 @@ const SHADERS = [
   'Pixelated', 'Scanlines', 'Fading', 'Dots', 'Dissolve',
 ];
 
-// SD uses its own published wwwroot (ShadowDusk's bytes) + its own
-// references/captures/diffs/results so it never overwrites the golden artifacts.
-const PUBLISH_ROOT = path.join(__dirname, IS_SD ? '.publish-sd' : '.publish', 'wwwroot');
-const REF_DIR = path.join(__dirname, IS_SD ? 'references-sd' : 'references');
-const CAP_DIR = path.join(__dirname, IS_SD ? 'captures-sd' : 'captures');
-const DIFF_DIR = path.join(__dirname, IS_SD ? 'diffs-sd' : 'diffs');
-const RESULTS_FILE = path.join(__dirname, IS_SD ? 'RESULTS-SD.md' : 'RESULTS.md');
+// Each corpus uses its own published wwwroot + references/captures/diffs/results so
+// the artifacts never collide. The faithful path reuses references-sd/ (same
+// ShadowDusk bytes) but its own publish dir + faithful-specific outputs.
+const PUBLISH_SUBDIR = IS_FAITHFUL ? '.publish-faithful' : (IS_SD ? '.publish-sd' : '.publish');
+const PUBLISH_ROOT = path.join(__dirname, PUBLISH_SUBDIR, 'wwwroot');
+const REF_DIR = path.join(__dirname, (IS_SD || IS_FAITHFUL) ? 'references-sd' : 'references');
+const CAP_DIR = path.join(__dirname, IS_FAITHFUL ? 'captures-faithful' : (IS_SD ? 'captures-sd' : 'captures'));
+const DIFF_DIR = path.join(__dirname, IS_FAITHFUL ? 'diffs-faithful' : (IS_SD ? 'diffs-sd' : 'diffs'));
+const RESULTS_FILE = path.join(__dirname, IS_FAITHFUL ? 'RESULTS-FAITHFUL.md' : (IS_SD ? 'RESULTS-SD.md' : 'RESULTS.md'));
 
 async function loadRefRgba(name) {
   const buf = await fs.readFile(path.join(REF_DIR, name + '.png'));
@@ -112,10 +123,11 @@ async function main() {
   await fs.mkdir(CAP_DIR, { recursive: true });
   await fs.mkdir(DIFF_DIR, { recursive: true });
 
-  console.log(`[harness] corpus=${CORPUS} (${IS_SD ? "ShadowDusk's OWN .mgfx" : 'mgfxc goldens'})`);
+  console.log(`[harness] corpus=${CORPUS} (${IS_FAITHFUL ? "ShadowDusk's OWN .mgfx, in-browser via FAITHFUL DXC->WASM" : (IS_SD ? "ShadowDusk's OWN .mgfx" : 'mgfxc goldens')})`);
 
   // Sanity: published wwwroot present.
-  const prepCmd = IS_SD ? 'node publish-sample-sd.mjs' : 'node publish-sample.mjs';
+  const prepCmd = IS_FAITHFUL ? 'node publish-sample-faithful.mjs'
+    : (IS_SD ? 'node publish-sample-sd.mjs' : 'node publish-sample.mjs');
   await fs.access(path.join(PUBLISH_ROOT, 'index.html')).catch(() => {
     throw new Error(`Publish not found at ${PUBLISH_ROOT}. Run: ${prepCmd}`);
   });
@@ -133,10 +145,13 @@ async function main() {
     ],
   });
 
-  const results = { mode1: [], mode2: null };
+  const results = { mode1: [], mode2: null, faithful: null };
   try {
     const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
     page.on('pageerror', (e) => console.log(`  [pageerror] ${e.message}`));
+    // The first FAITHFUL in-browser compile lazy-loads + instantiates the 17.4 MB
+    // dxcompiler.wasm under SwiftShader, which can be slow; give page.evaluate room.
+    if (IS_FAITHFUL) page.setDefaultTimeout(180000);
 
     await page.goto(`${srv.url}/?test=${SIZE}`, { waitUntil: 'domcontentloaded' });
     console.log('[harness] waiting for KNI game to boot…');
@@ -216,6 +231,92 @@ async function main() {
       results.mode1.push(row);
     }
 
+    // ---- FAITHFUL mode-2 proof (Phase 23 M3 / Gate G2): compile ALL 10 corpus
+    // shaders in-browser via the FAITHFUL DXC->WASM frontend, render in KNI WebGL,
+    // and pixel-compare each against references-sd/ (desktop render of ShadowDusk's
+    // own bytes). Since the faithful WASM SPIR-V is byte-identical to desktop DXC
+    // (G0/G1), the in-browser .mgfx must equal the desktop .mgfx -> renders match.
+    if (IS_FAITHFUL) {
+      console.log('[harness] FAITHFUL mode-2 — compiling all 10 corpus shaders in-browser via DXC->WASM…');
+      results.faithful = [];
+      for (const name of SHADERS) {
+        const row = { name, compiled: false, compileError: null, rendered: false,
+          maxDelta: null, differentPixels: null, totalPixels: null, verdict: 'FAIL', note: '' };
+        try {
+          const src = await page.evaluate(async ({ base, n }) => {
+            const r = await fetch(`${base}/shaders/src/${n}.fx`);
+            return r.ok ? await r.text() : null;
+          }, { base: srv.url, n: name });
+          if (!src) {
+            row.note = `could not fetch shaders/src/${name}.fx`;
+            results.faithful.push(row);
+            console.log(`  [FETCH-FAIL] ${name}`);
+            continue;
+          }
+          // In-browser compile (.fx -> .mgfx) + apply via the FAITHFUL pipeline.
+          // First compile lazy-loads the 17.4 MB dxcompiler.wasm (ensureReady).
+          const cErr = await page.evaluate(
+            async (s) => await window.theInstance.invokeMethodAsync('TestCompileAndApply', s),
+            src);
+          if (cErr !== null) {
+            row.compileError = String(cErr);
+            row.note = 'in-browser FAITHFUL compile/apply failed';
+            results.faithful.push(row);
+            console.log(`  [COMPILE-FAIL] ${name}: ${cErr}`);
+            continue;
+          }
+          row.compiled = true;
+          await page.waitForTimeout(600);
+
+          const cap = await readback(page);
+          if (!cap) { row.note = 'readback returned null'; results.faithful.push(row); continue; }
+          await fs.writeFile(path.join(CAP_DIR, name + '.png'),
+            rgbaToPng(cap.data, cap.width, cap.height));
+
+          const ref = await loadRefRgba(name);
+          if (ref.width !== cap.width || ref.height !== cap.height) {
+            row.note = `size mismatch ref=${ref.width}x${ref.height} cap=${cap.width}x${cap.height}`;
+            results.faithful.push(row);
+            continue;
+          }
+          const perTol = PER_SHADER_TOLERANCE[name] ?? TOLERANCE_OK_LSB;
+          const cmp = compareRgba(ref.data, cap.data, 0);
+          const cmpTol = compareRgba(ref.data, cap.data, TOLERANCE_OK_LSB);
+          row.rendered = true;
+          row.maxDelta = cmp.maxChannelDelta;
+          row.differentPixels = cmpTol.differentPixels;
+          row.totalPixels = cmp.totalPixels;
+          row.toleranceUsed = perTol;
+
+          await fs.writeFile(path.join(DIFF_DIR, name + '_diff.png'),
+            makeDiff(ref.data, cap.data, ref.width, ref.height, perTol));
+
+          const frac = cmpTol.differentPixels / cmp.totalPixels;
+          if (cmp.maxChannelDelta === 0) {
+            row.verdict = 'PASS(exact)';
+          } else if (cmp.maxChannelDelta <= TOLERANCE_OK_LSB) {
+            row.verdict = 'PASS(tol)';
+            row.note = `max-delta ${cmp.maxChannelDelta} LSB everywhere — WebGL/DesktopGL precision drift`;
+          } else if (cmp.maxChannelDelta <= perTol) {
+            row.verdict = 'PASS(tol)';
+            row.note = `max-delta ${cmp.maxChannelDelta} <= documented per-shader tolerance ${perTol}; ${cmpTol.differentPixels}/${cmp.totalPixels} (${(100 * frac).toFixed(3)}%) px > 2 LSB — transcendental edge drift`;
+          } else if (frac <= DIFF_PIXEL_BUDGET) {
+            row.verdict = 'PASS(tol)';
+            row.note = `max-delta ${cmp.maxChannelDelta}, only ${cmpTol.differentPixels}/${cmp.totalPixels} (${(100 * frac).toFixed(3)}%) px > ${TOLERANCE_OK_LSB} LSB — localized drift`;
+          } else {
+            row.verdict = 'FAIL';
+            row.note = `max-delta ${cmp.maxChannelDelta}, ${cmpTol.differentPixels}/${cmp.totalPixels} (${(100 * frac).toFixed(2)}%) px > ${TOLERANCE_OK_LSB} LSB — STRUCTURAL divergence`;
+          }
+          console.log(`  [${row.verdict}] ${name.padEnd(11)} maxDelta=${row.maxDelta} pxOverTol=${cmpTol.differentPixels}/${cmp.totalPixels} ${row.note}`);
+        } catch (e) {
+          row.note = `harness error: ${e.message}`;
+          console.log(`  [ERROR] ${name}: ${e.message}`);
+        }
+        results.faithful.push(row);
+      }
+      // Skip the single-shader Slang sample probe in faithful mode.
+    } else {
+
     // ---- Mode 2: in-browser compile (Slang sample path) on 1 shader ----
     console.log('[harness] mode-2 (Slang sample path) — fetching source for Grayscale…');
     try {
@@ -263,6 +364,7 @@ async function main() {
         note: 'sample-only (Slang frontend); harness exception' };
       console.log(`  [mode2] exception: ${e.message}`);
     }
+    } // end (!IS_FAITHFUL) Slang sample mode-2
   } finally {
     await browser.close();
     await srv.close();
@@ -273,21 +375,41 @@ async function main() {
   const mode1Pass = results.mode1.filter((r) => r.verdict.startsWith('PASS')).length;
   const allLoaded = results.mode1.every((r) => r.loaded);
   console.log(`\n[harness] Mode-1: ${mode1Pass}/${results.mode1.length} pass; loaded=${results.mode1.filter(r=>r.loaded).length}/${results.mode1.length}`);
+
+  if (IS_FAITHFUL) {
+    const f = results.faithful ?? [];
+    const fPass = f.filter((r) => r.verdict.startsWith('PASS')).length;
+    const fCompiled = f.filter((r) => r.compiled).length;
+    console.log(`[harness] FAITHFUL mode-2: ${fPass}/${f.length} render-pass; compiled=${fCompiled}/${f.length} in-browser`);
+    // Gate G2: every shader must compile in-browser via the FAITHFUL frontend AND
+    // render within tolerance. Mode-1 baseline must also hold.
+    const faithfulOk = f.length === SHADERS.length && fPass === f.length && fCompiled === f.length;
+    return (faithfulOk && mode1Pass === results.mode1.length && allLoaded) ? 0 : 1;
+  }
+
   return (mode1Pass === results.mode1.length && allLoaded) ? 0 : 1;
 }
 
 async function writeResults(results) {
-  const corpusLabel = IS_SD
-    ? "ShadowDusk's OWN compiled `.mgfx` (the product output)"
-    : 'the committed mgfxc golden `.mgfx`';
+  const corpusLabel = IS_FAITHFUL
+    ? "ShadowDusk's OWN `.mgfx`, compiled ENTIRELY IN-BROWSER via the FAITHFUL DXC→WASM frontend"
+    : (IS_SD ? "ShadowDusk's OWN compiled `.mgfx` (the product output)"
+             : 'the committed mgfxc golden `.mgfx`');
   const lines = [];
-  lines.push(`# Phase 24 — Browser Render Validation results (${CORPUS} corpus)`);
+  const title = IS_FAITHFUL
+    ? '# Phase 23 M3 — Faithful in-browser-compile render proof (Gate G2)'
+    : `# Phase 24 — Browser Render Validation results (${CORPUS} corpus)`;
+  lines.push(title);
   lines.push('');
   lines.push(`_Generated by \`run-harness.mjs --corpus=${CORPUS}\` — headless Chromium (ANGLE/SwiftShader), KNI WebGL, ${SIZE}x${SIZE}. Corpus under test: ${corpusLabel}._`);
   lines.push('');
+  if (IS_FAITHFUL) {
+    lines.push('The served `shadowdusk-dxc` `[JSImport]` module is the **FAITHFUL pinned DXC→WASM** shim (`src/ShadowDusk.Wasm/wwwroot/shadowdusk-dxc.js` + `dxc/dxcompiler.{js,wasm}`), NOT the Slang sample shim. The Faithful (mode-2) section below is the Gate G2 deliverable: each shader is compiled **entirely in-browser** (`WasmShaderCompiler.CompileAsync`: faithful DXC→WASM → SPIRV-Cross WASM → managed reflect/write → `.mgfx`), then loaded via `new Effect(gd, bytes)` in KNI WebGL and pixel-compared against the desktop DesktopGL render of ShadowDusk\'s own bytes (`references-sd/`). Because the faithful WASM SPIR-V is byte-identical to desktop DXC (gates G0/G1), the in-browser `.mgfx` equals the desktop `.mgfx`, so the renders must match within tolerance.');
+    lines.push('');
+  }
   lines.push('## Mode 1 — precompiled `.mgfx` load + render in real KNI WebGL `Effect`');
   lines.push('');
-  lines.push(`Reference = the SAME \`.mgfx\` bytes (${IS_SD ? 'ShadowDusk-compiled' : 'mgfxc golden'}) rendered on desktop **DesktopGL** (\`RefRenderer\`), so any diff isolates the WebGL-vs-DesktopGL question (Phase 24 risk #2). Tolerance policy: Phase 17 §6.1 (start exact; any tolerance>0 listed with observed max delta + reason).`);
+  lines.push(`Reference = the SAME \`.mgfx\` bytes (${(IS_SD || IS_FAITHFUL) ? 'ShadowDusk-compiled' : 'mgfxc golden'}) rendered on desktop **DesktopGL** (\`RefRenderer\`), so any diff isolates the WebGL-vs-DesktopGL question (Phase 24 risk #2). Tolerance policy: Phase 17 §6.1 (start exact; any tolerance>0 listed with observed max delta + reason).`);
   lines.push('');
   lines.push('| Shader | KNI load (parse) | Render | Max channel delta | Px over tol | Verdict | Note |');
   lines.push('|---|---|---|---|---|---|---|');
@@ -340,23 +462,59 @@ async function writeResults(results) {
   }
   lines.push('');
 
-  lines.push('## Mode 2 — in-browser compile (Slang sample path)');
-  lines.push('');
-  if (!results.mode2) {
-    lines.push('_Not run._');
-  } else if (!results.mode2.ran) {
-    lines.push(`_Did not run: ${results.mode2.note}_`);
-  } else if (results.mode2.ok) {
-    lines.push(`Compiled in-browser and rendered (nonBlack ${results.mode2.nonBlack}/${results.mode2.total} px). **${results.mode2.note}** — the faithful proof is Phase 23 M3 (DXC→WASM), which reruns this same harness.`);
+  if (IS_FAITHFUL) {
+    const f = results.faithful ?? [];
+    lines.push('## Faithful mode-2 — in-browser compile via DXC→WASM + render (Gate G2)');
+    lines.push('');
+    lines.push('Each shader compiled **entirely in-browser** (faithful DXC→WASM → SPIRV-Cross WASM → managed reflect/write → `.mgfx`), then `new Effect(gd, bytes)` in KNI WebGL, rendered, and pixel-compared against `references-sd/`.');
+    lines.push('');
+    lines.push('| Shader | In-browser compile | Render | Max channel delta | Px over tol | Verdict | Note |');
+    lines.push('|---|---|---|---|---|---|---|');
+    for (const r of f) {
+      const comp = r.compiled ? 'OK' : `FAIL: ${r.compileError ?? r.note}`;
+      const ren = r.rendered ? 'OK' : '—';
+      const md = r.maxDelta === null ? '—' : String(r.maxDelta);
+      const dp = r.differentPixels === null ? '—' : `${r.differentPixels}/${r.totalPixels}`;
+      lines.push(`| ${r.name} | ${comp} | ${ren} | ${md} | ${dp} | ${r.verdict} | ${r.note || ''} |`);
+    }
+    lines.push('');
+    const fPass = f.filter((r) => r.verdict.startsWith('PASS')).length;
+    const fCompiled = f.filter((r) => r.compiled).length;
+    lines.push('### Gate G2 verdict');
+    lines.push('');
+    if (f.length === SHADERS.length && fPass === f.length && fCompiled === f.length) {
+      lines.push(`**PASS — ${fPass}/${f.length} shaders compiled in-browser via the FAITHFUL DXC→WASM frontend AND rendered pixel-equivalent in real headless KNI WebGL.**`);
+      lines.push('');
+      lines.push('This proves the 17.4 MB `dxcompiler.wasm` LOADS + RUNS in a real browser and the end-to-end faithful in-browser pipeline renders correctly — the M3 Definition of Done. **Pixelated** (the roundEven→floor WebGL1 fix) and **Dissolve** (slot-1 sampler) are included and pass.');
+    } else {
+      lines.push(`**INCOMPLETE — ${fCompiled}/${f.length} compiled in-browser, ${fPass}/${f.length} rendered within tolerance.** Failures:`);
+      for (const r of f.filter((x) => !x.verdict.startsWith('PASS'))) {
+        const kind = !r.compiled ? 'COMPILE' : (!r.rendered ? 'RENDER' : 'TOLERANCE');
+        lines.push(`- **${r.name}** (${kind}): ${r.compileError ?? r.note}`);
+      }
+    }
+    lines.push('');
   } else {
-    lines.push(`Compile/apply failed: \`${results.mode2.error}\`. **${results.mode2.note}.** (Mode 2 is explicitly out of this phase's Definition of Done.)`);
+    lines.push('## Mode 2 — in-browser compile (Slang sample path)');
+    lines.push('');
+    if (!results.mode2) {
+      lines.push('_Not run._');
+    } else if (!results.mode2.ran) {
+      lines.push(`_Did not run: ${results.mode2.note}_`);
+    } else if (results.mode2.ok) {
+      lines.push(`Compiled in-browser and rendered (nonBlack ${results.mode2.nonBlack}/${results.mode2.total} px). **${results.mode2.note}** — the faithful proof is Phase 23 M3 (DXC→WASM), which reruns this same harness.`);
+    } else {
+      lines.push(`Compile/apply failed: \`${results.mode2.error}\`. **${results.mode2.note}.** (Mode 2 is explicitly out of this phase's Definition of Done.)`);
+    }
   }
   lines.push('');
-  const refRel = IS_SD ? 'references-sd' : 'references';
-  const capRel = IS_SD ? 'captures-sd' : 'captures';
-  const diffRel = IS_SD ? 'diffs-sd' : 'diffs';
-  const prepCmd = IS_SD ? 'node publish-sample-sd.mjs' : 'node publish-sample.mjs';
-  const runCmd = IS_SD ? 'node run-harness.mjs --corpus=sd' : 'node run-harness.mjs';
+  const refRel = (IS_SD || IS_FAITHFUL) ? 'references-sd' : 'references';
+  const capRel = IS_FAITHFUL ? 'captures-faithful' : (IS_SD ? 'captures-sd' : 'captures');
+  const diffRel = IS_FAITHFUL ? 'diffs-faithful' : (IS_SD ? 'diffs-sd' : 'diffs');
+  const prepCmd = IS_FAITHFUL ? 'node publish-sample-faithful.mjs'
+    : (IS_SD ? 'node publish-sample-sd.mjs' : 'node publish-sample.mjs');
+  const runCmd = IS_FAITHFUL ? 'node run-harness.mjs --corpus=faithful'
+    : (IS_SD ? 'node run-harness.mjs --corpus=sd' : 'node run-harness.mjs');
   lines.push('## Artifacts');
   lines.push(`- \`${refRel}/*.png\` — desktop DesktopGL renders of the same bytes (RefRenderer).`);
   lines.push(`- \`${capRel}/*.png\` — headless KNI WebGL canvas readbacks.`);

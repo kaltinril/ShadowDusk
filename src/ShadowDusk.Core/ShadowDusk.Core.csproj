@@ -10,4 +10,8 @@
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <Description>ShadowDusk core types (IShaderCompiler, Result, ShaderError, CompilerOptions, IR, SPIR-V reflection). Part of the ShadowDusk.Compiler cross-platform MonoGame/KNI shader compiler.</Description>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- Expose internal helpers (e.g. ManagedMd5) to the unit tests. -->
+    <InternalsVisibleTo Include="ShadowDusk.Core.Tests" />
+  </ItemGroup>
 </Project>

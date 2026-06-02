@@ -12,5 +12,12 @@ package-lock.json
 captures-sd/
 diffs-sd/
 
+# FAITHFUL in-browser-compile render proof (Phase 23 M3, --corpus=faithful).
+# Regenerate with: node publish-sample-faithful.mjs && node run-harness.mjs --corpus=faithful
+# (reuses references-sd/; RESULTS-FAITHFUL.md IS committed — the M3 deliverable.)
+.publish-faithful/
+captures-faithful/
+diffs-faithful/
+
 # references[-sd]/*.png ARE committed: small, deterministic desktop renders that
 # the harness diffs against. RESULTS[-SD].md IS committed: the Task-1c deliverable.
