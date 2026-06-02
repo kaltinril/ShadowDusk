@@ -98,6 +98,75 @@ public partial class Index
         await LoadCorpusAsync(_selected);
     }
 
+    /// <summary>
+    /// Phase 24 headless-test entry point. Loads a named corpus shader (mode 1)
+    /// deterministically and returns <c>null</c> on success or the human error
+    /// string from KNI's <c>new Effect(gd, bytes)</c> path. The Playwright
+    /// harness calls this via <c>DotNet.invokeMethodAsync</c>, then waits a few
+    /// frames and reads the canvas. Only callable explicitly; the normal UI path
+    /// is untouched.
+    /// </summary>
+    [JSInvokable]
+    public async Task<string?> TestLoadCorpus(string name)
+    {
+        if (!_ready || _game is null)
+            return "game not ready";
+
+        var bytes = await TryGetBytesAsync($"shaders/OpenGL/{name}.mgfx");
+        if (bytes is null)
+            return $"could not fetch shaders/OpenGL/{name}.mgfx";
+
+        var err = _game.ApplyEffect(bytes);
+        _selected = name;
+        if (err is null)
+        {
+            _status = $"Loaded sample: {name} (mode 1)";
+            _statusIsError = false;
+        }
+        else
+        {
+            SetError($"KNI could not load {name}.mgfx: {err}");
+        }
+        StateHasChanged();
+        return err;
+    }
+
+    /// <summary>Phase 24 headless-test entry point for mode 2 (Slang sample path).</summary>
+    [JSInvokable]
+    public async Task<string?> TestCompileAndApply(string source)
+    {
+        if (!_ready || _game is null)
+            return "game not ready";
+        if (!_jsBackendsRegistered)
+            return $"backends not registered: {_jsRegisterError}";
+
+        try
+        {
+            var options = new CompilerOptions
+            {
+                Target = PlatformTarget.OpenGL,
+                SourceFileName = "fiddle.fx",
+            };
+            var result = await _compiler.CompileAsync(source, options);
+            if (result.IsFailure)
+                return string.Join(" | ",
+                    System.Linq.Enumerable.Select(result.Error, d => d.FxcFormattedMessage));
+
+            var err = _game.ApplyEffect(result.Value.Data);
+            if (err is null)
+            {
+                _status = "Compiled in-browser and applied (mode 2).";
+                _statusIsError = false;
+                StateHasChanged();
+            }
+            return err;
+        }
+        catch (Exception ex)
+        {
+            return ex.Message;
+        }
+    }
+
     /// <summary>Mode 1: load a precompiled <c>.mgfx</c> and show its source.</summary>
     private async Task LoadCorpusAsync(string name)
     {

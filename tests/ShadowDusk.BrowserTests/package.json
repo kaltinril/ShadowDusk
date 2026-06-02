@@ -1,0 +1,15 @@
+{
+  "name": "shadowdusk-browser-tests",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Phase 24 — headless-browser render validation of ShadowDusk .mgfx in real KNI WebGL.",
+  "scripts": {
+    "test": "node run-harness.mjs",
+    "probe": "node probe-readback.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.60.0",
+    "pngjs": "^7.0.0"
+  }
+}

@@ -21,6 +21,74 @@
         <a class="dismiss">x</a>
     </div>
 
+    <!--
+        Phase 24 headless-render harness hook (gated behind ?test=<size>).
+        KNI's WebGL context does NOT request preserveDrawingBuffer, so after a
+        frame is presented the drawing buffer is cleared and a Playwright
+        screenshot / readback of the canvas comes back all-black. When ?test is
+        present we wrap getContext to force preserveDrawingBuffer:true so the
+        last rendered frame survives for pixel readback, and we remember the GL
+        context so __sd_readback() can read it directly. Fully additive: with no
+        ?test query the normal interactive app is untouched.
+    -->
+    <script>
+        window.__sdTest = (function () {
+            var params = new URLSearchParams(window.location.search);
+            var raw = params.get('test');
+            if (raw === null) return null;
+            var size = parseInt(raw, 10);
+            if (!Number.isFinite(size) || size <= 0) size = 512;
+
+            var state = { size: size, gl: null };
+
+            var origGetContext = HTMLCanvasElement.prototype.getContext;
+            HTMLCanvasElement.prototype.getContext = function (type, attrs) {
+                if (type === 'webgl' || type === 'webgl2' ||
+                    type === 'experimental-webgl') {
+                    attrs = attrs || {};
+                    attrs.preserveDrawingBuffer = true;
+                    var ctx = origGetContext.call(this, type, attrs);
+                    state.gl = ctx;          // last WebGL context KNI created
+                    return ctx;
+                }
+                return origGetContext.call(this, type, attrs);
+            };
+
+            return state;
+        })();
+
+        // Read the current WebGL drawing buffer as RGBA8 (row-major, top-left
+        // origin to match desktop PNGs) and return a base64 string the test can
+        // decode. Returns null if no context yet. WebGL readPixels origin is
+        // bottom-left, so we vertically flip into the result.
+        window.__sd_readback = function () {
+            var t = window.__sdTest;
+            if (!t || !t.gl) return null;
+            var gl = t.gl;
+            var w = gl.drawingBufferWidth;
+            var h = gl.drawingBufferHeight;
+            if (!w || !h) return null;
+            var src = new Uint8Array(w * h * 4);
+            gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, src);
+            // Flip vertically into row-major top-left.
+            var out = new Uint8Array(w * h * 4);
+            var rowBytes = w * 4;
+            for (var y = 0; y < h; y++) {
+                var srcRow = (h - 1 - y) * rowBytes;
+                var dstRow = y * rowBytes;
+                out.set(src.subarray(srcRow, srcRow + rowBytes), dstRow);
+            }
+            // base64-encode (chunked to avoid call-stack limits).
+            var binary = '';
+            var CH = 0x8000;
+            for (var i = 0; i < out.length; i += CH) {
+                binary += String.fromCharCode.apply(
+                    null, out.subarray(i, Math.min(i + CH, out.length)));
+            }
+            return { w: w, h: h, data: btoa(binary) };
+        };
+    </script>
+
     <script src="_framework/blazor.webassembly.js" autostart="false"></script>
     <script type="module">
         // Brotli static decompression is disabled (the dev server serves
@@ -54,11 +122,19 @@
         window.initRenderJS = (instance) => {
             window.theInstance = instance;
 
-            // Size the canvas to its holder before the game boots.
+            // Size the canvas to its holder before the game boots. In test
+            // mode (?test=<size>) pin a fixed square so the headless capture and
+            // the desktop reference share an exact resolution.
             var canvas = document.getElementById('theCanvas');
             var holder = document.getElementById('canvasHolder');
-            canvas.width = holder.clientWidth;
-            canvas.height = holder.clientHeight;
+            if (window.__sdTest) {
+                var s = window.__sdTest.size;
+                canvas.width = s;
+                canvas.height = s;
+            } else {
+                canvas.width = holder.clientWidth;
+                canvas.height = holder.clientHeight;
+            }
             canvas.addEventListener("contextmenu", e => e.preventDefault());
 
             // Begin the game loop.
