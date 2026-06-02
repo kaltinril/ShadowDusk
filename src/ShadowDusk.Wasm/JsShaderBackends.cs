@@ -34,19 +34,30 @@ internal sealed partial class JsDxcShaderCompiler : IDxcShaderCompiler
             request.Macros,
             request.Options);
 
-        return CompileCoreAsync(request, arguments.ToArray());
+        return CompileCoreAsync(request, arguments.ToArray(), cancellationToken);
     }
 
     private static async Task<Result<PlatformBlob, ShaderError>> CompileCoreAsync(
         DxcCompileRequest request,
-        string[] arguments)
+        string[] arguments,
+        CancellationToken cancellationToken)
     {
         try
         {
-            // The compile JS function (compileToSpirv) is SYNCHRONOUS, but its WASM
-            // backend (slang-wasm) loads asynchronously and lazily. Await the one-time
-            // load here before the synchronous compile so the heavy ~21 MB download is
-            // NOT forced at page init (keeping the mode-1 boot instant). Idempotent.
+            // Self-register BOTH [JSImport] modules (shadowdusk-dxc and
+            // shadowdusk-spirv-cross) from the package's own _content/ShadowDusk.Wasm/
+            // static web assets BEFORE the first [JSImport] call. This is the zero-
+            // consumer-wiring core of M1: the consumer adds only a PackageReference and
+            // wires nothing. Idempotent; registering does NOT download the heavy
+            // dxcompiler.wasm. We register the spirv-cross module here too (the DXC
+            // stage always runs before the synchronous SPIRV-Cross transpile in the
+            // pipeline) so that synchronous [JSImport] never hits an unregistered module.
+            await WasmModuleRegistration.EnsureRegisteredAsync(cancellationToken).ConfigureAwait(false);
+
+            // The compile JS function (compileToSpirv) is SYNCHRONOUS, but the faithful
+            // DXC WASM backend loads asynchronously and lazily. Await the one-time load
+            // here before the synchronous compile so the heavy ~17.4 MB download is NOT
+            // forced at page init (keeping the mode-1 boot instant). Idempotent.
             await DxcInterop.EnsureReadyAsync().ConfigureAwait(false);
 
             byte[] spirv = DxcInterop.CompileToSpirv(request.HlslSource, arguments);
@@ -109,19 +120,21 @@ internal sealed partial class JsSpirvToGlslTranspiler : ISpirvToGlslTranspiler
 }
 
 /// <summary>
-/// <c>[JSImport]</c> bindings into the host-provided DXC JavaScript module.
-/// The host must register a module named <c>shadowdusk-dxc</c> exporting
-/// <c>compileToSpirv(string hlsl, string[] args) =&gt; Uint8Array</c>.
+/// <c>[JSImport]</c> bindings into the faithful DXC JavaScript module. The module
+/// (<c>shadowdusk-dxc</c>, the faithful pinned DXC→WASM frontend) is self-registered by
+/// <see cref="WasmModuleRegistration"/> from the package's own
+/// <c>_content/ShadowDusk.Wasm/</c> static web assets — the consumer wires nothing. It
+/// exports <c>compileToSpirv(string hlsl, string[] args) =&gt; Uint8Array</c>.
 /// </summary>
 [SupportedOSPlatform("browser")]
 internal static partial class DxcInterop
 {
     /// <summary>
-    /// Lazily loads and initializes the WASM HLSL→SPIR-V backend (slang-wasm). The
-    /// host must <c>await</c> this once before the first <see cref="CompileToSpirv"/>;
-    /// it is idempotent and resolves immediately once loaded. Awaiting it here (rather
-    /// than blocking the module's evaluation) keeps the ~21 MB WASM off the page-init
-    /// critical path so the mode-1 render boots instantly.
+    /// Lazily loads and initializes the faithful WASM HLSL→SPIR-V backend (pinned
+    /// DXC→WASM). The host must <c>await</c> this once before the first
+    /// <see cref="CompileToSpirv"/>; it is idempotent and resolves immediately once
+    /// loaded. Awaiting it here (rather than blocking the module's evaluation) keeps the
+    /// ~17.4 MB WASM off the page-init critical path so the mode-1 render boots instantly.
     /// JS contract: <c>ensureReady(): Promise&lt;void&gt;</c> (rejects on load failure).
     /// </summary>
     [JSImport("ensureReady", "shadowdusk-dxc")]
@@ -138,9 +151,11 @@ internal static partial class DxcInterop
 }
 
 /// <summary>
-/// <c>[JSImport]</c> bindings into the host-provided SPIRV-Cross JavaScript module.
-/// The host must register a module named <c>shadowdusk-spirv-cross</c> exporting
-/// <c>transpileToGlsl(spirv, flipVertexY, fixupDepthConvention, glslVersion, glslEs, vulkanSemantics) =&gt; string</c>.
+/// <c>[JSImport]</c> bindings into the SPIRV-Cross JavaScript module. The module
+/// (<c>shadowdusk-spirv-cross</c>) is self-registered by
+/// <see cref="WasmModuleRegistration"/> from the package's own
+/// <c>_content/ShadowDusk.Wasm/</c> static web assets — the consumer wires nothing. It
+/// exports <c>transpileToGlsl(spirv, flipVertexY, fixupDepthConvention, glslVersion, glslEs, vulkanSemantics) =&gt; string</c>.
 /// </summary>
 [SupportedOSPlatform("browser")]
 internal static partial class SpirvCrossInterop

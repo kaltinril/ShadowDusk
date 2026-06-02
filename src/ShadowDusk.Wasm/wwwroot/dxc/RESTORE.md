@@ -35,10 +35,21 @@ Copy-Item .wasm-build/dxc-wasm-out/dxcompiler.wasm src/ShadowDusk.Wasm/wwwroot/d
   LOADS + RUNS in a real headless browser and the end-to-end faithful pipeline
   renders 10/10 in real KNI WebGL.
 
-## M1 (next agent — packaging)
+## M1 — packaging (DONE)
 
-M1 wires this into `ShadowDusk.Wasm`'s packaged static web assets so a consumer
-gets it transitively (auto-served at `_content/ShadowDusk.Wasm/dxc/…`) and
-`ShadowDusk.Wasm` self-registers `shadowdusk-dxc` against its own base path — no
-consumer `wwwroot`/`JSHost` wiring. The restore step above must run before pack so
-the `.wasm` is present to be packaged.
+M1 wired this into `ShadowDusk.Wasm`'s packaged static web assets:
+
+- `ShadowDusk.Wasm.csproj` uses the **Razor SDK** (`Microsoft.NET.Sdk.Razor`) so this
+  `wwwroot/` ships as Blazor static web assets, auto-served by a consumer at
+  `_content/ShadowDusk.Wasm/dxc/…`.
+- `ShadowDusk.Wasm` **self-registers** `shadowdusk-dxc` (and `shadowdusk-spirv-cross`)
+  via `JSHost.ImportAsync` against the relative URL
+  `../_content/ShadowDusk.Wasm/<file>` (resolved from `_framework/` to the app base),
+  inside the compile path (`WasmModuleRegistration.EnsureRegisteredAsync`) — so a
+  consumer adds ONLY a `PackageReference` and wires nothing.
+- `tools/restore.*` (`Restore-DxcWasm` / `restore_dxc_wasm`) copies the built
+  `.wasm-build/dxc-wasm-out/dxcompiler.wasm` into this directory before build/pack;
+  the csproj's `VerifyDxcWasmPresent` target fails the build loudly if it is missing.
+  This 17.4 MB `.wasm` stays gitignored.
+
+The restore step must run before `pack` so the `.wasm` is present to be packaged.

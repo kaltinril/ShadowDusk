@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
-using System.Runtime.InteropServices.JavaScript;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
@@ -13,8 +12,6 @@ namespace ShadowDusk.ShaderFiddle.Web.Pages;
 
 public partial class Index
 {
-    [Inject] private NavigationManager Nav { get; set; } = default!;
-
     private ShaderFiddleGame? _game;
     private readonly WasmShaderCompiler _compiler = new();
 
@@ -27,8 +24,11 @@ public partial class Index
     private bool _compiling;
     private string? _status;
     private bool _statusIsError;
-    private bool _jsBackendsRegistered;   // shadowdusk-dxc / -spirv-cross [JSImport] modules registered
-    private string? _jsRegisterError;     // why registration failed, if it did
+    // The ShadowDusk.Wasm package self-registers its faithful DXC / SPIRV-Cross
+    // [JSImport] modules lazily on first compile (no page-level wiring). This flag is
+    // kept only so the headless mode-2 entry point can short-circuit before the game
+    // boots; it is set true once init completes.
+    private bool _jsBackendsRegistered;
     private readonly List<string> _errors = new();
 
     protected override async Task OnInitializedAsync()
@@ -39,27 +39,17 @@ public partial class Index
         _source = await TryGetStringAsync($"shaders/src/{WebShaderInputs.DefaultShader}.fx")
                   ?? "// could not load default shader source";
 
-        // Register the JS modules that satisfy ShadowDusk.Wasm's [JSImport]
-        // contracts (shadowdusk-dxc / shadowdusk-spirv-cross). This MUST happen
-        // before any CompileAsync: invoking a [JSImport] whose module is not
-        // registered aborts the .NET WASM runtime (crashing the page). The
-        // shadowdusk-dxc module is a REAL HLSL->SPIR-V compiler (Slang WASM); it
-        // lazy-loads on first compile (JsDxcShaderCompiler awaits its ensureReady),
-        // so registering here does NOT download the ~21 MB WASM at page init. Any
-        // backend failure throws a catchable error surfaced as a clean diagnostic.
-        try
-        {
-            // JSHost.ImportAsync resolves a relative URL against _framework/, so
-            // use an app-root-absolute URL (BaseUri) to reach the wwwroot files.
-            await JSHost.ImportAsync("shadowdusk-dxc", $"{Nav.BaseUri}shadowdusk-dxc.js");
-            await JSHost.ImportAsync("shadowdusk-spirv-cross", $"{Nav.BaseUri}shadowdusk-spirv-cross.js");
-            _jsBackendsRegistered = true;
-        }
-        catch (Exception ex)
-        {
-            _jsBackendsRegistered = false;
-            _jsRegisterError = ex.Message;
-        }
+        // Phase 23 M1 — ZERO consumer wiring. The ShadowDusk.Wasm PACKAGE now
+        // self-registers BOTH [JSImport] modules (shadowdusk-dxc /
+        // shadowdusk-spirv-cross) from its own _content/ShadowDusk.Wasm/ static web
+        // assets, lazily on the first CompileAsync (see WasmModuleRegistration). This
+        // sample no longer hand-wires JSHost.ImportAsync — it just calls the API,
+        // exactly like a third-party consumer. The faithful DXC->WASM module is the
+        // product frontend served from the package; the Slang shim files remain in
+        // this sample's wwwroot/ for reference only and are never registered.
+        // (Headless faithful proof: publish-sample-faithful.mjs overlays the served
+        // package asset with the faithful binaries before the run.)
+        _jsBackendsRegistered = true;
     }
 
     protected override void OnAfterRender(bool firstRender)
@@ -131,14 +121,17 @@ public partial class Index
         return err;
     }
 
-    /// <summary>Phase 24 headless-test entry point for mode 2 (Slang sample path).</summary>
+    /// <summary>
+    /// Phase 24 headless-test entry point for mode 2 (in-browser compile). Uses the
+    /// package-self-registered faithful DXC + SPIRV-Cross WASM modules.
+    /// </summary>
     [JSInvokable]
     public async Task<string?> TestCompileAndApply(string source)
     {
         if (!_ready || _game is null)
             return "game not ready";
         if (!_jsBackendsRegistered)
-            return $"backends not registered: {_jsRegisterError}";
+            return "backends not registered (init not complete)";
 
         try
         {
@@ -196,8 +189,9 @@ public partial class Index
 
     /// <summary>
     /// Mode 2: compile the textarea source entirely in-browser via
-    /// <see cref="WasmShaderCompiler"/> and apply the result. Until Phase 100
-    /// wires the WASM DXC/SPIRV-Cross modules, this surfaces the real stub error.
+    /// <see cref="WasmShaderCompiler"/> and apply the result. The package
+    /// self-registers its faithful DXC + SPIRV-Cross WASM modules on first compile,
+    /// so any failure here is a real compile/load error surfaced verbatim.
     /// </summary>
     private async Task CompileAndApplyAsync()
     {
@@ -207,12 +201,11 @@ public partial class Index
         _statusIsError = false;
         StateHasChanged();
 
-        // Never invoke the [JSImport] path if module registration failed —
-        // calling an unregistered module aborts the WASM runtime.
+        // Don't attempt a compile before init has completed (the package
+        // self-registers its WASM modules lazily on the first CompileAsync).
         if (!_jsBackendsRegistered)
         {
-            _errors.Add($"shadowdusk-dxc / shadowdusk-spirv-cross JS modules failed to register: {_jsRegisterError}");
-            SetError("In-browser compile backend unavailable. Last good render kept.");
+            SetError("In-browser compile backend not ready yet. Last good render kept.");
             _compiling = false;
             StateHasChanged();
             return;
@@ -250,11 +243,11 @@ public partial class Index
         }
         catch (Exception ex)
         {
-            // The expected path today: JsDxcShaderCompiler's [JSImport] throws
-            // because the WASM DXC module isn't wired (Phase 100). Surface it
-            // verbatim instead of faking success.
+            // Surface any in-browser compile/backend failure verbatim instead of
+            // faking success. With the package self-registering its faithful WASM
+            // modules, this path now only fires on a genuine error.
             _errors.Add(ex.Message);
-            SetError("In-browser compile unavailable (Phase 19 mode 2 → Phase 100). Last good render kept.");
+            SetError("In-browser compile failed. Last good render kept.");
         }
         finally
         {

@@ -15,11 +15,15 @@
 //
 // Steps:
 //   (1) publish samples/ShaderFiddle.Web into ./.publish-faithful;
-//   (2) OVERWRITE the published wwwroot/shadowdusk-dxc.js (Slang sample shim) with
-//       the FAITHFUL product shim (src/ShadowDusk.Wasm/wwwroot/shadowdusk-dxc.js) and
-//       drop the faithful dxcompiler.{js,wasm} into wwwroot/dxc/ — this is what makes
-//       the "shadowdusk-dxc" [JSImport] module resolve to the FAITHFUL frontend for
-//       the proof run. The Slang shim + wwwroot/slang/ are left intact (sample-only).
+//   (2) Phase 23 M1: the sample now consumes the ShadowDusk.Wasm PACKAGE, which
+//       self-registers its faithful "shadowdusk-dxc" module from the package's static
+//       web assets at _content/ShadowDusk.Wasm/ (NOT the sample's own wwwroot root).
+//       The package wwwroot already ships the FAITHFUL shim + dxcompiler.{js,wasm}, so
+//       after publish those are already at wwwroot/_content/ShadowDusk.Wasm/. This step
+//       re-asserts them from src/ShadowDusk.Wasm/wwwroot/ (idempotent) so the proof
+//       definitively runs the SHIPPING faithful files even if the restored .wasm
+//       differed. The Slang shim at wwwroot/shadowdusk-dxc.js is left intact but is
+//       never registered (sample-only).
 //   (3) ALSO overwrite the served OpenGL .mgfx with ShadowDusk's own bytes so mode-1
 //       and the references-sd/ comparison stay same-source (mirrors publish-sample-sd).
 //
@@ -54,28 +58,38 @@ const wwwroot = path.join(publishOut, 'wwwroot');
 const sampleCsproj = path.join('samples', 'ShaderFiddle.Web', 'ShaderFiddle.Web.csproj');
 run('dotnet', ['publish', '-c', 'Release', sampleCsproj, '-o', publishOut]);
 
-// 2. Swap the "shadowdusk-dxc" module to the FAITHFUL product shim + binaries.
-//    The product home is src/ShadowDusk.Wasm/wwwroot/ (where M1 will package these
-//    as static web assets). We copy from there so the proof runs the SHIPPING files.
+// 2. Re-assert the FAITHFUL product shim + binaries into the package's served static
+//    web assets at _content/ShadowDusk.Wasm/ — the exact path ShadowDusk.Wasm
+//    self-registers against (WasmModuleRegistration: ../_content/ShadowDusk.Wasm/<f>).
+//    The product home is src/ShadowDusk.Wasm/wwwroot/. We also drop the SPIRV-Cross
+//    module (the package now ships it too).
 const productWwwroot = path.join(repoRoot, 'src', 'ShadowDusk.Wasm', 'wwwroot');
 const faithShim = path.join(productWwwroot, 'shadowdusk-dxc.js');
 const faithDxcJs = path.join(productWwwroot, 'dxc', 'dxcompiler.js');
 const faithDxcWasm = path.join(productWwwroot, 'dxc', 'dxcompiler.wasm');
-for (const f of [faithShim, faithDxcJs, faithDxcWasm]) {
+const spvShim = path.join(productWwwroot, 'shadowdusk-spirv-cross.js');
+const spvJs = path.join(productWwwroot, 'spirv-cross', 'spirv-cross.js');
+const spvWasm = path.join(productWwwroot, 'spirv-cross', 'spirv-cross.wasm');
+for (const f of [faithShim, faithDxcJs, faithDxcWasm, spvShim, spvJs, spvWasm]) {
   if (!existsSync(f)) {
     console.error(`Faithful frontend file missing: ${f}`);
-    console.error('Build/copy first: cp .wasm-build/dxc-wasm-out/dxcompiler.{js,wasm} src/ShadowDusk.Wasm/wwwroot/dxc/');
+    console.error('Build/copy first: run tools/restore.ps1 (copies dxcompiler.wasm into src/ShadowDusk.Wasm/wwwroot/dxc/)');
     process.exit(1);
   }
 }
-console.log('\n[publish-sample-faithful] swapping shadowdusk-dxc -> FAITHFUL DXC->WASM shim…');
-copyFileSync(faithShim, path.join(wwwroot, 'shadowdusk-dxc.js'));            // overwrite Slang shim
-const dxcDir = path.join(wwwroot, 'dxc');
-mkdirSync(dxcDir, { recursive: true });
-copyFileSync(faithDxcJs, path.join(dxcDir, 'dxcompiler.js'));
-copyFileSync(faithDxcWasm, path.join(dxcDir, 'dxcompiler.wasm'));
-console.log('  served wwwroot/shadowdusk-dxc.js  = FAITHFUL shim');
-console.log('  served wwwroot/dxc/dxcompiler.{js,wasm} = faithful DXC->WASM module (17.4 MB)');
+const contentRoot = path.join(wwwroot, '_content', 'ShadowDusk.Wasm');
+console.log('\n[publish-sample-faithful] re-asserting FAITHFUL frontend into _content/ShadowDusk.Wasm/…');
+mkdirSync(path.join(contentRoot, 'dxc'), { recursive: true });
+mkdirSync(path.join(contentRoot, 'spirv-cross'), { recursive: true });
+copyFileSync(faithShim, path.join(contentRoot, 'shadowdusk-dxc.js'));
+copyFileSync(faithDxcJs, path.join(contentRoot, 'dxc', 'dxcompiler.js'));
+copyFileSync(faithDxcWasm, path.join(contentRoot, 'dxc', 'dxcompiler.wasm'));
+copyFileSync(spvShim, path.join(contentRoot, 'shadowdusk-spirv-cross.js'));
+copyFileSync(spvJs, path.join(contentRoot, 'spirv-cross', 'spirv-cross.js'));
+copyFileSync(spvWasm, path.join(contentRoot, 'spirv-cross', 'spirv-cross.wasm'));
+console.log('  served _content/ShadowDusk.Wasm/shadowdusk-dxc.js       = FAITHFUL shim');
+console.log('  served _content/ShadowDusk.Wasm/dxc/dxcompiler.{js,wasm} = faithful DXC->WASM (17.4 MB)');
+console.log('  served _content/ShadowDusk.Wasm/shadowdusk-spirv-cross.js + spirv-cross/ = SPIRV-Cross WASM');
 
 // 3. Overwrite served OpenGL .mgfx with ShadowDusk's OWN bytes (mode-1 baseline +
 //    keeps the references-sd/ comparison same-source).

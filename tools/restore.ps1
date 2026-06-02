@@ -100,8 +100,32 @@ function Restore-DxcWasm {
     $DxcWasmWasm = Join-Path $DxcWasmDir 'dxcompiler.wasm'
     $DxcWasmJs   = Join-Path $DxcWasmDir 'dxcompiler.js'
 
+    # M1 (Phase 23) destination: the faithful DXC->WASM module must be present in the
+    # ShadowDusk.Wasm package's packaged wwwroot/dxc/ so it ships as a Blazor static
+    # web asset (served at _content/ShadowDusk.Wasm/dxc/). The 17.4 MB .wasm is
+    # gitignored (see .gitignore) and copied here from the built artifact; the small
+    # shadowdusk-dxc.js shim + dxc/dxcompiler.js loader are committed.
+    $PkgDxcDir   = Join-Path $RepoRoot 'src' 'ShadowDusk.Wasm' 'wwwroot' 'dxc'
+    $PkgDxcWasm  = Join-Path $PkgDxcDir 'dxcompiler.wasm'
+
     if ((Test-Path $DxcWasmWasm) -and (Test-Path $DxcWasmJs)) {
-        Write-Host "restore.ps1: DXC->WASM (dxcompiler.{js,wasm}) present — OK"
+        Write-Host "restore.ps1: DXC->WASM (dxcompiler.{js,wasm}) present in .wasm-build — OK"
+        # Copy the built .wasm into the package wwwroot for pack if it's missing or stale.
+        if (-not (Test-Path $PkgDxcWasm) -or
+            ((Get-Item $DxcWasmWasm).Length -ne (Get-Item $PkgDxcWasm).Length)) {
+            New-Item -ItemType Directory -Force -Path $PkgDxcDir | Out-Null
+            Copy-Item -Force $DxcWasmWasm $PkgDxcWasm
+            Write-Host "restore.ps1: copied dxcompiler.wasm -> src/ShadowDusk.Wasm/wwwroot/dxc/ (for pack)"
+        } else {
+            Write-Host "restore.ps1: src/ShadowDusk.Wasm/wwwroot/dxc/dxcompiler.wasm present — OK"
+        }
+        return
+    }
+
+    # No built artifact under .wasm-build — but the package wwwroot copy may already be
+    # populated (e.g. from a prior restore). If so, that's enough for build/pack.
+    if (Test-Path $PkgDxcWasm) {
+        Write-Host "restore.ps1: src/ShadowDusk.Wasm/wwwroot/dxc/dxcompiler.wasm present — OK (no .wasm-build source needed)"
         return
     }
 
@@ -158,11 +182,13 @@ Build recipe (faithful pinned DXC -> WebAssembly, emscripten 3.1.34 — the .NET
      WASM module matches it byte-for-byte over the corpus:
         dotnet run --project .wasm-build\dxc-corpus-probe -- <repoRoot> .wasm-build\corpus-spirv
         node .wasm-build\node-test-dxc-wasm.mjs
-  5. Output: .wasm-build/dxc-wasm-out/dxcompiler.{js,wasm}. Wiring it into the
-     ShadowDusk.Wasm packaged wwwroot is M1/M2 (NOT done here).
+  5. Output: .wasm-build/dxc-wasm-out/dxcompiler.{js,wasm}. This restore step (M1)
+     then copies dxcompiler.wasm into src/ShadowDusk.Wasm/wwwroot/dxc/ so it ships as a
+     packaged Blazor static web asset (served at _content/ShadowDusk.Wasm/dxc/). The
+     package wwwroot copy is gitignored too (see .gitignore).
 
-NOTE: dxcompiler.wasm is NOT committed (.gitignore ignores .wasm-build/). The full
-recipe + a build report are in .wasm-build/DXC-WASM-BUILD.md.
+NOTE: dxcompiler.wasm is NOT committed (.gitignore ignores both .wasm-build/ and the
+package wwwroot copy). The full recipe + a build report are in .wasm-build/DXC-WASM-BUILD.md.
 "@
 }
 

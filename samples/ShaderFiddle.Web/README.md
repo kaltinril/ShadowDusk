@@ -161,9 +161,9 @@ from the repo-root props (which force `net8.0`, central package management, and
 | `ShaderFiddleGame.cs` | KNI WebGL `Game`; cat + effect render path |
 | `WebShaderInputs.cs` | corpus list + by-name parameter values (ported) |
 | `wwwroot/index.html` | Blazor shell + KNI 8.0.11 JS shims + render loop |
-| `wwwroot/shadowdusk-dxc.js` | **host-side** ES module registered via `JSHost.ImportAsync` for `ShadowDusk.Wasm`'s `[JSImport("compileToSpirv"/"ensureReady","shadowdusk-dxc")]` contract. The **real** HLSL→SPIR-V compiler, backed by Slang WASM (`wwwroot/slang/`); `ensureReady()` lazy-loads it, `compileToSpirv(hlsl,args)` returns SPIR-V bytes. Throws on failure (→ SD1900). |
-| `wwwroot/slang/slang-wasm.{js,wasm,d.ts}` | Prebuilt **Slang v2026.10** WebAssembly compiler (HLSL→SPIR-V) + embind loader + TS types. Provenance & re-fetch recipe in `wwwroot/slang/RESTORE.md`. |
-| `wwwroot/shadowdusk-spirv-cross.js` | **host-side** ES module for the `[JSImport(...,"shadowdusk-spirv-cross")]` SPIR-V→GLSL contract (owned separately). Registering it (even when stubbed) is what makes a failure *graceful* — calling an **unregistered** `[JSImport]` module aborts the whole .NET WASM runtime and crashes the page. |
+| `wwwroot/shadowdusk-dxc.js` | **Sample-only Slang shim — NO LONGER REGISTERED.** Since Phase 23 M1 the `ShadowDusk.Wasm` package self-registers its own **faithful** DXC→WASM `shadowdusk-dxc` module from `_content/ShadowDusk.Wasm/`, so this sample wires nothing. This Slang-backed file is kept only as a reference of the prior substitute frontend (sample-only; never the product). |
+| `wwwroot/slang/slang-wasm.{js,wasm,d.ts}` | Prebuilt **Slang v2026.10** WebAssembly compiler (HLSL→SPIR-V) + embind loader + TS types — sample-only reference; not the product frontend. Provenance & re-fetch recipe in `wwwroot/slang/RESTORE.md`. |
+| `wwwroot/shadowdusk-spirv-cross.js` | Sample-only copy of the SPIR-V→GLSL shim. The product copy now ships in the `ShadowDusk.Wasm` package (`_content/ShadowDusk.Wasm/`) and is self-registered there; this sample copy is no longer registered. |
 | `wwwroot/cat.jpg` | the standard cat image |
 | `wwwroot/shaders/OpenGL/*.mgfx` | precompiled mode-1 corpus bytes |
 | `wwwroot/shaders/src/*.fx` | corpus sources shown in the editor |
