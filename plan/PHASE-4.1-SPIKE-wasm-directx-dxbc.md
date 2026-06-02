@@ -1,4 +1,8 @@
-# Research Spike — WASM + DirectX DXBC
+# Phase 4.1 — Research Spike: WASM + DirectX DXBC
+
+**Status:** Parked / far-future research spike. **Not on the near-term critical path** — it only matters for a KNI/browser game using the **DirectX** backend, whereas the browser story today is WebGL/OpenGL (Phases 22–24). Sequence it **after** the faithful OpenGL-in-WASM path (Phase 23) is done; it is the DXBC analogue of Phase 23's DXC→WASM build. **Owner decision pending** on whether browser-DirectX is a goal at all.
+
+**Relationship to Phase 23:** Phase 23 builds the faithful **DXC→WASM** frontend for the **OpenGL** (SPIR-V) path. This spike asks the parallel question for **DirectX** — getting a faithful **DXBC** producer (vkd3d-shader) into WASM. Same emscripten-to-`[JSImport]` mechanism, different native library. Neither uses a substitute compiler.
 
 ## Problem Statement
 
@@ -49,17 +53,11 @@ The WASM target already uses this pattern for DXC and SPIRV-Cross: both are comp
 
 ---
 
-### Option C — Server-side DXBC compilation relay
+### Option C — Server-side DXBC compilation relay — ❌ OUT OF BOUNDS
 
-The WASM client sends HLSL source to a lightweight server endpoint; the server runs the CLI version of ShadowDusk (which has full native P/Invoke access) and returns the compiled DXBC bytes.
+The WASM client sends HLSL source to a lightweight server endpoint; the server runs the CLI version of ShadowDusk and returns the compiled DXBC bytes.
 
-**Research questions:**
-1. Does the XNA Fiddle / KNI web use case already have a server component that could host this relay, or is fully in-browser compilation a hard requirement?
-2. What is the latency impact for interactive shader editing?
-3. Does this break the "no server roundtrip" design goal stated in the project overview?
-
-**Pros:** Trivially correct — the CLI path already works.  
-**Cons:** Requires a server; breaks the offline/serverless model.
+**Rejected — violates THE PURPOSE.** The product's differentiator is *self-contained, in-memory, no server roundtrip*. A server relay is "nothing but the library" turned into "the library plus a server you must run," and CLAUDE.md's success bar (Part 1: reach **at runtime, in-browser**, no server) explicitly excludes it. It is listed here only to be marked out of bounds — **do not pursue it**, even as a stopgap. The faithful in-browser answer is Option A (vkd3d-shader→WASM); if that is infeasible, browser-DirectX simply stays unsupported rather than becoming a client-server product.
 
 ---
 
@@ -91,9 +89,9 @@ A solution is acceptable if it meets all of the following:
 
 ## Next Steps
 
-1. Attempt an emscripten build of `vkd3d-shader` locally (Option A). Record build errors, patches required, and final binary size.
+1. Attempt an emscripten build of `vkd3d-shader` locally (Option A) — reuse Phase 23's emscripten 3.1.34 pin and `tools/restore.*` recipe pattern. Record build errors, patches required, and final binary size.
 2. Contact the KNI maintainers to clarify Option D viability.
-3. Determine whether XNA Fiddle requires fully in-browser compilation or can tolerate a server relay (Option C).
+3. ~~Determine whether a server relay is tolerable (Option C)~~ — **settled: it is out of bounds** (THE PURPOSE forbids a server roundtrip). No action.
 4. Update this document with findings and propose a path forward.
 
 ---
