@@ -36,6 +36,18 @@ public sealed record MonoGameGlslResult(
 /// </summary>
 public static class MonoGameGlslRewriter
 {
+    // Matches mgfxc/MojoShader's emitted precision header byte-for-byte. Guarded
+    // by `#ifdef GL_ES`, so desktop GLSL skips it entirely and runs at highp.
+    //
+    // NOTE (Phase 24 Dissolve investigation): mediump CAN flip data-dependent
+    // `discard`/tint decisions on boundary texels under real WebGL hardware, where
+    // `highp` would be the safer choice for precision-sensitive shaders. The
+    // Phase 24 headless harness (ANGLE/SwiftShader) could NOT confirm this — its
+    // software GL evaluates mediump and highp identically, so toggling this had
+    // zero observed effect. The Dissolve divergence found there was instead the
+    // unset slot-1 sampler state (see DISSOLVE-INVESTIGATION.md). Left at mediump
+    // to stay faithful to mgfxc; revisit (→ highp) only with real-WebGL-hardware
+    // evidence that a precision-sensitive shader needs it.
     private const string PrecisionHeader =
         "#ifdef GL_ES\n" +
         "precision mediump float;\n" +

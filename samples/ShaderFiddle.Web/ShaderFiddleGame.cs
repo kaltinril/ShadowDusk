@@ -115,6 +115,15 @@ public sealed class ShaderFiddleGame : Game
 
         if (_effect is not null)
         {
+            // Pin texture slot 1 (Dissolve's second texture, _dissolveTex) to a
+            // defined sampler state. SpriteBatch.Begin only sets slot 0; slot 1
+            // otherwise keeps the runtime default, which KNI WebGL and desktop
+            // DesktopGL resolve differently for the NPOT cat — that shifts the
+            // _dissolveTex sample and flips Dissolve's threshold-band tint in WebGL
+            // (Phase 24: Δ198/1.68% px -> Δ128/0.145% px after this pin; passes).
+            // See tests/ShadowDusk.BrowserTests/DISSOLVE-INVESTIGATION.md.
+            GraphicsDevice.SamplerStates[1] = SamplerState.LinearClamp;
+
             // Immediate applies each pass before the draw; Opaque so the result
             // is exactly the shader output (the cat is opaque; no blend bleed).
             _sb.Begin(SpriteSortMode.Immediate, BlendState.Opaque,

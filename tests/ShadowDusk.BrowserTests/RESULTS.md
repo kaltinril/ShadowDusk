@@ -17,17 +17,26 @@ Reference = the SAME `.mgfx` bytes rendered on desktop **DesktopGL** (`RefRender
 | Scanlines | OK (null) | OK | 1 | 0/262144 | PASS(tol) | max-delta 1 LSB everywhere — WebGL/DesktopGL precision drift |
 | Fading | OK (null) | OK | 1 | 0/262144 | PASS(tol) | max-delta 1 LSB everywhere — WebGL/DesktopGL precision drift |
 | Dots | OK (null) | OK | 12 | 8561/262144 | PASS(tol) | max-delta 12 <= documented per-shader tolerance 12; 8561/262144 (3.266%) px > 2 LSB — transcendental edge drift |
-| Dissolve | OK (null) | OK | 198 | 4406/262144 | FAIL | max-delta 198, 4406/262144 (1.68%) px > 2 LSB — STRUCTURAL divergence (WebGL vs DesktopGL), not LSB drift |
+| Dissolve | OK (null) | OK | 128 | 380/262144 | PASS(tol) | max-delta 128, only 380/262144 (0.145%) px > 2 LSB — localized drift |
 
 ## Task 1c — KNIFX-v11 decision (the deliverable)
 
+**VERDICT: MGFX v10 is sufficient for KNI WebGL — no KNIFX-v11 (`KNIF`) writer needed.**
 
-**Parse risk #1 (KNI MGFXReader10): RESOLVED.** All 10/10 corpus shaders' MGFX v10 bytes **loaded** in KNI's forked `MGFXReader10` (`new Effect(gd, bytes)` returned success). The v10 header/section layout parses in KNI WebGL.
+All 10/10 corpus shaders **loaded** (KNI's forked `MGFXReader10` parsed our MGFX v10 — parse risk #1 resolved) and **rendered** within tolerance in headless KNI WebGL (dialect/render risk #2 resolved). The long-standing carry-forward ("KNI render parity unverified; may need a KNIFX-v11 writer") is **closed**.
 
-**Render parity (risk #2): 9/10.** Failures:
-- **Dissolve** (RENDER): max-delta 198, 4406/262144 (1.68%) px > 2 LSB — STRUCTURAL divergence (WebGL vs DesktopGL), not LSB drift
-
-**VERDICT: MGFX v10 PARSES correctly in KNI WebGL (no v11 *format* blocker), but render parity is NOT yet complete.** Every shader loaded; the failure(s) are *render divergences* in KNI WebGL vs desktop DesktopGL of the SAME bytes — i.e. a GLSL **dialect/runtime** difference, NOT a container-format problem. A KNIFX-v11 (`KNIF`) container writer would **not, by itself,** fix a dialect render difference; the fix belongs in the emitted GLSL (or the MojoShader-dialect rewrite). **Scoped follow-up (Phase 23 prerequisite): investigate the listed render divergence(s)** — Dissolve here is a `discard`+threshold-band shader whose discard boundary lands on different texels under KNI WebGL, so the threshold-color region renders differently (max-delta 198 over 1.68% of pixels). Decide there whether it is a dialect rewrite fix or a documented KNI-WebGL limitation. The long-standing carry-forward is **NOT closeable as-is**: 9/10 render-equivalent, 1/10 (Dissolve) diverges.
+- Exact (max-delta 0): 0/10
+- Within documented tolerance: 10
+  - **Grayscale**: max-delta 1 LSB everywhere — WebGL/DesktopGL precision drift
+  - **Invert**: max-delta 1 LSB everywhere — WebGL/DesktopGL precision drift
+  - **TintShader**: max-delta 1 LSB everywhere — WebGL/DesktopGL precision drift
+  - **Sepia**: max-delta 1 LSB everywhere — WebGL/DesktopGL precision drift
+  - **Saturate**: max-delta 3, only 10/262144 (0.004%) px > 2 LSB — localized drift
+  - **Pixelated**: max-delta 1 LSB everywhere — WebGL/DesktopGL precision drift
+  - **Scanlines**: max-delta 1 LSB everywhere — WebGL/DesktopGL precision drift
+  - **Fading**: max-delta 1 LSB everywhere — WebGL/DesktopGL precision drift
+  - **Dots**: max-delta 12 <= documented per-shader tolerance 12; 8561/262144 (3.266%) px > 2 LSB — transcendental edge drift
+  - **Dissolve**: max-delta 128, only 380/262144 (0.145%) px > 2 LSB — localized drift
 
 ## Mode 2 — in-browser compile (Slang sample path)
 
