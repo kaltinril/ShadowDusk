@@ -135,6 +135,13 @@ sealed class RefGame : Game
 
             try { SetParams(effect, _cat); } catch { /* missing param must not abort */ }
 
+            // Pin texture slot 1 (Dissolve's second texture, _dissolveTex) to the
+            // same defined sampler state the browser sample now uses, so the
+            // WebGL-vs-DesktopGL comparison stays apples-to-apples. SpriteBatch.Begin
+            // only sets slot 0; an unset slot 1 defaults differently across the two
+            // runtimes for the NPOT cat. See DISSOLVE-INVESTIGATION.md.
+            GraphicsDevice.SamplerStates[1] = SamplerState.LinearClamp;
+
             _sb.Begin(SpriteSortMode.Immediate, BlendState.Opaque,
                 SamplerState.LinearClamp, null, null, effect);
             _sb.Draw(_cat, dest, Color.White);
