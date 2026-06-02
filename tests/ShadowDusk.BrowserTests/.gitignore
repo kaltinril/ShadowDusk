@@ -1,0 +1,10 @@
+# Phase 24 harness — generated / restored / large artifacts.
+# Regenerate with: npm ci && node publish-sample.mjs && node run-harness.mjs
+.publish/
+captures/
+diffs/
+node_modules/
+package-lock.json
+
+# references/*.png ARE committed: small, deterministic desktop renders that the
+# harness diffs against. RESULTS.md IS committed: the Task-1c deliverable.

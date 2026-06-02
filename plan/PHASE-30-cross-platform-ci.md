@@ -1,11 +1,13 @@
-# Phase 10 — Cross-Platform CI (GitHub Actions)
+# Phase 30 — Cross-Platform CI (GitHub Actions)
 
 ## Overview
 
-This phase wires up GitHub Actions CI that builds, tests, and packages ShadowDusk across Linux, macOS, and Windows. It is the final phase of the core pipeline and validates every prior phase end-to-end in a clean, reproducible environment.
+This phase wires up GitHub Actions CI that builds, tests, and packages ShadowDusk across Linux, macOS, and Windows — **and runs the WASM build + headless-browser validation** that Phases 22/23/24 depend on. It validates every prior phase end-to-end in a clean, reproducible environment, and is where **Part-1 (reach)** is proven: the desktop GL + vkd3d-DXBC paths *run* on Linux/macOS, and the WASM path *renders* in a headless browser.
 
-**Inputs:** A complete, passing local build from Phases 1–9.
-**Outputs:** Green CI badges on every push/PR; self-contained binaries and a NuGet package published on every `v*.*.*` tag.
+**Inputs:** A complete, passing local build from Phases 1–9, plus the WASM engine (Phase 19) and browser harness (Phase 24).
+**Outputs:** Green CI badges on every push/PR; self-contained binaries and a NuGet package published on every `v*.*.*` tag; a headless-browser smoke that renders corpus shaders in KNI WebGL.
+
+> **This phase OWNS the browser/WASM CI** that Phases 22, 23, 24, and 100 all defer to it. See **§16 — WASM & Headless-Browser CI** below; if that section is empty, those deferrals are unsatisfied.
 
 ---
 
@@ -14,10 +16,11 @@ This phase wires up GitHub Actions CI that builds, tests, and packages ShadowDus
 **In scope:**
 - `ci.yml` — build + unit test matrix on all 3 OS (push/PR)
 - `release.yml` — build + test + self-contained publish + NuGet push on `v*.*.*` tags
-- Native binary restore and caching for SPIRV-Cross
+- Native binary restore and caching for **SPIRV-Cross *and* vkd3d-shader** (the DirectX DXBC backend, Phase 18)
 - `chmod +x` fix for native shared libraries on Linux/macOS
 - RID matrix covering all 4 targets
-- Hash verification of all downloaded native binaries
+- Hash verification of all downloaded/built native binaries
+- **WASM build job** (`wasm-tools` workload, emscripten 3.1.34 pin) + **headless-browser render smoke** (Phase 24's Playwright harness) — see §14
 
 **Out of scope:**
 - macOS code signing / notarization (future work)
@@ -30,12 +33,16 @@ This phase wires up GitHub Actions CI that builds, tests, and packages ShadowDus
 
 ## 1. RID Matrix
 
-| RID | Hosted Runner OS | Native SPIRV-Cross Artifact | Notes |
-|---|---|---|---|
-| `win-x64` | `windows-latest` | `spirv-cross-win-x64.zip` | Primary dev platform; DXC via Vortice.Dxc NuGet |
-| `linux-x64` | `ubuntu-latest` | `spirv-cross-linux-x64.tar.gz` | CI + server deployments; `.so` needs `chmod +x` |
-| `osx-x64` | `macos-latest` | `spirv-cross-osx-x64.tar.gz` | Intel Mac legacy; `.dylib` needs `chmod +x` |
-| `osx-arm64` | `macos-latest` | `spirv-cross-osx-arm64.tar.gz` | M1/M2/M3; cross-publish from Intel runner |
+Each RID needs **both** native backends bundled: SPIRV-Cross (OpenGL path) and **vkd3d-shader** (DirectX DXBC path, Phase 18 — the cross-platform shipping DX backend, so the DirectX half of "reach" is CI-validated too).
+
+| RID | Hosted Runner OS | SPIRV-Cross | vkd3d-shader (DXBC) | Notes |
+|---|---|---|---|---|
+| `win-x64` | `windows-latest` | `spirv-cross` win-x64 | `libvkd3d-shader.dll` (+ `d3dcompiler_47` oracle, ships w/ Windows) | Primary dev platform; DXC via Vortice.Dxc NuGet |
+| `linux-x64` | `ubuntu-latest` | `spirv-cross` linux-x64 | `libvkd3d-shader.so` | CI + server deployments; `.so`/`.dylib` need `chmod +x` |
+| `osx-x64` | `macos-latest` | `spirv-cross` osx-x64 | `libvkd3d-shader.dylib` | Intel Mac legacy; cross-publish |
+| `osx-arm64` | `macos-latest` | `spirv-cross` osx-arm64 | `libvkd3d-shader.dylib` (arm64) | M1/M2/M3; cross-publish |
+
+> **vkd3d-shader is built from source** (vkd3d-1.17, WineHQ, MSYS2/autotools on Windows; distro/source on Linux/macOS) per the `tools/restore.*` recipe (Phase 18) — there is no official prebuilt Windows DLL. This is the DirectX-reach validation that Phase 18 carried forward to CI. **`MEMORY: DX vkd3d not packaged yet`** — packaging it into the per-RID publish is part of this phase.
 
 > **Note:** `osx-arm64` self-contained publish runs on the macOS Apple Silicon runner with `-r osx-arm64`. GitHub's `macos-latest` is Apple Silicon (M1/M2) as of 2025. Both `osx-x64` and `osx-arm64` use `macos-latest`; `osx-x64` is a cross-publish. If Intel is required, pin `macos-13`.
 
@@ -52,6 +59,8 @@ Configure via **Settings → Secrets and variables → Actions → New repositor
 ---
 
 ## 3. Native Binary Versioning
+
+> **⚠️ As-built update (post-Phase-18):** the `native-versions.json` + GitHub-release-download model below was the *green-field plan*. The **as-built** native strategy moved to **building from source via `tools/restore.*`** (SPIRV-Cross matched to the `Silk.NET.SPIRV.Cross.Native` pinned commit; **vkd3d-shader** from WineHQ source; and the WASM `spirv-cross.wasm`/`dxcompiler.wasm` via emscripten 3.1.34) because Khronos/WineHQ do not publish prebuilt binaries for every platform. **Treat `native-versions.json` as a pinning/hash manifest the restore scripts consult, not a URL-download index.** The integrity discipline (pin version, SHA-256 verify) still applies — to the built/restored artifacts. The original plan is kept below for the hash-manifest shape.
 
 All native binary versions and hashes are pinned in a single file:
 
@@ -241,7 +250,7 @@ SPIRV-Cross shared libraries must be included in the NuGet package and self-cont
 > Set `$(RepoRoot)` via `Directory.Build.props`:
 > ```xml
 > <PropertyGroup>
->   <RepoRoot>$([MSBuild]::NormalizeDirectory($([MSBuild]::GetDirectoryNameOfFileAbove($(MSBuildProjectDirectory), 'ShadowDusk.sln'))))</RepoRoot>
+>   <RepoRoot>$([MSBuild]::NormalizeDirectory($([MSBuild]::GetDirectoryNameOfFileAbove($(MSBuildProjectDirectory), 'ShadowDusk.slnx'))))</RepoRoot>
 > </PropertyGroup>
 > ```
 
@@ -972,3 +981,42 @@ Execute these steps in order. Each step is independently verifiable.
 | Automatic release notes | Consider `release-drafter` or `github-changelog-generator` |
 | Container image publish | A Docker image with `mgfxc` baked in would simplify CI for MonoGame game projects |
 | Dependabot for NuGet and GitHub Actions | Add `.github/dependabot.yml` to get automated version bump PRs |
+
+> **Note:** the WASM build + headless-browser validation is **no longer a deferred gap** — it is owned here, in §16.
+
+---
+
+## 16. WASM & Headless-Browser CI (owns the deferrals from Phases 22/23/24/100)
+
+Phases 22, 23, 24, and 100 all defer their browser/WASM validation "to Phase 30." This section discharges that. It is **separate from the desktop matrix** (different toolchain, slower, browser-gated) and lands as its own workflow job(s).
+
+### 16.1 WASM build job
+
+- [ ] Install the WASM workload: `dotnet workload install wasm-tools`.
+- [ ] **Pin emscripten to 3.1.34** (the .NET 8 runtime's version — a mismatch fails at link/load, not cleanly; see Phase 23 §Hard constraints). The `wasm-tools` workload carries it; any *native* emscripten build step (SPIRV-Cross, the faithful DXC→WASM module) must use the same 3.1.34 via `tools/restore.*`.
+- [ ] Build `samples/ShaderFiddle.Web` (and the multi-targeted `ShadowDusk.Wasm`) for `net8.0-browser`; `dotnet publish -c Release`; confirm `_framework/*.wasm` + the `shadowdusk-dxc`/`shadowdusk-spirv-cross` static web assets land in publish output.
+- [ ] Restore the WASM native artifacts (`spirv-cross.wasm`; the faithful `dxcompiler.wasm` once Phase 23 M0 produces it) via `tools/restore.*`, **SHA-256-verified** (Phase 25 supply-chain discipline applies to `.wasm` artifacts).
+- [ ] Node per-stage byte-identity checks (already in `.wasm-build/`): SPIRV-Cross (and, post-M0, DXC→WASM) WASM output == desktop, on the corpus.
+
+### 16.2 Headless-browser render smoke (Phase 24's harness)
+
+- [ ] Install Playwright browsers (`playwright install --with-deps chromium`).
+- [ ] Run **[Phase 24](PHASE-24-browser-render-validation.md)**'s harness headless against the published sample: **mode-1** (precompiled `.mgfx` loads + renders in KNI WebGL — the MGFXReader10/KNIFX-v11 answer), then **mode-2** (in-browser compile + render).
+- [ ] Use deterministic software GL (`--use-gl=angle --use-angle=swiftshader`) so pixel comparison is reproducible across runners.
+- [ ] Pixel-compare against Phase-17 references at the **§6.1 tolerance** (shared standard — do not invent a new one).
+- [ ] **AV-scan slowness allowance:** apply the CLAUDE.md Phase 21 note (freshly-built native/WASM binaries get on-access-scanned cold); generous step timeouts, and exclude `**/bin`, `**/obj`, `tools/`, `.wasm-build/` on self-hosted runners.
+
+### 16.3 Gating
+
+- [ ] Browser job runs on push to `main` and on PRs labelled `run-browser` (it is slow + heavy); never blocks the fast unit matrix.
+- [ ] Once Phase 23 M0 (faithful DXC→WASM) lands, the mode-2 smoke asserts **byte-identical-to-CLI `.mgfx`** (the faithful-path proof), not just "renders."
+
+### 16.4 Acceptance (browser/WASM additions to §13)
+
+| Criterion | How to Verify |
+|---|---|
+| WASM build succeeds | `dotnet publish` of `ShaderFiddle.Web` (net8.0-browser) exits 0 with `wasm-tools` + emscripten 3.1.34 |
+| vkd3d-shader bundled per RID | `dotnet build -r linux-x64` places `libvkd3d-shader.so` in `runtimes/linux-x64/native/`; DX `.mgfx` compiles on Linux/macOS (Phase 18 reach) |
+| Mode-1 renders in KNI WebGL | Phase 24 harness: 10/10 corpus `.mgfx` load + render pixel-equivalent in headless Chromium |
+| Faithful mode-2 (post-M0) | In-browser DXC→WASM `.mgfx` bytes == CLI bytes for a corpus shader |
+| `.wasm` supply chain | `.wasm` artifacts SHA-256-verified in `tools/restore.*` |

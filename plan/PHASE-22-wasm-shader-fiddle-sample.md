@@ -1,9 +1,11 @@
 # Phase 22 — WASM Shader Fiddle Sample (KNI, paste-a-shader → live cat)
 
-**Status:** In progress (2026-05-31) — building on the **Fallback (mode 1)** path. Mode 2 (in-browser compile) is **blocked on Phase 100** (the emscripten DXC/SPIRV-Cross WASM modules do not exist yet; `ShadowDusk.Wasm/Phase19.js` throws by design). In-browser *visual* validation is **not possible in the current dev session** (no browser, no emscripten) — the rendered-cat acceptance bar is a documented **manual run** step, not an in-session check.
+**Status:** In progress (updated 2026-06-01). Mode 1 (load precompiled `.mgfx`) is wired. **Mode 2 (in-browser compile) is now wired and real *in the sample* — via the Slang-wasm + SPIRV-Cross-wasm modules in `samples/ShaderFiddle.Web/wwwroot/` (each stage node-verified byte-identical to desktop).** ⚠️ **The Slang frontend is a SAMPLE-ONLY substitute, NOT the faithful product pipeline** (CLAUDE.md "no substitute compilers") — the faithful DXC→WASM path for the *product* `ShadowDusk.Wasm` package is **[Phase 23](PHASE-23-in-browser-compilation.md)** and is **not** what this sample proves. In-browser *visual* validation is **not possible in the current dev session** (no browser) — the rendered-cat acceptance bar is owned by **[Phase 24](PHASE-24-browser-render-validation.md)** (Playwright headless), not this phase.
 **Depends on:**
-- **Phase 19** (WASM runtime compilation) — *the* prerequisite. This sample is the user-facing realization of Phase 19's **mode 2** (in-browser `.fx` → `.mgfx` via WASM-compiled DXC + SPIRV-Cross from `ShadowDusk.Wasm`). It also exercises mode 1 (loading `.mgfx` bytes via `new Effect` in a WebGL runtime).
+- **Phase 19** (WASM runtime compilation) — *the* engine prerequisite (injectable backends, `SpirvReflector`, `WasmShaderCompiler`).
 - **Phase 17** (MonoGame-loadable `.mgfx` + MojoShader-dialect GLSL) — the browser-produced effect must load and render exactly like a desktop one.
+- **Phase 23** (in-browser compilation) — supplies the *faithful* DXC→WASM frontend the **product** path needs; this sample currently uses the Slang sample-frontend instead.
+- **Phase 24** (browser render validation) — owns the Playwright run that actually confirms the cat renders + answers the KNI MGFX-v10-load question.
 - **Phase 25** (security hardening) — the textarea takes **arbitrary untrusted shader source**; the same input-validation bar as the web path applies.
 
 **Blocks:** A live, demonstrable proof of ShadowDusk's *reach* axis — the XNA-Fiddle-style "type a shader, see it run, no server" experience. This is the showcase deliverable that makes the WASM path tangible.
@@ -16,7 +18,7 @@
 
 These supersede the original assumptions where they conflict.
 
-1. **Mode 2 is not functional yet (blocked on Phase 100).** `src/ShadowDusk.Wasm` is fully built: `WasmShaderCompiler : IShaderCompiler` composes `EffectCompiler` with `JsDxcShaderCompiler` + `JsSpirvToGlslTranspiler` + the pure-managed `SpirvReflector`, and **compiles for `net8.0-browser`**. But [`Phase19.js`](../src/ShadowDusk.Wasm/Phase19.js) stubs both JS imports to `throw` — the emscripten **DXC** and **SPIRV-Cross** WASM modules behind the `shadowdusk-dxc` / `shadowdusk-spirv-cross` contracts **do not exist in the repo** (Phase 100 tail). So a real paste→compile cannot run client-side today. **→ Build against the Fallback (mode 1); wire the mode-2 call but let it surface the stub error honestly.**
+1. **Mode 2 in the sample now runs — via the Slang sample-frontend (UPDATED 2026-06-01).** `src/ShadowDusk.Wasm` is fully built: `WasmShaderCompiler : IShaderCompiler` composes `EffectCompiler` with `JsDxcShaderCompiler` + `JsSpirvToGlslTranspiler` + the pure-managed `SpirvReflector`, and **compiles for `net8.0-browser`**. The original `Phase19.js` stub (which threw by design) is **superseded in the sample** by real modules in `samples/ShaderFiddle.Web/wwwroot/`: `shadowdusk-dxc.js` (backed by **Slang v2026.10 WASM**, ~21 MB, lazy-loaded) and `shadowdusk-spirv-cross.js` (backed by `spirv-cross.wasm`, node-verified byte-identical to desktop). So a real paste→compile **does** run client-side in the sample today. **BUT** Slang is a *substitute compiler* — accepted **sample-only** per THE PURPOSE; it silently drops two DXC flags and cannot be proven faithful on arbitrary shaders. The **product** path (faithful DXC→WASM in the shipping `ShadowDusk.Wasm` package) is [Phase 23](PHASE-23-in-browser-compilation.md) and is **not** what this sample demonstrates.
 
 2. **KNI format risk — load side (highest risk).** KNI v4.2 (`nkast.Kni.Platform.Blazor.GL` 4.2.9001, SDK `Microsoft.NET.Sdk.BlazorWebAssembly`, TFM plain `net8.0`) uses its **own KNIFX v11 format** (`dotnet-knifxc`). KNI's `new Effect(gd, byte[])` *also* accepts legacy **MGFX v10** (signature `MGFX`, version byte `10`, profile byte `ShaderProfileType.OpenGL_Mojo = 0`) — which is exactly what ShadowDusk's GL writer emits — via a backward-compat `MGFXReader10`. **But that reader is a fork**: passing the signature+version gate is necessary, not sufficient. Whether ShadowDusk/`mgfxc` MGFX v10 *renders correctly* (GLSL dialect, reflection, PS-only SpriteBatch link) in KNI WebGL is an **unverified hypothesis**, not a fact. If it diverges, Phase 22 needs a **KNIFX-v11 writer** (study `KNIFXReader11.cs` + `dotnet-knifxc` output). This is the load-side unknown the original doc flagged, now with specifics.
 
@@ -60,7 +62,7 @@ No MGCB, no `fxc.exe`, no server roundtrip — the differentiator Phase 19 mode 
 - OpenGL/**WebGL** profile only.
 
 **Out of scope:**
-- The WASM compiler internals themselves (DXC/SPIRV-Cross WASM interop) — that is **Phase 19**; this sample consumes it. If Phase 19 mode 2 is not yet functional, see *Fallback* below.
+- The WASM compiler internals themselves (DXC/SPIRV-Cross WASM interop) — the engine is **Phase 19** and the *faithful* frontend is **Phase 23**; this sample consumes them (and uses the Slang sample-frontend in the interim, see *Frontend status* below).
 - DirectX/DXBC in the browser (no native P/Invoke; Phase 18 / 4.1 spike).
 - A full editor (syntax highlighting, autocomplete, multi-file includes) — a single-buffer textarea is enough; richer editing is a follow-on.
 - Hosting/deployment (CDN, custom domain) and download-size optimization — note size/cold-start, don't optimize here.
@@ -79,12 +81,14 @@ No MGCB, no `fxc.exe`, no server roundtrip — the differentiator Phase 19 mode 
 
 ---
 
-## Fallback if Phase 19 mode 2 isn't ready
+## Frontend status (mode 2 now runs via the Slang sample-frontend)
 
-The user-facing goal is **in-memory, in-browser** compilation. If Phase 19 mode 2 (WASM DXC + SPIRV-Cross) is not yet functional when this sample is built, do **not** silently fake it. Options, in order:
-1. Build the full UI + render path against **mode 1** (precompiled `.mgfx` bytes loaded in WebGL) using the Phase 17 corpus, so the load+render+cat half is proven and the page works — with the editor disabled/labelled "compile coming with Phase 19 mode 2."
-2. Optionally wire a **temporary server-side compile endpoint** (calls the Phase 9 CLI / `ShadowDusk.Compiler`) behind a clearly-labelled flag, purely to demo the UX — but mark it explicitly as *not* the differentiator (it's a server roundtrip).
-Then swap in `WasmShaderCompiler` the moment mode 2 lands. The sample's value is the in-browser compile; ship that as soon as Phase 19 allows.
+The user-facing goal is **in-memory, in-browser** compilation, and the sample achieves it today via the Slang-wasm frontend (per *Review finding #1*). Two rules govern this:
+
+1. **Mode 1 (precompiled `.mgfx` loaded in WebGL)** remains the lowest-risk baseline and is what [Phase 24](PHASE-24-browser-render-validation.md) validates first.
+2. **A server-side compile relay is explicitly out of bounds** — it is a server roundtrip, which violates THE PURPOSE's "no server" differentiator. Never add one, even behind a flag.
+
+The sample's Slang mode-2 is honest *reach demonstration*, but it is **not** the faithful product path. When [Phase 23](PHASE-23-in-browser-compilation.md) lands the faithful DXC→WASM frontend, the **shipping `ShadowDusk.Wasm` package** swaps to it; the sample may keep Slang as its lightweight demo frontend, clearly labelled.
 
 ---
 
@@ -101,7 +105,7 @@ Then swap in `WasmShaderCompiler` the moment mode 2 lands. The sample's value is
 - [x] 🖥️ Load a Phase-17 `.mgfx` (precompiled, bundled in `wwwroot/shaders/OpenGL`) via `new Effect(gd, bytes)` and apply over the cat (dropdown selects 1 of 10) — code-complete; **whether KNI's forked `MGFXReader10` actually renders MonoGame MGFX v10 is the open browser-verified unknown** (see risks).
 
 ### Compile loop (mode 2 — the differentiator)
-- [x] 🖥️ Wire the textarea → `WasmShaderCompiler.CompileAsync(source, OpenGL)` → bytes → `new Effect` → apply, all in-browser, on button click. **The real compiler is called**; today it surfaces the honest Phase19.js stub error (mode 2 → Phase 100), never faked.
+- [x] 🖥️ Wire the textarea → `WasmShaderCompiler.CompileAsync(source, OpenGL)` → bytes → `new Effect` → apply, all in-browser, on button click. **The real compiler is called and runs** via the Slang sample-frontend (`wwwroot/shadowdusk-dxc.js` → Slang-wasm) + `shadowdusk-spirv-cross.js` — node-verified per stage, browser render pending [Phase 24](PHASE-24-browser-render-validation.md). This is the *sample* frontend, not the faithful product path ([Phase 23](PHASE-23-in-browser-compilation.md)).
 - [x] ✅ Prefill the textarea with a working default shader (Grayscale `.fx`); render it via its precompiled bytes on first load.
 - [x] ✅ Error panel: on `Result` failure, display each `ShaderError` via `FxcFormattedMessage` (file/line/col/message) verbatim; keep the last good render; clear on next success/load.
 - [x] ✅ Handle the "compiling…" state (button disabled + label) without blocking; first-run latency note in README.
@@ -121,21 +125,30 @@ Then swap in `WasmShaderCompiler` the moment mode 2 lands. The sample's value is
 ## Acceptance Criteria
 
 - [x] 🖥️ `samples/ShaderFiddle.Web/` **builds and publishes** as a KNI Blazor-WASM app (`dotnet build` + `dotnet publish -c Release` clean; all `index.html` JS/asset paths resolve in publish output; `ShadowDusk.Wasm.wasm` bundled). *Running* in a browser is the pending manual step.
-- [ ] 🖥️/⬜ Paste `.fx` → Compile & Apply → cat re-rendered, compiled client-side: **path wired to the real `WasmShaderCompiler`, but blocked on Phase 100** (WASM DXC/SPIRV-Cross modules). Surfaces the stub error today; not faked.
+- [x] 🖥️ Paste `.fx` → Compile & Apply → cat re-rendered, compiled client-side: **wired and running via the Slang sample-frontend** (node-verified per stage; browser render pending Phase 24). This is the *sample* reach demo, **not** the faithful product proof (Phase 23).
 - [x] ✅ A compile/load failure shows ShadowDusk's diagnostics (line/col/message) in the UI, keeps the previous good render, and does not crash the page (implemented; browser-confirm pending).
 - [x] 🖥️ Uniform-free + uniform-driven corpus shaders load with the by-name default parameter set (mode 1); interactive controls a documented stretch.
 - [x] ✅ WebGL-vs-DesktopGL divergence **and** the KNI MGFX-v10/KNIFX-v11 risk are documented (README + risks below), not assumed away.
-- [x] ✅ Phase 19 mode 2 is incomplete, so the sample ships against **mode 1** with the in-browser-compile path clearly flagged and surfacing the real stub error — never faked.
+- [x] ✅ The in-browser frontend is clearly flagged as the **sample-only Slang substitute**, with the faithful DXC→WASM product path pointed to Phase 23 — never silently passed off as the faithful pipeline.
 
 ---
 
 ## Definition of Done
 
-A browser page where a user pastes HLSL `.fx` shader source, ShadowDusk compiles it to `.mgfx`
-**entirely in the browser via WASM**, the bytes load as a real KNI `Effect`, and the standard cat
-image is rendered live with that shader applied — with compile errors surfaced in the UI. This is
-the visible, end-to-end demonstration of ShadowDusk's *reach* promise: the result `mgfxc` would
-produce, generated where `mgfxc` cannot run — in a browser, with no server.
+A browser page where a user pastes HLSL `.fx` shader source, the sample compiles it to `.mgfx`
+**entirely in the browser via WASM** (today via the **sample-only Slang frontend** — *not* the
+faithful DXC pipeline; that is [Phase 23](PHASE-23-in-browser-compilation.md)), the bytes load as a
+real KNI `Effect`, and the standard cat image is rendered live with that shader applied — with
+compile errors surfaced in the UI. This is a visible demonstration of ShadowDusk's *reach* — the
+*shape* of "compile where `mgfxc` cannot run, no server."
+
+**Two caveats this DoD does not let drift:**
+- The in-browser compile uses **Slang (a substitute compiler)**. Per THE PURPOSE this sample
+  proves *reach is reachable*, **not** that the output is faithful to `mgfxc`. The faithful proof
+  (byte-identical DXC→WASM) is Phase 23; do not read this sample as discharging it.
+- "Loads as a real KNI `Effect` and renders live" is a **hypothesis pending a real browser run** —
+  KNI's forked `MGFXReader10` accepting our MGFX v10 is unverified (see risks). **[Phase 24](PHASE-24-browser-render-validation.md)**
+  is what turns this DoD clause from hypothesis into fact.
 
 ---
 
@@ -150,12 +163,14 @@ produce, generated where `mgfxc` cannot run — in a browser, with no server.
   fix is a ShadowDusk **KNIFX-v11 writer** (study `KNIFXReader11.cs` + `dotnet-knifxc` output) — a
   follow-up task, deliberately *not* pre-built here (untestable in-session; user-confirmed). The
   sample reports the `new Effect` failure verbatim if this is the case.
-- **Phase 19 mode 2 readiness — CONFIRMED BLOCKED (Phase 100).** `Phase19.js` throws by design; the
-  emscripten DXC/SPIRV-Cross WASM modules don't exist yet. The sample is built on the Fallback
-  (mode 1) and wires the real `WasmShaderCompiler` for mode 2 so the swap is a `Phase19.js` change,
-  not a C# one.
-- **No in-session browser** — the build session has no browser, so the rendered-cat result is a
-  documented manual run (`README.md`) + a Phase 30 headless-browser CI item, not verified here.
+- **Faithful frontend not yet in the sample — uses Slang (sample-only).** Mode 2 runs via the
+  Slang-wasm modules in `wwwroot/`, not the faithful DXC→WASM pipeline. The faithful frontend is
+  [Phase 23](PHASE-23-in-browser-compilation.md); when it lands, the **product** `ShadowDusk.Wasm`
+  package swaps to it. The original `Phase19.js` throwing stub is superseded in the sample (it
+  survives only as the reference module contract in `src/ShadowDusk.Wasm/`).
+- **No in-session browser** — the build session has no browser, so the rendered-cat result is owned
+  by **[Phase 24](PHASE-24-browser-render-validation.md)** (Playwright headless) + a Phase 30 CI
+  item, not verified here.
 - **Download size / cold-start** — the WASM compiler stack may be large; measure and report, even
   if optimization is deferred.
 - **Untrusted input** — arbitrary shader text is a security surface (Phase 25): bound compile time

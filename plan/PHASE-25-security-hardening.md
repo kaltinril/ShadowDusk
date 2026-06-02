@@ -1,19 +1,19 @@
-# Phase 12 — Security Hardening
+# Phase 25 — Security Hardening
 
-**Context:** ShadowDusk processes user-submitted `.fx` shader files in the XNA Fiddle web context (https://xnafiddle.net/). Arbitrary untrusted input changes the threat model vs. a local developer CLI tool.
+**Context:** The **product is a library** (`ShadowDusk.Compiler` / `ShadowDusk.Wasm`) whose `IShaderCompiler.CompileAsync` accepts **arbitrary untrusted `.fx` source** — whenever a consumer feeds it shader text they didn't author (an in-browser fiddle, a user-content pipeline, a hosted build service). That untrusted-input surface — *not* any one website — is what changes the threat model vs. a developer compiling their own shaders locally. The KNI/Blazor fiddle sample (Phase 22/24) is **one** such consumer, not the threat model's center.
 
-**Prerequisite phases:** None — can be worked in parallel with any phase. Should be completed before the `ShadowDusk.Wasm` path is publicly deployed.
+**Prerequisite phases:** None — can be worked in parallel with any phase. Should be completed before the `ShadowDusk.Wasm` path (or any service that accepts third-party `.fx`) is publicly deployed.
 
 ---
 
-## Web / WASM Threat Model
+## Untrusted-input Threat Model (library API, any consumer)
 
-Users submit `.fx` source text and optional macro definitions via the XNA Fiddle UI. The compilation runs server-side or in-browser WASM. The compiler must not:
+A consumer hands the library `.fx` source text + optional macro definitions originating from an untrusted party. Compilation runs in-process (desktop), or in-browser WASM, or server-side. The compiler must not:
 - Read files outside the shader's declared include search paths
 - Be brought down by a single large or pathological shader input
-- Expose server-side data via error messages or side channels
+- Expose host data (paths, file contents) via error messages or side channels
 
-Note: the `ShadowDusk.Wasm` path uses `[JSImport]` to call WASM-compiled DXC and SPIRV-Cross — it does **not** use the P/Invoke native library loading (`SpvcLoader`, `SpvcNative`). DLL planting and supply-chain findings from the Phase 1–6 security review do not apply to the WASM path.
+Note on WASM supply chain: the `ShadowDusk.Wasm` path uses `[JSImport]` to call WASM-compiled DXC and SPIRV-Cross — it does **not** use the desktop P/Invoke native loading (`SpvcLoader`, `SpvcNative`), so DLL-planting (Finding 6) does not apply. **However**, the WASM path is *not* supply-chain-free: it ships `dxcompiler.wasm` (faithful DXC→WASM, Phase 23) and `spirv-cross.wasm` as packaged static web assets. Those `.wasm` artifacts need the **same pinning + SHA-256 integrity discipline as Finding 5** (verified in `tools/restore.*` when built/restored, and ideally subresource-integrity-checked when served). Finding 5's *mechanism* applies to the WASM artifacts even though Finding 6's does not.
 
 ---
 
@@ -26,12 +26,14 @@ Also triggered via: `src/ShadowDusk.Core/Preprocessor/Preprocessor.cs:65`, `src/
 
 **Issue:** After `Path.GetFullPath(Path.Combine(dir, includePath))` resolves `..` sequences, there is no check that the result remains within the allowed search roots. A shader containing `#include "../../../../etc/passwd"` reads and returns the file contents to the compiler.
 
-**Fix:** After computing `candidate = Path.GetFullPath(...)`, assert:
+**Fix:** After computing `candidate = Path.GetFullPath(...)`, assert containment **with a proper boundary check — a bare `string.StartsWith` is itself a vulnerability** (root `/app/shaders` would wrongly accept the sibling `/app/shaders-evil/x`). Either compare a separator-terminated root, or use `Path.GetRelativePath` and reject any result that escapes:
 ```csharp
-if (!candidate.StartsWith(allowedRoot, StringComparison.OrdinalIgnoreCase))
+// allowedRoot is already Path.GetFullPath(...)-canonicalized
+var rel = Path.GetRelativePath(allowedRoot, candidate);
+if (rel == ".." || rel.StartsWith(".." + Path.DirectorySeparatorChar) || Path.IsPathRooted(rel))
     return Result.Fail(ShaderError.IncludeNotFound(...));
 ```
-Apply to every search path in the resolver loop. `allowedRoot` is the canonicalized directory of the input `.fx` file plus any explicitly user-supplied `-I` paths.
+(Equivalently: ensure `allowedRoot` ends in a `DirectorySeparatorChar` before any `StartsWith`.) Use `OrdinalIgnoreCase` only on case-insensitive filesystems (Windows); Linux paths are case-sensitive, so a blanket `OrdinalIgnoreCase` is itself slightly wrong. Apply to every search path in the resolver loop. `allowedRoot` is the canonicalized directory of the input `.fx` file plus any explicitly user-supplied `-I` paths.
 
 **Note:** `InMemoryIncludeResolver` (which XNA Fiddle will likely use for user-submitted shaders with no file system) is not affected — it only resolves from a `Dictionary<string, string>`. Fix `FileSystemIncludeResolver` so it is safe by default for any caller.
 
@@ -97,7 +99,7 @@ Apply to every search path in the resolver loop. `allowedRoot` is the canonicali
 
 ## Checklist
 
-### Web / WASM path (block deployment of XNA Fiddle integration)
+### Untrusted-input path (block public deployment of any consumer that accepts third-party `.fx`)
 
 - [ ] 1. Add base-directory bounds check to `FileSystemIncludeResolver.Resolve()` — path traversal fix.
 - [ ] 2. Add file size limit in `FileSystemIncludeResolver` before `File.ReadAllText`.
@@ -115,5 +117,16 @@ Apply to every search path in the resolver loop. `allowedRoot` is the canonicali
 ## Out of Scope
 
 - Sandboxing the DXC compilation process (would require a subprocess model — significant architecture change).
-- Rate limiting / quota enforcement on XNA Fiddle submissions (web application layer concern, not ShadowDusk).
+- Rate limiting / quota enforcement on submissions (the *consumer's* web-application-layer concern, not the library's).
 - Auditing Vortice.Dxc's own native binary supply chain (upstream dependency, out of ShadowDusk's control).
+
+---
+
+## Definition of Done
+
+The library is safe to hand untrusted `.fx` from any consumer:
+
+1. **All four untrusted-input findings (1–4) fixed and unit-tested** with adversarial inputs: a `../`-escape include is rejected (with the separator-boundary check, *not* bare `StartsWith`), an oversized include and oversized root source are rejected before allocation, and malformed macro names/values are rejected.
+2. **Findings 5–6 (CLI/desktop supply chain) fixed**, and the **WASM `.wasm` artifacts** (`dxcompiler.wasm`, `spirv-cross.wasm`) are version-pinned with SHA-256 integrity verification in `tools/restore.*` (per the Finding-5 mechanism).
+3. **No host data leaks through diagnostics** — a test confirms `ShaderError` messages on a failing untrusted shader contain no absolute host paths or file contents outside the submitted source.
+4. A short `SECURITY.md` (or doc section) states the library's untrusted-input guarantees and the consumer's residual responsibilities (rate-limiting, sandboxing the process if they run it server-side).
