@@ -85,6 +85,89 @@ per-RID artifacts (win-x64 / linux-x64 / osx-*) as a pinned download is a follow
 
 Restore-Vkd3dShader
 
+# ---------------------------------------------------------------------------
+# DXC -> WASM (faithful in-browser HLSL -> SPIR-V frontend, Phase 23 M0)
+# ---------------------------------------------------------------------------
+# The faithful in-browser frontend is the SAME DirectXShaderCompiler the desktop
+# pipeline uses (Vortice.Dxc 3.3.4), compiled to WebAssembly so its SPIR-V is
+# byte-identical to the desktop CLI (Option A — NO substitute compiler; Slang is
+# sample-only). dxcompiler.{js,wasm} is a RESTORED/BUILT artifact, NOT checked into
+# the repo (large). This step verifies presence and documents the build recipe; the
+# build itself is out-of-band (an LLVM-fork emscripten build, scripted under
+# .wasm-build/). Mirrors Restore-Vkd3dShader. Runs unconditionally.
+function Restore-DxcWasm {
+    $DxcWasmDir = Join-Path $RepoRoot '.wasm-build' 'dxc-wasm-out'
+    $DxcWasmWasm = Join-Path $DxcWasmDir 'dxcompiler.wasm'
+    $DxcWasmJs   = Join-Path $DxcWasmDir 'dxcompiler.js'
+
+    if ((Test-Path $DxcWasmWasm) -and (Test-Path $DxcWasmJs)) {
+        Write-Host "restore.ps1: DXC->WASM (dxcompiler.{js,wasm}) present — OK"
+        return
+    }
+
+    Write-Warning @"
+
+DXC->WASM module not found at:
+  $DxcWasmJs
+  $DxcWasmWasm
+
+Build recipe (faithful pinned DXC -> WebAssembly, emscripten 3.1.34 — the .NET 8 pin):
+
+  PINNED SOURCE — microsoft/DirectXShaderCompiler @ commit
+    e043f4a1286f4e1026222ab1bc94e25de8d0e959
+  This is the EXACT commit Vortice.Dxc 3.3.4's dxcompiler.dll reports (FileVersion
+  1.7.2212.40, ProductVersion '1.7.2212.40 (e043f4a12)') — the December-2022 DXC
+  release branch (release-1.7.2212). Byte-identity requires this exact commit AND
+  its gitlinked SPIR-V submodules:
+    external/SPIRV-Headers  @ 1d31a100405cf8783ca7a31e31cdd727c9fc54c3
+    external/SPIRV-Tools    @ 40f5bf59c6acb4754a0bffd3c53a715732883a12
+    external/DirectX-Headers@ 980971e835876dc0cde415e8f9bc646e64667bf7
+
+  1. Clone the pinned source with submodules into .wasm-build/dxc-src:
+        git init .wasm-build/dxc-src
+        cd .wasm-build/dxc-src
+        git remote add origin https://github.com/microsoft/DirectXShaderCompiler.git
+        git fetch --depth 1 origin e043f4a1286f4e1026222ab1bc94e25de8d0e959
+        git checkout FETCH_HEAD
+        git -c advice.detachedHead=false submodule update --init --recursive --depth 1 ``
+            external/SPIRV-Headers external/SPIRV-Tools external/DirectX-Headers
+  2. Install + activate emscripten 3.1.34 in .wasm-build/emsdk (the .NET 8 WASM
+     runtime's pin; a mismatch fails at link/load, not cleanly):
+        .wasm-build/emsdk/emsdk install 3.1.34
+        .wasm-build/emsdk/emsdk activate 3.1.34
+  3. Build via the scripted 3-stage recipe (host tablegen -> WASM libdxcompiler ->
+     link the embind compileToSpirv glue), which captures all WASM patches:
+       * Stage 0: build native llvm-tblgen + clang-tblgen with the HOST (MSVC)
+         toolchain — LLVM tablegen is a build-time tool that must run natively;
+         an emscripten build would compile it to WASM. Pointed at via
+         -DLLVM_TABLEGEN / -DCLANG_TABLEGEN (the classic LLVM cross-compile gate).
+       * Stage 1: emcmake cmake -GNinja -C cmake/caches/PredefinedParams.cmake
+         -DENABLE_SPIRV_CODEGEN=ON, ALL tests OFF (LLVM/CLANG/HLSL/SPIRV), C++
+         exceptions via -fwasm-exceptions (DXC throws internally; default
+         no-exceptions WASM traps), -DLLVM_ENABLE_THREADS=OFF; then ninja libdxcompiler.
+         COM resolves without the Windows runtime via DXC's bundled WinAdapter; the
+         DXIL validator/signer (dxil.dll) is NOT built and NOT needed for -spirv.
+       * Stage 2: em++ --bind dxc-wasm-glue.cpp -ldxcompiler -sMODULARIZE=1
+         -sEXPORT_ES6=1 -sEXPORT_NAME=createDxcModule -sFILESYSTEM=0, exporting
+         compileToSpirv(hlsl, args[]) -> Uint8Array (matches the shadowdusk-dxc
+         JS contract; #includes are pre-flattened upstream so no FS is needed).
+     Launcher (loads the MSVC host env, then runs the staged build):
+        pwsh -NoProfile -File .wasm-build\Invoke-DxcWasmBuild.ps1
+     (Resume long builds with -SkipHostTblgen / -SkipLib.)
+  4. Byte-identity gate (M0 DoD): capture the desktop SPIR-V oracle, then assert the
+     WASM module matches it byte-for-byte over the corpus:
+        dotnet run --project .wasm-build\dxc-corpus-probe -- <repoRoot> .wasm-build\corpus-spirv
+        node .wasm-build\node-test-dxc-wasm.mjs
+  5. Output: .wasm-build/dxc-wasm-out/dxcompiler.{js,wasm}. Wiring it into the
+     ShadowDusk.Wasm packaged wwwroot is M1/M2 (NOT done here).
+
+NOTE: dxcompiler.wasm is NOT committed (.gitignore ignores .wasm-build/). The full
+recipe + a build report are in .wasm-build/DXC-WASM-BUILD.md.
+"@
+}
+
+Restore-DxcWasm
+
 if (-not $Force -and (Test-Path $WinDll)) {
     Write-Host "spirv-cross-c-shared.dll already present — skipping restore."
     exit 0
