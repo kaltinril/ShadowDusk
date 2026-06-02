@@ -1,13 +1,40 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<!--
+  Razor SDK (Microsoft.NET.Sdk.Razor) — NOT the plain SDK — so the files under
+  wwwroot/ are treated as Blazor STATIC WEB ASSETS. When this project is packed the
+  assets ship inside the .nupkg under staticwebassets/ and a consuming Blazor/KNI
+  app serves them transitively at `_content/ShadowDusk.Wasm/…` with ZERO wiring on
+  the consumer's part. The TFM stays net8.0-browser for the [JSImport] backends.
+-->
+<Project Sdk="Microsoft.NET.Sdk.Razor">
   <PropertyGroup>
     <TargetFramework>net8.0-browser</TargetFramework>
     <AssemblyName>ShadowDusk.Wasm</AssemblyName>
     <RootNamespace>ShadowDusk.Wasm</RootNamespace>
+    <Nullable>enable</Nullable>
     <!-- The [JSImport] source generator emits code requiring /unsafe. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <!-- Packaging metadata — mirrors ShadowDusk.Compiler / ShadowDusk.Core. -->
+    <IsPackable>true</IsPackable>
+    <PackageId>ShadowDusk.Wasm</PackageId>
+    <PackageVersion>0.1.0</PackageVersion>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageTags>monogame kni hlsl shader compiler mgfx wasm blazor browser webassembly</PackageTags>
+    <Description>In-browser (WebAssembly / Blazor net8.0-browser) HLSL Effect compiler for MonoGame and KNI. Add the package to a net8.0-browser app, call WasmShaderCompiler.CompileAsync, and feed the .mgfx bytes to new Effect(gd, bytes) — the native DXC + SPIRV-Cross WASM modules ride inside the package as Blazor static web assets (served at _content/ShadowDusk.Wasm/) and self-register; the consumer wires NOTHING. Uses the faithful pinned DXC -&gt; SPIR-V -&gt; SPIRV-Cross -&gt; GLSL pipeline so output matches the desktop CLI.</Description>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
   </ItemGroup>
+
+  <!--
+    The faithful DXC->WASM module (dxc/dxcompiler.wasm, ~17.4 MB) is gitignored and
+    restored/copied into wwwroot/dxc/ before build/pack (see wwwroot/dxc/RESTORE.md
+    and tools/restore.* Restore-DxcWasm). Fail the build loudly if it is missing so
+    a packed .nupkg can never silently ship without the product frontend's wasm.
+  -->
+  <Target Name="VerifyDxcWasmPresent" BeforeTargets="ResolveStaticWebAssetsInputs;BeforeBuild;Pack">
+    <Error Condition="!Exists('$(MSBuildProjectDirectory)/wwwroot/dxc/dxcompiler.wasm')"
+           Text="ShadowDusk.Wasm: wwwroot/dxc/dxcompiler.wasm is missing. It is gitignored and must be restored before build/pack. Run tools/restore.ps1 (or copy .wasm-build/dxc-wasm-out/dxcompiler.wasm into wwwroot/dxc/). See wwwroot/dxc/RESTORE.md." />
+  </Target>
 </Project>

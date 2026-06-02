@@ -33,12 +33,14 @@
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="8.0.17" PrivateAssets="all" />
   </ItemGroup>
 
-  <ItemGroup Label="ShadowDusk in-browser compiler (Phase 19 mode 2)">
+  <ItemGroup Label="ShadowDusk in-browser compiler (Phase 23 — faithful DXC->WASM)">
     <!--
-      WasmShaderCompiler : IShaderCompiler. Its HLSL->SPIR-V backend is now REAL:
-      wwwroot/shadowdusk-dxc.js drives Slang compiled to WebAssembly (wwwroot/slang/).
-      The SPIR-V->GLSL backend (shadowdusk-spirv-cross.js) is wired separately. Both
-      JS modules are registered via JSHost.ImportAsync (Pages/Index.razor.cs).
+      WasmShaderCompiler : IShaderCompiler. Phase 23 M1: the ShadowDusk.Wasm package
+      now SELF-REGISTERS its faithful DXC + SPIRV-Cross WASM [JSImport] modules from
+      its own _content/ShadowDusk.Wasm/ static web assets — this sample wires NOTHING
+      (no JSHost.ImportAsync; see Pages/Index.razor.cs). The Slang shim files under
+      wwwroot/ (shadowdusk-dxc.js + slang/) remain as a sample-only reference and are
+      never registered (the faithful DXC->WASM module is the product frontend).
     -->
     <ProjectReference Include="..\..\src\ShadowDusk.Wasm\ShadowDusk.Wasm.csproj" />
   </ItemGroup>
