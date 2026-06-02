@@ -1,6 +1,12 @@
 # Phase 24 — Browser Render Validation (Playwright headless)
 
-**Status:** Active — **next up, highest-priority browser work** (created 2026-06-01). This is the cheapest, highest-information step on the WASM-KNI path: it is the first thing that actually runs ShadowDusk output in a *real* browser graphics stack.
+**Status:** ✅ **DONE (2026-06-01).** All four DoD items met by a real headless-browser run (see `tests/ShadowDusk.BrowserTests/RESULTS.md`): the harness renders ShadowDusk `.mgfx` in the real KNI WebGL `Effect`, mode-1 is **10/10 load + 9/10 render-equivalent with a precise reproduced failure list**, the KNIFX-v11 question is answered with evidence, and the harness is handed to Phase 30 §16 for CI.
+
+**Carry-forwards (NOT Phase 24 work):**
+- **Dissolve WebGL render divergence → Phase 23 prerequisite.** MGFX v10 *parses* in KNI WebGL (no v11 container blocker), but Dissolve renders differently in WebGL vs DesktopGL of the same bytes (Δ198 over 1.68% px) at its `discard`/threshold band — a GLSL dialect/runtime difference a v11 container writer would not fix. Investigate in/before Phase 23.
+- **Mode-2 sample verification → carried to Phase 23 Gate 3 (M3).** Wired and reached, but blocked here on the restore-gated `slang-wasm.wasm`; it is *sample-only* (Slang) and explicitly out of this phase's DoD. Phase 23 reruns this same harness against the faithful DXC→WASM frontend.
+
+This was the cheapest, highest-information step on the WASM-KNI path: the first thing to actually run ShadowDusk output in a *real* browser graphics stack.
 
 **Depends on:** Phase 22 (the `samples/ShaderFiddle.Web/` KNI Blazor-WASM app — the page under test), Phase 17 (the 10-shader OpenGL corpus + the reference PNGs and the **pixel-equivalence tolerance standard, §6.1**, reused verbatim here). Tooling: **Playwright** (approved) driving headless Chromium with real WebGL.
 
