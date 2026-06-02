@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Ground-truth probe for the DXC->WASM byte-identity gate (Phase 23 M0).
+    NOT part of the solution. Drives the REAL desktop ShadowDusk pipeline
+    (EffectCompiler) over the Phase-17 PS-only corpus and, via a capturing
+    IDxcShaderCompiler decorator, dumps for each shader's OpenGL/SPIR-V compile:
+      * {name}.hlsl       — the EXACT preprocessed HLSL handed to DXC
+      * {name}.args.json  — the EXACT DXC argument list (from DxcFlagBuilder)
+      * {name}.spv        — the desktop DXC SPIR-V bytes (the byte-identity oracle)
+    node-test-dxc-wasm.mjs feeds {name}.hlsl + {name}.args.json to the WASM DXC
+    compileToSpirv and asserts its SPIR-V == {name}.spv byte-for-byte.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
+    <ProjectReference Include="..\..\src\ShadowDusk.Core\ShadowDusk.Core.csproj" />
+    <ProjectReference Include="..\..\src\ShadowDusk.HLSL\ShadowDusk.HLSL.csproj" />
+    <ProjectReference Include="..\..\src\ShadowDusk.GLSL\ShadowDusk.GLSL.csproj" />
+  </ItemGroup>
+
+</Project>

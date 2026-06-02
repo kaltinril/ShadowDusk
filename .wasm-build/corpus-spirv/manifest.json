@@ -1,0 +1,192 @@
+[
+  {
+    "name": "Grayscale",
+    "entryPoint": "MainPS",
+    "stage": "Pixel",
+    "spirvBytes": 1104,
+    "spirvWords": 276,
+    "args": [
+      "-E",
+      "MainPS",
+      "-T",
+      "ps_5_0",
+      "-spirv",
+      "-fvk-use-dx-layout",
+      "-auto-binding-space",
+      "1",
+      "-Zpr",
+      "-WX"
+    ]
+  },
+  {
+    "name": "Invert",
+    "entryPoint": "MainPS",
+    "stage": "Pixel",
+    "spirvBytes": 1080,
+    "spirvWords": 270,
+    "args": [
+      "-E",
+      "MainPS",
+      "-T",
+      "ps_5_0",
+      "-spirv",
+      "-fvk-use-dx-layout",
+      "-auto-binding-space",
+      "1",
+      "-Zpr",
+      "-WX"
+    ]
+  },
+  {
+    "name": "TintShader",
+    "entryPoint": "MainPS",
+    "stage": "Pixel",
+    "spirvBytes": 1172,
+    "spirvWords": 293,
+    "args": [
+      "-E",
+      "MainPS",
+      "-T",
+      "ps_5_0",
+      "-spirv",
+      "-fvk-use-dx-layout",
+      "-auto-binding-space",
+      "1",
+      "-Zpr",
+      "-WX"
+    ]
+  },
+  {
+    "name": "Sepia",
+    "entryPoint": "PixelShaderFunction",
+    "stage": "Pixel",
+    "spirvBytes": 1240,
+    "spirvWords": 310,
+    "args": [
+      "-E",
+      "PixelShaderFunction",
+      "-T",
+      "ps_5_0",
+      "-spirv",
+      "-fvk-use-dx-layout",
+      "-auto-binding-space",
+      "1",
+      "-Zpr",
+      "-WX"
+    ]
+  },
+  {
+    "name": "Saturate",
+    "entryPoint": "BloomPass",
+    "stage": "Pixel",
+    "spirvBytes": 1616,
+    "spirvWords": 404,
+    "args": [
+      "-E",
+      "BloomPass",
+      "-T",
+      "ps_5_0",
+      "-spirv",
+      "-fvk-use-dx-layout",
+      "-auto-binding-space",
+      "1",
+      "-Zpr",
+      "-WX"
+    ]
+  },
+  {
+    "name": "Pixelated",
+    "entryPoint": "MainPS",
+    "stage": "Pixel",
+    "spirvBytes": 1024,
+    "spirvWords": 256,
+    "args": [
+      "-E",
+      "MainPS",
+      "-T",
+      "ps_5_0",
+      "-spirv",
+      "-fvk-use-dx-layout",
+      "-auto-binding-space",
+      "1",
+      "-Zpr",
+      "-WX"
+    ]
+  },
+  {
+    "name": "Scanlines",
+    "entryPoint": "mainPS",
+    "stage": "Pixel",
+    "spirvBytes": 1364,
+    "spirvWords": 341,
+    "args": [
+      "-E",
+      "mainPS",
+      "-T",
+      "ps_5_0",
+      "-spirv",
+      "-fvk-use-dx-layout",
+      "-auto-binding-space",
+      "1",
+      "-Zpr",
+      "-WX"
+    ]
+  },
+  {
+    "name": "Fading",
+    "entryPoint": "MainPS",
+    "stage": "Pixel",
+    "spirvBytes": 1020,
+    "spirvWords": 255,
+    "args": [
+      "-E",
+      "MainPS",
+      "-T",
+      "ps_5_0",
+      "-spirv",
+      "-fvk-use-dx-layout",
+      "-auto-binding-space",
+      "1",
+      "-Zpr",
+      "-WX"
+    ]
+  },
+  {
+    "name": "Dots",
+    "entryPoint": "PixelShaderFunction",
+    "stage": "Pixel",
+    "spirvBytes": 1912,
+    "spirvWords": 478,
+    "args": [
+      "-E",
+      "PixelShaderFunction",
+      "-T",
+      "ps_5_0",
+      "-spirv",
+      "-fvk-use-dx-layout",
+      "-auto-binding-space",
+      "1",
+      "-Zpr",
+      "-WX"
+    ]
+  },
+  {
+    "name": "Dissolve",
+    "entryPoint": "mainPixel",
+    "stage": "Pixel",
+    "spirvBytes": 2060,
+    "spirvWords": 515,
+    "args": [
+      "-E",
+      "mainPixel",
+      "-T",
+      "ps_5_0",
+      "-spirv",
+      "-fvk-use-dx-layout",
+      "-auto-binding-space",
+      "1",
+      "-Zpr",
+      "-WX"
+    ]
+  }
+]
