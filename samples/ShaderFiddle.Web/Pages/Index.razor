@@ -48,14 +48,19 @@
         }
 
         <details class="note">
-            <summary>Why does "Compile & Apply" report a stub error?</summary>
+            <summary>How does "Compile & Apply" work?</summary>
             <p>
-                In-browser compilation (Phase&nbsp;19 <em>mode&nbsp;2</em>) needs the DXC and
-                SPIRV-Cross WASM modules, which are deferred to Phase&nbsp;100. The compile path
-                is fully wired to the real <code>WasmShaderCompiler</code> — it surfaces the
-                honest "not wired to a WASM DXC build" error rather than faking a result. The
-                <strong>load + render</strong> half (mode&nbsp;1) is live: pick a sample above to
-                see the cat re-rendered through a real KNI <code>Effect</code>.
+                It compiles the <code>.fx</code> in the editor <strong>entirely in the
+                browser</strong> via <code>WasmShaderCompiler</code> — the faithful
+                HLSL&nbsp;→&nbsp;DXC&nbsp;(WASM)&nbsp;→&nbsp;SPIR-V&nbsp;→&nbsp;SPIRV-Cross&nbsp;→&nbsp;<code>.mgfx</code>
+                pipeline — then loads the result with a real KNI <code>Effect</code>. The
+                <strong>first</strong> click downloads the ~17&nbsp;MB DXC compiler once, so it may
+                pause on "Compiling…". Your shader must be a MonoGame-format effect (a
+                <code>SpriteTexture</code> sampler, a <code>MainPS</code>, and a
+                <code>technique</code>). Heads-up: this sample only sets the 10 built-in corpus
+                parameters — a custom global such as <code>float MyAmount = 0.35;</code> is
+                <em>not</em> set here (and its initializer isn't baked into the bytes), so inline
+                such constants if you want them to take effect.
             </p>
         </details>
     </section>
