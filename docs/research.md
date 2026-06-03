@@ -2,6 +2,8 @@
 
 Reference document for building a proof-of-concept cross-platform MonoGame shader compiler. Covers HLSL/.fx format, the existing `mgfxc` pipeline, native toolchain, and gaps the project must address.
 
+> **Status note (2026-06-02):** This is **point-in-time pre-PoC research** — kept for its toolchain/format reference value, not as a description of the shipped design. Most of the "the project must address" / "ShadowDusk implements Option B" framing is now **built and validated**: the OpenGL path (DXC → SPIR-V → SPIRV-Cross → GLSL + a managed MojoShader-dialect rewrite + MGFX writer) renders pixel-equivalent to `mgfxc` in the real MonoGame DesktopGL runtime (Phase 17), the DirectX path ships **vkd3d-shader → DXBC SM5** (with Windows-only `d3dcompiler_47` as a correctness oracle — DX11 does **not** use DXC, since DXC emits DXIL/SM6, not the DXBC the DX11 runtime loads; Phase 18), and the in-browser frontend is the **pinned DirectXShaderCompiler compiled to WebAssembly** (byte-identical SPIR-V to desktop), render-proven in headless KNI WebGL (Phases 23/24). The actual product is a **self-contained, in-memory, cross-platform NuGet library** — `IShaderCompiler.CompileAsync(fx) → .mgfx bytes`; the CLI/MGCB plugin are delivery shapes and the browser fiddle is only a sample. For the current architecture see [`monogame_runtime_mgfx_compiler_research.md`](../monogame_runtime_mgfx_compiler_research.md) §0 and the root `CLAUDE.md` *THE PURPOSE* section. Where this doc still names ShaderConductor or glslang's HLSL frontend as candidate backends, those are **not** used (ShaderConductor was archived Aug 2025; the chosen frontend is faithful DXC everywhere).
+
 ---
 
 ## Table of Contents

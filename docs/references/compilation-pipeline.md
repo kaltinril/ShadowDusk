@@ -42,10 +42,12 @@ INPUT
                    │
                    ▼
 ┌─────────────────────────────────────────┐
-│  PHASE 4 — DXC Compiler (Vortice.Dxc)  │
+│  PHASE 4 — HLSL → bytecode/IR           │
 │                                         │
 │  Compiles each pass's VS + PS entry     │
-│  point separately                       │
+│  point separately. The compiler depends │
+│  on the target (see the two branches    │
+│  below) — DXC is NOT used for DX11.     │
 └──────────┬──────────────────────────────┘
            │
      ┌─────┴──────┐
@@ -54,10 +56,13 @@ INPUT
  DirectX       OpenGL / WebGL
  target        target
      │            │
+     │            │  DXC (Vortice.Dxc),
      │            │  -spirv flag
      ▼            ▼
-  DXBC         SPIR-V
-  bytecode      (binary IR)
+ DXBC backend   SPIR-V
+ (vkd3d-shader   (binary IR)
+  or             │
+  d3dcompiler_47)│
      │            │
      │            ▼
      │   ┌─────────────────────────────┐
@@ -112,8 +117,9 @@ INPUT
 
 ## Notes
 
-- **FX9 blocks** (`technique`, `pass`, `sampler_state`) are a D3DX legacy format inherited by XNA and MonoGame. DXC cannot parse them — the pre-parser strips them before DXC ever sees the file.
-- **DirectX path** is shorter: DXBC goes straight from DXC to the binary writer with no transpilation step.
-- **OpenGL / WebGL path** has an extra hop through SPIRV-Cross to convert SPIR-V → GLSL. Desktop targets `#version 140`; WebGL (KNI browser) targets `#version 300 es`.
-- **SPIRV-Cross** runs as native P/Invoke on desktop (CLI) and as a WASM JS interop call in the browser (KNI / XNA Fiddle).
-- **Output** is always a `.mgfx` binary blob — written to disk by the CLI, returned as `byte[]` in-memory by the WASM library.
+- **FX9 blocks** (`technique`, `pass`, `sampler_state`) are a D3DX legacy format inherited by XNA and MonoGame. The HLSL compilers cannot parse them — the pre-parser strips them before any compiler sees the file.
+- **DirectX path does NOT use DXC.** DXC only emits SM6 DXIL, but MonoGame 3.8's DX11 runtime loads **DXBC (SM ≤ 5)**. So the DirectX target routes HLSL → DXBC through a separate backend behind `IDxbcShaderCompiler`: the cross-platform **vkd3d-shader** library is the shipping backend (Linux/macOS/Windows, no Wine or Windows SDK), with Windows-only **`d3dcompiler_47`** as a correctness oracle. The backend is selected via `CompilerOptions.DxbcBackend` (`DxbcBackend.D3DCompiler` default, `DxbcBackend.Vkd3d` opt-in; see `src/ShadowDusk.Core/DxbcBackend.cs`). DXC's `ps_6_0`/`vs_6_0` (DXIL) path is retained only for the Vulkan / DX12-KNI SM6 profile. The DXBC bytes are also the reflection source (read via `ID3D11ShaderReflection`).
+- **OpenGL / WebGL path** is the faithful HLSL →[DXC]→ SPIR-V →[SPIRV-Cross]→ GLSL pipeline, plus the managed `MonoGameGlslRewriter` (MojoShader-dialect rewrite) for the PS-only path. Desktop targets `#version 140`; WebGL (KNI browser) targets `#version 300 es`. See `docs/glsl-uniform-naming.md` for the GLSL dialect / uniform-naming contract that rewrite enforces.
+- **SPIRV-Cross** runs as native P/Invoke on desktop (CLI) and as a WASM JS-interop call in the browser (KNI / XNA Fiddle).
+- **DXC in the browser** is the *same* DirectXShaderCompiler compiled to WebAssembly (matching `Vortice.Dxc`'s pinned commit), so the in-browser frontend emits byte-identical SPIR-V to the desktop pipeline — one faithful compiler everywhere, no substitute frontend (Phase 23, done). The in-browser shader-fiddle is a *sample* of this reach, not the product.
+- **Output** is always a `.mgfx` binary blob — written to disk by the CLI, returned as `byte[]` in-memory by the library (the in-memory / WASM path).
