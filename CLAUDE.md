@@ -43,7 +43,7 @@ MonoGame's stock content pipeline (`MGCB`) shells out to `mgfxc`, which depends 
 |---|---|---|
 | DirectX (Windows) | HLSL | vkd3d-shader → DXBC (SM5) |
 | OpenGL / DesktopGL | GLSL | DXC → SPIR-V → SPIRV-Cross → GLSL |
-| Metal (macOS / iOS) | MSL | DXC → SPIR-V → SPIRV-Cross → MSL |
+| Metal (macOS / iOS) *(not yet implemented)* | MSL | DXC → SPIR-V → SPIRV-Cross → MSL |
 | Vulkan (future) | SPIR-V | DXC → SPIR-V (direct) |
 
 > **DirectX DXBC now works (Phase 18, done 2026-05-30).** DXC compiles to **DXIL (SM6)**, not the **DXBC (SM ≤ 5)** MonoGame 3.8's DX11 runtime loads — so the DX11 path no longer uses DXC. It routes through a DXBC backend behind `IDxbcShaderCompiler`: the cross-platform **vkd3d-shader** library (HLSL → DXBC_TPF) is the shipping backend, with Windows-only `d3dcompiler_47.dll` as a correctness oracle. DXC `ps_6_0`/`vs_6_0` (DXIL) is retained only for the DX12/KNI path. **Both OpenGL (Phase 17) and DirectX (Phase 18) are now validated end-to-end** in the real MonoGame runtime for the SM3/SM5 PS-only corpus (10/10 each); the DX backend's selector defaults to the oracle, with `DxbcBackend.Vkd3d` opt-in. WASM + DirectX DXBC remains the open problem (Phase 4.1).
@@ -53,25 +53,37 @@ MonoGame's stock content pipeline (`MGCB`) shells out to `mgfxc`, which depends 
 ```
 ShadowDusk/
 ├── src/
-│   ├── ShadowDusk.Core/          # Compiler orchestration, IR, platform dispatch
-│   ├── ShadowDusk.HLSL/          # HLSL → FX parsing, DXC/FXC integration
-│   ├── ShadowDusk.GLSL/          # HLSL → GLSL transpilation (via SPIRV-Cross)
-│   ├── ShadowDusk.Metal/         # HLSL → MSL transpilation (via SPIRV-Cross)
-│   ├── ShadowDusk.Cli/           # CLI entry-point (dotnet tool)
-│   ├── ShadowDusk.MgcbPlugin/    # MonoGame Content Builder plugin
-│   └── ShadowDusk.Wasm/          # WASM-safe IShaderCompiler impl for browser (JS interop to WASM-compiled DXC + SPIRV-Cross)
+│   ├── ShadowDusk.Core/          # Core types & contracts: IShaderCompiler, Result<T,E>, ShaderError,
+│   │                             #   CompilerOptions, CompiledShader, ShaderIR, MGFX writer, reflection (SpirvReflector)
+│   ├── ShadowDusk.HLSL/          # FX9 pre-parser, preprocessor, DXC integration, reflection,
+│   │                             #   vkd3d-shader + d3dcompiler_47 DXBC backends
+│   ├── ShadowDusk.GLSL/          # SPIR-V → GLSL via SPIRV-Cross + MonoGameGlslRewriter (MojoShader dialect)
+│   ├── ShadowDusk.Metal/         # SPIR-V → MSL via SPIRV-Cross — STUB, not yet implemented
+│   ├── ShadowDusk.Compiler/      # EffectCompiler : IShaderCompiler + pipeline orchestration —
+│   │                             #   the consumer-facing product NuGet (the in-memory library)
+│   ├── ShadowDusk.Cli/           # CLI entry-point (dotnet tool `mgfxc`)
+│   ├── ShadowDusk.MgcbPlugin/    # MGCB content-processor plugin — STUB/scaffold (Tier-1 PATH override is the shipping MGCB path)
+│   └── ShadowDusk.Wasm/          # In-browser WASM IShaderCompiler (WasmShaderCompiler); [JSImport] to WASM-compiled DXC + SPIRV-Cross
 ├── tests/
 │   ├── ShadowDusk.Core.Tests/
 │   ├── ShadowDusk.HLSL.Tests/
 │   ├── ShadowDusk.GLSL.Tests/
+│   ├── ShadowDusk.Compiler.Tests/
 │   ├── ShadowDusk.Integration.Tests/   # Compile real .fx files end-to-end
+│   ├── ShadowDusk.ImageTests/          # Offscreen-render image regression
+│   ├── ShadowDusk.BrowserTests/        # Headless KNI WebGL render validation (Playwright)
 │   └── fixtures/
-│       ├── shaders/                    # Canonical .fx test shaders (39 files + 4 .fxh headers)
+│       ├── shaders/                    # Canonical .fx test shaders (52 .fx + 5 .fxh headers)
 │       └── golden/                     # Reference .mgfx outputs (DirectX_11/ and OpenGL/)
-├── tools/                         # Vendored / downloaded native binaries
-│   ├── dxc/                       # unused — DXC comes from Vortice.Dxc NuGet
-│   └── spirv-cross/               # libspirv-cross-c-shared (.dll/.so/.dylib)
-├── docs/
+├── samples/
+│   ├── ShaderFiddle.Web/               # KNI Blazor-WASM in-browser fiddle (sample of reach)
+│   ├── ShaderViewer/                   # Desktop shader viewer
+│   └── mgcb/                           # MGCB content-pipeline sample
+├── tools/                         # Vendored / downloaded native binaries (restored, not committed)
+│   ├── dxc/                       # unused — desktop DXC comes from Vortice.Dxc NuGet
+│   ├── spirv-cross/               # libspirv-cross-c-shared (.dll/.so/.dylib)
+│   └── vkd3d/                     # vkd3d-shader native (cross-platform DXBC backend)
+├── docs/                          # Architecture docs, research, HOWTO-WASM-KNI
 └── CLAUDE.md
 ```
 
@@ -80,9 +92,9 @@ ShadowDusk/
 - **Language**: C# 12 / .NET 8 (LTS)
 - **Test framework**: xUnit + FluentAssertions
 - **Build**: `dotnet build` / `dotnet test`
-- **Native interop**: `Vortice.Dxc` NuGet for DXC; raw P/Invoke for SPIRV-Cross C API
+- **Native interop**: `Vortice.Dxc` NuGet for DXC; P/Invoke (via `Silk.NET`) for the SPIRV-Cross C API; vkd3d-shader + `d3dcompiler_47` for the DXBC backend
 - **WASM interop**: `[JSImport]` / `[JSExport]` (.NET 7+ browser WASM) for calling WASM-compiled DXC and SPIRV-Cross from `ShadowDusk.Wasm`
-- **Packaging**: NuGet `dotnet tool` + optional MGCB plugin NuGet
+- **Packaging**: NuGet — the `ShadowDusk.Compiler` library (the product), the `ShadowDusk.Wasm` self-registering (Razor SDK) package, and the `mgfxc` `dotnet tool` (`ShadowDusk.Cli`). An MGCB plugin NuGet is a future scaffold.
 
 ## Core Design Constraints
 
@@ -96,7 +108,7 @@ ShadowDusk/
 
 ## Native Dependency Strategy
 
-Native binaries (DXC, glslang, SPIRV-Cross) are **not** checked into the repo. They are resolved at build time via a `tools/restore.ps1` / `tools/restore.sh` script that downloads pinned GitHub Releases artifacts and places them in `tools/`. CI caches these by hash.
+Native binaries (SPIRV-Cross, the vkd3d-shader DXBC backend, and the DXC + SPIRV-Cross **WASM** modules) are **not** checked into the repo. They are resolved at build time via a `tools/restore.ps1` / `tools/restore.sh` script that downloads/copies pinned artifacts into `tools/` (and into the WASM package's `wwwroot/`). CI caches these by hash. Desktop DXC itself comes from the `Vortice.Dxc` NuGet package, not `tools/` — and `glslang` is not used.
 
 ## Build & Test
 
