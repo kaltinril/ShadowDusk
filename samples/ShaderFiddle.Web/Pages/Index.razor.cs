@@ -31,6 +31,11 @@ public partial class Index
     private bool _jsBackendsRegistered;
     private readonly List<string> _errors = new();
 
+    // Live-editable float params of the currently applied effect (refreshed on
+    // every apply). Lets users drive tunables — e.g. a custom global like
+    // FishEyeAmount, whose `= 0.35` initializer is not baked into the bytes.
+    private IReadOnlyList<ShaderParam> _params = Array.Empty<ShaderParam>();
+
     protected override async Task OnInitializedAsync()
     {
         // Fetch the fixed inputs the page needs before the game can boot.
@@ -76,6 +81,7 @@ public partial class Index
             _game.Run();          // KNI: initializes the device + LoadContent
             _ready = true;
             _status = $"Loaded sample: {WebShaderInputs.DefaultShader} (mode 1)";
+            RefreshParams();
             StateHasChanged();
         }
 
@@ -169,8 +175,29 @@ public partial class Index
     {
         _game?.ClearEffect();
         _errors.Clear();
+        _params = Array.Empty<ShaderParam>();
         _status = "Reset — showing the original cat (no shader applied).";
         _statusIsError = false;
+    }
+
+    /// <summary>Pull the current effect's editable float params for the UI.</summary>
+    private void RefreshParams()
+        => _params = _game?.GetEditableParameters() ?? Array.Empty<ShaderParam>();
+
+    /// <summary>
+    /// Apply a live edit of one component of a float scalar/vector parameter.
+    /// Parses the input invariantly, writes it into the effect, and the next
+    /// rendered frame reflects it (the game loop redraws every frame).
+    /// </summary>
+    private void OnParamChanged(ShaderParam p, int index, ChangeEventArgs e)
+    {
+        if (float.TryParse(e.Value?.ToString(),
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var f))
+        {
+            p.Values[index] = f;
+            _game?.SetParameter(p.Name, p.Values);
+        }
     }
 
     /// <summary>Mode 1: load a precompiled <c>.mgfx</c> and show its source.</summary>
@@ -192,6 +219,7 @@ public partial class Index
         {
             _status = $"Loaded sample: {name} (mode 1)";
             _statusIsError = false;
+            RefreshParams();
         }
         else
         {
@@ -241,6 +269,7 @@ public partial class Index
                 {
                     _status = "Compiled in-browser and applied (mode 2).";
                     _statusIsError = false;
+                    RefreshParams();
                 }
                 else
                 {

@@ -36,6 +36,28 @@
             <span class="status @(_statusIsError ? "err" : "ok")">@_status</span>
         </div>
 
+        @if (_params.Count > 0)
+        {
+            <div class="params">
+                <div class="params-head">Live parameters — edit to drive the shader</div>
+                @foreach (var p in _params)
+                {
+                    <div class="param-row">
+                        <span class="pname" title="@p.Name">@p.Name</span>
+                        <div class="pvals">
+                            @for (var i = 0; i < p.Components; i++)
+                            {
+                                var idx = i;
+                                <input type="number" step="0.01" class="pval"
+                                       value="@p.Values[idx].ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                                       @onchange="@(e => OnParamChanged(p, idx, e))" />
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+
         @if (_errors.Count > 0)
         {
             <div class="errors">

@@ -1,9 +1,30 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 
 namespace ShadowDusk.ShaderFiddle.Web;
+
+/// <summary>A live-editable <c>float</c> scalar/vector parameter of the applied effect.</summary>
+public sealed class ShaderParam
+{
+    public ShaderParam(string name, int components, float[] values)
+    {
+        Name = name;
+        Components = components;
+        Values = values;
+    }
+
+    /// <summary>The effect parameter name (as declared in the .fx).</summary>
+    public string Name { get; }
+
+    /// <summary>Component count: 1 (scalar), 2/3/4 (vector).</summary>
+    public int Components { get; }
+
+    /// <summary>Current value per component; mutated in place as the user edits.</summary>
+    public float[] Values { get; }
+}
 
 /// <summary>
 /// KNI (nkast) Blazor-WebGL game that draws the standard cat image with a
@@ -103,6 +124,94 @@ public sealed class ShaderFiddleGame : Game
         _pendingMgfx = null;
         _effect?.Dispose();
         _effect = null;
+    }
+
+    /// <summary>
+    /// Enumerate the applied effect's editable <c>float</c> scalar/vector
+    /// parameters (skips textures, samplers, matrices, and int/bool params) with
+    /// their current values, so the UI can offer live inputs. Returns an empty
+    /// list when no effect is applied. Note: a global with an initializer such as
+    /// <c>float X = 0.35;</c> shows up here defaulting to 0 — DXC doesn't bake the
+    /// initializer into the bytes, so set it here to make it take effect.
+    /// </summary>
+    public IReadOnlyList<ShaderParam> GetEditableParameters()
+    {
+        var list = new List<ShaderParam>();
+        if (_effect is null)
+            return list;
+
+        foreach (var p in _effect.Parameters)
+        {
+            if (p.ParameterType != EffectParameterType.Single)
+                continue;
+
+            int comps = p.ParameterClass switch
+            {
+                EffectParameterClass.Scalar => 1,
+                EffectParameterClass.Vector => p.ColumnCount,
+                _ => 0,
+            };
+            if (comps < 1 || comps > 4)
+                continue;
+
+            var values = new float[comps];
+            try
+            {
+                switch (comps)
+                {
+                    case 1:
+                        values[0] = p.GetValueSingle();
+                        break;
+                    case 2:
+                        var v2 = p.GetValueVector2();
+                        values[0] = v2.X; values[1] = v2.Y;
+                        break;
+                    case 3:
+                        var v3 = p.GetValueVector3();
+                        values[0] = v3.X; values[1] = v3.Y; values[2] = v3.Z;
+                        break;
+                    default:
+                        var v4 = p.GetValueVector4();
+                        values[0] = v4.X; values[1] = v4.Y; values[2] = v4.Z; values[3] = v4.W;
+                        break;
+                }
+            }
+            catch
+            {
+                // Leave zeros if the runtime can't read this param's current value.
+            }
+
+            list.Add(new ShaderParam(p.Name, comps, values));
+        }
+
+        return list;
+    }
+
+    /// <summary>
+    /// Set a <c>float</c> scalar/vector parameter by name on the applied effect.
+    /// No-op if the effect is unset or the name is absent. Swallows type/layout
+    /// mismatches — tuning a value must never crash the render loop.
+    /// </summary>
+    public void SetParameter(string name, float[] values)
+    {
+        var p = _effect?.Parameters[name];
+        if (p is null || values.Length == 0)
+            return;
+
+        try
+        {
+            switch (values.Length)
+            {
+                case 1: p.SetValue(values[0]); break;
+                case 2: p.SetValue(new Vector2(values[0], values[1])); break;
+                case 3: p.SetValue(new Vector3(values[0], values[1], values[2])); break;
+                default: p.SetValue(new Vector4(values[0], values[1], values[2], values[3])); break;
+            }
+        }
+        catch
+        {
+            // ignore — a typed/sized mismatch must not abort the loop
+        }
     }
 
     protected override void Draw(GameTime gameTime)
