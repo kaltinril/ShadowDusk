@@ -1,211 +1,33 @@
-# Phase 100 — Deferred Backlog (far-future)
+# Phase 100 — Deferred Backlog (RETIRED / emptied)
 
-**Status:** Deferred / Backlog. Numbered 100 to park it well beyond the active roadmap.
-**Blocking anything?** No. Everything here was explicitly deferred from earlier phases and is not a prerequisite for current work. Review before a 1.0 release.
+**Status: ✅ Retired (2026-06-03).** This was the single far-future "deferred bucket" that
+collected unchecked items from earlier phases. Per the project decision that *the deferred
+bucket should not be a forever-parking-lot*, every item has been **promoted into a real,
+planned phase** with its own task list, acceptance criteria, and Definition of Done. This
+file is kept only as a **breadcrumb** so old links resolve and the provenance is traceable.
 
-This document is the single deferred bucket. It collects every unchecked item from completed (`DONE/`) phase plans and items deferred from phases 6+ (organized by source phase), **plus** the Phase 19 *WASM browser-runtime* tail (the part of Phase 19 that needs a browser/emscripten toolchain unavailable in-session) — see the **From Phase 19** section near the end. *(Formerly two docs: "Phase 20 — Deferred Backlog" and a standalone "Phase 100 — WASM Browser-Runtime Validation"; merged into this one Phase 100 on 2026-05-30.)*
-
----
-
-## From Phase 2 — FX9 Pre-Parser
-
-- [ ] Stripped HLSL output compiles without syntax errors when passed to DXC.
-  *(originally deferred: "verified by integration test in Phase 3." Phase 4 DXC integration likely covers this — run `dotnet test --filter Category=Integration` and check it off if passing.)*
+**Do not add new items here.** New deferred work goes into the relevant real phase (or a new
+one). This document is closed.
 
 ---
 
-## From Phase 3 — Preprocessor / Macro Injection
-
-**Tests — not yet written:**
-
-- [ ] `4.4` FileSystemIncludeResolver integration test: resolve a real `.fxh` file from disk.
-  *(deferred to Phase 10 integration suite — add to `ShadowDusk.Integration.Tests/Preprocessor/`)*
-- [ ] `7.4` DxcIncludeHandler smoke test: construct handler with `InMemoryIncludeResolver`,
-  verify `LoadSource` returns the correct blob bytes.
-  *(deferred: "requires live DXC COM init; add in Phase 4 DXC integration tests" — add to `ShadowDusk.Integration.Tests/Dxc/DxcShaderCompilerIntegrationTests.cs`)*
-
-**Wiring validation — verified against `CompilationPipeline.cs` (Phase 8):**
-
-- [x] `8.2` `Preprocessor.Flatten()` is called after Phase 2 and before DXC invocation. *(Stage 2 in CompilationPipeline)*
-- [x] `8.3` Platform macros are injected into the preprocessed HLSL text via `PlatformMacros.ToTextPrepend`; baked into `PreprocessedSource.Text` rather than passed as separate DXC flags — functionally equivalent.
-- [x] `8.4` Preprocessor flattens all `#include` directives before DXC sees the source; no `DxcIncludeHandler` is needed at the DXC call site. *(Comment in CompilationPipeline.cs confirms this.)*
-
----
-
-## From Phase 4 — DXC Integration
-
-**Unit tests (file exists — verify coverage):**
-
-Files: `tests/ShadowDusk.HLSL.Tests/Dxc/DxcFlagBuilderTests.cs`
-       `tests/ShadowDusk.HLSL.Tests/Dxc/DxcDiagnosticReformatterTests.cs`
-
-`DxcFlagBuilderTests` checklist:
-- [ ] OpenGL vertex stage: `-spirv`, `-fvk-use-dx-position-w`, `-fvk-use-dx-layout`, `vs_5_0`; no `-fvk-invert-y`
-- [ ] OpenGL pixel stage: `-spirv`, `-fvk-use-dx-layout`, `-auto-binding-space 1`, `ps_5_0`; no `-fvk-invert-y`
-- [ ] Vulkan vertex stage: all OpenGL vertex flags plus `-fspv-reflect`, `vs_6_0`
-- [ ] Vulkan pixel stage: all OpenGL pixel flags plus `-fspv-reflect`, `ps_6_0`
-- [ ] DirectX_11 vertex stage: `vs_6_0`; no `-spirv`
-- [ ] DirectX_11 pixel stage: `ps_6_0`; no `-spirv`
-- [ ] Macros appended as `-D Name=Value` (keyed) and `-D Name` (flag)
-- [ ] Entry point appears as `-E <entryPoint>` before profile argument
-- [ ] `-Zpr` always present
-- [ ] `-WX` present by default; absent when `AllowWarnings = true`
-
-`DxcDiagnosticReformatterTests` checklist:
-- [ ] Well-formed Clang diagnostic line → correct file/line/col/message
-- [ ] FXC-formatted output: `Filename.fx(line,col-col): error X0000: message`
-- [ ] Warning severity mapped to `ShaderError.Severity.Warning`
-- [ ] Unknown/non-matching lines preserved as raw
-- [ ] Empty input returns empty list
-- [ ] Multi-line error block with note lines handled correctly
-
-**Integration tests (file exists — verify coverage):**
-
-File: `tests/ShadowDusk.Integration.Tests/Dxc/DxcShaderCompilerIntegrationTests.cs`
-
-- [ ] Minimal vertex shader → non-empty SPIR-V (OpenGL)
-- [ ] Minimal pixel shader → non-empty SPIR-V (OpenGL)
-- [ ] Minimal vertex shader → non-empty DXIL (DirectX)
-- [ ] Syntax error → `Result.Failure` with `FxcFormattedMessage` containing `(line,col`
-- [ ] Undefined variable in pixel shader → failure with line/col in FXC format
-- [ ] Vulkan target vertex shader → non-empty SPIR-V
-- [ ] Compile with `-D` macro succeeds and macro is visible to DXC
-- [ ] Cancellation before invocation → `OperationCanceledException` (not `ShaderError`)
-
----
-
-## From Phase 5 — Shader Reflection
-
-**SPIRV-Cross binding slot verifier:**
-
-- [ ] `7.3.2` Use SPIRV-Cross P/Invoke (`spvc_context_create` → `spvc_compiler_create_shader_resources`).
-  Enumerate `separate_images` and `separate_samplers`.
-- [ ] `7.3.3` Compare DXIL and SPIR-V slots. Emit `ShaderError` with `"SD0101"` on mismatch.
-  *(Pick these up when Phase 8 wires the full pipeline — SPIRV-Cross P/Invoke will be in place.)*
-
-**Golden snapshot acceptance test — implement in Phase 10:**
-
-- [ ] `9.3.1` `MgfxParameterMatchTests.cs` — compile a MonoGame reference shader, run `ReflectionPipeline`,
-  compare output against a golden JSON snapshot from MonoGame's own `mgfxc`.
-- [ ] `9.3.2` Snapshot comparison must be exact (name, class, type, rows, columns, elements).
-
----
-
-## From Phase 6 — SPIRV-Cross GLSL Transpilation
-
-### 11-6-A: Wire `SpirvCrossGlslTranspiler` into `CompilationPipeline`
-
-**✅ Resolved by Phase 8.** `CompilationPipeline` calls `SpirvCrossGlslTranspiler.Transpile()` for each VS/PS SPIR-V blob (Stage 5), forwards the GLSL text bytes into `CompiledShaderBlob`, and propagates transpilation errors as compilation failures. All 67 integration tests pass.
-
-### 11-6-B: `Transpile_PassthroughVertex_YFlipIsApplied` integration test
-
-**Blocked by:** Requires the SPIRV-Cross native library to be present.
-
-When native library is available:
-1. Compile `tests/fixtures/shaders/passthrough_vs.fx` through `DxcShaderCompiler` targeting OpenGL.
-2. Pass vertex SPIR-V to `SpirvCrossGlslTranspiler.Transpile()`.
-3. Assert that `gl_Position.y` appears negated in the output (check for `-gl_Position.y` or equivalent sign-flip expression emitted by SPIRV-Cross for the `FlipVertexY` option).
-
-### 11-6-C: Run Phase 6 integration tests and platform check
-
-**Blocked by:** SPIRV-Cross native library not yet downloaded on the development machine.
-
-Steps:
-1. Run `.\tools\restore.ps1` (Windows) or `./tools/restore.sh` (Linux/macOS) to populate `tools/spirv-cross/`.
-2. Rebuild so MSBuild copies the native library to the output directory.
-3. Run `dotnet test --filter "Category=Integration&Platform=OpenGL"` — all 6 `GlslTranspilerTests` should pass.
-4. Run `/platform-check` to confirm no new platform-specific assumptions were introduced in Phase 6.
-
-### 11-6-D: Uniform remapping for MonoGame OpenGL runtime compatibility — ✅ RESOLVED (Phase 17, 2026-05-30)
-
-**Context:** Researched in Phase 6, resolved in Phase 17 (see `docs/glsl-uniform-naming.md`).
-
-MonoGame's OpenGL runtime expects uniforms in MojoShader convention (`vs_uniforms_vec4[N]` / `ps_uniforms_vec4[N]` float4 arrays), not the HLSL variable names that SPIRV-Cross produces by default.
-
-**Resolution:** Strategy 1 (post-process GLSL) was implemented as `MonoGameGlslRewriter` (`src/ShadowDusk.GLSL/MonoGameGlslRewriter.cs`), gated to the PS-only OpenGL path via the `monoGameGl` flag in `CompilationPipeline`. The SPIRV-Cross `type_Globals` UBO is rewritten to a flat `uniform vec4 ps_uniforms_vec4[N];` array (+ samplers→`ps_s{slot}`, varyings, `gl_FragColor`, `texture2D`, drop `#version`), and the pipeline names the cbuffer `ps_uniforms_vec4` with one register per free param in SM 3.0 register layout. Verified in-engine: all 10 SM3 shaders load in real MonoGame DesktopGL and match the `mgfxc` goldens with parameters set by name. See `docs/glsl-uniform-naming.md` for the full rule table, verification, and known limitations (VS stage + PS matrix free-uniforms remain future work, Phase 17 §8.3).
-
-Strategies 2 (patch MonoGame runtime) and 3 (UBO binding points) were rejected — both break drop-in compatibility with stock `mgfxc`-compiled `.mgfx`.
-
-### 17-VS: VS-driven MonoGame effects (OpenGL)
-
-**Context:** Carried forward from Phase 17 §8.3 (which proved in-engine equivalence for the **PS-only** SM3 corpus). The MonoGame GL path is gated by the `monoGameGl` flag in `CompilationPipeline` to **PS-only** effects; vertex-bearing passes keep the unmodified SPIRV-Cross dialect so their VS↔PS varying contract and the Phase-16 anchor tests don't regress.
-
-To support custom effects with their own vertex shader under the MonoGame GL runtime:
-1. **Symmetric uniform remap for the VS** — `MonoGameGlslRewriter` currently passes `ShaderStage.Vertex` through unchanged; it needs the `vs_uniforms_vec4[N]` equivalent of the PS rewrite, and the pipeline must name/emit the `vs_uniforms_vec4` cbuffer.
-2. **VS-side stage I/O contract** — emit the legacy `attribute`/`varying` declarations MonoGame's GL runtime links against (the VS produces the varyings the PS consumes by name), and the GL vertex-attribute table for `POSITION`/`COLOR0`/`TEXCOORD0`.
-3. **PS matrix free-uniforms** — complete the `mat4` member expansion in `MonoGameGlslRewriter` (today emits `ps_uniforms_vec4[i]/*TODO mat*/`); a VS almost always takes a `float4x4` transform, so this is a prerequisite.
-4. Extend the `validation/` harness to a VS-driven shader and confirm in-engine equivalence vs an `mgfxc` golden.
-
-See `docs/glsl-uniform-naming.md` → *Known limitations*.
-
----
-
-## From Phase 8 — Compiler Library
-
-**NuGet packaging verification — ✅ RESOLVED 2026-05-31 (branch `selfcontained-inmemory-nuget`).** Running these surfaced a real drop-in bug and fixed it:
-
-- [x] `7.4` `dotnet pack` produces `ShadowDusk.Compiler` 0.1.0. **Bug found:** the package declared deps on `ShadowDusk.Core/HLSL/GLSL` **1.0.0 (unpublished)** and bundled **no native DXC/SPIRV-Cross**, so `dotnet add package ShadowDusk.Compiler` would fail to restore and then throw `DllNotFoundException`. **Fix:** made Core/HLSL/GLSL packable + versioned 0.1.0 so the ShadowDusk.* set resolves, and the native-bundling NuGets (`Vortice.Dxc`, `Silk.NET.SPIRV.Cross.Native`) now flow transitively. (The OpenGL DXIL-reflection default is unchanged — it's cross-platform via dxcompiler, and `new EffectCompiler()` is the DXIL baseline of `SpirvReflectionByteIdentityTests`.)
-- [x] `7.5` Verified with a scratch console app **outside the repo**, restoring only from the package feed: `EffectCompiler.CompileAsync` on `Grayscale.fx` produced a valid 519-byte `.mgfx` (`MGFX` header) **in memory**. (Linux/macOS run validation → Phase 30 CI; the native deps are cross-platform via Vortice.Dxc + Silk.NET.)
-
-**ShaderIRBuilder direct unit tests (require `InternalsVisibleTo`):**
-
-- [ ] Add `[assembly: InternalsVisibleTo("ShadowDusk.Compiler.Tests")]` to `ShadowDusk.Compiler.csproj`.
-- [ ] `Build_ShaderIndicesAreZeroBased` — 2-pass technique; assert Pass 0: VertexShaderIndex=0, PixelShaderIndex=1; Pass 1: VertexShaderIndex=2, PixelShaderIndex=3.
-- [ ] `Build_EmptyAnnotationsAllowed` — pass with no annotations; assert `AnnotationInfo` list is empty, no exception thrown.
-
----
-
-## From Phase 9 — CLI Entry Point
-
-**Manual verification steps not yet run:**
-
-- [ ] `9.4` Run `dotnet pack src/ShadowDusk.Cli` — confirm NuGet package is produced with `ToolCommandName` set to `mgfxc`.
-- [ ] `9.5` Install locally: `dotnet tool install -g ShadowDusk.Cli --add-source ./nupkg`, then run `mgfxc` with no args — confirm usage on stderr with exit 1.
-- [ ] `9.6` Run `dotnet publish src/ShadowDusk.Cli -r win-x64 --self-contained` — confirm single-file binary executes and bundles native DLLs.
-
-**Deferred to integration phase (PHASE-15):**
-
-- [ ] Real `.fx` fixture library beyond `Minimal.fx` — add representative shaders covering textures, constant buffers, multiple techniques.
-- [ ] Per-platform integration test filter: tag tests with `[Trait("Platform","OpenGL")]` so `dotnet test --filter "Category=Integration&Platform=OpenGL"` works.
-
-**Deferred platform work:**
-
-- [ ] Metal/MSL pipeline stage in `PipelineRunner` — currently returns `X0010`; implement once Metal support (post-Phase 6) is complete.
-- [ ] Full MGCB content processor plugin (`ShadowDusk.MgcbPlugin`) — separate undertaking post-Phase 8.
-
----
-
-## From Phase 15 — Integration Tests
-
-**CLI-process invocation mode — infrastructure exists, no tests wire it up:**
-
-The Phase 15 plan §3.1 specified two invocation modes: `DirectPipeline` (in-process) and `CliProcess` (out-of-process via the published `mgfxc` binary). All 103 current tests run via `DirectPipeline`. The CLI-process path is fully implemented in `TestHelpers.CompileViaCliAsync`, plus `CliFixture` and `CliBinaryFixture`, but unused.
-
-- [ ] Add a `[Theory]` variant of `CompileFixtureTests.Compile_ProducesValidMgfxHeader` parameterised over both `InvocationMode` values so every fixture × platform also exercises the published CLI binary.
-- [ ] Wire `CliBinaryFixture` as a class fixture so the CLI is published once per test class instead of per test.
-- [ ] Confirm exit codes, stderr formatting, and `.mgfx` output match between the two invocation paths (drop-in equivalence guarantee).
-- [ ] Decide whether `CliFixture` (skip-on-missing) and `CliBinaryFixture` (publish-on-demand) should coexist or be unified — only one of them needs to remain.
-
-**Cross-platform validation:**
-
-- [ ] Tests run unmodified on Linux and macOS — explicitly deferred to Phase 30 (CI). Acceptance criterion from Phase 15 §9: *"Tests run without modification on Windows, Linux, and macOS (validated in Phase 10 CI)"* — Phase 10 was renumbered to Phase 30.
-
----
-
-## From Phase 19 — WASM Browser-Runtime Validation (emscripten modules + real in-browser run)
-
-> **⏫ MOVED OUT — no longer tracked here.** This WASM browser-runtime tail was promoted out of the backlog on 2026-05-31 and is now owned by **active, sequenced phases**. The task list that used to live here is **superseded** — do not work from it; the live plans are:
->
-> - **Faithful in-browser compile** (the DXC→WASM build, the `[JSImport]` seam, emscripten 3.1.34 pin, turnkey packaging, byte-identity gate) → **[Phase 23 — In-Browser Compilation](PHASE-23-in-browser-compilation.md)**. Note: the A-vs-B fork is **settled — Option A (faithful DXC→WASM)**; Slang is sample-only.
-> - **Browser render validation** (mode-1 precompiled load in KNI WebGL — the MGFXReader10/KNIFX-v11 question — then mode-2, via Playwright headless) → **[Phase 24 — Browser Render Validation](PHASE-24-browser-render-validation.md)**.
-> - **CI wiring** of the WASM build + headless-browser harness → **[Phase 30 §16](PHASE-30-cross-platform-ci.md)**.
->
-> Carved out of [Phase 19](DONE/PHASE-19-wasm-runtime-compilation.md) on 2026-05-30 (the managed compile **engine** is done & desktop-verified; this was the **runtime** tail). Kept here only as a breadcrumb so old links resolve.
-
----
-
-## How to resolve items here
-
-1. **Verify and check off:** For items marked *(file exists — verify coverage)*, run the existing test file, confirm the assertion exists, then check it off in both this document and the originating `DONE/PHASE-X` file.
-2. **Implement in the right phase:** Items tagged *(Phase 10)*, etc. belong in those phases — pick them up when starting that phase.
-3. **Write missing tests:** Items with no file yet go into the appropriate test project; write them as part of a test sweep before release.
+## Where everything went
+
+| Former Phase 100 section | Promoted to |
+|---|---|
+| **From Phase 2/3/4/5/6/8/9/15** — deferred unit/integration test coverage + manual pack/CLI verification (DXC flag/diagnostic tests, DXC integration, SPIRV-Cross binding-slot/`SD0101` verifier, `MgfxParameterMatch` golden snapshot, GLSL Y-flip `11-6-B`/`11-6-C`, `FileSystemIncludeResolver` + `DxcIncludeHandler` tests, direct `ShaderIRBuilder` tests + `InternalsVisibleTo`, CLI-process `[Theory]` parity, CLI pack/install/publish §9.4–9.6) | **[Phase 27 — Pre-1.0 Test & Verification Sweep](PHASE-27-pre-1.0-test-and-verification-sweep.md)** |
+| **`17-VS`** — VS-driven MonoGame effects (symmetric `vs_uniforms_vec4` remap, VS-side attribute/varying I/O, PS/VS `mat4` expansion, validation) | **[Phase 28 — VS-Driven MonoGame Effects](PHASE-28-vs-driven-monogame-effects.md)** |
+| **From Phase 9** — "Full MGCB content processor plugin (`ShadowDusk.MgcbPlugin`)" | **[Phase 29 — MGCB Content-Processor Plugin (Tier 2)](PHASE-29-mgcb-content-processor-plugin.md)** |
+| **From Phase 9** — "Metal/MSL pipeline stage" (the empty `MslEmitter` stub) | **[Phase 31 — Metal / MSL Backend](PHASE-31-metal-msl-backend.md)** |
+| **From Phase 4** — Vulkan compile-flag/SPIR-V items (most already covered by `DxcFlagBuilderTests` / `DxcShaderCompilerIntegrationTests`) + the Vulkan target wiring | **[Phase 32 — Vulkan Backend](PHASE-32-vulkan-backend.md)** |
+| **From Phase 19** — WASM browser-runtime tail (emscripten modules + real in-browser run) | already moved out (2026-05-31) → **[Phase 23](DONE/PHASE-23-in-browser-compilation.md)** (faithful compile) + **[Phase 24](DONE/PHASE-24-browser-render-validation.md)** (render) + **[Phase 30 §16](PHASE-30-cross-platform-ci.md)** (CI) |
+| **From Phase 15** — cross-platform *runs* of the suite (Linux/macOS) | **[Phase 30 — Cross-Platform CI](PHASE-30-cross-platform-ci.md)** |
+
+### Already-resolved items (not promoted — closed in place)
+
+- `11-6-A` — `SpirvCrossGlslTranspiler` wired into `CompilationPipeline` (resolved in Phase 8).
+- `11-6-D` — uniform remapping for the MonoGame OpenGL runtime (resolved in Phase 17; see `docs/glsl-uniform-naming.md`).
+- Phase 8 packaging `7.4`/`7.5` — NuGet drop-in fix (resolved 2026-05-31, branch `selfcontained-inmemory-nuget`).
+- Phase 3 wiring checks `8.2`/`8.3`/`8.4` — verified against `CompilationPipeline.cs`.
+
+> Cross-cutting `Status:` for the index lives in [plan.md](plan.md) → *Active & Planned Phases* (and the *Roadmap tracks* grouping below the table). The detailed task lists, acceptance criteria, and DoD that used to be sketched here now live in each promoted phase doc above.

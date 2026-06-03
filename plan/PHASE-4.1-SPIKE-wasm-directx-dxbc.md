@@ -99,5 +99,5 @@ A solution is acceptable if it meets all of the following:
 ## Related
 
 - [plan.md — DXC SM5 constraint](plan.md#-known-constraint-dxc-cannot-produce-sm5-dxbc)
-- [PHASE-4-dxc-integration.md — flag table deviation](PHASE-4-dxc-integration.md)
+- [PHASE-4-dxc-integration.md — flag table deviation](DONE/PHASE-4-dxc-integration.md)
 - Memory: `project-dxc-sm5-constraint.md`

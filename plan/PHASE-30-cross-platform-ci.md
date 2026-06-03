@@ -1001,7 +1001,7 @@ Phases 22, 23, 24, and 100 all defer their browser/WASM validation "to Phase 30.
 ### 16.2 Headless-browser render smoke (Phase 24's harness)
 
 - [ ] Install Playwright browsers (`playwright install --with-deps chromium`).
-- [ ] Run **[Phase 24](PHASE-24-browser-render-validation.md)**'s harness headless against the published sample: **mode-1** (precompiled `.mgfx` loads + renders in KNI WebGL — the MGFXReader10/KNIFX-v11 answer), then **mode-2** (in-browser compile + render).
+- [ ] Run **[Phase 24](DONE/PHASE-24-browser-render-validation.md)**'s harness headless against the published sample: **mode-1** (precompiled `.mgfx` loads + renders in KNI WebGL — the MGFXReader10/KNIFX-v11 answer), then **mode-2** (in-browser compile + render).
 - [ ] Use deterministic software GL (`--use-gl=angle --use-angle=swiftshader`) so pixel comparison is reproducible across runners.
 - [ ] Pixel-compare against Phase-17 references at the **§6.1 tolerance** (shared standard — do not invent a new one).
 - [ ] **AV-scan slowness allowance:** apply the CLAUDE.md Phase 21 note (freshly-built native/WASM binaries get on-access-scanned cold); generous step timeouts, and exclude `**/bin`, `**/obj`, `tools/`, `.wasm-build/` on self-hosted runners.
