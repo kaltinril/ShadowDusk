@@ -1,136 +1,94 @@
-# ShaderFiddle.Web — ShadowDusk in-browser shader fiddle (Phase 22)
+# ShaderFiddle.Web — ShadowDusk in-browser shader fiddle
 
-An XNA-Fiddle-style browser sample: paste HLSL `.fx`, and see the standard
-ShadowDusk **cat** re-rendered with that shader applied — entirely client-side,
-no server. Runtime is **KNI** (nkast's MonoGame fork) on **Blazor WebAssembly +
-WebGL**.
+An XNA-Fiddle-style browser sample: paste HLSL `.fx`, compile it **entirely in the
+browser**, and see the standard ShadowDusk **cat** re-rendered with that shader
+applied — no server, no `mgfxc`, no native toolchain on the user's machine.
+Runtime is **KNI** (nkast's MonoGame fork) on **Blazor WebAssembly + WebGL**.
 
 ```
-paste .fx ─▶ WasmShaderCompiler.CompileAsync(src, OpenGL)   ── in-browser (Phase 19 mode 2)
+paste .fx ─▶ WasmShaderCompiler.CompileAsync(src, OpenGL)   ── faithful DXC→WASM, in-browser
           ─▶ byte[] .mgfx (MonoGame MGFX v10 / MojoShader)  ── Phase 17 format
-          ─▶ new Effect(graphicsDevice, mgfxBytes)          ── KNI WebGL runtime
+          ─▶ new Effect(graphicsDevice, mgfxBytes)          ── real KNI WebGL Effect
           ─▶ SpriteBatch.Begin(effect:); Draw(cat); End();  ── applied over the cat
           ─▶ WebGL canvas
 ```
 
-## Status (2026-05-31) — read this first
+## Status — this sample uses the faithful product compiler
 
-This sample is built on the Phase 22 **Fallback (mode 1)** path, because two
-dependencies are not yet in place:
+Both modes are live and use the **real ShadowDusk pipeline**:
 
-| Path | What it is | State here |
+| Path | What it is | State |
 |---|---|---|
-| **Mode 1** — load precompiled `.mgfx` and render | the *Load a precompiled sample* dropdown | **Wired & shipped.** Renders one of the 10 Phase-17 corpus shaders through a real KNI `Effect`. |
-| **Mode 2** — compile `.fx` in-browser | the *Compile & Apply* button | **HLSL→SPIR-V frontend is now REAL** (`wwwroot/shadowdusk-dxc.js`, backed by **Slang** compiled to WebAssembly, `wwwroot/slang/`). The SPIR-V→GLSL stage (`wwwroot/shadowdusk-spirv-cross.js`) is wired separately. End-to-end mode-2 render also depends on the KNI MGFX-load path (see below). |
+| **Mode 1** — load a precompiled `.mgfx` and render | the *Load a precompiled sample* dropdown | **Done.** Renders one of the 10 Phase-17 corpus shaders through a real KNI `Effect`. |
+| **Mode 2** — compile `.fx` in-browser | the *Compile & Apply* button | **Done — faithful.** Compiles via `WasmShaderCompiler` (the **faithful pinned DXC→WASM → SPIR-V → SPIRV-Cross → MGFX** pipeline, Phase 23), then loads + renders the result. |
 
-The in-browser HLSL→SPIR-V compiler uses **Slang** (`slang-wasm`, v2026.10),
-not DXC: DXC has no maintained WASM build, while Slang ships a prebuilt browser
-WASM that compiles HLSL syntax straight to SPIR-V. A desktop spike proved Slang's
-SPIR-V flows through ShadowDusk's pure-managed `SpirvReflector` **unchanged**
-(Grayscale + TintShader reflect identically to the DXC/`-fvk-use-dx-layout`
-oracle for the SM3 PS corpus). See `wwwroot/slang/RESTORE.md` for version/source.
+**No substitute compilers.** Mode 2 runs the same faithful frontend as the desktop
+CLI — the in-browser SPIR-V is **byte-identical to desktop DXC**. The compiler ships
+inside the `ShadowDusk.Wasm` NuGet package as self-registered Blazor static web
+assets (`_content/ShadowDusk.Wasm/`); this sample adds only a `ProjectReference` and
+**wires nothing** (no `JSHost.ImportAsync` — see `Pages/Index.razor.cs`). The first
+*Compile & Apply* lazily downloads the ~17 MB `dxcompiler.wasm` once.
 
-### What has and has not been verified
+> The older Slang-wasm frontend (`wwwroot/shadowdusk-dxc.js` + `wwwroot/slang/`) is
+> **dead, sample-only reference** kept for history — it is **not registered** and
+> never runs. Slang was a *substitute* compiler (sample-only per THE PURPOSE); the
+> faithful DXC→WASM module replaced it in Phase 23.
+
+### Verified
 
 - ✅ **Builds and publishes** clean (`dotnet build`, `dotnet publish -c Release`),
-  `net8.0-browser` + BlazorWebAssembly SDK, referencing both KNI (net8.0) and
-  `ShadowDusk.Wasm` (net8.0-browser). All `index.html` JS/asset paths resolve in
-  the publish output, **including `wwwroot/slang/*`** (the Slang WASM is staged
-  into the publish `wwwroot/` and served as a static asset).
-- ✅ **HLSL→SPIR-V frontend verified under node** (no browser): the real
-  `shadowdusk-dxc.js` compiles a corpus pixel shader (Grayscale) to valid SPIR-V
-  (1400 bytes, magic `0x07230203`), broken shaders throw the Slang diagnostic, and
-  the output reflects cleanly through ShadowDusk's `SpirvReflector` — TintShader's
-  `TintColor` cbuffer member matches the DXC `-fvk-use-dx-layout` oracle byte-for-byte.
-- ⚠️ **Full mode-2 render not yet verified in a browser.** The dev environment that
-  produced this has no browser, so the actual cat render is a **manual run** step
-  (below) and a Phase 30 headless-browser CI item — not an automated check here.
-- ⚠️ **Two DXC flags can't be forwarded to Slang's WASM API.** The `slang-wasm`
-  embind surface only exposes `createSession(targetEnum)` (no `CompilerOptionEntry`
-  pass-through), so `-fvk-use-dx-layout` and `-fvk-use-entrypoint-name` are dropped.
-  Neither affects the SM3 PS corpus: Slang defaults to row-major (== `-Zpr`) and the
-  lone `float4` cbuffer member packs identically; the SPIR-V entry point is named
-  `main` (not `MainPS`), but `SpirvReflector` keys on types/decorations, not the
-  entry name. Shaders with mixed scalar/matrix cbuffer packing could differ — track
-  this if the corpus grows.
-- ⚠️ **KNI load-side risk (the big unknown).** KNI v4.x uses its own **KNIFX
-  v11** format (`KNIF` signature, `dotnet-knifxc`). KNI's `new Effect(gd, byte[])`
-  *also* accepts legacy MonoGame **MGFX v10** (`MGFX` signature, version byte 10,
-  profile `OpenGL_Mojo`) — which is exactly what ShadowDusk emits — via a
-  backward-compat `MGFXReader10`. **But that reader is a fork:** passing the
-  signature/version gate is necessary, not sufficient. Whether ShadowDusk's
-  MGFX v10 GLSL dialect actually *renders* in KNI WebGL is unverified. If it
-  diverges, ShadowDusk needs a KNIFX-v11 writer (see the phase doc); the UI
-  reports the `new Effect` failure verbatim if it happens.
+  `net8.0-browser` + BlazorWebAssembly SDK, referencing KNI (net8.0) and
+  `ShadowDusk.Wasm` (net8.0-browser).
+- ✅ **Faithful frontend byte-identical to desktop DXC** — the `.wasm-build` gates
+  (`node-test-dxc-wasm.mjs`, `node-test-dxc-shim.mjs`) are 10/10 exact on the corpus.
+- ✅ **Renders in real KNI WebGL** — Phase 24's headless harness compiles + renders
+  the corpus **10/10** pixel-equivalent (after the Dissolve slot-1 sampler pin and the
+  `roundEven`→`floor(x+0.5)` WebGL1 lowering). KNI's forked `MGFXReader10` parses
+  ShadowDusk's MGFX v10 directly — **no KNIFX-v11 writer needed**.
+- ✅ **Live mode-2 compile confirmed in a real desktop browser.**
 
-## Run it (manual)
+## Run it
 
 ```bash
 cd samples/ShaderFiddle.Web
-dotnet run                 # serves on https://localhost:5xxx
+dotnet run                 # serves on http://localhost:5000
 # then open the printed URL in a browser
 ```
 
-or `./run.ps1` on Windows. First load is slow — the whole .NET WASM runtime + KNI
-must download (no size optimization here; that's deferred).
+or `./run.ps1` on Windows. First load downloads the .NET WASM runtime + KNI (no size
+optimization here; deferred). **Prerequisite:** the faithful `dxcompiler.wasm` must be
+restored into the package's `wwwroot/dxc/` — run `pwsh -File tools/restore.ps1` (or
+`./tools/restore.sh`) once before building; the build fails loudly if it is missing.
 
 On the page:
 1. It boots showing the cat through the **Grayscale** sample (mode 1).
 2. Pick other samples from the dropdown to load their precompiled `.mgfx`
    (Invert, TintShader, Sepia, Saturate, Pixelated, Scanlines, Fading, Dots,
-   Dissolve) — each with the same by-name parameter values the desktop Phase-17
+   Dissolve), each with the by-name parameter values the desktop Phase-17
    validation uses (`WebShaderInputs.SetParams`).
-3. Click **Compile & Apply** to exercise the in-browser compile path. The
-   HLSL→SPIR-V step now runs the real Slang WASM compiler; the SPIR-V→GLSL step
-   and KNI MGFX load determine whether the final render appears (see the load
-   risk above). On any failure the error panel shows the verbatim diagnostic.
+3. Edit the source and click **Compile & Apply** to compile it in-browser (mode 2).
+   On any failure the error panel shows the verbatim ShadowDusk diagnostic.
+4. **Live parameters** — after a compile/load, the panel lists the effect's editable
+   `float` scalar/vector parameters; edit them to drive the shader live. (A custom
+   global like `float FishEyeAmount = 0.35;` shows up here defaulting to `0` — DXC
+   doesn't bake a global's initializer into the bytes, so set it here, inline it as a
+   literal, or `SetValue` it from code.)
+5. **Reset (no shader)** drops the effect and shows the original cat.
 
-## Verify the HLSL→SPIR-V frontend (Slang WASM)
+## Verify the faithful frontend without a browser
 
-The frontend (`wwwroot/shadowdusk-dxc.js`) is **node-testable without a browser**
-— it is a plain ES module and Slang's WASM runs under node ≥ v18:
+The product frontend is the pinned **DirectXShaderCompiler compiled to WebAssembly**
+(`.wasm-build/dxc-wasm-out/dxcompiler.{js,wasm}`, restored into the package). It is
+node-testable — its SPIR-V is byte-identical to the desktop CLI on the corpus:
 
 ```bash
-node - <<'EOF'
-import { pathToFileURL } from 'node:url';
-const url = pathToFileURL('samples/ShaderFiddle.Web/wwwroot/shadowdusk-dxc.js').href;
-const { compileToSpirv, ensureReady } = await import(url);
-await ensureReady();                                   // loads slang-wasm once
-const hlsl = `
-Texture2D SpriteTexture; SamplerState SpriteTextureSampler;
-struct VSOut { float4 Position: POSITION; float4 Color: COLOR0; float2 UV: TEXCOORD0; };
-float4 MainPS(VSOut i) : SV_Target {
-  float4 c = SpriteTexture.Sample(SpriteTextureSampler, i.UV) * i.Color;
-  c.rgb = (c.r + c.g + c.b) / 3.0f; return c; }`;
-const spv = compileToSpirv(hlsl, ['-E','MainPS','-T','ps_5_0','-spirv',
-  '-fvk-use-dx-layout','-auto-binding-space','1','-Zpr','-WX']);
-const magic = (spv[0]|(spv[1]<<8)|(spv[2]<<16)|(spv[3]<<24))>>>0;
-console.log('SPIR-V bytes', spv.length, 'magic 0x'+magic.toString(16)); // expect 0x7230203
-EOF
+node .wasm-build/node-test-dxc-wasm.mjs    # raw module == desktop DXC, 10/10
+node .wasm-build/node-test-dxc-shim.mjs    # the [JSImport] shim == desktop DXC, 10/10
 ```
 
-This is the same `(hlslSource, args)` contract `ShadowDusk.Wasm`'s
-`[JSImport("compileToSpirv","shadowdusk-dxc")]` calls. The emitted SPIR-V was
-confirmed to reflect cleanly through the real `SpirvReflector` (textures,
-samplers, and the `TintColor` cbuffer member all match the DXC oracle).
-
-### Browser verification (manual, no automation here)
-
-1. `dotnet run` (above); open the printed URL. The page boots in **mode 1** (cat
-   via precompiled `.mgfx`) — the ~21 MB `slang-wasm.wasm` is **not** downloaded
-   yet (the frontend loads it lazily, off the boot path).
-2. Open DevTools → Network. Click **Compile & Apply**. On the **first** click you
-   should see `slang/slang-wasm.wasm` fetched once (status "Compiling in-browser…"
-   stays up during the download), then the compile runs.
-3. **Expected with the current pieces:** the HLSL→SPIR-V step succeeds. Whether the
-   cat re-renders depends on the SPIR-V→GLSL module and the KNI MGFX-load path; if
-   either is incomplete the error panel shows the exact stage's diagnostic (the
-   frontend never fakes success). Subsequent compiles reuse the cached compiler (no
-   re-download).
-4. To confirm the frontend in isolation in the browser console:
-   `await (await import('./shadowdusk-dxc.js')).ensureReady()` should resolve, and
-   a `compileToSpirv(src, ['-E','MainPS','-T','ps_5_0'])` call should return a
-   `Uint8Array` beginning `03 02 23 07`.
+The full report (pinned DXC commit, emscripten version, build recipe) is
+`.wasm-build/DXC-WASM-BUILD.md`; the package-side restore is documented in
+`src/ShadowDusk.Wasm/wwwroot/dxc/RESTORE.md`.
 
 ## How it mirrors the desktop validation
 
@@ -138,7 +96,8 @@ The render path is a direct port of `validation/Shared/EffectImageRenderer.cs`
 (KNI keeps the `Microsoft.Xna.Framework` namespace, so the code is nearly
 verbatim): `BlendState.Opaque` + `SamplerState.LinearClamp`, the SpriteBatch VS
 **prime** so the PS-only effect inherits SpriteBatch's vertex shader, then an
-`Immediate` batch with the effect. Parameters are set **by name**
+`Immediate` batch with the effect. Slot-1 sampler state is pinned to
+`LinearClamp` (Dissolve's second texture). Parameters are set **by name**
 (`WebShaderInputs`, ported from `validation/Shared/ShaderInputs.cs`). The cat is
 `samples/ShaderViewer/Content/cat.jpg`; the mode-1 `.mgfx` are the Phase-17
 OpenGL goldens from `tests/fixtures/golden/OpenGL/`.
@@ -157,13 +116,12 @@ from the repo-root props (which force `net8.0`, central package management, and
 |---|---|
 | `ShaderFiddle.Web.csproj` | net8.0-browser Blazor WASM; refs KNI + `ShadowDusk.Wasm` |
 | `Program.cs` | Blazor host |
-| `Pages/Index.razor[.cs]` | the fiddle UI + compile/load loop + error panel |
-| `ShaderFiddleGame.cs` | KNI WebGL `Game`; cat + effect render path |
+| `Pages/Index.razor[.cs]` | the fiddle UI: compile/load loop, live-parameter panel, reset, error panel |
+| `ShaderFiddleGame.cs` | KNI WebGL `Game`; cat + effect render path; parameter get/set |
 | `WebShaderInputs.cs` | corpus list + by-name parameter values (ported) |
 | `wwwroot/index.html` | Blazor shell + KNI 8.0.11 JS shims + render loop |
-| `wwwroot/shadowdusk-dxc.js` | **Sample-only Slang shim — NO LONGER REGISTERED.** Since Phase 23 M1 the `ShadowDusk.Wasm` package self-registers its own **faithful** DXC→WASM `shadowdusk-dxc` module from `_content/ShadowDusk.Wasm/`, so this sample wires nothing. This Slang-backed file is kept only as a reference of the prior substitute frontend (sample-only; never the product). |
-| `wwwroot/slang/slang-wasm.{js,wasm,d.ts}` | Prebuilt **Slang v2026.10** WebAssembly compiler (HLSL→SPIR-V) + embind loader + TS types — sample-only reference; not the product frontend. Provenance & re-fetch recipe in `wwwroot/slang/RESTORE.md`. |
-| `wwwroot/shadowdusk-spirv-cross.js` | Sample-only copy of the SPIR-V→GLSL shim. The product copy now ships in the `ShadowDusk.Wasm` package (`_content/ShadowDusk.Wasm/`) and is self-registered there; this sample copy is no longer registered. |
 | `wwwroot/cat.jpg` | the standard cat image |
 | `wwwroot/shaders/OpenGL/*.mgfx` | precompiled mode-1 corpus bytes |
 | `wwwroot/shaders/src/*.fx` | corpus sources shown in the editor |
+| `wwwroot/shadowdusk-dxc.js`, `wwwroot/slang/*` | **Dead sample-only Slang reference — NOT registered, never runs.** The faithful DXC→WASM frontend ships in the `ShadowDusk.Wasm` package and self-registers; these are kept only as a record of the prior substitute frontend. |
+| `wwwroot/shadowdusk-spirv-cross.js` | Sample-only copy of the SPIR-V→GLSL shim; the product copy ships in the package and is self-registered. |
