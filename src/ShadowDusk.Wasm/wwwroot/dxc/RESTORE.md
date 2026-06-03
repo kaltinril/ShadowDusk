@@ -14,16 +14,20 @@ the desktop pipeline uses (Vortice.Dxc 3.3.4 == DXC 1.7.2212.40, commit
 
 ## Restore
 
-The `.wasm` is produced by the M0 build and lives under `.wasm-build/` (itself
-gitignored). To repopulate this directory after a fresh clone:
+The built module **is committed to the repo** at `.wasm-build/dxc-wasm-out/dxcompiler.{js,wasm}`
+(force-added past the `.wasm-build/` ignore). So on a fresh clone the restore is a
+plain **copy** — no rebuild — and `tools/restore.*` (`Restore-DxcWasm`) does it for
+you before build/pack. Manual copy if needed:
 
 ```pwsh
-# Build it (out-of-session, multi-day LLVM-fork build — see DXC-WASM-BUILD.md):
-pwsh -File .wasm-build/Invoke-DxcWasmBuild.ps1
-# Or, if .wasm-build/dxc-wasm-out/ already holds a built module, just copy:
 Copy-Item .wasm-build/dxc-wasm-out/dxcompiler.js   src/ShadowDusk.Wasm/wwwroot/dxc/
 Copy-Item .wasm-build/dxc-wasm-out/dxcompiler.wasm src/ShadowDusk.Wasm/wwwroot/dxc/
 ```
+
+Only if you need to **rebuild from source** (e.g. bump the DXC pin) run the M0 build
+(`pwsh -File .wasm-build/Invoke-DxcWasmBuild.ps1`) — an out-of-session LLVM-fork
+emscripten build; see `.wasm-build/DXC-WASM-BUILD.md`. **Carry-forward:** that build
+script is Windows/MSVC-only today; a Linux/macOS rebuild path + CI is owned by Phase 30 §16.
 
 ## Gates
 

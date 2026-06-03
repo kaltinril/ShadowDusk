@@ -1,6 +1,18 @@
 # Phase 23 — In-Browser Compilation (mode 2 end-to-end), un-deferred from Phase 100
 
-**Status:** Active (un-deferred 2026-05-31). Promotes the "Native WASM modules" tail out of [Phase 100](PHASE-100-deferred-backlog.md) into a real, sequenced phase because [Phase 22](PHASE-22-wasm-shader-fiddle-sample.md)'s showcase needs it — the deferral was blocking the *reach* promise it's meant to prove.
+**Status:** ✅ **DONE (2026-06-02).** All three gates met for the OpenGL PS-only corpus, confirmed by an adversarial completeness review (4 skeptical lenses + verdict: *closeable, zero blockers, high confidence*).
+
+- **Gate 1 — faithful frontend (no substitute compiler): MET.** The product's only `shadowdusk-dxc` registration loads the faithful **pinned DXC→WASM** module (Vortice.Dxc 3.3.4 == DXC `e043f4a1`, the same compiler as desktop) and forwards DXC args **verbatim** (incl. `-fvk-use-dx-layout`/`-auto-binding-space` that Slang dropped). Byte-identity gates **G0** (raw module) + **G1** (the product shim) pass **10/10 byte-identical to desktop DXC**, re-verified live. **No Slang leak** — Slang is sample-only.
+- **Gate 2 — turnkey packaging: MET.** `ShadowDusk.Wasm` ships the native modules as Razor-SDK static web assets and **self-registers** them (`WasmModuleRegistration`); an out-of-repo scratch consumer compiled with **only a `PackageReference`**, zero wiring.
+- **Gate 3 — proven render: MET (genuine rung-4).** The faithful in-browser compile (`WasmShaderCompiler` → DXC-WASM → SPIRV-Cross-WASM → managed write) loads via real `new Effect(gd, bytes)` in **real headless KNI WebGL** with real `gl.readPixels`, params bound via the real public `Effect.Parameters` API (not the injected-uniform trap) — **10/10 render-equivalent**. mgfxc-equivalence is the CLAUDE.md-sanctioned **transitive proof through Phase 17** (corroborated: 7/10 ShadowDusk references are md5-identical to mgfxc goldens).
+
+The faithful path also surfaced + fixed a real reach bug: .NET 8 WASM has no BCL MD5, so `MgfxWriter.ComputeEffectKey` threw in-browser → `ManagedMd5` (RFC-1321), proven ≡ BCL MD5 (17/17). Full solution **515/515**. Commits: M0 `33e298d`, M2+M3 `d51b070`, M1 `9cc983a`.
+
+**Carry-forwards (owned elsewhere, NOT Phase 23 blockers):** DirectX-DXBC-in-WASM → [Phase 4.1](PHASE-4.1-SPIKE-wasm-directx-dxbc.md); CI + Linux/macOS *rebuild-from-source* of `dxcompiler.wasm` (today the build script is Windows/MSVC-only; the built `.wasm` is committed so consumers/CI need only a copy) → [Phase 30 §16](PHASE-30-cross-platform-ci.md); VS-driven path through DXC→WASM (corpus is PS-only) → backlog 17-VS; untrusted-`.fx` input validation → [Phase 25](PHASE-25-security-hardening.md); download-size/cold-start UX + mode-2 default-on decision (Track E1); arbitrary-shader hardening beyond the 10-shader corpus.
+
+---
+
+**Original framing (kept for history).** Status: Active (un-deferred 2026-05-31). Promotes the "Native WASM modules" tail out of [Phase 100](PHASE-100-deferred-backlog.md) into a real, sequenced phase because [Phase 22](PHASE-22-wasm-shader-fiddle-sample.md)'s showcase needs it — the deferral was blocking the *reach* promise it's meant to prove.
 
 **Depends on:** Phase 19 (the managed engine: injectable backend seams, the pure-managed `SpirvReflector`, the DXIL-free GL reflection path, `WasmShaderCompiler` + the `[JSImport]` contract), Phase 22 (the consumer/sample app), **Phase 24 (the headless-browser render harness — Gate 3's proof tool, which must come up *before* the faithful frontend lands so KNI-load risk is retired first)**, Phase 25 (untrusted web input), Phase 30 (CI wiring of the Phase 24 harness). Requires the **emscripten 3.1.34** toolchain (the exact version the .NET 8 WASM runtime is built with) and a real browser for the run-validation tail.
 
@@ -57,10 +69,12 @@ Faithfulness is moot if the consumer hand-wires assets. Today the **sample** han
 
 ```xml
 <TargetFramework>net8.0-browser</TargetFramework>
-<PackageReference Include="ShadowDusk.Compiler" />
+<!-- ShadowDusk.Wasm carries WasmShaderCompiler + the self-registered native
+     modules; it transitively pulls in ShadowDusk.Compiler/Core. -->
+<PackageReference Include="ShadowDusk.Wasm" />
 ```
 ```csharp
-var mgfx = (await compiler.CompileAsync(fx, ShaderTarget.OpenGL)).Value.MgfxBytes;
+var mgfx = (await new WasmShaderCompiler().CompileAsync(fx, options)).Value.Data;
 var effect = new Effect(graphicsDevice, mgfx);   // no wwwroot, no JSHost
 ```
 

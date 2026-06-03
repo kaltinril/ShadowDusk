@@ -18,11 +18,15 @@ tools/vkd3d/*.so
 tools/vkd3d/*.so.*
 tools/vkd3d/*.dylib
 
-# WASM build scratch for the in-browser SPIRV-Cross module: emsdk (~600 MB),
-# the SPIRV-Cross source checkout, the .NET fixture probe, and the generated
-# SPIR-V/GLSL fixtures. All reproducible via .wasm-build/build-spirv-cross-wasm.ps1
-# + .wasm-build/README.md; never committed. The built wasm/js live under
-# samples/ShaderFiddle.Web/wwwroot/spirv-cross/ (those ARE committed).
+# WASM build scratch: emsdk (~600 MB), the SPIRV-Cross + DXC source checkouts,
+# and intermediate build trees. Ignored by default — BUT the durable Phase 23 M0
+# deliverables under .wasm-build/ are force-committed (git add -f) past this rule
+# so the build is reproducible and the faithful-DXC gates run from a clean clone:
+# the build scripts (build-dxc-wasm.ps1, Invoke-DxcWasmBuild.ps1, ninja-dxcompiler.ps1,
+# dxc-wasm-glue.cpp, dxc-wasm-patches.txt), the report (DXC-WASM-BUILD.md), the
+# byte-identity gates (node-test-dxc-{wasm,shim}.mjs), the desktop SPIR-V oracle
+# (corpus-spirv/, dxc-corpus-probe/), AND the built module dxc-wasm-out/dxcompiler.{js,wasm}
+# (~17.4 MB) are all tracked. The heavy emsdk/dxc-src/spirv-cross-src checkouts are not.
 .wasm-build/
 
 # The Slang HLSL->SPIR-V WASM module (~21 MB) for samples/ShaderFiddle.Web is a
@@ -33,11 +37,13 @@ tools/vkd3d/*.dylib
 samples/ShaderFiddle.Web/wwwroot/slang/slang-wasm.wasm
 
 # The FAITHFUL pinned DXC->WASM module (~17.4 MB) — the PRODUCT in-browser
-# HLSL->SPIR-V frontend (Phase 23, Option A). Built by
-# .wasm-build/build-dxc-wasm.ps1 (M0); restored/copied into the package wwwroot,
-# not committed (see src/ShadowDusk.Wasm/wwwroot/dxc/RESTORE.md). The small
-# faithful shim (src/ShadowDusk.Wasm/wwwroot/shadowdusk-dxc.js) and the emscripten
-# loader (dxc/dxcompiler.js, ~54 KB) ARE committed.
+# HLSL->SPIR-V frontend (Phase 23, Option A). Only THIS package-wwwroot COPY is
+# ignored: it is restored before build/pack by copying the committed source-of-truth
+# at .wasm-build/dxc-wasm-out/dxcompiler.wasm (see src/ShadowDusk.Wasm/wwwroot/dxc/RESTORE.md
+# + tools/restore.* Restore-DxcWasm). Because the source is committed, a clean clone
+# needs only a copy (no rebuild). The small faithful shim
+# (src/ShadowDusk.Wasm/wwwroot/shadowdusk-dxc.js) and the emscripten loader
+# (dxc/dxcompiler.js, ~54 KB) ARE committed here too.
 src/ShadowDusk.Wasm/wwwroot/dxc/dxcompiler.wasm
 
 # MGCB compiled content output (XNB wrappers — not the raw .mgfx golden files)
