@@ -45,13 +45,13 @@ Almost every "task" in this document already maps to a written phase plan under 
 | §11.7 CLI tool (`mgfxrt`-style → ShadowDusk's `mgfxc`) | [PHASE-9 CLI entry point](plan/DONE/PHASE-9-cli-entry-point.md) | ✅ Done |
 | §14.1–14.3 Golden-file + reader + runtime-constructor tests | [PHASE-15 integration](plan/DONE/PHASE-15-integration-tests.md), [PHASE-16 image regression](plan/DONE/PHASE-16-image-regression-tests.md) | ✅ Done |
 | §1, §5, §9.1–9.2, **§9.7 MojoShader**, §10.4, §14.4 — real `Effect` load + same-pixels equivalence + GL dialect | [PHASE-17 MonoGame runtime validation](plan/DONE/PHASE-17-monogame-runtime-validation.md) | ✅ **Done (2026-05-30)** — full SM3 PS-only corpus (10/10, Dissolve incl.); VS-driven → backlog 17-VS |
-| §9.3 / §13 — DXC emits DXIL, not the SM≤5 **DXBC** MonoGame DX11 loads | [PHASE-18 DirectX DXBC](plan/PHASE-18-directx-dxbc.md) | 🆕 New (this gap) |
-| §8 + §11.x + Task I — **WASM in-browser / runtime compilation** | [PHASE-19 WASM runtime compilation](plan/PHASE-19-wasm-runtime-compilation.md) | 🆕 New (this gap) |
-| §15.4 native-binary distribution across OS | [PHASE-30 cross-platform CI](plan/PHASE-30-cross-platform-ci.md) | 🚧 Active |
-| §15.4 / §8 path-safety + untrusted shader-source input validation | [PHASE-25 security hardening](plan/PHASE-25-security-hardening.md) | 🚧 Active |
-| §11.8 MSBuild precompile task | [PHASE-20 deferred backlog](plan/PHASE-100-deferred-backlog.md) | 🗒️ Backlog |
+| §9.3 / §13 — DXC emits DXIL, not the SM≤5 **DXBC** MonoGame DX11 loads | [PHASE-18 DirectX DXBC](plan/DONE/PHASE-18-directx-dxbc.md) | ✅ **Done (2026-05-30)** — DX11 path does **not** use DXC; the shipping cross-platform backend is **vkd3d-shader** (HLSL → DXBC SM5), with Windows-only `d3dcompiler_47` as a correctness oracle. 10/10 SM5 PS-only corpus loads + renders pixel-equivalent in real MonoGame WindowsDX |
+| §8 + §11.x + Task I — **WASM in-browser / runtime compilation** | [PHASE-19 WASM engine](plan/DONE/PHASE-19-wasm-runtime-compilation.md), [PHASE-22 fiddle sample](plan/DONE/PHASE-22-wasm-shader-fiddle-sample.md), [PHASE-23 in-browser compile](plan/DONE/PHASE-23-in-browser-compilation.md), [PHASE-24 browser render](plan/DONE/PHASE-24-browser-render-validation.md) | ✅ Done — the faithful in-browser frontend is the **pinned DirectXShaderCompiler compiled to WebAssembly** (byte-identical SPIR-V to desktop DXC); Slang was a sample-only spike and is **not** the product. Renders 10/10 in real headless KNI WebGL |
+| §15.4 native-binary distribution across OS | [PHASE-30 cross-platform CI](plan/PHASE-30-cross-platform-ci.md) | 🚧 Open |
+| §15.4 / §8 path-safety + untrusted shader-source input validation | [PHASE-25 security hardening](plan/PHASE-25-security-hardening.md) | 🚧 Open |
+| §11.8 MSBuild precompile task | [PHASE-100 deferred backlog](plan/PHASE-100-deferred-backlog.md) | 🗒️ Backlog |
 
-The two **🆕 New** rows are the only substantive areas this document raised that lacked a phase plan — both now have one (created alongside this mapping). Everything else is already planned or built.
+The two areas this document raised that originally lacked a phase plan — DirectX **DXBC** (now Phase 18) and **WASM in-browser compilation** (now Phases 19/22/23/24) — have since been planned *and* built (all moved to `plan/DONE/` as of 2026-06-02). Everything else is already planned or built.
 
 ---
 

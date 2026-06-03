@@ -1,8 +1,20 @@
 # slang-wasm — provenance & restore recipe
 
-In-browser **HLSL → SPIR-V** compiler for the Shader Fiddle mode-2 path
-(`wwwroot/shadowdusk-dxc.js`). These are the **official prebuilt** Slang
-WebAssembly artifacts — no local build is required.
+> **Slang is SAMPLE-ONLY / a dead reference — NOT the product in-browser frontend.**
+> The product in-browser HLSL → SPIR-V frontend is the **faithful pinned DXC compiled
+> to WebAssembly** (the SAME compiler the desktop pipeline uses — Vortice.Dxc 3.3.4 /
+> DXC commit `e043f4a1`), which lives in the package at
+> `src/ShadowDusk.Wasm/wwwroot/dxc/` (see its `RESTORE.md`) and produces byte-identical
+> SPIR-V to desktop. Slang was a 2026 spike; it is retained **only** in this sample's
+> mode-2 path because it lacks a maintained DXC WASM build at the time, and because
+> 2 DXC flags don't forward through Slang's API it could never be the faithful path.
+> Do not treat Slang as the deliverable — see THE PURPOSE in `CLAUDE.md` ("ONE
+> faithful pipeline everywhere, NO substitute compilers"). These artifacts exist so
+> the sample's mode-2 demo can run; the product never references them.
+
+In-browser **HLSL → SPIR-V** compiler for the Shader Fiddle mode-2 sample path
+(`wwwroot/shadowdusk-dxc.js`, the Slang shim in *this sample only*). These are the
+**official prebuilt** Slang WebAssembly artifacts — no local build is required.
 
 | File | What it is |
 |---|---|

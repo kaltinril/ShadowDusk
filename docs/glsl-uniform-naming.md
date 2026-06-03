@@ -6,6 +6,10 @@
 > proposal. Resolves backlog **11-6-D**. (Originally researched in Phase 6 and
 > deferred — that earlier "Phase 6/7" framing is superseded by what follows.)
 
+This rewrite is the **managed MojoShader-dialect** step of the OpenGL branch in the
+overall compilation pipeline; see `docs/references/compilation-pipeline.md` for where it
+sits (HLSL →[DXC]→ SPIR-V →[SPIRV-Cross]→ GLSL → **this rewrite** → `.mgfx`).
+
 ## Background
 
 When MonoGame's OpenGL backend loads a compiled `.mgfx` effect, it calls `glGetUniformLocation`
@@ -61,6 +65,7 @@ targets keep the unmodified SPIRV-Cross dialect. The transform, by rule:
 | 5 | `out vec4 out_var_SV_Target<N?>;` | declaration dropped; uses → `gl_FragColor` (or `gl_FragData[N]`) |
 | 6 | `texture()/textureLod()/textureProj()` | `texture2D()/texture2DLod()/texture2DProj()` |
 | 7 | `layout(std140) uniform type_Globals { … }` | `uniform vec4 ps_uniforms_vec4[N];`; member uses `_Globals.<m>` → `ps_uniforms_vec4[i]<swizzle>` |
+| 8 | `roundEven(x)` / `round(x)` (GLSL ES 3.00 / GL 1.30 only) | `floor((x) + 0.5)` — valid in every GLSL profile incl. WebGL1 / GLSL ES 1.00 (KNI's Reach profile), and exactly what mgfxc/MojoShader emits for HLSL `round`. Argument captured by a balanced-paren scan so nested calls lower correctly. |
 
 `Rewrite` returns the rewritten GLSL plus the discovered sampler list (`ps_s{slot}`) and the
 `ps_uniforms_vec4` register count. The pipeline pairs this with the `.mgfx` side:
