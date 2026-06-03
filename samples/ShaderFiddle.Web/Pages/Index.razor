@@ -30,6 +30,9 @@
             <button class="primary" @onclick="CompileAndApplyAsync" disabled="@(!_ready || _compiling)">
                 @(_compiling ? "Compiling…" : "Compile & Apply (mode 2)")
             </button>
+            <button @onclick="ResetEffect" disabled="@(!_ready || _compiling)">
+                Reset (no shader)
+            </button>
             <span class="status @(_statusIsError ? "err" : "ok")">@_status</span>
         </div>
 

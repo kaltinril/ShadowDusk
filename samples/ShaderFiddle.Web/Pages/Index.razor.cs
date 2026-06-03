@@ -160,6 +160,19 @@ public partial class Index
         }
     }
 
+    /// <summary>
+    /// Reset the canvas to the original cat with no shader applied. Drops the
+    /// current effect (the plain-cat draw pass renders on its own) without
+    /// touching the editor source or the selected sample.
+    /// </summary>
+    private void ResetEffect()
+    {
+        _game?.ClearEffect();
+        _errors.Clear();
+        _status = "Reset — showing the original cat (no shader applied).";
+        _statusIsError = false;
+    }
+
     /// <summary>Mode 1: load a precompiled <c>.mgfx</c> and show its source.</summary>
     private async Task LoadCorpusAsync(string name)
     {

@@ -92,6 +92,19 @@ public sealed class ShaderFiddleGame : Game
         return null;
     }
 
+    /// <summary>
+    /// Remove any applied effect so the plain cat renders with no shader,
+    /// returning the canvas to its original (unprocessed) image. Also clears any
+    /// effect queued before <see cref="LoadContent"/> ran. Safe to call from the
+    /// Blazor UI thread.
+    /// </summary>
+    public void ClearEffect()
+    {
+        _pendingMgfx = null;
+        _effect?.Dispose();
+        _effect = null;
+    }
+
     protected override void Draw(GameTime gameTime)
     {
         GraphicsDevice.SetRenderTarget(null);

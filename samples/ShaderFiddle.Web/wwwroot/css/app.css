@@ -69,6 +69,7 @@ select, button {
     border: 1px solid #44444c;
     border-radius: 6px;
     padding: 6px 10px;
+    cursor: pointer;
 }
 
 button.primary {
