@@ -481,6 +481,37 @@ void main()
 }
 """;
 
+    // HLSL semantics are case-insensitive: `: SV_TARGET` and `: sv_target` are the
+    // same primary output as `: SV_Target`. DXC mirrors the source spelling, so the
+    // rewriter must recognize the output regardless of case (a `: SV_TARGET` return —
+    // a very common spelling — must still get the alias, not leak `out_var_SV_TARGET`).
+    [Theory]
+    [InlineData("out_var_SV_TARGET")]
+    [InlineData("out_var_sv_target")]
+    [InlineData("out_var_SV_Target0")]
+    public void FragmentOutput_CaseInsensitiveSemantic_StillAliasedToPsOc0(string outName)
+    {
+        string src = $$"""
+#version 140
+
+uniform sampler2D _10;
+in vec2 in_var_TEXCOORD0;
+out vec4 {{outName}};
+
+void main()
+{
+    {{outName}} = texture(_10, in_var_TEXCOORD0);
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        result.Glsl.Should().Contain("#define ps_oC0 gl_FragColor");
+        result.Glsl.Should().Contain("ps_oC0 = texture2D(");
+        // The raw out_var_* declaration AND use must both be gone (no leak).
+        result.Glsl.Should().NotContain("out_var_", "the output decl + uses must be rewritten regardless of case");
+        result.Glsl.Should().NotContain("gl_FragData");
+    }
+
     [Fact]
     public void FragmentOutput_DiscardOnly_EmitsNoAliasAndNoFragColor()
     {

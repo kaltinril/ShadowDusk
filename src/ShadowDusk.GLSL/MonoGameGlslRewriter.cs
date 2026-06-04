@@ -64,10 +64,11 @@ public static class MonoGameGlslRewriter
         @"^\s*in\s+(float|vec2|vec3|vec4)\s+(in_var_[A-Za-z0-9_]+)\s*;\s*$",
         RegexOptions.Compiled);
 
-    // out vec4 out_var_SV_Target<N?>;
+    // out vec4 out_var_SV_Target<N?>;  (case-insensitive on the semantic: HLSL
+    // SV_Target ≡ SV_TARGET ≡ sv_target, and DXC mirrors the source spelling).
     private static readonly Regex OutputDecl = new(
         @"^\s*out\s+vec4\s+(out_var_SV_Target[0-9]*)\s*;\s*$",
-        RegexOptions.Compiled);
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private static readonly Regex VersionLine = new(
         @"^\s*#version\b.*$",
@@ -338,10 +339,13 @@ public static class MonoGameGlslRewriter
     /// for the primary output (N==0), <c>gl_FragData[N]</c> for MRT outputs.</param>
     private readonly record struct FragmentOutput(string Alias, string Builtin);
 
-    // out_var_SV_Target  or  out_var_SV_Target<N>  used in the body.
+    // out_var_SV_Target  or  out_var_SV_Target<N>  used in the body. Case-insensitive
+    // on the semantic (HLSL SV_Target ≡ SV_TARGET ≡ sv_target; DXC mirrors the source
+    // spelling, e.g. `: SV_TARGET` → out_var_SV_TARGET) so the alias is emitted
+    // regardless of how the author cased the return semantic.
     private static readonly Regex OutputUse = new(
         @"\bout_var_SV_Target([0-9]*)\b",
-        RegexOptions.Compiled);
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     /// <summary>
     /// Replaces every <c>out_var_SV_Target{N?}</c> use in <paramref name="body"/> with
