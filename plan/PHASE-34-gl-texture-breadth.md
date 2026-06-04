@@ -134,4 +134,4 @@ Cube/3D support spans more than the GLSL rewriter — **verify each, don't assum
 ---
 
 ### Provenance
-Created 2026-06-04 to formalise the follow-up the Phase 33 `SD0210` guards reference ("Tracked for Phase 34"). Feasibility split (cube maps everywhere; 3D/LOD on Desktop+HiDef; WebGL1 wall) established during the Phase 33 review + the follow-up discussion. See [PHASE-33-webgl2-es300-hidef-output.md](PHASE-33-webgl2-es300-hidef-output.md) § Scope.
+Created 2026-06-04 to formalise the follow-up the Phase 33 `SD0210` guards reference ("Tracked for Phase 34"). Feasibility split (cube maps everywhere; 3D/LOD on Desktop+HiDef; WebGL1 wall) established during the Phase 33 review + the follow-up discussion. See [PHASE-33-webgl2-es300-hidef-output.md](DONE/PHASE-33-webgl2-es300-hidef-output.md) § Scope.

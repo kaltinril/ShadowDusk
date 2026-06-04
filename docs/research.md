@@ -738,7 +738,7 @@ WebGL 1.0 requires GLSL ES 1.00 (`#version 100`); WebGL 2.0 requires GLSL ES 3.0
 
 **As built (do NOT configure SPIRV-Cross for `300 es`):** ShadowDusk does *not* emit native ES-3.00. It emits the **legacy MojoShader GLSL dialect** (the same `mgfxc` produces — `#define ps_oC0 gl_FragColor`, `varying`, `texture2D`, `precision mediump`), valid under WebGL1/Reach *and* desktop GL. For **HiDef/WebGL2**, KNI's runtime converter (`ConvertGLSLToGLSL300es`, present since KNI **v3.14.9001**) rewrites that dialect to ES 3.00 at load time — so **one `.mgfx` serves both profiles** with no per-profile output and no SPIRV-Cross `300 es` configuration. The earlier guidance here (set `GLSL_VERSION=300, GLSL_ES=true`) was a greenfield assumption and is **not** what ships.
 
-The load-bearing requirement: the fragment colour output must be emitted as a `#define`-aliased form (`#define ps_oC0 gl_FragColor`), because KNI's converter rewrites *only* that form — a raw `gl_FragColor` write survives untouched into ES 3.00 and fails to compile (GitHub issue #7). See [`plan/PHASE-33-webgl2-es300-hidef-output.md`](../plan/PHASE-33-webgl2-es300-hidef-output.md).
+The load-bearing requirement: the fragment colour output must be emitted as a `#define`-aliased form (`#define ps_oC0 gl_FragColor`), because KNI's converter rewrites *only* that form — a raw `gl_FragColor` write survives untouched into ES 3.00 and fails to compile (GitHub issue #7). See [`plan/DONE/PHASE-33-webgl2-es300-hidef-output.md`](../plan/DONE/PHASE-33-webgl2-es300-hidef-output.md).
 
 ### Key references
 
