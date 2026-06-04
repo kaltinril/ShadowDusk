@@ -33,9 +33,10 @@ public sealed class HidefGeneralityFixtureTests
     // be lowered to a profile-agnostic GLSL payload — the rewriter must reject them.
     public static TheoryData<string> LoudFailureFixtures() => new()
     {
-        "examples/ExSampleLevelHidef.fx", // textureLod  -> texture2DLod (guarded)
-        "examples/ExSampleGradHidef.fx",  // textureGrad (guarded)
-        "examples/ExCubeSamplerHidef.fx", // samplerCube (guarded)
+        "examples/ExSampleLevelHidef.fx",   // textureLod  -> texture2DLod (guarded)
+        "examples/ExSampleGradHidef.fx",    // textureGrad (guarded)
+        "examples/ExCubeSamplerHidef.fx",   // samplerCube (guarded)
+        "examples/ExVolumeTextureHidef.fx", // sampler3D   (guarded) — Phase 34 RED fixture
     };
 
     [Theory]
