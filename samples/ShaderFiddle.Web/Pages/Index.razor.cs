@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
 using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
 using ShadowDusk.Core;
 using ShadowDusk.Wasm;
 
@@ -12,8 +13,37 @@ namespace ShadowDusk.ShaderFiddle.Web.Pages;
 
 public partial class Index
 {
+    [Inject] private NavigationManager Nav { get; set; } = default!;
+
     private ShaderFiddleGame? _game;
     private readonly WasmShaderCompiler _compiler = new();
+
+    // Phase 33 (issue #7): a `?profile=hidef` query param boots the KNI game in
+    // the HiDef profile (WebGL2 / GLSL ES 3.00) instead of the default Reach
+    // (WebGL1 / GLSL ES 1.00). Mirrors the `?test=<size>` headless-capture hook.
+    // The interactive app, with no query param, stays on Reach (the broad-compat
+    // default a consumer expects — Phase 33 Task 7).
+    private GraphicsProfile ResolveProfile()
+    {
+        // Manual query-string parse (no Microsoft.AspNetCore.WebUtilities dep):
+        // look for a `profile=hidef` pair in the current URL's query.
+        var query = Nav.ToAbsoluteUri(Nav.Uri).Query;        // e.g. "?test=512&profile=hidef"
+        if (query.Length > 1)
+        {
+            foreach (var pair in query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var eq = pair.IndexOf('=');
+                var key = eq >= 0 ? pair[..eq] : pair;
+                var val = eq >= 0 ? pair[(eq + 1)..] : "";
+                if (string.Equals(key, "profile", StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(val, "hidef", StringComparison.OrdinalIgnoreCase))
+                {
+                    return GraphicsProfile.HiDef;
+                }
+            }
+        }
+        return GraphicsProfile.Reach;
+    }
 
     private byte[]? _catBytes;
     private byte[]? _defaultMgfx;
@@ -77,10 +107,11 @@ public partial class Index
 
         if (_game is null)
         {
-            _game = new ShaderFiddleGame(_catBytes, _defaultMgfx);
+            var profile = ResolveProfile();
+            _game = new ShaderFiddleGame(_catBytes, _defaultMgfx, profile);
             _game.Run();          // KNI: initializes the device + LoadContent
             _ready = true;
-            _status = $"Loaded sample: {WebShaderInputs.DefaultShader} (mode 1)";
+            _status = $"Loaded sample: {WebShaderInputs.DefaultShader} (mode 1, {profile})";
             RefreshParams();
             StateHasChanged();
         }

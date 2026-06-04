@@ -19,5 +19,15 @@ diffs-sd/
 captures-faithful/
 diffs-faithful/
 
+# KNI HiDef / WebGL2 path (Phase 33 / issue #7, --corpus=sd-hidef). Reuses
+# .publish-sd/ + references-sd/; only its captures/diffs are HiDef-specific.
+# Regenerate with: node publish-sample-sd-hidef.mjs && node run-harness.mjs --corpus=sd-hidef
+captures-sd-hidef/
+diffs-sd-hidef/
+# Scratch dir from a one-off publish capability probe (not part of the harness).
+.publish-hidef-probe/
+
 # references[-sd]/*.png ARE committed: small, deterministic desktop renders that
 # the harness diffs against. RESULTS[-SD].md IS committed: the Task-1c deliverable.
+# RESULTS-SD-HIDEF-REPRO.md (RED) and RESULTS-SD-HIDEF.md (GREEN) ARE committed:
+# the Phase-33 deliverables.

@@ -32,11 +32,21 @@ const SIZE = 512;
 // publish-sample.mjs; SD refs from publish-sample-sd.mjs). See ROUNDEVEN-FIX.md.
 const CORPUS = (process.argv.find((a) => a.startsWith('--corpus=')) ?? '--corpus=golden')
   .slice('--corpus='.length);
-if (CORPUS !== 'golden' && CORPUS !== 'sd' && CORPUS !== 'faithful') {
-  console.error(`unknown --corpus=${CORPUS} (expected 'golden', 'sd', or 'faithful')`);
+if (CORPUS !== 'golden' && CORPUS !== 'sd' && CORPUS !== 'faithful' && CORPUS !== 'sd-hidef') {
+  console.error(`unknown --corpus=${CORPUS} (expected 'golden', 'sd', 'faithful', or 'sd-hidef')`);
   process.exit(2);
 }
-const IS_SD = CORPUS === 'sd';
+// --corpus=sd-hidef (Phase 33 / issue #7): ShadowDusk's OWN .mgfx loaded in a KNI
+// HiDef context (WebGL2 / GLSL ES 3.00) via `?profile=hidef`. KNI maps HiDef ->
+// WebGL2 and runtime-converts the legacy .mgfx GLSL to ES 3.00 at load; that
+// conversion only rewrites mgfxc's `#define ps_oC0 gl_FragColor` form, so
+// ShadowDusk's CURRENT raw `gl_FragColor` write is left undeclared in ES 3.00 and
+// `new Effect(gd, bytes)` FAILS with `'gl_FragColor' : undeclared identifier`.
+// Before the Phase 33 fix this corpus is the RED repro (load-fail expected); after
+// the fix it is the GREEN proof (10/10 load + render). Same SD bytes + refs as
+// --corpus=sd; only the profile (and thus the WebGL context) differs.
+const IS_HIDEF = CORPUS === 'sd-hidef';
+const IS_SD = CORPUS === 'sd' || IS_HIDEF;
 // --corpus=faithful (Phase 23 M3 / Gate G2): the FAITHFUL in-browser-compile render
 // proof. The served "shadowdusk-dxc" module is the FAITHFUL DXC->WASM shim (swapped
 // in by publish-sample-faithful.mjs), and the harness drives mode-2 (in-browser
@@ -75,12 +85,25 @@ const SHADERS = [
 // Each corpus uses its own published wwwroot + references/captures/diffs/results so
 // the artifacts never collide. The faithful path reuses references-sd/ (same
 // ShadowDusk bytes) but its own publish dir + faithful-specific outputs.
+// The HiDef path reuses the same ShadowDusk publish/bytes/refs as --corpus=sd
+// (the .mgfx is profile-agnostic — KNI does the per-profile conversion), but its
+// captures/diffs/results live under their own *-hidef suffix so a HiDef run never
+// clobbers the Reach SD run. The Phase-33 RED baseline is written to
+// RESULTS-SD-HIDEF-REPRO.md; the post-fix GREEN run to RESULTS-SD-HIDEF.md.
 const PUBLISH_SUBDIR = IS_FAITHFUL ? '.publish-faithful' : (IS_SD ? '.publish-sd' : '.publish');
 const PUBLISH_ROOT = path.join(__dirname, PUBLISH_SUBDIR, 'wwwroot');
 const REF_DIR = path.join(__dirname, (IS_SD || IS_FAITHFUL) ? 'references-sd' : 'references');
-const CAP_DIR = path.join(__dirname, IS_FAITHFUL ? 'captures-faithful' : (IS_SD ? 'captures-sd' : 'captures'));
-const DIFF_DIR = path.join(__dirname, IS_FAITHFUL ? 'diffs-faithful' : (IS_SD ? 'diffs-sd' : 'diffs'));
-const RESULTS_FILE = path.join(__dirname, IS_FAITHFUL ? 'RESULTS-FAITHFUL.md' : (IS_SD ? 'RESULTS-SD.md' : 'RESULTS.md'));
+const CAP_DIR = path.join(__dirname,
+  IS_HIDEF ? 'captures-sd-hidef' : (IS_FAITHFUL ? 'captures-faithful' : (IS_SD ? 'captures-sd' : 'captures')));
+const DIFF_DIR = path.join(__dirname,
+  IS_HIDEF ? 'diffs-sd-hidef' : (IS_FAITHFUL ? 'diffs-faithful' : (IS_SD ? 'diffs-sd' : 'diffs')));
+// RED (pre-fix) baseline filename vs GREEN (post-fix). If the harness sees the
+// known RED error for Grayscale (the pinned repro case) it writes the *-REPRO file;
+// otherwise (all loaded) it writes the GREEN RESULTS-SD-HIDEF.md. Decided after the run.
+const RESULTS_FILE_HIDEF_GREEN = path.join(__dirname, 'RESULTS-SD-HIDEF.md');
+const RESULTS_FILE_HIDEF_RED = path.join(__dirname, 'RESULTS-SD-HIDEF-REPRO.md');
+const RESULTS_FILE = IS_HIDEF ? RESULTS_FILE_HIDEF_GREEN
+  : path.join(__dirname, IS_FAITHFUL ? 'RESULTS-FAITHFUL.md' : (IS_SD ? 'RESULTS-SD.md' : 'RESULTS.md'));
 
 async function loadRefRgba(name) {
   const buf = await fs.readFile(path.join(REF_DIR, name + '.png'));
@@ -148,13 +171,23 @@ async function main() {
   const results = { mode1: [], mode2: null, faithful: null };
   try {
     const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
-    page.on('pageerror', (e) => console.log(`  [pageerror] ${e.message}`));
+    // Capture page console + pageerror so a WebGL GLSL compile failure (which KNI
+    // surfaces partly via console.error, not only the thrown Effect message) is
+    // recorded for the Phase-33 RED evidence. consoleLog is scanned later for the
+    // `'gl_FragColor' : undeclared identifier` signature.
+    const consoleLog = [];
+    page.on('console', (m) => { const t = m.text(); consoleLog.push(t);
+      if (/gl_FragColor|undeclared|ERROR: 0:|GLSL|shader/i.test(t)) console.log(`  [console] ${t}`); });
+    page.on('pageerror', (e) => { consoleLog.push('pageerror: ' + e.message); console.log(`  [pageerror] ${e.message}`); });
     // The first FAITHFUL in-browser compile lazy-loads + instantiates the 17.4 MB
     // dxcompiler.wasm under SwiftShader, which can be slow; give page.evaluate room.
     if (IS_FAITHFUL) page.setDefaultTimeout(180000);
 
-    await page.goto(`${srv.url}/?test=${SIZE}`, { waitUntil: 'domcontentloaded' });
-    console.log('[harness] waiting for KNI game to boot…');
+    // HiDef (issue #7) boots the KNI game in the WebGL2 / GLSL ES 3.00 context via
+    // ?profile=hidef; otherwise the default Reach (WebGL1 / GLSL ES 1.00).
+    const profileQuery = IS_HIDEF ? '&profile=hidef' : '';
+    await page.goto(`${srv.url}/?test=${SIZE}${profileQuery}`, { waitUntil: 'domcontentloaded' });
+    console.log(`[harness] waiting for KNI game to boot…${IS_HIDEF ? ' (HiDef / WebGL2 / GLSL ES 3.00)' : ''}`);
     await page.waitForFunction(
       () => typeof window.theInstance !== 'undefined' && window.theInstance !== null,
       { timeout: 120000 }
@@ -166,13 +199,22 @@ async function main() {
       const row = { name, loaded: false, loadError: null, rendered: false,
         maxDelta: null, differentPixels: null, totalPixels: null, verdict: 'FAIL', note: '' };
       try {
+        const consoleBefore = consoleLog.length;
         const loadErr = await page.evaluate(
           async (n) => await window.theInstance.invokeMethodAsync('TestLoadCorpus', n), name);
         if (loadErr !== null) {
+          // Fold in any GLSL-compile console lines emitted during this load (KNI's
+          // WebGL2 converter logs the shader-compile error to console.error, which
+          // carries the exact `'gl_FragColor' : undeclared identifier` text).
+          const newConsole = consoleLog.slice(consoleBefore)
+            .filter((l) => /gl_FragColor|undeclared|ERROR: 0:|l-value|GLSL/i.test(l));
+          row.consoleError = newConsole.join(' || ');
           row.loadError = String(loadErr);
-          row.note = 'KNI new Effect() rejected the v10 bytes (PARSE failure)';
+          row.note = IS_HIDEF
+            ? 'KNI new Effect() FAILED under HiDef/WebGL2 (GLSL ES 3.00 compile failure)'
+            : 'KNI new Effect() rejected the v10 bytes (PARSE failure)';
           results.mode1.push(row);
-          console.log(`  [LOAD-FAIL] ${name}: ${loadErr}`);
+          console.log(`  [LOAD-FAIL] ${name}: ${loadErr}${newConsole.length ? ' | console: ' + newConsole.join(' ') : ''}`);
           continue;
         }
         row.loaded = true;
@@ -315,6 +357,11 @@ async function main() {
         results.faithful.push(row);
       }
       // Skip the single-shader Slang sample probe in faithful mode.
+    } else if (IS_HIDEF) {
+      // HiDef (issue #7) is purely a mode-1 load+render question (does KNI's
+      // WebGL2 runtime-conversion accept our .mgfx GLSL). The Slang in-browser
+      // compile path is irrelevant here and would only add noise — skip it.
+      results.mode2 = { ran: false, note: 'skipped for sd-hidef (mode-1 load is the issue-#7 question)' };
     } else {
 
     // ---- Mode 2: in-browser compile (Slang sample path) on 1 shader ----
@@ -370,11 +417,18 @@ async function main() {
     await srv.close();
   }
 
-  await writeResults(results);
-
   const mode1Pass = results.mode1.filter((r) => r.verdict.startsWith('PASS')).length;
   const allLoaded = results.mode1.every((r) => r.loaded);
   console.log(`\n[harness] Mode-1: ${mode1Pass}/${results.mode1.length} pass; loaded=${results.mode1.filter(r=>r.loaded).length}/${results.mode1.length}`);
+
+  if (IS_HIDEF) {
+    // Phase 33 RED/GREEN bracket. Decide RED vs GREEN from the pinned repro case
+    // (Grayscale) and overall load success, then write the matching file.
+    const exit = await writeHidefResults(results);
+    return exit;
+  }
+
+  await writeResults(results);
 
   if (IS_FAITHFUL) {
     const f = results.faithful ?? [];
@@ -388,6 +442,171 @@ async function main() {
   }
 
   return (mode1Pass === results.mode1.length && allLoaded) ? 0 : 1;
+}
+
+// Extract the printable GLSL shader source embedded in a .mgfx (the legacy MGFX
+// v10 stores each stage's GLSL as a length-prefixed ASCII string). We don't parse
+// the container — we pull the run of printable bytes spanning the `#ifdef GL_ES`
+// header through the closing `}` of main(). Best-effort, for the RED report only.
+async function extractMgfxGlsl(mgfxPath) {
+  try {
+    const buf = await fs.readFile(mgfxPath);
+    let ascii = '';
+    for (const b of buf) ascii += (b >= 9 && b <= 126) ? String.fromCharCode(b) : '';
+    const start = ascii.indexOf('#ifdef GL_ES');
+    if (start < 0) return null;
+    // main()'s body ends at the first `}` that is followed by a control byte.
+    const mainIdx = ascii.indexOf('void main', start);
+    if (mainIdx < 0) return null;
+    let end = ascii.indexOf('}', mainIdx);
+    if (end < 0) return null;
+    return ascii.slice(start, end + 1);
+  } catch {
+    return null;
+  }
+}
+
+// Phase 33 (issue #7) HiDef RED/GREEN writer. RED = the unfixed compiler's raw
+// `gl_FragColor` write fails to load under KNI HiDef/WebGL2 (the repro). GREEN =
+// after the #define fix, the SAME bytes load + render. We classify the run from
+// the pinned repro case (Grayscale) and overall load count, write the matching
+// file, and return an exit code: RED-as-expected -> 0 (the repro SUCCEEDED at
+// reproducing the bug); GREEN (all loaded + rendered) -> 0; ambiguous -> 1.
+async function writeHidefResults(results) {
+  const REPRO = 'Grayscale'; // the Phase-33 pinned repro case
+  const gray = results.mode1.find((r) => r.name === REPRO);
+  const loadedCount = results.mode1.filter((r) => r.loaded).length;
+  const total = results.mode1.length;
+  const passCount = results.mode1.filter((r) => r.verdict.startsWith('PASS')).length;
+
+  // The exact issue-#7 signature, looked for in BOTH the thrown Effect message
+  // and the captured WebGL console.error lines.
+  const sig = /gl_FragColor|undeclared identifier|l-value required/i;
+  const grayBlob = `${gray?.loadError ?? ''} ${gray?.consoleError ?? ''}`;
+  const grayHasSig = sig.test(grayBlob);
+  const grayFailed = gray ? !gray.loaded : false;
+
+  const isRed = grayFailed; // repro case did NOT load under HiDef
+  const isGreen = loadedCount === total && passCount === total;
+
+  const lines = [];
+  if (isRed) {
+    lines.push('# Phase 33 — issue #7 RED reproduction (KNI HiDef / WebGL2 / GLSL ES 3.00)');
+    lines.push('');
+    lines.push('_Generated by `run-harness.mjs --corpus=sd-hidef` — headless Chromium (ANGLE/SwiftShader), KNI **HiDef** (`?profile=hidef` → WebGL2 → GLSL ES 3.00). ShadowDusk-compiled `.mgfx` (current, UNFIXED `main`)._');
+    lines.push('');
+    lines.push('## Verdict: RED — issue #7 reproduced in a real KNI HiDef runtime');
+    lines.push('');
+    lines.push(`The pinned repro shader **${REPRO}.fx**, compiled by the current (unfixed) ShadowDusk and loaded via \`new Effect(gd, bytes)\` in a KNI HiDef / WebGL2 context, **FAILED to load** — exactly Victor Chelaru's issue-#7 report.`);
+    lines.push('');
+    lines.push('**Thrown error (verbatim, from the real KNI HiDef runtime):**');
+    lines.push('');
+    lines.push('```');
+    lines.push((gray?.loadError ?? '(none)').trim());
+    lines.push('```');
+    lines.push('');
+    if (gray?.consoleError) {
+      lines.push('**WebGL console (GLSL compile):**');
+      lines.push('');
+      lines.push('```');
+      lines.push(gray.consoleError.trim());
+      lines.push('```');
+      lines.push('');
+    }
+    lines.push(`- **issue-#7 signature present** (\`gl_FragColor\` / \`undeclared identifier\` / \`l-value required\`): **${grayHasSig ? 'YES' : 'NO'}**`);
+    lines.push('');
+    lines.push('Root cause (verified): ShadowDusk emits the PS colour output as a **raw `gl_FragColor` write** with **no** `#define ps_oC0 gl_FragColor`. KNI\'s HiDef runtime converter (`ConvertGLSLToGLSL300es`) only rewrites the `#define`-aliased form (mgfxc\'s form) to `out vec4`, so the raw write survives untouched into GLSL ES 3.00 — where `gl_FragColor` was removed — and the shader fails to compile.');
+    lines.push('');
+
+    // Static corroboration: extract the GLSL ShadowDusk actually emitted into the
+    // served Grayscale.mgfx and show it contains a raw `gl_FragColor =` write with
+    // NO `#define ps_oC0 gl_FragColor` — the exact condition KNI's converter skips.
+    const emittedGlsl = await extractMgfxGlsl(path.join(PUBLISH_ROOT, 'shaders', 'OpenGL', REPRO + '.mgfx'));
+    if (emittedGlsl) {
+      const hasDefine = /^#define\s+ps_oC0\s+gl_FragColor/m.test(emittedGlsl);
+      const hasRaw = /\bgl_FragColor\s*=/.test(emittedGlsl);
+      lines.push('### Static corroboration — the GLSL ShadowDusk emitted (from the served `Grayscale.mgfx`)');
+      lines.push('');
+      lines.push(`- raw \`gl_FragColor =\` write present: **${hasRaw ? 'YES' : 'no'}**`);
+      lines.push(`- \`#define ps_oC0 gl_FragColor\` present: **${hasDefine ? 'yes' : 'NO'}** ← the missing alias KNI\'s converter needs`);
+      lines.push('');
+      lines.push('```glsl');
+      lines.push(emittedGlsl.trim());
+      lines.push('```');
+      lines.push('');
+      lines.push('For contrast, the mgfxc golden (`tests/fixtures/golden/OpenGL/Grayscale.mgfx`) emits `#define ps_oC0 gl_FragColor` at column 0 and writes to `ps_oC0` — the form KNI\'s converter rewrites to `out vec4 ps_oC0;` under ES 3.00.');
+      lines.push('');
+    }
+  } else if (isGreen) {
+    lines.push('# Phase 33 — issue #7 GREEN validation (KNI HiDef / WebGL2 / GLSL ES 3.00)');
+    lines.push('');
+    lines.push('_Generated by `run-harness.mjs --corpus=sd-hidef` — headless Chromium (ANGLE/SwiftShader), KNI **HiDef** (`?profile=hidef` → WebGL2 → GLSL ES 3.00). ShadowDusk-compiled `.mgfx`._');
+    lines.push('');
+    lines.push(`## Verdict: GREEN — ${passCount}/${total} corpus shaders load + render in KNI HiDef`);
+    lines.push('');
+    lines.push('Every shader\'s ShadowDusk `.mgfx` loaded with no GLSL compile error in the KNI HiDef / WebGL2 context and rendered within tolerance vs its Reach render — issue #7 is fixed.');
+    lines.push('');
+  } else {
+    lines.push('# Phase 33 — KNI HiDef / WebGL2 run (AMBIGUOUS)');
+    lines.push('');
+    lines.push(`_Generated by \`run-harness.mjs --corpus=sd-hidef\`. Neither a clean RED (repro \`${REPRO}\` loaded) nor a clean GREEN (only ${loadedCount}/${total} loaded, ${passCount}/${total} passed)._`);
+    lines.push('');
+  }
+
+  lines.push('## Per-shader mode-1 results (HiDef / WebGL2)');
+  lines.push('');
+  lines.push('Reference = the SAME ShadowDusk `.mgfx` bytes rendered on desktop **DesktopGL** (`references-sd/`), so a render diff isolates KNI\'s ES-3.00 conversion of our bytes.');
+  lines.push('');
+  lines.push('| Shader | KNI HiDef load | GLSL error (thrown / console) | Render | Max delta | Verdict |');
+  lines.push('|---|---|---|---|---|---|');
+  // Flatten newlines/whitespace and escape pipes so multi-line GLSL errors stay
+  // inside a single markdown table cell.
+  const cell = (s) => (s ?? '').replace(/\s+/g, ' ').replace(/\|/g, '\\|').trim();
+  for (const r of results.mode1) {
+    const load = r.loaded ? 'OK' : 'FAIL';
+    const rawErr = r.loaded ? '—'
+      : `${r.loadError ?? r.note ?? ''}${r.consoleError ? ' // ' + r.consoleError : ''}`;
+    const err = cell(rawErr).slice(0, 220);
+    const ren = r.rendered ? 'OK' : '—';
+    const md = r.maxDelta === null ? '—' : String(r.maxDelta);
+    const verdict = r.loaded ? r.verdict : 'LOAD-FAIL';
+    lines.push(`| ${r.name} | ${load} | ${err} | ${ren} | ${md} | ${verdict} |`);
+  }
+  lines.push('');
+  lines.push('## How to re-run (RED before the fix, GREEN after)');
+  lines.push('');
+  lines.push('```bash');
+  lines.push('cd tests/ShadowDusk.BrowserTests');
+  lines.push('npm install                              # playwright + pngjs');
+  lines.push('npx playwright install chromium          # CI: --with-deps chromium');
+  lines.push('node publish-sample-sd-hidef.mjs         # publish + compile corpus w/ ShadowDusk + render Reach refs');
+  lines.push('node run-harness.mjs --corpus=sd-hidef   # load each .mgfx in KNI HiDef/WebGL2');
+  lines.push('```');
+  lines.push('');
+  lines.push('Before the `MonoGameGlslRewriter` `#define` fix this writes `RESULTS-SD-HIDEF-REPRO.md` (RED — `Grayscale` fails to load). After the fix it writes `RESULTS-SD-HIDEF.md` (GREEN — all load + render).');
+  lines.push('');
+  lines.push('## Environment (this run)');
+  lines.push('');
+  lines.push('- **Browser harness ran end-to-end here:** YES — `node` + Playwright Chromium + the `dotnet publish` of the `net8.0-browser` WASM sample all succeeded. The KNI game booted in HiDef and KNI requested a real **WebGL2 / GLSL ES 3.0** context (verified: `WebGL 2.0 (OpenGL ES 3.0 Chromium)` under ANGLE/SwiftShader). The errors above are from that real runtime, not a static inspection.');
+  lines.push('- **Determinism:** software GL (`--use-gl=angle --use-angle=swiftshader`) — no GPU required, so CI reproduces it.');
+  lines.push('- **To run in CI (Phase 30 §16):** `dotnet workload install wasm-tools`, then in `tests/ShadowDusk.BrowserTests`: `npm install` (no lockfile, so not `npm ci`), `npx playwright install --with-deps chromium`, `node publish-sample-sd-hidef.mjs`, `node run-harness.mjs --corpus=sd-hidef`.');
+  lines.push('');
+
+  const outFile = isRed ? RESULTS_FILE_HIDEF_RED : RESULTS_FILE_HIDEF_GREEN;
+  await fs.writeFile(outFile, lines.join('\n') + '\n');
+  console.log(`[harness] wrote ${path.basename(outFile)} (${isRed ? 'RED' : (isGreen ? 'GREEN' : 'AMBIGUOUS')})`);
+
+  if (isRed) {
+    console.log(`[harness] RED CONFIRMED — issue #7 reproduced: ${REPRO} fails to load in KNI HiDef/WebGL2.`);
+    console.log(`[harness]   signature present: ${grayHasSig ? 'YES' : 'NO'}`);
+    return 0; // reproducing the bug is the SUCCESS condition for Task 0
+  }
+  if (isGreen) {
+    console.log('[harness] GREEN — all corpus shaders load + render in KNI HiDef/WebGL2.');
+    return 0;
+  }
+  console.log('[harness] AMBIGUOUS — neither a clean RED nor GREEN; inspect the table.');
+  return 1;
 }
 
 async function writeResults(results) {

@@ -63,6 +63,39 @@ node run-harness.mjs                     # writes RESULTS.md; exit 0 iff mode-1 
 Requires: .NET SDK with the `net8.0` packs + `wasm-tools` workload (for the
 Blazor-WASM publish), Node 18+, Playwright + Chromium.
 
+## KNI HiDef / WebGL2 mode (Phase 33 / issue #7)
+
+`--corpus=sd-hidef` loads ShadowDusk's own `.mgfx` in a KNI **HiDef** context
+(WebGL2 / GLSL ES 3.00) instead of the default Reach (WebGL1 / GLSL ES 1.00). It
+boots the sample with `?profile=hidef` (a permanent knob in `ShaderFiddleGame.cs`,
+read in `Index.razor.cs`), which makes KNI request a WebGL2 context and
+runtime-convert the legacy `.mgfx` GLSL to ES 3.00 at load.
+
+This is the issue-#7 regression guard. KNI's converter only rewrites mgfxc's
+`#define ps_oC0 gl_FragColor` form; ShadowDusk's *raw* `gl_FragColor` write
+(current `MonoGameGlslRewriter`) is left undeclared in ES 3.00, so the shader
+fails to compile.
+
+```bash
+cd tests/ShadowDusk.BrowserTests
+npm install
+npx playwright install chromium
+node publish-sample-sd-hidef.mjs          # reuses .publish-sd/ + references-sd/ (add --skip-publish if present)
+node run-harness.mjs --corpus=sd-hidef
+```
+
+- **Before** the `MonoGameGlslRewriter` `#define` fix → **RED**: the corpus fails
+  to load (`'gl_FragColor' : undeclared identifier`), written to
+  `RESULTS-SD-HIDEF-REPRO.md`. The harness exits 0 because reproducing the bug is
+  the success condition for the RED baseline.
+- **After** the fix → **GREEN**: all 10 load + render within tolerance vs their
+  Reach render, written to `RESULTS-SD-HIDEF.md`.
+
+> Note: two MRT-style corpus shaders (Sepia, Dissolve) fail under HiDef with
+> `'gl_FragData' : undeclared identifier` — the same root cause for the
+> `gl_FragData[N]` output path; both are addressed by the same `#define` fix
+> (`#define ps_oC{N} gl_FragData[N]`).
+
 ## CI (Phase 30 §16)
 
 The harness is headless and self-contained. Phase 30 owns the CI wiring; a job is:
