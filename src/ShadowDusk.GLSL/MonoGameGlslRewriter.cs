@@ -7,10 +7,31 @@ using ShadowDusk.Core;
 namespace ShadowDusk.GLSL;
 
 /// <summary>
+/// The dimensionality of a sampler the rewriter modelled, mapped 1:1 onto
+/// MonoGame's <c>SamplerType</c> enum byte (the value the .mgfx sampler record
+/// carries). Verified against MonoGame's <c>Shader.cs</c> reader and an mgfxc
+/// cube golden — see <c>PHASE34-INVESTIGATION.md</c> §3. Do NOT renumber.
+/// </summary>
+public enum MonoGameSamplerDimension : byte
+{
+    /// <summary><c>sampler2D</c> — MonoGame <c>SamplerType.Sampler2D</c>.</summary>
+    Texture2D = 0,
+    /// <summary><c>samplerCube</c> — MonoGame <c>SamplerType.SamplerCube</c>.</summary>
+    TextureCube = 1,
+    /// <summary><c>sampler3D</c> — MonoGame <c>SamplerType.SamplerVolume</c>.</summary>
+    TextureVolume = 2,
+}
+
+/// <summary>
 /// A single sampler discovered while rewriting SPIRV-Cross GLSL into the
 /// MonoGame/MojoShader dialect. <see cref="Name"/> is always <c>ps_s{Slot}</c>.
+/// <see cref="Dimension"/> is the sampler's dimensionality (2D / cube / 3D),
+/// which the pipeline encodes into the .mgfx sampler-type byte.
 /// </summary>
-public sealed record MonoGameGlslSampler(int Slot, string Name);
+public sealed record MonoGameGlslSampler(
+    int Slot,
+    string Name,
+    MonoGameSamplerDimension Dimension = MonoGameSamplerDimension.Texture2D);
 
 /// <summary>
 /// Result of <see cref="MonoGameGlslRewriter.Rewrite"/>.
@@ -54,9 +75,13 @@ public static class MonoGameGlslRewriter
         "precision mediump int;\n" +
         "#endif\n";
 
-    // uniform sampler2D <id>;
+    // uniform sampler{2D|Cube|3D} <id>;  — captures the dimension keyword (group 1)
+    // and the identifier (group 2). SPIRV-Cross emits the dimension-specific sampler
+    // type for the decl (samplerCube / sampler3D) but the GENERIC texture() for the
+    // call (verified, Phase 34) — so the rewriter reads the dimension HERE and uses it
+    // to pick the matching texture builtin in Pass 2.
     private static readonly Regex SamplerDecl = new(
-        @"^\s*uniform\s+sampler2D\s+([A-Za-z_][A-Za-z0-9_]*)\s*;\s*$",
+        @"^\s*uniform\s+sampler(2D|Cube|3D)\s+([A-Za-z_][A-Za-z0-9_]*)\s*;\s*$",
         RegexOptions.Compiled);
 
     // in <type> in_var_<SEM>;
@@ -102,13 +127,12 @@ public static class MonoGameGlslRewriter
         // after Slang's field/entrypoint identifiers rather than HLSL semantics.)
         glsl = NormalizeSlangNaming(glsl);
 
-        // Non-2D sampler guard (Phase 33 generality). This rewriter only models the
-        // plain `sampler2D`/`texture2D` shape (Phase 17's PS-only SpriteBatch corpus).
-        // A `samplerCube`/`sampler3D`/`sampler2DArray`/… declaration is neither renamed
-        // to ps_s{k} nor sampled with the right builtin — the body's `texture(cube,…)`
-        // would be silently rewritten to `texture2D(cube,…)`, invalid GLSL that fails
-        // only at GL link time. Fail loudly at compile time instead of emitting
-        // silently-broken output (§ Scope: parity-or-loud-failure, never silent break).
+        // Unsupported-sampler guard (Phase 33 → narrowed in Phase 34). The rewriter
+        // now models sampler2D, samplerCube AND sampler3D — each renamed to ps_s{k} and
+        // sampled with its matching builtin (texture2D / textureCube / texture3D). Only
+        // sampler kinds it still doesn't model (sampler2DArray, sampler2DShadow, …) are
+        // rejected loudly here, so they fail at compile time instead of being silently
+        // rewritten to texture2D() — invalid GLSL that fails only at GL link time.
         ThrowIfUnsupportedSamplerType(glsl);
 
         // Normalize newlines to '\n' for processing.
@@ -180,16 +204,21 @@ public static class MonoGameGlslRewriter
                 continue;
             }
 
-            // Rule 3: sampler declaration.
+            // Rule 3: sampler declaration (sampler2D / samplerCube / sampler3D).
             var samplerMatch = SamplerDecl.Match(line);
             if (samplerMatch.Success)
             {
-                var origId = samplerMatch.Groups[1].Value;
+                var kind = samplerMatch.Groups[1].Value;     // "2D" | "Cube" | "3D"
+                var origId = samplerMatch.Groups[2].Value;
                 int slot = samplers.Count;
                 var newName = $"ps_s{slot}";
-                samplers.Add(new MonoGameGlslSampler(slot, newName));
+                var dimension = SamplerDimensionForKind(kind);
+                samplers.Add(new MonoGameGlslSampler(slot, newName, dimension));
                 samplerRenames[origId] = newName;
-                output.Add($"uniform sampler2D {newName};");
+                // Keep the dimension-specific decl keyword. KNI's HiDef/WebGL2 converter
+                // rewrites samplerCube/sampler3D usage cleanly; desktop GL and WebGL1
+                // accept the legacy decls.
+                output.Add($"uniform sampler{kind} {newName};");
                 continue;
             }
 
@@ -276,27 +305,51 @@ public static class MonoGameGlslRewriter
         // `out vec4 ps_oC{N};` must be at global scope before main()).
         var fragmentOutputs = RewriteFragmentOutputs(ref body);
 
-        // Rule 6: texture functions.
-        body = Regex.Replace(body, @"\btextureLod\s*\(", "texture2DLod(");
-        body = Regex.Replace(body, @"\btextureProj\s*\(", "texture2DProj(");
+        // Rule 6: texture functions — per-sampler-dimension (Phase 34).
+        //
+        // SPIRV-Cross emits the GENERIC `texture(<sampler>, …)` for EVERY sampler
+        // dimension (2D, cube, 3D alike). MonoGame's GL runtime (and KNI's WebGL1/Reach
+        // profile) speaks the legacy dialect, which needs the DIMENSION-SPECIFIC builtin
+        // — texture2D / textureCube / texture3D — matching each sampler's type. So the
+        // rewrite is keyed to each modelled sampler (renamed to ps_s{k} above): rewrite
+        // `texture(ps_s{k}, …)` → `<builtin>(ps_s{k}, …)` per its dimension.
+        //
+        // The `\btexture\s*\(` pattern matches ONLY the bare `texture(` form — it does
+        // NOT match `textureLod(` / `textureGrad(` / `textureProj(` (the suffix sits
+        // between `texture` and `(`), so those LOD/grad/proj calls are intentionally
+        // left in their GENERIC ES-3.00 form (see Rule 6b).
+        foreach (var sampler in samplers)
+        {
+            string builtin = TextureBuiltinForDimension(sampler.Dimension);
+            // texture(ps_sK, ...) -> <builtin>(ps_sK, ...)  (whole-word sampler name).
+            body = Regex.Replace(
+                body,
+                $@"\btexture\s*\(\s*{Regex.Escape(sampler.Name)}\b",
+                $"{builtin}({sampler.Name}");
+        }
+
+        // Defensive: any remaining bare `texture(` not bound to a modelled sampler
+        // (should not occur for the PS corpus) falls back to texture2D, preserving the
+        // prior behaviour.
         body = Regex.Replace(body, @"\btexture\s*\(", "texture2D(");
 
-        // Rule 6b: LOD / projected / gradient sampling guard (Phase 33 generality).
+        // Rule 6b: LOD / projected / gradient sampling (Phase 34 — generic form kept).
         //
-        // The texture-LOD / -Proj / -Grad family CANNOT be emitted in a single GLSL
-        // payload that is valid across ALL MonoGame/KNI GL profiles:
-        //   • `texture2DLod`/`textureGrad` aren't core GLSL ES 1.00 fragment builtins,
-        //     so they're unreliable/invalid under KNI Reach (WebGL1).
-        //   • KNI's HiDef/WebGL2 runtime converter rewrites only `texture2D/3D/Cube(`
-        //     (suffix immediately followed by '('), NOT the Lod/Proj/Grad variants —
-        //     so whatever survives is undefined in GLSL ES 3.00 and the shader fails
-        //     to load (the same class of bug as the raw-gl_FragColor one this phase
-        //     fixes). ShadowDusk has ONE universal blob and no per-profile knob, so
-        //     there is no form that satisfies both Reach and HiDef at once.
-        // Per § Scope, the rewriter must therefore FAIL LOUDLY at compile time rather
-        // than silently emit GLSL that breaks under HiDef (or Reach). Full support is
-        // deferred to the Phase-34 follow-up.
-        ThrowIfUnsupportedSampling(body);
+        // The LOD/grad/proj family is left in SPIRV-Cross's GENERIC spelling
+        // (`textureLod` / `textureGrad` / `textureProj`), NOT down-rewritten to the
+        // legacy `texture2DLod` etc. Rationale (verified, PHASE34-INVESTIGATION.md §6):
+        //   • The generic forms compile on desktop GL (legacy dialect) AND are core in
+        //     GLSL ES 3.00, so KNI's HiDef/WebGL2 converter passes them through untouched
+        //     (it only rewrites the texture2D/3D/Cube suffixes). The legacy
+        //     `texture2DLod` is NOT an ES-3.00 builtin and KNI does NOT convert it → it
+        //     would fail HiDef. So the generic form is the single-blob-correct choice.
+        //   • On KNI Reach (WebGL1) explicit-LOD/gradient in a fragment shader is only
+        //     available behind the optional GL_EXT_shader_texture_lod extension — a
+        //     genuine platform wall, documented (not compile-time detectable; we emit
+        //     ONE blob and cannot know the consumer's profile). This is the same honest-
+        //     limitation pattern as 3D textures on Reach.
+        // No compile-time guard fires here any longer: the generic LOD/grad/proj form
+        // is valid output on the targets that support it; the Reach wall is documented.
 
         // Rule 8: lower roundEven()/round() to a WebGL1-valid expression.
         // SPIRV-Cross emits roundEven(x) (for HLSL `round`, which DXC maps to
@@ -411,30 +464,43 @@ public static class MonoGameGlslRewriter
         return outputs;
     }
 
-    // LOD / projected / gradient sampling builtins that have no single-blob form
-    // valid across desktop GL + KNI Reach (WebGL1) + KNI HiDef (WebGL2). Maps the
-    // emitted GLSL token → the HLSL intrinsic that produced it, for the diagnostic.
-    private static readonly (string Glsl, string Hlsl)[] UnsupportedSampling =
+    /// <summary>
+    /// Maps a SPIRV-Cross sampler-decl keyword suffix (<c>"2D"</c> / <c>"Cube"</c> /
+    /// <c>"3D"</c>, captured by <see cref="SamplerDecl"/>) to the modelled dimension.
+    /// </summary>
+    private static MonoGameSamplerDimension SamplerDimensionForKind(string kind) => kind switch
     {
-        ("texture2DLod",  "tex2Dlod / SampleLevel"),
-        ("texture2DProj", "tex2Dproj"),
-        ("texture2DGrad", "tex2Dgrad / SampleGrad"),
-        ("textureLod",    "tex2Dlod / SampleLevel"),
-        ("textureProj",   "tex2Dproj"),
-        ("textureGrad",   "tex2Dgrad / SampleGrad"),
+        "Cube" => MonoGameSamplerDimension.TextureCube,
+        "3D"   => MonoGameSamplerDimension.TextureVolume,
+        _      => MonoGameSamplerDimension.Texture2D,
     };
 
-    // A `uniform sampler<KIND> <id>;` declaration whose KIND is anything other than
-    // the plain 2D form this rewriter models (samplerCube, sampler3D, sampler2DArray,
-    // sampler2DShadow, …). `(?!2D\b)` lets `sampler2D` through but catches the rest.
+    /// <summary>
+    /// The legacy-dialect texture builtin for a sampler dimension. mgfxc/MojoShader and
+    /// MonoGame's GL runtime use the dimension-specific spelling; KNI's HiDef converter
+    /// rewrites <c>texture2D/3D/Cube(</c> → <c>texture(</c> for ES 3.00. (Verified against
+    /// the mgfxc cube golden, which emits <c>textureCube(ps_s1, …)</c>.)
+    /// </summary>
+    private static string TextureBuiltinForDimension(MonoGameSamplerDimension dim) => dim switch
+    {
+        MonoGameSamplerDimension.TextureCube   => "textureCube",
+        MonoGameSamplerDimension.TextureVolume => "texture3D",
+        _                                      => "texture2D",
+    };
+
+    // A `uniform sampler<KIND> <id>;` declaration whose KIND is one the rewriter does
+    // NOT model. As of Phase 34 it models sampler2D, samplerCube and sampler3D, so the
+    // negative lookahead lets those three through and catches the rest (sampler2DArray,
+    // sampler2DShadow, samplerCubeArray, …).
     private static readonly Regex NonPlain2DSamplerDecl = new(
-        @"^\s*uniform\s+(?:[a-z]+\s+)?sampler(?!2D\s)([A-Za-z0-9]+)\s+[A-Za-z_][A-Za-z0-9_]*\s*;\s*$",
+        @"^\s*uniform\s+(?:[a-z]+\s+)?sampler(?!2D\s|Cube\s|3D\s)([A-Za-z0-9]+)\s+[A-Za-z_][A-Za-z0-9_]*\s*;\s*$",
         RegexOptions.Compiled | RegexOptions.Multiline);
 
     /// <summary>
-    /// Throws <see cref="MonoGameGlslRewriteException"/> if any sampler declaration is
-    /// not the plain <c>sampler2D</c> shape the MojoShader rewrite models. See the
-    /// call site for why a non-2D sampler would otherwise produce silently-broken GLSL.
+    /// Throws <see cref="MonoGameGlslRewriteException"/> if any sampler declaration uses
+    /// a kind the MojoShader rewrite does not model (anything other than
+    /// <c>sampler2D</c>/<c>samplerCube</c>/<c>sampler3D</c>). See the call site for why
+    /// an unmodelled sampler would otherwise produce silently-broken GLSL.
     /// </summary>
     private static void ThrowIfUnsupportedSamplerType(string glsl)
     {
@@ -444,33 +510,9 @@ public static class MonoGameGlslRewriter
             string kind = "sampler" + m.Groups[1].Value;
             throw new MonoGameGlslRewriteException(
                 $"Unsupported sampler type for the MonoGame/KNI GL target: '{kind}'. The MojoShader-" +
-                $"dialect rewrite models only 'sampler2D' (the PS-only SpriteBatch corpus); a " +
-                $"'{kind}' would be emitted as silently-broken GLSL (e.g. texture2D() on a non-2D " +
-                $"sampler) that fails at GL link time. Use a Texture2D, or extend the rewriter. " +
-                $"(Tracked for Phase 34.)");
-        }
-    }
-
-    /// <summary>
-    /// Throws <see cref="MonoGameGlslRewriteException"/> if the rewritten body still
-    /// contains a LOD / projected / gradient texture builtin. See Rule 6b for why
-    /// these cannot be expressed in a single profile-agnostic GLSL payload.
-    /// </summary>
-    private static void ThrowIfUnsupportedSampling(string body)
-    {
-        foreach (var (glslToken, hlslIntrinsic) in UnsupportedSampling)
-        {
-            // Whole-identifier, call position (suffix followed by '(').
-            if (Regex.IsMatch(body, $@"\b{Regex.Escape(glslToken)}\s*\("))
-            {
-                throw new MonoGameGlslRewriteException(
-                    $"Unsupported texture sampling for the MonoGame/KNI GL target: '{glslToken}' " +
-                    $"(from HLSL {hlslIntrinsic}). LOD/projected/gradient sampling has no single GLSL " +
-                    $"form valid in both KNI Reach (WebGL1) and KNI HiDef (WebGL2), and KNI's runtime " +
-                    $"ES-3.00 converter does not rewrite it — so it would silently fail to load under " +
-                    $"HiDef. Use a plain tex2D / Texture2D.Sample, or precompute the LOD. " +
-                    $"(Tracked for Phase 34.)");
-            }
+                $"dialect rewrite models 'sampler2D', 'samplerCube' and 'sampler3D'; a '{kind}' would " +
+                $"be emitted as silently-broken GLSL (e.g. texture2D() on an unmodelled sampler) that " +
+                $"fails at GL link time. Use a Texture2D/TextureCube/Texture3D, or extend the rewriter.");
         }
     }
 

@@ -348,12 +348,23 @@ internal sealed class CompilationPipeline
                 foreach (SamplerReflection samp in samplerRefs)
                 {
                     int slot = samp.BindSlot;
-                    string? texName = samp.TextureName
-                        ?? textureRefs.FirstOrDefault(t => t.BindSlot == slot)?.Name
-                        ?? textureRefs.FirstOrDefault()?.Name;
+                    // Pair the sampler with its texture (by slot, then by name fallback)
+                    // so the sampler-type byte can carry the texture's DIMENSION. The
+                    // dimension is reflected identically by BOTH the DXIL oracle and the
+                    // pure-managed SpirvReflector, so this stays byte-transparent across
+                    // the desktop and WASM reflection paths.
+                    TextureReflection? matchedTex =
+                        textureRefs.FirstOrDefault(t => t.BindSlot == slot)
+                        ?? (samp.TextureName is not null
+                                ? textureRefs.FirstOrDefault(t => t.Name == samp.TextureName)
+                                : null)
+                        ?? textureRefs.FirstOrDefault();
+                    string? texName = samp.TextureName ?? matchedTex?.Name;
                     int paramIndex = texName is null ? 0 : Math.Max(0, IndexOfParam(allParameters, texName));
                     samplers.Add(new MgfxSamplerInfo(
-                        Type:        0, // Sampler2D
+                        // MonoGame SamplerType byte: 2D=0, Cube=1, Volume(3D)=2 (1D=3).
+                        // Critical for binding — cube/3D won't bind at runtime if left 0.
+                        Type:        SamplerTypeByte(matchedTex?.Dimension),
                         TextureSlot: (byte)slot,
                         SamplerSlot: (byte)slot,
                         // DX binds samplers via the DXBC resource table, not by GLSL
@@ -613,6 +624,18 @@ internal sealed class CompilationPipeline
 
         return result;
     }
+
+    // MonoGame's per-sampler SamplerType byte (read by Shader.cs as
+    // (SamplerType)reader.ReadByte()): Sampler2D=0, SamplerCube=1, SamplerVolume(3D)=2,
+    // Sampler1D=3. Verified against an mgfxc cube golden — see PHASE34-INVESTIGATION.md.
+    // An unknown/unmatched dimension falls back to 2D (0), the prior behaviour.
+    private static byte SamplerTypeByte(TextureDimension? dimension) => dimension switch
+    {
+        TextureDimension.TextureCube => 1,
+        TextureDimension.Texture3D   => 2,
+        TextureDimension.Texture1D   => 3,
+        _                            => 0, // Texture2D / Unknown / null
+    };
 
     private static int IndexOfParam(IReadOnlyList<ParameterReflection> parameters, string name)
     {

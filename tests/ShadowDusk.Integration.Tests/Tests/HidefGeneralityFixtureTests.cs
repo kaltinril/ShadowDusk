@@ -7,54 +7,93 @@ using Xunit;
 namespace ShadowDusk.Integration.Tests.Tests;
 
 /// <summary>
-/// Phase 33 (issue #7) GENERALITY coverage — end-to-end through the real
-/// <c>EffectCompiler</c> OpenGL pipeline, not just the rewriter unit.
+/// GL texture-breadth coverage — end-to-end through the real <c>EffectCompiler</c>
+/// OpenGL pipeline (CLI child process), not just the rewriter unit.
 ///
-/// <para>The § Scope bar is "any shader that compiles for GL must work in KNI
-/// HiDef/WebGL2, OR fail loudly at compile time — never silently produce broken
-/// HiDef GLSL." These fixtures exercise the constructs the corpus does NOT, and
-/// assert that behavior at the product boundary:</para>
+/// <para>History: Phase 33 (issue #7) made these constructs FAIL LOUDLY
+/// (<c>SD0210</c>) because the MojoShader-dialect rewriter only modelled
+/// <c>sampler2D</c>/<c>texture2D</c>. <b>Phase 34 adds real support:</b></para>
 /// <list type="bullet">
-///   <item><b>Loud-failure cases</b> — LOD (`SampleLevel`), gradient (`SampleGrad`),
-///   and a non-2D sampler (`TextureCube`) each have no single-blob GLSL form valid
-///   in both KNI Reach (WebGL1) and HiDef (WebGL2), so the compile MUST fail with
-///   <c>SD0210</c> rather than emit GLSL that breaks (silently) under HiDef.</item>
-///   <item><b>Parity case</b> — a 4-sampler 2D shader (larger than the corpus's
-///   max of 2) MUST still compile and emit the <c>#define ps_oC0 gl_FragColor</c>
-///   single-output form + <c>ps_s0..ps_s3</c>, proving the fix/guards don't
-///   over-trigger and the sampler remap scales.</item>
+///   <item><b>Cube maps</b> (<c>TextureCube</c>) — supported everywhere
+///   (Desktop + KNI HiDef + Reach). Emits <c>samplerCube ps_s{k}</c> +
+///   <c>textureCube(</c>; sampler-type byte = 1.</item>
+///   <item><b>3D / volume</b> (<c>Texture3D</c>) — supported on Desktop + HiDef
+///   (Reach/WebGL1 has no 3D textures — documented platform wall). Emits
+///   <c>sampler3D ps_s{k}</c> + <c>texture3D(</c>; sampler-type byte = 2.</item>
+///   <item><b>Explicit-LOD / gradient</b> (<c>SampleLevel</c>/<c>SampleGrad</c>) —
+///   supported on Desktop + HiDef (Reach gates these behind an optional
+///   extension — documented platform wall). Emits the GENERIC <c>textureLod(</c>/
+///   <c>textureGrad(</c> (NOT the legacy <c>texture2DLod</c> KNI HiDef can't
+///   convert).</item>
 /// </list>
+/// <para>The Reach walls (3D, explicit-LOD) are NOT compile-time errors: ShadowDusk
+/// emits ONE OpenGL blob and cannot know the consumer's KNI profile, so the limit
+/// is documented, mirroring the KNI-version-floor pattern from Phase 33. Sampler
+/// kinds still unmodelled (sampler2DArray, shadow samplers) DO still fail loudly —
+/// covered by the rewriter unit tests
+/// (<c>MonoGameGlslRewriterTests.Sampling_StillUnmodeledSampler_FailsLoudly</c>).</para>
 /// </summary>
 [Trait("Category", "Integration")]
 [Trait("Platform", "OpenGL")]
 public sealed class HidefGeneralityFixtureTests
 {
-    // These compile through DXC/SPIRV-Cross but produce a GL construct that cannot
-    // be lowered to a profile-agnostic GLSL payload — the rewriter must reject them.
-    public static TheoryData<string> LoudFailureFixtures() => new()
-    {
-        "examples/ExSampleLevelHidef.fx",   // textureLod  -> texture2DLod (guarded)
-        "examples/ExSampleGradHidef.fx",    // textureGrad (guarded)
-        "examples/ExCubeSamplerHidef.fx",   // samplerCube (guarded)
-        "examples/ExVolumeTextureHidef.fx", // sampler3D   (guarded) — Phase 34 RED fixture
-    };
+    private static string Ascii(byte[] mgfx) =>
+        Encoding.ASCII.GetString(mgfx.Select(b => (b >= 9 && b <= 126) ? b : (byte)' ').ToArray());
 
-    [Theory]
-    [MemberData(nameof(LoudFailureFixtures))]
-    public async Task HidefUnsupportedConstruct_FailsLoudly_WithSD0210(string fx)
+    [Fact]
+    public async Task CubeMap_Compiles_EmitsSamplerCubeAndTextureCube()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var result = await TestHelpers.CompileFixtureAsync(
+            "examples/ExCubeSamplerHidef.fx", "OpenGL", ct: cts.Token);
 
+        result.ExitCode.Should().Be(0,
+            because: $"cube maps are supported on every GL profile now; stderr: {result.Stderr}");
+        result.Mgfx.Should().NotBeEmpty();
+
+        string ascii = Ascii(result.Mgfx);
+        ascii.Should().Contain("uniform samplerCube ps_s0;");
+        ascii.Should().Contain("textureCube(ps_s0,");
+        ascii.Should().NotContain("texture2D(",
+            because: "a cube sampler must not be down-rewritten to texture2D()");
+    }
+
+    [Fact]
+    public async Task VolumeTexture_Compiles_EmitsSampler3DAndTexture3D()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var result = await TestHelpers.CompileFixtureAsync(
+            "examples/ExVolumeTextureHidef.fx", "OpenGL", ct: cts.Token);
+
+        result.ExitCode.Should().Be(0,
+            because: $"3D textures are supported on Desktop + HiDef now; stderr: {result.Stderr}");
+        result.Mgfx.Should().NotBeEmpty();
+
+        string ascii = Ascii(result.Mgfx);
+        ascii.Should().Contain("uniform sampler3D ps_s0;");
+        ascii.Should().Contain("texture3D(ps_s0,");
+        ascii.Should().NotContain("texture2D(");
+    }
+
+    [Theory]
+    [InlineData("examples/ExSampleLevelHidef.fx", "textureLod(ps_s0,")]
+    [InlineData("examples/ExSampleGradHidef.fx",  "textureGrad(ps_s0,")]
+    public async Task LodGrad_Compiles_KeepsGenericBuiltin(string fx, string expectedCall)
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var result = await TestHelpers.CompileFixtureAsync(fx, "OpenGL", ct: cts.Token);
 
-        // Must FAIL (the whole point — silent broken-HiDef output is the bug).
-        result.ExitCode.Should().NotBe(0,
-            because: $"'{fx}' emits a construct with no HiDef-safe single-blob form and must fail loudly; stderr: {result.Stderr}");
-        result.Mgfx.Should().BeEmpty(because: "a failed compile must not emit output bytes");
+        result.ExitCode.Should().Be(0,
+            because: $"explicit-LOD/gradient sampling is supported on Desktop + HiDef now; stderr: {result.Stderr}");
+        result.Mgfx.Should().NotBeEmpty();
 
-        // The loud diagnostic is the Phase-33 generality guard (SD0210), not a crash.
-        result.Stderr.Should().Contain("SD0210",
-            because: $"the failure must be the explicit generality guard, not an unrelated error; stderr: {result.Stderr}");
+        string ascii = Ascii(result.Mgfx);
+        ascii.Should().Contain(expectedCall,
+            because: "the generic LOD/grad form is the single-blob-correct one (desktop + KNI HiDef)");
+        // The legacy texture2DLod/texture2DGrad forms are NOT ES-3.00 builtins and KNI
+        // HiDef does not convert them — they must never be emitted.
+        ascii.Should().NotContain("texture2DLod");
+        ascii.Should().NotContain("texture2DGrad");
     }
 
     [Fact]
@@ -70,10 +109,9 @@ public sealed class HidefGeneralityFixtureTests
         result.Mgfx.Should().NotBeEmpty();
 
         // The emitted GLSL is embedded as ASCII in the .mgfx — assert the Phase-33
-        // single-output alias form and the scaled sampler remap, and that NO guard
+        // single-output alias form and the scaled sampler remap, and that NO non-2D
         // construct leaked in.
-        string ascii = Encoding.ASCII.GetString(
-            result.Mgfx.Select(b => (b >= 9 && b <= 126) ? b : (byte)' ').ToArray());
+        string ascii = Ascii(result.Mgfx);
 
         ascii.Should().Contain("#define ps_oC0 gl_FragColor",
             because: "the single fragment output must use mgfxc's #define alias (KNI HiDef converts it)");
@@ -82,5 +120,7 @@ public sealed class HidefGeneralityFixtureTests
         ascii.Should().NotContain("gl_FragData", because: "this is a single-output shader, not MRT");
         ascii.Should().NotContain("texture2DLod");
         ascii.Should().NotContain("textureGrad");
+        ascii.Should().NotContain("samplerCube");
+        ascii.Should().NotContain("sampler3D");
     }
 }
