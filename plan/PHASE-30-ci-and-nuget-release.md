@@ -1020,6 +1020,7 @@ Phases 22, 23, 24, and 100 all defer their browser/WASM validation "to Phase 30.
 
 - [ ] Install Playwright browsers (`playwright install --with-deps chromium`).
 - [ ] Run **[Phase 24](DONE/PHASE-24-browser-render-validation.md)**'s harness headless against the published sample: **mode-1** (precompiled `.mgfx` loads + renders in KNI WebGL — the MGFXReader10/KNIFX-v11 answer), then **mode-2** (in-browser compile + render).
+- [ ] **KNI HiDef / WebGL2 run (Phase 33 — issue #7 regression guard):** `node publish-sample-sd-hidef.mjs` then `node run-harness.mjs --corpus=sd-hidef` (boots the sample with `?profile=hidef` → WebGL2 / GLSL ES 3.00). This is the **continuous guard for issue #7** — a regression to a raw-`gl_FragColor` write would flip it RED. After the Phase 33 fix it is GREEN (`RESULTS-SD-HIDEF.md`: 10/10 load + render); the harness writes `RESULTS-SD-HIDEF-REPRO.md` instead if it ever fails. Also run the matching Reach baseline (`--corpus=sd`) as the no-regression check.
 - [ ] Use deterministic software GL (`--use-gl=angle --use-angle=swiftshader`) so pixel comparison is reproducible across runners.
 - [ ] Pixel-compare against Phase-17 references at the **§6.1 tolerance** (shared standard — do not invent a new one).
 - [ ] **AV-scan slowness allowance:** apply the CLAUDE.md Phase 21 note (freshly-built native/WASM binaries get on-access-scanned cold); generous step timeouts, and exclude `**/bin`, `**/obj`, `tools/`, `.wasm-build/` on self-hosted runners.
@@ -1036,6 +1037,7 @@ Phases 22, 23, 24, and 100 all defer their browser/WASM validation "to Phase 30.
 | WASM build succeeds | `dotnet publish` of `ShaderFiddle.Web` (net8.0-browser) exits 0 with `wasm-tools` + emscripten 3.1.34 |
 | vkd3d-shader bundled per RID | `dotnet build -r linux-x64` places `libvkd3d-shader.so` in `runtimes/linux-x64/native/`; DX `.mgfx` compiles on Linux/macOS (Phase 18 reach) |
 | Mode-1 renders in KNI WebGL | Phase 24 harness: 10/10 corpus `.mgfx` load + render pixel-equivalent in headless Chromium |
+| KNI HiDef/WebGL2 loads (issue #7) | Phase 33 harness `--corpus=sd-hidef`: 10/10 corpus `.mgfx` load with **no GLSL error** + render within tolerance in headless KNI HiDef (WebGL2 / GLSL ES 3.00) |
 | Faithful mode-2 (post-M0) | In-browser DXC→WASM `.mgfx` bytes == CLI bytes for a corpus shader |
 | `.wasm` supply chain | `.wasm` artifacts SHA-256-verified in `tools/restore.*` |
 
