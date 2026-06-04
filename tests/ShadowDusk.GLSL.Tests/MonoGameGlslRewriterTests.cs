@@ -547,17 +547,109 @@ void main()
             .WithMessage("*collision*ps_oC0*");
     }
 
-    // ---- Phase 33 Task 3b: generality guards (LOD/proj/grad + non-2D samplers) ----
-    // These constructs have no single-blob GLSL form valid in both KNI Reach (WebGL1)
-    // and KNI HiDef (WebGL2), and KNI's ES-3.00 converter does not rewrite them. The
-    // rewriter must FAIL LOUDLY at compile time, never silently emit broken HiDef GLSL.
+    // ---- Phase 34: per-dimension texture support (cube / 3D) + LOD/grad ----
+    // SPIRV-Cross emits the dimension-specific sampler DECL (samplerCube / sampler3D)
+    // but the GENERIC texture() CALL for every dimension. The rewriter must (a) rename
+    // the non-2D sampler decl to ps_s{k} keeping its kind, (b) emit the matching
+    // dimension-specific builtin (textureCube / texture3D), and (c) carry the right
+    // MonoGameSamplerDimension so the pipeline can encode the .mgfx sampler-type byte.
+
+    [Fact]
+    public void CubeSampler_RenamedToPsS0_AndCallEmitsTextureCube()
+    {
+        // Verbatim SPIRV-Cross shape for a TextureCube.Sample (Phase 34 probe).
+        const string src = """
+#version 140
+
+uniform samplerCube _25;
+in vec3 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    out_var_SV_Target = texture(_25, in_var_TEXCOORD0);
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        result.Glsl.Should().Contain("uniform samplerCube ps_s0;",
+            "the cube sampler decl must keep its kind and be renamed to ps_s{k}");
+        result.Glsl.Should().Contain("textureCube(ps_s0,",
+            "a cube sampler must be sampled with textureCube(), not texture2D()");
+        result.Glsl.Should().NotContain("texture2D(",
+            "the generic texture() must NOT be down-rewritten to texture2D() for a cube sampler");
+
+        result.Samplers.Should().ContainSingle();
+        result.Samplers[0].Name.Should().Be("ps_s0");
+        result.Samplers[0].Dimension.Should().Be(MonoGameSamplerDimension.TextureCube);
+    }
+
+    [Fact]
+    public void VolumeSampler_RenamedToPsS0_AndCallEmitsTexture3D()
+    {
+        const string src = """
+#version 140
+
+uniform sampler3D _25;
+in vec3 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    out_var_SV_Target = texture(_25, in_var_TEXCOORD0);
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        result.Glsl.Should().Contain("uniform sampler3D ps_s0;");
+        result.Glsl.Should().Contain("texture3D(ps_s0,");
+        result.Glsl.Should().NotContain("texture2D(");
+
+        result.Samplers.Should().ContainSingle();
+        result.Samplers[0].Dimension.Should().Be(MonoGameSamplerDimension.TextureVolume);
+    }
+
+    [Fact]
+    public void MixedSamplers_EachGetsItsOwnDimensionBuiltin()
+    {
+        // A 2D + a cube sampler in one shader (the mgfxc EnvironmentMapEffect shape):
+        // ps_s0 (2D) -> texture2D, ps_s1 (cube) -> textureCube. Proves the rewrite is
+        // PER-sampler, not a blanket dimension.
+        const string src = """
+#version 140
+
+uniform sampler2D _10;
+uniform samplerCube _20;
+in vec2 in_var_TEXCOORD0;
+in vec3 in_var_TEXCOORD1;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    out_var_SV_Target = texture(_10, in_var_TEXCOORD0) + texture(_20, in_var_TEXCOORD1);
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        result.Glsl.Should().Contain("uniform sampler2D ps_s0;");
+        result.Glsl.Should().Contain("uniform samplerCube ps_s1;");
+        result.Glsl.Should().Contain("texture2D(ps_s0,");
+        result.Glsl.Should().Contain("textureCube(ps_s1,");
+
+        result.Samplers.Should().HaveCount(2);
+        result.Samplers[0].Dimension.Should().Be(MonoGameSamplerDimension.Texture2D);
+        result.Samplers[1].Dimension.Should().Be(MonoGameSamplerDimension.TextureCube);
+    }
 
     [Theory]
-    [InlineData("textureLod")]   // from tex2Dlod / SampleLevel
-    [InlineData("textureProj")]  // from tex2Dproj
-    [InlineData("textureGrad")]  // from tex2Dgrad / SampleGrad
-    public void Sampling_LodProjGrad_FailsLoudly(string builtin)
+    [InlineData("textureLod",  "2.0")]   // from tex2Dlod / SampleLevel
+    [InlineData("textureGrad", "vec2(0.01, 0.0), vec2(0.0, 0.01)")] // from tex2Dgrad / SampleGrad
+    public void LodGradSampling_KeptInGenericForm_NotDownRewritten(string builtin, string extraArgs)
     {
+        // Phase 34: the generic LOD/grad form is valid on Desktop + KNI HiDef (core ES
+        // 3.00) and is what the rewriter now KEEPS — it must NOT down-rewrite to the
+        // legacy texture2DLod/texture2DGrad (which KNI HiDef does not convert), and must
+        // NOT fail loudly any more.
         string src = $$"""
 #version 140
 
@@ -567,20 +659,26 @@ out vec4 out_var_SV_Target0;
 
 void main()
 {
-    out_var_SV_Target0 = {{builtin}}(_10, in_var_TEXCOORD0, 2.0);
+    out_var_SV_Target0 = {{builtin}}(_10, in_var_TEXCOORD0, {{extraArgs}});
 }
 """;
-        Action act = () => MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
-        act.Should().Throw<MonoGameGlslRewriteException>()
-            .WithMessage("*Unsupported texture sampling*",
-                "LOD/proj/grad sampling must fail loudly — it silently breaks under KNI HiDef");
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        result.Glsl.Should().Contain($"{builtin}(ps_s0,",
+            "the generic LOD/grad builtin is the single-blob-correct form (desktop + HiDef)");
+        result.Glsl.Should().NotContain("texture2DLod");
+        result.Glsl.Should().NotContain("texture2DGrad");
     }
 
+    // ---- Phase 33 → Phase 34: guards remain ONLY for kinds still unmodeled ----
+    // cube/3D are now supported; sampler kinds the rewriter still cannot model
+    // (sampler2DArray, sampler2DShadow, samplerCubeArray, …) must still FAIL LOUDLY.
+
     [Theory]
-    [InlineData("samplerCube")]
-    [InlineData("sampler3D")]
     [InlineData("sampler2DArray")]
-    public void Sampling_NonPlain2DSampler_FailsLoudly(string samplerType)
+    [InlineData("sampler2DShadow")]
+    [InlineData("samplerCubeArray")]
+    public void Sampling_StillUnmodeledSampler_FailsLoudly(string samplerType)
     {
         string src = $$"""
 #version 140
@@ -597,7 +695,29 @@ void main()
         Action act = () => MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
         act.Should().Throw<MonoGameGlslRewriteException>()
             .WithMessage("*Unsupported sampler type*",
-                "non-2D samplers would be silently rewritten to texture2D() — invalid GLSL");
+                "unmodeled samplers would be silently rewritten to texture2D() — invalid GLSL");
+    }
+
+    [Theory]
+    [InlineData("samplerCube")]
+    [InlineData("sampler3D")]
+    public void Sampling_CubeAnd3DSamplers_AreNoLongerGuarded(string samplerType)
+    {
+        // Regression for the Phase 34 lift: cube/3D must NOT trip the guard any more.
+        string src = $$"""
+#version 140
+
+uniform {{samplerType}} _10;
+in vec3 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target0;
+
+void main()
+{
+    out_var_SV_Target0 = texture(_10, in_var_TEXCOORD0);
+}
+""";
+        Action act = () => MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+        act.Should().NotThrow();
     }
 
     [Fact]
@@ -606,5 +726,26 @@ void main()
         // Regression: the guard must NOT trip on the normal sampler2D shape.
         Action act = () => MonoGameGlslRewriter.Rewrite(ExampleA, ShaderStage.Pixel);
         act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ErrorMessage_HasNoPhase34Placeholder()
+    {
+        // The "(Tracked for Phase 34.)" placeholder must be gone from shipped errors.
+        const string src = """
+#version 140
+
+uniform sampler2DArray _10;
+in vec3 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target0;
+
+void main()
+{
+    out_var_SV_Target0 = texture(_10, in_var_TEXCOORD0);
+}
+""";
+        Action act = () => MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+        act.Should().Throw<MonoGameGlslRewriteException>()
+            .Which.Message.Should().NotContain("Tracked for Phase 34");
     }
 }
