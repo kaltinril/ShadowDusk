@@ -8,7 +8,7 @@
 
 The faithful path also surfaced + fixed a real reach bug: .NET 8 WASM has no BCL MD5, so `MgfxWriter.ComputeEffectKey` threw in-browser → `ManagedMd5` (RFC-1321), proven ≡ BCL MD5 (17/17). Full solution **515/515**. Commits: M0 `33e298d`, M2+M3 `d51b070`, M1 `9cc983a`.
 
-**Carry-forwards (owned elsewhere, NOT Phase 23 blockers):** DirectX-DXBC-in-WASM → [Phase 4.1](PHASE-4.1-SPIKE-wasm-directx-dxbc.md); CI + Linux/macOS *rebuild-from-source* of `dxcompiler.wasm` (today the build script is Windows/MSVC-only; the built `.wasm` is committed so consumers/CI need only a copy) → [Phase 30 §16](PHASE-30-cross-platform-ci.md); VS-driven path through DXC→WASM (corpus is PS-only) → backlog 17-VS; untrusted-`.fx` input validation → [Phase 25](PHASE-25-security-hardening.md); download-size/cold-start UX + mode-2 default-on decision (Track E1); arbitrary-shader hardening beyond the 10-shader corpus.
+**Carry-forwards (owned elsewhere, NOT Phase 23 blockers):** DirectX-DXBC-in-WASM → [Phase 4.1](PHASE-4.1-SPIKE-wasm-directx-dxbc.md); CI + Linux/macOS *rebuild-from-source* of `dxcompiler.wasm` (today the build script is Windows/MSVC-only; the built `.wasm` is committed so consumers/CI need only a copy) → [Phase 30 §16](PHASE-30-ci-and-nuget-release.md); VS-driven path through DXC→WASM (corpus is PS-only) → backlog 17-VS; untrusted-`.fx` input validation → [Phase 25](PHASE-25-security-hardening.md); download-size/cold-start UX + mode-2 default-on decision (Track E1); arbitrary-shader hardening beyond the 10-shader corpus.
 
 ---
 
@@ -101,7 +101,7 @@ Two delivery mechanisms, **not** symmetric:
 - **M0 — build pinned DXC→WASM** (emscripten 3.1.34) — Gate 1. **Decided (Option A); the build is the work**, not a decision. Out-of-session LLVM-fork build (see the recipe in Track B below). DoD: emits `dxcompiler.{js,wasm}` whose `compileToSpirv` produces **byte-identical SPIR-V to the desktop CLI** on the corpus.
 - **M1 — turnkey packaging** — Gate 2; frontend-agnostic; **do now** (does not wait on M0).
 - **M2 — wire the faithful DXC→WASM frontend** into the shipping `ShadowDusk.Wasm` package; the Slang module stays in the sample only.
-- **M3 — headless-browser render proof** — Gate 3; runs on **[Phase 24](PHASE-24-browser-render-validation.md)**'s Playwright harness, then wired into [Phase 30](PHASE-30-cross-platform-ci.md) CI.
+- **M3 — headless-browser render proof** — Gate 3; runs on **[Phase 24](PHASE-24-browser-render-validation.md)**'s Playwright harness, then wired into [Phase 30](PHASE-30-ci-and-nuget-release.md) CI.
 
 M1 + M3 are unconditional. The detailed compile-seam task tracks (A–E) below remain valid, **except** Track A's "SPIRV-Cross via static-link / delete `JsSpirvToGlslTranspiler`" is **NOT the path** — SPIRV-Cross ships as a `[JSImport]` static web asset (same mechanism DXC requires); static-link is kept only as a future download-size optimization.
 
@@ -192,7 +192,7 @@ The build is out-of-session (multi-day, LLVM-fork) but well-trodden; capture the
 ### Track E — Sizing, security, CI
 - [ ] 🖥️ E1. Measure download size / memory / cold-start (DXC/Slang wasm dominates); decide mode-2 default-on vs opt-in.
 - [ ] E2. Run untrusted `.fx` through [Phase 25](PHASE-25-security-hardening.md) input validation.
-- [ ] E3. [Phase 30 CI](PHASE-30-cross-platform-ci.md): headless-browser smoke for mode 1; install `wasm-tools` + pin emscripten 3.1.34; account for AV-scan slowness (CLAUDE.md Phase 21 note).
+- [ ] E3. [Phase 30 CI](PHASE-30-ci-and-nuget-release.md): headless-browser smoke for mode 1; install `wasm-tools` + pin emscripten 3.1.34; account for AV-scan slowness (CLAUDE.md Phase 21 note).
 
 ### Sequencing
 SPIRV-Cross (Track A) is already done via `[JSImport]`. **D (mode-1 precompiled load) is the lowest-risk first landing and is owned by [Phase 24](PHASE-24-browser-render-validation.md)** — it retires the KNI MGFXReader10-load risk *before* the DXC→WASM build effort, so run it first. **B1 (the DXC→WASM build) is the long pole**; B2 + M1 packaging proceed in parallel. **C (faithful end-to-end compile) depends on B1-gate + B2** and is render-proven on Phase 24's harness (M3).

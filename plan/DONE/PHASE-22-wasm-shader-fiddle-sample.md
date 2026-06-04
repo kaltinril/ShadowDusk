@@ -126,7 +126,7 @@ The sample's Slang mode-2 is honest *reach demonstration*, but it is **not** the
 - [ ] 🖥️ Manually verify several shaders (Grayscale/Invert; Tint/Sepia) render in-browser equivalently to desktop Phase-17; record WebGL-vs-DesktopGL divergence — **pending a browser run** (manual step documented in README; needed to also settle the MGFX-v10-in-KNI question).
 - [x] 🖥️ Feed deliberately-broken `.fx`: the diagnostics path + "keep last good render" is implemented; browser-confirm pending.
 - [ ] ⬜ Run untrusted-input cases past [Phase 25](PHASE-25-security-hardening.md) — deferred to Phase 25.
-- [x] ✅ Documented manual run/smoke step (`README.md` + `run.ps1`); headless-browser check folded into [Phase 30 CI](PHASE-30-cross-platform-ci.md) — Phase 30.
+- [x] ✅ Documented manual run/smoke step (`README.md` + `run.ps1`); headless-browser check folded into [Phase 30 CI](PHASE-30-ci-and-nuget-release.md) — Phase 30.
 
 ---
 

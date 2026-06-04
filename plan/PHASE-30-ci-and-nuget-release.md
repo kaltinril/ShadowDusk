@@ -1,13 +1,21 @@
-# Phase 30 — Cross-Platform CI (GitHub Actions)
+# Phase 30 — Cross-Platform CI, NuGet Release & `/release` Automation (GitHub Actions)
+
+> **What this phase covers (read first — the old name "Cross-Platform CI" hid half of it):** three things, not one.
+> 1. **CI** — build + test on Linux/macOS/Windows on every push/PR (`ci.yml`).
+> 2. **NuGet release** — pack **all six** `ShadowDusk.*` packages + the `mgfxc` tool, push to nuget.org, and attach self-contained CLI binaries to a GitHub Release, on a `v*.*.*` tag *or* a manual dispatch (`release.yml`).
+> 3. **`/release` automation** — a one-command release skill (`.claude/skills/release/SKILL.md`, modelled on the KernSmith `/release`) that bumps the **single** centralized version, updates `CHANGELOG.md`/`RELEASING.md`, opens the PR, waits for CI, merges, and triggers publish. See **§17**.
+>
+> The CI half can ship independently; the version-centralization in **§17.1** is a prerequisite for both the `/release` skill and the release workflow's tag↔version validation.
 
 ## Overview
 
-This phase wires up GitHub Actions CI that builds, tests, and packages ShadowDusk across Linux, macOS, and Windows — **and runs the WASM build + headless-browser validation** that Phases 22/23/24 depend on. It validates every prior phase end-to-end in a clean, reproducible environment, and is where **Part-1 (reach)** is proven: the desktop GL + vkd3d-DXBC paths *run* on Linux/macOS, and the WASM path *renders* in a headless browser.
+This phase wires up GitHub Actions CI that builds, tests, and packages ShadowDusk across Linux, macOS, and Windows — **and runs the WASM build + headless-browser validation** that Phases 22/23/24 depend on — **and the NuGet release pipeline + `/release` skill** that turn a green `main` into published packages with one command. It validates every prior phase end-to-end in a clean, reproducible environment, and is where **Part-1 (reach)** is proven: the desktop GL + vkd3d-DXBC paths *run* on Linux/macOS, and the WASM path *renders* in a headless browser.
 
-**Inputs:** A complete, passing local build from Phases 1–9, plus the WASM engine (Phase 19) and browser harness (Phase 24).
-**Outputs:** Green CI badges on every push/PR; self-contained binaries and a NuGet package published on every `v*.*.*` tag; a headless-browser smoke that renders corpus shaders in KNI WebGL.
+**Inputs:** A complete, passing local build from Phases 1–9, plus the WASM engine (Phase 19) and browser harness (Phase 24). **Prerequisite for the release half:** the hermetic-restore `nuget.config` (PR #8, central package management) merged, so CI `dotnet restore`/`pack` resolves identically regardless of machine feeds.
+**Outputs:** Green CI badges on every push/PR; **all six `ShadowDusk.*` NuGet packages + the `mgfxc` dotnet tool** published to nuget.org and self-contained CLI binaries attached to a GitHub Release on every `v*.*.*` tag (or manual dispatch); a headless-browser smoke that renders corpus shaders in KNI WebGL; and a `/release` skill that drives the whole cut.
 
 > **This phase OWNS the browser/WASM CI** that Phases 22, 23, 24, and 100 all defer to it. See **§16 — WASM & Headless-Browser CI** below; if that section is empty, those deferrals are unsatisfied.
+> **This phase also OWNS NuGet release + the `/release` skill.** See **§17**. Phase 27 (pre-1.0 sweep) and any "ship 1.0" work depend on §17 existing.
 
 ---
 
@@ -15,7 +23,10 @@ This phase wires up GitHub Actions CI that builds, tests, and packages ShadowDus
 
 **In scope:**
 - `ci.yml` — build + unit test matrix on all 3 OS (push/PR)
-- `release.yml` — build + test + self-contained publish + NuGet push on `v*.*.*` tags
+- `release.yml` — build + test + self-contained publish + **multi-package NuGet pack & push** on `v*.*.*` tags **and `workflow_dispatch`** (§17.3)
+- **Centralizing the package version** into one `Directory.Build.props` `<Version>` (§17.1 — the "correct way"; removes the six scattered, confusingly-named `<PackageVersion>` properties)
+- **Packing all six `ShadowDusk.*` packages**, not just the CLI (§17.2): `Core`, `HLSL`, `GLSL`, `Compiler`, `Cli` (`mgfxc` tool), `Wasm`
+- **`CHANGELOG.md` + `RELEASING.md`** (§17.4) and the **`/release` skill** (§17.5)
 - Native binary restore and caching for **SPIRV-Cross *and* vkd3d-shader** (the DirectX DXBC backend, Phase 18)
 - `chmod +x` fix for native shared libraries on Linux/macOS
 - RID matrix covering all 4 targets
@@ -27,7 +38,8 @@ This phase wires up GitHub Actions CI that builds, tests, and packages ShadowDus
 - Windows code signing (future work)
 - Docker-based Linux builds (GitHub-hosted runners are sufficient)
 - ARM Linux runners (not available on GitHub free tier; add later)
-- Release notes generation / changelog (separate tooling)
+- Fully auto-generated changelog bodies (the `/release` skill curates `CHANGELOG.md` by hand; GitHub's `generate_release_notes` supplements the Release page only)
+- Publishing the `ShadowDusk.MgcbPlugin` / `ShadowDusk.Metal` packages (still stubs — Phases 29/31)
 
 ---
 
@@ -485,6 +497,12 @@ jobs:
 ---
 
 ## 7. `release.yml` — Release Workflow
+
+> **⚠️ Reconcile with §17 before implementing.** The YAML below was the original green-field draft and has **two gaps §17 closes**:
+> 1. Its `nuget` job packs **only `src/ShadowDusk.Cli`**. The product is the **six-package `ShadowDusk.*` set** — it must pack all six (§17.2). Replace the single `dotnet pack` with the matrix/loop in §17.2.
+> 2. It has **no `workflow_dispatch`** and **no tag↔version validation**. Add both (§17.3) so a release can be triggered from the Actions UI and so a `v1.2.3` tag whose `Directory.Build.props` says `1.2.0` fails fast instead of publishing a mislabeled package.
+>
+> Treat §17.2/§17.3 as the authoritative spec for the `nuget` job and the workflow triggers; the block below is correct for the build/publish/`github-release` jobs.
 
 ```yaml
 # .github/workflows/release.yml
@@ -977,8 +995,8 @@ Execute these steps in order. Each step is independently verifiable.
 | macOS code signing and notarization | Required for Gatekeeper pass on end-user machines; out of scope for CI phase |
 | Windows Authenticode signing | Required for `SmartScreen` bypass; out of scope |
 | `linux-arm64` RID | GitHub-hosted ARM Linux runners require paid minutes; add when budget allows |
-| Symbol packages (`.snupkg`) | Add `/p:IncludeSymbols=true /p:SymbolPackageFormat=snupkg` to `dotnet pack` and push to NuGet.org |
-| Automatic release notes | Consider `release-drafter` or `github-changelog-generator` |
+| ~~Symbol packages (`.snupkg`)~~ | **Now in scope — §17.2** adds `/p:IncludeSymbols=true /p:SymbolPackageFormat=snupkg` to the six-package pack |
+| ~~Automatic release notes~~ | **Now addressed — §17.4** (`CHANGELOG.md` curated by `/release`) + GitHub `generate_release_notes` on the Release page |
 | Container image publish | A Docker image with `mgfxc` baked in would simplify CI for MonoGame game projects |
 | Dependabot for NuGet and GitHub Actions | Add `.github/dependabot.yml` to get automated version bump PRs |
 
@@ -1020,3 +1038,221 @@ Phases 22, 23, 24, and 100 all defer their browser/WASM validation "to Phase 30.
 | Mode-1 renders in KNI WebGL | Phase 24 harness: 10/10 corpus `.mgfx` load + render pixel-equivalent in headless Chromium |
 | Faithful mode-2 (post-M0) | In-browser DXC→WASM `.mgfx` bytes == CLI bytes for a corpus shader |
 | `.wasm` supply chain | `.wasm` artifacts SHA-256-verified in `tools/restore.*` |
+
+---
+
+## 17. NuGet Release & the `/release` Skill (owns release automation)
+
+This section is the authoritative spec for **how a ShadowDusk release is cut**: a single centralized version, a multi-package publish, and a `/release` skill that drives it end-to-end. It is modelled on the working **KernSmith `/release`** (a sibling repo of the same author that publishes 8 NuGet packages from a tag), adapted to ShadowDusk's six-package set + native-dependency reality.
+
+> **Why this is here and not its own phase:** the release workflow (`release.yml`) and the CI workflow (`ci.yml`) share the entire native-restore / RID-matrix / locked-restore machinery in §1–§11. Splitting them would duplicate ~300 lines of YAML and two checklists. The `/release` skill is the human-facing front door to the `release.yml` defined in §7 + the additions below.
+
+### 17.1 Centralize the package version (the "correct way" — prerequisite)
+
+**Current state (the problem):** each of the six packable projects hard-codes its own version as an MSBuild **property**:
+
+```
+src/ShadowDusk.Core/ShadowDusk.Core.csproj         <PackageVersion>0.1.0</PackageVersion>
+src/ShadowDusk.HLSL/ShadowDusk.HLSL.csproj         <PackageVersion>0.1.0</PackageVersion>
+src/ShadowDusk.GLSL/ShadowDusk.GLSL.csproj         <PackageVersion>0.1.0</PackageVersion>
+src/ShadowDusk.Compiler/ShadowDusk.Compiler.csproj <PackageVersion>0.1.0</PackageVersion>
+src/ShadowDusk.Cli/ShadowDusk.Cli.csproj           <PackageVersion>0.1.0</PackageVersion>
+src/ShadowDusk.Wasm/ShadowDusk.Wasm.csproj         <PackageVersion>0.1.0</PackageVersion>
+```
+
+Two things are wrong with this:
+
+1. **Six edits per release, easy to desync.** A `/release` skill (or a human) must touch six files and can leave one behind, shipping a mixed-version set where `ShadowDusk.Compiler 0.2.0` depends on `ShadowDusk.HLSL 0.1.0`.
+2. **The property name collides with Central Package Management.** This repo uses **CPM** (`Directory.Packages.props`, `ManagePackageVersionsCentrally=true`; see PR #8 from @vchelaru on the hermetic-restore `nuget.config`). In CPM, `<PackageVersion Include="X" Version="Y" />` is an **item** that pins a *dependency's* version. The per-csproj `<PackageVersion>0.1.0</PackageVersion>` is a **property** that sets *this package's output* version. They are different MSBuild constructs that happen to share a name — a genuine footgun that makes the project look like it is "doing versioning wrong." This is the discrepancy that prompted the request.
+
+**Fix:** make `Directory.Build.props` the single source of truth, exactly like KernSmith.
+
+```xml
+<!-- Directory.Build.props -->
+<PropertyGroup>
+  <!-- Single source of truth for ALL ShadowDusk.* package versions.
+       /release bumps this one line; release.yml validates the tag against it. -->
+  <Version>0.1.0</Version>
+</PropertyGroup>
+```
+
+Then **delete the six `<PackageVersion>…</PackageVersion>` property lines** from the csprojs. With CPM on, `<Version>` flows to every project; `dotnet pack` uses it for `PackageVersion` automatically. Keep the per-project `<PackageId>`, `<Description>`, `<PackageTags>`, etc. — only the version centralizes.
+
+> **Verification after centralizing:** `dotnet pack ShadowDusk.slnx -c Release -o nupkg` must emit `ShadowDusk.Core.0.1.0.nupkg`, `…HLSL.0.1.0.nupkg`, … all six at the same version, and the inter-package `<dependency>` entries inside each `.nuspec` must reference `[0.1.0, )` (not a stale `0.1.0` literal). Confirm with `unzip -p nupkg/ShadowDusk.Compiler.0.1.0.nupkg '*.nuspec'`.
+
+### 17.2 Pack all six packages (not just the CLI)
+
+The product is the **set**, not the CLI alone (the CLI is one delivery shape — see CLAUDE.md *THE PURPOSE*). A consumer runs `dotnet add package ShadowDusk.Compiler` and NuGet must restore `Core/HLSL/GLSL` + the native deps transitively. So `release.yml`'s `nuget` job must pack **all six**:
+
+| Package | Project | Notes |
+|---|---|---|
+| `ShadowDusk.Core` | `src/ShadowDusk.Core` | net8.0 |
+| `ShadowDusk.HLSL` | `src/ShadowDusk.HLSL` | net8.0; pulls `Vortice.Dxc` (cross-platform DXC native) transitively |
+| `ShadowDusk.GLSL` | `src/ShadowDusk.GLSL` | net8.0; pulls `Silk.NET.SPIRV.Cross.Native` transitively |
+| `ShadowDusk.Compiler` | `src/ShadowDusk.Compiler` | net8.0; **the consumer-facing product**; depends on the three above |
+| `ShadowDusk.Cli` | `src/ShadowDusk.Cli` | `PackAsTool` → `dotnet tool install -g ShadowDusk.Cli` gives `mgfxc` |
+| `ShadowDusk.Wasm` | `src/ShadowDusk.Wasm` | **net8.0-browser** — must be packed on a job with the `wasm-tools` workload + the restored `dxcompiler.wasm` (its csproj `VerifyDxcWasmPresent` target hard-fails the pack otherwise). Pack it in the **§16 WASM job**, not the ubuntu `nuget` job. |
+
+Replace the single-CLI `dotnet pack` in §7's `nuget` job with (version comes from the validated tag, §17.3):
+
+```yaml
+- name: Pack desktop packages
+  run: |
+    for proj in \
+      src/ShadowDusk.Core/ShadowDusk.Core.csproj \
+      src/ShadowDusk.HLSL/ShadowDusk.HLSL.csproj \
+      src/ShadowDusk.GLSL/ShadowDusk.GLSL.csproj \
+      src/ShadowDusk.Compiler/ShadowDusk.Compiler.csproj \
+      src/ShadowDusk.Cli/ShadowDusk.Cli.csproj ; do
+        dotnet pack "$proj" -c Release -o nupkg \
+          /p:Version=${{ needs.validate.outputs.version }} \
+          /p:IncludeSymbols=true /p:SymbolPackageFormat=snupkg
+    done
+# ShadowDusk.Wasm is packed in the WASM job (§16) and its .nupkg uploaded as an
+# artifact; the push step globs all nupkg/*.nupkg from both jobs.
+```
+
+The existing `dotnet nuget push nupkg/*.nupkg … --skip-duplicate` step then pushes the whole set (idempotent — re-running a release no-ops on already-published versions).
+
+> **Known native-packaging gap (carry-forward from `MEMORY: DX vkd3d not packaged yet`):** the **GL + DXC in-memory path is fully self-contained from NuGet today** — `Vortice.Dxc` and `Silk.NET.SPIRV.Cross.Native` are on nuget.org and ride transitively, so `dotnet add package ShadowDusk.Compiler` → compile `.fx` → GL `.mgfx` works on a clean machine. The **DirectX DXBC backend's `vkd3d-shader` native is NOT yet packaged** (it is a restored, non-redistributed artifact). Until it ships as a `runtimes/<rid>/native/` asset inside `ShadowDusk.HLSL` (or a dedicated `ShadowDusk.Native.Vkd3d` package), DX-in-memory from a pure NuGet add is not self-contained. Packaging it is tracked in §4-style bundling and listed in §17.6 as a release blocker **only for advertising DX support** — the 0.1.x line can ship GL-only-from-NuGet honestly.
+
+### 17.3 Triggers + the `validate` job (tag ↔ version guard)
+
+Mirror KernSmith: `release.yml` fires on **either** a `v*` tag push **or** a manual `workflow_dispatch` with a `version` input, and a `validate` job gates everything else.
+
+```yaml
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 0.2.0)'
+        required: true
+        type: string
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Resolve version (input or tag, strip leading 'v')
+        id: resolve
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Verify version matches Directory.Build.props
+        run: |
+          want="${{ steps.resolve.outputs.version }}"
+          have=$(grep -oP '(?<=<Version>)[^<]+' Directory.Build.props)
+          if [ "$have" != "$want" ]; then
+            echo "::error::Release version ($want) != Directory.Build.props ($have). Merge a version-bump PR first (use /release)."
+            exit 1
+          fi
+```
+
+Every downstream job gains `needs: validate` and reads `${{ needs.validate.outputs.version }}`. On `workflow_dispatch`, a final `create-release` step also creates and pushes the `v<version>` tag (so the GitHub Release anchors to a tag even when triggered from the UI) — see KernSmith's `create-release` job for the exact pattern.
+
+### 17.4 `CHANGELOG.md` + `RELEASING.md`
+
+Neither exists yet. Both are prerequisites for `/release`.
+
+- **`CHANGELOG.md`** — [Keep a Changelog](https://keepachangelog.com) format with a rolling `## [Unreleased]` section at the top (`### Added` / `### Changed` / `### Fixed`). `/release` moves `[Unreleased]` into a dated `## [<version>] - <YYYY-MM-DD>` section. Seed it with a `## [0.1.0]` entry summarizing Phases 1–24 (the current shipped capability: cross-platform GL + DX compile, in-memory + CLI + WASM sample).
+- **`RELEASING.md`** — the human-readable runbook the skill automates: prerequisites (`NUGET_API_KEY` secret, nuget.org owner rights on all six IDs), the one-line version bump, how to trigger `release.yml` (tag vs. dispatch), and what to verify on nuget.org afterward. Keep version examples current (the skill refreshes them).
+
+### 17.5 The `/release` skill (`.claude/skills/release/SKILL.md`)
+
+Adapt KernSmith's skill. Below is the spec to drop in — note the ShadowDusk-specific deltas called out after it.
+
+```markdown
+---
+name: release
+description: "Cut a ShadowDusk release: bump the single centralized version, update CHANGELOG/RELEASING, audit docs, build+test, commit, push, PR, wait for CI, merge, then trigger the NuGet publish. Trigger on 'release', 'cut a release', 'bump version', 'new version', or /release."
+argument-hint: "<version> (e.g., 0.2.0)"
+---
+
+# Release
+
+Automate the full ShadowDusk release from version bump through PR merge to publish trigger.
+
+## Input
+`$ARGUMENTS` is the version (e.g., `0.2.0`). If omitted, read the current `<Version>` from
+`Directory.Build.props` and ask the user for the new one.
+
+## Steps
+
+1. **Validate clean tree.** `git status`; if dirty, warn and stop. Show current `<Version>`.
+2. **Branch from latest main.** `git checkout main && git pull && git checkout -b version/<version>`.
+3. **Bump version.** Edit `Directory.Build.props` `<Version>` only — the single source of truth
+   (do NOT touch the six csprojs; per §17.1 they no longer carry a version). 
+4. **Update CHANGELOG.md.** Move `[Unreleased]` → `## [<version>] - <today YYYY-MM-DD>`; leave a fresh
+   empty `[Unreleased]`. If Unreleased is empty, add "- Version bump and documentation updates".
+5. **Update RELEASING.md** version examples to <version>.
+6. **Docs audit (Explore agent, report-only — do NOT auto-fix).** Check CLAUDE.md inventory,
+   root README, CLI README, the DocFX site (Phase 26), and each csproj <Description> against the
+   code. Report gaps; ask whether to fix now or defer.
+7. **Build + test.** `dotnet build ShadowDusk.slnx -c Release` then
+   `dotnet test ShadowDusk.slnx -c Release --no-build --settings ShadowDusk.runsettings`
+   (the runsettings 5-min TestSessionTimeout — see CLAUDE.md Phase 21). Stop on failure.
+8. **Commit.** Stage the release files only; conventional message. NO Co-Authored-By / tool-attribution
+   trailer of any kind (CLAUDE.md Git Commit Conventions).
+9. **Push + PR.** `git push -u origin version/<version>`; `gh pr create` with a summary-bullets body
+   (no test-plan section, no tool-attribution footer).
+10. **Wait for PR CI.** `gh pr checks <pr> --watch`. Do not merge on red. Local green is not enough —
+    CI runs the 3-OS matrix (§6).
+11. **Merge.** `gh pr merge <pr> --merge`.
+12. **Wait for post-merge main CI**, then trigger publish: tell the user to run
+    **Actions → Release → Run workflow** with version `<version>`, or
+    `git tag v<version> && git push origin v<version>`. The `validate` job (§17.3) checks the tag
+    against Directory.Build.props, then all six packages + `mgfxc` publish to nuget.org and a GitHub
+    Release is cut.
+
+## Edge cases
+Dirty tree → stop. Branch exists → ask. Empty Unreleased → minimal entry. Merge conflict → stop, don't force.
+```
+
+**ShadowDusk-specific deltas from the KernSmith skill:**
+- **One file bumps**, not `Directory.Build.props`-as-property-bag plus csprojs — because §17.1 centralizes.
+- **No `/commit` skill exists here** — the skill commits directly, obeying CLAUDE.md (selective staging, **no `Co-Authored-By` of any kind**, no "Generated with Claude Code").
+- **Test invocation passes `--settings ShadowDusk.runsettings`** (the Phase 21 suite-timeout guardrail), matching the `/test` skill.
+- **Docs audit targets ShadowDusk's doc set**: CLAUDE.md inventory, the Phase 26 DocFX site, the WASM HOWTO, per-package `<Description>`s.
+- **Publish trigger is the §17.3 workflow** (tag or dispatch), which validates the tag against the centralized `<Version>`.
+
+### 17.6 Numbered Task Checklist (release automation)
+
+#### 17.6.a Versioning + packaging
+33. - [ ] Merge PR #8 (`nuget.config`, hermetic restore) — prerequisite for deterministic CI pack/restore.
+34. - [ ] Add `<Version>0.1.0</Version>` to `Directory.Build.props`; delete the six per-csproj `<PackageVersion>` **properties** (§17.1). Leave `Directory.Packages.props` `<PackageVersion Include=…>` **items** untouched.
+35. - [ ] `dotnet pack ShadowDusk.slnx -c Release -o nupkg` emits all six `.nupkg` at one version; inter-package deps resolve (§17.1 verification).
+36. - [ ] Confirm a clean-machine `dotnet add package ShadowDusk.Compiler` restores `Core/HLSL/GLSL` + `Vortice.Dxc` + `Silk.NET.SPIRV.Cross.Native` and compiles a `.fx` → GL `.mgfx` in memory (the self-contained promise, GL path).
+
+#### 17.6.b Release workflow
+37. - [ ] Add `workflow_dispatch` + the `validate` job (tag↔version guard) to `release.yml` (§17.3).
+38. - [ ] Replace the single-CLI pack with the six-package pack loop (§17.2); add `IncludeSymbols`/`snupkg`.
+39. - [ ] Pack `ShadowDusk.Wasm` in the §16 WASM job (needs `wasm-tools` + restored `dxcompiler.wasm`); upload its `.nupkg` for the shared push.
+40. - [ ] `NUGET_API_KEY` secret present (§2) and owner of all six package IDs on nuget.org confirmed (first publish reserves the IDs).
+
+#### 17.6.c `/release` skill + docs
+41. - [ ] Create `CHANGELOG.md` (Keep a Changelog) seeded with `[0.1.0]` (Phases 1–24 summary) + empty `[Unreleased]` (§17.4).
+42. - [ ] Create `RELEASING.md` runbook (§17.4).
+43. - [ ] Create `.claude/skills/release/SKILL.md` from §17.5.
+44. - [ ] Dry-run: `/release 0.1.1-alpha` on a scratch branch → PR opens, CI runs, **do not merge**; confirm the skill stops cleanly when asked.
+45. - [ ] First real cut: `/release 0.2.0` → merged, dispatch/tag → all six packages + `mgfxc` live on nuget.org at 0.2.0, GitHub Release has the four self-contained CLI archives.
+
+### 17.7 Acceptance Criteria (release automation — additions to §13)
+
+| Criterion | How to Verify |
+|---|---|
+| Single version source | Only `Directory.Build.props` carries `<Version>`; no `<PackageVersion>` **property** remains in any csproj; `grep -rl '<PackageVersion>' src` returns nothing |
+| All six packages publish | After a tag/dispatch, nuget.org shows `ShadowDusk.{Core,HLSL,GLSL,Compiler,Cli,Wasm}` all at `<version>` |
+| Tag ↔ version guard works | A `v9.9.9` tag against `Directory.Build.props=0.1.0` fails the `validate` job (does not publish) |
+| `mgfxc` tool installs | `dotnet tool install -g ShadowDusk.Cli --version <version>` then `mgfxc --help` works |
+| GL in-memory self-contained | Clean-machine consumer test (task 36) compiles a `.fx` with only `dotnet add package ShadowDusk.Compiler` |
+| `/release` drives the cut | `/release <version>` performs bump → CHANGELOG → PR → wait-CI → merge → publish-trigger with no manual file edits |
+| Conventions honored | Release commits carry **no** `Co-Authored-By` / tool-attribution; PR body has no test-plan/attribution footer |

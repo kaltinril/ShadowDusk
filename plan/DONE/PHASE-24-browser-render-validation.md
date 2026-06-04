@@ -65,7 +65,7 @@ Mode 2 (compile in-browser, then load + render) runs **on the existing Slang sam
 - [ ] 🖥️ 2b. Render+compare deferred with 2a (blocked on the restore artifact). Harness already labels any mode-2 result **"sample-only (Slang frontend), not the faithful-path proof."**
 
 ### Track 3 — handoff to CI
-- [x] ◻ 3. Harness is headless + self-contained for **[Phase 30](PHASE-30-cross-platform-ci.md) §16**: `npm ci && npx playwright install --with-deps chromium && node publish-sample.mjs && node run-harness.mjs`. Deterministic software GL is baked in; 120 s game-boot wait; AV-scan slowness allowance noted in `README.md`. Phase 30 owns the CI wiring.
+- [x] ◻ 3. Harness is headless + self-contained for **[Phase 30](PHASE-30-ci-and-nuget-release.md) §16**: `npm ci && npx playwright install --with-deps chromium && node publish-sample.mjs && node run-harness.mjs`. Deterministic software GL is baked in; 120 s game-boot wait; AV-scan slowness allowance noted in `README.md`. Phase 30 owns the CI wiring.
 
 ---
 
