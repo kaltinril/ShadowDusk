@@ -64,10 +64,11 @@ public static class MonoGameGlslRewriter
         @"^\s*in\s+(float|vec2|vec3|vec4)\s+(in_var_[A-Za-z0-9_]+)\s*;\s*$",
         RegexOptions.Compiled);
 
-    // out vec4 out_var_SV_Target<N?>;
+    // out vec4 out_var_SV_Target<N?>;  (case-insensitive on the semantic: HLSL
+    // SV_Target ≡ SV_TARGET ≡ sv_target, and DXC mirrors the source spelling).
     private static readonly Regex OutputDecl = new(
         @"^\s*out\s+vec4\s+(out_var_SV_Target[0-9]*)\s*;\s*$",
-        RegexOptions.Compiled);
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
     private static readonly Regex VersionLine = new(
         @"^\s*#version\b.*$",
@@ -100,6 +101,15 @@ public static class MonoGameGlslRewriter
         // Slang as the HLSL→SPIR-V frontend; SPIRV-Cross then names interface vars
         // after Slang's field/entrypoint identifiers rather than HLSL semantics.)
         glsl = NormalizeSlangNaming(glsl);
+
+        // Non-2D sampler guard (Phase 33 generality). This rewriter only models the
+        // plain `sampler2D`/`texture2D` shape (Phase 17's PS-only SpriteBatch corpus).
+        // A `samplerCube`/`sampler3D`/`sampler2DArray`/… declaration is neither renamed
+        // to ps_s{k} nor sampled with the right builtin — the body's `texture(cube,…)`
+        // would be silently rewritten to `texture2D(cube,…)`, invalid GLSL that fails
+        // only at GL link time. Fail loudly at compile time instead of emitting
+        // silently-broken output (§ Scope: parity-or-loud-failure, never silent break).
+        ThrowIfUnsupportedSamplerType(glsl);
 
         // Normalize newlines to '\n' for processing.
         var lines = glsl.Replace("\r\n", "\n").Replace("\r", "\n").Split('\n');
@@ -241,15 +251,52 @@ public static class MonoGameGlslRewriter
             body = Regex.Replace(body, pattern, replacement.Replace("$", "$$"));
         }
 
-        // Rule 5: output uses.
-        // out_var_SV_Target<N> -> gl_FragData[<N>]; out_var_SV_Target -> gl_FragColor.
-        body = Regex.Replace(body, @"\bout_var_SV_Target([0-9]+)\b", "gl_FragData[$1]");
-        body = Regex.Replace(body, @"\bout_var_SV_Target\b", "gl_FragColor");
+        // Rule 5: output uses → ps_oC{N} aliases (mgfxc/MojoShader form).
+        //
+        // mgfxc emits the fragment colour output as a `#define` alias, NOT a raw
+        // `gl_FragColor` write — `#define ps_oC0 gl_FragColor` and writes to ps_oC0
+        // (verified in tests/fixtures/golden/OpenGL/*.mgfx). KNI's WebGL2/HiDef
+        // runtime converter rewrites ONLY that `#define`-aliased form to `out vec4`
+        // under GLSL ES 3.00; a raw `gl_FragColor` write slips through untouched and
+        // fails ("'gl_FragColor' : undeclared identifier") — issue #7. Emitting the
+        // alias makes the one .mgfx load under Reach (WebGL1), HiDef (WebGL2) AND
+        // desktop GL, strictly closer to the golden.
+        //
+        // HLSL SV_Target ≡ SV_Target0 — BOTH are the PRIMARY single colour output,
+        // and mgfxc maps BOTH to `ps_oC0 → gl_FragColor`. Only SV_Target1/2/… (true
+        // MRT) map to `ps_oC{N} → gl_FragData[N]`. (DXC/SPIRV-Cross spells the
+        // primary `out_var_SV_Target` for `: COLOR` but `out_var_SV_Target0` for
+        // `: COLOR0` — they MUST collapse to the same ps_oC0, else single-output
+        // shaders like Sepia/Dissolve wrongly emit gl_FragData[0].)
+        //
+        // The `#define` lines are assembled as a SEPARATE string AFTER the Pass-2
+        // regex rewrites (see final assembly) so those passes can't corrupt them,
+        // and placed at column 0 in the header before main() — both required by
+        // KNI's converter (regex `^#define …` Multiline; the post-conversion
+        // `out vec4 ps_oC{N};` must be at global scope before main()).
+        var fragmentOutputs = RewriteFragmentOutputs(ref body);
 
         // Rule 6: texture functions.
         body = Regex.Replace(body, @"\btextureLod\s*\(", "texture2DLod(");
         body = Regex.Replace(body, @"\btextureProj\s*\(", "texture2DProj(");
         body = Regex.Replace(body, @"\btexture\s*\(", "texture2D(");
+
+        // Rule 6b: LOD / projected / gradient sampling guard (Phase 33 generality).
+        //
+        // The texture-LOD / -Proj / -Grad family CANNOT be emitted in a single GLSL
+        // payload that is valid across ALL MonoGame/KNI GL profiles:
+        //   • `texture2DLod`/`textureGrad` aren't core GLSL ES 1.00 fragment builtins,
+        //     so they're unreliable/invalid under KNI Reach (WebGL1).
+        //   • KNI's HiDef/WebGL2 runtime converter rewrites only `texture2D/3D/Cube(`
+        //     (suffix immediately followed by '('), NOT the Lod/Proj/Grad variants —
+        //     so whatever survives is undefined in GLSL ES 3.00 and the shader fails
+        //     to load (the same class of bug as the raw-gl_FragColor one this phase
+        //     fixes). ShadowDusk has ONE universal blob and no per-profile knob, so
+        //     there is no form that satisfies both Reach and HiDef at once.
+        // Per § Scope, the rewriter must therefore FAIL LOUDLY at compile time rather
+        // than silently emit GLSL that breaks under HiDef (or Reach). Full support is
+        // deferred to the Phase-34 follow-up.
+        ThrowIfUnsupportedSampling(body);
 
         // Rule 8: lower roundEven()/round() to a WebGL1-valid expression.
         // SPIRV-Cross emits roundEven(x) (for HLSL `round`, which DXC maps to
@@ -263,17 +310,168 @@ public static class MonoGameGlslRewriter
         // reference compiler. See ROUNDEVEN-FIX.md.
         body = LowerRoundToFloorHalfUp(body);
 
-        // ---- Assemble final output: precision header + body. ----
+        // ---- Assemble final output: precision header + #define block + body. ----
+        // The fragment-output `#define` aliases are emitted here, AFTER all Pass-2
+        // regex rewrites, so nothing can mangle them. They sit at column 0 in the
+        // header (global scope, before main()) — exactly what KNI's ES-3.00
+        // converter requires to rewrite `#define X gl_FragColor` → `out vec4 X;`.
+        var defineBlock = new StringBuilder();
+        foreach (var fo in fragmentOutputs)
+        {
+            defineBlock.Append("#define ").Append(fo.Alias).Append(' ').Append(fo.Builtin).Append('\n');
+        }
+
         // Trim leading blank lines from the body so the header sits at the top,
         // preserving a single blank line separation.
         var trimmedBody = body.TrimStart('\n');
-        var finalGlsl = PrecisionHeader + "\n" + trimmedBody;
+        var finalGlsl = PrecisionHeader + "\n" + defineBlock + trimmedBody;
         if (!finalGlsl.EndsWith("\n"))
         {
             finalGlsl += "\n";
         }
 
         return new MonoGameGlslResult(finalGlsl, samplers, uniformMembers.Count);
+    }
+
+    /// <summary>A fragment colour output discovered while rewriting the PS body.</summary>
+    /// <param name="Alias">The MojoShader alias, always <c>ps_oC{N}</c>.</param>
+    /// <param name="Builtin">The GLSL builtin the alias maps to: <c>gl_FragColor</c>
+    /// for the primary output (N==0), <c>gl_FragData[N]</c> for MRT outputs.</param>
+    private readonly record struct FragmentOutput(string Alias, string Builtin);
+
+    // out_var_SV_Target  or  out_var_SV_Target<N>  used in the body. Case-insensitive
+    // on the semantic (HLSL SV_Target ≡ SV_TARGET ≡ sv_target; DXC mirrors the source
+    // spelling, e.g. `: SV_TARGET` → out_var_SV_TARGET) so the alias is emitted
+    // regardless of how the author cased the return semantic.
+    private static readonly Regex OutputUse = new(
+        @"\bout_var_SV_Target([0-9]*)\b",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// Replaces every <c>out_var_SV_Target{N?}</c> use in <paramref name="body"/> with
+    /// its MojoShader alias <c>ps_oC{N}</c> and returns the distinct outputs (in slot
+    /// order) so the caller can emit the matching <c>#define</c> lines.
+    ///
+    /// <para><b>Primary collapse:</b> HLSL <c>SV_Target</c> ≡ <c>SV_Target0</c> — both
+    /// are the single primary colour output. DXC names the former <c>out_var_SV_Target</c>
+    /// (no digit) and the latter <c>out_var_SV_Target0</c>; both collapse to
+    /// <c>ps_oC0 → gl_FragColor</c>. Only <c>SV_Target1</c>+ (true MRT) become
+    /// <c>ps_oC{N} → gl_FragData[N]</c>. A discard-only / no-output shader yields an
+    /// empty list (no <c>#define</c>, no <c>gl_FragColor</c>).</para>
+    /// </summary>
+    /// <exception cref="MonoGameGlslRewriteException">
+    /// The body already contains a <c>ps_oC{N}</c> identifier (would be silently
+    /// shadowed by the alias) — fail loudly rather than emit ambiguous GLSL.
+    /// </exception>
+    private static IReadOnlyList<FragmentOutput> RewriteFragmentOutputs(ref string body)
+    {
+        var matches = OutputUse.Matches(body);
+        if (matches.Count == 0)
+        {
+            // No-output / discard-only shader: nothing to alias.
+            return Array.Empty<FragmentOutput>();
+        }
+
+        // Distinct output slots, in ascending order. SV_Target (no digit) ≡ slot 0.
+        var slots = new SortedSet<int>();
+        foreach (Match m in matches)
+        {
+            slots.Add(m.Groups[1].Value.Length == 0 ? 0 : int.Parse(m.Groups[1].Value));
+        }
+
+        // Name-collision guard: a pre-existing ps_oC{N} token (e.g. hand-written HLSL
+        // that survived) would be silently shadowed by our alias. Refuse rather than
+        // emit ambiguous GLSL.
+        foreach (int slot in slots)
+        {
+            if (Regex.IsMatch(body, $@"\bps_oC{slot}\b"))
+            {
+                throw new MonoGameGlslRewriteException(
+                    $"GLSL rewrite collision: source already contains identifier 'ps_oC{slot}', " +
+                    $"which clashes with the MojoShader fragment-output alias. Cannot safely rewrite.");
+            }
+        }
+
+        // Replace uses: out_var_SV_Target{N?} -> ps_oC{N} (N omitted or 0 -> ps_oC0).
+        body = OutputUse.Replace(body, m =>
+        {
+            int slot = m.Groups[1].Value.Length == 0 ? 0 : int.Parse(m.Groups[1].Value);
+            return $"ps_oC{slot}";
+        });
+
+        var outputs = new List<FragmentOutput>(slots.Count);
+        foreach (int slot in slots)
+        {
+            // Slot 0 is the primary colour output (gl_FragColor); 1+ are MRT
+            // (gl_FragData[N]). Matches mgfxc's golden output exactly.
+            string builtin = slot == 0 ? "gl_FragColor" : $"gl_FragData[{slot}]";
+            outputs.Add(new FragmentOutput($"ps_oC{slot}", builtin));
+        }
+
+        return outputs;
+    }
+
+    // LOD / projected / gradient sampling builtins that have no single-blob form
+    // valid across desktop GL + KNI Reach (WebGL1) + KNI HiDef (WebGL2). Maps the
+    // emitted GLSL token → the HLSL intrinsic that produced it, for the diagnostic.
+    private static readonly (string Glsl, string Hlsl)[] UnsupportedSampling =
+    {
+        ("texture2DLod",  "tex2Dlod / SampleLevel"),
+        ("texture2DProj", "tex2Dproj"),
+        ("texture2DGrad", "tex2Dgrad / SampleGrad"),
+        ("textureLod",    "tex2Dlod / SampleLevel"),
+        ("textureProj",   "tex2Dproj"),
+        ("textureGrad",   "tex2Dgrad / SampleGrad"),
+    };
+
+    // A `uniform sampler<KIND> <id>;` declaration whose KIND is anything other than
+    // the plain 2D form this rewriter models (samplerCube, sampler3D, sampler2DArray,
+    // sampler2DShadow, …). `(?!2D\b)` lets `sampler2D` through but catches the rest.
+    private static readonly Regex NonPlain2DSamplerDecl = new(
+        @"^\s*uniform\s+(?:[a-z]+\s+)?sampler(?!2D\s)([A-Za-z0-9]+)\s+[A-Za-z_][A-Za-z0-9_]*\s*;\s*$",
+        RegexOptions.Compiled | RegexOptions.Multiline);
+
+    /// <summary>
+    /// Throws <see cref="MonoGameGlslRewriteException"/> if any sampler declaration is
+    /// not the plain <c>sampler2D</c> shape the MojoShader rewrite models. See the
+    /// call site for why a non-2D sampler would otherwise produce silently-broken GLSL.
+    /// </summary>
+    private static void ThrowIfUnsupportedSamplerType(string glsl)
+    {
+        Match m = NonPlain2DSamplerDecl.Match(glsl);
+        if (m.Success)
+        {
+            string kind = "sampler" + m.Groups[1].Value;
+            throw new MonoGameGlslRewriteException(
+                $"Unsupported sampler type for the MonoGame/KNI GL target: '{kind}'. The MojoShader-" +
+                $"dialect rewrite models only 'sampler2D' (the PS-only SpriteBatch corpus); a " +
+                $"'{kind}' would be emitted as silently-broken GLSL (e.g. texture2D() on a non-2D " +
+                $"sampler) that fails at GL link time. Use a Texture2D, or extend the rewriter. " +
+                $"(Tracked for Phase 34.)");
+        }
+    }
+
+    /// <summary>
+    /// Throws <see cref="MonoGameGlslRewriteException"/> if the rewritten body still
+    /// contains a LOD / projected / gradient texture builtin. See Rule 6b for why
+    /// these cannot be expressed in a single profile-agnostic GLSL payload.
+    /// </summary>
+    private static void ThrowIfUnsupportedSampling(string body)
+    {
+        foreach (var (glslToken, hlslIntrinsic) in UnsupportedSampling)
+        {
+            // Whole-identifier, call position (suffix followed by '(').
+            if (Regex.IsMatch(body, $@"\b{Regex.Escape(glslToken)}\s*\("))
+            {
+                throw new MonoGameGlslRewriteException(
+                    $"Unsupported texture sampling for the MonoGame/KNI GL target: '{glslToken}' " +
+                    $"(from HLSL {hlslIntrinsic}). LOD/projected/gradient sampling has no single GLSL " +
+                    $"form valid in both KNI Reach (WebGL1) and KNI HiDef (WebGL2), and KNI's runtime " +
+                    $"ES-3.00 converter does not rewrite it — so it would silently fail to load under " +
+                    $"HiDef. Use a plain tex2D / Texture2D.Sample, or precompute the LOD. " +
+                    $"(Tracked for Phase 34.)");
+            }
+        }
     }
 
     /// <summary>

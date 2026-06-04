@@ -48,12 +48,32 @@ public sealed class ShaderFiddleGame : Game
     private Texture2D _cat = null!;
     private Effect? _effect;
 
-    public ShaderFiddleGame(byte[] catBytes, byte[]? initialMgfx)
+    /// <summary>
+    /// The graphics profile this game booted with. Exposed so callers / tests can
+    /// confirm whether HiDef (WebGL2 / GLSL ES 3.00) was actually requested.
+    /// </summary>
+    public GraphicsProfile Profile { get; }
+
+    /// <param name="profile">
+    /// The KNI <see cref="GraphicsProfile"/> to boot under. <see cref="GraphicsProfile.Reach"/>
+    /// (the default) maps to WebGL1 / GLSL ES 1.00; <see cref="GraphicsProfile.HiDef"/> maps to
+    /// WebGL2 / GLSL ES 3.00 in KNI's BlazorGL backend (the issue-#7 path — see Phase 33).
+    /// </param>
+    public ShaderFiddleGame(byte[] catBytes, byte[]? initialMgfx,
+        GraphicsProfile profile = GraphicsProfile.Reach)
     {
         _catBytes = catBytes;
         _pendingMgfx = initialMgfx;
+        Profile = profile;
 
-        _gdm = new GraphicsDeviceManager(this);
+        _gdm = new GraphicsDeviceManager(this)
+        {
+            // KNI maps Reach -> WebGL1 (GLSL ES 1.00) and HiDef -> WebGL2
+            // (strict GLSL ES 3.00) automatically. HiDef is the issue-#7 path:
+            // its runtime converts the legacy .mgfx GLSL to ES 3.00 at load,
+            // which only succeeds for mgfxc's `#define ps_oC0 gl_FragColor` form.
+            GraphicsProfile = profile,
+        };
         Content.RootDirectory = "Content";
         IsMouseVisible = true;
     }

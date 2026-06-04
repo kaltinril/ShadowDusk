@@ -64,7 +64,7 @@ emit the VS-side stage I/O contract, finish the matrix expansion, and prove it i
 **Out of scope / Non-Goals:**
 - Geometry / hull / domain / compute stages (DX/GL not supported by the corpus or MonoGame 3.8 GL Reach).
 - New vertex semantics beyond what a real effect needs first: `POSITION` + `COLOR0` + `TEXCOORD0` (the SpriteBatch-compatible attribute set). Additional attributes are follow-ons.
-- Linux/macOS *run* validation of this path (→ [Phase 30](PHASE-30-cross-platform-ci.md) CI) — author/verify on Windows DesktopGL first.
+- Linux/macOS *run* validation of this path (→ [Phase 30](PHASE-30-ci-and-nuget-release.md) CI) — author/verify on Windows DesktopGL first.
 - Metal/Vulkan VS support (`ShadowDusk.Metal` is still a stub).
 
 ---

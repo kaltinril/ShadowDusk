@@ -15,7 +15,7 @@ if/when a MonoGame/KNI Vulkan runtime ships.
 
 **Depends on:**
 - **[Phase 4](DONE/PHASE-4-dxc-integration.md)** (DXC integration) — the Vulkan target is a single DXC compile to SPIR-V (`vs_6_0`/`ps_6_0` + `-spirv`); the whole frontend is shared with the OpenGL SPIR-V branch.
-- **[Phase 30](PHASE-30-cross-platform-ci.md)** (cross-platform CI) — the SPIR-V-validity test must run on the Linux/macOS/Windows matrix; it is the only honest gate available without a render runtime.
+- **[Phase 30](PHASE-30-ci-and-nuget-release.md)** (cross-platform CI) — the SPIR-V-validity test must run on the Linux/macOS/Windows matrix; it is the only honest gate available without a render runtime.
 
 **Blocks:** nothing on the critical path. This is post-1.0 backend breadth.
 
@@ -82,7 +82,7 @@ and validation, which is the honesty-gated part.
 - [ ] Add an `EffectCompiler` integration test: compile a PS-only fixture (and one simple VS/PS) with `Target = Vulkan`; assert success, profile byte `3`, and that each shader blob begins with the SPIR-V magic word `0x07230203` and parses as a SPIR-V module.
 - [ ] (If `spirv-val` is restorable via `tools/restore.*`) add an optional, skip-on-missing validity check of the emitted SPIR-V.
 - [ ] Document the Vulkan target as **parked pending a validation runtime** on the docs-site backend page ([Phase 26](PHASE-26-documentation-site.md)); state plainly that no in-engine render validation exists.
-- [ ] Ensure the existing/added Vulkan tests run on the [Phase 30](PHASE-30-cross-platform-ci.md) Linux/macOS/Windows matrix.
+- [ ] Ensure the existing/added Vulkan tests run on the [Phase 30](PHASE-30-ci-and-nuget-release.md) Linux/macOS/Windows matrix.
 
 ### Already in place (verified — do not re-do)
 

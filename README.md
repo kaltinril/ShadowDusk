@@ -35,6 +35,8 @@ Supported MonoGame backends:
 | Metal (macOS / iOS) | MSL | Not yet implemented |
 | Vulkan | SPIR-V | Future |
 
+> **KNI HiDef / WebGL2 note.** A single ShadowDusk `.mgfx` loads in both KNI **Reach** (WebGL1) and **HiDef** (WebGL2 / GLSL ES 3.00) — no profile flag and no separate build. KNI converts the legacy GLSL to ES 3.00 at load time, and ShadowDusk emits the `#define`-aliased fragment output that converter expects (GitHub [#7](https://github.com/kaltinril/ShadowDusk/issues/7)). HiDef shader loading needs **KNI ≥ v3.14.9001** (the release that added KNI's runtime converter — any recent KNI qualifies); Reach and desktop GL have no version requirement. After upgrading ShadowDusk to pick up this fix, **recompile your `.fx`** — a `.mgfx` built by an older ShadowDusk keeps the old output and won't load under HiDef.
+
 ## Drop-in `mgfxc` replacement
 
 ShadowDusk is a transparent substitute for MonoGame's `mgfxc`. Same CLI flags, same `.mgfx` output format, same exit codes, same MGCB-compatible error messages on stderr. Games using the MonoGame Content Pipeline require zero code changes to switch.
