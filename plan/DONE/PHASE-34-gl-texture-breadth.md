@@ -1,6 +1,6 @@
 # Phase 34 — GL texture breadth: cube maps, 3D textures, and LOD/grad sampling
 
-**Status:** 🟢 Implemented + rung-4 render-validated to real limitations (compiler support 2026-06-04, branch `phase34-gl-texture-breadth`, PR #10; rung-4 render validation 2026-06-03, branch `phase34-render-validation`). Cube maps supported on Desktop + HiDef + Reach; 3D + explicit-LOD/gradient supported on Desktop + HiDef (Reach = documented platform wall). **Cube + 3D are now rung-4 render-validated in real MonoGame DesktopGL; LOD/grad GLSL is rung-4-render-proven (honors explicit level/gradient) in the real GL driver** — see **RUNG-4 RENDER VALIDATION (AS-BUILT)**. Deferred from **Phase 33**, which added loud `SD0210` guards for the GL shader constructs ShadowDusk's MojoShader-dialect rewriter didn't yet model. See **AS-BUILT** below.
+**Status:** ✅ **DONE — complete to real limitations (2026-06-04).** Compiler support merged via **PR #10**; rung-4 render validation + archive via **PR #12**. Cube maps supported on Desktop + HiDef + Reach; 3D + explicit-LOD/gradient supported on Desktop + HiDef (Reach = documented platform wall). **Cube + 3D are rung-4 render-validated in real MonoGame DesktopGL (face-selection + per-face binding + voxel sample); LOD/grad GLSL is rung-4-render-proven (honors explicit level/gradient) in the real GL driver** — see **RUNG-4 RENDER VALIDATION (AS-BUILT)**. Every stopping point is a genuine platform/runtime/oracle limit (documented), not a ShadowDusk gap. Full suite **551/551**. Deferred from **Phase 33**, which added loud `SD0210` guards for the GL shader constructs ShadowDusk's MojoShader-dialect rewriter didn't yet model. See **AS-BUILT** below.
 **Roadmap track:** Fidelity / reach (alongside Phase 28, Phase 33).
 **Prereq:** Phase 33 (KNI HiDef/WebGL2) merged to `main` (PR #9).
 
@@ -176,4 +176,4 @@ The Phase-34 carry-forward was "no in-engine rung-4 pixel render of cube/3D; har
 ---
 
 ### Provenance
-Created 2026-06-04 to formalise the follow-up the Phase 33 `SD0210` guards reference ("Tracked for Phase 34"). Feasibility split (cube maps everywhere; 3D/LOD on Desktop+HiDef; WebGL1 wall) established during the Phase 33 review + the follow-up discussion. See [PHASE-33-webgl2-es300-hidef-output.md](DONE/PHASE-33-webgl2-es300-hidef-output.md) § Scope.
+Created 2026-06-04 to formalise the follow-up the Phase 33 `SD0210` guards reference ("Tracked for Phase 34"). Feasibility split (cube maps everywhere; 3D/LOD on Desktop+HiDef; WebGL1 wall) established during the Phase 33 review + the follow-up discussion. See [PHASE-33-webgl2-es300-hidef-output.md](PHASE-33-webgl2-es300-hidef-output.md) § Scope.
