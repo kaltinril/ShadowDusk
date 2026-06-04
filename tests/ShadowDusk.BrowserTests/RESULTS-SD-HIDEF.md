@@ -32,6 +32,8 @@ The task flagged that KNI's converter forces `precision mediump`→`highp` under
 
 This run compares HiDef/WebGL2 against the **DesktopGL** render of the same bytes (`references-sd/`), so the deltas isolate "KNI's ES-3.00 conversion of our bytes," exactly as intended.
 
+> Note: this section is re-added after each harness run (the harness regenerates the rest of this file).
+
 ## How to re-run (RED before the fix, GREEN after)
 
 ```bash
