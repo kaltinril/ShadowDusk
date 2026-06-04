@@ -61,7 +61,9 @@ void main()
         result.Glsl.Should().Contain("varying vec4 vFrontColor;");
         result.Glsl.Should().Contain("uniform sampler2D ps_s0;");
         result.Glsl.Should().Contain("texture2D(ps_s0, vTexCoord0.xy)");
-        result.Glsl.Should().Contain("gl_FragColor");
+        // mgfxc form: #define alias + write to ps_oC0 (NOT a raw gl_FragColor write).
+        result.Glsl.Should().Contain("#define ps_oC0 gl_FragColor");
+        result.Glsl.Should().Contain("ps_oC0 = vec4(");
 
         // vec4 input -> no swizzle.
         result.Glsl.Should().Contain("* vFrontColor;");
@@ -337,5 +339,241 @@ void main()
         result.Glsl.Should().NotContain("GlobalParams_default");
         result.Glsl.Should().NotContain("type_Globals");
         result.Glsl.Should().NotContain("_Globals");
+    }
+
+    // ---- Phase 33: fragment output as mgfxc's `#define ps_oC{N}` alias ----
+    // mgfxc emits the PS colour output as `#define ps_oC0 gl_FragColor` and writes to
+    // ps_oC0 (verified in tests/fixtures/golden/OpenGL/*.mgfx). KNI's HiDef/WebGL2
+    // runtime converter rewrites ONLY that aliased form to `out vec4` under GLSL ES
+    // 3.00; a raw `gl_FragColor` write survives and fails (issue #7). These tests pin
+    // the alias form, its placement, the SV_Target≡SV_Target0 primary collapse, true
+    // MRT, the discard-only case, and the name-collision guard.
+
+    [Fact]
+    public void FragmentOutput_EmitsDefineAlias_AndNoRawGlFragColorWrite()
+    {
+        var result = MonoGameGlslRewriter.Rewrite(ExampleA, ShaderStage.Pixel);
+
+        // The #define alias mgfxc emits (and KNI's ES-3.00 converter needs).
+        result.Glsl.Should().Contain("#define ps_oC0 gl_FragColor");
+
+        // The body writes to the alias, not the builtin.
+        result.Glsl.Should().Contain("ps_oC0 = vec4(");
+
+        // CRITICAL: no RAW `gl_FragColor =` write may remain — that is exactly what
+        // breaks under KNI HiDef/WebGL2 (issue #7). The literal `gl_FragColor` may
+        // appear ONLY inside the #define line.
+        System.Text.RegularExpressions.Regex
+            .IsMatch(result.Glsl, @"gl_FragColor\s*[.\[]?\s*[a-z]*\s*=")
+            .Should().BeFalse("a raw gl_FragColor write must not survive — only the #define alias");
+
+        // gl_FragColor appears exactly once, on the #define line.
+        var occurrences = System.Text.RegularExpressions.Regex.Matches(result.Glsl, "gl_FragColor").Count;
+        occurrences.Should().Be(1, "gl_FragColor should appear only in the #define alias");
+    }
+
+    [Fact]
+    public void FragmentOutput_DefineIsAtColumnZero_BeforeFirstUse()
+    {
+        var result = MonoGameGlslRewriter.Rewrite(ExampleA, ShaderStage.Pixel);
+
+        int defineIdx = result.Glsl.IndexOf("#define ps_oC0", StringComparison.Ordinal);
+        defineIdx.Should().BeGreaterThanOrEqualTo(0);
+
+        // KNI's converter regex is `^#define …` (Multiline) → the alias MUST be at
+        // column 0 (line start). And the post-conversion `out vec4 ps_oC0;` must be at
+        // global scope before main(), so the #define precedes both main() and the
+        // first ps_oC0 use.
+        bool atColumnZero = defineIdx == 0 || result.Glsl[defineIdx - 1] == '\n';
+        atColumnZero.Should().BeTrue("KNI's converter only matches `#define` at column 0");
+
+        int firstUseIdx = result.Glsl.IndexOf("ps_oC0 =", StringComparison.Ordinal);
+        firstUseIdx.Should().BeGreaterThan(defineIdx, "the #define must precede the first ps_oC0 use");
+
+        int mainIdx = result.Glsl.IndexOf("void main", StringComparison.Ordinal);
+        defineIdx.Should().BeLessThan(mainIdx, "the #define must be in the header, before main()");
+    }
+
+    // Synthetic true-MRT case: three distinct SV_Target outputs.
+    private const string MrtThreeOutputs = """
+#version 140
+
+uniform sampler2D _10;
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target0;
+out vec4 out_var_SV_Target1;
+out vec4 out_var_SV_Target2;
+
+void main()
+{
+    vec4 c = texture(_10, in_var_TEXCOORD0);
+    out_var_SV_Target0 = c;
+    out_var_SV_Target1 = c.yxzw;
+    out_var_SV_Target2 = c.zzzw;
+}
+""";
+
+    [Fact]
+    public void FragmentOutput_TrueMrt_MapsZeroToFragColor_AndRestToFragData()
+    {
+        var result = MonoGameGlslRewriter.Rewrite(MrtThreeOutputs, ShaderStage.Pixel);
+
+        // Primary (slot 0) → gl_FragColor; slot 1/2 → gl_FragData[N].
+        result.Glsl.Should().Contain("#define ps_oC0 gl_FragColor");
+        result.Glsl.Should().Contain("#define ps_oC1 gl_FragData[1]");
+        result.Glsl.Should().Contain("#define ps_oC2 gl_FragData[2]");
+
+        // All three writes go to the aliases.
+        result.Glsl.Should().Contain("ps_oC0 = c;");
+        result.Glsl.Should().Contain("ps_oC1 = c.yxzw;");
+        result.Glsl.Should().Contain("ps_oC2 = c.zzzw;");
+
+        // No raw builtins survive as writes.
+        result.Glsl.Should().NotContain("out_var_");
+        System.Text.RegularExpressions.Regex
+            .IsMatch(result.Glsl, @"gl_FragData\[\d+\]\s*=")
+            .Should().BeFalse("MRT writes target ps_oC{N}, not raw gl_FragData[N]");
+    }
+
+    // Single output spelled `SV_Target0` (with the 0) — DXC's name for HLSL `: COLOR0`.
+    // SV_Target ≡ SV_Target0 (both PRIMARY); this MUST collapse to ps_oC0/gl_FragColor,
+    // NOT gl_FragData[0]. This is the Sepia/Dissolve correctness case.
+    private const string SingleOutputTarget0 = """
+#version 140
+
+uniform sampler2D _10;
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target0;
+
+void main()
+{
+    out_var_SV_Target0 = texture(_10, in_var_TEXCOORD0);
+}
+""";
+
+    [Fact]
+    public void FragmentOutput_SvTarget0_IsPrimary_CollapsesToFragColor_NotFragData()
+    {
+        var result = MonoGameGlslRewriter.Rewrite(SingleOutputTarget0, ShaderStage.Pixel);
+
+        // SV_Target0 is the PRIMARY single output → gl_FragColor (like mgfxc's golden
+        // for Sepia/Dissolve), NOT gl_FragData[0].
+        result.Glsl.Should().Contain("#define ps_oC0 gl_FragColor");
+        result.Glsl.Should().Contain("ps_oC0 = texture2D(");
+        result.Glsl.Should().NotContain("gl_FragData", "a single SV_Target0 output is primary, not MRT");
+        result.Glsl.Should().NotContain("#define ps_oC1");
+    }
+
+    // Discard-only PS: no colour output at all.
+    private const string DiscardOnly = """
+#version 140
+
+uniform sampler2D _10;
+in vec2 in_var_TEXCOORD0;
+
+void main()
+{
+    vec4 c = texture(_10, in_var_TEXCOORD0);
+    if (c.w < 0.5)
+    {
+        discard;
+    }
+}
+""";
+
+    [Fact]
+    public void FragmentOutput_DiscardOnly_EmitsNoAliasAndNoFragColor()
+    {
+        var result = MonoGameGlslRewriter.Rewrite(DiscardOnly, ShaderStage.Pixel);
+
+        result.Glsl.Should().NotContain("#define ps_oC", "a no-output shader has no fragment-output alias");
+        result.Glsl.Should().NotContain("gl_FragColor");
+        result.Glsl.Should().NotContain("gl_FragData");
+        result.Glsl.Should().Contain("discard");
+    }
+
+    // Name-collision: the (pathological) source already contains a ps_oC0 identifier.
+    private const string CollidingPsOc0 = """
+#version 140
+
+uniform sampler2D _10;
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    vec4 ps_oC0 = texture(_10, in_var_TEXCOORD0);
+    out_var_SV_Target = ps_oC0;
+}
+""";
+
+    [Fact]
+    public void FragmentOutput_NameCollision_FailsLoudly()
+    {
+        // Must NOT silently shadow — fail loudly with a clear message.
+        Action act = () => MonoGameGlslRewriter.Rewrite(CollidingPsOc0, ShaderStage.Pixel);
+        act.Should().Throw<MonoGameGlslRewriteException>()
+            .WithMessage("*collision*ps_oC0*");
+    }
+
+    // ---- Phase 33 Task 3b: generality guards (LOD/proj/grad + non-2D samplers) ----
+    // These constructs have no single-blob GLSL form valid in both KNI Reach (WebGL1)
+    // and KNI HiDef (WebGL2), and KNI's ES-3.00 converter does not rewrite them. The
+    // rewriter must FAIL LOUDLY at compile time, never silently emit broken HiDef GLSL.
+
+    [Theory]
+    [InlineData("textureLod")]   // from tex2Dlod / SampleLevel
+    [InlineData("textureProj")]  // from tex2Dproj
+    [InlineData("textureGrad")]  // from tex2Dgrad / SampleGrad
+    public void Sampling_LodProjGrad_FailsLoudly(string builtin)
+    {
+        string src = $$"""
+#version 140
+
+uniform sampler2D _10;
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target0;
+
+void main()
+{
+    out_var_SV_Target0 = {{builtin}}(_10, in_var_TEXCOORD0, 2.0);
+}
+""";
+        Action act = () => MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+        act.Should().Throw<MonoGameGlslRewriteException>()
+            .WithMessage("*Unsupported texture sampling*",
+                "LOD/proj/grad sampling must fail loudly — it silently breaks under KNI HiDef");
+    }
+
+    [Theory]
+    [InlineData("samplerCube")]
+    [InlineData("sampler3D")]
+    [InlineData("sampler2DArray")]
+    public void Sampling_NonPlain2DSampler_FailsLoudly(string samplerType)
+    {
+        string src = $$"""
+#version 140
+
+uniform {{samplerType}} _10;
+in vec3 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target0;
+
+void main()
+{
+    out_var_SV_Target0 = texture(_10, in_var_TEXCOORD0);
+}
+""";
+        Action act = () => MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+        act.Should().Throw<MonoGameGlslRewriteException>()
+            .WithMessage("*Unsupported sampler type*",
+                "non-2D samplers would be silently rewritten to texture2D() — invalid GLSL");
+    }
+
+    [Fact]
+    public void Sampling_Plain2DSampler_IsNotGuarded()
+    {
+        // Regression: the guard must NOT trip on the normal sampler2D shape.
+        Action act = () => MonoGameGlslRewriter.Rewrite(ExampleA, ShaderStage.Pixel);
+        act.Should().NotThrow();
     }
 }

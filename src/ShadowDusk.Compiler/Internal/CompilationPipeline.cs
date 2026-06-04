@@ -502,11 +502,33 @@ internal sealed class CompilationPipeline
                 return (Result<byte[], ShaderError>.Fail(transpileResult.Error), default, default);
 
             // Rewrite SPIRV-Cross GLSL into MonoGame/MojoShader-compatible GLSL so it
-            // links with MonoGame's built-in SpriteEffect VS (varying names, gl_FragColor,
-            // ps_sN samplers, ps_uniforms_vec4, legacy dialect). Only for PS-only effects.
-            string glslText = applyMonoGameGlsl
-                ? MonoGameGlslRewriter.Rewrite(transpileResult.Value.Text, stage).Glsl
-                : transpileResult.Value.Text;
+            // links with MonoGame's built-in SpriteEffect VS (varying names, ps_oC0
+            // fragment-output alias, ps_sN samplers, ps_uniforms_vec4, legacy dialect).
+            // Only for PS-only effects. The rewriter fails loudly (MonoGameGlslRewrite-
+            // Exception) on constructs that can't be lowered to a profile-agnostic GLSL
+            // payload (e.g. LOD/proj/grad sampling) — surface that as a compile error
+            // rather than letting it crash, so HiDef never silently breaks.
+            string glslText;
+            if (applyMonoGameGlsl)
+            {
+                try
+                {
+                    glslText = MonoGameGlslRewriter.Rewrite(transpileResult.Value.Text, stage).Glsl;
+                }
+                catch (MonoGameGlslRewriteException ex)
+                {
+                    return (Result<byte[], ShaderError>.Fail(new ShaderError(
+                        File:    preprocessed.OriginalFilePath,
+                        Line:    0,
+                        Column:  0,
+                        Code:    "SD0210",
+                        Message: ex.Message)), default, default);
+                }
+            }
+            else
+            {
+                glslText = transpileResult.Value.Text;
+            }
             byte[] glslBytes = Encoding.UTF8.GetBytes(glslText);
 
             return (
