@@ -11,6 +11,16 @@ the rewriter logic are untouched.
 > **4.6.0 NVIDIA 596.36** for the desktop-GL probe). Where something could not be
 > exercised in-env it is called out explicitly.
 
+> **Update (2026-06-03, branch `phase34-render-validation`):** this doc is the RED-phase
+> map and stays historical. The GREEN fix shipped (PR #10) and **rung-4 render validation
+> is now done to real limitations** — cube + 3D render-validated in real MonoGame DesktopGL,
+> LOD/grad render-proven (explicit level/gradient honored) in the real GL driver. The §5
+> "render scene is new harness work" note is resolved by `validation/TextureBreadthValidation`
+> (real-MonoGame cube+3D) and `Phase34LodGradRenderTests` (GL-render LOD/grad). For the
+> full rung-4 outcome, harnesses, and the precise remaining (platform / runtime-cost /
+> oracle) limits, see **`plan/PHASE-34-gl-texture-breadth.md` → "RUNG-4 RENDER VALIDATION
+> (AS-BUILT)"** and **"What stays a render-validation limitation"**.
+
 ---
 
 ## 1. RED reproduction (current behavior)
