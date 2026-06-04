@@ -355,7 +355,7 @@ public static class MonoGameGlslRewriter
     /// <c>ps_oC{N} → gl_FragData[N]</c>. A discard-only / no-output shader yields an
     /// empty list (no <c>#define</c>, no <c>gl_FragColor</c>).</para>
     /// </summary>
-    /// <exception cref="InvalidOperationException">
+    /// <exception cref="MonoGameGlslRewriteException">
     /// The body already contains a <c>ps_oC{N}</c> identifier (would be silently
     /// shadowed by the alias) — fail loudly rather than emit ambiguous GLSL.
     /// </exception>
