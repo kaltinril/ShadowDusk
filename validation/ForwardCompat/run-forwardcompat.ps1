@@ -1,59 +1,75 @@
 #!/usr/bin/env pwsh
-# Phase 35 Area A — forward-compat regression guard (re-runnable).
+# Phase 35 Area A — forward-compat VERSION-MATRIX regression guard (re-runnable).
 #
-# Proves ShadowDusk's existing v10 GL .mgfx still loads + renders pixel-equivalent
-# on a NEWER MonoGame (3.8.4.1) as on the product-pinned 3.8.2.1105, with the
-# product unchanged. Renders three sets on this machine and pixel-compares them.
+# Renders the SM3 corpus from ShadowDusk's UNCHANGED v10 .mgfx output on EACH
+# MonoGame version in the matrix, then proves:
+#   1. forward-compat — every version is pixel-identical to the floor (3.8.2.1105),
+#   2. fidelity       — every version is within tolerance of the mgfxc goldens.
+# The product is never changed: the newer MonoGame is pulled in per-run via
+# -p:ForwardCompatMonoGameVersion=<v> (VersionOverride); the pin stays 3.8.2.1105.
 #
-# Exit code: 0 = forward-compat holds; non-zero = a render failed or images diverged.
+# Exit code: 0 = matrix holds; non-zero = a render failed or images diverged.
 #
 # Usage (from anywhere):
 #   pwsh validation/ForwardCompat/run-forwardcompat.ps1
-#   pwsh validation/ForwardCompat/run-forwardcompat.ps1 -Tolerance 4 -SkipBaseline
+#   pwsh validation/ForwardCompat/run-forwardcompat.ps1 -Versions 3.8.2.1105,3.8.4.1 -Tolerance 4
+#   pwsh validation/ForwardCompat/run-forwardcompat.ps1 -SkipBaseline
 #
-# Requires: a real GPU/DesktopGL context (this is a rung-4 render, like Phase 17/33/34),
+# Extending the matrix: add the NuGet version string to -Versions (e.g. a future
+# 3.8.5 stable). The first entry is the forward-compat reference floor and MUST
+# stay 3.8.2.1105 (the product's compat promise).
+#
+# Requires: a real GPU/DesktopGL context (rung-4 render, like Phase 17/33/34),
 #           Python with pillow + numpy for the pixel compare.
 
 param(
+    [string[]]$Versions = @("3.8.2.1105", "3.8.4.1"),
     [int]$Tolerance = 4,
     [switch]$SkipBaseline
 )
 
 $ErrorActionPreference = "Stop"
 $validationDir = Split-Path -Parent $PSScriptRoot   # ...\validation
-$repoCandidate = Join-Path $validationDir "Candidate\Candidate.csproj"
-$repoForward   = Join-Path $validationDir "ForwardCompat\ForwardCompat.csproj"
-$repoBaseline  = Join-Path $validationDir "Baseline\Baseline.csproj"
-$compare       = Join-Path $validationDir "compare_forwardcompat.py"
+$repoMatrix   = Join-Path $validationDir "ForwardCompat\ForwardCompat.csproj"
+$repoBaseline = Join-Path $validationDir "Baseline\Baseline.csproj"
+$compare      = Join-Path $validationDir "compare_forwardcompat.py"
 
-function Invoke-Render($csproj, $label) {
-    Write-Host "==> rendering $label" -ForegroundColor Cyan
-    & dotnet run --project $csproj -c Debug
-    if ($LASTEXITCODE -ne 0) {
-        throw "$label render harness reported failures (exit $LASTEXITCODE)"
+# Render one matrix cell: build+run the matrix project against a specific MonoGame
+# version and tag the run so its PNGs land in output/versionmatrix/<version>/.
+function Invoke-MatrixCell($version) {
+    Write-Host "==> rendering matrix cell: ShadowDusk v10 -> MonoGame $version" -ForegroundColor Cyan
+    $env:MATRIX_VERSION_LABEL = $version
+    try {
+        & dotnet run --project $repoMatrix -c Debug -p:ForwardCompatMonoGameVersion=$version
+        if ($LASTEXITCODE -ne 0) {
+            throw "matrix cell $version reported failures (exit $LASTEXITCODE)"
+        }
+    }
+    finally {
+        Remove-Item Env:\MATRIX_VERSION_LABEL -ErrorAction SilentlyContinue
     }
 }
 
-# 1. ShadowDusk v10 bytes on the product-pinned 3.8.2.1105 (the reference).
-Invoke-Render $repoCandidate "Candidate (ShadowDusk v10 -> MonoGame 3.8.2.1105)"
+foreach ($v in $Versions) {
+    Invoke-MatrixCell $v
+}
 
-# 2. The SAME ShadowDusk v10 bytes on the NEWER 3.8.4.1.
-Invoke-Render $repoForward "ForwardCompat (ShadowDusk v10 -> MonoGame 3.8.4.1)"
-
-# 3. (optional) mgfxc goldens on 3.8.2.1105, so the forward run is held to the
-#    same bar as the original Phase 17 candidate-vs-mgfxc comparison.
-$compareArgs = @("--tolerance", "$Tolerance")
+# mgfxc goldens on 3.8.2.1105, so each version cell is held to the same bar as the
+# original Phase 17 candidate-vs-mgfxc comparison.
+$compareArgs = @("--versions") + $Versions + @("--tolerance", "$Tolerance")
 if (-not $SkipBaseline) {
-    Invoke-Render $repoBaseline "Baseline (mgfxc goldens -> MonoGame 3.8.2.1105)"
+    Write-Host "==> rendering Baseline (mgfxc goldens -> MonoGame 3.8.2.1105)" -ForegroundColor Cyan
+    & dotnet run --project $repoBaseline -c Debug
+    if ($LASTEXITCODE -ne 0) { throw "Baseline render harness reported failures (exit $LASTEXITCODE)" }
     $compareArgs += "--vs-baseline"
 }
 
-Write-Host "==> pixel compare" -ForegroundColor Cyan
+Write-Host "==> pixel compare (version matrix)" -ForegroundColor Cyan
 & python $compare @compareArgs
 $cmp = $LASTEXITCODE
 if ($cmp -ne 0) {
-    Write-Host "FORWARD-COMPAT REGRESSION: images diverged on the newer MonoGame." -ForegroundColor Red
+    Write-Host "VERSION-MATRIX REGRESSION: renders diverged across MonoGame versions." -ForegroundColor Red
     exit $cmp
 }
-Write-Host "FORWARD-COMPAT OK: v10 .mgfx renders identically on MonoGame 3.8.4.1." -ForegroundColor Green
+Write-Host "VERSION-MATRIX OK: v10 .mgfx renders identically across $($Versions -join ', ')." -ForegroundColor Green
 exit 0
