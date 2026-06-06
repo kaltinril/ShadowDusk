@@ -1,7 +1,9 @@
 # Phase 35 — Forward-version support & validation (newer MonoGame / MGFX / DX — seamless)
 
-**Status:** 📋 **SHELL — not started.** Scaffold for a future agent to pick up. Created 2026-06-04.
+**Status:** 🟡 **Area A DONE (2026-06-05); B/C/D not started.** Scaffold created 2026-06-04.
 **Roadmap track:** Forward-compatibility (newer versions, seamless).
+
+> **Area A result (2026-06-05):** ShadowDusk's existing **v10 GL `.mgfx`** (product unchanged) **loads + renders pixel-equivalent** on **MonoGame.Framework.DesktopGL 3.8.4.1** (latest stable; 3.8.5 is preview-only) exactly as on the pinned **3.8.2.1105** — **10/10** of the SM3 PS-only corpus, max per-channel delta **0** vs the 3.8.2 renders of the *same bytes* (within tolerance ≤1 vs mgfxc goldens). Product pin (`Directory.Packages.props` = 3.8.2.1105) and default (`MgfxVersion = 10`) **untouched**; the newer runtime is referenced only by a separate `validation/ForwardCompat/` project via `VersionOverride`. Harness + matrix + re-runnable regression guard delivered. **Seamless: the consumer does nothing — their existing `.mgfx` just keeps working forward.** See Area A below + `validation/ForwardCompat/README.md`.
 
 ---
 
@@ -17,7 +19,7 @@ Together: **support newer versions by making one output (or auto-selected output
 ## Context snapshot (as of 2026-06-04 — re-verify when starting)
 
 - **Pinned today:** MonoGame **3.8.2.1105** (`Directory.Packages.props`); MGFX default **v10** (`src/ShadowDusk.Core/CompilerOptions.cs` → `MgfxVersion = 10`).
-- **Newer exists:** MonoGame **3.8.4.1** (stable, Oct 2025); **3.8.5-preview** (Vulkan + DX12, *preview/experimental*, ~May 2026).
+- **Newer exists:** MonoGame **3.8.4.1** (stable; confirmed latest stable 3.8.x on nuget.org as of 2026-06-05 — Area A validated against it); **3.8.5-* preview/develop only** (Vulkan + DX12, *not stable* — keeps Areas C/D gated).
 - **DXIL path:** DXC `ps_6_0`/`vs_6_0` → DXIL is **built** ("for DX12/KNI", Phase 4) but **never render-validated in a real MonoGame DX12 runtime** (none existed). `plan.md` calls DX12 "✅ Works" — structural/theoretical, not rung-4.
 - **MGFX v11 / KNIFX:** a `--mgfx-version 11` flag stub exists; not built/validated. Phase 24 found v11 *not needed* for current render parity (v10 already renders in KNI WebGL). KNIFX = KNI's multi-variant container — see `DONE/PHASE-33-webgl2-es300-hidef-output.md` § KNI converter.
 - **Vulkan:** `PHASE-32-vulkan-backend.md` is **parked** on "no MonoGame/KNI Vulkan runtime + no mgfxc-Vulkan baseline." MonoGame 3.8.5 (Vulkan + a DXC→SPIR-V shader profile) **removes that blocker**.
@@ -26,11 +28,19 @@ Together: **support newer versions by making one output (or auto-selected output
 
 ## Work areas (each a self-contained task an agent can take)
 
-### A. Forward-compat validation — *doable now, non-breaking, highest value, inherently seamless*
+### A. Forward-compat validation — ✅ **DONE (2026-06-05)**
 Prove our existing **v10 output still loads + renders correctly** in MonoGame **3.8.4.1** (and 3.8.5 when stable), **without changing our pin or output**. This *is* seamless support for newer versions: the consumer's existing `.mgfx` just keeps working forward — they do nothing.
 - Use a **separate** validation/test project referencing the newer MonoGame — do **not** bump the product's pin.
 - Mirror the `validation/` rung-4 harness (real `Effect` load + render of the SM3 corpus).
 - Deliverable: a **forward-compat matrix** (which v10 features load/render in which MonoGame versions) + a regression guard.
+
+**Done — what was delivered (uncommitted; rung-4 render-validated on Windows DesktopGL):**
+- **Version landscape (verified live 2026-06-05 vs nuget.org):** `3.8.4.1` is the latest **stable** 3.8.x and restores cleanly under the repo's `nuget.config` on `net8.0`. `3.8.5-*` is **preview/develop only** (not targeted; Areas C/D stay gated). So Area A targets **3.8.4.1**.
+- **New project `validation/ForwardCompat/`** (mirrors `validation/Candidate/`) — a **version-matrix** harness: compiles the SM3 PS-only corpus with the **unchanged** `EffectCompiler` (default opts → **v10 GL `.mgfx`**) and renders those exact bytes in a **real `MonoGame.Framework.DesktopGL` `Effect`**, built+run **once per version** in the matrix `{3.8.2.1105 floor, 3.8.4.1 latest stable}` (extensible — add a version string to the runner's `-Versions`). The version is selected per-run via `-p:ForwardCompatMonoGameVersion=<v>` (`VersionOverride`); each cell writes to `output/versionmatrix/<v>/`. The product pin is untouched, the project is not in `ShadowDusk.slnx`, and is never packed. A **runtime-integrity guard** in `Program.cs` fails a cell if the loaded MonoGame version doesn't match the requested label (so a `VersionOverride` that silently didn't apply can't pass).
+- **Version matrix** (full table in `validation/ForwardCompat/README.md`): **10/10** compile + load + render on **both** 3.8.2.1105 and 3.8.4.1; the two runtimes are **pixel-identical (maxΔ 0)** on the same bytes; each is **≤ tolerance** vs the mgfxc goldens (maxΔ ≤ 1, same as the original Phase 17 fidelity result).
+- **Regression guard:** `validation/ForwardCompat/run-forwardcompat.ps1` (renders every matrix cell + the mgfxc baseline, then pixel-compares each version to the floor and to the goldens; exits non-zero on any divergence) backed by `validation/compare_forwardcompat.py`. Re-run instructions in the README.
+- **Guardrails proven held:** `Directory.Packages.props` (3.8.2.1105) and `CompilerOptions.MgfxVersion` (10) have an empty `git diff`; full solution test suite green (551 tests, 0 failures). The only build error is the pre-existing WASM `dxcompiler.wasm` restore guard, unrelated to this work.
+- **Forward-compat extends to the 3.8.5 preview too (source-verified, not yet render-run):** the 3.8.5 line bumps the runtime to `MGFXVersion = 11` **but** adds `MGFXMinVersion = 10`, so its `Effect` loader accepts the **range [10, 11]** — our **v10 output is accepted by 3.8.5 unchanged** (verified against `v3.8.5-preview.2` and `develop` tags of `MonoGame.Framework/Graphics/Effect/Effect.cs`). 3.8.4.1 keeps the strict `MGFXVersion = 10` exact-match (no `MGFXMinVersion`), which our v10 output satisfies. Net: **staying on v10 is forward-safe across 3.8.2 → 3.8.4.1 → 3.8.5-preview** — which is exactly why **Area B (emit v11) is very likely never required.** A render-run against 3.8.5 is deferred until it goes stable (Areas C/D gating).
 
 ### B. Newer MGFX format (v11 / KNIFX) — *only if a runtime ever requires it, and only seamlessly*
 If/when some target runtime needs more than v10, ShadowDusk must **auto-produce the right format** — the consumer never picks v10 vs v11. Note area A likely shows v10 keeps working forward, so this may not be needed at all.

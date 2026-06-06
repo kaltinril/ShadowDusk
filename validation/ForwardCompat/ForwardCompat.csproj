@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <!-- MonoGame/SDL analyzers and our harness trip the repo-wide warnings-as-errors -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RootNamespace>ShadowDusk.Validation.ForwardCompat</RootNamespace>
+  </PropertyGroup>
+
+  <!--
+    Phase 35 Area A: forward-compat validation against a NEWER MonoGame.
+
+    GUARDRAIL: the product's MonoGame pin (Directory.Packages.props =
+    3.8.2.1105) MUST NOT change. This project references a newer MonoGame
+    *locally only*, via VersionOverride on a single PackageReference.
+
+    Why VersionOverride (vs a local Directory.Packages.props or
+    ManagePackageVersionsCentrally=false): the repo uses central package
+    management, and the cleanest non-invasive way to pull a different version
+    for ONE project — while still inheriting every other centrally-managed
+    package and the repo's package-source mapping — is VersionOverride. It
+    touches only this csproj, leaves the central pin and every other validation
+    project on 3.8.2.1105, and is self-documenting at the reference site. The
+    product NuGet is never affected: this project is not in ShadowDusk.slnx and
+    is never packed.
+
+    The version is a property so the regression guard / README can re-point it
+    (e.g. to a future 3.8.5 stable) without editing the reference.
+  -->
+  <PropertyGroup>
+    <ForwardCompatMonoGameVersion>3.8.4.1</ForwardCompatMonoGameVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MonoGame.Framework.DesktopGL" VersionOverride="$(ForwardCompatMonoGameVersion)" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\Shared\*.cs" />
+  </ItemGroup>
+</Project>
