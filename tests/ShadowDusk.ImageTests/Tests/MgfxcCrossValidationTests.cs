@@ -151,8 +151,19 @@ public sealed class MgfxcCrossValidationTests : IClassFixture<GlContextFixture>
         using var fbo      = _fixture.CreateRenderer();
         var renderer       = new ShaderSceneRenderer(_fixture.Gl, fbo);
 
-        byte[] sdPixels      = renderer.Render(sdShaders,                                   scene);
-        byte[] mgfxcPixels   = renderer.Render(new GlslShaderPair(null, mgfxcPs),           scene);
+        // Drive IDENTICAL constants into BOTH programs. The renderer now uploads free
+        // uniforms into the MojoShader ps_uniforms_vec4[reg] array using each parameter's
+        // reflected constant-register index (from ShadowDusk's .mgfx cbuffer layout). The
+        // mgfxc golden uses the SAME ps_uniforms_vec4[] convention with the same
+        // declaration-order registers (fxc allocates one register per global, in order —
+        // see the golden's `#define ps_cN ps_uniforms_vec4[N]`), so feeding the mgfxc side
+        // the same register map renders both on the same constants. Without this the two
+        // sides would diverge (ShadowDusk reads the real uniform, mgfxc reads default-zero)
+        // — the comparison must stay symmetric to mean anything.
+        var mgfxcShaders = new GlslShaderPair(null, mgfxcPs, sdShaders.ParameterRegisters);
+
+        byte[] sdPixels      = renderer.Render(sdShaders,    scene);
+        byte[] mgfxcPixels   = renderer.Render(mgfxcShaders, scene);
 
         // 5. Optional diagnostic dump.
         if (Environment.GetEnvironmentVariable("SHADOWDUSK_SAVE_DIAGNOSTICS") == "1")

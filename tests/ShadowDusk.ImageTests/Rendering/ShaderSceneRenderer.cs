@@ -170,7 +170,7 @@ public sealed class ShaderSceneRenderer
         // a transient UBO bound to a binding point.
         var uboTracker = new UboBindingTracker(_gl, program.Handle);
         foreach (var kv in scene.Uniforms)
-            UploadUniform(_gl, program.Handle, kv.Key, kv.Value, uboTracker, scene.MojoConstantRegisters);
+            UploadUniform(_gl, program.Handle, kv.Key, kv.Value, uboTracker, scene.MojoConstantRegisters, shaders.ParameterRegisters);
 
         // Upload textures and bind to sequential texture units.
         var textureHandles = new List<uint>();
@@ -291,7 +291,8 @@ public sealed class ShaderSceneRenderer
         string name,
         UniformValue value,
         UboBindingTracker ubo,
-        IReadOnlyDictionary<string, int>? mojoConstantRegisters)
+        IReadOnlyDictionary<string, int>? mojoConstantRegisters,
+        IReadOnlyDictionary<string, int>? parameterRegisters)
     {
         int loc = gl.GetUniformLocation(program, name);
         if (loc >= 0)
@@ -312,32 +313,81 @@ public sealed class ShaderSceneRenderer
             return;
         }
 
-        // MojoShader-dialect program (mgfxc golden): free uniforms live in an
-        // unnamed `uniform vec4 ps_uniforms_vec4[N]` constant-register array, so
-        // there is no uniform named e.g. `TintColor`. Bind by the supplied
-        // constant-register index instead. Each register is a vec4; scalars are
-        // broadcast so `.x` / `.xxxx` reads all see the value, and vec2/vec3/vec4
-        // reads pick up the components they need.
+        // MojoShader-dialect program: free/cbuffer uniforms live in the unnamed
+        // `uniform vec4 {vs|ps}_uniforms_vec4[N]` constant-register arrays — there is
+        // NO uniform named e.g. `TintColor` or `WorldViewProj`. MonoGame's real GL
+        // runtime uploads the reflected cbuffer into those arrays via glUniform4fv,
+        // each variable at register = byteOffset/16 (a mat4 spanning four consecutive
+        // registers / columns). We mirror that EXACTLY using the .mgfx-derived
+        // register map, targeting whichever array(s) the program actually declares —
+        // the VS-bound cbuffer becomes vs_uniforms_vec4, the PS-bound one
+        // ps_uniforms_vec4; a cbuffer shared by both stages is uploaded to both.
+        if (parameterRegisters is not null &&
+            parameterRegisters.TryGetValue(name, out int reg))
+        {
+            bool wrote = UploadToMojoArray(gl, program, "vs_uniforms_vec4", reg, value);
+            wrote     |= UploadToMojoArray(gl, program, "ps_uniforms_vec4", reg, value);
+            if (wrote)
+                return;
+        }
+
+        // Back-compat: an explicit scene-catalog register override (used by the
+        // mgfxc-golden cross-validation, which has no ShadowDusk .mgfx register map).
+        // Pixel-stage array only; scalars broadcast across the vec4 register.
         if (mojoConstantRegisters is not null &&
             mojoConstantRegisters.TryGetValue(name, out int register))
         {
-            int arrLoc = gl.GetUniformLocation(program, $"ps_uniforms_vec4[{register}]");
-            if (arrLoc >= 0)
-            {
-                (float x, float y, float z, float w) = value switch
-                {
-                    UniformValue.FloatValue f => (f.V, f.V, f.V, f.V),
-                    UniformValue.Vec4Value v  => (v.X, v.Y, v.Z, v.W),
-                    _                         => (0f, 0f, 0f, 0f),
-                };
-                gl.Uniform4(arrLoc, x, y, z, w);
+            if (UploadToMojoArray(gl, program, "ps_uniforms_vec4", register, value))
                 return;
-            }
         }
 
         // Bare uniform name not found — try the UBO path (SPIRV-Cross wraps
         // HLSL cbuffers and global uniforms in std140 uniform blocks).
         ubo.SetMember(name, value);
+    }
+
+    /// <summary>
+    /// Uploads <paramref name="value"/> into the MojoShader constant-register array
+    /// <paramref name="arrayName"/> starting at register <paramref name="baseReg"/>,
+    /// mirroring MonoGame's GL runtime. A scalar is broadcast across the vec4 register
+    /// (so <c>.x</c>/<c>.xxxx</c> reads agree); a vec4 fills one register; a mat4
+    /// writes its four COLUMNS into <c>[baseReg..baseReg+3]</c> — matching the rewriter's
+    /// <c>mat4(arr[r], arr[r+1], arr[r+2], arr[r+3])</c> column reconstruction and the
+    /// .mgfx cbuffer packing. Returns <c>false</c> (no-op) if the program does not
+    /// declare that array slot, so the caller can try the other stage's array.
+    /// </summary>
+    private static bool UploadToMojoArray(GL gl, uint program, string arrayName, int baseReg, UniformValue value)
+    {
+        if (value is UniformValue.Mat4Value m)
+        {
+            // Column-major: m.Values is [c0.xyzw, c1.xyzw, c2.xyzw, c3.xyzw]. Each
+            // column lands at one register, base..base+3 — exactly the columns the
+            // rewritten GLSL reconstructs with mat4(...).
+            bool any = false;
+            for (int col = 0; col < 4; col++)
+            {
+                int arrLoc = gl.GetUniformLocation(program, $"{arrayName}[{baseReg + col}]");
+                if (arrLoc < 0)
+                    return any; // partial-array slot missing — stage doesn't bind this cbuffer
+                int o = col * 4;
+                gl.Uniform4(arrLoc, m.Values[o], m.Values[o + 1], m.Values[o + 2], m.Values[o + 3]);
+                any = true;
+            }
+            return any;
+        }
+
+        int loc = gl.GetUniformLocation(program, $"{arrayName}[{baseReg}]");
+        if (loc < 0)
+            return false;
+
+        (float x, float y, float z, float w) = value switch
+        {
+            UniformValue.FloatValue f => (f.V, f.V, f.V, f.V),
+            UniformValue.Vec4Value v  => (v.X, v.Y, v.Z, v.W),
+            _                         => (0f, 0f, 0f, 0f),
+        };
+        gl.Uniform4(loc, x, y, z, w);
+        return true;
     }
 
     private static void BindSampler(GL gl, uint program, string textureName, int unit)
