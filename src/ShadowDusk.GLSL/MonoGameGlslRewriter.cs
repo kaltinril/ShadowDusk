@@ -34,18 +34,52 @@ public sealed record MonoGameGlslSampler(
     MonoGameSamplerDimension Dimension = MonoGameSamplerDimension.Texture2D);
 
 /// <summary>
+/// One vertex-input attribute discovered while rewriting a VERTEX shader's
+/// SPIRV-Cross GLSL. The attribute is renamed to the MojoShader form
+/// <c>vs_v{Slot}</c> (declaration order), and <see cref="Usage"/>/<see cref="Index"/>
+/// carry the <c>VertexElementUsage</c>+semantic-index the pipeline writes into the
+/// .mgfx attribute table so MonoGame's GL runtime binds the attribute to the right
+/// vertex element. Empty for pixel shaders.
+/// </summary>
+/// <param name="Slot">Declaration order (0-based) — the <c>{N}</c> in <c>vs_v{N}</c>.</param>
+/// <param name="Name">Always <c>vs_v{Slot}</c>.</param>
+/// <param name="Usage">MonoGame <c>VertexElementUsage</c> byte (Position=0, Color=1, TextureCoordinate=2, Normal=3, …).</param>
+/// <param name="Index">The semantic index (e.g. TEXCOORD1 → 1).</param>
+public sealed record MonoGameGlslAttribute(
+    int    Slot,
+    string Name,
+    byte   Usage,
+    byte   Index);
+
+/// <summary>
 /// Result of <see cref="MonoGameGlslRewriter.Rewrite"/>.
 /// </summary>
 /// <param name="Glsl">The rewritten legacy GLSL source.</param>
-/// <param name="Samplers">Samplers in declaration order, renamed to <c>ps_s{k}</c>.</param>
+/// <param name="Samplers">Samplers in declaration order, renamed to <c>ps_s{k}</c> (pixel stage only).</param>
 /// <param name="UniformRegisterCount">
 /// 0 if there was no uniform block; otherwise the number of
-/// <c>ps_uniforms_vec4[]</c> registers (one per member).
+/// <c>ps_uniforms_vec4[]</c>/<c>vs_uniforms_vec4[]</c> registers (one per member, a
+/// <c>mat4</c> counting as four).
+/// </param>
+/// <param name="Attributes">
+/// Vertex-input attributes in declaration order, renamed to <c>vs_v{k}</c> (vertex
+/// stage only; empty for pixel shaders).
 /// </param>
 public sealed record MonoGameGlslResult(
     string Glsl,
     IReadOnlyList<MonoGameGlslSampler> Samplers,
-    int UniformRegisterCount);
+    int UniformRegisterCount,
+    IReadOnlyList<MonoGameGlslAttribute> Attributes)
+{
+    /// <summary>Back-compat constructor: pixel-stage results carry no attributes.</summary>
+    public MonoGameGlslResult(
+        string Glsl,
+        IReadOnlyList<MonoGameGlslSampler> Samplers,
+        int UniformRegisterCount)
+        : this(Glsl, Samplers, UniformRegisterCount, Array.Empty<MonoGameGlslAttribute>())
+    {
+    }
+}
 
 /// <summary>
 /// Rewrites the modern GLSL that SPIRV-Cross emits (<c>#version 140</c>,
@@ -89,6 +123,14 @@ public static class MonoGameGlslRewriter
         @"^\s*in\s+(float|vec2|vec3|vec4)\s+(in_var_[A-Za-z0-9_]+)\s*;\s*$",
         RegexOptions.Compiled);
 
+    // out <type> out_var_<SEM>;  — a VERTEX shader's user output (becomes a legacy
+    // `varying`). Excludes the SV_Target output (that is the pixel-shader colour, and
+    // is handled by OutputDecl). The pixel stage never has user `out_var_*` outputs
+    // other than SV_Target, so this is only consulted on the vertex stage.
+    private static readonly Regex OutputVaryingDecl = new(
+        @"^\s*out\s+(float|vec2|vec3|vec4)\s+(out_var_[A-Za-z0-9_]+)\s*;\s*$",
+        RegexOptions.Compiled);
+
     // out vec4 out_var_SV_Target<N?>;  (case-insensitive on the semantic: HLSL
     // SV_Target ≡ SV_TARGET ≡ sv_target, and DXC mirrors the source spelling).
     private static readonly Regex OutputDecl = new(
@@ -115,11 +157,11 @@ public static class MonoGameGlslRewriter
     {
         ArgumentNullException.ThrowIfNull(glsl);
 
-        // Vertex stage: pass through unchanged for now.
-        if (stage == ShaderStage.Vertex)
-        {
-            return new MonoGameGlslResult(glsl, Array.Empty<MonoGameGlslSampler>(), 0);
-        }
+        bool isVertex = stage == ShaderStage.Vertex;
+        // The MojoShader register-array prefix is the ONLY stage knob on the uniform
+        // side: pixel free uniforms bind as ps_uniforms_vec4[], vertex as
+        // vs_uniforms_vec4[] (MonoGame's GL runtime keys glUniform4fv on this name).
+        string regPrefix = isVertex ? "vs" : "ps";
 
         // Normalize Slang-emitted interface names to the DXC convention the rest of
         // this rewriter is keyed to. No-op for DXC/FXC output. (Browser path uses
@@ -140,7 +182,10 @@ public static class MonoGameGlslRewriter
 
         var samplers = new List<MonoGameGlslSampler>();
         var samplerRenames = new Dictionary<string, string>(); // original id -> ps_sK
-        var inputVaryings = new List<InputVarying>();           // in_var_* -> varying info
+        var inputVaryings = new List<InputVarying>();           // PS: in_var_* -> varying read
+        var outputVaryings = new List<InputVarying>();          // VS: out_var_* -> varying write
+        var attributes = new List<MonoGameGlslAttribute>();     // VS: in_var_* -> attribute vs_vK
+        var attributeReads = new List<InputVarying>();          // VS: in_var_* read width/rename
         var uniformMembers = new List<(string Type, string Member)>();
 
         var output = new List<string>();
@@ -199,14 +244,21 @@ public static class MonoGameGlslRewriter
                     j++;
                 }
 
-                output.Add($"uniform vec4 ps_uniforms_vec4[{uniformMembers.Count}];");
+                // The register count is NOT the member count: a mat4 occupies FOUR
+                // consecutive 16-byte registers (matching the .mgfx cbuffer packing in
+                // BuildConstantBufferInfoList and the std140 layout SPIRV-Cross assumed),
+                // every other member occupies one. So the array length is the running
+                // register total.
+                output.Add($"uniform vec4 {regPrefix}_uniforms_vec4[{RegisterCount(uniformMembers)}];");
                 i = j - 1; // loop i++ moves past consumed block
                 continue;
             }
 
-            // Rule 3: sampler declaration (sampler2D / samplerCube / sampler3D).
+            // Rule 3: sampler declaration (sampler2D / samplerCube / sampler3D). Pixel
+            // stage only — MonoGame's GL VS goldens carry no samplers, and a VS sampler
+            // would need its own vs_s{k} contract that no corpus exercises.
             var samplerMatch = SamplerDecl.Match(line);
-            if (samplerMatch.Success)
+            if (samplerMatch.Success && !isVertex)
             {
                 var kind = samplerMatch.Groups[1].Value;     // "2D" | "Cube" | "3D"
                 var origId = samplerMatch.Groups[2].Value;
@@ -222,20 +274,59 @@ public static class MonoGameGlslRewriter
                 continue;
             }
 
-            // Rule 4: input varying declaration.
+            // Rule 4: input declaration.
             var inMatch = InputVaryingDecl.Match(line);
             if (inMatch.Success)
             {
                 var type = inMatch.Groups[1].Value;
                 var ident = inMatch.Groups[2].Value;
-                var varyingName = SemanticToVaryingName(ident);
-                inputVaryings.Add(new InputVarying(ident, type, varyingName));
-                output.Add($"varying vec4 {varyingName};");
+                if (isVertex)
+                {
+                    // VS input = a vertex ATTRIBUTE. MojoShader names attributes
+                    // vs_v{k} (declaration order) and declares them vec4 regardless of
+                    // the source width (matches the SpriteEffect golden). The semantic
+                    // → VertexElementUsage+index mapping is captured for the .mgfx
+                    // attribute table so MonoGame binds the right vertex element.
+                    int slot = attributes.Count;
+                    var attrName = $"vs_v{slot}";
+                    var (usage, index) = SemanticToVertexUsage(ident);
+                    attributes.Add(new MonoGameGlslAttribute(slot, attrName, usage, index));
+                    // The attribute is DECLARED vec4 (mgfxc form) but a narrower source
+                    // (float3 POSITION / float2 TEXCOORD) must read a truncating swizzle
+                    // so a use like `vec4(in_var_POSITION0, 1.0)` stays well-typed.
+                    attributeReads.Add(new InputVarying(ident, type, attrName));
+                    output.Add($"attribute vec4 {attrName};");
+                }
+                else
+                {
+                    // PS input = a legacy varying the built-in/custom VS wrote.
+                    var varyingName = SemanticToVaryingName(ident);
+                    inputVaryings.Add(new InputVarying(ident, type, varyingName));
+                    output.Add($"varying vec4 {varyingName};");
+                }
                 continue;
             }
 
-            // Rule 5: output declaration — drop it.
-            if (OutputDecl.IsMatch(line))
+            // Rule 4b (VS only): user output declaration -> legacy varying WRITE. The
+            // varying name MUST match what the pixel shader reads (vFrontColor /
+            // vTexCoord{n}) — MonoGame links VS→PS by varying NAME, not index.
+            if (isVertex)
+            {
+                var outVaryMatch = OutputVaryingDecl.Match(line);
+                if (outVaryMatch.Success)
+                {
+                    var type = outVaryMatch.Groups[1].Value;
+                    var ident = outVaryMatch.Groups[2].Value;
+                    var varyingName = SemanticToVaryingName(ident);
+                    outputVaryings.Add(new InputVarying(ident, type, varyingName));
+                    output.Add($"varying vec4 {varyingName};");
+                    continue;
+                }
+            }
+
+            // Rule 5: pixel-shader colour output declaration — drop it (a VS has no
+            // SV_Target; gl_Position is a builtin and needs no decl).
+            if (!isVertex && OutputDecl.IsMatch(line))
             {
                 continue;
             }
@@ -254,30 +345,76 @@ public static class MonoGameGlslRewriter
             body = ReplaceWord(body, origId, newName);
         }
 
-        // Input varyings: rename + swizzle, honoring the trailing-'.' exception.
+        // VS attributes: rename in_var_<SEM> -> vs_v{k}, appending a width-truncating
+        // swizzle (the attribute is declared vec4, but a `float3 POSITION` etc. must
+        // read .xyz). Trailing-'.' exception so an existing swizzle isn't doubled.
+        foreach (var read in attributeReads)
+        {
+            body = ReplaceInputVaryingUses(body, read);
+        }
+
+        // PS input varyings: rename + swizzle, honoring the trailing-'.' exception.
         foreach (var varying in inputVaryings)
         {
             body = ReplaceInputVaryingUses(body, varying);
         }
 
-        // Uniform members: _Globals.<member> -> ps_uniforms_vec4[i]<swizzle>.
+        // VS output varyings: rename out_var_<SEM> -> the matching legacy varying.
+        // Width handling: the varying is declared vec4 but the VS may write a narrower
+        // type (vec2 TEXCOORD). A direct rename keeps the write valid because the body
+        // already assigns the correct width to a possibly-narrower swizzle target; the
+        // legacy varying is vec4 so any extra channels are simply unused by the PS.
+        foreach (var varying in outputVaryings)
+        {
+            body = ReplaceOutputVaryingUses(body, varying);
+        }
+
+        // Uniform members: _Globals.<member> -> {prefix}_uniforms_vec4[reg]<swizzle>.
+        // The register OFFSET is the running register total so a mat4 (4 registers)
+        // correctly shifts every member after it — this is the exact same packing as
+        // BuildConstantBufferInfoList, so the GLSL index lands on the right bytes.
+        int reg = 0;
         for (int idx = 0; idx < uniformMembers.Count; idx++)
         {
             var (type, member) = uniformMembers[idx];
-            var swizzle = SwizzleForType(type);
             string replacement;
             if (type == "mat4")
             {
-                replacement = $"ps_uniforms_vec4[{idx}]/*TODO mat*/";
+                // A mat4 occupies registers reg..reg+3. SPIRV-Cross emits the matrix
+                // column-major (GLSL native) and multiplies M * v; std140 stores each
+                // matrix COLUMN at a 16-byte register (column0 @ reg, column1 @ reg+1,
+                // …). GLSL mat4(c0,c1,c2,c3) takes COLUMNS, so reconstructing
+                // mat4(reg, reg+1, reg+2, reg+3) reproduces the original matrix exactly.
+                replacement =
+                    $"mat4({regPrefix}_uniforms_vec4[{reg}], {regPrefix}_uniforms_vec4[{reg + 1}], " +
+                    $"{regPrefix}_uniforms_vec4[{reg + 2}], {regPrefix}_uniforms_vec4[{reg + 3}])";
+                reg += 4;
             }
             else
             {
-                replacement = $"ps_uniforms_vec4[{idx}]{swizzle}";
+                var swizzle = SwizzleForType(type);
+                replacement = $"{regPrefix}_uniforms_vec4[{reg}]{swizzle}";
+                reg += 1;
             }
 
             // Match "_Globals.<member>" with a word boundary after the member.
             var pattern = $@"_Globals\.{Regex.Escape(member)}\b";
             body = Regex.Replace(body, pattern, replacement.Replace("$", "$$"));
+        }
+
+        // Vertex stage: assemble + return now. No fragment-output / texture / round
+        // passes — those are pixel-stage rules. The precision header for a VS uses
+        // highp float (matching the mgfxc VS golden, which needs full precision for
+        // the position transform) rather than the mediump the PS uses.
+        if (isVertex)
+        {
+            var vsTrimmed = body.TrimStart('\n');
+            var vsGlsl = VertexPrecisionHeader + "\n" + vsTrimmed;
+            if (!vsGlsl.EndsWith("\n"))
+            {
+                vsGlsl += "\n";
+            }
+            return new MonoGameGlslResult(vsGlsl, Array.Empty<MonoGameGlslSampler>(), reg, attributes);
         }
 
         // Rule 5: output uses → ps_oC{N} aliases (mgfxc/MojoShader form).
@@ -383,8 +520,32 @@ public static class MonoGameGlslRewriter
             finalGlsl += "\n";
         }
 
-        return new MonoGameGlslResult(finalGlsl, samplers, uniformMembers.Count);
+        return new MonoGameGlslResult(finalGlsl, samplers, reg, Array.Empty<MonoGameGlslAttribute>());
     }
+
+    /// <summary>
+    /// The number of 16-byte registers the uniform members occupy: a <c>mat4</c> spans
+    /// four, every other member one. This is the <c>{prefix}_uniforms_vec4[]</c> array
+    /// length, kept in lockstep with the .mgfx cbuffer packing.
+    /// </summary>
+    private static int RegisterCount(IReadOnlyList<(string Type, string Member)> members)
+    {
+        int n = 0;
+        foreach (var (type, _) in members)
+        {
+            n += type == "mat4" ? 4 : 1;
+        }
+        return n;
+    }
+
+    // The vertex stage uses highp float (the position transform needs full precision);
+    // the mgfxc VS golden does exactly this. The pixel stage stays at mediump
+    // (PrecisionHeader) to match mgfxc's PS output.
+    private const string VertexPrecisionHeader =
+        "#ifdef GL_ES\n" +
+        "precision highp float;\n" +
+        "precision mediump int;\n" +
+        "#endif\n";
 
     /// <summary>A fragment colour output discovered while rewriting the PS body.</summary>
     /// <param name="Alias">The MojoShader alias, always <c>ps_oC{N}</c>.</param>
@@ -576,9 +737,11 @@ public static class MonoGameGlslRewriter
 
     private static string SemanticToVaryingName(string identifier)
     {
-        // identifier looks like "in_var_TEXCOORD0".
-        const string prefix = "in_var_";
-        var sem = identifier.StartsWith(prefix) ? identifier[prefix.Length..] : identifier;
+        // identifier looks like "in_var_TEXCOORD0" (PS input) or "out_var_COLOR0"
+        // (VS output). Strip either interface prefix to the bare HLSL semantic so a
+        // VS output and the PS input it feeds resolve to the SAME varying name (the
+        // basis of MonoGame's name-based VS→PS link).
+        var sem = StripInterfacePrefix(identifier);
 
         switch (sem)
         {
@@ -596,6 +759,74 @@ public static class MonoGameGlslRewriter
 
         // Unknown semantic — pass through (won't occur in our corpus).
         return $"var_{sem}";
+    }
+
+    private static string StripInterfacePrefix(string identifier)
+    {
+        const string inPrefix = "in_var_";
+        const string outPrefix = "out_var_";
+        if (identifier.StartsWith(inPrefix)) return identifier[inPrefix.Length..];
+        if (identifier.StartsWith(outPrefix)) return identifier[outPrefix.Length..];
+        return identifier;
+    }
+
+    /// <summary>
+    /// Maps a vertex-input semantic (<c>in_var_&lt;SEM&gt;</c>) to MonoGame's
+    /// <c>VertexElementUsage</c> byte + semantic index, as the .mgfx attribute table
+    /// needs. Covers the SpriteBatch-compatible set this phase targets —
+    /// POSITION / COLOR / TEXCOORD / NORMAL — and is verified against the mgfxc VS
+    /// goldens (SpriteEffect: vs_v0=Position/0, vs_v1=Color/0, vs_v2=TexCoord/0;
+    /// DualTexture: TEXCOORD1 → usage 2 index 1). The byte values are MonoGame's
+    /// <c>VertexElementUsage</c> enum: Position=0, Color=1, TextureCoordinate=2,
+    /// Normal=3.
+    /// </summary>
+    private static (byte Usage, byte Index) SemanticToVertexUsage(string identifier)
+    {
+        var sem = StripInterfacePrefix(identifier);
+
+        if (sem.StartsWith("POSITION"))
+            return (0, ParseTrailingIndex(sem, "POSITION"));
+        if (sem.StartsWith("COLOR"))
+            return (1, ParseTrailingIndex(sem, "COLOR"));
+        if (sem.StartsWith("TEXCOORD"))
+            return (2, ParseTrailingIndex(sem, "TEXCOORD"));
+        if (sem.StartsWith("NORMAL"))
+            return (3, ParseTrailingIndex(sem, "NORMAL"));
+
+        // Unknown semantic: a real effect using an attribute the table doesn't model
+        // would bind to the wrong vertex element (silent, not a link error). Fail
+        // loudly so it's caught at compile time, consistent with the sampler guard.
+        throw new MonoGameGlslRewriteException(
+            $"Unsupported vertex-input semantic '{sem}' for the MonoGame GL target. The " +
+            $"attribute table models POSITION / COLOR / TEXCOORD / NORMAL; extend " +
+            $"SemanticToVertexUsage to support '{sem}'.");
+    }
+
+    private static byte ParseTrailingIndex(string sem, string baseName)
+    {
+        var tail = sem[baseName.Length..];
+        return tail.Length == 0 ? (byte)0 : (byte)int.Parse(tail);
+    }
+
+    /// <summary>
+    /// Replaces uses of a VS OUTPUT identifier (<c>out_var_&lt;SEM&gt;</c>) with its
+    /// legacy varying name. The varying is DECLARED <c>vec4</c> but the source output
+    /// may be narrower (a <c>vec2</c> TEXCOORD), so a width-matching swizzle is appended
+    /// to the assignment target — <c>vTexCoord0.xy = …;</c> — matching the mgfxc golden
+    /// (<c>vs_oT0.xy = vs_v2.xy;</c>). The trailing-'.' exception means a use that
+    /// already carries an explicit swizzle keeps it (only the rename applies).
+    /// </summary>
+    private static string ReplaceOutputVaryingUses(string input, InputVarying varying)
+    {
+        var swizzle = SwizzleForType(varying.Type);
+        var pattern = $@"\b{Regex.Escape(varying.Identifier)}\b";
+
+        return Regex.Replace(input, pattern, match =>
+        {
+            int after = match.Index + match.Length;
+            bool followedByDot = after < input.Length && input[after] == '.';
+            return followedByDot ? varying.VaryingName : varying.VaryingName + swizzle;
+        });
     }
 
     private static string SwizzleForType(string type) => type switch

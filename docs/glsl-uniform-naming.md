@@ -53,9 +53,10 @@ must also be in MonoGame's dialect or the custom PS will not link with the built
 ## Implemented Design — Strategy 1 (GLSL post-process)
 
 `MonoGameGlslRewriter.Rewrite(glsl, stage)` is a **pure string transform** (no SPIRV-Cross /
-native dependency) run over the SPIRV-Cross pixel-shader output. It is invoked from
-`CompilationPipeline` only when the `monoGameGl` gate is set (PS-only OpenGL effects); other
-targets keep the unmodified SPIRV-Cross dialect. The transform, by rule:
+native dependency) run over the SPIRV-Cross output. It is invoked from
+`CompilationPipeline` whenever the `monoGameGl` gate is set (**any** OpenGL effect; as of
+Phase 28 the gate is no longer PS-only — see *Vertex stage* below for the symmetric VS rules);
+other targets keep the unmodified SPIRV-Cross dialect. The pixel-stage transform, by rule:
 
 | # | SPIRV-Cross input | Rewritten to |
 |---|---|---|
@@ -91,12 +92,50 @@ uniform-driven ones (TintShader, Sepia, Saturate, Scanlines, Dots) with paramete
 name** (`validation/Candidate` vs `validation/Baseline` + `compare.py`: 8 exact, Scanlines/Dots
 maxd 1). Unit coverage: `tests/ShadowDusk.GLSL.Tests/MonoGameGlslRewriterTests.cs`.
 
+## Vertex stage (Phase 28, 2026-06-05)
+
+`Rewrite` is now **stage-symmetric**: for `ShaderStage.Vertex` it emits the VS-side
+MojoShader dialect that MonoGame's GL runtime links against. Same shared passes
+(version/420pack strip, matrix expansion, round lowering); the register prefix and the
+in/out direction are the only stage knobs:
+
+| SPIRV-Cross VS input | Rewritten to |
+|---|---|
+| `layout(std140) uniform type_Globals { … }` | `uniform vec4 vs_uniforms_vec4[N];` (a `mat4` counts as four registers) |
+| `in <type> in_var_<SEM>;` (vertex **inputs**) | `attribute vec4 vs_v{k};` — renamed in declaration order; uses get a width-truncating swizzle (`vec4(vs_v0.xyz, 1.0)`) |
+| `out <type> out_var_<SEM>;` (vertex **outputs**) | `varying vec4 <legacy>;` — the SAME names the PS reads (`vFrontColor`/`vTexCoord{n}`), so MonoGame links VS→PS **by name**; a narrower output writes a swizzled LHS (`vTexCoord0.xy = vs_v2.xy;`) |
+| `gl_Position = … ;` (from `SV_Position`) | kept as-is; SPIRV-Cross's `FlipVertexY` + `FixupDepthConvention` already bake the Y-flip and DX→GL depth range (mgfxc uses a `posFixup` uniform for the same effect — both produce the same `gl_Position`) |
+
+The VS rewrite also returns the **vertex-attribute table** (each `vs_v{k}` →
+`VertexElementUsage`+semantic-index: POSITION→0, COLOR→1, TEXCOORD→2, NORMAL→3) which the
+pipeline writes into the `.mgfx` shader record so MonoGame binds each attribute to the right
+vertex element. The `.mgfx` cbuffer for a VS-bound buffer is named **`vs_uniforms_vec4`**
+(PS-bound stays `ps_uniforms_vec4`); attribution is from reflection, not a PS-only assumption.
+
+**Matrix free-uniforms (resolved).** A `mat4` member now expands to the four consecutive
+registers it occupies — `_Globals.M` → `mat4(<prefix>_uniforms_vec4[r], [r+1], [r+2], [r+3])`
+(column-major: std140 stores each matrix column at a 16-byte register, and GLSL
+`mat4(c0,c1,c2,c3)` takes columns, so the reconstruction is byte-faithful to the original
+SPIRV-Cross `mat4`). The register index is the running register total so a `mat4` correctly
+shifts every member after it, agreeing exactly with the `.mgfx` cbuffer packing
+(`BuildConstantBufferInfoList`). Unit-pinned in `MonoGameGlslRewriterTests`
+(`Matrix_ExpandsToFourConsecutiveRegisters_IndicesMatchCbufferLayout`,
+`PixelStage_Mat4Uniform_ExpandsToFourRegisters_NoTodoLeft`). Applies to both stages.
+
+**Verification (rung 4):** the VS-driven fixture `VsTransformColorTexture.fx` (custom VS +
+`float4x4` transform + POSITION/COLOR0/TEXCOORD0 + textured/tinted PS) compiled by ShadowDusk
+loads in a **real** `MonoGame.Framework.DesktopGL` `Effect` and renders **pixel-identical**
+(max delta 0) to the mgfxc OpenGL golden, via a custom vertex-buffer draw path
+(`validation/VsDriven`). The same `.fx` for DirectX loads in real `MonoGame.Framework.WindowsDX`
+and renders pixel-identical to the mgfxc DX golden via **both** the d3dcompiler oracle and the
+cross-platform vkd3d backend (`validation/VsDrivenDx`). The PS-only corpus + Phase-16 anchors
+are unregressed (10/10).
+
 ## Known limitations (future work)
 
-- **Pixel stage only.** For `ShaderStage.Vertex`, `Rewrite` currently passes the GLSL through
-  unchanged. VS-driven MonoGame effects also need the symmetric `vs_uniforms_vec4` remap and
-  the VS-side varying contract — tracked as Phase 17 §8.3 future work.
-- **Matrix free-uniforms in the PS are not fully remapped.** A `mat4` member emits
-  `ps_uniforms_vec4[i]/*TODO mat*/` (a column/row expansion is still owed). The PS-only
-  post-process corpus uses only `float`/`vec` free uniforms, so this is unexercised today; it
-  must be completed before a PS that takes a matrix uniform is supported.
+- **Vertex semantics beyond POSITION/COLOR/TEXCOORD/NORMAL.** The attribute-table map covers the
+  SpriteBatch-compatible set; an unmodelled semantic (e.g. `BLENDWEIGHT`) fails loudly at compile
+  time (`MonoGameGlslRewriteException`) rather than binding to the wrong vertex element. Extend
+  `SemanticToVertexUsage` to add more.
+- **Geometry / hull / domain / compute stages** are out of scope (MonoGame 3.8 GL Reach doesn't
+  support them).

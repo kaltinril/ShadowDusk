@@ -1,6 +1,20 @@
 # Phase 28 — VS-Driven MonoGame Effects (vertex-shader support)
 
-**Status:** Planned (written 2026-06-03). **Track:** Fidelity / completeness.
+**Status:** ✅ **DONE (2026-06-05, branch `phase28-vs-driven-effects`).** **Track:** Fidelity / completeness.
+
+> **As-built summary.** `MonoGameGlslRewriter.Rewrite` is now stage-symmetric: the VS path
+> emits `vs_uniforms_vec4[]`, legacy `attribute vs_v{k}` inputs (with a returned
+> usage/index attribute table), legacy `varying` outputs matching the PS read names, and
+> `gl_Position` (SPIRV-Cross already bakes the Y-flip + depth range — no `posFixup` needed).
+> The `mat4` `/*TODO mat*/` is resolved on **both** stages: `_Globals.M` →
+> `mat4(<prefix>_uniforms_vec4[r..r+3])` (column-major, register-faithful to the `.mgfx`
+> cbuffer packing; unit-pinned). The `monoGameGl` gate is lifted to **all** OpenGL effects;
+> VS-bound cbuffers are named `vs_uniforms_vec4` from reflection. **Rung 4 met:** the new
+> fixture `tests/fixtures/shaders/VsTransformColorTexture.fx` renders **pixel-identical**
+> (max delta 0) to its mgfxc OpenGL golden in real DesktopGL **and** to its mgfxc DX golden
+> in real WindowsDX (d3dcompiler oracle **and** vkd3d). No regression: PS-only corpus 10/10,
+> Phase-16 anchors green, full suite 555/555. Harnesses: `validation/VsDriven`,
+> `validation/VsDrivenDx`.
 
 Today ShadowDusk faithfully compiles and renders the **PS-only** corpus on the MonoGame GL
 path (10/10 in real DesktopGL — [Phase 17](DONE/PHASE-17-monogame-runtime-validation.md))
