@@ -59,6 +59,11 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
   LOD / gradient sampling work on Desktop and HiDef (WebGL1 cannot, by platform limit). The
   MGFX sampler `Type` byte now carries the reflected texture dimension (2D / Cube / 3D), and
   the rewriter emits per-dimension sampling builtins.
+- **VS-driven effects (custom vertex shaders).** Effects that ship their own vertex shader
+  (a `float4x4` transform with `POSITION` / `COLOR0` / `TEXCOORD0` attributes) compile
+  faithfully on the GL path — the `MonoGameGlslRewriter` emits the symmetric
+  `vs_uniforms_vec4` block, the legacy `attribute`/`varying` stage I/O, and the full
+  matrix-uniform expansion — not just pixel-shader-only post-process effects.
 - **Forward-compatibility with newer MonoGame.** ShadowDusk's default MGFX **v10** output
   loads and renders correctly in MonoGame **3.8.4.1** (the latest stable 3.8.x) as well as
   the pinned **3.8.2.1105** baseline — pixel-identical on the same bytes, within tolerance
@@ -75,6 +80,10 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **DirectX fidelity in the real MonoGame runtime (Phase 18).** All 10/10 DX `.mgfx` of the
   SM5 PS-only corpus load in real MonoGame WindowsDX and render pixel-equivalent to `mgfxc`,
   via both the `d3dcompiler_47` oracle and the cross-platform vkd3d-shader backend.
+- **VS-driven fidelity in the real MonoGame runtime (Phase 28).** A VS-driven `.fx` (custom
+  vertex shader + `float4x4` transform) compiled by ShadowDusk loads in real MonoGame
+  DesktopGL **and** WindowsDX and renders pixel-identical (max delta 0) to its `mgfxc`
+  golden, on both the `d3dcompiler_47` oracle and the cross-platform vkd3d backend for DX.
 - **In-browser render proof (Phases 22–24).** Corpus `.mgfx` load and render in real
   headless KNI WebGL (Reach and HiDef/WebGL2), and the faithful in-browser DXC → WASM path
   emits `.mgfx` byte-identical to the CLI for the corpus.
@@ -87,8 +96,9 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
   path ships self-contained from NuGet today; the DirectX vkd3d-shader native is a restored,
   non-redistributed artifact not yet packaged as a `runtimes/<rid>/native/` asset. The
   0.1.0 line advertises GL-from-NuGet as the self-contained path.
-- **VS-driven (custom vertex shader) effects** are not yet covered; the validated corpus is
-  pixel-shader-only.
+- **VS-driven effects** are covered for the SpriteBatch-compatible attribute set
+  (`POSITION` / `COLOR0` / `TEXCOORD0`); additional vertex semantics (`NORMAL` / `TANGENT` /
+  skinning) and Metal/Vulkan vertex-shader paths are follow-ons.
 - **Metal (MSL) and Vulkan backends** are not yet implemented (stubs only).
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
