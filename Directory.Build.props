@@ -10,5 +10,17 @@
     <Authors>ShadowDusk Contributors</Authors>
     <RepositoryUrl>https://github.com/shadowdusk/ShadowDusk</RepositoryUrl>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <!-- Lock NuGet versions in CI (GitHub Actions sets CI=true) so restore is
+         deterministic; local restore still updates the lock file when deps change. -->
+    <RestoreLockedMode Condition="'$(CI)' == 'true'">true</RestoreLockedMode>
+    <!-- Single source of truth for ALL ShadowDusk.* package versions (Phase 30 §17.1).
+         /release bumps this one line; release.yml's validate job checks the tag against it.
+         With Central Package Management on, the version below flows to every project and
+         `dotnet pack` uses it for each package's PackageVersion automatically.
+         Do NOT re-add per-csproj PackageVersion PROPERTIES — they desync and collide
+         (by name only) with Directory.Packages.props PackageVersion Include=… ITEMS.
+         NOTE: release.yml/wasm.yml extract this value by grep; keep the element below
+         the only Version element in this file (do not write that XML tag in comments). -->
+    <Version>0.1.0</Version>
   </PropertyGroup>
 </Project>

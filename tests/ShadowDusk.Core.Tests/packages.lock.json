@@ -170,7 +170,7 @@
         "type": "Project",
         "dependencies": {
           "ShadowDusk.Compiler": "[0.1.0, )",
-          "ShadowDusk.Metal": "[1.0.0, )"
+          "ShadowDusk.Metal": "[0.1.0, )"
         }
       },
       "shadowdusk.compiler": {

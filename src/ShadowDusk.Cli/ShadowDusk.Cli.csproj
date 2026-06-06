@@ -8,13 +8,15 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>mgfxc</ToolCommandName>
     <PackageId>ShadowDusk.Cli</PackageId>
-    <PackageVersion>0.1.0</PackageVersion>
     <Description>Cross-platform drop-in replacement for MonoGame's mgfxc shader compiler.</Description>
 
-    <!-- Self-contained publish support -->
-    <PublishSingleFile>true</PublishSingleFile>
-    <SelfContained>false</SelfContained>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!-- Self-contained single-file publish is a PUBLISH-TIME concern, driven entirely by
+         release.yml's per-RID self-contained publish (PublishSingleFile +
+         IncludeNativeLibrariesForSelfExtract passed as /p: args there). These are
+         deliberately NOT project properties: as project properties they make restore infer
+         the host RID into packages.lock.json, which breaks locked-mode restore on
+         Linux/macOS CI (NU1004) and turns dotnet pack of this tool into RID-specific tool
+         packages. -->
   </PropertyGroup>
 
   <ItemGroup>

@@ -1,26 +1,107 @@
 # Changelog
 
-All notable changes to ShadowDusk are documented here. The project has not yet had a tagged release; entries accumulate under **Unreleased**.
+All notable changes to ShadowDusk are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+ShadowDusk is a cross-platform, in-memory drop-in `mgfxc` replacement: a self-contained
+library that compiles `.fx` → `.mgfx` at runtime on Linux, macOS, and Windows, with output
+that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime. All six
+`ShadowDusk.*` packages share a single version (see `Directory.Build.props` `<Version>`).
 
 ## [Unreleased]
 
 ### Added
 
-- **GL texture breadth — cube maps, 3D/volume textures, and explicit-LOD/gradient sampling (Phase 34).** These valid HLSL texture features previously failed to compile for the OpenGL target (`SD0210`, added in the #7 fix as a safe interim); they now compile to working GLSL on the platforms that support them:
-  - **Cube maps** (`TextureCube` / `samplerCube`) — supported on **Desktop GL, KNI HiDef (WebGL2), and KNI Reach (WebGL1)**. ShadowDusk emits the legacy `samplerCube ps_s{k}` + `textureCube(…)` form (byte-matching `mgfxc`'s own cube output) and the correct MonoGame sampler-type byte. Cross-validated against the `mgfxc` `EnvironmentMapEffect` golden (same form + sampler-type byte).
-  - **3D / volume textures** (`Texture3D` / `sampler3D`) — supported on **Desktop GL + KNI HiDef**. Not available on **KNI Reach / WebGL1**, which has no 3D textures at all (a platform limitation, not ShadowDusk's).
-  - **Explicit-LOD / gradient sampling** (`Texture2D.SampleLevel` / `SampleGrad`) — supported on **Desktop GL + KNI HiDef** via the generic `textureLod` / `textureGrad` builtins (core in GLSL ES 3.00; KNI HiDef passes them through). On **KNI Reach / WebGL1** these are gated behind an optional, non-guaranteed extension — a platform limitation.
-  - These walls (3D + explicit-LOD on Reach/WebGL1) are **documented limitations**, not compile errors: ShadowDusk emits one OpenGL blob and cannot know the consumer's KNI profile at compile time. Sampler kinds still unmodelled (`sampler2DArray`, shadow samplers) continue to fail loudly with `SD0210`.
-  - **In-engine render-validated (evidence-ladder rung 4).** Cube maps and 3D/volume textures now **render correctly in the real MonoGame DesktopGL runtime** (cube: correct face selection + per-face binding across all six faces; 3D: real `Texture3D` bind + sample), and the emitted explicit-LOD / gradient GLSL is **render-proven to honor the requested level/gradient** in the real GL driver — not merely to compile. (Genuine remaining limits — 3D multi-voxel selection under DesktopGL 3.8.2, explicit-LOD via the SpriteBatch path, and the absence of an `mgfxc` cube/3D pixel golden — are documented in `plan/PHASE-34-gl-texture-breadth.md`.)
-  - **Action required:** **recompile your `.fx`** to pick up cube/3D/LOD/grad support.
+### Changed
 
 ### Fixed
 
-- **KNI HiDef / WebGL2 shader loading ([#7](https://github.com/kaltinril/ShadowDusk/issues/7)).** A ShadowDusk-compiled `.mgfx` loaded in KNI **Reach** (WebGL1) but failed in KNI **HiDef** (WebGL2 / GLSL ES 3.00) with `'gl_FragColor' : undeclared identifier`. ShadowDusk now emits the pixel-shader colour output as the `#define ps_oC0 gl_FragColor` form (matching `mgfxc`), which KNI's runtime ES-3.00 converter rewrites correctly — so **one `.mgfx` now works in both Reach and HiDef** with no flag, no separate build, and no API change. Validated 10/10 in a real headless KNI HiDef/WebGL2 runtime.
-  - **Action required:** **recompile your `.fx`** after upgrading — a `.mgfx` built by an older ShadowDusk keeps the old output and still fails under HiDef.
-  - HiDef shader loading requires **KNI ≥ v3.14.9001** (the release that added KNI's runtime ES-3.00 converter; any recent KNI qualifies). Reach and desktop GL have **no** version requirement.
-- **Single-output fragment semantics.** A shader whose pixel output was written `: COLOR0` / `SV_Target0` was emitting `gl_FragData[0]` instead of `gl_FragColor`; an uppercase `: SV_TARGET` semantic was silently producing a non-rendering effect. Both now emit the correct primary `gl_FragColor` output. (Surfaced while generalising the #7 fix.)
+## [0.1.0] - 2026-06-06
 
-### Changed
+First public release. A single faithful HLSL → `.mgfx` pipeline
+(HLSL → DXC → SPIR-V → SPIRV-Cross → GLSL → managed reflect + MojoShader-dialect rewrite +
+MGFX writer, or vkd3d-shader → DXBC for DirectX), delivered as a library, a CLI tool, and a
+WASM-capable build — the same pipeline on every host, with no substitute compilers.
 
-- GL shaders using sampler kinds the MojoShader-dialect rewriter still doesn't model — **array / shadow samplers** (`sampler2DArray`, `sampler2DShadow`, `samplerCubeArray`, …) — **fail loudly at compile time** (`SD0210`) instead of silently emitting broken GLSL. (Originally, Phase 33 also guarded cube/3D/LOD/grad; Phase 34 lifts those — see **Added** above.) Plain `tex2D` / `Texture2D.Sample` on `sampler2D` is unaffected.
+### Added
+
+- **Cross-platform in-memory `.fx` → `.mgfx` compile.** `ShadowDusk.Compiler`
+  (`EffectCompiler : IShaderCompiler`) compiles HLSL `.fx` shaders to MonoGame `.mgfx`
+  bytes in-process on Linux, macOS, and Windows — no `fxc.exe`, no `mgfxc`, no Wine, no
+  Windows SDK. `IShaderCompiler.CompileAsync(fx)` returns `.mgfx` bytes; no temp files or
+  child process required by the API.
+- **OpenGL / DesktopGL backend.** HLSL → DXC → SPIR-V → SPIRV-Cross → GLSL with a managed
+  MojoShader-dialect rewriter and MGFX writer. SPIRV-Cross rides inside the package via the
+  `Silk.NET.SPIRV.Cross.Native` transitive dependency, and DXC via `Vortice.Dxc` — so
+  `dotnet add package ShadowDusk.Compiler` and call the API is the entire setup for the GL
+  path on a clean machine.
+- **DirectX DXBC backend.** SM5 DXBC via the cross-platform **vkd3d-shader** library
+  (`HLSL → DXBC_TPF`), with the Windows-only `d3dcompiler_47.dll` as a correctness oracle,
+  behind the `IDxbcShaderCompiler` seam (`DxbcBackend` selector). This is what makes DirectX
+  DXBC compilable where `mgfxc` cannot run. DXC `ps_6_0`/`vs_6_0` (DXIL) is retained for the
+  DX12/KNI path.
+- **`mgfxc`-compatible CLI tool.** `ShadowDusk.Cli` ships as a `dotnet tool` named `mgfxc`
+  (`dotnet tool install -g ShadowDusk.Cli`) — same CLI flags, same `.mgfx` output format,
+  same exit codes, and MGCB-parseable stderr diagnostics, so existing MonoGame content
+  pipelines switch with zero code changes (via `ExternalTool` config or PATH override).
+- **WASM / in-browser compile engine.** `ShadowDusk.Wasm` (`WasmShaderCompiler`) targets
+  `net8.0-browser` and runs the same faithful pipeline in the browser via `[JSImport]`
+  bindings to WASM-compiled DXC and SPIRV-Cross — emitting `.mgfx` bytes identical to the
+  CLI/desktop path. A pure-managed `SpirvReflector` reflects SPIR-V without a DXIL oracle.
+  The in-browser shader-fiddle (`samples/ShaderFiddle.Web`) is a sample of this reach.
+- **KNI HiDef / WebGL2 (GLSL ES 3.00) output.** A single `.mgfx` loads and renders in both
+  KNI Reach (WebGL1 / GLSL ES 1.00) and KNI HiDef (WebGL2 / GLSL ES 3.00) — the rewriter
+  emits `mgfxc`'s `#define ps_oC0 gl_FragColor` form that KNI's runtime converts to a typed
+  `out vec4`, with zero consumer input and no new flag or format.
+- **GL texture breadth.** Cube maps work on every GL target; 3D textures and explicit
+  LOD / gradient sampling work on Desktop and HiDef (WebGL1 cannot, by platform limit). The
+  MGFX sampler `Type` byte now carries the reflected texture dimension (2D / Cube / 3D), and
+  the rewriter emits per-dimension sampling builtins.
+- **VS-driven effects (custom vertex shaders).** Effects that ship their own vertex shader
+  (a `float4x4` transform with `POSITION` / `COLOR0` / `TEXCOORD0` attributes) compile
+  faithfully on the GL path — the `MonoGameGlslRewriter` emits the symmetric
+  `vs_uniforms_vec4` block, the legacy `attribute`/`varying` stage I/O, and the full
+  matrix-uniform expansion — not just pixel-shader-only post-process effects.
+- **Forward-compatibility with newer MonoGame.** ShadowDusk's default MGFX **v10** output
+  loads and renders correctly in MonoGame **3.8.4.1** (the latest stable 3.8.x) as well as
+  the pinned **3.8.2.1105** baseline — pixel-identical on the same bytes, within tolerance
+  of the `mgfxc` goldens — so a consumer's existing `.mgfx` keeps working forward with no
+  action required. A forward-compat regression guard backs this.
+- **Self-contained single-file CLI.** `dotnet publish -r <rid> --self-contained` produces a
+  working `mgfxc` binary that bundles the native dependencies it needs.
+
+### Validated
+
+- **OpenGL fidelity in the real MonoGame runtime (Phase 17).** All 10/10 shaders of the SM3
+  PS-only corpus load in a real MonoGame DesktopGL `Effect` and render pixel-equivalent to
+  `mgfxc` — the strongest rung of the evidence ladder: in-engine behavioral equivalence.
+- **DirectX fidelity in the real MonoGame runtime (Phase 18).** All 10/10 DX `.mgfx` of the
+  SM5 PS-only corpus load in real MonoGame WindowsDX and render pixel-equivalent to `mgfxc`,
+  via both the `d3dcompiler_47` oracle and the cross-platform vkd3d-shader backend.
+- **VS-driven fidelity in the real MonoGame runtime (Phase 28).** A VS-driven `.fx` (custom
+  vertex shader + `float4x4` transform) compiled by ShadowDusk loads in real MonoGame
+  DesktopGL **and** WindowsDX and renders pixel-identical (max delta 0) to its `mgfxc`
+  golden, on both the `d3dcompiler_47` oracle and the cross-platform vkd3d backend for DX.
+- **In-browser render proof (Phases 22–24).** Corpus `.mgfx` load and render in real
+  headless KNI WebGL (Reach and HiDef/WebGL2), and the faithful in-browser DXC → WASM path
+  emits `.mgfx` byte-identical to the CLI for the corpus.
+- **Deterministic, byte-identical output across hosts.** Same ShadowDusk version + same
+  source + same target produces the same `.mgfx` bytes on desktop, CLI, and WASM.
+
+### Known limitations
+
+- **DirectX from a pure NuGet add is not yet fully self-contained.** The GL + DXC in-memory
+  path ships self-contained from NuGet today; the DirectX vkd3d-shader native is a restored,
+  non-redistributed artifact not yet packaged as a `runtimes/<rid>/native/` asset. The
+  0.1.0 line advertises GL-from-NuGet as the self-contained path.
+- **VS-driven effects** are covered for the SpriteBatch-compatible attribute set
+  (`POSITION` / `COLOR0` / `TEXCOORD0`); additional vertex semantics (`NORMAL` / `TANGENT` /
+  skinning) and Metal/Vulkan vertex-shader paths are follow-ons.
+- **Metal (MSL) and Vulkan backends** are not yet implemented (stubs only).
+- **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
+  shipping MGCB integration path.
+
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/kaltinril/ShadowDusk/releases/tag/v0.1.0

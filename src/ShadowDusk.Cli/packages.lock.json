@@ -2,12 +2,6 @@
   "version": 2,
   "dependencies": {
     "net8.0": {
-      "Microsoft.NET.ILLink.Tasks": {
-        "type": "Direct",
-        "requested": "[8.0.27, )",
-        "resolved": "8.0.27",
-        "contentHash": "rQi9TxifHRnXP7lVRZH05DxD2/XGbJp12q0ozcbrlBlBnyyzssFTH/2vLhtKWUp2CT1qVscTrcYTFiwTyKPKRg=="
-      },
       "SharpGen.Runtime": {
         "type": "Transitive",
         "resolved": "2.1.2-beta",
@@ -118,24 +112,6 @@
           "SharpGen.Runtime": "2.1.2-beta",
           "Vortice.DXGI": "3.5.0"
         }
-      },
-      "Vortice.Dxc": {
-        "type": "CentralTransitive",
-        "requested": "[3.3.4, )",
-        "resolved": "3.3.4",
-        "contentHash": "Q+JJzn96ZKaLQFEhLRFtWau0/KxORtREpP8FTRdKN0luIdrTZIARto7OESKpOGXl3idIGP/jH8YQIupNzaR5EQ==",
-        "dependencies": {
-          "SharpGen.Runtime": "2.1.2-beta",
-          "SharpGen.Runtime.COM": "2.1.2-beta"
-        }
-      }
-    },
-    "net8.0/win-x64": {
-      "Silk.NET.SPIRV.Cross.Native": {
-        "type": "CentralTransitive",
-        "requested": "[2.23.0, )",
-        "resolved": "2.23.0",
-        "contentHash": "pY4LmIE8nYXkfCgExxksYlnYZZ4D3/AW13XNcpyp0jJDTkCpDsXL0nLOX7CM7tPS6xvkiERRd+Do2zegbl7Xtw=="
       },
       "Vortice.Dxc": {
         "type": "CentralTransitive",
