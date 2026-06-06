@@ -235,10 +235,12 @@ jobs:
         shell: pwsh
         run: ./tools/restore.ps1
 
-      # RID-targeted restore (cannot use --locked-mode: the committed solution-level
-      # lock files are RID-agnostic, and a -r restore re-evaluates the RID graph).
+      # RID-targeted restore. The committed solution-level lock files are RID-agnostic
+      # (net8.0 only), so a -r restore must re-evaluate the RID graph — it cannot run in
+      # locked mode. RestoreLockedMode is otherwise forced on in CI (Directory.Build.props,
+      # CI=true), so disable it explicitly for just this RID restore.
       - name: dotnet restore (RID)
-        run: dotnet restore src/ShadowDusk.Cli/ShadowDusk.Cli.csproj -r ${{ matrix.rid }}
+        run: dotnet restore src/ShadowDusk.Cli/ShadowDusk.Cli.csproj -r ${{ matrix.rid }} -p:RestoreLockedMode=false
 
       - name: Publish self-contained (${{ matrix.rid }})
         run: >
