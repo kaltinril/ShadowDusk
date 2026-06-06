@@ -104,13 +104,15 @@ internal sealed class CompilationPipeline
                 Code: "SD0010",
                 Message: "Effect source contains no techniques"));
 
-        // MonoGame-compatible GLSL emission (MojoShader dialect + ps_uniforms_vec4
-        // layout) currently targets the PS-only SpriteBatch post-process shape —
-        // Phase 17's scope. VS-driven effects keep the default SPIRV-Cross output
-        // (their VS<->PS varying contract would otherwise break). Gate on every pass
-        // being pixel-only so VS-driven OpenGL effects are unaffected.
-        bool monoGameGl = options.Target == PlatformTarget.OpenGL
-            && fxParsed.Techniques.All(t => t.Passes.All(p => p.VertexEntryPoint is null));
+        // MonoGame-compatible GLSL emission (MojoShader dialect) applies to EVERY GL
+        // stage — pixel (ps_uniforms_vec4, gl_FragColor, ps_s{k}) AND vertex
+        // (vs_uniforms_vec4, attribute/varying I/O, gl_Position) — so a VS-driven
+        // effect links in MonoGame's GL runtime (Phase 28). The rewrite is keyed PER
+        // STAGE inside MonoGameGlslRewriter; the pipeline just drives it on the OpenGL
+        // target. (Phase 17 originally gated this to PS-only passes; the VS rewrite now
+        // makes the gate stage-symmetric.) Non-GL targets keep the unmodified
+        // SPIRV-Cross dialect.
+        bool monoGameGl = options.Target == PlatformTarget.OpenGL;
 
         // When a reflector factory is injected and the target is OpenGL, reflection is
         // sourced from the SPIR-V blob (pure-managed, WASM-safe) instead of compiling a
@@ -160,6 +162,10 @@ internal sealed class CompilationPipeline
         var shaderSamplers      = new Dictionary<int, IReadOnlyList<SamplerReflection>>();
         var shaderCbufferNames  = new Dictionary<int, IReadOnlyList<string>>();
 
+        // cbuffer name -> which stages bind it. Drives the GL cbuffer name
+        // (vs_uniforms_vec4 for a VS-bound cbuffer, ps_uniforms_vec4 otherwise).
+        var cbufferStages       = new Dictionary<string, (bool Vs, bool Ps)>(StringComparer.Ordinal);
+
         var compileOptions = new DxcCompileOptions
         {
             EmbedDebugInfo = options.Debug,
@@ -191,7 +197,10 @@ internal sealed class CompilationPipeline
                         ShaderStage.Vertex,
                         options.Target,
                         compileOptions,
-                        applyMonoGameGlsl: false, // VS-bearing pass is never MonoGame-rewritten
+                        // VS-bearing GL passes are now MonoGame-rewritten too (Phase 28):
+                        // the rewrite is stage-symmetric, so the VS gets the vs_uniforms_vec4
+                        // + attribute/varying contract that lets MonoGame's GL runtime link it.
+                        applyMonoGameGlsl: monoGameGl,
                         reflectFromSpirv: reflectFromSpirv,
                         cancellationToken).ConfigureAwait(false);
 
@@ -201,7 +210,12 @@ internal sealed class CompilationPipeline
                     vsIndex     = compiledShaderBlobs.Count;
                     vsDxilBlob  = compileOutput.DxilBlob;
                     vsSpirvBlob = compileOutput.SpirvBlob;
-                    compiledShaderBlobs.Add(new CompiledShaderBlob(compileOutput.Blob.Value, ShaderStage.Vertex));
+                    compiledShaderBlobs.Add(new CompiledShaderBlob(compileOutput.Blob.Value, ShaderStage.Vertex)
+                    {
+                        // The GL attribute table maps each vs_v{k} → VertexElementUsage+index
+                        // so MonoGame binds the right vertex element. Empty for DX / non-GL.
+                        Attributes = compileOutput.Attributes,
+                    });
                 }
 
                 if (pass.PixelEntryPoint is not null)
@@ -296,6 +310,16 @@ internal sealed class CompilationPipeline
                     {
                         if (seenCbufferNames.Add(cb.Name))
                             allConstantBuffers.Add(cb);
+
+                        // Record which stage(s) bind this cbuffer so the GL writer can name
+                        // it ps_uniforms_vec4 / vs_uniforms_vec4 from reflection rather than
+                        // the PS-only assumption. blobIndex's stage is authoritative here.
+                        ShaderStage cbStage = compiledShaderBlobs[blobIndex].Stage;
+                        if (!cbufferStages.TryGetValue(cb.Name, out var stages))
+                            stages = (Vs: false, Ps: false);
+                        cbufferStages[cb.Name] = cbStage == ShaderStage.Vertex
+                            ? (Vs: true, stages.Ps)
+                            : (stages.Vs, Ps: true);
                     }
 
                     foreach (ParameterReflection param in reflected.Parameters)
@@ -334,7 +358,7 @@ internal sealed class CompilationPipeline
                 Passes: mgfxPasses));
         }
 
-        IReadOnlyList<ConstantBufferInfo>  constantBufferInfoList  = BuildConstantBufferInfoList(allConstantBuffers, allParameters, monoGameGl, directX);
+        IReadOnlyList<ConstantBufferInfo>  constantBufferInfoList  = BuildConstantBufferInfoList(allConstantBuffers, allParameters, monoGameGl, directX, cbufferStages);
         IReadOnlyList<EffectParameterInfo> effectParameterInfoList = BuildEffectParameterInfoList(allParameters);
 
         // Attach each shader's sampler table + constant-buffer-index list so the
@@ -425,7 +449,7 @@ internal sealed class CompilationPipeline
         }
     }
 
-    private static async Task<(Result<byte[], ShaderError> Blob, ReadOnlyMemory<byte> DxilBlob, ReadOnlyMemory<byte> SpirvBlob)>
+    private static async Task<(Result<byte[], ShaderError> Blob, ReadOnlyMemory<byte> DxilBlob, ReadOnlyMemory<byte> SpirvBlob, IReadOnlyList<MgfxVertexAttributeInfo> Attributes)>
         CompileEntryPointAsync(
             IDxcShaderCompiler dxcCompiler,
             IDxbcShaderCompiler dxbcCompiler,
@@ -439,12 +463,16 @@ internal sealed class CompilationPipeline
             bool reflectFromSpirv,
             CancellationToken ct)
     {
+        IReadOnlyList<MgfxVertexAttributeInfo> noAttributes = Array.Empty<MgfxVertexAttributeInfo>();
+
         if (platform == PlatformTarget.DirectX)
         {
             // DX11: compile SM5 DXBC via d3dcompiler_47 (the fxc oracle). DXC's
             // DirectX target only emits SM6 DXIL, which MonoGame's DX11 runtime
             // rejects. The DXBC bytes ARE the shader payload AND the reflection
             // source (carried in the dxilBlob slot — reflected as DXBC upstream).
+            // DX binds vertex inputs via the DXBC input signature, not a GL attribute
+            // table — so no attributes here.
             var dxbcRequest = new D3DCompileRequest
             {
                 HlslSource     = preprocessed.Text,
@@ -457,10 +485,10 @@ internal sealed class CompilationPipeline
 
             var dxbcResult = await dxbcCompiler.CompileAsync(dxbcRequest, ct).ConfigureAwait(false);
             if (dxbcResult.IsFailure)
-                return (Result<byte[], ShaderError>.Fail(dxbcResult.Error), default, default);
+                return (Result<byte[], ShaderError>.Fail(dxbcResult.Error), default, default, noAttributes);
 
             ReadOnlyMemory<byte> dxbc = dxbcResult.Value.Bytes;
-            return (Result<byte[], ShaderError>.Ok(dxbc.ToArray()), dxbc, default);
+            return (Result<byte[], ShaderError>.Ok(dxbc.ToArray()), dxbc, default, noAttributes);
         }
 
         if (platform == PlatformTarget.OpenGL)
@@ -487,7 +515,7 @@ internal sealed class CompilationPipeline
 
                 var dxilResult = await dxcCompiler.CompileAsync(dxilRequest, ct).ConfigureAwait(false);
                 if (dxilResult.IsFailure)
-                    return (Result<byte[], ShaderError>.Fail(dxilResult.Error), default, default);
+                    return (Result<byte[], ShaderError>.Fail(dxilResult.Error), default, default, noAttributes);
 
                 dxilBlob = dxilResult.Value.Bytes;
             }
@@ -505,26 +533,45 @@ internal sealed class CompilationPipeline
 
             var spirvResult = await dxcCompiler.CompileAsync(spirvRequest, ct).ConfigureAwait(false);
             if (spirvResult.IsFailure)
-                return (Result<byte[], ShaderError>.Fail(spirvResult.Error), default, default);
+                return (Result<byte[], ShaderError>.Fail(spirvResult.Error), default, default, noAttributes);
 
             // Transpile SPIR-V → GLSL.
             var transpileResult = glslTranspiler.Transpile(spirvResult.Value.Bytes, ct);
             if (transpileResult.IsFailure)
-                return (Result<byte[], ShaderError>.Fail(transpileResult.Error), default, default);
+                return (Result<byte[], ShaderError>.Fail(transpileResult.Error), default, default, noAttributes);
 
             // Rewrite SPIRV-Cross GLSL into MonoGame/MojoShader-compatible GLSL so it
-            // links with MonoGame's built-in SpriteEffect VS (varying names, ps_oC0
-            // fragment-output alias, ps_sN samplers, ps_uniforms_vec4, legacy dialect).
-            // Only for PS-only effects. The rewriter fails loudly (MonoGameGlslRewrite-
+            // links with MonoGame's GL runtime. Per-stage (Phase 28): the PIXEL stage
+            // gets varying reads, the ps_oC0 fragment-output alias, ps_sN samplers, and
+            // ps_uniforms_vec4; the VERTEX stage gets attribute inputs, varying writes,
+            // gl_Position, and vs_uniforms_vec4 (its attribute table is returned for the
+            // .mgfx shader record). The rewriter fails loudly (MonoGameGlslRewrite-
             // Exception) on constructs that can't be lowered to a profile-agnostic GLSL
-            // payload (e.g. LOD/proj/grad sampling) — surface that as a compile error
-            // rather than letting it crash, so HiDef never silently breaks.
+            // payload (e.g. LOD/proj/grad sampling, an unmodelled vertex semantic) —
+            // surface that as a compile error rather than letting it crash.
             string glslText;
+            IReadOnlyList<MgfxVertexAttributeInfo> attributes = noAttributes;
             if (applyMonoGameGlsl)
             {
                 try
                 {
-                    glslText = MonoGameGlslRewriter.Rewrite(transpileResult.Value.Text, stage).Glsl;
+                    MonoGameGlslResult rewritten = MonoGameGlslRewriter.Rewrite(transpileResult.Value.Text, stage);
+                    glslText = rewritten.Glsl;
+                    if (stage == ShaderStage.Vertex && rewritten.Attributes.Count > 0)
+                    {
+                        // Map the rewriter's discovered attributes (vs_v{k} + usage/index)
+                        // to the .mgfx attribute-table record. Location is 0 for every
+                        // attribute — matching mgfxc's goldens; MonoGame's GL runtime
+                        // binds by the (usage,index) pair and the attribute NAME, not by
+                        // this field.
+                        attributes = rewritten.Attributes
+                            .Select(a => new MgfxVertexAttributeInfo(
+                                Name:     a.Name,
+                                Usage:    a.Usage,
+                                Index:    a.Index,
+                                Location: 0))
+                            .ToList();
+                    }
                 }
                 catch (MonoGameGlslRewriteException ex)
                 {
@@ -533,7 +580,7 @@ internal sealed class CompilationPipeline
                         Line:    0,
                         Column:  0,
                         Code:    "SD0210",
-                        Message: ex.Message)), default, default);
+                        Message: ex.Message)), default, default, noAttributes);
                 }
             }
             else
@@ -545,7 +592,8 @@ internal sealed class CompilationPipeline
             return (
                 Result<byte[], ShaderError>.Ok(glslBytes),
                 dxilBlob,
-                spirvResult.Value.Bytes);
+                spirvResult.Value.Bytes,
+                attributes);
         }
         else
         {
@@ -563,13 +611,13 @@ internal sealed class CompilationPipeline
 
             var result = await dxcCompiler.CompileAsync(request, ct).ConfigureAwait(false);
             if (result.IsFailure)
-                return (Result<byte[], ShaderError>.Fail(result.Error), default, default);
+                return (Result<byte[], ShaderError>.Fail(result.Error), default, default, noAttributes);
 
             ReadOnlyMemory<byte> blob      = result.Value.Bytes;
             ReadOnlyMemory<byte> dxilBlob  = platform == PlatformTarget.DirectX ? blob : default;
             ReadOnlyMemory<byte> spirvBlob = platform != PlatformTarget.DirectX ? blob : default;
 
-            return (Result<byte[], ShaderError>.Ok(blob.ToArray()), dxilBlob, spirvBlob);
+            return (Result<byte[], ShaderError>.Ok(blob.ToArray()), dxilBlob, spirvBlob, noAttributes);
         }
     }
 
@@ -577,7 +625,8 @@ internal sealed class CompilationPipeline
         IReadOnlyList<ConstantBufferReflection> constantBuffers,
         IReadOnlyList<ParameterReflection> parameters,
         bool monoGameGl,
-        bool directX)
+        bool directX,
+        IReadOnlyDictionary<string, (bool Vs, bool Ps)> cbufferStages)
     {
         // For MonoGame's GL runtime, free uniforms bind as a single vec4[] array
         // named after the cbuffer (ps_uniforms_vec4) via glUniform4fv. Each free
@@ -611,9 +660,22 @@ internal sealed class CompilationPipeline
             }
 
             // DX cbuffer record carries an empty name (MonoGame's DX11 runtime binds
-            // the cbuffer by slot, not by name); GL uses ps_uniforms_vec4; both keep
-            // HLSL register-aligned offsets except the GL vec4[] remap above.
-            string cbName = gl ? "ps_uniforms_vec4" : directX ? string.Empty : cb.Name;
+            // the cbuffer by slot, not by name); GL names it after the binding stage —
+            // vs_uniforms_vec4 for a VS-bound cbuffer, ps_uniforms_vec4 otherwise (the
+            // name MonoGame's GL runtime keys glUniform4fv on). A cbuffer bound by BOTH
+            // stages is named ps_uniforms_vec4 (the pixel stage's view), matching the
+            // PS-only corpus's prior behaviour. Attribution comes from reflection
+            // (cbufferStages), not the old PS-only assumption.
+            string cbName;
+            if (gl)
+            {
+                bool vsBound = cbufferStages.TryGetValue(cb.Name, out var stages) && stages.Vs && !stages.Ps;
+                cbName = vsBound ? "vs_uniforms_vec4" : "ps_uniforms_vec4";
+            }
+            else
+            {
+                cbName = directX ? string.Empty : cb.Name;
+            }
 
             result.Add(new ConstantBufferInfo(
                 Name:             cbName,

@@ -229,14 +229,168 @@ void main()
         result.Glsl.Should().Contain("floor((abs(vTexCoord0.x) * 8.0) + 0.5)");
     }
 
-    [Fact]
-    public void VertexStage_ReturnsInputUnchanged()
-    {
-        var result = MonoGameGlslRewriter.Rewrite(ExampleA, ShaderStage.Vertex);
+    // ---- Vertex stage (Phase 28). SPIRV-Cross VS output for a custom VS taking a
+    // float4x4 transform + the SpriteBatch vertex set (POSITION0 / COLOR0 / TEXCOORD0),
+    // captured verbatim from DXC→SPIRV-Cross for VsTransformColorTexture.fx. The
+    // FlipVertexY / FixupDepthConvention options are on, so SPIRV-Cross already bakes
+    // the gl_Position Y-flip + depth-range conversion (no posFixup needed). ----
 
-        result.Glsl.Should().Be(ExampleA);
-        result.Samplers.Should().BeEmpty();
-        result.UniformRegisterCount.Should().Be(0);
+    private const string VertexExample = """
+#version 140
+#ifdef GL_ARB_shading_language_420pack
+#extension GL_ARB_shading_language_420pack : require
+#endif
+
+layout(binding = 0, std140) uniform type_Globals
+{
+    mat4 WorldViewProjection;
+    vec4 Tint;
+} _Globals;
+
+in vec4 in_var_POSITION0;
+in vec4 in_var_COLOR0;
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_COLOR0;
+out vec2 out_var_TEXCOORD0;
+
+void main()
+{
+    gl_Position = _Globals.WorldViewProjection * in_var_POSITION0;
+    out_var_COLOR0 = in_var_COLOR0 * _Globals.Tint;
+    out_var_TEXCOORD0 = in_var_TEXCOORD0;
+    gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;
+    gl_Position.y = -gl_Position.y;
+}
+""";
+
+    [Fact]
+    public void VertexStage_EmitsMojoShaderDialect()
+    {
+        var result = MonoGameGlslRewriter.Rewrite(VertexExample, ShaderStage.Vertex);
+
+        // Vertex constant buffer is named vs_uniforms_vec4 (NOT ps_), and a mat4
+        // occupies four registers + Tint one => array length 5.
+        result.Glsl.Should().Contain("uniform vec4 vs_uniforms_vec4[5];");
+
+        // Inputs become legacy attributes vs_v{k} (vec4, declaration order).
+        result.Glsl.Should().Contain("attribute vec4 vs_v0;");
+        result.Glsl.Should().Contain("attribute vec4 vs_v1;");
+        result.Glsl.Should().Contain("attribute vec4 vs_v2;");
+
+        // Outputs become legacy varyings matching the names the PS reads.
+        result.Glsl.Should().Contain("varying vec4 vFrontColor;");
+        result.Glsl.Should().Contain("varying vec4 vTexCoord0;");
+
+        // gl_Position is written; the matrix is reconstructed from 4 registers.
+        result.Glsl.Should().Contain("gl_Position = mat4(vs_uniforms_vec4[0], vs_uniforms_vec4[1], vs_uniforms_vec4[2], vs_uniforms_vec4[3]) * vs_v0;");
+
+        // Tint follows the mat4 at register 4.
+        result.Glsl.Should().Contain("vs_uniforms_vec4[4]");
+
+        // vec2 TEXCOORD output write is swizzled to .xy (matches mgfxc's vs_oT0.xy form).
+        result.Glsl.Should().Contain("vTexCoord0.xy = vs_v2.xy;");
+
+        // No modern qualifiers / interface names / UBO survive.
+        result.Glsl.Should().NotContain("#version");
+        result.Glsl.Should().NotContain("in_var_");
+        result.Glsl.Should().NotContain("out_var_");
+        result.Glsl.Should().NotContain("type_Globals");
+        result.Glsl.Should().NotContain("_Globals");
+        result.Glsl.Should().NotContain("\nin ");
+        result.Glsl.Should().NotContain("\nout ");
+    }
+
+    [Fact]
+    public void VertexStage_AttributeTableCarriesUsageAndIndex()
+    {
+        var result = MonoGameGlslRewriter.Rewrite(VertexExample, ShaderStage.Vertex);
+
+        result.Attributes.Should().HaveCount(3);
+        // POSITION0 -> Position(0)/index 0; COLOR0 -> Color(1)/0; TEXCOORD0 -> TexCoord(2)/0.
+        result.Attributes[0].Should().BeEquivalentTo(new { Slot = 0, Name = "vs_v0", Usage = (byte)0, Index = (byte)0 });
+        result.Attributes[1].Should().BeEquivalentTo(new { Slot = 1, Name = "vs_v1", Usage = (byte)1, Index = (byte)0 });
+        result.Attributes[2].Should().BeEquivalentTo(new { Slot = 2, Name = "vs_v2", Usage = (byte)2, Index = (byte)0 });
+    }
+
+    [Fact]
+    public void Matrix_ExpandsToFourConsecutiveRegisters_IndicesMatchCbufferLayout()
+    {
+        // A cbuffer laid out as [mat4 A][float B][mat4 C] occupies registers
+        // 0..3 (A), 4 (B), 5..8 (C) — exactly the .mgfx packing
+        // (BuildConstantBufferInfoList: a mat4 = four 16-byte registers, a scalar = one).
+        // Assert the GLSL indices land on those register offsets so the rewrite agrees
+        // with the writer (a transposed/shifted matrix is a silent runtime fidelity bug).
+        const string src = """
+#version 140
+layout(binding = 0, std140) uniform type_Globals
+{
+    mat4 A;
+    float B;
+    mat4 C;
+} _Globals;
+
+in vec4 in_var_POSITION0;
+
+void main()
+{
+    gl_Position = (_Globals.A * in_var_POSITION0) * _Globals.B + _Globals.C[0];
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Vertex);
+
+        // Array length = 4 (A) + 1 (B) + 4 (C) = 9 registers.
+        result.Glsl.Should().Contain("uniform vec4 vs_uniforms_vec4[9];");
+        result.UniformRegisterCount.Should().Be(9);
+
+        // A -> registers 0..3.
+        result.Glsl.Should().Contain("mat4(vs_uniforms_vec4[0], vs_uniforms_vec4[1], vs_uniforms_vec4[2], vs_uniforms_vec4[3])");
+        // B -> register 4 (scalar, .x swizzle).
+        result.Glsl.Should().Contain("vs_uniforms_vec4[4].x");
+        // C -> registers 5..8 (shifted PAST the mat4 A + scalar B).
+        result.Glsl.Should().Contain("mat4(vs_uniforms_vec4[5], vs_uniforms_vec4[6], vs_uniforms_vec4[7], vs_uniforms_vec4[8])");
+    }
+
+    [Fact]
+    public void PixelStage_Mat4Uniform_ExpandsToFourRegisters_NoTodoLeft()
+    {
+        // The PS-side mat4 /*TODO mat*/ is resolved: a pixel shader that reads a matrix
+        // free-uniform expands to the same 4-register form, and the placeholder is gone.
+        const string src = """
+#version 140
+layout(binding = 0, std140) uniform type_Globals
+{
+    mat4 ColorMatrix;
+} _Globals;
+
+in vec4 in_var_COLOR0;
+out vec4 out_var_SV_Target0;
+
+void main()
+{
+    out_var_SV_Target0 = _Globals.ColorMatrix * in_var_COLOR0;
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        result.Glsl.Should().NotContain("TODO mat");
+        result.Glsl.Should().Contain("mat4(ps_uniforms_vec4[0], ps_uniforms_vec4[1], ps_uniforms_vec4[2], ps_uniforms_vec4[3])");
+        result.UniformRegisterCount.Should().Be(4);
+    }
+
+    [Fact]
+    public void VertexStage_UnknownSemantic_ThrowsLoudly()
+    {
+        const string src = """
+#version 140
+in vec4 in_var_BLENDWEIGHT0;
+void main()
+{
+    gl_Position = in_var_BLENDWEIGHT0;
+}
+""";
+        var act = () => MonoGameGlslRewriter.Rewrite(src, ShaderStage.Vertex);
+        act.Should().Throw<MonoGameGlslRewriteException>()
+            .WithMessage("*BLENDWEIGHT0*");
     }
 
     // ---- Slang-frontend (browser path) GLSL. SPIRV-Cross names interface vars after
