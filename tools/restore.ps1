@@ -233,9 +233,14 @@ if ($env:VCPKG_ROOT) {
 }
 
 # No automatic source found — print manual instructions.
+# NON-FATAL: SPIRV-Cross ships transitively via the Silk.NET.SPIRV.Cross.Native NuGet
+# package (resolved at runtime under runtimes/<rid>/native/), so a tools/ copy is optional
+# and its absence must NOT fail CI. This matches restore.sh, which only warns. The manual
+# steps below are for niche local scenarios that bypass the NuGet-provided native.
 Write-Warning @"
 
-SPIRV-Cross C shared library not found. Manual steps to obtain it:
+SPIRV-Cross C shared library not found in tools/ (optional — normally provided by the
+Silk.NET.SPIRV.Cross.Native NuGet package). Manual steps if you need a tools/ copy:
 
   Option A — Vulkan SDK (recommended):
     1. Install the Vulkan SDK from https://vulkan.lunarg.com/sdk/home
@@ -269,4 +274,5 @@ SPIRV-Cross C shared library not found. Manual steps to obtain it:
     #      build/libspirv-cross-c-shared.dylib      (macOS)
 "@
 
-exit 1
+# Exit 0: absence of the optional tools/ SPIRV-Cross copy is not a failure (see note above).
+exit 0

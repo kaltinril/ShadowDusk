@@ -77,13 +77,28 @@ jobs:
       - name: dotnet build
         run: dotnet build ShadowDusk.slnx --no-restore -c Release
 
-      # Unit tests only on the fast PR path. Per-assembly is unnecessary in CI: the
-      # cross-assembly GPU contention only bites the heavyweight image/integration
-      # tests, which are excluded here by the Category!=Integration filter.
-      - name: dotnet test (unit)
+      # Unit tests on the fast PR path (Category!=Integration).
+      #
+      # ImageRegressionTests compare ShadowDusk's own GL render against reference PNGs that
+      # were captured on Windows, so they drift against the Linux/macOS software-GL driver
+      # (a few shaders differ by more than tolerance) — they are a Windows-anchored rung-3
+      # proxy and run on Windows only. MgfxcCrossValidationTests compare ShadowDusk vs mgfxc
+      # on the SAME machine (driver variance cancels), so they stay in the matrix on every
+      # OS — the meaningful cross-platform render check. Cross-platform COMPILE reach is
+      # proven by the Core/HLSL/GLSL unit tests here and the integration job below.
+      - name: dotnet test (unit, Windows — includes image regression)
+        if: runner.os == 'Windows'
         run: >
           dotnet test ShadowDusk.slnx --no-build -c Release
           --filter "Category!=Integration"
+          --logger "trx;LogFileName=unit-${{ matrix.os }}.trx"
+          --results-directory TestResults/
+
+      - name: dotnet test (unit, Linux/macOS — Windows-anchored image regression excluded)
+        if: runner.os != 'Windows'
+        run: >
+          dotnet test ShadowDusk.slnx --no-build -c Release
+          --filter "Category!=Integration&FullyQualifiedName!~ImageRegressionTests"
           --logger "trx;LogFileName=unit-${{ matrix.os }}.trx"
           --results-directory TestResults/
 
