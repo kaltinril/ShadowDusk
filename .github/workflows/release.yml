@@ -1,0 +1,360 @@
+# .github/workflows/release.yml
+# Release pipeline (Phase 30 §7 + §17.2/§17.3). Fires on a `v*.*.*` tag push OR a
+# manual workflow_dispatch with a `version` input. A `validate` job guards everything:
+# the resolved version MUST equal Directory.Build.props <Version> (the single source of
+# truth, §17.1) or the run fails before anything is published.
+#
+# Pipeline:
+#   validate          → resolve + guard the version
+#   build-and-test    → 3-OS build + full test gate
+#   pack-desktop      → pack the FIVE desktop packages (Core/HLSL/GLSL/Compiler/Cli)
+#                       at the validated version, with symbols (.snupkg)
+#   publish           → per-RID self-contained `mgfxc` CLI archives
+#   nuget-push        → push every nupkg/snupkg (idempotent --skip-duplicate)
+#   github-release    → GitHub Release with the CLI archives + packages
+#
+# NOTE: ShadowDusk.Wasm (the sixth package) is packed in the §16 WASM workflow
+# (wasm.yml) because its `VerifyDxcWasmPresent` MSBuild target hard-fails the pack
+# without the restored dxcompiler.wasm + the wasm-tools workload. Its .nupkg is
+# uploaded there and pushed by the same key on its own publish.
+#
+# Native strategy is the AS-BUILT one (see ci.yml header): SPIRV-Cross + DXC are
+# transitive NuGet, vkd3d-shader is restored non-fatally. No tools/spirv-cross bundling.
+name: Release
+
+on:
+  push:
+    tags: [ 'v*.*.*' ]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 0.2.0)'
+        required: true
+        type: string
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+  DOTNET_NOLOGO: '1'
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+
+jobs:
+  # ── Resolve + guard the release version ────────────────────────────────────
+  validate:
+    name: Validate version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version (input or tag, strip leading 'v')
+        id: resolve
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify version matches Directory.Build.props
+        run: |
+          want="${{ steps.resolve.outputs.version }}"
+          have=$(grep -oP '<Version>\K[^<]+' Directory.Build.props | head -n1)
+          echo "Requested: $want   Directory.Build.props: $have"
+          if [ "$have" != "$want" ]; then
+            echo "::error::Release version ($want) != Directory.Build.props ($have). Merge a version-bump PR first (use /release)."
+            exit 1
+          fi
+
+  # ── Build + test on all 3 OS before releasing ──────────────────────────────
+  build-and-test:
+    name: Build & Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: validate
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ ubuntu-latest, macos-latest, windows-latest ]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', '**/Directory.Packages.props') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Restore native tools (Linux / macOS)
+        if: runner.os != 'Windows'
+        run: |
+          chmod +x tools/restore.sh
+          ./tools/restore.sh || true
+
+      - name: Restore native tools (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tools/restore.ps1
+
+      - name: dotnet restore
+        run: dotnet restore ShadowDusk.slnx --locked-mode
+
+      - name: dotnet build
+        run: dotnet build ShadowDusk.slnx --no-restore -c Release
+
+      - name: dotnet test (unit + integration)
+        run: >
+          dotnet test ShadowDusk.slnx --no-build -c Release
+          --settings ShadowDusk.runsettings
+          --logger "trx;LogFileName=release-test-${{ matrix.os }}.trx"
+          --results-directory TestResults/
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-test-results-${{ matrix.os }}
+          path: TestResults/*.trx
+          retention-days: 30
+
+  # ── Pack the five desktop packages (Wasm is packed in wasm.yml) ────────────
+  pack-desktop:
+    name: Pack desktop NuGet packages
+    runs-on: ubuntu-latest
+    needs: [ validate, build-and-test ]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', '**/Directory.Packages.props') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Restore native tools
+        run: |
+          chmod +x tools/restore.sh
+          ./tools/restore.sh || true
+
+      - name: dotnet restore
+        run: dotnet restore ShadowDusk.slnx --locked-mode
+
+      # Pack the five desktop packages at the validated version, with symbol
+      # packages (.snupkg). The Version override is belt-and-braces — it already
+      # equals Directory.Build.props per the validate guard — but keeps the pack
+      # explicit and matches a workflow_dispatch where the tag may not exist yet.
+      - name: Pack desktop packages
+        run: |
+          for proj in \
+            src/ShadowDusk.Core/ShadowDusk.Core.csproj \
+            src/ShadowDusk.HLSL/ShadowDusk.HLSL.csproj \
+            src/ShadowDusk.GLSL/ShadowDusk.GLSL.csproj \
+            src/ShadowDusk.Compiler/ShadowDusk.Compiler.csproj \
+            src/ShadowDusk.Cli/ShadowDusk.Cli.csproj ; do
+              dotnet pack "$proj" -c Release --no-restore -o nupkg \
+                /p:Version=${{ needs.validate.outputs.version }} \
+                /p:IncludeSymbols=true /p:SymbolPackageFormat=snupkg
+          done
+
+      - name: Verify packages were produced
+        run: |
+          ls -la nupkg/
+          count=$(find nupkg -maxdepth 1 -name '*.nupkg' | wc -l)
+          echo "Found $count .nupkg files"
+          if [ "$count" -lt 5 ]; then
+            echo "::error::Expected 5 desktop .nupkg, found $count"
+            exit 1
+          fi
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: nupkg-desktop
+          path: |
+            nupkg/*.nupkg
+            nupkg/*.snupkg
+          if-no-files-found: error
+          retention-days: 30
+
+  # ── Self-contained `mgfxc` CLI publish per RID ─────────────────────────────
+  publish:
+    name: Publish CLI (${{ matrix.rid }})
+    runs-on: ${{ matrix.os }}
+    needs: [ validate, build-and-test ]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: win-x64
+            os: windows-latest
+          - rid: linux-x64
+            os: ubuntu-latest
+          - rid: osx-x64
+            os: macos-latest   # cross-publish from Apple Silicon runner
+          - rid: osx-arm64
+            os: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', '**/Directory.Packages.props') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Restore native tools (Linux / macOS)
+        if: runner.os != 'Windows'
+        run: |
+          chmod +x tools/restore.sh
+          ./tools/restore.sh || true
+
+      - name: Restore native tools (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tools/restore.ps1
+
+      # RID-targeted restore (cannot use --locked-mode: the committed solution-level
+      # lock files are RID-agnostic, and a -r restore re-evaluates the RID graph).
+      - name: dotnet restore (RID)
+        run: dotnet restore src/ShadowDusk.Cli/ShadowDusk.Cli.csproj -r ${{ matrix.rid }}
+
+      - name: Publish self-contained (${{ matrix.rid }})
+        run: >
+          dotnet publish src/ShadowDusk.Cli/ShadowDusk.Cli.csproj
+          -r ${{ matrix.rid }}
+          --self-contained
+          -c Release
+          --no-restore
+          -o publish/${{ matrix.rid }}
+          /p:Version=${{ needs.validate.outputs.version }}
+          /p:PublishSingleFile=true
+          /p:IncludeNativeLibrariesForSelfExtract=true
+          /p:EnableCompressionInSingleFile=true
+
+      - name: Verify binary exists (Linux / macOS)
+        if: runner.os != 'Windows'
+        run: |
+          test -f publish/${{ matrix.rid }}/mgfxc || \
+            (echo "::error::mgfxc binary not found in publish/${{ matrix.rid }}/" && exit 1)
+
+      - name: Verify binary exists (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "publish\${{ matrix.rid }}\mgfxc.exe")) {
+            Write-Error "mgfxc.exe not found in publish\${{ matrix.rid }}\"
+            exit 1
+          }
+
+      - name: Archive publish output (Linux / macOS)
+        if: runner.os != 'Windows'
+        run: |
+          cd publish
+          tar -czf ../shadowdusk-${{ matrix.rid }}.tar.gz ${{ matrix.rid }}/
+
+      - name: Archive publish output (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "publish\${{ matrix.rid }}\*" `
+            -DestinationPath "shadowdusk-${{ matrix.rid }}.zip"
+
+      - name: Upload publish artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: shadowdusk-${{ matrix.rid }}
+          path: |
+            shadowdusk-${{ matrix.rid }}.tar.gz
+            shadowdusk-${{ matrix.rid }}.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  # ── Push every package to NuGet.org ────────────────────────────────────────
+  nuget-push:
+    name: NuGet Push
+    runs-on: ubuntu-latest
+    needs: [ validate, pack-desktop ]
+    steps:
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Download desktop packages
+        uses: actions/download-artifact@v4
+        with:
+          name: nupkg-desktop
+          path: nupkg/
+
+      # ShadowDusk.Wasm (the 6th package) is NOT packed in this workflow: its pack
+      # needs the wasm-tools workload + the gitignored, out-of-band-built
+      # dxcompiler.wasm (VerifyDxcWasmPresent hard-fails otherwise — §17.2). It is
+      # packed in wasm.yml as the 'nupkg-wasm' artifact. download-artifact@v4 only
+      # sees artifacts from the SAME run, so within release.yml this is a best-effort
+      # no-op; the Wasm package publish is part of the §16 open tail (host the pinned
+      # .wasm so it can ride a unified release). The desktop five publish here.
+      - name: Download Wasm package (if present)
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: nupkg-wasm
+          path: nupkg/
+
+      - name: Push to NuGet.org
+        run: >
+          dotnet nuget push "nupkg/*.nupkg"
+          --api-key ${{ secrets.NUGET_API_KEY }}
+          --source https://api.nuget.org/v3/index.json
+          --skip-duplicate
+
+  # ── Create the GitHub Release with all assets ──────────────────────────────
+  github-release:
+    name: GitHub Release
+    runs-on: ubuntu-latest
+    needs: [ validate, publish, nuget-push ]
+    permissions:
+      contents: write
+    steps:
+      - name: Download all CLI archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: shadowdusk-*
+          merge-multiple: true
+          path: release-assets/
+
+      - name: Download desktop packages
+        uses: actions/download-artifact@v4
+        with:
+          name: nupkg-desktop
+          path: release-assets/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.validate.outputs.version }}
+          name: v${{ needs.validate.outputs.version }}
+          files: release-assets/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
