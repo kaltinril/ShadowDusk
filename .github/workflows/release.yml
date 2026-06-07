@@ -76,15 +76,15 @@ jobs:
     name: Build & Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs: validate
-    timeout-minutes: 30
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        # TEMPORARY HOTFIX (2026-06-07): macOS dropped from the release gate. The macOS
-        # `dotnet test` host hangs after tests pass (the tests themselves are green), which
-        # would stall the publish (pack/publish need build-and-test). Windows is the
-        # validation gate; ubuntu covers cross-platform. RESTORE macOS here once the
-        # macOS test-host stall is fixed — tracked as a follow-up (see memory
+        # macOS is still out of the RELEASE gate (so a release can never stall on it), but
+        # the root cause of the macOS `dotnet test` host-exit hang is now FIXED at the source
+        # (GLFW init left a non-background Cocoa thread; GlContextFixture now skips macOS
+        # before touching GLFW). The ci.yml macOS leg validates that fix on every push;
+        # RESTORE macOS here once ci.yml's macOS leg is reliably green (see memory
         # macos-ci-test-stall). Do NOT leave macOS out long-term.
         os: [ ubuntu-latest, windows-latest ]
     steps:
@@ -280,10 +280,9 @@ jobs:
     name: Publish CLI (${{ matrix.rid }})
     runs-on: ${{ matrix.os }}
     needs: [ validate, build-and-test ]
-    # Insurance against a macOS runner stall: this is `dotnet publish` (no tests, shouldn't
-    # hang), and the nuget-push job does NOT depend on it, so the packages publish even if a
-    # per-RID CLI archive lags. Bounded so github-release isn't blocked indefinitely.
-    timeout-minutes: 25
+    # `dotnet publish` only (no tests, ~30s observed) — 10 min is ample. The nuget-push job
+    # does NOT depend on this, so the packages publish even if a per-RID CLI archive lags.
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:

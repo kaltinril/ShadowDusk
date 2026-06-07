@@ -35,10 +35,12 @@ jobs:
   build-and-test:
     name: Build & Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # Bound any leg so the known macOS `dotnet test` host-exit hang can't burn hours
-    # (the tests pass; the host stalls on exit). Proper fix tracked in memory
-    # macos-ci-test-stall. fail-fast:false keeps Windows/ubuntu reporting independently.
-    timeout-minutes: 25
+    # Build + unit tests finish in ~1-3 min per OS; 10 is generous headroom. This also
+    # bounds the macOS `dotnet test` host-exit stall — now fixed at the source (the GLFW
+    # init that left a non-background Cocoa thread is skipped on macOS, see
+    # GlContextFixture), with this as the backstop. fail-fast:false keeps each OS
+    # reporting independently.
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -126,6 +128,9 @@ jobs:
     name: Integration Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs: build-and-test
+    # Heavier than the unit gate (CLI child-process spawn + native DXC/SPIRV-Cross), but
+    # the runsettings TestSessionTimeout caps the suite at 5 min; 12 is a safe job backstop.
+    timeout-minutes: 12
     if: |
       github.event_name == 'push' ||
       contains(github.event.pull_request.labels.*.name, 'run-integration')

@@ -1,5 +1,6 @@
 #nullable enable
 
+using System.Runtime.InteropServices;
 using Silk.NET.Maths;
 using Silk.NET.OpenGL;
 using Silk.NET.Windowing;
@@ -84,6 +85,25 @@ public sealed class GlContextFixture : IAsyncLifetime
 
     public Task InitializeAsync()
     {
+        // macOS: skip BEFORE touching GLFW. Two reasons:
+        //   1. Native macOS OpenGL caps the Compatibility profile at 2.1, so the GL 3.3
+        //      *Compatibility* context this suite requires (to link both modern GLSL 3.30+
+        //      and legacy GLSL ES `varying`/`gl_FragColor` in one context) cannot be created
+        //      — these tests would skip on macOS regardless.
+        //   2. More importantly, initializing GLFW on macOS spins up Cocoa / NSApplication
+        //      state on a non-background thread that prevents the test-host process from
+        //      EXITING after the run completes (the "macOS `dotnet test` passes then the host
+        //      hangs on exit until the job timeout" stall). TestSessionTimeout / --blame-hang
+        //      never catch it because the tests themselves finish fine; it's process exit that
+        //      hangs. Skipping before GLFW init avoids creating that thread entirely.
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        {
+            IsSkipped  = true;
+            SkipReason = "OpenGL 3.3 Compatibility is unavailable on macOS (native GL caps "
+                       + "Compatibility at 2.1); the ImageTests render proxy is skipped on macOS.";
+            return Task.CompletedTask;
+        }
+
         try
         {
             // Ensure the GLFW backend is chosen even if other windowing
