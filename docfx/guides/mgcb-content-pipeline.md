@@ -4,12 +4,12 @@ MonoGame's content build tool, **MGCB**, compiles `.fx` shaders by shelling out 
 
 ## Tier-1: PATH override (the shipping path)
 
-MGCB invokes whatever `mgfxc` it finds. Put ShadowDusk's `mgfxc` first on `PATH`:
+MGCB invokes whatever `mgfxc` it finds. Put ShadowDusk's `ShadowDuskCLI` first on `PATH`:
 
 ```sh
 dotnet tool install --global ShadowDusk.Cli
 # ensure the dotnet global-tools dir is on PATH (it is by default for `dotnet tool`),
-# and that ShadowDusk's mgfxc resolves before any MonoGame-provided mgfxc.
+# and that ShadowDusk's ShadowDuskCLI resolves before any MonoGame-provided mgfxc.
 ```
 
 Then run your content build as usual:

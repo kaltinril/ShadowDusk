@@ -22,7 +22,7 @@ var result = await compiler.CompileAsync(hlslSource,
     new ShadowDusk.Core.CompilerOptions { Target = ShadowDusk.Core.PlatformTarget.OpenGL });
 ```
 
-## The CLI tool (`mgfxc`)
+## The CLI tool (`ShadowDuskCLI`)
 
 Install the drop-in `mgfxc` replacement as a global tool:
 
@@ -30,7 +30,7 @@ Install the drop-in `mgfxc` replacement as a global tool:
 dotnet tool install --global ShadowDusk.Cli
 ```
 
-This provides an `mgfxc` command with the same flags and `.mgfx` output as MonoGame's tool. See the [CLI Reference](../cli/index.md) and the [Drop-in mgfxc](../guides/dropin-mgfxc.md) guide.
+This provides a `ShadowDuskCLI` command with the same flags and `.mgfx` output as MonoGame's tool. See the [CLI Reference](../cli/index.md) and the [Drop-in mgfxc](../guides/dropin-mgfxc.md) guide.
 
 > **Default-target caveat:** the CLI's default `/Profile` is **`DirectX_11`**, while the library's <xref:ShadowDusk.Core.CompilerOptions.Target> default is **`OpenGL`**. Always pass the target you want explicitly. This is called out again on the [Quickstart](in-memory-quickstart.md) and [CLI Reference](../cli/index.md) pages.
 

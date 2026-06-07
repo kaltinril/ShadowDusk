@@ -12,6 +12,7 @@
     <ToolCommandName>ShadowDuskCLI</ToolCommandName>
     <PackageId>ShadowDusk.Cli</PackageId>
     <Description>Cross-platform drop-in replacement for MonoGame's mgfxc shader compiler.</Description>
+    <PackageIcon>ShadowDuskFavIcon.png</PackageIcon>
 
     <!-- Self-contained single-file publish is a PUBLISH-TIME concern, driven entirely by
          release.yml's per-RID self-contained publish (PublishSingleFile +
@@ -24,6 +25,11 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="ShadowDusk.Core.Tests" />
+  </ItemGroup>
+
+  <!-- Pack the CLI's package icon (shown on nuget.org). Sourced from the repo-root brand image. -->
+  <ItemGroup>
+    <None Include="..\..\Brand\ShadowDuskFavIcon.png" Pack="true" PackagePath="\" Visible="false" />
   </ItemGroup>
 
   <ItemGroup>
