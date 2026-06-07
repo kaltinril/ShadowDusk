@@ -6,7 +6,7 @@
 
 The load-bearing distinctions — internalize these, they have drifted before:
 
-- **The library *is* the product.** The deliverable is the in-memory compiler a developer references from their own game/app and calls at runtime (`IShaderCompiler.CompileAsync(fx) → .mgfx bytes`). The **CLI** (`dotnet tool` `mgfxc`) and the **MGCB plugin** are *delivery shapes of the same library* for build-time use. The **browser / WASM shader-fiddle app is ONLY a sample / test of reach — never the product.** Do not let sample work redefine the goal.
+- **The library *is* the product.** The deliverable is the in-memory compiler a developer references from their own game/app and calls at runtime (`IShaderCompiler.CompileAsync(fx) → .mgfx bytes`). The **CLI** (`dotnet tool` `ShadowDuskCLI`) and the **MGCB plugin** are *delivery shapes of the same library* for build-time use. The **browser / WASM shader-fiddle app is ONLY a sample / test of reach — never the product.** Do not let sample work redefine the goal.
 - **One pipeline, everywhere — NO substitute compilers.** Every host (desktop, CLI, WASM/browser) runs the **same faithful pipeline**: HLSL →`[DXC]`→ SPIR-V →`[SPIRV-Cross]`→ GLSL →`[managed: reflect + MojoShader-dialect rewrite + MGFX writer]`→ `.mgfx` (or `vkd3d-shader` → DXBC for DirectX). A host **must not** swap in a *different* frontend/compiler (e.g. a different HLSL→SPIR-V tool) to make a platform "work" — a different compiler produces *different output* and silently breaks the "identical to `mgfxc`" promise. If a faithful component can't run on a host yet, that host's runtime-compile is **not done** — that is never a licence to substitute.
 - **"Self-contained" is a hard requirement.** The user gets the NuGet package and it just works on their OS — the native pieces the pipeline needs ride *inside the package* (transitively, as native assets), never as a separate manual install. "Add the package, call the API" is the entire setup.
 - **The bar is the real runtime, not our tests.** See *What success actually means* below — only ShadowDusk's `.mgfx` loading in MonoGame's `Effect` and rendering like `mgfxc`'s proves the promise.
@@ -18,7 +18,7 @@ ShadowDusk is a cross-platform HLSL shader compiler for MonoGame and KNI. Its fi
 1. **OS-agnostic compilation** — compile `.fx` shaders on Linux, macOS, or Windows with no Wine or Windows SDK required.
 2. **DirectX and OpenGL targets** — produce DXBC (DirectX 11) or GLSL (OpenGL/WebGL) output from a single HLSL source.
 3. **Drop-in `mgfxc` replacement** — transparent substitute for MonoGame's Windows-only `mgfxc` tool; same CLI flags, same `.mgfx` output, same exit codes and error format so existing content pipelines require zero changes.
-4. **CLI tool** — `dotnet tool` named `mgfxc`; usable standalone, from MGCB, or from any build script.
+4. **CLI tool** — `dotnet tool` named `ShadowDuskCLI`; usable standalone, from MGCB, or from any build script.
 5. **In-memory & WASM-capable** — the same library compiles in-process / in-memory at runtime (returns `.mgfx` bytes; no temp files or child process required by the API), and is built to run inside .NET WASM so a KNI/Blazor browser game could compile shaders at runtime without a server roundtrip. **The in-browser shader-fiddle is a *sample* of this reach — not a separate product** (see *THE PURPOSE*).
 
 ### What success actually means (read this first)
@@ -61,7 +61,7 @@ ShadowDusk/
 │   ├── ShadowDusk.Metal/         # SPIR-V → MSL via SPIRV-Cross — STUB, not yet implemented
 │   ├── ShadowDusk.Compiler/      # EffectCompiler : IShaderCompiler + pipeline orchestration —
 │   │                             #   the consumer-facing product NuGet (the in-memory library)
-│   ├── ShadowDusk.Cli/           # CLI entry-point (dotnet tool `mgfxc`)
+│   ├── ShadowDusk.Cli/           # CLI entry-point (dotnet tool `ShadowDuskCLI`)
 │   ├── ShadowDusk.MgcbPlugin/    # MGCB content-processor plugin — STUB/scaffold (Tier-1 PATH override is the shipping MGCB path)
 │   └── ShadowDusk.Wasm/          # In-browser WASM IShaderCompiler (WasmShaderCompiler); [JSImport] to WASM-compiled DXC + SPIRV-Cross
 ├── tests/
@@ -94,7 +94,7 @@ ShadowDusk/
 - **Build**: `dotnet build` / `dotnet test`
 - **Native interop**: `Vortice.Dxc` NuGet for DXC; P/Invoke (via `Silk.NET`) for the SPIRV-Cross C API; vkd3d-shader + `d3dcompiler_47` for the DXBC backend
 - **WASM interop**: `[JSImport]` / `[JSExport]` (.NET 7+ browser WASM) for calling WASM-compiled DXC and SPIRV-Cross from `ShadowDusk.Wasm`
-- **Packaging**: NuGet — the `ShadowDusk.Compiler` library (the product), the `ShadowDusk.Wasm` self-registering (Razor SDK) package, and the `mgfxc` `dotnet tool` (`ShadowDusk.Cli`). An MGCB plugin NuGet is a future scaffold.
+- **Packaging**: NuGet — the `ShadowDusk.Compiler` library (the product), the `ShadowDusk.Wasm` self-registering (Razor SDK) package, and the `ShadowDuskCLI` `dotnet tool` (`ShadowDusk.Cli`). An MGCB plugin NuGet is a future scaffold.
 
 ## Core Design Constraints
 
@@ -154,12 +154,12 @@ dotnet pack src/ShadowDusk.Cli/ShadowDusk.Cli.csproj
 
 ## Releases (how a release works)
 
-ShadowDusk ships as **six NuGet packages** — `ShadowDusk.{Core,HLSL,GLSL,Compiler,Cli,Wasm}` — plus the `mgfxc` dotnet tool (`ShadowDusk.Cli`), all at **one shared version**. The release machinery is Phase 30 (`plan/DONE/` once archived): `release.yml`, the `/release` skill, `CHANGELOG.md`, `RELEASING.md`.
+ShadowDusk ships as **six NuGet packages** — `ShadowDusk.{Core,HLSL,GLSL,Compiler,Cli,Wasm}` — plus the `ShadowDuskCLI` dotnet tool (`ShadowDusk.Cli`), all at **one shared version**. The release machinery is Phase 30 (`plan/DONE/` once archived): `release.yml`, the `/release` skill, `CHANGELOG.md`, `RELEASING.md`.
 
 - **Single source of version truth: `Directory.Build.props` `<Version>`.** Bump that one line. **NEVER** add a `<PackageVersion>` *property* to a csproj — it desyncs package versions and collides with Central Package Management's `<PackageVersion Include=… />` *items* in `Directory.Packages.props` (different MSBuild constructs that share a name). `dotnet pack` flows `<Version>` to all packages.
 - **To cut a release, use the `/release` skill** (`.claude/skills/release/SKILL.md`): it bumps `<Version>`, moves `CHANGELOG.md` `[Unreleased]` → a dated section, opens a PR, waits for CI, merges, then triggers the publish. `RELEASING.md` is the human runbook (prereqs: `NUGET_API_KEY` secret + nuget.org ownership of the six IDs).
 - **What triggers a publish:** `.github/workflows/release.yml` fires on a **`v*.*.*` tag push** *or* **Actions → Release → Run workflow** (manual `workflow_dispatch` with a `version` input). A `validate` job **fails the run unless the tag/input equals `Directory.Build.props` `<Version>`** — so bump + merge the version first, *then* tag/dispatch.
-- **What the publish does:** builds + tests on all 3 OS, packs the six packages (+ symbols) and the tool, pushes to nuget.org (`--skip-duplicate`, so re-runs are idempotent), and cuts a GitHub Release with per-RID self-contained `mgfxc` binaries.
+- **What the publish does:** builds + tests on all 3 OS, packs the six packages (+ symbols) and the tool, pushes to nuget.org (`--skip-duplicate`, so re-runs are idempotent), and cuts a GitHub Release with per-RID self-contained `ShadowDuskCLI` binaries.
 - **CI (`ci.yml`)** gates every push/PR on Linux/macOS/Windows. The Phase-34 advanced-texture compile tests currently run **Windows-only** (a real Linux/macOS DXC reach gap); the macOS leg can queue (10× runner) but the repo is public so minutes aren't capped.
 - Release commits/PRs follow the **Git Commit Conventions** above — no co-author / tool-attribution trailers.
 

@@ -4,7 +4,7 @@ This is the human runbook for cutting a ShadowDusk release. The `/release` skill
 (`.claude/skills/release/SKILL.md`) automates every step below; this document is the
 ground truth it follows, and the fallback when you cut a release by hand.
 
-A release publishes **all six** `ShadowDusk.*` NuGet packages plus the `mgfxc` `dotnet tool`
+A release publishes **all six** `ShadowDusk.*` NuGet packages plus the `ShadowDuskCLI` `dotnet tool`
 to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub Release.
 
 | Package | What it is |
@@ -13,7 +13,7 @@ to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub 
 | `ShadowDusk.HLSL` | FX9 pre-parser, DXC integration, vkd3d-shader / `d3dcompiler_47` DXBC backends |
 | `ShadowDusk.GLSL` | SPIR-V → GLSL via SPIRV-Cross + MojoShader-dialect rewriter |
 | `ShadowDusk.Compiler` | The consumer-facing product library (`EffectCompiler : IShaderCompiler`) |
-| `ShadowDusk.Cli` | The `mgfxc` `dotnet tool` |
+| `ShadowDusk.Cli` | The `ShadowDuskCLI` `dotnet tool` |
 | `ShadowDusk.Wasm` | The `net8.0-browser` in-browser compiler |
 
 ---
@@ -56,8 +56,8 @@ six packages (and their inter-package dependency ranges) at the same version.
 > those pin third-party dependency versions under Central Package Management. Leave them
 > alone.)
 
-To bump for a release, change that one line (e.g. `0.1.0` → `0.2.0`), update
-`CHANGELOG.md` (move `[Unreleased]` into a dated `[0.2.0]` section, leave a fresh empty
+To bump for a release, change that one line (e.g. `0.1.0` → `0.1.1`), update
+`CHANGELOG.md` (move `[Unreleased]` into a dated `[0.1.1]` section, leave a fresh empty
 `[Unreleased]`), update the version examples in this file, commit, and merge to `main` via PR.
 
 ---
@@ -72,13 +72,13 @@ After the version-bump PR is merged to `main`:
 
 ```bash
 git checkout main && git pull
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.1.1
+git push origin v0.1.1
 ```
 
 ### Option B — manual dispatch
 
-**Actions → Release → Run workflow**, and enter the `version` input (e.g. `0.2.0`, no
+**Actions → Release → Run workflow**, and enter the `version` input (e.g. `0.1.1`, no
 leading `v`). On dispatch the workflow also creates and pushes the matching `v<version>` tag
 so the GitHub Release anchors to a tag.
 
@@ -87,7 +87,7 @@ so the GitHub Release anchors to a tag.
 Before anything is packed or pushed, the `validate` job resolves the requested version (from
 the tag or the dispatch input, stripping a leading `v`) and compares it against
 `Directory.Build.props` `<Version>`. **If they disagree, the workflow fails fast and
-publishes nothing.** A `v0.2.0` tag against a `Directory.Build.props` that still says `0.1.0`
+publishes nothing.** A `v0.1.1` tag against a `Directory.Build.props` that still says `0.1.0`
 is rejected — merge the version-bump PR first (the `/release` skill does this for you).
 
 ---
@@ -96,7 +96,7 @@ is rejected — merge the version-bump PR first (the `/release` skill does this 
 
 1. **`validate`** — resolve + verify the version against `Directory.Build.props`.
 2. **build + test** on the 3-OS matrix (Linux / macOS / Windows).
-3. **publish** self-contained `mgfxc` binaries per RID (`win-x64`, `linux-x64`, `osx-x64`,
+3. **publish** self-contained `ShadowDuskCLI` binaries per RID (`win-x64`, `linux-x64`, `osx-x64`,
    `osx-arm64`) and archive them.
 4. **pack + push** all six `ShadowDusk.*` packages (`.nupkg` + `.snupkg` symbols) to
    nuget.org at the validated version, with `--skip-duplicate` (re-running a release no-ops
@@ -112,18 +112,18 @@ is rejected — merge the version-bump PR first (the `/release` skill does this 
 1. **nuget.org shows all six at the new version.** Check each of
    `ShadowDusk.{Core,HLSL,GLSL,Compiler,Cli,Wasm}` is listed at `<version>` (indexing can
    take a few minutes after push).
-2. **The `mgfxc` tool installs and runs:**
+2. **The `ShadowDuskCLI` tool installs and runs:**
 
    ```bash
-   dotnet tool install -g ShadowDusk.Cli --version 0.2.0
-   mgfxc --help
+   dotnet tool install -g ShadowDusk.Cli --version 0.1.1
+   ShadowDuskCLI --help
    ```
 
    It should print usage and exit with the `mgfxc`-compatible exit code.
 3. **The consumer (GL) self-contained path works on a clean machine:**
 
    ```bash
-   dotnet add package ShadowDusk.Compiler --version 0.2.0
+   dotnet add package ShadowDusk.Compiler --version 0.1.1
    ```
 
    then compile a `.fx` → GL `.mgfx` in memory. This restores `Core/HLSL/GLSL` plus

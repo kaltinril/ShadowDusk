@@ -8,22 +8,22 @@ ShadowDusk's CLI tool is a **transparent substitute** for MonoGame's `mgfxc`: sa
 dotnet tool install --global ShadowDusk.Cli
 ```
 
-This registers an `mgfxc` command.
+This registers a `ShadowDuskCLI` command.
 
 ## Usage
 
 ```sh
-mgfxc <SourceFile> <OutputFile> [options]
+ShadowDuskCLI <SourceFile> <OutputFile> [options]
 ```
 
 Output is **positional** — `<SourceFile>` then `<OutputFile>`. There is **no** `/Output:` flag. See the [full CLI Reference](../cli/index.md) for every flag.
 
 ```sh
 # Compile for OpenGL
-mgfxc MyShader.fx MyShader.mgfx /Profile:OpenGL
+ShadowDuskCLI MyShader.fx MyShader.mgfx /Profile:OpenGL
 
 # Compile for DirectX 11 (the CLI default profile)
-mgfxc MyShader.fx MyShader.mgfx /Profile:DirectX_11
+ShadowDuskCLI MyShader.fx MyShader.mgfx /Profile:DirectX_11
 ```
 
 > **Default profile:** with no `/Profile`, the CLI defaults to **`DirectX_11`** (matching `mgfxc`). Note this differs from the **library** default (`CompilerOptions.Target = OpenGL`). See [Parameters & Caveats](parameters-and-caveats.md).
@@ -32,8 +32,8 @@ mgfxc MyShader.fx MyShader.mgfx /Profile:DirectX_11
 
 Two common patterns:
 
-1. **PATH override (Tier-1).** Put ShadowDusk's `mgfxc` ahead of MonoGame's on `PATH` so MGCB and any script that shells out to `mgfxc` pick it up unchanged. This is the shipping MGCB integration path — see [MGCB Content Pipeline](mgcb-content-pipeline.md).
-2. **Explicit invocation.** Call `mgfxc` directly from your build script / Makefile / CI step.
+1. **PATH override (Tier-1).** Put ShadowDusk's `ShadowDuskCLI` ahead of MonoGame's `mgfxc` on `PATH` so MGCB and any script that shells out to `mgfxc` pick it up unchanged. This is the shipping MGCB integration path — see [MGCB Content Pipeline](mgcb-content-pipeline.md).
+2. **Explicit invocation.** Call `ShadowDuskCLI` directly from your build script / Makefile / CI step.
 
 Because the flags, output, and exit codes match, nothing downstream needs to know it swapped tools.
 

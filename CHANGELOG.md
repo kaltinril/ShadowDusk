@@ -18,6 +18,32 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+## [0.1.1] - 2026-06-07
+
+Maintenance release: the CLI is rebranded to `ShadowDuskCLI`, plus release-pipeline and CI
+reliability fixes. The product libraries (`Core` / `HLSL` / `GLSL` / `Compiler` / `Wasm`)
+are functionally identical to 0.1.0 — they remain platform-agnostic .NET packages that work
+for Linux, macOS, and Windows consumers from a single install.
+
+### Changed
+
+- **CLI renamed `mgfxc` → `ShadowDuskCLI`.** The `dotnet tool` command and the self-contained
+  binary now ship under ShadowDusk's own brand rather than the name of the tool they replace.
+  The NuGet package id is unchanged (`ShadowDusk.Cli`). To use it as a drop-in for MonoGame's
+  content pipeline, point MGCB's `ExternalTool` at `ShadowDuskCLI` (or alias it to `mgfxc`).
+
+### Fixed
+
+- **Release now produces the per-RID self-contained CLI binaries.** The single-file publish
+  names the apphost after the assembly, so the GitHub Release verify/archive steps now target
+  `ShadowDuskCLI`; 0.1.0's `Publish CLI` jobs failed looking for a `mgfxc` binary.
+- **macOS CI no longer hangs.** The ImageTests GL fixture initialized GLFW on macOS, leaving a
+  non-background Cocoa thread that kept the test host from exiting after a green run. The GL
+  render proxy is now correctly treated as N/A on macOS (Apple deprecated OpenGL; the proxy is
+  covered on Linux + Windows), so macOS is back in the release gate and completes in seconds.
+- **Quieter, tighter CI.** Doc-only pushes skip the build matrix, the WASM/browser workflow is
+  on-demand, and CI job timeouts were tightened from 25–30 min to 10–12 min.
+
 ## [0.1.0] - 2026-06-07
 
 First public release. A single faithful HLSL → `.mgfx` pipeline
@@ -107,5 +133,6 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/kaltinril/ShadowDusk/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/kaltinril/ShadowDusk/releases/tag/v0.1.0

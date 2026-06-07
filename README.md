@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="Brand/ShadowDuskBanner.png" alt="ShadowDusk" />
+</p>
+
 # ShadowDusk
 
 A cross-platform HLSL shader compiler for [MonoGame](https://monogame.net/) and [KNI](https://github.com/kniEngine/kni). Compile `.fx` shaders on Linux, macOS, or Windows — no Wine, no Windows SDK, no DirectX install required.
@@ -53,10 +57,10 @@ Result<CompiledShader, ShaderError[]> result =
     await compiler.CompileAsync(hlslSource, new CompilerOptions(/* … */));
 ```
 
-**CLI tool** (`dotnet tool` named `mgfxc`) — the same library wrapped for build-time use from MGCB, scripts, or the terminal:
+**CLI tool** (`dotnet tool` named `ShadowDuskCLI`) — the same library wrapped for build-time use from MGCB, scripts, or the terminal:
 
 ```sh
-mgfxc MyShader.fx MyShader.mgfx /Profile:OpenGL
+ShadowDuskCLI MyShader.fx MyShader.mgfx /Profile:OpenGL
 ```
 
 **WASM library** (`ShadowDusk.Wasm`, type `WasmShaderCompiler : IShaderCompiler`) — the same pipeline running inside .NET WASM for in-browser runtime compilation (the faithful pinned-DXC→WASM + SPIRV-Cross-WASM frontend). Returns `.mgfx` bytes in-memory with no server roundtrip. The in-browser shader fiddle ([samples/ShaderFiddle.Web](samples/ShaderFiddle.Web)) is a **sample** of this reach, not a separate product. See [`docs/HOWTO-WASM-KNI.md`](docs/HOWTO-WASM-KNI.md) for the KNI/Blazor walkthrough.
