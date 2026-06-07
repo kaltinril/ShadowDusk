@@ -34,6 +34,10 @@ on:
     branches: [ main ]
   pull_request:
     branches: [ main ]
+    # Include `labeled` so adding the `run-browser` label actually (re)triggers this
+    # workflow — the browser job is gated on that label (see its `if:`), but the default
+    # pull_request event types (opened/synchronize/reopened) don't fire on labeling.
+    types: [ opened, synchronize, reopened, labeled ]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
