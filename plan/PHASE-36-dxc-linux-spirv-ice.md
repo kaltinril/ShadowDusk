@@ -1,6 +1,8 @@
 # Phase 36 — DXC SPIR-V "Internal Compiler error" on the Linux Debug-CLI / spawned-process compile path
 
-**Status:** 🟠 **Open — scope CORRECTED 2026-06-07 (narrower than first feared; NOT a core-reach crisis).** Created from the Phase 30 `wasm.yml` red badge investigation.
+**Status:** 🟠 **Open — ABSORBED into [Phase 37](PHASE-37-cross-platform-native-availability.md) (2026-06-07).** Created from the Phase 30 `wasm.yml` red badge investigation.
+
+> ⚠️ **Scope re-corrected 2026-06-07 (Phase 37):** this doc's TL;DR claim that "Release in-process compile works on real Linux" is **DISPROVEN**. The `ci.yml` **integration-tests** job (Release, in-process `EffectCompiler`) ICEs on ~120 ubuntu tests — including `Minimal.fx` — while the **same run's** `build-and-test` ImageTests pass 27/27. That paradox is now the crux of **Phase 37 → Finding B**. Track the Linux DXC ICE there; this doc is retained for the original Debug-CLI/spawned-process evidence and the Vortice.Dxc native facts.
 **Track:** Reach (Part 1 of THE PURPOSE) + CI quality. The desktop in-process compile works on real Linux; the gap is the `wasm.yml` browser-smoke's corpus-compile path.
 
 ---
