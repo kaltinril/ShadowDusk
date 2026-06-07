@@ -152,6 +152,17 @@ dotnet pack src/ShadowDusk.Cli/ShadowDusk.Cli.csproj
 - **No "Generated with Claude Code" / tool-attribution lines** in commit messages or PR bodies.
 - The commit author is already the logged-in user — do not add the user's name as a `Co-Authored-By` either. Authorship is implicit; no co-author trailers of any kind.
 
+## Releases (how a release works)
+
+ShadowDusk ships as **six NuGet packages** — `ShadowDusk.{Core,HLSL,GLSL,Compiler,Cli,Wasm}` — plus the `mgfxc` dotnet tool (`ShadowDusk.Cli`), all at **one shared version**. The release machinery is Phase 30 (`plan/DONE/` once archived): `release.yml`, the `/release` skill, `CHANGELOG.md`, `RELEASING.md`.
+
+- **Single source of version truth: `Directory.Build.props` `<Version>`.** Bump that one line. **NEVER** add a `<PackageVersion>` *property* to a csproj — it desyncs package versions and collides with Central Package Management's `<PackageVersion Include=… />` *items* in `Directory.Packages.props` (different MSBuild constructs that share a name). `dotnet pack` flows `<Version>` to all packages.
+- **To cut a release, use the `/release` skill** (`.claude/skills/release/SKILL.md`): it bumps `<Version>`, moves `CHANGELOG.md` `[Unreleased]` → a dated section, opens a PR, waits for CI, merges, then triggers the publish. `RELEASING.md` is the human runbook (prereqs: `NUGET_API_KEY` secret + nuget.org ownership of the six IDs).
+- **What triggers a publish:** `.github/workflows/release.yml` fires on a **`v*.*.*` tag push** *or* **Actions → Release → Run workflow** (manual `workflow_dispatch` with a `version` input). A `validate` job **fails the run unless the tag/input equals `Directory.Build.props` `<Version>`** — so bump + merge the version first, *then* tag/dispatch.
+- **What the publish does:** builds + tests on all 3 OS, packs the six packages (+ symbols) and the tool, pushes to nuget.org (`--skip-duplicate`, so re-runs are idempotent), and cuts a GitHub Release with per-RID self-contained `mgfxc` binaries.
+- **CI (`ci.yml`)** gates every push/PR on Linux/macOS/Windows. The Phase-34 advanced-texture compile tests currently run **Windows-only** (a real Linux/macOS DXC reach gap); the macOS leg can queue (10× runner) but the repo is public so minutes aren't capped.
+- Release commits/PRs follow the **Git Commit Conventions** above — no co-author / tool-attribution trailers.
+
 ## Key Concepts
 
 - **Effect pass**: A single vertex+pixel shader pair compiled to a `PassBlob`.
