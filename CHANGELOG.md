@@ -18,7 +18,7 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
-## [0.1.0] - 2026-06-06
+## [0.1.0] - 2026-06-07
 
 First public release. A single faithful HLSL → `.mgfx` pipeline
 (HLSL → DXC → SPIR-V → SPIRV-Cross → GLSL → managed reflect + MojoShader-dialect rewrite +
@@ -37,11 +37,15 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
   `Silk.NET.SPIRV.Cross.Native` transitive dependency, and DXC via `Vortice.Dxc` — so
   `dotnet add package ShadowDusk.Compiler` and call the API is the entire setup for the GL
   path on a clean machine.
-- **DirectX DXBC backend.** SM5 DXBC via the cross-platform **vkd3d-shader** library
-  (`HLSL → DXBC_TPF`), with the Windows-only `d3dcompiler_47.dll` as a correctness oracle,
-  behind the `IDxbcShaderCompiler` seam (`DxbcBackend` selector). This is what makes DirectX
-  DXBC compilable where `mgfxc` cannot run. DXC `ps_6_0`/`vs_6_0` (DXIL) is retained for the
-  DX12/KNI path.
+- **DirectX DXBC backend.** Compiles HLSL → SM5 DXBC in-process (no `fxc.exe`/`mgfxc`)
+  behind the `IDxbcShaderCompiler` seam, with two backends chosen by
+  `CompilerOptions.DxbcBackend`: the **default** `d3dcompiler_47` (Microsoft's HLSL
+  compiler — a system DLL already present on Windows; most `fxc`-faithful) and the **opt-in,
+  cross-platform** `vkd3d-shader` (`DxbcBackend.Vkd3d`) for compiling DX shaders on
+  Linux/macOS where `mgfxc` cannot run. Both render pixel-equivalent to `mgfxc` (Phase 18).
+  DXC is not used for DX11 (it emits DXIL/SM6, not DXBC/SM ≤ 5); its `ps_6_0`/`vs_6_0` output
+  is retained for the DX12/KNI path. *(Cross-platform `vkd3d` is not yet packaged in the
+  NuGet — see Known limitations.)*
 - **`mgfxc`-compatible CLI tool.** `ShadowDusk.Cli` ships as a `dotnet tool` named `mgfxc`
   (`dotnet tool install -g ShadowDusk.Cli`) — same CLI flags, same `.mgfx` output format,
   same exit codes, and MGCB-parseable stderr diagnostics, so existing MonoGame content

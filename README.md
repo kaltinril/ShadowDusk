@@ -23,7 +23,9 @@ DirectX (DX11):
     → .mgfx binary            →  MonoGame Effect loader
 ```
 
-The DirectX path uses **vkd3d-shader** (cross-platform HLSL → DXBC) as the shipping backend, with Windows-only `d3dcompiler_47` available as a correctness oracle. DXC compiles to DXIL (SM6), not the DXBC (SM ≤ 5) that MonoGame's DX11 runtime loads, so the DX11 path does not use DXC; DXC's `ps_6_0`/`vs_6_0` output is retained only for the DX12/KNI path.
+**OpenGL / WebGL is fully cross-platform and self-contained** — DXC + SPIRV-Cross ride inside the package, so it compiles on Linux, macOS, and Windows with nothing to install.
+
+**DirectX (DX11)** produces DXBC in-process (no `fxc.exe`/`mgfxc`) via two backends behind `IDxbcShaderCompiler`, chosen by `CompilerOptions.DxbcBackend`: the **default** is `d3dcompiler_47` — Microsoft's HLSL compiler, a system DLL **already present on Windows** (not a dependency you install), giving the most `fxc`-faithful output; `vkd3d-shader` is the **opt-in, cross-platform** backend (`DxbcBackend.Vkd3d`) for compiling DX shaders on Linux/macOS. DXC is **not** used for DX11 (it emits DXIL/SM6, not the DXBC/SM ≤ 5 the DX11 runtime loads); its `ps_6_0`/`vs_6_0` output is retained only for the DX12/KNI path.
 
 Supported MonoGame backends:
 

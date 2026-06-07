@@ -40,7 +40,7 @@ For in-browser runtime compilation (KNI / Blazor WebAssembly), add the `ShadowDu
 
 ## DirectX backend & native tools
 
-The default DirectX DXBC backend (`d3dcompiler_47`) is Windows-only and used as a correctness oracle. The **cross-platform** DirectX backend is `vkd3d-shader`, a restored (non-redistributed) native artifact — see [Restore Native Tools](restore-native-tools.md) and [DirectX DXBC (vkd3d) Path](../architecture/directx-dxbc-vkd3d.md). The OpenGL/WebGL in-memory path needs no extra restore.
+For **DirectX (DX11)**, the **default** backend is `d3dcompiler_47` — a system DLL **already part of Windows** (you don't install it), so DX compilation works out of the box on Windows with the most `fxc`-faithful output. The **cross-platform** DirectX backend is `vkd3d-shader` (opt-in via `CompilerOptions.DxbcBackend = DxbcBackend.Vkd3d`), a restored (non-redistributed) native artifact for Linux/macOS — see [Restore Native Tools](restore-native-tools.md) and [DirectX DXBC (vkd3d) Path](../architecture/directx-dxbc-vkd3d.md). The OpenGL/WebGL in-memory path needs no extra restore and is cross-platform out of the box.
 
 ## Building from source
 

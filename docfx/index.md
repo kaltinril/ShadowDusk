@@ -25,7 +25,7 @@ DirectX (DX11):
     → .mgfx binary            →  MonoGame Effect loader
 ```
 
-The DirectX path uses **vkd3d-shader** (cross-platform HLSL → DXBC) as the shipping backend, with Windows-only `d3dcompiler_47` as a correctness oracle. DXC compiles to DXIL (SM6), **not** the DXBC (SM ≤ 5) that MonoGame's DX11 runtime loads — so the DX11 path does not use DXC. See [The Faithful Pipeline](architecture/the-faithful-pipeline.md) and [DirectX DXBC (vkd3d) Path](architecture/directx-dxbc-vkd3d.md).
+**OpenGL / WebGL is fully cross-platform and self-contained** (DXC + SPIRV-Cross ride inside the package). For **DirectX (DX11)**, ShadowDusk produces DXBC in-process via two backends behind `IDxbcShaderCompiler`, chosen by `CompilerOptions.DxbcBackend`: the **default** `d3dcompiler_47` (Microsoft's HLSL compiler — a system DLL already present on Windows; most `fxc`-faithful) and the **opt-in, cross-platform** `vkd3d-shader` (`DxbcBackend.Vkd3d`) for Linux/macOS. DXC is **not** used for DX11 (it emits DXIL/SM6, not the DXBC/SM ≤ 5 the DX11 runtime loads). See [The Faithful Pipeline](architecture/the-faithful-pipeline.md) and [DirectX DXBC (vkd3d) Path](architecture/directx-dxbc-vkd3d.md).
 
 ## Supported backends
 
