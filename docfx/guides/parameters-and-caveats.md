@@ -47,3 +47,16 @@ Pass extra include search paths with the CLI `/I <path>` (repeatable) or the lib
 ## Errors fail loudly
 
 Compilation returns `Result<CompiledShader, ShaderError[]>`. Each <xref:ShadowDusk.Core.ShaderError> carries the file, line, column, code, and message exactly as the underlying compiler emitted them; `FxcFormattedMessage` renders the MGCB-parseable form. No exceptions are thrown for expected shader failures.
+
+## Validating a `.fx` (no render needed)
+
+Because failures come back as data, `CompileAsync` doubles as a **validator/linter**: compile the source, ignore the `.mgfx` bytes on success, and read `ShaderError[]` on failure for the line, column, and message. No graphics device, no `Effect` load, no render required — handy for IDEs, build checks, and shader linters.
+
+```csharp
+var result = await compiler.CompileAsync(fxSource, options);
+if (result.IsError)
+    foreach (var e in result.Error)
+        Console.WriteLine($"{e.File}({e.Line},{e.Column}): {e.Code}: {e.Message}");
+```
+
+This works identically on desktop and **in the browser** — as of 0.2.0 the WASM path reports the same `Line`/`Column` as desktop, so an in-browser editor (e.g. a KNI/Blazor shader fiddle) can highlight the offending line. It's a real compile (not a parse-only pass), so it surfaces exactly what the shipping pipeline would reject.

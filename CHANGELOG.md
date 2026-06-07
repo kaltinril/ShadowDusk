@@ -14,6 +14,14 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.2.0] - 2026-06-07
+
+### Added
+
 - **`ShaderError` is now the diagnostics contract on every host.** A failed
   `IShaderCompiler.CompileAsync` returns `ShaderError[]` with `File`, `Line`, `Column`,
   and the compiler's `Message` verbatim — usable as a `.fx` validator (ignore the bytes,
@@ -152,6 +160,7 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/kaltinril/ShadowDusk/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/kaltinril/ShadowDusk/releases/tag/v0.1.0
