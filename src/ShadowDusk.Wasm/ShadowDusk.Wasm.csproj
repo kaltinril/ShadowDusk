@@ -19,11 +19,16 @@
     <PackageId>ShadowDusk.Wasm</PackageId>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageTags>monogame kni hlsl shader compiler mgfx wasm blazor browser webassembly</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <Description>In-browser (WebAssembly / Blazor net8.0-browser) HLSL Effect compiler for MonoGame and KNI. Add the package to a net8.0-browser app, call WasmShaderCompiler.CompileAsync, and feed the .mgfx bytes to new Effect(gd, bytes) — the native DXC + SPIRV-Cross WASM modules ride inside the package as Blazor static web assets (served at _content/ShadowDusk.Wasm/) and self-register; the consumer wires NOTHING. Uses the faithful pinned DXC -&gt; SPIR-V -&gt; SPIRV-Cross -&gt; GLSL pipeline so output matches the desktop CLI.</Description>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
   <!--
