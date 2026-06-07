@@ -23,6 +23,7 @@ namespace ShadowDusk.HLSL.Vkd3d;
 /// </summary>
 public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
 {
+    /// <inheritdoc/>
     public Task<Result<PlatformBlob, ShaderError>> CompileAsync(
         D3DCompileRequest request,
         CancellationToken cancellationToken = default)

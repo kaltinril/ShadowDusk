@@ -11,6 +11,10 @@
     <PackageTags>monogame kni hlsl shader compiler mgfx cross-platform runtime in-memory</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!-- Phase 26: emit the XML doc file for DocFX. CS1591 suppressed during the
+         doc-comment transition so the TreatWarningsAsErrors build stays green. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
   <!--
     The first-party projects ship as their own ShadowDusk.* packages (all 0.1.0),

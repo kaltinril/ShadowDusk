@@ -21,6 +21,7 @@ namespace ShadowDusk.Wasm;
 [SupportedOSPlatform("browser")]
 public sealed class WasmShaderCompiler : IShaderCompiler
 {
+    /// <inheritdoc/>
     public Task<Result<CompiledShader, ShaderError[]>> CompileAsync(
         string hlslSource,
         CompilerOptions options,
