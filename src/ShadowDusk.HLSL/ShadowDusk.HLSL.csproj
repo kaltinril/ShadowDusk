@@ -11,6 +11,10 @@
     <PackageId>ShadowDusk.HLSL</PackageId>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <Description>ShadowDusk HLSL front-end: FX9 pre-parse, preprocessor, and DXC integration (HLSL to SPIR-V/DXIL via Vortice.Dxc). Part of the ShadowDusk.Compiler cross-platform MonoGame/KNI shader compiler.</Description>
+    <!-- Phase 26: emit the XML doc file for DocFX. CS1591 suppressed during the
+         doc-comment transition so the TreatWarningsAsErrors build stays green. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

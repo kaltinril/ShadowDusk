@@ -8,12 +8,43 @@ using ShadowDusk.HLSL.Dxc;
 
 namespace ShadowDusk.Compiler;
 
+/// <summary>
+/// The product's in-memory shader compiler and the default <see cref="IShaderCompiler"/>
+/// implementation: HLSL <c>.fx</c> source in, <c>.mgfx</c> bytes out, on Linux, macOS, or
+/// Windows with nothing but this library. Orchestrates the faithful pipeline —
+/// HLSL → DXC → SPIR-V → SPIRV-Cross → GLSL for OpenGL, and HLSL → vkd3d-shader → DXBC for
+/// DirectX — and writes the MonoGame/KNI <c>.mgfx</c> container.
+/// </summary>
+/// <remarks>
+/// Construct with the default constructor for normal use (<c>new EffectCompiler()</c>); the
+/// optional factory parameters exist only to inject alternative pipeline components (e.g. the
+/// pure-managed <c>SpirvReflector</c> for the WASM host). The output loads into MonoGame's
+/// <c>Effect</c> and renders the same image as <c>mgfxc</c>'s, but is not byte-identical to it.
+/// </remarks>
 public sealed class EffectCompiler : IShaderCompiler
 {
     private readonly Func<IDxcShaderCompiler>? _dxcCompilerFactory;
     private readonly Func<ISpirvToGlslTranspiler>? _glslTranspilerFactory;
     private readonly Func<IShaderReflector>? _reflectorFactory;
 
+    /// <summary>
+    /// Creates an <see cref="EffectCompiler"/>. Pass no arguments for the standard,
+    /// self-contained desktop pipeline. The optional factories override individual pipeline
+    /// components for advanced/host-specific scenarios.
+    /// </summary>
+    /// <param name="dxcCompilerFactory">
+    /// Optional factory for the HLSL → SPIR-V DXC frontend. Defaults to the bundled
+    /// (Vortice.Dxc) desktop DXC.
+    /// </param>
+    /// <param name="glslTranspilerFactory">
+    /// Optional factory for the SPIR-V → GLSL transpiler. Defaults to the SPIRV-Cross-backed
+    /// transpiler.
+    /// </param>
+    /// <param name="reflectorFactory">
+    /// Optional factory for the shader reflector. When <see langword="null"/> the OpenGL path
+    /// reflects from the native DXIL oracle; the WASM host injects the pure-managed
+    /// <c>SpirvReflector</c> instead.
+    /// </param>
     public EffectCompiler(
         Func<IDxcShaderCompiler>? dxcCompilerFactory = null,
         Func<ISpirvToGlslTranspiler>? glslTranspilerFactory = null,
@@ -31,6 +62,7 @@ public sealed class EffectCompiler : IShaderCompiler
         _reflectorFactory      = reflectorFactory;
     }
 
+    /// <inheritdoc/>
     public Task<Result<CompiledShader, ShaderError[]>> CompileAsync(
         string hlslSource,
         CompilerOptions options,

@@ -11,6 +11,15 @@ namespace ShadowDusk.GLSL;
 /// </summary>
 public interface ISpirvToGlslTranspiler
 {
+    /// <summary>
+    /// Transpiles a SPIR-V module to GLSL source.
+    /// </summary>
+    /// <param name="spirvBytes">A complete SPIR-V module (little-endian word stream).</param>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    /// <returns>
+    /// The transpiled <see cref="GlslSource"/> on success, or a <see cref="ShaderError"/> on
+    /// failure.
+    /// </returns>
     Result<GlslSource, ShaderError> Transpile(
         ReadOnlyMemory<byte> spirvBytes,
         CancellationToken cancellationToken = default);

@@ -22,6 +22,7 @@ namespace ShadowDusk.Core.Reflection;
 /// </summary>
 public sealed class SpirvReflector : IShaderReflector
 {
+    /// <inheritdoc/>
     public Result<ReflectedEffect, ShaderError> Reflect(ReadOnlyMemory<byte> spirvBlob)
     {
         SpirvModule? module = SpirvModule.TryParse(spirvBlob.Span);

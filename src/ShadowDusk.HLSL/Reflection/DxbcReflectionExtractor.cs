@@ -18,6 +18,13 @@ namespace ShadowDusk.HLSL.Reflection;
 /// </summary>
 public sealed class DxbcReflectionExtractor
 {
+    /// <summary>
+    /// Reflects an SM5 DXBC module into a <see cref="ReflectedEffect"/>. Windows-only at
+    /// runtime (P/Invokes <c>d3dcompiler_47.dll</c>).
+    /// </summary>
+    /// <param name="dxbcBlob">A complete SM5 DXBC module.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>The reflected effect on success, or a <see cref="ShaderError"/> on failure.</returns>
     public Result<ReflectedEffect, ShaderError> Extract(
         ReadOnlyMemory<byte> dxbcBlob,
         CancellationToken ct = default)

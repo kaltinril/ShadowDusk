@@ -2,8 +2,14 @@
 
 namespace ShadowDusk.Core.Preprocessor;
 
+/// <summary>
+/// An <see cref="IIncludeResolver"/> that resolves <c>#include</c> directives from the file
+/// system, searching first relative to the including file's directory and then the supplied
+/// additional search paths.
+/// </summary>
 public sealed class FileSystemIncludeResolver : IIncludeResolver
 {
+    /// <inheritdoc/>
     public Result<IncludeResolvedFile, ShaderError> Resolve(
         string includePath,
         string? includingFilePath,

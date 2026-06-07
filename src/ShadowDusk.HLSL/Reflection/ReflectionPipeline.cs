@@ -5,17 +5,32 @@ using ShadowDusk.Core.Reflection;
 
 namespace ShadowDusk.HLSL.Reflection;
 
+/// <summary>
+/// The OpenGL/SPIR-V reflection pipeline: reflects the DXIL blob via
+/// <see cref="DxilReflectionExtractor"/>, cross-checks texture/sampler binding slots against
+/// the SPIR-V blob, and builds the final effect parameter list (merging in FX annotations).
+/// </summary>
 public sealed class ReflectionPipeline
 {
     private readonly DxilReflectionExtractor _extractor;
     private readonly SpvReflectionVerifier   _verifier;
 
+    /// <summary>Creates the pipeline from a DXIL extractor and a SPIR-V binding verifier.</summary>
+    /// <param name="extractor">The DXIL reflection extractor.</param>
+    /// <param name="verifier">The SPIR-V binding-slot verifier.</param>
     public ReflectionPipeline(DxilReflectionExtractor extractor, SpvReflectionVerifier verifier)
     {
         _extractor = extractor;
         _verifier  = verifier;
     }
 
+    /// <summary>
+    /// Runs reflection over the given input and returns the fully assembled
+    /// <see cref="ReflectedEffect"/>.
+    /// </summary>
+    /// <param name="input">The DXIL + SPIR-V blobs and FX annotations to reflect.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>The reflected effect on success, or a <see cref="ShaderError"/> on failure.</returns>
     public async Task<Result<ReflectedEffect, ShaderError>> ReflectAsync(
         ReflectionInput input,
         CancellationToken ct = default)

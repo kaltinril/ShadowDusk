@@ -6,13 +6,23 @@ using ShadowDusk.GLSL.Interop;
 
 namespace ShadowDusk.GLSL;
 
+/// <summary>
+/// The default desktop <see cref="ISpirvToGlslTranspiler"/>: transpiles SPIR-V to GLSL using
+/// the native SPIRV-Cross library (via P/Invoke). This is the faithful pipeline's
+/// SPIR-V → GLSL leg; the result is then rewritten into MonoGame's GLSL dialect by
+/// <see cref="MonoGameGlslRewriter"/>.
+/// </summary>
 public sealed class SpirvCrossGlslTranspiler : ISpirvToGlslTranspiler
 {
+    /// <summary>
+    /// Creates the transpiler, ensuring the native SPIRV-Cross library is registered/loaded.
+    /// </summary>
     public SpirvCrossGlslTranspiler()
     {
         SpvcLoader.Register();
     }
 
+    /// <inheritdoc/>
     public Result<GlslSource, ShaderError> Transpile(
         ReadOnlyMemory<byte> spirvBytes,
         CancellationToken cancellationToken = default)
@@ -21,6 +31,12 @@ public sealed class SpirvCrossGlslTranspiler : ISpirvToGlslTranspiler
         return Transpile(words, cancellationToken);
     }
 
+    /// <summary>
+    /// Transpiles a SPIR-V module, supplied as a span of 32-bit words, to GLSL source.
+    /// </summary>
+    /// <param name="spirvWords">The SPIR-V module as little-endian 32-bit words.</param>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    /// <returns>The transpiled <see cref="GlslSource"/>, or a <see cref="ShaderError"/> on failure.</returns>
     public Result<GlslSource, ShaderError> Transpile(
         ReadOnlySpan<uint> spirvWords,
         CancellationToken cancellationToken = default)

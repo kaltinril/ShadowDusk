@@ -10,8 +10,21 @@ using static Vortice.Dxc.Dxc;
 
 namespace ShadowDusk.HLSL.Reflection;
 
+/// <summary>
+/// Reflects Shader-Model-6 DXIL bytecode via <c>ID3D12ShaderReflection</c> (the DXC
+/// reflection API), producing a <see cref="ReflectedEffect"/>. This is the native "oracle"
+/// the pure-managed <see cref="ShadowDusk.Core.Reflection.SpirvReflector"/> is validated
+/// against; the desktop OpenGL path uses it (the reflection runs inside the bundled
+/// <c>dxcompiler</c>, so it is cross-platform), while the WASM host uses the managed reflector.
+/// </summary>
 public sealed class DxilReflectionExtractor
 {
+    /// <summary>
+    /// Reflects a DXIL module into a <see cref="ReflectedEffect"/>.
+    /// </summary>
+    /// <param name="dxilBlob">A complete SM6 DXIL module.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>The reflected effect on success, or a <see cref="ShaderError"/> on failure.</returns>
     public Result<ReflectedEffect, ShaderError> Extract(
         ReadOnlyMemory<byte> dxilBlob,
         CancellationToken ct = default)

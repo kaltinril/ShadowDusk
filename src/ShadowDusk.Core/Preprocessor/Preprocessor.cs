@@ -5,6 +5,11 @@ using System.Text.RegularExpressions;
 
 namespace ShadowDusk.Core.Preprocessor;
 
+/// <summary>
+/// Flattens an HLSL source tree by expanding all <c>#include</c> directives (honoring
+/// <c>#pragma once</c> and detecting circular includes) and prepending the platform macros,
+/// producing a single self-contained <see cref="PreprocessedSource"/> for the compiler.
+/// </summary>
 public sealed class Preprocessor
 {
     private static readonly Regex IncludePattern =
@@ -13,6 +18,18 @@ public sealed class Preprocessor
     private static readonly Regex PragmaOncePattern =
         new(@"^\s*#\s*pragma\s+once\s*$", RegexOptions.Compiled);
 
+    /// <summary>
+    /// Expands all includes in the source and prepends the platform macros.
+    /// </summary>
+    /// <param name="cleanedHlsl">The (comment-stripped) HLSL entry source.</param>
+    /// <param name="originalFilePath">The entry source's path, used for diagnostics and relative includes.</param>
+    /// <param name="macros">The platform macros to prepend.</param>
+    /// <param name="includeResolver">The resolver used to fetch <c>#include</c> targets.</param>
+    /// <param name="additionalPaths">Extra include search directories.</param>
+    /// <returns>
+    /// The flattened source on success, or a <see cref="ShaderError"/> on a missing or
+    /// circular include.
+    /// </returns>
     public Result<PreprocessedSource, ShaderError> Flatten(
         string cleanedHlsl,
         string originalFilePath,
