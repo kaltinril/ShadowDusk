@@ -13,10 +13,14 @@
 name: CI
 
 on:
+  # Skip the build/test matrix for doc-/plan-only changes (READMEs, plan/, docs/, docfx/,
+  # CHANGELOG, etc.) — they don't affect the build, so don't burn Actions minutes on them.
   push:
     branches: [ main ]
+    paths-ignore: [ '**/*.md', 'plan/**', 'docs/**', 'docfx/**', 'LICENSE', '.gitignore' ]
   pull_request:
     branches: [ main ]
+    paths-ignore: [ '**/*.md', 'plan/**', 'docs/**', 'docfx/**', 'LICENSE', '.gitignore' ]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -31,6 +35,10 @@ jobs:
   build-and-test:
     name: Build & Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # Bound any leg so the known macOS `dotnet test` host-exit hang can't burn hours
+    # (the tests pass; the host stalls on exit). Proper fix tracked in memory
+    # macos-ci-test-stall. fail-fast:false keeps Windows/ubuntu reporting independently.
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:

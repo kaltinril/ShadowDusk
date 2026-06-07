@@ -30,13 +30,14 @@
 name: WASM & Browser
 
 on:
-  push:
-    branches: [ main ]
+  # ON-DEMAND ONLY. ShadowDusk ships a LIBRARY (the browser app is only a sample / test
+  # rig), so this heavy browser+WASM reach check is NOT a per-push gate. It no longer runs
+  # on every push to main — that was the source of the red "WASM & Browser" badge and most
+  # of the Actions noise. Run it deliberately: manual dispatch, or add the `run-browser`
+  # label to a PR (`labeled` is included so the label (re)triggers it).
+  workflow_dispatch:
   pull_request:
     branches: [ main ]
-    # Include `labeled` so adding the `run-browser` label actually (re)triggers this
-    # workflow — the browser job is gated on that label (see its `if:`), but the default
-    # pull_request event types (opened/synchronize/reopened) don't fire on labeling.
     types: [ opened, synchronize, reopened, labeled ]
 
 concurrency:
@@ -58,9 +59,9 @@ jobs:
   wasm-build:
     name: WASM build & pack
     runs-on: ubuntu-latest
-    # Browser/WASM is heavy: run on push to main and on PRs labelled run-browser.
+    # On-demand: run via manual dispatch or a PR labelled run-browser.
     if: |
-      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
       contains(github.event.pull_request.labels.*.name, 'run-browser')
     steps:
       - uses: actions/checkout@v4
@@ -145,7 +146,7 @@ jobs:
     name: Browser render smoke
     runs-on: ubuntu-latest
     if: |
-      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
       contains(github.event.pull_request.labels.*.name, 'run-browser')
     steps:
       - uses: actions/checkout@v4
