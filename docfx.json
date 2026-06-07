@@ -1,0 +1,75 @@
+{
+  "$schema": "https://raw.githubusercontent.com/dotnet/docfx/main/schemas/docfx.schema.json",
+  "metadata": [
+    {
+      "src": [
+        {
+          "files": [
+            "src/ShadowDusk.Core/ShadowDusk.Core.csproj",
+            "src/ShadowDusk.HLSL/ShadowDusk.HLSL.csproj",
+            "src/ShadowDusk.GLSL/ShadowDusk.GLSL.csproj",
+            "src/ShadowDusk.Compiler/ShadowDusk.Compiler.csproj"
+          ]
+        }
+      ],
+      "dest": "api",
+      "outputFormat": "mref",
+      "filter": "filterConfig.yml",
+      "disableGitFeatures": false,
+      "disableDefaultFilter": false,
+      "properties": {
+        "TargetFramework": "net8.0",
+        "Configuration": "Release"
+      }
+    }
+  ],
+  "build": {
+    "content": [
+      {
+        "files": [
+          "**/*.{md,yml}"
+        ],
+        "src": "docfx",
+        "dest": "."
+      },
+      {
+        "files": [
+          "api/**.yml",
+          "api/index.md"
+        ]
+      }
+    ],
+    "resource": [
+      {
+        "files": [
+          "images/**"
+        ],
+        "src": "docfx",
+        "dest": "images"
+      }
+    ],
+    "output": "_site",
+    "template": [
+      "default",
+      "modern"
+    ],
+    "globalMetadata": {
+      "_appName": "ShadowDusk",
+      "_appTitle": "ShadowDusk — Cross-Platform MonoGame Shader Compiler",
+      "_appFooter": "ShadowDusk — a cross-platform HLSL → .mgfx shader compiler for MonoGame &amp; KNI.",
+      "_enableSearch": true,
+      "_disableContribution": false,
+      "_gitContribute": {
+        "repo": "https://github.com/kaltinril/ShadowDusk",
+        "branch": "main"
+      },
+      "_appBaseUrl": "https://kaltinril.github.io/ShadowDusk/",
+      "pdf": false
+    },
+    "sitemap": {
+      "baseUrl": "https://kaltinril.github.io/ShadowDusk/"
+    },
+    "xref": [],
+    "xrefService": []
+  }
+}

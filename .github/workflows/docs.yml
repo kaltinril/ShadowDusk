@@ -1,0 +1,116 @@
+# .github/workflows/docs.yml
+# Phase 26 — build the DocFX documentation site and deploy it to GitHub Pages.
+#
+# The site serves under the project-pages subpath https://kaltinril.github.io/ShadowDusk/,
+# so DocFX's root-relative asset/links are repointed by injecting <base href="/ShadowDusk/">
+# into every emitted *.html after the build.
+#
+# This workflow is self-contained and does NOT depend on the full cross-platform RID
+# matrix (ci.yml): it builds API metadata from the four plain net8.0 library projects
+# only, which restore from NuGet. The native-tool restore is best-effort / non-fatal —
+# the docs build does not need vkd3d or the WASM module.
+name: Docs
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'docfx/**'
+      - 'docfx.json'
+      - 'filterConfig.yml'
+      - 'api/index.md'
+      - '.config/dotnet-tools.json'
+      - '.github/workflows/docs.yml'
+      # Reused-as-source docs (single source of truth via [!INCLUDE]).
+      - 'docs/**'
+      - 'samples/ShaderFiddle.Web/README.md'
+      # API reference is generated from the library source.
+      - 'src/ShadowDusk.Core/**'
+      - 'src/ShadowDusk.HLSL/**'
+      - 'src/ShadowDusk.GLSL/**'
+      - 'src/ShadowDusk.Compiler/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deployment; don't cancel an in-progress publish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+  DOTNET_NOLOGO: '1'
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history so DocFX's git "edit this page" links resolve
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', '**/Directory.Packages.props') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: dotnet restore (locked)
+        run: dotnet restore ShadowDusk.slnx --locked-mode
+
+      # The docs build doesn't need the cross-platform natives, but run the restore
+      # best-effort so any DX/WASM-referencing prose stays accurate if the artifacts
+      # are present. NEVER fail the docs build on a missing optional native.
+      - name: Restore native tools (best-effort, non-fatal)
+        run: |
+          chmod +x tools/restore.sh || true
+          ./tools/restore.sh || true
+
+      - name: Restore .NET local tools (pinned DocFX)
+        run: dotnet tool restore
+
+      - name: Build documentation
+        run: dotnet docfx docfx.json
+
+      # The site lives at .../ShadowDusk/ (a project-pages subpath). DocFX's modern
+      # template emits root-relative URLs, so inject <base href="/ShadowDusk/"> right
+      # after each page's <head> so CSS/JS/search/inter-page links resolve under the
+      # subpath. Idempotent: skip files that already carry a <base>.
+      - name: Inject base href for the /ShadowDusk/ subpath
+        run: |
+          set -euo pipefail
+          count=0
+          while IFS= read -r -d '' f; do
+            if grep -qi '<base ' "$f"; then
+              continue
+            fi
+            # Insert immediately after the first <head ...> tag.
+            perl -0pi -e 's{(<head[^>]*>)}{$1\n  <base href="/ShadowDusk/">}i' "$f"
+            count=$((count + 1))
+          done < <(find _site -name '*.html' -print0)
+          echo "Injected <base href=\"/ShadowDusk/\"> into $count HTML file(s)."
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
