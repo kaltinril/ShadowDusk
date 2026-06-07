@@ -7,7 +7,7 @@ Runtime is **KNI** (nkast's MonoGame fork) on **Blazor WebAssembly + WebGL**.
 
 ```
 paste .fx ─▶ WasmShaderCompiler.CompileAsync(src, OpenGL)   ── faithful DXC→WASM, in-browser
-          ─▶ byte[] .mgfx (MonoGame MGFX v10 / MojoShader)  ── Phase 17 format
+          ─▶ byte[] .mgfx (MonoGame MGFX v10 / MojoShader)  ── MGFX binary format
           ─▶ new Effect(graphicsDevice, mgfxBytes)          ── real KNI WebGL Effect
           ─▶ SpriteBatch.Begin(effect:); Draw(cat); End();  ── applied over the cat
           ─▶ WebGL canvas
@@ -19,8 +19,8 @@ Both modes are live and use the **real ShadowDusk pipeline**:
 
 | Path | What it is | State |
 |---|---|---|
-| **Mode 1** — load a precompiled `.mgfx` and render | the *Load a precompiled sample* dropdown | **Done.** Renders one of the 10 Phase-17 corpus shaders through a real KNI `Effect`. |
-| **Mode 2** — compile `.fx` in-browser | the *Compile & Apply* button | **Done — faithful.** Compiles via `WasmShaderCompiler` (the **faithful pinned DXC→WASM → SPIR-V → SPIRV-Cross → MGFX** pipeline, Phase 23), then loads + renders the result. |
+| **Mode 1** — load a precompiled `.mgfx` and render | the *Load a precompiled sample* dropdown | **Done.** Renders one of the 10 corpus shaders through a real KNI `Effect`. |
+| **Mode 2** — compile `.fx` in-browser | the *Compile & Apply* button | **Done — faithful.** Compiles via `WasmShaderCompiler` (the **faithful pinned DXC→WASM → SPIR-V → SPIRV-Cross → MGFX** pipeline), then loads + renders the result. |
 
 **No substitute compilers.** Mode 2 runs the same faithful frontend as the desktop
 CLI — the in-browser SPIR-V is **byte-identical to desktop DXC**. The compiler ships
@@ -32,7 +32,7 @@ assets (`_content/ShadowDusk.Wasm/`); this sample adds only a `ProjectReference`
 > The older Slang-wasm frontend (`wwwroot/shadowdusk-dxc.js` + `wwwroot/slang/`) is
 > **dead, sample-only reference** kept for history — it is **not registered** and
 > never runs. Slang was a *substitute* compiler (sample-only per THE PURPOSE); the
-> faithful DXC→WASM module replaced it in Phase 23.
+> faithful DXC→WASM module replaced it.
 
 ### Verified
 
@@ -41,7 +41,7 @@ assets (`_content/ShadowDusk.Wasm/`); this sample adds only a `ProjectReference`
   `ShadowDusk.Wasm` (net8.0-browser).
 - ✅ **Faithful frontend byte-identical to desktop DXC** — the `.wasm-build` gates
   (`node-test-dxc-wasm.mjs`, `node-test-dxc-shim.mjs`) are 10/10 exact on the corpus.
-- ✅ **Renders in real KNI WebGL** — Phase 24's headless harness compiles + renders
+- ✅ **Renders in real KNI WebGL** — a headless harness compiles + renders
   the corpus **10/10** pixel-equivalent (after the Dissolve slot-1 sampler pin and the
   `roundEven`→`floor(x+0.5)` WebGL1 lowering). KNI's forked `MGFXReader10` parses
   ShadowDusk's MGFX v10 directly — **no KNIFX-v11 writer needed**.
@@ -64,7 +64,7 @@ On the page:
 1. It boots showing the cat through the **Grayscale** sample (mode 1).
 2. Pick other samples from the dropdown to load their precompiled `.mgfx`
    (Invert, TintShader, Sepia, Saturate, Pixelated, Scanlines, Fading, Dots,
-   Dissolve), each with the by-name parameter values the desktop Phase-17
+   Dissolve), each with the by-name parameter values the desktop
    validation uses (`WebShaderInputs.SetParams`).
 3. Edit the source and click **Compile & Apply** to compile it in-browser (mode 2).
    On any failure the error panel shows the verbatim ShadowDusk diagnostic.
@@ -99,7 +99,7 @@ verbatim): `BlendState.Opaque` + `SamplerState.LinearClamp`, the SpriteBatch VS
 `Immediate` batch with the effect. Slot-1 sampler state is pinned to
 `LinearClamp` (Dissolve's second texture). Parameters are set **by name**
 (`WebShaderInputs`, ported from `validation/Shared/ShaderInputs.cs`). The cat is
-`samples/ShaderViewer/Content/cat.jpg`; the mode-1 `.mgfx` are the Phase-17
+`samples/ShaderViewer/Content/cat.jpg`; the mode-1 `.mgfx` are the
 OpenGL goldens from `tests/fixtures/golden/OpenGL/`.
 
 ## Why it is not in `ShadowDusk.slnx`

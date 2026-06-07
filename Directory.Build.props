@@ -8,7 +8,7 @@
     <WarningLevel>9999</WarningLevel>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <Authors>ShadowDusk Contributors</Authors>
-    <RepositoryUrl>https://github.com/shadowdusk/ShadowDusk</RepositoryUrl>
+    <RepositoryUrl>https://github.com/kaltinril/ShadowDusk</RepositoryUrl>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <!-- Lock NuGet versions in CI (GitHub Actions sets CI=true) so restore is
          deterministic; local restore still updates the lock file when deps change. -->

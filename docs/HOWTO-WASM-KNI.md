@@ -2,8 +2,8 @@
 
 Compile `.fx` shaders **to `.mgfx` in the browser at runtime** and load them with
 `new Effect(graphicsDevice, bytes)` — no server, no `mgfxc`, no native toolchain on
-the user's machine. This is the Phase 23 deliverable: the faithful pinned-DXC→WASM
-pipeline, packaged so a consumer **adds one package reference and wires nothing**.
+the user's machine. The faithful pinned-DXC→WASM pipeline is packaged so a consumer
+**adds one package reference and wires nothing**.
 
 ---
 
@@ -14,8 +14,8 @@ pipeline, packaged so a consumer **adds one package reference and wires nothing*
 | **KNI** (nkast's MonoGame fork) **Blazor WebAssembly + WebGL**, target **OpenGL** | ✅ supported — this is the path below |
 | Output loads in real KNI WebGL `Effect` and renders like `mgfxc` | ✅ proven (10/10 corpus, headless) |
 | MonoGame *proper* in the browser | ❌ MonoGame has no mature browser-WASM runtime; **use KNI** for WASM |
-| **DirectX/DXBC** compiled *in the browser* | ❌ out of scope (Phase 4.1) — browser path is OpenGL/WebGL only |
-| Vertex-shader-driven effects (the corpus is pixel-shader-only) | ⚠️ untested in WASM (backlog 17-VS) |
+| **DirectX/DXBC** compiled *in the browser* | ❌ not yet — planned (Phase 4.1); browser path is OpenGL/WebGL only |
+| Vertex-shader-driven effects (the corpus is pixel-shader-only) | ⚠️ untested in WASM — tracked (backlog 17-VS) |
 
 So: **KNI + Blazor WASM + OpenGL/WebGL**, pixel-shader effects — solid. That's what
 this guide targets.
@@ -36,18 +36,26 @@ this guide targets.
 
 ---
 
-## 3. Get the ShadowDusk packages (local feed)
+## 3. Get the ShadowDusk packages
 
-ShadowDusk isn't on nuget.org yet, so build a **local NuGet feed** from this repo.
-The faithful DXC→WASM module (`dxcompiler.wasm`, ~17 MB) is gitignored in the package
-`wwwroot` but its source-of-truth is committed at `.wasm-build/dxc-wasm-out/`, so
-`restore` just **copies** it (no rebuild):
+Add the `ShadowDusk.Wasm` package to your app — that single reference is all you need
+(§4 shows the `.csproj`). It brings the compiler and the native DXC + SPIRV-Cross WASM
+modules transitively; there's nothing else to install and nothing to copy into `wwwroot`.
+
+### Consuming an unreleased / source build (local feed)
+
+If you're building against a source checkout ahead of the published version, pack a local
+NuGet feed from this repo. The faithful
+DXC→WASM module (`dxcompiler.wasm`, ~17 MB) is gitignored in the package `wwwroot`, but
+its source-of-truth is committed at `.wasm-build/dxc-wasm-out/`, so `restore` just
+**copies** it (no rebuild):
 
 ```pwsh
 # from the repo root
 pwsh -File tools/restore.ps1          # or: ./tools/restore.sh   (copies dxcompiler.wasm into the package wwwroot)
 
-# pack the 5 packages in the dependency chain (Wasm -> Compiler -> Core/HLSL/GLSL), all 0.1.0
+# pack the 5 packages in the dependency chain (Wasm -> Compiler -> Core/HLSL/GLSL),
+# all at one shared version — the repo's Directory.Build.props <Version>
 $feed = "$PWD/local-feed"
 dotnet pack src/ShadowDusk.Core/ShadowDusk.Core.csproj         -c Release -o $feed
 dotnet pack src/ShadowDusk.HLSL/ShadowDusk.HLSL.csproj         -c Release -o $feed
@@ -56,19 +64,17 @@ dotnet pack src/ShadowDusk.Compiler/ShadowDusk.Compiler.csproj -c Release -o $fe
 dotnet pack src/ShadowDusk.Wasm/ShadowDusk.Wasm.csproj         -c Release -o $feed
 ```
 
-In your **consumer app**, add a `nuget.config` next to the `.csproj` pointing at that feed:
+In your **consumer app**, add a `nuget.config` next to the `.csproj` pointing at that
+feed (use the absolute path to the `local-feed` folder you packed into above):
 
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
 <configuration>
   <packageSources>
-    <add key="shadowdusk-local" value="C:\git\ShadowDusk\local-feed" />
+    <add key="shadowdusk-local" value="/path/to/ShadowDusk/local-feed" />
   </packageSources>
 </configuration>
 ```
-
-> When ShadowDusk is published to nuget.org this whole section collapses to one
-> `<PackageReference Include="ShadowDusk.Wasm" Version="..." />` — no local feed.
 
 ---
 
@@ -85,7 +91,7 @@ The project must target **`net8.0-browser`** (required for `[JSImport]`):
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="nkast.Kni.Platform.Blazor.GL" Version="4.2.9001.*" />
-    <PackageReference Include="ShadowDusk.Wasm" Version="0.1.0" />  <!-- the ONLY ShadowDusk line you add -->
+    <PackageReference Include="ShadowDusk.Wasm" Version="*" />  <!-- the ONLY ShadowDusk line you add -->
   </ItemGroup>
 </Project>
 ```
@@ -177,7 +183,7 @@ That's the whole integration. The full working version is
 | Symptom | Fix |
 |---|---|
 | Build error: `dxcompiler.wasm is missing` | Run `tools/restore.ps1`/`.sh` before pack (copies the committed wasm into the package wwwroot). |
-| Restore can't find `ShadowDusk.Compiler 0.1.0` etc. | You only packed `Wasm` — pack **all five** projects (§3) into the local feed. |
+| Restore can't find `ShadowDusk.Compiler` etc. | You only packed `Wasm` — pack **all five** projects (§3) into the local feed. |
 | `new Effect(...)` throws on load | You're not on KNI (MonoGame proper has no v10 WebGL reader), or the `.mgfx` is for the wrong target. Use KNI + `PlatformTarget.OpenGL`. |
 | First compile hangs/slow | That's the one-time ~17 MB `dxcompiler.wasm` download. Show a loading state; enable server compression. |
 | Effect renders wrong only in the browser | Check sampler-slot state for multi-texture shaders (§5 note); compare against the desktop render of the *same* bytes. |
@@ -190,4 +196,4 @@ That's the whole integration. The full working version is
 You don't need to — the built module is committed. But the full reproducible recipe is
 `.wasm-build/DXC-WASM-BUILD.md` + `Invoke-DxcWasmBuild.ps1` (pinned DXC `e043f4a1` ==
 Vortice.Dxc 3.3.4, emscripten 3.1.34). It's a multi-hour LLVM-fork build and is
-**Windows/MSVC-only today**; a Linux/macOS rebuild + CI is a carry-forward (Phase 30 §16).
+**Windows/MSVC-only today**; a Linux/macOS rebuild + CI is planned future work (Phase 30 §16).

@@ -10,7 +10,7 @@ INPUT
        │
        ▼
 ┌─────────────────────────────────────────┐
-│  PHASE 2 — FX9 Pre-Parser               │
+│  FX9 Pre-Parser                         │
 │                                         │
 │  Strips technique/pass/sampler_state    │
 │  blocks (not valid HLSL)                │
@@ -32,7 +32,7 @@ INPUT
         │
         ▼
 ┌─────────────────────────────────────────┐
-│  PHASE 3 — Preprocessor                 │
+│  Preprocessor                           │
 │                                         │
 │  Flatten #includes                      │
 │  Inject platform macros:                │
@@ -42,7 +42,7 @@ INPUT
                    │
                    ▼
 ┌─────────────────────────────────────────┐
-│  PHASE 4 — HLSL → bytecode/IR           │
+│  HLSL → bytecode/IR                     │
 │                                         │
 │  Compiles each pass's VS + PS entry     │
 │  point separately. The compiler depends │
@@ -66,7 +66,7 @@ INPUT
      │            │
      │            ▼
      │   ┌─────────────────────────────┐
-     │   │  PHASE 6 — SPIRV-Cross      │
+     │   │  SPIRV-Cross                │
      │   │  (P/Invoke on desktop,      │
      │   │   JS interop in WASM)       │
      │   │                             │
@@ -74,9 +74,19 @@ INPUT
      │   │  • Y-axis flip              │
      │   │  • Depth range remap        │
      │   │  • Combined image samplers  │
-     │   │  • GLSL version targeting   │
-     │   │    desktop  → #version 140  │
-     │   │    WebGL    → #version 300 es│
+     │   │  • Emits #version 140 GLSL  │
+     │   └──────────────┬──────────────┘
+     │                  │
+     │                  ▼
+     │   ┌─────────────────────────────┐
+     │   │  MonoGameGlslRewriter       │
+     │   │  (managed, MojoShader       │
+     │   │   dialect)                  │
+     │   │                             │
+     │   │  • Strips #version          │
+     │   │  • MojoShader uniform &     │
+     │   │    sampler naming           │
+     │   │  • gl_FragColor / varying   │
      │   └──────────────┬──────────────┘
      │                  │
      │                  ▼
@@ -87,7 +97,7 @@ INPUT
              │
              ▼
 ┌─────────────────────────────────────────┐
-│  PHASE 5 — Shader Reflection            │
+│  Shader Reflection                      │
 │                                         │
 │  Extracts from bytecode:                │
 │  parameter names, types, sizes,         │
@@ -96,7 +106,7 @@ INPUT
                    │
                    ▼
 ┌─────────────────────────────────────────┐
-│  PHASE 7 — .mgfx Binary Writer          │
+│  .mgfx Binary Writer                    │
 │                                         │
 │  Assembles everything:                  │
 │  Header (MGFX signature + version)      │
@@ -119,7 +129,7 @@ INPUT
 
 - **FX9 blocks** (`technique`, `pass`, `sampler_state`) are a D3DX legacy format inherited by XNA and MonoGame. The HLSL compilers cannot parse them — the pre-parser strips them before any compiler sees the file.
 - **DirectX path does NOT use DXC.** DXC only emits SM6 DXIL, but MonoGame 3.8's DX11 runtime loads **DXBC (SM ≤ 5)**. So the DirectX target routes HLSL → DXBC through a separate backend behind `IDxbcShaderCompiler`: the cross-platform **vkd3d-shader** library is the shipping backend (Linux/macOS/Windows, no Wine or Windows SDK), with Windows-only **`d3dcompiler_47`** as a correctness oracle. The backend is selected via `CompilerOptions.DxbcBackend` (`DxbcBackend.D3DCompiler` default, `DxbcBackend.Vkd3d` opt-in; see `src/ShadowDusk.Core/DxbcBackend.cs`). DXC's `ps_6_0`/`vs_6_0` (DXIL) path is retained only for the Vulkan / DX12-KNI SM6 profile. The DXBC bytes are also the reflection source (read via `ID3D11ShaderReflection`).
-- **OpenGL / WebGL path** is the faithful HLSL →[DXC]→ SPIR-V →[SPIRV-Cross]→ GLSL pipeline, plus the managed `MonoGameGlslRewriter` (MojoShader-dialect rewrite) for the PS-only path. Desktop targets `#version 140`; WebGL (KNI browser) targets `#version 300 es`. See `docs/glsl-uniform-naming.md` for the GLSL dialect / uniform-naming contract that rewrite enforces.
+- **OpenGL / WebGL path** is the faithful HLSL →[DXC]→ SPIR-V →[SPIRV-Cross]→ GLSL pipeline, plus the managed `MonoGameGlslRewriter` (MojoShader-dialect rewrite). SPIRV-Cross emits `#version 140`; the rewrite then **strips the `#version` directive** and emits version-less legacy MojoShader-dialect GLSL — valid on both desktop GL and WebGL1. For WebGL2/HiDef, KNI's runtime converter up-converts that dialect to GLSL ES 3.00 at load, so a single `.mgfx` serves both profiles — ShadowDusk does **not** emit `#version 300 es`. See `docs/glsl-uniform-naming.md` for the GLSL dialect / uniform-naming contract the rewrite enforces.
 - **SPIRV-Cross** runs as native P/Invoke on desktop (CLI) and as a WASM JS-interop call in the browser (KNI / XNA Fiddle).
-- **DXC in the browser** is the *same* DirectXShaderCompiler compiled to WebAssembly (matching `Vortice.Dxc`'s pinned commit), so the in-browser frontend emits byte-identical SPIR-V to the desktop pipeline — one faithful compiler everywhere, no substitute frontend (Phase 23, done). The in-browser shader-fiddle is a *sample* of this reach, not the product.
+- **DXC in the browser** is the *same* DirectXShaderCompiler compiled to WebAssembly (matching `Vortice.Dxc`'s pinned commit), so the in-browser frontend emits byte-identical SPIR-V to the desktop pipeline — one faithful compiler everywhere, no substitute frontend. The in-browser shader-fiddle is a *sample* of this reach, not the product.
 - **Output** is always a `.mgfx` binary blob — written to disk by the CLI, returned as `byte[]` in-memory by the library (the in-memory / WASM path).
