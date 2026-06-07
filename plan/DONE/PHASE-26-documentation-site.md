@@ -1,7 +1,7 @@
 # Phase 26 — Documentation Site (DocFX → GitHub Pages)
 
-**Status:** Planned (written 2026-06-02). A public documentation website at
-`https://shadowdusk.github.io/ShadowDusk/`, generated from the solution: an
+**Status:** ✅ **DONE (dev) — 2026-06-04, PR #18 (merge `63409b0`).** Doc-comments across the four libraries, the DocFX site, and the `docs.yml` GitHub Pages workflow all shipped and merged. **⚠️ One-time USER step remaining** (operational, not dev): repo **Settings → Pages → Source = GitHub Actions** — after that toggle, `docs.yml` deploys the live site on push to `main` and the three remaining `(USER)`-marked items below auto-satisfy. Site URL is the project-pages subpath **`https://kaltinril.github.io/ShadowDusk/`** (the `shadowdusk.github.io` below was the green-field assumption; the as-built owner is `kaltinril`). A public documentation website at
+`https://kaltinril.github.io/ShadowDusk/`, generated from the solution: an
 **auto-generated managed API reference** (from XML doc-comments), **how-to / examples
 / samples** pages, and **conceptual/explanation** pages — built with **DocFX** and
 published by GitHub Actions to GitHub Pages. Inspired by (not a clone of) the DocFX
@@ -127,32 +127,32 @@ The 2026-06-02 sweep fixed these; the site must keep them right:
 ## Tasks
 
 ### Doc-comment foundation (the bulk)
-- [ ] Enable `GenerateDocumentationFile` per library project (with a `CS1591` transition strategy that never breaks the `TreatWarningsAsErrors` build).
-- [ ] Document **ShadowDusk.Core**'s consumer contract first: `IShaderCompiler`(+`CompileAsync`), `CompiledShader`, `CompilerOptions`, `Result<T,TError>`/`Unit`, `ShaderError`(+kind/severity), `PlatformTarget`, then `Reflection/*` and `Preprocessor/*`.
-- [ ] Document `EffectCompiler` (class, ctor, `CompileAsync`) and `WasmShaderCompiler.CompileAsync`.
-- [ ] Add member-level `<summary>`/`<param>`/`<returns>` to `ISpirvToGlslTranspiler.Transpile`, `SpirvCrossGlslTranspiler`, and the key HLSL backend classes.
+- [x] Enable `GenerateDocumentationFile` per library project (with a `CS1591` transition strategy that never breaks the `TreatWarningsAsErrors` build).
+- [x] Document **ShadowDusk.Core**'s consumer contract first: `IShaderCompiler`(+`CompileAsync`), `CompiledShader`, `CompilerOptions`, `Result<T,TError>`/`Unit`, `ShaderError`(+kind/severity), `PlatformTarget`, then `Reflection/*` and `Preprocessor/*`.
+- [x] Document `EffectCompiler` (class, ctor, `CompileAsync`) and `WasmShaderCompiler.CompileAsync`.
+- [x] Add member-level `<summary>`/`<param>`/`<returns>` to `ISpirvToGlslTranspiler.Transpile`, `SpirvCrossGlslTranspiler`, and the key HLSL backend classes.
 
 ### DocFX + site
-- [ ] Add `docfx.json` (metadata over the 4 library `.csproj`; build over conceptual content; modern template; search).
-- [ ] Write `index.md` (landing, README-synced), `toc.yml`, `api/index.md`, and a `filterConfig.yml` (exclude internals/stubs as needed).
-- [ ] Author the new conceptual/how-to/sample/CLI pages; move/include the existing accurate docs (single source of truth).
-- [ ] `.gitignore` the generated `api/` and `_site/`.
-- [ ] `docfx docfx.json` builds locally with **no empty-summary** API pages for documented types.
+- [x] Add `docfx.json` (metadata over the 4 library `.csproj`; build over conceptual content; modern template; search).
+- [x] Write `index.md` (landing, README-synced), `toc.yml`, `api/index.md`, and a `filterConfig.yml` (exclude internals/stubs as needed).
+- [x] Author the new conceptual/how-to/sample/CLI pages; move/include the existing accurate docs (single source of truth).
+- [x] `.gitignore` the generated `api/` and `_site/`.
+- [x] `docfx docfx.json` builds locally with **no empty-summary** API pages for documented types.
 
 ### Publish
-- [ ] Add `.github/workflows/docs.yml`: checkout (full history) → setup .NET 8 → `dotnet restore --locked-mode` → best-effort `tools/restore.*` (non-fatal) → install pinned DocFX → `docfx docfx.json` → inject base href → `upload-pages-artifact` → `deploy-pages` (permissions: `pages: write`, `id-token: write`; `concurrency: pages`).
-- [ ] One-time manual: repo **Settings → Pages → Source = GitHub Actions**.
-- [ ] Verify the published site at `…github.io/ShadowDusk/` (nav, search, API pages, inter-page links, base-href under the subpath).
+- [x] Add `.github/workflows/docs.yml`: checkout (full history) → setup .NET 8 → `dotnet restore --locked-mode` → best-effort `tools/restore.*` (non-fatal) → install pinned DocFX → `docfx docfx.json` → inject base href → `upload-pages-artifact` → `deploy-pages` (permissions: `pages: write`, `id-token: write`; `concurrency: pages`).
+- [ ] **(one-time USER step)** repo **Settings → Pages → Source = GitHub Actions**.
+- [ ] **(USER, gated on Pages toggle)** Verify the published site at `…github.io/ShadowDusk/` (nav, search, API pages, inter-page links, base-href under the subpath).
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] `docfx docfx.json` builds cleanly from a fresh clone (after restore) and emits an API reference for `Core`/`HLSL`/`GLSL`/`Compiler` with **non-empty** summaries for the documented public types — the consumer contract (`IShaderCompiler`, `CompilerOptions`, `CompiledShader`, `Result`, `ShaderError`, `EffectCompiler`) renders with real docs.
-- [ ] The site has working Home, Getting Started, Guides, Architecture, Samples, CLI Reference, API Reference, and Contributing sections, with the existing docs reused (not duplicated/divergent).
-- [ ] The GitHub Actions workflow builds and deploys to GitHub Pages on push to `main`; the live site loads under the `/ShadowDusk/` subpath with assets/search/links resolving.
-- [ ] Stubs (`Metal`, `MgcbPlugin`) are excluded from the API ref and labelled "future"; no page implies they ship.
-- [ ] The five *Content-accuracy guards* hold across the site.
+- [x] `docfx docfx.json` builds cleanly from a fresh clone (after restore) and emits an API reference for `Core`/`HLSL`/`GLSL`/`Compiler` with **non-empty** summaries for the documented public types — the consumer contract (`IShaderCompiler`, `CompilerOptions`, `CompiledShader`, `Result`, `ShaderError`, `EffectCompiler`) renders with real docs.
+- [x] The site has working Home, Getting Started, Guides, Architecture, Samples, CLI Reference, API Reference, and Contributing sections, with the existing docs reused (not duplicated/divergent).
+- [ ] **(verifies after the one-time Pages toggle)** The GitHub Actions workflow builds and deploys to GitHub Pages on push to `main`; the live site loads under the `/ShadowDusk/` subpath with assets/search/links resolving.
+- [x] Stubs (`Metal`, `MgcbPlugin`) are excluded from the API ref and labelled "future"; no page implies they ship.
+- [x] The five *Content-accuracy guards* hold across the site.
 
 ## Definition of Done
 

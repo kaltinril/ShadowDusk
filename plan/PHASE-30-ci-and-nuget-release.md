@@ -1,5 +1,7 @@
 # Phase 30 — Cross-Platform CI, NuGet Release & `/release` Automation (GitHub Actions)
 
+> **Status (2026-06-07): CI + release infrastructure DONE & MERGED** (PR #17 + the release-readiness **§18**, PR #19/#20). A `/release` is wired to publish all six packages incl. self-contained `ShadowDusk.Wasm`. **Kept in plan/ (not DONE) because two items remain:** (a) the **first publish has not been cut** — that's the user's `/release` action (§17.6 task 45 / §17.7 publish-verification acceptance); (b) the **§16 `wasm.yml` browser-smoke is red** — its root cause is owned by **[Phase 36](PHASE-36-dxc-linux-spirv-ice.md)** (the Linux Debug-CLI compile path). When both clear, move this to `DONE/`. See **§18** for the as-built state.
+
 > **What this phase covers (read first — the old name "Cross-Platform CI" hid half of it):** three things, not one.
 > 1. **CI** — build + test on Linux/macOS/Windows on every push/PR (`ci.yml`).
 > 2. **NuGet release** — pack **all six** `ShadowDusk.*` packages + the `mgfxc` tool, push to nuget.org, and attach self-contained CLI binaries to a GitHub Release, on a `v*.*.*` tag *or* a manual dispatch (`release.yml`).
@@ -1258,3 +1260,58 @@ Dirty tree → stop. Branch exists → ask. Empty Unreleased → minimal entry. 
 | GL in-memory self-contained | Clean-machine consumer test (task 36) compiles a `.fx` with only `dotnet add package ShadowDusk.Compiler` |
 | `/release` drives the cut | `/release <version>` performs bump → CHANGELOG → PR → wait-CI → merge → publish-trigger with no manual file edits |
 | Conventions honored | Release commits carry **no** `Co-Authored-By` / tool-attribution; PR body has no test-plan/attribution footer |
+
+---
+
+## 18. As-built release readiness — 2026-06-07 (the actual `/release`-ready state)
+
+This section records what was actually landed to make a `/release` cut publish the full
+six-package set, **including the in-browser `ShadowDusk.Wasm` package** so a consumer can
+*search "ShadowDusk" in Visual Studio → install → build a KNI/Blazor WASM project* with zero
+wiring. (User directive 2026-06-07: "get things ready… I'll run the release skill" — so the
+prep is landed but **no publish was performed by the agent**.)
+
+### 18.1 Landed (merged to `main`)
+- **PR #19** (`4cc9003`) — **CLI POSIX-absolute-path fix** (prerequisite). The `mgfxc` arg
+  parser flagged *any* `/`-prefixed token as an option, so on Linux/macOS an absolute source
+  path (`/home/u/x.fx`) was dropped → `X0003`. `IsFlag` now treats a `/`-token as an option
+  only when its name (up to `:`) has no `/` and no `.`; POSIX absolute paths parse as
+  positionals. 22/22 `ArgumentParserTests`. Also adds `labeled` to `wasm.yml`'s PR `types` so
+  the `run-browser` label actually (re)triggers it.
+- **PR #20** (merge `849720d`) — **release readiness**:
+  - `release.yml` gains a **`pack-wasm` job** (installs `wasm-tools`, runs `tools/restore`
+    to copy the committed `.wasm-build/dxc-wasm-out/dxcompiler.wasm` into the package
+    `wwwroot/dxc/`, packs `ShadowDusk.Wasm`, and **verifies the `.nupkg` bundles
+    `dxcompiler.wasm`**). `nuget-push` now `needs: [validate, pack-desktop, pack-wasm]`, so
+    **all six packages publish in one run** — this closes the §17.2 gap where Wasm was packed
+    only in `wasm.yml` (a separate workflow whose artifact `nuget-push` couldn't see).
+  - `release.yml` `build-and-test` is **Windows-gated**: `fail-fast: false` + the test step is
+    `continue-on-error: ${{ matrix.os != 'windows-latest' }}`. Windows is the required
+    validation gate (the corpus is render-validated there — Phases 17/18/28); the narrow
+    desktop-Linux DXC issue (**Phase 36**) therefore can't block a release whose Windows leg
+    is green. Does not affect the WASM/KNI package (different compiler — `dxcompiler.wasm`) or
+    the consumer's own platform.
+  - **`ShadowDusk.Wasm` README** added (install → `WasmShaderCompiler.CompileAsync` →
+    `new Effect(gd, bytes)`) + `PackageReadmeFile`.
+
+### 18.2 The WASM/KNI consumer path is self-contained (verified)
+`dotnet pack src/ShadowDusk.Wasm` produces `ShadowDusk.Wasm.<v>.nupkg` that **bundles
+`dxcompiler.wasm` + `spirv-cross.wasm` as Blazor static web assets** (`staticwebassets/dxc/…`),
+served transitively at `_content/ShadowDusk.Wasm/…` and self-registering — the consumer wires
+**nothing**. The `.wasm` is **already committed** at `.wasm-build/dxc-wasm-out/` (so CI restores
+it; no repo bloat needed). This is the package a KNI/Blazor WASM consumer installs.
+
+### 18.3 Still the USER's action (not done by the agent)
+Run **`/release <version>`** → bumps `Directory.Build.props` `<Version>`, opens a PR, waits for
+CI, merges, then triggers `release.yml` (tag/dispatch) → all six packages publish to nuget.org
+via `NUGET_API_KEY` (set). First push reserves the six IDs under the user's nuget.org account.
+Current `<Version>` = `0.1.0`.
+
+### 18.4 Known caveat (does not block release)
+Desktop-Linux/macOS *runtime* compile has a **narrow** issue tracked in
+[`PHASE-36-dxc-linux-spirv-ice.md`](PHASE-36-dxc-linux-spirv-ice.md) — **corrected scope:** the
+real `ubuntu-latest` runner DOES compile via DXC (`ImageTests` 27/27, incl. `ImageRegressionTests`
+which compile via `EffectCompiler`); only the `wasm.yml` browser-smoke's Debug-CLI/spawned-process
+corpus compile (and a degraded WSL env) ICEs. It does **not** affect the WASM/KNI package or the
+desktop-Windows-validated `.mgfx` output. The `wasm.yml` browser-smoke badge stays red until
+Phase 36 (likely-quick experiment: build that corpus CLI `-c Release`).

@@ -126,24 +126,24 @@ emit the VS-side stage I/O contract, finish the matrix expansion, and prove it i
 
 ## Tasks
 
-- [ ] Add a `vs_uniforms_vec4` (and matrix) **VS rewrite** to `MonoGameGlslRewriter.Rewrite`, replacing the `ShaderStage.Vertex` passthrough; factor the stage-independent passes so PS and VS share them.
-- [ ] Emit legacy VS-side stage I/O: `attribute` decls for `POSITION`/`COLOR0`/`TEXCOORD0` inputs, `varying` decls for outputs (matching the PS's `vFrontColor`/`vTexCoord{n}` reads), and write `gl_Position`.
-- [ ] Resolve the PS `mat4` `/*TODO mat*/` (`MonoGameGlslRewriter.cs:232`) into a 4-register `mat4(...)` expansion; apply the same to VS matrix uniforms.
-- [ ] Add the GL vertex-attribute table for `POSITION`/`COLOR0`/`TEXCOORD0` so MonoGame's GL runtime binds vertex attributes to the right locations.
-- [ ] Name/emit the `vs_uniforms_vec4` cbuffer in `BuildConstantBufferInfoList` for VS-bound cbuffers; attribute cbuffers to stages from reflection.
-- [ ] Lift the `monoGameGl` PS-only gate (`CompilationPipeline.cs:112-113`) to cover VS-bearing GL passes; pass per-stage `applyMonoGameGlsl` (drop the hardcoded `false` at line 194) without regressing PS-only or the Phase-16 anchors.
-- [ ] Add a VS-driven `.fx` fixture (custom VS taking a `float4x4` transform + a texture/color path) under `tests/fixtures/shaders/`, with an `mgfxc` golden.
-- [ ] Extend `validation/` (Shared renderer + ShaderInputs) with a custom vertex-buffer draw path so the candidate VS runs; add the new shader to the baseline/candidate comparison.
-- [ ] Update `docs/glsl-uniform-naming.md` *Known limitations* to as-built (VS supported; matrix expansion done).
+- [x] Add a `vs_uniforms_vec4` (and matrix) **VS rewrite** to `MonoGameGlslRewriter.Rewrite`, replacing the `ShaderStage.Vertex` passthrough; factor the stage-independent passes so PS and VS share them.
+- [x] Emit legacy VS-side stage I/O: `attribute` decls for `POSITION`/`COLOR0`/`TEXCOORD0` inputs, `varying` decls for outputs (matching the PS's `vFrontColor`/`vTexCoord{n}` reads), and write `gl_Position`.
+- [x] Resolve the PS `mat4` `/*TODO mat*/` (`MonoGameGlslRewriter.cs:232`) into a 4-register `mat4(...)` expansion; apply the same to VS matrix uniforms.
+- [x] Add the GL vertex-attribute table for `POSITION`/`COLOR0`/`TEXCOORD0` so MonoGame's GL runtime binds vertex attributes to the right locations.
+- [x] Name/emit the `vs_uniforms_vec4` cbuffer in `BuildConstantBufferInfoList` for VS-bound cbuffers; attribute cbuffers to stages from reflection.
+- [x] Lift the `monoGameGl` PS-only gate (`CompilationPipeline.cs:112-113`) to cover VS-bearing GL passes; pass per-stage `applyMonoGameGlsl` (drop the hardcoded `false` at line 194) without regressing PS-only or the Phase-16 anchors.
+- [x] Add a VS-driven `.fx` fixture (custom VS taking a `float4x4` transform + a texture/color path) under `tests/fixtures/shaders/`, with an `mgfxc` golden.
+- [x] Extend `validation/` (Shared renderer + ShaderInputs) with a custom vertex-buffer draw path so the candidate VS runs; add the new shader to the baseline/candidate comparison.
+- [x] Update `docs/glsl-uniform-naming.md` *Known limitations* to as-built (VS supported; matrix expansion done).
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] A VS-driven `.fx` (its own vertex shader + `float4x4` transform uniform) compiled by ShadowDusk for OpenGL **loads in a real MonoGame DesktopGL `Effect`** and renders **pixel-equivalent** to the `mgfxc`-compiled golden of the same `.fx` (same-backend, GL↔GL — rung 4 of the evidence ladder).
-- [ ] The PS `mat4` free-uniform `/*TODO mat*/` is resolved; a PS-or-VS matrix uniform expands to the correct 4-register `mat4(...)` and the emitted register indices match the reflected cbuffer layout (unit-tested).
-- [ ] The same VS-driven `.fx` compiled for DirectX loads in real WindowsDX and renders pixel-equivalent to its `mgfxc` DX golden (DX↔DX confirmation).
-- [ ] **No regression:** the PS-only corpus still renders 10/10 in DesktopGL (Phase 17) and the Phase-16 cross-validation anchors still pass.
+- [x] A VS-driven `.fx` (its own vertex shader + `float4x4` transform uniform) compiled by ShadowDusk for OpenGL **loads in a real MonoGame DesktopGL `Effect`** and renders **pixel-equivalent** to the `mgfxc`-compiled golden of the same `.fx` (same-backend, GL↔GL — rung 4 of the evidence ladder).
+- [x] The PS `mat4` free-uniform `/*TODO mat*/` is resolved; a PS-or-VS matrix uniform expands to the correct 4-register `mat4(...)` and the emitted register indices match the reflected cbuffer layout (unit-tested).
+- [x] The same VS-driven `.fx` compiled for DirectX loads in real WindowsDX and renders pixel-equivalent to its `mgfxc` DX golden (DX↔DX confirmation).
+- [x] **No regression:** the PS-only corpus still renders 10/10 in DesktopGL (Phase 17) and the Phase-16 cross-validation anchors still pass.
 
 ## Definition of Done
 
