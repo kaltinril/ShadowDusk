@@ -81,22 +81,98 @@ button.primary {
 
 button:disabled { opacity: 0.5; cursor: default; }
 
-.editor {
+/* Editor: a line-number gutter + a textarea layered over a scroll-synced
+   backdrop. The backdrop redraws the same text and carries the wavy-underline
+   decoration on flagged lines; the textarea on top is transparent so its
+   glyphs sit directly over the squiggles. All three share identical font
+   metrics and padding so everything lines up to the pixel. */
+.editor-area {
     flex: 1;
     min-height: 240px;
-    resize: vertical;
+    display: flex;
+    background: #1b1b1f;
+    border: 1px solid #3a3a42;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.gutter {
+    flex: 0 0 44px;
+    overflow: hidden;
+    background: #161619;
+    border-right: 1px solid #2c2c33;
+}
+
+.gutter-inner { padding: 10px 0; will-change: transform; }
+
+.gutter-line {
     font-family: var(--mono);
     font-size: 12.5px;
     line-height: 1.45;
-    background: #1b1b1f;
+    color: #5c5c66;
+    text-align: right;
+    padding: 0 8px 0 4px;
+    white-space: pre;
+}
+
+.gutter-line.gutter-err {
+    color: var(--err);
+    font-weight: 700;
+    cursor: help;
+    background: rgba(255, 107, 107, 0.12);
+}
+
+.editor-stack { position: relative; flex: 1; overflow: hidden; }
+
+.editor-backdrop {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.backdrop-inner { padding: 10px; will-change: transform; }
+
+.bd-line {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.45;
+    white-space: pre;
+    color: transparent;
+    tab-size: 4;
+}
+
+.squiggle {
+    text-decoration: underline wavy;
+    text-decoration-skip-ink: none;
+    text-underline-offset: 2px;
+}
+
+.squiggle.err { text-decoration-color: var(--err); }
+.squiggle.warn { text-decoration-color: #e3c34b; }
+
+.editor {
+    position: absolute;
+    inset: 0;
+    box-sizing: border-box;
+    width: 100%;
+    height: 100%;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    line-height: 1.45;
+    background: transparent;
     color: #dcdce4;
-    border: 1px solid #3a3a42;
-    border-radius: 8px;
+    border: 0;
     padding: 10px;
     white-space: pre;
     overflow: auto;
     tab-size: 4;
+    resize: none;
+    z-index: 1;
 }
+
+.editor:focus { outline: none; }
 
 .buttons { justify-content: space-between; }
 
@@ -154,11 +230,17 @@ button:disabled { opacity: 0.5; cursor: default; }
 
 .diag {
     margin: 2px 0;
+    padding: 2px 4px;
+    border-radius: 4px;
     font-family: var(--mono);
     font-size: 11.5px;
     white-space: pre-wrap;
     color: #ffd0d0;
+    cursor: pointer;
 }
+
+.diag:hover { background: rgba(255, 255, 255, 0.06); }
+.diag.warn { color: #ffe9a8; }
 
 .note { font-size: 0.8rem; color: var(--muted); }
 .note summary { cursor: pointer; color: var(--accent); }

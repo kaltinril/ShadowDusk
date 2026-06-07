@@ -59,7 +59,18 @@ public partial class Index
     // kept only so the headless mode-2 entry point can short-circuit before the game
     // boots; it is set true once init completes.
     private bool _jsBackendsRegistered;
-    private readonly List<string> _errors = new();
+
+    // Structured compile diagnostics (file/line/col/message), kept verbatim from
+    // the compiler so the editor can squiggle the offending lines and show the
+    // reason. Line 0 means "no source location" (e.g. a load/runtime failure).
+    private IReadOnlyList<ShaderError> _diagnostics = Array.Empty<ShaderError>();
+    // Per-line lookups derived from _diagnostics, used by the editor backdrop
+    // (squiggles) and the gutter (hover tooltips).
+    private Dictionary<int, List<string>> _lineMessages = new();
+    private Dictionary<int, ShaderErrorSeverity> _lineSeverity = new();
+
+    /// <summary>The editor source split into lines (newlines normalized to LF).</summary>
+    private string[] SourceLines => _source.Split('\n');
 
     // Live-editable float params of the currently applied effect (refreshed on
     // every apply). Lets users drive tunables — e.g. a custom global like
@@ -71,8 +82,10 @@ public partial class Index
         // Fetch the fixed inputs the page needs before the game can boot.
         _catBytes = await Http.GetByteArrayAsync("cat.jpg");
         _defaultMgfx = await TryGetBytesAsync($"shaders/OpenGL/{WebShaderInputs.DefaultShader}.mgfx");
-        _source = await TryGetStringAsync($"shaders/src/{WebShaderInputs.DefaultShader}.fx")
-                  ?? "// could not load default shader source";
+        var defaultSrc = await TryGetStringAsync($"shaders/src/{WebShaderInputs.DefaultShader}.fx");
+        _source = defaultSrc is null
+            ? "// could not load default shader source"
+            : NormalizeNewlines(defaultSrc);
 
         // Phase 23 M1 — ZERO consumer wiring. The ShadowDusk.Wasm PACKAGE now
         // self-registers BOTH [JSImport] modules (shadowdusk-dxc /
@@ -95,6 +108,10 @@ public partial class Index
             // Start the JS requestAnimationFrame loop, which calls back into TickDotNet.
             JsRuntime.InvokeAsync<object>("initRenderJS", DotNetObjectReference.Create(this));
         }
+
+        // Wire (once) and re-apply the backdrop/gutter scroll sync after every
+        // render so the squiggles and line numbers track the textarea's scroll.
+        _ = JsRuntime.InvokeVoidAsync("sdEditorSync");
     }
 
     /// <summary>Driven once per animation frame by the JS render loop.</summary>
@@ -205,7 +222,7 @@ public partial class Index
     private void ResetEffect()
     {
         _game?.ClearEffect();
-        _errors.Clear();
+        ClearDiagnostics();
         _params = Array.Empty<ShaderParam>();
         _status = "Reset — showing the original cat (no shader applied).";
         _statusIsError = false;
@@ -234,10 +251,12 @@ public partial class Index
     /// <summary>Mode 1: load a precompiled <c>.mgfx</c> and show its source.</summary>
     private async Task LoadCorpusAsync(string name)
     {
-        _errors.Clear();
+        ClearDiagnostics();
         _status = null;
 
-        _source = await TryGetStringAsync($"shaders/src/{name}.fx") ?? _source;
+        var corpusSrc = await TryGetStringAsync($"shaders/src/{name}.fx");
+        if (corpusSrc is not null)
+            _source = NormalizeNewlines(corpusSrc);
         var bytes = await TryGetBytesAsync($"shaders/OpenGL/{name}.mgfx");
         if (bytes is null)
         {
@@ -268,7 +287,7 @@ public partial class Index
     private async Task CompileAndApplyAsync()
     {
         _compiling = true;
-        _errors.Clear();
+        ClearDiagnostics();
         _status = "Compiling in-browser…";
         _statusIsError = false;
         StateHasChanged();
@@ -304,13 +323,15 @@ public partial class Index
                 }
                 else
                 {
+                    AddGenericDiagnostic(err);
                     SetError(err);
                 }
             }
             else
             {
-                foreach (var d in result.Error)
-                    _errors.Add(d.FxcFormattedMessage);
+                // Keep the structured diagnostics so the editor can squiggle the
+                // offending lines and the gutter can show the reason on hover.
+                SetDiagnostics(result.Error);
                 SetError($"{result.Error.Length} compile error(s) — last good render kept.");
             }
         }
@@ -319,7 +340,7 @@ public partial class Index
             // Surface any in-browser compile/backend failure verbatim instead of
             // faking success. With the package self-registering its faithful WASM
             // modules, this path now only fires on a genuine error.
-            _errors.Add(ex.Message);
+            AddGenericDiagnostic(ex.Message);
             SetError("In-browser compile failed. Last good render kept.");
         }
         finally
@@ -334,6 +355,60 @@ public partial class Index
         _status = message;
         _statusIsError = true;
     }
+
+    /// <summary>Replace the diagnostics and rebuild the per-line squiggle/tooltip maps.</summary>
+    private void SetDiagnostics(IReadOnlyList<ShaderError> diags)
+    {
+        _diagnostics = diags;
+        _lineMessages = new();
+        _lineSeverity = new();
+        foreach (var d in diags)
+        {
+            if (d.Line <= 0)
+                continue;   // no source location -> shown in the list, not squiggled
+            if (!_lineMessages.TryGetValue(d.Line, out var list))
+                _lineMessages[d.Line] = list = new();
+            list.Add(d.Column > 0 ? $"col {d.Column}: {d.Message}" : d.Message);
+            // Error (1) outranks Warning (0) for the squiggle colour on a shared line.
+            if (!_lineSeverity.TryGetValue(d.Line, out var s) || d.Severity > s)
+                _lineSeverity[d.Line] = d.Severity;
+        }
+    }
+
+    private void ClearDiagnostics()
+    {
+        _diagnostics = Array.Empty<ShaderError>();
+        _lineMessages = new();
+        _lineSeverity = new();
+    }
+
+    /// <summary>Append a diagnostic with no source location (load/runtime failures).</summary>
+    private void AddGenericDiagnostic(string message)
+    {
+        var list = new List<ShaderError>(_diagnostics)
+        {
+            new ShaderError("fiddle.fx", 0, 0, "SD", message),
+        };
+        SetDiagnostics(list);
+    }
+
+    /// <summary>Update the source on each keystroke and drop now-stale squiggles.</summary>
+    private void OnSourceInput(ChangeEventArgs e)
+    {
+        _source = e.Value?.ToString() ?? string.Empty;
+        if (_diagnostics.Count > 0)
+            ClearDiagnostics();
+    }
+
+    /// <summary>Scroll the editor to a diagnostic's line and focus it.</summary>
+    private async Task GotoLineAsync(int line)
+    {
+        if (line > 0)
+            await JsRuntime.InvokeVoidAsync("sdEditorGotoLine", line);
+    }
+
+    private static string NormalizeNewlines(string s) =>
+        s.Replace("\r\n", "\n").Replace("\r", "\n");
 
     private async Task<byte[]?> TryGetBytesAsync(string url)
     {
