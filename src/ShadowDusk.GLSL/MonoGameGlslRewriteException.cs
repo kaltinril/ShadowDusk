@@ -12,5 +12,7 @@ namespace ShadowDusk.GLSL;
 /// </summary>
 public sealed class MonoGameGlslRewriteException : Exception
 {
+    /// <summary>Creates the exception with a message describing the unsupported construct.</summary>
+    /// <param name="message">The diagnostic message.</param>
     public MonoGameGlslRewriteException(string message) : base(message) { }
 }

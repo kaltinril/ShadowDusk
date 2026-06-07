@@ -1,0 +1,40 @@
+# DocFX API-metadata filter.
+#
+# The metadata scope in docfx.json already restricts extraction to the four plain
+# net8.0 library projects (Core, HLSL, GLSL, Compiler). This filter trims what is
+# documented from THOSE assemblies down to the public surface and keeps stub /
+# internal types out of the rendered API reference.
+#
+# Excluded by design (per Phase 26):
+#   * ShadowDusk.Metal  (MslEmitter) — a stub, "future / not implemented".
+#   * ShadowDusk.MgcbPlugin            — a stub (no source), documented conceptually.
+#   * ShadowDusk.Wasm                  — net8.0-browser TFM, documented conceptually.
+#   (Metal/MgcbPlugin/Wasm are not in the metadata src list at all; the namespace
+#    rules below are belt-and-suspenders in case a transitive reference pulls them in.)
+
+apiRules:
+  # Document only public/protected surface; hide everything internal.
+  - include:
+      accessibility:
+        - public
+        - protected
+  - exclude:
+      accessibility:
+        - private
+        - internal
+        - protected internal
+        - private protected
+
+  # Keep stubs / conceptual-only assemblies out of the reference even if a
+  # transitive reference would otherwise pull them in.
+  - exclude:
+      uidRegex: ^ShadowDusk\.Metal
+  - exclude:
+      uidRegex: ^ShadowDusk\.MgcbPlugin
+  - exclude:
+      uidRegex: ^ShadowDusk\.Wasm
+
+  # Compiler-generated / interop noise.
+  - exclude:
+      hasAttribute:
+        uid: System.Runtime.CompilerServices.CompilerGeneratedAttribute

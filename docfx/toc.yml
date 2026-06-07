@@ -1,0 +1,67 @@
+- name: Home
+  href: index.md
+- name: Getting Started
+  items:
+    - name: Overview
+      href: getting-started/overview.md
+    - name: Installation
+      href: getting-started/installation.md
+    - name: In-Memory Quickstart
+      href: getting-started/in-memory-quickstart.md
+    - name: Restore Native Tools
+      href: getting-started/restore-native-tools.md
+- name: Guides
+  items:
+    - name: Drop-in mgfxc
+      href: guides/dropin-mgfxc.md
+    - name: MGCB Content Pipeline
+      href: guides/mgcb-content-pipeline.md
+    - name: In-Browser (KNI/Blazor WASM)
+      href: guides/in-browser-kni-blazor.md
+    - name: Parameters & Caveats
+      href: guides/parameters-and-caveats.md
+- name: Architecture
+  items:
+    - name: The Faithful Pipeline
+      href: architecture/the-faithful-pipeline.md
+    - name: FX9 Pre-Parser & Preprocessor
+      href: architecture/fx9-preparser-preprocessor.md
+    - name: Reflection
+      href: architecture/reflection.md
+    - name: GLSL Dialect Rewrite
+      href: architecture/glsl-dialect-rewrite.md
+    - name: MGFX / MojoShader Format
+      href: architecture/mgfx-format.md
+    - name: DirectX DXBC (vkd3d) Path
+      href: architecture/directx-dxbc-vkd3d.md
+    - name: WASM In-Browser Frontend
+      href: architecture/wasm-frontend.md
+- name: Alternative Backends
+  items:
+    - name: Metal (future)
+      href: backends/metal.md
+    - name: Vulkan (future)
+      href: backends/vulkan.md
+    - name: DirectX-in-WASM (spike)
+      href: backends/directx-in-wasm.md
+- name: Samples
+  items:
+    - name: ShaderFiddle.Web
+      href: samples/shaderfiddle-web.md
+    - name: ShaderViewer
+      href: samples/shaderviewer.md
+    - name: MGCB Sample
+      href: samples/mgcb.md
+- name: CLI Reference
+  href: cli/index.md
+- name: API Reference
+  href: ../api/
+  homepage: ../api/index.md
+- name: Contributing
+  items:
+    - name: Contributing Guide
+      href: contributing/index.md
+    - name: Test Shader Corpus
+      href: contributing/test-shader-corpus.md
+    - name: Validation & Evidence Ladder
+      href: contributing/validation.md

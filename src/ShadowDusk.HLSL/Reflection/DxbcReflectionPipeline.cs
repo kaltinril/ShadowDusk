@@ -17,11 +17,21 @@ public sealed class DxbcReflectionPipeline
 {
     private readonly DxbcReflectionExtractor _extractor;
 
+    /// <summary>Creates the pipeline from a DXBC reflection extractor.</summary>
+    /// <param name="extractor">The DXBC reflection extractor.</param>
     public DxbcReflectionPipeline(DxbcReflectionExtractor extractor)
     {
         _extractor = extractor;
     }
 
+    /// <summary>
+    /// Reflects the DXBC blob and builds the final effect parameter list (merging in the FX
+    /// annotations).
+    /// </summary>
+    /// <param name="dxbcBlob">A complete SM5 DXBC module.</param>
+    /// <param name="fxAnnotations">FX-level parameter annotations to merge, if any.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>The reflected effect on success, or a <see cref="ShaderError"/> on failure.</returns>
     public async Task<Result<ReflectedEffect, ShaderError>> ReflectAsync(
         ReadOnlyMemory<byte> dxbcBlob,
         IReadOnlyList<ParameterAnnotation>? fxAnnotations,

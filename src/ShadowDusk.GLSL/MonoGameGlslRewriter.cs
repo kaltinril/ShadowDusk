@@ -153,6 +153,18 @@ public static class MonoGameGlslRewriter
 
     private sealed record InputVarying(string Identifier, string Type, string VaryingName);
 
+    /// <summary>
+    /// Rewrites SPIRV-Cross GLSL into the MonoGame/MojoShader dialect for the given stage.
+    /// </summary>
+    /// <param name="glsl">The modern GLSL emitted by SPIRV-Cross.</param>
+    /// <param name="stage">The shader stage being rewritten (vertex or pixel).</param>
+    /// <returns>
+    /// The rewritten GLSL together with the discovered samplers, uniform register count, and
+    /// (for the vertex stage) vertex attributes.
+    /// </returns>
+    /// <exception cref="MonoGameGlslRewriteException">
+    /// Thrown when the input GLSL cannot be rewritten faithfully into the dialect.
+    /// </exception>
     public static MonoGameGlslResult Rewrite(string glsl, ShaderStage stage)
     {
         ArgumentNullException.ThrowIfNull(glsl);

@@ -4,13 +4,49 @@ using ShadowDusk.Core.Preprocessor;
 
 namespace ShadowDusk.Core;
 
+/// <summary>
+/// Settings that control a single <see cref="IShaderCompiler.CompileAsync"/> call: the
+/// target backend, how <c>#include</c> directives are resolved, debug output, the MGFX
+/// container version, and (for DirectX) which DXBC backend to use.
+/// </summary>
 public sealed class CompilerOptions
 {
+    /// <summary>
+    /// The platform backend to compile for. Defaults to <see cref="PlatformTarget.OpenGL"/>.
+    /// Note this differs from the CLI's default profile (<c>DirectX_11</c>).
+    /// </summary>
     public PlatformTarget Target { get; init; } = PlatformTarget.OpenGL;
+
+    /// <summary>
+    /// Optional custom resolver for <c>#include</c> directives. When <see langword="null"/>,
+    /// includes are resolved relative to <see cref="SourceFileName"/> and
+    /// <see cref="AdditionalIncludePaths"/>. Supply an in-memory resolver to compile without
+    /// touching disk (e.g. in WASM/in-browser scenarios).
+    /// </summary>
     public IIncludeResolver? IncludeResolver { get; init; }
+
+    /// <summary>
+    /// Additional directories searched, in order, when resolving <c>#include</c> directives.
+    /// Equivalent to the CLI's <c>/I</c> flag.
+    /// </summary>
     public IReadOnlyList<string> AdditionalIncludePaths { get; init; } = [];
+
+    /// <summary>
+    /// The logical source file name used for include resolution and for the file path
+    /// reported in <see cref="ShaderError"/> diagnostics. Optional when compiling a string
+    /// literal in memory.
+    /// </summary>
     public string? SourceFileName { get; init; }
+
+    /// <summary>
+    /// When <see langword="true"/>, compiles with debug information enabled.
+    /// </summary>
     public bool Debug { get; init; }
+
+    /// <summary>
+    /// The MGFX container version to emit. Defaults to <c>10</c>, which loads across the
+    /// supported MonoGame/KNI runtimes (the backwards-compatible choice).
+    /// </summary>
     public int MgfxVersion { get; init; } = 10;
 
     /// <summary>

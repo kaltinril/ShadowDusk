@@ -15,6 +15,15 @@ namespace ShadowDusk.HLSL.D3DCompiler;
 /// </summary>
 public interface IDxbcShaderCompiler
 {
+    /// <summary>
+    /// Compiles a preprocessed HLSL request to an SM ≤ 5 DXBC blob.
+    /// </summary>
+    /// <param name="request">The compile request: source, entry point, stage, and flags.</param>
+    /// <param name="cancellationToken">A cancellation token.</param>
+    /// <returns>
+    /// The compiled DXBC <see cref="PlatformBlob"/> on success, or a <see cref="ShaderError"/>
+    /// on failure.
+    /// </returns>
     Task<Result<PlatformBlob, ShaderError>> CompileAsync(
         D3DCompileRequest request,
         CancellationToken cancellationToken = default);

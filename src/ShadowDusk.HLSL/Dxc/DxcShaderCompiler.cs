@@ -16,6 +16,10 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
     private readonly IDxcCompiler3 _compiler;
     private bool _disposed;
 
+    /// <summary>
+    /// Creates the DXC compiler instance, loading <c>dxil.dll</c> for DXIL validation on
+    /// Windows (a no-op on other platforms).
+    /// </summary>
     public DxcShaderCompiler()
     {
         // Load dxil.dll for DXIL validation on Windows; no-op on other platforms.
@@ -23,6 +27,7 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         _compiler = CreateDxcCompiler<IDxcCompiler3>();
     }
 
+    /// <inheritdoc/>
     public Task<Result<PlatformBlob, ShaderError>> CompileAsync(
         DxcCompileRequest request,
         CancellationToken cancellationToken = default)
@@ -79,6 +84,7 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         return Result<PlatformBlob, ShaderError>.Ok(new PlatformBlob(kind, bytes));
     }
 
+    /// <summary>Releases the native DXC compiler instance.</summary>
     public void Dispose()
     {
         if (_disposed)

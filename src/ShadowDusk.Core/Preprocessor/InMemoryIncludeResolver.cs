@@ -2,15 +2,26 @@
 
 namespace ShadowDusk.Core.Preprocessor;
 
+/// <summary>
+/// An <see cref="IIncludeResolver"/> that resolves <c>#include</c> directives from an
+/// in-memory dictionary of file path → contents, with no disk access. Ideal for the
+/// WASM/in-browser host and for tests, where the entire shader source set is held in memory.
+/// </summary>
 public sealed class InMemoryIncludeResolver : IIncludeResolver
 {
     private readonly IReadOnlyDictionary<string, string> _files;
 
+    /// <summary>
+    /// Creates a resolver over the given map of file path → source text. Keys are matched
+    /// using forward-slash-normalized paths.
+    /// </summary>
+    /// <param name="files">The virtual file set: path → contents.</param>
     public InMemoryIncludeResolver(IReadOnlyDictionary<string, string> files)
     {
         _files = files;
     }
 
+    /// <inheritdoc/>
     public Result<IncludeResolvedFile, ShaderError> Resolve(
         string includePath,
         string? includingFilePath,

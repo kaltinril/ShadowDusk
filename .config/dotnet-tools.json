@@ -7,6 +7,12 @@
       "commands": [
         "mgcb"
       ]
+    },
+    "docfx": {
+      "version": "2.78.3",
+      "commands": [
+        "docfx"
+      ]
     }
   }
 }
