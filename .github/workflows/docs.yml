@@ -88,23 +88,12 @@ jobs:
       - name: Build documentation
         run: dotnet docfx docfx.json
 
-      # The site lives at .../ShadowDusk/ (a project-pages subpath). DocFX's modern
-      # template emits root-relative URLs, so inject <base href="/ShadowDusk/"> right
-      # after each page's <head> so CSS/JS/search/inter-page links resolve under the
-      # subpath. Idempotent: skip files that already carry a <base>.
-      - name: Inject base href for the /ShadowDusk/ subpath
-        run: |
-          set -euo pipefail
-          count=0
-          while IFS= read -r -d '' f; do
-            if grep -qi '<base ' "$f"; then
-              continue
-            fi
-            # Insert immediately after the first <head ...> tag.
-            perl -0pi -e 's{(<head[^>]*>)}{$1\n  <base href="/ShadowDusk/">}i' "$f"
-            count=$((count + 1))
-          done < <(find _site -name '*.html' -print0)
-          echo "Injected <base href=\"/ShadowDusk/\"> into $count HTML file(s)."
+      # NOTE: do NOT inject a <base href>. The site lives at a project-pages subpath
+      # (.../ShadowDusk/), but DocFX's modern template already emits DOCUMENT-relative
+      # links (e.g. "../public/docfx.min.css"), which resolve correctly under any
+      # subpath. A <base href="/ShadowDusk/"> tag breaks them: the browser would resolve
+      # "../public/..." against the base → "/public/..." (404). So we ship DocFX's
+      # output as-is.
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
