@@ -24,7 +24,48 @@
             </select>
         </div>
 
-        <textarea class="editor" spellcheck="false" @bind="_source" @bind:event="oninput"></textarea>
+        @* Editor with a line-number gutter and a scroll-synced backdrop that
+           draws wavy underlines under the lines the compiler flagged. The
+           textarea is transparent and sits on top; the backdrop (behind it)
+           renders the same text with the squiggle decoration, so the underline
+           lands exactly under the offending glyphs. *@
+        <div class="editor-area">
+            <div class="gutter" id="sdGutter">
+                <div class="gutter-inner" id="sdGutterInner">
+                    @{ var glines = SourceLines; }
+                    @for (var i = 0; i < glines.Length; i++)
+                    {
+                        var n = i + 1;
+                        var hasErr = _lineMessages.TryGetValue(n, out var gmsgs);
+                        <div class="gutter-line@(hasErr ? " gutter-err" : "")"
+                             title="@(hasErr ? string.Join("\n", gmsgs!) : null)">@n</div>
+                    }
+                </div>
+            </div>
+            <div class="editor-stack">
+                <div class="editor-backdrop" aria-hidden="true">
+                    <div class="backdrop-inner" id="sdBackdropInner">
+                        @{ var blines = SourceLines; }
+                        @for (var i = 0; i < blines.Length; i++)
+                        {
+                            var n = i + 1;
+                            var text = blines[i].Length == 0 ? " " : blines[i];
+                            if (_lineMessages.ContainsKey(n))
+                            {
+                                var sev = _lineSeverity.TryGetValue(n, out var s) ? s : ShaderErrorSeverity.Error;
+                                <div class="bd-line"><span class="squiggle @(sev == ShaderErrorSeverity.Warning ? "warn" : "err")">@text</span></div>
+                            }
+                            else
+                            {
+                                <div class="bd-line">@text</div>
+                            }
+                        }
+                    </div>
+                </div>
+                <textarea class="editor" id="sdEditor" spellcheck="false" wrap="off"
+                          value="@_source" @oninput="OnSourceInput"></textarea>
+            </div>
+        </div>
 
         <div class="row buttons">
             <button class="primary" @onclick="CompileAndApplyAsync" disabled="@(!_ready || _compiling)">
@@ -58,13 +99,17 @@
             </div>
         }
 
-        @if (_errors.Count > 0)
+        @if (_diagnostics.Count > 0)
         {
             <div class="errors">
-                <div class="errors-head">@_errors.Count diagnostic(s)</div>
-                @foreach (var d in _errors)
+                <div class="errors-head">@_diagnostics.Count diagnostic(s)</div>
+                @foreach (var d in _diagnostics)
                 {
-                    <pre class="diag">@d</pre>
+                    <div class="diag@(d.Severity == ShaderErrorSeverity.Warning ? " warn" : "")"
+                         @onclick="() => GotoLineAsync(d.Line)"
+                         title="@(d.Line > 0 ? $"Click to jump to line {d.Line}" : null)">
+                        @(d.Line > 0 ? $"Line {d.Line}, Col {d.Column}: " : "")@d.Message
+                    </div>
                 }
             </div>
         }

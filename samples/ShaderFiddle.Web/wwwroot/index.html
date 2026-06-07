@@ -89,6 +89,41 @@
         };
     </script>
 
+    <!--
+        Editor squiggle support. The error backdrop and the line-number gutter
+        are separate elements behind/beside the textarea; keep them aligned by
+        translating them to match the textarea's scroll position. Wired once
+        (guarded by __sdWired) and re-applied by Blazor after every render.
+    -->
+    <script>
+        window.sdEditorSync = function () {
+            var ta = document.getElementById('sdEditor');
+            if (!ta) return;
+            if (!ta.__sdWired) {
+                ta.__sdWired = true;
+                ta.addEventListener('scroll', window.sdEditorSync);
+            }
+            var bd = document.getElementById('sdBackdropInner');
+            var gt = document.getElementById('sdGutterInner');
+            var x = ta.scrollLeft, y = ta.scrollTop;
+            if (bd) bd.style.transform = 'translate(' + (-x) + 'px,' + (-y) + 'px)';
+            if (gt) gt.style.transform = 'translateY(' + (-y) + 'px)';
+        };
+
+        window.sdEditorGotoLine = function (line) {
+            var ta = document.getElementById('sdEditor');
+            if (!ta || !(line > 0)) return;
+            ta.focus();
+            var cs = window.getComputedStyle(ta);
+            var lh = parseFloat(cs.lineHeight);
+            if (!Number.isFinite(lh)) lh = parseFloat(cs.fontSize) * 1.45;
+            var padTop = parseFloat(cs.paddingTop) || 0;
+            // Center the target line in the viewport when possible.
+            ta.scrollTop = Math.max(0, (line - 1) * lh + padTop - ta.clientHeight / 2);
+            window.sdEditorSync();
+        };
+    </script>
+
     <script src="_framework/blazor.webassembly.js" autostart="false"></script>
     <script type="module">
         // Brotli static decompression is disabled (the dev server serves

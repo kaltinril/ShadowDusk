@@ -87,8 +87,16 @@ export function ensureReady() {
 
 /**
  * Compile HLSL source to a SPIR-V byte stream via the faithful DXC->WASM module.
- * JS contract: compileToSpirv(hlslSource: string, args: string[]): Uint8Array.
- * Throws a plain Error on any failure (surfaced to .NET as JSException -> SD1900).
+ * JS contract (to .NET): compileToSpirv(hlslSource: string, args: string[]): Uint8Array,
+ * throwing a plain Error on failure (surfaced to .NET as JSException).
+ *
+ * Phase 38: the underlying embind module now returns `{ spirv: Uint8Array, error: string }`
+ * instead of throwing. A non-empty `error` carries DXC's VERBATIM diagnostics
+ * (`file:line:col: error: message`); we re-throw it as a normal Error so the text reaches
+ * .NET as a readable `JSException.Message`, where `DxcDiagnosticReformatter` parses it into
+ * line/column `ShaderError`s. (A C++ throw would arrive as an opaque `WebAssembly.Exception`
+ * under -fwasm-exceptions and the text would be lost.) A back-compat branch still accepts a
+ * bare `Uint8Array` from an older glue build, so this shim works before/after the relink.
  *
  * `args` is forwarded to DXC VERBATIM — no parsing, no translation (the faithful
  * module IS DXC and accepts the exact DxcFlagBuilder list).
@@ -113,11 +121,24 @@ export function compileToSpirv(hlslSource, args) {
     // Forward args VERBATIM. embind expects a JS string[]; ensure that shape.
     const dxcArgs = Array.isArray(args) ? args : [];
 
-    let out = dxcInstance.compileToSpirv(hlslSource, dxcArgs);
-    // embind may hand back a Uint8Array view over the WASM heap; copy out into a
-    // standalone Uint8Array so the bytes survive the next allocation/compile.
-    out = out instanceof Uint8Array ? new Uint8Array(out) : new Uint8Array(out);
+    const res = dxcInstance.compileToSpirv(hlslSource, dxcArgs);
 
+    // Current glue (Phase 38): a { spirv, error } object. Re-throw DXC's verbatim
+    // diagnostic text on failure so .NET can parse line/column from it.
+    if (res && typeof res === 'object' && !(res instanceof Uint8Array) && 'error' in res) {
+        if (res.error) {
+            throw new Error(res.error);
+        }
+        return validateSpirv(res.spirv);
+    }
+
+    // Back-compat: an older glue build returned a bare Uint8Array (and threw on failure).
+    return validateSpirv(res);
+}
+
+// Copy the embind heap view into a standalone Uint8Array and sanity-check it.
+function validateSpirv(out) {
+    out = out instanceof Uint8Array ? new Uint8Array(out) : new Uint8Array(out || 0);
     if (out.length === 0) {
         throw new Error('DXC produced empty SPIR-V (compile likely failed; -WX warnings-as-errors).');
     }

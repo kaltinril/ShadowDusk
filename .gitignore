@@ -28,14 +28,21 @@ tools/vkd3d/*.so.*
 tools/vkd3d/*.dylib
 
 # WASM build scratch: emsdk (~600 MB), the SPIRV-Cross + DXC source checkouts,
-# and intermediate build trees. Ignored by default — BUT the durable Phase 23 M0
-# deliverables under .wasm-build/ are force-committed (git add -f) past this rule
-# so the build is reproducible and the faithful-DXC gates run from a clean clone:
-# the build scripts (build-dxc-wasm.ps1, Invoke-DxcWasmBuild.ps1, ninja-dxcompiler.ps1,
-# dxc-wasm-glue.cpp, dxc-wasm-patches.txt), the report (DXC-WASM-BUILD.md), the
-# byte-identity gates (node-test-dxc-{wasm,shim}.mjs), the desktop SPIR-V oracle
-# (corpus-spirv/, dxc-corpus-probe/), AND the built module dxc-wasm-out/dxcompiler.{js,wasm}
-# (~17.4 MB) are all tracked. The heavy emsdk/dxc-src/spirv-cross-src checkouts are not.
+# and intermediate build trees. Ignored by default — BUT the durable build inputs
+# under .wasm-build/ are force-committed (git add -f) past this rule so the build is
+# reproducible and the faithful-DXC + SPIRV-Cross gates run from a clean clone:
+#   DXC:         build scripts (build-dxc-wasm.ps1, Invoke-DxcWasmBuild.ps1,
+#                ninja-dxcompiler.ps1), the embind glue (dxc-wasm-glue.cpp),
+#                the dlopen stub (dxc-dlopen-stub.js), patches (dxc-wasm-patches.txt),
+#                the report (DXC-WASM-BUILD.md), byte-identity gates
+#                (node-test-dxc-{wasm,shim}.mjs), the desktop SPIR-V oracle
+#                (corpus-spirv/, dxc-corpus-probe/), AND the built module
+#                dxc-wasm-out/dxcompiler.{js,wasm} (~17.4 MB).
+#   SPIRV-Cross: build script (build-spirv-cross-wasm.ps1), gate
+#                (node-test-spirv-cross.mjs) + its fixtures (fixtures/*.spv,
+#                fixtures/*.desktop-glsl.txt).
+# The heavy emsdk/dxc-src/spirv-cross-src checkouts and the per-machine MSVC env
+# capture (msvc-env.txt) are NOT tracked (regenerated/downloaded by the build).
 .wasm-build/
 
 # The Slang HLSL->SPIR-V WASM module (~21 MB) for samples/ShaderFiddle.Web is a

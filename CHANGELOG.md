@@ -14,9 +14,28 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **`ShaderError` is now the diagnostics contract on every host.** A failed
+  `IShaderCompiler.CompileAsync` returns `ShaderError[]` with `File`, `Line`, `Column`,
+  and the compiler's `Message` verbatim — usable as a `.fx` validator (ignore the bytes,
+  read the errors). This already worked on desktop; the **in-browser (WASM) path now carries
+  the same line/column** (see Fixed), so a KNI/Blazor tool can highlight the offending line
+  with no API change.
+
 ### Changed
 
+- **Sample `ShaderFiddle.Web` highlights compile errors.** Bad shader lines get a wavy
+  underline, the line-number gutter shows the message on hover, and each diagnostic is
+  clickable to jump to its line — a demonstration of the line/column diagnostics above.
+
 ### Fixed
+
+- **In-browser (WASM) compile errors now report the source line and column.** Previously a
+  failed in-browser compile surfaced a single opaque error (`[object WebAssembly.Exception]`)
+  with no location, while desktop reported file/line/column. DXC captured the diagnostics, but
+  the WASM module *threw* them and `-fwasm-exceptions` made the text unreadable in JS. The
+  faithful DXC→WASM module now **returns** its diagnostics, so the in-browser path runs them
+  through the same reformatter as desktop and yields `ShaderError`s with real `Line`/`Column`.
+  Compiled output is byte-identical to before (success-path SPIR-V unchanged, 10/10).
 
 ## [0.1.1] - 2026-06-07
 
