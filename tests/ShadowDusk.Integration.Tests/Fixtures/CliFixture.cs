@@ -25,19 +25,20 @@ public sealed class CliFixture : IAsyncLifetime
     private static string LocateCliBinary()
     {
         string exeName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            ? "ShadowDuskCLI.exe"
+            : "ShadowDuskCLI";
+
+        // Legacy fallback: the pre-rename apphost name (ShadowDusk.Cli).
+        string legacyName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
             ? "ShadowDusk.Cli.exe"
             : "ShadowDusk.Cli";
-
-        string mgfxcName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-            ? "mgfxc.exe"
-            : "mgfxc";
 
         string baseDir = AppContext.BaseDirectory;
 
         string[] candidates =
         [
             Path.Combine(baseDir, exeName),
-            Path.Combine(baseDir, mgfxcName),
+            Path.Combine(baseDir, legacyName),
         ];
 
         foreach (string candidate in candidates)
@@ -57,7 +58,7 @@ public sealed class CliFixture : IAsyncLifetime
                 string[] publishCandidates =
                 [
                     Path.Combine(dir.FullName, "artifacts", exeName),
-                    Path.Combine(dir.FullName, "artifacts", mgfxcName),
+                    Path.Combine(dir.FullName, "artifacts", legacyName),
                 ];
                 foreach (string pc in publishCandidates)
                 {

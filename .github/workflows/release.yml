@@ -9,7 +9,7 @@
 #   build-and-test    → 3-OS build + full test gate
 #   pack-desktop      → pack the FIVE desktop packages (Core/HLSL/GLSL/Compiler/Cli)
 #                       at the validated version, with symbols (.snupkg)
-#   publish           → per-RID self-contained `mgfxc` CLI archives
+#   publish           → per-RID self-contained `ShadowDuskCLI` CLI archives
 #   nuget-push        → push every nupkg/snupkg (idempotent --skip-duplicate)
 #   github-release    → GitHub Release with the CLI archives + packages
 #
@@ -76,17 +76,17 @@ jobs:
     name: Build & Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs: validate
-    timeout-minutes: 30
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        # TEMPORARY HOTFIX (2026-06-07): macOS dropped from the release gate. The macOS
-        # `dotnet test` host hangs after tests pass (the tests themselves are green), which
-        # would stall the publish (pack/publish need build-and-test). Windows is the
-        # validation gate; ubuntu covers cross-platform. RESTORE macOS here once the
-        # macOS test-host stall is fixed — tracked as a follow-up (see memory
-        # macos-ci-test-stall). Do NOT leave macOS out long-term.
-        os: [ ubuntu-latest, windows-latest ]
+        # All three OSes run the release build + unit gate again. The macOS `dotnet test`
+        # host-exit hang that previously forced macOS out is fixed at the source
+        # (GlContextFixture no longer initializes GLFW on macOS — see its comment), so the
+        # macOS leg now completes cleanly instead of stalling. Windows is the hard gate
+        # (continue-on-error below keeps ubuntu/macOS informational here); the release is cut
+        # from main, which has already passed ci.yml's hard gate on all three OSes.
+        os: [ ubuntu-latest, macos-latest, windows-latest ]
     steps:
       - uses: actions/checkout@v4
 
@@ -275,15 +275,14 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  # ── Self-contained `mgfxc` CLI publish per RID ─────────────────────────────
+  # ── Self-contained `ShadowDuskCLI` publish per RID ─────────────────────────
   publish:
     name: Publish CLI (${{ matrix.rid }})
     runs-on: ${{ matrix.os }}
     needs: [ validate, build-and-test ]
-    # Insurance against a macOS runner stall: this is `dotnet publish` (no tests, shouldn't
-    # hang), and the nuget-push job does NOT depend on it, so the packages publish even if a
-    # per-RID CLI archive lags. Bounded so github-release isn't blocked indefinitely.
-    timeout-minutes: 25
+    # `dotnet publish` only (no tests, ~30s observed) — 10 min is ample. The nuget-push job
+    # does NOT depend on this, so the packages publish even if a per-RID CLI archive lags.
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -343,18 +342,26 @@ jobs:
           /p:IncludeNativeLibrariesForSelfExtract=true
           /p:EnableCompressionInSingleFile=true
 
+      # The self-contained single-file publish names the apphost after <AssemblyName>
+      # (ShadowDuskCLI). Verify it exists before archiving.
       - name: Verify binary exists (Linux / macOS)
         if: runner.os != 'Windows'
         run: |
-          test -f publish/${{ matrix.rid }}/mgfxc || \
-            (echo "::error::mgfxc binary not found in publish/${{ matrix.rid }}/" && exit 1)
+          dir="publish/${{ matrix.rid }}"
+          if [ ! -f "$dir/ShadowDuskCLI" ]; then
+            echo "::error::ShadowDuskCLI binary not found in $dir/"
+            ls -la "$dir" || true
+            exit 1
+          fi
+          chmod +x "$dir/ShadowDuskCLI"
 
       - name: Verify binary exists (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          if (-not (Test-Path "publish\${{ matrix.rid }}\mgfxc.exe")) {
-            Write-Error "mgfxc.exe not found in publish\${{ matrix.rid }}\"
+          if (-not (Test-Path "publish\${{ matrix.rid }}\ShadowDuskCLI.exe")) {
+            Write-Error "ShadowDuskCLI.exe not found in publish\${{ matrix.rid }}\"
+            Get-ChildItem "publish\${{ matrix.rid }}" | Format-Table Name
             exit 1
           }
 

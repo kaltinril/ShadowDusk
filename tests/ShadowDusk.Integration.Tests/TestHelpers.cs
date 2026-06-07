@@ -147,24 +147,25 @@ public static class TestHelpers
     {
         // Check the test assembly output directory first (e.g. after dotnet publish).
         string exeName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-            ? "ShadowDusk.Cli.exe"
-            : "ShadowDusk.Cli";
+            ? "ShadowDuskCLI.exe"
+            : "ShadowDuskCLI";
 
         string candidate = Path.Combine(AppContext.BaseDirectory, exeName);
         if (File.Exists(candidate))
             return candidate;
 
-        // Also check for the mgfxc tool name used by PackAsTool.
-        string mgfxcName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-            ? "mgfxc.exe"
-            : "mgfxc";
+        // Legacy fallback: the pre-rename apphost name (ShadowDusk.Cli), in case a stale
+        // build output is present.
+        string legacyName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            ? "ShadowDusk.Cli.exe"
+            : "ShadowDusk.Cli";
 
-        string mgfxcCandidate = Path.Combine(AppContext.BaseDirectory, mgfxcName);
-        if (File.Exists(mgfxcCandidate))
-            return mgfxcCandidate;
+        string legacyCandidate = Path.Combine(AppContext.BaseDirectory, legacyName);
+        if (File.Exists(legacyCandidate))
+            return legacyCandidate;
 
         throw new FileNotFoundException(
-            $"CLI binary not found. Searched: '{candidate}', '{mgfxcCandidate}'. " +
+            $"CLI binary not found. Searched: '{candidate}', '{legacyCandidate}'. " +
             "Build the CLI project before running CLI-mode integration tests.");
     }
 

@@ -1,12 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <AssemblyName>ShadowDusk.Cli</AssemblyName>
+    <!-- The CLI ships under its own brand (ShadowDuskCLI) — NOT the name of the tool it
+         replaces. The apphost / build output and the `dotnet tool` command are both
+         `ShadowDuskCLI`. (PackageId stays ShadowDusk.Cli — that's the published NuGet id.) -->
+    <AssemblyName>ShadowDuskCLI</AssemblyName>
     <RootNamespace>ShadowDusk.Cli</RootNamespace>
     <OutputType>Exe</OutputType>
 
     <!-- dotnet tool packaging -->
     <PackAsTool>true</PackAsTool>
-    <ToolCommandName>mgfxc</ToolCommandName>
+    <ToolCommandName>ShadowDuskCLI</ToolCommandName>
     <PackageId>ShadowDusk.Cli</PackageId>
     <Description>Cross-platform drop-in replacement for MonoGame's mgfxc shader compiler.</Description>
 

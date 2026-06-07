@@ -1,5 +1,6 @@
 #nullable enable
 
+using System.Runtime.InteropServices;
 using Silk.NET.Maths;
 using Silk.NET.OpenGL;
 using Silk.NET.Windowing;
@@ -84,6 +85,31 @@ public sealed class GlContextFixture : IAsyncLifetime
 
     public Task InitializeAsync()
     {
+        // This GL render proxy is N/A on macOS BY PLATFORM DESIGN — it is a deliberate
+        // decision, not a temporary workaround, and the coverage is not lost (the proxy
+        // runs on Linux + Windows in CI; the real-runtime fidelity bar is the MonoGame
+        // validation harness, not this proxy). Two independent platform facts make a
+        // headless GL 3.3 Compatibility render impossible on a macOS CI runner:
+        //   1. Apple DEPRECATED OpenGL (2018): native macOS GL caps the *Compatibility*
+        //      profile at 2.1, but this suite needs GL 3.3 Compatibility to link BOTH modern
+        //      GLSL 3.30+ (`in`/`out`) AND legacy GLSL ES (`varying`/`gl_FragColor`) in one
+        //      context. That context simply cannot be created with Apple's GL.
+        //   2. GLFW on macOS spins up Cocoa/NSApplication on a native NSThread that the .NET
+        //      runtime cannot reap, so the test-host process never EXITS after a green run
+        //      (confirmed unfixable upstream: glfw#1766; glfwTerminate does not release it).
+        //      Skipping BEFORE GLFW init is what keeps macOS exiting cleanly.
+        // (The only way to actually render GL on macOS headless is a from-source software
+        // Mesa/OSMesa build — large, expensive on the 10x-metered macOS runner, and it would
+        // only re-prove the Linux/Windows pixels. Not worth it for a proxy.)
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        {
+            IsSkipped  = true;
+            SkipReason = "GL render proxy is N/A on macOS (Apple deprecated OpenGL; native GL "
+                       + "caps Compatibility at 2.1, and GLFW cannot exit cleanly on macOS). "
+                       + "This proxy is covered on Linux + Windows.";
+            return Task.CompletedTask;
+        }
+
         try
         {
             // Ensure the GLFW backend is chosen even if other windowing
