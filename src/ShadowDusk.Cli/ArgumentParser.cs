@@ -154,8 +154,27 @@ internal static class ArgumentParser
             MgfxVersion: mgfxVersion));
     }
 
-    private static bool IsFlag(string token) =>
-        token.StartsWith('/') || token.StartsWith("--", StringComparison.Ordinal);
+    private static bool IsFlag(string token)
+    {
+        // GNU-style long options are unambiguous — no filesystem path starts with "--".
+        if (token.StartsWith("--", StringComparison.Ordinal))
+            return true;
+
+        // mgfxc-style "/Opt" options collide with POSIX absolute paths, which also start
+        // with '/' (e.g. "/home/user/shader.fx" on Linux/macOS). Treat a '/'-prefixed
+        // token as an option ONLY when its name (the part up to the first ':') looks like a
+        // bare flag — no path separator and no '.' extension. That way "/Profile:OpenGL",
+        // "/Debug" and "/I:/usr/include" are options, while an absolute source/output path
+        // like "/home/runner/work/.../Grayscale.fx" is correctly parsed as positional.
+        if (token.StartsWith('/'))
+        {
+            int colon = token.IndexOf(':');
+            string name = colon >= 0 ? token.Substring(1, colon - 1) : token.Substring(1);
+            return name.Length > 0 && !name.Contains('/') && !name.Contains('.');
+        }
+
+        return false;
+    }
 
     private static string StripPrefix(string token)
     {

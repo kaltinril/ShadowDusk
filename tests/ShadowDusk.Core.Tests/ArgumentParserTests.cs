@@ -175,6 +175,45 @@ public sealed class ArgumentParserTests
     }
 
     // -------------------------------------------------------------------------
+    // POSIX absolute paths — must NOT be misread as "/Opt" options (Linux/macOS)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_PosixAbsolutePaths_AreParsedAsPositionals()
+    {
+        // On Linux/macOS the source/output paths start with '/', like an mgfxc option.
+        // They must be parsed as positionals, not silently dropped as unknown flags.
+        var result = ArgumentParser.Parse(
+            ["/home/runner/work/ShadowDusk/tests/fixtures/shaders/Grayscale.fx",
+             "/tmp/out/Grayscale.mgfx"]);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.SourceFile.Should().Be("/home/runner/work/ShadowDusk/tests/fixtures/shaders/Grayscale.fx");
+        result.Value.OutputFile.Should().Be("/tmp/out/Grayscale.mgfx");
+    }
+
+    [Fact]
+    public void Parse_PosixAbsolutePaths_WithProfileFlag_StillParsesBoth()
+    {
+        var result = ArgumentParser.Parse(
+            ["/abs/src/Shader.fx", "/abs/out/Shader.mgfx", "/Profile:OpenGL"]);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.SourceFile.Should().Be("/abs/src/Shader.fx");
+        result.Value.OutputFile.Should().Be("/abs/out/Shader.mgfx");
+        result.Value.Platform.Should().Be(PlatformTarget.OpenGL);
+    }
+
+    [Fact]
+    public void Parse_IncludePath_ColonForm_WithPosixAbsoluteValue_Preserved()
+    {
+        var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "/I:/usr/local/include"]);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.IncludePaths.Should().ContainSingle().Which.Should().Be("/usr/local/include");
+    }
+
+    // -------------------------------------------------------------------------
     // Unknown flags — forward compatibility
     // -------------------------------------------------------------------------
 
