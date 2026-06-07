@@ -32,7 +32,7 @@ DirectX (DX11):
 | Backend | Output | Status |
 |---|---|---|
 | OpenGL / DesktopGL | GLSL | Validated end-to-end (10/10 in real MonoGame DesktopGL) |
-| DirectX (Windows, DX11) | DXBC (SM5) via vkd3d-shader | Validated end-to-end (10/10 in real MonoGame WindowsDX) |
+| DirectX (Windows, DX11) | DXBC (SM5) via `d3dcompiler_47` (default) / `vkd3d-shader` (cross-platform) | Validated end-to-end (10/10 in real MonoGame WindowsDX) |
 | WebGL (XNA Fiddle / KNI browser) | GLSL ES | Validated end-to-end (10/10 in real headless KNI WebGL) |
 | [Metal (macOS / iOS)](backends/metal.md) | MSL | **Not yet implemented (future)** |
 | [Vulkan](backends/vulkan.md) | SPIR-V | **Future** |

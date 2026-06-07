@@ -1,10 +1,8 @@
 # GLSL Uniform Naming: MonoGame / MojoShader Convention
 
-> **Status:** ✅ **Implemented (Phase 17, 2026-05-30).** Strategy 1 below is live as
-> `MonoGameGlslRewriter` (`src/ShadowDusk.GLSL/MonoGameGlslRewriter.cs`), gated to
-> the PS-only OpenGL path. This document records the design as built, not a
-> proposal. Resolves backlog **11-6-D**. (Originally researched in Phase 6 and
-> deferred — that earlier "Phase 6/7" framing is superseded by what follows.)
+> ShadowDusk's `MonoGameGlslRewriter` (`src/ShadowDusk.GLSL/MonoGameGlslRewriter.cs`)
+> implements the convention described here. This document records the GLSL
+> uniform-naming and dialect contract it enforces.
 
 This rewrite is the **managed MojoShader-dialect** step of the OpenGL branch in the
 overall compilation pipeline; see `docs/references/compilation-pipeline.md` for where it
@@ -54,8 +52,8 @@ must also be in MonoGame's dialect or the custom PS will not link with the built
 
 `MonoGameGlslRewriter.Rewrite(glsl, stage)` is a **pure string transform** (no SPIRV-Cross /
 native dependency) run over the SPIRV-Cross output. It is invoked from
-`CompilationPipeline` whenever the `monoGameGl` gate is set (**any** OpenGL effect; as of
-Phase 28 the gate is no longer PS-only — see *Vertex stage* below for the symmetric VS rules);
+`CompilationPipeline` whenever the `monoGameGl` gate is set (**any** OpenGL effect — see
+*Vertex stage* below for the symmetric VS rules);
 other targets keep the unmodified SPIRV-Cross dialect. The pixel-stage transform, by rule:
 
 | # | SPIRV-Cross input | Rewritten to |
@@ -85,16 +83,16 @@ other targets keep the unmodified SPIRV-Cross dialect. The pixel-stage transform
 
 ## Verification
 
-Proven end-to-end in Phase 17: ShadowDusk's OpenGL `.mgfx` (this rewrite + the `MgfxWriter`
+ShadowDusk's OpenGL `.mgfx` (this rewrite + the `MgfxWriter`
 format rework) loads into a **real** `MonoGame.Framework.DesktopGL` `Effect` and renders
 pixel-equivalent to the `mgfxc` goldens for all 10 SM3 PS-only shaders — including the
 uniform-driven ones (TintShader, Sepia, Saturate, Scanlines, Dots) with parameters **set by
 name** (`validation/Candidate` vs `validation/Baseline` + `compare.py`: 8 exact, Scanlines/Dots
 maxd 1). Unit coverage: `tests/ShadowDusk.GLSL.Tests/MonoGameGlslRewriterTests.cs`.
 
-## Vertex stage (Phase 28, 2026-06-05)
+## Vertex stage
 
-`Rewrite` is now **stage-symmetric**: for `ShaderStage.Vertex` it emits the VS-side
+`Rewrite` is **stage-symmetric**: for `ShaderStage.Vertex` it emits the VS-side
 MojoShader dialect that MonoGame's GL runtime links against. Same shared passes
 (version/420pack strip, matrix expansion, round lowering); the register prefix and the
 in/out direction are the only stage knobs:
@@ -112,7 +110,7 @@ pipeline writes into the `.mgfx` shader record so MonoGame binds each attribute 
 vertex element. The `.mgfx` cbuffer for a VS-bound buffer is named **`vs_uniforms_vec4`**
 (PS-bound stays `ps_uniforms_vec4`); attribution is from reflection, not a PS-only assumption.
 
-**Matrix free-uniforms (resolved).** A `mat4` member now expands to the four consecutive
+**Matrix free-uniforms.** A `mat4` member expands to the four consecutive
 registers it occupies — `_Globals.M` → `mat4(<prefix>_uniforms_vec4[r], [r+1], [r+2], [r+3])`
 (column-major: std140 stores each matrix column at a 16-byte register, and GLSL
 `mat4(c0,c1,c2,c3)` takes columns, so the reconstruction is byte-faithful to the original
@@ -122,14 +120,14 @@ shifts every member after it, agreeing exactly with the `.mgfx` cbuffer packing
 (`Matrix_ExpandsToFourConsecutiveRegisters_IndicesMatchCbufferLayout`,
 `PixelStage_Mat4Uniform_ExpandsToFourRegisters_NoTodoLeft`). Applies to both stages.
 
-**Verification (rung 4):** the VS-driven fixture `VsTransformColorTexture.fx` (custom VS +
+**Verification:** the VS-driven fixture `VsTransformColorTexture.fx` (custom VS +
 `float4x4` transform + POSITION/COLOR0/TEXCOORD0 + textured/tinted PS) compiled by ShadowDusk
 loads in a **real** `MonoGame.Framework.DesktopGL` `Effect` and renders **pixel-identical**
 (max delta 0) to the mgfxc OpenGL golden, via a custom vertex-buffer draw path
 (`validation/VsDriven`). The same `.fx` for DirectX loads in real `MonoGame.Framework.WindowsDX`
 and renders pixel-identical to the mgfxc DX golden via **both** the d3dcompiler oracle and the
-cross-platform vkd3d backend (`validation/VsDrivenDx`). The PS-only corpus + Phase-16 anchors
-are unregressed (10/10).
+cross-platform vkd3d backend (`validation/VsDrivenDx`). The PS-only corpus and
+image-regression anchors remain unregressed (10/10).
 
 ## Known limitations (future work)
 

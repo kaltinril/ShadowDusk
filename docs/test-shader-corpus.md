@@ -79,8 +79,8 @@ tests/fixtures/shaders/examples/
 ```
 
 Each targets a distinct part of the legacy→modern rewrite surface so the
-behavior added in Phase 16/17 (`FxPreParser` rewrites + the `monoGameGl` GL
-path) has owned, documented regression coverage. All are SM3 PS-only and follow
+`FxPreParser` rewrites and the `monoGameGl` GL path have owned, documented
+regression coverage. All are SM3 PS-only and follow
 MonoGame's conventional `SpriteBatch`/`SpriteEffect` shape (the validated path).
 
 | File | What it exercises |
@@ -101,7 +101,7 @@ MonoGame's conventional `SpriteBatch`/`SpriteEffect` shape (the validated path).
 - **Later (when `mgfxc` is available on a Windows + DirectX SDK box):**
   generate `mgfxc` goldens for these into `tests/fixtures/golden/OpenGL/` and
   add them to the `validation/` render-and-compare harness to get the full
-  in-engine fidelity bar (rung 4 of the evidence ladder).
+  in-engine fidelity bar.
 
 > **Scope honesty:** until those goldens exist, these fresh fixtures prove
 > "ShadowDusk compiles them into a valid effect," **not** "renders the same as

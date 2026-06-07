@@ -15,4 +15,4 @@ That matters because the two backends are different emitted artifacts loaded by 
 
 ## Where it's tracked
 
-This is a planned spike (referred to as "Phase 4.1" in the project plan). Until it lands, in-browser compilation should target OpenGL/WebGL; for DirectX `.mgfx`, compile on the desktop (CLI or library) where the `vkd3d-shader` / `d3dcompiler_47` backends run.
+This is a planned spike (tracked as Phase 4.1). Until it lands, in-browser compilation should target OpenGL/WebGL; for DirectX `.mgfx`, compile on the desktop (CLI or library) where the `vkd3d-shader` / `d3dcompiler_47` backends run.
