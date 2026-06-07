@@ -31,8 +31,8 @@ public sealed class CliBinaryFixture : IDisposable
         string repoRoot = FindRepoRoot();
 
         string exeName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-            ? "ShadowDusk.Cli.exe"
-            : "ShadowDusk.Cli";
+            ? "ShadowDuskCLI.exe"
+            : "ShadowDuskCLI";
 
         // Fast path: reuse the binary the normal build already produced.
         string? built = LocateBuiltCli(repoRoot, exeName);

@@ -8,7 +8,7 @@ internal static class ArgumentParser
 {
     public static string UsageText { get; } =
         """
-        Usage: mgfxc <SourceFile> <OutputFile> [options]
+        Usage: ShadowDuskCLI <SourceFile> <OutputFile> [options]
 
         Options:
           /Profile:<Platform>       Target platform. Default: DirectX_11
