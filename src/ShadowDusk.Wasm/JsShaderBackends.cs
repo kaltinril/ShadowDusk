@@ -66,14 +66,39 @@ internal sealed partial class JsDxcShaderCompiler : IDxcShaderCompiler
         }
         catch (JSException ex)
         {
-            return Result<PlatformBlob, ShaderError>.Fail(new ShaderError(
-                File: request.SourceFileName,
-                Line: 0,
-                Column: 0,
-                Code: "SD1900",
-                Message: $"WASM DXC backend failed: {ex.Message}",
-                Severity: ShaderErrorSeverity.Error,
-                RawDiagnostics: ex.Message));
+            // Phase 38: the JS shim re-throws DXC's VERBATIM diagnostics as the
+            // exception message (file:line:col: error: message). Parse it with the
+            // SAME reformatter the desktop path uses so the in-browser failure carries
+            // real line/column — a downstream editor (e.g. an XNA/KNI fiddle) can then
+            // squiggle the exact offending line instead of showing an opaque blob.
+            IReadOnlyList<ShaderError> parsed =
+                DxcDiagnosticReformatter.Reformat(ex.Message, request.SourceFileName);
+
+            // Prefer a located diagnostic (has a source line); fall back to the first
+            // parsed entry, then to an explicit backend error carrying the raw text.
+            ShaderError? located = null;
+            foreach (ShaderError e in parsed)
+            {
+                if (e.Line > 0)
+                {
+                    located = e;
+                    break;
+                }
+            }
+
+            ShaderError chosen = located
+                ?? (parsed.Count > 0
+                    ? parsed[0]
+                    : new ShaderError(
+                        File: request.SourceFileName,
+                        Line: 0,
+                        Column: 0,
+                        Code: "SD1900",
+                        Message: $"WASM DXC backend failed: {ex.Message}",
+                        Severity: ShaderErrorSeverity.Error,
+                        RawDiagnostics: ex.Message));
+
+            return Result<PlatformBlob, ShaderError>.Fail(chosen);
         }
     }
 }
