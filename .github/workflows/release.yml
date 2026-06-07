@@ -80,13 +80,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macOS is still out of the RELEASE gate (so a release can never stall on it), but
-        # the root cause of the macOS `dotnet test` host-exit hang is now FIXED at the source
-        # (GLFW init left a non-background Cocoa thread; GlContextFixture now skips macOS
-        # before touching GLFW). The ci.yml macOS leg validates that fix on every push;
-        # RESTORE macOS here once ci.yml's macOS leg is reliably green (see memory
-        # macos-ci-test-stall). Do NOT leave macOS out long-term.
-        os: [ ubuntu-latest, windows-latest ]
+        # All three OSes run the release build + unit gate again. The macOS `dotnet test`
+        # host-exit hang that previously forced macOS out is fixed at the source
+        # (GlContextFixture no longer initializes GLFW on macOS — see its comment), so the
+        # macOS leg now completes cleanly instead of stalling. Windows is the hard gate
+        # (continue-on-error below keeps ubuntu/macOS informational here); the release is cut
+        # from main, which has already passed ci.yml's hard gate on all three OSes.
+        os: [ ubuntu-latest, macos-latest, windows-latest ]
     steps:
       - uses: actions/checkout@v4
 

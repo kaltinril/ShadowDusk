@@ -85,22 +85,28 @@ public sealed class GlContextFixture : IAsyncLifetime
 
     public Task InitializeAsync()
     {
-        // macOS: skip BEFORE touching GLFW. Two reasons:
-        //   1. Native macOS OpenGL caps the Compatibility profile at 2.1, so the GL 3.3
-        //      *Compatibility* context this suite requires (to link both modern GLSL 3.30+
-        //      and legacy GLSL ES `varying`/`gl_FragColor` in one context) cannot be created
-        //      — these tests would skip on macOS regardless.
-        //   2. More importantly, initializing GLFW on macOS spins up Cocoa / NSApplication
-        //      state on a non-background thread that prevents the test-host process from
-        //      EXITING after the run completes (the "macOS `dotnet test` passes then the host
-        //      hangs on exit until the job timeout" stall). TestSessionTimeout / --blame-hang
-        //      never catch it because the tests themselves finish fine; it's process exit that
-        //      hangs. Skipping before GLFW init avoids creating that thread entirely.
+        // This GL render proxy is N/A on macOS BY PLATFORM DESIGN — it is a deliberate
+        // decision, not a temporary workaround, and the coverage is not lost (the proxy
+        // runs on Linux + Windows in CI; the real-runtime fidelity bar is the MonoGame
+        // validation harness, not this proxy). Two independent platform facts make a
+        // headless GL 3.3 Compatibility render impossible on a macOS CI runner:
+        //   1. Apple DEPRECATED OpenGL (2018): native macOS GL caps the *Compatibility*
+        //      profile at 2.1, but this suite needs GL 3.3 Compatibility to link BOTH modern
+        //      GLSL 3.30+ (`in`/`out`) AND legacy GLSL ES (`varying`/`gl_FragColor`) in one
+        //      context. That context simply cannot be created with Apple's GL.
+        //   2. GLFW on macOS spins up Cocoa/NSApplication on a native NSThread that the .NET
+        //      runtime cannot reap, so the test-host process never EXITS after a green run
+        //      (confirmed unfixable upstream: glfw#1766; glfwTerminate does not release it).
+        //      Skipping BEFORE GLFW init is what keeps macOS exiting cleanly.
+        // (The only way to actually render GL on macOS headless is a from-source software
+        // Mesa/OSMesa build — large, expensive on the 10x-metered macOS runner, and it would
+        // only re-prove the Linux/Windows pixels. Not worth it for a proxy.)
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
             IsSkipped  = true;
-            SkipReason = "OpenGL 3.3 Compatibility is unavailable on macOS (native GL caps "
-                       + "Compatibility at 2.1); the ImageTests render proxy is skipped on macOS.";
+            SkipReason = "GL render proxy is N/A on macOS (Apple deprecated OpenGL; native GL "
+                       + "caps Compatibility at 2.1, and GLFW cannot exit cleanly on macOS). "
+                       + "This proxy is covered on Linux + Windows.";
             return Task.CompletedTask;
         }
 
