@@ -34,7 +34,18 @@ For `Target = DirectX`, ShadowDusk emits DXBC (SM ≤ 5) — what MonoGame's DX1
 
 ## MGFX format version
 
-Output defaults to **MGFX v10** (<xref:ShadowDusk.Core.CompilerOptions.MgfxVersion> / CLI `--mgfx-version`). v10 loads in MonoGame 3.8.x DesktopGL/WindowsDX and KNI (Reach and HiDef). Stay on v10 for broad backward compatibility; only change it if you have a specific runtime that requires v11.
+Output defaults to **MGFX v10** (<xref:ShadowDusk.Core.CompilerOptions.MgfxVersion> / CLI `--mgfx-version`). v10 loads in MonoGame 3.8.x DesktopGL/WindowsDX and KNI (Reach and HiDef). Valid values are **10** and **11** only — ShadowDusk does not emit the older v9 (pre-3.8.2) format. Stay on v10 for broad backward compatibility; only change it if you have a specific runtime that requires v11.
+
+The version is **not** forward/backward tolerant: a runtime checks the byte and **rejects a mismatch** — a v11 `.mgfx` will not load in a v10 runtime, and v10 is what every shipping MonoGame 3.8.x / KNI build reads today. That's why v10 is the default; pick v11 only when you know the target runtime requires it.
+
+## `.mgfx` vs `.xnb`
+
+ShadowDusk produces a raw **`.mgfx`** blob — the compiled effect — **not** an `.xnb`. The `.xnb` is the Content Pipeline's *container* that wraps a `.mgfx` (along with a type-reader header), and it's what `Content.Load<Effect>("name")` reads. The raw `.mgfx` is what the `new Effect(graphicsDevice, mgfxBytes)` constructor reads directly.
+
+- Loading effects with **`new Effect(gd, bytes)`** → use ShadowDusk's `.mgfx` as-is.
+- Loading via **`Content.Load<Effect>`** → you need an `.xnb`. Build the `.fx` through MGCB (see [MGCB Content Pipeline](mgcb-content-pipeline.md)) so the pipeline wraps ShadowDusk's `.mgfx`, or wrap the bytes yourself.
+
+This matches `mgfxc`, which also emits the raw effect and leaves `.xnb` wrapping to the content pipeline. See [Choosing a Target](choosing-a-target.md#mgfx-vs-xnb).
 
 ## KNI HiDef / WebGL2
 

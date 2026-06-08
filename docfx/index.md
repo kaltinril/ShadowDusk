@@ -37,6 +37,8 @@ DirectX (DX11):
 | [Metal (macOS / iOS)](backends/metal.md) | MSL | **Not yet implemented (future)** |
 | [Vulkan](backends/vulkan.md) | SPIR-V | **Future** |
 
+The table above is the **graphics-backend** axis — the one that decides the output bytes. **Framework** is a separate axis: **MonoGame and KNI** read the same MGFX format (both supported); **FNA** uses a different effect path (MojoShader / DX9-era bytecode) and is **not a supported target**; classic Microsoft **XNA 4.0** is **out of scope**. New to picking a target, or building a shader-download feature? See **[Choosing a Target](guides/choosing-a-target.md)** — it covers the framework / backend / `GraphicsProfile` axes and the `.mgfx`-vs-`.xnb` distinction.
+
 > **"Same `.mgfx` as `mgfxc`"** means behaviorally equivalent and `Effect`-loadable — it renders the same pixels in the real runtime. Byte-identity is only ShadowDusk's *own* reproducibility (same version + source + target → same bytes), **never** byte-equality with `mgfxc`.
 
 ## Quick links
