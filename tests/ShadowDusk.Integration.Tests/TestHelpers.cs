@@ -88,12 +88,14 @@ public static class TestHelpers
             "OpenGL"      => PlatformTarget.OpenGL,
             "DirectX_11"  => PlatformTarget.DirectX,
             "Vulkan"      => PlatformTarget.Vulkan,
+            "FNA"         => PlatformTarget.Fna,
             _             => null,
         };
 
         if (target is null)
         {
-            string errorMsg = $"error X0004: Unknown profile '{profile}'. Valid profiles: DirectX_11, OpenGL, Vulkan";
+            // Mirrors ArgumentParser.ParseProfile's X0004 message.
+            string errorMsg = $"error X0004: Unknown profile '{profile}'. Valid profiles: DirectX_11, OpenGL, Vulkan, FNA";
             return new CompileResult(1, Array.Empty<byte>(), errorMsg);
         }
 

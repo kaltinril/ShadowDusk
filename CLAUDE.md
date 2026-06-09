@@ -13,7 +13,7 @@ The load-bearing distinctions — internalize these, they have drifted before (f
 
 ## Project Overview
 
-ShadowDusk is a cross-platform HLSL shader compiler for MonoGame and KNI: compile `.fx` on Linux/macOS/Windows (no Wine/SDK) for DirectX (DXBC) and OpenGL (GLSL) targets, as a drop-in `mgfxc` replacement — usable as the in-memory library (the product), the `ShadowDuskCLI` `dotnet tool`, or in-browser via WASM. Full statement of the five purposes, the two success axes, and the backend pipeline table: **[docs/the-purpose.md](docs/the-purpose.md)**.
+ShadowDusk is a cross-platform HLSL shader compiler for MonoGame and KNI: compile `.fx` on Linux/macOS/Windows (no Wine/SDK) for DirectX (DXBC) and OpenGL (GLSL) targets, as a drop-in `mgfxc` replacement — usable as the in-memory library (the product), the `ShadowDuskCLI` `dotnet tool`, or in-browser via WASM. An **additive FNA target** (Phase 39: `PlatformTarget.Fna` → D3D9 fx_2_0 `.fxb` via vkd3d SM1–3 + our `Fx2EffectWriter`) is implemented through evidence rung 2 — **no public FNA-support claims until rung 4** (real-FNA render validation). Full statement of the five purposes, the two success axes, the backend pipeline table, and the FNA bar: **[docs/the-purpose.md](docs/the-purpose.md)**.
 
 ## Repository Layout
 

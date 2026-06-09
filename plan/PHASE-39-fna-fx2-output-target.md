@@ -1,6 +1,6 @@
 # Phase 39 — FNA support: compile `.fx` → D3D9 `fx_2_0` Effects bytecode (MojoShader-loadable)
 
-**Status:** 🔬 **Research / Design (2026-06-08)** — no code yet. This doc is the findings + feasibility + proposed implementation for making ShadowDusk able to produce shaders that load and render in **FNA** (the open-source XNA4 reimplementation by Ethan Lee / flibitijibibo). Own research; not derived from VIC's README/docs work (those changes are not in this branch).
+**Status:** 🚧 **Implemented through evidence rung 2 (2026-06-09)** — Option A is built and green: `PlatformTarget.Fna` compiles D3D9-style `.fx` → `.fxb` (`0xFEFF0901`) end-to-end via vkd3d `D3D_BYTECODE` + the new `Fx2EffectWriter`, structurally validated against MojoShader's parse rules and real `fxc /T fx_2_0` goldens. **Rungs 3–4 (real MojoShader parse harness; real FNA render) are NOT yet claimed — no public "FNA support" claims until rung 4.** See *Implementation record* below. Original research (2026-06-08) follows unchanged.
 
 **Track:** Reach (Part 1 of THE PURPOSE) — a *new consumer runtime* (FNA), where FNA's only blessed compiler is the **Windows-only, deprecated `fxc.exe` run under Wine** — exactly the cross-platform gap ShadowDusk exists to close. Additive opt-in target (like Metal/Vulkan), never a change to existing OpenGL/DX11/`.mgfx` v10 output (per `backwards-compat-monogame-382-mgfx-v10`).
 
@@ -128,6 +128,163 @@ Rejected. No maintained HLSL→D3D9 generator exists in MojoShader; writing one 
 **Recommendation: Option A**, with Option B as a background watch — if upstream lands the fx_2_0 writer first, swap step 4 for a direct vkd3d call.
 
 ---
+
+## Implementation record (2026-06-09)
+
+Option A implemented on `feature/phase39-fna-fx2-target`. Preceded by a four-agent review/research
+pass (doc-vs-code audit, product-purpose review, MojoShader byte-spec extraction, empirical vkd3d
+gate) whose load-bearing outcomes are recorded here.
+
+### Empirical gate — vkd3d **1.17 suffices; no version bump**
+
+The pinned, already-vendored vkd3d-shader **1.17** binary was tested directly on this corpus
+(scratch P/Invoke harness, Windows 11, 2026-06-09):
+
+- **D3D9-style HLSL → `D3D_BYTECODE` works**: correct version tokens (ps_2_0 `0xFFFF0200`,
+  ps_3_0 `0xFFFF0300`, vs_3_0 `0xFFFE0300`), and **every successful blob carries a usable CTAB**
+  (names, FLOAT4/SAMPLER register sets, registers, matrix register counts).
+- **Corpus sweep: 105/107 attempted SM ≤ 3 entry-point compiles succeed.** The 2 failures
+  (`ForwardLighting.fx` PS, `DeferredSprite.fx`) are one vkd3d construct gap: int-typed ternary
+  in `clip((c < x) ? -1 : 1)` → `E5017` (float literals work). They fail loudly with vkd3d's
+  diagnostic — acceptable.
+- vkd3d **accepts `sampler_state { … }` initializers, `texture` declarations, `tex2D`, `COLOR`
+  semantics, and even whole technique blocks natively** — so FNA mode strips only what we strip
+  for metadata anyway.
+- One rewrite IS required: D3D9 stage-scoped reservations **`register(vs|ps, rN)` are
+  unimplemented in vkd3d 1.17 (`E5017`)**; the plain `register(rN)` form is honored (CTAB
+  confirms pinning). Hence `Sm3StageReservationRewriter` (per-stage, literal occurrences).
+- vkd3d's own `TARGET_FX`/fx_2_0 writer confirmed unusable (pass assignments not implemented) —
+  the container writer is ours, as designed.
+- **The doc's "needs 1.18" concern is resolved: the 1.18-landed ops are ps_1_x-era; ps_2_0+ is
+  fine on 1.17.** Staying pinned also keeps the validated DirectX SM5 vkd3d output byte-stable.
+- **Golden oracles exist**: both `fxc.exe /T fx_2_0` (three local SDKs) and
+  `D3DCompile("fx_2_0")` work on Windows and produce **byte-identical** output. Two goldens +
+  sources are checked in at `tests/fixtures/golden/FNA/` (test oracles only — fxc never ships).
+
+### What was built
+
+| Piece | Where | Notes |
+|---|---|---|
+| `PlatformTarget.Fna = 4` | `ShadowDusk.Core/PlatformTarget.cs` | additive; `MgfxVersion`/`DxbcBackend` ignored for Fna |
+| FNA macro set `FNA, HLSL, SM3` | `Preprocessor/PlatformMacros.cs` | deliberately NOT `MGFX`/`SM4`/`OPENGL` |
+| CLI `/Profile:FNA` | `ShadowDusk.Cli/ArgumentParser.cs` | additive; mgfxc parity unaffected |
+| `FxSourceMode.PreserveSm3` | `ShadowDusk.HLSL/FxPreParser.cs` + `FxSourceMode.cs` | passthrough of all D3D9 constructs; technique/annotation stripping + metadata capture unchanged; default mode byte-identical (proven by existing suite) |
+| `Sm3StageReservationRewriter` | `ShadowDusk.HLSL/` | per-stage `register(vs\|ps, rN)` → `register(rN)`; comment/string-aware |
+| SM ≤ 3 vkd3d path | `Vkd3d/Vkd3dShaderCompiler.cs` + `D3DCompileRequest.ProfileOverride` + `BlobKind.D3dBytecode` | profile ≤ 3 ⇒ `D3D_BYTECODE`; null override ⇒ existing SM5 path untouched |
+| `CtabReader` | `ShadowDusk.Core/Reflection/` | D3D9 CTAB = the FNA reflection source (it is what MojoShader binds against); leading-comments scan only; scalar/vector defaults propagated, matrix defaults deliberately not (F2) |
+| `Fx2EffectDesc` + `Fx2EffectWriter` | `ShadowDusk.Core/` | the `0xFEFF0901` container writer per `docs/fx2-binary-format.md`; validates every invariant MojoShader doesn't bounds-check; emits only FNA-honored states |
+| `Fx2EffectBuilder` | `ShadowDusk.Compiler/Internal/` | CTAB union + sampler/texture parameter assembly (textures before samplers) + MonoGame-ordinal → D3D9 render/sampler-state value maps |
+| Pipeline branch | `CompilationPipeline.RunFnaAsync` | fully separate path — DXC/SPIRV-Cross/MGFX never touched ⇒ existing targets' bytes cannot change |
+| WASM guard | `ShadowDusk.Wasm/WasmShaderCompiler.cs` | `SD0304` clear error (vkd3d has no WASM build; no substitute compiler, ever) |
+| Spec + goldens | `docs/fx2-binary-format.md`, `tests/fixtures/golden/FNA/` | MojoShader-derived byte spec (pinned icculus/mojoshader `6333f74`); fxc ground truth |
+
+**Profile policy** (the pre-parser sees profiles before macro expansion, so `compile
+PS_SHADERMODEL …` arrives as a macro name): literal SM ≤ 3 profile → honored as written; literal
+SM4+ → loud `SD0300`; macro/absent → default `vs_3_0`/`ps_3_0`.
+
+**Error codes**: `SD0300` SM4+ profile under Fna · `SD0301` CTAB missing/corrupt · `SD0302`
+fx_2_0 writer validation · `SD0303` FNA effect build (struct globals, unsupported/FNA-throwing
+sampler states) · `SD0304` Fna on the WASM host.
+
+### Evidence ladder — claimed rungs (per `docs/the-purpose.md`, proxies ≠ bar)
+
+1. ✅ **Compiles**: SM3 corpus → `.fxb` via the real pipeline (vkd3d on every host; never the
+   d3dcompiler oracle — output is host-independent by construction).
+2. ✅ **Structurally well-formed**: `Fx2BinaryValidator` (test-side reimplementation of
+   MojoShader's parse rules + FNA's runtime constraints, derived from the spec doc by an
+   agent that never read `Fx2EffectWriter` — independent of the writer, not of the spec)
+   parses our output **and is calibrated against the real fxc goldens**; CTAB names ⊂
+   parameter names, texture-before-sampler ordering, object wiring, padding all enforced.
+   The writer itself also enforces the CTAB-name⊆parameters rule at write time.
+3. ⬜ **Real MojoShader parses + translates** — needs a native MojoShader test harness
+   (recommended next step; cheapest high-value gate).
+4. ⬜ **Real FNA renders pixel-equivalent to `fxc /T fx_2_0`** — needs a `validation/CandidateFna`
+   host (the Phase 17/18 analog). **Until rung 4: no README/docs/release-notes claim of FNA
+   support.**
+
+### Honest scoping — packaging (pre-existing gap, now shared)
+
+`libvkd3d-shader` is a **restored, win-x64-only, NOT-NuGet-packed** artifact
+(`ShadowDusk.HLSL.csproj` copies it to build output only; `release.yml` doesn't bundle it). The
+DirectX target masks this via the Windows d3dcompiler_47 default; **FNA has no fallback**, so
+from the published NuGet the Fna target fails with the clear `SD0211` restore message on every
+OS. This is the same Phase 18 follow-up (per-RID vkd3d builds + `runtimes/{rid}/native`
+packing), not a new gap — but for FNA it is **blocking for the library delivery shape**. Until
+it lands, FNA works from repo builds and self-contained CLI publishes only. Do not describe the
+FNA target as self-contained before then.
+
+### Known limitations (documented, all fail loudly or are additive)
+
+- vkd3d 1.17 rejects int-typed ternary at SM ≤ 3 (`clip(c ? -1 : 1)`) — 2/48 corpus files;
+  write `? -1.0 : 1.0`. **Diagnostic-fidelity gap (Constraint 5):** for this particular
+  failure vkd3d 1.17 returns an *empty* messages blob, so the integrated pipeline surfaces
+  only `X0000 "Shader compilation failed"` + the file name — the `E5017` detail appears only
+  on vkd3d's own debug stderr. Improving that surface (e.g. capturing vkd3d debug output or
+  re-running at a higher log level on failure) is a follow-up.
+- `TECHNIQUE(…)` macro fixtures (stock XNA effects) are invisible to the pre-parser on **every**
+  target (macro-call techniques; pre-parse precedes expansion) — not an FNA regression; they
+  need macro-expanded technique extraction to become targetable.
+- The parameter table is CTAB-driven: globals the compiler optimized out are absent (mirrors
+  the MGFX writer's reflection-driven table). Unused `texture` declarations likewise.
+- `register(vs|ps, …)` rewriting covers literal occurrences; macro-generated ones (e.g.
+  `Macros.fxh _vs(c0)`) expand inside vkd3d's preprocessor where we can't rewrite — those
+  sources also use `TECHNIQUE(…)` and are blocked upstream of this anyway.
+- Non-square matrix parameters are rejected (`SD0302`) until F1 (MojoShader/fxc dims-order
+  conflict) is settled with a golden; matrix **defaults** bake as zeros until F2 is settled.
+- In-pass render states are emitted faithfully (mapped to the FNA-honored set; everything our
+  `RenderStateBlock` models maps inside it) but FNA-runtime behavior is unproven until rung 3/4.
+- vkd3d 1.17's preprocessor ignores `#line` directives (and logs a `fixme` per compile to its
+  debug stderr), so FNA-path diagnostic line numbers reference the *flattened* preprocessed
+  text, not the original include structure — unlike the DXC paths.
+- Parameter/technique/pass **annotations** are captured by the pre-parser but **not emitted**
+  into the fx_2_0 binary (zero-annotation policy; MojoShader and FNA fully tolerate it). fxc
+  would emit them; add emission if a real FNA consumer ever reads annotations.
+- `CompilerOptions.Debug` is a **deliberate no-op** on the FNA path: vkd3d's d3dbc target has
+  no debug-info knob we pass, and FNA's own guidance is that fxc *debug*-style codegen trips
+  MojoShader strictness — so Debug can never produce a `.fxb` MojoShader rejects.
+- Shared entry points referenced by multiple passes are compiled and embedded once **per
+  referencing pass** (no shader-object sharing) — larger `.fxb` than fxc's for multi-pass
+  effects reusing entries, behaviorally identical.
+- The FNA integration tests **skip (not fail) when the vkd3d native is absent** — which is the
+  case in CI today (Phase 37 C). Until vkd3d lands in CI, rung-1/2 evidence is local-machine
+  only; the gate is `FnaFactAttribute`/`FnaTheoryAttribute`.
+
+### Adversarial review (2026-06-09) — found & fixed before commit
+
+A four-reviewer adversarial pass (spec-vs-writer byte audit incl. an independent decode of a
+2-technique/3-pass/2-sampler probe, regression audit of every modified file, security review,
+completeness critic) confirmed the byte layout, determinism, and regression-safety, and found
+one real bug plus hardening gaps — all fixed:
+
+- **INT/BOOL parameter defaults were emitted as float bits** (vkd3d's CTAB stores defaults as
+  a float register image even for int/bool globals; the writer copied the bits through —
+  `int Count = 7;` baked `7.0f`'s bits, which MojoShader/FNA read back as `1088421888`).
+  The writer's value-blob emission is now type-aware (float = IEEE bits, int = rounded raw
+  dword, bool = 0/1), with byte-level tests.
+- **Literal `ps_4_0_level_9_1`-style profiles silently downgraded** to ps_3_0 (they're not in
+  the known-profiles list, so they classified as macro names). The profile policy now
+  classifies by shape (`vs_`/`ps_` + major digit), so all literal SM4+ forms fail `SD0300`.
+- Duplicate render-state keys in a pass threw `ArgumentException` instead of last-wins (fxc
+  semantics) — fixed in the FNA path.
+- Sampler arrays (`sampler ss[2]`) were silently reshaped to non-arrays — now fail `SD0303`.
+- The d3dcompiler_47 oracle silently ignored `ProfileOverride` — now refuses it loudly
+  (`SD0210`), so output can never silently depend on backend choice.
+- Writer hardening: negative-`Elements`/oversized-blob rejection, ASCII-only name enforcement
+  (lossy re-encode would break MojoShader's strcmp binding), CTAB-name⊆parameters enforcement
+  at write time, and a scan cap fixing a quadratic-time path in `Sm3StageReservationRewriter`
+  on adversarial input.
+
+### Follow-ups
+
+- [ ] Surface vkd3d's `E5017`-class detail when its messages blob is empty (Constraint-5
+      diagnostic fidelity; see Known limitations).
+- [ ] **Rung 3**: native MojoShader parse+translate harness over the corpus `.fxb`s.
+- [ ] **Rung 4**: `validation/CandidateFna` render-compare vs `fxc /T fx_2_0` (mirrors Phase 17/18);
+      includes verifying in-pass render states and the `Debug`-flag posture against MojoShader's
+      strictness notes.
+- [ ] vkd3d per-RID NuGet packing (shared with `DxbcBackend.Vkd3d`; blocking for library-shape FNA).
+- [ ] Option B watch: if upstream vkd3d lands a complete fx_2_0 writer, evaluate swapping the
+      container step.
 
 ## Definition of done (when pursued)
 
