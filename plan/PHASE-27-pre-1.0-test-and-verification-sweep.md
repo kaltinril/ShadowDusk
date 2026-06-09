@@ -149,6 +149,24 @@ Verified against the tree on 2026-06-03 (cite real files):
       assert `LoadSource` returns the correct blob bytes (Phase 3 §7.4).
 - [ ] Run `tools/restore.*` → rebuild → `dotnet test --filter "Category=Integration&Platform=OpenGL"`;
       tick Phase 6 `11-6-C` and run `/platform-check`.
+- [ ] **Verify the global-param default-value fidelity gap (vs real mgfxc).** A **global**
+      HLSL parameter with an initializer — e.g. `float FishEyeAmount = 0.35;` — compiles
+      through ShadowDusk but the `.mgfx` stores its default as **`0.0`, not `0.35`** (the
+      param data block is zeroed). Root cause: the global becomes a `$Globals` cbuffer
+      member and **DXC drops the initializer** for cbuffer globals (HLSL treats them as
+      advisory); **fxc** — which `mgfxc` uses — *does* capture it as the constant-table
+      `DefaultValue`, so **mgfxc almost certainly bakes `0.35`**. If a consumer never calls
+      `effect.Parameters["X"].SetValue(...)`, the uniform is `0` → any term multiplying it
+      vanishes → the effect renders as an **identity transform** (looks like "no shader",
+      though it compiled/loaded/applied fine). **Did NOT bite the SM3 corpus** (Phase 17 —
+      its shaders use `SetValue` or *local* initializers, which DXC constant-folds
+      correctly); only *global* params with defaults are affected. **Action:** compile a
+      shader with a global default on a Windows box with real `mgfxc`; diff the reflected
+      `DefaultValue`. **If mgfxc bakes it,** bake `$Globals` defaults into the MGFX constant
+      data (source of truth = reflected cbuffer layout + the HLSL initializer parsed by the
+      FX pre-parser, since DXC won't carry it). Found 2026-06-02 diagnosing a Fisheye shader
+      in `ShaderFiddle.Web` (the sample's help note already warns users to inline the
+      constant or `SetValue` it).
 
 ### C. CLI-process invocation parity (Phase 15)
 - [ ] Add a `[Theory]` variant of `CompileFixtureTests.Compile_ProducesValidMgfxHeader`
