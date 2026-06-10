@@ -135,6 +135,15 @@ Option A implemented on `feature/phase39-fna-fx2-target`. Preceded by a four-age
 pass (doc-vs-code audit, product-purpose review, MojoShader byte-spec extraction, empirical vkd3d
 gate) whose load-bearing outcomes are recorded here.
 
+> **Full evidence record: [PHASE-39-appendix/](PHASE-39-appendix/README.md)** — the complete
+> agent reports (A doc-vs-code integration map · B purpose review · C empirical vkd3d gate ·
+> D spec-extraction notes · E adversarial review, every finding verbatim · F rung-3/4 harness
+> build report incl. the pre-fix discovery run · G the Dissolve / MojoShader-printFloat
+> bisection) plus H, the session record (design rationale, cross-phase observations, WSL-build
+> and NuGet-testing gotchas, patcher engineering notes, the SD03xx error-code registry). This
+> file is the synthesis; the appendices are the primary sources — nothing load-bearing lives
+> only in a chat transcript.
+
 ### Empirical gate — vkd3d **1.17 suffices; no version bump**
 
 The pinned, already-vendored vkd3d-shader **1.17** binary was tested directly on this corpus
@@ -175,7 +184,9 @@ The pinned, already-vendored vkd3d-shader **1.17** binary was tested directly on
 | `Fx2EffectDesc` + `Fx2EffectWriter` | `ShadowDusk.Core/` | the `0xFEFF0901` container writer per `docs/fx2-binary-format.md`; validates every invariant MojoShader doesn't bounds-check; emits only FNA-honored states |
 | `Fx2EffectBuilder` | `ShadowDusk.Compiler/Internal/` | CTAB union + sampler/texture parameter assembly (textures before samplers) + MonoGame-ordinal → D3D9 render/sampler-state value maps |
 | Pipeline branch | `CompilationPipeline.RunFnaAsync` | fully separate path — DXC/SPIRV-Cross/MGFX never touched ⇒ existing targets' bytes cannot change |
+| `D3d9BytecodePatcher` | `ShadowDusk.Core/` | MojoShader-compat post-pass on vkd3d's SM2/3 token streams (texkill writemask, pre-SM3 texld swizzle, ≥2³² def-literal clamp) — FNA path only; see "MojoShader-compat fixes" below + Appendices F/G/H |
 | WASM guard | `ShadowDusk.Wasm/WasmShaderCompiler.cs` | `SD0304` clear error (vkd3d has no WASM build; no substitute compiler, ever) |
+| Rung-3/4 harness | `validation/FnaValidation/` | real-FNA load + render-compare vs the `D3DCompile("fx_2_0")` oracle; FNA/fnalibs restored via `restore-fna.ps1`, never committed (Appendix F) |
 | Spec + goldens | `docs/fx2-binary-format.md`, `tests/fixtures/golden/FNA/` | MojoShader-derived byte spec (pinned icculus/mojoshader `6333f74`); fxc ground truth |
 
 **Profile policy** (the pre-parser sees profiles before macro expansion, so `compile
@@ -183,8 +194,9 @@ PS_SHADERMODEL …` arrives as a macro name): literal SM ≤ 3 profile → honor
 SM4+ → loud `SD0300`; macro/absent → default `vs_3_0`/`ps_3_0`.
 
 **Error codes**: `SD0300` SM4+ profile under Fna · `SD0301` CTAB missing/corrupt · `SD0302`
-fx_2_0 writer validation · `SD0303` FNA effect build (struct globals, unsupported/FNA-throwing
-sampler states) · `SD0304` Fna on the WASM host.
+fx_2_0 writer validation · `SD0303` FNA effect build (struct globals, sampler arrays,
+unsupported/FNA-throwing sampler states) · `SD0304` Fna on the WASM host · `SD0305` bytecode
+patcher cannot canonicalize (no free temp / predicated / relative addressing).
 
 ### Evidence ladder — ALL FOUR RUNGS PROVEN (2026-06-09; per `docs/the-purpose.md`)
 
