@@ -9,10 +9,14 @@ of the Phase 39 evidence ladder (`docs/the-purpose.md`, *FNA's bar*):
   `new Effect(GraphicsDevice, bytes)` → FNA3D → `MOJOSHADER_compileEffect`. A parse or
   translate failure surfaces here (the harness hooks `FNALoggerEXT.LogError` to capture
   the exact MojoShader error text — FNA3D logs, it does not throw).
-- **Rung 4 — real FNA renders pixel-equivalent**: each effect is applied to the same cat
-  image via the normal `SpriteBatch` path (the scene mirrors
-  `validation/SharedDx/DxEffectImageRenderer.cs` exactly) and the two arms' pixels are
-  compared in-process.
+- **Rung 4 — real FNA renders pixel-equivalent**: each effect renders in one of two scenes
+  and the two arms' pixels are compared in-process. PS-only effects are applied to the same
+  cat image via the normal `SpriteBatch` path (mirrors
+  `validation/SharedDx/DxEffectImageRenderer.cs` exactly); VS-driven effects — which ship
+  their own vertex shader SpriteBatch can never exercise — draw a custom-geometry
+  clip-space quad (`POSITION0/COLOR0/TEXCOORD0`, `DrawUserIndexedPrimitives`) so the
+  effect's own VS runs (mirrors `validation/SharedDx/VsDxEffectImageRenderer.cs`, the
+  Phase-28 analog).
 
 ## The two arms
 
@@ -36,17 +40,28 @@ SHADERMODEL/`SV_POSITION` define block; anything else marks the shader
 
 ## Gate vs reported
 
-- **GATE (exit code 0 requires all 10 to PASS):** the Phase 17 PS-only set — Grayscale,
-  Invert, Sepia, Saturate, Pixelated, Scanlines, Fading, Dots, Dissolve, TintShader.
+- **GATE (exit code 0 requires all 14 to PASS):** the Phase 17 PS-only set — Grayscale,
+  Invert, Sepia, Saturate, Pixelated, Scanlines, Fading, Dots, Dissolve, TintShader — plus
+  the VS-driven set (custom-geometry quad scene, the 17-VS analog) —
+  VsTransformColorTexture, PolygonLight, VertexAndPixel, FnaMultiPassStates (the last also
+  proves multi-pass + in-pass render states empirically: its second pass alpha-blends over
+  its first with the device blend state pinned Opaque — pinned by an automated flat-image
+  content guard, since the arm-vs-arm compare alone cannot see an FNA-side honoring
+  regression that degrades both arms identically).
 - **Reported (not gating):** BasicShader, BlendShader, ClipShader, ClipShaderNew,
   ClipShaderSpriteTarget, MultiTexture, MultiTextureOverlay, SimpleLightShader,
-  SpriteAlphaTest, Teleport, plus the fxc golden sources `minimal`/`textured` from
-  `tests/fixtures/golden/FNA/`.
+  SpriteAlphaTest, Teleport, the fxc golden sources `minimal`/`textured` from
+  `tests/fixtures/golden/FNA/`, and the 5 diagnostic probe rows (`FnaPreshaderProbe` +
+  the `FnaProbe*` Appendix-G bisection ladder).
 
-**PASS** = both arms compile + load + render, and **zero** pixels have a per-channel
-delta above **4/255** — the same tolerance `validation/compare_dx.py` applies to the
-Phase 18 cross-compiler comparison (different compilers ⇒ tiny float divergence is
-legitimate; byte-equality is a non-goal).
+**PASS** = both arms compile + load + **render cleanly** (a render-stage error on either
+arm fails the row, even when comparable pixels exist), and **zero** pixels have a
+per-channel delta above **4/255** — the same tolerance `validation/compare_dx.py` applies
+to the Phase 18 cross-compiler comparison (different compilers ⇒ tiny float divergence is
+legitimate; byte-equality is a non-goal). Each row's scene flag is verified against the
+candidate `.fxb` (a VS-bearing effect misfiled under the Sprite scene would pass
+vacuously), and the VsQuad scene clears texture slots between arms so a missing
+sampler→texture binding renders black instead of inheriting the other arm's binding.
 
 ## External dependencies (restored, never committed)
 

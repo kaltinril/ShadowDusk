@@ -38,7 +38,7 @@ The product is the **combination**: *the same result `mgfxc` gives, produced whe
 **Part 2's bar is in-engine behavioral equivalence:** a game whose `.fx` shaders are compiled with ShadowDusk instead of `mgfxc`, loaded into the **real MonoGame/KNI runtime** (`Effect`), renders **the same pixels** as the `mgfxc`-compiled version.
 
 - The measure is *what the player sees in a real MonoGame game*, **not "ShadowDusk's own tests pass."** Unit tests, `.mgfx` structural tests, and images rendered by **ShadowDusk's own** renderer are necessary **proxies, not the bar** — a proxy can be green while the real goal is unmet. (This has happened: a GLSL cross-validation passed only because the test renderer was taught to bind uniform names the real runtime doesn't use.)
-- **Evidence ladder, weakest → strongest:** (1) compiles without error → (2) `.mgfx` is structurally well-formed → (3) ShadowDusk's GLSL matches `mgfxc`'s GLSL *in our own renderer* → (4) **ShadowDusk's `.mgfx` loads in MonoGame's `Effect` and renders like `mgfxc`'s in the real runtime.** Only (4) proves the promise. (4) is **proven for the OpenGL SM3 PS-only corpus** (Phase 17, done 2026-05-30 — `plan/DONE/PHASE-17-monogame-runtime-validation.md`: all 10/10 shaders render pixel-equivalent in real MonoGame DesktopGL) **and for the DirectX SM5 PS-only corpus** (Phase 18, done 2026-05-30 — `plan/DONE/PHASE-18-directx-dxbc.md`: all 10/10 DX `.mgfx` load in real MonoGame WindowsDX and render pixel-equivalent to `mgfxc`, via **both** the Windows-only `d3dcompiler_47` oracle and the cross-platform **vkd3d-shader** backend — the latter being what makes DX DXBC compilable where `mgfxc` can't run). VS-driven effects remain (backlog 17-VS); Linux/macOS *run* validation of the vkd3d backend → Phase 30 CI.
+- **Evidence ladder, weakest → strongest:** (1) compiles without error → (2) `.mgfx` is structurally well-formed → (3) ShadowDusk's GLSL matches `mgfxc`'s GLSL *in our own renderer* → (4) **ShadowDusk's `.mgfx` loads in MonoGame's `Effect` and renders like `mgfxc`'s in the real runtime.** Only (4) proves the promise. (4) is **proven for the OpenGL SM3 PS-only corpus** (Phase 17, done 2026-05-30 — `plan/DONE/PHASE-17-monogame-runtime-validation.md`: all 10/10 shaders render pixel-equivalent in real MonoGame DesktopGL) **and for the DirectX SM5 PS-only corpus** (Phase 18, done 2026-05-30 — `plan/DONE/PHASE-18-directx-dxbc.md`: all 10/10 DX `.mgfx` load in real MonoGame WindowsDX and render pixel-equivalent to `mgfxc`, via **both** the Windows-only `d3dcompiler_47` oracle and the cross-platform **vkd3d-shader** backend — the latter being what makes DX DXBC compilable where `mgfxc` can't run). VS-driven effects are also proven (Phase 28, done 2026-06-05 — `plan/DONE/PHASE-28-vs-driven-monogame-effects.md`: rung-4 max-delta-0 vs `mgfxc` in real DesktopGL **and** WindowsDX); Linux/macOS *run* validation of the vkd3d backend → Phase 30 CI.
 - **Compare same-backend, never cross-backend.** Validation always compares ShadowDusk vs `mgfxc` on the *same* target (GL↔GL, DX↔DX) — never OpenGL output against DirectX output. The shader's *intent* (e.g. a 9-tap blur) is backend-agnostic, but each backend is a **separate emitted artifact** (OpenGL = GLSL text; DirectX = GPU bytecode) loaded by a **different** MonoGame runtime path. So a green OpenGL result says nothing about DirectX: a shipped game runs exactly one backend, and each must be produced correctly and validated on its own. "The blur is correct" ≠ "ShadowDusk emitted a valid, loadable artifact for *this* backend."
 - **"Same `.mgfx` output" means behaviorally equivalent and `Effect`-loadable — NOT byte-identical to `mgfxc`.** Different compilers; byte-equality with `mgfxc` is neither expected nor a goal. "Byte-identical / deterministic" (Core Design Constraint 3) refers only to *ShadowDusk's own* reproducibility: same ShadowDusk version + same source + same target → same bytes.
 
@@ -52,7 +52,7 @@ MonoGame's stock content pipeline (`MGCB`) shells out to `mgfxc`, which depends 
 | OpenGL / DesktopGL | GLSL | DXC → SPIR-V → SPIRV-Cross → GLSL |
 | Metal (macOS / iOS) *(not yet implemented)* | MSL | DXC → SPIR-V → SPIRV-Cross → MSL |
 | Vulkan (future) | SPIR-V | DXC → SPIR-V (direct) |
-| FNA *(Phase 39 — **rung 4 proven**, PS-only corpus; one `.fxb` serves all FNA backends)* | D3D9-style HLSL (SM ≤ 3) | vkd3d-shader → D3D9 bytecode → ShadowDusk `Fx2EffectWriter` → fx_2_0 (`.fxb`) |
+| FNA *(Phase 39 — **rung 4 proven**, PS-only + VS-driven corpora; one `.fxb` serves all FNA backends)* | D3D9-style HLSL (SM ≤ 3) | vkd3d-shader → D3D9 bytecode → ShadowDusk `Fx2EffectWriter` → fx_2_0 (`.fxb`) |
 
 > **FNA's bar (Phase 39).** For FNA the reference compiler is not `mgfxc` but Microsoft's
 > `fxc.exe /T fx_2_0` (Windows-only, deprecated, FNA's blessed workflow runs it under Wine) —
@@ -61,10 +61,11 @@ MonoGame's stock content pipeline (`MGCB`) shells out to `mgfxc`, which depends 
 > same-backend-compared. The evidence ladder mirrors the MonoGame one: (1) compiles → (2)
 > structurally well-formed per MojoShader's parse rules + calibrated against real fxc goldens
 > (`tests/fixtures/golden/FNA/`) → (3) the real MojoShader library parses+translates it → (4)
-> real FNA renders pixel-equivalent. **All four rungs are proven for the SM3 PS-only corpus
-> (2026-06-09, `validation/FnaValidation`: gate 10/10 + 12 extended entries, max delta ≤ 1/255
-> vs the fxc oracle in real FNA 26.06)**; VS-driven FNA effects are the remaining 17-VS-style
-> follow-up. `fxc`/`d3dcompiler_47` are test oracles only and never ship — the shipping path
+> real FNA renders pixel-equivalent. **All four rungs are proven for the SM3 PS-only AND
+> VS-driven corpora (2026-06-09, `validation/FnaValidation`: gate 14/14 — the 10 Phase-17
+> PS-only shaders via the SpriteBatch scene + 4 VS-driven effects via the custom-geometry
+> quad scene — plus 12 extended entries, max delta ≤ 1/255 vs the fxc oracle in real FNA
+> 26.06; in-pass render states empirically honored)**. `fxc`/`d3dcompiler_47` are test oracles only and never ship — the shipping path
 > is vkd3d-shader's SM1–3 backend on every host, packed into the NuGet for win-x64 + linux-x64
 > with cross-host byte-identical output. This is additive reach (Part 1); the
 > mgfxc-replacement promise remains the primary product.

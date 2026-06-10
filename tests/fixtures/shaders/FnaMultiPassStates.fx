@@ -10,8 +10,9 @@
 //   - a float4 uniform read by the PS (CTAB FLOAT4 constant -> effect parameter),
 //   - a texture + sampler_state pair (the usage==1 sampler->texture name map).
 //
-// Consumed by FnaCompileFixtureTests only (fixture suites use explicit lists; no
-// test auto-globs this directory).
+// Consumed by FnaCompileFixtureTests (rungs 1-2) and validation/FnaValidation
+// (rungs 3-4, VS-driven gate row) — fixture suites use explicit lists; no test
+// auto-globs this directory.
 
 texture SceneTexture;
 sampler TexSampler = sampler_state
@@ -47,9 +48,15 @@ float4 TintedTexturePS(float2 uv : TEXCOORD0) : COLOR0
     return tex2D(TexSampler, uv) * Tint;
 }
 
+// Alpha 0.5, NOT 1.0: pass Solid draws over pass Blend's full-quad output, and the
+// AlphaBlendEnable/SRCALPHA states set in pass Blend persist into it (XNA semantics —
+// states stick until overwritten). At alpha 1 the green would fully occlude pass
+// Blend, making its tinted-texture path invisible to the rung-4 pixel compare (the
+// vacuous-coverage trap of Phase 39 Appendix G); at 0.5 BOTH passes contribute to
+// every pixel AND the persisted in-pass blend states become empirically observable.
 float4 PlainColorPS() : COLOR0
 {
-    return float4(0.0, 1.0, 0.0, 1.0);
+    return float4(0.0, 1.0, 0.0, 0.5);
 }
 
 technique MultiPass

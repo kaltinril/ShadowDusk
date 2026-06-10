@@ -8,27 +8,33 @@ using Microsoft.Xna.Framework.Graphics;
 namespace ShadowDusk.Validation.Fna;
 
 /// <summary>
-/// FNA (Phase 39 rung 3/4) shared inputs. The 10-shader GATE set and its parameter
+/// FNA (Phase 39 rung 3/4) shared inputs. The PS-only GATE set and its parameter
 /// values are a faithful port of <c>validation/SharedDx/DxShaderInputs.cs</c> (which is
 /// itself the Phase 17 set), so the FNA comparison uses the SAME shaders, the SAME cat
-/// image, and the SAME parameter values as the proven GL/DX validations. The extended
-/// (reported, non-gating) set adds the rest of the SM3-expressible PS-only corpus plus
-/// the two fxc golden sources from <c>tests/fixtures/golden/FNA/</c>.
+/// image, and the SAME parameter values as the proven GL/DX validations; the VS-driven
+/// GATE set (custom-geometry quad scene) is the 17-VS analog. The extended (reported,
+/// non-gating) set adds the rest of the SM3-expressible PS-only corpus plus the two
+/// fxc golden sources from <c>tests/fixtures/golden/FNA/</c>.
 /// </summary>
 public static class FnaShaderInputs
 {
-    /// <summary>One corpus entry: display name, repo-relative .fx path, gate membership.</summary>
-    public sealed record CorpusShader(string Name, string RelativePath, bool Gate);
+    /// <summary>One corpus entry: display name, repo-relative .fx path, gate membership, scene.</summary>
+    public sealed record CorpusShader(
+        string Name, string RelativePath, bool Gate, FnaScene Scene = FnaScene.Sprite);
 
     private static CorpusShader Fixture(string name, bool gate) =>
         new(name, Path.Combine("tests", "fixtures", "shaders", name + ".fx"), gate);
+
+    private static CorpusShader VsFixture(string name, bool gate) =>
+        new(name, Path.Combine("tests", "fixtures", "shaders", name + ".fx"), gate, FnaScene.VsQuad);
 
     private static CorpusShader Golden(string name) =>
         new(name, Path.Combine("tests", "fixtures", "golden", "FNA", name + ".fx"), Gate: false);
 
     /// <summary>
-    /// The corpus, in fixed order. The first 10 are the Phase 17 PS-only GATE set
-    /// (all must PASS for exit code 0); the rest are reported, not gating.
+    /// The corpus, in fixed order. The GATE set (all must PASS for exit code 0) is the
+    /// Phase 17 PS-only ten plus the four VS-driven effects (the 17-VS analog); the
+    /// rest are reported, not gating.
     /// </summary>
     public static readonly CorpusShader[] Corpus =
     {
@@ -43,6 +49,12 @@ public static class FnaShaderInputs
         Fixture("Fading", gate: true),
         Fixture("Dots", gate: true),
         Fixture("Dissolve", gate: true),
+        // ---- rung-4 GATE set, VS-driven (the effect ships its OWN vertex shader;
+        //      rendered through the custom-geometry quad scene — the Phase-28 analog) ----
+        VsFixture("VsTransformColorTexture", gate: true),
+        VsFixture("PolygonLight", gate: true),
+        VsFixture("VertexAndPixel", gate: true),
+        VsFixture("FnaMultiPassStates", gate: true),
         // ---- extended PS-only corpus (reported, not gating) ----
         Fixture("BasicShader", gate: false),
         Fixture("BlendShader", gate: false),
@@ -119,6 +131,36 @@ public static class FnaShaderInputs
         e.Parameters["_alphaTest"]?.SetValue(new Vector3(0.5f, -1f, 1f)); // SpriteAlphaTest
         e.Parameters["amount"]?.SetValue(0.3f);                   // Teleport
         e.Parameters["t"]?.SetValue(cat);                         // golden textured.fx
+
+        // ---- VS-driven gate set (custom-geometry quad scene) ----
+        // CAUTION: this block claims very common uniform names (World / View /
+        // Projection / Color / Tint / WorldViewProjection) in the shared SetParams
+        // namespace. SetParams runs against EVERY corpus effect via ?., so any future
+        // corpus row declaring one of these names silently receives THESE values, not
+        // defaults — check new fixtures against this list before adding them (e.g.
+        // PenumbraLight.fx already declares both Color and WorldViewProjection).
+        // VsTransformColorTexture: identity WVP maps the clip-space quad corners
+        // straight to the viewport; the non-white tint keeps the VS color path
+        // (vertexColor * Tint) non-vacuous. Tint is also FnaMultiPassStates' PS uniform.
+        e.Parameters["WorldViewProjection"]?.SetValue(Matrix.Identity);
+        e.Parameters["Tint"]?.SetValue(new Vector4(1f, 0.5f, 0.5f, 1f));
+        // PolygonLight: worldPos = texCoord, so a light at (0.5,0.5) with radius 0.75
+        // produces a spatially-varying radial gradient over the whole quad.
+        e.Parameters["viewProjectionMatrix"]?.SetValue(Matrix.Identity);
+        e.Parameters["lightSource"]?.SetValue(new Vector2(0.5f, 0.5f));
+        e.Parameters["lightColor"]?.SetValue(new Vector3(1f, 0.75f, 0.5f));
+        e.Parameters["lightRadius"]?.SetValue(0.75f);
+        // VertexAndPixel: exact-dyadic scale + translation (all entries representable
+        // and arithmetic exact in fp32, so both arms compute bit-identical vertex
+        // positions and rasterize identical edges) — the visible off-center half-size
+        // quad proves the three matrix uploads actually flow, and the translation row
+        // would expose a row/column-major mismatch that identity/scale never could.
+        e.Parameters["World"]?.SetValue(Matrix.CreateScale(0.5f));
+        e.Parameters["View"]?.SetValue(Matrix.CreateTranslation(0.25f, 0.25f, 0f));
+        e.Parameters["Projection"]?.SetValue(Matrix.Identity);
+        e.Parameters["Color"]?.SetValue(new Vector4(0.2f, 0.7f, 0.9f, 1f));
+        // FnaMultiPassStates: the cat through TexSampler (Tint set above).
+        e.Parameters["SceneTexture"]?.SetValue(cat);
         e.Parameters["probeA"]?.SetValue(0.25f);                  // FnaPreshaderProbe
         e.Parameters["probeB"]?.SetValue(0.5f);                   // FnaPreshaderProbe
     }

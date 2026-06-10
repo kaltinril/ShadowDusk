@@ -1,8 +1,9 @@
 // FnaValidation = the Phase 39 rung-3/4 proof harness.
 //
 // For each corpus shader it compiles BOTH arms, loads BOTH into REAL FNA
-// (Effect -> FNA3D -> MojoShader; rung 3), renders BOTH over the cat image via the
-// normal SpriteBatch path (rung 4), and compares the pixels in-process:
+// (Effect -> FNA3D -> MojoShader; rung 3), renders BOTH (rung 4) — PS-only effects
+// over the cat image via the normal SpriteBatch path, VS-driven effects through the
+// custom-geometry quad scene (FnaScene.VsQuad) — and compares the pixels in-process:
 //
 //   Arm A (candidate): ShadowDusk in-memory, PlatformTarget.Fna
 //                      (vkd3d SM<=3 + Fx2EffectWriter — the SHIPPING pipeline).
@@ -15,7 +16,9 @@
 // Phase 18 cross-compiler (vkd3d-vs-mgfxc) comparison, because different compilers
 // legitimately produce tiny float divergence.
 //
-// Exit code 0 iff all 10 GATE shaders (the Phase 17 PS-only set) PASS.
+// Exit code 0 iff every GATE shader PASSes — the Phase 17 PS-only set plus the
+// VS-driven set (the 17-VS analog); FnaShaderInputs.Corpus is the authoritative
+// list — and the FnaMultiPassStates non-vacuousness content guard holds.
 
 using System;
 using System.Collections.Generic;
@@ -61,7 +64,7 @@ foreach (FnaShaderInputs.CorpusShader shader in FnaShaderInputs.Corpus)
     string fx = Path.Combine(repoRoot, shader.RelativePath);
     if (!File.Exists(fx))
     {
-        cases.Add(new ShaderCase(shader.Name, shader.Gate, null, $".fx not found: {fx}", null, $".fx not found: {fx}", null));
+        cases.Add(new ShaderCase(shader.Name, shader.Gate, null, $".fx not found: {fx}", null, $".fx not found: {fx}", null, shader.Scene));
         continue;
     }
 
@@ -77,7 +80,7 @@ foreach (FnaShaderInputs.CorpusShader shader in FnaShaderInputs.Corpus)
         cases.Add(new ShaderCase(shader.Name, shader.Gate,
             null, $"macro-parity-unsafe: {parity}",
             null, $"macro-parity-unsafe: {parity}",
-            parity));
+            parity, shader.Scene));
         continue;
     }
 
@@ -95,11 +98,27 @@ foreach (FnaShaderInputs.CorpusShader shader in FnaShaderInputs.Corpus)
     else
         candBytes = result.Value.Data;
 
+    // Scene-classification guard (the Appendix-G vacuous-coverage trap): a VS-bearing
+    // effect misfiled under the Sprite scene runs its own VS against SpriteBatch's
+    // pixel-space vertices — degenerate in BOTH arms, i.e. a vacuous PASS. Tie each
+    // row's scene flag to what the compiled candidate binary actually embeds.
+    if (candBytes is not null)
+    {
+        bool hasVs = ContainsVertexShaderStream(candBytes);
+        bool expectsVs = shader.Scene == FnaScene.VsQuad;
+        if (hasVs != expectsVs)
+        {
+            candError = $"scene misclassified: candidate .fxb {(hasVs ? "embeds" : "lacks")} " +
+                        $"a vertex shader but the corpus row is FnaScene.{shader.Scene}";
+            candBytes = null;
+        }
+    }
+
     // Arm B — reference: system d3dcompiler_47 fx_2_0 (oracle).
     ReferenceFx2Compiler.ReferenceResult reference = ReferenceFx2Compiler.Compile(fx, src);
 
     cases.Add(new ShaderCase(shader.Name, shader.Gate,
-        reference.Bytes, reference.Error, candBytes, candError, null));
+        reference.Bytes, reference.Error, candBytes, candError, null, shader.Scene));
 
     // Persist both arms' .fxb for offline inspection.
     string fxbDir = Path.Combine(outRoot, "fxb");
@@ -139,6 +158,22 @@ foreach (string name in new[] { "Dissolve", "FnaProbeClip" })
         Gate = false,
         CandidateBytes = ClampBigDefLiterals(original.CandidateBytes),
     });
+}
+
+// True iff the fx_2_0 binary embeds a vertex-shader token stream (version token
+// 0xFFFE02xx / 0xFFFE03xx at a dword-aligned offset). Everything in the container is
+// dword-aligned; no other aligned dword plausibly carries a 0xFFFE HIGH word with a
+// version-shaped low word (comment tokens put 0xFFFE in the LOW word; name-pool bytes
+// are ASCII < 0x80; float blobs would need a NaN payload neither arm emits).
+static bool ContainsVertexShaderStream(byte[] fxb)
+{
+    for (int i = 0; i + 4 <= fxb.Length; i += 4)
+    {
+        uint tok = BitConverter.ToUInt32(fxb, i);
+        if ((tok >> 16) == 0xFFFE && (tok & 0xFFFF) is >= 0x0100 and <= 0x03FF)
+            return true;
+    }
+    return false;
 }
 
 // Walks every D3D9 SM2/SM3 token stream embedded in the fx_2_0 container and clamps
@@ -252,7 +287,14 @@ foreach (CaseOutcome o in outcomes)
         && o.Reference.Pixels.Length == o.Candidate.Pixels.Length)
     {
         (maxd, mean, diffPx) = Compare(o.Reference.Pixels, o.Candidate.Pixels);
-        verdict = diffPx == 0 ? "PASS" : "FAIL (pixels differ)";
+        // PASS requires both arms to have RENDERED cleanly, not merely produced
+        // comparable pixels: a symmetric soft failure (e.g. the shared SetParams
+        // delegate throwing identically in both arms) yields identical wrong pixels —
+        // without this clause that would count as a gate PASS while the table prints
+        // refrender/candrender FAIL.
+        verdict = !o.Reference.Rendered || !o.Candidate.Rendered
+            ? "FAIL (render errors)"
+            : diffPx == 0 ? "PASS" : "FAIL (pixels differ)";
     }
     else
     {
@@ -280,10 +322,35 @@ foreach (CaseOutcome o in outcomes)
 }
 
 Console.WriteLine(new string('-', 110));
-Console.WriteLine($"\n[fna] GATE: {gatePass}/{gateTotal} Phase-17 PS-only shaders PASS " +
-                  $"(both arms compile, load in real FNA, render, zero pixels over {Tolerance}/255).");
+
+// Non-vacuousness invariant (Appendix G): FnaMultiPassStates' candidate image must
+// show pass 1 THROUGH pass 2 (cat-texture variance under the half-green overlay).
+// The arm-vs-arm compare alone cannot see an FNA-side regression that stops honoring
+// the in-pass blend states — BOTH arms would render the same flat green and stay
+// delta-0. A flat image here means the manual 2026-06-09 "cat through half-green"
+// observation no longer holds; fail the gate loudly. (The cat contributes thousands
+// of distinct colors; a flat or near-flat image has almost none.)
+bool nonVacuous = true;
+CaseOutcome? mps = outcomes.FirstOrDefault(o => o.Name == "FnaMultiPassStates");
+if (mps is not null)
+{
+    int distinct = mps.Candidate.Pixels?.Distinct().Count() ?? 0;
+    if (distinct < 16)
+    {
+        nonVacuous = false;
+        Console.WriteLine($"[fna] NON-VACUOUSNESS FAIL: FnaMultiPassStates candidate is near-flat " +
+                          $"({distinct} distinct colors) — in-pass blend states are no longer observably honored.");
+        failures.Add("FnaMultiPassStates (non-vacuous content guard)");
+    }
+}
+
+// Derive the breakdown from the corpus so this line can never drift from the flags.
+int gateSprite = cases.Count(c => c.Gate && c.Scene == FnaScene.Sprite);
+int gateVs = cases.Count(c => c.Gate && c.Scene == FnaScene.VsQuad);
+Console.WriteLine($"\n[fna] GATE: {gatePass}/{gateTotal} shaders PASS ({gateSprite} PS-only + {gateVs} VS-driven; " +
+                  $"both arms compile, load in real FNA, render cleanly, zero pixels over {Tolerance}/255).");
 if (failures.Count > 0)
     Console.WriteLine($"[fna] non-PASS shaders: {string.Join(", ", failures)}");
 Console.WriteLine($"[fna] PNGs: {outRoot}");
 
-return gatePass == gateTotal ? 0 : 1;
+return gatePass == gateTotal && nonVacuous ? 0 : 1;
