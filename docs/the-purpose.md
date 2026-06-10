@@ -52,7 +52,7 @@ MonoGame's stock content pipeline (`MGCB`) shells out to `mgfxc`, which depends 
 | OpenGL / DesktopGL | GLSL | DXC → SPIR-V → SPIRV-Cross → GLSL |
 | Metal (macOS / iOS) *(not yet implemented)* | MSL | DXC → SPIR-V → SPIRV-Cross → MSL |
 | Vulkan (future) | SPIR-V | DXC → SPIR-V (direct) |
-| FNA *(Phase 39 — **rung 4 proven**, PS-only corpus; one `.fxb` serves all FNA backends)* | D3D9-style HLSL (SM ≤ 3) | vkd3d-shader → D3D9 bytecode → ShadowDusk `Fx2EffectWriter` → fx_2_0 (`.fxb`) |
+| FNA *(Phase 39 — **rung 4 proven**, PS-only + VS-driven corpora; one `.fxb` serves all FNA backends)* | D3D9-style HLSL (SM ≤ 3) | vkd3d-shader → D3D9 bytecode → ShadowDusk `Fx2EffectWriter` → fx_2_0 (`.fxb`) |
 
 > **FNA's bar (Phase 39).** For FNA the reference compiler is not `mgfxc` but Microsoft's
 > `fxc.exe /T fx_2_0` (Windows-only, deprecated, FNA's blessed workflow runs it under Wine) —
@@ -61,10 +61,11 @@ MonoGame's stock content pipeline (`MGCB`) shells out to `mgfxc`, which depends 
 > same-backend-compared. The evidence ladder mirrors the MonoGame one: (1) compiles → (2)
 > structurally well-formed per MojoShader's parse rules + calibrated against real fxc goldens
 > (`tests/fixtures/golden/FNA/`) → (3) the real MojoShader library parses+translates it → (4)
-> real FNA renders pixel-equivalent. **All four rungs are proven for the SM3 PS-only corpus
-> (2026-06-09, `validation/FnaValidation`: gate 10/10 + 12 extended entries, max delta ≤ 1/255
-> vs the fxc oracle in real FNA 26.06)**; VS-driven FNA effects are the remaining 17-VS-style
-> follow-up. `fxc`/`d3dcompiler_47` are test oracles only and never ship — the shipping path
+> real FNA renders pixel-equivalent. **All four rungs are proven for the SM3 PS-only AND
+> VS-driven corpora (2026-06-09, `validation/FnaValidation`: gate 14/14 — the 10 Phase-17
+> PS-only shaders via the SpriteBatch scene + 4 VS-driven effects via the custom-geometry
+> quad scene — plus 12 extended entries, max delta ≤ 1/255 vs the fxc oracle in real FNA
+> 26.06; in-pass render states empirically honored)**. `fxc`/`d3dcompiler_47` are test oracles only and never ship — the shipping path
 > is vkd3d-shader's SM1–3 backend on every host, packed into the NuGet for win-x64 + linux-x64
 > with cross-host byte-identical output. This is additive reach (Part 1); the
 > mgfxc-replacement promise remains the primary product.

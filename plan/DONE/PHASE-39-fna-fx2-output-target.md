@@ -1,6 +1,6 @@
 # Phase 39 — FNA support: compile `.fx` → D3D9 `fx_2_0` Effects bytecode (MojoShader-loadable)
 
-**Status:** ✅ **DONE — all four evidence rungs proven (2026-06-09)** for the PS-only corpus: `PlatformTarget.Fna` compiles D3D9-style `.fx` → `.fxb` (`0xFEFF0901`) via vkd3d `D3D_BYTECODE` + the new `Fx2EffectWriter`, **loads in real FNA 26.06 and renders pixel-identical to `fxc /T fx_2_0` (rung-4 gate 10/10 + 12 extended corpus entries, max delta ≤ 1/255)**, and ships **self-contained in the NuGet for win-x64 + linux-x64 with cross-host byte-identical output**. Remaining scoped follow-ups: VS-driven FNA effects (the 17-VS analog), macOS vkd3d binaries, CI hosting of the per-RID artifacts (Phase 37 C). See *Implementation record* below. Original research (2026-06-08) follows unchanged.
+**Status:** ✅ **DONE — all four evidence rungs proven (2026-06-09)** for the PS-only **and VS-driven** corpora: `PlatformTarget.Fna` compiles D3D9-style `.fx` → `.fxb` (`0xFEFF0901`) via vkd3d `D3D_BYTECODE` + the new `Fx2EffectWriter`, **loads in real FNA 26.06 and renders pixel-identical to `fxc /T fx_2_0` (rung-4 gate 14/14 — the 10 Phase-17 PS-only shaders + 4 VS-driven effects — plus 12 extended corpus entries, max delta ≤ 1/255)**, and ships **self-contained in the NuGet for win-x64 + linux-x64 with cross-host byte-identical output**. The VS-driven validation (same-day follow-up; see *VS-driven rung-4 completion* below) also **empirically confirmed in-pass render states are honored by real FNA**. Remaining scoped follow-ups: macOS vkd3d binaries, CI hosting of the per-RID artifacts (Phase 37 C). See *Implementation record* below. Original research (2026-06-08) follows unchanged.
 
 **Track:** Reach (Part 1 of THE PURPOSE) — a *new consumer runtime* (FNA), where FNA's only blessed compiler is the **Windows-only, deprecated `fxc.exe` run under Wine** — exactly the cross-platform gap ShadowDusk exists to close. Additive opt-in target (like Metal/Vulkan), never a change to existing OpenGL/DX11/`.mgfx` v10 output (per `backwards-compat-monogame-382-mgfx-v10`).
 
@@ -210,18 +210,20 @@ patcher cannot canonicalize (no free temp / predicated / relative addressing).
    The writer itself also enforces the CTAB-name⊆parameters rule at write time.
 3. ✅ **Real MojoShader parses + translates** — `validation/FnaValidation` loads every corpus
    `.fxb` through `new Effect(gd, bytes)` in **real FNA 26.06** (FNA3D → MojoShader
-   `abdc8036`, D3D11 backend): **22/22 load clean** (after the MojoShader-compat fixes below).
+   `abdc8036`, D3D11 backend): **26/26 load clean** (after the MojoShader-compat fixes below;
+   originally 22/22, +4 VS-driven rows added by the same-day follow-up).
 4. ✅ **Real FNA renders pixel-equivalent to `fxc /T fx_2_0`** — the same harness compiles
    each shader with BOTH arms (ShadowDusk vs the in-process `D3DCompile("fx_2_0")` oracle —
-   proven byte-identical to fxc.exe), renders both through the normal SpriteBatch path over
-   the Phase-17 cat scene with the Phase-17 parameter values, and pixel-compares:
-   **GATE 10/10 (the Phase 17 PS-only set) + the 12 extended corpus entries — every row
-   passes, max per-channel delta 0 except Dots (1/255)**. Run it:
-   `validation/FnaValidation/restore-fna.ps1` then `dotnet run -c Release`.
+   proven byte-identical to fxc.exe), renders both — PS-only effects through the normal
+   SpriteBatch path over the Phase-17 cat scene with the Phase-17 parameter values,
+   VS-driven effects through the custom-geometry quad scene (the Phase-28 analog) — and
+   pixel-compares: **GATE 14/14 (the Phase 17 PS-only set + the 4 VS-driven effects) + the
+   12 extended corpus entries — every row passes, max per-channel delta 0 except Dots
+   (1/255)**. Run it: `validation/FnaValidation/restore-fna.ps1` then `dotnet run -c Release`.
 
-**The Definition of done below is met for the PS-only corpus** — FNA support may now be
-stated publicly, scoped honestly (PS-only validated; VS-driven effects pending, the 17-VS
-analog).
+**The Definition of done below is met for the PS-only and VS-driven corpora** — FNA support
+may now be stated publicly. (Initially proven PS-only; the 17-VS-analog VS-driven rung-4 was
+closed the same day — see *VS-driven rung-4 completion* below.)
 
 ### MojoShader-compat fixes the rung-3/4 harness forced (all in `D3d9BytecodePatcher`)
 
@@ -288,7 +290,11 @@ RIDs; macOS remains pre-wired-but-pending:
 - Non-square matrix parameters are rejected (`SD0302`) until F1 (MojoShader/fxc dims-order
   conflict) is settled with a golden; matrix **defaults** bake as zeros until F2 is settled.
 - In-pass render states are emitted faithfully (mapped to the FNA-honored set; everything our
-  `RenderStateBlock` models maps inside it) but FNA-runtime behavior is unproven until rung 3/4.
+  `RenderStateBlock` models maps inside it) — and **proven honored at runtime**: the
+  `FnaMultiPassStates` rung-4 row renders its second pass alpha-blended over its first with
+  the device blend state pinned Opaque, which is only possible if the pass's
+  `AlphaBlendEnable`/`SrcBlend`/`DestBlend` assignments are applied (and persist across
+  passes, XNA semantics) by real FNA. Identical in both arms, max delta 0.
 - vkd3d 1.17's preprocessor ignores `#line` directives (and logs a `fixme` per compile to its
   debug stderr), so FNA-path diagnostic line numbers reference the *flattened* preprocessed
   text, not the original include structure — unlike the DXC paths.
@@ -335,10 +341,11 @@ one real bug plus hardening gaps — all fixed:
 - [x] ~~Rung 3 / Rung 4~~ — done via `validation/FnaValidation` (see Evidence ladder).
 - [x] ~~vkd3d per-RID NuGet packing~~ — done for win-x64 + linux-x64 (see Self-contained
       packaging); **osx-x64/osx-arm64 binaries still needed** (csproj entries pre-wired).
-- [ ] **VS-driven FNA effects** rung-4 validation (the 17-VS analog; the writer/pipeline
-      already emit VS states — `FnaMultiPassStates.fx` exercises them at rungs 1–3).
-- [ ] In-pass render-state runtime verification in real FNA (the † set is honored per FNA
-      source; a state-bearing rung-4 scene would close it empirically).
+- [x] ~~**VS-driven FNA effects** rung-4 validation~~ — done (2026-06-09, same-day
+      follow-up): gate 14/14, zero product changes needed. See *VS-driven rung-4
+      completion* below.
+- [x] ~~In-pass render-state runtime verification in real FNA~~ — closed empirically by the
+      `FnaMultiPassStates` rung-4 row (see Known limitations).
 - [ ] Host the pinned per-RID vkd3d artifacts for CI/release restore (Phase 37 C — last gap
       between "works from a dev machine pack" and "works from any CI release").
 - [ ] Surface vkd3d's `E5017`-class detail when its messages blob is empty (Constraint-5
@@ -348,7 +355,40 @@ one real bug plus hardening gaps — all fixed:
 - [ ] Option B watch: if upstream vkd3d lands a complete fx_2_0 writer, evaluate swapping the
       container step.
 
-## Definition of done (when pursued)
+### VS-driven rung-4 completion (2026-06-09, branch `feature/phase39-fna-vs-rung4`)
+
+The first follow-up (VS-driven FNA effects, the 17-VS analog) closed the same day —
+**harness-only work; the product pipeline needed zero changes**, confirming the writer's VS
+states, the CTAB-driven matrix parameters, and the `D3d9BytecodePatcher` were already
+stage-correct.
+
+- **Scene:** `validation/FnaValidation` gained `FnaScene.VsQuad` — a custom-geometry
+  clip-space quad via `DrawUserIndexedPrimitives` with a `POSITION0/COLOR0/TEXCOORD0`
+  vertex declaration (vertices byte-identical to Phase 28's
+  `validation/Shared{,Dx}/Vs*EffectImageRenderer`; the declaration is a superset of every
+  VS row's input semantics, satisfying FNA's strict VS-input ⊆ declaration matching). No
+  SpriteBatch priming: the effect supplies its own VS; multi-pass techniques loop
+  `pass.Apply()` + draw, XNA persistence semantics.
+- **Gate rows added (all GATE, all PASS, max delta 0):** `VsTransformColorTexture` (the
+  Phase-28 fixture: WVP identity, red tint through the VS color path),
+  `PolygonLight` (radial light falloff — float4x4 + float2/float3/float uniforms),
+  `VertexAndPixel` (three matrix uploads; **exact-dyadic** scale 0.5 + translation 0.25 so
+  both arms compute bit-identical vertex positions — the translation row would expose any
+  row/column-major mismatch that identity/scale never could; rendered as a visibly
+  off-center half-size quad), and `FnaMultiPassStates` (two passes + in-pass states).
+- **Non-vacuousness verified by hand-computed expected images** (the Appendix-G/H
+  antidote): each candidate PNG was visually confirmed to show the predicted non-trivial
+  content (off-center quad, radial gradient, tinted cat, cat-through-half-green) — no row
+  can pass with both arms rendering nothing.
+- **`FnaMultiPassStates.fx` change:** `PlainColorPS` alpha 1.0 → **0.5**. At alpha 1 the
+  second pass's opaque green fully occluded the first pass's tinted-texture output — the
+  exact vacuous-coverage trap Appendix G documents. At 0.5, both passes contribute to every
+  pixel **and** the persisted in-pass blend states become observable (closing the
+  render-state follow-up). The rung-1/2 structural pins in `FnaCompileFixtureTests` don't
+  pin the literal, so they're unaffected.
+- **No regression:** full suite green (739 tests, 0 failed, 0 skipped — FNA integration
+  tests included, vkd3d restored locally); the PS-only gate rows re-passed unchanged in the
+  same 14/14 run.
 
 - A new `PlatformTarget.Fna` compiles an SM3-expressible `.fx` to a `.fxb` whose bytes start with `0xFEFF0901` and parse cleanly in **MojoShader** (no parser errors).
 - The `.fxb` **loads in real FNA** (`new Effect(gd, bytes)`) and **renders pixel-equivalent** to the same source compiled with `fxc /T fx_2_0`, for the SM3 PS-only corpus (rung-4 — the FNA analog of Phase 17/18).
