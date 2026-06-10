@@ -14,8 +14,9 @@ namespace ShadowDusk.Core;
 ///   1. <c>texkill</c> with a partial destination writemask (vkd3d writes e.g. <c>.x</c>;
 ///      fxc always writes <c>.xyzw</c> and MojoShader hard-fails anything else:
 ///      "TEXKILL writemask must be .xyzw").
-///   2. <c>texld</c> with a swizzled coordinate source below SM3 (MojoShader:
-///      "TEXLD src0 must not swizzle" for ps_1_x/ps_2_x; SM3 allows it).
+///   2. <c>texld</c> whose coordinate source MojoShader rejects: a swizzle below SM3
+///      ("TEXLD src0 must not swizzle" for ps_1_x/ps_2_x; SM3 allows it), or a source
+///      modifier at ANY SM2+ major ("TEXLD src0 must have no modifiers").
 ///   3. <c>def</c> float literals with |f| ≥ 2³² — vkd3d's <c>discard</c> sentinel is
 ///      −2³² (0xCF800000), and MojoShader's <c>MOJOSHADER_printFloat</c> converts the
 ///      magnitude through a 32-bit <c>unsigned long</c> on Windows (LLP64), overflowing
@@ -36,7 +37,9 @@ namespace ShadowDusk.Core;
 /// D3D9 SM2+ instruction tokens carry an explicit operand-count field and the format
 /// has no byte-offset branches, so inserting instructions is purely mechanical; comment
 /// blocks (the CTAB) pass through byte-identical. Streams below SM2 are returned
-/// unchanged (no length fields; not produced by the FNA pipeline's profile policy).
+/// unchanged: MojoShader's ps_1_x rules differ wholesale (and ps_1_x tokens carry no
+/// instruction-length fields to walk), and the FNA pipeline rejects literal SM1
+/// profiles upstream (SD0300), so this pass never has to reason about them.
 ///
 /// Applied ONLY on the FNA path — the DirectX SM5 path never sees this code, and the
 /// blob handed to the fx_2_0 writer stays exactly what MojoShader will consume.
@@ -74,7 +77,12 @@ public static class D3d9BytecodePatcher
 
         int major = (int)((version >> 8) & 0xFF);
         if (major < 2)
-            return Ok(bytecode); // SM1.x has no instruction-length fields — leave untouched
+        {
+            // SM1.x: MojoShader's ps_1_x rules differ wholesale (and there are no
+            // instruction-length fields to walk); the FNA pipeline rejects literal
+            // SM1 profiles upstream (SD0300) — leave untouched.
+            return Ok(bytecode);
+        }
 
         // ---- Pass 1: find fixup sites and the highest temp register in use.
         var sites = new List<int>(); // byte offset of each instruction token needing a fix
@@ -99,6 +107,11 @@ public static class D3d9BytecodePatcher
             bool predicated = (token & 0x1000_0000) != 0;
             int instructionStart = pos;
             pos += 4;
+
+            // Truncated tail (operand list runs off the end of the array): stop scanning
+            // here — if a patch is still pending, pass 2 fails loudly at this same point.
+            if (pos + operandTokens * 4 > bytecode.Length)
+                break;
 
             if (opcode is OpDef or OpDefI or OpDefB)
             {
@@ -131,7 +144,7 @@ public static class D3d9BytecodePatcher
                     maxTemp = Math.Max(maxTemp, (int)(p & 0x7FF));
             }
 
-            if (!predicated && operandTokens >= 1)
+            if (operandTokens >= 1)
             {
                 if (opcode == OpTexKill)
                 {
@@ -140,19 +153,30 @@ public static class D3d9BytecodePatcher
                     bool fullMask = (dest & FullWritemask) == FullWritemask;
                     // Canonical form = full mask on a TEMP register; anything else (partial
                     // mask, or a non-temp register MojoShader also dislikes) gets routed
-                    // through a fresh temp.
+                    // through a fresh temp. A predicated site cannot take that rewrite (the
+                    // predicate guards the original instruction, not the inserted mov) —
+                    // the SD0305 contract says it fails loudly, never silently skipped.
                     if (!fullMask || regType != 0)
                     {
+                        if (predicated)
+                            return Fail(sourceFile, "predicated texkill/texld cannot be canonicalized");
                         if ((dest & RelativeAddressingBit) != 0)
                             return Fail(sourceFile, "texkill with relative addressing is not patchable");
                         sites.Add(instructionStart);
                     }
                 }
-                else if (opcode == OpTexLd && major < 3 && operandTokens >= 3)
+                else if (opcode == OpTexLd && operandTokens >= 3)
                 {
                     uint src0 = ReadU32(bytecode, pos + 4);
-                    if ((src0 & 0x00FF0000) != 0x00E40000 || ((src0 >> 24) & 0xF) != 0)
+                    bool nonIdentitySwizzle = (src0 & 0x00FF0000) != 0x00E40000;
+                    bool hasModifier = ((src0 >> 24) & 0xF) != 0;
+                    // Below SM3 MojoShader rejects any swizzle or modifier on src0; at SM3
+                    // swizzles are legal but modifiers stay forbidden ("TEXLD src0 must
+                    // have no modifiers" applies to every SM2+ major).
+                    if (hasModifier || (major < 3 && nonIdentitySwizzle))
                     {
+                        if (predicated)
+                            return Fail(sourceFile, "predicated texkill/texld cannot be canonicalized");
                         if ((src0 & RelativeAddressingBit) != 0)
                             return Fail(sourceFile, "texld with relative addressing is not patchable");
                         sites.Add(instructionStart);
@@ -192,6 +216,9 @@ public static class D3d9BytecodePatcher
             if ((token & 0xFFFF) == CommentOpcode && (token & ParamTokenBit) == 0)
             {
                 int len = 4 + (int)((token >> 16) & 0x7FFF) * 4;
+                if (pos + len > bytecode.Length)
+                    return Fail(sourceFile,
+                        "token stream truncated or desynchronized (comment length field overruns the stream)");
                 Append(output, bytecode, pos, len);
                 pos += len;
                 continue;
@@ -201,8 +228,20 @@ public static class D3d9BytecodePatcher
             int operandTokens = (int)((token >> 24) & 0xF);
             int instructionLength = 4 + operandTokens * 4;
 
+            // Mirror pass 1's truncation handling — but here a malformed stream cannot be
+            // tolerated (bytes are being re-emitted), so it fails instead of breaking.
+            if (pos + instructionLength > bytecode.Length)
+                return Fail(sourceFile,
+                    "token stream truncated or desynchronized (instruction operand list overruns the stream)");
+
             if (opcode == OpDef)
             {
+                // A def always carries dest + literal payload; a zero operand count means
+                // the stream is lying — re-emitting would duplicate a dword and desync.
+                if (operandTokens == 0)
+                    return Fail(sourceFile,
+                        "token stream truncated or desynchronized (def declares no operand tokens)");
+
                 // Fix #3: clamp misprintable float literals in place (size-preserving;
                 // instruction token + dest token pass through unchanged).
                 Append(output, bytecode, pos, 8);
@@ -234,7 +273,7 @@ public static class D3d9BytecodePatcher
                     WriteU32(output, token);
                     WriteU32(output, ParamTokenBit | FullWritemask | (uint)patchTemp);
                 }
-                else // OpTexLd below SM3
+                else // OpTexLd (swizzled src0 below SM3, or src0 modifier at any major)
                 {
                     uint dest = ReadU32(bytecode, pos + 4);
                     uint src0 = ReadU32(bytecode, pos + 8);

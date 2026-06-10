@@ -141,6 +141,14 @@ is rejected — merge the version-bump PR first (the `/release` skill does this 
 > it lands, a release machine needs the locally built/restored binaries present at pack
 > time. Self-containment + Windows↔Linux byte-identity of the packed FNA path were proven
 > 2026-06-09 (see `plan/DONE/PHASE-39-fna-fx2-output-target.md`).
+>
+> **Since Phase 40 this is ENFORCED, not advisory:** `release.yml`'s `pack-desktop` job
+> fails red if the packed `ShadowDusk.HLSL` nupkg is missing either vkd3d native
+> (win-x64 dll / linux-x64 so) — mirroring the `pack-wasm` dxcompiler.wasm gate. The
+> CI ubuntu runner cannot currently satisfy it (restore.sh only verifies, Phase 37 C
+> pending), so **a release will stop at this gate until the binaries are provisioned**
+> — that is deliberate: a red release beats silently shipping the FNA target and
+> `DxbcBackend.Vkd3d` broken for every consumer.
 
 ---
 

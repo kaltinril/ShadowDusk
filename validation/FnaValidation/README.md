@@ -40,15 +40,19 @@ SHADERMODEL/`SV_POSITION` define block; anything else marks the shader
 
 ## Gate vs reported
 
-- **GATE (exit code 0 requires all 14 to PASS):** the Phase 17 PS-only set — Grayscale,
+- **GATE (exit code 0 requires all 17 to PASS):** the Phase 17 PS-only set — Grayscale,
   Invert, Sepia, Saturate, Pixelated, Scanlines, Fading, Dots, Dissolve, TintShader — plus
   the VS-driven set (custom-geometry quad scene, the 17-VS analog) —
   VsTransformColorTexture, PolygonLight, VertexAndPixel, FnaMultiPassStates (the last also
   proves multi-pass + in-pass render states empirically: its second pass alpha-blends over
   its first with the device blend state pinned Opaque — pinned by an automated flat-image
   content guard, since the arm-vs-arm compare alone cannot see an FNA-side honoring
-  regression that degrades both arms identically).
-- **Reported (not gating):** BasicShader, BlendShader, ClipShader, ClipShaderNew,
+  regression that degrades both arms identically) — plus, since Phase 40:
+  FnaMultiPassStatesT2 (the same binary's second technique selected BY NAME),
+  ClipShaderNew (the brace-form sampler + paren texture-ref case, rendered with a
+  visually distinct mask so a lost binding diverges instead of hiding), and `matrix`
+  (square float4x4 calibration vs the oracle, explicit non-symmetric M upload).
+- **Reported (not gating):** BasicShader, BlendShader, ClipShader,
   ClipShaderSpriteTarget, MultiTexture, MultiTextureOverlay, SimpleLightShader,
   SpriteAlphaTest, Teleport, the fxc golden sources `minimal`/`textured` from
   `tests/fixtures/golden/FNA/`, and the 5 diagnostic probe rows (`FnaPreshaderProbe` +

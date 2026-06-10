@@ -526,6 +526,27 @@ public sealed class Fx2EffectWriter
         // write-time check guards the public writer API (and any future builder drift).
         for (int s = 0; s < effect.Shaders.Count; s++)
         {
+            // Choke-point stage check: the version token's high word says what the blob
+            // actually IS (0xFFFE vertex / 0xFFFF pixel); the Stage tag says what the
+            // pass binds it as. A producer mistake here (e.g. compiling a pass's
+            // VertexShader with a ps_* profile) ships a binary fxc would have rejected,
+            // and that breaks only inside the consumer's FNA at load/draw.
+            ReadOnlySpan<byte> bytecode = effect.Shaders[s].Bytecode.Span;
+            if (bytecode.Length >= 4)
+            {
+                uint versionToken = BitConverter.ToUInt32(bytecode[..4]);
+                uint kind = versionToken >> 16;
+                if (kind is 0xFFFE or 0xFFFF)
+                {
+                    ShaderStage actual = kind == 0xFFFE ? ShaderStage.Vertex : ShaderStage.Pixel;
+                    if (actual != effect.Shaders[s].Stage)
+                        return Error(
+                            $"shader #{s} is tagged {effect.Shaders[s].Stage} but its version token " +
+                            $"(0x{versionToken:X8}) is a {actual} token stream — a pass binding it " +
+                            "would break inside FNA at load");
+                }
+            }
+
             var ctabResult = Reflection.CtabReader.Read(effect.Shaders[s].Bytecode.Span, sourceFile: "");
             if (ctabResult.IsFailure)
                 return Error(

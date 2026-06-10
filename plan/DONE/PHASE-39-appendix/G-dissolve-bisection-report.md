@@ -68,3 +68,12 @@ exactly. The sentinel's only observable property is its sign (it reaches `texkil
 The broad |f| ≥ 2³² domain was chosen over clamping only the exact `0xCF800000` sentinel:
 fxc-compiled effects with such literals are equally destroyed by MojoShader (both arms
 identical ⇒ no fidelity gap), and the broad form is robust to vkd3d changing its sentinel.
+
+> **[Editorial correction, Phase 40 (2026-06-09).]** The "both arms equally destroyed ⇒ no
+> fidelity gap" justification above is wrong: the clamp patches the **candidate only**, so
+> for a ≥2³² literal in real arithmetic (not the kill sentinel) the arms diverge — on LP64
+> FNA (Linux/macOS, where `unsigned long` is 64-bit) fxc's arm renders the exact literal
+> *correctly* while ours uses 2³²−256, and on Windows/LLP64 both arms are destroyed but
+> *differently* (fxc's prints ~0.0, ours prints 2³²−256). The clamp is retained as the
+> documented tradeoff (working `clip()`/`discard` everywhere vs a rare-idiom divergence) —
+> see the phase doc's Known limitations; the upstream printFloat fix dissolves it.

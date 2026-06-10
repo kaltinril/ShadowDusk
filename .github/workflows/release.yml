@@ -199,6 +199,30 @@ jobs:
             exit 1
           fi
 
+      # ShadowDusk.HLSL's vkd3d packing is restore-state-dependent (csproj entries are
+      # Condition="Exists(...)"): a pack on a machine without the restored binaries
+      # SILENTLY produces a package whose FNA target and DxbcBackend.Vkd3d fail with
+      # SD0211 for every NuGet consumer — directly contradicting the documented
+      # self-contained promise. Fail the release red instead (the mirror of the
+      # pack-wasm dxcompiler.wasm gate). Until Phase 37 C hosts the pinned per-RID
+      # artifacts for CI download, this gate makes the gap loud: a release must run
+      # from a runner/machine where tools/restore.sh actually provisioned vkd3d.
+      - name: Verify ShadowDusk.HLSL contains the vkd3d natives (win-x64 + linux-x64)
+        run: |
+          pkg=$(find nupkg -maxdepth 1 -name 'ShadowDusk.HLSL.*.nupkg' ! -name '*.snupkg' | head -1)
+          echo "Inspecting $pkg"
+          listing=$(unzip -l "$pkg")
+          missing=0
+          for native in \
+            'runtimes/win-x64/native/libvkd3d-shader-1.dll' \
+            'runtimes/linux-x64/native/libvkd3d-shader.so.1' ; do
+              if ! grep -qF "$native" <<<"$listing"; then
+                echo "::error::$pkg is missing $native — the FNA target and DxbcBackend.Vkd3d would fail (SD0211) for every consumer on that RID. Restore vkd3d binaries before packing (tools/restore.sh; RELEASING.md 'Native binaries')."
+                missing=1
+              fi
+          done
+          exit $missing
+
       - name: Upload packages
         uses: actions/upload-artifact@v4
         with:

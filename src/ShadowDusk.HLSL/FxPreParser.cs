@@ -352,17 +352,23 @@ public sealed class FxPreParser
                 continue;
             }
 
-            // Sampler declaration. Three legacy forms are recognized:
+            // Sampler declaration. Four legacy forms are recognized:
             //   Form 1:  samplerNd S = sampler_state { Texture = <T>; ... };
             //   Form 2:  sampler S;                  (bare)
             //   Form 3:  sampler S : register(sN);   (bare; ':' is dropped by the lexer)
+            //   Form 4:  samplerNd S { Texture = <T>; ... };                  (brace form)
+            //            samplerNd S : register(sN) { ... };  (brace form with register)
+            //
+            // fxc treats Form 4 exactly like Form 1 — a state block opened directly
+            // after the name (or its register clause) IS a sampler_state block — so
+            // both forms share one parse/capture/rewrite path.
             //
             // A declaration is rewritten into the modern 'Texture2D' + 'SamplerState'
             // form only when S is sampled through a legacy intrinsic (tex2D); see
             // _legacyIntrinsicSamplers. Declarations no legacy intrinsic references
             // keep their previous handling so already-modern shaders are unaffected:
-            //   - Form 1 unused -> erased entirely (as before)
-            //   - bare   unused -> passed through verbatim (as before)
+            //   - Form 1/4 unused -> erased entirely (as before)
+            //   - bare     unused -> passed through verbatim (as before)
             if (tok.Kind == TokenKind.Identifier && SamplerTypeKeywords.Contains(tok.Text))
             {
                 int nameOffset = NextCodeOffset(1);
@@ -375,7 +381,14 @@ public sealed class FxPreParser
                         Peek(afterName).Kind == TokenKind.Equals &&
                         PeekIsKeywordAt(NextCodeOffset(afterName + 1), "sampler_state");
 
-                    if (isSamplerStateForm)
+                    // Form 4 must be detected before the bare-form check below: a
+                    // brace form with a register clause starts 'S register ( … )'
+                    // exactly like Form 3, and the bare-form path would swallow the
+                    // declaration only up to the first ';' INSIDE the state block.
+                    bool isBraceStateForm =
+                        !isSamplerStateForm && IsBraceSamplerStateForm(afterName);
+
+                    if (isSamplerStateForm || isBraceStateForm)
                     {
                         int blockStart = _tokenCharOffset[_pos];
                         var result = ParseSamplerDecl();
@@ -858,16 +871,39 @@ public sealed class FxPreParser
 
         SkipNonCodeTokens();
 
-        var eq = Expect(TokenKind.Equals);
-        if (eq.IsFailure)
-            return Result<SamplerInfo, FxParseError>.Fail(eq.Error);
-        SkipNonCodeTokens();
+        // Optional ': register(sN)' clause before a brace-form state block (the
+        // lexer drops the ':', leaving 'register' '(' … ')').
+        if (PeekIsKeyword("register"))
+        {
+            Consume(); // 'register'
+            SkipNonCodeTokens();
 
-        if (!PeekIsKeyword("sampler_state"))
-            return Fail<SamplerInfo>(FxParseErrorCode.UnexpectedToken,
-                $"Expected 'sampler_state' but found '{Peek().Text}'", Peek());
-        Consume(); // "sampler_state"
-        SkipNonCodeTokens();
+            var regLParen = Expect(TokenKind.LParen);
+            if (regLParen.IsFailure)
+                return Result<SamplerInfo, FxParseError>.Fail(regLParen.Error);
+            while (Peek().Kind is not (TokenKind.RParen or TokenKind.EOF))
+                Consume();
+
+            var regRParen = Expect(TokenKind.RParen);
+            if (regRParen.IsFailure)
+                return Result<SamplerInfo, FxParseError>.Fail(regRParen.Error);
+            SkipNonCodeTokens();
+        }
+
+        // Form 1 carries '= sampler_state' before the state block; Form 4 (the
+        // brace form) opens the block directly. fxc accepts both with identical
+        // semantics, so everything from the '{' on is shared.
+        if (Peek().Kind == TokenKind.Equals)
+        {
+            Consume(); // '='
+            SkipNonCodeTokens();
+
+            if (!PeekIsKeyword("sampler_state"))
+                return Fail<SamplerInfo>(FxParseErrorCode.UnexpectedToken,
+                    $"Expected 'sampler_state' but found '{Peek().Text}'", Peek());
+            Consume(); // "sampler_state"
+            SkipNonCodeTokens();
+        }
 
         var lbrace = Expect(TokenKind.LBrace);
         if (lbrace.IsFailure)
@@ -899,7 +935,7 @@ public sealed class FxPreParser
 
             if (string.Equals(key, "Texture", StringComparison.OrdinalIgnoreCase))
             {
-                // Texture = <TexName>; OR Texture = TexName;
+                // Texture = <TexName>; OR Texture = (TexName); OR Texture = TexName;
                 if (Peek().Kind == TokenKind.LAngle)
                 {
                     Consume(); // '<'
@@ -914,6 +950,23 @@ public sealed class FxPreParser
                     var ra = Expect(TokenKind.RAngle);
                     if (ra.IsFailure)
                         return Result<SamplerInfo, FxParseError>.Fail(ra.Error);
+                }
+                else if (Peek().Kind == TokenKind.LParen)
+                {
+                    // 'Texture = (TexName);' — ubiquitous legacy XNA syntax that fxc
+                    // accepts identically to the angle-bracket form.
+                    Consume(); // '('
+                    SkipNonCodeTokens();
+                    var texTok = Peek();
+                    if (texTok.Kind != TokenKind.Identifier)
+                        return Fail<SamplerInfo>(FxParseErrorCode.UnexpectedToken,
+                            $"Expected texture name inside '()' but found '{texTok.Text}'", texTok);
+                    textureRef = texTok.Text;
+                    Consume();
+                    SkipNonCodeTokens();
+                    var rp = Expect(TokenKind.RParen);
+                    if (rp.IsFailure)
+                        return Result<SamplerInfo, FxParseError>.Fail(rp.Error);
                 }
                 else
                 {
@@ -1177,6 +1230,40 @@ public sealed class FxPreParser
         }
 
         return used;
+    }
+
+    /// <summary>
+    /// Detects the brace-form sampler declaration '<c>sampler S { … };</c>' (with an
+    /// optional '<c>: register(sN)</c>' clause before the '{' — the lexer drops the
+    /// ':'). <paramref name="afterName"/> is the look-ahead offset of the first code
+    /// token after the declared name. fxc treats this form exactly like
+    /// '<c>= sampler_state { … }</c>'. No false positives on other '{'-bearing
+    /// constructs: a function returning a sampler type ('<c>sampler F() { … }</c>')
+    /// has '(' after the name, sampler-typed function parameters are followed by
+    /// ',' or ')', and struct/cbuffer/technique bodies never reach this check
+    /// because their type keywords are not sampler types.
+    /// </summary>
+    private bool IsBraceSamplerStateForm(int afterName)
+    {
+        int off = afterName;
+
+        // Optional register clause: 'register' '(' … ')'.
+        if (PeekIsKeywordAt(off, "register"))
+        {
+            off = NextCodeOffset(off + 1);
+            if (Peek(off).Kind != TokenKind.LParen)
+                return false;
+
+            off = NextCodeOffset(off + 1);
+            while (Peek(off).Kind is not (TokenKind.RParen or TokenKind.EOF))
+                off = NextCodeOffset(off + 1);
+            if (Peek(off).Kind != TokenKind.RParen)
+                return false;
+
+            off = NextCodeOffset(off + 1);
+        }
+
+        return Peek(off).Kind == TokenKind.LBrace;
     }
 
     /// <summary>

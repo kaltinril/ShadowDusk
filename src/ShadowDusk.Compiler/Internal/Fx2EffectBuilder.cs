@@ -64,11 +64,22 @@ internal static class Fx2EffectBuilder
     private const int RsStencilMask = 28;
     private const int RsStencilWriteMask = 29;
     private const int RsMultiSampleAntiAlias = 67;
+    private const int RsMultiSampleMask = 68;
     private const int RsColorWriteEnable = 73;
     private const int RsBlendOp = 75;
     private const int RsScissorTestEnable = 78;
     private const int RsSlopeScaleDepthBias = 79;
+    private const int RsTwoSidedStencilMode = 88;
+    private const int RsCcwStencilFail = 89;
+    private const int RsCcwStencilZFail = 90;
+    private const int RsCcwStencilPass = 91;
+    private const int RsCcwStencilFunc = 92;
+    private const int RsColorWriteEnable1 = 93;
+    private const int RsColorWriteEnable2 = 94;
+    private const int RsColorWriteEnable3 = 95;
+    private const int RsBlendFactor = 96;
     private const int RsDepthBias = 98;
+    private const int RsSeparateAlphaBlendEnable = 99;
     private const int RsSrcBlendAlpha = 100;
     private const int RsDestBlendAlpha = 101;
     private const int RsBlendOpAlpha = 102;
@@ -132,10 +143,21 @@ internal static class Fx2EffectBuilder
         foreach (string name in numericOrder)
         {
             CtabConstant c = numericsByName[name];
+            // Matrix class: the CTAB describes the SHADER's register layout (vkd3d's
+            // column-major default ⇒ MATRIX_COLUMNS), but fxc's effect parameter table
+            // carries the DECLARATION-level D3DX convention — an unqualified float4x4
+            // is MATRIX_ROWS (pinned by the matrix.fxb golden, whose shader CTAB also
+            // says COLUMNS while its parameter typedef says ROWS). Behaviorally inert
+            // in FNA (SetValue(Matrix) always writes column-major and MojoShader's
+            // copy_parameter_data never transposes by class), but games can read
+            // EffectParameter.ParameterClass — match fxc. Explicit column_major
+            // globals (rare) are indistinguishable from the default in the CTAB and
+            // also map to ROWS; that residual divergence is class-metadata only.
+            int parameterClass = c.Class == 3 ? 2 : c.Class;
             parameters.Add(new Fx2Parameter
             {
                 Name = c.Name,
-                Class = c.Class,
+                Class = parameterClass,
                 Type = c.Type,
                 Rows = c.Rows,
                 Columns = c.Columns,
@@ -216,6 +238,22 @@ internal static class Fx2EffectBuilder
             var passes = new List<Fx2Pass>(technique.Passes.Count);
             foreach (Fx2PassSource pass in technique.Passes)
             {
+                // States FNA's Effect runtime throws NotImplementedException on at
+                // EffectPass.Apply (the non-honored ops of docs/fx2-binary-format.md
+                // §8.2). The fxc build of this same .fx would crash FNA at runtime —
+                // silently dropping the state would mask that author error, so fail
+                // loudly instead.
+                if (pass.RenderState.KnownFnaThrowingStates.Count > 0)
+                {
+                    string offenders = string.Join(", ",
+                        pass.RenderState.KnownFnaThrowingStates.Select(s => $"'{s}'"));
+                    return Fail(sourceFile,
+                        $"pass '{pass.Name}' sets render state(s) {offenders}, which FNA's " +
+                        "Effect runtime throws NotImplementedException on at " +
+                        "EffectPass.Apply — remove them from the pass and set the " +
+                        "equivalent state from game code");
+                }
+
                 passes.Add(new Fx2Pass(
                     Name: pass.Name,
                     VertexShaderIndex: pass.VertexShaderIndex,
@@ -360,6 +398,12 @@ internal static class Fx2EffectBuilder
                 states.Add(new Fx2RenderState(op, BitConverter.SingleToUInt32Bits(value.Value), IsFloat: true));
         }
 
+        void AddDword(int op, uint? value)
+        {
+            if (value.HasValue)
+                states.Add(new Fx2RenderState(op, value.Value));
+        }
+
         // Blend.
         AddBool(RsAlphaBlendEnable, block.AlphaBlendEnable);
         if (block.ColorSourceBlend.HasValue)
@@ -368,13 +412,18 @@ internal static class Fx2EffectBuilder
             states.Add(new Fx2RenderState(RsDestBlend, MapBlend(block.ColorDestinationBlend.Value)));
         if (block.ColorBlendFunction.HasValue)
             states.Add(new Fx2RenderState(RsBlendOp, MapBlendFunction(block.ColorBlendFunction.Value)));
+        AddBool(RsSeparateAlphaBlendEnable, block.SeparateAlphaBlendEnable);
         if (block.AlphaSourceBlend.HasValue)
             states.Add(new Fx2RenderState(RsSrcBlendAlpha, MapBlend(block.AlphaSourceBlend.Value)));
         if (block.AlphaDestinationBlend.HasValue)
             states.Add(new Fx2RenderState(RsDestBlendAlpha, MapBlend(block.AlphaDestinationBlend.Value)));
         if (block.AlphaBlendFunction.HasValue)
             states.Add(new Fx2RenderState(RsBlendOpAlpha, MapBlendFunction(block.AlphaBlendFunction.Value)));
+        AddDword(RsBlendFactor, block.BlendFactor);           // D3DCOLOR dword, stored as-is
         AddInt(RsColorWriteEnable, block.ColorWriteChannels); // XNA channel bits == D3D9 bits
+        AddInt(RsColorWriteEnable1, block.ColorWriteChannels1);
+        AddInt(RsColorWriteEnable2, block.ColorWriteChannels2);
+        AddInt(RsColorWriteEnable3, block.ColorWriteChannels3);
 
         // Depth/stencil.
         AddBool(RsZEnable, block.DepthBufferEnable);          // zBufferType FALSE=0 / TRUE=1
@@ -393,6 +442,15 @@ internal static class Fx2EffectBuilder
             states.Add(new Fx2RenderState(RsStencilPass, MapStencilOp(block.StencilPass.Value)));
         if (block.StencilFunction.HasValue)
             states.Add(new Fx2RenderState(RsStencilFunc, MapCompareFunction(block.StencilFunction.Value)));
+        AddBool(RsTwoSidedStencilMode, block.TwoSidedStencilMode);
+        if (block.CounterClockwiseStencilFail.HasValue)
+            states.Add(new Fx2RenderState(RsCcwStencilFail, MapStencilOp(block.CounterClockwiseStencilFail.Value)));
+        if (block.CounterClockwiseStencilDepthBufferFail.HasValue)
+            states.Add(new Fx2RenderState(RsCcwStencilZFail, MapStencilOp(block.CounterClockwiseStencilDepthBufferFail.Value)));
+        if (block.CounterClockwiseStencilPass.HasValue)
+            states.Add(new Fx2RenderState(RsCcwStencilPass, MapStencilOp(block.CounterClockwiseStencilPass.Value)));
+        if (block.CounterClockwiseStencilFunction.HasValue)
+            states.Add(new Fx2RenderState(RsCcwStencilFunc, MapCompareFunction(block.CounterClockwiseStencilFunction.Value)));
 
         // Rasterizer.
         if (block.CullMode.HasValue)
@@ -405,6 +463,7 @@ internal static class Fx2EffectBuilder
             }));
         AddBool(RsScissorTestEnable, block.ScissorTestEnable);
         AddBool(RsMultiSampleAntiAlias, block.MultiSampleAntiAlias);
+        AddDword(RsMultiSampleMask, block.MultiSampleMask);    // raw dword mask, stored as-is
         AddFloat(RsDepthBias, block.DepthBias);
         AddFloat(RsSlopeScaleDepthBias, block.SlopeScaleDepthBias);
 

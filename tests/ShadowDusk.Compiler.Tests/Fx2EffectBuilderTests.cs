@@ -145,7 +145,11 @@ public sealed class Fx2EffectBuilderTests
 
         Fx2Parameter merged = result.Value.Parameters.Should().ContainSingle().Subject;
         merged.Name.Should().Be("WorldViewProj");
-        merged.Class.Should().Be(3, because: "MATRIX_COLUMNS class is preserved");
+        merged.Class.Should().Be(2,
+            because: "the parameter-table class for matrices is MATRIX_ROWS — fxc's " +
+                     "declaration-level D3DX convention, pinned by the matrix.fxb golden " +
+                     "(the CTAB's MATRIX_COLUMNS describes the shader's register layout, " +
+                     "not the parameter typedef; Phase 40)");
         merged.Rows.Should().Be(4);
         merged.Columns.Should().Be(4);
     }
@@ -523,6 +527,234 @@ public sealed class Fx2EffectBuilderTests
     public void MapRenderStates_SlopeScaleDepthBias_Is79_FloatBits()
         => AssertSingleRenderState(new RenderStateBlock { SlopeScaleDepthBias = 2.0f },
             new Fx2RenderState(79, BitConverter.SingleToUInt32Bits(2.0f), IsFloat: true));
+
+    // FNA-only states (honored † ops MGFX has no analog for; docs/fx2-binary-format.md §8.2).
+    [Fact]
+    public void MapRenderStates_SeparateAlphaBlendEnableTrue_Is99_1()
+        => AssertSingleRenderState(new RenderStateBlock { SeparateAlphaBlendEnable = true },
+            new Fx2RenderState(99, 1));
+
+    [Fact]
+    public void MapRenderStates_SeparateAlphaBlendEnableFalse_Is99_0()
+        => AssertSingleRenderState(new RenderStateBlock { SeparateAlphaBlendEnable = false },
+            new Fx2RenderState(99, 0));
+
+    [Fact]
+    public void MapRenderStates_BlendFactor_Is96_RawD3DColorDword()
+        => AssertSingleRenderState(new RenderStateBlock { BlendFactor = 0x80FF8080u },
+            new Fx2RenderState(96, 0x80FF8080u));
+
+    [Fact]
+    public void MapRenderStates_MultiSampleMask_Is68_RawDword()
+        => AssertSingleRenderState(new RenderStateBlock { MultiSampleMask = 0xFFFF0000u },
+            new Fx2RenderState(68, 0xFFFF0000u));
+
+    [Fact]
+    public void MapRenderStates_TwoSidedStencilModeTrue_Is88_1()
+        => AssertSingleRenderState(new RenderStateBlock { TwoSidedStencilMode = true },
+            new Fx2RenderState(88, 1));
+
+    [Fact]
+    public void MapRenderStates_CcwStencilFailKeep_Is89_1()
+        => AssertSingleRenderState(new RenderStateBlock { CounterClockwiseStencilFail = StencilOperationValue.Keep },
+            new Fx2RenderState(89, 1));
+
+    [Fact]
+    public void MapRenderStates_CcwStencilZFailIncrement_Is90_7()
+        => AssertSingleRenderState(new RenderStateBlock { CounterClockwiseStencilDepthBufferFail = StencilOperationValue.Increment },
+            new Fx2RenderState(90, 7));
+
+    [Fact]
+    public void MapRenderStates_CcwStencilPassReplace_Is91_3()
+        => AssertSingleRenderState(new RenderStateBlock { CounterClockwiseStencilPass = StencilOperationValue.Replace },
+            new Fx2RenderState(91, 3));
+
+    [Fact]
+    public void MapRenderStates_CcwStencilFuncAlways_Is92_8()
+        => AssertSingleRenderState(new RenderStateBlock { CounterClockwiseStencilFunction = CompareFunctionValue.Always },
+            new Fx2RenderState(92, 8));
+
+    [Fact]
+    public void MapRenderStates_ColorWriteChannels1_Is93_RawBits()
+        => AssertSingleRenderState(new RenderStateBlock { ColorWriteChannels1 = 3 },
+            new Fx2RenderState(93, 3));
+
+    [Fact]
+    public void MapRenderStates_ColorWriteChannels2_Is94_RawBits()
+        => AssertSingleRenderState(new RenderStateBlock { ColorWriteChannels2 = 8 },
+            new Fx2RenderState(94, 8));
+
+    [Fact]
+    public void MapRenderStates_ColorWriteChannels3_Is95_RawBits()
+        => AssertSingleRenderState(new RenderStateBlock { ColorWriteChannels3 = 15 },
+            new Fx2RenderState(95, 15));
+
+    // ---------------------------------------------------------------------------
+    // 8b. Combined old + new states: every pair is emitted, in the deterministic
+    //     blend → depth/stencil → rasterizer order MapRenderStates pins.
+    // ---------------------------------------------------------------------------
+
+    [Fact]
+    public void MapRenderStates_CombinedOldAndNewStates_EmitsAllPairsInDeterministicOrder()
+    {
+        var block = new RenderStateBlock
+        {
+            // Old (pre-existing) states.
+            AlphaBlendEnable = true,
+            ColorSourceBlend = BlendValue.SourceAlpha,
+            AlphaSourceBlend = BlendValue.One,
+            ColorWriteChannels = 15,
+            StencilEnable = true,
+            StencilFunction = CompareFunctionValue.Always,
+            CullMode = CullModeValue.None,
+            MultiSampleAntiAlias = false,
+            DepthBias = 0.5f,
+            // New (FNA-only) states.
+            SeparateAlphaBlendEnable = true,
+            BlendFactor = 0x80FF8080u,
+            ColorWriteChannels1 = 3,
+            ColorWriteChannels2 = 8,
+            ColorWriteChannels3 = 1,
+            TwoSidedStencilMode = true,
+            CounterClockwiseStencilFail = StencilOperationValue.Keep,
+            CounterClockwiseStencilDepthBufferFail = StencilOperationValue.Increment,
+            CounterClockwiseStencilPass = StencilOperationValue.Replace,
+            CounterClockwiseStencilFunction = CompareFunctionValue.Less,
+            MultiSampleMask = 0xFFFF0000u,
+        };
+
+        Fx2EffectBuilder.MapRenderStates(block).Should().Equal(
+            // Blend group.
+            new Fx2RenderState(13, 1),            // AlphaBlendEnable = true
+            new Fx2RenderState(6, 5),             // SrcBlend = SrcAlpha
+            new Fx2RenderState(99, 1),            // SeparateAlphaBlendEnable = true
+            new Fx2RenderState(100, 2),           // SrcBlendAlpha = One
+            new Fx2RenderState(96, 0x80FF8080u),  // BlendFactor
+            new Fx2RenderState(73, 15),           // ColorWriteEnable
+            new Fx2RenderState(93, 3),            // ColorWriteEnable1
+            new Fx2RenderState(94, 8),            // ColorWriteEnable2
+            new Fx2RenderState(95, 1),            // ColorWriteEnable3
+            // Depth/stencil group.
+            new Fx2RenderState(22, 1),            // StencilEnable = true
+            new Fx2RenderState(26, 8),            // StencilFunc = Always
+            new Fx2RenderState(88, 1),            // TwoSidedStencilMode = true
+            new Fx2RenderState(89, 1),            // CCW_StencilFail = Keep
+            new Fx2RenderState(90, 7),            // CCW_StencilZFail = Incr
+            new Fx2RenderState(91, 3),            // CCW_StencilPass = Replace
+            new Fx2RenderState(92, 2),            // CCW_StencilFunc = Less
+            // Rasterizer group.
+            new Fx2RenderState(8, 1),             // CullMode = None
+            new Fx2RenderState(67, 0),            // MultiSampleAntiAlias = false
+            new Fx2RenderState(68, 0xFFFF0000u),  // MultiSampleMask
+            new Fx2RenderState(98, BitConverter.SingleToUInt32Bits(0.5f), IsFloat: true)); // DepthBias
+    }
+
+    [Fact]
+    public void MapRenderStates_AllNewOps_AreAcceptedByFx2EffectWriter()
+    {
+        // Guards against an op typo the unit pins above can't catch alone: the writer
+        // restricts pass render states to FNA's honored set, so every new op must be in it.
+        IReadOnlyList<Fx2RenderState> states = Fx2EffectBuilder.MapRenderStates(new RenderStateBlock
+        {
+            SeparateAlphaBlendEnable = true,
+            BlendFactor = 0x80FF8080u,
+            ColorWriteChannels1 = 3,
+            ColorWriteChannels2 = 8,
+            ColorWriteChannels3 = 1,
+            TwoSidedStencilMode = true,
+            CounterClockwiseStencilFail = StencilOperationValue.Keep,
+            CounterClockwiseStencilDepthBufferFail = StencilOperationValue.Increment,
+            CounterClockwiseStencilPass = StencilOperationValue.Replace,
+            CounterClockwiseStencilFunction = CompareFunctionValue.Less,
+            MultiSampleMask = 0xFFFF0000u,
+        });
+
+        var effect = new Fx2EffectDesc
+        {
+            Parameters = [],
+            Techniques = [new Fx2Technique("T", [new Fx2Pass("P0", -1, -1, states)])],
+            Shaders = [],
+        };
+
+        var written = new Fx2EffectWriter().Write(effect);
+        written.IsSuccess.Should().BeTrue(
+            because: written.IsFailure ? written.Error.Message : "all new ops are in FNA's honored set");
+    }
+
+    // ---------------------------------------------------------------------------
+    // 8c. Known-FNA-throwing render states (the non-honored §8.2 ops, e.g.
+    //     AlphaTestEnable / fog / point sprites) must fail SD0303 loudly: the fxc
+    //     build of the same .fx throws NotImplementedException in FNA at
+    //     EffectPass.Apply, so silently dropping them would mask author error.
+    // ---------------------------------------------------------------------------
+
+    [Fact]
+    public void Build_PassWithFnaThrowingState_FailsWithSD0303NamingTheState()
+    {
+        var result = Build(
+            ctabs: [],
+            techniques:
+            [
+                new Fx2TechniqueSource("T",
+                [
+                    new Fx2PassSource("P0", -1, 0, new RenderStateBlock
+                    {
+                        KnownFnaThrowingStates = ["AlphaTestEnable"],
+                    }),
+                ]),
+            ]);
+
+        result.IsFailure.Should().BeTrue(
+            because: "FNA throws NotImplementedException on AlphaTestEnable at EffectPass.Apply");
+        result.Error.Code.Should().Be("SD0303");
+        result.Error.File.Should().Be(SourceFile);
+        result.Error.Message.Should().Contain("AlphaTestEnable",
+            because: "the diagnostic must name the offending state");
+        result.Error.Message.Should().Contain("P0",
+            because: "the diagnostic must name the pass");
+        result.Error.Message.Should().Contain("NotImplementedException",
+            because: "the diagnostic must explain that FNA throws on it at runtime");
+    }
+
+    [Fact]
+    public void Build_PassWithMultipleFnaThrowingStates_NamesAllOfThem()
+    {
+        var result = Build(
+            ctabs: [],
+            techniques:
+            [
+                new Fx2TechniqueSource("T",
+                [
+                    new Fx2PassSource("P0", -1, 0, new RenderStateBlock
+                    {
+                        KnownFnaThrowingStates = ["AlphaTestEnable", "FogEnable", "PointSpriteEnable"],
+                    }),
+                ]),
+            ]);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("SD0303");
+        result.Error.Message.Should().ContainAll("AlphaTestEnable", "FogEnable", "PointSpriteEnable");
+    }
+
+    [Fact]
+    public void Build_AlphaTestEnableParsedFromFxSyntax_FailsWithSD0303EndToEnd()
+    {
+        // The exact flow the FNA pipeline runs: RenderStateParser captures the throwing
+        // key as metadata, and the builder turns it into the loud SD0303.
+        var parsed = new RenderStateParser().Parse(
+            new Dictionary<string, string> { ["AlphaTestEnable"] = "True" });
+        parsed.IsSuccess.Should().BeTrue(
+            because: "the parser records the key as metadata rather than failing");
+
+        var result = Build(
+            ctabs: [],
+            techniques: [new Fx2TechniqueSource("T", [new Fx2PassSource("P0", -1, 0, parsed.Value)])]);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("SD0303");
+        result.Error.Message.Should().Contain("AlphaTestEnable");
+    }
 
     // ---------------------------------------------------------------------------
     // 9. Technique/pass passthrough: names and shader indices flow unchanged;

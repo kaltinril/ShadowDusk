@@ -1056,4 +1056,176 @@ public sealed class FxPreParserTests
         result.IsSuccess.Should().BeTrue();
         result.Value.StrippedHlsl.Should().Be(source);
     }
+
+    // -------------------------------------------------------------------------
+    // Brace-form sampler declarations (finding F1) — fxc treats
+    // 'sampler S { ... };' exactly like 'sampler S = sampler_state { ... };',
+    // so the default mode gives it the same SM4 rewrite treatment. The paren
+    // texture reference 'Texture = (X);' is legacy XNA syntax fxc also accepts.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_SamplerTextureParenForm_Extracted()
+    {
+        // 'Texture = (MyTex);' — sibling of T23 (<MyTex>) and T24 (bare MyTex).
+        const string source = """
+            sampler2D MySampler = sampler_state {
+                Texture = (MyTex);
+            };
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Samplers.Should().HaveCount(1);
+        result.Value.Samplers[0].TextureReference.Should().Be("MyTex");
+    }
+
+    [Fact]
+    public void Parse_BraceFormSampler_UsedByTex2D_RewrittenLikeKeywordForm()
+    {
+        // The ClipShaderNew.fx pattern: brace form (no '= sampler_state') with a
+        // paren texture reference, bound to an explicitly-declared Texture2D.
+        const string source = """
+            Texture2D Mask;
+            sampler MaskSampler
+            {
+                Texture = (Mask);
+                MinFilter = LINEAR;
+            };
+
+            float4 PS(float2 uv : TEXCOORD0) : COLOR
+            {
+                return tex2D(MaskSampler, uv);
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        string stripped = result.Value.StrippedHlsl;
+
+        // Same rewrite the keyword form gets: modern SamplerState, legacy block gone.
+        stripped.Should().Contain("SamplerState MaskSampler;");
+        stripped.Should().NotContain("MinFilter");
+
+        // No synthesized texture — the block bound the existing Texture2D, and
+        // tex2D resolves to a Sample call on it.
+        stripped.Should().NotContain("_SDTexture");
+        stripped.Should().Contain("Mask.Sample(MaskSampler, uv)");
+        stripped.Should().NotContain("tex2D");
+
+        // Metadata capture is identical to the keyword form.
+        result.Value.Samplers.Should().ContainSingle();
+        result.Value.Samplers[0].Name.Should().Be("MaskSampler");
+        result.Value.Samplers[0].TextureReference.Should().Be("Mask");
+        result.Value.Samplers[0].StateEntries.Should().ContainSingle(
+            e => e.Key == "MinFilter" && e.Value == "LINEAR");
+    }
+
+    [Fact]
+    public void Parse_BraceFormSamplerWithRegister_UsedByTex2D_RewrittenLikeKeywordForm()
+    {
+        // Brace form with a register clause between the name and the '{' (the ':'
+        // is dropped by the lexer). Must NOT be mistaken for the bare Form 3,
+        // whose consumer would swallow only up to the first ';' inside the block.
+        const string source = """
+            texture t;
+            sampler s : register(s0)
+            {
+                Texture = <t>;
+                AddressU = CLAMP;
+            };
+
+            float4 PS(float2 uv : TEXCOORD0) : COLOR
+            {
+                return tex2D(s, uv);
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        string stripped = result.Value.StrippedHlsl;
+
+        stripped.Should().Contain("Texture2D t;");
+        stripped.Should().Contain("SamplerState s;");
+        stripped.Should().Contain("t.Sample(s, uv)");
+        stripped.Should().NotContain("tex2D");
+        stripped.Should().NotContain("register");
+        stripped.Should().NotContain("AddressU");
+
+        result.Value.Samplers.Should().ContainSingle();
+        result.Value.Samplers[0].TextureReference.Should().Be("t");
+    }
+
+    [Fact]
+    public void Parse_UnusedBraceFormSampler_ErasedLikeKeywordForm()
+    {
+        // A brace-form sampler no tex2D references gets the keyword form's
+        // pre-existing unused handling: erased entirely, metadata still captured.
+        const string source = """
+            sampler2D UnusedSampler
+            {
+                Texture = <SomeTexture>;
+            };
+
+            float4 PS() : COLOR { return float4(1, 1, 1, 1); }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        string stripped = result.Value.StrippedHlsl;
+
+        stripped.Should().NotContain("UnusedSampler");
+        stripped.Should().NotContain("SomeTexture");
+        stripped.Should().NotContain("_SDTexture");
+
+        result.Value.Samplers.Should().ContainSingle();
+        result.Value.Samplers[0].Name.Should().Be("UnusedSampler");
+        result.Value.Samplers[0].TextureReference.Should().Be("SomeTexture");
+    }
+
+    [Fact]
+    public void Parse_NonSamplerBraces_NeverMatchBraceForm()
+    {
+        // False-positive guard: every other '{'-bearing construct the parser walks
+        // (struct bodies, function bodies, sampler-typed parameters — including a
+        // sampler parameter in last position, where ')' precedes the '{') must not
+        // be parsed as a brace-form sampler declaration.
+        const string source = """
+            struct PixelInput
+            {
+                float4 Position : SV_Position0;
+                float4 Color : COLOR0;
+            };
+
+            float4 WithSamplerParam(sampler2D s, float2 uv) : COLOR0
+            {
+                return float4(uv, 0, 1);
+            }
+
+            float4 LastParamSampler(float2 uv, sampler2D s) : COLOR0
+            {
+                return float4(uv, 0, 1);
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+
+        // No sampler declaration was (mis)captured…
+        result.Value.Samplers.Should().BeEmpty();
+
+        // …and the bodies survive: struct fields intact, both sampler-typed
+        // parameters untouched (only the function return ': COLOR0' is rewritten,
+        // which is the pre-existing SV_Target treatment, not sampler handling).
+        string stripped = result.Value.StrippedHlsl;
+        stripped.Should().Contain("float4 Color : COLOR0;");
+        stripped.Should().Contain("(sampler2D s, float2 uv)");
+        stripped.Should().Contain("(float2 uv, sampler2D s)");
+        stripped.Should().Contain("return float4(uv, 0, 1);");
+    }
 }

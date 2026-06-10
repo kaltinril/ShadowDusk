@@ -62,10 +62,12 @@ MonoGame's stock content pipeline (`MGCB`) shells out to `mgfxc`, which depends 
 > structurally well-formed per MojoShader's parse rules + calibrated against real fxc goldens
 > (`tests/fixtures/golden/FNA/`) → (3) the real MojoShader library parses+translates it → (4)
 > real FNA renders pixel-equivalent. **All four rungs are proven for the SM3 PS-only AND
-> VS-driven corpora (2026-06-09, `validation/FnaValidation`: gate 14/14 — the 10 Phase-17
-> PS-only shaders via the SpriteBatch scene + 4 VS-driven effects via the custom-geometry
-> quad scene — plus 12 extended entries, max delta ≤ 1/255 vs the fxc oracle in real FNA
-> 26.06; in-pass render states empirically honored)**. `fxc`/`d3dcompiler_47` are test oracles only and never ship — the shipping path
+> VS-driven corpora (2026-06-09, `validation/FnaValidation`: gate 17/17 — 13 PS-only rows
+> via the SpriteBatch scene incl. multi-technique selection and the float4x4 calibration
+> row, + 4 VS-driven effects via the custom-geometry quad scene — plus the extended
+> entries, max delta ≤ 1/255 vs the fxc oracle in real FNA 26.06; in-pass render states
+> empirically honored; Phase 40 hardened the fidelity surface — see
+> `plan/DONE/PHASE-40-fna-fidelity-hardening.md`)**. `fxc`/`d3dcompiler_47` are test oracles only and never ship — the shipping path
 > is vkd3d-shader's SM1–3 backend on every host, packed into the NuGet for win-x64 + linux-x64
 > with cross-host byte-identical output. This is additive reach (Part 1); the
 > mgfxc-replacement promise remains the primary product.
