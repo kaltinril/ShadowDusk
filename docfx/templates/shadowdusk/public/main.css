@@ -1,0 +1,10 @@
+/* ShadowDusk DocFX customizations (auto-loaded by the modern template). */
+
+/* The brand logo source (Brand/ShadowDuskIcon.png) is a 1254x1254 image. The
+   modern template doesn't clamp the navbar logo, so without this it renders at
+   full intrinsic size and bleeds over the rest of the page. Constrain it to a
+   normal navbar-glyph height and let the width scale to keep the aspect ratio. */
+.navbar-brand > img {
+  height: 32px;
+  width: auto;
+}
