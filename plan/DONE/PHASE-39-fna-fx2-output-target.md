@@ -1,6 +1,6 @@
 # Phase 39 — FNA support: compile `.fx` → D3D9 `fx_2_0` Effects bytecode (MojoShader-loadable)
 
-**Status:** ✅ **DONE — all four evidence rungs proven (2026-06-09)** for the PS-only **and VS-driven** corpora: `PlatformTarget.Fna` compiles D3D9-style `.fx` → `.fxb` (`0xFEFF0901`) via vkd3d `D3D_BYTECODE` + the new `Fx2EffectWriter`, **loads in real FNA 26.06 and renders pixel-identical to `fxc /T fx_2_0` (rung-4 gate 14/14 — the 10 Phase-17 PS-only shaders + 4 VS-driven effects — plus 12 extended corpus entries, max delta ≤ 1/255)**, and ships **self-contained in the NuGet for win-x64 + linux-x64 with cross-host byte-identical output**. The VS-driven validation (same-day follow-up; see *VS-driven rung-4 completion* below) also **empirically confirmed in-pass render states are honored by real FNA**. Remaining scoped follow-ups: macOS vkd3d binaries, CI hosting of the per-RID artifacts (Phase 37 C). See *Implementation record* below. Original research (2026-06-08) follows unchanged.
+**Status:** ✅ **DONE — all four evidence rungs proven (2026-06-09)** for the PS-only **and VS-driven** corpora: `PlatformTarget.Fna` compiles D3D9-style `.fx` → `.fxb` (`0xFEFF0901`) via vkd3d `D3D_BYTECODE` + the new `Fx2EffectWriter`, **loads in real FNA 26.06 and renders pixel-equivalent to `fxc /T fx_2_0` (rung-4 gate 14/14 — the 10 Phase-17 PS-only shaders + 4 VS-driven effects — plus 12 extended corpus entries, max delta 0 everywhere except Dots at 1/255)**, and ships **self-contained in the NuGet for win-x64 + linux-x64 with cross-host byte-identical output**. The VS-driven validation (same-day follow-up; see *VS-driven rung-4 completion* below) also **empirically confirmed in-pass render states are honored by real FNA**. Remaining scoped follow-ups: macOS vkd3d binaries, CI hosting of the per-RID artifacts (Phase 37 C). See *Implementation record* below. Original research (2026-06-08) follows unchanged.
 
 **Track:** Reach (Part 1 of THE PURPOSE) — a *new consumer runtime* (FNA), where FNA's only blessed compiler is the **Windows-only, deprecated `fxc.exe` run under Wine** — exactly the cross-platform gap ShadowDusk exists to close. Additive opt-in target (like Metal/Vulkan), never a change to existing OpenGL/DX11/`.mgfx` v10 output (per `backwards-compat-monogame-382-mgfx-v10`).
 
@@ -211,7 +211,8 @@ patcher cannot canonicalize (no free temp / predicated / relative addressing).
 3. ✅ **Real MojoShader parses + translates** — `validation/FnaValidation` loads every corpus
    `.fxb` through `new Effect(gd, bytes)` in **real FNA 26.06** (FNA3D → MojoShader
    `abdc8036`, D3D11 backend): **26/26 load clean** (after the MojoShader-compat fixes below;
-   originally 22/22, +4 VS-driven rows added by the same-day follow-up).
+   originally 22/22, +4 VS-driven rows added by the same-day follow-up; the 5 diagnostic
+   probe rows the harness also runs load clean too but are excluded from the corpus counts).
 4. ✅ **Real FNA renders pixel-equivalent to `fxc /T fx_2_0`** — the same harness compiles
    each shader with BOTH arms (ShadowDusk vs the in-process `D3DCompile("fx_2_0")` oracle —
    proven byte-identical to fxc.exe), renders both — PS-only effects through the normal
@@ -294,7 +295,11 @@ RIDs; macOS remains pre-wired-but-pending:
   `FnaMultiPassStates` rung-4 row renders its second pass alpha-blended over its first with
   the device blend state pinned Opaque, which is only possible if the pass's
   `AlphaBlendEnable`/`SrcBlend`/`DestBlend` assignments are applied (and persist across
-  passes, XNA semantics) by real FNA. Identical in both arms, max delta 0.
+  passes, XNA semantics) by real FNA. Identical in both arms, max delta 0. The honoring
+  evidence is the manually inspected 2026-06-09 candidate PNG (cat through half-green),
+  now pinned by the harness's automated flat-image guard — the arm-vs-arm compare alone
+  could not see an FNA-side honoring regression, which would degrade both arms identically
+  (emission, separately, is structurally pinned by `FnaCompileFixtureTests` rung-2 asserts).
 - vkd3d 1.17's preprocessor ignores `#line` directives (and logs a `fixme` per compile to its
   debug stderr), so FNA-path diagnostic line numbers reference the *flattened* preprocessed
   text, not the original include structure — unlike the DXC paths.
@@ -377,9 +382,11 @@ stage-correct.
   row/column-major mismatch that identity/scale never could; rendered as a visibly
   off-center half-size quad), and `FnaMultiPassStates` (two passes + in-pass states).
 - **Non-vacuousness verified by hand-computed expected images** (the Appendix-G/H
-  antidote): each candidate PNG was visually confirmed to show the predicted non-trivial
-  content (off-center quad, radial gradient, tinted cat, cat-through-half-green) — no row
-  can pass with both arms rendering nothing.
+  antidote): each candidate PNG of the 2026-06-09 run was visually confirmed to show the
+  predicted non-trivial content (off-center quad, radial gradient, tinted cat,
+  cat-through-half-green). The gate itself proves arm-vs-arm equivalence, not content;
+  the FnaMultiPassStates row's content is additionally pinned by an automated flat-image
+  guard (see *Post-review hardening* below).
 - **`FnaMultiPassStates.fx` change:** `PlainColorPS` alpha 1.0 → **0.5**. At alpha 1 the
   second pass's opaque green fully occluded the first pass's tinted-texture output — the
   exact vacuous-coverage trap Appendix G documents. At 0.5, both passes contribute to every
@@ -389,9 +396,23 @@ stage-correct.
 - **No regression:** full suite green (739 tests, 0 failed, 0 skipped — FNA integration
   tests included, vkd3d restored locally); the PS-only gate rows re-passed unchanged in the
   same 14/14 run.
+- **Post-review hardening (same day, pre-merge multi-agent review of the branch):** the
+  gate verdict now also requires both arms to have *rendered cleanly* (a symmetric soft
+  failure — e.g. the shared SetParams delegate throwing identically in both arms — could
+  previously pass on identical wrong pixels); the VsQuad scene clears `Textures[0..1]`
+  between arms (the reference arm runs first, so a candidate whose sampler→texture map
+  regressed away would otherwise inherit the oracle's stale binding and render
+  pixel-identical — masked); each row's scene flag is verified against whether the
+  candidate `.fxb` actually embeds a VS token stream (a misfiled future row would pass
+  vacuously); and an automated flat-image guard on the FnaMultiPassStates candidate pins
+  the "cat through half-green" observation so an FNA-side state-honoring regression
+  (which degrades both arms identically, invisible to the arm-vs-arm compare) fails the
+  gate.
+
+## Definition of done (when pursued)
 
 - A new `PlatformTarget.Fna` compiles an SM3-expressible `.fx` to a `.fxb` whose bytes start with `0xFEFF0901` and parse cleanly in **MojoShader** (no parser errors).
-- The `.fxb` **loads in real FNA** (`new Effect(gd, bytes)`) and **renders pixel-equivalent** to the same source compiled with `fxc /T fx_2_0`, for the SM3 PS-only corpus (rung-4 — the FNA analog of Phase 17/18).
+- The `.fxb` **loads in real FNA** (`new Effect(gd, bytes)`) and **renders pixel-equivalent** to the same source compiled with `fxc /T fx_2_0`, for the SM3 PS-only corpus (rung-4 — the FNA analog of Phase 17/18). *(Original PS-only scope; the VS-driven analog was closed the same day — see "VS-driven rung-4 completion" above.)*
 - Existing MonoGame GL/DX `.mgfx` output is **byte-unchanged** (no regression; FNA is purely additive).
 - Seamless: consumer picks the FNA target once (it's a platform their game already targets — allowed per `seamless-for-end-user`); no Wine, no SDK, no per-shader flags.
 - Honest scope note: shaders requiring SM4+ features are **not** FNA-targetable and must fail loudly with a clear diagnostic, not silently degrade.

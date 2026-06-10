@@ -8,12 +8,13 @@ using Microsoft.Xna.Framework.Graphics;
 namespace ShadowDusk.Validation.Fna;
 
 /// <summary>
-/// FNA (Phase 39 rung 3/4) shared inputs. The 10-shader GATE set and its parameter
+/// FNA (Phase 39 rung 3/4) shared inputs. The PS-only GATE set and its parameter
 /// values are a faithful port of <c>validation/SharedDx/DxShaderInputs.cs</c> (which is
 /// itself the Phase 17 set), so the FNA comparison uses the SAME shaders, the SAME cat
-/// image, and the SAME parameter values as the proven GL/DX validations. The extended
-/// (reported, non-gating) set adds the rest of the SM3-expressible PS-only corpus plus
-/// the two fxc golden sources from <c>tests/fixtures/golden/FNA/</c>.
+/// image, and the SAME parameter values as the proven GL/DX validations; the VS-driven
+/// GATE set (custom-geometry quad scene) is the 17-VS analog. The extended (reported,
+/// non-gating) set adds the rest of the SM3-expressible PS-only corpus plus the two
+/// fxc golden sources from <c>tests/fixtures/golden/FNA/</c>.
 /// </summary>
 public static class FnaShaderInputs
 {
@@ -132,6 +133,12 @@ public static class FnaShaderInputs
         e.Parameters["t"]?.SetValue(cat);                         // golden textured.fx
 
         // ---- VS-driven gate set (custom-geometry quad scene) ----
+        // CAUTION: this block claims very common uniform names (World / View /
+        // Projection / Color / Tint / WorldViewProjection) in the shared SetParams
+        // namespace. SetParams runs against EVERY corpus effect via ?., so any future
+        // corpus row declaring one of these names silently receives THESE values, not
+        // defaults — check new fixtures against this list before adding them (e.g.
+        // PenumbraLight.fx already declares both Color and WorldViewProjection).
         // VsTransformColorTexture: identity WVP maps the clip-space quad corners
         // straight to the viewport; the non-white tint keeps the VS color path
         // (vertexColor * Tint) non-vacuous. Tint is also FnaMultiPassStates' PS uniform.

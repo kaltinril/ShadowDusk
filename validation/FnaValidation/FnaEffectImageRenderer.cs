@@ -229,6 +229,14 @@ public sealed class FnaEffectImageRenderer : Game
                 GraphicsDevice.RasterizerState = RasterizerState.CullNone;
                 GraphicsDevice.SamplerStates[0] = SamplerState.LinearClamp;
                 GraphicsDevice.SamplerStates[1] = SamplerState.LinearClamp;
+                // Clear texture slots too: in this scene the ONLY path that binds a
+                // texture is the effect's own sampler→texture map (no SpriteBatch.Draw
+                // to rebind it), and the reference arm runs first on the same device —
+                // a candidate .fxb whose map regressed away would otherwise silently
+                // inherit the oracle's stale binding and render pixel-identical,
+                // masking exactly the defect class this harness exists to catch.
+                GraphicsDevice.Textures[0] = null;
+                GraphicsDevice.Textures[1] = null;
 
                 try { _setParams(effect, _cat); }
                 catch (Exception ex) { paramError = $"SetParams threw: {ex.GetType().Name}: {ex.Message}"; }
@@ -268,9 +276,13 @@ public sealed class FnaEffectImageRenderer : Game
             using (var outFs = File.Create(png))
                 rt.SaveAsPng(outFs, w, h);
 
-            string? renderErrors = _fna3dErrors.Count > 0
-                ? $"FNA3D errors during render: {string.Join(" | ", _fna3dErrors)}"
-                : paramError;
+            // Surface BOTH error kinds when both occurred — never drop one.
+            string? renderErrors = (_fna3dErrors.Count > 0, paramError) switch
+            {
+                (true, not null) => $"FNA3D errors during render: {string.Join(" | ", _fna3dErrors)} | {paramError}",
+                (true, null) => $"FNA3D errors during render: {string.Join(" | ", _fna3dErrors)}",
+                (false, _) => paramError,
+            };
             return new ArmOutcome(true, renderErrors is null, renderErrors, pixels, png);
         }
         catch (Exception ex)
