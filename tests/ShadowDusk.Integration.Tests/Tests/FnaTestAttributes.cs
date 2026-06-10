@@ -24,17 +24,23 @@ internal static class FnaTestGate
 
     // Mirrors Vkd3dLoader's probe: the build-output copy next to the test binaries,
     // then tools/vkd3d/ walking up from the output directory toward the repo root.
+    // On macOS the restored layout is per-arch (osx-x64/ / osx-arm64/ subdirectories
+    // — both arches share one dylib file name), so the current process arch's
+    // subdirectory is probed before the flat path, like the loader.
     private static bool ProbeVkd3d()
     {
         foreach (string name in CandidateFileNames())
         {
-            if (File.Exists(Path.Combine(AppContext.BaseDirectory, name)))
-                return true;
-
-            for (DirectoryInfo? dir = new(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+            foreach (string subdir in ProbeSubdirectories())
             {
-                if (File.Exists(Path.Combine(dir.FullName, "tools", "vkd3d", name)))
+                if (File.Exists(Path.Combine(AppContext.BaseDirectory, subdir, name)))
                     return true;
+
+                for (DirectoryInfo? dir = new(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+                {
+                    if (File.Exists(Path.Combine(dir.FullName, "tools", "vkd3d", subdir, name)))
+                        return true;
+                }
             }
         }
 
@@ -57,6 +63,15 @@ internal static class FnaTestGate
             yield return "libvkd3d-shader.so.1";
             yield return "libvkd3d-shader.so";
         }
+    }
+
+    private static string[] ProbeSubdirectories()
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            return [""];
+        string arch = RuntimeInformation.OSArchitecture == Architecture.Arm64
+            ? "osx-arm64" : "osx-x64";
+        return [arch, ""];
     }
 }
 

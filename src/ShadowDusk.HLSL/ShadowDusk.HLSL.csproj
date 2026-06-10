@@ -54,8 +54,11 @@
        runtimes/<rid>/native (self-contained consumers; the loader's
        NATIVE_DLL_SEARCH_DIRECTORIES probe). Packing is restore-state-dependent by
        design: the release pipeline must restore every shipping RID before `dotnet pack`
-       — see RELEASING.md and plan/PHASE-37 (C). macOS binaries do not exist yet; their
-       entries are pre-wired and inert until restored. -->
+       — see RELEASING.md and plan/PHASE-37 (C). The two macOS dylibs share one file
+       name, so their build-output copies keep the per-arch osx-{x64,arm64}/ subdirs
+       (Link) — flat links would collide when both are restored on one machine (the
+       release pack runner); Vkd3dLoader/FnaTestGate probe the current process arch's
+       subdir first, then flat. -->
   <ItemGroup>
     <None Include="$(MSBuildThisFileDirectory)..\..\tools\vkd3d\libvkd3d-shader-1.dll"
           Condition="Exists('$(MSBuildThisFileDirectory)..\..\tools\vkd3d\libvkd3d-shader-1.dll')"
@@ -67,10 +70,11 @@
           Pack="true" PackagePath="runtimes/linux-x64/native/libvkd3d-shader.so.1" />
     <None Include="$(MSBuildThisFileDirectory)..\..\tools\vkd3d\osx-x64\libvkd3d-shader.1.dylib"
           Condition="Exists('$(MSBuildThisFileDirectory)..\..\tools\vkd3d\osx-x64\libvkd3d-shader.1.dylib')"
-          CopyToOutputDirectory="PreserveNewest" Link="libvkd3d-shader.1.dylib"
+          CopyToOutputDirectory="PreserveNewest" Link="osx-x64\libvkd3d-shader.1.dylib"
           Pack="true" PackagePath="runtimes/osx-x64/native/libvkd3d-shader.1.dylib" />
     <None Include="$(MSBuildThisFileDirectory)..\..\tools\vkd3d\osx-arm64\libvkd3d-shader.1.dylib"
           Condition="Exists('$(MSBuildThisFileDirectory)..\..\tools\vkd3d\osx-arm64\libvkd3d-shader.1.dylib')"
+          CopyToOutputDirectory="PreserveNewest" Link="osx-arm64\libvkd3d-shader.1.dylib"
           Pack="true" PackagePath="runtimes/osx-arm64/native/libvkd3d-shader.1.dylib" />
   </ItemGroup>
 </Project>
