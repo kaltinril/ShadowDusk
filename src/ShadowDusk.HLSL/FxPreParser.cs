@@ -12,6 +12,9 @@ namespace ShadowDusk.HLSL;
 /// and extracts all FX9 metadata needed by the compilation pipeline.
 /// DXC rejects these constructs, so they must be removed before invoking DXC.
 /// Stripped output preserves original line numbers by replacing removed lines with blank lines.
+/// <see cref="FxSourceMode"/> selects how legacy D3D9 constructs in the shader body are
+/// treated: rewritten forward to SM4 for DXC (the default), or preserved verbatim for an
+/// SM1–3 backend (the FNA fx_2_0 target, compiled by vkd3d).
 /// </summary>
 public sealed class FxPreParser
 {
@@ -102,6 +105,13 @@ public sealed class FxPreParser
     private readonly IReadOnlyList<Token> _tokens;
     private int _pos;
 
+    // How legacy D3D9/SM3 constructs in the shader body are treated. RewriteToSm4
+    // (the default) rewrites them forward for DXC; PreserveSm3 (the FNA fx_2_0
+    // target) passes them through verbatim because vkd3d's D3D_BYTECODE profile
+    // accepts them natively. Technique/pass and parameter-annotation stripping is
+    // identical in both modes.
+    private readonly FxSourceMode _mode;
+
     // Tracks character positions of each token in the original source so we can
     // reconstruct stripped output by erasing spans.  We store the cumulative
     // character offset at which each token starts.
@@ -129,12 +139,13 @@ public sealed class FxPreParser
     // Constructor (private — callers use the static Parse entry point)
     // -------------------------------------------------------------------------
 
-    private FxPreParser(string source, string sourceFile, IReadOnlyList<Token> tokens, int[] tokenCharOffset)
+    private FxPreParser(string source, string sourceFile, IReadOnlyList<Token> tokens, int[] tokenCharOffset, FxSourceMode mode)
     {
         _source = source;
         _sourceFile = sourceFile;
         _tokens = tokens;
         _tokenCharOffset = tokenCharOffset;
+        _mode = mode;
         _pos = 0;
     }
 
@@ -143,16 +154,27 @@ public sealed class FxPreParser
     // -------------------------------------------------------------------------
 
     /// <summary>
+    /// Parses an FX9 .fx source file, strips FX9-specific blocks, and extracts metadata,
+    /// rewriting legacy D3D9 constructs forward to SM4 (<see cref="FxSourceMode.RewriteToSm4"/>).
+    /// </summary>
+    /// <param name="source">Full text of the .fx file.</param>
+    /// <param name="sourceFile">Display name used in diagnostics (file path or virtual name).</param>
+    public static Result<FxParseResult, FxParseError> Parse(string source, string sourceFile) =>
+        Parse(source, sourceFile, FxSourceMode.RewriteToSm4);
+
+    /// <summary>
     /// Parses an FX9 .fx source file, strips FX9-specific blocks, and extracts metadata.
     /// </summary>
     /// <param name="source">Full text of the .fx file.</param>
     /// <param name="sourceFile">Display name used in diagnostics (file path or virtual name).</param>
-    public static Result<FxParseResult, FxParseError> Parse(string source, string sourceFile)
+    /// <param name="mode">How legacy D3D9/SM3 constructs in the shader body are treated
+    /// (rewritten forward for DXC, or preserved verbatim for an SM1–3 backend).</param>
+    public static Result<FxParseResult, FxParseError> Parse(string source, string sourceFile, FxSourceMode mode)
     {
         var lexer = new FxLexer(source, sourceFile);
         var tokens = lexer.Tokenize();
         var offsets = ComputeCharacterOffsets(source, tokens);
-        var parser = new FxPreParser(source, sourceFile, tokens, offsets);
+        var parser = new FxPreParser(source, sourceFile, tokens, offsets, mode);
         return parser.ParseFile();
     }
 
@@ -330,17 +352,23 @@ public sealed class FxPreParser
                 continue;
             }
 
-            // Sampler declaration. Three legacy forms are recognized:
+            // Sampler declaration. Four legacy forms are recognized:
             //   Form 1:  samplerNd S = sampler_state { Texture = <T>; ... };
             //   Form 2:  sampler S;                  (bare)
             //   Form 3:  sampler S : register(sN);   (bare; ':' is dropped by the lexer)
+            //   Form 4:  samplerNd S { Texture = <T>; ... };                  (brace form)
+            //            samplerNd S : register(sN) { ... };  (brace form with register)
+            //
+            // fxc treats Form 4 exactly like Form 1 — a state block opened directly
+            // after the name (or its register clause) IS a sampler_state block — so
+            // both forms share one parse/capture/rewrite path.
             //
             // A declaration is rewritten into the modern 'Texture2D' + 'SamplerState'
             // form only when S is sampled through a legacy intrinsic (tex2D); see
             // _legacyIntrinsicSamplers. Declarations no legacy intrinsic references
             // keep their previous handling so already-modern shaders are unaffected:
-            //   - Form 1 unused -> erased entirely (as before)
-            //   - bare   unused -> passed through verbatim (as before)
+            //   - Form 1/4 unused -> erased entirely (as before)
+            //   - bare     unused -> passed through verbatim (as before)
             if (tok.Kind == TokenKind.Identifier && SamplerTypeKeywords.Contains(tok.Text))
             {
                 int nameOffset = NextCodeOffset(1);
@@ -353,7 +381,14 @@ public sealed class FxPreParser
                         Peek(afterName).Kind == TokenKind.Equals &&
                         PeekIsKeywordAt(NextCodeOffset(afterName + 1), "sampler_state");
 
-                    if (isSamplerStateForm)
+                    // Form 4 must be detected before the bare-form check below: a
+                    // brace form with a register clause starts 'S register ( … )'
+                    // exactly like Form 3, and the bare-form path would swallow the
+                    // declaration only up to the first ';' INSIDE the state block.
+                    bool isBraceStateForm =
+                        !isSamplerStateForm && IsBraceSamplerStateForm(afterName);
+
+                    if (isSamplerStateForm || isBraceStateForm)
                     {
                         int blockStart = _tokenCharOffset[_pos];
                         var result = ParseSamplerDecl();
@@ -363,7 +398,16 @@ public sealed class FxPreParser
                         SamplerInfo info = result.Value;
                         samplers.Add(info);
 
-                        if (_legacyIntrinsicSamplers.Contains(info.Name))
+                        if (_mode == FxSourceMode.PreserveSm3)
+                        {
+                            // FNA fx_2_0 target: vkd3d's D3D_BYTECODE profile parses the
+                            // sampler_state initializer natively (and ignores the state
+                            // block itself), so the declaration stays in the output
+                            // verbatim — no erasure, no SamplerState/Texture2D rewrite.
+                            // The SamplerInfo captured above still feeds the fx_2_0
+                            // parameter/state metadata.
+                        }
+                        else if (_legacyIntrinsicSamplers.Contains(info.Name))
                         {
                             // The block's terminating ';' is the last token ParseSamplerDecl
                             // consumed, so it sits at _pos - 1.
@@ -396,7 +440,8 @@ public sealed class FxPreParser
                         (Peek(afterName).Kind == TokenKind.Identifier &&
                          string.Equals(Peek(afterName).Text, "register", StringComparison.OrdinalIgnoreCase));
 
-                    if (isBareForm && _legacyIntrinsicSamplers.Contains(nameTok.Text))
+                    if (isBareForm && _mode == FxSourceMode.RewriteToSm4 &&
+                        _legacyIntrinsicSamplers.Contains(nameTok.Text))
                     {
                         int blockStart = _tokenCharOffset[_pos];
                         (string name, int declEnd) = ConsumeBareSamplerDecl();
@@ -428,8 +473,12 @@ public sealed class FxPreParser
             // sampler_state form references (gap #2) actually exists. Modern types
             // ('Texture2D', 'Texture3D', …) are matched case-sensitively above and
             // never reach here. Any trailing annotation block / register clause is
-            // dropped — modern resource declarations carry neither.
-            if (tok.Kind == TokenKind.Identifier &&
+            // dropped — modern resource declarations carry neither. In PreserveSm3
+            // mode the legacy 'texture' type is valid for vkd3d and passes through
+            // verbatim (including any annotation block — falls through to the
+            // generic 'Identifier Identifier <...>' annotation strip below).
+            if (_mode == FxSourceMode.RewriteToSm4 &&
+                tok.Kind == TokenKind.Identifier &&
                 LegacyTextureTypeKeywords.TryGetValue(tok.Text, out string? modernTextureType))
             {
                 int nameOffset = NextCodeOffset(1);
@@ -500,7 +549,10 @@ public sealed class FxPreParser
             // shaders that use ') : COLOR { ... }' compile. We discriminate against
             // struct-field input semantics (which are preceded by an identifier, not
             // ')') by requiring the token before the COLOR identifier to be RParen.
-            if (tok.Kind == TokenKind.RParen && TryMatchColorReturnSemantic(out int colorTokIdx, out string replacement))
+            // In PreserveSm3 mode ': COLOR<n>?' is a valid SM3 output semantic for
+            // vkd3d and passes through verbatim.
+            if (_mode == FxSourceMode.RewriteToSm4 &&
+                tok.Kind == TokenKind.RParen && TryMatchColorReturnSemantic(out int colorTokIdx, out string replacement))
             {
                 int colorStart = _tokenCharOffset[colorTokIdx];
                 var colorTok = _tokens[colorTokIdx];
@@ -524,7 +576,11 @@ public sealed class FxPreParser
             // is copied verbatim. A sampler not in the binding map (declaration form
             // not understood, e.g. effect-framework syntax) is left alone so DXC
             // surfaces a clear diagnostic rather than ShadowDusk emitting bad HLSL.
-            if (tok.Kind == TokenKind.Identifier && Tex2DIntrinsics.Contains(tok.Text) &&
+            // In PreserveSm3 mode 'tex2D' is a valid SM3 intrinsic for vkd3d and
+            // passes through verbatim (no bindings are recorded in that mode, so
+            // the map lookup would fail anyway — the mode check makes it explicit).
+            if (_mode == FxSourceMode.RewriteToSm4 &&
+                tok.Kind == TokenKind.Identifier && Tex2DIntrinsics.Contains(tok.Text) &&
                 TryMatchTexSampleArgument(out string samplerArg) &&
                 _samplerTextureBindings.TryGetValue(samplerArg, out string? boundTexture))
             {
@@ -815,16 +871,39 @@ public sealed class FxPreParser
 
         SkipNonCodeTokens();
 
-        var eq = Expect(TokenKind.Equals);
-        if (eq.IsFailure)
-            return Result<SamplerInfo, FxParseError>.Fail(eq.Error);
-        SkipNonCodeTokens();
+        // Optional ': register(sN)' clause before a brace-form state block (the
+        // lexer drops the ':', leaving 'register' '(' … ')').
+        if (PeekIsKeyword("register"))
+        {
+            Consume(); // 'register'
+            SkipNonCodeTokens();
 
-        if (!PeekIsKeyword("sampler_state"))
-            return Fail<SamplerInfo>(FxParseErrorCode.UnexpectedToken,
-                $"Expected 'sampler_state' but found '{Peek().Text}'", Peek());
-        Consume(); // "sampler_state"
-        SkipNonCodeTokens();
+            var regLParen = Expect(TokenKind.LParen);
+            if (regLParen.IsFailure)
+                return Result<SamplerInfo, FxParseError>.Fail(regLParen.Error);
+            while (Peek().Kind is not (TokenKind.RParen or TokenKind.EOF))
+                Consume();
+
+            var regRParen = Expect(TokenKind.RParen);
+            if (regRParen.IsFailure)
+                return Result<SamplerInfo, FxParseError>.Fail(regRParen.Error);
+            SkipNonCodeTokens();
+        }
+
+        // Form 1 carries '= sampler_state' before the state block; Form 4 (the
+        // brace form) opens the block directly. fxc accepts both with identical
+        // semantics, so everything from the '{' on is shared.
+        if (Peek().Kind == TokenKind.Equals)
+        {
+            Consume(); // '='
+            SkipNonCodeTokens();
+
+            if (!PeekIsKeyword("sampler_state"))
+                return Fail<SamplerInfo>(FxParseErrorCode.UnexpectedToken,
+                    $"Expected 'sampler_state' but found '{Peek().Text}'", Peek());
+            Consume(); // "sampler_state"
+            SkipNonCodeTokens();
+        }
 
         var lbrace = Expect(TokenKind.LBrace);
         if (lbrace.IsFailure)
@@ -856,7 +935,7 @@ public sealed class FxPreParser
 
             if (string.Equals(key, "Texture", StringComparison.OrdinalIgnoreCase))
             {
-                // Texture = <TexName>; OR Texture = TexName;
+                // Texture = <TexName>; OR Texture = (TexName); OR Texture = TexName;
                 if (Peek().Kind == TokenKind.LAngle)
                 {
                     Consume(); // '<'
@@ -871,6 +950,23 @@ public sealed class FxPreParser
                     var ra = Expect(TokenKind.RAngle);
                     if (ra.IsFailure)
                         return Result<SamplerInfo, FxParseError>.Fail(ra.Error);
+                }
+                else if (Peek().Kind == TokenKind.LParen)
+                {
+                    // 'Texture = (TexName);' — ubiquitous legacy XNA syntax that fxc
+                    // accepts identically to the angle-bracket form.
+                    Consume(); // '('
+                    SkipNonCodeTokens();
+                    var texTok = Peek();
+                    if (texTok.Kind != TokenKind.Identifier)
+                        return Fail<SamplerInfo>(FxParseErrorCode.UnexpectedToken,
+                            $"Expected texture name inside '()' but found '{texTok.Text}'", texTok);
+                    textureRef = texTok.Text;
+                    Consume();
+                    SkipNonCodeTokens();
+                    var rp = Expect(TokenKind.RParen);
+                    if (rp.IsFailure)
+                        return Result<SamplerInfo, FxParseError>.Fail(rp.Error);
                 }
                 else
                 {
@@ -1134,6 +1230,40 @@ public sealed class FxPreParser
         }
 
         return used;
+    }
+
+    /// <summary>
+    /// Detects the brace-form sampler declaration '<c>sampler S { … };</c>' (with an
+    /// optional '<c>: register(sN)</c>' clause before the '{' — the lexer drops the
+    /// ':'). <paramref name="afterName"/> is the look-ahead offset of the first code
+    /// token after the declared name. fxc treats this form exactly like
+    /// '<c>= sampler_state { … }</c>'. No false positives on other '{'-bearing
+    /// constructs: a function returning a sampler type ('<c>sampler F() { … }</c>')
+    /// has '(' after the name, sampler-typed function parameters are followed by
+    /// ',' or ')', and struct/cbuffer/technique bodies never reach this check
+    /// because their type keywords are not sampler types.
+    /// </summary>
+    private bool IsBraceSamplerStateForm(int afterName)
+    {
+        int off = afterName;
+
+        // Optional register clause: 'register' '(' … ')'.
+        if (PeekIsKeywordAt(off, "register"))
+        {
+            off = NextCodeOffset(off + 1);
+            if (Peek(off).Kind != TokenKind.LParen)
+                return false;
+
+            off = NextCodeOffset(off + 1);
+            while (Peek(off).Kind is not (TokenKind.RParen or TokenKind.EOF))
+                off = NextCodeOffset(off + 1);
+            if (Peek(off).Kind != TokenKind.RParen)
+                return false;
+
+            off = NextCodeOffset(off + 1);
+        }
+
+        return Peek(off).Kind == TokenKind.LBrace;
     }
 
     /// <summary>

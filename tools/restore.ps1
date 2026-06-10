@@ -42,45 +42,67 @@ EnsureDir (Split-Path $OsxX64)
 EnsureDir (Split-Path $OsxArm64)
 
 # ---------------------------------------------------------------------------
-# vkd3d-shader (cross-platform DXBC backend, Phase 18 Track A)
+# vkd3d-shader (cross-platform DXBC backend, Phase 18 Track A / Phase 39 FNA)
 # ---------------------------------------------------------------------------
 # The vkd3d-shader native lib is a RESTORED artifact, not checked into the repo.
-# Today only a locally-built win-x64 binary exists; this step just verifies it is
-# present and documents the build recipe. Hosting per-RID artifacts as a pinned
-# GitHub Releases download is a follow-up (see note below). Invoked up-front so it
-# always runs regardless of the spirv-cross restore state below.
-function Restore-Vkd3dShader {
-    $Vkd3dDir = Join-Path $RepoRoot 'tools' 'vkd3d'
-    $WinVkd3d = Join-Path $Vkd3dDir 'libvkd3d-shader-1.dll'   # win-x64
-    EnsureDir $Vkd3dDir
+# All four shipping RIDs are downloaded from the FIXED GitHub Release tag below and
+# SHA-256-verified against the pins (Phase 37 C). Every host restores every RID:
+# the binaries are small (~1-2 MB each) and that makes any machine pack-ready (the
+# ShadowDusk.HLSL nupkg must contain all four — release.yml gates on it).
+#
+# Provenance: linux/osx binaries are built by .github/workflows/build-vkd3d-natives.yml
+# from the pinned vkd3d 1.17 tarball (linux on ubuntu:20.04 = glibc 2.31 baseline;
+# macOS at MACOSX_DEPLOYMENT_TARGET=11.0, per-arch). The win-x64 dll is the MSYS2
+# build the Phase 18/39/40 goldens and rung-4 validation were proven against:
+#   ./configure --host=x86_64-w64-mingw32 \
+#       SONAME_LIBVULKAN=vulkan-1.dll \
+#       LDFLAGS="-static-libgcc -Wl,-Bstatic -lwinpthread -Wl,-Bdynamic"
+#   make    # from vkd3d-1.17.tar.xz (https://dl.winehq.org/vkd3d/source/)
+# Invoked up-front so it always runs regardless of the spirv-cross restore state below.
+$Vkd3dReleaseUrl = 'https://github.com/kaltinril/ShadowDusk/releases/download/native-vkd3d-1.17'
 
-    if (Test-Path $WinVkd3d) {
-        Write-Host "restore.ps1: vkd3d-shader (libvkd3d-shader-1.dll) present — OK"
-        return
+function Restore-Vkd3dFile([string]$Asset, [string]$DestRel, [string]$Sha256) {
+    $Vkd3dDir = Join-Path $RepoRoot 'tools' 'vkd3d'
+    $Dest = Join-Path $Vkd3dDir $DestRel
+    EnsureDir (Split-Path $Dest)
+
+    if (Test-Path $Dest) {
+        $have = (Get-FileHash -Algorithm SHA256 -Path $Dest).Hash.ToLowerInvariant()
+        if ($have -eq $Sha256) {
+            Write-Host "restore.ps1: vkd3d-shader ($DestRel) present, hash OK"
+            return
+        }
+        Write-Host "restore.ps1: vkd3d-shader ($DestRel) hash mismatch — re-downloading (had $have)"
     }
 
-    Write-Warning @"
+    $tmp = "$Dest.tmp"
+    try {
+        Invoke-WebRequest -Uri "$Vkd3dReleaseUrl/$Asset" -OutFile $tmp -UseBasicParsing
+    } catch {
+        Write-Warning ("restore.ps1: could not download $Asset from $Vkd3dReleaseUrl (offline?); " +
+            "vkd3d-dependent paths (FNA target, DxbcBackend.Vkd3d) will fail SD0211 / skip in tests. $_")
+        if (Test-Path $tmp) { Remove-Item -Force $tmp }
+        return   # non-fatal by design
+    }
+    $got = (Get-FileHash -Algorithm SHA256 -Path $tmp).Hash.ToLowerInvariant()
+    if ($got -ne $Sha256) {
+        Write-Warning "restore.ps1: $Asset SHA-256 mismatch (expected $Sha256, got $got); discarding."
+        Remove-Item -Force $tmp
+        return   # non-fatal, but the file is NOT placed
+    }
+    Move-Item -Force $tmp $Dest
+    Write-Host "restore.ps1: vkd3d-shader ($DestRel) downloaded, hash OK"
+}
 
-vkd3d-shader native library not found at:
-  $WinVkd3d
-
-Build recipe (win-x64, vkd3d-shader 1.17, self-contained — zero non-system deps):
-  1. Install a portable MSYS2 toolchain (mingw-w64 + autotools).
-  2. Download the vkd3d 1.17 release tarball from
-     https://dl.winehq.org/vkd3d/source/ (vkd3d-1.17.tar.xz).
-  3. Configure with Vulkan resolved to the system loader by SONAME and statically
-     linked libgcc/winpthread so the DLL has no external runtime deps:
-        ./configure --host=x86_64-w64-mingw32 \
-            SONAME_LIBVULKAN=vulkan-1.dll \
-            LDFLAGS="-static-libgcc -Wl,-Bstatic -lwinpthread -Wl,-Bdynamic"
-     make
-  4. Copy the resulting libvkd3d-shader-1.dll to:
-        $WinVkd3d
-     (Full recipe is in memory/Track-A report.)
-
-NOTE: This binary is NOT committed (.gitignore ignores tools/vkd3d/*.dll). Hosting
-per-RID artifacts (win-x64 / linux-x64 / osx-*) as a pinned download is a follow-up.
-"@
+function Restore-Vkd3dShader {
+    Restore-Vkd3dFile 'libvkd3d-shader-1.dll' 'libvkd3d-shader-1.dll' `
+        '500cd915002aa95b17995954e69474031b32837fb16355ae9aa31d7bdd6f6718'
+    Restore-Vkd3dFile 'libvkd3d-shader.so.1' 'libvkd3d-shader.so.1' `
+        '4799589c3e7abd4cdb4f1a0bae5a74937fbff310fb1e8daafa86b510c6272afc'
+    Restore-Vkd3dFile 'libvkd3d-shader.1.osx-x64.dylib' (Join-Path 'osx-x64' 'libvkd3d-shader.1.dylib') `
+        '4acb13b8d8c4faac2b2180c4747a6da8a431889f2d6a776013c61a394fff8b9d'
+    Restore-Vkd3dFile 'libvkd3d-shader.1.osx-arm64.dylib' (Join-Path 'osx-arm64' 'libvkd3d-shader.1.dylib') `
+        '887aa64611014d03b23a1827973822fd98ede6684d773632391736f8749a9bf4'
 }
 
 Restore-Vkd3dShader

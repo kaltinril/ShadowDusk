@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Diagnostic scratch tool (Phase 39 Dissolve bisection): feeds a D3D9 shader
+         blob (extracted from an .fxb) to the EXACT MojoShader the harness runs
+         (MOJOSHADER_parse exported by the restored FNA3D.dll) with profile "hlsl"
+         and prints the generated HLSL — the source FNA3D's D3D11 driver D3DCompiles
+         at runtime. Run: dotnet run -c Release [args: one or more .fxb paths] -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- FNA3D.dll needs its sibling natives (SDL3 et al.) loadable too. -->
+    <None Include="..\external\fnalibs\x64\*.dll" CopyToOutputDirectory="PreserveNewest" Link="%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

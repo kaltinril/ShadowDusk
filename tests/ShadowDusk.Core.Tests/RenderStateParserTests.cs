@@ -375,4 +375,216 @@ public sealed class RenderStateParserTests
         block.HasBlendState.Should().BeFalse();
         block.HasRasterizerState.Should().BeFalse();
     }
+
+    // -------------------------------------------------------------------------
+    // FNA-only states (fx_2_0 ops FNA honors; the MGFX writer never reads these)
+    // -------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("True",  true)]
+    [InlineData("FALSE", false)]
+    public void Parse_SeparateAlphaBlendEnable(string value, bool expected)
+    {
+        var block = Parse(("SeparateAlphaBlendEnable", value));
+        block.SeparateAlphaBlendEnable.Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("0x80FF8080", 0x80FF8080u)] // hex D3DCOLOR dword
+    [InlineData("0XFFFFFFFF", 0xFFFFFFFFu)] // upper-case prefix
+    [InlineData("255",        255u)]        // decimal
+    public void Parse_BlendFactor(string value, uint expected)
+    {
+        var block = Parse(("BlendFactor", value));
+        block.BlendFactor.Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("NotAColor")]
+    [InlineData("0x")]
+    [InlineData("-1")]
+    public void Parse_BlendFactor_InvalidValue_ReturnsError(string value)
+    {
+        var error = ParseExpectError(("BlendFactor", value));
+        error.Code.Should().Be("SD0010");
+        error.Message.Should().Contain("BlendFactor");
+    }
+
+    [Theory]
+    [InlineData("0xFFFF0000", 0xFFFF0000u)]
+    [InlineData("4294967295", 0xFFFFFFFFu)]
+    public void Parse_MultiSampleMask(string value, uint expected)
+    {
+        var block = Parse(("MultiSampleMask", value));
+        block.MultiSampleMask.Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("True",  true)]
+    [InlineData("False", false)]
+    public void Parse_TwoSidedStencilMode(string value, bool expected)
+    {
+        var block = Parse(("TwoSidedStencilMode", value));
+        block.TwoSidedStencilMode.Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("Keep",    StencilOperationValue.Keep)]
+    [InlineData("Zero",    StencilOperationValue.Zero)]
+    [InlineData("Replace", StencilOperationValue.Replace)]
+    [InlineData("Incr",    StencilOperationValue.Increment)]
+    [InlineData("Decr",    StencilOperationValue.Decrement)]
+    [InlineData("IncrSat", StencilOperationValue.IncrementSaturation)]
+    [InlineData("DecrSat", StencilOperationValue.DecrementSaturation)]
+    [InlineData("Invert",  StencilOperationValue.Invert)]
+    public void Parse_CcwStencilFail(string value, StencilOperationValue expected)
+    {
+        var block = Parse(("CCW_StencilFail", value));
+        block.CounterClockwiseStencilFail.Should().Be(expected);
+    }
+
+    [Fact]
+    public void Parse_CcwStencilZFail()
+    {
+        var block = Parse(("CCW_StencilZFail", "Replace"));
+        block.CounterClockwiseStencilDepthBufferFail.Should().Be(StencilOperationValue.Replace);
+    }
+
+    [Fact]
+    public void Parse_CcwStencilPass()
+    {
+        var block = Parse(("CCW_StencilPass", "IncrSat"));
+        block.CounterClockwiseStencilPass.Should().Be(StencilOperationValue.IncrementSaturation);
+    }
+
+    [Theory]
+    [InlineData("ALWAYS",    CompareFunctionValue.Always)]
+    [InlineData("Never",     CompareFunctionValue.Never)]
+    [InlineData("LessEqual", CompareFunctionValue.LessEqual)]
+    public void Parse_CcwStencilFunc(string value, CompareFunctionValue expected)
+    {
+        var block = Parse(("CCW_StencilFunc", value));
+        block.CounterClockwiseStencilFunction.Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("RED | GREEN",              3)]  // flag-OR of D3DCOLORWRITEENABLE tokens
+    [InlineData("Red|Green|Blue|Alpha",     15)] // no spaces, mixed case
+    [InlineData("ALPHA",                    8)]  // single flag
+    [InlineData("15",                       15)] // plain integer
+    [InlineData("0x7",                      7)]  // hex integer
+    [InlineData("RED | 0x2",                3)]  // flag and integer mixed
+    public void Parse_ColorWriteEnable1(string value, int expected)
+    {
+        var block = Parse(("ColorWriteEnable1", value));
+        block.ColorWriteChannels1.Should().Be(expected);
+    }
+
+    [Fact]
+    public void Parse_ColorWriteEnable2()
+    {
+        var block = Parse(("ColorWriteEnable2", "RED | BLUE"));
+        block.ColorWriteChannels2.Should().Be(5);
+    }
+
+    [Fact]
+    public void Parse_ColorWriteEnable3()
+    {
+        var block = Parse(("ColorWriteEnable3", "GREEN"));
+        block.ColorWriteChannels3.Should().Be(2);
+    }
+
+    [Theory]
+    [InlineData("RED | PURPLE")]
+    [InlineData("")]
+    public void Parse_ColorWriteEnable1_InvalidValue_ReturnsError(string value)
+    {
+        var error = ParseExpectError(("ColorWriteEnable1", value));
+        error.Code.Should().Be("SD0010");
+        error.Message.Should().Contain("ColorWriteEnable1");
+    }
+
+    [Fact]
+    public void Parse_FnaOnlyStates_DoNotFlipTheMgfxHasGates()
+    {
+        // The MGFX writer keys its three optional state-object headers off Has* —
+        // the FNA-only fields must stay invisible to it (MGFX output non-regression).
+        var block = Parse(
+            ("SeparateAlphaBlendEnable", "True"),
+            ("BlendFactor",              "0x80FF8080"),
+            ("MultiSampleMask",          "0xFFFF0000"),
+            ("TwoSidedStencilMode",      "True"),
+            ("CCW_StencilFail",          "Keep"),
+            ("CCW_StencilZFail",         "Decr"),
+            ("CCW_StencilPass",          "Replace"),
+            ("CCW_StencilFunc",          "Always"),
+            ("ColorWriteEnable1",        "RED | GREEN"),
+            ("ColorWriteEnable2",        "BLUE"),
+            ("ColorWriteEnable3",        "0xF"));
+
+        block.HasBlendState.Should().BeFalse();
+        block.HasDepthStencilState.Should().BeFalse();
+        block.HasRasterizerState.Should().BeFalse();
+    }
+
+    // -------------------------------------------------------------------------
+    // Known-FNA-throwing keys (non-honored §8.2 ops): recorded as metadata, never
+    // an error here — only the FNA path (Fx2EffectBuilder) fails on them.
+    // -------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("AlphaTestEnable",   "True")]
+    [InlineData("AlphaFunc",         "Greater")]
+    [InlineData("AlphaRef",          "128")]
+    [InlineData("FogEnable",         "True")]
+    [InlineData("FogColor",          "0xFFFFFFFF")]
+    [InlineData("FogStart",          "10.0")]
+    [InlineData("PointSpriteEnable", "True")]
+    [InlineData("PointSize",         "4.0")]
+    [InlineData("PointSize_Min",     "1.0")]
+    [InlineData("Wrap0",             "1")]
+    [InlineData("Lighting",          "False")]
+    [InlineData("SRGBWriteEnable",   "True")]
+    public void Parse_KnownFnaThrowingKey_IsRecordedNotErrored(string key, string value)
+    {
+        var block = Parse((key, value));
+        block.KnownFnaThrowingStates.Should().ContainSingle().Which.Should().Be(key);
+        block.HasBlendState.Should().BeFalse(because: "throwing keys map to no block field");
+        block.HasDepthStencilState.Should().BeFalse();
+        block.HasRasterizerState.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Parse_KnownFnaThrowingKey_ValueIsNotValidated()
+    {
+        // The key is the defect; the value never gets parsed (fxc would accept it and
+        // FNA would throw at runtime regardless of the value).
+        var block = Parse(("AlphaTestEnable", "garbage-value"));
+        block.KnownFnaThrowingStates.Should().Equal("AlphaTestEnable");
+    }
+
+    [Fact]
+    public void Parse_MultipleFnaThrowingKeys_SortedDeterministically()
+    {
+        var block = Parse(
+            ("PointSpriteEnable", "True"),
+            ("AlphaTestEnable",   "True"),
+            ("FogEnable",         "True"));
+
+        block.KnownFnaThrowingStates.Should().Equal("AlphaTestEnable", "FogEnable", "PointSpriteEnable");
+    }
+
+    [Fact]
+    public void Parse_UnknownKey_IsNotRecordedAsFnaThrowing()
+    {
+        var block = Parse(("UnknownRenderKey", "SomeValue"));
+        block.KnownFnaThrowingStates.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Parse_HonoredKeys_AreNotRecordedAsFnaThrowing()
+    {
+        var block = Parse(("ZEnable", "True"), ("BlendFactor", "0x01020304"));
+        block.KnownFnaThrowingStates.Should().BeEmpty();
+    }
 }

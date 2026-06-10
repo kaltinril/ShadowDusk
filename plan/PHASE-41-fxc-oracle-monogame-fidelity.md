@@ -1,6 +1,6 @@
-# Phase 39 — `fxc.exe` oracle comparison & MonoGame fidelity matching
+# Phase 41 — `fxc.exe` oracle comparison & MonoGame fidelity matching
 
-**Status:** 📋 **Shell (not started).** Created 2026-06-08 — a research/validation tracking phase.
+**Status:** 📋 **Shell (not started).** Created 2026-06-08 — a research/validation tracking phase. *(Renumbered from Phase 39 → 41: while this shell sat unstarted, Phases 39–40 shipped the FNA fx_2_0 target and consumed the `fxc /T fx_2_0` oracle for it. This phase is now scoped to the **remaining DX11 + GL** full-corpus fidelity matrix.)*
 **Roadmap track:** Fidelity / completeness.
 
 > **Why now:** the maintainer confirmed a working **`fxc.exe`** is installed locally (the real DirectX HLSL compiler `mgfxc` shells out to on Windows). That unlocks a *direct* fidelity oracle we did not previously have on hand. To date, DX fidelity has been validated against `d3dcompiler_47` (the fxc-faithful system DLL) + the `mgfxc` goldens (Phase 18), and GL against the `mgfxc` goldens (Phase 17) — both only over the **10-shader SM-PS-only corpus**. This phase is the standing home for "how close are we *really* to genuine `fxc`/`mgfxc`, across the *whole* corpus?" research, so findings land in a tracked place instead of scattered notes.
@@ -29,7 +29,7 @@
 1. **How faithful is ShadowDusk to genuine `fxc`/`mgfxc` beyond the validated corpus?** Compile the **full** `tests/fixtures/shaders` corpus through ShadowDusk *and* through real `mgfxc`/`fxc`, and produce a **divergence matrix** (per shader, per backend: loads? renders-equivalent? structural `.mgfx` diff? where it diverges and why).
 2. **Is `d3dcompiler_47` a sound stand-in for `fxc.exe`?** Compare DXBC from ShadowDusk's `d3dcompiler_47` backend vs standalone `fxc.exe` on the corpus — quantify any divergence so Phase 18's oracle choice is evidenced, not assumed.
 3. **Which fidelity gaps actually matter?** Triage each divergence: behaviorally-irrelevant (reordering, naming) vs render-affecting (the initializer gap class). Feed render-affecting ones into their own follow-up change.
-4. **(Stretch) FNA format reality** — *tracked separately; see "Carry-forward / related" below.* If folded in, the `fxc.exe`/MojoShader question overlaps, but FNA's effect format is a distinct backend question, not an `fxc`-vs-ShadowDusk comparison.
+4. **FNA — already covered.** The FNA fx_2_0 path now exists (`PlatformTarget.Fna`, Phases 39–40) and is validated against the `fxc /T fx_2_0` oracle (gate 17/17). It is **out of scope here** — this phase is the DX11 + GL matrix only; any further FNA divergence work belongs to the FNA phases, not this one.
 
 ## Work items (each a self-contained task an agent can take)
 
@@ -46,5 +46,5 @@ An honest, checked-in answer to "how close are we to genuine `fxc`/`mgfxc` acros
 
 ## Carry-forward / related
 
-- **FNA effect-format research** is a **separate** open thread (FNA appears to consume DX9-era bytecode via MojoShader, not MGFX — so it's a *backend* question, not an `fxc`-comparison). Recommended as its own phase if FNA is pursued; tracked in `plan.md`. See `docfx/guides/choosing-a-target.md` for the current honest user-facing statement.
+- **FNA effect-format work is done**, not a carry-forward: the legacy D3D9 fx_2_0 `.fxb` path shipped in **Phases [39](DONE/PHASE-39-fna-fx2-output-target.md)–[40](DONE/PHASE-40-fna-fidelity-hardening.md)** (vkd3d-shader SM1–3 + `Fx2EffectWriter`), rung-4 validated against the `fxc /T fx_2_0` oracle in real FNA. See `docfx/guides/choosing-a-target.md` for the user-facing statement.
 - **XNB output** is deliberately **not** in ShadowDusk core — it belongs to the MGCB content-pipeline layer ([Phase 29](PHASE-29-mgcb-content-processor-plugin.md)). See the `.mgfx`-vs-`.xnb` decision in `plan.md` → *Key Decisions Already Made*.

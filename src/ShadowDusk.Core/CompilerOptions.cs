@@ -39,13 +39,17 @@ public sealed class CompilerOptions
     public string? SourceFileName { get; init; }
 
     /// <summary>
-    /// When <see langword="true"/>, compiles with debug information enabled.
+    /// When <see langword="true"/>, compiles with debug information enabled. Deliberately a
+    /// no-op for <see cref="PlatformTarget.Fna"/>: MojoShader is stricter on fxc
+    /// debug-style codegen, so the FNA path always compiles optimized — Debug can never
+    /// produce a <c>.fxb</c> the FNA runtime rejects.
     /// </summary>
     public bool Debug { get; init; }
 
     /// <summary>
     /// The MGFX container version to emit. Defaults to <c>10</c>, which loads across the
-    /// supported MonoGame/KNI runtimes (the backwards-compatible choice).
+    /// supported MonoGame/KNI runtimes (the backwards-compatible choice). Ignored for
+    /// <see cref="PlatformTarget.Fna"/>, whose output is the D3D9 fx_2_0 container, not MGFX.
     /// </summary>
     public int MgfxVersion { get; init; } = 10;
 
@@ -53,7 +57,9 @@ public sealed class CompilerOptions
     /// Which backend compiles HLSL to SM5 DXBC when <see cref="Target"/> is
     /// <see cref="PlatformTarget.DirectX"/>. Defaults to the proven Windows-only
     /// d3dcompiler_47 oracle; set to <see cref="DxbcBackend.Vkd3d"/> for the
-    /// cross-platform vkd3d-shader backend. Ignored for non-DirectX targets.
+    /// cross-platform vkd3d-shader backend. Ignored for non-DirectX targets —
+    /// <see cref="PlatformTarget.Fna"/> always uses vkd3d-shader (the same backend on every
+    /// host, so output stays host-independent).
     /// </summary>
     public DxbcBackend DxbcBackend { get; init; } = DxbcBackend.D3DCompiler;
 }

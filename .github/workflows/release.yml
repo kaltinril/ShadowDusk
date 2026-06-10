@@ -48,7 +48,7 @@ jobs:
     outputs:
       version: ${{ steps.resolve.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -88,15 +88,15 @@ jobs:
         # from main, which has already passed ci.yml's hard gate on all three OSes.
         os: [ ubuntu-latest, macos-latest, windows-latest ]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup .NET 8
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '8.0.x'
 
       - name: Cache NuGet
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', '**/Directory.Packages.props') }}
@@ -137,7 +137,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-test-results-${{ matrix.os }}
           path: TestResults/*.trx
@@ -149,15 +149,15 @@ jobs:
     runs-on: ubuntu-latest
     needs: [ validate, build-and-test ]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup .NET 8
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '8.0.x'
 
       - name: Cache NuGet
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', '**/Directory.Packages.props') }}
@@ -199,8 +199,35 @@ jobs:
             exit 1
           fi
 
+      # ShadowDusk.HLSL's vkd3d packing is restore-state-dependent (csproj entries are
+      # Condition="Exists(...)"): a pack on a machine without the restored binaries
+      # SILENTLY produces a package whose FNA target and DxbcBackend.Vkd3d fail with
+      # SD0211 for every NuGet consumer — directly contradicting the documented
+      # self-contained promise. Fail the release red instead (the mirror of the
+      # pack-wasm dxcompiler.wasm gate). tools/restore.sh provisions all four RIDs
+      # by pinned download (Phase 37 C), so a clean CI runner satisfies this gate.
+      # The LGPL-2.1 notice must ride along with the binaries it covers.
+      - name: Verify ShadowDusk.HLSL contains the vkd3d natives (all four RIDs) + LGPL notice
+        run: |
+          pkg=$(find nupkg -maxdepth 1 -name 'ShadowDusk.HLSL.*.nupkg' ! -name '*.snupkg' | head -1)
+          echo "Inspecting $pkg"
+          listing=$(unzip -l "$pkg")
+          missing=0
+          for native in \
+            'runtimes/win-x64/native/libvkd3d-shader-1.dll' \
+            'runtimes/linux-x64/native/libvkd3d-shader.so.1' \
+            'runtimes/osx-x64/native/libvkd3d-shader.1.dylib' \
+            'runtimes/osx-arm64/native/libvkd3d-shader.1.dylib' \
+            'THIRD-PARTY-NOTICES.txt' ; do
+              if ! grep -qF "$native" <<<"$listing"; then
+                echo "::error::$pkg is missing $native — the FNA target and DxbcBackend.Vkd3d would fail (SD0211) for every consumer on that RID. Restore vkd3d binaries before packing (tools/restore.sh; RELEASING.md 'Native binaries')."
+                missing=1
+              fi
+          done
+          exit $missing
+
       - name: Upload packages
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nupkg-desktop
           path: |
@@ -220,15 +247,15 @@ jobs:
     runs-on: ubuntu-latest
     needs: [ validate, build-and-test ]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup .NET 8
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '8.0.x'
 
       - name: Cache NuGet
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', '**/Directory.Packages.props') }}
@@ -266,7 +293,7 @@ jobs:
           echo "ShadowDusk.Wasm packs with dxcompiler.wasm bundled — OK"
 
       - name: Upload Wasm package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nupkg-wasm
           path: |
@@ -296,15 +323,15 @@ jobs:
           - rid: osx-arm64
             os: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup .NET 8
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '8.0.x'
 
       - name: Cache NuGet
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', '**/Directory.Packages.props') }}
@@ -379,7 +406,7 @@ jobs:
             -DestinationPath "shadowdusk-${{ matrix.rid }}.zip"
 
       - name: Upload publish artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: shadowdusk-${{ matrix.rid }}
           path: |
@@ -395,12 +422,12 @@ jobs:
     needs: [ validate, pack-desktop, pack-wasm ]
     steps:
       - name: Setup .NET 8
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '8.0.x'
 
       - name: Download desktop packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: nupkg-desktop
           path: nupkg/
@@ -408,7 +435,7 @@ jobs:
       # ShadowDusk.Wasm (the 6th package) is packed by the pack-wasm job in THIS run,
       # so its artifact is available here. All six packages publish together.
       - name: Download Wasm package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: nupkg-wasm
           path: nupkg/
@@ -429,20 +456,20 @@ jobs:
       contents: write
     steps:
       - name: Download all CLI archives
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: shadowdusk-*
           merge-multiple: true
           path: release-assets/
 
       - name: Download desktop packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: nupkg-desktop
           path: release-assets/
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ needs.validate.outputs.version }}
           name: v${{ needs.validate.outputs.version }}

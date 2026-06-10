@@ -9,6 +9,12 @@
     <ProjectReference Include="..\..\src\ShadowDusk.HLSL\ShadowDusk.HLSL.csproj" />
   </ItemGroup>
 
+  <ItemGroup Label="Live-bug fixture: brace-form sampler + paren texture ref (finding F1). Embedded so the unit test stays disk-free at runtime while parsing the real file.">
+    <EmbeddedResource Include="..\fixtures\shaders\ClipShaderNew.fx"
+                      Link="fixtures\ClipShaderNew.fx"
+                      LogicalName="ShadowDusk.HLSL.Tests.fixtures.ClipShaderNew.fx" />
+  </ItemGroup>
+
   <ItemGroup Label="Test framework">
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />

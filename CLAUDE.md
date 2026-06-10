@@ -4,88 +4,20 @@
 
 **The product is a drop-in `mgfxc` replacement: a self-contained library** a user adds to their **MonoGame/KNI project on Linux, macOS, or Windows**, that compiles **`.fx` → `.mgfx` in memory at runtime**, requiring **nothing but the library itself** — no `fxc.exe`, no `mgfxc`, no Wine, no Windows SDK, no native toolchain the user has to install separately. Its output **loads and renders identically to `mgfxc`'s** in the **real MonoGame/KNI runtime**. **One faithful compiler; the same `mgfxc`-equivalent result everywhere.**
 
-The load-bearing distinctions — internalize these, they have drifted before:
+The load-bearing distinctions — internalize these, they have drifted before (full detail, success criteria, evidence ladder, and backend table in **[docs/the-purpose.md](docs/the-purpose.md)**):
 
-- **The library *is* the product.** The deliverable is the in-memory compiler a developer references from their own game/app and calls at runtime (`IShaderCompiler.CompileAsync(fx) → .mgfx bytes`). The **CLI** (`dotnet tool` `ShadowDuskCLI`) and the **MGCB plugin** are *delivery shapes of the same library* for build-time use. The **browser / WASM shader-fiddle app is ONLY a sample / test of reach — never the product.** Do not let sample work redefine the goal.
-- **One pipeline, everywhere — NO substitute compilers.** Every host (desktop, CLI, WASM/browser) runs the **same faithful pipeline**: HLSL →`[DXC]`→ SPIR-V →`[SPIRV-Cross]`→ GLSL →`[managed: reflect + MojoShader-dialect rewrite + MGFX writer]`→ `.mgfx` (or `vkd3d-shader` → DXBC for DirectX). A host **must not** swap in a *different* frontend/compiler (e.g. a different HLSL→SPIR-V tool) to make a platform "work" — a different compiler produces *different output* and silently breaks the "identical to `mgfxc`" promise. If a faithful component can't run on a host yet, that host's runtime-compile is **not done** — that is never a licence to substitute.
-- **"Self-contained" is a hard requirement.** The user gets the NuGet package and it just works on their OS — the native pieces the pipeline needs ride *inside the package* (transitively, as native assets), never as a separate manual install. "Add the package, call the API" is the entire setup.
-- **The bar is the real runtime, not our tests.** See *What success actually means* below — only ShadowDusk's `.mgfx` loading in MonoGame's `Effect` and rendering like `mgfxc`'s proves the promise.
+- **The library *is* the product.** The deliverable is the in-memory compiler called at runtime (`IShaderCompiler.CompileAsync(fx) → .mgfx bytes`). The **CLI** and **MGCB plugin** are *delivery shapes of the same library*; the **browser / WASM shader-fiddle is ONLY a sample of reach — never the product.** Don't let sample work redefine the goal.
+- **One pipeline, everywhere — NO substitute compilers.** Every host runs the same faithful pipeline (HLSL →`[DXC]`→ SPIR-V →`[SPIRV-Cross]`→ GLSL →`[managed rewrite + MGFX writer]`→ `.mgfx`; or `vkd3d-shader` → DXBC for DirectX). A host must **not** swap in a different frontend/compiler to make a platform "work" — different compiler ⇒ different output ⇒ silently breaks the "identical to `mgfxc`" promise. If a faithful component can't run on a host yet, that host's runtime-compile is **not done** — never a licence to substitute.
+- **"Self-contained" is a hard requirement.** Native pieces ride *inside* the NuGet package (transitive native assets), never a separate manual install. "Add the package, call the API" is the entire setup.
+- **The bar is the real runtime, not our tests.** Only ShadowDusk's `.mgfx` loading in MonoGame's `Effect` and rendering like `mgfxc`'s proves the promise. Tests/our-own-renderer images are **proxies, not the bar**. Compare same-backend only (GL↔GL, DX↔DX), never cross-backend. "Same as `mgfxc`" = behaviorally equivalent + `Effect`-loadable, **NOT** byte-identical (that's a non-goal). Proven for the OpenGL SM3 (Phase 17) and DirectX SM5 (Phase 18) PS-only corpora.
 
 ## Project Overview
 
-ShadowDusk is a cross-platform HLSL shader compiler for MonoGame and KNI. Its five core purposes are:
-
-1. **OS-agnostic compilation** — compile `.fx` shaders on Linux, macOS, or Windows with no Wine or Windows SDK required.
-2. **DirectX and OpenGL targets** — produce DXBC (DirectX 11) or GLSL (OpenGL/WebGL) output from a single HLSL source.
-3. **Drop-in `mgfxc` replacement** — transparent substitute for MonoGame's Windows-only `mgfxc` tool; same CLI flags, same `.mgfx` output, same exit codes and error format so existing content pipelines require zero changes.
-4. **CLI tool** — `dotnet tool` named `ShadowDuskCLI`; usable standalone, from MGCB, or from any build script.
-5. **In-memory & WASM-capable** — the same library compiles in-process / in-memory at runtime (returns `.mgfx` bytes; no temp files or child process required by the API), and is built to run inside .NET WASM so a KNI/Blazor browser game could compile shaders at runtime without a server roundtrip. **The in-browser shader-fiddle is a *sample* of this reach — not a separate product** (see *THE PURPOSE*).
-
-### What success actually means (read this first)
-
-ShadowDusk earns its existence on **two** axes, and needs **both** — either one alone is worthless:
-
-1. **Reach `mgfxc` can't (the differentiator).** Compile `.fx` where MonoGame's own toolchain cannot: on **Linux/macOS** (no Wine, no Windows SDK, no `fxc.exe`) and **at runtime, in-browser / in-memory** via WASM (e.g. XNA Fiddle). `mgfxc` already covers Windows-at-build-time, so matching it *only* there would be pointless — the reach is the reason to exist.
-2. **Output `mgfxc` would (the fidelity).** The compiled `.mgfx`, loaded into the **real MonoGame/KNI runtime**, renders **the same image** as the `mgfxc`-compiled version — zero code or content-pipeline changes.
-
-The product is the **combination**: *the same result `mgfxc` gives, produced where `mgfxc` can't run.* The two parts are validated differently — Part 1 (reach) by cross-platform CI (Phase 30) + the WASM/in-memory path, with all hosts producing byte-identical output to each other; Part 2 (fidelity) by the bar below. The ultimate combined proof is a shader compiled by ShadowDusk *on Linux or in a browser* rendering the same in-game image as `mgfxc`'s Windows build.
-
-**Part 2's bar is in-engine behavioral equivalence:** a game whose `.fx` shaders are compiled with ShadowDusk instead of `mgfxc`, loaded into the **real MonoGame/KNI runtime** (`Effect`), renders **the same pixels** as the `mgfxc`-compiled version.
-
-- The measure is *what the player sees in a real MonoGame game*, **not "ShadowDusk's own tests pass."** Unit tests, `.mgfx` structural tests, and images rendered by **ShadowDusk's own** renderer are necessary **proxies, not the bar** — a proxy can be green while the real goal is unmet. (This has happened: a GLSL cross-validation passed only because the test renderer was taught to bind uniform names the real runtime doesn't use.)
-- **Evidence ladder, weakest → strongest:** (1) compiles without error → (2) `.mgfx` is structurally well-formed → (3) ShadowDusk's GLSL matches `mgfxc`'s GLSL *in our own renderer* → (4) **ShadowDusk's `.mgfx` loads in MonoGame's `Effect` and renders like `mgfxc`'s in the real runtime.** Only (4) proves the promise. (4) is **proven for the OpenGL SM3 PS-only corpus** (Phase 17, done 2026-05-30 — `plan/DONE/PHASE-17-monogame-runtime-validation.md`: all 10/10 shaders render pixel-equivalent in real MonoGame DesktopGL) **and for the DirectX SM5 PS-only corpus** (Phase 18, done 2026-05-30 — `plan/DONE/PHASE-18-directx-dxbc.md`: all 10/10 DX `.mgfx` load in real MonoGame WindowsDX and render pixel-equivalent to `mgfxc`, via **both** the Windows-only `d3dcompiler_47` oracle and the cross-platform **vkd3d-shader** backend — the latter being what makes DX DXBC compilable where `mgfxc` can't run). VS-driven effects remain (backlog 17-VS); Linux/macOS *run* validation of the vkd3d backend → Phase 30 CI.
-- **Compare same-backend, never cross-backend.** Validation always compares ShadowDusk vs `mgfxc` on the *same* target (GL↔GL, DX↔DX) — never OpenGL output against DirectX output. The shader's *intent* (e.g. a 9-tap blur) is backend-agnostic, but each backend is a **separate emitted artifact** (OpenGL = GLSL text; DirectX = GPU bytecode) loaded by a **different** MonoGame runtime path. So a green OpenGL result says nothing about DirectX: a shipped game runs exactly one backend, and each must be produced correctly and validated on its own. "The blur is correct" ≠ "ShadowDusk emitted a valid, loadable artifact for *this* backend."
-- **"Same `.mgfx` output" means behaviorally equivalent and `Effect`-loadable — NOT byte-identical to `mgfxc`.** Different compilers; byte-equality with `mgfxc` is neither expected nor a goal. "Byte-identical / deterministic" (constraint 3) refers only to *ShadowDusk's own* reproducibility: same ShadowDusk version + same source + same target → same bytes.
-
-MonoGame's stock content pipeline (`MGCB`) shells out to `mgfxc`, which depends on `fxc.exe` (DirectX SDK) on Windows. ShadowDusk replaces that pipeline step with a portable toolchain that transpiles and cross-compiles shaders for each supported MonoGame/KNI backend:
-
-| MonoGame Backend | Shader Language | Compiler Target |
-|---|---|---|
-| DirectX (Windows) | HLSL | vkd3d-shader → DXBC (SM5) |
-| OpenGL / DesktopGL | GLSL | DXC → SPIR-V → SPIRV-Cross → GLSL |
-| Metal (macOS / iOS) *(not yet implemented)* | MSL | DXC → SPIR-V → SPIRV-Cross → MSL |
-| Vulkan (future) | SPIR-V | DXC → SPIR-V (direct) |
-
-> **DirectX DXBC now works (Phase 18, done 2026-05-30).** DXC compiles to **DXIL (SM6)**, not the **DXBC (SM ≤ 5)** MonoGame 3.8's DX11 runtime loads — so the DX11 path no longer uses DXC. It routes through a DXBC backend behind `IDxbcShaderCompiler`: the cross-platform **vkd3d-shader** library (HLSL → DXBC_TPF) is the shipping backend, with Windows-only `d3dcompiler_47.dll` as a correctness oracle. DXC `ps_6_0`/`vs_6_0` (DXIL) is retained only for the DX12/KNI path. **Both OpenGL (Phase 17) and DirectX (Phase 18) are now validated end-to-end** in the real MonoGame runtime for the SM3/SM5 PS-only corpus (10/10 each); the DX backend's selector defaults to the oracle, with `DxbcBackend.Vkd3d` opt-in. WASM + DirectX DXBC remains the open problem (Phase 4.1).
+ShadowDusk is a cross-platform HLSL shader compiler for MonoGame, KNI, and FNA: compile `.fx` on Linux/macOS/Windows (no Wine/SDK) for DirectX (DXBC) and OpenGL (GLSL) targets, as a drop-in `mgfxc` replacement — usable as the in-memory library (the product), the `ShadowDuskCLI` `dotnet tool`, or in-browser via WASM. The **additive FNA target** (Phase 39: `PlatformTarget.Fna` → D3D9 fx_2_0 `.fxb` via vkd3d SM1–3 + our `Fx2EffectWriter`) is **rung-4 proven for the PS-only and VS-driven corpora** — loads and renders pixel-equivalent (max Δ ≤ 1/255) to `fxc /T fx_2_0` in real FNA (`validation/FnaValidation`, gate 17/17 since the Phase-40 fidelity hardening; in-pass render states empirically honored); macOS vkd3d binaries + CI artifact hosting are the remaining follow-ups. Full statement of the five purposes, the two success axes, the backend pipeline table, and the FNA bar: **[docs/the-purpose.md](docs/the-purpose.md)**.
 
 ## Repository Layout
 
-```
-ShadowDusk/
-├── src/
-│   ├── ShadowDusk.Core/          # Core types & contracts: IShaderCompiler, Result<T,E>, ShaderError,
-│   │                             #   CompilerOptions, CompiledShader, ShaderIR, MGFX writer, reflection (SpirvReflector)
-│   ├── ShadowDusk.HLSL/          # FX9 pre-parser, preprocessor, DXC integration, reflection,
-│   │                             #   vkd3d-shader + d3dcompiler_47 DXBC backends
-│   ├── ShadowDusk.GLSL/          # SPIR-V → GLSL via SPIRV-Cross + MonoGameGlslRewriter (MojoShader dialect)
-│   ├── ShadowDusk.Metal/         # SPIR-V → MSL via SPIRV-Cross — STUB, not yet implemented
-│   ├── ShadowDusk.Compiler/      # EffectCompiler : IShaderCompiler + pipeline orchestration —
-│   │                             #   the consumer-facing product NuGet (the in-memory library)
-│   ├── ShadowDusk.Cli/           # CLI entry-point (dotnet tool `ShadowDuskCLI`)
-│   ├── ShadowDusk.MgcbPlugin/    # MGCB content-processor plugin — STUB/scaffold (Tier-1 PATH override is the shipping MGCB path)
-│   └── ShadowDusk.Wasm/          # In-browser WASM IShaderCompiler (WasmShaderCompiler); [JSImport] to WASM-compiled DXC + SPIRV-Cross
-├── tests/
-│   ├── ShadowDusk.Core.Tests/
-│   ├── ShadowDusk.HLSL.Tests/
-│   ├── ShadowDusk.GLSL.Tests/
-│   ├── ShadowDusk.Compiler.Tests/
-│   ├── ShadowDusk.Integration.Tests/   # Compile real .fx files end-to-end
-│   ├── ShadowDusk.ImageTests/          # Offscreen-render image regression
-│   ├── ShadowDusk.BrowserTests/        # Headless KNI WebGL render validation (Playwright)
-│   └── fixtures/
-│       ├── shaders/                    # Canonical .fx test shaders (52 .fx + 5 .fxh headers)
-│       └── golden/                     # Reference .mgfx outputs (DirectX_11/ and OpenGL/)
-├── samples/
-│   ├── ShaderFiddle.Web/               # KNI Blazor-WASM in-browser fiddle (sample of reach)
-│   ├── ShaderViewer/                   # Desktop shader viewer
-│   └── mgcb/                           # MGCB content-pipeline sample
-├── tools/                         # Vendored / downloaded native binaries (restored, not committed)
-│   ├── dxc/                       # unused — desktop DXC comes from Vortice.Dxc NuGet
-│   ├── spirv-cross/               # libspirv-cross-c-shared (.dll/.so/.dylib)
-│   └── vkd3d/                     # vkd3d-shader native (cross-platform DXBC backend)
-├── docs/                          # Architecture docs, research, HOWTO-WASM-KNI
-└── CLAUDE.md
-```
+`src/` holds the libraries (`ShadowDusk.{Core,HLSL,GLSL,Metal,Compiler,Cli,MgcbPlugin,Wasm}` — `Compiler` is the product NuGet, `Metal`/`MgcbPlugin` are stubs); `tests/` the xUnit projects + `fixtures/` (`shaders/`, `golden/`); `samples/` (`ShaderFiddle.Web`, `ShaderViewer`, `mgcb`); `tools/` the restored native binaries (`spirv-cross/`, `vkd3d/` — not committed); `docs/` the reference docs. **Full annotated tree: [docs/repository-layout.md](docs/repository-layout.md).**
 
 ## Tech Stack
 
@@ -131,11 +63,7 @@ dotnet pack src/ShadowDusk.Cli/ShadowDusk.Cli.csproj
 
 ### Integration-test performance (Phase 21)
 
-`ShadowDusk.Integration.Tests` is the only project that touches heavyweight external machinery (CLI child-process spawn, native DXC + SPIRV-Cross). If a full run is intermittently very slow (one outlier hit **21m43s** vs the usual single-digit seconds), the cause is **environmental, not algorithmic** — the test logic is identical:
-
-- **Antivirus / Defender on-access scanning** of freshly-built native binaries (`dxcompiler.dll`, SPIRV-Cross) and just-spawned executables is the prime suspect (warm cache → seconds; cold → minutes). **Dev-time mitigation:** add the repo's `**/bin`, `**/obj`, `tools/`, and the test `%TEMP%` paths to the Defender exclusion list (do **not** disable AV globally). Phase 30 CI should account for this.
-- `CliBinaryFixture` now **reuses the CLI binary from the normal build** (the test project has a `ReferenceOutputAssembly=false` ProjectReference to `ShadowDusk.Cli`) instead of running a per-run `dotnet publish -c Release` into a fresh temp dir — that nested cold-Release build + fresh native-binary copy was the dominant structural cost.
-- **Suite-level timeout guardrail:** pass `--settings ShadowDusk.runsettings` to `dotnet test` (repo-root file) to apply a 5-minute `TestSessionTimeout`. If the suite ever hangs again it now fails fast in bounded time instead of silently eating 20+ minutes. Per-test `CancellationTokenSource` timeouts (30 s/60 s/120 s) remain the first line of defense; this session cap is the backstop. Phase 30 CI uses the same value.
+`ShadowDusk.Integration.Tests` is the only project touching heavyweight external machinery (CLI child-process spawn, native DXC + SPIRV-Cross). A slow run is **environmental, not algorithmic** — usually antivirus on-access scanning of cold native binaries. Pass `--settings ShadowDusk.runsettings` for the 5-min `TestSessionTimeout` backstop. **Full troubleshooting (Defender exclusions, `CliBinaryFixture` reuse, timeout layers): [docs/integration-test-performance.md](docs/integration-test-performance.md).**
 
 ## Coding Conventions
 
@@ -152,16 +80,24 @@ dotnet pack src/ShadowDusk.Cli/ShadowDusk.Cli.csproj
 - **No "Generated with Claude Code" / tool-attribution lines** in commit messages or PR bodies.
 - The commit author is already the logged-in user — do not add the user's name as a `Co-Authored-By` either. Authorship is implicit; no co-author trailers of any kind.
 
+## User Directives & Working Practices
+
+Standing rules the user has stated (kept here because this file is always loaded; supersede defaults):
+
+- **Seamless for the end user — always.** The consumer adds the package, compiles their `.fx`, and it **just works** — they never choose a version/target/format, flip a flag, or take a manual step to get *correct* output. If any task would require the consumer to opt in / set a flag / pick a version to avoid broken output, that is a **DEFECT — reject it.** A flag may exist **only** as a non-required escape hatch (e.g. `--mgfx-version`, default v10), never the path to correct behavior. Preferred pattern: emit **one artifact that works everywhere** (e.g. the `#define ps_oC0 gl_FragColor` form that serves KNI Reach *and* HiDef) or auto-select from the target — never expose the choice. Supporting a **new platform the consumer's game already targets** (Metal/Vulkan/DX12) is seamless and fine; the bad kind of "opt-in" is a *ShadowDusk-specific* flag the consumer must set.
+
+- **Backwards compatibility — do not bump MonoGame or change the `.mgfx` format.** Keep the MonoGame pin at **3.8.2.1105** (`Directory.Packages.props`) and the output format at **MGFX v10** (`CompilerOptions.MgfxVersion` default = 10). A v10 `.mgfx` loads in MonoGame 3.8.2 *and* every newer MonoGame *and* KNI — it is the most backwards-compatible choice. Newer MonoGame exists (3.8.4.1 stable, 3.8.5-preview), but bumping is rejected. Any future new backend must be **additive and seamless** (a platform the consumer's game already targets, auto-handled), never a change to the existing OpenGL/DX11/v10 output a current consumer relies on. (Codified in `plan/plan.md` Key Decisions: "Default MGFXVersion: 10.")
+
+- **Do not rely on the local memory store.** All durable project knowledge — decisions, gotchas, status, working rules — goes into **source-controlled** files (this `CLAUDE.md`, `plan/`, phase docs, `docs/`, code comments), never the machine-local agent memory (which is lost between computers). Don't write new memories; capture findings in the appropriate source file instead.
+
+- **Never destroy a background agent's uncommitted output.** Do **not** `TaskStop` + `git worktree remove --force` a background agent's worktree until its output is committed or copied out — **commit first, clean up last.** A compiled artifact (`*.wasm`) is build output; the real code is the build scripts/glue/recipe — preserve those above all. When an agent claims a long build is "done," **verify by re-running its gate** before acting; don't trust a stale "multi-day = unfinished" estimate (this once nearly destroyed a *succeeded* DXC→WASM build). `.wasm-build/` is gitignored scratch — durable build code there must be `git add -f`'d to a branch or it's one cleanup away from gone.
+
 ## Releases (how a release works)
 
-ShadowDusk ships as **six NuGet packages** — `ShadowDusk.{Core,HLSL,GLSL,Compiler,Cli,Wasm}` — plus the `ShadowDuskCLI` dotnet tool (`ShadowDusk.Cli`), all at **one shared version**. The release machinery is Phase 30 (`plan/DONE/` once archived): `release.yml`, the `/release` skill, `CHANGELOG.md`, `RELEASING.md`.
+ShadowDusk ships as **six NuGet packages** — `ShadowDusk.{Core,HLSL,GLSL,Compiler,Cli,Wasm}` — plus the `ShadowDuskCLI` dotnet tool, all at **one shared version**. **To cut a release, use the `/release` skill**; `RELEASING.md` is the human runbook and **[the full release mechanics reference](RELEASING.md)** (what triggers a publish, the validate-job version guard, what the publish does, CI matrix). The two footguns to remember:
 
-- **Single source of version truth: `Directory.Build.props` `<Version>`.** Bump that one line. **NEVER** add a `<PackageVersion>` *property* to a csproj — it desyncs package versions and collides with Central Package Management's `<PackageVersion Include=… />` *items* in `Directory.Packages.props` (different MSBuild constructs that share a name). `dotnet pack` flows `<Version>` to all packages.
-- **To cut a release, use the `/release` skill** (`.claude/skills/release/SKILL.md`): it bumps `<Version>`, moves `CHANGELOG.md` `[Unreleased]` → a dated section, opens a PR, waits for CI, merges, then triggers the publish. `RELEASING.md` is the human runbook (prereqs: `NUGET_API_KEY` secret + nuget.org ownership of the six IDs).
-- **What triggers a publish:** `.github/workflows/release.yml` fires on a **`v*.*.*` tag push** *or* **Actions → Release → Run workflow** (manual `workflow_dispatch` with a `version` input). A `validate` job **fails the run unless the tag/input equals `Directory.Build.props` `<Version>`** — so bump + merge the version first, *then* tag/dispatch.
-- **What the publish does:** builds + tests on all 3 OS, packs the six packages (+ symbols) and the tool, pushes to nuget.org (`--skip-duplicate`, so re-runs are idempotent), and cuts a GitHub Release with per-RID self-contained `ShadowDuskCLI` binaries.
-- **CI (`ci.yml`)** gates every push/PR on Linux/macOS/Windows. The Phase-34 advanced-texture compile tests currently run **Windows-only** (a real Linux/macOS DXC reach gap); the macOS leg can queue (10× runner) but the repo is public so minutes aren't capped.
-- Release commits/PRs follow the **Git Commit Conventions** above — no co-author / tool-attribution trailers.
+- **Single source of version truth: `Directory.Build.props` `<Version>`.** Bump that one line. **NEVER** add a `<PackageVersion>` *property* to a csproj — it desyncs versions and collides with Central Package Management's `<PackageVersion Include=… />` *items* in `Directory.Packages.props`. `dotnet pack` flows `<Version>` to all packages.
+- Bump + merge the version **first**, *then* tag/dispatch — `release.yml`'s `validate` job fails unless the `v*.*.*` tag (or dispatch input) equals `<Version>`. Release commits/PRs follow the **Git Commit Conventions** above (no co-author trailers).
 
 ## Key Concepts
 

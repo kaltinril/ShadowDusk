@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- Windows-only: the REFERENCE arm is the system d3dcompiler_47 D3DCompile("fx_2_0")
+         oracle (Microsoft's own fx_2_0 compiler, byte-identical to fxc — see
+         tests/fixtures/golden/FNA/README.md), and the restored fnalibs natives here are
+         win-x64. FNA itself (and ShadowDusk's FNA target) are cross-platform; only this
+         rung-3/4 PROOF host needs Windows, because the oracle does.
+         Intentionally NOT in ShadowDusk.slnx (mirrors CandidateVkd3d / CandidateDx). -->
+    <TargetFramework>net8.0</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RootNamespace>ShadowDusk.Validation.Fna</RootNamespace>
+    <!-- external/ holds the restored FNA checkout — keep its sources out of the
+         SDK's default Compile/None globs (FNA.Core.csproj compiles them itself).
+         MojoHlslDump/ is a standalone diagnostic scratch tool with its own csproj. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);external/**;MojoHlslDump/**</DefaultItemExcludes>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Arm A (candidate): ShadowDusk in-memory, PlatformTarget.Fna. -->
+    <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
+    <!-- Rung 3+4 consumer: REAL FNA (Effect → FNA3D → MojoShader), restored by
+         restore-fna.ps1 into external/FNA (gitignored). FNA.Core.csproj is the
+         modern .NET project shape (net8.0). -->
+    <ProjectReference Include="external\FNA\FNA.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- fnalibs win-x64 natives (SDL3 / FNA3D / FAudio / theorafile) restored by
+         restore-fna.ps1 from the FNA-XNA/fnalibs-dailies CI artifact. The D3D12
+         folder is the Agility SDK that must ride next to FNA3D.dll (per the
+         fnalibs README) — harmless under FNA3D_FORCE_DRIVER=D3D11, required if
+         anyone flips the driver. -->
+    <None Include="external\fnalibs\x64\*.dll" CopyToOutputDirectory="PreserveNewest" Link="%(Filename)%(Extension)" />
+    <None Include="external\fnalibs\D3D12\*.dll" CopyToOutputDirectory="PreserveNewest" Link="D3D12\%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

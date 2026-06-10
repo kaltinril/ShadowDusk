@@ -133,6 +133,45 @@ The 2 Windows + 12 non-Windows vkd3d/DX tests pass; the three live vkd3d tests e
 
 > **Pin discipline:** the tests pin vkd3d **1.17** behavior (DXBC_TPF resource tables the reflection asserts on). Never use the distro version — it produces different DXBC bytes per OS, breaking constraint 3.
 
+### C — addendum (2026-06-09, post-Phase-39/40): C is now RELEASE-CRITICAL, and bigger than test coverage
+
+What changed since this finding was written, and why C moved to the front of the queue:
+
+- **C now gates releases, not just CI coverage.** Phase 39 made vkd3d the engine of the FNA
+  target (`PlatformTarget.Fna` — on the *default* consumer path, unlike the opt-in DX
+  backend), and Phase 40 added a `release.yml` pack gate that **fails any release** whose
+  `ShadowDusk.HLSL` nupkg is missing the vkd3d natives — deliberately, because the
+  published 0.2.0 package shipped without them (60 KB — FNA/vkd3d dead from nuget.org
+  today). Until C lands, no release can ship. C is the single blocker between "FNA works"
+  and "FNA ships" (see `plan/DONE/PHASE-40-fna-fidelity-hardening.md`).
+- **C also turns on the FNA CI net**: `FnaFactAttribute` is availability-probed by design —
+  the moment restore provisions vkd3d in CI, the FNA integration suite stops silently
+  skipping on all three OSes.
+- **macOS dylibs must land WITH the four pre-wiring fixes** recorded in Phase 40's
+  evaluation (otherwise arrival is a debugging session, not turnkey): the loader and
+  `FnaTestGate` probe only `tools/vkd3d/` flat (can't see the per-arch `osx-{x64,arm64}/`
+  subdirs the csproj expects); `restore.sh`'s Darwin check looks for the wrong filename
+  (`libvkd3d-shader.dylib`, flat, missing the `.1`); the csproj's osx-arm64 entry lacks
+  the copy-to-output link osx-x64 has; `.gitignore` doesn't cover the per-arch subdirs.
+- **macOS build cautions** (the analogs of lessons already paid for elsewhere): set
+  `MACOSX_DEPLOYMENT_TARGET` old enough (the macOS glibc-baseline analog — the linux
+  artifact itself should be REBUILT on the oldest supported distro while hosting it, it
+  was built on Ubuntu 24.04 against a 20.04+ support claim); verify with `otool -L` that
+  the dylibs link only system libraries (no Homebrew deps); GitHub Actions macos-14
+  (arm64) / macos-13 or `-arch x86_64` (x64) are the natural builders.
+- **Size is a non-issue** (measured 2026-06-09, recorded so it isn't re-litigated): the
+  win+linux vkd3d natives pack to a 3.3 MB nupkg; the two macOS dylibs add ~1.5–2.5 MB
+  compressed; the all-RID `ShadowDusk.HLSL` lands ~5–6 MB — smaller than the existing
+  `ShadowDusk.Wasm` package alone (6.3 MB) and a fifth of the `Vortice.Dxc` transitive
+  (~29 MB). Multi-RID cost is package-cache-only; deployed apps carry one RID's binary.
+- **Licensing housekeeping:** vkd3d-shader is LGPL-2.1+; same posture as the win/linux
+  binaries already shipped, but the package should carry the license notice properly when
+  the artifact hosting is formalized.
+- Strategy context (why we build-and-bundle rather than make users fetch anything):
+  `docs/the-purpose.md` → *Compiler-leverage strategy* — self-containment is a hard
+  requirement; there are no upstream prebuilt macOS binaries to point at anyway (Wine
+  ships source tarballs only).
+
 ---
 
 ## Investigation technique (how these were found — reproducible)

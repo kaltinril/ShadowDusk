@@ -4,7 +4,7 @@
 
 # ShadowDusk
 
-A cross-platform HLSL shader compiler for [MonoGame](https://monogame.net/) and [KNI](https://github.com/kniEngine/kni). Compile `.fx` shaders on Linux, macOS, or Windows — no Wine, no Windows SDK, no DirectX install required.
+A cross-platform HLSL shader compiler for [MonoGame](https://monogame.net/), [KNI](https://github.com/kniEngine/kni), and [FNA](https://fna-xna.github.io/). Compile `.fx` shaders on Linux, macOS, or Windows — no Wine, no Windows SDK, no DirectX install required.
 
 ## What it is
 
@@ -25,23 +25,38 @@ DirectX (DX11):
   HLSL (.fx)
     → vkd3d-shader            →  DXBC (SM5)
     → .mgfx binary            →  MonoGame Effect loader
+
+FNA (fx_2_0):
+  HLSL (.fx, D3D9-style)
+    → vkd3d-shader            →  D3D9 bytecode (SM ≤ 3)
+    → .fxb (fx_2_0) binary    →  FNA Effect loader (FNA3D / MojoShader)
 ```
 
 **OpenGL / WebGL is fully cross-platform and self-contained** — DXC + SPIRV-Cross ride inside the package, so it compiles on Linux, macOS, and Windows with nothing to install.
 
 **DirectX (DX11)** produces DXBC in-process (no `fxc.exe`/`mgfxc`) via two backends behind `IDxbcShaderCompiler`, chosen by `CompilerOptions.DxbcBackend`: the **default** is `d3dcompiler_47` — Microsoft's HLSL compiler, a system DLL **already present on Windows** (not a dependency you install), giving the most `fxc`-faithful output; `vkd3d-shader` is the **opt-in, cross-platform** backend (`DxbcBackend.Vkd3d`) for compiling DX shaders on Linux/macOS. DXC is **not** used for DX11 (it emits DXIL/SM6, not the DXBC/SM ≤ 5 the DX11 runtime loads); its `ps_6_0`/`vs_6_0` output is retained only for the DX12/KNI path.
 
-Supported MonoGame backends:
+Supported backends:
 
 | Backend | Output | Status |
 |---|---|---|
 | OpenGL / DesktopGL | GLSL | Validated end-to-end (10/10 in real MonoGame DesktopGL) |
 | DirectX (Windows, DX11) | DXBC (SM5) via vkd3d-shader | Validated end-to-end (10/10 in real MonoGame WindowsDX) |
 | WebGL (XNA Fiddle / KNI browser) | GLSL ES | Validated end-to-end (10/10 in real headless KNI WebGL) |
+| FNA (`/Profile:FNA` → `.fxb`) | D3D9 fx_2_0 via vkd3d-shader | Validated end-to-end (pixel-identical to `fxc /T fx_2_0` in real FNA — PS-only and custom-vertex-shader effects, incl. multi-pass + in-pass render states) |
 | Metal (macOS / iOS) | MSL | Not yet implemented |
 | Vulkan | SPIR-V | Future |
 
-This table is the **graphics-backend** axis (the one that decides the output bytes). **Framework** is separate: **MonoGame and KNI** share the MGFX format (both supported); **FNA** uses a different effect path (MojoShader / DX9-era bytecode) and is **not a supported target**; classic Microsoft **XNA 4.0** is out of scope. For picking a target — or building a shader-download feature — the docs have a [Choosing a Target](https://kaltinril.github.io/ShadowDusk/guides/choosing-a-target.html) guide covering the framework / backend / `GraphicsProfile` axes and the `.mgfx`-vs-`.xnb` distinction.
+This table is the **graphics-backend** axis (the one that decides the output bytes). **Framework** is a separate axis: **MonoGame and KNI** share the MGFX format (both supported); **FNA** is also a supported target, but takes a different effect path — ShadowDusk emits the legacy D3D9 fx_2_0 `.fxb` it loads (see the FNA note below), not the MGFX container; classic Microsoft **XNA 4.0** is out of scope. For picking a target — or building a shader-download feature — the docs have a [Choosing a Target](https://kaltinril.github.io/ShadowDusk/guides/choosing-a-target.html) guide covering the framework / backend / `GraphicsProfile` axes and the `.mgfx`-vs-`.xnb` distinction.
+
+> **FNA note.** FNA's documented shader workflow is the deprecated Windows-only
+> `fxc.exe /T fx_2_0` (run under Wine on Linux/macOS). `PlatformTarget.Fna` removes that
+> entirely: ShadowDusk compiles D3D9-style `.fx` (SM ≤ 3 — `sampler_state`, `tex2D`,
+> `COLOR0` semantics) to the legacy fx_2_0 effects binary FNA loads via
+> `new Effect(gd, bytes)`, on every OS, with no Wine. One `.fxb` serves every FNA graphics
+> backend (FNA translates at load time). Validated against real fxc output rendering in
+> real FNA (`validation/FnaValidation`); shaders needing SM4+ features fail loudly with a
+> clear diagnostic.
 
 > **KNI HiDef / WebGL2 note.** A single ShadowDusk `.mgfx` loads in both KNI **Reach** (WebGL1) and **HiDef** (WebGL2 / GLSL ES 3.00) — no profile flag and no separate build. KNI converts the legacy GLSL to ES 3.00 at load time, and ShadowDusk emits the `#define`-aliased fragment output that converter expects (GitHub [#7](https://github.com/kaltinril/ShadowDusk/issues/7)). HiDef shader loading needs **KNI ≥ v3.14.9001** (the release that added KNI's runtime converter — any recent KNI qualifies); Reach and desktop GL have no version requirement. After upgrading ShadowDusk to pick up this fix, **recompile your `.fx`** — a `.mgfx` built by an older ShadowDusk keeps the old output and won't load under HiDef.
 

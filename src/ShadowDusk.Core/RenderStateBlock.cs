@@ -35,6 +35,40 @@ public sealed record RenderStateBlock
     public StencilOperationValue? StencilPass            { get; init; }
     public CompareFunctionValue?  StencilFunction        { get; init; }
 
+    // FNA-only states (fx_2_0 ops FNA's Effect runtime honors but MGFX has no analog
+    // for). These are INTENTIONALLY excluded from the Has* gates below: MgfxWriter keys
+    // its three optional state-object headers off Has*, so including them would change
+    // MGFX v10 output for sources that set only these keys. Only Fx2EffectBuilder
+    // (the FNA path) consumes them.
+
+    // Blend (FNA-only)
+    public bool? SeparateAlphaBlendEnable { get; init; }              // op 99
+    public uint? BlendFactor              { get; init; }              // op 96, D3DCOLOR dword
+    public int?  ColorWriteChannels1      { get; init; }              // op 93
+    public int?  ColorWriteChannels2     { get; init; }               // op 94
+    public int?  ColorWriteChannels3     { get; init; }               // op 95
+
+    // Depth/Stencil (FNA-only, two-sided / counter-clockwise face set)
+    public bool?                  TwoSidedStencilMode                    { get; init; } // op 88
+    public StencilOperationValue? CounterClockwiseStencilFail            { get; init; } // op 89
+    public StencilOperationValue? CounterClockwiseStencilDepthBufferFail { get; init; } // op 90
+    public StencilOperationValue? CounterClockwiseStencilPass            { get; init; } // op 91
+    public CompareFunctionValue?  CounterClockwiseStencilFunction        { get; init; } // op 92
+
+    // Rasterizer (FNA-only)
+    public uint? MultiSampleMask { get; init; }                       // op 68, dword mask
+
+    /// <summary>
+    /// FX render-state keys present in the pass that FNA's Effect runtime throws
+    /// <c>NotImplementedException</c> on at <c>EffectPass.Apply</c> (the non-honored ops
+    /// of docs/fx2-binary-format.md §8.2, e.g. AlphaTestEnable, fog and point-sprite
+    /// states). Recorded by <see cref="RenderStateParser"/> so the FNA path can fail
+    /// loudly instead of silently diverging from the fxc build (which crashes FNA at
+    /// runtime). Sorted ordinally for deterministic diagnostics. MGFX paths ignore this
+    /// metadata entirely.
+    /// </summary>
+    public IReadOnlyList<string> KnownFnaThrowingStates { get; init; } = [];
+
     public bool HasBlendState =>
         AlphaBlendEnable.HasValue || ColorSourceBlend.HasValue || ColorDestinationBlend.HasValue ||
         ColorBlendFunction.HasValue || AlphaSourceBlend.HasValue || AlphaDestinationBlend.HasValue ||

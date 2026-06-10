@@ -43,21 +43,42 @@
     <PackageReference Include="Vortice.Direct3D11" />
   </ItemGroup>
 
-  <!-- Cross-platform DXBC backend (Phase 18 Track A): the vkd3d-shader native lib.
-       It is a RESTORED artifact (tools/restore.ps1), NOT checked into the repo, so the
-       copy is conditional on the file existing — a clean cross-platform build with no
+  <!-- Cross-platform SM1–5 backend (Phase 18 Track A / Phase 39 FNA): the vkd3d-shader
+       native lib. It is a RESTORED artifact (tools/restore.ps1), NOT checked into the
+       repo, so every entry is conditional on the file existing — a clean build with no
        restored binary stays green, and Vkd3dShaderCompiler fails loudly (SD0211) at
-       runtime if the lib is absent. Only the Windows binary exists locally today; the
-       Linux/macOS names are added here for the cross-platform path as they appear. -->
+       runtime if the lib is absent.
+
+       Each restored per-RID binary is BOTH copied to build output (repo/dev runs; the
+       Vkd3dLoader base-directory probe) AND packed into the NuGet under
+       runtimes/<rid>/native (self-contained consumers; the loader's
+       NATIVE_DLL_SEARCH_DIRECTORIES probe). Packing is restore-state-dependent by
+       design: the release pipeline must restore every shipping RID before `dotnet pack`
+       — see RELEASING.md and plan/PHASE-37 (C). The two macOS dylibs share one file
+       name, so their build-output copies keep the per-arch osx-{x64,arm64}/ subdirs
+       (Link) — flat links would collide when both are restored on one machine (the
+       release pack runner); Vkd3dLoader/FnaTestGate probe the current process arch's
+       subdir first, then flat. -->
   <ItemGroup>
+    <!-- LGPL-2.1 notice for the bundled vkd3d-shader binaries (Phase 37 C):
+         attribution, source availability (the pinned WineHQ tarball + our public
+         build recipes), and the full license text ride inside the package. -->
+    <None Include="THIRD-PARTY-NOTICES.txt" Pack="true" PackagePath="THIRD-PARTY-NOTICES.txt" />
     <None Include="$(MSBuildThisFileDirectory)..\..\tools\vkd3d\libvkd3d-shader-1.dll"
           Condition="Exists('$(MSBuildThisFileDirectory)..\..\tools\vkd3d\libvkd3d-shader-1.dll')"
-          CopyToOutputDirectory="PreserveNewest" Link="libvkd3d-shader-1.dll" />
+          CopyToOutputDirectory="PreserveNewest" Link="libvkd3d-shader-1.dll"
+          Pack="true" PackagePath="runtimes/win-x64/native/libvkd3d-shader-1.dll" />
     <None Include="$(MSBuildThisFileDirectory)..\..\tools\vkd3d\libvkd3d-shader.so.1"
           Condition="Exists('$(MSBuildThisFileDirectory)..\..\tools\vkd3d\libvkd3d-shader.so.1')"
-          CopyToOutputDirectory="PreserveNewest" Link="libvkd3d-shader.so.1" />
-    <None Include="$(MSBuildThisFileDirectory)..\..\tools\vkd3d\libvkd3d-shader.dylib"
-          Condition="Exists('$(MSBuildThisFileDirectory)..\..\tools\vkd3d\libvkd3d-shader.dylib')"
-          CopyToOutputDirectory="PreserveNewest" Link="libvkd3d-shader.dylib" />
+          CopyToOutputDirectory="PreserveNewest" Link="libvkd3d-shader.so.1"
+          Pack="true" PackagePath="runtimes/linux-x64/native/libvkd3d-shader.so.1" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\tools\vkd3d\osx-x64\libvkd3d-shader.1.dylib"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\..\tools\vkd3d\osx-x64\libvkd3d-shader.1.dylib')"
+          CopyToOutputDirectory="PreserveNewest" Link="osx-x64\libvkd3d-shader.1.dylib"
+          Pack="true" PackagePath="runtimes/osx-x64/native/libvkd3d-shader.1.dylib" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\tools\vkd3d\osx-arm64\libvkd3d-shader.1.dylib"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\..\tools\vkd3d\osx-arm64\libvkd3d-shader.1.dylib')"
+          CopyToOutputDirectory="PreserveNewest" Link="osx-arm64\libvkd3d-shader.1.dylib"
+          Pack="true" PackagePath="runtimes/osx-arm64/native/libvkd3d-shader.1.dylib" />
   </ItemGroup>
 </Project>

@@ -21,11 +21,12 @@ packages/
 tools/dxc/
 tools/spirv-cross/
 # vkd3d-shader DXBC backend native lib — restored, not checked in (the headers
-# alongside it are kept for binding reference; only the binary is ignored).
-tools/vkd3d/*.dll
-tools/vkd3d/*.so
-tools/vkd3d/*.so.*
-tools/vkd3d/*.dylib
+# alongside it are kept for binding reference; only the binaries are ignored).
+# `**` covers the per-arch macOS subdirs (tools/vkd3d/osx-{x64,arm64}/) too.
+tools/vkd3d/**/*.dll
+tools/vkd3d/**/*.so
+tools/vkd3d/**/*.so.*
+tools/vkd3d/**/*.dylib
 
 # WASM build scratch: emsdk (~600 MB), the SPIRV-Cross + DXC source checkouts,
 # and intermediate build trees. Ignored by default — BUT the durable build inputs
