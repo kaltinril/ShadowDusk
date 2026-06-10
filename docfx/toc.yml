@@ -12,6 +12,8 @@
       href: getting-started/restore-native-tools.md
 - name: Guides
   items:
+    - name: Choosing a Target
+      href: guides/choosing-a-target.md
     - name: Drop-in mgfxc
       href: guides/dropin-mgfxc.md
     - name: MGCB Content Pipeline
