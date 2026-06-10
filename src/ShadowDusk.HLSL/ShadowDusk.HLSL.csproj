@@ -60,6 +60,10 @@
        release pack runner); Vkd3dLoader/FnaTestGate probe the current process arch's
        subdir first, then flat. -->
   <ItemGroup>
+    <!-- LGPL-2.1 notice for the bundled vkd3d-shader binaries (Phase 37 C):
+         attribution, source availability (the pinned WineHQ tarball + our public
+         build recipes), and the full license text ride inside the package. -->
+    <None Include="THIRD-PARTY-NOTICES.txt" Pack="true" PackagePath="THIRD-PARTY-NOTICES.txt" />
     <None Include="$(MSBuildThisFileDirectory)..\..\tools\vkd3d\libvkd3d-shader-1.dll"
           Condition="Exists('$(MSBuildThisFileDirectory)..\..\tools\vkd3d\libvkd3d-shader-1.dll')"
           CopyToOutputDirectory="PreserveNewest" Link="libvkd3d-shader-1.dll"

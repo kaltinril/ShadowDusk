@@ -133,22 +133,26 @@ is rejected — merge the version-bump PR first (the `/release` skill does this 
 
 > **vkd3d-shader packing (DirectX `DxbcBackend.Vkd3d` + FNA fx_2_0 — Phase 39):**
 > `ShadowDusk.HLSL.csproj` packs each **restored** `tools/vkd3d` binary into the NuGet as
-> `runtimes/<rid>/native` (win-x64 + linux-x64 today; macOS entries pre-wired). Packing is
-> restore-state-dependent by design — **the release pipeline must restore every shipping
-> RID's vkd3d binary before `dotnet pack`, or those RIDs silently ship without it** (the
-> runtime then fails loudly with SD0211). Build recipes per RID: `tools/restore.{ps1,sh}`.
-> Hosting the pinned per-RID artifacts for CI restore is the open Phase 37 (C) item; until
-> it lands, a release machine needs the locally built/restored binaries present at pack
-> time. Self-containment + Windows↔Linux byte-identity of the packed FNA path were proven
+> `runtimes/<rid>/native` (win-x64, linux-x64, osx-x64, osx-arm64). Packing is
+> restore-state-dependent by design (csproj entries are `Exists(...)`-conditioned), but
+> since Phase 37 C **`tools/restore.{ps1,sh}` provision all four RIDs automatically**: the
+> pinned binaries are downloaded from the fixed GitHub Release tag `native-vkd3d-1.17` and
+> SHA-256-verified against pins embedded in the scripts — a clean CI runner is pack-ready
+> after restore. Provenance: linux/macOS binaries are built by the dispatchable
+> `.github/workflows/build-vkd3d-natives.yml` from the pinned WineHQ 1.17 tarball (linux on
+> ubuntu:20.04 = glibc 2.31 baseline; macOS at `MACOSX_DEPLOYMENT_TARGET=11.0`, per-arch);
+> the win-x64 dll is the MSYS2 build the Phase 18/39/40 goldens were proven against
+> (recipe in `tools/restore.ps1`). The LGPL-2.1 notice for the bundled binaries
+> (`src/ShadowDusk.HLSL/THIRD-PARTY-NOTICES.txt`) packs into the nupkg root.
+> Self-containment + Windows↔Linux byte-identity of the packed FNA path were proven
 > 2026-06-09 (see `plan/DONE/PHASE-39-fna-fx2-output-target.md`).
 >
 > **Since Phase 40 this is ENFORCED, not advisory:** `release.yml`'s `pack-desktop` job
-> fails red if the packed `ShadowDusk.HLSL` nupkg is missing either vkd3d native
-> (win-x64 dll / linux-x64 so) — mirroring the `pack-wasm` dxcompiler.wasm gate. The
-> CI ubuntu runner cannot currently satisfy it (restore.sh only verifies, Phase 37 C
-> pending), so **a release will stop at this gate until the binaries are provisioned**
-> — that is deliberate: a red release beats silently shipping the FNA target and
-> `DxbcBackend.Vkd3d` broken for every consumer.
+> fails red if the packed `ShadowDusk.HLSL` nupkg is missing any of the four vkd3d
+> natives or the THIRD-PARTY-NOTICES file — mirroring the `pack-wasm` dxcompiler.wasm
+> gate. A red release beats silently shipping the FNA target and `DxbcBackend.Vkd3d`
+> broken for any consumer RID. If the gate trips, check that the `native-vkd3d-1.17`
+> release assets are intact and the restore-step log shows four "hash OK" lines.
 
 ---
 

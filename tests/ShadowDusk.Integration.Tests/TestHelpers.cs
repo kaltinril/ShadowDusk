@@ -114,6 +114,14 @@ public static class TestHelpers
             Target          = target.Value,
             IncludeResolver = new FileSystemIncludeResolver(),
             SourceFileName  = inputPath,
+            // DirectX: exercise the default d3dcompiler_47 oracle where it exists
+            // (Windows — the proven consumer default) and the cross-platform vkd3d
+            // backend elsewhere (the Phase 18 reach path; the oracle is
+            // Windows-only by nature, SD0210). Phase 37 C provisions the vkd3d
+            // native in CI so these rows run, not skip, on all three OSes.
+            DxbcBackend     = OperatingSystem.IsWindows()
+                                  ? DxbcBackend.D3DCompiler
+                                  : DxbcBackend.Vkd3d,
         };
 
         var compiler      = new EffectCompiler();

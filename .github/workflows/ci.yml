@@ -66,10 +66,21 @@ jobs:
           restore-keys: |
             nuget-${{ runner.os }}-
 
-      # Restore the vkd3d-shader native (DirectX DXBC backend). Non-fatal: the script
-      # no-ops with a build-recipe note when no prebuilt binary is available, so the
-      # cross-platform build stays green. When a vkd3d binary is present it is copied
-      # into the build output and the DX `.fx` reach path runs (Phase 18 carry-forward).
+      # The pinned vkd3d-shader natives (all four RIDs) restore by download +
+      # SHA-256 verify (Phase 37 C); cache them so the GitHub Release download
+      # runs once per runner image, not per job. The restore script self-heals a
+      # stale/corrupt cache (hash mismatch -> re-download).
+      - name: Cache vkd3d natives
+        uses: actions/cache@v5
+        with:
+          path: tools/vkd3d
+          key: vkd3d-1.17-${{ runner.os }}
+
+      # Restore the vkd3d-shader natives (DirectX DXBC backend + the FNA target's
+      # engine). Non-fatal: when the download is unavailable the script warns and the
+      # cross-platform build stays green (vkd3d-dependent tests skip / fail SD0211
+      # loudly). When present the binaries are copied into build output and the DX/FNA
+      # `.fx` reach paths run (Phase 18 carry-forward; Phase 39 FNA CI net).
       - name: Restore native tools (Linux / macOS)
         if: runner.os != 'Windows'
         run: |
@@ -155,6 +166,12 @@ jobs:
           key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', '**/Directory.Packages.props') }}
           restore-keys: |
             nuget-${{ runner.os }}-
+
+      - name: Cache vkd3d natives
+        uses: actions/cache@v5
+        with:
+          path: tools/vkd3d
+          key: vkd3d-1.17-${{ runner.os }}
 
       - name: Restore native tools (Linux / macOS)
         if: runner.os != 'Windows'

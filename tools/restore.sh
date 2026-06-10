@@ -34,72 +34,72 @@ FORCE="${1:-}"
 OS="$(uname -s)"
 
 # ---------------------------------------------------------------------------
-# vkd3d-shader (cross-platform DXBC backend, Phase 18 Track A)
+# vkd3d-shader (cross-platform DXBC backend, Phase 18 Track A / Phase 39 FNA)
 # ---------------------------------------------------------------------------
 # The vkd3d-shader native lib is a RESTORED artifact, NOT checked into the repo.
-# Today only a locally-built win-x64 binary exists; this step verifies presence and
-# documents the build recipe. Hosting per-RID artifacts (win-x64 / linux-x64 /
-# osx-*) as a pinned GitHub Releases download is a follow-up. Runs unconditionally
-# (before the spirv-cross early exits below).
-restore_vkd3d_shader() {
-    local vkd3d_dir="$REPO_ROOT/tools/vkd3d"
-    mkdir -p "$vkd3d_dir"
-    case "$OS" in
-        Linux)  local vkd3d_lib="$vkd3d_dir/libvkd3d-shader.so.1" ;;
-        Darwin)
-            # Per-arch layout: both macOS arches share one dylib file name, so they
-            # live in osx-{x64,arm64}/ subdirectories (what ShadowDusk.HLSL.csproj
-            # packs from and Vkd3dLoader/FnaTestGate probe).
-            local vkd3d_rid="osx-x64"
-            [ "$(uname -m)" = "arm64" ] && vkd3d_rid="osx-arm64"
-            mkdir -p "$vkd3d_dir/$vkd3d_rid"
-            local vkd3d_lib="$vkd3d_dir/$vkd3d_rid/libvkd3d-shader.1.dylib" ;;
-        *)      local vkd3d_lib="$vkd3d_dir/libvkd3d-shader-1.dll" ;;
-    esac
+# All four shipping RIDs are downloaded from the FIXED GitHub Release tag below and
+# SHA-256-verified against the pins (Phase 37 C). Every host restores every RID:
+# the binaries are small (~1-2 MB each) and that makes any machine pack-ready (the
+# ShadowDusk.HLSL nupkg must contain all four — release.yml gates on it).
+# Built from the pinned vkd3d 1.17 tarball by .github/workflows/build-vkd3d-natives.yml
+# (linux on ubuntu:20.04 = glibc 2.31 baseline; macOS at MACOSX_DEPLOYMENT_TARGET=11.0;
+# win-x64 is the MSYS2 build the Phase 18/39/40 goldens were proven against).
+# Runs unconditionally (before the spirv-cross early exits below).
+VKD3D_RELEASE_URL="https://github.com/kaltinril/ShadowDusk/releases/download/native-vkd3d-1.17"
 
-    if [ -f "$vkd3d_lib" ]; then
-        echo "restore.sh: vkd3d-shader ($(basename "$vkd3d_lib")) present — OK"
-        return 0
+# sha256 of a file, portable: coreutils sha256sum (linux, GH runners) or
+# shasum (stock macOS). NOT a pipeline-with-|| — a pipeline's exit status is
+# the last stage's (awk: always 0), so a || fallback there never fires.
+vkd3d_sha256() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    else
+        shasum -a 256 "$1" | awk '{print $1}'
+    fi
+}
+
+# restore_vkd3d_file <asset-name> <dest-relative-to-tools/vkd3d> <sha256>
+restore_vkd3d_file() {
+    local asset="$1" dest_rel="$2" sha="$3"
+    local vkd3d_dir="$REPO_ROOT/tools/vkd3d"
+    local dest="$vkd3d_dir/$dest_rel"
+    mkdir -p "$(dirname "$dest")"
+
+    if [ -f "$dest" ]; then
+        local have
+        have="$(vkd3d_sha256 "$dest")"
+        if [ "$have" = "$sha" ]; then
+            echo "restore.sh: vkd3d-shader ($dest_rel) present, hash OK"
+            return 0
+        fi
+        echo "restore.sh: vkd3d-shader ($dest_rel) hash mismatch — re-downloading (had $have)"
     fi
 
-    cat >&2 <<EOF
+    if ! curl -fsSLo "$dest.tmp" "$VKD3D_RELEASE_URL/$asset"; then
+        echo "restore.sh: WARNING — could not download $asset from $VKD3D_RELEASE_URL (offline?); vkd3d-dependent paths (FNA target, DxbcBackend.Vkd3d) will fail SD0211 / skip in tests." >&2
+        rm -f "$dest.tmp"
+        return 0   # non-fatal by design
+    fi
+    local got
+    got="$(vkd3d_sha256 "$dest.tmp")"
+    if [ "$got" != "$sha" ]; then
+        echo "restore.sh: ERROR — $asset SHA-256 mismatch (expected $sha, got $got); discarding." >&2
+        rm -f "$dest.tmp"
+        return 0   # non-fatal, but the file is NOT placed
+    fi
+    mv -f "$dest.tmp" "$dest"
+    echo "restore.sh: vkd3d-shader ($dest_rel) downloaded, hash OK"
+}
 
-WARNING: vkd3d-shader native library not found at:
-  $vkd3d_lib
-
-Build recipe (vkd3d-shader 1.17, self-contained — zero non-system runtime deps).
-The win-x64 binary was built with a portable MSYS2 + autotools toolchain:
-  1. Download the vkd3d 1.17 release tarball:
-       https://dl.winehq.org/vkd3d/source/  (vkd3d-1.17.tar.xz)
-  2. Configure with Vulkan resolved to the system loader by SONAME and statically
-     linked libgcc/winpthread so the DLL has no external runtime deps:
-       ./configure --host=x86_64-w64-mingw32 \\
-           SONAME_LIBVULKAN=vulkan-1.dll \\
-           LDFLAGS="-static-libgcc -Wl,-Bstatic -lwinpthread -Wl,-Bdynamic"
-       make
-  3. Copy the resulting library to:
-       $vkd3d_lib
-     (Full recipe is in memory/Track-A report.)
-
-  linux-x64 recipe (verified on Ubuntu 24.04, 2026-06-09 — Phase 39):
-       apt-get install build-essential flex bison libvulkan-dev spirv-headers \\
-           libjson-perl xz-utils pkg-config
-       ./configure CFLAGS='-O2' LDFLAGS='-static-libgcc'
-       make include/private/vkd3d_version.h   # lib-only target misses this dep
-       make libvkd3d-shader.la
-       cp .libs/libvkd3d-shader.so.1.* tools/vkd3d/libvkd3d-shader.so.1
-     Runtime deps: libc/libm only (glibc baseline = the build distro's; build on
-     the oldest distro you intend to support). macOS: native autotools, same shape —
-     copy the built dylib to tools/vkd3d/osx-{x64,arm64}/libvkd3d-shader.1.dylib
-     (per-arch subdirs; both arches share one file name).
-
-NOTE: This binary is NOT committed (.gitignore ignores tools/vkd3d binaries incl. the per-arch subdirs).
-Restored per-RID binaries are BOTH copied to build output AND packed into the
-ShadowDusk.HLSL NuGet under runtimes/<rid>/native (see ShadowDusk.HLSL.csproj) —
-the release pipeline must restore every shipping RID before 'dotnet pack'.
-EOF
-    # Non-fatal: vkd3d is opt-in (default DXBC backend is the d3dcompiler oracle).
-    return 0
+restore_vkd3d_shader() {
+    restore_vkd3d_file "libvkd3d-shader-1.dll" "libvkd3d-shader-1.dll" \
+        "500cd915002aa95b17995954e69474031b32837fb16355ae9aa31d7bdd6f6718"
+    restore_vkd3d_file "libvkd3d-shader.so.1" "libvkd3d-shader.so.1" \
+        "4799589c3e7abd4cdb4f1a0bae5a74937fbff310fb1e8daafa86b510c6272afc"
+    restore_vkd3d_file "libvkd3d-shader.1.osx-x64.dylib" "osx-x64/libvkd3d-shader.1.dylib" \
+        "4acb13b8d8c4faac2b2180c4747a6da8a431889f2d6a776013c61a394fff8b9d"
+    restore_vkd3d_file "libvkd3d-shader.1.osx-arm64.dylib" "osx-arm64/libvkd3d-shader.1.dylib" \
+        "887aa64611014d03b23a1827973822fd98ede6684d773632391736f8749a9bf4"
 }
 
 restore_vkd3d_shader
