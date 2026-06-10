@@ -204,10 +204,10 @@ jobs:
       # SILENTLY produces a package whose FNA target and DxbcBackend.Vkd3d fail with
       # SD0211 for every NuGet consumer — directly contradicting the documented
       # self-contained promise. Fail the release red instead (the mirror of the
-      # pack-wasm dxcompiler.wasm gate). Until Phase 37 C hosts the pinned per-RID
-      # artifacts for CI download, this gate makes the gap loud: a release must run
-      # from a runner/machine where tools/restore.sh actually provisioned vkd3d.
-      - name: Verify ShadowDusk.HLSL contains the vkd3d natives (win-x64 + linux-x64)
+      # pack-wasm dxcompiler.wasm gate). tools/restore.sh provisions all four RIDs
+      # by pinned download (Phase 37 C), so a clean CI runner satisfies this gate.
+      # The LGPL-2.1 notice must ride along with the binaries it covers.
+      - name: Verify ShadowDusk.HLSL contains the vkd3d natives (all four RIDs) + LGPL notice
         run: |
           pkg=$(find nupkg -maxdepth 1 -name 'ShadowDusk.HLSL.*.nupkg' ! -name '*.snupkg' | head -1)
           echo "Inspecting $pkg"
@@ -215,7 +215,10 @@ jobs:
           missing=0
           for native in \
             'runtimes/win-x64/native/libvkd3d-shader-1.dll' \
-            'runtimes/linux-x64/native/libvkd3d-shader.so.1' ; do
+            'runtimes/linux-x64/native/libvkd3d-shader.so.1' \
+            'runtimes/osx-x64/native/libvkd3d-shader.1.dylib' \
+            'runtimes/osx-arm64/native/libvkd3d-shader.1.dylib' \
+            'THIRD-PARTY-NOTICES.txt' ; do
               if ! grep -qF "$native" <<<"$listing"; then
                 echo "::error::$pkg is missing $native — the FNA target and DxbcBackend.Vkd3d would fail (SD0211) for every consumer on that RID. Restore vkd3d binaries before packing (tools/restore.sh; RELEASING.md 'Native binaries')."
                 missing=1

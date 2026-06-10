@@ -13,10 +13,11 @@ namespace ShadowDusk.HLSL.Tests.Vkd3d;
 
 /// <summary>
 /// Tests for the cross-platform vkd3d-shader DXBC backend (Phase 18 Track A).
-/// The binding is cross-platform but needs the native vkd3d-shader library at
-/// runtime; only the win-x64 binary exists locally, so the live-compile tests are
-/// gated on Windows (where the .dll is restored and copied next to the binaries).
-/// These are tagged Integration because they exercise native interop.
+/// The binding is cross-platform; the live-compile tests are gated on the native
+/// vkd3d-shader library being present (availability-probed via
+/// <see cref="Vkd3dFactAttribute"/> — tools/restore provisions the per-RID binary,
+/// Phase 37 C), so they run on every OS in CI. Tagged Integration because they
+/// exercise native interop.
 /// </summary>
 [Trait("Category", "Integration")]
 public sealed class Vkd3dShaderCompilerTests

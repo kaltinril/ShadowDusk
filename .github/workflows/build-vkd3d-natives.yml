@@ -54,21 +54,29 @@ jobs:
       # bison/flex: vkd3d's HLSL lexer/parser need modern bison (macOS ships 2.3).
       # vulkan/spirv headers are compile-time only — header-only packages cannot
       # introduce a Homebrew runtime dependency (the otool gate below proves it).
+      # perl JSON: a hard configure requirement (build-script tooling, not linked).
       - name: Install build deps (Homebrew, headers + build tools only)
         run: |
-          brew install bison flex vulkan-headers spirv-headers
+          brew install bison flex vulkan-headers spirv-headers cpanminus
           echo "$(brew --prefix bison)/bin" >> "$GITHUB_PATH"
           echo "$(brew --prefix flex)/bin" >> "$GITHUB_PATH"
+          cpanm --local-lib="$HOME/perl5" --notest JSON
+          echo "PERL5LIB=$HOME/perl5/lib/perl5" >> "$GITHUB_ENV"
 
       # MACOSX_DEPLOYMENT_TARGET=11.0: the macOS glibc-baseline analog (Phase 37 C
       # addendum caution). 11.0 = first arm64 macOS; .NET 8 itself needs 12+, so this
       # leaves headroom rather than inheriting the builder image's 14/15 default.
+      # SONAME_LIBVULKAN bypasses configure's hard requirement for an installed
+      # Vulkan loader (same trick as the win-x64 MSYS2 recipe): the soname is only
+      # dlopen'd at RUNTIME by libvkd3d proper, which we don't build or ship —
+      # libvkd3d-shader links no Vulkan at all (the otool gate proves it).
       - name: Configure + build libvkd3d-shader
         working-directory: vkd3d-1.17
         env:
           MACOSX_DEPLOYMENT_TARGET: '11.0'
         run: |
           ./configure CFLAGS='-O2' \
+            SONAME_LIBVULKAN=libvulkan.1.dylib \
             CPPFLAGS="-I$(brew --prefix vulkan-headers)/include -I$(brew --prefix spirv-headers)/include"
           make include/private/vkd3d_version.h   # lib-only target misses this dep
           make -j"$(sysctl -n hw.ncpu)" libvkd3d-shader.la
@@ -96,8 +104,10 @@ jobs:
           dylib=$(ls .libs/libvkd3d-shader.*.dylib | head -1)
           echo "== otool -L $dylib =="
           otool -L "$dylib"
-          bad=$(otool -L "$dylib" | tail -n +2 | awk '{print $1}' \
-                | grep -vE '^(/usr/lib/|/System/|@rpath/libvkd3d-shader)' || true)
+          # Line 1 is the file header, line 2 the dylib's OWN install name (self-ID,
+          # not a dependency) — real dependencies start at line 3.
+          bad=$(otool -L "$dylib" | tail -n +3 | awk '{print $1}' \
+                | grep -vE '^(/usr/lib/|/System/)' || true)
           if [ -n "$bad" ]; then
             echo "::error::non-system linkage found: $bad"
             exit 1
@@ -147,10 +157,19 @@ jobs:
           echo "$VKD3D_TARBALL_SHA256  vkd3d.tar.xz" | sha256sum -c -
           tar xf vkd3d.tar.xz
 
+      # Ubuntu 20.04 ships Vulkan headers 1.2.131; vkd3d 1.17 requires >= 1.3.228.
+      # Vulkan-Headers is header-ONLY (compile-time), so taking it from a pinned
+      # upstream tag cannot move the glibc baseline the 20.04 container provides.
+      - name: Fetch pinned Vulkan-Headers (20.04's are too old; header-only)
+        run: |
+          curl -fsSL https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v1.3.296.tar.gz | tar xz
+          echo "VULKAN_HEADERS_INC=$(pwd)/Vulkan-Headers-1.3.296/include" >> "$GITHUB_ENV"
+
       - name: Configure + build libvkd3d-shader
         working-directory: vkd3d-1.17
         run: |
-          ./configure CFLAGS='-O2' LDFLAGS='-static-libgcc'
+          ./configure CFLAGS='-O2' LDFLAGS='-static-libgcc' \
+            CPPFLAGS="-I$VULKAN_HEADERS_INC"
           make include/private/vkd3d_version.h
           make -j"$(nproc)" libvkd3d-shader.la
           ls -la .libs/
@@ -173,8 +192,10 @@ jobs:
           so=$(ls .libs/libvkd3d-shader.so.1.* | head -1)
           echo "== NEEDED =="
           objdump -p "$so" | grep NEEDED
+          # libpthread/libdl/librt are glibc components (merged into libc.so.6
+          # only in glibc 2.34) — system libraries on the 2.31 baseline.
           bad_needed=$(objdump -p "$so" | awk '/NEEDED/{print $2}' \
-                       | grep -vE '^(libc\.so|libm\.so|ld-linux)' || true)
+                       | grep -vE '^(libc\.so|libm\.so|libpthread\.so|libdl\.so|librt\.so|ld-linux)' || true)
           if [ -n "$bad_needed" ]; then
             echo "::error::unexpected runtime dependency: $bad_needed"
             exit 1
