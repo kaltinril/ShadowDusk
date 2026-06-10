@@ -1,0 +1,201 @@
+# .github/workflows/build-vkd3d-natives.yml
+# Phase 37 C — build the pinned vkd3d-shader 1.17 native binaries for the RIDs that
+# have no upstream prebuilts (WineHQ ships source tarballs only):
+#
+#   * osx-arm64  — macos-14 (Apple Silicon) native build
+#   * osx-x64    — macos-15-intel (the last free x86_64 image) native build
+#   * linux-x64  — ubuntu:20.04 container = glibc 2.31 baseline (the oldest distro
+#                  we claim to support; the previous artifact was built on 24.04
+#                  against a 20.04+ claim — this rebuild closes that gap)
+#
+# win-x64 is NOT built here: the canonical libvkd3d-shader-1.dll is the locally-built
+# MSYS2 binary the Phase 18/39/40 goldens and rung-4 validation were proven against
+# (recipe in tools/restore.ps1); it is uploaded to the hosting release as-is.
+#
+# The artifacts produced here are uploaded to the FIXED GitHub Release tag
+# `native-vkd3d-1.17` (SHA-256 pins live in tools/restore.{sh,ps1}). Re-running this
+# workflow does NOT republish anything — publishing to the release tag is a deliberate
+# manual step (see plan/PHASE-37-cross-platform-native-availability.md, Finding C).
+#
+# Pin discipline: vkd3d stays at 1.17 (output byte-stability is a product promise —
+# a bump re-baselines goldens and re-runs rung-4). Never substitute a distro build.
+name: Build vkd3d natives (1.17)
+
+on:
+  workflow_dispatch:
+
+env:
+  VKD3D_VERSION: '1.17'
+  VKD3D_TARBALL_URL: 'https://dl.winehq.org/vkd3d/source/vkd3d-1.17.tar.xz'
+  # SHA-256 of vkd3d-1.17.tar.xz as published by WineHQ — verified before building so
+  # a tampered/moved tarball can never silently change the shipped compiler.
+  VKD3D_TARBALL_SHA256: 'bc61cb9e84d5045cbcaffbdd707940d399d8bf62874663dfe5809a0bfb87e9b6'
+
+jobs:
+  build-macos:
+    name: Build ${{ matrix.rid }} dylib
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: osx-arm64
+            os: macos-14
+          - rid: osx-x64
+            os: macos-15-intel
+    steps:
+      - name: Download + verify pinned tarball
+        run: |
+          curl -fsSLo vkd3d.tar.xz "$VKD3D_TARBALL_URL"
+          echo "$VKD3D_TARBALL_SHA256  vkd3d.tar.xz" | shasum -a 256 -c -
+          tar xf vkd3d.tar.xz
+
+      # bison/flex: vkd3d's HLSL lexer/parser need modern bison (macOS ships 2.3).
+      # vulkan/spirv headers are compile-time only — header-only packages cannot
+      # introduce a Homebrew runtime dependency (the otool gate below proves it).
+      - name: Install build deps (Homebrew, headers + build tools only)
+        run: |
+          brew install bison flex vulkan-headers spirv-headers
+          echo "$(brew --prefix bison)/bin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix flex)/bin" >> "$GITHUB_PATH"
+
+      # MACOSX_DEPLOYMENT_TARGET=11.0: the macOS glibc-baseline analog (Phase 37 C
+      # addendum caution). 11.0 = first arm64 macOS; .NET 8 itself needs 12+, so this
+      # leaves headroom rather than inheriting the builder image's 14/15 default.
+      - name: Configure + build libvkd3d-shader
+        working-directory: vkd3d-1.17
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '11.0'
+        run: |
+          ./configure CFLAGS='-O2' \
+            CPPFLAGS="-I$(brew --prefix vulkan-headers)/include -I$(brew --prefix spirv-headers)/include"
+          make include/private/vkd3d_version.h   # lib-only target misses this dep
+          make -j"$(sysctl -n hw.ncpu)" libvkd3d-shader.la
+          ls -la .libs/
+
+      # Smoke: the built library must actually compile shaders. vkd3d-compiler links
+      # the freshly-built libvkd3d-shader; a trivial ps_2_0 -> d3dbc compile exercises
+      # the exact SM1-3 path the FNA target ships on.
+      - name: Smoke-test (vkd3d-compiler, ps_2_0 -> d3dbc)
+        working-directory: vkd3d-1.17
+        run: |
+          make -j"$(sysctl -n hw.ncpu)" vkd3d-compiler
+          printf 'float4 main() : COLOR { return float4(1,0,0,1); }\n' > smoke.hlsl
+          ./vkd3d-compiler -e main -p ps_2_0 -b d3dbc -o smoke.fxo smoke.hlsl
+          test -s smoke.fxo && echo "d3dbc smoke OK ($(wc -c < smoke.fxo) bytes)"
+          ./vkd3d-compiler -e main -p ps_5_0 -b dxbc-tpf -o smoke.dxbc smoke.hlsl
+          test -s smoke.dxbc && echo "dxbc-tpf smoke OK ($(wc -c < smoke.dxbc) bytes)"
+
+      # The addendum's hard gate: the dylib must link SYSTEM libraries only. Any
+      # Homebrew (/opt/homebrew, /usr/local) runtime dependency means the binary
+      # would not run on a consumer's Mac -> fail red here, not on a user machine.
+      - name: Verify system-only linkage + arch + deployment target (otool/lipo)
+        working-directory: vkd3d-1.17
+        run: |
+          dylib=$(ls .libs/libvkd3d-shader.*.dylib | head -1)
+          echo "== otool -L $dylib =="
+          otool -L "$dylib"
+          bad=$(otool -L "$dylib" | tail -n +2 | awk '{print $1}' \
+                | grep -vE '^(/usr/lib/|/System/|@rpath/libvkd3d-shader)' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::non-system linkage found: $bad"
+            exit 1
+          fi
+          echo "== lipo -info =="
+          lipo -info "$dylib"
+          echo "== minos (build version) =="
+          otool -l "$dylib" | grep -A3 'LC_BUILD_VERSION\|LC_VERSION_MIN' || true
+
+      - name: Stage artifact
+        run: |
+          mkdir -p out
+          # libtool emits libvkd3d-shader.<N>.dylib; ship it under the SONAME-style
+          # name the loader/csproj expect.
+          cp vkd3d-1.17/.libs/libvkd3d-shader.*.dylib out/libvkd3d-shader.1.dylib
+          shasum -a 256 out/libvkd3d-shader.1.dylib | tee out/libvkd3d-shader.1.dylib.sha256
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: vkd3d-${{ env.VKD3D_VERSION }}-${{ matrix.rid }}
+          path: out/*
+          if-no-files-found: error
+          retention-days: 30
+
+  build-linux:
+    name: Build linux-x64 .so (glibc 2.31 baseline)
+    runs-on: ubuntu-latest
+    # Ubuntu 20.04 container = glibc 2.31, the oldest supported baseline. Matches the
+    # recipe in tools/restore.sh (verified on 24.04 in Phase 39) but built old enough
+    # to honor the 20.04+ support claim.
+    container: ubuntu:20.04
+    timeout-minutes: 30
+    steps:
+      - name: Install build deps
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential flex bison libvulkan-dev spirv-headers libjson-perl \
+            xz-utils pkg-config curl ca-certificates binutils
+
+      - name: Download + verify pinned tarball
+        run: |
+          curl -fsSLo vkd3d.tar.xz "$VKD3D_TARBALL_URL"
+          echo "$VKD3D_TARBALL_SHA256  vkd3d.tar.xz" | sha256sum -c -
+          tar xf vkd3d.tar.xz
+
+      - name: Configure + build libvkd3d-shader
+        working-directory: vkd3d-1.17
+        run: |
+          ./configure CFLAGS='-O2' LDFLAGS='-static-libgcc'
+          make include/private/vkd3d_version.h
+          make -j"$(nproc)" libvkd3d-shader.la
+          ls -la .libs/
+
+      - name: Smoke-test (vkd3d-compiler, ps_2_0 -> d3dbc)
+        working-directory: vkd3d-1.17
+        run: |
+          make -j"$(nproc)" vkd3d-compiler
+          printf 'float4 main() : COLOR { return float4(1,0,0,1); }\n' > smoke.hlsl
+          ./vkd3d-compiler -e main -p ps_2_0 -b d3dbc -o smoke.fxo smoke.hlsl
+          test -s smoke.fxo && echo "d3dbc smoke OK ($(wc -c < smoke.fxo) bytes)"
+          ./vkd3d-compiler -e main -p ps_5_0 -b dxbc-tpf -o smoke.dxbc smoke.hlsl
+          test -s smoke.dxbc && echo "dxbc-tpf smoke OK ($(wc -c < smoke.dxbc) bytes)"
+
+      # The whole point of the 20.04 build: no glibc symbol newer than 2.31, and
+      # runtime deps limited to libc/libm (+ the loader). Fail red otherwise.
+      - name: Verify glibc baseline + runtime deps
+        working-directory: vkd3d-1.17
+        run: |
+          so=$(ls .libs/libvkd3d-shader.so.1.* | head -1)
+          echo "== NEEDED =="
+          objdump -p "$so" | grep NEEDED
+          bad_needed=$(objdump -p "$so" | awk '/NEEDED/{print $2}' \
+                       | grep -vE '^(libc\.so|libm\.so|ld-linux)' || true)
+          if [ -n "$bad_needed" ]; then
+            echo "::error::unexpected runtime dependency: $bad_needed"
+            exit 1
+          fi
+          max_glibc=$(objdump -T "$so" | grep -o 'GLIBC_[0-9.]*' | sort -u -t_ -k2,2V | tail -1)
+          echo "max glibc symbol version: $max_glibc"
+          case "$max_glibc" in
+            GLIBC_2.3[01]|GLIBC_2.[12]?|GLIBC_2.[0-9]) echo "glibc baseline OK" ;;
+            *) echo "::error::glibc symbol $max_glibc exceeds the 2.31 (Ubuntu 20.04) baseline"; exit 1 ;;
+          esac
+
+      - name: Stage artifact
+        run: |
+          mkdir -p out
+          cp vkd3d-1.17/.libs/libvkd3d-shader.so.1.* out/libvkd3d-shader.so.1
+          sha256sum out/libvkd3d-shader.so.1 | tee out/libvkd3d-shader.so.1.sha256
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: vkd3d-${{ env.VKD3D_VERSION }}-linux-x64
+          path: out/*
+          if-no-files-found: error
+          retention-days: 30
