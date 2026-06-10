@@ -104,8 +104,10 @@ jobs:
           dylib=$(ls .libs/libvkd3d-shader.*.dylib | head -1)
           echo "== otool -L $dylib =="
           otool -L "$dylib"
-          bad=$(otool -L "$dylib" | tail -n +2 | awk '{print $1}' \
-                | grep -vE '^(/usr/lib/|/System/|@rpath/libvkd3d-shader)' || true)
+          # Line 1 is the file header, line 2 the dylib's OWN install name (self-ID,
+          # not a dependency) — real dependencies start at line 3.
+          bad=$(otool -L "$dylib" | tail -n +3 | awk '{print $1}' \
+                | grep -vE '^(/usr/lib/|/System/)' || true)
           if [ -n "$bad" ]; then
             echo "::error::non-system linkage found: $bad"
             exit 1
