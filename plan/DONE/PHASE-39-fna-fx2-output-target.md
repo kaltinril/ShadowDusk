@@ -290,6 +290,31 @@ RIDs; macOS remains pre-wired-but-pending:
   sources also use `TECHNIQUE(…)` and are blocked upstream of this anyway.
 - Non-square matrix parameters are rejected (`SD0302`) until F1 (MojoShader/fxc dims-order
   conflict) is settled with a golden; matrix **defaults** bake as zeros until F2 is settled.
+  **Array defaults** (`float4 Palette[4] = {…}`) likewise bake as zeros — unlike matrices
+  there is no layout ambiguity (array elements are densely packed rows), so propagation is
+  a candidate follow-up once pinned against an fxc golden; until then it is a documented
+  divergence from fxc, identical in kind to F2.
+- **The `D3d9BytecodePatcher` def-literal clamp (|f| ≥ 2³² → ±0x4F7FFFFF) patches the
+  candidate only** — fxc's output is never clamped. For the kill-sentinel use it was built
+  for the clamp is observably sign-only, but a shader that uses such a literal in real
+  arithmetic (hash/packing constants like `x * 4294967296.0`) diverges from the fxc build:
+  on LP64 FNA (Linux/macOS) fxc's arm renders the exact literal *correctly* (MojoShader's
+  printFloat bug is LLP64/Windows-only), while ours uses the clamped value. Appendix G's
+  original "both arms equally destroyed ⇒ no fidelity gap" justification is **wrong on
+  both platforms** (see the editorial note there); the honest statement is: the clamp
+  trades a rare-idiom arithmetic divergence for working `clip()`/`discard` everywhere.
+  Upstreaming the MojoShader printFloat fix (already a follow-up) dissolves the tradeoff.
+- **Macro-indirected profiles compile at the SM3 ceiling regardless of the macro's value**:
+  `compile PS_SHADERMODEL …` with `#define PS_SHADERMODEL ps_2_0` still compiles at ps_3_0
+  — the pre-parser sees the technique before macro expansion, and our preprocessor does not
+  evaluate conditionals (vkd3d's does, downstream of technique stripping). Codegen may
+  therefore differ from the author's own `fxc` baseline. Workaround: write a **literal**
+  profile (`compile ps_2_0 …`) to pin it; honoring macro values needs conditional
+  evaluation in our preprocessor (deferred — recorded in Phase 40).
+- Literal **SM1 profiles are rejected** (`SD0300`, since Phase 40): vkd3d 1.17's SM1
+  backend has known instruction gaps, MojoShader's ps_1_x rules differ wholesale from
+  SM2+, and the SM1 output path has never been validated against real FNA — refusing
+  loudly beats risking silently-wrong output.
 - In-pass render states are emitted faithfully (mapped to the FNA-honored set; everything our
   `RenderStateBlock` models maps inside it) — and **proven honored at runtime**: the
   `FnaMultiPassStates` rung-4 row renders its second pass alpha-blended over its first with

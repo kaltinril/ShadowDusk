@@ -199,12 +199,17 @@ public sealed class FnaCompileFixtureTests
     // B. Determinism — same source, two compiler instances, byte-identical bytes
     // -------------------------------------------------------------------------
 
-    [FnaFact]
-    public async Task Grayscale_Fna_CompiledTwice_IsByteIdentical()
+    // Grayscale = the simplest PS-only case; FnaMultiPassStates = the structural worst
+    // case (two techniques, two passes, VS+PS, in-pass states, sampler→texture map) —
+    // exactly where dictionary-order or emission-order nondeterminism would hide.
+    [FnaTheory]
+    [InlineData("Grayscale.fx")]
+    [InlineData("FnaMultiPassStates.fx")]
+    public async Task Corpus_Fna_CompiledTwice_IsByteIdentical(string fx)
     {
         using var cts = new CancellationTokenSource(CompileTimeout);
 
-        string path = TestHelpers.FixturePath("Grayscale.fx");
+        string path = TestHelpers.FixturePath(fx);
         var first  = await CompileFnaFileAsync(path, cts.Token);
         var second = await CompileFnaFileAsync(path, cts.Token);
 
@@ -275,7 +280,10 @@ public sealed class FnaCompileFixtureTests
     // D. Failure paths — SM4-style sources fail loudly, never silently degrade
     // -------------------------------------------------------------------------
 
-    [FnaFact]
+    // Plain [Fact], NOT [FnaFact]: the profile policy fires BEFORE any vkd3d call
+    // (ResolveFnaProfile precedes the compile), so this failure path needs no native
+    // and must stay covered on vkd3d-less machines and in CI.
+    [Fact]
     public async Task Textured_Fna_LiteralSm4Profile_FailsWithSd0300()
     {
         using var cts = new CancellationTokenSource(CompileTimeout);
@@ -288,11 +296,13 @@ public sealed class FnaCompileFixtureTests
             because: "a literal SM4+ profile under the FNA target must fail loudly, not silently degrade");
         result.Error.Should().Contain(e => e.Code == "SD0300",
             because: $"the documented FNA profile-policy error is SD0300; got: {DescribeErrors(result)}");
-        result.Error.First(e => e.Code == "SD0300").Message.Should().Contain("Shader Model 1–3",
-            because: "the diagnostic must tell the user what the FNA target supports");
+        result.Error.First(e => e.Code == "SD0300").Message.Should().Contain("Shader Model 2–3",
+            because: "the diagnostic must tell the user what the FNA target supports (SM1 is " +
+                     "rejected too — vkd3d 1.17 SM1 gaps; never validated)");
     }
 
-    [FnaFact]
+    // Plain [Fact] — same rationale as above: fails before vkd3d.
+    [Fact]
     public async Task LiteralLevel91Profile_Fna_FailsWithSd0300()
     {
         using var cts = new CancellationTokenSource(CompileTimeout);

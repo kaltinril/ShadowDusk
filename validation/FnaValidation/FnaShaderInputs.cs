@@ -18,9 +18,11 @@ namespace ShadowDusk.Validation.Fna;
 /// </summary>
 public static class FnaShaderInputs
 {
-    /// <summary>One corpus entry: display name, repo-relative .fx path, gate membership, scene.</summary>
+    /// <summary>One corpus entry: display name, repo-relative .fx path, gate membership,
+    /// scene, and (optionally) a technique to select by name instead of CurrentTechnique.</summary>
     public sealed record CorpusShader(
-        string Name, string RelativePath, bool Gate, FnaScene Scene = FnaScene.Sprite);
+        string Name, string RelativePath, bool Gate,
+        FnaScene Scene = FnaScene.Sprite, string? Technique = null);
 
     private static CorpusShader Fixture(string name, bool gate) =>
         new(name, Path.Combine("tests", "fixtures", "shaders", name + ".fx"), gate);
@@ -28,8 +30,8 @@ public static class FnaShaderInputs
     private static CorpusShader VsFixture(string name, bool gate) =>
         new(name, Path.Combine("tests", "fixtures", "shaders", name + ".fx"), gate, FnaScene.VsQuad);
 
-    private static CorpusShader Golden(string name) =>
-        new(name, Path.Combine("tests", "fixtures", "golden", "FNA", name + ".fx"), Gate: false);
+    private static CorpusShader Golden(string name, bool gate = false) =>
+        new(name, Path.Combine("tests", "fixtures", "golden", "FNA", name + ".fx"), gate);
 
     /// <summary>
     /// The corpus, in fixed order. The GATE set (all must PASS for exit code 0) is the
@@ -55,11 +57,26 @@ public static class FnaShaderInputs
         VsFixture("PolygonLight", gate: true),
         VsFixture("VertexAndPixel", gate: true),
         VsFixture("FnaMultiPassStates", gate: true),
+        // Same binary, second technique selected BY NAME (PS-only → Sprite scene; the
+        // technique-by-name lookup in real FNA is otherwise never exercised). Scene is
+        // chosen per the SELECTED technique, so the whole-binary VS guard is skipped
+        // for technique-selector rows.
+        new("FnaMultiPassStatesT2",
+            Path.Combine("tests", "fixtures", "shaders", "FnaMultiPassStates.fx"),
+            Gate: true, FnaScene.Sprite, Technique: "SinglePass"),
+        // Matrix calibration row (Phase 40): square float4x4 through PS arithmetic,
+        // explicit M upload (both arms identical — fxc bakes the source default,
+        // ShadowDusk deliberately bakes zeros until F2 is settled, so defaults must
+        // not be what the comparison exercises).
+        Golden("matrix", gate: true),
         // ---- extended PS-only corpus (reported, not gating) ----
         Fixture("BasicShader", gate: false),
         Fixture("BlendShader", gate: false),
         Fixture("ClipShader", gate: false),
-        Fixture("ClipShaderNew", gate: false),
+        // Gate row since Phase 40: the live brace-form sampler case (`sampler S { … };`)
+        // whose binding the FNA path used to silently lose — with the distinct mask
+        // texture, a lost Mask binding now diverges from the oracle instead of hiding.
+        Fixture("ClipShaderNew", gate: true),
         Fixture("ClipShaderSpriteTarget", gate: false),
         Fixture("MultiTexture", gate: false),
         Fixture("MultiTextureOverlay", gate: false),
@@ -86,51 +103,64 @@ public static class FnaShaderInputs
     };
 
     /// <summary>
-    /// Set every parameter any corpus shader might expose. Null-conditional so a name
-    /// absent on a given effect is silently skipped — both arms get the identical
-    /// call, so the comparison stays fair. The first block is a VERBATIM port of
-    /// <c>DxShaderInputs.SetParams</c> (same names, same values); the second block
-    /// covers the extended corpus (second textures get the same cat, mirroring how
-    /// the DX harness feeds Dissolve's <c>_dissolveTex</c>).
+    /// Set every parameter any corpus shader might expose, returning the names actually
+    /// set (the per-arm hit list — a name set on one arm but absent on the other is a
+    /// fidelity signal the harness reports). A name absent on a given effect is skipped —
+    /// both arms get the identical call, so the comparison stays fair. The first block is
+    /// a VERBATIM port of <c>DxShaderInputs.SetParams</c> (same names, same values).
+    /// Second/mask-style textures get <paramref name="mask"/>, a deterministic texture
+    /// VISIBLY DISTINCT from the cat: when every slot held the same cat, a lost or
+    /// mis-registered second-texture binding rendered pixel-identical to a correct one
+    /// (how the brace-form sampler bug stayed invisible — Phase 40).
     /// </summary>
-    public static void SetParams(Effect e, Texture2D cat)
+    public static IReadOnlyList<string> SetParams(Effect e, Texture2D cat, Texture2D mask)
     {
+        var hits = new List<string>();
+        void Set(string name, Action<EffectParameter> apply)
+        {
+            EffectParameter? p = e.Parameters[name];
+            if (p is null)
+                return;
+            apply(p);
+            hits.Add(name);
+        }
+
         // ---- gate set: verbatim DxShaderInputs.SetParams values ----
-        e.Parameters["SpriteTexture"]?.SetValue(cat);
+        Set("SpriteTexture", p => p.SetValue(cat));
 
-        e.Parameters["TintColor"]?.SetValue(new Vector4(1f, 0.5f, 0.5f, 1f));
+        Set("TintColor", p => p.SetValue(new Vector4(1f, 0.5f, 0.5f, 1f)));
 
-        e.Parameters["_sepiaTone"]?.SetValue(new Vector3(1.2f, 1.0f, 0.8f));
+        Set("_sepiaTone", p => p.SetValue(new Vector3(1.2f, 1.0f, 0.8f)));
 
-        e.Parameters["BloomThreshold"]?.SetValue(new Vector4(0.25f, 0.25f, 0.25f, 0.25f));
-        e.Parameters["BloomIntensity"]?.SetValue(1.5f);
-        e.Parameters["BloomSaturation"]?.SetValue(0.8f);
+        Set("BloomThreshold", p => p.SetValue(new Vector4(0.25f, 0.25f, 0.25f, 0.25f)));
+        Set("BloomIntensity", p => p.SetValue(1.5f));
+        Set("BloomSaturation", p => p.SetValue(0.8f));
 
-        e.Parameters["_attenuation"]?.SetValue(800.0f);
-        e.Parameters["_linesFactor"]?.SetValue(0.04f);
+        Set("_attenuation", p => p.SetValue(800.0f));
+        Set("_linesFactor", p => p.SetValue(0.04f));
 
-        e.Parameters["angle"]?.SetValue(0.5f);
-        e.Parameters["scale"]?.SetValue(0.5f);
-        e.Parameters["ScreenSize"]?.SetValue(new Vector2(cat.Width, cat.Height));
+        Set("angle", p => p.SetValue(0.5f));
+        Set("scale", p => p.SetValue(0.5f));
+        Set("ScreenSize", p => p.SetValue(new Vector2(cat.Width, cat.Height)));
 
-        e.Parameters["_dissolveTex"]?.SetValue(cat);
-        e.Parameters["_progress"]?.SetValue(0.5f);
-        e.Parameters["_dissolveThreshold"]?.SetValue(0.04f);
-        e.Parameters["_dissolveThresholdColor"]?.SetValue(new Vector4(1f, 0.5f, 0f, 1f));
+        Set("_dissolveTex", p => p.SetValue(mask));
+        Set("_progress", p => p.SetValue(0.5f));
+        Set("_dissolveThreshold", p => p.SetValue(0.04f));
+        Set("_dissolveThresholdColor", p => p.SetValue(new Vector4(1f, 0.5f, 0f, 1f)));
 
         // ---- extended corpus (reported set) ----
-        e.Parameters["ElapsedTime"]?.SetValue(0.5f);              // BlendShader
-        e.Parameters["Character01"]?.SetValue(cat);               // BlendShader
-        e.Parameters["Character02"]?.SetValue(cat);               // BlendShader
-        e.Parameters["ClipTexture"]?.SetValue(cat);               // ClipShader / ClipShaderSpriteTarget
-        e.Parameters["DrawTexture"]?.SetValue(cat);               // ClipShader / ClipShaderSpriteTarget
-        e.Parameters["Mask"]?.SetValue(cat);                      // ClipShaderNew
-        e.Parameters["_secondTexture"]?.SetValue(cat);            // MultiTexture / MultiTextureOverlay
-        e.Parameters["RenderTargetTexture"]?.SetValue(cat);       // SimpleLightShader
-        e.Parameters["MaskTexture"]?.SetValue(cat);               // SimpleLightShader
-        e.Parameters["_alphaTest"]?.SetValue(new Vector3(0.5f, -1f, 1f)); // SpriteAlphaTest
-        e.Parameters["amount"]?.SetValue(0.3f);                   // Teleport
-        e.Parameters["t"]?.SetValue(cat);                         // golden textured.fx
+        Set("ElapsedTime", p => p.SetValue(0.5f));                // BlendShader
+        Set("Character01", p => p.SetValue(cat));                 // BlendShader
+        Set("Character02", p => p.SetValue(mask));                // BlendShader
+        Set("ClipTexture", p => p.SetValue(mask));                // ClipShader / ClipShaderSpriteTarget
+        Set("DrawTexture", p => p.SetValue(cat));                 // ClipShader / ClipShaderSpriteTarget
+        Set("Mask", p => p.SetValue(mask));                       // ClipShaderNew
+        Set("_secondTexture", p => p.SetValue(mask));             // MultiTexture / MultiTextureOverlay
+        Set("RenderTargetTexture", p => p.SetValue(cat));         // SimpleLightShader
+        Set("MaskTexture", p => p.SetValue(mask));                // SimpleLightShader
+        Set("_alphaTest", p => p.SetValue(new Vector3(0.5f, -1f, 1f))); // SpriteAlphaTest
+        Set("amount", p => p.SetValue(0.3f));                     // Teleport
+        Set("t", p => p.SetValue(cat));                           // golden textured.fx
 
         // ---- VS-driven gate set (custom-geometry quad scene) ----
         // CAUTION: this block claims very common uniform names (World / View /
@@ -142,27 +172,66 @@ public static class FnaShaderInputs
         // VsTransformColorTexture: identity WVP maps the clip-space quad corners
         // straight to the viewport; the non-white tint keeps the VS color path
         // (vertexColor * Tint) non-vacuous. Tint is also FnaMultiPassStates' PS uniform.
-        e.Parameters["WorldViewProjection"]?.SetValue(Matrix.Identity);
-        e.Parameters["Tint"]?.SetValue(new Vector4(1f, 0.5f, 0.5f, 1f));
+        Set("WorldViewProjection", p => p.SetValue(Matrix.Identity));
+        Set("Tint", p => p.SetValue(new Vector4(1f, 0.5f, 0.5f, 1f)));
         // PolygonLight: worldPos = texCoord, so a light at (0.5,0.5) with radius 0.75
         // produces a spatially-varying radial gradient over the whole quad.
-        e.Parameters["viewProjectionMatrix"]?.SetValue(Matrix.Identity);
-        e.Parameters["lightSource"]?.SetValue(new Vector2(0.5f, 0.5f));
-        e.Parameters["lightColor"]?.SetValue(new Vector3(1f, 0.75f, 0.5f));
-        e.Parameters["lightRadius"]?.SetValue(0.75f);
+        Set("viewProjectionMatrix", p => p.SetValue(Matrix.Identity));
+        Set("lightSource", p => p.SetValue(new Vector2(0.5f, 0.5f)));
+        Set("lightColor", p => p.SetValue(new Vector3(1f, 0.75f, 0.5f)));
+        Set("lightRadius", p => p.SetValue(0.75f));
         // VertexAndPixel: exact-dyadic scale + translation (all entries representable
         // and arithmetic exact in fp32, so both arms compute bit-identical vertex
         // positions and rasterize identical edges) — the visible off-center half-size
         // quad proves the three matrix uploads actually flow, and the translation row
         // would expose a row/column-major mismatch that identity/scale never could.
-        e.Parameters["World"]?.SetValue(Matrix.CreateScale(0.5f));
-        e.Parameters["View"]?.SetValue(Matrix.CreateTranslation(0.25f, 0.25f, 0f));
-        e.Parameters["Projection"]?.SetValue(Matrix.Identity);
-        e.Parameters["Color"]?.SetValue(new Vector4(0.2f, 0.7f, 0.9f, 1f));
+        Set("World", p => p.SetValue(Matrix.CreateScale(0.5f)));
+        Set("View", p => p.SetValue(Matrix.CreateTranslation(0.25f, 0.25f, 0f)));
+        Set("Projection", p => p.SetValue(Matrix.Identity));
+        Set("Color", p => p.SetValue(new Vector4(0.2f, 0.7f, 0.9f, 1f)));
         // FnaMultiPassStates: the cat through TexSampler (Tint set above).
-        e.Parameters["SceneTexture"]?.SetValue(cat);
-        e.Parameters["probeA"]?.SetValue(0.25f);                  // FnaPreshaderProbe
-        e.Parameters["probeB"]?.SetValue(0.5f);                   // FnaPreshaderProbe
+        Set("SceneTexture", p => p.SetValue(cat));
+
+        // ---- diagnostic probes ----
+        Set("probeA", p => p.SetValue(0.25f));                    // FnaPreshaderProbe
+        Set("probeB", p => p.SetValue(0.5f));                     // FnaPreshaderProbe
+
+        // ---- matrix golden (Phase 40 calibration row) ----
+        // Exact-dyadic, NON-symmetric (translation row) — a row/column-major mishandling
+        // shifts the gradient; identical SetValue in both arms overrides fxc's baked
+        // default vs our baked zeros (the documented F2 difference must not be what the
+        // render comparison exercises).
+        Set("M", p => p.SetValue(Matrix.CreateTranslation(0.5f, 0.25f, 0f)));
+
+        return hits;
+    }
+
+    /// <summary>
+    /// The deterministic "second texture": spatially varying in every channel INCLUDING
+    /// alpha, and visibly distinct from the cat. Procedural (no asset, no randomness) so
+    /// both arms and every run see identical bytes. The red-channel gradient gives
+    /// Dissolve a spatially-varying kill region; the alpha band exercises mask/clip paths.
+    /// </summary>
+    public static Texture2D CreateMaskTexture(GraphicsDevice gd, int width = 256, int height = 256)
+    {
+        var data = new Color[width * height];
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                float u = x / (float)(width - 1);
+                float v = y / (float)(height - 1);
+                byte r = (byte)(u * 255f);
+                byte g = (byte)(v * 255f);
+                byte b = (byte)((x * 7 + y * 13) % 256);
+                byte a = (byte)(128 + (x * 3 + y * 5) % 128); // 128..255, varies per pixel
+                data[y * width + x] = new Color(r, g, b, a);
+            }
+        }
+
+        var texture = new Texture2D(gd, width, height, false, SurfaceFormat.Color);
+        texture.SetData(data);
+        return texture;
     }
 
     /// <summary>Walk up from the executing assembly to the repo root (has ShadowDusk.slnx).</summary>

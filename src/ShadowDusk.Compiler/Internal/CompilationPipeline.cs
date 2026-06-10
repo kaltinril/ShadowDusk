@@ -537,7 +537,7 @@ internal sealed class CompilationPipeline
                     var compiled = await CompileFnaStageAsync(
                         fnaCompiler, vsSource, preprocessed.OriginalFilePath,
                         pass.VertexEntryPoint, pass.VertexProfile, ShaderStage.Vertex,
-                        options.Debug, cancellationToken).ConfigureAwait(false);
+                        cancellationToken).ConfigureAwait(false);
                     if (compiled.IsFailure)
                         return Fail(compiled.Error);
 
@@ -552,7 +552,7 @@ internal sealed class CompilationPipeline
                     var compiled = await CompileFnaStageAsync(
                         fnaCompiler, psSource, preprocessed.OriginalFilePath,
                         pass.PixelEntryPoint, pass.PixelProfile, ShaderStage.Pixel,
-                        options.Debug, cancellationToken).ConfigureAwait(false);
+                        cancellationToken).ConfigureAwait(false);
                     if (compiled.IsFailure)
                         return Fail(compiled.Error);
 
@@ -602,7 +602,6 @@ internal sealed class CompilationPipeline
             string entryPoint,
             string? declaredProfile,
             ShaderStage stage,
-            bool debug,
             CancellationToken ct)
     {
         Result<string, ShaderError> profileResult =
@@ -616,7 +615,10 @@ internal sealed class CompilationPipeline
             SourceFileName  = sourceFileName,
             EntryPoint      = entryPoint,
             Stage           = stage,
-            EmbedDebugInfo  = debug,
+            // CompilerOptions.Debug is a deliberate no-op on the FNA path: vkd3d's d3dbc
+            // target has no debug-info knob we pass, and fxc debug-style codegen trips
+            // MojoShader strictness — Debug must never produce a .fxb MojoShader rejects.
+            EmbedDebugInfo  = false,
             AllowWarnings   = false,
             ProfileOverride = profileResult.Value,
         };
@@ -644,13 +646,19 @@ internal sealed class CompilationPipeline
     }
 
     /// <summary>
-    /// FNA profile policy: a literal SM ≤ 3 profile in the pass's compile statement is
-    /// honored as written (fxc fidelity); a literal SM4+ profile fails loudly (MojoShader's
-    /// hard ceiling is vs_3_0/ps_3_0); anything else — no profile, or an unexpanded macro
-    /// name like <c>PS_SHADERMODEL</c> (the pre-parser runs before macro expansion) —
-    /// defaults to the SM3 ceiling for the stage.
+    /// FNA profile policy: a literal SM 2–3 profile in the pass's compile statement is
+    /// honored as written (fxc fidelity), provided its vs_/ps_ prefix matches the stage
+    /// it compiles; a literal SM4+ profile fails loudly (MojoShader's hard ceiling is
+    /// vs_3_0/ps_3_0); a literal SM1 profile fails loudly too (vkd3d 1.17's ps_1_x
+    /// backend has known instruction gaps and MojoShader's ps_1_x rules differ wholesale
+    /// from SM2+ — never validated here, so refuse rather than risk silently-wrong
+    /// output); anything else — no profile, or an unexpanded macro name like
+    /// <c>PS_SHADERMODEL</c> (the pre-parser runs before macro expansion, and our
+    /// preprocessor does not evaluate conditionals, so the macro's value is unknowable
+    /// here) — defaults to the SM3 ceiling for the stage. Write a literal profile
+    /// (<c>compile ps_2_0 …</c>) to pin codegen to a specific fxc baseline.
     /// </summary>
-    private static Result<string, ShaderError> ResolveFnaProfile(
+    internal static Result<string, ShaderError> ResolveFnaProfile(
         string? declaredProfile, ShaderStage stage, string sourceFileName)
     {
         string fallback = stage == ShaderStage.Vertex ? "vs_3_0" : "ps_3_0";
@@ -668,7 +676,23 @@ internal sealed class CompilationPipeline
         if (!looksLikeProfile)
             return Result<string, ShaderError>.Ok(fallback);
 
-        if (declaredProfile![3] > '3')
+        // Cross-stage misuse: `VertexShader = compile ps_3_0 …` would compile a pixel
+        // shader and bind it as the pass's vertex shader. fxc rejects this at compile
+        // time; shipping it would break only inside the consumer's FNA at load/draw.
+        bool isVertexProfile = declaredProfile!.StartsWith("vs_", StringComparison.Ordinal);
+        if (isVertexProfile != (stage == ShaderStage.Vertex))
+        {
+            string want = stage == ShaderStage.Vertex ? "vs_2_0/vs_3_0" : "ps_2_0/ps_3_0";
+            return Result<string, ShaderError>.Fail(new ShaderError(
+                File: sourceFileName,
+                Line: 0,
+                Column: 0,
+                Code: "SD0300",
+                Message: $"Pass compiles its {stage} shader with profile '{declaredProfile}' — " +
+                         $"the profile's stage prefix must match the shader it compiles (use {want})"));
+        }
+
+        if (declaredProfile[3] > '3')
         {
             return Result<string, ShaderError>.Fail(new ShaderError(
                 File: sourceFileName,
@@ -676,11 +700,25 @@ internal sealed class CompilationPipeline
                 Column: 0,
                 Code: "SD0300",
                 Message: $"Pass compiles with profile '{declaredProfile}', but the FNA target " +
-                         "(MojoShader) supports Shader Model 1–3 only — use vs_2_0/vs_3_0 or " +
+                         "(MojoShader) supports Shader Model 2–3 only — use vs_2_0/vs_3_0 or " +
                          "ps_2_0/ps_3_0 in the technique's compile statements"));
         }
 
-        // Literal SM ≤ 3 profile: honored as written (fxc fidelity). An unusual-but-shaped
+        if (declaredProfile[3] < '2')
+        {
+            return Result<string, ShaderError>.Fail(new ShaderError(
+                File: sourceFileName,
+                Line: 0,
+                Column: 0,
+                Code: "SD0300",
+                Message: $"Pass compiles with profile '{declaredProfile}', but the FNA target " +
+                         "supports Shader Model 2–3 here: vkd3d 1.17's SM1 backend has known " +
+                         "instruction gaps and the SM1 output path has never been validated " +
+                         "against real FNA — use vs_2_0/ps_2_0 (FNA's own guidance: ps_2_0 is " +
+                         "the safest profile) or vs_3_0/ps_3_0"));
+        }
+
+        // Literal SM 2–3 profile: honored as written (fxc fidelity). An unusual-but-shaped
         // token (e.g. ps_3_9) passes through and vkd3d rejects it with its own diagnostic.
         return Result<string, ShaderError>.Ok(declaredProfile);
     }

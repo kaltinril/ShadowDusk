@@ -26,6 +26,23 @@ public sealed class D3DCompilerShaderCompiler : IDxbcShaderCompiler
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        // ProfileOverride is the vkd3d backend's SM1–3 (FNA) hook. This oracle never
+        // serves that path — honoring it here would let output silently depend on which
+        // backend a host picked. Refuse loudly, and BEFORE the Windows guard: the refusal
+        // is platform-independent policy, and checking it first makes it unit-testable on
+        // every OS.
+        if (request.ProfileOverride is not null)
+        {
+            return Task.FromResult(Result<PlatformBlob, ShaderError>.Fail(new ShaderError(
+                File:    request.SourceFileName,
+                Line:    0,
+                Column:  0,
+                Code:    "SD0210",
+                Message: $"The d3dcompiler_47 oracle backend does not support ProfileOverride " +
+                         $"('{request.ProfileOverride}') — SM1–3 compiles route through the " +
+                         "vkd3d-shader backend")));
+        }
+
         if (!OperatingSystem.IsWindows())
         {
             return Task.FromResult(Result<PlatformBlob, ShaderError>.Fail(new ShaderError(
@@ -45,21 +62,6 @@ public sealed class D3DCompilerShaderCompiler : IDxbcShaderCompiler
         // guard on this call path; CompileAsync already returns early off-Windows.
         if (!OperatingSystem.IsWindows())
             throw new PlatformNotSupportedException("DXBC oracle backend requires Windows");
-
-        // ProfileOverride is the vkd3d backend's SM1–3 (FNA) hook. This oracle never
-        // serves that path — honoring it here would let output silently depend on which
-        // backend a host picked. Refuse loudly instead of ignoring it.
-        if (request.ProfileOverride is not null)
-        {
-            return Result<PlatformBlob, ShaderError>.Fail(new ShaderError(
-                File:    request.SourceFileName,
-                Line:    0,
-                Column:  0,
-                Code:    "SD0210",
-                Message: $"The d3dcompiler_47 oracle backend does not support ProfileOverride " +
-                         $"('{request.ProfileOverride}') — SM1–3 compiles route through the " +
-                         "vkd3d-shader backend"));
-        }
 
         string profile = request.Stage switch
         {

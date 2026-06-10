@@ -64,7 +64,7 @@ foreach (FnaShaderInputs.CorpusShader shader in FnaShaderInputs.Corpus)
     string fx = Path.Combine(repoRoot, shader.RelativePath);
     if (!File.Exists(fx))
     {
-        cases.Add(new ShaderCase(shader.Name, shader.Gate, null, $".fx not found: {fx}", null, $".fx not found: {fx}", null, shader.Scene));
+        cases.Add(new ShaderCase(shader.Name, shader.Gate, null, $".fx not found: {fx}", null, $".fx not found: {fx}", null, shader.Scene, shader.Technique));
         continue;
     }
 
@@ -80,7 +80,7 @@ foreach (FnaShaderInputs.CorpusShader shader in FnaShaderInputs.Corpus)
         cases.Add(new ShaderCase(shader.Name, shader.Gate,
             null, $"macro-parity-unsafe: {parity}",
             null, $"macro-parity-unsafe: {parity}",
-            parity, shader.Scene));
+            parity, shader.Scene, shader.Technique));
         continue;
     }
 
@@ -102,7 +102,10 @@ foreach (FnaShaderInputs.CorpusShader shader in FnaShaderInputs.Corpus)
     // effect misfiled under the Sprite scene runs its own VS against SpriteBatch's
     // pixel-space vertices — degenerate in BOTH arms, i.e. a vacuous PASS. Tie each
     // row's scene flag to what the compiled candidate binary actually embeds.
-    if (candBytes is not null)
+    // Technique-selector rows are exempt: the whole-binary scan cannot see which
+    // technique binds the VS — their scene is chosen per the SELECTED technique and
+    // documented at the row.
+    if (candBytes is not null && shader.Technique is null)
     {
         bool hasVs = ContainsVertexShaderStream(candBytes);
         bool expectsVs = shader.Scene == FnaScene.VsQuad;
@@ -118,7 +121,7 @@ foreach (FnaShaderInputs.CorpusShader shader in FnaShaderInputs.Corpus)
     ReferenceFx2Compiler.ReferenceResult reference = ReferenceFx2Compiler.Compile(fx, src);
 
     cases.Add(new ShaderCase(shader.Name, shader.Gate,
-        reference.Bytes, reference.Error, candBytes, candError, null, shader.Scene));
+        reference.Bytes, reference.Error, candBytes, candError, null, shader.Scene, shader.Technique));
 
     // Persist both arms' .fxb for offline inspection.
     string fxbDir = Path.Combine(outRoot, "fxb");
@@ -322,6 +325,23 @@ foreach (CaseOutcome o in outcomes)
 }
 
 Console.WriteLine(new string('-', 110));
+
+// Parameter-presence asymmetry notes: a name SetParams hit on one arm but not the
+// other means the two effects expose different parameter tables. The candidate's
+// table is CTAB-driven (optimized-out globals are absent — documented), so an
+// asymmetry can be benign; but it is also exactly how a LOST binding (e.g. the
+// brace-form sampler bug) announces itself — always surface it, never hide it.
+foreach (CaseOutcome o in outcomes)
+{
+    if (o.Reference.ParamsSet is null || o.Candidate.ParamsSet is null)
+        continue;
+    var refOnly = o.Reference.ParamsSet.Except(o.Candidate.ParamsSet).ToList();
+    var candOnly = o.Candidate.ParamsSet.Except(o.Reference.ParamsSet).ToList();
+    if (refOnly.Count > 0 || candOnly.Count > 0)
+        Console.WriteLine($"[fna] note: {o.Name}: parameter set asymmetry — " +
+                          $"ref-only [{string.Join(", ", refOnly)}] cand-only [{string.Join(", ", candOnly)}] " +
+                          "(verify this is the documented optimized-out case, not a lost binding)");
+}
 
 // Non-vacuousness invariant (Appendix G): FnaMultiPassStates' candidate image must
 // show pass 1 THROUGH pass 2 (cat-texture variance under the half-green overlay).

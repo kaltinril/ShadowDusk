@@ -336,6 +336,64 @@ public sealed class Fx2EffectWriterTests
         pass.States.Should().ContainSingle(s => s.Operation == 147);
     }
 
+    [Fact]
+    public void Write_ShaderTaggedVertexButPixelTokenStream_Fails()
+    {
+        // Choke-point stage check: a producer that compiles a pass's VertexShader with
+        // a ps_* profile tags the blob Vertex while its version token says pixel — fxc
+        // rejects this at compile time; shipping it breaks inside FNA at load/draw.
+        var desc = new Fx2EffectDesc
+        {
+            Parameters = [],
+            Techniques =
+            [
+                new Fx2Technique("T", [new Fx2Pass("P", VertexShaderIndex: 0, PixelShaderIndex: -1, [])]),
+            ],
+            Shaders =
+            [
+                new Fx2Shader(ShaderStage.Vertex, Fx2SyntheticShaders.Ps20()),
+            ],
+        };
+
+        ShaderError error = WriteFails(desc);
+
+        error.Message.Should().Contain("version token",
+            because: "the diagnostic must say the blob's actual kind contradicts its stage tag");
+    }
+
+    [Fact]
+    public void Write_Float4x4Parameter_RoundTripsThroughValidator()
+    {
+        // Square matrices are the one numeric shape with the typedef dword5=columns /
+        // dword6=rows quirk (docs/fx2-binary-format.md §7) — round-trip it through the
+        // independent validator so the on-disk encoding is pinned, not just accepted.
+        var desc = new Fx2EffectDesc
+        {
+            Parameters =
+            [
+                new Fx2Parameter { Name = "m", Class = 2, Type = 3, Rows = 4, Columns = 4 },
+            ],
+            Techniques =
+            [
+                new Fx2Technique("T", [new Fx2Pass("P", VertexShaderIndex: -1, PixelShaderIndex: 0, [])]),
+            ],
+            Shaders =
+            [
+                new Fx2Shader(ShaderStage.Pixel, Fx2SyntheticShaders.Ps20(Fx2SyntheticShaders.Float4x4("m", 0))),
+            ],
+        };
+
+        var effect = Fx2BinaryValidator.Parse(WriteOk(desc));
+
+        var p = effect.Parameters.Should().ContainSingle().Subject;
+        p.Name.Should().Be("m");
+        p.Class.Should().Be(2, because: "MATRIX_ROWS class must survive the round trip");
+        p.Type.Should().Be(3);
+        p.Rows.Should().Be(4, because: "the validator reads rows from typedef dword6 (the MojoShader order)");
+        p.Columns.Should().Be(4, because: "the validator reads columns from typedef dword5");
+        effect.Shaders.Should().ContainSingle().Which.CtabConstantNames.Should().Equal("m");
+    }
+
     // -------------------------------------------------------------------------
     // Render-state value encoding round-trip
     // -------------------------------------------------------------------------

@@ -29,11 +29,16 @@ public sealed record ShaderCase(
     byte[]? ReferenceBytes, string? ReferenceCompileError,
     byte[]? CandidateBytes, string? CandidateCompileError,
     string? ParityNote,
-    FnaScene Scene = FnaScene.Sprite);
+    FnaScene Scene = FnaScene.Sprite,
+    string? Technique = null);
 
-/// <summary>What happened to one arm of one shader inside real FNA.</summary>
+/// <summary>What happened to one arm of one shader inside real FNA.
+/// <see cref="ParamsSet"/> = the parameter names SetParams actually hit on this arm —
+/// a name hit on one arm but absent on the other is a fidelity signal the harness
+/// reports (it can be the documented optimized-out-globals case, or a lost binding).</summary>
 public sealed record ArmOutcome(
-    bool Loaded, bool Rendered, string? Error, Color[]? Pixels, string? PngPath);
+    bool Loaded, bool Rendered, string? Error, Color[]? Pixels, string? PngPath,
+    IReadOnlyList<string>? ParamsSet = null);
 
 /// <summary>Both arms' outcomes for one shader.</summary>
 public sealed record CaseOutcome(string Name, bool Gate, ArmOutcome Reference, ArmOutcome Candidate);
@@ -71,11 +76,12 @@ public sealed class FnaEffectImageRenderer : Game
     private readonly string _refOutDir;
     private readonly string _candOutDir;
     private readonly IReadOnlyList<ShaderCase> _cases;
-    private readonly Action<Effect, Texture2D> _setParams;
+    private readonly Func<Effect, Texture2D, Texture2D, IReadOnlyList<string>> _setParams;
     private readonly List<string> _fna3dErrors;
 
     private SpriteBatch _sb = null!;
     private Texture2D _cat = null!;
+    private Texture2D _mask = null!;
     private bool _done;
 
     // Vertex with POSITION0 / COLOR0 / TEXCOORD0 — the SpriteBatch-compatible set, a
@@ -105,7 +111,8 @@ public sealed class FnaEffectImageRenderer : Game
 
     public FnaEffectImageRenderer(
         string catPath, string refOutDir, string candOutDir,
-        IReadOnlyList<ShaderCase> cases, Action<Effect, Texture2D> setParams,
+        IReadOnlyList<ShaderCase> cases,
+        Func<Effect, Texture2D, Texture2D, IReadOnlyList<string>> setParams,
         List<string> fna3dErrorSink)
     {
         _catPath = catPath;
@@ -129,6 +136,7 @@ public sealed class FnaEffectImageRenderer : Game
         _sb = new SpriteBatch(GraphicsDevice);
         using var fs = File.OpenRead(_catPath);
         _cat = Texture2D.FromStream(GraphicsDevice, fs);
+        _mask = FnaShaderInputs.CreateMaskTexture(GraphicsDevice);
         Directory.CreateDirectory(_refOutDir);
         Directory.CreateDirectory(_candOutDir);
     }
@@ -144,8 +152,8 @@ public sealed class FnaEffectImageRenderer : Game
         GraphicsDevice.Clear(Color.Black);
         foreach (ShaderCase c in _cases)
         {
-            ArmOutcome reference = RunArm(c.Name, c.Scene, c.ReferenceBytes, c.ReferenceCompileError, _refOutDir);
-            ArmOutcome candidate = RunArm(c.Name, c.Scene, c.CandidateBytes, c.CandidateCompileError, _candOutDir);
+            ArmOutcome reference = RunArm(c.Name, c.Scene, c.Technique, c.ReferenceBytes, c.ReferenceCompileError, _refOutDir);
+            ArmOutcome candidate = RunArm(c.Name, c.Scene, c.Technique, c.CandidateBytes, c.CandidateCompileError, _candOutDir);
             Outcomes.Add(new CaseOutcome(c.Name, c.Gate, reference, candidate));
         }
 
@@ -153,7 +161,7 @@ public sealed class FnaEffectImageRenderer : Game
         Exit();
     }
 
-    private ArmOutcome RunArm(string name, FnaScene scene, byte[]? bytes, string? compileError, string outDir)
+    private ArmOutcome RunArm(string name, FnaScene scene, string? technique, byte[]? bytes, string? compileError, string outDir)
     {
         if (bytes is null)
             return new ArmOutcome(false, false, $"compile failed: {compileError}", null, null);
@@ -182,6 +190,20 @@ public sealed class FnaEffectImageRenderer : Game
             return new ArmOutcome(false, false, $"MojoShader errors on load: {mojo}", null, null);
         }
 
+        // Technique-selector rows exercise FNA's technique-by-name lookup (otherwise
+        // only CurrentTechnique — the first technique — is ever rendered).
+        if (technique is not null)
+        {
+            EffectTechnique? selected = effect.Techniques[technique];
+            if (selected is null)
+            {
+                effect.Dispose();
+                return new ArmOutcome(false, false,
+                    $"technique '{technique}' not found by name in the loaded effect", null, null);
+            }
+            effect.CurrentTechnique = selected;
+        }
+
         int w = _cat.Width, h = _cat.Height;
         using var rt = new RenderTarget2D(GraphicsDevice, w, h, false,
             SurfaceFormat.Color, DepthFormat.None);
@@ -194,9 +216,16 @@ public sealed class FnaEffectImageRenderer : Game
             // remaining SetValue calls silently renders the arm with default (zero)
             // values, which fabricates a divergence (or hides a real one).
             string? paramError = null;
+            IReadOnlyList<string>? paramsSet = null;
 
             if (scene == FnaScene.Sprite)
             {
+                // Clear stale texture bindings from the previous arm/row (slot 0 is
+                // rebound by SpriteBatch.Draw below; slot 1 — second textures — would
+                // otherwise leak across arms and could mask a lost candidate binding).
+                GraphicsDevice.Textures[0] = null;
+                GraphicsDevice.Textures[1] = null;
+
                 var dest = new Rectangle(0, 0, w, h);
 
                 // Prime SpriteBatch's sprite vertex shader (pixel-only effects need a VS).
@@ -205,7 +234,7 @@ public sealed class FnaEffectImageRenderer : Game
                 _sb.Draw(_cat, dest, Color.White);
                 _sb.End();
 
-                try { _setParams(effect, _cat); }
+                try { paramsSet = _setParams(effect, _cat, _mask); }
                 catch (Exception ex) { paramError = $"SetParams threw: {ex.GetType().Name}: {ex.Message}"; }
 
                 _sb.Begin(SpriteSortMode.Immediate, BlendState.Opaque, SamplerState.LinearClamp,
@@ -238,7 +267,7 @@ public sealed class FnaEffectImageRenderer : Game
                 GraphicsDevice.Textures[0] = null;
                 GraphicsDevice.Textures[1] = null;
 
-                try { _setParams(effect, _cat); }
+                try { paramsSet = _setParams(effect, _cat, _mask); }
                 catch (Exception ex) { paramError = $"SetParams threw: {ex.GetType().Name}: {ex.Message}"; }
 
                 // TexCoord (0,0) top-left .. (1,1) bottom-right; indices wound so the
@@ -283,7 +312,7 @@ public sealed class FnaEffectImageRenderer : Game
                 (true, null) => $"FNA3D errors during render: {string.Join(" | ", _fna3dErrors)}",
                 (false, _) => paramError,
             };
-            return new ArmOutcome(true, renderErrors is null, renderErrors, pixels, png);
+            return new ArmOutcome(true, renderErrors is null, renderErrors, pixels, png, paramsSet);
         }
         catch (Exception ex)
         {
