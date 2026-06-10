@@ -9,12 +9,27 @@ using Microsoft.Xna.Framework.Graphics;
 
 namespace ShadowDusk.Validation.Fna;
 
+/// <summary>How a corpus shader is rendered at rung 4.</summary>
+public enum FnaScene
+{
+    /// <summary>PS-only effect: rides SpriteBatch's own vertex shader (the Phase 17/18 scene).</summary>
+    Sprite,
+
+    /// <summary>
+    /// VS-driven effect: the effect ships its OWN vertex shader, which SpriteBatch can
+    /// never exercise — drawn as a custom-geometry clip-space quad instead (the Phase-28
+    /// analog, mirroring <c>validation/SharedDx/VsDxEffectImageRenderer.cs</c>).
+    /// </summary>
+    VsQuad,
+}
+
 /// <summary>One shader to validate: both arms' fx_2_0 bytes (or their compile errors).</summary>
 public sealed record ShaderCase(
     string Name, bool Gate,
     byte[]? ReferenceBytes, string? ReferenceCompileError,
     byte[]? CandidateBytes, string? CandidateCompileError,
-    string? ParityNote);
+    string? ParityNote,
+    FnaScene Scene = FnaScene.Sprite);
 
 /// <summary>What happened to one arm of one shader inside real FNA.</summary>
 public sealed record ArmOutcome(
@@ -30,12 +45,18 @@ public sealed record CaseOutcome(string Name, bool Gate, ArmOutcome Reference, A
 ///
 /// For each case it loads each arm's fx_2_0 bytes into a REAL FNA
 /// <see cref="Effect"/> (rung 3: FNA3D hands the bytes to MojoShader — a parse/translate
-/// failure surfaces here), renders the cat through the effect via the normal
-/// <see cref="SpriteBatch"/> path (rung 4), reads the pixels back, and saves a PNG.
-/// The scene mirrors DxEffectImageRenderer exactly: prime SpriteBatch's own sprite
-/// vertex shader, then Immediate-mode draw with the effect (PS-only passes ride
-/// SpriteBatch's VS — ShadowDusk omits the VertexShader state for absent stages, so
-/// MojoShader keeps SpriteBatch's VS bound; that is by design and matches fxc output).
+/// failure surfaces here), renders through the effect (rung 4), reads the pixels back,
+/// and saves a PNG. Two scenes, selected per case by <see cref="FnaScene"/>:
+/// <list type="bullet">
+/// <item><see cref="FnaScene.Sprite"/> mirrors DxEffectImageRenderer exactly: prime
+/// SpriteBatch's own sprite vertex shader, then Immediate-mode draw the cat with the
+/// effect (PS-only passes ride SpriteBatch's VS — ShadowDusk omits the VertexShader
+/// state for absent stages, so MojoShader keeps SpriteBatch's VS bound; that is by
+/// design and matches fxc output).</item>
+/// <item><see cref="FnaScene.VsQuad"/> mirrors VsDxEffectImageRenderer (Phase 28): a
+/// custom-geometry clip-space quad via <c>DrawUserIndexedPrimitives</c>, so the
+/// effect's OWN vertex shader runs.</item>
+/// </list>
 ///
 /// MojoShader parse errors do NOT throw in FNA3D — they are logged via FNA3D_LogError
 /// and the broken effect then throws in FNA's managed Effect ctor — so the harness
@@ -56,6 +77,29 @@ public sealed class FnaEffectImageRenderer : Game
     private SpriteBatch _sb = null!;
     private Texture2D _cat = null!;
     private bool _done;
+
+    // Vertex with POSITION0 / COLOR0 / TEXCOORD0 — the SpriteBatch-compatible set, a
+    // SUPERSET of every VS-driven corpus shader's input semantics (FNA enforces strict
+    // VS-input ⊆ vertex-declaration matching; extra declared elements are fine).
+    // Mirrors validation/SharedDx/VsDxEffectImageRenderer.VsVertex byte for byte.
+    private readonly struct VsVertex : IVertexType
+    {
+        public readonly Vector3 Position;
+        public readonly Color Color;
+        public readonly Vector2 TexCoord;
+
+        public VsVertex(Vector3 position, Color color, Vector2 texCoord)
+        {
+            Position = position; Color = color; TexCoord = texCoord;
+        }
+
+        public static readonly VertexDeclaration Declaration = new(
+            new VertexElement(0, VertexElementFormat.Vector3, VertexElementUsage.Position, 0),
+            new VertexElement(12, VertexElementFormat.Color, VertexElementUsage.Color, 0),
+            new VertexElement(16, VertexElementFormat.Vector2, VertexElementUsage.TextureCoordinate, 0));
+
+        VertexDeclaration IVertexType.VertexDeclaration => Declaration;
+    }
 
     public List<CaseOutcome> Outcomes { get; } = new();
 
@@ -100,8 +144,8 @@ public sealed class FnaEffectImageRenderer : Game
         GraphicsDevice.Clear(Color.Black);
         foreach (ShaderCase c in _cases)
         {
-            ArmOutcome reference = RunArm(c.Name, c.ReferenceBytes, c.ReferenceCompileError, _refOutDir);
-            ArmOutcome candidate = RunArm(c.Name, c.CandidateBytes, c.CandidateCompileError, _candOutDir);
+            ArmOutcome reference = RunArm(c.Name, c.Scene, c.ReferenceBytes, c.ReferenceCompileError, _refOutDir);
+            ArmOutcome candidate = RunArm(c.Name, c.Scene, c.CandidateBytes, c.CandidateCompileError, _candOutDir);
             Outcomes.Add(new CaseOutcome(c.Name, c.Gate, reference, candidate));
         }
 
@@ -109,7 +153,7 @@ public sealed class FnaEffectImageRenderer : Game
         Exit();
     }
 
-    private ArmOutcome RunArm(string name, byte[]? bytes, string? compileError, string outDir)
+    private ArmOutcome RunArm(string name, FnaScene scene, byte[]? bytes, string? compileError, string outDir)
     {
         if (bytes is null)
             return new ArmOutcome(false, false, $"compile failed: {compileError}", null, null);
@@ -143,27 +187,77 @@ public sealed class FnaEffectImageRenderer : Game
             SurfaceFormat.Color, DepthFormat.None);
         try
         {
-            var dest = new Rectangle(0, 0, w, h);
             GraphicsDevice.SetRenderTarget(rt);
             GraphicsDevice.Clear(Color.Transparent);
-
-            // Prime SpriteBatch's sprite vertex shader (pixel-only effects need a VS).
-            _sb.Begin(SpriteSortMode.Deferred, BlendState.Opaque, SamplerState.LinearClamp,
-                DepthStencilState.None, RasterizerState.CullNone);
-            _sb.Draw(_cat, dest, Color.White);
-            _sb.End();
 
             // A parameter-set failure must be VISIBLE, never swallowed: skipping the
             // remaining SetValue calls silently renders the arm with default (zero)
             // values, which fabricates a divergence (or hides a real one).
             string? paramError = null;
-            try { _setParams(effect, _cat); }
-            catch (Exception ex) { paramError = $"SetParams threw: {ex.GetType().Name}: {ex.Message}"; }
 
-            _sb.Begin(SpriteSortMode.Immediate, BlendState.Opaque, SamplerState.LinearClamp,
-                DepthStencilState.None, RasterizerState.CullNone, effect);
-            _sb.Draw(_cat, dest, Color.White);
-            _sb.End();
+            if (scene == FnaScene.Sprite)
+            {
+                var dest = new Rectangle(0, 0, w, h);
+
+                // Prime SpriteBatch's sprite vertex shader (pixel-only effects need a VS).
+                _sb.Begin(SpriteSortMode.Deferred, BlendState.Opaque, SamplerState.LinearClamp,
+                    DepthStencilState.None, RasterizerState.CullNone);
+                _sb.Draw(_cat, dest, Color.White);
+                _sb.End();
+
+                try { _setParams(effect, _cat); }
+                catch (Exception ex) { paramError = $"SetParams threw: {ex.GetType().Name}: {ex.Message}"; }
+
+                _sb.Begin(SpriteSortMode.Immediate, BlendState.Opaque, SamplerState.LinearClamp,
+                    DepthStencilState.None, RasterizerState.CullNone, effect);
+                _sb.Draw(_cat, dest, Color.White);
+                _sb.End();
+            }
+            else
+            {
+                // VS-driven effect: SpriteBatch supplies its own VS, so it can never
+                // exercise an effect that ships one — draw a full-screen clip-space quad
+                // through a custom vertex declaration instead, so the effect's OWN
+                // vertex shader runs (the Phase-28 analog). Device state is set
+                // explicitly (no SpriteBatch.Begin to do it); in-pass render states the
+                // effect carries are applied ON TOP by pass.Apply(), identically for
+                // both arms. No priming draw: a VS-driven effect needs no donor VS, and
+                // the transparent clear keeps discarded/uncovered regions distinct from
+                // any survivor color (the Appendix-G non-vacuousness lesson).
+                GraphicsDevice.BlendState = BlendState.Opaque;
+                GraphicsDevice.DepthStencilState = DepthStencilState.None;
+                GraphicsDevice.RasterizerState = RasterizerState.CullNone;
+                GraphicsDevice.SamplerStates[0] = SamplerState.LinearClamp;
+                GraphicsDevice.SamplerStates[1] = SamplerState.LinearClamp;
+
+                try { _setParams(effect, _cat); }
+                catch (Exception ex) { paramError = $"SetParams threw: {ex.GetType().Name}: {ex.Message}"; }
+
+                // TexCoord (0,0) top-left .. (1,1) bottom-right; indices wound so the
+                // two triangles cover the quad under CullNone. Identical vertices to
+                // validation/Shared{,Dx}/Vs*EffectImageRenderer.
+                var verts = new[]
+                {
+                    new VsVertex(new Vector3(-1f,  1f, 0f), Color.White, new Vector2(0f, 0f)), // TL
+                    new VsVertex(new Vector3( 1f,  1f, 0f), Color.White, new Vector2(1f, 0f)), // TR
+                    new VsVertex(new Vector3(-1f, -1f, 0f), Color.White, new Vector2(0f, 1f)), // BL
+                    new VsVertex(new Vector3( 1f, -1f, 0f), Color.White, new Vector2(1f, 1f)), // BR
+                };
+                var indices = new short[] { 0, 1, 2, 2, 1, 3 };
+
+                // Multi-pass technique = sequential full-quad draws, XNA semantics:
+                // a pass with no VertexShader state keeps the previous pass's VS bound,
+                // and in-pass render states persist until something overwrites them.
+                foreach (EffectPass pass in effect.CurrentTechnique.Passes)
+                {
+                    pass.Apply();
+                    GraphicsDevice.DrawUserIndexedPrimitives(
+                        PrimitiveType.TriangleList,
+                        verts, 0, verts.Length,
+                        indices, 0, 2,
+                        VsVertex.Declaration);
+                }
+            }
 
             GraphicsDevice.SetRenderTarget(null);
 

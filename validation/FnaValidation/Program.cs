@@ -1,8 +1,9 @@
 // FnaValidation = the Phase 39 rung-3/4 proof harness.
 //
 // For each corpus shader it compiles BOTH arms, loads BOTH into REAL FNA
-// (Effect -> FNA3D -> MojoShader; rung 3), renders BOTH over the cat image via the
-// normal SpriteBatch path (rung 4), and compares the pixels in-process:
+// (Effect -> FNA3D -> MojoShader; rung 3), renders BOTH (rung 4) — PS-only effects
+// over the cat image via the normal SpriteBatch path, VS-driven effects through the
+// custom-geometry quad scene (FnaScene.VsQuad) — and compares the pixels in-process:
 //
 //   Arm A (candidate): ShadowDusk in-memory, PlatformTarget.Fna
 //                      (vkd3d SM<=3 + Fx2EffectWriter — the SHIPPING pipeline).
@@ -15,7 +16,9 @@
 // Phase 18 cross-compiler (vkd3d-vs-mgfxc) comparison, because different compilers
 // legitimately produce tiny float divergence.
 //
-// Exit code 0 iff all 10 GATE shaders (the Phase 17 PS-only set) PASS.
+// Exit code 0 iff all 14 GATE shaders PASS: the Phase 17 PS-only set (10) plus the
+// VS-driven set (VsTransformColorTexture, PolygonLight, VertexAndPixel,
+// FnaMultiPassStates — the 17-VS analog).
 
 using System;
 using System.Collections.Generic;
@@ -61,7 +64,7 @@ foreach (FnaShaderInputs.CorpusShader shader in FnaShaderInputs.Corpus)
     string fx = Path.Combine(repoRoot, shader.RelativePath);
     if (!File.Exists(fx))
     {
-        cases.Add(new ShaderCase(shader.Name, shader.Gate, null, $".fx not found: {fx}", null, $".fx not found: {fx}", null));
+        cases.Add(new ShaderCase(shader.Name, shader.Gate, null, $".fx not found: {fx}", null, $".fx not found: {fx}", null, shader.Scene));
         continue;
     }
 
@@ -77,7 +80,7 @@ foreach (FnaShaderInputs.CorpusShader shader in FnaShaderInputs.Corpus)
         cases.Add(new ShaderCase(shader.Name, shader.Gate,
             null, $"macro-parity-unsafe: {parity}",
             null, $"macro-parity-unsafe: {parity}",
-            parity));
+            parity, shader.Scene));
         continue;
     }
 
@@ -99,7 +102,7 @@ foreach (FnaShaderInputs.CorpusShader shader in FnaShaderInputs.Corpus)
     ReferenceFx2Compiler.ReferenceResult reference = ReferenceFx2Compiler.Compile(fx, src);
 
     cases.Add(new ShaderCase(shader.Name, shader.Gate,
-        reference.Bytes, reference.Error, candBytes, candError, null));
+        reference.Bytes, reference.Error, candBytes, candError, null, shader.Scene));
 
     // Persist both arms' .fxb for offline inspection.
     string fxbDir = Path.Combine(outRoot, "fxb");
@@ -280,8 +283,8 @@ foreach (CaseOutcome o in outcomes)
 }
 
 Console.WriteLine(new string('-', 110));
-Console.WriteLine($"\n[fna] GATE: {gatePass}/{gateTotal} Phase-17 PS-only shaders PASS " +
-                  $"(both arms compile, load in real FNA, render, zero pixels over {Tolerance}/255).");
+Console.WriteLine($"\n[fna] GATE: {gatePass}/{gateTotal} shaders PASS (10 Phase-17 PS-only + 4 VS-driven; " +
+                  $"both arms compile, load in real FNA, render, zero pixels over {Tolerance}/255).");
 if (failures.Count > 0)
     Console.WriteLine($"[fna] non-PASS shaders: {string.Join(", ", failures)}");
 Console.WriteLine($"[fna] PNGs: {outRoot}");
