@@ -1,6 +1,30 @@
-# Phase 4.1 — Research Spike: WASM + DirectX DXBC
+# Phase 4.1 — Research Spike: WASM + DirectX DXBC (now: vkd3d → WASM)
 
-**Status:** Parked / far-future research spike. **Not on the near-term critical path** — it only matters for a KNI/browser game using the **DirectX** backend, whereas the browser story today is WebGL/OpenGL (Phases 22–24). Sequence it **after** the faithful OpenGL-in-WASM path (Phase 23) is done; it is the DXBC analogue of Phase 23's DXC→WASM build. **Owner decision pending** on whether browser-DirectX is a goal at all.
+**Status:** 🟡 **Un-parked (2026-06-09)** — elevated from far-future spike to the **keystone
+of the browser-export-station vision** (owner decision; the question this doc left pending
+is answered: yes, browser-DirectX *and browser-FNA* are goals — as **export targets**, not
+render backends). The what and why:
+
+- **Compile-target ≠ render-backend.** A `ShadowDusk.Wasm` website is intended to let
+  users upload `.fx` and download compiled artifacts for *any* supported consumer —
+  MonoGame GL (works today, byte-identical to desktop), MonoGame **DX11 DXBC**, and **FNA
+  fx_2_0 `.fxb`** (which did not exist when this spike was written — Phase 39 added it).
+  Host-appropriate default, explicit override.
+- **One artifact closes two cells.** Both missing browser targets ride vkd3d-shader; the
+  fx_2_0 writer, `D3d9BytecodePatcher`, and CTAB reflection are managed C# that already
+  run in WASM. Compiling vkd3d (same pinned 1.17 source) to WASM therefore unlocks DX
+  **and** FNA export at once, with no substitute compiler and desktop byte-identity as
+  the bar (the G1-gate pattern). `ShadowDusk.Wasm`'s `SD0304` "Fna unavailable on WASM"
+  guard then flips to supported.
+- **Sequencing:** after Phase 37 (artifact hosting + macOS natives — the desktop matrix
+  and release pipeline come first); reuse Phase 23's emscripten toolchain/recipes (the
+  DXC→WASM build was the harder precedent). Size expectation: single-digit MB compressed
+  (cf. dxcompiler.wasm 16.6 MB raw → the whole `ShadowDusk.Wasm` nupkg is 6.3 MB).
+- Strategy context: `docs/the-purpose.md` → *Compiler-leverage strategy* and the
+  host×target matrix; `plan/plan.md` → Key Decisions.
+
+Original spike framing follows (the candidate analysis below remains the work plan;
+Option A is the chosen direction).
 
 **Relationship to Phase 23:** Phase 23 builds the faithful **DXC→WASM** frontend for the **OpenGL** (SPIR-V) path. This spike asks the parallel question for **DirectX** — getting a faithful **DXBC** producer (vkd3d-shader) into WASM. Same emscripten-to-`[JSImport]` mechanism, different native library. Neither uses a substitute compiler.
 
