@@ -625,7 +625,15 @@ internal sealed class CompilationPipeline
         if (compileResult.IsFailure)
             return Result<(Fx2Shader, CtabTable), ShaderError>.Fail(compileResult.Error);
 
-        byte[] bytecode = compileResult.Value.Bytes.ToArray();
+        // Canonicalize the instruction forms MojoShader rejects but vkd3d emits
+        // (texkill partial writemask; texld src0 swizzle below SM3) — found by the
+        // rung-3/4 real-FNA harness. Semantics-preserving; no-op for clean blobs.
+        var patchResult = D3d9BytecodePatcher.PatchForMojoShader(
+            compileResult.Value.Bytes.ToArray(), sourceFileName);
+        if (patchResult.IsFailure)
+            return Result<(Fx2Shader, CtabTable), ShaderError>.Fail(patchResult.Error);
+
+        byte[] bytecode = patchResult.Value;
 
         var ctabResult = CtabReader.Read(bytecode, sourceFileName);
         if (ctabResult.IsFailure)

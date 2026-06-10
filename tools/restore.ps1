@@ -78,8 +78,14 @@ Build recipe (win-x64, vkd3d-shader 1.17, self-contained — zero non-system dep
         $WinVkd3d
      (Full recipe is in memory/Track-A report.)
 
-NOTE: This binary is NOT committed (.gitignore ignores tools/vkd3d/*.dll). Hosting
-per-RID artifacts (win-x64 / linux-x64 / osx-*) as a pinned download is a follow-up.
+linux-x64 recipe (verified on Ubuntu 24.04 under WSL, 2026-06-09 — Phase 39): see
+tools/restore.sh — produces tools/vkd3d/libvkd3d-shader.so.1 (libc/libm deps only).
+
+NOTE: These binaries are NOT committed (.gitignore ignores tools/vkd3d binaries).
+Restored per-RID binaries are BOTH copied to build output AND packed into the
+ShadowDusk.HLSL NuGet under runtimes/<rid>/native (ShadowDusk.HLSL.csproj) — the
+release pipeline must restore every shipping RID before 'dotnet pack'. Hosting
+per-RID artifacts as a pinned download is the remaining follow-up (Phase 37 C).
 "@
 }
 

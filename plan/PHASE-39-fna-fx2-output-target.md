@@ -1,6 +1,6 @@
 # Phase 39 — FNA support: compile `.fx` → D3D9 `fx_2_0` Effects bytecode (MojoShader-loadable)
 
-**Status:** 🚧 **Implemented through evidence rung 2 (2026-06-09)** — Option A is built and green: `PlatformTarget.Fna` compiles D3D9-style `.fx` → `.fxb` (`0xFEFF0901`) end-to-end via vkd3d `D3D_BYTECODE` + the new `Fx2EffectWriter`, structurally validated against MojoShader's parse rules and real `fxc /T fx_2_0` goldens. **Rungs 3–4 (real MojoShader parse harness; real FNA render) are NOT yet claimed — no public "FNA support" claims until rung 4.** See *Implementation record* below. Original research (2026-06-08) follows unchanged.
+**Status:** ✅ **DONE — all four evidence rungs proven (2026-06-09)** for the PS-only corpus: `PlatformTarget.Fna` compiles D3D9-style `.fx` → `.fxb` (`0xFEFF0901`) via vkd3d `D3D_BYTECODE` + the new `Fx2EffectWriter`, **loads in real FNA 26.06 and renders pixel-identical to `fxc /T fx_2_0` (rung-4 gate 10/10 + 12 extended corpus entries, max delta ≤ 1/255)**, and ships **self-contained in the NuGet for win-x64 + linux-x64 with cross-host byte-identical output**. Remaining scoped follow-ups: VS-driven FNA effects (the 17-VS analog), macOS vkd3d binaries, CI hosting of the per-RID artifacts (Phase 37 C). See *Implementation record* below. Original research (2026-06-08) follows unchanged.
 
 **Track:** Reach (Part 1 of THE PURPOSE) — a *new consumer runtime* (FNA), where FNA's only blessed compiler is the **Windows-only, deprecated `fxc.exe` run under Wine** — exactly the cross-platform gap ShadowDusk exists to close. Additive opt-in target (like Metal/Vulkan), never a change to existing OpenGL/DX11/`.mgfx` v10 output (per `backwards-compat-monogame-382-mgfx-v10`).
 
@@ -186,7 +186,7 @@ SM4+ → loud `SD0300`; macro/absent → default `vs_3_0`/`ps_3_0`.
 fx_2_0 writer validation · `SD0303` FNA effect build (struct globals, unsupported/FNA-throwing
 sampler states) · `SD0304` Fna on the WASM host.
 
-### Evidence ladder — claimed rungs (per `docs/the-purpose.md`, proxies ≠ bar)
+### Evidence ladder — ALL FOUR RUNGS PROVEN (2026-06-09; per `docs/the-purpose.md`)
 
 1. ✅ **Compiles**: SM3 corpus → `.fxb` via the real pipeline (vkd3d on every host; never the
    d3dcompiler oracle — output is host-independent by construction).
@@ -196,22 +196,66 @@ sampler states) · `SD0304` Fna on the WASM host.
    parses our output **and is calibrated against the real fxc goldens**; CTAB names ⊂
    parameter names, texture-before-sampler ordering, object wiring, padding all enforced.
    The writer itself also enforces the CTAB-name⊆parameters rule at write time.
-3. ⬜ **Real MojoShader parses + translates** — needs a native MojoShader test harness
-   (recommended next step; cheapest high-value gate).
-4. ⬜ **Real FNA renders pixel-equivalent to `fxc /T fx_2_0`** — needs a `validation/CandidateFna`
-   host (the Phase 17/18 analog). **Until rung 4: no README/docs/release-notes claim of FNA
-   support.**
+3. ✅ **Real MojoShader parses + translates** — `validation/FnaValidation` loads every corpus
+   `.fxb` through `new Effect(gd, bytes)` in **real FNA 26.06** (FNA3D → MojoShader
+   `abdc8036`, D3D11 backend): **22/22 load clean** (after the MojoShader-compat fixes below).
+4. ✅ **Real FNA renders pixel-equivalent to `fxc /T fx_2_0`** — the same harness compiles
+   each shader with BOTH arms (ShadowDusk vs the in-process `D3DCompile("fx_2_0")` oracle —
+   proven byte-identical to fxc.exe), renders both through the normal SpriteBatch path over
+   the Phase-17 cat scene with the Phase-17 parameter values, and pixel-compares:
+   **GATE 10/10 (the Phase 17 PS-only set) + the 12 extended corpus entries — every row
+   passes, max per-channel delta 0 except Dots (1/255)**. Run it:
+   `validation/FnaValidation/restore-fna.ps1` then `dotnet run -c Release`.
 
-### Honest scoping — packaging (pre-existing gap, now shared)
+**The Definition of done below is met for the PS-only corpus** — FNA support may now be
+stated publicly, scoped honestly (PS-only validated; VS-driven effects pending, the 17-VS
+analog).
 
-`libvkd3d-shader` is a **restored, win-x64-only, NOT-NuGet-packed** artifact
-(`ShadowDusk.HLSL.csproj` copies it to build output only; `release.yml` doesn't bundle it). The
-DirectX target masks this via the Windows d3dcompiler_47 default; **FNA has no fallback**, so
-from the published NuGet the Fna target fails with the clear `SD0211` restore message on every
-OS. This is the same Phase 18 follow-up (per-RID vkd3d builds + `runtimes/{rid}/native`
-packing), not a new gap — but for FNA it is **blocking for the library delivery shape**. Until
-it lands, FNA works from repo builds and self-contained CLI publishes only. Do not describe the
-FNA target as self-contained before then.
+### MojoShader-compat fixes the rung-3/4 harness forced (all in `D3d9BytecodePatcher`)
+
+Real-FNA validation surfaced three vkd3d-codegen-vs-MojoShader incompatibilities invisible
+to every proxy (fxc never emits these shapes, so MojoShader had never been exercised on them):
+
+1. **texkill partial writemask** (vkd3d emits `.x`/`.y`; MojoShader hard-requires `.xyzw`) —
+   fixed by routing through a fresh temp: `mov rK, reg.<replicated-masked-components>` +
+   `texkill rK.xyzw`. Semantics-preserving (blind mask-widening would test garbage lanes).
+2. **texld src0 swizzle below SM3** (MojoShader forbids pre-SM3) — same fresh-temp routing.
+3. **def literals ≥ 2³² print as ±0.0** — vkd3d's `discard` sentinel is −2³² (`0xCF800000`);
+   MojoShader's `MOJOSHADER_printFloat` converts magnitudes through a 32-bit `unsigned long`
+   (overflow on Windows LLP64), so the translated HLSL read `-0.0` and `texkill`'s `< 0`
+   test never fired (Dissolve rendered un-discarded). Fixed by clamping finite `def` floats
+   with |f| ≥ 2³² to the same-signed largest float below 2³² (`±0x4F7FFFFF`) — in-place,
+   sign (the sentinel's only observable property) preserved. Found by a probe-ladder
+   bisection (`validation/FnaValidation/FnaProbe*.fx` — cmp/bool-lerp/ifc all passed; clip
+   diverged) and confirmed against MojoShader's source (`mojoshader_common.c:974` printFloat;
+   the defect also affects its GLSL/Metal profiles, i.e. FNA's GL backend, identically).
+
+The harness's `FNALoggerEXT` hook captures exact MojoShader errors; fnalibs provenance: the
+old `fna.flibitijibibo.com/archive/fnalibs.tar.bz2` URL is dead — natives come from the
+`FNA-XNA/fnalibs-dailies` CI artifacts (see `validation/FnaValidation/restore-fna.ps1`).
+
+### Self-contained packaging — CLOSED for win-x64 + linux-x64 (2026-06-09)
+
+The former blocker ("vkd3d not NuGet-packed, win-x64 only") is resolved for the two primary
+RIDs; macOS remains pre-wired-but-pending:
+
+- **`ShadowDusk.HLSL.csproj` now packs each restored `tools/vkd3d` binary into the NuGet as
+  `runtimes/<rid>/native`** (win-x64 `libvkd3d-shader-1.dll`, linux-x64 `libvkd3d-shader.so.1`;
+  osx-x64/osx-arm64 entries are pre-wired and inert until binaries are restored). Packing is
+  restore-state-dependent by design — the release pipeline must restore every shipping RID
+  before `dotnet pack` (RELEASING.md; hosting the pinned artifacts for CI is still Phase 37 C).
+- **A linux-x64 vkd3d-shader 1.17 was built from the pinned release tarball** (Ubuntu 24.04
+  under WSL; runtime deps libc/libm only; recipe recorded in `tools/restore.{ps1,sh}` —
+  including the `make include/private/vkd3d_version.h` quirk the lib-only target misses).
+- **`Vkd3dLoader` gained a `NATIVE_DLL_SEARCH_DIRECTORIES` probe** — framework-dependent NuGet
+  consumers resolve natives from the package cache via deps.json search dirs, where neither
+  the base-directory probe nor bare-name probing (our file names don't match the logical
+  name's default probing) could find them.
+- **Proven end-to-end, both OSes**: a scratch consumer app OUTSIDE the repo, referencing only
+  the locally-packed `ShadowDusk.Compiler` from a local feed, framework-dependent, compiled an
+  FNA effect on **Windows** and on **Ubuntu (WSL)** — and the two outputs are
+  **SHA256-identical** (`9DCFEF04…C509`), proving both "add the package, call the API" and the
+  cross-host byte-identity promise for the FNA path. No Wine, no SDK, no tools/ directory.
 
 ### Known limitations (documented, all fail loudly or are additive)
 
@@ -276,13 +320,19 @@ one real bug plus hardening gaps — all fixed:
 
 ### Follow-ups
 
+- [x] ~~Rung 3 / Rung 4~~ — done via `validation/FnaValidation` (see Evidence ladder).
+- [x] ~~vkd3d per-RID NuGet packing~~ — done for win-x64 + linux-x64 (see Self-contained
+      packaging); **osx-x64/osx-arm64 binaries still needed** (csproj entries pre-wired).
+- [ ] **VS-driven FNA effects** rung-4 validation (the 17-VS analog; the writer/pipeline
+      already emit VS states — `FnaMultiPassStates.fx` exercises them at rungs 1–3).
+- [ ] In-pass render-state runtime verification in real FNA (the † set is honored per FNA
+      source; a state-bearing rung-4 scene would close it empirically).
+- [ ] Host the pinned per-RID vkd3d artifacts for CI/release restore (Phase 37 C — last gap
+      between "works from a dev machine pack" and "works from any CI release").
 - [ ] Surface vkd3d's `E5017`-class detail when its messages blob is empty (Constraint-5
       diagnostic fidelity; see Known limitations).
-- [ ] **Rung 3**: native MojoShader parse+translate harness over the corpus `.fxb`s.
-- [ ] **Rung 4**: `validation/CandidateFna` render-compare vs `fxc /T fx_2_0` (mirrors Phase 17/18);
-      includes verifying in-pass render states and the `Debug`-flag posture against MojoShader's
-      strictness notes.
-- [ ] vkd3d per-RID NuGet packing (shared with `DxbcBackend.Vkd3d`; blocking for library-shape FNA).
+- [ ] Consider upstreaming the MojoShader `printFloat` LLP64 fix (helps every MojoShader
+      consumer; our def-clamp keeps working regardless).
 - [ ] Option B watch: if upstream vkd3d lands a complete fx_2_0 writer, evaluate swapping the
       container step.
 
