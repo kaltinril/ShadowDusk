@@ -66,12 +66,17 @@ jobs:
       # MACOSX_DEPLOYMENT_TARGET=11.0: the macOS glibc-baseline analog (Phase 37 C
       # addendum caution). 11.0 = first arm64 macOS; .NET 8 itself needs 12+, so this
       # leaves headroom rather than inheriting the builder image's 14/15 default.
+      # SONAME_LIBVULKAN bypasses configure's hard requirement for an installed
+      # Vulkan loader (same trick as the win-x64 MSYS2 recipe): the soname is only
+      # dlopen'd at RUNTIME by libvkd3d proper, which we don't build or ship —
+      # libvkd3d-shader links no Vulkan at all (the otool gate proves it).
       - name: Configure + build libvkd3d-shader
         working-directory: vkd3d-1.17
         env:
           MACOSX_DEPLOYMENT_TARGET: '11.0'
         run: |
           ./configure CFLAGS='-O2' \
+            SONAME_LIBVULKAN=libvulkan.1.dylib \
             CPPFLAGS="-I$(brew --prefix vulkan-headers)/include -I$(brew --prefix spirv-headers)/include"
           make include/private/vkd3d_version.h   # lib-only target misses this dep
           make -j"$(sysctl -n hw.ncpu)" libvkd3d-shader.la
@@ -185,8 +190,10 @@ jobs:
           so=$(ls .libs/libvkd3d-shader.so.1.* | head -1)
           echo "== NEEDED =="
           objdump -p "$so" | grep NEEDED
+          # libpthread/libdl/librt are glibc components (merged into libc.so.6
+          # only in glibc 2.34) — system libraries on the 2.31 baseline.
           bad_needed=$(objdump -p "$so" | awk '/NEEDED/{print $2}' \
-                       | grep -vE '^(libc\.so|libm\.so|ld-linux)' || true)
+                       | grep -vE '^(libc\.so|libm\.so|libpthread\.so|libdl\.so|librt\.so|ld-linux)' || true)
           if [ -n "$bad_needed" ]; then
             echo "::error::unexpected runtime dependency: $bad_needed"
             exit 1
