@@ -29,11 +29,13 @@ export const SHADERS = [
 export function compileCorpusSd(outDir) {
   mkdirSync(outDir, { recursive: true });
 
+  // The CLI assembly is named ShadowDuskCLI (csproj <AssemblyName>, 0.1.1 rename),
+  // not after the project file.
   const cliDll = path.join(
-    repoRoot, 'src', 'ShadowDusk.Cli', 'bin', 'Debug', 'net8.0', 'ShadowDusk.Cli.dll');
+    repoRoot, 'src', 'ShadowDusk.Cli', 'bin', 'Debug', 'net8.0', 'ShadowDuskCLI.dll');
   if (!existsSync(cliDll)) {
     throw new Error(
-      `ShadowDusk.Cli.dll not found at ${cliDll}. Build it first: ` +
+      `ShadowDuskCLI.dll not found at ${cliDll}. Build it first: ` +
       `dotnet build src/ShadowDusk.Cli`);
   }
 

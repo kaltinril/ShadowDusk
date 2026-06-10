@@ -54,17 +54,17 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0   # full history so DocFX's git "edit this page" links resolve
 
       - name: Setup .NET 8
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '8.0.x'
 
       - name: Cache NuGet
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', '**/Directory.Packages.props') }}
@@ -95,11 +95,15 @@ jobs:
       # "../public/..." against the base → "/public/..." (404). So we ship DocFX's
       # output as-is.
 
+      # NOTE: upload-pages-artifact v4+ excludes hidden files (dotfiles) by default.
+      # DocFX's emitted _site/ contains no load-bearing dotfiles (artifact-based Pages
+      # deploys never run Jekyll, so no .nojekyll is needed); if one ever appears,
+      # set include-hidden-files: true.
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: _site
 
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
