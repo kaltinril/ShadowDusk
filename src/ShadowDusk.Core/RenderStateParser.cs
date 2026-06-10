@@ -7,18 +7,57 @@ namespace ShadowDusk.Core;
 
 public sealed class RenderStateParser
 {
+    // Render-state keys fxc accepts in a pass block whose fx_2_0 ops FNA's Effect runtime
+    // throws NotImplementedException on at EffectPass.Apply — the non-† (non-honored) ops
+    // of docs/fx2-binary-format.md §8.2. They parse to no RenderStateBlock field; their
+    // presence is recorded in RenderStateBlock.KnownFnaThrowingStates so the FNA path can
+    // fail loudly instead of silently diverging from the fxc build (which crashes FNA at
+    // runtime). MGFX paths ignore the metadata, preserving the silent-ignore behavior.
+    private static readonly HashSet<string> FnaThrowingStateKeys =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "ShadeMode", "AlphaTestEnable", "LastPixel", "AlphaRef", "AlphaFunc",
+            "DitherEnable", "FogEnable", "SpecularEnable", "FogColor", "FogTableMode",
+            "FogStart", "FogEnd", "FogDensity", "RangeFogEnable", "TextureFactor",
+            "Wrap0", "Wrap1", "Wrap2", "Wrap3", "Wrap4", "Wrap5", "Wrap6", "Wrap7",
+            "Wrap8", "Wrap9", "Wrap10", "Wrap11", "Wrap12", "Wrap13", "Wrap14", "Wrap15",
+            "Clipping", "Lighting", "Ambient", "FogVertexMode", "ColorVertex",
+            "LocalViewer", "NormalizeNormals", "DiffuseMaterialSource",
+            "SpecularMaterialSource", "AmbientMaterialSource", "EmissiveMaterialSource",
+            "VertexBlend", "ClipPlaneEnable", "PointSize", "PointSize_Min",
+            "PointSpriteEnable", "PointScaleEnable", "PointScale_A", "PointScale_B",
+            "PointScale_C", "PatchEdgeStyle", "DebugMonitorToken", "PointSize_Max",
+            "IndexedVertexBlendEnable", "TweenFactor", "PositionDegree", "NormalDegree",
+            "AntialiasedLineEnable", "MinTessellationLevel", "MaxTessellationLevel",
+            "AdaptiveTess_X", "AdaptiveTess_Y", "AdaptiveTess_Z", "AdaptiveTess_W",
+            "EnableAdaptiveTessellation", "SRGBWriteEnable",
+        };
+
     public Result<RenderStateBlock, ShaderError> Parse(IReadOnlyDictionary<string, string> kvp)
     {
         var block = new RenderStateBlock();
+        List<string>? fnaThrowing = null;
 
         foreach (var (rawKey, rawValue) in kvp)
         {
             var key = rawKey.Trim();
             var value = rawValue.Trim();
 
+            if (FnaThrowingStateKeys.Contains(key))
+            {
+                (fnaThrowing ??= []).Add(key);
+                continue;
+            }
+
             var result = ApplyKey(ref block, key, value);
             if (result.IsFailure)
                 return Result<RenderStateBlock, ShaderError>.Fail(result.Error);
+        }
+
+        if (fnaThrowing is not null)
+        {
+            fnaThrowing.Sort(StringComparer.OrdinalIgnoreCase);
+            block = block with { KnownFnaThrowingStates = fnaThrowing };
         }
 
         return Result<RenderStateBlock, ShaderError>.Ok(block);
@@ -230,6 +269,98 @@ public sealed class RenderStateParser
             return Ok();
         }
 
+        // ---- FNA-only states (fx_2_0 ops FNA honors; MGFX has no analog and its
+        // writer never reads these fields — see RenderStateBlock).
+
+        if (key.Equals("SeparateAlphaBlendEnable", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!TryParseBool(value, out var v))
+                return UnknownValue(key, value);
+            block = block with { SeparateAlphaBlendEnable = v };
+            return Ok();
+        }
+
+        if (key.Equals("BlendFactor", StringComparison.OrdinalIgnoreCase))
+        {
+            // A D3DCOLOR dword: hex (BlendFactor = 0x80FF8080) or decimal.
+            if (!TryParseDword(value, out var v))
+                return UnknownValue(key, value);
+            block = block with { BlendFactor = v };
+            return Ok();
+        }
+
+        if (key.Equals("MultiSampleMask", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!TryParseDword(value, out var v))
+                return UnknownValue(key, value);
+            block = block with { MultiSampleMask = v };
+            return Ok();
+        }
+
+        if (key.Equals("TwoSidedStencilMode", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!TryParseBool(value, out var v))
+                return UnknownValue(key, value);
+            block = block with { TwoSidedStencilMode = v };
+            return Ok();
+        }
+
+        if (key.Equals("CCW_StencilFail", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!TryParseStencilOperation(value, out var v))
+                return UnknownValue(key, value);
+            block = block with { CounterClockwiseStencilFail = v };
+            return Ok();
+        }
+
+        if (key.Equals("CCW_StencilZFail", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!TryParseStencilOperation(value, out var v))
+                return UnknownValue(key, value);
+            block = block with { CounterClockwiseStencilDepthBufferFail = v };
+            return Ok();
+        }
+
+        if (key.Equals("CCW_StencilPass", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!TryParseStencilOperation(value, out var v))
+                return UnknownValue(key, value);
+            block = block with { CounterClockwiseStencilPass = v };
+            return Ok();
+        }
+
+        if (key.Equals("CCW_StencilFunc", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!TryParseCompareFunction(value, out var v))
+                return UnknownValue(key, value);
+            block = block with { CounterClockwiseStencilFunction = v };
+            return Ok();
+        }
+
+        if (key.Equals("ColorWriteEnable1", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!TryParseColorWriteMask(value, out var v))
+                return UnknownValue(key, value);
+            block = block with { ColorWriteChannels1 = v };
+            return Ok();
+        }
+
+        if (key.Equals("ColorWriteEnable2", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!TryParseColorWriteMask(value, out var v))
+                return UnknownValue(key, value);
+            block = block with { ColorWriteChannels2 = v };
+            return Ok();
+        }
+
+        if (key.Equals("ColorWriteEnable3", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!TryParseColorWriteMask(value, out var v))
+                return UnknownValue(key, value);
+            block = block with { ColorWriteChannels3 = v };
+            return Ok();
+        }
+
         // Unknown keys are silently ignored per spec
         return Ok();
     }
@@ -333,6 +464,37 @@ public sealed class RenderStateParser
             _ => (StencilOperationValue)(-1),
         };
         return (int)result != -1;
+    }
+
+    /// <summary>A raw dword: hex with a 0x prefix (e.g. <c>0x80FF8080</c>) or decimal.</summary>
+    private static bool TryParseDword(string value, out uint result)
+    {
+        if (value.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            return uint.TryParse(value.AsSpan(2), System.Globalization.NumberStyles.HexNumber,
+                System.Globalization.CultureInfo.InvariantCulture, out result);
+        return uint.TryParse(value, System.Globalization.NumberStyles.Integer,
+            System.Globalization.CultureInfo.InvariantCulture, out result);
+    }
+
+    /// <summary>
+    /// A D3DCOLORWRITEENABLE mask: an OR of RED/GREEN/BLUE/ALPHA flag tokens
+    /// (e.g. <c>RED | GREEN</c>) and/or integer literals (decimal or 0x hex).
+    /// The D3D9 flag bits are identical to XNA's ColorWriteChannels bits.
+    /// </summary>
+    private static bool TryParseColorWriteMask(string value, out int result)
+    {
+        result = 0;
+        foreach (string part in value.Split('|'))
+        {
+            string token = part.Trim();
+            if (token.Equals("Red", StringComparison.OrdinalIgnoreCase))        result |= 1;
+            else if (token.Equals("Green", StringComparison.OrdinalIgnoreCase)) result |= 2;
+            else if (token.Equals("Blue", StringComparison.OrdinalIgnoreCase))  result |= 4;
+            else if (token.Equals("Alpha", StringComparison.OrdinalIgnoreCase)) result |= 8;
+            else if (TryParseDword(token, out uint bits))                       result |= unchecked((int)bits);
+            else { result = 0; return false; }
+        }
+        return true;
     }
 
     private static Result<bool, ShaderError> UnknownValue(string key, string value)
