@@ -140,7 +140,7 @@ is rejected — merge the version-bump PR first (the `/release` skill does this 
 > Hosting the pinned per-RID artifacts for CI restore is the open Phase 37 (C) item; until
 > it lands, a release machine needs the locally built/restored binaries present at pack
 > time. Self-containment + Windows↔Linux byte-identity of the packed FNA path were proven
-> 2026-06-09 (see `plan/PHASE-39-fna-fx2-output-target.md`).
+> 2026-06-09 (see `plan/DONE/PHASE-39-fna-fx2-output-target.md`).
 
 ---
 

@@ -365,7 +365,7 @@ public sealed class FnaCompileFixtureTests
     }
 
     // DeferredSprite.fx and ForwardLighting.fx hit the documented vkd3d 1.17 construct
-    // gap (plan/PHASE-39-fna-fx2-output-target.md, "Known limitations"): int-typed
+    // gap (plan/DONE/PHASE-39-fna-fx2-output-target.md, "Known limitations"): int-typed
     // ternary in `clip((c < x) ? -1 : 1)` is unimplemented at SM ≤ 3 (vkd3d's E5017).
     //
     // Empirically pinned (2026-06-09, vkd3d 1.17 in-process): the surfaced ShaderError is
