@@ -72,4 +72,73 @@ MonoGame's stock content pipeline (`MGCB`) shells out to `mgfxc`, which depends 
 > with cross-host byte-identical output. This is additive reach (Part 1); the
 > mgfxc-replacement promise remains the primary product.
 
+## Compiler-leverage strategy — what we own, and what we never will
+
+*(Made explicit 2026-06-09 at owner direction: "we don't want to become the expert in
+Vulkan/D3D/OpenGL compilation if we don't have to — leverage others' work." This section
+records that this is, deliberately, already the architecture — and why the line sits
+where it does, so future work doesn't drift across it.)*
+
+**The division of labor:**
+
+| Layer | Owner | Why |
+|---|---|---|
+| HLSL parsing & compilation | **upstream** — Microsoft DXC; Wine vkd3d-shader (SM5 DXBC, SM1–3) | multi-year compiler engineering; actively maintained by the people who own the formats |
+| Cross-compilation (SPIR-V → GLSL/MSL) | **upstream** — Khronos SPIRV-Cross | same |
+| Container formats (`.mgfx`, fx_2_0 `.fxb`) | **ShadowDusk** | MonoGame/FNA-proprietary; no upstream will ever provide them — this *is* the product's reason to exist |
+| Runtime-dialect adapters (MonoGame-GL rewrite, MojoShader-compat patches) | **ShadowDusk** | the consumer runtimes' undocumented contracts; nobody else targets them |
+| **Validation against real runtimes** (the evidence ladder, rung-4 harnesses) | **ShadowDusk** | **this is the actual moat** — it is what lets us *trust* upstream compilers instead of becoming them |
+
+**The rules that keep the line honest:**
+
+- **Never fork or own compiler internals.** When upstream has a gap (vkd3d's int-ternary,
+  MojoShader's printFloat LLP64 bug), the responses are, in order: fail loudly with a clear
+  diagnostic; patch *minimally and surgically* on our side of the boundary (the
+  `D3d9BytecodePatcher` pattern — byte-level-tested, documented, reversible); record an
+  upstream-fix follow-up. Never "just handle it in our compiler" — we don't have one.
+- **Pin versions; bumps are deliberate events** (vkd3d stays at 1.17 because output
+  byte-stability is a product promise — a bump re-baselines goldens and re-runs rung-4).
+- **One faithful pipeline, no substitute compilers** (the standing rule): leverage only
+  works if every host runs the *same* upstream components — which is also exactly what
+  makes cross-host byte-identity achievable.
+- Parked backends (Metal, Vulkan) stay parked **not** because the compilation is hard —
+  SPIRV-Cross/DXC already do it — but because there is no consumer runtime to
+  rung-4-validate against yet. When one exists, the work is container plumbing +
+  validation, not compiler expertise. That's the strategy working as intended.
+
+## Host × target matrix, and the browser-export principle
+
+**Compile-target and render-backend are independent.** `CompilerOptions.Target` is an
+explicit parameter on every host; nothing limits a host to emitting "its own" format
+except which upstream compilers have been built for that host. This matters most in the
+browser: a website built on `ShadowDusk.Wasm` is not just a "compile GL for WebGL" tool —
+it is (by owner direction, 2026-06-09) intended as a **full export station**: users upload
+`.fx` and download compiled artifacts for *any* supported consumer (MonoGame GL/DX, FNA
+`.fxb`, …), with the host-appropriate default and an explicit override. The override is
+the *allowed* kind of choice (picking a platform the user's game targets — per
+`seamless-for-end-user`), and the in-browser artifact must be **byte-identical** to the
+desktop-compiled one (proven for GL — the G1 gate — and the bar for every future host).
+
+Where each host×target cell stands (2026-06-09):
+
+| Emit ↓ / Host → | Windows | Linux | macOS | Browser (WASM) |
+|---|---|---|---|---|
+| OpenGL `.mgfx` | ✅ proven | ⚠️ DXC ICE (Phase 37 B) | ⚠️ no DXC native (Phase 37 A) | ✅ proven, byte-identical |
+| DX11 DXBC `.mgfx` | ✅ proven | ✅ vkd3d | ⚠️ vkd3d dylib pending | ❌ needs vkd3d→WASM (Phase 4.1) |
+| FNA fx_2_0 `.fxb` | ✅ proven | ✅ proven | ⚠️ vkd3d dylib pending | ❌ needs vkd3d→WASM (Phase 4.1) |
+| Vulkan SPIR-V / Metal MSL | parked — no validatable consumer runtime yet (Phases 31/32) | | | |
+
+Every gap above is a **packaging/porting gap, never a compiler-writing gap** — and one
+artifact, **vkd3d-shader compiled to WASM (Phase 4.1)**, closes the entire browser column:
+the fx_2_0 writer, bytecode patcher, and reflection are managed C# that already run in
+WASM, so vkd3d.wasm unlocks **both** DX and FNA export in the browser from the same pinned
+1.17 source (no substitute compiler). The recommended completion order: **(1)** Phase 37 C
+artifact hosting + macOS vkd3d dylibs (also unblocks releases — the pack gate is a hard
+stop); **(2)** Phase 37 A/B (macOS DXC dylib, Linux ICE) to finish the desktop GL column;
+**(3)** un-park Phase 4.1 (vkd3d→WASM, reusing the Phase 23 emscripten infrastructure);
+**(4)** Vulkan/Metal remain validation-gated. Interim note for consumers who need DX/FNA
+export from a website before (3): hosting the same library server-side (Linux) yields the
+same bytes — legitimate for *their* architecture, while the in-browser path remains the
+product's own bar (no server relay as a substitute).
+
 > **DirectX DXBC now works (Phase 18, done 2026-05-30).** DXC compiles to **DXIL (SM6)**, not the **DXBC (SM ≤ 5)** MonoGame 3.8's DX11 runtime loads — so the DX11 path no longer uses DXC. It routes through a DXBC backend behind `IDxbcShaderCompiler`: the cross-platform **vkd3d-shader** library (HLSL → DXBC_TPF) is the shipping backend, with Windows-only `d3dcompiler_47.dll` as a correctness oracle. DXC `ps_6_0`/`vs_6_0` (DXIL) is retained only for the DX12/KNI path. **Both OpenGL (Phase 17) and DirectX (Phase 18) are now validated end-to-end** in the real MonoGame runtime for the SM3/SM5 PS-only corpus (10/10 each); the DX backend's selector defaults to the oracle, with `DxbcBackend.Vkd3d` opt-in. WASM + DirectX DXBC remains the open problem (Phase 4.1).
