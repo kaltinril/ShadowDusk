@@ -2,7 +2,7 @@
 
 namespace ShadowDusk.HLSL.Dxc;
 
-/// <summary>The container format of a blob DXC produced.</summary>
+/// <summary>The container format of a compiled shader blob.</summary>
 public enum BlobKind
 {
     /// <summary>A SPIR-V module (the OpenGL/Vulkan path's intermediate).</summary>
@@ -13,4 +13,10 @@ public enum BlobKind
     /// backend for DXBC, not DXC.
     /// </summary>
     Dxbc,
+    /// <summary>
+    /// A bare legacy D3D9 SM1–3 token stream (version token <c>0xFFFF____</c> ps /
+    /// <c>0xFFFE____</c> vs, CTAB comment, instructions, <c>0x0000FFFF</c> end token) — what
+    /// vkd3d-shader's D3D_BYTECODE target emits and what the FNA fx_2_0 container embeds.
+    /// </summary>
+    D3dBytecode,
 }

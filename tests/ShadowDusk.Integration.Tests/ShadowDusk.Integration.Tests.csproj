@@ -20,7 +20,18 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Phase 39: source-link the MojoShader-rule fx_2_0 validator from the unit-test
+         project (it depends only on the BCL + ShadowDusk.Core, so it links cleanly).
+         One validator, two consumers — the unit tests calibrate it against the fxc
+         goldens; the FNA integration tests apply it to real pipeline output. -->
+    <Compile Include="..\ShadowDusk.Core.Tests\Fx2\Fx2BinaryValidator.cs" Link="Fx2\Fx2BinaryValidator.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Include="..\..\tests\fixtures\shaders\**\*" CopyToOutputDirectory="PreserveNewest" Link="fixtures\shaders\%(RecursiveDir)%(Filename)%(Extension)" />
+    <!-- Phase 39: the fxc fx_2_0 goldens (sources + binaries) for the FNA structural
+         cross-check (FnaCompileFixtureTests). -->
+    <None Include="..\..\tests\fixtures\golden\FNA\**\*" CopyToOutputDirectory="PreserveNewest" Link="fixtures\golden\FNA\%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup Label="Test framework">

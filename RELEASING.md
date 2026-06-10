@@ -131,9 +131,16 @@ is rejected — merge the version-bump PR first (the `/release` skill does this 
 4. **The GitHub Release** exists for `v<version>` with the four self-contained CLI archives
    and the package set attached.
 
-> **DirectX caveat:** the DirectX vkd3d-shader native is not yet packaged as a transitive
-> NuGet asset, so the **pure-NuGet self-contained** promise covers the **OpenGL** path for
-> the 0.1.x line. The CLI and source builds support DirectX DXBC fully.
+> **vkd3d-shader packing (DirectX `DxbcBackend.Vkd3d` + FNA fx_2_0 — Phase 39):**
+> `ShadowDusk.HLSL.csproj` packs each **restored** `tools/vkd3d` binary into the NuGet as
+> `runtimes/<rid>/native` (win-x64 + linux-x64 today; macOS entries pre-wired). Packing is
+> restore-state-dependent by design — **the release pipeline must restore every shipping
+> RID's vkd3d binary before `dotnet pack`, or those RIDs silently ship without it** (the
+> runtime then fails loudly with SD0211). Build recipes per RID: `tools/restore.{ps1,sh}`.
+> Hosting the pinned per-RID artifacts for CI restore is the open Phase 37 (C) item; until
+> it lands, a release machine needs the locally built/restored binaries present at pack
+> time. Self-containment + Windows↔Linux byte-identity of the packed FNA path were proven
+> 2026-06-09 (see `plan/DONE/PHASE-39-fna-fx2-output-target.md`).
 
 ---
 

@@ -29,4 +29,9 @@
     <ProjectReference Include="..\ShadowDusk.HLSL\ShadowDusk.HLSL.csproj" />
     <ProjectReference Include="..\ShadowDusk.GLSL\ShadowDusk.GLSL.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Unit tests exercise internal pipeline pieces (Fx2EffectBuilder, ShaderIRBuilder)
+         directly — also a Phase 27 item. -->
+    <InternalsVisibleTo Include="ShadowDusk.Compiler.Tests" />
+  </ItemGroup>
 </Project>

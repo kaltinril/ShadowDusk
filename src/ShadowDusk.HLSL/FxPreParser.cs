@@ -12,6 +12,9 @@ namespace ShadowDusk.HLSL;
 /// and extracts all FX9 metadata needed by the compilation pipeline.
 /// DXC rejects these constructs, so they must be removed before invoking DXC.
 /// Stripped output preserves original line numbers by replacing removed lines with blank lines.
+/// <see cref="FxSourceMode"/> selects how legacy D3D9 constructs in the shader body are
+/// treated: rewritten forward to SM4 for DXC (the default), or preserved verbatim for an
+/// SM1–3 backend (the FNA fx_2_0 target, compiled by vkd3d).
 /// </summary>
 public sealed class FxPreParser
 {
@@ -102,6 +105,13 @@ public sealed class FxPreParser
     private readonly IReadOnlyList<Token> _tokens;
     private int _pos;
 
+    // How legacy D3D9/SM3 constructs in the shader body are treated. RewriteToSm4
+    // (the default) rewrites them forward for DXC; PreserveSm3 (the FNA fx_2_0
+    // target) passes them through verbatim because vkd3d's D3D_BYTECODE profile
+    // accepts them natively. Technique/pass and parameter-annotation stripping is
+    // identical in both modes.
+    private readonly FxSourceMode _mode;
+
     // Tracks character positions of each token in the original source so we can
     // reconstruct stripped output by erasing spans.  We store the cumulative
     // character offset at which each token starts.
@@ -129,12 +139,13 @@ public sealed class FxPreParser
     // Constructor (private — callers use the static Parse entry point)
     // -------------------------------------------------------------------------
 
-    private FxPreParser(string source, string sourceFile, IReadOnlyList<Token> tokens, int[] tokenCharOffset)
+    private FxPreParser(string source, string sourceFile, IReadOnlyList<Token> tokens, int[] tokenCharOffset, FxSourceMode mode)
     {
         _source = source;
         _sourceFile = sourceFile;
         _tokens = tokens;
         _tokenCharOffset = tokenCharOffset;
+        _mode = mode;
         _pos = 0;
     }
 
@@ -143,16 +154,27 @@ public sealed class FxPreParser
     // -------------------------------------------------------------------------
 
     /// <summary>
+    /// Parses an FX9 .fx source file, strips FX9-specific blocks, and extracts metadata,
+    /// rewriting legacy D3D9 constructs forward to SM4 (<see cref="FxSourceMode.RewriteToSm4"/>).
+    /// </summary>
+    /// <param name="source">Full text of the .fx file.</param>
+    /// <param name="sourceFile">Display name used in diagnostics (file path or virtual name).</param>
+    public static Result<FxParseResult, FxParseError> Parse(string source, string sourceFile) =>
+        Parse(source, sourceFile, FxSourceMode.RewriteToSm4);
+
+    /// <summary>
     /// Parses an FX9 .fx source file, strips FX9-specific blocks, and extracts metadata.
     /// </summary>
     /// <param name="source">Full text of the .fx file.</param>
     /// <param name="sourceFile">Display name used in diagnostics (file path or virtual name).</param>
-    public static Result<FxParseResult, FxParseError> Parse(string source, string sourceFile)
+    /// <param name="mode">How legacy D3D9/SM3 constructs in the shader body are treated
+    /// (rewritten forward for DXC, or preserved verbatim for an SM1–3 backend).</param>
+    public static Result<FxParseResult, FxParseError> Parse(string source, string sourceFile, FxSourceMode mode)
     {
         var lexer = new FxLexer(source, sourceFile);
         var tokens = lexer.Tokenize();
         var offsets = ComputeCharacterOffsets(source, tokens);
-        var parser = new FxPreParser(source, sourceFile, tokens, offsets);
+        var parser = new FxPreParser(source, sourceFile, tokens, offsets, mode);
         return parser.ParseFile();
     }
 
@@ -363,7 +385,16 @@ public sealed class FxPreParser
                         SamplerInfo info = result.Value;
                         samplers.Add(info);
 
-                        if (_legacyIntrinsicSamplers.Contains(info.Name))
+                        if (_mode == FxSourceMode.PreserveSm3)
+                        {
+                            // FNA fx_2_0 target: vkd3d's D3D_BYTECODE profile parses the
+                            // sampler_state initializer natively (and ignores the state
+                            // block itself), so the declaration stays in the output
+                            // verbatim — no erasure, no SamplerState/Texture2D rewrite.
+                            // The SamplerInfo captured above still feeds the fx_2_0
+                            // parameter/state metadata.
+                        }
+                        else if (_legacyIntrinsicSamplers.Contains(info.Name))
                         {
                             // The block's terminating ';' is the last token ParseSamplerDecl
                             // consumed, so it sits at _pos - 1.
@@ -396,7 +427,8 @@ public sealed class FxPreParser
                         (Peek(afterName).Kind == TokenKind.Identifier &&
                          string.Equals(Peek(afterName).Text, "register", StringComparison.OrdinalIgnoreCase));
 
-                    if (isBareForm && _legacyIntrinsicSamplers.Contains(nameTok.Text))
+                    if (isBareForm && _mode == FxSourceMode.RewriteToSm4 &&
+                        _legacyIntrinsicSamplers.Contains(nameTok.Text))
                     {
                         int blockStart = _tokenCharOffset[_pos];
                         (string name, int declEnd) = ConsumeBareSamplerDecl();
@@ -428,8 +460,12 @@ public sealed class FxPreParser
             // sampler_state form references (gap #2) actually exists. Modern types
             // ('Texture2D', 'Texture3D', …) are matched case-sensitively above and
             // never reach here. Any trailing annotation block / register clause is
-            // dropped — modern resource declarations carry neither.
-            if (tok.Kind == TokenKind.Identifier &&
+            // dropped — modern resource declarations carry neither. In PreserveSm3
+            // mode the legacy 'texture' type is valid for vkd3d and passes through
+            // verbatim (including any annotation block — falls through to the
+            // generic 'Identifier Identifier <...>' annotation strip below).
+            if (_mode == FxSourceMode.RewriteToSm4 &&
+                tok.Kind == TokenKind.Identifier &&
                 LegacyTextureTypeKeywords.TryGetValue(tok.Text, out string? modernTextureType))
             {
                 int nameOffset = NextCodeOffset(1);
@@ -500,7 +536,10 @@ public sealed class FxPreParser
             // shaders that use ') : COLOR { ... }' compile. We discriminate against
             // struct-field input semantics (which are preceded by an identifier, not
             // ')') by requiring the token before the COLOR identifier to be RParen.
-            if (tok.Kind == TokenKind.RParen && TryMatchColorReturnSemantic(out int colorTokIdx, out string replacement))
+            // In PreserveSm3 mode ': COLOR<n>?' is a valid SM3 output semantic for
+            // vkd3d and passes through verbatim.
+            if (_mode == FxSourceMode.RewriteToSm4 &&
+                tok.Kind == TokenKind.RParen && TryMatchColorReturnSemantic(out int colorTokIdx, out string replacement))
             {
                 int colorStart = _tokenCharOffset[colorTokIdx];
                 var colorTok = _tokens[colorTokIdx];
@@ -524,7 +563,11 @@ public sealed class FxPreParser
             // is copied verbatim. A sampler not in the binding map (declaration form
             // not understood, e.g. effect-framework syntax) is left alone so DXC
             // surfaces a clear diagnostic rather than ShadowDusk emitting bad HLSL.
-            if (tok.Kind == TokenKind.Identifier && Tex2DIntrinsics.Contains(tok.Text) &&
+            // In PreserveSm3 mode 'tex2D' is a valid SM3 intrinsic for vkd3d and
+            // passes through verbatim (no bindings are recorded in that mode, so
+            // the map lookup would fail anyway — the mode check makes it explicit).
+            if (_mode == FxSourceMode.RewriteToSm4 &&
+                tok.Kind == TokenKind.Identifier && Tex2DIntrinsics.Contains(tok.Text) &&
                 TryMatchTexSampleArgument(out string samplerArg) &&
                 _samplerTextureBindings.TryGetValue(samplerArg, out string? boundTexture))
             {

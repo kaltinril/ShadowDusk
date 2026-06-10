@@ -46,11 +46,27 @@ The product is the **combination**: *the same result `mgfxc` gives, produced whe
 
 MonoGame's stock content pipeline (`MGCB`) shells out to `mgfxc`, which depends on `fxc.exe` (DirectX SDK) on Windows. ShadowDusk replaces that pipeline step with a portable toolchain that transpiles and cross-compiles shaders for each supported MonoGame/KNI backend:
 
-| MonoGame Backend | Shader Language | Compiler Target |
+| Consumer runtime / backend | Shader Language | Compiler Target |
 |---|---|---|
 | DirectX (Windows) | HLSL | vkd3d-shader → DXBC (SM5) |
 | OpenGL / DesktopGL | GLSL | DXC → SPIR-V → SPIRV-Cross → GLSL |
 | Metal (macOS / iOS) *(not yet implemented)* | MSL | DXC → SPIR-V → SPIRV-Cross → MSL |
 | Vulkan (future) | SPIR-V | DXC → SPIR-V (direct) |
+| FNA *(Phase 39 — **rung 4 proven**, PS-only corpus; one `.fxb` serves all FNA backends)* | D3D9-style HLSL (SM ≤ 3) | vkd3d-shader → D3D9 bytecode → ShadowDusk `Fx2EffectWriter` → fx_2_0 (`.fxb`) |
+
+> **FNA's bar (Phase 39).** For FNA the reference compiler is not `mgfxc` but Microsoft's
+> `fxc.exe /T fx_2_0` (Windows-only, deprecated, FNA's blessed workflow runs it under Wine) —
+> so the FNA analog of the promise is: ShadowDusk's `.fxb`, loaded by **real FNA**
+> (`Effect` → FNA3D → MojoShader), renders **pixel-equivalent to the `fxc /T fx_2_0` build**,
+> same-backend-compared. The evidence ladder mirrors the MonoGame one: (1) compiles → (2)
+> structurally well-formed per MojoShader's parse rules + calibrated against real fxc goldens
+> (`tests/fixtures/golden/FNA/`) → (3) the real MojoShader library parses+translates it → (4)
+> real FNA renders pixel-equivalent. **All four rungs are proven for the SM3 PS-only corpus
+> (2026-06-09, `validation/FnaValidation`: gate 10/10 + 12 extended entries, max delta ≤ 1/255
+> vs the fxc oracle in real FNA 26.06)**; VS-driven FNA effects are the remaining 17-VS-style
+> follow-up. `fxc`/`d3dcompiler_47` are test oracles only and never ship — the shipping path
+> is vkd3d-shader's SM1–3 backend on every host, packed into the NuGet for win-x64 + linux-x64
+> with cross-host byte-identical output. This is additive reach (Part 1); the
+> mgfxc-replacement promise remains the primary product.
 
 > **DirectX DXBC now works (Phase 18, done 2026-05-30).** DXC compiles to **DXIL (SM6)**, not the **DXBC (SM ≤ 5)** MonoGame 3.8's DX11 runtime loads — so the DX11 path no longer uses DXC. It routes through a DXBC backend behind `IDxbcShaderCompiler`: the cross-platform **vkd3d-shader** library (HLSL → DXBC_TPF) is the shipping backend, with Windows-only `d3dcompiler_47.dll` as a correctness oracle. DXC `ps_6_0`/`vs_6_0` (DXIL) is retained only for the DX12/KNI path. **Both OpenGL (Phase 17) and DirectX (Phase 18) are now validated end-to-end** in the real MonoGame runtime for the SM3/SM5 PS-only corpus (10/10 each); the DX backend's selector defaults to the oracle, with `DxbcBackend.Vkd3d` opt-in. WASM + DirectX DXBC remains the open problem (Phase 4.1).

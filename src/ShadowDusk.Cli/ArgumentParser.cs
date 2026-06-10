@@ -12,7 +12,7 @@ internal static class ArgumentParser
 
         Options:
           /Profile:<Platform>       Target platform. Default: DirectX_11
-                                    Platforms: DirectX_11, OpenGL, Vulkan
+                                    Platforms: DirectX_11, OpenGL, Vulkan, FNA
           /Debug                    Include debug information in output
           /I <path>                 Additional include search path (repeatable)
           --mgfx-version <10|11>    Output format version. Default: 10
@@ -196,6 +196,11 @@ internal static class ArgumentParser
         if (value.Equals("Vulkan", StringComparison.OrdinalIgnoreCase))
             return Result<PlatformTarget, ShaderError>.Ok(PlatformTarget.Vulkan);
 
+        // FNA's D3D9 fx_2_0 effects target (.fxb). Not an mgfxc profile — additive,
+        // so mgfxc drop-in parity is unaffected.
+        if (value.Equals("FNA", StringComparison.OrdinalIgnoreCase))
+            return Result<PlatformTarget, ShaderError>.Ok(PlatformTarget.Fna);
+
         if (value.Equals("PlayStation4", StringComparison.OrdinalIgnoreCase) ||
             value.Equals("XboxOne", StringComparison.OrdinalIgnoreCase) ||
             value.Equals("Switch", StringComparison.OrdinalIgnoreCase))
@@ -213,6 +218,6 @@ internal static class ArgumentParser
             Line: 0,
             Column: 0,
             Code: "X0004",
-            Message: $"Unknown profile '{value}'. Valid profiles: DirectX_11, OpenGL, Vulkan"));
+            Message: $"Unknown profile '{value}'. Valid profiles: DirectX_11, OpenGL, Vulkan, FNA"));
     }
 }

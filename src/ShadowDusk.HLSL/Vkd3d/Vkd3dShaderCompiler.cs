@@ -17,6 +17,11 @@ namespace ShadowDusk.HLSL.Vkd3d;
 /// but it runs on Linux/macOS/Windows with no Wine, Windows SDK, or fxc.exe — the
 /// whole reason the DirectX backend exists.
 ///
+/// With an SM ≤ 3 <see cref="D3DCompileRequest.ProfileOverride"/> (e.g. "ps_2_0",
+/// "vs_3_0") it instead emits the bare legacy D3D9 token stream
+/// (VKD3D_SHADER_TARGET_D3D_BYTECODE) the FNA fx_2_0 effects container embeds —
+/// same library, same seam, different target type.
+///
 /// It still needs the native lib present at runtime; on a host where the lib
 /// cannot be resolved the compile fails with a clear <see cref="ShaderError"/>
 /// (SD0211) rather than a raw <see cref="DllNotFoundException"/>.
@@ -36,13 +41,19 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
     {
         Vkd3dLoader.Register();
 
-        string profile = request.Stage switch
+        string profile = request.ProfileOverride ?? request.Stage switch
         {
             ShaderStage.Vertex => "vs_5_0",
             ShaderStage.Pixel  => "ps_5_0",
             _ => throw new ArgumentOutOfRangeException(
                 nameof(request), $"Unsupported shader stage for DXBC: {request.Stage}"),
         };
+
+        // SM ≤ 3 profiles compile to the bare D3D9 token stream (the FNA fx_2_0 path);
+        // SM4/5 profiles keep the DXBC_TPF container MonoGame's DX11 runtime loads.
+        bool d3d9 = IsSm3OrBelow(profile);
+        Vkd3dTargetType targetType = d3d9 ? Vkd3dTargetType.D3dBytecode : Vkd3dTargetType.DxbcTpf;
+        BlobKind blobKind          = d3d9 ? BlobKind.D3dBytecode        : BlobKind.Dxbc;
 
         // Marshal source / strings as UTF-8. vkd3d_shader_code carries raw bytes +
         // size (NOT null-terminated for source); the char* strings are C strings.
@@ -76,7 +87,7 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
                 Next        = hlslInfoPtr,
                 Source      = new Vkd3dShaderCode { Code = sourcePtr, Size = (nuint)sourceBytes.Length },
                 SourceType  = Vkd3dSourceType.Hlsl,
-                TargetType  = Vkd3dTargetType.DxbcTpf,
+                TargetType  = targetType,
                 Options     = IntPtr.Zero,
                 OptionCount = 0,
                 // WARNING surfaces non-fatal diagnostics too; constraint 5 (fail loudly).
@@ -138,7 +149,7 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
 
                 var dxbc = new byte[checked((int)output.Size)];
                 Marshal.Copy(output.Code, dxbc, 0, dxbc.Length);
-                return Result<PlatformBlob, ShaderError>.Ok(new PlatformBlob(BlobKind.Dxbc, dxbc));
+                return Result<PlatformBlob, ShaderError>.Ok(new PlatformBlob(blobKind, dxbc));
             }
             finally
             {
@@ -154,6 +165,18 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
             FreeCString(profilePtr);
             FreeCString(sourceNamePtr);
         }
+    }
+
+    // Profile strings look like "vs_3_0" / "ps_2_b" / "vs_5_0": the digit after the first
+    // underscore is the shader-model major version. SM ≤ 3 selects the D3D9 token-stream
+    // target; anything unparseable falls through to DXBC_TPF (vkd3d then rejects a bad
+    // profile with its own diagnostic — fail loudly, constraint 5).
+    private static bool IsSm3OrBelow(string profile)
+    {
+        int underscore = profile.IndexOf('_');
+        return underscore >= 0
+            && underscore + 1 < profile.Length
+            && profile[underscore + 1] is >= '1' and <= '3';
     }
 
     private static string ReadAndFreeMessages(IntPtr messagesPtr)

@@ -74,10 +74,20 @@ The win-x64 binary was built with a portable MSYS2 + autotools toolchain:
        $vkd3d_lib
      (Full recipe is in memory/Track-A report.)
 
-  For Linux/macOS build the equivalent with the native autotools toolchain (the
-  SONAME_LIBVULKAN / static-libgcc tricks are Windows-specific).
+  linux-x64 recipe (verified on Ubuntu 24.04, 2026-06-09 — Phase 39):
+       apt-get install build-essential flex bison libvulkan-dev spirv-headers \\
+           libjson-perl xz-utils pkg-config
+       ./configure CFLAGS='-O2' LDFLAGS='-static-libgcc'
+       make include/private/vkd3d_version.h   # lib-only target misses this dep
+       make libvkd3d-shader.la
+       cp .libs/libvkd3d-shader.so.1.* tools/vkd3d/libvkd3d-shader.so.1
+     Runtime deps: libc/libm only (glibc baseline = the build distro's; build on
+     the oldest distro you intend to support). macOS: native autotools, same shape.
 
 NOTE: This binary is NOT committed (.gitignore ignores tools/vkd3d/{*.dll,*.so*,*.dylib}).
+Restored per-RID binaries are BOTH copied to build output AND packed into the
+ShadowDusk.HLSL NuGet under runtimes/<rid>/native (see ShadowDusk.HLSL.csproj) —
+the release pipeline must restore every shipping RID before 'dotnet pack'.
 EOF
     # Non-fatal: vkd3d is opt-in (default DXBC backend is the d3dcompiler oracle).
     return 0

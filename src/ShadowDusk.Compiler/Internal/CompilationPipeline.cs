@@ -48,6 +48,13 @@ internal sealed class CompilationPipeline
                 Message: "Metal target not yet supported"));
         }
 
+        // FNA takes a fully separate path: D3D9-style source preserved verbatim, vkd3d
+        // SM1–3 compiles, CTAB reflection, and the fx_2_0 container — nothing below
+        // (DXC/SPIRV-Cross/MGFX) participates, which also guarantees the existing
+        // MonoGame/KNI targets' output cannot change.
+        if (options.Target == PlatformTarget.Fna)
+            return await RunFnaAsync(hlslSource, options, cancellationToken).ConfigureAwait(false);
+
         string sourceFileName = options.SourceFileName ?? "<source>";
 
         // Stage 1: FX9 pre-parser.
@@ -447,6 +454,235 @@ internal sealed class CompilationPipeline
         {
             (dxcCompiler as IDisposable)?.Dispose();
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // FNA (fx_2_0) pipeline — Phase 39. HLSL (D3D9 style, preserved by the
+    // PreserveSm3 pre-parse mode) → vkd3d D3D_BYTECODE at SM1–3 → CTAB reflection →
+    // Fx2EffectBuilder → Fx2EffectWriter. Always vkd3d on every host (never the
+    // d3dcompiler oracle) so output is host-independent; CompilerOptions.DxbcBackend
+    // and MgfxVersion are ignored by design.
+    // -------------------------------------------------------------------------
+
+    private async Task<Result<CompiledShader, ShaderError[]>> RunFnaAsync(
+        string hlslSource,
+        CompilerOptions options,
+        CancellationToken cancellationToken)
+    {
+        string sourceFileName = options.SourceFileName ?? "<source>";
+
+        // Stage 1: FX9 pre-parse, preserving the D3D9 constructs vkd3d compiles natively.
+        var parseResult = FxPreParser.Parse(hlslSource, sourceFileName, FxSourceMode.PreserveSm3);
+        if (parseResult.IsFailure)
+        {
+            FxParseError err = parseResult.Error;
+            return Fail(new ShaderError(
+                File: err.SourceFile,
+                Line: err.Line,
+                Column: err.Column,
+                Code: $"FX{(int)err.Code:D4}",
+                Message: err.Message));
+        }
+
+        FxParseResult fxParsed = parseResult.Value;
+
+        if (fxParsed.Techniques.Count == 0)
+            return Fail(new ShaderError(
+                File: sourceFileName,
+                Line: 0,
+                Column: 0,
+                Code: "SD0010",
+                Message: "Effect source contains no techniques"));
+
+        // Stage 2: preprocess (flatten #includes, prepend the FNA macro set).
+        IIncludeResolver includeResolver = options.IncludeResolver ?? new FileSystemIncludeResolver();
+        var preprocessResult = new Preprocessor().Flatten(
+            fxParsed.StrippedHlsl,
+            sourceFileName,
+            PlatformMacros.For(PlatformTarget.Fna),
+            includeResolver,
+            options.AdditionalIncludePaths);
+
+        if (preprocessResult.IsFailure)
+            return Fail(preprocessResult.Error);
+
+        PreprocessedSource preprocessed = preprocessResult.Value;
+
+        // Per-stage source: vkd3d 1.17 rejects D3D9 stage-scoped register reservations
+        // (register(vs, c0)) — rewrite them per compiling stage. Lazy: most effects
+        // have none and many are PS-only.
+        string? vsSource = null;
+        string? psSource = null;
+
+        // Stage 3: compile each pass's entry points to SM1–3 D3D bytecode and reflect
+        // each blob's CTAB (the constant table MojoShader itself binds against).
+        var fnaCompiler = new Vkd3dShaderCompiler();
+        var renderStateParser = new RenderStateParser();
+        var shaders = new List<Fx2Shader>();
+        var ctabs = new List<CtabTable>();
+        var techniqueSources = new List<Fx2TechniqueSource>();
+
+        foreach (TechniqueInfo technique in fxParsed.Techniques)
+        {
+            var passSources = new List<Fx2PassSource>();
+
+            foreach (PassInfo pass in technique.Passes)
+            {
+                int vsIndex = -1;
+                int psIndex = -1;
+
+                if (pass.VertexEntryPoint is not null)
+                {
+                    vsSource ??= Sm3StageReservationRewriter.Rewrite(preprocessed.Text, ShaderStage.Vertex);
+                    var compiled = await CompileFnaStageAsync(
+                        fnaCompiler, vsSource, preprocessed.OriginalFilePath,
+                        pass.VertexEntryPoint, pass.VertexProfile, ShaderStage.Vertex,
+                        options.Debug, cancellationToken).ConfigureAwait(false);
+                    if (compiled.IsFailure)
+                        return Fail(compiled.Error);
+
+                    vsIndex = shaders.Count;
+                    shaders.Add(compiled.Value.Shader);
+                    ctabs.Add(compiled.Value.Ctab);
+                }
+
+                if (pass.PixelEntryPoint is not null)
+                {
+                    psSource ??= Sm3StageReservationRewriter.Rewrite(preprocessed.Text, ShaderStage.Pixel);
+                    var compiled = await CompileFnaStageAsync(
+                        fnaCompiler, psSource, preprocessed.OriginalFilePath,
+                        pass.PixelEntryPoint, pass.PixelProfile, ShaderStage.Pixel,
+                        options.Debug, cancellationToken).ConfigureAwait(false);
+                    if (compiled.IsFailure)
+                        return Fail(compiled.Error);
+
+                    psIndex = shaders.Count;
+                    shaders.Add(compiled.Value.Shader);
+                    ctabs.Add(compiled.Value.Ctab);
+                }
+
+                // Last assignment wins on a duplicated state key — fxc's semantics — instead
+                // of ToDictionary's ArgumentException (no exception-as-control-flow).
+                var renderStateKvp = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (RenderStateEntry rs in pass.RenderStates)
+                    renderStateKvp[rs.Key] = rs.Value;
+                var renderStateResult = renderStateParser.Parse(renderStateKvp);
+                if (renderStateResult.IsFailure)
+                    return Fail(renderStateResult.Error);
+
+                passSources.Add(new Fx2PassSource(
+                    Name: pass.Name,
+                    VertexShaderIndex: vsIndex,
+                    PixelShaderIndex: psIndex,
+                    RenderState: renderStateResult.Value));
+            }
+
+            techniqueSources.Add(new Fx2TechniqueSource(technique.Name, passSources));
+        }
+
+        // Stage 4: assemble the effect description and write the fx_2_0 container.
+        var buildResult = Fx2EffectBuilder.Build(
+            techniqueSources, shaders, ctabs, fxParsed.Samplers, sourceFileName);
+        if (buildResult.IsFailure)
+            return Fail(buildResult.Error);
+
+        var writeResult = new Fx2EffectWriter().Write(buildResult.Value);
+        if (writeResult.IsFailure)
+            return Fail(writeResult.Error);
+
+        return Result<CompiledShader, ShaderError[]>.Ok(
+            new CompiledShader(PlatformTarget.Fna, writeResult.Value));
+    }
+
+    private static async Task<Result<(Fx2Shader Shader, CtabTable Ctab), ShaderError>>
+        CompileFnaStageAsync(
+            Vkd3dShaderCompiler compiler,
+            string source,
+            string sourceFileName,
+            string entryPoint,
+            string? declaredProfile,
+            ShaderStage stage,
+            bool debug,
+            CancellationToken ct)
+    {
+        Result<string, ShaderError> profileResult =
+            ResolveFnaProfile(declaredProfile, stage, sourceFileName);
+        if (profileResult.IsFailure)
+            return Result<(Fx2Shader, CtabTable), ShaderError>.Fail(profileResult.Error);
+
+        var request = new D3DCompileRequest
+        {
+            HlslSource      = source,
+            SourceFileName  = sourceFileName,
+            EntryPoint      = entryPoint,
+            Stage           = stage,
+            EmbedDebugInfo  = debug,
+            AllowWarnings   = false,
+            ProfileOverride = profileResult.Value,
+        };
+
+        var compileResult = await compiler.CompileAsync(request, ct).ConfigureAwait(false);
+        if (compileResult.IsFailure)
+            return Result<(Fx2Shader, CtabTable), ShaderError>.Fail(compileResult.Error);
+
+        // Canonicalize the instruction forms MojoShader rejects but vkd3d emits
+        // (texkill partial writemask; texld src0 swizzle below SM3) — found by the
+        // rung-3/4 real-FNA harness. Semantics-preserving; no-op for clean blobs.
+        var patchResult = D3d9BytecodePatcher.PatchForMojoShader(
+            compileResult.Value.Bytes.ToArray(), sourceFileName);
+        if (patchResult.IsFailure)
+            return Result<(Fx2Shader, CtabTable), ShaderError>.Fail(patchResult.Error);
+
+        byte[] bytecode = patchResult.Value;
+
+        var ctabResult = CtabReader.Read(bytecode, sourceFileName);
+        if (ctabResult.IsFailure)
+            return Result<(Fx2Shader, CtabTable), ShaderError>.Fail(ctabResult.Error);
+
+        return Result<(Fx2Shader, CtabTable), ShaderError>.Ok(
+            (new Fx2Shader(stage, bytecode), ctabResult.Value));
+    }
+
+    /// <summary>
+    /// FNA profile policy: a literal SM ≤ 3 profile in the pass's compile statement is
+    /// honored as written (fxc fidelity); a literal SM4+ profile fails loudly (MojoShader's
+    /// hard ceiling is vs_3_0/ps_3_0); anything else — no profile, or an unexpanded macro
+    /// name like <c>PS_SHADERMODEL</c> (the pre-parser runs before macro expansion) —
+    /// defaults to the SM3 ceiling for the stage.
+    /// </summary>
+    private static Result<string, ShaderError> ResolveFnaProfile(
+        string? declaredProfile, ShaderStage stage, string sourceFileName)
+    {
+        string fallback = stage == ShaderStage.Vertex ? "vs_3_0" : "ps_3_0";
+
+        // Anything that does not LOOK like a literal profile (vs_/ps_ + SM major digit) is
+        // an unexpanded macro name (e.g. PS_SHADERMODEL) — default to the SM3 ceiling.
+        // Deliberately a shape test, not a KnownProfiles lookup, so literal SM4+ variants
+        // outside that list (ps_4_0_level_9_1, the MonoGame Reach profile) still classify
+        // as SM4 and fail loudly below instead of silently downgrading.
+        bool looksLikeProfile = declaredProfile is { Length: >= 4 }
+            && (declaredProfile.StartsWith("vs_", StringComparison.Ordinal) ||
+                declaredProfile.StartsWith("ps_", StringComparison.Ordinal))
+            && declaredProfile[3] is >= '0' and <= '9';
+
+        if (!looksLikeProfile)
+            return Result<string, ShaderError>.Ok(fallback);
+
+        if (declaredProfile![3] > '3')
+        {
+            return Result<string, ShaderError>.Fail(new ShaderError(
+                File: sourceFileName,
+                Line: 0,
+                Column: 0,
+                Code: "SD0300",
+                Message: $"Pass compiles with profile '{declaredProfile}', but the FNA target " +
+                         "(MojoShader) supports Shader Model 1–3 only — use vs_2_0/vs_3_0 or " +
+                         "ps_2_0/ps_3_0 in the technique's compile statements"));
+        }
+
+        // Literal SM ≤ 3 profile: honored as written (fxc fidelity). An unusual-but-shaped
+        // token (e.g. ps_3_9) passes through and vkd3d rejects it with its own diagnostic.
+        return Result<string, ShaderError>.Ok(declaredProfile);
     }
 
     private static async Task<(Result<byte[], ShaderError> Blob, ReadOnlyMemory<byte> DxilBlob, ReadOnlyMemory<byte> SpirvBlob, IReadOnlyList<MgfxVertexAttributeInfo> Attributes)>

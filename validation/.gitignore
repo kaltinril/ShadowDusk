@@ -4,3 +4,6 @@ output-cube/
 output-texbreadth/
 output-vs/
 output-vs-dx/
+output-fna/
+# FNA rung-3/4 harness external deps (restored by FnaValidation/restore-fna.ps1, never committed)
+FnaValidation/external/

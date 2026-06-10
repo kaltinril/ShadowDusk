@@ -8,7 +8,8 @@
 ShadowDusk/
 ├── src/
 │   ├── ShadowDusk.Core/          # Core types & contracts: IShaderCompiler, Result<T,E>, ShaderError,
-│   │                             #   CompilerOptions, CompiledShader, ShaderIR, MGFX writer, reflection (SpirvReflector)
+│   │                             #   CompilerOptions, CompiledShader, ShaderIR, MGFX writer, reflection
+│   │                             #   (SpirvReflector, CtabReader), FNA fx_2_0 writer (Fx2EffectWriter)
 │   ├── ShadowDusk.HLSL/          # FX9 pre-parser, preprocessor, DXC integration, reflection,
 │   │                             #   vkd3d-shader + d3dcompiler_47 DXBC backends
 │   ├── ShadowDusk.GLSL/          # SPIR-V → GLSL via SPIRV-Cross + MonoGameGlslRewriter (MojoShader dialect)
@@ -28,7 +29,7 @@ ShadowDusk/
 │   ├── ShadowDusk.BrowserTests/        # Headless KNI WebGL render validation (Playwright)
 │   └── fixtures/
 │       ├── shaders/                    # Canonical .fx test shaders (52 .fx + 5 .fxh headers)
-│       └── golden/                     # Reference .mgfx outputs (DirectX_11/ and OpenGL/)
+│       └── golden/                     # Reference outputs: .mgfx (DirectX_11/, OpenGL/) + fxc fx_2_0 .fxb (FNA/)
 ├── samples/
 │   ├── ShaderFiddle.Web/               # KNI Blazor-WASM in-browser fiddle (sample of reach)
 │   ├── ShaderViewer/                   # Desktop shader viewer

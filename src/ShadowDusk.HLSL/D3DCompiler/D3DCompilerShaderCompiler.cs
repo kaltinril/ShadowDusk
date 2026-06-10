@@ -46,6 +46,21 @@ public sealed class D3DCompilerShaderCompiler : IDxbcShaderCompiler
         if (!OperatingSystem.IsWindows())
             throw new PlatformNotSupportedException("DXBC oracle backend requires Windows");
 
+        // ProfileOverride is the vkd3d backend's SM1–3 (FNA) hook. This oracle never
+        // serves that path — honoring it here would let output silently depend on which
+        // backend a host picked. Refuse loudly instead of ignoring it.
+        if (request.ProfileOverride is not null)
+        {
+            return Result<PlatformBlob, ShaderError>.Fail(new ShaderError(
+                File:    request.SourceFileName,
+                Line:    0,
+                Column:  0,
+                Code:    "SD0210",
+                Message: $"The d3dcompiler_47 oracle backend does not support ProfileOverride " +
+                         $"('{request.ProfileOverride}') — SM1–3 compiles route through the " +
+                         "vkd3d-shader backend"));
+        }
+
         string profile = request.Stage switch
         {
             ShaderStage.Vertex => "vs_5_0",

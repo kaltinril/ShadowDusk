@@ -67,6 +67,24 @@ public sealed class ArgumentParserTests
         result.Value.Platform.Should().Be(PlatformTarget.OpenGL);
     }
 
+    [Fact]
+    public void Parse_ProfileFNA_ReturnsPlatformFna()
+    {
+        var result = ArgumentParser.Parse(["S.fx", "O.fxb", "/Profile:FNA"]);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Platform.Should().Be(PlatformTarget.Fna);
+    }
+
+    [Fact]
+    public void Parse_ProfileFnaCaseInsensitive_ReturnsPlatformFna()
+    {
+        var result = ArgumentParser.Parse(["S.fx", "O.fxb", "/Profile:fna"]);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Platform.Should().Be(PlatformTarget.Fna);
+    }
+
     // -------------------------------------------------------------------------
     // Debug flag
     // -------------------------------------------------------------------------
@@ -258,5 +276,14 @@ public sealed class ArgumentParserTests
 
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("X0004");
+    }
+
+    [Fact]
+    public void Parse_UnknownProfile_ErrorListsFnaAsValidProfile()
+    {
+        var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "/Profile:DOS"]);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Message.Should().Contain("FNA");
     }
 }
