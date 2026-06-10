@@ -10,7 +10,8 @@ namespace ShadowDusk.Core.Tests.Fx2;
 /// <summary>
 /// Unit tests for <see cref="D3d9BytecodePatcher"/> — the MojoShader-compatibility
 /// post-pass over vkd3d's D3D9 token streams (Phase 39 rung-3 fix: texkill partial
-/// writemask; texld src0 swizzle below SM3). Token encodings per the D3D9 shader
+/// writemask; texld src0 swizzle below SM3 / src0 modifier at any major; predicated
+/// sites and malformed streams fail as SD0305). Token encodings per the D3D9 shader
 /// token format (instruction token: opcode[15:0], operand count[27:24]; parameter
 /// tokens: bit 31 set, register type split [30:28]+[12:11], writemask [19:16],
 /// swizzle [23:16]).
@@ -24,6 +25,9 @@ public sealed class D3d9BytecodePatcherTests
     private const uint MovToken = 0x02000001;     // mov, 2 operands
     private const uint TexKillToken = 0x01000041; // texkill, 1 operand
     private const uint TexLdToken = 0x03000042;   // texld, 3 operands
+
+    private const uint PredicatedTexKillToken = 0x12000041; // texkill, predicated (bit 28), 2 operands (dest + predicate)
+    private const uint PredicateSrc = 0xB0E41000;           // p0.xyzw (type 19 = PREDICATE: bits [30:28] = 3, [12:11] = 2)
 
     private static uint TempDest(int reg, uint mask) => 0x8000_0000u | (mask << 16) | (uint)reg;
     private static uint TempSrc(int reg, uint swizzle) => 0x8000_0000u | (swizzle << 16) | (uint)reg;
@@ -132,6 +136,118 @@ public sealed class D3d9BytecodePatcherTests
 
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().BeSameAs(input, because: "SM3 allows texld src0 swizzles — MojoShader only rejects them below SM3");
+    }
+
+    [Fact]
+    public void TexldSrc0Modifier_AtSm3_IsRoutedThroughTemp()
+    {
+        // texld r0, -r1, s0 — identity swizzle but a negate source modifier (bits
+        // [27:24] = 1). MojoShader's "TEXLD src0 must have no modifiers" applies to
+        // every SM2+ major, so SM3 must patch this even though the swizzle is legal.
+        uint negatedSrc = TempSrc(1, 0xE4) | 0x0100_0000u;
+        byte[] input = Stream(
+            PsV3,
+            TexLdToken, TempDest(0, 0xF), negatedSrc, SamplerSrc(0),
+            End);
+
+        var result = D3d9BytecodePatcher.PatchForMojoShader(input, "t.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        uint[] tokens = Tokens(result.Value);
+        tokens.Should().HaveCount(9, because: "one compensating mov (3 tokens) is inserted");
+        tokens[1].Should().Be(MovToken);
+        tokens[2].Should().Be(TempDest(2, 0xF), because: "fresh temp above r0/r1");
+        tokens[3].Should().Be(negatedSrc, because: "the mov keeps src0's swizzle AND modifier — the negate moves onto the mov");
+        tokens[4].Should().Be(TexLdToken);
+        tokens[5].Should().Be(TempDest(0, 0xF));
+        tokens[6].Should().Be(TempSrc(2, 0xE4), because: "texld's coord source is now an unswizzled, unmodified temp");
+        tokens[7].Should().Be(SamplerSrc(0));
+        tokens[8].Should().Be(End);
+    }
+
+    [Fact]
+    public void PredicatedPartialMaskTexkill_FailsWithSd0305()
+    {
+        // (p0) texkill r0(.x) — a would-be patch site that cannot take the fresh-temp
+        // rewrite (the predicate guards the original instruction, not the inserted mov).
+        byte[] input = Stream(
+            PsV3,
+            PredicatedTexKillToken, TempDest(0, 0x1), PredicateSrc,
+            End);
+
+        var result = D3d9BytecodePatcher.PatchForMojoShader(input, "t.fx");
+
+        result.IsFailure.Should().BeTrue(because: "the SD0305 contract says a predicated patch site fails loudly, never silently skipped");
+        result.Error.Code.Should().Be("SD0305");
+        result.Error.Message.Should().Contain("predicated");
+    }
+
+    [Fact]
+    public void PredicatedFullMaskTexkill_IsPassthrough()
+    {
+        // (p0) texkill r0.xyzw — predicated but already canonical, so not a patch site.
+        byte[] input = Stream(
+            PsV3,
+            PredicatedTexKillToken, TempDest(0, 0xF), PredicateSrc,
+            End);
+
+        var result = D3d9BytecodePatcher.PatchForMojoShader(input, "t.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().BeSameAs(input, because: "a predicated instruction that needs no patching passes through untouched");
+    }
+
+    [Fact]
+    public void TruncatedTrailingDef_WithPatchSite_FailsInsteadOfThrowing()
+    {
+        // The partial-mask texkill is a real patch site, forcing pass 2 to re-emit the
+        // stream; the trailing def claims 5 operand tokens but the array ends after two.
+        byte[] input = Stream(
+            PsV3,
+            TexKillToken, TempDest(0, 0x1),
+            0x05000051, 0xA00F0000, 0x3F800000);
+
+        var result = D3d9BytecodePatcher.PatchForMojoShader(input, "t.fx");
+
+        result.IsFailure.Should().BeTrue(because: "a truncated stream must fail as a Result — never throw, never emit corrupt bytes");
+        result.Error.Code.Should().Be("SD0305");
+        result.Error.Message.Should().Contain("truncated or desynchronized");
+    }
+
+    [Fact]
+    public void CommentLengthFieldOverrun_WithPatchSite_FailsInsteadOfThrowing()
+    {
+        // The comment after the patch site claims 0x7FFF payload dwords, but only the
+        // end token follows — a lying length field must not drive an out-of-range copy.
+        byte[] input = Stream(
+            PsV3,
+            TexKillToken, TempDest(0, 0x1),
+            0x7FFFFFFE,
+            End);
+
+        var result = D3d9BytecodePatcher.PatchForMojoShader(input, "t.fx");
+
+        result.IsFailure.Should().BeTrue(because: "a comment length overrun must fail as a Result — never throw, never emit corrupt bytes");
+        result.Error.Code.Should().Be("SD0305");
+        result.Error.Message.Should().Contain("truncated or desynchronized");
+    }
+
+    [Fact]
+    public void DefWithZeroOperandTokens_WithPatchSite_FailsInsteadOfThrowing()
+    {
+        // def whose operand-count field lies (zero) — re-emitting it would duplicate a
+        // dword (8 bytes appended, 4 consumed) and desynchronize the rest of the stream.
+        byte[] input = Stream(
+            PsV3,
+            0x00000051,
+            TexKillToken, TempDest(0, 0x1),
+            End);
+
+        var result = D3d9BytecodePatcher.PatchForMojoShader(input, "t.fx");
+
+        result.IsFailure.Should().BeTrue(because: "a def with no operands must fail as a Result — never duplicate bytes into the output");
+        result.Error.Code.Should().Be("SD0305");
+        result.Error.Message.Should().Contain("truncated or desynchronized");
     }
 
     [Fact]
