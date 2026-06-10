@@ -46,7 +46,14 @@ restore_vkd3d_shader() {
     mkdir -p "$vkd3d_dir"
     case "$OS" in
         Linux)  local vkd3d_lib="$vkd3d_dir/libvkd3d-shader.so.1" ;;
-        Darwin) local vkd3d_lib="$vkd3d_dir/libvkd3d-shader.dylib" ;;
+        Darwin)
+            # Per-arch layout: both macOS arches share one dylib file name, so they
+            # live in osx-{x64,arm64}/ subdirectories (what ShadowDusk.HLSL.csproj
+            # packs from and Vkd3dLoader/FnaTestGate probe).
+            local vkd3d_rid="osx-x64"
+            [ "$(uname -m)" = "arm64" ] && vkd3d_rid="osx-arm64"
+            mkdir -p "$vkd3d_dir/$vkd3d_rid"
+            local vkd3d_lib="$vkd3d_dir/$vkd3d_rid/libvkd3d-shader.1.dylib" ;;
         *)      local vkd3d_lib="$vkd3d_dir/libvkd3d-shader-1.dll" ;;
     esac
 
@@ -82,9 +89,11 @@ The win-x64 binary was built with a portable MSYS2 + autotools toolchain:
        make libvkd3d-shader.la
        cp .libs/libvkd3d-shader.so.1.* tools/vkd3d/libvkd3d-shader.so.1
      Runtime deps: libc/libm only (glibc baseline = the build distro's; build on
-     the oldest distro you intend to support). macOS: native autotools, same shape.
+     the oldest distro you intend to support). macOS: native autotools, same shape —
+     copy the built dylib to tools/vkd3d/osx-{x64,arm64}/libvkd3d-shader.1.dylib
+     (per-arch subdirs; both arches share one file name).
 
-NOTE: This binary is NOT committed (.gitignore ignores tools/vkd3d/{*.dll,*.so*,*.dylib}).
+NOTE: This binary is NOT committed (.gitignore ignores tools/vkd3d binaries incl. the per-arch subdirs).
 Restored per-RID binaries are BOTH copied to build output AND packed into the
 ShadowDusk.HLSL NuGet under runtimes/<rid>/native (see ShadowDusk.HLSL.csproj) —
 the release pipeline must restore every shipping RID before 'dotnet pack'.
