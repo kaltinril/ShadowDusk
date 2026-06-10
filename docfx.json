@@ -56,7 +56,8 @@
     "output": "_site",
     "template": [
       "default",
-      "modern"
+      "modern",
+      "docfx/templates/shadowdusk"
     ],
     "globalMetadata": {
       "_appName": "ShadowDusk",
