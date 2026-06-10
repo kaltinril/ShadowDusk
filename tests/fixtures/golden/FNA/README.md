@@ -18,11 +18,14 @@ fxc.exe /T fx_2_0 /Fo <name>.fxb <name>.fx     (Windows SDK 10.0.26100.0, x64)
 `D3DCompile(pTarget: "fx_2_0")` from the system `d3dcompiler_47.dll` produces **byte-identical**
 output for both effects (verified) — one canonical oracle, two invocation paths. Both emit
 deprecation warning `X4717` ("Effects deprecated for D3DCompiler_47"); output is unaffected.
+(`matrix.fxb`, added Phase 40 / 2026-06-09, was produced by that same `D3DCompile` oracle via
+`validation/FnaValidation`'s reference arm — the path proven byte-identical to `fxc.exe`.)
 
 | File | Size | Contents |
 |---|---|---|
 | `minimal.fx` / `minimal.fxb` | 268 B | smallest valid effect: 0 parameters, 1 technique/1 pass, `PixelShader = compile ps_2_0` |
 | `textured.fx` / `textured.fxb` | 544 B | `texture` + `sampler_state { Texture = <t>; MipFilter = LINEAR; }` + `tex2D` — exercises texture/sampler parameters, sampler-state records, and the small/large object sections |
+| `matrix.fx` / `matrix.fxb` | 588 B | square `float4x4` with a non-trivial default, used in PS arithmetic (Phase 40) — the calibration artifact for the matrix typedef encoding (dword5 = columns / dword6 = rows) and the F2 matrix-default ground truth (fxc bakes the initializer) |
 
 These are **test oracles only** — fxc/d3dcompiler never ship in or drive the product pipeline
 (same posture as the Phase 18 `d3dcompiler_47` DXBC oracle). Byte layout decoded against

@@ -228,6 +228,7 @@ public sealed class FnaCompileFixtureTests
     [FnaTheory]
     [InlineData("minimal")]
     [InlineData("textured")]
+    [InlineData("matrix")] // Phase 40: square float4x4 — the typedef dims-order calibration
     public async Task Golden_Fna_OutputStructurallyEquivalentToFxc(string name)
     {
         using var cts = new CancellationTokenSource(CompileTimeout);

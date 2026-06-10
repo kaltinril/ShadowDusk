@@ -145,7 +145,11 @@ public sealed class Fx2EffectBuilderTests
 
         Fx2Parameter merged = result.Value.Parameters.Should().ContainSingle().Subject;
         merged.Name.Should().Be("WorldViewProj");
-        merged.Class.Should().Be(3, because: "MATRIX_COLUMNS class is preserved");
+        merged.Class.Should().Be(2,
+            because: "the parameter-table class for matrices is MATRIX_ROWS — fxc's " +
+                     "declaration-level D3DX convention, pinned by the matrix.fxb golden " +
+                     "(the CTAB's MATRIX_COLUMNS describes the shader's register layout, " +
+                     "not the parameter typedef; Phase 40)");
         merged.Rows.Should().Be(4);
         merged.Columns.Should().Be(4);
     }

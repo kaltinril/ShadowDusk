@@ -143,10 +143,21 @@ internal static class Fx2EffectBuilder
         foreach (string name in numericOrder)
         {
             CtabConstant c = numericsByName[name];
+            // Matrix class: the CTAB describes the SHADER's register layout (vkd3d's
+            // column-major default ⇒ MATRIX_COLUMNS), but fxc's effect parameter table
+            // carries the DECLARATION-level D3DX convention — an unqualified float4x4
+            // is MATRIX_ROWS (pinned by the matrix.fxb golden, whose shader CTAB also
+            // says COLUMNS while its parameter typedef says ROWS). Behaviorally inert
+            // in FNA (SetValue(Matrix) always writes column-major and MojoShader's
+            // copy_parameter_data never transposes by class), but games can read
+            // EffectParameter.ParameterClass — match fxc. Explicit column_major
+            // globals (rare) are indistinguishable from the default in the CTAB and
+            // also map to ROWS; that residual divergence is class-metadata only.
+            int parameterClass = c.Class == 3 ? 2 : c.Class;
             parameters.Add(new Fx2Parameter
             {
                 Name = c.Name,
-                Class = c.Class,
+                Class = parameterClass,
                 Type = c.Type,
                 Rows = c.Rows,
                 Columns = c.Columns,
