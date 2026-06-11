@@ -165,10 +165,69 @@ public sealed class GlContextFixture : IAsyncLifetime
         catch (Exception ex)
         {
             DisposeQuietly();
-            MarkSkippedOrThrow($"OpenGL 3.3 context unavailable: {ex.GetType().Name}: {ex.Message}");
+            string reason = $"OpenGL 3.3 context unavailable: {ex.GetType().Name}: {ex.Message}";
+
+            // Silk.NET reports a native-load failure as the one-line
+            // "Couldn't find a suitable window platform" and SWALLOWS the real
+            // loader exception (GlfwPlatform.IsApplicable catches it; the
+            // detail only prints in Silk's own DEBUG builds). Constraint 5 —
+            // fail loudly WITH diagnostics — so probe the GLFW native directly
+            // and append the true dlopen/resolution error to the reason.
+            if (ex is PlatformNotSupportedException)
+                reason += ProbeGlfwLoadDetail();
+
+            MarkSkippedOrThrow(reason);
         }
 
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Diagnoses WHY Silk.NET deemed the GLFW platform "not applicable":
+    /// re-runs the same native load Silk's <c>GlfwPlatform.IsApplicable</c>
+    /// performs (capturing the swallowed exception), and on Linux also tries
+    /// an absolute-path <see cref="NativeLibrary.Load(string)"/> of the
+    /// deployed binary to separate "name/deps resolution failed" from
+    /// "dlopen itself failed" (whose message carries the dlerror string).
+    /// </summary>
+    private static string ProbeGlfwLoadDetail()
+    {
+        string detail;
+        try
+        {
+            using var glfw = Silk.NET.GLFW.Glfw.GetApi();
+            detail = " [GLFW probe: Glfw.GetApi() succeeded — the windowing failure is elsewhere.]";
+        }
+        catch (Exception gex)
+        {
+            detail = $" [GLFW probe: Glfw.GetApi() failed: {gex.GetType().Name}: {gex.Message}]";
+        }
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        {
+            string abs = Path.Combine(
+                AppContext.BaseDirectory, "runtimes", "linux-x64", "native", "libglfw.so.3");
+            if (!File.Exists(abs))
+            {
+                detail += $" [GLFW probe: '{abs}' does not exist.]";
+            }
+            else
+            {
+                try
+                {
+                    nint handle = NativeLibrary.Load(abs);
+                    NativeLibrary.Free(handle);
+                    detail += " [GLFW probe: absolute-path dlopen of the deployed libglfw.so.3 succeeded.]";
+                }
+                catch (Exception dex)
+                {
+                    // DllNotFoundException's message embeds the raw dlerror text.
+                    detail += $" [GLFW probe: absolute-path dlopen FAILED: {dex.Message}]";
+                }
+            }
+        }
+
+        return detail;
     }
 
     /// <summary>
