@@ -1,6 +1,6 @@
 # Phase 37 — Cross-platform integration-test native availability (macOS DXC gap, Linux DXC ICE, vkd3d in CI)
 
-**Status:** 🔴 **Open — created 2026-06-07.** Contains a **consumer-facing product gap** (macOS), a dominant **Linux DXC ICE** (expands/absorbs Phase 36), and a smaller **vkd3d CI-provisioning** task.
+**Status:** 🟠 **Open — created 2026-06-07; Finding C ✅ done 2026-06-10 (PRs #35/#36/#37 — see the as-built section under Finding C).** Remaining: a **consumer-facing product gap** (macOS DXC, Finding A) and the dominant **Linux DXC ICE** (Finding B, expands/absorbs Phase 36).
 **Track:** Reach (Part 1 of THE PURPOSE) — "compile where `mgfxc` can't (Linux/macOS)." The integration tests are RED because they are faithfully catching real cross-platform gaps; this is not a test-logic problem.
 
 > **Supersedes the scope of [Phase 36](PHASE-36-dxc-linux-spirv-ice.md).** Phase 36 concluded the Linux DXC ICE was confined to the **Debug-CLI / spawned-process** `wasm.yml` path and that "Release in-process works on real Linux." New evidence in this phase **disproves that**: the `ci.yml` **integration-tests** job (Release, **in-process** `EffectCompiler`) ICEs on ~120 tests on `ubuntu-latest`. Phase 36's "likely-quick Release-CLI experiment" is now just one sub-hypothesis under Finding B below.
@@ -172,6 +172,47 @@ What changed since this finding was written, and why C moved to the front of the
   requirement; there are no upstream prebuilt macOS binaries to point at anyway (Wine
   ships source tarballs only).
 
+### C — AS-BUILT ✅ (done 2026-06-10, PRs #35 / #36 / #37)
+
+What landed, in merge order:
+
+- **PR #35 (pre-wiring):** the four macOS-arrival fixes recorded above (loader +
+  `FnaTestGate`/`Vkd3dTestGate` per-arch `osx-{x64,arm64}/` probing, `restore.sh` Darwin
+  filename, csproj osx-arm64 copy-link, `.gitignore` subdirs).
+- **PR #36 (builds):** a dispatchable `vkd3d-build.yml` workflow builds vkd3d **1.17**
+  from the WineHQ tarball on ubuntu **20.04** (glibc 2.31 baseline — the linux .so was
+  REBUILT there per the caution above) and macos arm64/x64, with `otool -L` /
+  `readelf -d` link-purity gates. win-x64 stays the byte-exact MSYS2 binary the
+  Phase 18/39/40 goldens were proven against.
+- **PR #37 (hosting + restore + tests + licensing):** all four per-RID binaries hosted on
+  the fixed release tag **`native-vkd3d-1.17`**; `tools/restore.{sh,ps1}` download +
+  SHA-256-verify against embedded pins (present+match → no-op; mismatch → re-download;
+  offline → non-fatal); `ci.yml` caches `tools/vkd3d` keyed `vkd3d-1.17-<os>`;
+  `Vkd3dFactAttribute` became an availability probe; DirectX integration rows select
+  `DxbcBackend.Vkd3d` off-Windows; `THIRD-PARTY-NOTICES.txt` (LGPL-2.1) packs into the
+  nupkg root; `release.yml`'s pack gate now requires **all four** natives **and** the
+  notice file.
+
+**Evidence (main CI run 27276635277, 2026-06-10):** restore reports hash-OK for all four
+binaries on all 3 OS; the FNA integration suite (rungs 1–2) runs **green on ubuntu and
+macOS** (0 skips — it was silently skipping before); the two vkd3d live-compile tests
+pass on all 3 OS; the release pack gate is now satisfiable from any clean machine.
+
+**Residue (the honest delta vs the original definition of done):**
+
+- The third vkd3d test (`DxbcReflectionExtractor_ReflectsVkd3dOutput`) **cannot pass
+  off-Windows**: `DxbcReflectionExtractor` P/Invokes d3dcompiler_47's `D3DReflect`
+  (Windows-only — "Phase 18 Track A"). PR #37 un-gated it everywhere so it *failed* on
+  ubuntu/macOS; it now skips truthfully off-Windows (`Vkd3dFact(requiresD3DReflect: true)`).
+- Same root cause: the **DX11 `.mgfx` pipeline end-to-end still requires Windows** — the
+  vkd3d backend compiles DXBC cross-platform, but reflection (SD0210) blocks the rest of
+  the pipeline, so `Compile_Minimal_DirectX_ReturnsBytes` + the `DirectX_11` fixture rows
+  stay red off-Windows until cross-platform DXBC reflection (Track A) exists. This is
+  **not** a vkd3d-provisioning gap; it predates C and is the remaining DX-reach item
+  (natural follow-on work alongside Finding A/B, or its own phase).
+- Cross-host DXBC byte-equality remains asserted only at the raw-DXBC level (the vkd3d
+  live tests), not `.mgfx`-level, for the same reason.
+
 ---
 
 ## Investigation technique (how these were found — reproducible)
@@ -205,7 +246,7 @@ What changed since this finding was written, and why C moved to the front of the
 ## Sequencing / priority
 1. **Finding B diagnosis FIRST** (free, no user action) — reproduce the Linux ICE in Docker and capture the raw DXC error. It's the dominant blocker (120 tests) and may share a root (and therefore a fix) with Finding A. Knowing its true cause sizes the whole phase.
 2. **Finding A (macOS native)** — the actual product gap; highest user impact. Likely the same from-source DXC build, retargeted.
-3. **Finding C (vkd3d)** — smallest, opt-in; needs the user to build the linux/macOS 1.17 binaries.
+3. ~~**Finding C (vkd3d)** — smallest, opt-in; needs the user to build the linux/macOS 1.17 binaries.~~ ✅ Done 2026-06-10 (see the as-built section).
 
 ## Severity & release note
 - **0.1.0 (already on nuget) and 0.1.1 both carry the macOS DXC gap** — the product cannot compile shaders on macOS until Finding A lands. This was previously (incorrectly) described as "works everywhere." 0.1.1 does **not** regress it (it adds branding + the CLI rename + CI fixes), so shipping 0.1.1 for the icons is fine — but the macOS claim must be qualified in docs until Phase 37 closes.

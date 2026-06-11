@@ -119,22 +119,29 @@ the *allowed* kind of choice (picking a platform the user's game targets — per
 `seamless-for-end-user`), and the in-browser artifact must be **byte-identical** to the
 desktop-compiled one (proven for GL — the G1 gate — and the bar for every future host).
 
-Where each host×target cell stands (2026-06-09):
+Where each host×target cell stands (updated 2026-06-10, post-Phase 37 C):
 
 | Emit ↓ / Host → | Windows | Linux | macOS | Browser (WASM) |
 |---|---|---|---|---|
 | OpenGL `.mgfx` | ✅ proven | ⚠️ DXC ICE (Phase 37 B) | ⚠️ no DXC native (Phase 37 A) | ✅ proven, byte-identical |
-| DX11 DXBC `.mgfx` | ✅ proven | ✅ vkd3d | ⚠️ vkd3d dylib pending | ❌ needs vkd3d→WASM (Phase 4.1) |
-| FNA fx_2_0 `.fxb` | ✅ proven | ✅ proven | ⚠️ vkd3d dylib pending | ❌ needs vkd3d→WASM (Phase 4.1) |
+| DX11 DXBC `.mgfx` | ✅ proven | ⚠️ vkd3d compiles DXBC; `.mgfx` reflection is Windows-only D3DReflect (Phase 18 Track A) | ⚠️ same reflection gap (+ 37 A) | ❌ needs vkd3d→WASM (Phase 4.1) |
+| FNA fx_2_0 `.fxb` | ✅ proven | ✅ proven | ✅ natives ship + compile suite green in CI (37 C); render oracle (`fxc`) is Windows-only by nature | ❌ needs vkd3d→WASM (Phase 4.1) |
 | Vulkan SPIR-V / Metal MSL | parked — no validatable consumer runtime yet (Phases 31/32) | | | |
+
+> Phase 37 C (2026-06-10) hosted all four pinned vkd3d 1.17 per-RID binaries and made
+> `tools/restore.*` provision them everywhere — which also surfaced (via CI) that the
+> earlier "DX11 on Linux ✅" claim was overstated: vkd3d produces the DXBC fine, but the
+> `.mgfx` pipeline's reflection step still P/Invokes Windows-only `D3DReflect`
+> (`DxbcReflectionExtractor`). Cross-platform DXBC reflection ("Phase 18 Track A") is the
+> remaining DX-reach gap, distinct from native availability.
 
 Every gap above is a **packaging/porting gap, never a compiler-writing gap** — and one
 artifact, **vkd3d-shader compiled to WASM (Phase 4.1)**, closes the entire browser column:
 the fx_2_0 writer, bytecode patcher, and reflection are managed C# that already run in
 WASM, so vkd3d.wasm unlocks **both** DX and FNA export in the browser from the same pinned
 1.17 source (no substitute compiler). The recommended completion order: **(1)** Phase 37 C
-artifact hosting + macOS vkd3d dylibs (also unblocks releases — the pack gate is a hard
-stop); **(2)** Phase 37 A/B (macOS DXC dylib, Linux ICE) to finish the desktop GL column;
+artifact hosting + macOS vkd3d dylibs (✅ done 2026-06-10 — releases unblocked, the pack
+gate is satisfiable); **(2)** Phase 37 A/B (macOS DXC dylib, Linux ICE) to finish the desktop GL column;
 **(3)** un-park Phase 4.1 (vkd3d→WASM, reusing the Phase 23 emscripten infrastructure);
 **(4)** Vulkan/Metal remain validation-gated. Interim note for consumers who need DX/FNA
 export from a website before (3): hosting the same library server-side (Linux) yields the

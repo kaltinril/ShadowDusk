@@ -76,7 +76,7 @@ public sealed class Vkd3dShaderCompilerTests
         result.Error.Message.Should().NotBeNullOrEmpty();
     }
 
-    [Vkd3dFact]
+    [Vkd3dFact(requiresD3DReflect: true)]
     public async Task DxbcReflectionExtractor_ReflectsVkd3dOutput()
     {
         // Confirms the SAME DxbcReflectionExtractor (ID3D11ShaderReflection) reflects
