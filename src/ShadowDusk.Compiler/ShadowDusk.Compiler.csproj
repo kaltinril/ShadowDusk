@@ -7,8 +7,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>true</IsPackable>
     <PackageId>ShadowDusk.Compiler</PackageId>
-    <Description>Cross-platform, self-contained HLSL Effect compiler for MonoGame and KNI. Compiles .fx shaders to .mgfx binaries in memory at runtime — on Linux, macOS, or Windows — with no Wine, Windows SDK, fxc.exe, or mgfxc required. Add the package and call EffectCompiler.CompileAsync; feed the bytes to new Effect(gd, bytes). Pulls the ShadowDusk.* set and the native DXC + SPIRV-Cross binaries transitively.</Description>
-    <PackageTags>monogame kni hlsl shader compiler mgfx cross-platform runtime in-memory</PackageTags>
+    <Description>Cross-platform, self-contained HLSL Effect compiler for MonoGame, KNI, and FNA. Compiles .fx shaders to .mgfx binaries (MonoGame/KNI) or D3D9 fx_2_0 .fxb binaries (FNA) in memory at runtime — on Linux, macOS, or Windows — with no Wine, Windows SDK, fxc.exe, or mgfxc required. Add the package and call EffectCompiler.CompileAsync; feed the bytes to new Effect(gd, bytes). Pulls the ShadowDusk.* set and the native DXC + SPIRV-Cross + vkd3d-shader binaries transitively.</Description>
+    <PackageTags>monogame kni fna hlsl shader compiler mgfx fxb cross-platform runtime in-memory</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <!-- Phase 26: emit the XML doc file for DocFX. CS1591 suppressed during the

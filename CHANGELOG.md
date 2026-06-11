@@ -14,6 +14,14 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.3.0] - 2026-06-10
+
+### Added
+
 - **FNA support: the new `PlatformTarget.Fna` output target.** Compiles D3D9-style `.fx`
   to the legacy D3D9 Effects binary (`.fxb`) FNA loads — no `fxc.exe`, no Wine, on every
   desktop OS. Render-validated in real FNA 26.06: the validation corpus (PS-only,
@@ -188,7 +196,8 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/kaltinril/ShadowDusk/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/kaltinril/ShadowDusk/releases/tag/v0.1.0

@@ -21,6 +21,6 @@
          (by name only) with Directory.Packages.props PackageVersion Include=… ITEMS.
          NOTE: release.yml/wasm.yml extract this value by grep; keep the element below
          the only Version element in this file (do not write that XML tag in comments). -->
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
   </PropertyGroup>
 </Project>

@@ -31,9 +31,15 @@ Every shape implements the same <xref:ShadowDusk.Core.IShaderCompiler> interface
 |---|---|---|
 | OpenGL / DesktopGL | GLSL | Validated end-to-end in real MonoGame DesktopGL |
 | DirectX (Windows, DX11) | DXBC (SM5) via vkd3d-shader | Validated end-to-end in real MonoGame WindowsDX |
+| FNA | D3D9 fx_2_0 `.fxb` (SM ≤ 3) via vkd3d-shader | Validated end-to-end in real FNA (renders pixel-equivalent to `fxc /T fx_2_0`, PS-only and VS-driven corpora) |
 | WebGL (KNI browser) | GLSL ES | Validated end-to-end in real headless KNI WebGL |
 | [Metal (macOS / iOS)](../backends/metal.md) | MSL | Not yet implemented (future) |
 | [Vulkan](../backends/vulkan.md) | SPIR-V | Future |
+
+> **Known platform gap (being worked):** on **macOS**, the OpenGL/WebGL targets currently fail
+> to compile — the upstream `Vortice.Dxc` package ships no macOS DXC native (tracked as
+> Phase 37 A). The FNA target is unaffected (its vkd3d natives ship for all four desktop
+> RIDs, including osx-x64/osx-arm64).
 
 ## Next steps
 
