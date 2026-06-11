@@ -76,8 +76,16 @@ jobs:
           path: tools/vkd3d
           key: vkd3d-1.17-${{ runner.os }}
 
+      # Same pattern for the pinned macOS DXC dylibs (Phase 37 A).
+      - name: Cache DXC macOS natives
+        uses: actions/cache@v5
+        with:
+          path: tools/dxc
+          key: dxc-1.7.2212.40-${{ runner.os }}
+
       # Restore the vkd3d-shader natives (DirectX DXBC backend + the FNA target's
-      # engine). Non-fatal: when the download is unavailable the script warns and the
+      # engine) and the macOS DXC dylibs (OpenGL frontend on macOS, Phase 37 A).
+      # Non-fatal: when the download is unavailable the script warns and the
       # cross-platform build stays green (vkd3d-dependent tests skip / fail SD0211
       # loudly). When present the binaries are copied into build output and the DX/FNA
       # `.fx` reach paths run (Phase 18 carry-forward; Phase 39 FNA CI net).
@@ -172,6 +180,12 @@ jobs:
         with:
           path: tools/vkd3d
           key: vkd3d-1.17-${{ runner.os }}
+
+      - name: Cache DXC macOS natives
+        uses: actions/cache@v5
+        with:
+          path: tools/dxc
+          key: dxc-1.7.2212.40-${{ runner.os }}
 
       - name: Restore native tools (Linux / macOS)
         if: runner.os != 'Windows'

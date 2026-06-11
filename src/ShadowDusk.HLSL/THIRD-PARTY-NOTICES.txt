@@ -1,8 +1,8 @@
 THIRD-PARTY NOTICES for the ShadowDusk.HLSL package
 ====================================================
 
-This package redistributes the following third-party native library as a
-dynamically-loaded binary (under runtimes/<rid>/native):
+This package redistributes the following third-party native libraries as
+dynamically-loaded binaries (under runtimes/<rid>/native):
 
 vkd3d-shader (libvkd3d-shader), version 1.17
 --------------------------------------------
@@ -32,6 +32,77 @@ output with your own build of the same or a modified version of the library.
 
 ShadowDusk itself is MIT-licensed; this notice applies only to the bundled
 vkd3d-shader binaries.
+
+====================================================
+
+DirectX Shader Compiler (libdxcompiler), version 1.7.2212.40, macOS binaries
+----------------------------------------------------------------------------
+Copyright (c) Microsoft Corporation; portions Copyright (c) 2003-2015
+University of Illinois at Urbana-Champaign. All rights reserved.
+
+NOTE (Phase 37 A): this entry applies to the macOS (osx-x64 / osx-arm64)
+libdxcompiler.dylib binaries, which ride in this package only once the Phase 37 A
+hosted build lands (until then no macOS DXC binary ships and this entry is
+prospective). The win-x64/win-arm64/linux-x64 DXC natives are NOT redistributed
+by this package — they come transitively from the Vortice.Dxc NuGet package
+under its own licensing.
+
+The DirectX Shader Compiler is distributed under the LLVM Release License
+(University of Illinois/NCSA Open Source License), reproduced below.
+
+Source availability: the macOS binaries are built UNMODIFIED from the official
+microsoft/DirectXShaderCompiler repository at the pinned commit
+    e043f4a1286f4e1026222ab1bc94e25de8d0e959 (release-1.7.2212)
+    https://github.com/microsoft/DirectXShaderCompiler
+Build recipe is public in the ShadowDusk repository:
+    https://github.com/kaltinril/ShadowDusk
+    (.github/workflows/dxc-build.yml and tools/restore.ps1)
+The complete upstream LICENSE.TXT (including third-party notices for code
+distributed with LLVM) accompanies the hosted binaries as LICENSE-DXC.TXT.
+
+==============================================================================
+LLVM Release License
+==============================================================================
+University of Illinois/NCSA
+Open Source License
+
+Copyright (c) 2003-2015 University of Illinois at Urbana-Champaign.
+All rights reserved.
+
+Developed by:
+
+    LLVM Team
+
+    University of Illinois at Urbana-Champaign
+
+    http://llvm.org
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal with
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+
+    * Redistributions of source code must retain the above copyright notice,
+      this list of conditions and the following disclaimers.
+
+    * Redistributions in binary form must reproduce the above copyright notice,
+      this list of conditions and the following disclaimers in the
+      documentation and/or other materials provided with the distribution.
+
+    * Neither the names of the LLVM Team, University of Illinois at
+      Urbana-Champaign, nor the names of its contributors may be used to
+      endorse or promote products derived from this Software without specific
+      prior written permission.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
+CONTRIBUTORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS WITH THE
+SOFTWARE.
 
 ====================================================
 
