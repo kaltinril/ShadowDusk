@@ -189,15 +189,29 @@ jobs:
         working-directory: tests/ShadowDusk.BrowserTests
         run: npx playwright install --with-deps chromium
 
+      # The harness's RefRenderer is a real MonoGame DesktopGL app (the desktop
+      # baseline of the pixel compare). Headless runners have no display or GPU, so
+      # give it an X virtual framebuffer + Mesa's software rasterizer (llvmpipe).
+      # Until the Phase 37 B wchar_t fix the job died earlier (corpus compile ICE)
+      # and never reached this wall.
+      - name: Install xvfb + Mesa software GL (DesktopGL reference renderer)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgl1-mesa-dri libglu1-mesa
+
       # ── mode-1: precompiled .mgfx load + render in KNI WebGL (Reach baseline) ──
       # Uses deterministic software GL (ANGLE/SwiftShader) inside the harness so the
-      # pixel compare reproduces across runners.
+      # pixel compare reproduces across runners; the DesktopGL baseline renders on
+      # Mesa llvmpipe under xvfb (LIBGL_ALWAYS_SOFTWARE pins the software path even
+      # if a GPU device node exists).
       - name: Mode-1 render smoke (KNI Reach / WebGL1)
         working-directory: tests/ShadowDusk.BrowserTests
         timeout-minutes: 25
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
         run: |
           node publish-sample-sd.mjs
-          node run-harness.mjs --corpus=sd
+          xvfb-run -a node run-harness.mjs --corpus=sd
 
       # ── Phase 33 / issue #7 regression guard: KNI HiDef / WebGL2 (GLSL ES 3.00) ──
       # The harness returns 0 for BOTH a clean GREEN and a reproduced-RED (its original
@@ -207,10 +221,12 @@ jobs:
       - name: Issue #7 HiDef/WebGL2 regression guard
         working-directory: tests/ShadowDusk.BrowserTests
         timeout-minutes: 25
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
         run: |
           rm -f RESULTS-SD-HIDEF.md RESULTS-SD-HIDEF-REPRO.md
           node publish-sample-sd-hidef.mjs
-          node run-harness.mjs --corpus=sd-hidef
+          xvfb-run -a node run-harness.mjs --corpus=sd-hidef
           if [ -f RESULTS-SD-HIDEF-REPRO.md ]; then
             echo "::error::issue #7 REGRESSED — KNI HiDef/WebGL2 reproduced the gl_FragColor load failure (RESULTS-SD-HIDEF-REPRO.md written)."
             cat RESULTS-SD-HIDEF-REPRO.md
