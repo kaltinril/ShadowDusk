@@ -128,6 +128,21 @@ public sealed class GlContextFixture : IAsyncLifetime
 
         try
         {
+            // Preload the GLFW native by ABSOLUTE path (Linux). Phase 37 tail
+            // finding, proven by the probe below on ubuntu-latest CI: the
+            // deployed runtimes/linux-x64/native/libglfw.so.3 is a pristine
+            // ELF and dlopen()s fine by absolute path, but Silk.NET's
+            // name-based NativeLibrary resolution fails on the runner under
+            // `dotnet test <slnx> --no-build` ("Could not load from any of
+            // the possible library names!") — the testhost's native search
+            // directories miss the test project's RID assets there (the same
+            // bin output resolves fine locally and in a plain container).
+            // Loading it once by absolute path makes glibc return the
+            // already-loaded SONAME ("libglfw.so.3") for Silk's subsequent
+            // dlopen-by-name — the same preload pattern as SpvcLoader /
+            // DxcLoader / Vkd3dLoader in src/.
+            PreloadGlfwNative();
+
             // Ensure the GLFW backend is chosen even if other windowing
             // platforms (e.g., SDL) are present in the test environment.
             Silk.NET.Windowing.Window.PrioritizeGlfw();
@@ -180,6 +195,27 @@ public sealed class GlContextFixture : IAsyncLifetime
         }
 
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Best-effort absolute-path preload of the deployed GLFW native so
+    /// Silk.NET's dlopen-by-name resolves even where the testhost's native
+    /// search directories don't cover the RID assets (observed on
+    /// ubuntu-latest CI; see the call site comment). No-op off Linux and
+    /// when the file is absent — failures fall through to the normal
+    /// Silk.NET load + the probe diagnostics.
+    /// </summary>
+    private static void PreloadGlfwNative()
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            return;
+
+        string rid = RuntimeInformation.ProcessArchitecture == Architecture.Arm64
+            ? "linux-arm64"
+            : "linux-x64";
+        string path = Path.Combine(AppContext.BaseDirectory, "runtimes", rid, "native", "libglfw.so.3");
+        if (File.Exists(path))
+            NativeLibrary.TryLoad(path, out _);
     }
 
     /// <summary>
