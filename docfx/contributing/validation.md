@@ -3,7 +3,7 @@
 ShadowDusk earns its existence on **two axes, both required**:
 
 1. **Reach `mgfxc` can't** — compile `.fx` on Linux/macOS (no Wine, no Windows SDK) and at runtime / in-browser via WASM.
-2. **Output `mgfxc` would** — the compiled `.mgfx`, loaded into the **real** MonoGame/KNI runtime, renders the **same image** as the `mgfxc`-compiled version.
+2. **Output the reference compiler would** — the compiled effect, loaded into the **real** runtime, renders the **same image** as the reference-compiled version (`mgfxc` for MonoGame/KNI `.mgfx`; `fxc /T fx_2_0` for FNA `.fxb`).
 
 The product is the *combination*: the same result `mgfxc` gives, produced where `mgfxc` can't run.
 
@@ -22,7 +22,8 @@ Rung 4 is **proven** for:
 
 - the **OpenGL SM3 PS-only corpus** — 10/10 render pixel-equivalent in real MonoGame DesktopGL;
 - the **DirectX SM5 PS-only corpus** — 10/10 DX `.mgfx` load in real MonoGame WindowsDX and render pixel-equivalent to `mgfxc`, via **both** the `d3dcompiler_47` oracle and the cross-platform `vkd3d-shader` backend;
-- the **KNI WebGL** path — render-equivalent in a real headless KNI WebGL run.
+- the **KNI WebGL** path — render-equivalent in a real headless KNI WebGL run;
+- the **FNA** target — the PS-only and custom-vertex-shader corpora render pixel-equivalent (max Δ ≤ 1/255) to `fxc /T fx_2_0` in real FNA, including multi-pass effects and in-pass render states.
 
 ## Compare same-backend, never cross-backend
 

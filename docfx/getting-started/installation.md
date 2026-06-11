@@ -38,6 +38,21 @@ This provides a `ShadowDuskCLI` command with the same flags and `.mgfx` output a
 
 For in-browser runtime compilation (KNI / Blazor WebAssembly), add the `ShadowDusk.Wasm` package. It self-registers as Blazor static web assets — see [In-Browser (KNI/Blazor WASM)](../guides/in-browser-kni-blazor.md).
 
+## Targeting FNA
+
+[FNA](https://fna-xna.github.io/) uses the **same `ShadowDusk.Compiler` package** — there is nothing FNA-specific to install on ShadowDusk's side:
+
+```sh
+dotnet add package ShadowDusk.Compiler
+```
+
+Two things differ from the MonoGame/KNI path, both on FNA's side, not ShadowDusk's:
+
+- **FNA is not a NuGet package.** Unlike MonoGame and KNI, FNA is consumed as a **project reference** — a git clone/submodule of [FNA-XNA/FNA](https://github.com/FNA-XNA/FNA) plus its native `fnalibs` (SDL3, FNA3D, FAudio) — per FNA's own setup docs. (Community/unofficial FNA NuGet builds exist, but the project reference is FNA's documented, supported path.) You add `ShadowDusk.Compiler` to that existing FNA project exactly as above.
+- **Different output container.** For `PlatformTarget.Fna`, ShadowDusk emits a D3D9 **fx_2_0 `.fxb`** (Shader Model ≤ 3), not the `.mgfx` MonoGame/KNI load. FNA reads it through MojoShader at runtime via `new Effect(graphicsDevice, fxbBytes)`. See [Compiling for FNA](in-memory-quickstart.md#compiling-for-fna) in the quickstart.
+
+The FNA path is cross-platform and needs the same restored `vkd3d-shader` native as the cross-platform DirectX backend — see [Restore Native Tools](restore-native-tools.md).
+
 ## DirectX backend & native tools
 
 For **DirectX (DX11)**, the **default** backend is `d3dcompiler_47` — a system DLL **already part of Windows** (you don't install it), so DX compilation works out of the box on Windows with the most `fxc`-faithful output. The **cross-platform** DirectX backend is `vkd3d-shader` (opt-in via `CompilerOptions.DxbcBackend = DxbcBackend.Vkd3d`), a restored (non-redistributed) native artifact for Linux/macOS — see [Restore Native Tools](restore-native-tools.md) and [DirectX DXBC (vkd3d) Path](../architecture/directx-dxbc-vkd3d.md). The OpenGL/WebGL in-memory path needs no extra restore and is cross-platform out of the box.

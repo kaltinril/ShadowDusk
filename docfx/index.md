@@ -4,25 +4,32 @@ title: ShadowDusk
 
 # ShadowDusk
 
-**A cross-platform HLSL shader compiler for [MonoGame](https://monogame.net/) and [KNI](https://github.com/kniEngine/kni).** Compile `.fx` shaders to `.mgfx` on Linux, macOS, or Windows — no Wine, no Windows SDK, no `fxc.exe`, no DirectX install required.
+**A cross-platform HLSL shader compiler for [MonoGame](https://monogame.net/), [KNI](https://github.com/kniEngine/kni), and [FNA](https://fna-xna.github.io/).** Compile `.fx` shaders to `.mgfx` (MonoGame/KNI) or `.fxb` (FNA) on Linux, macOS, or Windows — no Wine, no Windows SDK, no `fxc.exe`, no DirectX install required.
 
-> The product is the in-memory `IShaderCompiler` library (the `ShadowDusk.Compiler` NuGet package): add the package and call `CompileAsync(fx)` to get `.mgfx` bytes — nothing else to install. The **CLI** (`mgfxc` dotnet tool) and the **MGCB plugin** are delivery shapes of the same library for build-time use. The **in-browser shader fiddle is only a sample of reach — not a separate product.**
+> **The "XNA-likes."** Throughout these docs, **MonoGame, KNI, and FNA** — the XNA-derived runtimes ShadowDusk targets — are collectively the **XNA-likes**. Classic Microsoft XNA 4.0 itself is **out of scope** (a different, abandoned, Windows-only toolchain). The three share a heritage but **not** one effect format: MonoGame and KNI load the `.mgfx` (MGFX) container, while FNA loads the legacy D3D9 fx_2_0 `.fxb` — so where the output format matters, the docs name the runtime explicitly rather than say "XNA-likes."
+
+> The product is the in-memory `IShaderCompiler` library (the `ShadowDusk.Compiler` NuGet package): add the package and call `CompileAsync(fx)` to get the compiled effect bytes (`.mgfx`, or `.fxb` for FNA) — nothing else to install. The **CLI** (`mgfxc` dotnet tool) and the **MGCB plugin** are delivery shapes of the same library for build-time use. The **in-browser shader fiddle is only a sample of reach — not a separate product.**
 
 ## What it does
 
-MonoGame's stock content pipeline shells out to `mgfxc`, a Windows-only tool that depends on `fxc.exe` from the DirectX SDK. ShadowDusk replaces that step with one portable pipeline whose output a real MonoGame/KNI `Effect` loads and **renders like `mgfxc`'s**:
+MonoGame's stock content pipeline shells out to `mgfxc`, a Windows-only tool that depends on `fxc.exe` from the DirectX SDK. ShadowDusk replaces that step with one portable pipeline whose output a real XNA-like `Effect` — MonoGame, KNI, or FNA — loads and **renders like the reference compiler's** (`mgfxc` for MonoGame/KNI, `fxc` for FNA):
 
 ```text
-OpenGL / WebGL:
+OpenGL / WebGL  (MonoGame, KNI):
   HLSL (.fx)
     → DXC (via Vortice.Dxc)  →  SPIR-V
     → SPIRV-Cross             →  GLSL (+ MojoShader-dialect rewrite)
-    → .mgfx binary            →  MonoGame Effect loader
+    → .mgfx binary            →  MonoGame / KNI Effect loader
 
-DirectX (DX11):
+DirectX (DX11)  (MonoGame, KNI):
   HLSL (.fx)
     → vkd3d-shader            →  DXBC (SM5)
-    → .mgfx binary            →  MonoGame Effect loader
+    → .mgfx binary            →  MonoGame / KNI Effect loader
+
+FNA  (D3D9 fx_2_0):
+  HLSL (.fx)
+    → vkd3d-shader            →  D3D9 fx_2_0 bytecode (SM ≤ 3)
+    → .fxb binary             →  FNA Effect loader (MojoShader)
 ```
 
 **OpenGL / WebGL is fully cross-platform and self-contained** (DXC + SPIRV-Cross ride inside the package). For **DirectX (DX11)**, ShadowDusk produces DXBC in-process via two backends behind `IDxbcShaderCompiler`, chosen by `CompilerOptions.DxbcBackend`: the **default** `d3dcompiler_47` (Microsoft's HLSL compiler — a system DLL already present on Windows; most `fxc`-faithful) and the **opt-in, cross-platform** `vkd3d-shader` (`DxbcBackend.Vkd3d`) for Linux/macOS. DXC is **not** used for DX11 (it emits DXIL/SM6, not the DXBC/SM ≤ 5 the DX11 runtime loads). See [The Faithful Pipeline](architecture/the-faithful-pipeline.md) and [DirectX DXBC (vkd3d) Path](architecture/directx-dxbc-vkd3d.md).
