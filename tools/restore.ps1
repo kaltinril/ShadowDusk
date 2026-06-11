@@ -108,6 +108,80 @@ function Restore-Vkd3dShader {
 Restore-Vkd3dShader
 
 # ---------------------------------------------------------------------------
+# DXC macOS natives (libdxcompiler.dylib, Phase 37 A)
+# ---------------------------------------------------------------------------
+# Vortice.Dxc 3.3.4 ships NO macOS native (win-x64/win-arm64/linux-x64 only), so
+# every CompileAsync on a Mac dies with DllNotFoundException — the Finding A
+# product gap. The fix is OUR OWN libdxcompiler.dylib built from the EXACT pinned
+# DXC commit the Vortice native reports (e043f4a1286f4e1026222ab1bc94e25de8d0e959,
+# FileVersion 1.7.2212.40 — the same pin Restore-DxcWasm below uses; same compiler,
+# never a substitute), by .github/workflows/dxc-build.yml (osx-arm64 on macos-14,
+# osx-x64 on macos-15-intel; MACOSX_DEPLOYMENT_TARGET 11.0/10.15; otool gate =
+# system-only linkage). Both arches share one file name, so the restored layout is
+# per-arch (tools/dxc/osx-{x64,arm64}/), exactly like vkd3d's. Every host restores
+# both RIDs (pack-ready pattern; ShadowDusk.HLSL.csproj packs them under
+# runtimes/osx-{x64,arm64}/native). Mirrors Restore-Vkd3dShader.
+#
+# PENDING-FIRST-HOSTED-BUILD: the dylibs have not been built+hosted yet. Until the
+# release tag below carries the assets and the SHA-256 pins replace the
+# placeholders, this section skips with a notice (non-fatal — win/linux users are
+# unaffected; macOS DXC stays a known gap). To finish: dispatch dxc-build.yml,
+# download the artifacts, `gh release create native-dxc-1.7.2212.40 ...`, paste
+# the printed SHA-256s here and in restore.sh.
+$DxcReleaseUrl = 'https://github.com/kaltinril/ShadowDusk/releases/download/native-dxc-1.7.2212.40'
+$DxcOsxX64Sha256   = 'PENDING-FIRST-HOSTED-BUILD'
+$DxcOsxArm64Sha256 = 'PENDING-FIRST-HOSTED-BUILD'
+
+function Restore-DxcFile([string]$Asset, [string]$DestRel, [string]$Sha256) {
+    $DxcDir = Join-Path $RepoRoot 'tools' 'dxc'
+    $Dest = Join-Path $DxcDir $DestRel
+
+    if ($Sha256 -eq 'PENDING-FIRST-HOSTED-BUILD') {
+        Write-Host ("restore.ps1: NOTICE — DXC macOS native ($DestRel) pin is a placeholder " +
+            "(no hosted build yet); skipping. macOS DXC remains unavailable until Phase 37 A's " +
+            "hosted artifacts land.")
+        return   # non-fatal by design while the pins are placeholders
+    }
+
+    EnsureDir (Split-Path $Dest)
+    if (Test-Path $Dest) {
+        $have = (Get-FileHash -Algorithm SHA256 -Path $Dest).Hash.ToLowerInvariant()
+        if ($have -eq $Sha256) {
+            Write-Host "restore.ps1: DXC macOS native ($DestRel) present, hash OK"
+            return
+        }
+        Write-Host "restore.ps1: DXC macOS native ($DestRel) hash mismatch — re-downloading (had $have)"
+    }
+
+    $tmp = "$Dest.tmp"
+    try {
+        Invoke-WebRequest -Uri "$DxcReleaseUrl/$Asset" -OutFile $tmp -UseBasicParsing
+    } catch {
+        Write-Warning ("restore.ps1: could not download $Asset from $DxcReleaseUrl (offline?); " +
+            "DXC (the OpenGL pipeline frontend) will be unavailable on macOS. $_")
+        if (Test-Path $tmp) { Remove-Item -Force $tmp }
+        return   # non-fatal by design
+    }
+    $got = (Get-FileHash -Algorithm SHA256 -Path $tmp).Hash.ToLowerInvariant()
+    if ($got -ne $Sha256) {
+        Write-Warning "restore.ps1: $Asset SHA-256 mismatch (expected $Sha256, got $got); discarding."
+        Remove-Item -Force $tmp
+        return   # non-fatal, but the file is NOT placed
+    }
+    Move-Item -Force $tmp $Dest
+    Write-Host "restore.ps1: DXC macOS native ($DestRel) downloaded, hash OK"
+}
+
+function Restore-DxcMacos {
+    Restore-DxcFile 'libdxcompiler.osx-x64.dylib' (Join-Path 'osx-x64' 'libdxcompiler.dylib') `
+        $DxcOsxX64Sha256
+    Restore-DxcFile 'libdxcompiler.osx-arm64.dylib' (Join-Path 'osx-arm64' 'libdxcompiler.dylib') `
+        $DxcOsxArm64Sha256
+}
+
+Restore-DxcMacos
+
+# ---------------------------------------------------------------------------
 # DXC -> WASM (faithful in-browser HLSL -> SPIR-V frontend, Phase 23 M0)
 # ---------------------------------------------------------------------------
 # The faithful in-browser frontend is the SAME DirectXShaderCompiler the desktop

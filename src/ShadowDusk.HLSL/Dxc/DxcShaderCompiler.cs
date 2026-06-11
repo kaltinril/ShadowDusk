@@ -22,6 +22,11 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
     /// </summary>
     public DxcShaderCompiler()
     {
+        // macOS: hook Vortice's ResolveLibrary so our pinned libdxcompiler.dylib
+        // resolves (Vortice.Dxc ships no macOS native — Phase 37 A). Idempotent;
+        // no-op on Windows/Linux. Must precede the first DXC P/Invoke below.
+        DxcLoader.Register();
+
         // Load dxil.dll for DXIL validation on Windows; no-op on other platforms.
         LoadDxil();
         _compiler = CreateDxcCompiler<IDxcCompiler3>();

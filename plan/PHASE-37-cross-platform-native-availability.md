@@ -1,6 +1,6 @@
 # Phase 37 — Cross-platform integration-test native availability (macOS DXC gap, Linux DXC ICE, vkd3d in CI)
 
-**Status:** 🟠 **Open — created 2026-06-07; Finding C ✅ done 2026-06-10 (PRs #35/#36/#37 — see the as-built section under Finding C).** Remaining: a **consumer-facing product gap** (macOS DXC, Finding A) and the dominant **Linux DXC ICE** (Finding B, expands/absorbs Phase 36).
+**Status:** 🟠 **Open — created 2026-06-07; Finding C ✅ done 2026-06-10 (PRs #35/#36/#37 — see the as-built section under Finding C).** Remaining: a **consumer-facing product gap** (macOS DXC, Finding A — repo wiring landed 2026-06-10, hosted dylib build pending; see "A — AS-BUILT, part 1") and the dominant **Linux DXC ICE** (Finding B, expands/absorbs Phase 36).
 **Track:** Reach (Part 1 of THE PURPOSE) — "compile where `mgfxc` can't (Linux/macOS)." The integration tests are RED because they are faithfully catching real cross-platform gaps; this is not a test-logic problem.
 
 > **Supersedes the scope of [Phase 36](PHASE-36-dxc-linux-spirv-ice.md).** Phase 36 concluded the Linux DXC ICE was confined to the **Debug-CLI / spawned-process** `wasm.yml` path and that "Release in-process works on real Linux." New evidence in this phase **disproves that**: the `ci.yml` **integration-tests** job (Release, **in-process** `EffectCompiler`) ICEs on ~120 tests on `ubuntu-latest`. Phase 36's "likely-quick Release-CLI experiment" is now just one sub-hypothesis under Finding B below.
@@ -74,6 +74,68 @@ Ship our **own** `libdxcompiler.dylib` for macOS, built from the **exact pinned 
 
 ### Risk / fidelity note
 Changing/adding the DXC native is fidelity-sensitive: it must be gated by the existing **byte-identity corpus test** (the same gate used for the WASM module) so the macOS dylib's SPIR-V matches the win-x64/linux-x64 oracle, and the rung-4 render-vs-`mgfxc` bar must stay green.
+
+### A — AS-BUILT, part 1 (2026-06-10): implementation landed, build/hosting PENDING — **A is NOT done**
+
+All repo-side wiring landed on `feature/phase37a-macos-dxc` (mirrors the Phase 37 C
+vkd3d patterns one-for-one); **no macOS dylib exists yet**, so the gap is still open
+until the hosted artifacts land and a real macOS run compiles. What landed:
+
+- **`.github/workflows/dxc-build.yml`** — dispatchable build of `libdxcompiler.dylib`
+  from the pinned commit `e043f4a1…` (verified again from the Vortice 3.3.4 native:
+  ProductVersion `1.7.2212.40 (e043f4a12)`) + the three pinned submodules (gitlinks
+  asserted against the documented SHAs). osx-arm64 on macos-14
+  (`MACOSX_DEPLOYMENT_TARGET=11.0`), osx-x64 on macos-15-intel (`10.15`; macos-13 is
+  retired — both floors are far below .NET 8's own 12+ requirement). CMake+Ninja
+  Release with DXC's own `PredefinedParams.cmake` cache + `ENABLE_SPIRV_CODEGEN=ON`;
+  smoke gate = `dxc -T ps_6_0 -spirv` + SPIR-V magic; `otool -L` system-only-linkage
+  gate (skipping the dylib's own install name — the 694190e lesson); ships the
+  upstream `LICENSE.TXT` as `LICENSE-DXC.TXT` in the artifact. `dxil.dll` is NOT
+  built: `LoadDxil()` is a kernel32 no-op off Windows and `-spirv` never needs the
+  signer.
+- **`DxcLoader`** (`src/ShadowDusk.HLSL/Dxc/DxcLoader.cs`) — **CORRECTION to the
+  "how" above:** step 2's "register `SetDllImportResolver` on
+  `typeof(Vortice.Dxc.Dxc).Assembly`" would **throw `InvalidOperationException`** —
+  Vortice.Dxc 3.3.4's `Dxc` static ctor already registers its own resolver on that
+  assembly (verified by decompilation), and .NET allows one resolver per assembly.
+  Vortice instead exposes the public **`Dxc.ResolveLibrary` event**, consulted by its
+  resolver *before* the default-load fallback, and its built-in handler returns Zero
+  on macOS — so `DxcLoader.Register()` (macOS-only, idempotent) appends a handler
+  there. Probe order mirrors `Vkd3dLoader`: per-arch `osx-{x64,arm64}/` then flat
+  next to the binaries, the publish `runtimes/<rid>/native` layout, `tools/dxc/`
+  walking up to the root, `NATIVE_DLL_SEARCH_DIRECTORIES`, bare name. Registered
+  from `DxcShaderCompiler`'s ctor and `DxilReflectionExtractor` before any DXC
+  P/Invoke. Zero behavior change on Windows/Linux. Pure candidate generation is
+  unit-tested (`tests/ShadowDusk.HLSL.Tests/Dxc/DxcLoaderTests.cs`).
+- **`tools/restore.{sh,ps1}`** — `restore_dxc_macos`/`Restore-DxcMacos` mirroring the
+  vkd3d pinned-download pattern (fixed tag **`native-dxc-1.7.2212.40`**, per-arch
+  dest `tools/dxc/osx-{x64,arm64}/libdxcompiler.dylib`). Pins are
+  **`PENDING-FIRST-HOSTED-BUILD`** placeholders: the section skips with a notice
+  (non-fatal) until the hosted build exists, so win/linux restores are unaffected.
+- **`ShadowDusk.HLSL.csproj`** — `Exists()`-gated per-arch copy-to-output links +
+  `runtimes/osx-{x64,arm64}/native` pack entries (inert until restore places files).
+  `.gitignore` already covered `tools/dxc/`.
+- **`THIRD-PARTY-NOTICES.txt`** — DXC entry added. NOTE: the license is the **LLVM
+  Release License (University of Illinois/NCSA)** — DXC's LLVM-3.7 fork predates
+  LLVM's Apache-2.0 relicense; the notice is marked prospective until the dylibs
+  actually ship (the Vortice-shipped win/linux natives are NOT ours to notice).
+
+**Exact remaining steps to close A** (in order):
+1. Dispatch `dxc-build.yml` (`gh workflow run dxc-build.yml --ref <branch>`); iterate
+   until both RID jobs are green (expect iteration — vkd3d-build needed 3 fix commits;
+   the main risk is 2022-era LLVM source vs the runners' newer Xcode clang).
+2. Download the two artifacts; `gh release create native-dxc-1.7.2212.40 \
+   libdxcompiler.osx-x64.dylib libdxcompiler.osx-arm64.dylib LICENSE-DXC.TXT`
+   (rename each artifact's `libdxcompiler.dylib` to its per-RID asset name first).
+3. Paste the workflow-printed SHA-256s over both `PENDING-FIRST-HOSTED-BUILD`
+   placeholders in `tools/restore.sh` + `tools/restore.ps1` (this flips restore to
+   enforcing automatically — the placeholder check is the only bypass).
+4. Add a `tools/dxc` cache + restore to `ci.yml`'s macOS lanes if not already covered
+   by the existing restore step, and re-run CI: the macOS integration job's
+   `DllNotFoundException` wall should fall.
+5. **Fidelity gate before calling A done:** byte-identity corpus check (macOS SPIR-V
+   == win-x64 oracle) + `Compile_Minimal_OpenGL_ReturnsBytes` and the GL corpus green
+   on a real Mac (macos CI lane) + the scratch-consumer check from *Test steps* below.
 
 ---
 

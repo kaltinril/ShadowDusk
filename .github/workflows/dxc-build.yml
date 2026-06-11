@@ -1,0 +1,183 @@
+# .github/workflows/dxc-build.yml
+# Phase 37 A — build the pinned DXC native (libdxcompiler.dylib) for the macOS RIDs
+# that Vortice.Dxc 3.3.4 does NOT ship (it carries win-x64/win-arm64/linux-x64 only —
+# the consumer-facing macOS product gap, see
+# plan/PHASE-37-cross-platform-native-availability.md, Finding A):
+#
+#   * osx-arm64 — macos-14 (Apple Silicon) native build
+#   * osx-x64   — macos-15-intel (the last free x86_64 image) native build
+#
+# THE SAME COMPILER, NEVER A SUBSTITUTE: the source is microsoft/DirectXShaderCompiler
+# at the EXACT commit Vortice.Dxc 3.3.4's dxcompiler.dll reports (FileVersion
+# 1.7.2212.40, ProductVersion '1.7.2212.40 (e043f4a12)') with the same gitlinked
+# SPIR-V submodules — the same pin the DXC->WASM build uses (tools/restore.*,
+# .wasm-build/DXC-WASM-BUILD.md). Building from the identical commit is what keeps
+# macOS SPIR-V byte-identical to the win-x64/linux-x64/WASM output.
+#
+# Only libdxcompiler.dylib is built. dxil.dll (the DXIL validator/signer) is NOT
+# built and NOT needed: Dxc.LoadDxil() is a kernel32-only no-op off Windows, and the
+# macOS pipeline uses DXC exclusively for -spirv (OpenGL path; the DirectX path goes
+# through vkd3d-shader), which never requires the signer.
+#
+# The artifacts produced here are uploaded to the FIXED GitHub Release tag
+# `native-dxc-1.7.2212.40` (SHA-256 pins live in tools/restore.{sh,ps1}). Re-running
+# this workflow does NOT republish anything — publishing to the release tag is a
+# deliberate manual step (see the Finding A as-built notes in the phase doc).
+#
+# Pin discipline: one DXC commit everywhere (output byte-identity is a product
+# promise — constraint 3). Never bump the commit here without re-baselining the
+# byte-identity corpus + rung-4 renders on every RID at once.
+name: Build DXC macOS natives (1.7.2212.40)
+
+on:
+  workflow_dispatch:
+
+env:
+  DXC_VERSION: '1.7.2212.40'
+  # The exact commit Vortice.Dxc 3.3.4's native reports — verified from the package
+  # metadata (ProductVersion '1.7.2212.40 (e043f4a12)') and pinned for the WASM build.
+  DXC_COMMIT: 'e043f4a1286f4e1026222ab1bc94e25de8d0e959'
+  # Gitlinked submodule pins at DXC_COMMIT (same as tools/restore.* documents):
+  SPIRV_HEADERS_COMMIT: '1d31a100405cf8783ca7a31e31cdd727c9fc54c3'
+  SPIRV_TOOLS_COMMIT: '40f5bf59c6acb4754a0bffd3c53a715732883a12'
+  DIRECTX_HEADERS_COMMIT: '980971e835876dc0cde415e8f9bc646e64667bf7'
+
+jobs:
+  build-macos:
+    name: Build ${{ matrix.rid }} dylib
+    runs-on: ${{ matrix.os }}
+    # DXC is an LLVM-fork build — 1-2 h on the 3-4-core macOS runners is normal.
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: osx-arm64
+            os: macos-14
+            # 11.0 = the first arm64 macOS (the macOS glibc-baseline analog; .NET 8
+            # itself requires 12+, so this leaves headroom rather than inheriting
+            # the builder image's 14/15 default).
+            deployment_target: '11.0'
+          - rid: osx-x64
+            os: macos-15-intel
+            # 10.15 = oldest x86_64 macOS with full C++17 runtime support; again
+            # comfortably below .NET 8's own 12+ floor.
+            deployment_target: '10.15'
+    steps:
+      # Shallow-fetch the pinned commit (no tags/branches can move it) and only the
+      # three submodules the SPIR-V codegen build needs — mirrors the WASM recipe in
+      # tools/restore.* step 1, but checks the gitlinks against the documented pins
+      # so a silently-moved gitlink can never change the shipped compiler.
+      - name: Fetch pinned DXC source + submodules
+        run: |
+          git init dxc-src
+          cd dxc-src
+          git remote add origin https://github.com/microsoft/DirectXShaderCompiler.git
+          git fetch --depth 1 origin "$DXC_COMMIT"
+          git -c advice.detachedHead=false checkout FETCH_HEAD
+          git submodule update --init --recursive --depth 1 \
+            external/SPIRV-Headers external/SPIRV-Tools external/DirectX-Headers
+          for pair in \
+            "external/SPIRV-Headers:$SPIRV_HEADERS_COMMIT" \
+            "external/SPIRV-Tools:$SPIRV_TOOLS_COMMIT" \
+            "external/DirectX-Headers:$DIRECTX_HEADERS_COMMIT"; do
+            path="${pair%%:*}"; want="${pair##*:}"
+            have=$(git -C "$path" rev-parse HEAD)
+            if [ "$have" != "$want" ]; then
+              echo "::error::submodule $path is at $have, expected pinned $want"
+              exit 1
+            fi
+          done
+          echo "pinned source OK: $DXC_COMMIT (+3 submodules)"
+
+      # cmake + python3 are preinstalled on the macOS images; only ninja is needed.
+      # Build tools only — nothing here can become a runtime dependency (the otool
+      # gate below proves system-only linkage).
+      - name: Install build deps (ninja)
+        run: brew install ninja
+
+      # Native host build (no cross-compile, so no tablegen split — unlike the WASM
+      # recipe). PredefinedParams.cmake is DXC's own canonical cache (EH/RTTI etc.);
+      # ENABLE_SPIRV_CODEGEN=ON is the front-of-the-GL-pipeline feature this whole
+      # build exists for. MACOSX_DEPLOYMENT_TARGET is exported so both the cmake
+      # configure and every compile inherit the conservative floor.
+      - name: Configure (CMake + Ninja, Release)
+        env:
+          MACOSX_DEPLOYMENT_TARGET: ${{ matrix.deployment_target }}
+        run: |
+          cmake -G Ninja -S dxc-src -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_SPIRV_CODEGEN=ON \
+            -DLLVM_INCLUDE_TESTS=OFF -DCLANG_INCLUDE_TESTS=OFF \
+            -DHLSL_INCLUDE_TESTS=OFF -DSPIRV_BUILD_TESTS=OFF \
+            -DLLVM_INCLUDE_DOCS=OFF -DLLVM_INCLUDE_EXAMPLES=OFF \
+            -C dxc-src/cmake/caches/PredefinedParams.cmake
+
+      - name: Build libdxcompiler + dxc CLI
+        env:
+          MACOSX_DEPLOYMENT_TARGET: ${{ matrix.deployment_target }}
+        run: |
+          ninja -C build dxcompiler dxc
+          ls -la build/lib/ build/bin/ || true
+
+      # Smoke: the built library must actually compile HLSL -> SPIR-V (the dxc CLI
+      # dynamically links the freshly-built libdxcompiler — same code path as the
+      # Vortice P/Invokes). Gate on the SPIR-V magic (0x07230203 little-endian).
+      - name: Smoke-test (dxc, ps_6_0 -> SPIR-V)
+        run: |
+          ./build/bin/dxc --version || true
+          printf 'float4 main() : SV_Target { return float4(1,0,0,1); }\n' > smoke.hlsl
+          ./build/bin/dxc -T ps_6_0 -E main -spirv -Fo smoke.spv smoke.hlsl
+          test -s smoke.spv
+          magic=$(od -An -tx1 -N4 smoke.spv | tr -d ' \n')
+          if [ "$magic" != "03022307" ]; then
+            echo "::error::smoke output is not SPIR-V (first bytes: $magic)"
+            exit 1
+          fi
+          echo "SPIR-V smoke OK ($(wc -c < smoke.spv) bytes)"
+
+      # The Phase 37 hard gate: the dylib must link SYSTEM libraries only. Any
+      # Homebrew (/opt/homebrew, /usr/local) runtime dependency means the binary
+      # would not run on a consumer's Mac -> fail red here, not on a user machine.
+      # Line 1 of otool -L is the file header, line 2 the dylib's OWN install name
+      # (self-ID, not a dependency — the false positive commit 694190e fixed in the
+      # vkd3d gate); real dependencies start at line 3.
+      - name: Verify system-only linkage + arch + deployment target (otool/lipo)
+        run: |
+          dylib=$(cd build/lib && ls -1 libdxcompiler*.dylib | head -1)
+          dylib="build/lib/$dylib"
+          echo "== otool -L $dylib =="
+          otool -L "$dylib"
+          bad=$(otool -L "$dylib" | tail -n +3 | awk '{print $1}' \
+                | grep -vE '^(/usr/lib/|/System/)' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::non-system linkage found: $bad"
+            exit 1
+          fi
+          echo "== lipo -info =="
+          lipo -info "$dylib"
+          echo "== minos (build version) =="
+          otool -l "$dylib" | grep -A3 'LC_BUILD_VERSION\|LC_VERSION_MIN' || true
+
+      # Ship under the plain name DxcLoader probes for (cp -L resolves the cmake
+      # symlink if the build emitted a versioned libdxcompiler.<N>.dylib), plus the
+      # LLVM Release License (UIUC/NCSA) from the pinned source tree — it must
+      # accompany every redistributed binary.
+      - name: Stage artifact
+        run: |
+          mkdir -p out
+          if [ -e build/lib/libdxcompiler.dylib ]; then
+            cp -L build/lib/libdxcompiler.dylib out/libdxcompiler.dylib
+          else
+            cp -L "$(ls build/lib/libdxcompiler*.dylib | head -1)" out/libdxcompiler.dylib
+          fi
+          cp dxc-src/LICENSE.TXT out/LICENSE-DXC.TXT
+          shasum -a 256 out/libdxcompiler.dylib | tee out/libdxcompiler.dylib.sha256
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: dxc-${{ env.DXC_VERSION }}-${{ matrix.rid }}
+          path: out/*
+          if-no-files-found: error
+          retention-days: 30
