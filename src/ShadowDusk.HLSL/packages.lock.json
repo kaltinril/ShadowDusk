@@ -14,18 +14,6 @@
           "Vortice.Mathematics": "1.7.2"
         }
       },
-      "Vortice.Direct3D11": {
-        "type": "Direct",
-        "requested": "[3.3.4, )",
-        "resolved": "3.3.4",
-        "contentHash": "ma8ysRo7WBmJwt+nNpFi0icHKIgNud6Nb0rz6XPN4V/X93nkVZiN3t96cqdy0kC0QtzYlpFccQ2d/JPrvHt6og==",
-        "dependencies": {
-          "SharpGen.Runtime": "2.1.2-beta",
-          "SharpGen.Runtime.COM": "2.1.2-beta",
-          "Vortice.DXGI": "3.3.4",
-          "Vortice.Mathematics": "1.7.2"
-        }
-      },
       "Vortice.Direct3D12": {
         "type": "Direct",
         "requested": "[3.5.0, )",

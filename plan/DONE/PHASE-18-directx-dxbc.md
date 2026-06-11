@@ -100,6 +100,18 @@ Swap `mgfxc` → ShadowDusk for a **WindowsDX** game's `.fx` shaders, load the r
 
 ---
 
+## Track A landed (2026-06-10) — cross-platform DXBC reflection
+
+The "Phase 18 Track A" carry-forward (DXBC reflection P/Invoked Windows-only
+`D3DReflect`, keeping the DX11 `.mgfx` pipeline Windows-bound even with the vkd3d
+backend) is **done**: `DxbcReflectionExtractor` now delegates to the pure-managed
+**`RdefReader`** (`src/ShadowDusk.Core/Reflection/RdefReader.cs` — RDEF + ISGN/OSGN
+chunk parsing, the CtabReader sibling) on every OS. `D3DReflect` is demoted to a test
+oracle; `DxbcReflectionParityTests` proves the managed output deeply equal to it for
+both backends' DXBC, and a full-corpus A/B proved zero `.mgfx` byte change. As-built
+detail, evidence, and the uncovered corner cases:
+[PHASE-37 § Phase 18 Track A](../PHASE-37-cross-platform-native-availability.md#phase-18-track-a--cross-platform-dxbc-reflection--done-2026-06-10).
+
 ## Carry-forwards (tracked, not swept)
 
 - **VS-driven effects** — the validated corpus is PS-only SM3 (same scope as Phase 17). A VS+PS effect (BasicEffect) was decoded structurally (VS attr count = 0, clean) but not run through the render harness → backlog **17-VS**.
