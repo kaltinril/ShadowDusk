@@ -50,12 +50,16 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
             request.Macros,
             request.Options);
 
-        // IDxcIncludeHandler is declared non-nullable in Vortice but the native
-        // API marks it Optional — null is safe when the source has no #includes.
-        IDxcResult result = _compiler.Compile(
+        // Raw vtable call instead of Vortice's IDxcCompiler3.Compile(string, string[], ...):
+        // Vortice marshals the LPCWSTR* argument array as UTF-16 on every OS, but DXC's
+        // non-Windows builds use the native 4-byte wchar_t — on Linux/macOS the compiler
+        // reads garbage arguments and every compile fails with "Internal Compiler error:"
+        // (Phase 37 Finding B). DxcNativeInterop encodes the arguments per-platform.
+        IDxcResult result = DxcNativeInterop.Compile(
+            _compiler,
             request.HlslSource,
-            arguments.ToArray(),
-            request.IncludeHandler!);
+            arguments,
+            request.IncludeHandler);
 
         SharpGen.Runtime.Result status = result.GetStatus();
         string errorText = result.GetErrors();

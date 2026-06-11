@@ -1,6 +1,6 @@
 # Phase 37 — Cross-platform integration-test native availability (macOS DXC gap, Linux DXC ICE, vkd3d in CI)
 
-**Status:** 🟠 **Open — created 2026-06-07; Finding C ✅ done 2026-06-10 (PRs #35/#36/#37 — see the as-built section under Finding C).** Remaining: a **consumer-facing product gap** (macOS DXC, Finding A — repo wiring landed 2026-06-10, hosted dylib build pending; see "A — AS-BUILT, part 1") and the dominant **Linux DXC ICE** (Finding B, expands/absorbs Phase 36).
+**Status:** 🟠 **Open — created 2026-06-07; Finding C ✅ done 2026-06-10 (PRs #35/#36/#37); Finding B ✅ root cause found + fixed 2026-06-10 (Vortice UTF-16 args vs Linux 4-byte `wchar_t` — see Finding B).** Remaining: **Finding A** (macOS DXC — repo wiring + green dylib builds landed 2026-06-10/11, artifacts hosted on `native-dxc-1.7.2212.40`, pins flipped to enforcing; awaiting the macOS CI fidelity gate before A is declared done — see "A — AS-BUILT, part 1") and the Finding-C-residue DX11 reflection rows (Phase 18 Track A).
 **Track:** Reach (Part 1 of THE PURPOSE) — "compile where `mgfxc` can't (Linux/macOS)." The integration tests are RED because they are faithfully catching real cross-platform gaps; this is not a test-logic problem.
 
 > **Supersedes the scope of [Phase 36](PHASE-36-dxc-linux-spirv-ice.md).** Phase 36 concluded the Linux DXC ICE was confined to the **Debug-CLI / spawned-process** `wasm.yml` path and that "Release in-process works on real Linux." New evidence in this phase **disproves that**: the `ci.yml` **integration-tests** job (Release, **in-process** `EffectCompiler`) ICEs on ~120 tests on `ubuntu-latest`. Phase 36's "likely-quick Release-CLI experiment" is now just one sub-hypothesis under Finding B below.
@@ -13,8 +13,8 @@ The `ci.yml` **Integration Tests** job is red on all three OS. Build & Test (the
 
 | OS | Failing | Root cause | Category |
 |---|---|---|---|
-| **Windows** | 2 tests | `vkd3d-shader` native absent (gitignored, built out-of-band) | **C — vkd3d** |
-| **Ubuntu** | 132 tests | 12 = vkd3d/DX (no native + no Windows oracle); **120 = DXC "Internal Compiler error" on Linux** | **C (12) + B (120)** |
+| **Windows** | 2 tests | `vkd3d-shader` native absent (gitignored, built out-of-band) | **C — vkd3d** ✅ fixed |
+| **Ubuntu** | 132 tests | 12 = vkd3d/DX (no native + no Windows oracle); **120 = DXC "Internal Compiler error" on Linux** | **C (12) + B (120)** ✅ both fixed (DX11-reflection residue remains, see C) |
 | **macOS** | ~124 tests | **Vortice.Dxc ships NO macOS native** → `DllNotFoundException` loading `dxcompiler.dll` | **A — product gap** |
 
 **The most important finding (A) is not a test problem — it is a broken product on macOS.** Any developer who runs `dotnet add package ShadowDusk.Compiler` on a Mac and calls `CompileAsync` gets `DllNotFoundException`. The integration test is the canary.
@@ -150,36 +150,45 @@ until the hosted artifacts land and a real macOS run compiles. What landed:
 
 ---
 
-## Finding B — Linux: DXC "Internal Compiler error" (expands Phase 36)
+## Finding B — Linux: DXC "Internal Compiler error" ✅ ROOT CAUSE FOUND + FIXED (2026-06-10, expands Phase 36)
 
 ### Issue
 On `ubuntu-latest`, **120 of 132** integration failures are `error X0000: Shader compilation failed` at position `(0,0-0)` — including on trivial shaders like `Minimal.fx`.
 
-### Cause (signature decoded — but root cause UNRESOLVED)
-`DxcDiagnosticReformatter` (`src/ShadowDusk.HLSL/Dxc/DxcDiagnosticReformatter.cs:75-76`) emits `X0000 / "Shader compilation failed" / (0,0-0)` **only when DXC's error text has no parseable `file(line,col)`** — exactly what DXC's `Internal Compiler error:` (an ICE) produces. So every X0000/(0,0-0) failure is a **DXC ICE on Linux**, not a shader syntax error. (Confirmed by the pass/fail pattern: the only DXC tests that *pass* are ones that *expect* failure; every DXC test expecting success fails. SPIRV-Cross itself loads fine — the invalid/empty-SPIR-V tests pass — so **only the DXC compile step is broken.**)
+### Root cause (proven by single-factor toggle)
+**A `wchar_t`-width marshalling bug in Vortice.Dxc's managed wrapper — the pinned native DXC is fine.**
 
-### The paradox (the crux to investigate)
-In the **same CI run**:
-- `build-and-test` (ubuntu, Release) runs `ShadowDusk.ImageTests` → **27/27 PASS**. Those tests call `new EffectCompiler().CompileAsync(... OpenGL ...)` — DXC→SPIR-V→GLSL **in-process, Release** — and succeed.
-- `integration-tests` (ubuntu, Release) ICEs on ~120 in-process DXC compiles, **including `Compile_Minimal_OpenGL_ReturnsBytes`** (a trivial shader).
+DXC's C API declares the compiler arguments as `LPCWSTR*`. On Windows that is UTF-16 (`wchar_t` == 2 bytes), but DXC's non-Windows builds compile `WinAdapter.h` against the platform's native `wchar_t`, which is **4 bytes (UTF-32) on Linux and macOS**. Vortice.Dxc 3.3.4's generated wrapper (`Interop.AllocToPointers`, confirmed by decompiling the NuGet assembly) marshals every argument with `Marshal.StringToHGlobalUni` — **UTF-16 on every OS**. So on Linux `libdxcompiler.so` reads garbage arguments (`"-E"` as UTF-16 becomes the invalid UTF-32 unit `0x0045002D`), throws during argument conversion, and DXC's top-level catch reports `HRESULT 0x80AA000C` with the error text `Internal Compiler error: ` — **empty message** — which `DxcDiagnosticReformatter` (`src/ShadowDusk.HLSL/Dxc/DxcDiagnosticReformatter.cs:75-76`) flattens to `X0000 / (0,0-0)`.
 
-Same OS image, same commit, same NuGet-restored DXC native, same in-process `EffectCompiler` — **one job compiles, the other ICEs.** This contradicts Phase 36's "in-process works on Linux." The delta between the two `ubuntu-latest` runners is the open question this phase must resolve. Hypotheses to test:
-1. **Shader-set difference** — does the ImageTests corpus (curated SM3 PS-only) avoid an intrinsic/construct DXC-on-Linux chokes on, while the broader integration corpus (VS, Vulkan target, multipass, includes) hits it? (But `Minimal.fx` ICEing argues against pure shader-specificity.)
-2. **Environment delta** — a system/runtime dependency, working directory, env var, or native-resolution difference between the two jobs.
-3. **Spawned-vs-in-process / Debug-vs-Release** — Phase 36's original hypothesis (the CLI corpus path builds Debug + spawns). Largely refuted now (integration is Release in-process), but rule it out.
+**Toggle proof** (the bar set by this phase: make the failure appear AND disappear by one factor). In a clean `mcr.microsoft.com/dotnet/sdk:8.0` container, same shader, same flags, same pinned `libdxcompiler.so` from Vortice.Dxc 3.3.4, raw COM-vtable call (bypassing Vortice's marshalling), the **only** variable being the argument-string encoding:
 
-### How to investigate (reproduce-first)
-- **Reproduce locally on real Linux:** Docker `mcr.microsoft.com/dotnet/sdk:8.0` (closest to CI) — `dotnet test ShadowDusk.slnx -c Release --filter "Category=Integration"` and capture the raw DXC error (set `SHADOWDUSK_SAVE_DIAGNOSTICS=1` / log the unreformatted DXC text **before** `DxcDiagnosticReformatter` flattens it to X0000). WSL is a **degraded** repro (missing DXC runtime deps) — use Docker.
-- **Bisect the paradox:** run *only* the ImageTests corpus shaders through the integration entry point in Docker, then the integration corpus through the ImageTests entry point, to isolate shader-set vs environment.
-- **Capture the real ICE text:** the `(0,0-0)` flattening hides DXC's actual message. Temporarily surface the raw `DxcCompiler` error string to see *what* DXC is choking on (assertion? unsupported intrinsic? missing runtime dep?).
+| Argument encoding | Result |
+|---|---|
+| UTF-16 (what Vortice does) | `GetStatus = 0x80AA000C`, errors = `Internal Compiler error:` — the exact CI signature |
+| UTF-32 (Linux `wchar_t`) | `GetStatus = S_OK`, compiles to SPIR-V successfully |
 
-### How to fix (depends on root cause)
-- If the Linux Vortice native genuinely ICEs, the fix is likely the **same "build our own `libdxcompiler.so` from `e043f4a1`"** approach as Finding A (one DXC source built per-RID for linux-x64 too), replacing the Vortice-provided `.so`.
-- If it's an environment delta, fix the integration job's environment to match the working build job.
-- Either way, **keep one DXC version everywhere** (constraint 3 / cross-host byte-identity) and re-validate Windows output is unregressed.
+This also retro-explains **Phase 36's Debug-CLI/spawned ICE and the WSL ICE** — every Linux invocation through Vortice was broken identically; Debug-vs-Release and spawned-vs-in-process were never factors.
+
+### The paradox — RESOLVED: it was a false positive, not a real delta
+The "ImageTests 27/27 pass on ubuntu and compile via DXC in-process" evidence (the basis for Phase 36's "Release in-process works on real Linux") was wrong. Every ImageTests class guards on `GlContextFixture.IsSkipped` and **returns early as PASS** when no OpenGL context exists — and `ubuntu-latest` is headless, so GLFW init fails and all 27 tests "pass" **without ever invoking DXC** (visible in the run-27326162402 log: 27 tests in **73 ms**, impossible for 27 real DXC compiles). There is **no** environment in which Vortice-marshalled DXC worked on Linux. Lesson recorded: a *soft-skip-as-pass* guard can fabricate cross-platform "proof" — when a green job is load-bearing evidence, verify the tests actually exercised the machinery (duration is a cheap tell).
+
+### The fix (as-built — same pinned DXC native, marshalling corrected)
+`src/ShadowDusk.HLSL/Dxc/DxcNativeInterop.cs` performs the **same vtable call** Vortice's generated code makes (`IDxcCompiler3::Compile`, slot 3), with two deliberate differences:
+
+1. **Arguments are encoded in the platform's `wchar_t` width** — `Marshal.StringToHGlobalUni` (UTF-16) on Windows (bit-identical to Vortice's previous behavior there), manual UTF-32 + NUL elsewhere.
+2. **The source buffer is explicit UTF-8 / `DXC_CP_UTF8`** instead of Vortice's `StringToHGlobalAnsi` + `DXC_CP_ACP` (ANSI is system-codepage-dependent on Windows ⇒ non-deterministic for non-ASCII sources; byte-identical for the ASCII corpus).
+
+`DxcShaderCompiler.CompileCore` routes through it; everything downstream (`GetStatus`/`GetErrors`/`GetObjectBytecodeMemory`) is unchanged Vortice. The native binary is untouched — **same pinned Vortice.Dxc 3.3.4 `dxcompiler` everywhere** (no substitute compiler, no version bump). Scope note: the *only* live wide-string surface was the argument array — includes are flattened by ShadowDusk's own preprocessor before DXC (the `IDxcIncludeHandler` reverse callback, which would have the same `wchar_t` hazard inbound, is never exercised by the product pipeline), and the reflection APIs use `LPCSTR`.
+
+**Forward synergy with Finding A:** macOS `wchar_t` is also 4 bytes — when the macOS `libdxcompiler.dylib` lands, the marshalling is already correct; without this fix, Finding A's dylib would have ICEd identically on arrival.
+
+### Evidence (fix verified)
+- **Windows unregressed:** full suite (unit + integration + ImageTests with a real GL context, golden corpus + byte-identity + render proxies) green locally — 851/851.
+- **Linux fixed:** in the `dotnet/sdk:8.0` container, `grep -c X0000` over the full integration run = **0** (was ~120). `ShadowDusk.Compiler.Tests` integration rows 11/12 (was 1/12), `ShadowDusk.Integration.Tests` 163/174 (was 53/174). Every remaining failure is an `SD0210` DX11-reflection row — the documented Finding-C residue ("DX11 `.mgfx` end-to-end requires Windows until Phase 18 Track A"), which predates and is unrelated to B.
+- **Repro tooling note:** the CI runner builds `.slnx` with the runner image's newer pre-installed SDK; the `dotnet/sdk:8.0` container (8.0.422) can't parse `.slnx` — test per-project (`dotnet test tests/<project>`) in the container instead.
 
 ### Definition of done (B)
-Linux compiles the PS-only + VS-driven corpus **with no ICE**, the Linux `.mgfx` **renders pixel-equivalent to `mgfxc`** (rung-4, same bar as Phase 17/18), Windows output is **unregressed** (golden + byte-identity green), and `ci.yml`'s integration job runs the Linux compile to completion.
+Linux compiles the PS-only + VS-driven corpus **with no ICE** ✅, the Linux `.mgfx` **renders pixel-equivalent to `mgfxc`** (rung-4, same bar as Phase 17/18 — still proxy-pending: the render bar needs a GL-capable Linux host, tracked as follow-up), Windows output is **unregressed** (golden + byte-identity green) ✅, and `ci.yml`'s integration job runs the Linux compile to completion ✅ (remaining red rows are Finding-C-residue SD0210, not B).
 
 ---
 
@@ -317,7 +326,7 @@ pass on all 3 OS; the release pack gate is now satisfiable from any clean machin
 ---
 
 ## Sequencing / priority
-1. **Finding B diagnosis FIRST** (free, no user action) — reproduce the Linux ICE in Docker and capture the raw DXC error. It's the dominant blocker (120 tests) and may share a root (and therefore a fix) with Finding A. Knowing its true cause sizes the whole phase.
+1. ~~**Finding B diagnosis FIRST** (free, no user action) — reproduce the Linux ICE in Docker and capture the raw DXC error.~~ ✅ Done 2026-06-10 — root cause was Vortice's UTF-16 argument marshalling vs the 4-byte Linux `wchar_t` (see Finding B); fixed in-repo with `DxcNativeInterop`, no native change. The diagnosis also pre-cleared the same hazard for Finding A's macOS dylib.
 2. **Finding A (macOS native)** — the actual product gap; highest user impact. Likely the same from-source DXC build, retargeted.
 3. ~~**Finding C (vkd3d)** — smallest, opt-in; needs the user to build the linux/macOS 1.17 binaries.~~ ✅ Done 2026-06-10 (see the as-built section).
 
