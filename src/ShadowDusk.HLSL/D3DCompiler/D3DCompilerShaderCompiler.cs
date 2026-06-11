@@ -50,7 +50,7 @@ public sealed class D3DCompilerShaderCompiler : IDxbcShaderCompiler
                 Line:    0,
                 Column:  0,
                 Code:    "SD0210",
-                Message: "DXBC oracle backend requires Windows; cross-platform DXBC via vkd3d is pending Phase 18 Track A")));
+                Message: "DXBC oracle backend requires Windows; use DxbcBackend.Vkd3d for cross-platform DXBC")));
         }
 
         return Task.Run(() => CompileCore(request), cancellationToken);

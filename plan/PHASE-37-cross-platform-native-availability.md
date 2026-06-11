@@ -1,6 +1,6 @@
 # Phase 37 — Cross-platform integration-test native availability (macOS DXC gap, Linux DXC ICE, vkd3d in CI)
 
-**Status:** 🟠 **Open — created 2026-06-07; Finding C ✅ done 2026-06-10 (PRs #35/#36/#37); Finding B ✅ root cause found + fixed 2026-06-10 (Vortice UTF-16 args vs Linux 4-byte `wchar_t` — see Finding B).** Remaining: **Finding A** (macOS DXC — repo wiring + green dylib builds landed 2026-06-10/11, artifacts hosted on `native-dxc-1.7.2212.40`, pins flipped to enforcing; awaiting the macOS CI fidelity gate before A is declared done — see "A — AS-BUILT, part 1") and the Finding-C-residue DX11 reflection rows (Phase 18 Track A).
+**Status:** 🟠 **Open — created 2026-06-07; Finding C ✅ done 2026-06-10 (PRs #35/#36/#37); Finding B ✅ root cause found + fixed 2026-06-10 (Vortice UTF-16 args vs Linux 4-byte `wchar_t` — see Finding B); C-residue DX11 reflection ✅ done 2026-06-10 (Phase 18 Track A — managed `RdefReader`, see the Track A section below).** Remaining: **Finding A** (macOS DXC — repo wiring + green dylib builds landed 2026-06-10/11, artifacts hosted on `native-dxc-1.7.2212.40`, pins flipped to enforcing; awaiting the macOS CI fidelity gate before A is declared done — see "A — AS-BUILT, part 1"). A now gates only the GL/Vulkan targets on macOS — the DX11 path no longer constructs DXC (Track A's lazy-DXC change).
 **Track:** Reach (Part 1 of THE PURPOSE) — "compile where `mgfxc` can't (Linux/macOS)." The integration tests are RED because they are faithfully catching real cross-platform gaps; this is not a test-logic problem.
 
 > **Supersedes the scope of [Phase 36](PHASE-36-dxc-linux-spirv-ice.md).** Phase 36 concluded the Linux DXC ICE was confined to the **Debug-CLI / spawned-process** `wasm.yml` path and that "Release in-process works on real Linux." New evidence in this phase **disproves that**: the `ci.yml` **integration-tests** job (Release, **in-process** `EffectCompiler`) ICEs on ~120 tests on `ubuntu-latest`. Phase 36's "likely-quick Release-CLI experiment" is now just one sub-hypothesis under Finding B below.
@@ -14,7 +14,7 @@ The `ci.yml` **Integration Tests** job is red on all three OS. Build & Test (the
 | OS | Failing | Root cause | Category |
 |---|---|---|---|
 | **Windows** | 2 tests | `vkd3d-shader` native absent (gitignored, built out-of-band) | **C — vkd3d** ✅ fixed |
-| **Ubuntu** | 132 tests | 12 = vkd3d/DX (no native + no Windows oracle); **120 = DXC "Internal Compiler error" on Linux** | **C (12) + B (120)** ✅ both fixed (DX11-reflection residue remains, see C) |
+| **Ubuntu** | 132 tests | 12 = vkd3d/DX (no native + no Windows oracle); **120 = DXC "Internal Compiler error" on Linux** | **C (12) + B (120)** ✅ both fixed (the DX11-reflection residue ✅ resolved 2026-06-10 — Phase 18 Track A section below) |
 | **macOS** | ~124 tests | **Vortice.Dxc ships NO macOS native** → `DllNotFoundException` loading `dxcompiler.dll` | **A — product gap** |
 
 **The most important finding (A) is not a test problem — it is a broken product on macOS.** Any developer who runs `dotnet add package ShadowDusk.Compiler` on a Mac and calls `CompileAsync` gets `DllNotFoundException`. The integration test is the canary.
@@ -279,20 +279,84 @@ binaries on all 3 OS; the FNA integration suite (rungs 1–2) runs **green on ub
 macOS** (0 skips — it was silently skipping before); the two vkd3d live-compile tests
 pass on all 3 OS; the release pack gate is now satisfiable from any clean machine.
 
-**Residue (the honest delta vs the original definition of done):**
+**Residue (the honest delta vs the original definition of done) — ✅ RESOLVED 2026-06-10 by Phase 18 Track A (next section):**
 
-- The third vkd3d test (`DxbcReflectionExtractor_ReflectsVkd3dOutput`) **cannot pass
+- ~~The third vkd3d test (`DxbcReflectionExtractor_ReflectsVkd3dOutput`) **cannot pass
   off-Windows**: `DxbcReflectionExtractor` P/Invokes d3dcompiler_47's `D3DReflect`
   (Windows-only — "Phase 18 Track A"). PR #37 un-gated it everywhere so it *failed* on
-  ubuntu/macOS; it now skips truthfully off-Windows (`Vkd3dFact(requiresD3DReflect: true)`).
-- Same root cause: the **DX11 `.mgfx` pipeline end-to-end still requires Windows** — the
-  vkd3d backend compiles DXBC cross-platform, but reflection (SD0210) blocks the rest of
-  the pipeline, so `Compile_Minimal_DirectX_ReturnsBytes` + the `DirectX_11` fixture rows
-  stay red off-Windows until cross-platform DXBC reflection (Track A) exists. This is
-  **not** a vkd3d-provisioning gap; it predates C and is the remaining DX-reach item
-  (natural follow-on work alongside Finding A/B, or its own phase).
-- Cross-host DXBC byte-equality remains asserted only at the raw-DXBC level (the vkd3d
-  live tests), not `.mgfx`-level, for the same reason.
+  ubuntu/macOS; it now skips truthfully off-Windows (`Vkd3dFact(requiresD3DReflect: true)`).~~
+  → Reflection is now the pure-managed `RdefReader`; the test is un-gated (plain
+  `[Vkd3dFact]`) and runs wherever the vkd3d native exists. The `requiresD3DReflect`
+  parameter remains, repurposed for tests that need the **D3DReflect test oracle**
+  (`DxbcReflectionParityTests`).
+- ~~Same root cause: the **DX11 `.mgfx` pipeline end-to-end still requires Windows** …
+  `Compile_Minimal_DirectX_ReturnsBytes` + the `DirectX_11` fixture rows stay red
+  off-Windows until cross-platform DXBC reflection (Track A) exists.~~ → The SD0210
+  "reflection requires Windows" error is gone; those rows compile end-to-end via the
+  vkd3d backend on any OS (they already selected `DxbcBackend.Vkd3d` off-Windows —
+  Phase 37 C step 5 — reflection was the last blocker).
+- Cross-host `.mgfx`-level byte-equality for DX11 is now *possible*; asserting it in CI
+  (the Phase 30 cross-host pattern) is a follow-up, not done in Track A.
+
+---
+
+## Phase 18 Track A — cross-platform DXBC reflection ✅ (done 2026-06-10)
+
+The Finding-C residue above, closed. `D3DReflect` (d3dcompiler_47, Windows-only) was the
+last native in the DX11 `.mgfx` pipeline; it is replaced by **`RdefReader`**
+(`src/ShadowDusk.Core/Reflection/RdefReader.cs`) — a pure-managed parser of the DXBC
+container's `RDEF` + `ISGN`/`OSGN` chunks, the SM4/SM5 sibling of `CtabReader` (and like
+it, exactly the "we own container readers, never compilers" leverage posture). Placed in
+`ShadowDusk.Core` (dependency-free) so the future WASM DX path (Phase 4.1) gets it for free.
+
+**Decision: full replacement, one code path.** `DxbcReflectionExtractor.Extract` delegates
+to `RdefReader` on EVERY OS — no managed-off-Windows/D3DReflect-on-Windows split (two code
+paths would violate the determinism spirit). `D3DReflect` survives only as a **test
+oracle** (`tests/ShadowDusk.HLSL.Tests/Reflection/D3DReflectOracle.cs` — the pre-Track-A
+extractor code verbatim); the `Vortice.Direct3D11` package reference moved from
+`ShadowDusk.HLSL` (product) to `ShadowDusk.HLSL.Tests` accordingly.
+
+**Evidence (the bar was oracle parity, not "looks right"):**
+
+- **Oracle parity** — `DxbcReflectionParityTests` (Integration, Windows): for a 9-shader
+  corpus (minimal PS; textured PS; texture-only PS = the empty-`$Globals` drop; cbuffer-heavy
+  with float/bool/int/uint scalars, vectors, `float4x4`/`float3x3`, scalar/vector arrays and a
+  `float4x3[2]` matrix array; struct cbuffer with nested struct + struct array; VS+PS-style VS;
+  `SV_VertexID`; `SV_Depth` output; cube+volume textures with explicit registers), the managed
+  `ReflectedEffect` is **deeply equal (strict ordering) to D3DReflect's** for the DXBC of
+  **both backends** — d3dcompiler_47 AND vkd3d 1.17. Both tests green.
+- **Pure unit tests** — `RdefReaderTests` (+ `DxbcSyntheticBlobs`, the `Fx2SyntheticShaders`
+  pattern): 18 disk-free tests over synthetic containers covering field-by-field parsing,
+  the array size-rounding quirk, nested struct members, the empty-cbuffer drop, the
+  `SV_Target`/`SV_Depth` system-value fix-up (D3DReflect fixes up the 0 fxc stores, by
+  semantic name — verified against d3dcompiler_47 byte-level), SRV-dimension folding, the
+  SM4 (no-RD11, 24-byte variable record) layout, and loud structured failures
+  (truncation, bad fourcc, missing RDEF, unmapped class/type).
+- **No `.mgfx` byte change** — direct A/B: the full `tests/fixtures/shaders/*.fx` corpus
+  compiled with the pre-Track-A CLI (e3b21d7) and the post-Track-A CLI for **both**
+  `DirectX_11` and `OpenGL`; all 34 compiling fixtures **SHA-256-identical**, 15
+  non-DX/GL fixtures fail identically on both sides. Full suite 871/871 green
+  (golden corpus + byte-identity + render proxies included), **0 skips** on Windows.
+- **Bonus unblock:** `CompilationPipeline` now constructs DXC **lazily** — the DX11 path
+  never uses DXC, so DX11 compiles no longer die in `DxcShaderCompiler`'s constructor on
+  hosts without the DXC native (i.e. **macOS DX11 compiles work before Finding A lands**;
+  Finding A still gates GL/Vulkan on macOS). Byte-transparent (A/B above covers it).
+
+**Corner cases deliberately NOT covered (honest list):**
+
+- **Signature variants `ISG1`/`OSG1`/`OSG5`** are parsed (stride-adjusted) but have no
+  parity coverage — d3dcompiler/vkd3d emit classic `ISGN`/`OSGN` for the vs_5_0/ps_5_0
+  profiles ShadowDusk uses (SG1 needs min-precision; OSG5 needs GS streams).
+- **tbuffers, UAVs, structured/byte-address buffers, interface classes, `double`/min-precision
+  types**: not modeled — exactly as the previous extractor (it threw "Unmapped …"; the reader
+  fails loudly with SD0101). A tbuffer cbuffer record still lands in `ConstantBuffers`
+  with BindSlot 0, matching the old extractor's behavior verbatim.
+- **Input-signature system-value fix-up** is applied by semantic name whenever the stored
+  value is 0 (matching Wine's d3dcompiler and the observed MS behavior for outputs); a PS
+  *input* `SV_Coverage` (SM5.1 niche) is untested against the oracle.
+- **`D3D_NAME` values 17–22** (domain/hull tessellator values absent from Vortice's enum)
+  render numerically; HS/DS/GS/CS stages are out of ShadowDusk's scope entirely.
+- Cross-host DX11 `.mgfx` byte-equality is enabled but not yet asserted in CI (follow-up).
 
 ---
 

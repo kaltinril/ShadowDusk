@@ -16,6 +16,18 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Changed
 
+- **DirectX 11 (`.mgfx`) compiles now run end-to-end on Linux and macOS** (Phase 18
+  Track A). DXBC reflection no longer P/Invokes Windows-only `D3DReflect`
+  (d3dcompiler_47): it is a pure-managed reader of the DXBC container's `RDEF`/`ISGN`/
+  `OSGN` chunks (`RdefReader`), proven deeply equal to `D3DReflect`'s output for both
+  the d3dcompiler_47 and vkd3d backends, with **zero change to emitted `.mgfx` bytes**
+  (full-corpus A/B, DirectX + OpenGL). With the vkd3d backend (which already shipped
+  for all four desktop RIDs), no Windows-only native remains on the DX11 path.
+- The DXC compiler is now constructed lazily inside the pipeline: DirectX 11 compiles
+  never load the DXC native (FNA already did not), so they work on hosts where it is
+  unavailable (e.g. macOS, pending the Phase 37 A DXC dylib). OpenGL/Vulkan behavior is
+  unchanged.
+
 ### Fixed
 
 ## [0.3.0] - 2026-06-10

@@ -130,16 +130,20 @@ internal sealed class CompilationPipeline
 
         // Stages 3–5: Compile each pass's entry points, reflect, and transpile.
         // The preprocessor has already flattened all #includes so no include handler is needed for DXC.
-        IDxcShaderCompiler dxcCompiler = _dxcCompilerFactory();
+        // LAZY on purpose (Phase 18 Track A): the DX11 path never touches DXC (vkd3d /
+        // d3dcompiler_47 emit the DXBC; reflection is the managed RdefReader), so a DX11
+        // compile must not die constructing DXC on a host without the native (the
+        // Phase 37 A macOS gap). GL/Vulkan materialize it on first use, as before.
+        var dxcCompiler = new Lazy<IDxcShaderCompiler>(_dxcCompilerFactory);
         try
         {
         ISpirvToGlslTranspiler glslTranspiler = _glslTranspilerFactory();
 
         // DirectX (DX11) takes a separate backend: DXC only emits SM6 DXIL, which
-        // MonoGame's DX11 runtime rejects. d3dcompiler_47 (the fxc engine) emits the
-        // SM5 DXBC MonoGame loads — and the matching ID3D11ShaderReflection is reflected
-        // here. Windows-only at runtime (guarded inside the backend). A cross-platform
-        // vkd3d backend can replace D3DCompilerShaderCompiler behind IDxbcShaderCompiler.
+        // MonoGame's DX11 runtime rejects. The DXBC comes from d3dcompiler_47 (the fxc
+        // engine, Windows-only) or the cross-platform vkd3d-shader backend, and is
+        // reflected by the pure-managed RdefReader (Phase 18 Track A) — so the DX11
+        // pipeline end-to-end runs on any OS when the vkd3d backend is selected.
         bool directX = options.Target == PlatformTarget.DirectX;
         // Backend selection (default = the proven d3dcompiler_47 oracle). The
         // cross-platform vkd3d-shader backend is opt-in via CompilerOptions.DxbcBackend.
@@ -289,8 +293,8 @@ internal sealed class CompilationPipeline
                     }
                     else if (directX)
                     {
-                        // DirectX: dxilBlob actually carries SM5 DXBC — reflect via
-                        // ID3D11ShaderReflection (DXC's DXIL reflection can't read DXBC).
+                        // DirectX: dxilBlob actually carries SM5 DXBC — reflect via the
+                        // managed RdefReader (DXC's DXIL reflection can't read DXBC).
                         reflectResult = await dxbcReflectionPipe.ReflectAsync(
                             dxilBlob,
                             fxParsed.ParameterAnnotations,
@@ -452,7 +456,8 @@ internal sealed class CompilationPipeline
         }
         finally
         {
-            (dxcCompiler as IDisposable)?.Dispose();
+            if (dxcCompiler.IsValueCreated)
+                (dxcCompiler.Value as IDisposable)?.Dispose();
         }
     }
 
@@ -725,7 +730,7 @@ internal sealed class CompilationPipeline
 
     private static async Task<(Result<byte[], ShaderError> Blob, ReadOnlyMemory<byte> DxilBlob, ReadOnlyMemory<byte> SpirvBlob, IReadOnlyList<MgfxVertexAttributeInfo> Attributes)>
         CompileEntryPointAsync(
-            IDxcShaderCompiler dxcCompiler,
+            Lazy<IDxcShaderCompiler> dxcCompiler,
             IDxbcShaderCompiler dxbcCompiler,
             ISpirvToGlslTranspiler glslTranspiler,
             PreprocessedSource preprocessed,
@@ -787,7 +792,7 @@ internal sealed class CompilationPipeline
                     Options        = new DxcCompileOptions { EmbedDebugInfo = compileOptions.EmbedDebugInfo, AllowWarnings = true },
                 };
 
-                var dxilResult = await dxcCompiler.CompileAsync(dxilRequest, ct).ConfigureAwait(false);
+                var dxilResult = await dxcCompiler.Value.CompileAsync(dxilRequest, ct).ConfigureAwait(false);
                 if (dxilResult.IsFailure)
                     return (Result<byte[], ShaderError>.Fail(dxilResult.Error), default, default, noAttributes);
 
@@ -805,7 +810,7 @@ internal sealed class CompilationPipeline
                 Options        = compileOptions,
             };
 
-            var spirvResult = await dxcCompiler.CompileAsync(spirvRequest, ct).ConfigureAwait(false);
+            var spirvResult = await dxcCompiler.Value.CompileAsync(spirvRequest, ct).ConfigureAwait(false);
             if (spirvResult.IsFailure)
                 return (Result<byte[], ShaderError>.Fail(spirvResult.Error), default, default, noAttributes);
 
@@ -883,7 +888,7 @@ internal sealed class CompilationPipeline
                 Options        = compileOptions,
             };
 
-            var result = await dxcCompiler.CompileAsync(request, ct).ConfigureAwait(false);
+            var result = await dxcCompiler.Value.CompileAsync(request, ct).ConfigureAwait(false);
             if (result.IsFailure)
                 return (Result<byte[], ShaderError>.Fail(result.Error), default, default, noAttributes);
 

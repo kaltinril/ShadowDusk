@@ -12,10 +12,10 @@ namespace ShadowDusk.HLSL.Tests.Vkd3d;
 /// sibling of <c>ShadowDusk.Integration.Tests.FnaTestGate</c>) rather than OS-gated
 /// — once tools/restore provisions the per-RID binary (Phase 37 C), these run on
 /// every OS. The off-platform "fail loudly" path (SD0211) is a separate, pure concern.
-/// Tests that additionally exercise <c>DxbcReflectionExtractor</c> (D3DReflect via
-/// d3dcompiler_47 — Windows-only until Phase 18 Track A) set
-/// <paramref name="requiresD3DReflect"/> so they skip truthfully off-Windows instead
-/// of failing.
+/// DXBC reflection itself is pure managed since Phase 18 Track A (<c>RdefReader</c>) and
+/// needs no gate; tests that exercise the <c>D3DReflect</c> TEST ORACLE (d3dcompiler_47,
+/// e.g. <c>DxbcReflectionParityTests</c>) set <paramref name="requiresD3DReflect"/> so
+/// they skip truthfully off-Windows instead of failing.
 /// </summary>
 public sealed class Vkd3dFactAttribute : FactAttribute
 {
@@ -24,8 +24,9 @@ public sealed class Vkd3dFactAttribute : FactAttribute
         if (!Vkd3dTestGate.Available)
             Skip = Vkd3dTestGate.SkipReason;
         else if (requiresD3DReflect && !OperatingSystem.IsWindows())
-            Skip = "DxbcReflectionExtractor P/Invokes d3dcompiler_47 (D3DReflect) — " +
-                   "Windows-only until cross-platform DXBC reflection lands (Phase 18 Track A).";
+            Skip = "The D3DReflect test oracle P/Invokes d3dcompiler_47 — Windows-only " +
+                   "(the product's managed DXBC reflection runs everywhere; only the " +
+                   "oracle comparison needs Windows).";
     }
 }
 

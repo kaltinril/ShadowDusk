@@ -169,16 +169,16 @@
       "shadowdusk.cli": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Compiler": "[0.1.0, )",
-          "ShadowDusk.Metal": "[0.1.0, )"
+          "ShadowDusk.Compiler": "[0.3.0, )",
+          "ShadowDusk.Metal": "[0.3.0, )"
         }
       },
       "shadowdusk.compiler": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[0.1.0, )",
-          "ShadowDusk.GLSL": "[0.1.0, )",
-          "ShadowDusk.HLSL": "[0.1.0, )"
+          "ShadowDusk.Core": "[0.3.0, )",
+          "ShadowDusk.GLSL": "[0.3.0, )",
+          "ShadowDusk.HLSL": "[0.3.0, )"
         }
       },
       "shadowdusk.core": {
@@ -187,16 +187,15 @@
       "shadowdusk.glsl": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[0.1.0, )",
+          "ShadowDusk.Core": "[0.3.0, )",
           "Silk.NET.SPIRV.Cross.Native": "[2.23.0, )"
         }
       },
       "shadowdusk.hlsl": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[0.1.0, )",
+          "ShadowDusk.Core": "[0.3.0, )",
           "Vortice.D3DCompiler": "[3.3.4, )",
-          "Vortice.Direct3D11": "[3.3.4, )",
           "Vortice.Direct3D12": "[3.5.0, )",
           "Vortice.Dxc": "[3.3.4, )"
         }
@@ -204,7 +203,7 @@
       "shadowdusk.metal": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[0.1.0, )"
+          "ShadowDusk.Core": "[0.3.0, )"
         }
       },
       "Silk.NET.SPIRV.Cross.Native": {
@@ -222,18 +221,6 @@
           "SharpGen.Runtime": "2.1.2-beta",
           "SharpGen.Runtime.COM": "2.1.2-beta",
           "Vortice.DirectX": "3.3.4",
-          "Vortice.Mathematics": "1.7.2"
-        }
-      },
-      "Vortice.Direct3D11": {
-        "type": "CentralTransitive",
-        "requested": "[3.3.4, )",
-        "resolved": "3.3.4",
-        "contentHash": "ma8ysRo7WBmJwt+nNpFi0icHKIgNud6Nb0rz6XPN4V/X93nkVZiN3t96cqdy0kC0QtzYlpFccQ2d/JPrvHt6og==",
-        "dependencies": {
-          "SharpGen.Runtime": "2.1.2-beta",
-          "SharpGen.Runtime.COM": "2.1.2-beta",
-          "Vortice.DXGI": "3.3.4",
           "Vortice.Mathematics": "1.7.2"
         }
       },

@@ -119,21 +119,26 @@ the *allowed* kind of choice (picking a platform the user's game targets — per
 `seamless-for-end-user`), and the in-browser artifact must be **byte-identical** to the
 desktop-compiled one (proven for GL — the G1 gate — and the bar for every future host).
 
-Where each host×target cell stands (updated 2026-06-10, post-Phase 37 C):
+Where each host×target cell stands (updated 2026-06-10, post-Phase 37 C + Phase 18 Track A):
 
 | Emit ↓ / Host → | Windows | Linux | macOS | Browser (WASM) |
 |---|---|---|---|---|
 | OpenGL `.mgfx` | ✅ proven | ⚠️ DXC ICE (Phase 37 B) | ⚠️ no DXC native (Phase 37 A) | ✅ proven, byte-identical |
-| DX11 DXBC `.mgfx` | ✅ proven | ⚠️ vkd3d compiles DXBC; `.mgfx` reflection is Windows-only D3DReflect (Phase 18 Track A) | ⚠️ same reflection gap (+ 37 A) | ❌ needs vkd3d→WASM (Phase 4.1) |
+| DX11 DXBC `.mgfx` | ✅ proven | ✅ compiles end-to-end (vkd3d backend + managed `RdefReader` reflection — Track A); render bar is the real WindowsDX runtime, Windows-only by nature | ✅ same as Linux (DX11 no longer constructs DXC, so 37 A doesn't gate it) | ❌ needs vkd3d→WASM (Phase 4.1) |
 | FNA fx_2_0 `.fxb` | ✅ proven | ✅ proven | ✅ natives ship + compile suite green in CI (37 C); render oracle (`fxc`) is Windows-only by nature | ❌ needs vkd3d→WASM (Phase 4.1) |
 | Vulkan SPIR-V / Metal MSL | parked — no validatable consumer runtime yet (Phases 31/32) | | | |
 
 > Phase 37 C (2026-06-10) hosted all four pinned vkd3d 1.17 per-RID binaries and made
 > `tools/restore.*` provision them everywhere — which also surfaced (via CI) that the
-> earlier "DX11 on Linux ✅" claim was overstated: vkd3d produces the DXBC fine, but the
-> `.mgfx` pipeline's reflection step still P/Invokes Windows-only `D3DReflect`
-> (`DxbcReflectionExtractor`). Cross-platform DXBC reflection ("Phase 18 Track A") is the
-> remaining DX-reach gap, distinct from native availability.
+> earlier "DX11 on Linux ✅" claim was overstated: vkd3d produced the DXBC fine, but the
+> `.mgfx` pipeline's reflection step still P/Invoked Windows-only `D3DReflect`
+> (`DxbcReflectionExtractor`). **Phase 18 Track A (2026-06-10) closed that gap**: DXBC
+> reflection is now the pure-managed `RdefReader` (ShadowDusk.Core — the CtabReader
+> sibling), proven **deeply equal to the D3DReflect oracle** for both d3dcompiler_47 and
+> vkd3d DXBC (`DxbcReflectionParityTests`) with **zero `.mgfx` byte change** (full-corpus
+> A/B, DX + GL). The Linux/macOS DX11 cells above claim *compile* reach (rungs 1–2 +
+> oracle-parity reflection); the rung-4 render claim stays Windows-proven only — DXBC
+> renders only in a real WindowsDX runtime.
 
 Every gap above is a **packaging/porting gap, never a compiler-writing gap** — and one
 artifact, **vkd3d-shader compiled to WASM (Phase 4.1)**, closes the entire browser column:

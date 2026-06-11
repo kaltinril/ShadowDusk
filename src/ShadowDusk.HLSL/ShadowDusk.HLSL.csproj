@@ -37,10 +37,11 @@
   <!-- DXBC oracle backend (Phase 18). Vortice.D3DCompiler P/Invokes d3dcompiler_47.dll
        and is Windows-only at RUNTIME; the managed wrappers restore on every OS so the
        cross-platform build stays green. All usage is guarded by OperatingSystem.IsWindows().
-       Vortice.Direct3D11 supplies ID3D11ShaderReflection for DXBC reflection. -->
+       (Vortice.Direct3D11 — ID3D11ShaderReflection — was dropped in Phase 18 Track A:
+       DXBC reflection is now the pure-managed RdefReader in ShadowDusk.Core; the
+       D3DReflect oracle lives only in ShadowDusk.HLSL.Tests.) -->
   <ItemGroup>
     <PackageReference Include="Vortice.D3DCompiler" />
-    <PackageReference Include="Vortice.Direct3D11" />
   </ItemGroup>
 
   <!-- Cross-platform SM1–5 backend (Phase 18 Track A / Phase 39 FNA): the vkd3d-shader

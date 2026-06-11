@@ -76,11 +76,12 @@ public sealed class Vkd3dShaderCompilerTests
         result.Error.Message.Should().NotBeNullOrEmpty();
     }
 
-    [Vkd3dFact(requiresD3DReflect: true)]
+    [Vkd3dFact]
     public async Task DxbcReflectionExtractor_ReflectsVkd3dOutput()
     {
-        // Confirms the SAME DxbcReflectionExtractor (ID3D11ShaderReflection) reflects
-        // vkd3d's DXBC_TPF output cleanly — no separate reflector needed.
+        // Confirms the SAME DxbcReflectionExtractor (the pure-managed RdefReader since
+        // Phase 18 Track A — runs on every OS) reflects vkd3d's DXBC_TPF output cleanly
+        // — no separate reflector needed.
         var compiler = new Vkd3dShaderCompiler();
         var compileResult = await compiler.CompileAsync(new D3DCompileRequest
         {
@@ -97,7 +98,7 @@ public sealed class Vkd3dShaderCompilerTests
         var reflectResult = extractor.Extract(compileResult.Value.Bytes);
 
         reflectResult.IsSuccess.Should().BeTrue(
-            because: reflectResult.IsFailure ? reflectResult.Error.Message : "D3DReflect should accept vkd3d DXBC");
+            because: reflectResult.IsFailure ? reflectResult.Error.Message : "the managed reader should accept vkd3d DXBC");
         var effect = reflectResult.Value;
 
         effect.Textures.Select(t => t.Name).Should().Contain("SpriteTexture");

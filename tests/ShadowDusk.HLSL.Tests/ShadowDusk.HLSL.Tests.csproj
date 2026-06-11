@@ -9,6 +9,10 @@
     <ProjectReference Include="..\..\src\ShadowDusk.HLSL\ShadowDusk.HLSL.csproj" />
   </ItemGroup>
 
+  <ItemGroup Label="D3DReflect TEST ORACLE (Phase 18 Track A): ID3D11ShaderReflection for DxbcReflectionParityTests. Product code uses the pure-managed RdefReader; this package is test-only.">
+    <PackageReference Include="Vortice.Direct3D11" />
+  </ItemGroup>
+
   <ItemGroup Label="Live-bug fixture: brace-form sampler + paren texture ref (finding F1). Embedded so the unit test stays disk-free at runtime while parsing the real file.">
     <EmbeddedResource Include="..\fixtures\shaders\ClipShaderNew.fx"
                       Link="fixtures\ClipShaderNew.fx"
