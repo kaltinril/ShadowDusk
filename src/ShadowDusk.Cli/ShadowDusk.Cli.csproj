@@ -11,7 +11,7 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>ShadowDuskCLI</ToolCommandName>
     <PackageId>ShadowDusk.Cli</PackageId>
-    <Description>Cross-platform drop-in replacement for MonoGame's mgfxc shader compiler.</Description>
+    <Description>Cross-platform drop-in replacement for MonoGame's mgfxc shader compiler — compiles .fx to .mgfx (MonoGame/KNI) and D3D9 fx_2_0 .fxb (FNA), self-contained on Linux, macOS, and Windows.</Description>
     <PackageIcon>ShadowDuskFavIcon.png</PackageIcon>
 
     <!-- Self-contained single-file publish is a PUBLISH-TIME concern, driven entirely by
