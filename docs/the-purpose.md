@@ -119,11 +119,11 @@ the *allowed* kind of choice (picking a platform the user's game targets — per
 `seamless-for-end-user`), and the in-browser artifact must be **byte-identical** to the
 desktop-compiled one (proven for GL — the G1 gate — and the bar for every future host).
 
-Where each host×target cell stands (updated 2026-06-10, post-Phase 37 C + Phase 18 Track A):
+Where each host×target cell stands (updated 2026-06-11, post-Phase 37 A/B/C + Phase 18 Track A):
 
 | Emit ↓ / Host → | Windows | Linux | macOS | Browser (WASM) |
 |---|---|---|---|---|
-| OpenGL `.mgfx` | ✅ proven | ⚠️ DXC ICE (Phase 37 B) | ⚠️ no DXC native (Phase 37 A) | ✅ proven, byte-identical |
+| OpenGL `.mgfx` | ✅ proven | ✅ compiles green in CI (37 B fixed the Vortice `wchar_t` marshalling; the browser-smoke renders its corpus on llvmpipe); rung-4 render-vs-`mgfxc` still Windows-proven only | ✅ compiles green in CI (37 A dylib + the 37 B fix; full integration suite passes); byte-identity-vs-win assertion + rung-4 render are the remaining tail | ✅ proven, byte-identical |
 | DX11 DXBC `.mgfx` | ✅ proven | ✅ compiles end-to-end (vkd3d backend + managed `RdefReader` reflection — Track A); render bar is the real WindowsDX runtime, Windows-only by nature | ✅ same as Linux (DX11 no longer constructs DXC, so 37 A doesn't gate it) | ❌ needs vkd3d→WASM (Phase 4.1) |
 | FNA fx_2_0 `.fxb` | ✅ proven | ✅ proven | ✅ natives ship + compile suite green in CI (37 C); render oracle (`fxc`) is Windows-only by nature | ❌ needs vkd3d→WASM (Phase 4.1) |
 | Vulkan SPIR-V / Metal MSL | parked — no validatable consumer runtime yet (Phases 31/32) | | | |

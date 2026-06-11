@@ -14,6 +14,13 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **macOS shader compilation works.** The upstream `Vortice.Dxc` package ships no macOS
+  DXC native, so every OpenGL/WebGL compile on a Mac threw `DllNotFoundException`.
+  ShadowDusk now bundles its **own `libdxcompiler.dylib`** for osx-x64 and osx-arm64,
+  built from the exact DXC commit the bundled Windows/Linux natives report
+  (1.7.2212.40 / `e043f4a1` — same compiler, never a substitute), SHA-256-pinned and
+  loaded automatically. The full integration suite is green on macOS in CI.
+
 ### Changed
 
 - **DirectX 11 (`.mgfx`) compiles now run end-to-end on Linux and macOS** (Phase 18
@@ -29,6 +36,18 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   unchanged.
 
 ### Fixed
+
+- **Linux shader compilation no longer fails with `Internal Compiler error`.** Every DXC
+  compile on Linux failed (`error X0000`): Vortice.Dxc's managed wrapper marshals DXC's
+  `LPCWSTR*` arguments as UTF-16 on every OS, but DXC's non-Windows builds use the
+  platform's 4-byte `wchar_t` (UTF-32), so the native compiler read garbage arguments.
+  ShadowDusk now invokes `IDxcCompiler3::Compile` with platform-correct argument encoding
+  (and an explicit UTF-8 source buffer). The native compiler binary is unchanged; Windows
+  output is byte-identical. The same fix is what makes the new macOS dylib work.
+- The in-browser render-validation harness (the WebGL-vs-DesktopGL pixel compare behind
+  the KNI/WebGL support claims) now runs in CI on every change, on a software-GL baseline
+  with documented per-shader tolerances — 10/10 corpus shaders load and render
+  equivalently in real KNI WebGL1, and the issue #7 HiDef/WebGL2 guard runs with it.
 
 ## [0.3.0] - 2026-06-10
 
