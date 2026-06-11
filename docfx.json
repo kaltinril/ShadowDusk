@@ -64,7 +64,7 @@
       "_appTitle": "ShadowDusk — Cross-Platform MonoGame Shader Compiler",
       "_appLogoPath": "Brand/ShadowDuskIcon.png",
       "_appFaviconPath": "Brand/ShadowDuskFavIcon.png",
-      "_appFooter": "ShadowDusk — a cross-platform HLSL → .mgfx shader compiler for MonoGame &amp; KNI.",
+      "_appFooter": "ShadowDusk — a cross-platform HLSL shader compiler for MonoGame, KNI &amp; FNA.",
       "_enableSearch": true,
       "_disableContribution": false,
       "_gitContribute": {
