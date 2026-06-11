@@ -82,4 +82,24 @@
           CopyToOutputDirectory="PreserveNewest" Link="osx-arm64\libvkd3d-shader.1.dylib"
           Pack="true" PackagePath="runtimes/osx-arm64/native/libvkd3d-shader.1.dylib" />
   </ItemGroup>
+
+  <!-- macOS DXC natives (Phase 37 A): Vortice.Dxc 3.3.4 ships no macOS native, so we
+       bundle OUR OWN libdxcompiler.dylib built from the exact pinned DXC commit
+       (e043f4a1, FileVersion 1.7.2212.40 — the same compiler, never a substitute).
+       Restored artifacts (tools/restore.ps1, per-arch because both arches share one
+       file name), Exists()-gated like the vkd3d entries above: copied to build output
+       under osx-{x64,arm64}/ for local/dev runs (DxcLoader's base-directory probe)
+       and packed under runtimes/<rid>/native for consumers (the loader's
+       NATIVE_DLL_SEARCH_DIRECTORIES probe). Until the Phase 37 A hosted build lands,
+       restore leaves tools/dxc/ empty and these entries are simply inert. -->
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)..\..\tools\dxc\osx-x64\libdxcompiler.dylib"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\..\tools\dxc\osx-x64\libdxcompiler.dylib')"
+          CopyToOutputDirectory="PreserveNewest" Link="osx-x64\libdxcompiler.dylib"
+          Pack="true" PackagePath="runtimes/osx-x64/native/libdxcompiler.dylib" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\tools\dxc\osx-arm64\libdxcompiler.dylib"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\..\tools\dxc\osx-arm64\libdxcompiler.dylib')"
+          CopyToOutputDirectory="PreserveNewest" Link="osx-arm64\libdxcompiler.dylib"
+          Pack="true" PackagePath="runtimes/osx-arm64/native/libdxcompiler.dylib" />
+  </ItemGroup>
 </Project>

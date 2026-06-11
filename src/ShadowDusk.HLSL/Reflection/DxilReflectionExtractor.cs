@@ -50,6 +50,10 @@ public sealed class DxilReflectionExtractor
     {
         ct.ThrowIfCancellationRequested();
 
+        // macOS: hook Vortice's ResolveLibrary so our pinned libdxcompiler.dylib
+        // resolves (Phase 37 A). Idempotent; no-op on Windows/Linux.
+        HLSL.Dxc.DxcLoader.Register();
+
         IDxcUtils utils = CreateDxcUtils();
 
         nint nativeBuffer = nint.Zero;
