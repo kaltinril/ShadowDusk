@@ -65,7 +65,8 @@ namespace ShadowDusk.ImageTests.Tests;
 /// </summary>
 [Trait("Category", "MgfxcCrossValidation")]
 [Trait("Platform", "OpenGL")]
-public sealed class MgfxcCrossValidationTests : IClassFixture<GlContextFixture>
+[Collection(GlContextCollection.Name)] // shared GL fixture; see GlContextCollection
+public sealed class MgfxcCrossValidationTests
 {
     private readonly GlContextFixture  _fixture;
     private readonly ITestOutputHelper _output;
@@ -94,7 +95,7 @@ public sealed class MgfxcCrossValidationTests : IClassFixture<GlContextFixture>
     {
         if (_fixture.IsSkipped)
         {
-            _output.WriteLine($"Skipped (no GL context): {_fixture.SkipReason}");
+            _output.WriteLine(_fixture.SoftSkipLine);
             return;
         }
 
@@ -193,7 +194,7 @@ public sealed class MgfxcCrossValidationTests : IClassFixture<GlContextFixture>
     {
         if (_fixture.IsSkipped)
         {
-            _output.WriteLine($"Skipped (no GL context): {_fixture.SkipReason}");
+            _output.WriteLine(_fixture.SoftSkipLine);
             return;
         }
 
@@ -223,7 +224,7 @@ public sealed class MgfxcCrossValidationTests : IClassFixture<GlContextFixture>
     {
         if (_fixture.IsSkipped)
         {
-            _output.WriteLine($"Skipped (no GL context): {_fixture.SkipReason}");
+            _output.WriteLine(_fixture.SoftSkipLine);
             return;
         }
 

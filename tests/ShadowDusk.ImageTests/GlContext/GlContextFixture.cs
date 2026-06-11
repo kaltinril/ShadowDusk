@@ -48,6 +48,22 @@ public sealed class GlContextUnavailableException : Exception
 /// <see cref="SkipIfNoContext"/> at the top of every test body to short-circuit
 /// with a clear diagnostic.
 /// </para>
+/// <para>
+/// <b>Soft-skip hardening (Phase 37 tail item 4 / <c>SHADOWDUSK_REQUIRE_GL</c>):</b>
+/// the <see cref="IsSkipped"/> early-return pattern means a headless host
+/// reports every render test as PASS while rendering nothing — exactly the
+/// Finding-B "paradox" that fabricated 27/27-green ubuntu runs while the
+/// entire Linux compile path was broken. Two defenses live here now:
+/// (1) when <c>SHADOWDUSK_REQUIRE_GL</c> is set (see <see cref="GlRequirement"/>),
+/// a failed context creation THROWS from <see cref="InitializeAsync"/>, failing
+/// every test in the class loudly — ci.yml's ubuntu lane sets it (running under
+/// xvfb + Mesa llvmpipe) so a regression back to headless-skip turns the lane
+/// red; (2) when unset, the soft-skip stays but emits an unmistakable
+/// "GL SOFT-SKIP (rendered 0)" line per class so a log reader can tell
+/// "passed" from "rendered". Note the macOS by-design skip below also honors
+/// the gate: requiring GL on a macOS runner is a misconfiguration and fails
+/// loudly rather than silently passing.
+/// </para>
 /// </summary>
 public sealed class GlContextFixture : IAsyncLifetime
 {
@@ -103,15 +119,30 @@ public sealed class GlContextFixture : IAsyncLifetime
         // only re-prove the Linux/Windows pixels. Not worth it for a proxy.)
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
-            IsSkipped  = true;
-            SkipReason = "GL render proxy is N/A on macOS (Apple deprecated OpenGL; native GL "
-                       + "caps Compatibility at 2.1, and GLFW cannot exit cleanly on macOS). "
-                       + "This proxy is covered on Linux + Windows.";
+            MarkSkippedOrThrow(
+                "GL render proxy is N/A on macOS (Apple deprecated OpenGL; native GL "
+                + "caps Compatibility at 2.1, and GLFW cannot exit cleanly on macOS). "
+                + "This proxy is covered on Linux + Windows.");
             return Task.CompletedTask;
         }
 
         try
         {
+            // Preload the GLFW native by ABSOLUTE path (Linux). Phase 37 tail
+            // finding, proven by the probe below on ubuntu-latest CI: the
+            // deployed runtimes/linux-x64/native/libglfw.so.3 is a pristine
+            // ELF and dlopen()s fine by absolute path, but Silk.NET's
+            // name-based NativeLibrary resolution fails on the runner under
+            // `dotnet test <slnx> --no-build` ("Could not load from any of
+            // the possible library names!") — the testhost's native search
+            // directories miss the test project's RID assets there (the same
+            // bin output resolves fine locally and in a plain container).
+            // Loading it once by absolute path makes glibc return the
+            // already-loaded SONAME ("libglfw.so.3") for Silk's subsequent
+            // dlopen-by-name — the same preload pattern as SpvcLoader /
+            // DxcLoader / Vkd3dLoader in src/.
+            PreloadGlfwNative();
+
             // Ensure the GLFW backend is chosen even if other windowing
             // platforms (e.g., SDL) are present in the test environment.
             Silk.NET.Windowing.Window.PrioritizeGlfw();
@@ -149,12 +180,119 @@ public sealed class GlContextFixture : IAsyncLifetime
         catch (Exception ex)
         {
             DisposeQuietly();
-            IsSkipped  = true;
-            SkipReason = $"OpenGL 3.3 context unavailable: {ex.GetType().Name}: {ex.Message}";
+            string reason = $"OpenGL 3.3 context unavailable: {ex.GetType().Name}: {ex.Message}";
+
+            // Silk.NET reports a native-load failure as the one-line
+            // "Couldn't find a suitable window platform" and SWALLOWS the real
+            // loader exception (GlfwPlatform.IsApplicable catches it; the
+            // detail only prints in Silk's own DEBUG builds). Constraint 5 —
+            // fail loudly WITH diagnostics — so probe the GLFW native directly
+            // and append the true dlopen/resolution error to the reason.
+            if (ex is PlatformNotSupportedException)
+                reason += ProbeGlfwLoadDetail();
+
+            MarkSkippedOrThrow(reason);
         }
 
         return Task.CompletedTask;
     }
+
+    /// <summary>
+    /// Best-effort absolute-path preload of the deployed GLFW native so
+    /// Silk.NET's dlopen-by-name resolves even where the testhost's native
+    /// search directories don't cover the RID assets (observed on
+    /// ubuntu-latest CI; see the call site comment). No-op off Linux and
+    /// when the file is absent — failures fall through to the normal
+    /// Silk.NET load + the probe diagnostics.
+    /// </summary>
+    private static void PreloadGlfwNative()
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            return;
+
+        string rid = RuntimeInformation.ProcessArchitecture == Architecture.Arm64
+            ? "linux-arm64"
+            : "linux-x64";
+        string path = Path.Combine(AppContext.BaseDirectory, "runtimes", rid, "native", "libglfw.so.3");
+        if (File.Exists(path))
+            NativeLibrary.TryLoad(path, out _);
+    }
+
+    /// <summary>
+    /// Diagnoses WHY Silk.NET deemed the GLFW platform "not applicable":
+    /// re-runs the same native load Silk's <c>GlfwPlatform.IsApplicable</c>
+    /// performs (capturing the swallowed exception), and on Linux also tries
+    /// an absolute-path <see cref="NativeLibrary.Load(string)"/> of the
+    /// deployed binary to separate "name/deps resolution failed" from
+    /// "dlopen itself failed" (whose message carries the dlerror string).
+    /// </summary>
+    private static string ProbeGlfwLoadDetail()
+    {
+        string detail;
+        try
+        {
+            using var glfw = Silk.NET.GLFW.Glfw.GetApi();
+            detail = " [GLFW probe: Glfw.GetApi() succeeded — the windowing failure is elsewhere.]";
+        }
+        catch (Exception gex)
+        {
+            detail = $" [GLFW probe: Glfw.GetApi() failed: {gex.GetType().Name}: {gex.Message}]";
+        }
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        {
+            string abs = Path.Combine(
+                AppContext.BaseDirectory, "runtimes", "linux-x64", "native", "libglfw.so.3");
+            if (!File.Exists(abs))
+            {
+                detail += $" [GLFW probe: '{abs}' does not exist.]";
+            }
+            else
+            {
+                try
+                {
+                    nint handle = NativeLibrary.Load(abs);
+                    NativeLibrary.Free(handle);
+                    detail += " [GLFW probe: absolute-path dlopen of the deployed libglfw.so.3 succeeded.]";
+                }
+                catch (Exception dex)
+                {
+                    // DllNotFoundException's message embeds the raw dlerror text.
+                    detail += $" [GLFW probe: absolute-path dlopen FAILED: {dex.Message}]";
+                }
+            }
+        }
+
+        return detail;
+    }
+
+    /// <summary>
+    /// Records the soft-skip (visibly) — or, when <c>SHADOWDUSK_REQUIRE_GL</c>
+    /// is set, throws so every test in the class FAILS loudly instead of
+    /// silently passing without rendering. See the class doc and
+    /// <see cref="GlRequirement"/> for the Phase 37 Finding-B rationale.
+    /// </summary>
+    private void MarkSkippedOrThrow(string reason)
+    {
+        if (GlRequirement.IsRequired(Environment.GetEnvironmentVariable(GlRequirement.EnvVar)))
+            throw new GlContextUnavailableException(GlRequirement.BuildFailureMessage(reason));
+
+        IsSkipped  = true;
+        SkipReason = reason;
+
+        // Unmistakable per-class marker. ITestOutputHelper output only lands in
+        // the TRX, so also write to the test-host's stderr — a log reader must
+        // be able to see "rendered 0" next to a green summary.
+        Console.Error.WriteLine(GlRequirement.BuildSoftSkipNotice(reason));
+    }
+
+    /// <summary>
+    /// The standard line test bodies should write to <c>ITestOutputHelper</c>
+    /// when early-returning because <see cref="IsSkipped"/> is set — keeps the
+    /// "passed without rendering" marker consistent and greppable.
+    /// </summary>
+    public string SoftSkipLine =>
+        $"SOFT-SKIP (rendered 0 — PASS without rendering): {SkipReason}";
 
     public Task DisposeAsync()
     {

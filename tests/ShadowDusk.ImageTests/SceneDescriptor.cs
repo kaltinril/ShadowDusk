@@ -200,7 +200,15 @@ public static class SceneCatalog
         // actual fixture source uses semi-transparent red. The renderer reads
         // the framebuffer back as RGBA8 without blending (default state for
         // this fixture, since no AlphaBlendEnable is set), so the alpha
-        // channel is preserved verbatim. Tolerance 0 — solid color outputs.
+        // channel is preserved verbatim. Pass 0: tolerance 0 — solid opaque color.
+        //
+        // Pass 1 tolerance 1 (was 0) — §6.1-documented, observed value: the PS
+        // alpha 0.5 sits exactly on the 8-bit quantization boundary
+        // (0.5 * 255 = 127.5). The committed golden (real GPU) stored 128;
+        // Mesa llvmpipe (observed 2026-06-11 on Mesa 22.3.6 and 25.2.8,
+        // Phase 37 tail item 3) rounds to 127 — max channel delta exactly 1,
+        // alpha-only, uniform across all pixels, structure unchanged. Same
+        // rounding class render-states' tolerance 2 already anticipated.
         // -------------------------------------------------------------------
         catalog["multipass"] = new SceneDescriptor(
             FixtureName: "multipass",
@@ -220,7 +228,7 @@ public static class SceneCatalog
                     ClearColor: ((byte)0, (byte)0, (byte)0, (byte)255),
                     Uniforms: empty,
                     Textures: noTextures,
-                    Tolerance: 0,
+                    Tolerance: 1, // alpha-0.5 quantization boundary; see header comment
                     OutputStemSuffix: "_pass1"),
             });
 

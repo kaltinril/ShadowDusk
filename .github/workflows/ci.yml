@@ -35,12 +35,13 @@ jobs:
   build-and-test:
     name: Build & Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # Build + unit tests finish in ~1-3 min per OS; 10 is generous headroom. This also
-    # bounds the macOS `dotnet test` host-exit stall — now fixed at the source (the GLFW
-    # init that left a non-background Cocoa thread is skipped on macOS, see
-    # GlContextFixture), with this as the backstop. fail-fast:false keeps each OS
-    # reporting independently.
-    timeout-minutes: 10
+    # Build + unit tests finish in ~1-3 min per OS; the ubuntu lane additionally renders
+    # the ImageTests for real on Mesa llvmpipe (software rasterizer — slower than a GPU),
+    # so 15 gives headroom. This also bounds the macOS `dotnet test` host-exit stall —
+    # now fixed at the source (the GLFW init that left a non-background Cocoa thread is
+    # skipped on macOS, see GlContextFixture), with this as the backstop. fail-fast:false
+    # keeps each OS reporting independently.
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -106,6 +107,33 @@ jobs:
       - name: dotnet build
         run: dotnet build ShadowDusk.slnx --no-restore -c Release
 
+      # ── Real GL rendering on the ubuntu lane (Phase 37 verification tail, items 3+4) ──
+      # ubuntu runners are headless: without a display GlContextFixture cannot create its
+      # GL 3.3 Compatibility context and every ImageTests render test SOFT-SKIPS AS PASS.
+      # That soft-skip once fabricated "27/27 green in 73 ms" runs that never invoked DXC,
+      # masking a total Linux compile failure (Phase 37 Finding B). Mirror wasm.yml's
+      # proven browser-smoke recipe — xvfb (X virtual framebuffer) + Mesa llvmpipe
+      # (software GL; Mesa 24.x on ubuntu-latest advertises 4.5 Compatibility, covering
+      # the fixture's deliberate 3.3 Compatibility request) — so the lane actually renders
+      # the golden corpus. The extra libx*/libxkbcommon packages are GLFW's X11 client
+      # deps (the wasm.yml recipe used SDL via MonoGame; ImageTests use GLFW via Silk.NET).
+      - name: Install xvfb + Mesa software GL (ImageTests real rendering)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgl1-mesa-dri libglu1-mesa mesa-utils \
+            libx11-6 libxi6 libxrandr2 libxinerama1 libxcursor1 libxkbcommon0
+
+      # Empirical check (not assumed): print the Compatibility-profile version llvmpipe
+      # actually advertises under xvfb. The hard gate is SHADOWDUSK_REQUIRE_GL below —
+      # if the fixture can't create its 3.3 Compatibility context, the test step FAILS
+      # loudly — but this line puts the driver evidence in the log for humans.
+      - name: Verify llvmpipe GL Compatibility profile (diagnostic)
+        if: runner.os == 'Linux'
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+        run: xvfb-run -a glxinfo -B
+
       # Unit tests on the fast PR path (Category!=Integration).
       #
       # Phase34TextureBreadthTests live-compile the advanced 3D-texture / explicit-LOD /
@@ -116,7 +144,19 @@ jobs:
       # including the same-machine MgfxcCrossValidation cross-val and the ImageRegression
       # render proxy — runs on every OS, so cross-platform COMPILE reach for the normal
       # corpus is proven here, with the integration job as the heavier end-to-end check.
-      - name: dotnet test (unit, Windows — full)
+      #
+      # GL-render coverage per lane (Phase 37 tail items 3+4):
+      #   * ubuntu  — RENDERS FOR REAL under xvfb-run + llvmpipe. SHADOWDUSK_REQUIRE_GL=1
+      #               makes "no GL context" a hard failure, so a regression back to the
+      #               silent headless soft-skip turns this lane red instead of green.
+      #   * windows — SOFT-SKIPS (visibly): windows-latest runners expose only GDI Generic
+      #               OpenGL 1.1, so the GL 3.3 Compatibility context cannot be created.
+      #               Real-GPU GL coverage for Windows is the local dev run (the suite
+      #               renders fully there); do NOT set SHADOWDUSK_REQUIRE_GL here.
+      #   * macos   — SOFT-SKIPS (visibly) BY PLATFORM DESIGN: Apple caps the native GL
+      #               Compatibility profile at 2.1 and GLFW cannot exit cleanly headless
+      #               (see GlContextFixture). This is the remaining platform wall.
+      - name: dotnet test (unit, Windows — full; GL renders only on GPU-equipped hosts)
         if: runner.os == 'Windows'
         run: >
           dotnet test ShadowDusk.slnx --no-build -c Release
@@ -124,8 +164,46 @@ jobs:
           --logger "trx;LogFileName=unit-${{ matrix.os }}.trx"
           --results-directory TestResults/
 
-      - name: dotnet test (unit, Linux/macOS — advanced-texture compile tests excluded)
-        if: runner.os != 'Windows'
+      # Diagnostic for the GLFW native (the previous, pre-xvfb soft-skip reason on this
+      # runner family was "GlfwPlatform - not applicable" = Glfw.GetApi() could not LOAD
+      # libglfw.so.3 — not a display problem; the identical bin output loads fine in a
+      # headless Debian 12 container and in WSL2 ubuntu-24.04). Prints presence + linkage
+      # so a load failure here is diagnosable from the log instead of a Silk.NET one-liner.
+      - name: GLFW native load diagnostic
+        if: runner.os == 'Linux'
+        run: |
+          so=$(find tests/ShadowDusk.ImageTests/bin -path "*linux-x64*" -name "libglfw.so.3" | head -n1)
+          if [ -z "$so" ]; then
+            echo "::warning::libglfw.so.3 NOT in ImageTests bin output (runtimes/linux-x64/native)"
+            echo "--- ultz.native.glfw in NuGet cache ---"
+            find ~/.nuget/packages/ultz.native.glfw -type f 2>/dev/null || echo "(absent from cache)"
+          else
+            ls -la "$so"; file "$so" || true; ldd "$so" || true
+          fi
+
+      # Phase34LodGradRenderTests are additionally excluded on Linux — a DOCUMENTED
+      # STRUCTURAL exclusion, not a tolerance: Mesa's strict GLSL front-end rejects
+      # `textureLod`/`textureGrad` in the implicit-#version-110 legacy dialect these
+      # tests' shaders use ("0:13(17): error: no function with name 'textureLod'",
+      # observed on llvmpipe Mesa 22.3.6 + 25.2.8, 2026-06-11). The dev NVIDIA driver
+      # accepts those builtins in the legacy dialect (Windows real-GPU runs stay the
+      # coverage). Masking this with a tolerance would hide a real driver-strictness
+      # divergence — recorded in plan/PHASE-37 as a Phase 34 follow-up instead.
+      - name: dotnet test (unit, Linux — REAL GL render under xvfb/llvmpipe, REQUIRE_GL hard gate)
+        if: runner.os == 'Linux'
+        env:
+          # Pin Mesa's software rasterizer even if a GPU device node exists (same as wasm.yml).
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          # Phase 37 tail item 4: no GL context => ImageTests FAIL loudly, never pass-by-skip.
+          SHADOWDUSK_REQUIRE_GL: "1"
+        run: >
+          xvfb-run -a dotnet test ShadowDusk.slnx --no-build -c Release
+          --filter "Category!=Integration&FullyQualifiedName!~Phase34TextureBreadthTests&FullyQualifiedName!~Phase34LodGradRenderTests"
+          --logger "trx;LogFileName=unit-${{ matrix.os }}.trx"
+          --results-directory TestResults/
+
+      - name: dotnet test (unit, macOS — advanced-texture compile tests excluded; GL proxy N/A)
+        if: runner.os == 'macOS'
         run: >
           dotnet test ShadowDusk.slnx --no-build -c Release
           --filter "Category!=Integration&FullyQualifiedName!~Phase34TextureBreadthTests"
