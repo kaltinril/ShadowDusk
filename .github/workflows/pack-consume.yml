@@ -1,0 +1,290 @@
+# .github/workflows/pack-consume.yml
+# Scratch-consumer smoke (Phase 37 verification tail, item 2).
+#
+# Does EXACTLY what a brand-new consumer does, on all three OSes:
+#
+#   dotnet pack  (the four packages ShadowDusk.Compiler pulls)  → ./localfeed
+#   dotnet new console                                          (OUTSIDE the repo tree)
+#   dotnet add package ShadowDusk.Compiler                      (from the local feed)
+#   new EffectCompiler().CompileAsync(fx)                       (real shaders, OpenGL + FNA)
+#
+# This is the check that would have caught the 0.2.0 disaster (a 60 KB
+# ShadowDusk.HLSL with no natives): the pack gate asserts the natives are INSIDE
+# the nupkg, and the scratch app proves they actually load at runtime from a
+# package-only install — no ProjectReference, no repo path, no manual native step.
+# The macOS lane is the "scratch-consumer check on a real Mac" the Phase 37 doc
+# requires — stronger than waiting for a published release, because it tests HEAD.
+#
+# The packages are packed with a unique prerelease version
+# (<Directory.Build.props Version>-smoke.<run>) so the consumer can ONLY resolve
+# them from the local feed — never silently from the already-published nuget.org
+# version (which would test the wrong bits).
+name: Pack & Consume Smoke
+
+on:
+  workflow_dispatch:
+  # Same label gate as ci.yml's integration job: runs on PRs only when the
+  # 'run-integration' label is applied (heavyweight: packs + a cold consumer restore).
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+  DOTNET_NOLOGO: '1'
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+
+jobs:
+  pack-consume:
+    name: Pack & Consume (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.pull_request.labels.*.name, 'run-integration')
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, macos-latest, windows-latest ]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+
+      # Same caches as ci.yml: NuGet (carries the transitive DXC + SPIRV-Cross
+      # natives), the pinned vkd3d natives, and the pinned macOS DXC dylibs.
+      - name: Cache NuGet
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', '**/Directory.Packages.props') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Cache vkd3d natives
+        uses: actions/cache@v5
+        with:
+          path: tools/vkd3d
+          key: vkd3d-1.17-${{ runner.os }}
+
+      - name: Cache DXC macOS natives
+        uses: actions/cache@v5
+        with:
+          path: tools/dxc
+          key: dxc-1.7.2212.40-${{ runner.os }}
+
+      # Non-fatal like ci.yml: if the download is unavailable the PACK GATE below
+      # is the loud assertion — a package without natives must fail this job red.
+      - name: Restore native tools (Linux / macOS)
+        if: runner.os != 'Windows'
+        run: |
+          chmod +x tools/restore.sh
+          ./tools/restore.sh || true
+
+      - name: Restore native tools (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./tools/restore.ps1
+
+      - name: dotnet restore
+        run: dotnet restore ShadowDusk.slnx --locked-mode
+
+      # Resolve the smoke version: the single source of truth (Directory.Build.props
+      # <Version>) + a unique prerelease suffix so the local feed is the only place
+      # this version exists. sed (not grep -P) — macOS ships BSD grep.
+      - name: Resolve smoke version
+        id: version
+        shell: bash
+        run: |
+          base=$(sed -n 's/.*<Version>\(.*\)<\/Version>.*/\1/p' Directory.Build.props | head -n1)
+          if [ -z "$base" ]; then
+            echo "::error::Could not read <Version> from Directory.Build.props"
+            exit 1
+          fi
+          smoke="${base}-smoke.${GITHUB_RUN_ID}"
+          echo "Base version: $base   Smoke version: $smoke"
+          echo "smoke=$smoke" >> "$GITHUB_OUTPUT"
+
+      # Pack the four packages the ShadowDusk.Compiler dependency graph pulls
+      # (Core/HLSL/GLSL/Compiler — same projects release.yml packs, minus the CLI,
+      # which a library consumer never installs) into the local feed.
+      - name: Pack into local feed
+        shell: bash
+        run: |
+          mkdir -p localfeed
+          for proj in \
+            src/ShadowDusk.Core/ShadowDusk.Core.csproj \
+            src/ShadowDusk.HLSL/ShadowDusk.HLSL.csproj \
+            src/ShadowDusk.GLSL/ShadowDusk.GLSL.csproj \
+            src/ShadowDusk.Compiler/ShadowDusk.Compiler.csproj ; do
+              dotnet pack "$proj" -c Release --no-restore -o localfeed \
+                -p:Version=${{ steps.version.outputs.smoke }}
+          done
+          ls -la localfeed/
+
+      # PACK GATE (mirrors release.yml's pack-desktop gate, plus the Phase 37 A DXC
+      # dylibs): ShadowDusk.HLSL's native pack entries are Exists()-conditioned, so a
+      # pack on a machine without restored natives SILENTLY produces the broken 0.2.0
+      # shape — fail red here instead. python3 -m zipfile because windows-latest's
+      # Git Bash has no unzip.
+      - name: 'Pack gate: ShadowDusk.HLSL contains all natives + notices'
+        shell: bash
+        run: |
+          pkg=$(find localfeed -maxdepth 1 -name 'ShadowDusk.HLSL.*.nupkg' | head -1)
+          echo "Inspecting $pkg"
+          py=$(command -v python3 || command -v python)
+          listing=$("$py" -m zipfile -l "$pkg")
+          echo "$listing"
+          missing=0
+          for native in \
+            'runtimes/win-x64/native/libvkd3d-shader-1.dll' \
+            'runtimes/linux-x64/native/libvkd3d-shader.so.1' \
+            'runtimes/osx-x64/native/libvkd3d-shader.1.dylib' \
+            'runtimes/osx-arm64/native/libvkd3d-shader.1.dylib' \
+            'runtimes/osx-x64/native/libdxcompiler.dylib' \
+            'runtimes/osx-arm64/native/libdxcompiler.dylib' \
+            'THIRD-PARTY-NOTICES.txt' ; do
+              if ! grep -qF "$native" <<<"$listing"; then
+                echo "::error::$pkg is missing $native — a consumer on that RID gets the 0.2.0 disaster (natives absent from the package). Restore natives before packing (tools/restore.*)."
+                missing=1
+              fi
+          done
+          exit $missing
+
+      # Scaffold the scratch consumer OUTSIDE the repo tree so none of the repo's
+      # MSBuild/NuGet context (Directory.Build.props, Directory.Packages.props,
+      # nuget.config, lock files) can leak in. <clear/> + two sources: the local
+      # feed (the ShadowDusk bits under test) and nuget.org (transitive deps:
+      # Vortice.Dxc, Silk.NET.SPIRV.Cross.Native). The packageSourceMapping pins
+      # ShadowDusk.* EXCLUSIVELY to the local feed (and <clear/>s any ambient
+      # machine-level mapping that would shadow it): the ShadowDusk bits under
+      # test can never silently resolve from the already-published nuget.org
+      # version — if the local pack is broken, restore fails red, not green.
+      - name: Scaffold scratch consumer
+        shell: bash
+        run: |
+          scratch="$RUNNER_TEMP/sd-scratch-consumer"
+          rm -rf "$scratch"
+          dotnet new console -n ScratchConsumer -o "$scratch" -f net8.0
+          cat > "$scratch/nuget.config" <<EOF
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration>
+            <packageSources>
+              <clear />
+              <add key="localfeed" value="$GITHUB_WORKSPACE/localfeed" />
+              <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+            </packageSources>
+            <packageSourceMapping>
+              <clear />
+              <packageSource key="localfeed">
+                <package pattern="ShadowDusk.*" />
+              </packageSource>
+              <packageSource key="nuget.org">
+                <package pattern="*" />
+              </packageSource>
+            </packageSourceMapping>
+          </configuration>
+          EOF
+          # Real shaders from the repo's fixture corpus — data only, no repo code path
+          # leaks into the consumer build.
+          cp tests/fixtures/shaders/Minimal.fx   "$scratch/"
+          cp tests/fixtures/shaders/Grayscale.fx "$scratch/"
+          cp tests/fixtures/shaders/TintShader.fx "$scratch/"
+          # The consumer program IS the documentation of the consumer experience:
+          # add the package, call CompileAsync, get .mgfx/.fxb bytes. Nothing else.
+          cat > "$scratch/Program.cs" <<'EOF'
+          // ShadowDusk scratch consumer — exactly what a brand-new user does:
+          //   dotnet new console
+          //   dotnet add package ShadowDusk.Compiler
+          //   new EffectCompiler().CompileAsync(fxSource, options)
+          // No native installs, no flags, no extra steps ("self-contained" is a hard
+          // requirement — the natives must ride inside the package and load here).
+          using ShadowDusk.Compiler;
+          using ShadowDusk.Core;
+
+          var cases = new (string Fx, PlatformTarget Target)[]
+          {
+              ("Minimal.fx",    PlatformTarget.OpenGL), // simplest VS+PS effect → .mgfx
+              ("Grayscale.fx",  PlatformTarget.OpenGL), // textured (Texture2D + sampler) → .mgfx
+              ("Grayscale.fx",  PlatformTarget.Fna),    // textured → D3D9 fx_2_0 .fxb (vkd3d native)
+              ("TintShader.fx", PlatformTarget.Fna),    // textured, second FNA corpus shader
+          };
+
+          var compiler = new EffectCompiler();
+          int failed = 0;
+
+          foreach (var (fx, target) in cases)
+          {
+              string label = $"{fx} -> {target}";
+              string source = await File.ReadAllTextAsync(fx);
+              var result = await compiler.CompileAsync(
+                  source,
+                  new CompilerOptions { Target = target, SourceFileName = fx });
+
+              if (result.IsFailure)
+              {
+                  Console.Error.WriteLine($"FAIL  {label}: compile errors:");
+                  foreach (var e in result.Error)
+                      Console.Error.WriteLine($"      {e.File}({e.Line},{e.Column}): {e.Code}: {e.Message}");
+                  failed++;
+                  continue;
+              }
+
+              byte[] data = result.Value.Data;
+              if (data.Length <= 4)
+              {
+                  Console.Error.WriteLine($"FAIL  {label}: empty/truncated output ({data.Length} bytes)");
+                  failed++;
+                  continue;
+              }
+
+              bool magicOk = target switch
+              {
+                  // MGFX container: leading ASCII "MGFX" signature.
+                  PlatformTarget.OpenGL =>
+                      data[0] == (byte)'M' && data[1] == (byte)'G' &&
+                      data[2] == (byte)'F' && data[3] == (byte)'X',
+                  // D3D9 Effects Framework fx_2_0 version token.
+                  PlatformTarget.Fna => BitConverter.ToUInt32(data, 0) == 0xFEFF0901u,
+                  _ => false,
+              };
+              if (!magicOk)
+              {
+                  Console.Error.WriteLine($"FAIL  {label}: wrong magic (first 4 bytes: {Convert.ToHexString(data, 0, 4)})");
+                  failed++;
+                  continue;
+              }
+
+              Console.WriteLine($"OK    {label}: {data.Length} bytes, magic verified");
+          }
+
+          if (failed > 0)
+          {
+              Console.Error.WriteLine($"{failed} of {cases.Length} consumer compiles FAILED");
+              return 1;
+          }
+          Console.WriteLine($"All {cases.Length} consumer compiles succeeded — package is consumable on this OS");
+          return 0;
+          EOF
+
+      # THE consumer step: install ShadowDusk.Compiler by package reference only.
+      # The smoke version exists solely in the local feed, so this proves the feed
+      # resolution and pulls Core/HLSL/GLSL transitively, plus the third-party
+      # natives from nuget.org — the complete "add the package" experience.
+      - name: dotnet add package ShadowDusk.Compiler (from local feed)
+        shell: bash
+        working-directory: ${{ runner.temp }}/sd-scratch-consumer
+        run: dotnet add package ShadowDusk.Compiler --version ${{ steps.version.outputs.smoke }}
+
+      - name: Run scratch consumer (compile real shaders via the installed package)
+        shell: bash
+        working-directory: ${{ runner.temp }}/sd-scratch-consumer
+        run: dotnet run -c Release
