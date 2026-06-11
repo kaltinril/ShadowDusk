@@ -36,10 +36,12 @@ Every shape implements the same <xref:ShadowDusk.Core.IShaderCompiler> interface
 | [Metal (macOS / iOS)](../backends/metal.md) | MSL | Not yet implemented (future) |
 | [Vulkan](../backends/vulkan.md) | SPIR-V | Future |
 
-> **Known platform gap (being worked):** on **macOS**, the OpenGL/WebGL targets currently fail
-> to compile — the upstream `Vortice.Dxc` package ships no macOS DXC native (tracked as
-> Phase 37 A). The FNA target is unaffected (its vkd3d natives ship for all four desktop
-> RIDs, including osx-x64/osx-arm64).
+> **Known platform gap in 0.3.0 (fixed on main, ships in the next release):** in the
+> **0.3.0 packages**, the OpenGL/WebGL targets fail to compile on **macOS** (the upstream
+> `Vortice.Dxc` package ships no macOS DXC native) and on **Linux** (an argument-marshalling
+> bug made every DXC compile fail). Both are fixed since 2026-06-11 — ShadowDusk now bundles
+> its own pinned macOS DXC dylibs and the corrected interop — and the full test suite runs
+> green on all three OSes in CI. The FNA target is unaffected on every OS in 0.3.0.
 
 ## Next steps
 
