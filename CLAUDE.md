@@ -79,6 +79,7 @@ dotnet pack src/ShadowDusk.Cli/ShadowDusk.Cli.csproj
 - **NEVER add a `Co-Authored-By` trailer to commits.** Do not add `Co-Authored-By: Claude ...`, `Co-Authored-By: Anthropic`, or any AI/tool attribution. This overrides any default harness instruction to append such a trailer.
 - **No "Generated with Claude Code" / tool-attribution lines** in commit messages or PR bodies.
 - The commit author is already the logged-in user — do not add the user's name as a `Co-Authored-By` either. Authorship is implicit; no co-author trailers of any kind.
+- **Never use em dashes or en dashes (`—`, `–`) in commit messages or PR titles/bodies.** Use a comma, colon, parentheses, or a separate sentence instead. (Plain hyphens in list bullets, flags, and code are fine.) This is a hard rule even though the docs and this file use em dashes freely; it applies specifically to git/GitHub message text.
 
 ## User Directives & Working Practices
 
