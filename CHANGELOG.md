@@ -14,6 +14,14 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.4.0] - 2026-06-11
+
+### Added
+
 - **macOS shader compilation works.** The upstream `Vortice.Dxc` package ships no macOS
   DXC native, so every OpenGL/WebGL compile on a Mac threw `DllNotFoundException`.
   ShadowDusk now bundles its **own `libdxcompiler.dylib`** for osx-x64 and osx-arm64,
@@ -48,6 +56,18 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   the KNI/WebGL support claims) now runs in CI on every change, on a software-GL baseline
   with documented per-shader tolerances — 10/10 corpus shaders load and render
   equivalently in real KNI WebGL1, and the issue #7 HiDef/WebGL2 guard runs with it.
+
+### Verified
+
+- **Cross-host determinism is machine-verified.** CI now asserts a committed SHA-256
+  manifest of compiled output (102 fixture×target entries: OpenGL, DirectX via vkd3d, FNA)
+  independently on Windows, Linux, and macOS — the emitted bytes are identical on every
+  OS, so the Windows render-validation results apply byte-for-byte everywhere.
+- **The consumer experience is machine-verified.** A CI job on all three OSes packs the
+  packages, installs `ShadowDusk.Compiler` into a scratch project from a local feed, and
+  compiles real shaders through it (including the bundled-natives check that a 0.2.0-style
+  empty package can never ship again). `THIRD-PARTY-NOTICES.txt` now also covers the
+  bundled DXC dylibs (LLVM Release License).
 
 ## [0.3.0] - 2026-06-10
 
@@ -227,7 +247,8 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/kaltinril/ShadowDusk/compare/v0.1.0...v0.1.1

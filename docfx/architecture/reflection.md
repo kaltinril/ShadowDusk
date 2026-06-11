@@ -14,7 +14,7 @@ Being pure-managed, it runs anywhere .NET runs — including in the browser — 
 
 ## DXBC reflection (DirectX path)
 
-For the DirectX path the shader is compiled to **DXBC** by [`vkd3d-shader` or `d3dcompiler_47`](directx-dxbc-vkd3d.md). The same DXBC bytes are the reflection source, read via `ID3D11ShaderReflection`. A `DxbcReflectionExtractor` reflects the output of **both** DXBC backends so they produce the same parameter/cbuffer/sampler metadata.
+For the DirectX path the shader is compiled to **DXBC** by [`vkd3d-shader` or `d3dcompiler_47`](directx-dxbc-vkd3d.md). The same DXBC bytes are the reflection source, parsed by the pure-managed `RdefReader` (the DXBC container's `RDEF`/`ISGN`/`OSGN` chunks) — platform-agnostic, and proven deeply equal to the Windows `D3DReflect` oracle for both backends' output. A `DxbcReflectionExtractor` wraps it so both DXBC backends produce the same parameter/cbuffer/sampler metadata on every OS.
 
 ## The shared contract
 

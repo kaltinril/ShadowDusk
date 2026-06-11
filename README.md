@@ -41,7 +41,7 @@ Supported backends:
 | Backend | Output | Status |
 |---|---|---|
 | OpenGL / DesktopGL | GLSL | Validated end-to-end (10/10 in real MonoGame DesktopGL) |
-| DirectX (Windows, DX11) | DXBC (SM5) via vkd3d-shader | Validated end-to-end (10/10 in real MonoGame WindowsDX) |
+| DirectX (DX11) | DXBC (SM5) via vkd3d-shader — compiles on Windows, Linux, and macOS | Validated end-to-end (10/10 in real MonoGame WindowsDX) |
 | WebGL (XNA Fiddle / KNI browser) | GLSL ES | Validated end-to-end (10/10 in real headless KNI WebGL) |
 | FNA (`/Profile:FNA` → `.fxb`) | D3D9 fx_2_0 via vkd3d-shader | Validated end-to-end (pixel-identical to `fxc /T fx_2_0` in real FNA — PS-only and custom-vertex-shader effects, incl. multi-pass + in-pass render states) |
 | Metal (macOS / iOS) | MSL | Not yet implemented |
