@@ -121,15 +121,26 @@ until the hosted artifacts land and a real macOS run compiles. What landed:
   actually ship (the Vortice-shipped win/linux natives are NOT ours to notice).
 
 **Exact remaining steps to close A** (in order):
-1. Dispatch `dxc-build.yml` (`gh workflow run dxc-build.yml --ref <branch>`); iterate
-   until both RID jobs are green (expect iteration — vkd3d-build needed 3 fix commits;
-   the main risk is 2022-era LLVM source vs the runners' newer Xcode clang).
-2. Download the two artifacts; `gh release create native-dxc-1.7.2212.40 \
+1. ~~Dispatch `dxc-build.yml`; iterate until both RID jobs are green.~~ ✅ **GREEN
+   2026-06-11**, run https://github.com/kaltinril/ShadowDusk/actions/runs/27327330108
+   (attempt 2 — one fix iteration: the runners' CMake 4 rejects the 2022-era source
+   (`CMP0051 OLD` + SPIRV-Headers' pre-3.5 `cmake_minimum_required`), fixed by
+   pinning the official Kitware CMake 3.31.8 universal binary, SHA-256-verified.
+   Both dylibs passed the SPIR-V smoke + otool system-only-linkage gates; artifacts
+   downloaded and hash-verified locally. Two notes for posterity: GitHub had never
+   registered the dispatch-only workflow off the default branch, so a branch+path-
+   scoped push bootstrap trigger was added — remove on merge; and the Actions REST
+   API flapped wildly during the run (phantom job failures/successes) — trust the
+   artifacts endpoint over status fields. arm64 built in 9.5 min, x64 in ~25 min.)
+2. Download the two artifacts (`dxc-1.7.2212.40-osx-{arm64,x64}`, 30-day retention
+   from 2026-06-11); `gh release create native-dxc-1.7.2212.40 \
    libdxcompiler.osx-x64.dylib libdxcompiler.osx-arm64.dylib LICENSE-DXC.TXT`
    (rename each artifact's `libdxcompiler.dylib` to its per-RID asset name first).
-3. Paste the workflow-printed SHA-256s over both `PENDING-FIRST-HOSTED-BUILD`
-   placeholders in `tools/restore.sh` + `tools/restore.ps1` (this flips restore to
-   enforcing automatically — the placeholder check is the only bypass).
+3. Paste the verified SHA-256s over both `PENDING-FIRST-HOSTED-BUILD` placeholders
+   in `tools/restore.sh` + `tools/restore.ps1` (this flips restore to enforcing
+   automatically — the placeholder check is the only bypass):
+   - osx-arm64: `4f29ef90af61426a39037a2e9d7215a48c7c746328a38a20028e456c1ee3d811`
+   - osx-x64:   `9e61d5c1993d2cd5a5ea6701011d0a86e8c8dd89c995ef0c4d03ff3b83dbbc17`
 4. Add a `tools/dxc` cache + restore to `ci.yml`'s macOS lanes if not already covered
    by the existing restore step, and re-run CI: the macOS integration job's
    `DllNotFoundException` wall should fall.
