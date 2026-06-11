@@ -99,11 +99,20 @@ jobs:
           done
           echo "pinned source OK: $DXC_COMMIT (+3 submodules)"
 
-      # cmake + python3 are preinstalled on the macOS images; only ninja is needed.
-      # Build tools only — nothing here can become a runtime dependency (the otool
-      # gate below proves system-only linkage).
-      - name: Install build deps (ninja)
-        run: brew install ninja
+      # python3 is preinstalled on the macOS images; ninja comes from Homebrew.
+      # CMake must be pinned to 3.x: the runner images ship CMake 4, which rejects
+      # the 2022-era source outright (DXC's own `cmake_policy(SET CMP0051 OLD)` and
+      # SPIRV-Headers' pre-3.5 `cmake_minimum_required` are both hard errors on 4.x).
+      # The official Kitware universal binary is SHA-256-pinned. Build tools only —
+      # nothing here can become a runtime dependency (the otool gate proves it).
+      - name: Install build deps (ninja + pinned CMake 3.31)
+        run: |
+          brew install ninja
+          curl -fsSLo cmake.tar.gz \
+            https://github.com/Kitware/CMake/releases/download/v3.31.8/cmake-3.31.8-macos-universal.tar.gz
+          echo "d1449f969c54d5c00886d5b643340d493dfb3c81cb39ee29b35453395c11ebf7  cmake.tar.gz" | shasum -a 256 -c -
+          tar xf cmake.tar.gz
+          echo "$PWD/cmake-3.31.8-macos-universal/CMake.app/Contents/bin" >> "$GITHUB_PATH"
 
       # Native host build (no cross-compile, so no tablegen split — unlike the WASM
       # recipe). PredefinedParams.cmake is DXC's own canonical cache (EH/RTTI etc.);
