@@ -210,7 +210,7 @@ jobs:
         env:
           LIBGL_ALWAYS_SOFTWARE: "1"
         run: |
-          node publish-sample-sd.mjs
+          xvfb-run -a node publish-sample-sd.mjs
           xvfb-run -a node run-harness.mjs --corpus=sd
 
       # ── Phase 33 / issue #7 regression guard: KNI HiDef / WebGL2 (GLSL ES 3.00) ──
@@ -225,7 +225,7 @@ jobs:
           LIBGL_ALWAYS_SOFTWARE: "1"
         run: |
           rm -f RESULTS-SD-HIDEF.md RESULTS-SD-HIDEF-REPRO.md
-          node publish-sample-sd-hidef.mjs
+          xvfb-run -a node publish-sample-sd-hidef.mjs
           xvfb-run -a node run-harness.mjs --corpus=sd-hidef
           if [ -f RESULTS-SD-HIDEF-REPRO.md ]; then
             echo "::error::issue #7 REGRESSED — KNI HiDef/WebGL2 reproduced the gl_FragColor load failure (RESULTS-SD-HIDEF-REPRO.md written)."
