@@ -48,6 +48,22 @@ public sealed class GlContextUnavailableException : Exception
 /// <see cref="SkipIfNoContext"/> at the top of every test body to short-circuit
 /// with a clear diagnostic.
 /// </para>
+/// <para>
+/// <b>Soft-skip hardening (Phase 37 tail item 4 / <c>SHADOWDUSK_REQUIRE_GL</c>):</b>
+/// the <see cref="IsSkipped"/> early-return pattern means a headless host
+/// reports every render test as PASS while rendering nothing — exactly the
+/// Finding-B "paradox" that fabricated 27/27-green ubuntu runs while the
+/// entire Linux compile path was broken. Two defenses live here now:
+/// (1) when <c>SHADOWDUSK_REQUIRE_GL</c> is set (see <see cref="GlRequirement"/>),
+/// a failed context creation THROWS from <see cref="InitializeAsync"/>, failing
+/// every test in the class loudly — ci.yml's ubuntu lane sets it (running under
+/// xvfb + Mesa llvmpipe) so a regression back to headless-skip turns the lane
+/// red; (2) when unset, the soft-skip stays but emits an unmistakable
+/// "GL SOFT-SKIP (rendered 0)" line per class so a log reader can tell
+/// "passed" from "rendered". Note the macOS by-design skip below also honors
+/// the gate: requiring GL on a macOS runner is a misconfiguration and fails
+/// loudly rather than silently passing.
+/// </para>
 /// </summary>
 public sealed class GlContextFixture : IAsyncLifetime
 {
@@ -103,10 +119,10 @@ public sealed class GlContextFixture : IAsyncLifetime
         // only re-prove the Linux/Windows pixels. Not worth it for a proxy.)
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
-            IsSkipped  = true;
-            SkipReason = "GL render proxy is N/A on macOS (Apple deprecated OpenGL; native GL "
-                       + "caps Compatibility at 2.1, and GLFW cannot exit cleanly on macOS). "
-                       + "This proxy is covered on Linux + Windows.";
+            MarkSkippedOrThrow(
+                "GL render proxy is N/A on macOS (Apple deprecated OpenGL; native GL "
+                + "caps Compatibility at 2.1, and GLFW cannot exit cleanly on macOS). "
+                + "This proxy is covered on Linux + Windows.");
             return Task.CompletedTask;
         }
 
@@ -149,12 +165,39 @@ public sealed class GlContextFixture : IAsyncLifetime
         catch (Exception ex)
         {
             DisposeQuietly();
-            IsSkipped  = true;
-            SkipReason = $"OpenGL 3.3 context unavailable: {ex.GetType().Name}: {ex.Message}";
+            MarkSkippedOrThrow($"OpenGL 3.3 context unavailable: {ex.GetType().Name}: {ex.Message}");
         }
 
         return Task.CompletedTask;
     }
+
+    /// <summary>
+    /// Records the soft-skip (visibly) — or, when <c>SHADOWDUSK_REQUIRE_GL</c>
+    /// is set, throws so every test in the class FAILS loudly instead of
+    /// silently passing without rendering. See the class doc and
+    /// <see cref="GlRequirement"/> for the Phase 37 Finding-B rationale.
+    /// </summary>
+    private void MarkSkippedOrThrow(string reason)
+    {
+        if (GlRequirement.IsRequired(Environment.GetEnvironmentVariable(GlRequirement.EnvVar)))
+            throw new GlContextUnavailableException(GlRequirement.BuildFailureMessage(reason));
+
+        IsSkipped  = true;
+        SkipReason = reason;
+
+        // Unmistakable per-class marker. ITestOutputHelper output only lands in
+        // the TRX, so also write to the test-host's stderr — a log reader must
+        // be able to see "rendered 0" next to a green summary.
+        Console.Error.WriteLine(GlRequirement.BuildSoftSkipNotice(reason));
+    }
+
+    /// <summary>
+    /// The standard line test bodies should write to <c>ITestOutputHelper</c>
+    /// when early-returning because <see cref="IsSkipped"/> is set — keeps the
+    /// "passed without rendering" marker consistent and greppable.
+    /// </summary>
+    public string SoftSkipLine =>
+        $"SOFT-SKIP (rendered 0 — PASS without rendering): {SkipReason}";
 
     public Task DisposeAsync()
     {

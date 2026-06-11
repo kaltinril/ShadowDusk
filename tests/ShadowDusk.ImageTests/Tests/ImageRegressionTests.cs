@@ -30,7 +30,8 @@ namespace ShadowDusk.ImageTests.Tests;
 /// </summary>
 [Trait("Category", "ImageRegression")]
 [Trait("Platform", "OpenGL")]
-public sealed class ImageRegressionTests : IClassFixture<GlContextFixture>
+[Collection(GlContextCollection.Name)] // shared GL fixture; see GlContextCollection
+public sealed class ImageRegressionTests
 {
     private readonly GlContextFixture  _fixture;
     private readonly ITestOutputHelper _output;
@@ -63,7 +64,10 @@ public sealed class ImageRegressionTests : IClassFixture<GlContextFixture>
             // Pass with a clearly labelled message rather than fail. xUnit
             // doesn't have a built-in skip mechanism in plain Fact/Theory
             // attributes without Skip; returning early is the lightest option.
-            _output.WriteLine($"Skipped (no GL context): {_fixture.SkipReason}");
+            // NOTE this means "PASS" here can mean "rendered nothing" — set
+            // SHADOWDUSK_REQUIRE_GL=1 to make that a hard failure instead
+            // (the fixture throws before any test runs; see GlRequirement).
+            _output.WriteLine(_fixture.SoftSkipLine);
             return;
         }
 

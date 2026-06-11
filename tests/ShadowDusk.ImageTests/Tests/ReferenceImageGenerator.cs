@@ -32,7 +32,8 @@ namespace ShadowDusk.ImageTests.Tests;
 /// </summary>
 [Trait("Category", "ImageRegression")]
 [Trait("Platform", "OpenGL")]
-public sealed class ReferenceImageGenerator : IClassFixture<GlContextFixture>
+[Collection(GlContextCollection.Name)] // shared GL fixture; see GlContextCollection
+public sealed class ReferenceImageGenerator
 {
     private readonly GlContextFixture  _fixture;
     private readonly ITestOutputHelper _output;
@@ -54,7 +55,7 @@ public sealed class ReferenceImageGenerator : IClassFixture<GlContextFixture>
 
         if (_fixture.IsSkipped)
         {
-            _output.WriteLine($"Skipped: {_fixture.SkipReason}");
+            _output.WriteLine(_fixture.SoftSkipLine);
             return;
         }
 

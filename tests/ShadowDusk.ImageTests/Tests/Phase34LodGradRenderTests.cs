@@ -34,7 +34,8 @@ namespace ShadowDusk.ImageTests.Tests;
 /// </summary>
 [Trait("Category", "ImageRegression")]
 [Trait("Platform", "OpenGL")]
-public sealed class Phase34LodGradRenderTests : IClassFixture<GlContextFixture>
+[Collection(GlContextCollection.Name)] // shared GL fixture; see GlContextCollection
+public sealed class Phase34LodGradRenderTests
 {
     private readonly GlContextFixture _fixture;
     private readonly ITestOutputHelper _output;
@@ -70,7 +71,7 @@ public sealed class Phase34LodGradRenderTests : IClassFixture<GlContextFixture>
     [Fact]
     public async Task SampleLevel_EmittedTextureLod_HonorsExplicitMip2_InRealDriver()
     {
-        if (_fixture.IsSkipped) { _output.WriteLine("skip: " + _fixture.SkipReason); return; }
+        if (_fixture.IsSkipped) { _output.WriteLine(_fixture.SoftSkipLine); return; }
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         // ShadowDusk's actual emitted PS for SampleLevel(..., 2.0): textureLod(ps_s0, uv, 2.0).
@@ -90,7 +91,7 @@ public sealed class Phase34LodGradRenderTests : IClassFixture<GlContextFixture>
     [Fact]
     public void TextureGrad_LargeGradient_SelectsHighMip_InRealDriver()
     {
-        if (_fixture.IsSkipped) { _output.WriteLine("skip: " + _fixture.SkipReason); return; }
+        if (_fixture.IsSkipped) { _output.WriteLine(_fixture.SoftSkipLine); return; }
 
         // Use ShadowDusk's emitted spelling (generic textureGrad, as the grad fixture
         // produces) with a LARGE derivative so the LOD math lands on a high mip. The

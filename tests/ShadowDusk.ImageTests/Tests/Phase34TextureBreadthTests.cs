@@ -42,7 +42,8 @@ namespace ShadowDusk.ImageTests.Tests;
 /// </summary>
 [Trait("Category", "ImageRegression")]
 [Trait("Platform", "OpenGL")]
-public sealed class Phase34TextureBreadthTests : IClassFixture<GlContextFixture>
+[Collection(GlContextCollection.Name)] // shared GL fixture; see GlContextCollection
+public sealed class Phase34TextureBreadthTests
 {
     private readonly GlContextFixture  _fixture;
     private readonly ITestOutputHelper _output;
@@ -160,7 +161,7 @@ public sealed class Phase34TextureBreadthTests : IClassFixture<GlContextFixture>
     {
         if (_fixture.IsSkipped)
         {
-            _output.WriteLine($"Skipped (no GL context): {_fixture.SkipReason}");
+            _output.WriteLine(_fixture.SoftSkipLine);
             return;
         }
 
