@@ -32,6 +32,9 @@
     <!-- Phase 39: the fxc fx_2_0 goldens (sources + binaries) for the FNA structural
          cross-check (FnaCompileFixtureTests). -->
     <None Include="..\..\tests\fixtures\golden\FNA\**\*" CopyToOutputDirectory="PreserveNewest" Link="fixtures\golden\FNA\%(RecursiveDir)%(Filename)%(Extension)" />
+    <!-- Phase 37 tail (1): the committed cross-host byte-identity manifest
+         (CrossHostByteIdentityTests) — win-x64-generated SHA-256s asserted on every OS. -->
+    <None Include="..\..\tests\fixtures\golden\byte-identity\**\*" CopyToOutputDirectory="PreserveNewest" Link="fixtures\golden\byte-identity\%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup Label="Test framework">
