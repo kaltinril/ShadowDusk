@@ -376,8 +376,10 @@ one real bug plus hardening gaps — all fixed:
       completion* below.
 - [x] ~~In-pass render-state runtime verification in real FNA~~ — closed empirically by the
       `FnaMultiPassStates` rung-4 row (see Known limitations).
-- [ ] Host the pinned per-RID vkd3d artifacts for CI/release restore (Phase 37 C — last gap
-      between "works from a dev machine pack" and "works from any CI release").
+- [x] ~~Host the pinned per-RID vkd3d artifacts for CI/release restore~~ — done via
+      Phase 37 C (PRs #35–#37, 2026-06-10): all four RIDs (incl. osx-x64/osx-arm64) on
+      release tag `native-vkd3d-1.17`, downloaded + SHA-256-verified by `tools/restore.*`;
+      FNA compile suite green on ubuntu/macOS CI.
 - [ ] Surface vkd3d's `E5017`-class detail when its messages blob is empty (Constraint-5
       diagnostic fidelity; see Known limitations).
 - [ ] Consider upstreaming the MojoShader `printFloat` LLP64 fix (helps every MojoShader

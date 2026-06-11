@@ -14,9 +14,37 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **FNA support: the new `PlatformTarget.Fna` output target.** Compiles D3D9-style `.fx`
+  to the legacy D3D9 Effects binary (`.fxb`) FNA loads — no `fxc.exe`, no Wine, on every
+  desktop OS. Render-validated in real FNA 26.06: the validation corpus (PS-only,
+  VS-driven, multi-pass, in-pass render states) draws pixel-equivalent (max Δ ≤ 1/255) to
+  `fxc /T fx_2_0` output. Purely additive — existing OpenGL/DirectX output is unchanged.
+- **vkd3d-shader natives for all four desktop RIDs now ship inside `ShadowDusk.HLSL`**
+  (win-x64, linux-x64, osx-x64, osx-arm64; pinned vkd3d 1.17, SHA-256-verified at
+  restore). The FNA target and the opt-in `DxbcBackend.Vkd3d` DirectX backend are
+  self-contained from the package — add the package, compile, no manual install.
+- `THIRD-PARTY-NOTICES.txt` (vkd3d-shader attribution + LGPL-2.1 text) ships in the
+  `ShadowDusk.HLSL` package.
+- Docs: new "Choosing a target" guide (OpenGL vs DirectX vs FNA, and why output is raw
+  `.mgfx`/`.fxb` rather than `.xnb`).
+
 ### Changed
 
+- The release pipeline now refuses to publish if the packed `ShadowDusk.HLSL` package is
+  missing any of the four vkd3d natives or the license notice — a stopped release beats
+  shipping the FNA target broken.
+
 ### Fixed
+
+- **FNA: brace-form sampler blocks (`sampler s = sampler_state { Texture = (tex); … };`)
+  now bind their texture correctly** — previously the binding was silently lost and the
+  effect rendered wrong with no diagnostic.
+- **FNA: all render states FNA honors are now emitted into the `.fxb`** (11 previously
+  missing states), and states FNA would throw on are rejected loudly at compile time
+  (`SD0303`) instead of failing at runtime.
+- FNA: matrix parameters now carry the same parameter class `fxc` emits (column-major
+  fidelity, pinned by a new golden); shader-model/stage mismatches are caught at compile
+  time; SM1 profiles are rejected with a clear error.
 
 ## [0.2.0] - 2026-06-07
 

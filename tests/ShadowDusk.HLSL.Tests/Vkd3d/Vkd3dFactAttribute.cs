@@ -12,13 +12,20 @@ namespace ShadowDusk.HLSL.Tests.Vkd3d;
 /// sibling of <c>ShadowDusk.Integration.Tests.FnaTestGate</c>) rather than OS-gated
 /// — once tools/restore provisions the per-RID binary (Phase 37 C), these run on
 /// every OS. The off-platform "fail loudly" path (SD0211) is a separate, pure concern.
+/// Tests that additionally exercise <c>DxbcReflectionExtractor</c> (D3DReflect via
+/// d3dcompiler_47 — Windows-only until Phase 18 Track A) set
+/// <paramref name="requiresD3DReflect"/> so they skip truthfully off-Windows instead
+/// of failing.
 /// </summary>
 public sealed class Vkd3dFactAttribute : FactAttribute
 {
-    public Vkd3dFactAttribute()
+    public Vkd3dFactAttribute(bool requiresD3DReflect = false)
     {
         if (!Vkd3dTestGate.Available)
             Skip = Vkd3dTestGate.SkipReason;
+        else if (requiresD3DReflect && !OperatingSystem.IsWindows())
+            Skip = "DxbcReflectionExtractor P/Invokes d3dcompiler_47 (D3DReflect) — " +
+                   "Windows-only until cross-platform DXBC reflection lands (Phase 18 Track A).";
     }
 }
 
