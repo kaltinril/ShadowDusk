@@ -132,13 +132,12 @@ until the hosted artifacts land and a real macOS run compiles. What landed:
    scoped push bootstrap trigger was added — remove on merge; and the Actions REST
    API flapped wildly during the run (phantom job failures/successes) — trust the
    artifacts endpoint over status fields. arm64 built in 9.5 min, x64 in ~25 min.)
-2. Download the two artifacts (`dxc-1.7.2212.40-osx-{arm64,x64}`, 30-day retention
-   from 2026-06-11); `gh release create native-dxc-1.7.2212.40 \
-   libdxcompiler.osx-x64.dylib libdxcompiler.osx-arm64.dylib LICENSE-DXC.TXT`
-   (rename each artifact's `libdxcompiler.dylib` to its per-RID asset name first).
-3. Paste the verified SHA-256s over both `PENDING-FIRST-HOSTED-BUILD` placeholders
-   in `tools/restore.sh` + `tools/restore.ps1` (this flips restore to enforcing
-   automatically — the placeholder check is the only bypass):
+2. ~~Download + host the artifacts.~~ ✅ **Done 2026-06-11**: both dylibs downloaded
+   from the green run, hash-verified against the build-reported SHA-256s, and hosted
+   on https://github.com/kaltinril/ShadowDusk/releases/tag/native-dxc-1.7.2212.40
+   (per-RID asset names + `LICENSE-DXC.TXT`; prerelease-flagged artifact-hosting tag).
+3. ~~Paste the verified SHA-256s over the placeholders.~~ ✅ **Done 2026-06-11** in
+   both `tools/restore.sh` + `tools/restore.ps1` — restore is now enforcing:
    - osx-arm64: `4f29ef90af61426a39037a2e9d7215a48c7c746328a38a20028e456c1ee3d811`
    - osx-x64:   `9e61d5c1993d2cd5a5ea6701011d0a86e8c8dd89c995ef0c4d03ff3b83dbbc17`
 4. Add a `tools/dxc` cache + restore to `ci.yml`'s macOS lanes if not already covered

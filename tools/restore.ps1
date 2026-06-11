@@ -122,15 +122,13 @@ Restore-Vkd3dShader
 # both RIDs (pack-ready pattern; ShadowDusk.HLSL.csproj packs them under
 # runtimes/osx-{x64,arm64}/native). Mirrors Restore-Vkd3dShader.
 #
-# PENDING-FIRST-HOSTED-BUILD: the dylibs have not been built+hosted yet. Until the
-# release tag below carries the assets and the SHA-256 pins replace the
-# placeholders, this section skips with a notice (non-fatal — win/linux users are
-# unaffected; macOS DXC stays a known gap). To finish: dispatch dxc-build.yml,
-# download the artifacts, `gh release create native-dxc-1.7.2212.40 ...`, paste
-# the printed SHA-256s here and in restore.sh.
+# Pins enforced since 2026-06-11: dylibs built by dxc-build.yml run 27327330108
+# (green on both RIDs, otool gate + ps_6_0 -spirv smoke passed) and hosted on the
+# fixed tag below. Same pin-discipline as vkd3d: hash mismatch -> re-download;
+# offline -> non-fatal warning.
 $DxcReleaseUrl = 'https://github.com/kaltinril/ShadowDusk/releases/download/native-dxc-1.7.2212.40'
-$DxcOsxX64Sha256   = 'PENDING-FIRST-HOSTED-BUILD'
-$DxcOsxArm64Sha256 = 'PENDING-FIRST-HOSTED-BUILD'
+$DxcOsxX64Sha256   = '9e61d5c1993d2cd5a5ea6701011d0a86e8c8dd89c995ef0c4d03ff3b83dbbc17'
+$DxcOsxArm64Sha256 = '4f29ef90af61426a39037a2e9d7215a48c7c746328a38a20028e456c1ee3d811'
 
 function Restore-DxcFile([string]$Asset, [string]$DestRel, [string]$Sha256) {
     $DxcDir = Join-Path $RepoRoot 'tools' 'dxc'

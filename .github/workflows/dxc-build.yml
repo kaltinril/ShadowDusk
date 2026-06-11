@@ -31,15 +31,6 @@ name: Build DXC macOS natives (1.7.2212.40)
 
 on:
   workflow_dispatch:
-  # BOOTSTRAP TRIGGER (remove on merge): GitHub does not register a
-  # workflow_dispatch-only workflow until it exists on the default branch, so it
-  # cannot be dispatched from this feature branch (the vkd3d workflow was merged
-  # in PR #36 before its first dispatch for the same reason). This scoped push
-  # trigger runs the build on pushes touching this file on the Phase 37 A branch
-  # only — which is exactly the fix-iterate loop a first native build needs.
-  push:
-    branches: [feature/phase37a-macos-dxc]
-    paths: ['.github/workflows/dxc-build.yml']
 
 env:
   DXC_VERSION: '1.7.2212.40'
