@@ -19,7 +19,7 @@ For OpenGL effects the shader blob is GLSL in the **MojoShader dialect** — the
 
 ## Format version (MGFX v10)
 
-The default is **MGFX v10** (`CompilerOptions.MgfxVersion` / CLI `--mgfx-version`, valid values `10` and `11`). v10 is the broadly compatible choice: it loads in MonoGame 3.8.x (DesktopGL and WindowsDX) and in KNI for both **Reach** (WebGL1) and **HiDef** (WebGL2 / GLSL ES 3.00). New backends should be **additive** opt-in targets rather than changes to the existing v10 output.
+ShadowDusk produces **MGFX v10** (`CompilerOptions.MgfxVersion` / CLI `--mgfx-version`, which sets the header version **byte** and defaults to `10`). v10 is the broadly compatible choice: it loads in MonoGame 3.8.x (DesktopGL and WindowsDX) and in KNI for both **Reach** (WebGL1) and **HiDef** (WebGL2 / GLSL ES 3.00). The version flag is a non-required escape hatch; `10` is the value produced and validated. New backends should be **additive** targets auto-selected from the chosen platform rather than changes to the existing v10 output.
 
 ## One writer, two backends
 

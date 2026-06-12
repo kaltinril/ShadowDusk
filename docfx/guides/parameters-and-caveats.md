@@ -38,9 +38,9 @@ For `Target = DirectX`, ShadowDusk emits DXBC (SM ≤ 5) — what MonoGame's DX1
 
 ## MGFX format version
 
-Output defaults to **MGFX v10** (<xref:ShadowDusk.Core.CompilerOptions.MgfxVersion> / CLI `--mgfx-version`). v10 loads in MonoGame 3.8.x DesktopGL/WindowsDX and KNI (Reach and HiDef). Valid values are **10** and **11** only — ShadowDusk does not emit the older v9 (pre-3.8.2) format. Stay on v10 for broad backward compatibility; only change it if you have a specific runtime that requires v11.
+ShadowDusk produces **MGFX v10** (<xref:ShadowDusk.Core.CompilerOptions.MgfxVersion> / CLI `--mgfx-version`). v10 is the one effect container that **both MonoGame (3.8.x DesktopGL/WindowsDX) and KNI (Reach and HiDef) load** — MonoGame reads it directly and KNI reads it as its supported migration format. ShadowDusk does not emit the older v9 (pre-3.8.2) format.
 
-The version is **not** forward/backward tolerant: a runtime checks the byte and **rejects a mismatch** — a v11 `.mgfx` will not load in a v10 runtime, and v10 is what every shipping MonoGame 3.8.x / KNI build reads today. That's why v10 is the default; pick v11 only when you know the target runtime requires it.
+`--mgfx-version` / <xref:ShadowDusk.Core.CompilerOptions.MgfxVersion> sets the format-version **byte** in the header. It is an escape hatch, **defaults to 10, and 10 is the value ShadowDusk produces and validates** — there is no need to set it. A runtime checks that byte and **rejects a version it does not recognise**, which is exactly why v10 (the universally-loaded version) is the default. Setting the byte to another value does not by itself produce that runtime's newer container layout, so leave it on 10.
 
 ## `.mgfx` vs `.xnb`
 
