@@ -100,6 +100,7 @@ public sealed class FxLexer
                 '/' => TokenKind.Slash,
                 '*' => TokenKind.Star,
                 '.' => TokenKind.Dot,
+                '-' => TokenKind.Minus,
                 _ => null,
             };
 
@@ -110,7 +111,21 @@ public sealed class FxLexer
                 continue;
             }
 
-            // Unknown character — advance so we don't spin forever.
+            // Known HLSL operator/punctuation characters the FX pre-parser deliberately
+            // tokenizes-through: they only ever occur inside code bodies (or semantics /
+            // register clauses, whose token-level patterns RELY on ':' being dropped —
+            // see FxPreParser.TryMatchColorReturnSemantic) and the stripped output is
+            // reconstructed from the original source text, so skipping them loses nothing.
+            if (c is ':' or '+' or '[' or ']' or '&' or '|' or '!' or '?' or '%' or '^' or '~')
+            {
+                Advance();
+                continue;
+            }
+
+            // Genuinely-unknown character — emit an Unknown token so the parser can fail
+            // loudly instead of the character being silently swallowed (which historically
+            // turned 'DepthBias = -0.5' into '0.5').
+            tokens.Add(new Token(TokenKind.Unknown, c.ToString(), _line, _col));
             Advance();
         }
 
@@ -164,7 +179,9 @@ public sealed class FxLexer
         while (_pos < _source.Length)
         {
             char c = _source[_pos];
-            if (c == ' ' || c == '\t' || c == '\r' || c == '\n')
+            // \v, \f and a BOM are treated as whitespace (not Unknown) so harmless
+            // characters never become loud diagnostics.
+            if (c == ' ' || c == '\t' || c == '\r' || c == '\n' || c == '\v' || c == '\f' || c == '\uFEFF')
                 Advance();
             else
                 break;
@@ -198,6 +215,29 @@ public sealed class FxLexer
         int startLine = _line, startCol = _col;
         var sb = new StringBuilder();
 
+        // Hex literal: 0x/0X followed by at least one hex digit (e.g. 'BlendFactor = 0x80FF8080;').
+        if (_source[_pos] == '0' && (Peek(1) == 'x' || Peek(1) == 'X') && Uri.IsHexDigit(Peek(2)))
+        {
+            sb.Append(_source[_pos]);
+            Advance(); // '0'
+            sb.Append(_source[_pos]);
+            Advance(); // 'x' / 'X'
+            while (_pos < _source.Length && Uri.IsHexDigit(_source[_pos]))
+            {
+                sb.Append(_source[_pos]);
+                Advance();
+            }
+
+            // Optional integer suffix (u/U/l/L) — consume to avoid a stray identifier.
+            while (_pos < _source.Length && _source[_pos] is 'u' or 'U' or 'l' or 'L')
+            {
+                sb.Append(_source[_pos]);
+                Advance();
+            }
+
+            return new Token(TokenKind.Number, sb.ToString(), startLine, startCol);
+        }
+
         while (_pos < _source.Length && char.IsAsciiDigit(_source[_pos]))
         {
             sb.Append(_source[_pos]);
@@ -213,6 +253,29 @@ public sealed class FxLexer
             {
                 sb.Append(_source[_pos]);
                 Advance();
+            }
+        }
+
+        // Optional exponent: e/E, optional sign, at least one digit (e.g. '1e-4').
+        // Consumed only when well-formed so an identifier immediately following a
+        // number keeps its previous tokenization.
+        if (_pos < _source.Length && (_source[_pos] == 'e' || _source[_pos] == 'E'))
+        {
+            int look = _pos + 1;
+            if (look < _source.Length && (_source[look] == '+' || _source[look] == '-'))
+                look++;
+            if (look < _source.Length && char.IsAsciiDigit(_source[look]))
+            {
+                while (_pos < look)
+                {
+                    sb.Append(_source[_pos]);
+                    Advance();
+                }
+                while (_pos < _source.Length && char.IsAsciiDigit(_source[_pos]))
+                {
+                    sb.Append(_source[_pos]);
+                    Advance();
+                }
             }
         }
 

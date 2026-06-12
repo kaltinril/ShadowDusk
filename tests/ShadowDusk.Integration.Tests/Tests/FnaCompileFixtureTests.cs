@@ -461,4 +461,65 @@ public sealed class FnaCompileFixtureTests
                          "strcmp name match — a miss is release-mode memory corruption in FNA");
         }
     }
+
+    // -------------------------------------------------------------------------
+    // F. Negative state values through the FULL FNA path (lexer fix): the lexer
+    //    historically swallowed '-' (no Minus token), so 'DepthBias = -0.5;'
+    //    silently compiled as 0.5 and 'MipMapLodBias = -2;' as 2 — wrong bytes
+    //    in the shipped .fxb.
+    // -------------------------------------------------------------------------
+
+    // D3DRS_DEPTHBIAS / D3DSAMP_MIPMAPLODBIAS op numbers in the fx_2_0 state
+    // records (docs/fx2-binary-format.md; mirrored from Fx2EffectBuilder).
+    private const int RsDepthBiasOp     = 98;
+    private const int OpMipMapLodBiasOp = 172;
+
+    [FnaFact]
+    public async Task NegativeStateValues_Fna_SurviveIntoTheFx2Binary()
+    {
+        using var cts = new CancellationTokenSource(CompileTimeout);
+
+        const string source = """
+            texture SpriteTexture;
+            sampler TexSampler = sampler_state
+            {
+                Texture = <SpriteTexture>;
+                MipMapLodBias = -2;
+            };
+
+            float4 PSMain(float2 uv : TEXCOORD0) : COLOR0
+            {
+                return tex2D(TexSampler, uv);
+            }
+
+            technique T
+            {
+                pass P
+                {
+                    DepthBias = -0.5;
+                    PixelShader = compile ps_2_0 PSMain();
+                }
+            }
+            """;
+
+        var result = await CompileFnaSourceAsync(source, sourcePath: null, cts.Token);
+        result.IsSuccess.Should().BeTrue(because: $"errors: {DescribeErrors(result)}");
+
+        Fx2ParsedEffect effect = Fx2BinaryValidator.Parse(result.Value.Data);
+
+        // Pass render state: DepthBias = -0.5 must serialize the float bits of -0.5,
+        // not +0.5 (the silently-wrong pre-fix output).
+        Fx2ParsedState depthBias = effect.Techniques.Single().Passes.Single().States
+            .Should().ContainSingle(s => s.Operation == RsDepthBiasOp).Subject;
+        depthBias.DwordValue.Should().Be(BitConverter.SingleToUInt32Bits(-0.5f));
+        depthBias.DwordValue.Should().NotBe(BitConverter.SingleToUInt32Bits(0.5f));
+
+        // Sampler state: MipMapLodBias = -2 must serialize the float bits of -2.
+        var samplerStates = effect.Parameters
+            .SelectMany(p => p.SamplerStates)
+            .Where(s => s.Operation == OpMipMapLodBiasOp)
+            .ToList();
+        samplerStates.Should().ContainSingle()
+            .Which.DwordValue.Should().Be(BitConverter.SingleToUInt32Bits(-2.0f));
+    }
 }

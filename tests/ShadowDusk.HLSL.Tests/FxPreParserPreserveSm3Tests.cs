@@ -22,6 +22,28 @@ public sealed class FxPreParserPreserveSm3Tests
     // -------------------------------------------------------------------------
 
     [Fact]
+    public void Parse_PreserveSm3_Tex2DlodCall_SurvivesVerbatim_NoFx0012()
+    {
+        // The RewriteToSm4 mode fails loudly (FX0012) on tex2Dlod; PreserveSm3 must
+        // NOT — vkd3d compiles the legacy intrinsic natively for the FNA target.
+        const string source = """
+            texture t;
+            sampler s = sampler_state { Texture = <t>; };
+
+            float4 PS(float4 uv : TEXCOORD0) : COLOR
+            {
+                return tex2Dlod(s, uv);
+            }
+            technique T { pass P { PixelShader = compile ps_3_0 PS(); } }
+            """;
+
+        var result = FxPreParser.Parse(source, "test.fx", FxSourceMode.PreserveSm3);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.StrippedHlsl.Should().Contain("tex2Dlod(s, uv)");
+    }
+
+    [Fact]
     public void Parse_PreserveSm3_Tex2DCall_SurvivesVerbatim()
     {
         const string source = """
