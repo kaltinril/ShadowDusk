@@ -36,6 +36,17 @@ A small family of advanced **OpenGL-target** texture intrinsics — **3D-texture
 
 Sampling a texture **in a vertex shader** (e.g. displacement mapping via `SampleLevel`/`tex2Dlod` in the VS) fails loudly with **`SD0210`** for `Target = OpenGL`. This is deliberate: MonoGame 3.8.2's OpenGL runtime cannot bind vertex textures at all — its GL program link assigns texture units only for the *pixel* shader's sampler records, and there is no GL `VertexTextures` apply path — so any compiled output would silently sample whatever happens to sit on texture unit 0 (typically rendering black). A loud compile error is the only honest result. Move the fetch to the pixel stage, or pass the data through a uniform/vertex stream. The DirectX and FNA targets are unaffected by this MonoGame-GL-runtime limitation.
 
+## Uniform types on the OpenGL target (cbuffers, arrays, staged limits)
+
+Free uniforms, named `cbuffer`s (including one shared by both shader stages, or several in one stage), and **array uniforms** (`float4 Colors[4]`, `float4x4 Bones[N]`, `float`/`float2`/`float3` arrays) are fully modelled: array parameters expose their elements in `Effect.Parameters` — `Parameters["Colors"].SetValue(Vector4[])` and `Parameters["Colors"].Elements[i]` work exactly as with `mgfxc` output, on every target.
+
+Two uniform shapes are **rejected loudly** (`SD0210`) on the OpenGL target rather than silently miscompiled (staged scope, Phase 43C):
+
+- **`int` / `bool` (and `intN`/`boolN`) uniforms** — MojoShader models these in separate `{vs,ps}_uniforms_ivec4`/`_bool` register sets that ShadowDusk does not emit yet. Use a `float`-typed uniform and cast inside the shader.
+- **Non-`float4x4` matrices (`float3x3`, `float2x2`, …) and `struct` uniforms** — pad the matrix to `float4x4` or split it into vectors.
+
+Both shapes compiled silently into broken GLSL before Phase 43C (failing only at `Effect`-load time inside the game); the loud error is the honest replacement until the shapes are modelled.
+
 ## DirectX uses `vkd3d-shader`, not DXC
 
 For `Target = DirectX`, ShadowDusk emits DXBC (SM ≤ 5) — what MonoGame's DX11 runtime loads — via `vkd3d-shader` (cross-platform) or `d3dcompiler_47` (Windows-only oracle), selected by <xref:ShadowDusk.Core.CompilerOptions.DxbcBackend>. **DXC is not used for DX11** because it only emits SM6 DXIL. See [DirectX DXBC (vkd3d) Path](../architecture/directx-dxbc-vkd3d.md).

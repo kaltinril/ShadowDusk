@@ -64,7 +64,7 @@ other targets keep the unmodified SPIRV-Cross dialect. The pixel-stage transform
 | 5 | `out vec4 out_var_SV_Target<N?>;` | declaration dropped; uses → `gl_FragColor` (or `gl_FragData[N]`) |
 | 6 | `texture()` | dimension-specific legacy builtin per the sampler's declared type: `texture2D()` / `textureCube()` / `texture3D()` (Phase 34) |
 | 6b | `textureLod()` / `textureGrad()` / `textureProj()` | dimension-specific legacy names — `texture2DLod`/`textureCubeLod`/`texture3DLod`, `texture2DGrad` (2D only; cube/3D gradients fail loudly — no GLSL defines a legacy spelling), `texture2DProj`/`texture3DProj` — **plus** MojoShader's guarded extension header prepended once (Phase 43 F7): `#if __VERSION__ >= 300` maps the legacy names back to the generic builtins (KNI HiDef/WebGL2, mirroring MojoShader's GLSLES3 preflight), `#elif defined(GL_ARB_shader_texture_lod)` / `#elif defined(GL_EXT_gpu_shader4)` enable the fragment-stage builtins on legacy desktop GL (Mesa accepts this; the bare generic spelling was a Linux Effect-load failure), `#else` degrades to a plain `texture2D()`-family call — never a compile failure. One artifact serves Reach, HiDef and desktop. |
-| 7 | `layout(std140) uniform type_Globals { … }` | `uniform vec4 ps_uniforms_vec4[N];`; member uses `_Globals.<m>` → `ps_uniforms_vec4[i]<swizzle>` |
+| 7 | **every** `layout(binding=…, std140) uniform <Type> { … } <Inst>;` block — `type_Globals { … } _Globals` for loose globals AND `type_<Name> { … } <Name>` for each named cbuffer (Phase 43 F4/F5) | ONE merged `uniform vec4 ps_uniforms_vec4[N];` covering all blocks in declaration order (MojoShader's model: D3D9 has a single float-constant register file per stage); member uses `<Inst>.<m>` → `ps_uniforms_vec4[i]<swizzle>`; array members `<Inst>.<m>[idx]` → `ps_uniforms_vec4[base + idx]<swizzle>` (element stride 1 register; `mat4` arrays stride 4, reconstructed per element — Phase 43 F6); unmodelled member types (int/bool/mat3/struct/…), whole-array uses, and any surviving block-instance reference **fail loudly** (SD0210) instead of shipping GLSL that references a deleted block |
 | 8 | `roundEven(x)` / `round(x)` (GLSL ES 3.00 / GL 1.30 only) | `floor((x) + 0.5)` — valid in every GLSL profile incl. WebGL1 / GLSL ES 1.00 (KNI's Reach profile), and exactly what mgfxc/MojoShader emits for HLSL `round`. Argument captured by a balanced-paren scan so nested calls lower correctly. |
 
 `Rewrite` returns the rewritten GLSL plus the discovered sampler list (`ps_s{slot}`) and the
@@ -110,6 +110,38 @@ The VS rewrite also returns the **vertex-attribute table** (each `vs_v{k}` →
 pipeline writes into the `.mgfx` shader record so MonoGame binds each attribute to the right
 vertex element. The `.mgfx` cbuffer for a VS-bound buffer is named **`vs_uniforms_vec4`**
 (PS-bound stays `ps_uniforms_vec4`); attribution is from reflection, not a PS-only assumption.
+
+## The cbuffer record model (Phase 43 F4/F5/F6)
+
+The `.mgfx` constant-buffer records are built **per shader, from the rewriter's own
+register layout** (`MonoGameGlslResult.Uniforms`), never by cross-stage reflection-name
+dedup — so the record's offsets and the GLSL's `[i]` indices come from one allocation
+and cannot diverge. mgfxc's model, pinned by its goldens:
+
+- **A cbuffer bound by both stages → a record per stage** (`vs_uniforms_vec4` AND
+  `ps_uniforms_vec4`), each stage's shader binding its record **by index**. Several
+  records may share a name (the SkinnedEffect golden has three `vs_uniforms_vec4`).
+  The old cross-stage dedup named the single record `ps_uniforms_vec4` while the VS
+  GLSL read `vs_uniforms_vec4[]` — MonoGame never uploaded the VS array and VS
+  uniforms silently read zero (F4).
+- **Multiple same-stage cbuffers → one merged record** in declaration order (F5);
+  identical records dedupe across shaders mgfxc-style (`ConstantBufferData.SameAs`).
+- **Array members** occupy element-stride × count registers and the parameter carries
+  N recursive **element sub-parameter records** (empty name/semantic, parent shape,
+  zero-data leaf) — on every target, exactly MonoGame 3.8.2 `Effect.ReadParameters`'
+  recursive wire format (elements first, then struct members), so
+  `Parameters["X"].SetValue(array)` and `.Elements[i]` work beyond element 0 (F6).
+- **Pinned divergence:** mgfxc's per-stage records contain only the constants fxc
+  kept for that stage; ShadowDusk's carry the cbuffer's full declared layout per
+  stage. Both are self-consistent with their own GLSL; parameters are set by name —
+  render-proven equivalent (`validation/CbufferModel`, 5/5 maxd 0).
+- **mgfxc bug not replicated:** an array read at only SOME static indices is broken
+  in mgfxc+MonoGame GL itself — fxc references only the used registers, MojoShader
+  emits a **compacted** uniform array, but mgfxc's record keeps the full layout, so
+  MonoGame's full-buffer `glUniform4fv` lands element 0's data where the shader
+  reads element 1 (verified: that golden renders garbage in real MonoGame 3.8.2).
+  ShadowDusk always emits the full declared layout, rendering the source semantics
+  correctly.
 
 **Matrix free-uniforms.** A `mat4` member expands to the four consecutive
 registers it occupies — `_Globals.M` → `mat4(<prefix>_uniforms_vec4[r], [r+1], [r+2], [r+3])`

@@ -52,6 +52,24 @@ public sealed record MonoGameGlslAttribute(
     byte   Index);
 
 /// <summary>
+/// One uniform-block member modelled into the shader's single
+/// <c>{vs,ps}_uniforms_vec4[]</c> register space (Phase 43 F4/F5/F6). The pipeline
+/// builds the per-shader .mgfx constant-buffer record DIRECTLY from this layout, so
+/// the record's offsets are guaranteed to agree with the indices the emitted GLSL
+/// reads — they come from the same allocation.
+/// </summary>
+/// <param name="Name">The HLSL variable name (== the effect parameter name).</param>
+/// <param name="BaseRegister">First 16-byte register the member occupies.</param>
+/// <param name="RegisterCount">
+/// Registers occupied: 1 per <c>float/vec2/vec3/vec4</c>, 4 per <c>mat4</c>,
+/// multiplied by the array element count for array members.
+/// </param>
+public sealed record MonoGameGlslUniform(
+    string Name,
+    int    BaseRegister,
+    int    RegisterCount);
+
+/// <summary>
 /// Result of <see cref="MonoGameGlslRewriter.Rewrite"/>.
 /// </summary>
 /// <param name="Glsl">The rewritten legacy GLSL source.</param>
@@ -59,24 +77,41 @@ public sealed record MonoGameGlslAttribute(
 /// <param name="UniformRegisterCount">
 /// 0 if there was no uniform block; otherwise the number of
 /// <c>ps_uniforms_vec4[]</c>/<c>vs_uniforms_vec4[]</c> registers (one per member, a
-/// <c>mat4</c> counting as four).
+/// <c>mat4</c> counting as four, an array counting once per element).
 /// </param>
 /// <param name="Attributes">
 /// Vertex-input attributes in declaration order, renamed to <c>vs_v{k}</c> (vertex
 /// stage only; empty for pixel shaders).
 /// </param>
+/// <param name="Uniforms">
+/// The register layout of every uniform-block member folded into
+/// <c>{vs,ps}_uniforms_vec4[]</c>, in allocation order across ALL blocks. Empty when
+/// the shader has no uniform block.
+/// </param>
 public sealed record MonoGameGlslResult(
     string Glsl,
     IReadOnlyList<MonoGameGlslSampler> Samplers,
     int UniformRegisterCount,
-    IReadOnlyList<MonoGameGlslAttribute> Attributes)
+    IReadOnlyList<MonoGameGlslAttribute> Attributes,
+    IReadOnlyList<MonoGameGlslUniform> Uniforms)
 {
     /// <summary>Back-compat constructor: pixel-stage results carry no attributes.</summary>
     public MonoGameGlslResult(
         string Glsl,
         IReadOnlyList<MonoGameGlslSampler> Samplers,
         int UniformRegisterCount)
-        : this(Glsl, Samplers, UniformRegisterCount, Array.Empty<MonoGameGlslAttribute>())
+        : this(Glsl, Samplers, UniformRegisterCount,
+               Array.Empty<MonoGameGlslAttribute>(), Array.Empty<MonoGameGlslUniform>())
+    {
+    }
+
+    /// <summary>Back-compat constructor: results without an explicit uniform layout.</summary>
+    public MonoGameGlslResult(
+        string Glsl,
+        IReadOnlyList<MonoGameGlslSampler> Samplers,
+        int UniformRegisterCount,
+        IReadOnlyList<MonoGameGlslAttribute> Attributes)
+        : this(Glsl, Samplers, UniformRegisterCount, Attributes, Array.Empty<MonoGameGlslUniform>())
     {
     }
 }
@@ -141,17 +176,37 @@ public static class MonoGameGlslRewriter
         @"^\s*#version\b.*$",
         RegexOptions.Compiled);
 
-    // layout(binding = N, std140) uniform type_Globals
+    // layout(binding = N, std140) uniform <TypeName> — ANY uniform block DXC emits
+    // (type_Globals for loose globals, type_<Name> for a named cbuffer). All blocks
+    // of a stage are merged into the ONE {vs,ps}_uniforms_vec4[] register space
+    // (Phase 43 F4/F5 — MojoShader's model: D3D9 has a single float-constant
+    // register file per stage, so mgfxc's output never has more than one).
     private static readonly Regex UniformBlockHeader = new(
-        @"^\s*layout\s*\(\s*binding\s*=\s*\d+\s*,\s*std140\s*\)\s*uniform\s+type_Globals\s*$",
+        @"^\s*layout\s*\(\s*binding\s*=\s*\d+\s*,\s*std140\s*\)\s*uniform\s+([A-Za-z_][A-Za-z0-9_]*)\s*$",
         RegexOptions.Compiled);
 
-    // <type> <member>;
+    // <type> <member>;  or  <type> <member>[N];  (Phase 43 F6: array members are
+    // modelled — N consecutive element strides). Anything else inside a uniform
+    // block (int/bool/mat3/struct/layout-qualified members) FAILS LOUDLY in
+    // ThrowUnmodeledUniformMember instead of shipping GLSL that still references
+    // the deleted block.
     private static readonly Regex UniformMember = new(
-        @"^\s*(float|vec2|vec3|vec4|mat4)\s+([A-Za-z_][A-Za-z0-9_]*)\s*;\s*$",
+        @"^\s*(float|vec2|vec3|vec4|mat4)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:\[\s*([0-9]+)\s*\])?\s*;\s*$",
+        RegexOptions.Compiled);
+
+    // } <Instance>;  — the close of a uniform block, capturing the instance name the
+    // body's member uses are qualified with (`_Globals` for loose globals, the
+    // cbuffer's own name otherwise).
+    private static readonly Regex UniformBlockClose = new(
+        @"^\s*\}\s*([A-Za-z_][A-Za-z0-9_]*)\s*;\s*$",
         RegexOptions.Compiled);
 
     private sealed record InputVarying(string Identifier, string Type, string VaryingName);
+
+    /// <summary>One parsed uniform block: its instance name and members in order.</summary>
+    private sealed record UniformBlock(
+        string Instance,
+        List<(string Type, string Member, int Elements)> Members);
 
     /// <summary>
     /// Rewrites SPIRV-Cross GLSL into the MonoGame/MojoShader dialect for the given stage.
@@ -175,14 +230,12 @@ public static class MonoGameGlslRewriter
         // vs_uniforms_vec4[] (MonoGame's GL runtime keys glUniform4fv on this name).
         string regPrefix = isVertex ? "vs" : "ps";
 
-        // Normalize Slang-emitted interface names to the DXC convention the rest of
-        // this rewriter is keyed to. Intended as a no-op for DXC output. NOTE: the
-        // browser path no longer uses Slang — it runs the same faithful pinned
-        // DXC→WASM frontend as desktop (see JsShaderBackends/DxcInterop), so this
-        // pre-pass is legacy. It is NOT removed here because its UBO-rename branch
-        // also (accidentally) fires on real multi-cbuffer DXC output — untangling
-        // that is Phase 43 F5 (the cbuffer-model wave), tracked there.
-        glsl = NormalizeSlangNaming(glsl);
+        // NOTE: the legacy Slang-normalization pre-pass was REMOVED here (Phase 43
+        // F5/F11): the browser path runs the same faithful pinned DXC→WASM frontend
+        // as desktop (see JsShaderBackends/DxcInterop), so no Slang-shaped GLSL can
+        // reach this rewriter, and the pre-pass's accidental UBO-rename branch was
+        // exactly what made a second cbuffer ship as raw invalid GLSL. Named cbuffer
+        // blocks are now parsed directly (UniformBlockHeader matches any block).
 
         // Unsupported-sampler guard (Phase 33 → narrowed in Phase 34). The rewriter
         // now models sampler2D, samplerCube AND sampler3D — each renamed to ps_s{k} and
@@ -201,7 +254,8 @@ public static class MonoGameGlslRewriter
         var outputVaryings = new List<InputVarying>();          // VS: out_var_* -> varying write
         var attributes = new List<MonoGameGlslAttribute>();     // VS: in_var_* -> attribute vs_vK
         var attributeReads = new List<InputVarying>();          // VS: in_var_* read width/rename
-        var uniformMembers = new List<(string Type, string Member)>();
+        var uniformBlocks = new List<UniformBlock>();           // ALL std140 blocks, in order
+        int uniformDeclInsertIndex = -1;                        // where the merged decl goes
 
         var output = new List<string>();
 
@@ -229,10 +283,14 @@ public static class MonoGameGlslRewriter
                 continue;
             }
 
-            // Rule 7: uniform block header.
+            // Rule 7: uniform block header — ANY std140 block (type_Globals or a
+            // named cbuffer's type_<Name>). All blocks merge into the single
+            // {vs,ps}_uniforms_vec4[] register space (Phase 43 F4/F5); the combined
+            // declaration is inserted at the FIRST block's position once every
+            // block has been parsed (the total register count isn't known yet).
             if (UniformBlockHeader.IsMatch(line))
             {
-                // Consume: header, optional '{', members..., '} _Globals;'
+                // Consume: header, optional '{', members..., '} <Instance>;'
                 int j = i + 1;
                 // skip an opening brace line if present
                 while (j < lines.Length && lines[j].Trim() != "{" && lines[j].Trim().Length == 0)
@@ -244,27 +302,44 @@ public static class MonoGameGlslRewriter
                     j++;
                 }
                 // members until closing '}'
+                var members = new List<(string Type, string Member, int Elements)>();
                 while (j < lines.Length && !lines[j].TrimStart().StartsWith("}"))
                 {
-                    var m = UniformMember.Match(lines[j]);
-                    if (m.Success)
+                    if (lines[j].Trim().Length == 0)
                     {
-                        uniformMembers.Add((m.Groups[1].Value, m.Groups[2].Value));
+                        j++;
+                        continue;
                     }
+                    var m = UniformMember.Match(lines[j]);
+                    if (!m.Success)
+                    {
+                        // A member shape the MojoShader-dialect model doesn't cover.
+                        // The OLD behaviour silently skipped it, leaving the body's
+                        // `<Instance>.<member>` use referencing a deleted block —
+                        // invalid GLSL with exit code 0 (Phase 43 F6). Fail loudly.
+                        ThrowUnmodeledUniformMember(lines[j]);
+                    }
+                    int elements = m.Groups[3].Success ? int.Parse(m.Groups[3].Value) : 0;
+                    members.Add((m.Groups[1].Value, m.Groups[2].Value, elements));
                     j++;
                 }
-                // j now points at the '} _Globals;' line — skip it too.
-                if (j < lines.Length)
+                // j points at the '} <Instance>;' line — capture the instance name
+                // the body qualifies member uses with, then skip it.
+                Match closeMatch = j < lines.Length ? UniformBlockClose.Match(lines[j]) : Match.Empty;
+                if (!closeMatch.Success)
                 {
-                    j++;
+                    throw new MonoGameGlslRewriteException(
+                        "GLSL rewrite: uniform block has no parseable '} <instance>;' close — " +
+                        "cannot determine the block's instance name.");
                 }
+                string instance = closeMatch.Groups[1].Value;
+                j++;
 
-                // The register count is NOT the member count: a mat4 occupies FOUR
-                // consecutive 16-byte registers (matching the .mgfx cbuffer packing in
-                // BuildConstantBufferInfoList and the std140 layout SPIRV-Cross assumed),
-                // every other member occupies one. So the array length is the running
-                // register total.
-                output.Add($"uniform vec4 {regPrefix}_uniforms_vec4[{RegisterCount(uniformMembers)}];");
+                uniformBlocks.Add(new UniformBlock(instance, members));
+                if (uniformDeclInsertIndex < 0)
+                {
+                    uniformDeclInsertIndex = output.Count;
+                }
                 i = j - 1; // loop i++ moves past consumed block
                 continue;
             }
@@ -369,6 +444,18 @@ public static class MonoGameGlslRewriter
             output.Add(line);
         }
 
+        // The merged declaration goes where the FIRST block sat. The register count
+        // is NOT the member count: a mat4 occupies FOUR consecutive 16-byte
+        // registers and an array occupies its element stride times its element
+        // count — matching the .mgfx cbuffer record the pipeline derives from the
+        // SAME layout, so the GLSL index always lands on the right bytes.
+        int totalRegisters = RegisterCount(uniformBlocks);
+        if (uniformDeclInsertIndex >= 0)
+        {
+            output.Insert(uniformDeclInsertIndex,
+                $"uniform vec4 {regPrefix}_uniforms_vec4[{totalRegisters}];");
+        }
+
         // ---- Pass 2: rewrite identifier USES in the body. ----
         var body = string.Join("\n", output);
 
@@ -404,37 +491,73 @@ public static class MonoGameGlslRewriter
             body = ReplaceOutputVaryingUses(body, varying);
         }
 
-        // Uniform members: _Globals.<member> -> {prefix}_uniforms_vec4[reg]<swizzle>.
-        // The register OFFSET is the running register total so a mat4 (4 registers)
-        // correctly shifts every member after it — this is the exact same packing as
-        // BuildConstantBufferInfoList, so the GLSL index lands on the right bytes.
+        // Uniform members: <Instance>.<member> -> {prefix}_uniforms_vec4[reg]<swizzle>
+        // (array members: <Instance>.<member>[idx] -> the packed [base + idx] form).
+        // The register OFFSET is the running register total across ALL blocks in
+        // declaration order, so a mat4 (4 registers) or an array (stride × count)
+        // correctly shifts every member after it — the exact same packing the
+        // pipeline writes into the .mgfx cbuffer record (it consumes THIS layout),
+        // so the GLSL index lands on the right bytes.
+        var uniformLayout = new List<MonoGameGlslUniform>();
         int reg = 0;
-        for (int idx = 0; idx < uniformMembers.Count; idx++)
+        foreach (UniformBlock block in uniformBlocks)
         {
-            var (type, member) = uniformMembers[idx];
-            string replacement;
-            if (type == "mat4")
+            foreach (var (type, member, elements) in block.Members)
             {
-                // A mat4 occupies registers reg..reg+3. SPIRV-Cross emits the matrix
-                // column-major (GLSL native) and multiplies M * v; std140 stores each
-                // matrix COLUMN at a 16-byte register (column0 @ reg, column1 @ reg+1,
-                // …). GLSL mat4(c0,c1,c2,c3) takes COLUMNS, so reconstructing
-                // mat4(reg, reg+1, reg+2, reg+3) reproduces the original matrix exactly.
-                replacement =
-                    $"mat4({regPrefix}_uniforms_vec4[{reg}], {regPrefix}_uniforms_vec4[{reg + 1}], " +
-                    $"{regPrefix}_uniforms_vec4[{reg + 2}], {regPrefix}_uniforms_vec4[{reg + 3}])";
-                reg += 4;
-            }
-            else
-            {
-                var swizzle = SwizzleForType(type);
-                replacement = $"{regPrefix}_uniforms_vec4[{reg}]{swizzle}";
-                reg += 1;
-            }
+                int perElement = type == "mat4" ? 4 : 1;
+                int registers  = perElement * Math.Max(1, elements);
+                if (elements > 0)
+                {
+                    // Array member (Phase 43 F6): every use must be an indexed
+                    // access — rewritten to the packed register form, literal
+                    // indices folded. A whole-array use (no index) cannot be
+                    // expressed against the packed array and fails loudly inside.
+                    body = RewriteArrayMemberUses(body, block.Instance, member, type, reg, perElement, regPrefix);
+                }
+                else
+                {
+                    string replacement;
+                    if (type == "mat4")
+                    {
+                        // A mat4 occupies registers reg..reg+3. SPIRV-Cross emits the matrix
+                        // column-major (GLSL native) and multiplies M * v; std140 stores each
+                        // matrix COLUMN at a 16-byte register (column0 @ reg, column1 @ reg+1,
+                        // …). GLSL mat4(c0,c1,c2,c3) takes COLUMNS, so reconstructing
+                        // mat4(reg, reg+1, reg+2, reg+3) reproduces the original matrix exactly.
+                        replacement =
+                            $"mat4({regPrefix}_uniforms_vec4[{reg}], {regPrefix}_uniforms_vec4[{reg + 1}], " +
+                            $"{regPrefix}_uniforms_vec4[{reg + 2}], {regPrefix}_uniforms_vec4[{reg + 3}])";
+                    }
+                    else
+                    {
+                        var swizzle = SwizzleForType(type);
+                        replacement = $"{regPrefix}_uniforms_vec4[{reg}]{swizzle}";
+                    }
 
-            // Match "_Globals.<member>" with a word boundary after the member.
-            var pattern = $@"_Globals\.{Regex.Escape(member)}\b";
-            body = Regex.Replace(body, pattern, replacement.Replace("$", "$$"));
+                    // Match "<Instance>.<member>" with a word boundary after the member.
+                    var pattern = $@"\b{Regex.Escape(block.Instance)}\.{Regex.Escape(member)}\b";
+                    body = Regex.Replace(body, pattern, replacement.Replace("$", "$$"));
+                }
+
+                uniformLayout.Add(new MonoGameGlslUniform(member, reg, registers));
+                reg += registers;
+            }
+        }
+
+        // Leftover-instance guard: ANY surviving reference to a block instance means
+        // a use shape the rewrites above didn't cover — the deleted block would be
+        // referenced by the emitted GLSL (invalid; fails only at Effect-load time).
+        // Fail loudly at compile time instead (Phase 43 F5/F6).
+        foreach (UniformBlock block in uniformBlocks)
+        {
+            if (Regex.IsMatch(body, $@"\b{Regex.Escape(block.Instance)}\b"))
+            {
+                throw new MonoGameGlslRewriteException(
+                    $"GLSL rewrite: a reference to uniform block instance '{block.Instance}' " +
+                    $"survived the member rewrite — the use shape is not modelled by the " +
+                    $"MojoShader-dialect lowering, and the emitted GLSL would reference a " +
+                    $"deleted block. This is a ShadowDusk gap; please report the shader shape.");
+            }
         }
 
         // Vertex stage: assemble + return now. No fragment-output / texture / round
@@ -457,7 +580,7 @@ public static class MonoGameGlslRewriter
             {
                 vsGlsl += "\n";
             }
-            return new MonoGameGlslResult(vsGlsl, Array.Empty<MonoGameGlslSampler>(), reg, attributes);
+            return new MonoGameGlslResult(vsGlsl, Array.Empty<MonoGameGlslSampler>(), reg, attributes, uniformLayout);
         }
 
         // Rule 5: output uses → ps_oC{N} aliases (mgfxc/MojoShader form).
@@ -639,22 +762,200 @@ public static class MonoGameGlslRewriter
             finalGlsl += "\n";
         }
 
-        return new MonoGameGlslResult(finalGlsl, samplers, reg, Array.Empty<MonoGameGlslAttribute>());
+        return new MonoGameGlslResult(finalGlsl, samplers, reg, Array.Empty<MonoGameGlslAttribute>(), uniformLayout);
     }
 
     /// <summary>
-    /// The number of 16-byte registers the uniform members occupy: a <c>mat4</c> spans
-    /// four, every other member one. This is the <c>{prefix}_uniforms_vec4[]</c> array
+    /// The number of 16-byte registers the uniform members of ALL blocks occupy: a
+    /// <c>mat4</c> spans four, every other member one, an array its element stride
+    /// times its element count. This is the <c>{prefix}_uniforms_vec4[]</c> array
     /// length, kept in lockstep with the .mgfx cbuffer packing.
     /// </summary>
-    private static int RegisterCount(IReadOnlyList<(string Type, string Member)> members)
+    private static int RegisterCount(IReadOnlyList<UniformBlock> blocks)
     {
         int n = 0;
-        foreach (var (type, _) in members)
+        foreach (UniformBlock block in blocks)
         {
-            n += type == "mat4" ? 4 : 1;
+            foreach (var (type, _, elements) in block.Members)
+            {
+                n += (type == "mat4" ? 4 : 1) * Math.Max(1, elements);
+            }
         }
         return n;
+    }
+
+    /// <summary>
+    /// Rewrites every indexed use of an ARRAY uniform-block member —
+    /// <c><paramref name="instance"/>.<paramref name="member"/>[idx]</c> — into the
+    /// packed register form (Phase 43 F6):
+    /// <list type="bullet">
+    ///   <item>vec types: <c>{prefix}_uniforms_vec4[base + (idx)]&lt;swizzle&gt;</c>
+    ///   (element stride is one register — exactly how MonoGame's
+    ///   <c>ConstantBuffer.SetParameter</c> advances 16 bytes per written row, and how
+    ///   D3D9/MojoShader packs float-register arrays);</item>
+    ///   <item><c>mat4</c>: stride four — reconstructed column-by-column as
+    ///   <c>mat4(P[base+(idx)*4], …, P[base+(idx)*4+3])</c> (MonoGame writes a Matrix
+    ///   element as 4 sequential registers, the proven non-array mat4 model).</item>
+    /// </list>
+    /// Literal indices are folded to a plain register number. A use WITHOUT an index
+    /// (whole-array reference) cannot be expressed against the packed array and fails
+    /// loudly.
+    /// </summary>
+    private static string RewriteArrayMemberUses(
+        string body, string instance, string member, string type,
+        int baseRegister, int perElement, string regPrefix)
+    {
+        string token = $"{instance}.{member}";
+        var sb = new StringBuilder(body.Length);
+        int pos = 0;
+        while (true)
+        {
+            int idx = body.IndexOf(token, pos, StringComparison.Ordinal);
+            if (idx < 0)
+            {
+                sb.Append(body, pos, body.Length - pos);
+                break;
+            }
+
+            int afterToken = idx + token.Length;
+            bool boundaryBefore = idx == 0 || !IsIdentChar(body[idx - 1]);
+            bool boundaryAfter  = afterToken >= body.Length || !IsIdentChar(body[afterToken]);
+            if (!boundaryBefore || !boundaryAfter)
+            {
+                sb.Append(body, pos, afterToken - pos);
+                pos = afterToken;
+                continue;
+            }
+
+            // Skip whitespace to the expected '['.
+            int k = afterToken;
+            while (k < body.Length && (body[k] == ' ' || body[k] == '\t'))
+            {
+                k++;
+            }
+            if (k >= body.Length || body[k] != '[')
+            {
+                throw new MonoGameGlslRewriteException(
+                    $"GLSL rewrite: array uniform '{member}' is referenced without an index " +
+                    $"(a whole-array use). The MojoShader-dialect lowering packs the array " +
+                    $"into {regPrefix}_uniforms_vec4[] registers, so only indexed element " +
+                    $"accesses can be rewritten. Index the array per element instead.");
+            }
+
+            int close = FindMatchingBracket(body, k);
+            if (close < 0)
+            {
+                throw new MonoGameGlslRewriteException(
+                    $"GLSL rewrite: unbalanced '[' in an indexed use of array uniform '{member}'.");
+            }
+
+            string indexExpr = body.Substring(k + 1, close - k - 1).Trim();
+            string replacement = BuildArrayElementExpression(
+                type, indexExpr, baseRegister, perElement, regPrefix);
+
+            sb.Append(body, pos, idx - pos);
+            sb.Append(replacement);
+            pos = close + 1;
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// The packed-register expression for one array element access. A literal index
+    /// folds to a constant register; a dynamic index keeps the arithmetic in GLSL
+    /// (valid in every profile — MojoShader emits the same relative-addressed form
+    /// for D3D9 <c>a0</c> indexing).
+    /// </summary>
+    private static string BuildArrayElementExpression(
+        string type, string indexExpr, int baseRegister, int perElement, string regPrefix)
+    {
+        string p = $"{regPrefix}_uniforms_vec4";
+        bool literal = int.TryParse(indexExpr, out int literalIndex);
+
+        if (type == "mat4")
+        {
+            if (literal)
+            {
+                int r = baseRegister + literalIndex * 4;
+                return $"mat4({p}[{r}], {p}[{r + 1}], {p}[{r + 2}], {p}[{r + 3}])";
+            }
+            string b = $"{baseRegister} + ({indexExpr}) * 4";
+            return $"mat4({p}[{b}], {p}[{b} + 1], {p}[{b} + 2], {p}[{b} + 3])";
+        }
+
+        string swizzle = SwizzleForType(type);
+        return literal
+            ? $"{p}[{baseRegister + literalIndex}]{swizzle}"
+            : $"{p}[{baseRegister} + ({indexExpr})]{swizzle}";
+    }
+
+    /// <summary>
+    /// Given the index of an opening '[' in <paramref name="body"/>, returns the index
+    /// of its matching ']', or -1 if unbalanced.
+    /// </summary>
+    private static int FindMatchingBracket(string body, int openIndex)
+    {
+        int depth = 0;
+        for (int i = openIndex; i < body.Length; i++)
+        {
+            char c = body[i];
+            if (c == '[')
+            {
+                depth++;
+            }
+            else if (c == ']')
+            {
+                depth--;
+                if (depth == 0)
+                {
+                    return i;
+                }
+            }
+        }
+
+        return -1;
+    }
+
+    // GLSL scalar/vector/matrix type keywords the uniform-block model does NOT
+    // cover, used only to give the loud failure a precise diagnosis.
+    private static readonly Regex UnmodeledMemberTypeProbe = new(
+        @"^\s*(?:layout\s*\([^)]*\)\s*)?(int|uint|bool|ivec[234]|uvec[234]|bvec[234]|mat2(?:x[234])?|mat3(?:x[234])?|mat4x[23])\b",
+        RegexOptions.Compiled);
+
+    /// <summary>
+    /// Fails loudly (Phase 43 F6) for a uniform-block member line the model does not
+    /// cover. Before Phase 43C such members were SILENTLY DROPPED: the block was
+    /// deleted but the body still referenced <c>_Globals.&lt;member&gt;</c> — invalid
+    /// GLSL that compiled with exit code 0 and failed only inside the consumer's
+    /// game at Effect-load time.
+    /// </summary>
+    private static void ThrowUnmodeledUniformMember(string memberLine)
+    {
+        string trimmed = memberLine.Trim();
+        Match probe = UnmodeledMemberTypeProbe.Match(memberLine);
+        if (probe.Success)
+        {
+            string t = probe.Groups[1].Value;
+            if (t is "int" or "uint" or "bool" || t.StartsWith("ivec") || t.StartsWith("uvec") || t.StartsWith("bvec"))
+            {
+                throw new MonoGameGlslRewriteException(
+                    $"Unsupported uniform type in '{trimmed}': integer/boolean uniforms are not " +
+                    $"modelled for the MonoGame OpenGL target (MojoShader places them in the " +
+                    $"separate {{vs,ps}}_uniforms_ivec4/_bool register sets, which ShadowDusk " +
+                    $"does not emit yet). Use a float-typed uniform and cast in the shader.");
+            }
+            throw new MonoGameGlslRewriteException(
+                $"Unsupported uniform type in '{trimmed}': only float/float2/float3/float4 " +
+                $"and square float4x4 matrices (plus arrays of those) are modelled for the " +
+                $"MonoGame OpenGL target. Pad the matrix to float4x4 or split it into vectors.");
+        }
+
+        throw new MonoGameGlslRewriteException(
+            $"Unsupported uniform-block member for the MonoGame OpenGL target: '{trimmed}'. " +
+            $"The MojoShader-dialect lowering models float/vec2/vec3/vec4/mat4 members and " +
+            $"arrays of those; this member would otherwise be silently dropped, leaving the " +
+            $"emitted GLSL referencing a deleted uniform block.");
     }
 
     // The vertex stage uses highp float (the position transform needs full precision);
@@ -930,64 +1231,6 @@ public static class MonoGameGlslRewriter
                 $"be emitted as silently-broken GLSL (e.g. texture2D() on an unmodelled sampler) that " +
                 $"fails at GL link time. Use a Texture2D/TextureCube/Texture3D, or extend the rewriter.");
         }
-    }
-
-    /// <summary>
-    /// Rewrites Slang's GLSL interface names into the DXC convention this rewriter
-    /// expects. Slang (the browser HLSL→SPIR-V frontend) names interface variables
-    /// after the source field / entry-point identifier, whereas DXC names them after
-    /// the HLSL semantic; SPIR-V carries no semantic string, so the mapping is applied
-    /// here by the PS-only SpriteBatch input contract (color:COLOR0 + texcoord:TEXCOORD0).
-    /// Idempotent / no-op for DXC output (those identifier patterns never appear).
-    /// </summary>
-    private static string NormalizeSlangNaming(string glsl)
-    {
-        // (a) PS color output: Slang emits entryPointParam_<Entry>; DXC: out_var_SV_Target.
-        glsl = Regex.Replace(glsl, @"\bentryPointParam_[A-Za-z0-9_]+\b", "out_var_SV_Target");
-
-        // (b) Globals UBO: Slang types the block <Name>_default with instance e.g.
-        // globalParams; DXC uses type_Globals { ... } _Globals. Rename a std140 block
-        // whose type isn't already type_Globals, then point its member uses at _Globals.
-        var ubo = Regex.Match(
-            glsl,
-            @"(layout\s*\([^)]*\bstd140\b[^)]*\)\s*uniform\s+)([A-Za-z_][A-Za-z0-9_]*)(\s*\{[^}]*\}\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*;)",
-            RegexOptions.Singleline);
-        if (ubo.Success && ubo.Groups[2].Value != "type_Globals")
-        {
-            string instance = ubo.Groups[4].Value;
-            glsl = glsl.Remove(ubo.Groups[2].Index, ubo.Groups[2].Length)
-                       .Insert(ubo.Groups[2].Index, "type_Globals");
-            glsl = Regex.Replace(glsl, $@"\b{Regex.Escape(instance)}\b", "_Globals");
-        }
-
-        // (c) PS inputs: Slang emits input_<Field>; map to in_var_<SEM> by convention.
-        foreach (Match m in Regex.Matches(glsl, @"\bin\s+(float|vec2|vec3|vec4)\s+(input_[A-Za-z0-9_]+)\s*;"))
-        {
-            string type  = m.Groups[1].Value;
-            string ident = m.Groups[2].Value;
-            string sem   = SlangInputSemantic(ident, type);
-            glsl = Regex.Replace(glsl, $@"\b{Regex.Escape(ident)}\b", "in_var_" + sem);
-        }
-
-        return glsl;
-    }
-
-    /// <summary>
-    /// Maps a Slang input identifier (<c>input_&lt;Field&gt;</c>) to its HLSL semantic
-    /// under the PS-only SpriteBatch contract: a color (vec4 / name says "color") is
-    /// COLOR0, a texture coordinate (vec2 / name says tex/coord/uv) is TEXCOORD0.
-    /// </summary>
-    private static string SlangInputSemantic(string ident, string type)
-    {
-        const string prefix = "input_";
-        string name  = ident.StartsWith(prefix) ? ident[prefix.Length..] : ident;
-        string lower = name.ToLowerInvariant();
-
-        if (lower.Contains("color")) return "COLOR0";
-        if (lower.Contains("tex") || lower.Contains("coord") || lower.Contains("uv")) return "TEXCOORD0";
-
-        // Fallback by type: SpriteBatch hands the PS a vec4 color + vec2 texcoord.
-        return type == "vec4" ? "COLOR0" : "TEXCOORD0";
     }
 
     private static string SemanticToVaryingName(string identifier)

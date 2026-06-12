@@ -497,106 +497,258 @@ void main()
             .WithMessage("*BLENDWEIGHT0*");
     }
 
-    // ---- Slang-frontend (browser path) GLSL. SPIRV-Cross names interface vars after
-    // Slang's field/entrypoint identifiers (input_Color, entryPointParam_MainPS,
-    // GlobalParams_default/globalParams) instead of HLSL semantics; the rewriter's
-    // Slang-normalization pre-pass must fold these into the same MojoShader dialect as
-    // the DXC examples above. Captured verbatim from the Slang fidelity spike. ----
+    // ---- Phase 43 F4/F5/F6: the GL cbuffer/array model. ----
+    // The legacy Slang-normalization pre-pass was REMOVED (the browser path runs the
+    // faithful DXC frontend, so Slang-shaped GLSL can no longer reach the rewriter,
+    // and its accidental UBO-rename branch was what made a second cbuffer ship as
+    // raw invalid GLSL). Named cbuffer blocks are parsed directly; all same-stage
+    // blocks merge into ONE {vs,ps}_uniforms_vec4[] register space (MojoShader's
+    // model: D3D9 has a single float-constant register file per stage); array
+    // members are packed at their element stride; unmodelled members fail loudly.
+    // Block shapes below are verbatim SPIRV-Cross output for DXC-compiled HLSL.
 
-    private const string SlangGrayscale = """
+    private const string NamedCbufferPs = """
 #version 140
-#ifdef GL_ARB_shading_language_420pack
-#extension GL_ARB_shading_language_420pack : require
-#endif
 
-uniform sampler2D SPIRV_Cross_CombinedSpriteTextureSpriteTextureSampler;
+layout(binding = 0, std140) uniform type_Transforms
+{
+    mat4 WorldViewProj;
+    vec4 DiffuseColor;
+} Transforms;
 
-in vec2 input_TextureCoordinates;
-in vec4 input_Color;
-out vec4 entryPointParam_MainPS;
+out vec4 out_var_SV_TARGET;
 
 void main()
 {
-    vec4 _29 = texture(SPIRV_Cross_CombinedSpriteTextureSpriteTextureSampler, input_TextureCoordinates) * input_Color;
-    float _36 = ((_29.x + _29.y) + _29.z) * 0.3333333432674407958984375;
-    vec4 _59 = _29;
-    _59.x = _36;
-    _59.y = _36;
-    _59.z = _36;
-    entryPointParam_MainPS = _59;
+    out_var_SV_TARGET = Transforms.DiffuseColor;
 }
 """;
 
-    private const string SlangTint = """
+    private const string TwoCbuffersPs = """
 #version 140
-#ifdef GL_ARB_shading_language_420pack
-#extension GL_ARB_shading_language_420pack : require
-#endif
 
-layout(binding = 0, std140) uniform GlobalParams_default
+layout(binding = 0, std140) uniform type_BufA
 {
-    vec4 TintColor;
-} globalParams;
+    vec4 TintA;
+} BufA;
 
-uniform sampler2D SPIRV_Cross_CombinedSpriteTextureSpriteTextureSampler;
+layout(binding = 1, std140) uniform type_BufB
+{
+    vec4 TintB;
+    float MixAmount;
+} BufB;
 
-in vec2 input_TextureCoordinates;
-in vec4 input_Color;
-out vec4 entryPointParam_MainPS;
+out vec4 out_var_SV_TARGET;
 
 void main()
 {
-    entryPointParam_MainPS = (texture(SPIRV_Cross_CombinedSpriteTextureSpriteTextureSampler, input_TextureCoordinates) * input_Color) * globalParams.TintColor;
+    out_var_SV_TARGET = mix(BufA.TintA, BufB.TintB, vec4(BufB.MixAmount));
+}
+""";
+
+    private const string ArraysPs = """
+#version 140
+
+layout(binding = 0, std140) uniform type_Globals
+{
+    vec4 Colors[4];
+    float Weights[4];
+    vec3 Dirs[2];
+    mat4 Mats[2];
+    float Selector;
+} _Globals;
+
+out vec4 out_var_SV_TARGET;
+
+void main()
+{
+    int _40 = int(_Globals.Selector);
+    vec4 _51 = (_Globals.Colors[_40] * _Globals.Weights[_40]) + (_Globals.Colors[1] * _Globals.Weights[2]);
+    vec3 _56 = _51.xyz + (_Globals.Dirs[1] * 0.25);
+    out_var_SV_TARGET = vec4(_56.x, _56.y, _56.z, _51.w) + (_Globals.Mats[1] * vec4(0.0, 0.0, 0.0, 1.0));
 }
 """;
 
     [Fact]
-    public void SlangGrayscale_NormalizesToLegacyGlsl()
+    public void NamedCbuffer_RewritesToUniformsArray_NoBlockSurvives()
     {
-        var result = MonoGameGlslRewriter.Rewrite(SlangGrayscale, ShaderStage.Pixel);
+        var result = MonoGameGlslRewriter.Rewrite(NamedCbufferPs, ShaderStage.Pixel);
 
-        // input_TextureCoordinates -> in_var_TEXCOORD0 -> vTexCoord0; input_Color -> vFrontColor.
-        result.Glsl.Should().Contain("varying vec4 vTexCoord0;");
-        result.Glsl.Should().Contain("varying vec4 vFrontColor;");
-        result.Glsl.Should().Contain("uniform sampler2D ps_s0;");
-        result.Glsl.Should().Contain("texture2D(ps_s0, vTexCoord0.xy)");
-        // entryPointParam_MainPS -> out_var_SV_Target -> gl_FragColor.
-        result.Glsl.Should().Contain("gl_FragColor");
+        // mat4 (4 registers) + vec4 (1 register) = 5; DiffuseColor reads register 4.
+        result.Glsl.Should().Contain("uniform vec4 ps_uniforms_vec4[5];");
+        result.Glsl.Should().Contain("ps_oC0 = ps_uniforms_vec4[4];");
+        result.Glsl.Should().NotContain("Transforms");
+        result.Glsl.Should().NotContain("std140");
+        result.UniformRegisterCount.Should().Be(5);
 
-        // No Slang-isms or modern qualifiers survive.
-        result.Glsl.Should().NotContain("input_");
-        result.Glsl.Should().NotContain("entryPointParam_");
-        result.Glsl.Should().NotContain("in_var_");
-        result.Glsl.Should().NotContain("out_var_");
-        result.Glsl.Should().NotContain("#version");
-
-        result.Samplers.Should().ContainSingle();
-        result.Samplers[0].Name.Should().Be("ps_s0");
-        result.UniformRegisterCount.Should().Be(0);
+        // The layout the pipeline builds the .mgfx cbuffer record from.
+        result.Uniforms.Should().HaveCount(2);
+        result.Uniforms[0].Should().Be(new MonoGameGlslUniform("WorldViewProj", 0, 4));
+        result.Uniforms[1].Should().Be(new MonoGameGlslUniform("DiffuseColor", 4, 1));
     }
 
     [Fact]
-    public void SlangTint_NormalizesUniformBlockAndInterface()
+    public void TwoCbuffers_MergeIntoOneRegisterSpace_InDeclarationOrder()
     {
-        var result = MonoGameGlslRewriter.Rewrite(SlangTint, ShaderStage.Pixel);
+        var result = MonoGameGlslRewriter.Rewrite(TwoCbuffersPs, ShaderStage.Pixel);
 
-        // GlobalParams_default { vec4 TintColor; } globalParams -> ps_uniforms_vec4[].
-        result.Glsl.Should().Contain("uniform vec4 ps_uniforms_vec4[1];");
-        result.Glsl.Should().Contain("ps_uniforms_vec4[0]");
-        result.UniformRegisterCount.Should().Be(1);
+        // BufA.TintA -> reg 0; BufB.TintB -> reg 1; BufB.MixAmount -> reg 2.x.
+        result.Glsl.Should().Contain("uniform vec4 ps_uniforms_vec4[3];");
+        result.Glsl.Should().Contain("mix(ps_uniforms_vec4[0], ps_uniforms_vec4[1], vec4(ps_uniforms_vec4[2].x))");
+        result.Glsl.Should().NotContain("BufA");
+        result.Glsl.Should().NotContain("BufB");
+        result.Glsl.Should().NotContain("layout(");
 
-        result.Glsl.Should().Contain("varying vec4 vTexCoord0;");
-        result.Glsl.Should().Contain("varying vec4 vFrontColor;");
-        result.Glsl.Should().Contain("uniform sampler2D ps_s0;");
-        result.Glsl.Should().Contain("gl_FragColor");
+        result.Uniforms.Should().Equal(
+            new MonoGameGlslUniform("TintA", 0, 1),
+            new MonoGameGlslUniform("TintB", 1, 1),
+            new MonoGameGlslUniform("MixAmount", 2, 1));
+    }
 
-        // No Slang-isms survive.
-        result.Glsl.Should().NotContain("input_");
-        result.Glsl.Should().NotContain("entryPointParam_");
-        result.Glsl.Should().NotContain("globalParams");
-        result.Glsl.Should().NotContain("GlobalParams_default");
-        result.Glsl.Should().NotContain("type_Globals");
+    [Fact]
+    public void ArrayMembers_PackAtElementStride_LiteralAndDynamicIndices()
+    {
+        var result = MonoGameGlslRewriter.Rewrite(ArraysPs, ShaderStage.Pixel);
+
+        // Colors[4] @ 0..3, Weights[4] @ 4..7, Dirs[2] @ 8..9, Mats[2] @ 10..17,
+        // Selector @ 18 — total 19 registers.
+        result.Glsl.Should().Contain("uniform vec4 ps_uniforms_vec4[19];");
+
+        // Literal indices fold to constant registers.
+        result.Glsl.Should().Contain("ps_uniforms_vec4[1] * ps_uniforms_vec4[6].x");
+        result.Glsl.Should().Contain("ps_uniforms_vec4[9].xyz * 0.25");
+
+        // Dynamic indices keep the arithmetic in GLSL (MojoShader's relative form).
+        result.Glsl.Should().Contain("ps_uniforms_vec4[0 + (_40)]");
+        result.Glsl.Should().Contain("ps_uniforms_vec4[4 + (_40)].x");
+
+        // mat4 array elements reconstruct column-by-column at stride 4.
+        result.Glsl.Should().Contain(
+            "mat4(ps_uniforms_vec4[14], ps_uniforms_vec4[15], ps_uniforms_vec4[16], ps_uniforms_vec4[17])");
+
+        // Scalar after the arrays lands at the shifted register.
+        result.Glsl.Should().Contain("ps_uniforms_vec4[18].x");
         result.Glsl.Should().NotContain("_Globals");
+
+        result.Uniforms.Should().Equal(
+            new MonoGameGlslUniform("Colors", 0, 4),
+            new MonoGameGlslUniform("Weights", 4, 4),
+            new MonoGameGlslUniform("Dirs", 8, 2),
+            new MonoGameGlslUniform("Mats", 10, 8),
+            new MonoGameGlslUniform("Selector", 18, 1));
+        result.UniformRegisterCount.Should().Be(19);
+    }
+
+    [Fact]
+    public void VertexStage_ArrayMember_UsesVsPrefix_AndLayoutMatchesRecord()
+    {
+        const string src = """
+#version 140
+
+layout(binding = 0, std140) uniform type_Globals
+{
+    vec4 Offsets[2];
+    mat4 Bones[2];
+} _Globals;
+
+in vec4 in_var_POSITION;
+
+void main()
+{
+    gl_Position = (_Globals.Bones[1] * in_var_POSITION) + _Globals.Offsets[1];
+    gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Vertex);
+
+        result.Glsl.Should().Contain("uniform vec4 vs_uniforms_vec4[10];");
+        result.Glsl.Should().Contain(
+            "mat4(vs_uniforms_vec4[6], vs_uniforms_vec4[7], vs_uniforms_vec4[8], vs_uniforms_vec4[9])");
+        result.Glsl.Should().Contain("vs_uniforms_vec4[1]");
+        // posFixup still injected after the merged declaration.
+        result.Glsl.Should().Contain("uniform vec4 posFixup;");
+
+        result.Uniforms.Should().Equal(
+            new MonoGameGlslUniform("Offsets", 0, 2),
+            new MonoGameGlslUniform("Bones", 2, 8));
+    }
+
+    [Theory]
+    [InlineData("    int Mode;", "*integer/boolean uniforms*")]
+    [InlineData("    bool Flag;", "*integer/boolean uniforms*")]
+    [InlineData("    ivec4 Counts;", "*integer/boolean uniforms*")]
+    [InlineData("    mat3 Rot;", "*float4x4*")]
+    [InlineData("    mat2 Small;", "*float4x4*")]
+    public void UnmodeledUniformMember_FailsLoudly(string memberLine, string expectedMessage)
+    {
+        string src = $$"""
+#version 140
+
+layout(binding = 0, std140) uniform type_Globals
+{
+{{memberLine}}
+    vec4 Tint;
+} _Globals;
+
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    out_var_SV_Target = _Globals.Tint;
+}
+""";
+        var act = () => MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+        act.Should().Throw<MonoGameGlslRewriteException>().WithMessage(expectedMessage);
+    }
+
+    [Fact]
+    public void ArrayMember_WholeArrayUse_FailsLoudly()
+    {
+        const string src = """
+#version 140
+
+layout(binding = 0, std140) uniform type_Globals
+{
+    vec4 Colors[4];
+} _Globals;
+
+out vec4 out_var_SV_Target;
+
+vec4 pick(vec4 c[4]) { return c[0]; }
+
+void main()
+{
+    out_var_SV_Target = pick(_Globals.Colors);
+}
+""";
+        var act = () => MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+        act.Should().Throw<MonoGameGlslRewriteException>()
+            .WithMessage("*whole-array use*");
+    }
+
+    [Fact]
+    public void UnrewrittenBlockInstanceReference_FailsLoudly()
+    {
+        // A use shape the member rewrites don't cover (here: the instance used
+        // bare). Before Phase 43C this shipped as invalid GLSL with exit code 0.
+        const string src = """
+#version 140
+
+layout(binding = 0, std140) uniform type_Globals
+{
+    vec4 Tint;
+} _Globals;
+
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    out_var_SV_Target = _Globals . Tint;
+}
+""";
+        var act = () => MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+        act.Should().Throw<MonoGameGlslRewriteException>()
+            .WithMessage("*_Globals*");
     }
 
     // ---- Phase 33: fragment output as mgfxc's `#define ps_oC{N}` alias ----

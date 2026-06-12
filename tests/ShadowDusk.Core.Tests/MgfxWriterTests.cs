@@ -41,8 +41,8 @@ public sealed class MgfxWriterTests
             Annotations: annotations ?? Array.Empty<AnnotationInfo>(),
             RowCount: 0,
             ColumnCount: 0,
-            MemberIndices: Array.Empty<int>(),
-            ElementIndices: Array.Empty<int>());
+            Members: Array.Empty<EffectParameterInfo>(),
+            Elements: Array.Empty<EffectParameterInfo>());
 
     private static MgfxPassInfo EmptyPass(
         string name = "Pass0",

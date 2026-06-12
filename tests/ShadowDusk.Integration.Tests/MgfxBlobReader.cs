@@ -59,6 +59,26 @@ public sealed record MgfxRasterizerStateRecord(
     bool  ScissorTestEnable,
     float SlopeScaleDepthBias);
 
+/// <summary>
+/// One constant-buffer record (Phase 43C): the name MonoGame's GL runtime keys
+/// glUniform4fv on, the buffer size, and the interleaved parameter index/offset table.
+/// </summary>
+public sealed record MgfxConstantBufferRecord(
+    string Name,
+    int Size,
+    IReadOnlyList<int> ParameterIndices,
+    IReadOnlyList<int> ParameterOffsets);
+
+/// <summary>
+/// One shader record's identity + bindings (Phase 43C): its stage, raw bytecode/GLSL,
+/// and the indices into the effect's constant-buffer list it binds.
+/// </summary>
+public sealed record MgfxShaderRecord(
+    int Index,
+    bool IsVertex,
+    byte[] Bytecode,
+    IReadOnlyList<int> ConstantBufferIndices);
+
 /// <summary>One shader-record sampler entry, including its baked state (Phase 43, F9).</summary>
 public sealed record MgfxSamplerRecord(
     int    ShaderIndex,
@@ -84,6 +104,9 @@ public sealed record MgfxSamplerStateRecord(
 /// One parameter record as stored in the .mgfx parameter block — the reflection metadata
 /// MonoGame's <c>EffectReader</c> builds <c>EffectParameter</c> from. Captured for the
 /// Phase 27 <c>MgfxParameterMatchTests</c> golden comparison (Phase 5 §9.3.1/§9.3.2).
+/// <see cref="Elements"/>/<see cref="Members"/> are the RECURSIVE sub-parameter
+/// collections MonoGame 3.8.2 reads (elements first, then struct members — Phase 43
+/// F6); an array parameter's elements are full nested records, not indices.
 /// </summary>
 public sealed record MgfxParameterRecord(
     string Name,
@@ -93,7 +116,9 @@ public sealed record MgfxParameterRecord(
     byte   Rows,
     byte   Columns,
     int    MemberCount,
-    int    ElementCount);
+    int    ElementCount,
+    IReadOnlyList<MgfxParameterRecord> Elements,
+    IReadOnlyList<MgfxParameterRecord> Members);
 
 public sealed class MgfxBlobReader
 {
@@ -113,6 +138,10 @@ public sealed class MgfxBlobReader
 
     // Raw shader blob bytes indexed by shader slot.
     public IReadOnlyList<byte[]> ShaderBlobs { get; }
+
+    // Full constant-buffer records and per-shader stage/bindings (Phase 43C).
+    public IReadOnlyList<MgfxConstantBufferRecord> ConstantBuffers { get; private set; } = [];
+    public IReadOnlyList<MgfxShaderRecord>         Shaders         { get; private set; } = [];
 
     // Every sampler entry across all shader records, with baked state (Phase 43, F9).
     public IReadOnlyList<MgfxSamplerRecord> Samplers { get; }
@@ -193,6 +222,7 @@ public sealed class MgfxBlobReader
         // paramIndex -> sizeInBytes; paramIndex -> startOffset.
         var cbParamIndexToSize   = new Dictionary<int, int>();
         var cbParamIndexToOffset = new Dictionary<int, int>();
+        var cbRecords            = new List<MgfxConstantBufferRecord>();
         int cbCount = br.ReadInt32();
         for (int i = 0; i < cbCount; i++)
         {
@@ -209,6 +239,8 @@ public sealed class MgfxBlobReader
                 offsets[j]      = br.ReadUInt16();
             }
 
+            cbRecords.Add(new MgfxConstantBufferRecord(cbName, cbSize, paramIndices, offsets));
+
             for (int j = 0; j < paramCount; j++)
             {
                 int varSize = j < paramCount - 1
@@ -222,10 +254,11 @@ public sealed class MgfxBlobReader
         // Shaders
         int shaderCount = br.ReadInt32();
         var shaderBlobs = new List<byte[]>(shaderCount);
+        var shaderRecords = new List<MgfxShaderRecord>(shaderCount);
         var samplerRecords = new List<MgfxSamplerRecord>();
         for (int i = 0; i < shaderCount; i++)
         {
-            br.ReadBoolean();          // isVertexShader
+            bool isVertex = br.ReadBoolean();
             int byteLen = br.ReadInt32();
             shaderBlobs.Add(br.ReadBytes(byteLen));
 
@@ -259,8 +292,9 @@ public sealed class MgfxBlobReader
 
             // Constant-buffer index list.
             int cbIndexCount = br.ReadByte();
+            var cbIndices = new List<int>(cbIndexCount);
             for (int c = 0; c < cbIndexCount; c++)
-                br.ReadByte();
+                cbIndices.Add(br.ReadByte());
 
             // Vertex-attribute table.
             int attrCount = br.ReadByte();
@@ -271,46 +305,15 @@ public sealed class MgfxBlobReader
                 br.ReadByte();         // index
                 br.ReadInt16();        // location
             }
+
+            shaderRecords.Add(new MgfxShaderRecord(i, isVertex, shaderBlobs[i], cbIndices));
         }
 
-        // Parameters
-        int parameterCount = br.ReadInt32();
-        var parameterNames = new List<string>(parameterCount);
-        var parameters     = new List<MgfxParameterRecord>(parameterCount);
+        // Parameters — MonoGame 3.8.2's recursive layout: elements then struct
+        // members, each a full nested parameter record (Phase 43 F6).
         var paramAnnotationCounts = new Dictionary<string, int>(StringComparer.Ordinal);
-
-        for (int i = 0; i < parameterCount; i++)
-        {
-            byte paramClass = br.ReadByte(); // class
-            byte paramType  = br.ReadByte(); // type
-            string name     = br.ReadString();
-            string semantic = br.ReadString();
-
-            int annotationCount = ReadAnnotations(br);
-            parameterNames.Add(name);
-            if (annotationCount > 0)
-                paramAnnotationCounts[name] = annotationCount;
-
-            byte rowCount    = br.ReadByte();
-            byte columnCount = br.ReadByte();
-            int memberCount  = ReadInt32List(br); // memberIndices
-            int elementCount = ReadInt32List(br); // elementIndices
-
-            // Value-typed params (Scalar/Vector/Matrix, no members/elements) carry
-            // a raw default-value blob of rowCount*columnCount*4 bytes, no prefix.
-            if (paramClass <= 2 && memberCount == 0 && elementCount == 0)
-                br.ReadBytes(rowCount * columnCount * 4);
-
-            parameters.Add(new MgfxParameterRecord(
-                Name: name,
-                Semantic: semantic,
-                Class: paramClass,
-                Type: paramType,
-                Rows: rowCount,
-                Columns: columnCount,
-                MemberCount: memberCount,
-                ElementCount: elementCount));
-        }
+        var parameters     = ReadParameterList(br, paramAnnotationCounts);
+        var parameterNames = parameters.Select(p => p.Name).ToList();
 
         // Build ParameterSizes and ParameterOffsets from cb tables.
         var paramSizes   = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -379,7 +382,11 @@ public sealed class MgfxBlobReader
             rasterizerState: rasterizerState,
             parameterAnnotationCounts: paramAnnotationCounts,
             parameterSizes: paramSizes,
-            parameterOffsets: paramOffsets);
+            parameterOffsets: paramOffsets)
+        {
+            ConstantBuffers = cbRecords,
+            Shaders         = shaderRecords,
+        };
     }
 
     // Mirrors MonoGame 3.8.2 Effect.ReadPasses: each state object is a boolean
@@ -450,11 +457,50 @@ public sealed class MgfxBlobReader
     /// </summary>
     private static int ReadAnnotations(BinaryReader br) => br.ReadInt32();
 
-    private static int ReadInt32List(BinaryReader br)
+    /// <summary>
+    /// Mirrors MonoGame 3.8.2 <c>Effect.ReadParameters</c>: an int32 count of full
+    /// parameter records; per record the ELEMENTS sub-collection is read first, then
+    /// the struct MEMBERS, recursively; a value-typed leaf (Scalar/Vector/Matrix,
+    /// no elements/members) carries a rows*cols*4-byte default-value blob.
+    /// </summary>
+    private static List<MgfxParameterRecord> ReadParameterList(
+        BinaryReader br, Dictionary<string, int>? annotationCounts = null)
     {
         int count = br.ReadInt32();
+        var list = new List<MgfxParameterRecord>(count);
         for (int i = 0; i < count; i++)
-            br.ReadInt32();
-        return count;
+        {
+            byte paramClass = br.ReadByte();
+            byte paramType  = br.ReadByte();
+            string name     = br.ReadString();
+            string semantic = br.ReadString();
+
+            int annotationCount = ReadAnnotations(br);
+            if (annotationCounts is not null && annotationCount > 0)
+                annotationCounts[name] = annotationCount;
+
+            byte rowCount    = br.ReadByte();
+            byte columnCount = br.ReadByte();
+
+            var elements = ReadParameterList(br);
+            var members  = ReadParameterList(br);
+
+            if (paramClass <= 2 && elements.Count == 0 && members.Count == 0)
+                br.ReadBytes(rowCount * columnCount * 4);
+
+            list.Add(new MgfxParameterRecord(
+                Name: name,
+                Semantic: semantic,
+                Class: paramClass,
+                Type: paramType,
+                Rows: rowCount,
+                Columns: columnCount,
+                MemberCount: members.Count,
+                ElementCount: elements.Count,
+                Elements: elements,
+                Members: members));
+        }
+
+        return list;
     }
 }

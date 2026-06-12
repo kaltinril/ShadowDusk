@@ -60,6 +60,11 @@ public sealed class MgfxParameterMatchTests
         "Grayscale", "Invert", "TintShader", "Sepia", "Saturate",
         "Pixelated", "Scanlines", "Fading", "Dots", "Dissolve",
         "PolygonLight", "VertexAndPixel", "VsTransformColorTexture",
+        // Phase 43C: shared/multi/array cbuffer shapes (F4/F5/F6) — exact
+        // element/member COUNTS asserted here; the full recursive element
+        // sub-record comparison is Phase43CbufferModelTests.
+        "SharedCbuffer", "MultiCbuffer", "MultiCbufferVs",
+        "ArrayUniform", "ArrayUniformVs",
     };
 
     public static IEnumerable<object[]> Corpus() =>
