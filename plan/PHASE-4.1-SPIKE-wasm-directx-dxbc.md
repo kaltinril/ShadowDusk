@@ -302,6 +302,23 @@ compressed download.
 
 **Relationship to Phase 23:** Phase 23 builds the faithful **DXC→WASM** frontend for the **OpenGL** (SPIR-V) path. This spike asks the parallel question for **DirectX** — getting a faithful **DXBC** producer (vkd3d-shader) into WASM. Same emscripten-to-`[JSImport]` mechanism, different native library. Neither uses a substitute compiler.
 
+### Export-station sample (2026-06-11)
+
+`samples/ShaderFiddle.Web` now implements the owner-directed **browser = export
+station** (plan.md Key Decision, 2026-06-09): an *Export* panel compiles the editor
+source in-browser for **OpenGL** (`<name>.mgfx`), **DirectX** (DX11 SM5 DXBC
+`<name>.mgfx`), or **FNA** (fx_2_0 `<name>.fxb`) via the real `WasmShaderCompiler`
+(the vkd3d WASM backend above — never a substitute) and saves the artifact through a
+JS blob download. A local `.fx` can be uploaded into the editor; the artifact name
+follows the sample/upload and is editable. OpenGL remains the untouched
+host-appropriate default (live KNI WebGL render, mode 1/2, Live parameters, Reset all
+unchanged — the Phase 24/30 §16 browser smoke entry points are untouched); DX/FNA
+rows are export-only and the UI says so ("renders in your MonoGame WindowsDX / FNA
+game"). Failures keep the verbatim `file:line:col` diagnostics panel + squiggles; a
+genuinely-absent vkd3d module surfaces SD1902 with a clear per-target message. This
+is the sample-of-reach UI over the compile path — the G2 render-proof rung remains
+the parallel browser-tests work, not this.
+
 ## Problem Statement
 
 ShadowDusk's WASM delivery target (`ShadowDusk.Wasm`) must compile HLSL shaders to all supported output formats, including SM5 DXBC for the DirectX 11 backend. The CLI target solves SM5 DXBC via native P/Invoke (`d3dcompiler_47.dll` on Windows, `libvkd3d-shader` on Linux/macOS). Neither of these approaches is available inside a .NET WASM runtime — there is no native P/Invoke to OS libraries in the browser sandbox.

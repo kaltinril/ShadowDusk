@@ -1,9 +1,18 @@
-# ShaderFiddle.Web — ShadowDusk in-browser shader fiddle
+# ShaderFiddle.Web — ShadowDusk in-browser shader fiddle + export station
 
-An XNA-Fiddle-style browser sample: paste HLSL `.fx`, compile it **entirely in the
-browser**, and see the standard ShadowDusk **cat** re-rendered with that shader
-applied — no server, no `mgfxc`, no native toolchain on the user's machine.
-Runtime is **KNI** (nkast's MonoGame fork) on **Blazor WebAssembly + WebGL**.
+An XNA-Fiddle-style browser sample: paste (or upload) HLSL `.fx`, compile it
+**entirely in the browser**, and see the standard ShadowDusk **cat** re-rendered
+with that shader applied — no server, no `mgfxc`, no native toolchain on the
+user's machine. Runtime is **KNI** (nkast's MonoGame fork) on
+**Blazor WebAssembly + WebGL**.
+
+It is also the **export station** (owner-directed, 2026-06-09): the *Export*
+panel compiles the editor source in-browser for **OpenGL** (`.mgfx`),
+**DirectX** (DX11 SM5 DXBC `.mgfx`), or **FNA** (fx_2_0 `.fxb`) and downloads
+the artifact — **byte-identical to ShadowDusk's desktop output** for the same
+source and target. OpenGL stays the live render target; DirectX and FNA are
+export-only (a browser cannot execute DXBC/D3D9 bytecode — they render in your
+MonoGame WindowsDX / FNA game).
 
 ```
 paste .fx ─▶ WasmShaderCompiler.CompileAsync(src, OpenGL)   ── faithful DXC→WASM, in-browser
@@ -74,6 +83,22 @@ On the page:
    doesn't bake a global's initializer into the bytes, so set it here, inline it as a
    literal, or `SetValue` it from code.)
 5. **Reset (no shader)** drops the effect and shows the original cat.
+6. **Export** — upload your own `.fx` (or use the editor source), pick a target row,
+   and **Compile & Download**:
+   - **OpenGL** → `<name>.mgfx` — MonoGame DesktopGL / KNI (the same target rendered
+     live on the canvas).
+   - **DirectX (DX11 SM5)** → `<name>.mgfx` — export-only; renders in your MonoGame
+     WindowsDX game.
+   - **FNA (fx_2_0)** → `<name>.fxb` — export-only; renders in your FNA game.
+
+   All three run the same faithful pipeline as the desktop CLI (`WasmShaderCompiler`
+   with the browser-injected DXC / SPIRV-Cross / vkd3d WASM backends — Phase 4.1), so
+   the downloaded bytes are identical to a desktop compile. Compile errors appear in
+   the same verbatim `file:line:col` error panel + editor squiggles; if the vkd3d
+   WASM module is genuinely absent the DX/FNA rows fail loudly with **SD1902** (run
+   `tools/restore.*` first). The first DX/FNA export fetches `vkd3d-shader.wasm`
+   (~0.4 MB) once; the artifact name follows the selected sample / uploaded file and
+   is editable.
 
 ## Verify the faithful frontend without a browser
 
@@ -116,7 +141,7 @@ from the repo-root props (which force `net8.0`, central package management, and
 |---|---|
 | `ShaderFiddle.Web.csproj` | net8.0-browser Blazor WASM; refs KNI + `ShadowDusk.Wasm` |
 | `Program.cs` | Blazor host |
-| `Pages/Index.razor[.cs]` | the fiddle UI: compile/load loop, live-parameter panel, reset, error panel |
+| `Pages/Index.razor[.cs]` | the fiddle UI: compile/load loop, live-parameter panel, reset, error panel, export station (GL/DX/FNA compile + download, `.fx` upload) |
 | `ShaderFiddleGame.cs` | KNI WebGL `Game`; cat + effect render path; parameter get/set |
 | `WebShaderInputs.cs` | corpus list + by-name parameter values (ported) |
 | `wwwroot/index.html` | Blazor shell + KNI 8.0.11 JS shims + render loop |
