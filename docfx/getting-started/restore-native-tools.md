@@ -14,7 +14,8 @@ The restore script handles native artifacts that are **not** redistributed throu
 | Artifact | Used by | Notes |
 |---|---|---|
 | `vkd3d-shader` | the cross-platform DirectX DXBC backend (`DxbcBackend.Vkd3d`) | Restored, not committed. The script no-ops with a build-recipe note when no prebuilt binary is available, so the build stays green. The default DX backend (`d3dcompiler_47`) is Windows-only and doesn't need it. |
-| `dxcompiler.wasm` | the in-browser `ShadowDusk.Wasm` frontend | Copied from the committed source-of-truth in `.wasm-build/` into the package's `wwwroot/dxc/`. |
+| `dxcompiler.wasm` | the in-browser `ShadowDusk.Wasm` frontend (OpenGL/WebGL) | Copied from the committed source-of-truth in `.wasm-build/` into the package's `wwwroot/dxc/`. |
+| `vkd3d-shader.{js,wasm}` | the in-browser `ShadowDusk.Wasm` DirectX/FNA export backend | Downloaded (SHA-256-pinned) from the hosted release into the package's `wwwroot/vkd3d/`; a local `.wasm-build/vkd3d-wasm-out/` build takes precedence. See [DirectX & FNA in the Browser](../backends/directx-in-wasm.md). |
 
 ## Running it
 

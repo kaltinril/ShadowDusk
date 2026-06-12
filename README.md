@@ -80,7 +80,7 @@ Result<CompiledShader, ShaderError[]> result =
 ShadowDuskCLI MyShader.fx MyShader.mgfx /Profile:OpenGL
 ```
 
-**WASM library** (`ShadowDusk.Wasm`, type `WasmShaderCompiler : IShaderCompiler`) — the same pipeline running inside .NET WASM for in-browser runtime compilation (the faithful pinned-DXC→WASM + SPIRV-Cross-WASM frontend). Returns `.mgfx` bytes in-memory with no server roundtrip. The in-browser shader fiddle ([samples/ShaderFiddle.Web](samples/ShaderFiddle.Web)) is a **sample** of this reach, not a separate product. See [`docs/HOWTO-WASM-KNI.md`](docs/HOWTO-WASM-KNI.md) for the KNI/Blazor walkthrough.
+**WASM library** (`ShadowDusk.Wasm`, type `WasmShaderCompiler : IShaderCompiler`) — the same pipeline running inside .NET WASM for in-browser runtime compilation (the faithful pinned DXC→WASM + SPIRV-Cross→WASM + vkd3d-shader→WASM modules, all riding inside the package). All three targets compile in the browser, **byte-identical to the desktop output**: OpenGL `.mgfx` (renders live in KNI WebGL), plus DirectX `.mgfx` and FNA `.fxb` as **export targets** (a browser cannot render DXBC/D3D9 bytecode — the downloads render in your MonoGame WindowsDX / FNA game). Returns the bytes in-memory with no server roundtrip. The in-browser shader fiddle / export station ([samples/ShaderFiddle.Web](samples/ShaderFiddle.Web)) is a **sample** of this reach, not a separate product. See [`docs/HOWTO-WASM-KNI.md`](docs/HOWTO-WASM-KNI.md) for the KNI/Blazor walkthrough.
 
 Every shape shares the same `IShaderCompiler` interface. "Same `.mgfx` output" means behaviorally equivalent and `Effect`-loadable — byte-identity is ShadowDusk's *own* reproducibility (same version + source + target → same bytes), never byte-equality with `mgfxc`.
 

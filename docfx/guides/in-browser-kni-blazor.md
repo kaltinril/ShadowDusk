@@ -4,6 +4,8 @@ The **same faithful pipeline** runs inside .NET WebAssembly via the `ShadowDusk.
 
 The in-browser frontend is the **faithful pinned DirectXShaderCompiler compiled to WebAssembly** (matching the desktop `Vortice.Dxc` commit), so its SPIR-V is byte-identical to the desktop pipeline — one faithful compiler everywhere, **no substitute frontend**. (The older Slang-WASM frontend in the sample is *dead, sample-only reference* and never runs.) See [WASM In-Browser Frontend](../architecture/wasm-frontend.md) for the architecture.
 
+Beyond the OpenGL/WebGL path this guide covers, the same package also compiles **DirectX `.mgfx` and FNA `.fxb` in the browser** (the pinned `vkd3d-shader` compiled to WASM) — as *export* targets, byte-identical to the desktop output; a browser cannot render DXBC/D3D9 bytecode. See [DirectX & FNA in the Browser](../backends/directx-in-wasm.md).
+
 The [ShaderFiddle.Web sample](../samples/shaderfiddle-web.md) is a working demonstration of this reach — itself only a **sample**, not the product.
 
 The complete walkthrough (setup, package wiring, KNI specifics, gotchas) is maintained in the repository and reproduced below as the single source of truth:
