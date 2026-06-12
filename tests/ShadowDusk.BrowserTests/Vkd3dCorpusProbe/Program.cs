@@ -73,6 +73,20 @@ string[] sm3Fixtures =
 var directXCorpus = coreMgfxFixtures.Concat(sm3Fixtures).ToArray();
 var fnaCorpus     = sm3Fixtures;
 
+// Containment guard: the stale-file sweep below DELETES every file in outDir, so a
+// mistyped/hostile argument (e.g. the user's home directory) must be refused before
+// anything is touched. The probe only ever writes inside the repo, so require outDir
+// to be strictly under the repo root.
+string outRel = Path.GetRelativePath(repoRoot, outDir);
+if (outRel == "." || outRel.StartsWith("..", StringComparison.Ordinal) || Path.IsPathRooted(outRel))
+{
+    Console.Error.WriteLine(
+        $"Vkd3dCorpusProbe: refusing to sweep '{outDir}' — it is not strictly under the " +
+        $"repo root '{repoRoot}'. The output directory is cleared of stale files before " +
+        "capture, so it must be a repo-local scratch directory.");
+    return 1;
+}
+
 Directory.CreateDirectory(outDir);
 foreach (string stale in Directory.EnumerateFiles(outDir))
     File.Delete(stale);

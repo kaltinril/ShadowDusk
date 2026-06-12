@@ -84,10 +84,16 @@ async function loadVkd3d() {
  */
 export function ensureReady() {
     if (vkd3dInstance) return Promise.resolve();
-    if (initError) return Promise.reject(initError);
     if (!loadPromise) {
+        initError = null;
         loadPromise = loadVkd3d().catch((e) => {
             initError = e instanceof Error ? e : new Error(String(e));
+            // Reset so a LATER ensureReady() retries the download instead of the
+            // session staying bricked on a transient fetch failure — mirrors
+            // WasmModuleRegistration.RegisterOnceAsync's reset-on-failure. initError
+            // stays set between the failure and the next attempt so a stray compile()
+            // call still surfaces the load error rather than "not ready".
+            loadPromise = null;
             // Re-throw so the awaiting host sees the failure (surfaced as SD1902).
             throw initError;
         });
@@ -101,6 +107,7 @@ function allocCString(mod, value) {
     if (value === null || value === undefined) return 0;
     const bytes = utf8Encoder.encode(String(value));
     const ptr = mod._malloc(bytes.length + 1);
+    if (!ptr) throw new Error(`vkd3d-shader WASM: _malloc(${bytes.length + 1}) failed (out of memory).`);
     mod.HEAPU8.set(bytes, ptr);
     mod.HEAPU8[ptr + bytes.length] = 0;
     return ptr;
@@ -113,12 +120,14 @@ function readU32(mod, ptr) {
     return new DataView(mod.HEAPU8.buffer).getUint32(ptr, /* littleEndian */ true);
 }
 
-// Read a NUL-terminated UTF-8 C string from the module heap ('' for NULL).
+// Read a NUL-terminated UTF-8 C string from the module heap ('' for NULL). Bounded
+// by the heap length so a missing terminator can never scan past the end (heap[i]
+// is undefined !== 0 there, which would loop forever otherwise).
 function readCString(mod, ptr) {
     if (!ptr) return '';
     const heap = mod.HEAPU8;
     let end = ptr;
-    while (heap[end] !== 0) end++;
+    while (end < heap.length && heap[end] !== 0) end++;
     return utf8Decoder.decode(heap.subarray(ptr, end));
 }
 
@@ -158,6 +167,7 @@ export function compile(sourceUtf8, entryPoint, profile, sourceName, targetType)
     try {
         // Source bytes: raw UTF-8 + explicit length (NOT null-terminated at the ABI).
         srcPtr = mod._malloc(source.length);
+        if (!srcPtr) throw new Error(`vkd3d-shader WASM: _malloc(${source.length}) failed (out of memory).`);
         mod.HEAPU8.set(source, srcPtr);
 
         // C strings for entry point / profile / source name.
@@ -167,6 +177,7 @@ export function compile(sourceUtf8, entryPoint, profile, sourceName, targetType)
 
         // out_code / out_size / out_messages — three contiguous 32-bit out-slots.
         outPtrs = mod._malloc(12);
+        if (!outPtrs) throw new Error('vkd3d-shader WASM: _malloc(12) failed (out of memory).');
         mod.HEAPU8.fill(0, outPtrs, outPtrs + 12);
         const outCodePtr = outPtrs, outSizePtr = outPtrs + 4, outMsgsPtr = outPtrs + 8;
 

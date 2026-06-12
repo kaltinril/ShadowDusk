@@ -10,7 +10,8 @@ It is also the **export station** (owner-directed, 2026-06-09): the *Export*
 panel compiles the editor source in-browser for **OpenGL** (`.mgfx`),
 **DirectX** (DX11 SM5 DXBC `.mgfx`), or **FNA** (fx_2_0 `.fxb`) and downloads
 the artifact — **byte-identical to ShadowDusk's desktop output** for the same
-source and target. OpenGL stays the live render target; DirectX and FNA are
+source and target (for DirectX: a desktop compile using the vkd3d backend,
+which the browser always uses). OpenGL stays the live render target; DirectX and FNA are
 export-only (a browser cannot execute DXBC/D3D9 bytecode — they render in your
 MonoGame WindowsDX / FNA game).
 
@@ -92,8 +93,11 @@ On the page:
    - **FNA (fx_2_0)** → `<name>.fxb` — export-only; renders in your FNA game.
 
    All three run the same faithful pipeline as the desktop CLI (`WasmShaderCompiler`
-   with the browser-injected DXC / SPIRV-Cross / vkd3d WASM backends), so
-   the downloaded bytes are identical to a desktop compile. Compile errors appear in
+   with the browser-injected DXC / SPIRV-Cross / vkd3d WASM backends).
+   OpenGL and FNA bytes are identical to a desktop compile; DirectX bytes are
+   identical to a desktop compile **using the vkd3d backend** (`DxbcBackend.Vkd3d` —
+   the browser always compiles DXBC via vkd3d, while the desktop *default* is
+   d3dcompiler_47, whose bytes differ). Compile errors appear in
    the same verbatim `file:line:col` error panel + editor squiggles; if the vkd3d
    WASM module is genuinely absent the DX/FNA rows fail loudly with **SD1902** (run
    `tools/restore.*` first). The first DX/FNA export fetches `vkd3d-shader.wasm`

@@ -85,7 +85,8 @@
 
         @* Export station (owner-directed, 2026-06-09): compile the editor source
            in-browser for any supported target and download the artifact —
-           byte-identical to ShadowDusk's desktop output. OpenGL is also the live
+           byte-identical to ShadowDusk's desktop output (for DirectX: with the
+           vkd3d backend, which the browser always uses). OpenGL is also the live
            render target above; DirectX (DXBC) and FNA (D3D9 bytecode) are
            export-only because a browser cannot execute those binaries. *@
         <div class="export">
@@ -114,9 +115,12 @@
                 </div>
             }
             <div class="export-desc export-foot">
-                Every target runs the same faithful pipeline as the desktop CLI — the bytes you
-                download here are identical to a desktop compile of the same source. The first
-                DirectX/FNA export fetches the vkd3d-shader WASM module (~0.4&nbsp;MB) once.
+                Every target runs the same faithful pipeline as the desktop CLI. OpenGL and FNA
+                bytes are identical to a desktop compile of the same source; DirectX bytes are
+                identical to a desktop compile using the vkd3d backend
+                (<code>DxbcBackend.Vkd3d</code> — the browser always compiles DXBC via vkd3d,
+                while the desktop default is d3dcompiler_47). The first DirectX/FNA export
+                fetches the vkd3d-shader WASM module (~0.4&nbsp;MB) once.
             </div>
         </div>
 

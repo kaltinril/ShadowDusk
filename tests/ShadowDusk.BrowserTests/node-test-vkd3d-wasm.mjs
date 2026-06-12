@@ -117,13 +117,46 @@ for (const entry of manifest) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 4. Error path THROUGH THE PRODUCT SHIM: a broken shader must throw an Error
+//    whose message is vkd3d's VERBATIM diagnostic (source name + line:col), the
+//    text .NET parses for constraint 5. Without this, a regression in the shim's
+//    failure branch (e.g. dropping/garbling the messages) reddens nothing — the
+//    corpus above only exercises the success path.
+// ---------------------------------------------------------------------------
+{
+  const brokenName = 'broken.fx';
+  // Same deliberately broken shader as tools/vkd3d-wasm/smoke-test.mjs (missing ')').
+  const brokenSource = new TextEncoder().encode(
+    'float4 main() : COLOR { return float4(1,0,0,1; }\n');
+  const label = `error-path/${brokenName} (ps_2_0 -> tt4, via SHIM)`;
+  try {
+    shim.compile(brokenSource, 'main', 'ps_2_0', brokenName, 4);
+    failures.push(`${label}: a broken shader COMPILED instead of throwing`);
+    console.error(`  [FAIL] ${label} — compiled instead of throwing`);
+  } catch (e) {
+    const msg = String(e?.message ?? e);
+    // Verbatim vkd3d diagnostics carry "<sourceName>:<line>:<col>:" locations.
+    if (new RegExp(`${brokenName.replace('.', '\\.')}:\\d+:\\d+`).test(msg)) {
+      pass++;
+      console.log(`  [OK]   ${label} — threw with verbatim diagnostics: ${msg.split('\n')[0]}`);
+    } else {
+      failures.push(`${label}: thrown message lacks the verbatim ` +
+        `'${brokenName}:<line>:<col>' diagnostic — got: ${msg.slice(0, 300)}`);
+      console.error(`  [FAIL] ${label} — message lacks file:line:col — got: ${msg.slice(0, 300)}`);
+    }
+  }
+}
+const totalCases = manifest.length + 1; // corpus + the error-path case
+
 console.log('');
 if (failures.length > 0) {
-  console.error(`[vkd3d-wasm gate] FAIL — ${pass}/${manifest.length} byte-identical; ${failures.length} failures:`);
+  console.error(`[vkd3d-wasm gate] FAIL — ${pass}/${totalCases} byte-identical; ${failures.length} failures:`);
   for (const f of failures) console.error('  - ' + f);
   process.exit(1);
 }
 
-console.log(`ALL ${manifest.length} CORPUS COMPILES BYTE-IDENTICAL VIA THE FAITHFUL SHIM — ` +
+console.log(`ALL ${manifest.length} CORPUS COMPILES BYTE-IDENTICAL VIA THE FAITHFUL SHIM ` +
+  '(+ the shim error path surfaces verbatim diagnostics) — ' +
   'WASM vkd3d == desktop vkd3d. Phase 4.1 byte-identity gate PASSED.');
 process.exit(0);

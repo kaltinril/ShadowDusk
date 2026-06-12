@@ -658,12 +658,18 @@ public partial class Index
         SetDiagnostics(list);
     }
 
-    /// <summary>Update the source on each keystroke and drop now-stale squiggles.</summary>
+    /// <summary>
+    /// Update the source on each keystroke and drop now-stale squiggles AND export
+    /// statuses (a "Downloaded foo.mgfx" row must not keep describing bytes that no
+    /// longer match the edited source).
+    /// </summary>
     private void OnSourceInput(ChangeEventArgs e)
     {
         _source = e.Value?.ToString() ?? string.Empty;
         if (_diagnostics.Count > 0)
             ClearDiagnostics();
+        if (_exportStatus.Count > 0)
+            _exportStatus.Clear();
     }
 
     /// <summary>Scroll the editor to a diagnostic's line and focus it.</summary>
