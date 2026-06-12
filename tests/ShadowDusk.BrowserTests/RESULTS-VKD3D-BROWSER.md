@@ -32,12 +32,21 @@ order matters: the cold checks ran before ANY compile or initialization):
 - `InitializeAsync()` (awaited twice — idempotency): **OK**
 - WARM **synchronous** `Compile()` over the full DX+FNA corpus: **65/65** SHA-256 == committed manifest (sync bytes == async bytes == desktop render-proven bytes).
 
+## Phase 27 — SD1902 end-to-end + attribution scenarios
+
+Fresh per-scenario browser sessions with route-aborted static web assets (the honest
+browser analogue of "module not restored/hosted"):
+
+- module-absent cold sync Compile (DirectX): **PASS** — SD1903 (module not loaded yet — clear, no abort)
+- module-absent async CompileAsync (DirectX): **PASS** — SD1902 with the restore pointer: Grayscale.fx(0,0-0): error SD1902: WASM vkd3d-shader backend (vkd3d/vkd3d-shader.{js,wasm}) could not be loaded, so the DirectX (DXBC) and FNA (fx_2_0) targ…
+- vkd3d-path isolation (DirectX with DXC/SPIRV-Cross blocked): **PASS** — compiled successfully AND SHA-256 == committed manifest
+
 ## Coverage
 
 - **DirectX (SM4/5 DXBC → MGFX v10 `.mgfx`):** 37/37 fixtures (the full DX byte-identity corpus — core MGFX + SM≤3 render-proven sets).
 - **FNA (SM1–3 D3D9 → fx_2_0 `.fxb`):** 28/28 fixtures (the full FNA byte-identity corpus).
 - No subset, no silent caps: every `DirectX_Vkd3d/*` and `FNA/*` manifest entry ran.
-- Faithful-module evidence: `vkd3d-shader.wasm` fetched over HTTP by the page — **yes** (`http://127.0.0.1:62509/_content/ShadowDusk.Wasm/vkd3d/vkd3d-shader.wasm`, HTTP 200).
+- Faithful-module evidence: `vkd3d-shader.wasm` fetched over HTTP by the page — **yes** (`http://127.0.0.1:60720/_content/ShadowDusk.Wasm/vkd3d/vkd3d-shader.wasm`, HTTP 200).
 
 | Manifest key | Target | Artifact bytes | SHA-256 == manifest | Verdict |
 |---|---|---|---|---|

@@ -159,15 +159,16 @@ export function compile(sourceUtf8, entryPoint, profile, sourceName, targetType)
     }
 
     const source = sourceUtf8 instanceof Uint8Array ? sourceUtf8 : new Uint8Array(sourceUtf8 || 0);
-    if (source.length === 0) {
-        throw new Error('compile: empty HLSL source.');
-    }
 
     let srcPtr = 0, entryPtr = 0, profilePtr = 0, namePtr = 0, outPtrs = 0;
     try {
         // Source bytes: raw UTF-8 + explicit length (NOT null-terminated at the ABI).
-        srcPtr = mod._malloc(source.length);
-        if (!srcPtr) throw new Error(`vkd3d-shader WASM: _malloc(${source.length}) failed (out of memory).`);
+        // Empty source is NOT pre-judged here — it goes to vkd3d (pointer + length 0)
+        // and vkd3d speaks for itself, exactly like the desktop backend (Phase 27;
+        // Vkd3dShaderCompiler.CompileCore allocates max(1, len) the same way because
+        // a zero-byte allocation may legally return a null pointer).
+        srcPtr = mod._malloc(Math.max(source.length, 1));
+        if (!srcPtr) throw new Error(`vkd3d-shader WASM: _malloc(${Math.max(source.length, 1)}) failed (out of memory).`);
         mod.HEAPU8.set(source, srcPtr);
 
         // C strings for entry point / profile / source name.

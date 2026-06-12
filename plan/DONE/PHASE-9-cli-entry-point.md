@@ -747,12 +747,19 @@ technique Technique1
 - [ ] 9.1 Run `dotnet build` — 0 errors, 0 warnings.
 - [ ] 9.2 Run `dotnet test --filter "Category!=Integration"` — all unit tests pass.
 - [ ] 9.3 Run `dotnet test --filter "Category=Integration"` — all integration tests pass.
-- [ ] 9.4 Run `dotnet pack src/ShadowDusk.Cli` — NuGet package is produced with `ToolCommandName`
-         set to `mgfxc`.
-- [ ] 9.5 Install locally and verify: `dotnet tool install -g ShadowDusk.Cli --add-source ./nupkg`
-         then `mgfxc --help` (no-args) shows usage on stderr with exit 1.
-- [ ] 9.6 Run `dotnet publish src/ShadowDusk.Cli -r win-x64 --self-contained` (or the current
-         platform's RID) and confirm the single-file binary executes.
+- [x] 9.4 Run `dotnet pack src/ShadowDusk.Cli` — NuGet package is produced with `ToolCommandName`
+         set to `mgfxc`. *(Closed by Phase 27, 2026-06-12: `ShadowDusk.Cli.0.4.0.nupkg`
+         produced; the command name is `ShadowDuskCLI` — the later CLI re-brand superseded
+         this step's `mgfxc` wording. Scripted in `tools/verify-cli-packaging.ps1`.)*
+- [x] 9.5 Install locally and verify: `dotnet tool install -g ShadowDusk.Cli --add-source ./nupkg`
+         then `mgfxc --help` (no-args) shows usage on stderr with exit 1. *(Closed by
+         Phase 27, 2026-06-12 — installed with `--tool-path <scratch>` instead of `-g`
+         (no machine pollution); `ShadowDuskCLI` no-args → usage on stderr, exit 1, and a
+         fixture compile through the installed tool is byte-identical to the built CLI.)*
+- [x] 9.6 Run `dotnet publish src/ShadowDusk.Cli -r win-x64 --self-contained` (or the current
+         platform's RID) and confirm the single-file binary executes. *(Closed by Phase 27,
+         2026-06-12 — 45.4 MB single-file `ShadowDuskCLI.exe` with release.yml's flag set;
+         runs, compiles `Minimal.fx` byte-identically. Linux/macOS RIDs → Phase 30.)*
 
 ---
 

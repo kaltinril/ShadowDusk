@@ -44,7 +44,8 @@ internal sealed class WasmVkd3dShaderCompiler : IDxbcShaderCompiler
 
         try
         {
-            // Self-register the [JSImport] modules (idempotent, zero consumer wiring),
+            // Self-register the vkd3d [JSImport] module (idempotent, zero consumer
+            // wiring; ONLY this path's module — Phase 27 SD1902 attribution),
             // then drive the one-time lazy load of the vkd3d WASM module. Loading is
             // deferred to first compile (the DXC pattern) so the module download never
             // burdens page init. This is the ONLY genuinely-async step (issue #28); the

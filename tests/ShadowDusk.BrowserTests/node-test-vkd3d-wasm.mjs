@@ -23,7 +23,8 @@
 //         (or: npm run vkd3d-gate)
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, mkdirSync, mkdtempSync, copyFileSync, rmSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -44,6 +45,51 @@ function skip(reason) {
   console.log('='.repeat(78));
   console.log('');
   process.exit(0);
+}
+
+// ---------------------------------------------------------------------------
+// 0. Module-ABSENT load-failure path THROUGH THE PRODUCT SHIM (Phase 27 review
+//    input: the SD1902 trigger). Runs even when the real module IS restored, by
+//    importing a copy of the shim from a temp dir with no ./vkd3d/ next to it:
+//      - ensureReady() must REJECT (this rejection is what .NET maps to SD1902);
+//      - a stray compile() after the failed load must throw the sticky
+//        "failed to initialize" error, never silently return.
+//    Needs only the committed shim, so it runs before the artifact gate below.
+// ---------------------------------------------------------------------------
+{
+  const tmpDir = mkdtempSync(path.join(os.tmpdir(), 'sd-vkd3d-absent-'));
+  const absentShimPath = path.join(tmpDir, 'shadowdusk-vkd3d.js');
+  copyFileSync(shimPath, absentShimPath);
+  try {
+    const absentShim = await import(pathToFileURL(absentShimPath).href);
+    let rejected = false;
+    try {
+      await absentShim.ensureReady();
+    } catch (e) {
+      rejected = true;
+      console.log('  [OK]   module-absent: ensureReady() rejected (the SD1902 trigger) — ' +
+        String(e?.message ?? e).split('\n')[0]);
+    }
+    if (!rejected) {
+      console.error('  [FAIL] module-absent: ensureReady() RESOLVED with no ./vkd3d/ module present.');
+      process.exit(1);
+    }
+    try {
+      absentShim.compile(new TextEncoder().encode('float4 main() : COLOR { return 0; }'),
+        'main', 'ps_2_0', 'absent.fx', 4);
+      console.error('  [FAIL] module-absent: compile() after a failed load returned instead of throwing.');
+      process.exit(1);
+    } catch (e) {
+      const msg = String(e?.message ?? e);
+      if (!msg.includes('failed to initialize')) {
+        console.error(`  [FAIL] module-absent: compile() threw, but without the sticky load error — got: ${msg.slice(0, 300)}`);
+        process.exit(1);
+      }
+      console.log('  [OK]   module-absent: compile() after the failed load surfaced the sticky init error');
+    }
+  } finally {
+    rmSync(tmpDir, { recursive: true, force: true });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -147,7 +193,35 @@ for (const entry of manifest) {
     }
   }
 }
-const totalCases = manifest.length + 1; // corpus + the error-path case
+// ---------------------------------------------------------------------------
+// 5. Empty-source THROUGH THE PRODUCT SHIM (Phase 27 review input): the shim
+//    must NOT pre-judge an empty source with its own message — it goes to vkd3d
+//    (pointer + length 0) and vkd3d speaks for itself, mirroring the desktop
+//    backend (Vkd3dShaderCompiler passes empty source through the same way).
+// ---------------------------------------------------------------------------
+{
+  const label = 'empty-source/empty.fx (ps_2_0 -> tt4, via SHIM)';
+  try {
+    shim.compile(new Uint8Array(0), 'main', 'ps_2_0', 'empty.fx', 4);
+    failures.push(`${label}: an empty source COMPILED instead of failing`);
+    console.error(`  [FAIL] ${label} — compiled instead of failing`);
+  } catch (e) {
+    const msg = String(e?.message ?? e);
+    if (msg.includes('empty HLSL source')) {
+      failures.push(`${label}: the shim pre-judged the empty source itself ` +
+        `('${msg.slice(0, 120)}') instead of letting vkd3d speak`);
+      console.error(`  [FAIL] ${label} — shim pre-judged: ${msg.slice(0, 120)}`);
+    } else if (msg.trim().length === 0) {
+      failures.push(`${label}: threw with an empty message`);
+      console.error(`  [FAIL] ${label} — empty failure message`);
+    } else {
+      pass++;
+      console.log(`  [OK]   ${label} — vkd3d spoke for itself: ${msg.split('\n')[0].slice(0, 120)}`);
+    }
+  }
+}
+
+const totalCases = manifest.length + 2; // corpus + the error-path case + the empty-source case
 
 console.log('');
 if (failures.length > 0) {
@@ -157,6 +231,7 @@ if (failures.length > 0) {
 }
 
 console.log(`ALL ${manifest.length} CORPUS COMPILES BYTE-IDENTICAL VIA THE FAITHFUL SHIM ` +
-  '(+ the shim error path surfaces verbatim diagnostics) — ' +
+  '(+ the shim error path surfaces verbatim diagnostics, + empty source reaches vkd3d ' +
+  'unjudged, + the module-absent load path rejects loudly) — ' +
   'WASM vkd3d == desktop vkd3d. Phase 4.1 byte-identity gate PASSED.');
 process.exit(0);

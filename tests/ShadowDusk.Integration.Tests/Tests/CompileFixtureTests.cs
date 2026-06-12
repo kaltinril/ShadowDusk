@@ -1,5 +1,6 @@
 #nullable enable
 
+using System.Collections.Concurrent;
 using System.Text;
 using FluentAssertions;
 using Xunit;
@@ -7,40 +8,100 @@ using Xunit;
 namespace ShadowDusk.Integration.Tests.Tests;
 
 [Trait("Category", "Integration")]
-public sealed class CompileFixtureTests
+public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
 {
     // ProfileId values from MgfxProfile enum: OpenGL=0, DirectX11=1, Vulkan=3
     private const byte ProfileOpenGL    = 0;
     private const byte ProfileDirectX11 = 1;
     private const byte ProfileVulkan    = 3;
 
+    private readonly CliBinaryFixture _cli;
+
+    public CompileFixtureTests(CliBinaryFixture cli) => _cli = cli;
+
+    // Phase 27: each (fixture, profile, mode) cell is compiled exactly ONCE per test
+    // run and memoized, so the header [Theory] (both modes) and the CLI-vs-pipeline
+    // byte-identity [Theory] share results instead of tripling the heavyweight
+    // compile/process-spawn count (the Phase 21 performance concern). Tests in this
+    // class run sequentially (one xUnit collection), and the compiles are
+    // deterministic by design (DeterminismTests asserts that independently), so
+    // sharing results loses nothing.
+    private static readonly ConcurrentDictionary<(string Fx, string Profile, InvocationMode Mode), Lazy<Task<CompileResult>>>
+        CompileCache = new();
+
+    private Task<CompileResult> GetOrCompileAsync(string fx, string profile, InvocationMode mode, CancellationToken ct)
+    {
+        string cliPath = _cli.ExecutablePath;
+        return CompileCache.GetOrAdd(
+            (fx, profile, mode),
+            key => new Lazy<Task<CompileResult>>(() =>
+                TestHelpers.CompileFixtureAsync(key.Fx, key.Profile, key.Mode, cliPath, ct))).Value;
+    }
+
+    private static readonly string[] Fixtures =
+    {
+        "Minimal.fx",
+        "textured.fx",
+        "cbuffer.fx",
+        "multipass.fx",
+        "multitechnique.fx",
+        "render-states.fx",
+        "annotations.fx",
+        "platform-macros.fx",
+        "basiceffect-mini.fx",
+    };
+
+    private static readonly (string Profile, byte ProfileId)[] Platforms =
+    {
+        ("OpenGL",     ProfileOpenGL),
+        ("DirectX_11", ProfileDirectX11),
+        ("Vulkan",     ProfileVulkan),
+    };
+
+    /// <summary>
+    /// Whether a (profile, mode) cell can run on this host. The CLI process uses the
+    /// library's DEFAULT DirectX backend — the Windows-only d3dcompiler_47 oracle
+    /// (SD0210 elsewhere) — while the DirectPipeline helper opts into vkd3d off-Windows,
+    /// so the CLI-mode DirectX rows are Windows-only by the same backend reality.
+    /// </summary>
+    private static bool CellRunsHere(string profile, InvocationMode mode) =>
+        mode != InvocationMode.CliProcess
+        || profile != "DirectX_11"
+        || OperatingSystem.IsWindows();
+
     public static TheoryData<string, string, byte> AllFixturesAndPlatforms()
     {
         var data = new TheoryData<string, string, byte>();
-        var fixtures = new[]
-        {
-            "Minimal.fx",
-            "textured.fx",
-            "cbuffer.fx",
-            "multipass.fx",
-            "multitechnique.fx",
-            "render-states.fx",
-            "annotations.fx",
-            "platform-macros.fx",
-            "basiceffect-mini.fx",
-        };
-
-        var platforms = new[]
-        {
-            ("OpenGL",    ProfileOpenGL),
-            ("DirectX_11", ProfileDirectX11),
-            ("Vulkan",    ProfileVulkan),
-        };
-
-        foreach (string fixture in fixtures)
-        foreach (var (profile, profileId) in platforms)
+        foreach (string fixture in Fixtures)
+        foreach (var (profile, profileId) in Platforms)
             data.Add(fixture, profile, profileId);
+        return data;
+    }
 
+    /// <summary>Phase 27 (Phase 15 deferral): the same matrix over BOTH invocation modes.</summary>
+    public static TheoryData<string, string, byte, InvocationMode> AllFixturesPlatformsAndModes()
+    {
+        var data = new TheoryData<string, string, byte, InvocationMode>();
+        foreach (string fixture in Fixtures)
+        foreach (var (profile, profileId) in Platforms)
+        foreach (InvocationMode mode in new[] { InvocationMode.DirectPipeline, InvocationMode.CliProcess })
+        {
+            if (CellRunsHere(profile, mode))
+                data.Add(fixture, profile, profileId, mode);
+        }
+        return data;
+    }
+
+    /// <summary>The (fixture, platform) pairs whose CLI cell runs on this host (byte-identity matrix).</summary>
+    public static TheoryData<string, string> CliComparablePairs()
+    {
+        var data = new TheoryData<string, string>();
+        foreach (string fixture in Fixtures)
+        foreach (var (profile, _) in Platforms)
+        {
+            if (CellRunsHere(profile, InvocationMode.CliProcess))
+                data.Add(fixture, profile);
+        }
         return data;
     }
 
@@ -48,20 +109,47 @@ public sealed class CompileFixtureTests
     [Trait("Platform", "OpenGL")]
     [Trait("Platform", "DirectX_11")]
     [Trait("Platform", "Vulkan")]
-    [MemberData(nameof(AllFixturesAndPlatforms))]
-    public async Task Compile_ProducesValidMgfxHeader(string fx, string profile, byte expectedProfileId)
+    [MemberData(nameof(AllFixturesPlatformsAndModes))]
+    public async Task Compile_ProducesValidMgfxHeader(string fx, string profile, byte expectedProfileId, InvocationMode mode)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
-        var result = await TestHelpers.CompileFixtureAsync(fx, profile, ct: cts.Token);
+        var result = await GetOrCompileAsync(fx, profile, mode, cts.Token);
 
-        result.ExitCode.Should().Be(0, because: $"compilation of '{fx}' for '{profile}' should succeed; stderr: {result.Stderr}");
+        result.ExitCode.Should().Be(0, because: $"compilation of '{fx}' for '{profile}' via {mode} should succeed; stderr: {result.Stderr}");
         result.Mgfx.Should().NotBeEmpty(because: "successful compile must produce output bytes");
 
         var reader = MgfxBlobReader.Parse(result.Mgfx);
         reader.Signature.Should().Be("MGFX");
         reader.MgfxVersion.Should().Be(10);
         reader.ProfileId.Should().Be(expectedProfileId, because: $"profile '{profile}' must produce ProfileId {expectedProfileId}");
+    }
+
+    /// <summary>
+    /// Phase 27 (the Phase 15 deferral): the CLI is a delivery shape of the SAME library,
+    /// so a CLI-process compile must be a transparent equivalent of the in-process
+    /// pipeline — same exit code, same (empty) stderr, and BYTE-IDENTICAL .mgfx output.
+    /// Asserted, not assumed.
+    /// </summary>
+    [Theory]
+    [Trait("Platform", "OpenGL")]
+    [Trait("Platform", "DirectX_11")]
+    [Trait("Platform", "Vulkan")]
+    [MemberData(nameof(CliComparablePairs))]
+    public async Task CliProcess_And_DirectPipeline_ProduceByteIdenticalMgfx(string fx, string profile)
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+
+        var pipeline = await GetOrCompileAsync(fx, profile, InvocationMode.DirectPipeline, cts.Token);
+        var cli      = await GetOrCompileAsync(fx, profile, InvocationMode.CliProcess, cts.Token);
+
+        pipeline.ExitCode.Should().Be(0, because: $"pipeline stderr: {pipeline.Stderr}");
+        cli.ExitCode.Should().Be(0, because: $"CLI stderr: {cli.Stderr}");
+        cli.Stderr.Should().BeEmpty(because: "a successful CLI compile is silent (the mgfxc contract)");
+
+        cli.Mgfx.Should().Equal(pipeline.Mgfx,
+            because: $"the CLI is a delivery shape of the same library — '{fx}' for '{profile}' " +
+                     "must produce byte-identical .mgfx through both invocation modes");
     }
 
     // -------------------------------------------------------------------------

@@ -49,7 +49,7 @@ M1 wired this into `ShadowDusk.Wasm`'s packaged static web assets:
 - `ShadowDusk.Wasm` **self-registers** `shadowdusk-dxc` (and `shadowdusk-spirv-cross`)
   via `JSHost.ImportAsync` against the relative URL
   `../_content/ShadowDusk.Wasm/<file>` (resolved from `_framework/` to the app base),
-  inside the compile path (`WasmModuleRegistration.EnsureRegisteredAsync`) — so a
+  inside the compile path (`WasmModuleRegistration.EnsureDxcChainRegisteredAsync`) — so a
   consumer adds ONLY a `PackageReference` and wires nothing.
 - `tools/restore.*` (`Restore-DxcWasm` / `restore_dxc_wasm`) copies the built
   `.wasm-build/dxc-wasm-out/dxcompiler.wasm` into this directory before build/pack;

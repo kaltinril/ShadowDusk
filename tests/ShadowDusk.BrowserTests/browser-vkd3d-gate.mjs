@@ -168,12 +168,121 @@ const failures = [];
 // Phase 42 (issue #28) sync-API results: the cold SD1903 checks, the InitializeAsync
 // verdict, and the synchronous-Compile byte-identity pass count.
 const syncApi = { cold: [], initialize: null, pass: 0, total: 0 };
+// Phase 27 review-input scenarios: SD1902 module-absent e2e + vkd3d-path module
+// isolation (the SD1902 attribution fix). Each entry: { name, ok, note }.
+const phase27 = [];
 // Hard evidence that the REAL module was fetched over HTTP by the browser (and a
 // tripwire against any accidental future fallback path): record the network responses
 // for vkd3d-shader.{js,wasm}.
 const moduleFetches = [];
 
+// Boot one fresh sample page (its own .NET runtime/session) with an optional set of
+// Playwright route-abort patterns — the device for the Phase 27 module-absent /
+// module-isolation scenarios. Returns the page once the Blazor runtime is up.
+async function bootScenarioPage(blockPatterns) {
+  const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
+  page.setDefaultTimeout(180000);
+  for (const pattern of blockPatterns)
+    await page.route(pattern, (route) => route.abort('failed'));
+  await page.goto(`${srv.url}/`, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(
+    () => typeof window.theInstance !== 'undefined' && window.theInstance !== null,
+    { timeout: 120000 });
+  return page;
+}
+
+function recordPhase27(name, ok, note) {
+  phase27.push({ name, ok, note });
+  if (ok) {
+    console.log(`  [OK]   ${name} — ${note}`);
+  } else {
+    failures.push(`Phase27 ${name}: ${note}`);
+    console.error(`  [FAIL] ${name} — ${note}`);
+  }
+}
+
 try {
+  const grayscaleSource = readFileSync(path.join(fixturesDir, 'Grayscale.fx'), 'utf8')
+    .replace(/^\u{FEFF}/u, '')
+    .replace(/\r\n/g, '\n');
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Phase 27 scenario 1 — SD1902 END-TO-END (review input): the path every
+  // consumer hits if the packed vkd3d module ever goes missing. A fresh session
+  // where vkd3d/vkd3d-shader.{js,wasm} cannot be fetched (route-aborted — the
+  // honest browser analogue of "not restored / not hosted"):
+  //   (a) COLD sync Compile() → SD1903 (the module is simply not loaded yet);
+  //   (b) async CompileAsync → SD1902 with the helpful restore pointer.
+  // ─────────────────────────────────────────────────────────────────────────
+  console.log('[vkd3d browser gate] Phase 27 scenario 1 — vkd3d module ABSENT (SD1902 e2e)…');
+  {
+    const page = await bootScenarioPage([/.*\/vkd3d\/vkd3d-shader\.(js|wasm)(\?.*)?$/]);
+    try {
+      const cold = await page.evaluate(
+        async ({ src, name }) =>
+          await window.theInstance.invokeMethodAsync('TestSyncCompileExport', src, 'DirectX', name),
+        { src: grayscaleSource, name: 'Grayscale.fx' });
+      const coldOk = typeof cold === 'string' && cold.startsWith('ERR:') && cold.includes('SD1903');
+      recordPhase27('module-absent cold sync Compile (DirectX)', coldOk,
+        coldOk ? 'SD1903 (module not loaded yet — clear, no abort)'
+               : `expected SD1903, got: ${String(cold).slice(0, 300)}`);
+
+      const res = await page.evaluate(
+        async ({ src, name }) =>
+          await window.theInstance.invokeMethodAsync('TestCompileExport', src, 'DirectX', name),
+        { src: grayscaleSource, name: 'Grayscale.fx' });
+      const isErr = typeof res === 'string' && res.startsWith('ERR:');
+      const hasCode = isErr && res.includes('SD1902');
+      const hasPointer = isErr && (res.includes('RESTORE.md') || res.includes('tools/restore'));
+      recordPhase27('module-absent async CompileAsync (DirectX)', hasCode && hasPointer,
+        hasCode && hasPointer
+          ? `SD1902 with the restore pointer: ${String(res).slice(4, 160)}…`
+          : `expected ERR with SD1902 + the restore pointer, got: ${String(res).slice(0, 400)}`);
+    } finally {
+      await page.close();
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Phase 27 scenario 2 — SD1902 ATTRIBUTION (review input fix): the vkd3d path
+  // must register/load ONLY its own module, so a DXC/SPIRV-Cross asset being
+  // unavailable can no longer fail (or mis-headline) a DirectX/FNA compile. A
+  // fresh session where the DXC + SPIRV-Cross shims can NOT be fetched but vkd3d
+  // can: a DirectX export compile must SUCCEED, byte-identical to the manifest.
+  // ─────────────────────────────────────────────────────────────────────────
+  console.log('[vkd3d browser gate] Phase 27 scenario 2 — DXC/SPIRV-Cross ABSENT, vkd3d path must be unaffected…');
+  {
+    const page = await bootScenarioPage([
+      /.*\/shadowdusk-dxc\.js(\?.*)?$/,
+      /.*\/shadowdusk-spirv-cross\.js(\?.*)?$/,
+      /.*\/dxc\/.*$/,
+    ]);
+    try {
+      const probe = entries.find((e) => e.targetKey === 'DirectX_Vkd3d' && e.fixture === 'Grayscale.fx')
+        ?? entries.find((e) => e.targetKey === 'DirectX_Vkd3d');
+      const res = await page.evaluate(
+        async ({ src, name }) =>
+          await window.theInstance.invokeMethodAsync('TestCompileExport', src, 'DirectX', name),
+        { src: grayscaleSource, name: probe.fixture });
+
+      if (typeof res !== 'string' || !res.startsWith('OK:')) {
+        recordPhase27('vkd3d-path isolation (DirectX with DXC/SPIRV-Cross blocked)', false,
+          `expected a SUCCESSFUL compile (the vkd3d path must not touch the other modules), got: ${String(res).slice(0, 400)}`);
+      } else if (probe.fixture === 'Grayscale.fx') {
+        const actual = createHash('sha256').update(Buffer.from(res.slice(3), 'base64')).digest('hex');
+        const ok = actual === probe.expected;
+        recordPhase27('vkd3d-path isolation (DirectX with DXC/SPIRV-Cross blocked)', ok,
+          ok ? 'compiled successfully AND SHA-256 == committed manifest'
+             : `compiled, but HASH MISMATCH — manifest=${probe.expected} got=${actual}`);
+      } else {
+        recordPhase27('vkd3d-path isolation (DirectX with DXC/SPIRV-Cross blocked)', true,
+          'compiled successfully (manifest had no Grayscale.fx DX entry; hash not compared)');
+      }
+    } finally {
+      await page.close();
+    }
+  }
+
   const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
   page.setDefaultTimeout(180000);
   page.on('pageerror', (e) => console.log(`  [pageerror] ${e.message}`));
@@ -355,6 +464,9 @@ console.log(`ALL ${rows.length} DX+FNA ARTIFACTS COMPILED IN A REAL BROWSER ARE 
 console.log(`PHASE 42 (issue #28) PASSED: cold sync Compile() → SD1903 on all ` +
   `${syncApi.cold.length} targets; InitializeAsync OK (idempotent); warm SYNCHRONOUS ` +
   `Compile() byte-identical to the manifest ${syncApi.pass}/${syncApi.total}.`);
+console.log(`PHASE 27 PASSED: module-absent e2e → SD1903 (cold sync) + SD1902 with the ` +
+  `restore pointer (async), and the vkd3d path compiled UNAFFECTED with DXC/SPIRV-Cross ` +
+  `assets blocked (${phase27.filter((s) => s.ok).length}/${phase27.length} scenario checks).`);
 process.exit(0);
 
 async function writeResults(rows, pass, failures, wasmFetch) {
@@ -397,6 +509,15 @@ async function writeResults(rows, pass, failures, wasmFetch) {
   }
   lines.push(`- \`InitializeAsync()\` (awaited twice — idempotency): ${syncApi.initialize === 'OK' ? '**OK**' : `**FAIL** — \`${syncApi.initialize}\``}`);
   lines.push(`- WARM **synchronous** \`Compile()\` over the full DX+FNA corpus: **${syncApi.pass}/${syncApi.total}** SHA-256 == committed manifest (sync bytes == async bytes == desktop render-proven bytes).`);
+  lines.push('');
+  lines.push('## Phase 27 — SD1902 end-to-end + attribution scenarios');
+  lines.push('');
+  lines.push('Fresh per-scenario browser sessions with route-aborted static web assets (the honest');
+  lines.push('browser analogue of "module not restored/hosted"):');
+  lines.push('');
+  for (const s of phase27) {
+    lines.push(`- ${s.name}: ${s.ok ? '**PASS**' : '**FAIL**'} — ${s.note.replace(/\|/g, '\\|')}`);
+  }
   lines.push('');
   lines.push('## Coverage');
   lines.push('');

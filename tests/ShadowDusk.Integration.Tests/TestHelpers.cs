@@ -22,6 +22,7 @@ public static class TestHelpers
         string fx,
         string profile,
         InvocationMode mode = InvocationMode.DirectPipeline,
+        string? cliBinaryPath = null,
         CancellationToken ct = default)
     {
         var inputPath  = FixturePath(fx);
@@ -36,7 +37,7 @@ public static class TestHelpers
         {
             return mode switch
             {
-                InvocationMode.CliProcess     => await CompileViaCliAsync(inputPath, outputPath, profile, ct),
+                InvocationMode.CliProcess     => await CompileViaCliAsync(inputPath, outputPath, profile, ct, cliBinaryPath),
                 InvocationMode.DirectPipeline => await CompileViaPipelineAsync(inputPath, outputPath, profile, ct),
                 _                             => throw new ArgumentOutOfRangeException(nameof(mode))
             };
@@ -51,9 +52,13 @@ public static class TestHelpers
         string inputPath,
         string outputPath,
         string profile,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? cliBinaryPath = null)
     {
-        string cliBinary = FindCliBinary();
+        // Phase 27: callers normally pass CliBinaryFixture.ExecutablePath (the Phase 21
+        // reuse-built binary); the AppContext probe remains only as a fallback for an
+        // environment where the binary was copied next to the test assembly.
+        string cliBinary = cliBinaryPath ?? FindCliBinary();
 
         string arguments = BuildArgString(inputPath, outputPath, $"/Profile:{profile}");
 
