@@ -28,18 +28,35 @@ public sealed class VsEffectImageRenderer : Game
     private readonly string _catPath;
     private readonly string _outDir;
     private readonly IReadOnlyList<ShaderJob> _jobs;
+    private readonly bool _renderToBackbuffer;
 
     private Texture2D _cat = null!;
     private bool _done;
 
     public List<ShaderOutcome> Outcomes { get; } = new();
 
+    /// <summary>
+    /// Raw pixels of each successful render (same order as <see cref="Outcomes"/>),
+    /// so callers can compare baseline vs candidate in-process without a PNG decoder.
+    /// </summary>
+    public List<(string Name, Color[] Pixels, int Width, int Height)> Captures { get; } = new();
+
+    /// <param name="renderToBackbuffer">
+    /// Phase 43 F3: when <c>true</c>, draws to the BACKBUFFER (no
+    /// <c>RenderTarget2D</c>) and reads it back via
+    /// <see cref="GraphicsDevice.GetBackBufferData{T}(T[])"/>. This is the case the
+    /// static-Y-flip bug hid in — MonoGame sets <c>posFixup.y = +1</c> here (vs
+    /// <c>-1</c> with a render target bound), so only an effect carrying the dynamic
+    /// posFixup contract renders upright.
+    /// </param>
     public VsEffectImageRenderer(
-        string catPath, string outDir, IReadOnlyList<ShaderJob> jobs)
+        string catPath, string outDir, IReadOnlyList<ShaderJob> jobs,
+        bool renderToBackbuffer = false)
     {
         _catPath = catPath;
         _outDir = outDir;
         _jobs = jobs;
+        _renderToBackbuffer = renderToBackbuffer;
 
         _gdm = new GraphicsDeviceManager(this)
         {
@@ -104,8 +121,14 @@ public sealed class VsEffectImageRenderer : Game
                 $"new Effect() threw: {ex.Message}", null);
         }
 
-        using var rt = new RenderTarget2D(GraphicsDevice, w, h, false,
-            SurfaceFormat.Color, DepthFormat.None);
+        // Backbuffer mode draws straight to the swap chain (posFixup.y = +1 in real
+        // MonoGame); render-target mode is the original Phase 28 path (y = -1).
+        int outW = _renderToBackbuffer ? GraphicsDevice.PresentationParameters.BackBufferWidth  : w;
+        int outH = _renderToBackbuffer ? GraphicsDevice.PresentationParameters.BackBufferHeight : h;
+
+        using var rt = _renderToBackbuffer
+            ? null
+            : new RenderTarget2D(GraphicsDevice, w, h, false, SurfaceFormat.Color, DepthFormat.None);
         try
         {
             GraphicsDevice.SetRenderTarget(rt);
@@ -147,11 +170,29 @@ public sealed class VsEffectImageRenderer : Game
                     VsVertex.Declaration);
             }
 
-            GraphicsDevice.SetRenderTarget(null);
+            var pixels = new Color[outW * outH];
+            if (_renderToBackbuffer)
+            {
+                // Real-runtime backbuffer readback (GraphicsDevice.GetBackBufferData,
+                // implemented on DesktopGL via glReadPixels + row flip).
+                GraphicsDevice.GetBackBufferData(pixels);
+            }
+            else
+            {
+                GraphicsDevice.SetRenderTarget(null);
+                rt!.GetData(pixels);
+            }
+            Captures.Add((job.Name, pixels, outW, outH));
 
             string png = Path.Combine(_outDir, job.Name + ".png");
-            using (var outFs = File.Create(png))
-                rt.SaveAsPng(outFs, w, h);
+            using (var snapshot = new Texture2D(GraphicsDevice, outW, outH))
+            {
+                snapshot.SetData(pixels);
+                using var outFs = File.Create(png);
+                snapshot.SaveAsPng(outFs, outW, outH);
+            }
+            if (_renderToBackbuffer)
+                GraphicsDevice.SetRenderTarget(null);
 
             return new ShaderOutcome(job.Name, true, true, null, png);
         }

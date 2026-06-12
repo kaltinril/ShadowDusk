@@ -104,6 +104,13 @@ public sealed class ShaderSceneRenderer
         using var program = GlslShaderProgram.Compile(_gl, rewrittenVs, rewrittenPs);
         program.Use(_gl);
 
+        // Phase 43 F3: honor the dynamic posFixup contract the way real MonoGame
+        // does. This renderer always draws into the offscreen FBO == MonoGame's
+        // render-target case (y = -1), which is pixel-identical to the pre-Phase-43
+        // static Y-flip. No-op for programs without the uniform (passthrough VS).
+        MojoPosFixup.Apply(_gl, program.Handle, renderTargetBound: true,
+            OffscreenRenderer.Width, OffscreenRenderer.Height);
+
         if (DiagnosticLogger is not null)
             LogProgramAttributes(_gl, program.Handle);
 

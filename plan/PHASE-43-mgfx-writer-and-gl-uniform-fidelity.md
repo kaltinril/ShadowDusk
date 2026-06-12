@@ -46,7 +46,26 @@ shaders) → stream desync → load failure. **Fix:** write the count and **no b
 (mirror mgfxc). This also moots the annotation type-sniffing defect (int annotations
 typed Single, bools become strings — `CompilationPipeline.cs:1046-1080`).
 
-### F3 — HIGH: static Y-flip instead of the dynamic `posFixup` contract
+### F3 — HIGH: static Y-flip instead of the dynamic `posFixup` contract — ✅ FIXED (PR: Phase 43B)
+
+> **Fixed 2026-06-12** (`feature/phase43b-gl-posfixup-lod`). `FlipVertexY` is off in
+> `SpirvCrossGlslTranspiler` AND the WASM `JsShaderBackends` path (kept identical);
+> `MonoGameGlslRewriter.InjectPosFixup` emits `uniform vec4 posFixup;` (after
+> `vs_uniforms_vec4[]`, the golden's declaration order) + the two fixup lines before
+> the kept depth-convention line. Note: the spec text below says the depth line
+> "already matches the golden byte-for-byte" — almost: SPIRV-Cross spells it
+> `2.0 * gl_Position.z` where the golden spells `gl_Position.z * 2.0`
+> (mathematically identical; kept as SPIRV-Cross emits it).
+> **Evidence:** (a) string-decisive — `Phase43PosFixupRenderTests.EmittedVs_…` reads
+> the posFixup lines OUT OF the golden and asserts ShadowDusk's VS carries them;
+> (b) render — same test class: render-target fixup (y=-1) pixel-equivalent to the
+> golden VS+PS, backbuffer fixup (y=+1) is its exact vertical mirror;
+> (c) **real-runtime backbuffer** — `validation/VsDriven` gained a backbuffer mode
+> (real MonoGame 3.8.2 `GetBackBufferData`): candidate vs mgfxc baseline **maxd 0
+> in BOTH render-target and backbuffer modes** (run 2026-06-12, verdict PASS).
+> Proxy renderers now set posFixup per the MonoGame rule (`MojoPosFixup`); KNI
+> sets it automatically (`ConcreteGraphicsContext.ApplyPosFixup`, verified).
+> GL manifest regenerated: exactly the 13 VS-bearing entries changed.
 
 `src/ShadowDusk.GLSL/SpirvCrossGlslTranspiler.cs:73-75` bakes
 `gl_Position.y = -gl_Position.y;` via SPIRV-Cross `FlipVertexY`. mgfxc/MojoShader emit a
@@ -94,7 +113,27 @@ on DX (MonoGame reads elements as recursive sub-parameter collections).
 records; until then **fail loudly (SD-coded)** on array/int/mat3 members instead of
 emitting broken output.
 
-### F7 — HIGH (Linux/Mesa): generic `textureLod`/`textureGrad` in versionless GLSL
+### F7 — HIGH (Linux/Mesa): generic `textureLod`/`textureGrad` in versionless GLSL — ✅ FIXED (PR: Phase 43B)
+
+> **Fixed 2026-06-12.** Rule 6b now rewrites per the sampler's modelled dimension
+> (`texture2DLod`/`textureCubeLod`/`texture3DLod`, `texture2DGrad` 2D-only with a
+> loud error for cube/3D gradients — no GLSL or extension defines a legacy
+> spelling, MojoShader's own `textureCubeGrad` output can never link — and
+> `texture2DProj`/`texture3DProj`), prepending MojoShader's
+> `prepend_glsl_texlod_extensions` header composed with its GLSLES3 preflight:
+> `#if __VERSION__ >= 300` (KNI HiDef maps legacy → generic; one artifact, two
+> profiles) / `#elif defined(GL_ARB_shader_texture_lod)` /
+> `#elif defined(GL_EXT_gpu_shader4)` / `#else` graceful degrade. Deviation from
+> MojoShader: `defined(GL_…)` instead of bare `#if GL_…` because GLSL ES 1.00
+> errors on undefined macros in `#if` (bare form would hard-fail WebGL1/Reach).
+> Header emitted ONLY when a LOD/grad/proj call was rewritten — PS-only corpus
+> bytes unchanged (manifest proof). Stale fixture headers + the
+> `glsl-uniform-naming.md` Rule-6 row fixed; the **PR #48 Linux-lane exclusion of
+> `Phase34LodGradRenderTests` is REMOVED** — the ubuntu Mesa lane referees the fix
+> (NVIDIA dev box already renders the new form with the explicit mip honored).
+> Watch item: `Phase34LodGradRenderTests.SampleLevel…` live-compiles its fixture;
+> if the per-OS DXC compile divergence (F11) bites it on the Linux lane, that is
+> F11 evidence to handle there, not a reason to re-mask the Mesa coverage.
 
 `MonoGameGlslRewriter.cs:486-501` (Rule 6b) leaves generic `textureLod()`/`textureGrad()`
 in a GLSL-1.10 (no `#version`) shader — invalid before 1.30; Mesa enforces strictly →
@@ -111,7 +150,23 @@ block; ES3-guarded define for HiDef. Also fix the stale fixture header
 but compiles green) and `docs/glsl-uniform-naming.md:65`'s Rule-6 row (claims the
 dimension-specific rewrite already happens).
 
-### F8 — MEDIUM: VS texture fetch (GL) silently broken twice
+### F8 — MEDIUM: VS texture fetch (GL) silently broken twice — ✅ CLOSED (loud error; PR: Phase 43B)
+
+> **Closed 2026-06-12 with the sanctioned STOPGAP** (loud `SD0210`), not the
+> `vs_s{k}` contract — and deliberately so: implementing `vs_s{k}` cannot meet the
+> real-runtime bar because **MonoGame 3.8.2's GL runtime cannot bind vertex
+> textures at all**. Verified against the v3.8.2 sources:
+> `ShaderProgramCache.Link` calls ONLY `pixelShader.ApplySamplerTextureUnits(program)`
+> (the VS's sampler records never get a texture unit), and
+> `GraphicsDevice.OpenGL.cs` has no `VertexTextures`/`VertexSamplerStates` apply
+> path. Even a perfectly-named `vs_s0` uniform would read texture unit 0's
+> incidental contents at draw time — silently-wrong output, the failure mode the
+> purpose forbids. The rewriter now throws (`Vertex-stage texture sampling…`) for
+> any VS sampler decl; end-to-end pinned by the new `ExVsTextureFetch.fx` fixture
+> (`HidefGeneralityFixtureTests.VsTextureFetch_FailsLoudly_SD0210…`); limitation
+> documented in `docfx/guides/parameters-and-caveats.md`. Revisit only if the
+> runtime gap itself is ever solved (KNI does support VS textures; a KNI-specific
+> contract would be a separate, additive decision).
 
 `MonoGameGlslRewriter.cs:272-287` (`!isVertex` gate): VS sampler decls/uses are not
 renamed (ships `uniform sampler2D _35;`) while the `.mgfx` VS sampler record says
@@ -146,6 +201,10 @@ invisible. **Fix:** extract members + add `Members` to the parity assertion.
   both touch the same feature surface. Same pinned commit ≠ same binary.
 - The stale "Browser path uses Slang" comment + the accidental Slang-normalizer UBO
   rename (`MonoGameGlslRewriter.cs:178-181, 708-718`) — remove/repair with F5.
+  *(Update 2026-06-12, Phase 43B: the COMMENT is repaired — it now states the browser
+  path runs the faithful DXC→WASM frontend and points at F5 for the normalizer
+  itself. The `NormalizeSlangNaming` code, including the accidental UBO-rename
+  branch, is deliberately untouched: it belongs to the F5 cbuffer-model wave.)*
 
 ---
 

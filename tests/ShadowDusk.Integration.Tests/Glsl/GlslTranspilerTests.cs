@@ -92,13 +92,14 @@ public sealed class GlslTranspilerTests
     }
 
     [Fact]
-    public async Task Transpile_PassthroughVertex_YFlipIsApplied()
+    public async Task Transpile_PassthroughVertex_NoStaticYFlip_DepthFixupKept()
     {
-        // Phase 6 item 25 (backlog 11-6-B): the OpenGL DXC flags deliberately omit
-        // -fvk-invert-y (see DxcFlagBuilder); the Y-flip is SPIRV-Cross's job via the
-        // FlipVertexY option. A passthrough VS must therefore come out of the
-        // transpiler with an explicit gl_Position.y negation — if both sides flipped
-        // (or neither did), every GL render would be vertically mirrored.
+        // Phase 43 F3: the OpenGL DXC flags omit -fvk-invert-y (see DxcFlagBuilder)
+        // AND SPIRV-Cross's FlipVertexY option is now OFF — the Y-flip is the runtime
+        // posFixup uniform's job (injected later by MonoGameGlslRewriter, set per
+        // draw by MonoGame: +1 backbuffer / -1 render target). A baked negation here
+        // would DOUBLE-flip the render-target case and stay wrong on the backbuffer.
+        // The depth-convention fixup (FixupDepthConvention) must remain.
         string fxPath = Path.Combine(AppContext.BaseDirectory, "fixtures", "shaders", "passthrough_vs.fx");
         File.Exists(fxPath).Should().BeTrue($"fixture must exist at {fxPath}");
         string hlsl = await File.ReadAllTextAsync(fxPath);
@@ -109,8 +110,10 @@ public sealed class GlslTranspilerTests
         var result = transpiler.Transpile(spirvBytes);
 
         result.IsSuccess.Should().BeTrue(because: result.IsFailure ? result.Error.Message : "");
-        result.Value.Text.Should().Contain("gl_Position.y = -gl_Position.y",
-            because: "SPIRV-Cross's FlipVertexY option must emit the Y negation in the GLSL output");
+        result.Value.Text.Should().NotContain("gl_Position.y = -gl_Position.y",
+            because: "FlipVertexY is off — the Y-flip belongs to the runtime posFixup contract");
+        result.Value.Text.Should().Contain("gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;",
+            because: "FixupDepthConvention (DX [0,1] depth to GL [-1,1]) must stay on");
     }
 
     [Fact]
