@@ -125,7 +125,10 @@ shifts every member after it, agreeing exactly with the `.mgfx` cbuffer packing
 `float4x4` transform + POSITION/COLOR0/TEXCOORD0 + textured/tinted PS) compiled by ShadowDusk
 loads in a **real** `MonoGame.Framework.DesktopGL` `Effect` and renders **pixel-identical**
 (max delta 0) to the mgfxc OpenGL golden, via a custom vertex-buffer draw path
-(`validation/VsDriven`). The same `.fx` for DirectX loads in real `MonoGame.Framework.WindowsDX`
+(`validation/VsDriven`) — in **both** the `RenderTarget2D` mode and the **backbuffer** mode
+(`GetBackBufferData`; Phase 43 F3 — the case the static Y-flip got wrong, where MonoGame sets
+`posFixup.y = +1`). The proxy-renderer evidence is `Phase43PosFixupRenderTests` (golden
+string match + orientation-flip render proof). The same `.fx` for DirectX loads in real `MonoGame.Framework.WindowsDX`
 and renders pixel-identical to the mgfxc DX golden via **both** the d3dcompiler oracle and the
 cross-platform vkd3d backend (`validation/VsDrivenDx`). The PS-only corpus and
 image-regression anchors remain unregressed (10/10).
