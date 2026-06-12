@@ -34,8 +34,11 @@ export async function startServer(rootDir) {
       let urlPath = decodeURIComponent((req.url || '/').split('?')[0]);
       if (urlPath === '/' || urlPath === '') urlPath = '/index.html';
       let filePath = path.join(root, urlPath);
-      // Prevent path traversal.
-      if (!filePath.startsWith(root)) {
+      // Prevent path traversal. path.relative (not a raw startsWith(root), which a
+      // sibling directory sharing the prefix would bypass, e.g. /srv/app-secrets vs
+      // /srv/app): an escaping path yields '..'-prefixed or absolute relatives.
+      const rel = path.relative(root, filePath);
+      if (rel === '..' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel)) {
         res.writeHead(403).end('forbidden');
         return;
       }
