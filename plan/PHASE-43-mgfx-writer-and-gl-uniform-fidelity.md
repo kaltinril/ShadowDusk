@@ -1,6 +1,8 @@
 # Phase 43 — MGFX writer & GL uniform-model fidelity (beyond the validated corpus)
 
-**Status:** 🟡 **In progress — created 2026-06-12** from the four-lens full review (QA / Coder /
+**Status:** ✅ **COMPLETE — 2026-06-12** (43A writer-format → 43B posFixup/LOD →
+43C cbuffer/array model; Definition of Done met, see the as-built sections).
+Created 2026-06-12 from the four-lens full review (QA / Coder /
 cross-platform / shader-expert). The shader-expert lens found **seven HIGH fidelity
 defects**, all verified against compiled artifacts and the actual MonoGame 3.8.2 /
 MojoShader sources, all in **input shapes the rung-4 corpus never contained**. Nothing
@@ -9,8 +11,18 @@ here contradicts the existing rung-4 proofs — it maps exactly where their cove
 
 > **2026-06-12 — Phase 43A (writer-format half) landed:** F1 + F1b + F2 + F9 + F10 are
 > ✅ fixed with the full validation ladder (PR `feature/phase43a-mgfx-writer-fidelity`).
-> F3–F8 (the GLSL/uniform-model half, Phase 43B) remain open. As-built details in the
-> per-finding notes below and the **Phase 43A as-built** section at the end.
+> As-built details in the per-finding notes below and the **Phase 43A as-built**
+> section at the end.
+
+> **2026-06-12 — Phase 43B (posFixup/LOD half) landed:** F3 + F7 + F8 ✅
+> (PR `feature/phase43b-gl-posfixup-lod`).
+
+> **2026-06-12 — Phase 43C (GL cbuffer/array model, the FINAL wave) landed:**
+> F4 + F5 + F6 are ✅ fixed (per-stage cbuffer records, same-stage merge, array
+> modelling with recursive Elements on every target) and the F11 Slang-normalizer
+> cleanup is done (the pre-pass is REMOVED). As-built details in the per-finding
+> notes and the **Phase 43C as-built** section at the end. **With this, every
+> finding in this phase is closed — the Definition of Done is met.**
 
 > **The pattern (why rung-4 missed all of these):** the structural test suite validates
 > `.mgfx` with ShadowDusk's *own* reader, and the render-proven corpus contains **no pass
@@ -86,7 +98,26 @@ matches. The golden `VsTransformColorTexture.mgfx` VS contains the exact target 
 in the VS rewriter (keep the existing depth line — it already matches the golden).
 **Validation must include a backbuffer render**, not only RT.
 
-### F4 — HIGH: shared VS+PS cbuffer deduped into an unbindable record
+### F4 — HIGH: shared VS+PS cbuffer deduped into an unbindable record — ✅ FIXED (43C)
+
+> **Fixed 2026-06-12** (`feature/phase43c-gl-cbuffer-array-model`). GL cbuffer
+> records are now built ONE PER SHADER from the uniform register layout the
+> `MonoGameGlslRewriter` returns (`MonoGameGlslResult.Uniforms` — the same
+> allocation the emitted GLSL indexes), named `vs_/ps_uniforms_vec4` by stage and
+> deduplicated across shaders mgfxc-style (`ConstantBufferData.SameAs`); each GL
+> shader's cbuffer-index list points at its own record by construction. The mgfxc
+> golden for the new `SharedCbuffer.fx` pins the model: a record per stage; the
+> SkinnedEffect golden additionally pins that several records may share a NAME
+> (3× `vs_uniforms_vec4`). **Pinned divergence:** mgfxc's per-stage records carry
+> only the constants fxc kept per stage (vs=64/ps=16); ShadowDusk's carry the full
+> declared block per stage (80/80) — self-consistent with its own GLSL, set by
+> name, render-proven equivalent. **Evidence:** structural —
+> `Phase43CbufferModelTests.SharedCbuffer_EmitsPerStageRecords_VsArrayIsBindable`;
+> real bar — `validation/CbufferModel` SharedCbuffer row: real MonoGame 3.8.2
+> `Effect` load + render **maxDelta 0** vs the mgfxc-golden arm with the transform
+> + DiffuseColor set by name, plus a non-black guard (the pre-43C failure was a
+> black frame). GL manifest: exactly the 3 shared-cbuffer entries changed
+> (`cbuffer.fx`, `VertexAndPixel.fx`, `PolygonLight.fx`); 0 DX/FNA changes.
 
 `src/ShadowDusk.Compiler/Internal/CompilationPipeline.cs:343-355, 974-975`: a cbuffer
 bound by both stages becomes ONE record named `ps_uniforms_vec4` (the `vsBound` test
@@ -96,7 +127,21 @@ vertex stage). Reproduced with the repo's own `tests/fixtures/shaders/cbuffer.fx
 **Fix:** emit per-stage cbuffer records (`vs_uniforms_vec4` + `ps_uniforms_vec4`,
 mgfxc's model) instead of deduping across stages by reflection name.
 
-### F5 — HIGH: multiple cbuffers break the GLSL and the parameter model
+### F5 — HIGH: multiple cbuffers break the GLSL and the parameter model — ✅ FIXED (43C)
+
+> **Fixed 2026-06-12.** The rewriter parses EVERY std140 block (named cbuffers'
+> `type_<Name>` included) and merges all of a stage's blocks into the ONE
+> `{vs,ps}_uniforms_vec4[]` register space in declaration order — MojoShader's
+> model (one float-constant file per stage), pinned by the `MultiCbuffer.fx`
+> golden (ONE `ps_uniforms_vec4`: TintA@0/TintB@16/MixAmount@32, size 48 —
+> ShadowDusk's record matches it EXACTLY, offsets included). The accidental
+> Slang-normalizer UBO rename that F5 tripped over is gone (the whole legacy
+> pre-pass is removed — F11). Unparseable blocks/members fail loudly (SD0210).
+> **Evidence:** structural — `Phase43CbufferModelTests.MultiCbuffer*` (record ==
+> golden, no `std140`/`type_` survives in the GLSL); real bar —
+> `validation/CbufferModel` MultiCbuffer + MultiCbufferVs rows: **maxDelta 0**
+> vs the golden arm with members of BOTH cbuffers set by name (PS and VS
+> variants).
 
 `src/ShadowDusk.GLSL/MonoGameGlslRewriter.cs:146` (+ the stale Slang normalizer at
 708-718 whose UBO-rename branch accidentally fires): only the first block is rewritten;
@@ -106,7 +151,43 @@ two cbuffers both named `ps_uniforms_vec4`. Compile exits 0 today.
 **Fix:** merge all same-stage cbuffers into one `{vs,ps}_uniforms_vec4` register space
 (MojoShader's model) — or fail loudly until merging lands.
 
-### F6 — HIGH: array uniforms unmodeled (GLSL emission + parameter elements)
+### F6 — HIGH: array uniforms unmodeled (GLSL emission + parameter elements) — ✅ FIXED (43C)
+
+> **Fixed 2026-06-12.** (a) GLSL: array members pack at their element stride
+> (1 register per float/vec2/vec3/vec4 element — exactly how MonoGame's
+> `ConstantBuffer.SetParameter` advances one 16-byte row per written row, and
+> D3D9's float-register packing; 4 per mat4 element), every indexed use is
+> rewritten to the packed `{vs,ps}_uniforms_vec4[base + idx]` form (literals
+> folded; dynamic indices keep the arithmetic — MojoShader's relative form).
+> (b) `.mgfx`: `EffectParameterInfo` carries RECURSIVE Members/Elements and the
+> writer emits MonoGame 3.8.2 `ReadParameters`' exact recursive wire format
+> (elements first, then struct members; leaf-only data blobs) — the old flat
+> int32-list writer (wrong order too) was a guaranteed reader desync for any
+> array. `BuildEffectParameterInfoList` emits element sub-records (empty
+> name/semantic, parent shape — mgfxc's `GetParameterFromSymbol`) on EVERY
+> target, so `SetValue(array)` / `.Elements[i]` work beyond element 0 on DX too.
+> Unmodelled member types (int/bool/ivec/mat3/mat2/struct/qualified), whole-array
+> uses, and any surviving block reference FAIL LOUDLY (SD0210; fixtures
+> `examples/ExIntUniformMember.fx`, `examples/ExMat3UniformMember.fx`; documented
+> in `docfx/guides/parameters-and-caveats.md`).
+> **Evidence:** the mgfxc goldens decode-pin the element-record shape (SkinnedEffect
+> `Bones[72]` now decodes byte-clean with the fixed recursive decoders); structural —
+> `Phase43CbufferModelTests.ArrayParameters_CarryElementSubRecords…` compares the
+> element trees recursively vs the goldens on GL AND DX; real bar —
+> `validation/CbufferModel` ArrayUniform + ArrayUniformVs rows: **maxDelta 0** with
+> the whole array SET FROM MANAGED CODE plus an individual `.Elements[2].SetValue`
+> overwrite (PS) and a two-element `Bones[]`/`PosOffsets[]` blend (VS).
+> **mgfxc-bug finding (golden correction):** an array read at only SOME static
+> indices is broken in mgfxc+MonoGame GL itself — fxc references only the used
+> registers, MojoShader emits a COMPACTED uniform array
+> (`vs_c4..c7,c9 → vs_uniforms_vec4[0..4]`) while mgfxc's record keeps the full
+> 160-byte layout, so MonoGame's full-buffer `glUniform4fv` lands element 0's data
+> where the shader reads element 1 — **verified: that golden renders garbage in
+> real MonoGame 3.8.2 while ShadowDusk's full-layout output renders the source
+> semantics correctly** (PNGs from the 2026-06-12 harness run). ShadowDusk
+> deliberately does NOT replicate the compaction; `ArrayUniformVs.fx` references
+> every element (the real-world skinning shape) so its golden arm is itself
+> correct and comparable.
 
 `MonoGameGlslRewriter.cs:150-151`: the `UniformMember` regex skips `vec4 Colors[4];`
 (also `int`, `mat3`, `layout(…)`-qualified members) → emitted GLSL still references the
@@ -208,8 +289,11 @@ invisible. **Fix:** extract members + add `Members` to the parity assertion.
   rename (`MonoGameGlslRewriter.cs:178-181, 708-718`) — remove/repair with F5.
   *(Update 2026-06-12, Phase 43B: the COMMENT is repaired — it now states the browser
   path runs the faithful DXC→WASM frontend and points at F5 for the normalizer
-  itself. The `NormalizeSlangNaming` code, including the accidental UBO-rename
-  branch, is deliberately untouched: it belongs to the F5 cbuffer-model wave.)*
+  itself.)* ***(Update 2026-06-12, Phase 43C: `NormalizeSlangNaming` is REMOVED
+  entirely — the browser path runs the faithful DXC frontend so Slang-shaped GLSL
+  cannot reach the rewriter, and named cbuffer blocks are now parsed natively by
+  the generalized block handler. The two Slang unit tests were replaced by the
+  F5/F6 cbuffer/array-model tests.)***
 
 ---
 
@@ -316,6 +400,59 @@ invisible. **Fix:** extract members + add `Members` to the parity assertion.
    **17/17 PASS** (run live against this branch); browser G2 re-proven in CI
    (`run-browser` label).
 
+## Phase 43C as-built (2026-06-12, branch `feature/phase43c-gl-cbuffer-array-model`)
+
+**Scope: F4 + F5 + F6 (the GL cbuffer/array model) + the F11 normalizer removal —
+the final wave; per-finding details in the notes above.**
+
+- **The model source of truth:** GL cbuffer records are derived from
+  `MonoGameGlslResult.Uniforms` — the rewriter's own register allocation — so the
+  `.mgfx` offsets and the GLSL indices cannot diverge (SD0012 guards the
+  parameter-name join). Non-GL targets keep the reflection-based records unchanged.
+- **Oracle derivations** (mgfxc 3.8.2 sources + pinned `dotnet-mgfxc 3.8.2.1105`
+  goldens): `ShaderData.CreateGLSL` builds up to three cbuffers PER SHADER from the
+  MojoShader symbol table (`{vs,ps}_uniforms_{bool,ivec4,vec4}`) deduped via
+  `ConstantBufferData.SameAs`; `EffectObject.WriteParameter` writes elements THEN
+  struct members as recursive parameter records with leaf-only data;
+  `ConstantBufferData.GetParameterFromSymbol` gives array elements empty names and
+  the parent's shape. `Effect.ReadParameters` (v3.8.2) confirms the read side.
+- **Tooling brought to the real layout:** `MgfxBlobReader` (now exposes cb records,
+  per-shader bindings, and recursive parameter trees) and
+  `validation/decode_mgfx{,_dx}.py` — both previously desynced on any array param;
+  the SkinnedEffect golden (`Bones[72]`) now decodes byte-clean to the footer.
+
+**Validation ladder, as run (win-x64 + NVIDIA dev box, 2026-06-12):**
+
+1. **Corpus:** `SharedCbuffer.fx`, `MultiCbuffer.fx`, `MultiCbufferVs.fx`,
+   `ArrayUniform.fx` (literal indices so fxc compiles ps_3_0; dynamic-index
+   coverage is rewriter-unit-level), `ArrayUniformVs.fx` (blends BOTH elements of
+   `Bones[2]`+`PosOffsets[2]` — see the F6 note for why partial static reads are
+   an mgfxc bug, not a golden to match), plus loud-fail examples
+   `ExIntUniformMember.fx` / `ExMat3UniformMember.fx`. mgfxc 3.8.2.1105 goldens
+   committed for all five × {OpenGL, DirectX_11}.
+2. **Structural:** `Phase43CbufferModelTests` (10 facts: per-stage records, exact
+   merged-record layouts vs golden, recursive element trees on GL AND DX, GLSL
+   register assertions, SD0210 loud-fails) + the five stems added to
+   `MgfxParameterMatchTests` (18 rows green).
+3. **Real bar:** new `validation/CbufferModel` harness — every fixture loads in
+   real MonoGame 3.8.2 DesktopGL `Effect` and renders **pixel-identical
+   (maxDelta = 0, 5/5 rows)** to the mgfxc-golden arm through identical paths
+   (SpriteBatch for PS rows, custom vertex-buffer quad for VS rows), with all
+   parameters set BY NAME including `SetValue(Vector4[])`, an individual
+   `.Elements[2].SetValue` overwrite, and a per-element `Bones[]` blend; a
+   non-black guard makes a both-arms-broken outcome unpassable.
+4. **Manifest:** regenerated on win-x64: exactly 3 changed entries — OpenGL
+   `cbuffer.fx` / `VertexAndPixel.fx` / `PolygonLight.fx`, the three shared-cbuffer
+   shapes F4 fixes — plus 10 new entries (5 fixtures × GL/DX_Vkd3d). **Zero
+   existing DX entries changed** (no existing DX fixture has arrays) and **zero FNA
+   entries** (FNA's CTAB path untouched). All other GL entries byte-identical,
+   proving the per-shader record path reproduces the old bytes for every
+   non-shared shape.
+5. **Suites:** full `dotnet test` green (1,184: 58 GLSL + 174 HLSL + 121 Compiler +
+   421 Core + 53 ImageTests + 357 Integration); browser G2 via `run-browser` in CI
+   (the WASM path shares `CompilationPipeline` and the SPIR-V reflector already
+   models arrays/Elements).
+
 ## Definition of Done
 
 Every finding above is either fixed with the full validation ladder (fixture → golden →
@@ -324,3 +461,11 @@ converted to a loud SD-coded compile error with the limitation documented in
 `docfx/guides/parameters-and-caveats.md`. The corpus permanently covers pass states,
 annotations, shared/multi/array cbuffers, VS texturing, sampler states, and backbuffer
 rendering, so the proxy trap that hid all seven HIGHs is structurally closed.
+
+> **2026-06-12 — DoD met.** 43A closed F1/F1b/F2/F9/F10, 43B closed F3/F7/F8, and
+> 43C closed F4/F5/F6 (+ the F11 normalizer cleanup; F11's remaining bullets were
+> handed to `fix/review-compiler-bugs` and the per-OS DXC divergence is tracked as
+> its own follow-up, outside this phase's findings list). Each finding carries the
+> fixture → golden → real-`Effect` → render ladder or a documented SD-coded loud
+> error; the corpus and byte-identity manifest now permanently cover every shape
+> named here.

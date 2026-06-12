@@ -46,6 +46,7 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 | `SD0002` | Circular `#include` (true cycle on the include stack; a diamond include is legal). | `ShaderError.CircularInclude` |
 | `SD0010` | Effect source contains no techniques. | `CompilationPipeline` |
 | `SD0011` | Unrecognised value for a render-state key. | `RenderStateParser` |
+| `SD0012` | Internal (Phase 43C): a GL uniform in the rewriter's register layout has no matching reflected effect parameter — the GLSL uniform layout and the reflection diverged. A ShadowDusk bug if ever seen. | `CompilationPipeline` |
 | `SD0020` | Constant-buffer size exceeds the MGFX int16 maximum. | `MgfxWriter` |
 | `SD0021` | Shader index exceeds the MGFX int16 maximum. | `MgfxWriter` |
 | `SD0022` | A count/index serialized as a single byte in the `.mgfx` shader record is outside 0–255 (samplers, constant-buffer indices, vertex attributes, sampler parameter index). | `MgfxWriter` |
@@ -56,7 +57,7 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 | `SD0102` | Native DXIL reflection (`ID3D12ShaderReflection`) failed. | `DxilReflectionExtractor` |
 | `SD0103` | SPIRV-Cross native library missing or unloadable (run `tools/restore.ps1`). | `SpirvCrossGlslTranspiler` |
 | `SD0200` | Metal target not yet supported. | `CompilationPipeline` |
-| `SD0210` | **Two historical meanings (known shared code):** (a) the d3dcompiler_47 oracle backend refused the request (requires Windows, or a `ProfileOverride` it never serves); (b) the MonoGame GLSL rewriter could not lower a construct to MonoGame's GL dialect. | `D3DCompilerShaderCompiler`, `CompilationPipeline` |
+| `SD0210` | **Two historical meanings (known shared code):** (a) the d3dcompiler_47 oracle backend refused the request (requires Windows, or a `ProfileOverride` it never serves); (b) the MonoGame GLSL rewriter could not lower a construct to MonoGame's GL dialect — incl. (Phase 43C) int/bool/mat3/struct uniform-block members, a whole-array uniform use, or any surviving reference to a rewritten uniform block. | `D3DCompilerShaderCompiler`, `CompilationPipeline` |
 | `SD0211` | vkd3d-shader native library missing or unloadable (run `tools/restore.ps1`). | `Vkd3dShaderCompiler` |
 | `SD0212` | vkd3d-shader compile failed without parseable diagnostics. | `Vkd3dCompileContract` |
 | `SD0300` | FNA profile policy violation (SM4+/SM1 profile, or stage/profile prefix mismatch). | `CompilationPipeline.ResolveFnaProfile` |
