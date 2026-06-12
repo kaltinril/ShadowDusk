@@ -55,7 +55,7 @@ The FNA path is cross-platform and needs the same restored `vkd3d-shader` native
 
 ## DirectX backend & native tools
 
-For **DirectX (DX11)**, the **default** backend is `d3dcompiler_47` — a system DLL **already part of Windows** (you don't install it), so DX compilation works out of the box on Windows with the most `fxc`-faithful output. The **cross-platform** DirectX backend is `vkd3d-shader` (opt-in via `CompilerOptions.DxbcBackend = DxbcBackend.Vkd3d`), a restored (non-redistributed) native artifact for Linux/macOS — see [Restore Native Tools](restore-native-tools.md) and [DirectX DXBC (vkd3d) Path](../architecture/directx-dxbc-vkd3d.md). The OpenGL/WebGL in-memory path needs no extra restore and is cross-platform out of the box.
+For **DirectX (DX11)**, the **default** backend is `d3dcompiler_47` — a system DLL **already part of Windows** (you don't install it), so DX compilation works out of the box on Windows with the most `fxc`-faithful output. The **cross-platform** DirectX backend is `vkd3d-shader` (opt-in via `CompilerOptions.DxbcBackend = DxbcBackend.Vkd3d`); its native binaries for all four desktop RIDs (win-x64, linux-x64, osx-x64, osx-arm64) **ship inside the NuGet package** — nothing to install. (The [Restore Native Tools](restore-native-tools.md) script is only for building ShadowDusk itself from source.) See [DirectX DXBC (vkd3d) Path](../architecture/directx-dxbc-vkd3d.md). The OpenGL/WebGL in-memory path needs no extra restore and is cross-platform out of the box.
 
 ## Building from source
 

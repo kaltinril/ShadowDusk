@@ -25,7 +25,7 @@ var options = new CompilerOptions
 };
 ```
 
-The `vkd3d-shader` native is a **restored, non-redistributed** artifact (see [Restore Native Tools](../getting-started/restore-native-tools.md)); the default `d3dcompiler_47` oracle needs no restore but runs only on Windows.
+The `vkd3d-shader` natives for all four desktop RIDs **ship inside the NuGet package** (`runtimes/<rid>/native`, SHA-256-pinned builds hosted on the `native-vkd3d-1.17` release) — consumers install nothing; the repo's [restore script](../getting-started/restore-native-tools.md) is only for building ShadowDusk from source. The default `d3dcompiler_47` oracle needs no restore but runs only on Windows.
 
 ## Validation
 

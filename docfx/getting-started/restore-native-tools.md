@@ -9,11 +9,11 @@ Both are pulled in by `dotnet restore` and live in the NuGet package cache.
 
 ## When you *do* need the restore script
 
-The restore script handles native artifacts that are **not** redistributed through NuGet:
+The restore script provisions native artifacts that are **not committed to the repo** — it is for **building ShadowDusk itself from source** (and CI). Consumers never run it: everything below ships inside the published NuGet packages.
 
 | Artifact | Used by | Notes |
 |---|---|---|
-| `vkd3d-shader` | the cross-platform DirectX DXBC backend (`DxbcBackend.Vkd3d`) | Restored, not committed. The script no-ops with a build-recipe note when no prebuilt binary is available, so the build stays green. The default DX backend (`d3dcompiler_47`) is Windows-only and doesn't need it. |
+| `vkd3d-shader` | the cross-platform DirectX DXBC backend (`DxbcBackend.Vkd3d`) and the FNA fx_2_0 target | Downloaded (SHA-256-pinned) from the hosted `native-vkd3d-1.17` release for **all four desktop RIDs** (win-x64, linux-x64, osx-x64, osx-arm64) and packed under `runtimes/<rid>/native` — self-contained in the NuGet since Phase 37 C. The default DX backend (`d3dcompiler_47`) is Windows-only and doesn't need it. |
 | `dxcompiler.wasm` | the in-browser `ShadowDusk.Wasm` frontend (OpenGL/WebGL) | Copied from the committed source-of-truth in `.wasm-build/` into the package's `wwwroot/dxc/`. |
 | `vkd3d-shader.{js,wasm}` | the in-browser `ShadowDusk.Wasm` DirectX/FNA export backend | Downloaded (SHA-256-pinned) from the hosted release into the package's `wwwroot/vkd3d/`; a local `.wasm-build/vkd3d-wasm-out/` build takes precedence. See [DirectX & FNA in the Browser](../backends/directx-in-wasm.md). |
 
@@ -27,7 +27,7 @@ The restore script handles native artifacts that are **not** redistributed throu
 .\tools\restore.ps1       # Windows
 ```
 
-The script is **best-effort and non-fatal** for the cross-platform native pieces: if a prebuilt `vkd3d-shader` binary isn't available for your platform it prints a build recipe and continues, because vkd3d is opt-in (`DxbcBackend.Vkd3d`) while the default DX backend is the `d3dcompiler_47` oracle. CI runs the same script and tolerates its absence (see the [Contributing Guide](../contributing/index.md)).
+The script is **best-effort and non-fatal**: every artifact is downloaded from a fixed, SHA-256-pinned GitHub release, and an offline/failed download prints a warning and continues (the affected backends then fail loudly at compile time — SD0211 for the desktop vkd3d native, SD1902 for the browser module — and the package-level gates stop a release from packing without them). CI runs the same script (see the [Contributing Guide](../contributing/index.md)).
 
 ## What lands where
 
