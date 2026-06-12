@@ -253,6 +253,60 @@ public partial class Index
     }
 
     /// <summary>
+    /// Phase 4.1 G2 headless-test entry point (export-target byte-identity gate).
+    /// Compiles <paramref name="source"/> through the REAL product path
+    /// (<see cref="WasmShaderCompiler.CompileAsync"/>) for an EXPORT target the browser
+    /// cannot render — <see cref="PlatformTarget.DirectX"/> (SM4/5 DXBC) or
+    /// <see cref="PlatformTarget.Fna"/> (fx_2_0 .fxb) — and returns the compiled
+    /// artifact bytes for the Playwright harness
+    /// (<c>tests/ShadowDusk.BrowserTests/browser-vkd3d-gate.mjs</c>) to SHA-256 against
+    /// the committed cross-host byte-identity manifest. Rendering is deliberately out of
+    /// scope: a browser has no Direct3D, so the honest browser-side bar for these
+    /// targets is byte-identity to the desktop-render-proven bytes (see
+    /// <c>plan/PHASE-4.1-SPIKE-wasm-directx-dxbc.md</c>, the G2 rung).
+    /// Protocol: <c>"OK:&lt;base64 artifact&gt;"</c> on success, <c>"ERR:&lt;verbatim
+    /// diagnostics&gt;"</c> on failure. Test-only and UI-invisible (the
+    /// <see cref="TestLoadCorpus"/> pattern): only callable explicitly via JS interop;
+    /// no UI element reaches it, and it does not touch the game, canvas, editor, or
+    /// status line. Unlike the render hooks it does not require the game to have
+    /// booted — it is a pure compile.
+    /// </summary>
+    [JSInvokable]
+    public async Task<string> TestCompileExport(string source, string targetName, string sourceFileName)
+    {
+        try
+        {
+            if (!Enum.TryParse<PlatformTarget>(targetName, ignoreCase: false, out var target) ||
+                (target != PlatformTarget.DirectX && target != PlatformTarget.Fna))
+            {
+                return $"ERR:unsupported export target '{targetName}' (expected 'DirectX' or 'Fna')";
+            }
+
+            var result = await _compiler.CompileAsync(source, new CompilerOptions
+            {
+                Target = target,
+                // The fixture-relative name the byte-identity manifest was generated
+                // with (diagnostics only — proven not to leak into output bytes by
+                // CrossHostByteIdentityTests.SourceFileName_DoesNotAffect_OutputBytes*).
+                SourceFileName = sourceFileName,
+            });
+
+            if (result.IsFailure)
+            {
+                return "ERR:" + string.Join(" | ",
+                    System.Linq.Enumerable.Select(result.Error, d => d.FxcFormattedMessage));
+            }
+
+            return "OK:" + Convert.ToBase64String(result.Value.Data);
+        }
+        catch (Exception ex)
+        {
+            // Surface the failure verbatim — the harness records it; never fake a pass.
+            return "ERR:" + ex.Message;
+        }
+    }
+
+    /// <summary>
     /// Reset the canvas to the original cat with no shader applied. Drops the
     /// current effect (the plain-cat draw pass renders on its own) without
     /// touching the editor source or the selected sample.

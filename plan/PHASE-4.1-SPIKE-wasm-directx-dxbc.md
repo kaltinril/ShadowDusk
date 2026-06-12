@@ -1,13 +1,17 @@
 # Phase 4.1 — Research Spike: WASM + DirectX DXBC (now: vkd3d → WASM)
 
-**Status:** 🟢 **Compile path DONE — byte-identity gate PASSED 98/98 (2026-06-11).** Both
-halves landed the same day: the emscripten build is green + hosted on
+**Status:** ✅ **DONE — all evidence rungs closed (G2 real-browser proof PASSED 65/65,
+2026-06-12).** Both halves landed 2026-06-11: the emscripten build is green + hosted on
 `native-vkd3d-wasm-1.17` (*Build pipeline* section), the managed interop is wired
 end-to-end (*Managed-interop half* section), restore pins are real, and
 `node-test-vkd3d-wasm.mjs` proves WASM vkd3d == desktop vkd3d byte-for-byte over the full
-DX (SM5) + FNA (SM1–3) corpus. **Remaining rung:** a real-browser render proof (G2
-analogue) in the KNI/Blazor consumers, + removing the temporary CI `push:` trigger after
-merge. Un-parked 2026-06-09; elevated from
+DX (SM5) + FNA (SM1–3) corpus. The last rung — the **G2 analogue in a real browser** —
+closed 2026-06-12: headless Chromium runs the real `WasmShaderCompiler` over the full
+DX+FNA byte-identity corpus and every artifact is SHA-256-identical to the committed
+cross-host manifest, transferring the desktop rung-4 render proofs to the browser bytes
+by transitivity (see *G2 — real-browser byte-identity proof* below). Remaining
+housekeeping only (not an evidence rung): remove the temporary CI `push:` trigger from
+`vkd3d-wasm-build.yml` now that the branch has merged. Un-parked 2026-06-09; elevated from
 far-future spike to the **keystone of the browser-export-station vision** (owner decision;
 the question this doc left pending is answered: yes, browser-DirectX *and browser-FNA* are
 goals — as **export targets**, not render backends). The what and why:
@@ -99,8 +103,8 @@ the shim was written to need the MINIMUM runtime surface):
    fixtures (SM5 DXBC_TPF) + 28 FNA fixtures (SM1–3 D3D_BYTECODE), 98 stage compiles —
    produces the same bytes through the product shim as through the desktop P/Invoke.
    This also empirically confirms the glue expectations above (`HEAPU8` present on the
-   module instance, `_malloc`/`_free` exported). The remaining rung is a real-browser
-   render proof (G2 analogue) in the KNI/Blazor consumers.
+   module instance, `_malloc`/`_free` exported). The then-remaining rung — the G2
+   analogue in a real browser — closed 2026-06-12 (next section).
 3. ✅ Browser `CompileAsync` with `PlatformTarget.DirectX` / `Fna` now has its module
    restored; SD1902 remains only for a genuinely-absent module (the intended loud path).
 4. ✅ The csproj `NoticeVkd3dWasmMissing` Message upgraded to an **Error on pack** (the
@@ -108,6 +112,63 @@ the shim was written to need the MINIMUM runtime surface):
 
 Nothing regressed while gated: OpenGL-on-WASM, desktop DirectX/FNA, and all 921
 desktop tests unchanged and green (the seam defaults to off).
+
+---
+
+## G2 — real-browser byte-identity proof (DONE 2026-06-12, branch `feature/phase4.1-g2-browser-proof`)
+
+**What "G2" honestly means for export targets.** Phase 23's G2 was a real-browser
+*render* proof, because the browser can render the OpenGL target (KNI WebGL). A browser
+**cannot render DXBC or D3D9 bytecode** — there is no Direct3D in a browser, by
+construction. So the honest G2 analogue for the DirectX/FNA **export** targets is:
+a real browser, running the real product path, produces **the same bytes** the desktop
+produces — and the desktop bytes are already rung-4 render-proven. Render-equivalence
+then closes by **transitivity**, exactly the Phase 37 cross-host-manifest argument with
+the browser as the fourth host:
+
+1. **Browser bytes == manifest bytes** — `tests/ShadowDusk.BrowserTests/browser-vkd3d-gate.mjs`:
+   headless Chromium (Playwright) boots the published `samples/ShaderFiddle.Web`
+   KNI/Blazor sample (the actual .NET-browser runtime), and for **every**
+   `DirectX_Vkd3d/*` and `FNA/*` entry of the committed cross-host byte-identity
+   manifest (`tests/fixtures/golden/byte-identity/manifest.json`) compiles the fixture
+   through the REAL product path — `WasmShaderCompiler.CompileAsync` with
+   `PlatformTarget.DirectX` / `PlatformTarget.Fna`, real `[JSImport]` interop, real HTTP
+   fetch of `_content/ShadowDusk.Wasm/vkd3d/vkd3d-shader.{js,wasm}` (the gate asserts
+   the fetch was observed) — and asserts each artifact's SHA-256 equals the manifest.
+   **PASSED 65/65** (37 DX `.mgfx` + 28 FNA `.fxb` — the FULL corpus, no subset):
+   `tests/ShadowDusk.BrowserTests/RESULTS-VKD3D-BROWSER.md`.
+2. **Manifest bytes == desktop bytes on every OS** — `CrossHostByteIdentityTests`,
+   CI-asserted on windows/ubuntu/macos (Phase 37 verification tail 1).
+3. **Desktop bytes are rung-4 render-proven** — the DX corpus loads + renders
+   equivalently to `mgfxc` in real MonoGame WindowsDX (Phase 18); the FNA corpus loads +
+   renders pixel-equivalent (Δ ≤ 1/255) to `fxc /T fx_2_0` in real FNA (Phases 39/40,
+   gate 17/17).
+
+Therefore the bytes a browser user exports for DirectX/FNA **are** the render-proven
+bytes. **Explicitly NOT claimed:** rendering inside the browser for these targets —
+impossible by construction, not a gap this gate papers over.
+
+**Why the manifest (and not a fresh `Vkd3dCorpusProbe` capture) as ground truth:** the
+manifest is the **full-artifact** hash (`.mgfx`/`.fxb` — it also exercises the managed
+writers/reflection running on the browser .NET runtime, strictly stronger than the
+per-stage vkd3d seam the node G1 gate already proved 98/98); it is the exact device
+Phase 37 uses to transfer render proofs across hosts, so the transitivity argument is
+the same argument, not a new one; and it needs no desktop vkd3d native in the browser
+CI job. The full DX/FNA pipeline in the browser touches only the vkd3d WASM module
+(DXC is lazily constructed and never used for these targets), so the gate runs even
+where `dxcompiler.wasm` is not restorable.
+
+**Mechanics.** The gate is wired into `.github/workflows/wasm.yml` (`browser-smoke`
+job, the `run-browser` label path): red on any compile failure / hash mismatch /
+missing published module / unobserved wasm fetch; loud SKIP (exit 0 + `::warning::`,
+"NOT RUN, NOT A PASS") only when `vkd3d-shader.{js,wasm}` is not restored. The sample
+gained one **UI-invisible, test-only** `[JSInvokable]` hook (`TestCompileExport` in
+`samples/ShaderFiddle.Web/Pages/Index.razor.cs`, the `TestLoadCorpus` pattern) that
+compiles and returns the artifact bytes for the harness to hash — no UI element
+reaches it. One gotcha worth keeping: 9 corpus fixtures carry a UTF-8 BOM; .NET's
+`File.ReadAllTextAsync` (the manifest recipe) strips it while Node's `utf8` read keeps
+it, so the gate strips `U+FEFF` before feeding the page (a BOM-prefixed source fails
+the HLSL parse).
 
 ---
 
@@ -232,9 +293,12 @@ compressed download.
   landed (the *Managed-interop half* section above).
 - ✅ restore-script download + real SHA-256 pins — landed.
 - ✅ Desktop byte-identity gate over the DXBC/FNA corpora (G1 pattern) — **PASSED
-  98/98** (see *What flipped to green* above). Still open: the `Effect`-load/render
-  proof in the real browser consumers (G2 analogue).
-- Remove the temporary `push:` trigger from `vkd3d-wasm-build.yml` after merge.
+  98/98** (see *What flipped to green* above).
+- ✅ The G2 analogue in a real browser — **PASSED 65/65** (2026-06-12; see *G2 —
+  real-browser byte-identity proof* above). A render proof is impossible by
+  construction for export targets; byte-identity + transitivity is the honest bar.
+- Remove the temporary `push:` trigger from `vkd3d-wasm-build.yml` after merge
+  (housekeeping, not an evidence rung — the only item left in this phase).
 
 **Relationship to Phase 23:** Phase 23 builds the faithful **DXC→WASM** frontend for the **OpenGL** (SPIR-V) path. This spike asks the parallel question for **DirectX** — getting a faithful **DXBC** producer (vkd3d-shader) into WASM. Same emscripten-to-`[JSImport]` mechanism, different native library. Neither uses a substitute compiler.
 
