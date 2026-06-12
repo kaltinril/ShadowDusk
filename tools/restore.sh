@@ -6,7 +6,11 @@
 #   1. Vulkan SDK installation ($VULKAN_SDK environment variable)
 #   2. System package manager (apt / brew)
 #   3. vcpkg ($VCPKG_ROOT environment variable)
-# If no source is available, manual instructions are printed and the script exits 1.
+# If no source is available, manual instructions are printed and the script exits 0:
+# the tools/ SPIRV-Cross copy is OPTIONAL (the runtime native ships transitively via
+# the Silk.NET.SPIRV.Cross.Native NuGet package), matching tools/restore.ps1. Genuine
+# failures (set -e: download/IO errors, SHA-256 plumbing) still exit non-zero — CI
+# must NOT wrap this script in `|| true`.
 #
 # Output paths:
 #   tools/spirv-cross/win-x64/spirv-cross-c-shared.dll
@@ -455,9 +459,16 @@ if [ -n "${VCPKG_ROOT:-}" ]; then
 fi
 
 # No automatic source found — print manual instructions.
+# NON-FATAL: SPIRV-Cross ships transitively via the Silk.NET.SPIRV.Cross.Native NuGet
+# package (resolved at runtime under runtimes/<rid>/native/), so a tools/ copy is
+# optional and its absence must NOT fail CI. This matches restore.ps1, which likewise
+# warns and exits 0. The manual steps below are for niche local scenarios that bypass
+# the NuGet-provided native.
 cat <<EOF
 
-ERROR: SPIRV-Cross C shared library not found. Manual steps to obtain it:
+WARNING: SPIRV-Cross C shared library not found in tools/ (optional — normally
+provided by the Silk.NET.SPIRV.Cross.Native NuGet package). Manual steps if you
+need a tools/ copy:
 
   Option A — Vulkan SDK (recommended):
     Download from https://vulkan.lunarg.com/sdk/home
@@ -487,4 +498,5 @@ ERROR: SPIRV-Cross C shared library not found. Manual steps to obtain it:
     # Then copy build/libspirv-cross-c-shared.{so,dylib} to the path above.
 
 EOF
-exit 1
+# Exit 0: absence of the optional tools/ SPIRV-Cross copy is not a failure (see note above).
+exit 0

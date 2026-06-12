@@ -1,4 +1,6 @@
-#Requires -Version 5.1
+# PowerShell 7+ required: this script uses 3-argument Join-Path (PS 6+) throughout,
+# which dies under Windows PowerShell 5.1 despite an older 5.1 requirement claim.
+#Requires -Version 7.0
 <#
 .SYNOPSIS
     Restores native SPIRV-Cross C shared library binaries for all supported platforms.
@@ -8,7 +10,9 @@
     This script attempts to obtain the library from the following sources in order:
       1. Vulkan SDK installation (VULKAN_SDK environment variable)
       2. vcpkg installed packages (VCPKG_ROOT environment variable)
-    If neither source is available, the script prints instructions and exits with code 1.
+    If neither source is available, the script prints instructions and exits 0 — the
+    tools/ SPIRV-Cross copy is optional (the runtime native ships transitively via the
+    Silk.NET.SPIRV.Cross.Native NuGet package), matching tools/restore.sh.
 
     Place the resulting files at:
       tools/spirv-cross/win-x64/spirv-cross-c-shared.dll
@@ -429,8 +433,10 @@ if ($env:VCPKG_ROOT) {
 # No automatic source found — print manual instructions.
 # NON-FATAL: SPIRV-Cross ships transitively via the Silk.NET.SPIRV.Cross.Native NuGet
 # package (resolved at runtime under runtimes/<rid>/native/), so a tools/ copy is optional
-# and its absence must NOT fail CI. This matches restore.sh, which only warns. The manual
-# steps below are for niche local scenarios that bypass the NuGet-provided native.
+# and its absence must NOT fail CI. This matches restore.sh, which likewise warns and
+# exits 0 for this optional miss (parity restored 2026-06-12 — restore.sh used to exit 1
+# here, which is why workflows once wrapped it in `|| true`). The manual steps below are
+# for niche local scenarios that bypass the NuGet-provided native.
 Write-Warning @"
 
 SPIRV-Cross C shared library not found in tools/ (optional — normally provided by the
