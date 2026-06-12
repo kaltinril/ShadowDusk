@@ -25,12 +25,15 @@
 //   (Phases 39/40, gate 17/17) — render-equivalence closes by transitivity.
 //
 // SKIP-WITH-NOTICE (never a fabricated pass): vkd3d-shader.{js,wasm} not restored
-// -> loud SKIP, exit 0 (run tools/restore.* first). Everything else that goes wrong
-// (publish missing the module, compile failure, hash mismatch, the .wasm never being
-// fetched) -> FAIL, exit 1.
+// -> loud SKIP, exit 0 (run tools/restore.* first) — LOCAL runs only. With
+// --require-module (what wasm.yml passes) the missing-module branch FAILS instead:
+// the pins are hosted, so a module missing in CI is an infrastructure failure that
+// must go red, never a green self-skip. Everything else that goes wrong (publish
+// missing the module, compile failure, hash mismatch, the .wasm never being fetched)
+// -> FAIL, exit 1.
 //
 // Usage:  cd tests/ShadowDusk.BrowserTests
-//         node browser-vkd3d-gate.mjs [--skip-publish]
+//         node browser-vkd3d-gate.mjs [--skip-publish] [--require-module]
 //         (or: npm run vkd3d-browser-gate)
 // Requires: .NET SDK + wasm-tools workload (for the publish), Node 18+, Playwright
 // Chromium (npx playwright install chromium). No GPU / xvfb needed — pure compile.
@@ -56,6 +59,9 @@ const publishRoot  = path.join(publishOut, 'wwwroot');
 const resultsFile  = path.join(__dirname, 'RESULTS-VKD3D-BROWSER.md');
 
 const SKIP_PUBLISH = process.argv.includes('--skip-publish');
+// CI mode: the hosted pins exist (native-vkd3d-wasm-1.17), so a missing module is an
+// infrastructure failure — fail red instead of the local-convenience loud skip.
+const REQUIRE_MODULE = process.argv.includes('--require-module');
 
 // Manifest target key -> the PlatformTarget name TestCompileExport parses.
 const TARGETS = { DirectX_Vkd3d: 'DirectX', FNA: 'Fna' };
@@ -81,10 +87,16 @@ function fail(reason) {
 // 1. Artifact gate: the vkd3d->WASM module must be restored (repo side).
 // ---------------------------------------------------------------------------
 if (!existsSync(moduleJs) || !existsSync(moduleWasm)) {
-  skip(
+  const reason =
     'src/ShadowDusk.Wasm/wwwroot/vkd3d/vkd3d-shader.{js,wasm} is not restored. ' +
     'Run tools/restore.ps1 / tools/restore.sh (release tag native-vkd3d-wasm-1.17) ' +
-    'and re-run. See src/ShadowDusk.Wasm/wwwroot/vkd3d/RESTORE.md.');
+    'and re-run. See src/ShadowDusk.Wasm/wwwroot/vkd3d/RESTORE.md.';
+  if (REQUIRE_MODULE) {
+    // The hosted pins exist, so in CI (--require-module) a missing module means the
+    // restore itself failed — an infrastructure failure that must NOT skip green.
+    fail(`--require-module: ${reason}`);
+  }
+  skip(reason);
 }
 
 // ---------------------------------------------------------------------------

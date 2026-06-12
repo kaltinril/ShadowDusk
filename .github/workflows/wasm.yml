@@ -249,10 +249,13 @@ jobs:
       # the browser as the fourth host. Skips LOUDLY (exit 0 + ::warning::, never a
       # fabricated pass) only when vkd3d-shader.{js,wasm} is not restored; any compile
       # failure or hash mismatch is red. Pure compile — no GPU/xvfb needed.
+      # --require-module: the hosted pins exist (native-vkd3d-wasm-1.17), so a module
+      # missing in CI = restore infrastructure failure — the gate must go RED, never
+      # skip itself green. The loud-skip branch remains for LOCAL runs without the flag.
       - name: Phase 4.1 G2 — in-browser DX/FNA byte-identity gate
         working-directory: tests/ShadowDusk.BrowserTests
         timeout-minutes: 25
-        run: node browser-vkd3d-gate.mjs
+        run: node browser-vkd3d-gate.mjs --require-module
 
       - name: Upload browser results + diffs
         if: always()
