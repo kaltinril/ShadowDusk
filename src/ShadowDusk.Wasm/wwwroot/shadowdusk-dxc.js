@@ -74,10 +74,18 @@ async function loadDxc() {
  */
 export function ensureReady() {
     if (dxcInstance) return Promise.resolve();
-    if (initError) return Promise.reject(initError);
     if (!loadPromise) {
+        initError = null;
         loadPromise = loadDxc().catch((e) => {
             initError = e instanceof Error ? e : new Error(String(e));
+            // Reset so a LATER ensureReady() retries the download instead of the
+            // session staying bricked on a transient fetch failure of the 17 MB
+            // module — mirrors the shadowdusk-vkd3d shim and
+            // WasmModuleRegistration.RegisterOnceAsync's reset-on-failure. initError
+            // stays set between the failure and the next attempt so a stray
+            // compileToSpirv() call still surfaces the load error rather than
+            // "not ready".
+            loadPromise = null;
             // Re-throw so the awaiting host sees the failure (surfaced as SD1900).
             throw initError;
         });

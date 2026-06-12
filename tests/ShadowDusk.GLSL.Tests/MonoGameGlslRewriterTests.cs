@@ -229,6 +229,37 @@ void main()
         result.Glsl.Should().Contain("floor((abs(vTexCoord0.x) * 8.0) + 0.5)");
     }
 
+    [Fact]
+    public void Round_WhitespaceBeforeParen_IsLoweredCorrectly()
+    {
+        // FindCallStart tolerates 'round (x)' (space before the paren) — the argument
+        // slice must tolerate it too, or the rewrite emits corrupt GLSL like
+        // 'floor(((x) + 0.5' (the latent off-by-whitespace bug).
+        const string src = """
+#version 140
+
+uniform sampler2D _10;
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    out_var_SV_Target = texture(_10, vec2(round (in_var_TEXCOORD0.x), in_var_TEXCOORD0.y));
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        System.Text.RegularExpressions.Regex
+            .IsMatch(result.Glsl, @"\bround(Even)?\s*\(")
+            .Should().BeFalse("round/roundEven are unavailable in GLSL ES 1.00 (WebGL1)");
+        result.Glsl.Should().Contain("floor((vTexCoord0.x) + 0.5)");
+
+        // Balanced parens throughout — the historical bug dropped the closing paren.
+        int open  = result.Glsl.Count(c => c == '(');
+        int close = result.Glsl.Count(c => c == ')');
+        open.Should().Be(close, "the lowered GLSL must keep parentheses balanced");
+    }
+
     // ---- Vertex stage (Phase 28). SPIRV-Cross VS output for a custom VS taking a
     // float4x4 transform + the SpriteBatch vertex set (POSITION0 / COLOR0 / TEXCOORD0),
     // captured verbatim from DXC→SPIRV-Cross for VsTransformColorTexture.fx. The

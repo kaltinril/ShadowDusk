@@ -34,4 +34,14 @@ public enum FxParseErrorCode
 
     /// <summary>FX0010: A render-state key is not recognized (non-fatal warning).</summary>
     UnrecognizedRenderStateKey = 10,
+
+    /// <summary>FX0011: A character the lexer does not recognize appeared outside any token.</summary>
+    UnknownCharacter = 11,
+
+    /// <summary>
+    /// FX0012: A legacy D3D9 sampling intrinsic (e.g. <c>tex2Dlod</c>) whose argument list
+    /// does not map 1:1 onto a modern <c>Texture2D</c> method, so it cannot be rewritten
+    /// forward for DXC. (The FNA target compiles these natively and never raises this.)
+    /// </summary>
+    UnsupportedLegacyIntrinsic = 12,
 }

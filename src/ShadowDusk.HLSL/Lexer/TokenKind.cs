@@ -8,7 +8,11 @@ public enum TokenKind
     /// <summary>[A-Za-z_][A-Za-z0-9_]* — keywords and identifiers share this kind.</summary>
     Identifier,
 
-    /// <summary>[0-9]+(\.[0-9]*)? — integer or floating-point literal.</summary>
+    /// <summary>
+    /// Numeric literal: decimal integer/float with optional fraction, exponent
+    /// (<c>1e-4</c>) and f/F suffix, or a hex literal (<c>0x80FF8080</c>) with an
+    /// optional u/U/l/L suffix.
+    /// </summary>
     Number,
 
     /// <summary>A double-quoted string literal including the surrounding quotes.</summary>
@@ -49,6 +53,17 @@ public enum TokenKind
 
     /// <summary>. — member-access or swizzle separator; emitted so adjacent identifiers like color.a remain distinct.</summary>
     Dot,
+
+    /// <summary>- — emitted so negative numeric values (e.g. <c>DepthBias = -0.5;</c>) are visible to the parser.</summary>
+    Minus,
+
+    /// <summary>
+    /// A character the lexer does not recognise as part of any token. Carried through
+    /// (instead of silently skipped) so the parser can fail loudly when it reaches one;
+    /// the known HLSL operator characters the FX pre-parser deliberately tokenizes-through
+    /// (<c>: + [ ] &amp; | ! ? % ^ ~</c>) are still skipped, not emitted as Unknown.
+    /// </summary>
+    Unknown,
 
     /// <summary>A // line comment including leading slashes and trailing newline (if any).</summary>
     LineComment,

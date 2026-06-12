@@ -900,7 +900,15 @@ public static class MonoGameGlslRewriter
                     break;
                 }
 
+                // FindCallStart allows whitespace between the identifier and '(' — skip
+                // it here too, otherwise 'round (x)' would slice the argument off by the
+                // whitespace width and emit corrupt GLSL.
                 int openParen = callStart + fn.Length;
+                while (openParen < body.Length && (body[openParen] == ' ' || body[openParen] == '\t'))
+                {
+                    openParen++;
+                }
+
                 int closeParen = FindMatchingParen(body, openParen);
                 if (closeParen < 0)
                 {

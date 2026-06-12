@@ -78,7 +78,7 @@ public sealed class RenderStateParserTests
     public void Parse_CullMode_InvalidValue_ReturnsError()
     {
         var error = ParseExpectError(("CullMode", "Backwards"));
-        error.Code.Should().Be("SD0010");
+        error.Code.Should().Be("SD0011");
         error.Message.Should().Contain("CullMode");
         error.Message.Should().Contain("Backwards");
     }
@@ -117,6 +117,20 @@ public sealed class RenderStateParserTests
     {
         var block = Parse(("DepthBias", "0.5"));
         block.DepthBias.Should().BeApproximately(0.5f, 1e-6f);
+    }
+
+    [Fact]
+    public void Parse_DepthBias_Negative()
+    {
+        var block = Parse(("DepthBias", "-0.5"));
+        block.DepthBias.Should().BeApproximately(-0.5f, 1e-6f);
+    }
+
+    [Fact]
+    public void Parse_DepthBias_Exponent()
+    {
+        var block = Parse(("DepthBias", "1e-4"));
+        block.DepthBias.Should().BeApproximately(1e-4f, 1e-9f);
     }
 
     [Fact]
@@ -213,7 +227,7 @@ public sealed class RenderStateParserTests
     public void Parse_ColorWriteEnable_InvalidValue_ReturnsError()
     {
         var error = ParseExpectError(("ColorWriteEnable", "All"));
-        error.Code.Should().Be("SD0010");
+        error.Code.Should().Be("SD0011");
     }
 
     // -------------------------------------------------------------------------
@@ -257,7 +271,7 @@ public sealed class RenderStateParserTests
     public void Parse_ZFunc_InvalidValue_ReturnsError()
     {
         var error = ParseExpectError(("ZFunc", "Bogus"));
-        error.Code.Should().Be("SD0010");
+        error.Code.Should().Be("SD0011");
         error.Message.Should().Contain("ZFunc");
     }
 
@@ -406,7 +420,7 @@ public sealed class RenderStateParserTests
     public void Parse_BlendFactor_InvalidValue_ReturnsError(string value)
     {
         var error = ParseExpectError(("BlendFactor", value));
-        error.Code.Should().Be("SD0010");
+        error.Code.Should().Be("SD0011");
         error.Message.Should().Contain("BlendFactor");
     }
 
@@ -500,7 +514,7 @@ public sealed class RenderStateParserTests
     public void Parse_ColorWriteEnable1_InvalidValue_ReturnsError(string value)
     {
         var error = ParseExpectError(("ColorWriteEnable1", value));
-        error.Code.Should().Be("SD0010");
+        error.Code.Should().Be("SD0011");
         error.Message.Should().Contain("ColorWriteEnable1");
     }
 

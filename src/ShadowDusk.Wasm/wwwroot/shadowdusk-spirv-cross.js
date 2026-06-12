@@ -104,6 +104,7 @@ export function transpileToGlsl(spirv, flipVertexY, fixupDepthConvention, glslVe
     try {
         // context
         const ctxOut = Module._malloc(4);
+        if (!ctxOut) throw new Error('SPIRV-Cross WASM: _malloc(4) failed (out of memory).');
         try {
             if (spvc_context_create(ctxOut) !== SPVC_SUCCESS)
                 throw new Error('SPIRV-Cross [context_create]: failed to create context');
@@ -114,22 +115,26 @@ export function transpileToGlsl(spirv, flipVertexY, fixupDepthConvention, glslVe
 
         // copy SPIR-V words into the heap
         spirvPtr = Module._malloc(bytes.length);
+        if (!spirvPtr) throw new Error('SPIRV-Cross WASM: _malloc(' + bytes.length + ') failed (out of memory).');
         Module.HEAPU8.set(bytes, spirvPtr);
 
         // parse_spirv(ctx, spirv, wordCount, &ir)
         outIrPtr = Module._malloc(4);
+        if (!outIrPtr) throw new Error('SPIRV-Cross WASM: _malloc(4) failed (out of memory).');
         if (spvc_context_parse_spirv(ctx, spirvPtr, wordCount, outIrPtr) !== SPVC_SUCCESS)
             throw new Error(lastError(ctx, 'parse_spirv'));
         const ir = Module.getValue(outIrPtr, 'i32');
 
         // create_compiler(ctx, GLSL, ir, TAKE_OWNERSHIP, &compiler)
         outCompilerPtr = Module._malloc(4);
+        if (!outCompilerPtr) throw new Error('SPIRV-Cross WASM: _malloc(4) failed (out of memory).');
         if (spvc_context_create_compiler(ctx, SPVC_BACKEND_GLSL, ir, SPVC_CAPTURE_MODE_TAKE_OWNERSHIP, outCompilerPtr) !== SPVC_SUCCESS)
             throw new Error(lastError(ctx, 'create_compiler'));
         const compiler = Module.getValue(outCompilerPtr, 'i32');
 
         // create_compiler_options(compiler, &options)
         outOptionsPtr = Module._malloc(4);
+        if (!outOptionsPtr) throw new Error('SPIRV-Cross WASM: _malloc(4) failed (out of memory).');
         if (spvc_compiler_create_compiler_options(compiler, outOptionsPtr) !== SPVC_SUCCESS)
             throw new Error(lastError(ctx, 'create_compiler_options'));
         const options = Module.getValue(outOptionsPtr, 'i32');
@@ -155,6 +160,7 @@ export function transpileToGlsl(spirv, flipVertexY, fixupDepthConvention, glslVe
 
         // compile(compiler, &source) — source is owned by the context.
         outSourcePtr = Module._malloc(4);
+        if (!outSourcePtr) throw new Error('SPIRV-Cross WASM: _malloc(4) failed (out of memory).');
         if (spvc_compiler_compile(compiler, outSourcePtr) !== SPVC_SUCCESS)
             throw new Error(lastError(ctx, 'compile'));
         const srcPtr = Module.getValue(outSourcePtr, 'i32');

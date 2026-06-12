@@ -119,14 +119,11 @@ public static class TestHelpers
             Target          = target.Value,
             IncludeResolver = new FileSystemIncludeResolver(),
             SourceFileName  = inputPath,
-            // DirectX: exercise the default d3dcompiler_47 oracle where it exists
-            // (Windows — the proven consumer default) and the cross-platform vkd3d
-            // backend elsewhere (the Phase 18 reach path; the oracle is
-            // Windows-only by nature, SD0210). Phase 37 C provisions the vkd3d
-            // native in CI so these rows run, not skip, on all three OSes.
-            DxbcBackend     = OperatingSystem.IsWindows()
-                                  ? DxbcBackend.D3DCompiler
-                                  : DxbcBackend.Vkd3d,
+            // DirectX: deliberately left at the library DEFAULT (vkd3d, the
+            // cross-platform shipping backend) so the DirectPipeline arm exercises the
+            // same backend the CLI process uses and the CLI-vs-pipeline byte-identity
+            // assertions hold on every OS. The d3dcompiler_47 oracle is covered by its
+            // own opt-in tests (D3DCompilerOracleTests, SyncCompileByteIdentityTests).
         };
 
         var compiler      = new EffectCompiler();

@@ -286,4 +286,72 @@ public sealed class ArgumentParserTests
         result.IsFailure.Should().BeTrue();
         result.Error.Message.Should().Contain("FNA");
     }
+
+    // -------------------------------------------------------------------------
+    // Extensionless POSIX paths — historically misread as unknown '/'-flags and
+    // silently dropped; now positional ('/'-token is a flag only when its name is
+    // a known flag, or it carries a ':' value like future mgfxc flags).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_ExtensionlessPosixPaths_AreParsedAsPositionals()
+    {
+        var result = ArgumentParser.Parse(["/data", "/out"]);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.SourceFile.Should().Be("/data");
+        result.Value.OutputFile.Should().Be("/out");
+    }
+
+    [Fact]
+    public void Parse_UnknownSlashFlagWithColonValue_IsStillIgnoredForForwardCompat()
+    {
+        // A future mgfxc flag shape ("/Defines:FOO=1") keeps being tolerated.
+        var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "/Defines:FOO=1"]);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.SourceFile.Should().Be("S.fx");
+        result.Value.OutputFile.Should().Be("O.mgfx");
+    }
+
+    // -------------------------------------------------------------------------
+    // /DxbcBackend escape hatch (default: vkd3d — the cross-platform backend)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_NoDxbcBackendFlag_DefaultsToVkd3d()
+    {
+        var result = ArgumentParser.Parse(["S.fx", "O.mgfx"]);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.DxbcBackend.Should().Be(DxbcBackend.Vkd3d);
+    }
+
+    [Fact]
+    public void Parse_DxbcBackendD3DCompiler_OptsIntoTheOracle()
+    {
+        var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "/DxbcBackend:d3dcompiler"]);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.DxbcBackend.Should().Be(DxbcBackend.D3DCompiler);
+    }
+
+    [Fact]
+    public void Parse_DxbcBackendVkd3d_CaseInsensitive()
+    {
+        var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "/dxbcbackend:VKD3D"]);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.DxbcBackend.Should().Be(DxbcBackend.Vkd3d);
+    }
+
+    [Fact]
+    public void Parse_DxbcBackendInvalid_ReturnsFailureWithCodeX0006()
+    {
+        var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "/DxbcBackend:fxc"]);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("X0006");
+        result.Error.Message.Should().Contain("vkd3d").And.Contain("d3dcompiler");
+    }
 }

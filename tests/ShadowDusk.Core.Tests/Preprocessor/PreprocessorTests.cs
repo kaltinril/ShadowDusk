@@ -706,4 +706,271 @@ public sealed class PreprocessorTests
         lineDirectiveForHeader.Should().BeLessThan(includedTokenIndex,
             because: "the #line directive for the included file must precede the included content");
     }
+
+    // -------------------------------------------------------------------------
+    // Diamond includes are legal (cycle detection is an include STACK, not a
+    // visited set): a → {b, c} → common must flatten — fxc/mgfxc accept it —
+    // while true cycles still fail SD0002.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Flatten_DiamondInclude_Succeeds_AndIncludesCommonTwice()
+    {
+        var preprocessor = CreatePreprocessor();
+        var resolver = new InMemoryIncludeResolver(new Dictionary<string, string>
+        {
+            ["b.fxh"]      = "#include \"common.fxh\"\nfloat from_b;",
+            ["c.fxh"]      = "#include \"common.fxh\"\nfloat from_c;",
+            ["common.fxh"] = "float common_token;",
+        });
+        const string source = "#include \"b.fxh\"\n#include \"c.fxh\"\nfloat root_var;";
+
+        var result = preprocessor.Flatten(
+            source,
+            originalFilePath: "a.fx",
+            macros: DirectXMacros,
+            includeResolver: resolver,
+            additionalPaths: []);
+
+        result.IsSuccess.Should().BeTrue(
+            because: $"a diamond include is not a cycle; error: {(result.IsFailure ? result.Error.Message : "<none>")}");
+
+        var text = result.Value.Text;
+        text.Should().Contain("from_b");
+        text.Should().Contain("from_c");
+        // No #pragma once / guards → the textual inclusion happens twice, exactly
+        // like fxc's preprocessor (guards, when present, are evaluated by DXC later).
+        CountOccurrences(text, "common_token").Should().Be(2);
+    }
+
+    [Fact]
+    public void Flatten_DiamondInclude_WithPragmaOnce_IncludesCommonOnce()
+    {
+        var preprocessor = CreatePreprocessor();
+        var resolver = new InMemoryIncludeResolver(new Dictionary<string, string>
+        {
+            ["b.fxh"]      = "#include \"common.fxh\"\nfloat from_b;",
+            ["c.fxh"]      = "#include \"common.fxh\"\nfloat from_c;",
+            ["common.fxh"] = "#pragma once\nfloat common_token;",
+        });
+        const string source = "#include \"b.fxh\"\n#include \"c.fxh\"";
+
+        var result = preprocessor.Flatten(
+            source,
+            originalFilePath: "a.fx",
+            macros: DirectXMacros,
+            includeResolver: resolver,
+            additionalPaths: []);
+
+        result.IsSuccess.Should().BeTrue();
+        CountOccurrences(result.Value.Text, "common_token").Should().Be(1);
+    }
+
+    [Fact]
+    public void Flatten_SelfInclude_StillFailsAsCircular()
+    {
+        var preprocessor = CreatePreprocessor();
+        var resolver = new InMemoryIncludeResolver(new Dictionary<string, string>
+        {
+            ["self.fxh"] = "#include \"self.fxh\"\nfloat x;",
+        });
+
+        var result = preprocessor.Flatten(
+            "#include \"self.fxh\"",
+            originalFilePath: "root.fx",
+            macros: DirectXMacros,
+            includeResolver: resolver,
+            additionalPaths: []);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("SD0002");
+    }
+
+    [Fact]
+    public void Flatten_MutualInclude_StillFailsAsCircular()
+    {
+        var preprocessor = CreatePreprocessor();
+        var resolver = new InMemoryIncludeResolver(new Dictionary<string, string>
+        {
+            ["a.fxh"] = "#include \"b.fxh\"\nfloat from_a;",
+            ["b.fxh"] = "#include \"a.fxh\"\nfloat from_b;",
+        });
+
+        var result = preprocessor.Flatten(
+            "#include \"a.fxh\"",
+            originalFilePath: "root.fx",
+            macros: DirectXMacros,
+            includeResolver: resolver,
+            additionalPaths: []);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("SD0002");
+    }
+
+    [Fact]
+    public void Flatten_RepeatedSiblingInclude_IsNotACycle()
+    {
+        // The same header included twice from the SAME file is textual duplication
+        // (fxc semantics), not a cycle.
+        var preprocessor = CreatePreprocessor();
+        var resolver = new InMemoryIncludeResolver(new Dictionary<string, string>
+        {
+            ["common.fxh"] = "float common_token;",
+        });
+        const string source = "#include \"common.fxh\"\n#include \"common.fxh\"";
+
+        var result = preprocessor.Flatten(
+            source,
+            originalFilePath: "root.fx",
+            macros: DirectXMacros,
+            includeResolver: resolver,
+            additionalPaths: []);
+
+        result.IsSuccess.Should().BeTrue();
+        CountOccurrences(result.Value.Text, "common_token").Should().Be(2);
+    }
+
+    // -------------------------------------------------------------------------
+    // Comment-aware directive scanning: a directive inside a comment is TEXT,
+    // not an instruction (the input still carries comments — FxPreParser's
+    // stripped output preserves them).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Flatten_IncludeInsideBlockComment_IsIgnored()
+    {
+        var preprocessor = CreatePreprocessor();
+        // "ghost.fxh" is NOT in the resolver: if the commented directive were
+        // honored, Flatten would fail with SD0001.
+        var resolver = new InMemoryIncludeResolver(new Dictionary<string, string>());
+        const string source = "float a;\n/*\n#include \"ghost.fxh\"\n*/\nfloat b;";
+
+        var result = preprocessor.Flatten(
+            source,
+            originalFilePath: "root.fx",
+            macros: DirectXMacros,
+            includeResolver: resolver,
+            additionalPaths: []);
+
+        result.IsSuccess.Should().BeTrue(
+            because: $"a commented-out #include must not be processed; error: {(result.IsFailure ? result.Error.Message : "<none>")}");
+        // The comment passes through verbatim (DXC strips it later).
+        result.Value.Text.Should().Contain("#include \"ghost.fxh\"");
+    }
+
+    [Fact]
+    public void Flatten_PragmaOnceInsideBlockComment_IsIgnored()
+    {
+        var preprocessor = CreatePreprocessor();
+        var resolver = new InMemoryIncludeResolver(new Dictionary<string, string>
+        {
+            // The commented '#pragma once' must NOT register hdr.fxh as include-once.
+            ["hdr.fxh"] = "/*\n#pragma once\n*/\nfloat hdr_token;",
+        });
+        const string source = "#include \"hdr.fxh\"\n#include \"hdr.fxh\"";
+
+        var result = preprocessor.Flatten(
+            source,
+            originalFilePath: "root.fx",
+            macros: DirectXMacros,
+            includeResolver: resolver,
+            additionalPaths: []);
+
+        result.IsSuccess.Should().BeTrue();
+        CountOccurrences(result.Value.Text, "hdr_token").Should().Be(2);
+    }
+
+    [Fact]
+    public void Flatten_IncludeWithTrailingComment_IsStillProcessed()
+    {
+        var preprocessor = CreatePreprocessor();
+        var resolver = new InMemoryIncludeResolver(new Dictionary<string, string>
+        {
+            ["hdr.fxh"] = "float hdr_token;",
+        });
+        const string source = "#include \"hdr.fxh\" // the usual helpers";
+
+        var result = preprocessor.Flatten(
+            source,
+            originalFilePath: "root.fx",
+            macros: DirectXMacros,
+            includeResolver: resolver,
+            additionalPaths: []);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Text.Should().Contain("hdr_token");
+    }
+
+    [Fact]
+    public void Flatten_IncludeAfterClosedBlockComment_IsProcessed()
+    {
+        var preprocessor = CreatePreprocessor();
+        var resolver = new InMemoryIncludeResolver(new Dictionary<string, string>
+        {
+            ["hdr.fxh"] = "float hdr_token;",
+        });
+        const string source = "/* leading note */ #include \"hdr.fxh\"";
+
+        var result = preprocessor.Flatten(
+            source,
+            originalFilePath: "root.fx",
+            macros: DirectXMacros,
+            includeResolver: resolver,
+            additionalPaths: []);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Text.Should().Contain("hdr_token");
+    }
+
+    [Fact]
+    public void Flatten_CommentOpenerInsideStringLiteral_DoesNotSwallowLaterIncludes()
+    {
+        var preprocessor = CreatePreprocessor();
+        var resolver = new InMemoryIncludeResolver(new Dictionary<string, string>
+        {
+            ["hdr.fxh"] = "float hdr_token;",
+        });
+        // The "/*" inside the string must not open a block comment, or the real
+        // #include on the next line would be silently skipped.
+        const string source = "string s = \"/*\";\n#include \"hdr.fxh\"";
+
+        var result = preprocessor.Flatten(
+            source,
+            originalFilePath: "root.fx",
+            macros: DirectXMacros,
+            includeResolver: resolver,
+            additionalPaths: []);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Text.Should().Contain("hdr_token");
+    }
+
+    [Fact]
+    public void Flatten_LineCommentedInclude_IsIgnored()
+    {
+        var preprocessor = CreatePreprocessor();
+        var resolver = new InMemoryIncludeResolver(new Dictionary<string, string>());
+        const string source = "// #include \"ghost.fxh\"\nfloat a;";
+
+        var result = preprocessor.Flatten(
+            source,
+            originalFilePath: "root.fx",
+            macros: DirectXMacros,
+            includeResolver: resolver,
+            additionalPaths: []);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Text.Should().Contain("// #include \"ghost.fxh\"");
+    }
+
+    private static int CountOccurrences(string text, string token)
+    {
+        int count = 0, index = 0;
+        while ((index = text.IndexOf(token, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += token.Length;
+        }
+        return count;
+    }
 }

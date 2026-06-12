@@ -101,11 +101,11 @@ public sealed class SyncCompileByteIdentityTests
     }
 
     /// <summary>
-    /// The d3dcompiler_47 oracle backend (the Windows DirectX default) must serve the
-    /// sync entry identically too — the "clean scope" of issue #28 covers ALL backends,
-    /// not just the cross-platform set. Windows-only by nature (SD0210 elsewhere), so a
-    /// single representative fixture suffices; the full-corpus DX assertion above runs
-    /// the vkd3d backend on every OS.
+    /// The d3dcompiler_47 oracle backend (opt-in via DxbcBackend.D3DCompiler; the
+    /// library default is vkd3d) must serve the sync entry identically too — the
+    /// "clean scope" of issue #28 covers ALL backends, not just the cross-platform set.
+    /// Windows-only by nature (SD0210 elsewhere), so a single representative fixture
+    /// suffices; the full-corpus DX assertion above runs the vkd3d backend on every OS.
     /// </summary>
     [WindowsFact]
     public async Task DirectX_Oracle_SyncCompile_ByteIdentical_To_CompileAsync()

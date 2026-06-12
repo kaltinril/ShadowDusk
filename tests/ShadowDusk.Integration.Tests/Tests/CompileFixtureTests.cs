@@ -58,16 +58,10 @@ public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
         ("Vulkan",     ProfileVulkan),
     };
 
-    /// <summary>
-    /// Whether a (profile, mode) cell can run on this host. The CLI process uses the
-    /// library's DEFAULT DirectX backend — the Windows-only d3dcompiler_47 oracle
-    /// (SD0210 elsewhere) — while the DirectPipeline helper opts into vkd3d off-Windows,
-    /// so the CLI-mode DirectX rows are Windows-only by the same backend reality.
-    /// </summary>
-    private static bool CellRunsHere(string profile, InvocationMode mode) =>
-        mode != InvocationMode.CliProcess
-        || profile != "DirectX_11"
-        || OperatingSystem.IsWindows();
+    // Every (profile, mode) cell runs on every host: the library's DEFAULT DirectX
+    // backend is now vkd3d (cross-platform, host-independent), so the CLI-process
+    // DirectX rows are no longer Windows-only — both invocation modes use the same
+    // backend everywhere, which is exactly what the byte-identity assertion needs.
 
     public static TheoryData<string, string, byte> AllFixturesAndPlatforms()
     {
@@ -85,23 +79,17 @@ public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
         foreach (string fixture in Fixtures)
         foreach (var (profile, profileId) in Platforms)
         foreach (InvocationMode mode in new[] { InvocationMode.DirectPipeline, InvocationMode.CliProcess })
-        {
-            if (CellRunsHere(profile, mode))
-                data.Add(fixture, profile, profileId, mode);
-        }
+            data.Add(fixture, profile, profileId, mode);
         return data;
     }
 
-    /// <summary>The (fixture, platform) pairs whose CLI cell runs on this host (byte-identity matrix).</summary>
+    /// <summary>The (fixture, platform) pairs of the CLI-vs-pipeline byte-identity matrix.</summary>
     public static TheoryData<string, string> CliComparablePairs()
     {
         var data = new TheoryData<string, string>();
         foreach (string fixture in Fixtures)
         foreach (var (profile, _) in Platforms)
-        {
-            if (CellRunsHere(profile, InvocationMode.CliProcess))
-                data.Add(fixture, profile);
-        }
+            data.Add(fixture, profile);
         return data;
     }
 

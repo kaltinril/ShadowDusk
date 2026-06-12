@@ -39,7 +39,7 @@ public sealed class DxilReflectionExtractor
                 File:    "",
                 Line:    0,
                 Column:  0,
-                Code:    "SD0100",
+                Code:    "SD0102",
                 Message: "Reflection failed: " + ex.Message));
         }
     }
@@ -71,7 +71,7 @@ public sealed class DxilReflectionExtractor
                     File:    "",
                     Line:    0,
                     Column:  0,
-                    Code:    "SD0100",
+                    Code:    "SD0102",
                     Message: "Reflection failed: unable to create DXC blob from DXIL bytes"));
             }
 
@@ -83,7 +83,7 @@ public sealed class DxilReflectionExtractor
                     File:    "",
                     Line:    0,
                     Column:  0,
-                    Code:    "SD0100",
+                    Code:    "SD0102",
                     Message: "Reflection failed: CreateReflection returned null"));
             }
 

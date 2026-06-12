@@ -40,6 +40,18 @@ internal static class Vkd3dLoader
     {
         if (Interlocked.CompareExchange(ref _registered, 1, 0) != 0) return;
 
+        // Silence vkd3d's internal debug logging by default (e.g.
+        // "vkd3d:1234:fixme:preproc_yyparse #line directive." on stderr). A successful
+        // compile must be SILENT — the mgfxc contract: MGCB treats stderr output as
+        // diagnostics, and a consumer's process should not get native debug noise on
+        // its stderr. Real compile errors are unaffected: they flow through vkd3d's
+        // messages out-parameter (constraint 5), not this debug channel. An explicit
+        // user setting is respected (debugging escape hatch, never required for
+        // correct output). Must run BEFORE the native library loads — vkd3d caches
+        // its debug level from the environment on first use.
+        SetDefaultEnvironmentVariable("VKD3D_DEBUG", "none");
+        SetDefaultEnvironmentVariable("VKD3D_SHADER_DEBUG", "none");
+
         NativeLibrary.SetDllImportResolver(
             typeof(Vkd3dLoader).Assembly,
             (name, _, _) =>
@@ -79,6 +91,12 @@ internal static class Vkd3dLoader
 
                 return IntPtr.Zero;
             });
+    }
+
+    private static void SetDefaultEnvironmentVariable(string name, string value)
+    {
+        if (Environment.GetEnvironmentVariable(name) is null)
+            Environment.SetEnvironmentVariable(name, value);
     }
 
     private static string[] GetNativeSearchDirectories()

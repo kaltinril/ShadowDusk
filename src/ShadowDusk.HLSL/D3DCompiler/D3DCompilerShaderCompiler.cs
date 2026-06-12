@@ -87,13 +87,7 @@ public sealed class D3DCompilerShaderCompiler : IDxbcShaderCompiler
         if (!OperatingSystem.IsWindows())
             throw new PlatformNotSupportedException("DXBC oracle backend requires Windows");
 
-        string profile = request.Stage switch
-        {
-            ShaderStage.Vertex => "vs_5_0",
-            ShaderStage.Pixel  => "ps_5_0",
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(request), $"Unsupported shader stage for DXBC: {request.Stage}"),
-        };
+        string profile = ShaderProfiles.DefaultDxbcProfile(request.Stage);
 
         // Row-major matrix packing matches the DXC path's -Zpr so reflection
         // offsets and the runtime's float4x4 layout agree across backends.

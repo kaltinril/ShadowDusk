@@ -1228,4 +1228,265 @@ public sealed class FxPreParserTests
         stripped.Should().Contain("(float2 uv, sampler2D s)");
         stripped.Should().Contain("return float4(uv, 0, 1);");
     }
+
+    // -------------------------------------------------------------------------
+    // Negative numeric values — the lexer historically SWALLOWED '-' (no Minus
+    // token), so 'DepthBias = -0.5;' was captured as '0.5': silently-wrong output.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_NegativeRenderStateValue_CapturesTheSign()
+    {
+        const string source = """
+            technique T
+            {
+                pass P
+                {
+                    PixelShader = compile ps_3_0 PSMain();
+                    DepthBias = -0.5;
+                    SlopeScaleDepthBias = -2;
+                }
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        var states = result.Value.Techniques[0].Passes[0].RenderStates;
+        states.Should().ContainSingle(s => s.Key == "DepthBias").Which.Value.Should().Be("-0.5");
+        states.Should().ContainSingle(s => s.Key == "SlopeScaleDepthBias").Which.Value.Should().Be("-2");
+    }
+
+    [Fact]
+    public void Parse_NegativeSamplerStateValue_CapturesTheSign()
+    {
+        const string source = """
+            sampler MySampler = sampler_state
+            {
+                Texture = <SomeTexture>;
+                MipMapLodBias = -2;
+            };
+            technique T
+            {
+                pass P { PixelShader = compile ps_3_0 PSMain(); }
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        var sampler = result.Value.Samplers.Should().ContainSingle().Subject;
+        sampler.StateEntries.Should().ContainSingle(e => e.Key == "MipMapLodBias")
+            .Which.Value.Should().Be("-2");
+    }
+
+    [Fact]
+    public void Parse_NegativeAnnotationValue_CapturesTheSign()
+    {
+        const string source = """
+            float Intensity < float UIMin = -1.0; > ;
+            technique T
+            {
+                pass P { PixelShader = compile ps_3_0 PSMain(); }
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        var annotation = result.Value.ParameterAnnotations.Should().ContainSingle().Subject;
+        annotation.Entries.Should().ContainSingle(e => e.Name == "UIMin")
+            .Which.Value.Should().Be("-1.0");
+    }
+
+    [Fact]
+    public void Parse_MinusInFunctionBody_PassesThroughVerbatim()
+    {
+        const string source = """
+            float4 PSMain() : SV_Target
+            {
+                float a = 1.0 - 0.25;
+                return float4(-a, a - 1.0, 0, 1);
+            }
+            technique T
+            {
+                pass P { PixelShader = compile ps_3_0 PSMain(); }
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.StrippedHlsl.Should().Contain("float a = 1.0 - 0.25;");
+        result.Value.StrippedHlsl.Should().Contain("return float4(-a, a - 1.0, 0, 1);");
+    }
+
+    // -------------------------------------------------------------------------
+    // Hex / exponent numeric literals (lexer ReadNumber upgrade)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_HexRenderStateValue_CapturedAsOneToken()
+    {
+        const string source = """
+            technique T
+            {
+                pass P
+                {
+                    PixelShader = compile ps_3_0 PSMain();
+                    BlendFactor = 0x80FF8080;
+                }
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Techniques[0].Passes[0].RenderStates
+            .Should().ContainSingle(s => s.Key == "BlendFactor")
+            .Which.Value.Should().Be("0x80FF8080");
+    }
+
+    [Fact]
+    public void Parse_ExponentRenderStateValue_CapturedAsOneToken()
+    {
+        const string source = """
+            technique T
+            {
+                pass P
+                {
+                    PixelShader = compile ps_3_0 PSMain();
+                    DepthBias = 1e-4;
+                }
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Techniques[0].Passes[0].RenderStates
+            .Should().ContainSingle(s => s.Key == "DepthBias")
+            .Which.Value.Should().Be("1e-4");
+    }
+
+    // -------------------------------------------------------------------------
+    // Unknown characters fail loudly (FX0011) instead of being silently skipped
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_UnknownCharacter_FailsWithFX0011()
+    {
+        const string source = """
+            float x @ 1;
+            technique T
+            {
+                pass P { PixelShader = compile ps_3_0 PSMain(); }
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be(FxParseErrorCode.UnknownCharacter);
+        result.Error.Message.Should().Contain("'@'");
+    }
+
+    [Fact]
+    public void Parse_HlslOperatorCharacters_DoNotTriggerUnknownCharacter()
+    {
+        // The operator characters the lexer deliberately tokenizes-through must keep
+        // working in code bodies (the ':' drop is load-bearing for semantics).
+        const string source = """
+            float4 PSMain(float2 uv : TEXCOORD0) : SV_Target
+            {
+                int mask = (3 & 1) | (4 ^ 2);
+                bool flag = !(mask % 2 == 1) ? true : false;
+                float arr[2] = { 0.5, ~0 };
+                return float4(uv, arr[0], flag ? 1.0 : 0.0);
+            }
+            technique T
+            {
+                pass P { PixelShader = compile ps_3_0 PSMain(); }
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.StrippedHlsl.Should().Contain("int mask = (3 & 1) | (4 ^ 2);");
+    }
+
+    // -------------------------------------------------------------------------
+    // Legacy sampling intrinsics: tex2Dgrad forwards (1:1 args); tex2Dlod and the
+    // other restructuring variants fail loudly with FX0012 (naming the intrinsic)
+    // instead of dying inside DXC with a misleading diagnostic.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_Tex2Dgrad_RewritesToSampleGrad()
+    {
+        const string source = """
+            sampler TexSampler = sampler_state { Texture = <SpriteTexture>; };
+
+            float4 PSMain(float2 uv : TEXCOORD0) : SV_Target
+            {
+                return tex2Dgrad(TexSampler, uv, ddx(uv), ddy(uv));
+            }
+            technique T
+            {
+                pass P { PixelShader = compile ps_3_0 PSMain(); }
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.StrippedHlsl.Should().Contain("SpriteTexture.SampleGrad(TexSampler, uv, ddx(uv), ddy(uv))");
+        result.Value.StrippedHlsl.Should().NotContain("tex2Dgrad");
+    }
+
+    [Theory]
+    [InlineData("tex2Dlod")]
+    [InlineData("tex2Dproj")]
+    [InlineData("tex2Dbias")]
+    [InlineData("texCUBE")]
+    [InlineData("tex3D")]
+    public void Parse_UnsupportedLegacyIntrinsic_FailsWithFX0012_NamingTheIntrinsic(string intrinsic)
+    {
+        string source = $$"""
+            sampler TexSampler = sampler_state { Texture = <SpriteTexture>; };
+
+            float4 PSMain(float4 t : TEXCOORD0) : SV_Target
+            {
+                return {{intrinsic}}(TexSampler, t);
+            }
+            technique T
+            {
+                pass P { PixelShader = compile ps_3_0 PSMain(); }
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be(FxParseErrorCode.UnsupportedLegacyIntrinsic);
+        result.Error.Message.Should().Contain($"'{intrinsic}'");
+    }
+
+    [Fact]
+    public void Parse_IdentifierNamedLikeIntrinsic_ButNotACall_DoesNotFail()
+    {
+        // Only a CALL trips FX0012; a variable merely named tex2Dlod does not.
+        const string source = """
+            float tex2Dlod;
+            technique T
+            {
+                pass P { PixelShader = compile ps_3_0 PSMain(); }
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+    }
 }

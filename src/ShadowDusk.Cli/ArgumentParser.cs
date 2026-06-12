@@ -15,6 +15,9 @@ internal static class ArgumentParser
                                     Platforms: DirectX_11, OpenGL, Vulkan, FNA
           /Debug                    Include debug information in output
           /I <path>                 Additional include search path (repeatable)
+          /DxbcBackend:<Backend>    DXBC backend for DirectX_11. Default: vkd3d
+                                    (cross-platform). d3dcompiler is the Windows-only
+                                    correctness oracle; never required for correct output.
           --mgfx-version <10|11>    Output format version. Default: 10
 
         Unsupported platforms (exit 1): PlayStation4, XboxOne, Switch
@@ -30,6 +33,7 @@ internal static class ArgumentParser
         bool debug = false;
         var includePaths = new List<string>();
         int mgfxVersion = 10;
+        DxbcBackend dxbcBackend = DxbcBackend.Vkd3d;
 
         int i = 0;
         while (i < args.Length)
@@ -54,6 +58,26 @@ internal static class ArgumentParser
                     if (profileResult.IsFailure)
                         return Result<CliArguments, ShaderError>.Fail(profileResult.Error);
                     platform = profileResult.Value;
+                    i++;
+                    continue;
+                }
+
+                if (flagBody.StartsWith("DxbcBackend:", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Non-required escape hatch (the default, vkd3d, is the correct path
+                    // on every OS); d3dcompiler opts in to the Windows-only fxc oracle.
+                    string backendValue = flagBody.Substring("DxbcBackend:".Length);
+                    if (backendValue.Equals("vkd3d", StringComparison.OrdinalIgnoreCase))
+                        dxbcBackend = DxbcBackend.Vkd3d;
+                    else if (backendValue.Equals("d3dcompiler", StringComparison.OrdinalIgnoreCase))
+                        dxbcBackend = DxbcBackend.D3DCompiler;
+                    else
+                        return Result<CliArguments, ShaderError>.Fail(new ShaderError(
+                            File: "",
+                            Line: 0,
+                            Column: 0,
+                            Code: "X0006",
+                            Message: $"Invalid /DxbcBackend value '{backendValue}'. Valid backends: vkd3d, d3dcompiler"));
                     i++;
                     continue;
                 }
@@ -151,8 +175,16 @@ internal static class ArgumentParser
             Platform: platform,
             Debug: debug,
             IncludePaths: includePaths,
-            MgfxVersion: mgfxVersion));
+            MgfxVersion: mgfxVersion,
+            DxbcBackend: dxbcBackend));
     }
+
+    // The flag names this CLI understands, for '/'-prefix disambiguation in IsFlag.
+    // (Matched against the part of the token before any ':'.)
+    private static readonly string[] KnownSlashFlagNames =
+    {
+        "Debug", "Profile", "I", "DxbcBackend", "mgfx-version",
+    };
 
     private static bool IsFlag(string token)
     {
@@ -161,16 +193,22 @@ internal static class ArgumentParser
             return true;
 
         // mgfxc-style "/Opt" options collide with POSIX absolute paths, which also start
-        // with '/' (e.g. "/home/user/shader.fx" on Linux/macOS). Treat a '/'-prefixed
-        // token as an option ONLY when its name (the part up to the first ':') looks like a
-        // bare flag — no path separator and no '.' extension. That way "/Profile:OpenGL",
-        // "/Debug" and "/I:/usr/include" are options, while an absolute source/output path
-        // like "/home/runner/work/.../Grayscale.fx" is correctly parsed as positional.
+        // with '/' (e.g. "/home/user/shader.fx" on Linux/macOS). A '/'-prefixed token is
+        // an option when its name (the part up to the first ':') is one of THIS CLI's
+        // known flags, or — for forward compatibility with future mgfxc flags MGCB may
+        // pass (e.g. "/Defines:FOO=1") — when it carries a ':' value and its name looks
+        // like a bare flag (no path separator, no '.' extension). A bare extensionless
+        // POSIX path like "/data" is NOT a known flag and carries no ':', so it parses
+        // as positional instead of being silently dropped.
         if (token.StartsWith('/'))
         {
             int colon = token.IndexOf(':');
             string name = colon >= 0 ? token.Substring(1, colon - 1) : token.Substring(1);
-            return name.Length > 0 && !name.Contains('/') && !name.Contains('.');
+
+            if (KnownSlashFlagNames.Any(f => f.Equals(name, StringComparison.OrdinalIgnoreCase)))
+                return true;
+
+            return colon >= 0 && name.Length > 0 && !name.Contains('/') && !name.Contains('.');
         }
 
         return false;

@@ -534,6 +534,73 @@ public sealed class MgfxWriterTests
         result.Error.Code.Should().Be("SD0021");
     }
 
+    [Fact]
+    public void Shader_ConstantBufferIndexExceedsByte_ReturnsError()
+    {
+        // The cbuffer-index list is serialized as single bytes — an index > 255 must
+        // fail loudly (SD0022) instead of silently truncating into a corrupt .mgfx.
+        var ir = new ShaderIR
+        {
+            Shaders =
+            [
+                new CompiledShaderBlob([1, 2, 3], ShaderStage.Pixel)
+                {
+                    ConstantBufferIndices = [byte.MaxValue + 1],
+                },
+            ],
+        };
+
+        var result = new MgfxWriter().Write(ir, new MgfxWriterOptions(MgfxProfile.OpenGL));
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("SD0022");
+    }
+
+    [Fact]
+    public void Shader_SamplerParameterIndexExceedsByte_ReturnsError()
+    {
+        var ir = new ShaderIR
+        {
+            Shaders =
+            [
+                new CompiledShaderBlob([1, 2, 3], ShaderStage.Pixel)
+                {
+                    Samplers =
+                    [
+                        new MgfxSamplerInfo(
+                            Type: 0,
+                            TextureSlot: 0,
+                            SamplerSlot: 0,
+                            Name: "ps_s0",
+                            Parameter: byte.MaxValue + 1),
+                    ],
+                },
+            ],
+        };
+
+        var result = new MgfxWriter().Write(ir, new MgfxWriterOptions(MgfxProfile.OpenGL));
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("SD0022");
+    }
+
+    [Fact]
+    public void Shader_ByteRangeValues_AtTheLimit_Succeed()
+    {
+        // 255 is representable — only 256+ trips the guard.
+        var ir = new ShaderIR
+        {
+            Shaders =
+            [
+                new CompiledShaderBlob([1, 2, 3], ShaderStage.Pixel)
+                {
+                    ConstantBufferIndices = [byte.MaxValue],
+                },
+            ],
+        };
+
+        var result = new MgfxWriter().Write(ir, new MgfxWriterOptions(MgfxProfile.OpenGL));
+        result.IsSuccess.Should().BeTrue();
+    }
+
     // -------------------------------------------------------------------------
     // 9.6 Render state tests
     // -------------------------------------------------------------------------

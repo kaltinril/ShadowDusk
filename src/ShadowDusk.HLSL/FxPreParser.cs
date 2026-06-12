@@ -60,16 +60,32 @@ public sealed class FxPreParser
     // -------------------------------------------------------------------------
 
     // SM 1.x–3.x sampling intrinsics that DXC 6.x dropped and that ShadowDusk
-    // rewrites to the modern '<texture>.Sample(<sampler>, uv)' form. Only the
-    // plain 2D sampler→coordinate intrinsic is handled: its argument list aligns
-    // exactly with Texture2D.Sample (sampler first, coordinate second), so the
-    // rewrite is a clean identifier swap. The projection / LOD / bias / gradient
-    // variants (tex2Dlod, tex2Dproj, tex2Dbias, tex2Dgrad, texCUBE, …) restructure
-    // their arguments and are left for future work — they fail loudly in DXC.
+    // rewrites to the modern '<texture>.<Method>(<sampler>, …)' form. Only the
+    // intrinsics whose argument lists align ONE-TO-ONE with the corresponding
+    // Texture2D method are handled, so the rewrite is a clean identifier swap:
+    //   tex2D(s, uv)               → T.Sample(s, uv)
+    //   tex2Dgrad(s, uv, ddx, ddy) → T.SampleGrad(s, uv, ddx, ddy)
     // Matched case-sensitively because HLSL intrinsic names are case-sensitive.
-    private static readonly HashSet<string> Tex2DIntrinsics = new(StringComparer.Ordinal)
+    private static readonly Dictionary<string, string> LegacySampleIntrinsics = new(StringComparer.Ordinal)
     {
-        "tex2D",
+        ["tex2D"]     = "Sample",
+        ["tex2Dgrad"] = "SampleGrad",
+    };
+
+    // Legacy sampling intrinsics whose arguments do NOT map 1:1 onto a modern
+    // Texture method (tex2Dlod packs the LOD into coord.w, tex2Dproj divides by
+    // coord.w, the bias forms pack the bias into coord.w; the 1D/3D/CUBE families
+    // additionally need a non-Texture2D resource the sampler rewrite does not
+    // synthesize). Rewriting them is NOT mechanical with the span-substitution
+    // machinery here, so they fail loudly with a targeted FX0012 diagnostic instead
+    // of dying later inside DXC with a misleading 'unknown identifier' error.
+    // The FNA target (PreserveSm3) compiles all of these natively via vkd3d.
+    private static readonly HashSet<string> UnsupportedLegacyIntrinsics = new(StringComparer.Ordinal)
+    {
+        "tex1D", "tex1Dbias", "tex1Dgrad", "tex1Dlod", "tex1Dproj",
+        "tex2Dbias", "tex2Dlod", "tex2Dproj",
+        "tex3D", "tex3Dbias", "tex3Dgrad", "tex3Dlod", "tex3Dproj",
+        "texCUBE", "texCUBEbias", "texCUBEgrad", "texCUBElod", "texCUBEproj",
     };
 
     // -------------------------------------------------------------------------
@@ -121,7 +137,7 @@ public sealed class FxPreParser
     private readonly string _source;
 
     // Names of samplers that appear as the first argument of a legacy sampling
-    // intrinsic (currently tex2D). Populated by a pre-scan before the main loop.
+    // intrinsic (tex2D / tex2Dgrad). Populated by a pre-scan before the main loop.
     // A sampler declaration is only rewritten into the modern Texture2D +
     // SamplerState form when its name is in this set — declarations that no
     // legacy intrinsic references keep their existing handling (Form 1 erased,
@@ -568,31 +584,62 @@ public sealed class FxPreParser
                 continue;
             }
 
-            // DXC 6.x dropped the legacy 'tex2D(s, uv)' sampling intrinsic. Rewrite
-            // it to '<texture>.Sample(s, uv)', where <texture> is the Texture2D the
-            // sampler 's' was bound to during declaration processing. The argument
-            // list aligns one-to-one with Texture2D.Sample (sampler first, coordinate
-            // second), so only the 'tex2D' identifier itself is replaced; '(s, uv)'
-            // is copied verbatim. A sampler not in the binding map (declaration form
-            // not understood, e.g. effect-framework syntax) is left alone so DXC
-            // surfaces a clear diagnostic rather than ShadowDusk emitting bad HLSL.
-            // In PreserveSm3 mode 'tex2D' is a valid SM3 intrinsic for vkd3d and
-            // passes through verbatim (no bindings are recorded in that mode, so
-            // the map lookup would fail anyway — the mode check makes it explicit).
+            // Legacy sampling intrinsics that CANNOT be rewritten mechanically (their
+            // argument lists restructure — e.g. tex2Dlod packs the LOD into coord.w).
+            // Fail loudly with a targeted diagnostic naming the intrinsic instead of
+            // letting DXC die later with a misleading 'unknown identifier'. Only an
+            // actual CALL trips this; a user variable that merely shares the name does
+            // not. PreserveSm3 (FNA) passes these through verbatim — vkd3d compiles
+            // them natively.
             if (_mode == FxSourceMode.RewriteToSm4 &&
-                tok.Kind == TokenKind.Identifier && Tex2DIntrinsics.Contains(tok.Text) &&
+                tok.Kind == TokenKind.Identifier && UnsupportedLegacyIntrinsics.Contains(tok.Text) &&
+                Peek(NextCodeOffset(1)).Kind == TokenKind.LParen)
+            {
+                return Fail<FxParseResult>(FxParseErrorCode.UnsupportedLegacyIntrinsic,
+                    $"The legacy D3D9 sampling intrinsic '{tok.Text}' is not supported on this " +
+                    "target: its arguments do not map 1:1 onto a modern Texture method, so " +
+                    "ShadowDusk cannot rewrite it automatically. Rewrite the call to the modern " +
+                    "form (e.g. tex2Dlod(s, t) becomes T.SampleLevel(s, t.xy, t.w); " +
+                    "tex2Dproj(s, t) becomes T.Sample(s, t.xy / t.w)). The FNA (fx_2_0) target " +
+                    "compiles this intrinsic natively.", tok);
+            }
+
+            // DXC 6.x dropped the legacy 'tex2D(s, uv)' / 'tex2Dgrad(s, uv, ddx, ddy)'
+            // sampling intrinsics. Rewrite them to '<texture>.Sample(…)' /
+            // '<texture>.SampleGrad(…)', where <texture> is the Texture2D the sampler
+            // 's' was bound to during declaration processing. The argument lists align
+            // one-to-one with the Texture2D methods (sampler first), so only the
+            // intrinsic identifier itself is replaced; '(s, …)' is copied verbatim.
+            // A sampler not in the binding map (declaration form not understood, e.g.
+            // effect-framework syntax) is left alone so DXC surfaces a clear diagnostic
+            // rather than ShadowDusk emitting bad HLSL. In PreserveSm3 mode these are
+            // valid SM3 intrinsics for vkd3d and pass through verbatim (no bindings are
+            // recorded in that mode, so the map lookup would fail anyway — the mode
+            // check makes it explicit).
+            if (_mode == FxSourceMode.RewriteToSm4 &&
+                tok.Kind == TokenKind.Identifier &&
+                LegacySampleIntrinsics.TryGetValue(tok.Text, out string? sampleMethod) &&
                 TryMatchTexSampleArgument(out string samplerArg) &&
                 _samplerTextureBindings.TryGetValue(samplerArg, out string? boundTexture))
             {
                 int texStart = _tokenCharOffset[_pos];
                 int texEnd = texStart + tok.Text.Length;
-                replacedRanges.Add((texStart, texEnd, $"{boundTexture}.Sample"));
+                replacedRanges.Add((texStart, texEnd, $"{boundTexture}.{sampleMethod}"));
 
                 // Consume only the intrinsic identifier; '(', the sampler argument,
                 // and the rest of the call flow through the loop verbatim.
                 Consume();
                 SkipNonCodeTokens();
                 continue;
+            }
+
+            // A genuinely-unknown character (e.g. '@', '$', a backtick) — fail loudly.
+            // Historically the lexer silently swallowed these, which corrupted captured
+            // values; now they surface with their exact location.
+            if (tok.Kind == TokenKind.Unknown)
+            {
+                return Fail<FxParseResult>(FxParseErrorCode.UnknownCharacter,
+                    $"Unexpected character '{tok.Text}' in effect source", tok);
             }
 
             // Everything else: copy verbatim (advance past single token).
@@ -812,13 +859,25 @@ public sealed class FxPreParser
             }
             else
             {
-                // Generic render state: Key = Value ;
+                // Generic render state: Key = Value ;  (Value may be a negative
+                // numeric literal, e.g. 'DepthBias = -0.5;' — the '-' is its own token.)
+                string negativePrefix = string.Empty;
+                if (Peek().Kind == TokenKind.Minus)
+                {
+                    Consume(); // '-'
+                    SkipNonCodeTokens();
+                    if (Peek().Kind != TokenKind.Number)
+                        return Fail<PassInfo>(FxParseErrorCode.UnexpectedToken,
+                            $"Expected numeric render-state value after '-' but found '{Peek().Text}'", Peek());
+                    negativePrefix = "-";
+                }
+
                 var valueTok = Peek();
                 if (valueTok.Kind is not (TokenKind.Identifier or TokenKind.Number))
                     return Fail<PassInfo>(FxParseErrorCode.UnexpectedToken,
                         $"Expected render-state value but found '{valueTok.Text}'", valueTok);
 
-                string value = valueTok.Text;
+                string value = negativePrefix + valueTok.Text;
                 var valueSpan = new SourceSpan(keyTok.Line, keyTok.Column,
                     valueTok.Line, valueTok.Column + valueTok.Text.Length);
                 Consume();
@@ -980,6 +1039,19 @@ public sealed class FxPreParser
             }
             else
             {
+                // Sampler-state value, optionally a negative numeric literal
+                // (e.g. 'MipMapLodBias = -2;' — the '-' is its own token).
+                string negativePrefix = string.Empty;
+                if (Peek().Kind == TokenKind.Minus)
+                {
+                    Consume(); // '-'
+                    SkipNonCodeTokens();
+                    if (Peek().Kind != TokenKind.Number)
+                        return Fail<SamplerInfo>(FxParseErrorCode.UnexpectedToken,
+                            $"Expected numeric sampler state value after '-' but found '{Peek().Text}'", Peek());
+                    negativePrefix = "-";
+                }
+
                 var valTok = Peek();
                 if (valTok.Kind is not (TokenKind.Identifier or TokenKind.Number))
                     return Fail<SamplerInfo>(FxParseErrorCode.UnexpectedToken,
@@ -987,7 +1059,7 @@ public sealed class FxPreParser
 
                 var span = new SourceSpan(keyTok.Line, keyTok.Column,
                     valTok.Line, valTok.Column + valTok.Text.Length);
-                stateEntries.Add(new SamplerStateEntry(key, valTok.Text, span));
+                stateEntries.Add(new SamplerStateEntry(key, negativePrefix + valTok.Text, span));
                 Consume();
             }
 
@@ -1062,12 +1134,25 @@ public sealed class FxPreParser
                 return Result<List<AnnotationEntry>, FxParseError>.Fail(annotEq.Error);
             SkipNonCodeTokens();
 
+            // Annotation value, optionally a negative numeric literal
+            // (e.g. '< float UIMin = -1.0; >' — the '-' is its own token).
+            string negativePrefix = string.Empty;
+            if (Peek().Kind == TokenKind.Minus)
+            {
+                Consume(); // '-'
+                SkipNonCodeTokens();
+                if (Peek().Kind != TokenKind.Number)
+                    return Fail<List<AnnotationEntry>>(FxParseErrorCode.UnexpectedToken,
+                        $"Expected numeric annotation value after '-' but found '{Peek().Text}'", Peek());
+                negativePrefix = "-";
+            }
+
             var valueTok = Peek();
             if (valueTok.Kind is not (TokenKind.StringLiteral or TokenKind.Number or TokenKind.Identifier))
                 return Fail<List<AnnotationEntry>>(FxParseErrorCode.UnexpectedToken,
                     $"Expected annotation value but found '{valueTok.Text}'", valueTok);
 
-            string value = valueTok.Text;
+            string value = negativePrefix + valueTok.Text;
             var entrySpan = new SourceSpan(typeTok.Line, typeTok.Column,
                 valueTok.Line, valueTok.Column + valueTok.Text.Length);
             Consume();
@@ -1212,10 +1297,10 @@ public sealed class FxPreParser
 
         for (int i = 0; i < _tokens.Count; i++)
         {
-            if (_tokens[i].Kind != TokenKind.Identifier || !Tex2DIntrinsics.Contains(_tokens[i].Text))
+            if (_tokens[i].Kind != TokenKind.Identifier || !LegacySampleIntrinsics.ContainsKey(_tokens[i].Text))
                 continue;
 
-            // Expect 'tex2D' '(' Identifier — comments may sit in between.
+            // Expect '<intrinsic>' '(' Identifier — comments may sit in between.
             int j = i + 1;
             while (j < _tokens.Count && _tokens[j].Kind is TokenKind.LineComment or TokenKind.BlockComment)
                 j++;

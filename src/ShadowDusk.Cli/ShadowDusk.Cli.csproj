@@ -34,6 +34,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
-    <ProjectReference Include="..\ShadowDusk.Metal\ShadowDusk.Metal.csproj" />
+    <!-- ShadowDusk.Metal is an empty stub; nothing in the CLI uses it, so it is not
+         referenced — keeping its DLL out of the ShadowDuskCLI tool package. -->
   </ItemGroup>
 </Project>

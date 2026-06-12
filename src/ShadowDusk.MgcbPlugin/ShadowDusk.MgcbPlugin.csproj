@@ -2,6 +2,8 @@
   <PropertyGroup>
     <AssemblyName>ShadowDusk.MgcbPlugin</AssemblyName>
     <RootNamespace>ShadowDusk.MgcbPlugin</RootNamespace>
+    <!-- Stub project (future MGCB plugin scaffold) — never packed until implemented. -->
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>

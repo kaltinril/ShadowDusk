@@ -85,18 +85,10 @@ public sealed class EffectCompilerTests
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
-        // Default d3dcompiler_47 oracle on Windows (the proven consumer default);
-        // the cross-platform vkd3d backend elsewhere (the oracle is Windows-only
-        // by nature — SD0210). Phase 37 C provisions the vkd3d native in CI so
-        // this runs, not skips, on all three OSes.
-        var options = new CompilerOptions
-        {
-            Target      = PlatformTarget.DirectX,
-            DxbcBackend = OperatingSystem.IsWindows()
-                              ? DxbcBackend.D3DCompiler
-                              : DxbcBackend.Vkd3d,
-        };
-        var result = await CompileFileAsync("Minimal.fx", PlatformTarget.DirectX, options, cancellationToken: cts.Token);
+        // Library DEFAULT backend (vkd3d, cross-platform and host-independent) — the
+        // exact path a consumer hits with no options set, on all three OSes. The
+        // Windows-only d3dcompiler_47 oracle is exercised by its own opt-in tests.
+        var result = await CompileFileAsync("Minimal.fx", PlatformTarget.DirectX, cancellationToken: cts.Token);
 
         result.IsSuccess.Should().BeTrue(
             because: result.IsFailure ? FormatErrors(result.Error) : "compilation must succeed");

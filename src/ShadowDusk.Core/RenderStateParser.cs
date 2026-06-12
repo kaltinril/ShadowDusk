@@ -497,12 +497,14 @@ public sealed class RenderStateParser
         return true;
     }
 
+    // SD0011 — unique to this condition (SD0010 is the pipeline's "no techniques" error;
+    // the two previously collided). Registered in docs/error-codes.md.
     private static Result<bool, ShaderError> UnknownValue(string key, string value)
         => Result<bool, ShaderError>.Fail(new ShaderError(
             File: "",
             Line: 0,
             Column: 0,
-            Code: "SD0010",
+            Code: "SD0011",
             Message: $"Unrecognised value '{Sanitize(value)}' for render state key '{key}'"));
 
     private static string Sanitize(string s)

@@ -28,4 +28,15 @@ public static class PlatformMacros
         PlatformTarget.Fna     => new MacroSet([new("FNA"), new("HLSL"), new("SM3")]),
         _ => throw new ArgumentOutOfRangeException(nameof(platform))
     };
+
+    /// <summary>
+    /// Whether <see cref="For"/> can produce a macro set for the given target — i.e. the
+    /// target is one ShadowDusk compiles. Callers pre-check this instead of catching the
+    /// <see cref="ArgumentOutOfRangeException"/> (no exception-as-control-flow).
+    /// </summary>
+    public static bool IsSupported(PlatformTarget platform) => platform
+        is PlatformTarget.DirectX
+        or PlatformTarget.OpenGL
+        or PlatformTarget.Vulkan
+        or PlatformTarget.Fna;
 }
