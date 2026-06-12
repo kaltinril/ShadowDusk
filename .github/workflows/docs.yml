@@ -74,13 +74,15 @@ jobs:
       - name: dotnet restore (locked)
         run: dotnet restore ShadowDusk.slnx --locked-mode
 
-      # The docs build doesn't need the cross-platform natives, but run the restore
-      # best-effort so any DX/WASM-referencing prose stays accurate if the artifacts
-      # are present. NEVER fail the docs build on a missing optional native.
-      - name: Restore native tools (best-effort, non-fatal)
+      # The docs build doesn't need the cross-platform natives, but run the restore so
+      # any DX/WASM-referencing prose stays accurate if the artifacts are present.
+      # Missing OPTIONAL natives never fail it (the script warns and exits 0 for those
+      # — including the optional spirv-cross copy, since 2026-06-12), but a genuine
+      # script failure goes red here like everywhere else: no `|| true`.
+      - name: Restore native tools
         run: |
-          chmod +x tools/restore.sh || true
-          ./tools/restore.sh || true
+          chmod +x tools/restore.sh
+          ./tools/restore.sh
 
       - name: Restore .NET local tools (pinned DocFX)
         run: dotnet tool restore

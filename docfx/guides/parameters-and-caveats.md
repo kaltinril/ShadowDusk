@@ -28,6 +28,10 @@ float FishEyeAmount = 0.35;
 
 This is a known fidelity gap versus `mgfxc` for the *initializer* specifically (it did not affect the validated SM3 corpus). Setting parameters by name at runtime is the recommended pattern regardless.
 
+## Advanced texture intrinsics compile on Windows only (for now)
+
+A small family of advanced **OpenGL-target** texture intrinsics — **3D-texture sampling (`tex3D`), explicit-LOD sampling (the `tex2Dlod` family), and gradient sampling (the `tex2Dgrad` family)** — currently compiles on the Windows DXC native but **fails to compile on the Linux/macOS DXC builds**, even though all hosts pin the same DXC version. If your `.fx` uses these and you compile on Linux/macOS, expect a compile error (a loud diagnostic, never a miscompile); compiling the same shader on Windows works. The ordinary texture corpus (`tex2D`, multi-texture, samplers, render targets, …) is unaffected and compiles identically on all three OSes. This per-OS divergence is a known, tracked gap under investigation — it will be fixed in the compiler, not papered over here.
+
 ## DirectX uses `vkd3d-shader`, not DXC
 
 For `Target = DirectX`, ShadowDusk emits DXBC (SM ≤ 5) — what MonoGame's DX11 runtime loads — via `vkd3d-shader` (cross-platform) or `d3dcompiler_47` (Windows-only oracle), selected by <xref:ShadowDusk.Core.CompilerOptions.DxbcBackend>. **DXC is not used for DX11** because it only emits SM6 DXIL. See [DirectX DXBC (vkd3d) Path](../architecture/directx-dxbc-vkd3d.md).
@@ -65,7 +69,7 @@ Because failures come back as data, `CompileAsync` doubles as a **validator/lint
 
 ```csharp
 var result = await compiler.CompileAsync(fxSource, options);
-if (result.IsError)
+if (result.IsFailure)
     foreach (var e in result.Error)
         Console.WriteLine($"{e.File}({e.Line},{e.Column}): {e.Code}: {e.Message}");
 ```
