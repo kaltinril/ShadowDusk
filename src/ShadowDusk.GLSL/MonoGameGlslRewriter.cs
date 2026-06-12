@@ -269,11 +269,31 @@ public static class MonoGameGlslRewriter
                 continue;
             }
 
-            // Rule 3: sampler declaration (sampler2D / samplerCube / sampler3D). Pixel
-            // stage only — MonoGame's GL VS goldens carry no samplers, and a VS sampler
-            // would need its own vs_s{k} contract that no corpus exercises.
+            // Rule 3: sampler declaration (sampler2D / samplerCube / sampler3D).
+            //
+            // Pixel stage only — and a VERTEX-stage sampler FAILS LOUDLY (Phase 43
+            // F8). This is deliberate, not a missing feature: MonoGame 3.8.2's GL
+            // runtime cannot bind a vertex texture at all. ShaderProgramCache.Link
+            // calls ONLY pixelShader.ApplySamplerTextureUnits(program) (the vertex
+            // shader's sampler records never get a texture unit assigned), and
+            // GraphicsDevice.OpenGL.cs has no VertexTextures/VertexSamplerStates
+            // apply path. So ANY emitted form — vs_s{k} contract or not — leaves
+            // the VS sampler reading texture unit 0's incidental contents: silently
+            // wrong output in the real runtime, the exact failure mode this
+            // project's purpose forbids. Until/unless the runtime gap is solved,
+            // the only honest output is a loud compile error (surfaces as SD0210).
             var samplerMatch = SamplerDecl.Match(line);
-            if (samplerMatch.Success && !isVertex)
+            if (samplerMatch.Success && isVertex)
+            {
+                throw new MonoGameGlslRewriteException(
+                    "Vertex-stage texture sampling is not supported for the MonoGame OpenGL " +
+                    "target: MonoGame 3.8.2's GL runtime never assigns texture units to " +
+                    "VERTEX-shader samplers (ShaderProgramCache.Link applies only the pixel " +
+                    "shader's sampler records, and there is no GL VertexTextures path), so any " +
+                    "compiled output would silently sample the wrong texture at runtime. " +
+                    "Move the texture fetch to the pixel stage (or pass the data via a uniform).");
+            }
+            if (samplerMatch.Success)
             {
                 var kind = samplerMatch.Groups[1].Value;     // "2D" | "Cube" | "3D"
                 var origId = samplerMatch.Groups[2].Value;

@@ -110,6 +110,26 @@ public sealed class HidefGeneralityFixtureTests
     }
 
     [Fact]
+    public async Task VsTextureFetch_FailsLoudly_SD0210_NeverSilentlyBlack()
+    {
+        // Phase 43 F8: MonoGame 3.8.2's GL runtime cannot bind vertex textures
+        // (ShaderProgramCache.Link assigns texture units only for the PIXEL shader's
+        // sampler records; GraphicsDevice.OpenGL.cs has no VertexTextures path), so
+        // ANY emitted GLSL would silently sample the wrong texture at runtime.
+        // Previously the rewriter shipped the un-renamed sampler decl and the .mgfx
+        // pointed at ps_s0 — silently-black output. Now it must fail LOUDLY.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var result = await TestHelpers.CompileFixtureAsync(
+            "examples/ExVsTextureFetch.fx", "OpenGL", ct: cts.Token);
+
+        result.ExitCode.Should().NotBe(0,
+            because: "a VS texture fetch cannot work in MonoGame 3.8.2's GL runtime and must not compile silently");
+        result.Stderr.Should().Contain("SD0210");
+        result.Stderr.Should().Contain("Vertex-stage texture sampling",
+            because: "the diagnostic must name the actual limitation, not a generic rewrite error");
+    }
+
+    [Fact]
     public async Task MultiSampler2D_StillCompiles_WithSingleOutputAlias_AndScaledSamplers()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));

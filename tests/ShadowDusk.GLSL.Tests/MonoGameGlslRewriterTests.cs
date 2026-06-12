@@ -1053,6 +1053,35 @@ void main()
     }
 
     [Fact]
+    public void VertexStage_SamplerDeclaration_FailsLoudly()
+    {
+        // Phase 43 F8: MonoGame 3.8.2's GL runtime never assigns texture units to
+        // vertex-shader samplers (ShaderProgramCache.Link applies only the pixel
+        // shader's sampler records; no GL VertexTextures path exists), so any emitted
+        // VS sampler would silently read the wrong texture at runtime. The old
+        // behavior shipped the un-renamed decl (`uniform sampler2D _35;`) while the
+        // .mgfx sampler record said ps_s0 — silently-black output, twice broken.
+        const string src = """
+#version 140
+
+uniform sampler2D _35;
+in vec4 in_var_POSITION0;
+in vec2 in_var_TEXCOORD0;
+out vec2 out_var_TEXCOORD0;
+
+void main()
+{
+    gl_Position = in_var_POSITION0 + textureLod(_35, in_var_TEXCOORD0, 0.0);
+    out_var_TEXCOORD0 = in_var_TEXCOORD0;
+    gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;
+}
+""";
+        var act = () => MonoGameGlslRewriter.Rewrite(src, ShaderStage.Vertex);
+        act.Should().Throw<MonoGameGlslRewriteException>()
+            .WithMessage("*Vertex-stage texture sampling*");
+    }
+
+    [Fact]
     public void Sampling_Plain2DSampler_IsNotGuarded()
     {
         // Regression: the guard must NOT trip on the normal sampler2D shape.
