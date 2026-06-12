@@ -21,11 +21,49 @@ namespace ShadowDusk.Wasm;
 [SupportedOSPlatform("browser")]
 internal sealed partial class JsDxcShaderCompiler : IDxcShaderCompiler
 {
-    public Task<Result<PlatformBlob, ShaderError>> CompileAsync(
+    public async Task<Result<PlatformBlob, ShaderError>> CompileAsync(
         DxcCompileRequest request,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+
+        try
+        {
+            // One-time load of registration (both the shadowdusk-dxc and
+            // shadowdusk-spirv-cross [JSImport] modules — zero consumer wiring) + the
+            // heavy ~17.4 MB DXC WASM. Awaited HERE, lazily, so the download is never
+            // forced at page init (keeping the mode-1 boot instant). Idempotent. This is
+            // the ONLY genuinely-async step; the compile itself is the synchronous core
+            // below (issue #28) — so async and sync output is identical by construction.
+            await WasmCompilerInitialization.EnsureDxcReadyAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (JSException ex)
+        {
+            return Result<PlatformBlob, ShaderError>.Fail(MapJsException(ex, request.SourceFileName));
+        }
+
+        return Compile(request, cancellationToken);
+    }
+
+    /// <summary>
+    /// Synchronous compile (issue #28): calls the synchronous <c>compileToSpirv</c>
+    /// <c>[JSImport]</c> directly. PRECONDITION: the DXC module is loaded
+    /// (<see cref="WasmCompilerInitialization.DxcReady"/>) — when it is not, returns the
+    /// clear SD1903 not-initialized error instead of risking an opaque runtime abort.
+    /// Never awaits or blocks on a task.
+    /// </summary>
+    public Result<PlatformBlob, ShaderError> Compile(
+        DxcCompileRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!WasmCompilerInitialization.DxcReady)
+        {
+            return Result<PlatformBlob, ShaderError>.Fail(
+                WasmCompilerInitialization.NotInitializedError(
+                    "DXC (HLSL → SPIR-V frontend)", request.SourceFileName));
+        }
 
         IReadOnlyList<string> arguments = DxcFlagBuilder.Build(
             request.Platform,
@@ -34,72 +72,55 @@ internal sealed partial class JsDxcShaderCompiler : IDxcShaderCompiler
             request.Macros,
             request.Options);
 
-        return CompileCoreAsync(request, arguments.ToArray(), cancellationToken);
-    }
-
-    private static async Task<Result<PlatformBlob, ShaderError>> CompileCoreAsync(
-        DxcCompileRequest request,
-        string[] arguments,
-        CancellationToken cancellationToken)
-    {
         try
         {
-            // Self-register BOTH [JSImport] modules (shadowdusk-dxc and
-            // shadowdusk-spirv-cross) from the package's own _content/ShadowDusk.Wasm/
-            // static web assets BEFORE the first [JSImport] call. This is the zero-
-            // consumer-wiring core of M1: the consumer adds only a PackageReference and
-            // wires nothing. Idempotent; registering does NOT download the heavy
-            // dxcompiler.wasm. We register the spirv-cross module here too (the DXC
-            // stage always runs before the synchronous SPIRV-Cross transpile in the
-            // pipeline) so that synchronous [JSImport] never hits an unregistered module.
-            await WasmModuleRegistration.EnsureRegisteredAsync(cancellationToken).ConfigureAwait(false);
-
-            // The compile JS function (compileToSpirv) is SYNCHRONOUS, but the faithful
-            // DXC WASM backend loads asynchronously and lazily. Await the one-time load
-            // here before the synchronous compile so the heavy ~17.4 MB download is NOT
-            // forced at page init (keeping the mode-1 boot instant). Idempotent.
-            await DxcInterop.EnsureReadyAsync().ConfigureAwait(false);
-
-            byte[] spirv = DxcInterop.CompileToSpirv(request.HlslSource, arguments);
+            byte[] spirv = DxcInterop.CompileToSpirv(request.HlslSource, arguments.ToArray());
             var blob = new PlatformBlob(BlobKind.Spirv, spirv);
             return Result<PlatformBlob, ShaderError>.Ok(blob);
         }
         catch (JSException ex)
         {
-            // Phase 38: the JS shim re-throws DXC's VERBATIM diagnostics as the
-            // exception message (file:line:col: error: message). Parse it with the
-            // SAME reformatter the desktop path uses so the in-browser failure carries
-            // real line/column — a downstream editor (e.g. an XNA/KNI fiddle) can then
-            // squiggle the exact offending line instead of showing an opaque blob.
-            IReadOnlyList<ShaderError> parsed =
-                DxcDiagnosticReformatter.Reformat(ex.Message, request.SourceFileName);
-
-            // Prefer a located diagnostic (has a source line); fall back to the first
-            // parsed entry, then to an explicit backend error carrying the raw text.
-            ShaderError? located = null;
-            foreach (ShaderError e in parsed)
-            {
-                if (e.Line > 0)
-                {
-                    located = e;
-                    break;
-                }
-            }
-
-            ShaderError chosen = located
-                ?? (parsed.Count > 0
-                    ? parsed[0]
-                    : new ShaderError(
-                        File: request.SourceFileName,
-                        Line: 0,
-                        Column: 0,
-                        Code: "SD1900",
-                        Message: $"WASM DXC backend failed: {ex.Message}",
-                        Severity: ShaderErrorSeverity.Error,
-                        RawDiagnostics: ex.Message));
-
-            return Result<PlatformBlob, ShaderError>.Fail(chosen);
+            return Result<PlatformBlob, ShaderError>.Fail(MapJsException(ex, request.SourceFileName));
         }
+    }
+
+    /// <summary>
+    /// Phase 38: the JS shim re-throws DXC's VERBATIM diagnostics as the exception
+    /// message (file:line:col: error: message). Parse it with the SAME reformatter the
+    /// desktop path uses so the in-browser failure carries real line/column — a
+    /// downstream editor (e.g. an XNA/KNI fiddle) can then squiggle the exact offending
+    /// line instead of showing an opaque blob. Shared by the load and compile failure
+    /// paths (and by <see cref="WasmShaderCompiler"/>'s warm-up) so every DXC-side
+    /// JSException maps identically.
+    /// </summary>
+    internal static ShaderError MapJsException(JSException ex, string sourceFileName)
+    {
+        IReadOnlyList<ShaderError> parsed =
+            DxcDiagnosticReformatter.Reformat(ex.Message, sourceFileName);
+
+        // Prefer a located diagnostic (has a source line); fall back to the first
+        // parsed entry, then to an explicit backend error carrying the raw text.
+        ShaderError? located = null;
+        foreach (ShaderError e in parsed)
+        {
+            if (e.Line > 0)
+            {
+                located = e;
+                break;
+            }
+        }
+
+        return located
+            ?? (parsed.Count > 0
+                ? parsed[0]
+                : new ShaderError(
+                    File: sourceFileName,
+                    Line: 0,
+                    Column: 0,
+                    Code: "SD1900",
+                    Message: $"WASM DXC backend failed: {ex.Message}",
+                    Severity: ShaderErrorSeverity.Error,
+                    RawDiagnostics: ex.Message));
     }
 }
 
