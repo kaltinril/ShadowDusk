@@ -37,7 +37,7 @@
 - [ ] **Full-corpus divergence matrix (DX):** ShadowDusk (vkd3d + `d3dcompiler_47`) vs `fxc.exe`/`mgfxc` over all DX-applicable fixtures — structural `.mgfx` compare + rung-4 render where a runtime exists. Output a checked-in matrix doc.
 - [ ] **`d3dcompiler_47` vs `fxc.exe` delta study:** quantify and document (answers OQ#2).
 - [ ] **Full-corpus divergence matrix (GL):** ShadowDusk vs `mgfxc` OpenGL goldens over all GL-applicable fixtures.
-- [ ] **Triage + gap register:** classify every divergence (irrelevant / render-affecting); file render-affecting ones as their own follow-up with a reproduce case. Revisit the **initializer gap** with `fxc` in hand — confirm scope and whether a faithful fix is feasible.
+- [ ] **Triage + gap register:** classify every divergence (irrelevant / render-affecting); file render-affecting ones as their own follow-up with a reproduce case. Revisit the **initializer gap** with `fxc` in hand — confirm scope and whether a faithful fix is feasible. *(Re-deferred here from Phase 27's closure, 2026-06-12 — see the detailed root-cause record in [Phase 27](DONE/PHASE-27-pre-1.0-test-and-verification-sweep.md) Tasks: DXC drops cbuffer-global initializers so the `.mgfx` param block zeroes the default; the new `MgfxParameterMatchTests` compares parameter METADATA only and deliberately stays green across this value gap.)*
 - [ ] **Document outcomes** in this doc + update `docfx/guides/parameters-and-caveats.md` / `choosing-a-target.md` if any user-facing fidelity caveat changes.
 
 ## Definition of Done
