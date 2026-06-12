@@ -32,6 +32,14 @@ using ShadowDusk.Validation.Fna;
 
 const int Tolerance = 4; // per-channel, /255 — mirrors compare_dx.py --tolerance default
 
+// The documented gate size (CLAUDE.md / docs: "gate 17/17" since the Phase-40 fidelity
+// hardening): the Phase 17 PS-only ten + the four VS-driven effects + FnaMultiPassStatesT2
+// + the matrix calibration row + ClipShaderNew. Pinned so a corpus edit that silently
+// drops a gate row (shrinking "N/N PASS" to a smaller N) fails the run instead of
+// passing a weaker gate. Deliberately changing the gate set means updating this constant
+// AND the documented claim together.
+const int ExpectedGateTotal = 17;
+
 // Pin the FNA3D backend BEFORE any FNA code runs (determinism; D3D11 is FNA3D's
 // default on Windows anyway, but never rely on a default for a validation gate).
 Environment.SetEnvironmentVariable("FNA3D_FORCE_DRIVER", "D3D11");
@@ -352,7 +360,18 @@ foreach (CaseOutcome o in outcomes)
 // of distinct colors; a flat or near-flat image has almost none.)
 bool nonVacuous = true;
 CaseOutcome? mps = outcomes.FirstOrDefault(o => o.Name == "FnaMultiPassStates");
-if (mps is not null)
+if (mps is null)
+{
+    // The guard's subject vanished: a corpus rename/removal would otherwise silently
+    // disable the only check that the in-pass render states are observably honored —
+    // fail loudly, never let the guard evaporate.
+    nonVacuous = false;
+    Console.WriteLine("[fna] NON-VACUOUSNESS FAIL: the FnaMultiPassStates row is ABSENT from the " +
+                      "outcomes — the in-pass render-state content guard has nothing to check " +
+                      "(corpus row removed/renamed?). Restore the row or rewire the guard.");
+    failures.Add("FnaMultiPassStates (guard subject missing)");
+}
+else
 {
     int distinct = mps.Candidate.Pixels?.Distinct().Count() ?? 0;
     if (distinct < 16)
@@ -364,6 +383,17 @@ if (mps is not null)
     }
 }
 
+// Gate-size pin: "gatePass == gateTotal" alone is satisfiable by a SHRUNKEN gate
+// (drop a failing row, pass a smaller N/N). The documented bar is 17/17 — assert it.
+bool gateSizeOk = gateTotal == ExpectedGateTotal;
+if (!gateSizeOk)
+{
+    Console.WriteLine($"[fna] GATE-SIZE FAIL: {gateTotal} gate rows ran but the documented gate is " +
+                      $"{ExpectedGateTotal} (CLAUDE.md \"gate 17/17\"). A gate row was added or removed — " +
+                      "update ExpectedGateTotal AND the documented claim together if deliberate.");
+    failures.Add($"gate size {gateTotal} != {ExpectedGateTotal}");
+}
+
 // Derive the breakdown from the corpus so this line can never drift from the flags.
 int gateSprite = cases.Count(c => c.Gate && c.Scene == FnaScene.Sprite);
 int gateVs = cases.Count(c => c.Gate && c.Scene == FnaScene.VsQuad);
@@ -373,4 +403,4 @@ if (failures.Count > 0)
     Console.WriteLine($"[fna] non-PASS shaders: {string.Join(", ", failures)}");
 Console.WriteLine($"[fna] PNGs: {outRoot}");
 
-return gatePass == gateTotal && nonVacuous ? 0 : 1;
+return gatePass == gateTotal && nonVacuous && gateSizeOk ? 0 : 1;
