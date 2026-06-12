@@ -102,6 +102,7 @@ validation/output/
 validation/output-dx/
 validation/output-vs/
 validation/output-vs-dx/
+validation/output-state/
 
 # Python
 __pycache__/
