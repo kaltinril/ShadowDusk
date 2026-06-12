@@ -59,7 +59,11 @@ public sealed class CompilerOptions
     /// d3dcompiler_47 oracle; set to <see cref="DxbcBackend.Vkd3d"/> for the
     /// cross-platform vkd3d-shader backend. Ignored for non-DirectX targets —
     /// <see cref="PlatformTarget.Fna"/> always uses vkd3d-shader (the same backend on every
-    /// host, so output stays host-independent).
+    /// host, so output stays host-independent). On the browser/WASM host this option is
+    /// OVERRIDDEN: <c>WasmShaderCompiler</c> always compiles DXBC via the vkd3d-shader
+    /// WASM backend (there is no d3dcompiler_47 in a browser), so a browser DirectX
+    /// compile matches a desktop compile with <see cref="DxbcBackend.Vkd3d"/>, not the
+    /// desktop default.
     /// </summary>
     public DxbcBackend DxbcBackend { get; init; } = DxbcBackend.D3DCompiler;
 }
