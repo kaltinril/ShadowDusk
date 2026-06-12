@@ -12,13 +12,15 @@ internal sealed class PipelineRunner
         CliArguments args,
         CancellationToken ct = default)
     {
-        // Stage 1: Read source file.
+        // Stage 1: Read source file. UnauthorizedAccessException (ACL-denied path,
+        // directory-as-file) is an input failure exactly like IOException — map it to
+        // X0001 rather than letting it crash out as an internal X0099.
         string hlslSource;
         try
         {
             hlslSource = await File.ReadAllTextAsync(args.SourceFile, ct).ConfigureAwait(false);
         }
-        catch (IOException ex)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return Fail(new ShaderError(
                 File: args.SourceFile,
@@ -39,6 +41,7 @@ internal sealed class PipelineRunner
             SourceFileName         = args.SourceFile,
             Debug                  = args.Debug,
             MgfxVersion            = args.MgfxVersion,
+            DxbcBackend            = args.DxbcBackend,
         };
 
         var compiler       = new EffectCompiler();
@@ -58,7 +61,7 @@ internal sealed class PipelineRunner
 
             await File.WriteAllBytesAsync(args.OutputFile, mgfxBytes, ct).ConfigureAwait(false);
         }
-        catch (IOException ex)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return Fail(new ShaderError(
                 File: args.OutputFile,

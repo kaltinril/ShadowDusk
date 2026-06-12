@@ -55,15 +55,15 @@ public sealed class CompilerOptions
 
     /// <summary>
     /// Which backend compiles HLSL to SM5 DXBC when <see cref="Target"/> is
-    /// <see cref="PlatformTarget.DirectX"/>. Defaults to the proven Windows-only
-    /// d3dcompiler_47 oracle; set to <see cref="DxbcBackend.Vkd3d"/> for the
-    /// cross-platform vkd3d-shader backend. Ignored for non-DirectX targets —
-    /// <see cref="PlatformTarget.Fna"/> always uses vkd3d-shader (the same backend on every
-    /// host, so output stays host-independent). On the browser/WASM host this option is
-    /// OVERRIDDEN: <c>WasmShaderCompiler</c> always compiles DXBC via the vkd3d-shader
-    /// WASM backend (there is no d3dcompiler_47 in a browser), so a browser DirectX
-    /// compile matches a desktop compile with <see cref="DxbcBackend.Vkd3d"/>, not the
-    /// desktop default.
+    /// <see cref="PlatformTarget.DirectX"/>. Defaults to <see cref="DxbcBackend.Vkd3d"/>,
+    /// the cross-platform shipping backend: it runs on every desktop OS and is
+    /// host-independent, so a default DirectX compile produces the same bytes on
+    /// Linux, macOS, and Windows. Set <see cref="DxbcBackend.D3DCompiler"/> to opt in
+    /// to the Windows-only d3dcompiler_47 correctness oracle (it hard-fails off
+    /// Windows). Ignored for non-DirectX targets — <see cref="PlatformTarget.Fna"/>
+    /// always uses vkd3d-shader. On the browser/WASM host this option is moot:
+    /// <c>WasmShaderCompiler</c> always compiles DXBC via the vkd3d-shader WASM backend
+    /// (there is no d3dcompiler_47 in a browser), which matches the desktop default.
     /// </summary>
-    public DxbcBackend DxbcBackend { get; init; } = DxbcBackend.D3DCompiler;
+    public DxbcBackend DxbcBackend { get; init; } = DxbcBackend.Vkd3d;
 }

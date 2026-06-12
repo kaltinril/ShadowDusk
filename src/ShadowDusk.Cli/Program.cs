@@ -13,7 +13,8 @@ if (parseResult.IsFailure)
 
 CliArguments cliArgs = parseResult.Value;
 
-using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+TimeSpan timeout = TimeSpan.FromMinutes(5);
+using var cts = new CancellationTokenSource(timeout);
 
 try
 {
@@ -28,6 +29,19 @@ try
     }
 
     return 0;
+}
+catch (OperationCanceledException) when (cts.IsCancellationRequested)
+{
+    // The watchdog above fired — report a real timeout instead of an opaque
+    // X0099 "The operation was canceled."
+    var timeoutError = new ShaderError(
+        File: cliArgs.SourceFile,
+        Line: 0,
+        Column: 0,
+        Code: "X0007",
+        Message: $"Compilation timed out after {timeout.TotalMinutes:0} minutes");
+    Console.Error.WriteLine(MgcbErrorFormatter.Format(timeoutError));
+    return 1;
 }
 catch (Exception ex)
 {

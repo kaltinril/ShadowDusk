@@ -91,12 +91,9 @@ internal sealed class CompilationPipeline
         FxParseResult fxParsed = parseResult.Value;
 
         // Stage 2: Preprocessor — inject platform macros and flatten #includes.
-        MacroSet macros;
-        try
-        {
-            macros = PlatformMacros.For(options.Target);
-        }
-        catch (ArgumentOutOfRangeException)
+        // Pre-check (no exception-as-control-flow): an unsupported target is reported
+        // as a Result error, never caught from PlatformMacros.For.
+        if (!PlatformMacros.IsSupported(options.Target))
         {
             return Fail(new ShaderError(
                 File: "",
@@ -105,6 +102,8 @@ internal sealed class CompilationPipeline
                 Code: "X0010",
                 Message: $"platform '{options.Target}' is not supported by ShadowDusk"));
         }
+
+        MacroSet macros = PlatformMacros.For(options.Target);
 
         IIncludeResolver includeResolver = options.IncludeResolver ?? new FileSystemIncludeResolver();
         var preprocessor = new Preprocessor();
@@ -163,16 +162,18 @@ internal sealed class CompilationPipeline
         // reflected by the pure-managed RdefReader (Phase 18 Track A) — so the DX11
         // pipeline end-to-end runs on any OS when the vkd3d backend is selected.
         bool directX = options.Target == PlatformTarget.DirectX;
-        // Backend selection (default = the proven d3dcompiler_47 oracle). The
-        // cross-platform vkd3d-shader backend is opt-in via CompilerOptions.DxbcBackend.
-        // Both implement IDxbcShaderCompiler and both feed the SAME DxbcReflectionExtractor.
+        // Backend selection (default = the cross-platform vkd3d-shader backend, the
+        // shipping backend on every OS — host-independent, so default-DX output is
+        // cross-host byte-identical). The Windows-only d3dcompiler_47 correctness
+        // oracle is opt-in via CompilerOptions.DxbcBackend. Both implement
+        // IDxbcShaderCompiler and both feed the SAME DxbcReflectionExtractor.
         // An injected host backend (the WASM vkd3d backend) takes precedence over both —
         // a host-appropriate default, not a consumer choice (CompilerOptions.DxbcBackend
         // selects between desktop natives that do not exist in the browser).
         IDxbcShaderCompiler dxbcCompiler = _dxbcCompilerFactory?.Invoke() ?? options.DxbcBackend switch
         {
-            DxbcBackend.Vkd3d => new Vkd3dShaderCompiler(),
-            _                 => new D3DCompilerShaderCompiler(),
+            DxbcBackend.D3DCompiler => new D3DCompilerShaderCompiler(),
+            _                       => new Vkd3dShaderCompiler(),
         };
         var dxbcReflectionPipe  = new DxbcReflectionPipeline(new DxbcReflectionExtractor());
 
@@ -366,8 +367,11 @@ internal sealed class CompilationPipeline
                     shaderCbufferNames[blobIndex] = reflected.ConstantBuffers.Select(c => c.Name).ToList();
                 }
 
-                var renderStateKvp = pass.RenderStates
-                    .ToDictionary(rs => rs.Key, rs => rs.Value, StringComparer.OrdinalIgnoreCase);
+                // Last assignment wins on a duplicated state key — fxc's semantics — instead
+                // of ToDictionary's ArgumentException (no exception-as-control-flow).
+                var renderStateKvp = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (RenderStateEntry rs in pass.RenderStates)
+                    renderStateKvp[rs.Key] = rs.Value;
                 var renderStateResult = renderStateParser.Parse(renderStateKvp);
                 if (renderStateResult.IsFailure)
                     return Fail(renderStateResult.Error);
@@ -462,6 +466,16 @@ internal sealed class CompilationPipeline
             PlatformTarget.Vulkan  => MgfxProfile.Vulkan,
             _ => MgfxProfile.OpenGL,
         };
+
+        // Guard the byte cast (like the writer's SD0020/SD0021 size guards): a
+        // MgfxVersion outside 0..255 would silently truncate into a bogus header.
+        if (options.MgfxVersion is < byte.MinValue or > byte.MaxValue)
+            return Fail(new ShaderError(
+                File: "",
+                Line: 0,
+                Column: 0,
+                Code: "SD0023",
+                Message: $"MgfxVersion {options.MgfxVersion} is outside the MGFX header's byte range (0-255)"));
 
         var mgfxWriter  = new MgfxWriter();
         var writeResult = mgfxWriter.Write(ir, new MgfxWriterOptions(

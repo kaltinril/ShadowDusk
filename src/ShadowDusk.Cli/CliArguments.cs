@@ -10,5 +10,6 @@ internal sealed record CliArguments(
     PlatformTarget        Platform,
     bool                  Debug,
     IReadOnlyList<string> IncludePaths,
-    int                   MgfxVersion
+    int                   MgfxVersion,
+    DxbcBackend           DxbcBackend
 );

@@ -85,7 +85,7 @@ public sealed class DxbcCompilerInjectionTests
         {
             Target         = PlatformTarget.DirectX,
             SourceFileName = "inline.fx",
-            // Deliberately left at the default (D3DCompiler): the injected factory is a
+            // Deliberately left at the default (Vkd3d): the injected factory is a
             // HOST decision and must take precedence over the desktop backend selector.
         });
 
