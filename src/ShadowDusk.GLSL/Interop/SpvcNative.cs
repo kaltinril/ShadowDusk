@@ -30,7 +30,12 @@ internal static class SpvcCompilerOption
 
 internal static class SpvcNative
 {
-    private const string LibName = "spirv-cross";
+    /// <summary>
+    /// The module name every SPIRV-Cross P/Invoke declares. <see cref="SpvcLoader"/>'s
+    /// resolver must match this exact name (it once tested for a different string and
+    /// was silently dead).
+    /// </summary>
+    internal const string LibName = "spirv-cross";
 
     [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
     internal static extern SpvcResult spvc_context_create(out IntPtr context);
