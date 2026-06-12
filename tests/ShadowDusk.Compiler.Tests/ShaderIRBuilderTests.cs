@@ -2,25 +2,22 @@
 
 using FluentAssertions;
 using ShadowDusk.Compiler;
+using ShadowDusk.Compiler.Internal;
 using ShadowDusk.Core;
 using Xunit;
 
 namespace ShadowDusk.Compiler.Tests;
 
 /// <summary>
-/// Unit-style smoke tests for the IR construction layer, exercised through the
-/// public <see cref="EffectCompiler"/> API.
+/// Tests for the IR construction layer: smoke tests through the public
+/// <see cref="EffectCompiler"/> API, plus direct unit tests of the internal
+/// <c>ShaderIRBuilder.Build</c> (Phase 8 items closed by Phase 27;
+/// <c>ShadowDusk.Compiler.csproj</c> grants
+/// <c>InternalsVisibleTo("ShadowDusk.Compiler.Tests")</c>).
 ///
-/// Note: if direct access to the internal <c>ShaderIRBuilder.Build</c> method is
-/// required in the future, add
-/// <c>[assembly: InternalsVisibleTo("ShadowDusk.Compiler.Tests")]</c>
-/// to <c>ShadowDusk.Compiler.csproj</c>.  Until then these tests validate
-/// observable behaviour via the public surface.
-///
-/// These tests do not invoke DXC or SPIRV-Cross against real fixture files and
-/// therefore carry no <c>[Trait("Category", "Integration")]</c> tag — they use
-/// inline sources with the native compiler chain, so they are tagged Integration
-/// only where native invocation is unavoidable (multipass test).
+/// The direct tests are pure (no DXC, no SPIRV-Cross, no disk) and carry no
+/// <c>[Trait("Category", "Integration")]</c> tag; the multipass test drives the
+/// full native compile pipeline and is tagged Integration.
 /// </summary>
 public sealed class ShaderIRBuilderTests
 {
@@ -113,5 +110,81 @@ public sealed class ShaderIRBuilderTests
 
         result.Value.Data.Should().NotBeEmpty(
             because: "a multipass effect must produce a non-empty output blob");
+    }
+
+    // ---------------------------------------------------------------------------
+    // Direct ShaderIRBuilder.Build unit tests (Phase 8, closed by Phase 27).
+    // Pure: hand-built inputs, no native invocation.
+    // ---------------------------------------------------------------------------
+
+    private static CompiledShaderBlob Blob(ShaderStage stage) =>
+        new(Bytes: [0x01, 0x02, 0x03], Stage: stage);
+
+    private static MgfxPassInfo Pass(string name, int vsIndex, int psIndex,
+        IReadOnlyList<AnnotationInfo>? annotations = null) =>
+        new(
+            Name: name,
+            Annotations: annotations ?? [],
+            VertexShaderIndex: vsIndex,
+            PixelShaderIndex: psIndex,
+            RenderState: new RenderStateBlock());
+
+    [Fact]
+    public void Build_ShaderIndicesAreZeroBased()
+    {
+        // A two-pass technique over four shader blobs: pass 0 references VS=0/PS=1,
+        // pass 1 references VS=2/PS=3. Build must preserve the zero-based indices
+        // verbatim — MgfxWriter writes them directly into the .mgfx pass records,
+        // where MonoGame's EffectReader indexes the shader list with them.
+        var blobs = new[]
+        {
+            Blob(ShaderStage.Vertex), Blob(ShaderStage.Pixel),
+            Blob(ShaderStage.Vertex), Blob(ShaderStage.Pixel),
+        };
+        var technique = new MgfxTechniqueInfo(
+            Name: "Technique1",
+            Annotations: [],
+            Passes: [Pass("Pass0", vsIndex: 0, psIndex: 1), Pass("Pass1", vsIndex: 2, psIndex: 3)]);
+
+        ShaderIR ir = ShaderIRBuilder.Build(blobs, [technique], [], []);
+
+        ir.Shaders.Should().HaveCount(4);
+        ir.Techniques.Should().ContainSingle().Which.Passes.Should().HaveCount(2);
+
+        MgfxPassInfo pass0 = ir.Techniques[0].Passes[0];
+        MgfxPassInfo pass1 = ir.Techniques[0].Passes[1];
+
+        pass0.VertexShaderIndex.Should().Be(0, because: "shader indices are zero-based");
+        pass0.PixelShaderIndex.Should().Be(1);
+        pass1.VertexShaderIndex.Should().Be(2);
+        pass1.PixelShaderIndex.Should().Be(3);
+
+        foreach (MgfxPassInfo pass in ir.Techniques[0].Passes)
+        {
+            pass.VertexShaderIndex.Should().BeInRange(0, ir.Shaders.Count - 1);
+            pass.PixelShaderIndex.Should().BeInRange(0, ir.Shaders.Count - 1);
+            ir.Shaders[pass.VertexShaderIndex].Stage.Should().Be(ShaderStage.Vertex);
+            ir.Shaders[pass.PixelShaderIndex].Stage.Should().Be(ShaderStage.Pixel);
+        }
+    }
+
+    [Fact]
+    public void Build_EmptyAnnotationsAllowed()
+    {
+        // A pass (and technique) with no annotations must build without throwing
+        // and surface empty — never null — annotation lists.
+        var technique = new MgfxTechniqueInfo(
+            Name: "Technique1",
+            Annotations: [],
+            Passes: [Pass("Pass0", vsIndex: 0, psIndex: 1, annotations: [])]);
+
+        var act = () => ShaderIRBuilder.Build(
+            [Blob(ShaderStage.Vertex), Blob(ShaderStage.Pixel)], [technique], [], []);
+
+        ShaderIR ir = act.Should().NotThrow().Subject;
+        ir.Techniques[0].Annotations.Should().NotBeNull().And.BeEmpty();
+        ir.Techniques[0].Passes[0].Annotations.Should().NotBeNull().And.BeEmpty();
+        ir.Parameters.Should().BeEmpty();
+        ir.ConstantBuffers.Should().BeEmpty();
     }
 }
