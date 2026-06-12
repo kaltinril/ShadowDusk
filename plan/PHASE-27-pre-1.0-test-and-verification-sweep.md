@@ -187,7 +187,12 @@ Verified against the tree on 2026-06-03 (cite real files):
       *(Done 2026-06-12 on win-x64: full suite 958/958 green (no skips), Phase 6 items
       0c/25/29/30 ticked, `/platform-check` over the Phase-6 surface + new tests: 0 BREAK,
       0 WARN.)*
-- [ ] **Verify the global-param default-value fidelity gap (vs real mgfxc).** A **global**
+- [ ] *(Not done in the 2026-06-12 core-coverage sweep — needs a Windows box with a real
+      `mgfxc` install to diff the reflected `DefaultValue`, and any fix is a production
+      change (bake `$Globals` defaults), both outside the test-only core half. Note the
+      new `MgfxParameterMatchTests` deliberately compares parameter METADATA only, so it
+      stays green across this known default-VALUE gap. Left open for the phase closer.)*
+      **Verify the global-param default-value fidelity gap (vs real mgfxc).** A **global**
       HLSL parameter with an initializer — e.g. `float FishEyeAmount = 0.35;` — compiles
       through ShadowDusk but the `.mgfx` stores its default as **`0.0`, not `0.35`** (the
       param data block is zeroed). Root cause: the global becomes a `$Globals` cbuffer
