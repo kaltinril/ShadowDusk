@@ -96,6 +96,17 @@ public sealed class DxcFlagBuilderTests
         flags[idx + 1].Should().Be("VSMain");
     }
 
+    [Fact]
+    public void EntryPoint_PrecedesProfileArgument()
+    {
+        // Phase 4 checklist: "-E <entryPoint> appears before the profile argument".
+        var flags = Build(PlatformTarget.OpenGL, ShaderStage.Vertex, entryPoint: "VSMain").ToList();
+        int entryIdx   = flags.IndexOf("-E");
+        int profileIdx = flags.IndexOf("-T");
+        entryIdx.Should().BeGreaterThanOrEqualTo(0, "'-E' must be present");
+        profileIdx.Should().BeGreaterThan(entryIdx, "'-T <profile>' must follow '-E <entryPoint>'");
+    }
+
     // ── Invariant flags ───────────────────────────────────────────────────────
 
     [Fact] public void ZprAlwaysPresent()
