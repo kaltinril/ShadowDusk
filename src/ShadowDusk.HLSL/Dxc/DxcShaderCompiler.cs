@@ -41,6 +41,15 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         return Task.Run(() => CompileCore(request), cancellationToken);
     }
 
+    /// <inheritdoc/>
+    public Result<PlatformBlob, ShaderError> Compile(
+        DxcCompileRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return CompileCore(request);
+    }
+
     private Result<PlatformBlob, ShaderError> CompileCore(DxcCompileRequest request)
     {
         IReadOnlyList<string> arguments = DxcFlagBuilder.Build(
