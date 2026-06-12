@@ -59,6 +59,26 @@ public sealed record MgfxRasterizerStateRecord(
     bool  ScissorTestEnable,
     float SlopeScaleDepthBias);
 
+/// <summary>
+/// One constant-buffer record (Phase 43C): the name MonoGame's GL runtime keys
+/// glUniform4fv on, the buffer size, and the interleaved parameter index/offset table.
+/// </summary>
+public sealed record MgfxConstantBufferRecord(
+    string Name,
+    int Size,
+    IReadOnlyList<int> ParameterIndices,
+    IReadOnlyList<int> ParameterOffsets);
+
+/// <summary>
+/// One shader record's identity + bindings (Phase 43C): its stage, raw bytecode/GLSL,
+/// and the indices into the effect's constant-buffer list it binds.
+/// </summary>
+public sealed record MgfxShaderRecord(
+    int Index,
+    bool IsVertex,
+    byte[] Bytecode,
+    IReadOnlyList<int> ConstantBufferIndices);
+
 /// <summary>One shader-record sampler entry, including its baked state (Phase 43, F9).</summary>
 public sealed record MgfxSamplerRecord(
     int    ShaderIndex,
@@ -118,6 +138,10 @@ public sealed class MgfxBlobReader
 
     // Raw shader blob bytes indexed by shader slot.
     public IReadOnlyList<byte[]> ShaderBlobs { get; }
+
+    // Full constant-buffer records and per-shader stage/bindings (Phase 43C).
+    public IReadOnlyList<MgfxConstantBufferRecord> ConstantBuffers { get; private set; } = [];
+    public IReadOnlyList<MgfxShaderRecord>         Shaders         { get; private set; } = [];
 
     // Every sampler entry across all shader records, with baked state (Phase 43, F9).
     public IReadOnlyList<MgfxSamplerRecord> Samplers { get; }
@@ -198,6 +222,7 @@ public sealed class MgfxBlobReader
         // paramIndex -> sizeInBytes; paramIndex -> startOffset.
         var cbParamIndexToSize   = new Dictionary<int, int>();
         var cbParamIndexToOffset = new Dictionary<int, int>();
+        var cbRecords            = new List<MgfxConstantBufferRecord>();
         int cbCount = br.ReadInt32();
         for (int i = 0; i < cbCount; i++)
         {
@@ -214,6 +239,8 @@ public sealed class MgfxBlobReader
                 offsets[j]      = br.ReadUInt16();
             }
 
+            cbRecords.Add(new MgfxConstantBufferRecord(cbName, cbSize, paramIndices, offsets));
+
             for (int j = 0; j < paramCount; j++)
             {
                 int varSize = j < paramCount - 1
@@ -227,10 +254,11 @@ public sealed class MgfxBlobReader
         // Shaders
         int shaderCount = br.ReadInt32();
         var shaderBlobs = new List<byte[]>(shaderCount);
+        var shaderRecords = new List<MgfxShaderRecord>(shaderCount);
         var samplerRecords = new List<MgfxSamplerRecord>();
         for (int i = 0; i < shaderCount; i++)
         {
-            br.ReadBoolean();          // isVertexShader
+            bool isVertex = br.ReadBoolean();
             int byteLen = br.ReadInt32();
             shaderBlobs.Add(br.ReadBytes(byteLen));
 
@@ -264,8 +292,9 @@ public sealed class MgfxBlobReader
 
             // Constant-buffer index list.
             int cbIndexCount = br.ReadByte();
+            var cbIndices = new List<int>(cbIndexCount);
             for (int c = 0; c < cbIndexCount; c++)
-                br.ReadByte();
+                cbIndices.Add(br.ReadByte());
 
             // Vertex-attribute table.
             int attrCount = br.ReadByte();
@@ -276,6 +305,8 @@ public sealed class MgfxBlobReader
                 br.ReadByte();         // index
                 br.ReadInt16();        // location
             }
+
+            shaderRecords.Add(new MgfxShaderRecord(i, isVertex, shaderBlobs[i], cbIndices));
         }
 
         // Parameters — MonoGame 3.8.2's recursive layout: elements then struct
@@ -351,7 +382,11 @@ public sealed class MgfxBlobReader
             rasterizerState: rasterizerState,
             parameterAnnotationCounts: paramAnnotationCounts,
             parameterSizes: paramSizes,
-            parameterOffsets: paramOffsets);
+            parameterOffsets: paramOffsets)
+        {
+            ConstantBuffers = cbRecords,
+            Shaders         = shaderRecords,
+        };
     }
 
     // Mirrors MonoGame 3.8.2 Effect.ReadPasses: each state object is a boolean

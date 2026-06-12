@@ -1,9 +1,18 @@
 // Phase 43C (F6, vertex-stage variant) — float4x4 and float4 ARRAY uniforms in
-// the VS, deliberately reading element [1] of both (skinning-style `Bones[]`):
-// if only element 0 reached the GPU (the pre-43C Elements gap) the transform
-// reads zero and nothing renders. The harness sets Bones[1] to the real
-// transform and Bones[0] to garbage, so a correct render PROVES element 1 was
-// both modelled in the .mgfx and uploaded at the right register offset.
+// the VS, blending BOTH elements of both arrays (skinning-style `Bones[]`): the
+// output is right only if every element lands at its exact register offset, so
+// the render proves per-element modelling AND upload (the pre-43C Elements gap
+// made any element beyond 0 unreachable).
+//
+// DELIBERATELY references EVERY element. A statically-PARTIALLY-read array
+// (e.g. only Bones[1]) is broken in mgfxc+MonoGame GL ITSELF: fxc only
+// references the used registers, MojoShader then emits a COMPACTED uniform
+// array (vs_c4..c7,c9 -> vs_uniforms_vec4[0..4]) while mgfxc's cbuffer record
+// keeps the full 160-byte layout — MonoGame uploads the full buffer into the
+// short array, so element 0's data lands where the shader reads element 1
+// (verified: the mgfxc golden for that shape renders garbage in real MonoGame
+// 3.8.2 while ShadowDusk's full-layout output renders the source semantics
+// correctly — see the Phase 43 doc, F6 as-built).
 
 #if OPENGL
 #define VS_SHADERMODEL vs_3_0
@@ -39,7 +48,9 @@ struct VertexShaderOutput
 VertexShaderOutput MainVS(VertexShaderInput input)
 {
     VertexShaderOutput output = (VertexShaderOutput)0;
-    output.Position = mul(input.Position + PosOffsets[1], Bones[1]);
+    float4 p0 = mul(input.Position + PosOffsets[0], Bones[0]);
+    float4 p1 = mul(input.Position + PosOffsets[1], Bones[1]);
+    output.Position = p0 * 0.35 + p1 * 0.65;
     output.Color    = input.Color;
     output.TexCoord = input.TexCoord;
     return output;

@@ -85,6 +85,13 @@ public sealed class CrossHostByteIdentityTests
         "StateRasterizer.fx",
         "SamplerStatesFull.fx",
         "AnnotatedTechnique.fx",
+        // Phase 43C cbuffer/array-model corpus (F4/F5/F6): MGFX-only — the FNA
+        // target's cbuffer/array handling is CTAB-native and out of 43C's scope.
+        "SharedCbuffer.fx",
+        "MultiCbuffer.fx",
+        "MultiCbufferVs.fx",
+        "ArrayUniform.fx",
+        "ArrayUniformVs.fx",
     ];
 
     /// <summary>
