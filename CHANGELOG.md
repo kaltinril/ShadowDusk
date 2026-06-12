@@ -14,6 +14,21 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **`InitializeAsync()` + synchronous `Compile()`** on the compiler surface
+  (`IShaderCompiler` / `EffectCompiler` / `WasmShaderCompiler`) — issue
+  [#28](https://github.com/kaltinril/ShadowDusk/issues/28): compile `.fx` from a
+  **synchronous** call site (e.g. MonoGame/KNI `Content.Load<Effect>`) after a one-time
+  async warm-up, with no sync-over-async deadlock on single-threaded Blazor WASM.
+  `await compiler.InitializeAsync()` once (on WASM it loads all the compiler WASM
+  modules; on desktop it is a documented no-op), then `compiler.Compile(source, options)`
+  runs the entire pipeline on the calling thread. Sync and async share **one** pipeline
+  core, so their output is byte-identical (asserted over the full fixture corpus for
+  OpenGL, DirectX, and FNA, on desktop and in a real browser). Calling the synchronous
+  `Compile` on WASM before `InitializeAsync` returns a clear `SD1903` error telling you
+  to initialize first — never an opaque runtime abort. `CompileAsync` is unchanged for
+  existing consumers. The backend interfaces (`IDxcShaderCompiler`,
+  `IDxbcShaderCompiler`) and reflection pipelines gained matching synchronous entries.
+
 ### Changed
 
 ### Fixed
