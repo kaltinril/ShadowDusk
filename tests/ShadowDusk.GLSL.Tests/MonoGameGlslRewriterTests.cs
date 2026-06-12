@@ -260,11 +260,12 @@ void main()
         open.Should().Be(close, "the lowered GLSL must keep parentheses balanced");
     }
 
-    // ---- Vertex stage (Phase 28). SPIRV-Cross VS output for a custom VS taking a
-    // float4x4 transform + the SpriteBatch vertex set (POSITION0 / COLOR0 / TEXCOORD0),
-    // captured verbatim from DXC→SPIRV-Cross for VsTransformColorTexture.fx. The
-    // FlipVertexY / FixupDepthConvention options are on, so SPIRV-Cross already bakes
-    // the gl_Position Y-flip + depth-range conversion (no posFixup needed). ----
+    // ---- Vertex stage (Phase 28, posFixup contract since Phase 43 F3). SPIRV-Cross
+    // VS output for a custom VS taking a float4x4 transform + the SpriteBatch vertex
+    // set (POSITION0 / COLOR0 / TEXCOORD0), captured verbatim from DXC→SPIRV-Cross for
+    // VsTransformColorTexture.fx. FixupDepthConvention is ON (the depth line below);
+    // FlipVertexY is OFF since Phase 43 — the Y-flip is the runtime posFixup
+    // uniform's job, injected by the rewriter (mgfxc/MojoShader's contract). ----
 
     private const string VertexExample = """
 #version 140
@@ -290,7 +291,6 @@ void main()
     out_var_COLOR0 = in_var_COLOR0 * _Globals.Tint;
     out_var_TEXCOORD0 = in_var_TEXCOORD0;
     gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;
-    gl_Position.y = -gl_Position.y;
 }
 """;
 
@@ -329,6 +329,79 @@ void main()
         result.Glsl.Should().NotContain("_Globals");
         result.Glsl.Should().NotContain("\nin ");
         result.Glsl.Should().NotContain("\nout ");
+    }
+
+    // ---- Phase 43 F3: the dynamic posFixup contract. The OpenGL golden
+    // VsTransformColorTexture.mgfx VS is string-decisive — its exact lines are:
+    //   uniform vec4 posFixup;
+    //   gl_Position.y = gl_Position.y * posFixup.y;
+    //   gl_Position.xy += posFixup.zw * gl_Position.ww;
+    //   gl_Position.z = gl_Position.z * 2.0 - gl_Position.w;   (depth, last)
+    // MonoGame 3.8.2's GraphicsDevice.OpenGL.cs sets the uniform at draw time
+    // (+1 backbuffer / -1 render target, half-pixel via .zw) and SKIPS programs
+    // without it — a baked static flip is wrong for the backbuffer case. ----
+
+    [Fact]
+    public void VertexStage_EmitsPosFixupContract_MatchingMgfxcGoldenForm()
+    {
+        var result = MonoGameGlslRewriter.Rewrite(VertexExample, ShaderStage.Vertex);
+
+        // Declaration directly after the constant-register array (golden order).
+        result.Glsl.Should().Contain("uniform vec4 vs_uniforms_vec4[5];\nuniform vec4 posFixup;");
+
+        // The two fixup lines, byte-for-byte the golden's form.
+        result.Glsl.Should().Contain("gl_Position.y = gl_Position.y * posFixup.y;");
+        result.Glsl.Should().Contain("gl_Position.xy += posFixup.zw * gl_Position.ww;");
+
+        // No static flip survives anywhere (FlipVertexY off + nothing re-bakes it).
+        result.Glsl.Should().NotContain("-gl_Position.y");
+
+        // Golden line ORDER: Y-flip, then half-pixel, then the depth-convention line.
+        int yFlip  = result.Glsl.IndexOf("gl_Position.y = gl_Position.y * posFixup.y;", StringComparison.Ordinal);
+        int halfPx = result.Glsl.IndexOf("gl_Position.xy += posFixup.zw * gl_Position.ww;", StringComparison.Ordinal);
+        int depth  = result.Glsl.IndexOf("gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;", StringComparison.Ordinal);
+        yFlip.Should().BePositive();
+        halfPx.Should().BeGreaterThan(yFlip);
+        depth.Should().BeGreaterThan(halfPx,
+            "the depth-convention line must stay LAST, matching the mgfxc golden's statement order");
+    }
+
+    [Fact]
+    public void VertexStage_NoUniformBlock_StillEmitsPosFixup()
+    {
+        // A passthrough VS (no cbuffer) still needs the posFixup contract or it
+        // renders upside-down on the backbuffer in real MonoGame.
+        const string src = """
+#version 140
+in vec4 in_var_POSITION0;
+void main()
+{
+    gl_Position = in_var_POSITION0;
+    gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Vertex);
+
+        result.Glsl.Should().Contain("uniform vec4 posFixup;");
+        result.Glsl.Should().Contain("gl_Position.y = gl_Position.y * posFixup.y;");
+        result.Glsl.Should().Contain("gl_Position.xy += posFixup.zw * gl_Position.ww;");
+    }
+
+    [Fact]
+    public void VertexStage_PosFixupIdentifierCollision_FailsLoudly()
+    {
+        const string src = """
+#version 140
+in vec4 in_var_POSITION0;
+void main()
+{
+    vec4 posFixup = in_var_POSITION0;
+    gl_Position = posFixup;
+}
+""";
+        var act = () => MonoGameGlslRewriter.Rewrite(src, ShaderStage.Vertex);
+        act.Should().Throw<MonoGameGlslRewriteException>()
+            .WithMessage("*posFixup*");
     }
 
     [Fact]

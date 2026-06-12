@@ -29,8 +29,12 @@ SPIRV-Cross) to produce reference GLSL, and `node-test-spirv-cross.mjs` feeds th
 same SPIR-V to this WASM module and asserts the GLSL is **byte-identical**. Both a
 texture-free and a textured shader (the latter exercising
 `spvc_compiler_build_combined_image_samplers`) pass. See the test for the exact
-option set (`flipVertexY=true, fixupDepthConvention=true, glslVersion=140,
-glslEs=false, vulkanSemantics=false`) — identical to `JsShaderBackends.cs`.
+option set used there (`flipVertexY=true, …` — parity on both sides). The PRODUCT
+option set (`JsShaderBackends.cs`, matching the desktop `SpirvCrossGlslTranspiler`)
+is `flipVertexY=false, fixupDepthConvention=true, glslVersion=140, glslEs=false,
+vulkanSemantics=false` — `flipVertexY` is false since Phase 43 F3: the Y-flip is
+the runtime `posFixup` uniform's job (injected by `MonoGameGlslRewriter`), not a
+baked negation.
 
 ## Rebuilding
 

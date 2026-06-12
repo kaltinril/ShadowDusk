@@ -420,6 +420,14 @@ public static class MonoGameGlslRewriter
         // the position transform) rather than the mediump the PS uses.
         if (isVertex)
         {
+            // Phase 43 F3: inject mgfxc/MojoShader's runtime posFixup contract.
+            // SPIRV-Cross's FlipVertexY is OFF (see SpirvCrossGlslTranspiler), so the
+            // Y-flip is performed at draw time by MonoGame's GL runtime via the
+            // `posFixup` uniform it sets on every program that declares one
+            // (GraphicsDevice.OpenGL.cs ActivateShaderProgram: y=+1 backbuffer,
+            // y=-1 render target, zw = the half-pixel offset when UseHalfPixelOffset).
+            body = InjectPosFixup(body);
+
             var vsTrimmed = body.TrimStart('\n');
             var vsGlsl = VertexPrecisionHeader + "\n" + vsTrimmed;
             if (!vsGlsl.EndsWith("\n"))
@@ -558,6 +566,92 @@ public static class MonoGameGlslRewriter
         "precision highp float;\n" +
         "precision mediump int;\n" +
         "#endif\n";
+
+    // The SPIRV-Cross depth-convention fixup line (FixupDepthConvention option), used
+    // as the insertion anchor so the posFixup lines land in mgfxc's order (Y-flip,
+    // half-pixel, THEN depth). NOTE the factor order: SPIRV-Cross spells it
+    // `2.0 * gl_Position.z` where the mgfxc golden spells `gl_Position.z * 2.0` —
+    // mathematically identical, kept as SPIRV-Cross emits it.
+    private const string SpirvCrossDepthFixupLine = "gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;";
+
+    // mgfxc/MojoShader's two posFixup lines, byte-for-byte the form in the OpenGL
+    // golden VsTransformColorTexture.mgfx VS (and in MonoGame's own
+    // GraphicsDevice.OpenGL.cs comment describing what it appends):
+    //   gl_Position.y = gl_Position.y * posFixup.y;
+    //   gl_Position.xy += posFixup.zw * gl_Position.ww;
+    private const string PosFixupLine1 = "gl_Position.y = gl_Position.y * posFixup.y;";
+    private const string PosFixupLine2 = "gl_Position.xy += posFixup.zw * gl_Position.ww;";
+
+    /// <summary>
+    /// Injects the mgfxc/MojoShader <c>posFixup</c> contract into a rewritten VERTEX
+    /// body: declares <c>uniform vec4 posFixup;</c> (after the
+    /// <c>vs_uniforms_vec4[]</c> declaration when present, matching the golden's
+    /// declaration order) and appends the two fixup lines at the end of
+    /// <c>main()</c> — before the SPIRV-Cross depth-convention line when present, so
+    /// the line order matches the golden (Y-flip, half-pixel, depth).
+    ///
+    /// <para>MonoGame's GL runtime sets the uniform at draw time
+    /// (<c>posFixup.y</c> = +1 backbuffer / -1 render target; <c>.zw</c> = the
+    /// half-pixel offset when <c>UseHalfPixelOffset</c>) and skips programs that do
+    /// not declare it — so a VS that never writes <c>gl_Position</c> is returned
+    /// unchanged.</para>
+    /// </summary>
+    /// <exception cref="MonoGameGlslRewriteException">
+    /// The body already contains a <c>posFixup</c> identifier (would be silently
+    /// shadowed / double-applied) — fail loudly rather than emit ambiguous GLSL.
+    /// </exception>
+    private static string InjectPosFixup(string body)
+    {
+        // No position output => nothing for the runtime fixup to act on (and MonoGame
+        // skips the upload when the uniform is absent — same contract).
+        if (!Regex.IsMatch(body, @"\bgl_Position\b"))
+        {
+            return body;
+        }
+
+        if (Regex.IsMatch(body, @"\bposFixup\b"))
+        {
+            throw new MonoGameGlslRewriteException(
+                "GLSL rewrite collision: source already contains identifier 'posFixup', " +
+                "which clashes with the MojoShader position-fixup uniform. Cannot safely rewrite.");
+        }
+
+        var lines = body.Split('\n').ToList();
+
+        // ---- Declaration: after `uniform vec4 vs_uniforms_vec4[N];` when present
+        // (the golden's order), else before the first line of the body. ----
+        int declAnchor = lines.FindIndex(l =>
+            Regex.IsMatch(l, @"^\s*uniform\s+vec4\s+vs_uniforms_vec4\[\d+\]\s*;\s*$"));
+        lines.Insert(declAnchor >= 0 ? declAnchor + 1 : 0, "uniform vec4 posFixup;");
+
+        // ---- Fixup lines: immediately before the depth-convention line (mgfxc's
+        // order: Y-flip, half-pixel, depth). SPIRV-Cross emits the depth line as the
+        // last statement of main() when FixupDepthConvention is on; if it is absent
+        // (e.g. a depth-range-neutral shader shape), fall back to the last `}` —
+        // the close of main(), which SPIRV-Cross emits as the final function. ----
+        int insertAt = lines.FindLastIndex(l => l.Trim() == SpirvCrossDepthFixupLine);
+        string indent;
+        if (insertAt >= 0)
+        {
+            indent = lines[insertAt][..(lines[insertAt].Length - lines[insertAt].TrimStart().Length)];
+        }
+        else
+        {
+            insertAt = lines.FindLastIndex(l => l.Trim() == "}");
+            if (insertAt < 0)
+            {
+                throw new MonoGameGlslRewriteException(
+                    "GLSL rewrite: vertex shader writes gl_Position but no insertion point " +
+                    "for the posFixup lines was found (no depth-fixup line and no closing brace).");
+            }
+            indent = "    ";
+        }
+
+        lines.Insert(insertAt, indent + PosFixupLine1);
+        lines.Insert(insertAt + 1, indent + PosFixupLine2);
+
+        return string.Join("\n", lines);
+    }
 
     /// <summary>A fragment colour output discovered while rewriting the PS body.</summary>
     /// <param name="Alias">The MojoShader alias, always <c>ps_oC{N}</c>.</param>
