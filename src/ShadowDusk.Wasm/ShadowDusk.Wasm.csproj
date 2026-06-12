@@ -53,7 +53,10 @@
     the vkd3d wasm (the hosted build + real restore pins landed 2026-06-11).
   -->
   <Target Name="VerifyVkd3dWasmPresent" BeforeTargets="ResolveStaticWebAssetsInputs;BeforeBuild;Pack">
-    <Error Condition="!Exists('$(MSBuildProjectDirectory)/wwwroot/vkd3d/vkd3d-shader.wasm')"
-           Text="ShadowDusk.Wasm: wwwroot/vkd3d/vkd3d-shader.{js,wasm} is missing. It is gitignored and must be restored before build/pack. Run tools/restore.ps1 (downloads from the native-vkd3d-wasm-1.17 release, or copy a local .wasm-build/vkd3d-wasm-out/ build into wwwroot/vkd3d/). See wwwroot/vkd3d/RESTORE.md." />
+    <!-- Guard BOTH halves of the module: a partial restore (e.g. the .js download failed
+         after the .wasm landed) would otherwise pass and ship a package whose browser
+         DirectX/FNA always fails SD1902 — the .js loader is as load-bearing as the .wasm. -->
+    <Error Condition="!Exists('$(MSBuildProjectDirectory)/wwwroot/vkd3d/vkd3d-shader.wasm') Or !Exists('$(MSBuildProjectDirectory)/wwwroot/vkd3d/vkd3d-shader.js')"
+           Text="ShadowDusk.Wasm: wwwroot/vkd3d/vkd3d-shader.{js,wasm} is missing (both files are required). They are gitignored and must be restored before build/pack. Run tools/restore.ps1 (downloads from the native-vkd3d-wasm-1.17 release, or copy a local .wasm-build/vkd3d-wasm-out/ build into wwwroot/vkd3d/). See wwwroot/vkd3d/RESTORE.md." />
   </Target>
 </Project>

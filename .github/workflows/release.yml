@@ -280,10 +280,22 @@ jobs:
       # Phase 4.1: the vkd3d->WASM module (browser DirectX-DXBC + FNA-fx_2_0 backend)
       # is downloaded by tools/restore.sh from the native-vkd3d-wasm-1.17 release
       # under SHA-256 pins. A stopped release beats shipping browser DX/FNA broken.
-      - name: Verify vkd3d-shader.wasm restored
+      # BOTH files are verified (a partial restore — js failed, wasm landed — would
+      # ship DX/FNA permanently failing SD1902), and verified by RE-HASHING against
+      # the pins extracted from tools/restore.sh (the single source of truth), not by
+      # mere existence — defense in depth against a mismatched file left on disk.
+      - name: Verify vkd3d-shader.{js,wasm} restored (hash-checked against restore.sh pins)
         run: |
-          test -f src/ShadowDusk.Wasm/wwwroot/vkd3d/vkd3d-shader.wasm || \
-            (echo "::error::vkd3d-shader.wasm not restored into wwwroot/vkd3d/ — tools/restore.sh failed to download from the native-vkd3d-wasm-1.17 release" && exit 1)
+          js_sha=$(grep -oP "^VKD3D_WASM_JS_SHA256=\"\K[0-9a-f]{64}" tools/restore.sh)
+          wasm_sha=$(grep -oP "^VKD3D_WASM_WASM_SHA256=\"\K[0-9a-f]{64}" tools/restore.sh)
+          if [ -z "$js_sha" ] || [ -z "$wasm_sha" ]; then
+            echo "::error::could not extract the vkd3d-wasm SHA-256 pins from tools/restore.sh (variable renamed?) — refusing to release unverified."
+            exit 1
+          fi
+          echo "$js_sha  src/ShadowDusk.Wasm/wwwroot/vkd3d/vkd3d-shader.js" | sha256sum -c - || \
+            (echo "::error::vkd3d-shader.js missing or does not match the restore.sh pin — browser DirectX/FNA would fail SD1902 for every consumer" && exit 1)
+          echo "$wasm_sha  src/ShadowDusk.Wasm/wwwroot/vkd3d/vkd3d-shader.wasm" | sha256sum -c - || \
+            (echo "::error::vkd3d-shader.wasm missing or does not match the restore.sh pin — browser DirectX/FNA would fail SD1902 for every consumer" && exit 1)
 
       - name: Pack ShadowDusk.Wasm
         run: >
@@ -300,7 +312,9 @@ jobs:
             (echo "::error::ShadowDusk.Wasm .nupkg does not contain dxcompiler.wasm" && exit 1)
           unzip -l "$pkg" | grep -q 'vkd3d-shader.wasm' || \
             (echo "::error::ShadowDusk.Wasm .nupkg does not contain vkd3d-shader.wasm — browser DirectX/FNA would fail SD1902 for every consumer" && exit 1)
-          echo "ShadowDusk.Wasm packs with dxcompiler.wasm + vkd3d-shader.wasm bundled — OK"
+          unzip -l "$pkg" | grep -q 'vkd3d-shader.js' || \
+            (echo "::error::ShadowDusk.Wasm .nupkg does not contain vkd3d-shader.js (the module loader) — browser DirectX/FNA would fail SD1902 for every consumer" && exit 1)
+          echo "ShadowDusk.Wasm packs with dxcompiler.wasm + vkd3d-shader.{js,wasm} bundled — OK"
 
       - name: Upload Wasm package
         uses: actions/upload-artifact@v7
