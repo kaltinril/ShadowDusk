@@ -23,10 +23,15 @@ name: Pack & Consume Smoke
 
 on:
   workflow_dispatch:
-  # Same label gate as ci.yml's integration job: runs on PRs only when the
-  # 'run-integration' label is applied (heavyweight: packs + a cold consumer restore).
+  # Label-gated on PRs (the job `if:` requires the 'run-integration' label —
+  # heavyweight: packs + a cold consumer restore). NOTE: unlike ci.yml's integration
+  # job there is NO push-to-main trigger here; the weekly schedule below is the
+  # standing net so the pack/consume path can't rot unobserved between labelled PRs.
   pull_request:
     branches: [ main ]
+  schedule:
+    # Weekly standing run (Mondays 05:40 UTC) against HEAD of main.
+    - cron: '40 5 * * 1'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -44,6 +49,7 @@ jobs:
     timeout-minutes: 20
     if: |
       github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule' ||
       contains(github.event.pull_request.labels.*.name, 'run-integration')
     strategy:
       fail-fast: false
@@ -81,13 +87,14 @@ jobs:
           path: tools/dxc
           key: dxc-1.7.2212.40-${{ runner.os }}
 
-      # Non-fatal like ci.yml: if the download is unavailable the PACK GATE below
-      # is the loud assertion — a package without natives must fail this job red.
+      # Download failures only warn inside the script (offline tolerance) — the PACK
+      # GATE below is the loud assertion: a package without natives must fail this job
+      # red. No `|| true`: a non-zero exit is a genuine script failure (ci.yml ditto).
       - name: Restore native tools (Linux / macOS)
         if: runner.os != 'Windows'
         run: |
           chmod +x tools/restore.sh
-          ./tools/restore.sh || true
+          ./tools/restore.sh
 
       - name: Restore native tools (Windows)
         if: runner.os == 'Windows'

@@ -3,17 +3,24 @@
 # workflow Phases 22/23/24/100 defer their browser/WASM proof to.
 #
 # It is SEPARATE from the desktop matrix (different toolchain, slower, browser-gated)
-# and never blocks the fast unit CI. It runs on pushes to main and on PRs labelled
-# `run-browser`.
+# and never blocks the fast unit CI. The HEAVY render jobs (wasm-build, browser-smoke)
+# run on manual dispatch or PRs labelled `run-browser` ONLY — deliberately not
+# per-push. The LIGHT vkd3d-export-gate job is the standing coverage: it runs on every
+# push to main and on a daily schedule, so the G2 byte-identity gate and the
+# SD1902/SD1903 scenarios cannot rot unobserved between labelled runs.
 #
-# Two jobs:
-#   wasm-build       — wasm-tools workload (emscripten 3.1.34 pin), build/publish the
-#                      net8.0-browser ShadowDusk.Wasm + ShaderFiddle.Web sample, and
-#                      pack ShadowDusk.Wasm (the 6th NuGet package) IF the gitignored
-#                      dxcompiler.wasm is present (its VerifyDxcWasmPresent target
-#                      hard-fails the pack otherwise — see §17.2).
-#   browser-smoke    — Phase 24 Playwright harness: mode-1 render + the Phase 33
-#                      issue-#7 HiDef/WebGL2 regression guard (--corpus=sd-hidef).
+# Three jobs:
+#   wasm-build        — wasm-tools workload (emscripten 3.1.34 pin), build/publish the
+#                       net8.0-browser ShadowDusk.Wasm + ShaderFiddle.Web sample, and
+#                       pack ShadowDusk.Wasm (the 6th NuGet package) IF the gitignored
+#                       dxcompiler.wasm is present (its VerifyDxcWasmPresent target
+#                       hard-fails the pack otherwise — see §17.2).
+#   browser-smoke     — Phase 24 Playwright harness: mode-1 render + the Phase 33
+#                       issue-#7 HiDef/WebGL2 regression guard (--corpus=sd-hidef),
+#                       plus the node G1 seam gate and the Phase 4.1 G2 browser gate.
+#   vkd3d-export-gate — standing (push-to-main + daily) minimal run of ONLY
+#                       browser-vkd3d-gate.mjs --require-module: pure compile, no
+#                       GPU/xvfb, headless Chromium byte-identity vs the manifest.
 #
 # ── KNOWN STUBS / RUNTIME-ONLY (flagged per §16) ──────────────────────────────
 #   * The faithful DXC->WASM module (dxcompiler.wasm, ~17.4 MB) and spirv-cross.wasm
@@ -30,15 +37,24 @@
 name: WASM & Browser
 
 on:
-  # ON-DEMAND ONLY. ShadowDusk ships a LIBRARY (the browser app is only a sample / test
-  # rig), so this heavy browser+WASM reach check is NOT a per-push gate. It no longer runs
-  # on every push to main — that was the source of the red "WASM & Browser" badge and most
-  # of the Actions noise. Run it deliberately: manual dispatch, or add the `run-browser`
-  # label to a PR (`labeled` is included so the label (re)triggers it).
+  # The HEAVY jobs are on-demand only. ShadowDusk ships a LIBRARY (the browser app is
+  # only a sample / test rig), so the heavy browser+WASM render checks are NOT a
+  # per-push gate (per-push heavy runs were the source of the red "WASM & Browser"
+  # badge and most of the Actions noise). Run them deliberately: manual dispatch, or
+  # add the `run-browser` label to a PR (`labeled` is included so the label
+  # (re)triggers it). The push/schedule triggers below feed ONLY the cheap
+  # vkd3d-export-gate job (pure compile, no GPU) — each job's `if:` selects which
+  # events it answers to.
   workflow_dispatch:
   pull_request:
     branches: [ main ]
     types: [ opened, synchronize, reopened, labeled ]
+  push:
+    branches: [ main ]
+  schedule:
+    # Daily standing run of the cheap export gate, so the G2 byte-identity proof and
+    # the SD1902/SD1903 scenarios can't rot unobserved when no one pushes or labels.
+    - cron: '17 5 * * *'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -59,7 +75,8 @@ jobs:
   wasm-build:
     name: WASM build & pack
     runs-on: ubuntu-latest
-    # On-demand: run via manual dispatch or a PR labelled run-browser.
+    # On-demand (heavy): manual dispatch or a PR labelled run-browser. Pushes and the
+    # schedule run only the cheap vkd3d-export-gate job below.
     if: |
       github.event_name == 'workflow_dispatch' ||
       contains(github.event.pull_request.labels.*.name, 'run-browser')
@@ -83,12 +100,13 @@ jobs:
         run: dotnet workload install wasm-tools
 
       # Restore the gitignored WASM native artifacts (dxcompiler.wasm / spirv-cross.wasm).
-      # Non-fatal: the script no-ops with the build recipe when they are absent. Whether
-      # they landed gates the Wasm pack + the faithful mode-2 smoke below.
+      # The script warns-and-continues for absent out-of-band artifacts; whether they
+      # landed gates the Wasm pack + the faithful mode-2 smoke below. No `|| true`:
+      # a non-zero exit is a genuine script failure that must go red.
       - name: Restore WASM native artifacts
         run: |
           chmod +x tools/restore.sh
-          ./tools/restore.sh || true
+          ./tools/restore.sh
 
       - name: Check faithful DXC->WASM presence
         id: dxcwasm
@@ -145,6 +163,7 @@ jobs:
   browser-smoke:
     name: Browser render smoke
     runs-on: ubuntu-latest
+    # On-demand (heavy): manual dispatch or a PR labelled run-browser.
     if: |
       github.event_name == 'workflow_dispatch' ||
       contains(github.event.pull_request.labels.*.name, 'run-browser')
@@ -174,10 +193,28 @@ jobs:
       - name: Install WASM workload
         run: dotnet workload install wasm-tools
 
+      # No `|| true`: a non-zero exit is a genuine script failure that must go red.
       - name: Restore native tools
         run: |
           chmod +x tools/restore.sh
-          ./tools/restore.sh || true
+          ./tools/restore.sh
+
+      # HARD GATE (the soft-skip-chain fix, 2026-06-12 review): the vkd3d->WASM module
+      # is a hosted, pinned download — if it isn't in the package wwwroot after restore,
+      # the restore infrastructure failed and the G1/G2 gates below would degrade.
+      # Fail here with a precise message instead.
+      - name: Verify vkd3d-shader WASM module restored (hard gate)
+        run: |
+          missing=0
+          for f in \
+            'src/ShadowDusk.Wasm/wwwroot/vkd3d/vkd3d-shader.js' \
+            'src/ShadowDusk.Wasm/wwwroot/vkd3d/vkd3d-shader.wasm' ; do
+              if [ ! -f "$f" ]; then
+                echo "::error::restored WASM artifact missing: $f — tools/restore.sh failed to download the pinned native-vkd3d-wasm-1.17 asset."
+                missing=1
+              fi
+          done
+          exit $missing
 
       # Phase 21 AV-allowance note doesn't apply on GitHub-hosted Linux (no Defender),
       # but generous timeouts here cover cold WASM publish + first Chromium launch.
@@ -252,6 +289,19 @@ jobs:
       # --require-module: the hosted pins exist (native-vkd3d-wasm-1.17), so a module
       # missing in CI = restore infrastructure failure — the gate must go RED, never
       # skip itself green. The loud-skip branch remains for LOCAL runs without the flag.
+      # ── Phase 4.1 G1 — vkd3d->WASM seam byte-identity (node, no browser) ──
+      # The PER-STAGE companion of G2 below: the dotnet Vkd3dCorpusProbe captures every
+      # vkd3d compile the REAL desktop pipeline issues, then node replays each through
+      # the product shim (shadowdusk-vkd3d.js) and asserts byte-identity at the exact
+      # seam that differs between hosts. Cheap (no Chromium, no publish) and already in
+      # the repo — wiring it here (2026-06-12 review) closes the gap where only G2 ran
+      # in CI. Needs the restored module (hard-gated above) + desktop vkd3d native
+      # (restored by tools/restore.sh above); its own loud-skip branches cover the rest.
+      - name: Phase 4.1 G1 — vkd3d-WASM seam byte-identity gate (node)
+        working-directory: tests/ShadowDusk.BrowserTests
+        timeout-minutes: 25
+        run: node node-test-vkd3d-wasm.mjs
+
       - name: Phase 4.1 G2 — in-browser DX/FNA byte-identity gate
         working-directory: tests/ShadowDusk.BrowserTests
         timeout-minutes: 25
@@ -267,3 +317,64 @@ jobs:
             tests/ShadowDusk.BrowserTests/**/diffs/**
           if-no-files-found: ignore
           retention-days: 14
+
+  # ── Standing vkd3d export gate (push-to-main + daily schedule) ──────────────
+  # The CHEAP standing coverage (2026-06-12 review): only browser-vkd3d-gate.mjs
+  # --require-module — pure compile in headless Chromium, no GPU/xvfb, no render
+  # harness — so the Phase 4.1 G2 byte-identity proof and the SD1902/SD1903 module
+  # scenarios can't rot unobserved between labelled heavy runs. The heavy render jobs
+  # above stay dispatch/label-gated as designed.
+  vkd3d-export-gate:
+    name: vkd3d export gate (standing)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: |
+      github.event_name == 'push' ||
+      github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Cache NuGet
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-wasm-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', '**/Directory.Packages.props') }}
+          restore-keys: |
+            nuget-wasm-${{ runner.os }}-
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      # Needed for the gate's internal `dotnet publish` of the ShaderFiddle.Web sample
+      # (the real consumer app whose published output Chromium loads).
+      - name: Install WASM workload
+        run: dotnet workload install wasm-tools
+
+      # Restores the pinned vkd3d-shader.{js,wasm} into the package wwwroot. No
+      # `|| true`: a non-zero exit is a genuine script failure that must go red.
+      - name: Restore native tools
+        run: |
+          chmod +x tools/restore.sh
+          ./tools/restore.sh
+
+      - name: Install harness deps (Playwright)
+        working-directory: tests/ShadowDusk.BrowserTests
+        run: npm install
+
+      - name: Install Playwright Chromium
+        working-directory: tests/ShadowDusk.BrowserTests
+        run: npx playwright install --with-deps chromium
+
+      # --require-module: the pinned module is hosted, so a missing module in CI is a
+      # restore-infrastructure failure — the gate goes RED, never skips itself green.
+      - name: Phase 4.1 G2 — in-browser DX/FNA byte-identity gate
+        working-directory: tests/ShadowDusk.BrowserTests
+        timeout-minutes: 25
+        run: node browser-vkd3d-gate.mjs --require-module
