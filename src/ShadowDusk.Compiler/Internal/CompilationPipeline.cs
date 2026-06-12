@@ -397,6 +397,25 @@ internal sealed class CompilationPipeline
         IReadOnlyList<ConstantBufferInfo>  constantBufferInfoList  = BuildConstantBufferInfoList(allConstantBuffers, allParameters, monoGameGl, directX, cbufferStages);
         IReadOnlyList<EffectParameterInfo> effectParameterInfoList = BuildEffectParameterInfoList(allParameters);
 
+        // Phase 43, F9: bake parsed sampler_state members (MinFilter/AddressU/…)
+        // into per-sampler MGFX states, keyed by the .fx sampler name — the
+        // declaration survives the SM4 rewrite verbatim ('SamplerState <name>;'),
+        // so reflection reports the same name. mgfxc bakes these identically and
+        // MonoGame applies them at EffectPass.Apply; dropping them silently
+        // diverged (Point became Linear).
+        var samplerStateByName = new Dictionary<string, MgfxSamplerStateInfo>(StringComparer.Ordinal);
+        foreach (SamplerInfo parsedSampler in fxParsed.Samplers)
+        {
+            var resolved = MgfxSamplerStateResolver.Resolve(
+                parsedSampler.Name,
+                parsedSampler.StateEntries.Select(e => (e.Key, e.Value)),
+                options.SourceFileName ?? "<source>");
+            if (resolved.IsFailure)
+                return Fail(resolved.Error);
+            if (resolved.Value is { } samplerState)
+                samplerStateByName[parsedSampler.Name] = samplerState;
+        }
+
         // Attach each shader's sampler table + constant-buffer-index list so the
         // .mgfx shader record is complete and MonoGame can bind textures/uniforms.
         for (int i = 0; i < compiledShaderBlobs.Count; i++)
@@ -430,7 +449,10 @@ internal sealed class CompilationPipeline
                         // DX binds samplers via the DXBC resource table, not by GLSL
                         // uniform name, so the sampler name is empty for DirectX.
                         Name:        directX ? string.Empty : $"ps_s{slot}",
-                        Parameter:   paramIndex));
+                        Parameter:   paramIndex,
+                        // The reflected sampler name is the .fx sampler identifier —
+                        // the key the parsed sampler_state members were resolved under.
+                        State:       samplerStateByName.GetValueOrDefault(samp.Name)));
                 }
             }
 

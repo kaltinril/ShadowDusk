@@ -1,11 +1,16 @@
 # Phase 43 — MGFX writer & GL uniform-model fidelity (beyond the validated corpus)
 
-**Status:** 🔴 **Open — created 2026-06-12** from the four-lens full review (QA / Coder /
+**Status:** 🟡 **In progress — created 2026-06-12** from the four-lens full review (QA / Coder /
 cross-platform / shader-expert). The shader-expert lens found **seven HIGH fidelity
 defects**, all verified against compiled artifacts and the actual MonoGame 3.8.2 /
 MojoShader sources, all in **input shapes the rung-4 corpus never contained**. Nothing
 here contradicts the existing rung-4 proofs — it maps exactly where their coverage ends.
 **Track:** Fidelity / completeness.
+
+> **2026-06-12 — Phase 43A (writer-format half) landed:** F1 + F1b + F2 + F9 + F10 are
+> ✅ fixed with the full validation ladder (PR `feature/phase43a-mgfx-writer-fidelity`).
+> F3–F8 (the GLSL/uniform-model half, Phase 43B) remain open. As-built details in the
+> per-finding notes below and the **Phase 43A as-built** section at the end.
 
 > **The pattern (why rung-4 missed all of these):** the structural test suite validates
 > `.mgfx` with ShadowDusk's *own* reader, and the render-proven corpus contains **no pass
@@ -21,7 +26,7 @@ here contradicts the existing rung-4 proofs — it maps exactly where their cove
 
 ## Findings (from the 2026-06-12 shader-expert review — file:line as of main `6c05c91`)
 
-### F1 — HIGH: pass render-state block uses a format MonoGame cannot read
+### F1 — HIGH: pass render-state block uses a format MonoGame cannot read ✅ FIXED (43A)
 
 `src/ShadowDusk.Core/MgfxWriter.cs:198-285` writes `(byte fieldId, int32 value)` pairs +
 `0xFF` sentinel. **MonoGame 3.8.2 `Effect.ReadEffect` reads a fixed field sequence**
@@ -37,7 +42,7 @@ swapped, last three wrong; CullMode is D3D9-valued). FNA is unaffected (its
 MonoGame's exact fixed field order/types with mgfxc's defaults for unset fields; fix the
 enum values + comment together.
 
-### F2 — HIGH: annotation bodies desync the reader
+### F2 — HIGH: annotation bodies desync the reader ✅ FIXED (43A)
 
 `MgfxWriter.cs:287-311` writes annotation name/type/value after the count — MonoGame
 3.8.2 `ReadAnnotations` reads **only the int32 count** ("TODO: Annotations are not
@@ -174,7 +179,7 @@ renamed (ships `uniform sampler2D _35;`) while the `.mgfx` VS sampler record say
 **Fix:** implement the `vs_s{k}` contract end-to-end, or throw
 `MonoGameGlslRewriteException` for VS samplers (fail-loudly) until implemented.
 
-### F9 — MEDIUM: `sampler_state` filter/address states dropped on MGFX targets
+### F9 — MEDIUM: `sampler_state` filter/address states dropped on MGFX targets ✅ FIXED (43A)
 
 `CompilationPipeline.Run` never consumes `fxParsed.Samplers` state members (only `RunFna`
 does); `MgfxWriter.cs:125` writes `hasState = 0` always. mgfxc bakes
@@ -184,7 +189,7 @@ Corpus sampler blocks only contain `Texture = <…>`, so rung-4 never saw it.
 **Fix:** map parsed sampler states into the sampler record (`hasState = 1`) with
 MonoGame's SamplerState field layout.
 
-### F10 — MEDIUM-LOW: SPIR-V reflection drops struct `Members`
+### F10 — MEDIUM-LOW: SPIR-V reflection drops struct `Members` ✅ FIXED (43A)
 
 `src/ShadowDusk.Core/Reflection/Spirv/SpirvReflectionParser.cs` (`BuildVariable`) never
 populates struct `Members` (the DXIL oracle does, recursively); the parity test
@@ -243,6 +248,73 @@ invisible. **Fix:** extract members + add `Members` to the parity assertion.
 4. **F7 + F8 (LOD dialect + VS samplers)** — closes the Mesa watch item with the
    MojoShader-faithful header.
 5. **F9, F10** — independent, can ride along.
+
+## Phase 43A as-built (2026-06-12, branch `feature/phase43a-mgfx-writer-fidelity`)
+
+**Scope: F1 + F1b + F2 + F9 + F10 (the writer-format half). F3–F8 untouched (43B).**
+
+- **F1 (pass render states):** `MgfxWriter.Write{Blend,DepthStencil,Rasterizer}State`
+  rewritten to MonoGame 3.8.2 `Effect.ReadPasses`' fixed alphabetical field layout
+  (verified against the v3.8.2 tag source, == mgfxc's `EffectObject.writer.cs`), with
+  mgfxc's state-object-constructor defaults for unset fields and mgfxc's PassInfo
+  materialization semantics mirrored exactly: the `AlphaBlendEnable=TRUE` premultiplied
+  preset (One/InvSrcAlpha), `SrcBlend/DestBlend → ToAlphaBlend`-derived alpha factors,
+  and the **BlendOp → AlphaBlendFunction quirk** (ColorBlendFunction always ships Add —
+  mirrored deliberately; rendering identically to mgfxc beats D3D9 correctness here).
+- **F1b (enums):** `BlendValue`/`CullModeValue` now carry MonoGame's ordinals (One=0,
+  Zero=1, Dest **Color** pair = 6/7 before the Alpha pair 8/9, BlendFactor=10/11,
+  SrcAlphaSat=12; CullMode None=0/CW=1/CCW=2); the false "verified" comment replaced
+  with a field-by-field citation. FNA unaffected: `Fx2EffectBuilder` maps symbolically
+  (a new `MapCullMode` replaces the one raw-ordinal cast) — **proven** by zero FNA
+  manifest hash changes after regeneration AND the live FNA gate (17/17 PASS).
+- **F2 (annotations):** `WriteAnnotations` writes the int32 count and **no bodies**
+  (MonoGame reads only the count; mgfxc's `annotation_handles` are always null, so it
+  writes count 0 — ShadowDusk preserves the declared count, metadata-only, loadable
+  either way). The pipeline's annotation type-sniffing is moot for output bytes.
+- **F9 (sampler states):** new `MgfxSamplerStateResolver` (Core) mirrors mgfxc's
+  `SamplerStateInfo` verbatim — SamplerState-ctor defaults, the Min/Mag/Mip →
+  `TextureFilter` combination if-chain, `MipFilter=None` ⇒ LOD bias −16, mgfxc's
+  `ParseColor` (0xRRGGBB/0xRRGGBBAA) for BorderColor, float-floor int parsing,
+  `MipLodBias`/`MaxLod` key spellings; unparseable values fail loudly (**SD0024**).
+  `CompilationPipeline.Run` resolves `fxParsed.Samplers` by sampler name and the writer
+  emits `hasState=1` + MonoGame's exact field sequence. `MultiTexture`/
+  `MultiTextureOverlay`/`ClipShaderNew`/`FnaMultiPassStates` (whose sampler members were
+  silently dropped before) now match their mgfxc goldens' sampler records **exactly**.
+- **F10 (struct Members):** `SpirvReflectionParser` populates `Members` recursively
+  (member offsets within the struct, member SizeBytes 0, nested recursion — mirroring
+  `DxilReflectionExtractor.ExtractStructMembers`), plus struct `DescribeVariable`
+  support (Class=Struct/Type=Void, Rows=1, Columns=total component count, packed size).
+  `SpirvVsDxilReflectionTests` now asserts `Members` recursively and gained an inline
+  struct-cbuffer parity fact (oracle-guarded against vacuous pass).
+
+**Validation ladder, as run (all on win-x64, 2026-06-12):**
+
+1. **Corpus:** new fixtures `StateBlendAdditive.fx`, `StateDepthStencil.fx`,
+   `StateRasterizer.fx` (negative DepthBias/SlopeScaleDepthBias), `SamplerStatesFull.fx`,
+   `AnnotatedTechnique.fx` (technique/pass annotations — ShadowDusk-only: mgfxc's
+   grammar has no annotation production); `render-states.fx`/`annotations.fx` reauthored
+   mgfxc-compilable (ZEnable spelling, SM-macro profiles, TRUE SV_POSITION — the
+   `#define SV_POSITION POSITION` alias produces a dead varying on the DXC path, a known
+   F3/F8-adjacent trap left for 43B).
+2. **mgfxc golden oracle:** goldens generated with the real `dotnet-mgfxc 3.8.2.1105`
+   for all six mgfxc-compilable fixtures × {OpenGL, DirectX_11} into
+   `tests/fixtures/golden/`. `MgfxStateGoldenMatchTests` (12 + 4 facts) parses golden
+   and ShadowDusk output with the same real-reader-layout `MgfxBlobReader` (now with
+   MonoGame's tail-signature desync guard): pass state records and per-slot baked
+   sampler states match the goldens **field-for-field**; decode-level diff showed them
+   byte-identical within the state blocks.
+3. **Real bar:** new `validation/StateFidelity` harness — every fixture loads in real
+   MonoGame 3.8.2 DesktopGL `Effect` (the AlphaBlendEnable/annotation rows are exactly
+   the loads that desynced before), and the four PS-only rows render
+   **pixel-identical (maxDelta = 0)** to the mgfxc-golden arm through the identical
+   SpriteBatch path: **7/7 rows PASS**.
+4. **Manifest:** regenerated on win-x64 (`SHADOWDUSK_REGENERATE_BYTE_MANIFEST=1`):
+   6 changed + 5 new entries per MGFX target (OpenGL, DirectX_Vkd3d); **zero FNA
+   entries changed**. `decode_mgfx*.py` updated to the real layouts.
+5. **Suites:** full `dotnet test` green (1,142: 41 GLSL + 174 HLSL + 121 Compiler +
+   421 Core + 51 ImageTests + 334 Integration); `validation/FnaValidation` gate
+   **17/17 PASS** (run live against this branch); browser G2 re-proven in CI
+   (`run-browser` label).
 
 ## Definition of Done
 

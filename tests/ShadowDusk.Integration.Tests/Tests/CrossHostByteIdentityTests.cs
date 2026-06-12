@@ -77,6 +77,14 @@ public sealed class CrossHostByteIdentityTests
         "annotations.fx",
         "platform-macros.fx",
         "basiceffect-mini.fx",
+        // Phase 43 writer-fidelity corpus (F1/F2/F9): MGFX-only — SamplerStatesFull
+        // uses BorderColor (FNA's runtime throws on it) and AnnotatedTechnique uses
+        // technique/pass annotations, so these stay out of the FNA corpus.
+        "StateBlendAdditive.fx",
+        "StateDepthStencil.fx",
+        "StateRasterizer.fx",
+        "SamplerStatesFull.fx",
+        "AnnotatedTechnique.fx",
     ];
 
     /// <summary>

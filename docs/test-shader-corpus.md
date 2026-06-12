@@ -53,6 +53,7 @@ upstream verbatim (see the integrity caveat in §1).
 | Post-FX pack: `Grayscale.fx`, `Invert.fx`, `Sepia.fx`, `Saturate.fx`, `Pixelated.fx`, `Scanlines.fx`, `Fading.fx`, `Dots.fx` | A common MonoGame post-process tutorial pack; exact upstream not confidently identified | Unknown |
 | `Dissolve.fx`, `ForwardLighting.fx`, `PolygonLight.fx` | Nez-style 2D framework (underscore-prefixed sampler convention, discard-based dissolve); exact upstream not confidently identified | Unknown |
 | `Minimal.fx`, `cbuffer.fx`, `multipass.fx`, `multitechnique.fx`, `render-states.fx`, `annotations.fx`, `platform-macros.fx`, `basiceffect-mini.fx`, etc. | Purpose-built ShadowDusk structural fixtures (SM4/5 feature probes) | Project-owned |
+| `StateBlendAdditive.fx`, `StateDepthStencil.fx`, `StateRasterizer.fx`, `SamplerStatesFull.fx`, `AnnotatedTechnique.fx` | Phase 43 writer-fidelity corpus (pass blend/depth-stencil/rasterizer states incl. negative floats; baked `sampler_state` members; parameter/technique/pass annotations). All but `AnnotatedTechnique.fx` have real `mgfxc` 3.8.2.1105 goldens in `tests/fixtures/golden/{OpenGL,DirectX_11}/` (mgfxc's grammar cannot parse technique/pass annotations); validated by `MgfxStateGoldenMatchTests` (structural vs golden) and `validation/StateFidelity` (real MonoGame 3.8.2 `Effect` load + pixel-equal render vs the golden). | Project-owned |
 
 > If you can supply the original source links for the "Unknown" rows, add them
 > here — that lets us diff the checked-in files against upstream and decide,

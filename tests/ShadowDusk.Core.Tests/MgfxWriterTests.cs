@@ -636,6 +636,21 @@ public sealed class MgfxWriterTests
         br.ReadByte().Should().Be(0, because: "rasterizer state not specified");
     }
 
+    // The fixed field layouts below mirror MonoGame 3.8.2 Effect.ReadPasses
+    // verbatim (Phase 43, F1): a bool presence flag, then every field of the
+    // state object in alphabetical order — no field IDs, no terminator.
+
+    /// <summary>Reads the 16-byte fixed blend block exactly as MonoGame 3.8.2 does.</summary>
+    private static (byte AlphaFunc, byte AlphaDst, byte AlphaSrc, byte[] BlendFactor,
+                    byte ColorFunc, byte ColorDst, byte ColorSrc,
+                    byte Cwc0, byte Cwc1, byte Cwc2, byte Cwc3, int MultiSampleMask)
+        ReadBlendBlock(BinaryReader br) => (
+            br.ReadByte(), br.ReadByte(), br.ReadByte(),
+            br.ReadBytes(4),
+            br.ReadByte(), br.ReadByte(), br.ReadByte(),
+            br.ReadByte(), br.ReadByte(), br.ReadByte(), br.ReadByte(),
+            br.ReadInt32());
+
     [Fact]
     public void RenderState_CullModeNone()
     {
@@ -650,18 +665,18 @@ public sealed class MgfxWriterTests
 
         SkipToFirstPassRenderState(br);
 
-        br.ReadByte().Should().Be(0, because: "no blend state");
-        br.ReadByte().Should().Be(0, because: "no depth stencil state");
-        var rasterizerPresent = br.ReadByte();
-        rasterizerPresent.Should().Be(1);
+        br.ReadBoolean().Should().BeFalse(because: "no blend state");
+        br.ReadBoolean().Should().BeFalse(because: "no depth stencil state");
+        br.ReadBoolean().Should().BeTrue(because: "rasterizer state present");
 
-        // CullMode field ID is 0
-        var fieldId = br.ReadByte();
-        fieldId.Should().Be(0);
-        var fieldValue = br.ReadInt32();
-        fieldValue.Should().Be((int)CullModeValue.None, because: "CullModeValue.None == 1");
-
-        br.ReadByte().Should().Be(0xFF, because: "sentinel ends the rasterizer block");
+        // MonoGame reads: CullMode, DepthBias, FillMode, MultiSampleAntiAlias,
+        // ScissorTestEnable, SlopeScaleDepthBias.
+        br.ReadByte().Should().Be((byte)CullModeValue.None, because: "MonoGame CullMode.None == 0");
+        br.ReadSingle().Should().Be(0f, because: "DepthBias defaults to 0 (RasterizerState ctor)");
+        br.ReadByte().Should().Be((byte)FillModeValue.Solid);
+        br.ReadBoolean().Should().BeTrue(because: "MultiSampleAntiAlias defaults to true");
+        br.ReadBoolean().Should().BeFalse(because: "ScissorTestEnable defaults to false");
+        br.ReadSingle().Should().Be(0f);
     }
 
     [Fact]
@@ -682,24 +697,75 @@ public sealed class MgfxWriterTests
 
         SkipToFirstPassRenderState(br);
 
-        var blendPresent = br.ReadByte();
-        blendPresent.Should().Be(1);
+        br.ReadBoolean().Should().BeTrue(because: "blend state present");
+        var blend = ReadBlendBlock(br);
 
-        // ColorSourceBlend field ID = 1
-        br.ReadByte().Should().Be(1);
-        br.ReadInt32().Should().Be((int)BlendValue.SourceAlpha);
+        blend.ColorSrc.Should().Be((byte)BlendValue.SourceAlpha);
+        blend.ColorDst.Should().Be((byte)BlendValue.InverseSourceAlpha);
+        // mgfxc derives the alpha channel from SrcBlend/DestBlend via ToAlphaBlend
+        // (identity for the alpha-form blends used here).
+        blend.AlphaSrc.Should().Be((byte)BlendValue.SourceAlpha);
+        blend.AlphaDst.Should().Be((byte)BlendValue.InverseSourceAlpha);
+        blend.ColorFunc.Should().Be((byte)BlendFunctionValue.Add);
+        blend.AlphaFunc.Should().Be((byte)BlendFunctionValue.Add);
+        blend.BlendFactor.Should().Equal(255, 255, 255, 255); // Color.White default
+        blend.Cwc0.Should().Be(15); blend.Cwc1.Should().Be(15);
+        blend.Cwc2.Should().Be(15); blend.Cwc3.Should().Be(15);
+        blend.MultiSampleMask.Should().Be(int.MaxValue);
 
-        // ColorDestinationBlend field ID = 2
-        br.ReadByte().Should().Be(2);
-        br.ReadInt32().Should().Be((int)BlendValue.InverseSourceAlpha);
+        br.ReadBoolean().Should().BeFalse(because: "no depth stencil state");
+        br.ReadBoolean().Should().BeFalse(because: "no rasterizer state");
+    }
 
-        br.ReadByte().Should().Be(0xFF);
+    [Fact]
+    public void RenderState_AlphaBlendEnable_True_PresetsPremultiplied()
+    {
+        // mgfxc PassInfo: AlphaBlendEnable=TRUE alone presets One/InverseSourceAlpha.
+        var renderState = new RenderStateBlock { AlphaBlendEnable = true };
+        var ir = new ShaderIR
+        {
+            Techniques = [MakeTechnique("T", EmptyPass(renderState: renderState))],
+        };
+
+        var bytes = Write(ir);
+        using var br = ReaderFor(bytes);
+
+        SkipToFirstPassRenderState(br);
+
+        br.ReadBoolean().Should().BeTrue();
+        var blend = ReadBlendBlock(br);
+        blend.ColorSrc.Should().Be((byte)BlendValue.One);
+        blend.AlphaSrc.Should().Be((byte)BlendValue.One);
+        blend.ColorDst.Should().Be((byte)BlendValue.InverseSourceAlpha);
+        blend.AlphaDst.Should().Be((byte)BlendValue.InverseSourceAlpha);
+    }
+
+    [Fact]
+    public void RenderState_BlendOp_LandsInAlphaBlendFunction()
+    {
+        // mgfxc quirk mirrored for fidelity: BlendOp assigns ONLY AlphaBlendFunction;
+        // ColorBlendFunction always ships as Add.
+        var renderState = new RenderStateBlock { ColorBlendFunction = BlendFunctionValue.ReverseSubtract };
+        var ir = new ShaderIR
+        {
+            Techniques = [MakeTechnique("T", EmptyPass(renderState: renderState))],
+        };
+
+        var bytes = Write(ir);
+        using var br = ReaderFor(bytes);
+
+        SkipToFirstPassRenderState(br);
+
+        br.ReadBoolean().Should().BeTrue();
+        var blend = ReadBlendBlock(br);
+        blend.AlphaFunc.Should().Be((byte)BlendFunctionValue.ReverseSubtract);
+        blend.ColorFunc.Should().Be((byte)BlendFunctionValue.Add);
     }
 
     [Fact]
     public void RenderState_DepthBufferEnable()
     {
-        var renderState = new RenderStateBlock { DepthBufferEnable = true };
+        var renderState = new RenderStateBlock { DepthBufferEnable = false };
         var ir = new ShaderIR
         {
             Techniques = [MakeTechnique("T", EmptyPass(renderState: renderState))],
@@ -710,20 +776,37 @@ public sealed class MgfxWriterTests
 
         SkipToFirstPassRenderState(br);
 
-        br.ReadByte().Should().Be(0); // blend not present
-        var depthPresent = br.ReadByte();
-        depthPresent.Should().Be(1);
+        br.ReadBoolean().Should().BeFalse(); // blend not present
+        br.ReadBoolean().Should().BeTrue();  // depth-stencil present
 
-        // DepthBufferEnable field ID = 0
-        br.ReadByte().Should().Be(0);
-        br.ReadInt32().Should().Be(1, because: "true serializes as int32 1");
-        br.ReadByte().Should().Be(0xFF);
+        // MonoGame reads: CCWStencilDepthBufferFail, CCWStencilFail, CCWStencilFunction,
+        // CCWStencilPass, DepthBufferEnable, DepthBufferFunction, DepthBufferWriteEnable,
+        // ReferenceStencil, StencilDepthBufferFail, StencilEnable, StencilFail,
+        // StencilFunction, StencilMask, StencilPass, StencilWriteMask, TwoSidedStencilMode.
+        br.ReadByte().Should().Be((byte)StencilOperationValue.Keep);
+        br.ReadByte().Should().Be((byte)StencilOperationValue.Keep);
+        br.ReadByte().Should().Be((byte)CompareFunctionValue.Always);
+        br.ReadByte().Should().Be((byte)StencilOperationValue.Keep);
+        br.ReadBoolean().Should().BeFalse(because: "DepthBufferEnable was set to false");
+        br.ReadByte().Should().Be((byte)CompareFunctionValue.LessEqual, because: "DepthStencilState ctor default");
+        br.ReadBoolean().Should().BeTrue(because: "DepthBufferWriteEnable defaults to true");
+        br.ReadInt32().Should().Be(0, because: "ReferenceStencil defaults to 0");
+        br.ReadByte().Should().Be((byte)StencilOperationValue.Keep);
+        br.ReadBoolean().Should().BeFalse(because: "StencilEnable defaults to false");
+        br.ReadByte().Should().Be((byte)StencilOperationValue.Keep);
+        br.ReadByte().Should().Be((byte)CompareFunctionValue.Always);
+        br.ReadInt32().Should().Be(int.MaxValue, because: "StencilMask defaults to Int32.MaxValue");
+        br.ReadByte().Should().Be((byte)StencilOperationValue.Keep);
+        br.ReadInt32().Should().Be(int.MaxValue, because: "StencilWriteMask defaults to Int32.MaxValue");
+        br.ReadBoolean().Should().BeFalse(because: "TwoSidedStencilMode defaults to false");
+
+        br.ReadBoolean().Should().BeFalse(); // rasterizer not present
     }
 
     [Fact]
-    public void RenderState_DepthFunction_LessEqual()
+    public void RenderState_DepthFunction_Greater()
     {
-        var renderState = new RenderStateBlock { DepthBufferFunction = CompareFunctionValue.LessEqual };
+        var renderState = new RenderStateBlock { DepthBufferFunction = CompareFunctionValue.Greater };
         var ir = new ShaderIR
         {
             Techniques = [MakeTechnique("T", EmptyPass(renderState: renderState))],
@@ -734,14 +817,51 @@ public sealed class MgfxWriterTests
 
         SkipToFirstPassRenderState(br);
 
-        br.ReadByte().Should().Be(0); // blend not present
-        var depthPresent = br.ReadByte();
-        depthPresent.Should().Be(1);
+        br.ReadBoolean().Should().BeFalse(); // blend not present
+        br.ReadBoolean().Should().BeTrue();  // depth-stencil present
 
-        // DepthBufferFunction field ID = 2
-        br.ReadByte().Should().Be(2);
-        br.ReadInt32().Should().Be((int)CompareFunctionValue.LessEqual);
-        br.ReadByte().Should().Be(0xFF);
+        br.ReadBytes(4);                     // CCW stencil quad
+        br.ReadBoolean().Should().BeTrue(because: "DepthBufferEnable defaults to true");
+        br.ReadByte().Should().Be((byte)CompareFunctionValue.Greater);
+    }
+
+    // -------------------------------------------------------------------------
+    // 9.6b Annotations (Phase 43, F2): count only, NO bodies
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Annotations_WriteCountOnly_NoBodies()
+    {
+        var annotations = new List<AnnotationInfo>
+        {
+            new(Name: "UIName",  Type: 4, StringValue: "Tint Color", FloatValue: null, IntValue: null, BoolValue: null),
+            new(Name: "UIOrder", Type: 2, StringValue: null, FloatValue: null, IntValue: 1, BoolValue: null),
+        };
+        var ir = new ShaderIR
+        {
+            Parameters = [MakeParameter("TintColor", annotations: annotations)],
+            Techniques = [MakeTechnique("T", EmptyPass())],
+        };
+
+        var bytes = Write(ir);
+        using var br = ReaderFor(bytes);
+
+        SkipHeader(br);
+        SkipConstantBuffers(br);
+        SkipShaders(br);
+
+        br.ReadInt32().Should().Be(1);          // parameter count
+        br.ReadByte(); br.ReadByte();           // class, type
+        br.ReadString().Should().Be("TintColor");
+        br.ReadString();                        // semantic
+        br.ReadInt32().Should().Be(2, because: "the annotation COUNT is preserved");
+
+        // MonoGame 3.8.2 ReadAnnotations reads ONLY the count — the very next bytes
+        // must be the parameter's RowCount/ColumnCount, not annotation bodies.
+        br.ReadByte().Should().Be(0, because: "RowCount follows the count immediately");
+        br.ReadByte().Should().Be(0, because: "ColumnCount follows");
+        br.ReadInt32().Should().Be(0);          // member indices
+        br.ReadInt32().Should().Be(0);          // element indices
     }
 
     // -------------------------------------------------------------------------
@@ -913,22 +1033,9 @@ public sealed class MgfxWriterTests
         }
     }
 
-    private static void ReadAnnotationList(BinaryReader br)
-    {
-        var count = br.ReadInt32();
-        for (var i = 0; i < count; i++)
-        {
-            br.ReadString(); // name
-            var type = br.ReadByte();
-            switch (type)
-            {
-                case 3: br.ReadSingle(); break;  // Single
-                case 2: br.ReadInt32();  break;  // Int32
-                case 1: br.ReadInt32();  break;  // Bool
-                default: br.ReadString(); break; // String / other
-            }
-        }
-    }
+    // MGFX v10 annotations are the int32 count and nothing else — MonoGame's
+    // ReadAnnotations never reads bodies (Phase 43, F2).
+    private static void ReadAnnotationList(BinaryReader br) => br.ReadInt32();
 
     private static void SkipPass(BinaryReader br)
     {
@@ -941,13 +1048,20 @@ public sealed class MgfxWriterTests
 
     private static void SkipRenderStateBlock(BinaryReader br)
     {
-        for (var block = 0; block < 3; block++)
+        // MonoGame 3.8.2 fixed layouts: blend 14 bytes + int32; depth-stencil
+        // 8 enum/bool bytes + 3 bool bytes + 3 int32; rasterizer 2 enum bytes +
+        // 2 bool bytes + 2 singles.
+        if (br.ReadBoolean()) { br.ReadBytes(14); br.ReadInt32(); }
+        if (br.ReadBoolean())
         {
-            var present = br.ReadByte();
-            if (present == 0) continue;
-            byte fieldId;
-            while ((fieldId = br.ReadByte()) != 0xFF)
-                br.ReadInt32();
+            br.ReadBytes(4); br.ReadBoolean(); br.ReadByte(); br.ReadBoolean();
+            br.ReadInt32(); br.ReadByte(); br.ReadBoolean(); br.ReadByte(); br.ReadByte();
+            br.ReadInt32(); br.ReadByte(); br.ReadInt32(); br.ReadBoolean();
+        }
+        if (br.ReadBoolean())
+        {
+            br.ReadByte(); br.ReadSingle(); br.ReadByte();
+            br.ReadBoolean(); br.ReadBoolean(); br.ReadSingle();
         }
     }
 

@@ -4,9 +4,81 @@ using System.Text;
 
 namespace ShadowDusk.Integration.Tests;
 
-public sealed record PassInfo(string Name, int VertexShaderIndex, int PixelShaderIndex);
+public sealed record PassInfo(
+    string Name,
+    int VertexShaderIndex,
+    int PixelShaderIndex,
+    MgfxBlendStateRecord? BlendState = null,
+    MgfxDepthStencilStateRecord? DepthStencilState = null,
+    MgfxRasterizerStateRecord? RasterizerState = null);
 
 public sealed record TechniqueInfo(string Name, int PassCount, IReadOnlyList<PassInfo> Passes);
+
+// ---------------------------------------------------------------------------
+// Pass render-state records, field-for-field as MonoGame 3.8.2 Effect.ReadPasses
+// reads them (fixed alphabetical layout — Phase 43, F1).
+// ---------------------------------------------------------------------------
+
+public sealed record MgfxBlendStateRecord(
+    byte AlphaBlendFunction,
+    byte AlphaDestinationBlend,
+    byte AlphaSourceBlend,
+    byte BlendFactorR, byte BlendFactorG, byte BlendFactorB, byte BlendFactorA,
+    byte ColorBlendFunction,
+    byte ColorDestinationBlend,
+    byte ColorSourceBlend,
+    byte ColorWriteChannels,
+    byte ColorWriteChannels1,
+    byte ColorWriteChannels2,
+    byte ColorWriteChannels3,
+    int  MultiSampleMask);
+
+public sealed record MgfxDepthStencilStateRecord(
+    byte CounterClockwiseStencilDepthBufferFail,
+    byte CounterClockwiseStencilFail,
+    byte CounterClockwiseStencilFunction,
+    byte CounterClockwiseStencilPass,
+    bool DepthBufferEnable,
+    byte DepthBufferFunction,
+    bool DepthBufferWriteEnable,
+    int  ReferenceStencil,
+    byte StencilDepthBufferFail,
+    bool StencilEnable,
+    byte StencilFail,
+    byte StencilFunction,
+    int  StencilMask,
+    byte StencilPass,
+    int  StencilWriteMask,
+    bool TwoSidedStencilMode);
+
+public sealed record MgfxRasterizerStateRecord(
+    byte  CullMode,
+    float DepthBias,
+    byte  FillMode,
+    bool  MultiSampleAntiAlias,
+    bool  ScissorTestEnable,
+    float SlopeScaleDepthBias);
+
+/// <summary>One shader-record sampler entry, including its baked state (Phase 43, F9).</summary>
+public sealed record MgfxSamplerRecord(
+    int    ShaderIndex,
+    byte   Type,
+    byte   TextureSlot,
+    byte   SamplerSlot,
+    string Name,
+    byte   Parameter,
+    MgfxSamplerStateRecord? State);
+
+/// <summary>The baked sampler state, field-for-field as MonoGame 3.8.2's Shader reader consumes it.</summary>
+public sealed record MgfxSamplerStateRecord(
+    byte  AddressU,
+    byte  AddressV,
+    byte  AddressW,
+    byte  BorderColorR, byte BorderColorG, byte BorderColorB, byte BorderColorA,
+    byte  Filter,
+    int   MaxAnisotropy,
+    int   MaxMipLevel,
+    float MipMapLevelOfDetailBias);
 
 /// <summary>
 /// One parameter record as stored in the .mgfx parameter block — the reflection metadata
@@ -28,19 +100,6 @@ public sealed class MgfxBlobReader
     // The four bytes "MGFX" read little-endian as a uint32.
     private const uint ExpectedSignature = 0x5846474Du;
 
-    private const byte TypeSingle = 3;
-    private const byte TypeInt32  = 2;
-    private const byte TypeBool   = 1;
-
-    // Blend state field IDs
-    private const byte BlendAlphaBlendEnable = 0;
-
-    // Depth-stencil state field IDs
-    private const byte DepthDepthBufferEnable = 0;
-
-    // Rasterizer state field IDs
-    private const byte RasterizerCullMode = 0;
-
     public string   Signature            { get; }
     public byte     MgfxVersion          { get; }
     public byte     ProfileId            { get; }
@@ -55,13 +114,22 @@ public sealed class MgfxBlobReader
     // Raw shader blob bytes indexed by shader slot.
     public IReadOnlyList<byte[]> ShaderBlobs { get; }
 
-    // Render state values read from any pass in any technique.
-    public bool? AlphaBlendEnable  { get; }
-    public bool? DepthBufferEnable { get; }
-    public int?  CullMode          { get; }
+    // Every sampler entry across all shader records, with baked state (Phase 43, F9).
+    public IReadOnlyList<MgfxSamplerRecord> Samplers { get; }
 
-    // paramName -> list of (annotationName, annotationStringValue) for string-type annotations.
-    public IReadOnlyDictionary<string, IReadOnlyList<(string Name, string StringValue)>> ParameterAnnotations { get; }
+    // Render state records read from the LAST pass (in any technique) that carried them.
+    // Per-pass values are on PassInfo; these are conveniences for single-pass fixtures.
+    public MgfxBlendStateRecord?        BlendState        { get; }
+    public MgfxDepthStencilStateRecord? DepthStencilState { get; }
+    public MgfxRasterizerStateRecord?   RasterizerState   { get; }
+
+    // Convenience views over the records above.
+    public bool? DepthBufferEnable => DepthStencilState?.DepthBufferEnable;
+    public int?  CullMode          => RasterizerState?.CullMode;
+
+    // paramName -> annotation count. MGFX v10 stores ONLY the count — MonoGame's
+    // ReadAnnotations never reads bodies, and mgfxc never writes them (Phase 43, F2).
+    public IReadOnlyDictionary<string, int> ParameterAnnotationCounts { get; }
 
     // paramName -> variable size in bytes computed from constant-buffer offset data.
     public IReadOnlyDictionary<string, int> ParameterSizes { get; }
@@ -77,12 +145,13 @@ public sealed class MgfxBlobReader
         byte profileId,
         IReadOnlyList<TechniqueInfo> techniques,
         IReadOnlyList<byte[]> shaderBlobs,
+        IReadOnlyList<MgfxSamplerRecord> samplers,
         IReadOnlyList<string> parameterNames,
         IReadOnlyList<MgfxParameterRecord> parameters,
-        bool? alphaBlendEnable,
-        bool? depthBufferEnable,
-        int? cullMode,
-        IReadOnlyDictionary<string, IReadOnlyList<(string, string)>> parameterAnnotations,
+        MgfxBlendStateRecord? blendState,
+        MgfxDepthStencilStateRecord? depthStencilState,
+        MgfxRasterizerStateRecord? rasterizerState,
+        IReadOnlyDictionary<string, int> parameterAnnotationCounts,
         IReadOnlyDictionary<string, int> parameterSizes,
         IReadOnlyDictionary<string, int> parameterOffsets)
     {
@@ -92,13 +161,14 @@ public sealed class MgfxBlobReader
         Techniques           = techniques;
         TechniqueCount       = techniques.Count;
         ShaderBlobs          = shaderBlobs;
+        Samplers             = samplers;
         TotalShaderBlobCount = shaderBlobs.Count;
         ParameterNames       = parameterNames;
         Parameters           = parameters;
-        AlphaBlendEnable     = alphaBlendEnable;
-        DepthBufferEnable    = depthBufferEnable;
-        CullMode             = cullMode;
-        ParameterAnnotations = parameterAnnotations;
+        BlendState           = blendState;
+        DepthStencilState    = depthStencilState;
+        RasterizerState      = rasterizerState;
+        ParameterAnnotationCounts = parameterAnnotationCounts;
         ParameterSizes       = parameterSizes;
         ParameterOffsets     = parameterOffsets;
     }
@@ -152,6 +222,7 @@ public sealed class MgfxBlobReader
         // Shaders
         int shaderCount = br.ReadInt32();
         var shaderBlobs = new List<byte[]>(shaderCount);
+        var samplerRecords = new List<MgfxSamplerRecord>();
         for (int i = 0; i < shaderCount; i++)
         {
             br.ReadBoolean();          // isVertexShader
@@ -162,20 +233,28 @@ public sealed class MgfxBlobReader
             int samplerCount = br.ReadByte();
             for (int s = 0; s < samplerCount; s++)
             {
-                br.ReadByte();         // type
-                br.ReadByte();         // textureSlot
-                br.ReadByte();         // samplerSlot
-                if (br.ReadBoolean())  // hasState
+                byte sType       = br.ReadByte();
+                byte textureSlot = br.ReadByte();
+                byte samplerSlot = br.ReadByte();
+                MgfxSamplerStateRecord? state = null;
+                if (br.ReadBoolean())  // hasState (Phase 43, F9)
                 {
-                    br.ReadBytes(3);   // AddressU/V/W
-                    br.ReadBytes(4);   // BorderColor RGBA
-                    br.ReadByte();     // Filter
-                    br.ReadInt32();    // MaxAnisotropy
-                    br.ReadInt32();    // MaxMipLevel
-                    br.ReadSingle();   // MipMapLevelOfDetailBias
+                    state = new MgfxSamplerStateRecord(
+                        AddressU: br.ReadByte(),
+                        AddressV: br.ReadByte(),
+                        AddressW: br.ReadByte(),
+                        BorderColorR: br.ReadByte(), BorderColorG: br.ReadByte(),
+                        BorderColorB: br.ReadByte(), BorderColorA: br.ReadByte(),
+                        Filter: br.ReadByte(),
+                        MaxAnisotropy: br.ReadInt32(),
+                        MaxMipLevel: br.ReadInt32(),
+                        MipMapLevelOfDetailBias: br.ReadSingle());
                 }
-                br.ReadString();       // name
-                br.ReadByte();         // parameter index
+                string sName = br.ReadString();
+                byte sParam  = br.ReadByte();
+                samplerRecords.Add(new MgfxSamplerRecord(
+                    ShaderIndex: i, Type: sType, TextureSlot: textureSlot,
+                    SamplerSlot: samplerSlot, Name: sName, Parameter: sParam, State: state));
             }
 
             // Constant-buffer index list.
@@ -198,7 +277,7 @@ public sealed class MgfxBlobReader
         int parameterCount = br.ReadInt32();
         var parameterNames = new List<string>(parameterCount);
         var parameters     = new List<MgfxParameterRecord>(parameterCount);
-        var paramAnnotationMap = new Dictionary<string, IReadOnlyList<(string, string)>>(StringComparer.Ordinal);
+        var paramAnnotationCounts = new Dictionary<string, int>(StringComparer.Ordinal);
 
         for (int i = 0; i < parameterCount; i++)
         {
@@ -207,17 +286,10 @@ public sealed class MgfxBlobReader
             string name     = br.ReadString();
             string semantic = br.ReadString();
 
-            var annotations = ReadAnnotations(br);
+            int annotationCount = ReadAnnotations(br);
             parameterNames.Add(name);
-
-            // Include all annotations that were stored as strings (any non-numeric type).
-            var stringAnnotations = annotations
-                .Where(a => a.Type != TypeSingle && a.Type != TypeInt32 && a.Type != TypeBool)
-                .Select(a => (a.Name, a.StringValue ?? string.Empty))
-                .ToList();
-
-            if (stringAnnotations.Count > 0)
-                paramAnnotationMap[name] = stringAnnotations;
+            if (annotationCount > 0)
+                paramAnnotationCounts[name] = annotationCount;
 
             byte rowCount    = br.ReadByte();
             byte columnCount = br.ReadByte();
@@ -252,9 +324,9 @@ public sealed class MgfxBlobReader
         }
 
         // Techniques
-        bool? alphaBlendEnable  = null;
-        bool? depthBufferEnable = null;
-        int?  cullMode          = null;
+        MgfxBlendStateRecord?        blendState        = null;
+        MgfxDepthStencilStateRecord? depthStencilState = null;
+        MgfxRasterizerStateRecord?   rasterizerState   = null;
 
         int techniqueCount = br.ReadInt32();
         var techniques     = new List<TechniqueInfo>(techniqueCount);
@@ -262,27 +334,36 @@ public sealed class MgfxBlobReader
         for (int t = 0; t < techniqueCount; t++)
         {
             string techName = br.ReadString();
-            ReadAnnotations(br); // technique annotations (consume)
+            ReadAnnotations(br); // technique annotations (count only)
 
             int passCount = br.ReadInt32();
             var passes    = new List<PassInfo>(passCount);
             for (int p = 0; p < passCount; p++)
             {
                 string passName = br.ReadString();
-                ReadAnnotations(br); // pass annotations
+                ReadAnnotations(br); // pass annotations (count only)
 
                 int vsIndex = br.ReadInt32();
                 int psIndex = br.ReadInt32();
-                passes.Add(new PassInfo(passName, vsIndex, psIndex));
 
-                var (ab, db, cm) = ReadRenderStateBlock(br);
-                if (ab.HasValue) alphaBlendEnable  = ab;
-                if (db.HasValue) depthBufferEnable = db;
-                if (cm.HasValue) cullMode          = cm;
+                var (blend, depth, raster) = ReadRenderStateBlock(br);
+                passes.Add(new PassInfo(passName, vsIndex, psIndex, blend, depth, raster));
+
+                if (blend  is not null) blendState        = blend;
+                if (depth  is not null) depthStencilState = depth;
+                if (raster is not null) rasterizerState   = raster;
             }
 
             techniques.Add(new TechniqueInfo(techName, passCount, passes));
         }
+
+        // Tail signature — the same desync guard MonoGame's Effect ctor applies. If a
+        // writer change ever desyncs the stream (the F1/F2 failure mode), this throws
+        // here instead of silently mis-parsing.
+        uint tail = br.ReadUInt32();
+        if (tail != ExpectedSignature)
+            throw new InvalidDataException(
+                $"MGFX tail signature mismatch (0x{tail:X8}) — the body was not parsed correctly.");
 
         return new MgfxBlobReader(
             signature: "MGFX",
@@ -290,101 +371,84 @@ public sealed class MgfxBlobReader
             profileId: profileId,
             techniques: techniques,
             shaderBlobs: shaderBlobs,
+            samplers: samplerRecords,
             parameterNames: parameterNames,
             parameters: parameters,
-            alphaBlendEnable: alphaBlendEnable,
-            depthBufferEnable: depthBufferEnable,
-            cullMode: cullMode,
-            parameterAnnotations: paramAnnotationMap,
+            blendState: blendState,
+            depthStencilState: depthStencilState,
+            rasterizerState: rasterizerState,
+            parameterAnnotationCounts: paramAnnotationCounts,
             parameterSizes: paramSizes,
             parameterOffsets: paramOffsets);
     }
 
-    private static (bool? AlphaBlendEnable, bool? DepthBufferEnable, int? CullMode) ReadRenderStateBlock(BinaryReader br)
+    // Mirrors MonoGame 3.8.2 Effect.ReadPasses: each state object is a boolean
+    // presence flag followed by a FIXED alphabetical field sequence (Phase 43, F1).
+    private static (MgfxBlendStateRecord?, MgfxDepthStencilStateRecord?, MgfxRasterizerStateRecord?)
+        ReadRenderStateBlock(BinaryReader br)
     {
-        bool? alphaBlend = null;
-        bool? depthBuf   = null;
-        int?  cull       = null;
-
-        // BlendState
-        byte blendPresent = br.ReadByte();
-        if (blendPresent == 1)
+        MgfxBlendStateRecord? blend = null;
+        if (br.ReadBoolean())
         {
-            while (true)
-            {
-                byte fieldId = br.ReadByte();
-                if (fieldId == 0xFF) break;
-                int value = br.ReadInt32();
-                if (fieldId == BlendAlphaBlendEnable)
-                    alphaBlend = value != 0;
-            }
+            blend = new MgfxBlendStateRecord(
+                AlphaBlendFunction:    br.ReadByte(),
+                AlphaDestinationBlend: br.ReadByte(),
+                AlphaSourceBlend:      br.ReadByte(),
+                BlendFactorR: br.ReadByte(), BlendFactorG: br.ReadByte(),
+                BlendFactorB: br.ReadByte(), BlendFactorA: br.ReadByte(),
+                ColorBlendFunction:    br.ReadByte(),
+                ColorDestinationBlend: br.ReadByte(),
+                ColorSourceBlend:      br.ReadByte(),
+                ColorWriteChannels:    br.ReadByte(),
+                ColorWriteChannels1:   br.ReadByte(),
+                ColorWriteChannels2:   br.ReadByte(),
+                ColorWriteChannels3:   br.ReadByte(),
+                MultiSampleMask:       br.ReadInt32());
         }
 
-        // DepthStencilState
-        byte depthPresent = br.ReadByte();
-        if (depthPresent == 1)
+        MgfxDepthStencilStateRecord? depth = null;
+        if (br.ReadBoolean())
         {
-            while (true)
-            {
-                byte fieldId = br.ReadByte();
-                if (fieldId == 0xFF) break;
-                int value = br.ReadInt32();
-                if (fieldId == DepthDepthBufferEnable)
-                    depthBuf = value != 0;
-            }
+            depth = new MgfxDepthStencilStateRecord(
+                CounterClockwiseStencilDepthBufferFail: br.ReadByte(),
+                CounterClockwiseStencilFail:            br.ReadByte(),
+                CounterClockwiseStencilFunction:        br.ReadByte(),
+                CounterClockwiseStencilPass:            br.ReadByte(),
+                DepthBufferEnable:      br.ReadBoolean(),
+                DepthBufferFunction:    br.ReadByte(),
+                DepthBufferWriteEnable: br.ReadBoolean(),
+                ReferenceStencil:       br.ReadInt32(),
+                StencilDepthBufferFail: br.ReadByte(),
+                StencilEnable:          br.ReadBoolean(),
+                StencilFail:            br.ReadByte(),
+                StencilFunction:        br.ReadByte(),
+                StencilMask:            br.ReadInt32(),
+                StencilPass:            br.ReadByte(),
+                StencilWriteMask:       br.ReadInt32(),
+                TwoSidedStencilMode:    br.ReadBoolean());
         }
 
-        // RasterizerState
-        byte rastPresent = br.ReadByte();
-        if (rastPresent == 1)
+        MgfxRasterizerStateRecord? raster = null;
+        if (br.ReadBoolean())
         {
-            while (true)
-            {
-                byte fieldId = br.ReadByte();
-                if (fieldId == 0xFF) break;
-                int value = br.ReadInt32();
-                if (fieldId == RasterizerCullMode)
-                    cull = value;
-            }
+            raster = new MgfxRasterizerStateRecord(
+                CullMode:             br.ReadByte(),
+                DepthBias:            br.ReadSingle(),
+                FillMode:             br.ReadByte(),
+                MultiSampleAntiAlias: br.ReadBoolean(),
+                ScissorTestEnable:    br.ReadBoolean(),
+                SlopeScaleDepthBias:  br.ReadSingle());
         }
 
-        return (alphaBlend, depthBuf, cull);
+        return (blend, depth, raster);
     }
 
-    private sealed record ParsedAnnotation(string Name, byte Type, string? StringValue);
-
-    private static List<ParsedAnnotation> ReadAnnotations(BinaryReader br)
-    {
-        int count = br.ReadInt32();
-        var list  = new List<ParsedAnnotation>(count);
-
-        for (int i = 0; i < count; i++)
-        {
-            string name = br.ReadString();
-            byte   type = br.ReadByte();
-
-            string? stringValue = null;
-            switch (type)
-            {
-                case TypeSingle:
-                    br.ReadSingle();
-                    break;
-                case TypeInt32:
-                    br.ReadInt32();
-                    break;
-                case TypeBool:
-                    br.ReadInt32();
-                    break;
-                default:
-                    stringValue = br.ReadString();
-                    break;
-            }
-
-            list.Add(new ParsedAnnotation(name, type, stringValue));
-        }
-
-        return list;
-    }
+    /// <summary>
+    /// MGFX v10 annotations are an int32 count and NOTHING else — MonoGame's
+    /// ReadAnnotations reads only the count ("TODO: Annotations are not implemented!")
+    /// and mgfxc writes no bodies (Phase 43, F2).
+    /// </summary>
+    private static int ReadAnnotations(BinaryReader br) => br.ReadInt32();
 
     private static int ReadInt32List(BinaryReader br)
     {
