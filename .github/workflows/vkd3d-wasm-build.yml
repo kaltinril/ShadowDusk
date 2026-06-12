@@ -3,7 +3,7 @@
 # host can compile HLSL -> SM5 DXBC (MonoGame DX11) and HLSL -> SM1-3 D3D bytecode
 # (FNA fx_2_0) with THE SAME pinned compiler as desktop. One pipeline everywhere —
 # NO substitute compilers (THE PURPOSE, CLAUDE.md); a server relay (Option C) is
-# out of bounds (plan/PHASE-4.1-SPIKE-wasm-directx-dxbc.md).
+# out of bounds (plan/DONE/PHASE-4.1-SPIKE-wasm-directx-dxbc.md).
 #
 # Same hosting model as the Phase 37 native builds (build-vkd3d-natives.yml /
 # dxc-build.yml): the artifact produced here is uploaded to the FIXED GitHub

@@ -17,7 +17,7 @@ silently against that promise.
   → `tools/spirv-cross/`) for the integration-gated items.
 
 **Blocks:** Nothing in the product pipeline. This is a release-readiness gate, not a
-feature. It feeds [Phase 30](PHASE-30-ci-and-nuget-release.md), which **runs** the resulting
+feature. It feeds [Phase 30](DONE/PHASE-30-ci-and-nuget-release.md), which **runs** the resulting
 suite across Linux/macOS/Windows (and owns the cross-platform run validation this phase
 deliberately does *not* duplicate).
 
@@ -56,7 +56,7 @@ steps.
 
 **Out of scope / Non-Goals:**
 - **Cross-platform *runs*** of the suite on Linux/macOS — owned by
-  [Phase 30](PHASE-30-ci-and-nuget-release.md) (Phase 15 §9 / the old "Phase 10 CI"
+  [Phase 30](DONE/PHASE-30-ci-and-nuget-release.md) (Phase 15 §9 / the old "Phase 10 CI"
   criterion). Reference it; do not duplicate the matrix here.
 - **Already-resolved** Phase-100 items: `11-6-A` (transpiler wired — Phase 8),
   `11-6-D` (uniform remap — Phase 17), Phase 8 packaging `7.4/7.5` (NuGet drop-in fix,
@@ -254,7 +254,7 @@ so that entering 1.0 there is no parked-but-unknown coverage gap in the areas th
 the drop-in-`mgfxc` contract (DXC flags/diagnostics, reflection parameter fidelity, GLSL
 transpile, include resolution, IR construction, and CLI↔in-process equivalence). The
 manual CLI pack/install/publish path is verified once on Windows; the cross-platform *run*
-of the whole suite is handed to [Phase 30](PHASE-30-ci-and-nuget-release.md).
+of the whole suite is handed to [Phase 30](DONE/PHASE-30-ci-and-nuget-release.md).
 
 ---
 

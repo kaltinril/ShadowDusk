@@ -330,7 +330,7 @@ This spike documents the problem, catalogues candidate solutions, and defines ac
 ## What We Know
 
 ### Why DXC alone is insufficient
-DXC (via `Vortice.Dxc`) only emits SM6 DXIL. It rejects `vs_5_0`/`ps_5_0` profiles for non-SPIRV targets (`error: invalid profile`). MonoGame's DirectX 11 backend (`ID3D11Device::CreateVertexShader`) rejects DXIL unconditionally — DXIL is a D3D12-only format. See [plan.md](plan.md#-known-constraint-dxc-cannot-produce-sm5-dxbc).
+DXC (via `Vortice.Dxc`) only emits SM6 DXIL. It rejects `vs_5_0`/`ps_5_0` profiles for non-SPIRV targets (`error: invalid profile`). MonoGame's DirectX 11 backend (`ID3D11Device::CreateVertexShader`) rejects DXIL unconditionally — DXIL is a D3D12-only format. See [plan.md](../plan.md#-known-constraint-dxc-cannot-produce-sm5-dxbc).
 
 ### The WASM constraint
 .NET WASM runs inside the browser sandbox. Native shared libraries (`.dll`, `.so`, `.dylib`) cannot be loaded or P/Invoked. The only native interop available is via `[JSImport]` / `[JSExport]` to JavaScript, which can call into WASM-compiled C/C++ modules loaded by the browser.
@@ -413,6 +413,6 @@ A solution is acceptable if it meets all of the following:
 
 ## Related
 
-- [plan.md — DXC SM5 constraint](plan.md#-known-constraint-dxc-cannot-produce-sm5-dxbc)
-- [PHASE-4-dxc-integration.md — flag table deviation](DONE/PHASE-4-dxc-integration.md)
+- [plan.md — DXC SM5 constraint](../plan.md#-known-constraint-dxc-cannot-produce-sm5-dxbc)
+- [PHASE-4-dxc-integration.md — flag table deviation](PHASE-4-dxc-integration.md)
 - Memory: `project-dxc-sm5-constraint.md`

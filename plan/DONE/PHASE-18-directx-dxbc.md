@@ -110,7 +110,7 @@ chunk parsing, the CtabReader sibling) on every OS. `D3DReflect` is demoted to a
 oracle; `DxbcReflectionParityTests` proves the managed output deeply equal to it for
 both backends' DXBC, and a full-corpus A/B proved zero `.mgfx` byte change. As-built
 detail, evidence, and the uncovered corner cases:
-[PHASE-37 § Phase 18 Track A](../PHASE-37-cross-platform-native-availability.md#phase-18-track-a--cross-platform-dxbc-reflection--done-2026-06-10).
+[PHASE-37 § Phase 18 Track A](PHASE-37-cross-platform-native-availability.md#phase-18-track-a--cross-platform-dxbc-reflection--done-2026-06-10).
 
 ## Carry-forwards (tracked, not swept)
 

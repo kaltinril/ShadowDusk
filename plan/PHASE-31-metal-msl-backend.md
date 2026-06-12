@@ -57,7 +57,7 @@ What exists today (verified):
 - Claiming Metal "done" / production-ready without a real-runtime render proof (rung 4 of the evidence ladder). Until then Metal ships as **experimental / unvalidated** and is labelled so everywhere (matching the [Phase 26](PHASE-26-documentation-site.md) "future backend" treatment).
 - VS-driven Metal effects — the OpenGL PS-only gate (`fxParsed.Techniques.All(... VertexEntryPoint is null)` in `CompilationPipeline.cs:112-113`) carries forward; VS-driven remains backlog `17-VS`.
 - iOS/tvOS specifics, Metal argument buffers, the `.metallib` precompile step, or any Metal-version targeting beyond what MonoGame/KNI's loader actually consumes.
-- Running the Metal validation on CI hardware — execution is owned by / coordinated with [Phase 30](PHASE-30-ci-and-nuget-release.md) (macOS CI), which is where any real Apple runner lives.
+- Running the Metal validation on CI hardware — execution is owned by / coordinated with [Phase 30](DONE/PHASE-30-ci-and-nuget-release.md) (macOS CI), which is where any real Apple runner lives.
 
 ---
 
@@ -114,7 +114,7 @@ component is *not* finished). Metal is never silently presented as validated.
 ## Open questions / risks
 
 - **No same-backend oracle (the central risk).** `mgfxc` emits no MSL and MonoGame 3.8 Apple targets run GL-via-MojoShader, so there may be **no `mgfxc` Metal output** to compare against. Without a same-backend reference, rung 4 is unreachable by the normal method — hence the experimental-until-runtime stance.
-- **No Apple hardware / Metal runtime in the dev loop.** Even MSL *compilation* (Apple's `metal`/`metallib`) and offscreen render checks need macOS; this couples tightly to [Phase 30](PHASE-30-ci-and-nuget-release.md)'s macOS runner. Until then, validation is at best SPIRV-Cross-emits-without-error (rung 1–2).
+- **No Apple hardware / Metal runtime in the dev loop.** Even MSL *compilation* (Apple's `metal`/`metallib`) and offscreen render checks need macOS; this couples tightly to [Phase 30](DONE/PHASE-30-ci-and-nuget-release.md)'s macOS runner. Until then, validation is at best SPIRV-Cross-emits-without-error (rung 1–2).
 - **Which Metal `.mgfx` shape does any consumer load?** The `MgfxProfile` id, MSL entry-point/binding convention, and whether a MojoShader-style rewrite is needed are all **undefined** until a concrete Metal runtime is chosen — do not invent a format with no loader.
 - **Shared SPIRV-Cross interop ownership.** The P/Invoke currently lives in `ShadowDusk.GLSL/Interop`. Referencing it from `ShadowDusk.Metal` (vs. extracting a shared interop assembly) is a small structural decision to make before adding MSL options to it.
 - **Scope creep into iOS/Vulkan.** Keep this phase to macOS-class MSL emission + the validation-story decision; iOS specifics and the Vulkan direct-SPIR-V target are separate future backends.

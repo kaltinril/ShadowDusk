@@ -15,7 +15,7 @@
 # The artifacts produced here are uploaded to the FIXED GitHub Release tag
 # `native-vkd3d-1.17` (SHA-256 pins live in tools/restore.{sh,ps1}). Re-running this
 # workflow does NOT republish anything — publishing to the release tag is a deliberate
-# manual step (see plan/PHASE-37-cross-platform-native-availability.md, Finding C).
+# manual step (see plan/DONE/PHASE-37-cross-platform-native-availability.md, Finding C).
 #
 # Pin discipline: vkd3d stays at 1.17 (output byte-stability is a product promise —
 # a bump re-baselines goldens and re-runs rung-4). Never substitute a distro build.

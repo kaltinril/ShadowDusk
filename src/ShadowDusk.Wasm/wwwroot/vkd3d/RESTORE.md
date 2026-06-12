@@ -3,7 +3,7 @@
 This directory holds the **faithful pinned vkd3d-shader 1.17 compiled to
 WebAssembly** — the PRODUCT in-browser HLSL→DXBC (DirectX) and HLSL→D3D9-bytecode
 (FNA fx_2_0) backend (Phase 4.1, Option A; see
-`plan/PHASE-4.1-SPIKE-wasm-directx-dxbc.md`). It is the SAME library + version the
+`plan/DONE/PHASE-4.1-SPIKE-wasm-directx-dxbc.md`). It is the SAME library + version the
 desktop pipeline P/Invokes (`tools/vkd3d/`, tag `native-vkd3d-1.17`), so its output
 is asserted **byte-identical to the desktop backend** on the corpus — never a
 substitute compiler.

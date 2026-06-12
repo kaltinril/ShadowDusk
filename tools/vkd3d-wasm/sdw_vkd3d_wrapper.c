@@ -21,7 +21,7 @@
  *
  * ===========================================================================
  * ABI CONTRACT — DO NOT CHANGE SIGNATURES without recording the change in
- * plan/PHASE-4.1-SPIKE-wasm-directx-dxbc.md. The C# [JSImport] interop side is
+ * plan/DONE/PHASE-4.1-SPIKE-wasm-directx-dxbc.md. The C# [JSImport] interop side is
  * written against exactly this surface.
  *
  *   int  sdw_vkd3d_compile(const unsigned char* source, int source_len,

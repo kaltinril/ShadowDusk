@@ -4,7 +4,7 @@ This directory holds the **durable build code** for compiling the pinned
 **vkd3d-shader 1.17** to WebAssembly, so the browser host can compile HLSL →
 **SM5 DXBC** (MonoGame DX11) and **SM1–3 D3D bytecode** (FNA fx_2_0) with the
 **same pinned compiler as desktop** — no substitute compiler, per THE PURPOSE
-(CLAUDE.md) and `plan/PHASE-4.1-SPIKE-wasm-directx-dxbc.md` (Option A).
+(CLAUDE.md) and `plan/DONE/PHASE-4.1-SPIKE-wasm-directx-dxbc.md` (Option A).
 
 The compiled `vkd3d-shader.{js,wasm}` artifacts are **NOT committed** — they are
 built by `.github/workflows/vkd3d-wasm-build.yml` and hosted on the fixed
@@ -44,4 +44,4 @@ vkd3d is **LGPL-2.1+**. The workflow ships vkd3d's license text as
 recorded in the phase doc: the `.wasm` module statically links the thin wrapper
 with `libvkd3d-shader.a`, but the module as a whole remains a separately
 served, user-replaceable file (the dynamic-link analog). See
-`plan/PHASE-4.1-SPIKE-wasm-directx-dxbc.md` → *License note*.
+`plan/DONE/PHASE-4.1-SPIKE-wasm-directx-dxbc.md` → *License note*.

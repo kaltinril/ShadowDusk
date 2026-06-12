@@ -42,7 +42,7 @@ internal static class Vkd3dTestGate
 {
     internal const string SkipReason =
         "vkd3d-shader native library not found (restore it via tools/restore — " +
-        "see plan/PHASE-37-cross-platform-native-availability.md, finding C).";
+        "see plan/DONE/PHASE-37-cross-platform-native-availability.md, finding C).";
 
     internal static bool Available { get; } = Probe();
 

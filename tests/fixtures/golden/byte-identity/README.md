@@ -64,4 +64,4 @@ If any OS produces different bytes, that is a **real fidelity finding** in the p
 native builds (e.g. a non-deterministic or divergent DXC/vkd3d build) — never loosen this
 to structural equality or per-OS manifests. The test failure message carries both hashes
 (manifest vs this-host) per mismatching fixture×target; capture them in
-`plan/PHASE-37-cross-platform-native-availability.md` as an open finding.
+`plan/DONE/PHASE-37-cross-platform-native-availability.md` as an open finding.

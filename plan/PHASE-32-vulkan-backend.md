@@ -6,7 +6,7 @@ SPIR-V target already exists — DXC emits SPIR-V (it is the OpenGL branch's int
 `PlatformTarget.Vulkan` is wired through the CLI, the DXC flag builder, the platform macros,
 and the MGFX profile map. What is missing is (a) the Vulkan reflection/`.mgfx` write wiring
 in the full `EffectCompiler` pipeline and (b) **a runtime to validate against**. This phase
-is **parked like [Phase 4.1](PHASE-4.1-SPIKE-wasm-directx-dxbc.md)**: MonoGame 3.8 ships **no
+is **parked like [Phase 4.1](DONE/PHASE-4.1-SPIKE-wasm-directx-dxbc.md)**: MonoGame 3.8 ships **no
 Vulkan backend**, and KNI's Vulkan story is unclear — so there is **no `mgfxc`-Vulkan baseline
 and no MonoGame Vulkan runtime** to render-validate against. The "renders like `mgfxc`" bar
 (CLAUDE.md → *What success actually means*, evidence-ladder rung 4) **cannot be met today**.
@@ -15,11 +15,11 @@ if/when a MonoGame/KNI Vulkan runtime ships.
 
 **Depends on:**
 - **[Phase 4](DONE/PHASE-4-dxc-integration.md)** (DXC integration) — the Vulkan target is a single DXC compile to SPIR-V (`vs_6_0`/`ps_6_0` + `-spirv`); the whole frontend is shared with the OpenGL SPIR-V branch.
-- **[Phase 30](PHASE-30-ci-and-nuget-release.md)** (cross-platform CI) — the SPIR-V-validity test must run on the Linux/macOS/Windows matrix; it is the only honest gate available without a render runtime.
+- **[Phase 30](DONE/PHASE-30-ci-and-nuget-release.md)** (cross-platform CI) — the SPIR-V-validity test must run on the Linux/macOS/Windows matrix; it is the only honest gate available without a render runtime.
 
 **Blocks:** nothing on the critical path. This is post-1.0 backend breadth.
 
-**Sibling parked backend:** [Phase 4.1 — WASM + DirectX DXBC spike](PHASE-4.1-SPIKE-wasm-directx-dxbc.md)
+**Sibling parked backend:** [Phase 4.1 — WASM + DirectX DXBC spike](DONE/PHASE-4.1-SPIKE-wasm-directx-dxbc.md)
 is the analogous "backend wired in code, blocked on a runtime/toolchain reality" item. Both are
 parked for honesty, not abandoned.
 
@@ -60,7 +60,7 @@ and validation, which is the honesty-gated part.
 - **Any "renders like `mgfxc`" claim.** There is no `mgfxc` Vulkan output and no MonoGame Vulkan runtime — rung 4 of the evidence ladder is unreachable. Do **not** assert in-engine equivalence; the strongest honest claim is "valid SPIR-V + well-formed `.mgfx`."
 - The **exact KNI/MonoGame Vulkan `.mgfx` container shape** (SPIR-V layout, push-constant vs UBO binding model, sampler/descriptor-set convention). Unknown until a runtime exists; the writer uses the existing v10 record shape as a placeholder, explicitly provisional.
 - A SPIR-V → MSL/Metal path (that is [Phase 31 — Metal/MSL backend](PHASE-31-metal-msl-backend.md)).
-- Vulkan-in-WASM specifics (the WASM DXC already emits SPIR-V; no separate spike needed — unlike DX DXBC's [Phase 4.1](PHASE-4.1-SPIKE-wasm-directx-dxbc.md)).
+- Vulkan-in-WASM specifics (the WASM DXC already emits SPIR-V; no separate spike needed — unlike DX DXBC's [Phase 4.1](DONE/PHASE-4.1-SPIKE-wasm-directx-dxbc.md)).
 
 ---
 
@@ -82,7 +82,7 @@ and validation, which is the honesty-gated part.
 - [ ] Add an `EffectCompiler` integration test: compile a PS-only fixture (and one simple VS/PS) with `Target = Vulkan`; assert success, profile byte `3`, and that each shader blob begins with the SPIR-V magic word `0x07230203` and parses as a SPIR-V module.
 - [ ] (If `spirv-val` is restorable via `tools/restore.*`) add an optional, skip-on-missing validity check of the emitted SPIR-V.
 - [ ] Document the Vulkan target as **parked pending a validation runtime** on the docs-site backend page ([Phase 26](PHASE-26-documentation-site.md)); state plainly that no in-engine render validation exists.
-- [ ] Ensure the existing/added Vulkan tests run on the [Phase 30](PHASE-30-ci-and-nuget-release.md) Linux/macOS/Windows matrix.
+- [ ] Ensure the existing/added Vulkan tests run on the [Phase 30](DONE/PHASE-30-ci-and-nuget-release.md) Linux/macOS/Windows matrix.
 
 ### Already in place (verified — do not re-do)
 
@@ -117,6 +117,6 @@ model and (b) add the rung-4 render-equivalence validation that finishes the bac
 
 - **No baseline, no bar (the central risk).** Without an `mgfxc` Vulkan output and a MonoGame/KNI Vulkan runtime, "valid SPIR-V" is the strongest honest claim. The danger is mistaking a green SPIR-V-validity test for the product bar — it is **rung 2–3, not rung 4**. Guard against the proxy-as-bar trap CLAUDE.md warns about.
 - **Unknown `.mgfx` Vulkan container.** The descriptor/binding model (push constants vs UBO, sampler/descriptor-set layout, SPIR-V placement in the record) is undefined until a runtime exists. Anything we write now is provisional and will likely change.
-- **KNI Vulkan story unclear.** Whether KNI ever ships a Vulkan backend (desktop or WASM via WebGPU) is unknown. Coordinate with the KNI runtime question raised in [Phase 4.1](PHASE-4.1-SPIKE-wasm-directx-dxbc.md) Option D before investing further.
+- **KNI Vulkan story unclear.** Whether KNI ever ships a Vulkan backend (desktop or WASM via WebGPU) is unknown. Coordinate with the KNI runtime question raised in [Phase 4.1](DONE/PHASE-4.1-SPIKE-wasm-directx-dxbc.md) Option D before investing further.
 - **SM6/DXIL vs SPIR-V symmetry.** Vulkan uses `vs_6_0`/`ps_6_0` like the DX12/KNI DXIL path, but emits SPIR-V (`-spirv`), not DXIL — keep the two SM6 targets distinct in the flag builder and pipeline so a future DX12 path and Vulkan don't get conflated.
 - **`SpirvReflector` coverage.** The managed reflector is proven byte-equivalent to the DXIL oracle for the OpenGL corpus; confirm it handles the Vulkan `-fspv-reflect`-decorated SPIR-V (the reflect builtins) without surprises before relying on it for the Vulkan gate.

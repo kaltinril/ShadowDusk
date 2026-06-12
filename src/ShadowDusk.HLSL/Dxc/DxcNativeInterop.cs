@@ -27,7 +27,7 @@ namespace ShadowDusk.HLSL.Dxc;
 /// Proven by a single-factor toggle against the same pinned native in a clean
 /// <c>mcr.microsoft.com/dotnet/sdk:8.0</c> container: identical shader + flags, raw
 /// vtable call — UTF-16 arguments reproduce the ICE; UTF-32 arguments compile
-/// successfully. See <c>plan/PHASE-37-cross-platform-native-availability.md</c>.
+/// successfully. See <c>plan/DONE/PHASE-37-cross-platform-native-availability.md</c>.
 /// </para>
 /// <para>
 /// This helper performs the exact same vtable call Vortice's generated code makes

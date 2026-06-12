@@ -1,6 +1,6 @@
 # Phase 30 — Cross-Platform CI, NuGet Release & `/release` Automation (GitHub Actions)
 
-> **Status (2026-06-07): CI + release infrastructure DONE & MERGED** (PR #17 + the release-readiness **§18**, PR #19/#20). A `/release` is wired to publish all six packages incl. self-contained `ShadowDusk.Wasm`. **Kept in plan/ (not DONE) because two items remain:** (a) the **first publish has not been cut** — that's the user's `/release` action (§17.6 task 45 / §17.7 publish-verification acceptance); (b) the **§16 `wasm.yml` browser-smoke is red** — its root cause is owned by **[Phase 36](PHASE-36-dxc-linux-spirv-ice.md)** (the Linux Debug-CLI compile path). When both clear, move this to `DONE/`. See **§18** for the as-built state.
+> **Status: ✅ DONE — moved to `DONE/` (2026-06-12).** CI + release infrastructure was done & merged 2026-06-07 (PR #17 + the release-readiness **§18**, PR #19/#20); the two items that kept it in `plan/` have both cleared. (a) The first publish **has** been cut — four product releases have shipped via `release.yml`, all green: v0.1.1 (2026-06-08), v0.2.0, v0.3.0, and v0.4.0 (2026-06-11, latest). (b) The **§16 `wasm.yml` browser smoke is green** — fixed by Phase 37 (PR #44, 2026-06-11: xvfb + llvmpipe + calibrated tolerances) and it now also carries the Phase 4.1 G2 vkd3d-browser gate. See **§18** for the as-built state.
 
 > **What this phase covers (read first — the old name "Cross-Platform CI" hid half of it):** three things, not one.
 > 1. **CI** — build + test on Linux/macOS/Windows on every push/PR (`ci.yml`).
@@ -1021,7 +1021,7 @@ Phases 22, 23, 24, and 100 all defer their browser/WASM validation "to Phase 30.
 ### 16.2 Headless-browser render smoke (Phase 24's harness)
 
 - [ ] Install Playwright browsers (`playwright install --with-deps chromium`).
-- [ ] Run **[Phase 24](DONE/PHASE-24-browser-render-validation.md)**'s harness headless against the published sample: **mode-1** (precompiled `.mgfx` loads + renders in KNI WebGL — the MGFXReader10/KNIFX-v11 answer), then **mode-2** (in-browser compile + render).
+- [ ] Run **[Phase 24](PHASE-24-browser-render-validation.md)**'s harness headless against the published sample: **mode-1** (precompiled `.mgfx` loads + renders in KNI WebGL — the MGFXReader10/KNIFX-v11 answer), then **mode-2** (in-browser compile + render).
 - [ ] **KNI HiDef / WebGL2 run (Phase 33 — issue #7 regression guard):** `node publish-sample-sd-hidef.mjs` then `node run-harness.mjs --corpus=sd-hidef` (boots the sample with `?profile=hidef` → WebGL2 / GLSL ES 3.00). This is the **continuous guard for issue #7** — a regression to a raw-`gl_FragColor` write would flip it RED. After the Phase 33 fix it is GREEN (`RESULTS-SD-HIDEF.md`: 10/10 load + render); the harness writes `RESULTS-SD-HIDEF-REPRO.md` instead if it ever fails. Also run the matching Reach baseline (`--corpus=sd`) as the no-regression check.
 - [ ] Use deterministic software GL (`--use-gl=angle --use-angle=swiftshader`) so pixel comparison is reproducible across runners.
 - [ ] Pixel-compare against Phase-17 references at the **§6.1 tolerance** (shared standard — do not invent a new one).
