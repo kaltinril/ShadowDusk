@@ -27,6 +27,16 @@ public sealed class SpirvCrossGlslTranspiler : ISpirvToGlslTranspiler
         ReadOnlyMemory<byte> spirvBytes,
         CancellationToken cancellationToken = default)
     {
+        // Guard the byte→word reinterpretation: MemoryMarshal.Cast silently DROPS a
+        // non-multiple-of-4 tail, which would hand SPIRV-Cross a truncated module.
+        if (spirvBytes.Length % 4 != 0)
+            return Result<GlslSource, ShaderError>.Fail(new ShaderError(
+                File: "<spirv-cross>",
+                Line: 0,
+                Column: 0,
+                Code: "SD0100",
+                Message: $"SPIRV-Cross: SPIR-V byte length {spirvBytes.Length} is not a multiple of 4 — not a valid SPIR-V module"));
+
         var words = MemoryMarshal.Cast<byte, uint>(spirvBytes.Span);
         return Transpile(words, cancellationToken);
     }
@@ -107,6 +117,27 @@ public sealed class SpirvCrossGlslTranspiler : ISpirvToGlslTranspiler
             var glsl = Marshal.PtrToStringUTF8(glslPtr) ?? string.Empty;
 
             return Result<GlslSource, ShaderError>.Ok(new GlslSource(glsl));
+        }
+        catch (DllNotFoundException ex)
+        {
+            // Mirror Vkd3dShaderCompiler's SD0211 policy: a missing native is a clear
+            // SD-coded error with the restore instruction, never a raw exception.
+            return Result<GlslSource, ShaderError>.Fail(new ShaderError(
+                File: "<spirv-cross>",
+                Line: 0,
+                Column: 0,
+                Code: "SD0103",
+                Message: "SPIRV-Cross native library not found. Restore it via tools/restore.ps1 " +
+                         "(places tools/spirv-cross/). Underlying error: " + ex.Message));
+        }
+        catch (Exception ex) when (ex is EntryPointNotFoundException or BadImageFormatException)
+        {
+            return Result<GlslSource, ShaderError>.Fail(new ShaderError(
+                File: "<spirv-cross>",
+                Line: 0,
+                Column: 0,
+                Code: "SD0103",
+                Message: "SPIRV-Cross native library could not be loaded: " + ex.Message));
         }
         finally
         {

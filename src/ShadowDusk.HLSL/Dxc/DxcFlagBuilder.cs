@@ -26,12 +26,12 @@ internal static class DxcFlagBuilder
         switch ((platform, stage))
         {
             case (PlatformTarget.OpenGL, ShaderStage.Vertex):
-                profile = "vs_5_0";
+                profile = ShaderProfiles.Sm5Vertex;
                 platformFlags = new[] { "-spirv", "-fvk-use-dx-layout", "-fvk-use-dx-position-w" };
                 break;
 
             case (PlatformTarget.OpenGL, ShaderStage.Pixel):
-                profile = "ps_5_0";
+                profile = ShaderProfiles.Sm5Pixel;
                 platformFlags = new[] { "-spirv", "-fvk-use-dx-layout", "-auto-binding-space", "1" };
                 break;
 
@@ -58,12 +58,12 @@ internal static class DxcFlagBuilder
 
             // Metal goes through SPIR-V so use the same profile/flags as OpenGL
             case (PlatformTarget.Metal, ShaderStage.Vertex):
-                profile = "vs_5_0";
+                profile = ShaderProfiles.Sm5Vertex;
                 platformFlags = new[] { "-spirv", "-fvk-use-dx-layout", "-fvk-use-dx-position-w" };
                 break;
 
             case (PlatformTarget.Metal, ShaderStage.Pixel):
-                profile = "ps_5_0";
+                profile = ShaderProfiles.Sm5Pixel;
                 platformFlags = new[] { "-spirv", "-fvk-use-dx-layout", "-auto-binding-space", "1" };
                 break;
 

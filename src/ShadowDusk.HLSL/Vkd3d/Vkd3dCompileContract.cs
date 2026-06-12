@@ -42,13 +42,7 @@ internal static class Vkd3dCompileContract
     /// (vs_5_0/ps_5_0 — the MonoGame DX11 path).
     /// </summary>
     public static string ResolveProfile(D3DCompileRequest request) =>
-        request.ProfileOverride ?? request.Stage switch
-        {
-            ShaderStage.Vertex => "vs_5_0",
-            ShaderStage.Pixel  => "ps_5_0",
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(request), $"Unsupported shader stage for DXBC: {request.Stage}"),
-        };
+        request.ProfileOverride ?? ShaderProfiles.DefaultDxbcProfile(request.Stage);
 
     /// <summary>
     /// Profile strings look like "vs_3_0" / "ps_2_b" / "vs_5_0": the digit after the

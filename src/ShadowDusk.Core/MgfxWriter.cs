@@ -29,6 +29,36 @@ public sealed class MgfxWriter
                     File: "", Line: 0, Column: 0, Code: "SD0020",
                     Message: $"Constant buffer '{cb.Name}' size {cb.SizeInBytes} exceeds MGFX int16 maximum ({short.MaxValue})"));
         }
+        // Guard every count/index serialized as a single byte (SD0022) so an oversized
+        // effect fails loudly instead of silently truncating into a corrupt .mgfx —
+        // the same policy as the SD0020/SD0021 int16 guards above.
+        for (int i = 0; i < ir.Shaders.Count; i++)
+        {
+            var blob = ir.Shaders[i];
+            if (blob.Samplers.Count > byte.MaxValue)
+                return Result<byte[], ShaderError>.Fail(new ShaderError(
+                    File: "", Line: 0, Column: 0, Code: "SD0022",
+                    Message: $"Shader #{i} has {blob.Samplers.Count} samplers, exceeding the MGFX byte maximum ({byte.MaxValue})"));
+            foreach (var s in blob.Samplers)
+                if (s.Parameter is < byte.MinValue or > byte.MaxValue)
+                    return Result<byte[], ShaderError>.Fail(new ShaderError(
+                        File: "", Line: 0, Column: 0, Code: "SD0022",
+                        Message: $"Shader #{i} sampler '{s.Name}' references parameter index {s.Parameter}, outside the MGFX byte range (0-{byte.MaxValue})"));
+            if (blob.ConstantBufferIndices.Count > byte.MaxValue)
+                return Result<byte[], ShaderError>.Fail(new ShaderError(
+                    File: "", Line: 0, Column: 0, Code: "SD0022",
+                    Message: $"Shader #{i} references {blob.ConstantBufferIndices.Count} constant buffers, exceeding the MGFX byte maximum ({byte.MaxValue})"));
+            foreach (int cbi in blob.ConstantBufferIndices)
+                if (cbi is < byte.MinValue or > byte.MaxValue)
+                    return Result<byte[], ShaderError>.Fail(new ShaderError(
+                        File: "", Line: 0, Column: 0, Code: "SD0022",
+                        Message: $"Shader #{i} references constant-buffer index {cbi}, outside the MGFX byte range (0-{byte.MaxValue})"));
+            if (blob.Attributes.Count > byte.MaxValue)
+                return Result<byte[], ShaderError>.Fail(new ShaderError(
+                    File: "", Line: 0, Column: 0, Code: "SD0022",
+                    Message: $"Shader #{i} has {blob.Attributes.Count} vertex attributes, exceeding the MGFX byte maximum ({byte.MaxValue})"));
+        }
+
         foreach (var tech in ir.Techniques)
             foreach (var pass in tech.Passes)
             {

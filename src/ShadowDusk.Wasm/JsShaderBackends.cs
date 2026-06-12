@@ -19,7 +19,7 @@ namespace ShadowDusk.Wasm;
 /// only ever asked for OpenGL/SPIR-V compiles — never DirectX/DXIL.</para>
 /// </summary>
 [SupportedOSPlatform("browser")]
-internal sealed partial class JsDxcShaderCompiler : IDxcShaderCompiler
+internal sealed class JsDxcShaderCompiler : IDxcShaderCompiler
 {
     public async Task<Result<PlatformBlob, ShaderError>> CompileAsync(
         DxcCompileRequest request,
@@ -131,7 +131,7 @@ internal sealed partial class JsDxcShaderCompiler : IDxcShaderCompiler
 /// GLSL text in a <see cref="GlslSource"/>.
 /// </summary>
 [SupportedOSPlatform("browser")]
-internal sealed partial class JsSpirvToGlslTranspiler : ISpirvToGlslTranspiler
+internal sealed class JsSpirvToGlslTranspiler : ISpirvToGlslTranspiler
 {
     public Result<GlslSource, ShaderError> Transpile(
         ReadOnlyMemory<byte> spirvBytes,

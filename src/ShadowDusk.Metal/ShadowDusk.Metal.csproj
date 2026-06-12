@@ -2,6 +2,9 @@
   <PropertyGroup>
     <AssemblyName>ShadowDusk.Metal</AssemblyName>
     <RootNamespace>ShadowDusk.Metal</RootNamespace>
+    <!-- Stub project (MslEmitter is empty) — never packed until the Metal backend
+         is actually implemented (Phase 31). -->
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>

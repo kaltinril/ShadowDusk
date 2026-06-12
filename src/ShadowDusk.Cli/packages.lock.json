@@ -66,12 +66,6 @@
           "Vortice.Dxc": "[3.3.4, )"
         }
       },
-      "shadowdusk.metal": {
-        "type": "Project",
-        "dependencies": {
-          "ShadowDusk.Core": "[0.4.0, )"
-        }
-      },
       "Silk.NET.SPIRV.Cross.Native": {
         "type": "CentralTransitive",
         "requested": "[2.23.0, )",
