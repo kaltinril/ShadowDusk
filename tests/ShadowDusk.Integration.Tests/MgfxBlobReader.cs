@@ -8,6 +8,21 @@ public sealed record PassInfo(string Name, int VertexShaderIndex, int PixelShade
 
 public sealed record TechniqueInfo(string Name, int PassCount, IReadOnlyList<PassInfo> Passes);
 
+/// <summary>
+/// One parameter record as stored in the .mgfx parameter block — the reflection metadata
+/// MonoGame's <c>EffectReader</c> builds <c>EffectParameter</c> from. Captured for the
+/// Phase 27 <c>MgfxParameterMatchTests</c> golden comparison (Phase 5 §9.3.1/§9.3.2).
+/// </summary>
+public sealed record MgfxParameterRecord(
+    string Name,
+    string Semantic,
+    byte   Class,
+    byte   Type,
+    byte   Rows,
+    byte   Columns,
+    int    MemberCount,
+    int    ElementCount);
+
 public sealed class MgfxBlobReader
 {
     // The four bytes "MGFX" read little-endian as a uint32.
@@ -33,6 +48,9 @@ public sealed class MgfxBlobReader
     public IReadOnlyList<TechniqueInfo>  Techniques           { get; }
     public int      TotalShaderBlobCount { get; }
     public IReadOnlyList<string>         ParameterNames       { get; }
+
+    // Full per-parameter reflection metadata, in parameter-block order.
+    public IReadOnlyList<MgfxParameterRecord> Parameters { get; }
 
     // Raw shader blob bytes indexed by shader slot.
     public IReadOnlyList<byte[]> ShaderBlobs { get; }
@@ -60,6 +78,7 @@ public sealed class MgfxBlobReader
         IReadOnlyList<TechniqueInfo> techniques,
         IReadOnlyList<byte[]> shaderBlobs,
         IReadOnlyList<string> parameterNames,
+        IReadOnlyList<MgfxParameterRecord> parameters,
         bool? alphaBlendEnable,
         bool? depthBufferEnable,
         int? cullMode,
@@ -75,6 +94,7 @@ public sealed class MgfxBlobReader
         ShaderBlobs          = shaderBlobs;
         TotalShaderBlobCount = shaderBlobs.Count;
         ParameterNames       = parameterNames;
+        Parameters           = parameters;
         AlphaBlendEnable     = alphaBlendEnable;
         DepthBufferEnable    = depthBufferEnable;
         CullMode             = cullMode;
@@ -177,12 +197,13 @@ public sealed class MgfxBlobReader
         // Parameters
         int parameterCount = br.ReadInt32();
         var parameterNames = new List<string>(parameterCount);
+        var parameters     = new List<MgfxParameterRecord>(parameterCount);
         var paramAnnotationMap = new Dictionary<string, IReadOnlyList<(string, string)>>(StringComparer.Ordinal);
 
         for (int i = 0; i < parameterCount; i++)
         {
             byte paramClass = br.ReadByte(); // class
-            br.ReadByte(); // type
+            byte paramType  = br.ReadByte(); // type
             string name     = br.ReadString();
             string semantic = br.ReadString();
 
@@ -207,6 +228,16 @@ public sealed class MgfxBlobReader
             // a raw default-value blob of rowCount*columnCount*4 bytes, no prefix.
             if (paramClass <= 2 && memberCount == 0 && elementCount == 0)
                 br.ReadBytes(rowCount * columnCount * 4);
+
+            parameters.Add(new MgfxParameterRecord(
+                Name: name,
+                Semantic: semantic,
+                Class: paramClass,
+                Type: paramType,
+                Rows: rowCount,
+                Columns: columnCount,
+                MemberCount: memberCount,
+                ElementCount: elementCount));
         }
 
         // Build ParameterSizes and ParameterOffsets from cb tables.
@@ -260,6 +291,7 @@ public sealed class MgfxBlobReader
             techniques: techniques,
             shaderBlobs: shaderBlobs,
             parameterNames: parameterNames,
+            parameters: parameters,
             alphaBlendEnable: alphaBlendEnable,
             depthBufferEnable: depthBufferEnable,
             cullMode: cullMode,

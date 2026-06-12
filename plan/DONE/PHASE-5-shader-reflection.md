@@ -272,8 +272,8 @@ These rules are not enforced by ShadowDusk — DXC handles packing — but the r
   }
   ```
   where `BindingSlotMap` is a simple `record` with `IReadOnlyDictionary<string, int>` for textures and samplers.
-- [ ] 7.3.2 Use the existing SPIRV-Cross P/Invoke wrapper (`spvc_context_create` → `spvc_compiler_create_shader_resources`). Enumerate `separate_images` and `separate_samplers` from the resources struct.
-- [ ] 7.3.3 Compare slots with DXIL-reflected slots. If a mismatch exists, emit a `ShaderError` with `ErrorCode.BindingSlotMismatch` and include the resource name and both slot values in the message.
+- [ ] 7.3.2 Use the existing SPIRV-Cross P/Invoke wrapper (`spvc_context_create` → `spvc_compiler_create_shader_resources`). Enumerate `separate_images` and `separate_samplers` from the resources struct. *(SUPERSEDED — recorded in Phase 27, 2026-06-12: never implemented; the SPIRV-Cross wrapper (`SpvcNative.cs`) exposes no `spvc_compiler_create_shader_resources`, and `SpvReflectionVerifier` remains a stub returning `BindingSlotMap.Empty`. The role this was designed for is filled by the pure-managed `SpirvReflector` (Phase 19), which enumerates SPIR-V resources directly.)*
+- [ ] 7.3.3 Compare slots with DXIL-reflected slots. If a mismatch exists, emit a `ShaderError` with `ErrorCode.BindingSlotMismatch` and include the resource name and both slot values in the message. *(SUPERSEDED — recorded in Phase 27, 2026-06-12: the in-production-pipeline comparison was never implemented (see 7.3.2) and adding it now would be a production change outside Phase 27's test-only scope. The cross-check it was designed to provide is enforced corpus-wide by the `SpirvVsDxilReflectionTests` parity gate (DXIL oracle vs managed `SpirvReflector`), with Phase 27's negative controls in `SpvBindingVerificationTests`: `SpirvReflector_InvalidModule_ReturnsSD0101` asserts the production SD0101 error path, and `DivergentBindings_DxilVsSpirv_SlotMismatchIsDetectable` proves a divergent layout surfaces as differing reflected slots, so the parity comparison cannot pass vacuously. If a true in-pipeline verifier is ever wanted, it is a new feature, not a test gap.)*
 - [x] 7.3.4 This verifier runs only when the SPIR-V blob is available (OpenGL/Vulkan targets). Guard with `if (spirvBlob.IsEmpty) return Result.Ok(BindingSlotMap.Empty)`.
 
 ### 7.4 Parameter List Assembly
@@ -375,7 +375,7 @@ All integration tests carry `[Trait("Category", "Integration")]`.
 - [x] 9.2.5 `SpvBindingVerificationTests.cs`
   - Compile the texture/sampler fixture to both DXIL and SPIR-V.
   - Run `SpvReflectionVerifier` and assert no mismatch errors.
-  - Mutate the SPIR-V blob's binding annotation (or use a hand-crafted mismatched fixture) and assert `BindingSlotMismatch` error is returned.
+  - Mutate the SPIR-V blob's binding annotation (or use a hand-crafted mismatched fixture) and assert `BindingSlotMismatch` error is returned. *(The mismatch bullet sat as a TODO until Phase 27 (2026-06-12), which closed it in the superseded form — see §7.3.3: SD0101 negative test on the production `SpirvReflector` + a divergent-bindings negative control for the parity gate.)*
 
 - [x] 9.2.6 `SignatureReflectionTests.cs`
   - Fixture: `fixtures/shaders/reflection/vs_input.hlsl` with a vertex shader taking `POSITION`, `NORMAL`, `TEXCOORD0`.
@@ -383,8 +383,8 @@ All integration tests carry `[Trait("Category", "Integration")]`.
 
 ### 9.3 Acceptance Test (End-to-End)
 
-- [ ] 9.3.1 `MgfxParameterMatchTests.cs` — compile a reference shader that MonoGame ships (`SpriteBatch.fx` or equivalent), run the full `ReflectionPipeline`, and compare the resulting parameter names and types against a golden JSON snapshot produced from MonoGame's own `mgfxc`. Snapshot is checked into `fixtures/snapshots/`. **Note:** Generating the golden snapshot requires a working MonoGame `mgfxc` installation; the snapshot should be pre-generated and committed to the repository.
-- [ ] 9.3.2 The golden snapshot comparison must be exact (name, class, type, rows, columns, elements) — no fuzzy matching.
+- [x] 9.3.1 `MgfxParameterMatchTests.cs` — compile a reference shader that MonoGame ships (`SpriteBatch.fx` or equivalent), run the full `ReflectionPipeline`, and compare the resulting parameter names and types against a golden JSON snapshot produced from MonoGame's own `mgfxc`. Snapshot is checked into `fixtures/snapshots/`. **Note:** Generating the golden snapshot requires a working MonoGame `mgfxc` installation; the snapshot should be pre-generated and committed to the repository. *(Closed in Phase 27, 2026-06-12: `tests/ShadowDusk.Integration.Tests/Reflection/MgfxParameterMatchTests.cs`. The snapshot is the already-committed mgfxc `.mgfx` golden BINARY (`tests/fixtures/golden/OpenGL/*.mgfx`, 13 rung-4-proven corpus stems) parsed by `MgfxBlobReader`, not a separate JSON in `fixtures/snapshots/` — same intent, one source of truth shared with `MgfxcCrossValidationTests`.)*
+- [x] 9.3.2 The golden snapshot comparison must be exact (name, class, type, rows, columns, elements) — no fuzzy matching. *(Closed in Phase 27: exact on all value-class parameters and on name reachability; the test pins the only two allowed object-class divergences — ShadowDusk's additive sampler parameters (§7.4.3) and the legacy-`sampler` `*_SDTexture` synthesis — both render-proven in real MonoGame (Phases 17/28). Anything else fails.)*
 
 ---
 
@@ -470,5 +470,5 @@ tests/fixtures/snapshots/
 
 Before starting this phase, confirm:
 - [x] `Vortice.Direct3D12` is added to `ShadowDusk.HLSL.csproj` (reflection types live here).
-- [ ] SPIRV-Cross P/Invoke wrapper from Phase 4 exposes `spvc_compiler_create_shader_resources` and the `spvc_resources` struct accessors.
+- [ ] SPIRV-Cross P/Invoke wrapper from Phase 4 exposes `spvc_compiler_create_shader_resources` and the `spvc_resources` struct accessors. *(SUPERSEDED — recorded in Phase 27, 2026-06-12: never added to `SpvcNative.cs`; not needed since the managed `SpirvReflector` (Phase 19) reads SPIR-V resources without SPIRV-Cross. See §7.3.2.)*
 - [x] `Result<T, ShaderError>` type and `ShaderErrorCode` enum are defined in `ShadowDusk.Core` (Phase 2 or earlier).

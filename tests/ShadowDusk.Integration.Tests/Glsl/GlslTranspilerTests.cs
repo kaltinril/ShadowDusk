@@ -92,6 +92,28 @@ public sealed class GlslTranspilerTests
     }
 
     [Fact]
+    public async Task Transpile_PassthroughVertex_YFlipIsApplied()
+    {
+        // Phase 6 item 25 (backlog 11-6-B): the OpenGL DXC flags deliberately omit
+        // -fvk-invert-y (see DxcFlagBuilder); the Y-flip is SPIRV-Cross's job via the
+        // FlipVertexY option. A passthrough VS must therefore come out of the
+        // transpiler with an explicit gl_Position.y negation — if both sides flipped
+        // (or neither did), every GL render would be vertically mirrored.
+        string fxPath = Path.Combine(AppContext.BaseDirectory, "fixtures", "shaders", "passthrough_vs.fx");
+        File.Exists(fxPath).Should().BeTrue($"fixture must exist at {fxPath}");
+        string hlsl = await File.ReadAllTextAsync(fxPath);
+
+        var spirvBytes = await CompileToSpirvAsync(hlsl, ShaderStage.Vertex, "VSMain");
+        var transpiler = new SpirvCrossGlslTranspiler();
+
+        var result = transpiler.Transpile(spirvBytes);
+
+        result.IsSuccess.Should().BeTrue(because: result.IsFailure ? result.Error.Message : "");
+        result.Value.Text.Should().Contain("gl_Position.y = -gl_Position.y",
+            because: "SPIRV-Cross's FlipVertexY option must emit the Y negation in the GLSL output");
+    }
+
+    [Fact]
     public void Transpile_InvalidSpirv_ReturnsShaderError()
     {
         var transpiler = new SpirvCrossGlslTranspiler();

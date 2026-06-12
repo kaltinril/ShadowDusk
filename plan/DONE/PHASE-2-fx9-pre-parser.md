@@ -576,7 +576,7 @@ tests/ShadowDusk.HLSL.Tests/
 
 - [x] All 25 unit tests pass with `dotnet test`.
 - [x] `FxPreParser.Parse` never throws; all error paths return `Result.Fail(FxParseError)`.
-- [ ] Stripped HLSL output compiles without syntax errors when passed to DXC (verified by integration test in Phase 3).
+- [x] Stripped HLSL output compiles without syntax errors when passed to DXC (verified by integration test in Phase 3). *(Ticked in Phase 27, 2026-06-12: the integration suite feeds FX9 pre-parser output through real DXC corpus-wide — `DxcShaderCompilerIntegrationTests`, `CompileFixtureTests`, `SpirvVsDxilReflectionTests` et al. — and the full run is green.)*
 - [x] Line numbers in `FxParseError` and `SourceSpan` match line numbers in the original `.fx` source.
 - [x] `TechniqueInfo`, `PassInfo`, and `SamplerInfo` are fully populated for the MonoGame `BasicEffect.fx` canonical test file.
 - [x] No `Thread.Sleep`, no disk I/O, no process spawning in any type in this phase.

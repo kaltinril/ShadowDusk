@@ -76,7 +76,9 @@ public sealed class SpirvVsDxilReflectionTests
         pass.PixelEntryPoint.Should().NotBeNull(because: "corpus shaders are PS-only");
         string psEntry = pass.PixelEntryPoint!;
 
-        var preprocessor = new Preprocessor();
+        // Fully qualified: the sibling ShadowDusk.Integration.Tests.Preprocessor test
+        // namespace (Phase 27) would otherwise shadow the Core type name here.
+        var preprocessor = new ShadowDusk.Core.Preprocessor.Preprocessor();
         var pre = preprocessor.Flatten(
             fx.StrippedHlsl,
             fxPath,

@@ -126,30 +126,73 @@ Verified against the tree on 2026-06-03 (cite real files):
 ## Tasks
 
 ### A. HLSL / DXC unit (pure — no native; verify-and-tick)
-- [ ] Confirm `DxcFlagBuilderTests` covers the Phase-4 flag matrix; reconcile the
+- [x] Confirm `DxcFlagBuilderTests` covers the Phase-4 flag matrix; reconcile the
       `-DName=Value` checklist wording to the real `-DName=Value` single-token format.
-- [ ] Confirm `DxcDiagnosticReformatterTests` covers empty/well-formed/warning/note/
-      raw/multi-error; tick the Phase-4 reformatter checklist.
+      *(Done 2026-06-12: Phase 4 §8.1 ticked with reconciled wording — single-token
+      macros, DirectX `vs_6_0`/`ps_6_0` (not `vs_5_0`; DXC min is SM6), Vulkan-adds-
+      `-fvk-invert-y`. One assertion added: `EntryPoint_PrecedesProfileArgument`
+      (the "-E before profile" ordering was previously unasserted).)*
+- [x] Confirm `DxcDiagnosticReformatterTests` covers empty/well-formed/warning/note/
+      raw/multi-error; tick the Phase-4 reformatter checklist. *(Done 2026-06-12:
+      Phase 4 §8.2 ticked; field shipped as `RawDiagnostics`, not `Raw` — wording noted.)*
 
 ### B. DXC + reflection integration (native-gated: SPIRV-Cross + DXC)
-- [ ] Verify-and-tick `DxcShaderCompilerIntegrationTests` against the Phase-4 integration
+- [x] Verify-and-tick `DxcShaderCompilerIntegrationTests` against the Phase-4 integration
       checklist (SPIR-V/DXBC blobs, FXC-format failures, macro, cancellation).
-- [ ] **New:** SD0101 mismatch test in `SpvBindingVerificationTests` (replace the TODO) —
+      *(Done 2026-06-12: natives restored, class green, Phase 4 §9.2 ticked — with the
+      nuance that the DirectX-target "DXBC" is SM6 DXIL in its DXBC container.)*
+- [x] **New:** SD0101 mismatch test in `SpvBindingVerificationTests` (replace the TODO) —
       assert a `ShaderError` with code `"SD0101"` on a deliberately divergent
       DXIL-vs-SPIR-V binding layout (Phase 5 §7.3.3).
-- [ ] **New:** `MgfxParameterMatchTests` golden-snapshot test — compile a reference shader,
+      *(Done 2026-06-12 in the SUPERSEDED form this doc's risk note allowed: the
+      production §7.3.3 comparison never existed — `SpvReflectionVerifier` is a stub
+      returning `BindingSlotMap.Empty` and `SpvcNative` exposes no
+      `spvc_compiler_create_shader_resources` — and implementing it is a production
+      change outside this phase. Added instead:
+      `SpirvReflector_InvalidModule_ReturnsSD0101` (the SD0101 path that DOES exist in
+      production) and `DivergentBindings_DxilVsSpirv_SlotMismatchIsDetectable` (negative
+      control proving the `SpirvVsDxilReflectionTests` parity gate's slot comparison
+      cannot pass vacuously — note both reflectors model slots as per-class register
+      RANK, so the divergence is constructed by rank, not by raw register shift).
+      Recorded as superseded in Phase 5 §7.3.2/§7.3.3.)*
+- [x] **New:** `MgfxParameterMatchTests` golden-snapshot test — compile a reference shader,
       run reflection, compare exactly (name/class/type/rows/columns/elements) to the
       `mgfxc` golden under `tests/fixtures/golden/` (Phase 5 §9.3.1–§9.3.2).
-- [ ] **New:** Y-flip assertion in `GlslTranspilerTests` — `passthrough_vs.fx` → SPIR-V →
+      *(Done 2026-06-12: `Integration.Tests/Reflection/MgfxParameterMatchTests.cs`, 13
+      corpus stems vs `golden/OpenGL/*.mgfx` parsed by the extended `MgfxBlobReader`.
+      Exact on all value-class params; pins the only two render-proven object-class
+      divergences — ShadowDusk's additive sampler params (§7.4.3) and the legacy-sampler
+      `*_SDTexture` synthesis. Anything else fails. FINDING worth knowing: mgfxc's GL
+      output does NOT emit sampler parameters and names the legacy-sampler texture param
+      after the sampler — both verified harmless in-engine in Phases 17/28.)*
+- [x] **New:** Y-flip assertion in `GlslTranspilerTests` — `passthrough_vs.fx` → SPIR-V →
       transpile, assert `gl_Position.y` is negated (Phase 6 `11-6-B`).
-- [ ] **New:** `FileSystemIncludeResolver` integration test — resolve a real `.fxh` from
+      *(Done 2026-06-12; mutation-checked — inverted assertion fails.)*
+- [x] **New:** `FileSystemIncludeResolver` integration test — resolve a real `.fxh` from
       disk (Phase 3 §4.4); add to `Integration.Tests/Preprocessor/` (coordinate with the
       Phase 25 path-traversal test so they share one harness).
-- [ ] **New:** `DxcIncludeHandler` smoke test — construct with `InMemoryIncludeResolver`,
+      *(Done 2026-06-12: 4 tests — sibling-dir + search-path resolution of
+      `includes/TestHelper.fxh`, IncludeNotFound diagnostics, end-to-end `Flatten` of
+      `MinimalWithInclude.fx`. Functional only; Phase 25 owns the `../`-escape security
+      cases and can extend this class as its harness.)*
+- [x] **New:** `DxcIncludeHandler` smoke test — construct with `InMemoryIncludeResolver`,
       assert `LoadSource` returns the correct blob bytes (Phase 3 §7.4).
-- [ ] Run `tools/restore.*` → rebuild → `dotnet test --filter "Category=Integration&Platform=OpenGL"`;
+      *(Done 2026-06-12: `HLSL.Tests/Dxc/DxcIncludeHandlerTests.cs` — placed in
+      HLSL.Tests because `DxcIncludeHandler` is internal to ShadowDusk.HLSL (only
+      HLSL.Tests has InternalsVisibleTo); Integration-tagged since `IDxcUtils` loads
+      native DXC; macOS skips cleanly via a DXC gate. Also asserts the failure HRESULT +
+      null blob for an unresolvable include.)*
+- [x] Run `tools/restore.*` → rebuild → `dotnet test --filter "Category=Integration&Platform=OpenGL"`;
       tick Phase 6 `11-6-C` and run `/platform-check`.
-- [ ] **Verify the global-param default-value fidelity gap (vs real mgfxc).** A **global**
+      *(Done 2026-06-12 on win-x64: full suite 958/958 green (no skips), Phase 6 items
+      0c/25/29/30 ticked, `/platform-check` over the Phase-6 surface + new tests: 0 BREAK,
+      0 WARN.)*
+- [ ] *(Not done in the 2026-06-12 core-coverage sweep — needs a Windows box with a real
+      `mgfxc` install to diff the reflected `DefaultValue`, and any fix is a production
+      change (bake `$Globals` defaults), both outside the test-only core half. Note the
+      new `MgfxParameterMatchTests` deliberately compares parameter METADATA only, so it
+      stays green across this known default-VALUE gap. Left open for the phase closer.)*
+      **Verify the global-param default-value fidelity gap (vs real mgfxc).** A **global**
       HLSL parameter with an initializer — e.g. `float FishEyeAmount = 0.35;` — compiles
       through ShadowDusk but the `.mgfx` stores its default as **`0.0`, not `0.35`** (the
       param data block is zeroed). Root cause: the global becomes a `$Globals` cbuffer
@@ -192,12 +235,16 @@ Verified against the tree on 2026-06-03 (cite real files):
       the binary — a missing CLI is a build regression that must fail loudly, not skip.
 
 ### D. `ShaderIRBuilder` direct unit tests (Phase 8)
-- [ ] Add `[assembly: InternalsVisibleTo("ShadowDusk.Compiler.Tests")]` to
-      `ShadowDusk.Compiler.csproj`.
-- [ ] `Build_ShaderIndicesAreZeroBased` — 2-pass technique; Pass 0 VS=0/PS=1,
-      Pass 1 VS=2/PS=3.
-- [ ] `Build_EmptyAnnotationsAllowed` — pass with no annotations; empty `AnnotationInfo`,
-      no throw.
+- [x] Add `[assembly: InternalsVisibleTo("ShadowDusk.Compiler.Tests")]` to
+      `ShadowDusk.Compiler.csproj`. *(Already present when Phase 27 ran (2026-06-12) —
+      `ShadowDusk.Compiler.csproj` line 35 gained it after this doc's 2026-06-03
+      verification; NO production change was needed at all for this phase.)*
+- [x] `Build_ShaderIndicesAreZeroBased` — 2-pass technique; Pass 0 VS=0/PS=1,
+      Pass 1 VS=2/PS=3. *(Done 2026-06-12 in `ShaderIRBuilderTests.cs` — pure direct
+      test of the internal `ShaderIRBuilder.Build`; also asserts each index lands on a
+      stage-correct blob in the zero-based shader list.)*
+- [x] `Build_EmptyAnnotationsAllowed` — pass with no annotations; empty `AnnotationInfo`,
+      no throw. *(Done 2026-06-12 — empty, never-null annotation lists round-trip.)*
 
 ### E. CLI pack / install / publish — scripted + run (Phase 9 §9.4–9.6) — DONE 2026-06-12
 
@@ -225,10 +272,17 @@ normal built CLI. Results (Windows, 2026-06-12, v0.4.0):
       (Linux/macOS RIDs → Phase 30, unchanged.)
 
 ### F. Bookkeeping
-- [ ] Tick the Phase 2 stripped-HLSL item once the DXC integration run is green (or add a
-      named assertion).
-- [ ] For each item *not* done: record a one-line re-deferral reason in the originating
-      `DONE/PHASE-X` doc and in Phase 100.
+- [x] Tick the Phase 2 stripped-HLSL item once the DXC integration run is green (or add a
+      named assertion). *(Done 2026-06-12: DXC integration run green; Phase 2 acceptance
+      item ticked with the corpus-wide-coverage rationale.)*
+- [x] For each item *not* done: record a one-line re-deferral reason in the originating
+      `DONE/PHASE-X` doc and in Phase 100. *(Done for the core-coverage half, 2026-06-12 —
+      Phase 100 is RETIRED (emptied 2026-06-03), so supersession/re-deferral notes live in
+      the originating docs + this file only: Phase 5 §7.3.2/§7.3.3 + prerequisite line
+      (SPIRV-Cross-based verifier superseded by the managed `SpirvReflector` + parity
+      gate; stub `SpvReflectionVerifier` documented), Phase 3 §8.2–8.4 (closed-in-place
+      per Phase 100, now ticked). CLI-parity/pack/review-input re-deferrals belong to the
+      parallel CLI-half agent.)*
 
 ### Inputs from the 2026-06-12 Phase 4.1 QA + security reviews (added 2026-06-12)
 
