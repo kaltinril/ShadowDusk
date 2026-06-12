@@ -6,16 +6,36 @@ namespace ShadowDusk.GLSL.Interop;
 
 internal static class SpvcLoader
 {
-    private static int _registered;
+    private static readonly object RegisterGate = new();
+    private static volatile bool _registered;
 
+    // A lock (not a lone CAS) so a concurrent second caller BLOCKS until the winner
+    // has finished installing the resolver — with CAS-then-subscribe the loser could
+    // return and P/Invoke before the resolver existed (the DxcLoader race class).
     public static void Register()
     {
-        if (Interlocked.CompareExchange(ref _registered, 1, 0) != 0) return;
+        if (_registered) return;
+        lock (RegisterGate)
+        {
+            if (_registered) return;
+            RegisterCore();
+            _registered = true;
+        }
+    }
+
+    private static void RegisterCore()
+    {
         NativeLibrary.SetDllImportResolver(
             typeof(SpvcLoader).Assembly,
             (name, _, _) =>
             {
-                if (name != "spirv-cross-c-shared") return IntPtr.Zero;
+                // Must match the DllImport name in SpvcNative (`LibName = "spirv-cross"`).
+                // This previously tested for "spirv-cross-c-shared", which no P/Invoke
+                // declares — the resolver was dead code and SPIRV-Cross loaded purely
+                // via .NET default probing of the Silk.NET-shipped file names. The
+                // resolver is a FALLBACK for layouts default probing misses (e.g. the
+                // package runtimes/<rid>/native dir under the app base).
+                if (name != SpvcNative.LibName) return IntPtr.Zero;
 
                 var rid = GetCurrentRid();
                 var candidate = Path.Combine(

@@ -51,22 +51,32 @@ internal static class DxcLoader
     /// <summary>The file name our macOS DXC build ships under (both arches).</summary>
     internal const string MacLibFileName = "libdxcompiler.dylib";
 
-    private static int _registered;
+    private static readonly object RegisterGate = new();
+    private static volatile bool _registered;
 
     /// <summary>
     /// Idempotently hooks <c>Vortice.Dxc.Dxc.ResolveLibrary</c> on macOS. Must run
     /// before the first DXC P/Invoke (<see cref="DxcShaderCompiler"/>'s constructor
     /// and <c>DxilReflectionExtractor</c> call it first thing).
+    /// A lock (not a lone CAS) so a concurrent second caller BLOCKS until the
+    /// winner has finished subscribing — with CAS-then-subscribe the loser could
+    /// return and P/Invoke before the resolver existed (observed once as an
+    /// intermittent macOS <c>DllNotFoundException</c> under test parallelism).
     /// </summary>
     public static void Register()
     {
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.OSX)) return;
-        if (Interlocked.CompareExchange(ref _registered, 1, 0) != 0) return;
+        if (_registered) return;
+        lock (RegisterGate)
+        {
+            if (_registered) return;
 
-        // Touching the event runs Dxc's static ctor first, so Vortice's built-in
-        // handler is always ahead of ours in the invocation list — it yields Zero
-        // on macOS and we take over.
-        Vortice.Dxc.Dxc.ResolveLibrary += Resolve;
+            // Touching the event runs Dxc's static ctor first, so Vortice's built-in
+            // handler is always ahead of ours in the invocation list — it yields Zero
+            // on macOS and we take over.
+            Vortice.Dxc.Dxc.ResolveLibrary += Resolve;
+            _registered = true;
+        }
     }
 
     private static IntPtr Resolve(
