@@ -110,6 +110,20 @@
             if (gt) gt.style.transform = 'translateY(' + (-y) + 'px)';
         };
 
+        // Export station: save a compiled artifact (byte[] arrives from Blazor
+        // as a Uint8Array) via a transient <a download> blob link.
+        window.sdDownloadBytes = function (fileName, bytes) {
+            var blob = new Blob([bytes], { type: 'application/octet-stream' });
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+        };
+
         window.sdEditorGotoLine = function (line) {
             var ta = document.getElementById('sdEditor');
             if (!ta || !(line > 0)) return;

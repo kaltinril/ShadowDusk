@@ -1,8 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Forms;
 using Microsoft.JSInterop;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -76,6 +79,41 @@ public partial class Index
     // every apply). Lets users drive tunables — e.g. a custom global like
     // FishEyeAmount, whose `= 0.35` initializer is not baked into the bytes.
     private IReadOnlyList<ShaderParam> _params = Array.Empty<ShaderParam>();
+
+    // ---- Export station (owner-directed, 2026-06-09) -------------------------
+    // The browser is an export station: compile the editor source for ANY
+    // supported target and download the artifact, byte-identical to desktop
+    // output. OpenGL stays the host-appropriate default (it renders live in KNI
+    // WebGL); DirectX (DX11 SM5 DXBC .mgfx) and FNA (fx_2_0 .fxb) are export-only
+    // — a browser cannot execute DXBC/D3D9 bytecode, so the UI says so honestly.
+
+    /// <summary>One row of the export panel: a compile target plus its artifact shape.</summary>
+    private sealed record ExportTarget(
+        PlatformTarget Target, string Title, string Extension, string Description);
+
+    private static readonly ExportTarget[] ExportTargets =
+    {
+        new(PlatformTarget.OpenGL, "OpenGL", ".mgfx",
+            "MonoGame DesktopGL / KNI — the same target the canvas renders live."),
+        new(PlatformTarget.DirectX, "DirectX (DX11 SM5)", ".mgfx",
+            "Export-only: compiles + downloads here, renders in your MonoGame WindowsDX game " +
+            "(a browser cannot render DXBC)."),
+        new(PlatformTarget.Fna, "FNA (fx_2_0)", ".fxb",
+            "Export-only: compiles + downloads here, renders in your FNA game " +
+            "(a browser cannot render D3D9 bytecode)."),
+    };
+
+    /// <summary>Base name for downloaded artifacts (no extension). Follows the
+    /// selected sample / uploaded file; user-editable.</summary>
+    private string _exportName = WebShaderInputs.DefaultShader;
+
+    /// <summary>The target whose export compile is in flight, or null when idle.</summary>
+    private PlatformTarget? _exporting;
+
+    /// <summary>Per-target outcome line shown under each export row.</summary>
+    private readonly Dictionary<PlatformTarget, (string Message, bool IsError)> _exportStatus = new();
+
+    private string FileNameFor(ExportTarget t) => SafeExportName() + t.Extension;
 
     protected override async Task OnInitializedAsync()
     {
@@ -253,6 +291,7 @@ public partial class Index
     {
         ClearDiagnostics();
         _status = null;
+        _exportName = name;   // future exports default to the sample's name
 
         var corpusSrc = await TryGetStringAsync($"shaders/src/{name}.fx");
         if (corpusSrc is not null)
@@ -347,6 +386,113 @@ public partial class Index
         {
             _compiling = false;
             StateHasChanged();
+        }
+    }
+
+    /// <summary>
+    /// Export station: compile the editor source for <paramref name="target"/> entirely
+    /// in-browser via the SAME <see cref="WasmShaderCompiler"/> the live path uses (never a
+    /// substitute pipeline), then hand the artifact to a JS blob download. The live render
+    /// is left untouched — exporting is a side-channel, "Compile &amp; Apply" stays the
+    /// only thing that changes the canvas.
+    /// </summary>
+    private async Task ExportAsync(ExportTarget target)
+    {
+        if (!_ready || _compiling || _exporting is not null)
+            return;
+
+        _exporting = target.Target;
+        ClearDiagnostics();
+        _exportStatus[target.Target] = ("Compiling in-browser…", false);
+        StateHasChanged();
+
+        var fileName = FileNameFor(target);
+        try
+        {
+            var options = new CompilerOptions
+            {
+                Target = target.Target,
+                SourceFileName = SafeExportName() + ".fx",
+            };
+
+            var result = await _compiler.CompileAsync(_source, options);
+
+            if (result.IsSuccess)
+            {
+                await JsRuntime.InvokeVoidAsync("sdDownloadBytes", fileName, result.Value.Data);
+                _exportStatus[target.Target] =
+                    ($"Downloaded {fileName} ({result.Value.Data.Length:N0} bytes).", false);
+            }
+            else
+            {
+                // Same verbatim file:line:col fidelity as the live path: the structured
+                // diagnostics drive the shared error panel + editor squiggles.
+                SetDiagnostics(result.Error);
+                // SD1902 = the vkd3d WASM module is genuinely absent (not restored /
+                // not hosted). Surface that clearly instead of a generic failure; the
+                // verbatim diagnostic with the restore pointer is in the panel below.
+                _exportStatus[target.Target] = result.Error.Any(e => e.Code == "SD1902")
+                    ? ("The vkd3d-shader WASM module could not be loaded (SD1902), so DirectX/FNA " +
+                       "export is unavailable in this session — details in the diagnostics below.", true)
+                    : ($"{result.Error.Length} compile error(s) — see diagnostics below.", true);
+            }
+        }
+        catch (Exception ex)
+        {
+            // Surface any in-browser backend failure verbatim instead of faking success.
+            AddGenericDiagnostic(ex.Message);
+            _exportStatus[target.Target] = ($"{target.Title} export failed — see diagnostics below.", true);
+        }
+        finally
+        {
+            _exporting = null;
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>Keep the user-edited artifact name; the safe form is applied on use.</summary>
+    private void OnExportNameChanged(ChangeEventArgs e)
+        => _exportName = e.Value?.ToString() ?? string.Empty;
+
+    /// <summary>
+    /// The artifact base name with anything filename-hostile stripped; falls back to
+    /// "fiddle" when nothing usable remains.
+    /// </summary>
+    private string SafeExportName()
+    {
+        var cleaned = new string(_exportName.Trim()
+            .Where(c => char.IsLetterOrDigit(c) || c is '-' or '_' or '.' or ' ')
+            .ToArray()).Trim();
+        return cleaned.Length == 0 ? "fiddle" : cleaned;
+    }
+
+    /// <summary>
+    /// Upload a local <c>.fx</c> into the editor (the export-station entry point for
+    /// users with a file rather than pasted source). Loads the text, names future
+    /// downloads after the file, and leaves compiling/exporting to the buttons.
+    /// </summary>
+    private async Task OnFxFileSelectedAsync(InputFileChangeEventArgs e)
+    {
+        const long maxBytes = 2 * 1024 * 1024;   // .fx sources are tiny; 2 MB is generous.
+        try
+        {
+            var file = e.File;
+            await using var stream = file.OpenReadStream(maxAllowedSize: maxBytes);
+            using var reader = new StreamReader(stream);
+            var text = await reader.ReadToEndAsync();
+
+            _source = NormalizeNewlines(text);
+            ClearDiagnostics();
+            _exportStatus.Clear();
+            var baseName = Path.GetFileNameWithoutExtension(file.Name);
+            if (!string.IsNullOrWhiteSpace(baseName))
+                _exportName = baseName;
+            _status = $"Loaded {file.Name} into the editor — Compile & Apply to render, or export below.";
+            _statusIsError = false;
+        }
+        catch (Exception ex)
+        {
+            SetError($"Could not read the selected file: {ex.Message}");
         }
     }
 

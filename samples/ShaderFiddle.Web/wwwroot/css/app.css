@@ -217,6 +217,68 @@ button:disabled { opacity: 0.5; cursor: default; }
 .status.ok { color: var(--ok); }
 .status.err { color: var(--err); }
 
+/* Export station: per-target compile-and-download rows. */
+.export {
+    background: #20232a;
+    border: 1px solid #34343c;
+    border-radius: 8px;
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.export-head { font-size: 0.8rem; color: var(--muted); }
+
+.export-name-row label { font-size: 0.8rem; }
+
+.export-name {
+    width: 160px;
+    font-family: var(--mono);
+    font-size: 12px;
+    background: #1b1b1f;
+    color: #dcdce4;
+    border: 1px solid #3a3a42;
+    border-radius: 4px;
+    padding: 3px 6px;
+}
+
+.export-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 0;
+    border-top: 1px solid #2c2c33;
+}
+
+.export-info { flex: 1; min-width: 0; }
+
+.export-target {
+    font-size: 0.85rem;
+    color: #d6d6e0;
+}
+
+.export-target code { color: var(--accent); }
+
+.export-desc {
+    font-size: 0.72rem;
+    color: var(--muted);
+}
+
+.export-foot { border-top: 1px solid #2c2c33; padding-top: 6px; }
+
+.export-status { font-size: 0.75rem; }
+.export-status.ok { color: var(--ok); }
+.export-status.err { color: var(--err); }
+
+.export-btn { white-space: nowrap; }
+
+.fx-upload {
+    font-size: 0.78rem;
+    color: var(--muted);
+    max-width: 230px;
+}
+
 .errors {
     background: #2c1c1c;
     border: 1px solid #5a2d2d;

@@ -24,6 +24,12 @@
             </select>
         </div>
 
+        <div class="row">
+            <label for="sdFxUpload">…or upload your own <code>.fx</code> into the editor:</label>
+            <InputFile id="sdFxUpload" class="fx-upload" accept=".fx,.fxh,.hlsl"
+                       OnChange="OnFxFileSelectedAsync" disabled="@(!_ready || _compiling || _exporting is not null)" />
+        </div>
+
         @* Editor with a line-number gutter and a scroll-synced backdrop that
            draws wavy underlines under the lines the compiler flagged. The
            textarea is transparent and sits on top; the backdrop (behind it)
@@ -68,13 +74,50 @@
         </div>
 
         <div class="row buttons">
-            <button class="primary" @onclick="CompileAndApplyAsync" disabled="@(!_ready || _compiling)">
+            <button class="primary" @onclick="CompileAndApplyAsync" disabled="@(!_ready || _compiling || _exporting is not null)">
                 @(_compiling ? "Compiling…" : "Compile & Apply (mode 2)")
             </button>
-            <button @onclick="ResetEffect" disabled="@(!_ready || _compiling)">
+            <button @onclick="ResetEffect" disabled="@(!_ready || _compiling || _exporting is not null)">
                 Reset (no shader)
             </button>
             <span class="status @(_statusIsError ? "err" : "ok")">@_status</span>
+        </div>
+
+        @* Export station (owner-directed, 2026-06-09): compile the editor source
+           in-browser for any supported target and download the artifact —
+           byte-identical to ShadowDusk's desktop output. OpenGL is also the live
+           render target above; DirectX (DXBC) and FNA (D3D9 bytecode) are
+           export-only because a browser cannot execute those binaries. *@
+        <div class="export">
+            <div class="export-head">Export — compile in-browser, download, use in your game</div>
+            <div class="row export-name-row">
+                <label for="sdExportName">Artifact name:</label>
+                <input id="sdExportName" class="export-name" type="text" spellcheck="false"
+                       value="@_exportName" @onchange="OnExportNameChanged" />
+            </div>
+            @foreach (var t in ExportTargets)
+            {
+                var target = t;
+                <div class="export-row">
+                    <div class="export-info">
+                        <div class="export-target">@t.Title → <code>@FileNameFor(t)</code></div>
+                        <div class="export-desc">@t.Description</div>
+                        @if (_exportStatus.TryGetValue(t.Target, out var st))
+                        {
+                            <div class="export-status @(st.IsError ? "err" : "ok")">@st.Message</div>
+                        }
+                    </div>
+                    <button class="export-btn" @onclick="() => ExportAsync(target)"
+                            disabled="@(!_ready || _compiling || _exporting is not null)">
+                        @(_exporting == t.Target ? "Compiling…" : "Compile & Download")
+                    </button>
+                </div>
+            }
+            <div class="export-desc export-foot">
+                Every target runs the same faithful pipeline as the desktop CLI — the bytes you
+                download here are identical to a desktop compile of the same source. The first
+                DirectX/FNA export fetches the vkd3d-shader WASM module (~0.4&nbsp;MB) once.
+            </div>
         </div>
 
         @if (_params.Count > 0)
