@@ -13,7 +13,7 @@
 //              texture unit 0's incidental contents at runtime (silently wrong
 //              output, typically black). The rewriter therefore fails loudly
 //              instead of emitting it (Phase 43 F8 decision, recorded in
-//              plan/PHASE-43-mgfx-writer-and-gl-uniform-fidelity.md).
+//              plan/DONE/PHASE-43-mgfx-writer-and-gl-uniform-fidelity.md).
 // Exercises  : MonoGameGlslRewriter Rule 3 vertex-stage sampler guard.
 // Expect     : OpenGL compile FAILS with SD0210 (loud), message naming the
 //              vertex stage; never silently-black output.
