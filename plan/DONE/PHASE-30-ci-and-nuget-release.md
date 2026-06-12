@@ -1021,7 +1021,7 @@ Phases 22, 23, 24, and 100 all defer their browser/WASM validation "to Phase 30.
 ### 16.2 Headless-browser render smoke (Phase 24's harness)
 
 - [ ] Install Playwright browsers (`playwright install --with-deps chromium`).
-- [ ] Run **[Phase 24](DONE/PHASE-24-browser-render-validation.md)**'s harness headless against the published sample: **mode-1** (precompiled `.mgfx` loads + renders in KNI WebGL — the MGFXReader10/KNIFX-v11 answer), then **mode-2** (in-browser compile + render).
+- [ ] Run **[Phase 24](PHASE-24-browser-render-validation.md)**'s harness headless against the published sample: **mode-1** (precompiled `.mgfx` loads + renders in KNI WebGL — the MGFXReader10/KNIFX-v11 answer), then **mode-2** (in-browser compile + render).
 - [ ] **KNI HiDef / WebGL2 run (Phase 33 — issue #7 regression guard):** `node publish-sample-sd-hidef.mjs` then `node run-harness.mjs --corpus=sd-hidef` (boots the sample with `?profile=hidef` → WebGL2 / GLSL ES 3.00). This is the **continuous guard for issue #7** — a regression to a raw-`gl_FragColor` write would flip it RED. After the Phase 33 fix it is GREEN (`RESULTS-SD-HIDEF.md`: 10/10 load + render); the harness writes `RESULTS-SD-HIDEF-REPRO.md` instead if it ever fails. Also run the matching Reach baseline (`--corpus=sd`) as the no-regression check.
 - [ ] Use deterministic software GL (`--use-gl=angle --use-angle=swiftshader`) so pixel comparison is reproducible across runners.
 - [ ] Pixel-compare against Phase-17 references at the **§6.1 tolerance** (shared standard — do not invent a new one).

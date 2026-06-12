@@ -363,7 +363,7 @@ internal static class DxcTestGate
 {
     internal const string SkipReason =
         "macOS DXC native (libdxcompiler.dylib) not found (restore it via tools/restore — " +
-        "see plan/PHASE-37-cross-platform-native-availability.md, finding A).";
+        "see plan/DONE/PHASE-37-cross-platform-native-availability.md, finding A).";
 
     internal static bool DxcAvailable { get; } = ProbeDxc();
 

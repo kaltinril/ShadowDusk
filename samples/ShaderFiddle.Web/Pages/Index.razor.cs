@@ -263,7 +263,7 @@ public partial class Index
     /// the committed cross-host byte-identity manifest. Rendering is deliberately out of
     /// scope: a browser has no Direct3D, so the honest browser-side bar for these
     /// targets is byte-identity to the desktop-render-proven bytes (see
-    /// <c>plan/PHASE-4.1-SPIKE-wasm-directx-dxbc.md</c>, the G2 rung).
+    /// <c>plan/DONE/PHASE-4.1-SPIKE-wasm-directx-dxbc.md</c>, the G2 rung).
     /// Protocol: <c>"OK:&lt;base64 artifact&gt;"</c> on success, <c>"ERR:&lt;verbatim
     /// diagnostics&gt;"</c> on failure. Test-only and UI-invisible (the
     /// <see cref="TestLoadCorpus"/> pattern): only callable explicitly via JS interop;

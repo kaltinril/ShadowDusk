@@ -75,7 +75,7 @@ Each area is either **delivered seamlessly** (zero consumer input; validated; de
 
 ### Pointers for the implementing agent
 - Memory: `seamless-for-end-user` + `backwards-compat-monogame-382-mgfx-v10` (the two guardrails), `phase33-kni-hidef-webgl2`, `phase34-gl-texture-breadth`.
-- Docs: `DONE/PHASE-33-...` (KNIFX/converter + the one-blob/seamless design pattern), `DONE/PHASE-34-...` (validation-harness patterns), `PHASE-32-vulkan-backend.md`, `PHASE-4.1-SPIKE-wasm-directx-dxbc.md`, `plan.md` "Resolved Constraint (Phase 18): DXC Cannot Produce SM5 DXBC".
+- Docs: `DONE/PHASE-33-...` (KNIFX/converter + the one-blob/seamless design pattern), `DONE/PHASE-34-...` (validation-harness patterns), `PHASE-32-vulkan-backend.md`, `DONE/PHASE-4.1-SPIKE-wasm-directx-dxbc.md`, `plan.md` "Resolved Constraint (Phase 18): DXC Cannot Produce SM5 DXBC".
 - Verify the 3.8.x landscape live when starting (MonoGame releases + CHANGELOG).
 
 ### Provenance

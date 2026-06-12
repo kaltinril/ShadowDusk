@@ -150,7 +150,7 @@ replays all 98 vkd3d stage compiles of the byte-identity corpus through the prod
 98/98 byte-identical to the desktop native; a real headless browser running the real
 `WasmShaderCompiler` reproduces all 65 full artifacts (37 DX `.mgfx` + 28 FNA `.fxb`)
 SHA-256-identical to the committed cross-host manifest — so render-equivalence transfers
-from the desktop rung-4 proofs by transitivity (`plan/PHASE-4.1-SPIKE-wasm-directx-dxbc.md`).
+from the desktop rung-4 proofs by transitivity (`plan/DONE/PHASE-4.1-SPIKE-wasm-directx-dxbc.md`).
 DX/FNA in the browser are **export targets** — a browser cannot render DXBC/D3D9 bytecode,
 by construction, so the browser-side bar is byte-identity, honestly stated. Of the old
 completion order, only **(4)** remains: Vulkan/Metal stay validation-gated; the desktop GL
