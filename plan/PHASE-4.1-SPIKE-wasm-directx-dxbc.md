@@ -30,9 +30,17 @@ Option A is the chosen direction).
 
 ## Build pipeline (Option A) — as built (2026-06-11)
 
-**Status: 🟡 IN PROGRESS** — wrapper + workflow committed on
-`feature/phase4.1-vkd3d-wasm-build`; iterating the CI build to green. This section
-is updated as the build progresses (hosted tag + SHA-256s land here when green).
+**Status: ✅ BUILD PIPELINE GREEN + ARTIFACT HOSTED (2026-06-11)** — the emscripten
+build of vkd3d-shader 1.17 **works, first CI run green** (run
+[27387535685](https://github.com/kaltinril/ShadowDusk/actions/runs/27387535685),
+3m19s end-to-end — vkd3d is a plain C library, not the multi-hour LLVM fork DXC
+was). All 9 smoke assertions passed (ps_2_0→d3dbc 112 bytes with version token
+`0xFFFF0200`; ps_5_0→dxbc-tpf 424 bytes with `DXBC` magic; broken shader fails
+rc=-4 with verbatim `smoke.hlsl:1:57: E5000: syntax error…` diagnostics). The
+spike's Option-A research question is answered: **vkd3d-shader builds cleanly
+under emscripten 3.1.34 with zero source patches** — configure flags alone
+sufficed (see findings below). Remaining for Phase 4.1: the C# `[JSImport]`
+interop + restore-script pins (parallel agent), then the browser-side G1 gate.
 
 ### What exists
 
@@ -95,7 +103,12 @@ stringToUTF8, lengthBytesUTF8`; the JS default-exports the factory and locates
 - apt's `spirv-headers` cannot be used: `/usr/include` on emcc's include path
   would shadow the emscripten sysroot with glibc headers — SPIRV-Headers is
   fetched from the pinned Khronos tag instead (header-only, compile-time only).
-- (Further build errors/patches recorded here as the CI iteration finds them.)
+- **Zero source patches were needed.** The autotools configure + build + emcc
+  link + node smoke gate went green on the FIRST CI run with the flags above —
+  dramatically easier than the DXC→WASM build (no tablegen split, no
+  `-fwasm-exceptions`, no CMake cross-compile patches). vkd3d-shader is plain
+  C99 with no filesystem/threading/dlopen needs on the compile path.
+- Build time: ~3 minutes total on `ubuntu-latest` (vs. multi-hour for DXC).
 
 ### License note (LGPL-2.1+ and WASM static linking — flagged, not silently decided)
 
@@ -110,13 +123,37 @@ intent. `LICENSE-vkd3d.txt` ships beside the artifact. If counsel ever disagrees
 the fallback is building the wrapper INTO vkd3d as a patched export (same
 artifact shape, no proprietary code involved either way).
 
-### Hosted artifact (filled in when the build is green)
+### Hosted artifact — LIVE (2026-06-11)
 
-- Tag: `native-vkd3d-wasm-1.17` — **PENDING** (never modify existing `native-*`
-  releases; this is a NEW tag).
-- `vkd3d-shader.js` SHA-256: **PENDING-FIRST-HOSTED-BUILD**
-- `vkd3d-shader.wasm` SHA-256: **PENDING-FIRST-HOSTED-BUILD**
-- Sizes (raw / gzip -9): **PENDING**
+Hosted on the NEW fixed prerelease tag
+[`native-vkd3d-wasm-1.17`](https://github.com/kaltinril/ShadowDusk/releases/tag/native-vkd3d-wasm-1.17)
+(same hosting model as `native-vkd3d-1.17`; existing `native-*` tags untouched).
+Assets: `vkd3d-shader.js`, `vkd3d-shader.wasm`, `LICENSE-vkd3d.txt`, `SHA256SUMS`.
+Provenance: workflow run 27387535685, built unmodified from the pinned WineHQ
+tarball. **These are the pins the restore scripts wait on:**
+
+| Asset | SHA-256 | Size (raw / gzip -9) |
+|---|---|---|
+| `vkd3d-shader.js` | `aff3ae6dece4d9aea38d32e3e7ed4c2d809dc0e0bf1c12bbaa4ad97e3b5dd7aa` | 19 834 / 6 119 bytes |
+| `vkd3d-shader.wasm` | `c80b8bb8a887a629aeb00951e5273a64598e6153b8580db428ee824f70f161e0` | 1 266 170 / 431 947 bytes |
+| `LICENSE-vkd3d.txt` | `dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551` | 26 530 bytes |
+
+The size expectation is beaten by an order of magnitude: **1.27 MB raw / 0.43 MB
+compressed** vs. the phase-doc guess of "single-digit MB compressed" (cf.
+dxcompiler.wasm 17.4 MB raw). Browser-DX/FNA adds less than half a megabyte of
+compressed download.
+
+### What remains (not this PR / parallel work)
+
+- C# `[JSImport]` interop in `ShadowDusk.Wasm` against the `sdw_*` ABI + a
+  `shadowdusk-vkd3d.js` shim (deferred-load like `shadowdusk-dxc.js`), flipping
+  the `SD0304` "Fna unavailable on WASM" guard — parallel interop agent (owns
+  `restore.{sh,ps1}` and `src/`).
+- restore-script download + SHA-256 pins (placeholders said
+  PENDING-FIRST-HOSTED-BUILD; real pins are in the table above).
+- The real bar: desktop byte-identity gate over the DXBC/FNA corpora (the G1
+  pattern), then `Effect`-load/render proof in the browser consumers.
+- Remove the temporary `push:` trigger from `vkd3d-wasm-build.yml` after merge.
 
 **Relationship to Phase 23:** Phase 23 builds the faithful **DXC→WASM** frontend for the **OpenGL** (SPIR-V) path. This spike asks the parallel question for **DirectX** — getting a faithful **DXBC** producer (vkd3d-shader) into WASM. Same emscripten-to-`[JSImport]` mechanism, different native library. Neither uses a substitute compiler.
 
