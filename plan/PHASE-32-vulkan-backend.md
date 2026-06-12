@@ -54,7 +54,7 @@ and validation, which is the honesty-gated part.
 - Make `EffectCompiler.CompileAsync` produce a structurally valid Vulkan-profile `.mgfx` whose shader blobs are valid SPIR-V, for the same PS-only (and ideally simple VS/PS) corpus already used elsewhere.
 - Fill the **reflection gap**: the Vulkan branch currently feeds an *empty* DXIL blob to the DXIL-reflection oracle (see *Architecture*); route Vulkan reflection through the pure-managed SPIR-V reflector instead (the same `SpirvReflector` the WASM/OpenGL path already uses).
 - A test gate proving the Vulkan target emits **valid SPIR-V** (magic word `0x07230203`, parseable module) and a structurally well-formed `.mgfx` with profile byte `3`.
-- Documentation: a clear "parked pending a validation runtime" statement in the docs site backend page ([Phase 26](PHASE-26-documentation-site.md) → *Alternative Backends / Vulkan (future)*).
+- Documentation: a clear "parked pending a validation runtime" statement in the docs site backend page ([Phase 26](DONE/PHASE-26-documentation-site.md) → *Alternative Backends / Vulkan (future)*).
 
 **Out of scope / Non-Goals (the honesty boundary):**
 - **Any "renders like `mgfxc`" claim.** There is no `mgfxc` Vulkan output and no MonoGame Vulkan runtime — rung 4 of the evidence ladder is unreachable. Do **not** assert in-engine equivalence; the strongest honest claim is "valid SPIR-V + well-formed `.mgfx`."
@@ -81,7 +81,7 @@ and validation, which is the honesty-gated part.
 - [ ] Verify (and document) the `.mgfx` writer emits profile byte `MgfxProfile.Vulkan (3)` and the SPIR-V blob as the shader payload; mark the container shape provisional.
 - [ ] Add an `EffectCompiler` integration test: compile a PS-only fixture (and one simple VS/PS) with `Target = Vulkan`; assert success, profile byte `3`, and that each shader blob begins with the SPIR-V magic word `0x07230203` and parses as a SPIR-V module.
 - [ ] (If `spirv-val` is restorable via `tools/restore.*`) add an optional, skip-on-missing validity check of the emitted SPIR-V.
-- [ ] Document the Vulkan target as **parked pending a validation runtime** on the docs-site backend page ([Phase 26](PHASE-26-documentation-site.md)); state plainly that no in-engine render validation exists.
+- [ ] Document the Vulkan target as **parked pending a validation runtime** on the docs-site backend page ([Phase 26](DONE/PHASE-26-documentation-site.md)); state plainly that no in-engine render validation exists.
 - [ ] Ensure the existing/added Vulkan tests run on the [Phase 30](DONE/PHASE-30-ci-and-nuget-release.md) Linux/macOS/Windows matrix.
 
 ### Already in place (verified — do not re-do)

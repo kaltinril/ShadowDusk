@@ -54,7 +54,7 @@ What exists today (verified):
 - **Define the real-runtime render-equivalence story** (see *Architecture* below) even if execution is hardware-blocked.
 
 **Out of scope / Non-Goals:**
-- Claiming Metal "done" / production-ready without a real-runtime render proof (rung 4 of the evidence ladder). Until then Metal ships as **experimental / unvalidated** and is labelled so everywhere (matching the [Phase 26](PHASE-26-documentation-site.md) "future backend" treatment).
+- Claiming Metal "done" / production-ready without a real-runtime render proof (rung 4 of the evidence ladder). Until then Metal ships as **experimental / unvalidated** and is labelled so everywhere (matching the [Phase 26](DONE/PHASE-26-documentation-site.md) "future backend" treatment).
 - VS-driven Metal effects — the OpenGL PS-only gate (`fxParsed.Techniques.All(... VertexEntryPoint is null)` in `CompilationPipeline.cs:112-113`) carries forward; VS-driven remains backlog `17-VS`.
 - iOS/tvOS specifics, Metal argument buffers, the `.metallib` precompile step, or any Metal-version targeting beyond what MonoGame/KNI's loader actually consumes.
 - Running the Metal validation on CI hardware — execution is owned by / coordinated with [Phase 30](DONE/PHASE-30-ci-and-nuget-release.md) (macOS CI), which is where any real Apple runner lives.

@@ -119,7 +119,7 @@ public interface IDxcShaderCompiler
 
 ### 3.1 Flag Table
 
-> **⚠️ Implementation deviation — DirectX profiles:** The original plan specified `vs_5_0`/`ps_5_0` for DirectX. DXC rejects SM5 profiles for non-SPIRV output (`error: invalid profile vs_5_0`). DXC only emits SM6 DXIL. The implemented profiles are `vs_6_0`/`ps_6_0`. See the [DXC SM5 constraint note in plan.md](plan.md#-known-constraint-dxc-cannot-produce-sm5-dxbc) for the full analysis and the `vkd3d-shader` path to true SM5 DXBC support.
+> **⚠️ Implementation deviation — DirectX profiles:** The original plan specified `vs_5_0`/`ps_5_0` for DirectX. DXC rejects SM5 profiles for non-SPIRV output (`error: invalid profile vs_5_0`). DXC only emits SM6 DXIL. The implemented profiles are `vs_6_0`/`ps_6_0`. See the [DXC SM5 constraint note in plan.md](../plan.md#-known-constraint-dxc-cannot-produce-sm5-dxbc) for the full analysis and the `vkd3d-shader` path to true SM5 DXBC support.
 
 | Platform | Stage | Profile (planned) | Profile (implemented) | Additional flags |
 |----------|-------|-------------------|-----------------------|-----------------|

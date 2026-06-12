@@ -6,7 +6,7 @@ The two caveats that kept this phase open are both resolved:
 - **Frontend is now faithful** — [Phase 23](PHASE-23-in-browser-compilation.md) landed the pinned DXC→WASM module; its in-browser SPIR-V is **byte-identical to desktop DXC** (10/10 corpus). No substitute compiler in the product path.
 - **"Loads as a real KNI `Effect` + renders live" is proven, not hypothesized** — [Phase 24](PHASE-24-browser-render-validation.md) renders the corpus **10/10** in real headless KNI WebGL (KNI's forked `MGFXReader10` parses ShadowDusk's MGFX v10 — **no KNIFX-v11 writer needed**; Dissolve fixed via the slot-1 sampler pin + the `roundEven`→`floor(x+0.5)` WebGL1 lowering), plus a confirmed **live desktop-browser** compile-and-render run (2026-06-02).
 
-The documented **stretch** (reflect the compiled effect's parameters → auto-generated controls) is **implemented** — the "Live parameters" panel ([commit c84ce3e]) lists the effect's `float` scalar/vector params and drives them live; a **Reset (no shader)** button was added too. `dotnet build` **and** `dotnet publish -c Release` are clean, with the faithful 17 MB `dxcompiler.wasm` bundled as a self-registered static web asset. The **only** carry-forward is untrusted-input hardening — always **[Phase 25](PHASE-25-security-hardening.md)**'s scope, never a Phase 22 acceptance criterion. Doc moved to `plan/DONE/`.
+The documented **stretch** (reflect the compiled effect's parameters → auto-generated controls) is **implemented** — the "Live parameters" panel ([commit c84ce3e]) lists the effect's `float` scalar/vector params and drives them live; a **Reset (no shader)** button was added too. `dotnet build` **and** `dotnet publish -c Release` are clean, with the faithful 17 MB `dxcompiler.wasm` bundled as a self-registered static web asset. The **only** carry-forward is untrusted-input hardening — always **[Phase 25](../PHASE-25-security-hardening.md)**'s scope, never a Phase 22 acceptance criterion. Doc moved to `plan/DONE/`.
 
 > The body below is the as-built record; where the original prose still says "mode 2 uses the Slang sample-frontend," read it as superseded by the DONE banner above — the shipping sample uses the faithful DXC→WASM path.
 **Depends on:**
@@ -125,7 +125,7 @@ The sample's Slang mode-2 is honest *reach demonstration*, but it is **not** the
 ### Validation
 - [ ] 🖥️ Manually verify several shaders (Grayscale/Invert; Tint/Sepia) render in-browser equivalently to desktop Phase-17; record WebGL-vs-DesktopGL divergence — **pending a browser run** (manual step documented in README; needed to also settle the MGFX-v10-in-KNI question).
 - [x] 🖥️ Feed deliberately-broken `.fx`: the diagnostics path + "keep last good render" is implemented; browser-confirm pending.
-- [ ] ⬜ Run untrusted-input cases past [Phase 25](PHASE-25-security-hardening.md) — deferred to Phase 25.
+- [ ] ⬜ Run untrusted-input cases past [Phase 25](../PHASE-25-security-hardening.md) — deferred to Phase 25.
 - [x] ✅ Documented manual run/smoke step (`README.md` + `run.ps1`); headless-browser check folded into [Phase 30 CI](PHASE-30-ci-and-nuget-release.md) — Phase 30.
 
 ---
