@@ -198,6 +198,32 @@ Verified against the tree on 2026-06-03 (cite real files):
 - [ ] For each item *not* done: record a one-line re-deferral reason in the originating
       `DONE/PHASE-X` doc and in Phase 100.
 
+### Inputs from the 2026-06-12 Phase 4.1 QA + security reviews (added 2026-06-12)
+
+The post-merge QA/security review of PRs #52–#56 (most findings fixed same-day in PR #59)
+deferred these verification items here — they are exactly this phase's shape:
+
+- [ ] **SD1902 end-to-end test** (vkd3d WASM module absent → SD1902 → the sample's
+      per-target message): the path every consumer hits if the packed module ever goes
+      missing; currently untested end-to-end.
+- [ ] **SD1902 attribution** (`WasmVkd3dShaderCompiler` wraps `EnsureRegisteredAsync`,
+      which loads all three modules — a spirv-cross load failure is mis-headlined as
+      vkd3d; underlying error text is included so it fails loudly, just misleadingly).
+      Deliberately deferred from PR #59 to avoid colliding with Phase 42's
+      InitializeAsync design — now safe to fix.
+- [ ] **Sample UI download path untested** (the G2 gate enters via `TestCompileExport`,
+      bypassing `ExportAsync` → `sdDownloadBytes`; a broken blob-download wiring ships
+      green). Sample-grade — decide test-or-re-defer explicitly.
+- [ ] **Success-path compiler warnings are discarded on both hosts** (desktop + WASM read
+      vkd3d messages then drop them when rc==0, despite `log_level=WARNING`); parity is
+      preserved, but constraint 5 ("diagnostics surface verbatim") arguably wants them
+      surfaced. Decide + record.
+- [ ] **Shim empty-source pre-judge** (`shadowdusk-vkd3d.js` rejects empty source itself
+      instead of letting vkd3d speak; unreachable through the real pipeline — cosmetic
+      deviation, decide + record).
+- [ ] **No source-size cap on the uncancellable in-browser compile** (self-DoS only;
+      recorded as deliberate — re-confirm and document, or cap).
+
 ---
 
 ## Acceptance Criteria
