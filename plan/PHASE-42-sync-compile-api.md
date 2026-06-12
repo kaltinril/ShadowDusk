@@ -102,7 +102,7 @@ var effect = new Effect(graphicsDevice, result.Value.Data);
 | Gate | Result |
 |---|---|
 | **Byte-identity, sync vs async, full corpus, per target** — `SyncCompileByteIdentityTests`: OpenGL (37 fixtures), DirectX/vkd3d (37), FNA (28), + a d3dcompiler_47 oracle row (Windows) | ✅ pass (in suite below) |
-| Existing suites incl. `CrossHostByteIdentityTests` (the committed manifest is untouched — output bytes did not change) | ✅ `dotnet test ShadowDusk.slnx`: **933 passed / 0 failed / 0 skipped** (win-x64; was ~924 before the phase) |
+| Existing suites incl. `CrossHostByteIdentityTests` (the committed manifest is untouched — output bytes did not change) | ✅ `dotnet test ShadowDusk.slnx`: **933 passed / 0 failed / 0 skipped** (win-x64, including the 12 new Phase-42 tests) |
 | Node vkd3d gate: `node node-test-vkd3d-wasm.mjs` | ✅ **98/98** byte-identical |
 | Real-browser gate (`browser-vkd3d-gate.mjs`, extended): (a) **cold sync `Compile` → SD1903** on DirectX, OpenGL, and Fna; (b) `InitializeAsync` OK, awaited twice (idempotent); (c) warm **synchronous** `Compile` over the full DX+FNA manifest corpus byte-identical to the committed manifest; existing async 65/65 unchanged | ✅ cold SD1903 3/3, init OK, sync 65/65, async 65/65 (see `RESULTS-VKD3D-BROWSER.md`) |
 | Grep-proof: no `.Result` / `.Wait()` / `GetAwaiter().GetResult()` anywhere under `src/` | ✅ only doc-comment mentions and the unrelated `SharpGen.Runtime.Result` type |
