@@ -1,6 +1,6 @@
 # Phase 30 — Cross-Platform CI, NuGet Release & `/release` Automation (GitHub Actions)
 
-> **Status (2026-06-07): CI + release infrastructure DONE & MERGED** (PR #17 + the release-readiness **§18**, PR #19/#20). A `/release` is wired to publish all six packages incl. self-contained `ShadowDusk.Wasm`. **Kept in plan/ (not DONE) because two items remain:** (a) the **first publish has not been cut** — that's the user's `/release` action (§17.6 task 45 / §17.7 publish-verification acceptance); (b) the **§16 `wasm.yml` browser-smoke is red** — its root cause is owned by **[Phase 36](PHASE-36-dxc-linux-spirv-ice.md)** (the Linux Debug-CLI compile path). When both clear, move this to `DONE/`. See **§18** for the as-built state.
+> **Status: ✅ DONE — moved to `DONE/` (2026-06-12).** CI + release infrastructure was done & merged 2026-06-07 (PR #17 + the release-readiness **§18**, PR #19/#20); the two items that kept it in `plan/` have both cleared. (a) The first publish **has** been cut — four product releases have shipped via `release.yml`, all green: v0.1.1 (2026-06-08), v0.2.0, v0.3.0, and v0.4.0 (2026-06-11, latest). (b) The **§16 `wasm.yml` browser smoke is green** — fixed by Phase 37 (PR #44, 2026-06-11: xvfb + llvmpipe + calibrated tolerances) and it now also carries the Phase 4.1 G2 vkd3d-browser gate. See **§18** for the as-built state.
 
 > **What this phase covers (read first — the old name "Cross-Platform CI" hid half of it):** three things, not one.
 > 1. **CI** — build + test on Linux/macOS/Windows on every push/PR (`ci.yml`).

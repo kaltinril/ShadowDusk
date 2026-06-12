@@ -1,6 +1,6 @@
 # Phase 42 — `InitializeAsync()` + synchronous `Compile()` (issue #28)
 
-**Status:** 🟢 **Implemented (2026-06-11)** — branch `feature/phase42-sync-compile-api`. All gates below pass locally; PR open for CI (`run-integration` + `run-browser`).
+**Status:** ✅ **Done (2026-06-12)** — PR #58 merged with **all CI green**: 3-OS Build & Test + Integration + Pack & Consume + WASM & Browser (including the cold-SD1903 + warm-sync 65/65 browser gate). Issue #28 closed.
 
 **Track:** Reach (Part 1 of THE PURPOSE — in-memory runtime compilation) + consumer API. This is the **linchpin dependency for `vchelaru/XnaFiddle#39`** (Victor Chelaru's runtime shader compilation in exported KNI/Blazor projects): without it, a synchronous host call site (`Content.Load<Effect>`) cannot use the compiler on single-threaded browser WASM at all.
 
