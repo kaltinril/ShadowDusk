@@ -49,6 +49,14 @@ public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
         "annotations.fx",
         "platform-macros.fx",
         "basiceffect-mini.fx",
+        // Phase 43 writer-fidelity corpus: pass render states (blend/depth-stencil/
+        // rasterizer incl. negative floats), technique/pass annotations, and baked
+        // sampler_state members.
+        "StateBlendAdditive.fx",
+        "StateDepthStencil.fx",
+        "StateRasterizer.fx",
+        "SamplerStatesFull.fx",
+        "AnnotatedTechnique.fx",
     };
 
     private static readonly (string Profile, byte ProfileId)[] Platforms =
@@ -260,34 +268,45 @@ public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
         reader.TechniqueCount.Should().Be(1);
         reader.Techniques[0].PassCount.Should().Be(1);
 
-        // CullMode.None = 1 in MonoGame's CullMode enum (mirrors D3D9: None=1, CW=2, CCW=3).
-        reader.CullMode.Should().Be(1, because: "CullMode = None maps to integer value 1 (D3D9 convention)");
-        reader.AlphaBlendEnable.Should().BeTrue(because: "AlphaBlendEnable = True was declared in the pass");
+        // MonoGame 3.8.2 CullMode ordinals: None=0, CW=1, CCW=2 (Phase 43, F1b —
+        // the reader casts the byte straight to its enum, so D3D9's None=1 would
+        // load as CullClockwiseFace).
+        reader.CullMode.Should().Be(0, because: "CullMode = None is MonoGame ordinal 0");
         reader.DepthBufferEnable.Should().BeFalse(because: "DepthBufferEnable = False was declared in the pass");
+
+        // AlphaBlendEnable = True materializes mgfxc's premultiplied preset
+        // (One / InverseSourceAlpha on both channels) — MonoGame's BlendState has
+        // no enable flag; the factors ARE the enable.
+        reader.BlendState.Should().NotBeNull();
+        reader.BlendState!.ColorSourceBlend.Should().Be(0, because: "Blend.One == 0");
+        reader.BlendState.ColorDestinationBlend.Should().Be(5, because: "Blend.InverseSourceAlpha == 5");
+        reader.BlendState.AlphaSourceBlend.Should().Be(0);
+        reader.BlendState.AlphaDestinationBlend.Should().Be(5);
     }
 
     // -------------------------------------------------------------------------
-    // annotations.fx — UIName annotation round-trips through MGFX
+    // annotations.fx — annotation COUNT survives; bodies are never written
+    // (MGFX v10 stores only the count — Phase 43, F2)
     // -------------------------------------------------------------------------
 
     [Fact]
     [Trait("Platform", "OpenGL")]
-    public async Task Annotations_OpenGL_UiNameRoundTrips()
+    public async Task Annotations_OpenGL_CountPreserved_NoBodies()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         var result = await TestHelpers.CompileFixtureAsync("annotations.fx", "OpenGL", ct: cts.Token);
         result.ExitCode.Should().Be(0, because: $"stderr: {result.Stderr}");
 
+        // MgfxBlobReader.Parse reads annotations as MonoGame 3.8.2 does (count only)
+        // and verifies the trailing MGFX signature — if bodies were written the
+        // stream would desync and this parse would throw.
         var reader = MgfxBlobReader.Parse(result.Mgfx);
         reader.ParameterNames.Should().Contain("TintColor");
 
-        reader.ParameterAnnotations.Should().ContainKey("TintColor");
-        var annotations = reader.ParameterAnnotations["TintColor"];
-        var uiName = annotations.FirstOrDefault(a => a.Name == "UIName");
-        uiName.Name.Should().Be("UIName");
-        // The string value is stored verbatim from the HLSL source, including surrounding quotes.
-        uiName.StringValue.Should().Contain("Tint Color");
+        reader.ParameterAnnotationCounts.Should().ContainKey("TintColor");
+        reader.ParameterAnnotationCounts["TintColor"].Should().Be(2,
+            because: "TintColor declares <string UIName; int UIOrder;> — two annotations");
     }
 
     // -------------------------------------------------------------------------

@@ -85,13 +85,17 @@ public sealed record RenderStateBlock
         MultiSampleAntiAlias.HasValue || DepthBias.HasValue || SlopeScaleDepthBias.HasValue;
 }
 
-// These mirror MonoGame 3.8.2 enum ordinal values (verified against MonoGame source).
-// CullMode mirrors D3D9: None=1, not 0.
+// These mirror MonoGame 3.8.2 enum ordinal values, verified field-by-field against
+// the v3.8.2 tag's MonoGame.Framework/Graphics/States/{CullMode,FillMode,Blend,
+// BlendFunction,CompareFunction,StencilOperation}.cs (Phase 43, F1b). The MGFX
+// writer serializes these ordinals as single bytes that MonoGame's Effect reader
+// casts straight back to its enums, so they MUST be MonoGame's values — NOT the
+// D3D9 ones (the FNA path maps symbolically to D3D9 in Fx2EffectBuilder instead).
 public enum CullModeValue : int
 {
-    None                    = 1,
-    CullClockwiseFace       = 2,
-    CullCounterClockwiseFace = 3,
+    None                    = 0,
+    CullClockwiseFace       = 1,
+    CullCounterClockwiseFace = 2,
 }
 
 public enum FillModeValue : int
@@ -102,19 +106,19 @@ public enum FillModeValue : int
 
 public enum BlendValue : int
 {
-    One                    = 1,
-    Zero                   = 0,
+    One                    = 0,
+    Zero                   = 1,
     SourceColor            = 2,
     InverseSourceColor     = 3,
     SourceAlpha            = 4,
     InverseSourceAlpha     = 5,
-    DestinationAlpha       = 6,
-    InverseDestinationAlpha = 7,
-    DestinationColor       = 8,
-    InverseDestinationColor = 9,
-    SourceAlphaSaturation  = 10,
-    BlendFactor            = 11,
-    InverseBlendFactor     = 12,
+    DestinationColor       = 6,
+    InverseDestinationColor = 7,
+    DestinationAlpha       = 8,
+    InverseDestinationAlpha = 9,
+    BlendFactor            = 10,
+    InverseBlendFactor     = 11,
+    SourceAlphaSaturation  = 12,
 }
 
 public enum BlendFunctionValue : int

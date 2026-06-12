@@ -46,11 +46,9 @@ class R:
 
 
 def read_annotations(r):
-    # EffectAnnotation list: count(int32) then per-annotation. Goldens use 0.
-    n = r.i32()
-    if n != 0:
-        raise RuntimeError(f"annotations={n} not supported in decoder")
-    return n
+    # EffectAnnotation list: int32 count and NOTHING else — MonoGame 3.8.2's
+    # ReadAnnotations reads only the count and mgfxc writes no bodies (Phase 43, F2).
+    return r.i32()
 
 
 def main():
@@ -139,19 +137,29 @@ def main():
         for pa in range(npass):
             pname = r.s7(); read_annotations(r); vsi = r.i32(); psi = r.i32()
             print(f"        pass[{pa}] name={pname!r} vsIndex={vsi} psIndex={psi}")
-            # render-state block: 3 optional state objects (byte present flag)
-            for which in ("blend", "depth", "raster"):
-                present = r.byte()
-                if present:
-                    # KV pairs terminated by 0xFF sentinel: (byte field, int32 value)*
-                    kvs = []
-                    while True:
-                        fid = r.byte()
-                        if fid == 0xFF:
-                            break
-                        val = r.i32()
-                        kvs.append((fid, val))
-                    print(f"            {which}: {kvs}")
+            # Render-state block: 3 optional state objects, each a bool presence
+            # flag + MonoGame 3.8.2's FIXED alphabetical field layout (Phase 43, F1).
+            if r.byte():
+                blend = dict(
+                    alphaFunc=r.byte(), alphaDst=r.byte(), alphaSrc=r.byte(),
+                    blendFactor=(r.byte(), r.byte(), r.byte(), r.byte()),
+                    colorFunc=r.byte(), colorDst=r.byte(), colorSrc=r.byte(),
+                    cwc=(r.byte(), r.byte(), r.byte(), r.byte()),
+                    multiSampleMask=r.i32())
+                print(f"            blend: {blend}")
+            if r.byte():
+                depth = dict(
+                    ccwZFail=r.byte(), ccwFail=r.byte(), ccwFunc=r.byte(), ccwPass=r.byte(),
+                    zEnable=r.byte(), zFunc=r.byte(), zWrite=r.byte(),
+                    stencilRef=r.i32(), stencilZFail=r.byte(), stencilEnable=r.byte(),
+                    stencilFail=r.byte(), stencilFunc=r.byte(), stencilMask=r.i32(),
+                    stencilPass=r.byte(), stencilWriteMask=r.i32(), twoSided=r.byte())
+                print(f"            depth: {depth}")
+            if r.byte():
+                raster = dict(
+                    cullMode=r.byte(), depthBias=r.f32(), fillMode=r.byte(),
+                    msaa=r.byte(), scissor=r.byte(), slopeScaleDepthBias=r.f32())
+                print(f"            raster: {raster}")
 
     tail = r.d[r.i:r.i + 4]
     r.i += 4

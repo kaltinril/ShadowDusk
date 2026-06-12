@@ -12,13 +12,6 @@ public sealed class MgfxWriter
     // uint). MonoGame's EffectReader reads these as an int and rejects anything
     // else, so byte order matters — this is the literal sequence it expects.
     private static readonly byte[] MgfxSignatureBytes = { 0x4D, 0x47, 0x46, 0x58 };
-    private const byte RenderStateSentinel = 0xFF;
-
-    // EffectParameterType byte value for annotation dispatch
-    private const byte TypeSingle = 3;
-    private const byte TypeInt32  = 2;
-    private const byte TypeBool   = 1;
-    private const byte TypeString = 4;
 
     public Result<byte[], ShaderError> Write(ShaderIR ir, MgfxWriterOptions options)
     {
@@ -152,7 +145,28 @@ public sealed class MgfxWriter
                 bw.Write(s.Type);
                 bw.Write(s.TextureSlot);
                 bw.Write(s.SamplerSlot);
-                bw.Write((byte)0);  // hasState = false — sampler state comes from GraphicsDevice.SamplerStates
+                if (s.State is { } st)
+                {
+                    // Baked sampler_state members (Phase 43, F9), in the exact field
+                    // order MonoGame 3.8.2's Shader reader consumes (== mgfxc's
+                    // ShaderData.writer.cs). MonoGame applies these at EffectPass.Apply.
+                    bw.Write(true);
+                    bw.Write(st.AddressU);
+                    bw.Write(st.AddressV);
+                    bw.Write(st.AddressW);
+                    bw.Write(st.BorderColorR);
+                    bw.Write(st.BorderColorG);
+                    bw.Write(st.BorderColorB);
+                    bw.Write(st.BorderColorA);
+                    bw.Write(st.Filter);
+                    bw.Write(st.MaxAnisotropy);
+                    bw.Write(st.MaxMipLevel);
+                    bw.Write(st.MipMapLevelOfDetailBias);
+                }
+                else
+                {
+                    bw.Write(false); // sampler state comes from GraphicsDevice.SamplerStates
+                }
                 bw.Write(s.Name);
                 bw.Write((byte)s.Parameter);
             }
@@ -225,119 +239,156 @@ public sealed class MgfxWriter
         }
     }
 
+    // ----------------------------------------------------------------------------
+    // Pass render-state blocks (Phase 43, F1).
+    //
+    // MonoGame 3.8.2's Effect.ReadPasses reads each optional state object as a
+    // boolean presence flag followed by a FIXED field sequence (alphabetical
+    // property order, exactly mirroring mgfxc's EffectObject.writer.cs) — there are
+    // no field IDs and no terminator. Unset fields get mgfxc's defaults: mgfxc's
+    // TPGParser materializes `new BlendState()` / `new DepthStencilState()` /
+    // `new RasterizerState()` and overwrites only the parsed keys, so the defaults
+    // below are those state objects' constructor values (MonoGame v3.8.2
+    // Graphics/States/{TargetBlendState,BlendState,DepthStencilState,RasterizerState}.cs).
+    // ----------------------------------------------------------------------------
+
     private static void WriteRenderStateBlock(BinaryWriter bw, RenderStateBlock block)
     {
-        WriteOptionalStateObject(bw, block.HasBlendState,        () => WriteBlendState(bw, block));
-        WriteOptionalStateObject(bw, block.HasDepthStencilState, () => WriteDepthStencilState(bw, block));
-        WriteOptionalStateObject(bw, block.HasRasterizerState,   () => WriteRasterizerState(bw, block));
+        WriteBlendState(bw, block);
+        WriteDepthStencilState(bw, block);
+        WriteRasterizerState(bw, block);
     }
 
-    private static void WriteOptionalStateObject(BinaryWriter bw, bool present, Action writeFields)
+    /// <summary>
+    /// mgfxc's PassInfo.ToAlphaBlend (v3.8.2): the alpha-channel blend derived from a
+    /// color blend when the .fx sets only the D3D9-style SrcBlend/DestBlend keys.
+    /// </summary>
+    private static BlendValue ToAlphaBlend(BlendValue blend) => blend switch
     {
-        if (present)
-        {
-            bw.Write((byte)1);
-            writeFields();
-            bw.Write(RenderStateSentinel);
-        }
-        else
-        {
-            bw.Write((byte)0);
-        }
-    }
+        BlendValue.SourceColor             => BlendValue.SourceAlpha,
+        BlendValue.InverseSourceColor      => BlendValue.InverseSourceAlpha,
+        BlendValue.DestinationColor        => BlendValue.DestinationAlpha,
+        BlendValue.InverseDestinationColor => BlendValue.InverseDestinationAlpha,
+        _ => blend,
+    };
 
     private static void WriteBlendState(BinaryWriter bw, RenderStateBlock block)
     {
-        if (block.AlphaBlendEnable.HasValue)
-            WriteStateKV(bw, 0, block.AlphaBlendEnable.Value ? 1 : 0);
-        if (block.ColorSourceBlend.HasValue)
-            WriteStateKV(bw, 1, (int)block.ColorSourceBlend.Value);
-        if (block.ColorDestinationBlend.HasValue)
-            WriteStateKV(bw, 2, (int)block.ColorDestinationBlend.Value);
-        if (block.ColorBlendFunction.HasValue)
-            WriteStateKV(bw, 3, (int)block.ColorBlendFunction.Value);
-        if (block.AlphaSourceBlend.HasValue)
-            WriteStateKV(bw, 4, (int)block.AlphaSourceBlend.Value);
-        if (block.AlphaDestinationBlend.HasValue)
-            WriteStateKV(bw, 5, (int)block.AlphaDestinationBlend.Value);
-        if (block.AlphaBlendFunction.HasValue)
-            WriteStateKV(bw, 6, (int)block.AlphaBlendFunction.Value);
-        if (block.ColorWriteChannels.HasValue)
-            WriteStateKV(bw, 7, block.ColorWriteChannels.Value);
+        if (!block.HasBlendState)
+        {
+            bw.Write(false);
+            return;
+        }
+        bw.Write(true);
+
+        // mgfxc PassInfo semantics:
+        //  - AlphaBlendEnable=TRUE (with no Src/DestBlend keys) presets the
+        //    premultiplied pair One/InverseSourceAlpha on both channels;
+        //    AlphaBlendEnable=FALSE forces One/Zero (== the BlendState defaults).
+        //  - SrcBlend/DestBlend set the color blend AND the ToAlphaBlend-derived
+        //    alpha blend; the explicit SrcBlendAlpha/DestBlendAlpha keys (a
+        //    ShadowDusk extension mgfxc does not parse) override the derived alpha.
+        BlendValue presetSrc = BlendValue.One;
+        BlendValue presetDst = block.AlphaBlendEnable == true ? BlendValue.InverseSourceAlpha : BlendValue.Zero;
+
+        BlendValue colorSrc = block.ColorSourceBlend      ?? presetSrc;
+        BlendValue colorDst = block.ColorDestinationBlend ?? presetDst;
+        BlendValue alphaSrc = block.AlphaSourceBlend
+            ?? (block.ColorSourceBlend is { } cs ? ToAlphaBlend(cs) : presetSrc);
+        BlendValue alphaDst = block.AlphaDestinationBlend
+            ?? (block.ColorDestinationBlend is { } cd ? ToAlphaBlend(cd) : presetDst);
+
+        // mgfxc quirk, mirrored for drop-in fidelity: PassInfo.BlendOp assigns ONLY
+        // AlphaBlendFunction — ColorBlendFunction always ships as Add. The explicit
+        // BlendOpAlpha extension key wins over BlendOp when both are present.
+        BlendFunctionValue alphaFunc =
+            block.AlphaBlendFunction ?? block.ColorBlendFunction ?? BlendFunctionValue.Add;
+        const BlendFunctionValue colorFunc = BlendFunctionValue.Add;
+
+        // ColorWriteChannels default: ColorWriteChannels.All == 15 (all four targets).
+        int cwc0 = block.ColorWriteChannels  ?? 15;
+        int cwc1 = block.ColorWriteChannels1 ?? 15;
+        int cwc2 = block.ColorWriteChannels2 ?? 15;
+        int cwc3 = block.ColorWriteChannels3 ?? 15;
+
+        // BlendFactor is parsed as a D3DCOLOR dword (0xAARRGGBB); the reader consumes
+        // R,G,B,A bytes. Default: Color.White (BlendState ctor).
+        uint bf = block.BlendFactor ?? 0xFFFFFFFFu;
+
+        // MultiSampleMask default: Int32.MaxValue (BlendState ctor).
+        int multiSampleMask = block.MultiSampleMask.HasValue
+            ? unchecked((int)block.MultiSampleMask.Value)
+            : int.MaxValue;
+
+        bw.Write((byte)alphaFunc);            // AlphaBlendFunction
+        bw.Write((byte)alphaDst);             // AlphaDestinationBlend
+        bw.Write((byte)alphaSrc);             // AlphaSourceBlend
+        bw.Write((byte)((bf >> 16) & 0xFF));  // BlendFactor.R
+        bw.Write((byte)((bf >> 8)  & 0xFF));  // BlendFactor.G
+        bw.Write((byte)(bf         & 0xFF));  // BlendFactor.B
+        bw.Write((byte)((bf >> 24) & 0xFF));  // BlendFactor.A
+        bw.Write((byte)colorFunc);            // ColorBlendFunction
+        bw.Write((byte)colorDst);             // ColorDestinationBlend
+        bw.Write((byte)colorSrc);             // ColorSourceBlend
+        bw.Write((byte)cwc0);                 // ColorWriteChannels
+        bw.Write((byte)cwc1);                 // ColorWriteChannels1
+        bw.Write((byte)cwc2);                 // ColorWriteChannels2
+        bw.Write((byte)cwc3);                 // ColorWriteChannels3
+        bw.Write(multiSampleMask);            // MultiSampleMask (int32)
     }
 
     private static void WriteDepthStencilState(BinaryWriter bw, RenderStateBlock block)
     {
-        if (block.DepthBufferEnable.HasValue)
-            WriteStateKV(bw, 0, block.DepthBufferEnable.Value ? 1 : 0);
-        if (block.DepthBufferWriteEnable.HasValue)
-            WriteStateKV(bw, 1, block.DepthBufferWriteEnable.Value ? 1 : 0);
-        if (block.DepthBufferFunction.HasValue)
-            WriteStateKV(bw, 2, (int)block.DepthBufferFunction.Value);
-        if (block.StencilEnable.HasValue)
-            WriteStateKV(bw, 3, block.StencilEnable.Value ? 1 : 0);
-        if (block.ReferenceStencil.HasValue)
-            WriteStateKV(bw, 4, block.ReferenceStencil.Value);
-        if (block.StencilMask.HasValue)
-            WriteStateKV(bw, 5, block.StencilMask.Value);
-        if (block.StencilWriteMask.HasValue)
-            WriteStateKV(bw, 6, block.StencilWriteMask.Value);
-        if (block.StencilFail.HasValue)
-            WriteStateKV(bw, 7, (int)block.StencilFail.Value);
-        if (block.StencilDepthBufferFail.HasValue)
-            WriteStateKV(bw, 8, (int)block.StencilDepthBufferFail.Value);
-        if (block.StencilPass.HasValue)
-            WriteStateKV(bw, 9, (int)block.StencilPass.Value);
-        if (block.StencilFunction.HasValue)
-            WriteStateKV(bw, 10, (int)block.StencilFunction.Value);
+        if (!block.HasDepthStencilState)
+        {
+            bw.Write(false);
+            return;
+        }
+        bw.Write(true);
+
+        bw.Write((byte)(block.CounterClockwiseStencilDepthBufferFail ?? StencilOperationValue.Keep));
+        bw.Write((byte)(block.CounterClockwiseStencilFail            ?? StencilOperationValue.Keep));
+        bw.Write((byte)(block.CounterClockwiseStencilFunction        ?? CompareFunctionValue.Always));
+        bw.Write((byte)(block.CounterClockwiseStencilPass            ?? StencilOperationValue.Keep));
+        bw.Write(block.DepthBufferEnable ?? true);                            // bool
+        bw.Write((byte)(block.DepthBufferFunction ?? CompareFunctionValue.LessEqual));
+        bw.Write(block.DepthBufferWriteEnable ?? true);                       // bool
+        bw.Write(block.ReferenceStencil ?? 0);                                // int32
+        bw.Write((byte)(block.StencilDepthBufferFail ?? StencilOperationValue.Keep));
+        bw.Write(block.StencilEnable ?? false);                               // bool
+        bw.Write((byte)(block.StencilFail     ?? StencilOperationValue.Keep));
+        bw.Write((byte)(block.StencilFunction ?? CompareFunctionValue.Always));
+        bw.Write(block.StencilMask ?? int.MaxValue);                          // int32
+        bw.Write((byte)(block.StencilPass ?? StencilOperationValue.Keep));
+        bw.Write(block.StencilWriteMask ?? int.MaxValue);                     // int32
+        bw.Write(block.TwoSidedStencilMode ?? false);                         // bool
     }
 
     private static void WriteRasterizerState(BinaryWriter bw, RenderStateBlock block)
     {
-        if (block.CullMode.HasValue)
-            WriteStateKV(bw, 0, (int)block.CullMode.Value);
-        if (block.FillMode.HasValue)
-            WriteStateKV(bw, 1, (int)block.FillMode.Value);
-        if (block.ScissorTestEnable.HasValue)
-            WriteStateKV(bw, 2, block.ScissorTestEnable.Value ? 1 : 0);
-        if (block.MultiSampleAntiAlias.HasValue)
-            WriteStateKV(bw, 3, block.MultiSampleAntiAlias.Value ? 1 : 0);
-        if (block.DepthBias.HasValue)
-            WriteStateKV(bw, 4, BitConverter.SingleToInt32Bits(block.DepthBias.Value));
-        if (block.SlopeScaleDepthBias.HasValue)
-            WriteStateKV(bw, 5, BitConverter.SingleToInt32Bits(block.SlopeScaleDepthBias.Value));
-    }
+        if (!block.HasRasterizerState)
+        {
+            bw.Write(false);
+            return;
+        }
+        bw.Write(true);
 
-    private static void WriteStateKV(BinaryWriter bw, byte fieldId, int value)
-    {
-        bw.Write(fieldId);
-        bw.Write(value);
+        bw.Write((byte)(block.CullMode ?? CullModeValue.CullCounterClockwiseFace));
+        bw.Write(block.DepthBias ?? 0f);                                      // single
+        bw.Write((byte)(block.FillMode ?? FillModeValue.Solid));
+        bw.Write(block.MultiSampleAntiAlias ?? true);                         // bool
+        bw.Write(block.ScissorTestEnable ?? false);                           // bool
+        bw.Write(block.SlopeScaleDepthBias ?? 0f);                            // single
     }
 
     private static void WriteAnnotations(BinaryWriter bw, IReadOnlyList<AnnotationInfo> annotations)
     {
+        // MGFX v10 annotations are the int32 count and NOTHING else (Phase 43, F2).
+        // MonoGame 3.8.2's ReadAnnotations reads only the count ("TODO: Annotations
+        // are not implemented!") and never any bodies; mgfxc likewise writes none
+        // (its annotation_handles are always null). Writing name/type/value bodies
+        // here desynced the reader stream and bricked any annotated effect.
         bw.Write(annotations.Count);
-        foreach (var ann in annotations)
-        {
-            bw.Write(ann.Name);
-            bw.Write(ann.Type);
-            switch (ann.Type)
-            {
-                case TypeSingle:
-                    bw.Write(ann.FloatValue.GetValueOrDefault());
-                    break;
-                case TypeInt32:
-                    bw.Write(ann.IntValue.GetValueOrDefault());
-                    break;
-                case TypeBool:
-                    bw.Write(ann.BoolValue.GetValueOrDefault() ? 1 : 0);
-                    break;
-                default:
-                    // String type and any unrecognised type — write as string
-                    bw.Write(ann.StringValue ?? "");
-                    break;
-            }
-        }
     }
 
     private static void WriteInt32List(BinaryWriter bw, IReadOnlyList<int> list)

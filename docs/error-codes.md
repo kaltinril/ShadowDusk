@@ -50,6 +50,7 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 | `SD0021` | Shader index exceeds the MGFX int16 maximum. | `MgfxWriter` |
 | `SD0022` | A count/index serialized as a single byte in the `.mgfx` shader record is outside 0–255 (samplers, constant-buffer indices, vertex attributes, sampler parameter index). | `MgfxWriter` |
 | `SD0023` | `CompilerOptions.MgfxVersion` is outside the MGFX header's byte range (0–255). | `CompilationPipeline` |
+| `SD0024` | A `sampler_state` member has an unparseable value for a recognized key (MinFilter/MagFilter/MipFilter/Filter, AddressU/V/W, BorderColor, MaxAnisotropy, MaxMipLevel, MipLodBias). | `MgfxSamplerStateResolver` |
 | `SD0100` | SPIRV-Cross SPIR-V→GLSL transpilation failed (includes a SPIR-V blob whose byte length is not a multiple of 4). | `SpirvCrossGlslTranspiler` |
 | `SD0101` | Pure-managed reflection failed (DXBC `RdefReader`, `SpirvReflector`). | `RdefReader`, `SpirvReflector` |
 | `SD0102` | Native DXIL reflection (`ID3D12ShaderReflection`) failed. | `DxilReflectionExtractor` |

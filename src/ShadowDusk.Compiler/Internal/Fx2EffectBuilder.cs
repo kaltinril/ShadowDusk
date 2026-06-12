@@ -454,7 +454,7 @@ internal static class Fx2EffectBuilder
 
         // Rasterizer.
         if (block.CullMode.HasValue)
-            states.Add(new Fx2RenderState(RsCullMode, (uint)block.CullMode.Value)); // already D3DCULL values
+            states.Add(new Fx2RenderState(RsCullMode, MapCullMode(block.CullMode.Value)));
         if (block.FillMode.HasValue)
             states.Add(new Fx2RenderState(RsFillMode, block.FillMode.Value switch
             {
@@ -469,6 +469,19 @@ internal static class Fx2EffectBuilder
 
         return states;
     }
+
+    /// <summary>
+    /// MonoGame CullMode ordinal → D3DCULL / MOJOSHADER_cullMode. Symbolic (like every
+    /// other Map* below) so Phase 43's F1b ordinal correction — CullModeValue now carries
+    /// MonoGame's 0/1/2, not D3D9's 1/2/3 — leaves FNA's fx_2_0 bytes untouched.
+    /// </summary>
+    private static uint MapCullMode(CullModeValue value) => value switch
+    {
+        CullModeValue.None                     => 1, // D3DCULL_NONE
+        CullModeValue.CullClockwiseFace        => 2, // D3DCULL_CW
+        CullModeValue.CullCounterClockwiseFace => 3, // D3DCULL_CCW
+        _ => 1,
+    };
 
     /// <summary>MonoGame Blend ordinal → D3DBLEND / MOJOSHADER_blendMode.</summary>
     private static uint MapBlend(BlendValue value) => value switch
