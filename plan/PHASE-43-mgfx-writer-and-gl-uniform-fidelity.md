@@ -1,0 +1,195 @@
+# Phase 43 — MGFX writer & GL uniform-model fidelity (beyond the validated corpus)
+
+**Status:** 🔴 **Open — created 2026-06-12** from the four-lens full review (QA / Coder /
+cross-platform / shader-expert). The shader-expert lens found **seven HIGH fidelity
+defects**, all verified against compiled artifacts and the actual MonoGame 3.8.2 /
+MojoShader sources, all in **input shapes the rung-4 corpus never contained**. Nothing
+here contradicts the existing rung-4 proofs — it maps exactly where their coverage ends.
+**Track:** Fidelity / completeness.
+
+> **The pattern (why rung-4 missed all of these):** the structural test suite validates
+> `.mgfx` with ShadowDusk's *own* reader, and the render-proven corpus contains **no pass
+> render-states, no annotations, no shared/multi/array cbuffers, and renders only into
+> `RenderTarget2D`** (never the backbuffer). That is precisely the proxy trap
+> `docs/the-purpose.md` warns about. **The fix for this phase is therefore corpus-first:**
+> every item below gets a fixture exercising the shape, validated by (a) structural
+> comparison against the in-repo `mgfxc` goldens where they exist, (b) **loading in real
+> MonoGame 3.8.2 `Effect`**, and (c) render comparison where applicable — *before* the
+> code change is considered done.
+
+---
+
+## Findings (from the 2026-06-12 shader-expert review — file:line as of main `6c05c91`)
+
+### F1 — HIGH: pass render-state block uses a format MonoGame cannot read
+
+`src/ShadowDusk.Core/MgfxWriter.cs:198-285` writes `(byte fieldId, int32 value)` pairs +
+`0xFF` sentinel. **MonoGame 3.8.2 `Effect.ReadEffect` reads a fixed field sequence**
+(blend: 11 single-byte enum fields + a 4-byte BlendFactor color + an int32
+MultiSampleMask, in alphabetical order; analogous fixed layouts for depth-stencil and
+rasterizer). Any `.fx` with pass states (`AlphaBlendEnable = TRUE;` etc.) produces a
+`.mgfx` that desyncs the reader → **Effect load failure**. Compounded by **F1b**:
+`src/ShadowDusk.Core/RenderStateBlock.cs:88-118`'s Blend enum values do NOT match
+MonoGame's ordinals despite the comment claiming "verified" (One/Zero swapped, Dest pairs
+swapped, last three wrong; CullMode is D3D9-valued). FNA is unaffected (its
+`Fx2EffectBuilder.MapBlend` maps symbolically and is verified correct).
+**Fix:** rewrite `WriteBlendState/WriteDepthStencilState/WriteRasterizerState` to
+MonoGame's exact fixed field order/types with mgfxc's defaults for unset fields; fix the
+enum values + comment together.
+
+### F2 — HIGH: annotation bodies desync the reader
+
+`MgfxWriter.cs:287-311` writes annotation name/type/value after the count — MonoGame
+3.8.2 `ReadAnnotations` reads **only the int32 count** ("TODO: Annotations are not
+implemented!"). Any annotated `.fx` (`< string ui = "color"; >` — ubiquitous in XNA-era
+shaders) → stream desync → load failure. **Fix:** write the count and **no bodies**
+(mirror mgfxc). This also moots the annotation type-sniffing defect (int annotations
+typed Single, bools become strings — `CompilationPipeline.cs:1046-1080`).
+
+### F3 — HIGH: static Y-flip instead of the dynamic `posFixup` contract
+
+`src/ShadowDusk.GLSL/SpirvCrossGlslTranspiler.cs:73-75` bakes
+`gl_Position.y = -gl_Position.y;` via SPIRV-Cross `FlipVertexY`. mgfxc/MojoShader emit a
+**runtime `posFixup` uniform** — MonoGame sets `posFixup.y = +1` for the backbuffer and
+`-1` only when a render target is bound (and skips it entirely if the uniform is absent),
+plus the half-pixel offset via `posFixup.zw`. ShadowDusk's VS-driven GL effects therefore
+render **vertically inverted in the normal game case** (drawing to the backbuffer) and
+ignore `UseHalfPixelOffset`. The rung-4 harnesses all render into `RenderTarget2D`
+(`validation/Shared/VsEffectImageRenderer.cs:107`) — the one case where the static flip
+matches. The golden `VsTransformColorTexture.mgfx` VS contains the exact target form:
+`uniform vec4 posFixup; … gl_Position.y *= posFixup.y; gl_Position.xy += posFixup.zw * gl_Position.ww;`.
+**Fix:** disable `FlipVertexY`; emit the `posFixup` declaration + mgfxc's two fixup lines
+in the VS rewriter (keep the existing depth line — it already matches the golden).
+**Validation must include a backbuffer render**, not only RT.
+
+### F4 — HIGH: shared VS+PS cbuffer deduped into an unbindable record
+
+`src/ShadowDusk.Compiler/Internal/CompilationPipeline.cs:343-355, 974-975`: a cbuffer
+bound by both stages becomes ONE record named `ps_uniforms_vec4` (the `vsBound` test
+requires `Vs && !Ps`), but the VS GLSL reads `vs_uniforms_vec4[]` → MonoGame never sets
+the VS array → **VS uniforms silently read zero** (a shared `WorldViewProj` kills the
+vertex stage). Reproduced with the repo's own `tests/fixtures/shaders/cbuffer.fx`.
+**Fix:** emit per-stage cbuffer records (`vs_uniforms_vec4` + `ps_uniforms_vec4`,
+mgfxc's model) instead of deduping across stages by reflection name.
+
+### F5 — HIGH: multiple cbuffers break the GLSL and the parameter model
+
+`src/ShadowDusk.GLSL/MonoGameGlslRewriter.cs:146` (+ the stale Slang normalizer at
+708-718 whose UBO-rename branch accidentally fires): only the first block is rewritten;
+the second ships as raw `layout(binding = 1, std140) uniform type_B { … } B;` inside
+**versionless legacy GLSL** → GL compile error at Effect load; the `.mgfx` also carries
+two cbuffers both named `ps_uniforms_vec4`. Compile exits 0 today.
+**Fix:** merge all same-stage cbuffers into one `{vs,ps}_uniforms_vec4` register space
+(MojoShader's model) — or fail loudly until merging lands.
+
+### F6 — HIGH: array uniforms unmodeled (GLSL emission + parameter elements)
+
+`MonoGameGlslRewriter.cs:150-151`: the `UniformMember` regex skips `vec4 Colors[4];`
+(also `int`, `mat3`, `layout(…)`-qualified members) → emitted GLSL still references the
+deleted block (`_Globals.Colors[1]`) → invalid GLSL, load failure, compile exits 0.
+Independently `CompilationPipeline.cs:1031-1040` (`BuildEffectParameterInfoList`) writes
+`Elements` count 0 for **every** target — array params un-settable beyond element 0 even
+on DX (MonoGame reads elements as recursive sub-parameter collections).
+**Fix:** model array members (N×registers, indexed rewrite) + emit element sub-parameter
+records; until then **fail loudly (SD-coded)** on array/int/mat3 members instead of
+emitting broken output.
+
+### F7 — HIGH (Linux/Mesa): generic `textureLod`/`textureGrad` in versionless GLSL
+
+`MonoGameGlslRewriter.cs:486-501` (Rule 6b) leaves generic `textureLod()`/`textureGrad()`
+in a GLSL-1.10 (no `#version`) shader — invalid before 1.30; Mesa enforces strictly →
+Effect-load compile failure on Linux DesktopGL. (This confirms and root-causes the
+Phase 37/34 watch item; NVIDIA/Windows lenience is why it passes locally.) MojoShader's
+faithful form: dimension-specific `texture2DLod/textureCubeLod/texture3DLod` (+
+`texture2DGrad`) with the guarded extension header
+(`#if GL_ARB_shader_texture_lod … #elif GL_EXT_gpu_shader4 … #else #define texture2DLod(a,b,c) texture2D(a,b) #endif`)
+— degrades gracefully, never fails to compile. For KNI HiDef/ES3, MojoShader's own ES3
+header maps `texture2DLod → textureLod`.
+**Fix:** rewrite to the dimension-specific legacy names + prepend the guarded extension
+block; ES3-guarded define for HiDef. Also fix the stale fixture header
+(`tests/fixtures/shaders/examples/ExSampleLevelHidef.fx` claims "Expect: FAILS SD0210"
+but compiles green) and `docs/glsl-uniform-naming.md:65`'s Rule-6 row (claims the
+dimension-specific rewrite already happens).
+
+### F8 — MEDIUM: VS texture fetch (GL) silently broken twice
+
+`MonoGameGlslRewriter.cs:272-287` (`!isVertex` gate): VS sampler decls/uses are not
+renamed (ships `uniform sampler2D _35;`) while the `.mgfx` VS sampler record says
+`ps_s0` → texture never binds (black); plus generic `textureLod` in VS (F7).
+**Fix:** implement the `vs_s{k}` contract end-to-end, or throw
+`MonoGameGlslRewriteException` for VS samplers (fail-loudly) until implemented.
+
+### F9 — MEDIUM: `sampler_state` filter/address states dropped on MGFX targets
+
+`CompilationPipeline.Run` never consumes `fxParsed.Samplers` state members (only `RunFna`
+does); `MgfxWriter.cs:125` writes `hasState = 0` always. mgfxc bakes
+`MinFilter/AddressU/...` into the `.mgfx` sampler record and MonoGame applies them at
+`EffectPass.Apply` → silent filtering/addressing divergence (Point becomes Linear).
+Corpus sampler blocks only contain `Texture = <…>`, so rung-4 never saw it.
+**Fix:** map parsed sampler states into the sampler record (`hasState = 1`) with
+MonoGame's SamplerState field layout.
+
+### F10 — MEDIUM-LOW: SPIR-V reflection drops struct `Members`
+
+`src/ShadowDusk.Core/Reflection/Spirv/SpirvReflectionParser.cs` (`BuildVariable`) never
+populates struct `Members` (the DXIL oracle does, recursively); the parity test
+(`SpirvVsDxilReflectionTests`) compares 7 fields but not `Members`, so the gap is
+invisible. **Fix:** extract members + add `Members` to the parity assertion.
+
+### F11 — carried context (fixed elsewhere or follow-up)
+
+- Duplicate render-state key crash (last-wins) and `tex2Dlod`/`tex2Dgrad` forwarding were
+  handed to the 2026-06-12 contained-fix PR (`fix/review-compiler-bugs`); if that PR
+  shipped only a loud error for tex2Dlod, the full `.SampleLevel` forwarding lands here.
+- Per-OS DXC compile divergence (Phase 34 3D/LOD/grad intrinsics fail to compile on the
+  Vortice linux/mac DXC builds — `ci.yml:140-146`) — root-cause here alongside F7, since
+  both touch the same feature surface. Same pinned commit ≠ same binary.
+- The stale "Browser path uses Slang" comment + the accidental Slang-normalizer UBO
+  rename (`MonoGameGlslRewriter.cs:178-181, 708-718`) — remove/repair with F5.
+
+---
+
+## Validation plan (the bar for every item)
+
+1. **Corpus first:** add fixtures for each shape — pass render-states (blend/depth/raster
+   combinations), annotated parameters/techniques, a shared VS+PS cbuffer, two+ cbuffers,
+   `float4 x[4]` arrays (VS and PS), VS texture fetch, `sampler_state` with filter/address
+   members, `tex2Dlod`. Each compiles through ShadowDusk **and** has an `mgfxc` golden
+   where obtainable (the maintainer's Windows box can regenerate goldens — see
+   `tests/fixtures/golden/README` conventions).
+2. **Structural oracle:** byte/structure comparison against the mgfxc golden (the
+   `MgfxParameterMatch` / golden-reader machinery exists). For F3 the golden already
+   contains the exact `posFixup` lines — string-level GLSL comparison is decisive.
+3. **The real bar:** every new fixture **loads in real MonoGame 3.8.2 `Effect`**
+   (extend `validation/` / ImageTests' mgfxc cross-validation rows), and renders
+   pixel-equivalent where a visual exists. **F3 additionally requires a backbuffer
+   render test** — rendering only to RenderTarget2D is precisely how this bug survived.
+4. **No regression:** the existing byte-identity manifest stays green for the existing
+   corpus *until* a writer fix intentionally changes bytes — those manifest entries are
+   then regenerated on win-x64 **in the same PR** with the change called out, and the
+   browser G2 gate re-proven.
+5. **Beyond-corpus guard:** once fixed, the new fixtures join the byte-identity manifest
+   and (where render-proven) the rung-4 sets, so this class of gap cannot silently
+   reopen.
+
+## Suggested sequencing
+
+1. **F1 + F1b + F2 (the writer-format trio)** — highest blast-victim count (any pass
+   state or annotation bricks the file), cleanly golden-validatable, contained to
+   `MgfxWriter` + `RenderStateBlock` + the annotation path.
+2. **F3 (posFixup)** — golden-decisive, but needs the backbuffer validation harness
+   extension.
+3. **F4 + F5 + F6 (the GL cbuffer/array model)** — the deep one; design against
+   MojoShader's register-space model; fail-loudly stopgaps acceptable as a first PR.
+4. **F7 + F8 (LOD dialect + VS samplers)** — closes the Mesa watch item with the
+   MojoShader-faithful header.
+5. **F9, F10** — independent, can ride along.
+
+## Definition of Done
+
+Every finding above is either fixed with the full validation ladder (fixture → golden →
+real-`Effect` load → render where applicable → manifest/G2 regenerated) or explicitly
+converted to a loud SD-coded compile error with the limitation documented in
+`docfx/guides/parameters-and-caveats.md`. The corpus permanently covers pass states,
+annotations, shared/multi/array cbuffers, VS texturing, sampler states, and backbuffer
+rendering, so the proxy trap that hid all seven HIGHs is structurally closed.
