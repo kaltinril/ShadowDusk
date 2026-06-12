@@ -42,39 +42,48 @@ internal sealed class WasmVkd3dShaderCompiler : IDxbcShaderCompiler
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Shared contract — identical resolution to the desktop Vkd3dShaderCompiler.
-        string profile     = Vkd3dCompileContract.ResolveProfile(request);
-        int targetType     = Vkd3dCompileContract.ResolveTargetType(profile);
-        BlobKind blobKind  = Vkd3dCompileContract.ResolveBlobKind(profile);
-
         try
         {
             // Self-register the [JSImport] modules (idempotent, zero consumer wiring),
             // then drive the one-time lazy load of the vkd3d WASM module. Loading is
             // deferred to first compile (the DXC pattern) so the module download never
-            // burdens page init.
-            await WasmModuleRegistration.EnsureRegisteredAsync(cancellationToken).ConfigureAwait(false);
-            await Vkd3dInterop.EnsureReadyAsync().ConfigureAwait(false);
+            // burdens page init. This is the ONLY genuinely-async step (issue #28); the
+            // compile itself is the synchronous core below.
+            await WasmCompilerInitialization.EnsureVkd3dReadyAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (JSException ex)
         {
-            // The module genuinely is not loadable (not restored, not hosted, fetch
-            // failed). Fail loudly with a clear SD code — never silently, never a
-            // substitute compiler (the desktop SD0211 pattern, WASM flavor).
-            return Result<PlatformBlob, ShaderError>.Fail(new ShaderError(
-                File:    request.SourceFileName,
-                Line:    0,
-                Column:  0,
-                Code:    "SD1902",
-                Message: "WASM vkd3d-shader backend (vkd3d/vkd3d-shader.{js,wasm}) could not be " +
-                         "loaded, so the DirectX (DXBC) and FNA (fx_2_0) targets are unavailable " +
-                         "in this browser session. The module ships as a ShadowDusk.Wasm static " +
-                         "web asset once restored (tools/restore.* / release tag " +
-                         "native-vkd3d-wasm-1.17 — see src/ShadowDusk.Wasm/wwwroot/vkd3d/RESTORE.md). " +
-                         "Underlying error: " + ex.Message));
+            return Result<PlatformBlob, ShaderError>.Fail(
+                MapLoadFailure(ex, request.SourceFileName));
         }
 
+        return Compile(request, cancellationToken);
+    }
+
+    /// <summary>
+    /// Synchronous compile (issue #28): calls the synchronous <c>compile</c>
+    /// <c>[JSImport]</c> directly. PRECONDITION: the vkd3d-shader module is loaded
+    /// (<see cref="WasmCompilerInitialization.Vkd3dReady"/>) — when it is not, returns
+    /// the clear SD1903 not-initialized error instead of risking an opaque runtime
+    /// abort. Never awaits or blocks on a task.
+    /// </summary>
+    public Result<PlatformBlob, ShaderError> Compile(
+        D3DCompileRequest request,
+        CancellationToken cancellationToken = default)
+    {
         cancellationToken.ThrowIfCancellationRequested();
+
+        if (!WasmCompilerInitialization.Vkd3dReady)
+        {
+            return Result<PlatformBlob, ShaderError>.Fail(
+                WasmCompilerInitialization.NotInitializedError(
+                    "vkd3d-shader (DirectX DXBC / FNA fx_2_0 backend)", request.SourceFileName));
+        }
+
+        // Shared contract — identical resolution to the desktop Vkd3dShaderCompiler.
+        string profile     = Vkd3dCompileContract.ResolveProfile(request);
+        int targetType     = Vkd3dCompileContract.ResolveTargetType(profile);
+        BlobKind blobKind  = Vkd3dCompileContract.ResolveBlobKind(profile);
 
         try
         {
@@ -104,4 +113,23 @@ internal sealed class WasmVkd3dShaderCompiler : IDxbcShaderCompiler
                     "vkd3d-shader WASM compilation failed with no diagnostics"));
         }
     }
+
+    /// <summary>
+    /// The module genuinely is not loadable (not restored, not hosted, fetch failed).
+    /// Fail loudly with a clear SD code — never silently, never a substitute compiler
+    /// (the desktop SD0211 pattern, WASM flavor). Shared by the async compile path and
+    /// <see cref="WasmShaderCompiler"/>'s warm-up so the failure maps identically.
+    /// </summary>
+    internal static ShaderError MapLoadFailure(JSException ex, string? sourceFileName) =>
+        new(
+            File:    sourceFileName ?? "<source>",
+            Line:    0,
+            Column:  0,
+            Code:    "SD1902",
+            Message: "WASM vkd3d-shader backend (vkd3d/vkd3d-shader.{js,wasm}) could not be " +
+                     "loaded, so the DirectX (DXBC) and FNA (fx_2_0) targets are unavailable " +
+                     "in this browser session. The module ships as a ShadowDusk.Wasm static " +
+                     "web asset once restored (tools/restore.* / release tag " +
+                     "native-vkd3d-wasm-1.17 — see src/ShadowDusk.Wasm/wwwroot/vkd3d/RESTORE.md). " +
+                     "Underlying error: " + ex.Message);
 }

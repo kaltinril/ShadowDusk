@@ -75,13 +75,47 @@ public sealed class EffectCompiler : IShaderCompiler
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// A thin asynchronous shell over the same synchronous pipeline core
+    /// <see cref="Compile"/> runs (one implementation — output is byte-identical by
+    /// construction). The compile is offloaded to the thread pool so the caller's thread
+    /// is never blocked by the native compiler work.
+    /// </remarks>
     public Task<Result<CompiledShader, ShaderError[]>> CompileAsync(
+        string hlslSource,
+        CompilerOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.Run(() => Compile(hlslSource, options, cancellationToken), cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// On desktop no prior <see cref="InitializeAsync"/> is required: the native
+    /// compilers (DXC via Vortice.Dxc, SPIRV-Cross, vkd3d-shader, d3dcompiler_47) load
+    /// lazily on first use, synchronously, inside this call.
+    /// </remarks>
+    public Result<CompiledShader, ShaderError[]> Compile(
         string hlslSource,
         CompilerOptions options,
         CancellationToken cancellationToken = default)
     {
         var pipeline = new CompilationPipeline(
             _dxcCompilerFactory, _glslTranspilerFactory, _reflectorFactory, _dxbcCompilerFactory);
-        return pipeline.RunAsync(hlslSource, options, cancellationToken);
+        return pipeline.Run(hlslSource, options, cancellationToken);
     }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Effectively a no-op on desktop: the native compiler libraries load on first use
+    /// and that load is itself synchronous, so <see cref="Compile"/> needs no prior
+    /// warm-up here. The method exists so consumers can call the same
+    /// <c>await compiler.InitializeAsync(); … compiler.Compile(...)</c> pattern against
+    /// any <see cref="IShaderCompiler"/> — on the browser/WASM host
+    /// (<c>WasmShaderCompiler</c>) the warm-up is real and required.
+    /// </remarks>
+    public Task InitializeAsync(CancellationToken cancellationToken = default)
+        => cancellationToken.IsCancellationRequested
+            ? Task.FromCanceled(cancellationToken)
+            : Task.CompletedTask;
 }

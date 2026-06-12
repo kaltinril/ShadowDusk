@@ -40,11 +40,22 @@ internal sealed class CompilationPipeline
         _dxbcCompilerFactory   = dxbcCompilerFactory;
     }
 
-    public async Task<Result<CompiledShader, ShaderError[]>> RunAsync(
+    // The SYNCHRONOUS pipeline core (issue #28). Every backend stage is synchronous
+    // work on every host (desktop natives are direct in-process calls; the WASM
+    // [JSImport] compiles are synchronous once their modules are loaded), so the whole
+    // pipeline runs on the calling thread with no task to block on — which is what
+    // makes IShaderCompiler.Compile safe from a synchronous call site on single-
+    // threaded browser WASM. The async surface (EffectCompiler.CompileAsync) is a thin
+    // shell over THIS method — one implementation, so sync and async output is
+    // byte-identical by construction. Never add an await-able stage here; hoist any
+    // genuinely-async work (module loads) into IShaderCompiler.InitializeAsync instead.
+    public Result<CompiledShader, ShaderError[]> Run(
         string hlslSource,
         CompilerOptions options,
         CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (options.Target == PlatformTarget.Metal)
         {
             return Fail(new ShaderError(
@@ -60,7 +71,7 @@ internal sealed class CompilationPipeline
         // (DXC/SPIRV-Cross/MGFX) participates, which also guarantees the existing
         // MonoGame/KNI targets' output cannot change.
         if (options.Target == PlatformTarget.Fna)
-            return await RunFnaAsync(hlslSource, options, cancellationToken).ConfigureAwait(false);
+            return RunFna(hlslSource, options, cancellationToken);
 
         string sourceFileName = options.SourceFileName ?? "<source>";
 
@@ -209,7 +220,7 @@ internal sealed class CompilationPipeline
 
                 if (pass.VertexEntryPoint is not null)
                 {
-                    var compileOutput = await CompileEntryPointAsync(
+                    var compileOutput = CompileEntryPoint(
                         dxcCompiler,
                         dxbcCompiler,
                         glslTranspiler,
@@ -223,7 +234,7 @@ internal sealed class CompilationPipeline
                         // + attribute/varying contract that lets MonoGame's GL runtime link it.
                         applyMonoGameGlsl: monoGameGl,
                         reflectFromSpirv: reflectFromSpirv,
-                        cancellationToken).ConfigureAwait(false);
+                        cancellationToken);
 
                     if (compileOutput.Blob.IsFailure)
                         return Fail(compileOutput.Blob.Error);
@@ -241,7 +252,7 @@ internal sealed class CompilationPipeline
 
                 if (pass.PixelEntryPoint is not null)
                 {
-                    var compileOutput = await CompileEntryPointAsync(
+                    var compileOutput = CompileEntryPoint(
                         dxcCompiler,
                         dxbcCompiler,
                         glslTranspiler,
@@ -252,7 +263,7 @@ internal sealed class CompilationPipeline
                         compileOptions,
                         applyMonoGameGlsl: monoGameGl,
                         reflectFromSpirv: reflectFromSpirv,
-                        cancellationToken).ConfigureAwait(false);
+                        cancellationToken);
 
                     if (compileOutput.Blob.IsFailure)
                         return Fail(compileOutput.Blob.Error);
@@ -305,10 +316,10 @@ internal sealed class CompilationPipeline
                     {
                         // DirectX: dxilBlob actually carries SM5 DXBC — reflect via the
                         // managed RdefReader (DXC's DXIL reflection can't read DXBC).
-                        reflectResult = await dxbcReflectionPipe.ReflectAsync(
+                        reflectResult = dxbcReflectionPipe.Reflect(
                             dxilBlob,
                             fxParsed.ParameterAnnotations,
-                            cancellationToken).ConfigureAwait(false);
+                            cancellationToken);
                     }
                     else
                     {
@@ -319,7 +330,7 @@ internal sealed class CompilationPipeline
                             FxAnnotations = fxParsed.ParameterAnnotations,
                         };
 
-                        reflectResult = await reflectionPipeline.ReflectAsync(reflectionInput, cancellationToken).ConfigureAwait(false);
+                        reflectResult = reflectionPipeline.Reflect(reflectionInput, cancellationToken);
                     }
 
                     if (reflectResult.IsFailure)
@@ -479,7 +490,7 @@ internal sealed class CompilationPipeline
     // and MgfxVersion are ignored by design.
     // -------------------------------------------------------------------------
 
-    private async Task<Result<CompiledShader, ShaderError[]>> RunFnaAsync(
+    private Result<CompiledShader, ShaderError[]> RunFna(
         string hlslSource,
         CompilerOptions options,
         CancellationToken cancellationToken)
@@ -551,10 +562,10 @@ internal sealed class CompilationPipeline
                 if (pass.VertexEntryPoint is not null)
                 {
                     vsSource ??= Sm3StageReservationRewriter.Rewrite(preprocessed.Text, ShaderStage.Vertex);
-                    var compiled = await CompileFnaStageAsync(
+                    var compiled = CompileFnaStage(
                         fnaCompiler, vsSource, preprocessed.OriginalFilePath,
                         pass.VertexEntryPoint, pass.VertexProfile, ShaderStage.Vertex,
-                        cancellationToken).ConfigureAwait(false);
+                        cancellationToken);
                     if (compiled.IsFailure)
                         return Fail(compiled.Error);
 
@@ -566,10 +577,10 @@ internal sealed class CompilationPipeline
                 if (pass.PixelEntryPoint is not null)
                 {
                     psSource ??= Sm3StageReservationRewriter.Rewrite(preprocessed.Text, ShaderStage.Pixel);
-                    var compiled = await CompileFnaStageAsync(
+                    var compiled = CompileFnaStage(
                         fnaCompiler, psSource, preprocessed.OriginalFilePath,
                         pass.PixelEntryPoint, pass.PixelProfile, ShaderStage.Pixel,
-                        cancellationToken).ConfigureAwait(false);
+                        cancellationToken);
                     if (compiled.IsFailure)
                         return Fail(compiled.Error);
 
@@ -611,8 +622,8 @@ internal sealed class CompilationPipeline
             new CompiledShader(PlatformTarget.Fna, writeResult.Value));
     }
 
-    private static async Task<Result<(Fx2Shader Shader, CtabTable Ctab), ShaderError>>
-        CompileFnaStageAsync(
+    private static Result<(Fx2Shader Shader, CtabTable Ctab), ShaderError>
+        CompileFnaStage(
             IDxbcShaderCompiler compiler,
             string source,
             string sourceFileName,
@@ -640,7 +651,7 @@ internal sealed class CompilationPipeline
             ProfileOverride = profileResult.Value,
         };
 
-        var compileResult = await compiler.CompileAsync(request, ct).ConfigureAwait(false);
+        var compileResult = compiler.Compile(request, ct);
         if (compileResult.IsFailure)
             return Result<(Fx2Shader, CtabTable), ShaderError>.Fail(compileResult.Error);
 
@@ -740,8 +751,8 @@ internal sealed class CompilationPipeline
         return Result<string, ShaderError>.Ok(declaredProfile);
     }
 
-    private static async Task<(Result<byte[], ShaderError> Blob, ReadOnlyMemory<byte> DxilBlob, ReadOnlyMemory<byte> SpirvBlob, IReadOnlyList<MgfxVertexAttributeInfo> Attributes)>
-        CompileEntryPointAsync(
+    private static (Result<byte[], ShaderError> Blob, ReadOnlyMemory<byte> DxilBlob, ReadOnlyMemory<byte> SpirvBlob, IReadOnlyList<MgfxVertexAttributeInfo> Attributes)
+        CompileEntryPoint(
             Lazy<IDxcShaderCompiler> dxcCompiler,
             IDxbcShaderCompiler dxbcCompiler,
             ISpirvToGlslTranspiler glslTranspiler,
@@ -774,7 +785,7 @@ internal sealed class CompilationPipeline
                 AllowWarnings  = compileOptions.AllowWarnings,
             };
 
-            var dxbcResult = await dxbcCompiler.CompileAsync(dxbcRequest, ct).ConfigureAwait(false);
+            var dxbcResult = dxbcCompiler.Compile(dxbcRequest, ct);
             if (dxbcResult.IsFailure)
                 return (Result<byte[], ShaderError>.Fail(dxbcResult.Error), default, default, noAttributes);
 
@@ -804,7 +815,7 @@ internal sealed class CompilationPipeline
                     Options        = new DxcCompileOptions { EmbedDebugInfo = compileOptions.EmbedDebugInfo, AllowWarnings = true },
                 };
 
-                var dxilResult = await dxcCompiler.Value.CompileAsync(dxilRequest, ct).ConfigureAwait(false);
+                var dxilResult = dxcCompiler.Value.Compile(dxilRequest, ct);
                 if (dxilResult.IsFailure)
                     return (Result<byte[], ShaderError>.Fail(dxilResult.Error), default, default, noAttributes);
 
@@ -822,7 +833,7 @@ internal sealed class CompilationPipeline
                 Options        = compileOptions,
             };
 
-            var spirvResult = await dxcCompiler.Value.CompileAsync(spirvRequest, ct).ConfigureAwait(false);
+            var spirvResult = dxcCompiler.Value.Compile(spirvRequest, ct);
             if (spirvResult.IsFailure)
                 return (Result<byte[], ShaderError>.Fail(spirvResult.Error), default, default, noAttributes);
 
@@ -900,7 +911,7 @@ internal sealed class CompilationPipeline
                 Options        = compileOptions,
             };
 
-            var result = await dxcCompiler.Value.CompileAsync(request, ct).ConfigureAwait(false);
+            var result = dxcCompiler.Value.Compile(request, ct);
             if (result.IsFailure)
                 return (Result<byte[], ShaderError>.Fail(result.Error), default, default, noAttributes);
 

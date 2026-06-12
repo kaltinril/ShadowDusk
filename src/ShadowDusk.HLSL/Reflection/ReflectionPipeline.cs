@@ -25,18 +25,31 @@ public sealed class ReflectionPipeline
     }
 
     /// <summary>
-    /// Runs reflection over the given input and returns the fully assembled
-    /// <see cref="ReflectedEffect"/>.
+    /// Runs reflection over the given input on a thread-pool thread and returns the fully
+    /// assembled <see cref="ReflectedEffect"/>. A thin asynchronous shell over
+    /// <see cref="Reflect"/> (one implementation; identical output).
     /// </summary>
     /// <param name="input">The DXIL + SPIR-V blobs and FX annotations to reflect.</param>
     /// <param name="ct">A cancellation token.</param>
     /// <returns>The reflected effect on success, or a <see cref="ShaderError"/> on failure.</returns>
-    public async Task<Result<ReflectedEffect, ShaderError>> ReflectAsync(
+    public Task<Result<ReflectedEffect, ShaderError>> ReflectAsync(
+        ReflectionInput input,
+        CancellationToken ct = default)
+        => Task.Run(() => Reflect(input, ct), ct);
+
+    /// <summary>
+    /// Synchronous counterpart of <see cref="ReflectAsync"/>: runs reflection over the
+    /// given input on the calling thread (the extraction and verification are synchronous
+    /// work on every host) and returns the fully assembled <see cref="ReflectedEffect"/>.
+    /// </summary>
+    /// <param name="input">The DXIL + SPIR-V blobs and FX annotations to reflect.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>The reflected effect on success, or a <see cref="ShaderError"/> on failure.</returns>
+    public Result<ReflectedEffect, ShaderError> Reflect(
         ReflectionInput input,
         CancellationToken ct = default)
     {
-        Result<ReflectedEffect, ShaderError> extractResult =
-            await Task.Run(() => _extractor.Extract(input.DxilBlob, ct), ct).ConfigureAwait(false);
+        Result<ReflectedEffect, ShaderError> extractResult = _extractor.Extract(input.DxilBlob, ct);
 
         if (extractResult.IsFailure)
             return extractResult;

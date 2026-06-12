@@ -25,20 +25,35 @@ public sealed class DxbcReflectionPipeline
     }
 
     /// <summary>
-    /// Reflects the DXBC blob and builds the final effect parameter list (merging in the FX
-    /// annotations).
+    /// Reflects the DXBC blob on a thread-pool thread and builds the final effect
+    /// parameter list (merging in the FX annotations). A thin asynchronous shell over
+    /// <see cref="Reflect"/> (one implementation; identical output).
     /// </summary>
     /// <param name="dxbcBlob">A complete SM5 DXBC module.</param>
     /// <param name="fxAnnotations">FX-level parameter annotations to merge, if any.</param>
     /// <param name="ct">A cancellation token.</param>
     /// <returns>The reflected effect on success, or a <see cref="ShaderError"/> on failure.</returns>
-    public async Task<Result<ReflectedEffect, ShaderError>> ReflectAsync(
+    public Task<Result<ReflectedEffect, ShaderError>> ReflectAsync(
+        ReadOnlyMemory<byte> dxbcBlob,
+        IReadOnlyList<ParameterAnnotation>? fxAnnotations,
+        CancellationToken ct = default)
+        => Task.Run(() => Reflect(dxbcBlob, fxAnnotations, ct), ct);
+
+    /// <summary>
+    /// Synchronous counterpart of <see cref="ReflectAsync"/>: reflects the DXBC blob on
+    /// the calling thread (the pure-managed RDEF read is synchronous work) and builds the
+    /// final effect parameter list (merging in the FX annotations).
+    /// </summary>
+    /// <param name="dxbcBlob">A complete SM5 DXBC module.</param>
+    /// <param name="fxAnnotations">FX-level parameter annotations to merge, if any.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>The reflected effect on success, or a <see cref="ShaderError"/> on failure.</returns>
+    public Result<ReflectedEffect, ShaderError> Reflect(
         ReadOnlyMemory<byte> dxbcBlob,
         IReadOnlyList<ParameterAnnotation>? fxAnnotations,
         CancellationToken ct = default)
     {
-        Result<ReflectedEffect, ShaderError> extractResult =
-            await Task.Run(() => _extractor.Extract(dxbcBlob, ct), ct).ConfigureAwait(false);
+        Result<ReflectedEffect, ShaderError> extractResult = _extractor.Extract(dxbcBlob, ct);
 
         if (extractResult.IsFailure)
             return extractResult;

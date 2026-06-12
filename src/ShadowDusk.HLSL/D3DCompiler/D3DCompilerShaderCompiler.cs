@@ -26,34 +26,58 @@ public sealed class D3DCompilerShaderCompiler : IDxbcShaderCompiler
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        // ProfileOverride is the vkd3d backend's SM1–3 (FNA) hook. This oracle never
-        // serves that path — honoring it here would let output silently depend on which
-        // backend a host picked. Refuse loudly, and BEFORE the Windows guard: the refusal
-        // is platform-independent policy, and checking it first makes it unit-testable on
-        // every OS.
+        // Guard failures short-circuit without a thread hop (the pre-existing behavior).
+        if (GuardError(request) is { } guardError)
+            return Task.FromResult(Result<PlatformBlob, ShaderError>.Fail(guardError));
+
+        return Task.Run(() => CompileCore(request), cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public Result<PlatformBlob, ShaderError> Compile(
+        D3DCompileRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (GuardError(request) is { } guardError)
+            return Result<PlatformBlob, ShaderError>.Fail(guardError);
+
+        return CompileCore(request);
+    }
+
+    /// <summary>
+    /// Shared policy guards for both entry points. ProfileOverride is the vkd3d
+    /// backend's SM1–3 (FNA) hook — this oracle never serves that path; honoring it here
+    /// would let output silently depend on which backend a host picked. Refuse loudly,
+    /// and BEFORE the Windows guard: the refusal is platform-independent policy, and
+    /// checking it first makes it unit-testable on every OS.
+    /// </summary>
+    private static ShaderError? GuardError(D3DCompileRequest request)
+    {
         if (request.ProfileOverride is not null)
         {
-            return Task.FromResult(Result<PlatformBlob, ShaderError>.Fail(new ShaderError(
+            return new ShaderError(
                 File:    request.SourceFileName,
                 Line:    0,
                 Column:  0,
                 Code:    "SD0210",
                 Message: $"The d3dcompiler_47 oracle backend does not support ProfileOverride " +
                          $"('{request.ProfileOverride}') — SM1–3 compiles route through the " +
-                         "vkd3d-shader backend")));
+                         "vkd3d-shader backend");
         }
 
         if (!OperatingSystem.IsWindows())
         {
-            return Task.FromResult(Result<PlatformBlob, ShaderError>.Fail(new ShaderError(
+            return new ShaderError(
                 File:    request.SourceFileName,
                 Line:    0,
                 Column:  0,
                 Code:    "SD0210",
-                Message: "DXBC oracle backend requires Windows; use DxbcBackend.Vkd3d for cross-platform DXBC")));
+                Message: "DXBC oracle backend requires Windows; use DxbcBackend.Vkd3d for cross-platform DXBC");
         }
 
-        return Task.Run(() => CompileCore(request), cancellationToken);
+        return null;
     }
 
     private static Result<PlatformBlob, ShaderError> CompileCore(D3DCompileRequest request)

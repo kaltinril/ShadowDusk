@@ -153,6 +153,9 @@ const browser = await chromium.launch({
 
 const rows = [];
 const failures = [];
+// Phase 42 (issue #28) sync-API results: the cold SD1903 checks, the InitializeAsync
+// verdict, and the synchronous-Compile byte-identity pass count.
+const syncApi = { cold: [], initialize: null, pass: 0, total: 0 };
 // Hard evidence that the REAL module was fetched over HTTP by the browser (and a
 // tripwire against any accidental future fallback path): record the network responses
 // for vkd3d-shader.{js,wasm}.
@@ -173,6 +176,95 @@ try {
   await page.waitForFunction(
     () => typeof window.theInstance !== 'undefined' && window.theInstance !== null,
     { timeout: 120000 });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Phase 42 (issue #28) — the InitializeAsync + synchronous Compile() API,
+  // proven in the real browser runtime. MUST run in this order:
+  //
+  //   (a) COLD: sync Compile() before ANY initialization or compile in this
+  //       session must fail with the clear, SD-coded SD1903 "await
+  //       InitializeAsync() first" error — never an opaque runtime abort.
+  //       (Runs FIRST because any compile would warm the modules.)
+  //   (b) InitializeAsync(): the one-time warm-up (awaited twice — idempotency),
+  //       loading ALL the WASM modules (DXC + SPIRV-Cross + vkd3d).
+  //   (c) WARM: sync Compile() over the FULL DX+FNA manifest corpus, every
+  //       artifact SHA-256 == the committed cross-host manifest — the synchronous
+  //       path produces the exact desktop-render-proven bytes (and therefore the
+  //       exact CompileAsync bytes, asserted again by the async pass below).
+  // ─────────────────────────────────────────────────────────────────────────
+  // Grayscale.fx: in the render-proven corpus of ALL THREE targets, so on every path
+  // the source parses cleanly and the failure can only come from the module-readiness
+  // gate — the SD1903 under test (Minimal.fx would trip the FNA SM≤3 profile policy
+  // first, SD0300, masking the check).
+  const coldSource = readFileSync(path.join(fixturesDir, 'Grayscale.fx'), 'utf8')
+    .replace(/^\u{FEFF}/u, '')
+    .replace(/\r\n/g, '\n');
+
+  console.log('[vkd3d browser gate] Phase 42 (a) — COLD sync Compile() must fail SD1903…');
+  for (const target of ['DirectX', 'OpenGL', 'Fna']) {
+    const res = await page.evaluate(
+      async ({ src, target, name }) =>
+        await window.theInstance.invokeMethodAsync('TestSyncCompileExport', src, target, name),
+      { src: coldSource, target, name: 'Grayscale.fx' });
+
+    const ok = typeof res === 'string' && res.startsWith('ERR:') && res.includes('SD1903');
+    syncApi.cold.push({ target, ok, res: String(res).slice(0, 200) });
+    if (!ok) {
+      failures.push(`Phase42 cold sync Compile (${target}): expected the clear SD1903 ` +
+        `not-initialized error, got: ${String(res).slice(0, 400)}`);
+      console.error(`  [FAIL] cold sync Compile (${target}) — expected SD1903, got: ${String(res).slice(0, 200)}`);
+    } else {
+      console.log(`  [OK]   cold sync Compile (${target}) → SD1903 (clear, diagnosable, no abort)`);
+    }
+  }
+
+  console.log('[vkd3d browser gate] Phase 42 (b) — await InitializeAsync() (loads DXC + SPIRV-Cross + vkd3d)…');
+  {
+    const res = await page.evaluate(
+      async () => await window.theInstance.invokeMethodAsync('TestInitializeCompiler'));
+    syncApi.initialize = String(res).slice(0, 400);
+    if (res !== 'OK') {
+      failures.push(`Phase42 InitializeAsync failed: ${String(res).slice(0, 400)}`);
+      console.error(`  [FAIL] InitializeAsync — ${String(res).slice(0, 200)}`);
+    } else {
+      console.log('  [OK]   InitializeAsync completed (awaited twice — idempotent)');
+    }
+  }
+
+  console.log('[vkd3d browser gate] Phase 42 (c) — WARM sync Compile() over the full corpus…');
+  for (const e of entries) {
+    const label = `${e.targetKey}/${e.fixture} (sync)`;
+    syncApi.total++;
+    try {
+      const source = readFileSync(path.join(fixturesDir, e.fixture), 'utf8')
+        .replace(/^\u{FEFF}/u, '')
+        .replace(/\r\n/g, '\n');
+
+      const res = await page.evaluate(
+        async ({ src, target, name }) =>
+          await window.theInstance.invokeMethodAsync('TestSyncCompileExport', src, target, name),
+        { src: source, target: e.target, name: e.fixture });
+
+      if (typeof res !== 'string' || !res.startsWith('OK:')) {
+        failures.push(`${label}: sync compile failed: ${String(res).slice(0, 400)}`);
+        console.error(`  [FAIL] ${label} — ${String(res).slice(0, 200)}`);
+        continue;
+      }
+
+      const artifact = Buffer.from(res.slice(3), 'base64');
+      const actual = createHash('sha256').update(artifact).digest('hex');
+      if (actual !== e.expected) {
+        failures.push(`${label}: HASH MISMATCH — manifest=${e.expected} sync-browser=${actual}`);
+        console.error(`  [DIFF] ${label} — manifest=${e.expected} sync-browser=${actual}`);
+      } else {
+        syncApi.pass++;
+        console.log(`  [OK]   ${label} — ${artifact.length} bytes, SHA-256 == committed manifest`);
+      }
+    } catch (err) {
+      failures.push(`${label}: harness error: ${err?.message ?? err}`);
+      console.error(`  [FAIL] ${label} — harness error: ${err?.message ?? err}`);
+    }
+  }
 
   for (const e of entries) {
     const label = `${e.targetKey}/${e.fixture}`;
@@ -248,6 +340,9 @@ if (failures.length > 0) {
 console.log(`ALL ${rows.length} DX+FNA ARTIFACTS COMPILED IN A REAL BROWSER ARE BYTE-IDENTICAL ` +
   '(SHA-256) TO THE COMMITTED CROSS-HOST MANIFEST — browser bytes == desktop ' +
   'render-proven bytes. Phase 4.1 G2 gate PASSED.');
+console.log(`PHASE 42 (issue #28) PASSED: cold sync Compile() → SD1903 on all ` +
+  `${syncApi.cold.length} targets; InitializeAsync OK (idempotent); warm SYNCHRONOUS ` +
+  `Compile() byte-identical to the manifest ${syncApi.pass}/${syncApi.total}.`);
 process.exit(0);
 
 async function writeResults(rows, pass, failures, wasmFetch) {
@@ -277,6 +372,19 @@ async function writeResults(rows, pass, failures, wasmFetch) {
   lines.push('Therefore the bytes a browser user exports ARE the render-proven bytes. **Not claimed:**');
   lines.push('rendering inside the browser — that is impossible for these targets by construction, not a');
   lines.push('gap this gate papers over.');
+  lines.push('');
+  lines.push('## Phase 42 (issue #28) — InitializeAsync + synchronous Compile()');
+  lines.push('');
+  lines.push('The synchronous-compile API, proven in the same real browser session (the lazy-load');
+  lines.push('order matters: the cold checks ran before ANY compile or initialization):');
+  lines.push('');
+  for (const c of syncApi.cold) {
+    lines.push(`- COLD sync \`Compile()\` (${c.target}, before InitializeAsync): ` +
+      (c.ok ? '**SD1903** — the clear "await InitializeAsync() first" error, no runtime abort. PASS'
+            : `**FAIL** — got \`${c.res.replace(/\|/g, '\\|')}\``));
+  }
+  lines.push(`- \`InitializeAsync()\` (awaited twice — idempotency): ${syncApi.initialize === 'OK' ? '**OK**' : `**FAIL** — \`${syncApi.initialize}\``}`);
+  lines.push(`- WARM **synchronous** \`Compile()\` over the full DX+FNA corpus: **${syncApi.pass}/${syncApi.total}** SHA-256 == committed manifest (sync bytes == async bytes == desktop render-proven bytes).`);
   lines.push('');
   lines.push('## Coverage');
   lines.push('');

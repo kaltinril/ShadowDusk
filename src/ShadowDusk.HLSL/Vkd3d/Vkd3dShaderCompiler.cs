@@ -37,6 +37,15 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
         return Task.Run(() => CompileCore(request), cancellationToken);
     }
 
+    /// <inheritdoc/>
+    public Result<PlatformBlob, ShaderError> Compile(
+        D3DCompileRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return CompileCore(request);
+    }
+
     private static Result<PlatformBlob, ShaderError> CompileCore(D3DCompileRequest request)
     {
         Vkd3dLoader.Register();
