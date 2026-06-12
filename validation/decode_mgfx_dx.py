@@ -100,20 +100,28 @@ def main():
             an = r.s7(); ausage = r.byte(); aindex = r.byte(); aloc = r.i16()
             print(f"          attr[{a}] name={an!r} usage={ausage} index={aindex} loc={aloc}")
 
-    npar = r.i32()
-    print(f"[{r.i}] parameters: {npar}")
-    for p in range(npar):
-        pclass = r.byte(); ptype = r.byte(); pname = r.s7(); psem = r.s7()
-        read_annotations(r)
-        rows = r.byte(); cols = r.byte()
-        nmem = r.i32(); members = [r.i32() for _ in range(nmem)]
-        nelem = r.i32(); elems = [r.i32() for _ in range(nelem)]
-        data = b""
-        if pclass <= 2 and nmem == 0 and nelem == 0:
-            dlen = rows * cols * 4
-            data = r.d[r.i:r.i + dlen]; r.i += dlen
-        print(f"    p[{p}] class={pclass} type={ptype} name={pname!r} sem={psem!r} "
-              f"rows={rows} cols={cols} members={members} elems={elems} dataLen={len(data)}")
+    # parameters — MonoGame 3.8.2 ReadParameters is RECURSIVE: per record the
+    # array ELEMENTS sub-collection is read first, then the struct MEMBERS, each
+    # a full nested parameter record (mgfxc EffectObject.WriteParameter order).
+    # Phase 43 F6 — the old flat int32-list model desynced on any array param.
+    def read_parameter_list(depth):
+        n = r.i32()
+        for p in range(n):
+            pclass = r.byte(); ptype = r.byte(); pname = r.s7(); psem = r.s7()
+            read_annotations(r)
+            rows = r.byte(); cols = r.byte()
+            nelem = read_parameter_list(depth + 1)   # array elements
+            nmem  = read_parameter_list(depth + 1)   # struct members
+            dlen = 0
+            if pclass <= 2 and nelem == 0 and nmem == 0:
+                dlen = rows * cols * 4
+                r.i += dlen
+            print(f"    {'    ' * depth}p[{p}] class={pclass} type={ptype} name={pname!r} "
+                  f"sem={psem!r} rows={rows} cols={cols} elems={nelem} members={nmem} dataLen={dlen}")
+        return n
+
+    print(f"[{r.i}] parameters:")
+    read_parameter_list(0)
 
     ntech = r.i32()
     print(f"[{r.i}] techniques: {ntech}")

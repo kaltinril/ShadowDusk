@@ -190,32 +190,47 @@ public sealed class MgfxWriter
         }
     }
 
-    private static void WriteParameters(BinaryWriter bw, ShaderIR ir)
-    {
-        bw.Write(ir.Parameters.Count);
-        foreach (var p in ir.Parameters)
-        {
-            bw.Write(p.Class);
-            bw.Write(p.Type);
-            bw.Write(p.Name);
-            bw.Write(p.Semantic ?? "");
-            WriteAnnotations(bw, p.Annotations);
-            bw.Write(p.RowCount);
-            bw.Write(p.ColumnCount);
-            WriteInt32List(bw, p.MemberIndices);
-            WriteInt32List(bw, p.ElementIndices);
+    private static void WriteParameters(BinaryWriter bw, ShaderIR ir) =>
+        WriteParameterList(bw, ir.Parameters);
 
-            // MonoGame reads a raw default-value blob for value-typed params
-            // (Scalar/Vector/Matrix) that are neither structs nor arrays:
-            // rows*cols*4 bytes, NO length prefix. Object/Struct/array params
-            // carry none. We emit zeros — the runtime sets values by name.
-            bool isValueType = p.Class <= 2; // Scalar=0, Vector=1, Matrix=2
-            if (isValueType && p.MemberIndices.Count == 0 && p.ElementIndices.Count == 0)
-            {
-                int dataLen = p.RowCount * p.ColumnCount * 4;
-                for (int b = 0; b < dataLen; b++)
-                    bw.Write((byte)0);
-            }
+    // MonoGame 3.8.2's Effect.ReadParameters reads array ELEMENTS and struct
+    // MEMBERS as recursive parameter collections — elements FIRST, then members
+    // (mgfxc's EffectObject.WriteParameter order: WriteParameters(member_handles,
+    // element_count) then WriteParameters(member_handles, member_count)). Phase 43
+    // F6: before this, the writer emitted bare int32 "index" lists (and in the
+    // wrong order) — latent while every count was 0, a reader desync for any
+    // array/struct parameter.
+    private static void WriteParameterList(BinaryWriter bw, IReadOnlyList<EffectParameterInfo> parameters)
+    {
+        bw.Write(parameters.Count);
+        foreach (var p in parameters)
+            WriteParameter(bw, p);
+    }
+
+    private static void WriteParameter(BinaryWriter bw, EffectParameterInfo p)
+    {
+        bw.Write(p.Class);
+        bw.Write(p.Type);
+        bw.Write(p.Name);
+        bw.Write(p.Semantic ?? "");
+        WriteAnnotations(bw, p.Annotations);
+        bw.Write(p.RowCount);
+        bw.Write(p.ColumnCount);
+        WriteParameterList(bw, p.Elements);
+        WriteParameterList(bw, p.Members);
+
+        // MonoGame reads a raw default-value blob for value-typed params
+        // (Scalar/Vector/Matrix) that are neither structs nor arrays:
+        // rows*cols*4 bytes, NO length prefix — so for an ARRAY the parent
+        // carries no data and each element leaf carries its own blob (exactly
+        // mgfxc: GetParameterFromSymbol gives each element rows*cols*4 zero
+        // bytes). We emit zeros — the runtime sets values by name.
+        bool isValueType = p.Class <= 2; // Scalar=0, Vector=1, Matrix=2
+        if (isValueType && p.Members.Count == 0 && p.Elements.Count == 0)
+        {
+            int dataLen = p.RowCount * p.ColumnCount * 4;
+            for (int b = 0; b < dataLen; b++)
+                bw.Write((byte)0);
         }
     }
 
@@ -391,10 +406,4 @@ public sealed class MgfxWriter
         bw.Write(annotations.Count);
     }
 
-    private static void WriteInt32List(BinaryWriter bw, IReadOnlyList<int> list)
-    {
-        bw.Write(list.Count);
-        foreach (var v in list)
-            bw.Write(v);
-    }
 }

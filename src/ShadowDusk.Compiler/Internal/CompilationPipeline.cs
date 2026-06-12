@@ -195,9 +195,11 @@ internal sealed class CompilationPipeline
         var shaderSamplers      = new Dictionary<int, IReadOnlyList<SamplerReflection>>();
         var shaderCbufferNames  = new Dictionary<int, IReadOnlyList<string>>();
 
-        // cbuffer name -> which stages bind it. Drives the GL cbuffer name
-        // (vs_uniforms_vec4 for a VS-bound cbuffer, ps_uniforms_vec4 otherwise).
-        var cbufferStages       = new Dictionary<string, (bool Vs, bool Ps)>(StringComparer.Ordinal);
+        // Per-shader (by blob index) GL uniform register layout returned by the
+        // MonoGameGlslRewriter — the allocation the emitted GLSL actually indexes.
+        // The GL .mgfx cbuffer records are built from THIS (one record per shader,
+        // mgfxc's model — Phase 43 F4/F5), never from cross-stage name dedup.
+        var shaderUniformLayouts = new Dictionary<int, IReadOnlyList<MonoGameGlslUniform>>();
 
         var compileOptions = new DxcCompileOptions
         {
@@ -243,6 +245,7 @@ internal sealed class CompilationPipeline
                     vsIndex     = compiledShaderBlobs.Count;
                     vsDxilBlob  = compileOutput.DxilBlob;
                     vsSpirvBlob = compileOutput.SpirvBlob;
+                    shaderUniformLayouts[vsIndex] = compileOutput.Uniforms;
                     compiledShaderBlobs.Add(new CompiledShaderBlob(compileOutput.Blob.Value, ShaderStage.Vertex)
                     {
                         // The GL attribute table maps each vs_v{k} → VertexElementUsage+index
@@ -272,6 +275,7 @@ internal sealed class CompilationPipeline
                     psIndex     = compiledShaderBlobs.Count;
                     psDxilBlob  = compileOutput.DxilBlob;
                     psSpirvBlob = compileOutput.SpirvBlob;
+                    shaderUniformLayouts[psIndex] = compileOutput.Uniforms;
                     compiledShaderBlobs.Add(new CompiledShaderBlob(compileOutput.Blob.Value, ShaderStage.Pixel));
                 }
 
@@ -343,16 +347,6 @@ internal sealed class CompilationPipeline
                     {
                         if (seenCbufferNames.Add(cb.Name))
                             allConstantBuffers.Add(cb);
-
-                        // Record which stage(s) bind this cbuffer so the GL writer can name
-                        // it ps_uniforms_vec4 / vs_uniforms_vec4 from reflection rather than
-                        // the PS-only assumption. blobIndex's stage is authoritative here.
-                        ShaderStage cbStage = compiledShaderBlobs[blobIndex].Stage;
-                        if (!cbufferStages.TryGetValue(cb.Name, out var stages))
-                            stages = (Vs: false, Ps: false);
-                        cbufferStages[cb.Name] = cbStage == ShaderStage.Vertex
-                            ? (Vs: true, stages.Ps)
-                            : (stages.Vs, Ps: true);
                     }
 
                     foreach (ParameterReflection param in reflected.Parameters)
@@ -394,7 +388,71 @@ internal sealed class CompilationPipeline
                 Passes: mgfxPasses));
         }
 
-        IReadOnlyList<ConstantBufferInfo>  constantBufferInfoList  = BuildConstantBufferInfoList(allConstantBuffers, allParameters, monoGameGl, directX, cbufferStages);
+        // GL (Phase 43 F4/F5): one cbuffer record PER SHADER, built from the uniform
+        // register layout the GLSL rewriter returned for that shader, deduplicated
+        // across shaders mgfxc-style (ConstantBufferData.SameAs). A cbuffer bound by
+        // BOTH stages therefore yields a vs_uniforms_vec4 record AND a
+        // ps_uniforms_vec4 record (the SkinnedEffect mgfxc golden carries several
+        // records with the SAME name — MonoGame binds each shader to its records by
+        // index, not by name). Multiple HLSL cbuffers in one stage are already merged
+        // into that shader's single register space by the rewriter (MojoShader's
+        // model: D3D9 has one float-constant file per stage).
+        IReadOnlyList<ConstantBufferInfo> constantBufferInfoList;
+        Dictionary<int, int>? glShaderCbRecord = null;
+        if (monoGameGl)
+        {
+            var records = new List<ConstantBufferInfo>();
+            glShaderCbRecord = new Dictionary<int, int>();
+            for (int i = 0; i < compiledShaderBlobs.Count; i++)
+            {
+                if (!shaderUniformLayouts.TryGetValue(i, out var layout) || layout.Count == 0)
+                    continue;
+
+                string cbName = compiledShaderBlobs[i].Stage == ShaderStage.Vertex
+                    ? "vs_uniforms_vec4"
+                    : "ps_uniforms_vec4";
+
+                var paramIndices = new List<int>(layout.Count);
+                var paramOffsets = new List<ushort>(layout.Count);
+                int sizeRegisters = 0;
+                foreach (MonoGameGlslUniform u in layout)
+                {
+                    sizeRegisters = Math.Max(sizeRegisters, u.BaseRegister + u.RegisterCount);
+                    int paramIndex = IndexOfParam(allParameters, u.Name);
+                    if (paramIndex < 0)
+                        return Fail(new ShaderError(
+                            File: sourceFileName,
+                            Line: 0,
+                            Column: 0,
+                            Code: "SD0012",
+                            Message: $"internal: GL uniform '{u.Name}' (shader #{i}) has no " +
+                                     "matching effect parameter — the GLSL uniform layout and " +
+                                     "the reflected parameter list diverged"));
+                    paramIndices.Add(paramIndex);
+                    paramOffsets.Add((ushort)(u.BaseRegister * 16));
+                }
+
+                var record = new ConstantBufferInfo(
+                    Name:             cbName,
+                    SizeInBytes:      sizeRegisters * 16,
+                    ParameterIndices: paramIndices,
+                    ParameterOffsets: paramOffsets);
+
+                int existing = records.FindIndex(r => SameCbufferRecord(r, record));
+                if (existing < 0)
+                {
+                    records.Add(record);
+                    existing = records.Count - 1;
+                }
+                glShaderCbRecord[i] = existing;
+            }
+            constantBufferInfoList = records;
+        }
+        else
+        {
+            constantBufferInfoList = BuildConstantBufferInfoList(allConstantBuffers, allParameters, directX);
+        }
+
         IReadOnlyList<EffectParameterInfo> effectParameterInfoList = BuildEffectParameterInfoList(allParameters);
 
         // Phase 43, F9: bake parsed sampler_state members (MinFilter/AddressU/…)
@@ -457,7 +515,14 @@ internal sealed class CompilationPipeline
             }
 
             var cbIndices = new List<int>();
-            if (shaderCbufferNames.TryGetValue(i, out var cbNames))
+            if (glShaderCbRecord is not null)
+            {
+                // GL: the shader's single merged {vs,ps}_uniforms_vec4 record
+                // (Phase 43 F4/F5) — by construction, never by reflection-name lookup.
+                if (glShaderCbRecord.TryGetValue(i, out int recordIndex))
+                    cbIndices.Add(recordIndex);
+            }
+            else if (shaderCbufferNames.TryGetValue(i, out var cbNames))
             {
                 foreach (string name in cbNames)
                 {
@@ -787,7 +852,7 @@ internal sealed class CompilationPipeline
         return Result<string, ShaderError>.Ok(declaredProfile);
     }
 
-    private static (Result<byte[], ShaderError> Blob, ReadOnlyMemory<byte> DxilBlob, ReadOnlyMemory<byte> SpirvBlob, IReadOnlyList<MgfxVertexAttributeInfo> Attributes)
+    private static (Result<byte[], ShaderError> Blob, ReadOnlyMemory<byte> DxilBlob, ReadOnlyMemory<byte> SpirvBlob, IReadOnlyList<MgfxVertexAttributeInfo> Attributes, IReadOnlyList<MonoGameGlslUniform> Uniforms)
         CompileEntryPoint(
             Lazy<IDxcShaderCompiler> dxcCompiler,
             IDxbcShaderCompiler dxbcCompiler,
@@ -802,6 +867,7 @@ internal sealed class CompilationPipeline
             CancellationToken ct)
     {
         IReadOnlyList<MgfxVertexAttributeInfo> noAttributes = Array.Empty<MgfxVertexAttributeInfo>();
+        IReadOnlyList<MonoGameGlslUniform>     noUniforms   = Array.Empty<MonoGameGlslUniform>();
 
         if (platform == PlatformTarget.DirectX)
         {
@@ -823,10 +889,10 @@ internal sealed class CompilationPipeline
 
             var dxbcResult = dxbcCompiler.Compile(dxbcRequest, ct);
             if (dxbcResult.IsFailure)
-                return (Result<byte[], ShaderError>.Fail(dxbcResult.Error), default, default, noAttributes);
+                return (Result<byte[], ShaderError>.Fail(dxbcResult.Error), default, default, noAttributes, noUniforms);
 
             ReadOnlyMemory<byte> dxbc = dxbcResult.Value.Bytes;
-            return (Result<byte[], ShaderError>.Ok(dxbc.ToArray()), dxbc, default, noAttributes);
+            return (Result<byte[], ShaderError>.Ok(dxbc.ToArray()), dxbc, default, noAttributes, noUniforms);
         }
 
         if (platform == PlatformTarget.OpenGL)
@@ -853,7 +919,7 @@ internal sealed class CompilationPipeline
 
                 var dxilResult = dxcCompiler.Value.Compile(dxilRequest, ct);
                 if (dxilResult.IsFailure)
-                    return (Result<byte[], ShaderError>.Fail(dxilResult.Error), default, default, noAttributes);
+                    return (Result<byte[], ShaderError>.Fail(dxilResult.Error), default, default, noAttributes, noUniforms);
 
                 dxilBlob = dxilResult.Value.Bytes;
             }
@@ -871,12 +937,12 @@ internal sealed class CompilationPipeline
 
             var spirvResult = dxcCompiler.Value.Compile(spirvRequest, ct);
             if (spirvResult.IsFailure)
-                return (Result<byte[], ShaderError>.Fail(spirvResult.Error), default, default, noAttributes);
+                return (Result<byte[], ShaderError>.Fail(spirvResult.Error), default, default, noAttributes, noUniforms);
 
             // Transpile SPIR-V → GLSL.
             var transpileResult = glslTranspiler.Transpile(spirvResult.Value.Bytes, ct);
             if (transpileResult.IsFailure)
-                return (Result<byte[], ShaderError>.Fail(transpileResult.Error), default, default, noAttributes);
+                return (Result<byte[], ShaderError>.Fail(transpileResult.Error), default, default, noAttributes, noUniforms);
 
             // Rewrite SPIRV-Cross GLSL into MonoGame/MojoShader-compatible GLSL so it
             // links with MonoGame's GL runtime. Per-stage (Phase 28): the PIXEL stage
@@ -889,12 +955,18 @@ internal sealed class CompilationPipeline
             // surface that as a compile error rather than letting it crash.
             string glslText;
             IReadOnlyList<MgfxVertexAttributeInfo> attributes = noAttributes;
+            IReadOnlyList<MonoGameGlslUniform>     uniforms   = noUniforms;
             if (applyMonoGameGlsl)
             {
                 try
                 {
                     MonoGameGlslResult rewritten = MonoGameGlslRewriter.Rewrite(transpileResult.Value.Text, stage);
                     glslText = rewritten.Glsl;
+                    // The shader's uniform register layout — the pipeline builds the
+                    // per-shader {vs,ps}_uniforms_vec4 cbuffer record from THIS, so
+                    // the .mgfx offsets and the GLSL indices share one allocation
+                    // (Phase 43 F4/F5/F6).
+                    uniforms = rewritten.Uniforms;
                     if (stage == ShaderStage.Vertex && rewritten.Attributes.Count > 0)
                     {
                         // Map the rewriter's discovered attributes (vs_v{k} + usage/index)
@@ -918,7 +990,7 @@ internal sealed class CompilationPipeline
                         Line:    0,
                         Column:  0,
                         Code:    "SD0210",
-                        Message: ex.Message)), default, default, noAttributes);
+                        Message: ex.Message)), default, default, noAttributes, noUniforms);
                 }
             }
             else
@@ -931,7 +1003,8 @@ internal sealed class CompilationPipeline
                 Result<byte[], ShaderError>.Ok(glslBytes),
                 dxilBlob,
                 spirvResult.Value.Bytes,
-                attributes);
+                attributes,
+                uniforms);
         }
         else
         {
@@ -949,75 +1022,63 @@ internal sealed class CompilationPipeline
 
             var result = dxcCompiler.Value.Compile(request, ct);
             if (result.IsFailure)
-                return (Result<byte[], ShaderError>.Fail(result.Error), default, default, noAttributes);
+                return (Result<byte[], ShaderError>.Fail(result.Error), default, default, noAttributes, noUniforms);
 
             ReadOnlyMemory<byte> blob      = result.Value.Bytes;
             ReadOnlyMemory<byte> dxilBlob  = platform == PlatformTarget.DirectX ? blob : default;
             ReadOnlyMemory<byte> spirvBlob = platform != PlatformTarget.DirectX ? blob : default;
 
-            return (Result<byte[], ShaderError>.Ok(blob.ToArray()), dxilBlob, spirvBlob, noAttributes);
+            return (Result<byte[], ShaderError>.Ok(blob.ToArray()), dxilBlob, spirvBlob, noAttributes, noUniforms);
         }
     }
 
+    /// <summary>
+    /// mgfxc's <c>ConstantBufferData.SameAs</c> equivalence for the GL per-shader
+    /// record dedup: same name, same size, and the same parameter index/offset
+    /// sequences. (mgfxc compares the parameter shapes; here the indices point into
+    /// the single global parameter list, so index equality subsumes shape equality.)
+    /// </summary>
+    private static bool SameCbufferRecord(ConstantBufferInfo a, ConstantBufferInfo b) =>
+        a.Name == b.Name &&
+        a.SizeInBytes == b.SizeInBytes &&
+        a.ParameterIndices.SequenceEqual(b.ParameterIndices) &&
+        a.ParameterOffsets.SequenceEqual(b.ParameterOffsets);
+
+    // NON-GL targets only (DirectX / Vulkan): one record per reflected cbuffer with
+    // the HLSL byte packing. The GL records are built per shader from the GLSL
+    // rewriter's register layout in Run() (Phase 43 F4/F5).
     private static IReadOnlyList<ConstantBufferInfo> BuildConstantBufferInfoList(
         IReadOnlyList<ConstantBufferReflection> constantBuffers,
         IReadOnlyList<ParameterReflection> parameters,
-        bool monoGameGl,
-        bool directX,
-        IReadOnlyDictionary<string, (bool Vs, bool Ps)> cbufferStages)
+        bool directX)
     {
-        // For MonoGame's GL runtime, free uniforms bind as a single vec4[] array
-        // named after the cbuffer (ps_uniforms_vec4) via glUniform4fv. Each free
-        // param is register-aligned (16 bytes), occupying ceil(size/16) registers —
-        // scalars padded to a full register, a float4x4 spanning four — matching
-        // mgfxc's MojoShader layout and the ps_uniforms_vec4[reg] indexing the GLSL
-        // rewriter emits. Otherwise (DirectX, or VS-driven GL) keep HLSL packing.
-        bool gl = monoGameGl;
         var result = new List<ConstantBufferInfo>(constantBuffers.Count);
 
         foreach (ConstantBufferReflection cb in constantBuffers)
         {
             var paramIndices = new List<int>();
             var paramOffsets = new List<ushort>();
-            int glByteOffset = 0;
 
             foreach (VariableReflection variable in cb.Variables)
             {
-                int thisOffset = glByteOffset;
-                glByteOffset += Math.Max(1, (variable.SizeBytes + 15) / 16) * 16;
-
                 for (int idx = 0; idx < parameters.Count; idx++)
                 {
                     if (parameters[idx].Name == variable.Name)
                     {
                         paramIndices.Add(idx);
-                        paramOffsets.Add(gl ? (ushort)thisOffset : (ushort)variable.StartOffset);
+                        paramOffsets.Add((ushort)variable.StartOffset);
                         break;
                     }
                 }
             }
 
             // DX cbuffer record carries an empty name (MonoGame's DX11 runtime binds
-            // the cbuffer by slot, not by name); GL names it after the binding stage —
-            // vs_uniforms_vec4 for a VS-bound cbuffer, ps_uniforms_vec4 otherwise (the
-            // name MonoGame's GL runtime keys glUniform4fv on). A cbuffer bound by BOTH
-            // stages is named ps_uniforms_vec4 (the pixel stage's view), matching the
-            // PS-only corpus's prior behaviour. Attribution comes from reflection
-            // (cbufferStages), not the old PS-only assumption.
-            string cbName;
-            if (gl)
-            {
-                bool vsBound = cbufferStages.TryGetValue(cb.Name, out var stages) && stages.Vs && !stages.Ps;
-                cbName = vsBound ? "vs_uniforms_vec4" : "ps_uniforms_vec4";
-            }
-            else
-            {
-                cbName = directX ? string.Empty : cb.Name;
-            }
+            // the cbuffer by slot, not by name).
+            string cbName = directX ? string.Empty : cb.Name;
 
             result.Add(new ConstantBufferInfo(
                 Name:             cbName,
-                SizeInBytes:      gl ? glByteOffset : cb.SizeBytes,
+                SizeInBytes:      cb.SizeBytes,
                 ParameterIndices: paramIndices,
                 ParameterOffsets: paramOffsets));
         }
@@ -1072,11 +1133,43 @@ internal sealed class CompilationPipeline
                 Annotations: annotations,
                 RowCount: (byte)param.Rows,
                 ColumnCount: (byte)param.Columns,
-                MemberIndices: Array.Empty<int>(),
-                ElementIndices: Array.Empty<int>()));
+                Members: Array.Empty<EffectParameterInfo>(),
+                Elements: BuildElementParameters(param)));
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Phase 43 F6: the element sub-parameter records for an ARRAY parameter, on
+    /// EVERY target. MonoGame's <c>Effect.ReadParameters</c> reads array elements as
+    /// a recursive parameter collection, and <c>EffectParameter.SetValue</c> for an
+    /// array (or <c>Elements[i]</c> indexing) requires them — with <c>Elements</c>
+    /// empty, an array parameter was un-settable beyond element 0 even on DirectX.
+    /// Shape mirrors mgfxc (<c>ConstantBufferData.GetParameterFromSymbol</c>): each
+    /// element carries an EMPTY name/semantic, the parent's class/type/rows/columns,
+    /// no annotations, and a zero default-value blob (written by the leaf data rule).
+    /// </summary>
+    private static IReadOnlyList<EffectParameterInfo> BuildElementParameters(ParameterReflection param)
+    {
+        if (param.Elements <= 1)
+            return Array.Empty<EffectParameterInfo>();
+
+        var elements = new List<EffectParameterInfo>(param.Elements);
+        for (int i = 0; i < param.Elements; i++)
+        {
+            elements.Add(new EffectParameterInfo(
+                Class: (byte)param.Class,
+                Type: (byte)param.Type,
+                Name: "",
+                Semantic: "",
+                Annotations: Array.Empty<AnnotationInfo>(),
+                RowCount: (byte)param.Rows,
+                ColumnCount: (byte)param.Columns,
+                Members: Array.Empty<EffectParameterInfo>(),
+                Elements: Array.Empty<EffectParameterInfo>()));
+        }
+        return elements;
     }
 
     private static AnnotationInfo MapAnnotation(AnnotationReflection annotation)
