@@ -63,6 +63,15 @@ samples/ShaderFiddle.Web/wwwroot/slang/slang-wasm.wasm
 # (dxc/dxcompiler.js, ~54 KB) ARE committed here too.
 src/ShadowDusk.Wasm/wwwroot/dxc/dxcompiler.wasm
 
+# The FAITHFUL pinned vkd3d-shader->WASM module (Phase 4.1) — the PRODUCT in-browser
+# HLSL->DXBC (DirectX) / HLSL->D3D9-bytecode (FNA fx_2_0) backend. BOTH files are
+# restored (release tag native-vkd3d-wasm-1.17 via tools/restore.*, or copied from a
+# local .wasm-build/vkd3d-wasm-out/ build) — unlike dxc/, the emscripten loader .js is
+# part of the hosted artifact, not committed. The small faithful shim
+# (src/ShadowDusk.Wasm/wwwroot/shadowdusk-vkd3d.js) and vkd3d/RESTORE.md ARE committed.
+src/ShadowDusk.Wasm/wwwroot/vkd3d/vkd3d-shader.js
+src/ShadowDusk.Wasm/wwwroot/vkd3d/vkd3d-shader.wasm
+
 # MGCB compiled content output (XNB wrappers — not the raw .mgfx golden files)
 *.xnb
 *.mgcb.log

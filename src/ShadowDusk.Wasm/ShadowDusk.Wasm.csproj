@@ -41,4 +41,22 @@
     <Error Condition="!Exists('$(MSBuildProjectDirectory)/wwwroot/dxc/dxcompiler.wasm')"
            Text="ShadowDusk.Wasm: wwwroot/dxc/dxcompiler.wasm is missing. It is gitignored and must be restored before build/pack. Run tools/restore.ps1 (or copy .wasm-build/dxc-wasm-out/dxcompiler.wasm into wwwroot/dxc/). See wwwroot/dxc/RESTORE.md." />
   </Target>
+
+  <!--
+    The faithful vkd3d-shader->WASM module (vkd3d/vkd3d-shader.{js,wasm}, Phase 4.1 —
+    the browser DirectX-DXBC + FNA-fx_2_0 backend) is gitignored and restored into
+    wwwroot/vkd3d/ by tools/restore.* (Restore-Vkd3dWasm, release tag
+    native-vkd3d-wasm-1.17; see wwwroot/vkd3d/RESTORE.md). When present, the Razor SDK
+    packs it automatically as a static web asset alongside the dxc/spirv-cross modules
+    (zero extra wiring). While the first hosted build is PENDING this target only
+    NOTICES the absence (build/pack stay green; browser DirectX/FNA fail loudly with
+    SD1902 at runtime). Once the hosted artifact lands and the restore pins are real,
+    upgrade this Message to an Error exactly like VerifyDxcWasmPresent above, so a
+    packed .nupkg can never silently ship without the vkd3d wasm again.
+  -->
+  <Target Name="NoticeVkd3dWasmMissing" BeforeTargets="ResolveStaticWebAssetsInputs;BeforeBuild;Pack"
+          Condition="!Exists('$(MSBuildProjectDirectory)/wwwroot/vkd3d/vkd3d-shader.wasm')">
+    <Message Importance="high"
+             Text="ShadowDusk.Wasm: NOTICE — wwwroot/vkd3d/vkd3d-shader.{js,wasm} not restored (hosted build pending, tag native-vkd3d-wasm-1.17). The package will serve OpenGL only; browser DirectX/FNA compiles fail with SD1902 until tools/restore.* places the module. See wwwroot/vkd3d/RESTORE.md." />
+  </Target>
 </Project>

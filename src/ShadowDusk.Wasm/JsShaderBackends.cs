@@ -176,6 +176,48 @@ internal static partial class DxcInterop
 }
 
 /// <summary>
+/// <c>[JSImport]</c> bindings into the faithful vkd3d-shader JavaScript module
+/// (Phase 4.1). The module (<c>shadowdusk-vkd3d</c>, the pinned vkd3d 1.17 compiled to
+/// WASM) is self-registered by <see cref="WasmModuleRegistration"/> from the package's
+/// own <c>_content/ShadowDusk.Wasm/</c> static web assets — the consumer wires nothing.
+/// Like the DXC module it loads LAZILY: registration evaluates only the tiny committed
+/// shim (<c>shadowdusk-vkd3d.js</c>); the restored <c>vkd3d/vkd3d-shader.{js,wasm}</c>
+/// download + instantiate on the first <see cref="EnsureReadyAsync"/>.
+/// </summary>
+[SupportedOSPlatform("browser")]
+internal static partial class Vkd3dInterop
+{
+    /// <summary>
+    /// Lazily loads and initializes the faithful vkd3d-shader→WASM backend. The host
+    /// must <c>await</c> this once before the first <see cref="Compile"/>; idempotent,
+    /// resolves immediately once loaded, rejects (→ <see cref="JSException"/>, mapped to
+    /// SD1902) when the module is not loadable (e.g. not restored yet).
+    /// JS contract: <c>ensureReady(): Promise&lt;void&gt;</c>.
+    /// </summary>
+    [JSImport("ensureReady", "shadowdusk-vkd3d")]
+    [return: JSMarshalAs<JSType.Promise<JSType.Void>>]
+    public static partial Task EnsureReadyAsync();
+
+    /// <summary>
+    /// Compiles HLSL (UTF-8 bytes, NOT null-terminated) to D3D bytecode via the
+    /// <c>sdw_vkd3d_compile</c> C ABI. <paramref name="targetType"/> is the raw vkd3d
+    /// target type (4 = D3D_BYTECODE for SM1–3/FNA, 5 = DXBC_TPF for SM4/5/DX11 —
+    /// <c>Vkd3dCompileContract</c>). JS contract:
+    /// <c>compile(source: Uint8Array, entryPoint: string, profile: string,
+    /// sourceName: string, targetType: number): Uint8Array</c>; on failure the JS side
+    /// throws an <c>Error</c> whose message carries vkd3d's VERBATIM diagnostics
+    /// (surfaced here as a <see cref="JSException"/>).
+    /// </summary>
+    [JSImport("compile", "shadowdusk-vkd3d")]
+    public static partial byte[] Compile(
+        byte[] sourceUtf8,
+        string entryPoint,
+        string profile,
+        string sourceName,
+        [JSMarshalAs<JSType.Number>] int targetType);
+}
+
+/// <summary>
 /// <c>[JSImport]</c> bindings into the SPIRV-Cross JavaScript module. The module
 /// (<c>shadowdusk-spirv-cross</c>) is self-registered by
 /// <see cref="WasmModuleRegistration"/> from the package's own

@@ -41,19 +41,15 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
     {
         Vkd3dLoader.Register();
 
-        string profile = request.ProfileOverride ?? request.Stage switch
-        {
-            ShaderStage.Vertex => "vs_5_0",
-            ShaderStage.Pixel  => "ps_5_0",
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(request), $"Unsupported shader stage for DXBC: {request.Stage}"),
-        };
+        // Request→ABI mapping is the SHARED Vkd3dCompileContract (Phase 4.1): the same
+        // profile defaults and SM ≤ 3 → D3D_BYTECODE routing the WASM backend uses, so
+        // the two hosts can never drift apart.
+        string profile = Vkd3dCompileContract.ResolveProfile(request);
 
         // SM ≤ 3 profiles compile to the bare D3D9 token stream (the FNA fx_2_0 path);
         // SM4/5 profiles keep the DXBC_TPF container MonoGame's DX11 runtime loads.
-        bool d3d9 = IsSm3OrBelow(profile);
-        Vkd3dTargetType targetType = d3d9 ? Vkd3dTargetType.D3dBytecode : Vkd3dTargetType.DxbcTpf;
-        BlobKind blobKind          = d3d9 ? BlobKind.D3dBytecode        : BlobKind.Dxbc;
+        var targetType    = (Vkd3dTargetType)Vkd3dCompileContract.ResolveTargetType(profile);
+        BlobKind blobKind = Vkd3dCompileContract.ResolveBlobKind(profile);
 
         // Marshal source / strings as UTF-8. vkd3d_shader_code carries raw bytes +
         // size (NOT null-terminated for source); the char* strings are C strings.
@@ -129,22 +125,13 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
             {
                 if (rc != 0 || output.Code == IntPtr.Zero || output.Size == 0)
                 {
-                    IReadOnlyList<ShaderError> errors =
-                        D3DCompilerDiagnosticReformatter.Reformat(messages, request.SourceFileName);
-
-                    ShaderError primary = errors.Count > 0
-                        ? errors[0]
-                        : new ShaderError(
-                            File:    request.SourceFileName,
-                            Line:    0,
-                            Column:  0,
-                            Code:    "SD0212",
-                            Message: string.IsNullOrWhiteSpace(messages)
-                                ? $"vkd3d-shader DXBC compilation failed (rc={rc}) with no diagnostics"
-                                : messages.Trim(),
-                            RawDiagnostics: string.IsNullOrWhiteSpace(messages) ? null : messages);
-
-                    return Result<PlatformBlob, ShaderError>.Fail(primary);
+                    // Shared error mapping (Vkd3dCompileContract): verbatim diagnostics
+                    // first, SD0212 fallback — identical on desktop and WASM.
+                    return Result<PlatformBlob, ShaderError>.Fail(
+                        Vkd3dCompileContract.MapCompileFailure(
+                            messages,
+                            request.SourceFileName,
+                            $"vkd3d-shader DXBC compilation failed (rc={rc}) with no diagnostics"));
                 }
 
                 var dxbc = new byte[checked((int)output.Size)];
@@ -165,18 +152,6 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
             FreeCString(profilePtr);
             FreeCString(sourceNamePtr);
         }
-    }
-
-    // Profile strings look like "vs_3_0" / "ps_2_b" / "vs_5_0": the digit after the first
-    // underscore is the shader-model major version. SM ≤ 3 selects the D3D9 token-stream
-    // target; anything unparseable falls through to DXBC_TPF (vkd3d then rejects a bad
-    // profile with its own diagnostic — fail loudly, constraint 5).
-    private static bool IsSm3OrBelow(string profile)
-    {
-        int underscore = profile.IndexOf('_');
-        return underscore >= 0
-            && underscore + 1 < profile.Length
-            && profile[underscore + 1] is >= '1' and <= '3';
     }
 
     private static string ReadAndFreeMessages(IntPtr messagesPtr)

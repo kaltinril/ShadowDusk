@@ -4,6 +4,7 @@ using ShadowDusk.Compiler.Internal;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Reflection;
 using ShadowDusk.GLSL;
+using ShadowDusk.HLSL.D3DCompiler;
 using ShadowDusk.HLSL.Dxc;
 
 namespace ShadowDusk.Compiler;
@@ -26,6 +27,7 @@ public sealed class EffectCompiler : IShaderCompiler
     private readonly Func<IDxcShaderCompiler>? _dxcCompilerFactory;
     private readonly Func<ISpirvToGlslTranspiler>? _glslTranspilerFactory;
     private readonly Func<IShaderReflector>? _reflectorFactory;
+    private readonly Func<IDxbcShaderCompiler>? _dxbcCompilerFactory;
 
     /// <summary>
     /// Creates an <see cref="EffectCompiler"/>. Pass no arguments for the standard,
@@ -45,10 +47,19 @@ public sealed class EffectCompiler : IShaderCompiler
     /// reflects from the native DXIL oracle; the WASM host injects the pure-managed
     /// <c>SpirvReflector</c> instead.
     /// </param>
+    /// <param name="dxbcCompilerFactory">
+    /// Optional factory for the HLSL → DXBC / D3D-bytecode backend (the DirectX and FNA
+    /// targets). When <see langword="null"/> (the desktop default) the backend is selected
+    /// from <see cref="CompilerOptions.DxbcBackend"/> for DirectX and is always the
+    /// native vkd3d-shader backend for FNA — byte-for-byte the pre-existing behavior.
+    /// The WASM host injects its browser vkd3d backend (<c>WasmVkd3dShaderCompiler</c>)
+    /// here — the SAME pinned vkd3d 1.17, never a substitute compiler.
+    /// </param>
     public EffectCompiler(
         Func<IDxcShaderCompiler>? dxcCompilerFactory = null,
         Func<ISpirvToGlslTranspiler>? glslTranspilerFactory = null,
-        Func<IShaderReflector>? reflectorFactory = null)
+        Func<IShaderReflector>? reflectorFactory = null,
+        Func<IDxbcShaderCompiler>? dxbcCompilerFactory = null)
     {
         _dxcCompilerFactory    = dxcCompilerFactory;
         _glslTranspilerFactory = glslTranspilerFactory;
@@ -60,6 +71,7 @@ public sealed class EffectCompiler : IShaderCompiler
         // as its DXIL baseline arm, so defaulting it to SpirvReflector would
         // silently make that keystone DXIL≡SPIR-V test compare SPIR-V to itself.
         _reflectorFactory      = reflectorFactory;
+        _dxbcCompilerFactory   = dxbcCompilerFactory;
     }
 
     /// <inheritdoc/>
@@ -68,7 +80,8 @@ public sealed class EffectCompiler : IShaderCompiler
         CompilerOptions options,
         CancellationToken cancellationToken = default)
     {
-        var pipeline = new CompilationPipeline(_dxcCompilerFactory, _glslTranspilerFactory, _reflectorFactory);
+        var pipeline = new CompilationPipeline(
+            _dxcCompilerFactory, _glslTranspilerFactory, _reflectorFactory, _dxbcCompilerFactory);
         return pipeline.RunAsync(hlslSource, options, cancellationToken);
     }
 }

@@ -288,6 +288,88 @@ package wwwroot copy). The full recipe + a build report are in .wasm-build/DXC-W
 
 Restore-DxcWasm
 
+# ---------------------------------------------------------------------------
+# vkd3d-shader -> WASM (faithful in-browser DXBC + FNA backend, Phase 4.1)
+# ---------------------------------------------------------------------------
+# The faithful in-browser DirectX (SM4/5 DXBC) and FNA (SM1-3 fx_2_0) backend is the
+# SAME pinned vkd3d-shader 1.17 the desktop pipeline P/Invokes (tag native-vkd3d-1.17
+# above), compiled to WebAssembly (emscripten, MODULARIZE + EXPORT_ES6) — NO
+# substitute compiler; output is gated byte-identical to the desktop backend
+# (tests/ShadowDusk.BrowserTests/node-test-vkd3d-wasm.mjs). vkd3d-shader.{js,wasm}
+# are RESTORED artifacts placed into the ShadowDusk.Wasm package wwwroot/vkd3d/ so
+# they ship as Blazor static web assets (served at _content/ShadowDusk.Wasm/vkd3d/).
+# Mirrors Restore-DxcWasm (local-build copy) + Restore-DxcMacos (pinned download with
+# the PENDING-FIRST-HOSTED-BUILD placeholder pattern). Runs unconditionally.
+#
+# Pins: PLACEHOLDERS until the first hosted build lands on the fixed tag below (the
+# build pipeline is owned by the Phase 4.1 build-agent half). While placeholders, the
+# download is skipped with a notice and browser DirectX/FNA fail loudly with SD1902.
+$Vkd3dWasmReleaseUrl = 'https://github.com/kaltinril/ShadowDusk/releases/download/native-vkd3d-wasm-1.17'
+$Vkd3dWasmJsSha256   = 'PENDING-FIRST-HOSTED-BUILD'
+$Vkd3dWasmWasmSha256 = 'PENDING-FIRST-HOSTED-BUILD'
+
+function Restore-Vkd3dWasmFile([string]$Asset, [string]$Sha256) {
+    $PkgVkd3dDir = Join-Path $RepoRoot 'src' 'ShadowDusk.Wasm' 'wwwroot' 'vkd3d'
+    $Dest = Join-Path $PkgVkd3dDir $Asset
+
+    # A locally built module takes precedence over the (possibly placeholder-pinned)
+    # download — the Restore-DxcWasm pattern for developers iterating on the build.
+    $LocalBuild = Join-Path $RepoRoot '.wasm-build' 'vkd3d-wasm-out' $Asset
+    if (Test-Path $LocalBuild) {
+        if (-not (Test-Path $Dest) -or
+            ((Get-Item $LocalBuild).Length -ne (Get-Item $Dest).Length)) {
+            EnsureDir $PkgVkd3dDir
+            Copy-Item -Force $LocalBuild $Dest
+            Write-Host "restore.ps1: copied $Asset (.wasm-build local build) -> src/ShadowDusk.Wasm/wwwroot/vkd3d/"
+        } else {
+            Write-Host "restore.ps1: vkd3d-shader WASM ($Asset) present (local build) — OK"
+        }
+        return
+    }
+
+    if ($Sha256 -eq 'PENDING-FIRST-HOSTED-BUILD') {
+        Write-Host ("restore.ps1: NOTICE — vkd3d-shader WASM ($Asset) pin is a placeholder " +
+            "(no hosted build on $Vkd3dWasmReleaseUrl yet); skipping. Browser DirectX/FNA " +
+            "export stays unavailable (SD1902) until the Phase 4.1 hosted artifacts land.")
+        return   # non-fatal by design while the pins are placeholders
+    }
+
+    EnsureDir $PkgVkd3dDir
+    if (Test-Path $Dest) {
+        $have = (Get-FileHash -Algorithm SHA256 -Path $Dest).Hash.ToLowerInvariant()
+        if ($have -eq $Sha256) {
+            Write-Host "restore.ps1: vkd3d-shader WASM ($Asset) present, hash OK"
+            return
+        }
+        Write-Host "restore.ps1: vkd3d-shader WASM ($Asset) hash mismatch — re-downloading (had $have)"
+    }
+
+    $tmp = "$Dest.tmp"
+    try {
+        Invoke-WebRequest -Uri "$Vkd3dWasmReleaseUrl/$Asset" -OutFile $tmp -UseBasicParsing
+    } catch {
+        Write-Warning ("restore.ps1: could not download $Asset from $Vkd3dWasmReleaseUrl (offline?); " +
+            "browser DirectX/FNA export will fail SD1902 / the vkd3d-wasm gate will skip. $_")
+        if (Test-Path $tmp) { Remove-Item -Force $tmp }
+        return   # non-fatal by design
+    }
+    $got = (Get-FileHash -Algorithm SHA256 -Path $tmp).Hash.ToLowerInvariant()
+    if ($got -ne $Sha256) {
+        Write-Warning "restore.ps1: $Asset SHA-256 mismatch (expected $Sha256, got $got); discarding."
+        Remove-Item -Force $tmp
+        return   # non-fatal, but the file is NOT placed
+    }
+    Move-Item -Force $tmp $Dest
+    Write-Host "restore.ps1: vkd3d-shader WASM ($Asset) downloaded, hash OK"
+}
+
+function Restore-Vkd3dWasm {
+    Restore-Vkd3dWasmFile 'vkd3d-shader.js'   $Vkd3dWasmJsSha256
+    Restore-Vkd3dWasmFile 'vkd3d-shader.wasm' $Vkd3dWasmWasmSha256
+}
+
+Restore-Vkd3dWasm
+
 if (-not $Force -and (Test-Path $WinDll)) {
     Write-Host "spirv-cross-c-shared.dll already present — skipping restore."
     exit 0
