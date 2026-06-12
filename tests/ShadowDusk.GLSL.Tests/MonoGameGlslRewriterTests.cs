@@ -900,14 +900,17 @@ void main()
     }
 
     [Theory]
-    [InlineData("textureLod",  "2.0")]   // from tex2Dlod / SampleLevel
-    [InlineData("textureGrad", "vec2(0.01, 0.0), vec2(0.0, 0.01)")] // from tex2Dgrad / SampleGrad
-    public void LodGradSampling_KeptInGenericForm_NotDownRewritten(string builtin, string extraArgs)
+    [InlineData("textureLod",  "2.0",                               "texture2DLod")]   // from tex2Dlod / SampleLevel
+    [InlineData("textureGrad", "vec2(0.01, 0.0), vec2(0.0, 0.01)", "texture2DGrad")]  // from tex2Dgrad / SampleGrad
+    public void LodGradSampling_RewrittenToLegacyName_WithGuardedHeader(string builtin, string extraArgs, string legacy)
     {
-        // Phase 34: the generic LOD/grad form is valid on Desktop + KNI HiDef (core ES
-        // 3.00) and is what the rewriter now KEEPS — it must NOT down-rewrite to the
-        // legacy texture2DLod/texture2DGrad (which KNI HiDef does not convert), and must
-        // NOT fail loudly any more.
+        // Phase 43 F7: the generic textureLod/textureGrad forms only exist from GLSL
+        // 1.30 / ES 3.00 — Mesa's strict front-end rejects them in the versionless
+        // legacy dialect ("no function with name 'textureLod'", the confirmed Linux
+        // DesktopGL load failure). The faithful MojoShader form is the
+        // dimension-specific legacy name + the guarded extension header; the header's
+        // __VERSION__ >= 300 branch maps the legacy name back for KNI HiDef, so the
+        // one-artifact-two-profiles promise (Phase 33) holds.
         string src = $$"""
 #version 140
 
@@ -922,10 +925,81 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().Contain($"{builtin}(ps_s0,",
-            "the generic LOD/grad builtin is the single-blob-correct form (desktop + HiDef)");
-        result.Glsl.Should().NotContain("texture2DLod");
-        result.Glsl.Should().NotContain("texture2DGrad");
+        result.Glsl.Should().Contain($"{legacy}(ps_s0,",
+            "the dimension-specific legacy spelling is the MojoShader-faithful, Mesa-valid form");
+
+        // No generic CALL survives (the header's `#define texture2DLod textureLod`
+        // mention is fine — it is not a call site).
+        System.Text.RegularExpressions.Regex.IsMatch(result.Glsl, $@"\b{builtin}\s*\(")
+            .Should().BeFalse($"no generic {builtin}( call site may survive in the body");
+
+        // The guarded extension header (MojoShader prepend_glsl_texlod_extensions +
+        // its GLSLES3 mapping): graceful degrade, never a compile failure.
+        result.Glsl.Should().Contain("#if __VERSION__ >= 300");
+        result.Glsl.Should().Contain($"#define {legacy} {builtin}");
+        result.Glsl.Should().Contain("#elif defined(GL_ARB_shader_texture_lod)");
+        result.Glsl.Should().Contain("#extension GL_ARB_shader_texture_lod : enable");
+        result.Glsl.Should().Contain("#elif defined(GL_EXT_gpu_shader4)");
+        result.Glsl.Should().Contain("#define texture2DLod(a,b,c) texture2D(a,b)");
+    }
+
+    [Theory]
+    [InlineData("samplerCube", "vec3 in_var_TEXCOORD0",
+        "textureLod(_10, in_var_TEXCOORD0, 2.0)", "textureCubeLod(ps_s0,")]
+    [InlineData("sampler3D", "vec3 in_var_TEXCOORD0",
+        "textureLod(_10, in_var_TEXCOORD0, 1.0)", "texture3DLod(ps_s0,")]
+    public void LodSampling_NonTwoDSamplers_GetDimensionSpecificLodName(
+        string samplerType, string inDecl, string call, string expected)
+    {
+        // SPIRV-Cross emits the GENERIC textureLod for every dimension; the legacy
+        // name must follow the SAMPLER's dimension (MojoShader emit_GLSL_TEXLDL:
+        // texture2DLod / textureCubeLod / texture3DLod).
+        string src = $$"""
+#version 140
+
+uniform {{samplerType}} _10;
+in {{inDecl}};
+out vec4 out_var_SV_Target0;
+
+void main()
+{
+    out_var_SV_Target0 = {{call}};
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+        result.Glsl.Should().Contain(expected);
+    }
+
+    [Fact]
+    public void GradSampling_CubeSampler_FailsLoudly()
+    {
+        // No GLSL profile or extension defines a textureCubeGrad-style legacy name
+        // (MojoShader emits one anyway — GLSL that can never link). Fail loudly.
+        const string src = """
+#version 140
+
+uniform samplerCube _10;
+in vec3 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target0;
+
+void main()
+{
+    out_var_SV_Target0 = textureGrad(_10, in_var_TEXCOORD0, vec3(0.01), vec3(0.01));
+}
+""";
+        var act = () => MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+        act.Should().Throw<MonoGameGlslRewriteException>()
+            .WithMessage("*Gradient sampling*cube*");
+    }
+
+    [Fact]
+    public void PlainSampling_DoesNotEmitTexLodHeader()
+    {
+        // The guarded header is emitted ONLY when a LOD/grad/proj call was rewritten —
+        // the ordinary corpus output must stay byte-identical to the pre-F7 form.
+        var result = MonoGameGlslRewriter.Rewrite(ExampleA, ShaderStage.Pixel);
+        result.Glsl.Should().NotContain("GL_ARB_shader_texture_lod");
+        result.Glsl.Should().NotContain("__VERSION__");
     }
 
     // ---- Phase 33 → Phase 34: guards remain ONLY for kinds still unmodeled ----

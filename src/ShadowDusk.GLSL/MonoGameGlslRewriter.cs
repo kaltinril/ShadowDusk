@@ -176,9 +176,12 @@ public static class MonoGameGlslRewriter
         string regPrefix = isVertex ? "vs" : "ps";
 
         // Normalize Slang-emitted interface names to the DXC convention the rest of
-        // this rewriter is keyed to. No-op for DXC/FXC output. (Browser path uses
-        // Slang as the HLSL→SPIR-V frontend; SPIRV-Cross then names interface vars
-        // after Slang's field/entrypoint identifiers rather than HLSL semantics.)
+        // this rewriter is keyed to. Intended as a no-op for DXC output. NOTE: the
+        // browser path no longer uses Slang — it runs the same faithful pinned
+        // DXC→WASM frontend as desktop (see JsShaderBackends/DxcInterop), so this
+        // pre-pass is legacy. It is NOT removed here because its UBO-rename branch
+        // also (accidentally) fires on real multi-cbuffer DXC output — untangling
+        // that is Phase 43 F5 (the cbuffer-model wave), tracked there.
         glsl = NormalizeSlangNaming(glsl);
 
         // Unsupported-sampler guard (Phase 33 → narrowed in Phase 34). The rewriter
@@ -490,23 +493,95 @@ public static class MonoGameGlslRewriter
         // prior behaviour.
         body = Regex.Replace(body, @"\btexture\s*\(", "texture2D(");
 
-        // Rule 6b: LOD / projected / gradient sampling (Phase 34 — generic form kept).
+        // Rule 6b: LOD / gradient / projected sampling (Phase 43 F7 — dimension-
+        // specific legacy names + MojoShader's guarded extension header).
         //
-        // The LOD/grad/proj family is left in SPIRV-Cross's GENERIC spelling
-        // (`textureLod` / `textureGrad` / `textureProj`), NOT down-rewritten to the
-        // legacy `texture2DLod` etc. Rationale (verified, PHASE34-INVESTIGATION.md §6):
-        //   • The generic forms compile on desktop GL (legacy dialect) AND are core in
-        //     GLSL ES 3.00, so KNI's HiDef/WebGL2 converter passes them through untouched
-        //     (it only rewrites the texture2D/3D/Cube suffixes). The legacy
-        //     `texture2DLod` is NOT an ES-3.00 builtin and KNI does NOT convert it → it
-        //     would fail HiDef. So the generic form is the single-blob-correct choice.
-        //   • On KNI Reach (WebGL1) explicit-LOD/gradient in a fragment shader is only
-        //     available behind the optional GL_EXT_shader_texture_lod extension — a
-        //     genuine platform wall, documented (not compile-time detectable; we emit
-        //     ONE blob and cannot know the consumer's profile). This is the same honest-
-        //     limitation pattern as 3D textures on Reach.
-        // No compile-time guard fires here any longer: the generic LOD/grad/proj form
-        // is valid output on the targets that support it; the Reach wall is documented.
+        // Phase 34 left these in SPIRV-Cross's GENERIC spelling (`textureLod` /
+        // `textureGrad` / `textureProj`) on the rationale that lenient desktop drivers
+        // (NVIDIA) accept them in the legacy no-#version dialect. Mesa's strict GLSL
+        // front-end does NOT ("no function with name 'textureLod'", llvmpipe Mesa
+        // 22.3.6/25.2.8) — the generic forms only exist from GLSL 1.30 / ES 3.00, so
+        // every Linux DesktopGL Effect load failed. The faithful form is MojoShader's
+        // (profiles/mojoshader_profile_glsl.c, emit_GLSL_TEXLDL / emit_GLSL_TEXLDD):
+        // dimension-specific `texture2DLod` / `textureCubeLod` / `texture3DLod` /
+        // `texture2DGrad`, plus `prepend_glsl_texlod_extensions`'s guarded header
+        // (ARB_shader_texture_lod, else EXT_gpu_shader4, else degrade to a plain
+        // texture call — never a compile failure). For KNI HiDef/WebGL2 the header's
+        // leading `#if __VERSION__ >= 300` branch maps the legacy names back to the
+        // generic ES-3.00 builtins (MojoShader's own GLSLES3 preflight does exactly
+        // this: `#define texture2DLod textureLod` …), so the ONE emitted artifact
+        // still serves Reach AND HiDef (the Phase 33 promise).
+        bool needsTexLodHeader = false;
+        foreach (var sampler in samplers)
+        {
+            string samplerPattern = Regex.Escape(sampler.Name);
+
+            // textureLod(ps_sK, …) -> texture{2D,Cube,3D}Lod(ps_sK, …).
+            string lodBuiltin = sampler.Dimension switch
+            {
+                MonoGameSamplerDimension.TextureCube   => "textureCubeLod",
+                MonoGameSamplerDimension.TextureVolume => "texture3DLod",
+                _                                      => "texture2DLod",
+            };
+            var lodRegex = new Regex($@"\btextureLod\s*\(\s*{samplerPattern}\b");
+            if (lodRegex.IsMatch(body))
+            {
+                body = lodRegex.Replace(body, $"{lodBuiltin}({sampler.Name}");
+                needsTexLodHeader = true;
+            }
+
+            // textureGrad(ps_sK, …) -> texture2DGrad(ps_sK, …). Only the 2D form has
+            // a legacy spelling any GLSL profile defines (ARB names the new fragment
+            // built-ins texture2DGradARB etc. — the header maps it); MojoShader's own
+            // cube/3D grad output (`textureCubeGrad`) is a name NO GLSL or extension
+            // declares, so a cube/3D gradient sample fails loudly instead of shipping
+            // GLSL that can never link.
+            var gradRegex = new Regex($@"\btextureGrad\s*\(\s*{samplerPattern}\b");
+            if (gradRegex.IsMatch(body))
+            {
+                if (sampler.Dimension != MonoGameSamplerDimension.Texture2D)
+                {
+                    throw new MonoGameGlslRewriteException(
+                        $"Gradient sampling (SampleGrad/tex2Dgrad) on a " +
+                        $"{(sampler.Dimension == MonoGameSamplerDimension.TextureCube ? "cube" : "3D")} " +
+                        $"sampler has no legacy-GLSL spelling MonoGame's GL dialect can express " +
+                        $"(only texture2DGrad exists via GL_ARB_shader_texture_lod / " +
+                        $"GL_EXT_gpu_shader4). Use a 2D gradient sample, or an explicit-LOD " +
+                        $"sample (SampleLevel), which supports all dimensions.");
+                }
+                body = gradRegex.Replace(body, $"texture2DGrad({sampler.Name}");
+                needsTexLodHeader = true;
+            }
+
+            // textureProj(ps_sK, …) -> texture{2D,3D}Proj(ps_sK, …) (core GLSL 1.10;
+            // no cube proj exists in any GLSL). The header's ES-3.00 branch maps the
+            // legacy spelling back for KNI HiDef.
+            var projRegex = new Regex($@"\btextureProj\s*\(\s*{samplerPattern}\b");
+            if (projRegex.IsMatch(body))
+            {
+                if (sampler.Dimension == MonoGameSamplerDimension.TextureCube)
+                {
+                    throw new MonoGameGlslRewriteException(
+                        "Projected sampling on a cube sampler is not expressible in GLSL " +
+                        "(no textureCubeProj builtin exists in any profile).");
+                }
+                string projBuiltin = sampler.Dimension == MonoGameSamplerDimension.TextureVolume
+                    ? "texture3DProj" : "texture2DProj";
+                body = projRegex.Replace(body, $"{projBuiltin}({sampler.Name}");
+                needsTexLodHeader = true;
+            }
+        }
+
+        // Defensive: any remaining generic LOD/grad/proj call not bound to a modelled
+        // sampler (should not occur — every sampler decl is modelled or guarded) falls
+        // back to the 2D legacy form, mirroring the bare `texture(` fallback above.
+        if (Regex.IsMatch(body, @"\btexture(Lod|Grad|Proj)\s*\("))
+        {
+            body = Regex.Replace(body, @"\btextureLod\s*\(",  "texture2DLod(");
+            body = Regex.Replace(body, @"\btextureGrad\s*\(", "texture2DGrad(");
+            body = Regex.Replace(body, @"\btextureProj\s*\(", "texture2DProj(");
+            needsTexLodHeader = true;
+        }
 
         // Rule 8: lower roundEven()/round() to a WebGL1-valid expression.
         // SPIRV-Cross emits roundEven(x) (for HLSL `round`, which DXC maps to
@@ -532,9 +607,13 @@ public static class MonoGameGlslRewriter
         }
 
         // Trim leading blank lines from the body so the header sits at the top,
-        // preserving a single blank line separation.
+        // preserving a single blank line separation. The texlod extension header (when
+        // needed) sits between the precision header and the #define block — the same
+        // preflight position MojoShader gives prepend_glsl_texlod_extensions' output.
         var trimmedBody = body.TrimStart('\n');
-        var finalGlsl = PrecisionHeader + "\n" + defineBlock + trimmedBody;
+        var finalGlsl = PrecisionHeader
+            + (needsTexLodHeader ? TexLodExtensionHeader : "")
+            + "\n" + defineBlock + trimmedBody;
         if (!finalGlsl.EndsWith("\n"))
         {
             finalGlsl += "\n";
@@ -565,6 +644,56 @@ public static class MonoGameGlslRewriter
         "#ifdef GL_ES\n" +
         "precision highp float;\n" +
         "precision mediump int;\n" +
+        "#endif\n";
+
+    // Phase 43 F7 — the guarded extension header for explicit-LOD / gradient /
+    // projected sampling, prepended only when Rule 6b rewrote such a call. This is
+    // MojoShader's prepend_glsl_texlod_extensions block (mojoshader_profile_glsl.c)
+    // composed with its GLSLES3 preflight defines, so ONE artifact serves every
+    // profile (the Phase 33 one-artifact-two-profiles promise):
+    //
+    //   • `#if __VERSION__ >= 300` — KNI's HiDef/WebGL2 converter prepends
+    //     `#version 300 es`, making this branch active there (and ONLY there:
+    //     versionless desktop GLSL is __VERSION__ 110, WebGL1 is 100). It maps the
+    //     legacy names back to the generic core-ES-3.00 builtins, exactly
+    //     MojoShader's own GLSLES3 profile header (`#define texture2DLod textureLod`,
+    //     `#define texture2DGrad textureGrad`, `#define texture2DProj textureProj`…).
+    //   • `GL_ARB_shader_texture_lod` — makes the unsuffixed texture*Lod names valid
+    //     in fragment shaders and adds the Grad functions under ARB-suffixed names
+    //     (hence `#define texture2DGrad texture2DGradARB`). Mesa supports this
+    //     extension, which is what fixes the Linux/Mesa Effect-load failure.
+    //   • `GL_EXT_gpu_shader4` — same effect, unsuffixed names.
+    //   • `#else` — graceful degrade to a plain texture call (the mip the driver
+    //     picks), NEVER a compile failure; extended past MojoShader's pixel-only
+    //     texture2DLod fallback with cube/3D equivalents so no emitted name is ever
+    //     left undefined.
+    //
+    // Deviation from MojoShader (deliberate): the extension tests use
+    // `defined(GL_…)` instead of MojoShader's bare `#if GL_…` — GLSL ES 1.00 (§3.4,
+    // WebGL1/Reach) makes an UNDEFINED identifier in #if/#elif a compile ERROR
+    // (desktop GLSL defaults it to 0), so the bare form would turn the Reach
+    // degrade path into a compile failure. `defined()` is legal and equivalent
+    // everywhere (extension macros are defined to 1 when supported).
+    private const string TexLodExtensionHeader =
+        "#if __VERSION__ >= 300\n" +
+        "#define texture2DLod textureLod\n" +
+        "#define textureCubeLod textureLod\n" +
+        "#define texture3DLod textureLod\n" +
+        "#define texture2DGrad textureGrad\n" +
+        "#define texture2DProj textureProj\n" +
+        "#define texture3DProj textureProj\n" +
+        "#elif defined(GL_ARB_shader_texture_lod)\n" +
+        "#extension GL_ARB_shader_texture_lod : enable\n" +
+        "#define texture2DGrad texture2DGradARB\n" +
+        "#define texture2DProjGrad texture2DProjARB\n" +
+        "#elif defined(GL_EXT_gpu_shader4)\n" +
+        "#extension GL_EXT_gpu_shader4 : enable\n" +
+        "#else\n" +
+        "#define texture2DGrad(a,b,c,d) texture2D(a,b)\n" +
+        "#define texture2DProjGrad(a,b,c,d) texture2DProj(a,b)\n" +
+        "#define texture2DLod(a,b,c) texture2D(a,b)\n" +
+        "#define textureCubeLod(a,b,c) textureCube(a,b)\n" +
+        "#define texture3DLod(a,b,c) texture3D(a,b)\n" +
         "#endif\n";
 
     // The SPIRV-Cross depth-convention fixup line (FixupDepthConvention option), used

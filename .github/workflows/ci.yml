@@ -182,14 +182,18 @@ jobs:
             ls -la "$so"; file "$so" || true; ldd "$so" || true
           fi
 
-      # Phase34LodGradRenderTests are additionally excluded on Linux — a DOCUMENTED
-      # STRUCTURAL exclusion, not a tolerance: Mesa's strict GLSL front-end rejects
-      # `textureLod`/`textureGrad` in the implicit-#version-110 legacy dialect these
-      # tests' shaders use ("0:13(17): error: no function with name 'textureLod'",
-      # observed on llvmpipe Mesa 22.3.6 + 25.2.8, 2026-06-11). The dev NVIDIA driver
-      # accepts those builtins in the legacy dialect (Windows real-GPU runs stay the
-      # coverage). Masking this with a tolerance would hide a real driver-strictness
-      # divergence — recorded in plan/PHASE-37 as a Phase 34 follow-up instead.
+      # Phase34LodGradRenderTests run on Linux again (Phase 43 F7 closed the watch
+      # item): the emitted form is now the legacy `texture2DLod`/`texture2DGrad` +
+      # MojoShader's guarded extension header, which Mesa's strict GLSL front-end
+      # accepts (the old generic `textureLod`/`textureGrad` spelling was rejected in
+      # the implicit-#version-110 legacy dialect — "no function with name
+      # 'textureLod'", llvmpipe Mesa 22.3.6 + 25.2.8, 2026-06-11; the PR #48
+      # exclusion masked exactly that). This lane IS the referee for the fix.
+      # (Phase34TextureBreadthTests stay excluded — that is the separate per-OS DXC
+      # COMPILE divergence for 3D/LOD/grad intrinsics, Phase 43 F11, not a Mesa
+      # dialect issue. Phase34LodGradRenderTests.SampleLevel also live-compiles its
+      # fixture; if the Linux DXC divergence bites it, that failure is F11 evidence
+      # and must be handled there, not re-masked here.)
       - name: dotnet test (unit, Linux — REAL GL render under xvfb/llvmpipe, REQUIRE_GL hard gate)
         if: runner.os == 'Linux'
         env:
@@ -199,7 +203,7 @@ jobs:
           SHADOWDUSK_REQUIRE_GL: "1"
         run: >
           xvfb-run -a dotnet test ShadowDusk.slnx --no-build -c Release
-          --filter "Category!=Integration&FullyQualifiedName!~Phase34TextureBreadthTests&FullyQualifiedName!~Phase34LodGradRenderTests"
+          --filter "Category!=Integration&FullyQualifiedName!~Phase34TextureBreadthTests"
           --logger "trx;LogFileName=unit-${{ matrix.os }}.trx"
           --results-directory TestResults/
 

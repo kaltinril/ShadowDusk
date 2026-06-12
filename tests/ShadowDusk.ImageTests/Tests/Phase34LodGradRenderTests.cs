@@ -18,12 +18,13 @@ namespace ShadowDusk.ImageTests.Tests;
 /// <para>The sibling <see cref="Phase34TextureBreadthTests"/> proves ShadowDusk's
 /// LOD/grad GLSL <i>compiles + links</i> in the real driver (rung 3). These tests
 /// go one rung further for the OpenGL backend: they <b>render</b> ShadowDusk's
-/// emitted <c>textureLod</c> / <c>textureGrad</c> fragment shader against a real
-/// mipmapped texture (mip 0 = White, mip 2 = Blue, mip 3 = Green) in the GL 3.3
-/// Compatibility context, read the pixels back, and assert the requested mip
-/// level / gradient is actually <b>honored</b> — i.e. an explicit
-/// <c>textureLod(…, 2.0)</c> returns mip 2 (Blue), and a large
-/// <c>textureGrad</c> derivative selects a high mip (not mip 0).</para>
+/// emitted <c>texture2DLod</c> / <c>texture2DGrad</c> fragment shader (the
+/// MojoShader-faithful legacy spelling + guarded extension header, Phase 43 F7)
+/// against a real mipmapped texture (mip 0 = White, mip 2 = Blue, mip 3 = Green)
+/// in the GL 3.3 Compatibility context, read the pixels back, and assert the
+/// requested mip level / gradient is actually <b>honored</b> — i.e. an explicit
+/// <c>texture2DLod(…, 2.0)</c> returns mip 2 (Blue), and a large
+/// <c>texture2DGrad</c> derivative selects a high mip (not mip 0).</para>
 ///
 /// <para>This closes the rung-3→rung-4 gap for LOD/grad <i>on the OpenGL emission
 /// itself</i>: it proves ShadowDusk emits a builtin whose explicit level/gradient
@@ -74,9 +75,13 @@ public sealed class Phase34LodGradRenderTests
         if (_fixture.IsSkipped) { _output.WriteLine(_fixture.SoftSkipLine); return; }
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
-        // ShadowDusk's actual emitted PS for SampleLevel(..., 2.0): textureLod(ps_s0, uv, 2.0).
+        // ShadowDusk's actual emitted PS for SampleLevel(..., 2.0). Phase 43 F7:
+        // texture2DLod(ps_s0, uv, 2.0) + the guarded extension header — the
+        // MojoShader-faithful form Mesa's strict front-end accepts (the generic
+        // textureLod does not exist in versionless legacy GLSL).
         string ps = await ExtractFragmentAsync("examples/ExSampleLevelHidef.fx", cts.Token);
-        ps.Should().Contain("textureLod(", "the SampleLevel fixture must emit textureLod");
+        ps.Should().Contain("texture2DLod(", "the SampleLevel fixture must emit the legacy texture2DLod");
+        ps.Should().Contain("GL_ARB_shader_texture_lod", "the guarded extension header must be prepended");
 
         (byte r, byte g, byte b) center;
         using (_fixture.MakeContextCurrent())
@@ -93,17 +98,28 @@ public sealed class Phase34LodGradRenderTests
     {
         if (_fixture.IsSkipped) { _output.WriteLine(_fixture.SoftSkipLine); return; }
 
-        // Use ShadowDusk's emitted spelling (generic textureGrad, as the grad fixture
-        // produces) with a LARGE derivative so the LOD math lands on a high mip. The
-        // grad fixture itself uses a deliberately tiny gradient (→ mip 0), which can't
+        // Use ShadowDusk's emitted spelling (Phase 43 F7: the legacy texture2DGrad +
+        // the guarded extension header, as the grad fixture now produces) with a
+        // LARGE derivative so the LOD math lands on a high mip. The grad fixture
+        // itself uses a deliberately tiny gradient (→ mip 0), which can't
         // distinguish "honored" from "ignored"; a large gradient can.
         const string ps =
+            "#if __VERSION__ >= 300\n" +
+            "#define texture2DGrad textureGrad\n" +
+            "#elif defined(GL_ARB_shader_texture_lod)\n" +
+            "#extension GL_ARB_shader_texture_lod : enable\n" +
+            "#define texture2DGrad texture2DGradARB\n" +
+            "#elif defined(GL_EXT_gpu_shader4)\n" +
+            "#extension GL_EXT_gpu_shader4 : enable\n" +
+            "#else\n" +
+            "#define texture2DGrad(a,b,c,d) texture2D(a,b)\n" +
+            "#endif\n" +
             "#define ps_oC0 gl_FragColor\n" +
             "uniform sampler2D ps_s0;\n" +
             "varying vec4 vTexCoord0;\n" +
             // dFdx/dFdy of a 0.5-scaled coord across an 8-texel base ≈ several texels,
             // pushing the computed LOD to the top of the chain.
-            "void main() { ps_oC0 = textureGrad(ps_s0, vTexCoord0.xy, vec2(0.5, 0.0), vec2(0.0, 0.5)); }\n";
+            "void main() { ps_oC0 = texture2DGrad(ps_s0, vTexCoord0.xy, vec2(0.5, 0.0), vec2(0.0, 0.5)); }\n";
 
         (byte r, byte g, byte b) center;
         using (_fixture.MakeContextCurrent())

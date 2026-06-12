@@ -4,17 +4,21 @@
 // Provenance : Authored from scratch for the ShadowDusk project on 2026-06-03.
 //              Project-owned (same license as the repository). NOT derived from
 //              any third-party shader — see docs/test-shader-corpus.md.
-// Purpose    : GENERALITY GUARD case. An explicit-LOD texture read
-//              (`Texture2D.SampleLevel`) compiles fine through DXC and emits
-//              `textureLod()` from SPIRV-Cross, which the MojoShader rewrite
-//              would turn into `texture2DLod()` — a builtin that is NOT a valid
-//              GLSL ES 1.00 fragment builtin (KNI Reach/WebGL1) and that KNI's
-//              HiDef/WebGL2 ES-3.00 converter does NOT rewrite. There is no
-//              single-blob GLSL form valid in both profiles, so the rewriter
-//              must FAIL LOUDLY (ShaderError SD0210) rather than silently emit
-//              GLSL that breaks under KNI HiDef. (Phase 34 = HiDef-safe emission.)
-// Exercises  : MonoGameGlslRewriter LOD/proj/grad guard (ThrowIfUnsupportedSampling).
-// Expect     : OpenGL compile FAILS with SD0210 (loud), never a silent pass.
+// Purpose    : Explicit-LOD texture read (`Texture2D.SampleLevel`). DXC emits an
+//              OpImageSampleExplicitLod and SPIRV-Cross the generic `textureLod()`.
+//              Since Phase 43 F7 the MojoShader rewrite lowers it to the legacy
+//              `texture2DLod()` + the guarded extension header (MojoShader's
+//              prepend_glsl_texlod_extensions): valid on Mesa's strict legacy
+//              front-end (the generic form is GLSL>=1.30-only and failed every
+//              Linux DesktopGL load), mapped back to `textureLod` by the header's
+//              `#if __VERSION__ >= 300` branch under KNI HiDef/WebGL2, and
+//              degraded gracefully to texture2D() where no extension exists.
+//              (History: Phase 33 made this FAIL LOUDLY SD0210; Phase 34 lifted
+//              the guard but chose the generic spelling, which Mesa rejects.)
+// Exercises  : MonoGameGlslRewriter Rule 6b (texture2DLod + TexLodExtensionHeader).
+// Expect     : OpenGL compile SUCCEEDS; .mgfx GLSL contains texture2DLod(ps_s0,
+//              and the guarded header; render honors the explicit mip
+//              (Phase34LodGradRenderTests).
 // =============================================================================
 #if OPENGL
 	#define SV_POSITION POSITION

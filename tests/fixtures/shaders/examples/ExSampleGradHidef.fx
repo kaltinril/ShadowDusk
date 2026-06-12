@@ -4,14 +4,21 @@
 // Provenance : Authored from scratch for the ShadowDusk project on 2026-06-03.
 //              Project-owned (same license as the repository). NOT derived from
 //              any third-party shader — see docs/test-shader-corpus.md.
-// Purpose    : GENERALITY GUARD case. A gradient texture read
-//              (`Texture2D.SampleGrad`) compiles through DXC and emits
-//              `textureGrad()` from SPIRV-Cross — an ES-3.00 / GL-3.30-only
-//              builtin that is invalid in KNI Reach/WebGL1 (GLSL ES 1.00) AND is
-//              NOT rewritten by KNI's HiDef/WebGL2 converter. No single-blob form
-//              serves both profiles, so the rewriter must FAIL LOUDLY (SD0210).
-// Exercises  : MonoGameGlslRewriter LOD/proj/grad guard (ThrowIfUnsupportedSampling).
-// Expect     : OpenGL compile FAILS with SD0210 (loud), never a silent pass.
+// Purpose    : Gradient texture read (`Texture2D.SampleGrad`). DXC emits an
+//              explicit-gradient sample and SPIRV-Cross the generic
+//              `textureGrad()`. Since Phase 43 F7 the MojoShader rewrite lowers
+//              it to the legacy `texture2DGrad()` + the guarded extension header
+//              (ARB maps it to texture2DGradARB, EXT_gpu_shader4 keeps the name,
+//              the `#if __VERSION__ >= 300` branch maps it back to textureGrad
+//              for KNI HiDef/WebGL2, and the #else degrades to texture2D()).
+//              The Phase 34 generic spelling failed Mesa's strict legacy
+//              front-end on every Linux DesktopGL load.
+//              (History: Phase 33 made this FAIL LOUDLY SD0210; Phase 34 lifted
+//              the guard but chose the generic spelling.)
+// Exercises  : MonoGameGlslRewriter Rule 6b (texture2DGrad + TexLodExtensionHeader).
+// Expect     : OpenGL compile SUCCEEDS; .mgfx GLSL contains texture2DGrad(ps_s0,
+//              and the guarded header; a large gradient leaves mip 0
+//              (Phase34LodGradRenderTests).
 // =============================================================================
 #if OPENGL
 	#define SV_POSITION POSITION
