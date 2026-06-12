@@ -19,11 +19,13 @@ internal sealed class CompilationPipeline
     private readonly Func<IDxcShaderCompiler> _dxcCompilerFactory;
     private readonly Func<ISpirvToGlslTranspiler> _glslTranspilerFactory;
     private readonly Func<IShaderReflector>? _reflectorFactory;
+    private readonly Func<IDxbcShaderCompiler>? _dxbcCompilerFactory;
 
     public CompilationPipeline(
         Func<IDxcShaderCompiler>? dxcCompilerFactory = null,
         Func<ISpirvToGlslTranspiler>? glslTranspilerFactory = null,
-        Func<IShaderReflector>? reflectorFactory = null)
+        Func<IShaderReflector>? reflectorFactory = null,
+        Func<IDxbcShaderCompiler>? dxbcCompilerFactory = null)
     {
         _dxcCompilerFactory    = dxcCompilerFactory    ?? (() => new DxcShaderCompiler());
         _glslTranspilerFactory = glslTranspilerFactory ?? (() => new SpirvCrossGlslTranspiler());
@@ -31,6 +33,11 @@ internal sealed class CompilationPipeline
         // browser/WASM path) instead of the native DXIL ID3D12ShaderReflection oracle.
         // Null (desktop default) keeps the DXIL path byte-for-byte unchanged.
         _reflectorFactory      = reflectorFactory;
+        // When non-null, the DirectX AND FNA targets compile their D3D bytecode through
+        // this factory instead of the desktop defaults below (the browser/WASM host
+        // injects WasmVkd3dShaderCompiler — same pinned vkd3d, different call mechanism).
+        // Null (desktop default) keeps both targets byte-for-byte unchanged.
+        _dxbcCompilerFactory   = dxbcCompilerFactory;
     }
 
     public async Task<Result<CompiledShader, ShaderError[]>> RunAsync(
@@ -148,7 +155,10 @@ internal sealed class CompilationPipeline
         // Backend selection (default = the proven d3dcompiler_47 oracle). The
         // cross-platform vkd3d-shader backend is opt-in via CompilerOptions.DxbcBackend.
         // Both implement IDxbcShaderCompiler and both feed the SAME DxbcReflectionExtractor.
-        IDxbcShaderCompiler dxbcCompiler = options.DxbcBackend switch
+        // An injected host backend (the WASM vkd3d backend) takes precedence over both —
+        // a host-appropriate default, not a consumer choice (CompilerOptions.DxbcBackend
+        // selects between desktop natives that do not exist in the browser).
+        IDxbcShaderCompiler dxbcCompiler = _dxbcCompilerFactory?.Invoke() ?? options.DxbcBackend switch
         {
             DxbcBackend.Vkd3d => new Vkd3dShaderCompiler(),
             _                 => new D3DCompilerShaderCompiler(),
@@ -521,7 +531,9 @@ internal sealed class CompilationPipeline
 
         // Stage 3: compile each pass's entry points to SM1–3 D3D bytecode and reflect
         // each blob's CTAB (the constant table MojoShader itself binds against).
-        var fnaCompiler = new Vkd3dShaderCompiler();
+        // Always vkd3d (never the d3dcompiler oracle); an injected host backend (the
+        // WASM vkd3d backend) is the same vkd3d behind a different call mechanism.
+        IDxbcShaderCompiler fnaCompiler = _dxbcCompilerFactory?.Invoke() ?? new Vkd3dShaderCompiler();
         var renderStateParser = new RenderStateParser();
         var shaders = new List<Fx2Shader>();
         var ctabs = new List<CtabTable>();
@@ -601,7 +613,7 @@ internal sealed class CompilationPipeline
 
     private static async Task<Result<(Fx2Shader Shader, CtabTable Ctab), ShaderError>>
         CompileFnaStageAsync(
-            Vkd3dShaderCompiler compiler,
+            IDxbcShaderCompiler compiler,
             string source,
             string sourceFileName,
             string entryPoint,

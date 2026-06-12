@@ -21,8 +21,13 @@
     <InternalsVisibleTo Include="ShadowDusk.HLSL.Tests" />
     <!-- Phase 19: the WASM/browser JsDxcShaderCompiler reuses DxcFlagBuilder to
          build identical DXC argument lists before handing source+args to the
-         host-provided [JSImport] DXC backend. -->
+         host-provided [JSImport] DXC backend. Phase 4.1: WasmVkd3dShaderCompiler
+         reuses Vkd3dCompileContract (the shared request->ABI + error mapping). -->
     <InternalsVisibleTo Include="ShadowDusk.Wasm" />
+    <!-- Phase 4.1: the vkd3d->WASM byte-identity gate's desktop ground-truth probe
+         (tests/ShadowDusk.BrowserTests/Vkd3dCorpusProbe) records the resolved
+         profile/target type via the same shared Vkd3dCompileContract. -->
+    <InternalsVisibleTo Include="Vkd3dCorpusProbe" />
   </ItemGroup>
 
   <ItemGroup>

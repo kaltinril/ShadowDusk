@@ -27,6 +27,10 @@ diffs-sd-hidef/
 # Scratch dir from a one-off publish capability probe (not part of the harness).
 .publish-hidef-probe/
 
+# Phase 4.1 vkd3d->WASM byte-identity gate scratch (desktop ground-truth captures).
+# Regenerate with: node node-test-vkd3d-wasm.mjs (npm run vkd3d-gate)
+.vkd3d-gate/
+
 # references[-sd]/*.png ARE committed: small, deterministic desktop renders that
 # the harness diffs against. RESULTS[-SD].md IS committed: the Task-1c deliverable.
 # RESULTS-SD-HIDEF-REPRO.md (RED) and RESULTS-SD-HIDEF.md (GREEN) ARE committed:

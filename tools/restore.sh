@@ -272,6 +272,87 @@ EOF
 
 restore_dxc_wasm
 
+# ---------------------------------------------------------------------------
+# vkd3d-shader -> WASM (faithful in-browser DXBC + FNA backend, Phase 4.1)
+# ---------------------------------------------------------------------------
+# The faithful in-browser DirectX (SM4/5 DXBC) and FNA (SM1-3 fx_2_0) backend is the
+# SAME pinned vkd3d-shader 1.17 the desktop pipeline P/Invokes (tag native-vkd3d-1.17
+# above), compiled to WebAssembly (emscripten, MODULARIZE + EXPORT_ES6) — NO
+# substitute compiler; output is gated byte-identical to the desktop backend
+# (tests/ShadowDusk.BrowserTests/node-test-vkd3d-wasm.mjs). vkd3d-shader.{js,wasm}
+# are RESTORED artifacts placed into the ShadowDusk.Wasm package wwwroot/vkd3d/ so
+# they ship as Blazor static web assets (served at _content/ShadowDusk.Wasm/vkd3d/).
+# Mirrors restore_dxc_wasm (local-build copy) + restore_dxc_file (pinned download with
+# the PENDING-FIRST-HOSTED-BUILD placeholder pattern). Runs unconditionally.
+#
+# Pins: SHA-256 of the assets hosted on the native-vkd3d-wasm-1.17 prerelease (built
+# by .github/workflows/vkd3d-wasm-build.yml from the pinned vkd3d-1.17 tarball,
+# emscripten 3.1.34). Re-running the build workflow re-pins here + in SHA256SUMS.
+VKD3D_WASM_RELEASE_URL="https://github.com/kaltinril/ShadowDusk/releases/download/native-vkd3d-wasm-1.17"
+VKD3D_WASM_JS_SHA256="aff3ae6dece4d9aea38d32e3e7ed4c2d809dc0e0bf1c12bbaa4ad97e3b5dd7aa"
+VKD3D_WASM_WASM_SHA256="c80b8bb8a887a629aeb00951e5273a64598e6153b8580db428ee824f70f161e0"
+
+# restore_vkd3d_wasm_file <asset-name> <sha256>
+restore_vkd3d_wasm_file() {
+    local asset="$1" sha="$2"
+    local pkg_dir="$REPO_ROOT/src/ShadowDusk.Wasm/wwwroot/vkd3d"
+    local dest="$pkg_dir/$asset"
+
+    # A locally built module takes precedence over the (possibly placeholder-pinned)
+    # download — the restore_dxc_wasm pattern for developers iterating on the build.
+    local local_build="$REPO_ROOT/.wasm-build/vkd3d-wasm-out/$asset"
+    if [ -f "$local_build" ]; then
+        if [ ! -f "$dest" ] || \
+           [ "$(stat -c%s "$local_build" 2>/dev/null || stat -f%z "$local_build")" != \
+             "$(stat -c%s "$dest" 2>/dev/null || stat -f%z "$dest" 2>/dev/null)" ]; then
+            mkdir -p "$pkg_dir"
+            cp -f "$local_build" "$dest"
+            echo "restore.sh: copied $asset (.wasm-build local build) -> src/ShadowDusk.Wasm/wwwroot/vkd3d/"
+        else
+            echo "restore.sh: vkd3d-shader WASM ($asset) present (local build) — OK"
+        fi
+        return 0
+    fi
+
+    if [ "$sha" = "PENDING-FIRST-HOSTED-BUILD" ]; then
+        echo "restore.sh: NOTICE — vkd3d-shader WASM ($asset) pin is a placeholder (no hosted build on $VKD3D_WASM_RELEASE_URL yet); skipping. Browser DirectX/FNA export stays unavailable (SD1902) until the Phase 4.1 hosted artifacts land."
+        return 0   # non-fatal by design while the pins are placeholders
+    fi
+
+    mkdir -p "$pkg_dir"
+    if [ -f "$dest" ]; then
+        local have
+        have="$(vkd3d_sha256 "$dest")"
+        if [ "$have" = "$sha" ]; then
+            echo "restore.sh: vkd3d-shader WASM ($asset) present, hash OK"
+            return 0
+        fi
+        echo "restore.sh: vkd3d-shader WASM ($asset) hash mismatch — re-downloading (had $have)"
+    fi
+
+    if ! curl -fsSLo "$dest.tmp" "$VKD3D_WASM_RELEASE_URL/$asset"; then
+        echo "restore.sh: WARNING — could not download $asset from $VKD3D_WASM_RELEASE_URL (offline?); browser DirectX/FNA export will fail SD1902 / the vkd3d-wasm gate will skip." >&2
+        rm -f "$dest.tmp"
+        return 0   # non-fatal by design
+    fi
+    local got
+    got="$(vkd3d_sha256 "$dest.tmp")"
+    if [ "$got" != "$sha" ]; then
+        echo "restore.sh: ERROR — $asset SHA-256 mismatch (expected $sha, got $got); discarding." >&2
+        rm -f "$dest.tmp"
+        return 0   # non-fatal, but the file is NOT placed
+    fi
+    mv -f "$dest.tmp" "$dest"
+    echo "restore.sh: vkd3d-shader WASM ($asset) downloaded, hash OK"
+}
+
+restore_vkd3d_wasm() {
+    restore_vkd3d_wasm_file "vkd3d-shader.js"   "$VKD3D_WASM_JS_SHA256"
+    restore_vkd3d_wasm_file "vkd3d-shader.wasm" "$VKD3D_WASM_WASM_SHA256"
+}
+
+restore_vkd3d_wasm
+
 # Determine which output file we are targeting on this platform.
 if [ "$OS" = "Linux" ]; then
     TARGET_FILE="$LINUX_SO"
