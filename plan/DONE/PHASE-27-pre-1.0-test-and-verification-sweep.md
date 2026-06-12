@@ -1,7 +1,21 @@
 # Phase 27 — Pre-1.0 Test & Verification Sweep
 
 **Track:** Release (→ v1.0).
-**Status:** Planned (written 2026-06-03). A consolidation pass that closes the deferred
+**Status:** ✅ **DONE (2026-06-12)** — both halves landed and merged the same day: the
+core-coverage sweep (PR #64 — all verify-and-tick items run green and ticked, 32 new
+tests incl. SD0101 negative coverage, the `MgfxParameterMatch` golden, Y-flip,
+include-resolver/handler, direct `ShaderIRBuilder`; zero production changes, byte-identity
+manifest untouched) and the CLI-parity + review-inputs half (PR #63 — CLI↔in-process
+**byte-identical** over 27 fixture pairs via the new `[Theory]`, fixture unification on
+`CliBinaryFixture`, §9.4–9.6 pack/install/publish scripted in
+`tools/verify-cli-packaging.ps1`, and all six 2026-06-12 review inputs closed: SD1902
+e2e + attribution fixed, three explicit recorded decisions). Suite green on all 3 CI
+OSes for both PRs (integration matrix included). The **one open fidelity item** — the
+global-param default-VALUE gap (DXC drops cbuffer-global initializers; `fxc`/`mgfxc`
+captures them) — is **explicitly re-deferred to
+[Phase 41](../PHASE-41-fxc-oracle-monogame-fidelity.md)**, whose scope already names it; it
+is production-fidelity work needing the real-`mgfxc` oracle, not test coverage. Was:
+Planned (written 2026-06-03). A consolidation pass that closes the deferred
 unit/integration test-coverage and manual pack/CLI verification items parked across
 Phases 2–9 and 15, so that **test coverage is not a 1.0 blind spot**. Many items are
 "file exists — run it and check it off"; a handful need new tests written. The product is
@@ -17,7 +31,7 @@ silently against that promise.
   → `tools/spirv-cross/`) for the integration-gated items.
 
 **Blocks:** Nothing in the product pipeline. This is a release-readiness gate, not a
-feature. It feeds [Phase 30](DONE/PHASE-30-ci-and-nuget-release.md), which **runs** the resulting
+feature. It feeds [Phase 30](PHASE-30-ci-and-nuget-release.md), which **runs** the resulting
 suite across Linux/macOS/Windows (and owns the cross-platform run validation this phase
 deliberately does *not* duplicate).
 
@@ -29,7 +43,7 @@ deliberately does *not* duplicate).
 
 ## Overview
 
-[Phase 100](PHASE-100-deferred-backlog.md) is the single deferred bucket. Items shouldn't
+[Phase 100](../PHASE-100-deferred-backlog.md) is the single deferred bucket. Items shouldn't
 live there forever; the test/verification subset of it is being **promoted into this real
 plan** so it gets done (or gets an explicit, recorded re-deferral) before 1.0. Verification
 of the current tree (2026-06-03) found most of the referenced test *files* already exist
@@ -56,14 +70,14 @@ steps.
 
 **Out of scope / Non-Goals:**
 - **Cross-platform *runs*** of the suite on Linux/macOS — owned by
-  [Phase 30](DONE/PHASE-30-ci-and-nuget-release.md) (Phase 15 §9 / the old "Phase 10 CI"
+  [Phase 30](PHASE-30-ci-and-nuget-release.md) (Phase 15 §9 / the old "Phase 10 CI"
   criterion). Reference it; do not duplicate the matrix here.
 - **Already-resolved** Phase-100 items: `11-6-A` (transpiler wired — Phase 8),
   `11-6-D` (uniform remap — Phase 17), Phase 8 packaging `7.4/7.5` (NuGet drop-in fix,
   branch `selfcontained-inmemory-nuget`). Do not re-open.
 - **VS-driven GL effects** (`17-VS`) — a feature, not a test gap; stays in Phase 100.
 - The browser-runtime tail (moved out of Phase 100 to Phases 23/24/30 §16).
-- New security-hardening tests — those belong to [Phase 25](PHASE-25-security-hardening.md)
+- New security-hardening tests — those belong to [Phase 25](../PHASE-25-security-hardening.md)
   (its Finding-1 `../`-escape test overlaps the include-resolver work; coordinate so the
   two don't write competing tests).
 
@@ -187,11 +201,13 @@ Verified against the tree on 2026-06-03 (cite real files):
       *(Done 2026-06-12 on win-x64: full suite 958/958 green (no skips), Phase 6 items
       0c/25/29/30 ticked, `/platform-check` over the Phase-6 surface + new tests: 0 BREAK,
       0 WARN.)*
-- [ ] *(Not done in the 2026-06-12 core-coverage sweep — needs a Windows box with a real
-      `mgfxc` install to diff the reflected `DefaultValue`, and any fix is a production
-      change (bake `$Globals` defaults), both outside the test-only core half. Note the
-      new `MgfxParameterMatchTests` deliberately compares parameter METADATA only, so it
-      stays green across this known default-VALUE gap. Left open for the phase closer.)*
+- [x] **RE-DEFERRED → [Phase 41](../PHASE-41-fxc-oracle-monogame-fidelity.md) (2026-06-12,
+      phase closer):** needs a Windows box with a real `mgfxc` install to diff the
+      reflected `DefaultValue`, and any fix is a production change (bake `$Globals`
+      defaults) — production-fidelity work, exactly Phase 41's fxc-oracle scope (its
+      plan.md row already names "the known global-initializer gap"). Note the new
+      `MgfxParameterMatchTests` deliberately compares parameter METADATA only, so it
+      stays green across this known default-VALUE gap.
       **Verify the global-param default-value fidelity gap (vs real mgfxc).** A **global**
       HLSL parameter with an initializer — e.g. `float FishEyeAmount = 0.35;` — compiles
       through ShadowDusk but the `.mgfx` stores its default as **`0.0`, not `0.35`** (the
@@ -351,25 +367,36 @@ deferred these verification items here — they are exactly this phase's shape:
 
 ## Acceptance Criteria
 
-- [ ] Every Phase-100 *"file exists — verify coverage"* item (Phase 2; Phase 4 unit +
+- [x] Every Phase-100 *"file exists — verify coverage"* item (Phase 2; Phase 4 unit +
       integration; Phase 6 `11-6-C`) is **either** ticked after a green run **or** has a
-      recorded re-deferral reason.
-- [ ] The genuinely-missing tests (SD0101 mismatch, `MgfxParameterMatch` golden, Y-flip,
+      recorded re-deferral reason. *(2026-06-12, PR #64 — all run green and ticked;
+      checklist wording reconciled to shipped code where the 2026-06-03 doc had drifted.)*
+- [x] The genuinely-missing tests (SD0101 mismatch, `MgfxParameterMatch` golden, Y-flip,
       `FileSystemIncludeResolver` integration, `DxcIncludeHandler` smoke, CLI-process
       `[Theory]`, the two `ShaderIRBuilder` direct tests) are **implemented and passing**,
-      or explicitly re-deferred with a reason.
-- [ ] `InternalsVisibleTo("ShadowDusk.Compiler.Tests")` is present and the direct
-      `ShaderIRBuilder` tests compile.
-- [ ] The full suite is green (baseline 515/515) with the new tests added; native-gated
+      or explicitly re-deferred with a reason. *(2026-06-12, PRs #64 + #63 — all
+      implemented and passing; SD0101's originally designed production path was found
+      never-implemented and is recorded SUPERSEDED in Phase 5, with negative coverage
+      added for the path that exists.)*
+- [x] `InternalsVisibleTo("ShadowDusk.Compiler.Tests")` is present and the direct
+      `ShaderIRBuilder` tests compile. *(Already existed in the tree; tests added, PR #64.)*
+- [x] The full suite is green (baseline 515/515) with the new tests added; native-gated
       tests pass with `tools/restore.*` run, and skip cleanly (not fail) without it.
+      *(2026-06-12: combined main suite green with both halves merged; CI integration
+      matrix green on all 3 OSes for both PRs; `DxcIncludeHandlerTests` observed skipping
+      cleanly on macOS in CI. The 515 baseline had grown to ~958 before this phase's
+      additions — recorded in PR #64.)*
 - [x] The CLI `pack`/`install`/`publish` manual steps (§9.4–9.6) are run and recorded; the
       tool (command `ShadowDuskCLI` — the re-brand superseded the doc's `mgfxc` name)
       installs and shows usage/exit-1 on no args. *(Scripted:
       `tools/verify-cli-packaging.ps1`; see Task E.)*
 - [x] The `CliFixture` vs `CliBinaryFixture` duplication is resolved (one kept, decision
       recorded). *(Kept `CliBinaryFixture`; see Task C.)*
-- [ ] No coverage gap that matters for the drop-in-`mgfxc` promise (diagnostics format,
+- [x] No coverage gap that matters for the drop-in-`mgfxc` promise (diagnostics format,
       reflection parameter match, CLI↔in-process parity) is left silently open.
+      *(2026-06-12: the one known fidelity gap — global-param default VALUES — is loudly
+      recorded and re-deferred to [Phase 41](../PHASE-41-fxc-oracle-monogame-fidelity.md);
+      everything else is covered by passing tests.)*
 
 ## Definition of Done
 
@@ -379,7 +406,7 @@ so that entering 1.0 there is no parked-but-unknown coverage gap in the areas th
 the drop-in-`mgfxc` contract (DXC flags/diagnostics, reflection parameter fidelity, GLSL
 transpile, include resolution, IR construction, and CLI↔in-process equivalence). The
 manual CLI pack/install/publish path is verified once on Windows; the cross-platform *run*
-of the whole suite is handed to [Phase 30](DONE/PHASE-30-ci-and-nuget-release.md).
+of the whole suite is handed to [Phase 30](PHASE-30-ci-and-nuget-release.md).
 
 ---
 
@@ -398,7 +425,7 @@ of the whole suite is handed to [Phase 30](DONE/PHASE-30-ci-and-nuget-release.md
 - **`MgfxParameterMatch` exactness vs `mgfxc` quirks.** The snapshot must compare
   *behaviorally significant* reflection fields, not byte-for-byte `mgfxc` output
   (byte-equality with `mgfxc` is never a goal — `CLAUDE.md`). Pin which fields are exact.
-- **Overlap with [Phase 25](PHASE-25-security-hardening.md).** Both touch
+- **Overlap with [Phase 25](../PHASE-25-security-hardening.md).** Both touch
   `FileSystemIncludeResolver` tests. Whichever lands first should own a shared harness so
   the path-traversal (Finding 1) and the §4.4 resolve-from-disk tests don't collide.
 - **Re-deferral discipline.** "Explicitly re-defer with a reason" must be enforced — the
