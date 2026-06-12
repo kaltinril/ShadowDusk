@@ -1,0 +1,195 @@
+# .github/workflows/vkd3d-wasm-build.yml
+# Phase 4.1 — build the pinned vkd3d-shader 1.17 to WebAssembly, so the browser
+# host can compile HLSL -> SM5 DXBC (MonoGame DX11) and HLSL -> SM1-3 D3D bytecode
+# (FNA fx_2_0) with THE SAME pinned compiler as desktop. One pipeline everywhere —
+# NO substitute compilers (THE PURPOSE, CLAUDE.md); a server relay (Option C) is
+# out of bounds (plan/PHASE-4.1-SPIKE-wasm-directx-dxbc.md).
+#
+# Same hosting model as the Phase 37 native builds (build-vkd3d-natives.yml /
+# dxc-build.yml): the artifact produced here is uploaded to the FIXED GitHub
+# Release tag `native-vkd3d-wasm-1.17` as a deliberate MANUAL step — re-running
+# this workflow never republishes anything. NEVER modify existing native-* tags.
+#
+# Pin discipline:
+#   * vkd3d stays at 1.17 EXACTLY (same WineHQ tarball + SHA-256 as the desktop
+#     natives — output byte-stability is a product promise; a bump re-baselines
+#     goldens and re-runs rung-4, and gets a NEW hosting tag).
+#   * emscripten stays at 3.1.34 — the .NET 8 WASM runtime's pin (the same pin
+#     the DXC->WASM build uses; see tools/restore.sh and .wasm-build/DXC-WASM-BUILD.md).
+#   * Vulkan-Headers / SPIRV-Headers are compile-time-only (header-only) and
+#     pinned to upstream tags; they cannot leak into the runtime artifact.
+#
+# The wrapper ABI (sdw_vkd3d_compile / sdw_vkd3d_free_code / sdw_vkd3d_free_messages)
+# is a CONTRACT with the C# [JSImport] interop side — see tools/vkd3d-wasm/
+# sdw_vkd3d_wrapper.c and the phase doc before changing anything.
+name: Build vkd3d-shader WASM (1.17)
+
+on:
+  workflow_dispatch:
+  # TEMPORARY (pre-merge iteration only): workflow_dispatch is not runnable until
+  # this file is on the default branch, so the feature branch self-triggers here.
+  # REMOVE this push trigger after the Phase 4.1 branch merges.
+  push:
+    branches:
+      - 'feature/phase4.1-vkd3d-wasm-build*'
+    paths:
+      - '.github/workflows/vkd3d-wasm-build.yml'
+      - 'tools/vkd3d-wasm/**'
+
+env:
+  VKD3D_VERSION: '1.17'
+  VKD3D_TARBALL_URL: 'https://dl.winehq.org/vkd3d/source/vkd3d-1.17.tar.xz'
+  # SHA-256 of vkd3d-1.17.tar.xz as published by WineHQ — verified before building
+  # so a tampered/moved tarball can never silently change the shipped compiler.
+  # (Identical pin to build-vkd3d-natives.yml — same compiler, different target.)
+  VKD3D_TARBALL_SHA256: 'bc61cb9e84d5045cbcaffbdd707940d399d8bf62874663dfe5809a0bfb87e9b6'
+  # emscripten 3.1.34 = the .NET 8 WASM runtime pin (Microsoft.NET.Runtime.
+  # Emscripten.3.1.34.Sdk.*). emsdk repo pinned at its own '3.1.34' release tag.
+  EMSDK_VERSION: '3.1.34'
+  EMSDK_COMMIT: 'f747b2c4c5dacde32eced00df3ad42e3a41511e2'
+  # Header-only compile-time deps (same Vulkan-Headers pin as the linux-x64 native
+  # build; SPIRV-Headers from the matching SDK tag — apt's copy lives in
+  # /usr/include, which must NOT be put on emcc's include path: it would shadow
+  # the emscripten sysroot with glibc headers).
+  VULKAN_HEADERS_TAG: 'v1.3.296'
+  SPIRV_HEADERS_TAG: 'vulkan-sdk-1.3.296.0'
+
+jobs:
+  build-wasm:
+    name: Build vkd3d-shader.{js,wasm} (emscripten 3.1.34)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      # The wrapper + smoke gate live in the repo (tools/vkd3d-wasm/).
+      - uses: actions/checkout@v6
+
+      # bison/flex: vkd3d's HLSL lexer/parser generators (run on the HOST at build
+      # time — never compiled to WASM). perl JSON: a hard configure requirement
+      # (build-script tooling, not linked).
+      - name: Install build deps (host tools only)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential flex bison libjson-perl xz-utils
+
+      - name: Install emsdk ${{ env.EMSDK_VERSION }} (pinned)
+        run: |
+          git clone https://github.com/emscripten-core/emsdk.git emsdk
+          git -C emsdk -c advice.detachedHead=false checkout "$EMSDK_COMMIT"
+          ./emsdk/emsdk install "$EMSDK_VERSION"
+          ./emsdk/emsdk activate "$EMSDK_VERSION"
+          source emsdk/emsdk_env.sh
+          emcc -v
+
+      - name: Download + verify pinned tarball
+        run: |
+          curl -fsSLo vkd3d.tar.xz "$VKD3D_TARBALL_URL"
+          echo "$VKD3D_TARBALL_SHA256  vkd3d.tar.xz" | sha256sum -c -
+          tar xf vkd3d.tar.xz
+
+      - name: Fetch pinned header-only deps (Vulkan-Headers + SPIRV-Headers)
+        run: |
+          curl -fsSL "https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/$VULKAN_HEADERS_TAG.tar.gz" | tar xz
+          curl -fsSL "https://github.com/KhronosGroup/SPIRV-Headers/archive/refs/tags/$SPIRV_HEADERS_TAG.tar.gz" | tar xz
+          echo "VULKAN_HEADERS_INC=$(pwd)/Vulkan-Headers-${VULKAN_HEADERS_TAG#v}/include" >> "$GITHUB_ENV"
+          echo "SPIRV_HEADERS_INC=$(pwd)/SPIRV-Headers-$SPIRV_HEADERS_TAG/include" >> "$GITHUB_ENV"
+
+      # Cross-compile configure notes (every flag is load-bearing):
+      #   --host=wasm32-unknown-emscripten — config.sub (2024-05-27 in the 1.17
+      #     tarball) accepts it; sets cross_compiling=yes so no AC_RUN tests.
+      #   --disable-shared — emcc cannot produce real ELF shared objects; build
+      #     the static libvkd3d-shader.a the wrapper links against.
+      #   SONAME_LIBVULKAN / SONAME_LIBDXCOMPILER — bypass configure's dlopen-able
+      #     library probes (same trick as the macOS/MSYS2 native recipes): the
+      #     sonames are only ever dlopen'd at RUNTIME by libvkd3d proper, which we
+      #     do not build or ship; libvkd3d-shader itself links neither.
+      #   PTHREAD_LIBS='-lpthread' — preempt VKD3D_CHECK_PTHREAD's '-pthread'
+      #     fallback: under emcc, '-pthread' would switch the whole build to the
+      #     SharedArrayBuffer/Web-Worker threaded ABI, which the browser module
+      #     must NOT require. emscripten's default single-threaded libc provides
+      #     working pthread mutex/cond stubs (all vkd3d-shader needs); '-lpthread'
+      #     satisfies the link probe without flipping the ABI.
+      - name: Configure (emconfigure, static lib only)
+        working-directory: vkd3d-1.17
+        run: |
+          source "$GITHUB_WORKSPACE/emsdk/emsdk_env.sh"
+          emconfigure ./configure \
+            --host=wasm32-unknown-emscripten \
+            --disable-shared \
+            --disable-tests \
+            CFLAGS='-O2' \
+            PTHREAD_LIBS='-lpthread' \
+            SONAME_LIBVULKAN=libvulkan.so.1 \
+            SONAME_LIBDXCOMPILER=libdxcompiler.so \
+            CPPFLAGS="-I$VULKAN_HEADERS_INC -I$SPIRV_HEADERS_INC"
+
+      - name: Build libvkd3d-shader.a (emmake)
+        working-directory: vkd3d-1.17
+        run: |
+          source "$GITHUB_WORKSPACE/emsdk/emsdk_env.sh"
+          emmake make include/private/vkd3d_version.h   # lib-only target misses this dep
+          emmake make -j"$(nproc)" libvkd3d-shader.la
+          ls -la .libs/
+
+      # Link the thin sdw_* wrapper with the static lib into the browser module.
+      # Module shape matches the DXC->WASM module (shadowdusk-dxc.js contract):
+      # MODULARIZE + EXPORT_ES6 default-export factory; the .wasm is located next
+      # to the .js via import.meta.url. FILESYSTEM=0: ShadowDusk pre-flattens
+      # #includes in managed code, vkd3d never touches a real FS here.
+      - name: Link vkd3d-shader.{js,wasm} (emcc)
+        run: |
+          source emsdk/emsdk_env.sh
+          mkdir -p out
+          emcc -O2 \
+            tools/vkd3d-wasm/sdw_vkd3d_wrapper.c \
+            -Ivkd3d-1.17/include \
+            vkd3d-1.17/.libs/libvkd3d-shader.a \
+            -lm \
+            -o out/vkd3d-shader.js \
+            -sMODULARIZE=1 \
+            -sEXPORT_ES6=1 \
+            -sEXPORT_NAME=createVkd3dModule \
+            -sFILESYSTEM=0 \
+            -sALLOW_MEMORY_GROWTH=1 \
+            -sEXPORTED_FUNCTIONS=_sdw_vkd3d_compile,_sdw_vkd3d_free_code,_sdw_vkd3d_free_messages,_malloc,_free \
+            -sEXPORTED_RUNTIME_METHODS=cwrap,ccall,getValue,setValue,UTF8ToString,stringToUTF8,lengthBytesUTF8
+          ls -la out/
+
+      # Smoke gate: same two shaders as build-vkd3d-natives.yml, driven through
+      # the sdw_* ABI under node. ps_2_0 -> d3dbc must carry the 0xFFFF0200
+      # version token (FNA fx_2_0 path); ps_5_0 -> dxbc-tpf must carry the "DXBC"
+      # magic (MonoGame DX11 path); a broken shader must fail loudly with
+      # verbatim diagnostics. Red here = no artifact.
+      - name: Smoke-test (node, sdw_* ABI)
+        run: |
+          mkdir -p smoke
+          cp out/vkd3d-shader.js out/vkd3d-shader.wasm smoke/
+          echo '{ "type": "module" }' > smoke/package.json
+          node --version
+          node tools/vkd3d-wasm/smoke-test.mjs smoke/vkd3d-shader.js
+
+      # Phase-doc expectation: single-digit MB compressed (cf. dxcompiler.wasm
+      # 16.6 MB raw). Report both raw and gzip -9 so the phase doc can record them.
+      - name: Report sizes (raw + gzip)
+        run: |
+          for f in out/vkd3d-shader.js out/vkd3d-shader.wasm; do
+            raw=$(wc -c < "$f")
+            gz=$(gzip -9 -c "$f" | wc -c)
+            echo "$f: raw $raw bytes, gzip -9 $gz bytes"
+          done
+
+      # vkd3d is LGPL-2.1+ — the license text must accompany every redistributed
+      # binary. (WASM static-link nuance is recorded in the phase doc, not
+      # silently decided here.)
+      - name: Stage artifact (+ license + SHA-256s)
+        run: |
+          cp vkd3d-1.17/LICENSE out/LICENSE-vkd3d.txt
+          (cd out && sha256sum vkd3d-shader.js vkd3d-shader.wasm LICENSE-vkd3d.txt | tee SHA256SUMS)
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: vkd3d-wasm-${{ env.VKD3D_VERSION }}
+          path: out/*
+          if-no-files-found: error
+          retention-days: 30
