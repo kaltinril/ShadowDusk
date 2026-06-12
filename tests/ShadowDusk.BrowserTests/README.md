@@ -96,6 +96,33 @@ node run-harness.mjs --corpus=sd-hidef
 > `gl_FragData[N]` output path; both are addressed by the same `#define` fix
 > (`#define ps_oC{N} gl_FragData[N]`).
 
+## Phase 4.1 G2 — real-browser DirectX/FNA export byte-identity gate
+
+A browser cannot render DXBC or D3D9 bytecode (no Direct3D in a browser), so the
+honest G2 analogue for the DX/FNA **export** targets is byte-identity in a real
+browser: `browser-vkd3d-gate.mjs` publishes the sample, boots it in headless
+Chromium (the actual .NET-browser runtime), and compiles **every**
+`DirectX_Vkd3d/*` and `FNA/*` entry of the committed cross-host byte-identity
+manifest (`tests/fixtures/golden/byte-identity/manifest.json`) through the REAL
+product path — `WasmShaderCompiler.CompileAsync` via the sample's test-only
+`TestCompileExport` hook, with a real HTTP fetch of
+`_content/ShadowDusk.Wasm/vkd3d/vkd3d-shader.{js,wasm}`. Each artifact's SHA-256
+must equal the manifest hash; render-equivalence then closes by transitivity
+(browser bytes == desktop bytes == the Phase 18 / Phase 39–40 rung-4
+render-proven bytes). Verdict + per-fixture table: `RESULTS-VKD3D-BROWSER.md`.
+
+```bash
+./tools/restore.sh                        # vkd3d-shader.{js,wasm} (native-vkd3d-wasm-1.17)
+cd tests/ShadowDusk.BrowserTests
+npm install && npx playwright install chromium
+node browser-vkd3d-gate.mjs               # publishes into .publish-vkd3d/; --skip-publish to reuse
+```
+
+Skips loudly (exit 0, "NOT RUN, NOT A PASS", `::warning::` in CI) when the wasm
+module is not restored; any compile failure, hash mismatch, missing published
+module, or unobserved `vkd3d-shader.wasm` fetch is a hard FAIL. No GPU/xvfb
+needed — pure compile, no rendering.
+
 ## CI (Phase 30 §16)
 
 The harness is headless and self-contained. Phase 30 owns the CI wiring; a job is:
@@ -132,3 +159,6 @@ Notes for CI:
 | `image-compare.mjs` | JS mirror of `ShadowDusk.ImageTests/ImageComparer` (RGBA8 max-delta). |
 | `references/`, `captures/`, `diffs/` | Reference PNGs, browser captures, magenta diffs. |
 | `RESULTS.md` | Generated run results + the KNIFX-v11 verdict (Task 1c). |
+| `node-test-vkd3d-wasm.mjs` + `Vkd3dCorpusProbe/` | Phase 4.1 node byte-identity gate (G1 analogue): WASM vkd3d == desktop vkd3d per stage compile. |
+| `browser-vkd3d-gate.mjs` | Phase 4.1 **G2** gate: real-browser DX/FNA compile, SHA-256 == committed byte-identity manifest. |
+| `RESULTS-VKD3D-BROWSER.md` | Generated G2 verdict + per-fixture hash table. |
