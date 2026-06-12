@@ -294,25 +294,39 @@ These tests must be pure — no DXC binary, no disk, no process execution.
 
 ### 8.1 `DxcFlagBuilderTests` checklist
 
-- [ ] OpenGL vertex stage produces `-spirv`, `-fvk-use-dx-position-w`, `-fvk-use-dx-layout`, profile `vs_5_0`; does NOT contain `-fvk-invert-y` (SPIRV-Cross handles Y-flip via `FlipVertexY` option to avoid double flip)
-- [ ] OpenGL pixel stage produces `-spirv`, `-fvk-use-dx-layout`, `-auto-binding-space 1`, profile `ps_5_0`; does NOT contain `-fvk-invert-y`
-- [ ] Vulkan vertex stage produces all OpenGL vertex flags plus `-fspv-reflect`, profile `vs_6_0`
-- [ ] Vulkan pixel stage produces all OpenGL pixel flags plus `-fspv-reflect`, profile `ps_6_0`
-- [ ] DirectX_11 vertex stage produces `vs_5_0`; does NOT contain `-spirv`
-- [ ] DirectX_11 pixel stage produces `ps_5_0`; does NOT contain `-spirv`
-- [ ] Macros are appended as `-D Name=Value` for keyed macros and `-D Name` for flag macros
-- [ ] Entry point appears as `-E <entryPoint>` before the profile argument
-- [ ] `-Zpr` always present
-- [ ] `-WX` present by default; absent when `AllowWarnings = true`
+> Verified and ticked in Phase 27 (2026-06-12) against the shipped
+> `tests/ShadowDusk.HLSL.Tests/Dxc/DxcFlagBuilderTests.cs`. Wording reconciled to the
+> code where this checklist had drifted (the code is correct; the original wording
+> below was the plan-time sketch): DirectX profiles are `vs_6_0`/`ps_6_0` (DXC's
+> minimum is SM6 — the DX11 DXBC comes from d3dcompiler_47/vkd3d, Phase 18, not from
+> these flags); macros are SINGLE-token `-DName=Value` / `-DName`, not two-token
+> `-D Name=Value`; and Vulkan vertex additionally carries `-fvk-invert-y` (which
+> OpenGL deliberately omits — SPIRV-Cross's `FlipVertexY` does the GL Y-flip).
+
+- [x] OpenGL vertex stage produces `-spirv`, `-fvk-use-dx-position-w`, `-fvk-use-dx-layout`, profile `vs_5_0`; does NOT contain `-fvk-invert-y` (SPIRV-Cross handles Y-flip via `FlipVertexY` option to avoid double flip)
+- [x] OpenGL pixel stage produces `-spirv`, `-fvk-use-dx-layout`, `-auto-binding-space 1`, profile `ps_5_0`; does NOT contain `-fvk-invert-y`
+- [x] Vulkan vertex stage produces all OpenGL vertex flags plus `-fspv-reflect` **and `-fvk-invert-y`**, profile `vs_6_0`
+- [x] Vulkan pixel stage produces all OpenGL pixel flags plus `-fspv-reflect`, profile `ps_6_0`
+- [x] DirectX_11 vertex stage produces ~~`vs_5_0`~~ `vs_6_0` (DXC minimum is SM6); does NOT contain `-spirv`
+- [x] DirectX_11 pixel stage produces ~~`ps_5_0`~~ `ps_6_0`; does NOT contain `-spirv`
+- [x] Macros are appended as single-token `-DName=Value` for keyed macros and `-DName` for flag macros (NOT the two-token `-D Name=Value` originally written here)
+- [x] Entry point appears as `-E <entryPoint>` before the profile argument (ordering assertion `EntryPoint_PrecedesProfileArgument` added in Phase 27)
+- [x] `-Zpr` always present
+- [x] `-WX` present by default; absent when `AllowWarnings = true`
 
 ### 8.2 `DxcDiagnosticReformatterTests` checklist
 
-- [ ] Well-formed Clang diagnostic line parses to correct file/line/col/message
-- [ ] FXC-formatted output matches `Filename.fx(line,col-col): error X0000: message`
-- [ ] Warning severity mapped to `ShaderError.Severity.Warning`
-- [ ] Unknown/non-matching lines preserved as `ShaderError.Raw`
-- [ ] Empty input returns empty list
-- [ ] Multi-line error block with note lines handled correctly
+> Verified and ticked in Phase 27 (2026-06-12) against the shipped
+> `tests/ShadowDusk.HLSL.Tests/Dxc/DxcDiagnosticReformatterTests.cs` (plus note-severity
+> mapping and source-file-name normalization tests beyond this list). Naming drift:
+> "preserved as `ShaderError.Raw`" shipped as the `ShaderError.RawDiagnostics` field.
+
+- [x] Well-formed Clang diagnostic line parses to correct file/line/col/message
+- [x] FXC-formatted output matches `Filename.fx(line,col-col): error X0000: message`
+- [x] Warning severity mapped to `ShaderError.Severity.Warning`
+- [x] Unknown/non-matching lines preserved as `ShaderError.RawDiagnostics` (planned name: `Raw`)
+- [x] Empty input returns empty list
+- [x] Multi-line error block with note lines handled correctly
 
 ---
 
@@ -353,14 +367,20 @@ public async Task CompileMinimalVertex_OpenGL_ReturnsSpirvBlob()
 
 ### 9.2 Full integration test checklist
 
-- [ ] Minimal vertex shader compiles to non-empty SPIR-V on OpenGL target
-- [ ] Minimal pixel shader compiles to non-empty SPIR-V on OpenGL target
-- [ ] Minimal vertex shader compiles to non-empty DXBC on DirectX_11 target
-- [ ] Syntax error in HLSL returns `Result.Failure` with a `ShaderError` whose `FxcFormattedMessage` contains `(line,col`
-- [ ] Undefined variable in pixel shader returns `Result.Failure` with line/col in FXC format
-- [ ] Vulkan target vertex shader compiles to non-empty SPIR-V
-- [ ] Compile with a valid `-D` macro (e.g., conditional `#ifdef`) succeeds and macro is visible to DXC
-- [ ] Cancellation before invocation returns `OperationCanceledException` (not `ShaderError`)
+> Run green and ticked in Phase 27 (2026-06-12): `tools/restore.ps1` restored the
+> natives, then the full `DxcShaderCompilerIntegrationTests` class passed on win-x64
+> (part of the all-green 958-test suite run). The "DXBC" blob on the DirectX target is
+> DXC's SM6 DXIL in its DXBC container (`BlobKind.Dxbc`); MonoGame-loadable DX11 DXBC
+> comes from the Phase 18 d3dcompiler_47/vkd3d backend.
+
+- [x] Minimal vertex shader compiles to non-empty SPIR-V on OpenGL target
+- [x] Minimal pixel shader compiles to non-empty SPIR-V on OpenGL target
+- [x] Minimal vertex shader compiles to non-empty DXBC on DirectX_11 target
+- [x] Syntax error in HLSL returns `Result.Failure` with a `ShaderError` whose `FxcFormattedMessage` contains `(line,col`
+- [x] Undefined variable in pixel shader returns `Result.Failure` with line/col in FXC format
+- [x] Vulkan target vertex shader compiles to non-empty SPIR-V
+- [x] Compile with a valid `-D` macro (e.g., conditional `#ifdef`) succeeds and macro is visible to DXC
+- [x] Cancellation before invocation returns `OperationCanceledException` (not `ShaderError`)
 
 ---
 

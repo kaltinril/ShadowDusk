@@ -331,8 +331,13 @@ public static class PlatformMacros
 - [x] 4.2 Respect search order: sibling directory of including file, then `additionalSearchPaths`.
 - [x] 4.3 Canonicalize resolved paths with `Path.GetFullPath` to ensure OS-independent comparison
          in the `visitedFiles` set.
-- [ ] 4.4 Integration test (tagged `[Trait("Category","Integration")]`): resolve a real `.fxh`
-         file from disk. *(deferred — add alongside Phase 9 integration suite)*
+- [x] 4.4 Integration test (tagged `[Trait("Category","Integration")]`): resolve a real `.fxh`
+         file from disk. *(Closed in Phase 27, 2026-06-12:
+         `tests/ShadowDusk.Integration.Tests/Preprocessor/FileSystemIncludeResolverTests.cs`
+         — direct sibling-dir + search-path resolution of `includes/TestHelper.fxh`, the
+         IncludeNotFound diagnostic, and an end-to-end `Preprocessor.Flatten` of
+         `MinimalWithInclude.fx`. Functional coverage only; the `../`-escape security
+         cases stay with Phase 25.)*
 
 ### 5. Preprocessor.Flatten()
 
@@ -380,20 +385,27 @@ public static class PlatformMacros
 - [x] 7.2 Map `Result.Failure` from the resolver to a DXC `E_FAIL` HRESULT return, setting
          `includeSource` to `null`.
 - [x] 7.3 Encode included text as UTF-8 via `IDxcUtils.CreateBlobFromPinned` (codepage 65001).
-- [ ] 7.4 Unit/smoke test: construct a `DxcIncludeHandler` with an `InMemoryIncludeResolver`
+- [x] 7.4 Unit/smoke test: construct a `DxcIncludeHandler` with an `InMemoryIncludeResolver`
          containing a known file; verify `LoadSource` returns success and the correct blob bytes.
-         *(deferred — requires live DXC COM init; add in Phase 4 DXC integration tests)*
+         *(Closed in Phase 27, 2026-06-12:
+         `tests/ShadowDusk.HLSL.Tests/Dxc/DxcIncludeHandlerTests.cs` — Integration-tagged
+         because `IDxcUtils` initializes native DXC, exactly the live-COM-init reason this
+         was deferred; also covers the unresolvable-include failure HRESULT + null blob.)*
 
 ### 8. Wiring into the compilation pipeline
 
 - [x] 8.1 Add `IIncludeResolver` and `IReadOnlyList<string> AdditionalIncludePaths` parameters to
          `CompilerOptions` (Phase 4 will wire these into the DXC call).
-- [ ] 8.2 `Preprocessor.Flatten()` is called after Phase 2 and before DXC invocation; its output
-         replaces the raw cleaned HLSL as the text sent to DXC. *(Phase 4)*
-- [ ] 8.3 `PreprocessedSource.DxcMacroFlags` is merged into the DXC compile arguments list in
-         Phase 4 — no duplication guard needed, but document that duplication is harmless. *(Phase 4)*
-- [ ] 8.4 `DxcIncludeHandler` instance is constructed from the same `IIncludeResolver` and
-         forwarded to `IDxcCompiler3.Compile()` in Phase 4. *(Phase 4)*
+- [x] 8.2 `Preprocessor.Flatten()` is called after Phase 2 and before DXC invocation; its output
+         replaces the raw cleaned HLSL as the text sent to DXC. *(Phase 4; verified against
+         `CompilationPipeline.cs` — recorded closed-in-place in PHASE-100, ticked Phase 27.)*
+- [x] 8.3 `PreprocessedSource.DxcMacroFlags` is merged into the DXC compile arguments list in
+         Phase 4 — no duplication guard needed, but document that duplication is harmless. *(Phase 4;
+         verified against `CompilationPipeline.cs` — recorded closed-in-place in PHASE-100, ticked Phase 27.)*
+- [x] 8.4 `DxcIncludeHandler` instance is constructed from the same `IIncludeResolver` and
+         forwarded to `IDxcCompiler3.Compile()` in Phase 4. *(Verified in PHASE-100, ticked Phase 27.
+         Note today's pipeline flattens all includes BEFORE DXC, so DXC normally needs no include
+         handler; `DxcCompileRequest.IncludeHandler` remains the supported hook.)*
 
 ---
 
