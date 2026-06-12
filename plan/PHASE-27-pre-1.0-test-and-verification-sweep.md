@@ -168,14 +168,28 @@ Verified against the tree on 2026-06-03 (cite real files):
       in `ShaderFiddle.Web` (the sample's help note already warns users to inline the
       constant or `SetValue` it).
 
-### C. CLI-process invocation parity (Phase 15)
-- [ ] Add a `[Theory]` variant of `CompileFixtureTests.Compile_ProducesValidMgfxHeader`
+### C. CLI-process invocation parity (Phase 15) — DONE 2026-06-12
+- [x] Add a `[Theory]` variant of `CompileFixtureTests.Compile_ProducesValidMgfxHeader`
       parameterised over both `InvocationMode` values (also exercises the built CLI binary).
-- [ ] Wire `CliBinaryFixture` as the class fixture (publish/locate once per class).
-- [ ] Assert exit codes, stderr format, and `.mgfx` bytes match across the two paths
-      (drop-in equivalence).
-- [ ] **Decide & unify:** keep one of `CliFixture` (skip-on-missing) / `CliBinaryFixture`
-      (reuse-built); remove or document the other.
+      *(9 fixtures × 3 platforms × 2 modes; the `CliProcess`+`DirectX_11` cells are
+      Windows-only because the CLI uses the library's default DirectX backend — the
+      d3dcompiler_47 oracle, SD0210 off-Windows — while the DirectPipeline helper opts
+      into vkd3d there; see `CellRunsHere`.)*
+- [x] Wire `CliBinaryFixture` as the class fixture (publish/locate once per class).
+      *(Plus a per-(fixture, profile, mode) compile memo so the two theories share
+      results instead of tripling the process-spawn count — Phase 21 discipline.)*
+- [x] Assert exit codes, stderr format, and `.mgfx` bytes match across the two paths
+      (drop-in equivalence). *(`CliProcess_And_DirectPipeline_ProduceByteIdenticalMgfx`:
+      exit 0 both, CLI stderr empty, output bytes `.Should().Equal(...)` — asserted, not
+      assumed; 27 pairs green on Windows 2026-06-12.)*
+- [x] **Decide & unify:** keep one of `CliFixture` (skip-on-missing) / `CliBinaryFixture`
+      (reuse-built); remove or document the other. **Decision: kept `CliBinaryFixture`,
+      deleted `Fixtures/CliFixture.cs`.** Rationale: `CliBinaryFixture` is the Phase-21
+      performance-blessed one (reuses the build output that the test project's
+      `ReferenceOutputAssembly=false` ProjectReference guarantees exists, publish only as
+      fallback) and was the only one any test actually used; `CliFixture` was dead code,
+      and its skip-on-missing behavior is the wrong default now that the build guarantees
+      the binary — a missing CLI is a build regression that must fail loudly, not skip.
 
 ### D. `ShaderIRBuilder` direct unit tests (Phase 8)
 - [ ] Add `[assembly: InternalsVisibleTo("ShadowDusk.Compiler.Tests")]` to
@@ -185,12 +199,30 @@ Verified against the tree on 2026-06-03 (cite real files):
 - [ ] `Build_EmptyAnnotationsAllowed` — pass with no annotations; empty `AnnotationInfo`,
       no throw.
 
-### E. CLI pack / install / publish — manual (Phase 9 §9.4–9.6)
-- [ ] `dotnet pack src/ShadowDusk.Cli` → confirm package with `ToolCommandName = mgfxc`.
-- [ ] `dotnet tool install -g ShadowDusk.Cli --add-source ./nupkg` → run `mgfxc` with no
-      args → usage on stderr, exit 1.
-- [ ] `dotnet publish src/ShadowDusk.Cli -r win-x64 --self-contained` → single-file binary
-      runs and bundles native DLLs. (Linux/macOS RIDs → Phase 30.)
+### E. CLI pack / install / publish — scripted + run (Phase 9 §9.4–9.6) — DONE 2026-06-12
+
+Scripted as **`tools/verify-cli-packaging.ps1`** so "manual" never means "unrepeatable":
+it packs, installs into a scratch `--tool-path` (**never `-g`** — no machine pollution;
+the install is hermetic via a scratch `nuget.config` because machine-level
+`packageSourceMapping` rejects `--add-source`), publishes win-x64 self-contained
+single-file with release.yml's exact flag set, and runs each binary through the no-args
+usage check + a real `Minimal.fx /Profile:OpenGL` compile, SHA-256-compared against the
+normal built CLI. Results (Windows, 2026-06-12, v0.4.0):
+
+- [x] `dotnet pack src/ShadowDusk.Cli` → `ShadowDusk.Cli.0.4.0.nupkg` (61.77 MB);
+      `DotnetToolSettings.xml` command name = **`ShadowDuskCLI`**. *(Phase 9 wrote
+      "`ToolCommandName = mgfxc`" — superseded by the CLI re-brand: the tool ships under
+      its own name, `mgfxc` compatibility is flags/format/exit-code behavior, not the
+      command name.)*
+- [x] `dotnet tool install ShadowDusk.Cli --tool-path <scratch>` → installs; no-args →
+      usage on stderr + exit 1; `Minimal.fx /Profile:OpenGL` → exit 0, 571 bytes,
+      `sha256 28fc06e2…99` — **byte-identical** to the built CLI's output.
+- [x] `dotnet publish -r win-x64 --self-contained /p:PublishSingleFile=true
+      /p:IncludeNativeLibrariesForSelfExtract=true /p:EnableCompressionInSingleFile=true`
+      → `ShadowDuskCLI.exe` 45.4 MB (12 files in the publish dir — apphost + the
+      non-embedded native companions, the same shape release.yml archives per RID); runs
+      the usage check and the fixture compile with **byte-identical** output.
+      (Linux/macOS RIDs → Phase 30, unchanged.)
 
 ### F. Bookkeeping
 - [ ] Tick the Phase 2 stripped-HLSL item once the DXC integration run is green (or add a
@@ -203,26 +235,63 @@ Verified against the tree on 2026-06-03 (cite real files):
 The post-merge QA/security review of PRs #52–#56 (most findings fixed same-day in PR #59)
 deferred these verification items here — they are exactly this phase's shape:
 
-- [ ] **SD1902 end-to-end test** (vkd3d WASM module absent → SD1902 → the sample's
-      per-target message): the path every consumer hits if the packed module ever goes
-      missing; currently untested end-to-end.
-- [ ] **SD1902 attribution** (`WasmVkd3dShaderCompiler` wraps `EnsureRegisteredAsync`,
-      which loads all three modules — a spirv-cross load failure is mis-headlined as
-      vkd3d; underlying error text is included so it fails loudly, just misleadingly).
-      Deliberately deferred from PR #59 to avoid colliding with Phase 42's
-      InitializeAsync design — now safe to fix.
-- [ ] **Sample UI download path untested** (the G2 gate enters via `TestCompileExport`,
-      bypassing `ExportAsync` → `sdDownloadBytes`; a broken blob-download wiring ships
-      green). Sample-grade — decide test-or-re-defer explicitly.
-- [ ] **Success-path compiler warnings are discarded on both hosts** (desktop + WASM read
-      vkd3d messages then drop them when rc==0, despite `log_level=WARNING`); parity is
-      preserved, but constraint 5 ("diagnostics surface verbatim") arguably wants them
-      surfaced. Decide + record.
-- [ ] **Shim empty-source pre-judge** (`shadowdusk-vkd3d.js` rejects empty source itself
-      instead of letting vkd3d speak; unreachable through the real pipeline — cosmetic
-      deviation, decide + record).
-- [ ] **No source-size cap on the uncancellable in-browser compile** (self-DoS only;
-      recorded as deliberate — re-confirm and document, or cap).
+- [x] **SD1902 end-to-end test** — DONE 2026-06-12, at the two honest levels:
+      *node gate* (`node-test-vkd3d-wasm.mjs` case 0, runs even without the restored
+      module): the product shim imported with no `./vkd3d/` module → `ensureReady()`
+      REJECTS (the exact rejection .NET maps to SD1902) and a stray `compile()` after the
+      failed load throws the sticky "failed to initialize" error; *real-browser gate*
+      (`browser-vkd3d-gate.mjs` Phase 27 scenario 1, fresh session with
+      `vkd3d/vkd3d-shader.{js,wasm}` route-aborted): cold sync `Compile()` → **SD1903**
+      (post-Phase-42 behavior) and async `CompileAsync` → **SD1902 with the helpful
+      restore pointer** (`RESTORE.md` / `tools/restore`) — the path every consumer hits
+      if the packed module ever goes missing. (Unit-level was NOT possible honestly:
+      `WasmVkd3dShaderCompiler` is `[SupportedOSPlatform("browser")]` with `[JSImport]`
+      seams that do not exist off-browser.)
+- [x] **SD1902 attribution** — FIXED 2026-06-12. Registration is now **per compile
+      path**: `WasmModuleRegistration.EnsureVkd3dRegisteredAsync` registers ONLY
+      `shadowdusk-vkd3d` (the DirectX/FNA path makes no DXC/SPIRV-Cross `[JSImport]`
+      calls), `EnsureDxcChainRegisteredAsync` registers `shadowdusk-dxc` +
+      `shadowdusk-spirv-cross` (preserving the eager-SPIRV-Cross-instantiation ordering),
+      and every individual import failure is re-wrapped to NAME the failing module + its
+      asset URL. So a SPIRV-Cross load failure can no longer surface under the vkd3d
+      SD1902 headline (or vice versa). Phase 42 `InitializeAsync` semantics unchanged —
+      it still warms everything via both `Ensure*ReadyAsync` gates. Proven in the browser
+      gate's Phase 27 scenario 2: with the DXC + SPIRV-Cross assets route-aborted, a
+      DirectX export compile SUCCEEDS, SHA-256 == the committed manifest.
+- [x] **Sample UI download path** — **decision: re-defer (recorded).** Everything beneath
+      the export button (`WasmShaderCompiler.CompileAsync` for DirectX/FNA) is already
+      gate-proven byte-identical via `TestCompileExport`; the untested remainder is the
+      sample's `ExportAsync` status-line handling plus the ~10-line `sdDownloadBytes` JS
+      blob helper. A Playwright click-through with a browser-download listener would add
+      a flaky download dependency to the gate for sample-only plumbing — disproportionate
+      (the sample is never the product, CLAUDE.md). Revisit only if the export station is
+      ever promoted beyond sample status.
+- [x] **Success-path compiler warnings** — **decision: keep discarding on rc==0
+      (recorded), revisit post-1.0 as an additive API if asked for.** Reasons: (1) the
+      CLI's mgfxc contract — a successful compile is SILENT on stdout+stderr — is
+      asserted by `CliIntegrationTest` and now by the CLI↔pipeline parity theory;
+      printing rc==0 warnings to stderr would break it and risk MGCB mis-parsing noise
+      as failure. (2) Host parity is currently exact (desktop and WASM drop them
+      identically); surfacing requires a `CompiledShader` diagnostics channel plumbed
+      through both hosts — additive, not a pre-1.0 must. (3) vkd3d's non-fatal stream
+      carries version-dependent internal noise (e.g. `fixme:preproc_yyparse #line
+      directive`) — coupling consumer-visible output to it would churn. Constraint 5 is
+      fully honored where it bites: FAILURE diagnostics surface verbatim
+      (`Vkd3dCompileContract.MapCompileFailure`, both hosts).
+- [x] **Shim empty-source pre-judge** — **decision: fix (done 2026-06-12).** The
+      pre-judge (`throw 'compile: empty HLSL source.'`) was removed; the shim now mirrors
+      the desktop backend exactly — empty source goes to vkd3d as pointer + length 0
+      (allocating `max(1, len)` like the desktop's `AllocHGlobal(1)` pattern, since
+      `_malloc(0)` may legally return null) and vkd3d speaks for itself. Node-gate case
+      added: empty source through the shim → vkd3d's verbatim
+      `empty.fx: E5005: Entry point "main" is not defined.` — host parity, no shim
+      editorializing.
+- [x] **Source-size cap** — **decision: re-confirmed deliberate NO cap (recorded).** The
+      desktop backend has no cap either, so a browser-only cap would be a host-parity
+      deviation (a shader legal on desktop failing in the browser — the bad kind of
+      ShadowDusk-specific behavior). The uncancellable in-browser compile can only hurt
+      the user's own tab (self-DoS, no server involved), and the sample's upload entry
+      point already caps file reads at 2 MB at the UI edge. No product-side cap.
 
 ---
 
@@ -239,10 +308,12 @@ deferred these verification items here — they are exactly this phase's shape:
       `ShaderIRBuilder` tests compile.
 - [ ] The full suite is green (baseline 515/515) with the new tests added; native-gated
       tests pass with `tools/restore.*` run, and skip cleanly (not fail) without it.
-- [ ] The CLI `pack`/`install`/`publish` manual steps (§9.4–9.6) are run and recorded; the
-      `mgfxc` tool installs and shows usage/exit-1 on no args.
-- [ ] The `CliFixture` vs `CliBinaryFixture` duplication is resolved (one kept, decision
-      recorded).
+- [x] The CLI `pack`/`install`/`publish` manual steps (§9.4–9.6) are run and recorded; the
+      tool (command `ShadowDuskCLI` — the re-brand superseded the doc's `mgfxc` name)
+      installs and shows usage/exit-1 on no args. *(Scripted:
+      `tools/verify-cli-packaging.ps1`; see Task E.)*
+- [x] The `CliFixture` vs `CliBinaryFixture` duplication is resolved (one kept, decision
+      recorded). *(Kept `CliBinaryFixture`; see Task C.)*
 - [ ] No coverage gap that matters for the drop-in-`mgfxc` promise (diagnostics format,
       reflection parameter match, CLI↔in-process parity) is left silently open.
 

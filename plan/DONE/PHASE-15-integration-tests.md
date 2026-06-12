@@ -1,7 +1,11 @@
 # Phase 15 — End-to-End Integration Tests
 
 **Status:** ✅ Done. 103 integration tests pass. Two items deferred to Phase 20 backlog:
-CLI-process invocation mode tests (infrastructure built, tests not yet wired up), and
+CLI-process invocation mode tests (infrastructure built, tests not yet wired up — **closed
+by Phase 27, 2026-06-12**: `Compile_ProducesValidMgfxHeader` is now a `[Theory]` over both
+`InvocationMode` values and `CliProcess_And_DirectPipeline_ProduceByteIdenticalMgfx`
+asserts exit-code/stderr/byte-identity across the two paths; the unused skip-on-missing
+`Fixtures/CliFixture.cs` was deleted in favor of the Phase-21 `CliBinaryFixture`), and
 cross-platform Linux/macOS validation (explicitly scoped to Phase 30 CI).
 
 ## Overview
