@@ -76,7 +76,7 @@ So the code above (no explicit `Target`) compiles for **OpenGL**, while `mgfxc M
 When `Target = PlatformTarget.DirectX`, ShadowDusk emits DXBC (SM5) via a backend selected by <xref:ShadowDusk.Core.CompilerOptions.DxbcBackend>:
 
 - `DxbcBackend.D3DCompiler` (**default**) — the Windows-only `d3dcompiler_47` correctness oracle.
-- `DxbcBackend.Vkd3d` — the cross-platform `vkd3d-shader` backend (the shipping reach backend; works on Linux/macOS/Windows). Requires the restored vkd3d native — see [Restore Native Tools](restore-native-tools.md).
+- `DxbcBackend.Vkd3d` — the cross-platform `vkd3d-shader` backend (the shipping reach backend; works on Linux/macOS/Windows). The vkd3d natives for all four desktop RIDs **ship inside the NuGet package** — consumers install nothing (self-contained since Phase 37 C; the repo's [restore script](restore-native-tools.md) is only for building ShadowDusk itself from source).
 
 ```csharp
 var options = new CompilerOptions

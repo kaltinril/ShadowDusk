@@ -98,7 +98,7 @@ Standing rules the user has stated (kept here because this file is always loaded
 ShadowDusk ships as **six NuGet packages** — `ShadowDusk.{Core,HLSL,GLSL,Compiler,Cli,Wasm}` — plus the `ShadowDuskCLI` dotnet tool, all at **one shared version**. **To cut a release, use the `/release` skill**; `RELEASING.md` is the human runbook and **[the full release mechanics reference](RELEASING.md)** (what triggers a publish, the validate-job version guard, what the publish does, CI matrix). The two footguns to remember:
 
 - **Single source of version truth: `Directory.Build.props` `<Version>`.** Bump that one line. **NEVER** add a `<PackageVersion>` *property* to a csproj — it desyncs versions and collides with Central Package Management's `<PackageVersion Include=… />` *items* in `Directory.Packages.props`. `dotnet pack` flows `<Version>` to all packages.
-- Bump + merge the version **first**, *then* tag/dispatch — `release.yml`'s `validate` job fails unless the `v*.*.*` tag (or dispatch input) equals `<Version>`. Release commits/PRs follow the **Git Commit Conventions** above (no co-author trailers).
+- Bump + merge the version **first**, *then* dispatch — `release.yml` is **dispatch-only** (a `v*.*.*` tag is only a marker; pushing one publishes nothing), and its `validate` job fails unless the dispatch `version` input equals `<Version>`. Release commits/PRs follow the **Git Commit Conventions** above (no co-author trailers).
 
 ## Key Concepts
 

@@ -51,7 +51,7 @@ Two things differ from the MonoGame/KNI path, both on FNA's side, not ShadowDusk
 - **FNA is not a NuGet package.** Unlike MonoGame and KNI, FNA is consumed as a **project reference** — a git clone/submodule of [FNA-XNA/FNA](https://github.com/FNA-XNA/FNA) plus its native `fnalibs` (SDL3, FNA3D, FAudio) — per FNA's own setup docs. (Community/unofficial FNA NuGet builds exist, but the project reference is FNA's documented, supported path.) You add `ShadowDusk.Compiler` to that existing FNA project exactly as above.
 - **Different output container.** For `PlatformTarget.Fna`, ShadowDusk emits a D3D9 **fx_2_0 `.fxb`** (Shader Model ≤ 3), not the `.mgfx` MonoGame/KNI load. FNA reads it through MojoShader at runtime via `new Effect(graphicsDevice, fxbBytes)`. See [Compiling for FNA](in-memory-quickstart.md#compiling-for-fna) in the quickstart.
 
-The FNA path is cross-platform and needs the same restored `vkd3d-shader` native as the cross-platform DirectX backend — see [Restore Native Tools](restore-native-tools.md).
+The FNA path is cross-platform and uses the same `vkd3d-shader` native as the cross-platform DirectX backend — which **ships inside the NuGet package** for all four desktop RIDs, so there is nothing to restore or install (the [restore script](restore-native-tools.md) is only for building ShadowDusk itself from source).
 
 ## DirectX backend & native tools
 

@@ -32,7 +32,7 @@ ShadowDuskCLI MyShader.fx MyShader.mgfx /Profile:DirectX_11
 
 Two common patterns:
 
-1. **PATH override (Tier-1).** Put ShadowDusk's `ShadowDuskCLI` ahead of MonoGame's `mgfxc` on `PATH` so MGCB and any script that shells out to `mgfxc` pick it up unchanged. This is the shipping MGCB integration path — see [MGCB Content Pipeline](mgcb-content-pipeline.md).
+1. **PATH override (Tier-1).** Expose ShadowDusk's CLI **under the name `mgfxc`** (a renamed copy/symlink of a published build, or a wrapper script named `mgfxc` that forwards to `ShadowDuskCLI`) ahead of MonoGame's `mgfxc` on `PATH` — MGCB and `mgfxc`-shelling scripts look for the *name* `mgfxc`, not `ShadowDuskCLI`, so the tool command alone is not picked up. This is the shipping MGCB integration path — see [MGCB Content Pipeline](mgcb-content-pipeline.md) for the exact steps.
 2. **Explicit invocation.** Call `ShadowDuskCLI` directly from your build script / Makefile / CI step.
 
 Because the flags, output, and exit codes match, nothing downstream needs to know it swapped tools.
