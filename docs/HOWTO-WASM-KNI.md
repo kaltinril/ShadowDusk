@@ -14,11 +14,15 @@ the user's machine. The faithful pinned-DXC→WASM pipeline is packaged so a con
 | **KNI** (nkast's MonoGame fork) **Blazor WebAssembly + WebGL**, target **OpenGL** | ✅ supported — this is the path below |
 | Output loads in real KNI WebGL `Effect` and renders like `mgfxc` | ✅ proven (10/10 corpus, headless) |
 | MonoGame *proper* in the browser | ❌ MonoGame has no mature browser-WASM runtime; **use KNI** for WASM |
-| **DirectX/DXBC** compiled *in the browser* | ❌ not yet — planned (Phase 4.1); browser path is OpenGL/WebGL only |
+| **DirectX/DXBC** compiled *in the browser* (`PlatformTarget.DirectX`) | ✅ supported — as an **export** target: the `.mgfx` is byte-identical to the desktop compile, but a browser cannot *render* DXBC; it renders in your MonoGame WindowsDX game |
+| **FNA fx_2_0 `.fxb`** compiled *in the browser* (`PlatformTarget.Fna`) | ✅ supported — likewise export-only (no D3D9 in a browser); renders in your FNA game |
 | Vertex-shader-driven effects (the corpus is pixel-shader-only) | ⚠️ untested in WASM — tracked (backlog 17-VS) |
 
-So: **KNI + Blazor WASM + OpenGL/WebGL**, pixel-shader effects — solid. That's what
-this guide targets.
+So: **KNI + Blazor WASM + OpenGL/WebGL**, pixel-shader effects — solid; that's the
+*render-in-the-browser* path this guide targets. The DirectX/FNA rows compile through
+the same pinned `vkd3d-shader` compiled to WebAssembly (never a substitute compiler);
+use them to *export* artifacts from a browser tool — see
+`samples/ShaderFiddle.Web` for a working export station.
 
 ---
 
@@ -39,8 +43,9 @@ this guide targets.
 ## 3. Get the ShadowDusk packages
 
 Add the `ShadowDusk.Wasm` package to your app — that single reference is all you need
-(§4 shows the `.csproj`). It brings the compiler and the native DXC + SPIRV-Cross WASM
-modules transitively; there's nothing else to install and nothing to copy into `wwwroot`.
+(§4 shows the `.csproj`). It brings the compiler and the native DXC + SPIRV-Cross +
+vkd3d-shader WASM modules transitively; there's nothing else to install and nothing to
+copy into `wwwroot`.
 
 ### Consuming an unreleased / source build (local feed)
 
@@ -48,7 +53,8 @@ If you're building against a source checkout ahead of the published version, pac
 NuGet feed from this repo. The faithful
 DXC→WASM module (`dxcompiler.wasm`, ~17 MB) is gitignored in the package `wwwroot`, but
 its source-of-truth is committed at `.wasm-build/dxc-wasm-out/`, so `restore` just
-**copies** it (no rebuild):
+**copies** it (no rebuild); the same script also downloads the pinned
+`vkd3d-shader.{js,wasm}` module (SHA-256-verified) into the package `wwwroot`:
 
 ```pwsh
 # from the repo root
@@ -97,8 +103,8 @@ The project must target **`net8.0-browser`** (required for `[JSImport]`):
 ```
 
 That single `ShadowDusk.Wasm` reference brings `ShadowDusk.Compiler`/`Core`/`HLSL`/`GLSL`
-transitively **and** the native DXC + SPIRV-Cross WASM modules (as Blazor static web
-assets). You do **not** add anything to `wwwroot`, and you do **not** call
+transitively **and** the native DXC + SPIRV-Cross + vkd3d-shader WASM modules (as Blazor
+static web assets). You do **not** add anything to `wwwroot`, and you do **not** call
 `JSHost.ImportAsync` — the library self-registers its modules on the first compile.
 
 ---
@@ -172,9 +178,11 @@ That's the whole integration. The full working version is
   `JSHost.ImportAsync` itself (in `WasmModuleRegistration`) against
   `../_content/ShadowDusk.Wasm/<file>` — so it works whether your app is hosted at the
   site root or a sub-path, with no consumer wiring.
-- The ~17 MB `dxcompiler.wasm` is **lazy-loaded on the first `CompileAsync`**, not at page
-  boot — so app startup stays fast. Serve your site with **HTTP compression** (brotli/gzip):
-  the module compresses to ~6 MB on the wire.
+- Each WASM module is **lazy-loaded by the first `CompileAsync` that needs it**, not at
+  page boot — so app startup stays fast: the ~17 MB `dxcompiler.wasm` on the first
+  OpenGL compile, the ~1.3 MB `vkd3d-shader.wasm` on the first DirectX/FNA compile.
+  Serve your site with **HTTP compression** (brotli/gzip): on the wire they compress to
+  ~6 MB and ~0.4 MB respectively.
 
 ---
 
@@ -182,7 +190,8 @@ That's the whole integration. The full working version is
 
 | Symptom | Fix |
 |---|---|
-| Build error: `dxcompiler.wasm is missing` | Run `tools/restore.ps1`/`.sh` before pack (copies the committed wasm into the package wwwroot). |
+| Build error: `dxcompiler.wasm is missing` or `vkd3d-shader.{js,wasm} is missing` | Run `tools/restore.ps1`/`.sh` before pack (copies/downloads the modules into the package wwwroot). |
+| `SD1902` on a DirectX/FNA compile | The `vkd3d-shader.{js,wasm}` module couldn't be loaded (e.g. not restored in a source build, or not served). Run `tools/restore.ps1`/`.sh` and check the browser fetched `_content/ShadowDusk.Wasm/vkd3d/vkd3d-shader.wasm`. |
 | Restore can't find `ShadowDusk.Compiler` etc. | You only packed `Wasm` — pack **all five** projects (§3) into the local feed. |
 | `new Effect(...)` throws on load | You're not on KNI (MonoGame proper has no v10 WebGL reader), or the `.mgfx` is for the wrong target. Use KNI + `PlatformTarget.OpenGL`. |
 | First compile hangs/slow | That's the one-time ~17 MB `dxcompiler.wasm` download. Show a loading state; enable server compression. |

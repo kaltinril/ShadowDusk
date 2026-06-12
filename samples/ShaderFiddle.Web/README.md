@@ -92,7 +92,7 @@ On the page:
    - **FNA (fx_2_0)** → `<name>.fxb` — export-only; renders in your FNA game.
 
    All three run the same faithful pipeline as the desktop CLI (`WasmShaderCompiler`
-   with the browser-injected DXC / SPIRV-Cross / vkd3d WASM backends — Phase 4.1), so
+   with the browser-injected DXC / SPIRV-Cross / vkd3d WASM backends), so
    the downloaded bytes are identical to a desktop compile. Compile errors appear in
    the same verbatim `file:line:col` error panel + editor squiggles; if the vkd3d
    WASM module is genuinely absent the DX/FNA rows fail loudly with **SD1902** (run

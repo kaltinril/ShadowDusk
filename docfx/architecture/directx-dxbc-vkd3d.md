@@ -25,7 +25,7 @@ var options = new CompilerOptions
 };
 ```
 
-The `vkd3d-shader` native is a **restored, non-redistributed** artifact (see [Restore Native Tools](../getting-started/restore-native-tools.md)); the default `d3dcompiler_47` oracle needs no restore but runs only on Windows.
+The `vkd3d-shader` natives for all four desktop RIDs **ship inside the NuGet package** (`runtimes/<rid>/native`, SHA-256-pinned builds hosted on the `native-vkd3d-1.17` release) — consumers install nothing; the repo's [restore script](../getting-started/restore-native-tools.md) is only for building ShadowDusk from source. The default `d3dcompiler_47` oracle needs no restore but runs only on Windows.
 
 ## Validation
 
@@ -33,8 +33,8 @@ Both backends are validated end-to-end: all 10/10 of the SM5 PS-only corpus shad
 
 ## Reflection from the same bytes
 
-The emitted DXBC is also the [reflection](reflection.md) source (read via `ID3D11ShaderReflection`), and a `DxbcReflectionExtractor` reflects both backends identically — so the [MGFX writer](mgfx-format.md) gets the same parameter/cbuffer/sampler metadata regardless of which backend produced the bytes.
+The emitted DXBC is also the [reflection](reflection.md) source, parsed by the pure-managed `RdefReader` (proven deeply equal to the Windows `D3DReflect` oracle for both backends' output), and a `DxbcReflectionExtractor` reflects both backends identically — so the [MGFX writer](mgfx-format.md) gets the same parameter/cbuffer/sampler metadata regardless of which backend produced the bytes, on every OS.
 
-## Open problem
+## In the browser
 
-**DirectX DXBC in the browser (WASM)** remains unsolved — see [DirectX-in-WASM (spike)](../backends/directx-in-wasm.md). The in-browser path today is OpenGL/WebGL only.
+**DirectX DXBC also compiles in the browser**: the same pinned `vkd3d-shader` is compiled to WebAssembly and ships inside the `ShadowDusk.Wasm` package, producing `.mgfx` byte-identical to the desktop output. It is an *export* target — a browser cannot render DXBC — see [DirectX & FNA in the Browser](../backends/directx-in-wasm.md).

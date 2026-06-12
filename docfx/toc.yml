@@ -44,7 +44,7 @@
       href: backends/metal.md
     - name: Vulkan (future)
       href: backends/vulkan.md
-    - name: DirectX-in-WASM (spike)
+    - name: DirectX & FNA in the Browser
       href: backends/directx-in-wasm.md
 - name: Samples
   items:

@@ -117,15 +117,16 @@ it is (by owner direction, 2026-06-09) intended as a **full export station**: us
 `.fxb`, …), with the host-appropriate default and an explicit override. The override is
 the *allowed* kind of choice (picking a platform the user's game targets — per
 `seamless-for-end-user`), and the in-browser artifact must be **byte-identical** to the
-desktop-compiled one (proven for GL — the G1 gate — and the bar for every future host).
+desktop-compiled one (proven for GL — the G1 gate — and, since Phase 4.1 (2026-06-12),
+for DX and FNA via the real-browser byte-identity gate; the bar for every future host).
 
-Where each host×target cell stands (updated 2026-06-11, post-Phase 37 A/B/C + Phase 18 Track A):
+Where each host×target cell stands (updated 2026-06-12, post-Phase 37 A/B/C + Phase 18 Track A + Phase 4.1):
 
 | Emit ↓ / Host → | Windows | Linux | macOS | Browser (WASM) |
 |---|---|---|---|---|
 | OpenGL `.mgfx` | ✅ proven | ✅ compiles green in CI (37 B fixed the Vortice `wchar_t` marshalling; the browser-smoke renders its corpus on llvmpipe); rung-4 render-vs-`mgfxc` still Windows-proven only | ✅ compiles green in CI (37 A dylib + the 37 B fix; full integration suite passes); byte-identity-vs-win assertion + rung-4 render are the remaining tail | ✅ proven, byte-identical |
-| DX11 DXBC `.mgfx` | ✅ proven | ✅ compiles end-to-end (vkd3d backend + managed `RdefReader` reflection — Track A); render bar is the real WindowsDX runtime, Windows-only by nature | ✅ same as Linux (DX11 no longer constructs DXC, so 37 A doesn't gate it) | ❌ needs vkd3d→WASM (Phase 4.1) |
-| FNA fx_2_0 `.fxb` | ✅ proven | ✅ proven | ✅ natives ship + compile suite green in CI (37 C); render oracle (`fxc`) is Windows-only by nature | ❌ needs vkd3d→WASM (Phase 4.1) |
+| DX11 DXBC `.mgfx` | ✅ proven | ✅ compiles end-to-end (vkd3d backend + managed `RdefReader` reflection — Track A); render bar is the real WindowsDX runtime, Windows-only by nature | ✅ same as Linux (DX11 no longer constructs DXC, so 37 A doesn't gate it) | ✅ **export target** — vkd3d→WASM landed (Phase 4.1, 2026-06-12): real-browser gate 65-artifact byte-identity vs the cross-host manifest; render bar stays desktop-by-nature (no Direct3D in a browser) |
+| FNA fx_2_0 `.fxb` | ✅ proven | ✅ proven | ✅ natives ship + compile suite green in CI (37 C); render oracle (`fxc`) is Windows-only by nature | ✅ **export target** — same Phase 4.1 vkd3d→WASM module, same 2026-06-12 real-browser byte-identity proof (no D3D9 in a browser) |
 | Vulkan SPIR-V / Metal MSL | parked — no validatable consumer runtime yet (Phases 31/32) | | | |
 
 > Phase 37 C (2026-06-10) hosted all four pinned vkd3d 1.17 per-RID binaries and made
@@ -140,17 +141,19 @@ Where each host×target cell stands (updated 2026-06-11, post-Phase 37 A/B/C + P
 > oracle-parity reflection); the rung-4 render claim stays Windows-proven only — DXBC
 > renders only in a real WindowsDX runtime.
 
-Every gap above is a **packaging/porting gap, never a compiler-writing gap** — and one
-artifact, **vkd3d-shader compiled to WASM (Phase 4.1)**, closes the entire browser column:
-the fx_2_0 writer, bytecode patcher, and reflection are managed C# that already run in
-WASM, so vkd3d.wasm unlocks **both** DX and FNA export in the browser from the same pinned
-1.17 source (no substitute compiler). The recommended completion order: **(1)** Phase 37 C
-artifact hosting + macOS vkd3d dylibs (✅ done 2026-06-10 — releases unblocked, the pack
-gate is satisfiable); **(2)** Phase 37 A/B (macOS DXC dylib, Linux ICE) to finish the desktop GL column;
-**(3)** un-park Phase 4.1 (vkd3d→WASM, reusing the Phase 23 emscripten infrastructure);
-**(4)** Vulkan/Metal remain validation-gated. Interim note for consumers who need DX/FNA
-export from a website before (3): hosting the same library server-side (Linux) yields the
-same bytes — legitimate for *their* architecture, while the in-browser path remains the
-product's own bar (no server relay as a substitute).
+Every gap above was a **packaging/porting gap, never a compiler-writing gap** — and one
+artifact, **vkd3d-shader compiled to WASM (Phase 4.1, ✅ done 2026-06-12)**, closed the
+entire browser column: the fx_2_0 writer, bytecode patcher, and reflection are managed C#
+that already ran in WASM, so vkd3d.wasm unlocked **both** DX and FNA export in the browser
+from the same pinned 1.17 source (no substitute compiler). The evidence: the node gate
+replays all 98 vkd3d stage compiles of the byte-identity corpus through the product shim,
+98/98 byte-identical to the desktop native; a real headless browser running the real
+`WasmShaderCompiler` reproduces all 65 full artifacts (37 DX `.mgfx` + 28 FNA `.fxb`)
+SHA-256-identical to the committed cross-host manifest — so render-equivalence transfers
+from the desktop rung-4 proofs by transitivity (`plan/PHASE-4.1-SPIKE-wasm-directx-dxbc.md`).
+DX/FNA in the browser are **export targets** — a browser cannot render DXBC/D3D9 bytecode,
+by construction, so the browser-side bar is byte-identity, honestly stated. Of the old
+completion order, only **(4)** remains: Vulkan/Metal stay validation-gated; the desktop GL
+column's remaining tail is the Linux/macOS rung-4 render items noted in the matrix.
 
-> **DirectX DXBC now works (Phase 18, done 2026-05-30).** DXC compiles to **DXIL (SM6)**, not the **DXBC (SM ≤ 5)** MonoGame 3.8's DX11 runtime loads — so the DX11 path no longer uses DXC. It routes through a DXBC backend behind `IDxbcShaderCompiler`: the cross-platform **vkd3d-shader** library (HLSL → DXBC_TPF) is the shipping backend, with Windows-only `d3dcompiler_47.dll` as a correctness oracle. DXC `ps_6_0`/`vs_6_0` (DXIL) is retained only for the DX12/KNI path. **Both OpenGL (Phase 17) and DirectX (Phase 18) are now validated end-to-end** in the real MonoGame runtime for the SM3/SM5 PS-only corpus (10/10 each); the DX backend's selector defaults to the oracle, with `DxbcBackend.Vkd3d` opt-in. WASM + DirectX DXBC remains the open problem (Phase 4.1).
+> **DirectX DXBC now works (Phase 18, done 2026-05-30).** DXC compiles to **DXIL (SM6)**, not the **DXBC (SM ≤ 5)** MonoGame 3.8's DX11 runtime loads — so the DX11 path no longer uses DXC. It routes through a DXBC backend behind `IDxbcShaderCompiler`: the cross-platform **vkd3d-shader** library (HLSL → DXBC_TPF) is the shipping backend, with Windows-only `d3dcompiler_47.dll` as a correctness oracle. DXC `ps_6_0`/`vs_6_0` (DXIL) is retained only for the DX12/KNI path. **Both OpenGL (Phase 17) and DirectX (Phase 18) are now validated end-to-end** in the real MonoGame runtime for the SM3/SM5 PS-only corpus (10/10 each); the DX backend's selector defaults to the oracle, with `DxbcBackend.Vkd3d` opt-in. WASM + DirectX DXBC, long the open problem, closed 2026-06-12: the same pinned vkd3d 1.17 compiled to WASM ships in `ShadowDusk.Wasm`, byte-identical to desktop (Phase 4.1).

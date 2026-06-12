@@ -36,6 +36,8 @@ Select the backend with <xref:ShadowDusk.Core.CompilerOptions.Target> (library) 
 For the MonoGame/KNI targets, the on-disk **profile byte** in the MGFX header encodes the backend choice (`OpenGL = 0`, `DirectX11 = 1`, `Vulkan = 3`). The runtime reads it to pick the shader path, so the target must be chosen **at compile time** — there is no universal `.mgfx` that serves both DirectX and OpenGL. A DirectX `.mgfx` is useless to a DesktopGL game and vice versa. FNA is selected differently (it's a whole separate format, `.fxb` — see Axis 1) and is **not** byte-compatible with the `.mgfx` targets.
 
 > **Practical rule for shader downloads:** first ask *which framework* — if it's **FNA**, emit the `.fxb` (`PlatformTarget.Fna`) and you're done (one file, all FNA backends). For **MonoGame/KNI**, the only remaining question is *"DirectX (WindowsDX) or OpenGL/DesktopGL/Web?"* — offer one `.mgfx` per backend. `GraphicsProfile` never matters.
+>
+> All three targets can also be compiled **in the browser** via `ShadowDusk.Wasm`, byte-identical to a desktop compile — OpenGL renders live in KNI WebGL, while DirectX and FNA are **export** targets (a browser cannot render DXBC/D3D9 bytecode). See [DirectX & FNA in the Browser](../backends/directx-in-wasm.md).
 
 ## Axis 3 — Reach vs HiDef (a runtime concept, not a target)
 
