@@ -143,9 +143,11 @@ internal sealed class JsSpirvToGlslTranspiler : ISpirvToGlslTranspiler
         {
             // Option values MUST match SpirvCrossGlslTranspiler exactly so the
             // browser-emitted GLSL is identical to the desktop output.
+            // flipVertexY is false (Phase 43 F3): the Y-flip is the runtime posFixup
+            // uniform's job (injected by MonoGameGlslRewriter), not a baked negation.
             string glsl = SpirvCrossInterop.TranspileToGlsl(
                 spirvBytes.ToArray(),
-                flipVertexY: true,
+                flipVertexY: false,
                 fixupDepthConvention: true,
                 glslVersion: 140,
                 glslEs: false,

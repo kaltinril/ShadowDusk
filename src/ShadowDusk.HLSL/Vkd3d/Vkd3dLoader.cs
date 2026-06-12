@@ -34,12 +34,26 @@ namespace ShadowDusk.HLSL.Vkd3d;
 /// </summary>
 internal static class Vkd3dLoader
 {
-    private static int _registered;
+    private static readonly object RegisterGate = new();
+    private static volatile bool _registered;
 
+    // A lock (not a lone CAS) so a concurrent second caller BLOCKS until the winner
+    // has finished installing the resolver — with CAS-then-subscribe the loser could
+    // return and P/Invoke before the resolver existed (the DxcLoader race class,
+    // observed as an intermittent DllNotFoundException under test parallelism).
     public static void Register()
     {
-        if (Interlocked.CompareExchange(ref _registered, 1, 0) != 0) return;
+        if (_registered) return;
+        lock (RegisterGate)
+        {
+            if (_registered) return;
+            RegisterCore();
+            _registered = true;
+        }
+    }
 
+    private static void RegisterCore()
+    {
         // Silence vkd3d's internal debug logging by default (e.g.
         // "vkd3d:1234:fixme:preproc_yyparse #line directive." on stderr). A successful
         // compile must be SILENT — the mgfxc contract: MGCB treats stderr output as

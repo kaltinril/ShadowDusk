@@ -32,6 +32,10 @@ This is a known fidelity gap versus `mgfxc` for the *initializer* specifically (
 
 A small family of advanced **OpenGL-target** texture intrinsics — **3D-texture sampling (`tex3D`), explicit-LOD sampling (the `tex2Dlod` family), and gradient sampling (the `tex2Dgrad` family)** — currently compiles on the Windows DXC native but **fails to compile on the Linux/macOS DXC builds**, even though all hosts pin the same DXC version. If your `.fx` uses these and you compile on Linux/macOS, expect a compile error (a loud diagnostic, never a miscompile); compiling the same shader on Windows works. The ordinary texture corpus (`tex2D`, multi-texture, samplers, render targets, …) is unaffected and compiles identically on all three OSes. This per-OS divergence is a known, tracked gap under investigation — it will be fixed in the compiler, not papered over here.
 
+## Vertex-stage texture fetch is rejected on the OpenGL target
+
+Sampling a texture **in a vertex shader** (e.g. displacement mapping via `SampleLevel`/`tex2Dlod` in the VS) fails loudly with **`SD0210`** for `Target = OpenGL`. This is deliberate: MonoGame 3.8.2's OpenGL runtime cannot bind vertex textures at all — its GL program link assigns texture units only for the *pixel* shader's sampler records, and there is no GL `VertexTextures` apply path — so any compiled output would silently sample whatever happens to sit on texture unit 0 (typically rendering black). A loud compile error is the only honest result. Move the fetch to the pixel stage, or pass the data through a uniform/vertex stream. The DirectX and FNA targets are unaffected by this MonoGame-GL-runtime limitation.
+
 ## DirectX uses `vkd3d-shader`, not DXC
 
 For `Target = DirectX`, ShadowDusk emits DXBC (SM ≤ 5) — what MonoGame's DX11 runtime loads — via `vkd3d-shader` (cross-platform) or `d3dcompiler_47` (Windows-only oracle), selected by <xref:ShadowDusk.Core.CompilerOptions.DxbcBackend>. **DXC is not used for DX11** because it only emits SM6 DXIL. See [DirectX DXBC (vkd3d) Path](../architecture/directx-dxbc-vkd3d.md).

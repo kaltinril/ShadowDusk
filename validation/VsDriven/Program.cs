@@ -59,11 +59,12 @@ string? baselineErr = baselineBytes is null ? $"golden not found: {goldenPath}" 
 Console.WriteLine($"[vs] candidate: {(candidateBytes is null ? "COMPILE FAIL: " + candidateErr : candidateBytes.Length + " bytes")}");
 Console.WriteLine($"[vs] baseline:  {(baselineBytes is null ? baselineErr : baselineBytes.Length + " bytes")}\n");
 
-int Render(string label, byte[]? bytes, string? err)
+(int Ok, (string Name, Microsoft.Xna.Framework.Color[] Pixels, int W, int H)? Capture)
+    Render(string label, byte[]? bytes, string? err, bool backbuffer)
 {
     var jobs = new List<ShaderJob> { new(fixture, bytes, err) };
     string outDir = Path.Combine(outBase, label);
-    using var game = new VsEffectImageRenderer(catPath, outDir, jobs);
+    using var game = new VsEffectImageRenderer(catPath, outDir, jobs, renderToBackbuffer: backbuffer);
     game.Run();
     int ok = 0;
     foreach (var o in game.Outcomes)
@@ -72,11 +73,44 @@ int Render(string label, byte[]? bytes, string? err)
         if (status == "OK  ") ok++;
         Console.WriteLine($"  [{label}] [{status}] {o.Name,-24} {(o.Error ?? o.PngPath)}");
     }
-    return ok;
+    return (ok, game.Captures.Count > 0 ? game.Captures[0] : null);
 }
 
-int b = Render("baseline", baselineBytes, baselineErr);
-int c = Render("candidate", candidateBytes, candidateErr);
+int MaxDelta((string, Microsoft.Xna.Framework.Color[], int, int)? a,
+             (string, Microsoft.Xna.Framework.Color[], int, int)? b)
+{
+    if (a is null || b is null) return int.MaxValue;
+    var (_, pa, wa, ha) = a.Value;
+    var (_, pb, wb, hb) = b.Value;
+    if (wa != wb || ha != hb) return int.MaxValue;
+    int maxd = 0;
+    for (int i = 0; i < pa.Length; i++)
+    {
+        maxd = Math.Max(maxd, Math.Abs(pa[i].R - pb[i].R));
+        maxd = Math.Max(maxd, Math.Abs(pa[i].G - pb[i].G));
+        maxd = Math.Max(maxd, Math.Abs(pa[i].B - pb[i].B));
+        maxd = Math.Max(maxd, Math.Abs(pa[i].A - pb[i].A));
+    }
+    return maxd;
+}
 
-Console.WriteLine($"\n[vs] baseline rendered {b}/1, candidate rendered {c}/1.");
-return (b == 1 && c == 1) ? 0 : 1;
+// ---- Render-target mode (the original Phase 28 path; MonoGame sets posFixup.y = -1). ----
+var (bRt, bRtCap) = Render("baseline",  baselineBytes,  baselineErr,  backbuffer: false);
+var (cRt, cRtCap) = Render("candidate", candidateBytes, candidateErr, backbuffer: false);
+
+// ---- BACKBUFFER mode (Phase 43 F3 — the case the static Y-flip got wrong;
+// MonoGame sets posFixup.y = +1 and reads back via GetBackBufferData). ----
+var (bBb, bBbCap) = Render("baseline-backbuffer",  baselineBytes,  baselineErr,  backbuffer: true);
+var (cBb, cBbCap) = Render("candidate-backbuffer", candidateBytes, candidateErr, backbuffer: true);
+
+int rtMaxd = MaxDelta(bRtCap, cRtCap);
+int bbMaxd = MaxDelta(bBbCap, cBbCap);
+
+Console.WriteLine($"\n[vs] render-target: baseline {bRt}/1, candidate {cRt}/1, baseline-vs-candidate maxd {(rtMaxd == int.MaxValue ? "n/a" : rtMaxd)}");
+Console.WriteLine($"[vs] backbuffer:    baseline {bBb}/1, candidate {cBb}/1, baseline-vs-candidate maxd {(bbMaxd == int.MaxValue ? "n/a" : bbMaxd)}");
+
+// Pass = all four render AND the candidate matches the mgfxc baseline pixel-for-pixel
+// (tolerance 1/255, the established rung-4 bar) in BOTH modes — same-backend GL<->GL.
+bool pass = bRt == 1 && cRt == 1 && bBb == 1 && cBb == 1 && rtMaxd <= 1 && bbMaxd <= 1;
+Console.WriteLine($"[vs] verdict: {(pass ? "PASS" : "FAIL")}");
+return pass ? 0 : 1;

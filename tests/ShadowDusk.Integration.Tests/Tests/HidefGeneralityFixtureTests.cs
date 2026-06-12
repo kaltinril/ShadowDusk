@@ -21,10 +21,13 @@ namespace ShadowDusk.Integration.Tests.Tests;
 ///   (Reach/WebGL1 has no 3D textures — documented platform wall). Emits
 ///   <c>sampler3D ps_s{k}</c> + <c>texture3D(</c>; sampler-type byte = 2.</item>
 ///   <item><b>Explicit-LOD / gradient</b> (<c>SampleLevel</c>/<c>SampleGrad</c>) —
-///   supported on Desktop + HiDef (Reach gates these behind an optional
-///   extension — documented platform wall). Emits the GENERIC <c>textureLod(</c>/
-///   <c>textureGrad(</c> (NOT the legacy <c>texture2DLod</c> KNI HiDef can't
-///   convert).</item>
+///   supported on Desktop + HiDef. Since Phase 43 F7 this emits the
+///   dimension-specific LEGACY names (<c>texture2DLod(</c>/<c>texture2DGrad(</c>,
+///   the MojoShader-faithful, Mesa-valid form) plus the guarded extension header
+///   whose <c>__VERSION__ &gt;= 300</c> branch maps them back to the generic
+///   builtins for KNI HiDef — one artifact, both profiles. (The Phase 34
+///   generic-form choice failed on Mesa: <c>textureLod</c> does not exist in
+///   versionless legacy GLSL.)</item>
 /// </list>
 /// <para>The Reach walls (3D, explicit-LOD) are NOT compile-time errors: ShadowDusk
 /// emits ONE OpenGL blob and cannot know the consumer's KNI profile, so the limit
@@ -76,24 +79,54 @@ public sealed class HidefGeneralityFixtureTests
     }
 
     [Theory]
-    [InlineData("examples/ExSampleLevelHidef.fx", "textureLod(ps_s0,")]
-    [InlineData("examples/ExSampleGradHidef.fx",  "textureGrad(ps_s0,")]
-    public async Task LodGrad_Compiles_KeepsGenericBuiltin(string fx, string expectedCall)
+    [InlineData("examples/ExSampleLevelHidef.fx", "texture2DLod(ps_s0,",  "textureLod(ps_s0,")]
+    [InlineData("examples/ExSampleGradHidef.fx",  "texture2DGrad(ps_s0,", "textureGrad(ps_s0,")]
+    public async Task LodGrad_Compiles_EmitsLegacyNameWithGuardedHeader(string fx, string expectedCall, string genericCall)
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var result = await TestHelpers.CompileFixtureAsync(fx, "OpenGL", ct: cts.Token);
 
         result.ExitCode.Should().Be(0,
-            because: $"explicit-LOD/gradient sampling is supported on Desktop + HiDef now; stderr: {result.Stderr}");
+            because: $"explicit-LOD/gradient sampling is supported on Desktop + HiDef; stderr: {result.Stderr}");
         result.Mgfx.Should().NotBeEmpty();
 
+        // Phase 43 F7: the generic textureLod/textureGrad forms only exist from GLSL
+        // 1.30 / ES 3.00 — Mesa's strict front-end rejects them in the versionless
+        // legacy dialect (the confirmed Linux DesktopGL Effect-load failure). The
+        // faithful form is MojoShader's: the dimension-specific legacy name plus the
+        // guarded extension header, whose `#if __VERSION__ >= 300` branch maps it
+        // back to the generic builtin for KNI HiDef/WebGL2 — one artifact, both
+        // profiles (the Phase 33 promise).
         string ascii = Ascii(result.Mgfx);
         ascii.Should().Contain(expectedCall,
-            because: "the generic LOD/grad form is the single-blob-correct one (desktop + KNI HiDef)");
-        // The legacy texture2DLod/texture2DGrad forms are NOT ES-3.00 builtins and KNI
-        // HiDef does not convert them — they must never be emitted.
-        ascii.Should().NotContain("texture2DLod");
-        ascii.Should().NotContain("texture2DGrad");
+            because: "the dimension-specific legacy spelling is the Mesa-valid MojoShader form");
+        ascii.Should().NotContain(genericCall,
+            because: "no generic call site may survive (Mesa rejects it in versionless GLSL)");
+
+        // The guarded header: HiDef mapping + ARB/EXT extension ladder + degrade.
+        ascii.Should().Contain("#if __VERSION__ >= 300");
+        ascii.Should().Contain("#elif defined(GL_ARB_shader_texture_lod)");
+        ascii.Should().Contain("#define texture2DLod(a,b,c) texture2D(a,b)");
+    }
+
+    [Fact]
+    public async Task VsTextureFetch_FailsLoudly_SD0210_NeverSilentlyBlack()
+    {
+        // Phase 43 F8: MonoGame 3.8.2's GL runtime cannot bind vertex textures
+        // (ShaderProgramCache.Link assigns texture units only for the PIXEL shader's
+        // sampler records; GraphicsDevice.OpenGL.cs has no VertexTextures path), so
+        // ANY emitted GLSL would silently sample the wrong texture at runtime.
+        // Previously the rewriter shipped the un-renamed sampler decl and the .mgfx
+        // pointed at ps_s0 — silently-black output. Now it must fail LOUDLY.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var result = await TestHelpers.CompileFixtureAsync(
+            "examples/ExVsTextureFetch.fx", "OpenGL", ct: cts.Token);
+
+        result.ExitCode.Should().NotBe(0,
+            because: "a VS texture fetch cannot work in MonoGame 3.8.2's GL runtime and must not compile silently");
+        result.Stderr.Should().Contain("SD0210");
+        result.Stderr.Should().Contain("Vertex-stage texture sampling",
+            because: "the diagnostic must name the actual limitation, not a generic rewrite error");
     }
 
     [Fact]

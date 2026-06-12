@@ -155,8 +155,8 @@ public sealed class Phase34TextureBreadthTests
     [Theory]
     [InlineData("examples/ExCubeSamplerHidef.fx",   "textureCube")]
     [InlineData("examples/ExVolumeTextureHidef.fx", "texture3D")]
-    [InlineData("examples/ExSampleLevelHidef.fx",   "textureLod")]
-    [InlineData("examples/ExSampleGradHidef.fx",    "textureGrad")]
+    [InlineData("examples/ExSampleLevelHidef.fx",   "texture2DLod")]  // Phase 43 F7: legacy name + guarded header
+    [InlineData("examples/ExSampleGradHidef.fx",    "texture2DGrad")] // Phase 43 F7: legacy name + guarded header
     public async Task EmittedGlsl_CompilesAndLinks_InRealDriver(string fx, string expectedBuiltin)
     {
         if (_fixture.IsSkipped)

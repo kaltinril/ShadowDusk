@@ -62,7 +62,8 @@ other targets keep the unmodified SPIRV-Cross dialect. The pixel-stage transform
 | 3 | `uniform sampler2D <id>;` | `uniform sampler2D ps_s{slot};` (by declaration order); uses renamed in the body |
 | 4 | `in <type> in_var_<SEM>;` | `varying vec4 <legacy>;` — `COLOR0`→`vFrontColor`, `COLOR1`→`vBackColor`, `TEXCOORD{n}`→`vTexCoord{n}`; uses get a width-truncating swizzle |
 | 5 | `out vec4 out_var_SV_Target<N?>;` | declaration dropped; uses → `gl_FragColor` (or `gl_FragData[N]`) |
-| 6 | `texture()/textureLod()/textureProj()` | `texture2D()/texture2DLod()/texture2DProj()` |
+| 6 | `texture()` | dimension-specific legacy builtin per the sampler's declared type: `texture2D()` / `textureCube()` / `texture3D()` (Phase 34) |
+| 6b | `textureLod()` / `textureGrad()` / `textureProj()` | dimension-specific legacy names — `texture2DLod`/`textureCubeLod`/`texture3DLod`, `texture2DGrad` (2D only; cube/3D gradients fail loudly — no GLSL defines a legacy spelling), `texture2DProj`/`texture3DProj` — **plus** MojoShader's guarded extension header prepended once (Phase 43 F7): `#if __VERSION__ >= 300` maps the legacy names back to the generic builtins (KNI HiDef/WebGL2, mirroring MojoShader's GLSLES3 preflight), `#elif defined(GL_ARB_shader_texture_lod)` / `#elif defined(GL_EXT_gpu_shader4)` enable the fragment-stage builtins on legacy desktop GL (Mesa accepts this; the bare generic spelling was a Linux Effect-load failure), `#else` degrades to a plain `texture2D()`-family call — never a compile failure. One artifact serves Reach, HiDef and desktop. |
 | 7 | `layout(std140) uniform type_Globals { … }` | `uniform vec4 ps_uniforms_vec4[N];`; member uses `_Globals.<m>` → `ps_uniforms_vec4[i]<swizzle>` |
 | 8 | `roundEven(x)` / `round(x)` (GLSL ES 3.00 / GL 1.30 only) | `floor((x) + 0.5)` — valid in every GLSL profile incl. WebGL1 / GLSL ES 1.00 (KNI's Reach profile), and exactly what mgfxc/MojoShader emits for HLSL `round`. Argument captured by a balanced-paren scan so nested calls lower correctly. |
 
@@ -102,7 +103,7 @@ in/out direction are the only stage knobs:
 | `layout(std140) uniform type_Globals { … }` | `uniform vec4 vs_uniforms_vec4[N];` (a `mat4` counts as four registers) |
 | `in <type> in_var_<SEM>;` (vertex **inputs**) | `attribute vec4 vs_v{k};` — renamed in declaration order; uses get a width-truncating swizzle (`vec4(vs_v0.xyz, 1.0)`) |
 | `out <type> out_var_<SEM>;` (vertex **outputs**) | `varying vec4 <legacy>;` — the SAME names the PS reads (`vFrontColor`/`vTexCoord{n}`), so MonoGame links VS→PS **by name**; a narrower output writes a swizzled LHS (`vTexCoord0.xy = vs_v2.xy;`) |
-| `gl_Position = … ;` (from `SV_Position`) | kept as-is; SPIRV-Cross's `FlipVertexY` + `FixupDepthConvention` already bake the Y-flip and DX→GL depth range (mgfxc uses a `posFixup` uniform for the same effect — both produce the same `gl_Position`) |
+| `gl_Position = … ;` (from `SV_Position`) | kept, then the mgfxc/MojoShader **`posFixup` contract** is injected (Phase 43 F3): `uniform vec4 posFixup;` (declared after `vs_uniforms_vec4[]`, the golden's order) and the two fixup lines `gl_Position.y = gl_Position.y * posFixup.y;` + `gl_Position.xy += posFixup.zw * gl_Position.ww;` immediately before SPIRV-Cross's kept depth-convention line. MonoGame's GL runtime sets the uniform per draw (`+1` backbuffer / `-1` render target, half-pixel offset in `.zw` when `UseHalfPixelOffset`) and skips programs without it. SPIRV-Cross's `FlipVertexY` is **off** — the old baked `-gl_Position.y` only matched the render-target case and rendered backbuffer draws (the normal game case) vertically inverted. `FixupDepthConvention` stays on. |
 
 The VS rewrite also returns the **vertex-attribute table** (each `vs_v{k}` →
 `VertexElementUsage`+semantic-index: POSITION→0, COLOR→1, TEXCOORD→2, NORMAL→3) which the
@@ -124,7 +125,10 @@ shifts every member after it, agreeing exactly with the `.mgfx` cbuffer packing
 `float4x4` transform + POSITION/COLOR0/TEXCOORD0 + textured/tinted PS) compiled by ShadowDusk
 loads in a **real** `MonoGame.Framework.DesktopGL` `Effect` and renders **pixel-identical**
 (max delta 0) to the mgfxc OpenGL golden, via a custom vertex-buffer draw path
-(`validation/VsDriven`). The same `.fx` for DirectX loads in real `MonoGame.Framework.WindowsDX`
+(`validation/VsDriven`) — in **both** the `RenderTarget2D` mode and the **backbuffer** mode
+(`GetBackBufferData`; Phase 43 F3 — the case the static Y-flip got wrong, where MonoGame sets
+`posFixup.y = +1`). The proxy-renderer evidence is `Phase43PosFixupRenderTests` (golden
+string match + orientation-flip render proof). The same `.fx` for DirectX loads in real `MonoGame.Framework.WindowsDX`
 and renders pixel-identical to the mgfxc DX golden via **both** the d3dcompiler oracle and the
 cross-platform vkd3d backend (`validation/VsDrivenDx`). The PS-only corpus and
 image-regression anchors remain unregressed (10/10).

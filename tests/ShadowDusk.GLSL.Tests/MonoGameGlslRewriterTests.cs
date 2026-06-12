@@ -260,11 +260,12 @@ void main()
         open.Should().Be(close, "the lowered GLSL must keep parentheses balanced");
     }
 
-    // ---- Vertex stage (Phase 28). SPIRV-Cross VS output for a custom VS taking a
-    // float4x4 transform + the SpriteBatch vertex set (POSITION0 / COLOR0 / TEXCOORD0),
-    // captured verbatim from DXC→SPIRV-Cross for VsTransformColorTexture.fx. The
-    // FlipVertexY / FixupDepthConvention options are on, so SPIRV-Cross already bakes
-    // the gl_Position Y-flip + depth-range conversion (no posFixup needed). ----
+    // ---- Vertex stage (Phase 28, posFixup contract since Phase 43 F3). SPIRV-Cross
+    // VS output for a custom VS taking a float4x4 transform + the SpriteBatch vertex
+    // set (POSITION0 / COLOR0 / TEXCOORD0), captured verbatim from DXC→SPIRV-Cross for
+    // VsTransformColorTexture.fx. FixupDepthConvention is ON (the depth line below);
+    // FlipVertexY is OFF since Phase 43 — the Y-flip is the runtime posFixup
+    // uniform's job, injected by the rewriter (mgfxc/MojoShader's contract). ----
 
     private const string VertexExample = """
 #version 140
@@ -290,7 +291,6 @@ void main()
     out_var_COLOR0 = in_var_COLOR0 * _Globals.Tint;
     out_var_TEXCOORD0 = in_var_TEXCOORD0;
     gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;
-    gl_Position.y = -gl_Position.y;
 }
 """;
 
@@ -329,6 +329,79 @@ void main()
         result.Glsl.Should().NotContain("_Globals");
         result.Glsl.Should().NotContain("\nin ");
         result.Glsl.Should().NotContain("\nout ");
+    }
+
+    // ---- Phase 43 F3: the dynamic posFixup contract. The OpenGL golden
+    // VsTransformColorTexture.mgfx VS is string-decisive — its exact lines are:
+    //   uniform vec4 posFixup;
+    //   gl_Position.y = gl_Position.y * posFixup.y;
+    //   gl_Position.xy += posFixup.zw * gl_Position.ww;
+    //   gl_Position.z = gl_Position.z * 2.0 - gl_Position.w;   (depth, last)
+    // MonoGame 3.8.2's GraphicsDevice.OpenGL.cs sets the uniform at draw time
+    // (+1 backbuffer / -1 render target, half-pixel via .zw) and SKIPS programs
+    // without it — a baked static flip is wrong for the backbuffer case. ----
+
+    [Fact]
+    public void VertexStage_EmitsPosFixupContract_MatchingMgfxcGoldenForm()
+    {
+        var result = MonoGameGlslRewriter.Rewrite(VertexExample, ShaderStage.Vertex);
+
+        // Declaration directly after the constant-register array (golden order).
+        result.Glsl.Should().Contain("uniform vec4 vs_uniforms_vec4[5];\nuniform vec4 posFixup;");
+
+        // The two fixup lines, byte-for-byte the golden's form.
+        result.Glsl.Should().Contain("gl_Position.y = gl_Position.y * posFixup.y;");
+        result.Glsl.Should().Contain("gl_Position.xy += posFixup.zw * gl_Position.ww;");
+
+        // No static flip survives anywhere (FlipVertexY off + nothing re-bakes it).
+        result.Glsl.Should().NotContain("-gl_Position.y");
+
+        // Golden line ORDER: Y-flip, then half-pixel, then the depth-convention line.
+        int yFlip  = result.Glsl.IndexOf("gl_Position.y = gl_Position.y * posFixup.y;", StringComparison.Ordinal);
+        int halfPx = result.Glsl.IndexOf("gl_Position.xy += posFixup.zw * gl_Position.ww;", StringComparison.Ordinal);
+        int depth  = result.Glsl.IndexOf("gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;", StringComparison.Ordinal);
+        yFlip.Should().BePositive();
+        halfPx.Should().BeGreaterThan(yFlip);
+        depth.Should().BeGreaterThan(halfPx,
+            "the depth-convention line must stay LAST, matching the mgfxc golden's statement order");
+    }
+
+    [Fact]
+    public void VertexStage_NoUniformBlock_StillEmitsPosFixup()
+    {
+        // A passthrough VS (no cbuffer) still needs the posFixup contract or it
+        // renders upside-down on the backbuffer in real MonoGame.
+        const string src = """
+#version 140
+in vec4 in_var_POSITION0;
+void main()
+{
+    gl_Position = in_var_POSITION0;
+    gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Vertex);
+
+        result.Glsl.Should().Contain("uniform vec4 posFixup;");
+        result.Glsl.Should().Contain("gl_Position.y = gl_Position.y * posFixup.y;");
+        result.Glsl.Should().Contain("gl_Position.xy += posFixup.zw * gl_Position.ww;");
+    }
+
+    [Fact]
+    public void VertexStage_PosFixupIdentifierCollision_FailsLoudly()
+    {
+        const string src = """
+#version 140
+in vec4 in_var_POSITION0;
+void main()
+{
+    vec4 posFixup = in_var_POSITION0;
+    gl_Position = posFixup;
+}
+""";
+        var act = () => MonoGameGlslRewriter.Rewrite(src, ShaderStage.Vertex);
+        act.Should().Throw<MonoGameGlslRewriteException>()
+            .WithMessage("*posFixup*");
     }
 
     [Fact]
@@ -827,14 +900,17 @@ void main()
     }
 
     [Theory]
-    [InlineData("textureLod",  "2.0")]   // from tex2Dlod / SampleLevel
-    [InlineData("textureGrad", "vec2(0.01, 0.0), vec2(0.0, 0.01)")] // from tex2Dgrad / SampleGrad
-    public void LodGradSampling_KeptInGenericForm_NotDownRewritten(string builtin, string extraArgs)
+    [InlineData("textureLod",  "2.0",                               "texture2DLod")]   // from tex2Dlod / SampleLevel
+    [InlineData("textureGrad", "vec2(0.01, 0.0), vec2(0.0, 0.01)", "texture2DGrad")]  // from tex2Dgrad / SampleGrad
+    public void LodGradSampling_RewrittenToLegacyName_WithGuardedHeader(string builtin, string extraArgs, string legacy)
     {
-        // Phase 34: the generic LOD/grad form is valid on Desktop + KNI HiDef (core ES
-        // 3.00) and is what the rewriter now KEEPS — it must NOT down-rewrite to the
-        // legacy texture2DLod/texture2DGrad (which KNI HiDef does not convert), and must
-        // NOT fail loudly any more.
+        // Phase 43 F7: the generic textureLod/textureGrad forms only exist from GLSL
+        // 1.30 / ES 3.00 — Mesa's strict front-end rejects them in the versionless
+        // legacy dialect ("no function with name 'textureLod'", the confirmed Linux
+        // DesktopGL load failure). The faithful MojoShader form is the
+        // dimension-specific legacy name + the guarded extension header; the header's
+        // __VERSION__ >= 300 branch maps the legacy name back for KNI HiDef, so the
+        // one-artifact-two-profiles promise (Phase 33) holds.
         string src = $$"""
 #version 140
 
@@ -849,10 +925,81 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().Contain($"{builtin}(ps_s0,",
-            "the generic LOD/grad builtin is the single-blob-correct form (desktop + HiDef)");
-        result.Glsl.Should().NotContain("texture2DLod");
-        result.Glsl.Should().NotContain("texture2DGrad");
+        result.Glsl.Should().Contain($"{legacy}(ps_s0,",
+            "the dimension-specific legacy spelling is the MojoShader-faithful, Mesa-valid form");
+
+        // No generic CALL survives (the header's `#define texture2DLod textureLod`
+        // mention is fine — it is not a call site).
+        System.Text.RegularExpressions.Regex.IsMatch(result.Glsl, $@"\b{builtin}\s*\(")
+            .Should().BeFalse($"no generic {builtin}( call site may survive in the body");
+
+        // The guarded extension header (MojoShader prepend_glsl_texlod_extensions +
+        // its GLSLES3 mapping): graceful degrade, never a compile failure.
+        result.Glsl.Should().Contain("#if __VERSION__ >= 300");
+        result.Glsl.Should().Contain($"#define {legacy} {builtin}");
+        result.Glsl.Should().Contain("#elif defined(GL_ARB_shader_texture_lod)");
+        result.Glsl.Should().Contain("#extension GL_ARB_shader_texture_lod : enable");
+        result.Glsl.Should().Contain("#elif defined(GL_EXT_gpu_shader4)");
+        result.Glsl.Should().Contain("#define texture2DLod(a,b,c) texture2D(a,b)");
+    }
+
+    [Theory]
+    [InlineData("samplerCube", "vec3 in_var_TEXCOORD0",
+        "textureLod(_10, in_var_TEXCOORD0, 2.0)", "textureCubeLod(ps_s0,")]
+    [InlineData("sampler3D", "vec3 in_var_TEXCOORD0",
+        "textureLod(_10, in_var_TEXCOORD0, 1.0)", "texture3DLod(ps_s0,")]
+    public void LodSampling_NonTwoDSamplers_GetDimensionSpecificLodName(
+        string samplerType, string inDecl, string call, string expected)
+    {
+        // SPIRV-Cross emits the GENERIC textureLod for every dimension; the legacy
+        // name must follow the SAMPLER's dimension (MojoShader emit_GLSL_TEXLDL:
+        // texture2DLod / textureCubeLod / texture3DLod).
+        string src = $$"""
+#version 140
+
+uniform {{samplerType}} _10;
+in {{inDecl}};
+out vec4 out_var_SV_Target0;
+
+void main()
+{
+    out_var_SV_Target0 = {{call}};
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+        result.Glsl.Should().Contain(expected);
+    }
+
+    [Fact]
+    public void GradSampling_CubeSampler_FailsLoudly()
+    {
+        // No GLSL profile or extension defines a textureCubeGrad-style legacy name
+        // (MojoShader emits one anyway — GLSL that can never link). Fail loudly.
+        const string src = """
+#version 140
+
+uniform samplerCube _10;
+in vec3 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target0;
+
+void main()
+{
+    out_var_SV_Target0 = textureGrad(_10, in_var_TEXCOORD0, vec3(0.01), vec3(0.01));
+}
+""";
+        var act = () => MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+        act.Should().Throw<MonoGameGlslRewriteException>()
+            .WithMessage("*Gradient sampling*cube*");
+    }
+
+    [Fact]
+    public void PlainSampling_DoesNotEmitTexLodHeader()
+    {
+        // The guarded header is emitted ONLY when a LOD/grad/proj call was rewritten —
+        // the ordinary corpus output must stay byte-identical to the pre-F7 form.
+        var result = MonoGameGlslRewriter.Rewrite(ExampleA, ShaderStage.Pixel);
+        result.Glsl.Should().NotContain("GL_ARB_shader_texture_lod");
+        result.Glsl.Should().NotContain("__VERSION__");
     }
 
     // ---- Phase 33 → Phase 34: guards remain ONLY for kinds still unmodeled ----
@@ -903,6 +1050,35 @@ void main()
 """;
         Action act = () => MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
         act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void VertexStage_SamplerDeclaration_FailsLoudly()
+    {
+        // Phase 43 F8: MonoGame 3.8.2's GL runtime never assigns texture units to
+        // vertex-shader samplers (ShaderProgramCache.Link applies only the pixel
+        // shader's sampler records; no GL VertexTextures path exists), so any emitted
+        // VS sampler would silently read the wrong texture at runtime. The old
+        // behavior shipped the un-renamed decl (`uniform sampler2D _35;`) while the
+        // .mgfx sampler record said ps_s0 — silently-black output, twice broken.
+        const string src = """
+#version 140
+
+uniform sampler2D _35;
+in vec4 in_var_POSITION0;
+in vec2 in_var_TEXCOORD0;
+out vec2 out_var_TEXCOORD0;
+
+void main()
+{
+    gl_Position = in_var_POSITION0 + textureLod(_35, in_var_TEXCOORD0, 0.0);
+    out_var_TEXCOORD0 = in_var_TEXCOORD0;
+    gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;
+}
+""";
+        var act = () => MonoGameGlslRewriter.Rewrite(src, ShaderStage.Vertex);
+        act.Should().Throw<MonoGameGlslRewriteException>()
+            .WithMessage("*Vertex-stage texture sampling*");
     }
 
     [Fact]

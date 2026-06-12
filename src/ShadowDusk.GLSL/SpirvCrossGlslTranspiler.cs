@@ -80,7 +80,13 @@ public sealed class SpirvCrossGlslTranspiler : ISpirvToGlslTranspiler
                 != SpvcResult.Success)
                 return Result<GlslSource, ShaderError>.Fail(GetLastError(ctx, "create_compiler_options"));
 
-            if (SpvcNative.spvc_compiler_options_set_bool(options, SpvcCompilerOption.FlipVertexY, true)
+            // FlipVertexY is deliberately OFF (Phase 43 F3). A static baked
+            // `gl_Position.y = -gl_Position.y;` only matches MonoGame's render-target
+            // case; the real contract is mgfxc/MojoShader's runtime `posFixup` uniform
+            // (+1 backbuffer / -1 render target, half-pixel offset in .zw), which
+            // MonoGameGlslRewriter injects into the vertex stage. Setting this to true
+            // again would DOUBLE-flip every VS-driven GL effect.
+            if (SpvcNative.spvc_compiler_options_set_bool(options, SpvcCompilerOption.FlipVertexY, false)
                 != SpvcResult.Success)
                 return Result<GlslSource, ShaderError>.Fail(GetLastError(ctx, "set_option FlipVertexY"));
 
