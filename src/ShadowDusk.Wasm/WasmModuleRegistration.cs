@@ -24,15 +24,28 @@ namespace ShadowDusk.Wasm;
 /// app is hosted at the site root or under a sub-path, with no <c>document.baseURI</c>
 /// read or consumer-supplied <c>NavigationManager</c> needed.</para>
 ///
-/// <para><b>Ordering:</b> the <c>shadowdusk-spirv-cross</c> shim uses a top-level
-/// <c>await</c> (it instantiates its WASM eagerly during module evaluation) so that its
-/// exported <c>transpileToGlsl</c> can be synchronous. <see cref="JSHost.ImportAsync"/>
-/// only resolves after the module has finished evaluating, so awaiting the import here
-/// guarantees the SPIRV-Cross WASM is fully initialized before the synchronous
-/// <c>[JSImport]</c> call in <see cref="JsSpirvToGlslTranspiler"/>. We register BOTH
-/// modules up front in the async DXC path (which always runs before SPIRV-Cross in the
-/// pipeline) so neither synchronous <c>[JSImport]</c> can ever hit an unregistered
-/// module (which would abort the .NET WASM runtime).</para>
+/// <para><b>Registration is PER COMPILE PATH (Phase 27 — SD1902 attribution):</b> the
+/// OpenGL/Vulkan path registers <c>shadowdusk-dxc</c> + <c>shadowdusk-spirv-cross</c>
+/// (the only modules whose synchronous <c>[JSImport]</c>s that path makes), and the
+/// DirectX/FNA path registers <c>shadowdusk-vkd3d</c> alone. Registering all three from
+/// every path meant a SPIRV-Cross load failure surfaced under the vkd3d SD1902 headline
+/// (and vice versa) — misleading attribution. Each import failure is also re-wrapped to
+/// NAME the failing module, so the underlying error text can never be ambiguous.
+/// <see cref="WasmShaderCompiler.InitializeAsync"/> still warms everything (it awaits
+/// both groups via the two <c>Ensure*ReadyAsync</c> gates) — Phase 42 semantics are
+/// unchanged.</para>
+///
+/// <para><b>Ordering within the DXC group:</b> the <c>shadowdusk-spirv-cross</c> shim
+/// uses a top-level <c>await</c> (it instantiates its WASM eagerly during module
+/// evaluation) so that its exported <c>transpileToGlsl</c> can be synchronous.
+/// <see cref="JSHost.ImportAsync"/> only resolves after the module has finished
+/// evaluating, so awaiting the import here guarantees the SPIRV-Cross WASM is fully
+/// initialized before the synchronous <c>[JSImport]</c> call in
+/// <see cref="JsSpirvToGlslTranspiler"/>. The DXC path always registers both up front,
+/// so neither synchronous <c>[JSImport]</c> can ever hit an unregistered module (which
+/// would abort the .NET WASM runtime). The vkd3d path makes no DXC/SPIRV-Cross
+/// <c>[JSImport]</c> calls (vkd3d → managed RDEF/CTAB reflection → managed writers), so
+/// it needs only its own module.</para>
 /// </summary>
 [SupportedOSPlatform("browser")]
 internal static class WasmModuleRegistration
@@ -45,42 +58,81 @@ internal static class WasmModuleRegistration
     private const string Vkd3dModuleUrl = "../_content/ShadowDusk.Wasm/shadowdusk-vkd3d.js";
 
     private static readonly SemaphoreSlim Gate = new(1, 1);
-    private static Task? _registration;
+    private static Task? _dxcChainRegistration;   // shadowdusk-dxc + shadowdusk-spirv-cross
+    private static Task? _vkd3dRegistration;      // shadowdusk-vkd3d
 
     /// <summary>
-    /// Idempotently imports (registers) all three <c>[JSImport]</c> modules from the
-    /// package's own <c>_content/ShadowDusk.Wasm/</c> base. Safe to call repeatedly and
-    /// concurrently; the import happens exactly once. Awaiting it before the first
-    /// <c>[JSImport]</c> call in any backend is what makes the consumer's experience
-    /// zero-wiring. The heavy WASM binaries are NOT downloaded here — registering the
-    /// <c>shadowdusk-dxc</c> / <c>shadowdusk-vkd3d</c> shims only evaluates their tiny
-    /// JS; each shim lazy-loads its WASM on the first compile via its
-    /// <c>EnsureReadyAsync</c> (<c>DxcInterop</c> / <c>Vkd3dInterop</c>).
+    /// Idempotently imports (registers) the two <c>[JSImport]</c> modules the
+    /// OpenGL/Vulkan compile path needs (<c>shadowdusk-dxc</c> then
+    /// <c>shadowdusk-spirv-cross</c>) from the package's own
+    /// <c>_content/ShadowDusk.Wasm/</c> base. Safe to call repeatedly and concurrently;
+    /// the import happens exactly once. The heavy DXC WASM binary is NOT downloaded
+    /// here — the shim lazy-loads it on the first compile via
+    /// <c>DxcInterop.EnsureReadyAsync</c>; SPIRV-Cross instantiates eagerly during its
+    /// module evaluation (top-level await), by design.
     /// </summary>
-    public static Task EnsureRegisteredAsync(CancellationToken cancellationToken = default)
+    public static Task EnsureDxcChainRegisteredAsync(CancellationToken cancellationToken = default)
     {
         // Fast path: already registered (or in flight).
-        var existing = Volatile.Read(ref _registration);
+        var existing = Volatile.Read(ref _dxcChainRegistration);
         if (existing is not null)
             return existing;
 
-        return RegisterOnceAsync(cancellationToken);
+        return RegisterOnceAsync(vkd3d: false, cancellationToken);
     }
 
-    private static async Task RegisterOnceAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// Idempotently imports (registers) the single <c>[JSImport]</c> module the
+    /// DirectX/FNA compile path needs (<c>shadowdusk-vkd3d</c>). Evaluating the shim is
+    /// cheap and does NOT require <c>vkd3d/vkd3d-shader.{js,wasm}</c> to be present;
+    /// that WASM lazy-loads on the first DirectX/FNA compile via
+    /// <c>Vkd3dInterop.EnsureReadyAsync</c>. Deliberately does NOT touch the
+    /// DXC/SPIRV-Cross modules: this path never calls into them, and pulling them in
+    /// here would mis-attribute their load failures to vkd3d (SD1902).
+    /// </summary>
+    public static Task EnsureVkd3dRegisteredAsync(CancellationToken cancellationToken = default)
+    {
+        var existing = Volatile.Read(ref _vkd3dRegistration);
+        if (existing is not null)
+            return existing;
+
+        return RegisterOnceAsync(vkd3d: true, cancellationToken);
+    }
+
+    private static async Task RegisterOnceAsync(bool vkd3d, CancellationToken cancellationToken)
     {
         await Gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            _registration ??= ImportBothAsync(cancellationToken);
-            await _registration.ConfigureAwait(false);
-        }
-        catch
-        {
-            // A failed import must NOT be cached as "done" — reset so a later call can
-            // retry (e.g. transient asset-fetch failure). Re-throw so the caller sees it.
-            _registration = null;
-            throw;
+            if (vkd3d)
+            {
+                _vkd3dRegistration ??= ImportModuleAsync("shadowdusk-vkd3d", Vkd3dModuleUrl, cancellationToken);
+                try
+                {
+                    await _vkd3dRegistration.ConfigureAwait(false);
+                }
+                catch
+                {
+                    // A failed import must NOT be cached as "done" — reset so a later
+                    // call can retry (e.g. transient asset-fetch failure). Re-throw so
+                    // the caller sees it.
+                    _vkd3dRegistration = null;
+                    throw;
+                }
+            }
+            else
+            {
+                _dxcChainRegistration ??= ImportDxcChainAsync(cancellationToken);
+                try
+                {
+                    await _dxcChainRegistration.ConfigureAwait(false);
+                }
+                catch
+                {
+                    _dxcChainRegistration = null;
+                    throw;
+                }
+            }
         }
         finally
         {
@@ -88,16 +140,31 @@ internal static class WasmModuleRegistration
         }
     }
 
-    private static async Task ImportBothAsync(CancellationToken cancellationToken)
+    private static async Task ImportDxcChainAsync(CancellationToken cancellationToken)
     {
         // Register DXC first, then SPIRV-Cross. Importing shadowdusk-spirv-cross drives
         // its top-level await (WASM instantiation) to completion, so the subsequent
-        // synchronous transpileToGlsl [JSImport] is safe. The vkd3d shim (Phase 4.1) is
-        // lazy like the DXC one (no top-level await — evaluating it is cheap and does
-        // NOT require vkd3d-shader.{js,wasm} to be present); its WASM loads on the
-        // first DirectX/FNA compile via Vkd3dInterop.EnsureReadyAsync.
-        await JSHost.ImportAsync("shadowdusk-dxc", DxcModuleUrl, cancellationToken).ConfigureAwait(false);
-        await JSHost.ImportAsync("shadowdusk-spirv-cross", SpirvCrossModuleUrl, cancellationToken).ConfigureAwait(false);
-        await JSHost.ImportAsync("shadowdusk-vkd3d", Vkd3dModuleUrl, cancellationToken).ConfigureAwait(false);
+        // synchronous transpileToGlsl [JSImport] is safe.
+        await ImportModuleAsync("shadowdusk-dxc", DxcModuleUrl, cancellationToken).ConfigureAwait(false);
+        await ImportModuleAsync("shadowdusk-spirv-cross", SpirvCrossModuleUrl, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Imports one JS module, re-wrapping a load failure so the message NAMES the
+    /// failing module and its asset URL (Phase 27 — SD1902/SD1900 attribution: the
+    /// underlying error a consumer sees must never leave WHICH module failed ambiguous).
+    /// </summary>
+    private static async Task ImportModuleAsync(string moduleName, string moduleUrl, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await JSHost.ImportAsync(moduleName, moduleUrl, cancellationToken).ConfigureAwait(false);
+        }
+        catch (JSException ex)
+        {
+            throw new JSException(
+                $"The '{moduleName}' JS module failed to load from its static web asset " +
+                $"('{moduleUrl}', resolved relative to _framework/): {ex.Message}");
+        }
     }
 }

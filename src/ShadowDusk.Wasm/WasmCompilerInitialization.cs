@@ -17,11 +17,12 @@ namespace ShadowDusk.Wasm;
 /// <c>SD1903</c> error.
 /// </summary>
 /// <remarks>
-/// A flag is set only after BOTH module registration
-/// (<see cref="WasmModuleRegistration.EnsureRegisteredAsync"/> — which also drives
-/// SPIRV-Cross's eager WASM instantiation) and the module's own lazy WASM load
-/// (<c>ensureReady()</c>) have completed. Loading is single-threaded (browser WASM), so
-/// plain <c>volatile</c> writes-after-await are sufficient.
+/// A flag is set only after BOTH the path's module registration
+/// (<see cref="WasmModuleRegistration.EnsureDxcChainRegisteredAsync"/> — which also
+/// drives SPIRV-Cross's eager WASM instantiation — or
+/// <see cref="WasmModuleRegistration.EnsureVkd3dRegisteredAsync"/>) and the module's
+/// own lazy WASM load (<c>ensureReady()</c>) have completed. Loading is single-threaded
+/// (browser WASM), so plain <c>volatile</c> writes-after-await are sufficient.
 /// </remarks>
 [SupportedOSPlatform("browser")]
 internal static class WasmCompilerInitialization
@@ -36,27 +37,31 @@ internal static class WasmCompilerInitialization
     internal static bool Vkd3dReady => _vkd3dReady;
 
     /// <summary>
-    /// One-time load of everything an OpenGL/Vulkan compile needs: module registration
-    /// (which eagerly instantiates SPIRV-Cross) + the ~17.4 MB DXC WASM. Idempotent;
-    /// resolves immediately once loaded. A load failure throws (JSException) — the
-    /// caller maps it to a loud ShaderError or rethrows with context.
+    /// One-time load of everything an OpenGL/Vulkan compile needs: registration of the
+    /// DXC + SPIRV-Cross modules (which eagerly instantiates SPIRV-Cross) + the
+    /// ~17.4 MB DXC WASM. Idempotent; resolves immediately once loaded. A load failure
+    /// throws (JSException) — the caller maps it to a loud ShaderError or rethrows with
+    /// context. Registers ONLY this path's modules (Phase 27 — never pull vkd3d in
+    /// here, so a vkd3d failure can never be mis-headlined as a DXC one).
     /// </summary>
     internal static async Task EnsureDxcReadyAsync(CancellationToken cancellationToken = default)
     {
-        await WasmModuleRegistration.EnsureRegisteredAsync(cancellationToken).ConfigureAwait(false);
+        await WasmModuleRegistration.EnsureDxcChainRegisteredAsync(cancellationToken).ConfigureAwait(false);
         await DxcInterop.EnsureReadyAsync().ConfigureAwait(false);
         _dxcReady = true;
     }
 
     /// <summary>
-    /// One-time load of everything a DirectX/FNA compile needs: module registration +
-    /// the vkd3d-shader WASM (432 KB). Idempotent; resolves immediately once loaded.
-    /// A load failure throws (JSException) — the caller maps it to SD1902 or rethrows
-    /// with context.
+    /// One-time load of everything a DirectX/FNA compile needs: registration of the
+    /// vkd3d module alone + the vkd3d-shader WASM (432 KB). Idempotent; resolves
+    /// immediately once loaded. A load failure throws (JSException) — the caller maps
+    /// it to SD1902 or rethrows with context. Registers ONLY the vkd3d module
+    /// (Phase 27 — a DXC/SPIRV-Cross load failure must never surface under the vkd3d
+    /// SD1902 headline; this path makes no [JSImport] into those modules).
     /// </summary>
     internal static async Task EnsureVkd3dReadyAsync(CancellationToken cancellationToken = default)
     {
-        await WasmModuleRegistration.EnsureRegisteredAsync(cancellationToken).ConfigureAwait(false);
+        await WasmModuleRegistration.EnsureVkd3dRegisteredAsync(cancellationToken).ConfigureAwait(false);
         await Vkd3dInterop.EnsureReadyAsync().ConfigureAwait(false);
         _vkd3dReady = true;
     }
