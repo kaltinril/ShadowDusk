@@ -70,36 +70,54 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
             arguments,
             request.IncludeHandler);
 
-        SharpGen.Runtime.Result status = result.GetStatus();
-        string errorText = result.GetErrors();
-
-        if (status.Failure)
+        // Dispose the native COM result (and the object blob below) deterministically —
+        // historically neither was released, leaking native memory on EVERY compile.
+        // The same pattern as D3DCompilerShaderCompiler's blob disposal.
+        try
         {
-            IReadOnlyList<ShaderError> errors = DxcDiagnosticReformatter.Reformat(
-                errorText,
-                request.SourceFileName);
+            SharpGen.Runtime.Result status = result.GetStatus();
+            string errorText = result.GetErrors();
 
-            ShaderError primary = errors.Count > 0
-                ? errors[0]
-                : new ShaderError(
-                    File: request.SourceFileName,
-                    Line: 0,
-                    Column: 0,
-                    Code: "X0000",
-                    Message: "Shader compilation failed with no diagnostics",
-                    Severity: ShaderErrorSeverity.Error,
-                    RawDiagnostics: errorText);
+            if (status.Failure)
+            {
+                IReadOnlyList<ShaderError> errors = DxcDiagnosticReformatter.Reformat(
+                    errorText,
+                    request.SourceFileName);
 
-            return Result<PlatformBlob, ShaderError>.Fail(primary);
+                ShaderError primary = errors.Count > 0
+                    ? errors[0]
+                    : new ShaderError(
+                        File: request.SourceFileName,
+                        Line: 0,
+                        Column: 0,
+                        Code: "X0000",
+                        Message: "Shader compilation failed with no diagnostics",
+                        Severity: ShaderErrorSeverity.Error,
+                        RawDiagnostics: errorText);
+
+                return Result<PlatformBlob, ShaderError>.Fail(primary);
+            }
+
+            // Copy the bytecode into a managed array BEFORE disposal: the previous
+            // GetObjectBytecodeMemory() returned memory backed by the native blob, which
+            // both pinned the blob alive forever and made the returned bytes unsafe to
+            // outlive it. The managed copy is byte-identical.
+            byte[] bytes;
+            using (IDxcBlob objectBlob = result.GetOutput(DxcOutKind.Object))
+            {
+                bytes = objectBlob.AsBytes();
+            }
+
+            BlobKind kind = request.Platform == PlatformTarget.DirectX
+                ? BlobKind.Dxbc
+                : BlobKind.Spirv;
+
+            return Result<PlatformBlob, ShaderError>.Ok(new PlatformBlob(kind, bytes));
         }
-
-        ReadOnlyMemory<byte> bytes = result.GetObjectBytecodeMemory();
-
-        BlobKind kind = request.Platform == PlatformTarget.DirectX
-            ? BlobKind.Dxbc
-            : BlobKind.Spirv;
-
-        return Result<PlatformBlob, ShaderError>.Ok(new PlatformBlob(kind, bytes));
+        finally
+        {
+            result.Dispose();
+        }
     }
 
     /// <summary>Releases the native DXC compiler instance.</summary>
