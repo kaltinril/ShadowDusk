@@ -1,22 +1,23 @@
 # .github/workflows/release.yml
-# Release pipeline (Phase 30 §7 + §17.2/§17.3). Fires on a `v*.*.*` tag push OR a
-# manual workflow_dispatch with a `version` input. A `validate` job guards everything:
-# the resolved version MUST equal Directory.Build.props <Version> (the single source of
-# truth, §17.1) or the run fails before anything is published.
+# Release pipeline (Phase 30 §7 + §17.2/§17.3). DISPATCH-ONLY: a maintainer runs
+# Actions → Release → Run workflow with a `version` input (see the `on:` block below —
+# there is no tag-push trigger; tags are markers, never publish triggers). A `validate`
+# job guards everything: the dispatch version MUST equal Directory.Build.props
+# <Version> (the single source of truth, §17.1) or the run fails before anything is
+# published.
 #
 # Pipeline:
 #   validate          → resolve + guard the version
 #   build-and-test    → 3-OS build + full test gate
 #   pack-desktop      → pack the FIVE desktop packages (Core/HLSL/GLSL/Compiler/Cli)
 #                       at the validated version, with symbols (.snupkg)
-#   publish           → per-RID self-contained `ShadowDuskCLI` CLI archives
+#   pack-wasm         → pack ShadowDusk.Wasm (the SIXTH package) in THIS workflow —
+#                       its own job because it needs the wasm-tools workload and the
+#                       restored dxcompiler.wasm (its `VerifyDxcWasmPresent` MSBuild
+#                       target hard-fails the pack otherwise)
+#   publish           → per-RID self-contained `ShadowDuskCLI` CLI archives (+ smoke)
 #   nuget-push        → push every nupkg/snupkg (idempotent --skip-duplicate)
 #   github-release    → GitHub Release with the CLI archives + packages
-#
-# NOTE: ShadowDusk.Wasm (the sixth package) is packed in the §16 WASM workflow
-# (wasm.yml) because its `VerifyDxcWasmPresent` MSBuild target hard-fails the pack
-# without the restored dxcompiler.wasm + the wasm-tools workload. Its .nupkg is
-# uploaded there and pushed by the same key on its own publish.
 #
 # Native strategy is the AS-BUILT one (see ci.yml header): SPIRV-Cross + DXC are
 # transitive NuGet, vkd3d-shader is restored non-fatally. No tools/spirv-cross bundling.
@@ -80,12 +81,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # All three OSes run the release build + unit gate again. The macOS `dotnet test`
-        # host-exit hang that previously forced macOS out is fixed at the source
-        # (GlContextFixture no longer initializes GLFW on macOS — see its comment), so the
-        # macOS leg now completes cleanly instead of stalling. Windows is the hard gate
-        # (continue-on-error below keeps ubuntu/macOS informational here); the release is cut
-        # from main, which has already passed ci.yml's hard gate on all three OSes.
+        # All three OSes run the release build + unit gate again, and ALL THREE are hard
+        # gates (the pre-Phase-37 continue-on-error that kept ubuntu/macOS informational
+        # is gone — its rationale, "DXC's native fails to load on macOS", was fixed by
+        # Phase 37 A's restored dylib). The macOS `dotnet test` host-exit hang that
+        # previously forced macOS out is also fixed at the source (GlContextFixture no
+        # longer initializes GLFW on macOS — see its comment).
         os: [ ubuntu-latest, macos-latest, windows-latest ]
     steps:
       - uses: actions/checkout@v6
@@ -103,11 +104,13 @@ jobs:
           restore-keys: |
             nuget-${{ runner.os }}-
 
+      # No `|| true`: restore.sh exits 0 for the optional spirv-cross miss (parity with
+      # restore.ps1 since 2026-06-12), so a non-zero exit is a genuine failure.
       - name: Restore native tools (Linux / macOS)
         if: runner.os != 'Windows'
         run: |
           chmod +x tools/restore.sh
-          ./tools/restore.sh || true
+          ./tools/restore.sh
 
       - name: Restore native tools (Windows)
         if: runner.os == 'Windows'
@@ -120,14 +123,13 @@ jobs:
       - name: dotnet build
         run: dotnet build ShadowDusk.slnx --no-restore -c Release
 
-      # Unit gate ONLY (Category!=Integration), mirroring ci.yml. The Integration tests
-      # require native libs that aren't available on CI runners (the vkd3d-shader DXBC
-      # native is gitignored/built-out-of-band; DXC's native fails to load on macOS), so
-      # running the full suite here fails for native-availability reasons, not code defects.
-      # Those paths are covered locally + by the dedicated validation/ harness. Windows is
-      # the required gate; ubuntu is informational (continue-on-error).
+      # Unit gate ONLY (Category!=Integration), mirroring ci.yml — the heavier
+      # Integration suite is ci.yml's push-to-main job (the release is cut from main,
+      # which has already passed it on all three OSes). All three OSes are HARD gates:
+      # the old continue-on-error for ubuntu/macOS rested on a pre-Phase-37 rationale
+      # ("DXC's native fails to load on macOS") that Phase 37 A/B fixed — a red unit
+      # suite on any OS is a real defect and must block the release.
       - name: dotnet test (unit)
-        continue-on-error: ${{ matrix.os != 'windows-latest' }}
         run: >
           dotnet test ShadowDusk.slnx --no-build -c Release
           --filter "Category!=Integration"
@@ -164,10 +166,47 @@ jobs:
           restore-keys: |
             nuget-${{ runner.os }}-
 
+      # Same native caches as ci.yml: the pack below bundles these into the nupkg, so
+      # the pinned downloads should hit the cache, with restore self-healing a stale
+      # or corrupt entry by hash.
+      - name: Cache vkd3d natives
+        uses: actions/cache@v5
+        with:
+          path: tools/vkd3d
+          key: vkd3d-1.17-${{ runner.os }}
+
+      - name: Cache DXC macOS natives
+        uses: actions/cache@v5
+        with:
+          path: tools/dxc
+          key: dxc-1.7.2212.40-${{ runner.os }}
+
+      # No `|| true`: a genuine restore failure must fail the release, not surface
+      # later as a broken package.
       - name: Restore native tools
         run: |
           chmod +x tools/restore.sh
-          ./tools/restore.sh || true
+          ./tools/restore.sh
+
+      # HARD GATE before packing (mirrors ci.yml's integration job): every native the
+      # nupkg must bundle has a hosted, pinned asset — a missing file here is a restore
+      # failure that would otherwise become a broken published package.
+      - name: Verify restored natives present (hard gate)
+        run: |
+          missing=0
+          for f in \
+            'tools/vkd3d/libvkd3d-shader-1.dll' \
+            'tools/vkd3d/libvkd3d-shader.so.1' \
+            'tools/vkd3d/osx-x64/libvkd3d-shader.1.dylib' \
+            'tools/vkd3d/osx-arm64/libvkd3d-shader.1.dylib' \
+            'tools/dxc/osx-x64/libdxcompiler.dylib' \
+            'tools/dxc/osx-arm64/libdxcompiler.dylib' ; do
+              if [ ! -f "$f" ]; then
+                echo "::error::restored native missing: $f — tools/restore.sh failed to provision a hosted, pinned asset. Packing now would ship a package broken on that RID; failing the release instead."
+                missing=1
+              fi
+          done
+          exit $missing
 
       - name: dotnet restore
         run: dotnet restore ShadowDusk.slnx --locked-mode
@@ -199,15 +238,17 @@ jobs:
             exit 1
           fi
 
-      # ShadowDusk.HLSL's vkd3d packing is restore-state-dependent (csproj entries are
+      # ShadowDusk.HLSL's native packing is restore-state-dependent (csproj entries are
       # Condition="Exists(...)"): a pack on a machine without the restored binaries
       # SILENTLY produces a package whose FNA target and DxbcBackend.Vkd3d fail with
-      # SD0211 for every NuGet consumer — directly contradicting the documented
-      # self-contained promise. Fail the release red instead (the mirror of the
-      # pack-wasm dxcompiler.wasm gate). tools/restore.sh provisions all four RIDs
-      # by pinned download (Phase 37 C), so a clean CI runner satisfies this gate.
+      # SD0211 — and, for the Phase 37 A macOS DXC dylibs, whose ENTIRE OpenGL pipeline
+      # dies with DllNotFoundException on every Mac — for every NuGet consumer,
+      # directly contradicting the documented self-contained promise. Fail the release
+      # red instead (the mirror of the pack-wasm dxcompiler.wasm gate; same list as
+      # pack-consume.yml's pack gate). tools/restore.sh provisions everything by pinned
+      # download (Phase 37 A/C), so a clean CI runner satisfies this gate.
       # The LGPL-2.1 notice must ride along with the binaries it covers.
-      - name: Verify ShadowDusk.HLSL contains the vkd3d natives (all four RIDs) + LGPL notice
+      - name: Verify ShadowDusk.HLSL contains all natives (vkd3d ×4 RIDs + macOS DXC ×2) + LGPL notice
         run: |
           pkg=$(find nupkg -maxdepth 1 -name 'ShadowDusk.HLSL.*.nupkg' ! -name '*.snupkg' | head -1)
           echo "Inspecting $pkg"
@@ -218,9 +259,11 @@ jobs:
             'runtimes/linux-x64/native/libvkd3d-shader.so.1' \
             'runtimes/osx-x64/native/libvkd3d-shader.1.dylib' \
             'runtimes/osx-arm64/native/libvkd3d-shader.1.dylib' \
+            'runtimes/osx-x64/native/libdxcompiler.dylib' \
+            'runtimes/osx-arm64/native/libdxcompiler.dylib' \
             'THIRD-PARTY-NOTICES.txt' ; do
               if ! grep -qF "$native" <<<"$listing"; then
-                echo "::error::$pkg is missing $native — the FNA target and DxbcBackend.Vkd3d would fail (SD0211) for every consumer on that RID. Restore vkd3d binaries before packing (tools/restore.sh; RELEASING.md 'Native binaries')."
+                echo "::error::$pkg is missing $native — a consumer on that RID gets a broken package (SD0211 for vkd3d paths; DllNotFoundException for the macOS OpenGL pipeline). Restore natives before packing (tools/restore.sh; RELEASING.md 'Native binaries')."
                 missing=1
               fi
           done
@@ -267,10 +310,11 @@ jobs:
 
       # Copies the committed .wasm-build/dxc-wasm-out/dxcompiler.wasm into
       # src/ShadowDusk.Wasm/wwwroot/dxc/ so the pack gate passes and the .wasm ships.
+      # No `|| true`: a genuine restore failure must fail the release.
       - name: Restore WASM native artifacts
         run: |
           chmod +x tools/restore.sh
-          ./tools/restore.sh || true
+          ./tools/restore.sh
 
       - name: Verify dxcompiler.wasm restored
         run: |
@@ -366,7 +410,7 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           chmod +x tools/restore.sh
-          ./tools/restore.sh || true
+          ./tools/restore.sh
 
       - name: Restore native tools (Windows)
         if: runner.os == 'Windows'
@@ -415,6 +459,38 @@ jobs:
             Get-ChildItem "publish\${{ matrix.rid }}" | Format-Table Name
             exit 1
           }
+
+      # EXECUTION smoke (2026-06-12 review): existence + chmod proves nothing about the
+      # single-file bundle actually working — a bad native-bundling change would still
+      # ship. Run the published binary on a real fixture and require exit 0 + non-empty
+      # .mgfx output. osx-x64 executes on the arm64 macos-latest runner under Rosetta 2
+      # (preinstalled on GitHub macOS runners), so all four RIDs are smoked.
+      - name: Smoke-run published CLI (Linux / macOS)
+        if: runner.os != 'Windows'
+        run: |
+          out="$RUNNER_TEMP/smoke-${{ matrix.rid }}.mgfx"
+          ./publish/${{ matrix.rid }}/ShadowDuskCLI tests/fixtures/shaders/Minimal.fx "$out" /Profile:OpenGL
+          if [ ! -s "$out" ]; then
+            echo "::error::published ${{ matrix.rid }} CLI exited 0 but produced a missing/empty .mgfx — the single-file bundle is broken."
+            exit 1
+          fi
+          echo "smoke OK: $(stat -c%s "$out" 2>/dev/null || stat -f%z "$out") bytes"
+
+      - name: Smoke-run published CLI (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP "smoke-${{ matrix.rid }}.mgfx"
+          & ".\publish\${{ matrix.rid }}\ShadowDuskCLI.exe" tests\fixtures\shaders\Minimal.fx $out /Profile:OpenGL
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "published ${{ matrix.rid }} CLI exited $LASTEXITCODE"
+            exit 1
+          }
+          if (-not (Test-Path $out) -or (Get-Item $out).Length -eq 0) {
+            Write-Error "published ${{ matrix.rid }} CLI exited 0 but produced a missing/empty .mgfx — the single-file bundle is broken."
+            exit 1
+          }
+          Write-Host "smoke OK: $((Get-Item $out).Length) bytes"
 
       - name: Archive publish output (Linux / macOS)
         if: runner.os != 'Windows'

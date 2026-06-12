@@ -1,0 +1,14 @@
+# Shader sources are byte-input to the compiler: pin LF in the repo AND in the
+# working tree so the same fixture feeds identical bytes on every OS (the
+# byte-identity tests normalize EOLs defensively, but the checkout should not
+# vary in the first place). Verified before adding (git ls-files --eol): every
+# tracked *.fx / *.fxh is already index-LF, so this renormalizes nothing.
+*.fx  text eol=lf
+*.fxh text eol=lf
+
+# Compiled shader containers and WASM modules are binary — never EOL-converted,
+# never diffed as text. (Already auto-detected as binary today; pinned so a
+# future text-looking blob can't be silently mangled.)
+*.mgfx binary
+*.fxb  binary
+*.wasm binary

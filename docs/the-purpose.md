@@ -124,11 +124,23 @@ Where each host×target cell stands (updated 2026-06-12, post-Phase 37 A/B/C + P
 
 | Emit ↓ / Host → | Windows | Linux | macOS | Browser (WASM) |
 |---|---|---|---|---|
-| OpenGL `.mgfx` | ✅ proven | ✅ compiles green in CI (37 B fixed the Vortice `wchar_t` marshalling; the browser-smoke renders its corpus on llvmpipe); rung-4 render-vs-`mgfxc` still Windows-proven only | ✅ compiles green in CI (37 A dylib + the 37 B fix; full integration suite passes); byte-identity-vs-win assertion + rung-4 render are the remaining tail | ✅ proven, byte-identical |
+| OpenGL `.mgfx` | ✅ proven | ✅ compiles green in CI (37 B fixed the Vortice `wchar_t` marshalling; the browser-smoke renders its corpus on llvmpipe) — **with one carve-out, see the DXC-divergence note below**; rung-4 render-vs-`mgfxc` still Windows-proven only | ✅ compiles green in CI (37 A dylib + the 37 B fix; full integration suite passes) — **same DXC-divergence carve-out**; byte-identity-vs-win assertion + rung-4 render are the remaining tail | ✅ proven, byte-identical |
 | DX11 DXBC `.mgfx` | ✅ proven | ✅ compiles end-to-end (vkd3d backend + managed `RdefReader` reflection — Track A); render bar is the real WindowsDX runtime, Windows-only by nature | ✅ same as Linux (DX11 no longer constructs DXC, so 37 A doesn't gate it) | ✅ **export target** — vkd3d→WASM landed (Phase 4.1, 2026-06-12): real-browser gate 65-artifact byte-identity vs the cross-host manifest; render bar stays desktop-by-nature (no Direct3D in a browser) |
 | FNA fx_2_0 `.fxb` | ✅ proven | ✅ proven | ✅ natives ship + compile suite green in CI (37 C); render oracle (`fxc`) is Windows-only by nature | ✅ **export target** — same Phase 4.1 vkd3d→WASM module, same 2026-06-12 real-browser byte-identity proof (no D3D9 in a browser) |
 | Vulkan SPIR-V / Metal MSL | parked — no validatable consumer runtime yet (Phases 31/32) | | | |
 
+> **The DXC-divergence carve-out (per-OS compile reach, open):** the Linux/macOS
+> "compiles green in CI" cells above hold for the normal corpus, but NOT for the
+> Phase 34 advanced-texture HiDef shaders — 3D-texture (`tex3D`), explicit-LOD
+> (`tex2Dlod`-family), and gradient-sampling (`tex2Dgrad`-family) intrinsics compile on
+> the Windows DXC yet FAIL to compile on the Vortice Linux/macOS DXC builds.
+> `Phase34TextureBreadthTests` is therefore Windows-only in ci.yml (see its
+> "runs on Windows only until that discrepancy is investigated" comment), i.e. the
+> green Linux/macOS lanes deliberately exclude those shaders. This is a real per-OS
+> reach gap in the *same-pinned-compiler* promise for that intrinsic family — being
+> investigated under a shader-lens phase (the carve-out is documentation, not a fix);
+> consumer-visible caveat: docfx/guides/parameters-and-caveats.md.
+>
 > Phase 37 C (2026-06-10) hosted all four pinned vkd3d 1.17 per-RID binaries and made
 > `tools/restore.*` provision them everywhere — which also surfaced (via CI) that the
 > earlier "DX11 on Linux ✅" claim was overstated: vkd3d produced the DXBC fine, but the

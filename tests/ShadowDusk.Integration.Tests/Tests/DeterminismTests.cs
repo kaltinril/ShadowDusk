@@ -6,6 +6,18 @@ using Xunit;
 namespace ShadowDusk.Integration.Tests.Tests;
 
 /// <summary>
+/// The collection definition backing <c>[Collection("Determinism")]</c>. Without this,
+/// xUnit silently creates an implicit collection: the tests still serialize, but the
+/// collection has no declared definition to hang fixtures or behavior on, and a typo in
+/// the name would fork a second collection unnoticed. Declared explicitly so the
+/// collection is a real, single, referencable thing.
+/// </summary>
+[CollectionDefinition("Determinism")]
+public sealed class DeterminismCollection
+{
+}
+
+/// <summary>
 /// Determinism is guaranteed only for the same DXC + SPIRV-Cross binary versions within
 /// a single CI run. These tests do not assert cross-version stability.
 /// </summary>

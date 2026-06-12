@@ -22,7 +22,7 @@ ShadowDuskCLI MyShader.fx MyShader.mgfx /Profile:OpenGL
 
 | Option | Description | Default |
 |---|---|---|
-| `/Profile:<Platform>` | Target platform. Valid: `DirectX_11`, `OpenGL`, `Vulkan`. | **`DirectX_11`** |
+| `/Profile:<Platform>` | Target platform. Valid: `DirectX_11`, `OpenGL`, `Vulkan`, `FNA` (the D3D9 fx_2_0 `.fxb` target — additive, not an `mgfxc` profile). | **`DirectX_11`** |
 | `/Debug` | Include debug information in the output. | off |
 | `/I <path>` | Additional include search path (repeatable). Also accepts `/I:<path>`. | none |
 | `--mgfx-version <10\|11>` | Output `.mgfx` format version. | **`10`** |
@@ -64,4 +64,4 @@ ShadowDuskCLI effects/Lit.fx Content/Lit.mgfx /Profile:OpenGL /I shaders/common 
 
 ## Using it from MGCB
 
-Put ShadowDusk's `ShadowDuskCLI` first on `PATH`; MGCB then calls it unchanged. See [Drop-in mgfxc](../guides/dropin-mgfxc.md) and [MGCB Content Pipeline (Tier-1)](../guides/mgcb-content-pipeline.md).
+MGCB shells out to the executable **named `mgfxc`**, so expose ShadowDusk's CLI under that name (a renamed copy/symlink or a wrapper script forwarding to `ShadowDuskCLI`) first on `PATH`; MGCB then calls it unchanged. See [Drop-in mgfxc](../guides/dropin-mgfxc.md) and [MGCB Content Pipeline (Tier-1)](../guides/mgcb-content-pipeline.md) for the exact steps.

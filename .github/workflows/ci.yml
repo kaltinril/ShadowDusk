@@ -86,15 +86,16 @@ jobs:
 
       # Restore the vkd3d-shader natives (DirectX DXBC backend + the FNA target's
       # engine) and the macOS DXC dylibs (OpenGL frontend on macOS, Phase 37 A).
-      # Non-fatal: when the download is unavailable the script warns and the
-      # cross-platform build stays green (vkd3d-dependent tests skip / fail SD0211
-      # loudly). When present the binaries are copied into build output and the DX/FNA
-      # `.fx` reach paths run (Phase 18 carry-forward; Phase 39 FNA CI net).
+      # A failed pinned DOWNLOAD only warns (the script is offline-tolerant by design;
+      # vkd3d-dependent tests skip / fail SD0211 loudly) — but the script's own exit
+      # code is honored: do NOT wrap it in `|| true` (that once swallowed every restore
+      # failure; restore.sh exits 0 for the optional spirv-cross miss since 2026-06-12,
+      # so a non-zero exit is a genuine script failure that must go red).
       - name: Restore native tools (Linux / macOS)
         if: runner.os != 'Windows'
         run: |
           chmod +x tools/restore.sh
-          ./tools/restore.sh || true
+          ./tools/restore.sh
 
       - name: Restore native tools (Windows)
         if: runner.os == 'Windows'
@@ -269,12 +270,36 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           chmod +x tools/restore.sh
-          ./tools/restore.sh || true
+          ./tools/restore.sh
 
       - name: Restore native tools (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: ./tools/restore.ps1
+
+      # HARD GATE on the restored natives (the soft-skip-chain fix, 2026-06-12 review):
+      # the restore script's download failures are warnings by design (offline
+      # tolerance), but in CI the pinned assets are hosted — a missing file here means
+      # the restore infrastructure failed, and the job must go red BEFORE the test run
+      # can quietly skip the vkd3d/DXC-gated suites green. All four vkd3d RIDs are
+      # asserted on every OS (every machine must be pack-ready, see tools/restore.*).
+      - name: Verify restored natives present (hard gate)
+        shell: bash
+        run: |
+          missing=0
+          for f in \
+            'tools/vkd3d/libvkd3d-shader-1.dll' \
+            'tools/vkd3d/libvkd3d-shader.so.1' \
+            'tools/vkd3d/osx-x64/libvkd3d-shader.1.dylib' \
+            'tools/vkd3d/osx-arm64/libvkd3d-shader.1.dylib' \
+            'tools/dxc/osx-x64/libdxcompiler.dylib' \
+            'tools/dxc/osx-arm64/libdxcompiler.dylib' ; do
+              if [ ! -f "$f" ]; then
+                echo "::error::restored native missing: $f — tools/restore.* failed to provision a hosted, pinned asset (download/cache failure). The vkd3d/DXC-gated integration tests would silently skip; failing the job instead."
+                missing=1
+              fi
+          done
+          exit $missing
 
       - name: dotnet restore
         run: dotnet restore ShadowDusk.slnx --locked-mode
@@ -285,7 +310,15 @@ jobs:
       # The suite-level 5-minute TestSessionTimeout guardrail (CLAUDE.md Phase 21 /
       # ShadowDusk.runsettings) backstops the per-test CancellationToken timeouts so a
       # cold-AV-scan hang fails fast instead of eating 20+ minutes.
+      #
+      # SHADOWDUSK_REQUIRE_VKD3D / SHADOWDUSK_REQUIRE_DXC (the attribute-level analog
+      # of SHADOWDUSK_REQUIRE_GL): the natives were just hard-gated above, so inside
+      # the test run a missing native is a FAILURE, never a skip — defense in depth
+      # against a probe/loader regression re-opening the skip-as-green hole.
       - name: dotnet test (integration)
+        env:
+          SHADOWDUSK_REQUIRE_VKD3D: "1"
+          SHADOWDUSK_REQUIRE_DXC: "1"
         run: >
           dotnet test ShadowDusk.slnx --no-build -c Release
           --filter "Category=Integration"

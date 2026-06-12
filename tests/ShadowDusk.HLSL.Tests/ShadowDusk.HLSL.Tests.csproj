@@ -19,6 +19,10 @@
                       LogicalName="ShadowDusk.HLSL.Tests.fixtures.ClipShaderNew.fx" />
   </ItemGroup>
 
+  <ItemGroup Label="Shared SHADOWDUSK_REQUIRE_VKD3D / SHADOWDUSK_REQUIRE_DXC gate logic (the GlRequirement analog): one source of truth, linked from the integration-test project (the Fx2BinaryValidator pattern). Unit-tested there (NativeRequirementTests).">
+    <Compile Include="..\ShadowDusk.Integration.Tests\Tests\NativeRequirement.cs" Link="Vkd3d\NativeRequirement.cs" />
+  </ItemGroup>
+
   <ItemGroup Label="Test framework">
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />

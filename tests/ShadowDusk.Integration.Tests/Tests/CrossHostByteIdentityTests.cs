@@ -213,6 +213,22 @@ public sealed class CrossHostByteIdentityTests
 
         if (RegenerateRequested)
         {
+            // Regen mode asserts NOTHING — it rewrites the manifest and reports PASS.
+            // Guard it so that "PASS" can never be mistaken for verification:
+            //   * never in CI (a leaked env var would silently neuter the whole gate);
+            //   * only on win-x64 (the manifest's documented canonical host — see the
+            //     class doc: hashes are generated on win-x64 and asserted elsewhere).
+            if (Environment.GetEnvironmentVariable("GITHUB_ACTIONS") == "true")
+                throw new InvalidOperationException(
+                    $"{RegenerateEnvVar}=1 is set in CI (GITHUB_ACTIONS=true). Regeneration mode " +
+                    "asserts nothing and would turn this byte-identity gate into a fabricated " +
+                    "PASS — regenerate locally on win-x64 and commit the reviewed manifest diff.");
+            if (!OperatingSystem.IsWindows() || RuntimeInformation.OSArchitecture != Architecture.X64)
+                throw new InvalidOperationException(
+                    $"{RegenerateEnvVar}=1 requires win-x64 — the committed manifest's canonical " +
+                    $"host. This host is {RuntimeInformation.OSDescription} ({RuntimeInformation.OSArchitecture}); " +
+                    "regenerating here would commit per-OS hashes and destroy the cross-host assertion.");
+
             RegenerateManifestSection(targetKey, actual);
             return;
         }
@@ -353,7 +369,12 @@ public sealed class DxcFactAttribute : FactAttribute
 {
     public DxcFactAttribute()
     {
-        if (!DxcTestGate.DxcAvailable)
+        // SHADOWDUSK_REQUIRE_DXC set (CI) + dylib missing => do NOT skip: the test runs
+        // and fails loudly at the DXC load — a restore-infrastructure failure must go
+        // red, never quietly skip green. See ShadowDusk.Tests.Shared.NativeRequirement.
+        if (ShadowDusk.Tests.Shared.NativeRequirement.ShouldSkip(
+                DxcTestGate.DxcAvailable,
+                Environment.GetEnvironmentVariable(ShadowDusk.Tests.Shared.NativeRequirement.DxcEnvVar)))
             Skip = DxcTestGate.SkipReason;
     }
 }
