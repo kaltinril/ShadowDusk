@@ -72,7 +72,11 @@ restore_vkd3d_file() {
             echo "restore.sh: vkd3d-shader ($dest_rel) present, hash OK"
             return 0
         fi
-        echo "restore.sh: vkd3d-shader ($dest_rel) hash mismatch — re-downloading (had $have)"
+        # Delete the mismatched file BEFORE attempting re-download: if the download
+        # fails (offline), an unverified file must never stay in place to satisfy
+        # existence-only downstream checks.
+        echo "restore.sh: vkd3d-shader ($dest_rel) hash mismatch — deleting and re-downloading (had $have)"
+        rm -f "$dest"
     fi
 
     if ! curl -fsSLo "$dest.tmp" "$VKD3D_RELEASE_URL/$asset"; then
@@ -146,7 +150,10 @@ restore_dxc_file() {
             echo "restore.sh: DXC macOS native ($dest_rel) present, hash OK"
             return 0
         fi
-        echo "restore.sh: DXC macOS native ($dest_rel) hash mismatch — re-downloading (had $have)"
+        # Delete-on-mismatch (see restore_vkd3d_file): never leave an unverified file
+        # in place for existence-only downstream checks if the re-download fails.
+        echo "restore.sh: DXC macOS native ($dest_rel) hash mismatch — deleting and re-downloading (had $have)"
+        rm -f "$dest"
     fi
 
     if ! curl -fsSLo "$dest.tmp" "$DXC_RELEASE_URL/$asset"; then
@@ -298,20 +305,27 @@ restore_vkd3d_wasm_file() {
     local pkg_dir="$REPO_ROOT/src/ShadowDusk.Wasm/wwwroot/vkd3d"
     local dest="$pkg_dir/$asset"
 
-    # A locally built module takes precedence over the (possibly placeholder-pinned)
-    # download — the restore_dxc_wasm pattern for developers iterating on the build.
+    # A locally built module takes precedence over the pinned download — the
+    # restore_dxc_wasm pattern for developers iterating on the build. LOCAL ONLY:
+    # in CI ($GITHUB_ACTIONS) the pinned download is always taken, so an unpinned
+    # local artifact can never reach a CI-built package. The local file's SHA-256
+    # is logged for provenance, and staleness is decided by hash (not size).
     local local_build="$REPO_ROOT/.wasm-build/vkd3d-wasm-out/$asset"
     if [ -f "$local_build" ]; then
-        if [ ! -f "$dest" ] || \
-           [ "$(stat -c%s "$local_build" 2>/dev/null || stat -f%z "$local_build")" != \
-             "$(stat -c%s "$dest" 2>/dev/null || stat -f%z "$dest" 2>/dev/null)" ]; then
-            mkdir -p "$pkg_dir"
-            cp -f "$local_build" "$dest"
-            echo "restore.sh: copied $asset (.wasm-build local build) -> src/ShadowDusk.Wasm/wwwroot/vkd3d/"
+        if [ -n "${GITHUB_ACTIONS:-}" ]; then
+            echo "restore.sh: NOTICE — ignoring local build $local_build in CI; the pinned download is authoritative."
         else
-            echo "restore.sh: vkd3d-shader WASM ($asset) present (local build) — OK"
+            local local_sha
+            local_sha="$(vkd3d_sha256 "$local_build")"
+            if [ ! -f "$dest" ] || [ "$(vkd3d_sha256 "$dest")" != "$local_sha" ]; then
+                mkdir -p "$pkg_dir"
+                cp -f "$local_build" "$dest"
+                echo "restore.sh: copied $asset (.wasm-build LOCAL build, sha256 $local_sha) -> src/ShadowDusk.Wasm/wwwroot/vkd3d/"
+            else
+                echo "restore.sh: vkd3d-shader WASM ($asset) present (LOCAL build, sha256 $local_sha) — OK"
+            fi
+            return 0
         fi
-        return 0
     fi
 
     if [ "$sha" = "PENDING-FIRST-HOSTED-BUILD" ]; then
@@ -327,7 +341,10 @@ restore_vkd3d_wasm_file() {
             echo "restore.sh: vkd3d-shader WASM ($asset) present, hash OK"
             return 0
         fi
-        echo "restore.sh: vkd3d-shader WASM ($asset) hash mismatch — re-downloading (had $have)"
+        # Delete-on-mismatch (see restore_vkd3d_file): never leave an unverified file
+        # in place for existence-only downstream checks if the re-download fails.
+        echo "restore.sh: vkd3d-shader WASM ($asset) hash mismatch — deleting and re-downloading (had $have)"
+        rm -f "$dest"
     fi
 
     if ! curl -fsSLo "$dest.tmp" "$VKD3D_WASM_RELEASE_URL/$asset"; then

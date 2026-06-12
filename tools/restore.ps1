@@ -72,7 +72,11 @@ function Restore-Vkd3dFile([string]$Asset, [string]$DestRel, [string]$Sha256) {
             Write-Host "restore.ps1: vkd3d-shader ($DestRel) present, hash OK"
             return
         }
-        Write-Host "restore.ps1: vkd3d-shader ($DestRel) hash mismatch — re-downloading (had $have)"
+        # Delete the mismatched file BEFORE attempting re-download: if the download
+        # fails (offline), an unverified file must never stay in place to satisfy
+        # existence-only downstream checks.
+        Write-Host "restore.ps1: vkd3d-shader ($DestRel) hash mismatch — deleting and re-downloading (had $have)"
+        Remove-Item -Force $Dest
     }
 
     $tmp = "$Dest.tmp"
@@ -148,7 +152,10 @@ function Restore-DxcFile([string]$Asset, [string]$DestRel, [string]$Sha256) {
             Write-Host "restore.ps1: DXC macOS native ($DestRel) present, hash OK"
             return
         }
-        Write-Host "restore.ps1: DXC macOS native ($DestRel) hash mismatch — re-downloading (had $have)"
+        # Delete-on-mismatch (see Restore-Vkd3dFile): never leave an unverified file
+        # in place for existence-only downstream checks if the re-download fails.
+        Write-Host "restore.ps1: DXC macOS native ($DestRel) hash mismatch — deleting and re-downloading (had $have)"
+        Remove-Item -Force $Dest
     }
 
     $tmp = "$Dest.tmp"
@@ -312,19 +319,27 @@ function Restore-Vkd3dWasmFile([string]$Asset, [string]$Sha256) {
     $PkgVkd3dDir = Join-Path $RepoRoot 'src' 'ShadowDusk.Wasm' 'wwwroot' 'vkd3d'
     $Dest = Join-Path $PkgVkd3dDir $Asset
 
-    # A locally built module takes precedence over the (possibly placeholder-pinned)
-    # download — the Restore-DxcWasm pattern for developers iterating on the build.
+    # A locally built module takes precedence over the pinned download — the
+    # Restore-DxcWasm pattern for developers iterating on the build. LOCAL ONLY:
+    # in CI ($env:GITHUB_ACTIONS) the pinned download is always taken, so an unpinned
+    # local artifact can never reach a CI-built package. The local file's SHA-256
+    # is logged for provenance, and staleness is decided by hash (not size).
     $LocalBuild = Join-Path $RepoRoot '.wasm-build' 'vkd3d-wasm-out' $Asset
     if (Test-Path $LocalBuild) {
-        if (-not (Test-Path $Dest) -or
-            ((Get-Item $LocalBuild).Length -ne (Get-Item $Dest).Length)) {
-            EnsureDir $PkgVkd3dDir
-            Copy-Item -Force $LocalBuild $Dest
-            Write-Host "restore.ps1: copied $Asset (.wasm-build local build) -> src/ShadowDusk.Wasm/wwwroot/vkd3d/"
+        if ($env:GITHUB_ACTIONS) {
+            Write-Host "restore.ps1: NOTICE — ignoring local build $LocalBuild in CI; the pinned download is authoritative."
         } else {
-            Write-Host "restore.ps1: vkd3d-shader WASM ($Asset) present (local build) — OK"
+            $localSha = (Get-FileHash -Algorithm SHA256 -Path $LocalBuild).Hash.ToLowerInvariant()
+            if (-not (Test-Path $Dest) -or
+                ((Get-FileHash -Algorithm SHA256 -Path $Dest).Hash.ToLowerInvariant() -ne $localSha)) {
+                EnsureDir $PkgVkd3dDir
+                Copy-Item -Force $LocalBuild $Dest
+                Write-Host "restore.ps1: copied $Asset (.wasm-build LOCAL build, sha256 $localSha) -> src/ShadowDusk.Wasm/wwwroot/vkd3d/"
+            } else {
+                Write-Host "restore.ps1: vkd3d-shader WASM ($Asset) present (LOCAL build, sha256 $localSha) — OK"
+            }
+            return
         }
-        return
     }
 
     if ($Sha256 -eq 'PENDING-FIRST-HOSTED-BUILD') {
@@ -341,7 +356,10 @@ function Restore-Vkd3dWasmFile([string]$Asset, [string]$Sha256) {
             Write-Host "restore.ps1: vkd3d-shader WASM ($Asset) present, hash OK"
             return
         }
-        Write-Host "restore.ps1: vkd3d-shader WASM ($Asset) hash mismatch — re-downloading (had $have)"
+        # Delete-on-mismatch (see Restore-Vkd3dFile): never leave an unverified file
+        # in place for existence-only downstream checks if the re-download fails.
+        Write-Host "restore.ps1: vkd3d-shader WASM ($Asset) hash mismatch — deleting and re-downloading (had $have)"
+        Remove-Item -Force $Dest
     }
 
     $tmp = "$Dest.tmp"
