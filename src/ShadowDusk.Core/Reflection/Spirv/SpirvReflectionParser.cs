@@ -248,7 +248,53 @@ internal sealed class SpirvReflectionParser
             Rows           = rows,
             Columns        = cols,
             Elements       = elements,
+            Members        = BuildStructMembers(type),
         };
+    }
+
+    /// <summary>
+    /// Phase 43, F10: recursively extracts struct member variables, mirroring the
+    /// DXIL oracle's <c>ExtractStructMembers</c>: member <c>StartOffset</c> is the
+    /// offset WITHIN the parent struct (the SPIR-V member Offset decoration),
+    /// member <c>SizeBytes</c> is 0 (the oracle reports 0 for members — D3D's
+    /// per-member type description carries no size), and nesting recurses. Arrays
+    /// of structs report the element type's members, exactly as D3D does.
+    /// </summary>
+    private IReadOnlyList<VariableReflection>? BuildStructMembers(SpirvType? type)
+    {
+        if (type is ArrayType arr)
+            return BuildStructMembers(arr.Element);
+        if (type is not StructType st)
+            return null;
+
+        uint[] memberTypes = _structMembers.TryGetValue(st.Id, out uint[]? mt) ? mt : Array.Empty<uint>();
+        if (memberTypes.Length == 0)
+            return null;
+
+        _memberOffset.TryGetValue(st.Id, out Dictionary<int, int>? offsets);
+        _memberNames.TryGetValue(st.Id, out Dictionary<int, string>? names);
+
+        var members = new List<VariableReflection>(memberTypes.Length);
+        for (int i = 0; i < memberTypes.Length; i++)
+        {
+            SpirvType? memberType = _types.GetValueOrDefault(memberTypes[i]);
+            var (cls, ptype, rows, cols, elements, _) = DescribeVariable(memberType);
+
+            members.Add(new VariableReflection
+            {
+                Name           = names is not null && names.TryGetValue(i, out string? n) ? n : $"member{i}",
+                StartOffset    = offsets is not null && offsets.TryGetValue(i, out int o) ? o : 0,
+                SizeBytes      = 0, // the DXIL oracle reports 0 for struct members
+                ParameterClass = cls,
+                ParameterType  = ptype,
+                Rows           = rows,
+                Columns        = cols,
+                Elements       = elements,
+                Members        = BuildStructMembers(memberType),
+            });
+        }
+
+        return members;
     }
 
     /// <summary>
@@ -292,10 +338,68 @@ internal sealed class SpirvReflectionParser
                 return (cls, ptype, rows, cols, a.Length, padded);
             }
 
+            case StructType st:
+            {
+                // Phase 43, F10 — mirrors the DXIL oracle for struct members:
+                // Class=Struct, Type=Void, Rows = 1, Columns = the TOTAL scalar
+                // component count of all members (D3D's struct type description),
+                // size = packed size (last member offset + last member size).
+                return (EffectParameterClass.Struct, EffectParameterType.Void,
+                        1, StructComponentCount(st), 0, StructSizeBytes(st));
+            }
+
             default:
                 return (EffectParameterClass.Scalar, EffectParameterType.Void, 1, 1, 0, 0);
         }
     }
+
+    /// <summary>Packed struct size: last member's Offset decoration + its size.</summary>
+    private int StructSizeBytes(StructType st)
+    {
+        uint[] memberTypes = _structMembers.TryGetValue(st.Id, out uint[]? mt) ? mt : Array.Empty<uint>();
+        if (memberTypes.Length == 0)
+            return 0;
+
+        _memberOffset.TryGetValue(st.Id, out Dictionary<int, int>? offsets);
+        int lastIndex = memberTypes.Length - 1;
+        int lastOffset = offsets is not null && offsets.TryGetValue(lastIndex, out int o) ? o : 0;
+        var (_, _, _, _, _, lastSize) = DescribeVariable(_types.GetValueOrDefault(memberTypes[lastIndex]));
+        return lastOffset + lastSize;
+    }
+
+    /// <summary>
+    /// Total scalar component count across all members (recursive) — what D3D
+    /// reports as a struct type's ColumnCount.
+    /// </summary>
+    private int StructComponentCount(StructType st)
+    {
+        uint[] memberTypes = _structMembers.TryGetValue(st.Id, out uint[]? mt) ? mt : Array.Empty<uint>();
+        int total = 0;
+        foreach (uint typeId in memberTypes)
+        {
+            SpirvType? member = _types.GetValueOrDefault(typeId);
+            total += member switch
+            {
+                ScalarType         => 1,
+                VectorType v       => v.Count,
+                MatrixType m       => m.Column.Count * m.ColumnCount,
+                ArrayType a        => a.Length * ComponentCountOf(a.Element),
+                StructType nested  => StructComponentCount(nested),
+                _                  => 0,
+            };
+        }
+        return total;
+    }
+
+    private int ComponentCountOf(SpirvType? type) => type switch
+    {
+        ScalarType        => 1,
+        VectorType v      => v.Count,
+        MatrixType m      => m.Column.Count * m.ColumnCount,
+        ArrayType a       => a.Length * ComponentCountOf(a.Element),
+        StructType nested => StructComponentCount(nested),
+        _                 => 0,
+    };
 
     private int ComputeStructSize(uint[] memberTypes, Dictionary<int, int>? offsets)
     {

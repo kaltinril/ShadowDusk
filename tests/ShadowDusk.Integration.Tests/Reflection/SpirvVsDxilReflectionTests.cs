@@ -141,8 +141,95 @@ public sealed class SpirvVsDxilReflectionTests
                 sv.Rows.Should().Be(ov.Rows,                  $"'{sub.Name}.{sv.Name}' Rows");
                 sv.Columns.Should().Be(ov.Columns,            $"'{sub.Name}.{sv.Name}' Columns");
                 sv.Elements.Should().Be(ov.Elements,          $"'{sub.Name}.{sv.Name}' Elements");
+                AssertMembersEquivalent(ov, sv, $"{sub.Name}.{sv.Name}");
             }
         }
+    }
+
+    // Phase 43, F10: struct Members must match the oracle recursively — the gap was
+    // invisible while the parity assertion skipped this field.
+    private static void AssertMembersEquivalent(VariableReflection oracle, VariableReflection subject, string path)
+    {
+        if (oracle.Members is null)
+        {
+            subject.Members.Should().BeNull($"'{path}' is not a struct in the oracle");
+            return;
+        }
+
+        subject.Members.Should().NotBeNull($"'{path}' has struct members in the oracle");
+        subject.Members!.Count.Should().Be(oracle.Members.Count, $"'{path}' member count");
+
+        var oraByName = oracle.Members.ToDictionary(m => m.Name, StringComparer.Ordinal);
+        foreach (VariableReflection sm in subject.Members)
+        {
+            oraByName.Should().ContainKey(sm.Name, $"'{path}' must contain member '{sm.Name}'");
+            VariableReflection om = oraByName[sm.Name];
+
+            sm.StartOffset.Should().Be(om.StartOffset,       $"'{path}.{sm.Name}' StartOffset (within struct)");
+            sm.SizeBytes.Should().Be(om.SizeBytes,           $"'{path}.{sm.Name}' SizeBytes");
+            sm.ParameterClass.Should().Be(om.ParameterClass, $"'{path}.{sm.Name}' ParameterClass");
+            sm.ParameterType.Should().Be(om.ParameterType,   $"'{path}.{sm.Name}' ParameterType");
+            sm.Rows.Should().Be(om.Rows,                     $"'{path}.{sm.Name}' Rows");
+            sm.Columns.Should().Be(om.Columns,               $"'{path}.{sm.Name}' Columns");
+            sm.Elements.Should().Be(om.Elements,             $"'{path}.{sm.Name}' Elements");
+            AssertMembersEquivalent(om, sm, $"{path}.{sm.Name}");
+        }
+    }
+
+    // Phase 43, F10: a struct cbuffer member — the shape the fixture corpus never
+    // contained. Inlined (like StructReflectionTests) rather than a corpus .fx
+    // because the MGFX parameter model does not consume struct members yet; this
+    // gate is reflection-parity only.
+    private const string StructCbufferHlsl = """
+        struct DirectionalLight
+        {
+            float3 Dir;
+            float3 Color;
+            float  Intensity;
+        };
+
+        cbuffer LightParams : register(b0)
+        {
+            DirectionalLight Light;
+            float4 Ambient;
+        }
+
+        float4 PSMain() : SV_Target
+        {
+            return float4(Light.Color * Light.Intensity, 1.0) + Ambient * float4(Light.Dir, 0.0);
+        }
+        """;
+
+    [Fact]
+    public async Task SpirvReflection_StructMembers_MatchDxilOracle()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        var ct = cts.Token;
+
+        ReadOnlyMemory<byte> dxil = await CompileAsync(
+            StructCbufferHlsl, "struct_cbuffer.hlsl", "PSMain", PlatformTarget.DirectX, ct);
+        var oracleResult = new DxilReflectionExtractor().Extract(dxil, ct);
+        oracleResult.IsSuccess.Should().BeTrue(
+            because: oracleResult.IsFailure ? oracleResult.Error.Message : "DXIL reflection must succeed");
+        ReflectedEffect oracle = oracleResult.Value;
+
+        ReadOnlyMemory<byte> spirv = await CompileAsync(
+            StructCbufferHlsl, "struct_cbuffer.hlsl", "PSMain", PlatformTarget.OpenGL, ct);
+        var subjectResult = new SpirvReflector().Reflect(spirv);
+        subjectResult.IsSuccess.Should().BeTrue(
+            because: subjectResult.IsFailure ? subjectResult.Error.Message : "SPIR-V reflection must succeed");
+        ReflectedEffect subject = subjectResult.Value;
+
+        DumpDiff("struct_cbuffer (inline)", oracle, subject);
+
+        // The struct member must actually be present with members on the ORACLE side
+        // (guards against a vacuous pass if reflection shapes ever change).
+        VariableReflection oracleLight = oracle.ConstantBuffers
+            .SelectMany(cb => cb.Variables).Single(v => v.Name == "Light");
+        oracleLight.Members.Should().NotBeNull("the DXIL oracle reports struct members");
+        oracleLight.Members!.Should().HaveCount(3);
+
+        AssertConstantBuffersEquivalent(oracle, subject);
     }
 
     private static void AssertTexturesEquivalent(ReflectedEffect oracle, ReflectedEffect subject)
@@ -187,14 +274,23 @@ public sealed class SpirvVsDxilReflectionTests
         {
             _output.WriteLine($"  cbuffer {cb.Name} size={cb.SizeBytes} slot={cb.BindSlot}");
             foreach (var v in cb.Variables)
-                _output.WriteLine($"    {v.Name} off={v.StartOffset} size={v.SizeBytes} " +
-                                  $"class={v.ParameterClass} type={v.ParameterType} " +
-                                  $"r={v.Rows} c={v.Columns} elems={v.Elements}");
+                DescribeVariable(v, indent: "    ");
         }
         foreach (var t in e.Textures)
             _output.WriteLine($"  texture {t.Name} slot={t.BindSlot} dim={t.Dimension}");
         foreach (var s in e.Samplers)
             _output.WriteLine($"  sampler {s.Name} slot={s.BindSlot}");
+    }
+
+    private void DescribeVariable(VariableReflection v, string indent)
+    {
+        _output.WriteLine($"{indent}{v.Name} off={v.StartOffset} size={v.SizeBytes} " +
+                          $"class={v.ParameterClass} type={v.ParameterType} " +
+                          $"r={v.Rows} c={v.Columns} elems={v.Elements} " +
+                          $"members={(v.Members is null ? "-" : v.Members.Count.ToString())}");
+        if (v.Members is not null)
+            foreach (var m in v.Members)
+                DescribeVariable(m, indent + "  ");
     }
 
     private static async Task<ReadOnlyMemory<byte>> CompileAsync(
