@@ -14,6 +14,14 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.5.0] - 2026-06-12
+
+### Added
+
 - **`InitializeAsync()` + synchronous `Compile()`** on the compiler surface
   (`IShaderCompiler` / `EffectCompiler` / `WasmShaderCompiler`) — issue
   [#28](https://github.com/kaltinril/ShadowDusk/issues/28): compile `.fx` from a
@@ -28,10 +36,84 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   to initialize first — never an opaque runtime abort. `CompileAsync` is unchanged for
   existing consumers. The backend interfaces (`IDxcShaderCompiler`,
   `IDxbcShaderCompiler`) and reflection pipelines gained matching synchronous entries.
+- **In-browser DirectX and FNA compilation.** `WasmShaderCompiler` now compiles
+  `PlatformTarget.DirectX` (SM5 DXBC `.mgfx`) and `PlatformTarget.Fna` (D3D9 `.fxb`) in
+  the browser, so every shipping target (OpenGL, DirectX, FNA) works on every host. The
+  browser runs the **same pinned vkd3d-shader 1.17** the desktop packages bundle,
+  compiled to WebAssembly (0.43 MB gzipped) — never a substitute compiler — and the
+  emitted bytes are identical to desktop output, asserted over the full DirectX + FNA
+  fixture corpus both in Node and in a real headless browser against the committed
+  cross-host manifest.
 
 ### Changed
 
+- **DirectX compiles default to the cross-platform vkd3d-shader backend on every OS.**
+  A bare DirectX compile (including the CLI's default `DirectX_11` profile with no
+  backend flag) previously defaulted to the Windows-only `d3dcompiler_47` and
+  hard-failed `SD0210` on Linux and macOS. The default is now host-independent — the
+  same vkd3d backend everywhere, so default DX output is byte-identical across OSes.
+  `d3dcompiler_47` remains fully supported as the opt-in correctness oracle (CLI escape
+  hatch `/DxbcBackend:<vkd3d|d3dcompiler>`), and vkd3d's stderr debug chatter is
+  suppressed so the CLI keeps `mgfxc`'s silent-success contract.
+- **Vertex-stage texture sampling on the GL target now fails at compile time with a
+  clear diagnostic** instead of emitting GLSL that MonoGame's GL runtime cannot bind
+  (it was silently broken at runtime in two independent ways).
+- Sample: `ShaderFiddle.Web` gained an export station — compile once in the browser and
+  download the compiled artifact for each target (OpenGL/DirectX `.mgfx`, FNA `.fxb`).
+
 ### Fixed
+
+- **GL: effects with a custom vertex shader rendered upside-down when drawing to the
+  backbuffer** (the normal game case — only render-target rendering was correct), and
+  `UseHalfPixelOffset` was ignored. ShadowDusk baked a static Y-flip into the vertex
+  shader where MonoGame expects `mgfxc`'s dynamic `posFixup` uniform (the runtime flips
+  the sign for backbuffer vs render target and applies the half-pixel offset).
+  ShadowDusk now emits the exact `posFixup` contract, validated pixel-identical
+  (max delta 0) to `mgfxc` in real MonoGame 3.8.2 in **both** backbuffer and
+  render-target modes.
+- **MGFX: pass render states, annotations, and `sampler_state` filter/address states
+  are now written in MonoGame 3.8.2's exact wire format.** A pass carrying render
+  states (e.g. `AlphaBlendEnable = TRUE;`) or annotations could desync or fail the real
+  `Effect` reader, and sampler filter/address modes were silently dropped on MGFX
+  targets. All three are now byte-faithful to the real reader, golden-validated and
+  render-validated in real MonoGame.
+- **GL: effects with multiple cbuffers, a cbuffer shared by VS and PS, or uniform
+  arrays now get a correct uniform/parameter model.** Same-stage cbuffers merge into
+  one register space, per-stage records bind correctly (a buffer shared by VS and PS is
+  no longer deduped into an unbindable record), and array parameters carry per-element
+  records so `Effect.Parameters` behaves as with `mgfxc`. Shapes the GL model does not
+  yet cover (int/bool/mat3/struct uniform members) now fail loudly at compile time
+  (`SD0210`/`SD0012`) instead of emitting wrong GLSL.
+- **GL on Mesa (Linux): explicit-LOD/gradient sampling** (`SampleLevel`, `SampleGrad`,
+  projective forms) failed on strict drivers because the rewriter emitted generic
+  `textureLod`/`textureGrad` in versionless GLSL. These now lower to the legacy builtin
+  names under MojoShader's guarded `GL_ARB_shader_texture_lod` header, matching
+  `mgfxc`.
+- **A first-use race in all three native-library loaders** (DXC, vkd3d-shader,
+  SPIRV-Cross): a concurrent first compile could P/Invoke before the import resolver
+  was registered, surfacing as an intermittent `DllNotFoundException` under test
+  parallelism. Also revived the SPIRV-Cross resolver, which matched the wrong library
+  name and never fired (the library had loaded only via default probing).
+- Preprocessor/lexer robustness on real-world `.fx`: `#include` diamonds (the same
+  header reachable via two paths) no longer error; directives inside comments are
+  ignored; the HLSL lexer no longer silently swallows minus signs or unknown
+  characters. SPIR-V reflection now populates struct `Members` (parity with the DXIL
+  oracle), and colliding `SDxxxx` diagnostic codes were renumbered behind a registry
+  test.
+- WASM: the DXC module load retries after a transient fetch failure, and the vkd3d
+  shim is hardened (allocation null-checks, bounded string reads, clean retry after a
+  failed init) — a flaky first fetch no longer wedges the in-browser compiler.
+
+### Verified
+
+- **The CLI and the in-process library emit byte-identical output** — proven over the
+  fixture corpus by a parameterized suite that runs every fixture through both
+  invocation modes (the CLI is a delivery shape of the library, now machine-checked).
+- **The pre-1.0 verification sweep closed every deferred verify item from the
+  foundation phases** with 32+ new tests (negative diagnostics coverage, golden
+  parameter-table matches against the `mgfxc` goldens, include-resolver and GLSL
+  Y-flip checks), plus scripted pack / global-install / self-contained-publish
+  verification of the CLI.
 
 ## [0.4.0] - 2026-06-11
 
@@ -262,7 +344,8 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.1.1...v0.2.0

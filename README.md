@@ -34,7 +34,7 @@ FNA (fx_2_0):
 
 **OpenGL / WebGL is fully cross-platform and self-contained** — DXC + SPIRV-Cross ride inside the package, so it compiles on Linux, macOS, and Windows with nothing to install.
 
-**DirectX (DX11)** produces DXBC in-process (no `fxc.exe`/`mgfxc`) via two backends behind `IDxbcShaderCompiler`, chosen by `CompilerOptions.DxbcBackend`: the **default** is `d3dcompiler_47` — Microsoft's HLSL compiler, a system DLL **already present on Windows** (not a dependency you install), giving the most `fxc`-faithful output; `vkd3d-shader` is the **opt-in, cross-platform** backend (`DxbcBackend.Vkd3d`) for compiling DX shaders on Linux/macOS. DXC is **not** used for DX11 (it emits DXIL/SM6, not the DXBC/SM ≤ 5 the DX11 runtime loads); its `ps_6_0`/`vs_6_0` output is retained only for the DX12/KNI path.
+**DirectX (DX11)** produces DXBC in-process (no `fxc.exe`/`mgfxc`) via two backends behind `IDxbcShaderCompiler`, chosen by `CompilerOptions.DxbcBackend`: the **default** is the cross-platform `vkd3d-shader` (`DxbcBackend.Vkd3d`) — its natives ship inside the package for all four desktop RIDs, so a default DirectX compile works on Linux, macOS, and Windows and produces the same bytes on every OS; `d3dcompiler_47` — Microsoft's HLSL compiler, a system DLL already present on Windows — remains the **opt-in correctness oracle** (`DxbcBackend.D3DCompiler`), giving the most `fxc`-faithful output where available. DXC is **not** used for DX11 (it emits DXIL/SM6, not the DXBC/SM ≤ 5 the DX11 runtime loads); its `ps_6_0`/`vs_6_0` output is retained only for the DX12/KNI path.
 
 Supported backends:
 

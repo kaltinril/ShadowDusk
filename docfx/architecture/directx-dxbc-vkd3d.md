@@ -14,18 +14,18 @@ DirectX compilation routes HLSL → DXBC through a backend behind the `IDxbcShad
 
 | `DxbcBackend` | Backend | Platform | Role |
 |---|---|---|---|
-| `D3DCompiler` (**default**) | `d3dcompiler_47` | **Windows-only** | Correctness **oracle** — the reference output. |
-| `Vkd3d` | `vkd3d-shader` (the Wine project) | **Linux / macOS / Windows** | The **shipping cross-platform** backend — what makes the DX path compilable where `mgfxc` can't run. |
+| `Vkd3d` (**default**) | `vkd3d-shader` (the Wine project) | **Linux / macOS / Windows** | The **shipping cross-platform** backend — what makes the DX path compilable where `mgfxc` can't run; host-independent, so default output is byte-identical on every OS. |
+| `D3DCompiler` | `d3dcompiler_47` | **Windows-only** | Correctness **oracle** — the reference output (opt-in). |
 
 ```csharp
 var options = new CompilerOptions
 {
     Target = PlatformTarget.DirectX,
-    DxbcBackend = DxbcBackend.Vkd3d,   // cross-platform DXBC
+    DxbcBackend = DxbcBackend.D3DCompiler,   // opt in to the Windows-only oracle
 };
 ```
 
-The `vkd3d-shader` natives for all four desktop RIDs **ship inside the NuGet package** (`runtimes/<rid>/native`, SHA-256-pinned builds hosted on the `native-vkd3d-1.17` release) — consumers install nothing; the repo's [restore script](../getting-started/restore-native-tools.md) is only for building ShadowDusk from source. The default `d3dcompiler_47` oracle needs no restore but runs only on Windows.
+The `vkd3d-shader` natives for all four desktop RIDs **ship inside the NuGet package** (`runtimes/<rid>/native`, SHA-256-pinned builds hosted on the `native-vkd3d-1.17` release) — consumers install nothing; the repo's [restore script](../getting-started/restore-native-tools.md) is only for building ShadowDusk from source. The opt-in `d3dcompiler_47` oracle needs no restore but runs only on Windows.
 
 ## Validation
 
