@@ -25,16 +25,9 @@
 name: Build vkd3d-shader WASM (1.17)
 
 on:
+  # ON-DEMAND ONLY (dispatch from the default branch). The artifact is hosted on the
+  # fixed release tag; re-running never republishes — see the header comment.
   workflow_dispatch:
-  # TEMPORARY (pre-merge iteration only): workflow_dispatch is not runnable until
-  # this file is on the default branch, so the feature branch self-triggers here.
-  # REMOVE this push trigger after the Phase 4.1 branch merges.
-  push:
-    branches:
-      - 'feature/phase4.1-vkd3d-wasm-build*'
-    paths:
-      - '.github/workflows/vkd3d-wasm-build.yml'
-      - 'tools/vkd3d-wasm/**'
 
 env:
   VKD3D_VERSION: '1.17'
