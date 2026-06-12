@@ -25,7 +25,7 @@ ShadowDuskCLI MyShader.fx MyShader.mgfx /Profile:OpenGL
 | `/Profile:<Platform>` | Target platform. Valid: `DirectX_11`, `OpenGL`, `Vulkan`, `FNA` (the D3D9 fx_2_0 `.fxb` target — additive, not an `mgfxc` profile). | **`DirectX_11`** |
 | `/Debug` | Include debug information in the output. | off |
 | `/I <path>` | Additional include search path (repeatable). Also accepts `/I:<path>`. | none |
-| `--mgfx-version <10\|11>` | Output `.mgfx` format version. | **`10`** |
+| `--mgfx-version <byte>` | MGFX header format-version byte (escape hatch). `10` is the produced/validated format and loads on MonoGame and KNI; leave it unset. | **`10`** |
 
 Unknown flags are **silently ignored** (not consuming a following value) so that future `mgfxc` flags MGCB may pass don't break existing pipelines.
 
