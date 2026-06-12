@@ -307,6 +307,72 @@ public partial class Index
     }
 
     /// <summary>
+    /// Phase 42 (issue #28) headless-test entry point: compiles through the
+    /// <b>synchronous</b> <see cref="WasmShaderCompiler.Compile"/> — the API that lets a
+    /// synchronous call site (e.g. KNI's <c>Content.Load&lt;Effect&gt;</c>) compile
+    /// without awaiting a Task. The Playwright harness
+    /// (<c>tests/ShadowDusk.BrowserTests/browser-vkd3d-gate.mjs</c>) uses it two ways:
+    /// COLD (before any compile/initialization) to prove the call fails with the clear
+    /// SD1903 not-initialized error rather than an opaque runtime abort, and WARM (after
+    /// the modules are loaded) to prove the sync output is byte-identical to the
+    /// committed cross-host manifest — i.e. identical to <c>CompileAsync</c>'s bytes.
+    /// Protocol: <c>"OK:&lt;base64 artifact&gt;"</c> on success,
+    /// <c>"ERR:&lt;code&gt;: &lt;message&gt; | …"</c> on failure (the SD code is
+    /// machine-checkable). Test-only and UI-invisible (the <see cref="TestCompileExport"/>
+    /// pattern); a pure compile, synchronous end-to-end on the browser thread.
+    /// </summary>
+    [JSInvokable]
+    public string TestSyncCompileExport(string source, string targetName, string sourceFileName)
+    {
+        try
+        {
+            if (!Enum.TryParse<PlatformTarget>(targetName, ignoreCase: false, out var target))
+                return $"ERR:unsupported target '{targetName}'";
+
+            // The synchronous product path — no Task, no await, no blocking.
+            var result = _compiler.Compile(source, new CompilerOptions
+            {
+                Target = target,
+                SourceFileName = sourceFileName,
+            });
+
+            if (result.IsFailure)
+            {
+                return "ERR:" + string.Join(" | ",
+                    System.Linq.Enumerable.Select(result.Error, d => $"{d.Code}: {d.Message}"));
+            }
+
+            return "OK:" + Convert.ToBase64String(result.Value.Data);
+        }
+        catch (Exception ex)
+        {
+            return "ERR:" + ex.Message;
+        }
+    }
+
+    /// <summary>
+    /// Phase 42 (issue #28) headless-test entry point: drives the one-time
+    /// <see cref="WasmShaderCompiler.InitializeAsync"/> warm-up (awaited twice to prove
+    /// idempotency) that makes the synchronous <see cref="TestSyncCompileExport"/> path
+    /// valid for every target. Returns <c>"OK"</c> or <c>"ERR:&lt;message&gt;"</c>.
+    /// Test-only and UI-invisible.
+    /// </summary>
+    [JSInvokable]
+    public async Task<string> TestInitializeCompiler()
+    {
+        try
+        {
+            await _compiler.InitializeAsync();
+            await _compiler.InitializeAsync(); // idempotent — safe to await repeatedly
+            return "OK";
+        }
+        catch (Exception ex)
+        {
+            return "ERR:" + ex.Message;
+        }
+    }
+
+    /// <summary>
     /// Reset the canvas to the original cat with no shader applied. Drops the
     /// current effect (the plain-cat draw pass renders on its own) without
     /// touching the editor source or the selected sample.

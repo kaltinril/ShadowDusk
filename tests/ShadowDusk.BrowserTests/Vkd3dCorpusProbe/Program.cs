@@ -193,4 +193,14 @@ internal sealed class RecordingVkd3dCompiler : IDxbcShaderCompiler
             Captures.Add((request, result.Value.Bytes.ToArray()));
         return result;
     }
+
+    public Result<PlatformBlob, ShaderError> Compile(
+        D3DCompileRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var result = _inner.Compile(request, cancellationToken);
+        if (result.IsSuccess)
+            Captures.Add((request, result.Value.Bytes.ToArray()));
+        return result;
+    }
 }

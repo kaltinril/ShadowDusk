@@ -59,14 +59,19 @@ public sealed class DxbcCompilerInjectionTests
         public Task<Result<PlatformBlob, ShaderError>> CompileAsync(
             D3DCompileRequest request,
             CancellationToken cancellationToken = default)
+            => Task.FromResult(Compile(request, cancellationToken));
+
+        public Result<PlatformBlob, ShaderError> Compile(
+            D3DCompileRequest request,
+            CancellationToken cancellationToken = default)
         {
             Requests.Add(request);
-            return Task.FromResult(Result<PlatformBlob, ShaderError>.Fail(new ShaderError(
+            return Result<PlatformBlob, ShaderError>.Fail(new ShaderError(
                 File: request.SourceFileName,
                 Line: 0,
                 Column: 0,
                 Code: "SDTEST",
-                Message: "sentinel from injected dxbc compiler")));
+                Message: "sentinel from injected dxbc compiler"));
         }
     }
 
@@ -116,6 +121,51 @@ public sealed class DxbcCompilerInjectionTests
         request.ProfileOverride.Should().Be("ps_2_0",
             because: "the FNA path honors the pass's declared SM ≤ 3 profile verbatim — " +
                      "this is what makes the injected (WASM) backend emit D3D_BYTECODE");
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().ContainSingle(e => e.Code == "SDTEST");
+    }
+
+    /// <summary>
+    /// Phase 42 (issue #28): the SYNCHRONOUS <see cref="EffectCompiler.Compile"/> must
+    /// route through the exact same injected-backend seam as <c>CompileAsync</c> — there
+    /// is ONE pipeline core; the sync entry is not a fork. Mirrors the async test above.
+    /// </summary>
+    [Fact]
+    public void DirectXTarget_SyncCompile_RoutesThroughInjectedDxbcCompiler()
+    {
+        var fake = new RecordingFailingDxbcCompiler();
+        var compiler = new EffectCompiler(dxbcCompilerFactory: () => fake);
+
+        var result = compiler.Compile(DirectXEffect, new CompilerOptions
+        {
+            Target         = PlatformTarget.DirectX,
+            SourceFileName = "inline.fx",
+        });
+
+        fake.Requests.Should().ContainSingle();
+        fake.Requests[0].Stage.Should().Be(ShaderStage.Pixel);
+        fake.Requests[0].EntryPoint.Should().Be("MainPS");
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().ContainSingle(e => e.Code == "SDTEST");
+    }
+
+    /// <inheritdoc cref="DirectXTarget_SyncCompile_RoutesThroughInjectedDxbcCompiler"/>
+    [Fact]
+    public void FnaTarget_SyncCompile_RoutesThroughInjectedDxbcCompiler()
+    {
+        var fake = new RecordingFailingDxbcCompiler();
+        var compiler = new EffectCompiler(dxbcCompilerFactory: () => fake);
+
+        var result = compiler.Compile(FnaEffect, new CompilerOptions
+        {
+            Target         = PlatformTarget.Fna,
+            SourceFileName = "inline.fx",
+        });
+
+        fake.Requests.Should().ContainSingle();
+        fake.Requests[0].ProfileOverride.Should().Be("ps_2_0");
 
         result.IsFailure.Should().BeTrue();
         result.Error.Should().ContainSingle(e => e.Code == "SDTEST");
