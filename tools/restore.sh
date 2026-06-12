@@ -285,12 +285,12 @@ restore_dxc_wasm
 # Mirrors restore_dxc_wasm (local-build copy) + restore_dxc_file (pinned download with
 # the PENDING-FIRST-HOSTED-BUILD placeholder pattern). Runs unconditionally.
 #
-# Pins: PLACEHOLDERS until the first hosted build lands on the fixed tag below (the
-# build pipeline is owned by the Phase 4.1 build-agent half). While placeholders, the
-# download is skipped with a notice and browser DirectX/FNA fail loudly with SD1902.
+# Pins: SHA-256 of the assets hosted on the native-vkd3d-wasm-1.17 prerelease (built
+# by .github/workflows/vkd3d-wasm-build.yml from the pinned vkd3d-1.17 tarball,
+# emscripten 3.1.34). Re-running the build workflow re-pins here + in SHA256SUMS.
 VKD3D_WASM_RELEASE_URL="https://github.com/kaltinril/ShadowDusk/releases/download/native-vkd3d-wasm-1.17"
-VKD3D_WASM_JS_SHA256="PENDING-FIRST-HOSTED-BUILD"
-VKD3D_WASM_WASM_SHA256="PENDING-FIRST-HOSTED-BUILD"
+VKD3D_WASM_JS_SHA256="aff3ae6dece4d9aea38d32e3e7ed4c2d809dc0e0bf1c12bbaa4ad97e3b5dd7aa"
+VKD3D_WASM_WASM_SHA256="c80b8bb8a887a629aeb00951e5273a64598e6153b8580db428ee824f70f161e0"
 
 # restore_vkd3d_wasm_file <asset-name> <sha256>
 restore_vkd3d_wasm_file() {

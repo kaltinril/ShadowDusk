@@ -301,12 +301,12 @@ Restore-DxcWasm
 # Mirrors Restore-DxcWasm (local-build copy) + Restore-DxcMacos (pinned download with
 # the PENDING-FIRST-HOSTED-BUILD placeholder pattern). Runs unconditionally.
 #
-# Pins: PLACEHOLDERS until the first hosted build lands on the fixed tag below (the
-# build pipeline is owned by the Phase 4.1 build-agent half). While placeholders, the
-# download is skipped with a notice and browser DirectX/FNA fail loudly with SD1902.
+# Pins: SHA-256 of the assets hosted on the native-vkd3d-wasm-1.17 prerelease (built
+# by .github/workflows/vkd3d-wasm-build.yml from the pinned vkd3d-1.17 tarball,
+# emscripten 3.1.34). Re-running the build workflow re-pins here + in SHA256SUMS.
 $Vkd3dWasmReleaseUrl = 'https://github.com/kaltinril/ShadowDusk/releases/download/native-vkd3d-wasm-1.17'
-$Vkd3dWasmJsSha256   = 'PENDING-FIRST-HOSTED-BUILD'
-$Vkd3dWasmWasmSha256 = 'PENDING-FIRST-HOSTED-BUILD'
+$Vkd3dWasmJsSha256   = 'aff3ae6dece4d9aea38d32e3e7ed4c2d809dc0e0bf1c12bbaa4ad97e3b5dd7aa'
+$Vkd3dWasmWasmSha256 = 'c80b8bb8a887a629aeb00951e5273a64598e6153b8580db428ee824f70f161e0'
 
 function Restore-Vkd3dWasmFile([string]$Asset, [string]$Sha256) {
     $PkgVkd3dDir = Join-Path $RepoRoot 'src' 'ShadowDusk.Wasm' 'wwwroot' 'vkd3d'
