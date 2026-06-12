@@ -45,9 +45,12 @@ public sealed class ErrorCaseTests
         var result = await CompileSourceAsync(source, "OpenGL", cts.Token);
 
         result.ExitCode.Should().Be(1);
-        // DXC emits (line,col) diagnostics; the formatter preserves this.
-        Regex.IsMatch(result.Stderr, @"\(\d+,\d+\)").Should().BeTrue(
-            because: $"stderr must contain (line,col) diagnostic; actual stderr: {result.Stderr}");
+        // DXC emits (line,col) diagnostics; the formatter preserves this. Pin the FULL
+        // MGCB-parseable shape (`file(line,col[-col]): error CODE: message`) — the
+        // drop-in-mgfxc promise (Core Design Constraint 2/5) is the format, not merely
+        // that a line/column appears somewhere.
+        result.Stderr.Should().MatchRegex(@"\.fx\(\d+,\d+(-\d+)?\): error [A-Z]+\d+:",
+            because: $"stderr must carry the MGCB-parseable diagnostic form; actual stderr: {result.Stderr}");
         result.Stderr.Should().NotMatchRegex(@"at \S+\.\S+\(",
             because: "internal stack traces must not appear in stderr");
     }
@@ -92,6 +95,11 @@ public sealed class ErrorCaseTests
         // The source file name (not just the include path) must appear in the diagnostic.
         result.Stderr.Should().Contain("test_shader.fx",
             because: "the including file name must be referenced in the error");
+        // Pin the diagnostic CODE: a missing include is SD0001 (ShaderError.IncludeNotFound)
+        // — the documented contract (docfx guides reference SD0001/SD0002 by name), so a
+        // code drift would break consumers matching on it.
+        result.Stderr.Should().Contain("SD0001",
+            because: "a missing include must surface the documented SD0001 diagnostic code");
     }
 
     [Fact]

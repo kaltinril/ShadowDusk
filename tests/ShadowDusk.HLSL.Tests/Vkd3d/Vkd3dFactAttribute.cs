@@ -1,6 +1,7 @@
 #nullable enable
 
 using System.Runtime.InteropServices;
+using ShadowDusk.Tests.Shared;
 using Xunit;
 
 namespace ShadowDusk.HLSL.Tests.Vkd3d;
@@ -21,7 +22,12 @@ public sealed class Vkd3dFactAttribute : FactAttribute
 {
     public Vkd3dFactAttribute(bool requiresD3DReflect = false)
     {
-        if (!Vkd3dTestGate.Available)
+        // SHADOWDUSK_REQUIRE_VKD3D set (CI) + native missing => do NOT skip: the test
+        // runs and fails loudly at the native boundary (SD0211) — a restore-infrastructure
+        // failure must go red, never quietly skip green. See NativeRequirement.
+        if (NativeRequirement.ShouldSkip(
+                Vkd3dTestGate.Available,
+                Environment.GetEnvironmentVariable(NativeRequirement.Vkd3dEnvVar)))
             Skip = Vkd3dTestGate.SkipReason;
         else if (requiresD3DReflect && !OperatingSystem.IsWindows())
             Skip = "The D3DReflect test oracle P/Invokes d3dcompiler_47 — Windows-only " +

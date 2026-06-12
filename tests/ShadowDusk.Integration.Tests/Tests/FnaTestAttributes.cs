@@ -1,16 +1,21 @@
 #nullable enable
 
 using System.Runtime.InteropServices;
+using ShadowDusk.Tests.Shared;
 using Xunit;
 
 namespace ShadowDusk.Integration.Tests.Tests;
 
 /// <summary>
 /// Skip gate for the FNA fx_2_0 integration tests: every FNA compile goes through the
-/// native vkd3d-shader SM1–3 backend, and that library is a RESTORED, non-redistributed
-/// artifact (tools/restore is non-fatal when it's absent — the known Phase 37 C gap, so
-/// CI typically runs without it). When the library can't be found these tests skip with
-/// a clear reason instead of failing the run — the sibling of
+/// native vkd3d-shader SM1–3 backend, a RESTORED artifact. Since Phase 37 C
+/// (2026-06-10) the pinned binaries for all four RIDs are hosted and
+/// <c>tools/restore.*</c> downloads them on every CI run, so CI normally HAS the
+/// native; only local runs that haven't restored it should ever skip. When the library
+/// can't be found these tests skip with a clear reason — UNLESS
+/// <c>SHADOWDUSK_REQUIRE_VKD3D</c> is set (CI), in which case they run and fail loudly
+/// at the native boundary (SD0211) instead of skipping green (see
+/// <see cref="NativeRequirement"/>). The sibling of
 /// <c>ShadowDusk.HLSL.Tests.Vkd3d.Vkd3dFactAttribute</c>, but availability-probed rather
 /// than OS-gated so a future restored Linux/macOS binary enables them automatically.
 /// </summary>
@@ -75,22 +80,35 @@ internal static class FnaTestGate
     }
 }
 
-/// <summary>An xUnit fact that skips when the vkd3d-shader native library is absent.</summary>
+/// <summary>
+/// An xUnit fact that skips when the vkd3d-shader native library is absent — unless
+/// <c>SHADOWDUSK_REQUIRE_VKD3D</c> is set, in which case the test RUNS and fails
+/// loudly at the native boundary (SD0211) instead of skipping (the CI restore-failure
+/// net; see <see cref="NativeRequirement"/>).
+/// </summary>
 public sealed class FnaFactAttribute : FactAttribute
 {
     public FnaFactAttribute()
     {
-        if (!FnaTestGate.Vkd3dAvailable)
+        if (NativeRequirement.ShouldSkip(
+                FnaTestGate.Vkd3dAvailable,
+                Environment.GetEnvironmentVariable(NativeRequirement.Vkd3dEnvVar)))
             Skip = FnaTestGate.SkipReason;
     }
 }
 
-/// <summary>An xUnit theory that skips when the vkd3d-shader native library is absent.</summary>
+/// <summary>
+/// An xUnit theory that skips when the vkd3d-shader native library is absent — unless
+/// <c>SHADOWDUSK_REQUIRE_VKD3D</c> is set (then it runs and fails loudly; see
+/// <see cref="FnaFactAttribute"/>).
+/// </summary>
 public sealed class FnaTheoryAttribute : TheoryAttribute
 {
     public FnaTheoryAttribute()
     {
-        if (!FnaTestGate.Vkd3dAvailable)
+        if (NativeRequirement.ShouldSkip(
+                FnaTestGate.Vkd3dAvailable,
+                Environment.GetEnvironmentVariable(NativeRequirement.Vkd3dEnvVar)))
             Skip = FnaTestGate.SkipReason;
     }
 }

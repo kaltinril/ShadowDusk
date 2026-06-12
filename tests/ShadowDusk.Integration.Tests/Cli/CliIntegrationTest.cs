@@ -64,6 +64,14 @@ public sealed class CliIntegrationTest : IClassFixture<CliBinaryFixture>
             exitCode.Should().Be(1);
             stdout.Should().BeEmpty("nothing must ever go to stdout");
             stderr.Should().NotBeEmpty("error diagnostics must appear on stderr");
+            // THE MGCB CONTRACT (Core Design Constraint 2/5): diagnostics on stderr in
+            // mgfxc-compatible `file(line,col-col): error CODE: message` form, which
+            // MGCB parses. Pin the full shape at the CLI boundary — "stderr non-empty"
+            // alone would let the format silently regress to something MGCB can't read.
+            stderr.Should().MatchRegex(@"\.fx\(\d+,\d+(-\d+)?\): error [A-Z]+\d+:",
+                because: "stderr must carry the MGCB-parseable " +
+                         "'file(line,col-col): error CODE: message' diagnostic form " +
+                         $"(MgcbErrorFormatter); actual stderr: {stderr}");
         }
         finally
         {
