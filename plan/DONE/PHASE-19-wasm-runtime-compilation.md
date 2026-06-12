@@ -4,7 +4,7 @@
 **Depends on:** Phase 8 (`ShadowDusk.Compiler` / `IShaderCompiler` abstraction — `ShadowDusk.Wasm` is the second implementation), Phase 17 (a browser-produced `.mgfx` must be exactly as MonoGame-loadable, and carry the same MojoShader-dialect GLSL, as a desktop-produced one — same format, same fidelity bar), Phase 25 (security hardening of the untrusted web/input path), Phase 30 (cross-platform CI / native-binary restore).
 **Blocks:** ShadowDusk's **Part 1 (reach)** promise for the browser — compiling `.fx` at runtime, in-browser, with **no server roundtrip** (e.g. Vic's XNA Fiddle / KNI web).
 
-> The [plan.md dependency graph](plan.md#dependencies) previously placeholdered this as **"Phase 9W (WASM)"** (now renumbered to Phase 19) but no phase document ever defined it. This is that document. The architecture survey is [`monogame_runtime_mgfx_compiler_research.md`](../monogame_runtime_mgfx_compiler_research.md) §8 (WASM considerations), §11 (package structure), and Task I.
+> The [plan.md dependency graph](../plan.md#dependencies) previously placeholdered this as **"Phase 9W (WASM)"** (now renumbered to Phase 19) but no phase document ever defined it. This is that document. The architecture survey is [`monogame_runtime_mgfx_compiler_research.md`](../../monogame_runtime_mgfx_compiler_research.md) §8 (WASM considerations), §11 (package structure), and Task I.
 
 > **Scope boundary vs [Phase 22](PHASE-22-wasm-shader-fiddle-sample.md) (avoid overlap):** Phase 19 owns the **compiler capability** — `WasmShaderCompiler` working in WASM (modes 1 & 2) plus a **minimal** harness that proves bytes load and a shader compiles in-browser. The **interactive XNA-Fiddle sample app** — paste-in editor, the cat image, parameter controls, error UI — is **[Phase 22](PHASE-22-wasm-shader-fiddle-sample.md)**, which consumes this. Build the throwaway harness here; build the real app there. Don't build the app twice.
 
@@ -69,7 +69,7 @@ The **managed "reach engine"** — everything needed to compile `.fx` → `.mgfx
 
 ### Validation / CI
 - [→100] Headless-browser smoke test in [Phase 30 CI](PHASE-30-ci-and-nuget-release.md) for mode 1 — **moved to [Phase 100](../PHASE-100-deferred-backlog.md)**.
-- [→100] Feed untrusted `.fx` through [Phase 25](PHASE-25-security-hardening.md) input validation — **moved to [Phase 100](../PHASE-100-deferred-backlog.md)** (real browser input path).
+- [→100] Feed untrusted `.fx` through [Phase 25](../PHASE-25-security-hardening.md) input validation — **moved to [Phase 100](../PHASE-100-deferred-backlog.md)** (real browser input path).
 
 ---
 

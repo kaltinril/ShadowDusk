@@ -17,8 +17,8 @@
 > `validation/VsDrivenDx`.
 
 Today ShadowDusk faithfully compiles and renders the **PS-only** corpus on the MonoGame GL
-path (10/10 in real DesktopGL — [Phase 17](DONE/PHASE-17-monogame-runtime-validation.md))
-and DX path (10/10 in real WindowsDX — [Phase 18](DONE/PHASE-18-directx-dxbc.md)). Every
+path (10/10 in real DesktopGL — [Phase 17](PHASE-17-monogame-runtime-validation.md))
+and DX path (10/10 in real WindowsDX — [Phase 18](PHASE-18-directx-dxbc.md)). Every
 one of those effects reuses MonoGame's **built-in `SpriteEffect` vertex shader** and only
 supplies a pixel shader. The common real-world case — an effect that ships **its own vertex
 shader** (almost always taking a `float4x4` transform) — is **not yet supported on the GL
@@ -27,12 +27,12 @@ a vertex-bearing pass falls through to the unmodified SPIRV-Cross dialect, which
 runtime cannot link. This phase closes that gap and confirms parity on DX.
 
 **Depends on:**
-- **[Phase 17](DONE/PHASE-17-monogame-runtime-validation.md)** — proved in-engine equivalence for the PS-only SM3 corpus and built the GL `MonoGameGlslRewriter` + `validation/` harness this phase extends. The VS work is explicitly carried forward from Phase 17 §8.3.
-- **[Phase 18](DONE/PHASE-18-directx-dxbc.md)** — the DX DXBC backend (`vkd3d` / `d3dcompiler_47` oracle) the DX confirmation leg rides on.
+- **[Phase 17](PHASE-17-monogame-runtime-validation.md)** — proved in-engine equivalence for the PS-only SM3 corpus and built the GL `MonoGameGlslRewriter` + `validation/` harness this phase extends. The VS work is explicitly carried forward from Phase 17 §8.3.
+- **[Phase 18](PHASE-18-directx-dxbc.md)** — the DX DXBC backend (`vkd3d` / `d3dcompiler_47` oracle) the DX confirmation leg rides on.
 
 **Blocks:** nothing structurally, but it is a prerequisite for any sample/game whose effect
 has a custom VS (e.g. a transform + lit/skinned vertex path), and a prerequisite for the
-"VS-driven" backlog item to ever leave [Phase 100](PHASE-100-deferred-backlog.md).
+"VS-driven" backlog item to ever leave [Phase 100](../PHASE-100-deferred-backlog.md).
 
 > The product is the in-memory `IShaderCompiler` library (see `CLAUDE.md` → THE PURPOSE). A
 > compiler that can only handle PS-only post-process effects is materially incomplete; a custom
@@ -152,7 +152,7 @@ the `MonoGameGlslRewriter` emits the symmetric `vs_uniforms_vec4` block, the VS-
 attribute/varying I/O contract, and a complete matrix-uniform expansion; the `monoGameGl` gate no
 longer excludes VS-bearing passes; a VS-driven `.fx` renders pixel-equivalent to `mgfxc` in **both**
 real DesktopGL and real WindowsDX; and the PS-only corpus + Phase-16 anchors are unregressed. The
-"VS-driven MonoGame effects" item is removed from [Phase 100](PHASE-100-deferred-backlog.md) and
+"VS-driven MonoGame effects" item is removed from [Phase 100](../PHASE-100-deferred-backlog.md) and
 `docs/glsl-uniform-naming.md` is updated to as-built.
 
 ---
