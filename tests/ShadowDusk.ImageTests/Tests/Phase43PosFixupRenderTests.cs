@@ -181,8 +181,9 @@ public sealed class Phase43PosFixupRenderTests
         prog.Use(gl);
 
         // The uniform contract both compilers share: identity matrix columns in
-        // vs_uniforms_vec4[0..3] (identity is symmetric, so fxc row-major vs
-        // SPIRV-Cross column-major layouts agree), white tint in [4].
+        // vs_uniforms_vec4[0..3] (this test isolates posFixup, so identity is fine; the
+        // non-identity matrix transform is render-pinned separately by
+        // Issue70MatrixTransposeRenderTests), white tint in [4].
         SetVec4(gl, prog.Handle, "vs_uniforms_vec4[0]", 1, 0, 0, 0);
         SetVec4(gl, prog.Handle, "vs_uniforms_vec4[1]", 0, 1, 0, 0);
         SetVec4(gl, prog.Handle, "vs_uniforms_vec4[2]", 0, 0, 1, 0);

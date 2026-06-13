@@ -89,9 +89,19 @@ public sealed class D3DCompilerShaderCompiler : IDxbcShaderCompiler
 
         string profile = ShaderProfiles.DefaultDxbcProfile(request.Stage);
 
-        // Row-major matrix packing matches the DXC path's -Zpr so reflection
-        // offsets and the runtime's float4x4 layout agree across backends.
-        ShaderFlags flags = ShaderFlags.PackMatrixRowMajor;
+        // Column-major matrix packing (issue #70). MonoGame's runtime uploads a
+        // float4x4 via EffectParameter.SetValue(Matrix) as its COLUMNS, and the mgfxc
+        // golden + the shipping vkd3d DXBC backend both read it that way (the bytecode
+        // dot-products POSITION against cb0[j] = column j). The previous
+        // PackMatrixRowMajor packed the matrix as ROWS, so this oracle backend rendered
+        // every non-identity transform TRANSPOSED in real MonoGame (a sheared/garbled
+        // mesh) — the DXBC analog of the OpenGL issue-#70 bug, hidden because the only
+        // DX VS-matrix render check uploaded an identity (transpose-invariant) matrix.
+        // Column-major matches fxc's default (what mgfxc uses), vkd3d, and the runtime,
+        // so all three backends now render pixel-identical to the golden. (The matrix's
+        // reflection OFFSET is majorness-independent — 4 registers either way — so the
+        // cross-backend reflection tables still agree; verified by the reflection suite.)
+        ShaderFlags flags = ShaderFlags.PackMatrixColumnMajor;
         if (!request.AllowWarnings)
             flags |= ShaderFlags.WarningsAreErrors;
         if (request.EmbedDebugInfo)

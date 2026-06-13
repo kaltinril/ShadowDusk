@@ -238,14 +238,16 @@ public sealed class Phase43CbufferModelTests
         OffsetsByName(subject, sub).Should().BeEquivalentTo(OffsetsByName(golden, gold),
             because: "Bones@0 and PosOffsets@128 — mat4 array elements stride FOUR registers");
 
-        // The VS GLSL reads BOTH elements of both arrays at the packed offsets.
+        // The VS GLSL reads BOTH elements of both arrays at the packed offsets. The mat4
+        // elements are reconstructed TRANSPOSED (issue #70): the registers become the
+        // matrix ROWS, so each transposed-matrix column is vec4(reg[a].c, reg[b].c, …).
         string vsGlsl = Ascii(subject.Shaders.Single(s => s.IsVertex).Bytecode);
         vsGlsl.Should().Contain(
-            "mat4(vs_uniforms_vec4[0], vs_uniforms_vec4[1], vs_uniforms_vec4[2], vs_uniforms_vec4[3])",
-            because: "Bones[0] sits at registers 0-3");
+            "vec4(vs_uniforms_vec4[0].x, vs_uniforms_vec4[1].x, vs_uniforms_vec4[2].x, vs_uniforms_vec4[3].x)",
+            because: "Bones[0] sits at registers 0-3, reconstructed transposed");
         vsGlsl.Should().Contain(
-            "mat4(vs_uniforms_vec4[4], vs_uniforms_vec4[5], vs_uniforms_vec4[6], vs_uniforms_vec4[7])",
-            because: "Bones[1] sits at registers 4-7 (mat4 array elements stride FOUR)");
+            "vec4(vs_uniforms_vec4[4].x, vs_uniforms_vec4[5].x, vs_uniforms_vec4[6].x, vs_uniforms_vec4[7].x)",
+            because: "Bones[1] sits at registers 4-7 (mat4 array elements stride FOUR), transposed");
         vsGlsl.Should().Contain("vs_uniforms_vec4[8]", because: "PosOffsets[0] sits at register 8");
         vsGlsl.Should().Contain("vs_uniforms_vec4[9]", because: "PosOffsets[1] sits at register 9");
     }

@@ -102,7 +102,7 @@ in/out direction are the only stage knobs:
 |---|---|
 | `layout(std140) uniform type_Globals { … }` | `uniform vec4 vs_uniforms_vec4[N];` (a `mat4` counts as four registers) |
 | `in <type> in_var_<SEM>;` (vertex **inputs**) | `attribute vec4 vs_v{k};` — renamed in declaration order; uses get a width-truncating swizzle (`vec4(vs_v0.xyz, 1.0)`) |
-| `out <type> out_var_<SEM>;` (vertex **outputs**) | `varying vec4 <legacy>;` — the SAME names the PS reads (`vFrontColor`/`vTexCoord{n}`), so MonoGame links VS→PS **by name**; a narrower output writes a swizzled LHS (`vTexCoord0.xy = vs_v2.xy;`) |
+| `out <type> out_var_<SEM>;` (vertex **outputs**) | `varying vec4 <legacy>;` — the SAME names the PS reads (`vFrontColor`/`vTexCoord{n}`), so MonoGame links VS→PS **by name**; a narrower output writes a swizzled LHS (`vTexCoord0.xy = vs_v2.xy;`). **Exception — `out_var_POSITION{0}` → `gl_Position`** (issue #70): a VS output carrying the legacy D3D9 `POSITION`/`POSITION0` semantic **is** the clip position (the stock MonoGame GL template emits this via `#define SV_POSITION POSITION`). DXC (Shader Model 6) treats `: POSITION` as an ordinary user output (only `: SV_Position` is the builtin position), so without this remap the transform would land in a dead `var_POSITION` varying and `gl_Position` would be left **unwritten** — silently-broken geometry. The rewriter (`IsPositionSemantic`) drops its varying decl and rewrites its uses to `gl_Position`, so `posFixup` then applies as for any SV_Position shader. mgfxc maps `: POSITION` to the position natively (D3D9 SM3). |
 | `gl_Position = … ;` (from `SV_Position`) | kept, then the mgfxc/MojoShader **`posFixup` contract** is injected (Phase 43 F3): `uniform vec4 posFixup;` (declared after `vs_uniforms_vec4[]`, the golden's order) and the two fixup lines `gl_Position.y = gl_Position.y * posFixup.y;` + `gl_Position.xy += posFixup.zw * gl_Position.ww;` immediately before SPIRV-Cross's kept depth-convention line. MonoGame's GL runtime sets the uniform per draw (`+1` backbuffer / `-1` render target, half-pixel offset in `.zw` when `UseHalfPixelOffset`) and skips programs without it. SPIRV-Cross's `FlipVertexY` is **off** — the old baked `-gl_Position.y` only matched the render-target case and rendered backbuffer draws (the normal game case) vertically inverted. `FixupDepthConvention` stays on. |
 
 The VS rewrite also returns the **vertex-attribute table** (each `vs_v{k}` →
@@ -143,15 +143,28 @@ and cannot diverge. mgfxc's model, pinned by its goldens:
   ShadowDusk always emits the full declared layout, rendering the source semantics
   correctly.
 
-**Matrix free-uniforms.** A `mat4` member expands to the four consecutive
-registers it occupies — `_Globals.M` → `mat4(<prefix>_uniforms_vec4[r], [r+1], [r+2], [r+3])`
-(column-major: std140 stores each matrix column at a 16-byte register, and GLSL
-`mat4(c0,c1,c2,c3)` takes columns, so the reconstruction is byte-faithful to the original
-SPIRV-Cross `mat4`). The register index is the running register total so a `mat4` correctly
-shifts every member after it, agreeing exactly with the `.mgfx` cbuffer packing
-(`BuildConstantBufferInfoList`). Unit-pinned in `MonoGameGlslRewriterTests`
-(`Matrix_ExpandsToFourConsecutiveRegisters_IndicesMatchCbufferLayout`,
-`PixelStage_Mat4Uniform_ExpandsToFourRegisters_NoTodoLeft`). Applies to both stages.
+**Matrix free-uniforms.** A `mat4` member expands to the four consecutive registers it
+occupies — `_Globals.M` → a `mat4` reconstructed **transposed** (the registers are taken as the
+matrix's ROWS), open-coded with swizzles by `BuildUploadedMat4`:
+`mat4(vec4(P[r].x, P[r+1].x, P[r+2].x, P[r+3].x), vec4(P[r].y, …), vec4(P[r].z, …), vec4(P[r].w, …))`.
+**Why transposed (issue #70).** MonoGame/KNI's `EffectParameter.SetValue(Matrix)` uploads
+register `k` = column `k` of the authored matrix — the layout mgfxc's golden reads with
+`result[j] = dot(v, register[j])` for HLSL `mul(v, M)` (i.e. `v * mat4(reg0..reg3)`).
+SPIRV-Cross, however, lowers `mul(v, M)` to GLSL `M * v` (operands swapped, since the
+row/column-major decoration it carries — which this rewrite strips when it flattens the UBO
+into the flat register array — is what would otherwise keep the result upright). A naive
+`mat4(reg0..reg3)` (registers as columns) would therefore compute `M·v`, the **transpose** of
+the intended `v·M`, rendering geometry garbled (issue #70's "exploded cube"). Reconstructing the
+transpose cancels the operand swap — `Mᵀ * v == v * M == dot(register[i], v)`, the golden's
+per-row dot — and is correct for every mul order. `transpose()` is **not** used (it is absent in
+GLSL ES 1.00 / Reach / WebGL1 and versionless desktop GLSL 1.10). The register index is the
+running register total so a `mat4` correctly shifts every member after it, agreeing exactly with
+the `.mgfx` cbuffer packing (`BuildConstantBufferInfoList`). Unit-pinned in
+`MonoGameGlslRewriterTests` (`Matrix_ExpandsToFourConsecutiveRegisters_IndicesMatchCbufferLayout`,
+`Matrix_IsReconstructedTransposed_MatchingMgfxcDotForm_Issue70`,
+`PixelStage_Mat4Uniform_ExpandsToFourRegisters_NoTodoLeft`) and render-pinned by
+`Issue70MatrixTransposeRenderTests` (non-identity asymmetric matrix vs the mgfxc golden). Applies
+to both stages.
 
 **Verification:** the VS-driven fixture `VsTransformColorTexture.fx` (custom VS +
 `float4x4` transform + POSITION/COLOR0/TEXCOORD0 + textured/tinted PS) compiled by ShadowDusk

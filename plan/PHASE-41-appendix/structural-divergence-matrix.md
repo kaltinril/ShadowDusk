@@ -24,7 +24,7 @@
   - Structurally **clean**: **64**
   - **Divergent** (>=1 level): **17**
   - Compile/parse **failures**: **11**
-- Non-golden census cells: **52** (**41** compile, **11** fail with a code)
+- Non-golden census cells: **54** (**43** compile, **11** fail with a code)
 
 ## Golden-backed fixtures — per-level structural verdict
 
@@ -216,6 +216,8 @@ is a CORRECT result, not a defect.
 | Minimal.fx | OpenGL | PASS |  |  |
 | MinimalWithInclude.fx | DirectX_11 | FAIL | SD0001 | Cannot find include 'TestHelper.fxh' |
 | MinimalWithInclude.fx | OpenGL | FAIL | SD0001 | Cannot find include 'TestHelper.fxh' |
+| VsTransformColorTextureLegacyPos.fx | DirectX_11 | PASS |  |  |
+| VsTransformColorTextureLegacyPos.fx | OpenGL | PASS |  |  |
 | basiceffect-mini.fx | DirectX_11 | PASS |  |  |
 | basiceffect-mini.fx | OpenGL | PASS |  |  |
 | cbuffer.fx | DirectX_11 | PASS |  |  |

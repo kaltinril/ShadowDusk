@@ -9,6 +9,21 @@ namespace ShadowDusk.GLSL.Tests;
 
 public sealed class MonoGameGlslRewriterTests
 {
+    /// <summary>
+    /// The expected GLSL for a <c>float4x4</c> reconstructed from four registers
+    /// <paramref name="a"/>..<paramref name="d"/> of <paramref name="prefix"/>, in the
+    /// TRANSPOSED form the rewriter now emits (issue #70): registers are taken as the
+    /// matrix's ROWS, open-coded with swizzles so no <c>transpose()</c> builtin is needed.
+    /// MonoGame/KNI's <c>SetValue(Matrix)</c> uploads register k = column k, and
+    /// SPIRV-Cross swaps the multiply operands, so the transpose is what makes the
+    /// transform render upright (equivalent to the mgfxc golden's <c>dot(v, c_j)</c>).
+    /// </summary>
+    private static string Mat4(string prefix, int a, int b, int c, int d)
+        => $"mat4(vec4({prefix}[{a}].x, {prefix}[{b}].x, {prefix}[{c}].x, {prefix}[{d}].x), " +
+           $"vec4({prefix}[{a}].y, {prefix}[{b}].y, {prefix}[{c}].y, {prefix}[{d}].y), " +
+           $"vec4({prefix}[{a}].z, {prefix}[{b}].z, {prefix}[{c}].z, {prefix}[{d}].z), " +
+           $"vec4({prefix}[{a}].w, {prefix}[{b}].w, {prefix}[{c}].w, {prefix}[{d}].w))";
+
     private const string ExampleA = """
 #version 140
 #ifdef GL_ARB_shading_language_420pack
@@ -312,8 +327,9 @@ void main()
         result.Glsl.Should().Contain("varying vec4 vFrontColor;");
         result.Glsl.Should().Contain("varying vec4 vTexCoord0;");
 
-        // gl_Position is written; the matrix is reconstructed from 4 registers.
-        result.Glsl.Should().Contain("gl_Position = mat4(vs_uniforms_vec4[0], vs_uniforms_vec4[1], vs_uniforms_vec4[2], vs_uniforms_vec4[3]) * vs_v0;");
+        // gl_Position is written; the matrix is reconstructed (transposed, issue #70)
+        // from 4 registers, then multiplied by the position attribute.
+        result.Glsl.Should().Contain($"gl_Position = {Mat4("vs_uniforms_vec4", 0, 1, 2, 3)} * vs_v0;");
 
         // Tint follows the mat4 at register 4.
         result.Glsl.Should().Contain("vs_uniforms_vec4[4]");
@@ -329,6 +345,97 @@ void main()
         result.Glsl.Should().NotContain("_Globals");
         result.Glsl.Should().NotContain("\nin ");
         result.Glsl.Should().NotContain("\nout ");
+    }
+
+    // ---- Issue #70: a float4x4 must be reconstructed TRANSPOSED so the vertex
+    // transform renders upright in the real MonoGame/KNI runtime.
+    //
+    // SPIRV-Cross lowers HLSL `mul(v, M)` to GLSL `M * v` (operands swapped, carrying a
+    // row/column-major decoration the dialect flatten then strips). MonoGame/KNI's
+    // EffectParameter.SetValue(Matrix) uploads register k = column k of the matrix. The
+    // mgfxc OpenGL golden therefore computes `result[j] = dot(v, register[j])` — i.e.
+    // `v * mat4(reg0..reg3)`. A naive `mat4(reg0..reg3) * v` (registers as columns)
+    // computes M·v, the TRANSPOSE — issue #70's "exploded cube". The rewriter reconstructs
+    // the transpose (registers as rows, open-coded so no `transpose()` builtin is needed),
+    // which is algebraically `mat4(reg0..reg3)ᵀ * v == v * mat4(reg0..reg3) ==
+    // dot(reg[i], v)` — exactly the golden's per-row dot. ----
+
+    [Fact]
+    public void Matrix_IsReconstructedTransposed_MatchingMgfxcDotForm_Issue70()
+    {
+        // The exact issue-#70 shape: HLSL `mul(input.Position, xWorldViewProjection)`,
+        // which SPIRV-Cross emits (with -Zpr) as `_Globals.M * in_var_POSITION0`.
+        const string src = """
+#version 140
+layout(binding = 0, std140) uniform type_Globals
+{
+    mat4 xWorldViewProjection;
+} _Globals;
+
+in vec4 in_var_POSITION0;
+out vec4 out_var_TEXCOORD0;
+
+void main()
+{
+    gl_Position = _Globals.xWorldViewProjection * in_var_POSITION0;
+    out_var_TEXCOORD0 = in_var_POSITION0;
+    gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Vertex);
+
+        // The transpose: each gl_Position component i becomes dot(register[i], position),
+        // matching the mgfxc golden's `vs_o0.x = dot(vs_v0, vs_c0); …` exactly.
+        result.Glsl.Should().Contain(Mat4("vs_uniforms_vec4", 0, 1, 2, 3));
+
+        // The naive column reconstruction (the transposed/garbled form) must NOT appear.
+        result.Glsl.Should().NotContain(
+            "mat4(vs_uniforms_vec4[0], vs_uniforms_vec4[1], vs_uniforms_vec4[2], vs_uniforms_vec4[3])");
+
+        // transpose() must never be emitted — absent in GLSL ES 1.00 (Reach) / desktop 110.
+        result.Glsl.Should().NotContain("transpose(");
+    }
+
+    // ---- A VS output carrying the legacy D3D9 POSITION/POSITION0 semantic (the form the stock
+    // MonoGame GL template emits via `#define SV_POSITION POSITION`) IS the clip position and
+    // must be lowered to gl_Position — NOT a `varying`. ShadowDusk's DXC (SM6) frontend makes
+    // `: POSITION` an ordinary user output; without this mapping the transform would land in a
+    // dead varying and gl_Position would be left UNWRITTEN (silently-broken geometry). ----
+
+    [Theory]
+    [InlineData("out_var_POSITION")]   // `: POSITION`  → DXC drops the index
+    [InlineData("out_var_POSITION0")]  // `: POSITION0`
+    public void VertexPositionSemantic_MapsToGlPosition_NotAVarying(string positionOut)
+    {
+        string src = $$"""
+#version 140
+layout(binding = 0, std140) uniform type_Globals
+{
+    mat4 WorldViewProjection;
+} _Globals;
+
+in vec4 in_var_POSITION0;
+in vec4 in_var_COLOR0;
+out vec4 {{positionOut}};
+out vec4 out_var_COLOR0;
+
+void main()
+{
+    {{positionOut}} = _Globals.WorldViewProjection * in_var_POSITION0;
+    out_var_COLOR0 = in_var_COLOR0;
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Vertex);
+
+        // The position write targets the gl_Position builtin...
+        result.Glsl.Should().Contain("gl_Position =");
+        // ...and the runtime posFixup is appended (proof gl_Position is actually written).
+        result.Glsl.Should().Contain("gl_Position.y = gl_Position.y * posFixup.y;");
+        // The position output is NOT emitted as a dead varying, and no interface name survives.
+        result.Glsl.Should().NotContain("var_POSITION");
+        result.Glsl.Should().NotContain(positionOut);
+        // A genuine non-position varying (COLOR0) still lowers to its legacy varying.
+        result.Glsl.Should().Contain("varying vec4 vFrontColor;");
     }
 
     // ---- Phase 43 F3: the dynamic posFixup contract. The OpenGL golden
@@ -447,11 +554,11 @@ void main()
         result.UniformRegisterCount.Should().Be(9);
 
         // A -> registers 0..3.
-        result.Glsl.Should().Contain("mat4(vs_uniforms_vec4[0], vs_uniforms_vec4[1], vs_uniforms_vec4[2], vs_uniforms_vec4[3])");
+        result.Glsl.Should().Contain(Mat4("vs_uniforms_vec4", 0, 1, 2, 3));
         // B -> register 4 (scalar, .x swizzle).
         result.Glsl.Should().Contain("vs_uniforms_vec4[4].x");
         // C -> registers 5..8 (shifted PAST the mat4 A + scalar B).
-        result.Glsl.Should().Contain("mat4(vs_uniforms_vec4[5], vs_uniforms_vec4[6], vs_uniforms_vec4[7], vs_uniforms_vec4[8])");
+        result.Glsl.Should().Contain(Mat4("vs_uniforms_vec4", 5, 6, 7, 8));
     }
 
     [Fact]
@@ -477,7 +584,7 @@ void main()
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
         result.Glsl.Should().NotContain("TODO mat");
-        result.Glsl.Should().Contain("mat4(ps_uniforms_vec4[0], ps_uniforms_vec4[1], ps_uniforms_vec4[2], ps_uniforms_vec4[3])");
+        result.Glsl.Should().Contain(Mat4("ps_uniforms_vec4", 0, 1, 2, 3));
         result.UniformRegisterCount.Should().Be(4);
     }
 
@@ -622,9 +729,8 @@ void main()
         result.Glsl.Should().Contain("ps_uniforms_vec4[0 + (_40)]");
         result.Glsl.Should().Contain("ps_uniforms_vec4[4 + (_40)].x");
 
-        // mat4 array elements reconstruct column-by-column at stride 4.
-        result.Glsl.Should().Contain(
-            "mat4(ps_uniforms_vec4[14], ps_uniforms_vec4[15], ps_uniforms_vec4[16], ps_uniforms_vec4[17])");
+        // mat4 array elements reconstruct (transposed, issue #70) at stride 4.
+        result.Glsl.Should().Contain(Mat4("ps_uniforms_vec4", 14, 15, 16, 17));
 
         // Scalar after the arrays lands at the shifted register.
         result.Glsl.Should().Contain("ps_uniforms_vec4[18].x");
@@ -662,8 +768,7 @@ void main()
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Vertex);
 
         result.Glsl.Should().Contain("uniform vec4 vs_uniforms_vec4[10];");
-        result.Glsl.Should().Contain(
-            "mat4(vs_uniforms_vec4[6], vs_uniforms_vec4[7], vs_uniforms_vec4[8], vs_uniforms_vec4[9])");
+        result.Glsl.Should().Contain(Mat4("vs_uniforms_vec4", 6, 7, 8, 9));
         result.Glsl.Should().Contain("vs_uniforms_vec4[1]");
         // posFixup still injected after the merged declaration.
         result.Glsl.Should().Contain("uniform vec4 posFixup;");

@@ -139,12 +139,8 @@ public sealed class VsEffectImageRenderer : Game
             GraphicsDevice.SamplerStates[0] = SamplerState.LinearClamp;
 
             // A full-screen quad in clip space. The VS multiplies POSITION by
-            // WorldViewProjection; an identity transform maps these clip-space corners
-            // straight to the viewport so the whole cat fills the target. A slight
-            // off-identity scale would also exercise the matrix, but identity keeps the
-            // baseline/candidate comparison about the SHADER, not floating-point edges.
-            // Vertices are wound so the two triangles cover the quad with CullNone.
-            // TexCoord (0,0) top-left .. (1,1) bottom-right.
+            // WorldViewProjection. Vertices are wound so the two triangles cover the quad
+            // with CullNone. TexCoord (0,0) top-left .. (1,1) bottom-right.
             var verts = new[]
             {
                 new VsVertex(new Vector3(-1f,  1f, 0f), Color.White, new Vector2(0f, 0f)), // TL
@@ -154,9 +150,22 @@ public sealed class VsEffectImageRenderer : Game
             };
             var indices = new short[] { 0, 1, 2, 2, 1, 3 };
 
-            // Identity transform + opaque-white tint -> output == the sampled texture,
-            // so baseline and candidate must produce the same image as a plain blit.
-            effect.Parameters["WorldViewProjection"]?.SetValue(Matrix.Identity);
+            // A NON-IDENTITY, asymmetric WorldViewProjection (issue #70). The original
+            // identity transform was transpose-INVARIANT, so it could not detect a
+            // transposed matrix in the VS — exactly the bug issue #70 reported (a custom
+            // VS's mul(POSITION, WorldViewProjection) rendered garbled because the GL
+            // rewriter reconstructed the matrix transposed). This matrix is the proven
+            // Phase-40 trick: EXACT-DYADIC scale 0.5 + translation 0.25 so both the mgfxc
+            // baseline and the ShadowDusk candidate compute BIT-IDENTICAL vertex positions
+            // (no float-rounding divergence, so maxd stays 0 when correct), while the
+            // translation row (M41/M42 — present only in row-major, absent in its
+            // transpose) exposes any row/column-major mismatch identity never could.
+            // Renders the cat at half size, offset toward one corner.
+            effect.Parameters["WorldViewProjection"]?.SetValue(new Matrix(
+                0.5f,  0f,    0f, 0f,
+                0f,    0.5f,  0f, 0f,
+                0f,    0f,    1f, 0f,
+                0.25f, 0.25f, 0f, 1f));
             effect.Parameters["Tint"]?.SetValue(new Vector4(1f, 1f, 1f, 1f));
             effect.Parameters["SpriteTexture"]?.SetValue(_cat);
 
