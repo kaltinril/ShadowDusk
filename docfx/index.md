@@ -8,7 +8,7 @@ title: ShadowDusk
 
 > **The "XNA-likes."** Throughout these docs, **MonoGame, KNI, and FNA** — the XNA-derived runtimes ShadowDusk targets — are collectively the **XNA-likes**. Classic Microsoft XNA 4.0 itself is **out of scope** (a different, abandoned, Windows-only toolchain). The three share a heritage but **not** one effect format: MonoGame and KNI load the `.mgfx` (MGFX) container, while FNA loads the legacy D3D9 fx_2_0 `.fxb` — so where the output format matters, the docs name the runtime explicitly rather than say "XNA-likes."
 
-> The product is the in-memory `IShaderCompiler` library (the `ShadowDusk.Compiler` NuGet package): add the package and call `CompileAsync(fx)` to get the compiled effect bytes (`.mgfx`, or `.fxb` for FNA) — nothing else to install. The **CLI** (`mgfxc` dotnet tool) and the **MGCB plugin** are delivery shapes of the same library for build-time use. The **in-browser shader fiddle is only a sample of reach — not a separate product.**
+> The product is the in-memory `IShaderCompiler` library (the `ShadowDusk.Compiler` NuGet package): add the package and call `CompileAsync(fx)` to get the compiled effect bytes (`.mgfx`, or `.fxb` for FNA) — nothing else to install. The **CLI** (`mgfxc` dotnet tool) is a delivery shape of the same library for build-time use (an **MGCB plugin** is a future scaffold, not yet shipped). The **in-browser shader fiddle is only a sample of reach — not a separate product.**
 
 ## What it does
 
@@ -32,14 +32,14 @@ FNA  (D3D9 fx_2_0):
     → .fxb binary             →  FNA Effect loader (MojoShader)
 ```
 
-**OpenGL / WebGL is fully cross-platform and self-contained** (DXC + SPIRV-Cross ride inside the package). For **DirectX (DX11)**, ShadowDusk produces DXBC in-process via two backends behind `IDxbcShaderCompiler`, chosen by `CompilerOptions.DxbcBackend`: the **default** `d3dcompiler_47` (Microsoft's HLSL compiler — a system DLL already present on Windows; most `fxc`-faithful) and the **opt-in, cross-platform** `vkd3d-shader` (`DxbcBackend.Vkd3d`) for Linux/macOS. DXC is **not** used for DX11 (it emits DXIL/SM6, not the DXBC/SM ≤ 5 the DX11 runtime loads). See [The Faithful Pipeline](architecture/the-faithful-pipeline.md) and [DirectX DXBC (vkd3d) Path](architecture/directx-dxbc-vkd3d.md).
+**OpenGL / WebGL is fully cross-platform and self-contained** (DXC + SPIRV-Cross ride inside the package). For **DirectX (DX11)**, ShadowDusk produces DXBC in-process via two backends behind `IDxbcShaderCompiler`, chosen by `CompilerOptions.DxbcBackend`: the **default, cross-platform** `vkd3d-shader` (`DxbcBackend.Vkd3d`), whose per-RID natives ship inside the package and run on Linux/macOS/Windows, and the **opt-in** `d3dcompiler_47` (Microsoft's HLSL compiler — a Windows-only system DLL; the most `fxc`-faithful correctness oracle). DXC is **not** used for DX11 (it emits DXIL/SM6, not the DXBC/SM ≤ 5 the DX11 runtime loads). See [The Faithful Pipeline](architecture/the-faithful-pipeline.md) and [DirectX DXBC (vkd3d) Path](architecture/directx-dxbc-vkd3d.md).
 
 ## Supported backends
 
 | Backend | Output | Status |
 |---|---|---|
 | OpenGL / DesktopGL | GLSL | Validated end-to-end (10/10 in real MonoGame DesktopGL) |
-| DirectX (Windows, DX11) | DXBC (SM5) via `d3dcompiler_47` (default) / `vkd3d-shader` (cross-platform) | Validated end-to-end (10/10 in real MonoGame WindowsDX) |
+| DirectX (DX11) | DXBC (SM5) via `vkd3d-shader` (default, cross-platform) / `d3dcompiler_47` (Windows-only oracle, opt-in) | Validated end-to-end (10/10 in real MonoGame WindowsDX) |
 | WebGL (XNA Fiddle / KNI browser) | GLSL ES | Validated end-to-end (10/10 in real headless KNI WebGL) |
 | FNA (`/Profile:FNA` → `.fxb`) | D3D9 fx_2_0 via vkd3d-shader | Validated end-to-end (pixel-identical to `fxc /T fx_2_0` in real FNA — PS-only and custom-vertex-shader effects, incl. multi-pass + in-pass render states) |
 | [Metal (macOS / iOS)](backends/metal.md) | MSL | **Not yet implemented (future)** |

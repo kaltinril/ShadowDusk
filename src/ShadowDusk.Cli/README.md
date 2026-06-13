@@ -16,7 +16,7 @@ ShadowDuskCLI <input.fx> <output.mgfx> /Profile:DirectX_11
 ShadowDuskCLI <input.fx> <output.fxb>  /Profile:FNA
 ```
 
-Flags mirror `mgfxc` (`/Profile`, `/Defines`, `/Debug`, …). Run `ShadowDuskCLI --help` for the full list.
+Flags mirror `mgfxc` (`/Profile`, `/Debug`, `/I`, `/DxbcBackend`, `--mgfx-version`). Run `ShadowDuskCLI --help` for the full list.
 
 ### As the MGCB shader compiler
 
