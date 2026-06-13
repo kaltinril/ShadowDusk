@@ -97,4 +97,27 @@ internal static class DxcFlagBuilder
 
         return args;
     }
+
+    /// <summary>
+    /// Builds the DXC argument list for a preprocess-only invocation (<c>-P</c>): expand
+    /// includes/macros/conditionals and emit the flat HLSL text. Deliberately carries NO
+    /// <c>-E</c>/<c>-T</c> (no entry/profile — preprocessing is stage-agnostic) and NO
+    /// <c>-WX</c> (warnings-as-errors must not fail a pure expansion). Only the macro
+    /// defines are forwarded so the right <c>#if</c> branch (e.g. <c>SM4</c>) is taken.
+    /// </summary>
+    public static IReadOnlyList<string> BuildPreprocess(
+        IReadOnlyList<(string Name, string? Value)> macros)
+    {
+        var args = new List<string> { "-P" };
+
+        foreach ((string name, string? value) in macros)
+        {
+            if (value is null)
+                args.Add($"-D{name}");
+            else
+                args.Add($"-D{name}={value}");
+        }
+
+        return args;
+    }
 }

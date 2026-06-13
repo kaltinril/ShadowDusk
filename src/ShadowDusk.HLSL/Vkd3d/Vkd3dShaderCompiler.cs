@@ -2,6 +2,7 @@
 
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using ShadowDusk.Core;
 using ShadowDusk.HLSL.D3DCompiler;
 using ShadowDusk.HLSL.Dxc;
@@ -28,6 +29,12 @@ namespace ShadowDusk.HLSL.Vkd3d;
 /// </summary>
 public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
 {
+    // Matches a whole #line directive line (keeps the trailing newline so blanking it
+    // leaves an empty line, preserving overall line numbering for vkd3d diagnostics).
+    private static readonly Regex LineDirectivePattern =
+        new(@"(?m)^[ \t]*#[ \t]*line\b[^\n]*", RegexOptions.Compiled);
+
+
     /// <inheritdoc/>
     public Task<Result<PlatformBlob, ShaderError>> CompileAsync(
         D3DCompileRequest request,
@@ -60,9 +67,25 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
         var targetType    = (Vkd3dTargetType)Vkd3dCompileContract.ResolveTargetType(profile);
         BlobKind blobKind = Vkd3dCompileContract.ResolveBlobKind(profile);
 
+        // vkd3d-shader's HLSL preprocessor does not honor #line directives; it ignores
+        // each one and (at LogLevel >= Warning / VKD3D_DEBUG on) prints
+        // "vkd3d:NNNN:fixme:preproc_yyparse #line directive." to the process stderr, once
+        // per directive. An include-heavy effect (e.g. the MonoGame stock effects, which
+        // pull in Macros.fxh/Structures.fxh/Common.fxh/Lighting.fxh) carries hundreds of
+        // them from the include flattener, so a SUCCESSFUL compile would spew hundreds of
+        // stderr lines and break the mgfxc silent-success contract. (The VKD3D_DEBUG=none
+        // default in Vkd3dLoader does not reliably reach the native getenv at runtime,
+        // which masked this until an include-heavy effect first reached the vkd3d backend.)
+        // Blank every #line directive line before handing the source to vkd3d: it never
+        // used them, ShadowDusk maps no diagnostics through them on this path, and BLANKING
+        // (not deleting) preserves line numbering so vkd3d's own error line numbers are
+        // unchanged. The DXC/GL and d3dcompiler_47 paths keep their #line directives (those
+        // compilers honor them for diagnostics) — this strip is vkd3d-only.
+        string vkd3dSource = LineDirectivePattern.Replace(request.HlslSource, string.Empty);
+
         // Marshal source / strings as UTF-8. vkd3d_shader_code carries raw bytes +
         // size (NOT null-terminated for source); the char* strings are C strings.
-        byte[] sourceBytes = Encoding.UTF8.GetBytes(request.HlslSource);
+        byte[] sourceBytes = Encoding.UTF8.GetBytes(vkd3dSource);
 
         IntPtr sourcePtr     = Marshal.AllocHGlobal(sourceBytes.Length == 0 ? 1 : sourceBytes.Length);
         IntPtr entryPointPtr = MarshalCString(request.EntryPoint);
