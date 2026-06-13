@@ -510,32 +510,6 @@ public sealed class FxPreParserTests
     }
 
     // -------------------------------------------------------------------------
-    // T21 — RenderStateMapper: CullMode/None maps to expected MonoGame target
-    // -------------------------------------------------------------------------
-
-    [Fact]
-    public void RenderStateMapper_CullModeNone_MapsCorrectly()
-    {
-        var mapped = RenderStateMapper.TryMap("CullMode", "None");
-
-        mapped.Should().NotBeNull();
-        mapped!.MonoGameTarget.Should().Be("RasterizerState.CullMode");
-        mapped.NormalizedValue.Should().NotBeNullOrEmpty();
-    }
-
-    // -------------------------------------------------------------------------
-    // T22 — RenderStateMapper: unrecognized key returns null
-    // -------------------------------------------------------------------------
-
-    [Fact]
-    public void RenderStateMapper_UnrecognizedKey_ReturnsNull()
-    {
-        var mapped = RenderStateMapper.TryMap("UnknownXyz", "SomeValue");
-
-        mapped.Should().BeNull();
-    }
-
-    // -------------------------------------------------------------------------
     // T23 — sampler Texture = <MyTex>; (angle-bracket form)
     // -------------------------------------------------------------------------
 

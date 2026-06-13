@@ -78,15 +78,7 @@ internal sealed class CompilationPipeline
         // Stage 1: FX9 pre-parser.
         var parseResult = FxPreParser.Parse(hlslSource, sourceFileName);
         if (parseResult.IsFailure)
-        {
-            FxParseError err = parseResult.Error;
-            return Fail(new ShaderError(
-                File: err.SourceFile,
-                Line: err.Line,
-                Column: err.Column,
-                Code: $"FX{(int)err.Code:D4}",
-                Message: err.Message));
-        }
+            return Fail(FromFxParseError(parseResult.Error));
 
         FxParseResult fxParsed = parseResult.Value;
 
@@ -172,15 +164,7 @@ internal sealed class CompilationPipeline
 
             var reparseResult = FxPreParser.Parse(expandResult.Value, sourceFileName);
             if (reparseResult.IsFailure)
-            {
-                FxParseError err = reparseResult.Error;
-                return Fail(new ShaderError(
-                    File: err.SourceFile,
-                    Line: err.Line,
-                    Column: err.Column,
-                    Code: $"FX{(int)err.Code:D4}",
-                    Message: err.Message));
-            }
+                return Fail(FromFxParseError(reparseResult.Error));
 
             FxParseResult expandedParsed = reparseResult.Value;
 
@@ -263,8 +247,7 @@ internal sealed class CompilationPipeline
         var dxbcReflectionPipe  = new DxbcReflectionPipeline(new DxbcReflectionExtractor());
 
         var extractor          = new DxilReflectionExtractor();
-        var verifier           = new SpvReflectionVerifier();
-        var reflectionPipeline = new ReflectionPipeline(extractor, verifier);
+        var reflectionPipeline = new ReflectionPipeline(extractor);
         var renderStateParser  = new RenderStateParser();
 
         var compiledShaderBlobs = new List<CompiledShaderBlob>();
@@ -416,7 +399,6 @@ internal sealed class CompilationPipeline
                         var reflectionInput = new ReflectionInput
                         {
                             DxilBlob      = dxilBlob,
-                            SpirVBlob     = spirvBlob,
                             FxAnnotations = fxParsed.ParameterAnnotations,
                         };
 
@@ -686,15 +668,7 @@ internal sealed class CompilationPipeline
         // Stage 1: FX9 pre-parse, preserving the D3D9 constructs vkd3d compiles natively.
         var parseResult = FxPreParser.Parse(hlslSource, sourceFileName, FxSourceMode.PreserveSm3);
         if (parseResult.IsFailure)
-        {
-            FxParseError err = parseResult.Error;
-            return Fail(new ShaderError(
-                File: err.SourceFile,
-                Line: err.Line,
-                Column: err.Column,
-                Code: $"FX{(int)err.Code:D4}",
-                Message: err.Message));
-        }
+            return Fail(FromFxParseError(parseResult.Error));
 
         FxParseResult fxParsed = parseResult.Value;
 
@@ -1261,6 +1235,12 @@ internal sealed class CompilationPipeline
         return elements;
     }
 
+    // Annotation Type tags are the MGFX EffectParameterType ordinals the reader uses to
+    // pick the value field: Int32 = 2, Single = 3, String = 4.
+    private const byte AnnotationTypeInt32  = 2;
+    private const byte AnnotationTypeSingle = 3;
+    private const byte AnnotationTypeString = 4;
+
     private static AnnotationInfo MapAnnotation(AnnotationReflection annotation)
     {
         if (float.TryParse(
@@ -1271,7 +1251,7 @@ internal sealed class CompilationPipeline
         {
             return new AnnotationInfo(
                 Name: annotation.Name,
-                Type: 3,
+                Type: AnnotationTypeSingle,
                 StringValue: null,
                 FloatValue: floatVal,
                 IntValue: null,
@@ -1282,7 +1262,7 @@ internal sealed class CompilationPipeline
         {
             return new AnnotationInfo(
                 Name: annotation.Name,
-                Type: 2,
+                Type: AnnotationTypeInt32,
                 StringValue: null,
                 FloatValue: null,
                 IntValue: intVal,
@@ -1291,7 +1271,7 @@ internal sealed class CompilationPipeline
 
         return new AnnotationInfo(
             Name: annotation.Name,
-            Type: 4,
+            Type: AnnotationTypeString,
             StringValue: annotation.Value,
             FloatValue: null,
             IntValue: null,
@@ -1306,7 +1286,7 @@ internal sealed class CompilationPipeline
         {
             result.Add(new AnnotationInfo(
                 Name: entry.Name,
-                Type: 4,
+                Type: AnnotationTypeString,
                 StringValue: entry.Value,
                 FloatValue: null,
                 IntValue: null,
@@ -1317,4 +1297,15 @@ internal sealed class CompilationPipeline
 
     private static Result<CompiledShader, ShaderError[]> Fail(ShaderError error) =>
         Result<CompiledShader, ShaderError[]>.Fail(new ShaderError[] { error });
+
+    // Maps an FX9 pre-parser error to the pipeline's ShaderError, formatting the FX
+    // diagnostic code as the four-digit "FXnnnn" string. Shared by every FxPreParser
+    // call site so the mapping stays identical.
+    private static ShaderError FromFxParseError(FxParseError err) =>
+        new(
+            File: err.SourceFile,
+            Line: err.Line,
+            Column: err.Column,
+            Code: $"FX{(int)err.Code:D4}",
+            Message: err.Message);
 }

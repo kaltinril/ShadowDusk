@@ -5,6 +5,13 @@ using System.Linq;
 
 namespace ShadowDusk.Core;
 
+/// <summary>
+/// Parses the render-state assignments inside an FX pass block into a typed
+/// <see cref="RenderStateBlock"/>. Recognized states map to nullable fields (left unset
+/// when absent in the source); states fxc accepts but FNA's runtime would throw on are
+/// recorded in <see cref="RenderStateBlock.KnownFnaThrowingStates"/> so the FNA path can
+/// fail loudly while the MGFX paths preserve fxc/mgfxc's silent-ignore behavior.
+/// </summary>
 public sealed class RenderStateParser
 {
     // Render-state keys fxc accepts in a pass block whose fx_2_0 ops FNA's Effect runtime

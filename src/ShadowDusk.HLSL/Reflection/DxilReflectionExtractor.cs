@@ -289,47 +289,20 @@ public sealed class DxilReflectionExtractor
         return parameters;
     }
 
+    // These delegate to the shared raw D3D value → enum tables in D3DReflectionMaps (the
+    // Vortice reflection enums' underlying values ARE the D3D constants), so the numeric
+    // mappings stay in lock-step with RdefReader. This path keeps its own unmapped policy:
+    // an unmapped class/type throws (RdefReader reports failure instead) — preserved here.
     private static EffectParameterClass MapClass(ShaderVariableClass cls) =>
-        cls switch
-        {
-            ShaderVariableClass.Scalar        => EffectParameterClass.Scalar,
-            ShaderVariableClass.Vector        => EffectParameterClass.Vector,
-            ShaderVariableClass.MatrixRows    => EffectParameterClass.Matrix,
-            ShaderVariableClass.MatrixColumns => EffectParameterClass.Matrix,
-            ShaderVariableClass.Object        => EffectParameterClass.Object,
-            ShaderVariableClass.Struct        => EffectParameterClass.Struct,
-            _ => throw new InvalidOperationException($"Unmapped ShaderVariableClass: {cls}"),
-        };
+        D3DReflectionMaps.TryMapClass((uint)cls, out EffectParameterClass mapped)
+            ? mapped
+            : throw new InvalidOperationException($"Unmapped ShaderVariableClass: {cls}");
 
     private static EffectParameterType MapType(ShaderVariableType type) =>
-        type switch
-        {
-            ShaderVariableType.Void        => EffectParameterType.Void,
-            ShaderVariableType.Bool        => EffectParameterType.Bool,
-            ShaderVariableType.Int         => EffectParameterType.Int32,
-            ShaderVariableType.UInt        => EffectParameterType.Int32,
-            ShaderVariableType.Float       => EffectParameterType.Single,
-            ShaderVariableType.String      => EffectParameterType.String,
-            ShaderVariableType.Texture     => EffectParameterType.Texture,
-            ShaderVariableType.Texture1D   => EffectParameterType.Texture1D,
-            ShaderVariableType.Texture2D   => EffectParameterType.Texture2D,
-            ShaderVariableType.Texture3D   => EffectParameterType.Texture3D,
-            ShaderVariableType.TextureCube => EffectParameterType.TextureCube,
-            _ => throw new InvalidOperationException($"Unmapped ShaderVariableType: {type}"),
-        };
+        D3DReflectionMaps.TryMapType((uint)type, out EffectParameterType mapped)
+            ? mapped
+            : throw new InvalidOperationException($"Unmapped ShaderVariableType: {type}");
 
     private static TextureDimension MapSrvDimension(ShaderResourceViewDimension dim) =>
-        dim switch
-        {
-            ShaderResourceViewDimension.Texture1D                  => TextureDimension.Texture1D,
-            ShaderResourceViewDimension.Texture1DArray             => TextureDimension.Texture1D,
-            ShaderResourceViewDimension.Texture2D                  => TextureDimension.Texture2D,
-            ShaderResourceViewDimension.Texture2DArray             => TextureDimension.Texture2D,
-            ShaderResourceViewDimension.Texture2DMultisampled      => TextureDimension.Texture2D,
-            ShaderResourceViewDimension.Texture2DMultisampledArray => TextureDimension.Texture2D,
-            ShaderResourceViewDimension.Texture3D                  => TextureDimension.Texture3D,
-            ShaderResourceViewDimension.TextureCube                => TextureDimension.TextureCube,
-            ShaderResourceViewDimension.TextureCubeArray           => TextureDimension.TextureCube,
-            _                                                      => TextureDimension.Unknown,
-        };
+        D3DReflectionMaps.MapSrvDimension((uint)dim);
 }

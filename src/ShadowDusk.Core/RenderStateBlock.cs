@@ -2,6 +2,15 @@
 
 namespace ShadowDusk.Core;
 
+/// <summary>
+/// The render states declared inside a single FX pass, parsed from the source by
+/// <see cref="RenderStateParser"/>. Every state is nullable so a state left unset in the
+/// source stays absent (rather than defaulting), which lets the <see cref="MgfxWriter"/>
+/// decide via the <c>Has*</c> gates whether to emit each of the three optional MGFX
+/// state-object headers. The FNA-only states (and <see cref="KnownFnaThrowingStates"/>)
+/// are consumed solely by the FNA fx_2_0 path and are deliberately kept out of the
+/// <c>Has*</c> gates so they never alter MGFX v10 output.
+/// </summary>
 public sealed record RenderStateBlock
 {
     // Rasterizer

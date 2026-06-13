@@ -71,7 +71,7 @@ ShadowDusk is a transparent substitute for MonoGame's `mgfxc`. Same CLI flags, s
 ```csharp
 var compiler = new EffectCompiler();
 Result<CompiledShader, ShaderError[]> result =
-    await compiler.CompileAsync(hlslSource, new CompilerOptions(/* … */));
+    await compiler.CompileAsync(hlslSource, new CompilerOptions { Target = PlatformTarget.OpenGL });
 ```
 
 **CLI tool** (`dotnet tool` named `ShadowDuskCLI`) — the same library wrapped for build-time use from MGCB, scripts, or the terminal:
