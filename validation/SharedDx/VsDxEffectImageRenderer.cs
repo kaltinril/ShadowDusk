@@ -120,7 +120,19 @@ public sealed class VsDxEffectImageRenderer : Game
             };
             var indices = new short[] { 0, 1, 2, 2, 1, 3 };
 
-            effect.Parameters["WorldViewProjection"]?.SetValue(Matrix.Identity);
+            // A NON-IDENTITY, asymmetric WorldViewProjection (issue #70 defense-in-depth).
+            // The DirectX (DXBC) path is structurally immune to the GL transpose bug (the
+            // matrix stays in the cbuffer and the bytecode dot-products against it — no
+            // SPIRV-Cross/mat4 reconstruction), but the previous identity upload was
+            // transpose-INVARIANT and so could not have caught a transpose regression here
+            // either. Same exact-dyadic scale 0.5 + translation 0.25 as the GL harness:
+            // both arms compute bit-identical positions (maxd 0 when correct) while the
+            // translation row exposes any row/column-major mismatch.
+            effect.Parameters["WorldViewProjection"]?.SetValue(new Matrix(
+                0.5f,  0f,    0f, 0f,
+                0f,    0.5f,  0f, 0f,
+                0f,    0f,    1f, 0f,
+                0.25f, 0.25f, 0f, 1f));
             effect.Parameters["Tint"]?.SetValue(new Vector4(1f, 1f, 1f, 1f));
             effect.Parameters["SpriteTexture"]?.SetValue(_cat);
 

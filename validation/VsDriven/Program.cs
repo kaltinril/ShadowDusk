@@ -51,6 +51,29 @@ string? candidateErr = null;
     }
 }
 
+// ---- Issue #70 follow-up: the LEGACY ': POSITION' vertex-output variant. Same contract,
+// but the VS position output uses the D3D9 POSITION semantic (the stock MonoGame GL template
+// form). ShadowDusk's DXC frontend makes `: POSITION` a user varying; the rewriter must remap
+// it to gl_Position or the geometry is silently broken. Rendered in real MonoGame and compared
+// to the (golden-proven) true-SV_Position candidate below. ----
+const string legacyFixture = "VsTransformColorTextureLegacyPos";
+byte[]? legacyBytes = null;
+string? legacyErr = null;
+{
+    var compiler = new EffectCompiler();
+    string legacyPath = Path.Combine(shaderDir, legacyFixture + ".fx");
+    var result = await compiler.CompileAsync(await File.ReadAllTextAsync(legacyPath), new CompilerOptions
+    {
+        Target = PlatformTarget.OpenGL,
+        IncludeResolver = new FileSystemIncludeResolver(),
+        SourceFileName = legacyPath,
+    });
+    if (result.IsFailure)
+        legacyErr = string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}"));
+    else
+        legacyBytes = result.Value.Data;
+}
+
 // ---- Baseline: the mgfxc OpenGL golden bytes. ----
 string goldenPath = Path.Combine(goldenDir, fixture + ".mgfx");
 byte[]? baselineBytes = File.Exists(goldenPath) ? await File.ReadAllBytesAsync(goldenPath) : null;
@@ -106,11 +129,21 @@ var (cBb, cBbCap) = Render("candidate-backbuffer", candidateBytes, candidateErr,
 int rtMaxd = MaxDelta(bRtCap, cRtCap);
 int bbMaxd = MaxDelta(bBbCap, cBbCap);
 
+// ---- Legacy ': POSITION' variant: render in real MonoGame, compare to the true-SV_Position
+// candidate (which is itself proven == the mgfxc golden above). Equal pixels prove the legacy
+// form both LOADS and renders correctly through the POSITION->gl_Position mapping. ----
+var (lRt, lRtCap) = Render("candidate-legacypos", legacyBytes, legacyErr, backbuffer: false);
+int legacyMaxd = MaxDelta(cRtCap, lRtCap);
+Console.WriteLine($"[vs] legacy ': POSITION' bytes: {(legacyBytes is null ? "COMPILE FAIL: " + legacyErr : legacyBytes.Length + " bytes")}");
+
 Console.WriteLine($"\n[vs] render-target: baseline {bRt}/1, candidate {cRt}/1, baseline-vs-candidate maxd {(rtMaxd == int.MaxValue ? "n/a" : rtMaxd)}");
 Console.WriteLine($"[vs] backbuffer:    baseline {bBb}/1, candidate {cBb}/1, baseline-vs-candidate maxd {(bbMaxd == int.MaxValue ? "n/a" : bbMaxd)}");
+Console.WriteLine($"[vs] legacy-pos:    legacy {lRt}/1, legacy-vs-true-SV maxd {(legacyMaxd == int.MaxValue ? "n/a" : legacyMaxd)}");
 
 // Pass = all four render AND the candidate matches the mgfxc baseline pixel-for-pixel
-// (tolerance 1/255, the established rung-4 bar) in BOTH modes — same-backend GL<->GL.
-bool pass = bRt == 1 && cRt == 1 && bBb == 1 && cBb == 1 && rtMaxd <= 1 && bbMaxd <= 1;
+// (tolerance 1/255, the established rung-4 bar) in BOTH modes — same-backend GL<->GL — AND the
+// legacy ': POSITION' variant loads, renders, and matches the true-SV_Position candidate.
+bool pass = bRt == 1 && cRt == 1 && bBb == 1 && cBb == 1 && rtMaxd <= 1 && bbMaxd <= 1
+            && lRt == 1 && legacyMaxd <= 1;
 Console.WriteLine($"[vs] verdict: {(pass ? "PASS" : "FAIL")}");
 return pass ? 0 : 1;

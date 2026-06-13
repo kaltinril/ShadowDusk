@@ -21,6 +21,7 @@ Every phase below exists to serve that sentence. If a phase or sample starts red
 | Document | What it's good for | ⚠️ Read with |
 |---|---|---|
 | [`monogame_runtime_mgfx_compiler_research.md`](../monogame_runtime_mgfx_compiler_research.md) | Architecture survey of *how one builds a runtime MGFX compiler*: the `new Effect(gd, byte[])` loading path, `.xnb`-vs-raw-bytes, the DXC/SPIRV-Cross/MojoShader tool landscape, and a §0.1 map from its sections to these phases. | Its §0 alignment note — it was written greenfield and **understates** the MojoShader-GLSL-dialect blocker, which Phase 17 §3.6 proves is the real wall. Treat it as context, not a plan; Phases 7/8/17 supersede its roadmap. |
+| [`ISSUE-70-gl-vertex-fidelity.md`](ISSUE-70-gl-vertex-fidelity.md) | The two OpenGL vertex-shader fidelity bugs from GitHub issue #70 — (1) the matrix transpose and (2) the legacy `: POSITION` output not mapped to `gl_Position` — their root causes, fixes, rung-4 evidence, the **validation-gap lesson** (identity-only / SV_Position-only inputs hid both), and the corpus matrix-sweep + mutation test that now guard them. | A *correctness*-fix record, not a version/format question — KNIFX/MGFX-v11 do not fix these (they're in the emitted GLSL). The MonoGame pin / MGFX v10 default are unchanged. |
 
 ---
 

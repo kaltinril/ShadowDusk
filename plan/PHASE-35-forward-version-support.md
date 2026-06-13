@@ -44,6 +44,8 @@ Prove our existing **v10 output still loads + renders correctly** in MonoGame **
 
 ### B. Newer format (MonoGame `MGFX` v11 AND/OR KNI KNIFX) — *only if a runtime ever requires it, and only seamlessly*
 > **Read [the appendix research](PHASE-35-appendix/knifx-vs-mgfx-v11-research.md) first — "v11" is two different formats, not one.** MonoGame v11 = the `MGFX` signature with the byte bumped (a body-format extension); KNI v11 = **KNIFX**, a *new container with its own signature*. So this is **two separate deliverables** (a faithful MonoGame-`MGFX`-v11 writer and/or a faithful KNIFX writer), not a single byte bump. The existing `--mgfx-version 11` flag is **not a head start** — it writes only the header byte over a v10 body, is DOA in KNI, and is unvalidated in MonoGame.
+>
+> **Starting this area? Use the [Area B kickoff brief](PHASE-35-appendix/knifx-area-b-kickoff-brief.md)** — a self-contained handoff (goal, constraints, code touchpoints at `MgfxWriter`/`CompilerOptions`, the auto-select design crux, open questions, validation gap, and first moves) built from the research appendix.
 
 If/when some target runtime needs more than v10, ShadowDusk must **auto-produce the right format** — the consumer never picks v10 vs v11. Note Area A shows v10 keeps **loading** forward on both forks, so this is **very likely never needed for loadability** — the only real driver is the KNIFX-era *render-quality / XNA-compat fixes* (§4 of the appendix), a product-scope decision.
 - **Default stays v10.** Any v11/KNIFX emission must be **auto-selected by ShadowDusk** (e.g. from the chosen target), never a flag the consumer must set. The `--mgfx-version` flag stays a non-required escape hatch only.

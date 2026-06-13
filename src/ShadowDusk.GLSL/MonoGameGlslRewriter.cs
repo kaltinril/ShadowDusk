@@ -252,6 +252,7 @@ public static class MonoGameGlslRewriter
         var samplerRenames = new Dictionary<string, string>(); // original id -> ps_sK
         var inputVaryings = new List<InputVarying>();           // PS: in_var_* -> varying read
         var outputVaryings = new List<InputVarying>();          // VS: out_var_* -> varying write
+        var positionOutputIds = new List<string>();             // VS: out_var_POSITION{0} -> gl_Position
         var attributes = new List<MonoGameGlslAttribute>();     // VS: in_var_* -> attribute vs_vK
         var attributeReads = new List<InputVarying>();          // VS: in_var_* read width/rename
         var uniformBlocks = new List<UniformBlock>();           // ALL std140 blocks, in order
@@ -425,8 +426,25 @@ public static class MonoGameGlslRewriter
                 var outVaryMatch = OutputVaryingDecl.Match(line);
                 if (outVaryMatch.Success)
                 {
-                    var type = outVaryMatch.Groups[1].Value;
                     var ident = outVaryMatch.Groups[2].Value;
+
+                    // A VS output carrying the legacy D3D9 POSITION/POSITION0 semantic IS the
+                    // clip-space position (mgfxc/MojoShader map it to gl_Position). This is the
+                    // form the stock MonoGame GL effect template emits — `#define SV_POSITION
+                    // POSITION` makes `: SV_POSITION` compile as `: POSITION`. ShadowDusk's
+                    // frontend is DXC (Shader Model 6), where ONLY `: SV_Position` is the builtin
+                    // position (SPIRV-Cross then emits gl_Position directly, never reaching here);
+                    // a `: POSITION` output is just a user varying. Emitting it as such would
+                    // leave gl_Position UNWRITTEN — silently-broken geometry. So map the
+                    // position-semantic output to gl_Position instead: drop its varying decl and
+                    // rewrite its uses to gl_Position in Pass 2 (posFixup then applies as usual).
+                    if (IsPositionSemantic(ident))
+                    {
+                        positionOutputIds.Add(ident);
+                        continue;
+                    }
+
+                    var type = outVaryMatch.Groups[1].Value;
                     var varyingName = SemanticToVaryingName(ident);
                     outputVaryings.Add(new InputVarying(ident, type, varyingName));
                     output.Add($"varying vec4 {varyingName};");
@@ -491,6 +509,15 @@ public static class MonoGameGlslRewriter
             body = ReplaceOutputVaryingUses(body, varying);
         }
 
+        // VS position output (legacy POSITION/POSITION0 semantic) -> gl_Position. The body's
+        // `out_var_POSITION{0} = …` write becomes `gl_Position = …`, so InjectPosFixup (below)
+        // finds gl_Position and appends the runtime Y-flip/depth fixup, exactly as for a true
+        // SV_Position shader.
+        foreach (var id in positionOutputIds)
+        {
+            body = ReplaceWord(body, id, "gl_Position");
+        }
+
         // Uniform members: <Instance>.<member> -> {prefix}_uniforms_vec4[reg]<swizzle>
         // (array members: <Instance>.<member>[idx] -> the packed [base + idx] form).
         // The register OFFSET is the running register total across ALL blocks in
@@ -519,14 +546,15 @@ public static class MonoGameGlslRewriter
                     string replacement;
                     if (type == "mat4")
                     {
-                        // A mat4 occupies registers reg..reg+3. SPIRV-Cross emits the matrix
-                        // column-major (GLSL native) and multiplies M * v; std140 stores each
-                        // matrix COLUMN at a 16-byte register (column0 @ reg, column1 @ reg+1,
-                        // …). GLSL mat4(c0,c1,c2,c3) takes COLUMNS, so reconstructing
-                        // mat4(reg, reg+1, reg+2, reg+3) reproduces the original matrix exactly.
-                        replacement =
-                            $"mat4({regPrefix}_uniforms_vec4[{reg}], {regPrefix}_uniforms_vec4[{reg + 1}], " +
-                            $"{regPrefix}_uniforms_vec4[{reg + 2}], {regPrefix}_uniforms_vec4[{reg + 3}])";
+                        // A mat4 occupies registers reg..reg+3, reconstructed TRANSPOSED
+                        // (registers read as ROWS) — see BuildUploadedMat4 for why issue #70
+                        // requires this. The naive mat4(reg, reg+1, reg+2, reg+3) (registers
+                        // as COLUMNS) renders geometry transposed/garbled in the real runtime.
+                        replacement = BuildUploadedMat4(
+                            $"{regPrefix}_uniforms_vec4[{reg}]",
+                            $"{regPrefix}_uniforms_vec4[{reg + 1}]",
+                            $"{regPrefix}_uniforms_vec4[{reg + 2}]",
+                            $"{regPrefix}_uniforms_vec4[{reg + 3}]");
                     }
                     else
                     {
@@ -862,6 +890,36 @@ public static class MonoGameGlslRewriter
     }
 
     /// <summary>
+    /// Reconstructs a <c>float4x4</c> uniform as a GLSL <c>mat4</c> from its four
+    /// consecutive <c>{vs,ps}_uniforms_vec4[]</c> registers, <b>transposed</b>: the four
+    /// register expressions are taken as the matrix's ROWS (the <c>mat4(col0,col1,col2,col3)</c>
+    /// constructor takes COLUMNS, so the rows are spread component-wise across the columns).
+    ///
+    /// <para><b>Why transposed (issue #70).</b> MonoGame/KNI's
+    /// <c>EffectParameter.SetValue(Matrix)</c> uploads each matrix as its COLUMNS — register
+    /// <c>k</c> = column <c>k</c> of the authored matrix — which is exactly the layout mgfxc's
+    /// GLSL golden reads with <c>result[j] = dot(v, register[j])</c> for HLSL <c>mul(v, M)</c>
+    /// (i.e. <c>v * mat4(reg0..reg3)</c>). SPIRV-Cross, however, emits the multiply with the
+    /// operands swapped relative to the HLSL (HLSL <c>mul(v, M)</c> → GLSL <c>M * v</c>;
+    /// <c>mul(M, v)</c> → <c>v * M</c>), because the row/column-major decoration it carries on
+    /// the matrix — which the dialect rewrite then strips when it flattens the UBO into the
+    /// flat register array — is what would otherwise keep the result upright. A naive
+    /// <c>mat4(reg0..reg3)</c> (registers as COLUMNS) therefore computes <c>M·v</c>, the
+    /// TRANSPOSE of the intended <c>v·M</c>, and renders geometry visibly garbled (issue #70's
+    /// "exploded cube"). Reconstructing the transpose cancels SPIRV-Cross's operand swap:
+    /// <c>Mᵀ * v == v * M == mul(v, M)</c> for the vector-first form, and <c>v * Mᵀ == M * v
+    /// == mul(M, v)</c> for the matrix-first form — correct for every mul order, matching the
+    /// mgfxc golden behaviourally. <c>transpose()</c> is deliberately NOT used: it does not
+    /// exist in GLSL ES 1.00 (KNI Reach / WebGL1) nor versionless desktop GLSL 1.10, so the
+    /// transpose is open-coded with swizzles, valid in every profile the one artifact serves.</para>
+    /// </summary>
+    private static string BuildUploadedMat4(string r0, string r1, string r2, string r3)
+        => $"mat4(vec4({r0}.x, {r1}.x, {r2}.x, {r3}.x), " +
+           $"vec4({r0}.y, {r1}.y, {r2}.y, {r3}.y), " +
+           $"vec4({r0}.z, {r1}.z, {r2}.z, {r3}.z), " +
+           $"vec4({r0}.w, {r1}.w, {r2}.w, {r3}.w))";
+
+    /// <summary>
     /// The packed-register expression for one array element access. A literal index
     /// folds to a constant register; a dynamic index keeps the arithmetic in GLSL
     /// (valid in every profile — MojoShader emits the same relative-addressed form
@@ -875,13 +933,15 @@ public static class MonoGameGlslRewriter
 
         if (type == "mat4")
         {
+            // Transposed reconstruction (registers as ROWS) — see BuildUploadedMat4
+            // for why issue #70 requires this for the matrix to render upright.
             if (literal)
             {
                 int r = baseRegister + literalIndex * 4;
-                return $"mat4({p}[{r}], {p}[{r + 1}], {p}[{r + 2}], {p}[{r + 3}])";
+                return BuildUploadedMat4($"{p}[{r}]", $"{p}[{r + 1}]", $"{p}[{r + 2}]", $"{p}[{r + 3}]");
             }
             string b = $"{baseRegister} + ({indexExpr}) * 4";
-            return $"mat4({p}[{b}], {p}[{b} + 1], {p}[{b} + 2], {p}[{b} + 3])";
+            return BuildUploadedMat4($"{p}[{b}]", $"{p}[{b} + 1]", $"{p}[{b} + 2]", $"{p}[{b} + 3]");
         }
 
         string swizzle = SwizzleForType(type);
@@ -1231,6 +1291,17 @@ public static class MonoGameGlslRewriter
                 $"be emitted as silently-broken GLSL (e.g. texture2D() on an unmodelled sampler) that " +
                 $"fails at GL link time. Use a Texture2D/TextureCube/Texture3D, or extend the rewriter.");
         }
+    }
+
+    /// <summary>
+    /// True if <paramref name="identifier"/> (e.g. <c>out_var_POSITION</c> /
+    /// <c>out_var_POSITION0</c>) carries the D3D9 clip-position semantic. POSITION ≡ POSITION0
+    /// is the single VS output position in Shader Model 3; higher indices are not the position.
+    /// </summary>
+    private static bool IsPositionSemantic(string identifier)
+    {
+        var sem = StripInterfacePrefix(identifier);
+        return sem is "POSITION" or "POSITION0";
     }
 
     private static string SemanticToVaryingName(string identifier)
