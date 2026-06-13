@@ -13,6 +13,7 @@
     <PackageId>ShadowDusk.Cli</PackageId>
     <Description>Cross-platform drop-in replacement for MonoGame's mgfxc shader compiler — compiles .fx to .mgfx (MonoGame/KNI) and D3D9 fx_2_0 .fxb (FNA), self-contained on Linux, macOS, and Windows.</Description>
     <PackageIcon>ShadowDuskFavIcon.png</PackageIcon>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
 
     <!-- Self-contained single-file publish is a PUBLISH-TIME concern, driven entirely by
          release.yml's per-RID self-contained publish (PublishSingleFile +
@@ -30,6 +31,7 @@
   <!-- Pack the CLI's package icon (shown on nuget.org). Sourced from the repo-root brand image. -->
   <ItemGroup>
     <None Include="..\..\Brand\ShadowDuskFavIcon.png" Pack="true" PackagePath="\" Visible="false" />
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
   <ItemGroup>

@@ -85,8 +85,12 @@ internal static class DxcLoader
         if (libraryName != DxcLibraryName) return IntPtr.Zero;
 
         IntPtr handle;
+        // ProcessArchitecture, NOT OSArchitecture: the dylib must match the PROCESS.
+        // Under Rosetta 2 (an osx-x64 binary on an arm64 Mac — GitHub's macOS runners
+        // do exactly this) OSArchitecture reports Arm64, which made the resolver probe
+        // the arm64 dylib an x64 process can never load and miss the x64 one beside it.
         foreach (string candidate in GetProbeCandidates(
-                     AppContext.BaseDirectory, RuntimeInformation.OSArchitecture))
+                     AppContext.BaseDirectory, RuntimeInformation.ProcessArchitecture))
         {
             if (NativeLibrary.TryLoad(candidate, out handle))
                 return handle;
@@ -116,9 +120,9 @@ internal static class DxcLoader
     /// (and flat, for a manually-placed dylib) walking up to the filesystem root.
     /// </summary>
     internal static IEnumerable<string> GetProbeCandidates(
-        string baseDirectory, Architecture osArchitecture)
+        string baseDirectory, Architecture processArchitecture)
     {
-        string rid = osArchitecture == Architecture.Arm64 ? "osx-arm64" : "osx-x64";
+        string rid = processArchitecture == Architecture.Arm64 ? "osx-arm64" : "osx-x64";
 
         // 1. Next to the app binaries (csproj copy links; per-arch first, then flat).
         yield return Path.Combine(baseDirectory, rid, MacLibFileName);

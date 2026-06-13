@@ -53,10 +53,12 @@ internal static class SpvcLoader
             });
     }
 
+    // ProcessArchitecture, not OSArchitecture: the native must match the PROCESS
+    // (under Rosetta 2 the OS is Arm64 but the process loads only x64 dylibs).
     private static string GetCurrentRid() =>
         (RuntimeInformation.IsOSPlatform(OSPlatform.Windows),
          RuntimeInformation.IsOSPlatform(OSPlatform.OSX),
-         RuntimeInformation.OSArchitecture) switch
+         RuntimeInformation.ProcessArchitecture) switch
         {
             (true,  _,    _)                  => "win-x64",
             (false, true, Architecture.Arm64) => "osx-arm64",
