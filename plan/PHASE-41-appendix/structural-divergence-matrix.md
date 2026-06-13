@@ -22,8 +22,8 @@
 
 - Golden-backed cells (fixture x target): **92**
   - Structurally **clean**: **64**
-  - **Divergent** (>=1 level): **7**
-  - Compile/parse **failures**: **21**
+  - **Divergent** (>=1 level): **17**
+  - Compile/parse **failures**: **11**
 - Non-golden census cells: **52** (**41** compile, **11** fail with a code)
 
 ## Golden-backed fixtures — per-level structural verdict
@@ -32,13 +32,13 @@ Legend: `OK` = match, `XX` = diverge, `--` = compile/parse failed (see notes). L
 
 | Fixture | Target | Params | Cbuf | Samp | Tech+St | Annot | Notes |
 |---|---|:--:|:--:|:--:|:--:|:--:|---|
-| AlphaTestEffect | DirectX_11 | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
+| AlphaTestEffect | DirectX_11 | OK | OK | OK | XX | OK | `AlphaTestEffect_LTGT` pass[0] name `P0` vs ``; `AlphaTestEffect_LTGT_NoFog` pass[0] name `P0` vs ``; `AlphaTestEffect_LTGT_VertexColor` pass[0] name `P0` vs ``; `AlphaTestEffect_LTGT_VertexColor_NoFog` pass[0] name `P0` vs ``; `AlphaTestEffect_EQNE` pass[0] name `P0` vs ``; `AlphaTestEffect_EQNE_NoFog` pass[0] name `P0` vs ``; `AlphaTestEffect_EQNE_VertexColor` pass[0] name `P0` vs ``; `AlphaTestEffect_EQNE_VertexColor_NoFog` pass[0] name `P0` vs `` |
 | AlphaTestEffect | OpenGL | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
 | ArrayUniform | DirectX_11 | OK | OK | OK | OK | OK |  |
 | ArrayUniform | OpenGL | OK | OK | OK | OK | OK |  |
 | ArrayUniformVs | DirectX_11 | OK | OK | OK | OK | OK |  |
 | ArrayUniformVs | OpenGL | OK | OK | OK | OK | OK |  |
-| BasicEffect | DirectX_11 | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
+| BasicEffect | DirectX_11 | OK | OK | OK | XX | OK | `BasicEffect` pass[0] name `P0` vs ``; `BasicEffect_NoFog` pass[0] name `P0` vs ``; `BasicEffect_VertexColor` pass[0] name `P0` vs ``; `BasicEffect_VertexColor_NoFog` pass[0] name `P0` vs ``; `BasicEffect_Texture` pass[0] name `P0` vs ``; `BasicEffect_Texture_NoFog` pass[0] name `P0` vs ``; `BasicEffect_Texture_VertexColor` pass[0] name `P0` vs ``; `BasicEffect_Texture_VertexColor_NoFog` pass[0] name `P0` vs ``; `BasicEffect_VertexLighting` pass[0] name `P0` vs ``; `BasicEffect_VertexLighting_NoFog` pass[0] name `P0` vs ``; `BasicEffect_VertexLighting_VertexColor` pass[0] name `P0` vs ``; `BasicEffect_VertexLighting_VertexColor_NoFog` pass[0] name `P0` vs ``; `BasicEffect_VertexLighting_Texture` pass[0] name `P0` vs ``; `BasicEffect_VertexLighting_Texture_NoFog` pass[0] name `P0` vs ``; `BasicEffect_VertexLighting_Texture_VertexColor` pass[0] name `P0` vs ``; `BasicEffect_VertexLighting_Texture_VertexColor_NoFog` pass[0] name `P0` vs ``; `BasicEffect_OneLight` pass[0] name `P0` vs ``; `BasicEffect_OneLight_NoFog` pass[0] name `P0` vs ``; `BasicEffect_OneLight_VertexColor` pass[0] name `P0` vs ``; `BasicEffect_OneLight_VertexColor_NoFog` pass[0] name `P0` vs ``; `BasicEffect_OneLight_Texture` pass[0] name `P0` vs ``; `BasicEffect_OneLight_Texture_NoFog` pass[0] name `P0` vs ``; `BasicEffect_OneLight_Texture_VertexColor` pass[0] name `P0` vs ``; `BasicEffect_OneLight_Texture_VertexColor_NoFog` pass[0] name `P0` vs ``; `BasicEffect_PixelLighting` pass[0] name `P0` vs ``; `BasicEffect_PixelLighting_NoFog` pass[0] name `P0` vs ``; `BasicEffect_PixelLighting_VertexColor` pass[0] name `P0` vs ``; `BasicEffect_PixelLighting_VertexColor_NoFog` pass[0] name `P0` vs ``; `BasicEffect_PixelLighting_Texture` pass[0] name `P0` vs ``; `BasicEffect_PixelLighting_Texture_NoFog` pass[0] name `P0` vs ``; `BasicEffect_PixelLighting_Texture_VertexColor` pass[0] name `P0` vs ``; `BasicEffect_PixelLighting_Texture_VertexColor_NoFog` pass[0] name `P0` vs `` |
 | BasicEffect | OpenGL | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
 | BasicShader | DirectX_11 | OK | OK | OK | OK | OK |  |
 | BasicShader | OpenGL | OK | OK | OK | OK | OK |  |
@@ -56,9 +56,9 @@ Legend: `OK` = match, `XX` = diverge, `--` = compile/parse failed (see notes). L
 | Dissolve | OpenGL | OK | OK | OK | OK | OK |  |
 | Dots | DirectX_11 | OK | OK | OK | OK | OK |  |
 | Dots | OpenGL | OK | OK | OK | OK | OK |  |
-| DualTextureEffect | DirectX_11 | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
+| DualTextureEffect | DirectX_11 | OK | OK | OK | XX | OK | `DualTextureEffect` pass[0] name `P0` vs ``; `DualTextureEffect_NoFog` pass[0] name `P0` vs ``; `DualTextureEffect_VertexColor` pass[0] name `P0` vs ``; `DualTextureEffect_VertexColor_NoFog` pass[0] name `P0` vs `` |
 | DualTextureEffect | OpenGL | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
-| EnvironmentMapEffect | DirectX_11 | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
+| EnvironmentMapEffect | DirectX_11 | OK | OK | OK | XX | OK | `EnvironmentMapEffect` pass[0] name `P0` vs ``; `EnvironmentMapEffect_NoFog` pass[0] name `P0` vs ``; `EnvironmentMapEffect_Fresnel` pass[0] name `P0` vs ``; `EnvironmentMapEffect_Fresnel_NoFog` pass[0] name `P0` vs ``; `EnvironmentMapEffect_Specular` pass[0] name `P0` vs ``; `EnvironmentMapEffect_Specular_NoFog` pass[0] name `P0` vs ``; `EnvironmentMapEffect_Fresnel_Specular` pass[0] name `P0` vs ``; `EnvironmentMapEffect_Fresnel_Specular_NoFog` pass[0] name `P0` vs ``; `EnvironmentMapEffect_OneLight` pass[0] name `P0` vs ``; `EnvironmentMapEffect_OneLight_NoFog` pass[0] name `P0` vs ``; `EnvironmentMapEffect_OneLight_Fresnel` pass[0] name `P0` vs ``; `EnvironmentMapEffect_OneLight_Fresnel_NoFog` pass[0] name `P0` vs ``; `EnvironmentMapEffect_OneLight_Specular` pass[0] name `P0` vs ``; `EnvironmentMapEffect_OneLight_Specular_NoFog` pass[0] name `P0` vs ``; `EnvironmentMapEffect_OneLight_Fresnel_Specular` pass[0] name `P0` vs ``; `EnvironmentMapEffect_OneLight_Fresnel_Specular_NoFog` pass[0] name `P0` vs `` |
 | EnvironmentMapEffect | OpenGL | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
 | Fading | DirectX_11 | OK | OK | OK | OK | OK |  |
 | Fading | OpenGL | OK | OK | OK | OK | OK |  |
@@ -76,13 +76,13 @@ Legend: `OK` = match, `XX` = diverge, `--` = compile/parse failed (see notes). L
 | MultiTexture | OpenGL | OK | OK | OK | OK | OK |  |
 | MultiTextureOverlay | DirectX_11 | OK | OK | OK | OK | OK |  |
 | MultiTextureOverlay | OpenGL | OK | OK | OK | OK | OK |  |
-| PenumbraHull | DirectX_11 | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
+| PenumbraHull | DirectX_11 | OK | XX | OK | XX | OK | cbuffer `` size 64 vs 16; `Main` pass[0] name `P0` vs `` |
 | PenumbraHull | OpenGL | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
-| PenumbraLight | DirectX_11 | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
+| PenumbraLight | DirectX_11 | OK | OK | OK | XX | OK | `PointLight` pass[0] name `P0` vs ``; `Spotlight` pass[0] name `P0` vs ``; `TexturedLight` pass[0] name `P0` vs ``; `DebugLight` pass[0] name `P0` vs `` |
 | PenumbraLight | OpenGL | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
-| PenumbraShadow | DirectX_11 | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
+| PenumbraShadow | DirectX_11 | OK | OK | OK | XX | OK | `Main` pass[0] name `P0` vs ``; `Debug` pass[0] name `P0` vs `` |
 | PenumbraShadow | OpenGL | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
-| PenumbraTexture | DirectX_11 | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
+| PenumbraTexture | DirectX_11 | OK | OK | XX | XX | OK | sampler slot 1 missing (golden ``); `Main` pass[0] name `P0` vs `` |
 | PenumbraTexture | OpenGL | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
 | Pixelated | DirectX_11 | OK | OK | OK | OK | OK |  |
 | Pixelated | OpenGL | OK | OK | OK | OK | OK |  |
@@ -100,11 +100,11 @@ Legend: `OK` = match, `XX` = diverge, `--` = compile/parse failed (see notes). L
 | SharedCbuffer | OpenGL | OK | XX | OK | OK | OK | cbuffer `ps_uniforms_vec4` size 80 vs 16; cbuffer `vs_uniforms_vec4` size 80 vs 64; param `DiffuseColor` cbuffer offset 64 vs 0 |
 | SimpleLightShader | DirectX_11 | OK | OK | OK | OK | OK |  |
 | SimpleLightShader | OpenGL | OK | OK | OK | OK | OK |  |
-| SkinnedEffect | DirectX_11 | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
+| SkinnedEffect | DirectX_11 | OK | OK | OK | XX | OK | `SkinnedEffect_VertexLighting_OneBone` pass[0] name `P0` vs ``; `SkinnedEffect_VertexLighting_OneBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_VertexLighting_TwoBone` pass[0] name `P0` vs ``; `SkinnedEffect_VertexLighting_TwoBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_VertexLighting_FourBone` pass[0] name `P0` vs ``; `SkinnedEffect_VertexLighting_FourBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_OneLight_OneBone` pass[0] name `P0` vs ``; `SkinnedEffect_OneLight_OneBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_OneLight_TwoBone` pass[0] name `P0` vs ``; `SkinnedEffect_OneLight_TwoBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_OneLight_FourBone` pass[0] name `P0` vs ``; `SkinnedEffect_OneLight_FourBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_PixelLighting_OneBone` pass[0] name `P0` vs ``; `SkinnedEffect_PixelLighting_OneBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_PixelLighting_TwoBone` pass[0] name `P0` vs ``; `SkinnedEffect_PixelLighting_TwoBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_PixelLighting_FourBone` pass[0] name `P0` vs ``; `SkinnedEffect_PixelLighting_FourBone_NoFog` pass[0] name `P0` vs `` |
 | SkinnedEffect | OpenGL | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
 | SpriteAlphaTest | DirectX_11 | OK | OK | OK | OK | OK |  |
 | SpriteAlphaTest | OpenGL | OK | OK | OK | OK | OK |  |
-| SpriteEffect | DirectX_11 | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
+| SpriteEffect | DirectX_11 | OK | OK | OK | XX | OK | `SpriteBatch` pass[0] name `P0` vs `` |
 | SpriteEffect | OpenGL | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
 | StateBlendAdditive | DirectX_11 | OK | OK | OK | OK | OK |  |
 | StateBlendAdditive | OpenGL | OK | OK | OK | OK | OK |  |
@@ -132,38 +132,32 @@ produce a `.mgfx` for the target. Each is a real ShadowDusk limitation, not a ha
 
 | Fixture | Target | Code | Message |
 |---|---|:--:|---|
-| AlphaTestEffect | DirectX_11 | SD0010 | Effect source contains no techniques |
 | AlphaTestEffect | OpenGL | SD0010 | Effect source contains no techniques |
-| BasicEffect | DirectX_11 | SD0010 | Effect source contains no techniques |
 | BasicEffect | OpenGL | SD0010 | Effect source contains no techniques |
 | DeferredSprite | OpenGL | X0000 | Semantic COLOR is invalid for shader model: ps |
-| DualTextureEffect | DirectX_11 | SD0010 | Effect source contains no techniques |
 | DualTextureEffect | OpenGL | SD0010 | Effect source contains no techniques |
-| EnvironmentMapEffect | DirectX_11 | SD0010 | Effect source contains no techniques |
 | EnvironmentMapEffect | OpenGL | SD0010 | Effect source contains no techniques |
-| PenumbraHull | DirectX_11 | SD0010 | Effect source contains no techniques |
 | PenumbraHull | OpenGL | SD0010 | Effect source contains no techniques |
-| PenumbraLight | DirectX_11 | SD0010 | Effect source contains no techniques |
 | PenumbraLight | OpenGL | SD0010 | Effect source contains no techniques |
-| PenumbraShadow | DirectX_11 | SD0010 | Effect source contains no techniques |
 | PenumbraShadow | OpenGL | SD0010 | Effect source contains no techniques |
-| PenumbraTexture | DirectX_11 | SD0010 | Effect source contains no techniques |
 | PenumbraTexture | OpenGL | SD0010 | Effect source contains no techniques |
-| SkinnedEffect | DirectX_11 | SD0010 | Effect source contains no techniques |
 | SkinnedEffect | OpenGL | SD0010 | Effect source contains no techniques |
-| SpriteEffect | DirectX_11 | SD0010 | Effect source contains no techniques |
 | SpriteEffect | OpenGL | SD0010 | Effect source contains no techniques |
 
-**Root cause of the SD0010 cluster (XNA stock effects):** `AlphaTestEffect`, `BasicEffect`,
-`DualTextureEffect`, `EnvironmentMapEffect`, `SkinnedEffect`, `SpriteEffect`, and the `Penumbra*`
-fixtures declare their techniques ONLY through the `TECHNIQUE(name, vs, ps)` macro defined in the
-`#include`d `Macros.fxh`. ShadowDusk's `FxPreParser` counts techniques on the RAW source BEFORE
-include flattening / macro expansion, and it deliberately ignores macro-call forms like
-`TECHNIQUE(...)` (only literal `technique`/`technique11` keywords are recognized). So zero techniques
-are detected and the pipeline fails with SD0010 "Effect source contains no techniques" before any
-backend runs. mgfxc expands includes/macros first, so it sees the techniques. This is a characterized
-ordering limitation (technique detection vs include expansion), not a backend fidelity gap, and is
-the single highest-value item to feed into Phase 41 triage.
+**SD0010 macro-technique cluster (XNA stock effects) — RESOLVED on DirectX (Phase 41):**
+`AlphaTestEffect`, `BasicEffect`, `DualTextureEffect`, `EnvironmentMapEffect`, `SkinnedEffect`,
+`SpriteEffect`, and the `Penumbra*` fixtures declare their techniques ONLY through the
+`TECHNIQUE(name, vs, ps)` macro defined in the `#include`d `Macros.fxh`. ShadowDusk's `FxPreParser`
+counts techniques on the RAW source BEFORE macro expansion and deliberately ignores macro-call
+forms. The pipeline now applies a GATED zero-technique fallback: when the raw pre-parse yields zero
+techniques AND the target's macros select the modern (SM4/SM6) branch, it DXC-preprocesses (`-P`)
+the source and re-parses the expanded text, recovering the literal `technique` blocks. On
+**DirectX_11 these effects now compile** (structurally clean apart from the known anonymous-pass
+`P0` naming class). On **OpenGL they still report SD0010**: the GL macro set is deliberately
+`{MGFX, GLSL, OPENGL}` with NO SM4/SM6, so the stock effects expand to their legacy DX9/SM2 branch
+(`sampler2D`/`tex2D`/`vs_2_0`) which the modern DXC -> SPIR-V GL backend cannot compile (it crashes
+DXC's native codegen), so that target is gated OUT of the recovery and keeps the loud SD0010. This
+is the documented GL macro-model gap (Phase 41 follow-up), not a PlatformMacros change.
 
 **DeferredSprite [OpenGL] (X0000):** a distinct, loud diagnostic ('Semantic COLOR is invalid for
 shader model: ps') from the GL path, unrelated to the SD0010 macro-technique cluster.
@@ -172,23 +166,35 @@ shader model: ps') from the GL path, unrelated to the SD0010 macro-technique clu
 
 Distinct classes of divergence observed across the matrix, grouped by shape:
 
+### Anonymous-pass naming (`P0` vs empty) — KNOWN, render-irrelevant (12 cell(s))
+
+For an anonymous `pass { ... }` (no name), mgfxc stores an empty pass name while ShadowDusk synthesizes `P0`. MonoGame addresses passes by INDEX (and by name only when the user named them), so a synthesized name for an unnamed pass does not change which pass runs. Render-irrelevant; not a defect.
+
+Affected cells: AlphaTestEffect [DirectX_11], BasicEffect [DirectX_11], ClipShaderNew [DirectX_11], ClipShaderNew [OpenGL], DualTextureEffect [DirectX_11], EnvironmentMapEffect [DirectX_11], PenumbraHull [DirectX_11], PenumbraLight [DirectX_11], PenumbraShadow [DirectX_11], PenumbraTexture [DirectX_11], SkinnedEffect [DirectX_11], SpriteEffect [DirectX_11]
+
 ### GL per-stage cbuffer sizing (full-layout vs used-only) — KNOWN, render-equivalent (3 cell(s))
 
 On the OpenGL target, mgfxc sizes each per-stage `{vs,ps}_uniforms_vec4` record to ONLY the members that stage actually uses (dead-uniform elimination); ShadowDusk emits each stage's FULL declared cbuffer layout. Both `.mgfx` files are internally self-consistent — the USED parameter's offset and the GLSL `uniform vec4 {vs,ps}_uniforms_vec4[size/16]` array length agree within each file, so `SetValue` binds correctly either way. This is the pinned, render-equivalent divergence already documented and tolerated by `Phase43CbufferModelTests` (F4); the accompanying `offset N vs 0` lines are the SAME shape (the used member sits at a different absolute offset but the same relative slot). Not a defect.
 
 Affected cells: PolygonLight [OpenGL], SharedCbuffer [OpenGL], VertexAndPixel [OpenGL]
 
-### Anonymous-pass naming (`P0` vs empty) — KNOWN, render-irrelevant (2 cell(s))
-
-For an anonymous `pass { ... }` (no name), mgfxc stores an empty pass name while ShadowDusk synthesizes `P0`. MonoGame addresses passes by INDEX (and by name only when the user named them), so a synthesized name for an unnamed pass does not change which pass runs. Render-irrelevant; not a defect.
-
-Affected cells: ClipShaderNew [DirectX_11], ClipShaderNew [OpenGL]
-
 ### Annotation counts (mgfxc drops, ShadowDusk preserves) — KNOWN, render-irrelevant (2 cell(s))
 
 mgfxc writes annotation count 0 (drops annotation bodies and counts); ShadowDusk preserves the declared count as metadata. MonoGame's reader allocates the slots and reads no bodies either way, so this is render-irrelevant (Phase 43 F2). Not a defect.
 
 Affected cells: annotations [DirectX_11], annotations [OpenGL]
+
+### Constant-buffer layout (size / offset) — TRIAGE (1 cell(s))
+
+A constant buffer size or a per-parameter byte offset differs OUTSIDE the known GL per-stage sizing model. Worth triage: cbuffer offsets are the runtime SetValue layout.
+
+Affected cells: PenumbraHull [DirectX_11]
+
+### Sampler slot / baked-state delta (1 cell(s))
+
+A sampler slot is missing/extra or its baked sampler_state differs.
+
+Affected cells: PenumbraTexture [DirectX_11]
 
 > Note on bytecode: every cell's shader bytecode differs from the golden (vkd3d vs fxc on DX,
 > SPIRV-Cross GLSL vs MojoShader on GL). This is EXPECTED and is not counted as a divergence anywhere above.

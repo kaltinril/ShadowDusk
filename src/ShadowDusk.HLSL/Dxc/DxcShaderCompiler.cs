@@ -50,6 +50,63 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         return CompileCore(request);
     }
 
+    /// <inheritdoc/>
+    public Result<string, ShaderError> Preprocess(
+        DxcPreprocessRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        IReadOnlyList<string> arguments = DxcFlagBuilder.BuildPreprocess(request.Macros);
+
+        // Same raw vtable call the compile path uses (per-platform wchar_t arg encoding,
+        // UTF-8 source). #includes are already flattened upstream, so no include handler.
+        IDxcResult result = DxcNativeInterop.Compile(
+            _compiler,
+            request.HlslSource,
+            arguments,
+            includeHandler: null);
+
+        try
+        {
+            SharpGen.Runtime.Result status = result.GetStatus();
+            string errorText = result.GetErrors();
+
+            if (status.Failure)
+            {
+                IReadOnlyList<ShaderError> errors = DxcDiagnosticReformatter.Reformat(
+                    errorText,
+                    request.SourceFileName);
+
+                ShaderError primary = errors.Count > 0
+                    ? errors[0]
+                    : new ShaderError(
+                        File: request.SourceFileName,
+                        Line: 0,
+                        Column: 0,
+                        Code: "X0000",
+                        Message: "Shader preprocessing failed with no diagnostics",
+                        Severity: ShaderErrorSeverity.Error,
+                        RawDiagnostics: errorText);
+
+                return Result<string, ShaderError>.Fail(primary);
+            }
+
+            // -P writes the expanded HLSL text to the Hlsl output (not the Object blob).
+            using IDxcBlob hlslBlob = result.GetOutput(DxcOutKind.Hlsl);
+            byte[] bytes = hlslBlob.AsBytes();
+            string text = System.Text.Encoding.UTF8.GetString(bytes);
+            // DXC -P NUL-terminates the Hlsl blob; trim the trailing NUL(s) so the FX
+            // re-parser's lexer does not flag the terminator as an unexpected character.
+            text = text.TrimEnd('\0');
+            return Result<string, ShaderError>.Ok(text);
+        }
+        finally
+        {
+            result.Dispose();
+        }
+    }
+
     private Result<PlatformBlob, ShaderError> CompileCore(DxcCompileRequest request)
     {
         IReadOnlyList<string> arguments = DxcFlagBuilder.Build(

@@ -85,6 +85,25 @@ internal sealed class JsDxcShaderCompiler : IDxcShaderCompiler
     }
 
     /// <summary>
+    /// Preprocess-only is not wired through the WASM DXC shim (it exports
+    /// <c>compileToSpirv</c>, not a <c>-P</c> entry point). The zero-technique macro
+    /// fallback that needs this is GL/DX desktop-only today; the browser corpus does not
+    /// exercise the stock MonoGame effects whose techniques come solely from
+    /// <c>TECHNIQUE(...)</c>. Tracked follow-up: expose a preprocess export from the DXC
+    /// WASM module so the in-browser path supports macro-technique effects too.
+    /// </summary>
+    public Result<string, ShaderError> Preprocess(
+        DxcPreprocessRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        throw new NotSupportedException(
+            "DXC preprocess-only (-P) is not available on the WASM DXC backend yet. The " +
+            "zero-technique TECHNIQUE(...) macro fallback is desktop GL/DX only; see the " +
+            "Phase 41 follow-up to add a preprocess export to the DXC WASM module.");
+    }
+
+    /// <summary>
     /// Phase 38: the JS shim re-throws DXC's VERBATIM diagnostics as the exception
     /// message (file:line:col: error: message). Parse it with the SAME reformatter the
     /// desktop path uses so the in-browser failure carries real line/column — a

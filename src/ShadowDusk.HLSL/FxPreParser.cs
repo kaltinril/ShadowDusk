@@ -493,7 +493,18 @@ public sealed class FxPreParser
             // mode the legacy 'texture' type is valid for vkd3d and passes through
             // verbatim (including any annotation block — falls through to the
             // generic 'Identifier Identifier <...>' annotation strip below).
+            // Guard: a capitalized 'Texture'/'Texture2D'... keyword that is actually the
+            // VARIABLE NAME of a modern templated declaration ('Texture2D<float4> Texture
+            // : register(t0);') closes a template, so the immediately preceding code token
+            // is '>' (RAngle). In that position it is a variable name, NOT a legacy
+            // 'texture T;' declaration, so the rewrite below must not fire (it would turn
+            // 'Texture2D<float4> Texture : register(t0);' into a broken
+            // 'Texture2D<float4> Texture2D register;'). This only surfaces on the Phase 41
+            // re-parse of DXC-expanded source, where the SM4 'DECLARE_TEXTURE' macro emits
+            // exactly that modern form with a variable literally named 'Texture'.
+            bool prevIsTemplateClose = PrevCodeKind() == TokenKind.RAngle;
             if (_mode == FxSourceMode.RewriteToSm4 &&
+                !prevIsTemplateClose &&
                 tok.Kind == TokenKind.Identifier &&
                 LegacyTextureTypeKeywords.TryGetValue(tok.Text, out string? modernTextureType))
             {
@@ -1278,6 +1289,20 @@ public sealed class FxPreParser
         while (Peek(offset).Kind is TokenKind.LineComment or TokenKind.BlockComment)
             offset++;
         return offset;
+    }
+
+    /// <summary>
+    /// The kind of the nearest preceding code token (skipping comments) before the current
+    /// position, or <see cref="TokenKind.EOF"/> when there is none. Used to disambiguate a
+    /// type keyword that is actually a variable name closing a template ('...&gt; Texture').
+    /// </summary>
+    private TokenKind PrevCodeKind()
+    {
+        int offset = -1;
+        while (_pos + offset >= 0 &&
+               Peek(offset).Kind is TokenKind.LineComment or TokenKind.BlockComment)
+            offset--;
+        return _pos + offset >= 0 ? Peek(offset).Kind : TokenKind.EOF;
     }
 
     /// <summary>The synthesized <c>Texture2D</c> name bound to a bare/untextured sampler.</summary>

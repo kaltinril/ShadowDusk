@@ -120,6 +120,93 @@ internal sealed class CompilationPipeline
 
         PreprocessedSource preprocessed = preprocessResult.Value;
 
+        // LAZY DXC instance, hoisted above the zero-technique fallback so the fallback's
+        // preprocess pass and the GL reflection compile share one instance/disposal
+        // (Phase 18 Track A: a DX11 compile must still never construct DXC). Materialized
+        // only on first use — the macro-technique fallback below, or the GL/Vulkan compile.
+        var dxcCompiler = new Lazy<IDxcShaderCompiler>(_dxcCompilerFactory);
+        try
+        {
+
+        // Zero-technique fallback (Phase 41). The raw pre-parse (Stage 1) ran BEFORE macro
+        // expansion and deliberately ignores macro-call technique forms, so the MonoGame
+        // stock effects (BasicEffect.fx etc.) whose techniques come ONLY from the
+        // TECHNIQUE(name, vs, ps) macro in Macros.fxh yield zero techniques here — today an
+        // immediate SD0010. Recover by macro-expanding the (already #include-flattened)
+        // source through DXC's preprocessor with the target's PlatformMacros, then re-parse
+        // the EXPANDED text: the TECHNIQUE(...) calls are now literal `technique { ... }`
+        // blocks the pre-parser reads. The default (techniques already found) path is
+        // untouched. NOTE: GL/DX only — the FNA path (RunFna) does not apply this fallback;
+        // tracked follow-up.
+        //
+        // GATE — modern macro branch only. The recovery runs ONLY when the target's macro
+        // set selects the modern (SM4/SM6) branch of Macros.fxh (DirectX, Vulkan). The
+        // OpenGL macro set is deliberately {MGFX, GLSL, OPENGL} with NO SM4/SM6 (it must
+        // stay that way — changing it would regress every #if OPENGL / #if SM4 fixture), so
+        // the stock effects expand to their LEGACY DX9/SM2 branch (sampler2D / tex2D /
+        // vs_2_0). Feeding that legacy form to ShadowDusk's modern DXC -> SPIR-V GL backend
+        // crashes DXC's native SPIR-V codegen (an uncatchable access violation), which is
+        // strictly worse than the loud SD0010 the user already gets. So for a target whose
+        // macros lack a modern shader model we DECLINE the recovery and keep the honest
+        // SD0010 below. This is a documented GL macro-model gap (Phase 41 follow-up), NOT a
+        // PlatformMacros change and NOT a special-case in the GL shader path. DirectX is the
+        // primary, proven win for the stock TECHNIQUE() effects.
+        bool macrosSelectModernBranch = macros.Macros.Any(m =>
+            m.Name is "SM4" or "SM6");
+
+        if (fxParsed.Techniques.Count == 0 && macrosSelectModernBranch)
+        {
+            var preprocessRequest = new DxcPreprocessRequest
+            {
+                HlslSource     = preprocessed.Text,
+                SourceFileName = sourceFileName,
+                Macros         = macros.Macros
+                    .Select(m => (m.Name, (string?)m.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)))
+                    .ToList(),
+            };
+
+            Result<string, ShaderError> expandResult =
+                dxcCompiler.Value.Preprocess(preprocessRequest, cancellationToken);
+            if (expandResult.IsFailure)
+                return Fail(expandResult.Error);
+
+            var reparseResult = FxPreParser.Parse(expandResult.Value, sourceFileName);
+            if (reparseResult.IsFailure)
+            {
+                FxParseError err = reparseResult.Error;
+                return Fail(new ShaderError(
+                    File: err.SourceFile,
+                    Line: err.Line,
+                    Column: err.Column,
+                    Code: $"FX{(int)err.Code:D4}",
+                    Message: err.Message));
+            }
+
+            FxParseResult expandedParsed = reparseResult.Value;
+
+            if (expandedParsed.Techniques.Count == 0)
+                return Fail(new ShaderError(
+                    File: sourceFileName,
+                    Line: 0,
+                    Column: 0,
+                    Code: "SD0010",
+                    Message: "Effect source contains no techniques"));
+
+            // Adopt the re-parsed (expanded, technique-stripped) result. Its StrippedHlsl
+            // already has #includes inlined and the macros consumed, so build the downstream
+            // PreprocessedSource directly from it WITHOUT a second Flatten (re-flattening
+            // would double-prepend the platform macros and re-trigger #include handling on
+            // already-inlined text).
+            fxParsed = expandedParsed;
+            preprocessed = new PreprocessedSource(
+                expandedParsed.StrippedHlsl,
+                macros.ToDxcFlags(),
+                sourceFileName);
+        }
+
+        // No techniques after the (possibly skipped) recovery — a genuinely technique-free
+        // effect, or a macro-only-technique effect on a target whose macros select the
+        // legacy branch (gated out above). Loud SD0010, identical to the prior behavior.
         if (fxParsed.Techniques.Count == 0)
             return Fail(new ShaderError(
                 File: sourceFileName,
@@ -147,13 +234,11 @@ internal sealed class CompilationPipeline
 
         // Stages 3–5: Compile each pass's entry points, reflect, and transpile.
         // The preprocessor has already flattened all #includes so no include handler is needed for DXC.
+        // The dxcCompiler Lazy is hoisted above the zero-technique fallback (see Stage 2);
         // LAZY on purpose (Phase 18 Track A): the DX11 path never touches DXC (vkd3d /
         // d3dcompiler_47 emit the DXBC; reflection is the managed RdefReader), so a DX11
         // compile must not die constructing DXC on a host without the native (the
         // Phase 37 A macOS gap). GL/Vulkan materialize it on first use, as before.
-        var dxcCompiler = new Lazy<IDxcShaderCompiler>(_dxcCompilerFactory);
-        try
-        {
         ISpirvToGlslTranspiler glslTranspiler = _glslTranspilerFactory();
 
         // DirectX (DX11) takes a separate backend: DXC only emits SM6 DXIL, which
@@ -613,6 +698,10 @@ internal sealed class CompilationPipeline
 
         FxParseResult fxParsed = parseResult.Value;
 
+        // NOTE: the GL/DX macro-technique fallback (Phase 41 — DXC -P expand + re-parse for
+        // effects whose techniques come only from the TECHNIQUE(...) macro) is intentionally
+        // NOT applied here. FNA uses the SM1–3 vkd3d path with no DXC -P step; a tracked
+        // follow-up if a stock effect ever needs the FNA target.
         if (fxParsed.Techniques.Count == 0)
             return Fail(new ShaderError(
                 File: sourceFileName,

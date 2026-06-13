@@ -42,4 +42,22 @@ public interface IDxcShaderCompiler
     Result<PlatformBlob, ShaderError> Compile(
         DxcCompileRequest request,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Preprocess-only (<c>-P</c>): expand <c>#include</c>s, <c>#define</c>s and conditional
+    /// directives into a single flat HLSL text WITHOUT compiling — no entry point, stage,
+    /// or profile. Used by the zero-technique fallback in the pipeline to macro-expand the
+    /// stock-effect <c>TECHNIQUE(...)</c> declarations into literal <c>technique</c> blocks
+    /// the FX pre-parser can read. Synchronous (the DXC preprocessor is in-process work on
+    /// every host).
+    /// </summary>
+    /// <param name="request">The preprocess request: source, file name, and macro defines.</param>
+    /// <param name="cancellationToken">Token checked before preprocessing starts.</param>
+    /// <returns>
+    /// The expanded HLSL text on success, or a <see cref="ShaderError"/> carrying the DXC
+    /// diagnostics on failure.
+    /// </returns>
+    Result<string, ShaderError> Preprocess(
+        DxcPreprocessRequest request,
+        CancellationToken cancellationToken = default);
 }
