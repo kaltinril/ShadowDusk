@@ -12,11 +12,11 @@ namespace ShadowDusk.Wasm;
 /// Browser/WASM <see cref="IShaderCompiler"/>. Composes the real managed compilation
 /// pipeline (<see cref="EffectCompiler"/>) with browser-backed native stages:
 /// <list type="bullet">
-///   <item>HLSL → SPIR-V via <see cref="JsDxcShaderCompiler"/> (host JS, WASM DXC).</item>
-///   <item>SPIR-V → GLSL via <see cref="JsSpirvToGlslTranspiler"/> (host JS, WASM SPIRV-Cross).</item>
+///   <item>HLSL → SPIR-V via <c>JsDxcShaderCompiler</c> (host JS, WASM DXC).</item>
+///   <item>SPIR-V → GLSL via <c>JsSpirvToGlslTranspiler</c> (host JS, WASM SPIRV-Cross).</item>
 ///   <item>SPIR-V reflection via <see cref="SpirvReflector"/> (pure managed — runs in-browser).</item>
 ///   <item>HLSL → DXBC (DirectX) / D3D9 bytecode (FNA) via
-///   <see cref="WasmVkd3dShaderCompiler"/> (host JS, WASM vkd3d-shader — Phase 4.1).</item>
+///   <c>WasmVkd3dShaderCompiler</c> (host JS, WASM vkd3d-shader — Phase 4.1).</item>
 /// </list>
 /// Injecting the reflector makes the OpenGL path reflect SPIR-V directly and skip the
 /// native DXIL reflection oracle, so no Windows-only reflection is ever required.
