@@ -152,7 +152,9 @@ internal static class Vkd3dLoader
     {
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
             return [""];
-        string arch = RuntimeInformation.OSArchitecture == Architecture.Arm64
+        // ProcessArchitecture, not OSArchitecture: under Rosetta 2 the OS is Arm64
+        // but only an x64 dylib can load into the x64 process (see DxcLoader.Resolve).
+        string arch = RuntimeInformation.ProcessArchitecture == Architecture.Arm64
             ? "osx-arm64" : "osx-x64";
         return [arch, ""];
     }
