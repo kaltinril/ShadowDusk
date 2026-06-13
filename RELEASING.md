@@ -43,7 +43,7 @@ ShadowDusk's package version lives in **exactly one place**:
 ```xml
 <!-- Directory.Build.props -->
 <PropertyGroup>
-  <Version>0.5.0</Version>
+  <Version>0.5.1</Version>
 </PropertyGroup>
 ```
 
@@ -56,39 +56,31 @@ six packages (and their inter-package dependency ranges) at the same version.
 > those pin third-party dependency versions under Central Package Management. Leave them
 > alone.)
 
-To bump for a release, change that one line (e.g. `0.4.0` → `0.5.0`), update
-`CHANGELOG.md` (move `[Unreleased]` into a dated `[0.5.0]` section, leave a fresh empty
+To bump for a release, change that one line (e.g. `0.5.0` → `0.5.1`), update
+`CHANGELOG.md` (move `[Unreleased]` into a dated `[0.5.1]` section, leave a fresh empty
 `[Unreleased]`), update the version examples in this file, commit, and merge to `main` via PR.
 
 ---
 
 ## Triggering a release
 
-`release.yml` fires on **either** of two triggers; both run the same `validate` guard first.
+`release.yml` is **dispatch-only by design** — publishing is always a deliberate,
+human-run action. Pushing a `v<version>` tag triggers **nothing** (a tag is only a
+marker; the workflow creates and pushes it itself on a successful release).
 
-### Option A — push a `v<version>` tag
+### Manual dispatch (the only trigger)
 
-After the version-bump PR is merged to `main`:
+After the version-bump PR is merged to `main`: **Actions → Release → Run workflow**, and
+enter the `version` input (e.g. `0.5.1`, no leading `v`). On dispatch the workflow also
+creates and pushes the matching `v<version>` tag so the GitHub Release anchors to a tag.
 
-```bash
-git checkout main && git pull
-git tag v0.5.0
-git push origin v0.5.0
-```
+### The `validate` guard (input ↔ version)
 
-### Option B — manual dispatch
-
-**Actions → Release → Run workflow**, and enter the `version` input (e.g. `0.5.0`, no
-leading `v`). On dispatch the workflow also creates and pushes the matching `v<version>` tag
-so the GitHub Release anchors to a tag.
-
-### The `validate` guard (tag ↔ version)
-
-Before anything is packed or pushed, the `validate` job resolves the requested version (from
-the tag or the dispatch input, stripping a leading `v`) and compares it against
-`Directory.Build.props` `<Version>`. **If they disagree, the workflow fails fast and
-publishes nothing.** A `v0.5.0` tag against a `Directory.Build.props` that still says `0.4.0`
-is rejected — merge the version-bump PR first (the `/release` skill does this for you).
+Before anything is packed or pushed, the `validate` job compares the dispatch `version`
+input (stripping a leading `v`) against `Directory.Build.props` `<Version>`. **If they
+disagree, the workflow fails fast and publishes nothing.** Dispatching `0.5.1` against a
+`Directory.Build.props` that still says `0.5.0` is rejected — merge the version-bump PR
+first (the `/release` skill does this for you).
 
 ---
 
@@ -115,7 +107,7 @@ is rejected — merge the version-bump PR first (the `/release` skill does this 
 2. **The `ShadowDuskCLI` tool installs and runs:**
 
    ```bash
-   dotnet tool install -g ShadowDusk.Cli --version 0.5.0
+   dotnet tool install -g ShadowDusk.Cli --version 0.5.1
    ShadowDuskCLI --help
    ```
 
@@ -123,7 +115,7 @@ is rejected — merge the version-bump PR first (the `/release` skill does this 
 3. **The consumer (GL) self-contained path works on a clean machine:**
 
    ```bash
-   dotnet add package ShadowDusk.Compiler --version 0.5.0
+   dotnet add package ShadowDusk.Compiler --version 0.5.1
    ```
 
    then compile a `.fx` → GL `.mgfx` in memory. This restores `Core/HLSL/GLSL` plus
@@ -158,9 +150,9 @@ is rejected — merge the version-bump PR first (the `/release` skill does this 
 
 ## If something goes wrong
 
-- **`validate` fails** — the tag/input version doesn't match `Directory.Build.props`. Bump
-  the prop (via PR), then re-tag or re-dispatch.
+- **`validate` fails** — the dispatch input version doesn't match `Directory.Build.props`.
+  Bump the prop (via PR), then re-dispatch.
 - **A package push fails on an unreserved ID** — reserve it by a manual first push, or fix
   ownership on nuget.org, then re-run the workflow (idempotent via `--skip-duplicate`).
-- **Re-running a release** is safe: already-published versions are skipped, so a partial
-  failure can be retried by re-pushing the tag or re-dispatching.
+- **Re-running a release** is safe: already-published versions are skipped
+  (`--skip-duplicate`), so a partial failure can be retried by re-dispatching.

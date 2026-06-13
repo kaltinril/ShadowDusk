@@ -18,6 +18,27 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+## [0.5.1] - 2026-06-12
+
+### Added
+
+- **Every package now ships a README** on its nuget.org page (previously only
+  `ShadowDusk.Wasm` had one — the other five showed nuget.org's "missing a README"
+  banner).
+
+### Fixed
+
+- **macOS: native-library resolution now keys on the process architecture, not the OS
+  architecture.** Under Rosetta 2 (an x64 build running on an Apple-silicon Mac) the
+  resolvers for all three natives (DXC, vkd3d-shader, SPIRV-Cross) probed the arm64
+  binaries — which can never load into an x64 process — instead of the x64 ones sitting
+  beside them, so compiles failed with `X0099`. Caught by the release pipeline's new
+  smoke-run gate during the 0.5.0 publish: the run stopped before creating the GitHub
+  Release, so the broken self-contained osx-x64 CLI binary never shipped. The 0.5.0
+  NuGet packages remain fine for typical consumers (NuGet's own native layout sidesteps
+  the buggy probe); 0.5.1 makes the self-contained osx-x64 CLI work on Apple-silicon
+  Macs and completes the GitHub Release that 0.5.0 never got.
+
 ## [0.5.0] - 2026-06-12
 
 ### Added
@@ -344,7 +365,8 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/kaltinril/ShadowDusk/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.2.0...v0.3.0
