@@ -6,6 +6,14 @@ using System.Text;
 
 namespace ShadowDusk.Core;
 
+/// <summary>
+/// Serializes a fully assembled <see cref="ShaderIR"/> into the binary MGFX container
+/// MonoGame/KNI's <c>Effect</c> loads (the "MGFX" header, constant buffers, shader blobs,
+/// parameters, and techniques). Counts and sizes that the format stores in a single byte
+/// or int16 are guarded so an oversized effect fails loudly (SD002x) rather than silently
+/// truncating into a corrupt file. The emitted version is controlled via
+/// <see cref="MgfxWriterOptions"/> (default v10, the most backwards-compatible choice).
+/// </summary>
 public sealed class MgfxWriter
 {
     // On-disk MonoGame signature: the four ASCII bytes "MGFX" (NOT a reversed

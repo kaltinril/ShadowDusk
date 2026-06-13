@@ -445,59 +445,17 @@ public static class RdefReader
     // Value mapping
     // -------------------------------------------------------------------------
 
-    private static bool TryMapClass(ushort cls, out EffectParameterClass mapped)
-    {
-        // D3D_SHADER_VARIABLE_CLASS values, mapped exactly as the previous extractor's
-        // MapClass (interface classes were unmapped there too — they threw, here we fail).
-        switch (cls)
-        {
-            case 0: mapped = EffectParameterClass.Scalar; return true;
-            case 1: mapped = EffectParameterClass.Vector; return true;
-            case 2: mapped = EffectParameterClass.Matrix; return true; // row-major
-            case 3: mapped = EffectParameterClass.Matrix; return true; // column-major
-            case 4: mapped = EffectParameterClass.Object; return true;
-            case 5: mapped = EffectParameterClass.Struct; return true;
-            default: mapped = default; return false;
-        }
-    }
+    // The raw D3D value → enum tables live in the shared D3DReflectionMaps so the
+    // RdefReader and the DXIL extractor cannot drift apart. RdefReader keeps its own
+    // unmapped policy (report failure), distinct from the extractor's (throw).
+    private static bool TryMapClass(ushort cls, out EffectParameterClass mapped) =>
+        D3DReflectionMaps.TryMapClass(cls, out mapped);
 
-    private static bool TryMapType(ushort type, out EffectParameterType mapped)
-    {
-        // D3D_SHADER_VARIABLE_TYPE values, mapped exactly as the previous extractor's
-        // MapType (uint folds into Int32, matching mgfxc/MonoGame's parameter model).
-        switch (type)
-        {
-            case 0:  mapped = EffectParameterType.Void;        return true;
-            case 1:  mapped = EffectParameterType.Bool;        return true;
-            case 2:  mapped = EffectParameterType.Int32;       return true;
-            case 19: mapped = EffectParameterType.Int32;       return true; // uint
-            case 3:  mapped = EffectParameterType.Single;      return true;
-            case 4:  mapped = EffectParameterType.String;      return true;
-            case 5:  mapped = EffectParameterType.Texture;     return true;
-            case 6:  mapped = EffectParameterType.Texture1D;   return true;
-            case 7:  mapped = EffectParameterType.Texture2D;   return true;
-            case 8:  mapped = EffectParameterType.Texture3D;   return true;
-            case 9:  mapped = EffectParameterType.TextureCube; return true;
-            default: mapped = default; return false;
-        }
-    }
+    private static bool TryMapType(ushort type, out EffectParameterType mapped) =>
+        D3DReflectionMaps.TryMapType(type, out mapped);
 
     private static TextureDimension MapSrvDimension(uint dim) =>
-        // D3D_SRV_DIMENSION values, folded as the previous extractor's MapSrvDimension
-        // (arrays/multisample collapse onto their base dimensionality).
-        dim switch
-        {
-            2  => TextureDimension.Texture1D,   // TEXTURE1D
-            3  => TextureDimension.Texture1D,   // TEXTURE1DARRAY
-            4  => TextureDimension.Texture2D,   // TEXTURE2D
-            5  => TextureDimension.Texture2D,   // TEXTURE2DARRAY
-            6  => TextureDimension.Texture2D,   // TEXTURE2DMS
-            7  => TextureDimension.Texture2D,   // TEXTURE2DMSARRAY
-            8  => TextureDimension.Texture3D,   // TEXTURE3D
-            9  => TextureDimension.TextureCube, // TEXTURECUBE
-            10 => TextureDimension.TextureCube, // TEXTURECUBEARRAY
-            _  => TextureDimension.Unknown,
-        };
+        D3DReflectionMaps.MapSrvDimension(dim);
 
     /// <summary>
     /// D3D_NAME values → the exact strings the previous extractor produced
