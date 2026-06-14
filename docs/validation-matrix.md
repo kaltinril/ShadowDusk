@@ -73,11 +73,11 @@ features the GL path rejects, but their **render** is not yet proven.
 
 | Feature | Compiles (DirectX) | Rejected on OpenGL | Rendered + matched on DirectX |
 |---|---|---|---|
-| Vertex texture fetch (`SampleLevel` in VS) | ✅ (exit 0) | ✅ `SD0210` (correct) | ⬜ **not yet** |
-| `Texture2DArray` | ✅ (exit 0) | ✅ `SD0210` (correct) | ⬜ **not yet** |
+| Vertex texture fetch (`SampleLevel` in VS) | ✅ (exit 0) | ✅ `SD0210` (correct) | ✅ **render-proven** — vkd3d == `fxc` oracle at **maxd 0** in real MonoGame WindowsDX, VTF actually deforms the mesh (`validation/DxModernFeatures`, 2026-06-14) |
+| `Texture2DArray` | ✅ (exit 0) | ✅ `SD0210` (correct) | 🚫 **blocked** — MonoGame's public API has no `Texture2DArray` to bind, so a non-vacuous render can't be set up yet (Phase 44 item D-adjacent) |
 
-Closing these = a focused real-MonoGame WindowsDX render test comparing ShadowDusk's vkd3d output against the
-`fxc`/`d3dcompiler` oracle (self-contained on Windows). See *Gaps & next targets*.
+VTF is closed; the texture-array render is blocked on a MonoGame runtime-API gap, not a ShadowDusk one. The
+compile rung for both is pinned by `ValidationMatrixCoverageTests`; VTF render by `validation/DxModernFeatures`.
 
 ---
 
@@ -94,10 +94,12 @@ Closing these = a focused real-MonoGame WindowsDX render test comparing ShadowDu
 | Coverage | Test / harness | Automated in CI? | How to run locally |
 |---|---|---|---|
 | Compile every fixture to DX + GL (+ census) | `tests/ShadowDusk.Integration.Tests` `Phase41StructuralDivergenceMatrixTests` | ✅ | `dotnet test ...Integration.Tests --filter Phase41StructuralDivergence` |
+| **Matrix compile/reject claims** (this doc's compile rung: GL rejects VTF/arrays `SD0210`, DX compiles them, FNA rejects SM4 `SD0300`) | `ValidationMatrixCoverageTests` | ✅ | `dotnet test ...Integration.Tests --filter ValidationMatrixCoverage` |
 | **Cross-OS byte-identical** output (Win/Linux/Mac; GL/DX/FNA) | `CrossHostByteIdentityTests` | ✅ (all 3 OSes) | `dotnet test ...Integration.Tests --filter CrossHostByteIdentity` |
 | OpenGL render vs golden (software GL) | `tests/ShadowDusk.ImageTests` (incl. `MatrixConventionSweepTests`, `Issue70MatrixTransposeRenderTests`) | ✅ (Linux Mesa) | `dotnet test tests/ShadowDusk.ImageTests` |
 | **Real MonoGame OpenGL** render vs `mgfxc` | `validation/VsDriven`, `validation/Candidate` + `validation/compare.py` | manual | `dotnet run --project validation/VsDriven` |
 | **Real MonoGame DirectX** render vs `mgfxc`/`fxc` | `validation/VsDrivenDx`, `validation/Candidate{Dx,Vkd3d}` + `compare_dx.py` | manual | `dotnet run --project validation/VsDrivenDx` |
+| **DirectX modern features render** (vertex texture fetch; vkd3d vs `fxc`) | `validation/DxModernFeatures` | manual | `dotnet run --project validation/DxModernFeatures` |
 | **Real FNA** render vs `fxc /T fx_2_0` | `validation/FnaValidation` | manual | `dotnet run --project validation/FnaValidation` |
 | Forward-compat (newer MonoGame loads our v10) | `validation/ForwardCompat` | manual | `validation/ForwardCompat/run-forwardcompat.ps1` |
 | **KNI WebGL** render (browser) | `tests/ShadowDusk.BrowserTests` (Playwright) | manual | see `tests/ShadowDusk.BrowserTests/README.md` |
@@ -112,10 +114,10 @@ passing test). Tracked as a gap below.
 
 | Gap | Achievable here? | Notes |
 |---|---|---|
-| **DirectX modern features render** (VTF, texture arrays) | ✅ yes | Self-contained real-MonoGame WindowsDX test vs the `fxc` oracle. Converts 🟡->✅ for the §4 rows. |
+| **DirectX modern features render** | partly **done** | **VTF ✅** (`validation/DxModernFeatures`, vkd3d == `fxc` maxd 0). Texture-array render is **blocked** on MonoGame's missing public `Texture2DArray` binding (a runtime-API gap, not ours). |
 | **KNI v4.02 render** (desktop `SDL2.GL` + a fresh WebGL run) | partly | Needs a current KNI runtime; browser path can refresh the Phase-24 harness. Closes the biggest 🌐/🟡 cells. |
 | **Promote `validation/*` render gates into CI** | partly | GL render runs in CI on Linux today; DX/FNA render are Windows-runner + (for DX) a software driver question. |
-| **Machine-readable coverage manifest** backing this matrix | ✅ yes | A `[Theory]` over the matrix cells that asserts the claimed status against a passing test, so the doc cannot drift from reality. |
+| **Machine-readable coverage** backing this matrix | **compile rung done** | `ValidationMatrixCoverageTests` pins the compile/reject cells as a `[Theory]`. Extending it to assert the render cells against the `validation/*` gates is the remaining step. |
 | **MGFX v11 / KNIFX writers** | gated | Only if a runtime proves v10 deficient (KNIFX) or 3.8.5 goes stable (v11). See [`PHASE-35-appendix/`](../plan/PHASE-35-appendix/). |
 | **Vulkan / DX12 render** | gated | Blocked on MonoGame 3.8.5 going **stable** (Areas C/D). ShadowDusk's DXC->SPIR-V/DXIL plumbing is built. |
 | **Metal target** | ⬛ | ShadowDusk Metal is a stub; FNA's Metal backend is already covered by the one `.fxb`. |
