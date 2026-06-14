@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Issue #70 follow-up: render the VS-DRIVEN fixtures in REAL KNI (not just MonoGame).
+    squarebananas reported the wrong vertex positions on KNI; the MonoGame VS proof
+    (validation/VsDriven) is the same bytes, but this renders them in KNI v4.2.9001 directly.
+
+    Compiles VsTransformColorTexture.fx + the legacy-POSITION variant with ShadowDusk
+    (default v10 GL), loads them into a real KNI Effect on SDL2.GL, renders via the shared
+    VsEffectImageRenderer, and compares (in-process, GL<->GL) ShadowDusk's output to the
+    mgfxc OpenGL golden - the same rung-4 bar as validation/VsDriven, on the KNI runtime.
+
+    Same KNI wiring as validation/KniDesktopGL; not in ShadowDusk.slnx; opts out of CPM.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RollForward>Major</RollForward>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RootNamespace>ShadowDusk.Validation.KniVs</RootNamespace>
+    <DefineConstants>$(DefineConstants);DESKTOPGL</DefineConstants>
+    <KniPlatform>DesktopGL</KniPlatform>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup Label="KNI (nkast) - SDL2 desktop OpenGL runtime, v4.2.9001 (KNI v4.02 line)">
+    <PackageReference Include="nkast.Xna.Framework" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Xna.Framework.Content" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Xna.Framework.Graphics" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Xna.Framework.Audio" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Xna.Framework.Media" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Xna.Framework.Input" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Xna.Framework.Game" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Kni.Platform.SDL2.GL" Version="4.2.9001.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Shared\*.cs" />
+  </ItemGroup>
+
+</Project>
