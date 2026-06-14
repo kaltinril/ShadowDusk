@@ -69,7 +69,7 @@ It must either be fixed into a real writer or remain clearly documented as a raw
 
 ## Open questions to resolve (reproduce-first, before trusting anything)
 1. Does MonoGame's v11 **body** differ structurally from v10, or does a v10 body labeled 11 actually parse/render? (`MGFXMinVersion=10` hints the loader intends to read v10-era files, but unconfirmed.)
-2. What are **KNIFX's exact signature bytes, header layout, and body deltas vs MGFX v10**? Read `KNIFXHeader` + the **KNIFXC** compiler in the KNI repo; reverse-engineer from a KNIFXC-produced sample.
+2. ~~What are **KNIFX's exact signature bytes, header layout, and body deltas vs MGFX v10**?~~ **ANSWERED (2026-06-14)** — fully reverse-engineered from KNI source (writer + reader + enums + hash). Byte-exact spec + writer blueprint: **[`knifx-format-spec.md`](knifx-format-spec.md)**. Headlines: signature `"KNIF"`, a **multi-backend directory** container, `WritePackedInt` (zigzag+7bit) for counts/indices, new `ShaderVersion` / compute-stage / `columnsActual` fields; the GLSL body is the **same** MojoShader bytes as v10.
 3. The auto-select seam (see "hard design problem").
 
 ## Validation gap to close — ✅ desktop reproduce-first CLOSED (2026-06-14)

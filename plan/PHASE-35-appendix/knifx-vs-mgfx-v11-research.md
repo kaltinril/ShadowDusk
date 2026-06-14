@@ -116,7 +116,7 @@ proof pre-dates it) and **KNI DirectX** (`WinForms.DX11`). (Prior state: render 
 ## 8. Open questions for the implementer
 
 - Does MonoGame's v11 **body** differ structurally from v10, or is a v10 body labeled 11 actually parseable? (Unverified; `MGFXMinVersion=10` hints the loader *intends* to read v10-era files, but we have not confirmed a v10-bodied/11-labeled file renders. Resolve reproduce-first before trusting `--mgfx-version 11` on MonoGame.)
-- What are KNIFX's exact signature bytes, header layout, and body deltas vs MGFX v10? (Read `KNIFXHeader` + the KNIFXC compiler in the KNI repo; reverse-engineer from a KNIFXC-produced sample.)
+- ~~What are KNIFX's exact signature bytes, header layout, and body deltas vs MGFX v10?~~ **ANSWERED (2026-06-14)** — fully reverse-engineered from KNI source: signature `"KNIF"`, version int16 11, a **multi-backend directory** header, and a body that re-encodes nearly every count/index as `WritePackedInt` (zigzag+7bit) plus new `ShaderVersion` / compute-stage / `columnsActual` fields. Complete byte-exact spec + writer blueprint: [`knifx-format-spec.md`](knifx-format-spec.md).
 - Is there a target-detection seam that can auto-select MGFX-v10 vs MonoGame-v11 vs KNIFX without a consumer flag? (Same one-artifact-vs-auto-select design problem as Phase 33's Reach/HiDef and Area C's DXBC/DXIL.)
 
 ## 9. Sources
