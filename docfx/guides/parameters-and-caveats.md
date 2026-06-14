@@ -51,11 +51,16 @@ Both shapes compiled silently into broken GLSL before Phase 43C (failing only at
 
 For `Target = DirectX`, ShadowDusk emits DXBC (SM ≤ 5) — what MonoGame's DX11 runtime loads — via `vkd3d-shader` (cross-platform) or `d3dcompiler_47` (Windows-only oracle), selected by <xref:ShadowDusk.Core.CompilerOptions.DxbcBackend>. **DXC is not used for DX11** because it only emits SM6 DXIL. See [DirectX DXBC (vkd3d) Path](../architecture/directx-dxbc-vkd3d.md).
 
-## MGFX format version
+## Effect container: MGFX v10 (default), and opt-in MGFX v11 / KNIFX
 
-ShadowDusk produces **MGFX v10** (<xref:ShadowDusk.Core.CompilerOptions.MgfxVersion> / CLI `--mgfx-version`). v10 is the one effect container that **both MonoGame (3.8.x DesktopGL/WindowsDX) and KNI (Reach and HiDef) load** — MonoGame reads it directly and KNI reads it as its supported migration format. ShadowDusk does not emit the older v9 (pre-3.8.2) format.
+ShadowDusk produces **MGFX v10** by default (<xref:ShadowDusk.Core.CompilerOptions.MgfxVersion> defaults to 10; CLI `--mgfx-version`). v10 is the one effect container that **both MonoGame (3.8.x DesktopGL/WindowsDX) and KNI (Reach and HiDef) load** — MonoGame reads it directly and KNI reads it as its supported migration format. It is the **seamless default**: you never set a flag to get correct output, and it loads on every MonoGame 3.8.2+ and KNI runtime. ShadowDusk does not emit the older v9 (pre-3.8.2) format.
 
-`--mgfx-version` / <xref:ShadowDusk.Core.CompilerOptions.MgfxVersion> sets the format-version **byte** in the header. It is an escape hatch, **defaults to 10, and 10 is the value ShadowDusk produces and validates** — there is no need to set it. A runtime checks that byte and **rejects a version it does not recognise**, which is exactly why v10 (the universally-loaded version) is the default. Setting the byte to another value does not by itself produce that runtime's newer container layout, so leave it on 10.
+As of **0.6.0**, two **opt-in, experimental** newer containers are available for consumers targeting newer runtimes. Both are **additive** — the v10 default is unchanged, and you only get them if you ask:
+
+- **MGFX v11** — set <xref:ShadowDusk.Core.CompilerOptions.MgfxVersion> `= 11` (CLI `--mgfx-version 11`). A faithful MonoGame v11 container for **MonoGame 3.8.5+**. v11 adds two per-shader diagnostic strings (the source file + entry point, used only in shader error messages, MonoGame PR #8813); it renders identically to v10. Render-proven in real MonoGame 3.8.5. *(3.8.5 is pre-release, so v11 stays opt-in.)*
+- **KNIFX v11** — set <xref:ShadowDusk.Core.CompilerOptions.Container> `= EffectContainer.Knifx`. KNI's newer KNIFX container for **KNI v4.02+**, render-proven in real KNI v4.2.9001. `MgfxVersion` is ignored when `Container == Knifx`; `Container` is ignored for the `Fna` target (always D3D9 fx_2_0).
+
+> **Important:** before 0.6.0, `--mgfx-version 11` only bumped the header *byte* over a v10 body, which a real v11 reader **cannot parse**. As of 0.6.0 it writes a correct v11 body. Still, **leave the default (v10) unless you specifically target a newer runtime and want its container** — v10 loads everywhere.
 
 ## `.mgfx` vs `.xnb`
 

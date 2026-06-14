@@ -49,6 +49,8 @@ The table above is the **graphics-backend** axis — the one that decides the ou
 
 > **"Same `.mgfx` as `mgfxc`"** means behaviorally equivalent and `Effect`-loadable — it renders the same pixels in the real runtime. Byte-identity is only ShadowDusk's *own* reproducibility (same version + source + target → same bytes), **never** byte-equality with `mgfxc`.
 
+> **Output container.** The default is **MGFX v10** — it loads on every MonoGame 3.8.2+ and KNI runtime, so you never set a flag for correct output. As of **0.6.0**, opt-in/experimental **MGFX v11** (`CompilerOptions.MgfxVersion = 11`, MonoGame 3.8.5+) and **KNIFX v11** (`CompilerOptions.Container = EffectContainer.Knifx`, KNI v4.02+) containers are additionally available, both render-proven in their real engines. See [Parameters & Caveats](guides/parameters-and-caveats.md).
+
 ## Quick links
 
 - **New here?** Start with [Overview](getting-started/overview.md) → [Installation](getting-started/installation.md) → [In-Memory Quickstart](getting-started/in-memory-quickstart.md).

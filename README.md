@@ -52,8 +52,16 @@ This table is the **graphics-backend** axis (the one that decides the output byt
 > **Detailed, per-cell validation status** (which library × format/version × target × OS is *render-proven*
 > vs *compile-only* vs *blocked*, with the test backing each cell): the living
 > **[Validation Matrix](docs/validation-matrix.md)**. The "Validated end-to-end" cells above are its ✅
-> rows; the matrix is the honest, complete tracker (e.g. KNI render proof is browser-only and predates
-> v4.02; DirectX modern features compile but are not yet render-checked).
+> rows; the matrix is the honest, complete tracker (e.g. KNI is now render-proven on a current **v4.02
+> desktop** runtime, and the DirectX vertex-texture-fetch feature is render-checked; the texture-array
+> render stays blocked on a MonoGame runtime-API gap).
+
+> **Output container (default v10; opt-in v11 / KNIFX).** ShadowDusk emits **MGFX v10** by default — the
+> seamless choice that loads on every MonoGame 3.8.2+ and KNI runtime, never a flag for correct output.
+> As of **0.6.0**, two opt-in/experimental newer containers are also available (additive; the v10 default
+> is unchanged): a faithful MonoGame **MGFX v11** (`CompilerOptions.MgfxVersion = 11`, MonoGame 3.8.5+) and
+> KNI's **KNIFX v11** (`CompilerOptions.Container = EffectContainer.Knifx`, KNI v4.02+), both render-proven
+> in their real engines. See [Parameters &amp; Caveats](https://kaltinril.github.io/ShadowDusk/guides/parameters-and-caveats.html).
 
 > **FNA note.** FNA's documented shader workflow is the deprecated Windows-only
 > `fxc.exe /T fx_2_0` (run under Wine on Linux/macOS). `PlatformTarget.Fna` removes that

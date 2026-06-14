@@ -17,9 +17,11 @@ The writer assembles, in order:
 
 For OpenGL effects the shader blob is GLSL in the **MojoShader dialect** — the uniform-naming and fragment-output convention MonoGame's OpenGL effect loader expects. ShadowDusk's [GLSL dialect rewrite](glsl-dialect-rewrite.md) produces exactly that dialect so the bytes load and render like `mgfxc`'s.
 
-## Format version (MGFX v10)
+## Format version: MGFX v10 (default), opt-in MGFX v11 / KNIFX v11
 
-ShadowDusk produces **MGFX v10** (`CompilerOptions.MgfxVersion` / CLI `--mgfx-version`, which sets the header version **byte** and defaults to `10`). v10 is the broadly compatible choice: it loads in MonoGame 3.8.x (DesktopGL and WindowsDX) and in KNI for both **Reach** (WebGL1) and **HiDef** (WebGL2 / GLSL ES 3.00). The version flag is a non-required escape hatch; `10` is the value produced and validated. New backends should be **additive** targets auto-selected from the chosen platform rather than changes to the existing v10 output.
+ShadowDusk produces **MGFX v10** by default (`CompilerOptions.MgfxVersion` / CLI `--mgfx-version`, defaults to `10`). v10 is the broadly compatible choice: it loads in MonoGame 3.8.x (DesktopGL and WindowsDX) and in KNI for both **Reach** (WebGL1) and **HiDef** (WebGL2 / GLSL ES 3.00). It is the **seamless default** and is never something a consumer must change to get correct output. ShadowDusk does not emit the older v9 (pre-3.8.2) format.
+
+As of **0.6.0**, two **opt-in, additive** newer containers are also available (the v10 default is unchanged): a faithful MonoGame **MGFX v11** (`MgfxVersion = 11`; MonoGame 3.8.5+, which adds two per-shader diagnostic strings to the shader blob, render-proven in real MonoGame 3.8.5) and KNI's **KNIFX v11** (a distinct `KNIF`-signed container; `CompilerOptions.Container = EffectContainer.Knifx`; KNI v4.02+, render-proven in real KNI). Both render identically to v10. See [Parameters & Caveats](../guides/parameters-and-caveats.md).
 
 ## One writer, two backends
 
