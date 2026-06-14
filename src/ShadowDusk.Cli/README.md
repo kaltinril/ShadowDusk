@@ -18,6 +18,8 @@ ShadowDuskCLI <input.fx> <output.fxb>  /Profile:FNA
 
 Flags mirror `mgfxc` (`/Profile`, `/Debug`, `/I`, `/DxbcBackend`, `--mgfx-version`). Run `ShadowDuskCLI --help` for the full list.
 
+The output container defaults to **MGFX v10**, which loads on every MonoGame 3.8.2+ and KNI runtime — you never need a flag for correct output. For newer runtimes, `--mgfx-version 11` opts into a faithful MonoGame MGFX v11 container (MonoGame 3.8.5+, opt-in/experimental). KNI's KNIFX v11 container is available via the library (`CompilerOptions.Container`).
+
 ### As the MGCB shader compiler
 
 Point MGCB's `ExternalTool` at `ShadowDuskCLI` (or alias it to `mgfxc` on `PATH`) and the MonoGame Content Pipeline uses ShadowDusk transparently — including on Linux/macOS build agents where `mgfxc` cannot run.

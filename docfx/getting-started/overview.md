@@ -36,6 +36,12 @@ Every shape implements the same <xref:ShadowDusk.Core.IShaderCompiler> interface
 | [Metal (macOS / iOS)](../backends/metal.md) | MSL | Not yet implemented (future) |
 | [Vulkan](../backends/vulkan.md) | SPIR-V | Future |
 
+> **Output container.** The default is **MGFX v10**, which loads on every MonoGame 3.8.2+ and KNI
+> runtime — you never set a flag for correct output. As of **0.6.0**, opt-in/experimental newer
+> containers are additionally available: a faithful MonoGame **MGFX v11** (`MgfxVersion = 11`, MonoGame
+> 3.8.5+) and KNI's **KNIFX v11** (`Container = EffectContainer.Knifx`, KNI v4.02+), both render-proven in
+> their real engines. See [Parameters & Caveats](../guides/parameters-and-caveats.md).
+
 > **Version note:** use **0.4.0 or later** on macOS and Linux. In the 0.3.0 packages the
 > OpenGL/WebGL targets failed to compile on macOS (no DXC native) and Linux (an
 > argument-marshalling bug); 0.4.0 fixes both — ShadowDusk bundles its own pinned macOS

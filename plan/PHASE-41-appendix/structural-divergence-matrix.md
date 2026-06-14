@@ -5,7 +5,7 @@
 
 ## Provenance & the "byte-identity is not the bar" note
 
-- **ShadowDusk version:** 0.5.1.0 (DX target = vkd3d-shader default, GL target = DXC -> SPIRV-Cross).
+- **ShadowDusk version:** 0.6.0.0 (DX target = vkd3d-shader default, GL target = DXC -> SPIRV-Cross).
 - **Goldens:** committed `tests/fixtures/golden/{DirectX_11,OpenGL}/*.mgfx`, produced by the real
   `dotnet-mgfxc 3.8.2.1105` (fxc.exe -> DXBC for DX; MojoShader/GLSL for GL). The locally installed
   mgfxc is 3.8.4.1, but the **3.8.2.1105 goldens are the canonical reference** and are treated as

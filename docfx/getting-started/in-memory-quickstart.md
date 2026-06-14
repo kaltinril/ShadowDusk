@@ -52,6 +52,8 @@ var effect = new Effect(graphicsDevice, mgfx);   // MonoGame / KNI — .mgfx
 
 It renders the same image `mgfxc`'s output would.
 
+> **Newer runtimes (opt-in).** The default v10 container loads on every MonoGame 3.8.2+ and KNI runtime, so you usually do nothing. If you target a newer runtime and want its container, set `CompilerOptions.MgfxVersion = 11` (MonoGame **3.8.5+**) or `CompilerOptions.Container = EffectContainer.Knifx` (KNI **v4.02+**) — both opt-in/experimental, both render identically to v10. See [Parameters & Caveats](../guides/parameters-and-caveats.md#effect-container-mgfx-v10-default-and-opt-in-mgfx-v11--knifx).
+
 For **FNA**, you pass the `.fxb` produced by `PlatformTarget.Fna` (see [below](#compiling-for-fna)); FNA loads it through MojoShader:
 
 ```csharp

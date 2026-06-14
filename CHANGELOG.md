@@ -18,6 +18,65 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+## [0.6.0] - 2026-06-14
+
+The seamless default is unchanged: MGFX **v10** is still the default container and you never
+set a flag to get correct output. This release adds two **opt-in / experimental** container
+writers for newer runtimes (MonoGame MGFX v11 and KNI KNIFX v11), recovers macro-declared
+techniques on DirectX, and fixes two OpenGL vertex-shader fidelity bugs.
+
+### Added
+
+- **Faithful MGFX v11 writer (opt-in, experimental).** `CompilerOptions.MgfxVersion = 11`
+  (CLI `--mgfx-version 11`) now emits a **correct** MonoGame v11 container — where it was
+  previously **corrupt** (a v10 body labeled version 11, which a real v11 reader cannot
+  parse). MonoGame 3.8.5's `Effect` loader expects a per-shader `SourceFile` and `Entrypoint`
+  string in the shader stream (PR #8813); ShadowDusk now writes them. They are diagnostic-only
+  (they appear in shader error messages) and do not affect rendering. **Render-proven in real
+  MonoGame 3.8.5**: the corpus loads + renders 10/10, max delta 0 vs the v10 render. **v10
+  remains the default and never reads them** — `MgfxVersion` is a non-required escape hatch
+  (default 10).
+- **KNIFX v11 container target (opt-in, experimental).** New public `EffectContainer` enum
+  (`Mgfx` default, `Knifx`) and `CompilerOptions.Container` property (default `Mgfx`). Set
+  `Container = EffectContainer.Knifx` to emit KNI's newer KNIFX v11 container for KNI v4.02+
+  consumers — signature `KNIF`, a multi-backend directory, a packed-int body, and the GL
+  GLSL-version directory KNI's runtime requires. **Render-proven in real KNI v4.2.9001 desktop
+  GL**: the corpus loads + renders 10/10, max delta 0 vs the v10 render. Additive, not a
+  replacement for the v10 default; `MgfxVersion` is ignored when `Container == Knifx`, and
+  `Container` is ignored for `PlatformTarget.Fna` (always D3D9 fx_2_0). `CompiledShaderBlob`
+  gained three init-only properties with mgfxc's own safe fallbacks (`ShaderModel = (3,0)`,
+  `SourceFile`/`Entrypoint = "<unknown>"`).
+
+### Changed
+
+- **DirectX: macro-declared techniques are now recovered.** Stock-MonoGame-style effects that
+  declare their technique via the `TECHNIQUE(...)` macro (e.g. `BasicEffect.fx`) now compile
+  on DirectX/Vulkan through a gated zero-technique fallback (DXC-preprocess then re-parse).
+  OpenGL and FNA explicitly decline this path; existing behavior is otherwise unchanged.
+- **vkd3d: include-heavy effects compile without noise** — `#line` directives are blanked so
+  they no longer surface as diagnostics.
+- **`ShadowDusk.HLSL` package: removed dead public types** as dead-code cleanup
+  (`RenderStateMapper`, `MappedRenderState`, the empty `FxFileParser` stub,
+  `ReflectionInput.SpirVBlob`, `ReflectionPipeline.ReflectAsync`; `IDxcShaderCompiler` gained a
+  `Preprocess` method). Behavior-neutral — no emitted bytes change. The product surface
+  (`IShaderCompiler` in `ShadowDusk.Compiler`) is unaffected; this only matters if you
+  referenced `ShadowDusk.HLSL` internals directly.
+
+### Fixed
+
+- **OpenGL vertex-shader geometry fidelity ([#70](https://github.com/kaltinril/ShadowDusk/issues/70)).**
+  Two silent GL bugs in custom-vertex-shader effects are corrected, moving the default v10 GL
+  output toward `mgfxc`-equivalence: a `float4x4` uniform was reconstructed **transposed** (so
+  a non-identity `mul(v, M)` rendered an exploded/garbled mesh), and legacy `: POSITION` vertex
+  outputs were not mapped to `gl_Position` (silently broken geometry). Both are now
+  render-proven **max delta 0** against the `mgfxc` golden in real MonoGame. This intentionally
+  changes the v10 GL bytes for VS-driven effects (12 OpenGL byte-identity fixtures updated;
+  **zero** DirectX/FNA fixtures changed) — previously broken output is now correct.
+
+> MGFX v11 and KNIFX v11 are opt-in and experimental; the seamless default remains MGFX v10,
+> which loads on every MonoGame 3.8.2+ and KNI runtime with no consumer action. FNA (fx_2_0
+> `.fxb`) output is byte-identical to the previous release.
+
 ## [0.5.1] - 2026-06-12
 
 ### Added
@@ -365,7 +424,8 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/kaltinril/ShadowDusk/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.3.0...v0.4.0
