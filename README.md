@@ -49,6 +49,12 @@ Supported backends:
 
 This table is the **graphics-backend** axis (the one that decides the output bytes). **Framework** is a separate axis: **MonoGame and KNI** share the MGFX format (both supported); **FNA** is also a supported target, but takes a different effect path — ShadowDusk emits the legacy D3D9 fx_2_0 `.fxb` it loads (see the FNA note below), not the MGFX container; classic Microsoft **XNA 4.0** is out of scope. For picking a target — or building a shader-download feature — the docs have a [Choosing a Target](https://kaltinril.github.io/ShadowDusk/guides/choosing-a-target.html) guide covering the framework / backend / `GraphicsProfile` axes and the `.mgfx`-vs-`.xnb` distinction.
 
+> **Detailed, per-cell validation status** (which library × format/version × target × OS is *render-proven*
+> vs *compile-only* vs *blocked*, with the test backing each cell): the living
+> **[Validation Matrix](docs/validation-matrix.md)**. The "Validated end-to-end" cells above are its ✅
+> rows; the matrix is the honest, complete tracker (e.g. KNI render proof is browser-only and predates
+> v4.02; DirectX modern features compile but are not yet render-checked).
+
 > **FNA note.** FNA's documented shader workflow is the deprecated Windows-only
 > `fxc.exe /T fx_2_0` (run under Wine on Linux/macOS). `PlatformTarget.Fna` removes that
 > entirely: ShadowDusk compiles D3D9-style `.fx` (SM ≤ 3 — `sampler_state`, `tex2D`,
