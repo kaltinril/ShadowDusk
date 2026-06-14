@@ -7,10 +7,22 @@ deltas vs MGFX v10"). It is the implementation blueprint for ShadowDusk's faithf
 
 **Why this matters:** Per the 2026-06-14 direction, emitting KNIFX is a **committed** additive output (see the
 [kickoff brief](knifx-area-b-kickoff-brief.md) and [main phase doc](../PHASE-35-forward-version-support.md)).
-The shader **body (GLSL) is byte-for-byte the same MojoShader-dialect code ShadowDusk already emits for v10**
-(KNIFX is a container over a still-MojoShader body, verified in
-[shader-pipeline-landscape-2026-06.md](shader-pipeline-landscape-2026-06.md)). So a faithful KNIFX writer is a
-**re-serialization of the same effect data** into KNIFX's binary layout, **not** a shader-compilation change.
+The GLSL **dialect/text** is the same MojoShader-dialect code ShadowDusk already emits for v10 (KNIFX is a
+container over a still-MojoShader body, verified in
+[shader-pipeline-landscape-2026-06.md](shader-pipeline-landscape-2026-06.md)) — but **the bytes are NOT the
+same**, and "re-serialization" is an **understatement** (adversarial validation, 2026-06-14). KNIFX requires
+real writer work beyond re-encoding:
+
+> **⚠️ Correction (2026-06-14, validation agent).** An earlier draft of this spec wrongly said the body is
+> "byte-for-byte the same GLSL." It is not. Three load-bearing items make KNIFX **more** than re-serialization:
+> 1. **The GL `ShaderCode` is a GLSL-version bytecode DIRECTORY, not raw GLSL** (see [§ GL ShaderCode](#gl-shadercode-the-glsl-is-wrapped-in-a-version-directory-not-raw) below). With a non-default `ShaderVersion`, KNI's `ConcreteShader.FindShaderByteCode` parses `ShaderCode` as this directory; raw GLSL there throws `"Invalid shader bytecode"`. **Hard correctness gate.**
+> 2. **`columnsActual` is load-bearing** — it drives the runtime matrix uniform-upload stride (`ConstantBufferStrategy.cs` uses `ColumnCountActual`, not `ColumnCount`). ShadowDusk gets columns from SPIRV-Cross, not MojoShader register-packing, so it **cannot yet compute the optimized value** for matrices that pack into fewer registers. `columnsActual == columns` is safe for scalar/vector/full-matrix; the optimized-matrix case (exactly the "Matrix4x4 not demoted" fix KNIFX advertises) is a **known fidelity gap**.
+> 3. **The validation bar is NOT "renders identical to our v10 render."** For the optimized-matrix and sampler-without-texture fixes, a *correct* KNIFX render can legitimately **differ** from v10. "maxd 0 vs v10" is only a smoke test for the simple corpus; feature-bearing cases must be checked against a **KNIFXC golden**.
+
+So a faithful KNIFX writer re-serializes the same *container* data **and** wraps the GL shader code in the
+version directory **and** carries a non-default per-shader `ShaderVersion`. The compute stage is the only true
+new *compiler* capability the container exposes, and it is **dead at runtime** (KNI v4.2.9001's reader throws
+`NotImplementedException` for compute), so we emit the `-1` sentinel and build no `cs_*` path.
 
 ## Source of truth (KNI @ main, read 2026-06-14)
 
@@ -131,6 +143,44 @@ body:
 \* Sampler-state block: AddressU/V/W (3 bytes), BorderColor R/G/B/A (4 bytes), Filter (byte), then
 **MaxAnisotropy** and **MaxMipLevel** (MGFX: plain int32; **KNIFX: PI**), MipMapLevelOfDetailBias (single).
 
+\*\* `codeLength` + `code`: in MGFX v10 the `code` is the raw GLSL (GL) or DXBC (DX). In KNIFX the **GL**
+`ShaderCode` is **not** raw GLSL — see the next section. The DX `ShaderCode` stays raw DXBC.
+
+### GL ShaderCode: the GLSL is wrapped in a version directory, not raw
+
+> Source: KNI `ShaderProfileGL.CreateGLSL` (writer) + `ConcreteShader.FindShaderByteCode` (runtime reader).
+
+For a **GL** backend, KNI does not store raw GLSL in `ShaderCode`. It stores a **GLSL-version bytecode
+directory**, and the runtime selects the entry matching its GL context. Layout (all little-endian; the GLSL
+bytes are ASCII):
+
+```
+ShaderCode (GL):
+  reserved        int16  = 0
+  count           int16  = number of GLSL version entries
+  directory[count], EntrySize = 7 bytes each:
+     Major        byte    (GLSL language version major)
+     Minor        byte    (GLSL language version minor)
+     ES           bool    (1 byte; true for GL-ES/WebGL entries)
+     offset       int32   (absolute offset within ShaderCode of this blob's length prefix)
+  blobs[count], each:
+     length       int32
+     glsl         length bytes (ASCII)
+```
+`HeaderSize = 4` (reserved + count), `EntrySize = 7`, so `offset[0] = 4 + 7*count`.
+
+Per-backend entries KNI emits:
+- **`OpenGL` (desktop)** -> **one** entry `(Major=1, Minor=1, ES=false)` = GLSL 1.10. **This is exactly
+  ShadowDusk's existing MojoShader-dialect GL output** (the same bytes that render raw on the v10 path), just
+  wrapped. This is what `validation/KniDesktopGL` exercises.
+- `GLES` -> `(3,0,ES=true)` (GLSL 300 es), plus `(1,0,ES=false)` for SM2. Needs GLSL-version *conversion*
+  ShadowDusk does not yet do on this path -> a documented refinement.
+
+**Trigger:** the directory parse only happens when the per-shader `ShaderVersion` is **non-default**. If
+`ShaderVersion == (0,0)`, the runtime treats `ShaderCode` as **raw GLSL** (the legacy MGFX-v10 path). So a
+faithful v11 GL shader **must** carry both the non-default `ShaderVersion` **and** the directory wrapper; a
+v10-style "raw GLSL with (0,0)" would also load but is not the v11 path.
+
 ### Parameters (recursive: elements then members)
 | Field | MGFX v10 (ShadowDusk) | KNIFX v11 |
 |---|---|---|
@@ -147,10 +197,14 @@ body:
 | members (recursive) | list | list |
 | leaf data blob | rows*cols*4 zero bytes (value-type leaf) | same (`Write((byte[])param.data)`) |
 
-`columnsActual` semantics: in KNI's `EffectObject`, `columns` is the declared column count and `columnsActual`
-is the un-padded actual columns (they differ for some optimized matrix layouts). **For the PS-only / scalar /
-vector corpus they are equal**; pin the matrix case against a KNIFXC golden. Safe initial value:
-`columnsActual = columns`.
+`columnsActual` semantics (**load-bearing, not cosmetic**): KNI's runtime
+`ConstantBufferStrategy` uses **`ColumnCountActual`, not `ColumnCount`**, as the matrix register stride when
+uploading uniforms. KNI computes it as `Math.Min(columns, register_count)` from MojoShader's register packing.
+**For scalar / vector / full matrices `columnsActual == columns`** (safe to default), but for an **optimized
+matrix array** (the exact "Matrix4x4 not demoted to Matrix4x3" fix KNIFX advertises) it is smaller. ShadowDusk
+derives its column count from **SPIRV-Cross, not MojoShader register packing**, so it **cannot currently
+compute the optimized value** -> defaulting `columnsActual = columns` silently loses that fix for optimized
+matrices. **Known fidelity gap**; pin against a KNIFXC golden when implementing the optimized-matrix case.
 
 ### Techniques / passes
 | Field | MGFX v10 (ShadowDusk) | KNIFX v11 |
@@ -178,6 +232,13 @@ KNI maps to `(2,?)`, ignore until we target those.)
 
 ## Implementation plan for `KnifxWriter` (ShadowDusk.Core)
 
+> **Status (2026-06-14):** `KnifxWriter` + `KnifxWriterOptions`/`KnifxBackend` are **implemented** in
+> `src/ShadowDusk.Core/KnifxWriter.cs` with the corrected GL ShaderCode directory wrapping, and **unit-tested
+> for byte structure** (`tests/ShadowDusk.Core.Tests/KnifxWriterTests.cs`, 15 tests incl. a GL-wrap/DX-raw
+> regression guard). `CompiledShaderBlob.ShaderModel` was added (default (3,0)). **Not yet done:** wiring the
+> compile path to emit KNIFX, threading the real `ShaderModel` from the pass profile, and the **render
+> validation** on the KNI rig (the actual proof). `columnsActual` defaults to `columns` (optimized-matrix gap).
+
 1. **IR additions:** add `ShaderVersionMajor`/`Minor` to the shader blob (populated from the parsed pass model)
    and, if not already present, `columnsActual` to the parameter info (default = column count). No other IR
    change, the GLSL bytes, samplers, cbuffers, attributes, render-states are all already produced for v10.
@@ -187,10 +248,14 @@ KNI maps to `(2,?)`, ignore until we target those.)
 3. **Single- vs multi-backend:** start single-backend (one body, the GL one), since ShadowDusk compiles one
    target at a time. Leave the directory loop ready for a future "bundle GL+DX in one KNIFX" (the seamless
    one-artifact win).
-4. **Validation (the bar):** emit KNIFX for the SM3 corpus, load + render in the **`validation/KniDesktopGL`
-   rig** (already built, KNI v4.2.9001). Expected: **pixel-identical to the v10 render** (same shaders/params;
-   maxd 0), proving the container loads + runs in real KNI. For byte-faithfulness to KNIFXC, diff against a
-   KNIFXC-produced sample once obtained (pins `columnsActual`, the `GraphicsBackend` value, and the effectKey).
+4. **Validation (the bar, corrected):** emit KNIFX for the SM3 corpus, load + render in the
+   **`validation/KniDesktopGL` rig** (already built, KNI v4.2.9001). For the **simple corpus** (no optimized
+   matrices, textured samplers), a *loads + renders, and matches the v10 render (maxd 0)* result is a valid
+   **smoke test** (same GLSL, same params). But **do NOT treat "maxd 0 vs v10" as the success criterion in
+   general**: the optimized-matrix and sampler-without-texture fixes mean a *correct* KNIFX render can
+   legitimately **differ** from v10 — so feature-bearing cases must be checked against a **KNIFXC golden**, not
+   against our own v10 output (which would mask exactly the fixes KNIFX exists to provide). A KNIFXC sample also
+   pins `columnsActual` (optimized case), the `GraphicsBackend` value, and the effectKey for byte-faithfulness.
 5. **Seamless wiring (separate step, see [auto-select design](knifx-autoselect-design.md)):** default stays
    v10; KNIFX is auto-selected from a KNI target signal or available as a non-required escape hatch. Never a
    flag a consumer must set for correct output.
