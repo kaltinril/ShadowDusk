@@ -52,13 +52,15 @@ WebGL proof on v4.02 (the Phase-24 run pre-dates it), and the **modern DirectX f
 > KNIFX are **first-class additive outputs** so consumers can use the newer containers' features (and take the
 > bytes for their own runtime if they like). Forward-compatibility of v10 is a nice-to-have, **not** a reason
 > to stop short of v11/KNIFX. The newer formats are opt-in or auto-selected from the target, **never a flag a
-> consumer must set to get correct output** (the seamless rule still holds). Build path: Phase 44 D (prove the
-> KNI v4.02 render harness) -> Phase 35 Area B (the faithful writers).
+> consumer must set to get correct output** (the seamless rule still holds). **All three are now BUILT and
+> render-proven (2026-06-14):** v10 (default, everywhere), **MGFX v11** (`MgfxVersion = 11`, render-proven in
+> MonoGame 3.8.5), and **KNIFX v11** (`Container = Knifx`, render-proven in KNI 4.02). Remaining: the
+> auto-select/override seam, and KNIFX feature-parity for optimized matrices.
 
 | Format / profile | Applies to | Status | Notes |
 |---|---|---|---|
 | **MGFX v10** | MonoGame, KNI | ✅ | The default and the basis of every ✅ above. The one container every MGFX-lineage runtime loads. |
-| **MGFX v11** (MonoGame) | MonoGame 3.8.5+ | 🟡 **committed, building** | **A faithful v11 writer is a planned additive output** (Phase 35 Area B) so consumers can use the v11 container, *not* a "won't do." Today `--mgfx-version 11` only flips the header byte over a v10 body (a stub, compile-only), so the *faithful* writer is still to come. v10 also keeps loading forward in 3.8.5's `[10,11]` range, that is a **convenience, not the reason to skip v11.** |
+| **MGFX v11** (MonoGame) | MonoGame 3.8.5+ | ✅ **render-proven (MonoGame 3.8.5)** | ShadowDusk emits a **faithful MGFX v11** via `CompilerOptions.MgfxVersion = 11`: the v10 body plus the two per-shader diagnostic strings (`SourceFile`, `Entrypoint`) MonoGame PR #8813 added. **Render-proven 2026-06-14**: loads + renders **10/10 in real MonoGame 3.8.5.0** (`validation/MonoGameV11`), **maxd 0 vs v10**, <= 1 vs the mgfxc goldens. **Opt-in only** (3.8.5 is pre-release; the default stays v10). The old header-byte `--mgfx-version 11` was actually **corrupt** (v10 body + version 11 desyncs a v11 reader); now fixed. Spec: [`PHASE-35-appendix/mgfx-v11-format-spec.md`](../plan/PHASE-35-appendix/mgfx-v11-format-spec.md). |
 | **KNIFX v11** (KNI) | KNI 4.02+ | ✅ **render-proven (corpus); feature parity pending** | ShadowDusk **emits KNIFX v11** today (`CompilerOptions.Container = Knifx`, `KnifxWriter`): signature `KNIF`, multi-backend directory, packed-int body, GL GLSL-version directory. **Render-proven 2026-06-14**: the KNIFX corpus **loads + renders 10/10 in real KNI v4.2.9001** (`validation/KniDesktopGL knifx`), **maxd 0 vs the v10 render**. Still **opt-in / experimental**: not auto-selected yet, and the KNIFX-specific fixes (optimized `Matrix4x4` via `columnsActual`, sampler-without-texture) are **not yet validated against a KNIFXC golden** (the corpus does not exercise them; `columnsActual` defaults to `columns`). KNIFX = a new container + those parity fixes over a still-MojoShader body. Spec: [`PHASE-35-appendix/knifx-format-spec.md`](../plan/PHASE-35-appendix/knifx-format-spec.md). |
 | **Reach** (WebGL1 / GL ES 1.00) | MonoGame, KNI GL | ✅ | The default GL output dialect. |
 | **HiDef** (WebGL2 / GL ES 3.00) | KNI GL | 🌐 | The `#version 300`-guarded output; browser-proven (Phase 24 SD-HIDEF), pre-v4.02. |
@@ -114,6 +116,8 @@ compile rung for both is pinned by `ValidationMatrixCoverageTests`; VTF render b
 | Forward-compat (newer MonoGame loads our v10) | `validation/ForwardCompat` | manual | `validation/ForwardCompat/run-forwardcompat.ps1` |
 | **KNI WebGL** render (browser) | `tests/ShadowDusk.BrowserTests` (Playwright) | manual | see `tests/ShadowDusk.BrowserTests/README.md` |
 | **Real KNI OpenGL desktop** render vs mgfxc + MonoGame (KNI v4.02, SDL2.GL) | `validation/KniDesktopGL` + `compare_kni.py` | manual | `dotnet run --project validation/KniDesktopGL` then `python validation/compare_kni.py` |
+| **KNIFX v11** render in real KNI (vs v10) | `validation/KniDesktopGL knifx` + `compare_kni.py` | manual | `dotnet run --project validation/KniDesktopGL -- knifx` |
+| **MGFX v11** render in real MonoGame 3.8.5 (vs v10 + goldens) | `validation/MonoGameV11` + `compare_mgfxv11.py` | manual | `dotnet run --project validation/MonoGameV11` then `... -- v10`, then `python validation/compare_mgfxv11.py` |
 
 **The "test programmatically" goal:** the manual `validation/*` harnesses are the render-proof for the
 strongest cells but are not yet wired into CI. The path to a fully self-checking matrix is (a) promote the

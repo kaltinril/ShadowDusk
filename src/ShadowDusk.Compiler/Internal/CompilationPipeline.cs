@@ -319,6 +319,10 @@ internal sealed class CompilationPipeline
                         // The GL attribute table maps each vs_v{k} → VertexElementUsage+index
                         // so MonoGame binds the right vertex element. Empty for DX / non-GL.
                         Attributes = compileOutput.Attributes,
+                        ShaderModel = ParseShaderModel(pass.VertexProfile),
+                        // Diagnostic strings written only by MGFX v11+ (ignored by v10/KNIFX).
+                        SourceFile = options.SourceFileName ?? "<unknown>",
+                        Entrypoint = pass.VertexEntryPoint ?? "<unknown>",
                     });
                 }
 
@@ -344,7 +348,13 @@ internal sealed class CompilationPipeline
                     psDxilBlob  = compileOutput.DxilBlob;
                     psSpirvBlob = compileOutput.SpirvBlob;
                     shaderUniformLayouts[psIndex] = compileOutput.Uniforms;
-                    compiledShaderBlobs.Add(new CompiledShaderBlob(compileOutput.Blob.Value, ShaderStage.Pixel));
+                    compiledShaderBlobs.Add(new CompiledShaderBlob(compileOutput.Blob.Value, ShaderStage.Pixel)
+                    {
+                        ShaderModel = ParseShaderModel(pass.PixelProfile),
+                        // Diagnostic strings written only by MGFX v11+ (ignored by v10/KNIFX).
+                        SourceFile = options.SourceFileName ?? "<unknown>",
+                        Entrypoint = pass.PixelEntryPoint ?? "<unknown>",
+                    });
                 }
 
                 // Stage 4: Reflect each shader stage independently so parameters that are
@@ -664,6 +674,23 @@ internal sealed class CompilationPipeline
             if (dxcCompiler.IsValueCreated)
                 (dxcCompiler.Value as IDisposable)?.Dispose();
         }
+    }
+
+    // Parse a pass profile string ("vs_3_0", "ps_2_0") into (Major, Minor) for the KNIFX
+    // per-shader ShaderVersion. MGFX v10 ignores this; KNIFX v11 records it (and a non-(0,0)
+    // value selects KNI's GLSL-directory parse path). Defaults to (3,0) — the MojoShader GL
+    // ceiling — when the profile is absent or unparseable.
+    private static (int Major, int Minor) ParseShaderModel(string? profile)
+    {
+        if (!string.IsNullOrEmpty(profile))
+        {
+            var m = System.Text.RegularExpressions.Regex.Match(profile, @"_(\d)_(\d)");
+            if (m.Success
+                && int.TryParse(m.Groups[1].Value, out int major)
+                && int.TryParse(m.Groups[2].Value, out int minor))
+                return (major, minor);
+        }
+        return (3, 0);
     }
 
     // -------------------------------------------------------------------------

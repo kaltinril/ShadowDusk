@@ -27,10 +27,7 @@
    - **MonoGame v11** keeps the `MGFX` signature, bumps the version byte to 11, and accepts the range **[10, 11]** under that one signature.
    - **KNI's "v11" is KNIFX** — a brand-new container with its **own distinct 4-byte signature**, accepted only at version 11. KNI still reads `MGFX` **v10** (the migration path) but dropped `MGFX` v09.
 
-4. **ShadowDusk's `--mgfx-version 11` flag is a non-faithful stub** — it writes the `MGFX` signature with the version byte set to 11 on top of an unchanged **v10 body**. That is:
-   - **Dead-on-arrival in KNI** (KNI routes the `MGFX` signature to its MGFX path, which requires version == 10, so byte 11 is rejected; the KNIFX path needs the *KNIFX* signature, which we never write).
-   - **Unfaithful / unvalidated in MonoGame** (header may pass the [10,11] check, but the body is not a real v11 body; we have never render-validated it).
-   - **Therefore it must never be advertised as "v11 support."** It is a header-byte escape hatch, nothing more. Default and only validated value: **10**.
+4. **~~ShadowDusk's `--mgfx-version 11` flag is a non-faithful stub~~ — FIXED (2026-06-14).** The *old* flag wrote the `MGFX` signature + version byte 11 over an unchanged **v10 body**, which was **actually corrupt** against a real v11 reader (the `version > 10` branch's `ReadString()` desyncs the stream, the file does not load), and DOA in KNI. **It is now a faithful MGFX v11 writer**: MonoGame v11's only body delta vs v10 is two per-shader strings (`SourceFile`, `Entrypoint`, PR #8813), which `MgfxWriter` now emits when `MgfxVersion > 10`. **Render-proven in real MonoGame 3.8.5** (`validation/MonoGameV11`, maxd 0 vs v10). Full spec: [mgfx-v11-format-spec.md](mgfx-v11-format-spec.md). Still **opt-in** (3.8.5 pre-release); default = 10.
 
 5. **"Supporting v11" is two separate deliverables**, not a byte bump: a faithful MonoGame-`MGFX`-v11 writer *and* a faithful KNI-**KNIFX** writer (new signature + container). Each is its own reverse-engineering job. Both stay **auto-selected from the target, never a consumer flag** (Phase 35 guardrail #1).
 
@@ -115,7 +112,7 @@ proof pre-dates it) and **KNI DirectX** (`WinForms.DX11`). (Prior state: render 
 
 ## 8. Open questions for the implementer
 
-- Does MonoGame's v11 **body** differ structurally from v10, or is a v10 body labeled 11 actually parseable? (Unverified; `MGFXMinVersion=10` hints the loader *intends* to read v10-era files, but we have not confirmed a v10-bodied/11-labeled file renders. Resolve reproduce-first before trusting `--mgfx-version 11` on MonoGame.)
+- ~~Does MonoGame's v11 **body** differ structurally from v10?~~ **ANSWERED (2026-06-14): YES, minimally.** v11 adds exactly two per-shader strings (`SourceFile`, `Entrypoint`) after the `isVertexShader` bool, read conditionally on `version > 10` (PR #8813); everything else is byte-identical to v10. A v10-bodied/11-labeled file does **not** parse (the reader desyncs). ShadowDusk now writes a faithful v11 body, render-proven in MonoGame 3.8.5. Spec: [mgfx-v11-format-spec.md](mgfx-v11-format-spec.md).
 - ~~What are KNIFX's exact signature bytes, header layout, and body deltas vs MGFX v10?~~ **ANSWERED (2026-06-14)** — fully reverse-engineered from KNI source: signature `"KNIF"`, version int16 11, a **multi-backend directory** header, and a body that re-encodes nearly every count/index as `WritePackedInt` (zigzag+7bit) plus new `ShaderVersion` / compute-stage / `columnsActual` fields. Complete byte-exact spec + writer blueprint: [`knifx-format-spec.md`](knifx-format-spec.md).
 - Is there a target-detection seam that can auto-select MGFX-v10 vs MonoGame-v11 vs KNIFX without a consumer flag? (Same one-artifact-vs-auto-select design problem as Phase 33's Reach/HiDef and Area C's DXBC/DXIL.)
 

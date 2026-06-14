@@ -9,6 +9,17 @@ confirmed against KNI CHANGELOG v4.2.9001 (2025-11-02) and the MonoGame/mojoshad
 them the newest best experience, with an optional override to different outputs?" This is the grounded
 answer, plus the one decision-critical finding that reshapes the request.
 
+> **⚠️ Update (2026-06-14): the KNIFX deferral below is SUPERSEDED.** This doc originally recommended *not*
+> building KNIFX (defer until a proof that v10 renders worse on KNI). The owner explicitly **overrode** that:
+> v10 + v11 + KNIFX are all committed additive outputs so consumers can *use* the newer formats' features,
+> independent of whether v10 still loads. **KNIFX is now BUILT and render-proven:** `KnifxWriter` ships in
+> `ShadowDusk.Core`, the compile path emits it via `CompilerOptions.Container = Knifx`, and the KNIFX corpus
+> **loads + renders 10/10 in real KNI v4.2.9001** (`validation/KniDesktopGL knifx`, maxd 0 vs v10). The
+> byte-exact format is in [knifx-format-spec.md](knifx-format-spec.md). What remains from this doc is the
+> **format-selection seam itself** (the `CapabilityProfile` model + the detection helper in §§1-4), which is
+> still the right design for "auto-detect → newest + override" and is **not yet implemented**. Read the
+> sections below as the seam design; treat the "KNIFX is a smaller prize / defer it" conclusion as historical.
+
 ---
 
 ## TL;DR — the one finding that matters
