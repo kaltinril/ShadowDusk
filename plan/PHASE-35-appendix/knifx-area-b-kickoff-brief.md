@@ -1,7 +1,7 @@
 # Phase 35 appendix — KNIFX / KNI v11 (Area B) kickoff brief
 
-**Status:** Kickoff brief for Area B (no code changed). Companion to the [version-format research](knifx-vs-mgfx-v11-research.md).
-**Verified:** 2026-06-13 (re-verify the loader sources + version landscape when you start — these are live, evolving forks).
+**Status:** Kickoff brief for Area B (no code changed). Companions: the [version-format research](knifx-vs-mgfx-v11-research.md), the [shader-pipeline landscape](shader-pipeline-landscape-2026-06.md) (June-2026 verified runtime state), and the [auto-detect/override design](knifx-autoselect-design.md).
+**Verified:** 2026-06-13; runtime state **re-verified 2026-06-14** — KNI (`v4.2.9001`) and MonoGame (`v3.8.5-preview.6`) **both still use MojoShader for OpenGL**, so KNIFX stays a container over a still-MojoShader body and the "modern GLSL" path still has no runtime; the open item below (a real KNI v4.02 *render* validation) remains. Re-verify the loaders when you start — these are live, evolving forks.
 **Why this exists:** A self-contained handoff for the agent that picks up Phase 35 **Area B** (emit a newer format if a runtime ever needs it). The [research appendix](knifx-vs-mgfx-v11-research.md) establishes *what* the format landscape is; this brief turns it into an actionable starting point (goal, constraints, code touchpoints, open questions, first moves). Read the research doc first, then this.
 
 ---

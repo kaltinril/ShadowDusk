@@ -54,6 +54,14 @@ MonoGame's stock content pipeline (`MGCB`) shells out to `mgfxc`, which depends 
 | Vulkan (future) | SPIR-V | DXC → SPIR-V (direct) |
 | FNA *(Phase 39 — **rung 4 proven**, PS-only + VS-driven corpora; one `.fxb` serves all FNA backends)* | D3D9-style HLSL (SM ≤ 3) | vkd3d-shader → D3D9 bytecode → ShadowDusk `Fx2EffectWriter` → fx_2_0 (`.fxb`) |
 
+> **The feature ceiling is the *runtime's*, not the compiler's, and it differs by backend.** ShadowDusk's
+> frontend (DXC + SPIRV-Cross) is fully modern; the limits it enforces mirror what each consumer runtime can
+> actually load. The **OpenGL** target is capped to the MojoShader-era GL runtime (still MojoShader on both
+> MonoGame and KNI as of June 2026), so it rejects vertex texture fetch / texture arrays with `SD0210`. The
+> **DirectX** target has no such cap — it emits the SM4/5 features the GL path refuses (verified). So the
+> rejections are an OpenGL-runtime constraint, not a ShadowDusk limitation. Full state of the forks + which
+> backends are modern: [`../plan/PHASE-35-appendix/shader-pipeline-landscape-2026-06.md`](../plan/PHASE-35-appendix/shader-pipeline-landscape-2026-06.md).
+
 > **FNA's bar (Phase 39).** For FNA the reference compiler is not `mgfxc` but Microsoft's
 > `fxc.exe /T fx_2_0` (Windows-only, deprecated, FNA's blessed workflow runs it under Wine) —
 > so the FNA analog of the promise is: ShadowDusk's `.fxb`, loaded by **real FNA**
