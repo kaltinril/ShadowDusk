@@ -1,0 +1,59 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Phase 44 D - KNI v4.02 DESKTOP render validation (the non-browser KNI proof).
+
+    This is the KNI analogue of validation/Candidate: it compiles the SM3 PS-only
+    corpus with ShadowDusk's UNCHANGED EffectCompiler (default opts -> v10 GL .mgfx),
+    then loads those exact bytes into a REAL KNI (nkast) Effect on the SDL2.GL desktop
+    backend and renders the identical scene. Comparing this render to the MonoGame
+    DesktopGL render of the SAME bytes (validation/Candidate) and to the mgfxc goldens
+    (validation/Baseline) proves ShadowDusk's v10 output loads + renders correctly on a
+    CURRENT KNI runtime (v4.2.9001), not just in the browser and not just on MonoGame.
+
+    KNI reuses the Microsoft.Xna.Framework namespaces, so validation/Shared/*.cs (the
+    render recipe shared with the MonoGame harnesses) compiles against KNI verbatim -
+    same recipe, only the runtime under it differs, which keeps the comparison fair.
+
+    Intentionally NOT in ShadowDusk.slnx (like every validation/* harness) so the core
+    build/test never sees the nkast packages. Opted OUT of central package management
+    (like samples/ShaderFiddle.Web) so the KNI desktop pins stay local to this harness.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RollForward>Major</RollForward>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RootNamespace>ShadowDusk.Validation.Kni</RootNamespace>
+    <!-- KNI desktop GL platform selector + define, per the KNI DesktopGL template. -->
+    <DefineConstants>$(DefineConstants);DESKTOPGL</DefineConstants>
+    <KniPlatform>DesktopGL</KniPlatform>
+    <!-- Local pins (this harness only); keep nkast out of the core's central versions. -->
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup Label="KNI (nkast) - SDL2 desktop OpenGL runtime, v4.2.9001 (KNI v4.02 line)">
+    <PackageReference Include="nkast.Xna.Framework" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Xna.Framework.Content" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Xna.Framework.Graphics" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Xna.Framework.Audio" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Xna.Framework.Media" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Xna.Framework.Input" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Xna.Framework.Game" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Kni.Platform.SDL2.GL" Version="4.2.9001.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
+  </ItemGroup>
+
+  <!-- The render recipe shared with the MonoGame GL harnesses (EffectImageRenderer +
+       ShaderInputs). Compiled against KNI here so the scene is byte-for-byte the same. -->
+  <ItemGroup>
+    <Compile Include="..\Shared\*.cs" />
+  </ItemGroup>
+
+</Project>
