@@ -61,6 +61,14 @@ dotnet test ShadowDusk.slnx --filter "Category=Integration&Platform=OpenGL"
 dotnet pack src/ShadowDusk.Cli/ShadowDusk.Cli.csproj
 ```
 
+### Validation render drivers are the real bar — `dotnet test` does NOT run them
+
+`dotnet test` covers the unit / integration / image suites, but the **rung-4 render proofs** — the actual product bar (*"loads + renders like `mgfxc` / `fxc` in the real engine"*) — live in the **`validation/*` console drivers**. These are deliberately **not in `ShadowDusk.slnx`, not run by `dotnet test`, and not (yet) in CI**; each needs a real GL / DX / FNA driver and most pair with a Python `compare_*.py`. So when a change touches **shader output, transpilation, the MGFX/KNIFX writer, render state, or matrix handling, a green `dotnet test` is necessary but NOT sufficient** — you must also run the relevant `validation/*` driver and confirm it still matches the reference compiler. The **authoritative list of every driver + its exact run command is [docs/validation-matrix.md](docs/validation-matrix.md) §6.** The KNI proofs in particular (`validation/KniDesktopGL`, `validation/KniVsDriven`) are how we prove the *KNI* runtime, not just MonoGame — e.g. the issue #70 VS fix is render-proven on KNI via:
+
+```bash
+dotnet run --project validation/KniVsDriven    # real KNI v4.02 OpenGL, VS-driven, vs mgfxc golden
+```
+
 ### Integration-test performance (Phase 21)
 
 `ShadowDusk.Integration.Tests` is the only project touching heavyweight external machinery (CLI child-process spawn, native DXC + SPIRV-Cross). A slow run is **environmental, not algorithmic** — usually antivirus on-access scanning of cold native binaries. Pass `--settings ShadowDusk.runsettings` for the 5-min `TestSessionTimeout` backstop. **Full troubleshooting (Defender exclusions, `CliBinaryFixture` reuse, timeout layers): [docs/integration-test-performance.md](docs/integration-test-performance.md).**
