@@ -93,6 +93,67 @@ public sealed class MgfxWriterTests
         bytes[4].Should().Be(11);
     }
 
+    // -------------------------------------------------------------------------
+    // MGFX v11 per-shader SourceFile + Entrypoint (MonoGame PR #8813). v11 writes
+    // them after the isVertexShader bool and before the bytecode length; v10 omits
+    // them. Header is 10 bytes (MGFX[4] + version[1] + profile[1] + effectKey[4]);
+    // body starts with the cbuffer count then the shader count.
+    // -------------------------------------------------------------------------
+
+    private static ShaderIR OneShaderIR(string sourceFile, string entrypoint) => new()
+    {
+        Shaders = new[]
+        {
+            new CompiledShaderBlob(new byte[] { 1, 2, 3 }, ShaderStage.Pixel)
+            {
+                SourceFile = sourceFile,
+                Entrypoint = entrypoint,
+            },
+        },
+    };
+
+    [Fact]
+    public void Shaders_V10_OmitsSourceFileAndEntrypoint()
+    {
+        var bytes = Write(OneShaderIR("foo.fx", "PSMain"),
+            new MgfxWriterOptions(MgfxProfile.OpenGL, MgfxVersion: 10));
+        using var r = ReaderFor(bytes);
+        r.BaseStream.Position = 10;       // skip header
+        r.ReadInt32().Should().Be(0);     // constant-buffer count
+        r.ReadInt32().Should().Be(1);     // shader count
+        r.ReadBoolean();                  // isVertexShader
+        r.ReadInt32().Should().Be(3);     // v10: bytecode length immediately (no strings)
+    }
+
+    [Fact]
+    public void Shaders_V11_WritesSourceFileThenEntrypointBeforeBytecode()
+    {
+        var bytes = Write(OneShaderIR("foo.fx", "PSMain"),
+            new MgfxWriterOptions(MgfxProfile.OpenGL, MgfxVersion: 11));
+        using var r = ReaderFor(bytes);
+        r.BaseStream.Position = 10;
+        r.ReadInt32().Should().Be(0);          // constant-buffer count
+        r.ReadInt32().Should().Be(1);          // shader count
+        r.ReadBoolean();                       // isVertexShader
+        r.ReadString().Should().Be("foo.fx");  // v11: SourceFile
+        r.ReadString().Should().Be("PSMain");  // v11: Entrypoint
+        r.ReadInt32().Should().Be(3);          // then bytecode length
+    }
+
+    [Fact]
+    public void Shaders_V11_DefaultsToUnknownWhenUnset()
+    {
+        var bytes = Write(new ShaderIR { Shaders = new[] { new CompiledShaderBlob(new byte[] { 9 }, ShaderStage.Vertex) } },
+            new MgfxWriterOptions(MgfxProfile.OpenGL, MgfxVersion: 11));
+        using var r = ReaderFor(bytes);
+        r.BaseStream.Position = 10;
+        r.ReadInt32();                          // cbuffer count
+        r.ReadInt32();                          // shader count
+        r.ReadBoolean();                        // isVertexShader
+        r.ReadString().Should().Be("<unknown>");  // SourceFile default (mgfxc's own fallback)
+        r.ReadString().Should().Be("<unknown>");  // Entrypoint default
+    }
+
     [Fact]
     public void Header_OpenGlProfileId()
     {

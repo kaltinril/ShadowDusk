@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Phase 35 Area B - MGFX v11 RENDER validation against a v11-capable MonoGame.
+
+    MonoGame 3.8.5 (develop / preview line) is the version that shipped MGFX v11 (PR #8813,
+    "Better Runtime Shader Compiler Errors": the per-shader SourceFile + Entrypoint strings).
+    Its Effect loader accepts the range [MGFXMinVersion=10, MGFXVersion=11]. This harness
+    compiles the SM3 PS-only corpus with ShadowDusk's EffectCompiler at MgfxVersion 11 (or 10
+    via the `v10` arg) and renders those bytes in real MonoGame DesktopGL 3.8.5-preview.6, to
+    prove the v11 byte stream LOADS + renders (a malformed v11 throws on load). Comparing the
+    v11 render to the v10 render (both in 3.8.5) confirms the diagnostic-only v11 strings don't
+    change the picture.
+
+    3.8.5 is PRE-RELEASE: this is VALIDATION only, NOT the product baseline (still 3.8.2.1105 /
+    v10). Intentionally NOT in ShadowDusk.slnx; opted out of central package management so the
+    preview pin stays local to this harness.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RootNamespace>ShadowDusk.Validation.MonoGameV11</RootNamespace>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup Label="MonoGame 3.8.5 (the develop/preview line that shipped MGFX v11)">
+    <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.5-preview.6" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
+  </ItemGroup>
+
+  <!-- Shared render recipe (same scene the other GL harnesses use). -->
+  <ItemGroup>
+    <Compile Include="..\Shared\*.cs" />
+  </ItemGroup>
+
+</Project>

@@ -28,4 +28,19 @@ public sealed record CompiledShaderBlob(
     /// compilation pipeline overrides it from the pass's profile string.
     /// </summary>
     public (int Major, int Minor) ShaderModel { get; init; } = (3, 0);
+
+    /// <summary>
+    /// The source <c>.fx</c> file path, written per shader by <b>MGFX v11+</b>
+    /// (diagnostic-only, used only in shader error messages). MGFX v10 and KNIFX omit it.
+    /// Defaults to <c>"&lt;unknown&gt;"</c>, mgfxc's own null-fallback (render-faithful);
+    /// the pipeline populates it from the source file name.
+    /// </summary>
+    public string SourceFile { get; init; } = "<unknown>";
+
+    /// <summary>
+    /// The HLSL entry-point function name, written per shader by <b>MGFX v11+</b>
+    /// (diagnostic-only). MGFX v10 and KNIFX omit it. Defaults to <c>"&lt;unknown&gt;"</c>;
+    /// the pipeline populates it from the pass's vertex/pixel entry point.
+    /// </summary>
+    public string Entrypoint { get; init; } = "<unknown>";
 }

@@ -320,6 +320,9 @@ internal sealed class CompilationPipeline
                         // so MonoGame binds the right vertex element. Empty for DX / non-GL.
                         Attributes = compileOutput.Attributes,
                         ShaderModel = ParseShaderModel(pass.VertexProfile),
+                        // Diagnostic strings written only by MGFX v11+ (ignored by v10/KNIFX).
+                        SourceFile = options.SourceFileName ?? "<unknown>",
+                        Entrypoint = pass.VertexEntryPoint ?? "<unknown>",
                     });
                 }
 
@@ -348,6 +351,9 @@ internal sealed class CompilationPipeline
                     compiledShaderBlobs.Add(new CompiledShaderBlob(compileOutput.Blob.Value, ShaderStage.Pixel)
                     {
                         ShaderModel = ParseShaderModel(pass.PixelProfile),
+                        // Diagnostic strings written only by MGFX v11+ (ignored by v10/KNIFX).
+                        SourceFile = options.SourceFileName ?? "<unknown>",
+                        Entrypoint = pass.PixelEntryPoint ?? "<unknown>",
                     });
                 }
 

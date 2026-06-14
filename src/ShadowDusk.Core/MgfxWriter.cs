@@ -78,7 +78,7 @@ public sealed class MgfxWriter
         using (var bodyBw = new BinaryWriter(bodyMs, Encoding.UTF8, leaveOpen: true))
         {
             WriteConstantBuffers(bodyBw, ir);
-            WriteShaders(bodyBw, ir);
+            WriteShaders(bodyBw, ir, options.MgfxVersion);
             WriteParameters(bodyBw, ir);
             WriteTechniques(bodyBw, ir);
             bodyBw.Flush();
@@ -137,12 +137,25 @@ public sealed class MgfxWriter
         }
     }
 
-    private static void WriteShaders(BinaryWriter bw, ShaderIR ir)
+    private static void WriteShaders(BinaryWriter bw, ShaderIR ir, byte mgfxVersion)
     {
         bw.Write(ir.Shaders.Count);
         foreach (var blob in ir.Shaders)
         {
             bw.Write(blob.Stage == ShaderStage.Vertex); // isVertexShader (bool)
+
+            // MGFX v11+ writes the source file + entry point per shader, immediately after
+            // the isVertexShader bool and before the bytecode length (MonoGame PR #8813,
+            // read conditionally on version > 10 by Shader.cs). They are diagnostic-only
+            // (shader error messages) and do not affect rendering, but they shift the byte
+            // stream, so a v11 file MUST include them or the reader's ReadString consumes
+            // the bytecode-length bytes and desyncs. mgfxc's own null-fallback is "<unknown>".
+            if (mgfxVersion > 10)
+            {
+                bw.Write(blob.SourceFile);
+                bw.Write(blob.Entrypoint);
+            }
+
             bw.Write(blob.Bytes.Length);
             bw.Write(blob.Bytes);
 
