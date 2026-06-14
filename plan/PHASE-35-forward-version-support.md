@@ -18,8 +18,19 @@ Together: **support newer versions by making one output (or auto-selected output
 
 ## Context snapshot (as of 2026-06-04 — re-verify when starting)
 
+> **2026-06-14 live-source re-verification (full detail: [shader-pipeline-landscape-2026-06.md](PHASE-35-appendix/shader-pipeline-landscape-2026-06.md)).**
+> - **Both forks still use MojoShader for OpenGL** (verified against live source): KNI latest `v4.2.9001`
+>   (Nov 2025; 2026 commits are non-shader) — `ShaderProfileGL.cs` "Use MojoShader to convert the HLSL
+>   bytecode to GLSL"; MonoGame latest `v3.8.5-preview.6` (May 2026, **still preview**) — `ShaderProfile.OpenGL.cs`
+>   "using MojoShader". Neither has shipped the DXC/SPIRV-Cross GL pipeline. So the "modern GLSL on OpenGL"
+>   capability still has **no runtime** to consume it; KNIFX is a container over a still-MojoShader body.
+> - **The MojoShader limit is OpenGL-only.** ShadowDusk's **DirectX** target already generates SM4/5 features
+>   that the GL path rejects with SD0210 (empirically verified 2026-06-14: vertex texture fetch and
+>   `Texture2DArray` compile on `DirectX_11`, SD0210 on `OpenGL`). The modern-shader frontier for these
+>   engines is **DirectX (now) and Vulkan/DX12** (MonoGame 3.8.5), not OpenGL — i.e. Areas C/D below.
+
 - **Pinned today:** MonoGame **3.8.2.1105** (`Directory.Packages.props`); MGFX default **v10** (`src/ShadowDusk.Core/CompilerOptions.cs` → `MgfxVersion = 10`).
-- **Newer exists:** MonoGame **3.8.4.1** (stable; confirmed latest stable 3.8.x on nuget.org as of 2026-06-05 — Area A validated against it); **3.8.5-* preview/develop only** (Vulkan + DX12, *not stable* — keeps Areas C/D gated).
+- **Newer exists:** MonoGame **3.8.4.1** (latest *stable* 3.8.x, Area A validated); **3.8.5** is at **preview.6 (2026-05-22), still not stable** — its Vulkan + DX12 backends keep Areas C/D gated. KNI latest **v4.2.9001** (Nov 2025).
 - **DXIL path:** DXC `ps_6_0`/`vs_6_0` → DXIL is **built** ("for DX12/KNI", Phase 4) but **never render-validated in a real MonoGame DX12 runtime** (none existed). `plan.md` calls DX12 "✅ Works" — structural/theoretical, not rung-4.
 - **MGFX v11 / KNIFX — these are TWO different formats, not one (see [appendix research](PHASE-35-appendix/knifx-vs-mgfx-v11-research.md)):** MonoGame "v11" keeps the `MGFX` signature (loader accepts range [10,11]); KNI "v11" is **KNIFX**, a *new distinct signature* (KNI still reads `MGFX` v10 as a migration path). The `--mgfx-version 11` flag is a **non-faithful stub** — it bumps only the header byte on a v10 body, so it is **dead-on-arrival in KNI** and unvalidated in MonoGame; never advertise it as "v11 support." Phase 24 found v11 *not needed* for current render *parity* (v10 already renders in KNI WebGL) — but that predates KNI v4.02/KNIFX and weighed loadability, not the KNIFX XNA-compat render fixes. KNIFX background: `DONE/PHASE-33-webgl2-es300-hidef-output.md` § KNI converter.
 - **Vulkan:** `PHASE-32-vulkan-backend.md` is **parked** on "no MonoGame/KNI Vulkan runtime + no mgfxc-Vulkan baseline." MonoGame 3.8.5 (Vulkan + a DXC→SPIR-V shader profile) **removes that blocker**.

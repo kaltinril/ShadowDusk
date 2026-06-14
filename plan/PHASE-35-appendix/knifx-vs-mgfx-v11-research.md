@@ -1,7 +1,18 @@
 # Phase 35 appendix — MGFX v10 vs v11 vs KNIFX: the version-format research
 
 **Status:** Research record (findings captured, no code changed).
-**Verified:** 2026-06-12 (re-verify the loader source + version landscape when you start Area B — these are live, evolving forks).
+**Verified:** 2026-06-12; **re-verified against live source 2026-06-14** (see update below).
+
+> **2026-06-14 verification update (closes §7/§8 "re-verify the forks" items).** Re-checked both forks
+> against live source via the GitHub API. **KNI:** latest release `v4.2.9001` (Nov 2025); `main` has 2026
+> commits but none touch the shader pipeline; its GL effect compiler is **still MojoShader**
+> (`...Graphics.MojoProcessor/EffectCompiler/ShaderProfileGL.cs`: "Use MojoShader to convert the HLSL
+> bytecode to GLSL"). **MonoGame:** latest `v3.8.5-preview.6` (May 2026, still preview); GL is **still
+> MojoShader** (`ShaderProfile.OpenGL.cs`; `MonoGame.Library.MojoShader` package ref), though 3.8.5 adds
+> modern Vulkan + DX12 backends. So KNIFX remains a *container* over a still-MojoShader body, and our v10
+> still loads in KNI via its MGFX-v10 migration path. Full evidence + the broader landscape (which backends
+> are modern, that the MojoShader limit is OpenGL-only, that ShadowDusk uses SPIRV-Cross not MojoShader):
+> **[shader-pipeline-landscape-2026-06.md](shader-pipeline-landscape-2026-06.md)**.
 **Why this exists:** Area B ("emit a newer format if a runtime ever needs it") was scoped on the assumption that "v11 / KNIFX" is *one* thing. It is not. This doc captures the research behind that correction so the implementer does not have to re-derive it. Provenance: a KNI-Discord user noted ShadowDusk emits "the older MonoGame v10 Effect format" and pointed at KNI's newer KNIFX format; the questions that follow ("who defines these versions? is v11 shared?") drove a source-level investigation of both runtime forks' effect loaders.
 
 ---
