@@ -101,16 +101,22 @@ KNIFX shipped in **KNI v4.02 (2025-10-19)** with a new compiler tool **KNIFXC**.
 - **Re-scope Area B from one task to two.** Emitting "v11" means either (or both): a faithful MonoGame `MGFX`-v11 writer, and/or a faithful KNI **KNIFX** writer (new signature + reverse-engineered container). Pick per the runtime actually being served.
 - **Default stays v10**; any newer emission is **auto-selected from the target**, never a consumer-set flag (guardrail #1). `--mgfx-version` remains a non-required escape hatch.
 - **The existing `--mgfx-version 11` path is not a head start** — it is wrong for both forks and would need to be either fixed into a real writer or left clearly documented as a raw byte override.
-- **v10 keeps working forward regardless** (§3), so Area B is "do we want the KNIFX-era *quality fixes* on KNI?", not "do we need it to load?". Likely never required for loading; only for parity with new-KNI render behavior.
+- **v10 keeps working forward regardless** (§3), so the driver for Area B is **giving consumers the KNIFX-era *quality fixes / new-container features*** — *not* loadability (v10 already loads). **Decision (2026-06-14): build it.** "v10 keeps loading" is settled and is a reason v10 stays the safe *default*, **not** a reason to skip emitting KNIFX. Both writers (MonoGame `MGFX`-v11 and KNI KNIFX) are committed additive outputs.
 
-## 7. Open validation gap (do this before claiming KNI parity)
+## 7. Open validation gap — ✅ desktop CLOSED (2026-06-14)
 
-Everything render-validated to date targeted **MonoGame** (3.8.2.1105 floor, 3.8.4.1 stable; 3.8.5 source-read only). **We have never rung-4 render-validated ShadowDusk's v10 output against KNI v4.02's loader specifically** — a *different fork*. The cheap, high-value next step is to confirm "v10 still renders pixel-equivalent in KNI v4.02 web," replacing the current assumption with evidence. (Phase 24 did real-browser KNI render proof, but pre-dates v4.02 / KNIFX.)
+**ShadowDusk's v10 output is now render-validated against KNI v4.02 specifically.** `validation/KniDesktopGL`
+loads our v10 GL `.mgfx` into a **real KNI `Effect` v4.2.9001 (SDL2.GL desktop)** and renders the 10-shader
+corpus **pixel-identical to MonoGame (maxd 0)** and **within maxd 1 of the mgfxc goldens** (`compare_kni.py`,
+same-backend GL, tol 4/255), with a runtime guard proving the runtime is KNI not MonoGame. So the prior
+assumption ("v10 *probably* still renders on the KNI fork") is now **evidence**. This is the reproduce-first
+baseline for the KNIFX writer (Phase 35 Area B). Still open: a **fresh WebGL** run on v4.02 (Phase 24's browser
+proof pre-dates it) and **KNI DirectX** (`WinForms.DX11`). (Prior state: render proof was MonoGame-only.)
 
 ## 8. Open questions for the implementer
 
 - Does MonoGame's v11 **body** differ structurally from v10, or is a v10 body labeled 11 actually parseable? (Unverified; `MGFXMinVersion=10` hints the loader *intends* to read v10-era files, but we have not confirmed a v10-bodied/11-labeled file renders. Resolve reproduce-first before trusting `--mgfx-version 11` on MonoGame.)
-- What are KNIFX's exact signature bytes, header layout, and body deltas vs MGFX v10? (Read `KNIFXHeader` + the KNIFXC compiler in the KNI repo; reverse-engineer from a KNIFXC-produced sample.)
+- ~~What are KNIFX's exact signature bytes, header layout, and body deltas vs MGFX v10?~~ **ANSWERED (2026-06-14)** — fully reverse-engineered from KNI source: signature `"KNIF"`, version int16 11, a **multi-backend directory** header, and a body that re-encodes nearly every count/index as `WritePackedInt` (zigzag+7bit) plus new `ShaderVersion` / compute-stage / `columnsActual` fields. Complete byte-exact spec + writer blueprint: [`knifx-format-spec.md`](knifx-format-spec.md).
 - Is there a target-detection seam that can auto-select MGFX-v10 vs MonoGame-v11 vs KNIFX without a consumer flag? (Same one-artifact-vs-auto-select design problem as Phase 33's Reach/HiDef and Area C's DXBC/DXIL.)
 
 ## 9. Sources

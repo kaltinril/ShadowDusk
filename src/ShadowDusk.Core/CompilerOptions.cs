@@ -50,8 +50,18 @@ public sealed class CompilerOptions
     /// The MGFX container version to emit. Defaults to <c>10</c>, which loads across the
     /// supported MonoGame/KNI runtimes (the backwards-compatible choice). Ignored for
     /// <see cref="PlatformTarget.Fna"/>, whose output is the D3D9 fx_2_0 container, not MGFX.
+    /// Also ignored when <see cref="Container"/> is <see cref="EffectContainer.Knifx"/>.
     /// </summary>
     public int MgfxVersion { get; init; } = 10;
+
+    /// <summary>
+    /// Which effect container to emit. Defaults to <see cref="EffectContainer.Mgfx"/>
+    /// (MGFX v10), which loads on every MonoGame/KNI runtime, the seamless default.
+    /// Set <see cref="EffectContainer.Knifx"/> to opt into KNI's additive KNIFX v11
+    /// container (KNI v4.02+). This is a non-required escape hatch / additive target,
+    /// never needed for correct v10 output. Ignored for <see cref="PlatformTarget.Fna"/>.
+    /// </summary>
+    public EffectContainer Container { get; init; } = EffectContainer.Mgfx;
 
     /// <summary>
     /// Which backend compiles HLSL to SM5 DXBC when <see cref="Target"/> is

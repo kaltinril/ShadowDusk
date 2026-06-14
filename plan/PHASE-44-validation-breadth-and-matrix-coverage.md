@@ -1,6 +1,6 @@
 # Phase 44 — Validation breadth & matrix coverage
 
-**Status:** 🟡 In progress (started 2026-06-14). **A done; B (VTF) done, B (texture-array render) blocked on a MonoGame API gap; C/D remain.** Owns the living [validation matrix](../docs/validation-matrix.md).
+**Status:** 🟡 In progress (started 2026-06-14). **A done; B (VTF) done, B (texture-array render) blocked on a MonoGame API gap; D (KNI v4.02 *desktop* render) done 2026-06-14, D (WebGL refresh + KNI DirectX) remains; C remains.** Owns the living [validation matrix](../docs/validation-matrix.md).
 **Track:** Validation / fidelity.
 
 ## Goal
@@ -48,11 +48,27 @@ arm-vs-arm, same scene, only the compiler differs (the `VsDrivenDx` pattern).
 Promote the manual `validation/*` render gates (MonoGame GL/DX, FNA) into CI jobs where a software/headless
 driver exists (GL already renders in CI on Linux via Mesa; DX/FNA need the Windows runner + a driver story).
 
-### D. KNI v4.02 render validation — (gap, shared with Phase 35 Area B)
-Refresh the Phase-24 browser harness against **KNI v4.02** and add a KNI **desktop** (`SDL2.GL`) render
-check, so KNI stops being browser-only/dated in the matrix. This is also Phase 35 Area B's reproduce-first
-gate ("does our v10 render correctly on current KNI, or is KNIFX actually needed?"). Needs a current KNI
-runtime/harness.
+### D. KNI v4.02 render validation — ✅ desktop done (2026-06-14); WebGL refresh + KNI DirectX remain
+Add a KNI **desktop** (`SDL2.GL`) render check and refresh the Phase-24 browser harness against **KNI v4.02**,
+so KNI stops being browser-only/dated in the matrix. This is Phase 35 Area B's **reproduce-first** step: prove
+ShadowDusk's v10 output **loads + renders pixel-equivalent in real KNI v4.2.9001** to establish the baseline
+rig. KNIFX is a **committed** additive deliverable (per the 2026-06-14 direction), so this harness is not a
+"decide whether KNIFX is needed" gate, it is the **validation rig the faithful KNIFX writer will be checked
+against** (v10 baseline first, then KNIFX output on the same rig).
+
+**Done — desktop (`validation/KniDesktopGL`, 2026-06-14):** a new harness compiles the 10-shader SM3 PS corpus
+with the unchanged `EffectCompiler` (default -> v10 GL) and loads those bytes into a **real KNI `Effect`
+v4.2.9001 on SDL2.GL**. A runtime-integrity guard asserts the XNA assembly is KNI's (`Xna.Framework.*`
+4.2.9001.x), not MonoGame's, so a render can't be mislabeled. Result: **10/10 load + render**; pixel-compared
+(`compare_kni.py`, GL<->GL, tol 4/255) the KNI render is **maxd 0 vs the MonoGame render of the same bytes**
+and **<= maxd 1 vs the mgfxc goldens** (Scanlines/Dots differ by 1, driver rounding). So v10 is **render-proven
+on the current KNI v4.02 desktop runtime** -> matrix §1 KNI OpenGL cell promoted to ✅. The packages
+(`nkast.Xna.Framework[.*]` + `nkast.Kni.Platform.SDL2.GL` @ 4.2.9001.\*) restore from nuget.org; the project is
+not in `ShadowDusk.slnx` and opts out of central package management. README: `validation/KniDesktopGL/README.md`.
+
+**Remaining:** (1) refresh the Phase-24 **WebGL/Blazor** harness against the v4.02 `nkast.Kni.Platform.Blazor.GL`
+pin and record a fresh `RESULTS` (the existing run pre-dates v4.02); (2) **KNI DirectX** (`WinForms.DX11`) load
++ render, still untested. Desktop GL render-in-CI is Phase 44 C (driver story on the runners).
 
 ## Gating
 - A + B: doable now (no external blocker).

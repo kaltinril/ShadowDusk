@@ -275,7 +275,10 @@ public sealed class MgfxWriter
     // Graphics/States/{TargetBlendState,BlendState,DepthStencilState,RasterizerState}.cs).
     // ----------------------------------------------------------------------------
 
-    private static void WriteRenderStateBlock(BinaryWriter bw, RenderStateBlock block)
+    // internal (not private): the KNIFX v11 render-state blocks are byte-identical to
+    // MGFX v10's (same fields, same order, same encodings — verified against KNI's
+    // KNIFXWriter11.WriteBlendState/Depth/Rasterizer), so KnifxWriter reuses these verbatim.
+    internal static void WriteRenderStateBlock(BinaryWriter bw, RenderStateBlock block)
     {
         WriteBlendState(bw, block);
         WriteDepthStencilState(bw, block);

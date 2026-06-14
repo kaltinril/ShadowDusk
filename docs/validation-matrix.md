@@ -36,20 +36,30 @@ What ShadowDusk emits for each runtime/target, and the best proof to date. (Form
 | Runtime | DirectX (DX11) | OpenGL / GLES | Vulkan | Metal |
 |---|---|---|---|---|
 | **MonoGame** | ✅ DXBC SM5 (MGFX v10) — rendered on Windows vs `mgfxc` + `fxc` oracle (PS corpus + VS-matrix) | ✅ GLSL (MGFX v10) — rendered on Linux (Mesa) + Windows vs `mgfxc` (PS corpus + VS-driven) | 🚫 SPIR-V — MonoGame 3.8.5 Vulkan still **preview**; ShadowDusk DXC->SPIR-V path **parked** (Phase 32) | ⬛ MSL — ShadowDusk Metal target is a **stub** |
-| **KNI** | 🟡 DXBC SM5 (MGFX v10) — same bytes as MonoGame DX (likely loads), **not load/render-tested in KNI** (`WinForms.DX11`/`UAP.DX11`) | 🌐 GLSL (MGFX v10) — rendered in **KNI WebGL/Blazor (Phase 24)** but **pre-v4.02**; KNI **desktop** (`SDL2.GL`) not separately tested | — KNI ships **no Vulkan** platform | — KNI iOS uses **GL**, no Metal |
+| **KNI** | 🟡 DXBC SM5 (MGFX v10) — same bytes as MonoGame DX (likely loads), **not load/render-tested in KNI** (`WinForms.DX11`/`UAP.DX11`) | ✅ GLSL (MGFX v10) — **render-proven on KNI v4.2.9001 desktop (SDL2.GL)**: v10 loads + renders **pixel-identical to MonoGame (maxd 0)** and **within maxd 1 of the mgfxc goldens** across the 10-shader corpus (`validation/KniDesktopGL`, 2026-06-14). Also browser-proven in KNI WebGL/Blazor (Phase 24; that run pre-dates v4.02, refresh pending) | — KNI ships **no Vulkan** platform | — KNI iOS uses **GL**, no Metal |
 | **FNA** | ✅ — *one* fx_2_0 `.fxb` serves **all** FNA3D backends (D3D11 / Vulkan / OpenGL / Metal) via FNA3D + MojoShader; rendered vs `fxc /T fx_2_0` (PS + VS-driven) | ✅ (same `.fxb`) | ✅ (same `.fxb`) | ✅ (same `.fxb`) |
 
-**Reading it:** the rock-solid, render-proven cells today are **MonoGame OpenGL, MonoGame DirectX, and FNA
-(all backends)**. The biggest honest gaps are **KNI render validation on a current (v4.02) runtime** and the
-**modern DirectX features** (next section).
+**Reading it:** the rock-solid, render-proven cells today are **MonoGame OpenGL, MonoGame DirectX, FNA
+(all backends), and now KNI OpenGL on the current v4.02 desktop runtime** (`validation/KniDesktopGL`,
+2026-06-14). The remaining honest gaps are **KNI DirectX** (untested), a **browser refresh** of the KNI
+WebGL proof on v4.02 (the Phase-24 run pre-dates it), and the **modern DirectX features** (next section).
 
 ## 2. Shader format / version / graphics profile
+
+> **Format roadmap (committed):** ShadowDusk will emit **v10 *and* v11 *and* KNIFX**, each a real, faithful
+> output a consumer can select and use, not just v10 with a promise that newer runtimes still load it. v10
+> stays the **default** because it loads on every MGFX-lineage runtime (the seamless baseline), but v11 and
+> KNIFX are **first-class additive outputs** so consumers can use the newer containers' features (and take the
+> bytes for their own runtime if they like). Forward-compatibility of v10 is a nice-to-have, **not** a reason
+> to stop short of v11/KNIFX. The newer formats are opt-in or auto-selected from the target, **never a flag a
+> consumer must set to get correct output** (the seamless rule still holds). Build path: Phase 44 D (prove the
+> KNI v4.02 render harness) -> Phase 35 Area B (the faithful writers).
 
 | Format / profile | Applies to | Status | Notes |
 |---|---|---|---|
 | **MGFX v10** | MonoGame, KNI | ✅ | The default and the basis of every ✅ above. The one container every MGFX-lineage runtime loads. |
-| **MGFX v11** (MonoGame) | MonoGame 3.8.5+ | 🟡 | `--mgfx-version 11` is a header-byte **stub**, not a faithful v11 body. v10 loads forward in 3.8.5's `[10,11]` range (source-verified). 3.8.5 still **preview**. |
-| **KNIFX v11** (KNI) | KNI 4.02+ | ⬛ | No KNIFX writer. Our v10 loads in KNI via its MGFX-v10 migration path. KNIFX = container + parity fixes over a still-MojoShader body. See [`PHASE-35-appendix/knifx-vs-mgfx-v11-research.md`](../plan/PHASE-35-appendix/knifx-vs-mgfx-v11-research.md). |
+| **MGFX v11** (MonoGame) | MonoGame 3.8.5+ | 🟡 **committed, building** | **A faithful v11 writer is a planned additive output** (Phase 35 Area B) so consumers can use the v11 container, *not* a "won't do." Today `--mgfx-version 11` only flips the header byte over a v10 body (a stub, compile-only), so the *faithful* writer is still to come. v10 also keeps loading forward in 3.8.5's `[10,11]` range, that is a **convenience, not the reason to skip v11.** |
+| **KNIFX v11** (KNI) | KNI 4.02+ | ✅ **render-proven (corpus); feature parity pending** | ShadowDusk **emits KNIFX v11** today (`CompilerOptions.Container = Knifx`, `KnifxWriter`): signature `KNIF`, multi-backend directory, packed-int body, GL GLSL-version directory. **Render-proven 2026-06-14**: the KNIFX corpus **loads + renders 10/10 in real KNI v4.2.9001** (`validation/KniDesktopGL knifx`), **maxd 0 vs the v10 render**. Still **opt-in / experimental**: not auto-selected yet, and the KNIFX-specific fixes (optimized `Matrix4x4` via `columnsActual`, sampler-without-texture) are **not yet validated against a KNIFXC golden** (the corpus does not exercise them; `columnsActual` defaults to `columns`). KNIFX = a new container + those parity fixes over a still-MojoShader body. Spec: [`PHASE-35-appendix/knifx-format-spec.md`](../plan/PHASE-35-appendix/knifx-format-spec.md). |
 | **Reach** (WebGL1 / GL ES 1.00) | MonoGame, KNI GL | ✅ | The default GL output dialect. |
 | **HiDef** (WebGL2 / GL ES 3.00) | KNI GL | 🌐 | The `#version 300`-guarded output; browser-proven (Phase 24 SD-HIDEF), pre-v4.02. |
 
@@ -61,7 +71,7 @@ actually run.
 
 | OS | Compile | Render proof that ran here |
 |---|---|---|
-| **Windows** | ✅ (CI) | ✅ DirectX (validation harnesses) + ✅ FNA (`fxc` oracle). GL render **soft-skips** (runners expose only GDI Generic GL). |
+| **Windows** | ✅ (CI) | ✅ DirectX (validation harnesses) + ✅ FNA (`fxc` oracle) + ✅ **KNI OpenGL desktop** (`validation/KniDesktopGL`, real SDL2.GL driver). MonoGame GL render **soft-skips** in CI (runners expose only GDI Generic GL), but renders on a real desktop driver. |
 | **Linux** | ✅ (CI, byte-identical) | ✅ OpenGL (Mesa software GL, the `ShadowDusk.ImageTests` suite runs in CI here). |
 | **macOS** | ✅ (CI, byte-identical) | (no separate render run — transferred via byte-identity: the output equals the Windows/Linux bytes, so their render proofs carry over). |
 | **Web (WASM / Blazor)** | ✅ (in-browser DXC+SPIRV-Cross frontend, Phase 23) | 🌐 KNI WebGL (Phase 24 Playwright harness), pre-v4.02. |
@@ -103,6 +113,7 @@ compile rung for both is pinned by `ValidationMatrixCoverageTests`; VTF render b
 | **Real FNA** render vs `fxc /T fx_2_0` | `validation/FnaValidation` | manual | `dotnet run --project validation/FnaValidation` |
 | Forward-compat (newer MonoGame loads our v10) | `validation/ForwardCompat` | manual | `validation/ForwardCompat/run-forwardcompat.ps1` |
 | **KNI WebGL** render (browser) | `tests/ShadowDusk.BrowserTests` (Playwright) | manual | see `tests/ShadowDusk.BrowserTests/README.md` |
+| **Real KNI OpenGL desktop** render vs mgfxc + MonoGame (KNI v4.02, SDL2.GL) | `validation/KniDesktopGL` + `compare_kni.py` | manual | `dotnet run --project validation/KniDesktopGL` then `python validation/compare_kni.py` |
 
 **The "test programmatically" goal:** the manual `validation/*` harnesses are the render-proof for the
 strongest cells but are not yet wired into CI. The path to a fully self-checking matrix is (a) promote the
@@ -115,11 +126,11 @@ passing test). Tracked as a gap below.
 | Gap | Achievable here? | Notes |
 |---|---|---|
 | **DirectX modern features render** | partly **done** | **VTF ✅** (`validation/DxModernFeatures`, vkd3d == `fxc` maxd 0). Texture-array render is **blocked** on MonoGame's missing public `Texture2DArray` binding (a runtime-API gap, not ours). |
-| **KNI v4.02 render** (desktop `SDL2.GL` + a fresh WebGL run) | partly | Needs a current KNI runtime; browser path can refresh the Phase-24 harness. Closes the biggest 🌐/🟡 cells. |
+| **KNI v4.02 render** (desktop `SDL2.GL` + a fresh WebGL run) | **desktop done** | ✅ **Desktop SDL2.GL render-proven on KNI v4.2.9001** (`validation/KniDesktopGL`, 2026-06-14): v10 renders maxd 0 vs MonoGame, ≤1 vs mgfxc goldens, 10/10. Remaining: a **fresh WebGL run** on v4.02 (refresh the Phase-24 browser harness) and **KNI DirectX**. This desktop rig is also Phase 35 Area B's reproduce-first baseline for the KNIFX writer. |
 | **Promote `validation/*` render gates into CI** | partly | GL render runs in CI on Linux today; DX/FNA render are Windows-runner + (for DX) a software driver question. |
 | **Machine-readable coverage** backing this matrix | **compile rung done** | `ValidationMatrixCoverageTests` pins the compile/reject cells as a `[Theory]`. Extending it to assert the render cells against the `validation/*` gates is the remaining step. |
-| **MGFX v11 / KNIFX writers** | gated | Only if a runtime proves v10 deficient (KNIFX) or 3.8.5 goes stable (v11). See [`PHASE-35-appendix/`](../plan/PHASE-35-appendix/). |
-| **Vulkan / DX12 render** | gated | Blocked on MonoGame 3.8.5 going **stable** (Areas C/D). ShadowDusk's DXC->SPIR-V/DXIL plumbing is built. |
+| **MGFX v11 / KNIFX writers** | **committed, in progress** | Additive outputs we **will** emit so consumers can *use* the new-container features (KNIFX's XNA-compat/quality fixes; MonoGame v11's body), not a "won't do." v10 staying forward-compatible is a convenience, **not** a reason to skip these. Default stays v10 for universal load; v11/KNIFX are opt-in / auto-selected from the target, never required (seamless rule preserved). Path: reproduce-first render against KNI v4.02 (Phase 44 D) -> build the faithful writers (Phase 35 Area B). See [`PHASE-35-appendix/`](../plan/PHASE-35-appendix/). |
+| **Vulkan / DX12 render** | **ready, ext-blocked** | The DXC->SPIR-V / DXIL plumbing is **already built**; only the render-validation is blocked, and solely on the **external** dependency of MonoGame 3.8.5 (Vulkan + DX12 runtimes) going **stable** (it is preview.6 today). The moment 3.8.5 ships stable this validates (Areas C/D). Not a "won't do", a wait on someone else's release. |
 | **Metal target** | ⬛ | ShadowDusk Metal is a stub; FNA's Metal backend is already covered by the one `.fxb`. |
 
 ---
