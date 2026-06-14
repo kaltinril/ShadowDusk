@@ -612,6 +612,22 @@ internal sealed class CompilationPipeline
             constantBufferInfoList,
             effectParameterInfoList);
 
+        // Stage 6 (additive): KNIFX v11 container — opt-in, never the default. Same IR, a
+        // different container; the default MGFX v10 path below is untouched. (Phase 35 B.)
+        if (options.Container == EffectContainer.Knifx)
+        {
+            KnifxBackend knifxBackend = options.Target switch
+            {
+                PlatformTarget.DirectX => KnifxBackend.DirectX11,
+                _ => KnifxBackend.OpenGL,
+            };
+            var knifxResult = new KnifxWriter().Write(ir, new KnifxWriterOptions(knifxBackend));
+            if (knifxResult.IsFailure)
+                return Fail(knifxResult.Error);
+            return Result<CompiledShader, ShaderError[]>.Ok(
+                new CompiledShader(options.Target, knifxResult.Value));
+        }
+
         // Stage 6: MGFX binary writer.
         MgfxProfile mgfxProfile = options.Target switch
         {

@@ -40,11 +40,20 @@ if (!isKni)
     return 2;
 }
 
+// Container mode: default MGFX v10, or `knifx` arg for KNI's additive KNIFX v11 container.
+// The KNIFX run renders into output/kni-knifx so compare_kni.py can pixel-diff it against
+// the v10 render (output/kni) in real KNI — the render proof that KNIFX loads + runs.
+bool knifxMode = args.Any(a => a.Equals("knifx", StringComparison.OrdinalIgnoreCase));
+var container = knifxMode ? EffectContainer.Knifx : EffectContainer.Mgfx;
+string containerLabel = knifxMode ? "KNIFX v11" : "MGFX v10";
+string outLeaf = knifxMode ? "kni-knifx" : "kni";
+
 string repoRoot = ShaderInputs.FindRepoRoot();
 string shaderDir = Path.Combine(repoRoot, "tests", "fixtures", "shaders");
 string catPath = ShaderInputs.CatPath(repoRoot);
-string outDir = Path.Combine(repoRoot, "validation", "output", "kni");
+string outDir = Path.Combine(repoRoot, "validation", "output", outLeaf);
 
+Console.WriteLine($"[kni-desktop] container: {containerLabel}");
 Console.WriteLine($"[kni-desktop] cat: {catPath}");
 Console.WriteLine($"[kni-desktop] shaders: {shaderDir}");
 Console.WriteLine($"[kni-desktop] out: {outDir}\n");
@@ -65,6 +74,7 @@ foreach (var name in ShaderInputs.ShaderNames)
     var result = await compiler.CompileAsync(src, new CompilerOptions
     {
         Target = PlatformTarget.OpenGL,
+        Container = container,
         IncludeResolver = new FileSystemIncludeResolver(),
         SourceFileName = fx,
     });
@@ -75,10 +85,11 @@ foreach (var name in ShaderInputs.ShaderNames)
     }
     else
     {
-        // Persist the raw .mgfx so the bytes can be diffed against the candidate set offline.
-        string mgfxDir = Path.Combine(outDir, "..", "kni-mgfx");
-        Directory.CreateDirectory(mgfxDir);
-        await File.WriteAllBytesAsync(Path.Combine(mgfxDir, name + ".mgfx"), result.Value.Data);
+        // Persist the raw container bytes so they can be diffed/inspected offline.
+        string byteDir = Path.Combine(outDir, "..", knifxMode ? "kni-knifx-bytes" : "kni-mgfx");
+        Directory.CreateDirectory(byteDir);
+        string ext = knifxMode ? ".knifx" : ".mgfx";
+        await File.WriteAllBytesAsync(Path.Combine(byteDir, name + ext), result.Value.Data);
         jobs.Add(new ShaderJob(name, result.Value.Data, null));
     }
 }

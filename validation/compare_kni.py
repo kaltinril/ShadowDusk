@@ -35,6 +35,7 @@ except ImportError as e:
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 KNI = os.path.join(HERE, "output", "kni")
+KNIFX = os.path.join(HERE, "output", "kni-knifx")
 BASELINE = os.path.join(HERE, "output", "baseline")
 CANDIDATE = os.path.join(HERE, "output", "candidate")
 DIFF_DIR = os.path.join(HERE, "output", "kni-diff")
@@ -108,11 +109,37 @@ def main():
         print(f"{name:<12} | {bcol}    | {ccol}")
 
     print("-" * 80)
-    if failures:
-        print(f"\n{failures} shader(s) missing or over tolerance. Diffs in {DIFF_DIR}")
+
+    # ---- KNIFX v11 container vs the MGFX v10 render (both in real KNI) ------------------
+    # Phase 35 Area B render proof: ShadowDusk's KNIFX v11 output loads + renders in real KNI
+    # and, for this simple corpus (same GLSL, no optimized matrices / texture-override cases),
+    # draws the SAME picture as our v10 output. This is the smoke test; feature-bearing cases
+    # (optimized matrices, sampler-without-texture) must be checked against a KNIFXC golden,
+    # since a correct KNIFX render can legitimately differ from v10 there.
+    knifx_failures = 0
+    if os.path.isdir(KNIFX) and os.listdir(KNIFX):
+        print(f"\nknifx:     {KNIFX}  (KNIFX v11 container, real KNI render)")
+        print(f"{'shader':<12} | {'KNIFX-v11 vs MGFX-v10 (both in KNI)':<34}")
+        print(f"{'':<12} | {'status':<10}{'maxd':>6}{'mean':>8}")
+        print("-" * 50)
+        for name in SHADERS:
+            stat, _, _, maxd, mean = compare(
+                os.path.join(KNIFX, name + ".png"), os.path.join(KNI, name + ".png"),
+                args.tolerance, os.path.join(DIFF_DIR, name + "_knifx_vs_v10.png"))
+            if stat != "MATCH":
+                knifx_failures += 1
+            col = f"{stat:<10}{(maxd if maxd is not None else '-'):>6}{(f'{mean:.3f}' if mean is not None else '-'):>8}"
+            print(f"{name:<12} | {col}")
+        print("-" * 50)
+
+    if failures or knifx_failures:
+        print(f"\n{failures + knifx_failures} comparison(s) missing or over tolerance. Diffs in {DIFF_DIR}")
         return 1
-    print("\nAll 10 shaders: KNI renders ShadowDusk's v10 output within tolerance of BOTH "
-          "the mgfxc golden and the MonoGame render. KNI v4.02 desktop render-proven.")
+    print("\nAll 10 shaders: KNI renders ShadowDusk's v10 output within tolerance of BOTH the "
+          "mgfxc golden and the MonoGame render (KNI v4.02 desktop render-proven).")
+    if os.path.isdir(KNIFX) and os.listdir(KNIFX):
+        print("KNIFX v11: loads + renders in real KNI, pixel-equivalent to the v10 render for "
+              "the corpus (Phase 35 Area B smoke test passed).")
     return 0
 
 

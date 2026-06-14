@@ -232,12 +232,16 @@ KNI maps to `(2,?)`, ignore until we target those.)
 
 ## Implementation plan for `KnifxWriter` (ShadowDusk.Core)
 
-> **Status (2026-06-14):** `KnifxWriter` + `KnifxWriterOptions`/`KnifxBackend` are **implemented** in
-> `src/ShadowDusk.Core/KnifxWriter.cs` with the corrected GL ShaderCode directory wrapping, and **unit-tested
-> for byte structure** (`tests/ShadowDusk.Core.Tests/KnifxWriterTests.cs`, 15 tests incl. a GL-wrap/DX-raw
-> regression guard). `CompiledShaderBlob.ShaderModel` was added (default (3,0)). **Not yet done:** wiring the
-> compile path to emit KNIFX, threading the real `ShaderModel` from the pass profile, and the **render
-> validation** on the KNI rig (the actual proof). `columnsActual` defaults to `columns` (optimized-matrix gap).
+> **Status (2026-06-14): RENDER-PROVEN (corpus).** `KnifxWriter` + `KnifxWriterOptions`/`KnifxBackend` are
+> implemented (`src/ShadowDusk.Core/KnifxWriter.cs`) with the corrected GL ShaderCode directory wrapping and
+> **unit-tested for byte structure** (`tests/ShadowDusk.Core.Tests/KnifxWriterTests.cs`, 15 tests incl. a
+> GL-wrap/DX-raw guard). The compile path emits it via **`CompilerOptions.Container = Knifx`** (additive; the
+> default MGFX v10 path is untouched). **Render-validated: the KNIFX corpus loads + renders 10/10 in real KNI
+> v4.2.9001 (`validation/KniDesktopGL knifx`), maxd 0 vs the v10 render.** `CompiledShaderBlob.ShaderModel`
+> added (default (3,0), correct for the SM3 corpus). **Still to do:** thread the real `ShaderModel` from the
+> pass profile (correctness beyond SM3); validate the **feature-bearing** cases (optimized matrices via
+> `columnsActual`, sampler-without-texture) against a **KNIFXC golden** (`columnsActual` defaults to `columns`);
+> auto-select / override seam; MGFX v11 writer.
 
 1. **IR additions:** add `ShaderVersionMajor`/`Minor` to the shader blob (populated from the parsed pass model)
    and, if not already present, `columnsActual` to the parameter info (default = column count). No other IR

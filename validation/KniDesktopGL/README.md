@@ -51,12 +51,27 @@ never packed; it opts out of central package management so the nkast pins stay l
 dotnet run --project validation/Baseline       # mgfxc goldens   -> validation/output/baseline
 dotnet run --project validation/Candidate      # ShadowDusk@MonoGame -> validation/output/candidate
 
-# 2. the KNI desktop render
+# 2. the KNI desktop render (MGFX v10, the default)
 dotnet run --project validation/KniDesktopGL   # ShadowDusk@KNI   -> validation/output/kni
 
-# 3. pixel compare (GL <-> GL, tolerance 4/255)
+# 2b. (optional) the KNIFX v11 render — ShadowDusk's additive KNIFX container in real KNI
+dotnet run --project validation/KniDesktopGL -- knifx   # -> validation/output/kni-knifx
+
+# 3. pixel compare (GL <-> GL, tolerance 4/255). If output/kni-knifx exists, also compares
+#    KNIFX v11 vs MGFX v10 (both rendered in KNI).
 python validation/compare_kni.py
 ```
+
+## KNIFX v11 render proof (Phase 35 Area B)
+
+Passing `knifx` makes the harness compile each shader with `CompilerOptions.Container = Knifx`
+(`KnifxWriter`, signature `KNIF`) and render those bytes in the same real KNI runtime. Result
+(2026-06-14): **10/10 KNIFX shaders load + render in real KNI v4.2.9001, maxd 0 vs the v10
+render** (`compare_kni.py`). The GLSL is the same MojoShader-dialect code, so for this corpus
+the KNIFX picture is identical to v10, the **smoke test** that ShadowDusk's KNIFX container is
+valid and loadable. The KNIFX-specific fixes (optimized `Matrix4x4` via `columnsActual`,
+sampler-without-texture) are **not** exercised by this corpus and must be validated against a
+KNIFXC golden separately (see `plan/PHASE-35-appendix/knifx-format-spec.md`).
 
 `compare_kni.py` exits non-zero if any image is missing or over tolerance, and writes magenta
 diffs to `validation/output/kni-diff/` for any over-tolerance pixels.
