@@ -53,6 +53,8 @@ The default container is **MGFX v10**, which loads on every MonoGame 3.8.2+ and 
 
 Both render identically to v10 and are render-proven in their real engines; leave the default unless you specifically target a newer runtime.
 
+Prefer to pick a whole target (backend **and** container) in one value? Set `CompilerOptions.Profile` to a `CapabilityProfile` (e.g. `CapabilityProfile.KniGL_4_02` for KNIFX on OpenGL); a profile fully specifies the output and overrides `Target` / `Container` / `MgfxVersion`. For an in-app compile, `RuntimeProfileDetector.Recommend(typeof(Game).Assembly, target)` returns the proven profile for the loaded framework.
+
 ## Links
 
 - Documentation: <https://kaltinril.github.io/ShadowDusk/>

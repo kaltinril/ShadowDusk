@@ -54,8 +54,13 @@ WebGL proof on v4.02 (the Phase-24 run pre-dates it), and the **modern DirectX f
 > to stop short of v11/KNIFX. The newer formats are opt-in or auto-selected from the target, **never a flag a
 > consumer must set to get correct output** (the seamless rule still holds). **All three are now BUILT and
 > render-proven (2026-06-14):** v10 (default, everywhere), **MGFX v11** (`MgfxVersion = 11`, render-proven in
-> MonoGame 3.8.5), and **KNIFX v11** (`Container = Knifx`, render-proven in KNI 4.02). Remaining: the
-> auto-select/override seam, and KNIFX feature-parity for optimized matrices.
+> MonoGame 3.8.5), and **KNIFX v11** (`Container = Knifx`, render-proven in KNI 4.02). **The
+> auto-select/override seam is now built too:** a closed `CapabilityProfile` set names each
+> (runtime, format) contract, `CompilerOptions.Profile` (and CLI `--target-runtime`) selects one (a
+> profile implies its backend), and `RuntimeProfileDetector` recommends a proven profile from the
+> loaded framework assembly, all byte-identical when unset. KNIFX `columnsActual` is now **validated
+> against a KNIFXC golden** (full matrices match exactly; the partially-used-matrix divergence is
+> render-safe, a storage-only difference, see the KNIFX spec).
 
 | Format / profile | Applies to | Status | Notes |
 |---|---|---|---|
