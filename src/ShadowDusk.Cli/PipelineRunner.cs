@@ -42,6 +42,9 @@ internal sealed class PipelineRunner
             Debug                  = args.Debug,
             MgfxVersion            = args.MgfxVersion,
             DxbcBackend            = args.DxbcBackend,
+            // A --target-runtime profile fully specifies the output target; when set it overrides
+            // Target / MgfxVersion (resolved in the pipeline, since the profile implies its backend).
+            Profile                = args.Profile,
         };
 
         var compiler       = new EffectCompiler();

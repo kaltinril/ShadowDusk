@@ -83,5 +83,6 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 | `X0005` | Invalid `--mgfx-version` value (only 10 and 11). |
 | `X0006` | Invalid `/DxbcBackend` value (only `vkd3d`, `d3dcompiler`). |
 | `X0007` | CLI compile timed out (5-minute watchdog). |
+| `X0008` | Invalid `--target-runtime` value (only `monogame-gl`, `monogame-dx`, `monogame-gl-v11`, `kni-knifx`, `fna`). |
 | `X0010` | Platform not supported by ShadowDusk (e.g. PlayStation4, XboxOne, Switch). |
 | `X0099` | Unexpected internal error (catch-all; a bug if a consumer ever sees it). |

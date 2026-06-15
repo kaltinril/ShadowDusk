@@ -19,6 +19,9 @@ internal static class ArgumentParser
                                     (cross-platform). d3dcompiler is the Windows-only
                                     correctness oracle; never required for correct output.
           --mgfx-version <10|11>    Output format version. Default: 10
+          --target-runtime <name>   Output target runtime (picks backend + format together).
+                                    Names: monogame-gl, monogame-dx, monogame-gl-v11,
+                                    kni-knifx, fna. Overrides /Profile and --mgfx-version.
 
         Unsupported platforms (exit 1): PlayStation4, XboxOne, Switch
         """;
@@ -34,6 +37,7 @@ internal static class ArgumentParser
         var includePaths = new List<string>();
         int mgfxVersion = 10;
         DxbcBackend dxbcBackend = DxbcBackend.Vkd3d;
+        CapabilityProfile? profile = null;
 
         int i = 0;
         while (i < args.Length)
@@ -142,6 +146,30 @@ internal static class ArgumentParser
                     continue;
                 }
 
+                if (flagBody.Equals("target-runtime", StringComparison.OrdinalIgnoreCase))
+                {
+                    i++;
+                    if (i < args.Length)
+                    {
+                        var trResult = ParseTargetRuntime(args[i]);
+                        if (trResult.IsFailure)
+                            return Result<CliArguments, ShaderError>.Fail(trResult.Error);
+                        profile = trResult.Value;
+                        i++;
+                    }
+                    continue;
+                }
+
+                if (flagBody.StartsWith("target-runtime:", StringComparison.OrdinalIgnoreCase))
+                {
+                    var trResult = ParseTargetRuntime(flagBody.Substring("target-runtime:".Length));
+                    if (trResult.IsFailure)
+                        return Result<CliArguments, ShaderError>.Fail(trResult.Error);
+                    profile = trResult.Value;
+                    i++;
+                    continue;
+                }
+
                 // Unknown flag — silently ignore the flag token only. Not consuming a
                 // potential following value ensures positional args are never accidentally
                 // swallowed by future mgfxc flags MGCB may pass.
@@ -176,14 +204,15 @@ internal static class ArgumentParser
             Debug: debug,
             IncludePaths: includePaths,
             MgfxVersion: mgfxVersion,
-            DxbcBackend: dxbcBackend));
+            DxbcBackend: dxbcBackend,
+            Profile: profile));
     }
 
     // The flag names this CLI understands, for '/'-prefix disambiguation in IsFlag.
     // (Matched against the part of the token before any ':'.)
     private static readonly string[] KnownSlashFlagNames =
     {
-        "Debug", "Profile", "I", "DxbcBackend", "mgfx-version",
+        "Debug", "Profile", "I", "DxbcBackend", "mgfx-version", "target-runtime",
     };
 
     private static bool IsFlag(string token)
@@ -257,5 +286,31 @@ internal static class ArgumentParser
             Column: 0,
             Code: "X0004",
             Message: $"Unknown profile '{value}'. Valid profiles: DirectX_11, OpenGL, Vulkan, FNA"));
+    }
+
+    // Maps the friendly --target-runtime names to a proven CapabilityProfile. The profile fully
+    // specifies the output target (backend + container/version), so it is set on
+    // CompilerOptions.Profile and overrides /Profile and --mgfx-version.
+    private static Result<CapabilityProfile, ShaderError> ParseTargetRuntime(string value)
+    {
+        CapabilityProfile? profile = value.ToLowerInvariant() switch
+        {
+            "monogame-gl"     => CapabilityProfile.MonoGameGL_3_8_2,
+            "monogame-dx"     => CapabilityProfile.MonoGameDX_SM5,
+            "monogame-gl-v11" => CapabilityProfile.MonoGameGL_3_8_5,
+            "kni-knifx"       => CapabilityProfile.KniGL_4_02,
+            "fna"             => CapabilityProfile.Fna_Fx2,
+            _                 => null,
+        };
+
+        if (profile is null)
+            return Result<CapabilityProfile, ShaderError>.Fail(new ShaderError(
+                File: "",
+                Line: 0,
+                Column: 0,
+                Code: "X0008",
+                Message: $"Unknown --target-runtime value '{value}'. Valid: monogame-gl, monogame-dx, monogame-gl-v11, kni-knifx, fna"));
+
+        return Result<CapabilityProfile, ShaderError>.Ok(profile);
     }
 }
