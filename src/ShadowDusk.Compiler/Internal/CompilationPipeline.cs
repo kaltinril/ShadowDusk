@@ -56,6 +56,14 @@ internal sealed class CompilationPipeline
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        // A CapabilityProfile fully specifies the output target, including the graphics backend, so
+        // a set Profile's GraphicsTarget wins over Target (this is what lets the runtime-detection
+        // advisory return ONE profile that picks both format and backend). Normalize up front so the
+        // resolved backend flows through every downstream options.Target read. With no profile this
+        // is a no-op, so Profile == null stays byte-identical.
+        if (options.Profile is { } selectedProfile && selectedProfile.GraphicsTarget != options.Target)
+            options = options.WithGraphicsTarget(selectedProfile.GraphicsTarget);
+
         if (options.Target == PlatformTarget.Metal)
         {
             return Fail(new ShaderError(

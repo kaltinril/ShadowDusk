@@ -57,6 +57,26 @@ public sealed class RuntimeProfileDetectorTests
             .MgfxVersion.Should().Be(10);
     }
 
+    [Theory]
+    [InlineData(DetectedRuntime.MonoGame, PlatformTarget.OpenGL)]
+    [InlineData(DetectedRuntime.MonoGame, PlatformTarget.DirectX)]
+    [InlineData(DetectedRuntime.Kni, PlatformTarget.OpenGL)]
+    [InlineData(DetectedRuntime.Unknown, PlatformTarget.OpenGL)]
+    public void Recommend_ProfileBackendMatchesRequestedTarget(DetectedRuntime runtime, PlatformTarget target)
+    {
+        // Auto-detect stays consistent with Profile-implies-backend: the recommended profile's
+        // GraphicsTarget equals the requested target, so passing it as Profile alone compiles to the
+        // detected backend (regression guard for the "don't break auto-detect" change).
+        RuntimeProfileDetector.Recommend(runtime, target).GraphicsTarget.Should().Be(target);
+    }
+
+    [Fact]
+    public void Recommend_Fna_AlwaysTargetsFnaBackend()
+    {
+        RuntimeProfileDetector.Recommend(DetectedRuntime.Fna, PlatformTarget.OpenGL)
+            .GraphicsTarget.Should().Be(PlatformTarget.Fna);
+    }
+
     [Fact]
     public void Recommend_FromAssembly_UsesItsSimpleName()
     {

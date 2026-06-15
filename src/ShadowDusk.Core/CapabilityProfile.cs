@@ -28,12 +28,14 @@ public sealed class CapabilityProfile
 {
     private CapabilityProfile(
         string name,
+        PlatformTarget graphicsTarget,
         EffectContainer container,
         int mgfxVersion,
         ShaderDialect dialect,
         ShaderFeatures allowedFeatures = ShaderFeatures.None)
     {
         Name = name;
+        GraphicsTarget = graphicsTarget;
         Container = container;
         MgfxVersion = mgfxVersion;
         Dialect = dialect;
@@ -42,6 +44,16 @@ public sealed class CapabilityProfile
 
     /// <summary>The stable, human-readable identifier (also what <see cref="ToString"/> returns).</summary>
     public string Name { get; }
+
+    /// <summary>
+    /// The graphics backend this profile targets (<see cref="PlatformTarget.OpenGL"/>,
+    /// <see cref="PlatformTarget.DirectX"/>, or <see cref="PlatformTarget.Fna"/>). A profile fully
+    /// specifies the output target, so when <see cref="CompilerOptions.Profile"/> is set this wins
+    /// over <see cref="CompilerOptions.Target"/>: selecting a profile alone picks both format and
+    /// backend (this is what lets <see cref="RuntimeProfileDetector"/> return one profile that
+    /// chooses everything).
+    /// </summary>
+    public PlatformTarget GraphicsTarget { get; }
 
     /// <summary>
     /// The effect container this profile emits (<see cref="EffectContainer.Mgfx"/> or
@@ -73,14 +85,14 @@ public sealed class CapabilityProfile
     /// contract; render-proven in real MonoGame (Phase 17/28/43) and KNI v4.02 desktop.
     /// </summary>
     public static readonly CapabilityProfile MonoGameGL_3_8_2 =
-        new("MonoGameGL_3_8_2", EffectContainer.Mgfx, 10, ShaderDialect.LegacyMojoShader);
+        new("MonoGameGL_3_8_2", PlatformTarget.OpenGL, EffectContainer.Mgfx, 10, ShaderDialect.LegacyMojoShader);
 
     /// <summary>
     /// MonoGame / KNI DirectX 11, MGFX v10, DXBC SM5. No GL dialect (DXBC bytecode); render-proven
     /// in real MonoGame WindowsDX (Phase 18).
     /// </summary>
     public static readonly CapabilityProfile MonoGameDX_SM5 =
-        new("MonoGameDX_SM5", EffectContainer.Mgfx, 10, ShaderDialect.NotApplicable);
+        new("MonoGameDX_SM5", PlatformTarget.DirectX, EffectContainer.Mgfx, 10, ShaderDialect.NotApplicable);
 
     /// <summary>
     /// MonoGame OpenGL, MGFX <b>v11</b>, MojoShader-dialect GLSL. The 3.8.5+ container (the v10
@@ -88,7 +100,7 @@ public sealed class CapabilityProfile
     /// 3.8.5 (<c>validation/MonoGameV11</c>); opt-in (3.8.5 is pre-release, the default stays v10).
     /// </summary>
     public static readonly CapabilityProfile MonoGameGL_3_8_5 =
-        new("MonoGameGL_3_8_5", EffectContainer.Mgfx, 11, ShaderDialect.LegacyMojoShader);
+        new("MonoGameGL_3_8_5", PlatformTarget.OpenGL, EffectContainer.Mgfx, 11, ShaderDialect.LegacyMojoShader);
 
     /// <summary>
     /// KNI OpenGL, the <b>KNIFX v11</b> container, MojoShader-dialect GLSL. KNI v4.02+. The corpus
@@ -97,14 +109,14 @@ public sealed class CapabilityProfile
     /// pending validation against a KNIFXC golden. Opt-in / additive (the default stays v10).
     /// </summary>
     public static readonly CapabilityProfile KniGL_4_02 =
-        new("KniGL_4_02", EffectContainer.Knifx, 11, ShaderDialect.LegacyMojoShader);
+        new("KniGL_4_02", PlatformTarget.OpenGL, EffectContainer.Knifx, 11, ShaderDialect.LegacyMojoShader);
 
     /// <summary>
     /// FNA, the D3D9 fx_2_0 <c>.fxb</c> container (SM1-3). No GL dialect; render-proven in real FNA
     /// via MojoShader (Phase 39/40). Container/version fields are inert for the FNA target.
     /// </summary>
     public static readonly CapabilityProfile Fna_Fx2 =
-        new("Fna_Fx2", EffectContainer.Mgfx, 10, ShaderDialect.NotApplicable);
+        new("Fna_Fx2", PlatformTarget.Fna, EffectContainer.Mgfx, 10, ShaderDialect.NotApplicable);
 
     /// <inheritdoc/>
     public override string ToString() => Name;
