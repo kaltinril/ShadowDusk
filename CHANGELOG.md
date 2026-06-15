@@ -18,6 +18,42 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+## [0.7.0] - 2026-06-14
+
+The seamless default is unchanged: MGFX **v10** is still the default container and output is
+**byte-identical to 0.6.0** for every existing call (`CrossHostByteIdentity` stays green). This
+release adds an opt-in **capability-profile** API for naming a full output target (graphics backend
++ container/version) in one value, a matching CLI flag, and runtime detection. It also validates the
+KNIFX optimized-matrix (`columnsActual`) fidelity against KNI's own compiler (KNIFXC).
+
+### Added
+
+- **Capability-profile output-target selector.** New `CapabilityProfile` (a **closed set** of
+  render-proven (runtime, format) contracts: `MonoGameGL_3_8_2`, `MonoGameDX_SM5`, `MonoGameGL_3_8_5`
+  for MGFX v11, `KniGL_4_02` for KNIFX v11, and `Fna_Fx2`) plus `CompilerOptions.Profile`. A profile
+  fully specifies the output target, **including the graphics backend**, so setting `Profile` alone
+  picks both format and backend; it overrides `Target` / `Container` / `MgfxVersion`. The default
+  (`null`) reproduces today's behavior exactly.
+- **CLI `--target-runtime <name>`** (also `/target-runtime:<name>`): selects the output target by
+  name (`monogame-gl`, `monogame-dx`, `monogame-gl-v11`, `kni-knifx`, `fna`), mapping to a
+  `CapabilityProfile`. Overrides `/Profile` and `--mgfx-version`. Unknown values fail with `X0008`.
+- **Runtime detection.** `RuntimeProfileDetector` classifies the loaded XNA framework assembly
+  (MonoGame / KNI / FNA) and recommends a proven `CapabilityProfile` to pass to
+  `CompilerOptions.Profile`. Conservative: it returns the universally-loadable MGFX v10 (fx_2_0 for
+  FNA) and never silently upgrades a consumer to a newer container.
+- **Shader-feature capability axis.** `ShaderFeatures` + `ShaderFeatureSupport`, which **rejects
+  (`SD0201`)** any GL feature no shipping runtime consumes yet, so an unsupported feature can never
+  silently compile into bytes no runtime can load. (No shipping runtime supports these today.)
+
+### Changed
+
+- A `CapabilityProfile` **implies its graphics backend**, so a set `CompilerOptions.Profile`
+  determines the backend (overriding `Target`); the runtime-detection advisory composes with this so
+  one recommended profile picks both format and backend.
+- **KNIFX `columnsActual` validated against a KNIFXC golden.** Full matrices match KNI's own compiler
+  exactly; the partially-used-matrix case (ShadowDusk emits `columnsActual = columns`) is a
+  render-safe, storage-only divergence, not a correctness difference. KNIFX output is unchanged.
+
 ## [0.6.0] - 2026-06-14
 
 The seamless default is unchanged: MGFX **v10** is still the default container and you never
@@ -424,7 +460,8 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/kaltinril/ShadowDusk/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.4.0...v0.5.0
