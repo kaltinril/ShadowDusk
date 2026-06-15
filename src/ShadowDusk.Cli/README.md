@@ -16,9 +16,9 @@ ShadowDuskCLI <input.fx> <output.mgfx> /Profile:DirectX_11
 ShadowDuskCLI <input.fx> <output.fxb>  /Profile:FNA
 ```
 
-Flags mirror `mgfxc` (`/Profile`, `/Debug`, `/I`, `/DxbcBackend`, `--mgfx-version`). Run `ShadowDuskCLI --help` for the full list.
+Flags mirror `mgfxc` (`/Profile`, `/Debug`, `/I`, `/DxbcBackend`, `--mgfx-version`), plus `--target-runtime` to pick the backend + format together by name. Run `ShadowDuskCLI --help` for the full list.
 
-The output container defaults to **MGFX v10**, which loads on every MonoGame 3.8.2+ and KNI runtime — you never need a flag for correct output. For newer runtimes, `--mgfx-version 11` opts into a faithful MonoGame MGFX v11 container (MonoGame 3.8.5+, opt-in/experimental). KNI's KNIFX v11 container is available via the library (`CompilerOptions.Container`).
+The output container defaults to **MGFX v10**, which loads on every MonoGame 3.8.2+ and KNI runtime — you never need a flag for correct output. For newer runtimes, `--mgfx-version 11` opts into a faithful MonoGame MGFX v11 container (MonoGame 3.8.5+, opt-in/experimental). To pick a whole target in one flag, `--target-runtime <name>` (`monogame-gl`, `monogame-dx`, `monogame-gl-v11`, `kni-knifx`, `fna`) selects the backend and container together — e.g. `--target-runtime kni-knifx` emits KNI's KNIFX v11 container.
 
 ### As the MGCB shader compiler
 

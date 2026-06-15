@@ -39,6 +39,22 @@ For the MonoGame/KNI targets, the on-disk **profile byte** in the MGFX header en
 >
 > All three targets can also be compiled **in the browser** via `ShadowDusk.Wasm`, byte-identical to a desktop compile — OpenGL renders live in KNI WebGL, while DirectX and FNA are **export** targets (a browser cannot render DXBC/D3D9 bytecode). See [DirectX & FNA in the Browser](../backends/directx-in-wasm.md).
 
+## One-shot selection: capability profiles (`Profile` / `--target-runtime`)
+
+Instead of setting the backend (`Target`), container (`Container`), and version (`MgfxVersion`) separately, you can name the whole **(runtime, format) contract** with a single **capability profile**. A profile fully specifies the output, **including the backend**, so picking one is all you need:
+
+| Profile (`CapabilityProfile.*`) | CLI `--target-runtime` | Output |
+|---|---|---|
+| `MonoGameGL_3_8_2` | `monogame-gl` | OpenGL, MGFX v10 |
+| `MonoGameDX_SM5` | `monogame-dx` | DirectX, MGFX v10 |
+| `MonoGameGL_3_8_5` | `monogame-gl-v11` | OpenGL, MGFX v11 (MonoGame 3.8.5+) |
+| `KniGL_4_02` | `kni-knifx` | OpenGL, KNIFX v11 (KNI 4.02+) |
+| `Fna_Fx2` | `fna` | FNA, fx_2_0 |
+
+Set it on the library with `CompilerOptions.Profile = CapabilityProfile.KniGL_4_02`, or on the CLI with `--target-runtime kni-knifx`. A set profile **overrides** `Target` / `Container` / `MgfxVersion`. The set is **closed** — it holds only render-proven contracts, so you can never request an untested combination.
+
+**Auto-detecting the runtime.** For an in-app runtime compile, `RuntimeProfileDetector.Recommend(typeof(Game).Assembly, target)` classifies the loaded framework (MonoGame / KNI / FNA) and returns the proven profile to pass to `CompilerOptions.Profile`. It is **conservative**: it returns the universally-loadable MGFX v10 (or fx_2_0 for FNA) and never silently upgrades a consumer to a newer container — the newer formats stay an explicit opt-in.
+
 ## Axis 3 — Reach vs HiDef (a runtime concept, not a target)
 
 `GraphicsProfile.Reach` and `GraphicsProfile.HiDef` are **runtime** settings, not compile-time targets. `mgfxc` has no "Reach profile" vs "HiDef profile" — only `OpenGL` and `DirectX_11`. So you do **not** compile twice for Reach vs HiDef.

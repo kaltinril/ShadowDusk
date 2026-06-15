@@ -60,6 +60,8 @@ As of **0.6.0**, two **opt-in, experimental** newer containers are available for
 - **MGFX v11** — set <xref:ShadowDusk.Core.CompilerOptions.MgfxVersion> `= 11` (CLI `--mgfx-version 11`). A faithful MonoGame v11 container for **MonoGame 3.8.5+**. v11 adds two per-shader diagnostic strings (the source file + entry point, used only in shader error messages, MonoGame PR #8813); it renders identically to v10. Render-proven in real MonoGame 3.8.5. *(3.8.5 is pre-release, so v11 stays opt-in.)*
 - **KNIFX v11** — set <xref:ShadowDusk.Core.CompilerOptions.Container> `= EffectContainer.Knifx`. KNI's newer KNIFX container for **KNI v4.02+**, render-proven in real KNI v4.2.9001. `MgfxVersion` is ignored when `Container == Knifx`; `Container` is ignored for the `Fna` target (always D3D9 fx_2_0).
 
+To pick a whole target (backend + container) with one value instead of setting these separately, set `CompilerOptions.Profile` to a `CapabilityProfile` (e.g. `CapabilityProfile.KniGL_4_02`), or use the CLI `--target-runtime` flag — a profile overrides `Target` / `Container` / `MgfxVersion`. See [Choosing a Target](choosing-a-target.md).
+
 > **Important:** before 0.6.0, `--mgfx-version 11` only bumped the header *byte* over a v10 body, which a real v11 reader **cannot parse**. As of 0.6.0 it writes a correct v11 body. Still, **leave the default (v10) unless you specifically target a newer runtime and want its container** — v10 loads everywhere.
 
 ## `.mgfx` vs `.xnb`

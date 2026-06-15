@@ -25,7 +25,8 @@ ShadowDuskCLI MyShader.fx MyShader.mgfx /Profile:OpenGL
 | `/Profile:<Platform>` | Target platform. Valid: `DirectX_11`, `OpenGL`, `Vulkan`, `FNA` (the D3D9 fx_2_0 `.fxb` target — additive, not an `mgfxc` profile). | **`DirectX_11`** |
 | `/Debug` | Include debug information in the output. | off |
 | `/I <path>` | Additional include search path (repeatable). Also accepts `/I:<path>`. | none |
-| `--mgfx-version <10\|11>` | MGFX container version (opt-in escape hatch). `10` (default) loads on every MonoGame 3.8.2+ and KNI runtime — leave it unset for correct output everywhere. `11` emits a faithful MonoGame **MGFX v11** container (MonoGame 3.8.5+, opt-in/experimental; renders identically to v10). KNI's KNIFX v11 container is library-only (`CompilerOptions.Container`). | **`10`** |
+| `--mgfx-version <10\|11>` | MGFX container version (opt-in escape hatch). `10` (default) loads on every MonoGame 3.8.2+ and KNI runtime — leave it unset for correct output everywhere. `11` emits a faithful MonoGame **MGFX v11** container (MonoGame 3.8.5+, opt-in/experimental; renders identically to v10). | **`10`** |
+| `--target-runtime <name>` | Pick the output target (backend **and** container/version) with one name: `monogame-gl`, `monogame-dx`, `monogame-gl-v11` (MGFX v11), `kni-knifx` (KNI's KNIFX v11), `fna`. Overrides `/Profile` and `--mgfx-version`. Also accepts `/target-runtime:<name>`. | (use `/Profile`) |
 
 Unknown flags are **silently ignored** (not consuming a following value) so that future `mgfxc` flags MGCB may pass don't break existing pipelines.
 
@@ -55,6 +56,9 @@ ShadowDuskCLI effects/Blur.fx Content/Blur.mgfx /Profile:DirectX_11
 
 # With include paths and debug info
 ShadowDuskCLI effects/Lit.fx Content/Lit.mgfx /Profile:OpenGL /I shaders/common /I shaders/lighting /Debug
+
+# Pick backend + format together by name (KNI's KNIFX v11 container)
+ShadowDuskCLI effects/Cube.fx Content/Cube.knifx --target-runtime kni-knifx
 ```
 
 ## Exit codes & diagnostics
