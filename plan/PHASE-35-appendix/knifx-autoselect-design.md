@@ -31,8 +31,13 @@ answer, plus the one decision-critical finding that reshapes the request.
 > `MonoGameGL_3_8_5` MGFX-v11 and `KniGL_4_02` KNIFX proven profiles, byte-identical to the
 > standalone options); seam 4 adds the `ShaderFeatures` axis + `ShaderFeatureSupport`, which
 > **rejects (SD0201) any feature no shipping runtime consumes yet** (today: all of them, since KNI GL
-> is still MojoShader), so a feature can never silently emit unloadable bytes. Still open: the
-> detection assembly + CLI override (seams 6-7).
+> is still MojoShader), so a feature can never silently emit unloadable bytes. **Seam 6 is landed
+> too:** `RuntimeProfileDetector` (in `ShadowDusk.Core`, XNA-free, classifies the loaded framework
+> assembly name) recommends a proven profile, conservatively, it returns the universal v10 / fx_2_0
+> contract and never auto-upgrades to v11/KNIFX (those stay opt-in until promoted, a one-line change
+> once KNIFX parity is proven). Still open: the CLI `--target-runtime` override (seam 7), and
+> promoting KNI detection to `KniGL_4_02` once KNIFX feature-parity is render-proven against a
+> KNIFXC golden.
 
 ---
 
