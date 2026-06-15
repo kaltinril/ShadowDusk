@@ -26,12 +26,18 @@ namespace ShadowDusk.Core;
 /// </remarks>
 public sealed class CapabilityProfile
 {
-    private CapabilityProfile(string name, EffectContainer container, int mgfxVersion, ShaderDialect dialect)
+    private CapabilityProfile(
+        string name,
+        EffectContainer container,
+        int mgfxVersion,
+        ShaderDialect dialect,
+        ShaderFeatures allowedFeatures = ShaderFeatures.None)
     {
         Name = name;
         Container = container;
         MgfxVersion = mgfxVersion;
         Dialect = dialect;
+        AllowedFeatures = allowedFeatures;
     }
 
     /// <summary>The stable, human-readable identifier (also what <see cref="ToString"/> returns).</summary>
@@ -54,6 +60,13 @@ public sealed class CapabilityProfile
 
     /// <summary>The GL dialect this profile emits. <see cref="ShaderDialect.NotApplicable"/> for non-GL contracts.</summary>
     public ShaderDialect Dialect { get; }
+
+    /// <summary>
+    /// The GL features this profile permits beyond the MojoShader baseline. Every current proven
+    /// profile declares <see cref="ShaderFeatures.None"/>; a feature is only honored once a runtime
+    /// is render-proven to consume it (enforced by <see cref="ShaderFeatureSupport"/>).
+    /// </summary>
+    public ShaderFeatures AllowedFeatures { get; }
 
     /// <summary>
     /// MonoGame / KNI OpenGL (DesktopGL / WebGL), MGFX v10, MojoShader-dialect GLSL. The default GL

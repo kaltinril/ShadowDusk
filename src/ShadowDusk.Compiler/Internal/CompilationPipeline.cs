@@ -228,6 +228,15 @@ internal sealed class CompilationPipeline
         EffectContainer effectiveContainer = options.Profile?.Container ?? options.Container;
         int effectiveMgfxVersion = options.Profile?.MgfxVersion ?? options.MgfxVersion;
 
+        // Seam 4: the feature axis. A profile may declare AllowedFeatures, but a feature is honored
+        // only once a shipping runtime is render-proven to consume it; ShaderFeatureSupport rejects
+        // any unsupported feature loudly (SD0201) so ShadowDusk never emits bytes no runtime can
+        // load. Today no runtime consumes these, so every proven profile declares None and this
+        // never fires (Profile == null is byte-identical).
+        ShaderFeatures effectiveFeatures = options.Profile?.AllowedFeatures ?? ShaderFeatures.None;
+        if (ShaderFeatureSupport.Validate(effectiveFeatures) is { } featureError)
+            return Fail(featureError);
+
         // When a reflector factory is injected and the target is OpenGL, reflection is
         // sourced from the SPIR-V blob (pure-managed, WASM-safe) instead of compiling a
         // separate DXIL blob and reflecting it via the native ID3D12ShaderReflection

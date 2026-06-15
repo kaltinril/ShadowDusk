@@ -26,11 +26,13 @@ answer, plus the one decision-critical finding that reshapes the request.
 > `CompilerOptions.Profile` (nullable, default `null`) refines the GL dialect gate
 > (`CompilationPipeline.cs` ~`:210`). `Profile == null` reproduces today's behavior exactly
 > (`CrossHostByteIdentity` + the corpus stay green) and explicitly selecting `MonoGameGL_3_8_2` emits
-> identical bytes (`CapabilityProfileByteIdentityTests`). The **container axis stays the existing
-> `EffectContainer` / `MgfxVersion` options** (deliberately NOT folded into the profile yet, since
-> 0.6.0 shipped them standalone). Still open: `ShaderFeatures` + the feature-gated SD0210 lift
-> (seam 4), the container subsumption decision (seam 5), and the detection assembly + CLI override
-> (seams 6-7).
+> identical bytes (`CapabilityProfileByteIdentityTests`). **Seams 4 and 5 are now landed too:** seam
+> 5 folds the container axis into the profile (`Container` + `MgfxVersion`, with the
+> `MonoGameGL_3_8_5` MGFX-v11 and `KniGL_4_02` KNIFX proven profiles, byte-identical to the
+> standalone options); seam 4 adds the `ShaderFeatures` axis + `ShaderFeatureSupport`, which
+> **rejects (SD0201) any feature no shipping runtime consumes yet** (today: all of them, since KNI GL
+> is still MojoShader), so a feature can never silently emit unloadable bytes. Still open: the
+> detection assembly + CLI override (seams 6-7).
 
 ---
 
