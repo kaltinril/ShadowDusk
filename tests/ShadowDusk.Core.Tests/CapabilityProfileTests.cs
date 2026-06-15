@@ -57,6 +57,15 @@ public sealed class CapabilityProfileTests
     }
 
     [Fact]
+    public void EveryProvenProfile_DeclaresNoFeatures()
+    {
+        // No shipping runtime consumes the lifted GL features yet, so every proven profile must
+        // declare None. A profile with a feature is only valid once that feature is render-proven
+        // (and added to ShaderFeatureSupport.RuntimeSupported).
+        ProvenProfiles.Should().OnlyContain(p => p.AllowedFeatures == ShaderFeatures.None);
+    }
+
+    [Fact]
     public void NoProvenProfile_SelectsModernGlsl()
     {
         // ModernGlsl is reserved (no shipping runtime consumes it), so no proven profile may select

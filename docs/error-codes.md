@@ -57,6 +57,7 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 | `SD0102` | Native DXIL reflection (`ID3D12ShaderReflection`) failed. | `DxilReflectionExtractor` |
 | `SD0103` | SPIRV-Cross native library missing or unloadable (run `tools/restore.ps1`). | `SpirvCrossGlslTranspiler` |
 | `SD0200` | Metal target not yet supported. | `CompilationPipeline` |
+| `SD0201` | A capability-profile shader feature (e.g. vertex texture fetch, texture arrays) has no shipping runtime support yet and cannot be enabled. Reserved for a future runtime proven to consume it. | `ShaderFeatureSupport` |
 | `SD0210` | **Two historical meanings (known shared code):** (a) the d3dcompiler_47 oracle backend refused the request (requires Windows, or a `ProfileOverride` it never serves); (b) the MonoGame GLSL rewriter could not lower a construct to MonoGame's GL dialect — incl. (Phase 43C) int/bool/mat3/struct uniform-block members, a whole-array uniform use, or any surviving reference to a rewritten uniform block. | `D3DCompilerShaderCompiler`, `CompilationPipeline` |
 | `SD0211` | vkd3d-shader native library missing or unloadable (run `tools/restore.ps1`). | `Vkd3dShaderCompiler` |
 | `SD0212` | vkd3d-shader compile failed without parseable diagnostics. | `Vkd3dCompileContract` |
