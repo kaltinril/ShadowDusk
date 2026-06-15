@@ -207,7 +207,19 @@ internal sealed class CompilationPipeline
         // target. (Phase 17 originally gated this to PS-only passes; the VS rewrite now
         // makes the gate stage-symmetric.) Non-GL targets keep the unmodified
         // SPIRV-Cross dialect.
-        bool monoGameGl = options.Target == PlatformTarget.OpenGL;
+        //
+        // The dialect is the capability axis (Phase 35 auto-select seam 3): an explicit
+        // CapabilityProfile may refine it, but with no profile (the default) it is derived
+        // from the target exactly as before — LegacyMojoShader on OpenGL, NotApplicable
+        // elsewhere — so Profile == null is byte-identical to the pre-seam behavior. The
+        // Target == OpenGL guard is retained so a mismatched profile can never force the GL
+        // rewrite onto a DirectX/FNA compile.
+        ShaderDialect glDialect = options.Profile?.Dialect
+            ?? (options.Target == PlatformTarget.OpenGL
+                ? ShaderDialect.LegacyMojoShader
+                : ShaderDialect.NotApplicable);
+        bool monoGameGl = options.Target == PlatformTarget.OpenGL
+            && glDialect == ShaderDialect.LegacyMojoShader;
 
         // When a reflector factory is injected and the target is OpenGL, reflection is
         // sourced from the SPIR-V blob (pure-managed, WASM-safe) instead of compiling a
