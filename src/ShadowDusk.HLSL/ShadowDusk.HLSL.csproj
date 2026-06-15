@@ -12,6 +12,7 @@
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <Description>ShadowDusk HLSL front-end: FX9 pre-parse, preprocessor, DXC integration (HLSL to SPIR-V/DXIL via Vortice.Dxc), and the vkd3d-shader DXBC backend (HLSL to SM1–5 D3D bytecode for the DirectX and FNA targets; bundles the vkd3d 1.17 natives for win-x64/linux-x64/osx-x64/osx-arm64). Part of the ShadowDusk.Compiler cross-platform MonoGame/KNI/FNA shader compiler.</Description>
+    <PackageTags>monogame kni fna hlsl shader compiler dxc vkd3d dxbc spirv</PackageTags>
     <!-- Phase 26: emit the XML doc file for DocFX. CS1591 suppressed during the
          doc-comment transition so the TreatWarningsAsErrors build stays green. -->
     <GenerateDocumentationFile>true</GenerateDocumentationFile>

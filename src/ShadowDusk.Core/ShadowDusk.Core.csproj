@@ -9,6 +9,7 @@
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <Description>ShadowDusk core types (IShaderCompiler, Result, ShaderError, CompilerOptions, IR, SPIR-V reflection). Part of the ShadowDusk.Compiler cross-platform MonoGame/KNI shader compiler.</Description>
+    <PackageTags>monogame kni fna hlsl shader compiler mgfx reflection cross-platform</PackageTags>
     <!-- Phase 26: emit the XML doc file for DocFX. CS1591 (missing XML comment for a
          public member) is suppressed during the transition so partially-documented
          projects do not break TreatWarningsAsErrors. Remove CS1591 from NoWarn once the
