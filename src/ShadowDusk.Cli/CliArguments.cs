@@ -11,5 +11,6 @@ internal sealed record CliArguments(
     bool                  Debug,
     IReadOnlyList<string> IncludePaths,
     int                   MgfxVersion,
-    DxbcBackend           DxbcBackend
+    DxbcBackend           DxbcBackend,
+    CapabilityProfile?    Profile = null
 );

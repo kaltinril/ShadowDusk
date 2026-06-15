@@ -25,6 +25,44 @@ public sealed class ArgumentParserTests
         result.Value.Debug.Should().BeFalse();
         result.Value.IncludePaths.Should().BeEmpty();
         result.Value.MgfxVersion.Should().Be(10);
+        result.Value.Profile.Should().BeNull();
+    }
+
+    // -------------------------------------------------------------------------
+    // --target-runtime flag (maps a friendly name to a proven CapabilityProfile)
+    // -------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("monogame-gl", "MonoGameGL_3_8_2")]
+    [InlineData("monogame-dx", "MonoGameDX_SM5")]
+    [InlineData("monogame-gl-v11", "MonoGameGL_3_8_5")]
+    [InlineData("kni-knifx", "KniGL_4_02")]
+    [InlineData("fna", "Fna_Fx2")]
+    public void Parse_TargetRuntime_MapsToProfile(string name, string expectedProfileName)
+    {
+        var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "--target-runtime", name]);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Profile.Should().NotBeNull();
+        result.Value.Profile!.Name.Should().Be(expectedProfileName);
+    }
+
+    [Fact]
+    public void Parse_TargetRuntime_SlashColonForm_Works()
+    {
+        var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "/target-runtime:kni-knifx"]);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Profile.Should().Be(CapabilityProfile.KniGL_4_02);
+    }
+
+    [Fact]
+    public void Parse_TargetRuntime_Unknown_FailsWithX0008()
+    {
+        var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "--target-runtime", "nope"]);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("X0008");
     }
 
     // -------------------------------------------------------------------------
