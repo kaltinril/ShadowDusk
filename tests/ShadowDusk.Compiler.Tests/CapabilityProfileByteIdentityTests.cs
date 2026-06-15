@@ -33,14 +33,17 @@ public sealed class CapabilityProfileByteIdentityTests
         throw new DirectoryNotFoundException("Could not locate tests/fixtures directory.");
     }
 
-    private static async Task<byte[]> CompileBytesAsync(string fixture, PlatformTarget target, CapabilityProfile? profile)
+    private static async Task<byte[]> CompileBytesAsync(string fixture, CompilerOptions options)
     {
         string source = await File.ReadAllTextAsync(ShaderPath(fixture));
-        var result = await new EffectCompiler().CompileAsync(
-            source, new CompilerOptions { Target = target, Profile = profile });
-        result.IsSuccess.Should().BeTrue($"{fixture} should compile for {target} (profile: {profile?.ToString() ?? "none"})");
+        var result = await new EffectCompiler().CompileAsync(source, options);
+        result.IsSuccess.Should().BeTrue(
+            $"{fixture} should compile for {options.Target} (profile: {options.Profile?.ToString() ?? "none"})");
         return result.Value.Data;
     }
+
+    private static Task<byte[]> CompileBytesAsync(string fixture, PlatformTarget target, CapabilityProfile? profile)
+        => CompileBytesAsync(fixture, new CompilerOptions { Target = target, Profile = profile });
 
     [Fact]
     [Trait("Platform", "OpenGL")]
@@ -64,5 +67,39 @@ public sealed class CapabilityProfileByteIdentityTests
 
         withGlProfile.Should().Equal(withoutProfile,
             "a GL profile must not change DirectX output (the dialect gate is guarded by Target == OpenGL)");
+    }
+
+    [Fact]
+    [Trait("Platform", "OpenGL")]
+    public async Task KniProfile_SelectsKnifx_IsByteIdenticalToContainerKnifx()
+    {
+        // Seam 5: a profile selects the container, so KniGL_4_02 must emit exactly what the
+        // low-level Container = Knifx option does.
+        byte[] viaOption = await CompileBytesAsync("Minimal.fx", new CompilerOptions
+        {
+            Target = PlatformTarget.OpenGL,
+            Container = EffectContainer.Knifx,
+        });
+        byte[] viaProfile = await CompileBytesAsync("Minimal.fx", PlatformTarget.OpenGL, CapabilityProfile.KniGL_4_02);
+
+        viaProfile.Should().Equal(viaOption,
+            "KniGL_4_02 names the KNIFX container, so it must emit identical bytes to Container = Knifx");
+    }
+
+    [Fact]
+    [Trait("Platform", "OpenGL")]
+    public async Task MonoGameV11Profile_SelectsMgfxV11_IsByteIdenticalToMgfxVersion11()
+    {
+        // Seam 5: a profile selects the MGFX version, so MonoGameGL_3_8_5 must emit exactly what
+        // the low-level MgfxVersion = 11 option does.
+        byte[] viaOption = await CompileBytesAsync("Minimal.fx", new CompilerOptions
+        {
+            Target = PlatformTarget.OpenGL,
+            MgfxVersion = 11,
+        });
+        byte[] viaProfile = await CompileBytesAsync("Minimal.fx", PlatformTarget.OpenGL, CapabilityProfile.MonoGameGL_3_8_5);
+
+        viaProfile.Should().Equal(viaOption,
+            "MonoGameGL_3_8_5 names MGFX v11, so it must emit identical bytes to MgfxVersion = 11");
     }
 }
