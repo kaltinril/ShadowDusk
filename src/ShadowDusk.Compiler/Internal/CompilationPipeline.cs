@@ -221,6 +221,13 @@ internal sealed class CompilationPipeline
         bool monoGameGl = options.Target == PlatformTarget.OpenGL
             && glDialect == ShaderDialect.LegacyMojoShader;
 
+        // Seam 5: the container/version axis. A CapabilityProfile (when set) names a full
+        // (runtime, format) contract, so it selects the effect container and MGFX version too
+        // (e.g. KniGL_4_02 -> KNIFX, MonoGameGL_3_8_5 -> MGFX v11). With no profile the existing
+        // Container / MgfxVersion options apply unchanged, so Profile == null is byte-identical.
+        EffectContainer effectiveContainer = options.Profile?.Container ?? options.Container;
+        int effectiveMgfxVersion = options.Profile?.MgfxVersion ?? options.MgfxVersion;
+
         // When a reflector factory is injected and the target is OpenGL, reflection is
         // sourced from the SPIR-V blob (pure-managed, WASM-safe) instead of compiling a
         // separate DXIL blob and reflecting it via the native ID3D12ShaderReflection
@@ -636,7 +643,7 @@ internal sealed class CompilationPipeline
 
         // Stage 6 (additive): KNIFX v11 container — opt-in, never the default. Same IR, a
         // different container; the default MGFX v10 path below is untouched. (Phase 35 B.)
-        if (options.Container == EffectContainer.Knifx)
+        if (effectiveContainer == EffectContainer.Knifx)
         {
             KnifxBackend knifxBackend = options.Target switch
             {
@@ -661,18 +668,18 @@ internal sealed class CompilationPipeline
 
         // Guard the byte cast (like the writer's SD0020/SD0021 size guards): a
         // MgfxVersion outside 0..255 would silently truncate into a bogus header.
-        if (options.MgfxVersion is < byte.MinValue or > byte.MaxValue)
+        if (effectiveMgfxVersion is < byte.MinValue or > byte.MaxValue)
             return Fail(new ShaderError(
                 File: "",
                 Line: 0,
                 Column: 0,
                 Code: "SD0023",
-                Message: $"MgfxVersion {options.MgfxVersion} is outside the MGFX header's byte range (0-255)"));
+                Message: $"MgfxVersion {effectiveMgfxVersion} is outside the MGFX header's byte range (0-255)"));
 
         var mgfxWriter  = new MgfxWriter();
         var writeResult = mgfxWriter.Write(ir, new MgfxWriterOptions(
             Profile: mgfxProfile,
-            MgfxVersion: (byte)options.MgfxVersion));
+            MgfxVersion: (byte)effectiveMgfxVersion));
 
         if (writeResult.IsFailure)
             return Fail(writeResult.Error);

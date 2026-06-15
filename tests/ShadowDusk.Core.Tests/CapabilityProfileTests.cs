@@ -17,6 +17,8 @@ public sealed class CapabilityProfileTests
     {
         CapabilityProfile.MonoGameGL_3_8_2,
         CapabilityProfile.MonoGameDX_SM5,
+        CapabilityProfile.MonoGameGL_3_8_5,
+        CapabilityProfile.KniGL_4_02,
         CapabilityProfile.Fna_Fx2,
     };
 
@@ -25,7 +27,22 @@ public sealed class CapabilityProfileTests
     {
         CapabilityProfile.MonoGameGL_3_8_2.Dialect.Should().Be(ShaderDialect.LegacyMojoShader);
         CapabilityProfile.MonoGameDX_SM5.Dialect.Should().Be(ShaderDialect.NotApplicable);
+        CapabilityProfile.MonoGameGL_3_8_5.Dialect.Should().Be(ShaderDialect.LegacyMojoShader);
+        CapabilityProfile.KniGL_4_02.Dialect.Should().Be(ShaderDialect.LegacyMojoShader);
         CapabilityProfile.Fna_Fx2.Dialect.Should().Be(ShaderDialect.NotApplicable);
+    }
+
+    [Fact]
+    public void ProvenProfiles_SpanTheContainerFormats()
+    {
+        // The closed set expresses every (runtime, format) cell: MGFX v10, MGFX v11, and KNIFX v11.
+        CapabilityProfile.MonoGameGL_3_8_2.Container.Should().Be(EffectContainer.Mgfx);
+        CapabilityProfile.MonoGameGL_3_8_2.MgfxVersion.Should().Be(10);
+
+        CapabilityProfile.MonoGameGL_3_8_5.Container.Should().Be(EffectContainer.Mgfx);
+        CapabilityProfile.MonoGameGL_3_8_5.MgfxVersion.Should().Be(11);
+
+        CapabilityProfile.KniGL_4_02.Container.Should().Be(EffectContainer.Knifx);
     }
 
     [Fact]
@@ -52,6 +69,8 @@ public sealed class CapabilityProfileTests
     {
         CapabilityProfile.MonoGameGL_3_8_2.ToString().Should().Be("MonoGameGL_3_8_2");
         CapabilityProfile.MonoGameDX_SM5.ToString().Should().Be("MonoGameDX_SM5");
+        CapabilityProfile.MonoGameGL_3_8_5.ToString().Should().Be("MonoGameGL_3_8_5");
+        CapabilityProfile.KniGL_4_02.ToString().Should().Be("KniGL_4_02");
         CapabilityProfile.Fna_Fx2.ToString().Should().Be("Fna_Fx2");
     }
 }

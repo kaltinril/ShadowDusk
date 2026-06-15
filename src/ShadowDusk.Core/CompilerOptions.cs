@@ -18,12 +18,13 @@ public sealed class CompilerOptions
     public PlatformTarget Target { get; init; } = PlatformTarget.OpenGL;
 
     /// <summary>
-    /// An optional, render-proven <see cref="CapabilityProfile"/> that refines how the effect is
-    /// emitted (today: the GL <see cref="ShaderDialect"/>). Defaults to <see langword="null"/>,
-    /// which reproduces today's behavior exactly: the GL dialect is derived from
-    /// <see cref="Target"/>. A profile is never required for correct output, only an additive
-    /// refinement; the effect container stays the separate <see cref="Container"/> /
-    /// <see cref="MgfxVersion"/> axis.
+    /// An optional, render-proven <see cref="CapabilityProfile"/> naming a full (runtime, format)
+    /// contract: when set it selects the effect container/version <i>and</i> the GL
+    /// <see cref="ShaderDialect"/>, overriding <see cref="Container"/> / <see cref="MgfxVersion"/>.
+    /// Defaults to <see langword="null"/>, which reproduces today's behavior exactly (the container
+    /// comes from <see cref="Container"/> / <see cref="MgfxVersion"/> and the dialect from
+    /// <see cref="Target"/>). A profile is never required for correct output, only an additive,
+    /// named convenience the runtime-detection helper also returns.
     /// </summary>
     public CapabilityProfile? Profile { get; init; }
 
