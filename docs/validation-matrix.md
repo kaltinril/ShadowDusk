@@ -4,7 +4,7 @@
 library, shader format/version, graphics target, and OS, and to mark cells off as they advance. This is a
 **living checklist**: update a cell's status (and the date) whenever its evidence changes.
 
-**Last updated:** 2026-06-14.
+**Last updated:** 2026-06-15.
 
 ---
 
@@ -58,7 +58,11 @@ WebGL proof on v4.02 (the Phase-24 run pre-dates it), and the **modern DirectX f
 > auto-select/override seam is now built too:** a closed `CapabilityProfile` set names each
 > (runtime, format) contract, `CompilerOptions.Profile` (and CLI `--target-runtime`) selects one (a
 > profile implies its backend), and `RuntimeProfileDetector` recommends a proven profile from the
-> loaded framework assembly, all byte-identical when unset. KNIFX `columnsActual` is now **validated
+> loaded framework assembly, all byte-identical when unset. A `ShaderFeatures` axis
+> (`ShaderFeatureSupport.Validate`) **rejects loudly with `SD0201`** any shader that needs a capability
+> no shipping runtime supports yet (e.g. vertex texture fetch / texture arrays on the GL/MojoShader
+> path), so an unsupported feature fails at compile rather than silently mis-rendering. KNIFX
+> `columnsActual` is now **validated
 > against a KNIFXC golden** (full matrices match exactly; the partially-used-matrix divergence is
 > render-safe, a storage-only difference, see the KNIFX spec).
 
@@ -115,6 +119,9 @@ compile rung for both is pinned by `ValidationMatrixCoverageTests`; VTF render b
 | **Cross-OS byte-identical** output (Win/Linux/Mac; GL/DX/FNA) | `CrossHostByteIdentityTests` | ✅ (all 3 OSes) | `dotnet test ...Integration.Tests --filter CrossHostByteIdentity` |
 | OpenGL render vs golden (software GL) | `tests/ShadowDusk.ImageTests` (incl. `MatrixConventionSweepTests`, `Issue70MatrixTransposeRenderTests`) | ✅ (Linux Mesa) | `dotnet test tests/ShadowDusk.ImageTests` |
 | **Real MonoGame OpenGL** render vs `mgfxc` | `validation/VsDriven`, `validation/Candidate` + `validation/compare.py` | manual | `dotnet run --project validation/VsDriven` |
+| **Real MonoGame OpenGL** cube + 3D/volume texture render (rung-4; cube full, 3D single-voxel) | `validation/TextureBreadthValidation` (in-process assert) | manual | `dotnet run --project validation/TextureBreadthValidation` |
+| **Real MonoGame OpenGL** pass render-states / annotations / baked sampler-states load + render vs `mgfxc` golden (Phase 43) | `validation/StateFidelity` (in-process compare) | manual | `dotnet run -c Release --project validation/StateFidelity` |
+| **Real MonoGame OpenGL** cbuffer + array-parameter-by-name model load + render vs `mgfxc` golden (Phase 43C) | `validation/CbufferModel` (in-process compare) | manual | `dotnet run -c Release --project validation/CbufferModel` |
 | **Real MonoGame DirectX** render vs `mgfxc`/`fxc` | `validation/VsDrivenDx`, `validation/Candidate{Dx,Vkd3d}` + `compare_dx.py` | manual | `dotnet run --project validation/VsDrivenDx` |
 | **DirectX modern features render** (vertex texture fetch; vkd3d vs `fxc`) | `validation/DxModernFeatures` | manual | `dotnet run --project validation/DxModernFeatures` |
 | **Real FNA** render vs `fxc /T fx_2_0` | `validation/FnaValidation` | manual | `dotnet run --project validation/FnaValidation` |
