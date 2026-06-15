@@ -24,6 +24,37 @@ version directory **and** carries a non-default per-shader `ShaderVersion`. The 
 new *compiler* capability the container exposes, and it is **dead at runtime** (KNI v4.2.9001's reader throws
 `NotImplementedException` for compute), so we emit the `-1` sentinel and build no `cs_*` path.
 
+## Empirical confirmation (2026-06-14): KNIFXC built + run, `columnsActual` rule verified
+
+KNIFXC (`kni/Tools/EffectCompiler`, AssemblyName `KNIFXC`, also `dotnet tool install -g dotnet-knifxc`)
+was built from source (net8.0) and run to produce real `.knifx` goldens (signature `KNIF`, version 11,
+verified by hexdump). Invocation: `dotnet KNIFXC.dll <src.fx> <out.knifx> /Platform:DesktopGL`.
+
+- **The rule is `columnsActual = min(columns, register_count)`** (`ShaderProfileGL.cs:576`): the
+  MojoShader CTAB register count, i.e. the number of constant registers the shader actually
+  references, clamped to the column count.
+- **Full matrices already match ShadowDusk.** Golden for `float4x4 WorldViewProjection` used fully
+  (`o.Position = mul(input.Position, WorldViewProjection)`): `rows=4, columns=4, columnsActual=4` —
+  identical to ShadowDusk's current `columnsActual = columns`.
+- **The gap is partially-used matrices.** Golden for `float4x4 World` referenced only as
+  `(float3x3)World` (3 columns used): `columns=4, columnsActual=3` — the "Matrix4x4 not demoted"
+  case (true type stays 4 columns; only 3 registers are used).
+- **ShadowDusk's `columnsActual = columns` is render-SAFE, not a correctness bug.** ShadowDusk
+  generates BOTH the MojoShader-dialect GLSL and the `columnsActual` from its own reflection, so they
+  are internally consistent: at `columnsActual = 4` the runtime uploads 4 registers and ShadowDusk's
+  GLSL reads 4 — consistent, renders correct. The divergence from KNIFXC (4 vs 3) is storage
+  efficiency (one extra register uploaded for a partially-used matrix), NOT wrong pixels. Matching
+  fxc's optimized `register_count` would require analyzing each matrix's per-register access in the
+  compiled bytecode (ShadowDusk has the cbuffer LAYOUT, which keeps the full `float4x4`, not the
+  usage-derived count) — a storage-only, non-correctness refinement.
+
+**Conclusion:** ShadowDusk's KNIFX is render-faithful (full-matrix `columnsActual` golden-matched; the
+corpus already renders maxd 0 vs v10). The partially-used-matrix `columnsActual` difference is a
+documented, benign storage divergence; closing it fully is a non-goal (bytecode usage analysis for no
+correctness gain). A real-KNI render of a partially-used-matrix shader is the only remaining step to
+upgrade this from "reasoned render-safe" to "render-proven" (needs a KNI desktop rig). The
+sampler-without-texture fix has not been golden-checked yet (same render-safe vs storage question).
+
 ## Source of truth (KNI @ main, read 2026-06-14)
 
 | Piece | File |
