@@ -87,4 +87,23 @@ public sealed class CompilerOptions
     /// (there is no d3dcompiler_47 in a browser), which matches the desktop default.
     /// </summary>
     public DxbcBackend DxbcBackend { get; init; } = DxbcBackend.Vkd3d;
+
+    /// <summary>
+    /// Returns a copy with <see cref="Target"/> replaced by <paramref name="graphicsTarget"/>,
+    /// preserving every other setting. The pipeline uses this to apply a
+    /// <see cref="CapabilityProfile.GraphicsTarget"/> (a profile fully specifies its output
+    /// backend, so a set <see cref="Profile"/> determines the backend).
+    /// </summary>
+    public CompilerOptions WithGraphicsTarget(PlatformTarget graphicsTarget) => new()
+    {
+        Target                 = graphicsTarget,
+        Profile                = Profile,
+        IncludeResolver        = IncludeResolver,
+        AdditionalIncludePaths = AdditionalIncludePaths,
+        SourceFileName         = SourceFileName,
+        Debug                  = Debug,
+        MgfxVersion            = MgfxVersion,
+        Container              = Container,
+        DxbcBackend            = DxbcBackend,
+    };
 }

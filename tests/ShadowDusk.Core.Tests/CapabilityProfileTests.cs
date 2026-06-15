@@ -46,6 +46,17 @@ public sealed class CapabilityProfileTests
     }
 
     [Fact]
+    public void ProvenProfiles_DeclareTheirGraphicsBackend()
+    {
+        // A profile fully specifies its output target, so it carries the backend too.
+        CapabilityProfile.MonoGameGL_3_8_2.GraphicsTarget.Should().Be(PlatformTarget.OpenGL);
+        CapabilityProfile.MonoGameDX_SM5.GraphicsTarget.Should().Be(PlatformTarget.DirectX);
+        CapabilityProfile.MonoGameGL_3_8_5.GraphicsTarget.Should().Be(PlatformTarget.OpenGL);
+        CapabilityProfile.KniGL_4_02.GraphicsTarget.Should().Be(PlatformTarget.OpenGL);
+        CapabilityProfile.Fna_Fx2.GraphicsTarget.Should().Be(PlatformTarget.Fna);
+    }
+
+    [Fact]
     public void IsAClosedSet_NoPublicOrInternalConstructor()
     {
         // The model forbids anonymous combinations: the only way to obtain a profile is the static

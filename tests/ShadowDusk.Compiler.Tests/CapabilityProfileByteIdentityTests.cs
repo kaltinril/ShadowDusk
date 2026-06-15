@@ -58,15 +58,34 @@ public sealed class CapabilityProfileByteIdentityTests
 
     [Fact]
     [Trait("Platform", "DirectX")]
-    public async Task DirectX_GLProfileIsIgnored_IsByteIdenticalToNoProfile()
+    public async Task Profile_ImpliesItsBackend_OverridingTarget()
     {
-        // The Target == OpenGL guard means a GL-dialect profile can never force the GL rewrite onto
-        // a DirectX compile: a mismatched profile is inert, not corrupting.
-        byte[] withoutProfile = await CompileBytesAsync("Minimal.fx", PlatformTarget.DirectX, profile: null);
-        byte[] withGlProfile = await CompileBytesAsync("Minimal.fx", PlatformTarget.DirectX, CapabilityProfile.MonoGameGL_3_8_2);
+        // A CapabilityProfile fully specifies the output target, including the backend, so the
+        // profile's GraphicsTarget wins over Target. A DirectX profile emits DirectX even when
+        // Target is the default OpenGL, and a GL profile emits OpenGL even when Target is DirectX.
+        byte[] dxViaTarget  = await CompileBytesAsync("Minimal.fx", PlatformTarget.DirectX, profile: null);
+        byte[] dxViaProfile = await CompileBytesAsync("Minimal.fx", PlatformTarget.OpenGL, CapabilityProfile.MonoGameDX_SM5);
+        dxViaProfile.Should().Equal(dxViaTarget,
+            "MonoGameDX_SM5 names the DirectX backend, so it emits DirectX output even when Target is OpenGL");
 
-        withGlProfile.Should().Equal(withoutProfile,
-            "a GL profile must not change DirectX output (the dialect gate is guarded by Target == OpenGL)");
+        byte[] glViaTarget  = await CompileBytesAsync("Minimal.fx", PlatformTarget.OpenGL, profile: null);
+        byte[] glViaProfile = await CompileBytesAsync("Minimal.fx", PlatformTarget.DirectX, CapabilityProfile.MonoGameGL_3_8_2);
+        glViaProfile.Should().Equal(glViaTarget,
+            "MonoGameGL_3_8_2 names the OpenGL backend, so it emits OpenGL output even when Target is DirectX");
+    }
+
+    [Fact]
+    [Trait("Platform", "DirectX")]
+    public async Task AutoDetectedProfile_CompilesToDetectedBackend_NoRegression()
+    {
+        // Locks the "don't break auto-detect" guarantee: a profile from RuntimeProfileDetector, set
+        // as Profile alone (Target left at its OpenGL default), compiles to the DETECTED backend.
+        CapabilityProfile detected = RuntimeProfileDetector.Recommend(DetectedRuntime.MonoGame, PlatformTarget.DirectX);
+        byte[] viaDetectedProfile = await CompileBytesAsync("Minimal.fx", new CompilerOptions { Profile = detected });
+        byte[] viaExplicitTarget  = await CompileBytesAsync("Minimal.fx", new CompilerOptions { Target = PlatformTarget.DirectX });
+
+        viaDetectedProfile.Should().Equal(viaExplicitTarget,
+            "an auto-detected DirectX profile must compile to DirectX even though Target defaulted to OpenGL");
     }
 
     [Fact]
