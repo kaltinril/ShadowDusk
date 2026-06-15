@@ -20,6 +20,18 @@ answer, plus the one decision-critical finding that reshapes the request.
 > still the right design for "auto-detect → newest + override" and is **not yet implemented**. Read the
 > sections below as the seam design; treat the "KNIFX is a smaller prize / defer it" conclusion as historical.
 
+> **⚠️ Update (2026-06-14, part 2): seams 1-3 (the dialect axis) are now LANDED, byte-identical.**
+> `ShaderDialect` (`NotApplicable | LegacyMojoShader | ModernGlsl`) and the closed `CapabilityProfile`
+> set (`MonoGameGL_3_8_2`, `MonoGameDX_SM5`, `Fna_Fx2`) ship in `ShadowDusk.Core`, and
+> `CompilerOptions.Profile` (nullable, default `null`) refines the GL dialect gate
+> (`CompilationPipeline.cs` ~`:210`). `Profile == null` reproduces today's behavior exactly
+> (`CrossHostByteIdentity` + the corpus stay green) and explicitly selecting `MonoGameGL_3_8_2` emits
+> identical bytes (`CapabilityProfileByteIdentityTests`). The **container axis stays the existing
+> `EffectContainer` / `MgfxVersion` options** (deliberately NOT folded into the profile yet, since
+> 0.6.0 shipped them standalone). Still open: `ShaderFeatures` + the feature-gated SD0210 lift
+> (seam 4), the container subsumption decision (seam 5), and the detection assembly + CLI override
+> (seams 6-7).
+
 ---
 
 ## TL;DR — the one finding that matters

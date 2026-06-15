@@ -18,6 +18,16 @@ public sealed class CompilerOptions
     public PlatformTarget Target { get; init; } = PlatformTarget.OpenGL;
 
     /// <summary>
+    /// An optional, render-proven <see cref="CapabilityProfile"/> that refines how the effect is
+    /// emitted (today: the GL <see cref="ShaderDialect"/>). Defaults to <see langword="null"/>,
+    /// which reproduces today's behavior exactly: the GL dialect is derived from
+    /// <see cref="Target"/>. A profile is never required for correct output, only an additive
+    /// refinement; the effect container stays the separate <see cref="Container"/> /
+    /// <see cref="MgfxVersion"/> axis.
+    /// </summary>
+    public CapabilityProfile? Profile { get; init; }
+
+    /// <summary>
     /// Optional custom resolver for <c>#include</c> directives. When <see langword="null"/>,
     /// includes are resolved relative to <see cref="SourceFileName"/> and
     /// <see cref="AdditionalIncludePaths"/>. Supply an in-memory resolver to compile without
