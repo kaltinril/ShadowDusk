@@ -161,7 +161,7 @@ jobs:
         if: runner.os == 'Windows'
         run: >
           dotnet test ShadowDusk.slnx --no-build -c Release
-          --filter "Category!=Integration"
+          --filter "(Category!=Integration|Category=Fidelity)"
           --logger "trx;LogFileName=unit-${{ matrix.os }}.trx"
           --results-directory TestResults/
 
@@ -203,7 +203,7 @@ jobs:
           SHADOWDUSK_REQUIRE_GL: "1"
         run: >
           xvfb-run -a dotnet test ShadowDusk.slnx --no-build -c Release
-          --filter "Category!=Integration&FullyQualifiedName!~Phase34TextureBreadthTests"
+          --filter "(Category!=Integration|Category=Fidelity)&FullyQualifiedName!~Phase34TextureBreadthTests"
           --logger "trx;LogFileName=unit-${{ matrix.os }}.trx"
           --results-directory TestResults/
 
@@ -211,7 +211,7 @@ jobs:
         if: runner.os == 'macOS'
         run: >
           dotnet test ShadowDusk.slnx --no-build -c Release
-          --filter "Category!=Integration&FullyQualifiedName!~Phase34TextureBreadthTests"
+          --filter "(Category!=Integration|Category=Fidelity)&FullyQualifiedName!~Phase34TextureBreadthTests"
           --logger "trx;LogFileName=unit-${{ matrix.os }}.trx"
           --results-directory TestResults/
 

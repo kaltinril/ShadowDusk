@@ -31,7 +31,7 @@ Select the backend with <xref:ShadowDusk.Core.CompilerOptions.Target> (library) 
 | **DirectX 11 (WindowsDX)** | `PlatformTarget.DirectX` | `DirectX_11` | `.mgfx`, **DXBC binary** (SM5) | ✅ Validated |
 | **FNA** | `PlatformTarget.Fna` | `FNA` | `.fxb`, **D3D9 fx_2_0** (SM ≤ 3) | ✅ Validated |
 | **Metal** | `PlatformTarget.Metal` | — | MSL | ❌ Not implemented ([future](../backends/metal.md)) |
-| **Vulkan** | `PlatformTarget.Vulkan` | `Vulkan` | SPIR-V | ❌ Parked ([future](../backends/vulkan.md)) |
+| **Vulkan** | `PlatformTarget.Vulkan` | `Vulkan` | SPIR-V | 🧪 Experimental: compiles, but unvalidated ([parked](../backends/vulkan.md) on no shipping Vulkan runtime) |
 
 For the MonoGame/KNI targets, the on-disk **profile byte** in the MGFX header encodes the backend choice (`OpenGL = 0`, `DirectX11 = 1`, `Vulkan = 3`). The runtime reads it to pick the shader path, so the target must be chosen **at compile time** — there is no universal `.mgfx` that serves both DirectX and OpenGL. A DirectX `.mgfx` is useless to a DesktopGL game and vice versa. FNA is selected differently (it's a whole separate format, `.fxb` — see Axis 1) and is **not** byte-compatible with the `.mgfx` targets.
 

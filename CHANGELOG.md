@@ -13,10 +13,34 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 ## [Unreleased]
 
 ### Added
+- `SECURITY.md` at the repo root: the project's trust model (compiling a `.fx` runs code; the
+  shader author and the compiler-runner are the same developer, so the library is a build-time/in-app
+  tool, not a sandbox), the consumer's isolation responsibility for any service that compiles
+  third-party `.fx`, the supply-chain integrity model for the natives we ship, and how to report a
+  vulnerability.
+- KNI **DirectX** render validation (`validation/KniWinFormsDX`): ShadowDusk's DX output renders
+  pixel-equivalent to the `mgfxc` DirectX golden in real KNI v4.02 WinForms.DX11.
+- `validation/run-windows-render-gates.ps1`: one command that runs the Windows-GPU render proofs CI
+  cannot (DirectX corpus, vertex-texture-fetch, KNI-DX, and FNA under `-IncludeFna`), required before a
+  release.
+- CI render gates for the in-process OpenGL validation drivers
+  (`.github/workflows/validation-render.yml`, Mesa llvmpipe under xvfb).
 
 ### Changed
+- The in-process MGFX/KNIFX/FNA golden-comparison and cross-host byte-identity tests now run on the
+  fast PR lane (previously only on the heavier integration lane), so a writer/transpiler/render-state
+  regression that still compiles is caught on every pull request, not just at release time.
+- The KNI WebGL render proof was refreshed on the current KNI v4.02 runtime, and the browser harness now
+  stamps the KNI runtime version into every generated results file.
+- Documentation accuracy pass: corrected Vulkan's status (it compiles to a SPIR-V `.mgfx` but has no
+  shipping runtime to render-validate against, i.e. experimental/unvalidated, not "future"), the
+  fixture-corpus count, and assorted status/cross-reference drift surfaced by a full project review.
 
 ### Fixed
+- Closed soft-skip-as-green holes in the validation drivers/tests: `validation/TextureBreadthValidation`
+  now honors `SHADOWDUSK_REQUIRE_GL` (a missing GL device fails loudly instead of reporting success),
+  and the `mgfxc` cross-validation test fails (rather than silently passing) when a known-good fixture
+  stops compiling.
 
 ## [0.7.0] - 2026-06-14
 

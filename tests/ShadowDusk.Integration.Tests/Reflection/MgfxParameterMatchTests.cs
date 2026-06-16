@@ -46,6 +46,7 @@ namespace ShadowDusk.Integration.Tests.Reflection;
 /// metadata delta, an unexpected extra value-class parameter) fails the test.</para>
 /// </summary>
 [Trait("Category", "Integration")]
+[Trait("Category", "Fidelity")] // also runs on the PR unit lane (folds the fidelity gate into the required build-and-test job)
 [Trait("Platform", "OpenGL")]
 public sealed class MgfxParameterMatchTests
 {

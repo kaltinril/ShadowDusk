@@ -122,6 +122,18 @@ game.Run();
 
 if (game.Skipped)
 {
+    // SHADOWDUSK_REQUIRE_GL=1 turns a "no GL device" skip into a hard failure — the same
+    // soft-skip-as-green guard the ImageTests use (Phase 37). CI (validation-render.yml) sets
+    // it, so a regression that silently loses the GL context turns the lane RED instead of
+    // masking itself green; a normal headless dev run without the flag still skips cleanly.
+    bool requireGl = string.Equals(
+        Environment.GetEnvironmentVariable("SHADOWDUSK_REQUIRE_GL"), "1", StringComparison.Ordinal);
+    if (requireGl)
+    {
+        Console.Error.WriteLine(
+            $"\n[texbreadth] FAIL — SHADOWDUSK_REQUIRE_GL=1 but the GL device could not be created: {game.SkipReason}");
+        return 1;
+    }
     Console.WriteLine($"\n[texbreadth] SKIPPED (no GL device): {game.SkipReason}");
     return 0; // clean skip — matches the Phase 17 harness on headless CI without a device
 }
