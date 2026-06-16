@@ -1,0 +1,66 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Phase 44 D - KNI v4.02 DIRECTX (WinForms.DX11) load + render validation.
+
+    The KNI analogue of validation/CandidateDx + validation/StateFidelity, on the
+    DirectX backend: it compiles the SM5 PS-only corpus with ShadowDusk's UNCHANGED
+    EffectCompiler (DirectX target -> DXBC SM5 in an MGFX v10 container), and loads
+    BOTH those bytes AND the committed mgfxc DirectX goldens (tests/fixtures/golden/
+    DirectX_11/*.mgfx) into a REAL KNI (nkast) DX11 Effect on the WinForms.DX11
+    desktop backend, renders the identical cat-corpus scene for each, and
+    pixel-compares the two arms IN PROCESS. Exit 0 iff every row loads on both arms
+    and the ShadowDusk render matches the mgfxc render within the tolerance bound
+    (default 4, the Phase 18 DX bar). This proves ShadowDusk's DX output loads + renders correctly
+    on a CURRENT KNI runtime (v4.2.9001), closing the matrix's KNI DirectX cell.
+
+    KNI reuses the Microsoft.Xna.Framework.Graphics namespaces, so the SharedDx render
+    inputs (DxShaderInputs) compile against KNI verbatim - same recipe, only the
+    runtime under it differs, which keeps the comparison fair.
+
+    WinForms.DX11 is the only KNI DX platform published at 4.2.9001 (no SDL2.DX11), so
+    this is net8.0-windows + UseWindowsForms + an [STAThread] Main (the WinForms host
+    wants an STA message pump). Intentionally NOT in ShadowDusk.slnx (like every
+    validation/* harness) and opted OUT of central package management so the KNI DX
+    pins stay local to this harness.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <RollForward>Major</RollForward>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>ShadowDusk.Validation.KniDx</RootNamespace>
+    <!-- KNI WinForms DX11 platform selector + define, per the KNI WindowsDX template. -->
+    <DefineConstants>$(DefineConstants);WINDOWSDX</DefineConstants>
+    <KniPlatform>WindowsDX</KniPlatform>
+    <!-- Local pins (this harness only); keep nkast out of the core's central versions. -->
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup Label="KNI (nkast) - WinForms DX11 desktop runtime, v4.2.9001 (KNI v4.02 line)">
+    <PackageReference Include="nkast.Xna.Framework" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Xna.Framework.Content" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Xna.Framework.Graphics" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Xna.Framework.Audio" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Xna.Framework.Media" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Xna.Framework.Input" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Xna.Framework.Game" Version="4.2.9001.*" />
+    <PackageReference Include="nkast.Kni.Platform.WinForms.DX11" Version="4.2.9001.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
+  </ItemGroup>
+
+  <!-- The shared DX render inputs (shader list, by-name params, repo-root/cat helpers).
+       Compiled against KNI here so the scene is byte-for-byte the same as the MonoGame
+       DX harnesses. The comparing Game itself is defined inline in Program.cs. -->
+  <ItemGroup>
+    <Compile Include="..\SharedDx\DxShaderInputs.cs" />
+  </ItemGroup>
+
+</Project>

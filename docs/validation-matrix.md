@@ -4,7 +4,7 @@
 library, shader format/version, graphics target, and OS, and to mark cells off as they advance. This is a
 **living checklist**: update a cell's status (and the date) whenever its evidence changes.
 
-**Last updated:** 2026-06-15.
+**Last updated:** 2026-06-15 (Phase 44: KNI DirectX render-proven; GL render gates wired into CI).
 
 ---
 
@@ -36,13 +36,14 @@ What ShadowDusk emits for each runtime/target, and the best proof to date. (Form
 | Runtime | DirectX (DX11) | OpenGL / GLES | Vulkan | Metal |
 |---|---|---|---|---|
 | **MonoGame** | ✅ DXBC SM5 (MGFX v10) — rendered on Windows vs `mgfxc` + `fxc` oracle (PS corpus + VS-matrix) | ✅ GLSL (MGFX v10) — rendered on Linux (Mesa) + Windows vs `mgfxc` (PS corpus + VS-driven) | 🚫 SPIR-V — MonoGame 3.8.5 Vulkan still **preview**; ShadowDusk DXC->SPIR-V path **parked** (Phase 32) | ⬛ MSL — ShadowDusk Metal target is a **stub** |
-| **KNI** | 🟡 DXBC SM5 (MGFX v10) — same bytes as MonoGame DX (likely loads), **not load/render-tested in KNI** (`WinForms.DX11`/`UAP.DX11`) | ✅ GLSL (MGFX v10) — **render-proven on KNI v4.2.9001 desktop (SDL2.GL)**: v10 loads + renders **pixel-identical to MonoGame (maxd 0)** and **within maxd 1 of the mgfxc goldens** across the 10-shader corpus (`validation/KniDesktopGL`, 2026-06-14). Also browser-proven in KNI WebGL/Blazor (Phase 24; that run pre-dates v4.02, refresh pending) | — KNI ships **no Vulkan** platform | — KNI iOS uses **GL**, no Metal |
+| **KNI** | ✅ DXBC SM5 (MGFX v10) — **render-proven on KNI v4.2.9001 (WinForms.DX11)**: ShadowDusk's DX output loads + renders **pixel-equivalent to the mgfxc DX golden (maxd <= 1, driver rounding on Dots only)** across the 10-shader corpus in real KNI DX11 (`validation/KniWinFormsDX`, 2026-06-15) | ✅ GLSL (MGFX v10) — **render-proven on KNI v4.2.9001 desktop (SDL2.GL)**: v10 loads + renders **pixel-identical to MonoGame (maxd 0)** and **within maxd 1 of the mgfxc goldens** across the 10-shader corpus (`validation/KniDesktopGL`, 2026-06-14). Also browser-proven in KNI WebGL/Blazor (Phase 24; that run pre-dates v4.02, refresh pending) | — KNI ships **no Vulkan** platform | — KNI iOS uses **GL**, no Metal |
 | **FNA** | ✅ — *one* fx_2_0 `.fxb` serves **all** FNA3D backends (D3D11 / Vulkan / OpenGL / Metal) via FNA3D + MojoShader; rendered vs `fxc /T fx_2_0` (PS + VS-driven) | ✅ (same `.fxb`) | ✅ (same `.fxb`) | ✅ (same `.fxb`) |
 
 **Reading it:** the rock-solid, render-proven cells today are **MonoGame OpenGL, MonoGame DirectX, FNA
-(all backends), and now KNI OpenGL on the current v4.02 desktop runtime** (`validation/KniDesktopGL`,
-2026-06-14). The remaining honest gaps are **KNI DirectX** (untested), a **browser refresh** of the KNI
-WebGL proof on v4.02 (the Phase-24 run pre-dates it), and the **modern DirectX features** (next section).
+(all backends), KNI OpenGL on the current v4.02 desktop runtime** (`validation/KniDesktopGL`, 2026-06-14),
+**and now KNI DirectX on the v4.02 WinForms.DX11 runtime** (`validation/KniWinFormsDX`, 2026-06-15). The
+remaining honest gaps are a **browser refresh** of the KNI WebGL proof on v4.02 (the Phase-24 run
+pre-dates it) and the **modern DirectX features** (next section).
 
 ## 2. Shader format / version / graphics profile
 
@@ -119,32 +120,37 @@ compile rung for both is pinned by `ValidationMatrixCoverageTests`; VTF render b
 | **Cross-OS byte-identical** output (Win/Linux/Mac; GL/DX/FNA) | `CrossHostByteIdentityTests` | ✅ (all 3 OSes) | `dotnet test ...Integration.Tests --filter CrossHostByteIdentity` |
 | OpenGL render vs golden (software GL) | `tests/ShadowDusk.ImageTests` (incl. `MatrixConventionSweepTests`, `Issue70MatrixTransposeRenderTests`) | ✅ (Linux Mesa) | `dotnet test tests/ShadowDusk.ImageTests` |
 | **Real MonoGame OpenGL** render vs `mgfxc` | `validation/VsDriven`, `validation/Candidate` + `validation/compare.py` | manual | `dotnet run --project validation/VsDriven` |
-| **Real MonoGame OpenGL** cube + 3D/volume texture render (rung-4; cube full, 3D single-voxel) | `validation/TextureBreadthValidation` (in-process assert) | manual | `dotnet run --project validation/TextureBreadthValidation` |
-| **Real MonoGame OpenGL** pass render-states / annotations / baked sampler-states load + render vs `mgfxc` golden (Phase 43) | `validation/StateFidelity` (in-process compare) | manual | `dotnet run -c Release --project validation/StateFidelity` |
-| **Real MonoGame OpenGL** cbuffer + array-parameter-by-name model load + render vs `mgfxc` golden (Phase 43C) | `validation/CbufferModel` (in-process compare) | manual | `dotnet run -c Release --project validation/CbufferModel` |
+| **Real MonoGame OpenGL** cube + 3D/volume texture render (rung-4; cube full, 3D single-voxel) | `validation/TextureBreadthValidation` (in-process assert) | ✅ (`validation-render.yml`, ubuntu/llvmpipe) | `dotnet run --project validation/TextureBreadthValidation` |
+| **Real MonoGame OpenGL** pass render-states / annotations / baked sampler-states load + render vs `mgfxc` golden (Phase 43) | `validation/StateFidelity` (in-process compare) | ✅ (`validation-render.yml`, ubuntu/llvmpipe) | `dotnet run -c Release --project validation/StateFidelity` |
+| **Real MonoGame OpenGL** cbuffer + array-parameter-by-name model load + render vs `mgfxc` golden (Phase 43C) | `validation/CbufferModel` (in-process compare) | ✅ (`validation-render.yml`, ubuntu/llvmpipe) | `dotnet run -c Release --project validation/CbufferModel` |
 | **Real MonoGame DirectX** render vs `mgfxc`/`fxc` | `validation/VsDrivenDx`, `validation/Candidate{Dx,Vkd3d}` + `compare_dx.py` | manual | `dotnet run --project validation/VsDrivenDx` |
 | **DirectX modern features render** (vertex texture fetch; vkd3d vs `fxc`) | `validation/DxModernFeatures` | manual | `dotnet run --project validation/DxModernFeatures` |
 | **Real FNA** render vs `fxc /T fx_2_0` | `validation/FnaValidation` | manual | `dotnet run --project validation/FnaValidation` |
 | Forward-compat (newer MonoGame loads our v10) | `validation/ForwardCompat` | manual | `validation/ForwardCompat/run-forwardcompat.ps1` |
 | **KNI WebGL** render (browser) | `tests/ShadowDusk.BrowserTests` (Playwright) | manual | see `tests/ShadowDusk.BrowserTests/README.md` |
 | **Real KNI OpenGL desktop** render vs mgfxc + MonoGame (KNI v4.02, SDL2.GL) | `validation/KniDesktopGL` + `compare_kni.py` | manual | `dotnet run --project validation/KniDesktopGL` then `python validation/compare_kni.py` |
+| **Real KNI DirectX** render vs mgfxc (KNI v4.02, WinForms.DX11; in-process compare) | `validation/KniWinFormsDX` | manual (Windows DX11) | `dotnet run --project validation/KniWinFormsDX -c Release` |
 | **Real KNI OpenGL VS-driven** render vs mgfxc (issue #70: matrix transpose + legacy `: POSITION`, KNI v4.02 SDL2.GL) | `validation/KniVsDriven` (in-process compare) | manual | `dotnet run --project validation/KniVsDriven` |
 | **KNIFX v11** render in real KNI (vs v10) | `validation/KniDesktopGL knifx` + `compare_kni.py` | manual | `dotnet run --project validation/KniDesktopGL -- knifx` |
 | **MGFX v11** render in real MonoGame 3.8.5 (vs v10 + goldens) | `validation/MonoGameV11` + `compare_mgfxv11.py` | manual | `dotnet run --project validation/MonoGameV11` then `... -- v10`, then `python validation/compare_mgfxv11.py` |
 
-**The "test programmatically" goal:** the manual `validation/*` harnesses are the render-proof for the
-strongest cells but are not yet wired into CI. The path to a fully self-checking matrix is (a) promote the
+**The "test programmatically" goal:** the path to a fully self-checking matrix is (a) promote the
 `validation/*` render gates into CI jobs (where a software/headless driver exists), and (b) back this matrix
 with a machine-readable coverage manifest a test asserts against (so a cell cannot be marked ✅ without a
-passing test). Tracked as a gap below.
+passing test). **(a) is now partly done (Phase 44 C):** the three in-process, self-asserting **GL** render
+gates (`StateFidelity`, `CbufferModel`, `TextureBreadthValidation`) run in CI on ubuntu under
+xvfb + Mesa llvmpipe via **`validation-render.yml`** (push-to-main + the `run-validation-render` PR label),
+so a GL render regression turns the lane red. The **DX / FNA / KNI-DX** render gates stay manual — they
+need a Windows runner with a software D3D driver (WARP), which is unverified, so they are deliberately not
+wired yet (the remaining Phase 44 C tail).
 
 ## 7. Gaps & next targets (ordered)
 
 | Gap | Achievable here? | Notes |
 |---|---|---|
 | **DirectX modern features render** | partly **done** | **VTF ✅** (`validation/DxModernFeatures`, vkd3d == `fxc` maxd 0). Texture-array render is **blocked** on MonoGame's missing public `Texture2DArray` binding (a runtime-API gap, not ours). |
-| **KNI v4.02 render** (desktop `SDL2.GL` + a fresh WebGL run) | **desktop done** | ✅ **Desktop SDL2.GL render-proven on KNI v4.2.9001** (`validation/KniDesktopGL`, 2026-06-14): v10 renders maxd 0 vs MonoGame, ≤1 vs mgfxc goldens, 10/10. Remaining: a **fresh WebGL run** on v4.02 (refresh the Phase-24 browser harness) and **KNI DirectX**. This desktop rig is also Phase 35 Area B's reproduce-first baseline for the KNIFX writer. |
-| **Promote `validation/*` render gates into CI** | partly | GL render runs in CI on Linux today; DX/FNA render are Windows-runner + (for DX) a software driver question. |
+| **KNI v4.02 render** (desktop `SDL2.GL` + DirectX + a fresh WebGL run) | **desktop + DirectX done** | ✅ **Desktop SDL2.GL render-proven on KNI v4.2.9001** (`validation/KniDesktopGL`, 2026-06-14): v10 renders maxd 0 vs MonoGame, ≤1 vs mgfxc goldens, 10/10. ✅ **KNI DirectX render-proven** (`validation/KniWinFormsDX`, 2026-06-15): ShadowDusk DX output vs mgfxc DX golden, maxd ≤1, 10/10 in real KNI WinForms.DX11. Remaining: a **fresh WebGL run** on v4.02 (refresh the Phase-24 browser harness). This desktop rig is also Phase 35 Area B's reproduce-first baseline for the KNIFX writer. |
+| **Promote `validation/*` render gates into CI** | partly **done** | **GL in-process gates wired into CI** (`validation-render.yml`: `StateFidelity` / `CbufferModel` / `TextureBreadthValidation` on ubuntu/llvmpipe, push-to-main + label). The `ShadowDusk.ImageTests` GL render already runs in CI. **DX / FNA / KNI-DX** render gates remain manual — they need a Windows runner + a software D3D driver (WARP), unverified. |
 | **Machine-readable coverage** backing this matrix | **compile rung done** | `ValidationMatrixCoverageTests` pins the compile/reject cells as a `[Theory]`. Extending it to assert the render cells against the `validation/*` gates is the remaining step. |
 | **MGFX v11 / KNIFX writers** | **committed, in progress** | Additive outputs we **will** emit so consumers can *use* the new-container features (KNIFX's XNA-compat/quality fixes; MonoGame v11's body), not a "won't do." v10 staying forward-compatible is a convenience, **not** a reason to skip these. Default stays v10 for universal load; v11/KNIFX are opt-in / auto-selected from the target, never required (seamless rule preserved). Path: reproduce-first render against KNI v4.02 (Phase 44 D) -> build the faithful writers (Phase 35 Area B). See [`PHASE-35-appendix/`](../plan/PHASE-35-appendix/). |
 | **Vulkan / DX12 render** | **ready, ext-blocked** | The DXC->SPIR-V / DXIL plumbing is **already built**; only the render-validation is blocked, and solely on the **external** dependency of MonoGame 3.8.5 (Vulkan + DX12 runtimes) going **stable** (it is preview.6 today). The moment 3.8.5 ships stable this validates (Areas C/D). Not a "won't do", a wait on someone else's release. |
