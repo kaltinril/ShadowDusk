@@ -1,11 +1,13 @@
 # Phase 25 — Security: state the trust model honestly
 
-**Status:** Reframed 2026-06-12. The original draft modeled ShadowDusk as if it had to
-defend a victim against **untrusted `.fx` supplied by a third party**. For the actual
-product that threat model is wrong, so most of the original findings were **removed as
-not-real-harm** (recorded below with rationale so they are not re-litigated). What
-remains is small: write down the real trust model, and confirm the supply-chain hygiene
-that already exists.
+**Status:** ✅ **Done (2026-06-15).** Reframed 2026-06-12 (the original draft modeled
+ShadowDusk as if it had to defend a victim against **untrusted `.fx` supplied by a third
+party** — wrong threat model for the actual product, so most original findings were
+**removed as not-real-harm**, recorded below with rationale so they are not re-litigated).
+The single remaining deliverable — a root **`SECURITY.md`** stating the real trust model,
+the supply-chain verification of the natives we ship, and a vulnerability-reporting contact
+— is written and committed. No input-validation "hardening" was added (by design). This
+phase does not block v1.0.
 
 ---
 
@@ -124,11 +126,15 @@ none is a vulnerability for the product.
 
 ## Definition of Done
 
-1. `SECURITY.md` exists at the repo root stating the trust model (compiling `.fx` runs
+1. ✅ `SECURITY.md` exists at the repo root stating the trust model (compiling `.fx` runs
    code; ShadowDusk is a tool, not a sandbox; third-party-input services are the consumer's
    isolation responsibility), the supply-chain verification of the natives we ship, and a
-   vulnerability-reporting contact.
-2. No input-validation "hardening" is added that would imply the library sandboxes
-   untrusted shader input (it does not, by design).
-3. This phase no longer blocks v1.0 — the original "untrusted-input findings" were security
+   vulnerability-reporting contact. *(Written 2026-06-15: trust model + the consumer's
+   isolation responsibility for third-party `.fx`; supply-chain section documenting the
+   pinned + SHA-256-verified vkd3d / macOS DXC / WASM natives, the release-gate enforcement,
+   and the transitive `Silk.NET.SPIRV.Cross.Native` / `Vortice.Dxc` NuGets; reporting via
+   GitHub Security Advisories with an email fallback.)*
+2. ✅ No input-validation "hardening" was added that would imply the library sandboxes
+   untrusted shader input (it does not, by design) — `SECURITY.md` says so explicitly.
+3. ✅ This phase no longer blocks v1.0 — the original "untrusted-input findings" were security
    theater for the product's real threat model and have been removed with rationale above.

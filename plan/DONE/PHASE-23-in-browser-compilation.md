@@ -8,7 +8,7 @@
 
 The faithful path also surfaced + fixed a real reach bug: .NET 8 WASM has no BCL MD5, so `MgfxWriter.ComputeEffectKey` threw in-browser → `ManagedMd5` (RFC-1321), proven ≡ BCL MD5 (17/17). Full solution **515/515**. Commits: M0 `33e298d`, M2+M3 `d51b070`, M1 `9cc983a`.
 
-**Carry-forwards (owned elsewhere, NOT Phase 23 blockers):** DirectX-DXBC-in-WASM → [Phase 4.1](PHASE-4.1-SPIKE-wasm-directx-dxbc.md); CI + Linux/macOS *rebuild-from-source* of `dxcompiler.wasm` (today the build script is Windows/MSVC-only; the built `.wasm` is committed so consumers/CI need only a copy) → [Phase 30 §16](PHASE-30-ci-and-nuget-release.md); VS-driven path through DXC→WASM (corpus is PS-only) → backlog 17-VS; untrusted-`.fx` input validation → [Phase 25](../PHASE-25-security-hardening.md); download-size/cold-start UX + mode-2 default-on decision (Track E1); arbitrary-shader hardening beyond the 10-shader corpus.
+**Carry-forwards (owned elsewhere, NOT Phase 23 blockers):** DirectX-DXBC-in-WASM → [Phase 4.1](PHASE-4.1-SPIKE-wasm-directx-dxbc.md); CI + Linux/macOS *rebuild-from-source* of `dxcompiler.wasm` (today the build script is Windows/MSVC-only; the built `.wasm` is committed so consumers/CI need only a copy) → [Phase 30 §16](PHASE-30-ci-and-nuget-release.md); VS-driven path through DXC→WASM (corpus is PS-only) → backlog 17-VS; untrusted-`.fx` input validation → [Phase 25](PHASE-25-security-hardening.md) (closed 2026-06-15: consumer's isolation responsibility per the trust model); download-size/cold-start UX + mode-2 default-on decision (Track E1); arbitrary-shader hardening beyond the 10-shader corpus.
 
 ---
 
@@ -191,7 +191,7 @@ The build is out-of-session (multi-day, LLVM-fork) but well-trodden; capture the
 
 ### Track E — Sizing, security, CI
 - [ ] 🖥️ E1. Measure download size / memory / cold-start (DXC/Slang wasm dominates); decide mode-2 default-on vs opt-in.
-- [ ] E2. Run untrusted `.fx` through [Phase 25](../PHASE-25-security-hardening.md) input validation.
+- [x] E2. ~~Run untrusted `.fx` through [Phase 25](PHASE-25-security-hardening.md) input validation.~~ Closed 2026-06-15: Phase 25 reframed — untrusted third-party `.fx` is the consumer's process/host-isolation responsibility, not library input validation.
 - [ ] E3. [Phase 30 CI](PHASE-30-ci-and-nuget-release.md): headless-browser smoke for mode 1; install `wasm-tools` + pin emscripten 3.1.34; account for AV-scan slowness (CLAUDE.md Phase 21 note).
 
 ### Sequencing
