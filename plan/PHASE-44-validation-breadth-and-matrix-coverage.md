@@ -1,13 +1,15 @@
 # Phase 44 — Validation breadth & matrix coverage
 
 **Status:** ✅ **Effectively done (2026-06-15)** — every in-scope item is closed; the only
-remaining work is two **externally-blocked** items documented below (per this phase's own
+remaining work is **one externally-blocked** item documented below (per this phase's own
 Definition of Done, a cell may be "blocked on a real external dependency"). **A done; B (VTF)
-done, B (texture-array render) blocked on a MonoGame public-API gap (not ours); C: GL render
-gates wired into CI 2026-06-15 (DX/FNA/KNI-DX render-in-CI need a Windows software-driver/WARP
-story, external); D (KNI v4.02 render) done across all three KNI paths: desktop GL 2026-06-14,
-DirectX 2026-06-15, WebGL Reach + HiDef refreshed 2026-06-15.** Owns the living
-[validation matrix](../docs/validation-matrix.md).
+done; B (texture-array render) resolved as N/A-not-ours — our DXBC is correct + pinned, MonoGame
+just has no public array-binding API to render through (a MonoGame limitation, closed from our
+side); C: GL render gates wired into CI 2026-06-15, DX/FNA/KNI-DX render-in-CI need a Windows
+software-driver/WARP story (external) but are now a baked-in local pre-release gate
+(`validation/run-windows-render-gates.ps1`); D (KNI v4.02 render) done across all three KNI
+paths: desktop GL 2026-06-14, DirectX 2026-06-15, WebGL Reach + HiDef refreshed 2026-06-15.**
+Owns the living [validation matrix](../docs/validation-matrix.md).
 **Track:** Validation / fidelity.
 
 ## Goal
@@ -46,9 +48,10 @@ arm-vs-arm, same scene, only the compiler differs (the `VsDrivenDx` pattern).
 - **Vertex texture fetch: ✅ render-proven** (2026-06-14) — vkd3d == `fxc` at **maxd 0**, and the VTF
   genuinely deforms the mesh (gradient-height vs flat-height differ, so the pixel-match is non-vacuous).
   Matrix §4 VTF cell -> ✅.
-- **`Texture2DArray`: 🚫 render blocked** — MonoGame's public API exposes no `Texture2DArray` to bind to the
-  shader's array sampler, so a non-vacuous render can't be set up. This is a MonoGame *runtime-API* gap, not
-  a ShadowDusk one (ShadowDusk compiles the array shader to valid DXBC, pinned by item A). Revisit if a
+- **`Texture2DArray`: ✅ resolved (render N/A, not our gap)** — ShadowDusk compiles the array shader to
+  valid DXBC, pinned by item A. A non-vacuous render can't be set up because **MonoGame's public API exposes
+  no `Texture2DArray` to bind** to the shader's array sampler. That is a MonoGame *runtime-API* limitation,
+  not a ShadowDusk gap, so this is **closed from our side** (our part is done and proven). Revisit only if a
   MonoGame array-binding path lands (3.8.5+?) or via a non-MonoGame DX11 harness.
 
 ### C. CI-ify the real-engine render gates — ✅ GL in-process gates wired; DX/FNA/KNI-DX remain

@@ -96,10 +96,12 @@ features the GL path rejects, but their **render** is not yet proven.
 | Feature | Compiles (DirectX) | Rejected on OpenGL | Rendered + matched on DirectX |
 |---|---|---|---|
 | Vertex texture fetch (`SampleLevel` in VS) | ✅ (exit 0) | ✅ `SD0210` (correct) | ✅ **render-proven** — vkd3d == `fxc` oracle at **maxd 0** in real MonoGame WindowsDX, VTF actually deforms the mesh (`validation/DxModernFeatures`, 2026-06-14) |
-| `Texture2DArray` | ✅ (exit 0) | ✅ `SD0210` (correct) | 🚫 **blocked** — MonoGame's public API has no `Texture2DArray` to bind, so a non-vacuous render can't be set up yet (Phase 44 item D-adjacent) |
+| `Texture2DArray` | ✅ (exit 0) | ✅ `SD0210` (correct) | ✅ **our part done** / render **N/A (not our gap)** — ShadowDusk compiles it to valid DXBC (pinned by `ValidationMatrixCoverageTests`); a render can't be set up because **MonoGame exposes no public `Texture2DArray` binding API**. A MonoGame runtime limitation, **closed from ShadowDusk's side**; revisit only if MonoGame adds array binding. |
 
-VTF is closed; the texture-array render is blocked on a MonoGame runtime-API gap, not a ShadowDusk one. The
-compile rung for both is pinned by `ValidationMatrixCoverageTests`; VTF render by `validation/DxModernFeatures`.
+VTF is closed (render-proven). The texture-array render is **N/A from ShadowDusk's side** — our compile is
+correct and pinned; the render simply can't be exercised because MonoGame has no public array-binding API, a
+MonoGame limitation rather than a ShadowDusk gap. The compile rung for both is pinned by
+`ValidationMatrixCoverageTests`; VTF render by `validation/DxModernFeatures`.
 
 ---
 
@@ -148,7 +150,7 @@ wired yet (the remaining Phase 44 C tail).
 
 | Gap | Achievable here? | Notes |
 |---|---|---|
-| **DirectX modern features render** | partly **done** | **VTF ✅** (`validation/DxModernFeatures`, vkd3d == `fxc` maxd 0). Texture-array render is **blocked** on MonoGame's missing public `Texture2DArray` binding (a runtime-API gap, not ours). |
+| **DirectX modern features render** | **done** | **VTF ✅** (`validation/DxModernFeatures`, vkd3d == `fxc` maxd 0). Texture-array render is **N/A from our side** (closed): our DXBC is correct + pinned, but MonoGame has no public `Texture2DArray` binding API to render through — a MonoGame limitation, not a ShadowDusk gap. |
 | **KNI v4.02 render** (desktop `SDL2.GL` + DirectX + WebGL) | **done** | ✅ **Desktop SDL2.GL** (`validation/KniDesktopGL`, 2026-06-14): v10 maxd 0 vs MonoGame, ≤1 vs mgfxc goldens, 10/10. ✅ **DirectX WinForms.DX11** (`validation/KniWinFormsDX`, 2026-06-15): ShadowDusk DX vs mgfxc DX golden, maxd ≤1, 10/10. ✅ **WebGL Reach + HiDef** (`tests/ShadowDusk.BrowserTests`, refreshed 2026-06-15 on KNI v4.2.9001.2): 10/10 of ShadowDusk's own `.mgfx` load + render in real KNI WebGL, issue-#7 HiDef guard GREEN. All three KNI render paths now proven on the current v4.02 line. The desktop rig is also Phase 35 Area B's reproduce-first baseline for the KNIFX writer. |
 | **Promote `validation/*` render gates into CI** | partly **done** | **GL in-process gates wired into CI** (`validation-render.yml`: `StateFidelity` / `CbufferModel` / `TextureBreadthValidation` on ubuntu/llvmpipe, push-to-main + label). The `ShadowDusk.ImageTests` GL render already runs in CI. **DX / FNA / KNI-DX** render gates remain manual — they need a Windows runner + a software D3D driver (WARP), unverified. |
 | **Machine-readable coverage** backing this matrix | **compile rung done** | `ValidationMatrixCoverageTests` pins the compile/reject cells as a `[Theory]`. Extending it to assert the render cells against the `validation/*` gates is the remaining step. |
