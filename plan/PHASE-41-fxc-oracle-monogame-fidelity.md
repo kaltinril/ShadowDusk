@@ -17,7 +17,7 @@
 
 ## Context snapshot (as of 2026-06-08 — re-verify when starting)
 
-- **What's validated today:** Phase 17 (GL, 10/10 rung-4 vs `mgfxc`), Phase 18 (DX DXBC, 10/10 rung-4 vs `mgfxc` via both `d3dcompiler_47` oracle and vkd3d-shader), Phase 28 (VS-driven effects, maxΔ-0 vs `mgfxc` on GL + DX). All over the **SM3/SM5 PS-only + the VS corpus** — not the full 52-`.fx` fixture set.
+- **What's validated today:** Phase 17 (GL, 10/10 rung-4 vs `mgfxc`), Phase 18 (DX DXBC, 10/10 rung-4 vs `mgfxc` via both `d3dcompiler_47` oracle and vkd3d-shader), Phase 28 (VS-driven effects, maxΔ-0 vs `mgfxc` on GL + DX). All over the **SM3/SM5 PS-only + the VS corpus** — not the full fixture set.
 - **Known, documented fidelity gap:** global cbuffer **initializers** are dropped by DXC vs `fxc`/`mgfxc` (stored default `0`) — see `docfx/guides/parameters-and-caveats.md`. Characterized but not closed; the recommended pattern is `SetValue` / inline literals.
 - **Oracle relationships:** `mgfxc` (Windows) → `fxc.exe` for DX HLSL → DXBC. ShadowDusk's DX path uses **vkd3d-shader** (shipping, cross-platform) with **`d3dcompiler_47`** as the Windows oracle. `d3dcompiler_47` and standalone `fxc.exe` are closely related but **not guaranteed identical** — having `fxc.exe` lets us check that assumption directly.
 - **Goldens:** `tests/fixtures/golden/{DirectX_11,OpenGL}/` hold reference `.mgfx`. Provenance / how they were produced: confirm they came from genuine `mgfxc` and whether the full corpus (not just the validated 10) has goldens.

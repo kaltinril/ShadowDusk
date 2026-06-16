@@ -18,7 +18,7 @@ The load-bearing distinctions — internalize these, they have drifted before:
 
 ## Project Overview
 
-ShadowDusk is a cross-platform HLSL shader compiler for MonoGame and KNI. Its five core purposes are:
+ShadowDusk is a cross-platform HLSL shader compiler for MonoGame, KNI, and FNA. Its five core purposes are:
 
 1. **OS-agnostic compilation** — compile `.fx` shaders on Linux, macOS, or Windows with no Wine or Windows SDK required.
 2. **DirectX and OpenGL targets** — produce DXBC (DirectX 11) or GLSL (OpenGL/WebGL) output from a single HLSL source.

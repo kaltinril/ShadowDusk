@@ -109,9 +109,9 @@ public sealed class MgfxcCrossValidationTests
         File.Exists(fxPath)        .Should().BeTrue($".fx source must exist at {fxPath}");
         File.Exists(goldenMgfxPath).Should().BeTrue($"golden mgfx must exist at {goldenMgfxPath}");
 
-        // 1. ShadowDusk side — try to compile. If this fails (current state of
-        //    the codebase, see class doc), skip with the underlying compiler
-        //    diagnostic so the bottleneck is obvious in test output.
+        // 1. ShadowDusk side — compile. These 10 fixtures are known-good (they compile on
+        //    every other GL harness), so a compile failure here is a real regression and the
+        //    test FAILS with the underlying compiler diagnostic — never a pass-by-skip.
         string hlslSource = await File.ReadAllTextAsync(fxPath, ct);
         var sdResult = await new EffectCompiler().CompileAsync(
             hlslSource,
@@ -125,12 +125,13 @@ public sealed class MgfxcCrossValidationTests
 
         if (sdResult.IsFailure)
         {
-            _output.WriteLine($"SKIP {fixtureStem}: ShadowDusk compile failed.");
-            foreach (var e in sdResult.Error)
-                _output.WriteLine($"  {e.File}({e.Line},{e.Column}): {e.Code}: {e.Message}");
-            // Returning rather than failing — this is a known compiler-limitation
-            // gap. See class doc for unblocking work items.
-            return;
+            string diag = string.Join("\n",
+                sdResult.Error.Select(e => $"  {e.File}({e.Line},{e.Column}): {e.Code}: {e.Message}"));
+            _output.WriteLine($"FAIL {fixtureStem}: ShadowDusk compile failed.\n{diag}");
+            // A known-good fixture failing to compile is exactly the regression this gate
+            // exists to catch — surface it, do not skip-as-green.
+            sdResult.IsSuccess.Should().BeTrue(
+                $"known-good fixture '{fixtureStem}' must compile for OpenGL:\n{diag}");
         }
 
         byte[] sdMgfx = sdResult.Value.Data;

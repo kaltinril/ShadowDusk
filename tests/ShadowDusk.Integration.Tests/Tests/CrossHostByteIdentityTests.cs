@@ -48,6 +48,7 @@ namespace ShadowDusk.Integration.Tests.Tests;
 /// with both hashes (the failure message below carries them).</para>
 /// </summary>
 [Trait("Category", "Integration")]
+[Trait("Category", "Fidelity")] // also runs on the PR unit lane (folds the fidelity gate into the required build-and-test job)
 public sealed class CrossHostByteIdentityTests
 {
     private const string RegenerateEnvVar = "SHADOWDUSK_REGENERATE_BYTE_MANIFEST";

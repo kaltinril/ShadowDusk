@@ -119,6 +119,10 @@ jobs:
       - name: Run GL render gates (real DesktopGL under xvfb/llvmpipe)
         env:
           LIBGL_ALWAYS_SOFTWARE: "1"
+          # No GL context => hard FAIL, never a pass-by-skip. StateFidelity/CbufferModel throw
+          # on a missing device (natural red); TextureBreadthValidation catches+skips, so this
+          # flag turns its skip into a failure too (it reads SHADOWDUSK_REQUIRE_GL).
+          SHADOWDUSK_REQUIRE_GL: "1"
         run: |
           set +e
           rc=0

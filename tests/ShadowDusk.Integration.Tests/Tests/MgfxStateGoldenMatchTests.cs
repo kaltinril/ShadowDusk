@@ -21,6 +21,7 @@ namespace ShadowDusk.Integration.Tests.Tests;
 /// <c>dotnet-mgfxc 3.8.2.1105</c>: <c>mgfxc &lt;fx&gt; &lt;out&gt; /Profile:{OpenGL|DirectX_11}</c>.</para>
 /// </summary>
 [Trait("Category", "Integration")]
+[Trait("Category", "Fidelity")] // also runs on the PR unit lane (folds the fidelity gate into the required build-and-test job)
 public sealed class MgfxStateGoldenMatchTests
 {
     public static IEnumerable<object[]> StateFixtures()

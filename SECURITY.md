@@ -37,9 +37,10 @@ third-party shader source:
 - Run the compile in an **isolated process or container** with CPU, memory, wall-clock, and
   filesystem limits enforced by the OS / container runtime, not by the library.
 - Do **not** point a `FileSystemIncludeResolver` with access to sensitive paths at
-  stranger-supplied input. For a no-filesystem host (a browser fiddle), use
-  `InMemoryIncludeResolver`, which resolves only from an in-memory dictionary, so there is no
-  host filesystem to traverse in the first place.
+  stranger-supplied input. For a no-filesystem host (a browser fiddle), supply
+  `InMemoryIncludeResolver`, which resolves only from an in-memory dictionary; and note that a real
+  browser / WASM host exposes no accessible host filesystem in the first place, so `#include`
+  resolution cannot reach host files there regardless of which resolver is configured.
 
 The library will not do this isolation for you, and you should not assume it does.
 
@@ -48,14 +49,22 @@ The library will not do this isolation for you, and you should not assume it doe
 The one place ShadowDusk itself sits in a trust path is the **native binaries it
 distributes** (you trust our package). Those are version-pinned and integrity-checked:
 
-- **vkd3d-shader (DXBC / fx_2_0 backend), the macOS DXC dylib, and the WebAssembly modules**
-  (DXC to WASM, SPIRV-Cross, vkd3d to WASM) are **version-pinned and SHA-256-verified** by
-  `tools/restore.ps1` / `tools/restore.sh` against hashes embedded in those scripts. They are
-  downloaded from **fixed GitHub Release tags** (`native-vkd3d-1.17`,
-  `native-dxc-1.7.2212.40`, `native-vkd3d-wasm-1.17`); a hash mismatch is rejected and
-  re-downloaded rather than used. Packaging runs under **hard release gates**
-  (`.github/workflows/release.yml` and `wasm.yml` fail the build if a shipped native is
-  missing or mismatched), so a NuGet package cannot ship without its verified natives.
+- **Downloaded, version-pinned, SHA-256-verified natives** — vkd3d-shader (the DXBC / fx_2_0
+  backend, all four desktop RIDs), the macOS DXC dylib, and the vkd3d-shader **WebAssembly**
+  module. `tools/restore.ps1` / `tools/restore.sh` download these from **fixed GitHub Release
+  tags** (`native-vkd3d-1.17`, `native-dxc-1.7.2212.40`, `native-vkd3d-wasm-1.17`), check each
+  file's SHA-256 against a hash embedded in the script, and **discard a mismatched file**
+  (re-downloading rather than using it). The packaging workflows then gate on the verified file
+  being present (`release.yml`), and `wasm.yml` additionally **re-hashes** the vkd3d WASM module
+  against the pinned value at gate time, so a package cannot ship without the pinned, hash-checked
+  native.
+- **Committed-in-repository WASM frontend modules** — `dxcompiler.wasm` (the in-browser
+  HLSL → SPIR-V DXC frontend, ~17 MB) and `spirv-cross.wasm` (SPIR-V → GLSL). These are built
+  out-of-band (recipes in `tools/`) and **committed to the repository** rather than downloaded at
+  restore time, so their integrity rests on **git version control plus pull-request review** — the
+  same basis as any source file we ship — not on a download-time SHA-256 pin. The build copies them
+  verbatim into the `ShadowDusk.Wasm` package. (If you require a download-time hash pin for these
+  too, treat that as a hardening follow-up; today their provenance is the committed git object.)
 - **The runtime SPIRV-Cross native ships transitively via the versioned
   `Silk.NET.SPIRV.Cross.Native` NuGet package**, with integrity provided by NuGet plus the
   committed `packages.lock.json` files restored under CI `RestoreLockedMode`. (The
@@ -64,9 +73,10 @@ distributes** (you trust our package). Those are version-pinned and integrity-ch
 - **Desktop DXC on Windows/Linux** comes from the `Vortice.Dxc` NuGet package, pinned in
   `Directory.Packages.props` and locked via `packages.lock.json`.
 
-Any native added to ShadowDusk's distribution in the future must join the same
-pin + SHA-256 + release-gate discipline. To verify a shipped native yourself, compute its
-SHA-256 and compare it against the pinned value in `tools/restore.ps1` / `tools/restore.sh`.
+Any **downloaded** native added to ShadowDusk's distribution in the future must join the same
+pin + SHA-256 + release-gate discipline. To verify a downloaded, pinned native yourself, compute
+its SHA-256 and compare it against the pinned value in `tools/restore.ps1` / `tools/restore.sh`;
+to verify a committed-in-repo WASM module, inspect its git history / blob hash.
 
 ## Reporting a vulnerability
 

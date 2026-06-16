@@ -1,6 +1,6 @@
 # Phase 35 — Forward-version support & validation (newer MonoGame / MGFX / DX — seamless)
 
-**Status:** 🟡 **Area A DONE (2026-06-05); B/C/D not started.** Scaffold created 2026-06-04.
+**Status:** 🟡 **Area A + B DONE (B built + render-proven 2026-06-14); C/D externally blocked on MonoGame 3.8.5 going stable.** Scaffold created 2026-06-04. (Area B: MGFX v11 + KNIFX writers, the `CapabilityProfile` / `--target-runtime` selector, and `RuntimeProfileDetector` are all shipped and render-proven, see PRs #92-#98 and `validation/MonoGameV11` + `validation/KniDesktopGL knifx`.)
 **Roadmap track:** Forward-compatibility (newer versions, seamless).
 
 > **Area A result (2026-06-05):** ShadowDusk's existing **v10 GL `.mgfx`** (product unchanged) **loads + renders pixel-equivalent** on **MonoGame.Framework.DesktopGL 3.8.4.1** (latest stable; 3.8.5 is preview-only) exactly as on the pinned **3.8.2.1105** — **10/10** of the SM3 PS-only corpus, max per-channel delta **0** vs the 3.8.2 renders of the *same bytes* (within tolerance ≤1 vs mgfxc goldens). Product pin (`Directory.Packages.props` = 3.8.2.1105) and default (`MgfxVersion = 10`) **untouched**; the newer runtime is referenced only by a separate `validation/ForwardCompat/` project via `VersionOverride`. Harness + matrix + re-runnable regression guard delivered. **Seamless: the consumer does nothing — their existing `.mgfx` just keeps working forward.** See Area A below + `validation/ForwardCompat/README.md`.

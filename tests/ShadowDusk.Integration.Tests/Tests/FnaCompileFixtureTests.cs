@@ -21,6 +21,7 @@ namespace ShadowDusk.Integration.Tests.Tests;
 /// real FNA render (rung 4) are NOT covered here — proxies, not the bar.
 /// </summary>
 [Trait("Category", "Integration")]
+[Trait("Category", "Fidelity")] // also runs on the PR unit lane (folds the fidelity gate into the required build-and-test job)
 [Trait("Platform", "FNA")]
 public sealed class FnaCompileFixtureTests
 {

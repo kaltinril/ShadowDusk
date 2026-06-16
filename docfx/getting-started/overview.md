@@ -34,7 +34,7 @@ Every shape implements the same <xref:ShadowDusk.Core.IShaderCompiler> interface
 | FNA | D3D9 fx_2_0 `.fxb` (SM ≤ 3) via vkd3d-shader | Validated end-to-end in real FNA (renders pixel-equivalent to `fxc /T fx_2_0`, PS-only and VS-driven corpora) |
 | WebGL (KNI browser) | GLSL ES | Validated end-to-end in real headless KNI WebGL |
 | [Metal (macOS / iOS)](../backends/metal.md) | MSL | Not yet implemented (future) |
-| [Vulkan](../backends/vulkan.md) | SPIR-V | Future |
+| [Vulkan](../backends/vulkan.md) | SPIR-V | Experimental (compiles to SPIR-V; no shipping runtime to render-validate against yet) |
 
 > **Output container.** The default is **MGFX v10**, which loads on every MonoGame 3.8.2+ and KNI
 > runtime — you never set a flag for correct output. As of **0.6.0**, opt-in/experimental newer

@@ -29,6 +29,9 @@ public sealed class VsDxEffectImageRenderer : Game
 
     public List<ShaderOutcome> Outcomes { get; } = new();
 
+    /// <summary>Captured RGBA pixels per successfully-rendered job, for in-process pixel comparison.</summary>
+    public Dictionary<string, Color[]> RenderedPixels { get; } = new();
+
     public VsDxEffectImageRenderer(string catPath, string outDir, IReadOnlyList<ShaderJob> jobs)
     {
         _catPath = catPath;
@@ -147,6 +150,10 @@ public sealed class VsDxEffectImageRenderer : Game
             }
 
             GraphicsDevice.SetRenderTarget(null);
+
+            var pixels = new Color[w * h];
+            rt.GetData(pixels);
+            RenderedPixels[job.Name] = pixels;
 
             string png = Path.Combine(_outDir, job.Name + ".png");
             using (var outFs = File.Create(png))
