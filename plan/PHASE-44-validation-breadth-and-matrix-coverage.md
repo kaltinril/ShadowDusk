@@ -1,6 +1,13 @@
 # Phase 44 — Validation breadth & matrix coverage
 
-**Status:** 🟡 In progress (started 2026-06-14). **A done; B (VTF) done, B (texture-array render) blocked on a MonoGame API gap; D (KNI v4.02 *desktop* GL render) done 2026-06-14, D (KNI *DirectX* render) done 2026-06-15, D (WebGL refresh) remains; C: GL render gates wired into CI 2026-06-15, DX/FNA/KNI-DX render-in-CI remain (Windows software-driver story).** Owns the living [validation matrix](../docs/validation-matrix.md).
+**Status:** ✅ **Effectively done (2026-06-15)** — every in-scope item is closed; the only
+remaining work is two **externally-blocked** items documented below (per this phase's own
+Definition of Done, a cell may be "blocked on a real external dependency"). **A done; B (VTF)
+done, B (texture-array render) blocked on a MonoGame public-API gap (not ours); C: GL render
+gates wired into CI 2026-06-15 (DX/FNA/KNI-DX render-in-CI need a Windows software-driver/WARP
+story, external); D (KNI v4.02 render) done across all three KNI paths: desktop GL 2026-06-14,
+DirectX 2026-06-15, WebGL Reach + HiDef refreshed 2026-06-15.** Owns the living
+[validation matrix](../docs/validation-matrix.md).
 **Track:** Validation / fidelity.
 
 ## Goal
@@ -94,9 +101,19 @@ KNI DX11, maxd 0 for 9 shaders and maxd 1 on Dots (driver rounding) -> matrix §
 to ✅. `WinForms.DX11` is the only KNI DX platform published at 4.2.9001 (no SDL2.DX11), so the harness is
 `net8.0-windows` + `UseWindowsForms` + an `[STAThread]` `Main`. README: `validation/KniWinFormsDX/README.md`.
 
-**Remaining:** refresh the Phase-24 **WebGL/Blazor** harness against the v4.02 `nkast.Kni.Platform.Blazor.GL`
-pin and record a fresh `RESULTS` (the existing run pre-dates v4.02). Desktop GL render-in-CI is Phase 44 C
-(now done for the in-process GL gates).
+**Done — KNI WebGL refresh (2026-06-15).** The sample's `nkast.Kni.Platform.Blazor.GL` pin was already at
+`4.2.9001.*` (resolved `4.2.9001.2`), so the gap was that the last *run* pre-dated it. Re-ran the Phase-24
+Playwright harness on the current pin: **mode-1 Reach (`--corpus=sd`) 10/10 load + render** of ShadowDusk's
+own `.mgfx` in real KNI WebGL, and **HiDef/WebGL2 (`--corpus=sd-hidef`) 10/10 GREEN** with the issue-#7
+`gl_FragColor` regression guard holding (no `RESULTS-SD-HIDEF-REPRO.md`), both within the Phase-17 §6.1
+tolerance vs the DesktopGL render of the same bytes. To stop the dated-ness ambiguity from recurring, the
+harness now **stamps the KNI pin into every generated `RESULTS`** (`run-harness.mjs` reads the version from
+the sample csproj) — `RESULTS-SD.md` / `RESULTS-SD-HIDEF.md` now record `nkast.Kni.Platform.Blazor.GL
+4.2.9001.*`. Matrix §1 KNI/OpenGL browser note + §2 HiDef row + §3 Web row updated to current-on-v4.02.
+
+**Remaining (externally blocked, out of this phase's control):** the **DX/FNA/KNI-DX render-in-CI** gates
+need a Windows runner + a software D3D driver (WARP) — see item C. Desktop + browser GL render-in-CI is
+done.
 
 ## Gating
 - A + B: doable now (no external blocker).
