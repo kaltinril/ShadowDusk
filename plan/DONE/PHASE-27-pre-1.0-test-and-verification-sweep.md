@@ -77,7 +77,7 @@ steps.
   branch `selfcontained-inmemory-nuget`). Do not re-open.
 - **VS-driven GL effects** (`17-VS`) — a feature, not a test gap; stays in Phase 100.
 - The browser-runtime tail (moved out of Phase 100 to Phases 23/24/30 §16).
-- New security-hardening tests — those belong to [Phase 25](../PHASE-25-security-hardening.md)
+- New security-hardening tests — those belong to [Phase 25](PHASE-25-security-hardening.md)
   (its Finding-1 `../`-escape test overlaps the include-resolver work; coordinate so the
   two don't write competing tests).
 
@@ -425,7 +425,7 @@ of the whole suite is handed to [Phase 30](PHASE-30-ci-and-nuget-release.md).
 - **`MgfxParameterMatch` exactness vs `mgfxc` quirks.** The snapshot must compare
   *behaviorally significant* reflection fields, not byte-for-byte `mgfxc` output
   (byte-equality with `mgfxc` is never a goal — `CLAUDE.md`). Pin which fields are exact.
-- **Overlap with [Phase 25](../PHASE-25-security-hardening.md).** Both touch
+- **Overlap with [Phase 25](PHASE-25-security-hardening.md).** Both touch
   `FileSystemIncludeResolver` tests. Whichever lands first should own a shared harness so
   the path-traversal (Finding 1) and the §4.4 resolve-from-disk tests don't collide.
 - **Re-deferral discipline.** "Explicitly re-defer with a reason" must be enforced — the

@@ -69,7 +69,7 @@ The **managed "reach engine"** — everything needed to compile `.fx` → `.mgfx
 
 ### Validation / CI
 - [→100] Headless-browser smoke test in [Phase 30 CI](PHASE-30-ci-and-nuget-release.md) for mode 1 — **moved to [Phase 100](../PHASE-100-deferred-backlog.md)**.
-- [→100] Feed untrusted `.fx` through [Phase 25](../PHASE-25-security-hardening.md) input validation — **moved to [Phase 100](../PHASE-100-deferred-backlog.md)** (real browser input path).
+- [→100] Feed untrusted `.fx` through [Phase 25](PHASE-25-security-hardening.md) input validation — **closed 2026-06-15**: Phase 25 reframed, untrusted third-party `.fx` is the consumer's isolation responsibility, not library input validation.
 
 ---
 
