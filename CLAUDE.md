@@ -63,11 +63,22 @@ dotnet pack src/ShadowDusk.Cli/ShadowDusk.Cli.csproj
 
 ### Validation render drivers are the real bar — `dotnet test` does NOT run them
 
-`dotnet test` covers the unit / integration / image suites, but the **rung-4 render proofs** — the actual product bar (*"loads + renders like `mgfxc` / `fxc` in the real engine"*) — live in the **`validation/*` console drivers**. These are deliberately **not in `ShadowDusk.slnx`, not run by `dotnet test`, and not (yet) in CI**; each needs a real GL / DX / FNA driver and most pair with a Python `compare_*.py`. So when a change touches **shader output, transpilation, the MGFX/KNIFX writer, render state, or matrix handling, a green `dotnet test` is necessary but NOT sufficient** — you must also run the relevant `validation/*` driver and confirm it still matches the reference compiler. The **authoritative list of every driver + its exact run command is [docs/validation-matrix.md](docs/validation-matrix.md) §6.** The KNI proofs in particular (`validation/KniDesktopGL`, `validation/KniVsDriven`) are how we prove the *KNI* runtime, not just MonoGame — e.g. the issue #70 VS fix is render-proven on KNI via:
+`dotnet test` covers the unit / integration / image suites, but the **rung-4 render proofs** — the actual product bar (*"loads + renders like `mgfxc` / `fxc` in the real engine"*) — live in the **`validation/*` console drivers**. These are deliberately **not in `ShadowDusk.slnx` and not run by `dotnet test`**; each needs a real GL / DX / FNA driver and most pair with a Python `compare_*.py`. So when a change touches **shader output, transpilation, the MGFX/KNIFX writer, render state, or matrix handling, a green `dotnet test` is necessary but NOT sufficient** — you must also run the relevant `validation/*` driver and confirm it still matches the reference compiler. The **authoritative list of every driver + its exact run command is [docs/validation-matrix.md](docs/validation-matrix.md) §6.** The KNI proofs in particular (`validation/KniDesktopGL`, `validation/KniVsDriven`, `validation/KniWinFormsDX`) are how we prove the *KNI* runtime, not just MonoGame — e.g. the issue #70 VS fix is render-proven on KNI via:
 
 ```bash
 dotnet run --project validation/KniVsDriven    # real KNI v4.02 OpenGL, VS-driven, vs mgfxc golden
 ```
+
+**What runs where (Phase 44):** the **OpenGL** in-process render gates now run in CI on Linux (Mesa llvmpipe) via `.github/workflows/validation-render.yml`, and the KNI **WebGL** smoke runs in `wasm.yml`. But the **DirectX / FNA / KNI-DirectX render gates have NO headless CI driver** (Mesa is GL-only; there is no verified headless D3D/WARP path on the runners). They can only render on a real Windows box with a GPU — so **the developer's machine is the gate.**
+
+> **HARD RULE — Windows render gate before release / before merging shader-output changes.** Because CI cannot run the DX/FNA/KNI-DX render proofs, you MUST run them locally and confirm green **before cutting a release**, and before merging any change that touches shader output / transpilation / the MGFX-FNA writers / render state / matrix handling. One command does all of them:
+>
+> ```powershell
+> ./validation/run-windows-render-gates.ps1            # DX corpus + DX-modern (VTF) + KNI-DX, vs mgfxc/fxc
+> ./validation/run-windows-render-gates.ps1 -IncludeFna  # also the FNA fx_2_0 gate (for an FNA-affecting release)
+> ```
+>
+> It restores the vkd3d native, runs each Windows-GPU render driver, and exits non-zero if any render diverges from the reference compiler. A green run is the evidence CI structurally cannot produce. The `/release` skill requires this step.
 
 ### Integration-test performance (Phase 21)
 

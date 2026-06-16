@@ -1,6 +1,15 @@
 # Phase 44 — Validation breadth & matrix coverage
 
-**Status:** 🟡 In progress (started 2026-06-14). **A done; B (VTF) done, B (texture-array render) blocked on a MonoGame API gap; D (KNI v4.02 *desktop* render) done 2026-06-14, D (WebGL refresh + KNI DirectX) remains; C remains.** Owns the living [validation matrix](../docs/validation-matrix.md).
+**Status:** ✅ **Effectively done (2026-06-15)** — every in-scope item is closed; the only
+remaining work is **one externally-blocked** item documented below (per this phase's own
+Definition of Done, a cell may be "blocked on a real external dependency"). **A done; B (VTF)
+done; B (texture-array render) resolved as N/A-not-ours — our DXBC is correct + pinned, MonoGame
+just has no public array-binding API to render through (a MonoGame limitation, closed from our
+side); C: GL render gates wired into CI 2026-06-15, DX/FNA/KNI-DX render-in-CI need a Windows
+software-driver/WARP story (external) but are now a baked-in local pre-release gate
+(`validation/run-windows-render-gates.ps1`); D (KNI v4.02 render) done across all three KNI
+paths: desktop GL 2026-06-14, DirectX 2026-06-15, WebGL Reach + HiDef refreshed 2026-06-15.**
+Owns the living [validation matrix](../docs/validation-matrix.md).
 **Track:** Validation / fidelity.
 
 ## Goal
@@ -39,14 +48,32 @@ arm-vs-arm, same scene, only the compiler differs (the `VsDrivenDx` pattern).
 - **Vertex texture fetch: ✅ render-proven** (2026-06-14) — vkd3d == `fxc` at **maxd 0**, and the VTF
   genuinely deforms the mesh (gradient-height vs flat-height differ, so the pixel-match is non-vacuous).
   Matrix §4 VTF cell -> ✅.
-- **`Texture2DArray`: 🚫 render blocked** — MonoGame's public API exposes no `Texture2DArray` to bind to the
-  shader's array sampler, so a non-vacuous render can't be set up. This is a MonoGame *runtime-API* gap, not
-  a ShadowDusk one (ShadowDusk compiles the array shader to valid DXBC, pinned by item A). Revisit if a
+- **`Texture2DArray`: ✅ resolved (render N/A, not our gap)** — ShadowDusk compiles the array shader to
+  valid DXBC, pinned by item A. A non-vacuous render can't be set up because **MonoGame's public API exposes
+  no `Texture2DArray` to bind** to the shader's array sampler. That is a MonoGame *runtime-API* limitation,
+  not a ShadowDusk gap, so this is **closed from our side** (our part is done and proven). Revisit only if a
   MonoGame array-binding path lands (3.8.5+?) or via a non-MonoGame DX11 harness.
 
-### C. CI-ify the real-engine render gates — (gap, partly this phase)
+### C. CI-ify the real-engine render gates — ✅ GL in-process gates wired; DX/FNA/KNI-DX remain
 Promote the manual `validation/*` render gates (MonoGame GL/DX, FNA) into CI jobs where a software/headless
-driver exists (GL already renders in CI on Linux via Mesa; DX/FNA need the Windows runner + a driver story).
+driver exists.
+
+**Done (2026-06-15):** the three in-process, **self-asserting GL** render gates — `validation/StateFidelity`
+(Phase 43 render-states/annotations/sampler-states), `validation/CbufferModel` (Phase 43C cbuffer + array
+model), and `validation/TextureBreadthValidation` (Phase 34 cube + 3D texture) — now run in CI on ubuntu
+under **xvfb + Mesa llvmpipe** via the new **`.github/workflows/validation-render.yml`** (push-to-main +
+manual dispatch + the `run-validation-render` PR label, mirroring the integration-tests cadence). They need
+no Python compare and no baseline-generation step (each loads the committed mgfxc goldens itself and exits
+non-zero on any over-tolerance row), and a GL-init failure is a natural red (MonoGame throws
+`NoSuitableGraphicsDevice`), never a silent skip. This is the same DesktopGL-on-llvmpipe recipe `wasm.yml`'s
+reference renderer already proves in CI. (The `ShadowDusk.ImageTests` GL render was already in CI; this adds
+the heavier real-engine `validation/*` GL gates.) All three were re-confirmed passing locally on real GPU GL
+(exit 0) before wiring.
+
+**Remaining:** the **DX / FNA / KNI-DX** render gates (`validation/CandidateDx`, `VsDrivenDx`,
+`DxModernFeatures`, `FnaValidation`, `KniWinFormsDX`) need a **Windows runner with a software D3D driver
+(WARP)** — unverified, so deliberately not wired yet. The first push-to-main run of `validation-render.yml`
+will confirm the GL lane green on a real GitHub runner.
 
 ### D. KNI v4.02 render validation — ✅ desktop done (2026-06-14); WebGL refresh + KNI DirectX remain
 Add a KNI **desktop** (`SDL2.GL`) render check and refresh the Phase-24 browser harness against **KNI v4.02**,
@@ -66,9 +93,30 @@ on the current KNI v4.02 desktop runtime** -> matrix §1 KNI OpenGL cell promote
 (`nkast.Xna.Framework[.*]` + `nkast.Kni.Platform.SDL2.GL` @ 4.2.9001.\*) restore from nuget.org; the project is
 not in `ShadowDusk.slnx` and opts out of central package management. README: `validation/KniDesktopGL/README.md`.
 
-**Remaining:** (1) refresh the Phase-24 **WebGL/Blazor** harness against the v4.02 `nkast.Kni.Platform.Blazor.GL`
-pin and record a fresh `RESULTS` (the existing run pre-dates v4.02); (2) **KNI DirectX** (`WinForms.DX11`) load
-+ render, still untested. Desktop GL render-in-CI is Phase 44 C (driver story on the runners).
+**Done — KNI DirectX (`validation/KniWinFormsDX`, 2026-06-15):** the DX analogue of `KniDesktopGL`. It
+compiles the 10-shader SM5 PS-only corpus with the unchanged `EffectCompiler` (DirectX target -> DXBC SM5 in
+an MGFX v10 container) and, in **one real KNI `Effect` v4.2.9001 on WinForms.DX11**, loads **both** those
+bytes **and** the committed mgfxc DirectX goldens (`tests/fixtures/golden/DirectX_11/*.mgfx`, the control),
+renders each through the identical SpriteBatch path, and pixel-compares the two arms **in process**
+(self-asserting exit code). The same runtime-integrity guard asserts the XNA assembly is KNI's
+(`Xna.Framework.*` 4.2.9001.x), not MonoGame's. Result: **10/10 loaded + rendered + matched mgfxc** in real
+KNI DX11, maxd 0 for 9 shaders and maxd 1 on Dots (driver rounding) -> matrix §1 KNI/DirectX cell promoted
+to ✅. `WinForms.DX11` is the only KNI DX platform published at 4.2.9001 (no SDL2.DX11), so the harness is
+`net8.0-windows` + `UseWindowsForms` + an `[STAThread]` `Main`. README: `validation/KniWinFormsDX/README.md`.
+
+**Done — KNI WebGL refresh (2026-06-15).** The sample's `nkast.Kni.Platform.Blazor.GL` pin was already at
+`4.2.9001.*` (resolved `4.2.9001.2`), so the gap was that the last *run* pre-dated it. Re-ran the Phase-24
+Playwright harness on the current pin: **mode-1 Reach (`--corpus=sd`) 10/10 load + render** of ShadowDusk's
+own `.mgfx` in real KNI WebGL, and **HiDef/WebGL2 (`--corpus=sd-hidef`) 10/10 GREEN** with the issue-#7
+`gl_FragColor` regression guard holding (no `RESULTS-SD-HIDEF-REPRO.md`), both within the Phase-17 §6.1
+tolerance vs the DesktopGL render of the same bytes. To stop the dated-ness ambiguity from recurring, the
+harness now **stamps the KNI pin into every generated `RESULTS`** (`run-harness.mjs` reads the version from
+the sample csproj) — `RESULTS-SD.md` / `RESULTS-SD-HIDEF.md` now record `nkast.Kni.Platform.Blazor.GL
+4.2.9001.*`. Matrix §1 KNI/OpenGL browser note + §2 HiDef row + §3 Web row updated to current-on-v4.02.
+
+**Remaining (externally blocked, out of this phase's control):** the **DX/FNA/KNI-DX render-in-CI** gates
+need a Windows runner + a software D3D driver (WARP) — see item C. Desktop + browser GL render-in-CI is
+done.
 
 ## Gating
 - A + B: doable now (no external blocker).

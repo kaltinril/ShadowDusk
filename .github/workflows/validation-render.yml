@@ -1,0 +1,147 @@
+# .github/workflows/validation-render.yml
+# Phase 44 C — promote the manual `validation/*` real-engine render gates into CI,
+# where a software/headless driver exists.
+#
+# The product bar is "loads + renders like the reference compiler in the REAL engine"
+# (CLAUDE.md). That bar lives in the validation/* console drivers, which `dotnet test`
+# does NOT run. This workflow runs the ones that (a) render through a real MonoGame
+# DesktopGL device and (b) self-assert in process (exit 0 iff every row matched the
+# committed mgfxc golden within tolerance) — so they need no Python compare and no
+# baseline-generation step. Mesa's llvmpipe software rasterizer under xvfb gives the
+# headless runner a real GL 4.5 context (the same proven recipe wasm.yml uses for its
+# DesktopGL reference renderer), so a GL-init failure is a NATURAL red (MonoGame throws
+# NoSuitableGraphicsDevice -> non-zero exit), never a silent skip.
+#
+# GL render gates wired here (each is `Category`-free, self-asserting, net8.0 + DesktopGL):
+#   * StateFidelity          — Phase 43 pass render-states / annotations / baked sampler
+#                              states load + render vs mgfxc golden.
+#   * CbufferModel           — Phase 43C cbuffer + array-parameter-by-name model.
+#   * TextureBreadthValidation — Phase 34 cube + 3D/volume texture render (rung-4).
+#
+# NOT here (no headless driver story yet — tracked as the Phase 44 C tail):
+#   * DirectX (validation/CandidateDx, VsDrivenDx, DxModernFeatures) + FNA
+#     (validation/FnaValidation) + KNI DirectX (validation/KniWinFormsDX) need a Windows
+#     runner with a software D3D driver (WARP) — unverified, so deliberately left manual.
+#   * The Python-compare GL corpus (Baseline+Candidate+compare.py, VsDriven) — needs the
+#     two-process baseline/candidate orchestration; the in-process gates above already
+#     cover the regression-critical render shapes.
+name: Validation Render Gates
+
+on:
+  # Standing regression coverage on main (the matrix's whole point: a validation/*
+  # gate cannot silently rot). On PRs it is opt-in via the `run-validation-render`
+  # label (GL-on-llvmpipe is environment-sensitive, so it does not block every PR);
+  # plus manual dispatch. Mirrors the integration-tests cadence in ci.yml.
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - 'validation/**'
+      - 'tests/fixtures/**'
+      - '.github/workflows/validation-render.yml'
+  pull_request:
+    branches: [ main ]
+    types: [ opened, synchronize, reopened, labeled ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+  DOTNET_NOLOGO: '1'
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+
+jobs:
+  gl-render-gates:
+    name: GL render gates (ubuntu / Mesa llvmpipe)
+    runs-on: ubuntu-latest
+    # On a PR, only run when explicitly labelled run-validation-render (push-to-main and
+    # manual dispatch always run). Keeps GL-on-software off the every-PR critical path.
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(github.event.pull_request.labels.*.name, 'run-validation-render')
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Cache NuGet
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', '**/Directory.Packages.props') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      # The GL render path needs only DXC (Vortice.Dxc NuGet) + SPIRV-Cross
+      # (Silk.NET.SPIRV.Cross.Native NuGet), both restored by `dotnet restore`. vkd3d is
+      # NOT needed by these GL gates, so we do not hard-gate it here (unlike the DX/FNA
+      # integration job). restore.sh is offline-tolerant; run it for parity only.
+      - name: Restore native tools
+        run: |
+          chmod +x tools/restore.sh
+          ./tools/restore.sh
+
+      # Real GL rendering on a headless runner: MonoGame DesktopGL (SDL2) needs an X
+      # display + a GL driver. xvfb provides the display, Mesa llvmpipe the software GL
+      # context (advertises 4.5, covers the HiDef GraphicsProfile the gates request).
+      # The libx*/libxkbcommon packages are SDL2's X11 client deps.
+      - name: Install xvfb + Mesa software GL (DesktopGL render)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgl1-mesa-dri libglu1-mesa mesa-utils \
+            libx11-6 libxi6 libxrandr2 libxinerama1 libxcursor1 libxkbcommon0 \
+            libsdl2-2.0-0
+
+      # Put the driver evidence in the log (llvmpipe's advertised Compatibility version).
+      - name: Verify llvmpipe GL (diagnostic)
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+        run: xvfb-run -a glxinfo -B || echo "::warning::glxinfo unavailable (diagnostic only)"
+
+      - name: Build the GL render gates
+        run: |
+          dotnet build validation/StateFidelity/StateFidelity.csproj -c Release
+          dotnet build validation/CbufferModel/CbufferModel.csproj -c Release
+          dotnet build validation/TextureBreadthValidation/TextureBreadthValidation.csproj -c Release
+
+      # Each driver self-asserts (exit 0 iff every row loaded + matched the mgfxc golden
+      # within tolerance). Run all three even if an earlier one fails, then fail the job
+      # if any did, so one regression doesn't hide another. LIBGL_ALWAYS_SOFTWARE pins
+      # llvmpipe even if a GPU device node exists, for deterministic software rendering.
+      - name: Run GL render gates (real DesktopGL under xvfb/llvmpipe)
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+        run: |
+          set +e
+          rc=0
+          for proj in StateFidelity CbufferModel TextureBreadthValidation; do
+            echo "::group::$proj"
+            xvfb-run -a dotnet run --project "validation/$proj" -c Release --no-build
+            this=$?
+            echo "::endgroup::"
+            if [ "$this" -ne 0 ]; then
+              echo "::error::validation/$proj render gate FAILED (exit $this)"
+              rc=1
+            fi
+          done
+          exit $rc
+
+      - name: Upload render outputs (debug)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: validation-render-output
+          path: |
+            validation/output-state/**
+            validation/output-cbuffer/**
+            validation/output-texbreadth/**
+          if-no-files-found: ignore
+          retention-days: 7
