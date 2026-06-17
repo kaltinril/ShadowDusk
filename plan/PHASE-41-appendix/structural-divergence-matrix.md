@@ -24,7 +24,7 @@
   - Structurally **clean**: **64**
   - **Divergent** (>=1 level): **17**
   - Compile/parse **failures**: **11**
-- Non-golden census cells: **54** (**43** compile, **11** fail with a code)
+- Non-golden census cells: **62** (**51** compile, **11** fail with a code)
 
 ## Golden-backed fixtures — per-level structural verdict
 
@@ -232,18 +232,26 @@ is a CORRECT result, not a defect.
 | examples/ExIntUniformMember.fx | OpenGL | FAIL | SD0210 | Unsupported uniform type in 'int Mode;': integer/boolean uniforms are not modelled for the MonoGame OpenGL target (MojoShader places them in the separate {vs,ps... |
 | examples/ExLegacyTextureDiscard.fx | DirectX_11 | PASS |  |  |
 | examples/ExLegacyTextureDiscard.fx | OpenGL | PASS |  |  |
+| examples/ExLoopRelational.fx | DirectX_11 | PASS |  |  |
+| examples/ExLoopRelational.fx | OpenGL | PASS |  |  |
 | examples/ExMat3UniformMember.fx | DirectX_11 | PASS |  |  |
 | examples/ExMat3UniformMember.fx | OpenGL | FAIL | SD0210 | Unsupported uniform type in 'mat3 ColorTransform;': only float/float2/float3/float4 and square float4x4 matrices (plus arrays of those) are modelled for the Mon... |
 | examples/ExModernSample.fx | DirectX_11 | PASS |  |  |
 | examples/ExModernSample.fx | OpenGL | PASS |  |  |
 | examples/ExMultiSamplerHidef.fx | DirectX_11 | PASS |  |  |
 | examples/ExMultiSamplerHidef.fx | OpenGL | PASS |  |  |
+| examples/ExRelationalBranch.fx | DirectX_11 | PASS |  |  |
+| examples/ExRelationalBranch.fx | OpenGL | PASS |  |  |
+| examples/ExRelationalThreshold.fx | DirectX_11 | PASS |  |  |
+| examples/ExRelationalThreshold.fx | OpenGL | PASS |  |  |
 | examples/ExSampleGradHidef.fx | DirectX_11 | PASS |  |  |
 | examples/ExSampleGradHidef.fx | OpenGL | PASS |  |  |
 | examples/ExSampleLevelHidef.fx | DirectX_11 | PASS |  |  |
 | examples/ExSampleLevelHidef.fx | OpenGL | PASS |  |  |
 | examples/ExSamplerStateUniform.fx | DirectX_11 | PASS |  |  |
 | examples/ExSamplerStateUniform.fx | OpenGL | PASS |  |  |
+| examples/ExTernaryHelper.fx | DirectX_11 | PASS |  |  |
+| examples/ExTernaryHelper.fx | OpenGL | PASS |  |  |
 | examples/ExVolumeTextureHidef.fx | DirectX_11 | PASS |  |  |
 | examples/ExVolumeTextureHidef.fx | OpenGL | PASS |  |  |
 | examples/ExVsTextureFetch.fx | DirectX_11 | PASS |  |  |

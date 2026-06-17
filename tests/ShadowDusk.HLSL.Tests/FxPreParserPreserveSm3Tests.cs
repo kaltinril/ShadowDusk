@@ -506,6 +506,128 @@ public sealed class FxPreParserPreserveSm3Tests
         result.Value.Techniques[0].Passes[0].PixelEntryPoint.Should().Be("SpritePixelShader");
     }
 
+    // -------------------------------------------------------------------------
+    // (l) Issue #106 in PreserveSm3 (FNA) mode. The discriminator that gates the
+    //     global-annotation heuristic lives BEFORE the mode-specific rewrites, so
+    //     the fix is mode-independent — but the original fix only added tests in
+    //     RewriteToSm4 mode. These prove relational/shift/ternary operators in a
+    //     function body are NOT mistaken for an annotation on the FNA path either,
+    //     and that the operator survives verbatim for vkd3d.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_PreserveSm3_TernaryReturnWithRelationalOperator_IssueExactSnippet_Compiles()
+    {
+        // The exact issue #106 helper, compiled on the FNA path.
+        const string source = """
+            float TernaryReturn(float value)
+            {
+                return value <= 0.5f ? 0.0f : 1.0f;
+            }
+            float4 PSMain() : COLOR { return TernaryReturn(0.25f).xxxx; }
+            technique T
+            {
+                pass P { PixelShader = compile ps_3_0 PSMain(); }
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, "Shader.fx", FxSourceMode.PreserveSm3);
+
+        result.IsSuccess.Should().BeTrue();
+        // The relational operator survives verbatim so vkd3d sees the original '<='.
+        result.Value.StrippedHlsl.Should().Contain("value <= 0.5f");
+        result.Value.ParameterAnnotations.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("return a < b;", "a < b")]
+    [InlineData("return a <= b;", "a <= b")]
+    [InlineData("return a > b;", "a > b")]
+    [InlineData("return a >= b;", "a >= b")]
+    [InlineData("return a < b ? 1 : 0;", "a < b")]
+    [InlineData("return a << b;", "a << b")]
+    public void Parse_PreserveSm3_RelationalOrShiftOperatorInBody_NotTreatedAsAnnotation(
+        string statement, string mustSurvive)
+    {
+        string source =
+            "int Helper(int a, int b)\n" +
+            "{\n" +
+            $"    {statement}\n" +
+            "}\n" +
+            "float4 PSMain() : COLOR { return (float)Helper(1, 2); }\n" +
+            "technique T\n" +
+            "{\n" +
+            "    pass P { PixelShader = compile ps_3_0 PSMain(); }\n" +
+            "}\n";
+
+        var result = FxPreParser.Parse(source, "test.fx", FxSourceMode.PreserveSm3);
+
+        result.IsSuccess.Should().BeTrue();
+        // The operator must reach vkd3d unchanged (not consumed as an annotation).
+        result.Value.StrippedHlsl.Should().Contain(mustSurvive);
+        result.Value.ParameterAnnotations.Should().BeEmpty();
+    }
+
+    // -------------------------------------------------------------------------
+    // (m) a legacy 'texture T < ... >;' annotation block STILL strips correctly in
+    //     PreserveSm3. This is the documented PreserveSm3 path (FxPreParser.cs
+    //     ~lines 493-495): the legacy 'texture' type passes through verbatim, and
+    //     any trailing annotation falls through to the GENERIC annotation strip —
+    //     which the issue #106 discriminator now gates. A real annotation
+    //     ('Identifier Identifier Equals' after '<') must still be recognized and
+    //     removed, leaving the 'texture T;' declaration for vkd3d.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_PreserveSm3_LegacyTextureWithAnnotation_AnnotationStripped()
+    {
+        const string source = """
+            texture Tex < string foo = "bar"; >;
+
+            float4 PS() : COLOR { return float4(1, 1, 1, 1); }
+            """;
+
+        var result = FxPreParser.Parse(source, "test.fx", FxSourceMode.PreserveSm3);
+
+        result.IsSuccess.Should().BeTrue();
+        string stripped = result.Value.StrippedHlsl;
+
+        // The legacy 'texture' type passes through verbatim (no Texture2D rewrite on
+        // the FNA path), but its FX annotation block is stripped.
+        stripped.Should().Contain("texture Tex");
+        stripped.Should().NotContain("Texture2D");
+        stripped.Should().NotContain("<");
+        stripped.Should().NotContain("foo");
+        stripped.Should().NotContain("\"bar\"");
+
+        // The annotation was captured against the texture's name.
+        result.Value.ParameterAnnotations.Should().ContainSingle()
+            .Which.ParameterName.Should().Be("Tex");
+        result.Value.ParameterAnnotations[0].Entries.Should().ContainSingle()
+            .Which.Name.Should().Be("foo");
+    }
+
+    [Fact]
+    public void Parse_PreserveSm3_LegacyTextureWithAnnotation_PreservesLineNumbers()
+    {
+        // The annotation strip must keep the source's total line count so vkd3d
+        // diagnostics on later lines still point at the right line.
+        const string source =
+            "texture Tex < string foo = \"bar\"; >;\n" + // line 1
+            "\n" +                                       // line 2
+            "float4 PS() : COLOR { return 0; }\n";       // line 3
+
+        var result = FxPreParser.Parse(source, "test.fx", FxSourceMode.PreserveSm3);
+
+        result.IsSuccess.Should().BeTrue();
+        var lines = result.Value.StrippedHlsl.Replace("\r\n", "\n").Split('\n');
+
+        lines.Length.Should().Be(source.Replace("\r\n", "\n").Split('\n').Length);
+        lines[0].Should().Contain("texture Tex");
+        lines[0].Should().NotContain("foo");
+        lines[2].Should().Contain("float4 PS");
+    }
+
     /// <summary>Reads a fixture embedded into this test assembly (see the csproj) —
     /// the real on-disk fixture file, without a runtime disk dependency.</summary>
     private static string ReadFixture(string fileName)

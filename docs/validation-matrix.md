@@ -4,7 +4,7 @@
 library, shader format/version, graphics target, and OS, and to mark cells off as they advance. This is a
 **living checklist**: update a cell's status (and the date) whenever its evidence changes.
 
-**Last updated:** 2026-06-15 (Phase 44: KNI DirectX render-proven; GL render gates wired into CI).
+**Last updated:** 2026-06-17 (issue #106 relational/ternary parser regression: added to the §6 compile-rung coverage). Prior: 2026-06-15 (Phase 44: KNI DirectX render-proven; GL render gates wired into CI).
 
 ---
 
@@ -118,6 +118,7 @@ MonoGame limitation rather than a ShadowDusk gap. The compile rung for both is p
 | Coverage | Test / harness | Automated in CI? | How to run locally |
 |---|---|---|---|
 | Compile every fixture to DX + GL (+ census) | `tests/ShadowDusk.Integration.Tests` `Phase41StructuralDivergenceMatrixTests` | ✅ | `dotnet test ...Integration.Tests --filter Phase41StructuralDivergence` |
+| **FX language-construct parse regression** (relational operators, ternaries, shifts, helper functions in shader bodies; issue #106 `FX0001` false positive) | `tests/ShadowDusk.HLSL.Tests` (`FxPreParser` unit cases) + the regression `.fx` fixture corpus compile | ✅ | `dotnet test tests/ShadowDusk.HLSL.Tests` (full corpus: `dotnet test ShadowDusk.slnx`) |
 | **Matrix compile/reject claims** (this doc's compile rung: GL rejects VTF/arrays `SD0210`, DX compiles them, FNA rejects SM4 `SD0300`) | `ValidationMatrixCoverageTests` | ✅ | `dotnet test ...Integration.Tests --filter ValidationMatrixCoverage` |
 | **Cross-OS byte-identical** output (Win/Linux/Mac; GL/DX/FNA) | `CrossHostByteIdentityTests` | ✅ (all 3 OSes) | `dotnet test ...Integration.Tests --filter CrossHostByteIdentity` |
 | OpenGL render vs golden (software GL) | `tests/ShadowDusk.ImageTests` (incl. `MatrixConventionSweepTests`, `Issue70MatrixTransposeRenderTests`) | ✅ (Linux Mesa) | `dotnet test tests/ShadowDusk.ImageTests` |

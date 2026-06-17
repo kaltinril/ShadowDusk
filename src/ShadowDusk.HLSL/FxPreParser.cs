@@ -526,6 +526,22 @@ public sealed class FxPreParser
             // We look for: Identifier (possibly type) Identifier (name) < annotations > ;
             // This is heuristic: if we see Identifier followed eventually by < we try to
             // parse annotations, stripping just the < ... > range.
+            //
+            // CRITICAL: the bare 'Identifier Identifier LAngle' shape ALSO matches a
+            // relational/shift/ternary expression inside a function body, because the
+            // lexer emits '<' as LAngle, lexes '<=' as 'LAngle Equals' (two tokens), and
+            // DROPS '?' and ':'. So 'return value <= 0.5f ? 0.0f : 1.0f;' tokenizes to
+            // 'Identifier("return") Identifier("value") LAngle Equals Number Number Number',
+            // which without a discriminator was consumed as 'type name <' and then failed in
+            // ParseAnnotationBlock with FX0001 ("Expected annotation type but found '='").
+            // Gate the annotation path on the GENUINE annotation-block shape: after the '<'
+            // a real FX annotation block is either empty ('<' immediately '>') or one or more
+            // entries, each 'Type Name = Value ;' — so the first three code tokens after '<'
+            // are 'Identifier Identifier Equals' (see ParseAnnotationBlock). A relational/
+            // shift/ternary expression never matches that ('value <= …' → Equals; 'a < b ? c : d'
+            // → Identifier Identifier Identifier with '?'/':' dropped; 'a << b' → LAngle), so a
+            // non-matching shape falls through to the verbatim Consume() at the bottom of the
+            // loop and the original operator reaches DXC/vkd3d unchanged.
             if (tok.Kind == TokenKind.Identifier)
             {
                 // Look ahead to see if there is a matching annotation: type name < ...
@@ -541,7 +557,7 @@ public sealed class FxPreParser
                     while (Peek(la2).Kind is TokenKind.LineComment or TokenKind.BlockComment)
                         la2++;
 
-                    if (Peek(la2).Kind == TokenKind.LAngle)
+                    if (Peek(la2).Kind == TokenKind.LAngle && IsAnnotationBlockStart(la2))
                     {
                         // type name < ... > ; -- try annotation parse.
                         var typeTok = Consume(); // type
@@ -1303,6 +1319,42 @@ public sealed class FxPreParser
                Peek(offset).Kind is TokenKind.LineComment or TokenKind.BlockComment)
             offset--;
         return _pos + offset >= 0 ? Peek(offset).Kind : TokenKind.EOF;
+    }
+
+    /// <summary>
+    /// Discriminates a GENUINE FX annotation block from a relational/shift/ternary
+    /// expression that merely happens to match the 'Identifier Identifier LAngle' shape
+    /// in this flat (scope-unaware) token scanner. <paramref name="langleOffset"/> is the
+    /// lookahead offset (relative to <c>_pos</c>) of the <c>&lt;</c> token already confirmed
+    /// by the caller. A real annotation block (see <see cref="ParseAnnotationBlock"/>) is
+    /// either empty (<c>&lt;</c> immediately followed by <c>&gt;</c>) or one-or-more entries
+    /// each of the form <c>Type Name = Value ;</c>, so the first code token after the
+    /// <c>&lt;</c> is <c>RAngle</c>, or it is <c>Identifier</c> followed by <c>Identifier</c>
+    /// followed by <c>Equals</c>. Relational operators never match: <c>value &lt;= 0.5f</c>
+    /// has <c>Equals</c> right after the <c>&lt;</c>; <c>a &lt; b ? c : d</c> tokenizes to
+    /// three identifiers (<c>?</c>/<c>:</c> are dropped) so the third token is an
+    /// <c>Identifier</c>, not <c>Equals</c>; and <c>a &lt;&lt; b</c> has another <c>LAngle</c>.
+    /// Comments are skipped between each token, mirroring the caller's lookahead idiom.
+    /// </summary>
+    private bool IsAnnotationBlockStart(int langleOffset)
+    {
+        int o1 = NextCodeOffset(langleOffset + 1);
+        var first = Peek(o1);
+
+        // Empty annotation block: '< >'.
+        if (first.Kind == TokenKind.RAngle)
+            return true;
+
+        // First entry must be 'Type Name = …': Identifier Identifier Equals.
+        if (first.Kind != TokenKind.Identifier)
+            return false;
+
+        int o2 = NextCodeOffset(o1 + 1);
+        if (Peek(o2).Kind != TokenKind.Identifier)
+            return false;
+
+        int o3 = NextCodeOffset(o2 + 1);
+        return Peek(o3).Kind == TokenKind.Equals;
     }
 
     /// <summary>The synthesized <c>Texture2D</c> name bound to a bare/untextured sampler.</summary>

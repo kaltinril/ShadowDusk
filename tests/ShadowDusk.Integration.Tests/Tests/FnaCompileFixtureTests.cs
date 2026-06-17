@@ -100,6 +100,13 @@ public sealed class FnaCompileFixtureTests
         "examples/ExSamplerStateUniform.fx",
         "examples/ExDualTexture.fx",
         "examples/ExLegacyTextureDiscard.fx",
+        // Issue #106 regression set: relationals / ternaries / helper functions
+        // / a for-loop relational in shader bodies (formerly misparsed as FX
+        // annotations -> FX0001). See docs/test-shader-corpus.md.
+        "examples/ExTernaryHelper.fx",
+        "examples/ExRelationalThreshold.fx",
+        "examples/ExRelationalBranch.fx",
+        "examples/ExLoopRelational.fx",
     };
 
     [FnaTheory]

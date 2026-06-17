@@ -92,6 +92,32 @@ MonoGame's conventional `SpriteBatch`/`SpriteEffect` shape (the validated path).
 | `ExLegacyTextureDiscard.fx` | Legacy effect-framework `texture T;` rewritten to `Texture2D T;` (gap #3) + `sampler_state` bound to it + `clip()`/discard + scalar uniform. A clean, owned analogue of `Dissolve`. |
 | `ExModernSample.fx` | Control / negative case: already-modern `Texture2D` + `SamplerState` + `.Sample()` + `SV_TARGET`. No rewrite should fire. |
 
+### Issue #106 regression set (relationals / ternaries / helpers / loop)
+
+Authored from scratch for ShadowDusk on 2026-06-17 to pin issue #106 ("Shader
+should be able to return ternary values"). Before the fix, a relational operator
+(`<`, `<=`, `>`, `>=`), a ternary, an `if`/`else` branch, or a `for`-loop
+condition appearing in a shader **body** was misparsed by the `FxPreParser` as the
+start of an FX annotation and the compile failed loudly with **FX0001**. These
+fixtures are small, real (full technique + pass, renderable), project-owned
+originals in the **all-runtime SM3/fx_2_0 subset**, so each compiles on **OpenGL
+(MonoGame-GL / KNI), DirectX_11 (MonoGame-DX), and FNA (D3D9 fx_2_0)** — verified
+exit 0 with non-empty output on all three.
+
+| File | Bug-class it guards | Runtimes |
+|---|---|---|
+| `ExTernaryHelper.fx` | The canonical #106 shape: a helper function that **returns a ternary over a relational** (`value <= 0.5f ? 0 : 1`), called from the PS entry, plus a ternary in the entry body. VS+PS sprite path. | GL + DX + FNA |
+| `ExRelationalThreshold.fx` | **Relational operators directly in the PS body** — `<`, `<=`, `>`, `>=` as scalar bool expressions (not inside a ternary, not inside `clip()`), each promoted to a 0/1 float for a banded threshold. | GL + DX + FNA |
+| `ExRelationalBranch.fx` | A **relational-driven `if` / `else if` / `else`** branch in the body (not `clip()`) **and** a **nested / chained ternary** (4-band select). | GL + DX + FNA |
+| `ExLoopRelational.fx` | A **relational condition in a `for`-loop header** (`for (int i = 0; i < N; i++)`) — also closes the corpus's missing all-runtime SM3 loop case. Literal-bounded so fxc unrolls it at `ps_3_0`/`ps_2_0`. | GL + DX + FNA |
+
+These are exercised by `tests/ShadowDusk.Integration.Tests/Issue106RegressionCorpusTests.cs`
+(compile-asserts each on all three targets) and folded into the FNA SM3 corpus
+census in `FnaCompileFixtureTests.Sm3Corpus()`. As with the other fresh fixtures,
+they prove **"ShadowDusk compiles them into a valid effect,"** not pixel-equivalence
+to `mgfxc`/`fxc` — the in-engine render-and-compare (a committed golden + a
+`validation/*` driver) is the follow-up.
+
 ### How they are used
 
 - **Now (no `mgfxc` golden required):** compile-level coverage in
