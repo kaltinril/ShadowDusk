@@ -27,6 +27,25 @@ namespace ShadowDusk.Integration.Tests;
 ///   <item><b>B9</b> — a trailing sampler-level annotation
 ///   <c>sampler2D S = sampler_state { … } &lt; … &gt;;</c> failed FX0001.
 ///   (<c>ExSamplerAnnotation.fx</c> — GL + DX + FNA.)</item>
+///   <item><b>B4</b> — a legacy <c>texture T &lt; …annotation… &gt;;</c> leaked the
+///   trailing <c>&gt;;</c> (the inner annotation <c>;</c> stopped the consume early)
+///   → DXC "expected unqualified-id". Now the consume tracks angle-bracket depth.
+///   (<c>ExLegacyTextureAnnotation.fx</c> — GL + DX + FNA.)</item>
+///   <item><b>B5</b> — a resource VARIABLE named <c>Texture</c>
+///   (<c>Texture2D Texture : register(t0);</c>) was corrupted to
+///   <c>Texture2D Texture2D register;</c>. The legacy-texture rewrite (RewriteToSm4
+///   only) now declines when the keyword is in name position.
+///   (<c>ExTextureNamedTexture.fx</c> — GL + DX; the fixture's <c>.Sample</c> is SM4
+///   method syntax so the FNA SM &lt;= 3 path is N/A.)</item>
+///   <item><b>B6</b> — a VERTEX shader whose return semantic is <c>: COLOR</c> (a VS
+///   that writes POSITION via an <c>out</c> param) had its <c>: COLOR</c> wrongly
+///   rewritten to the PS-only <c>: SV_Target</c>. The rewrite is now deferred and
+///   skips VS entry points. (<c>ExVsColorReturn.fx</c> — GL + DX + FNA.)</item>
+///   <item><b>B7</b> — an array-indexed relational with an assignment in a ternary
+///   arm inside a function body (<c>Thresholds[i] &lt; x ? acc = w : acc;</c>) was
+///   misread as an FX annotation → FX0001 (the issue-#106 residual). The global
+///   annotation strip is now gated on brace depth 0.
+///   (<c>ExArrayTernaryAssign.fx</c> — GL + DX + FNA.)</item>
 /// </list>
 ///
 /// <para>Each fixture is compile-asserted on every applicable delivery target. Scope:
@@ -46,22 +65,31 @@ public sealed class Phase45PreParserRobustnessCorpusTests
     /// <summary>Every Phase-45 fixture compiles on the MGFX targets (GL + DX).</summary>
     public static TheoryData<string> MgfxFixtures() => new()
     {
-        "examples/ExModernSamplerState.fx",  // B2: sampler_state used via .Sample (SM4 method)
-        "examples/ExColorWriteMask.fx",      // B3: ColorWriteEnable = Red | Green | Blue
+        "examples/ExModernSamplerState.fx",   // B2: sampler_state used via .Sample (SM4 method)
+        "examples/ExColorWriteMask.fx",       // B3: ColorWriteEnable = Red | Green | Blue
         "examples/ExSamplerRegisterState.fx", // B8: register(s0) before = sampler_state
-        "examples/ExSamplerAnnotation.fx",   // B9: trailing sampler-level annotation
+        "examples/ExSamplerAnnotation.fx",    // B9: trailing sampler-level annotation
+        "examples/ExLegacyTextureAnnotation.fx", // B4: legacy texture < annotation >;
+        "examples/ExTextureNamedTexture.fx",  // B5: resource variable named 'Texture'
+        "examples/ExVsColorReturn.fx",        // B6: VS function-return ': COLOR'
+        "examples/ExArrayTernaryAssign.fx",   // B7: array-indexed relational + ternary-assign
     };
 
     /// <summary>
     /// The all-runtime (SM3 / fx_2_0) subset of the Phase-45 fixtures — these also
-    /// compile on the FNA target. B2 is excluded: <c>.Sample</c> is SM4 method syntax,
-    /// which the FNA SM &lt;= 3 path does not use (it uses the <c>tex2D</c> form).
+    /// compile on the FNA target. B2 and B5 are excluded: both use the SM4
+    /// <c>Texture.Sample(…)</c> method, which the FNA SM &lt;= 3 path does not use
+    /// (it uses the <c>tex2D</c> form). B6's VS <c>: COLOR</c> is a valid SM3 output
+    /// semantic on FNA and passes through to vkd3d unchanged.
     /// </summary>
     public static TheoryData<string> AllRuntimeFixtures() => new()
     {
         "examples/ExColorWriteMask.fx",
         "examples/ExSamplerRegisterState.fx",
         "examples/ExSamplerAnnotation.fx",
+        "examples/ExLegacyTextureAnnotation.fx", // B4: passes through to vkd3d (annotation stripped)
+        "examples/ExVsColorReturn.fx",        // B6: ': COLOR' is a valid SM3 output semantic on FNA
+        "examples/ExArrayTernaryAssign.fx",   // B7: relational/ternary in body, all-runtime
     };
 
     // -------------------------------------------------------------------------

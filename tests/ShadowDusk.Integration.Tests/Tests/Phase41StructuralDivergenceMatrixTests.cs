@@ -84,7 +84,8 @@ public sealed class Phase41StructuralDivergenceMatrixTests
         _output.WriteLine($"Golden-backed cells: {matrixRows.Count}; non-golden census cells: {censusRows.Count}");
 
         // Sanity: the run must cover the expected corpus shape so a future fixture
-        // add/remove is noticed. (46 golden-backed * 2 targets, 26 non-golden * 2.)
+        // add/remove is noticed. (46 golden-backed * 2 targets, 30 non-golden * 2 —
+        // the count grows as Phase-45 example fixtures are added under shaders/examples.)
         matrixRows.Count.Should().Be(goldenBacked.Count * 2);
         censusRows.Count.Should().Be(nonGolden.Count * 2);
         File.Exists(reportPath).Should().BeTrue();

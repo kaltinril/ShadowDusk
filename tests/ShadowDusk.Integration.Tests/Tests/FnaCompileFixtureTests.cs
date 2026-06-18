@@ -109,10 +109,15 @@ public sealed class FnaCompileFixtureTests
         "examples/ExLoopRelational.fx",
         // Phase 45 FX pre-parser robustness — the all-runtime (SM3 / fx_2_0) subset
         // (B3 ColorWriteEnable mask, B8 register-before-sampler_state, B9 trailing
-        // sampler annotation). B2 (.Sample method) is SM4-only, so it is NOT here.
+        // sampler annotation, B4 legacy texture < annotation >;, B6 VS ': COLOR'
+        // return, B7 array-indexed relational + ternary-assign in a body). B2 and B5
+        // (.Sample method) are SM4-only, so they are NOT here.
         "examples/ExColorWriteMask.fx",
         "examples/ExSamplerRegisterState.fx",
         "examples/ExSamplerAnnotation.fx",
+        "examples/ExLegacyTextureAnnotation.fx",
+        "examples/ExVsColorReturn.fx",
+        "examples/ExArrayTernaryAssign.fx",
     };
 
     [FnaTheory]

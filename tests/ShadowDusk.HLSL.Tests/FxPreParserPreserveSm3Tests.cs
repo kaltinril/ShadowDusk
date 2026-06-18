@@ -727,6 +727,74 @@ public sealed class FxPreParserPreserveSm3Tests
         result.Value.Samplers[0].TextureReference.Should().Be("t");
     }
 
+    // -------------------------------------------------------------------------
+    // (m) Phase 45 B4 — a legacy 'texture T < annotation >;' passes through to vkd3d
+    //     with the legacy type intact, but the FX annotation block (which vkd3d does
+    //     not accept) is stripped by the generic global-annotation strip. The inner
+    //     ';' inside the annotation must not truncate the strip early.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_PreserveSm3_B4_LegacyTextureAnnotation_TypeKeptAnnotationStripped()
+    {
+        const string source =
+            "texture Tex < string Name = \"diffuse\"; >;\n" +              // line 1
+            "sampler s = sampler_state { Texture = <Tex>; };\n" +          // line 2
+            "\n" +                                                          // line 3
+            "float4 PS(float2 uv : TEXCOORD0) : COLOR { return tex2D(s, uv); }\n"; // line 4
+
+        var result = FxPreParser.Parse(source, "test.fx", FxSourceMode.PreserveSm3);
+
+        result.IsSuccess.Should().BeTrue();
+        string stripped = result.Value.StrippedHlsl;
+
+        // The legacy 'texture' type passes through verbatim (vkd3d accepts it)...
+        stripped.Should().Contain("texture Tex");
+        // ...but the FX annotation block is stripped, with no leaked contents. (The
+        // sampler_state's 'Texture = <Tex>;' binding legitimately keeps its angle
+        // brackets, so we check the annotation contents specifically, not all '>'.)
+        stripped.Should().NotContain("Name");
+        stripped.Should().NotContain("\"diffuse\"");
+        stripped.Should().NotContain("string Name");
+        // The texture-binding angle brackets survive; the annotation's do not.
+        stripped.Should().Contain("Texture = <Tex>;");
+        // tex2D survives verbatim on the FNA path.
+        stripped.Should().Contain("tex2D(s, uv)");
+
+        // Line count preserved (the annotation erasure keeps newlines).
+        var lines = stripped.Replace("\r\n", "\n").Split('\n');
+        lines.Length.Should().Be(source.Replace("\r\n", "\n").Split('\n').Length);
+    }
+
+    // -------------------------------------------------------------------------
+    // (n) Phase 45 B7 — an array-indexed relational with a ternary-arm assignment in
+    //     a function body survives verbatim (no annotation misparse) on the FNA path
+    //     too. The brace-depth gate is mode-independent.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_PreserveSm3_B7_ArrayIndexedRelationalTernaryAssign_SurvivesVerbatim()
+    {
+        const string source = """
+            float arr[4];
+
+            float4 PS() : COLOR
+            {
+                int i = 0;
+                float y = 1, z = 2, w = 3, q = 4;
+                float r = arr[i] < y ? z = w : q;
+                return float4(r, r, r, 1);
+            }
+            technique T { pass P { PixelShader = compile ps_3_0 PS(); } }
+            """;
+
+        var result = FxPreParser.Parse(source, "test.fx", FxSourceMode.PreserveSm3);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.StrippedHlsl.Should().Contain("float r = arr[i] < y ? z = w : q;");
+        result.Value.ParameterAnnotations.Should().BeEmpty();
+    }
+
     /// <summary>Reads a fixture embedded into this test assembly (see the csproj) —
     /// the real on-disk fixture file, without a runtime disk dependency.</summary>
     private static string ReadFixture(string fileName)

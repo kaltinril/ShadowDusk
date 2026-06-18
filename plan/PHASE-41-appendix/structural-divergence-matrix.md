@@ -24,7 +24,7 @@
   - Structurally **clean**: **64**
   - **Divergent** (>=1 level): **17**
   - Compile/parse **failures**: **11**
-- Non-golden census cells: **70** (**59** compile, **11** fail with a code)
+- Non-golden census cells: **78** (**67** compile, **11** fail with a code)
 
 ## Golden-backed fixtures — per-level structural verdict
 
@@ -222,6 +222,8 @@ is a CORRECT result, not a defect.
 | basiceffect-mini.fx | OpenGL | PASS |  |  |
 | cbuffer.fx | DirectX_11 | PASS |  |  |
 | cbuffer.fx | OpenGL | PASS |  |  |
+| examples/ExArrayTernaryAssign.fx | DirectX_11 | PASS |  |  |
+| examples/ExArrayTernaryAssign.fx | OpenGL | PASS |  |  |
 | examples/ExBareSamplerTex2D.fx | DirectX_11 | PASS |  |  |
 | examples/ExBareSamplerTex2D.fx | OpenGL | PASS |  |  |
 | examples/ExColorWriteMask.fx | DirectX_11 | PASS |  |  |
@@ -232,6 +234,8 @@ is a CORRECT result, not a defect.
 | examples/ExDualTexture.fx | OpenGL | PASS |  |  |
 | examples/ExIntUniformMember.fx | DirectX_11 | PASS |  |  |
 | examples/ExIntUniformMember.fx | OpenGL | FAIL | SD0210 | Unsupported uniform type in 'int Mode;': integer/boolean uniforms are not modelled for the MonoGame OpenGL target (MojoShader places them in the separate {vs,ps... |
+| examples/ExLegacyTextureAnnotation.fx | DirectX_11 | PASS |  |  |
+| examples/ExLegacyTextureAnnotation.fx | OpenGL | PASS |  |  |
 | examples/ExLegacyTextureDiscard.fx | DirectX_11 | PASS |  |  |
 | examples/ExLegacyTextureDiscard.fx | OpenGL | PASS |  |  |
 | examples/ExLoopRelational.fx | DirectX_11 | PASS |  |  |
@@ -260,8 +264,12 @@ is a CORRECT result, not a defect.
 | examples/ExSamplerStateUniform.fx | OpenGL | PASS |  |  |
 | examples/ExTernaryHelper.fx | DirectX_11 | PASS |  |  |
 | examples/ExTernaryHelper.fx | OpenGL | PASS |  |  |
+| examples/ExTextureNamedTexture.fx | DirectX_11 | PASS |  |  |
+| examples/ExTextureNamedTexture.fx | OpenGL | PASS |  |  |
 | examples/ExVolumeTextureHidef.fx | DirectX_11 | PASS |  |  |
 | examples/ExVolumeTextureHidef.fx | OpenGL | PASS |  |  |
+| examples/ExVsColorReturn.fx | DirectX_11 | PASS |  |  |
+| examples/ExVsColorReturn.fx | OpenGL | PASS |  |  |
 | examples/ExVsTextureFetch.fx | DirectX_11 | PASS |  |  |
 | examples/ExVsTextureFetch.fx | OpenGL | FAIL | SD0210 | Vertex-stage texture sampling is not supported for the MonoGame OpenGL target: MonoGame 3.8.2's GL runtime never assigns texture units to VERTEX-shader samplers... |
 | minimal_vs_ps.fx | DirectX_11 | FAIL | SD0010 | Effect source contains no techniques |

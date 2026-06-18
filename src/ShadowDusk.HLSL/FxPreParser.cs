@@ -352,6 +352,34 @@ public sealed class FxPreParser
         // texture '.Sample(s, uv)'.
         var replacedRanges = new List<(int Start, int End, string Replacement)>();
 
+        // Deferred ': COLOR' -> ': SV_Target' rewrites (B6). The COLOR-return rewrite
+        // must apply ONLY to PIXEL-shader entry points: a VERTEX shader's return
+        // semantic of ': COLOR' is legal HLSL (e.g. a VS that writes POSITION via an
+        // 'out' parameter and returns a colour) that fxc/mgfxc accept, but rewriting
+        // it to the PS-only ': SV_Target' makes the VS invalid. Techniques may be
+        // parsed AFTER the functions, so we cannot know a function is a VS entry when
+        // its '): COLOR {' is scanned. We therefore COLLECT each candidate rewrite
+        // together with the enclosing function name, collect the VS entry names from
+        // the 'compile vs_* <name>' pass statements, and at the very end apply every
+        // deferred rewrite EXCEPT those whose function is a VS entry. (PS entries and
+        // helper functions keep being rewritten — the audit confirmed that is correct.)
+        var deferredColorRewrites = new List<(int Start, int End, string Replacement, string? Function)>();
+        var vertexEntryNames = new HashSet<string>(StringComparer.Ordinal);
+
+        // Brace-nesting depth in the main scan (B7). Incremented when the verbatim
+        // path consumes a '{' and decremented on '}'. Technique / pass / sampler_state
+        // bodies are consumed inside their own parsers (never via the main loop), so
+        // this depth reflects ONLY genuine HLSL body scope — a function/struct/cbuffer
+        // body is depth >= 1, global/declaration scope is depth 0, and a global
+        // initializer list ('float3 c = {1,2,3};') balances back to 0. The GENERIC
+        // global-parameter annotation strip is gated on depth 0 so a relational/
+        // ternary expression in a function body (whose dropped '?'/':'/'['/']' can
+        // mimic the 'Ident Ident <' annotation shape, e.g. 'x[i] < y ? z = w : q;')
+        // can never be misread as an annotation. ONLY the annotation strip is gated;
+        // the legacy 'tex2D' -> '.Sample' rewrite and the other in-body rewrites must
+        // still fire at depth >= 1.
+        int braceDepth = 0;
+
         // Pre-scan: discover which samplers are sampled through a legacy
         // intrinsic so the main loop knows which declarations to rewrite.
         _legacyIntrinsicSamplers = CollectLegacyIntrinsicSamplers();
@@ -400,6 +428,12 @@ public sealed class FxPreParser
                         $"Duplicate technique name '{tech.Name}'", tok);
 
                 techniques.Add(tech);
+
+                // Record every vertex-shader entry name so the deferred ': COLOR'
+                // rewrite (B6) skips a VS function-return semantic.
+                foreach (var pass in tech.Passes)
+                    if (pass.VertexEntryPoint is { } vsEntry)
+                        vertexEntryNames.Add(vsEntry);
 
                 // Erase from blockStart up to (but not including) current position's char offset.
                 int blockEnd = _pos < _tokens.Count ? _tokenCharOffset[_pos] : _source.Length;
@@ -571,18 +605,23 @@ public sealed class FxPreParser
             // mode the legacy 'texture' type is valid for vkd3d and passes through
             // verbatim (including any annotation block — falls through to the
             // generic 'Identifier Identifier <...>' annotation strip below).
-            // Guard: a capitalized 'Texture'/'Texture2D'... keyword that is actually the
-            // VARIABLE NAME of a modern templated declaration ('Texture2D<float4> Texture
-            // : register(t0);') closes a template, so the immediately preceding code token
-            // is '>' (RAngle). In that position it is a variable name, NOT a legacy
-            // 'texture T;' declaration, so the rewrite below must not fire (it would turn
-            // 'Texture2D<float4> Texture : register(t0);' into a broken
-            // 'Texture2D<float4> Texture2D register;'). This only surfaces on the Phase 41
-            // re-parse of DXC-expanded source, where the SM4 'DECLARE_TEXTURE' macro emits
-            // exactly that modern form with a variable literally named 'Texture'.
-            bool prevIsTemplateClose = PrevCodeKind() == TokenKind.RAngle;
+            // Guard: a capitalized 'Texture'/'Texture2D'... keyword can also be the
+            // VARIABLE NAME of a modern declaration rather than a legacy 'texture T;'
+            // type, and in that position the rewrite must NOT fire (it would turn
+            // 'Texture2D Texture : register(t0);' into a broken 'Texture2D Texture2D
+            // register;'). The keyword is in NAME position — never a legacy type
+            // declaration — exactly when its immediately preceding code token is:
+            //   - an Identifier — the preceding type, e.g. 'Texture2D Texture' (B5);
+            //   - '>' (RAngle)  — closing a template, e.g. 'Texture2D<float4> Texture'
+            //     (the Phase 41 re-parse of the SM4 'DECLARE_TEXTURE' macro expansion).
+            // A genuine legacy 'texture'/'Texture' type declaration always sits at a
+            // statement boundary (preceded by ';' / '}' / a preprocessor line / start
+            // of file), so declining on just these two predecessors is the minimal,
+            // lowest-risk discriminator: every previously-rewritten shape is unchanged.
+            TokenKind prevKind = PrevCodeKind();
+            bool prevIsNamePosition = prevKind is TokenKind.Identifier or TokenKind.RAngle;
             if (_mode == FxSourceMode.RewriteToSm4 &&
-                !prevIsTemplateClose &&
+                !prevIsNamePosition &&
                 tok.Kind == TokenKind.Identifier &&
                 LegacyTextureTypeKeywords.TryGetValue(tok.Text, out string? modernTextureType))
             {
@@ -620,7 +659,16 @@ public sealed class FxPreParser
             // → Identifier Identifier Identifier with '?'/':' dropped; 'a << b' → LAngle), so a
             // non-matching shape falls through to the verbatim Consume() at the bottom of the
             // loop and the original operator reaches DXC/vkd3d unchanged.
-            if (tok.Kind == TokenKind.Identifier)
+            //
+            // SCOPE GATE (B7): a global-parameter annotation is ALWAYS at declaration
+            // scope (brace depth 0). An annotation-shaped relational/ternary expression
+            // only occurs INSIDE a function body (depth >= 1) — e.g. 'x[i] < y ? z = w
+            // : q;' tokenizes (after the lexer drops '?'/':'/'['/']') to 'x i < y z = w
+            // q', whose 'y z =' tail satisfies IsAnnotationBlockStart and would be
+            // misparsed as an annotation. Firing the strip only at depth 0 makes that
+            // structurally impossible, hardening the whole #106 class; IsAnnotationBlockStart
+            // remains as a second layer for the depth-0 shapes.
+            if (braceDepth == 0 && tok.Kind == TokenKind.Identifier)
             {
                 // Look ahead to see if there is a matching annotation: type name < ...
                 int la = 1;
@@ -672,13 +720,18 @@ public sealed class FxPreParser
             // ')') by requiring the token before the COLOR identifier to be RParen.
             // In PreserveSm3 mode ': COLOR<n>?' is a valid SM3 output semantic for
             // vkd3d and passes through verbatim.
+            //
+            // The rewrite is DEFERRED (B6), not applied here: it must NOT fire on a
+            // VERTEX-shader entry, whose ': COLOR' is legal (e.g. a VS writing POSITION
+            // via an 'out' parameter). We record the candidate plus the enclosing
+            // function name and resolve VS entries after the whole file is scanned.
             if (_mode == FxSourceMode.RewriteToSm4 &&
                 tok.Kind == TokenKind.RParen && TryMatchColorReturnSemantic(out int colorTokIdx, out string replacement))
             {
                 int colorStart = _tokenCharOffset[colorTokIdx];
                 var colorTok = _tokens[colorTokIdx];
                 int colorEnd = colorStart + colorTok.Text.Length;
-                replacedRanges.Add((colorStart, colorEnd, replacement));
+                deferredColorRewrites.Add((colorStart, colorEnd, replacement, EnclosingFunctionName()));
 
                 // Consume only the RParen; let the loop continue past the COLOR token
                 // naturally so any subsequent COLOR-return on a non-entry helper is also
@@ -747,9 +800,27 @@ public sealed class FxPreParser
                     $"Unexpected character '{tok.Text}' in effect source", tok);
             }
 
-            // Everything else: copy verbatim (advance past single token).
+            // Everything else: copy verbatim (advance past single token). Track HLSL
+            // body brace depth (B7) as the verbatim path passes '{' / '}' — only braces
+            // that reach the main loop (function / struct / cbuffer bodies, global
+            // initializer lists) are counted; technique / pass / sampler bodies are
+            // consumed inside their own parsers and never seen here.
+            if (tok.Kind == TokenKind.LBrace)
+                braceDepth++;
+            else if (tok.Kind == TokenKind.RBrace && braceDepth > 0)
+                braceDepth--;
             Consume();
             SkipNonCodeTokens();
+        }
+
+        // Apply the deferred ': COLOR' -> ': SV_Target' rewrites (B6), skipping any
+        // whose enclosing function is a vertex-shader entry (its ': COLOR' is a valid
+        // VS output semantic that the rewrite would break).
+        foreach (var (start, end, replacement, function) in deferredColorRewrites)
+        {
+            if (function is not null && vertexEntryNames.Contains(function))
+                continue;
+            replacedRanges.Add((start, end, replacement));
         }
 
         string strippedHlsl = BuildStrippedOutput(erasedRanges, replacedRanges);
@@ -1668,9 +1739,24 @@ public sealed class FxPreParser
         var nameTok = Consume(); // texture name (caller verified Identifier)
 
         // Swallow everything up to and including the terminating ';' (covers an
-        // optional '< ... >' annotation block or ': register(tN)' clause).
-        while (Peek().Kind != TokenKind.Semicolon && Peek().Kind != TokenKind.EOF)
+        // optional '< ... >' annotation block or ': register(tN)' clause). The
+        // ';' that terminates the DECLARATION is the one at angle-bracket depth 0:
+        // an FX annotation block ('< string Name = "x"; float2 Dim = {1,1}; >') has
+        // its own inner ';' separators between '<' and '>', and stopping at the
+        // first of those would leak the rest of the annotation plus the trailing
+        // '>;' into the rewritten output (DXC 'expected unqualified-id'). Track '<'
+        // / '>' depth so only a top-level ';' ends the declaration.
+        int angleDepth = 0;
+        while (Peek().Kind != TokenKind.EOF &&
+               !(Peek().Kind == TokenKind.Semicolon && angleDepth == 0))
+        {
+            switch (Peek().Kind)
+            {
+                case TokenKind.LAngle: angleDepth++; break;
+                case TokenKind.RAngle: if (angleDepth > 0) angleDepth--; break;
+            }
             Consume();
+        }
 
         int declEnd;
         if (Peek().Kind == TokenKind.Semicolon)
@@ -1703,6 +1789,41 @@ public sealed class FxPreParser
                 sb.Append(c);
         }
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Returns the name of the function whose parameter list is closed by the
+    /// <c>)</c> at the current position (<c>_pos</c> must be that RParen), or
+    /// <c>null</c> when it cannot be determined. Used by the deferred COLOR-return
+    /// rewrite (B6) to look the function up among the vertex-shader entry names.
+    /// Scans backward from the RParen to the matching <c>(</c> (balancing nested
+    /// parens, e.g. default-valued or cast parameters) and returns the identifier
+    /// immediately preceding that <c>(</c> — the function name in
+    /// '<c>retType Name ( params ) : COLOR {</c>'. Comments are skipped.
+    /// </summary>
+    private string? EnclosingFunctionName()
+    {
+        // Walk back to the '(' that matches the RParen at _pos.
+        int depth = 0;
+        int i = _pos;
+        for (; i >= 0; i--)
+        {
+            TokenKind k = _tokens[i].Kind;
+            if (k == TokenKind.RParen) depth++;
+            else if (k == TokenKind.LParen)
+            {
+                depth--;
+                if (depth == 0) break;
+            }
+        }
+        if (i < 0)
+            return null;
+
+        // The function name is the nearest preceding code token before that '('.
+        int j = i - 1;
+        while (j >= 0 && _tokens[j].Kind is TokenKind.LineComment or TokenKind.BlockComment)
+            j--;
+        return j >= 0 && _tokens[j].Kind == TokenKind.Identifier ? _tokens[j].Text : null;
     }
 
     /// <summary>

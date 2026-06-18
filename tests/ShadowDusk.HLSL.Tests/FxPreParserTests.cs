@@ -2069,4 +2069,311 @@ public sealed class FxPreParserTests
         var rs = result.Value.Techniques[0].Passes[0].RenderStates;
         rs.Should().ContainSingle(e => e.Key == "CullMode" && e.Value == "None");
     }
+
+    // -------------------------------------------------------------------------
+    // Phase 45 — FX pre-parser robustness (dropped-operator bug class), B4/B5/B6/B7.
+    // -------------------------------------------------------------------------
+
+    // B4 — a legacy 'texture T < …annotation… >;' has its own inner ';' separators
+    // inside the annotation block; ConsumeLegacyTextureDecl must stop at the ';' at
+    // angle-bracket depth 0, not the first inner one, or the rewrite leaks '>;'.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_B4_LegacyTextureWithStringAnnotation_NoLeakedAngleBracket()
+    {
+        // The annotation value is a STRING, so there is a ';' right after it INSIDE
+        // the '< … >'. The old consume stopped there and leaked the trailing '>;'.
+        const string source = """
+            texture Tex < string Name = "diffuse"; >;
+
+            float4 PS() : COLOR { return float4(1, 1, 1, 1); }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        string stripped = result.Value.StrippedHlsl;
+
+        stripped.Should().Contain("Texture2D Tex;");
+        // The whole legacy declaration (incl. annotation) is gone — no stray '>'
+        // or ';'-leftover, no annotation contents.
+        stripped.Should().NotContain(">");
+        stripped.Should().NotContain("Name");
+        stripped.Should().NotContain("texture Tex");
+    }
+
+    [Fact]
+    public void Parse_B4_LegacyTextureWithMultiEntryAnnotation_FullyConsumed()
+    {
+        // Several annotation entries, including an initializer-list value '{1,1}',
+        // each ending in an inner ';'. Only the depth-0 ';' ends the declaration.
+        const string source = """
+            texture Tex < string N = "x"; float2 Dim = {1,1}; >;
+
+            float4 PS() : COLOR { return float4(1, 1, 1, 1); }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        string stripped = result.Value.StrippedHlsl;
+
+        stripped.Should().Contain("Texture2D Tex;");
+        stripped.Should().NotContain(">");
+        stripped.Should().NotContain("Dim");
+    }
+
+    [Fact]
+    public void Parse_B4_LegacyTextureBareAndRegister_StillRewrite()
+    {
+        // The pre-existing forms must keep rewriting after the depth-tracking change.
+        const string bareSource = """
+            texture Tex;
+
+            float4 PS() : COLOR { return 0; }
+            """;
+        FxPreParser.Parse(bareSource, sourceFile: "test.fx").Value.StrippedHlsl
+            .Should().Contain("Texture2D Tex;");
+
+        const string registerSource = """
+            texture Tex : register(t0);
+
+            float4 PS() : COLOR { return 0; }
+            """;
+        string registerStripped = FxPreParser.Parse(registerSource, sourceFile: "test.fx").Value.StrippedHlsl;
+        registerStripped.Should().Contain("Texture2D Tex;");
+        registerStripped.Should().NotContain("register");
+    }
+
+    // B5 — a modern resource whose VARIABLE NAME is a legacy texture keyword
+    // ('Texture2D Texture : register(t0);'). The keyword is in name position
+    // (preceded by an Identifier / '>'), so the legacy-texture rewrite must NOT fire.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_B5_ResourceNamedTexture_LeftIntact()
+    {
+        // 'Texture2D Texture : register(t0);' — the variable is literally named
+        // 'Texture'. The old guard only excluded the templated form, so this became
+        // the broken 'Texture2D Texture2D register;'. It must now pass through.
+        const string source = """
+            Texture2D Texture : register(t0);
+            SamplerState Sampler : register(s0);
+
+            float4 PS(float2 uv : TEXCOORD0) : COLOR0
+            {
+                return Texture.Sample(Sampler, uv);
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        string stripped = result.Value.StrippedHlsl;
+
+        stripped.Should().Contain("Texture2D Texture : register(t0);");
+        stripped.Should().NotContain("Texture2D Texture2D");
+    }
+
+    [Fact]
+    public void Parse_B5_ResourceNamedTextureWithSemanticOnly_LeftIntact()
+    {
+        // Same B5 class but with a plain ': SEMANTIC' instead of register(...).
+        const string source = """
+            Texture2D Texture : TEXCOORD0;
+
+            float4 PS() : SV_Target { return 0; }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.StrippedHlsl.Should().Contain("Texture2D Texture : TEXCOORD0;");
+        result.Value.StrippedHlsl.Should().NotContain("Texture2D Texture2D");
+    }
+
+    [Fact]
+    public void Parse_B5_GenuineLegacyTextureAfterAnotherDecl_StillRewrites()
+    {
+        // A genuine legacy 'texture' type keyword at statement start (preceded by
+        // ';' from the previous decl) must still rewrite — the guard only declines
+        // the NAME position.
+        const string source = """
+            float Cutoff;
+            texture Foo;
+
+            float4 PS() : COLOR { return 0; }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.StrippedHlsl.Should().Contain("Texture2D Foo;");
+        result.Value.StrippedHlsl.Should().NotContain("texture Foo");
+    }
+
+    // B6 — a VERTEX shader whose function-return semantic is ': COLOR' (e.g. it
+    // writes POSITION via an 'out' param). The COLOR->SV_Target rewrite is deferred
+    // and must SKIP vertex-shader entries, while still rewriting PS entries/helpers.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_B6_VertexShaderColorReturn_NotRewritten()
+    {
+        // The VS writes POSITION via an out-param and returns ': COLOR'. fxc/mgfxc
+        // accept this; rewriting the VS return to ': SV_Target' would make it invalid.
+        const string source = """
+            float4 MainVS(float4 pos : POSITION0, out float4 outPos : SV_POSITION) : COLOR0
+            {
+                outPos = pos;
+                return float4(1, 0, 0, 1);
+            }
+
+            float4 MainPS(float4 color : COLOR0) : COLOR0
+            {
+                return color;
+            }
+
+            technique T
+            {
+                pass P
+                {
+                    VertexShader = compile vs_4_0_level_9_1 MainVS();
+                    PixelShader  = compile ps_4_0_level_9_1 MainPS();
+                }
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        string stripped = result.Value.StrippedHlsl;
+
+        // The VS return semantic stays ': COLOR0' (NOT rewritten).
+        stripped.Should().Contain("out float4 outPos : SV_POSITION) : COLOR0");
+        // The PS return semantic IS still rewritten to ': SV_Target0'.
+        stripped.Should().Contain("float4 color : COLOR0) : SV_Target0");
+    }
+
+    [Fact]
+    public void Parse_B6_PixelShaderColorReturn_StillRewrittenWithoutTechnique()
+    {
+        // Regression guard: with NO technique (so no VS entry is registered), a PS
+        // function-return ': COLOR' must still be rewritten — the deferral only
+        // skips VS entries, it does not disable the rewrite.
+        const string source = """
+            float4 PS(float2 uv : TEXCOORD0) : COLOR
+            {
+                return float4(uv, 0, 1);
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.StrippedHlsl.Should().Contain(": SV_Target");
+        result.Value.StrippedHlsl.Should().NotContain(": COLOR");
+    }
+
+    [Fact]
+    public void Parse_B6_StructReturningVertexShader_Unaffected()
+    {
+        // The canonical VS returns a STRUCT (with a POSITION field), which never
+        // matches the '): COLOR {' rewrite shape — pinned as unaffected.
+        const string source = """
+            struct VOut { float4 Pos : SV_POSITION; float4 Col : COLOR0; };
+
+            VOut MainVS(float4 pos : POSITION0)
+            {
+                VOut o;
+                o.Pos = pos;
+                o.Col = float4(1, 1, 1, 1);
+                return o;
+            }
+
+            technique T { pass P { VertexShader = compile vs_4_0_level_9_1 MainVS(); } }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        // The struct field 'COLOR0' is an output-struct member, not a function-return
+        // semantic, so it is untouched.
+        result.Value.StrippedHlsl.Should().Contain("float4 Col : COLOR0;");
+        result.Value.StrippedHlsl.Should().NotContain("SV_Target");
+    }
+
+    // B7 — an array-indexed relational with an assignment in a ternary arm inside a
+    // FUNCTION BODY mimics the 'Ident Ident <' annotation shape once '?'/':'/'['/']'
+    // are dropped. The global annotation strip is gated on brace depth 0, so an
+    // in-body expression can never be misread as an annotation.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_B7_ArrayIndexedRelationalTernaryAssign_SurvivesVerbatim()
+    {
+        // 'arr[i] < y ? z = w : q;' -> tokens 'arr i < y z = w q' whose 'y z =' tail
+        // satisfies IsAnnotationBlockStart. Gating on brace depth 0 stops the misparse.
+        const string source = """
+            float arr[4];
+
+            float4 PS() : COLOR
+            {
+                int i = 0;
+                float y = 1, z = 2, w = 3, q = 4;
+                float r = arr[i] < y ? z = w : q;
+                return float4(r, r, r, 1);
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        // The in-body expression survives verbatim (no annotation stripping).
+        result.Value.StrippedHlsl.Should().Contain("float r = arr[i] < y ? z = w : q;");
+        // It was never captured as a parameter annotation.
+        result.Value.ParameterAnnotations.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Parse_B7_GenuineGlobalAnnotationAtDepthZero_StillStripped()
+    {
+        // The brace-depth gate must not break a REAL global-parameter annotation,
+        // which is always at depth 0.
+        const string source = """
+            float P < float UIMin = 0; float UIMax = 1; > = 0.5;
+
+            float4 PS() : COLOR { return P; }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.ParameterAnnotations.Should().ContainSingle(a => a.ParameterName == "P");
+        // The '< … >' block is stripped from the global declaration.
+        result.Value.StrippedHlsl.Should().NotContain("UIMin");
+        result.Value.StrippedHlsl.Should().Contain("float P");
+        result.Value.StrippedHlsl.Should().Contain("= 0.5;");
+    }
+
+    [Fact]
+    public void Parse_B7_GlobalAnnotationAfterInitializerList_StillStripped()
+    {
+        // A global initializer list '{...}' balances brace depth back to 0, so a
+        // following global annotation must still be stripped.
+        const string source = """
+            float3 Tint = {1, 1, 1};
+            float P < float UIMin = 0; > = 0.5;
+
+            float4 PS() : COLOR { return float4(Tint * P, 1); }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.ParameterAnnotations.Should().ContainSingle(a => a.ParameterName == "P");
+        result.Value.StrippedHlsl.Should().NotContain("UIMin");
+        result.Value.StrippedHlsl.Should().Contain("float3 Tint = {1, 1, 1};");
+    }
 }
