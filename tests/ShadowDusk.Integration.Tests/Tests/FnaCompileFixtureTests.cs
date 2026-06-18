@@ -118,6 +118,23 @@ public sealed class FnaCompileFixtureTests
         "examples/ExLegacyTextureAnnotation.fx",
         "examples/ExVsColorReturn.fx",
         "examples/ExArrayTernaryAssign.fx",
+        // Third-party vendored corpus (Nez, MIT — see tests/fixtures/shaders/
+        // third-party/Nez/{LICENSE,NOTICE.md} and docs/test-shader-corpus.md). Only
+        // the ALL-RUNTIME subset (compiles on GL + DX + FNA) is folded into the SM3
+        // census here; the DX/FNA-leaning vendored shaders (Crosshatch, Noise,
+        // PaletteCycler, Reflection) are covered by ThirdPartyShaderCorpusTests on
+        // their classified targets only.
+        "third-party/Nez/Bevels.fx",
+        "third-party/Nez/BloomCombine.fx",       // helper fn adjustSaturation()
+        "third-party/Nez/BloomExtract.fx",
+        "third-party/Nez/GaussianBlur.fx",       // literal-bounded for-loop over array uniforms
+        "third-party/Nez/HeatDistortion.fx",     // 2nd sampler with AddressU/V=Wrap sampler_state
+        "third-party/Nez/Letterbox.fx",          // VPOS screen-space + relational if
+        "third-party/Nez/PixelGlitch.fx",        // helper fn hash11()
+        "third-party/Nez/SpriteBlinkEffect.fx",
+        "third-party/Nez/SpriteLines.fx",        // VPOS + float modulo, two techniques
+        "third-party/Nez/Twist.fx",              // relational if(dist<radius) + sin/cos
+        "third-party/Nez/Vignette.fx",
     };
 
     [FnaTheory]

@@ -3,8 +3,10 @@
 **Status:** 🔧 **In progress (2026-06-17)** — opened from GitHub **issue #106**. Item B1 (#106
 itself) is **fixed and merged to this branch** (commit `bedcebf`); the sampler / render-state
 items **B2, B3, B8, B9 are fixed** (commit `9136453`); and the legacy-texture / return-semantic /
-scope items **B4, B5, B6, B7 are fixed** (in the working tree, this change). All nine catalogued
-defects are now resolved. **B6 note:** the catalogued shape (a bare `: COLOR` VS with no position
+scope items **B4, B5, B6, B7 are fixed** (commit `af815a1`). All nine pre-parser defects (B1-B9)
+are resolved. A tenth defect **B10** — a *different* class (a GLSL reserved-word / reflection-join
+bug, not a dropped-operator pre-parser one), surfaced while vendoring real Nez shaders into the
+corpus — is catalogued below and is **to-fix**. **B6 note:** the catalogued shape (a bare `: COLOR` VS with no position
 output) is rejected by `fxc` regardless (X4541 "vertex shader must minimally write all four
 components of POSITION"), so it is not-a-bug on its own; the REAL valid case is a VS that writes
 `POSITION` through an `out` parameter and returns `: COLOR` — `fxc` and `mgfxc` accept it, and our
@@ -52,6 +54,8 @@ sampler, render-state, legacy-texture, and return-semantic heuristics.
 | **B7** | `x[i] < y ? z = w : q;` (array-indexed `<` + assignment in a ternary arm) | residual #106 false positive → `FX0001` | GL, DX, FNA | `IsAnnotationBlockStart` can't distinguish `Type Name = Value` (annotation) from dropped-`?` `y z = w` | LOW-MOD | ✅ **Fixed** — the GENERIC global-parameter annotation strip is now gated on brace depth 0 (main-loop `{`/`}` tracking); an annotation-shaped relational/ternary in a function body is at depth >= 1 and can no longer be misread (`IsAnnotationBlockStart` kept as a second layer). Only the annotation strip is gated; in-body `tex2D`->`.Sample` etc. still fire. Fixture `ExArrayTernaryAssign.fx`. |
 | **B8** | `sampler S : register(s0) = sampler_state { ... };` (register clause before `= sampler_state`) | dispatch routes to bare path → leaks state block → DXC error | GL, DX, FNA | `isSamplerStateForm` requires `=` immediately after the name (`FxPreParser.cs` ~396-405) | LOW | ✅ **Fixed** — dispatch skips an optional `register ( … )` before the `= sampler_state` (new `OffsetAfterOptionalRegister`, shared with the brace-form detector); `ParseSamplerDecl` already consumed the clause. Fixture `ExSamplerRegisterState.fx`. |
 | **B9** | `sampler2D S = sampler_state { ... } < string UIName = "x"; >;` (sampler-level annotation) | `FX0001: Expected 'Semicolon' but found '<'` | GL, DX, FNA | `ParseSamplerDecl` hard-requires `;` right after `}` (`FxPreParser.cs` ~1108) | LOW | ✅ **Fixed** — `ParseSamplerDecl` optionally consumes a trailing `< … >` annotation before the required `;`; its span is erased in every mode (incl. PreserveSm3, where the rest of the decl stays verbatim for vkd3d). Fixture `ExSamplerAnnotation.fx`. |
+
+| **B10** | a free uniform named `noise` (a GLSL reserved word) used in a GL shader, e.g. Nez `Noise.fx` | GL compile fails `SD0012` (cbuffer/parameter join misses) | GL | **Different class — NOT a pre-parser bug.** SPIRV-Cross renames the uniform `noise` to `_noise` (GLSL reserved word) but `CompilationPipeline` joins the rewriter's uniform layout to the reflected parameter list BY NAME (`IndexOfParam`, `CompilationPipeline.cs` ~534) and the reflected list still says `noise`, so the join misses. `noise` is valid HLSL that `fxc`/`mgfxc` accept. | MED (any uniform whose name collides with a GLSL reserved word) | ⬜ to-fix (see `docs/glsl-uniform-naming.md`) |
 
 (Line numbers are approximate against pre-fix `FxPreParser.cs`; the fixes will pin them.)
 

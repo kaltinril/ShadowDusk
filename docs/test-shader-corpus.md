@@ -159,3 +159,73 @@ pixel-equivalence to `mgfxc`/`fxc`.
 > **Scope honesty:** until those goldens exist, these fresh fixtures prove
 > "ShadowDusk compiles them into a valid effect," **not** "renders the same as
 > `mgfxc`." That stronger claim is still carried only by the original 10.
+
+---
+
+## 4. Third-party shader corpus (vendored, real shipping shaders)
+
+Added 2026-06-17 (issue #106 / Phase 45 follow-up). Unlike the project-owned
+fixtures in §3, these are **NOT project-owned** — they are real, shipping MonoGame
+post-process shaders **vendored verbatim** from the **Nez** framework
+(`prime31/Nez`, **MIT**, Copyright (c) 2016 Mike), pinned at commit
+`6c9d4a87ac62ce36e217cb5e4bbe36d1769dfa4c`, upstream dir
+`DefaultContentSource/effects/`. They live under
+`tests/fixtures/shaders/third-party/Nez/`, with the verbatim upstream `LICENSE` and a
+`NOTICE.md` recording the repo, exact commit, per-file upstream path, license, and the
+single modification (a provenance comment header prepended to each `.fx`; **the shader
+code itself is byte-for-byte upstream**). Licence gate: only MIT / MS-PL / BSD /
+Apache-2.0 / public-domain are vendorable — Nez is MIT, so it qualifies; the
+MonoGame-docs grayscale tutorial (CC-BY-NC-SA) was explicitly **rejected** as
+non-permissive.
+
+**Why these:** they broaden the corpus along the language features the project-owned
+fixtures under-covered: a literal-bounded `for`-loop, helper functions called from an
+entry point, relational-driven `if` branches in the body, bloom passes, UV distortion,
+vignette, edge-detect, VPOS + float-modulo scanlines, a two-technique VS+PS effect, and
+a 1-D-LUT palette swap.
+
+Each shader was compile-classified on all three delivery targets and is wired in only on
+the targets it actually compiles on (the rationale per shader is in the directory's
+`NOTICE.md`):
+
+| File | Upstream | Targets (compile) | Feature / gap covered | Classification |
+|---|---|---|---|---|
+| `GaussianBlur.fx` | Nez (MIT) | GL + DX + FNA | A literal-bounded `for`-loop accumulating weighted taps over `float2[]`/`float[]` array uniforms (the corpus's only all-runtime SM3 loop). | all-runtime |
+| `BloomCombine.fx` | Nez (MIT) | GL + DX + FNA | Helper fn `adjustSaturation()` called from the entry; 2nd sampler; `lerp`/`dot`/`saturate`. | all-runtime |
+| `BloomExtract.fx` | Nez (MIT) | GL + DX + FNA | Bloom bright-pass; `saturate()` threshold remap. | all-runtime |
+| `Twist.fx` | Nez (MIT) | GL + DX + FNA | Relational-driven `if (dist < radius)` in the body + `length`/`sin`/`cos` UV warp. | all-runtime |
+| `Vignette.fx` | Nez (MIT) | GL + DX + FNA | Radial vignette: `dot`-based falloff + swizzle, no VS. | all-runtime |
+| `HeatDistortion.fx` | Nez (MIT) | GL + DX + FNA | 2nd sampler declared with explicit `AddressU/V = Wrap` `sampler_state`; time-scrolled UV; remap-to-signed. | all-runtime |
+| `Bevels.fx` | Nez (MIT) | GL + DX + FNA | Neighbor-tap edge-detect / emboss (offset `tex2D` taps, no loop). | all-runtime |
+| `PixelGlitch.fx` | Nez (MIT) | GL + DX + FNA | Helper fn `hash11()` (`frac`/`floor`) called from the entry; row offset. | all-runtime |
+| `SpriteBlinkEffect.fx` | Nez (MIT) | GL + DX + FNA | Tint via `lerp` by a uniform alpha; VS-output-struct PS. | all-runtime |
+| `Letterbox.fx` | Nez (MIT) | GL + DX + FNA | `VPOS` screen-space + `min()` + relational `if`. Compiles on every target; VPOS->`gl_FragCoord` render-equivalence is **not** asserted. | all-runtime (VPOS) |
+| `SpriteLines.fx` | Nez (MIT) | GL + DX + FNA | Two techniques (H/V); `VPOS` + `floor` + float modulo (`%`). Compiles everywhere; VPOS render-equivalence **not** asserted. | all-runtime (VPOS) |
+| `Crosshatch.fx` | Nez (MIT) | DX + FNA | Nested `if` + `<` relationals + `VPOS` + float `%` + an `int` uniform. **Not GL:** `int` uniforms are not modelled on the MonoGame-GL path (loud `SD0210`, by design). | DX + FNA |
+| `PaletteCycler.fx` | Nez (MIT) | FNA only | Palette swap via a 1-D LUT (`tex1D` / `sampler1D`). **Not GL/DX:** `tex1D` has no 1:1 modern `Texture` method, rejected with a targeted `FX0012` that points to FNA (which compiles it natively). | FNA only |
+| `Reflection.fx` | Nez (MIT) | DX only | Two techniques, each **VS+PS** (mirror + water); world-space, `half2`, `frac`, relational `if`. **Not GL:** the multi-`TEXCOORD` interpolant block cannot be expressed in std140/std430 by SPIRV-Cross (`SD0100`). **Not FNA:** an int/relational construct hits the vkd3d 1.17 SM3 gap (`X0000`). | DX only |
+| `Noise.fx` | Nez (MIT) | DX + FNA | Film-grain; helper fn `rand()` (`frac`/`sin`/`dot`) called from the entry. **Not GL — tracked ShadowDusk bug:** a uniform literally named `noise` collides with a GLSL reserved word, SPIRV-Cross renames it `_noise`, but the reflected parameter list does not follow, so the GL cbuffer/parameter join fails (`SD0012`). `noise` is valid HLSL fxc/mgfxc accept (Phase-45 catalogue candidate, see below). | DX + FNA (GL is an OUR-BUG) |
+
+These are exercised by `tests/ShadowDusk.Integration.Tests/ThirdPartyShaderCorpusTests.cs`
+(compile-asserts each on its classified targets; FNA via `[FnaTheory]` + the
+MojoShader-rule fx_2_0 validator). The 11 all-runtime ones are also folded into
+`FnaCompileFixtureTests.Sm3Corpus()`, and all 15 are auto-globbed by the GL+DX
+`Phase41StructuralDivergenceMatrixTests` structural census.
+
+> **Scope (same as §3):** these prove **"ShadowDusk compiles them into a well-formed,
+> loadable container,"** not pixel-equivalence to `mgfxc`/`fxc`. There is no committed
+> golden for them; the render bar stays with the `validation/*` drivers. The VPOS shaders
+> in particular compile on every target but their cross-path VPOS behavior is deliberately
+> left unclaimed.
+
+> **Phase-45 catalogue candidate found while vendoring (`Noise.fx`, GL `SD0012`):** a free
+> uniform whose name is a GLSL reserved word (e.g. `noise`, which collides with the
+> deprecated `noise1`/`noise2`/... builtins) is renamed by SPIRV-Cross (to `_noise`), but
+> ShadowDusk's GL cbuffer-record builder joins the rewriter's uniform layout to the
+> reflected effect-parameter list **by name** (`CompilationPipeline.IndexOfParam`), and the
+> reflected list still carries the original `noise`, so the join misses and emits the
+> internal `SD0012` ("a ShadowDusk bug if ever seen"). Minimal repro: any GL compile of a
+> shader with `float noise;` used in the body. Fix direction (NOT done in this task):
+> reconcile the rewriter's renamed uniform names with the reflected parameter names (apply
+> SPIRV-Cross's reserved-word renaming to the parameter side too, or join on the pre-rename
+> name). Until fixed, `Noise.fx` is wired on DX + FNA only.

@@ -24,7 +24,7 @@
   - Structurally **clean**: **64**
   - **Divergent** (>=1 level): **17**
   - Compile/parse **failures**: **11**
-- Non-golden census cells: **78** (**67** compile, **11** fail with a code)
+- Non-golden census cells: **108** (**92** compile, **16** fail with a code)
 
 ## Golden-backed fixtures — per-level structural verdict
 
@@ -286,10 +286,43 @@ is a CORRECT result, not a defect.
 | textured.fx | OpenGL | PASS |  |  |
 | textured_vs_ps.fx | DirectX_11 | FAIL | SD0010 | Effect source contains no techniques |
 | textured_vs_ps.fx | OpenGL | FAIL | SD0010 | Effect source contains no techniques |
+| third-party/Nez/Bevels.fx | DirectX_11 | PASS |  |  |
+| third-party/Nez/Bevels.fx | OpenGL | PASS |  |  |
+| third-party/Nez/BloomCombine.fx | DirectX_11 | PASS |  |  |
+| third-party/Nez/BloomCombine.fx | OpenGL | PASS |  |  |
+| third-party/Nez/BloomExtract.fx | DirectX_11 | PASS |  |  |
+| third-party/Nez/BloomExtract.fx | OpenGL | PASS |  |  |
+| third-party/Nez/Crosshatch.fx | DirectX_11 | PASS |  |  |
+| third-party/Nez/Crosshatch.fx | OpenGL | FAIL | SD0210 | Unsupported uniform type in 'int crossHatchSize;': integer/boolean uniforms are not modelled for the MonoGame OpenGL target (MojoShader places them in the separ... |
+| third-party/Nez/GaussianBlur.fx | DirectX_11 | PASS |  |  |
+| third-party/Nez/GaussianBlur.fx | OpenGL | PASS |  |  |
+| third-party/Nez/HeatDistortion.fx | DirectX_11 | PASS |  |  |
+| third-party/Nez/HeatDistortion.fx | OpenGL | PASS |  |  |
+| third-party/Nez/Letterbox.fx | DirectX_11 | PASS |  |  |
+| third-party/Nez/Letterbox.fx | OpenGL | PASS |  |  |
+| third-party/Nez/Noise.fx | DirectX_11 | PASS |  |  |
+| third-party/Nez/Noise.fx | OpenGL | FAIL | SD0012 | internal: GL uniform '_noise' (shader #0) has no matching effect parameter — the GLSL uniform layout and the reflected parameter list diverged |
+| third-party/Nez/PaletteCycler.fx | DirectX_11 | FAIL | FX0012 | The legacy D3D9 sampling intrinsic 'tex1D' is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot rewr... |
+| third-party/Nez/PaletteCycler.fx | OpenGL | FAIL | FX0012 | The legacy D3D9 sampling intrinsic 'tex1D' is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot rewr... |
+| third-party/Nez/PixelGlitch.fx | DirectX_11 | PASS |  |  |
+| third-party/Nez/PixelGlitch.fx | OpenGL | PASS |  |  |
+| third-party/Nez/Reflection.fx | DirectX_11 | PASS |  |  |
+| third-party/Nez/Reflection.fx | OpenGL | FAIL | SD0100 | SPIRV-Cross [compile]: Buffer block cannot be expressed as any of std430, std140, scalar, even with enhanced layouts. You can try flattening this block to suppo... |
+| third-party/Nez/SpriteBlinkEffect.fx | DirectX_11 | PASS |  |  |
+| third-party/Nez/SpriteBlinkEffect.fx | OpenGL | PASS |  |  |
+| third-party/Nez/SpriteLines.fx | DirectX_11 | PASS |  |  |
+| third-party/Nez/SpriteLines.fx | OpenGL | PASS |  |  |
+| third-party/Nez/Twist.fx | DirectX_11 | PASS |  |  |
+| third-party/Nez/Twist.fx | OpenGL | PASS |  |  |
+| third-party/Nez/Vignette.fx | DirectX_11 | PASS |  |  |
+| third-party/Nez/Vignette.fx | OpenGL | PASS |  |  |
 
 ### Census failure codes
 
 - `SD0010`: 6 cell(s) — minimal_vs_ps.fx [DirectX_11], minimal_vs_ps.fx [OpenGL], passthrough_vs.fx [DirectX_11], passthrough_vs.fx [OpenGL], textured_vs_ps.fx [DirectX_11], textured_vs_ps.fx [OpenGL]
-- `SD0210`: 3 cell(s) — examples/ExIntUniformMember.fx [OpenGL], examples/ExMat3UniformMember.fx [OpenGL], examples/ExVsTextureFetch.fx [OpenGL]
+- `SD0210`: 4 cell(s) — examples/ExIntUniformMember.fx [OpenGL], examples/ExMat3UniformMember.fx [OpenGL], examples/ExVsTextureFetch.fx [OpenGL], third-party/Nez/Crosshatch.fx [OpenGL]
 - `SD0001`: 2 cell(s) — MinimalWithInclude.fx [DirectX_11], MinimalWithInclude.fx [OpenGL]
+- `FX0012`: 2 cell(s) — third-party/Nez/PaletteCycler.fx [DirectX_11], third-party/Nez/PaletteCycler.fx [OpenGL]
+- `SD0012`: 1 cell(s) — third-party/Nez/Noise.fx [OpenGL]
+- `SD0100`: 1 cell(s) — third-party/Nez/Reflection.fx [OpenGL]
 
