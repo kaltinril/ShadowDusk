@@ -216,17 +216,30 @@ public sealed class RenderStateParserTests
         block.AlphaBlendFunction.Should().Be(BlendFunctionValue.Add);
     }
 
-    [Fact]
-    public void Parse_ColorWriteEnable()
+    // Phase 45 B3: the bare ColorWriteEnable key now uses TryParseColorWriteMask
+    // (like ColorWriteEnable1/2/3), so symbolic single AND OR'd masks resolve in
+    // addition to the numeric forms. (It previously used int.TryParse, which
+    // rejected every symbolic flag — an unintended asymmetry vs. the numbered keys.)
+    [Theory]
+    [InlineData("15",                       15)] // plain integer
+    [InlineData("0x0F",                     15)] // hex integer
+    [InlineData("0",                        0)]  // explicit "write nothing"
+    [InlineData("Red",                      1)]  // single symbolic flag
+    [InlineData("Red | Green | Blue",       7)]  // OR'd symbolic flags
+    [InlineData("All",                      15)] // the ALL alias (RED|GREEN|BLUE|ALPHA)
+    [InlineData("RED | 0x8",                9)]  // flag + integer mixed
+    public void Parse_ColorWriteEnable(string value, int expected)
     {
-        var block = Parse(("ColorWriteEnable", "15"));
-        block.ColorWriteChannels.Should().Be(15);
+        var block = Parse(("ColorWriteEnable", value));
+        block.ColorWriteChannels.Should().Be(expected);
     }
 
-    [Fact]
-    public void Parse_ColorWriteEnable_InvalidValue_ReturnsError()
+    [Theory]
+    [InlineData("Purple")]         // unknown flag name
+    [InlineData("Red | Magenta")]  // unknown flag inside an OR
+    public void Parse_ColorWriteEnable_InvalidValue_ReturnsError(string value)
     {
-        var error = ParseExpectError(("ColorWriteEnable", "All"));
+        var error = ParseExpectError(("ColorWriteEnable", value));
         error.Code.Should().Be("SD0011");
     }
 
@@ -485,6 +498,7 @@ public sealed class RenderStateParserTests
     [InlineData("RED | GREEN",              3)]  // flag-OR of D3DCOLORWRITEENABLE tokens
     [InlineData("Red|Green|Blue|Alpha",     15)] // no spaces, mixed case
     [InlineData("ALPHA",                    8)]  // single flag
+    [InlineData("All",                      15)] // the ALL alias (Phase 45 B3)
     [InlineData("15",                       15)] // plain integer
     [InlineData("0x7",                      7)]  // hex integer
     [InlineData("RED | 0x2",                3)]  // flag and integer mixed

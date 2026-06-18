@@ -628,6 +628,105 @@ public sealed class FxPreParserPreserveSm3Tests
         lines[2].Should().Contain("float4 PS");
     }
 
+    // -------------------------------------------------------------------------
+    // (n) Phase 45 B3 — ColorWriteEnable flag masks parse on the FNA path too
+    //     (render states are captured identically in both modes; the lexer drops
+    //     '|', so the mask flags arrive as adjacent identifiers and must all be
+    //     captured rather than failing on the second flag).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_PreserveSm3_B3_ColorWriteEnableOredMask_Captured()
+    {
+        const string source = """
+            technique T
+            {
+                pass P
+                {
+                    ColorWriteEnable = Red | Green | Blue;
+                    PixelShader = compile ps_3_0 PS();
+                }
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, "test.fx", FxSourceMode.PreserveSm3);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Techniques[0].Passes[0].RenderStates
+            .Should().ContainSingle(e => e.Key == "ColorWriteEnable" && e.Value == "Red|Green|Blue");
+    }
+
+    // -------------------------------------------------------------------------
+    // (o) Phase 45 B8 — 'sampler S : register(s0) = sampler_state { … };' (register
+    //     clause before '=') parses on the FNA path and passes through verbatim.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_PreserveSm3_B8_RegisterBeforeSamplerState_VerbatimAndCaptured()
+    {
+        const string source = """
+            texture t;
+            sampler s : register(s0) = sampler_state { Texture = <t>; MinFilter = LINEAR; };
+
+            float4 PS(float2 uv : TEXCOORD0) : COLOR
+            {
+                return tex2D(s, uv);
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, "test.fx", FxSourceMode.PreserveSm3);
+
+        result.IsSuccess.Should().BeTrue();
+
+        result.Value.Samplers.Should().ContainSingle();
+        var sampler = result.Value.Samplers[0];
+        sampler.Name.Should().Be("s");
+        sampler.TextureReference.Should().Be("t");
+        sampler.StateEntries.Should().ContainSingle(e => e.Key == "MinFilter" && e.Value == "LINEAR");
+
+        // Whole declaration (register clause + initializer) passes through verbatim.
+        string stripped = result.Value.StrippedHlsl;
+        stripped.Should().Contain("sampler s : register(s0) = sampler_state { Texture = <t>; MinFilter = LINEAR; };");
+        stripped.Should().NotContain("SamplerState");
+    }
+
+    // -------------------------------------------------------------------------
+    // (p) Phase 45 B9 — a trailing sampler-level FX annotation parses on the FNA
+    //     path. The annotation is FX metadata vkd3d cannot parse, so it is erased
+    //     (with line numbers preserved) while the rest of the declaration stays
+    //     verbatim and the SamplerInfo is unaffected.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_PreserveSm3_B9_TrailingSamplerAnnotation_StrippedRestVerbatim()
+    {
+        const string source =
+            "texture t;\n" +                                                          // line 1
+            "sampler s = sampler_state { Texture = <t>; } < string UIName = \"x\"; >;\n" + // line 2
+            "\n" +                                                                    // line 3
+            "float4 PS(float2 uv : TEXCOORD0) : COLOR { return tex2D(s, uv); }\n";     // line 4
+
+        var result = FxPreParser.Parse(source, "test.fx", FxSourceMode.PreserveSm3);
+
+        result.IsSuccess.Should().BeTrue();
+        string stripped = result.Value.StrippedHlsl;
+
+        // The annotation block is gone; the sampler_state body stays verbatim.
+        stripped.Should().NotContain("UIName");
+        stripped.Should().NotContain("\"x\"");
+        stripped.Should().Contain("sampler s = sampler_state { Texture = <t>; }");
+        stripped.Should().Contain("tex2D(s, uv)");
+
+        // Line count preserved (the annotation erasure keeps newlines).
+        var lines = stripped.Replace("\r\n", "\n").Split('\n');
+        lines.Length.Should().Be(source.Replace("\r\n", "\n").Split('\n').Length);
+
+        // SamplerInfo unaffected by the annotation.
+        result.Value.Samplers.Should().ContainSingle();
+        result.Value.Samplers[0].Name.Should().Be("s");
+        result.Value.Samplers[0].TextureReference.Should().Be("t");
+    }
+
     /// <summary>Reads a fixture embedded into this test assembly (see the csproj) —
     /// the real on-disk fixture file, without a runtime disk dependency.</summary>
     private static string ReadFixture(string fileName)

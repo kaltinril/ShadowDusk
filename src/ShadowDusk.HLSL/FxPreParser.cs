@@ -56,6 +56,22 @@ public sealed class FxPreParser
     };
 
     // -------------------------------------------------------------------------
+    // Render-state keys whose value is a D3DCOLORWRITEENABLE flag mask
+    // -------------------------------------------------------------------------
+
+    // The ColorWriteEnable family takes an OR of RED/GREEN/BLUE/ALPHA/ALL flags
+    // (e.g. 'ColorWriteEnable = Red | Green | Blue;'). The FxLexer drops '|', so
+    // the value arrives as several adjacent Identifier tokens; for these keys the
+    // pass render-state value parser accumulates the consecutive identifiers and
+    // re-joins them with '|' (which RenderStateParser.TryParseColorWriteMask then
+    // splits). Scoped to these keys only — every other render state is a single
+    // value token, so the single-token path is unchanged for them.
+    private static readonly HashSet<string> ColorWriteMaskKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "ColorWriteEnable", "ColorWriteEnable1", "ColorWriteEnable2", "ColorWriteEnable3",
+    };
+
+    // -------------------------------------------------------------------------
     // Legacy sampling intrinsics
     // -------------------------------------------------------------------------
 
@@ -144,12 +160,31 @@ public sealed class FxPreParser
     // bare passed through verbatim) so already-modern shaders are untouched.
     private IReadOnlySet<string> _legacyIntrinsicSamplers = new HashSet<string>(StringComparer.Ordinal);
 
+    // Names of samplers that appear as an argument of a MODERN Texture method
+    // call ('Tex.Sample(S, uv)', '.SampleGrad', '.SampleLevel', …), where the
+    // legacy 'tex2D' is NOT used. Populated by a pre-scan before the main loop.
+    // A 'sampler S = sampler_state { … }' / 'SamplerState S { … }' declaration in
+    // this set must NOT be erased in RewriteToSm4 mode (the old behavior): DXC
+    // cannot parse the FX9 '= sampler_state { … }' initializer, but the modern
+    // '.Sample(S, …)' call still needs 'S' declared, so the declaration is
+    // rewritten to a passthrough 'SamplerState S;'. A sampler in NEITHER this set
+    // nor _legacyIntrinsicSamplers is genuinely unused and stays erased.
+    private IReadOnlySet<string> _modernMethodSamplers = new HashSet<string>(StringComparer.Ordinal);
+
     // Maps a rewritten sampler name to the Texture2D it should sample through in
     // the rewritten '<texture>.Sample(<sampler>, uv)' call. Populated as sampler
     // declarations are processed in the main loop; read when a tex2D call is
     // rewritten. Valid HLSL declares samplers before use, so a sampler is always
     // in this map by the time its tex2D call is reached.
     private readonly Dictionary<string, string> _samplerTextureBindings = new(StringComparer.Ordinal);
+
+    // Character spans of trailing sampler-level FX annotation blocks
+    // ('sampler S = sampler_state { … } < … >;') that ParseSamplerDecl consumed.
+    // These are FX metadata that no shader backend understands, so they are erased
+    // from the stripped output in EVERY mode — including PreserveSm3, where the
+    // rest of the sampler declaration otherwise passes through verbatim to vkd3d.
+    // Drained by the ParseFile sampler dispatch after each ParseSamplerDecl call.
+    private readonly List<(int Start, int End)> _samplerAnnotationErasures = new();
 
     // -------------------------------------------------------------------------
     // Constructor (private — callers use the static Parse entry point)
@@ -321,6 +356,12 @@ public sealed class FxPreParser
         // intrinsic so the main loop knows which declarations to rewrite.
         _legacyIntrinsicSamplers = CollectLegacyIntrinsicSamplers();
 
+        // Pre-scan: discover which samplers are used through a MODERN Texture
+        // method call (e.g. 'Tex.Sample(S, uv)') so a 'sampler_state' declaration
+        // that the modern code actually references is rewritten to a passthrough
+        // 'SamplerState S;' rather than erased (see _modernMethodSamplers).
+        _modernMethodSamplers = CollectModernMethodSamplers();
+
         // Skip comments and preprocessor directives at the start of the token stream
         // (they are always included verbatim in stripped output).
         SkipNonCodeTokens();
@@ -393,9 +434,17 @@ public sealed class FxPreParser
                 {
                     int afterName = NextCodeOffset(nameOffset + 1);
 
+                    // The '= sampler_state' initializer may be preceded by a
+                    // 'register(sN)' clause ('sampler S : register(s0) = sampler_state
+                    // { … };'). The lexer drops the ':', so after the name we may see
+                    // 'register' '(' … ')' before the '='. Skip it so the '= sampler_state'
+                    // form is detected and routed to ParseSamplerDecl (which consumes the
+                    // register clause itself) rather than mis-routed to the bare path.
+                    int afterRegister = OffsetAfterOptionalRegister(afterName);
+
                     bool isSamplerStateForm =
-                        Peek(afterName).Kind == TokenKind.Equals &&
-                        PeekIsKeywordAt(NextCodeOffset(afterName + 1), "sampler_state");
+                        Peek(afterRegister).Kind == TokenKind.Equals &&
+                        PeekIsKeywordAt(NextCodeOffset(afterRegister + 1), "sampler_state");
 
                     // Form 4 must be detected before the bare-form check below: a
                     // brace form with a register clause starts 'S register ( … )'
@@ -422,6 +471,12 @@ public sealed class FxPreParser
                             // verbatim — no erasure, no SamplerState/Texture2D rewrite.
                             // The SamplerInfo captured above still feeds the fx_2_0
                             // parameter/state metadata.
+                            //
+                            // EXCEPTION (B9): a trailing sampler-level FX annotation
+                            // ('… } < string UIName = "x"; >;') is NOT raw HLSL and vkd3d
+                            // rejects it, so erase just that span (the rest of the
+                            // declaration still passes through verbatim).
+                            erasedRanges.AddRange(_samplerAnnotationErasures);
                         }
                         else if (_legacyIntrinsicSamplers.Contains(info.Name))
                         {
@@ -440,11 +495,34 @@ public sealed class FxPreParser
                             replacedRanges.Add((blockStart, declEnd,
                                 BuildDeclReplacement(blockStart, declEnd, newDecl)));
                         }
+                        else if (_modernMethodSamplers.Contains(info.Name))
+                        {
+                            // Modern shape (e.g. MonoGame HiDef SpriteEffect): the
+                            // declaration is referenced by a modern Texture method
+                            // ('Tex.Sample(S, …)'), NOT by tex2D. DXC cannot parse the
+                            // FX9 '= sampler_state { … }' initializer, but '.Sample(S, …)'
+                            // still needs 'S' declared, so rewrite the whole declaration
+                            // to a passthrough 'SamplerState S;' (mirroring the
+                            // legacy-intrinsic branch's texture-referenced form). No
+                            // Texture2D is synthesized — the modern shader declares its
+                            // own 'Texture2D Tex;' and references it directly. If 'S' is
+                            // genuinely unused DXC drops it, so a truly-unused sampler is
+                            // not in _modernMethodSamplers and stays erased below.
+                            int declEnd = _tokenCharOffset[_pos - 1] + _tokens[_pos - 1].Text.Length;
+                            replacedRanges.Add((blockStart, declEnd,
+                                BuildDeclReplacement(blockStart, declEnd, $"SamplerState {info.Name};")));
+                        }
                         else
                         {
                             int blockEnd = _pos < _tokens.Count ? _tokenCharOffset[_pos] : _source.Length;
                             erasedRanges.Add((blockStart, blockEnd));
                         }
+
+                        // The annotation span (if any) is already covered by the
+                        // replacement/erasure of the RewriteToSm4 branches and was
+                        // erased explicitly in the PreserveSm3 branch above; clear it so
+                        // it does not carry over to the next sampler declaration.
+                        _samplerAnnotationErasures.Clear();
 
                         SkipNonCodeTokens();
                         continue;
@@ -905,10 +983,29 @@ public sealed class FxPreParser
                         $"Expected render-state value but found '{valueTok.Text}'", valueTok);
 
                 string value = negativePrefix + valueTok.Text;
-                var valueSpan = new SourceSpan(keyTok.Line, keyTok.Column,
-                    valueTok.Line, valueTok.Column + valueTok.Text.Length);
+                var lastValueTok = valueTok;
                 Consume();
                 SkipNonCodeTokens();
+
+                // ColorWriteEnable flag masks: 'Red | Green | Blue' loses its '|'
+                // separators in the lexer and arrives as adjacent Identifier tokens.
+                // For these keys only, accumulate the consecutive identifiers and
+                // re-join them with '|' so the value is captured whole (otherwise the
+                // ';' check below would fail on the second flag, FX0008). Every other
+                // render state is a single token, so this never affects them.
+                if (ColorWriteMaskKeys.Contains(key) && valueTok.Kind == TokenKind.Identifier)
+                {
+                    while (Peek().Kind == TokenKind.Identifier)
+                    {
+                        lastValueTok = Peek();
+                        value += "|" + lastValueTok.Text;
+                        Consume();
+                        SkipNonCodeTokens();
+                    }
+                }
+
+                var valueSpan = new SourceSpan(keyTok.Line, keyTok.Column,
+                    lastValueTok.Line, lastValueTok.Column + lastValueTok.Text.Length);
 
                 if (Peek().Kind != TokenKind.Semicolon)
                     return Fail<PassInfo>(FxParseErrorCode.MissingSemicolon,
@@ -1103,6 +1200,27 @@ public sealed class FxPreParser
         if (rbrace.IsFailure)
             return Result<SamplerInfo, FxParseError>.Fail(rbrace.Error);
         SkipNonCodeTokens();
+
+        // Optional sampler-level FX annotation block after the '}':
+        //   'sampler2D S = sampler_state { … } < string UIName = "x"; >;'
+        // fxc accepts an annotation here exactly as on any other effect variable.
+        // Consume (and validate) it so the trailing ';' check below still succeeds;
+        // the annotation contributes no SamplerInfo. The captured span is erased in
+        // EVERY mode (recorded here, applied by the ParseFile caller): in
+        // RewriteToSm4 the whole declaration span (through the trailing ';') is
+        // already erased or replaced, and in PreserveSm3 the annotation must be
+        // erased on its own because the rest of the declaration passes through
+        // verbatim and vkd3d does not accept an FX annotation on a sampler.
+        if (Peek().Kind == TokenKind.LAngle)
+        {
+            int annotStart = _tokenCharOffset[_pos]; // points to '<'
+            var samplerAnnot = ParseAnnotationBlock();
+            if (samplerAnnot.IsFailure)
+                return Result<SamplerInfo, FxParseError>.Fail(samplerAnnot.Error);
+            int annotEnd = _pos < _tokens.Count ? _tokenCharOffset[_pos] : _source.Length;
+            _samplerAnnotationErasures.Add((annotStart, annotEnd));
+            SkipNonCodeTokens();
+        }
 
         // sampler declarations require a trailing ';'
         var trailSemi = Expect(TokenKind.Semicolon);
@@ -1395,6 +1513,53 @@ public sealed class FxPreParser
     }
 
     /// <summary>
+    /// One-pass scan collecting the names of samplers passed as the first argument
+    /// of a MODERN Texture method call ('<c>Tex.Sample(S, uv)</c>',
+    /// '<c>.SampleGrad</c>', '<c>.SampleLevel</c>', …). The token shape is
+    /// '<c>. Sample… ( Identifier</c>' — a <see cref="TokenKind.Dot"/>, an
+    /// identifier whose name begins with 'Sample' (the SM4 sample-method family),
+    /// '(', then the sampler argument. This drives B2: a <c>sampler_state</c>
+    /// declaration referenced this way is rewritten to a passthrough
+    /// '<c>SamplerState S;</c>' instead of being erased. Matched case-sensitively
+    /// because HLSL method names are case-sensitive. Text inside comments and
+    /// preprocessor directives is never seen here (the lexer emits those as single
+    /// tokens, not identifiers).
+    /// </summary>
+    private HashSet<string> CollectModernMethodSamplers()
+    {
+        var used = new HashSet<string>(StringComparer.Ordinal);
+
+        for (int i = 1; i < _tokens.Count; i++)
+        {
+            if (_tokens[i].Kind != TokenKind.Identifier ||
+                !_tokens[i].Text.StartsWith("Sample", StringComparison.Ordinal))
+                continue;
+
+            // The method must be invoked on a resource: the preceding code token is '.'.
+            int p = i - 1;
+            while (p >= 0 && _tokens[p].Kind is TokenKind.LineComment or TokenKind.BlockComment)
+                p--;
+            if (p < 0 || _tokens[p].Kind != TokenKind.Dot)
+                continue;
+
+            // Expect 'Sample…' '(' Identifier — comments may sit in between.
+            int j = i + 1;
+            while (j < _tokens.Count && _tokens[j].Kind is TokenKind.LineComment or TokenKind.BlockComment)
+                j++;
+            if (j >= _tokens.Count || _tokens[j].Kind != TokenKind.LParen)
+                continue;
+
+            j++;
+            while (j < _tokens.Count && _tokens[j].Kind is TokenKind.LineComment or TokenKind.BlockComment)
+                j++;
+            if (j < _tokens.Count && _tokens[j].Kind == TokenKind.Identifier)
+                used.Add(_tokens[j].Text);
+        }
+
+        return used;
+    }
+
+    /// <summary>
     /// Detects the brace-form sampler declaration '<c>sampler S { … };</c>' (with an
     /// optional '<c>: register(sN)</c>' clause before the '{' — the lexer drops the
     /// ':'). <paramref name="afterName"/> is the look-ahead offset of the first code
@@ -1405,27 +1570,35 @@ public sealed class FxPreParser
     /// ',' or ')', and struct/cbuffer/technique bodies never reach this check
     /// because their type keywords are not sampler types.
     /// </summary>
-    private bool IsBraceSamplerStateForm(int afterName)
+    private bool IsBraceSamplerStateForm(int afterName) =>
+        Peek(OffsetAfterOptionalRegister(afterName)).Kind == TokenKind.LBrace;
+
+    /// <summary>
+    /// Returns the look-ahead offset (relative to <c>_pos</c>) of the first code
+    /// token AFTER an optional '<c>register ( … )</c>' clause beginning at
+    /// <paramref name="offset"/>. The FxLexer drops the leading ':', so a register
+    /// clause surfaces as '<c>register</c>' '<c>(</c>' … '<c>)</c>'. When no
+    /// register clause is present (or it is malformed / unterminated), the input
+    /// <paramref name="offset"/> is returned unchanged so the caller's own shape
+    /// check decides the outcome. Shared by the '<c>= sampler_state</c>' dispatch
+    /// (B8) and the brace-form detector.
+    /// </summary>
+    private int OffsetAfterOptionalRegister(int offset)
     {
-        int off = afterName;
+        if (!PeekIsKeywordAt(offset, "register"))
+            return offset;
 
-        // Optional register clause: 'register' '(' … ')'.
-        if (PeekIsKeywordAt(off, "register"))
-        {
+        int off = NextCodeOffset(offset + 1);
+        if (Peek(off).Kind != TokenKind.LParen)
+            return offset;
+
+        off = NextCodeOffset(off + 1);
+        while (Peek(off).Kind is not (TokenKind.RParen or TokenKind.EOF))
             off = NextCodeOffset(off + 1);
-            if (Peek(off).Kind != TokenKind.LParen)
-                return false;
+        if (Peek(off).Kind != TokenKind.RParen)
+            return offset;
 
-            off = NextCodeOffset(off + 1);
-            while (Peek(off).Kind is not (TokenKind.RParen or TokenKind.EOF))
-                off = NextCodeOffset(off + 1);
-            if (Peek(off).Kind != TokenKind.RParen)
-                return false;
-
-            off = NextCodeOffset(off + 1);
-        }
-
-        return Peek(off).Kind == TokenKind.LBrace;
+        return NextCodeOffset(off + 1);
     }
 
     /// <summary>

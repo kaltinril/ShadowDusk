@@ -1798,4 +1798,275 @@ public sealed class FxPreParserTests
 
         result.IsSuccess.Should().BeTrue();
     }
+
+    // =========================================================================
+    // Phase 45 — FX pre-parser robustness (dropped-operator bug class), B2/B8/B9.
+    // (B3 is render-state-only; covered in the render-state region below.)
+    // =========================================================================
+
+    // -------------------------------------------------------------------------
+    // B2 — a 'sampler S = sampler_state { … }' USED through the modern
+    // 'T.Sample(S, uv)' method (not tex2D) must NOT be erased; the declaration is
+    // rewritten to a passthrough 'SamplerState S;' so '.Sample(S, …)' resolves.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_B2_SamplerStateUsedByModernSample_RewrittenToPassthroughSamplerState()
+    {
+        const string source = """
+            Texture2D SpriteTexture;
+            sampler2D SpriteTextureSampler = sampler_state
+            {
+                Texture = <SpriteTexture>;
+            };
+
+            float4 PS(float2 uv : TEXCOORD0) : SV_TARGET
+            {
+                return SpriteTexture.Sample(SpriteTextureSampler, uv);
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        string stripped = result.Value.StrippedHlsl;
+
+        // The legacy initializer is gone, but the declaration survives as a
+        // passthrough SamplerState (NOT erased) so the .Sample call resolves.
+        stripped.Should().Contain("SamplerState SpriteTextureSampler;");
+        stripped.Should().NotContain("sampler_state");
+        // No Texture2D is synthesized — the shader declares its own and uses it.
+        stripped.Should().NotContain("_SDTexture");
+        // The modern call is untouched (it is not a tex2D rewrite).
+        stripped.Should().Contain("SpriteTexture.Sample(SpriteTextureSampler, uv)");
+
+        // Metadata is still captured.
+        result.Value.Samplers.Should().ContainSingle();
+        result.Value.Samplers[0].Name.Should().Be("SpriteTextureSampler");
+    }
+
+    [Fact]
+    public void Parse_B2_SamplerStateBraceFormUsedByModernSample_RewrittenToPassthrough()
+    {
+        // The brace form ('SamplerState S { … }', no '= sampler_state') used via
+        // a modern method must rewrite the same way.
+        const string source = """
+            Texture2D Tex;
+            SamplerState S
+            {
+                Texture = <Tex>;
+                Filter = MIN_MAG_MIP_LINEAR;
+            };
+
+            float4 PS(float2 uv : TEXCOORD0) : SV_TARGET
+            {
+                return Tex.SampleLevel(S, uv, 0);
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        string stripped = result.Value.StrippedHlsl;
+
+        stripped.Should().Contain("SamplerState S;");
+        stripped.Should().NotContain("Filter");
+        stripped.Should().NotContain("_SDTexture");
+        stripped.Should().Contain("Tex.SampleLevel(S, uv, 0)");
+    }
+
+    [Fact]
+    public void Parse_B2_UnusedSamplerState_StillErased_NotPassthrough()
+    {
+        // Regression guard: a sampler_state referenced by NEITHER tex2D nor a
+        // modern .Sample call is genuinely unused and stays erased (pre-existing
+        // behavior; DXC would drop a passthrough SamplerState as unused anyway).
+        const string source = """
+            Texture2D SpriteTexture;
+            sampler2D UnusedSampler = sampler_state
+            {
+                Texture = <SpriteTexture>;
+            };
+
+            float4 PS() : SV_TARGET { return float4(1, 1, 1, 1); }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        string stripped = result.Value.StrippedHlsl;
+
+        stripped.Should().NotContain("sampler_state");
+        stripped.Should().NotContain("SamplerState UnusedSampler;");
+    }
+
+    // -------------------------------------------------------------------------
+    // B8 — 'sampler S : register(s0) = sampler_state { … };' (register clause
+    // BEFORE the '='): routes to ParseSamplerDecl, no leaked state block.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_B8_RegisterClauseBeforeSamplerState_RoutesToSamplerDecl()
+    {
+        const string source = """
+            Texture2D SpriteTexture;
+            sampler2D SpriteTextureSampler : register(s0) = sampler_state
+            {
+                Texture = <SpriteTexture>;
+            };
+
+            float4 PS(float2 uv : TEXCOORD0) : COLOR
+            {
+                return tex2D(SpriteTextureSampler, uv);
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        string stripped = result.Value.StrippedHlsl;
+
+        // Sampler is tex2D-referenced, so the whole decl (register clause + state
+        // block) is replaced by a SamplerState; nothing of the block leaks.
+        stripped.Should().Contain("SamplerState SpriteTextureSampler;");
+        stripped.Should().NotContain("sampler_state");
+        stripped.Should().NotContain("register");
+        stripped.Should().Contain("SpriteTexture.Sample(SpriteTextureSampler, uv)");
+
+        // Metadata captured (including the texture binding).
+        result.Value.Samplers.Should().ContainSingle();
+        result.Value.Samplers[0].Name.Should().Be("SpriteTextureSampler");
+        result.Value.Samplers[0].TextureReference.Should().Be("SpriteTexture");
+    }
+
+    // -------------------------------------------------------------------------
+    // B9 — sampler-level FX annotation after the state block:
+    // 'sampler2D S = sampler_state { … } < string UIName = "x"; >;'.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_B9_TrailingSamplerAnnotation_ConsumedAndStripped()
+    {
+        const string source = """
+            Texture2D SpriteTexture;
+            sampler2D SpriteTextureSampler = sampler_state
+            {
+                Texture = <SpriteTexture>;
+            } < string UIName = "Diffuse"; int UIOrder = 1; >;
+
+            float4 PS(float2 uv : TEXCOORD0) : COLOR
+            {
+                return tex2D(SpriteTextureSampler, uv);
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        string stripped = result.Value.StrippedHlsl;
+
+        // The annotation block is metadata: it must not reach DXC.
+        stripped.Should().NotContain("UIName");
+        stripped.Should().NotContain("UIOrder");
+        // The declaration still rewrites normally (tex2D-referenced).
+        stripped.Should().Contain("SamplerState SpriteTextureSampler;");
+        stripped.Should().Contain("SpriteTexture.Sample(SpriteTextureSampler, uv)");
+
+        // SamplerInfo is unaffected by the annotation.
+        result.Value.Samplers.Should().ContainSingle();
+        result.Value.Samplers[0].Name.Should().Be("SpriteTextureSampler");
+        result.Value.Samplers[0].TextureReference.Should().Be("SpriteTexture");
+    }
+
+    // -------------------------------------------------------------------------
+    // B3 — ColorWriteEnable flag masks. The lexer drops '|', so 'Red | Green |
+    // Blue' arrives as adjacent identifiers; the pass parser must capture them
+    // all (joined with '|') instead of stopping at the first and demanding ';'.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_B3_ColorWriteEnableOredMask_CapturesFullValue()
+    {
+        const string source = """
+            technique T
+            {
+                pass P
+                {
+                    ColorWriteEnable = Red | Green | Blue;
+                    PixelShader = compile ps_3_0 PS();
+                }
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        var rs = result.Value.Techniques[0].Passes[0].RenderStates;
+        rs.Should().ContainSingle(e => e.Key == "ColorWriteEnable" && e.Value == "Red|Green|Blue");
+    }
+
+    [Fact]
+    public void Parse_B3_ColorWriteEnableSingleFlag_StillCaptured()
+    {
+        const string source = """
+            technique T
+            {
+                pass P
+                {
+                    ColorWriteEnable = Red;
+                    PixelShader = compile ps_3_0 PS();
+                }
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        var rs = result.Value.Techniques[0].Passes[0].RenderStates;
+        rs.Should().ContainSingle(e => e.Key == "ColorWriteEnable" && e.Value == "Red");
+    }
+
+    [Fact]
+    public void Parse_B3_NumberedColorWriteEnableOredMask_CapturesFullValue()
+    {
+        const string source = """
+            technique T
+            {
+                pass P
+                {
+                    ColorWriteEnable1 = Red | Alpha;
+                    PixelShader = compile ps_3_0 PS();
+                }
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        var rs = result.Value.Techniques[0].Passes[0].RenderStates;
+        rs.Should().ContainSingle(e => e.Key == "ColorWriteEnable1" && e.Value == "Red|Alpha");
+    }
+
+    [Fact]
+    public void Parse_B3_OrdinaryRenderState_UnaffectedBySingleTokenPath()
+    {
+        // A non-mask render state with a single identifier value must capture
+        // exactly that one token (the accumulation loop is scoped to mask keys).
+        const string source = """
+            technique T
+            {
+                pass P
+                {
+                    CullMode = None;
+                    PixelShader = compile ps_3_0 PS();
+                }
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        var rs = result.Value.Techniques[0].Passes[0].RenderStates;
+        rs.Should().ContainSingle(e => e.Key == "CullMode" && e.Value == "None");
+    }
 }

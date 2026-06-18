@@ -107,6 +107,12 @@ public sealed class FnaCompileFixtureTests
         "examples/ExRelationalThreshold.fx",
         "examples/ExRelationalBranch.fx",
         "examples/ExLoopRelational.fx",
+        // Phase 45 FX pre-parser robustness — the all-runtime (SM3 / fx_2_0) subset
+        // (B3 ColorWriteEnable mask, B8 register-before-sampler_state, B9 trailing
+        // sampler annotation). B2 (.Sample method) is SM4-only, so it is NOT here.
+        "examples/ExColorWriteMask.fx",
+        "examples/ExSamplerRegisterState.fx",
+        "examples/ExSamplerAnnotation.fx",
     };
 
     [FnaTheory]

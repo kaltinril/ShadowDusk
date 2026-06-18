@@ -24,7 +24,7 @@
   - Structurally **clean**: **64**
   - **Divergent** (>=1 level): **17**
   - Compile/parse **failures**: **11**
-- Non-golden census cells: **62** (**51** compile, **11** fail with a code)
+- Non-golden census cells: **70** (**59** compile, **11** fail with a code)
 
 ## Golden-backed fixtures — per-level structural verdict
 
@@ -224,6 +224,8 @@ is a CORRECT result, not a defect.
 | cbuffer.fx | OpenGL | PASS |  |  |
 | examples/ExBareSamplerTex2D.fx | DirectX_11 | PASS |  |  |
 | examples/ExBareSamplerTex2D.fx | OpenGL | PASS |  |  |
+| examples/ExColorWriteMask.fx | DirectX_11 | PASS |  |  |
+| examples/ExColorWriteMask.fx | OpenGL | PASS |  |  |
 | examples/ExCubeSamplerHidef.fx | DirectX_11 | PASS |  |  |
 | examples/ExCubeSamplerHidef.fx | OpenGL | PASS |  |  |
 | examples/ExDualTexture.fx | DirectX_11 | PASS |  |  |
@@ -238,6 +240,8 @@ is a CORRECT result, not a defect.
 | examples/ExMat3UniformMember.fx | OpenGL | FAIL | SD0210 | Unsupported uniform type in 'mat3 ColorTransform;': only float/float2/float3/float4 and square float4x4 matrices (plus arrays of those) are modelled for the Mon... |
 | examples/ExModernSample.fx | DirectX_11 | PASS |  |  |
 | examples/ExModernSample.fx | OpenGL | PASS |  |  |
+| examples/ExModernSamplerState.fx | DirectX_11 | PASS |  |  |
+| examples/ExModernSamplerState.fx | OpenGL | PASS |  |  |
 | examples/ExMultiSamplerHidef.fx | DirectX_11 | PASS |  |  |
 | examples/ExMultiSamplerHidef.fx | OpenGL | PASS |  |  |
 | examples/ExRelationalBranch.fx | DirectX_11 | PASS |  |  |
@@ -248,6 +252,10 @@ is a CORRECT result, not a defect.
 | examples/ExSampleGradHidef.fx | OpenGL | PASS |  |  |
 | examples/ExSampleLevelHidef.fx | DirectX_11 | PASS |  |  |
 | examples/ExSampleLevelHidef.fx | OpenGL | PASS |  |  |
+| examples/ExSamplerAnnotation.fx | DirectX_11 | PASS |  |  |
+| examples/ExSamplerAnnotation.fx | OpenGL | PASS |  |  |
+| examples/ExSamplerRegisterState.fx | DirectX_11 | PASS |  |  |
+| examples/ExSamplerRegisterState.fx | OpenGL | PASS |  |  |
 | examples/ExSamplerStateUniform.fx | DirectX_11 | PASS |  |  |
 | examples/ExSamplerStateUniform.fx | OpenGL | PASS |  |  |
 | examples/ExTernaryHelper.fx | DirectX_11 | PASS |  |  |

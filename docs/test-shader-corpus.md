@@ -118,6 +118,28 @@ they prove **"ShadowDusk compiles them into a valid effect,"** not pixel-equival
 to `mgfxc`/`fxc` — the in-engine render-and-compare (a committed golden + a
 `validation/*` driver) is the follow-up.
 
+### Phase 45 FX pre-parser robustness set (dropped-operator bug class)
+
+Authored from scratch for ShadowDusk on 2026-06-17 to pin the Phase 45 fixes
+(`plan/PHASE-45-fx-preparser-robustness.md`, items B2/B3/B8/B9). Same shared root
+cause as #106: the `FxLexer` drops several operators (`: + [ ] & | ! ? % ^ ~`), so
+a flat heuristic in `FxPreParser` pattern-matched the fragmented token stream and
+acted wrongly. Each fixture is small, real (full technique + pass, renderable), and
+project-owned.
+
+| File | Bug it guards | Runtimes |
+|---|---|---|
+| `ExModernSamplerState.fx` | **B2** — a `sampler S = sampler_state { Texture = <T>; }` declaration USED through the modern `T.Sample(S, uv)` method (not `tex2D`). Was erased → DXC "undeclared identifier 'S'"; now rewritten to a passthrough `SamplerState S;`. The MonoGame HiDef `SpriteEffect` / modern KNI 2D shape. | GL + DX (`.Sample` is SM4 method syntax; FNA N/A) |
+| `ExColorWriteMask.fx` | **B3** — `ColorWriteEnable = Red \| Green \| Blue;`. The lexer drops `\|`, so the value arrived as three adjacent identifiers; the pass parser stopped at the first and demanded `;` (FX0008). | GL + DX + FNA |
+| `ExSamplerRegisterState.fx` | **B8** — `sampler S : register(s0) = sampler_state { … };` (the `register` clause appears BEFORE the `=`). The dropped `:` mis-routed it to the bare-sampler path, leaking the state block to DXC. | GL + DX + FNA |
+| `ExSamplerAnnotation.fx` | **B9** — `sampler2D S = sampler_state { … } < string UIName = "x"; >;` (a trailing sampler-level FX annotation). `ParseSamplerDecl` hard-required `;` right after `}` (FX0001 on `<`); the annotation is now consumed and stripped. | GL + DX + FNA |
+
+These are exercised by `tests/ShadowDusk.Integration.Tests/Phase45PreParserRobustnessCorpusTests.cs`
+(compile-asserts each on its applicable targets); the all-runtime three (B3/B8/B9)
+are also folded into `FnaCompileFixtureTests.Sm3Corpus()`. As with the other fresh
+fixtures, they prove **"ShadowDusk compiles them into a valid effect,"** not
+pixel-equivalence to `mgfxc`/`fxc`.
+
 ### How they are used
 
 - **Now (no `mgfxc` golden required):** compile-level coverage in
