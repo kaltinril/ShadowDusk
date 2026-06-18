@@ -45,6 +45,22 @@ if (!isKni)
 // the v10 render (output/kni) in real KNI — the render proof that KNIFX loads + runs.
 bool knifxMode = args.Any(a => a.Equals("knifx", StringComparison.OrdinalIgnoreCase));
 var container = knifxMode ? EffectContainer.Knifx : EffectContainer.Mgfx;
+
+// ---- Reserved-word (`float noise;`) B10 render proof in real KNI ------------------------
+// Phase 45 B10 fixed the GL binding of a free uniform whose name collides with a GLSL
+// reserved word; the fix lives in the SHARED GL container path, so it flows into both the
+// v10 MGFX and the KNIFX containers KNI loads. validation/ReservedWordGl proved it for v10 in
+// MonoGame; this arm re-proves the SAME non-vacuous bar (set `noise` by name to 0.25/0.75,
+// render, assert grey 64/191 and the ~127 differentiation) in the real KNI v4.02 runtime
+// above, for MGFX v10 (default) or KNIFX (`knifx` arg). It does NOT touch the shared golden
+// corpus - it compiles only the focused noise fixture.
+//   Run: dotnet run --project validation/KniDesktopGL -- reservedword         # KNI MGFX v10
+//        dotnet run --project validation/KniDesktopGL -- reservedword knifx   # KNI KNIFX v11
+if (args.Any(a => a.Equals("reservedword", StringComparison.OrdinalIgnoreCase)))
+    return await ShadowDusk.Validation.ReservedWordProbe.RunAsync(
+        label: knifxMode ? "KNIFX v11" : "MGFX v10",
+        outLeaf: knifxMode ? "kni-knifx" : "kni-v10",
+        container: container);
 string containerLabel = knifxMode ? "KNIFX v11" : "MGFX v10";
 string outLeaf = knifxMode ? "kni-knifx" : "kni";
 

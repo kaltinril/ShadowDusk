@@ -34,6 +34,19 @@ if (!isMonoGame || !is385Plus)
     return 2;
 }
 
+// ---- Reserved-word (`float noise;`) B10 render proof at MGFX v11 ------------------------
+// Phase 45 B10 fixed the GL binding of a free uniform whose name collides with a GLSL
+// reserved word; the fix lives in the SHARED GL container path, so it flows into the v11
+// container too. validation/ReservedWordGl proved it for v10 in MonoGame 3.8.2; this arm
+// re-proves the SAME non-vacuous bar (set `noise` by name to 0.25/0.75, render, assert grey
+// 64/191 and the ~127 differentiation) for MGFX v11 in the real MonoGame 3.8.5 above. It does
+// NOT touch the shared golden corpus - it compiles only the focused noise fixture.
+//   Run: dotnet run --project validation/MonoGameV11 -- reservedword
+if (args.Any(a => a.Equals("reservedword", StringComparison.OrdinalIgnoreCase)))
+    return await ShadowDusk.Validation.ReservedWordProbe.RunAsync(
+        label: "MGFX v11", outLeaf: "v11",
+        container: EffectContainer.Mgfx, mgfxVersion: 11);
+
 bool v10Mode = args.Any(a => a.Equals("v10", StringComparison.OrdinalIgnoreCase));
 int mgfxVersion = v10Mode ? 10 : 11;
 string outLeaf = v10Mode ? "mgfx-v10-385" : "mgfx-v11";
