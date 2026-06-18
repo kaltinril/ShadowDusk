@@ -38,6 +38,9 @@
   <!-- Shared render recipe (same scene the other GL harnesses use). -->
   <ItemGroup>
     <Compile Include="..\Shared\*.cs" />
+    <!-- Phase 45 B10 reserved-word render probe (in a subfolder so the corpus globs in
+         Baseline/Candidate/etc. - which don't reference ShadowDusk.Compiler - don't pick it up). -->
+    <Compile Include="..\Shared\ReservedWord\ReservedWordProbe.cs" />
   </ItemGroup>
 
 </Project>

@@ -54,6 +54,9 @@
        ShaderInputs). Compiled against KNI here so the scene is byte-for-byte the same. -->
   <ItemGroup>
     <Compile Include="..\Shared\*.cs" />
+    <!-- Phase 45 B10 reserved-word render probe (in a subfolder so the corpus globs in
+         Baseline/Candidate/etc. - which don't reference ShadowDusk.Compiler - don't pick it up). -->
+    <Compile Include="..\Shared\ReservedWord\ReservedWordProbe.cs" />
   </ItemGroup>
 
 </Project>
