@@ -1,13 +1,16 @@
 # Phase 45 — FX pre-parser robustness (the dropped-operator bug class)
 
-**Status:** 🔧 **In progress (2026-06-17)** — opened from GitHub **issue #106**. Item B1 (#106
-itself) is **fixed and merged to this branch** (commit `bedcebf`); the sampler / render-state
+**Status:** ✅ **Done (2026-06-18)** — opened from GitHub **issue #106** (now CLOSED). Item B1 (#106
+itself) is **fixed** (commit `bedcebf`); the sampler / render-state
 items **B2, B3, B8, B9 are fixed** (commit `9136453`); and the legacy-texture / return-semantic /
 scope items **B4, B5, B6, B7 are fixed** (commit `af815a1`). All nine pre-parser defects (B1-B9)
 are resolved. A tenth defect **B10** — a *different* class (a GLSL reserved-word / reflection-join
 bug, not a dropped-operator pre-parser one), surfaced while vendoring real Nez shaders into the
-corpus — is now **✅ fixed** (offset bridge in `CompilationPipeline`; the real Nez `Noise.fx` and a
-new `ExReservedWordUniform.fx` fixture compile on GL again). **B6 note:** the catalogued shape (a bare `: COLOR` VS with no position
+corpus — is also **✅ fixed** (offset bridge in `CompilationPipeline`; the real Nez `Noise.fx` and a
+new `ExReservedWordUniform.fx` fixture compile on GL again). The whole class shipped via **PRs #108
+and #109** (merged to `main`): permanent regression fixtures compiled on every runtime/target, unit
+coverage, full suite green, and render-proven vs `mgfxc`/`fxc` across MonoGame-GL/DX, KNI-GL/DX,
+KNIFX, MGFX v11, and FNA. **B6 note:** the catalogued shape (a bare `: COLOR` VS with no position
 output) is rejected by `fxc` regardless (X4541 "vertex shader must minimally write all four
 components of POSITION"), so it is not-a-bug on its own; the REAL valid case is a VS that writes
 `POSITION` through an `out` parameter and returns `: COLOR` — `fxc` and `mgfxc` accept it, and our

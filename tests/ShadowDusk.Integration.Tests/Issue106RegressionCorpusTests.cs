@@ -39,6 +39,7 @@ public sealed class Issue106RegressionCorpusTests
     /// <summary>The issue-#106 regression fixtures, each in the all-runtime SM3/fx_2_0 subset.</summary>
     public static TheoryData<string> Fixtures() => new()
     {
+        "examples/Issue106Repro.fx",         // the VERBATIM reporter shader (nested if, ==, <=, early return in a helper)
         "examples/ExTernaryHelper.fx",      // helper returns a ternary over a relational (the canonical #106 shape)
         "examples/ExRelationalThreshold.fx", // <, <=, >, >= directly in the PS body
         "examples/ExRelationalBranch.fx",    // relational-driven if/else if/else + a chained ternary
