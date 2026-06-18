@@ -37,6 +37,7 @@ public sealed record Fx2EffectDesc
 /// </summary>
 public sealed record Fx2Parameter
 {
+    /// <summary>The parameter name (must exactly match the corresponding CTAB constant name).</summary>
     public required string Name { get; init; }
 
     /// <summary>Optional HLSL semantic; <see langword="null"/> = none.</summary>

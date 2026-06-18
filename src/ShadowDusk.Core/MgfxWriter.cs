@@ -21,6 +21,15 @@ public sealed class MgfxWriter
     // else, so byte order matters — this is the literal sequence it expects.
     private static readonly byte[] MgfxSignatureBytes = { 0x4D, 0x47, 0x46, 0x58 };
 
+    /// <summary>
+    /// Serializes <paramref name="ir"/> into the binary MGFX container bytes.
+    /// </summary>
+    /// <param name="ir">The fully assembled effect IR to serialize.</param>
+    /// <param name="options">The target profile and MGFX version to emit.</param>
+    /// <returns>
+    /// The MGFX bytes on success, or a <see cref="ShaderError"/> (e.g. <c>SD002x</c>) when a
+    /// count or size exceeds what the format can store.
+    /// </returns>
     public Result<byte[], ShaderError> Write(ShaderIR ir, MgfxWriterOptions options)
     {
         foreach (var cb in ir.ConstantBuffers)

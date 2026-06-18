@@ -347,7 +347,7 @@ reflected parameter is still `noise`, so a pure name match fails. DirectX and FN
 GLSL, so they are unaffected; and `mgfxc` never hits this because MojoShader packs constants by
 D3D9 register index and never emits named uniforms at all.
 
-The fix (Phase 45 B10) is to **fall back to binding by location** the moment the name match
+The fix is to **fall back to binding by location** the moment the name match
 misses — never for a shader that already resolves by name, so existing output is byte-identical.
 The data is already in the reflection: a `ConstantBufferReflection` lists its `VariableReflection`
 members in offset order with both the original name and the byte `StartOffset`, and the GL uniform

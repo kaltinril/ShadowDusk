@@ -40,6 +40,14 @@ public sealed class RenderStateParser
             "EnableAdaptiveTessellation", "SRGBWriteEnable",
         };
 
+    /// <summary>
+    /// Parses a pass's render-state assignments into a typed <see cref="RenderStateBlock"/>.
+    /// </summary>
+    /// <param name="kvp">The raw <c>state = value</c> pairs collected from the pass block.</param>
+    /// <returns>
+    /// The populated <see cref="RenderStateBlock"/> on success, or a <see cref="ShaderError"/>
+    /// when a recognized state has an unparseable value.
+    /// </returns>
     public Result<RenderStateBlock, ShaderError> Parse(IReadOnlyDictionary<string, string> kvp)
     {
         var block = new RenderStateBlock();

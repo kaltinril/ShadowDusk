@@ -2,6 +2,13 @@
 
 namespace ShadowDusk.Core;
 
+/// <summary>
+/// One compiled shader within an effect: its platform bytecode (<paramref name="Bytes"/>) and
+/// the stage it belongs to (<paramref name="Stage"/>), plus the per-shader tables the effect
+/// writers serialize (samplers, constant-buffer indices, vertex attributes, shader model).
+/// </summary>
+/// <param name="Bytes">The compiled platform bytecode (DXBC, SPIR-V-derived GLSL, or D3D9 token stream).</param>
+/// <param name="Stage">The pipeline stage this blob targets (vertex or pixel).</param>
 public sealed record CompiledShaderBlob(
     byte[]      Bytes,
     ShaderStage Stage

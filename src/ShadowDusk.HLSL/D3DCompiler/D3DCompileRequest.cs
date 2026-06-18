@@ -13,11 +13,22 @@ namespace ShadowDusk.HLSL.D3DCompiler;
 /// </summary>
 public sealed class D3DCompileRequest
 {
+    /// <summary>The preprocessed HLSL source to compile.</summary>
     public required string      HlslSource     { get; init; }
+
+    /// <summary>The logical file name reported in diagnostics.</summary>
     public required string      SourceFileName { get; init; }
+
+    /// <summary>The entry-point function name to compile.</summary>
     public required string      EntryPoint     { get; init; }
+
+    /// <summary>The shader stage (vertex/pixel) the entry point belongs to.</summary>
     public required ShaderStage Stage          { get; init; }
+
+    /// <summary>When <see langword="true"/>, debug information is embedded in the output bytecode.</summary>
     public bool                 EmbedDebugInfo { get; init; }
+
+    /// <summary>When <see langword="true"/>, compiler warnings do not fail the compile.</summary>
     public bool                 AllowWarnings  { get; init; }
 
     /// <summary>
