@@ -6,5 +6,6 @@ output-vs/
 output-vs-dx/
 output-fna/
 output-cbuffer/
+output-reservedword/
 # FNA rung-3/4 harness external deps (restored by FnaValidation/restore-fna.ps1, never committed)
 FnaValidation/external/

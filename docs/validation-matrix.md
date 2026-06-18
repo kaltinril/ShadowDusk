@@ -4,7 +4,7 @@
 library, shader format/version, graphics target, and OS, and to mark cells off as they advance. This is a
 **living checklist**: update a cell's status (and the date) whenever its evidence changes.
 
-**Last updated:** 2026-06-17 (issue #106 relational/ternary parser regression: added to the §6 compile-rung coverage). Prior: 2026-06-15 (Phase 44: KNI DirectX render-proven; GL render gates wired into CI).
+**Last updated:** 2026-06-17 (Phase 45 B10: added the `validation/ReservedWordGl` GL render gate, reserved-word free uniform binds + drives output, wired into `validation-render.yml`). Prior: 2026-06-17 (issue #106 relational/ternary parser regression: added to the §6 compile-rung coverage); 2026-06-15 (Phase 44: KNI DirectX render-proven; GL render gates wired into CI).
 
 ---
 
@@ -126,6 +126,7 @@ MonoGame limitation rather than a ShadowDusk gap. The compile rung for both is p
 | **Real MonoGame OpenGL** cube + 3D/volume texture render (rung-4; cube full, 3D single-voxel) | `validation/TextureBreadthValidation` (in-process assert) | ✅ (`validation-render.yml`, ubuntu/llvmpipe) | `dotnet run --project validation/TextureBreadthValidation` |
 | **Real MonoGame OpenGL** pass render-states / annotations / baked sampler-states load + render vs `mgfxc` golden (Phase 43) | `validation/StateFidelity` (in-process compare) | ✅ (`validation-render.yml`, ubuntu/llvmpipe) | `dotnet run -c Release --project validation/StateFidelity` |
 | **Real MonoGame OpenGL** cbuffer + array-parameter-by-name model load + render vs `mgfxc` golden (Phase 43C) | `validation/CbufferModel` (in-process compare) | ✅ (`validation-render.yml`, ubuntu/llvmpipe) | `dotnet run -c Release --project validation/CbufferModel` |
+| **Real MonoGame OpenGL** reserved-word free uniform (`float noise;`) binds by name + drives output on the B10 offset-bridge path (Phase 45 B10; exact expected pixels, plus pixel-equiv vs `mgfxc` when present) | `validation/ReservedWordGl` (in-process assert) | ✅ (`validation-render.yml`, ubuntu/llvmpipe) | `dotnet run -c Release --project validation/ReservedWordGl` |
 | **Real MonoGame DirectX** render vs `mgfxc`/`fxc` | `validation/VsDrivenDx`, `validation/Candidate{Dx,Vkd3d}` + `compare_dx.py` | manual | `dotnet run --project validation/VsDrivenDx` |
 | **DirectX modern features render** (vertex texture fetch; vkd3d vs `fxc`) | `validation/DxModernFeatures` | manual | `dotnet run --project validation/DxModernFeatures` |
 | **Real FNA** render vs `fxc /T fx_2_0` | `validation/FnaValidation` | manual | `dotnet run --project validation/FnaValidation` |

@@ -17,6 +17,9 @@
 #                              states load + render vs mgfxc golden.
 #   * CbufferModel           — Phase 43C cbuffer + array-parameter-by-name model.
 #   * TextureBreadthValidation — Phase 34 cube + 3D/volume texture render (rung-4).
+#   * ReservedWordGl         — Phase 45 B10 reserved-word free uniform ('float noise;')
+#                              binds by name + drives the output on the GL offset-bridge
+#                              path (exact expected pixels; no mgfxc needed in CI).
 #
 # NOT here (no headless driver story yet — tracked as the Phase 44 C tail):
 #   * DirectX (validation/CandidateDx, VsDrivenDx, DxModernFeatures) + FNA
@@ -111,22 +114,24 @@ jobs:
           dotnet build validation/StateFidelity/StateFidelity.csproj -c Release
           dotnet build validation/CbufferModel/CbufferModel.csproj -c Release
           dotnet build validation/TextureBreadthValidation/TextureBreadthValidation.csproj -c Release
+          dotnet build validation/ReservedWordGl/ReservedWordGl.csproj -c Release
 
-      # Each driver self-asserts (exit 0 iff every row loaded + matched the mgfxc golden
-      # within tolerance). Run all three even if an earlier one fails, then fail the job
+      # Each driver self-asserts (exit 0 iff every row loaded + matched its reference
+      # within tolerance). Run all of them even if an earlier one fails, then fail the job
       # if any did, so one regression doesn't hide another. LIBGL_ALWAYS_SOFTWARE pins
       # llvmpipe even if a GPU device node exists, for deterministic software rendering.
       - name: Run GL render gates (real DesktopGL under xvfb/llvmpipe)
         env:
           LIBGL_ALWAYS_SOFTWARE: "1"
-          # No GL context => hard FAIL, never a pass-by-skip. StateFidelity/CbufferModel throw
-          # on a missing device (natural red); TextureBreadthValidation catches+skips, so this
-          # flag turns its skip into a failure too (it reads SHADOWDUSK_REQUIRE_GL).
+          # No GL context => hard FAIL, never a pass-by-skip. StateFidelity/CbufferModel/
+          # ReservedWordGl throw on a missing device (MonoGame NoSuitableGraphicsDevice ->
+          # natural red); TextureBreadthValidation catches+skips, so this flag turns its
+          # skip into a failure too (it reads SHADOWDUSK_REQUIRE_GL).
           SHADOWDUSK_REQUIRE_GL: "1"
         run: |
           set +e
           rc=0
-          for proj in StateFidelity CbufferModel TextureBreadthValidation; do
+          for proj in StateFidelity CbufferModel TextureBreadthValidation ReservedWordGl; do
             echo "::group::$proj"
             xvfb-run -a dotnet run --project "validation/$proj" -c Release --no-build
             this=$?
@@ -147,5 +152,6 @@ jobs:
             validation/output-state/**
             validation/output-cbuffer/**
             validation/output-texbreadth/**
+            validation/output-reservedword/**
           if-no-files-found: ignore
           retention-days: 7
