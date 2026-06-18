@@ -137,11 +137,13 @@ project-owned.
 | `ExSamplerRegisterState.fx` | **B8** — `sampler S : register(s0) = sampler_state { … };` (the `register` clause appears BEFORE the `=`). The dropped `:` mis-routed it to the bare-sampler path, leaking the state block to DXC. | GL + DX + FNA |
 | `ExSamplerAnnotation.fx` | **B9** — `sampler2D S = sampler_state { … } < string UIName = "x"; >;` (a trailing sampler-level FX annotation). `ParseSamplerDecl` hard-required `;` right after `}` (FX0001 on `<`); the annotation is now consumed and stripped. | GL + DX + FNA |
 | `ExArrayTernaryAssign.fx` | **B7** — an array-indexed relational with an assignment in a ternary arm inside a function body, `Thresholds[i] < x ? acc = w : acc;` (the issue-#106 residual). Once `?`/`:`/`[`/`]` are dropped, the `x acc =` tail satisfies the annotation-shape guard; the global annotation strip is now gated on brace depth 0, so an in-body expression can never be misread. | GL + DX + FNA |
+| `ExReservedWordUniform.fx` | **B10** (a DIFFERENT class — a GLSL reserved-word / reflection-join bug, not a dropped-operator pre-parser one) — a free uniform named after a GLSL reserved word, `float noise;`, used in the body. On GL, SPIRV-Cross renames it `_noise`, so the cbuffer/parameter join (matched by name) missed and failed `SD0012`. The join now falls back to an offset bridge that recovers the parameter by its `BaseRegister * 16` byte offset, keeping it exposed under `noise`. See the third-party `Noise.fx` note below. | GL + DX + FNA |
 
 These are exercised by `tests/ShadowDusk.Integration.Tests/Phase45PreParserRobustnessCorpusTests.cs`
-(compile-asserts each on its applicable targets); the all-runtime ones (B3/B4/B6/B7/B8/B9)
-are also folded into `FnaCompileFixtureTests.Sm3Corpus()`. As with the other fresh
-fixtures, they prove **"ShadowDusk compiles them into a valid effect,"** not
+(compile-asserts each on its applicable targets); the all-runtime ones (B3/B4/B6/B7/B8/B9/B10)
+are also folded into `FnaCompileFixtureTests.Sm3Corpus()` (and `ExReservedWordUniform.fx` is in
+the cross-host byte-identity corpus, pinning the GL offset-bridge path's determinism). As with
+the other fresh fixtures, they prove **"ShadowDusk compiles them into a valid effect,"** not
 pixel-equivalence to `mgfxc`/`fxc`.
 
 ### How they are used
@@ -204,11 +206,11 @@ the targets it actually compiles on (the rationale per shader is in the director
 | `Crosshatch.fx` | Nez (MIT) | DX + FNA | Nested `if` + `<` relationals + `VPOS` + float `%` + an `int` uniform. **Not GL:** `int` uniforms are not modelled on the MonoGame-GL path (loud `SD0210`, by design). | DX + FNA |
 | `PaletteCycler.fx` | Nez (MIT) | FNA only | Palette swap via a 1-D LUT (`tex1D` / `sampler1D`). **Not GL/DX:** `tex1D` has no 1:1 modern `Texture` method, rejected with a targeted `FX0012` that points to FNA (which compiles it natively). | FNA only |
 | `Reflection.fx` | Nez (MIT) | DX only | Two techniques, each **VS+PS** (mirror + water); world-space, `half2`, `frac`, relational `if`. **Not GL:** the multi-`TEXCOORD` interpolant block cannot be expressed in std140/std430 by SPIRV-Cross (`SD0100`). **Not FNA:** an int/relational construct hits the vkd3d 1.17 SM3 gap (`X0000`). | DX only |
-| `Noise.fx` | Nez (MIT) | DX + FNA | Film-grain; helper fn `rand()` (`frac`/`sin`/`dot`) called from the entry. **Not GL — tracked ShadowDusk bug:** a uniform literally named `noise` collides with a GLSL reserved word, SPIRV-Cross renames it `_noise`, but the reflected parameter list does not follow, so the GL cbuffer/parameter join fails (`SD0012`). `noise` is valid HLSL fxc/mgfxc accept (Phase-45 catalogue candidate, see below). | DX + FNA (GL is an OUR-BUG) |
+| `Noise.fx` | Nez (MIT) | GL + DX + FNA | Film-grain; helper fn `rand()` (`frac`/`sin`/`dot`) called from the entry. A uniform literally named `noise` collides with a GLSL reserved word and SPIRV-Cross renames it `_noise`; this used to break the GL cbuffer/parameter join (`SD0012`), but **Phase 45 B10 fixed it** (offset-bridge fallback — see below), so it now compiles on GL too. | all-runtime (B10) |
 
 These are exercised by `tests/ShadowDusk.Integration.Tests/ThirdPartyShaderCorpusTests.cs`
 (compile-asserts each on its classified targets; FNA via `[FnaTheory]` + the
-MojoShader-rule fx_2_0 validator). The 11 all-runtime ones are also folded into
+MojoShader-rule fx_2_0 validator). The all-runtime ones are also folded into
 `FnaCompileFixtureTests.Sm3Corpus()`, and all 15 are auto-globbed by the GL+DX
 `Phase41StructuralDivergenceMatrixTests` structural census.
 
@@ -218,14 +220,19 @@ MojoShader-rule fx_2_0 validator). The 11 all-runtime ones are also folded into
 > in particular compile on every target but their cross-path VPOS behavior is deliberately
 > left unclaimed.
 
-> **Phase-45 catalogue candidate found while vendoring (`Noise.fx`, GL `SD0012`):** a free
-> uniform whose name is a GLSL reserved word (e.g. `noise`, which collides with the
-> deprecated `noise1`/`noise2`/... builtins) is renamed by SPIRV-Cross (to `_noise`), but
-> ShadowDusk's GL cbuffer-record builder joins the rewriter's uniform layout to the
-> reflected effect-parameter list **by name** (`CompilationPipeline.IndexOfParam`), and the
-> reflected list still carries the original `noise`, so the join misses and emits the
-> internal `SD0012` ("a ShadowDusk bug if ever seen"). Minimal repro: any GL compile of a
-> shader with `float noise;` used in the body. Fix direction (NOT done in this task):
-> reconcile the rewriter's renamed uniform names with the reflected parameter names (apply
-> SPIRV-Cross's reserved-word renaming to the parameter side too, or join on the pre-rename
-> name). Until fixed, `Noise.fx` is wired on DX + FNA only.
+> **Phase-45 B10 — GLSL reserved-word uniform on GL (`Noise.fx`, formerly `SD0012`) — FIXED.**
+> A free uniform whose name is a GLSL reserved word (e.g. `noise`, which collides with the
+> deprecated `noise1`/`noise2`/... builtins) is renamed by SPIRV-Cross (to `_noise`). The GL
+> cbuffer-record builder joins the rewriter's uniform layout to the reflected effect-parameter
+> list **by name** (`CompilationPipeline.IndexOfParam`); the reflected list still carries the
+> original `noise`, so the name join missed and emitted the internal `SD0012`. The fix
+> (`CompilationPipeline.IndexOfParamByRegister`) adds an **offset bridge** that runs only on a
+> name miss: the GL uniform's `BaseRegister * 16` byte offset locates the reflected `$Globals`
+> cbuffer variable, whose ORIGINAL name recovers the parameter index — so the parameter stays
+> exposed under `noise` and `effect.Parameters["noise"].SetValue(...)` binds. It is restricted
+> to the single-`$Globals` case (the reserved-word case is always a free global); a multi-cbuffer
+> shape falls through to keep `SD0012` rather than risk a mis-map (correctness over coverage).
+> Because shaders that compile today never hit the name miss, output is byte-identical (the
+> cross-host manifest gained only the new fixture's entries, with no existing hash changed).
+> Pinned by `ExReservedWordUniform.fx` (GL+DX+FNA), `ReservedWordUniformBridgeTests`, and the
+> re-enabled Nez `Noise.fx` GL arm. See `docs/glsl-uniform-naming.md` "Design notes".

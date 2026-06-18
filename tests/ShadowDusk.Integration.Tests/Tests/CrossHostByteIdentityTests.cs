@@ -133,6 +133,10 @@ public sealed class CrossHostByteIdentityTests
         "examples/ExSamplerStateUniform.fx",
         "examples/ExDualTexture.fx",
         "examples/ExLegacyTextureDiscard.fx",
+        // Phase 45 B10: a free uniform named after a GLSL reserved word ('noise').
+        // Pins the new GL offset-bridge path's cross-host determinism (and it compiles
+        // on all three targets, so DX/FNA are pinned too).
+        "examples/ExReservedWordUniform.fx",
     ];
 
     private static IEnumerable<string> OpenGLCorpus  => CoreMgfxFixtures.Concat(Sm3Fixtures);

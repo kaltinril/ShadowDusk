@@ -27,11 +27,11 @@ namespace ShadowDusk.Integration.Tests;
 /// compiles on</b> — the classification is recorded in the directory's NOTICE.md and
 /// in docs/test-shader-corpus.md. A target a shader is NOT tested on is excluded for a
 /// documented, legitimate shader-model reason (e.g. <c>int</c> uniforms and
-/// <c>tex1D</c> are not on the MonoGame-GL path), with one tracked exception:
-/// <c>Noise.fx</c> hits a ShadowDusk GL bug (a uniform named <c>noise</c> collides
-/// with the GLSL reserved word; SPIRV-Cross renames it to <c>_noise</c> but the
-/// reflected parameter list does not follow, so the GL cbuffer/parameter join fails
-/// with <c>SD0012</c>), so it is wired on DX + FNA only until that is fixed.</para>
+/// <c>tex1D</c> are not on the MonoGame-GL path). <c>Noise.fx</c> (a uniform named
+/// <c>noise</c>, a GLSL reserved word) USED to be a tracked GL exception — Phase 45 B10
+/// fixed it: the OpenGL cbuffer/parameter join now falls back to an offset bridge when
+/// SPIRV-Cross's <c>noise</c>→<c>_noise</c> rename breaks the name match, so
+/// <c>Noise.fx</c> compiles on GL too and is in the GL set below.</para>
 ///
 /// <para><b>Scope:</b> a green compile to a well-formed container is the bar here
 /// (this is COMPILE regression coverage). It is NOT a pixel-equivalence claim to
@@ -55,9 +55,9 @@ public sealed class ThirdPartyShaderCorpusTests
     // -------------------------------------------------------------------------
 
     /// <summary>
-    /// Shaders that compile on the MonoGame-GL target. The all-runtime subset only
-    /// (Crosshatch/PaletteCycler/Reflection have legitimate GL SM limits; Noise hits
-    /// the tracked SD0012 GL bug).
+    /// Shaders that compile on the MonoGame-GL target. The all-runtime subset PLUS
+    /// Noise (Phase 45 B10 fixed the reserved-word <c>noise</c>→<c>_noise</c> GL
+    /// join). Crosshatch/PaletteCycler/Reflection still have legitimate GL SM limits.
     /// </summary>
     public static TheoryData<string> OpenGLShaders() => new()
     {
@@ -67,6 +67,7 @@ public sealed class ThirdPartyShaderCorpusTests
         Root + "GaussianBlur.fx",       // literal-bounded for-loop over array uniforms
         Root + "HeatDistortion.fx",
         Root + "Letterbox.fx",          // VPOS (compiles; render-equivalence not claimed)
+        Root + "Noise.fx",              // B10: uniform 'noise' (GLSL reserved word) — fixed on GL
         Root + "PixelGlitch.fx",        // helper fn hash11()
         Root + "SpriteBlinkEffect.fx",
         Root + "SpriteLines.fx",        // VPOS + float % (compiles; render-equivalence not claimed)
@@ -77,7 +78,8 @@ public sealed class ThirdPartyShaderCorpusTests
     /// <summary>
     /// Shaders that compile on the MonoGame-DX target — the all-runtime subset PLUS the
     /// DX-capable ones GL/FNA can't take: Crosshatch (int uniform), Reflection (2-tech
-    /// VS+PS), Noise (the GL SD0012 bug does not affect DX).
+    /// VS+PS). (Noise also compiles on GL since the Phase 45 B10 fix, but is listed in
+    /// the GL set; it is included here too as an ordinary DX shader.)
     /// </summary>
     public static TheoryData<string> DirectXShaders() => new()
     {
@@ -93,7 +95,7 @@ public sealed class ThirdPartyShaderCorpusTests
         Root + "Twist.fx",
         Root + "Vignette.fx",
         Root + "Crosshatch.fx",         // int uniform + VPOS + float % + nested if
-        Root + "Noise.fx",              // helper fn rand(); DX is fine (GL bug is SD0012)
+        Root + "Noise.fx",              // helper fn rand(); compiles on DX (and GL since B10)
         Root + "Reflection.fx",         // two techniques, each VS+PS
     };
 
@@ -116,7 +118,7 @@ public sealed class ThirdPartyShaderCorpusTests
         Root + "Twist.fx",
         Root + "Vignette.fx",
         Root + "Crosshatch.fx",         // int uniform + VPOS + % compile natively at SM3
-        Root + "Noise.fx",              // helper fn rand(); FNA path unaffected by the GL bug
+        Root + "Noise.fx",              // helper fn rand(); 'noise' is an ordinary SM3 const here
         Root + "PaletteCycler.fx",      // tex1D / sampler1D — FNA compiles it natively
     };
 

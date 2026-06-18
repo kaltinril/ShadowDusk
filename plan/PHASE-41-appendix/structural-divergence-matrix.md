@@ -24,7 +24,7 @@
   - Structurally **clean**: **64**
   - **Divergent** (>=1 level): **17**
   - Compile/parse **failures**: **11**
-- Non-golden census cells: **108** (**92** compile, **16** fail with a code)
+- Non-golden census cells: **110** (**95** compile, **15** fail with a code)
 
 ## Golden-backed fixtures — per-level structural verdict
 
@@ -252,6 +252,8 @@ is a CORRECT result, not a defect.
 | examples/ExRelationalBranch.fx | OpenGL | PASS |  |  |
 | examples/ExRelationalThreshold.fx | DirectX_11 | PASS |  |  |
 | examples/ExRelationalThreshold.fx | OpenGL | PASS |  |  |
+| examples/ExReservedWordUniform.fx | DirectX_11 | PASS |  |  |
+| examples/ExReservedWordUniform.fx | OpenGL | PASS |  |  |
 | examples/ExSampleGradHidef.fx | DirectX_11 | PASS |  |  |
 | examples/ExSampleGradHidef.fx | OpenGL | PASS |  |  |
 | examples/ExSampleLevelHidef.fx | DirectX_11 | PASS |  |  |
@@ -301,7 +303,7 @@ is a CORRECT result, not a defect.
 | third-party/Nez/Letterbox.fx | DirectX_11 | PASS |  |  |
 | third-party/Nez/Letterbox.fx | OpenGL | PASS |  |  |
 | third-party/Nez/Noise.fx | DirectX_11 | PASS |  |  |
-| third-party/Nez/Noise.fx | OpenGL | FAIL | SD0012 | internal: GL uniform '_noise' (shader #0) has no matching effect parameter — the GLSL uniform layout and the reflected parameter list diverged |
+| third-party/Nez/Noise.fx | OpenGL | PASS |  |  |
 | third-party/Nez/PaletteCycler.fx | DirectX_11 | FAIL | FX0012 | The legacy D3D9 sampling intrinsic 'tex1D' is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot rewr... |
 | third-party/Nez/PaletteCycler.fx | OpenGL | FAIL | FX0012 | The legacy D3D9 sampling intrinsic 'tex1D' is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot rewr... |
 | third-party/Nez/PixelGlitch.fx | DirectX_11 | PASS |  |  |
@@ -323,6 +325,5 @@ is a CORRECT result, not a defect.
 - `SD0210`: 4 cell(s) — examples/ExIntUniformMember.fx [OpenGL], examples/ExMat3UniformMember.fx [OpenGL], examples/ExVsTextureFetch.fx [OpenGL], third-party/Nez/Crosshatch.fx [OpenGL]
 - `SD0001`: 2 cell(s) — MinimalWithInclude.fx [DirectX_11], MinimalWithInclude.fx [OpenGL]
 - `FX0012`: 2 cell(s) — third-party/Nez/PaletteCycler.fx [DirectX_11], third-party/Nez/PaletteCycler.fx [OpenGL]
-- `SD0012`: 1 cell(s) — third-party/Nez/Noise.fx [OpenGL]
 - `SD0100`: 1 cell(s) — third-party/Nez/Reflection.fx [OpenGL]
 

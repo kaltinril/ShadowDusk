@@ -341,22 +341,27 @@ holds**. On the GL path that correlation is currently made by **name**: the rewr
 layout (the names parsed out of the SPIRV-Cross GLSL) is matched against the reflected parameter
 list (`IndexOfParam`, by `ParameterReflection.Name`).
 
-This is the one place that depends on the emitted GLSL identifier, and it is the weak link. When
+This was the one place that depends on the emitted GLSL identifier, and it is the weak link. When
 SPIRV-Cross renames a reserved-word uniform (Stage 5), the GLSL side says `_noise` while the
-reflected parameter is still `noise`, the name match fails, and the GL compile stops with a loud
-internal-consistency error (`SD0012`) rather than ship a parameter the game could never bind.
-DirectX and FNA never go through GLSL, so they are unaffected; and `mgfxc` never hits this because
-MojoShader packs constants by D3D9 register index and never emits named uniforms at all.
+reflected parameter is still `noise`, so a pure name match fails. DirectX and FNA never go through
+GLSL, so they are unaffected; and `mgfxc` never hits this because MojoShader packs constants by
+D3D9 register index and never emits named uniforms at all.
 
-The standard, rename-proof fix is to **bind by location, not by name**. The data is already in
-the reflection: a `ConstantBufferReflection` lists its `VariableReflection` members in offset
-order with both the original name and the byte `StartOffset`, and the GL uniform layout carries
-each member's base register. Correlating register × 16 to the cbuffer member's `StartOffset`,
-then taking that member's original name, recovers the parameter without ever trusting the
-SPIRV-Cross-emitted spelling, and without replicating SPIRV-Cross's reserved-word list (which is
-the brittle alternative). The parameter stays exposed under its original name in the `.mgfx`. This
-is a known limitation on the OpenGL path for a shader whose parameter name collides with a GLSL
-reserved word; other targets are unaffected.
+The fix (Phase 45 B10) is to **fall back to binding by location** the moment the name match
+misses — never for a shader that already resolves by name, so existing output is byte-identical.
+The data is already in the reflection: a `ConstantBufferReflection` lists its `VariableReflection`
+members in offset order with both the original name and the byte `StartOffset`, and the GL uniform
+layout carries each member's base register. `CompilationPipeline.IndexOfParamByRegister` correlates
+the GL uniform's `BaseRegister × 16` to the cbuffer member's `StartOffset`, then takes that
+member's original name, recovering the parameter without ever trusting the SPIRV-Cross-emitted
+spelling and without replicating SPIRV-Cross's reserved-word list (the brittle alternative). The
+parameter stays exposed under its original name in the `.mgfx`, so `effect.Parameters["noise"]
+.SetValue(...)` binds. The bridge is restricted to the single-`$Globals` case (the reserved-word
+case is always a free global, where a variable's effective offset is exactly its `StartOffset`); a
+multi-cbuffer shape — where the rewriter's GLSL-declaration merge order is not guaranteed to match
+the reflection's cbuffer order — falls through and keeps the loud `SD0012` rather than risk
+mis-mapping (correctness over coverage). Only the previously-failing name-miss path is new, so the
+`mgfxc`-equivalence and cross-host byte-identity of every existing shader are untouched.
 
 ### Determinism and cross-host byte-identity
 

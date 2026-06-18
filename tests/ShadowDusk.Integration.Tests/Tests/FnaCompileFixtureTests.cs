@@ -118,6 +118,10 @@ public sealed class FnaCompileFixtureTests
         "examples/ExLegacyTextureAnnotation.fx",
         "examples/ExVsColorReturn.fx",
         "examples/ExArrayTernaryAssign.fx",
+        // B10: a free uniform named 'noise' (a GLSL reserved word). The bug was
+        // OpenGL-only (SPIRV-Cross rename); on FNA 'noise' is an ordinary SM3 const,
+        // so the fx_2_0 path compiles it and binds it under its original name.
+        "examples/ExReservedWordUniform.fx",
         // Third-party vendored corpus (Nez, MIT — see tests/fixtures/shaders/
         // third-party/Nez/{LICENSE,NOTICE.md} and docs/test-shader-corpus.md). Only
         // the ALL-RUNTIME subset (compiles on GL + DX + FNA) is folded into the SM3

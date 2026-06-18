@@ -46,6 +46,15 @@ namespace ShadowDusk.Integration.Tests;
 ///   misread as an FX annotation → FX0001 (the issue-#106 residual). The global
 ///   annotation strip is now gated on brace depth 0.
 ///   (<c>ExArrayTernaryAssign.fx</c> — GL + DX + FNA.)</item>
+///   <item><b>B10</b> — a DIFFERENT class (a GLSL reserved-word / reflection-join
+///   bug, not a dropped-operator pre-parser one): a free uniform named after a GLSL
+///   reserved word (<c>float noise;</c>) is renamed by SPIRV-Cross to <c>_noise</c>,
+///   so the OpenGL cbuffer/parameter join (which matched BY NAME) missed and failed
+///   with <c>SD0012</c>. The join now falls back to an OFFSET BRIDGE (the GL uniform's
+///   <c>BaseRegister * 16</c> byte offset recovers the reflected variable's original
+///   name) on a name miss only, so the parameter resolves and stays exposed under
+///   <c>noise</c>. DX + FNA were never affected (no GLSL on those paths).
+///   (<c>ExReservedWordUniform.fx</c> — GL + DX + FNA.)</item>
 /// </list>
 ///
 /// <para>Each fixture is compile-asserted on every applicable delivery target. Scope:
@@ -73,6 +82,7 @@ public sealed class Phase45PreParserRobustnessCorpusTests
         "examples/ExTextureNamedTexture.fx",  // B5: resource variable named 'Texture'
         "examples/ExVsColorReturn.fx",        // B6: VS function-return ': COLOR'
         "examples/ExArrayTernaryAssign.fx",   // B7: array-indexed relational + ternary-assign
+        "examples/ExReservedWordUniform.fx",  // B10: free uniform named 'noise' (GLSL reserved word)
     };
 
     /// <summary>
@@ -90,6 +100,7 @@ public sealed class Phase45PreParserRobustnessCorpusTests
         "examples/ExLegacyTextureAnnotation.fx", // B4: passes through to vkd3d (annotation stripped)
         "examples/ExVsColorReturn.fx",        // B6: ': COLOR' is a valid SM3 output semantic on FNA
         "examples/ExArrayTernaryAssign.fx",   // B7: relational/ternary in body, all-runtime
+        "examples/ExReservedWordUniform.fx",  // B10: 'noise' is fine on FNA (no GLSL); all-runtime
     };
 
     // -------------------------------------------------------------------------
