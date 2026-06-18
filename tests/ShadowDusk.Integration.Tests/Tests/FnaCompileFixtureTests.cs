@@ -100,6 +100,45 @@ public sealed class FnaCompileFixtureTests
         "examples/ExSamplerStateUniform.fx",
         "examples/ExDualTexture.fx",
         "examples/ExLegacyTextureDiscard.fx",
+        // Issue #106 regression set: relationals / ternaries / helper functions
+        // / a for-loop relational in shader bodies (formerly misparsed as FX
+        // annotations -> FX0001). See docs/test-shader-corpus.md.
+        "examples/ExTernaryHelper.fx",
+        "examples/ExRelationalThreshold.fx",
+        "examples/ExRelationalBranch.fx",
+        "examples/ExLoopRelational.fx",
+        // Phase 45 FX pre-parser robustness — the all-runtime (SM3 / fx_2_0) subset
+        // (B3 ColorWriteEnable mask, B8 register-before-sampler_state, B9 trailing
+        // sampler annotation, B4 legacy texture < annotation >;, B6 VS ': COLOR'
+        // return, B7 array-indexed relational + ternary-assign in a body). B2 and B5
+        // (.Sample method) are SM4-only, so they are NOT here.
+        "examples/ExColorWriteMask.fx",
+        "examples/ExSamplerRegisterState.fx",
+        "examples/ExSamplerAnnotation.fx",
+        "examples/ExLegacyTextureAnnotation.fx",
+        "examples/ExVsColorReturn.fx",
+        "examples/ExArrayTernaryAssign.fx",
+        // B10: a free uniform named 'noise' (a GLSL reserved word). The bug was
+        // OpenGL-only (SPIRV-Cross rename); on FNA 'noise' is an ordinary SM3 const,
+        // so the fx_2_0 path compiles it and binds it under its original name.
+        "examples/ExReservedWordUniform.fx",
+        // Third-party vendored corpus (Nez, MIT — see tests/fixtures/shaders/
+        // third-party/Nez/{LICENSE,NOTICE.md} and docs/test-shader-corpus.md). Only
+        // the ALL-RUNTIME subset (compiles on GL + DX + FNA) is folded into the SM3
+        // census here; the DX/FNA-leaning vendored shaders (Crosshatch, Noise,
+        // PaletteCycler, Reflection) are covered by ThirdPartyShaderCorpusTests on
+        // their classified targets only.
+        "third-party/Nez/Bevels.fx",
+        "third-party/Nez/BloomCombine.fx",       // helper fn adjustSaturation()
+        "third-party/Nez/BloomExtract.fx",
+        "third-party/Nez/GaussianBlur.fx",       // literal-bounded for-loop over array uniforms
+        "third-party/Nez/HeatDistortion.fx",     // 2nd sampler with AddressU/V=Wrap sampler_state
+        "third-party/Nez/Letterbox.fx",          // VPOS screen-space + relational if
+        "third-party/Nez/PixelGlitch.fx",        // helper fn hash11()
+        "third-party/Nez/SpriteBlinkEffect.fx",
+        "third-party/Nez/SpriteLines.fx",        // VPOS + float modulo, two techniques
+        "third-party/Nez/Twist.fx",              // relational if(dist<radius) + sin/cos
+        "third-party/Nez/Vignette.fx",
     };
 
     [FnaTheory]

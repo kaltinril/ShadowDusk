@@ -28,8 +28,9 @@ ShadowDusk/
 │   ├── ShadowDusk.ImageTests/          # Offscreen-render image regression
 │   ├── ShadowDusk.BrowserTests/        # Headless KNI WebGL render validation (Playwright)
 │   └── fixtures/
-│       ├── shaders/                    # Canonical .fx test shaders (73 .fx incl. examples/ + 5 .fxh headers)
-│       └── golden/                     # Reference outputs: .mgfx (DirectX_11/, OpenGL/) + fxc fx_2_0 .fxb (FNA/)
+│       ├── shaders/                    # Canonical .fx test shaders (102 .fx total + 5 .fxh headers):
+│       │                               #   60 in the root + examples/ (27) + third-party/Nez/ (15 vendored MIT Nez shaders)
+│       └── golden/                     # Reference outputs: .mgfx (DirectX_11/, OpenGL/) + fxc fx_2_0 .fxb (FNA/) + byte-identity/
 ├── samples/
 │   ├── ShaderFiddle.Web/               # KNI Blazor-WASM in-browser fiddle (sample of reach)
 │   ├── ShaderViewer/                   # Desktop shader viewer
@@ -38,6 +39,10 @@ ShadowDusk/
 │   ├── dxc/                       # unused — desktop DXC comes from Vortice.Dxc NuGet
 │   ├── spirv-cross/               # libspirv-cross-c-shared (.dll/.so/.dylib)
 │   └── vkd3d/                     # vkd3d-shader native (cross-platform DXBC backend)
-├── docs/                          # Architecture docs, research, HOWTO-WASM-KNI
+├── validation/                    # Rung-4 render-proof console drivers (NOT in ShadowDusk.slnx, not run by `dotnet test`):
+│                                  #   GL (VsDriven, StateFidelity, CbufferModel, ReservedWordGl, …), DX (VsDrivenDx,
+│                                  #   DxModernFeatures, …), FNA (FnaValidation), KNI (KniDesktopGL, KniWinFormsDX, KniVsDriven),
+│                                  #   v11 (MonoGameV11) + the compare_*.py oracles. See docs/validation-matrix.md §6.
+├── docs/                          # Architecture / reference docs (the-purpose, validation-matrix, references/, HOWTO-WASM-KNI, …)
 └── CLAUDE.md
 ```

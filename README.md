@@ -187,13 +187,14 @@ ShadowDusk stands on a lot of excellent prior work. The faithful compilation pip
 - **[MojoShader](https://github.com/icculus/mojoshader)** (Ryan C. Gordon) — the OpenGL GLSL dialect / shader-bytecode heritage that MonoGame's `.mgfx` OpenGL effects use, which our GLSL rewrite matches.
 - **[Emscripten](https://emscripten.org/)** — used to compile DXC and SPIRV-Cross to WebAssembly.
 - **[Slang](https://github.com/shader-slang/slang)** (shader-slang) — used **only** in the in-browser sample as an early spike frontend; it is *not* part of the product pipeline (which uses faithful DXC everywhere).
-- **[DocFX](https://github.com/dotnet/docfx)** (the .NET Foundation) — planned to generate the documentation site.
+- **[DocFX](https://github.com/dotnet/docfx)** (the .NET Foundation) — generates the published [documentation site](https://kaltinril.github.io/ShadowDusk/).
 - **[xUnit](https://github.com/xunit/xunit)** and **[FluentAssertions](https://github.com/fluentassertions/fluentassertions)** — the test suite.
 
 The test-shader corpus is derived from community MonoGame/HLSL examples, with thanks to:
 
 - **[Penumbra](https://github.com/discosultan/penumbra)** by *discosultan* — several effect shaders.
 - **[monogame-hlsl-examples](https://github.com/manbeardgames/monogame-hlsl-examples)** by *manbeardgames* — the tutorial shader set.
+- **[Nez](https://github.com/prime31/Nez)** by *prime31* (MIT) — real shipping `.fx` effects vendored as compile-level regression inputs.
 
 See [`docs/test-shader-corpus.md`](docs/test-shader-corpus.md) for per-shader provenance.
 

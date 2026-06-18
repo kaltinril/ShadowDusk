@@ -61,6 +61,15 @@ public sealed class Fx2EffectWriter
     // Sampler-state ops FNA throws NotImplementedException on (Effect.cs:745–748).
     private static readonly HashSet<int> FnaThrowingSamplerStates = [168, 175, 176, 177];
 
+    /// <summary>
+    /// Serializes <paramref name="effect"/> into the D3D9 fx_2_0 effects binary (<c>.fxb</c>)
+    /// FNA loads.
+    /// </summary>
+    /// <param name="effect">The fx_2_0 effect description to serialize.</param>
+    /// <returns>
+    /// The fx_2_0 bytes on success, or a <see cref="ShaderError"/> when the effect uses a
+    /// render or sampler state FNA's runtime would throw on (and which the writer rejects up front).
+    /// </returns>
     public Result<byte[], ShaderError> Write(Fx2EffectDesc effect)
     {
         ShaderError? validationError = Validate(effect);

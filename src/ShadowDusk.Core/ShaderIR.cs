@@ -11,8 +11,15 @@ namespace ShadowDusk.Core;
 /// </summary>
 public sealed class ShaderIR
 {
+    /// <summary>The effect's global constant buffers, in emission order.</summary>
     public IReadOnlyList<ConstantBufferInfo>  ConstantBuffers { get; init; } = [];
+
+    /// <summary>The compiled per-pass shader blobs (vertex and pixel).</summary>
     public IReadOnlyList<CompiledShaderBlob>  Shaders         { get; init; } = [];
+
+    /// <summary>The flattened effect parameters exposed to the runtime.</summary>
     public IReadOnlyList<EffectParameterInfo> Parameters      { get; init; } = [];
+
+    /// <summary>The effect techniques, each with its ordered passes.</summary>
     public IReadOnlyList<MgfxTechniqueInfo>   Techniques      { get; init; } = [];
 }

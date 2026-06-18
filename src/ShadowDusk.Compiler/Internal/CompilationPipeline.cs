@@ -531,7 +531,25 @@ internal sealed class CompilationPipeline
                 foreach (MonoGameGlslUniform u in layout)
                 {
                     sizeRegisters = Math.Max(sizeRegisters, u.BaseRegister + u.RegisterCount);
+                    // Primary: join by NAME. Every shader that compiles today resolves
+                    // here, so it never reaches the fallback below and its bytes are
+                    // unchanged (the byte-identity corpus stays green by construction).
                     int paramIndex = IndexOfParam(allParameters, u.Name);
+                    if (paramIndex < 0)
+                    {
+                        // Fallback (B10): SPIRV-Cross renames a free uniform whose name
+                        // collides with a GLSL reserved word (e.g. `noise` -> `_noise`,
+                        // legal+required GLSL), so the GLSL layout's name no longer
+                        // matches the reflected parameter (still `noise`) and the name
+                        // join misses. Recover the parameter through an OFFSET BRIDGE:
+                        // the GL uniform's BaseRegister * 16 is its byte offset, which
+                        // the reflected cbuffer variable carries as StartOffset — so the
+                        // variable's ORIGINAL name recovers the parameter without ever
+                        // trusting the SPIRV-Cross-emitted spelling. The parameter stays
+                        // exposed under its original name in the .mgfx; only the INDEX is
+                        // needed here. See docs/glsl-uniform-naming.md "Design notes".
+                        paramIndex = IndexOfParamByRegister(allConstantBuffers, allParameters, u.BaseRegister);
+                    }
                     if (paramIndex < 0)
                         return Fail(new ShaderError(
                             File: sourceFileName,
@@ -1245,6 +1263,47 @@ internal sealed class CompilationPipeline
         for (int i = 0; i < parameters.Count; i++)
             if (parameters[i].Name == name)
                 return i;
+        return -1;
+    }
+
+    /// <summary>
+    /// The OFFSET BRIDGE for the GL cbuffer/parameter join (B10), used ONLY when the
+    /// primary name match fails — which happens exactly when SPIRV-Cross renamed a
+    /// free uniform whose name collides with a GLSL reserved word (e.g. <c>noise</c> →
+    /// <c>_noise</c>). The GL uniform's byte offset is <c>baseRegister * 16</c>; the
+    /// reflected cbuffer variable at that <see cref="VariableReflection.StartOffset"/>
+    /// carries the ORIGINAL HLSL name, which recovers the effect-parameter index
+    /// without ever trusting the SPIRV-Cross-emitted spelling. Returns the parameter
+    /// index, or -1 if it cannot be resolved unambiguously (caller then keeps the loud
+    /// <c>SD0012</c> guard).
+    ///
+    /// <para><b>Single-cbuffer only, by design (correctness over coverage).</b> The
+    /// reserved-word case is always a free global, which DXC reflects as a single
+    /// <c>$Globals</c> cbuffer — there a variable's effective byte offset is exactly
+    /// its <c>StartOffset</c>, so <c>StartOffset == baseRegister * 16</c> holds
+    /// directly. With MULTIPLE cbuffers the rewriter merges them into one packed
+    /// register space in GLSL-declaration order, which is NOT guaranteed to match the
+    /// reflection's cbuffer order, so the per-cbuffer base offset cannot be reliably
+    /// reconstructed here. Rather than risk MIS-mapping to the wrong parameter, this
+    /// declines (returns -1) for the multi-cbuffer case and lets <c>SD0012</c> stand.</para>
+    /// </summary>
+    private static int IndexOfParamByRegister(
+        IReadOnlyList<ConstantBufferReflection> constantBuffers,
+        IReadOnlyList<ParameterReflection> parameters,
+        int baseRegister)
+    {
+        // Only the unambiguous single-cbuffer ($Globals) case is bridged — see the
+        // remarks above for why the multi-cbuffer merge order is not reconstructed.
+        if (constantBuffers.Count != 1)
+            return -1;
+
+        int targetOffset = baseRegister * 16;
+        foreach (VariableReflection variable in constantBuffers[0].Variables)
+        {
+            if (variable.StartOffset == targetOffset)
+                return IndexOfParam(parameters, variable.Name);
+        }
+
         return -1;
     }
 

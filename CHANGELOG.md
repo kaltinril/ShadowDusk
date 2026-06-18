@@ -25,6 +25,14 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   release.
 - CI render gates for the in-process OpenGL validation drivers
   (`.github/workflows/validation-render.yml`, Mesa llvmpipe under xvfb).
+- 15 real, MIT-licensed **Nez** `.fx` shaders vendored under
+  `tests/fixtures/shaders/third-party/Nez/` as **compile-level** regression inputs (issue
+  [#106](https://github.com/kaltinril/ShadowDusk/issues/106) / Phase 45), plus author-original
+  regression fixtures for the pre-parser fixes below. These guard the FX9 pre-parser against
+  real-world shaders; they are not new render-equivalence proofs (provenance + per-shader target
+  classification in `docs/test-shader-corpus.md`).
+- `validation/ReservedWordGl`: a GL render driver that render-proves the reserved-word uniform
+  binding fix below pixel-identical to `mgfxc`.
 
 ### Changed
 - The in-process MGFX/KNIFX/FNA golden-comparison and cross-host byte-identity tests now run on the
@@ -37,6 +45,25 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   fixture-corpus count, and assorted status/cross-reference drift surfaced by a full project review.
 
 ### Fixed
+- **FX pre-parser: a whole class of valid shaders that previously failed now compiles** (issue
+  [#106](https://github.com/kaltinril/ShadowDusk/issues/106) / Phase 45). The global-parameter
+  annotation heuristic matched the bare token shape `Identifier Identifier <` anywhere in the stream,
+  so a **relational, shift, or ternary expression** in a shader body (e.g.
+  `return value <= 0.5f ? 0 : 1;`) was misread as an FX annotation and failed with `FX0001`. The path
+  is now gated on the genuine annotation-block shape, and several related pre-parser bugs are fixed in
+  the same pass: modern `sampler_state` + `.Sample`, `ColorWriteEnable = Red | Green | Blue` masks,
+  legacy `texture < ... >` annotations, a texture variable named `Texture`, a vertex shader returning
+  `: COLOR`, array-indexed relational/ternary assignment, and sampler register/annotation variants
+  (B1-B9). Purely additive: it only enables previously-failing shaders, so existing output stays
+  byte-identical (pinned by the cross-host byte-identity gate).
+- **OpenGL: a uniform whose name collides with a GLSL reserved word now binds correctly** (issue
+  [#106](https://github.com/kaltinril/ShadowDusk/issues/106), B10). `float noise;` is valid HLSL that
+  `mgfxc`/`fxc` accept, but SPIRV-Cross renames the colliding uniform (`noise` to `_noise`) for legal
+  GLSL, so the GL cbuffer/parameter join — matching by name — missed it and failed loudly with
+  `SD0012`. The join now falls back to an offset bridge that recovers the parameter by byte offset
+  (keeping its original name), render-proven pixel-identical to `mgfxc` in real MonoGame GL. The
+  primary name match is unchanged and runs first, so every shader that compiles today is byte-for-byte
+  identical; this only enables the reserved-word case (re-enabling the real Nez `Noise.fx` on GL).
 - Closed soft-skip-as-green holes in the validation drivers/tests: `validation/TextureBreadthValidation`
   now honors `SHADOWDUSK_REQUIRE_GL` (a missing GL device fails loudly instead of reporting success),
   and the `mgfxc` cross-validation test fails (rather than silently passing) when a known-good fixture

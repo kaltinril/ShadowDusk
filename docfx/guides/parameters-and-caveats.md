@@ -40,12 +40,12 @@ Sampling a texture **in a vertex shader** (e.g. displacement mapping via `Sample
 
 Free uniforms, named `cbuffer`s (including one shared by both shader stages, or several in one stage), and **array uniforms** (`float4 Colors[4]`, `float4x4 Bones[N]`, `float`/`float2`/`float3` arrays) are fully modelled: array parameters expose their elements in `Effect.Parameters` — `Parameters["Colors"].SetValue(Vector4[])` and `Parameters["Colors"].Elements[i]` work exactly as with `mgfxc` output, on every target.
 
-Two uniform shapes are **rejected loudly** (`SD0210`) on the OpenGL target rather than silently miscompiled (staged scope, Phase 43C):
+Two uniform shapes are **rejected loudly** (`SD0210`) on the OpenGL target rather than silently miscompiled (a staged scope — these shapes are not modelled on the GL path yet):
 
 - **`int` / `bool` (and `intN`/`boolN`) uniforms** — MojoShader models these in separate `{vs,ps}_uniforms_ivec4`/`_bool` register sets that ShadowDusk does not emit yet. Use a `float`-typed uniform and cast inside the shader.
 - **Non-`float4x4` matrices (`float3x3`, `float2x2`, …) and `struct` uniforms** — pad the matrix to `float4x4` or split it into vectors.
 
-Both shapes compiled silently into broken GLSL before Phase 43C (failing only at `Effect`-load time inside the game); the loud error is the honest replacement until the shapes are modelled.
+The loud error is the honest result until these shapes are modelled — far better than the silent broken GLSL they would otherwise produce (which fails only at `Effect`-load time inside the game).
 
 ## DirectX uses `vkd3d-shader`, not DXC
 
@@ -55,14 +55,14 @@ For `Target = DirectX`, ShadowDusk emits DXBC (SM ≤ 5) — what MonoGame's DX1
 
 ShadowDusk produces **MGFX v10** by default (<xref:ShadowDusk.Core.CompilerOptions.MgfxVersion> defaults to 10; CLI `--mgfx-version`). v10 is the one effect container that **both MonoGame (3.8.x DesktopGL/WindowsDX) and KNI (Reach and HiDef) load** — MonoGame reads it directly and KNI reads it as its supported migration format. It is the **seamless default**: you never set a flag to get correct output, and it loads on every MonoGame 3.8.2+ and KNI runtime. ShadowDusk does not emit the older v9 (pre-3.8.2) format.
 
-As of **0.6.0**, two **opt-in, experimental** newer containers are available for consumers targeting newer runtimes. Both are **additive** — the v10 default is unchanged, and you only get them if you ask:
+Two **opt-in, experimental** newer containers are available for consumers targeting newer runtimes. Both are **additive** — the v10 default is unchanged, and you only get them if you ask:
 
 - **MGFX v11** — set <xref:ShadowDusk.Core.CompilerOptions.MgfxVersion> `= 11` (CLI `--mgfx-version 11`). A faithful MonoGame v11 container for **MonoGame 3.8.5+**. v11 adds two per-shader diagnostic strings (the source file + entry point, used only in shader error messages, MonoGame PR #8813); it renders identically to v10. Render-proven in real MonoGame 3.8.5. *(3.8.5 is pre-release, so v11 stays opt-in.)*
 - **KNIFX v11** — set <xref:ShadowDusk.Core.CompilerOptions.Container> `= EffectContainer.Knifx`. KNI's newer KNIFX container for **KNI v4.02+**, render-proven in real KNI v4.2.9001. `MgfxVersion` is ignored when `Container == Knifx`; `Container` is ignored for the `Fna` target (always D3D9 fx_2_0).
 
 To pick a whole target (backend + container) with one value instead of setting these separately, set `CompilerOptions.Profile` to a `CapabilityProfile` (e.g. `CapabilityProfile.KniGL_4_02`), or use the CLI `--target-runtime` flag — a profile overrides `Target` / `Container` / `MgfxVersion`. See [Choosing a Target](choosing-a-target.md).
 
-> **Important:** before 0.6.0, `--mgfx-version 11` only bumped the header *byte* over a v10 body, which a real v11 reader **cannot parse**. As of 0.6.0 it writes a correct v11 body. Still, **leave the default (v10) unless you specifically target a newer runtime and want its container** — v10 loads everywhere.
+> **Important:** `--mgfx-version 11` writes a correct, full v11 body (not merely a bumped header byte over a v10 body). Still, **leave the default (v10) unless you specifically target a newer runtime and want its container** — v10 loads everywhere.
 
 ## `.mgfx` vs `.xnb`
 
@@ -96,4 +96,4 @@ if (result.IsFailure)
         Console.WriteLine($"{e.File}({e.Line},{e.Column}): {e.Code}: {e.Message}");
 ```
 
-This works identically on desktop and **in the browser** — as of 0.2.0 the WASM path reports the same `Line`/`Column` as desktop, so an in-browser editor (e.g. a KNI/Blazor shader fiddle) can highlight the offending line. It's a real compile (not a parse-only pass), so it surfaces exactly what the shipping pipeline would reject.
+This works identically on desktop and **in the browser** — the WASM path reports the same `Line`/`Column` as desktop, so an in-browser editor (e.g. a KNI/Blazor shader fiddle) can highlight the offending line. It's a real compile (not a parse-only pass), so it surfaces exactly what the shipping pipeline would reject.

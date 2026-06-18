@@ -40,6 +40,14 @@ public sealed class RenderStateParser
             "EnableAdaptiveTessellation", "SRGBWriteEnable",
         };
 
+    /// <summary>
+    /// Parses a pass's render-state assignments into a typed <see cref="RenderStateBlock"/>.
+    /// </summary>
+    /// <param name="kvp">The raw <c>state = value</c> pairs collected from the pass block.</param>
+    /// <returns>
+    /// The populated <see cref="RenderStateBlock"/> on success, or a <see cref="ShaderError"/>
+    /// when a recognized state has an unparseable value.
+    /// </returns>
     public Result<RenderStateBlock, ShaderError> Parse(IReadOnlyDictionary<string, string> kvp)
     {
         var block = new RenderStateBlock();
@@ -181,7 +189,11 @@ public sealed class RenderStateParser
 
         if (key.Equals("ColorWriteEnable", StringComparison.OrdinalIgnoreCase))
         {
-            if (!int.TryParse(value, out var v))
+            // Symbolic masks ('Red', 'Red | Green | Blue', 'All'), and numeric
+            // forms ('7', '0x0F') — same parser the numbered ColorWriteEnable1/2/3
+            // keys already use (the bare key previously used int.TryParse, which
+            // rejected every symbolic flag).
+            if (!TryParseColorWriteMask(value, out var v))
                 return UnknownValue(key, value);
             block = block with { ColorWriteChannels = v };
             return Ok();
@@ -484,9 +496,12 @@ public sealed class RenderStateParser
     }
 
     /// <summary>
-    /// A D3DCOLORWRITEENABLE mask: an OR of RED/GREEN/BLUE/ALPHA flag tokens
-    /// (e.g. <c>RED | GREEN</c>) and/or integer literals (decimal or 0x hex).
-    /// The D3D9 flag bits are identical to XNA's ColorWriteChannels bits.
+    /// A D3DCOLORWRITEENABLE mask: an OR of RED/GREEN/BLUE/ALPHA/ALL flag tokens
+    /// (e.g. <c>RED | GREEN</c>) and/or integer literals (decimal or 0x hex). The
+    /// FxPreParser drops the '<c>|</c>' separator (the FxLexer does not emit it),
+    /// so it re-joins the flags as '<c>Red|Green|Blue</c>' before this runs; the
+    /// split on '<c>|</c>' below reconstructs them. The D3D9 flag bits are identical
+    /// to XNA's ColorWriteChannels bits; <c>ALL</c> is RED|GREEN|BLUE|ALPHA = 0xF.
     /// </summary>
     private static bool TryParseColorWriteMask(string value, out int result)
     {
@@ -498,6 +513,7 @@ public sealed class RenderStateParser
             else if (token.Equals("Green", StringComparison.OrdinalIgnoreCase)) result |= 2;
             else if (token.Equals("Blue", StringComparison.OrdinalIgnoreCase))  result |= 4;
             else if (token.Equals("Alpha", StringComparison.OrdinalIgnoreCase)) result |= 8;
+            else if (token.Equals("All", StringComparison.OrdinalIgnoreCase))   result |= 0xF;
             else if (TryParseDword(token, out uint bits))                       result |= unchecked((int)bits);
             else { result = 0; return false; }
         }

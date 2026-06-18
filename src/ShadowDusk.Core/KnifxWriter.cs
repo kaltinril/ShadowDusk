@@ -55,6 +55,13 @@ public sealed class KnifxWriter
     /// <summary>The only KNIFX container version KNI defines today.</summary>
     public const short KnifxVersion = 11;
 
+    /// <summary>
+    /// Serializes <paramref name="ir"/> into the binary KNIFX (v11) container bytes for the
+    /// backend named in <paramref name="options"/>.
+    /// </summary>
+    /// <param name="ir">The fully assembled effect IR to serialize.</param>
+    /// <param name="options">The KNIFX backend (and thus integer-as-float decoding) to emit for.</param>
+    /// <returns>The KNIFX bytes on success, or a <see cref="ShaderError"/> on failure.</returns>
     public Result<byte[], ShaderError> Write(ShaderIR ir, KnifxWriterOptions options)
     {
         // KNIFX writes a leading bool the runtime uses to decode integer-typed parameter

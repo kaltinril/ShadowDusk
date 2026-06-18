@@ -77,7 +77,7 @@ So the code above (no explicit `Target`) compiles for **OpenGL**, while `mgfxc M
 
 When `Target = PlatformTarget.DirectX`, ShadowDusk emits DXBC (SM5) via a backend selected by <xref:ShadowDusk.Core.CompilerOptions.DxbcBackend>:
 
-- `DxbcBackend.Vkd3d` (**default**) — the cross-platform `vkd3d-shader` backend; works on Linux/macOS/Windows and emits the same bytes on every OS. The vkd3d natives for all four desktop RIDs **ship inside the NuGet package** — consumers install nothing (self-contained since Phase 37 C; the repo's [restore script](restore-native-tools.md) is only for building ShadowDusk itself from source).
+- `DxbcBackend.Vkd3d` (**default**) — the cross-platform `vkd3d-shader` backend; works on Linux/macOS/Windows and emits the same bytes on every OS. The vkd3d natives for all four desktop RIDs **ship inside the NuGet package** — consumers install nothing (self-contained; the repo's [restore script](restore-native-tools.md) is only for building ShadowDusk itself from source).
 - `DxbcBackend.D3DCompiler` — the Windows-only `d3dcompiler_47` correctness oracle (opt-in; hard-fails off Windows).
 
 You only set the property to opt in to the oracle:

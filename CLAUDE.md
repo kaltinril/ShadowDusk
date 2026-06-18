@@ -80,6 +80,13 @@ dotnet run --project validation/KniVsDriven    # real KNI v4.02 OpenGL, VS-drive
 >
 > It restores the vkd3d native, runs each Windows-GPU render driver, and exits non-zero if any render diverges from the reference compiler. A green run is the evidence CI structurally cannot produce. The `/release` skill requires this step.
 
+### Regression testing is always run — the other half of the pre-merge bar
+
+The render gates above prove pixels; they do **not** prove the compiler still *accepts the language*. When a change touches the **parser / FX pre-parser, transpilation, the MGFX / KNIFX / FNA writers, render state, or matrix handling**, you MUST also run the **full regression suite** — the `FxPreParser` unit tests in `tests/ShadowDusk.HLSL.Tests` **and** the fixture-corpus compile exercised by the integration / structural tests — by running the whole `dotnet test ShadowDusk.slnx`. A green `dotnet test` of a *subset* (one filtered project) is **not enough**: a whole class of valid HLSL can silently fail to compile while every test you happened to run stays green. (This is exactly how issue #106 escaped — a relational operator / ternary in a function body, e.g. `return value <= 0.5f ? 0.0f : 1.0f;`, was misread by the flat-token annotation heuristic and no fixture exercised that shape.)
+
+- **Every fixed bug earns a permanent regression fixture/test** so it can never silently return. Issue #106 added `FxPreParser` unit cases plus regression `.fx` fixtures covering relational / ternary / shift operators and helper-function bodies; that pattern is the rule, not the exception.
+- **Regression testing + the Windows render gate are the combined pre-merge bar** for any shader-output-affecting change: run `dotnet test ShadowDusk.slnx` (catches parse/compile regressions) **and** `./validation/run-windows-render-gates.ps1` (catches render regressions CI cannot). [`docs/validation-matrix.md`](docs/validation-matrix.md) is the authoritative tracker of what each is proven to cover (§6 lists the backing tests).
+
 ### Integration-test performance (Phase 21)
 
 `ShadowDusk.Integration.Tests` is the only project touching heavyweight external machinery (CLI child-process spawn, native DXC + SPIRV-Cross). A slow run is **environmental, not algorithmic** — usually antivirus on-access scanning of cold native binaries. Pass `--settings ShadowDusk.runsettings` for the 5-min `TestSessionTimeout` backstop. **Full troubleshooting (Defender exclusions, `CliBinaryFixture` reuse, timeout layers): [docs/integration-test-performance.md](docs/integration-test-performance.md).**

@@ -6,9 +6,19 @@ namespace ShadowDusk.Core;
 // PlatformTarget.DirectX=0, PlatformTarget.OpenGL=1
 // MgfxProfile.OpenGL=0,     MgfxProfile.DirectX11=1
 // Always use MgfxProfile values when writing the binary format profile byte.
+/// <summary>
+/// The profile byte written into the MGFX binary header, identifying the shader backend an
+/// effect was compiled for. <b>These byte values are deliberately NOT the same as
+/// <see cref="PlatformTarget"/> ordinals</b> (<c>PlatformTarget.DirectX=0, OpenGL=1</c> vs
+/// <c>MgfxProfile.OpenGL=0, DirectX11=1</c>) — always use these values when writing the
+/// format's profile byte.
+/// </summary>
 public enum MgfxProfile : byte
 {
+    /// <summary>The OpenGL/GLSL profile (MGFX profile byte 0).</summary>
     OpenGL    = 0,
+    /// <summary>The DirectX 11 / DXBC profile (MGFX profile byte 1).</summary>
     DirectX11 = 1,
+    /// <summary>The Vulkan / SPIR-V profile (MGFX profile byte 3); reserved for a future backend.</summary>
     Vulkan    = 3,
 }

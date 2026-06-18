@@ -5,8 +5,25 @@ using ShadowDusk.HLSL.Ast;
 
 namespace ShadowDusk.HLSL.Reflection;
 
+/// <summary>
+/// Flattens a <see cref="ReflectedEffect"/> into the ordered effect-parameter list the MGFX
+/// writer consumes: every constant-buffer variable, then every texture, then (optionally)
+/// every sampler, each carrying any matching FX annotation.
+/// </summary>
 public static class ParameterListBuilder
 {
+    /// <summary>
+    /// Builds the flattened parameter list from <paramref name="dxilReflection"/>, attaching
+    /// the matching <paramref name="fxAnnotations"/> by name.
+    /// </summary>
+    /// <param name="dxilReflection">The reflected effect (constant buffers, textures, samplers).</param>
+    /// <param name="fxAnnotations">Per-parameter FX annotations to attach by name; may be <see langword="null"/>.</param>
+    /// <param name="includeSamplerParameters">
+    /// When <see langword="false"/>, samplers are omitted so a sampler+texture folds into the
+    /// single texture parameter (the DirectX path, matching mgfxc); the GL path leaves it
+    /// <see langword="true"/>.
+    /// </param>
+    /// <returns>The effect parameters in writer order: cbuffer variables, then textures, then samplers.</returns>
     public static IReadOnlyList<ParameterReflection> Build(
         ReflectedEffect dxilReflection,
         IReadOnlyList<ParameterAnnotation>? fxAnnotations,
