@@ -28,8 +28,8 @@ ShadowDusk/
 │   ├── ShadowDusk.ImageTests/          # Offscreen-render image regression
 │   ├── ShadowDusk.BrowserTests/        # Headless KNI WebGL render validation (Playwright)
 │   └── fixtures/
-│       ├── shaders/                    # Canonical .fx test shaders (102 .fx total + 5 .fxh headers):
-│       │                               #   60 in the root + examples/ (27) + third-party/Nez/ (15 vendored MIT Nez shaders)
+│       ├── shaders/                    # Canonical .fx test shaders (103 .fx total + 5 .fxh headers):
+│       │                               #   60 in the root + examples/ (28) + third-party/Nez/ (15 vendored MIT Nez shaders)
 │       └── golden/                     # Reference outputs: .mgfx (DirectX_11/, OpenGL/) + fxc fx_2_0 .fxb (FNA/) + byte-identity/
 ├── samples/
 │   ├── ShaderFiddle.Web/               # KNI Blazor-WASM in-browser fiddle (sample of reach)

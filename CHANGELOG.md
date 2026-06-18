@@ -13,6 +13,14 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+## [0.8.0] - 2026-06-18
+
+### Added
 - `SECURITY.md` at the repo root: the project's trust model (compiling a `.fx` runs code; the
   shader author and the compiler-runner are the same developer, so the library is a build-time/in-app
   tool, not a sandbox), the consumer's isolation responsibility for any service that compiles
@@ -33,6 +41,10 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   classification in `docs/test-shader-corpus.md`).
 - `validation/ReservedWordGl`: a GL render driver that render-proves the reserved-word uniform
   binding fix below pixel-identical to `mgfxc`.
+- `tests/fixtures/shaders/examples/Issue106Repro.fx`: the verbatim shader from the issue
+  [#106](https://github.com/kaltinril/ShadowDusk/issues/106) report (a helper using `==`, `<=`, a
+  nested `if`, and an early `return`), pinned as a permanent regression fixture and compile-asserted
+  on OpenGL, DirectX, and FNA.
 
 ### Changed
 - The in-process MGFX/KNIFX/FNA golden-comparison and cross-host byte-identity tests now run on the
@@ -511,7 +523,8 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/kaltinril/ShadowDusk/compare/v0.5.0...v0.5.1
