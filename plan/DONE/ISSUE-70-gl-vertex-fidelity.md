@@ -1,6 +1,6 @@
 # Issue #70 — OpenGL vertex-shader fidelity (matrix transpose + legacy POSITION output)
 
-**Status:** ✅ Both bugs fixed and rung-4 render-proven in real MonoGame (uncommitted). Driven by
+**Status:** ✅ Done — both bugs fixed, rung-4 render-proven in real MonoGame, merged to `main`; GitHub issue #70 CLOSED. Driven by
 GitHub issue [#70](https://github.com/kaltinril/ShadowDusk/issues/70) (squarebananas: a custom VS
 rendered garbled vertex positions on DesktopGL/KNI).
 

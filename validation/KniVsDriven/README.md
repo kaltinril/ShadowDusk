@@ -19,7 +19,7 @@ the **mgfxc OpenGL golden**. It covers **both** issue #70 root causes:
 
 Identity matrices and true-`SV_Position` fixtures are transpose-/remap-invariant, so this harness
 deliberately uses a non-identity matrix and the legacy POSITION form — the shapes that actually
-expose #70 (background: `plan/ISSUE-70-gl-vertex-fidelity.md`).
+expose #70 (background: `plan/DONE/ISSUE-70-gl-vertex-fidelity.md`).
 
 ## Why this is honest / non-vacuous
 

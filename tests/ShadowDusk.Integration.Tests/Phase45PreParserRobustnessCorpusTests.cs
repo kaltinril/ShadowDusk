@@ -12,7 +12,7 @@ namespace ShadowDusk.Integration.Tests;
 /// <summary>
 /// Permanent regression coverage for the Phase 45 FX pre-parser robustness fixes
 /// (the dropped-operator bug class catalogued in
-/// <c>plan/PHASE-45-fx-preparser-robustness.md</c>):
+/// <c>plan/DONE/PHASE-45-fx-preparser-robustness.md</c>):
 /// <list type="bullet">
 ///   <item><b>B2</b> — a <c>sampler S = sampler_state { … }</c> used through the
 ///   MODERN <c>T.Sample(S, uv)</c> method (not <c>tex2D</c>) was erased, so DXC

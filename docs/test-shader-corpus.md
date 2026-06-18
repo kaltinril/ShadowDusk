@@ -106,6 +106,7 @@ exit 0 with non-empty output on all three.
 
 | File | Bug-class it guards | Runtimes |
 |---|---|---|
+| `Issue106Repro.fx` | The **verbatim reporter shader** from issue #106: a helper (`TestEarlyReturn`) using an equality (`==`), a relational (`<=`), nested `if`, and an **early `return`** in its body, called from the PS entry. Kept exact (only a provenance header added) so the real reported shape is pinned, not just a synthetic stand-in. VS+PS sprite path. | GL + DX + FNA |
 | `ExTernaryHelper.fx` | The canonical #106 shape: a helper function that **returns a ternary over a relational** (`value <= 0.5f ? 0 : 1`), called from the PS entry, plus a ternary in the entry body. VS+PS sprite path. | GL + DX + FNA |
 | `ExRelationalThreshold.fx` | **Relational operators directly in the PS body** — `<`, `<=`, `>`, `>=` as scalar bool expressions (not inside a ternary, not inside `clip()`), each promoted to a 0/1 float for a banded threshold. | GL + DX + FNA |
 | `ExRelationalBranch.fx` | A **relational-driven `if` / `else if` / `else`** branch in the body (not `clip()`) **and** a **nested / chained ternary** (4-band select). | GL + DX + FNA |
@@ -121,7 +122,7 @@ to `mgfxc`/`fxc` — the in-engine render-and-compare (a committed golden + a
 ### Phase 45 FX pre-parser robustness set (dropped-operator bug class)
 
 Authored from scratch for ShadowDusk on 2026-06-17 to pin the Phase 45 fixes
-(`plan/PHASE-45-fx-preparser-robustness.md`, items B2-B9). Same shared root
+(`plan/DONE/PHASE-45-fx-preparser-robustness.md`, items B2-B9). Same shared root
 cause as #106: the `FxLexer` drops several operators (`: + [ ] & | ! ? % ^ ~`), so
 a flat heuristic in `FxPreParser` pattern-matched the fragmented token stream and
 acted wrongly. Each fixture is small, real (full technique + pass, renderable), and
