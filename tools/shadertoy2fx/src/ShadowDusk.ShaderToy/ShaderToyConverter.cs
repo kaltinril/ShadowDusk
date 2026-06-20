@@ -1,0 +1,269 @@
+using System.Text;
+using ShadowDusk.ShaderToy.Ast;
+
+namespace ShadowDusk.ShaderToy;
+
+/// <summary>
+/// The single public entry point of the ShaderToy → HLSL <c>.fx</c> conversion tool (Phase 46).
+/// Out-of-band: it depends on nothing in the ShadowDusk compiler pipeline and only emits <c>.fx</c>
+/// text. Unsupported constructs produce a fatal, located diagnostic (fail loudly) rather than
+/// silently-wrong output.
+/// </summary>
+public static class ShaderToyConverter
+{
+    /// <summary>
+    /// Convert a single-pass ShaderToy GLSL "image" shader (optionally with a "Common" tab via
+    /// <see cref="ConvertOptions.CommonSource"/>) into a self-contained HLSL <c>.fx</c>.
+    /// </summary>
+    /// <param name="shaderToyGlsl">The ShaderToy "Image" tab source.</param>
+    /// <param name="options">Conversion options; defaults are used when null.</param>
+    /// <returns>
+    /// A <see cref="ConvertResult"/>. On success <see cref="ConvertResult.Success"/> is true,
+    /// <see cref="ConvertResult.Fx"/> holds the <c>.fx</c> text, and
+    /// <see cref="ConvertResult.UsedUniforms"/> lists the referenced uniforms. On any error,
+    /// <see cref="ConvertResult.Success"/> is false, <see cref="ConvertResult.Fx"/> is null, and the
+    /// diagnostics describe what was rejected and where.
+    /// </returns>
+    public static ConvertResult Convert(string shaderToyGlsl, ConvertOptions? options = null)
+    {
+        options ??= new ConvertOptions();
+        var diagnostics = new List<ConvertDiagnostic>();
+
+        if (shaderToyGlsl is null)
+        {
+            diagnostics.Add(new ConvertDiagnostic(
+                DiagnosticSeverity.Error, "Source GLSL was null.", 0, 0));
+            return Fail(diagnostics);
+        }
+
+        try
+        {
+            return ConvertCore(shaderToyGlsl, options, diagnostics);
+        }
+        catch (ConvertException ex)
+        {
+            diagnostics.Add(new ConvertDiagnostic(
+                DiagnosticSeverity.Error, ex.Message, ex.Line, ex.Column, ex.Construct));
+            return Fail(diagnostics);
+        }
+    }
+
+    private static ConvertResult ConvertCore(
+        string imageSource, ConvertOptions options, List<ConvertDiagnostic> diagnostics)
+    {
+        // Reject obvious multipass / non-image entry points before doing real work (cheap guardrail
+        // against silently producing a wrong single-pass effect from a multipass shader).
+        RejectUnsupportedEntryPoints(imageSource, diagnostics);
+        if (options.CommonSource is { } common)
+        {
+            RejectUnsupportedEntryPoints(common, diagnostics);
+        }
+
+        if (diagnostics.Count > 0 && options.StopOnFirstError)
+        {
+            return Fail(diagnostics);
+        }
+
+        // Preprocess + parse the Common tab (if any) and the Image tab.
+        var pre = new Preprocessor();
+        string commonPp = options.CommonSource is null ? string.Empty : pre.Process(options.CommonSource);
+        string imagePp = pre.Process(imageSource);
+
+        TranslationUnit commonUnit = ParseUnit(commonPp);
+        TranslationUnit imageUnit = ParseUnit(imagePp);
+
+        // Merge: Common globals/functions come first.
+        var globals = new List<GlobalConstDecl>(commonUnit.Globals);
+        globals.AddRange(imageUnit.Globals);
+        var functions = new List<FunctionDecl>(commonUnit.Functions);
+        functions.AddRange(imageUnit.Functions);
+        var merged = new TranslationUnit { Globals = globals, Functions = functions };
+
+        // Validate the mainImage entry point.
+        ValidateMainImage(functions);
+
+        // Type-inference + emit.
+        var types = new TypeInference(merged);
+        var emitter = new HlslEmitter(types);
+        emitter.SetUserFunctions(functions.Where(f => f.Name != "mainImage").Select(f => f.Name)
+            .Concat(new[] { "mainImage" }));
+
+        var globalsSb = new StringBuilder();
+        foreach (GlobalConstDecl g in merged.Globals)
+        {
+            globalsSb.Append(emitter.EmitGlobalConst(g));
+        }
+
+        var fnSb = new StringBuilder();
+        foreach (FunctionDecl f in merged.Functions)
+        {
+            // Skip pure prototypes (empty body, no statements) — we only emit definitions.
+            if (f.Body.Statements.Count == 0 && f.Parameters.Count >= 0 && IsPrototype(f, merged.Functions))
+            {
+                continue;
+            }
+
+            fnSb.Append(emitter.EmitFunction(f));
+            fnSb.AppendLine();
+        }
+
+        var harness = new HarnessGenerator();
+        string fx = harness.Generate(
+            options,
+            emitter.ReferencedUniforms,
+            emitter.UsedGlslMod,
+            globalsSb.ToString(),
+            fnSb.ToString());
+
+        // If any Error accumulated (e.g. a banned entry point detected up front without
+        // StopOnFirstError), the conversion is NOT a success even though emission ran to completion.
+        if (diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error))
+        {
+            return Fail(diagnostics);
+        }
+
+        var used = emitter.ReferencedUniforms.ToList();
+        return new ConvertResult
+        {
+            Success = true,
+            Fx = fx,
+            Diagnostics = diagnostics,
+            UsedUniforms = used,
+        };
+    }
+
+    /// <summary>True if this declaration is a forward prototype superseded by a later definition.</summary>
+    private static bool IsPrototype(FunctionDecl candidate, IReadOnlyList<FunctionDecl> all)
+    {
+        if (candidate.Body.Statements.Count != 0)
+        {
+            return false;
+        }
+
+        // A defined twin (same name, non-empty body) exists → this is just a prototype.
+        return all.Any(f => f.Name == candidate.Name && f.Body.Statements.Count > 0);
+    }
+
+    private static TranslationUnit ParseUnit(string preprocessed)
+    {
+        List<Token> tokens = new Lexer(preprocessed).Tokenize();
+        return new Parser(tokens).Parse();
+    }
+
+    private static void ValidateMainImage(IReadOnlyList<FunctionDecl> functions)
+    {
+        List<FunctionDecl> entries = functions.Where(f => f.Name == "mainImage").ToList();
+        if (entries.Count == 0)
+        {
+            throw new ConvertException(
+                "No 'void mainImage(out vec4 fragColor, in vec2 fragCoord)' entry point was found. " +
+                "Only single-pass ShaderToy image shaders are supported.",
+                0, 0, "mainImage");
+        }
+
+        if (entries.Count > 1)
+        {
+            FunctionDecl dup = entries[1];
+            throw new ConvertException(
+                "Multiple 'mainImage' definitions found.", dup.Line, dup.Column, "mainImage");
+        }
+
+        FunctionDecl main = entries[0];
+        if (main.ReturnType != "void")
+        {
+            throw new ConvertException(
+                "'mainImage' must return void.", main.Line, main.Column, "mainImage");
+        }
+
+        if (main.Parameters.Count != 2)
+        {
+            throw new ConvertException(
+                "'mainImage' must take exactly (out vec4 fragColor, in vec2 fragCoord).",
+                main.Line, main.Column, "mainImage");
+        }
+
+        ParamDecl p0 = main.Parameters[0];
+        ParamDecl p1 = main.Parameters[1];
+        if (p0.TypeName != "vec4" || p0.Qualifier != ParamQualifier.Out)
+        {
+            throw new ConvertException(
+                "The first parameter of 'mainImage' must be 'out vec4'.", p0.Line, p0.Column, "mainImage");
+        }
+
+        if (p1.TypeName != "vec2")
+        {
+            throw new ConvertException(
+                "The second parameter of 'mainImage' must be 'vec2 fragCoord'.", p1.Line, p1.Column, "mainImage");
+        }
+    }
+
+    /// <summary>
+    /// Reject the non-image ShaderToy entry points and multipass buffers up front. These are
+    /// matched as whole-word occurrences so they are not confused with substrings.
+    /// </summary>
+    private static void RejectUnsupportedEntryPoints(string source, List<ConvertDiagnostic> diagnostics)
+    {
+        (string Token, string Message)[] banned =
+        {
+            ("mainSound", "Audio shaders ('mainSound') are outside the supported subset (single-pass image only)."),
+            ("mainVR", "VR shaders ('mainVR') are outside the supported subset (single-pass image only)."),
+            ("mainCubemap", "Cubemap shaders ('mainCubemap') are outside the supported subset (single-pass image only)."),
+        };
+
+        foreach ((string token, string message) in banned)
+        {
+            if (FindWholeWord(source, token, out int line, out int col))
+            {
+                diagnostics.Add(new ConvertDiagnostic(DiagnosticSeverity.Error, message, line, col, token));
+            }
+        }
+    }
+
+    private static bool FindWholeWord(string text, string word, out int line, out int col)
+    {
+        line = 0;
+        col = 0;
+        int idx = 0;
+        while ((idx = text.IndexOf(word, idx, StringComparison.Ordinal)) >= 0)
+        {
+            bool leftOk = idx == 0 || !(char.IsLetterOrDigit(text[idx - 1]) || text[idx - 1] == '_');
+            int after = idx + word.Length;
+            bool rightOk = after >= text.Length || !(char.IsLetterOrDigit(text[after]) || text[after] == '_');
+            if (leftOk && rightOk)
+            {
+                ComputeLineCol(text, idx, out line, out col);
+                return true;
+            }
+
+            idx = after;
+        }
+
+        return false;
+    }
+
+    private static void ComputeLineCol(string text, int index, out int line, out int col)
+    {
+        line = 1;
+        col = 1;
+        for (int i = 0; i < index && i < text.Length; i++)
+        {
+            if (text[i] == '\n')
+            {
+                line++;
+                col = 1;
+            }
+            else if (text[i] != '\r')
+            {
+                col++;
+            }
+        }
+    }
+
+    private static ConvertResult Fail(IReadOnlyList<ConvertDiagnostic> diagnostics) => new()
+    {
+        Success = false,
+        Fx = null,
+        Diagnostics = diagnostics,
+        UsedUniforms = Array.Empty<string>(),
+    };
+}

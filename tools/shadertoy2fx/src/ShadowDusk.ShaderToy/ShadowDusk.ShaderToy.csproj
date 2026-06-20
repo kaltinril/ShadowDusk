@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>ShadowDusk.ShaderToy</AssemblyName>
+    <RootNamespace>ShadowDusk.ShaderToy</RootNamespace>
+    <!-- Phase 46 experiment: standalone tool, intentionally NOT packed and NOT in ShadowDusk.slnx. -->
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="ShadowDusk.ShaderToy.Tests" />
+  </ItemGroup>
+</Project>
