@@ -4,6 +4,16 @@ A statistical coverage report for the `shadertoy2fx` GLSL → HLSL `.fx` convert
 running a batch of **real, third-party single-pass ShaderToy / GLSL image shaders** through the
 converter and then through the ShadowDusk OpenGL compiler.
 
+> **Update 2026-06-19 — C preprocessor support landed.** The converter now evaluates the full
+> conditional-compilation family (`#if`/`#ifdef`/`#ifndef`/`#elif`/`#else`/`#endif`, correctly
+> nested, with a C integer const-expression evaluator that understands `defined()` and macro
+> expansion) and expands **function-like macros** `#define F(a,b) …` with argument substitution
+> (plus `#undef`, and comment-stripping on directive lines). `##`/`#` (paste/stringize) and
+> `#include` remain loud rejects. Re-measured over the same scratch corpus:
+> **conversion rate 23.4 %** (36/154, was 20.1 %), **compile rate 86.1 %** (31/36, was 67.7 %),
+> **end-to-end 20.1 %** (31/154, was 13.6 %). The §2/§3 tables below are the original baseline
+> snapshot kept for the construct ranking; the headline numbers in this note supersede them.
+
 **Licensing note:** the third-party shaders were fetched only transiently into the gitignored
 `.scratch/` directory and are **not** committed. This report contains only aggregate statistics,
 categorized failure causes, and short illustrative snippets **authored here by hand** to show the

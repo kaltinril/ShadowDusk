@@ -55,7 +55,7 @@ public sealed class RejectCorpusTests
             "user_array" => "array",
             "second_entry_cubemap" => "Cubemap",
             "switch_statement" => "switch",
-            "function_like_define" => "macro",
+            "macro_paste" => "##",
             "unknown_intrinsic" => "texelFetch",
             "unknown_global" => "RENDERSIZE",
             _ => string.Empty,

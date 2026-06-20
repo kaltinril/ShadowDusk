@@ -31,5 +31,11 @@ translation trap so a failure points at a single cause.
 | `decl_modifier_spacing.glsl` | **B5**: a stray storage/precision modifier after the type must be dropped (no "modifiers must appear before type"). |
 | `builtin_redeclare.glsl` | **L1(a)**: redundant `uniform iTime/iResolution/iMouse` re-declarations are dropped, not rejected. |
 | `iglobaltime_alias.glsl` | **L1(b)**: deprecated `iGlobalTime` alias maps to `iTime`. |
+| `macro_function.glsl` | Function-like `#define SQR(x) ...` / `#define MIXC(a,b,t) ...` macros expand with argument substitution at the call site. |
+| `pp_ifdef.glsl` | `#ifdef` / `#ifndef` / `#else` gating: the inactive branch bodies are dropped (blanked), never emitted. |
+| `pp_if_arith.glsl` | `#if` with an integer constant expression (arithmetic, comparison, shift, `&&`, macro expansion). |
+| `pp_nested.glsl` | Nested `#if` / `#elif` / `#else` with correct nesting (only the one selected branch survives). |
+| `pp_defined.glsl` | `defined(NAME)` and bare `defined NAME` inside an `#if` expression. |
+| `pp_undef.glsl` | `#undef` followed by a redefinition; the use before/after sees the right value, and `#ifdef` sees the redefine. |
 
-Total: 24 authored shaders.
+Total: 30 authored shaders.

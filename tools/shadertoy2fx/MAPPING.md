@@ -148,11 +148,35 @@ or precision modifier that appears **after** the type in a copied/generated decl
 `type name` — never `type modifier name`, which the stricter HLSL compilers (fxc / FNA) reject as
 "modifiers must appear before type".
 
-## `#define`
+## Preprocessor (C-style, runs before lex/parse)
 
-Object-like `#define NAME value` constants are applied by whole-word token substitution (bounded
-multi-pass for define-of-a-define). `#undef` is honored. `#version` / `#extension` / `#pragma` are
-ignored.
+A real line-oriented C preprocessor pass handles:
+
+- **Conditional compilation:** `#if` / `#ifdef` / `#ifndef` / `#elif` / `#else` / `#endif`, correctly
+  nested. The `#if`/`#elif` expression is a C **integer constant expression**: integer literals
+  (decimal and `0x…` hex, with `u`/`l` suffixes tolerated), the operators
+  `! ~ * / % + - << >> < <= > >= == != & ^ | && ||`, ternary `?:`, parentheses, and
+  `defined(NAME)` / `defined NAME`. Macros are expanded inside the expression first; an identifier
+  that is **not** a defined macro evaluates to `0` (the standard C rule). Inactive branches are
+  dropped but each source line is preserved as a blank line, so downstream diagnostics keep pointing
+  at the original line.
+- **Object-like macros:** `#define NAME value` — whole-word token substitution (bounded multi-pass so
+  a define-of-a-define resolves).
+- **Function-like macros:** `#define F(a, b) body` — argument substitution at each call site (no-arg
+  `F()` and multi-token / nested-comma arguments handled; a multi-token argument is hygienically
+  wrapped in parentheses to preserve call-site precedence). A function-like macro name **not** followed
+  by `(` is left as a plain identifier (C rule).
+- **`#undef`** is honored in source order (a use before the `#undef` sees the old value, after sees the
+  redefinition).
+- **Comments on directive lines** (`#define X 0 // note`, `#if A /* x */`) are stripped before the
+  body/expression is taken, so they never leak into a macro body or an `#if` expression.
+- **Line continuations** (`\` at end of a physical line) are folded into one logical directive.
+- `#version` / `#extension` / `#pragma` are ignored.
+
+**Rejected (loud, located):** the token-paste `##` and stringize `#` operators inside a macro body
+(rare in shaders; rejected rather than mis-expanded), variadic macros (`...`), and `#include` (inline
+the included source instead). A recursion/expansion-depth guard turns a pathological self-referential
+macro into a loud reject rather than an infinite loop.
 
 ## Control flow & statements supported
 
@@ -181,8 +205,9 @@ Each of the following produces a fatal diagnostic, never silently-wrong HLSL:
   (with line/column) rather than leaked to a downstream "use of undeclared identifier" compile error.
   This covers custom uniforms and non-ShaderToy builtins (e.g. ISF's `RENDERSIZE`). The deprecated
   `iGlobalTime`/`iGlobalFrame` aliases are auto-mapped before this check, so they are accepted.
-- **Preprocessor:** function-like macros `#define NAME(...)`; `#if`/`#ifdef`/`#ifndef`/`#else`/
-  `#elif`/`#endif`/`#include` and any other non-ignored directive.
+- **Preprocessor:** the token-paste `##` / stringize `#` operators in a macro body, variadic macros
+  (`...`), `#include`, and any other non-ignored directive. (Conditional compilation and function-like
+  macros are now **supported** — see *Preprocessor* above — and are no longer rejected.)
 - **Statements/expressions:** `switch`; unknown function/intrinsic that is neither a user function nor
   in the mapping table; single-argument matrix constructor `matN(x)` (HLSL has no diagonal
   `floatNxN(scalar)` form); `texelFetch`, `textureProj`, `textureSize`, `fwidth`, fine/coarse

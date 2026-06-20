@@ -11,8 +11,13 @@ assert the tool rejects for that specific reason.
 | `user_array.glsl` | Declares a user array (`float weights[3];`) — arrays are not in the v1 subset. |
 | `second_entry_cubemap.glsl` | Contains a second entry point (`mainCubemap`) — v1 supports a single `mainImage` image shader only. |
 | `switch_statement.glsl` | Uses a `switch` statement — `switch` is not in the v1 subset. |
-| `function_like_define.glsl` | Uses a function-like `#define SQR(x) ...` macro — only object-like `#define` constants are supported. |
+| `macro_paste.glsl` | Uses the token-paste operator `##` inside a `#define` body — `##`/`#` (stringize) are not implemented and are a loud reject rather than a mis-expansion. |
 | `unknown_intrinsic.glsl` | Calls `texelFetch`, which has no entry in the intrinsic mapping table — unmapped intrinsics are a loud reject. |
 | `unknown_global.glsl` | Uses a free identifier (`RENDERSIZE`, an ISF builtin) that is not a ShaderToy uniform/local/const/user-function — undeclared identifiers are a loud reject (L1), not a silent pass-through. |
 
 Total: 7 reject shaders.
+
+Note: function-like `#define NAME(...)` macros and the `#if`/`#ifdef`/`#ifndef`/`#elif`/`#else`/`#endif`
+conditional family are now **supported** (Phase 46 preprocessor) and have moved to `authored/` (see
+`macro_function.glsl`, `pp_*.glsl`). Only the unimplemented `##`/`#` operators and `#include` remain
+loud rejects.
