@@ -20,8 +20,9 @@ assert the tool rejects for that specific reason.
 | `global_unsupported_type.glsl` | **G1 boundary**: a top-level mutable global of an unsupported type (`double gBad;`) — supported-type mutable globals are now accepted (as `static`), but an unsupported-type one stays a loud reject. |
 | `pp_include.glsl` | **G5 boundary**: `#include "common.glsl"` — there is no file resolver, so `#include` stays a loud reject (it cannot be silently dropped without losing code). |
 | `main_no_output.glsl` | **G2 boundary**: a plain-GLSL `void main()` with no discoverable fragment output (no `out vec4 <name>;` and no `gl_FragColor` write) — there is nothing to return as COLOR0, so it is a loud reject. |
+| `array_nonconst_size.glsl` | **G7 boundary**: an array sized by a non-constant expression (`float a[n];` where `n` is a variable) — a fixed-size array (`float k[3];`) is supported, but a non-constant / macro size has no compile-time length, so it stays a loud reject. |
 
-Total: 12 reject shaders.
+Total: 13 reject shaders.
 
 Note: a shader that defines **BOTH** a ShaderToy `mainImage` AND a standalone `void main()` wrapper is
 **no longer a reject** (the former `both_entry_points.glsl`, now retired). It PREFERS ShaderToy mode,

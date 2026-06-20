@@ -137,16 +137,21 @@ public static class ShaderToyConverter
         // Type-inference + emit.
         var types = new TypeInference(merged);
 
+        // gl_FragCoord (G3c) is a predefined vec4 built-in usable in EITHER entry mode's body; register
+        // it so references resolve (and `gl_FragCoord.xy` infers vec2). In ShaderToy mode the harness
+        // publishes it as a `static float4` set before calling mainImage (only when referenced); in
+        // plain-GLSL mode the synthesized PS always bridges it (see HarnessGenerator).
+        types.DeclareBuiltinGlobal("gl_FragCoord", GlslType.Vector(ScalarKind.Float, 4));
+
         // In plain-GLSL `main()` mode (G2) the fragment output (`gl_FragColor` or the user-declared
-        // `out vec4 <name>;`) and `gl_FragCoord` are predefined vec4 file-scope identifiers the shader
-        // body reads/writes; register them so the body's references resolve (the harness declares each
-        // as a `static float4` global and the synthesized PS bridges them — see HarnessGenerator).
+        // `out vec4 <name>;`) is also a predefined vec4 file-scope identifier the shader body writes;
+        // register it so the body's references resolve (the harness declares it as a `static float4`
+        // global and the synthesized PS bridges it — see HarnessGenerator).
         string fragmentOutputName = "gl_FragColor";
         if (entryMode == EntryMode.PlainGlsl)
         {
             fragmentOutputName = userFragmentOutput?.Name ?? "gl_FragColor";
             types.DeclareBuiltinGlobal(fragmentOutputName, GlslType.Vector(ScalarKind.Float, 4));
-            types.DeclareBuiltinGlobal("gl_FragCoord", GlslType.Vector(ScalarKind.Float, 4));
         }
 
         string entryFunctionName = entryMode == EntryMode.ShaderToy ? "mainImage" : "main";
@@ -213,7 +218,8 @@ public static class ShaderToyConverter
             globalsSb.ToString(),
             fnSb.ToString(),
             entryMode,
-            fragmentOutputName);
+            fragmentOutputName,
+            emitter.UsedGlFragCoord);
 
         // If any Error accumulated (e.g. a banned entry point detected up front without
         // StopOnFirstError), the conversion is NOT a success even though emission ran to completion.

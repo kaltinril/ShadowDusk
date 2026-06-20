@@ -148,14 +148,28 @@ internal sealed class Parser
         // Must be a type now.
         Token typeTok = Current;
         string typeName = ExpectTypeName();
-        Token nameTok = Expect(TokenKind.Identifier, "an identifier");
-        string name = nameTok.Text;
 
-        // G7: an array suffix `[N]` (a fixed-size array). The size must be a non-negative integer
-        // literal; an unsized `[]` global (runtime/implicitly-sized) is a loud reject.
+        // G7: an array suffix `[N]` may appear AFTER the type, before the name, the GLSL-canonical
+        // position (`const vec3[3] s = {...};`). Parse it here; a name-side `[N]` is parsed below.
         int? arraySize = null;
         if (Check(TokenKind.LBracket))
         {
+            arraySize = ParseArraySuffix();
+        }
+
+        Token nameTok = Expect(TokenKind.Identifier, "an identifier");
+        string name = nameTok.Text;
+
+        // G7: an array suffix `[N]` may instead appear AFTER the name (`const float k[3] = ...;`). At
+        // most one of the two positions carries the size.
+        if (Check(TokenKind.LBracket))
+        {
+            if (arraySize is not null)
+            {
+                throw Reject(
+                    "An array may carry a size on the type OR the name, not both.", Current);
+            }
+
             arraySize = ParseArraySuffix();
         }
 
@@ -181,7 +195,7 @@ internal sealed class Parser
         if (isConst)
         {
             Expect(TokenKind.Assign, "'=' (a const global requires an initializer)");
-            Expr cinit = ParseExpression();
+            Expr cinit = arraySize is null ? ParseExpression() : ParseInitializer();
             Expect(TokenKind.Semicolon, "';'");
             ValidateArrayInit(arraySize, cinit, nameTok);
             globals.Add(new GlobalConstDecl
@@ -203,7 +217,7 @@ internal sealed class Parser
             Expr? arrInit = null;
             if (Match(TokenKind.Assign))
             {
-                arrInit = ParseAssignment();
+                arrInit = ParseInitializer();
             }
 
             Expect(TokenKind.Semicolon, "';'");
@@ -413,6 +427,46 @@ internal sealed class Parser
     }
 
     /// <summary>
+    /// Parse a declaration initializer: either a GLSL brace initializer list <c>{ a, b, c }</c>
+    /// (an aggregate initializer, used for arrays — GLSL ES 3.00+) or an ordinary assignment-level
+    /// expression (which covers the <c>T[](...)</c> array-constructor form and every scalar/vector
+    /// init). A brace list becomes a <see cref="BraceInitExpr"/> the emitter renders as <c>{ ... }</c>.
+    /// </summary>
+    private Expr ParseInitializer()
+    {
+        if (Check(TokenKind.LBrace))
+        {
+            Token open = Current;
+            _pos++; // '{'
+            var elements = new List<Expr>();
+            if (!Check(TokenKind.RBrace))
+            {
+                do
+                {
+                    // Tolerate a trailing comma before '}' (GLSL allows it in an aggregate initializer).
+                    if (Check(TokenKind.RBrace))
+                    {
+                        break;
+                    }
+
+                    elements.Add(ParseAssignment());
+                }
+                while (Match(TokenKind.Comma));
+            }
+
+            Expect(TokenKind.RBrace, "'}'");
+            if (elements.Count == 0)
+            {
+                throw Reject("A brace initializer must have at least one element.", open);
+            }
+
+            return new BraceInitExpr { Elements = elements, Line = open.Line, Column = open.Column };
+        }
+
+        return ParseAssignment();
+    }
+
+    /// <summary>
     /// Validate the initializer of a declared array (<c>type name[N] = ...</c>, G7). When present the
     /// initializer must be a GLSL array constructor whose element count equals the declared size N; any
     /// other initializer shape, or a size mismatch, is a loud, located reject (so we never emit a brace
@@ -425,17 +479,26 @@ internal sealed class Parser
             return;
         }
 
-        if (init is not ArrayConstructorExpr ctor)
+        int count;
+        switch (init)
         {
-            throw Reject(
-                "An array initializer must be a GLSL array constructor 'type[](...)'.", at);
+            case ArrayConstructorExpr ctor:
+                count = ctor.Elements.Count;
+                break;
+            case BraceInitExpr brace:
+                count = brace.Elements.Count;
+                break;
+            default:
+                throw Reject(
+                    "An array initializer must be a GLSL array constructor 'type[](...)' or a brace " +
+                    "initializer list '{ ... }'.", at);
         }
 
-        if (ctor.Elements.Count != arraySize.Value)
+        if (count != arraySize.Value)
         {
             throw Reject(
                 $"Array '{at.Text}' is declared size {arraySize.Value} but its initializer has " +
-                $"{ctor.Elements.Count} element(s).",
+                $"{count} element(s).",
                 at);
         }
     }
@@ -492,14 +555,17 @@ internal sealed class Parser
 
     /// <summary>
     /// Handle a top-level <c>uniform</c>/<c>varying</c>/<c>attribute</c>/<c>in</c>/<c>out</c>
-    /// declaration. Three outcomes:
+    /// declaration. The qualifier and base type apply to a comma-separated declarator list
+    /// (<c>uniform float a, b, c;</c>); each declarator is classified independently:
     /// <list type="bullet">
-    /// <item>A redundant re-declaration of a KNOWN ShaderToy built-in (e.g. <c>uniform float iTime;</c>)
-    /// is silently DROPPED — the harness already injects that global, so it is harmless.</item>
+    /// <item>A redundant re-declaration of a KNOWN ShaderToy built-in (e.g. <c>uniform float iTime;</c>,
+    /// even with an initializer <c>uniform vec3 iResolution = vec3(1920,1080,1);</c> or a redundant
+    /// <c>uniform sampler2D iChannel0;</c>) is silently DROPPED — the harness already injects that
+    /// global, so the declaration (and any initializer) is irrelevant.</item>
     /// <item>A <c>uniform</c> of a SUPPORTED type (scalar/vector/matrix, or <c>sampler2D</c>) is
     /// ACCEPTED as a custom uniform: emitted as an HLSL effect parameter the consumer drives. A common
     /// glslViewer alias (<c>u_time</c>) is folded onto its ShaderToy built-in.</item>
-    /// <item>Anything else (an unsupported uniform type, a uniform with an initializer, or a
+    /// <item>Anything else (an unsupported uniform type, or a
     /// <c>varying</c>/<c>attribute</c>/<c>in</c>/<c>out</c> of a custom name — none of which the host
     /// can drive) is a loud, located reject.</item>
     /// </list>
@@ -524,8 +590,27 @@ internal sealed class Parser
         }
 
         Token typeTok = Current;
-        _pos++; // type name (validated below only when we need to keep the declaration)
+        _pos++; // type name (validated per-declarator below only when we keep the declaration)
 
+        // Each declarator in the comma list (`uniform float a, b = 1.0, c;`) is handled independently
+        // against the shared qualifier + type.
+        do
+        {
+            HandleQualifiedDeclarator(start, qualifier, typeTok, customUniforms);
+        }
+        while (Match(TokenKind.Comma));
+
+        Expect(TokenKind.Semicolon, "';'");
+    }
+
+    /// <summary>
+    /// Handle one declarator (name + optional <c>[N]</c> + optional initializer) of a qualified
+    /// top-level declaration, against the shared <paramref name="qualifier"/> and
+    /// <paramref name="typeTok"/>. The terminating <c>,</c>/<c>;</c> is NOT consumed here.
+    /// </summary>
+    private void HandleQualifiedDeclarator(
+        Token start, string qualifier, Token typeTok, List<CustomUniformDecl> customUniforms)
+    {
         if (!Check(TokenKind.Identifier))
         {
             throw Reject(
@@ -535,13 +620,14 @@ internal sealed class Parser
 
         Token nameTok = Current;
         string name = nameTok.Text;
+        _pos++; // name
 
         if (UniformInfo.IsUniform(name))
         {
-            // Redundant re-declaration of a built-in ShaderToy uniform: drop it. Consume the rest of
-            // the declaration (optional `[N]` array suffix and the terminating ';') and add nothing.
-            _pos++; // name
-            ConsumeUniformTail(nameTok);
+            // Redundant re-declaration of a built-in ShaderToy uniform: drop it (including any `[N]`
+            // array suffix and any initializer — the harness injects the built-in, so the source's
+            // declaration and its initializer value are irrelevant). Add nothing.
+            ConsumeDeclaratorTail();
             return;
         }
 
@@ -561,8 +647,7 @@ internal sealed class Parser
         // mapped; everything else is exposed verbatim as a custom uniform.
         if (UniformAliases.TryResolve(name, typeTok.Text, out string? aliasOf))
         {
-            _pos++; // name
-            ConsumeUniformTail(nameTok);
+            ConsumeDeclaratorTail();
             _aliases[name] = aliasOf!;
             return;
         }
@@ -585,8 +670,6 @@ internal sealed class Parser
                     typeTok);
             }
         }
-
-        _pos++; // name
 
         if (Check(TokenKind.LBracket))
         {
@@ -611,7 +694,6 @@ internal sealed class Parser
             initializer = ParseAssignment();
         }
 
-        Expect(TokenKind.Semicolon, "';'");
         customUniforms.Add(new CustomUniformDecl
         {
             TypeName = typeTok.Text,
@@ -623,11 +705,11 @@ internal sealed class Parser
         });
     }
 
-    /// <summary>Consume the tail of a built-in/alias uniform declaration: an optional <c>[N]</c>
-    /// array suffix and the terminating <c>;</c>.</summary>
-    private void ConsumeUniformTail(Token nameTok)
+    /// <summary>Consume the tail of a dropped built-in/alias declarator: an optional <c>[N]</c> array
+    /// suffix and an optional <c>= initializer</c> (the value is irrelevant for an injected built-in).
+    /// Stops at the next <c>,</c>/<c>;</c>, which the caller consumes.</summary>
+    private void ConsumeDeclaratorTail()
     {
-        _ = nameTok;
         if (Check(TokenKind.LBracket))
         {
             while (!Check(TokenKind.RBracket) && !Check(TokenKind.EndOfFile))
@@ -638,7 +720,13 @@ internal sealed class Parser
             Match(TokenKind.RBracket);
         }
 
-        Expect(TokenKind.Semicolon, "';'");
+        if (Match(TokenKind.Assign))
+        {
+            // Parse-and-discard the initializer so multi-token / call initializers
+            // (`= vec3(1920, 1080, 1)`) are consumed correctly (commas inside are arg separators, not
+            // declarator separators — ParseAssignment stops at the top-level ',').
+            _ = ParseAssignment();
+        }
     }
 
     private FunctionDecl ParseFunctionRest(string returnType, string name, Token start)
@@ -711,12 +799,29 @@ internal sealed class Parser
         }
 
         string typeName = ExpectTypeName();
+
+        // G7c: an array parameter's size may appear AFTER the type, before the name
+        // (`void f(inout float[9] k)`), the GLSL-canonical position. A size after the name
+        // (`float k[9]`) is parsed below; at most one of the two forms appears.
+        int? arraySize = null;
+        if (Check(TokenKind.LBracket))
+        {
+            arraySize = ParseArraySuffix();
+        }
+
         SkipStrayDeclModifiers();
         Token nameTok = Expect(TokenKind.Identifier, "a parameter name");
 
+        // G7c: the array size may instead appear AFTER the name (`float k[9]`).
         if (Check(TokenKind.LBracket))
         {
-            throw Reject("Array parameters are outside the supported subset.", Current);
+            if (arraySize is not null)
+            {
+                throw Reject(
+                    "An array parameter may carry a size on the type OR the name, not both.", Current);
+            }
+
+            arraySize = ParseArraySuffix();
         }
 
         return new ParamDecl
@@ -724,6 +829,7 @@ internal sealed class Parser
             TypeName = typeName,
             Name = nameTok.Text,
             Qualifier = qual,
+            ArraySize = arraySize,
             Line = start.Line,
             Column = start.Column,
         };
@@ -854,8 +960,16 @@ internal sealed class Parser
 
         string typeName = ExpectTypeName();
 
+        // G7b: a type-side array suffix `[N]` (`vec2[4] c = {...};`) applies to every declarator in
+        // the comma list. A name-side `[N]` is parsed per-declarator in ParseSingleDeclarator.
+        int? typeArraySize = null;
+        if (Check(TokenKind.LBracket))
+        {
+            typeArraySize = ParseArraySuffix();
+        }
+
         // First declarator.
-        VarDeclStmt first = ParseSingleDeclarator(typeName, isConst, start);
+        VarDeclStmt first = ParseSingleDeclarator(typeName, isConst, start, typeArraySize);
 
         // GLSL allows `float a = 1.0, b, c = 2.0;`. Model the comma list as a non-scoping
         // MultiDeclStmt so the declarators stay siblings in the enclosing block (a nested
@@ -865,7 +979,7 @@ internal sealed class Parser
             var list = new List<VarDeclStmt> { first };
             while (Match(TokenKind.Comma))
             {
-                list.Add(ParseSingleDeclarator(typeName, isConst, Current));
+                list.Add(ParseSingleDeclarator(typeName, isConst, Current, typeArraySize));
             }
 
             Expect(TokenKind.Semicolon, "';'");
@@ -893,22 +1007,30 @@ internal sealed class Parser
         }
     }
 
-    private VarDeclStmt ParseSingleDeclarator(string typeName, bool isConst, Token start)
+    private VarDeclStmt ParseSingleDeclarator(
+        string typeName, bool isConst, Token start, int? typeArraySize = null)
     {
         SkipStrayDeclModifiers();
         Token nameTok = Expect(TokenKind.Identifier, "a variable name");
 
-        // G7: a local fixed-size array (`float arr[4];` or `const float k[3] = float[](...);`).
-        int? arraySize = null;
+        // G7: a local fixed-size array. The size comes from the type side (`vec2[4] c`, passed in) OR
+        // the name side (`float arr[4]`). At most one position carries it.
+        int? arraySize = typeArraySize;
         if (Check(TokenKind.LBracket))
         {
+            if (arraySize is not null)
+            {
+                throw Reject(
+                    "An array may carry a size on the type OR the name, not both.", Current);
+            }
+
             arraySize = ParseArraySuffix();
         }
 
         Expr? init = null;
         if (Match(TokenKind.Assign))
         {
-            init = ParseAssignment();
+            init = arraySize is null ? ParseAssignment() : ParseInitializer();
         }
 
         ValidateArrayInit(arraySize, init, nameTok);
@@ -1066,7 +1188,9 @@ internal sealed class Parser
         Expr left = ParseConditional();
 
         if (Current.Kind is TokenKind.Assign or TokenKind.PlusAssign or TokenKind.MinusAssign
-            or TokenKind.StarAssign or TokenKind.SlashAssign or TokenKind.PercentAssign)
+            or TokenKind.StarAssign or TokenKind.SlashAssign or TokenKind.PercentAssign
+            or TokenKind.AmpAssign or TokenKind.PipeAssign or TokenKind.CaretAssign
+            or TokenKind.ShlAssign or TokenKind.ShrAssign)
         {
             Token opTok = Current;
             _pos++;

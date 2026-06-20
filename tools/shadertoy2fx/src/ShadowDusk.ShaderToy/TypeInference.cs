@@ -202,6 +202,9 @@ internal sealed class TypeInference
         IndexExpr idx => InferIndex(idx),
         CallExpr call => InferCall(call),
         ArrayConstructorExpr ac => ResolveTypeName(ac.ElementTypeName),
+        // A brace initializer's "type" is the type of its first element (best-effort); it only appears
+        // as an array initializer, where the declared array type drives element inference anyway.
+        BraceInitExpr bi => bi.Elements.Count > 0 ? Infer(bi.Elements[0]) : GlslType.Unknown,
         UnaryExpr un => un.Op == "!" ? GlslType.ScalarOf(ScalarKind.Bool) : Infer(un.Operand),
         BinaryExpr bin => InferBinary(bin),
         ConditionalExpr c => Merge(Infer(c.WhenTrue), Infer(c.WhenFalse)),

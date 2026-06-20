@@ -117,6 +117,7 @@ internal sealed class Preprocessor
 
         string body = string.Join('\n', physicalOut);
         body = StripPrecisionQualifiers(body);
+        body = StripOpenFrameworksHeaderToken(body);
         body = ApplyDeprecatedAliases(body);
         return body;
     }
@@ -896,6 +897,15 @@ internal sealed class Preprocessor
 
         return trimmed;
     }
+
+    /// <summary>
+    /// Strip the bare openFrameworks header token <c>OF_GLSL_SHADER_HEADER</c>. openFrameworks
+    /// substitutes its own version/precision header for this token before compiling; in our pipeline
+    /// it is a no-op marker (the harness emits its own header), so removing the whole-word token leaves
+    /// valid GLSL where it would otherwise dangle as an undeclared identifier / parse error.
+    /// </summary>
+    private static string StripOpenFrameworksHeaderToken(string body) =>
+        ReplaceWholeWord(body, "OF_GLSL_SHADER_HEADER", string.Empty);
 
     /// <summary>Remove standalone <c>highp</c>/<c>mediump</c>/<c>lowp</c> tokens from the body.</summary>
     private static string StripPrecisionQualifiers(string body)

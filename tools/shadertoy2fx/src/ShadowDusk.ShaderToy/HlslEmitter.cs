@@ -33,6 +33,11 @@ internal sealed class HlslEmitter
     /// <summary>True once any expression used the sign-correct <c>mod</c> path (so the helper is emitted).</summary>
     public bool UsedGlslMod { get; private set; }
 
+    /// <summary>True once the body referenced the built-in <c>gl_FragCoord</c> (G3c). In ShaderToy mode
+    /// the harness then publishes <c>gl_FragCoord</c> as a <c>static float4</c> set before calling
+    /// <c>mainImage</c>; in plain-GLSL mode the static is always emitted.</summary>
+    public bool UsedGlFragCoord { get; private set; }
+
     public HlslEmitter(TypeInference types) => _types = types;
 
     private void Line(string text)
@@ -67,8 +72,17 @@ internal sealed class HlslEmitter
                 ParamQualifier.InOut => "inout ",
                 _ => string.Empty,
             };
-            ps.Add($"{qual}{HlslType(p.TypeName)} {p.Name}");
-            _types.Declare(p.Name, p.TypeName);
+            if (p.ArraySize is { } n)
+            {
+                // G7c: an array parameter. HLSL spells the size on the declarator name: `T name[N]`.
+                ps.Add($"{qual}{HlslType(p.TypeName)} {p.Name}[{n}]");
+                _types.DeclareArray(p.Name, p.TypeName);
+            }
+            else
+            {
+                ps.Add($"{qual}{HlslType(p.TypeName)} {p.Name}");
+                _types.Declare(p.Name, p.TypeName);
+            }
         }
 
         Line($"{ret} {fn.Name}({string.Join(", ", ps)})");
@@ -357,6 +371,7 @@ internal sealed class HlslEmitter
         IndexExpr idx => EmitIndex(idx),
         CallExpr call => EmitCall(call),
         ArrayConstructorExpr ac => EmitArrayConstructor(ac),
+        BraceInitExpr bi => $"{{ {string.Join(", ", bi.Elements.Select(EmitExpr))} }}",
         UnaryExpr un => EmitUnary(un),
         BinaryExpr bin => EmitBinary(bin),
         ConditionalExpr c => $"({EmitCondition(c.Condition)} ? {EmitExpr(c.WhenTrue)} : {EmitExpr(c.WhenFalse)})",
@@ -474,6 +489,15 @@ internal sealed class HlslEmitter
         {
             // A custom uniform: emitted verbatim (the harness declares it as an effect parameter).
             return id.Name;
+        }
+
+        // G3c: gl_FragCoord is a built-in usable anywhere in the body (mainImage or main). It aliases
+        // the harness pixel coordinate as a float4 (.xy = fragCoord with the bottom-left Y convention,
+        // .z = 0, .w = 1). Mark it used so the harness publishes the matching `static float4` global.
+        if (id.Name == "gl_FragCoord")
+        {
+            UsedGlFragCoord = true;
+            return "gl_FragCoord";
         }
 
         if (!_types.IsKnownIdentifier(id.Name) && !_userFunctions.Contains(id.Name))

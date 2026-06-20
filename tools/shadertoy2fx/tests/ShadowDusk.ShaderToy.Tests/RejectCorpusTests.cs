@@ -53,6 +53,7 @@ public sealed class RejectCorpusTests
         {
             "nested_struct" => "struct",
             "unsized_array" => "Unsized",
+            "array_nonconst_size" => "constant",
             "unmappable_intrinsic" => "roundEven",
             "second_entry_cubemap" => "Cubemap",
             "switch_statement" => "switch",

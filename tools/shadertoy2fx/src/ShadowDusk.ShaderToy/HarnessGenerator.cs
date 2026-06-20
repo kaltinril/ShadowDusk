@@ -24,7 +24,8 @@ internal sealed class HarnessGenerator
         string translatedGlobals,
         string translatedFunctions,
         EntryMode entryMode = EntryMode.ShaderToy,
-        string fragmentOutputName = "gl_FragColor")
+        string fragmentOutputName = "gl_FragColor",
+        bool usedGlFragCoord = false)
     {
         var sb = new StringBuilder();
 
@@ -90,6 +91,15 @@ internal sealed class HarnessGenerator
             sb.AppendLine($"static float4 {fragmentOutputName};");
             sb.AppendLine();
         }
+        else if (usedGlFragCoord)
+        {
+            // G3c: a ShaderToy `mainImage` body that references gl_FragCoord directly. Publish it as a
+            // static float4 the PS sets (from the same pixel coordinate it computes for fragCoord)
+            // before calling mainImage, so the body's reads resolve.
+            sb.AppendLine("// gl_FragCoord referenced by the body; bridged as a static global the PS sets.");
+            sb.AppendLine("static float4 gl_FragCoord;");
+            sb.AppendLine();
+        }
 
         // Translated user structs (+ their factory functions), then const globals, then functions.
         if (translatedStructs.Length > 0)
@@ -114,7 +124,7 @@ internal sealed class HarnessGenerator
         }
         else
         {
-            EmitPixelShader(sb, referencedUniforms);
+            EmitPixelShader(sb, usedGlFragCoord);
         }
 
         EmitTechnique(sb, options.TechniqueName);
@@ -239,7 +249,7 @@ internal sealed class HarnessGenerator
         sb.AppendLine();
     }
 
-    private static void EmitPixelShader(StringBuilder sb, IReadOnlyCollection<string> referenced)
+    private static void EmitPixelShader(StringBuilder sb, bool usedGlFragCoord)
     {
         sb.AppendLine("float4 PSMain(VSOutput input) : COLOR0");
         sb.AppendLine("{");
@@ -247,6 +257,13 @@ internal sealed class HarnessGenerator
         sb.AppendLine("    // (uv.y=0 at the top). Flip Y back so fragCoord.y grows upward, matching the");
         sb.AppendLine("    // ShaderToy reference orientation: fragCoord = (uv.x, 1 - uv.y) * iResolution.xy.");
         sb.AppendLine("    float2 fragCoord = float2(input.UV.x, 1.0 - input.UV.y) * iResolution.xy;");
+        if (usedGlFragCoord)
+        {
+            // G3c: publish gl_FragCoord from the same pixel coordinate (.xy = fragCoord, .z = 0, .w = 1)
+            // before calling mainImage, so a body that reads gl_FragCoord directly resolves.
+            sb.AppendLine("    gl_FragCoord = float4(fragCoord, 0.0, 1.0);");
+        }
+
         sb.AppendLine("    float4 fragColor = float4(0.0, 0.0, 0.0, 1.0);");
         sb.AppendLine("    mainImage(fragColor, fragCoord);");
         sb.AppendLine("    return fragColor;");

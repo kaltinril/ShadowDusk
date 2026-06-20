@@ -50,6 +50,11 @@ internal enum TokenKind
     Caret,
     Shl,
     Shr,
+    AmpAssign,
+    PipeAssign,
+    CaretAssign,
+    ShlAssign,
+    ShrAssign,
 
     EndOfFile,
 }

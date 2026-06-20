@@ -54,5 +54,14 @@ exercises **one** feature or translation trap so a failure points at a single ca
 | `main_out_var.glsl` | **G2**: plain-GLSL `void main()` with a user-declared `out vec4 outColor;` (GLSL ES 3.00 / 330) consumed (not a parameter/global) and returned as COLOR0; plus a helper. |
 | `main_custom_resolution.glsl` | **G2**: plain-GLSL `void main()` reading a declared custom `uniform vec2 resolution;` (exposed as a host-driven effect parameter, not folded onto vec3 iResolution) + `gl_FragCoord`. |
 | `mainimage_with_main_wrapper.glsl` | **G2 both-entries**: a ShaderToy `mainImage` PLUS a standalone `void main(){ mainImage(gl_FragColor, gl_FragCoord.xy); }` wrapper. The converter PREFERS ShaderToy mode, DROPS the `void main()` wrapper with a Warning, and emits the same `.fx` as the wrapper-less shader (our harness replaces `main`). The common third-party desktop-runner shape. |
+| `array_global_const.glsl` | **G7a**: a global `const` array with the size suffix AFTER the base type (`const float[N] name`) and a GLSL brace initializer list (`= { ... }`) -> `static const T name[N] = { ... };`. |
+| `array_local.glsl` | **G7b**: a local array with the size suffix AFTER the base type (`vec2[4] c = {...};`) using a brace initializer list. |
+| `array_param.glsl` | **G7c**: an array function **parameter** with the size after the type (`void f(inout float[N] k)`); HLSL spells the size on the declarator name (`inout float k[N]`). |
+| `array_constructor.glsl` | **G7**: the GLSL array-constructor expression in both the unsized `T[](...)` and sized `T[N](...)` forms, used as a declaration initializer (-> HLSL brace list). |
+| `bitwise_ops.glsl` | **Bitwise**: `& \| ^ << >>` and the compound forms `&= \|= ^= <<= >>=` pass straight through to HLSL (valid on int), distinct from logical `&&`/`\|\|`. |
+| `glfragcoord_in_body.glsl` | **G3c**: `gl_FragCoord` referenced directly in a `mainImage` body (a `float4`: `.xy` = pixel coord, `.z` = 0, `.w` = 1); the harness publishes a `static float4 gl_FragCoord;` and sets it before calling `mainImage`. |
+| `uint_type.glsl` | **uint mapping**: `uint` -> `int` and `uvec2/3/4` -> `int2/3/4` (treated as signed int; common hash idiom). |
+| `redeclare_ichannel.glsl` | **Channel redeclare**: a redundant `uniform sampler2D iChannel0;` re-declaration is accepted-and-ignored (the built-in channel is already injected). |
+| `uniform_multi_declarator.glsl` | **Multi-declarator uniform**: a comma list `uniform float uA, uB, uC;` (each becomes its own custom uniform) plus a redundant built-in WITH an initializer (`uniform vec3 iResolution = vec3(...);`) dropped. |
 
-Total: 47 authored shaders.
+Total: 56 authored shaders.

@@ -7,6 +7,14 @@ internal sealed class ParamDecl
     public required string Name { get; init; }
     /// <summary>One of <c>in</c> (default), <c>out</c>, <c>inout</c>.</summary>
     public required ParamQualifier Qualifier { get; init; }
+
+    /// <summary>
+    /// The fixed array length when this is an array parameter (<c>void f(inout float[9] k)</c> or
+    /// <c>void f(float k[9])</c>), or null for a scalar/vector/matrix/struct parameter. (G7c.) HLSL
+    /// requires the size on the declarator name, so the emitter spells it as <c>T name[N]</c>.
+    /// </summary>
+    public int? ArraySize { get; init; }
+
     public int Line { get; init; }
     public int Column { get; init; }
 }

@@ -4,6 +4,25 @@ A statistical coverage report for the `shadertoy2fx` GLSL → HLSL `.fx` convert
 running a batch of **real, third-party single-pass ShaderToy / GLSL image shaders** through the
 converter and then through the ShadowDusk OpenGL compiler.
 
+> **Update 2026-06-19 (g) — LOW-RISK / HIGH-YIELD batch landed (sized arrays x3 contexts, bitwise,
+> `gl_FragCoord`, `uint`, redundant-uniform handling, OF header).** Seven correctness-first converter
+> families from the 160-shader failure analysis: (1) sized `[N]` arrays accepted in **all three**
+> contexts (global const, local var, function parameter) with the size after the base type, plus the
+> GLSL array constructor `T[](...)`/`T[N](...)` and brace-initializer `{ ... }` forms; (2) bitwise
+> operators `& | ^ << >>` and the compound-assign forms `&= |= ^= <<= >>=` (correct C precedence,
+> distinct from `&&`/`||`); (3) `gl_FragCoord` as a body built-in (a `float4`, `.xy`=fragCoord/`.z`=0/
+> `.w`=1) usable anywhere in `mainImage`/`main`; (4) `uint`→`int`, `uvec2/3/4`→`int2/3/4`; (5) redundant
+> `uniform sampler2D iChannelN;` redeclaration accepted-and-ignored; (6) redundant built-in WITH an
+> initializer dropped + multi-declarator uniforms `uniform float a, b, c;`; (7) the bare openFrameworks
+> `OF_GLSL_SHADER_HEADER` token stripped. Anything still unhandled stays a **loud, located reject**
+> (non-constant array size, ISF/openfl builtins, switch, includes, multipass mainImage, texelFetch).
+> **Scratch re-measure: conversion 51.2 % (82/160), up from 44.4 % (71/160) — a +11-shader gain.** Unit
+> suite **298 green (0 warn)**; golden compile-sweep **OpenGL 61/61, DirectX_11 61/61, FNA 59/61** (the 2
+> FNA misses are `bitwise_ops`/`uint_type` — D3D9 fx_2_0/SM3 has no integer-bitwise instruction set, an
+> inherent ceiling, not a converter bug; both compile on GL/DX); render-proof **4/4 + multipass
+> (exit 0)**. 9 new authored fixtures + 1 new reject fixture (`array_nonconst_size`) + a
+> `Phase46BatchTests` unit class.
+>
 > **Update 2026-06-19 (f) — both-entries (`mainImage` + standalone `void main()`) now CONVERTS.** The
 > single biggest real-world coverage bug is fixed: a shader that defines BOTH a ShaderToy
 > `void mainImage(out vec4, in vec2)` AND a standalone `void main(){ mainImage(gl_FragColor,

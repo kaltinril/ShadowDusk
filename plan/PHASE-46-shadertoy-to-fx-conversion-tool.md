@@ -83,6 +83,7 @@ scope (5 non-`mainImage`/multipass, 1 VR). The other ~114 failures bucket as bel
 | G5 | **`#version` / `#extension` / `#pragma` / glslViewer `#iChannel`** directives | 6 | Strip/ignore the harmless ones; keep `#include` a loud reject (no resolver) | **DONE (2026-06-19)** |
 | G6 | **structs** | 5 | Parse + emit HLSL `struct`; member type inference | **DONE (2026-06-19)** |
 | G7 | **unknown types / arrays / unknown intrinsics / parse tail** | ~25 | Case-by-case: const + local arrays, more intrinsics, parser hardening | **DONE (2026-06-19)** |
+| G8 | **LOW-RISK / HIGH-YIELD batch**: sized arrays x3 contexts + brace/constructor init, bitwise ops (+ compound assign), `gl_FragCoord` body built-in, `uint`/`uvec`→`int`, redundant `sampler2D iChannelN`, redundant built-in w/ initializer + multi-declarator uniforms, OF header token | ~11 | Accept each faithfully; non-const array size / ISF builtins / switch / includes stay loud rejects | **DONE (2026-06-19)** |
 | — | **Multipass (Buffer A–D), VR, sound** | ~6 | OUT OF v1 SCOPE — multipass is a separate runtime-orchestration project | not planned (v1) |
 
 The headline coverage number will be re-measured after each gap closes. Multipass remains the one
@@ -228,6 +229,48 @@ point" reject (G2) and accounted for ~a third of all real-corpus failures.
   ambiguous-reject case with: both-entries → ShaderToy chosen + `main` dropped + Warning;
   `mainImage` output identical with/without the wrapper; substantive-`main` still dropped. `RejectCorpusTests`
   drops the `both_entry_points` keyword row.
+
+### G8 as-built (2026-06-19 (g)) — LOW-RISK / HIGH-YIELD batch
+
+Seven correctness-first families from the 160-shader failure analysis, each a real corpus bucket.
+Correctness beats coverage: anything not faithfully handleable stays a LOUD, located reject.
+
+- **Sized arrays in all 3 contexts + brace/constructor init.** A `[N]` size suffix is now accepted
+  AFTER the base type (the GLSL-canonical position) in global const, local var, AND function **parameter**
+  declarations, in addition to the existing name-side `[N]`. A GLSL brace initializer list `{ ... }`
+  (GLSL ES 3.00+ aggregate init, new `BraceInitExpr`) joins the `T[](...)`/`T[N](...)` array constructor
+  as an accepted array initializer; both emit an HLSL brace list. An array **parameter** spells its size
+  on the HLSL declarator name (`inout float k[N]`). A size on BOTH the type and name, a non-constant /
+  macro size, an unsized array, and an array RETURN type stay rejects. *(Parser type-side `[N]` in
+  `ParseTopLevel`/`ParseLocalVarDecl`/`ParseParam`, `ParseInitializer`, `BraceInitExpr`, `ParamDecl.ArraySize`,
+  `HlslEmitter.EmitFunction` array param.)*
+- **Bitwise operators.** Lexer tokens + parser grammar for `& | ^ << >>` (correct C precedence: shifts
+  below relational, then `&`, `^`, `|`) and the compound-assign forms `&= |= ^= <<= >>=`. Map straight
+  through to HLSL (valid on int); `&&`/`||` stay distinct. *(Lexer 3-char `<<=`/`>>=` + 2-char `&=`/`|=`/`^=`,
+  `Token` kinds, `ParseAssignment`; emitter pass-through.)*
+- **`gl_FragCoord` body built-in.** Now resolves anywhere in a `mainImage`/`main` body as a `float4`
+  (`.xy` = fragCoord with the bottom-left-Y convention, `.z` = 0, `.w` = 1). In ShaderToy mode the harness
+  publishes a `static float4 gl_FragCoord;` and sets it from the same pixel coord before calling
+  `mainImage`, only when referenced. *(`TypeInference.DeclareBuiltinGlobal` in both modes, `HlslEmitter`
+  `UsedGlFragCoord`, `HarnessGenerator` static + PS set.)*
+- **`uint`/`uvec` → signed int.** `uint`→`int`, `uvec2/3/4`→`int2/3/4` (moved out of `RejectedTypes` into
+  the type tables). Behaviorally equivalent under the bitwise ops we pass through; a `uint`-heavy bit-hash
+  legitimately hits the FNA/fx_2_0 no-integer-bitwise ceiling (GL/DX compile fine).
+- **Redundant `uniform sampler2D iChannelN;`** → accepted-and-ignored (the built-in channel is injected).
+  A `sampler2D` of a non-`iChannel` name stays a custom sampler param.
+- **Redundant built-in WITH initializer** (`uniform vec3 iResolution = vec3(1920,1080,1);`) → dropped
+  (initializer irrelevant). **Multi-declarator uniforms** `uniform float a, b, c;` → comma list supported,
+  each declarator classified independently (built-in dropped / alias folded / custom emitted).
+  *(Parser `HandleQualifiedTopLevelDecl` refactor into `HandleQualifiedDeclarator` + `ConsumeDeclaratorTail`.)*
+- **`OF_GLSL_SHADER_HEADER`** bare openFrameworks header token stripped (whole-word) in the preprocessor;
+  `#pragma`/`#pragma header` were already stripped.
+
+**Validation.** Unit suite **298 green (0 warn)**. Golden compile-sweep **OpenGL 61/61, DirectX_11 61/61,
+FNA 59/61** (the 2 FNA misses, `bitwise_ops`/`uint_type`, are the D3D9 fx_2_0/SM3 no-integer-bitwise
+ceiling — inherent, not a converter bug). Render-proof **4/4 + multipass (exit 0)**. **Scratch re-measure:
+conversion 51.2 % (82/160), up from 44.4 % (71/160) — a +11-shader gain.** Fixtures: 9 new
+`corpus/authored/*.glsl` (+ goldens), 1 new `corpus/reject/array_nonconst_size.glsl`, new
+`Phase46BatchTests` unit class.
 
 ### Multipass batch-export mode as-built (2026-06-19) — batch-convert + documented wiring, NOT an orchestrator
 

@@ -140,9 +140,17 @@ names at the token level before parsing, so they resolve cleanly: `iGlobalTime` 
 `iGlobalFrame` → `iFrame`.
 
 **Redundant built-in re-declaration (dropped).** A top-level declaration that merely re-declares a
-known ShaderToy built-in uniform (e.g. `uniform float iTime;`, `uniform vec2 iResolution;`) is
-silently dropped, not rejected: the harness already injects that global, so the declaration is
-harmless.
+known ShaderToy built-in uniform (e.g. `uniform float iTime;`, `uniform vec2 iResolution;`, or a
+redundant `uniform sampler2D iChannel0;`) is silently dropped, not rejected: the harness already
+injects that global, so the declaration is harmless. This holds **even with an initializer**
+(`uniform vec3 iResolution = vec3(1920, 1080, 1);`) — the built-in is host-injected, so the source's
+initializer value is irrelevant and dropped. A `uniform sampler2D` of a **non-`iChannel`** name stays a
+custom sampler param (see *Custom uniforms*).
+
+**Multi-declarator uniforms (comma list).** A `uniform <type> a, b, c;` comma list is supported: each
+declarator is classified independently against the shared qualifier + type — a built-in name is dropped,
+a glslViewer alias is folded, and a custom name becomes its own effect parameter (optionally with its
+own default value, `uniform float a, b = 1.0;`).
 
 ## Top-level mutable globals (G1)
 
@@ -183,22 +191,40 @@ falls to the unknown-type reject.
 
 ## Arrays (G7)
 
-A **fixed-size array** is accepted at global (`const`/mutable) and local scope:
+A **fixed-size array** is accepted in **three contexts** — global (`const`/mutable), local, and a
+function **parameter** — with the size suffix `[N]` allowed **after the base type** (the GLSL-canonical
+position) OR after the declarator name (at most one position carries it):
 
 | GLSL | HLSL emitted |
 |---|---|
 | `const float k[3] = float[](a, b, c);` | `static const float k[3] = { a, b, c };` |
+| `const float[3] k = { a, b, c };` (type-side size + brace init) | `static const float k[3] = { a, b, c };` |
 | `const vec2 p[2] = vec2[2](vec2(0.), vec2(1.));` | `static const float2 p[2] = { ((float2)(0.0)), ((float2)(1.0)) };` |
+| `vec2[4] c = { ... };` (local, type-side size) | `float2 c[4] = { ... };` |
 | `float arr[4];` (local) | `float arr[4];` |
+| `void f(inout float[9] k)` (array PARAMETER) | `void f(inout float k[9])` (size on the name) |
 | `arr[i]` (indexing) | `arr[i]` (unchanged; element type inferred for traps) |
 
-A GLSL array constructor `type[](...)` / `type[N](...)` becomes an HLSL brace initializer list
-`{ ... }` (valid at a declaration-initializer site, the only place an array constructor legally appears
-in the subset). The element type is inferred so an indexed element still type-checks for the traps.
+A GLSL array constructor `type[](...)` / `type[N](...)` **or** a brace initializer list `{ ... }`
+(GLSL ES 3.00+ aggregate initializer) becomes an HLSL brace list `{ ... }` (valid at a
+declaration-initializer site, the only place an array initializer legally appears in the subset). The
+element type is inferred so an indexed element still type-checks for the traps. An array **parameter**
+spells its size on the HLSL declarator name (`T name[N]`), as HLSL requires.
 
 **Rejected (loud, located):** an **unsized / runtime-sized** array (`float a[];`), an array whose
-declared size does not match its constructor's element count, an array constructor with a
-non-constant-integer size, an array struct member, and an array function parameter / return type.
+declared size does not match its constructor / brace-list element count, an array sized by a
+**non-constant / macro** expression (`float a[n];`), a size on **both** the type and the name, an array
+struct member, and an array function **return type**.
+
+## `gl_FragCoord` built-in (G3c)
+
+`gl_FragCoord` is a predefined built-in usable **anywhere** in a `mainImage`/`main` body. It aliases
+the harness pixel coordinate as a `float4`: `.xy` = fragCoord with the existing bottom-left Y
+convention, `.z` = 0, `.w` = 1. A reference resolves cleanly (no "undeclared identifier"). In ShaderToy
+mode the harness publishes it as a `static float4 gl_FragCoord;` and **sets it from the same pixel
+coordinate it computes for `fragCoord`** before calling `mainImage` (only when the body references it);
+in plain-GLSL `void main()` mode the synthesized PS always bridges it. This handles the common
+third-party shape where a `mainImage` body reads `gl_FragCoord` directly.
 
 ## Custom uniforms (consumer-driven effect parameters)
 
@@ -265,6 +291,14 @@ ShaderToy reference orientation. (Documented inline in `HarnessGenerator.EmitPix
 | `int` | `int` | | `mat2` | `float2x2` |
 | `float` | `float` | | `mat3` | `float3x3` |
 | `vec2/3/4` | `float2/3/4` | | `mat4` | `float4x4` |
+| `uint` | `int` | | `uvec2/3/4` | `int2/3/4` |
+
+**Unsigned types are mapped to signed `int`.** The supported subset has no unsigned type, so `uint` →
+`int` and `uvec2/3/4` → `int2/3/4`. ShaderToy image shaders use `uint`/`uvec` almost exclusively for
+hashes / bit tricks, where the signed reinterpretation is behaviorally equivalent under the bitwise
+operators we pass through. (A FNA / fx_2_0 target has no integer-bitwise instruction set at all, so a
+`uint`-heavy bit-hash shader compiles on GL/DX but legitimately hits the SM3 ceiling on FNA — an
+inherent fx_2_0 limit, not a converter bug.)
 
 **Vector splat (GLSL-only, expanded):** GLSL `vecN(scalar)` splats the scalar to all N components.
 HLSL has no single-scalar vector constructor, so `vecN(s)` → `((floatN)(s))`. A single **vector**
@@ -273,9 +307,11 @@ argument `vecN(vM)` likewise emits a truncating cast `((floatN)(vM))` (matches G
 ## Operator mapping
 
 Operators pass through unchanged **except** `*` when an operand is a matrix (trap 2, below):
-`+ - * / %`, `== != < > <= >=`, `&& ||`, `& | ^ << >>`, ternary `?:`, assignment `= += -= *= /= %=`,
-unary `- ! + ++ --` (prefix and postfix). Float literals without a decimal point are normalized to
-`x.0` so HLSL types them as float.
+`+ - * / %`, `== != < > <= >=`, `&& ||`, `& | ^ << >>`, ternary `?:`, assignment
+`= += -= *= /= %= &= |= ^= <<= >>=`, unary `- ! + ++ --` (prefix and postfix). Float literals without a
+decimal point are normalized to `x.0` so HLSL types them as float. The bitwise operators (`& | ^ << >>`
+with correct C precedence: shifts below relational, then `&`, `^`, `|`) and their compound-assign forms
+map straight through to HLSL (valid on `int`); `&&`/`||` stay distinct from `&`/`|`.
 
 Four correctness rules layer on top of that pass-through:
 
@@ -347,7 +383,10 @@ bit-packing/bitfield intrinsics (see the reject-list).
 
 ## Precision qualifiers (trap 5)
 
-`highp` / `mediump` / `lowp` tokens and bare `precision …;` statements are stripped. A stray storage
+`highp` / `mediump` / `lowp` tokens and bare `precision …;` statements are stripped. The bare
+openFrameworks header token `OF_GLSL_SHADER_HEADER` (a marker openFrameworks replaces with its own
+version/precision header before compiling) is also stripped as a whole-word token, so it does not
+dangle as an undeclared identifier. A stray storage
 or precision modifier that appears **after** the type in a copied/generated declaration
 (e.g. `float const k`, `vec2 mediump uv`) is also dropped, so the emitted HLSL is a clean
 `type name` — never `type modifier name`, which the stricter HLSL compilers (fxc / FNA) reject as
@@ -411,17 +450,19 @@ Each of the following produces a fatal diagnostic, never silently-wrong HLSL:
   output; `mainSound`, `mainVR`, `mainCubemap` (Buffer A–D multipass is implied out of scope — only a
   single image pass is emitted). (**Both** a `mainImage` and a `main` is NO LONGER a reject: it prefers
   ShaderToy mode and drops the `main()` wrapper with a Warning — see *Entry point* above.)
-- **Types:** `double`, `dvecN`, `uint`, `uvecN`, explicit `matAxB` spellings (use `mat2/3/4`),
-  non-square matrices, `sampler3D` / `samplerCube`, and any unknown type name.
+- **Types:** `double`, `dvecN`, explicit `matAxB` spellings (use `mat2/3/4`), non-square matrices,
+  `sampler3D` / `samplerCube`, and any unknown type name. (`uint` / `uvecN` are now **mapped to signed
+  `int` / `intN`** — see the type-mapping table — not rejected.)
 - **Declarations:** a **nested / inline** struct member, a struct *array* member, a combined
   `struct Name { ... } var;` declarator, an empty struct, or a struct used before declaration (a flat
   top-level `struct` of supported member types is now **accepted**, G6); an **unsized / runtime-sized**
-  array (`float a[];`) or an array whose declared size mismatches its constructor (a fixed-size array
-  `float k[N];` / `float[](...)` constructor is now **accepted**, G7); an array function **parameter**
-  or **return type**;
+  array (`float a[];`), an array sized by a **non-constant / macro** expression (`float a[n];`), or an
+  array whose declared size mismatches its constructor / brace list (a fixed-size array `float k[N];` /
+  `float[](...)` constructor / `{ ... }` brace init is now **accepted**, G7, in global / local /
+  **parameter** position); an array function **return type**;
   a top-level non-`const` global of an **unsupported type** (`double g;` etc. — supported-type mutable
   globals are now **accepted** as `static`, see G1); a custom `uniform` of an **unsupported type**
-  (struct/array/`sampler3D`/`samplerCube`/`uint`/`double`/non-square matrix/unknown) or a **sampler with
+  (struct/array/`sampler3D`/`samplerCube`/`double`/non-square matrix/unknown) or a **sampler with
   an initializer**; a top-level `varying`/`attribute`/`in`/`out` declaration of a **custom** name (only
   `uniform` is host-drivable). A redundant re-declaration of a known ShaderToy built-in is dropped; a
   custom `uniform` of a SUPPORTED type (optionally with a default initializer, G4) is **accepted** as an

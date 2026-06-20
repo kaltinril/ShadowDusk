@@ -73,6 +73,18 @@ internal sealed class ArrayConstructorExpr : Expr
     public required IReadOnlyList<Expr> Elements { get; init; }
 }
 
+/// <summary>
+/// A GLSL brace initializer list <c>{ a, b, c }</c> (GLSL ES 3.00+ aggregate initializer), used as an
+/// array declaration's initializer (<c>vec2[4] c = { ... };</c>). Distinct from
+/// <see cref="ArrayConstructorExpr"/> (the <c>T[](...)</c> call form): a brace list carries no element
+/// type token (the declared array type supplies it). The emitter renders it as an HLSL brace list
+/// <c>{ a, b, c }</c>, valid at the same declaration-initializer site.
+/// </summary>
+internal sealed class BraceInitExpr : Expr
+{
+    public required IReadOnlyList<Expr> Elements { get; init; }
+}
+
 /// <summary>A unary prefix expression: <c>-x</c>, <c>!b</c>, <c>+x</c>, <c>++i</c>, <c>--i</c>.</summary>
 internal sealed class UnaryExpr : Expr
 {

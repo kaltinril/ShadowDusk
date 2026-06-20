@@ -211,8 +211,16 @@ internal sealed class Lexer
     {
         char c = Current;
         char n = Peek();
+        char n2 = Peek(2);
 
-        // Two-character operators first.
+        // Three-character operators first (the compound shift assignments).
+        switch (c)
+        {
+            case '<' when n == '<' && n2 == '=': return Three(TokenKind.ShlAssign, "<<=", line, col);
+            case '>' when n == '>' && n2 == '=': return Three(TokenKind.ShrAssign, ">>=", line, col);
+        }
+
+        // Two-character operators next.
         switch (c)
         {
             case '+' when n == '+': return Two(TokenKind.Increment, "++", line, col);
@@ -230,6 +238,9 @@ internal sealed class Lexer
             case '>' when n == '>': return Two(TokenKind.Shr, ">>", line, col);
             case '&' when n == '&': return Two(TokenKind.AndAnd, "&&", line, col);
             case '|' when n == '|': return Two(TokenKind.OrOr, "||", line, col);
+            case '&' when n == '=': return Two(TokenKind.AmpAssign, "&=", line, col);
+            case '|' when n == '=': return Two(TokenKind.PipeAssign, "|=", line, col);
+            case '^' when n == '=': return Two(TokenKind.CaretAssign, "^=", line, col);
         }
 
         TokenKind kind = c switch
@@ -268,6 +279,14 @@ internal sealed class Lexer
 
     private Token Two(TokenKind kind, string text, int line, int col)
     {
+        Advance();
+        Advance();
+        return new Token(kind, text, line, col);
+    }
+
+    private Token Three(TokenKind kind, string text, int line, int col)
+    {
+        Advance();
         Advance();
         Advance();
         return new Token(kind, text, line, col);
