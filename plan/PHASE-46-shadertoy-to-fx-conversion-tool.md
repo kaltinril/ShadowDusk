@@ -2,6 +2,45 @@
 
 **Track:** Reach experiment (adoption/demo). **Not** the product pipeline.
 
+> ## ⏯️ SESSION HANDOFF — current state (2026-06-20, end of day)
+>
+> Everything below this block is the running history; THIS block is the live status to resume from.
+>
+> - **Branch:** `experiment/shadertoy-to-fx` — **pushed** to origin (16 commits). `main` untouched.
+>   Working tree clean. PR not opened yet (link: `https://github.com/kaltinril/ShadowDusk/pull/new/experiment/shadertoy-to-fx`).
+> - **Isolation verified:** the ONLY changes outside `tools/shadertoy2fx/` are `.gitignore`, this doc,
+>   and `plan/plan.md`. No `src/` or `tests/` product file changed; the tool is NOT in `ShadowDusk.slnx`.
+> - **Tests: 371/371 green, 0 warnings** (`dotnet test tools/shadertoy2fx/shadertoy2fx.slnx`).
+> - **Compile sweep (all goldens):** OpenGL 69/69, DirectX_11 69/69, **FNA 67/69** (the 2 FNA misses =
+>   `bitwise_ops`/`uint_type`, the inherent D3D9/SM3 no-integer-bitwise ceiling, compile fine on GL/DX).
+> - **Render-proof (real MonoGame GL):** 6/6 single-pass cases + the multipass chain, exit 0.
+> - **Real-world conversion: 61.2% (98/160)** over the gitignored 160-shader scratch corpus, up from a
+>   17.5% v1 baseline. Trajectory: 17.5 → 23.4 → 26.0 → 34.0 → 34.6 → 44.4 (mainImage+main wrapper fix)
+>   → 51.2 (G8) → 55.0 (G9) → **61.2 (final wave)**.
+> - **Inputs accepted:** ShaderToy `mainImage`, plain-GLSL `void main()`, `mainImage`+wrapper-`main`,
+>   Godot 4-arg `mainImage`, vec3/vec4-**returning** `mainImage`, and **multi-tab export JSON**
+>   (`--multipass`, emits N `.fx` + `manifest.json` + `WIRING.md`; NOT an orchestrator).
+> - **Proven against your 4 ShaderToy shaders** (Seascape/Ms2SD1, Rainforest/4ttSWf, XsK3RR, tsScRK):
+>   all convert + compile to OpenGL (fetched transiently, not committed).
+> - **Reference docs in-repo:** `tools/shadertoy2fx/COVERAGE.md` (dated trajectory + remaining buckets),
+>   `MAPPING.md` (subset + reject-list), `GLSL-HLSL-NOTES.md` (ShaderMan/MS/Unity study; confirmed our
+>   matrix-order / mod / Y-flip traps match Microsoft's authoritative docs).
+>
+> **Realistic ceiling reached:** ~61% is about the practical single-pass ceiling on an unfiltered
+> real-world sample. The permanent remainder is genuinely out of scope (multipass-only/feedback,
+> host-specific uniforms whose values we can't invent, `#include` with no source, cubemap/3D/mip-bias,
+> texelFetch, VR) — each a clean, well-named loud reject, never silent-wrong output.
+>
+> **Open next-steps (none mid-flight):** (1) open the draft PR; (2) broader render-fidelity diff vs
+> ShaderToy's own WebGL across a corpus (current render proof is analytic-pixel + eyeball);
+> (3) NuGet packaging of the runtime helper (intentionally deferred by owner); (4) optionally a tiny
+> further coverage pass on host-uniform passthrough (risky — would mean exposing unknown globals as
+> consumer-driven params; deliberately NOT done to avoid guessing values).
+>
+> The G1–G9 backlog table + per-gap as-built sections below are accurate history. The original
+> "Results so far" and "Why coverage is ~26%" blocks below are EARLIER snapshots — superseded by this
+> handoff; kept for the narrative.
+
 > ## Results so far (2026-06-19) — bet proven; compiles, loads, AND renders
 >
 > The tool is **built, green, and render-proven**. The central bet holds: ShaderToy/GLSL image
