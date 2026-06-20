@@ -55,6 +55,24 @@ internal sealed class CallExpr : Expr
     public required IReadOnlyList<Expr> Args { get; init; }
 }
 
+/// <summary>
+/// A GLSL array constructor, e.g. <c>float[](a, b, c)</c> or <c>float[3](a, b, c)</c> (G7). The
+/// element type is a supported scalar/vector/matrix spelling; HLSL has no array-constructor call
+/// syntax, so the emitter renders this as a brace initializer list <c>{ a, b, c }</c> (valid only at
+/// a declaration initializer site, which is the only place GLSL array constructors legally appear in
+/// the supported subset).
+/// </summary>
+internal sealed class ArrayConstructorExpr : Expr
+{
+    public required string ElementTypeName { get; init; }
+
+    /// <summary>The declared length inside <c>[...]</c>, or null for the unsized <c>type[](...)</c> form
+    /// (the length is then the element count).</summary>
+    public int? DeclaredSize { get; init; }
+
+    public required IReadOnlyList<Expr> Elements { get; init; }
+}
+
 /// <summary>A unary prefix expression: <c>-x</c>, <c>!b</c>, <c>+x</c>, <c>++i</c>, <c>--i</c>.</summary>
 internal sealed class UnaryExpr : Expr
 {
@@ -78,6 +96,17 @@ internal sealed class ConditionalExpr : Expr
     public required Expr Condition { get; init; }
     public required Expr WhenTrue { get; init; }
     public required Expr WhenFalse { get; init; }
+}
+
+/// <summary>
+/// A GLSL comma (sequence) expression <c>a, b, c</c>: each sub-expression is evaluated left to right
+/// and the value is the last. Appears in <c>for</c> headers (<c>for (...; ...; i++, j--)</c>) and the
+/// rare comma expression statement. HLSL has the same operator, so the parts are emitted joined by
+/// commas.
+/// </summary>
+internal sealed class SequenceExpr : Expr
+{
+    public required IReadOnlyList<Expr> Items { get; init; }
 }
 
 /// <summary>An assignment (or compound assignment): <c>x = e</c>, <c>x += e</c>, …</summary>

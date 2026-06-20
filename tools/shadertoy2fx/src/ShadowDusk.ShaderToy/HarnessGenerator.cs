@@ -20,6 +20,7 @@ internal sealed class HarnessGenerator
         IReadOnlyList<CustomUniformDecl> customUniforms,
         IReadOnlyDictionary<string, string> customUniformDefaults,
         bool usedGlslMod,
+        string translatedStructs,
         string translatedGlobals,
         string translatedFunctions)
     {
@@ -63,7 +64,13 @@ internal sealed class HarnessGenerator
             sb.AppendLine();
         }
 
-        // Translated const globals, then user functions + mainImage.
+        // Translated user structs (+ their factory functions), then const globals, then functions.
+        if (translatedStructs.Length > 0)
+        {
+            sb.Append(translatedStructs);
+            sb.AppendLine();
+        }
+
         if (translatedGlobals.Length > 0)
         {
             sb.Append(translatedGlobals);

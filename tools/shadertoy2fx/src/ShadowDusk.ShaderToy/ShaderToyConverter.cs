@@ -81,6 +81,8 @@ public static class ShaderToyConverter
         customUniforms.AddRange(imageUnit.CustomUniforms);
         var mutableGlobals = new List<GlobalVarDecl>(commonUnit.MutableGlobals);
         mutableGlobals.AddRange(imageUnit.MutableGlobals);
+        var structs = new List<StructDecl>(commonUnit.Structs);
+        structs.AddRange(imageUnit.Structs);
         var aliases = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (KeyValuePair<string, string> a in commonUnit.Aliases)
         {
@@ -98,6 +100,7 @@ public static class ShaderToyConverter
             Functions = functions,
             CustomUniforms = customUniforms,
             MutableGlobals = mutableGlobals,
+            Structs = structs,
             Aliases = aliases,
         };
 
@@ -110,6 +113,16 @@ public static class ShaderToyConverter
         emitter.SetUserFunctions(functions.Where(f => f.Name != "mainImage").Select(f => f.Name)
             .Concat(new[] { "mainImage" }));
         emitter.SetCustomUniforms(merged.CustomUniforms.Select(c => c.Name));
+        emitter.SetStructs(merged.Structs);
+
+        // G6: struct declarations + their factory functions are emitted first (before const globals and
+        // functions) so every later use of the struct type / its constructor resolves.
+        var structsSb = new StringBuilder();
+        foreach (StructDecl s in merged.Structs)
+        {
+            structsSb.Append(emitter.EmitStruct(s));
+            structsSb.AppendLine();
+        }
 
         var globalsSb = new StringBuilder();
         foreach (GlobalConstDecl g in merged.Globals)
@@ -155,6 +168,7 @@ public static class ShaderToyConverter
             merged.CustomUniforms,
             customUniformDefaults,
             emitter.UsedGlslMod,
+            structsSb.ToString(),
             globalsSb.ToString(),
             fnSb.ToString());
 

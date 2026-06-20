@@ -56,6 +56,51 @@ HLSL `static` globals have the matching semantics, so a helper that mutates the 
 host-driven parameter** (it is NOT added to `UsedUniforms`). A mutable global of an **unsupported
 type** (`double g;` etc.) stays a loud, located reject.
 
+## User-defined structs (G6)
+
+A top-level `struct Name { <type> member; ... };` of supported member types (scalar / vector / matrix,
+or a previously-declared struct) is ACCEPTED. HLSL struct syntax matches GLSL, so the converter emits a
+matching `struct Name { ... };` (member types re-spelled to HLSL) **plus a factory function**, because
+GLSL's struct constructor `Name(a, b)` has no HLSL equivalent:
+
+```
+struct Particle { float2 pos; float2x2 rot; float3 color; };
+Particle make_Particle(float2 pos, float2x2 rot, float3 color)
+{ Particle result; result.pos = pos; result.rot = rot; result.color = color; return result; }
+```
+
+A GLSL struct constructor `Name(a, b, ...)` is rewritten to `make_Name(a, b, ...)` (the arg count must
+equal the member count, else a loud reject). Struct-typed locals, parameters, and return types are
+supported. **Member access `s.field` is emitted verbatim** (never run through swizzle normalization, so
+a field whose name happens to be all-`stpq` is not mangled), and its type is inferred from the struct
+definition, so **a matrix-typed member still hits the matrix-multiply trap**: `s.rot * v` (a `mat2`
+member) emits `mul(v, s.rot)`, exactly as a bare `mat2 * vec2` would. (`struct_basic.glsl` proves this.)
+
+**Rejected (loud, located):** a nested / inline struct member (`struct { ... } inner;`), a struct array
+member, a combined `struct Name { ... } var;` declaration (declare the variable separately), an empty
+struct, a struct-name collision, and a struct used before it is declared (forward reference). A
+Common-tab struct referenced from the Image tab is not resolved (each tab parses independently) and
+falls to the unknown-type reject.
+
+## Arrays (G7)
+
+A **fixed-size array** is accepted at global (`const`/mutable) and local scope:
+
+| GLSL | HLSL emitted |
+|---|---|
+| `const float k[3] = float[](a, b, c);` | `static const float k[3] = { a, b, c };` |
+| `const vec2 p[2] = vec2[2](vec2(0.), vec2(1.));` | `static const float2 p[2] = { ((float2)(0.0)), ((float2)(1.0)) };` |
+| `float arr[4];` (local) | `float arr[4];` |
+| `arr[i]` (indexing) | `arr[i]` (unchanged; element type inferred for traps) |
+
+A GLSL array constructor `type[](...)` / `type[N](...)` becomes an HLSL brace initializer list
+`{ ... }` (valid at a declaration-initializer site, the only place an array constructor legally appears
+in the subset). The element type is inferred so an indexed element still type-checks for the traps.
+
+**Rejected (loud, located):** an **unsized / runtime-sized** array (`float a[];`), an array whose
+declared size does not match its constructor's element count, an array constructor with a
+non-constant-integer size, an array struct member, and an array function parameter / return type.
+
 ## Custom uniforms (consumer-driven effect parameters)
 
 A top-level `uniform <type> <name>;` of a **non**-built-in name is now ACCEPTED and emitted as its own
@@ -180,11 +225,22 @@ emitted only when `mod` was used.
 `texture`/`texture2D`→`tex2D`, `textureLod`→`tex2Dlod` (uv packed into `float4(uv,0,lod)`),
 `textureGrad`→`tex2Dgrad`.
 
-**Special-cased:** `atan(y,x)`→`atan2(y,x)`, `atan(x)`→`atan(x)`; `mod`→`glsl_mod` (see trap 3).
+**Special-cased:** `atan(y,x)`→`atan2(y,x)`, `atan(x)`→`atan(x)`; `mod`→`glsl_mod` (see trap 3);
+`matrixCompMult(a,b)`→`(a * b)` (the **componentwise** matrix product: HLSL `*` on matrices is already
+componentwise — only `mul` is the linear-algebra product — so this is emitted directly and **must not**
+go through the matrix-order trap, G7).
 
 **Same name (carried over):** `clamp, min, max, abs, floor, ceil, round, trunc, sign, sqrt, exp, log,
 exp2, log2, pow, sin, cos, tan, asin, acos, sinh, cosh, tanh, step, smoothstep, length, distance, dot,
-cross, normalize, reflect, refract, radians, degrees, saturate`.
+cross, normalize, reflect, refract, radians, degrees, saturate, fwidth` (`fwidth` is a same-named HLSL
+intrinsic available in `ps_2_x`+, which the `ps_3_0` harness targets, G7).
+
+**Rejected (loud):** `roundEven` (round-half-to-even / banker's rounding has no faithful HLSL map —
+`round` and `floor(x+0.5)` are both round-half-up, so emitting either would be subtly wrong); the
+mip-bias texture form `texture(s, uv, bias)` (its `tex2Dbias` mapping does not compile on the
+OpenGL/DirectX SM4 targets, so it is rejected at convert time rather than emitting GL/DX-incompatible
+output); plus `texelFetch`, `textureProj`, `textureSize`, fine/coarse derivatives, and
+bit-packing/bitfield intrinsics (see the reject-list).
 
 ## Swizzles
 
@@ -238,7 +294,11 @@ scope), expression statement, compound assignment, `if/else`, `for`, `while`, `d
 `break`, `continue`, `discard`. User-defined functions with `in`/`out`/`inout` params, `const`
 globals (emitted as `static const`), and **top-level non-`const` mutable globals** (emitted as
 `static`, see *Top-level mutable globals* above) are supported. Function prototypes are accepted and
-the later definition is emitted.
+the later definition is emitted. The GLSL **comma (sequence) operator** `a, b, c` is supported at
+full-expression sites (`for` headers `for (...; ...; i++, j--)`, the comma expression statement) and
+emitted as the same comma operator; it is distinct from the comma SEPARATORs in argument lists and
+declarators, which stay separators (G7 parser hardening). User **structs** (G6) and fixed-size
+**arrays** (G7) are supported as described above.
 
 ---
 
@@ -250,7 +310,12 @@ Each of the following produces a fatal diagnostic, never silently-wrong HLSL:
   `mainCubemap` (Buffer A–D multipass is implied out of scope — only a single `mainImage` is emitted).
 - **Types:** `double`, `dvecN`, `uint`, `uvecN`, explicit `matAxB` spellings (use `mat2/3/4`),
   non-square matrices, `sampler3D` / `samplerCube`, and any unknown type name.
-- **Declarations:** user `struct` (top-level or local); user-declared arrays (locals, params, globals);
+- **Declarations:** a **nested / inline** struct member, a struct *array* member, a combined
+  `struct Name { ... } var;` declarator, an empty struct, or a struct used before declaration (a flat
+  top-level `struct` of supported member types is now **accepted**, G6); an **unsized / runtime-sized**
+  array (`float a[];`) or an array whose declared size mismatches its constructor (a fixed-size array
+  `float k[N];` / `float[](...)` constructor is now **accepted**, G7); an array function **parameter**
+  or **return type**;
   a top-level non-`const` global of an **unsupported type** (`double g;` etc. — supported-type mutable
   globals are now **accepted** as `static`, see G1); a custom `uniform` of an **unsupported type**
   (struct/array/`sampler3D`/`samplerCube`/`uint`/`double`/non-square matrix/unknown) or a **sampler with
@@ -270,8 +335,9 @@ Each of the following produces a fatal diagnostic, never silently-wrong HLSL:
   metadata directives are now silently **ignored** rather than rejected — see *Preprocessor* above.)
 - **Statements/expressions:** `switch`; unknown function/intrinsic that is neither a user function nor
   in the mapping table; single-argument matrix constructor `matN(x)` (HLSL has no diagonal
-  `floatNxN(scalar)` form); `texelFetch`, `textureProj`, `textureSize`, `fwidth`, fine/coarse
-  derivatives, and bit-packing/bitfield intrinsics.
+  `floatNxN(scalar)` form); `roundEven` (no faithful HLSL map); the mip-bias `texture(s, uv, bias)`
+  form; `texelFetch`, `textureProj`, `textureSize`, fine/coarse derivatives, and bit-packing/bitfield
+  intrinsics. (`fwidth` and `matrixCompMult` are now **supported** — see the intrinsic table.)
 
 ## Notes / known limits
 

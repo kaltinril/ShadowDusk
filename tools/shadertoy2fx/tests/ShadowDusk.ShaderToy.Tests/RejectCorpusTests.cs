@@ -51,8 +51,9 @@ public sealed class RejectCorpusTests
         // Map the filename to a keyword the diagnostic message/construct must mention.
         string expectedKeyword = Path.GetFileNameWithoutExtension(fileName) switch
         {
-            "user_struct" => "struct",
-            "user_array" => "array",
+            "nested_struct" => "struct",
+            "unsized_array" => "Unsized",
+            "unmappable_intrinsic" => "roundEven",
             "second_entry_cubemap" => "Cubemap",
             "switch_statement" => "switch",
             "macro_paste" => "##",

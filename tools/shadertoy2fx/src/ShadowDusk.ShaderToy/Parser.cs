@@ -15,6 +15,11 @@ internal sealed class Parser
     /// <summary>glslViewer-alias name → ShaderToy built-in it was folded onto (e.g. u_time → iTime).</summary>
     private readonly Dictionary<string, string> _aliases = new(StringComparer.Ordinal);
 
+    /// <summary>Names of user-defined structs declared so far, so they are recognized as type names
+    /// (G6). GLSL requires a struct to be declared before use, so this is populated in source order
+    /// and a forward reference naturally falls through to the "unknown type" reject.</summary>
+    private readonly HashSet<string> _structNames = new(StringComparer.Ordinal);
+
     public Parser(IReadOnlyList<Token> tokens) => _tokens = tokens;
 
     private Token Current => _tokens[_pos];
@@ -62,10 +67,11 @@ internal sealed class Parser
         var functions = new List<FunctionDecl>();
         var customUniforms = new List<CustomUniformDecl>();
         var mutableGlobals = new List<GlobalVarDecl>();
+        var structs = new List<StructDecl>();
 
         while (!Check(TokenKind.EndOfFile))
         {
-            ParseTopLevel(globals, functions, customUniforms, mutableGlobals);
+            ParseTopLevel(globals, functions, customUniforms, mutableGlobals, structs);
         }
 
         return new TranslationUnit
@@ -74,20 +80,24 @@ internal sealed class Parser
             Functions = functions,
             CustomUniforms = customUniforms,
             MutableGlobals = mutableGlobals,
+            Structs = structs,
             Aliases = _aliases,
         };
     }
 
     private void ParseTopLevel(
         List<GlobalConstDecl> globals, List<FunctionDecl> functions, List<CustomUniformDecl> customUniforms,
-        List<GlobalVarDecl> mutableGlobals)
+        List<GlobalVarDecl> mutableGlobals, List<StructDecl> structs)
     {
         Token start = Current;
 
+        // G6: a top-level `struct Name { type member; ... };`. A struct declaration may be immediately
+        // followed by a declarator (`struct Name { ... } g;`); that combined form is out of subset
+        // (reject), but the plain declaration is accepted.
         if (Check(TokenKind.Identifier) && Current.Text == "struct")
         {
-            throw Reject(
-                "User-defined 'struct' is outside the supported subset.", start);
+            structs.Add(ParseStruct(start));
+            return;
         }
 
         if (Check(TokenKind.Identifier) && (Current.Text is "uniform" or "varying" or "attribute" or "in" or "out"))
@@ -109,10 +119,12 @@ internal sealed class Parser
         Token nameTok = Expect(TokenKind.Identifier, "an identifier");
         string name = nameTok.Text;
 
+        // G7: an array suffix `[N]` (a fixed-size array). The size must be a non-negative integer
+        // literal; an unsized `[]` global (runtime/implicitly-sized) is a loud reject.
+        int? arraySize = null;
         if (Check(TokenKind.LBracket))
         {
-            throw Reject(
-                "User-declared arrays are outside the supported subset.", Current);
+            arraySize = ParseArraySuffix();
         }
 
         if (Check(TokenKind.LParen))
@@ -122,22 +134,54 @@ internal sealed class Parser
                 throw Reject("'const' cannot qualify a function.", typeTok);
             }
 
+            if (arraySize is not null)
+            {
+                throw Reject("Array return types are outside the supported subset.", typeTok);
+            }
+
             FunctionDecl fn = ParseFunctionRest(typeName, name, start);
             functions.Add(fn);
             return;
         }
 
-        // A `const` global: a single declarator with a required initializer (supported as-is).
+        // A `const` global: a single declarator with a required initializer (supported as-is, incl. a
+        // const array `const float k[3] = float[](...)`).
         if (isConst)
         {
             Expect(TokenKind.Assign, "'=' (a const global requires an initializer)");
             Expr cinit = ParseExpression();
             Expect(TokenKind.Semicolon, "';'");
+            ValidateArrayInit(arraySize, cinit, nameTok);
             globals.Add(new GlobalConstDecl
             {
                 TypeName = typeName,
                 Name = name,
                 Initializer = cinit,
+                ArraySize = arraySize,
+                Line = start.Line,
+                Column = start.Column,
+            });
+            return;
+        }
+
+        // A non-const top-level array global (`float k[3] = float[](...)` / `float k[3];`) is handled
+        // by the mutable-global path below; pass the array size through.
+        if (arraySize is not null)
+        {
+            Expr? arrInit = null;
+            if (Match(TokenKind.Assign))
+            {
+                arrInit = ParseAssignment();
+            }
+
+            Expect(TokenKind.Semicolon, "';'");
+            ValidateArrayInit(arraySize, arrInit, nameTok);
+            mutableGlobals.Add(new GlobalVarDecl
+            {
+                TypeName = typeName,
+                Name = name,
+                Initializer = arrInit,
+                ArraySize = arraySize,
                 Line = start.Line,
                 Column = start.Column,
             });
@@ -150,6 +194,151 @@ internal sealed class Parser
         // become a GlobalVarDecl. The type was already validated by ExpectTypeName above, so an
         // unsupported-type global has already been rejected.
         ParseMutableGlobalRest(typeName, nameTok, start, mutableGlobals);
+    }
+
+    /// <summary>
+    /// Parse a top-level <c>struct Name { type member; ... };</c> (G6). The leading <c>struct</c> token
+    /// is the current token. Each member is a single supported-type field; an array member, a nested
+    /// inline struct, or a member of an unknown/unsupported type is a loud, located reject. A combined
+    /// <c>struct Name { ... } var;</c> declarator form is also rejected (declare the variable separately).
+    /// </summary>
+    private StructDecl ParseStruct(Token start)
+    {
+        _pos++; // consume 'struct'
+        Token nameTok = Expect(TokenKind.Identifier, "a struct name");
+        string name = nameTok.Text;
+
+        if (TypeTable.IsTypeName(name) || _structNames.Contains(name))
+        {
+            throw Reject($"Struct name '{name}' collides with an existing type.", nameTok);
+        }
+
+        Expect(TokenKind.LBrace, "'{'");
+        var members = new List<StructMember>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        while (!Check(TokenKind.RBrace) && !Check(TokenKind.EndOfFile))
+        {
+            Token mStart = Current;
+            if (Check(TokenKind.Identifier) && Current.Text == "struct")
+            {
+                throw Reject("Nested / inline struct members are outside the supported subset.", mStart);
+            }
+
+            // A member type must be a built-in supported type or a previously-declared struct.
+            string memberType = ExpectTypeName();
+
+            // First member declarator, then any comma-separated siblings of the same type.
+            do
+            {
+                Token memberName = Expect(TokenKind.Identifier, "a struct member name");
+                if (Check(TokenKind.LBracket))
+                {
+                    throw Reject(
+                        "Array struct members are outside the supported subset.", Current);
+                }
+
+                if (!seen.Add(memberName.Text))
+                {
+                    throw Reject($"Duplicate struct member '{memberName.Text}'.", memberName);
+                }
+
+                members.Add(new StructMember
+                {
+                    TypeName = memberType,
+                    Name = memberName.Text,
+                    Line = memberName.Line,
+                    Column = memberName.Column,
+                });
+            }
+            while (Match(TokenKind.Comma));
+
+            Expect(TokenKind.Semicolon, "';'");
+        }
+
+        Expect(TokenKind.RBrace, "'}'");
+
+        if (members.Count == 0)
+        {
+            throw Reject($"Struct '{name}' has no members.", nameTok);
+        }
+
+        // A trailing declarator (`struct Name { ... } g;`) is out of subset: only the bare declaration
+        // is supported. Anything other than the closing ';' here is rejected.
+        if (!Check(TokenKind.Semicolon))
+        {
+            throw Reject(
+                "A combined 'struct Name { ... } variable;' declaration is outside the supported subset " +
+                "(declare the struct and the variable separately).",
+                Current);
+        }
+
+        Expect(TokenKind.Semicolon, "';'");
+        _structNames.Add(name);
+        return new StructDecl { Name = name, Members = members, Line = start.Line, Column = start.Column };
+    }
+
+    /// <summary>
+    /// Parse a fixed-size array suffix <c>[N]</c> at the current position and return N. The size must be
+    /// a non-negative integer literal; an unsized <c>[]</c> (runtime / implicitly-sized array) is a loud
+    /// reject (G7). The opening <c>[</c> is the current token.
+    /// </summary>
+    private int ParseArraySuffix()
+    {
+        Token open = Expect(TokenKind.LBracket, "'['");
+        if (Check(TokenKind.RBracket))
+        {
+            throw Reject(
+                "Unsized / runtime-sized arrays ('type name[]') are outside the supported subset " +
+                "(only fixed-size arrays 'type name[N]' with a constant integer N are supported).",
+                open);
+        }
+
+        if (!Check(TokenKind.IntLiteral))
+        {
+            throw Reject(
+                "Array size must be a constant non-negative integer literal.", Current);
+        }
+
+        Token sizeTok = Current;
+        _pos++;
+        Expect(TokenKind.RBracket, "']'");
+
+        if (!int.TryParse(sizeTok.Text, out int size) || size <= 0)
+        {
+            throw Reject(
+                $"Array size '{sizeTok.Text}' must be a positive integer literal.", sizeTok);
+        }
+
+        return size;
+    }
+
+    /// <summary>
+    /// Validate the initializer of a declared array (<c>type name[N] = ...</c>, G7). When present the
+    /// initializer must be a GLSL array constructor whose element count equals the declared size N; any
+    /// other initializer shape, or a size mismatch, is a loud, located reject (so we never emit a brace
+    /// list of the wrong length, which would be a downstream HLSL error).
+    /// </summary>
+    private void ValidateArrayInit(int? arraySize, Expr? init, Token at)
+    {
+        if (arraySize is null || init is null)
+        {
+            return;
+        }
+
+        if (init is not ArrayConstructorExpr ctor)
+        {
+            throw Reject(
+                "An array initializer must be a GLSL array constructor 'type[](...)'.", at);
+        }
+
+        if (ctor.Elements.Count != arraySize.Value)
+        {
+            throw Reject(
+                $"Array '{at.Text}' is declared size {arraySize.Value} but its initializer has " +
+                $"{ctor.Elements.Count} element(s).",
+                at);
+        }
     }
 
     /// <summary>
@@ -455,11 +644,11 @@ internal sealed class Parser
             throw Reject(reason, Current);
         }
 
-        if (!TypeTable.IsTypeName(name))
+        if (!TypeTable.IsTypeName(name) && !_structNames.Contains(name))
         {
             throw Reject(
                 $"Unsupported or unknown type '{name}'. Supported: void/bool/int/float, " +
-                "vecN/ivecN/bvecN, matN.", Current);
+                "vecN/ivecN/bvecN, matN, and user-declared structs.", Current);
         }
 
         _pos++;
@@ -523,8 +712,10 @@ internal sealed class Parser
                     throw Reject("Local 'struct' is outside the supported subset.", t);
             }
 
-            // A local variable declaration starts with `const` or a type name.
-            if (t.Text == "const" || IsTypeAt(_pos))
+            // A local variable declaration starts with `const` or a type name. A type name
+            // immediately followed by `(` is a constructor expression (e.g. a struct ctor `Ray(...)`
+            // used as a statement), not a declaration, so fall through to the expression path.
+            if (t.Text == "const" || (IsTypeAt(_pos) && Peek().Kind != TokenKind.LParen))
             {
                 return ParseLocalVarDecl();
             }
@@ -548,7 +739,8 @@ internal sealed class Parser
     private bool IsTypeAt(int index)
     {
         Token tok = _tokens[index];
-        return tok.Kind == TokenKind.Identifier && TypeTable.IsTypeName(tok.Text);
+        return tok.Kind == TokenKind.Identifier &&
+               (TypeTable.IsTypeName(tok.Text) || _structNames.Contains(tok.Text));
     }
 
     private Stmt ParseLocalVarDecl()
@@ -606,9 +798,12 @@ internal sealed class Parser
     {
         SkipStrayDeclModifiers();
         Token nameTok = Expect(TokenKind.Identifier, "a variable name");
+
+        // G7: a local fixed-size array (`float arr[4];` or `const float k[3] = float[](...);`).
+        int? arraySize = null;
         if (Check(TokenKind.LBracket))
         {
-            throw Reject("Local array declarations are outside the supported subset.", Current);
+            arraySize = ParseArraySuffix();
         }
 
         Expr? init = null;
@@ -617,12 +812,15 @@ internal sealed class Parser
             init = ParseAssignment();
         }
 
+        ValidateArrayInit(arraySize, init, nameTok);
+
         return new VarDeclStmt
         {
             TypeName = typeName,
             Name = nameTok.Text,
             Initializer = init,
             IsConst = isConst,
+            ArraySize = arraySize,
             Line = start.Line,
             Column = start.Column,
         };
@@ -741,7 +939,28 @@ internal sealed class Parser
 
     // ── expressions (precedence climbing) ────────────────────────────────────
 
-    private Expr ParseExpression() => ParseAssignment();
+    /// <summary>
+    /// Parse a full expression, including the GLSL comma (sequence) operator <c>a, b, c</c> at the
+    /// lowest precedence. The comma operator only applies at full-expression sites (statement,
+    /// for-header parts, parenthesized expression, loop/branch conditions); argument lists and
+    /// declarators call <see cref="ParseAssignment"/> directly so their commas stay separators.
+    /// </summary>
+    private Expr ParseExpression()
+    {
+        Expr first = ParseAssignment();
+        if (!Check(TokenKind.Comma))
+        {
+            return first;
+        }
+
+        var items = new List<Expr> { first };
+        while (Match(TokenKind.Comma))
+        {
+            items.Add(ParseAssignment());
+        }
+
+        return new SequenceExpr { Items = items, Line = first.Line, Column = first.Column };
+    }
 
     private Expr ParseAssignment()
     {
@@ -939,6 +1158,14 @@ internal sealed class Parser
         Token t = Current;
         _pos++;
 
+        // G7: a GLSL array constructor `type[](a, b, c)` or `type[N](a, b, c)`. The head is a supported
+        // type name followed by `[`. (A non-type identifier followed by `[` is an index expression,
+        // handled by ParsePostfix, so only treat the type-name form as an array constructor here.)
+        if (Check(TokenKind.LBracket) && (TypeTable.IsTypeName(t.Text) || _structNames.Contains(t.Text)))
+        {
+            return ParseArrayConstructorRest(t);
+        }
+
         // Reject double/uint literals dressed as identifiers in a call head is handled by type tables.
         if (Check(TokenKind.LParen))
         {
@@ -958,5 +1185,68 @@ internal sealed class Parser
         }
 
         return new IdentifierExpr { Name = t.Text, Line = t.Line, Column = t.Column };
+    }
+
+    /// <summary>
+    /// Parse the tail of a GLSL array constructor after the element-type token: <c>[N?](e0, e1, ...)</c>.
+    /// The opening <c>[</c> is the current token. An unsized <c>[]</c> form is allowed here (the length
+    /// is the element count). Produces an <see cref="ArrayConstructorExpr"/> the emitter renders as an
+    /// HLSL brace initializer list.
+    /// </summary>
+    private Expr ParseArrayConstructorRest(Token typeTok)
+    {
+        Expect(TokenKind.LBracket, "'['");
+        int? declaredSize = null;
+        if (!Check(TokenKind.RBracket))
+        {
+            if (!Check(TokenKind.IntLiteral))
+            {
+                throw Reject("Array constructor size must be a constant integer literal.", Current);
+            }
+
+            Token sizeTok = Current;
+            _pos++;
+            if (!int.TryParse(sizeTok.Text, out int size) || size <= 0)
+            {
+                throw Reject($"Array constructor size '{sizeTok.Text}' must be a positive integer.", sizeTok);
+            }
+
+            declaredSize = size;
+        }
+
+        Expect(TokenKind.RBracket, "']'");
+        Expect(TokenKind.LParen, "'(' (an array constructor needs an element list)");
+
+        var elements = new List<Expr>();
+        if (!Check(TokenKind.RParen))
+        {
+            do
+            {
+                elements.Add(ParseAssignment());
+            }
+            while (Match(TokenKind.Comma));
+        }
+
+        Expect(TokenKind.RParen, "')'");
+
+        if (elements.Count == 0)
+        {
+            throw Reject("Array constructor must have at least one element.", typeTok);
+        }
+
+        if (declaredSize is { } n && n != elements.Count)
+        {
+            throw Reject(
+                $"Array constructor declares size {n} but has {elements.Count} elements.", typeTok);
+        }
+
+        return new ArrayConstructorExpr
+        {
+            ElementTypeName = typeTok.Text,
+            DeclaredSize = declaredSize,
+            Elements = elements,
+            Line = typeTok.Line,
+            Column = typeTok.Column,
+        };
     }
 }

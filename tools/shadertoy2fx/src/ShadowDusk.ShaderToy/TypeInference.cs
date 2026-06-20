@@ -17,14 +17,43 @@ internal sealed class TypeInference
     private readonly IReadOnlyDictionary<string, string> _aliases;
     private readonly List<Dictionary<string, GlslType>> _scopes = new();
 
+    /// <summary>struct name → (member name → member GlslType). Drives member-access inference so a
+    /// struct member that is a matrix still routes through the matrix-multiply trap (G6).</summary>
+    private readonly Dictionary<string, Dictionary<string, GlslType>> _structs =
+        new(StringComparer.Ordinal);
+
+    /// <summary>Array-typed identifiers in the current/global scope → element type. Indexing one yields
+    /// the element type (G7). Kept separate from <see cref="GlslType"/> (which has no array shape).</summary>
+    private readonly List<Dictionary<string, GlslType>> _arrayScopes = new();
+    private readonly Dictionary<string, GlslType> _globalArrays = new(StringComparer.Ordinal);
+
     /// <summary>The predefined ShaderToy uniform types (so references to them infer correctly).</summary>
     private static readonly IReadOnlyDictionary<string, GlslType> Uniforms = BuildUniforms();
 
     public TypeInference(TranslationUnit unit)
     {
+        // Structs first so member types and struct-typed declarations resolve.
+        foreach (StructDecl s in unit.Structs)
+        {
+            var members = new Dictionary<string, GlslType>(StringComparer.Ordinal);
+            foreach (StructMember m in s.Members)
+            {
+                members[m.Name] = ResolveTypeName(m.TypeName);
+            }
+
+            _structs[s.Name] = members;
+        }
+
         foreach (GlobalConstDecl g in unit.Globals)
         {
-            _globals[g.Name] = TypeTable.Resolve(g.TypeName);
+            if (g.ArraySize is not null)
+            {
+                _globalArrays[g.Name] = ResolveTypeName(g.TypeName);
+            }
+            else
+            {
+                _globals[g.Name] = ResolveTypeName(g.TypeName);
+            }
         }
 
         foreach (FunctionDecl f in unit.Functions)
@@ -36,28 +65,57 @@ internal sealed class TypeInference
         {
             _customUniforms[cu.Name] = cu.IsSampler
                 ? GlslType.ScalarOf(ScalarKind.Sampler)
-                : TypeTable.Resolve(cu.TypeName);
+                : ResolveTypeName(cu.TypeName);
         }
 
         // Mutable globals (G1) are file-scope identifiers like const globals; register their types so
-        // references infer correctly and are NOT rejected as undeclared.
+        // references infer correctly and are NOT rejected as undeclared. An array global (G7) registers
+        // its element type in the array table instead.
         foreach (GlobalVarDecl gv in unit.MutableGlobals)
         {
-            _globals[gv.Name] = TypeTable.Resolve(gv.TypeName);
+            if (gv.ArraySize is not null)
+            {
+                _globalArrays[gv.Name] = ResolveTypeName(gv.TypeName);
+            }
+            else
+            {
+                _globals[gv.Name] = ResolveTypeName(gv.TypeName);
+            }
         }
 
         _aliases = unit.Aliases;
     }
 
+    /// <summary>Resolve a GLSL type spelling, including a user-defined struct name (G6), to a
+    /// <see cref="GlslType"/>. A known struct name yields a struct value type; otherwise the built-in
+    /// table is used.</summary>
+    public GlslType ResolveTypeName(string name) =>
+        _structs.ContainsKey(name) ? GlslType.Struct(name) : TypeTable.Resolve(name);
+
+    /// <summary>True if <paramref name="name"/> is a declared user struct type (G6).</summary>
+    public bool IsStructType(string name) => _structs.ContainsKey(name);
+
     /// <summary>Resolve a glslViewer alias to the ShaderToy built-in it was folded onto (or itself).</summary>
     public string ResolveName(string name) => _aliases.TryGetValue(name, out string? to) ? to : name;
 
-    public void PushScope() => _scopes.Add(new Dictionary<string, GlslType>(StringComparer.Ordinal));
+    public void PushScope()
+    {
+        _scopes.Add(new Dictionary<string, GlslType>(StringComparer.Ordinal));
+        _arrayScopes.Add(new Dictionary<string, GlslType>(StringComparer.Ordinal));
+    }
 
-    public void PopScope() => _scopes.RemoveAt(_scopes.Count - 1);
+    public void PopScope()
+    {
+        _scopes.RemoveAt(_scopes.Count - 1);
+        _arrayScopes.RemoveAt(_arrayScopes.Count - 1);
+    }
 
     public void Declare(string name, string glslType) =>
-        _scopes[^1][name] = TypeTable.Resolve(glslType);
+        _scopes[^1][name] = ResolveTypeName(glslType);
+
+    /// <summary>Register a local array variable's element type (G7), so indexing it infers correctly.</summary>
+    public void DeclareArray(string name, string elementGlslType) =>
+        _arrayScopes[^1][name] = ResolveTypeName(elementGlslType);
 
     /// <summary>
     /// True if <paramref name="name"/> resolves to a known identifier in the current context: a
@@ -69,7 +127,7 @@ internal sealed class TypeInference
     {
         for (int i = _scopes.Count - 1; i >= 0; i--)
         {
-            if (_scopes[i].ContainsKey(name))
+            if (_scopes[i].ContainsKey(name) || _arrayScopes[i].ContainsKey(name))
             {
                 return true;
             }
@@ -77,8 +135,23 @@ internal sealed class TypeInference
 
         string resolved = ResolveName(name);
         return _globals.ContainsKey(name) ||
+               _globalArrays.ContainsKey(name) ||
                _customUniforms.ContainsKey(name) ||
                Uniforms.ContainsKey(resolved);
+    }
+
+    /// <summary>Look up the element type of an array-typed identifier (local or global), if any.</summary>
+    private bool TryLookupArrayElement(string name, out GlslType element)
+    {
+        for (int i = _arrayScopes.Count - 1; i >= 0; i--)
+        {
+            if (_arrayScopes[i].TryGetValue(name, out element))
+            {
+                return true;
+            }
+        }
+
+        return _globalArrays.TryGetValue(name, out element);
     }
 
     private GlslType LookupVar(string name)
@@ -119,9 +192,11 @@ internal sealed class TypeInference
         SwizzleExpr sw => InferSwizzle(sw),
         IndexExpr idx => InferIndex(idx),
         CallExpr call => InferCall(call),
+        ArrayConstructorExpr ac => ResolveTypeName(ac.ElementTypeName),
         UnaryExpr un => un.Op == "!" ? GlslType.ScalarOf(ScalarKind.Bool) : Infer(un.Operand),
         BinaryExpr bin => InferBinary(bin),
         ConditionalExpr c => Merge(Infer(c.WhenTrue), Infer(c.WhenFalse)),
+        SequenceExpr seq => seq.Items.Count > 0 ? Infer(seq.Items[^1]) : GlslType.Unknown,
         AssignExpr a => Infer(a.Target),
         _ => GlslType.Unknown,
     };
@@ -130,6 +205,15 @@ internal sealed class TypeInference
     {
         GlslType target = Infer(sw.Target);
         string m = sw.Member;
+
+        // Struct member access (G6): `s.field` infers the member's declared type. This is what lets a
+        // matrix-typed member still route through the matrix-multiply trap in the emitter.
+        if (target.IsStruct && target.StructName is { } structName &&
+            _structs.TryGetValue(structName, out Dictionary<string, GlslType>? members) &&
+            members.TryGetValue(m, out GlslType memberType))
+        {
+            return memberType;
+        }
 
         // Matrix `.length()` style is not in scope; a swizzle is component selection.
         if (m.Length is >= 1 and <= 4 && IsSwizzleChars(m))
@@ -161,6 +245,12 @@ internal sealed class TypeInference
 
     private GlslType InferIndex(IndexExpr idx)
     {
+        // Indexing an array-typed identifier (G7) yields its element type.
+        if (idx.Target is IdentifierExpr arrId && TryLookupArrayElement(arrId.Name, out GlslType elem))
+        {
+            return elem;
+        }
+
         GlslType target = Infer(idx.Target);
         if (target.IsMatrix)
         {
@@ -182,6 +272,12 @@ internal sealed class TypeInference
     {
         string name = call.Callee;
 
+        // Struct constructor (G6) → the struct value type.
+        if (_structs.ContainsKey(name))
+        {
+            return GlslType.Struct(name);
+        }
+
         // Constructor → the constructed type.
         if (TypeTable.IsTypeName(name))
         {
@@ -191,7 +287,7 @@ internal sealed class TypeInference
         // User function → its declared return type.
         if (_functions.TryGetValue(name, out FunctionDecl? fn))
         {
-            return TypeTable.Resolve(fn.ReturnType);
+            return ResolveTypeName(fn.ReturnType);
         }
 
         return InferIntrinsicReturn(name, call.Args);

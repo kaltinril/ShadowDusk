@@ -44,5 +44,11 @@ translation trap so a failure points at a single cause.
 | `uniform_default.glsl` | **G4**: a custom `uniform` with a default value (`uniform float uGain = 1.5;`, `uniform vec3 uColor = vec3(...)`) preserves the initializer as the HLSL parameter default. |
 | `pp_version_extension.glsl` | **G5**: `#version` / `#extension` / `#pragma` / glslViewer `#iChannel0 "..."` metadata directives are all silently dropped (never rejected). |
 | `alias_u_time.glsl` | **G3**: a glslViewer exact-type alias `uniform float time;` folds onto the ShaderToy built-in `iTime`. |
+| `struct_basic.glsl` | **G6**: a user `struct` (with a **matrix member**) + the GLSL constructor `Name(...)` (-> generated `make_Name(...)` factory) + member access; the struct-member matrix multiply `s.rot * s.pos` must still emit `mul(...)` (the trap survives member access). |
+| `const_array.glsl` | **G7**: a `const` global array via the GLSL array constructor `float[](...)` and the sized `vec3[2](...)` form (-> HLSL brace list `{ ... }`), plus indexing in a loop. |
+| `local_array.glsl` | **G7**: a local fixed-size array (`float samples[4];`) written/read by index, plus a local `const` array initialized by an array constructor. |
+| `intrinsic_fwidth.glsl` | **G7**: the `fwidth` intrinsic maps to the same-named HLSL intrinsic. |
+| `matrix_comp_mult.glsl` | **G7**: `matrixCompMult(a, b)` is COMPONENTWISE and must emit `(a * b)`, NOT the mul()-reordered linear product (the trap must NOT fire here). |
+| `for_comma_increment.glsl` | **G7 parser**: the GLSL comma (sequence) operator in a `for` header (`for (int i=0, j=4; ...; i++, j--)`). |
 
-Total: 37 authored shaders.
+Total: 43 authored shaders.

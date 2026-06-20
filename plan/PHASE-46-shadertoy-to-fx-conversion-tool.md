@@ -67,8 +67,8 @@ scope (5 non-`mainImage`/multipass, 1 VR). The other ~114 failures bucket as bel
 | G3 | **Undeclared identifier** (L1 reject) | 16 | Add more known built-ins/aliases (`iChannelResolution`, glslViewer `u_*`); the genuinely-undeclared stay loud rejects | **DONE (2026-06-19)** |
 | G4 | Custom **uniform with initializer** (`uniform float x = 1.;`) | 6 | Accept; use the initializer as the parameter default | **DONE (2026-06-19)** |
 | G5 | **`#version` / `#extension` / `#pragma` / glslViewer `#iChannel`** directives | 6 | Strip/ignore the harmless ones; keep `#include` a loud reject (no resolver) | **DONE (2026-06-19)** |
-| G6 | **structs** | 5 | Parse + emit HLSL `struct`; member type inference | planned |
-| G7 | **unknown types / arrays / unknown intrinsics / parse tail** | ~25 | Case-by-case: const + local arrays, more intrinsics, parser hardening | planned |
+| G6 | **structs** | 5 | Parse + emit HLSL `struct`; member type inference | **DONE (2026-06-19)** |
+| G7 | **unknown types / arrays / unknown intrinsics / parse tail** | ~25 | Case-by-case: const + local arrays, more intrinsics, parser hardening | **DONE (2026-06-19)** |
 | — | **Multipass (Buffer A–D), VR, sound** | ~6 | OUT OF v1 SCOPE — multipass is a separate runtime-orchestration project | not planned (v1) |
 
 The headline coverage number will be re-measured after each gap closes. Multipass remains the one
@@ -100,6 +100,47 @@ The four highest-value gaps closed together. Over the 160-shader gitignored scra
   channel-binding & input metadata directives (`#iChannel0 "..."`, `#iKeyboard`, `#iMouse`, … —
   recognized by the leading-`i` ShaderToy-input convention) are silently dropped. `#include` stays a
   loud reject (no file resolver); `##`/`#`/variadic macro rejects unchanged. *(`Preprocessor`.)*
+
+### G6/G7 as-built (2026-06-19)
+
+Structs (G6) and arrays / added-intrinsics / parser-tail (G7) closed together. Over the same 160-shader
+gitignored scratch corpus (153 with `void mainImage`; none committed), this lifted **conversion
+34.0 % → 34.6 %** (53 converted), **compile-of-converted 86.5 % → 88.7 %** (47/53), **end-to-end
+29.4 % → 30.7 %** (47/153). Unit suite 214 green (0 warn); golden compile-sweep **44/44 on
+OpenGL / DirectX_11 / FNA** (the struct + array goldens compile on FNA fx_2_0 too — **no SM3-limit case
+in this corpus**); render-proof 3/3 (exit 0). The lift is modest because the dominant remaining blockers
+are multipass / `texelFetch` / complex custom constructs, not structs/arrays; correctness (never
+silent-wrong) was the priority, not raw coverage.
+
+- **G6 — user structs.** A top-level `struct Name { <type> member; ... };` of supported member types
+  (scalar/vector/matrix or a previously-declared struct) is ACCEPTED. The converter emits an HLSL
+  `struct` (member types re-spelled) PLUS a generated factory `Name make_Name(...)`, and rewrites the
+  GLSL constructor `Name(a,b)` -> `make_Name(a,b)` (HLSL has no struct constructor). Struct-typed
+  locals/params/returns and member access `s.field` work; member types are registered in
+  `TypeInference` so **a matrix-typed member still hits the matrix-multiply trap** (`s.rot * v` ->
+  `mul(v, s.rot)`, proven by `struct_basic.glsl`). Member access is emitted verbatim (no swizzle
+  normalization, so a field named e.g. `sp` is not mangled). Nested/inline-struct members, struct array
+  members, a combined `struct{..}var;` form, an empty struct, a name collision, and a forward-referenced
+  struct stay loud, located rejects. *(`StructDecl`/`StructMember` AST, `Parser.ParseStruct`,
+  `TypeInference` struct table + `InferSwizzle`/`InferCall`, `HlslEmitter.EmitStruct` + factory rewrite.)*
+- **G7 — arrays.** A fixed-size array at const/mutable global and local scope is ACCEPTED:
+  `const float k[3] = float[](a,b,c);` / `vec3[2](...)` -> `static const float k[3] = { a, b, c };`,
+  and `float arr[4];` locals. The GLSL array constructor `type[](...)` / `type[N](...)` becomes an HLSL
+  brace list; the element type is inferred so an indexed element type-checks for the traps. Unsized /
+  runtime-sized arrays, a declared-size vs constructor-element-count mismatch, a non-constant array
+  size, and array params/returns stay loud rejects. *(`ArrayConstructorExpr` AST, `ArraySize` on the
+  decl nodes, `Parser.ParseArraySuffix`/`ParseArrayConstructorRest`/`ValidateArrayInit`,
+  `TypeInference` array element table, `HlslEmitter` brace-list emission.)*
+- **G7 — added intrinsics.** `fwidth` -> same-named HLSL intrinsic (valid in the `ps_3_0` harness);
+  `matrixCompMult(a,b)` -> componentwise `(a * b)` emitted DIRECTLY (NOT through the matrix-order trap).
+  `roundEven` (no faithful HLSL round-half-to-even) and the mip-bias `texture(s,uv,bias)` form (its
+  `tex2Dbias` does not compile on the GL/DX SM4 targets) are loud rejects rather than silent-wrong or
+  GL/DX-incompatible output. *(`IntrinsicTable`, `HlslEmitter.EmitCall`.)*
+- **G7 — parser hardening.** The GLSL comma (sequence) operator `a, b, c` is now parsed at
+  full-expression sites (`for` headers `i++, j--`, comma statements) as a `SequenceExpr`, distinct from
+  the comma SEPARATORs in argument lists / declarators; and a type name immediately followed by `(` at
+  statement start is treated as a constructor expression, not a malformed declaration. *(`Parser.ParseExpression`
+  comma handling, `SequenceExpr` AST + emitter/inference.)*
 
 ## Why this shape (and why it is separate)
 

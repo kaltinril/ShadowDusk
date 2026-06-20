@@ -36,6 +36,13 @@ internal sealed class GlobalConstDecl
     public required string TypeName { get; init; }
     public required string Name { get; init; }
     public required Expr Initializer { get; init; }
+
+    /// <summary>
+    /// The fixed array length when this is a <c>const</c> array (<c>const float k[3] = float[](...);</c>),
+    /// or null for a scalar/vector/matrix const. (G7.)
+    /// </summary>
+    public int? ArraySize { get; init; }
+
     public int Line { get; init; }
     public int Column { get; init; }
 }
@@ -54,6 +61,9 @@ internal sealed class GlobalVarDecl
 
     /// <summary>The optional initializer (null for a bare <c>float g;</c>).</summary>
     public Expr? Initializer { get; init; }
+
+    /// <summary>The fixed array length for a top-level array global (<c>float k[3];</c>), or null. (G7.)</summary>
+    public int? ArraySize { get; init; }
 
     public int Line { get; init; }
     public int Column { get; init; }
@@ -88,11 +98,37 @@ internal sealed class CustomUniformDecl
     public int Column { get; init; }
 }
 
+/// <summary>One member of a user-defined <c>struct</c>: its GLSL type spelling and field name.</summary>
+internal sealed class StructMember
+{
+    public required string TypeName { get; init; }
+    public required string Name { get; init; }
+    public int Line { get; init; }
+    public int Column { get; init; }
+}
+
+/// <summary>
+/// A top-level user-defined <c>struct Name { type member; ... };</c> (G6). HLSL has near-identical
+/// struct syntax, so the converter emits an HLSL <c>struct</c> with the member types re-spelled. A
+/// GLSL struct constructor call <c>Name(a, b)</c> has no direct HLSL equivalent, so the converter
+/// generates a factory function <c>Name make_Name(...)</c> and rewrites the constructor to call it.
+/// </summary>
+internal sealed class StructDecl
+{
+    public required string Name { get; init; }
+    public required IReadOnlyList<StructMember> Members { get; init; }
+    public int Line { get; init; }
+    public int Column { get; init; }
+}
+
 /// <summary>The parsed translation unit: globals + functions, in source order within each list.</summary>
 internal sealed class TranslationUnit
 {
     public required IReadOnlyList<GlobalConstDecl> Globals { get; init; }
     public required IReadOnlyList<FunctionDecl> Functions { get; init; }
+
+    /// <summary>Top-level user-defined <c>struct</c> declarations (G6), in source order.</summary>
+    public IReadOnlyList<StructDecl> Structs { get; init; } = Array.Empty<StructDecl>();
 
     /// <summary>Top-level custom <c>uniform</c> declarations the consumer drives.</summary>
     public IReadOnlyList<CustomUniformDecl> CustomUniforms { get; init; } = Array.Empty<CustomUniformDecl>();

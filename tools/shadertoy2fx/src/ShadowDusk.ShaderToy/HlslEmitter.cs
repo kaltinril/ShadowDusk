@@ -56,7 +56,7 @@ internal sealed class HlslEmitter
         _sb.Clear();
         _indent = 0;
 
-        string ret = TypeTable.ToHlsl(fn.ReturnType);
+        string ret = HlslType(fn.ReturnType);
         var ps = new List<string>();
         _types.PushScope();
         foreach (ParamDecl p in fn.Parameters)
@@ -67,7 +67,7 @@ internal sealed class HlslEmitter
                 ParamQualifier.InOut => "inout ",
                 _ => string.Empty,
             };
-            ps.Add($"{qual}{TypeTable.ToHlsl(p.TypeName)} {p.Name}");
+            ps.Add($"{qual}{HlslType(p.TypeName)} {p.Name}");
             _types.Declare(p.Name, p.TypeName);
         }
 
@@ -77,13 +77,22 @@ internal sealed class HlslEmitter
         return _sb.ToString();
     }
 
-    /// <summary>Emit a top-level <c>const</c> global.</summary>
+    /// <summary>Emit a top-level <c>const</c> global (including a <c>const</c> array, G7).</summary>
     public string EmitGlobalConst(GlobalConstDecl g)
     {
         _sb.Clear();
         _indent = 0;
-        string type = TypeTable.ToHlsl(g.TypeName);
-        Line($"static const {type} {g.Name} = {EmitExpr(g.Initializer)};");
+        string type = HlslType(g.TypeName);
+        if (g.ArraySize is { } n)
+        {
+            // const float k[3] = float[](a,b,c)  ->  static const float k[3] = { a, b, c };
+            Line($"static const {type} {g.Name}[{n}] = {EmitExpr(g.Initializer)};");
+        }
+        else
+        {
+            Line($"static const {type} {g.Name} = {EmitExpr(g.Initializer)};");
+        }
+
         return _sb.ToString();
     }
 
@@ -96,8 +105,15 @@ internal sealed class HlslEmitter
     {
         _sb.Clear();
         _indent = 0;
-        string type = TypeTable.ToHlsl(g.TypeName);
-        if (g.Initializer is null)
+        string type = HlslType(g.TypeName);
+        if (g.ArraySize is { } n)
+        {
+            // A non-const array global (G7): `static float k[3] [= { ... }];`.
+            Line(g.Initializer is null
+                ? $"static {type} {g.Name}[{n}];"
+                : $"static {type} {g.Name}[{n}] = {EmitExpr(g.Initializer)};");
+        }
+        else if (g.Initializer is null)
         {
             Line($"static {type} {g.Name};");
         }
@@ -191,9 +207,20 @@ internal sealed class HlslEmitter
 
     private void EmitVarDecl(VarDeclStmt v)
     {
-        _types.Declare(v.Name, v.TypeName);
-        string type = TypeTable.ToHlsl(v.TypeName);
+        string type = HlslType(v.TypeName);
         string prefix = v.IsConst ? "const " : string.Empty;
+
+        if (v.ArraySize is { } n)
+        {
+            // G7: a local fixed-size array (`float arr[4];` / `const float k[3] = float[](...);`).
+            _types.DeclareArray(v.Name, v.TypeName);
+            Line(v.Initializer is null
+                ? $"{prefix}{type} {v.Name}[{n}];"
+                : $"{prefix}{type} {v.Name}[{n}] = {EmitExpr(v.Initializer)};");
+            return;
+        }
+
+        _types.Declare(v.Name, v.TypeName);
         if (v.Initializer is null)
         {
             Line($"{prefix}{type} {v.Name};");
@@ -280,7 +307,7 @@ internal sealed class HlslEmitter
     private string RenderInlineVarDecl(VarDeclStmt v)
     {
         _types.Declare(v.Name, v.TypeName);
-        string type = TypeTable.ToHlsl(v.TypeName);
+        string type = HlslType(v.TypeName);
         return v.Initializer is null
             ? $"{type} {v.Name}"
             : $"{type} {v.Name} = {EmitInitializer(v.TypeName, v.Initializer)}";
@@ -289,7 +316,7 @@ internal sealed class HlslEmitter
     private string RenderInlineMultiDecl(MultiDeclStmt m)
     {
         // GLSL `for (int i = 0, n = 4; ...)` -> HLSL `int i = 0, n = 4`.
-        string type = TypeTable.ToHlsl(m.Declarators[0].TypeName);
+        string type = HlslType(m.Declarators[0].TypeName);
         var parts = new List<string>();
         foreach (VarDeclStmt d in m.Declarators)
         {
@@ -326,12 +353,14 @@ internal sealed class HlslEmitter
         FloatLiteralExpr f => NormalizeFloat(f.Text),
         BoolLiteralExpr b => b.Value ? "true" : "false",
         IdentifierExpr id => EmitIdentifier(id),
-        SwizzleExpr sw => $"{EmitExpr(sw.Target)}.{TranslateSwizzle(sw.Member)}",
+        SwizzleExpr sw => EmitMemberOrSwizzle(sw),
         IndexExpr idx => EmitIndex(idx),
         CallExpr call => EmitCall(call),
+        ArrayConstructorExpr ac => EmitArrayConstructor(ac),
         UnaryExpr un => EmitUnary(un),
         BinaryExpr bin => EmitBinary(bin),
         ConditionalExpr c => $"({EmitCondition(c.Condition)} ? {EmitExpr(c.WhenTrue)} : {EmitExpr(c.WhenFalse)})",
+        SequenceExpr seq => string.Join(", ", seq.Items.Select(EmitExpr)),
         AssignExpr a => EmitAssign(a),
         _ => throw new ConvertException("Internal: unhandled expression.", expr.Line, expr.Column),
     };
@@ -464,6 +493,20 @@ internal sealed class HlslEmitter
         return id.Name;
     }
 
+    /// <summary>
+    /// Emit a <c>.member</c> access: a struct member (G6) is emitted verbatim (no swizzle translation,
+    /// so a member whose name happens to be stpq-only is not mangled), while a vector component
+    /// selection goes through the swizzle normalizer (stpq → xyzw).
+    /// </summary>
+    private string EmitMemberOrSwizzle(SwizzleExpr sw)
+    {
+        string target = EmitExpr(sw.Target);
+        GlslType targetType = _types.Infer(sw.Target);
+        return targetType.IsStruct
+            ? $"{target}.{sw.Member}"
+            : $"{target}.{TranslateSwizzle(sw.Member)}";
+    }
+
     private string EmitIndex(IndexExpr idx)
     {
         // Track the array uniforms (iChannelTime / iChannelResolution) when indexed.
@@ -518,6 +561,20 @@ internal sealed class HlslEmitter
         string name = call.Callee;
         List<string> args = call.Args.Select(EmitExpr).ToList();
 
+        // Struct constructor (G6): GLSL `Name(a, b)` -> the generated factory `make_Name(a, b)`. The
+        // arg count must match the struct's member count (a wrong arity is a loud reject).
+        if (_structs.TryGetValue(name, out StructDecl? sd))
+        {
+            if (call.Args.Count != sd.Members.Count)
+            {
+                throw Reject(call,
+                    $"Struct constructor '{name}' expects {sd.Members.Count} argument(s) " +
+                    $"(one per member), got {call.Args.Count}.");
+            }
+
+            return $"make_{name}({string.Join(", ", args)})";
+        }
+
         // Type constructor.
         if (TypeTable.IsTypeName(name))
         {
@@ -549,8 +606,35 @@ internal sealed class HlslEmitter
                 UsedGlslMod = true;
                 return $"glsl_mod({args[0]}, {args[1]})";
 
+            case "matrixCompMult":
+                // GLSL matrixCompMult(a, b) is the COMPONENTWISE matrix product. HLSL `*` on matrices
+                // is already componentwise (only `mul` is the linear-algebra product), so emit `(a * b)`
+                // directly — NOT through the matrix-order trap in EmitBinary.
+                if (call.Args.Count != 2)
+                {
+                    throw Reject(call, $"'matrixCompMult' takes 2 arguments, got {call.Args.Count}.");
+                }
+
+                return $"({args[0]} * {args[1]})";
+
             case "texture" or "texture2D":
                 RegisterChannelArg(call);
+                if (call.Args.Count == 3)
+                {
+                    // texture(sampler, uv, bias) would map to tex2Dbias, but that legacy intrinsic is
+                    // NOT compilable on the GL/DX (SM4-rewrite) targets (only FNA's fx_2_0 path accepts
+                    // it). Rather than emit something that fails on the primary target, reject loudly at
+                    // convert time so the boundary is explicit and located.
+                    throw Reject(call,
+                        $"The mip-bias texture form '{name}(sampler, uv, bias)' is outside the supported " +
+                        "subset (its tex2Dbias mapping does not compile on the OpenGL/DirectX targets).");
+                }
+
+                if (call.Args.Count != 2)
+                {
+                    throw Reject(call, $"'{name}' expects (sampler, uv).");
+                }
+
                 return $"tex2D({string.Join(", ", args)})";
 
             case "textureLod":
@@ -603,6 +687,65 @@ internal sealed class HlslEmitter
 
     private readonly HashSet<string> _userFunctions = new(StringComparer.Ordinal);
     private readonly HashSet<string> _customUniforms = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, StructDecl> _structs = new(StringComparer.Ordinal);
+
+    /// <summary>Register the user-defined structs (G6) so struct-typed declarations spell their HLSL
+    /// type as the struct name and struct constructors route to the generated factory.</summary>
+    public void SetStructs(IEnumerable<StructDecl> structs)
+    {
+        _structs.Clear();
+        foreach (StructDecl s in structs)
+        {
+            _structs[s.Name] = s;
+        }
+    }
+
+    /// <summary>The HLSL type spelling for a GLSL type spelling, passing a user struct name through
+    /// unchanged (HLSL struct syntax matches) and mapping built-ins via the type table.</summary>
+    private string HlslType(string glslType) =>
+        _structs.ContainsKey(glslType) ? glslType : TypeTable.ToHlsl(glslType);
+
+    /// <summary>
+    /// Emit a user-defined <c>struct</c> declaration (G6) plus a factory function the converter uses in
+    /// place of a GLSL struct constructor. GLSL's <c>Name(a, b)</c> constructor has no HLSL equivalent,
+    /// so each <c>Name(...)</c> call is rewritten to <c>make_Name(...)</c>, and this emits:
+    /// <code>
+    /// struct Name { float3 a; float b; };
+    /// Name make_Name(float3 a, float b) { Name s; s.a = a; s.b = b; return s; }
+    /// </code>
+    /// </summary>
+    public string EmitStruct(StructDecl s)
+    {
+        _sb.Clear();
+        _indent = 0;
+
+        Line($"struct {s.Name}");
+        Line("{");
+        _indent++;
+        foreach (StructMember m in s.Members)
+        {
+            Line($"{HlslType(m.TypeName)} {m.Name};");
+        }
+
+        _indent--;
+        Line("};");
+
+        // Factory: make_Name(<members>) building and returning the struct, field by field.
+        string paramList = string.Join(", ", s.Members.Select(m => $"{HlslType(m.TypeName)} {m.Name}"));
+        Line($"{s.Name} make_{s.Name}({paramList})");
+        Line("{");
+        _indent++;
+        Line($"{s.Name} result;");
+        foreach (StructMember m in s.Members)
+        {
+            Line($"result.{m.Name} = {m.Name};");
+        }
+
+        Line("return result;");
+        _indent--;
+        Line("}");
+        return _sb.ToString();
+    }
 
     /// <summary>Register the set of user-defined function names so calls to them are accepted.</summary>
     public void SetUserFunctions(IEnumerable<string> names)
@@ -671,6 +814,14 @@ internal sealed class HlslEmitter
 
         return $"{hlsl}({string.Join(", ", args)})";
     }
+
+    /// <summary>
+    /// Emit a GLSL array constructor (G7) as an HLSL brace initializer list <c>{ a, b, c }</c>. HLSL
+    /// has no array-constructor call syntax; a brace list is valid at a declaration initializer site,
+    /// which is the only place the supported subset allows an array constructor.
+    /// </summary>
+    private string EmitArrayConstructor(ArrayConstructorExpr ac) =>
+        $"{{ {string.Join(", ", ac.Elements.Select(EmitExpr))} }}";
 
     private static ConvertException Reject(Expr at, string message) =>
         new(message, at.Line, at.Column);

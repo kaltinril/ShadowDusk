@@ -4,6 +4,26 @@ A statistical coverage report for the `shadertoy2fx` GLSL → HLSL `.fx` convert
 running a batch of **real, third-party single-pass ShaderToy / GLSL image shaders** through the
 converter and then through the ShadowDusk OpenGL compiler.
 
+> **Update 2026-06-19 (d) — G6 (structs) + G7 (arrays / intrinsics / parser tail) landed.** Two more
+> backlog gaps closed. **G6:** a top-level user `struct` of supported member types is accepted and
+> emitted as an HLSL `struct` plus a generated `make_Name(...)` factory (GLSL's `Name(...)` constructor
+> is rewritten to call it); struct-typed locals/params/returns and member access `s.field` work, and a
+> **matrix-typed member still hits the matrix-order trap** (`s.rot * v` -> `mul(v, s.rot)`); nested /
+> inline-struct members and combined `struct{..}var;` forms stay loud rejects. **G7:** fixed-size arrays
+> at const/mutable global and local scope (`const float k[3] = float[](...)` -> `static const float k[3]
+> = { ... }`, `float arr[4];`, indexing), the added intrinsics `fwidth` (same-name) and `matrixCompMult`
+> (componentwise `(a*b)`, NOT the mul-reordered product), and parser hardening for the GLSL comma
+> (sequence) operator in `for` headers; unsized/runtime arrays, size/element mismatches, `roundEven`
+> (no faithful HLSL map), and the mip-bias `texture(s,uv,bias)` form (its `tex2Dbias` does not compile
+> on GL/DX) stay loud, located rejects. Re-measured over the same 160-shader gitignored scratch corpus
+> (153 with a `void mainImage`): **conversion 34.6 %** (53/153, was 34.0 %), **compile-of-converted
+> 88.7 %** (47/53, was 86.5 %), **end-to-end 30.7 %** (47/153, was 29.4 %). The compile-of-converted
+> rate IMPROVED because the `texture(s,uv,bias)` reject removes a converted-but-fails case; the remaining
+> 6 converted-but-not-compiling shaders are pre-existing §5 edge cases (B4 truncation, B5 modifier
+> spacing, a `float(...)` shadow, a legacy `tex2Dlod` case), none a new silent-wrong path. Unit suite
+> 214 green (0 warn); golden compile-sweep **44/44 on OpenGL / DirectX_11 / FNA** (the struct and array
+> goldens compile on FNA fx_2_0 too — no SM3-limit case in this corpus); render-proof 3/3 (exit 0).
+>
 > **Update 2026-06-19 (c) — G1/G3/G4/G5 gap-closures landed.** Four backlog gaps closed together:
 > **G1** top-level non-`const` mutable globals (emitted as HLSL `static` globals; unsupported-type
 > globals still reject), **G3** more exact-type host aliases (`time`/`fGlobalTime`→`iTime`,

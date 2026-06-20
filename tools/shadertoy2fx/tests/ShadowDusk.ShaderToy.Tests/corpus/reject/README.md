@@ -7,8 +7,9 @@ assert the tool rejects for that specific reason.
 
 | File | Expected rejection reason |
 |---|---|
-| `user_struct.glsl` | Declares a user `struct` (`struct Ray { ... }`) — user structs are not in the v1 subset. |
-| `user_array.glsl` | Declares a user array (`float weights[3];`) — arrays are not in the v1 subset. |
+| `nested_struct.glsl` | A struct with a **nested / inline** struct member (`struct { ... } inner;`) — a flat user struct is now supported (G6), but an inline nested struct is not. |
+| `unsized_array.glsl` | An **unsized / runtime-sized** array (`float data[];`) — a fixed-size array (`float k[3];`) is now supported (G7), but an unsized one has no fixed length. |
+| `unmappable_intrinsic.glsl` | Calls `roundEven` (round-half-to-even / banker's rounding), which has no faithful HLSL equivalent — an unmappable intrinsic is a loud reject (the mapping table stays authoritative). |
 | `second_entry_cubemap.glsl` | Contains a second entry point (`mainCubemap`) — v1 supports a single `mainImage` image shader only. |
 | `switch_statement.glsl` | Uses a `switch` statement — `switch` is not in the v1 subset. |
 | `macro_paste.glsl` | Uses the token-paste operator `##` inside a `#define` body — `##`/`#` (stringize) are not implemented and are a loud reject rather than a mis-expansion. |
@@ -26,7 +27,11 @@ conditional family are now **supported** (Phase 46 preprocessor) and have moved 
 `macro_function.glsl`, `pp_*.glsl`). A custom `uniform` of a SUPPORTED type is now **accepted** and
 emitted as an effect parameter, **including one with a default value** (`uniform float x = 1.0;`, G4);
 a top-level non-`const` mutable global of a SUPPORTED type is **accepted** as a `static` global (G1);
-and `#version`/`#extension`/`#pragma`/`#line` plus glslViewer/Bonzomatic `#i*` channel-metadata
-directives are now silently **ignored** (G5). What stays a reject here: an *unsupported* uniform/global
-type, a custom `varying`/`in`/`out`, a sampler with an initializer, the unimplemented `##`/`#`
-operators, and `#include`.
+`#version`/`#extension`/`#pragma`/`#line` plus glslViewer/Bonzomatic `#i*` channel-metadata directives
+are now silently **ignored** (G5); a flat user **`struct`** is **accepted** (G6, see `struct_basic.glsl`),
+and a fixed-size **array** is **accepted** (G7, see `const_array.glsl`/`local_array.glsl`). The former
+`user_struct.glsl` / `user_array.glsl` rejects were therefore retired (now in-subset), replaced by
+`nested_struct.glsl` / `unsized_array.glsl` for the boundary cases that genuinely stay rejected. What
+stays a reject here: an *unsupported* uniform/global type, a custom `varying`/`in`/`out`, a sampler with
+an initializer, the unimplemented `##`/`#` operators, `#include`, a nested/inline struct, an unsized
+array, and an unmappable intrinsic (`roundEven`).

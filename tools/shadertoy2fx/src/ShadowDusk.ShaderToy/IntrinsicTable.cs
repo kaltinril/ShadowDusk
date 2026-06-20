@@ -28,6 +28,10 @@ internal static class IntrinsicTable
         "exp", "log", "exp2", "log2", "pow", "sin", "cos", "tan", "asin", "acos",
         "sinh", "cosh", "tanh", "step", "smoothstep", "length", "distance", "dot",
         "cross", "normalize", "reflect", "refract", "radians", "degrees", "saturate",
+
+        // fwidth(x) = abs(ddx(x)) + abs(ddy(x)) — a same-named HLSL intrinsic available in ps_2_x+
+        // (the harness targets ps_3_0), so it maps faithfully.
+        "fwidth",
     };
 
     /// <summary>
@@ -36,7 +40,7 @@ internal static class IntrinsicTable
     /// </summary>
     public static readonly IReadOnlySet<string> Special = new HashSet<string>(StringComparer.Ordinal)
     {
-        "atan", "mod",
+        "atan", "mod", "matrixCompMult",
     };
 
     /// <summary>Intrinsics that are explicitly rejected with a tailored message.</summary>
@@ -48,9 +52,16 @@ internal static class IntrinsicTable
             ["textureSize"] = "'textureSize' is outside the supported subset (use iChannelResolution).",
             ["dFdxFine"] = "fine/coarse derivatives are outside the supported subset.",
             ["dFdyFine"] = "fine/coarse derivatives are outside the supported subset.",
-            ["fwidth"] = "'fwidth' is outside the supported subset.",
+            ["dFdxCoarse"] = "fine/coarse derivatives are outside the supported subset.",
+            ["dFdyCoarse"] = "fine/coarse derivatives are outside the supported subset.",
             ["bitfieldExtract"] = "integer bitfield intrinsics are outside the supported subset.",
             ["packHalf2x16"] = "bit-packing intrinsics are outside the supported subset.",
+
+            // GLSL roundEven is banker's (round-half-to-even) rounding; HLSL `round` and a
+            // floor(x+0.5) form are both round-half-up, so there is no faithful HLSL map. Reject
+            // loudly rather than emit a subtly-different rounding.
+            ["roundEven"] =
+                "'roundEven' (round-half-to-even) has no faithful HLSL equivalent and is outside the supported subset.",
         };
 
     /// <summary>True if <paramref name="name"/> is any recognized intrinsic (mapped or special).</summary>

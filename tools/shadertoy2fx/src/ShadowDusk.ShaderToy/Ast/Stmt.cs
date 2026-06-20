@@ -21,6 +21,12 @@ internal sealed class VarDeclStmt : Stmt
     public Expr? Initializer { get; init; }
     /// <summary>True for a <c>const</c> local.</summary>
     public bool IsConst { get; init; }
+
+    /// <summary>
+    /// The fixed array length when this is a local fixed-size array (<c>float arr[4];</c> or
+    /// <c>const float k[3] = float[](...);</c>), or null for a scalar/vector/matrix/struct local. (G7.)
+    /// </summary>
+    public int? ArraySize { get; init; }
 }
 
 /// <summary>
