@@ -4,6 +4,29 @@ A statistical coverage report for the `shadertoy2fx` GLSL → HLSL `.fx` convert
 running a batch of **real, third-party single-pass ShaderToy / GLSL image shaders** through the
 converter and then through the ShadowDusk OpenGL compiler.
 
+> **Update 2026-06-19 (h) — SECOND fixable batch landed (stage-I/O ignore + screen-UV alias, OpenFL,
+> Godot 4-arg `mainImage`, libretro VERTEX/FRAGMENT, `switch`).** Five correctness-first families from
+> the failure analysis: (1) a top-level `in`/`varying`/`attribute` (and `layout(location=N) in`)
+> declaration is web/desktop-export VERTEX-STAGE leftover the converter now **IGNORES** (not a parameter,
+> not a reject); a conventional fullscreen coordinate-varying name (`texCoord`/`vUv`/`uv`/…) referenced
+> as the UV resolves to the harness normalized screen UV ([0,1]) — a NON-coordinate ignored varying that
+> is referenced stays a loud undeclared reject (we cannot invent its value); (2) OpenFL/Haxe `#pragma
+> header` exports — the pragma is stripped and `openfl_TextureCoordv`->screen UV, `openfl_TextureSize`->
+> `iResolution.xy`; (3) the GdShaders/Godot 4-arg `mainImage(in vec4 inputColor, in vec2 uv, out vec4
+> outputColor)` recognized + wired (`uv`=SCREEN_UV, `inputColor`=iChannel0 sample, `outputColor`=return);
+> (4) libretro/RetroArch `.slang` VERTEX/FRAGMENT stage split — `FRAGMENT` is seeded so the fragment
+> branch (the real `mainImage`) survives (scoped narrowly to the VERTEX/FRAGMENT pair); (5) `switch`
+> parsed and **lowered to an if/else-if/else chain** (portable to SM3/FNA), with stacked/`default` labels
+> supported — true **fall-through** (a non-empty case body with no `break`/`return`) stays a loud reject.
+> **Scratch re-measure: conversion 55.0 % (88/160), up from 51.2 % (82/160) — a +6-shader gain.** Unit
+> suite **327 green (0 warn)**; golden compile-sweep **OpenGL 62/62, DirectX_11 62/62, FNA 60/62** (the 2
+> FNA misses remain `bitwise_ops`/`uint_type`, the inherent fx_2_0/SM3 integer-bitwise ceiling — all 5
+> new fixtures compile on GL/DX/FNA); render-proof **5/5 + multipass (exit 0)**, with a new
+> `varying_gradient` case proving the screen-UV alias renders the SAME orientation as the gradient oracle
+> (not upside-down). 5 new authored fixtures + 2 new reject fixtures (`switch_fallthrough`,
+> `stage_in_noncoord_referenced`) + a `Phase46StageIoTests` unit class; the former `switch_statement`
+> reject moved to `authored/` (now in-subset).
+>
 > **Update 2026-06-19 (g) — LOW-RISK / HIGH-YIELD batch landed (sized arrays x3 contexts, bitwise,
 > `gl_FragCoord`, `uint`, redundant-uniform handling, OF header).** Seven correctness-first converter
 > families from the 160-shader failure analysis: (1) sized `[N]` arrays accepted in **all three**

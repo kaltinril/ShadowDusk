@@ -96,6 +96,9 @@ public static class ShaderToyConverter
             aliases[a.Key] = a.Value;
         }
 
+        var screenUvAliases = new HashSet<string>(commonUnit.ScreenUvAliases, StringComparer.Ordinal);
+        screenUvAliases.UnionWith(imageUnit.ScreenUvAliases);
+
         var merged = new TranslationUnit
         {
             Globals = globals,
@@ -105,6 +108,7 @@ public static class ShaderToyConverter
             Structs = structs,
             FragmentOutputs = fragmentOutputs,
             Aliases = aliases,
+            ScreenUvAliases = screenUvAliases,
         };
 
         // Detect the entry convention: a ShaderToy `void mainImage(out vec4, in vec2)` OR a plain-GLSL
@@ -114,9 +118,10 @@ public static class ShaderToyConverter
         // point" reject.
         EntryMode entryMode = DetectEntryMode(functions, diagnostics);
         FragmentOutputDecl? userFragmentOutput = null;
+        MainImageShape mainImageShape = MainImageShape.Standard;
         if (entryMode == EntryMode.ShaderToy)
         {
-            ValidateMainImage(functions);
+            mainImageShape = ValidateMainImage(functions);
 
             // ShaderToy mode wins even when a standalone `void main()` wrapper is also present. The
             // wrapper (e.g. `void main(){ mainImage(gl_FragColor, gl_FragCoord.xy); }`) is NOT translated
@@ -143,6 +148,24 @@ public static class ShaderToyConverter
         // plain-GLSL mode the synthesized PS always bridges it (see HarnessGenerator).
         types.DeclareBuiltinGlobal("gl_FragCoord", GlslType.Vector(ScalarKind.Float, 4));
 
+        // Screen-coordinate aliases: ignored stage-I/O coordinate varyings (vUv/texCoord/uv/…) AND the
+        // OpenFL fullscreen-filter coordinate global (openfl_TextureCoordv) all resolve to the harness
+        // normalized screen UV (a vec2, [0,1]). Register each as a vec2 builtin so the body's references
+        // infer correctly and are not rejected; the emitter rewrites them to the harness `sd_ScreenUV`.
+        var screenUvNames = new HashSet<string>(merged.ScreenUvAliases, StringComparer.Ordinal)
+        {
+            "openfl_TextureCoordv",
+        };
+        foreach (string n in screenUvNames)
+        {
+            types.DeclareBuiltinGlobal(n, GlslType.Vector(ScalarKind.Float, 2));
+        }
+
+        // The OpenFL fullscreen-filter resolution global (openfl_TextureSize, a vec2) resolves to the
+        // ShaderToy iResolution.xy. Register it as a vec2 builtin; the emitter rewrites it to
+        // `iResolution.xy` and marks iResolution referenced.
+        types.DeclareBuiltinGlobal("openfl_TextureSize", GlslType.Vector(ScalarKind.Float, 2));
+
         // In plain-GLSL `main()` mode (G2) the fragment output (`gl_FragColor` or the user-declared
         // `out vec4 <name>;`) is also a predefined vec4 file-scope identifier the shader body writes;
         // register it so the body's references resolve (the harness declares it as a `static float4`
@@ -154,12 +177,18 @@ public static class ShaderToyConverter
             types.DeclareBuiltinGlobal(fragmentOutputName, GlslType.Vector(ScalarKind.Float, 4));
         }
 
+        // Godot/GdShaders mainImage wires `inputColor` to the iChannel0 sample at `uv` (Godot's
+        // SCREEN_TEXTURE). Mark iChannel0 referenced so the harness emits its sampler and the consumer
+        // knows to bind it; the harness PS does the sample and passes it as inputColor.
+        bool godotMode = entryMode == EntryMode.ShaderToy && mainImageShape == MainImageShape.Godot;
+
         string entryFunctionName = entryMode == EntryMode.ShaderToy ? "mainImage" : "main";
         var emitter = new HlslEmitter(types);
         emitter.SetUserFunctions(functions.Where(f => f.Name != entryFunctionName).Select(f => f.Name)
             .Concat(new[] { entryFunctionName }));
         emitter.SetCustomUniforms(merged.CustomUniforms.Select(c => c.Name));
         emitter.SetStructs(merged.Structs);
+        emitter.SetScreenUvAliases(screenUvNames);
 
         // G6: struct declarations + their factory functions are emitted first (before const globals and
         // functions) so every later use of the struct type / its constructor resolves.
@@ -207,6 +236,13 @@ public static class ShaderToyConverter
             fnSb.AppendLine();
         }
 
+        // In Godot mode iChannel0 backs `inputColor`, so it is always referenced even if the body never
+        // names iChannel0 directly. Add it so the harness emits the sampler.
+        if (godotMode)
+        {
+            emitter.ReferencedUniforms.Add("iChannel0");
+        }
+
         var harness = new HarnessGenerator();
         string fx = harness.Generate(
             options,
@@ -219,7 +255,9 @@ public static class ShaderToyConverter
             fnSb.ToString(),
             entryMode,
             fragmentOutputName,
-            emitter.UsedGlFragCoord);
+            emitter.UsedGlFragCoord,
+            emitter.UsedScreenUv,
+            godotMode);
 
         // If any Error accumulated (e.g. a banned entry point detected up front without
         // StopOnFirstError), the conversion is NOT a success even though emission ran to completion.
@@ -374,7 +412,19 @@ public static class ShaderToyConverter
     private static bool MentionsGlFragColor(FunctionDecl main) =>
         AstScan.MentionsIdentifier(main.Body, "gl_FragColor");
 
-    private static void ValidateMainImage(IReadOnlyList<FunctionDecl> functions)
+    /// <summary>
+    /// Validate the <c>mainImage</c> entry and classify its shape (G2). Two valid forms:
+    /// <list type="bullet">
+    /// <item><b>Standard ShaderToy</b> — <c>void mainImage(out vec4 fragColor, in vec2 fragCoord)</c>.</item>
+    /// <item><b>Godot / GdShaders</b> — <c>void mainImage(in vec4 inputColor, in vec2 uv,
+    /// out vec4 outputColor)</c> (the <c>in</c> qualifiers may be <c>const in</c> or omitted): <c>uv</c>
+    /// is Godot's SCREEN_UV ([0,1]) set from the harness, <c>inputColor</c> is the iChannel0 sample at
+    /// <c>uv</c> (or opaque black with no channel), <c>outputColor</c> is the returned color.</item>
+    /// </list>
+    /// Returns which shape was matched. Any other return type, arity, or parameter type/qualifier is a
+    /// loud, located reject.
+    /// </summary>
+    private static MainImageShape ValidateMainImage(IReadOnlyList<FunctionDecl> functions)
     {
         List<FunctionDecl> entries = functions.Where(f => f.Name == "mainImage").ToList();
         if (entries.Count == 0)
@@ -399,10 +449,32 @@ public static class ShaderToyConverter
                 "'mainImage' must return void.", main.Line, main.Column, "mainImage");
         }
 
+        // Godot / GdShaders 3-parameter form: (in vec4 inputColor, in vec2 uv, out vec4 outputColor).
+        if (main.Parameters.Count == 3)
+        {
+            ParamDecl g0 = main.Parameters[0];
+            ParamDecl g1 = main.Parameters[1];
+            ParamDecl g2 = main.Parameters[2];
+            bool godot =
+                g0.TypeName == "vec4" && g0.Qualifier == ParamQualifier.In &&
+                g1.TypeName == "vec2" && g1.Qualifier == ParamQualifier.In &&
+                g2.TypeName == "vec4" && g2.Qualifier == ParamQualifier.Out;
+            if (godot)
+            {
+                return MainImageShape.Godot;
+            }
+
+            throw new ConvertException(
+                "A 3-parameter 'mainImage' must be the Godot/GdShaders form " +
+                "'(in vec4 inputColor, in vec2 uv, out vec4 outputColor)'.",
+                main.Line, main.Column, "mainImage");
+        }
+
         if (main.Parameters.Count != 2)
         {
             throw new ConvertException(
-                "'mainImage' must take exactly (out vec4 fragColor, in vec2 fragCoord).",
+                "'mainImage' must take exactly (out vec4 fragColor, in vec2 fragCoord) or the Godot form " +
+                "(in vec4 inputColor, in vec2 uv, out vec4 outputColor).",
                 main.Line, main.Column, "mainImage");
         }
 
@@ -419,6 +491,8 @@ public static class ShaderToyConverter
             throw new ConvertException(
                 "The second parameter of 'mainImage' must be 'vec2 fragCoord'.", p1.Line, p1.Column, "mainImage");
         }
+
+        return MainImageShape.Standard;
     }
 
     /// <summary>

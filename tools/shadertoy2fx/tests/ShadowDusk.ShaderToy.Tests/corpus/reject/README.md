@@ -11,7 +11,8 @@ assert the tool rejects for that specific reason.
 | `unsized_array.glsl` | An **unsized / runtime-sized** array (`float data[];`) — a fixed-size array (`float k[3];`) is now supported (G7), but an unsized one has no fixed length. |
 | `unmappable_intrinsic.glsl` | Calls `roundEven` (round-half-to-even / banker's rounding), which has no faithful HLSL equivalent — an unmappable intrinsic is a loud reject (the mapping table stays authoritative). |
 | `second_entry_cubemap.glsl` | Contains a second entry point (`mainCubemap`) — v1 supports a single `mainImage` image shader only. |
-| `switch_statement.glsl` | Uses a `switch` statement — `switch` is not in the v1 subset. |
+| `switch_fallthrough.glsl` | A `switch` with true **fall-through** (a non-empty `case` body with no terminating `break`/`return`) — a plain break-terminated `switch` is now supported (lowered to if/else), but fall-through cannot be lowered without changing control flow. |
+| `stage_in_noncoord_referenced.glsl` | A top-level `in`/`varying` of a **non-coordinate** name is ignored (vertex-stage leftover), but here it is **referenced** — we have no per-vertex value for it, so the reference is a loud undeclared-identifier reject (a conventional coordinate-varying name like `vUv`/`uv` WOULD resolve to the harness screen UV instead). |
 | `macro_paste.glsl` | Uses the token-paste operator `##` inside a `#define` body — `##`/`#` (stringize) are not implemented and are a loud reject rather than a mis-expansion. |
 | `unknown_intrinsic.glsl` | Calls `texelFetch`, which has no entry in the intrinsic mapping table — unmapped intrinsics are a loud reject. |
 | `unknown_global.glsl` | Uses a free identifier (`RENDERSIZE`, an ISF builtin) that is not a ShaderToy uniform/local/const/user-function — undeclared identifiers are a loud reject (L1), not a silent pass-through. |
@@ -22,7 +23,7 @@ assert the tool rejects for that specific reason.
 | `main_no_output.glsl` | **G2 boundary**: a plain-GLSL `void main()` with no discoverable fragment output (no `out vec4 <name>;` and no `gl_FragColor` write) — there is nothing to return as COLOR0, so it is a loud reject. |
 | `array_nonconst_size.glsl` | **G7 boundary**: an array sized by a non-constant expression (`float a[n];` where `n` is a variable) — a fixed-size array (`float k[3];`) is supported, but a non-constant / macro size has no compile-time length, so it stays a loud reject. |
 
-Total: 13 reject shaders.
+Total: 14 reject shaders.
 
 Note: a shader that defines **BOTH** a ShaderToy `mainImage` AND a standalone `void main()` wrapper is
 **no longer a reject** (the former `both_entry_points.glsl`, now retired). It PREFERS ShaderToy mode,
@@ -43,3 +44,15 @@ and a fixed-size **array** is **accepted** (G7, see `const_array.glsl`/`local_ar
 stays a reject here: an *unsupported* uniform/global type, a custom `varying`/`in`/`out`, a sampler with
 an initializer, the unimplemented `##`/`#` operators, `#include`, a nested/inline struct, an unsized
 array, and an unmappable intrinsic (`roundEven`).
+
+Note (Phase 46 second batch): a top-level `in`/`varying`/`attribute` declaration is now **IGNORED**
+(web/desktop-export vertex-stage leftover), not rejected; a conventional coordinate-varying name
+(`vUv`/`texCoord`/`uv`/…) referenced as the UV resolves to the harness normalized screen UV (see
+`authored/stage_in_varying_ignored.glsl`). The OpenFL `#pragma header` + `openfl_*` globals
+(`authored/openfl_header.glsl`), the GdShaders/Godot 4-arg `mainImage`
+(`authored/godot_4arg_mainimage.glsl`), the libretro VERTEX/FRAGMENT stage split
+(`authored/libretro_vertex_fragment.glsl`), and a break-terminated `switch`
+(`authored/switch_statement.glsl`) are all now **accepted**. The former `switch_statement.glsl` reject
+was retired (now in-subset), replaced by `switch_fallthrough.glsl` (fall-through) and
+`stage_in_noncoord_referenced.glsl` (a non-coordinate ignored varying that is referenced) for the
+boundary cases that genuinely stay rejects.

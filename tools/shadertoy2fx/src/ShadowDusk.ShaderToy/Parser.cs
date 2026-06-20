@@ -15,6 +15,10 @@ internal sealed class Parser
     /// <summary>glslViewer-alias name → ShaderToy built-in it was folded onto (e.g. u_time → iTime).</summary>
     private readonly Dictionary<string, string> _aliases = new(StringComparer.Ordinal);
 
+    /// <summary>Conventional screen-coordinate varying names (from ignored stage-I/O decls) that alias
+    /// the harness normalized screen UV (see <see cref="ScreenCoordVaryings"/>).</summary>
+    private readonly HashSet<string> _screenUvAliases = new(StringComparer.Ordinal);
+
     /// <summary>Names of user-defined structs declared so far, so they are recognized as type names
     /// (G6). GLSL requires a struct to be declared before use, so this is populated in source order
     /// and a forward reference naturally falls through to the "unknown type" reject.</summary>
@@ -84,6 +88,7 @@ internal sealed class Parser
             Structs = structs,
             FragmentOutputs = fragmentOutputs,
             Aliases = _aliases,
+            ScreenUvAliases = _screenUvAliases,
         };
     }
 
@@ -94,16 +99,27 @@ internal sealed class Parser
         Token start = Current;
 
         // G2: a `layout(...)` qualifier prefix (e.g. `layout(location = 0) out vec4 X;`). The layout
-        // qualifier is consumed; the declaration it prefixes must be a plain-GLSL fragment output
-        // `out vec4 X;` (anything else after a layout qualifier is outside the supported subset).
+        // qualifier is consumed; the declaration it prefixes is either a plain-GLSL fragment output
+        // `out vec4 X;` OR an IGNORED stage input `layout(location=N) in <type> <name>;` (vertex-stage
+        // leftover from a web/desktop export). Anything else after a layout qualifier is out of subset.
         if (Check(TokenKind.Identifier) && Current.Text == "layout")
         {
             ConsumeLayoutQualifier();
+            if (Check(TokenKind.Identifier) && Current.Text is "in" or "varying" or "attribute")
+            {
+                // A stage input (`layout(location=N) in vec2 vUv;`): ignore the declaration (the harness
+                // synthesizes its own vertex shader); record a conventional coordinate-varying name so a
+                // reference resolves to the harness screen UV.
+                HandleQualifiedTopLevelDecl(start, customUniforms);
+                return;
+            }
+
             if (!(Check(TokenKind.Identifier) && Current.Text == "out"))
             {
                 throw Reject(
-                    "Only a fragment-output 'layout(location=N) out vec4 <name>;' declaration is " +
-                    "supported after a 'layout(...)' qualifier.", Current);
+                    "Only a fragment-output 'layout(location=N) out vec4 <name>;' declaration or an " +
+                    "ignored 'layout(location=N) in <type> <name>;' stage input is supported after a " +
+                    "'layout(...)' qualifier.", Current);
             }
 
             fragmentOutputs.Add(ParseFragmentOutputDecl(start));
@@ -631,8 +647,26 @@ internal sealed class Parser
             return;
         }
 
-        // Only `uniform` declares a host-drivable value; `varying`/`attribute`/`in`/`out` of a custom
-        // name has no host contract and stays a loud reject.
+        // A top-level `in`/`varying`/`attribute` declaration is web / desktop-export VERTEX-STAGE
+        // leftover. The harness synthesizes its own fullscreen vertex shader, so we IGNORE the
+        // declaration entirely (do not reject, do not emit it as a parameter). For the COMMON case where
+        // the varying is a conventional fullscreen screen-coordinate name (texCoord/vUv/uv/…), record it
+        // so a reference to it resolves to the harness normalized screen UV ([0,1]); a NON-coordinate /
+        // unknown name is still ignored here, and if it is later referenced it becomes a loud
+        // undeclared-identifier reject (we cannot invent its per-vertex value).
+        if (qualifier is "in" or "varying" or "attribute")
+        {
+            if (ScreenCoordVaryings.IsScreenCoordName(name))
+            {
+                _screenUvAliases.Add(name);
+            }
+
+            ConsumeDeclaratorTail();
+            return;
+        }
+
+        // A top-level `out` of a custom name has no host contract (the only supported `out` is the
+        // plain-GLSL `out vec4 <name>;` fragment output, handled before this point) and stays a reject.
         if (qualifier != "uniform")
         {
             throw Reject(
@@ -912,7 +946,7 @@ internal sealed class Parser
                     Expect(TokenKind.Semicolon, "';'");
                     return new DiscardStmt { Line = t.Line, Column = t.Column };
                 case "switch":
-                    throw Reject("'switch' is outside the supported subset.", t);
+                    return ParseSwitch();
                 case "struct":
                     throw Reject("Local 'struct' is outside the supported subset.", t);
             }
@@ -1156,6 +1190,154 @@ internal sealed class Parser
 
         Expect(TokenKind.Semicolon, "';'");
         return new ReturnStmt { Value = value, Line = start.Line, Column = start.Column };
+    }
+
+    /// <summary>
+    /// Parse a <c>switch (selector) { case K: stmts break; ... default: stmts }</c> statement into a
+    /// <see cref="SwitchStmt"/> the emitter lowers to an if/else-if chain (portable to SM3 / FNA, which
+    /// have no native <c>switch</c>). Multiple <c>case</c> labels stacked with no statements between them
+    /// share the next body (<c>case 1: case 2: ...</c>). The terminating <c>break;</c> of an arm is
+    /// consumed (not stored). A non-empty arm body that does NOT end in <c>break</c>/<c>return</c> is a
+    /// true C fall-through, which is error-prone to lower faithfully, so it is a loud, located reject.
+    /// </summary>
+    private Stmt ParseSwitch()
+    {
+        Token start = Current;
+        _pos++; // 'switch'
+        Expect(TokenKind.LParen, "'(' after 'switch'");
+        Expr selector = ParseExpression();
+        Expect(TokenKind.RParen, "')'");
+        Expect(TokenKind.LBrace, "'{' to open the switch body");
+
+        var cases = new List<SwitchCase>();
+        bool seenDefault = false;
+
+        while (!Check(TokenKind.RBrace) && !Check(TokenKind.EndOfFile))
+        {
+            // Collect one or more stacked labels (`case K:` / `default:`) that share the next body.
+            var labels = new List<Expr>();
+            bool isDefault = false;
+            Token labelStart = Current;
+
+            while (Check(TokenKind.Identifier) && Current.Text is "case" or "default")
+            {
+                if (Current.Text == "default")
+                {
+                    if (seenDefault)
+                    {
+                        throw Reject("Duplicate 'default' label in 'switch'.", Current);
+                    }
+
+                    seenDefault = true;
+                    isDefault = true;
+                    _pos++; // 'default'
+                    Expect(TokenKind.Colon, "':' after 'default'");
+                }
+                else
+                {
+                    _pos++; // 'case'
+                    labels.Add(ParseConditional()); // a constant case label (no comma/assignment)
+                    Expect(TokenKind.Colon, "':' after a 'case' label");
+                }
+
+                // If the very next token is another label, this is a stacked/shared label group: keep
+                // collecting (an empty body between two labels means they share the following body).
+                // Otherwise this label group is complete and its body follows.
+                if (!(Check(TokenKind.Identifier) && Current.Text is "case" or "default"))
+                {
+                    break;
+                }
+            }
+
+            if (labels.Count == 0 && !isDefault)
+            {
+                throw Reject(
+                    "Expected a 'case' or 'default' label inside the 'switch' body.", labelStart);
+            }
+
+            // A group that stacks the `default` label together with one or more `case` labels sharing one
+            // body is ambiguous to lower into an if/else chain (the default is the catch-all `else`, not a
+            // value-matched arm). Keep it a loud reject rather than lower it wrong.
+            if (isDefault && labels.Count > 0)
+            {
+                throw Reject(
+                    "A 'switch' arm that stacks 'default' with 'case' labels on one body is outside the " +
+                    "supported subset (give 'default' its own arm).", labelStart);
+            }
+
+            // Collect this arm's body statements up to the next label or the closing brace.
+            var body = new List<Stmt>();
+            while (!Check(TokenKind.RBrace) && !Check(TokenKind.EndOfFile) &&
+                   !(Check(TokenKind.Identifier) && Current.Text is "case" or "default"))
+            {
+                body.Add(ParseStatement());
+            }
+
+            // The arm must terminate with a `break;` (consumed, not stored) or a `return ...;` — anything
+            // else with a non-empty body is real fall-through, which we do not lower. A trailing
+            // `default:` arm without a break is fine (nothing falls through past it).
+            bool endsClean = EndsCaseCleanly(body, out bool trailingBreakIndex);
+            if (!endsClean)
+            {
+                throw Reject(
+                    "'switch' fall-through (a non-empty 'case' body with no terminating 'break' or " +
+                    "'return') is outside the supported subset: it cannot be lowered to an if/else chain " +
+                    "without changing control flow. Add a 'break;' to each case.",
+                    labelStart);
+            }
+
+            // Strip the trailing break from the stored body (the lowering is an if/else chain, so a
+            // break would be illegal HLSL outside a loop). A `return` stays.
+            if (trailingBreakIndex)
+            {
+                body.RemoveAt(body.Count - 1);
+            }
+
+            cases.Add(new SwitchCase
+            {
+                Labels = labels,
+                IsDefault = isDefault,
+                Body = body,
+            });
+        }
+
+        Expect(TokenKind.RBrace, "'}' to close the switch body");
+
+        return new SwitchStmt
+        {
+            Selector = selector,
+            Cases = cases,
+            Line = start.Line,
+            Column = start.Column,
+        };
+    }
+
+    /// <summary>
+    /// Decide whether a <c>case</c> arm body terminates cleanly for if/else lowering: an EMPTY body is
+    /// clean (a shared/stacked label, or an intentionally empty arm), a body whose last statement is a
+    /// <c>break;</c> is clean (and <paramref name="hasTrailingBreak"/> is set so the caller strips it), and
+    /// a body whose last statement is a <c>return ...;</c> is clean (the return exits the function, so no
+    /// fall-through). Anything else with a non-empty body is a real fall-through and is NOT clean.
+    /// </summary>
+    private static bool EndsCaseCleanly(IReadOnlyList<Stmt> body, out bool hasTrailingBreak)
+    {
+        hasTrailingBreak = false;
+        if (body.Count == 0)
+        {
+            return true;
+        }
+
+        Stmt last = body[^1];
+        if (last is BreakStmt)
+        {
+            hasTrailingBreak = true;
+            return true;
+        }
+
+        // A `return ...;` exits the function, so no fall-through; treat it as a clean terminator. (A
+        // `discard;` is deliberately NOT treated as clean: in C the next case body would still run, so a
+        // discard-terminated case with no break is true fall-through and stays a loud reject.)
+        return last is ReturnStmt;
     }
 
     // ── expressions (precedence climbing) ────────────────────────────────────

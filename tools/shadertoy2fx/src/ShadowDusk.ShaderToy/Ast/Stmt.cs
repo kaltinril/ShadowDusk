@@ -82,6 +82,42 @@ internal sealed class ReturnStmt : Stmt
     public Expr? Value { get; init; }
 }
 
+/// <summary>
+/// A <c>switch (selector) { case K: ...; ... }</c> statement (lowered to an if/else-if chain by the
+/// emitter so it is portable to SM3 / FNA fx_2_0, which have no native <c>switch</c>). Each
+/// <see cref="SwitchCase"/> carries one or more <c>case</c> label values (multiple labels sharing one
+/// body), or is the <c>default</c>. A case body that is non-empty and does NOT end in
+/// <c>break</c>/<c>return</c> (true C fall-through into the next case) is rejected at parse time, since
+/// faithfully lowering fall-through is error-prone; an empty body BEFORE a labelled body (shared labels)
+/// is supported.
+/// </summary>
+internal sealed class SwitchStmt : Stmt
+{
+    /// <summary>The selector expression (<c>switch (e)</c>); compared for equality against each label.</summary>
+    public required Expr Selector { get; init; }
+
+    /// <summary>The cases in source order. At most one is the <c>default</c>.</summary>
+    public required IReadOnlyList<SwitchCase> Cases { get; init; }
+}
+
+/// <summary>
+/// One arm of a <see cref="SwitchStmt"/>: the <c>case</c> label value(s) it matches (empty when this is
+/// the <c>default</c>), and the statements of its body (with the terminating <c>break</c> already
+/// stripped). Multiple labels stacked on one body (<c>case 1: case 2: ...</c>) are collected into
+/// <see cref="Labels"/>.
+/// </summary>
+internal sealed class SwitchCase
+{
+    /// <summary>The <c>case</c> label value expressions this arm matches; empty for <c>default</c>.</summary>
+    public required IReadOnlyList<Expr> Labels { get; init; }
+
+    /// <summary>True when this arm is the <c>default</c> case.</summary>
+    public required bool IsDefault { get; init; }
+
+    /// <summary>The arm's body statements (the trailing <c>break;</c> is not included).</summary>
+    public required IReadOnlyList<Stmt> Body { get; init; }
+}
+
 /// <summary>A <c>break;</c>.</summary>
 internal sealed class BreakStmt : Stmt;
 

@@ -45,6 +45,10 @@ public static class RenderProofShaders
             // G2 plain-GLSL `void main()` mode: SAME analytic gradient + SAME orientation asserts as
             // gradient_uv above. A green run proves gl_FragCoord's Y maps right in main() mode.
             ("main_gradient", GradientUvAsserts, null),
+            // Phase 46 (second batch): the ignored coordinate-varying -> harness screen-UV alias. SAME
+            // analytic gradient + SAME orientation asserts as gradient_uv. A green run proves the screen-UV
+            // alias (used by stage-I/O varyings AND openfl_TextureCoordv) is not upside-down.
+            ("varying_gradient", GradientUvAsserts, null),
         };
 
     /// <summary>

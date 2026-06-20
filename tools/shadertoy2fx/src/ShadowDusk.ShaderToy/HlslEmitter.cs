@@ -38,6 +38,11 @@ internal sealed class HlslEmitter
     /// <c>mainImage</c>; in plain-GLSL mode the static is always emitted.</summary>
     public bool UsedGlFragCoord { get; private set; }
 
+    /// <summary>True once the body referenced a screen-coordinate alias (an ignored stage-I/O coordinate
+    /// varying, or the OpenFL <c>openfl_TextureCoordv</c>). The harness then publishes the normalized
+    /// screen UV as a <c>static float2 sd_ScreenUV;</c> set before the entry runs.</summary>
+    public bool UsedScreenUv { get; private set; }
+
     public HlslEmitter(TypeInference types) => _types = types;
 
     private void Line(string text)
@@ -189,6 +194,9 @@ internal sealed class HlslEmitter
             case IfStmt i:
                 EmitIf(i);
                 break;
+            case SwitchStmt sw:
+                EmitSwitch(sw);
+                break;
             case ForStmt f:
                 EmitFor(f);
                 break;
@@ -300,6 +308,87 @@ internal sealed class HlslEmitter
             EmitBody(i.Else);
         }
     }
+
+    /// <summary>
+    /// Lower a <c>switch (selector) { case K: ...; default: ... }</c> to an if / else-if / else chain
+    /// (HLSL on the SM3 / FNA targets has no native <c>switch</c>). The selector is evaluated exactly
+    /// ONCE into a fresh local (so a non-pure selector is not re-evaluated per arm), then each non-default
+    /// arm becomes <c>if/else if (sd_sw == label || ...)</c> and the <c>default</c> arm becomes the final
+    /// <c>else</c>. Stacked <c>case</c> labels sharing one body become an OR'd condition. The trailing
+    /// <c>break;</c> of each arm was already stripped by the parser (a <c>break</c> outside a loop is
+    /// illegal HLSL); a <c>return;</c> inside an arm is preserved and still exits the function.
+    /// </summary>
+    private void EmitSwitch(SwitchStmt sw)
+    {
+        string selType = HlslType(InferSelectorTypeName(sw.Selector));
+        string sel = $"sd_sw{_switchCounter++}";
+        Line($"{selType} {sel} = {EmitExpr(sw.Selector)};");
+
+        // Reorder so the default arm (if any) is emitted last as the final `else`, regardless of its
+        // source position. Equality semantics are independent of arm order once break/return terminate
+        // each arm (no fall-through reached this far — the parser rejected it).
+        var valueCases = sw.Cases.Where(c => !c.IsDefault).ToList();
+        SwitchCase? defaultCase = sw.Cases.FirstOrDefault(c => c.IsDefault);
+
+        bool first = true;
+        foreach (SwitchCase c in valueCases)
+        {
+            // A label group with an empty body and shared labels still emits its condition; the body is
+            // simply empty. Build `sel == L0 || sel == L1 ...`.
+            string cond = string.Join(
+                " || ", c.Labels.Select(l => $"{sel} == {EmitExpr(l)}"));
+            Line($"{(first ? "if" : "else if")} ({cond})");
+            EmitCaseBody(c.Body);
+            first = false;
+        }
+
+        if (defaultCase is not null)
+        {
+            if (first)
+            {
+                // Only a default arm: emit its body unconditionally in a block.
+                EmitCaseBody(defaultCase.Body);
+            }
+            else
+            {
+                Line("else");
+                EmitCaseBody(defaultCase.Body);
+            }
+        }
+    }
+
+    /// <summary>Best-effort HLSL type spelling for a switch selector's local temp. A non-inferrable
+    /// selector defaults to <c>int</c> (the GLSL switch selector is an integer expression).</summary>
+    private string InferSelectorTypeName(Expr selector)
+    {
+        GlslType t = _types.Infer(selector);
+        if (t.IsKnown && !t.IsVector && !t.IsMatrix)
+        {
+            return t.Scalar switch
+            {
+                ScalarKind.Bool => "bool",
+                ScalarKind.Float => "float",
+                _ => "int",
+            };
+        }
+
+        return "int";
+    }
+
+    private void EmitCaseBody(IReadOnlyList<Stmt> body)
+    {
+        Line("{");
+        _indent++;
+        foreach (Stmt s in body)
+        {
+            EmitStatement(s);
+        }
+
+        _indent--;
+        Line("}");
+    }
+
+    private int _switchCounter;
 
     private void EmitFor(ForStmt f)
     {
@@ -498,6 +587,25 @@ internal sealed class HlslEmitter
         {
             UsedGlFragCoord = true;
             return "gl_FragCoord";
+        }
+
+        // Screen-coordinate alias (an ignored stage-I/O coordinate varying like vUv/texCoord/uv, or the
+        // OpenFL fullscreen-filter coordinate openfl_TextureCoordv): resolves to the harness normalized
+        // screen UV (fragCoord / iResolution.xy, [0,1], ShaderToy bottom-left origin). Rewrite the
+        // reference to the harness static and mark it used so the harness publishes + sets it.
+        if (_screenUvAliases.Contains(id.Name))
+        {
+            UsedScreenUv = true;
+            ReferencedUniforms.Add("iResolution");
+            return "sd_ScreenUV";
+        }
+
+        // OpenFL fullscreen-filter resolution global: openfl_TextureSize (vec2) resolves to the ShaderToy
+        // iResolution.xy. Rewrite the reference and mark iResolution referenced.
+        if (id.Name == "openfl_TextureSize")
+        {
+            ReferencedUniforms.Add("iResolution");
+            return "iResolution.xy";
         }
 
         if (!_types.IsKnownIdentifier(id.Name) && !_userFunctions.Contains(id.Name))
@@ -711,6 +819,7 @@ internal sealed class HlslEmitter
 
     private readonly HashSet<string> _userFunctions = new(StringComparer.Ordinal);
     private readonly HashSet<string> _customUniforms = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _screenUvAliases = new(StringComparer.Ordinal);
     private readonly Dictionary<string, StructDecl> _structs = new(StringComparer.Ordinal);
 
     /// <summary>Register the user-defined structs (G6) so struct-typed declarations spell their HLSL
@@ -789,6 +898,17 @@ internal sealed class HlslEmitter
         foreach (string n in names)
         {
             _customUniforms.Add(n);
+        }
+    }
+
+    /// <summary>Register the screen-coordinate alias names (ignored coordinate varyings +
+    /// <c>openfl_TextureCoordv</c>) so a reference to one resolves to the harness <c>sd_ScreenUV</c>.</summary>
+    public void SetScreenUvAliases(IEnumerable<string> names)
+    {
+        _screenUvAliases.Clear();
+        foreach (string n in names)
+        {
+            _screenUvAliases.Add(n);
         }
     }
 

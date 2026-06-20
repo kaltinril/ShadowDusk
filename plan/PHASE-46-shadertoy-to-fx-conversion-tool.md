@@ -84,6 +84,7 @@ scope (5 non-`mainImage`/multipass, 1 VR). The other ~114 failures bucket as bel
 | G6 | **structs** | 5 | Parse + emit HLSL `struct`; member type inference | **DONE (2026-06-19)** |
 | G7 | **unknown types / arrays / unknown intrinsics / parse tail** | ~25 | Case-by-case: const + local arrays, more intrinsics, parser hardening | **DONE (2026-06-19)** |
 | G8 | **LOW-RISK / HIGH-YIELD batch**: sized arrays x3 contexts + brace/constructor init, bitwise ops (+ compound assign), `gl_FragCoord` body built-in, `uint`/`uvec`→`int`, redundant `sampler2D iChannelN`, redundant built-in w/ initializer + multi-declarator uniforms, OF header token | ~11 | Accept each faithfully; non-const array size / ISF builtins / switch / includes stay loud rejects | **DONE (2026-06-19)** |
+| G9 | **SECOND fixable batch**: ignore stage-I/O `in`/`varying`/`attribute` (+ `layout(location) in`) with coordinate-varying -> screen-UV alias; OpenFL `#pragma header` + `openfl_*` globals; Godot/GdShaders 4-arg `mainImage`; libretro VERTEX/FRAGMENT stage split; `switch` -> if/else lowering | ~6 | Alias only conventional coord names (else undeclared reject); seed FRAGMENT narrowly; switch fall-through stays a loud reject | **DONE (2026-06-20)** |
 | — | **Multipass (Buffer A–D), VR, sound** | ~6 | OUT OF v1 SCOPE — multipass is a separate runtime-orchestration project | not planned (v1) |
 
 The headline coverage number will be re-measured after each gap closes. Multipass remains the one
@@ -271,6 +272,54 @@ ceiling — inherent, not a converter bug). Render-proof **4/4 + multipass (exit
 conversion 51.2 % (82/160), up from 44.4 % (71/160) — a +11-shader gain.** Fixtures: 9 new
 `corpus/authored/*.glsl` (+ goldens), 1 new `corpus/reject/array_nonconst_size.glsl`, new
 `Phase46BatchTests` unit class.
+
+### G9 as-built (2026-06-20) — SECOND fixable batch (stage I/O, alternate entries, switch)
+
+Five correctness-first families from the same failure analysis. Anything whose value/semantics can't be
+known stays a LOUD, located reject — never silent-wrong.
+
+- **Ignore leftover top-level stage I/O decls.** A top-level `in`/`varying`/`attribute` declaration (and
+  the `layout(location = N) in <type> <name>;` form) is web/desktop-export VERTEX-STAGE leftover: the
+  harness synthesizes its own vertex shader, so the declaration is **IGNORED** (not rejected, not emitted
+  as a parameter/global). For the common case where such a varying is referenced as the fullscreen UV, a
+  fixed set of conventional coordinate-varying names (`texCoord`, `vUv`, `vUV`, `v_texcoord`,
+  `vTextureCoord`, `vTexCoord`, `v_coord`, `uv`, `texcoord`) is aliased to the harness normalized screen
+  UV (`fragCoord / iResolution.xy`, [0,1], bottom-left Y), bridged as a `static float2 sd_ScreenUV;` the
+  PS sets. A NON-coordinate ignored varying that is referenced stays a loud **undeclared-identifier**
+  reject (no per-vertex value to invent). *(`ScreenCoordVaryings`, `Parser` ignore + alias collection,
+  `TranslationUnit.ScreenUvAliases`, `HlslEmitter` rewrite + `UsedScreenUv`, `HarnessGenerator` static/set.)*
+- **OpenFL / Haxe `#pragma header` exports.** `#pragma header` is stripped (G5 already strips `#pragma`);
+  `openfl_TextureCoordv` (vec2) -> the harness screen UV (same `sd_ScreenUV` bridge), `openfl_TextureSize`
+  (vec2) -> `iResolution.xy`. *(`HlslEmitter.EmitIdentifier` special-cases.)*
+- **Godot / GdShaders 4-arg `mainImage`.** The alternate signature
+  `void mainImage(in vec4 inputColor, in vec2 uv, out vec4 outputColor)` (the `in` may be `const in` or
+  omitted) is recognized by its 3-parameter shape as a valid ShaderToy-mode entry: `uv` = Godot SCREEN_UV
+  ([0,1]) set from the harness, `inputColor` = the iChannel0 sample at `uv` (iChannel0 always exposed in
+  this mode), `outputColor` = the returned color. Any other 3-parameter `mainImage` is a loud reject; the
+  standard 2-arg `mainImage` and plain-GLSL `main` paths are unchanged. *(`MainImageShape` enum,
+  `ShaderToyConverter.ValidateMainImage`, `HarnessGenerator.EmitGodotPixelShader`.)*
+- **libretro / RetroArch (`.slang`) VERTEX/FRAGMENT stage split.** When a source gates both stages on
+  `VERTEX`/`FRAGMENT` (`#if defined(VERTEX) ... #elif defined(FRAGMENT) ... #endif` / `#ifdef`) and defines
+  NEITHER itself, the preprocessor seeds `FRAGMENT` = 1 (VERTEX left = 0) so the fragment branch (the real
+  `mainImage`) survives instead of being stripped to "no entry point". Scoped narrowly to the
+  VERTEX/FRAGMENT pair (requires BOTH guards present, NEITHER locally defined) so it cannot misfire on
+  ordinary `#if` logic. *(`Preprocessor.UsesVertexFragmentStageSplit` seed.)*
+- **`switch` -> if/else lowering.** A `switch (e) { case K: ...; break; default: ...; }` is parsed and
+  lowered to an `if`/`else if`/`else` chain (portable to SM3/FNA, which have no native `switch`): the
+  selector is hoisted once into `sd_swN`, stacked `case` labels OR into one condition, and `default`
+  becomes the final `else`. True **fall-through** (a non-empty case body with no terminating
+  `break`/`return`), and a `default` stacked with `case` labels on one body, stay loud rejects.
+  *(`SwitchStmt`/`SwitchCase` AST, `Parser.ParseSwitch`/`EndsCaseCleanly`, `HlslEmitter.EmitSwitch`,
+  `AstScan` switch walk.)*
+
+**Validation.** Unit suite **327 green (0 warn)**. Golden compile-sweep **OpenGL 62/62, DirectX_11 62/62,
+FNA 60/62** (the 2 FNA misses remain `bitwise_ops`/`uint_type`, the inherent fx_2_0/SM3 ceiling — all 5
+new fixtures compile on GL/DX/FNA). Render-proof **5/5 + multipass (exit 0)**, with a new
+`varying_gradient` case proving the screen-UV alias renders the SAME orientation as the gradient oracle.
+**Scratch re-measure: conversion 55.0 % (88/160), up from 51.2 % (82/160) — a +6-shader gain.** Fixtures:
+5 new `corpus/authored/*.glsl` (+ goldens), 2 new rejects (`switch_fallthrough`,
+`stage_in_noncoord_referenced`), new `Phase46StageIoTests` unit class; the former `switch_statement`
+reject moved to `authored/` (now in-subset).
 
 ### Multipass batch-export mode as-built (2026-06-19) — batch-convert + documented wiring, NOT an orchestrator
 

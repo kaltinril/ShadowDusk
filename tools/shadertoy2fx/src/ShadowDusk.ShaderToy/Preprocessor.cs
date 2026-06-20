@@ -56,6 +56,20 @@ internal sealed class Preprocessor
     {
         // Normalize line endings so the line counter and the lexer agree.
         string normalized = source.Replace("\r\n", "\n").Replace('\r', '\n');
+
+        // libretro / RetroArch ".slang" shape: a single file wraps BOTH the vertex and fragment stages
+        // in `#if defined(VERTEX) ... #elif defined(FRAGMENT) ... #endif` (the build system #defines one
+        // of VERTEX / FRAGMENT per compilation). Our converter only emits the fragment stage (the
+        // fullscreen-quad vertex shader is synthesized by the harness), so when a source uses this exact
+        // pair and neither symbol is otherwise defined, seed FRAGMENT=1 (and leave VERTEX undefined=0) so
+        // the fragment branch (which holds the real `mainImage`/`main`) survives instead of being stripped
+        // to a "no entry point" reject. Scoped narrowly to the VERTEX/FRAGMENT pair so it cannot misfire on
+        // ordinary `#if` feature logic.
+        if (UsesVertexFragmentStageSplit(normalized))
+        {
+            _macros["FRAGMENT"] = new Macro("FRAGMENT", Parameters: null, "1");
+        }
+
         string[] rawLines = normalized.Split('\n');
 
         // Join physical lines that end in a backslash into a single logical line (C line-continuation),
@@ -120,6 +134,106 @@ internal sealed class Preprocessor
         body = StripOpenFrameworksHeaderToken(body);
         body = ApplyDeprecatedAliases(body);
         return body;
+    }
+
+    /// <summary>
+    /// True for the libretro / RetroArch ".slang" stage-split shape: the source gates its two stages on
+    /// <c>VERTEX</c> and <c>FRAGMENT</c> (via <c>#if defined(VERTEX)</c>/<c>#ifdef VERTEX</c> and a
+    /// <c>FRAGMENT</c> guard), and neither symbol is <c>#define</c>d anywhere in the file. The check is
+    /// deliberately narrow: it requires BOTH a VERTEX guard and a FRAGMENT guard to be present and NEITHER
+    /// to be locally defined, so a normal shader that merely uses an unrelated <c>#if</c> never trips it.
+    /// </summary>
+    private static bool UsesVertexFragmentStageSplit(string normalized)
+    {
+        // Already-defined either symbol: respect the source's own definition, do not seed.
+        if (DefinesMacroNamed(normalized, "VERTEX") || DefinesMacroNamed(normalized, "FRAGMENT"))
+        {
+            return false;
+        }
+
+        return GuardsOnMacroNamed(normalized, "VERTEX") && GuardsOnMacroNamed(normalized, "FRAGMENT");
+    }
+
+    /// <summary>True if the source has a <c>#define NAME ...</c> for <paramref name="name"/> (whole word).</summary>
+    private static bool DefinesMacroNamed(string text, string name)
+    {
+        foreach (string line in text.Split('\n'))
+        {
+            string t = line.TrimStart();
+            if (!t.StartsWith('#'))
+            {
+                continue;
+            }
+
+            string content = t[1..].TrimStart();
+            if (content.StartsWith("define", StringComparison.Ordinal))
+            {
+                string rest = content[6..].TrimStart();
+                if (StartsWithWord(rest, name))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>True if a <c>#if</c>/<c>#elif</c>/<c>#ifdef</c>/<c>#ifndef</c> directive line references
+    /// <paramref name="name"/> as a whole-word token (a stage guard).</summary>
+    private static bool GuardsOnMacroNamed(string text, string name)
+    {
+        foreach (string line in text.Split('\n'))
+        {
+            string t = line.TrimStart();
+            if (!t.StartsWith('#'))
+            {
+                continue;
+            }
+
+            string content = t[1..].TrimStart();
+            bool isCondition =
+                content.StartsWith("ifdef", StringComparison.Ordinal) ||
+                content.StartsWith("ifndef", StringComparison.Ordinal) ||
+                content.StartsWith("elif", StringComparison.Ordinal) ||
+                content.StartsWith("if", StringComparison.Ordinal);
+            if (isCondition && ContainsWord(content, name))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool StartsWithWord(string s, string word)
+    {
+        if (!s.StartsWith(word, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        int after = word.Length;
+        return after >= s.Length || !(char.IsLetterOrDigit(s[after]) || s[after] == '_');
+    }
+
+    private static bool ContainsWord(string s, string word)
+    {
+        int i = 0;
+        while ((i = s.IndexOf(word, i, StringComparison.Ordinal)) >= 0)
+        {
+            bool leftOk = i == 0 || !(char.IsLetterOrDigit(s[i - 1]) || s[i - 1] == '_');
+            int after = i + word.Length;
+            bool rightOk = after >= s.Length || !(char.IsLetterOrDigit(s[after]) || s[after] == '_');
+            if (leftOk && rightOk)
+            {
+                return true;
+            }
+
+            i = after;
+        }
+
+        return false;
     }
 
     private static void EmitBlankPhysicalLines(List<string> output, int count)

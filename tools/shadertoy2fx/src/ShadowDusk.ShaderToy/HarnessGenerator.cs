@@ -25,7 +25,9 @@ internal sealed class HarnessGenerator
         string translatedFunctions,
         EntryMode entryMode = EntryMode.ShaderToy,
         string fragmentOutputName = "gl_FragColor",
-        bool usedGlFragCoord = false)
+        bool usedGlFragCoord = false,
+        bool usedScreenUv = false,
+        bool godotMode = false)
     {
         var sb = new StringBuilder();
 
@@ -101,6 +103,18 @@ internal sealed class HarnessGenerator
             sb.AppendLine();
         }
 
+        if (usedScreenUv)
+        {
+            // A screen-coordinate alias (ignored coordinate varying like vUv/texCoord/uv, or the OpenFL
+            // openfl_TextureCoordv) was referenced. Publish the normalized screen UV as a static float2
+            // the PS sets to fragCoord/iResolution.xy (ShaderToy bottom-left origin, [0,1]) before the
+            // entry runs, so the body's reads resolve to the fullscreen UV.
+            sb.AppendLine("// Screen-coordinate alias (ignored coordinate varying / openfl_TextureCoordv);");
+            sb.AppendLine("// bridged as a static normalized screen UV the PS sets before the entry runs.");
+            sb.AppendLine("static float2 sd_ScreenUV;");
+            sb.AppendLine();
+        }
+
         // Translated user structs (+ their factory functions), then const globals, then functions.
         if (translatedStructs.Length > 0)
         {
@@ -120,11 +134,15 @@ internal sealed class HarnessGenerator
         EmitVertexShader(sb);
         if (entryMode == EntryMode.PlainGlsl)
         {
-            EmitPlainGlslPixelShader(sb, fragmentOutputName);
+            EmitPlainGlslPixelShader(sb, fragmentOutputName, usedScreenUv);
+        }
+        else if (godotMode)
+        {
+            EmitGodotPixelShader(sb, usedGlFragCoord, usedScreenUv);
         }
         else
         {
-            EmitPixelShader(sb, usedGlFragCoord);
+            EmitPixelShader(sb, usedGlFragCoord, usedScreenUv);
         }
 
         EmitTechnique(sb, options.TechniqueName);
@@ -249,7 +267,7 @@ internal sealed class HarnessGenerator
         sb.AppendLine();
     }
 
-    private static void EmitPixelShader(StringBuilder sb, bool usedGlFragCoord)
+    private static void EmitPixelShader(StringBuilder sb, bool usedGlFragCoord, bool usedScreenUv)
     {
         sb.AppendLine("float4 PSMain(VSOutput input) : COLOR0");
         sb.AppendLine("{");
@@ -264,9 +282,49 @@ internal sealed class HarnessGenerator
             sb.AppendLine("    gl_FragCoord = float4(fragCoord, 0.0, 1.0);");
         }
 
+        if (usedScreenUv)
+        {
+            // Publish the normalized screen UV ([0,1], same bottom-left origin as fragCoord) so a body
+            // that reads a coordinate-varying / openfl_TextureCoordv alias resolves to the fullscreen UV.
+            sb.AppendLine("    sd_ScreenUV = fragCoord / iResolution.xy;");
+        }
+
         sb.AppendLine("    float4 fragColor = float4(0.0, 0.0, 0.0, 1.0);");
         sb.AppendLine("    mainImage(fragColor, fragCoord);");
         sb.AppendLine("    return fragColor;");
+        sb.AppendLine("}");
+        sb.AppendLine();
+    }
+
+    /// <summary>
+    /// Emit the pixel shader for the Godot / GdShaders 3-parameter <c>mainImage</c> form
+    /// (<c>in vec4 inputColor, in vec2 uv, out vec4 outputColor</c>). It computes the same bottom-left-Y
+    /// <c>fragCoord</c>, derives Godot's normalized SCREEN_UV <c>uv = fragCoord / iResolution.xy</c>
+    /// ([0,1]), samples <c>iChannel0</c> at <c>uv</c> as the screen-texture <c>inputColor</c>, calls
+    /// <c>mainImage(inputColor, uv, outputColor)</c>, and returns <c>outputColor</c> as COLOR0.
+    /// </summary>
+    private static void EmitGodotPixelShader(StringBuilder sb, bool usedGlFragCoord, bool usedScreenUv)
+    {
+        sb.AppendLine("float4 PSMain(VSOutput input) : COLOR0");
+        sb.AppendLine("{");
+        sb.AppendLine("    // Godot/GdShaders mainImage: uv = SCREEN_UV ([0,1]); inputColor = the screen");
+        sb.AppendLine("    // (iChannel0) sample at uv; outputColor = the returned color. Same bottom-left Y.");
+        sb.AppendLine("    float2 fragCoord = float2(input.UV.x, 1.0 - input.UV.y) * iResolution.xy;");
+        sb.AppendLine("    float2 uv = fragCoord / iResolution.xy;");
+        if (usedGlFragCoord)
+        {
+            sb.AppendLine("    gl_FragCoord = float4(fragCoord, 0.0, 1.0);");
+        }
+
+        if (usedScreenUv)
+        {
+            sb.AppendLine("    sd_ScreenUV = uv;");
+        }
+
+        sb.AppendLine("    float4 inputColor = tex2D(iChannel0, uv);");
+        sb.AppendLine("    float4 outputColor = float4(0.0, 0.0, 0.0, 1.0);");
+        sb.AppendLine("    mainImage(inputColor, uv, outputColor);");
+        sb.AppendLine("    return outputColor;");
         sb.AppendLine("}");
         sb.AppendLine();
     }
@@ -278,7 +336,7 @@ internal sealed class HarnessGenerator
     /// global (<c>.xy</c> = pixel coord, <c>.z</c> = 0, <c>.w</c> = 1), calls the translated
     /// <c>main()</c>, and returns the fragment-output static global as <c>COLOR0</c>.
     /// </summary>
-    private static void EmitPlainGlslPixelShader(StringBuilder sb, string fragmentOutputName)
+    private static void EmitPlainGlslPixelShader(StringBuilder sb, string fragmentOutputName, bool usedScreenUv)
     {
         sb.AppendLine("float4 PSMain(VSOutput input) : COLOR0");
         sb.AppendLine("{");
@@ -288,6 +346,12 @@ internal sealed class HarnessGenerator
         sb.AppendLine("    // gl_FragCoord (depth/1-over-w are not meaningful for a fullscreen pass).");
         sb.AppendLine("    float2 pixel = float2(input.UV.x, 1.0 - input.UV.y) * iResolution.xy;");
         sb.AppendLine("    gl_FragCoord = float4(pixel, 0.0, 1.0);");
+        if (usedScreenUv)
+        {
+            // Publish the normalized screen UV ([0,1]) for a coordinate-varying / openfl_TextureCoordv alias.
+            sb.AppendLine("    sd_ScreenUV = pixel / iResolution.xy;");
+        }
+
         sb.AppendLine($"    {fragmentOutputName} = float4(0.0, 0.0, 0.0, 1.0);");
         sb.AppendLine("    main();");
         sb.AppendLine($"    return {fragmentOutputName};");

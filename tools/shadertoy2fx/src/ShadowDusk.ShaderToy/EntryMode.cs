@@ -19,6 +19,24 @@ internal enum EntryMode
 }
 
 /// <summary>
+/// The shape of a <c>mainImage</c> entry (G2). The standard ShaderToy form takes two parameters
+/// (<c>out vec4 fragColor, in vec2 fragCoord</c>); GdShaders / Godot 4's port uses a four-... rather a
+/// three-parameter form (<c>in vec4 inputColor, in vec2 uv, out vec4 outputColor</c>). Both are valid
+/// entries; the harness wires each correctly (see <see cref="HarnessGenerator"/>).
+/// </summary>
+internal enum MainImageShape
+{
+    /// <summary>ShaderToy: <c>void mainImage(out vec4 fragColor, in vec2 fragCoord)</c>.</summary>
+    Standard,
+
+    /// <summary>Godot/GdShaders: <c>void mainImage(in vec4 inputColor, in vec2 uv, out vec4 outputColor)</c>.
+    /// <c>uv</c> is Godot's SCREEN_UV ([0,1]) set from the harness (<c>fragCoord/iResolution</c>);
+    /// <c>inputColor</c> is the iChannel0 sample at <c>uv</c> (or opaque black if no channel);
+    /// <c>outputColor</c> is the returned fragment color.</summary>
+    Godot,
+}
+
+/// <summary>
 /// A tiny read-only AST walker used by entry-point detection: it answers "does this subtree reference
 /// a given identifier name anywhere?" (e.g. is <c>gl_FragColor</c> written somewhere in <c>main()</c>).
 /// It only walks the supported-subset node shapes, so a new node type would be a compile error here,
@@ -44,6 +62,10 @@ internal static class AstScan
         WhileStmt w => MentionsIdentifier(w.Condition, identifier) || MentionsIdentifier(w.Body, identifier),
         DoWhileStmt d => MentionsIdentifier(d.Body, identifier) || MentionsIdentifier(d.Condition, identifier),
         ReturnStmt r => r.Value is not null && MentionsIdentifier(r.Value, identifier),
+        SwitchStmt sw => MentionsIdentifier(sw.Selector, identifier) ||
+                         sw.Cases.Any(c =>
+                             c.Labels.Any(l => MentionsIdentifier(l, identifier)) ||
+                             c.Body.Any(s => MentionsIdentifier(s, identifier))),
         _ => false, // BreakStmt / ContinueStmt / DiscardStmt: no expressions.
     };
 

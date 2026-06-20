@@ -170,4 +170,14 @@ internal sealed class TranslationUnit
     /// applied to identifier references so a declared alias resolves to its built-in.</summary>
     public IReadOnlyDictionary<string, string> Aliases { get; init; } =
         new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Names of IGNORED top-level <c>in</c>/<c>varying</c>/<c>attribute</c> declarations (web /
+    /// desktop-export vertex-stage leftover) whose name is a conventional fullscreen screen-coordinate
+    /// varying (see <see cref="ScreenCoordVaryings"/>). A reference to one of these resolves to the
+    /// harness's normalized screen UV (<c>fragCoord / iResolution.xy</c>, [0,1]); a non-coordinate ignored
+    /// varying is NOT here and stays an undeclared-identifier reject if referenced.
+    /// </summary>
+    public IReadOnlySet<string> ScreenUvAliases { get; init; } =
+        new HashSet<string>(StringComparer.Ordinal);
 }

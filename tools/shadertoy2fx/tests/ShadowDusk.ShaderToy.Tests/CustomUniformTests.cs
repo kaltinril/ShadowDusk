@@ -202,11 +202,33 @@ public sealed class CustomUniformTests
     }
 
     [Fact]
-    public void CustomVaryingOfCustomName_StillRejects()
+    public void CustomVaryingOfCustomName_IsIgnored_NotEmitted()
     {
-        // Only `uniform` is host-drivable; a `varying`/`in`/`out` custom name stays a reject.
+        // Phase 46 (second batch): a top-level `varying`/`in`/`attribute` is web/desktop-export
+        // vertex-stage leftover the converter now IGNORES (not a reject). It is not emitted as a
+        // global/parameter; an UNreferenced non-coordinate varying simply vanishes.
         const string glsl = """
         varying vec2 vCustom;
+        void mainImage(out vec4 fragColor, in vec2 fragCoord)
+        {
+            fragColor = vec4(0.0);
+        }
+        """;
+
+        ConvertResult r = Convert(glsl);
+        r.Success.Should().BeTrue();
+        r.Fx!.Should().NotContain("vCustom");
+        r.UsedUniforms.Should().NotContain("vCustom");
+        r.Diagnostics.Should().NotContain(d => d.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void CustomOutOfNonVec4Name_StillRejects()
+    {
+        // A top-level `out` of a custom name is NOT the supported plain-GLSL `out vec4 <name>;` fragment
+        // output, and `out` is not a vertex-stage input, so it stays a loud reject.
+        const string glsl = """
+        out vec2 vBad;
         void mainImage(out vec4 fragColor, in vec2 fragCoord)
         {
             fragColor = vec4(0.0);

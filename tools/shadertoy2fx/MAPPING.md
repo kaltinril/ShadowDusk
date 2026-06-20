@@ -57,7 +57,9 @@ two-pass example in `render-proof/` renders + asserts this end to end (Buffer A 
 The converter accepts **either** of two single-pass entry conventions; it auto-detects which by the
 entry **name** the shader defines (no flag, no consumer choice):
 
-1. **ShaderToy** — `void mainImage(out vec4 fragColor, in vec2 fragCoord)`.
+1. **ShaderToy** — `void mainImage(out vec4 fragColor, in vec2 fragCoord)` (standard) OR the
+   **Godot / GdShaders** 3-parameter form `void mainImage(in vec4 inputColor, in vec2 uv,
+   out vec4 outputColor)` (see *Godot mainImage* below).
 2. **Plain-GLSL fragment** — `void main()` (no parameters), as used by glslViewer / Bonzomatic /
    Shadertoy-export style single-pass image shaders.
 
@@ -90,6 +92,27 @@ only both-entries outcome — it does not affect a shader that defines just one 
 - Multiple `mainImage` definitions → reject.
 - The harness PS declares a local `fragColor`, computes `fragCoord` (bottom-left Y origin), and calls
   `mainImage(fragColor, fragCoord)`, returning `fragColor` as `COLOR0`.
+
+### Godot / GdShaders `mainImage` (the alternate 3-parameter form)
+
+GdShaders / Godot 4's ShaderToy port uses an alternate `mainImage` signature:
+`void mainImage(in vec4 inputColor, in vec2 uv, out vec4 outputColor)` (the `in` qualifiers may be
+`const in` or omitted). It is recognized as a valid ShaderToy-mode entry **by its 3-parameter shape**
+(param0 = `in vec4`, param1 = `in vec2`, param2 = `out vec4`); any other 3-parameter `mainImage` is a
+loud, located reject. The harness wires Godot's conventions:
+
+- **`uv`** = Godot's normalized `SCREEN_UV` ([0,1]). The harness PS sets it from `fragCoord /
+  iResolution.xy` (same bottom-left-Y fragCoord the standard harness computes, so the orientation
+  matches the ShaderToy/Godot reference — render-proven by `varying_gradient`'s shared screen-UV path).
+- **`inputColor`** = Godot's screen-texture sample at `uv`. The harness samples **`iChannel0`** at `uv`
+  (`tex2D(iChannel0, uv)`) and passes it as `inputColor`; `iChannel0` is therefore always exposed as a
+  drivable channel in this mode (the consumer binds the input/screen texture to it). With no channel
+  bound the sample is the default texture (opaque black by the sampler's default), matching "the
+  iChannel0 sample at uv (or `float4(0,0,0,1)` if no channel)".
+- **`outputColor`** = the returned fragment color (`COLOR0`).
+
+The standard 2-arg ShaderToy `mainImage` and the plain-GLSL `main` paths are unchanged; this only adds
+the 3-arg Godot recognition.
 
 ### Plain-GLSL `main()` mode
 
@@ -251,10 +274,69 @@ cannot carry an initializer (loud reject).
 
 **Restrictions (still loud rejects).** A custom uniform whose type is **not** in the supported set
 (`struct`, array, `sampler3D`/`samplerCube`, `double`/`uint`/`uvec`/`dvec`, non-square / explicit
-`matAxB`, or any unknown type) is a loud, located reject. A `varying`/`attribute`/`in`/`out`
-declaration of a custom name is **still** a loud reject (only `uniform` is host-drivable). The L1 rule
-is unchanged: a **bare, never-declared** identifier (e.g. ISF's `RENDERSIZE`) is still a loud reject —
-declare it as a top-level `uniform` to expose it.
+`matAxB`, or any unknown type) is a loud, located reject. A top-level `out` declaration of a custom
+name (anything other than the plain-GLSL `out vec4 <name>;` fragment output) is a loud reject (only
+`uniform` is host-drivable). A top-level `in`/`varying`/`attribute` declaration is now **ignored**, not
+rejected (see *Ignored stage I/O declarations* below). The L1 rule is unchanged: a **bare,
+never-declared** identifier (e.g. ISF's `RENDERSIZE`) is still a loud reject — declare it as a top-level
+`uniform` to expose it.
+
+## Ignored stage I/O declarations + screen-coordinate varyings
+
+A top-level `in`/`varying`/`attribute` declaration (and the `layout(location = N) in <type> <name>;`
+form) is **web / desktop-export VERTEX-STAGE leftover** — the fragment-stage source of a shader that was
+exported alongside its vertex stage. The converter synthesizes its own fullscreen vertex shader, so it
+**IGNORES** such a declaration entirely: it is not rejected, and it is not emitted as a parameter or
+global. An unreferenced ignored varying simply vanishes from the output.
+
+**The common case — a coordinate varying used as the fullscreen UV.** A large share of these exports
+declare a `vec2` varying and then read it in the fragment body as the fullscreen UV. For a fixed set of
+**conventional screen-coordinate varying names** the converter aliases the reference to the harness's
+**normalized screen UV** (`fragCoord / iResolution.xy`, the [0,1] coordinate with the same ShaderToy
+bottom-left Y origin):
+
+```
+texCoord, vUv, vUV, v_texcoord, vTextureCoord, vTexCoord, v_coord, uv, texcoord
+```
+
+The harness publishes the screen UV as a `static float2 sd_ScreenUV;` and sets it in the PS before the
+entry runs (only when one of these aliases is referenced); each aliased reference is rewritten to
+`sd_ScreenUV`. This is a **documented heuristic**: the names above are the only ones aliased, and the
+orientation matches the gradient oracle (render-proven by `varying_gradient`).
+
+**Heuristic boundary (loud reject).** An ignored varying whose name is **NOT** one of the conventional
+coordinate names, if it is actually **referenced** in the body, stays a loud, located **undeclared
+identifier** reject — we have no per-vertex value for it and refuse to invent one. (Declare it as a
+`uniform` if you want to drive it as an effect parameter.)
+
+## OpenFL / Haxe `#pragma header` exports
+
+OpenFL / Haxe fullscreen-filter shaders start with a `#pragma header` line (OpenFL substitutes its own
+GLSL header there before compiling). `#pragma` is already stripped (G5), so `#pragma header` is dropped
+like any pragma. The two OpenFL fullscreen-filter globals are mapped by their **conventional
+fullscreen-filter meaning**:
+
+| OpenFL global | Maps to |
+|---|---|
+| `openfl_TextureCoordv` (vec2) | the harness normalized screen UV (`fragCoord / iResolution.xy`, [0,1]) — the same `sd_ScreenUV` bridge the coordinate varyings use. |
+| `openfl_TextureSize` (vec2) | the resolution `iResolution.xy`. |
+
+A reference to either resolves cleanly (no undeclared-identifier reject); these are the only two OpenFL
+globals mapped.
+
+## libretro / RetroArch (`.slang`) VERTEX/FRAGMENT stage split
+
+A libretro / RetroArch ".slang" source wraps **both** stages in one file, gated on `VERTEX` and
+`FRAGMENT` (`#if defined(VERTEX) ... #elif defined(FRAGMENT) ... #endif`, or the `#ifdef` form); the
+build system `#define`s one symbol per compilation. Our converter only needs the **fragment** stage
+(the harness synthesizes the vertex shader), so when a source uses this shape AND neither symbol is
+otherwise `#define`d in the file, the preprocessor **seeds `FRAGMENT` = 1 (and leaves `VERTEX`
+undefined = 0)** so the fragment branch (which holds the real `mainImage`/`main`) survives preprocessing
+instead of being stripped to a "no entry point" reject.
+
+This is scoped **narrowly to the VERTEX/FRAGMENT pair**: it fires only when the file has BOTH a `VERTEX`
+guard and a `FRAGMENT` guard and defines NEITHER itself, so an ordinary shader using an unrelated `#if`
+is never affected.
 
 **Common alias nicety (G3).** A declared `uniform` whose **name** is a known glslViewer / KodeLife /
 Bonzomatic alias AND whose **type matches the ShaderToy built-in exactly** is folded onto that built-in,
@@ -415,7 +497,12 @@ A real line-oriented C preprocessor pass handles:
 - **Comments on directive lines** (`#define X 0 // note`, `#if A /* x */`) are stripped before the
   body/expression is taken, so they never leak into a macro body or an `#if` expression.
 - **Line continuations** (`\` at end of a physical line) are folded into one logical directive.
-- **Harmless directives ignored (G5):** `#version`, `#extension`, `#pragma`, `#line`, and the
+- **libretro / RetroArch stage split:** when the source gates both stages on `VERTEX`/`FRAGMENT`
+  (`#if defined(VERTEX) ... #elif defined(FRAGMENT) ... #endif`, or the `#ifdef` form) and defines
+  NEITHER symbol itself, `FRAGMENT` is seeded = 1 (and `VERTEX` left = 0) so the fragment branch
+  survives — see *libretro / RetroArch VERTEX/FRAGMENT stage split* above. Scoped narrowly to that pair.
+- **Harmless directives ignored (G5):** `#version`, `#extension`, `#pragma` (including OpenFL's
+  `#pragma header`), `#line`, and the
   glslViewer / Bonzomatic / VShaderEd channel-binding & input **metadata** directives (recognized by
   the leading `i` ShaderToy-input convention: `#iChannel0 "tex.png"`, `#iKeyboard`, `#iMouse`,
   `#iDate`, `#iuniform`, …) are silently dropped (the host binds those inputs itself), never an error.
@@ -429,7 +516,8 @@ macro into a loud reject rather than an infinite loop.
 
 block `{}`, local var decl + init (incl. comma lists `float a=…, b=…;` kept as siblings, not a new
 scope), expression statement, compound assignment, `if/else`, `for`, `while`, `do…while`, `return`,
-`break`, `continue`, `discard`. User-defined functions with `in`/`out`/`inout` params, `const`
+`break`, `continue`, `discard`, and **`switch`** (see *switch lowering* below). User-defined functions
+with `in`/`out`/`inout` params, `const`
 globals (emitted as `static const`), and **top-level non-`const` mutable globals** (emitted as
 `static`, see *Top-level mutable globals* above) are supported. Function prototypes are accepted and
 the later definition is emitted. The GLSL **comma (sequence) operator** `a, b, c` is supported at
@@ -437,6 +525,23 @@ full-expression sites (`for` headers `for (...; ...; i++, j--)`, the comma expre
 emitted as the same comma operator; it is distinct from the comma SEPARATORs in argument lists and
 declarators, which stay separators (G7 parser hardening). User **structs** (G6) and fixed-size
 **arrays** (G7) are supported as described above.
+
+### `switch` lowering (portable to SM3 / FNA)
+
+A `switch (selector) { case K: ...; break; ... default: ...; }` is parsed and **lowered to an
+`if` / `else if` / `else` chain** (HLSL on the SM3 / FNA fx_2_0 targets has no native `switch`). The
+selector is evaluated **exactly once** into a fresh local (`sd_swN`) so a non-pure selector is not
+re-evaluated per arm; each non-default arm becomes `if/else if (sd_swN == K0 || sd_swN == K1 ...)` and
+the `default` arm becomes the final `else` (emitted last regardless of source position). Multiple `case`
+labels stacked on one body (`case 1: case 2: ...`) become an OR'd condition. The trailing `break;` of
+each arm is consumed (a `break` outside a loop is illegal HLSL); a `return ...;` inside an arm is
+preserved.
+
+**Fall-through stays a loud reject.** A non-empty `case` body with **no terminating `break`/`return`**
+is real C fall-through (control falls into the next case). Lowering that to an if/else chain would
+change control flow, so it is a loud, located reject (add a `break;`). A `default` label stacked
+together with `case` labels on one body is also a reject (give `default` its own arm); a `discard;`
+does **not** count as a clean terminator (the next case body would still run in C).
 
 ---
 
@@ -448,8 +553,10 @@ Each of the following produces a fatal diagnostic, never silently-wrong HLSL:
   `mainImage` or duplicate `main`; a `main` with parameters or a `main()` with no discoverable
   fragment output (no user `out vec4` and no `gl_FragColor` write); more than one `out vec4` fragment
   output; `mainSound`, `mainVR`, `mainCubemap` (Buffer A–D multipass is implied out of scope — only a
-  single image pass is emitted). (**Both** a `mainImage` and a `main` is NO LONGER a reject: it prefers
-  ShaderToy mode and drops the `main()` wrapper with a Warning — see *Entry point* above.)
+  single image pass is emitted); a 3-parameter `mainImage` that is **not** the Godot/GdShaders shape
+  `(in vec4, in vec2, out vec4)`. (**Both** a `mainImage` and a `main` is NO LONGER a reject: it prefers
+  ShaderToy mode and drops the `main()` wrapper with a Warning — see *Entry point* above. The Godot 3-arg
+  `mainImage` IS accepted — see *Godot mainImage* above.)
 - **Types:** `double`, `dvecN`, explicit `matAxB` spellings (use `mat2/3/4`), non-square matrices,
   `sampler3D` / `samplerCube`, and any unknown type name. (`uint` / `uvecN` are now **mapped to signed
   `int` / `intN`** — see the type-mapping table — not rejected.)
@@ -463,10 +570,13 @@ Each of the following produces a fatal diagnostic, never silently-wrong HLSL:
   a top-level non-`const` global of an **unsupported type** (`double g;` etc. — supported-type mutable
   globals are now **accepted** as `static`, see G1); a custom `uniform` of an **unsupported type**
   (struct/array/`sampler3D`/`samplerCube`/`double`/non-square matrix/unknown) or a **sampler with
-  an initializer**; a top-level `varying`/`attribute`/`in`/`out` declaration of a **custom** name (only
-  `uniform` is host-drivable). A redundant re-declaration of a known ShaderToy built-in is dropped; a
-  custom `uniform` of a SUPPORTED type (optionally with a default initializer, G4) is **accepted** as an
-  effect parameter — see *Custom uniforms* above.
+  an initializer**; a top-level `out` declaration of a **custom** name (anything but the plain-GLSL
+  `out vec4 <name>;` fragment output). A top-level `in`/`varying`/`attribute` declaration is now
+  **IGNORED** (vertex-stage leftover) rather than rejected — see *Ignored stage I/O declarations* above;
+  the only related reject is a **non-coordinate** ignored varying that is actually referenced (an
+  undeclared-identifier reject, since its value is unknown). A redundant re-declaration of a known
+  ShaderToy built-in is dropped; a custom `uniform` of a SUPPORTED type (optionally with a default
+  initializer, G4) is **accepted** as an effect parameter — see *Custom uniforms* above.
 - **Undeclared identifiers:** a free identifier used in an expression that is not a local/parameter, a
   `const` global, a user function, a declared custom uniform, or a predefined ShaderToy uniform is
   rejected at convert time (with line/column) rather than leaked to a downstream "use of undeclared
@@ -477,11 +587,14 @@ Each of the following produces a fatal diagnostic, never silently-wrong HLSL:
   (`...`), and `#include` (no file resolver). (Conditional compilation and function-like macros are
   **supported**, and `#version`/`#extension`/`#pragma`/`#line` plus glslViewer/Bonzomatic `#i*` channel
   metadata directives are now silently **ignored** rather than rejected — see *Preprocessor* above.)
-- **Statements/expressions:** `switch`; unknown function/intrinsic that is neither a user function nor
-  in the mapping table; single-argument matrix constructor `matN(x)` (HLSL has no diagonal
-  `floatNxN(scalar)` form); `roundEven` (no faithful HLSL map); the mip-bias `texture(s, uv, bias)`
-  form; `texelFetch`, `textureProj`, `textureSize`, fine/coarse derivatives, and bit-packing/bitfield
-  intrinsics. (`fwidth` and `matrixCompMult` are now **supported** — see the intrinsic table.)
+- **Statements/expressions:** a `switch` with true **fall-through** (a non-empty `case` body lacking a
+  terminating `break`/`return`) or a `default` stacked with `case` labels on one body (a plain
+  break-terminated `switch` is now **supported** and lowered to if/else — see *switch lowering* above);
+  unknown function/intrinsic that is neither a user function nor in the mapping table; single-argument
+  matrix constructor `matN(x)` (HLSL has no diagonal `floatNxN(scalar)` form); `roundEven` (no faithful
+  HLSL map); the mip-bias `texture(s, uv, bias)` form; `texelFetch`, `textureProj`, `textureSize`,
+  fine/coarse derivatives, and bit-packing/bitfield intrinsics. (`fwidth` and `matrixCompMult` are now
+  **supported** — see the intrinsic table.)
 
 ## Notes / known limits
 

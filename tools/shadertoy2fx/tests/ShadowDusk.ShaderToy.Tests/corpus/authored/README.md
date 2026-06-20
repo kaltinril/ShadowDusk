@@ -63,5 +63,10 @@ exercises **one** feature or translation trap so a failure points at a single ca
 | `uint_type.glsl` | **uint mapping**: `uint` -> `int` and `uvec2/3/4` -> `int2/3/4` (treated as signed int; common hash idiom). |
 | `redeclare_ichannel.glsl` | **Channel redeclare**: a redundant `uniform sampler2D iChannel0;` re-declaration is accepted-and-ignored (the built-in channel is already injected). |
 | `uniform_multi_declarator.glsl` | **Multi-declarator uniform**: a comma list `uniform float uA, uB, uC;` (each becomes its own custom uniform) plus a redundant built-in WITH an initializer (`uniform vec3 iResolution = vec3(...);`) dropped. |
+| `stage_in_varying_ignored.glsl` | **Stage I/O ignore**: a top-level `varying vec2 vUv;` (vertex-stage leftover) is ignored, and `vUv` (a conventional coordinate-varying name) used as the UV resolves to the harness normalized screen UV; an unreferenced non-coordinate `varying vec3` just vanishes. |
+| `openfl_header.glsl` | **OpenFL export**: `#pragma header` stripped; `openfl_TextureCoordv` -> the harness screen UV, `openfl_TextureSize` -> `iResolution.xy`. |
+| `godot_4arg_mainimage.glsl` | **Godot/GdShaders 4-arg `mainImage`**: `(in vec4 inputColor, in vec2 uv, out vec4 outputColor)` — `uv` = SCREEN_UV ([0,1]) from the harness; `inputColor` = iChannel0 sample at `uv`; `outputColor` = the returned color. |
+| `libretro_vertex_fragment.glsl` | **libretro stage split**: both stages wrapped in `#if defined(VERTEX) ... #elif defined(FRAGMENT) ... #endif`; the converter seeds `FRAGMENT`=1 so the fragment branch (the real `mainImage`) survives. |
+| `switch_statement.glsl` | **`switch` lowering**: a break-terminated `switch` (multiple cases, stacked labels sharing a body, `default`) lowered to an if/else-if/else chain (portable to SM3/FNA). |
 
-Total: 56 authored shaders.
+Total: 61 authored shaders.
