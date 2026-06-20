@@ -25,10 +25,22 @@ using ShadowDusk.ShaderToy.RenderProof;
 
 string driverDir = AppContext.BaseDirectory;
 string shadersDir = Path.Combine(driverDir, "shaders");
-string outDir = Path.Combine(FindRepoRoot(driverDir), "tools", "shadertoy2fx", "render-proof", "output");
+string repoRoot = FindRepoRoot(driverDir);
+string outDir = Path.Combine(repoRoot, "tools", "shadertoy2fx", "render-proof", "output");
 Directory.CreateDirectory(outDir);
 
 string cliDll = LocateCliDll(driverDir);
+
+// ---- GALLERY MODE (Phase 46 render-fidelity broadening): render EVERY authored corpus shader. ----
+// `--gallery` iterates corpus/authored/*.glsl, converts + compiles (OpenGL), renders each at a fixed
+// resolution/time, asserts each frame is NON-TRIVIAL, and writes a single committed montage PNG.
+if (args.Length > 0 && args[0] == "--gallery")
+{
+    Console.WriteLine($"[gallery] CLI:    {cliDll}");
+    Console.WriteLine($"[gallery] output: {outDir}\n");
+    return ShadowDusk.ShaderToy.RenderProof.GalleryRunner.Run(cliDll, repoRoot, outDir);
+}
+
 Console.WriteLine($"[render-proof] CLI:     {cliDll}");
 Console.WriteLine($"[render-proof] shaders: {shadersDir}");
 Console.WriteLine($"[render-proof] output:  {outDir}\n");

@@ -10,10 +10,18 @@
 >   Working tree clean. PR not opened yet (link: `https://github.com/kaltinril/ShadowDusk/pull/new/experiment/shadertoy-to-fx`).
 > - **Isolation verified:** the ONLY changes outside `tools/shadertoy2fx/` are `.gitignore`, this doc,
 >   and `plan/plan.md`. No `src/` or `tests/` product file changed; the tool is NOT in `ShadowDusk.slnx`.
-> - **Tests: 371/371 green, 0 warnings** (`dotnet test tools/shadertoy2fx/shadertoy2fx.slnx`).
-> - **Compile sweep (all goldens):** OpenGL 69/69, DirectX_11 69/69, **FNA 67/69** (the 2 FNA misses =
+> - **Tests: 379/379 green, 0 warnings** (`dotnet test tools/shadertoy2fx/shadertoy2fx.slnx`).
+> - **Compile sweep (all goldens):** OpenGL 73/73, DirectX_11 73/73, **FNA 71/73** (the 2 FNA misses =
 >   `bitwise_ops`/`uint_type`, the inherent D3D9/SM3 no-integer-bitwise ceiling, compile fine on GL/DX).
-> - **Render-proof (real MonoGame GL):** 6/6 single-pass cases + the multipass chain, exit 0.
+>   The 4 new COMPLEX shaders all compile on GL/DX/**and FNA** — no SM3/instruction ceiling hit.
+> - **Render-proof (real MonoGame GL):** the 6 analytic-pixel cases + the multipass chain (exit 0), AND
+>   a new **render GALLERY** (`render-proof --gallery`): converts + compiles (OpenGL) + loads a real
+>   `Effect` + renders + reads back EVERY `corpus/authored/*.glsl`, asserting each frame is non-trivial.
+>   **72/72 authored shaders render non-trivially (gallery exit 0)** — render-gating lifted from 6 → 72
+>   shaders. One committed montage at `render-proof/output/gallery.png` (per-shader thumbs gitignored).
+> - **4 COMPLEX original shaders added** (`raymarch_sphere`, `fbm_clouds`, `kaleidoscope`, `domain_warp`)
+>   exercising loops, hashing/fbm, normalize/dot/cross/reflect, atan2/mod/mat2, and nested helper calls.
+>   All 4 convert, compile (GL/DX/FNA), and render correctly in the gallery. No converter bug surfaced.
 > - **Real-world conversion: 61.2% (98/160)** over the gitignored 160-shader scratch corpus, up from a
 >   17.5% v1 baseline. Trajectory: 17.5 → 23.4 → 26.0 → 34.0 → 34.6 → 44.4 (mainImage+main wrapper fix)
 >   → 51.2 (G8) → 55.0 (G9) → **61.2 (final wave)**.

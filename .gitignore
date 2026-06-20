@@ -89,6 +89,10 @@ tools/shadertoy2fx/.scratch/
 tools/shadertoy2fx/render-proof/output/*.fx
 tools/shadertoy2fx/render-proof/output/*.mgfx
 
+# Phase 46 render GALLERY: only the single montage (gallery.png) is committed as eyeball
+# evidence. The per-shader thumbnails + their .fx/.mgfx are regenerable scratch.
+tools/shadertoy2fx/render-proof/output/gallery-thumbs/
+
 # Phase 46 sample regenerable artifacts (the .png eyeball evidence IS committed).
 tools/shadertoy2fx/sample/output/*.fx
 tools/shadertoy2fx/sample/output/*.mgfx

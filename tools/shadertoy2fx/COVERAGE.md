@@ -4,6 +4,31 @@ A statistical coverage report for the `shadertoy2fx` GLSL → HLSL `.fx` convert
 running a batch of **real, third-party single-pass ShaderToy / GLSL image shaders** through the
 converter and then through the ShadowDusk OpenGL compiler.
 
+> **Update 2026-06-20 (j) — RENDER-FIDELITY BROADENED: the whole authored corpus is now render-gated,
+> not just 6 analytic shaders, and 4 genuinely-COMPLEX original shaders prove the hard machinery
+> renders.** Added 4 committable, original, single-pass `mainImage` shaders that exercise the constructs
+> the famous ShaderToys use: **`raymarch_sphere`** (a 64-step sphere/plane raymarch loop, central-
+> difference normal, diffuse + Blinn specular, `iTime` camera orbit; loops + normalize/dot/cross/reflect
+> + gamma), **`fbm_clouds`** (sin-dot hash → bilinear value noise → 5-octave fbm loop with a mat2 inter-
+> octave rotate, animated; fract/floor/mix + matrix), **`kaleidoscope`** (polar `atan2`, angular
+> `glsl_mod` fold, mat2 spin — the matrix-order + mod-sign traps — plus a ring/spoke pattern), and
+> **`domain_warp`** (fbm-of-fbm domain warping, nested helper calls + loops). **All 4 convert (exit 0)
+> and compile on OpenGL + DirectX_11 + FNA fx_2_0** — no SM3/instruction ceiling hit; the kaleidoscope
+> golden confirms the converter emitted `mul(uv, spin)` (column-major order) and `glsl_mod` (GLSL sign).
+> New **render GALLERY** driver (`render-proof --gallery`): it converts + compiles (OpenGL) + loads a
+> real MonoGame DesktopGL `Effect` for **every** `corpus/authored/*.glsl`, renders each at a fixed
+> 320×240 / iTime=1.5 / iMouse into an offscreen RenderTarget, reads back pixels, and ASSERTS each frame
+> is non-trivial: a two-tier gate where the render-fidelity proof set (the 4 complex + 14 representative
+> spatial fixtures) must be SPATIALLY varied (≥16 distinct colors) and every other fixture must be "not
+> all-black" (custom-uniform-dependent fixtures, which MonoGame zero-inits, are tolerated all-black). It
+> composes all 72 thumbnails into a single committed montage `render-proof/output/gallery.png` (per-shader
+> thumbnails gitignored under `output/gallery-thumbs/`). **Result: 72/72 authored shaders convert, compile
+> on OpenGL, load as an `Effect`, and render non-trivially (gallery exit 0).** This lifts render-gated
+> coverage from **6 analytic shaders → 72 corpus shaders + the 4 complex proofs.** No converter bug was
+> surfaced by the complex shaders; the 10 fixtures that render constant/black were each verified correct
+> (constant-by-design, saturate-to-constant, or depend on an unset custom uniform — not a render failure).
+> Unit suite **379 green (0 warn)** (4 new golden + determinism cases).
+>
 > **Update 2026-06-20 (i) — FINAL coverage wave landed (entry/prototype + returning mainImage,
 > overloading, const/macro/expression array sizes, struct array members, single-arg matrix constructors,
 > self-referential-macro C-rule; named out-of-scope rejects for the permanent tail).** The last
