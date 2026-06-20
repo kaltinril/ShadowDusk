@@ -2,52 +2,58 @@
 
 **Track:** Reach experiment (adoption/demo). **Not** the product pipeline.
 
-> ## ⏯️ SESSION HANDOFF — current state (2026-06-20, end of day)
+> ## ⏯️ SESSION HANDOFF — current state (2026-06-20)
 >
 > Everything below this block is the running history; THIS block is the live status to resume from.
 >
-> - **Branch:** `experiment/shadertoy-to-fx` — **pushed** to origin (16 commits). `main` untouched.
->   Working tree clean. PR not opened yet (link: `https://github.com/kaltinril/ShadowDusk/pull/new/experiment/shadertoy-to-fx`).
+> - **Branch:** `experiment/shadertoy-to-fx` — pushed. **Draft PR #112 OPEN**
+>   (`https://github.com/kaltinril/ShadowDusk/pull/112`). `main` untouched, working tree clean.
 > - **Isolation verified:** the ONLY changes outside `tools/shadertoy2fx/` are `.gitignore`, this doc,
 >   and `plan/plan.md`. No `src/` or `tests/` product file changed; the tool is NOT in `ShadowDusk.slnx`.
-> - **Tests: 379/379 green, 0 warnings** (`dotnet test tools/shadertoy2fx/shadertoy2fx.slnx`).
-> - **Compile sweep (all goldens):** OpenGL 73/73, DirectX_11 73/73, **FNA 71/73** (the 2 FNA misses =
+> - **Tests: 380/380 green, 0 warnings** (`dotnet test tools/shadertoy2fx/shadertoy2fx.slnx`).
+> - **Compile sweep (all goldens):** OpenGL 72/72, DirectX_11 72/72, **FNA 70/72** (the 2 FNA misses =
 >   `bitwise_ops`/`uint_type`, the inherent D3D9/SM3 no-integer-bitwise ceiling, compile fine on GL/DX).
->   The 4 new COMPLEX shaders all compile on GL/DX/**and FNA** — no SM3/instruction ceiling hit.
-> - **Render-proof (real MonoGame GL):** the 6 analytic-pixel cases + the multipass chain (exit 0), AND
->   a new **render GALLERY** (`render-proof --gallery`): converts + compiles (OpenGL) + loads a real
->   `Effect` + renders + reads back EVERY `corpus/authored/*.glsl`, asserting each frame is non-trivial.
->   **72/72 authored shaders render non-trivially (gallery exit 0)** — render-gating lifted from 6 → 72
->   shaders. One committed montage at `render-proof/output/gallery.png` (per-shader thumbs gitignored).
-> - **4 COMPLEX original shaders added** (`raymarch_sphere`, `fbm_clouds`, `kaleidoscope`, `domain_warp`)
->   exercising loops, hashing/fbm, normalize/dot/cross/reflect, atan2/mod/mat2, and nested helper calls.
->   All 4 convert, compile (GL/DX/FNA), and render correctly in the gallery. No converter bug surfaced.
-> - **Real-world conversion: 61.2% (98/160)** over the gitignored 160-shader scratch corpus, up from a
->   17.5% v1 baseline. Trajectory: 17.5 → 23.4 → 26.0 → 34.0 → 34.6 → 44.4 (mainImage+main wrapper fix)
->   → 51.2 (G8) → 55.0 (G9) → **61.2 (final wave)**.
+> - **★ PIXEL-FIDELITY GATE (new, the strongest proof): `render-proof --fidelity`.** Renders the
+>   ORIGINAL ShaderToy GLSL directly in a raw Silk.NET GL context (ground truth) vs OUR converted
+>   `.fx` through MonoGame, and diffs per pixel. **46/46 deterministic shaders MATCH the original GLSL
+>   at mean 0.00/255** (pixel-identical), incl. every matrix/precision trap + the 4 complex shaders.
+>   Committed montage `render-proof/output/fidelity.png` (reference | ours | diff). This gate **caught
+>   a real bug** the compile/render gates missed: `vec *= mat` rendered the vertical mirror (wrong
+>   `mul` side in the compound-assign lowering) — **now fixed**, `mul(M,v)` for `v *= M`.
+> - **Render GALLERY (`render-proof --gallery`): 72/72 authored shaders render non-trivially** in real
+>   MonoGame GL (montage `render-proof/output/gallery.png`). 4 COMPLEX original shaders
+>   (`raymarch_sphere`, `fbm_clouds`, `kaleidoscope`, `domain_warp`) all render correctly.
+> - **Sample loads ANY file now:** `dotnet run --project tools/shadertoy2fx/sample -- <path.glsl>`
+>   converts+compiles+renders an arbitrary `.glsl/.frag/.fs/.txt`, with **live hot-reload** (edit on
+>   disk → re-renders) + on-screen errors; `--smoke <path>` validates one file headlessly. Bundled
+>   catalog still works.
+> - **Real-world conversion: 61.2% (98/160)** over the gitignored 160-shader scratch corpus (17.5%
+>   v1 baseline). Trajectory: 17.5 → 23.4 → 26.0 → 34.0 → 34.6 → 44.4 → 51.2 → 55.0 → **61.2**.
 > - **Inputs accepted:** ShaderToy `mainImage`, plain-GLSL `void main()`, `mainImage`+wrapper-`main`,
->   Godot 4-arg `mainImage`, vec3/vec4-**returning** `mainImage`, and **multi-tab export JSON**
->   (`--multipass`, emits N `.fx` + `manifest.json` + `WIRING.md`; NOT an orchestrator).
-> - **Proven against your 4 ShaderToy shaders** (Seascape/Ms2SD1, Rainforest/4ttSWf, XsK3RR, tsScRK):
->   all convert + compile to OpenGL (fetched transiently, not committed).
-> - **Reference docs in-repo:** `tools/shadertoy2fx/COVERAGE.md` (dated trajectory + remaining buckets),
->   `MAPPING.md` (subset + reject-list), `GLSL-HLSL-NOTES.md` (ShaderMan/MS/Unity study; confirmed our
->   matrix-order / mod / Y-flip traps match Microsoft's authoritative docs).
+>   Godot 4-arg `mainImage`, vec3/vec4-returning `mainImage`, and multi-tab export JSON (`--multipass`).
+> - **Proven against the owner's 4 ShaderToy shaders** (Seascape/Ms2SD1, Rainforest/4ttSWf, XsK3RR,
+>   tsScRK): all convert + compile to OpenGL (fetched transiently, not committed).
+> - **Reference docs:** `COVERAGE.md`, `MAPPING.md`, `GLSL-HLSL-NOTES.md` (confirmed matrix-order / mod /
+>   Y-flip traps match Microsoft's docs).
 >
-> **Realistic ceiling reached:** ~61% is about the practical single-pass ceiling on an unfiltered
-> real-world sample. The permanent remainder is genuinely out of scope (multipass-only/feedback,
-> host-specific uniforms whose values we can't invent, `#include` with no source, cubemap/3D/mip-bias,
-> texelFetch, VR) — each a clean, well-named loud reject, never silent-wrong output.
+> **OWNER-CLARIFIED DIRECTION (2026-06-20):** this is a proof of concept. The eventual plan is to
+> **lift the converter CORE into the product library** and have the **existing `ShadowDuskCLI`/`mgfxc`
+> accept `.glsl` ShaderToy input** (route through the library). The PoC is already shaped for that
+> lift: clean `ShadowDusk.ShaderToy` library, one public `Convert(glsl)` entry, zero product coupling.
+> Keep it that way; promotion is a wire-in, not a rewrite.
 >
-> **Open next-steps (none mid-flight):** (1) open the draft PR; (2) broader render-fidelity diff vs
-> ShaderToy's own WebGL across a corpus (current render proof is analytic-pixel + eyeball);
-> (3) NuGet packaging of the runtime helper (intentionally deferred by owner); (4) optionally a tiny
-> further coverage pass on host-uniform passthrough (risky — would mean exposing unknown globals as
-> consumer-driven params; deliberately NOT done to avoid guessing values).
+> **Open next-steps (none mid-flight):**
+> 1. **Promote core → library + CLI `.glsl` input** (the owner's stated end-goal; the real next phase).
+> 2. **Host-uniform passthrough, WARNED version** (owner asked "what's the harm"): expose an
+>    undeclared identifier as an effect parameter ONLY where the type is inferable, with a loud Warning
+>    ("assumed `float`; you must supply X"). Raises the % but with lower-quality "best-effort" output;
+>    deliberately not done silently (would break the never-silently-wrong rule). Owner inclined to try.
+> 3. NuGet packaging — deferred by owner.
 >
-> The G1–G9 backlog table + per-gap as-built sections below are accurate history. The original
-> "Results so far" and "Why coverage is ~26%" blocks below are EARLIER snapshots — superseded by this
-> handoff; kept for the narrative.
+> The realistic single-pass ceiling is ~61% on an unfiltered sample; the remainder is genuinely out of
+> scope (multipass-only/feedback, host-specific uniforms, `#include` w/o source, cubemap/3D/mip-bias,
+> texelFetch, VR) — each a clean named reject. The G1–G9 backlog + as-built sections below are accurate
+> history; the older "Results so far" / "Why ~26%" blocks are superseded snapshots kept for narrative.
 
 > ## Results so far (2026-06-19) — bet proven; compiles, loads, AND renders
 >
