@@ -1,0 +1,63 @@
+{
+  "projectName": "Authored feedback (Buffer A trail -> Image)",
+  "hasFeedback": true,
+  "executionOrder": [
+    "Buffer A",
+    "Image"
+  ],
+  "passes": [
+    {
+      "name": "Buffer A",
+      "outputFile": "BufferA.fx",
+      "converted": true,
+      "hasFeedback": true,
+      "usedUniforms": [
+        "iChannel0",
+        "iResolution"
+      ],
+      "channels": [
+        {
+          "channel": 0,
+          "source": "feedback",
+          "sourcePass": "Buffer A",
+          "sourceFile": "BufferA.fx",
+          "feedback": true,
+          "wrap": "clamp",
+          "filter": "linear",
+          "note": "feedback: bind THIS pass's previous-frame target (ping-pong)"
+        }
+      ]
+    },
+    {
+      "name": "Image",
+      "outputFile": "Image.fx",
+      "converted": true,
+      "hasFeedback": false,
+      "usedUniforms": [
+        "iChannel0",
+        "iResolution"
+      ],
+      "channels": [
+        {
+          "channel": 0,
+          "source": "buffer",
+          "sourcePass": "Buffer A",
+          "sourceFile": "BufferA.fx",
+          "feedback": false,
+          "wrap": "clamp",
+          "filter": "linear",
+          "note": "bind the output of 'Buffer A'"
+        },
+        {
+          "channel": 1,
+          "source": "texture",
+          "textureSrc": "/media/a/rocks.jpg",
+          "feedback": false,
+          "wrap": "repeat",
+          "filter": "mipmap",
+          "note": "external texture: supply your own texture"
+        }
+      ]
+    }
+  ]
+}

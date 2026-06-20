@@ -197,6 +197,55 @@ priority: anything ambiguous stays a loud, located reject.
   ShaderToy-mode-unchanged, both-entries + no-output + no-params rejects); render-proof
   `shaders/main_gradient.glsl` wired into the driver catalog.
 
+### Multipass batch-export mode as-built (2026-06-19) — batch-convert + documented wiring, NOT an orchestrator
+
+The one "genuinely-large unbuilt feature" called out above (multipass: Buffer A–D / feedback) is now
+addressed **by design as a batch converter, not a runtime engine.** Owner-directed scope: **do NOT
+build a ShaderToy runtime / orchestrator / emulator.** We "accept the syntax" (convert each tab with
+the EXISTING single-pass converter, no behavior change) and hand the consumer the pieces + a documented
+~15-line wiring example they drop into their own game's Draw loop. **The render-graph is the consumer's
+job, the way MonoGame already works.**
+
+- **Export model + parser.** `ShaderToyProject.Parse(json)` (System.Text.Json) reads the ShaderToy API
+  JSON (`{ ver, info, renderpass:[...] }`) into a typed model: passes (`name`/`type`/`code`/`inputs`/
+  `outputs`), inputs (`ctype`/`channel`/`sampler{wrap,filter,...}`), outputs (`id`/`channel`). Pass
+  type ∈ image|buffer|common|sound|cubemap; channel ctype ∈ texture|buffer|keyboard|music|musicstream|
+  mic|webcam|volume|cubemap|video. (`src/ShadowDusk.ShaderToy/Multipass/ShaderToyProject.cs`.)
+- **`MultipassConverter.Convert(project, options) → MultipassResult`.** Prepends the single `common`
+  tab to every other pass; converts each `buffer`/`image` tab via the unchanged
+  `ShaderToyConverter.Convert` (per-pass `.fx` + diagnostics); **skips `sound`/`cubemap` with a
+  Warning**; resolves each channel (buffer → source pass, or **self = feedback**; texture → external
+  `src`; other ctypes → Warning "unsupported, leave unbound"); records sampler wrap/filter; records the
+  canonical order (buffers A..D in name order, then Image; Common never rendered).
+  (`Multipass/MultipassConverter.cs`, `Multipass/MultipassResult.cs`.)
+- **Artifacts.** `MultipassManifest.ToJson` emits the machine-readable `manifest.json` (ordered passes,
+  each pass's `.fx` + channel→source wiring + feedback flags + sampler modes); `ToWiringMarkdown` emits
+  the human `WIRING.md` (buffer graph + a concrete ~15-line MonoGame `RenderTarget2D` example tailored
+  to the graph). (`Multipass/MultipassManifest.cs`.)
+- **CLI.** `shadertoy2fx --multipass <export.json> -o <outdir>` writes each pass's `.fx` +
+  `manifest.json` + `WIRING.md`; **loud non-zero exit** if any pass fails to convert (per-pass errors
+  in MGCB form on stderr). The existing single-file mode is **unchanged**.
+- **Fixtures/tests (OUR OWN authored export JSON, no third-party shader).**
+  `tests/.../corpus/multipass/chain2.json` (Common tab + Buffer A gradient + Image tint reading
+  iChannel0=Buffer A + a `sound` pass + a `keyboard` channel to exercise skip/warn) and `feedback.json`
+  (Buffer A reads itself = feedback trail + Image + an external-texture channel). `MultipassTests.cs`
+  asserts: JSON parses; pass count/order (buffers then Image; multi-buffer sorted A,B); Common prepended
+  (the Image's `tint()` resolves only because Common is prepended; without it, loud reject); buffer
+  wiring A→Image; feedback detected on the self-referencing buffer; sound/cubemap skipped with a
+  warning; unsupported ctype warned; each emitted per-pass `.fx` non-null and **compiles on OpenGL via
+  the real ShadowDusk CLI** (Integration theory). Per-pass `.fx` + `manifest.json` are **goldened**
+  (`SHADERTOY2FX_UPDATE_GOLDENS`).
+- **Render proof.** `render-proof/MultipassChain2Proof.cs` is a small, explicitly-labeled hand-wired
+  example (the exact loop a consumer writes): convert `chain2` → compile each `.fx` → allocate a
+  `RenderTarget2D` for Buffer A → render A → bind A as iChannel0 of Image → render Image offscreen →
+  read back and **assert the analytic tint of A's gradient** (R=uv.x, G=storedY*0.5, B=0.125) → save
+  `output/multipass_chain2.png`. **5/5 analytic asserts pass, exit 0.**
+- **Validation (this machine).** `dotnet test tools/shadertoy2fx/shadertoy2fx.slnx` green (0 warnings,
+  TreatWarningsAsErrors + EnforceCodeStyleInBuild on); golden compile-sweep of the 4 per-pass `.fx`
+  **4/4 on OpenGL / DirectX_11 / FNA**; the single-pass render-proof still **4/4** plus the new
+  multipass chain2 example **PASS**. No existing converter source or existing golden was changed — the
+  multipass mode is purely additive.
+
 ## Why this shape (and why it is separate)
 
 We considered three ways to get ShaderToy GLSL into the engine (full discussion lives in this

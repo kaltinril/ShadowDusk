@@ -1,0 +1,62 @@
+{
+  "ver": "0.1",
+  "info": {
+    "name": "Authored chain2 (Buffer A gradient -> Image tint)",
+    "description": "Hand-authored OWN test export. No third-party shader. Buffer A writes a UV gradient; Image reads it on iChannel0 and tints it. A Common tab is shared; a Sound pass and a keyboard channel are present to exercise skip/warn."
+  },
+  "renderpass": [
+    {
+      "name": "Common",
+      "type": "common",
+      "description": "Shared helper used by both render tabs.",
+      "code": "vec3 tint(vec3 c) { return c * vec3(1.0, 0.5, 0.25); }\n",
+      "inputs": [],
+      "outputs": []
+    },
+    {
+      "name": "Buffer A",
+      "type": "buffer",
+      "description": "Writes a horizontal/vertical UV gradient into its render target.",
+      "code": "void mainImage(out vec4 fragColor, in vec2 fragCoord)\n{\n    vec2 uv = fragCoord / iResolution.xy;\n    fragColor = vec4(uv, 0.5, 1.0);\n}\n",
+      "inputs": [],
+      "outputs": [
+        { "id": "bufferA-out", "channel": 0 }
+      ]
+    },
+    {
+      "name": "Image",
+      "type": "image",
+      "description": "Reads Buffer A on iChannel0 and applies the Common tint.",
+      "code": "void mainImage(out vec4 fragColor, in vec2 fragCoord)\n{\n    vec2 uv = fragCoord / iResolution.xy;\n    vec3 src = texture(iChannel0, uv).rgb;\n    fragColor = vec4(tint(src), 1.0);\n}\n",
+      "inputs": [
+        {
+          "id": "bufferA-out",
+          "src": "",
+          "ctype": "buffer",
+          "channel": 0,
+          "sampler": { "filter": "linear", "wrap": "clamp", "vflip": "true", "srgb": "false", "internal": "byte" }
+        },
+        {
+          "id": "keyboard-in",
+          "src": "/media/a/keyboard.png",
+          "ctype": "keyboard",
+          "channel": 1,
+          "sampler": { "filter": "nearest", "wrap": "clamp", "vflip": "false", "srgb": "false", "internal": "byte" }
+        }
+      ],
+      "outputs": [
+        { "id": "image-out", "channel": 0 }
+      ]
+    },
+    {
+      "name": "Sound",
+      "type": "sound",
+      "description": "Out-of-scope sound pass; must be skipped with a warning.",
+      "code": "vec2 mainSound(int samp, float time) { return vec2(0.0); }\n",
+      "inputs": [],
+      "outputs": [
+        { "id": "sound-out", "channel": 0 }
+      ]
+    }
+  ]
+}

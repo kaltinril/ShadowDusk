@@ -11,6 +11,47 @@ original GLSL line/column and the offending construct) — never silently-wrong 
 
 ---
 
+## Multipass batch-export mode (Buffer A–D / feedback)
+
+Beyond the single-pass `Convert`, the library accepts a ShaderToy **multi-tab export** (the ShaderToy
+API JSON, `{ "ver", "info", "renderpass": [...] }`) and batch-converts it. This is **NOT** a runtime /
+orchestrator / emulator: it converts each render tab with the **exact same single-pass converter
+above** (no behavior change) and resolves the channel wiring; the consumer writes the actual render
+loop (the way MonoGame already works). The API:
+
+- `ShaderToyProject.Parse(json)` / `TryParse(...)` — parse the export into a typed model (passes with
+  `name`/`type`/`code`/`inputs`/`outputs`; inputs carry `ctype`/`channel`/`sampler`). Built on
+  `System.Text.Json`.
+- `MultipassConverter.Convert(project, options) → MultipassResult` —
+  - finds the single `common` pass (if any) and passes its code as `ConvertOptions.CommonSource` to
+    **every** other pass (so a Common-tab helper resolves in each pass);
+  - converts each `buffer` and `image` pass via the existing `ShaderToyConverter.Convert` → a per-pass
+    `.fx` (per-pass success + diagnostics collected);
+  - **skips `sound` and `cubemap` passes with a Warning** (out of v1 scope);
+  - resolves each pass's input channels: `buffer` → (source pass name, or **self = feedback**),
+    `texture` → external media `src` ("supply your own texture"), every other ctype
+    (keyboard/music/musicstream/mic/webcam/volume/cubemap/video) → a Warning "unsupported channel type,
+    leave unbound";
+  - records sampler `wrap`/`filter` per channel;
+  - records the canonical execution order: **buffers in name order (Buffer A, B, C, D) then Image**
+    (Common is never rendered).
+- `MultipassManifest.ToJson(result)` → the machine-readable `manifest.json` (ordered passes, each
+  pass's output `.fx` + channel→source wiring + feedback flags + sampler modes).
+- `MultipassManifest.ToWiringMarkdown(result)` → the human `WIRING.md` (the buffer graph + a concrete
+  ~15-line MonoGame `RenderTarget2D` example tailored to the graph).
+
+**WIRING RULE.** A `buffer` input's `id` equals some renderpass's `outputs[].id` — that pass is the
+source for the channel. If the matched source pass IS the same pass, the channel is **feedback** (reads
+its own previous frame; ping-pong it).
+
+**Scope note (owner-directed).** We "accept the syntax"; the render-graph is the consumer's job. The
+CLI hands the consumer the per-pass `.fx`, the `manifest.json`, and the `WIRING.md` ~15-line example
+they drop into their own Draw loop (allocate a target per buffer, bind prior outputs as `iChannelN` via
+`ShaderToyEffect`, run in order, ping-pong feedback, last pass to screen). The hand-wired `chain2`
+two-pass example in `render-proof/` renders + asserts this end to end (Buffer A gradient → Image tint).
+
+---
+
 ## Entry point — two conventions (G2)
 
 The converter accepts **either** of two single-pass entry conventions; it auto-detects which by the

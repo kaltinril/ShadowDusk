@@ -1,0 +1,52 @@
+{
+  "ver": "0.1",
+  "info": {
+    "name": "Authored feedback (Buffer A trail -> Image)",
+    "description": "Hand-authored OWN test export. No third-party shader. Buffer A reads ITSELF on iChannel0 (feedback/accumulation trail). Image reads Buffer A and shows it. An external texture channel exercises the supply-your-own path."
+  },
+  "renderpass": [
+    {
+      "name": "Buffer A",
+      "type": "buffer",
+      "description": "Accumulates a fading trail by reading its own previous frame on iChannel0.",
+      "code": "void mainImage(out vec4 fragColor, in vec2 fragCoord)\n{\n    vec2 uv = fragCoord / iResolution.xy;\n    vec3 prev = texture(iChannel0, uv).rgb;\n    vec3 add = vec3(uv.x, uv.y, 0.5);\n    fragColor = vec4(prev * 0.9 + add * 0.1, 1.0);\n}\n",
+      "inputs": [
+        {
+          "id": "bufferA-out",
+          "src": "",
+          "ctype": "buffer",
+          "channel": 0,
+          "sampler": { "filter": "linear", "wrap": "clamp", "vflip": "true", "srgb": "false", "internal": "byte" }
+        }
+      ],
+      "outputs": [
+        { "id": "bufferA-out", "channel": 0 }
+      ]
+    },
+    {
+      "name": "Image",
+      "type": "image",
+      "description": "Shows Buffer A on iChannel0; an external texture is bound on iChannel1.",
+      "code": "void mainImage(out vec4 fragColor, in vec2 fragCoord)\n{\n    vec2 uv = fragCoord / iResolution.xy;\n    vec3 trail = texture(iChannel0, uv).rgb;\n    fragColor = vec4(trail, 1.0);\n}\n",
+      "inputs": [
+        {
+          "id": "bufferA-out",
+          "src": "",
+          "ctype": "buffer",
+          "channel": 0,
+          "sampler": { "filter": "linear", "wrap": "clamp", "vflip": "true", "srgb": "false", "internal": "byte" }
+        },
+        {
+          "id": "tex-rocks",
+          "src": "/media/a/rocks.jpg",
+          "ctype": "texture",
+          "channel": 1,
+          "sampler": { "filter": "mipmap", "wrap": "repeat", "vflip": "true", "srgb": "false", "internal": "byte" }
+        }
+      ],
+      "outputs": [
+        { "id": "image-out", "channel": 0 }
+      ]
+    }
+  ]
+}

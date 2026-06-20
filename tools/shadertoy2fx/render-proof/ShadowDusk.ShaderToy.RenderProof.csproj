@@ -17,5 +17,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\*.glsl" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="multipass\*.json" CopyToOutputDirectory="PreserveNewest" Link="multipass\%(Filename)%(Extension)" />
   </ItemGroup>
 </Project>

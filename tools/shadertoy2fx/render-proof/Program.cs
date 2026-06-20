@@ -89,7 +89,12 @@ catch (Exception ex)
     return 3;
 }
 
-return exitCode;
+// ---- MULTIPASS render proof: the hand-wired chain2 two-pass example. ----
+Console.WriteLine();
+string chain2Json = Path.Combine(driverDir, "multipass", "chain2.json");
+int multipassExit = ShadowDusk.ShaderToy.RenderProof.MultipassChain2Proof.Run(cliDll, chain2Json, outDir);
+
+return exitCode != 0 ? exitCode : multipassExit;
 
 // ----------------------------------------------------------------------------
 

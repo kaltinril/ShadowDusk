@@ -1,0 +1,50 @@
+{
+  "projectName": "Authored chain2 (Buffer A gradient -> Image tint)",
+  "hasFeedback": false,
+  "executionOrder": [
+    "Buffer A",
+    "Image"
+  ],
+  "passes": [
+    {
+      "name": "Buffer A",
+      "outputFile": "BufferA.fx",
+      "converted": true,
+      "hasFeedback": false,
+      "usedUniforms": [
+        "iResolution"
+      ],
+      "channels": []
+    },
+    {
+      "name": "Image",
+      "outputFile": "Image.fx",
+      "converted": true,
+      "hasFeedback": false,
+      "usedUniforms": [
+        "iChannel0",
+        "iResolution"
+      ],
+      "channels": [
+        {
+          "channel": 0,
+          "source": "buffer",
+          "sourcePass": "Buffer A",
+          "sourceFile": "BufferA.fx",
+          "feedback": false,
+          "wrap": "clamp",
+          "filter": "linear",
+          "note": "bind the output of 'Buffer A'"
+        },
+        {
+          "channel": 1,
+          "source": "unsupported",
+          "feedback": false,
+          "wrap": "clamp",
+          "filter": "nearest",
+          "note": "unsupported channel type (keyboard); leave unbound"
+        }
+      ]
+    }
+  ]
+}
