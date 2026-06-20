@@ -447,9 +447,12 @@ map straight through to HLSL (valid on `int`); `&&`/`||` stay distinct from `&`/
 Four correctness rules layer on top of that pass-through:
 
 - **Matrix compound assignment.** A `*=` whose right-hand side is a matrix is desugared the same way
-  as a binary `*` (trap 2): GLSL `v *= M` (`M` a `matN`) means `v = M*v`, which under the
-  `A*B → mul(B,A)` rule emits `v = mul(v, M)`. A plain `v *= M` would be invalid HLSL
-  (`float2 *= float2x2`). Scalar/vector `*=` (and every other compound op) stays component-wise.
+  as a binary `*` (trap 2), **preserving GLSL operand order**: GLSL `v *= M` (`M` a `matN`) means
+  `v = v*M` (a row-vector times matrix), which under the `A*B → mul(B,A)` rule emits `v = mul(M, v)`.
+  (Inverting the order to `mul(v, M)` emits the transpose, i.e. a vertical mirror — the B1 bug fixed in
+  Phase 46.) Likewise `A *= B` (both matrices) is `A = A*B → mul(B, A)`. A plain `v *= M` would be
+  invalid HLSL (`float2 *= float2x2`). Scalar/vector `*=` (and every other compound op) stays
+  component-wise.
 - **No double-parenthesized conditions.** A relational/equality expression used directly as an
   `if`/`while`/`do…while`/ternary condition is NOT wrapped in its own extra parentheses (the
   condition site already supplies them), so `if (a == 0.0)` is emitted rather than `if ((a == 0.0))`

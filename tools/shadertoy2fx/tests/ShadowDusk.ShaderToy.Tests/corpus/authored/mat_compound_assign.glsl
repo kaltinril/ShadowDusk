@@ -1,5 +1,6 @@
 // Exercises B1: a matrix COMPOUND assignment `v *= M` (M = mat2). GLSL `p *= rot(a)` means
-// p = M*p, which under the A*B -> mul(B,A) rule must emit `p = mul(p, rot(a))`, never the invalid
+// p = p*M (a row-vector times matrix), which under the A*B -> mul(B,A) rule must emit
+// `p = mul(rot(a), p)`, never the transpose `mul(p, rot(a))` (a vertical mirror) nor the invalid
 // `float2 *= float2x2`. A scalar `*=` in the same body must stay component-wise.
 mat2 rot(float a)
 {

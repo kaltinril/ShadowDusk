@@ -472,9 +472,10 @@ internal sealed class HlslEmitter
     /// <summary>
     /// Emit an assignment, with one trap (B1): a compound <c>*=</c> whose right-hand side is a matrix
     /// must honor the same matrix-multiply reordering as a binary <c>*</c>. GLSL <c>v *= M</c> means
-    /// <c>v = M*v</c>; under the converter's <c>A*B → mul(B,A)</c> rule that is <c>v = mul(v, M)</c>.
-    /// A plain <c>v *= M</c> would emit invalid HLSL (<c>float2 *= float2x2</c>). Scalar/vector
-    /// <c>*=</c> (and every other compound op) stays component-wise and passes through unchanged.
+    /// <c>v = v*M</c> (a row-vector times matrix); under the converter's <c>A*B → mul(B,A)</c> rule that
+    /// is <c>v = mul(M, v)</c>. A plain <c>v *= M</c> would emit invalid HLSL (<c>float2 *= float2x2</c>).
+    /// Scalar/vector <c>*=</c> (and every other compound op) stays component-wise and passes through
+    /// unchanged.
     /// </summary>
     private string EmitAssign(AssignExpr a)
     {
@@ -484,15 +485,16 @@ internal sealed class HlslEmitter
             GlslType valueType = _types.Infer(a.Value);
             if (targetType.IsMatrix || valueType.IsMatrix)
             {
-                // Desugar `lhs *= rhs` to `lhs = (rhs * lhs)` and route the multiply through the
-                // binary path so the matrix-order trap applies consistently. For `v *= M` this
-                // yields `v = mul(v, M)`; the `(rhs * lhs)` order is what makes EmitBinary place the
-                // matrix as the second mul() argument.
+                // Desugar `lhs *= rhs` to `lhs = (lhs * rhs)` preserving GLSL operand order, and route
+                // the multiply through the binary path so the matrix-order trap applies consistently.
+                // GLSL `v *= M` means `v = v*M` (row-vector); EmitBinary turns `lhs * rhs` into
+                // `mul(rhs, lhs)`, yielding `v = mul(M, v)`. (Inverting the order here would emit the
+                // transpose, i.e. a vertical mirror.) For `A *= B` this is `A = A*B → mul(B, A)`.
                 var product = new BinaryExpr
                 {
                     Op = "*",
-                    Left = a.Value,
-                    Right = a.Target,
+                    Left = a.Target,
+                    Right = a.Value,
                     Line = a.Line,
                     Column = a.Column,
                 };

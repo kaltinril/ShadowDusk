@@ -142,13 +142,29 @@ public sealed class TranslationTrapTests
     [Fact]
     public void MatrixCompoundAssign_DesugarsToMul()
     {
-        // B1: `v *= M` (M a mat2) must become `v = mul(v, M)`, never the invalid `float2 *= float2x2`.
+        // B1: GLSL `v *= M` means `v = v*M` (row-vector times matrix). Under the converter's
+        // `A*B → mul(B,A)` rule that is `v = mul(M, v)` — the matrix is the FIRST mul() argument and
+        // the vector is the SECOND. (Inverting to `mul(v, M)` emits the transpose: a vertical mirror.)
+        // It must never be the invalid `float2 *= float2x2`.
         string fx = ConvertBody(
             "    float c = cos(iTime), s = sin(iTime); mat2 m = mat2(c, -s, s, c);\n" +
             "    vec2 p = fragCoord.xy; p *= m; fragColor = vec4(p, 0.0, 1.0);");
 
-        fx.Should().Contain("p = mul(p, m)");
+        fx.Should().Contain("p = mul(m, p)");
+        fx.Should().NotContain("mul(p, m)");
         fx.Should().NotContain("p *= m");
+    }
+
+    [Fact]
+    public void MatrixTimesMatrixCompoundAssign_PreservesOrder()
+    {
+        // `A *= B` (both mat2) means `A = A*B`; under `A*B → mul(B,A)` that is `A = mul(B, A)`.
+        string fx = ConvertBody(
+            "    mat2 a = mat2(1.0, 0.0, 0.0, 1.0); mat2 b = mat2(2.0, 0.0, 0.0, 2.0);\n" +
+            "    a *= b; fragColor = vec4(a[0], a[1]);");
+
+        fx.Should().Contain("a = mul(b, a)");
+        fx.Should().NotContain("a *= b");
     }
 
     [Fact]
