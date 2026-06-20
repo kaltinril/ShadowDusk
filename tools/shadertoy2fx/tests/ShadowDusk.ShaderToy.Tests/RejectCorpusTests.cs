@@ -63,7 +63,6 @@ public sealed class RejectCorpusTests
             "custom_uniform_bad_type" => "mat2x3",
             "global_unsupported_type" => "double",
             "pp_include" => "#include",
-            "both_entry_points" => "Ambiguous",
             "main_no_output" => "fragment output",
             _ => string.Empty,
         };

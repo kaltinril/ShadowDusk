@@ -53,5 +53,6 @@ exercises **one** feature or translation trap so a failure points at a single ca
 | `main_glfragcolor.glsl` | **G2**: plain-GLSL `void main()` entry writing the legacy `gl_FragColor`, reading `gl_FragCoord` (a UV gradient; the gl_FragCoord -> harness-pixel-coord + gl_FragColor -> PS-return bridge). |
 | `main_out_var.glsl` | **G2**: plain-GLSL `void main()` with a user-declared `out vec4 outColor;` (GLSL ES 3.00 / 330) consumed (not a parameter/global) and returned as COLOR0; plus a helper. |
 | `main_custom_resolution.glsl` | **G2**: plain-GLSL `void main()` reading a declared custom `uniform vec2 resolution;` (exposed as a host-driven effect parameter, not folded onto vec3 iResolution) + `gl_FragCoord`. |
+| `mainimage_with_main_wrapper.glsl` | **G2 both-entries**: a ShaderToy `mainImage` PLUS a standalone `void main(){ mainImage(gl_FragColor, gl_FragCoord.xy); }` wrapper. The converter PREFERS ShaderToy mode, DROPS the `void main()` wrapper with a Warning, and emits the same `.fx` as the wrapper-less shader (our harness replaces `main`). The common third-party desktop-runner shape. |
 
-Total: 46 authored shaders.
+Total: 47 authored shaders.

@@ -5,9 +5,9 @@ namespace ShadowDusk.ShaderToy.Tests;
 
 /// <summary>
 /// Unit coverage for the G2 plain-GLSL <c>void main()</c> entry mode: detection (mainImage vs main,
-/// both = ambiguous reject, neither = no-entry reject), the <c>gl_FragColor</c> / user <c>out vec4</c>
-/// fragment-output bridging, the <c>gl_FragCoord</c> -> harness pixel-coord mapping, and that the
-/// existing ShaderToy <c>mainImage</c> mode is untouched.
+/// both = prefer ShaderToy + drop the main() wrapper with a Warning, neither = no-entry reject), the
+/// <c>gl_FragColor</c> / user <c>out vec4</c> fragment-output bridging, the <c>gl_FragCoord</c> ->
+/// harness pixel-coord mapping, and that the existing ShaderToy <c>mainImage</c> mode is untouched.
 /// </summary>
 public sealed class EntryModeTests
 {
@@ -138,19 +138,91 @@ public sealed class EntryModeTests
 
     // ── rejects ───────────────────────────────────────────────────────────────
 
+    // ── both entries present → prefer ShaderToy, drop the main() wrapper with a Warning ──
+
     [Fact]
-    public void BothEntries_Ambiguous_Rejected()
+    public void BothEntries_PrefersShaderToy_DropsMainWrapper_WithWarning()
     {
         const string glsl = """
-        void mainImage(out vec4 fragColor, in vec2 fragCoord) { fragColor = vec4(1.0); }
-        void main() { gl_FragColor = vec4(1.0); }
+        void mainImage(out vec4 fragColor, in vec2 fragCoord)
+        {
+            fragColor = vec4(fragCoord / iResolution.xy, 0.0, 1.0);
+        }
+        void main()
+        {
+            mainImage(gl_FragColor, gl_FragCoord.xy);
+        }
         """;
 
-        ConvertResult r = Convert(glsl);
-        r.Success.Should().BeFalse();
-        r.Fx.Should().BeNull();
+        ConvertResult r = ConvertOk(glsl);
+
+        // ShaderToy mode is chosen: the harness wraps mainImage directly (its standard ShaderToy PS).
+        r.Fx!.Should().Contain("mainImage(fragColor, fragCoord);");
+        // The user `void main()` wrapper is dropped: it is NOT translated/emitted, and the plain-GLSL
+        // bridging globals (gl_FragColor / gl_FragCoord statics) are NOT present in ShaderToy mode.
+        r.Fx!.Should().NotContain("void main()");
+        r.Fx!.Should().NotContain("static float4 gl_FragColor;");
+        r.Fx!.Should().NotContain("static float4 gl_FragCoord;");
+        // A Warning explains the wrapper was ignored in favor of mainImage.
         r.Diagnostics.Should().Contain(d =>
-            d.Severity == DiagnosticSeverity.Error && d.Message.Contains("Ambiguous"));
+            d.Severity == DiagnosticSeverity.Warning &&
+            d.Message.Contains("mainImage") && d.Message.Contains("main()"));
+        // No errors.
+        r.Diagnostics.Should().NotContain(d => d.Severity == DiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void BothEntries_MainImageTranslation_IsIdenticalToWithoutWrapper()
+    {
+        const string body = """
+        void mainImage(out vec4 fragColor, in vec2 fragCoord)
+        {
+            vec2 uv = fragCoord / iResolution.xy;
+            fragColor = vec4(uv, 0.0, 1.0);
+        }
+        """;
+
+        const string withWrapper = """
+        void mainImage(out vec4 fragColor, in vec2 fragCoord)
+        {
+            vec2 uv = fragCoord / iResolution.xy;
+            fragColor = vec4(uv, 0.0, 1.0);
+        }
+        void main()
+        {
+            mainImage(gl_FragColor, gl_FragCoord.xy);
+        }
+        """;
+
+        ConvertResult plain = ConvertOk(body);
+        ConvertResult both = ConvertOk(withWrapper);
+
+        // Dropping the wrapper must leave the mainImage translation (and the whole harness) byte-identical.
+        both.Fx.Should().Be(plain.Fx, "dropping the void main() wrapper must not change the mainImage output");
+    }
+
+    [Fact]
+    public void BothEntries_SubstantiveMain_StillPrefersMainImage_AndDropsIt()
+    {
+        // A main() that does substantive work beyond calling mainImage is STILL dropped (mainImage is
+        // canonical for a ShaderToy-derived file); we never try to merge them.
+        const string glsl = """
+        void mainImage(out vec4 fragColor, in vec2 fragCoord)
+        {
+            fragColor = vec4(fragCoord / iResolution.xy, 0.0, 1.0);
+        }
+        void main()
+        {
+            vec4 c;
+            mainImage(c, gl_FragCoord.xy);
+            gl_FragColor = c * 0.5 + vec4(0.1, 0.0, 0.0, 0.0);
+        }
+        """;
+
+        ConvertResult r = ConvertOk(glsl);
+        r.Fx!.Should().Contain("mainImage(fragColor, fragCoord);");
+        r.Fx!.Should().NotContain("void main()");
+        r.Diagnostics.Should().Contain(d => d.Severity == DiagnosticSeverity.Warning);
     }
 
     [Fact]

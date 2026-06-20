@@ -5,8 +5,9 @@ single-pass GLSL **image** shader into a self-contained HLSL **`.fx`** source fi
 entry conventions (G2): a **ShaderToy** `void mainImage(out vec4 fragColor, in vec2 fragCoord)` shader
 **and** a **plain-GLSL** `void main()` fragment shader (glslViewer / Bonzomatic / Shadertoy-export
 style) that writes `gl_FragColor` or a user-declared `out vec4 <name>;` and reads `gl_FragCoord`. The
-convention is auto-detected (no flag, no consumer choice); a shader that defines BOTH is an ambiguous,
-loud reject. Once you have the `.fx`, the **existing ShadowDusk pipeline** compiles it to MonoGame/KNI
+convention is auto-detected (no flag, no consumer choice); a shader that defines BOTH a `mainImage` AND
+a standalone `void main()` wrapper (the common desktop-runner shape) prefers ShaderToy mode, drops the
+`void main()` wrapper with a Warning, and converts. Once you have the `.fx`, the **existing ShadowDusk pipeline** compiles it to MonoGame/KNI
 (OpenGL/DirectX) and, within fx_2_0/SM3 limits, FNA — with zero pipeline changes and no native
 dependency.
 

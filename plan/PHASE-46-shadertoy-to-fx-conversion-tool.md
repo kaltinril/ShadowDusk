@@ -164,7 +164,9 @@ priority: anything ambiguous stays a loud, located reject.
 
 - **Detection (by entry NAME, no flag).** `mainImage` defined and `main` not → ShaderToy mode
   (unchanged). `main` defined and `mainImage` not → plain-GLSL mode. Neither → "no entry point" reject.
-  **Both → ambiguous loud reject** (the converter never guesses which to wrap). Detection is on parsed
+  **Both → ShaderToy mode + Warning** (the `void main()` wrapper is dropped — see *G2.1 as-built*
+  below; this was originally an ambiguous reject, revised 2026-06-19 (f) once the both-entries shape
+  proved to be ~a third of real-corpus failures). Detection is on parsed
   function names, not substrings, so a `mainImage`-referencing comment does not trip it.
   *(`EntryMode`/`AstScan`, `ShaderToyConverter.DetectEntryMode`/`ResolveMainEntry`.)*
 - **`void main()` validation.** Must take no parameters; multiple `main` → reject.
@@ -196,6 +198,36 @@ priority: anything ambiguous stays a loud, located reject.
   `main_no_output.glsl`; `EntryModeTests.cs` (detection, `gl_FragColor`/out-var/`gl_FragCoord`,
   ShaderToy-mode-unchanged, both-entries + no-output + no-params rejects); render-proof
   `shaders/main_gradient.glsl` wired into the driver catalog.
+
+### G2.1 as-built (2026-06-19 (f)) — both-entries (`mainImage` + standalone `void main()`) now CONVERTS
+
+The single biggest real-world coverage bug. A large share of real third-party ShaderToy shaders define
+BOTH a ShaderToy `void mainImage(out vec4, in vec2)` AND a standalone wrapper
+`void main(){ mainImage(gl_FragColor, gl_FragCoord.xy); }` (glslViewer / Bonzomatic / desktop-runner
+style, so the same `.glsl` runs outside ShaderToy). That shape was previously the "ambiguous entry
+point" reject (G2) and accounted for ~a third of all real-corpus failures.
+
+- **Fix.** When BOTH are present the converter now PREFERS ShaderToy mode (`mainImage` is canonical) and
+  **drops the user `void main()`** — it is NOT translated or emitted (our harness synthesizes its own
+  fullscreen VS/PS that calls `mainImage` directly, and the wrapper's `gl_FragColor`/`gl_FragCoord`
+  write target is only declared in the plain-GLSL harness, so emitting the wrapper would dangle). A
+  **Warning** records that the standalone wrapper was ignored in favor of `mainImage`.
+  *(`ShaderToyConverter.DetectEntryMode` now takes the diagnostics list and returns `EntryMode.ShaderToy`
+  with a Warning; the caller `RemoveAll(f => f.Name == "main")` after `ValidateMainImage`.)*
+- **No merge, no regression.** A `main()` that does substantive work beyond calling `mainImage` is still
+  dropped (for a ShaderToy-derived file `mainImage` is canonical; the two are never merged). Single-entry
+  shaders, plain-GLSL `main`-only mode, and the "no entry point" reject are all UNCHANGED. Dropping the
+  wrapper leaves the `mainImage` translation byte-identical to the wrapper-less shader (asserted in
+  `EntryModeTests`).
+- **Validation.** Unit suite **259 green (0 warn)**. Golden compile-sweep **52/52 on OpenGL /
+  DirectX_11 / FNA** (+1 both-entries golden, no regressions). Render-proof **4/4 + multipass (exit 0)**.
+  **Scratch re-measure: conversion 44.4 % (71/160), up from 33.8 % (54/160) — a +17-shader gain**,
+  confirming the both-entries shape was a top failure cause.
+- **Fixtures/tests.** Retired `corpus/reject/both_entry_points.glsl`; added
+  `corpus/authored/mainimage_with_main_wrapper.glsl` (+ golden). `EntryModeTests` replaces the
+  ambiguous-reject case with: both-entries → ShaderToy chosen + `main` dropped + Warning;
+  `mainImage` output identical with/without the wrapper; substantive-`main` still dropped. `RejectCorpusTests`
+  drops the `both_entry_points` keyword row.
 
 ### Multipass batch-export mode as-built (2026-06-19) — batch-convert + documented wiring, NOT an orchestrator
 

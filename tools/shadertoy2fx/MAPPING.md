@@ -68,7 +68,20 @@ entry **name** the shader defines (no flag, no consumer choice):
 | yes | no | ShaderToy mode (unchanged). |
 | no | yes | Plain-GLSL `main()` mode. |
 | no | no | "no entry point" reject. |
-| yes | yes | **Ambiguous → loud reject** (the converter never guesses which to wrap). |
+| yes | yes | **ShaderToy mode + Warning** — `mainImage` is canonical; the standalone `void main()` wrapper is **dropped** (not translated/emitted), and a Warning notes it was ignored in favor of `mainImage`. |
+
+**Both entries present (the common third-party shape).** A large share of real third-party ShaderToy
+shaders ship BOTH the ShaderToy `void mainImage(out vec4, in vec2)` AND a standalone
+`void main(){ mainImage(gl_FragColor, gl_FragCoord.xy); }` wrapper so the same `.glsl` also runs under
+a desktop runner (glslViewer / Bonzomatic / Shadertoy-export). The converter **prefers ShaderToy mode**:
+`mainImage` is the canonical shader, and our harness synthesizes its own fullscreen VS/PS that calls
+`mainImage` directly, so the user `void main()` is **dropped** — it is *not* translated or emitted (its
+body's `gl_FragColor`/`gl_FragCoord` write target, which only the plain-GLSL harness declares, would
+otherwise dangle). A **Warning** records that the wrapper was ignored. The dropped wrapper does not
+change the `mainImage` translation at all (the emitted `.fx` is byte-identical to the same shader
+without the wrapper). A `main()` that does **substantive work** beyond calling `mainImage` is *still*
+dropped (for a ShaderToy-derived file `mainImage` is canonical; the two are never merged). This is the
+only both-entries outcome — it does not affect a shader that defines just one of the two.
 
 ### ShaderToy mode (`mainImage`)
 
@@ -393,10 +406,11 @@ declarators, which stay separators (G7 parser hardening). User **structs** (G6) 
 Each of the following produces a fatal diagnostic, never silently-wrong HLSL:
 
 - **Entry points / multipass:** missing entry point (no `mainImage` and no `main`); duplicate
-  `mainImage` or duplicate `main`; **both** a `mainImage` and a `main` (ambiguous); a `main` with
-  parameters or a `main()` with no discoverable fragment output (no user `out vec4` and no
-  `gl_FragColor` write); more than one `out vec4` fragment output; `mainSound`, `mainVR`,
-  `mainCubemap` (Buffer A–D multipass is implied out of scope — only a single image pass is emitted).
+  `mainImage` or duplicate `main`; a `main` with parameters or a `main()` with no discoverable
+  fragment output (no user `out vec4` and no `gl_FragColor` write); more than one `out vec4` fragment
+  output; `mainSound`, `mainVR`, `mainCubemap` (Buffer A–D multipass is implied out of scope — only a
+  single image pass is emitted). (**Both** a `mainImage` and a `main` is NO LONGER a reject: it prefers
+  ShaderToy mode and drops the `main()` wrapper with a Warning — see *Entry point* above.)
 - **Types:** `double`, `dvecN`, `uint`, `uvecN`, explicit `matAxB` spellings (use `mat2/3/4`),
   non-square matrices, `sampler3D` / `samplerCube`, and any unknown type name.
 - **Declarations:** a **nested / inline** struct member, a struct *array* member, a combined

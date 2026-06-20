@@ -19,10 +19,15 @@ assert the tool rejects for that specific reason.
 | `custom_uniform_bad_type.glsl` | A custom `uniform mat2x3` (non-square) — a custom uniform must be a supported scalar/vector/matrix (mat2/3/4) or `sampler2D`; everything else is a loud reject. |
 | `global_unsupported_type.glsl` | **G1 boundary**: a top-level mutable global of an unsupported type (`double gBad;`) — supported-type mutable globals are now accepted (as `static`), but an unsupported-type one stays a loud reject. |
 | `pp_include.glsl` | **G5 boundary**: `#include "common.glsl"` — there is no file resolver, so `#include` stays a loud reject (it cannot be silently dropped without losing code). |
-| `both_entry_points.glsl` | **G2 boundary**: defines BOTH a ShaderToy `mainImage` and a plain-GLSL `main` — the converter cannot know which to wrap, so an ambiguous entry is a loud reject (never a guess). |
 | `main_no_output.glsl` | **G2 boundary**: a plain-GLSL `void main()` with no discoverable fragment output (no `out vec4 <name>;` and no `gl_FragColor` write) — there is nothing to return as COLOR0, so it is a loud reject. |
 
-Total: 13 reject shaders.
+Total: 12 reject shaders.
+
+Note: a shader that defines **BOTH** a ShaderToy `mainImage` AND a standalone `void main()` wrapper is
+**no longer a reject** (the former `both_entry_points.glsl`, now retired). It PREFERS ShaderToy mode,
+drops the `void main()` wrapper with a Warning, and converts — see
+`authored/mainimage_with_main_wrapper.glsl`. This is the common third-party shape (a desktop-runner shim
+around `mainImage`); ~a third of failures in the real-shader corpus hit it.
 
 Note: function-like `#define NAME(...)` macros and the `#if`/`#ifdef`/`#ifndef`/`#elif`/`#else`/`#endif`
 conditional family are now **supported** (Phase 46 preprocessor) and have moved to `authored/` (see

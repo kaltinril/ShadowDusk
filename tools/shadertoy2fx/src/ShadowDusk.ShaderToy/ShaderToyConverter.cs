@@ -108,13 +108,26 @@ public static class ShaderToyConverter
         };
 
         // Detect the entry convention: a ShaderToy `void mainImage(out vec4, in vec2)` OR a plain-GLSL
-        // `void main()`. Validate the chosen entry; BOTH present is ambiguous (loud reject), NEITHER is
-        // the existing "no entry point" reject.
-        EntryMode entryMode = DetectEntryMode(functions);
+        // `void main()`. When BOTH are present we prefer ShaderToy (`mainImage` is canonical for a
+        // ShaderToy-derived file; the standalone `void main()` is just a desktop-runner wrapper that our
+        // harness replaces) and DROP the user `main` with a Warning. NEITHER is the existing "no entry
+        // point" reject.
+        EntryMode entryMode = DetectEntryMode(functions, diagnostics);
         FragmentOutputDecl? userFragmentOutput = null;
         if (entryMode == EntryMode.ShaderToy)
         {
             ValidateMainImage(functions);
+
+            // ShaderToy mode wins even when a standalone `void main()` wrapper is also present. The
+            // wrapper (e.g. `void main(){ mainImage(gl_FragColor, gl_FragCoord.xy); }`) is NOT translated
+            // or emitted — our harness synthesizes its own fullscreen VS/PS that calls `mainImage`
+            // directly. Drop it here so its body (which references the GL-only `gl_FragColor`/
+            // `gl_FragCoord` write target the ShaderToy harness does not declare) is never emitted and
+            // leaves no dangling reference. Everything else (helpers, `mainImage`, globals) is unaffected.
+            if (functions.Any(f => f.Name == "main"))
+            {
+                functions.RemoveAll(f => f.Name == "main");
+            }
         }
         else
         {
@@ -249,24 +262,35 @@ public static class ShaderToyConverter
 
     /// <summary>
     /// Decide which entry convention the shader uses (G2): a ShaderToy
-    /// <c>void mainImage(out vec4, in vec2)</c> or a plain-GLSL <c>void main()</c>. Exactly one must be
-    /// present. BOTH defined is ambiguous (we cannot know which the author intends — loud reject); a
-    /// shader with NEITHER falls through to the existing "no entry point" reject in
-    /// <see cref="ResolveMainEntry"/>. (Signatures are validated by the per-mode validator; here we only
-    /// pick the mode by which entry-NAME is defined.)
+    /// <c>void mainImage(out vec4, in vec2)</c> or a plain-GLSL <c>void main()</c>. When BOTH are
+    /// defined we PREFER ShaderToy mode (<c>mainImage</c> is canonical for a ShaderToy-derived file) and
+    /// emit a <see cref="DiagnosticSeverity.Warning"/> noting the standalone <c>void main()</c> wrapper
+    /// is ignored in favor of <c>mainImage</c> (the caller drops it; our harness replaces it). A shader
+    /// with NEITHER falls through to the existing "no entry point" reject in <see cref="ValidateMainImage"/>
+    /// (ShaderToy is the default mode). When ONLY <c>main</c> is defined we use plain-GLSL mode (G2).
+    /// (Signatures are validated by the per-mode validator; here we only pick the mode by which
+    /// entry-NAME is defined.)
     /// </summary>
-    private static EntryMode DetectEntryMode(IReadOnlyList<FunctionDecl> functions)
+    private static EntryMode DetectEntryMode(
+        IReadOnlyList<FunctionDecl> functions, List<ConvertDiagnostic> diagnostics)
     {
         bool hasMainImage = functions.Any(f => f.Name == "mainImage");
         bool hasMain = functions.Any(f => f.Name == "main");
 
         if (hasMainImage && hasMain)
         {
+            // Both entries present: prefer the canonical ShaderToy `mainImage` and warn that the
+            // standalone `void main()` wrapper (a glslViewer / Bonzomatic / desktop-runner shim that our
+            // harness replaces) is ignored. This is a Warning, not a reject: ~a third of real third-party
+            // ShaderToy shaders ship with such a wrapper, and `mainImage` is unambiguously the shader.
             FunctionDecl at = functions.First(f => f.Name == "main");
-            throw new ConvertException(
-                "Ambiguous entry point: the shader defines BOTH a ShaderToy 'mainImage' and a plain-GLSL " +
-                "'main'. Provide exactly one entry convention so the converter knows which to wrap.",
-                at.Line, at.Column, "main");
+            diagnostics.Add(new ConvertDiagnostic(
+                DiagnosticSeverity.Warning,
+                "The shader defines BOTH a ShaderToy 'mainImage' and a standalone 'void main()'. " +
+                "Using 'mainImage' as the entry and ignoring the 'void main()' wrapper (our harness " +
+                "generates its own fullscreen pass that calls 'mainImage' directly).",
+                at.Line, at.Column, "main"));
+            return EntryMode.ShaderToy;
         }
 
         return hasMain && !hasMainImage ? EntryMode.PlainGlsl : EntryMode.ShaderToy;

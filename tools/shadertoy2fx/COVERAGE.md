@@ -4,6 +4,23 @@ A statistical coverage report for the `shadertoy2fx` GLSL → HLSL `.fx` convert
 running a batch of **real, third-party single-pass ShaderToy / GLSL image shaders** through the
 converter and then through the ShadowDusk OpenGL compiler.
 
+> **Update 2026-06-19 (f) — both-entries (`mainImage` + standalone `void main()`) now CONVERTS.** The
+> single biggest real-world coverage bug is fixed: a shader that defines BOTH a ShaderToy
+> `void mainImage(out vec4, in vec2)` AND a standalone `void main(){ mainImage(gl_FragColor,
+> gl_FragCoord.xy); }` wrapper (the glslViewer / Bonzomatic / desktop-runner shape, ~a third of all
+> real-corpus failures) is **no longer the "ambiguous entry point" reject**. The converter now PREFERS
+> ShaderToy mode (`mainImage` is canonical; our harness generates its own fullscreen VS/PS), **drops the
+> `void main()` wrapper** (not translated/emitted, so no dangling `gl_FragColor`/`gl_FragCoord`), and
+> emits a **Warning** that the wrapper was ignored in favor of `mainImage`. The dropped wrapper does not
+> change the `mainImage` output (byte-identical to the wrapper-less shader). A `main()` doing
+> substantive work beyond calling `mainImage` is still dropped (never merged). Single-entry shaders and
+> the plain-GLSL `main`-only mode are UNCHANGED; "no entry point" stays a reject. **Scratch re-measure:
+> conversion 44.4 % (71/160), up from 33.8 % (54/160) — a +17-shader gain** confirming the both-entries
+> shape was a top failure cause. Unit suite **259 green (0 warn)**; golden compile-sweep **52/52 on
+> OpenGL / DirectX_11 / FNA** (1 new both-entries golden, no regressions); render-proof **4/4 + multipass
+> (exit 0)**. The former `reject/both_entry_points.glsl` was retired; the new
+> `authored/mainimage_with_main_wrapper.glsl` covers the converting case.
+>
 > **Update 2026-06-19 (e) — G2 (plain-GLSL `void main()` entry mode) landed.** The converter now
 > accepts a SECOND entry convention: a plain-GLSL `void main()` fragment shader (glslViewer /
 > Bonzomatic / Shadertoy-export style) in addition to the ShaderToy `void mainImage(...)`. The
