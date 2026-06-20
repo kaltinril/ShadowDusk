@@ -34,6 +34,14 @@ internal enum MainImageShape
     /// <c>inputColor</c> is the iChannel0 sample at <c>uv</c> (or opaque black if no channel);
     /// <c>outputColor</c> is the returned fragment color.</summary>
     Godot,
+
+    /// <summary>The desktop-runner "returning" form <c>vec3/vec4 mainImage(in vec2 fragCoord)</c>: instead
+    /// of writing an <c>out vec4</c> parameter, the entry RETURNS the fragment color and the file's own
+    /// <c>void main(){ gl_FragColor = mainImage(gl_FragCoord.xy); }</c> wrapper assigns it. The harness
+    /// calls <c>fragColor = mainImage(fragCoord)</c> and returns it (a <c>vec3</c> return is padded to
+    /// <c>float4(rgb, 1.0)</c>). This is a faithful single-pass entry, just a different plumbing of the
+    /// same fragCoord-&gt;color contract.</summary>
+    Returning,
 }
 
 /// <summary>

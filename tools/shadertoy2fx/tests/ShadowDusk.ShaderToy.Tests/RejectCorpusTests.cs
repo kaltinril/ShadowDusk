@@ -66,6 +66,12 @@ public sealed class RejectCorpusTests
             "global_unsupported_type" => "double",
             "pp_include" => "#include",
             "main_no_output" => "fragment output",
+            "intrinsic_texturecube" => "textureCube",
+            "feedback_lastframe" => "getLastFrameColor",
+            "gl_fragdepth_builtin" => "gl_FragDepth",
+            "host_specific_uniform" => "host-provided value",
+            "host_template_placeholder" => "host-template placeholder",
+            "sampler_param" => "sampler2D",
             _ => string.Empty,
         };
 

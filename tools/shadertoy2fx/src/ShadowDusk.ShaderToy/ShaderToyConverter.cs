@@ -119,9 +119,17 @@ public static class ShaderToyConverter
         EntryMode entryMode = DetectEntryMode(functions, diagnostics);
         FragmentOutputDecl? userFragmentOutput = null;
         MainImageShape mainImageShape = MainImageShape.Standard;
+        // For the "returning" mainImage form, the GLSL return type ("vec3" / "vec4") so the harness
+        // knows whether to pad a vec3 result to float4(rgb, 1.0). Null for every other shape.
+        string? returningReturnType = null;
         if (entryMode == EntryMode.ShaderToy)
         {
             mainImageShape = ValidateMainImage(functions);
+            if (mainImageShape == MainImageShape.Returning)
+            {
+                returningReturnType = functions
+                    .First(f => f.Name == "mainImage" && IsDefinition(f)).ReturnType;
+            }
 
             // ShaderToy mode wins even when a standalone `void main()` wrapper is also present. The
             // wrapper (e.g. `void main(){ mainImage(gl_FragColor, gl_FragCoord.xy); }`) is NOT translated
@@ -129,6 +137,7 @@ public static class ShaderToyConverter
             // directly. Drop it here so its body (which references the GL-only `gl_FragColor`/
             // `gl_FragCoord` write target the ShaderToy harness does not declare) is never emitted and
             // leaves no dangling reference. Everything else (helpers, `mainImage`, globals) is unaffected.
+            // A `main` PROTOTYPE (empty body) is also dropped along with any definition.
             if (functions.Any(f => f.Name == "main"))
             {
                 functions.RemoveAll(f => f.Name == "main");
@@ -257,7 +266,8 @@ public static class ShaderToyConverter
             fragmentOutputName,
             emitter.UsedGlFragCoord,
             emitter.UsedScreenUv,
-            godotMode);
+            godotMode,
+            returningReturnType);
 
         // If any Error accumulated (e.g. a banned entry point detected up front without
         // StopOnFirstError), the conversion is NOT a success even though emission ran to completion.
@@ -315,11 +325,19 @@ public static class ShaderToyConverter
     /// (Signatures are validated by the per-mode validator; here we only pick the mode by which
     /// entry-NAME is defined.)
     /// </summary>
+    /// <summary>True if this <c>FunctionDecl</c> is a real definition (has a body), as opposed to a
+    /// forward prototype (<c>void mainImage(out vec4, in vec2);</c>), which the parser models as an
+    /// empty-body declaration. A prototype is not a definition, so it never counts toward "duplicate
+    /// definition" detection (the common third-party shape declares a <c>mainImage</c> prototype near
+    /// the top, then defines it lower down).</summary>
+    private static bool IsDefinition(FunctionDecl f) => f.Body.Statements.Count > 0;
+
     private static EntryMode DetectEntryMode(
         IReadOnlyList<FunctionDecl> functions, List<ConvertDiagnostic> diagnostics)
     {
-        bool hasMainImage = functions.Any(f => f.Name == "mainImage");
-        bool hasMain = functions.Any(f => f.Name == "main");
+        // Only a real DEFINITION (non-empty body) counts as an entry; a bare prototype does not.
+        bool hasMainImage = functions.Any(f => f.Name == "mainImage" && IsDefinition(f));
+        bool hasMain = functions.Any(f => f.Name == "main" && IsDefinition(f));
 
         if (hasMainImage && hasMain)
         {
@@ -426,7 +444,9 @@ public static class ShaderToyConverter
     /// </summary>
     private static MainImageShape ValidateMainImage(IReadOnlyList<FunctionDecl> functions)
     {
-        List<FunctionDecl> entries = functions.Where(f => f.Name == "mainImage").ToList();
+        // Only real DEFINITIONS count; a forward prototype (`void mainImage(...);`, empty body) is not a
+        // duplicate. The common third-party shape declares a prototype near the top and defines it lower.
+        List<FunctionDecl> entries = functions.Where(f => f.Name == "mainImage" && IsDefinition(f)).ToList();
         if (entries.Count == 0)
         {
             throw new ConvertException(
@@ -439,14 +459,30 @@ public static class ShaderToyConverter
         {
             FunctionDecl dup = entries[1];
             throw new ConvertException(
-                "Multiple 'mainImage' definitions found.", dup.Line, dup.Column, "mainImage");
+                "Multiple 'mainImage' definitions found (this looks like a concatenated multi-tab / " +
+                "multipass file; only a single image pass is supported).",
+                dup.Line, dup.Column, "mainImage");
         }
 
         FunctionDecl main = entries[0];
+
+        // The desktop-runner "returning" form: `vec3/vec4 mainImage(in vec2 fragCoord)` returns the color
+        // (the file's own `void main(){ gl_FragColor = mainImage(...); }` wrapper assigns it). It takes a
+        // single `vec2 fragCoord` and returns a vec3/vec4. Recognize it as a valid entry shape.
+        if ((main.ReturnType == "vec3" || main.ReturnType == "vec4") &&
+            main.Parameters.Count == 1 && main.Parameters[0].TypeName == "vec2" &&
+            main.Parameters[0].Qualifier == ParamQualifier.In)
+        {
+            return MainImageShape.Returning;
+        }
+
         if (main.ReturnType != "void")
         {
             throw new ConvertException(
-                "'mainImage' must return void.", main.Line, main.Column, "mainImage");
+                "'mainImage' must return void (the standard ShaderToy form writes 'out vec4 fragColor'); " +
+                "the only supported non-void form is the desktop-runner 'vec3/vec4 mainImage(in vec2 " +
+                "fragCoord)' that RETURNS the color.",
+                main.Line, main.Column, "mainImage");
         }
 
         // Godot / GdShaders 3-parameter form: (in vec4 inputColor, in vec2 uv, out vec4 outputColor).

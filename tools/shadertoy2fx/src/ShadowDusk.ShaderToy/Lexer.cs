@@ -268,6 +268,12 @@ internal sealed class Lexer
             '&' => TokenKind.Amp,
             '|' => TokenKind.Pipe,
             '^' => TokenKind.Caret,
+            '$' => throw new ConvertException(
+                "Unexpected character '$': this is a host-template placeholder (e.g. '$param', as used " +
+                "by parameterized shader hosts). The converter cannot resolve a host-substituted value, " +
+                "so this shader depends on a host-provided template parameter and is outside the " +
+                "supported subset.",
+                line, col, "$"),
             _ => throw new ConvertException(
                 $"Unexpected character '{c}'.", line, col, c.ToString()),
         };

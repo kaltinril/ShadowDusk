@@ -89,9 +89,24 @@ only both-entries outcome — it does not affect a shader that defines just one 
 
 - The signature is validated: first param must be `out vec4`, second `vec2`. Wrong return type,
   wrong arity, or wrong param types/qualifiers → reject.
-- Multiple `mainImage` definitions → reject.
+- **A `mainImage` PROTOTYPE (forward declaration, `void mainImage(out vec4, in vec2);` with no body)
+  is NOT counted as a definition.** The common third-party desktop-export shape declares a `mainImage`
+  prototype near the top, then defines it lower down (alongside a `void main()` wrapper); only the real
+  DEFINITION (non-empty body) counts. Multiple *definitions* (a concatenated multi-tab / multipass file
+  with two real `mainImage` bodies) → reject with a message that names the likely cause.
 - The harness PS declares a local `fragColor`, computes `fragCoord` (bottom-left Y origin), and calls
   `mainImage(fragColor, fragCoord)`, returning `fragColor` as `COLOR0`.
+
+#### The "returning" `mainImage` form (desktop-runner variant)
+
+Several desktop runners ship `mainImage` as `vec3 mainImage(in vec2 fragCoord)` or
+`vec4 mainImage(in vec2 fragCoord)` that **RETURNS** the color (rather than writing an `out vec4`
+parameter), paired with the file's own `void main(){ gl_FragColor = mainImage(gl_FragCoord.xy); }`
+wrapper. This is recognized as a valid entry by its shape (`vec3`/`vec4` return, a single `in vec2`
+param). The harness PS calls `mainImage(fragCoord)` and returns the result as `COLOR0`; a `vec3`
+return is padded to `float4(rgb, 1.0)`. The `void main()` wrapper is dropped (same as the standard
+both-entries case). Render-proven by `returning_gradient` (identical gradient + orientation as the
+standard `gradient_uv`).
 
 ### Godot / GdShaders `mainImage` (the alternate 3-parameter form)
 
@@ -206,11 +221,26 @@ a field whose name happens to be all-`stpq` is not mangled), and its type is inf
 definition, so **a matrix-typed member still hits the matrix-multiply trap**: `s.rot * v` (a `mat2`
 member) emits `mul(v, s.rot)`, exactly as a bare `mat2 * vec2` would. (`struct_basic.glsl` proves this.)
 
-**Rejected (loud, located):** a nested / inline struct member (`struct { ... } inner;`), a struct array
-member, a combined `struct Name { ... } var;` declaration (declare the variable separately), an empty
-struct, a struct-name collision, and a struct used before it is declared (forward reference). A
+**Array struct members are SUPPORTED.** A fixed-size array member (`struct S { float w[4]; vec3 t; };`)
+is accepted and emitted directly (HLSL allows a struct member array, `float w[4];`). The size resolves
+through the same const-int / `#define` / const-expression path as any array suffix. The generated
+`make_S(...)` factory copies the array member element-by-element (HLSL FX9/SM3 has no whole-array
+assignment).
+
+**Rejected (loud, located):** a nested / inline struct member (`struct { ... } inner;`), a combined
+`struct Name { ... } var;` declaration (declare the variable separately), an empty struct, a
+struct-name collision, and a struct used before it is declared (forward reference). A
 Common-tab struct referenced from the Image tab is not resolved (each tab parses independently) and
 falls to the unknown-type reject.
+
+## Function overloading (same name, different signatures)
+
+GLSL and HLSL both allow multiple functions with the **same name and different parameter signatures**.
+The converter accepts same-name helper overloads (`float f(float x)` + `vec2 f(vec2 v)`) and emits ALL
+of them; HLSL resolves each call by its argument types exactly as GLSL does. A forward **prototype**
+(empty body) is not a definition (only the later definition is emitted). A TRUE redefinition (an
+identical signature with two bodies) is still an error — but two same-name functions whose parameter
+lists differ are not.
 
 ## Arrays (G7)
 
@@ -234,10 +264,17 @@ declaration-initializer site, the only place an array initializer legally appear
 element type is inferred so an indexed element still type-checks for the traps. An array **parameter**
 spells its size on the HLSL declarator name (`T name[N]`), as HLSL requires.
 
+**Array sizes from constants/expressions are SUPPORTED.** The size in `[N]` may be an integer literal,
+a `#define`d constant (the preprocessor expands it to a literal), a **`const int`** name (`const int
+NUM = 41; vec2 path[NUM];`), or a **constant-integer expression** of those (`int idx[NUM_TRIANGLES *
+3];`, with `+ - * / %`, parentheses, unary `-`). The expression is evaluated at convert time to a
+literal HLSL array size. A `const int` is recorded in source order, so a forward reference (using a
+const before it is declared) still falls to the non-constant reject.
+
 **Rejected (loud, located):** an **unsized / runtime-sized** array (`float a[];`), an array whose
 declared size does not match its constructor / brace-list element count, an array sized by a
-**non-constant / macro** expression (`float a[n];`), a size on **both** the type and the name, an array
-struct member, and an array function **return type**.
+**genuinely runtime / non-constant** expression (`float a[n];` where `n` is a runtime variable), a
+size on **both** the type and the name, and an array function **return type**.
 
 ## `gl_FragCoord` built-in (G3c)
 
@@ -386,6 +423,18 @@ inherent fx_2_0 limit, not a converter bug.)
 HLSL has no single-scalar vector constructor, so `vecN(s)` → `((floatN)(s))`. A single **vector**
 argument `vecN(vM)` likewise emits a truncating cast `((floatN)(vM))` (matches GLSL truncation).
 
+**Single-argument matrix constructors (GLSL-only, expanded):** HLSL has no diagonal / matrix-from-matrix
+constructor, so the converter expands the GLSL forms to an explicit `floatNxN(...)` grid:
+- `matN(scalar s)` → the GLSL **diagonal** matrix (`s` on the diagonal, 0 elsewhere; `mat3(1.0)` is the
+  identity) → `floatNxN(s,0,0, 0,s,0, 0,0,s)`. A diagonal matrix is symmetric, so this is consistent
+  with the trap-2 transpose convention.
+- `matN(matM m)` → the GLSL upper-left `min(N,M)` **submatrix** of `m`, with any remaining diagonal
+  completed to 1 (identity completion) → a `floatNxN(...)` grid reading `m[r][c]` (the two trap-2
+  transposes cancel, so the HLSL components are copied directly). `mat3(mat4)` extracts the upper-left
+  3x3; `mat4(mat3)` expands the 3x3 into a 4x4 with a 1 in the bottom-right.
+
+A single **vector** argument to a matrix constructor is not a defined GLSL form → loud reject.
+
 ## Operator mapping
 
 Operators pass through unchanged **except** `*` when an operand is a matrix (trap 2, below):
@@ -456,8 +505,12 @@ intrinsic available in `ps_2_x`+, which the `ps_3_0` harness targets, G7).
 `round` and `floor(x+0.5)` are both round-half-up, so emitting either would be subtly wrong); the
 mip-bias texture form `texture(s, uv, bias)` (its `tex2Dbias` mapping does not compile on the
 OpenGL/DirectX SM4 targets, so it is rejected at convert time rather than emitting GL/DX-incompatible
-output); plus `texelFetch`, `textureProj`, `textureSize`, fine/coarse derivatives, and
-bit-packing/bitfield intrinsics (see the reject-list).
+output); `textureCube` / `texture3D` (cubemap / 3D sampling, no faithful 2D map); `getLastFrameColor`
+(feedback / previous-frame read — a single image pass cannot supply it); plus `texelFetch`,
+`textureProj`, `textureSize`, fine/coarse derivatives, and bit-packing/bitfield intrinsics (see the
+reject-list). Each carries a message that NAMES the construct precisely. Note `random` / `readDepth` and
+similar are **not GLSL built-ins** — they are user helpers the shader never defined (or a host supplies),
+so they fall to the "unknown function" reject, which is correct.
 
 ## Swizzles
 
@@ -507,10 +560,16 @@ A real line-oriented C preprocessor pass handles:
   the leading `i` ShaderToy-input convention: `#iChannel0 "tex.png"`, `#iKeyboard`, `#iMouse`,
   `#iDate`, `#iuniform`, …) are silently dropped (the host binds those inputs itself), never an error.
 
+- **Self-referential macros follow the C "blue-paint" rule.** A macro whose body references ITSELF
+  (`#define N1 $N1`, `#define A A + 1`) — directly or indirectly (`#define A B` / `#define B A`) — is
+  expanded EXACTLY ONCE: the macro's own name in its expansion is left as the plain identifier, NOT
+  re-expanded. This is the standard C rule and turns what used to be a runaway-expansion reject into
+  correct output. (A genuinely unresolvable result — e.g. a host-template `$placeholder` left behind by
+  such a macro — then fails loudly downstream, which is correct.) A depth guard remains as a backstop.
+
 **Rejected (loud, located):** the token-paste `##` and stringize `#` operators inside a macro body
 (rare in shaders; rejected rather than mis-expanded), variadic macros (`...`), and `#include` (inline
-the included source instead). A recursion/expansion-depth guard turns a pathological self-referential
-macro into a loud reject rather than an infinite loop.
+the included source instead).
 
 ## Control flow & statements supported
 
@@ -549,11 +608,13 @@ does **not** count as a clean terminator (the next case body would still run in 
 
 Each of the following produces a fatal diagnostic, never silently-wrong HLSL:
 
-- **Entry points / multipass:** missing entry point (no `mainImage` and no `main`); duplicate
-  `mainImage` or duplicate `main`; a `main` with parameters or a `main()` with no discoverable
-  fragment output (no user `out vec4` and no `gl_FragColor` write); more than one `out vec4` fragment
-  output; `mainSound`, `mainVR`, `mainCubemap` (Buffer A–D multipass is implied out of scope — only a
-  single image pass is emitted); a 3-parameter `mainImage` that is **not** the Godot/GdShaders shape
+- **Entry points / multipass:** missing entry point (no `mainImage` and no `main`); **multiple
+  `mainImage` DEFINITIONS** (a concatenated multi-tab / multipass file — a forward *prototype* does NOT
+  count, and the `vec3/vec4 mainImage(in vec2)` "returning" form and the Godot 3-arg form are accepted);
+  duplicate `main`; a `main` with parameters or a `main()` with no discoverable fragment output (no user
+  `out vec4` and no `gl_FragColor` write); more than one `out vec4` fragment output; `mainSound`,
+  `mainVR`, `mainCubemap` (Buffer A–D multipass is implied out of scope — only a single image pass is
+  emitted); a 3-parameter `mainImage` that is **not** the Godot/GdShaders shape
   `(in vec4, in vec2, out vec4)`. (**Both** a `mainImage` and a `main` is NO LONGER a reject: it prefers
   ShaderToy mode and drops the `main()` wrapper with a Warning — see *Entry point* above. The Godot 3-arg
   `mainImage` IS accepted — see *Godot mainImage* above.)
@@ -590,11 +651,27 @@ Each of the following produces a fatal diagnostic, never silently-wrong HLSL:
 - **Statements/expressions:** a `switch` with true **fall-through** (a non-empty `case` body lacking a
   terminating `break`/`return`) or a `default` stacked with `case` labels on one body (a plain
   break-terminated `switch` is now **supported** and lowered to if/else — see *switch lowering* above);
-  unknown function/intrinsic that is neither a user function nor in the mapping table; single-argument
-  matrix constructor `matN(x)` (HLSL has no diagonal `floatNxN(scalar)` form); `roundEven` (no faithful
-  HLSL map); the mip-bias `texture(s, uv, bias)` form; `texelFetch`, `textureProj`, `textureSize`,
-  fine/coarse derivatives, and bit-packing/bitfield intrinsics. (`fwidth` and `matrixCompMult` are now
-  **supported** — see the intrinsic table.)
+  unknown function/intrinsic that is neither a user function nor in the mapping table; `roundEven` (no
+  faithful HLSL map); the mip-bias `texture(s, uv, bias)` form; `texelFetch`, `textureProj`,
+  `textureSize`, fine/coarse derivatives, and bit-packing/bitfield intrinsics; **`textureCube` /
+  `texture3D`** (cubemap / 3D sampling has no faithful 2D `sampler2D` map); **`getLastFrameColor`**
+  (reads the shader's own previous-frame output — a feedback / multipass construct a single pass cannot
+  supply). (`fwidth`, `matrixCompMult`, and the single-argument matrix constructors `matN(scalar)` /
+  `matN(matM)` are now **supported** — see the intrinsic / type tables.)
+- **Sampler / GL stage built-ins:** a **`sampler2D` function parameter** (`vec4 f(sampler2D tex, ...)`)
+  is valid HLSL but does **not** compile through the legacy-FX9 → GL/DX pipeline (a sampler cannot be a
+  function argument there, the same class of limit as the mip-bias reject) → loud, named reject (inline
+  the `tex2D` on the global sampler instead). The GL stage built-ins `gl_FragDepth`, `gl_FrontFacing`,
+  `gl_TexCoord`, `gl_FragData` are named-rejected (no value for a 2D fullscreen pass) rather than the
+  generic undeclared-identifier message. (`gl_FragCoord` IS supported.)
+- **Undeclared / host-provided identifiers:** a free identifier that is not a local/parameter, a
+  `const` global, a user function, a declared custom uniform, or a predefined ShaderToy uniform is a
+  loud reject whose message reads "undeclared identifier 'X' (not a ShaderToy built-in or declared
+  uniform) — this shader depends on a host-provided value." This covers host-specific globals
+  (terminal-cursor uniforms like `iCurrentCursor`, ISF's `RENDERSIZE`, app-specific values) whose value
+  we cannot invent. We do **not** auto-expose an arbitrary unknown as a uniform (that would be guessing);
+  declare it as a top-level `uniform` to drive it. A host-template `$placeholder` token is likewise a
+  loud, named reject (we cannot resolve a host-substituted value).
 
 ## Notes / known limits
 

@@ -4,6 +4,49 @@ A statistical coverage report for the `shadertoy2fx` GLSL → HLSL `.fx` convert
 running a batch of **real, third-party single-pass ShaderToy / GLSL image shaders** through the
 converter and then through the ShadowDusk OpenGL compiler.
 
+> **Update 2026-06-20 (i) — FINAL coverage wave landed (entry/prototype + returning mainImage,
+> overloading, const/macro/expression array sizes, struct array members, single-arg matrix constructors,
+> self-referential-macro C-rule; named out-of-scope rejects for the permanent tail).** The last
+> correctness-first batch from the 160-shader analysis: (1) a `mainImage` **prototype** (forward
+> declaration, empty body) no longer counts as a duplicate definition (the common
+> prototype+definition+`void main()` desktop-export shape now converts); (2) the desktop-runner
+> **"returning" `mainImage`** form `vec3/vec4 mainImage(in vec2 fragCoord)` (RETURNS the color, the
+> file's own `void main()` assigns it) is recognized + wired (a `vec3` return is padded to
+> `float4(rgb,1)`), render-proven by `returning_gradient`; (3) **function overloading** — same-name
+> helpers with different signatures are emitted in full and HLSL resolves each call (a true identical
+> redefinition is still an error); (4) array sizes from a `#define`, a **`const int`**, or a
+> **const-integer EXPRESSION** (`NUM_TRIANGLES * 3`) resolve to a literal size; (5) **struct array
+> members** (`struct S { float w[4]; };`) emitted directly + element-wise factory copy; (6) **single-arg
+> matrix constructors** `matN(scalar)` (diagonal; `mat3(1)` is identity) and `matN(matM)` (upper-left
+> submatrix + identity completion) expanded to an explicit `floatNxN(...)` grid; (7) the
+> **self-referential macro** C "blue-paint" rule (a macro's own name in its expansion is not
+> re-expanded) turns a runaway-reject into correct output. **Permanent tail named-rejected:** `sampler2D`
+> function PARAMETERS (valid HLSL but uncompilable on the legacy-FX9 GL/DX path — same class as the
+> mip-bias reject), `textureCube` / `texture3D` (cubemap/3D), `getLastFrameColor` (feedback), the GL
+> stage built-ins `gl_FragDepth` / `gl_FrontFacing` / `gl_TexCoord` / `gl_FragData`, host-specific
+> undeclared globals (`iCurrentCursor`, `RENDERSIZE`, ...), and host-template `$placeholder` tokens —
+> each with a precise, named diagnostic ("...depends on a host-provided value", etc.). **Scratch
+> re-measure: conversion 61.2 % (98/160), up from 55.0 % (88/160) — a +10-shader gain (correctness-held:
+> the sampler2D-param shapes were initially +13 but reverted to a reject after the rendered output proved
+> uncompilable on GL/DX).** Of the 10 newly-converted scratch shaders, **7 compile cleanly on GL/DX/FNA**;
+> the other 3 reach pre-existing §5 transpiler edge cases (B4 truncation, a struct-typed ternary, a
+> shader that redeclares `iTime` as its own mutable global) and fail LOUDLY at compile (non-zero exit),
+> never silent-wrong. Unit suite **371 green (0 warn)**; golden compile-sweep **OpenGL 69/69, DirectX_11
+> 69/69, FNA 67/69** (the 2 FNA misses remain `bitwise_ops`/`uint_type`, the inherent fx_2_0 integer
+> ceiling — all 7 new fixtures compile on GL/DX/FNA); render-proof **6/6 + multipass (exit 0)** with the
+> new `returning_gradient` case. 7 new authored fixtures + 6 new reject fixtures + a
+> `Phase46CoverageWaveTests` unit class; the `PreprocessorTests` recursive-macro case was corrected from a
+> runaway-reject assertion to the C-rule expansion.
+>
+> **Realistic ceiling for single-pass.** ~61 % of this broad real-world corpus is the practical ceiling
+> for a faithful single-pass converter. The permanent remainder is genuinely out of scope: multipass /
+> feedback / buffer-graph shaders, cubemap / 3D / mip-bias texture sampling, `texelFetch` / depth /
+> integer-bitwise-on-FNA, host-specific uniforms (terminal cursors, ISF `RENDERSIZE`, app values) whose
+> values we cannot invent, host-template `$`-parameterized shaders, sampler-passing helper functions
+> (uncompilable on the GL/DX FX9 path), and a small tail of pre-existing transpiler edge cases (vector
+> truncation, struct-typed ternaries, built-in-name shadowing). For every one of these a **loud,
+> well-named reject is the correct outcome** — never a guessed value or silently-wrong output.
+>
 > **Update 2026-06-19 (h) — SECOND fixable batch landed (stage-I/O ignore + screen-UV alias, OpenFL,
 > Godot 4-arg `mainImage`, libretro VERTEX/FRAGMENT, `switch`).** Five correctness-first families from
 > the failure analysis: (1) a top-level `in`/`varying`/`attribute` (and `layout(location=N) in`)

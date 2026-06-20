@@ -27,7 +27,8 @@ internal sealed class HarnessGenerator
         string fragmentOutputName = "gl_FragColor",
         bool usedGlFragCoord = false,
         bool usedScreenUv = false,
-        bool godotMode = false)
+        bool godotMode = false,
+        string? returningReturnType = null)
     {
         var sb = new StringBuilder();
 
@@ -139,6 +140,10 @@ internal sealed class HarnessGenerator
         else if (godotMode)
         {
             EmitGodotPixelShader(sb, usedGlFragCoord, usedScreenUv);
+        }
+        else if (returningReturnType is not null)
+        {
+            EmitReturningPixelShader(sb, returningReturnType, usedGlFragCoord, usedScreenUv);
         }
         else
         {
@@ -292,6 +297,44 @@ internal sealed class HarnessGenerator
         sb.AppendLine("    float4 fragColor = float4(0.0, 0.0, 0.0, 1.0);");
         sb.AppendLine("    mainImage(fragColor, fragCoord);");
         sb.AppendLine("    return fragColor;");
+        sb.AppendLine("}");
+        sb.AppendLine();
+    }
+
+    /// <summary>
+    /// Emit the pixel shader for the desktop-runner "returning" <c>mainImage</c> form
+    /// (<c>vec3/vec4 mainImage(in vec2 fragCoord)</c>). It computes the same bottom-left-Y
+    /// <c>fragCoord</c>, calls <c>mainImage(fragCoord)</c>, and returns the result as <c>COLOR0</c>. A
+    /// <c>vec3</c> (float3) return is padded to <c>float4(rgb, 1.0)</c>; a <c>vec4</c> return is used as-is.
+    /// </summary>
+    private static void EmitReturningPixelShader(
+        StringBuilder sb, string returningReturnType, bool usedGlFragCoord, bool usedScreenUv)
+    {
+        sb.AppendLine("float4 PSMain(VSOutput input) : COLOR0");
+        sb.AppendLine("{");
+        sb.AppendLine("    // 'returning' mainImage form: vec3/vec4 mainImage(in vec2 fragCoord) returns the");
+        sb.AppendLine("    // color. Same bottom-left-Y fragCoord as the standard harness.");
+        sb.AppendLine("    float2 fragCoord = float2(input.UV.x, 1.0 - input.UV.y) * iResolution.xy;");
+        if (usedGlFragCoord)
+        {
+            sb.AppendLine("    gl_FragCoord = float4(fragCoord, 0.0, 1.0);");
+        }
+
+        if (usedScreenUv)
+        {
+            sb.AppendLine("    sd_ScreenUV = fragCoord / iResolution.xy;");
+        }
+
+        if (returningReturnType == "vec3")
+        {
+            sb.AppendLine("    float3 rgb = mainImage(fragCoord);");
+            sb.AppendLine("    return float4(rgb, 1.0);");
+        }
+        else
+        {
+            sb.AppendLine("    return mainImage(fragCoord);");
+        }
+
         sb.AppendLine("}");
         sb.AppendLine();
     }

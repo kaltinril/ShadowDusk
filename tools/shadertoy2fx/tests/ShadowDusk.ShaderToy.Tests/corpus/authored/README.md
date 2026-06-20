@@ -68,5 +68,12 @@ exercises **one** feature or translation trap so a failure points at a single ca
 | `godot_4arg_mainimage.glsl` | **Godot/GdShaders 4-arg `mainImage`**: `(in vec4 inputColor, in vec2 uv, out vec4 outputColor)` — `uv` = SCREEN_UV ([0,1]) from the harness; `inputColor` = iChannel0 sample at `uv`; `outputColor` = the returned color. |
 | `libretro_vertex_fragment.glsl` | **libretro stage split**: both stages wrapped in `#if defined(VERTEX) ... #elif defined(FRAGMENT) ... #endif`; the converter seeds `FRAGMENT`=1 so the fragment branch (the real `mainImage`) survives. |
 | `switch_statement.glsl` | **`switch` lowering**: a break-terminated `switch` (multiple cases, stacked labels sharing a body, `default`) lowered to an if/else-if/else chain (portable to SM3/FNA). |
+| `mainimage_prototype.glsl` | **Final wave — prototype**: a `mainImage` forward PROTOTYPE (empty body) + a `void main()` wrapper + the real `mainImage` definition. The prototype must NOT count as a duplicate definition; ShaderToy mode is used and the wrapper dropped. |
+| `mainimage_returning.glsl` | **Final wave — returning form**: `vec3 mainImage(in vec2 fragCoord)` RETURNS the color (the file's own `void main()` assigns it); the harness calls `rgb = mainImage(fragCoord)` and returns `float4(rgb, 1.0)`. |
+| `function_overload.glsl` | **Final wave — overloading**: two helpers named `sd_scale` with different signatures (`float`/`vec2`); both are emitted and HLSL resolves each call by argument type. |
+| `array_macro_size.glsl` | **Final wave — array sizes**: array sizes from a `#define`d constant, a `const int`, and a const-int EXPRESSION (`COUNT * 2`) all resolve to a literal HLSL size. |
+| `struct_array_member.glsl` | **Final wave — struct array member**: a `struct { float w[NW]; vec3 tint; }` array member emitted directly (`float w[4];`); the `make_*` factory copies the array element-by-element. |
+| `matrix_from_scalar.glsl` | **Final wave — single-arg matrix ctor**: `mat3(1.0)` (identity diagonal), `mat2(2.0)` (scaled diagonal), and `mat3(mat4)` (upper-left submatrix) each expand to an explicit `floatNxN(...)` grid. |
+| `self_referential_macro.glsl` | **Final wave — macro C-rule**: a self-referential `#define` chain expands per the C "blue-paint" rule (a macro's own name in its expansion is left as a plain identifier, not re-expanded). |
 
-Total: 61 authored shaders.
+Total: 68 authored shaders.

@@ -24,6 +24,14 @@ internal sealed class Parser
     /// and a forward reference naturally falls through to the "unknown type" reject.</summary>
     private readonly HashSet<string> _structNames = new(StringComparer.Ordinal);
 
+    /// <summary>Compile-time integer constants in scope, name → value. Populated from
+    /// <c>const int NAME = literal;</c> globals (and local <c>const int</c> declarations) in source
+    /// order, so a later array size <c>[NAME]</c> resolves to the literal. A <c>#define</c>d size is
+    /// already a literal by the time the parser runs (the preprocessor expands it), so this only needs
+    /// to cover the const-int form. Populated as declarations are parsed; a forward reference naturally
+    /// is not yet present and falls to the non-constant-size reject.</summary>
+    private readonly Dictionary<string, int> _intConstants = new(StringComparer.Ordinal);
+
     public Parser(IReadOnlyList<Token> tokens) => _tokens = tokens;
 
     private Token Current => _tokens[_pos];
@@ -214,6 +222,13 @@ internal sealed class Parser
             Expr cinit = arraySize is null ? ParseExpression() : ParseInitializer();
             Expect(TokenKind.Semicolon, "';'");
             ValidateArrayInit(arraySize, cinit, nameTok);
+
+            // Record a `const int NAME = <literal>;` so a later array size `[NAME]` resolves to it.
+            if (arraySize is null && typeName == "int")
+            {
+                RecordIntConstant(name, cinit);
+            }
+
             globals.Add(new GlobalConstDecl
             {
                 TypeName = typeName,
@@ -294,10 +309,14 @@ internal sealed class Parser
             do
             {
                 Token memberName = Expect(TokenKind.Identifier, "a struct member name");
+
+                // A fixed-size array member (`vec3 colors[4];` / `Sphere spheres[MAX];`). HLSL allows a
+                // struct member array directly (`float3 colors[4];`), so we accept it; the size resolves
+                // through the same const-int / literal path as any array suffix.
+                int? memberArraySize = null;
                 if (Check(TokenKind.LBracket))
                 {
-                    throw Reject(
-                        "Array struct members are outside the supported subset.", Current);
+                    memberArraySize = ParseArraySuffix();
                 }
 
                 if (!seen.Add(memberName.Text))
@@ -309,6 +328,7 @@ internal sealed class Parser
                 {
                     TypeName = memberType,
                     Name = memberName.Text,
+                    ArraySize = memberArraySize,
                     Line = memberName.Line,
                     Column = memberName.Column,
                 });
@@ -423,23 +443,116 @@ internal sealed class Parser
                 open);
         }
 
-        if (!Check(TokenKind.IntLiteral))
+        // A constant integer expression: an integer literal, an identifier naming a compile-time int
+        // constant (a `const int NAME = 16;` global / local, or a `#define`d size already expanded by the
+        // preprocessor), or an arithmetic combination of those (`NUM_TRIANGLES * 3`, `N - 1`). Evaluating
+        // it lets `Hitable h[MAX_HITABLES];`, `vec2 path[NUM];`, and `int idx[NUM_TRIANGLES * 3];` accept
+        // a literal size. A genuinely runtime / non-constant size (an identifier with no known value)
+        // stays a loud reject.
+        Token startTok = Current;
+        int size = ParseConstIntExpr(startTok);
+
+        if (size <= 0)
         {
             throw Reject(
-                "Array size must be a constant non-negative integer literal.", Current);
+                $"Array size expression must evaluate to a positive integer (got {size}).", startTok);
         }
 
-        Token sizeTok = Current;
-        _pos++;
         Expect(TokenKind.RBracket, "']'");
+        return size;
+    }
 
-        if (!int.TryParse(sizeTok.Text, out int size) || size <= 0)
+    /// <summary>
+    /// Evaluate a constant integer expression in an array-size suffix from the current token up to the
+    /// closing <c>]</c>: integer literals, compile-time int constants (<c>const int</c> / <c>#define</c>),
+    /// and the arithmetic operators <c>+ - * / %</c> with parentheses and unary <c>+</c>/<c>-</c>. A
+    /// non-constant operand (an unknown identifier, a runtime value) is a loud reject — we never invent a
+    /// size. Tokens are consumed up to (but not including) the <c>]</c>.
+    /// </summary>
+    private int ParseConstIntExpr(Token at) => ParseConstAddSub(at);
+
+    private int ParseConstAddSub(Token at)
+    {
+        int value = ParseConstMulDiv(at);
+        while (Current.Kind is TokenKind.Plus or TokenKind.Minus)
         {
-            throw Reject(
-                $"Array size '{sizeTok.Text}' must be a positive integer literal.", sizeTok);
+            bool add = Current.Kind == TokenKind.Plus;
+            _pos++;
+            int rhs = ParseConstMulDiv(at);
+            value = add ? value + rhs : value - rhs;
         }
 
-        return size;
+        return value;
+    }
+
+    private int ParseConstMulDiv(Token at)
+    {
+        int value = ParseConstUnary(at);
+        while (Current.Kind is TokenKind.Star or TokenKind.Slash or TokenKind.Percent)
+        {
+            TokenKind op = Current.Kind;
+            _pos++;
+            int rhs = ParseConstUnary(at);
+            value = op switch
+            {
+                TokenKind.Star => value * rhs,
+                TokenKind.Slash => rhs == 0 ? throw Reject("Division by zero in array size.", at) : value / rhs,
+                _ => rhs == 0 ? throw Reject("Modulo by zero in array size.", at) : value % rhs,
+            };
+        }
+
+        return value;
+    }
+
+    private int ParseConstUnary(Token at)
+    {
+        if (Current.Kind == TokenKind.Minus)
+        {
+            _pos++;
+            return -ParseConstUnary(at);
+        }
+
+        if (Current.Kind == TokenKind.Plus)
+        {
+            _pos++;
+            return ParseConstUnary(at);
+        }
+
+        return ParseConstPrimary(at);
+    }
+
+    private int ParseConstPrimary(Token at)
+    {
+        if (Match(TokenKind.LParen))
+        {
+            int inner = ParseConstAddSub(at);
+            Expect(TokenKind.RParen, "')'");
+            return inner;
+        }
+
+        if (Check(TokenKind.IntLiteral))
+        {
+            Token tok = Current;
+            _pos++;
+            if (!int.TryParse(tok.Text, out int v))
+            {
+                throw Reject($"Array size literal '{tok.Text}' is not a valid integer.", tok);
+            }
+
+            return v;
+        }
+
+        if (Check(TokenKind.Identifier) && _intConstants.TryGetValue(Current.Text, out int constValue))
+        {
+            _pos++;
+            return constValue;
+        }
+
+        throw Reject(
+            "Array size must be a constant integer expression (a literal, a 'const int' / '#define'd " +
+            "constant, or an arithmetic combination of those); a runtime / non-constant size is not " +
+            "supported.",
+            Current);
     }
 
     /// <summary>
@@ -516,6 +629,35 @@ internal sealed class Parser
                 $"Array '{at.Text}' is declared size {arraySize.Value} but its initializer has " +
                 $"{count} element(s).",
                 at);
+        }
+    }
+
+    /// <summary>
+    /// Record a compile-time int constant (<c>const int NAME = &lt;literal&gt;;</c>) so a later array
+    /// size <c>[NAME]</c> can resolve to its value. Only a bare non-negative integer literal initializer
+    /// (optionally a parenthesized one) is recorded; anything else leaves the name unrecorded, so using
+    /// it as an array size falls to the non-constant-size reject.
+    /// </summary>
+    private void RecordIntConstant(string name, Expr initializer)
+    {
+        Expr e = initializer;
+
+        // A unary minus on a literal makes a negative constant; record it (an array size <= 0 is caught
+        // later by ParseArraySuffix).
+        bool negative = false;
+        while (e is UnaryExpr { Op: "-" or "+", IsPostfix: false } un)
+        {
+            if (un.Op == "-")
+            {
+                negative = !negative;
+            }
+
+            e = un.Operand;
+        }
+
+        if (e is IntLiteralExpr lit && int.TryParse(lit.Text, out int value))
+        {
+            _intConstants[name] = negative ? -value : value;
         }
     }
 
@@ -1068,6 +1210,12 @@ internal sealed class Parser
         }
 
         ValidateArrayInit(arraySize, init, nameTok);
+
+        // Record a local `const int NAME = <literal>;` so a later local array size `[NAME]` resolves.
+        if (isConst && arraySize is null && typeName == "int" && init is not null)
+        {
+            RecordIntConstant(nameTok.Text, init);
+        }
 
         return new VarDeclStmt
         {

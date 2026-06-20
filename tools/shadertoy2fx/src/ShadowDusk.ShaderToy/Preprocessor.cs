@@ -597,8 +597,12 @@ internal sealed class Preprocessor
     // ─────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Expand every macro invocation in <paramref name="line"/> using the current macro table.
-    /// A bounded pass count guards against pathological recursion.
+    /// Expand every macro invocation in <paramref name="line"/> using the current macro table, following
+    /// the standard C "no recursive expansion of the currently-expanding macro" (blue-paint) rule: while
+    /// a macro is being expanded, its own name appearing in the expansion is NOT re-expanded (it is left
+    /// as the plain identifier). This makes a self-referential macro (<c>#define N1 $N1</c>,
+    /// <c>#define A B</c> / <c>#define B A</c>) terminate with the correct output instead of looping. The
+    /// bounded depth guard remains as a backstop for any pathological nesting the hide-set cannot cover.
     /// </summary>
     private string ExpandLine(string line, int lineNo)
     {
@@ -607,33 +611,30 @@ internal sealed class Preprocessor
             return line;
         }
 
-        string current = line;
-        for (int pass = 0; pass < MaxExpansionPasses; pass++)
-        {
-            string next = ExpandOnce(current, lineNo, out bool changed);
-            if (!changed)
-            {
-                return next;
-            }
-
-            current = next;
-        }
-
-        throw new ConvertException(
-            "Macro expansion did not terminate (possible recursive macro).", lineNo, 1, "#define");
+        return ExpandText(line, lineNo, hideSet: null, depth: 0);
     }
 
-    /// <summary>One expansion pass: replace each macro name (and its call arguments) with its body.</summary>
-    private string ExpandOnce(string text, int lineNo, out bool changed)
+    /// <summary>
+    /// Recursively expand macros in <paramref name="text"/>. <paramref name="hideSet"/> holds the names
+    /// of macros currently being expanded (already "painted blue"); a name in the hide set is emitted
+    /// verbatim, never re-expanded. Each macro's body is expanded with the macro's own name added to the
+    /// hide set, so direct and indirect self-reference terminate per the C rule.
+    /// </summary>
+    private string ExpandText(string text, int lineNo, IReadOnlySet<string>? hideSet, int depth)
     {
-        changed = false;
+        if (depth > MaxExpansionPasses)
+        {
+            throw new ConvertException(
+                "Macro expansion did not terminate (possible recursive macro).", lineNo, 1, "#define");
+        }
+
         var sb = new StringBuilder(text.Length);
         int i = 0;
         while (i < text.Length)
         {
             char c = text[i];
 
-            // Skip string/char literals and comments verbatim so we never touch their contents.
+            // Skip line comments verbatim so we never touch their contents.
             if (c == '/' && i + 1 < text.Length && text[i + 1] == '/')
             {
                 sb.Append(text, i, text.Length - i);
@@ -654,6 +655,14 @@ internal sealed class Preprocessor
             }
 
             string word = text[start..i];
+
+            // Blue-paint rule: a macro currently being expanded is not re-expanded.
+            if (hideSet is not null && hideSet.Contains(word))
+            {
+                sb.Append(word);
+                continue;
+            }
+
             if (!_macros.TryGetValue(word, out Macro? macro))
             {
                 sb.Append(word);
@@ -662,8 +671,10 @@ internal sealed class Preprocessor
 
             if (!macro.IsFunctionLike)
             {
-                sb.Append(macro.Body);
-                changed = true;
+                // Expand the body, then recursively expand the RESULT with this macro hidden, so a
+                // self-reference (`#define N1 $N1`) leaves `N1` as a plain identifier rather than looping.
+                string expanded = ExpandText(macro.Body, lineNo, WithHidden(hideSet, word), depth + 1);
+                sb.Append(expanded);
                 continue;
             }
 
@@ -682,13 +693,31 @@ internal sealed class Preprocessor
             }
 
             List<string> args = ReadCallArguments(text, j, out int afterCall, lineNo);
-            string expansion = SubstituteFunctionMacro(macro, args, lineNo);
-            sb.Append(expansion);
+
+            // Arguments are macro-expanded in the CALLER's context (without the called macro hidden).
+            var expandedArgs = args
+                .Select(a => ExpandText(a, lineNo, hideSet, depth + 1))
+                .ToList();
+
+            string substituted = SubstituteFunctionMacro(macro, expandedArgs, lineNo);
+
+            // Re-expand the substituted body with this macro hidden (blue-paint).
+            string result = ExpandText(substituted, lineNo, WithHidden(hideSet, word), depth + 1);
+            sb.Append(result);
             i = afterCall;
-            changed = true;
         }
 
         return sb.ToString();
+    }
+
+    /// <summary>Return a hide set that is <paramref name="existing"/> plus <paramref name="name"/>.</summary>
+    private static IReadOnlySet<string> WithHidden(IReadOnlySet<string>? existing, string name)
+    {
+        var set = existing is null
+            ? new HashSet<string>(StringComparer.Ordinal)
+            : new HashSet<string>(existing, StringComparer.Ordinal);
+        set.Add(name);
+        return set;
     }
 
     /// <summary>

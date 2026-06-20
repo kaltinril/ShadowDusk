@@ -610,15 +610,24 @@ internal sealed class HlslEmitter
 
         if (!_types.IsKnownIdentifier(id.Name) && !_userFunctions.Contains(id.Name))
         {
+            // A known GLSL stage built-in that the single-pass 2D harness has no value for: name it
+            // precisely (rather than a generic "undeclared identifier") so the boundary is clear.
+            if (KnownUnsupportedGlBuiltins.TryGetValue(id.Name, out string? glReason))
+            {
+                throw new ConvertException(glReason, id.Line, id.Column, id.Name);
+            }
+
             // A free (undeclared) identifier: not a local/param/const-global, not a ShaderToy
             // uniform, not a user function. Reject loudly at convert time rather than leaking it to
             // HLSL where it surfaces as "use of undeclared identifier". (Custom uniforms, ISF
-            // builtins like RENDERSIZE, etc. land here.)
+            // builtins like RENDERSIZE, host-specific globals like iCurrentCursor, etc. land here —
+            // we cannot invent a host-provided value.)
             throw new ConvertException(
-                $"Undeclared identifier '{id.Name}'. It is not a local variable, a 'const' global, " +
-                "a user function, a declared custom uniform, or a predefined ShaderToy uniform (iTime, " +
-                "iResolution, iMouse, iChannelN, ...). Declare it as a top-level 'uniform' to expose it " +
-                "as an effect parameter.",
+                $"Undeclared identifier '{id.Name}' (not a ShaderToy built-in or declared uniform). " +
+                "This shader depends on a host-provided value: '" + id.Name + "' is not a local " +
+                "variable, a 'const' global, a user function, a declared custom uniform, or a predefined " +
+                "ShaderToy uniform (iTime, iResolution, iMouse, iChannelN, ...). If it is a value your " +
+                "host supplies, declare it as a top-level 'uniform' to expose it as an effect parameter.",
                 id.Line, id.Column, id.Name);
         }
 
@@ -817,6 +826,28 @@ internal sealed class HlslEmitter
             $"Unknown function or intrinsic '{name}' is not a user function and not in the mapping table.");
     }
 
+    /// <summary>
+    /// Known GLSL stage built-ins that the single-pass 2D fullscreen harness cannot provide a value for,
+    /// mapped to a precise (named) reject message — better than a generic "undeclared identifier."
+    /// (<c>gl_FragCoord</c> IS supported and is handled before this point.)
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, string> KnownUnsupportedGlBuiltins =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["gl_FragDepth"] =
+                "'gl_FragDepth' (per-fragment depth output) is outside the supported subset: a 2D " +
+                "fullscreen image pass has no meaningful depth output.",
+            ["gl_FrontFacing"] =
+                "'gl_FrontFacing' (front/back face flag) is outside the supported subset: the fullscreen " +
+                "harness draws a single front-facing quad.",
+            ["gl_TexCoord"] =
+                "'gl_TexCoord' (legacy fixed-function texture coordinate) is outside the supported " +
+                "subset; use 'fragCoord'/'gl_FragCoord' or a declared uniform instead.",
+            ["gl_FragData"] =
+                "'gl_FragData' (multiple render targets) is outside the supported subset (single image " +
+                "output only).",
+        };
+
     private readonly HashSet<string> _userFunctions = new(StringComparer.Ordinal);
     private readonly HashSet<string> _customUniforms = new(StringComparer.Ordinal);
     private readonly HashSet<string> _screenUvAliases = new(StringComparer.Ordinal);
@@ -857,21 +888,41 @@ internal sealed class HlslEmitter
         _indent++;
         foreach (StructMember m in s.Members)
         {
-            Line($"{HlslType(m.TypeName)} {m.Name};");
+            // An array member spells its size on the member name (HLSL, matching GLSL): `float w[4];`.
+            Line(m.ArraySize is { } n
+                ? $"{HlslType(m.TypeName)} {m.Name}[{n}];"
+                : $"{HlslType(m.TypeName)} {m.Name};");
         }
 
         _indent--;
         Line("};");
 
-        // Factory: make_Name(<members>) building and returning the struct, field by field.
-        string paramList = string.Join(", ", s.Members.Select(m => $"{HlslType(m.TypeName)} {m.Name}"));
+        // Factory: make_Name(<members>) building and returning the struct, field by field. An array
+        // member becomes an array parameter (size on the name) and is copied element-by-element, since
+        // HLSL has no whole-array assignment in the FX9 / SM3 target. (A struct with array members rarely
+        // uses its positional constructor; we still provide a faithful factory so `Name(...)` resolves.)
+        string paramList = string.Join(", ", s.Members.Select(m =>
+            m.ArraySize is { } n
+                ? $"{HlslType(m.TypeName)} {m.Name}[{n}]"
+                : $"{HlslType(m.TypeName)} {m.Name}"));
         Line($"{s.Name} make_{s.Name}({paramList})");
         Line("{");
         _indent++;
         Line($"{s.Name} result;");
         foreach (StructMember m in s.Members)
         {
-            Line($"result.{m.Name} = {m.Name};");
+            if (m.ArraySize is { } n)
+            {
+                // HLSL (FX9/SM3) has no whole-array assignment; copy element by element.
+                for (int e = 0; e < n; e++)
+                {
+                    Line($"result.{m.Name}[{e}] = {m.Name}[{e}];");
+                }
+            }
+            else
+            {
+                Line($"result.{m.Name} = {m.Name};");
+            }
         }
 
         Line("return result;");
@@ -947,16 +998,104 @@ internal sealed class HlslEmitter
         // Matrix constructor: pass the identical scalar list to the HLSL floatNxN constructor.
         // This intentionally yields the transpose of the GLSL matrix; the reversed mul() order in
         // EmitBinary cancels it so M*v matches GLSL. (See class remarks for the full proof.)
-        // HLSL has no `floatNxN(scalar)` single-arg diagonal constructor, so a 1-arg matrix
-        // constructor is rejected (rare in ShaderToy image shaders; reject loudly, never guess).
+        // A SINGLE-argument matrix constructor has well-defined GLSL semantics that HLSL lacks a builtin
+        // for, so we expand it explicitly (the diagonal of the result is symmetric, so the transpose
+        // question is moot — a diagonal matrix and a submatrix-of-a-symmetric-or-not are emitted as the
+        // exact scalar grid GLSL specifies):
+        //   - matN(scalar s): the GLSL diagonal matrix (s on the diagonal, 0 elsewhere). e.g. mat3(1) is
+        //     the identity. We expand to floatNxN(s,0,0, 0,s,0, 0,0,s).
+        //   - matN(matM m): GLSL takes the upper-left min(N,M) submatrix of m and fills any remaining
+        //     diagonal with 1 and off-diagonal with 0 (the identity completion). We expand to the
+        //     floatNxN grid reading m[r][c] where both indices are < M, else the identity value.
         if (t.IsMatrix && args.Count == 1)
         {
+            GlslType argType = _types.Infer(call.Args[0]);
+            int n = t.Rows;
+            if (argType.IsMatrix)
+            {
+                return EmitMatrixFromMatrix(hlsl, n, argType.Rows, args[0]);
+            }
+
+            if (argType.IsScalar || !argType.IsKnown)
+            {
+                return EmitDiagonalMatrix(hlsl, n, args[0]);
+            }
+
+            // A single vector argument to a matrix constructor is not a defined GLSL form; reject.
             throw Reject(call,
-                $"Single-argument matrix constructor '{glslType}(x)' is outside the supported subset " +
-                "(HLSL has no diagonal floatNxN(scalar) form). Use an explicit component list.");
+                $"Single-argument matrix constructor '{glslType}(x)' with a non-scalar, non-matrix " +
+                "argument is outside the supported subset.");
         }
 
         return $"{hlsl}({string.Join(", ", args)})";
+    }
+
+    /// <summary>
+    /// Expand a GLSL single-scalar matrix constructor <c>matN(s)</c> (the diagonal matrix: <c>s</c> on
+    /// the diagonal, 0 elsewhere; <c>mat3(1)</c> is the identity) to an explicit HLSL
+    /// <c>floatNxN(...)</c> grid. The diagonal matrix is symmetric, so emitting the grid directly is
+    /// consistent with the trap-2 transpose convention (Mᵀ == M for a diagonal matrix). The scalar is
+    /// evaluated once into a temp-free inline expression; to avoid re-evaluating a non-trivial scalar
+    /// expression N times it is wrapped so only the literal/identifier common case stays terse.
+    /// </summary>
+    private static string EmitDiagonalMatrix(string hlsl, int n, string scalar)
+    {
+        var cells = new List<string>(n * n);
+        for (int r = 0; r < n; r++)
+        {
+            for (int c = 0; c < n; c++)
+            {
+                cells.Add(r == c ? scalar : "0.0");
+            }
+        }
+
+        return $"{hlsl}({string.Join(", ", cells)})";
+    }
+
+    /// <summary>
+    /// Expand a GLSL matrix-from-matrix constructor <c>matN(matM m)</c> to an explicit HLSL
+    /// <c>floatNxN(...)</c> grid following GLSL semantics: take the upper-left <c>min(N,M)</c> submatrix of
+    /// <c>m</c> and complete any remaining diagonal with 1 / off-diagonal with 0 (the identity
+    /// completion). Because the stored HLSL matrix is the transpose of the GLSL matrix (trap 2), and the
+    /// result must keep the same convention, the emitted HLSL cell <c>[r][c]</c> reads the SAME HLSL cell
+    /// <c>m[r][c]</c> for r,c &lt; M (the two transposes cancel), so a direct component copy is correct.
+    /// </summary>
+    private static string EmitMatrixFromMatrix(string hlsl, int n, int m, string matExpr)
+    {
+        // Parenthesize a non-atom matrix expression so the indexing binds to the whole value.
+        string mref = IsAtomExpr(matExpr) ? matExpr : $"({matExpr})";
+        var cells = new List<string>(n * n);
+        for (int r = 0; r < n; r++)
+        {
+            for (int c = 0; c < n; c++)
+            {
+                if (r < m && c < m)
+                {
+                    cells.Add($"{mref}[{r}][{c}]");
+                }
+                else
+                {
+                    cells.Add(r == c ? "1.0" : "0.0");
+                }
+            }
+        }
+
+        return $"{hlsl}({string.Join(", ", cells)})";
+    }
+
+    /// <summary>True if <paramref name="expr"/> is a bare identifier / member path (safe to index
+    /// without extra parens).</summary>
+    private static bool IsAtomExpr(string expr)
+    {
+        foreach (char ch in expr)
+        {
+            if (!(char.IsLetterOrDigit(ch) || ch == '_' || ch == '.'))
+            {
+                return false;
+            }
+        }
+
+        return expr.Length > 0;
     }
 
     /// <summary>

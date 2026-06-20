@@ -321,6 +321,61 @@ new fixtures compile on GL/DX/FNA). Render-proof **5/5 + multipass (exit 0)**, w
 `stage_in_noncoord_referenced`), new `Phase46StageIoTests` unit class; the former `switch_statement`
 reject moved to `authored/` (now in-subset).
 
+### FINAL coverage wave as-built (2026-06-20) — correctness-held ceiling + named permanent-tail rejects
+
+The last fixable batch from the 160-shader analysis, correctness-first throughout (a converted shader
+must actually COMPILE; an honest reject beats silently-wrong output). Fixed:
+
+- **mainImage prototype vs definition.** A forward `void mainImage(...);` (empty body) no longer counts
+  as a duplicate definition. The common prototype + `void main()` wrapper + real definition desktop-export
+  shape now converts (5 scratch shaders). A true multi-DEFINITION (concatenated multipass file) still
+  rejects, with a message that names the likely cause.
+- **The "returning" mainImage form.** `vec3/vec4 mainImage(in vec2 fragCoord)` that RETURNS the color
+  (the file's own `void main()` assigns it) is recognized + wired; the harness calls
+  `mainImage(fragCoord)` and returns it (a `vec3` padded to `float4(rgb,1)`). Render-proven by
+  `returning_gradient` (same gradient + orientation as the standard form). 4 scratch shaders.
+- **Function overloading.** Same-name helpers with different signatures are emitted in full; HLSL
+  resolves each call by argument type, exactly as GLSL. A true identical redefinition is still an error.
+- **Array sizes from `#define` / `const int` / const-expression.** `[NUM]` (with `const int NUM = 41;`),
+  `[MAX]` (`#define`d), and `[NUM_TRIANGLES * 3]` (a const-int arithmetic expression) all evaluate to a
+  literal HLSL size at convert time. A genuinely runtime size stays a loud reject.
+- **Struct array members.** `struct S { float w[4]; vec3 t; }` emitted directly (HLSL allows it); the
+  `make_S` factory copies the array member element-by-element (no whole-array assignment in FX9/SM3).
+- **Single-argument matrix constructors.** `matN(scalar)` (diagonal; `mat3(1)` = identity) and
+  `matN(matM)` (upper-left submatrix + identity completion) expand to an explicit `floatNxN(...)` grid,
+  consistent with the trap-2 transpose convention (the two transposes cancel).
+- **Self-referential macro C-rule.** The expander now follows the standard "blue-paint" rule (a macro's
+  own name in its expansion is left as a plain identifier, not re-expanded), turning a runaway-reject
+  false positive into correct output. The 2 affected scratch shaders are host-`$`-templated and now fail
+  loudly + precisely on the unresolvable `$placeholder` (the correct out-of-scope outcome).
+
+**Permanent tail — named, located rejects (never a guess):** `sampler2D` function PARAMETERS (valid HLSL
+but uncompilable on the legacy-FX9 GL/DX path — proven by rendering, the same class as the mip-bias
+reject), `textureCube` / `texture3D` (cubemap/3D), `getLastFrameColor` (feedback / multipass), the GL
+stage built-ins `gl_FragDepth` / `gl_FrontFacing` / `gl_TexCoord` / `gl_FragData`, host-specific
+undeclared globals (`iCurrentCursor`, ISF `RENDERSIZE`, app values — "depends on a host-provided value"),
+and host-template `$placeholder` tokens. We do NOT auto-expose an arbitrary unknown as a uniform (that
+would be guessing); declare it as a `uniform` to drive it.
+
+**Validation.** Unit suite **371 green (0 warn)**. Golden compile-sweep **OpenGL 69/69, DirectX_11 69/69,
+FNA 67/69** (the 2 FNA misses remain `bitwise_ops`/`uint_type`; all 7 new fixtures compile on GL/DX/FNA).
+Render-proof **6/6 + multipass (exit 0)** with the new `returning_gradient`. **Scratch re-measure:
+conversion 61.2 % (98/160), up from 55.0 % (88/160) — a +10-shader gain.** Of the 10 newly-converted
+scratch shaders, **7 compile cleanly on GL/DX/FNA**; the other 3 reach pre-existing §5 transpiler edge
+cases (B4 vector truncation, a struct-typed ternary, a shader that redeclares `iTime` as its own mutable
+global) and fail LOUDLY at compile (non-zero exit), never silent-wrong. Fixtures: 7 new
+`corpus/authored/*.glsl` (+ goldens), 6 new rejects (`sampler_param`, `intrinsic_texturecube`,
+`feedback_lastframe`, `gl_fragdepth_builtin`, `host_specific_uniform`, `host_template_placeholder`), new
+`Phase46CoverageWaveTests` unit class; the `PreprocessorTests` recursive-macro case corrected from a
+runaway-reject assertion to the C-rule expansion.
+
+**Realistic single-pass ceiling.** ~61 % of this broad real-world corpus is the practical ceiling for a
+faithful single-pass converter. The permanent remainder is genuinely out of scope: multipass / feedback /
+buffer-graph shaders, cubemap / 3D / mip-bias texture sampling, `texelFetch` / depth / integer-bitwise-on-
+FNA, host-specific uniforms whose values we cannot invent, host-`$`-templated shaders, sampler-passing
+helpers (uncompilable on the GL/DX FX9 path), and a small tail of pre-existing transpiler edge cases. For
+each, a loud well-named reject is the correct outcome.
+
 ### Multipass batch-export mode as-built (2026-06-19) — batch-convert + documented wiring, NOT an orchestrator
 
 The one "genuinely-large unbuilt feature" called out above (multipass: Buffer A–D / feedback) is now

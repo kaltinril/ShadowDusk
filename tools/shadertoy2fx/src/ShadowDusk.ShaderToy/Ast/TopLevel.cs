@@ -126,6 +126,12 @@ internal sealed class StructMember
 {
     public required string TypeName { get; init; }
     public required string Name { get; init; }
+
+    /// <summary>The fixed array length when this is an array member (<c>float w[4];</c> /
+    /// <c>Sphere spheres[MAX];</c>), or null for a scalar/vector/matrix/struct member. HLSL spells the
+    /// size on the member name (<c>float w[4];</c>), matching GLSL.</summary>
+    public int? ArraySize { get; init; }
+
     public int Line { get; init; }
     public int Column { get; init; }
 }

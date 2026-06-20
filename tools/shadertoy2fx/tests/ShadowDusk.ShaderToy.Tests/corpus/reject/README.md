@@ -22,8 +22,14 @@ assert the tool rejects for that specific reason.
 | `pp_include.glsl` | **G5 boundary**: `#include "common.glsl"` — there is no file resolver, so `#include` stays a loud reject (it cannot be silently dropped without losing code). |
 | `main_no_output.glsl` | **G2 boundary**: a plain-GLSL `void main()` with no discoverable fragment output (no `out vec4 <name>;` and no `gl_FragColor` write) — there is nothing to return as COLOR0, so it is a loud reject. |
 | `array_nonconst_size.glsl` | **G7 boundary**: an array sized by a non-constant expression (`float a[n];` where `n` is a variable) — a fixed-size array (`float k[3];`) is supported, but a non-constant / macro size has no compile-time length, so it stays a loud reject. |
+| `sampler_param.glsl` | **Final wave boundary**: a `sampler2D` FUNCTION PARAMETER (`vec4 f(sampler2D tex, ...)`) — valid HLSL but uncompilable through the legacy-FX9 → GL/DX pipeline (a sampler cannot be a function argument there, the same class as the mip-bias reject), so it is a loud, named reject (inline the `tex2D` on the global sampler instead). |
+| `intrinsic_texturecube.glsl` | **Final wave**: `textureCube` samples a CUBEMAP — no faithful 2D `sampler2D` map. Named reject. |
+| `feedback_lastframe.glsl` | **Final wave**: `getLastFrameColor` reads the shader's own previous-frame output (feedback / multipass) — a single image pass cannot supply it. Named reject. |
+| `gl_fragdepth_builtin.glsl` | **Final wave**: `gl_FragDepth` (per-fragment depth output) has no meaning for a 2D fullscreen pass — a known GL stage built-in, named-rejected rather than a generic undeclared-identifier message. |
+| `host_specific_uniform.glsl` | **Final wave**: a host-specific global (`iCurrentCursor`, like a terminal-cursor uniform) the converter cannot invent a value for — stays a loud "undeclared identifier ... depends on a host-provided value" reject (we do NOT auto-expose arbitrary unknowns). |
+| `host_template_placeholder.glsl` | **Final wave**: a host-template `$placeholder` token (`#define speed $speed`) the converter cannot resolve to a host-substituted value — a loud, named reject (NOT a runaway macro expansion; the C blue-paint rule is honored first). |
 
-Total: 14 reject shaders.
+Total: 21 reject shaders.
 
 Note: a shader that defines **BOTH** a ShaderToy `mainImage` AND a standalone `void main()` wrapper is
 **no longer a reject** (the former `both_entry_points.glsl`, now retired). It PREFERS ShaderToy mode,

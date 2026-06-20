@@ -207,11 +207,23 @@ public sealed class PreprocessorTests
     }
 
     [Fact]
-    public void RecursiveMacro_RunawayGuard_Rejects()
+    public void SelfReferentialMacro_FollowsCRule_NotReExpanded()
     {
-        // A self-referential object macro would loop forever without the expansion-pass guard.
-        Action act = () => Pp("#define A A + 1\nint x = A;");
-        act.Should().Throw<ConvertException>().WithMessage("*not terminate*");
+        // Per the standard C "blue-paint" rule, a macro that references ITSELF is expanded EXACTLY ONCE:
+        // the macro's own name in its expansion is left as the plain identifier, NOT re-expanded. So
+        // `#define A A + 1` expands `A` to `A + 1` (and stops), rather than looping forever. This is the
+        // correct behavior; the previous runaway-reject was a false positive.
+        string outp = Pp("#define A A + 1\nint x = A;");
+        outp.Should().Contain("int x = A + 1;");
+    }
+
+    [Fact]
+    public void MutuallyRecursiveMacros_FollowCRule_Terminate()
+    {
+        // Indirect self-reference (`#define A B` / `#define B A`) also terminates per the hide-set rule:
+        // expanding A -> B -> (A is hidden) leaves A. No runaway.
+        string outp = Pp("#define A B\n#define B A\nint x = A;");
+        outp.Should().Contain("int x = A;");
     }
 
     [Fact]

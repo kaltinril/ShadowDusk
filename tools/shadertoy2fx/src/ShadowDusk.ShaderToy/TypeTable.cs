@@ -82,5 +82,18 @@ internal static class TypeTable
             ["mat3x2"] = "non-square matrices are outside the supported subset.",
             ["sampler3D"] = "3D samplers are outside the supported subset (iChannelN is 2D only).",
             ["samplerCube"] = "cube samplers are outside the supported subset (iChannelN is 2D only).",
+
+            // A `sampler2D` FUNCTION PARAMETER (a helper that takes a sampler, e.g.
+            // `vec4 blur(sampler2D tex, vec2 uv)`) is valid HLSL but does NOT compile through the
+            // ShadowDusk legacy-FX9 -> GL/DX pipeline: a sampler_state-initialized global sampler cannot
+            // be passed as a function argument on those backends (the same class of limit as the
+            // mip-bias texture reject). Rejecting at convert time keeps the boundary explicit and located
+            // rather than emitting GL/DX-incompatible output. (A top-level `uniform sampler2D` is still
+            // accepted as a texture+sampler_state pair; only the parameter/local use is rejected.)
+            ["sampler2D"] =
+                "A 'sampler2D' function parameter is outside the supported subset: although valid HLSL, " +
+                "a sampler cannot be passed as a function argument through the OpenGL/DirectX legacy-FX9 " +
+                "pipeline. Inline the sampling (call tex2D on the global iChannelN / custom sampler " +
+                "directly) instead of passing the sampler into a helper.",
         };
 }

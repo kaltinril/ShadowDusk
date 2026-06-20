@@ -49,6 +49,11 @@ public static class RenderProofShaders
             // analytic gradient + SAME orientation asserts as gradient_uv. A green run proves the screen-UV
             // alias (used by stage-I/O varyings AND openfl_TextureCoordv) is not upside-down.
             ("varying_gradient", GradientUvAsserts, null),
+            // Phase 46 (final wave): the desktop-runner "returning" mainImage form
+            // (vec3 mainImage(in vec2 fragCoord) that RETURNS the color). SAME analytic gradient + SAME
+            // orientation asserts as gradient_uv. A green run proves the returning-form harness wires
+            // fragCoord -> return -> COLOR0 (with vec3 padded to float4(rgb,1)) correctly.
+            ("returning_gradient", GradientUvAsserts, null),
         };
 
     /// <summary>
