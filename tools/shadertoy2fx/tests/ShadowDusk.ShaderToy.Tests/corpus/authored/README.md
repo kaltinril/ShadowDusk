@@ -24,5 +24,12 @@ translation trap so a failure points at a single cause.
 | `define_constants.glsl` | Object-like `#define` constants (`PI`, `TAU`, `SCALE`). |
 | `length_normalize_dot.glsl` | `length` / `normalize` / `dot` vector intrinsics (lambert-style dot). |
 | `pow_gamma.glsl` | `pow`, `abs`, vec3 gamma curve, `*=` compound assignment. |
+| `mat_compound_assign.glsl` | **B1**: matrix compound assignment `v *= M` (must become `v = mul(v, M)`; scalar `*=` stays component-wise). |
+| `equality_parens.glsl` | **B2**: scalar equality `if (a == 0.0)` must not be double-parenthesized. |
+| `vector_equality.glsl` | **B3**: vector `==`/`!=` in a bool context must be scalarized with `all(...)`/`any(...)` (incl. a `&&` chain). |
+| `vector_truncation.glsl` | **B4**: implicit vector truncation on assign/init must emit an explicit `.xy`/`.xyz` swizzle. |
+| `decl_modifier_spacing.glsl` | **B5**: a stray storage/precision modifier after the type must be dropped (no "modifiers must appear before type"). |
+| `builtin_redeclare.glsl` | **L1(a)**: redundant `uniform iTime/iResolution/iMouse` re-declarations are dropped, not rejected. |
+| `iglobaltime_alias.glsl` | **L1(b)**: deprecated `iGlobalTime` alias maps to `iTime`. |
 
-Total: 17 authored shaders.
+Total: 24 authored shaders.

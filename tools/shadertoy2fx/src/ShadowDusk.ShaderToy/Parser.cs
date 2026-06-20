@@ -78,9 +78,8 @@ internal sealed class Parser
 
         if (Check(TokenKind.Identifier) && (Current.Text is "uniform" or "varying" or "attribute" or "in" or "out"))
         {
-            throw Reject(
-                $"Top-level '{Current.Text}' declarations are outside the supported subset " +
-                "(ShaderToy uniforms are predefined and injected automatically).", start);
+            HandleQualifiedTopLevelDecl(start);
+            return;
         }
 
         bool isConst = false;
@@ -133,6 +132,73 @@ internal sealed class Parser
             Line = start.Line,
             Column = start.Column,
         });
+    }
+
+    /// <summary>
+    /// Handle a top-level <c>uniform</c>/<c>varying</c>/<c>attribute</c>/<c>in</c>/<c>out</c>
+    /// declaration. A redundant re-declaration of a KNOWN ShaderToy built-in (e.g.
+    /// <c>uniform float iTime;</c>) is silently DROPPED — the harness already injects that global,
+    /// so the declaration is harmless and dropping it lets the shader convert. A declaration of any
+    /// OTHER (custom) name is a loud reject: the host has no contract for supplying it, so leaking it
+    /// through would only surface later as a "use of undeclared identifier" compile error.
+    /// </summary>
+    private void HandleQualifiedTopLevelDecl(Token start)
+    {
+        string qualifier = Current.Text;
+        _pos++; // consume the qualifier keyword
+
+        // Tolerate a precision qualifier between the storage qualifier and the type
+        // (e.g. `uniform highp float iTime;`); the preprocessor strips these to bare tokens, but be
+        // robust if one survives as an identifier.
+        while (Check(TokenKind.Identifier) && Current.Text is "highp" or "mediump" or "lowp")
+        {
+            _pos++;
+        }
+
+        // The type may be a known type or an unknown one (e.g. a framework wrapper). We do not need
+        // to validate it for a builtin re-declaration; what matters is the declared NAME.
+        if (!Check(TokenKind.Identifier))
+        {
+            throw Reject(
+                $"Malformed top-level '{qualifier}' declaration.", start);
+        }
+
+        _pos++; // type name (whatever it is)
+
+        if (!Check(TokenKind.Identifier))
+        {
+            throw Reject(
+                $"Top-level '{qualifier}' declarations are outside the supported subset " +
+                "(ShaderToy uniforms are predefined and injected automatically).", start);
+        }
+
+        Token nameTok = Current;
+        string name = nameTok.Text;
+
+        if (UniformInfo.IsUniform(name))
+        {
+            // Redundant re-declaration of a built-in ShaderToy uniform: drop it. Consume the rest of
+            // the declaration (optional `[N]` array suffix and the terminating ';') and add nothing.
+            _pos++; // name
+            if (Check(TokenKind.LBracket))
+            {
+                while (!Check(TokenKind.RBracket) && !Check(TokenKind.EndOfFile))
+                {
+                    _pos++;
+                }
+
+                Match(TokenKind.RBracket);
+            }
+
+            Expect(TokenKind.Semicolon, "';'");
+            return;
+        }
+
+        throw Reject(
+            $"Top-level '{qualifier}' declaration of '{name}' is outside the supported subset. " +
+            "Only the predefined ShaderToy uniforms (iTime, iResolution, iMouse, iChannelN, ...) are " +
+            "available; a custom uniform/global has no host-supplied value.",
+            nameTok);
     }
 
     private FunctionDecl ParseFunctionRest(string returnType, string name, Token start)
@@ -205,6 +271,7 @@ internal sealed class Parser
         }
 
         string typeName = ExpectTypeName();
+        SkipStrayDeclModifiers();
         Token nameTok = Expect(TokenKind.Identifier, "a parameter name");
 
         if (Check(TokenKind.LBracket))
@@ -366,8 +433,26 @@ internal sealed class Parser
         return first;
     }
 
+    /// <summary>
+    /// Consume any stray storage / precision modifier that appears AFTER the type spelling
+    /// (B5: "modifiers must appear before type"). GLSL requires qualifiers before the type, and the
+    /// preprocessor strips precision qualifiers, but some copied/generated declarations carry a
+    /// qualifier in the wrong place (e.g. <c>vec4 const x</c> / <c>float mediump y</c>). Left in, the
+    /// modifier would either be mis-parsed as the declared name or emitted after the type, which the
+    /// stricter HLSL compilers (fxc / FNA) reject. Dropping it here yields a valid <c>type name</c>.
+    /// </summary>
+    private void SkipStrayDeclModifiers()
+    {
+        while (Check(TokenKind.Identifier) &&
+               Current.Text is "const" or "in" or "out" or "inout" or "highp" or "mediump" or "lowp")
+        {
+            _pos++;
+        }
+    }
+
     private VarDeclStmt ParseSingleDeclarator(string typeName, bool isConst, Token start)
     {
+        SkipStrayDeclModifiers();
         Token nameTok = Expect(TokenKind.Identifier, "a variable name");
         if (Check(TokenKind.LBracket))
         {

@@ -56,6 +56,31 @@ internal sealed class Preprocessor
         string body = output.ToString();
         body = StripPrecisionQualifiers(body);
         body = ApplyDefines(body);
+        body = ApplyDeprecatedAliases(body);
+        return body;
+    }
+
+    /// <summary>
+    /// Deprecated ShaderToy uniform aliases. <c>iGlobalTime</c> was the original spelling of
+    /// <c>iTime</c> (and <c>iGlobalFrame</c> of <c>iFrame</c>); both still appear in older shaders.
+    /// Rewriting them at the token level here means every later stage (parser, type inference,
+    /// emitter, harness) sees only the canonical name, so the alias is handled once and the
+    /// (now-canonical) reference resolves cleanly instead of leaking to a compile error.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, string> DeprecatedAliases =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["iGlobalTime"] = "iTime",
+            ["iGlobalFrame"] = "iFrame",
+        };
+
+    private static string ApplyDeprecatedAliases(string body)
+    {
+        foreach (KeyValuePair<string, string> alias in DeprecatedAliases)
+        {
+            body = ReplaceWholeWord(body, alias.Key, alias.Value);
+        }
+
         return body;
     }
 

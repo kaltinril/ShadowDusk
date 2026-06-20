@@ -20,8 +20,8 @@ float3 iResolution;
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
     float2 uv = (fragCoord / iResolution.xy);
-    float band = ((uv.y <= 0.5) ? 0.0 : 1.0);
-    float edge = ((uv.x > 0.5) ? uv.x : (1.0 - uv.x));
+    float band = (uv.y <= 0.5 ? 0.0 : 1.0);
+    float edge = (uv.x > 0.5 ? uv.x : (1.0 - uv.x));
     fragColor = float4(band, edge, (band * edge), 1.0);
 }
 

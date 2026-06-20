@@ -36,6 +36,16 @@ original GLSL line/column and the offending construct) — never silently-wrong 
 
 `texture(iChannelN, uv)` → `tex2D(iChannelN, uv)`.
 
+**Deprecated aliases (auto-mapped).** The original ShaderToy spellings are rewritten to the canonical
+names at the token level before parsing, so they resolve cleanly: `iGlobalTime` → `iTime`,
+`iGlobalFrame` → `iFrame`.
+
+**Redundant built-in re-declaration (dropped).** A top-level declaration that merely re-declares a
+known ShaderToy built-in uniform (e.g. `uniform float iTime;`, `uniform vec2 iResolution;`) is
+silently dropped, not rejected: the harness already injects that global, so the declaration is
+harmless. A top-level `uniform`/`varying`/`attribute`/`in`/`out` declaration of any **other** name is
+still a loud reject (a custom uniform has no host-supplied value).
+
 ## Harness synthesized into the `.fx`
 
 - A fullscreen-quad **vertex shader** `VSMain` taking `float4 Position : POSITION` (assumed already in
@@ -72,6 +82,23 @@ Operators pass through unchanged **except** `*` when an operand is a matrix (tra
 `+ - * / %`, `== != < > <= >=`, `&& ||`, `& | ^ << >>`, ternary `?:`, assignment `= += -= *= /= %=`,
 unary `- ! + ++ --` (prefix and postfix). Float literals without a decimal point are normalized to
 `x.0` so HLSL types them as float.
+
+Four correctness rules layer on top of that pass-through:
+
+- **Matrix compound assignment.** A `*=` whose right-hand side is a matrix is desugared the same way
+  as a binary `*` (trap 2): GLSL `v *= M` (`M` a `matN`) means `v = M*v`, which under the
+  `A*B → mul(B,A)` rule emits `v = mul(v, M)`. A plain `v *= M` would be invalid HLSL
+  (`float2 *= float2x2`). Scalar/vector `*=` (and every other compound op) stays component-wise.
+- **No double-parenthesized conditions.** A relational/equality expression used directly as an
+  `if`/`while`/`do…while`/ternary condition is NOT wrapped in its own extra parentheses (the
+  condition site already supplies them), so `if (a == 0.0)` is emitted rather than `if ((a == 0.0))`
+  (the latter trips fxc's `-Werror,-Wparentheses-equality`).
+- **Vector equality scalarized.** A vector `==`/`!=` used in a boolean context (an `if`/`while`/
+  ternary condition, or under `&&`/`||`/`!`) is reduced with `all(a == b)` / `any(a != b)`, since
+  HLSL `==` on vectors yields a bool-vector that is not a valid scalar condition.
+- **Explicit vector truncation.** When an initializer/assignment narrows a wider vector into a
+  narrower slot (e.g. a `vec4` into a `vec2`), an explicit truncating swizzle (`.xy`/`.xyz`) is
+  inserted, because GLSL truncates implicitly but stricter HLSL errors (`-Werror,-Wconversion`).
 
 ### Matrix multiply order (trap 2 — the highest-risk trap)
 
@@ -115,7 +142,11 @@ cross, normalize, reflect, refract, radians, degrees, saturate`.
 
 ## Precision qualifiers (trap 5)
 
-`highp` / `mediump` / `lowp` tokens and bare `precision …;` statements are stripped.
+`highp` / `mediump` / `lowp` tokens and bare `precision …;` statements are stripped. A stray storage
+or precision modifier that appears **after** the type in a copied/generated declaration
+(e.g. `float const k`, `vec2 mediump uv`) is also dropped, so the emitted HLSL is a clean
+`type name` — never `type modifier name`, which the stricter HLSL compilers (fxc / FNA) reject as
+"modifiers must appear before type".
 
 ## `#define`
 
@@ -142,7 +173,14 @@ Each of the following produces a fatal diagnostic, never silently-wrong HLSL:
 - **Types:** `double`, `dvecN`, `uint`, `uvecN`, explicit `matAxB` spellings (use `mat2/3/4`),
   non-square matrices, `sampler3D` / `samplerCube`, and any unknown type name.
 - **Declarations:** user `struct` (top-level or local); user-declared arrays (locals, params, globals);
-  top-level non-`const` globals; top-level `uniform`/`varying`/`attribute`/`in`/`out` declarations.
+  top-level non-`const` globals; top-level `uniform`/`varying`/`attribute`/`in`/`out` declarations of
+  a **custom** name (a redundant re-declaration of a known ShaderToy built-in is dropped, not
+  rejected — see *ShaderToy uniforms* above).
+- **Undeclared identifiers:** a free identifier used in an expression that is not a local/parameter, a
+  `const` global, a user function, or a predefined ShaderToy uniform is rejected at convert time
+  (with line/column) rather than leaked to a downstream "use of undeclared identifier" compile error.
+  This covers custom uniforms and non-ShaderToy builtins (e.g. ISF's `RENDERSIZE`). The deprecated
+  `iGlobalTime`/`iGlobalFrame` aliases are auto-mapped before this check, so they are accepted.
 - **Preprocessor:** function-like macros `#define NAME(...)`; `#if`/`#ifdef`/`#ifndef`/`#else`/
   `#elif`/`#endif`/`#include` and any other non-ignored directive.
 - **Statements/expressions:** `switch`; unknown function/intrinsic that is neither a user function nor

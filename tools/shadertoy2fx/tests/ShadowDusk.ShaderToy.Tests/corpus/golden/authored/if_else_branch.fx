@@ -21,13 +21,13 @@ void mainImage(out float4 fragColor, float2 fragCoord)
 {
     float2 uv = (fragCoord / iResolution.xy);
     float3 col;
-    if ((uv.x < 0.33))
+    if (uv.x < 0.33)
     {
         col = float3(1.0, 0.0, 0.0);
     }
     else
     {
-        if ((uv.x < 0.66))
+        if (uv.x < 0.66)
         {
             col = float3(0.0, 1.0, 0.0);
         }

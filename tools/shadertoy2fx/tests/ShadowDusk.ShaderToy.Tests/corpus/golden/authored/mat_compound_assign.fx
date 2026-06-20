@@ -16,23 +16,22 @@
 #endif
 
 float3 iResolution;
+float iTime;
 
-// GLSL mod(x,y) = x - y*floor(x/y) (sign follows y). HLSL fmod truncates toward
-// zero, so for possibly-negative operands they differ. Use the GLSL-equivalent.
-float  glsl_mod(float  x, float  y) { return x - y * floor(x / y); }
-float2 glsl_mod(float2 x, float2 y) { return x - y * floor(x / y); }
-float3 glsl_mod(float3 x, float3 y) { return x - y * floor(x / y); }
-float4 glsl_mod(float4 x, float4 y) { return x - y * floor(x / y); }
-float2 glsl_mod(float2 x, float  y) { return x - y * floor(x / y); }
-float3 glsl_mod(float3 x, float  y) { return x - y * floor(x / y); }
-float4 glsl_mod(float4 x, float  y) { return x - y * floor(x / y); }
+float2x2 rot(float a)
+{
+    float c = cos(a);
+    float s = sin(a);
+    return float2x2(c, -s, s, c);
+}
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
     float2 p = ((fragCoord - (0.5 * iResolution.xy)) / iResolution.y);
-    float2 cell = glsl_mod((p * 8.0), 1.0);
-    float checker = (step(0.5, cell.x) == step(0.5, cell.y) ? 1.0 : 0.0);
-    fragColor = float4(checker, checker, checker, 1.0);
+    p = mul(p, rot(iTime));
+    p *= 2.0;
+    float stripes = (0.5 + (0.5 * sin((p.x * 10.0))));
+    fragColor = float4(stripes, stripes, stripes, 1.0);
 }
 
 

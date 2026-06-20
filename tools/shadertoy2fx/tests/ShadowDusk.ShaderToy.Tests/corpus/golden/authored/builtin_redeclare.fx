@@ -16,23 +16,15 @@
 #endif
 
 float3 iResolution;
-
-// GLSL mod(x,y) = x - y*floor(x/y) (sign follows y). HLSL fmod truncates toward
-// zero, so for possibly-negative operands they differ. Use the GLSL-equivalent.
-float  glsl_mod(float  x, float  y) { return x - y * floor(x / y); }
-float2 glsl_mod(float2 x, float2 y) { return x - y * floor(x / y); }
-float3 glsl_mod(float3 x, float3 y) { return x - y * floor(x / y); }
-float4 glsl_mod(float4 x, float4 y) { return x - y * floor(x / y); }
-float2 glsl_mod(float2 x, float  y) { return x - y * floor(x / y); }
-float3 glsl_mod(float3 x, float  y) { return x - y * floor(x / y); }
-float4 glsl_mod(float4 x, float  y) { return x - y * floor(x / y); }
+float iTime;
+float4 iMouse;
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 p = ((fragCoord - (0.5 * iResolution.xy)) / iResolution.y);
-    float2 cell = glsl_mod((p * 8.0), 1.0);
-    float checker = (step(0.5, cell.x) == step(0.5, cell.y) ? 1.0 : 0.0);
-    fragColor = float4(checker, checker, checker, 1.0);
+    float2 uv = (fragCoord / iResolution.xy);
+    float2 m = (iMouse.xy / iResolution.xy);
+    float d = length((uv - m));
+    fragColor = float4(d, sin(iTime), 0.5, 1.0);
 }
 
 

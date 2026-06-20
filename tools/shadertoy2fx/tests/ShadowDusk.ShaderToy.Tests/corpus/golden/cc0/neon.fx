@@ -189,7 +189,7 @@ float3 groundEffect(float2 p)
     const float3 shineCol = (0.75 * float3(0.5, 0.75, 1.0));
     const float3 gridCol = ((float3)(1.0));
     float3 col = ((float3)(0.0));
-    if ((distg > 0.0))
+    if (distg > 0.0)
     {
         float3 pg = (ro + (rd * distg));
         float aa = 0.0025;

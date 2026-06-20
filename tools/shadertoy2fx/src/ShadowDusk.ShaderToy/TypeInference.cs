@@ -38,6 +38,25 @@ internal sealed class TypeInference
     public void Declare(string name, string glslType) =>
         _scopes[^1][name] = TypeTable.Resolve(glslType);
 
+    /// <summary>
+    /// True if <paramref name="name"/> resolves to a known identifier in the current context: a
+    /// declared local/parameter (any enclosing scope), a <c>const</c> global, or a predefined
+    /// ShaderToy uniform. Used by the emitter to reject a free (undeclared) identifier at convert
+    /// time instead of letting it leak through to a downstream "use of undeclared identifier" error.
+    /// </summary>
+    public bool IsKnownIdentifier(string name)
+    {
+        for (int i = _scopes.Count - 1; i >= 0; i--)
+        {
+            if (_scopes[i].ContainsKey(name))
+            {
+                return true;
+            }
+        }
+
+        return _globals.ContainsKey(name) || Uniforms.ContainsKey(name);
+    }
+
     private GlslType LookupVar(string name)
     {
         for (int i = _scopes.Count - 1; i >= 0; i--)

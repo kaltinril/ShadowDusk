@@ -22,7 +22,7 @@ void mainImage(out float4 fragColor, float2 fragCoord)
     float2 uv = (fragCoord / iResolution.xy);
     float acc = 0.0;
     int i = 0;
-    while ((i < 5))
+    while (i < 5)
     {
         acc += abs(sin(((uv.x * float((i + 1))) * 3.0)));
         i++;

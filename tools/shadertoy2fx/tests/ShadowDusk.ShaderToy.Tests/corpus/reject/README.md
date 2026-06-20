@@ -13,5 +13,6 @@ assert the tool rejects for that specific reason.
 | `switch_statement.glsl` | Uses a `switch` statement — `switch` is not in the v1 subset. |
 | `function_like_define.glsl` | Uses a function-like `#define SQR(x) ...` macro — only object-like `#define` constants are supported. |
 | `unknown_intrinsic.glsl` | Calls `texelFetch`, which has no entry in the intrinsic mapping table — unmapped intrinsics are a loud reject. |
+| `unknown_global.glsl` | Uses a free identifier (`RENDERSIZE`, an ISF builtin) that is not a ShaderToy uniform/local/const/user-function — undeclared identifiers are a loud reject (L1), not a silent pass-through. |
 
-Total: 6 reject shaders.
+Total: 7 reject shaders.

@@ -57,6 +57,7 @@ public sealed class RejectCorpusTests
             "switch_statement" => "switch",
             "function_like_define" => "macro",
             "unknown_intrinsic" => "texelFetch",
+            "unknown_global" => "RENDERSIZE",
             _ => string.Empty,
         };
 

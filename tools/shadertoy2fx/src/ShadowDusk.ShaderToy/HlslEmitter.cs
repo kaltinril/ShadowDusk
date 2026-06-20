@@ -129,13 +129,13 @@ internal sealed class HlslEmitter
                 EmitFor(f);
                 break;
             case WhileStmt w:
-                Line($"while ({EmitExpr(w.Condition)})");
+                Line($"while ({EmitCondition(w.Condition)})");
                 EmitBody(w.Body);
                 break;
             case DoWhileStmt d:
                 Line("do");
                 EmitBody(d.Body);
-                Line($"while ({EmitExpr(d.Condition)});");
+                Line($"while ({EmitCondition(d.Condition)});");
                 break;
             case ReturnStmt r:
                 Line(r.Value is null ? "return;" : $"return {EmitExpr(r.Value)};");
@@ -166,13 +166,58 @@ internal sealed class HlslEmitter
         }
         else
         {
-            Line($"{prefix}{type} {v.Name} = {EmitExpr(v.Initializer)};");
+            Line($"{prefix}{type} {v.Name} = {EmitInitializer(v.TypeName, v.Initializer)};");
         }
+    }
+
+    /// <summary>
+    /// Emit an initializer / assigned value (B4): when the declared/target type is a narrower vector
+    /// than the value's inferred type, GLSL silently truncates but stricter HLSL errors
+    /// (<c>-Werror,-Wconversion</c>). Insert an explicit truncating swizzle (<c>.xy</c>/<c>.xyz</c>)
+    /// so the conversion is explicit. Equal/compatible widths and scalars are emitted unchanged.
+    /// </summary>
+    private string EmitInitializer(string declaredGlslType, Expr value)
+    {
+        GlslType declared = TypeTable.Resolve(declaredGlslType);
+        return TruncateToWidth(declared, value);
+    }
+
+    /// <summary>
+    /// If <paramref name="target"/> is a vector strictly narrower than the value's inferred vector
+    /// width, append a truncating swizzle to the emitted value; otherwise emit it unchanged.
+    /// </summary>
+    private string TruncateToWidth(GlslType target, Expr value)
+    {
+        string emitted = EmitExpr(value);
+        if (!target.IsVector)
+        {
+            return emitted;
+        }
+
+        GlslType valueType = _types.Infer(value);
+        if (!valueType.IsVector || valueType.Rows <= target.Rows)
+        {
+            return emitted;
+        }
+
+        string swizzle = target.Rows switch
+        {
+            2 => "xy",
+            3 => "xyz",
+            _ => string.Empty,
+        };
+        if (swizzle.Length == 0)
+        {
+            return emitted;
+        }
+
+        // Parenthesize so the swizzle binds to the whole value, then select the leading components.
+        return $"({emitted}).{swizzle}";
     }
 
     private void EmitIf(IfStmt i)
     {
-        Line($"if ({EmitExpr(i.Condition)})");
+        Line($"if ({EmitCondition(i.Condition)})");
         EmitBody(i.Then);
         if (i.Else is not null)
         {
@@ -204,7 +249,7 @@ internal sealed class HlslEmitter
         string type = TypeTable.ToHlsl(v.TypeName);
         return v.Initializer is null
             ? $"{type} {v.Name}"
-            : $"{type} {v.Name} = {EmitExpr(v.Initializer)}";
+            : $"{type} {v.Name} = {EmitInitializer(v.TypeName, v.Initializer)}";
     }
 
     private string RenderInlineMultiDecl(MultiDeclStmt m)
@@ -215,7 +260,7 @@ internal sealed class HlslEmitter
         foreach (VarDeclStmt d in m.Declarators)
         {
             _types.Declare(d.Name, d.TypeName);
-            parts.Add(d.Initializer is null ? d.Name : $"{d.Name} = {EmitExpr(d.Initializer)}");
+            parts.Add(d.Initializer is null ? d.Name : $"{d.Name} = {EmitInitializer(d.TypeName, d.Initializer)}");
         }
 
         return $"{type} {string.Join(", ", parts)}";
@@ -252,16 +297,123 @@ internal sealed class HlslEmitter
         CallExpr call => EmitCall(call),
         UnaryExpr un => EmitUnary(un),
         BinaryExpr bin => EmitBinary(bin),
-        ConditionalExpr c => $"({EmitExpr(c.Condition)} ? {EmitExpr(c.WhenTrue)} : {EmitExpr(c.WhenFalse)})",
-        AssignExpr a => $"{EmitExpr(a.Target)} {a.Op} {EmitExpr(a.Value)}",
+        ConditionalExpr c => $"({EmitCondition(c.Condition)} ? {EmitExpr(c.WhenTrue)} : {EmitExpr(c.WhenFalse)})",
+        AssignExpr a => EmitAssign(a),
         _ => throw new ConvertException("Internal: unhandled expression.", expr.Line, expr.Column),
     };
+
+    /// <summary>
+    /// Emit an assignment, with one trap (B1): a compound <c>*=</c> whose right-hand side is a matrix
+    /// must honor the same matrix-multiply reordering as a binary <c>*</c>. GLSL <c>v *= M</c> means
+    /// <c>v = M*v</c>; under the converter's <c>A*B → mul(B,A)</c> rule that is <c>v = mul(v, M)</c>.
+    /// A plain <c>v *= M</c> would emit invalid HLSL (<c>float2 *= float2x2</c>). Scalar/vector
+    /// <c>*=</c> (and every other compound op) stays component-wise and passes through unchanged.
+    /// </summary>
+    private string EmitAssign(AssignExpr a)
+    {
+        if (a.Op == "*=")
+        {
+            GlslType targetType = _types.Infer(a.Target);
+            GlslType valueType = _types.Infer(a.Value);
+            if (targetType.IsMatrix || valueType.IsMatrix)
+            {
+                // Desugar `lhs *= rhs` to `lhs = (rhs * lhs)` and route the multiply through the
+                // binary path so the matrix-order trap applies consistently. For `v *= M` this
+                // yields `v = mul(v, M)`; the `(rhs * lhs)` order is what makes EmitBinary place the
+                // matrix as the second mul() argument.
+                var product = new BinaryExpr
+                {
+                    Op = "*",
+                    Left = a.Value,
+                    Right = a.Target,
+                    Line = a.Line,
+                    Column = a.Column,
+                };
+                return $"{EmitExpr(a.Target)} = {EmitBinary(product)}";
+            }
+        }
+
+        // B4: a plain assignment whose RHS is a wider vector than the LHS truncates implicitly in
+        // GLSL but errors under stricter HLSL; make the truncation explicit with a swizzle.
+        if (a.Op == "=")
+        {
+            GlslType targetType = _types.Infer(a.Target);
+            return $"{EmitExpr(a.Target)} = {TruncateToWidth(targetType, a.Value)}";
+        }
+
+        return $"{EmitExpr(a.Target)} {a.Op} {EmitExpr(a.Value)}";
+    }
+
+    /// <summary>
+    /// Emit an expression used in a BOOLEAN context (an <c>if</c>/<c>while</c>/<c>do…while</c>/ternary
+    /// condition). Two traps are handled here:
+    /// <list type="bullet">
+    /// <item><b>B2 — over-parenthesization.</b> The call site already wraps the condition in
+    /// <c>(...)</c>, so a top-level binary must NOT add its own outer parens; otherwise
+    /// <c>if (a == 0.0)</c> becomes <c>if ((a == 0.0))</c>, which fxc rejects under
+    /// <c>-Werror,-Wparentheses-equality</c>.</item>
+    /// <item><b>B3 — vector equality.</b> GLSL <c>vecA == vecB</c> in a bool context is a single
+    /// bool; HLSL <c>==</c> on vectors yields a bool-vector, so it must be reduced with
+    /// <c>all(a == b)</c> (and <c>!=</c> with <c>any(a != b)</c>). The reduction recurses through
+    /// <c>&amp;&amp;</c>/<c>||</c>/<c>!</c> so a nested vector comparison is also scalarized.</item>
+    /// </list>
+    /// </summary>
+    private string EmitCondition(Expr expr)
+    {
+        switch (expr)
+        {
+            case BinaryExpr bin when bin.Op is "==" or "!=":
+            {
+                GlslType lt = _types.Infer(bin.Left);
+                GlslType rt = _types.Infer(bin.Right);
+                if (lt.IsVector || rt.IsVector)
+                {
+                    string reducer = bin.Op == "==" ? "all" : "any";
+                    return $"{reducer}({EmitExpr(bin.Left)} {bin.Op} {EmitExpr(bin.Right)})";
+                }
+
+                // Scalar equality: emit without the redundant outer parens (B2).
+                return $"{EmitExpr(bin.Left)} {bin.Op} {EmitExpr(bin.Right)}";
+            }
+
+            case BinaryExpr bin when bin.Op is "&&" or "||":
+                // Recurse so a vector comparison on either side is still scalarized; keep parens
+                // around each side to preserve precedence.
+                return $"({EmitCondition(bin.Left)}) {bin.Op} ({EmitCondition(bin.Right)})";
+
+            case UnaryExpr un when un.Op == "!" && !un.IsPostfix:
+                return $"!({EmitCondition(un.Operand)})";
+
+            case BinaryExpr bin when bin.Op is "<" or ">" or "<=" or ">=":
+                // Other top-level relational comparisons: drop the redundant outer parens the
+                // generic EmitBinary would add (B2 generalizes to all top-level comparisons).
+                return $"{EmitExpr(bin.Left)} {bin.Op} {EmitExpr(bin.Right)}";
+
+            default:
+                // Arithmetic / call / identifier condition: keep the generic emission (which retains
+                // matrix handling and any needed parens).
+                return EmitExpr(expr);
+        }
+    }
 
     private string EmitIdentifier(IdentifierExpr id)
     {
         if (UniformInfo.IsUniform(id.Name))
         {
             ReferencedUniforms.Add(id.Name);
+        }
+        else if (!_types.IsKnownIdentifier(id.Name) && !_userFunctions.Contains(id.Name))
+        {
+            // A free (undeclared) identifier: not a local/param/const-global, not a ShaderToy
+            // uniform, not a user function. Reject loudly at convert time rather than leaking it to
+            // HLSL where it surfaces as "use of undeclared identifier". (Custom uniforms, ISF
+            // builtins like RENDERSIZE, etc. land here.)
+            throw new ConvertException(
+                $"Undeclared identifier '{id.Name}'. It is not a local variable, a 'const' global, " +
+                "a user function, or a predefined ShaderToy uniform (iTime, iResolution, iMouse, " +
+                "iChannelN, ...). A custom uniform/global has no host-supplied value and cannot be " +
+                "converted.",
+                id.Line, id.Column, id.Name);
         }
 
         return id.Name;
