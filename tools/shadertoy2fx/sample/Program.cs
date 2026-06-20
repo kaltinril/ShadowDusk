@@ -11,45 +11,72 @@ using ShadowDusk.ShaderToy.Sample;
 // compile: ShaderToy GLSL -> .fx -> .mgfx (compiled in memory, no mgfxc, no build
 // step) -> a live MonoGame Effect rendered over a fullscreen quad.
 //
-//   default : open an interactive window; SPACE/arrows cycle the bundled shaders,
-//             the mouse drives iMouse, ESC quits. Each cycle recompiles at runtime.
-//   --smoke : headless validation. Convert + compile + load + render ONE frame per
-//             bundled shader to an offscreen RenderTarget, write a PNG each, assert
-//             the frame is non-trivial, exit 0 (non-zero on any failure). No window.
+// USAGE:
+//   (no args)            open an interactive window over the BUNDLED catalog;
+//                        SPACE/arrows cycle, the mouse drives iMouse, ESC quits.
+//   <path-to-shader>     open the window with that ShaderToy/GLSL file added as the
+//                        first, HOT-RELOADABLE entry (edit on disk -> live reload),
+//                        with the bundled catalog still cyclable behind it. Accepts
+//                        .glsl / .frag / .fs / .txt.
+//   --smoke              headless: convert+compile+render ONE frame per BUNDLED shader
+//                        to an offscreen PNG, assert non-trivial, exit 0/non-zero.
+//   --smoke <path>       same, but for the GIVEN file only (testable without a window).
 // =============================================================================
 
 bool smoke = false;
+string? path = null;
+
 foreach (string arg in args)
 {
     if (string.Equals(arg, "--smoke", StringComparison.OrdinalIgnoreCase))
         smoke = true;
+    else if (arg.StartsWith("--", StringComparison.Ordinal))
+        Console.Error.WriteLine($"[sample] ignoring unknown option: {arg}");
+    else if (path is null)
+        path = arg; // first positional arg is the shader file to load
+    else
+        Console.Error.WriteLine($"[sample] ignoring extra argument: {arg}");
+}
+
+// Resolve a user-supplied path (for either mode) before opening any GL context, so a bad path / bad
+// extension reports cleanly with a non-zero exit instead of crashing inside the game loop.
+ShaderSource? external = null;
+if (path is not null)
+{
+    if (!ShaderSource.TryFromPath(path, out external, out string error))
+    {
+        Console.Error.WriteLine($"[sample] cannot load shader:\n{error}");
+        return 2;
+    }
 }
 
 if (smoke)
-    return RunSmoke();
+    return RunSmoke(external);
 
-RunInteractive();
+RunInteractive(external);
 return 0;
 
-static void RunInteractive()
+static void RunInteractive(ShaderSource? external)
 {
-    using var game = new SampleGame();
+    using var game = new SampleGame(external);
     game.Run();
 }
 
-static int RunSmoke()
+static int RunSmoke(ShaderSource? external)
 {
     string outDir = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "output");
     outDir = Path.GetFullPath(outDir);
     Directory.CreateDirectory(outDir);
 
     Console.WriteLine("[smoke] ShadowDusk ShaderToy sample: convert -> in-memory compile -> load -> render.");
-    Console.WriteLine($"[smoke] shaders: {SampleCompiler.ShadersDirectory}");
+    Console.WriteLine(external is null
+        ? $"[smoke] shaders: {SampleCompiler.ShadersDirectory} (bundled catalog)"
+        : $"[smoke] shader:  {external.Path} (external file)");
     Console.WriteLine($"[smoke] output:  {outDir}");
 
     try
     {
-        using var game = new SmokeGame(outDir);
+        using var game = new SmokeGame(outDir, external);
         game.Run();
         return game.Report();
     }

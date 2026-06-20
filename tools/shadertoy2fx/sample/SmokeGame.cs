@@ -35,14 +35,21 @@ public sealed class SmokeGame : Game
 
     private readonly GraphicsDeviceManager _gdm;
     private readonly string _outDir;
+    private readonly IReadOnlyList<ShaderSource> _sources;
 
     private bool _done;
 
     public List<SmokeResult> Results { get; } = new();
 
-    public SmokeGame(string outDir)
+    /// <param name="outDir">Directory the per-shader PNGs are written to.</param>
+    /// <param name="external">
+    /// When non-null, smoke ONLY this user-supplied file (the <c>--smoke &lt;path&gt;</c> form); when
+    /// null, smoke every bundled shader.
+    /// </param>
+    public SmokeGame(string outDir, ShaderSource? external = null)
     {
         _outDir = outDir;
+        _sources = external is null ? ShaderCatalog.Bundled : new[] { external };
         _gdm = new GraphicsDeviceManager(this)
         {
             PreferredBackBufferWidth = Width,
@@ -60,18 +67,18 @@ public sealed class SmokeGame : Game
             return;
         }
 
-        foreach (ShaderEntry entry in ShaderCatalog.Entries)
-            Results.Add(RenderOne(entry));
+        foreach (ShaderSource source in _sources)
+            Results.Add(RenderOne(source));
 
         _done = true;
         Exit();
     }
 
-    private SmokeResult RenderOne(ShaderEntry entry)
+    private SmokeResult RenderOne(ShaderSource source)
     {
-        CompiledShaderToy built = SampleCompiler.Build(GraphicsDevice, entry);
+        CompiledShaderToy built = SampleCompiler.Build(GraphicsDevice, source);
         if (!built.Ok || built.Effect is null)
-            return new SmokeResult(entry.DisplayName, false, built.Error, null);
+            return new SmokeResult(source.DisplayName, false, built.Error, null);
 
         using ShaderToyEffect shader = built.Effect;
         using var rt = new RenderTarget2D(
@@ -94,7 +101,7 @@ public sealed class SmokeGame : Game
             var pixels = new Color[Width * Height];
             rt.GetData(pixels);
 
-            string png = Path.Combine(_outDir, Path.GetFileNameWithoutExtension(entry.FileName) + ".png");
+            string png = Path.Combine(_outDir, Path.GetFileNameWithoutExtension(source.Path) + ".png");
             using (FileStream fs = File.Create(png))
                 rt.SaveAsPng(fs, Width, Height);
 
@@ -102,12 +109,12 @@ public sealed class SmokeGame : Game
             string detail = nonTrivial
                 ? $"rendered non-trivial frame ({stats})"
                 : $"rendered ALL-BLACK / trivial frame ({stats})";
-            return new SmokeResult(entry.DisplayName, nonTrivial, detail, png);
+            return new SmokeResult(source.DisplayName, nonTrivial, detail, png);
         }
         catch (Exception ex)
         {
             try { GraphicsDevice.SetRenderTarget(null); } catch { /* ignore cleanup error */ }
-            return new SmokeResult(entry.DisplayName, false, $"render threw: {ex.GetType().Name}: {ex.Message}", null);
+            return new SmokeResult(source.DisplayName, false, $"render threw: {ex.GetType().Name}: {ex.Message}", null);
         }
     }
 

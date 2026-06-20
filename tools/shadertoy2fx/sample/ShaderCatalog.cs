@@ -4,12 +4,6 @@ using System.Collections.Generic;
 
 namespace ShadowDusk.ShaderToy.Sample;
 
-/// <summary>One bundled ShaderToy shader: a friendly display name and the <c>.glsl</c> file
-/// (relative to the sample's <c>shaders/</c> output folder) it loads at runtime.</summary>
-/// <param name="DisplayName">Human-readable name shown in the overlay / window title.</param>
-/// <param name="FileName">The <c>.glsl</c> file name under <c>shaders/</c>.</param>
-public sealed record ShaderEntry(string DisplayName, string FileName);
-
 /// <summary>
 /// The shaders this sample bundles and cycles through. Each is an ANIMATED and/or INTERACTIVE
 /// ShaderToy image shader copied from the converter's authored / CC0 corpus, so every one
@@ -17,12 +11,33 @@ public sealed record ShaderEntry(string DisplayName, string FileName);
 /// </summary>
 public static class ShaderCatalog
 {
-    /// <summary>The bundled shaders, in cycle order.</summary>
-    public static readonly IReadOnlyList<ShaderEntry> Entries = new[]
+    /// <summary>The bundled shaders, in cycle order, resolved to their on-disk <c>shaders/</c> paths.</summary>
+    public static IReadOnlyList<ShaderSource> Bundled { get; } = new[]
     {
-        new ShaderEntry("Time animation (iTime pulse)", "time_animation.glsl"),
-        new ShaderEntry("Mouse interaction (iMouse glow)", "mouse_interaction.glsl"),
-        new ShaderEntry("Polar spiral (atan2 + iTime)", "atan_polar.glsl"),
-        new ShaderEntry("Neonwave road (CC0)", "neon.glsl"),
+        ShaderSource.Bundled("Time animation (iTime pulse)", "time_animation.glsl"),
+        ShaderSource.Bundled("Mouse interaction (iMouse glow)", "mouse_interaction.glsl"),
+        ShaderSource.Bundled("Polar spiral (atan2 + iTime)", "atan_polar.glsl"),
+        ShaderSource.Bundled("Neonwave road (CC0)", "neon.glsl"),
     };
+
+    /// <summary>
+    /// The list the interactive window cycles through: the bundled shaders, with the user-supplied
+    /// <paramref name="external"/> file (if any) appended as an extra, hot-reloadable entry. When a
+    /// file is given it is selected first so the user immediately sees their shader.
+    /// </summary>
+    /// <param name="external">An external file resolved from the command line, or <c>null</c>.</param>
+    /// <param name="startIndex">Receives the index the window should start on.</param>
+    public static IReadOnlyList<ShaderSource> Build(ShaderSource? external, out int startIndex)
+    {
+        if (external is null)
+        {
+            startIndex = 0;
+            return Bundled;
+        }
+
+        var list = new List<ShaderSource>(Bundled.Count + 1) { external };
+        list.AddRange(Bundled);
+        startIndex = 0; // the external file is first
+        return list;
+    }
 }

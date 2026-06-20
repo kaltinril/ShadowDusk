@@ -35,33 +35,66 @@ in the bundled file. Full provenance:
 
 ## How to run
 
-Interactive window:
+Interactive window (bundled catalog):
 
 ```bash
 dotnet run --project tools/shadertoy2fx/sample
 ```
 
+**Load ANY shader file** -- point the sample at your own ShaderToy / plain-GLSL file:
+
+```bash
+dotnet run --project tools/shadertoy2fx/sample -- path/to/your_shader.glsl
+```
+
+Accepted extensions: `.glsl`, `.frag`, `.fs`, `.txt`. The given file is added as the **first,
+hot-reloadable** entry; the four bundled shaders remain cyclable behind it. The window title shows
+the file name (tagged `EXTERNAL (hot-reload)`) and the uniforms it references.
+
+**Hot-reload** -- while a file is loaded the sample polls its last-write-time (~4x/sec) and, when it
+changes on disk, automatically **re-converts + recompiles + reloads** it live, flashing `reloaded`
+(or `reload ERROR`) on screen. So you can edit the shader in your editor and watch it update without
+restarting. Press **R** to force a reload of any entry.
+
+**On a convert/compile error** the sample does **not** crash: it dims the screen and draws the
+diagnostic text (file, line/column, message) using a tiny built-in bitmap font (no content build /
+`SpriteFont` asset needed), and keeps running so you can fix the file and let hot-reload pick it up.
+
 Controls:
 
 - **SPACE** or **RIGHT** -- next shader (recompiled at runtime)
 - **LEFT** -- previous shader
+- **R** -- reload the current shader now
 - **mouse** -- drives `iMouse` (ShaderToy bottom-left-origin convention; click sets the `zw` slot)
 - **ESC** -- quit
-
-The window title shows the current shader name, the uniforms it references, and that it was compiled
-in memory via ShadowDusk.
 
 Headless smoke (automated validation, no window loop):
 
 ```bash
+# every bundled shader
 dotnet run --project tools/shadertoy2fx/sample -- --smoke
+
+# OR a single external file (testable without a window)
+dotnet run --project tools/shadertoy2fx/sample -- --smoke path/to/your_shader.glsl
 ```
 
-`--smoke` runs the full convert -> in-memory compile -> load -> render-one-frame path for **each**
-bundled shader to an offscreen `RenderTarget`, writes a PNG per shader to `sample/output/`, asserts
-the frame is non-trivial (not all-black), and exits `0` (non-zero on any failure). A few
-representative PNGs are committed under `output/` as eyeball evidence; regenerable `*.fx` / `*.mgfx`
-written there (if any) are gitignored.
+`--smoke` runs the full convert -> in-memory compile -> load -> render-one-frame path (for **each**
+bundled shader, or just the **given** file) to an offscreen `RenderTarget`, writes a PNG per shader
+to `sample/output/`, asserts the frame is non-trivial (not all-black), and exits `0` (non-zero on any
+failure). A bad path / unsupported extension exits `2` with a diagnostic and never opens a context; a
+file that fails to convert/compile is reported and exits `1`. A few representative PNGs are committed
+under `output/` as eyeball evidence; regenerable `*.fx` / `*.mgfx` written there (if any) are
+gitignored.
+
+### Limitations
+
+- The interactive sample renders **single-pass image shaders**. ShaderToy **multipass** shaders
+  (a Buffer-A/B/... graph, typically shipped as a `.json` manifest) are **not** driven here -- that
+  is handled by the converter's multipass path and CLI, not this single-quad viewer. Point the sample
+  at the **image-tab GLSL** of such a shader.
+- Custom textures / `iChannel` inputs are not bound, so a shader that samples a channel renders
+  whatever the unbound sampler yields. `iTime`, `iTimeDelta`, `iFrame`, `iResolution`, and `iMouse`
+  are all driven.
 
 ## What this proves
 

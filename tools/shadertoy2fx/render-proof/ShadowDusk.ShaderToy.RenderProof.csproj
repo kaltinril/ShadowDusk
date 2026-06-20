@@ -10,7 +10,15 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="MonoGame.Framework.DesktopGL" />
+    <!-- Phase 46 fidelity gate: raw Silk.NET GL ground-truth reference renderer + ImageSharp montage. -->
+    <PackageReference Include="Silk.NET.OpenGL" />
+    <PackageReference Include="Silk.NET.Windowing.Glfw" />
+    <PackageReference Include="SixLabors.ImageSharp" />
   </ItemGroup>
+  <PropertyGroup>
+    <!-- Silk.NET unsafe blocks for the GL reference renderer (VBO upload, glReadPixels). -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\src\ShadowDusk.ShaderToy\ShadowDusk.ShaderToy.csproj" />
     <ProjectReference Include="..\src\ShadowDusk.ShaderToy.Runtime\ShadowDusk.ShaderToy.Runtime.csproj" />

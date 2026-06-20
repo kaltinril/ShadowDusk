@@ -93,6 +93,10 @@ tools/shadertoy2fx/render-proof/output/*.mgfx
 # evidence. The per-shader thumbnails + their .fx/.mgfx are regenerable scratch.
 tools/shadertoy2fx/render-proof/output/gallery-thumbs/
 
+# Phase 46 FIDELITY gate (--fidelity): only the single montage (fidelity.png) is committed
+# as eyeball evidence. The per-shader .fx/.mgfx + dumped ref/ours/diff PNGs are scratch.
+tools/shadertoy2fx/render-proof/output/fidelity-work/
+
 # Phase 46 sample regenerable artifacts (the .png eyeball evidence IS committed).
 tools/shadertoy2fx/sample/output/*.fx
 tools/shadertoy2fx/sample/output/*.mgfx

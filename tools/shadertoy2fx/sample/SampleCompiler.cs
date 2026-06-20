@@ -41,25 +41,47 @@ public static class SampleCompiler
     public static string ShadersDirectory => Path.Combine(AppContext.BaseDirectory, "shaders");
 
     /// <summary>
-    /// Run the full runtime path for one bundled shader. Returns a failure result (not an exception)
-    /// when the file is missing, the convert reports an error, or the in-memory compile fails.
+    /// Run the full runtime path for one shader source (a bundled catalog entry or an arbitrary
+    /// external file). Returns a failure result (not an exception) when the file is missing, the
+    /// convert reports an error, or the in-memory compile fails.
     /// </summary>
-    public static CompiledShaderToy Build(GraphicsDevice device, ShaderEntry entry)
+    public static CompiledShaderToy Build(GraphicsDevice device, ShaderSource source)
     {
         if (device is null)
             throw new ArgumentNullException(nameof(device));
-        if (entry is null)
-            throw new ArgumentNullException(nameof(entry));
+        if (source is null)
+            throw new ArgumentNullException(nameof(source));
 
-        string glslPath = Path.Combine(ShadersDirectory, entry.FileName);
-        if (!File.Exists(glslPath))
-            return Fail($"Shader source not found:\n{glslPath}");
+        if (!File.Exists(source.Path))
+            return Fail($"Shader source not found:\n{source.Path}");
 
-        string glsl = File.ReadAllText(glslPath);
+        string glsl;
+        try
+        {
+            glsl = File.ReadAllText(source.Path);
+        }
+        catch (IOException ex)
+        {
+            // A hot-reload can race the editor's save; surface it as a (transient) error, not a crash.
+            return Fail($"Could not read shader file:\n{source.Path}\n{ex.Message}");
+        }
+
+        return BuildFromGlsl(device, glsl, source.DisplayName);
+    }
+
+    /// <summary>
+    /// Run the full runtime path for one shader given its GLSL source text directly (used by both the
+    /// bundled-and-external file path and by callers that already hold the text). Never throws for a
+    /// bad shader: convert/compile/load failures come back as a failed <see cref="CompiledShaderToy"/>.
+    /// </summary>
+    public static CompiledShaderToy BuildFromGlsl(GraphicsDevice device, string glsl, string displayName)
+    {
+        if (device is null)
+            throw new ArgumentNullException(nameof(device));
 
         // 1. ShaderToy GLSL -> HLSL .fx (no disk, no external tool).
         ConvertResult conv = ShaderToyConverter.Convert(
-            glsl, new ConvertOptions { EffectName = entry.DisplayName });
+            glsl, new ConvertOptions { EffectName = SanitizeEffectName(displayName) });
         if (!conv.Success || conv.Fx is null)
             return Fail("Convert failed:\n" + FormatDiagnostics(conv.Diagnostics));
 
@@ -86,6 +108,26 @@ public static class SampleCompiler
 
     private static CompiledShaderToy Fail(string error) =>
         new(false, null, Array.Empty<string>(), error);
+
+    /// <summary>
+    /// Reduce an arbitrary display/file name to something safe to drop into the emitted <c>.fx</c>
+    /// metadata. The name is cosmetic (it appears in a comment), but an external file can be named
+    /// anything, so keep only identifier-friendly characters and fall back to a constant.
+    /// </summary>
+    private static string SanitizeEffectName(string displayName)
+    {
+        if (string.IsNullOrWhiteSpace(displayName))
+            return "ShaderToyEffect";
+
+        var sb = new System.Text.StringBuilder(displayName.Length);
+        foreach (char c in displayName)
+            sb.Append(char.IsLetterOrDigit(c) || c == '_' ? c : '_');
+
+        string cleaned = sb.ToString().Trim('_');
+        if (cleaned.Length == 0 || !char.IsLetter(cleaned[0]))
+            cleaned = "Shader_" + cleaned;
+        return cleaned;
+    }
 
     private static string FormatDiagnostics(IReadOnlyList<ConvertDiagnostic> diagnostics)
     {

@@ -41,6 +41,17 @@ if (args.Length > 0 && args[0] == "--gallery")
     return ShadowDusk.ShaderToy.RenderProof.GalleryRunner.Run(cliDll, repoRoot, outDir);
 }
 
+// ---- FIDELITY MODE (Phase 46 pixel-fidelity gate): prove OUR render == the ORIGINAL GLSL render. ----
+// `--fidelity` renders each authored shader's ORIGINAL GLSL in a raw Silk.NET GL context (ground
+// truth), renders OUR converted .mgfx through MonoGame at the same uniforms, diffs them, classifies
+// every divergence (conversion bug vs float chaos vs Y-flip), and writes a side-by-side montage.
+if (args.Length > 0 && args[0] == "--fidelity")
+{
+    Console.WriteLine($"[fidelity] CLI:    {cliDll}");
+    Console.WriteLine($"[fidelity] output: {outDir}\n");
+    return ShadowDusk.ShaderToy.RenderProof.FidelityRunner.Run(cliDll, repoRoot, outDir);
+}
+
 Console.WriteLine($"[render-proof] CLI:     {cliDll}");
 Console.WriteLine($"[render-proof] shaders: {shadersDir}");
 Console.WriteLine($"[render-proof] output:  {outDir}\n");
