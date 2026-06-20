@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>ShadowDusk.ShaderToy.Sample</AssemblyName>
+    <RootNamespace>ShadowDusk.ShaderToy.Sample</RootNamespace>
+    <!-- Phase 46 capstone: runnable sample, intentionally NOT packed and NOT in ShadowDusk.slnx. -->
+    <IsPackable>false</IsPackable>
+    <!-- Warnings-as-errors + code-style-as-errors are inherited from the repo Directory.Build.props
+         and deliberately LEFT ON here: this sample is held to the zero-warning bar. -->
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MonoGame.Framework.DesktopGL" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The converter, the runtime helper, and the in-memory ShadowDusk compiler (+ its transitive
+         native assets: DXC, SPIRV-Cross, vkd3d) flow in through this last reference. -->
+    <ProjectReference Include="..\src\ShadowDusk.ShaderToy\ShadowDusk.ShaderToy.csproj" />
+    <ProjectReference Include="..\src\ShadowDusk.ShaderToy.Runtime\ShadowDusk.ShaderToy.Runtime.csproj" />
+    <ProjectReference Include="..\..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="shaders\*.glsl" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

@@ -89,6 +89,10 @@ tools/shadertoy2fx/.scratch/
 tools/shadertoy2fx/render-proof/output/*.fx
 tools/shadertoy2fx/render-proof/output/*.mgfx
 
+# Phase 46 sample regenerable artifacts (the .png eyeball evidence IS committed).
+tools/shadertoy2fx/sample/output/*.fx
+tools/shadertoy2fx/sample/output/*.mgfx
+
 # Visual Studio / VS Code / Rider
 .vs/
 .vscode/

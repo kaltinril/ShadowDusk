@@ -27,6 +27,18 @@
 >   through**. The `render-proof/` driver is the gate; PNGs are committed eyeball evidence.
 > - **COMPILE SWEEP 102/102**: all 34 emitted `.fx` (incl. the 234-line real CC0 neon shader)
 >   compile through the real pipeline → **OpenGL 34/34, DirectX_11 34/34, FNA 34/34**.
+> - **RUNNABLE SAMPLE (capstone, 2026-06-19)**: `tools/shadertoy2fx/sample/` is a real MonoGame
+>   DesktopGL game that, **at runtime with no build step and no `mgfxc`**, runs the full path for
+>   each bundled shader: `ShaderToyConverter.Convert` → `EffectCompiler.Compile` (OpenGL, **in
+>   memory**) → `new Effect(GraphicsDevice, mgfxBytes)` → animated/interactive fullscreen render via
+>   `ShaderToyEffect`. It bundles 4 animated/interactive shaders (`time_animation`,
+>   `mouse_interaction`, `atan_polar`, CC0 `neon`); SPACE/arrows cycle + recompile at runtime, the
+>   mouse drives `iMouse`, ESC quits, the window title shows the shader + its uniforms. A `--smoke`
+>   mode renders one offscreen frame per shader, writes a PNG each to `sample/output/`, asserts
+>   non-trivial (not all-black), and exits 0 — **green 4/4 on this machine**; committed PNGs are
+>   eyeball evidence. Builds 0-warning under the inherited warnings-as-errors. Out-of-band: **no
+>   NuGet**, **not** in `ShadowDusk.slnx`. This proves ShadowDusk's in-memory runtime compile, not
+>   just an offline `.fx`.
 > - **Coverage trajectory (160 real third-party shaders, gitignored scratch, none committed),
 >   conversion → end-to-end-compile:** v1 baseline 17.5% → +preprocessor 23.4% → +custom uniforms
 >   **26.0% convert / 22.1% end-to-end** (compile-of-converted ~85%). The `COVERAGE.md` blast-radius
@@ -36,8 +48,10 @@
 > **Still open (honest):** (a) **multipass** (Buffer A–D / feedback) is the big unbuilt feature and
 > the main reason real-world coverage caps in the ~25-50% range for arbitrary shaders; (b) render
 > validation is analytic-pixel + eyeball, not yet a diff against ShaderToy's own WebGL reference for
-> a broad corpus; (c) productization (NuGet packaging of the runtime helper, a sample app, docs) is
-> not started. The matrix/`mod`/Y-flip traps are render-confirmed for the cases tested.
+> a broad corpus; (c) productization — a **runnable sample app now exists** (`sample/`, runtime
+> in-memory compile + interactive render, see the Results bullet above), but NuGet packaging of the
+> runtime helper and end-user docs are still not started (NuGet intentionally deferred). The
+> matrix/`mod`/Y-flip traps are render-confirmed for the cases tested.
 
 **Status:** Experiment IN PROGRESS (started + compile-proven 2026-06-19). A **standalone, separate tool** that converts a
 **ShaderToy GLSL** shader into an **HLSL `.fx`** source file. It is **deliberately NOT part of the
