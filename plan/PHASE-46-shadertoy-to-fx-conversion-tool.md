@@ -53,6 +53,27 @@ already-proven ShadowDusk pipeline** compiles it to whatever the consumer's game
 
 ---
 
+## Why coverage is ~26% and the gap-closing backlog (2026-06-19)
+
+A categorized run of the 160-shader scratch corpus shows the ~26% conversion rate is **almost
+entirely fixable subset gaps, not multipass**. Only **~6 of 160** shaders are genuinely out of v1
+scope (5 non-`mainImage`/multipass, 1 VR). The other ~114 failures bucket as below — so the
+*addressable* ceiling on this corpus is ~95%. This is the ordered "get it all working" backlog:
+
+| # | Gap | Shaders | Plan | Status |
+|---|---|---:|---|---|
+| G1 | Top-level **mutable globals** (`float g;` / `vec2 g = …;` at file scope) | 33 | Emit as HLSL `static` global (per-invocation semantics) | planned |
+| G2 | Top-level **qualifier decls** (`out vec4`/`layout`/`varying`) + the `void main()`+`out fragColor`+`gl_FragCoord` plain-GLSL-fragment **entry mode** | 17 | Accept a second entry convention; map `out` color to the PS return | planned |
+| G3 | **Undeclared identifier** (L1 reject) | 16 | Add more known built-ins/aliases (`iChannelResolution`, glslViewer `u_*`); the genuinely-undeclared stay loud rejects | planned (partial) |
+| G4 | Custom **uniform with initializer** (`uniform float x = 1.;`) | 6 | Accept; use the initializer as the parameter default | planned |
+| G5 | **`#version` / `#extension` / `#pragma` / glslViewer `#iChannel`** directives | 6 | Strip/ignore the harmless ones; keep `#include` a loud reject (no resolver) | planned |
+| G6 | **structs** | 5 | Parse + emit HLSL `struct`; member type inference | planned |
+| G7 | **unknown types / arrays / unknown intrinsics / parse tail** | ~25 | Case-by-case: const + local arrays, more intrinsics, parser hardening | planned |
+| — | **Multipass (Buffer A–D), VR, sound** | ~6 | OUT OF v1 SCOPE — multipass is a separate runtime-orchestration project | not planned (v1) |
+
+The headline coverage number will be re-measured after each gap closes. Multipass remains the one
+genuinely-large unbuilt feature and the reason arbitrary-corpus coverage can't approach 100% in v1.
+
 ## Why this shape (and why it is separate)
 
 We considered three ways to get ShaderToy GLSL into the engine (full discussion lives in this
