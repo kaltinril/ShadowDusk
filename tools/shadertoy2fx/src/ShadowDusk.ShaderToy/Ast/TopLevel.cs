@@ -41,6 +41,25 @@ internal sealed class GlobalConstDecl
 }
 
 /// <summary>
+/// A top-level non-<c>const</c> mutable global variable (GLSL fragment-scope global), e.g.
+/// <c>float g;</c> or <c>vec2 p = vec2(0.0);</c>. GLSL fragment globals are per-invocation mutable
+/// state; the converter emits each as an HLSL <c>static</c> global, which has the matching
+/// per-invocation-mutable semantics. Multiple declarators of one statement (<c>float a, b = 1.0;</c>)
+/// become one <see cref="GlobalVarDecl"/> each.
+/// </summary>
+internal sealed class GlobalVarDecl
+{
+    public required string TypeName { get; init; }
+    public required string Name { get; init; }
+
+    /// <summary>The optional initializer (null for a bare <c>float g;</c>).</summary>
+    public Expr? Initializer { get; init; }
+
+    public int Line { get; init; }
+    public int Column { get; init; }
+}
+
+/// <summary>
 /// A top-level custom <c>uniform</c> declaration the consumer drives as an effect parameter, e.g.
 /// <c>uniform float u_roughness;</c> or <c>uniform sampler2D u_noise;</c>. Distinct from the
 /// predefined ShaderToy uniforms (which the harness injects) and from a redundant built-in
@@ -58,6 +77,13 @@ internal sealed class CustomUniformDecl
     /// <summary>True when this is a <c>sampler2D</c> (emitted as a texture + sampler_state pair).</summary>
     public required bool IsSampler { get; init; }
 
+    /// <summary>
+    /// The optional default value (GLSL 1.20+ allows <c>uniform float x = 1.0;</c>). When present it is
+    /// emitted as the HLSL parameter's default initializer, so the consumer gets that value unless they
+    /// override it. Null for a plain <c>uniform float x;</c>. Never set for a sampler.
+    /// </summary>
+    public Expr? Initializer { get; init; }
+
     public int Line { get; init; }
     public int Column { get; init; }
 }
@@ -70,6 +96,9 @@ internal sealed class TranslationUnit
 
     /// <summary>Top-level custom <c>uniform</c> declarations the consumer drives.</summary>
     public IReadOnlyList<CustomUniformDecl> CustomUniforms { get; init; } = Array.Empty<CustomUniformDecl>();
+
+    /// <summary>Top-level non-<c>const</c> mutable globals (emitted as HLSL <c>static</c> globals).</summary>
+    public IReadOnlyList<GlobalVarDecl> MutableGlobals { get; init; } = Array.Empty<GlobalVarDecl>();
 
     /// <summary>glslViewer-style alias name → ShaderToy built-in it was folded onto (e.g. u_time → iTime),
     /// applied to identifier references so a declared alias resolves to its built-in.</summary>

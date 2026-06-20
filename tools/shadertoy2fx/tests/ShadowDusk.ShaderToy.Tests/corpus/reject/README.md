@@ -16,12 +16,17 @@ assert the tool rejects for that specific reason.
 | `unknown_global.glsl` | Uses a free identifier (`RENDERSIZE`, an ISF builtin) that is not a ShaderToy uniform/local/const/user-function — undeclared identifiers are a loud reject (L1), not a silent pass-through. |
 | `custom_uniform_sampler3d.glsl` | A custom `uniform sampler3D` — only `sampler2D` is a supported uniform type; `sampler3D`/`samplerCube` are a loud reject. |
 | `custom_uniform_bad_type.glsl` | A custom `uniform mat2x3` (non-square) — a custom uniform must be a supported scalar/vector/matrix (mat2/3/4) or `sampler2D`; everything else is a loud reject. |
+| `global_unsupported_type.glsl` | **G1 boundary**: a top-level mutable global of an unsupported type (`double gBad;`) — supported-type mutable globals are now accepted (as `static`), but an unsupported-type one stays a loud reject. |
+| `pp_include.glsl` | **G5 boundary**: `#include "common.glsl"` — there is no file resolver, so `#include` stays a loud reject (it cannot be silently dropped without losing code). |
 
-Total: 9 reject shaders.
+Total: 11 reject shaders.
 
 Note: function-like `#define NAME(...)` macros and the `#if`/`#ifdef`/`#ifndef`/`#elif`/`#else`/`#endif`
 conditional family are now **supported** (Phase 46 preprocessor) and have moved to `authored/` (see
 `macro_function.glsl`, `pp_*.glsl`). A custom `uniform` of a SUPPORTED type is now **accepted** and
-emitted as an effect parameter (see `authored/custom_uniform_*.glsl`); only an *unsupported* uniform
-type / an initialized uniform / a custom `varying`/`in`/`out` stays a reject here. The unimplemented
-`##`/`#` operators and `#include` also remain loud rejects.
+emitted as an effect parameter, **including one with a default value** (`uniform float x = 1.0;`, G4);
+a top-level non-`const` mutable global of a SUPPORTED type is **accepted** as a `static` global (G1);
+and `#version`/`#extension`/`#pragma`/`#line` plus glslViewer/Bonzomatic `#i*` channel-metadata
+directives are now silently **ignored** (G5). What stays a reject here: an *unsupported* uniform/global
+type, a custom `varying`/`in`/`out`, a sampler with an initializer, the unimplemented `##`/`#`
+operators, and `#include`.

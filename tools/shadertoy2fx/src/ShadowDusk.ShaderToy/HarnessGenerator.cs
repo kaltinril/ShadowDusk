@@ -18,6 +18,7 @@ internal sealed class HarnessGenerator
         ConvertOptions options,
         IReadOnlyCollection<string> referencedUniforms,
         IReadOnlyList<CustomUniformDecl> customUniforms,
+        IReadOnlyDictionary<string, string> customUniformDefaults,
         bool usedGlslMod,
         string translatedGlobals,
         string translatedFunctions)
@@ -46,7 +47,7 @@ internal sealed class HarnessGenerator
 
         EmitUniformGlobals(sb, referencedUniforms);
         EmitChannelSamplers(sb, referencedUniforms);
-        EmitCustomUniforms(sb, customUniforms);
+        EmitCustomUniforms(sb, customUniforms, customUniformDefaults);
 
         if (usedGlslMod)
         {
@@ -136,7 +137,10 @@ internal sealed class HarnessGenerator
     /// <c>iChannelN</c>, so <c>tex2D(&lt;name&gt;, uv)</c> works. All declared customs are emitted (the
     /// host drives them whether or not the body references them).
     /// </summary>
-    private static void EmitCustomUniforms(StringBuilder sb, IReadOnlyList<CustomUniformDecl> customUniforms)
+    private static void EmitCustomUniforms(
+        StringBuilder sb,
+        IReadOnlyList<CustomUniformDecl> customUniforms,
+        IReadOnlyDictionary<string, string> customUniformDefaults)
     {
         if (customUniforms.Count == 0)
         {
@@ -155,6 +159,11 @@ internal sealed class HarnessGenerator
                 sb.AppendLine("{");
                 sb.AppendLine($"    Texture = <{cu.Name}Texture>;");
                 sb.AppendLine("};");
+            }
+            else if (customUniformDefaults.TryGetValue(cu.Name, out string? def))
+            {
+                // G4: a uniform with a default value emits its default as the parameter's initializer.
+                sb.AppendLine($"{TypeTable.ToHlsl(cu.TypeName)} {cu.Name} = {def};");
             }
             else
             {

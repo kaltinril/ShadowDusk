@@ -87,6 +87,40 @@ internal sealed class HlslEmitter
         return _sb.ToString();
     }
 
+    /// <summary>
+    /// Emit a top-level non-<c>const</c> mutable global (G1) as an HLSL <c>static</c> global, with the
+    /// matching per-invocation-mutable semantics of a GLSL fragment-scope global. An initializer (if
+    /// any) is truncated-to-width like a local declaration so a wider value narrows explicitly.
+    /// </summary>
+    public string EmitGlobalVar(GlobalVarDecl g)
+    {
+        _sb.Clear();
+        _indent = 0;
+        string type = TypeTable.ToHlsl(g.TypeName);
+        if (g.Initializer is null)
+        {
+            Line($"static {type} {g.Name};");
+        }
+        else
+        {
+            Line($"static {type} {g.Name} = {EmitInitializer(g.TypeName, g.Initializer)};");
+        }
+
+        return _sb.ToString();
+    }
+
+    /// <summary>
+    /// Translate a custom-uniform default initializer (G4) to an HLSL expression string, narrowing a
+    /// wider value to the declared width if needed. Used by the harness to emit
+    /// <c>&lt;type&gt; &lt;name&gt; = &lt;default&gt;;</c>.
+    /// </summary>
+    public string EmitUniformDefault(string declaredGlslType, Expr value)
+    {
+        _sb.Clear();
+        _indent = 0;
+        return EmitInitializer(declaredGlslType, value);
+    }
+
     // ── statements ─────────────────────────────────────────────────────────────
 
     private void EmitBlock(BlockStmt block)

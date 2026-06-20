@@ -61,10 +61,11 @@ internal sealed class Parser
         var globals = new List<GlobalConstDecl>();
         var functions = new List<FunctionDecl>();
         var customUniforms = new List<CustomUniformDecl>();
+        var mutableGlobals = new List<GlobalVarDecl>();
 
         while (!Check(TokenKind.EndOfFile))
         {
-            ParseTopLevel(globals, functions, customUniforms);
+            ParseTopLevel(globals, functions, customUniforms, mutableGlobals);
         }
 
         return new TranslationUnit
@@ -72,12 +73,14 @@ internal sealed class Parser
             Globals = globals,
             Functions = functions,
             CustomUniforms = customUniforms,
+            MutableGlobals = mutableGlobals,
             Aliases = _aliases,
         };
     }
 
     private void ParseTopLevel(
-        List<GlobalConstDecl> globals, List<FunctionDecl> functions, List<CustomUniformDecl> customUniforms)
+        List<GlobalConstDecl> globals, List<FunctionDecl> functions, List<CustomUniformDecl> customUniforms,
+        List<GlobalVarDecl> mutableGlobals)
     {
         Token start = Current;
 
@@ -124,25 +127,79 @@ internal sealed class Parser
             return;
         }
 
-        // Global variable: only `const` globals are supported.
-        if (!isConst)
+        // A `const` global: a single declarator with a required initializer (supported as-is).
+        if (isConst)
         {
-            throw Reject(
-                $"Top-level non-const global '{name}' is outside the supported subset (only 'const' globals).",
-                nameTok);
+            Expect(TokenKind.Assign, "'=' (a const global requires an initializer)");
+            Expr cinit = ParseExpression();
+            Expect(TokenKind.Semicolon, "';'");
+            globals.Add(new GlobalConstDecl
+            {
+                TypeName = typeName,
+                Name = name,
+                Initializer = cinit,
+                Line = start.Line,
+                Column = start.Column,
+            });
+            return;
         }
 
-        Expect(TokenKind.Assign, "'=' (a const global requires an initializer)");
-        Expr init = ParseExpression();
-        Expect(TokenKind.Semicolon, "';'");
-        globals.Add(new GlobalConstDecl
+        // G1: a top-level non-const mutable global of a supported type is accepted and emitted as an
+        // HLSL `static <type> <name> [= <init>];` (GLSL fragment globals are per-invocation mutable
+        // state, which HLSL `static` globals match). Multiple declarators (`float a, b = 1.0;`) each
+        // become a GlobalVarDecl. The type was already validated by ExpectTypeName above, so an
+        // unsupported-type global has already been rejected.
+        ParseMutableGlobalRest(typeName, nameTok, start, mutableGlobals);
+    }
+
+    /// <summary>
+    /// Parse the tail of a top-level mutable global declaration after the type and first name have been
+    /// consumed: an optional <c>= initializer</c> and any comma-separated additional declarators, ending
+    /// at the <c>;</c>. Each declarator is added as its own <see cref="GlobalVarDecl"/>.
+    /// </summary>
+    private void ParseMutableGlobalRest(
+        string typeName, Token firstNameTok, Token start, List<GlobalVarDecl> mutableGlobals)
+    {
+        Expr? init = null;
+        if (Match(TokenKind.Assign))
+        {
+            init = ParseAssignment();
+        }
+
+        mutableGlobals.Add(new GlobalVarDecl
         {
             TypeName = typeName,
-            Name = name,
+            Name = firstNameTok.Text,
             Initializer = init,
             Line = start.Line,
             Column = start.Column,
         });
+
+        while (Match(TokenKind.Comma))
+        {
+            Token nameTok = Expect(TokenKind.Identifier, "a variable name");
+            if (Check(TokenKind.LBracket))
+            {
+                throw Reject("User-declared arrays are outside the supported subset.", Current);
+            }
+
+            Expr? declInit = null;
+            if (Match(TokenKind.Assign))
+            {
+                declInit = ParseAssignment();
+            }
+
+            mutableGlobals.Add(new GlobalVarDecl
+            {
+                TypeName = typeName,
+                Name = nameTok.Text,
+                Initializer = declInit,
+                Line = nameTok.Line,
+                Column = nameTok.Column,
+            });
+        }
+
+        Expect(TokenKind.Semicolon, "';'");
     }
 
     /// <summary>
@@ -251,12 +308,19 @@ internal sealed class Parser
                 Current);
         }
 
-        if (Check(TokenKind.Assign))
+        // G4: a custom uniform may carry a default value (`uniform float x = 1.0;`, valid GLSL 1.20+).
+        // The initializer becomes the HLSL parameter's default so the consumer gets that value unless
+        // they override it. A sampler cannot have an initializer.
+        Expr? initializer = null;
+        if (Match(TokenKind.Assign))
         {
-            throw Reject(
-                $"Custom uniform '{name}' has an initializer, which is not valid GLSL for a 'uniform' " +
-                "(its value is host-supplied).",
-                Current);
+            if (isSampler)
+            {
+                throw Reject(
+                    $"Sampler uniform '{name}' cannot have an initializer.", typeTok);
+            }
+
+            initializer = ParseAssignment();
         }
 
         Expect(TokenKind.Semicolon, "';'");
@@ -265,6 +329,7 @@ internal sealed class Parser
             TypeName = typeTok.Text,
             Name = name,
             IsSampler = isSampler,
+            Initializer = initializer,
             Line = start.Line,
             Column = start.Column,
         });

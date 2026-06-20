@@ -62,17 +62,44 @@ scope (5 non-`mainImage`/multipass, 1 VR). The other ~114 failures bucket as bel
 
 | # | Gap | Shaders | Plan | Status |
 |---|---|---:|---|---|
-| G1 | Top-level **mutable globals** (`float g;` / `vec2 g = …;` at file scope) | 33 | Emit as HLSL `static` global (per-invocation semantics) | planned |
+| G1 | Top-level **mutable globals** (`float g;` / `vec2 g = …;` at file scope) | 33 | Emit as HLSL `static` global (per-invocation semantics) | **DONE (2026-06-19)** |
 | G2 | Top-level **qualifier decls** (`out vec4`/`layout`/`varying`) + the `void main()`+`out fragColor`+`gl_FragCoord` plain-GLSL-fragment **entry mode** | 17 | Accept a second entry convention; map `out` color to the PS return | planned |
-| G3 | **Undeclared identifier** (L1 reject) | 16 | Add more known built-ins/aliases (`iChannelResolution`, glslViewer `u_*`); the genuinely-undeclared stay loud rejects | planned (partial) |
-| G4 | Custom **uniform with initializer** (`uniform float x = 1.;`) | 6 | Accept; use the initializer as the parameter default | planned |
-| G5 | **`#version` / `#extension` / `#pragma` / glslViewer `#iChannel`** directives | 6 | Strip/ignore the harmless ones; keep `#include` a loud reject (no resolver) | planned |
+| G3 | **Undeclared identifier** (L1 reject) | 16 | Add more known built-ins/aliases (`iChannelResolution`, glslViewer `u_*`); the genuinely-undeclared stay loud rejects | **DONE (2026-06-19)** |
+| G4 | Custom **uniform with initializer** (`uniform float x = 1.;`) | 6 | Accept; use the initializer as the parameter default | **DONE (2026-06-19)** |
+| G5 | **`#version` / `#extension` / `#pragma` / glslViewer `#iChannel`** directives | 6 | Strip/ignore the harmless ones; keep `#include` a loud reject (no resolver) | **DONE (2026-06-19)** |
 | G6 | **structs** | 5 | Parse + emit HLSL `struct`; member type inference | planned |
 | G7 | **unknown types / arrays / unknown intrinsics / parse tail** | ~25 | Case-by-case: const + local arrays, more intrinsics, parser hardening | planned |
 | — | **Multipass (Buffer A–D), VR, sound** | ~6 | OUT OF v1 SCOPE — multipass is a separate runtime-orchestration project | not planned (v1) |
 
 The headline coverage number will be re-measured after each gap closes. Multipass remains the one
 genuinely-large unbuilt feature and the reason arbitrary-corpus coverage can't approach 100% in v1.
+
+### G1/G3/G4/G5 as-built (2026-06-19)
+
+The four highest-value gaps closed together. Over the 160-shader gitignored scratch corpus (153 with a
+`void mainImage`; none committed), this lifted **conversion 26.0% → 34.0%**, **end-to-end 22.1% → 29.4%**
+(compile-of-converted held at ~86.5%). Suite 161 → 185 green, 0 warnings; golden compile-sweep
+**38/38 on OpenGL / DirectX_11 / FNA**; render-proof still 3/3 (exit 0).
+
+- **G1 — top-level mutable globals.** A non-`const` top-level global of a supported type (`float g;`,
+  `vec2 p = vec2(0.0);`, comma multi-declarators) is accepted and emitted as an HLSL
+  `static <type> <name> [= <init>];` (GLSL fragment-global = per-invocation mutable, which `static`
+  matches). It is internal state, NOT a host parameter (excluded from `UsedUniforms`). An
+  unsupported-type global (`double g;`) stays a loud reject. *(Parser `ParseMutableGlobalRest`,
+  `GlobalVarDecl` AST, `HlslEmitter.EmitGlobalVar`, `TypeInference` registration.)*
+- **G3 — alias / built-in coverage.** The full ShaderToy built-in set was already modeled. Added the
+  exact-type host aliases `time`/`fGlobalTime` → `iTime` and `u_frame`/`iGlobalFrame` → `iFrame`
+  (alongside the existing `u_time`/`iGlobalTime`). A **type-mismatched** alias (e.g. glslViewer
+  `vec2 u_resolution` vs `vec3 iResolution`) is NOT folded — it is exposed verbatim as a custom uniform.
+  A genuinely-undeclared identifier still rejects loudly (L1 intact). *(`UniformAliases`.)*
+- **G4 — custom uniform with initializer.** `uniform <type> <name> = <const-expr>;` (valid GLSL 1.20+)
+  is accepted; the initializer is translated and emitted as the HLSL parameter's default, and the
+  uniform is still reported in `UsedUniforms`. A sampler-with-initializer stays a loud reject. *(Parser
+  + `CustomUniformDecl.Initializer` + harness `EmitCustomUniforms` default path.)*
+- **G5 — harmless directives.** `#version`/`#extension`/`#pragma`/`#line` and the glslViewer/Bonzomatic
+  channel-binding & input metadata directives (`#iChannel0 "..."`, `#iKeyboard`, `#iMouse`, … —
+  recognized by the leading-`i` ShaderToy-input convention) are silently dropped. `#include` stays a
+  loud reject (no file resolver); `##`/`#`/variadic macro rejects unchanged. *(`Preprocessor`.)*
 
 ## Why this shape (and why it is separate)
 

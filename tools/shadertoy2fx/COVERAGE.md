@@ -4,6 +4,22 @@ A statistical coverage report for the `shadertoy2fx` GLSL → HLSL `.fx` convert
 running a batch of **real, third-party single-pass ShaderToy / GLSL image shaders** through the
 converter and then through the ShadowDusk OpenGL compiler.
 
+> **Update 2026-06-19 (c) — G1/G3/G4/G5 gap-closures landed.** Four backlog gaps closed together:
+> **G1** top-level non-`const` mutable globals (emitted as HLSL `static` globals; unsupported-type
+> globals still reject), **G3** more exact-type host aliases (`time`/`fGlobalTime`→`iTime`,
+> `u_frame`/`iGlobalFrame`→`iFrame`; a type-mismatched alias becomes a custom uniform, not a wrong
+> alias; genuine undeclared idents still reject), **G4** a custom `uniform` with a default initializer
+> (`uniform float x = 1.0;`, valid GLSL 1.20+) is accepted and the default is preserved, and **G5**
+> harmless preprocessor directives (`#version`/`#extension`/`#pragma`/`#line` + glslViewer/Bonzomatic
+> `#iChannel0 "..."`/`#iKeyboard`/… metadata) are silently ignored (`#include` still a loud reject).
+> Re-measured over the same 160-shader gitignored scratch corpus (153 with a `void mainImage`):
+> **conversion rate 34.0 %** (52/153, was 26.0 %), **compile-of-converted 86.5 %** (45/52),
+> **end-to-end 29.4 %** (45/153, was 22.1 %). The 7 converted-but-not-compiling shaders are all
+> pre-existing §5 edge cases (B4 implicit-truncation, B5 modifier-spacing, a `float(...)` shadowing,
+> a legacy `tex2Dlod`/texture-offset case) that the new shaders only now *reach* — none is a new
+> silent-wrong path; each fails loudly at compile (non-zero exit). Unit suite 161→185 green (0 warn);
+> golden compile-sweep 38/38 on OpenGL/DirectX_11/FNA; render-proof 3/3 (exit 0).
+>
 > **Update 2026-06-19 (b) — custom top-level uniforms landed.** A top-level `uniform <type> <name>;`
 > of a non-built-in name is now ACCEPTED and emitted as an HLSL effect parameter the consumer drives
 > (scalar/vector/matrix, plus `sampler2D` as the iChannelN-style texture+sampler pair). Unsupported

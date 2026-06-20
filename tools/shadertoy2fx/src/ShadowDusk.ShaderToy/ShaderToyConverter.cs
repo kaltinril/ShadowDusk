@@ -79,6 +79,8 @@ public static class ShaderToyConverter
         functions.AddRange(imageUnit.Functions);
         var customUniforms = new List<CustomUniformDecl>(commonUnit.CustomUniforms);
         customUniforms.AddRange(imageUnit.CustomUniforms);
+        var mutableGlobals = new List<GlobalVarDecl>(commonUnit.MutableGlobals);
+        mutableGlobals.AddRange(imageUnit.MutableGlobals);
         var aliases = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (KeyValuePair<string, string> a in commonUnit.Aliases)
         {
@@ -95,6 +97,7 @@ public static class ShaderToyConverter
             Globals = globals,
             Functions = functions,
             CustomUniforms = customUniforms,
+            MutableGlobals = mutableGlobals,
             Aliases = aliases,
         };
 
@@ -112,6 +115,24 @@ public static class ShaderToyConverter
         foreach (GlobalConstDecl g in merged.Globals)
         {
             globalsSb.Append(emitter.EmitGlobalConst(g));
+        }
+
+        // G1: top-level mutable globals emit as HLSL `static` globals (after the const globals).
+        foreach (GlobalVarDecl gv in merged.MutableGlobals)
+        {
+            globalsSb.Append(emitter.EmitGlobalVar(gv));
+        }
+
+        // G4: translate each custom-uniform default initializer (if any) to an HLSL expression the
+        // harness emits as the parameter's default. Done here (not in the harness) so the shared
+        // emitter does the expression translation (intrinsic renames, matrix order, etc.).
+        var customUniformDefaults = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (CustomUniformDecl cu in merged.CustomUniforms)
+        {
+            if (cu.Initializer is not null)
+            {
+                customUniformDefaults[cu.Name] = emitter.EmitUniformDefault(cu.TypeName, cu.Initializer);
+            }
         }
 
         var fnSb = new StringBuilder();
@@ -132,6 +153,7 @@ public static class ShaderToyConverter
             options,
             emitter.ReferencedUniforms,
             merged.CustomUniforms,
+            customUniformDefaults,
             emitter.UsedGlslMod,
             globalsSb.ToString(),
             fnSb.ToString());

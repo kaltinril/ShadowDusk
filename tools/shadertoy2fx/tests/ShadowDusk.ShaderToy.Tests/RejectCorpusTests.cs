@@ -60,6 +60,8 @@ public sealed class RejectCorpusTests
             "unknown_global" => "RENDERSIZE",
             "custom_uniform_sampler3d" => "sampler",
             "custom_uniform_bad_type" => "mat2x3",
+            "global_unsupported_type" => "double",
+            "pp_include" => "#include",
             _ => string.Empty,
         };
 

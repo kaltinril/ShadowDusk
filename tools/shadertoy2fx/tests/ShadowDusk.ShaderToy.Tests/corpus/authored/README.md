@@ -40,5 +40,9 @@ translation trap so a failure points at a single cause.
 | `custom_uniform_scalar.glsl` | **Custom uniforms**: a top-level `uniform float` + `uniform vec3` emitted as effect-parameter globals the consumer drives. |
 | `custom_sampler.glsl` | **Custom sampler**: a top-level `uniform sampler2D` emitted as the iChannelN-style texture + sampler_state pair; `texture(...)` → `tex2D`. |
 | `custom_uniform_alias.glsl` | **Alias nicety**: the exact-type glslViewer alias `uniform float u_time;` folds onto `iTime`, while a genuinely-custom `uniform float uSpeed;` is exposed verbatim. |
+| `global_mutable.glsl` | **G1**: top-level non-`const` mutable globals (bare, initialized, comma multi-declarator) emit as HLSL `static` globals; a helper mutates the global before `mainImage` reads it back. |
+| `uniform_default.glsl` | **G4**: a custom `uniform` with a default value (`uniform float uGain = 1.5;`, `uniform vec3 uColor = vec3(...)`) preserves the initializer as the HLSL parameter default. |
+| `pp_version_extension.glsl` | **G5**: `#version` / `#extension` / `#pragma` / glslViewer `#iChannel0 "..."` metadata directives are all silently dropped (never rejected). |
+| `alias_u_time.glsl` | **G3**: a glslViewer exact-type alias `uniform float time;` folds onto the ShaderToy built-in `iTime`. |
 
-Total: 33 authored shaders.
+Total: 37 authored shaders.

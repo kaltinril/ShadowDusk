@@ -17,7 +17,14 @@ internal static class UniformAliases
     private static readonly IReadOnlyDictionary<string, (string Type, string Builtin)> Map =
         new Dictionary<string, (string, string)>(StringComparer.Ordinal)
         {
+            // glslViewer / KodeLife / Bonzomatic time aliases — all exact-type float onto iTime.
             ["u_time"] = ("float", "iTime"),
+            ["iGlobalTime"] = ("float", "iTime"),
+            ["time"] = ("float", "iTime"),
+            ["fGlobalTime"] = ("float", "iTime"),   // Bonzomatic
+            // Frame counter aliases — exact-type int onto iFrame.
+            ["u_frame"] = ("int", "iFrame"),
+            ["iGlobalFrame"] = ("int", "iFrame"),
         };
 
     /// <summary>

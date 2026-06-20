@@ -220,6 +220,7 @@ internal sealed class Preprocessor
             case "version":
             case "extension":
             case "pragma":
+            case "line":
             case "":
                 return;
             case "include":
@@ -227,10 +228,30 @@ internal sealed class Preprocessor
                     "'#include' is outside the supported subset; inline the included source instead.",
                     lineNo, col, "#include");
             default:
+                // G5: glslViewer / Bonzomatic / VShaderEd channel-binding and input metadata directives
+                // (`#iChannel0 "tex.png"`, `#iKeyboard`, `#iMouse`, `#iDate`, `#iuniform`, ...) are
+                // host-tooling hints, not GLSL. Silently drop them (the host binds those inputs itself)
+                // rather than rejecting an otherwise-convertible shader. `#include` stays a loud reject.
+                if (IsIgnorableMetadataDirective(keyword))
+                {
+                    return;
+                }
+
                 throw new ConvertException(
                     $"Unsupported preprocessor directive '#{keyword}'.", lineNo, col, "#" + keyword);
         }
     }
+
+    /// <summary>
+    /// True for a host-tooling metadata directive that is NOT C-preprocessor syntax and carries no
+    /// translatable code: glslViewer / Bonzomatic / VShaderEd channel-binding and input hints. These
+    /// are recognized by their leading <c>i</c> (the ShaderToy input-naming convention:
+    /// <c>#iChannel0</c>, <c>#iKeyboard</c>, <c>#iMouse</c>, <c>#iDate</c>, <c>#iuniform</c>, …). They
+    /// are dropped silently; the host binds those inputs itself. <c>#include</c> is deliberately handled
+    /// before this check and stays a loud reject.
+    /// </summary>
+    private static bool IsIgnorableMetadataDirective(string keyword) =>
+        keyword.Length >= 2 && keyword[0] == 'i' && char.IsLetter(keyword[1]);
 
     private void PushConditional(bool taken, Stack<CondFrame> condStack)
     {

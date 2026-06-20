@@ -45,6 +45,17 @@ known ShaderToy built-in uniform (e.g. `uniform float iTime;`, `uniform vec2 iRe
 silently dropped, not rejected: the harness already injects that global, so the declaration is
 harmless.
 
+## Top-level mutable globals (G1)
+
+A top-level **non-`const`** global variable of a supported type (`float g;`, `vec2 p = vec2(0.0);`,
+including a comma multi-declarator `float a, b = 1.0;`) is ACCEPTED and emitted as an HLSL
+`static <type> <name> [= <init>];`. A GLSL fragment-scope global is per-invocation mutable state;
+HLSL `static` globals have the matching semantics, so a helper that mutates the global before
+`mainImage` reads it works as written. An optional initializer is translated like a local declaration
+(intrinsic renames, matrix order, width-narrowing). A mutable global is **internal state, not a
+host-driven parameter** (it is NOT added to `UsedUniforms`). A mutable global of an **unsupported
+type** (`double g;` etc.) stays a loud, located reject.
+
 ## Custom uniforms (consumer-driven effect parameters)
 
 A top-level `uniform <type> <name>;` of a **non**-built-in name is now ACCEPTED and emitted as its own
@@ -62,19 +73,28 @@ list).
 
 `texture(<name>, uv)` on a custom `sampler2D` → `tex2D(<name>, uv)`, exactly as for `iChannelN`.
 
+**Default value / initializer (G4).** A custom `uniform` MAY carry a default value
+(`uniform float uGain = 1.5;`, valid GLSL 1.20+). The initializer is translated and emitted as the
+HLSL parameter's default (`float uGain = 1.5;`), so the consumer gets that value unless they override
+it; the uniform is still a drivable parameter (reported in `UsedUniforms`). A **sampler** uniform
+cannot carry an initializer (loud reject).
+
 **Restrictions (still loud rejects).** A custom uniform whose type is **not** in the supported set
 (`struct`, array, `sampler3D`/`samplerCube`, `double`/`uint`/`uvec`/`dvec`, non-square / explicit
-`matAxB`, or any unknown type) is a loud, located reject. A `uniform` with an **initializer**
-(illegal GLSL — its value is host-supplied) is a loud reject. A `varying`/`attribute`/`in`/`out`
+`matAxB`, or any unknown type) is a loud, located reject. A `varying`/`attribute`/`in`/`out`
 declaration of a custom name is **still** a loud reject (only `uniform` is host-drivable). The L1 rule
 is unchanged: a **bare, never-declared** identifier (e.g. ISF's `RENDERSIZE`) is still a loud reject —
 declare it as a top-level `uniform` to expose it.
 
-**Common alias nicety.** A declared `uniform float u_time;` (the glslViewer alias) whose type matches
-the ShaderToy built-in **exactly** is folded onto `iTime`, so its references Just Work and no separate
-parameter is exposed. Only the zero-risk exact-type alias is mapped; type-mismatched glslViewer aliases
-(`vec2 u_resolution` vs `vec3 iResolution`, `vec2 u_mouse` vs `vec4 iMouse`) are **not** aliased — they
-are exposed verbatim as custom uniforms instead, so the consumer drives them directly.
+**Common alias nicety (G3).** A declared `uniform` whose **name** is a known glslViewer / KodeLife /
+Bonzomatic alias AND whose **type matches the ShaderToy built-in exactly** is folded onto that built-in,
+so its references Just Work and no separate parameter is exposed. The mapped exact-type aliases are:
+`u_time` / `time` / `fGlobalTime` / `iGlobalTime` → `iTime` (float); `u_frame` / `iGlobalFrame` →
+`iFrame` (int). (`iGlobalTime`/`iGlobalFrame` are additionally token-rewritten by the preprocessor's
+deprecated-alias pass, which handles the bare-reference spelling.) Only the **zero-risk exact-type**
+alias is mapped; a type-**mismatched** glslViewer alias (`vec2 u_resolution` vs `vec3 iResolution`,
+`vec2 u_mouse` vs `vec4 iMouse`) is **not** aliased — it is exposed verbatim as a custom uniform
+instead, so the consumer drives it directly.
 
 ## Harness synthesized into the `.fx`
 
@@ -201,7 +221,10 @@ A real line-oriented C preprocessor pass handles:
 - **Comments on directive lines** (`#define X 0 // note`, `#if A /* x */`) are stripped before the
   body/expression is taken, so they never leak into a macro body or an `#if` expression.
 - **Line continuations** (`\` at end of a physical line) are folded into one logical directive.
-- `#version` / `#extension` / `#pragma` are ignored.
+- **Harmless directives ignored (G5):** `#version`, `#extension`, `#pragma`, `#line`, and the
+  glslViewer / Bonzomatic / VShaderEd channel-binding & input **metadata** directives (recognized by
+  the leading `i` ShaderToy-input convention: `#iChannel0 "tex.png"`, `#iKeyboard`, `#iMouse`,
+  `#iDate`, `#iuniform`, …) are silently dropped (the host binds those inputs itself), never an error.
 
 **Rejected (loud, located):** the token-paste `##` and stringize `#` operators inside a macro body
 (rare in shaders; rejected rather than mis-expanded), variadic macros (`...`), and `#include` (inline
@@ -212,8 +235,9 @@ macro into a loud reject rather than an infinite loop.
 
 block `{}`, local var decl + init (incl. comma lists `float a=…, b=…;` kept as siblings, not a new
 scope), expression statement, compound assignment, `if/else`, `for`, `while`, `do…while`, `return`,
-`break`, `continue`, `discard`. User-defined functions with `in`/`out`/`inout` params and `const`
-globals are supported (a `const` global emits as `static const`). Function prototypes are accepted and
+`break`, `continue`, `discard`. User-defined functions with `in`/`out`/`inout` params, `const`
+globals (emitted as `static const`), and **top-level non-`const` mutable globals** (emitted as
+`static`, see *Top-level mutable globals* above) are supported. Function prototypes are accepted and
 the later definition is emitted.
 
 ---
@@ -227,11 +251,13 @@ Each of the following produces a fatal diagnostic, never silently-wrong HLSL:
 - **Types:** `double`, `dvecN`, `uint`, `uvecN`, explicit `matAxB` spellings (use `mat2/3/4`),
   non-square matrices, `sampler3D` / `samplerCube`, and any unknown type name.
 - **Declarations:** user `struct` (top-level or local); user-declared arrays (locals, params, globals);
-  top-level non-`const` globals; a custom `uniform` of an **unsupported type** (struct/array/
-  `sampler3D`/`samplerCube`/`uint`/`double`/non-square matrix/unknown) or **with an initializer**; a
-  top-level `varying`/`attribute`/`in`/`out` declaration of a **custom** name (only `uniform` is
-  host-drivable). A redundant re-declaration of a known ShaderToy built-in is dropped, and a custom
-  `uniform` of a SUPPORTED type is now **accepted** as an effect parameter — see *Custom uniforms* above.
+  a top-level non-`const` global of an **unsupported type** (`double g;` etc. — supported-type mutable
+  globals are now **accepted** as `static`, see G1); a custom `uniform` of an **unsupported type**
+  (struct/array/`sampler3D`/`samplerCube`/`uint`/`double`/non-square matrix/unknown) or a **sampler with
+  an initializer**; a top-level `varying`/`attribute`/`in`/`out` declaration of a **custom** name (only
+  `uniform` is host-drivable). A redundant re-declaration of a known ShaderToy built-in is dropped; a
+  custom `uniform` of a SUPPORTED type (optionally with a default initializer, G4) is **accepted** as an
+  effect parameter — see *Custom uniforms* above.
 - **Undeclared identifiers:** a free identifier used in an expression that is not a local/parameter, a
   `const` global, a user function, a declared custom uniform, or a predefined ShaderToy uniform is
   rejected at convert time (with line/column) rather than leaked to a downstream "use of undeclared
@@ -239,8 +265,9 @@ Each of the following produces a fatal diagnostic, never silently-wrong HLSL:
   never declared. The deprecated `iGlobalTime`/`iGlobalFrame` aliases are auto-mapped before this
   check, so they are accepted.
 - **Preprocessor:** the token-paste `##` / stringize `#` operators in a macro body, variadic macros
-  (`...`), `#include`, and any other non-ignored directive. (Conditional compilation and function-like
-  macros are now **supported** — see *Preprocessor* above — and are no longer rejected.)
+  (`...`), and `#include` (no file resolver). (Conditional compilation and function-like macros are
+  **supported**, and `#version`/`#extension`/`#pragma`/`#line` plus glslViewer/Bonzomatic `#i*` channel
+  metadata directives are now silently **ignored** rather than rejected — see *Preprocessor* above.)
 - **Statements/expressions:** `switch`; unknown function/intrinsic that is neither a user function nor
   in the mapping table; single-argument matrix constructor `matN(x)` (HLSL has no diagonal
   `floatNxN(scalar)` form); `texelFetch`, `textureProj`, `textureSize`, `fwidth`, fine/coarse

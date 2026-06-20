@@ -39,6 +39,13 @@ internal sealed class TypeInference
                 : TypeTable.Resolve(cu.TypeName);
         }
 
+        // Mutable globals (G1) are file-scope identifiers like const globals; register their types so
+        // references infer correctly and are NOT rejected as undeclared.
+        foreach (GlobalVarDecl gv in unit.MutableGlobals)
+        {
+            _globals[gv.Name] = TypeTable.Resolve(gv.TypeName);
+        }
+
         _aliases = unit.Aliases;
     }
 

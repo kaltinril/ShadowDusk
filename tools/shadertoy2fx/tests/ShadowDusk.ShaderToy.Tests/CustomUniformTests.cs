@@ -166,9 +166,10 @@ public sealed class CustomUniformTests
     }
 
     [Fact]
-    public void UniformWithInitializer_RejectsLoudly()
+    public void UniformWithInitializer_IsAccepted_AndDefaultPreserved()
     {
-        // A `uniform` with an initializer is illegal GLSL (its value is host-supplied) -> loud reject.
+        // G4: a `uniform` with a default value (valid GLSL 1.20+) is now ACCEPTED; the initializer is
+        // emitted as the HLSL parameter's default so the consumer gets it unless they override.
         const string glsl = """
         uniform float uK = 1.0;
         void mainImage(out vec4 fragColor, in vec2 fragCoord)
@@ -177,11 +178,9 @@ public sealed class CustomUniformTests
         }
         """;
 
-        ConvertResult r = Convert(glsl);
-        r.Success.Should().BeFalse();
-        r.Diagnostics.Should().Contain(d =>
-            d.Severity == DiagnosticSeverity.Error &&
-            d.Message.Contains("initializer", StringComparison.OrdinalIgnoreCase));
+        ConvertResult r = ConvertOk(glsl);
+        r.Fx!.Should().Contain("float uK = 1.0;");
+        r.UsedUniforms.Should().Contain("uK");
     }
 
     [Fact]
