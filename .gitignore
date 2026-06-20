@@ -81,6 +81,14 @@ Content/obj/
 # dotnet local tool cache
 .dotnet/
 
+# Phase 46 shadertoy2fx coverage-stress scratch: third-party ShaderToy shaders
+# fetched transiently to measure transpiler coverage. NEVER committed (licensing).
+tools/shadertoy2fx/.scratch/
+
+# Phase 46 render-proof regenerable artifacts (the .png reference images ARE committed).
+tools/shadertoy2fx/render-proof/output/*.fx
+tools/shadertoy2fx/render-proof/output/*.mgfx
+
 # Visual Studio / VS Code / Rider
 .vs/
 .vscode/

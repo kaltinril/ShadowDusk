@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>ShadowDusk.ShaderToy.RenderProof</AssemblyName>
+    <RootNamespace>ShadowDusk.ShaderToy.RenderProof</RootNamespace>
+    <!-- Phase 46 experiment: out-of-band render driver, NOT packed and NOT in ShadowDusk.slnx. -->
+    <IsPackable>false</IsPackable>
+    <!-- MonoGame/SDL analyzers trip the repo-wide warnings-as-errors, same as validation/Baseline. -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MonoGame.Framework.DesktopGL" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\src\ShadowDusk.ShaderToy\ShadowDusk.ShaderToy.csproj" />
+    <ProjectReference Include="..\src\ShadowDusk.ShaderToy.Runtime\ShadowDusk.ShaderToy.Runtime.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="shaders\*.glsl" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
