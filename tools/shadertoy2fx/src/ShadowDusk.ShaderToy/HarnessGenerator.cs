@@ -1,4 +1,5 @@
 using System.Text;
+using ShadowDusk.ShaderToy.Ast;
 
 namespace ShadowDusk.ShaderToy;
 
@@ -16,6 +17,7 @@ internal sealed class HarnessGenerator
     public string Generate(
         ConvertOptions options,
         IReadOnlyCollection<string> referencedUniforms,
+        IReadOnlyList<CustomUniformDecl> customUniforms,
         bool usedGlslMod,
         string translatedGlobals,
         string translatedFunctions)
@@ -44,6 +46,7 @@ internal sealed class HarnessGenerator
 
         EmitUniformGlobals(sb, referencedUniforms);
         EmitChannelSamplers(sb, referencedUniforms);
+        EmitCustomUniforms(sb, customUniforms);
 
         if (usedGlslMod)
         {
@@ -117,6 +120,47 @@ internal sealed class HarnessGenerator
             sb.AppendLine("{");
             sb.AppendLine($"    Texture = <{ch}Texture>;");
             sb.AppendLine("};");
+            any = true;
+        }
+
+        if (any)
+        {
+            sb.AppendLine();
+        }
+    }
+
+    /// <summary>
+    /// Emit each accepted custom <c>uniform</c> as a top-level HLSL global the consumer drives: a
+    /// scalar/vector/matrix becomes a plain global (an effect parameter); a <c>sampler2D</c> becomes the
+    /// same <c>texture &lt;name&gt;Texture; sampler2D &lt;name&gt; = sampler_state {...};</c> pair used for
+    /// <c>iChannelN</c>, so <c>tex2D(&lt;name&gt;, uv)</c> works. All declared customs are emitted (the
+    /// host drives them whether or not the body references them).
+    /// </summary>
+    private static void EmitCustomUniforms(StringBuilder sb, IReadOnlyList<CustomUniformDecl> customUniforms)
+    {
+        if (customUniforms.Count == 0)
+        {
+            return;
+        }
+
+        sb.AppendLine("// Custom uniforms declared by the source shader. The host drives each as an");
+        sb.AppendLine("// effect parameter (samplers via the matching <name>Texture).");
+        bool any = false;
+        foreach (CustomUniformDecl cu in customUniforms)
+        {
+            if (cu.IsSampler)
+            {
+                sb.AppendLine($"texture {cu.Name}Texture;");
+                sb.AppendLine($"sampler2D {cu.Name} = sampler_state");
+                sb.AppendLine("{");
+                sb.AppendLine($"    Texture = <{cu.Name}Texture>;");
+                sb.AppendLine("};");
+            }
+            else
+            {
+                sb.AppendLine($"{TypeTable.ToHlsl(cu.TypeName)} {cu.Name};");
+            }
+
             any = true;
         }
 

@@ -77,7 +77,26 @@ public static class ShaderToyConverter
         globals.AddRange(imageUnit.Globals);
         var functions = new List<FunctionDecl>(commonUnit.Functions);
         functions.AddRange(imageUnit.Functions);
-        var merged = new TranslationUnit { Globals = globals, Functions = functions };
+        var customUniforms = new List<CustomUniformDecl>(commonUnit.CustomUniforms);
+        customUniforms.AddRange(imageUnit.CustomUniforms);
+        var aliases = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (KeyValuePair<string, string> a in commonUnit.Aliases)
+        {
+            aliases[a.Key] = a.Value;
+        }
+
+        foreach (KeyValuePair<string, string> a in imageUnit.Aliases)
+        {
+            aliases[a.Key] = a.Value;
+        }
+
+        var merged = new TranslationUnit
+        {
+            Globals = globals,
+            Functions = functions,
+            CustomUniforms = customUniforms,
+            Aliases = aliases,
+        };
 
         // Validate the mainImage entry point.
         ValidateMainImage(functions);
@@ -87,6 +106,7 @@ public static class ShaderToyConverter
         var emitter = new HlslEmitter(types);
         emitter.SetUserFunctions(functions.Where(f => f.Name != "mainImage").Select(f => f.Name)
             .Concat(new[] { "mainImage" }));
+        emitter.SetCustomUniforms(merged.CustomUniforms.Select(c => c.Name));
 
         var globalsSb = new StringBuilder();
         foreach (GlobalConstDecl g in merged.Globals)
@@ -111,6 +131,7 @@ public static class ShaderToyConverter
         string fx = harness.Generate(
             options,
             emitter.ReferencedUniforms,
+            merged.CustomUniforms,
             emitter.UsedGlslMod,
             globalsSb.ToString(),
             fnSb.ToString());
@@ -122,7 +143,17 @@ public static class ShaderToyConverter
             return Fail(diagnostics);
         }
 
-        var used = emitter.ReferencedUniforms.ToList();
+        // Drivable parameters = the referenced ShaderToy built-ins PLUS every accepted custom uniform
+        // (a custom uniform is always host-driven, whether or not the body references it).
+        var used = new List<string>(emitter.ReferencedUniforms);
+        foreach (CustomUniformDecl cu in merged.CustomUniforms)
+        {
+            if (!used.Contains(cu.Name))
+            {
+                used.Add(cu.Name);
+            }
+        }
+
         return new ConvertResult
         {
             Success = true,

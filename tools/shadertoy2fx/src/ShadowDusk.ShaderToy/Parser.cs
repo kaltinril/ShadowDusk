@@ -12,6 +12,9 @@ internal sealed class Parser
     private readonly IReadOnlyList<Token> _tokens;
     private int _pos;
 
+    /// <summary>glslViewer-alias name → ShaderToy built-in it was folded onto (e.g. u_time → iTime).</summary>
+    private readonly Dictionary<string, string> _aliases = new(StringComparer.Ordinal);
+
     public Parser(IReadOnlyList<Token> tokens) => _tokens = tokens;
 
     private Token Current => _tokens[_pos];
@@ -57,16 +60,24 @@ internal sealed class Parser
     {
         var globals = new List<GlobalConstDecl>();
         var functions = new List<FunctionDecl>();
+        var customUniforms = new List<CustomUniformDecl>();
 
         while (!Check(TokenKind.EndOfFile))
         {
-            ParseTopLevel(globals, functions);
+            ParseTopLevel(globals, functions, customUniforms);
         }
 
-        return new TranslationUnit { Globals = globals, Functions = functions };
+        return new TranslationUnit
+        {
+            Globals = globals,
+            Functions = functions,
+            CustomUniforms = customUniforms,
+            Aliases = _aliases,
+        };
     }
 
-    private void ParseTopLevel(List<GlobalConstDecl> globals, List<FunctionDecl> functions)
+    private void ParseTopLevel(
+        List<GlobalConstDecl> globals, List<FunctionDecl> functions, List<CustomUniformDecl> customUniforms)
     {
         Token start = Current;
 
@@ -78,7 +89,7 @@ internal sealed class Parser
 
         if (Check(TokenKind.Identifier) && (Current.Text is "uniform" or "varying" or "attribute" or "in" or "out"))
         {
-            HandleQualifiedTopLevelDecl(start);
+            HandleQualifiedTopLevelDecl(start, customUniforms);
             return;
         }
 
@@ -136,13 +147,19 @@ internal sealed class Parser
 
     /// <summary>
     /// Handle a top-level <c>uniform</c>/<c>varying</c>/<c>attribute</c>/<c>in</c>/<c>out</c>
-    /// declaration. A redundant re-declaration of a KNOWN ShaderToy built-in (e.g.
-    /// <c>uniform float iTime;</c>) is silently DROPPED — the harness already injects that global,
-    /// so the declaration is harmless and dropping it lets the shader convert. A declaration of any
-    /// OTHER (custom) name is a loud reject: the host has no contract for supplying it, so leaking it
-    /// through would only surface later as a "use of undeclared identifier" compile error.
+    /// declaration. Three outcomes:
+    /// <list type="bullet">
+    /// <item>A redundant re-declaration of a KNOWN ShaderToy built-in (e.g. <c>uniform float iTime;</c>)
+    /// is silently DROPPED — the harness already injects that global, so it is harmless.</item>
+    /// <item>A <c>uniform</c> of a SUPPORTED type (scalar/vector/matrix, or <c>sampler2D</c>) is
+    /// ACCEPTED as a custom uniform: emitted as an HLSL effect parameter the consumer drives. A common
+    /// glslViewer alias (<c>u_time</c>) is folded onto its ShaderToy built-in.</item>
+    /// <item>Anything else (an unsupported uniform type, a uniform with an initializer, or a
+    /// <c>varying</c>/<c>attribute</c>/<c>in</c>/<c>out</c> of a custom name — none of which the host
+    /// can drive) is a loud, located reject.</item>
+    /// </list>
     /// </summary>
-    private void HandleQualifiedTopLevelDecl(Token start)
+    private void HandleQualifiedTopLevelDecl(Token start, List<CustomUniformDecl> customUniforms)
     {
         string qualifier = Current.Text;
         _pos++; // consume the qualifier keyword
@@ -155,15 +172,14 @@ internal sealed class Parser
             _pos++;
         }
 
-        // The type may be a known type or an unknown one (e.g. a framework wrapper). We do not need
-        // to validate it for a builtin re-declaration; what matters is the declared NAME.
         if (!Check(TokenKind.Identifier))
         {
             throw Reject(
                 $"Malformed top-level '{qualifier}' declaration.", start);
         }
 
-        _pos++; // type name (whatever it is)
+        Token typeTok = Current;
+        _pos++; // type name (validated below only when we need to keep the declaration)
 
         if (!Check(TokenKind.Identifier))
         {
@@ -180,25 +196,96 @@ internal sealed class Parser
             // Redundant re-declaration of a built-in ShaderToy uniform: drop it. Consume the rest of
             // the declaration (optional `[N]` array suffix and the terminating ';') and add nothing.
             _pos++; // name
-            if (Check(TokenKind.LBracket))
-            {
-                while (!Check(TokenKind.RBracket) && !Check(TokenKind.EndOfFile))
-                {
-                    _pos++;
-                }
-
-                Match(TokenKind.RBracket);
-            }
-
-            Expect(TokenKind.Semicolon, "';'");
+            ConsumeUniformTail(nameTok);
             return;
         }
 
-        throw Reject(
-            $"Top-level '{qualifier}' declaration of '{name}' is outside the supported subset. " +
-            "Only the predefined ShaderToy uniforms (iTime, iResolution, iMouse, iChannelN, ...) are " +
-            "available; a custom uniform/global has no host-supplied value.",
-            nameTok);
+        // Only `uniform` declares a host-drivable value; `varying`/`attribute`/`in`/`out` of a custom
+        // name has no host contract and stays a loud reject.
+        if (qualifier != "uniform")
+        {
+            throw Reject(
+                $"Top-level '{qualifier}' declaration of '{name}' is outside the supported subset. " +
+                "Only the predefined ShaderToy uniforms (iTime, iResolution, iMouse, iChannelN, ...) " +
+                "and custom 'uniform' declarations are available.",
+                nameTok);
+        }
+
+        // A common glslViewer alias whose type matches a ShaderToy built-in exactly: fold it onto the
+        // built-in so it Just Works (u_time -> iTime). Only the zero-risk exact-type aliases are
+        // mapped; everything else is exposed verbatim as a custom uniform.
+        if (UniformAliases.TryResolve(name, typeTok.Text, out string? aliasOf))
+        {
+            _pos++; // name
+            ConsumeUniformTail(nameTok);
+            _aliases[name] = aliasOf!;
+            return;
+        }
+
+        // A custom uniform: validate the type, then emit it as an effect parameter.
+        bool isSampler = typeTok.Text == "sampler2D";
+        if (!isSampler)
+        {
+            if (TypeTable.RejectedTypes.TryGetValue(typeTok.Text, out string? reason))
+            {
+                throw Reject(
+                    $"Custom uniform '{name}' has an unsupported type: {reason}", typeTok);
+            }
+
+            if (!TypeTable.IsTypeName(typeTok.Text) || typeTok.Text == "void")
+            {
+                throw Reject(
+                    $"Custom uniform '{name}' has an unsupported type '{typeTok.Text}'. Supported uniform " +
+                    "types: bool/int/float, vecN/ivecN/bvecN, matN, and sampler2D.",
+                    typeTok);
+            }
+        }
+
+        _pos++; // name
+
+        if (Check(TokenKind.LBracket))
+        {
+            throw Reject(
+                $"Array uniform '{name}' is outside the supported subset (custom uniforms must be scalar, " +
+                "vector, matrix, or sampler2D).",
+                Current);
+        }
+
+        if (Check(TokenKind.Assign))
+        {
+            throw Reject(
+                $"Custom uniform '{name}' has an initializer, which is not valid GLSL for a 'uniform' " +
+                "(its value is host-supplied).",
+                Current);
+        }
+
+        Expect(TokenKind.Semicolon, "';'");
+        customUniforms.Add(new CustomUniformDecl
+        {
+            TypeName = typeTok.Text,
+            Name = name,
+            IsSampler = isSampler,
+            Line = start.Line,
+            Column = start.Column,
+        });
+    }
+
+    /// <summary>Consume the tail of a built-in/alias uniform declaration: an optional <c>[N]</c>
+    /// array suffix and the terminating <c>;</c>.</summary>
+    private void ConsumeUniformTail(Token nameTok)
+    {
+        _ = nameTok;
+        if (Check(TokenKind.LBracket))
+        {
+            while (!Check(TokenKind.RBracket) && !Check(TokenKind.EndOfFile))
+            {
+                _pos++;
+            }
+
+            Match(TokenKind.RBracket);
+        }
+
+        Expect(TokenKind.Semicolon, "';'");
     }
 
     private FunctionDecl ParseFunctionRest(string returnType, string name, Token start)

@@ -398,11 +398,22 @@ internal sealed class HlslEmitter
 
     private string EmitIdentifier(IdentifierExpr id)
     {
-        if (UniformInfo.IsUniform(id.Name))
+        // A glslViewer alias (e.g. u_time) resolves to the ShaderToy built-in it was folded onto, so it
+        // emits as that built-in's global and is tracked as a referenced built-in.
+        string resolved = _types.ResolveName(id.Name);
+        if (UniformInfo.IsUniform(resolved))
         {
-            ReferencedUniforms.Add(id.Name);
+            ReferencedUniforms.Add(resolved);
+            return resolved;
         }
-        else if (!_types.IsKnownIdentifier(id.Name) && !_userFunctions.Contains(id.Name))
+
+        if (_customUniforms.Contains(id.Name))
+        {
+            // A custom uniform: emitted verbatim (the harness declares it as an effect parameter).
+            return id.Name;
+        }
+
+        if (!_types.IsKnownIdentifier(id.Name) && !_userFunctions.Contains(id.Name))
         {
             // A free (undeclared) identifier: not a local/param/const-global, not a ShaderToy
             // uniform, not a user function. Reject loudly at convert time rather than leaking it to
@@ -410,9 +421,9 @@ internal sealed class HlslEmitter
             // builtins like RENDERSIZE, etc. land here.)
             throw new ConvertException(
                 $"Undeclared identifier '{id.Name}'. It is not a local variable, a 'const' global, " +
-                "a user function, or a predefined ShaderToy uniform (iTime, iResolution, iMouse, " +
-                "iChannelN, ...). A custom uniform/global has no host-supplied value and cannot be " +
-                "converted.",
+                "a user function, a declared custom uniform, or a predefined ShaderToy uniform (iTime, " +
+                "iResolution, iMouse, iChannelN, ...). Declare it as a top-level 'uniform' to expose it " +
+                "as an effect parameter.",
                 id.Line, id.Column, id.Name);
         }
 
@@ -557,6 +568,7 @@ internal sealed class HlslEmitter
     }
 
     private readonly HashSet<string> _userFunctions = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _customUniforms = new(StringComparer.Ordinal);
 
     /// <summary>Register the set of user-defined function names so calls to them are accepted.</summary>
     public void SetUserFunctions(IEnumerable<string> names)
@@ -565,6 +577,17 @@ internal sealed class HlslEmitter
         foreach (string n in names)
         {
             _userFunctions.Add(n);
+        }
+    }
+
+    /// <summary>Register the declared custom-uniform names so references to them are accepted and
+    /// emitted verbatim (the harness declares each as an effect parameter the consumer drives).</summary>
+    public void SetCustomUniforms(IEnumerable<string> names)
+    {
+        _customUniforms.Clear();
+        foreach (string n in names)
+        {
+            _customUniforms.Add(n);
         }
     }
 

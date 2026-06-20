@@ -10,8 +10,14 @@ using ShadowDusk.ShaderToy.Runtime;
 
 namespace ShadowDusk.ShaderToy.RenderProof;
 
-/// <summary>One shader to render + its analytic asserter.</summary>
-public sealed record RenderJob(string Name, byte[] MgfxBytes, Func<int, int, RgbAssertion[]> Asserter);
+/// <summary>One shader to render + its analytic asserter, plus an optional hook that drives any
+/// CUSTOM effect parameters the consumer owns (e.g. a custom <c>uniform</c>). The hook is the proof
+/// that a host-set parameter reflects through to a valid effect parameter and renders.</summary>
+public sealed record RenderJob(
+    string Name,
+    byte[] MgfxBytes,
+    Func<int, int, RgbAssertion[]> Asserter,
+    Action<ShaderToyEffect>? CustomSetup = null);
 
 /// <summary>Result of rendering + asserting one job.</summary>
 public sealed record RenderResult(string Name, bool Ok, string Detail, string? PngPath);
@@ -89,6 +95,9 @@ public sealed class RenderProofGame : Game
             helper.SetTimeDelta(0f);
             helper.SetFrame(0);
             helper.SetMouse(Vector4.Zero);
+
+            // Drive any consumer-owned custom uniforms (proves a host-set parameter renders through).
+            job.CustomSetup?.Invoke(helper);
 
             GraphicsDevice.SetRenderTarget(rt);
             GraphicsDevice.Clear(Color.Black);

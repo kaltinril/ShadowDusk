@@ -68,8 +68,10 @@ public sealed record ConvertResult
     public required IReadOnlyList<ConvertDiagnostic> Diagnostics { get; init; }
 
     /// <summary>
-    /// The ShaderToy uniforms the shader actually referenced (e.g. <c>iTime</c>, <c>iChannel0</c>),
-    /// so a runtime helper knows which effect parameters to drive.
+    /// The drivable effect parameters: the ShaderToy built-in uniforms the shader actually referenced
+    /// (e.g. <c>iTime</c>, <c>iChannel0</c>) PLUS every accepted custom <c>uniform</c> the source
+    /// declared (e.g. <c>u_roughness</c>, a custom <c>sampler2D</c>), so a runtime helper knows which
+    /// effect parameters to drive each frame.
     /// </summary>
     public required IReadOnlyList<string> UsedUniforms { get; init; }
 }

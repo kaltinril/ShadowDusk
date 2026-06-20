@@ -4,6 +4,19 @@ A statistical coverage report for the `shadertoy2fx` GLSL → HLSL `.fx` convert
 running a batch of **real, third-party single-pass ShaderToy / GLSL image shaders** through the
 converter and then through the ShadowDusk OpenGL compiler.
 
+> **Update 2026-06-19 (b) — custom top-level uniforms landed.** A top-level `uniform <type> <name>;`
+> of a non-built-in name is now ACCEPTED and emitted as an HLSL effect parameter the consumer drives
+> (scalar/vector/matrix, plus `sampler2D` as the iChannelN-style texture+sampler pair). Unsupported
+> uniform types (`sampler3D`/`samplerCube`/struct/array/`uint`/non-square matrix/unknown), a `uniform`
+> with an initializer, and `varying`/`attribute`/`in`/`out` of a custom name stay loud rejects; bare
+> never-declared identifiers (L1) still reject. The exact-type glslViewer alias `u_time` is folded onto
+> `iTime`. Re-measured over the same scratch corpus (154 in-scope):
+> **conversion rate 26.0 %** (40/154, was 23.4 %), **compile rate 85.0 %** (34/40, was 86.1 %),
+> **end-to-end 22.1 %** (34/154, was 20.1 %). The compile-rate dip is not a regression in the new path:
+> the 6 converted-but-not-compiling shaders hit pre-existing transpiler edge cases already catalogued
+> in §5 (B4 implicit-truncation, B5 modifier-spacing) that they only now *reach* because the custom
+> uniform that previously blocked them is accepted; none are caused by custom-uniform emission.
+>
 > **Update 2026-06-19 — C preprocessor support landed.** The converter now evaluates the full
 > conditional-compilation family (`#if`/`#ifdef`/`#ifndef`/`#elif`/`#else`/`#endif`, correctly
 > nested, with a C integer const-expression evaluator that understands `defined()` and macro
@@ -146,9 +159,10 @@ high-yield wins are at the top.
    syntax is straightforward.
 6. **`texelFetch` / `textureLod` / `textureGrad` for `iChannelN`** (+~9 combined). `texelFetch`
    maps to a `tex2D` with explicit integer-coordinate normalization; `textureLod` is already half-done.
-7. **Custom top-level uniforms with a default-value convention** (+47 potential, but harder/lower
-   confidence). Would need a host contract for supplying arbitrary uniform values; only worth it after
-   1-5.
+7. **Custom top-level uniforms** (+47 potential). **DONE (2026-06-19).** A custom `uniform` of a
+   supported type is now emitted as an HLSL effect parameter the consumer drives (reported in
+   `UsedUniforms`); samplers use the iChannelN-style texture+sampler pair. The host contract is the
+   `ShaderToyEffect.SetCustom(name, value)` runtime helper. Unsupported uniform types stay loud rejects.
 
 `switch` (4), `samplerCube`/`sampler3D` (7 combined), `uint`/`uvec` (3), and `layout`/`varying`
 (framework-wrapped, off-format) are long-tail and lower priority.

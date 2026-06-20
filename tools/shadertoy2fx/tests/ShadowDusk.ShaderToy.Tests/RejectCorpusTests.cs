@@ -58,6 +58,8 @@ public sealed class RejectCorpusTests
             "macro_paste" => "##",
             "unknown_intrinsic" => "texelFetch",
             "unknown_global" => "RENDERSIZE",
+            "custom_uniform_sampler3d" => "sampler",
+            "custom_uniform_bad_type" => "mat2x3",
             _ => string.Empty,
         };
 

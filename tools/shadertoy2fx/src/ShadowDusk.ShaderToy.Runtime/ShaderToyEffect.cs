@@ -128,6 +128,22 @@ public sealed class ShaderToyEffect : IDisposable
         }
     }
 
+    /// <summary>
+    /// Set a CUSTOM effect parameter by name (a value driven by a custom <c>uniform</c> the source
+    /// shader declared). No-op if the effect has no such parameter. Mirrors the best-effort contract of
+    /// the standard uniform setters.
+    /// </summary>
+    public void SetCustom(string name, float value) => TrySet(name, value);
+
+    /// <inheritdoc cref="SetCustom(string,float)"/>
+    public void SetCustom(string name, Vector3 value) => TrySet(name, value);
+
+    /// <inheritdoc cref="SetCustom(string,float)"/>
+    public void SetCustom(string name, Vector4 value) => TrySet(name, value);
+
+    /// <inheritdoc cref="SetCustom(string,float)"/>
+    public void SetCustom(string name, Texture2D? value) => TrySet(name, value);
+
     private void TrySet(string name, float value) => Parameter(name)?.SetValue(value);
     private void TrySet(string name, int value) => Parameter(name)?.SetValue(value);
     private void TrySet(string name, Vector3 value) => Parameter(name)?.SetValue(value);

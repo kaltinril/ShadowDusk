@@ -13,6 +13,8 @@ internal sealed class TypeInference
 {
     private readonly Dictionary<string, GlslType> _globals = new(StringComparer.Ordinal);
     private readonly Dictionary<string, FunctionDecl> _functions = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, GlslType> _customUniforms = new(StringComparer.Ordinal);
+    private readonly IReadOnlyDictionary<string, string> _aliases;
     private readonly List<Dictionary<string, GlslType>> _scopes = new();
 
     /// <summary>The predefined ShaderToy uniform types (so references to them infer correctly).</summary>
@@ -29,7 +31,19 @@ internal sealed class TypeInference
         {
             _functions[f.Name] = f;
         }
+
+        foreach (CustomUniformDecl cu in unit.CustomUniforms)
+        {
+            _customUniforms[cu.Name] = cu.IsSampler
+                ? GlslType.ScalarOf(ScalarKind.Sampler)
+                : TypeTable.Resolve(cu.TypeName);
+        }
+
+        _aliases = unit.Aliases;
     }
+
+    /// <summary>Resolve a glslViewer alias to the ShaderToy built-in it was folded onto (or itself).</summary>
+    public string ResolveName(string name) => _aliases.TryGetValue(name, out string? to) ? to : name;
 
     public void PushScope() => _scopes.Add(new Dictionary<string, GlslType>(StringComparer.Ordinal));
 
@@ -54,7 +68,10 @@ internal sealed class TypeInference
             }
         }
 
-        return _globals.ContainsKey(name) || Uniforms.ContainsKey(name);
+        string resolved = ResolveName(name);
+        return _globals.ContainsKey(name) ||
+               _customUniforms.ContainsKey(name) ||
+               Uniforms.ContainsKey(resolved);
     }
 
     private GlslType LookupVar(string name)
@@ -72,7 +89,12 @@ internal sealed class TypeInference
             return g;
         }
 
-        if (Uniforms.TryGetValue(name, out GlslType u))
+        if (_customUniforms.TryGetValue(name, out GlslType c))
+        {
+            return c;
+        }
+
+        if (Uniforms.TryGetValue(ResolveName(name), out GlslType u))
         {
             return u;
         }

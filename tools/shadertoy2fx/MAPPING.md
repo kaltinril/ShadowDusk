@@ -43,8 +43,38 @@ names at the token level before parsing, so they resolve cleanly: `iGlobalTime` 
 **Redundant built-in re-declaration (dropped).** A top-level declaration that merely re-declares a
 known ShaderToy built-in uniform (e.g. `uniform float iTime;`, `uniform vec2 iResolution;`) is
 silently dropped, not rejected: the harness already injects that global, so the declaration is
-harmless. A top-level `uniform`/`varying`/`attribute`/`in`/`out` declaration of any **other** name is
-still a loud reject (a custom uniform has no host-supplied value).
+harmless.
+
+## Custom uniforms (consumer-driven effect parameters)
+
+A top-level `uniform <type> <name>;` of a **non**-built-in name is now ACCEPTED and emitted as its own
+HLSL global, i.e. an **effect parameter the consumer drives** each frame. This broadens the tool from
+pure-ShaderToy toward general single-pass GLSL image shaders (glslViewer / KodeLife / ShaderToy-derived).
+Every accepted custom uniform/sampler is reported in `ConvertResult.UsedUniforms` (the drivable-parameter
+list).
+
+| GLSL custom uniform | HLSL emitted |
+|---|---|
+| `uniform float/int/bool <name>;` | `float/int/bool <name>;` |
+| `uniform vecN/ivecN/bvecN <name>;` | `floatN/intN/boolN <name>;` |
+| `uniform matN <name>;` (mat2/3/4) | `floatNxN <name>;` |
+| `uniform sampler2D <name>;` | `texture <name>Texture;` + `sampler2D <name> = sampler_state { Texture = <<name>Texture>; };` |
+
+`texture(<name>, uv)` on a custom `sampler2D` → `tex2D(<name>, uv)`, exactly as for `iChannelN`.
+
+**Restrictions (still loud rejects).** A custom uniform whose type is **not** in the supported set
+(`struct`, array, `sampler3D`/`samplerCube`, `double`/`uint`/`uvec`/`dvec`, non-square / explicit
+`matAxB`, or any unknown type) is a loud, located reject. A `uniform` with an **initializer**
+(illegal GLSL — its value is host-supplied) is a loud reject. A `varying`/`attribute`/`in`/`out`
+declaration of a custom name is **still** a loud reject (only `uniform` is host-drivable). The L1 rule
+is unchanged: a **bare, never-declared** identifier (e.g. ISF's `RENDERSIZE`) is still a loud reject —
+declare it as a top-level `uniform` to expose it.
+
+**Common alias nicety.** A declared `uniform float u_time;` (the glslViewer alias) whose type matches
+the ShaderToy built-in **exactly** is folded onto `iTime`, so its references Just Work and no separate
+parameter is exposed. Only the zero-risk exact-type alias is mapped; type-mismatched glslViewer aliases
+(`vec2 u_resolution` vs `vec3 iResolution`, `vec2 u_mouse` vs `vec4 iMouse`) are **not** aliased — they
+are exposed verbatim as custom uniforms instead, so the consumer drives them directly.
 
 ## Harness synthesized into the `.fx`
 
@@ -197,14 +227,17 @@ Each of the following produces a fatal diagnostic, never silently-wrong HLSL:
 - **Types:** `double`, `dvecN`, `uint`, `uvecN`, explicit `matAxB` spellings (use `mat2/3/4`),
   non-square matrices, `sampler3D` / `samplerCube`, and any unknown type name.
 - **Declarations:** user `struct` (top-level or local); user-declared arrays (locals, params, globals);
-  top-level non-`const` globals; top-level `uniform`/`varying`/`attribute`/`in`/`out` declarations of
-  a **custom** name (a redundant re-declaration of a known ShaderToy built-in is dropped, not
-  rejected — see *ShaderToy uniforms* above).
+  top-level non-`const` globals; a custom `uniform` of an **unsupported type** (struct/array/
+  `sampler3D`/`samplerCube`/`uint`/`double`/non-square matrix/unknown) or **with an initializer**; a
+  top-level `varying`/`attribute`/`in`/`out` declaration of a **custom** name (only `uniform` is
+  host-drivable). A redundant re-declaration of a known ShaderToy built-in is dropped, and a custom
+  `uniform` of a SUPPORTED type is now **accepted** as an effect parameter — see *Custom uniforms* above.
 - **Undeclared identifiers:** a free identifier used in an expression that is not a local/parameter, a
-  `const` global, a user function, or a predefined ShaderToy uniform is rejected at convert time
-  (with line/column) rather than leaked to a downstream "use of undeclared identifier" compile error.
-  This covers custom uniforms and non-ShaderToy builtins (e.g. ISF's `RENDERSIZE`). The deprecated
-  `iGlobalTime`/`iGlobalFrame` aliases are auto-mapped before this check, so they are accepted.
+  `const` global, a user function, a declared custom uniform, or a predefined ShaderToy uniform is
+  rejected at convert time (with line/column) rather than leaked to a downstream "use of undeclared
+  identifier" compile error. This covers non-ShaderToy builtins (e.g. ISF's `RENDERSIZE`) that were
+  never declared. The deprecated `iGlobalTime`/`iGlobalFrame` aliases are auto-mapped before this
+  check, so they are accepted.
 - **Preprocessor:** the token-paste `##` / stringize `#` operators in a macro body, variadic macros
   (`...`), `#include`, and any other non-ignored directive. (Conditional compilation and function-like
   macros are now **supported** — see *Preprocessor* above — and are no longer rejected.)
@@ -220,5 +253,6 @@ Each of the following produces a fatal diagnostic, never silently-wrong HLSL:
   inherent fx_2_0 limit the pipeline already surfaces loudly, not a converter bug.
 - **Oracle.** The reference for correctness is ShaderToy's own WebGL output, not `mgfxc`/`fxc`. GL is
   the closest match; DX/FNA may differ a hair due to D3D conventions.
-- The converter only emits `.fx` text. A runtime helper that drives the uniforms each frame and draws
-  a fullscreen quad is a separate deliverable (see the Phase 46 plan).
+- The converter only emits `.fx` text. A runtime helper (`ShaderToyEffect`) that drives the uniforms
+  each frame and draws a fullscreen quad is a separate deliverable; it exposes `SetCustom(name, value)`
+  so the consumer drives the custom uniforms reported in `UsedUniforms`.

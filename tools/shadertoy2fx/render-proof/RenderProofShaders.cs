@@ -1,6 +1,8 @@
 #nullable enable
 
 using System;
+using Microsoft.Xna.Framework;
+using ShadowDusk.ShaderToy.Runtime;
 
 namespace ShadowDusk.ShaderToy.RenderProof;
 
@@ -26,16 +28,38 @@ public sealed record RgbAssertion(
 /// </summary>
 public static class RenderProofShaders
 {
+    /// <summary>The constant color a host drives into the <c>custom_uniform_color</c> proof shader.</summary>
+    public static readonly Vector3 CustomColor = new(0.25f, 0.50f, 0.75f);
+
     /// <summary>
-    /// (shader-name, asserter) pairs. The asserter receives (width, height) and returns the
-    /// expected pixels at chosen probe locations.
+    /// (shader-name, asserter, custom-setup) tuples. The asserter receives (width, height) and returns
+    /// the expected pixels at chosen probe locations; the optional custom-setup drives any consumer-owned
+    /// custom uniforms the shader declares (host-supplied effect parameters).
     /// </summary>
-    public static readonly IReadOnlyList<(string Name, Func<int, int, RgbAssertion[]> Asserter)> Catalog =
-        new (string, Func<int, int, RgbAssertion[]>)[]
+    public static readonly IReadOnlyList<(string Name, Func<int, int, RgbAssertion[]> Asserter, Action<ShaderToyEffect>? CustomSetup)> Catalog =
+        new (string, Func<int, int, RgbAssertion[]>, Action<ShaderToyEffect>?)[]
         {
-            ("gradient_uv", GradientUvAsserts),
-            ("radial_distance", RadialAsserts),
+            ("gradient_uv", GradientUvAsserts, null),
+            ("radial_distance", RadialAsserts, null),
+            ("custom_uniform_color", CustomColorAsserts, e => e.SetCustom("uColor", CustomColor)),
         };
+
+    /// <summary>
+    /// custom_uniform_color: fragColor = vec4(uColor, 1) where uColor is a custom uniform the HOST sets.
+    /// The whole image must be exactly the host-driven color, proving a consumer-set parameter reflects
+    /// through to a valid effect parameter and renders. Orientation-independent (constant fill).
+    /// </summary>
+    private static RgbAssertion[] CustomColorAsserts(int w, int h)
+    {
+        const float tol = 0.03f;
+        Vector3 c = CustomColor;
+        return new[]
+        {
+            new RgbAssertion("center", w / 2, h / 2, c.X, c.Y, c.Z, tol),
+            new RgbAssertion("top-left", 4, 4, c.X, c.Y, c.Z, tol),
+            new RgbAssertion("bottom-right", w - 5, h - 5, c.X, c.Y, c.Z, tol),
+        };
+    }
 
     /// <summary>
     /// gradient_uv: fragColor = (uv.x, uv.y, 0.5, 1). In ShaderToy's BOTTOM-LEFT fragCoord

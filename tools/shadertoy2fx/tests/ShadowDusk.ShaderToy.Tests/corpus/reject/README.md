@@ -14,10 +14,14 @@ assert the tool rejects for that specific reason.
 | `macro_paste.glsl` | Uses the token-paste operator `##` inside a `#define` body — `##`/`#` (stringize) are not implemented and are a loud reject rather than a mis-expansion. |
 | `unknown_intrinsic.glsl` | Calls `texelFetch`, which has no entry in the intrinsic mapping table — unmapped intrinsics are a loud reject. |
 | `unknown_global.glsl` | Uses a free identifier (`RENDERSIZE`, an ISF builtin) that is not a ShaderToy uniform/local/const/user-function — undeclared identifiers are a loud reject (L1), not a silent pass-through. |
+| `custom_uniform_sampler3d.glsl` | A custom `uniform sampler3D` — only `sampler2D` is a supported uniform type; `sampler3D`/`samplerCube` are a loud reject. |
+| `custom_uniform_bad_type.glsl` | A custom `uniform mat2x3` (non-square) — a custom uniform must be a supported scalar/vector/matrix (mat2/3/4) or `sampler2D`; everything else is a loud reject. |
 
-Total: 7 reject shaders.
+Total: 9 reject shaders.
 
 Note: function-like `#define NAME(...)` macros and the `#if`/`#ifdef`/`#ifndef`/`#elif`/`#else`/`#endif`
 conditional family are now **supported** (Phase 46 preprocessor) and have moved to `authored/` (see
-`macro_function.glsl`, `pp_*.glsl`). Only the unimplemented `##`/`#` operators and `#include` remain
-loud rejects.
+`macro_function.glsl`, `pp_*.glsl`). A custom `uniform` of a SUPPORTED type is now **accepted** and
+emitted as an effect parameter (see `authored/custom_uniform_*.glsl`); only an *unsupported* uniform
+type / an initialized uniform / a custom `varying`/`in`/`out` stays a reject here. The unimplemented
+`##`/`#` operators and `#include` also remain loud rejects.

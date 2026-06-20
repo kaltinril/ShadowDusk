@@ -37,5 +37,8 @@ translation trap so a failure points at a single cause.
 | `pp_nested.glsl` | Nested `#if` / `#elif` / `#else` with correct nesting (only the one selected branch survives). |
 | `pp_defined.glsl` | `defined(NAME)` and bare `defined NAME` inside an `#if` expression. |
 | `pp_undef.glsl` | `#undef` followed by a redefinition; the use before/after sees the right value, and `#ifdef` sees the redefine. |
+| `custom_uniform_scalar.glsl` | **Custom uniforms**: a top-level `uniform float` + `uniform vec3` emitted as effect-parameter globals the consumer drives. |
+| `custom_sampler.glsl` | **Custom sampler**: a top-level `uniform sampler2D` emitted as the iChannelN-style texture + sampler_state pair; `texture(...)` → `tex2D`. |
+| `custom_uniform_alias.glsl` | **Alias nicety**: the exact-type glslViewer alias `uniform float u_time;` folds onto `iTime`, while a genuinely-custom `uniform float uSpeed;` is exposed verbatim. |
 
-Total: 30 authored shaders.
+Total: 33 authored shaders.
