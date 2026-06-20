@@ -2,34 +2,42 @@
 
 **Track:** Reach experiment (adoption/demo). **Not** the product pipeline.
 
-> ## Results so far (2026-06-19) — the bet holds at the compile bar
+> ## Results so far (2026-06-19) — bet proven; compiles, loads, AND renders
 >
-> The tool is **built and green**, and the central bet is **proven at the compile rung**: emitted
-> `.fx` compiles through the **unchanged, real ShadowDusk pipeline** on **every** XNA-family backend.
+> The tool is **built, green, and render-proven**. The central bet holds: ShaderToy/GLSL image
+> shader → `.fx` → the **unchanged, real ShadowDusk pipeline** → every XNA-family backend, and a
+> converted shader **renders correctly in a real MonoGame GL `Effect`**.
 >
 > - **`tools/shadertoy2fx/`** — a standalone managed converter (`ShadowDusk.ShaderToy` library +
->   `shadertoy2fx` CLI), **no native dependency**, **not** wired into the pipeline, **not** in
->   `ShadowDusk.slnx`. Lexer → parser → AST → type-inference → HLSL emitter → harness generator,
->   behind `ShaderToyConverter.Convert(glsl) → ConvertResult`. Builds 0-warning under the repo's
->   `TreatWarningsAsErrors` + `EnforceCodeStyleInBuild`.
-> - **Tests: 71/71 green** (`dotnet test tools/shadertoy2fx/shadertoy2fx.slnx`) — unit trap-tests
->   (matrix-order, `mod`-sign, intrinsic renames, splat), uniform-detection, options, **golden
->   regression** over the whole corpus (18 goldens), and **loud-reject** coverage (6 out-of-scope
->   shapes each fail with a located diagnostic).
-> - **Corpus**: 17 authored ShaderToy-dialect shaders (one trap/feature each) + 6 reject cases +
->   **1 verified-CC0 real shader** (mrange / ShaderToy `WlByzy`, explicit `// License CC0` header;
->   provenance in `corpus/cc0/LICENSES.md`).
-> - **THE PROOF — compile sweep 54/54**: all 18 emitted `.fx` (incl. the 234-line real CC0 neon
->   shader) compile through the real pipeline → **OpenGL 18/18, DirectX_11 18/18, FNA 18/18**. FNA's
->   fx_2_0/SM3 ceiling did not bite this corpus. So **ShaderToy → `.fx` → MonoGame/KNI/FNA** works
->   today with zero pipeline changes and no native dependency, exactly as the bet predicted.
+>   `shadertoy2fx` CLI + a `ShadowDusk.ShaderToy.Runtime` helper), **no native dependency**, **not**
+>   wired into the pipeline, **not** in `ShadowDusk.slnx`. Preprocessor → lexer → parser → AST →
+>   type-inference → HLSL emitter → harness generator, behind `ShaderToyConverter.Convert(glsl)`.
+>   Builds 0-warning under `TreatWarningsAsErrors` + `EnforceCodeStyleInBuild`.
+> - **Tests: 161/161 green** — unit trap-tests (matrix-order incl. `*=`, `mod`-sign, vector `==`
+>   scalarization, intrinsic renames, splat/truncation), preprocessor (28), custom-uniform (10),
+>   uniform-detection, options, **golden regression** over 34 goldens, and **loud-reject** coverage.
+> - **Language supported (v1+):** the constrained ShaderToy subset PLUS a full C preprocessor
+>   (`#if/#ifdef/#elif/#else/#endif` with a const-expr evaluator + `defined()`, object- and
+>   function-like macros, `#undef`) AND custom top-level `uniform` declarations (scalar/vector/matrix
+>   + `sampler2D`) exposed as consumer-driven effect parameters. Unsupported shapes (structs, arrays,
+>   multipass/Buffer, `##`/`#include`, sampler3D/cube, …) stay **loud located rejects**, never silent.
+> - **RENDER-PROVEN**: a converted shader loads in a real MonoGame DesktopGL `Effect` and renders
+>   with analytic pixel assertions passing — gradient right-side-up vs ShaderToy's bottom-left
+>   `fragCoord` convention (Y-flip correct), and a **host-set custom uniform renders exactly
+>   through**. The `render-proof/` driver is the gate; PNGs are committed eyeball evidence.
+> - **COMPILE SWEEP 102/102**: all 34 emitted `.fx` (incl. the 234-line real CC0 neon shader)
+>   compile through the real pipeline → **OpenGL 34/34, DirectX_11 34/34, FNA 34/34**.
+> - **Coverage trajectory (160 real third-party shaders, gitignored scratch, none committed),
+>   conversion → end-to-end-compile:** v1 baseline 17.5% → +preprocessor 23.4% → +custom uniforms
+>   **26.0% convert / 22.1% end-to-end** (compile-of-converted ~85%). The `COVERAGE.md` blast-radius
+>   ranking drives what to add next; the remaining ceiling for single-pass image shaders is structs,
+>   arrays, and a long tail of exotic GLSL — many real shaders are **multipass** (out of v1 scope).
 >
-> **Still open (honest):** this proves shaders **compile + load**, not that they **render** like the
-> ShaderToy reference. Rendering needs (a) the **runtime helper** below (drive uniforms + draw a
-> fullscreen triangle) and (b) an actual GL/DX render comparison vs the ShaderToy WebGL reference.
-> The Phase-0 "render one shader" probe and the render-diff corpus are the next rung. The matrix /
-> `mod` / Y-flip traps are handled in code and unit-tested, but only **rendering** confirms the
-> Y-orientation and rotation are pixel-right.
+> **Still open (honest):** (a) **multipass** (Buffer A–D / feedback) is the big unbuilt feature and
+> the main reason real-world coverage caps in the ~25-50% range for arbitrary shaders; (b) render
+> validation is analytic-pixel + eyeball, not yet a diff against ShaderToy's own WebGL reference for
+> a broad corpus; (c) productization (NuGet packaging of the runtime helper, a sample app, docs) is
+> not started. The matrix/`mod`/Y-flip traps are render-confirmed for the cases tested.
 
 **Status:** Experiment IN PROGRESS (started + compile-proven 2026-06-19). A **standalone, separate tool** that converts a
 **ShaderToy GLSL** shader into an **HLSL `.fx`** source file. It is **deliberately NOT part of the
