@@ -1,9 +1,9 @@
 # Authored corpus — ShaderToy → FX (Phase 46)
 
-Original single-pass ShaderToy *image* shaders written for this project (no copyright concerns).
-Each uses `void mainImage(out vec4 fragColor, in vec2 fragCoord)` and the ShaderToy predefined
-uniforms, stays inside the v1 supported subset, and deliberately exercises **one** feature or
-translation trap so a failure points at a single cause.
+Original single-pass GLSL *image* shaders written for this project (no copyright concerns). Most use
+the ShaderToy `void mainImage(out vec4 fragColor, in vec2 fragCoord)` entry; the `main_*` shaders use
+the plain-GLSL `void main()` entry (G2). Each stays inside the v1 supported subset and deliberately
+exercises **one** feature or translation trap so a failure points at a single cause.
 
 | File | Feature / trap targeted |
 |---|---|
@@ -50,5 +50,8 @@ translation trap so a failure points at a single cause.
 | `intrinsic_fwidth.glsl` | **G7**: the `fwidth` intrinsic maps to the same-named HLSL intrinsic. |
 | `matrix_comp_mult.glsl` | **G7**: `matrixCompMult(a, b)` is COMPONENTWISE and must emit `(a * b)`, NOT the mul()-reordered linear product (the trap must NOT fire here). |
 | `for_comma_increment.glsl` | **G7 parser**: the GLSL comma (sequence) operator in a `for` header (`for (int i=0, j=4; ...; i++, j--)`). |
+| `main_glfragcolor.glsl` | **G2**: plain-GLSL `void main()` entry writing the legacy `gl_FragColor`, reading `gl_FragCoord` (a UV gradient; the gl_FragCoord -> harness-pixel-coord + gl_FragColor -> PS-return bridge). |
+| `main_out_var.glsl` | **G2**: plain-GLSL `void main()` with a user-declared `out vec4 outColor;` (GLSL ES 3.00 / 330) consumed (not a parameter/global) and returned as COLOR0; plus a helper. |
+| `main_custom_resolution.glsl` | **G2**: plain-GLSL `void main()` reading a declared custom `uniform vec2 resolution;` (exposed as a host-driven effect parameter, not folded onto vec3 iResolution) + `gl_FragCoord`. |
 
-Total: 43 authored shaders.
+Total: 46 authored shaders.

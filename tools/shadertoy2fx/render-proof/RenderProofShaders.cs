@@ -42,6 +42,9 @@ public static class RenderProofShaders
             ("gradient_uv", GradientUvAsserts, null),
             ("radial_distance", RadialAsserts, null),
             ("custom_uniform_color", CustomColorAsserts, e => e.SetCustom("uColor", CustomColor)),
+            // G2 plain-GLSL `void main()` mode: SAME analytic gradient + SAME orientation asserts as
+            // gradient_uv above. A green run proves gl_FragCoord's Y maps right in main() mode.
+            ("main_gradient", GradientUvAsserts, null),
         };
 
     /// <summary>

@@ -113,6 +113,15 @@ internal sealed class TypeInference
     public void Declare(string name, string glslType) =>
         _scopes[^1][name] = ResolveTypeName(glslType);
 
+    /// <summary>
+    /// Register a predefined file-scope builtin global (G2): the plain-GLSL fragment output
+    /// (<c>gl_FragColor</c> or the user <c>out vec4 &lt;name&gt;;</c>) and <c>gl_FragCoord</c>, both
+    /// <c>vec4</c>. This makes the shader body's references to them resolve as known identifiers (so they
+    /// are NOT rejected as undeclared and infer their <c>vec4</c> shape), mirroring how a mutable global
+    /// is registered. Only used in <c>void main()</c> mode.
+    /// </summary>
+    public void DeclareBuiltinGlobal(string name, GlslType type) => _globals[name] = type;
+
     /// <summary>Register a local array variable's element type (G7), so indexing it infers correctly.</summary>
     public void DeclareArray(string name, string elementGlslType) =>
         _arrayScopes[^1][name] = ResolveTypeName(elementGlslType);

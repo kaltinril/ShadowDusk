@@ -63,7 +63,7 @@ scope (5 non-`mainImage`/multipass, 1 VR). The other ~114 failures bucket as bel
 | # | Gap | Shaders | Plan | Status |
 |---|---|---:|---|---|
 | G1 | Top-level **mutable globals** (`float g;` / `vec2 g = …;` at file scope) | 33 | Emit as HLSL `static` global (per-invocation semantics) | **DONE (2026-06-19)** |
-| G2 | Top-level **qualifier decls** (`out vec4`/`layout`/`varying`) + the `void main()`+`out fragColor`+`gl_FragCoord` plain-GLSL-fragment **entry mode** | 17 | Accept a second entry convention; map `out` color to the PS return | planned |
+| G2 | Top-level **qualifier decls** (`out vec4`/`layout`) + the `void main()`+`out fragColor`/`gl_FragColor`+`gl_FragCoord` plain-GLSL-fragment **entry mode** | 17 | Accept a second entry convention; map `out`/`gl_FragColor` color to the PS return | **DONE (2026-06-19)** |
 | G3 | **Undeclared identifier** (L1 reject) | 16 | Add more known built-ins/aliases (`iChannelResolution`, glslViewer `u_*`); the genuinely-undeclared stay loud rejects | **DONE (2026-06-19)** |
 | G4 | Custom **uniform with initializer** (`uniform float x = 1.;`) | 6 | Accept; use the initializer as the parameter default | **DONE (2026-06-19)** |
 | G5 | **`#version` / `#extension` / `#pragma` / glslViewer `#iChannel`** directives | 6 | Strip/ignore the harmless ones; keep `#include` a loud reject (no resolver) | **DONE (2026-06-19)** |
@@ -141,6 +141,47 @@ silent-wrong) was the priority, not raw coverage.
   the comma SEPARATORs in argument lists / declarators; and a type name immediately followed by `(` at
   statement start is treated as a constructor expression, not a malformed declaration. *(`Parser.ParseExpression`
   comma handling, `SequenceExpr` AST + emitter/inference.)*
+
+### G2 as-built (2026-06-19) — plain-GLSL `void main()` entry mode
+
+The converter now accepts a SECOND single-pass entry convention, broadening it from pure-ShaderToy to
+general single-pass GLSL image shaders (glslViewer / Bonzomatic / Shadertoy-export). Correctness was the
+priority: anything ambiguous stays a loud, located reject.
+
+- **Detection (by entry NAME, no flag).** `mainImage` defined and `main` not → ShaderToy mode
+  (unchanged). `main` defined and `mainImage` not → plain-GLSL mode. Neither → "no entry point" reject.
+  **Both → ambiguous loud reject** (the converter never guesses which to wrap). Detection is on parsed
+  function names, not substrings, so a `mainImage`-referencing comment does not trip it.
+  *(`EntryMode`/`AstScan`, `ShaderToyConverter.DetectEntryMode`/`ResolveMainEntry`.)*
+- **`void main()` validation.** Must take no parameters; multiple `main` → reject.
+- **Fragment output.** Either the legacy `gl_FragColor` (no declaration) OR a single top-level
+  user-declared `out vec4 <name>;` (incl. `layout(location = N) out vec4 <name>;`). The `out vec4`
+  declaration is CONSUMED, not emitted as a parameter/global; its name is the local the synthesized PS
+  returns as `COLOR0`. A `main()` with neither a user `out vec4` nor any `gl_FragColor` write → loud
+  reject; more than one `out vec4` → reject. *(`FragmentOutputDecl` AST,
+  `Parser.ParseFragmentOutputDecl`/`ConsumeLayoutQualifier`.)*
+- **`gl_FragCoord`.** Maps to the SAME pixel coord the ShaderToy harness uses for `fragCoord` (bottom-
+  left Y origin, `.xy` = pixel coord, `.z` = 0, `.w` = 1); the harness PS reuses the identical Y-flip
+  so the rendered orientation matches. The fragment output and `gl_FragCoord` are bridged as
+  `static float4` globals (the translated `void main()` writes/reads them; the PS sets `gl_FragCoord`,
+  calls `main()`, returns the output). *(`HarnessGenerator.EmitPlainGlslPixelShader` + the static-global
+  bridge, `TypeInference.DeclareBuiltinGlobal`.)*
+- **Resolution / time** come from the existing built-in / custom-uniform / alias handling (G1/G3/G4),
+  no special case; an undeclared identifier still rejects (L1). Everything else is the same translator;
+  only the entry/harness wrapping differs.
+- **Validation.** Unit suite 234 green (0 warn). Golden compile-sweep **47/47 on OpenGL / DirectX_11 /
+  FNA** (+3 main-mode goldens, no regressions). Render-proof **4/4 (exit 0)**, including the new
+  `main_gradient` plain-GLSL case which asserts the SAME orientation as the ShaderToy `gradient_uv`
+  (proving `gl_FragCoord`'s Y maps right in main mode). Scratch re-measure **unchanged at 34.6 % /
+  88.7 % / 30.7 %** over the 153-`mainImage` set: this corpus (sampled by a `mainImage` GitHub search)
+  has **0 pure plain-GLSL `main()` shaders**, so G2 adds no new conversions HERE; the 6 `main`-only
+  files all correctly reject (3 define BOTH a `mainImage` and a `main` = ambiguous, 3 hit unsupported
+  constructs). G2's value is reach to the glslViewer/Bonzomatic class, with never-silent-wrong held.
+- **New fixtures/tests.** `corpus/authored/main_glfragcolor.glsl`, `main_out_var.glsl`,
+  `main_custom_resolution.glsl` (+ goldens); `corpus/reject/both_entry_points.glsl`,
+  `main_no_output.glsl`; `EntryModeTests.cs` (detection, `gl_FragColor`/out-var/`gl_FragCoord`,
+  ShaderToy-mode-unchanged, both-entries + no-output + no-params rejects); render-proof
+  `shaders/main_gradient.glsl` wired into the driver catalog.
 
 ## Why this shape (and why it is separate)
 

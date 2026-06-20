@@ -11,12 +11,57 @@ original GLSL line/column and the offending construct) — never silently-wrong 
 
 ---
 
-## Entry point
+## Entry point — two conventions (G2)
 
-- Required: `void mainImage(out vec4 fragColor, in vec2 fragCoord)`. Missing → reject.
+The converter accepts **either** of two single-pass entry conventions; it auto-detects which by the
+entry **name** the shader defines (no flag, no consumer choice):
+
+1. **ShaderToy** — `void mainImage(out vec4 fragColor, in vec2 fragCoord)`.
+2. **Plain-GLSL fragment** — `void main()` (no parameters), as used by glslViewer / Bonzomatic /
+   Shadertoy-export style single-pass image shaders.
+
+**Detection rule.**
+
+| `mainImage` defined? | `main` defined? | Outcome |
+|---|---|---|
+| yes | no | ShaderToy mode (unchanged). |
+| no | yes | Plain-GLSL `main()` mode. |
+| no | no | "no entry point" reject. |
+| yes | yes | **Ambiguous → loud reject** (the converter never guesses which to wrap). |
+
+### ShaderToy mode (`mainImage`)
+
 - The signature is validated: first param must be `out vec4`, second `vec2`. Wrong return type,
   wrong arity, or wrong param types/qualifiers → reject.
 - Multiple `mainImage` definitions → reject.
+- The harness PS declares a local `fragColor`, computes `fragCoord` (bottom-left Y origin), and calls
+  `mainImage(fragColor, fragCoord)`, returning `fragColor` as `COLOR0`.
+
+### Plain-GLSL `main()` mode
+
+- The entry must be `void main()` with **no parameters** (`void main(...)` with params → reject;
+  multiple `main` → reject).
+- **Fragment output.** The output is EITHER the legacy `gl_FragColor` (a write target needing no
+  declaration) OR a single top-level user-declared `out vec4 <name>;` (GLSL ES 3.00 / desktop 330,
+  including the `layout(location = N) out vec4 <name>;` form). The `out vec4 <name>;` declaration is
+  **consumed** (it is NOT emitted as a global or effect parameter): its name becomes the local the
+  synthesized PS returns as `COLOR0`. A `main()` that has **neither** a user `out vec4` nor any
+  `gl_FragColor` write has no discoverable output → loud, located reject. More than one `out vec4` is a
+  reject (a single-pass shader has one color output).
+- **`gl_FragCoord`.** References to `gl_FragCoord` resolve to the SAME pixel coordinate the ShaderToy
+  harness computes for `fragCoord` (xy = pixel coords, bottom-left Y origin; `.z` = 0, `.w` = 1). The
+  harness PS reuses the identical Y-flip (`float2(uv.x, 1 - uv.y) * iResolution.xy`), so the rendered
+  orientation matches the GLSL/ShaderToy reference (render-proven by `main_gradient`, which asserts the
+  same orientation as the ShaderToy `gradient_uv`).
+- **How it is wired.** The fragment output (`gl_FragColor` or the user name) and `gl_FragCoord` are
+  bridged as `static float4` globals so the translated `void main()` (a regular HLSL function) can
+  write the output and read `gl_FragCoord`; the synthesized PS sets `gl_FragCoord`, calls `main()`, and
+  returns the output global. (See `HarnessGenerator.EmitPlainGlslPixelShader`.)
+- **Resolution / time uniforms.** Plain-GLSL shaders read resolution/time from a custom uniform
+  (`resolution`, `u_resolution`, `iResolution`, `time`, `u_time`, …); these go through the existing
+  built-in / custom-uniform / alias handling (G1/G3/G4) with no special case. An undeclared identifier
+  still rejects (L1). Everything else (preprocessor, structs, arrays, traps, custom uniforms) works
+  identically in both modes — only the entry/harness wrapping differs.
 
 ## ShaderToy uniforms (declared in the `.fx` only when referenced)
 
@@ -306,8 +351,11 @@ declarators, which stay separators (G7 parser hardening). User **structs** (G6) 
 
 Each of the following produces a fatal diagnostic, never silently-wrong HLSL:
 
-- **Entry points / multipass:** missing or duplicate `mainImage`; `mainSound`, `mainVR`,
-  `mainCubemap` (Buffer A–D multipass is implied out of scope — only a single `mainImage` is emitted).
+- **Entry points / multipass:** missing entry point (no `mainImage` and no `main`); duplicate
+  `mainImage` or duplicate `main`; **both** a `mainImage` and a `main` (ambiguous); a `main` with
+  parameters or a `main()` with no discoverable fragment output (no user `out vec4` and no
+  `gl_FragColor` write); more than one `out vec4` fragment output; `mainSound`, `mainVR`,
+  `mainCubemap` (Buffer A–D multipass is implied out of scope — only a single image pass is emitted).
 - **Types:** `double`, `dvecN`, `uint`, `uvecN`, explicit `matAxB` spellings (use `mat2/3/4`),
   non-square matrices, `sampler3D` / `samplerCube`, and any unknown type name.
 - **Declarations:** a **nested / inline** struct member, a struct *array* member, a combined

@@ -4,6 +4,26 @@ A statistical coverage report for the `shadertoy2fx` GLSL → HLSL `.fx` convert
 running a batch of **real, third-party single-pass ShaderToy / GLSL image shaders** through the
 converter and then through the ShadowDusk OpenGL compiler.
 
+> **Update 2026-06-19 (e) — G2 (plain-GLSL `void main()` entry mode) landed.** The converter now
+> accepts a SECOND entry convention: a plain-GLSL `void main()` fragment shader (glslViewer /
+> Bonzomatic / Shadertoy-export style) in addition to the ShaderToy `void mainImage(...)`. The
+> convention is auto-detected by entry name (no flag): `mainImage`-only → ShaderToy mode, `main`-only →
+> plain-GLSL mode, **both → ambiguous loud reject**, neither → no-entry reject. In `main()` mode the
+> fragment output is the legacy `gl_FragColor` OR a single top-level user-declared `out vec4 <name>;`
+> (incl. `layout(location=N) out vec4`), consumed (NOT emitted as a parameter/global) and returned as
+> COLOR0; `gl_FragCoord` maps to the SAME bottom-left-Y pixel coord the ShaderToy harness uses
+> (render-proven by the new `main_gradient` case, which asserts the same orientation as `gradient_uv`).
+> A `main()` with no discoverable output is a loud reject; everything else (preprocessor, structs,
+> arrays, traps, custom uniforms) works identically in both modes. **Scratch re-measure: unchanged at
+> conversion 34.6 % / compile-of-converted 88.7 % / end-to-end 30.7 %** over the same 153-`mainImage`
+> in-scope set — this corpus was sampled by a `mainImage` GitHub search and contains **0 pure
+> plain-GLSL `main()` shaders**, so G2 adds no new conversions HERE (the 6 `main`-only files in the 160
+> all genuinely reject: 3 define BOTH a `mainImage` and a `main` = ambiguous, 3 hit unsupported
+> constructs). The value of G2 is broadened *reach* to the glslViewer/Bonzomatic class of shaders, with
+> correctness held first (never silent-wrong). Unit suite **234 green (0 warn)**; golden compile-sweep
+> **47/47 on OpenGL / DirectX_11 / FNA** (3 new main-mode goldens, no regressions); render-proof
+> **4/4 (exit 0)** with the new main-mode orientation case.
+>
 > **Update 2026-06-19 (d) — G6 (structs) + G7 (arrays / intrinsics / parser tail) landed.** Two more
 > backlog gaps closed. **G6:** a top-level user `struct` of supported member types is accepted and
 > emitted as an HLSL `struct` plus a generated `make_Name(...)` factory (GLSL's `Name(...)` constructor

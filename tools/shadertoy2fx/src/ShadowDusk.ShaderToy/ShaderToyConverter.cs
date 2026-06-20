@@ -83,6 +83,8 @@ public static class ShaderToyConverter
         mutableGlobals.AddRange(imageUnit.MutableGlobals);
         var structs = new List<StructDecl>(commonUnit.Structs);
         structs.AddRange(imageUnit.Structs);
+        var fragmentOutputs = new List<FragmentOutputDecl>(commonUnit.FragmentOutputs);
+        fragmentOutputs.AddRange(imageUnit.FragmentOutputs);
         var aliases = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (KeyValuePair<string, string> a in commonUnit.Aliases)
         {
@@ -101,17 +103,43 @@ public static class ShaderToyConverter
             CustomUniforms = customUniforms,
             MutableGlobals = mutableGlobals,
             Structs = structs,
+            FragmentOutputs = fragmentOutputs,
             Aliases = aliases,
         };
 
-        // Validate the mainImage entry point.
-        ValidateMainImage(functions);
+        // Detect the entry convention: a ShaderToy `void mainImage(out vec4, in vec2)` OR a plain-GLSL
+        // `void main()`. Validate the chosen entry; BOTH present is ambiguous (loud reject), NEITHER is
+        // the existing "no entry point" reject.
+        EntryMode entryMode = DetectEntryMode(functions);
+        FragmentOutputDecl? userFragmentOutput = null;
+        if (entryMode == EntryMode.ShaderToy)
+        {
+            ValidateMainImage(functions);
+        }
+        else
+        {
+            userFragmentOutput = ResolveMainEntry(functions, merged);
+        }
 
         // Type-inference + emit.
         var types = new TypeInference(merged);
+
+        // In plain-GLSL `main()` mode (G2) the fragment output (`gl_FragColor` or the user-declared
+        // `out vec4 <name>;`) and `gl_FragCoord` are predefined vec4 file-scope identifiers the shader
+        // body reads/writes; register them so the body's references resolve (the harness declares each
+        // as a `static float4` global and the synthesized PS bridges them — see HarnessGenerator).
+        string fragmentOutputName = "gl_FragColor";
+        if (entryMode == EntryMode.PlainGlsl)
+        {
+            fragmentOutputName = userFragmentOutput?.Name ?? "gl_FragColor";
+            types.DeclareBuiltinGlobal(fragmentOutputName, GlslType.Vector(ScalarKind.Float, 4));
+            types.DeclareBuiltinGlobal("gl_FragCoord", GlslType.Vector(ScalarKind.Float, 4));
+        }
+
+        string entryFunctionName = entryMode == EntryMode.ShaderToy ? "mainImage" : "main";
         var emitter = new HlslEmitter(types);
-        emitter.SetUserFunctions(functions.Where(f => f.Name != "mainImage").Select(f => f.Name)
-            .Concat(new[] { "mainImage" }));
+        emitter.SetUserFunctions(functions.Where(f => f.Name != entryFunctionName).Select(f => f.Name)
+            .Concat(new[] { entryFunctionName }));
         emitter.SetCustomUniforms(merged.CustomUniforms.Select(c => c.Name));
         emitter.SetStructs(merged.Structs);
 
@@ -170,7 +198,9 @@ public static class ShaderToyConverter
             emitter.UsedGlslMod,
             structsSb.ToString(),
             globalsSb.ToString(),
-            fnSb.ToString());
+            fnSb.ToString(),
+            entryMode,
+            fragmentOutputName);
 
         // If any Error accumulated (e.g. a banned entry point detected up front without
         // StopOnFirstError), the conversion is NOT a success even though emission ran to completion.
@@ -216,6 +246,103 @@ public static class ShaderToyConverter
         List<Token> tokens = new Lexer(preprocessed).Tokenize();
         return new Parser(tokens).Parse();
     }
+
+    /// <summary>
+    /// Decide which entry convention the shader uses (G2): a ShaderToy
+    /// <c>void mainImage(out vec4, in vec2)</c> or a plain-GLSL <c>void main()</c>. Exactly one must be
+    /// present. BOTH defined is ambiguous (we cannot know which the author intends — loud reject); a
+    /// shader with NEITHER falls through to the existing "no entry point" reject in
+    /// <see cref="ResolveMainEntry"/>. (Signatures are validated by the per-mode validator; here we only
+    /// pick the mode by which entry-NAME is defined.)
+    /// </summary>
+    private static EntryMode DetectEntryMode(IReadOnlyList<FunctionDecl> functions)
+    {
+        bool hasMainImage = functions.Any(f => f.Name == "mainImage");
+        bool hasMain = functions.Any(f => f.Name == "main");
+
+        if (hasMainImage && hasMain)
+        {
+            FunctionDecl at = functions.First(f => f.Name == "main");
+            throw new ConvertException(
+                "Ambiguous entry point: the shader defines BOTH a ShaderToy 'mainImage' and a plain-GLSL " +
+                "'main'. Provide exactly one entry convention so the converter knows which to wrap.",
+                at.Line, at.Column, "main");
+        }
+
+        return hasMain && !hasMainImage ? EntryMode.PlainGlsl : EntryMode.ShaderToy;
+    }
+
+    /// <summary>
+    /// Validate the plain-GLSL <c>void main()</c> entry (G2) and resolve its fragment output. The entry
+    /// must be <c>void main()</c> with no parameters. The fragment output is EITHER a user-declared
+    /// top-level <c>out vec4 &lt;name&gt;;</c> (returned) OR the legacy <c>gl_FragColor</c> write target;
+    /// at most one user <c>out vec4</c> is allowed. A <c>main</c> with no discoverable fragment output
+    /// (no user <c>out vec4</c> AND no <c>gl_FragColor</c> write anywhere in the source) is a loud reject.
+    /// </summary>
+    private static FragmentOutputDecl? ResolveMainEntry(
+        IReadOnlyList<FunctionDecl> functions, TranslationUnit unit)
+    {
+        List<FunctionDecl> entries = functions.Where(f => f.Name == "main").ToList();
+        if (entries.Count == 0)
+        {
+            throw new ConvertException(
+                "No entry point was found. Provide a ShaderToy " +
+                "'void mainImage(out vec4 fragColor, in vec2 fragCoord)' or a plain-GLSL 'void main()' " +
+                "single-pass fragment shader.",
+                0, 0, "main");
+        }
+
+        if (entries.Count > 1)
+        {
+            FunctionDecl dup = entries[1];
+            throw new ConvertException("Multiple 'main' definitions found.", dup.Line, dup.Column, "main");
+        }
+
+        FunctionDecl main = entries[0];
+        if (main.ReturnType != "void")
+        {
+            throw new ConvertException("'main' must return void.", main.Line, main.Column, "main");
+        }
+
+        if (main.Parameters.Count != 0)
+        {
+            throw new ConvertException(
+                "A plain-GLSL 'main' entry must take no parameters ('void main()'). For a ShaderToy " +
+                "shader use 'void mainImage(out vec4 fragColor, in vec2 fragCoord)' instead.",
+                main.Line, main.Column, "main");
+        }
+
+        if (unit.FragmentOutputs.Count > 1)
+        {
+            FragmentOutputDecl dup = unit.FragmentOutputs[1];
+            throw new ConvertException(
+                "Multiple 'out vec4' fragment outputs declared; a single-pass fragment shader has one " +
+                "color output.", dup.Line, dup.Column, dup.Name);
+        }
+
+        if (unit.FragmentOutputs.Count == 1)
+        {
+            return unit.FragmentOutputs[0];
+        }
+
+        // No user-declared out var: the shader must write the legacy gl_FragColor. Require that the
+        // token appears in a main()-mode source, else there is no discoverable fragment output.
+        if (!MentionsGlFragColor(main))
+        {
+            throw new ConvertException(
+                "'main()' has no discoverable fragment output: declare a top-level 'out vec4 <name>;' " +
+                "(GLSL ES 3.00 / 330) or write the legacy 'gl_FragColor' in main().",
+                main.Line, main.Column, "main");
+        }
+
+        return null; // legacy gl_FragColor output
+    }
+
+    /// <summary>True if any statement/expression in <paramref name="main"/> references
+    /// <c>gl_FragColor</c> (a cheap structural check so a <c>main()</c> with no output target is a clean,
+    /// located reject rather than a downstream undeclared-identifier compile error).</summary>
+    private static bool MentionsGlFragColor(FunctionDecl main) =>
+        AstScan.MentionsIdentifier(main.Body, "gl_FragColor");
 
     private static void ValidateMainImage(IReadOnlyList<FunctionDecl> functions)
     {

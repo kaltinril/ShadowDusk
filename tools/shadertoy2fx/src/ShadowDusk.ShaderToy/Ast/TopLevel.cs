@@ -98,6 +98,21 @@ internal sealed class CustomUniformDecl
     public int Column { get; init; }
 }
 
+/// <summary>
+/// A top-level user-declared fragment output of a plain-GLSL <c>void main()</c> shader (G2):
+/// <c>out vec4 outColor;</c> or <c>layout(location = 0) out vec4 outColor;</c> (GLSL ES 3.00 / desktop
+/// 330). This is NOT a custom uniform and is NOT emitted as a global/parameter — it names the local the
+/// synthesized pixel shader returns as its <c>COLOR0</c>. The legacy <c>gl_FragColor</c> write target
+/// needs no declaration, so it has no <see cref="FragmentOutputDecl"/>.
+/// </summary>
+internal sealed class FragmentOutputDecl
+{
+    /// <summary>The declared output variable's name (e.g. <c>outColor</c>).</summary>
+    public required string Name { get; init; }
+    public int Line { get; init; }
+    public int Column { get; init; }
+}
+
 /// <summary>One member of a user-defined <c>struct</c>: its GLSL type spelling and field name.</summary>
 internal sealed class StructMember
 {
@@ -126,6 +141,13 @@ internal sealed class TranslationUnit
 {
     public required IReadOnlyList<GlobalConstDecl> Globals { get; init; }
     public required IReadOnlyList<FunctionDecl> Functions { get; init; }
+
+    /// <summary>
+    /// Top-level user-declared fragment output(s) of a plain-GLSL <c>void main()</c> shader (G2):
+    /// <c>out vec4 outColor;</c> / <c>layout(location=0) out vec4 outColor;</c>. Empty for a ShaderToy
+    /// <c>mainImage</c> shader (or a <c>main()</c> shader that writes the legacy <c>gl_FragColor</c>).
+    /// </summary>
+    public IReadOnlyList<FragmentOutputDecl> FragmentOutputs { get; init; } = Array.Empty<FragmentOutputDecl>();
 
     /// <summary>Top-level user-defined <c>struct</c> declarations (G6), in source order.</summary>
     public IReadOnlyList<StructDecl> Structs { get; init; } = Array.Empty<StructDecl>();

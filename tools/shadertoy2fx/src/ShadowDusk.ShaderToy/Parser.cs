@@ -68,10 +68,11 @@ internal sealed class Parser
         var customUniforms = new List<CustomUniformDecl>();
         var mutableGlobals = new List<GlobalVarDecl>();
         var structs = new List<StructDecl>();
+        var fragmentOutputs = new List<FragmentOutputDecl>();
 
         while (!Check(TokenKind.EndOfFile))
         {
-            ParseTopLevel(globals, functions, customUniforms, mutableGlobals, structs);
+            ParseTopLevel(globals, functions, customUniforms, mutableGlobals, structs, fragmentOutputs);
         }
 
         return new TranslationUnit
@@ -81,15 +82,33 @@ internal sealed class Parser
             CustomUniforms = customUniforms,
             MutableGlobals = mutableGlobals,
             Structs = structs,
+            FragmentOutputs = fragmentOutputs,
             Aliases = _aliases,
         };
     }
 
     private void ParseTopLevel(
         List<GlobalConstDecl> globals, List<FunctionDecl> functions, List<CustomUniformDecl> customUniforms,
-        List<GlobalVarDecl> mutableGlobals, List<StructDecl> structs)
+        List<GlobalVarDecl> mutableGlobals, List<StructDecl> structs, List<FragmentOutputDecl> fragmentOutputs)
     {
         Token start = Current;
+
+        // G2: a `layout(...)` qualifier prefix (e.g. `layout(location = 0) out vec4 X;`). The layout
+        // qualifier is consumed; the declaration it prefixes must be a plain-GLSL fragment output
+        // `out vec4 X;` (anything else after a layout qualifier is outside the supported subset).
+        if (Check(TokenKind.Identifier) && Current.Text == "layout")
+        {
+            ConsumeLayoutQualifier();
+            if (!(Check(TokenKind.Identifier) && Current.Text == "out"))
+            {
+                throw Reject(
+                    "Only a fragment-output 'layout(location=N) out vec4 <name>;' declaration is " +
+                    "supported after a 'layout(...)' qualifier.", Current);
+            }
+
+            fragmentOutputs.Add(ParseFragmentOutputDecl(start));
+            return;
+        }
 
         // G6: a top-level `struct Name { type member; ... };`. A struct declaration may be immediately
         // followed by a declarator (`struct Name { ... } g;`); that combined form is out of subset
@@ -97,6 +116,19 @@ internal sealed class Parser
         if (Check(TokenKind.Identifier) && Current.Text == "struct")
         {
             structs.Add(ParseStruct(start));
+            return;
+        }
+
+        // G2: a plain-GLSL fragment output `out vec4 <name>;` (GLSL ES 3.00 / desktop 330). This is a
+        // user-declared fragment-output variable, NOT a custom uniform: consume it as a
+        // FragmentOutputDecl (the harness uses its name as the synthesized PS's COLOR0 return). Only the
+        // `out vec4 <name>;` shape is a fragment output; any other `out` declaration falls through to the
+        // qualified-decl handler, which rejects it.
+        if (Check(TokenKind.Identifier) && Current.Text == "out" &&
+            Peek().Kind == TokenKind.Identifier && Peek().Text == "vec4" &&
+            Peek(2).Kind == TokenKind.Identifier)
+        {
+            fragmentOutputs.Add(ParseFragmentOutputDecl(start));
             return;
         }
 
@@ -276,6 +308,73 @@ internal sealed class Parser
         Expect(TokenKind.Semicolon, "';'");
         _structNames.Add(name);
         return new StructDecl { Name = name, Members = members, Line = start.Line, Column = start.Column };
+    }
+
+    /// <summary>
+    /// Parse a plain-GLSL fragment-output declaration <c>out vec4 &lt;name&gt;;</c> (G2). The current
+    /// token is <c>out</c>. The type is required to be <c>vec4</c> (a fragment color); the name becomes
+    /// the local the synthesized pixel shader returns as its <c>COLOR0</c>. A fragment output cannot
+    /// carry an initializer (it is written by the shader's <c>main()</c>), so an <c>= ...</c> here is a
+    /// loud reject.
+    /// </summary>
+    private FragmentOutputDecl ParseFragmentOutputDecl(Token start)
+    {
+        Expect(TokenKind.Identifier, "'out'"); // consume 'out' (already validated as 'out')
+        Token typeTok = Current;
+        if (!(Check(TokenKind.Identifier) && typeTok.Text == "vec4"))
+        {
+            throw Reject(
+                "A plain-GLSL fragment output must be 'out vec4 <name>;' (only a vec4 color output is " +
+                "supported).", typeTok);
+        }
+
+        _pos++; // consume 'vec4'
+        Token nameTok = Expect(TokenKind.Identifier, "a fragment-output name");
+
+        if (Check(TokenKind.Assign))
+        {
+            throw Reject(
+                $"Fragment output '{nameTok.Text}' cannot have an initializer (it is written by main()).",
+                Current);
+        }
+
+        Expect(TokenKind.Semicolon, "';'");
+        return new FragmentOutputDecl
+        {
+            Name = nameTok.Text,
+            Line = start.Line,
+            Column = start.Column,
+        };
+    }
+
+    /// <summary>
+    /// Consume a <c>layout(...)</c> qualifier prefix (G2): the <c>layout</c> keyword followed by a
+    /// balanced parenthesized list (e.g. <c>(location = 0)</c>). The contents are host-tooling layout
+    /// metadata the converter does not need; only the declaration the qualifier prefixes matters.
+    /// </summary>
+    private void ConsumeLayoutQualifier()
+    {
+        _pos++; // consume 'layout'
+        Expect(TokenKind.LParen, "'(' after 'layout'");
+        int depth = 1;
+        while (depth > 0 && !Check(TokenKind.EndOfFile))
+        {
+            if (Check(TokenKind.LParen))
+            {
+                depth++;
+            }
+            else if (Check(TokenKind.RParen))
+            {
+                depth--;
+            }
+
+            _pos++;
+        }
+
+        if (depth != 0)
+        {
+            throw Reject("Unterminated 'layout(...)' qualifier.", Current);
+        }
     }
 
     /// <summary>
