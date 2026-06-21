@@ -39,7 +39,8 @@ internal sealed class PipelineRunner
             return Fail(detection.Error);
 
         string hlslSource;
-        if (detection.Value == InputKind.Glsl)
+        bool isConvertedGlsl = detection.Value == InputKind.Glsl;
+        if (isConvertedGlsl)
         {
             var converted = ConvertShaderToy(args, sourceText);
             if (converted.IsFailure)
@@ -54,12 +55,21 @@ internal sealed class PipelineRunner
         // Stage 2: Build options and delegate compilation to the library.
         IIncludeResolver includeResolver = new FileSystemIncludeResolver();
 
+        // F2: for ShaderToy/GLSL input, a pipeline (DXC) error is in the GENERATED HLSL, whose line
+        // numbers do NOT correspond to the user's .glsl. Attribute those errors to a synthetic
+        // "<name>.generated.fx" name so they are never mistaken for the original source (e.g. a 30-line
+        // .glsl reporting "line 51"). Convert-stage diagnostics keep the real .glsl name (they ARE located
+        // in the user's GLSL). SourceFileName is diagnostics-only and does not affect output bytes.
+        string compileSourceName = isConvertedGlsl
+            ? Path.GetFileNameWithoutExtension(args.SourceFile) + ".generated.fx"
+            : args.SourceFile;
+
         var options = new CompilerOptions
         {
             Target                 = args.Platform,
             IncludeResolver        = includeResolver,
             AdditionalIncludePaths = args.IncludePaths,
-            SourceFileName         = args.SourceFile,
+            SourceFileName         = compileSourceName,
             Debug                  = args.Debug,
             MgfxVersion            = args.MgfxVersion,
             DxbcBackend            = args.DxbcBackend,
@@ -72,7 +82,26 @@ internal sealed class PipelineRunner
         var compileResult  = await compiler.CompileAsync(hlslSource, options, ct).ConfigureAwait(false);
 
         if (compileResult.IsFailure)
+        {
+            // F2: when the converted GLSL fails the pipeline compile, lead with a Note so the user knows
+            // the error below is in the GENERATED HLSL (.fx) produced from their shader, not their source
+            // file. Identifier collisions (F1) are auto-fixed at convert time, so reaching here means the
+            // generated HLSL hit a real limit (e.g. an SM3 instruction cap on a heavy shader).
+            if (isConvertedGlsl)
+            {
+                var note = new ShaderError(
+                    File: args.SourceFile, Line: 0, Column: 0, Code: "SD0003",
+                    Message: $"the converted .fx generated from '{Path.GetFileName(args.SourceFile)}' " +
+                             "failed to compile. The diagnostics below refer to the GENERATED HLSL " +
+                             $"('{compileSourceName}'), not your original source lines.",
+                    Severity: ShaderErrorSeverity.Note);
+                var withNote = new List<ShaderError> { note };
+                withNote.AddRange(compileResult.Error);
+                return Result<byte[], IReadOnlyList<ShaderError>>.Fail(withNote);
+            }
+
             return Result<byte[], IReadOnlyList<ShaderError>>.Fail(compileResult.Error);
+        }
 
         byte[] mgfxBytes = compileResult.Value.Data;
 
