@@ -47,6 +47,7 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 | `SD0010` | Effect source contains no techniques. | `CompilationPipeline` |
 | `SD0011` | Unrecognised value for a render-state key. | `RenderStateParser` |
 | `SD0012` | Internal (Phase 43C): a GL uniform in the rewriter's register layout has no matching reflected effect parameter — the GLSL uniform layout and the reflection diverged. A ShadowDusk bug if ever seen. | `CompilationPipeline` |
+| `SD0013` | A pass `compile <target>` token does not resolve (after macro expansion) to a recognized shader profile — e.g. a typo (`compile A …`), an undefined `*_SHADERMODEL` macro (the `#if OPENGL … #else …` header was removed), or a profile-shaped-but-bogus literal (`ps_9_9`). Matches mgfxc/fxc's `unrecognized compiler target` (Phase 48). Fires on the GL/DX/Vulkan AND the FNA path. | `CompilationPipeline` |
 | `SD0020` | Constant-buffer size exceeds the MGFX int16 maximum. | `MgfxWriter` |
 | `SD0021` | Shader index exceeds the MGFX int16 maximum. | `MgfxWriter` |
 | `SD0022` | A count/index serialized as a single byte in the `.mgfx` shader record is outside 0–255 (samplers, constant-buffer indices, vertex attributes, sampler parameter index). | `MgfxWriter` |

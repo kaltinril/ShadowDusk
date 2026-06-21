@@ -24,7 +24,7 @@
   - Structurally **clean**: **64**
   - **Divergent** (>=1 level): **17**
   - Compile/parse **failures**: **11**
-- Non-golden census cells: **114** (**99** compile, **15** fail with a code)
+- Non-golden census cells: **122** (**101** compile, **21** fail with a code)
 
 ## Golden-backed fixtures — per-level structural verdict
 
@@ -248,6 +248,14 @@ is a CORRECT result, not a defect.
 | examples/ExModernSamplerState.fx | OpenGL | PASS |  |  |
 | examples/ExMultiSamplerHidef.fx | DirectX_11 | PASS |  |  |
 | examples/ExMultiSamplerHidef.fx | OpenGL | PASS |  |  |
+| examples/ExProfileBogusLiteral.fx | DirectX_11 | FAIL | SD0013 | compile target 'ps_9_9' is not a recognized shader profile (did you forget to #define VS_SHADERMODEL / PS_SHADERMODEL, e.g. via the standard '#if OPENGL ... #el... |
+| examples/ExProfileBogusLiteral.fx | OpenGL | FAIL | SD0013 | compile target 'ps_9_9' is not a recognized shader profile (did you forget to #define VS_SHADERMODEL / PS_SHADERMODEL, e.g. via the standard '#if OPENGL ... #el... |
+| examples/ExProfileLevel9Header.fx | DirectX_11 | PASS |  |  |
+| examples/ExProfileLevel9Header.fx | OpenGL | PASS |  |  |
+| examples/ExProfileTypo.fx | DirectX_11 | FAIL | SD0013 | compile target 'a' is not a recognized shader profile (did you forget to #define VS_SHADERMODEL / PS_SHADERMODEL, e.g. via the standard '#if OPENGL ... #else ..... |
+| examples/ExProfileTypo.fx | OpenGL | FAIL | SD0013 | compile target 'a' is not a recognized shader profile (did you forget to #define VS_SHADERMODEL / PS_SHADERMODEL, e.g. via the standard '#if OPENGL ... #else ..... |
+| examples/ExProfileUndefinedMacro.fx | DirectX_11 | FAIL | SD0013 | compile target 'ps_shadermodel' is not a recognized shader profile (did you forget to #define VS_SHADERMODEL / PS_SHADERMODEL, e.g. via the standard '#if OPENGL... |
+| examples/ExProfileUndefinedMacro.fx | OpenGL | FAIL | SD0013 | compile target 'ps_shadermodel' is not a recognized shader profile (did you forget to #define VS_SHADERMODEL / PS_SHADERMODEL, e.g. via the standard '#if OPENGL... |
 | examples/ExRelationalBranch.fx | DirectX_11 | PASS |  |  |
 | examples/ExRelationalBranch.fx | OpenGL | PASS |  |  |
 | examples/ExRelationalThreshold.fx | DirectX_11 | PASS |  |  |
@@ -325,6 +333,7 @@ is a CORRECT result, not a defect.
 
 ### Census failure codes
 
+- `SD0013`: 6 cell(s) — examples/ExProfileBogusLiteral.fx [DirectX_11], examples/ExProfileBogusLiteral.fx [OpenGL], examples/ExProfileTypo.fx [DirectX_11], examples/ExProfileTypo.fx [OpenGL], examples/ExProfileUndefinedMacro.fx [DirectX_11], examples/ExProfileUndefinedMacro.fx [OpenGL]
 - `SD0010`: 6 cell(s) — minimal_vs_ps.fx [DirectX_11], minimal_vs_ps.fx [OpenGL], passthrough_vs.fx [DirectX_11], passthrough_vs.fx [OpenGL], textured_vs_ps.fx [DirectX_11], textured_vs_ps.fx [OpenGL]
 - `SD0210`: 4 cell(s) — examples/ExIntUniformMember.fx [OpenGL], examples/ExMat3UniformMember.fx [OpenGL], examples/ExVsTextureFetch.fx [OpenGL], third-party/Nez/Crosshatch.fx [OpenGL]
 - `SD0001`: 2 cell(s) — MinimalWithInclude.fx [DirectX_11], MinimalWithInclude.fx [OpenGL]

@@ -1,10 +1,21 @@
 # Phase 48 — `compile <target>` profile validation (mgfxc-reject fidelity)
 
-**Status:** 🟡 **In progress (2026-06-20).** Characterized + design settled; implementation underway on
-`fix/compile-target-profile-validation` (branched off `main`). This phase fixes a real fidelity gap a user
-hit: a `.fx` that **fails in MonoGame's `mgfxc`** (and `fxc`) **compiles silently in ShadowDusk**, because
-ShadowDusk never validates the shader-profile token in a `compile <target> Entry()` statement.
+**Status:** 🟢 **Implemented (2026-06-20).** Recognized-profile validation lands on
+`fix/compile-target-profile-validation` (branched off `main`). The `compile <target>` token is now validated
+against the recognized-profile set (after macro expansion when needed) on the GL/DX/Vulkan AND FNA paths;
+an unrecognized target fails loudly with the new **`SD0013`** diagnostic, matching `mgfxc`/`fxc`. Whole-suite
+`dotnet test ShadowDusk.slnx` is green (1469 passed, 0 failed) and the byte-identity corpus is unchanged.
+This phase fixes a real fidelity gap a user hit: a `.fx` that **fails in MonoGame's `mgfxc`** (and `fxc`)
+**compiled silently in ShadowDusk**, because ShadowDusk never validated the shader-profile token in a
+`compile <target> Entry()` statement.
 **Roadmap track:** Fidelity / completeness (reject-side sibling to [Phase 41](PHASE-41-fxc-oracle-monogame-fidelity.md)).
+
+> **Implementation note (code chosen vs. the draft's `SD0301`):** the diagnostic ships as **`SD0013`**, NOT
+> `SD0301` as this doc originally suggested. `SD0301` was already taken (D3D9 CTAB-reflection failure in
+> `CtabReader`), and `SD0304` is a historically-burned code; reusing either would violate the
+> one-code-one-condition rule in `docs/error-codes.md`. The check is a **pipeline-level effect validation**
+> that fires on every target (GL/DX/Vulkan/FNA), so the pipeline-validation range (`SD0010`–`SD0019`) is its
+> correct home; `SD0013` was the first free slot there.
 
 > **Why this phase exists:** surfaced 2026-06-20 from a user report (Victor Chelaru / XnaFiddle context). Two
 > reproductions of the same root cause:
@@ -180,31 +191,41 @@ rejects) from a defined one, and an uppercase typo like `A` still slips through.
 
 ## Work items (each a self-contained task)
 
-- [ ] **W0 — REQUIRED, load-bearing: audit + extend `KnownProfiles`.** The set at
+- [x] **W0 — REQUIRED, load-bearing: audit + extend `KnownProfiles`.** Done: added
+      `vs_4_0_level_9_0/_9_1/_9_3` and `ps_4_0_level_9_0/_9_1/_9_3` (fxc's documented FL9 set; no `_level_9_2`). The set at
       [FxPreParser.cs:27-43](../src/ShadowDusk.HLSL/FxPreParser.cs#L27-L43) is **missing the `*_level_9_*`
       variants** (`vs_4_0_level_9_1/_9_3`, `ps_4_0_level_9_1/_9_3`, and `*_level_9_0` if fxc accepts it) — the
       exact profiles the **standard MonoGame DirectX header expands to**. If rejection is turned on before this
       set is extended, **every stock MonoGame shader on the DirectX path is wrongly rejected** — a regression
       far worse than the bug. Audit against what `fxc`/`mgfxc` actually accept, then extend the set. This is a
       **prerequisite** for W2/W3, not a "risk to watch."
-- [ ] **W1 — confirm the expanded-token plumbing** for both pipelines: GL/DX via DXC `Preprocess` scoped to
-      non-literal tokens (confirm it yields the macro-expanded target with the right `#if` branch); determine
-      and pin the FNA (PreserveSm3) expansion mechanism.
-- [ ] **W2 — implement validation** on the GL/DX path (new `SD0301`): cheap set-lookup for all tokens +
-      scoped expansion for macro tokens. Fold the recognized-profile reject into `ResolveFnaProfile` for FNA.
-      Keep literal-known-profile passes zero-cost. No change to any currently-compiling output.
-- [ ] **W3 — optional, same change:** add the GL/DX stage-prefix cross-check (mirror the FNA `SD0300` logic:
-      `VertexShader = compile ps_3_0 …` is cross-stage misuse mgfxc rejects).
-- [ ] **W4 — regression fixtures + unit tests** (mandatory per `CLAUDE.md`):
-      - `FxPreParser` / pipeline unit cases: `compile A MainPS()` → reject; `compile PS_SHADERMODEL …` with the
-        macro **defined** → accept; with the macro **undefined** → reject; `compile ps_9_9 …` → reject;
-        `compile ps_3_0 …` and `compile ps_4_0_level_9_1 …` literals → accept.
-      - `.fx` regression fixtures under `tests/fixtures/shaders/` for each shape, wired into the integration /
-        structural corpus so the whole-suite gate exercises them on GL/DX/FNA.
-- [ ] **W5 — run the full regression bar:** `dotnet test ShadowDusk.slnx` (whole suite, not a filtered
-      subset). Render gates are *not* required (no output bytes change); state that explicitly in the PR.
-- [ ] **W6 — consumer docs:** a short note in `docfx/` on the `compile` target and the `#if OPENGL`
-      `*_SHADERMODEL` + `SV_POSITION` idiom, so a user who hits `SD0301` understands the header's role.
+- [x] **W1 — expanded-token plumbing.** GL/DX (and the FNA expansion) reuse DXC's `Preprocess` (`-P`): a
+      unique-sentinel probe (`__SD_PROFILE_PROBE__ <rawToken> __SD_PROFILE_PROBE__`) is appended to the
+      already-`#include`-flattened source and preprocessed with the target's `PlatformMacros`, so the correct
+      `#if OPENGL` branch drives the expansion; the value between the sentinels is read back and re-checked.
+      C macros are case-sensitive, so the RAW token (`PS_SHADERMODEL`) is expanded, not the lowercased form.
+- [x] **W2 — implement validation** on the GL/DX path (`SD0013`, not `SD0301` — see status note): cheap
+      set-lookup (literal known → accept; profile-shaped-but-bogus → reject) + scoped expansion for macro
+      tokens, cached per raw token. The same `ValidateCompileProfile` runs on the FNA path with the FNA macro
+      set BEFORE `ResolveFnaProfile`, which is unchanged (it still applies the MojoShader SM2–3 ceiling once a
+      token resolves to a real profile). Literal-known-profile passes stay zero-cost. No currently-compiling
+      output changed (byte-identity corpus green).
+- [ ] **W3 — optional, NOT done:** the GL/DX stage-prefix cross-check (`VertexShader = compile ps_3_0 …`) is
+      left for a follow-up; the `stage` parameter is already threaded into `ValidateCompileProfile` as the hook.
+- [x] **W4 — regression fixtures + unit tests.**
+      - `tests/ShadowDusk.HLSL.Tests/ProfileRecognitionTests.cs` — `IsKnownProfile` (incl. the FL9 W0 set) and
+        `LooksLikeProfile` (shaped vs. macro-name) helpers.
+      - `tests/ShadowDusk.Integration.Tests/Phase48ProfileValidationCorpusTests.cs` — end-to-end on GL/DX/FNA:
+        `compile A` (typo), `compile PS_SHADERMODEL` with the header REMOVED (undefined macro), and
+        `compile ps_9_9` (bogus literal) → all reject `SD0013`; the standard `*_level_9_1` header fixture →
+        accept on every target (the W0 guard; also proves a DEFINED `PS_SHADERMODEL` still compiles).
+      - Fixtures: `examples/ExProfileTypo.fx`, `ExProfileUndefinedMacro.fx`, `ExProfileBogusLiteral.fx`,
+        `ExProfileLevel9Header.fx` (auto-copied via the `fixtures/shaders/**` wildcard).
+- [x] **W5 — full regression bar:** `dotnet test ShadowDusk.slnx` green — 1469 passed, 0 failed, 0 skipped
+      (HLSL 255, GLSL 61, Compiler 126, Core 489, Image 57, Integration 481). Render gates not required (no
+      output bytes change; this is a reject-set change only).
+- [x] **W6 — consumer docs:** added a "The `compile <target>` profile and the `#if OPENGL` header" section to
+      `docfx/guides/parameters-and-caveats.md` covering the `*_SHADERMODEL` + `SV_POSITION` idiom and `SD0013`.
 
 ## Definition of done
 

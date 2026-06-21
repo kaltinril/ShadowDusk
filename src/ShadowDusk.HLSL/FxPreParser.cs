@@ -22,8 +22,11 @@ public sealed class FxPreParser
     // Known shader profiles
     // -------------------------------------------------------------------------
 
-    // All profiles accepted at pre-parse time; unrecognized profiles will be
-    // rejected by DXC later with a proper diagnostic. We store the raw string.
+    // All profiles accepted at pre-parse time; an unrecognized literal profile (or a
+    // macro that does not expand to one) is rejected LATER by the pipeline's recognized-
+    // profile check (SD0013) after macro expansion — the pre-parser stays lenient because
+    // it runs before macro expansion and cannot know what 'PS_SHADERMODEL' resolves to.
+    // We store the raw string.
     private static readonly HashSet<string> KnownProfiles = new(StringComparer.OrdinalIgnoreCase)
     {
         // VS profiles
@@ -31,6 +34,13 @@ public sealed class FxPreParser
         "vs_2_0", "vs_2_a", "vs_2_sw",
         "vs_3_0",
         "vs_4_0", "vs_4_1",
+        // Direct3D feature-level 9 variants of the SM4 vertex profile. These are the
+        // EXACT tokens the standard MonoGame cross-platform header expands to on the
+        // DirectX branch ('#define VS_SHADERMODEL vs_4_0_level_9_1'), so they MUST be
+        // recognized — otherwise every stock MonoGame DirectX shader is wrongly rejected
+        // once recognized-profile validation is enabled. fxc accepts the
+        // _level_9_0/_9_1/_9_3 forms for vs_4_0 (there is no _level_9_2).
+        "vs_4_0_level_9_0", "vs_4_0_level_9_1", "vs_4_0_level_9_3",
         "vs_5_0",
         "vs_6_0", "vs_6_1", "vs_6_2", "vs_6_3", "vs_6_4", "vs_6_5", "vs_6_6", "vs_6_7",
         // PS profiles
@@ -38,12 +48,31 @@ public sealed class FxPreParser
         "ps_2_0", "ps_2_a", "ps_2_b", "ps_2_sw",
         "ps_3_0",
         "ps_4_0", "ps_4_1",
+        // Direct3D feature-level 9 variants of the SM4 pixel profile (the DirectX-branch
+        // '#define PS_SHADERMODEL ps_4_0_level_9_1'). Same fxc support as the vs_ forms.
+        "ps_4_0_level_9_0", "ps_4_0_level_9_1", "ps_4_0_level_9_3",
         "ps_5_0",
         "ps_6_0", "ps_6_1", "ps_6_2", "ps_6_3", "ps_6_4", "ps_6_5", "ps_6_6", "ps_6_7",
     };
 
     /// <summary>Returns true when the given profile string (already lowercased) is a recognized shader profile.</summary>
     public static bool IsKnownProfile(string profile) => KnownProfiles.Contains(profile);
+
+    /// <summary>
+    /// Returns true when <paramref name="token"/> is SHAPED like a shader profile
+    /// (a <c>vs_</c>/<c>ps_</c>/<c>gs_</c>/<c>hs_</c>/<c>ds_</c>/<c>cs_</c> stage prefix
+    /// immediately followed by a digit) REGARDLESS of whether it is a recognized profile.
+    /// This distinguishes a typo'd real-shaped profile (<c>ps_9_9</c>) — which is
+    /// unconditionally invalid and can be rejected without any macro expansion — from a
+    /// macro NAME (<c>PS_SHADERMODEL</c>), which may still expand to a valid profile. It is
+    /// NOT a substitute for <see cref="IsKnownProfile"/>: a profile-shaped token is not
+    /// necessarily a real profile.
+    /// </summary>
+    public static bool LooksLikeProfile(string token) =>
+        System.Text.RegularExpressions.Regex.IsMatch(
+            token,
+            @"^(vs|ps|gs|hs|ds|cs)_\d",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
     // -------------------------------------------------------------------------
     // Sampler type keywords
@@ -961,6 +990,8 @@ public sealed class FxPreParser
 
         string? vertexEntry = null, pixelEntry = null;
         string? vertexProfile = null, pixelProfile = null;
+        string? vertexProfileToken = null, pixelProfileToken = null;
+        SourceSpan? vertexProfileSpan = null, pixelProfileSpan = null;
         var renderStates = new List<RenderStateEntry>();
 
         while (Peek().Kind != TokenKind.RBrace)
@@ -1000,7 +1031,11 @@ public sealed class FxPreParser
                     return Fail<PassInfo>(FxParseErrorCode.MalformedCompileExpression,
                         $"Expected shader profile after 'compile' but found '{profileTok.Text}'", profileTok);
 
-                string profile = profileTok.Text.ToLowerInvariant();
+                string profileToken = profileTok.Text;
+                string profile = profileToken.ToLowerInvariant();
+                var profileSpan = new SourceSpan(
+                    profileTok.Line, profileTok.Column,
+                    profileTok.Line, profileTok.Column + profileTok.Text.Length);
                 Consume();
                 SkipNonCodeTokens();
 
@@ -1030,8 +1065,8 @@ public sealed class FxPreParser
                 if (semi.IsFailure)
                     return Result<PassInfo, FxParseError>.Fail(semi.Error);
 
-                if (isVs) { vertexEntry = entry; vertexProfile = profile; }
-                else { pixelEntry = entry; pixelProfile = profile; }
+                if (isVs) { vertexEntry = entry; vertexProfile = profile; vertexProfileToken = profileToken; vertexProfileSpan = profileSpan; }
+                else { pixelEntry = entry; pixelProfile = profile; pixelProfileToken = profileToken; pixelProfileSpan = profileSpan; }
             }
             else
             {
@@ -1099,6 +1134,10 @@ public sealed class FxPreParser
             PixelEntryPoint = pixelEntry,
             VertexProfile = vertexProfile,
             PixelProfile = pixelProfile,
+            VertexProfileToken = vertexProfileToken,
+            PixelProfileToken = pixelProfileToken,
+            VertexProfileSpan = vertexProfileSpan,
+            PixelProfileSpan = pixelProfileSpan,
             RenderStates = renderStates,
             Annotations = annotations,
         });
