@@ -10,6 +10,7 @@ using Microsoft.JSInterop;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using ShadowDusk.Core;
+using ShadowDusk.ShaderToy;
 using ShadowDusk.Wasm;
 
 namespace ShadowDusk.ShaderFiddle.Web.Pages;
@@ -227,12 +228,16 @@ public partial class Index
 
         try
         {
+            // ShaderToy/GLSL source is converted to .fx first (a real .fx passes through unchanged).
+            if (!TryResolveFx(source, out var fxSource, out var convertErrors))
+                return string.Join(" | ", convertErrors.Select(d => d.FxcFormattedMessage));
+
             var options = new CompilerOptions
             {
                 Target = PlatformTarget.OpenGL,
                 SourceFileName = "fiddle.fx",
             };
-            var result = await _compiler.CompileAsync(source, options);
+            var result = await _compiler.CompileAsync(fxSource, options);
             if (result.IsFailure)
                 return string.Join(" | ",
                     System.Linq.Enumerable.Select(result.Error, d => d.FxcFormattedMessage));
@@ -372,6 +377,31 @@ public partial class Index
         }
     }
 
+    /// <summary>A small, self-contained animated ShaderToy shader (the classic cosine-palette) used by
+    /// the "ShaderToy example" button so a user can try the GLSL path with one click.</summary>
+    private const string ShaderToyExample =
+        """
+        // ShaderToy example — paste your own Image-tab code here.
+        // Animated cosine palette: drives iTime + iResolution, no iChannel needed.
+        void mainImage( out vec4 fragColor, in vec2 fragCoord )
+        {
+            vec2 uv = fragCoord / iResolution.xy;
+            vec3 col = 0.5 + 0.5 * cos(iTime + uv.xyx + vec3(0.0, 2.0, 4.0));
+            fragColor = vec4(col, 1.0);
+        }
+        """;
+
+    /// <summary>Load the bundled ShaderToy example into the editor and compile it, so the GLSL path is
+    /// one click to try.</summary>
+    private async Task LoadShaderToyExampleAsync()
+    {
+        _source = NormalizeNewlines(ShaderToyExample);
+        _exportName = "shadertoy-example";
+        ClearDiagnostics();
+        _exportStatus.Clear();
+        await CompileAndApplyAsync();
+    }
+
     /// <summary>
     /// Reset the canvas to the original cat with no shader applied. Drops the
     /// current effect (the plain-cat draw pass renders on its own) without
@@ -461,6 +491,17 @@ public partial class Index
             return;
         }
 
+        // ShaderToy / GLSL input is converted to .fx in-browser before compiling; a real .fx is
+        // unchanged. A convert failure surfaces as located diagnostics (last good render kept).
+        if (!TryResolveFx(_source, out var fxSource, out var convertErrors))
+        {
+            SetDiagnostics(convertErrors);
+            SetError($"{convertErrors.Count} ShaderToy conversion error(s) — last good render kept.");
+            _compiling = false;
+            StateHasChanged();
+            return;
+        }
+
         try
         {
             var options = new CompilerOptions
@@ -469,7 +510,7 @@ public partial class Index
                 SourceFileName = "fiddle.fx",
             };
 
-            var result = await _compiler.CompileAsync(_source, options);
+            var result = await _compiler.CompileAsync(fxSource, options);
 
             if (result.IsSuccess)
             {
@@ -527,6 +568,19 @@ public partial class Index
         StateHasChanged();
 
         var fileName = FileNameFor(target);
+
+        // Convert ShaderToy/GLSL source to .fx first (a real .fx passes through); a convert failure
+        // surfaces in the shared diagnostics panel and aborts the export.
+        if (!TryResolveFx(_source, out var fxSource, out var convertErrors))
+        {
+            SetDiagnostics(convertErrors);
+            _exportStatus[target.Target] =
+                ($"{convertErrors.Count} ShaderToy conversion error(s) — see diagnostics below.", true);
+            _exporting = null;
+            StateHasChanged();
+            return;
+        }
+
         try
         {
             var options = new CompilerOptions
@@ -535,7 +589,7 @@ public partial class Index
                 SourceFileName = SafeExportName() + ".fx",
             };
 
-            var result = await _compiler.CompileAsync(_source, options);
+            var result = await _compiler.CompileAsync(fxSource, options);
 
             if (result.IsSuccess)
             {
@@ -677,6 +731,53 @@ public partial class Index
     {
         if (line > 0)
             await JsRuntime.InvokeVoidAsync("sdEditorGotoLine", line);
+    }
+
+    /// <summary>
+    /// Resolve the editor source to HLSL <c>.fx</c> text ready for the compiler. If the source looks
+    /// like a ShaderToy / GLSL image shader (a <c>mainImage</c> / <c>void main</c> with no
+    /// <c>technique</c>), it is converted in-browser via <see cref="ShaderToyConverter"/>; a real
+    /// <c>.fx</c> passes straight through. Returns false (with mapped diagnostics) only on a convert
+    /// failure, so the caller can squiggle the offending GLSL line and keep the last good render.
+    /// </summary>
+    private bool TryResolveFx(string source, out string fx, out IReadOnlyList<ShaderError> errors)
+    {
+        errors = Array.Empty<ShaderError>();
+
+        if (!ShaderToySource.LooksLikeShaderToyGlsl(source))
+        {
+            fx = source;   // already an HLSL .fx effect
+            return true;
+        }
+
+        var result = ShaderToyConverter.Convert(source, new ConvertOptions
+        {
+            EffectName    = "fiddle",
+            TechniqueName = "fiddle",
+        });
+
+        if (!result.Success || result.Fx is null)
+        {
+            fx = string.Empty;
+            errors = result.Diagnostics.Select(MapConvertDiagnostic).ToList();
+            return false;
+        }
+
+        fx = result.Fx;
+        return true;
+    }
+
+    // Map a ShaderToy convert diagnostic to the shared ShaderError shape so it drives the same editor
+    // squiggles / diagnostics panel as a compile error. SD#### codes namespace convert errors apart from
+    // fxc/pipeline errors; the line/col point at the ORIGINAL GLSL.
+    private static ShaderError MapConvertDiagnostic(ConvertDiagnostic d)
+    {
+        var severity = d.Severity == DiagnosticSeverity.Error
+            ? ShaderErrorSeverity.Error
+            : ShaderErrorSeverity.Warning;
+        string code = d.Severity == DiagnosticSeverity.Error ? "SD0010" : "SD0001";
+        string message = string.IsNullOrEmpty(d.Construct) ? d.Message : $"{d.Message} (near '{d.Construct}')";
+        return new ShaderError("fiddle.glsl", d.Line, d.Column, code, message, severity);
     }
 
     private static string NormalizeNewlines(string s) =>
