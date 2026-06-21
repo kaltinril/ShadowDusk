@@ -1,7 +1,16 @@
 # Phase 47 Appendix — CLI ShaderToy / GLSL input
 
 **Track:** Delivery shapes (CLI).
-**Status:** Planned (written 2026-06-20). **Appendix** to the main Phase 47 plan
+**Status:** IMPLEMENTED (2026-06-20). `ShadowDuskCLI` now takes a `ProjectReference` to
+`src/ShadowDusk.ShaderToy`; `InputFormatDetector` auto-routes `.glsl`/`.frag`/`.fs` (and sniffs unknown
+extensions) while `.fx` is never sniffed; `--input-format auto|fx|glsl` (with space/`:`/`=` forms) is the
+non-required escape hatch and `--print-uniforms` (default off, preserving the empty-stderr MGCB contract)
+prints the drivable uniforms; `PipelineRunner` converts `glsl → .fx` then feeds the UNCHANGED pipeline;
+convert diagnostics map to `SD####` codes on the original `.glsl` via `MgcbErrorFormatter`. CLI
+integration tests (`CliShaderToyInputTest`) cover OpenGL/DX compile, the located-reject error path, the
+`--print-uniforms` note, `.txt`-forced-glsl, an invalid-value error, and CLI-output ≡ Convert+pipeline
+byte-identity — all green under `dotnet test ShadowDusk.slnx`. **Deferred:** multipass batch mode (`--multipass`)
+and the OpenGL/Windows render-gate fixture entries (run the Windows DX/FNA gates before merge). **Appendix** to the main Phase 47 plan
 (`plan/PHASE-47-shadertoy-frontend-promotion.md`, owned by a sibling agent). This appendix covers
 **only** the `ShadowDuskCLI` (`src/ShadowDusk.Cli`) change that lets the drop-in `mgfxc` accept
 **ShaderToy / GLSL** input in addition to `.fx`, routing it through the promoted

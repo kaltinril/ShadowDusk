@@ -20,7 +20,8 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\src\ShadowDusk.ShaderToy\ShadowDusk.ShaderToy.csproj" />
+    <!-- Phase 47: converter library promoted to src/ShadowDusk.ShaderToy; render-proof stays out-of-band. -->
+    <ProjectReference Include="..\..\..\src\ShadowDusk.ShaderToy\ShadowDusk.ShaderToy.csproj" />
     <ProjectReference Include="..\src\ShadowDusk.ShaderToy.Runtime\ShadowDusk.ShaderToy.Runtime.csproj" />
   </ItemGroup>
   <ItemGroup>

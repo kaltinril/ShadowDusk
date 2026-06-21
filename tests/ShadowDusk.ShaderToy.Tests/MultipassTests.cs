@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text.Json;
 using FluentAssertions;
 using ShadowDusk.ShaderToy.Multipass;
@@ -13,9 +12,10 @@ namespace ShadowDusk.ShaderToy.Tests;
 /// the emitted per-pass <c>.fx</c> + <c>manifest.json</c> goldens. Two hand-authored OWN export
 /// fixtures (<c>chain2.json</c>, <c>feedback.json</c>) drive this — no third-party shader is used.
 ///
-/// The per-pass <c>.fx</c> are also asserted to COMPILE on OpenGL via the real ShadowDusk CLI (a
-/// <c>[Trait("Category","Integration")]</c> theory that shells the built <c>ShadowDuskCLI</c>, the same
-/// approach the render-proof driver uses).
+/// This suite is pure / in-memory (no child process). The companion assertion that each per-pass
+/// <c>.fx</c> COMPILES on OpenGL via the real ShadowDusk CLI lives in
+/// <c>ShadowDusk.Integration.Tests.Cli.CliMultipassCompileTest</c> (Phase 47, Decision F), keeping this
+/// project child-process-free.
 /// </summary>
 public sealed class MultipassTests
 {
@@ -301,110 +301,5 @@ public sealed class MultipassTests
             "golden '{0}' must exist; run once with SHADERTOY2FX_UPDATE_GOLDENS=1 to generate it", goldenPath);
         string expected = CorpusLocator.NormalizeNewlines(File.ReadAllText(goldenPath));
         actual.Should().Be(expected, "the emitted output for '{0}' must match its committed golden", label);
-    }
-
-    // ── Each per-pass .fx COMPILES on OpenGL via the real ShadowDusk CLI ─────────
-
-    public static IEnumerable<object[]> CompileCases()
-    {
-        foreach (string fixture in new[] { "chain2", "feedback" })
-        {
-            MultipassResult result =
-                MultipassConverter.Convert(ShaderToyProject.Parse(
-                    File.ReadAllText(Path.Combine(
-                        Path.GetDirectoryName(typeof(MultipassTests).Assembly.Location)!,
-                        "corpus", "multipass", fixture + ".json"))));
-            foreach (MultipassPassResult pass in result.Passes)
-                yield return new object[] { fixture, pass.OutputFileName, pass.Fx! };
-        }
-    }
-
-    [Theory]
-    [Trait("Category", "Integration")]
-    [MemberData(nameof(CompileCases))]
-    public void EmittedFx_CompilesOnOpenGL(string fixture, string fileName, string fx)
-    {
-        string? error = CliCompiler.TryCompileOpenGl(fx);
-        error.Should().BeNull(
-            "the converted .fx for {0}/{1} must compile on OpenGL via the real ShadowDusk CLI; error: {2}",
-            fixture, fileName, error);
-    }
-}
-
-/// <summary>
-/// Shells the BUILT ShadowDusk product CLI to compile a <c>.fx</c> to <c>.mgfx</c> on OpenGL, the same
-/// "use the real pipeline" approach the render-proof driver uses. Returns <c>null</c> on success or an
-/// error string on failure (so the integration theory can assert and surface the diagnostic).
-/// </summary>
-internal static class CliCompiler
-{
-    public static string? TryCompileOpenGl(string fx)
-    {
-        string cli = LocateCliDll();
-        string fxPath = Path.Combine(Path.GetTempPath(), $"sd_mp_{Guid.NewGuid():N}.fx");
-        string mgfxPath = Path.ChangeExtension(fxPath, ".mgfx");
-        File.WriteAllText(fxPath, fx);
-
-        try
-        {
-            var psi = new ProcessStartInfo
-            {
-                FileName = "dotnet",
-                RedirectStandardError = true,
-                RedirectStandardOutput = true,
-                UseShellExecute = false,
-            };
-            psi.ArgumentList.Add(cli);
-            psi.ArgumentList.Add(fxPath);
-            psi.ArgumentList.Add(mgfxPath);
-            psi.ArgumentList.Add("/Profile:OpenGL");
-
-            using Process proc = Process.Start(psi)
-                ?? throw new InvalidOperationException("Failed to start the ShadowDusk CLI process.");
-            string stdout = proc.StandardOutput.ReadToEnd();
-            string stderr = proc.StandardError.ReadToEnd();
-            proc.WaitForExit();
-
-            if (proc.ExitCode != 0)
-                return $"exit={proc.ExitCode}\n{stderr}\n{stdout}".Trim();
-            if (!File.Exists(mgfxPath))
-                return $"CLI exited 0 but produced no .mgfx\n{stderr}\n{stdout}".Trim();
-            return null;
-        }
-        finally
-        {
-            try { File.Delete(fxPath); } catch { /* best effort */ }
-            try { File.Delete(mgfxPath); } catch { /* best effort */ }
-        }
-    }
-
-    private static string LocateCliDll()
-    {
-        string repoRoot = FindRepoRoot(AppContext.BaseDirectory);
-        foreach (string config in new[] { "Debug", "Release" })
-        {
-            string candidate = Path.Combine(
-                repoRoot, "src", "ShadowDusk.Cli", "bin", config, "net8.0", "ShadowDuskCLI.dll");
-            if (File.Exists(candidate))
-                return candidate;
-        }
-
-        throw new FileNotFoundException(
-            "Built ShadowDuskCLI.dll not found. Build it first: " +
-            "dotnet build src/ShadowDusk.Cli/ShadowDusk.Cli.csproj");
-    }
-
-    private static string FindRepoRoot(string start)
-    {
-        var dir = new DirectoryInfo(start);
-        while (dir is not null)
-        {
-            if (File.Exists(Path.Combine(dir.FullName, "ShadowDusk.slnx")))
-                return dir.FullName;
-            dir = dir.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            $"Could not locate the ShadowDusk repo root (ShadowDusk.slnx) from {start}.");
     }
 }

@@ -22,6 +22,11 @@ internal static class ArgumentParser
           --target-runtime <name>   Output target runtime (picks backend + format together).
                                     Names: monogame-gl, monogame-dx, monogame-gl-v11,
                                     kni-knifx, fna. Overrides /Profile and --mgfx-version.
+          --input-format <fmt>      Input language: auto (default), fx, glsl. ShaderToy / GLSL
+                                    image shaders (.glsl/.frag/.fs) are auto-detected and converted
+                                    to .fx before compiling; never required for correct output.
+          --print-uniforms          Print the converted shader's drivable effect parameters to
+                                    stderr (off by default; only affects ShaderToy/GLSL input).
 
         Unsupported platforms (exit 1): PlayStation4, XboxOne, Switch
         """;
@@ -38,6 +43,8 @@ internal static class ArgumentParser
         int mgfxVersion = 10;
         DxbcBackend dxbcBackend = DxbcBackend.Vkd3d;
         CapabilityProfile? profile = null;
+        InputFormat inputFormat = InputFormat.Auto;
+        bool printUniforms = false;
 
         int i = 0;
         while (i < args.Length)
@@ -170,6 +177,24 @@ internal static class ArgumentParser
                     continue;
                 }
 
+                if (flagBody.Equals("print-uniforms", StringComparison.OrdinalIgnoreCase))
+                {
+                    printUniforms = true;
+                    i++;
+                    continue;
+                }
+
+                // --input-format <auto|fx|glsl> — a NON-required escape hatch (default auto). Accepts
+                // the space, ':' and '=' value forms, matching the parser's other long options.
+                if (TryReadValuedFlag(flagBody, "input-format", args, ref i, out string? formatValue))
+                {
+                    var fmtResult = ParseInputFormat(formatValue);
+                    if (fmtResult.IsFailure)
+                        return Result<CliArguments, ShaderError>.Fail(fmtResult.Error);
+                    inputFormat = fmtResult.Value;
+                    continue;
+                }
+
                 // Unknown flag — silently ignore the flag token only. Not consuming a
                 // potential following value ensures positional args are never accidentally
                 // swallowed by future mgfxc flags MGCB may pass.
@@ -205,7 +230,69 @@ internal static class ArgumentParser
             IncludePaths: includePaths,
             MgfxVersion: mgfxVersion,
             DxbcBackend: dxbcBackend,
-            Profile: profile));
+            Profile: profile,
+            InputFormat: inputFormat,
+            PrintUniforms: printUniforms));
+    }
+
+    // Reads a long option that carries a value in any of the three forms the CLI accepts:
+    //   --name value   (space) | --name:value (colon) | --name=value (equals)
+    // Advances `i` past the consumed token(s) and returns the value when `flagBody` names this flag.
+    private static bool TryReadValuedFlag(
+        string flagBody, string name, string[] args, ref int i, out string? value)
+    {
+        if (flagBody.Equals(name, StringComparison.OrdinalIgnoreCase))
+        {
+            i++;
+            if (i < args.Length && !IsFlag(args[i]))
+            {
+                value = args[i];
+                i++;
+            }
+            else
+            {
+                value = string.Empty;   // missing value -> let the value parser emit a loud error
+            }
+            return true;
+        }
+
+        if (flagBody.StartsWith(name + ":", StringComparison.OrdinalIgnoreCase))
+        {
+            value = flagBody.Substring(name.Length + 1);
+            i++;
+            return true;
+        }
+
+        if (flagBody.StartsWith(name + "=", StringComparison.OrdinalIgnoreCase))
+        {
+            value = flagBody.Substring(name.Length + 1);
+            i++;
+            return true;
+        }
+
+        value = null;
+        return false;
+    }
+
+    private static Result<InputFormat, ShaderError> ParseInputFormat(string? value)
+    {
+        InputFormat? format = (value ?? string.Empty).ToLowerInvariant() switch
+        {
+            "auto" => InputFormat.Auto,
+            "fx"   => InputFormat.Fx,
+            "glsl" => InputFormat.Glsl,
+            _      => null,
+        };
+
+        if (format is null)
+            return Result<InputFormat, ShaderError>.Fail(new ShaderError(
+                File: "",
+                Line: 0,
+                Column: 0,
+                Code: "X0011",
+                Message: $"Invalid --input-format value '{value}'. Valid: auto, fx, glsl"));
+
+        return Result<InputFormat, ShaderError>.Ok(format.Value);
     }
 
     // The flag names this CLI understands, for '/'-prefix disambiguation in IsFlag.

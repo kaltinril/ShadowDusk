@@ -16,7 +16,9 @@ ShadowDusk/
 │   ├── ShadowDusk.Metal/         # SPIR-V → MSL via SPIRV-Cross — STUB, not yet implemented
 │   ├── ShadowDusk.Compiler/      # EffectCompiler : IShaderCompiler + pipeline orchestration —
 │   │                             #   the consumer-facing product NuGet (the in-memory library)
-│   ├── ShadowDusk.Cli/           # CLI entry-point (dotnet tool `ShadowDuskCLI`)
+│   ├── ShadowDusk.Cli/           # CLI entry-point (dotnet tool `ShadowDuskCLI`); also accepts ShaderToy/GLSL input
+│   ├── ShadowDusk.ShaderToy/     # Pure-managed ShaderToy/GLSL → .fx front-end (ShaderToyConverter.Convert); ZERO
+│   │                             #   native + ZERO MonoGame dep; additive, upstream of the pipeline. Publishing deferred.
 │   ├── ShadowDusk.MgcbPlugin/    # MGCB content-processor plugin — STUB/scaffold (Tier-1 PATH override is the shipping MGCB path)
 │   └── ShadowDusk.Wasm/          # In-browser WASM IShaderCompiler (WasmShaderCompiler); [JSImport] to WASM-compiled DXC + SPIRV-Cross
 ├── tests/
@@ -24,7 +26,8 @@ ShadowDusk/
 │   ├── ShadowDusk.HLSL.Tests/
 │   ├── ShadowDusk.GLSL.Tests/
 │   ├── ShadowDusk.Compiler.Tests/
-│   ├── ShadowDusk.Integration.Tests/   # Compile real .fx files end-to-end
+│   ├── ShadowDusk.ShaderToy.Tests/     # ShaderToy→.fx converter unit/trap/golden/reject suite (pure managed)
+│   ├── ShadowDusk.Integration.Tests/   # Compile real .fx files end-to-end (+ CLI .glsl-input integration)
 │   ├── ShadowDusk.ImageTests/          # Offscreen-render image regression
 │   ├── ShadowDusk.BrowserTests/        # Headless KNI WebGL render validation (Playwright)
 │   └── fixtures/
@@ -38,7 +41,11 @@ ShadowDusk/
 ├── tools/                         # Vendored / downloaded native binaries (restored, not committed)
 │   ├── dxc/                       # unused — desktop DXC comes from Vortice.Dxc NuGet
 │   ├── spirv-cross/               # libspirv-cross-c-shared (.dll/.so/.dylib)
-│   └── vkd3d/                     # vkd3d-shader native (cross-platform DXBC backend)
+│   ├── vkd3d/                     # vkd3d-shader native (cross-platform DXBC backend)
+│   └── shadertoy2fx/             # ShaderToy experiment SHELLS (out-of-band, NOT in ShadowDusk.slnx):
+│                                  #   the converter LIBRARY + tests were promoted to src/+tests/ (Phase 47);
+│                                  #   what remains is the standalone PoC CLI, the MonoGame Runtime helper,
+│                                  #   the interactive sample, and the fidelity/gallery render-proof driver.
 ├── validation/                    # Rung-4 render-proof console drivers (NOT in ShadowDusk.slnx, not run by `dotnet test`):
 │                                  #   GL (VsDriven, StateFidelity, CbufferModel, ReservedWordGl, …), DX (VsDrivenDx,
 │                                  #   DxModernFeatures, …), FNA (FnaValidation), KNI (KniDesktopGL, KniWinFormsDX, KniVsDriven),

@@ -8,6 +8,9 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
     <ProjectReference Include="..\..\src\ShadowDusk.Core\ShadowDusk.Core.csproj" />
+    <!-- Phase 47: the ShaderToy/GLSL -> .fx front-end, for the byte-identity test that proves the
+         CLI's .glsl route adds no behavior over Convert + the existing pipeline. -->
+    <ProjectReference Include="..\..\src\ShadowDusk.ShaderToy\ShadowDusk.ShaderToy.csproj" />
     <ProjectReference Include="..\..\src\ShadowDusk.HLSL\ShadowDusk.HLSL.csproj" />
     <ProjectReference Include="..\..\src\ShadowDusk.GLSL\ShadowDusk.GLSL.csproj" />
     <!-- Phase 21: reference the CLI so its binary is built alongside the tests.

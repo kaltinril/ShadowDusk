@@ -163,6 +163,29 @@ wired yet (the remaining Phase 44 C tail).
 
 ---
 
+## 8. ShaderToy / GLSL frontend — a DISTINCT evidence axis (NOT `mgfxc`-equivalence)
+
+`src/ShadowDusk.ShaderToy` (Phase 47) converts a single-pass ShaderToy / GLSL image shader to a
+self-contained `.fx`, which the **existing, unchanged** pipeline then compiles. Its evidence bar is a
+**separate rung from the headline `mgfxc`/`fxc`-equivalence bar** and must never be conflated with it:
+
+- **There is NO `mgfxc` oracle for ShaderToy input** — a `.glsl` is not an `mgfxc` input, so there is
+  nothing to be byte/render-equivalent *to* on the input side. The frontend's honest bar is
+  **pixel-fidelity vs the ORIGINAL GLSL**: render the original ShaderToy GLSL in a raw GL context
+  (ground truth) vs OUR converted `.fx`→`.mgfx` through MonoGame, diff per pixel. Phase 46's
+  out-of-band `render-proof --fidelity` gate: **46/46 deterministic shaders match the original at mean
+  0.00/255** (gallery 72/72). This driver stays out-of-band like `validation/*`.
+- **The DOWNSTREAM half is unchanged.** Once the converter emits `.fx`, the `.fx`→`.mgfx`/`.fxb` step is
+  the SAME faithful, `mgfxc`-equivalent pipeline proven by the existing corpus — the promotion changes
+  neither bar (proven additive: existing `.fx` output byte-identical; converter is pure-managed, no
+  native/MonoGame dep — guarded by `NoMonoGameInProductLibrariesTests`).
+- **CLI `.glsl` route** (`ShadowDuskCLI shader.glsl out.mgfx /Profile:...`): backed by
+  `CliShaderToyInputTest` (compile OpenGL/DX, located-reject error path, byte-identity CLI ≡
+  Convert+pipeline). The Windows DX/FNA + GL render-gate fixtures for the `.glsl` route are a tracked
+  follow-up; run the Windows render gates on a GPU box before a release that ships this route.
+
+---
+
 ## Sources / cross-references
 
 - Engine state (June 2026, primary-source): [`PHASE-35-appendix/shader-pipeline-landscape-2026-06.md`](../plan/PHASE-35-appendix/shader-pipeline-landscape-2026-06.md).

@@ -7,6 +7,7 @@
     <Project Path="src/ShadowDusk.HLSL/ShadowDusk.HLSL.csproj" />
     <Project Path="src/ShadowDusk.Metal/ShadowDusk.Metal.csproj" />
     <Project Path="src/ShadowDusk.MgcbPlugin/ShadowDusk.MgcbPlugin.csproj" />
+    <Project Path="src/ShadowDusk.ShaderToy/ShadowDusk.ShaderToy.csproj" />
     <Project Path="src/ShadowDusk.Wasm/ShadowDusk.Wasm.csproj" />
   </Folder>
   <Folder Name="/tests/">
@@ -16,5 +17,6 @@
     <Project Path="tests/ShadowDusk.HLSL.Tests/ShadowDusk.HLSL.Tests.csproj" />
     <Project Path="tests/ShadowDusk.ImageTests/ShadowDusk.ImageTests.csproj" />
     <Project Path="tests/ShadowDusk.Integration.Tests/ShadowDusk.Integration.Tests.csproj" />
+    <Project Path="tests/ShadowDusk.ShaderToy.Tests/ShadowDusk.ShaderToy.Tests.csproj" />
   </Folder>
 </Solution>

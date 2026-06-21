@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>ShadowDusk.ShaderToy</AssemblyName>
+    <RootNamespace>ShadowDusk.ShaderToy</RootNamespace>
+    <!-- Phase 47: promoted to a product library + tested in-solution; publishing deferred by owner.
+         To ship it, flip IsPackable to true and add it to the release set (see plan/PHASE-47). Do NOT
+         add a <Version>/<PackageVersion> property here: the single version source of truth is
+         Directory.Build.props <Version>, inherited like every other ShadowDusk.* package. -->
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="ShadowDusk.ShaderToy.Tests" />
+  </ItemGroup>
+</Project>

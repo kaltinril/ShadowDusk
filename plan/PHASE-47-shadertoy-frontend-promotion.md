@@ -6,7 +6,16 @@ product library** — pure-managed, zero native dependency, strictly additive. T
 owns the **overall architecture** and the **library-migration** plan, and links to two sibling
 appendix docs that own the CLI-input and sample-migration slices.
 
-**Status:** Planned (written 2026-06-20). No code change made by this doc — planning only.
+**Status:** IMPLEMENTED (2026-06-20). The converter library + its 380-test suite were promoted to
+`src/ShadowDusk.ShaderToy/` + `tests/ShadowDusk.ShaderToy.Tests/` (git mv, history preserved) and added
+to `ShadowDusk.slnx`; `dotnet build/test ShadowDusk.slnx` is green (ShaderToy 380, full suite passing, 0
+warnings). The out-of-band PoC CLI / render-proof / sample were repointed at the new `src/` path and
+still build; `shadertoy2fx.slnx` references the promoted library in place. The real `ShadowDuskCLI` now
+accepts ShaderToy/GLSL input (CLI appendix, implemented). A standing `NoMonoGameInProductLibrariesTests`
+guard asserts no `src/*.csproj` depends on MonoGame. **Still owner-deferred:** NuGet publication of
+`ShadowDusk.ShaderToy` (kept `IsPackable=false`), the sample/runtime migration to `samples/`
+(sample-migration appendix), and the Windows DX/FNA + fidelity render gates (must be run on a Windows GPU
+box before this merges — CI cannot run them).
 
 **Depends on:**
 - [Phase 46 — ShaderToy → FX Conversion Tool](PHASE-46-shadertoy-to-fx-conversion-tool.md): the
@@ -349,6 +358,55 @@ drivers stay out-of-band like `validation/*`. NuGet publication is **deferred** 
 documented one-line toggle. The ShaderToy frontend's honest, distinct evidence bar
 (pixel-fidelity-vs-original-GLSL, 46/46 @ 0.00 — NOT `mgfxc`-equivalence) is documented. The CLI `.glsl`
 input and the sample/runtime migration are planned in the two linked appendices.
+
+---
+
+## Follow-up work (next session, 2026-06-21) — converter robustness + diagnostics
+
+Two converter gaps surfaced while testing real third-party ShaderToy shaders through the new WASM-fiddle
+ShaderToy path (the fiddle now accepts ShaderToy/GLSL input and renders it fullscreen; see
+`samples/ShaderFiddle.Web`). Both are **converter** issues, NOT pipeline or WebGL-profile issues, and both
+violate the project's "never silently wrong / fail loudly with a clear, located diagnostic" rule because
+the converter emitted invalid HLSL and let DXC be the one to complain. Owner will pick these up next.
+
+### F1. Identifier-safety pass (reserved-word / name-collision protection) [the actual bug]
+
+GLSL identifiers that are invalid as HLSL identifiers pass through the converter verbatim and produce
+HLSL that DXC rejects with an opaque error. Two flavors:
+
+- **A local variable that shadows a function name.** Legal GLSL, invalid HLSL. Reproduced with mrange's
+  "Let's self reflect" ShaderToy: `mat3 rot = rot(normalize(r0), normalize(r1));` — the local `rot`
+  shadows the `rot()` function, so DXC reports `error X0000: type 'float3x3' does not provide a call
+  operator`. Renaming the local (`rot` -> `rotm`) compiles cleanly (verified via the CLI).
+- **An identifier that collides with an HLSL keyword/intrinsic** (e.g. a GLSL variable named `min`,
+  `sample`, `input`, `output`, `matrix`, `vector`, `linear`, `texture`, `row_major`, ...). Fine in GLSL,
+  breaks in HLSL.
+
+**Fix:** a converter identifier-safety pass that detects both cases and AUTO-RENAMES the offending
+identifier (and its in-scope references) — e.g. `rot` -> `rot_sd` — emitting a **located Warning** (so it
+is seamless AND transparent, honoring both directives). Genuinely unresolvable cases become a clear,
+GLSL-located reject rather than an opaque DXC error. Needs scope-aware renaming in the
+parser/type-inference/emitter, an HLSL reserved-word/intrinsic table, unit tests, and a regression
+fixture (the `rot`/reserved-word shaders) per the repo's "every fixed bug earns a fixture" rule.
+
+### F2. Better diagnostics for ShaderToy/GLSL input
+
+When converted ShaderToy input fails at the **pipeline (DXC) stage**, the diagnostic is poor:
+
+- **Wrong line attribution.** The error is stamped with the original `.glsl` filename but carries the
+  *generated* `.fx` line numbers. A ~30-line `.glsl` reproduced an error reported at "line 51" (a line
+  that exists only in the synthesized `.fx`), so a click-to-jump lands nowhere. Convert-stage diagnostics
+  ARE correctly GLSL-located; only pipeline-stage ones leak generated-HLSL lines under the `.glsl` name.
+- **Raw DXC message.** `type 'float3x3' does not provide a call operator` never explains the GLSL cause
+  (a local shadowing a function).
+
+**Fix:** (a) catch known translation traps (F1 and similar) at CONVERT time so they surface GLSL-located,
+in plain English, and never reach the mislocated pipeline error; (b) for residual pipeline errors on
+converted input, stop stamping the `.glsl` filename onto generated-HLSL line numbers — attribute them as
+"generated HLSL" (full GLSL source-mapping through `.fx` generation is a larger effort, deferred). The
+fiddle should also surface the panel detail more prominently than the "N compile error(s)" summary.
+
+Suggested order: F1 first (it is the actual fix for the shaders that fail), then F2.
 
 ---
 

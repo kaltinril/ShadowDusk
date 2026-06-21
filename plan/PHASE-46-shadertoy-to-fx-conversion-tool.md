@@ -43,7 +43,10 @@
 > Keep it that way; promotion is a wire-in, not a rewrite.
 >
 > **Open next-steps (none mid-flight):**
-> 1. **Promote core → library + CLI `.glsl` input** (the owner's stated end-goal; the real next phase).
+> 1. ~~**Promote core → library + CLI `.glsl` input**~~ **DONE (Phase 47, 2026-06-20):** the converter
+>    library + 380-test suite are now `src/ShadowDusk.ShaderToy/` + `tests/ShadowDusk.ShaderToy.Tests/`
+>    in `ShadowDusk.slnx`, and `ShadowDuskCLI` accepts ShaderToy/GLSL input. See
+>    `plan/PHASE-47-shadertoy-frontend-promotion.md` + the CLI appendix.
 > 2. **Host-uniform passthrough, WARNED version** (owner asked "what's the harm"): expose an
 >    undeclared identifier as an effect parameter ONLY where the type is inferable, with a loud Warning
 >    ("assumed `float`; you must supply X"). Raises the % but with lower-quality "best-effort" output;
