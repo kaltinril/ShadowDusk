@@ -87,6 +87,28 @@ public sealed class Phase48ProfileValidationCorpusTests
     }
 
     // -------------------------------------------------------------------------
+    // Reject — W3 cross-stage: a ps_* profile bound to the VertexShader slot.
+    // GL/DX/Vulkan reject with SD0014 (the FNA SD0300 equivalent is covered by
+    // FnaProfilePolicyTests and is unchanged by W3).
+    // -------------------------------------------------------------------------
+
+    [Theory]
+    [Trait("Platform", "OpenGL")]
+    [InlineData(PlatformTarget.OpenGL)]
+    [InlineData(PlatformTarget.DirectX)]
+    public async Task StageMismatchProfile_GlDx_RejectsWithSd0014(PlatformTarget target)
+    {
+        using var cts = new CancellationTokenSource(CompileTimeout);
+
+        var result = await CompileAsync("examples/ExProfileStageMismatch.fx", target, cts.Token);
+
+        result.IsFailure.Should().BeTrue(
+            because: "a ps_* profile in the VertexShader slot is a cross-stage binding mgfxc rejects");
+        result.Error.Should().Contain(e => e.Code == "SD0014",
+            because: "the stage/slot prefix mismatch must surface as SD0014");
+    }
+
+    // -------------------------------------------------------------------------
     // Accept — the W0 guard: the standard MonoGame header's *_level_9_1 profiles
     // must keep compiling on every target (else rejection regresses stock shaders).
     // -------------------------------------------------------------------------

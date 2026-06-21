@@ -331,7 +331,7 @@ internal sealed class CompilationPipeline
                     var v = ValidateCompileProfile(
                         pass.VertexProfile, pass.VertexProfileToken, pass.VertexProfileSpan, ShaderStage.Vertex,
                         dxcCompiler, macros, preprocessed, sourceFileName,
-                        profileExpansionCache, cancellationToken);
+                        profileExpansionCache, enforceStagePrefix: true, cancellationToken);
                     if (v is { } vErr)
                         return Fail(vErr);
                 }
@@ -340,7 +340,7 @@ internal sealed class CompilationPipeline
                     var p = ValidateCompileProfile(
                         pass.PixelProfile, pass.PixelProfileToken, pass.PixelProfileSpan, ShaderStage.Pixel,
                         dxcCompiler, macros, preprocessed, sourceFileName,
-                        profileExpansionCache, cancellationToken);
+                        profileExpansionCache, enforceStagePrefix: true, cancellationToken);
                     if (p is { } pErr)
                         return Fail(pErr);
                 }
@@ -812,6 +812,7 @@ internal sealed class CompilationPipeline
         PreprocessedSource preprocessed,
         string sourceFileName,
         Dictionary<string, string?> expansionCache,
+        bool enforceStagePrefix,
         CancellationToken cancellationToken)
     {
         // A missing profile cannot be validated (and never reaches a compile with a real
@@ -822,7 +823,7 @@ internal sealed class CompilationPipeline
         // Cheap path: an already-known literal profile is accepted with no expansion.
         // (IsKnownProfile is case-insensitive, so the lowercased form is fine here.)
         if (FxPreParser.IsKnownProfile(profile))
-            return null;
+            return StagePrefixCheck(profile, stage, span, sourceFileName, enforceStagePrefix);
 
         // Profile-SHAPED but NOT a known profile (e.g. 'ps_9_9', 'ps_2_5'): unconditionally
         // invalid — no macro could rescue a literal that already looks like a profile — so
@@ -848,9 +849,42 @@ internal sealed class CompilationPipeline
         }
 
         if (expanded is not null && FxPreParser.IsKnownProfile(expanded))
-            return null;
+            return StagePrefixCheck(expanded, stage, span, sourceFileName, enforceStagePrefix);
 
         return ProfileError(profile, span, sourceFileName);
+    }
+
+    /// <summary>
+    /// W3 (GL/DX/Vulkan): once a compile target resolves to a recognized profile, verify its
+    /// stage prefix matches the pass slot it is bound to — a <c>vs_*</c> profile in a
+    /// <c>VertexShader =</c> slot and a <c>ps_*</c> in a <c>PixelShader =</c> slot. mgfxc/fxc
+    /// reject a cross-stage binding (e.g. <c>VertexShader = compile ps_3_0 …</c>); ShadowDusk
+    /// previously ignored the declared prefix and compiled by slot. Returns <c>null</c> when
+    /// the prefix matches (or when <paramref name="enforceStagePrefix"/> is false — the FNA
+    /// path keeps this check in <see cref="ResolveFnaProfile"/> as SD0300). A recognized
+    /// profile is always <c>vs_</c> or <c>ps_</c> (KnownProfiles lists no other stages).
+    /// </summary>
+    private static ShaderError? StagePrefixCheck(
+        string knownProfile, ShaderStage stage, SourceSpan? span, string sourceFileName, bool enforceStagePrefix)
+    {
+        if (!enforceStagePrefix)
+            return null;
+
+        bool profileIsVertex = knownProfile.StartsWith("vs_", StringComparison.Ordinal);
+        bool slotIsVertex    = stage == ShaderStage.Vertex;
+        if (profileIsVertex == slotIsVertex)
+            return null;
+
+        string slot = slotIsVertex ? "VertexShader" : "PixelShader";
+        string want = slotIsVertex ? "vs_*" : "ps_*";
+        return new ShaderError(
+            File: sourceFileName,
+            Line: span?.StartLine ?? 0,
+            Column: span?.StartColumn ?? 0,
+            Code: "SD0014",
+            Message: $"compile target '{knownProfile}' is a {(profileIsVertex ? "vertex" : "pixel")} profile but " +
+                     $"is bound to the pass's {slot} slot — the profile's stage must match the slot it compiles " +
+                     $"(use a {want} profile)");
     }
 
     /// <summary>
@@ -1001,10 +1035,12 @@ internal sealed class CompilationPipeline
                 {
                     if (pass.VertexEntryPoint is not null)
                     {
+                        // enforceStagePrefix: false — the FNA path's stage/profile prefix
+                        // cross-check stays in ResolveFnaProfile (SD0300, FNA range), unchanged.
                         var v = ValidateCompileProfile(
                             pass.VertexProfile, pass.VertexProfileToken, pass.VertexProfileSpan, ShaderStage.Vertex,
                             fnaDxcCompiler, fnaMacros, preprocessed, sourceFileName,
-                            fnaProfileExpansionCache, cancellationToken);
+                            fnaProfileExpansionCache, enforceStagePrefix: false, cancellationToken);
                         if (v is { } vErr)
                             return Fail(vErr);
                     }
@@ -1013,7 +1049,7 @@ internal sealed class CompilationPipeline
                         var p = ValidateCompileProfile(
                             pass.PixelProfile, pass.PixelProfileToken, pass.PixelProfileSpan, ShaderStage.Pixel,
                             fnaDxcCompiler, fnaMacros, preprocessed, sourceFileName,
-                            fnaProfileExpansionCache, cancellationToken);
+                            fnaProfileExpansionCache, enforceStagePrefix: false, cancellationToken);
                         if (p is { } pErr)
                             return Fail(pErr);
                     }

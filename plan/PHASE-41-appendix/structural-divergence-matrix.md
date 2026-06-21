@@ -24,7 +24,7 @@
   - Structurally **clean**: **64**
   - **Divergent** (>=1 level): **17**
   - Compile/parse **failures**: **11**
-- Non-golden census cells: **122** (**101** compile, **21** fail with a code)
+- Non-golden census cells: **124** (**101** compile, **23** fail with a code)
 
 ## Golden-backed fixtures — per-level structural verdict
 
@@ -252,6 +252,8 @@ is a CORRECT result, not a defect.
 | examples/ExProfileBogusLiteral.fx | OpenGL | FAIL | SD0013 | compile target 'ps_9_9' is not a recognized shader profile (did you forget to #define VS_SHADERMODEL / PS_SHADERMODEL, e.g. via the standard '#if OPENGL ... #el... |
 | examples/ExProfileLevel9Header.fx | DirectX_11 | PASS |  |  |
 | examples/ExProfileLevel9Header.fx | OpenGL | PASS |  |  |
+| examples/ExProfileStageMismatch.fx | DirectX_11 | FAIL | SD0014 | compile target 'ps_4_0_level_9_1' is a pixel profile but is bound to the pass's VertexShader slot — the profile's stage must match the slot it compiles (use a v... |
+| examples/ExProfileStageMismatch.fx | OpenGL | FAIL | SD0014 | compile target 'ps_3_0' is a pixel profile but is bound to the pass's VertexShader slot — the profile's stage must match the slot it compiles (use a vs_* profil... |
 | examples/ExProfileTypo.fx | DirectX_11 | FAIL | SD0013 | compile target 'a' is not a recognized shader profile (did you forget to #define VS_SHADERMODEL / PS_SHADERMODEL, e.g. via the standard '#if OPENGL ... #else ..... |
 | examples/ExProfileTypo.fx | OpenGL | FAIL | SD0013 | compile target 'a' is not a recognized shader profile (did you forget to #define VS_SHADERMODEL / PS_SHADERMODEL, e.g. via the standard '#if OPENGL ... #else ..... |
 | examples/ExProfileUndefinedMacro.fx | DirectX_11 | FAIL | SD0013 | compile target 'ps_shadermodel' is not a recognized shader profile (did you forget to #define VS_SHADERMODEL / PS_SHADERMODEL, e.g. via the standard '#if OPENGL... |
@@ -337,6 +339,7 @@ is a CORRECT result, not a defect.
 - `SD0010`: 6 cell(s) — minimal_vs_ps.fx [DirectX_11], minimal_vs_ps.fx [OpenGL], passthrough_vs.fx [DirectX_11], passthrough_vs.fx [OpenGL], textured_vs_ps.fx [DirectX_11], textured_vs_ps.fx [OpenGL]
 - `SD0210`: 4 cell(s) — examples/ExIntUniformMember.fx [OpenGL], examples/ExMat3UniformMember.fx [OpenGL], examples/ExVsTextureFetch.fx [OpenGL], third-party/Nez/Crosshatch.fx [OpenGL]
 - `SD0001`: 2 cell(s) — MinimalWithInclude.fx [DirectX_11], MinimalWithInclude.fx [OpenGL]
+- `SD0014`: 2 cell(s) — examples/ExProfileStageMismatch.fx [DirectX_11], examples/ExProfileStageMismatch.fx [OpenGL]
 - `FX0012`: 2 cell(s) — third-party/Nez/PaletteCycler.fx [DirectX_11], third-party/Nez/PaletteCycler.fx [OpenGL]
 - `SD0100`: 1 cell(s) — third-party/Nez/Reflection.fx [OpenGL]
 

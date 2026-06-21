@@ -212,8 +212,16 @@ rejects) from a defined one, and an uppercase typo like `A` still slips through.
       set BEFORE `ResolveFnaProfile`, which is unchanged (it still applies the MojoShader SM2–3 ceiling once a
       token resolves to a real profile). Literal-known-profile passes stay zero-cost. No currently-compiling
       output changed (byte-identity corpus green).
-- [ ] **W3 — optional, NOT done:** the GL/DX stage-prefix cross-check (`VertexShader = compile ps_3_0 …`) is
-      left for a follow-up; the `stage` parameter is already threaded into `ValidateCompileProfile` as the hook.
+- [x] **W3 — GL/DX/Vulkan stage-prefix cross-check (done, 2026-06-20).** Once a compile target resolves to a
+      recognized profile, `StagePrefixCheck` verifies its stage prefix matches the slot it is bound to — a
+      `vs_*` in a `VertexShader =` slot, a `ps_*` in a `PixelShader =` slot. A mismatch (`VertexShader = compile
+      ps_3_0 …`, or via a macro like `VertexShader = compile PS_SHADERMODEL …`) is rejected with the new
+      **`SD0014`** (pipeline-validation range), matching mgfxc/fxc, which reject a cross-stage binding;
+      ShadowDusk previously ignored the declared prefix and compiled by slot. Gated by an `enforceStagePrefix`
+      flag: ON for GL/DX/Vulkan, OFF for FNA — the FNA path keeps the identical condition as `SD0300` in
+      `ResolveFnaProfile` (FNA range, untouched, still covered by `FnaProfilePolicyTests`). Regression fixture
+      `examples/ExProfileStageMismatch.fx` (rejects SD0014 on GL + DX). No existing fixture has a cross-stage
+      compile (grep-verified), so nothing currently-compiling regresses.
 - [x] **W4 — regression fixtures + unit tests.**
       - `tests/ShadowDusk.HLSL.Tests/ProfileRecognitionTests.cs` — `IsKnownProfile` (incl. the FL9 W0 set) and
         `LooksLikeProfile` (shaped vs. macro-name) helpers.
