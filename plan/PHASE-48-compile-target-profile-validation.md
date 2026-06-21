@@ -262,16 +262,23 @@ the byte-identity corpus). The three caveats the review surfaced, and their reso
 - **Extra preprocess latency — ACCEPTED.** Each macro-profile shader pays one cached DXC `-P` preprocess per
   distinct token (~1–2 per typical effect); literal-profile passes pay nothing. Small vs. a full compile, suite
   unaffected. A lighter source-`#define` scan is a possible future optimization, not needed now.
-- **New DXC dependency on the FNA validation step — SOUND BY CONSTRUCTION, desktop-proven; WASM browser-smoke
-  is a follow-up.** FNA codegen stays vkd3d-only (output bytes unchanged, host-independent) — DXC is used only
-  for the *preprocessor* during validation, and only when an FNA shader uses a macro profile token. The factory
-  is never null (`CompilationPipeline` defaults it to `new DxcShaderCompiler()`) and WASM wires it to
-  `JsDxcShaderCompiler` ([WasmShaderCompiler.cs:112](../src/ShadowDusk.Wasm/WasmShaderCompiler.cs#L112)); WASM
-  DXC `Preprocess` is already a proven path (Phase 38 line/col diagnostics) and `InitializeAsync` warms the DXC
-  module (Phase 42). Desktop FNA-macro-through-DXC is render-corpus-tested by `ExProfileLevel9Header.fx` on FNA
-  (green). Worst case (DXC genuinely unavailable) surfaces a clear preprocess error, never a crash. The one
-  un-run check is a dedicated **WASM-FNA-with-macro-profile browser smoke** — recorded as a follow-up; not a
-  blocker given the proven composition.
+- **New DXC dependency on the validation step — this was WRONG in the first cut and BROKE `main`; now FIXED.**
+  My original note here ("sound by construction") was incorrect. The recognized-profile check macro-expands a
+  profile macro via DXC's `-P` preprocessor, but the **WASM DXC shim has no `-P` export and THROWS**
+  `NotSupportedException` ([JsShaderBackends.Preprocess](../src/ShadowDusk.Wasm/JsShaderBackends.cs#L95-L104)).
+  The check ran on every macro-profile compile, which the in-browser DX/FNA byte-identity corpus exercises, so
+  the standing `wasm.yml` gate went RED on the PR-#113 merge (every macro-profile shader threw, including the
+  "vkd3d path must not touch the other modules" isolation scenario). I deferred running that gate instead of
+  triggering it; it would have caught this pre-merge. **Fix (PR follow-up):** the macro-token check is now
+  strictly **best-effort** — `TryExpandProfileToken` catches a thrown/failed expansion and returns an
+  `ExpansionUnavailable` sentinel, and `ValidateCompileProfile` then **defers** (accepts), exactly restoring
+  the pre-Phase-48 lenient behavior on a backend without `-P`. Desktop (where `-P` works) still rejects bogus
+  macros; literal-token validation (`ps_9_9`, cross-stage with a literal) still works on every backend since it
+  needs no expansion. Regression-locked by `DxbcCompilerInjectionTests.MacroProfile_WhenPreprocessThrows_SkipsValidationAndCompiles`
+  (pure unit test: a `Preprocess`-throwing DXC + injected vkd3d, FNA macro-profile compile must reach codegen,
+  not throw or reject) AND re-proven green by the real in-browser `wasm.yml` gate. Lesson recorded: run the
+  WASM/browser gate (or dispatch `wasm.yml`) for any change that touches the shared compile path, not just the
+  desktop suite.
 - **Scope honesty:** this fixes the **profile-token** class of mgfxc-vs-ShadowDusk divergence only. Other
   accept-side gaps (bad entry-point names — already caught by DXC; unsupported intrinsics; semantic mismatches)
   are separate, some already handled, the rest [Phase 41](PHASE-41-fxc-oracle-monogame-fidelity.md) territory.
