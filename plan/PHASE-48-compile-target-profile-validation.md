@@ -192,13 +192,15 @@ rejects) from a defined one, and an uppercase typo like `A` still slips through.
 ## Work items (each a self-contained task)
 
 - [x] **W0 — REQUIRED, load-bearing: audit + extend `KnownProfiles`.** Done: added
-      `vs_4_0_level_9_0/_9_1/_9_3` and `ps_4_0_level_9_0/_9_1/_9_3` (fxc's documented FL9 set; no `_level_9_2`). The set at
-      [FxPreParser.cs:27-43](../src/ShadowDusk.HLSL/FxPreParser.cs#L27-L43) is **missing the `*_level_9_*`
-      variants** (`vs_4_0_level_9_1/_9_3`, `ps_4_0_level_9_1/_9_3`, and `*_level_9_0` if fxc accepts it) — the
-      exact profiles the **standard MonoGame DirectX header expands to**. If rejection is turned on before this
-      set is extended, **every stock MonoGame shader on the DirectX path is wrongly rejected** — a regression
-      far worse than the bug. Audit against what `fxc`/`mgfxc` actually accept, then extend the set. This is a
-      **prerequisite** for W2/W3, not a "risk to watch."
+      `vs_4_0_level_9_0/_9_1/_9_3` and `ps_4_0_level_9_0/_9_1/_9_3` (fxc's documented FL9 set; no `_level_9_2`).
+      These are the exact profiles the **standard MonoGame DirectX header expands to**; without them, turning on
+      rejection would wrongly fail **every stock MonoGame DirectX shader** — a regression far worse than the bug.
+      **Completeness follow-up (post-review, 2026-06-20):** the set was also missing a few profiles fxc/DXC
+      accept, which would have over-rejected in the *other* direction (rejecting a valid-to-reference target).
+      Added `vs_3_sw`/`ps_3_sw` (the `*_2_sw` siblings were already listed — the omission was an asymmetry) and
+      `vs_6_8`/`vs_6_9`/`ps_6_8`/`ps_6_9` (the SM6 list ran to 6_7; DXC, our frontend, accepts these). None are
+      used by real MonoGame/FNA/KNI games, but "reject exactly what the reference compiler rejects" means not
+      over-rejecting either. Unit-covered in `ProfileRecognitionTests`.
 - [x] **W1 — expanded-token plumbing.** GL/DX (and the FNA expansion) reuse DXC's `Preprocess` (`-P`): a
       unique-sentinel probe (`__SD_PROFILE_PROBE__ <rawToken> __SD_PROFILE_PROBE__`) is appended to the
       already-`#include`-flattened source and preprocessed with the target's `PlatformMacros`, so the correct
@@ -230,7 +232,7 @@ rejects) from a defined one, and an uppercase typo like `A` still slips through.
 ## Definition of done
 
 - A `.fx` whose `compile` target does not resolve (after macro expansion) to a recognized profile is
-  **rejected with a clear `SD0301` diagnostic** on GL, DX, and FNA — matching mgfxc's `unrecognized compiler
+  **rejected with a clear `SD0013` diagnostic** on GL, DX, and FNA — matching mgfxc's `unrecognized compiler
   target`. Covers `A`, undefined `PS_SHADERMODEL`, and profile-shaped-but-bogus literals (`ps_9_9`).
 - Every currently-compiling shader (literal profile or defined-macro profile, including the standard DX
   `*_level_9_1` header) still compiles, byte-for-byte unchanged (spot-check the corpus manifest).
@@ -238,12 +240,30 @@ rejects) from a defined one, and an uppercase typo like `A` still slips through.
   bogus-literal cases.
 - Whole-suite `dotnet test ShadowDusk.slnx` green.
 
-## Risk / notes
+## Risk / notes (post-review hardening, 2026-06-20)
 
-- **Risk: over-rejection (the W0 trap).** Mitigated by making the `KnownProfiles` audit a hard prerequisite —
-  the `*_level_9_*` DX-header profiles MUST be present before rejection is enabled.
-- **Risk: extra preprocess latency.** Mitigated by scoping expansion to non-literal tokens only; quantify on
-  the corpus during W2.
+A purpose/regression review asked "does this break anything in place or bend the library's intent?" Verdict:
+**no — it advances the drop-in-`mgfxc` purpose** (rejects what the reference rejects, fails loudly, no new
+flag, no `.mgfx`/pin change, output bytes unchanged) and **nothing proven regresses** (full suite green incl.
+the byte-identity corpus). The three caveats the review surfaced, and their resolution:
+
+- **Over-rejection (both directions) — RESOLVED.** Under-listing the DX-header `*_level_9_*` profiles was the
+  dangerous direction (handled by W0). The review also found the *other* direction: `vs_3_sw`/`ps_3_sw` and
+  SM6.8/6.9 were valid-to-fxc/DXC but absent, so they'd be wrongly rejected. Added in the W0 completeness
+  follow-up. The `KnownProfiles` set now matches the reference compilers' accepted `vs_*`/`ps_*` targets.
+- **Extra preprocess latency — ACCEPTED.** Each macro-profile shader pays one cached DXC `-P` preprocess per
+  distinct token (~1–2 per typical effect); literal-profile passes pay nothing. Small vs. a full compile, suite
+  unaffected. A lighter source-`#define` scan is a possible future optimization, not needed now.
+- **New DXC dependency on the FNA validation step — SOUND BY CONSTRUCTION, desktop-proven; WASM browser-smoke
+  is a follow-up.** FNA codegen stays vkd3d-only (output bytes unchanged, host-independent) — DXC is used only
+  for the *preprocessor* during validation, and only when an FNA shader uses a macro profile token. The factory
+  is never null (`CompilationPipeline` defaults it to `new DxcShaderCompiler()`) and WASM wires it to
+  `JsDxcShaderCompiler` ([WasmShaderCompiler.cs:112](../src/ShadowDusk.Wasm/WasmShaderCompiler.cs#L112)); WASM
+  DXC `Preprocess` is already a proven path (Phase 38 line/col diagnostics) and `InitializeAsync` warms the DXC
+  module (Phase 42). Desktop FNA-macro-through-DXC is render-corpus-tested by `ExProfileLevel9Header.fx` on FNA
+  (green). Worst case (DXC genuinely unavailable) surfaces a clear preprocess error, never a crash. The one
+  un-run check is a dedicated **WASM-FNA-with-macro-profile browser smoke** — recorded as a follow-up; not a
+  blocker given the proven composition.
 - **Scope honesty:** this fixes the **profile-token** class of mgfxc-vs-ShadowDusk divergence only. Other
   accept-side gaps (bad entry-point names — already caught by DXC; unsupported intrinsics; semantic mismatches)
   are separate, some already handled, the rest [Phase 41](PHASE-41-fxc-oracle-monogame-fidelity.md) territory.

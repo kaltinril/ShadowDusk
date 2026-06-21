@@ -39,6 +39,21 @@ public sealed class ProfileRecognitionTests
                      "rejecting them would break every stock MonoGame DirectX shader");
 
     [Theory]
+    // Completeness: profiles fxc/DXC accept that are easy to omit. The *_2_sw siblings were
+    // already listed, so omitting the *_3_sw pair would over-reject a valid-to-fxc profile;
+    // the SM6 list ran to 6_7, so 6_8/6_9 (which DXC, our frontend, accepts) round it out.
+    [InlineData("vs_3_sw")]
+    [InlineData("ps_3_sw")]
+    [InlineData("vs_6_8")]
+    [InlineData("vs_6_9")]
+    [InlineData("ps_6_8")]
+    [InlineData("ps_6_9")]
+    public void IsKnownProfile_AcceptsLessCommonButValidProfiles(string profile) =>
+        FxPreParser.IsKnownProfile(profile).Should().BeTrue(
+            because: "fxc/DXC accept these, so rejecting them would diverge in the over-reject " +
+                     "direction (accepting fewer than the reference compiler)");
+
+    [Theory]
     [InlineData("ps_9_9")]   // profile-shaped but bogus
     [InlineData("ps_2_5")]   // profile-shaped but bogus
     [InlineData("a")]        // typo

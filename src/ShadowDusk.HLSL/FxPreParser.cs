@@ -32,7 +32,7 @@ public sealed class FxPreParser
         // VS profiles
         "vs_1_1",
         "vs_2_0", "vs_2_a", "vs_2_sw",
-        "vs_3_0",
+        "vs_3_0", "vs_3_sw",
         "vs_4_0", "vs_4_1",
         // Direct3D feature-level 9 variants of the SM4 vertex profile. These are the
         // EXACT tokens the standard MonoGame cross-platform header expands to on the
@@ -42,17 +42,17 @@ public sealed class FxPreParser
         // _level_9_0/_9_1/_9_3 forms for vs_4_0 (there is no _level_9_2).
         "vs_4_0_level_9_0", "vs_4_0_level_9_1", "vs_4_0_level_9_3",
         "vs_5_0",
-        "vs_6_0", "vs_6_1", "vs_6_2", "vs_6_3", "vs_6_4", "vs_6_5", "vs_6_6", "vs_6_7",
+        "vs_6_0", "vs_6_1", "vs_6_2", "vs_6_3", "vs_6_4", "vs_6_5", "vs_6_6", "vs_6_7", "vs_6_8", "vs_6_9",
         // PS profiles
         "ps_1_1", "ps_1_2", "ps_1_3", "ps_1_4",
         "ps_2_0", "ps_2_a", "ps_2_b", "ps_2_sw",
-        "ps_3_0",
+        "ps_3_0", "ps_3_sw",
         "ps_4_0", "ps_4_1",
         // Direct3D feature-level 9 variants of the SM4 pixel profile (the DirectX-branch
         // '#define PS_SHADERMODEL ps_4_0_level_9_1'). Same fxc support as the vs_ forms.
         "ps_4_0_level_9_0", "ps_4_0_level_9_1", "ps_4_0_level_9_3",
         "ps_5_0",
-        "ps_6_0", "ps_6_1", "ps_6_2", "ps_6_3", "ps_6_4", "ps_6_5", "ps_6_6", "ps_6_7",
+        "ps_6_0", "ps_6_1", "ps_6_2", "ps_6_3", "ps_6_4", "ps_6_5", "ps_6_6", "ps_6_7", "ps_6_8", "ps_6_9",
     };
 
     /// <summary>Returns true when the given profile string (already lowercased) is a recognized shader profile.</summary>
