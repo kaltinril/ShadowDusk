@@ -838,20 +838,67 @@ internal sealed class CompilationPipeline
         string rawToken = profileToken ?? profile;
         if (!expansionCache.TryGetValue(rawToken, out string? expanded))
         {
-            var expandResult = ExpandProfileToken(
+            expanded = TryExpandProfileToken(
                 rawToken, dxcCompiler, macros, preprocessed, sourceFileName, cancellationToken);
-            // A preprocess failure here is reported as-is (it is a real source error, e.g.
-            // a malformed #if the user wrote); a null expansion means 'still not a profile'.
-            if (expandResult.IsFailure)
-                return expandResult.Error;
-            expanded = expandResult.Value;
             expansionCache[rawToken] = expanded;
         }
+
+        // The macro-token check is BEST-EFFORT and must never block a compile that would
+        // otherwise succeed. When expansion could not run on this backend (the WASM DXC shim
+        // has no preprocess-only '-P' export and throws — see JsShaderBackends.Preprocess),
+        // we cannot tell a real profile from a typo, so we defer to the actual compile: this
+        // restores the exact pre-Phase-48 behavior (lenient accept) for macro tokens on a
+        // backend without '-P', while desktop (where '-P' works) still rejects bogus macros.
+        if (ReferenceEquals(expanded, ExpansionUnavailable))
+            return null;
 
         if (expanded is not null && FxPreParser.IsKnownProfile(expanded))
             return StagePrefixCheck(expanded, stage, span, sourceFileName, enforceStagePrefix);
 
         return ProfileError(profile, span, sourceFileName);
+    }
+
+    /// <summary>
+    /// Sentinel cached by <see cref="TryExpandProfileToken"/> when macro expansion could not
+    /// run on the active DXC backend (e.g. the WASM shim has no <c>-P</c> export). Distinct
+    /// from a <c>null</c> expansion (which is a definitive "not a profile" → reject).
+    /// </summary>
+    private const string ExpansionUnavailable = " __sd_expansion_unavailable__";
+
+    /// <summary>
+    /// Macro-expands a compile-target token, returning the expansion, <c>null</c> when it does
+    /// not resolve to a profile-shaped token, or <see cref="ExpansionUnavailable"/> when the
+    /// backend cannot preprocess at all (the WASM DXC shim throws <see cref="NotSupportedException"/>
+    /// for <c>-P</c>). Any non-cancellation failure is treated as "unavailable" so the
+    /// best-effort profile check can never crash or block a compile.
+    /// </summary>
+    private static string? TryExpandProfileToken(
+        string token,
+        Lazy<IDxcShaderCompiler> dxcCompiler,
+        MacroSet macros,
+        PreprocessedSource preprocessed,
+        string sourceFileName,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var expandResult = ExpandProfileToken(
+                token, dxcCompiler, macros, preprocessed, sourceFileName, cancellationToken);
+            // A preprocess failure (e.g. a malformed #if the user wrote) is NOT surfaced here:
+            // the real compile independently reports any genuine source error, so treating it
+            // as "unavailable" keeps the check best-effort and avoids double/duplicate errors.
+            return expandResult.IsFailure ? ExpansionUnavailable : expandResult.Value;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            // Backend cannot preprocess (WASM DXC shim has no -P export, throws
+            // NotSupportedException). Skip the macro-token check; defer to the actual compile.
+            return ExpansionUnavailable;
+        }
     }
 
     /// <summary>

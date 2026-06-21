@@ -175,4 +175,70 @@ public sealed class DxbcCompilerInjectionTests
     // would have to run the native vkd3d/d3dcompiler P/Invoke — not a pure unit test.
     // That default path is already pinned end-to-end by the Integration suite
     // (CrossHostByteIdentityTests, FnaCompileFixtureTests, EffectCompilerTests).
+
+    // -------------------------------------------------------------------------
+    // Phase 48 regression: the recognized-profile check (SD0013/SD0014) macro-
+    // expands a profile macro via DXC's -P preprocessor. The WASM DXC shim has NO
+    // -P export and THROWS NotSupportedException (JsShaderBackends.Preprocess). The
+    // best-effort check must CATCH that and DEFER to the actual compile, never crash
+    // or block a compile that would otherwise succeed. (Caught a real main-breaking
+    // regression: the in-browser DX/FNA byte-identity gate threw on every macro-
+    // profile shader.) Pure unit test — no native, no browser.
+    // -------------------------------------------------------------------------
+
+    private const string FnaMacroProfileEffect = """
+        #define PS_SHADERMODEL ps_2_0
+        float4 MainPS() : COLOR0
+        {
+            return float4(1, 0, 0, 1);
+        }
+
+        technique T
+        {
+            pass P
+            {
+                PixelShader = compile PS_SHADERMODEL MainPS();
+            }
+        }
+        """;
+
+    /// <summary>Mirrors the WASM DXC shim: <c>-P</c> preprocess throws; codegen never reached on FNA.</summary>
+    private sealed class PreprocessThrowingDxcCompiler : IDxcShaderCompiler
+    {
+        public Task<Result<PlatformBlob, ShaderError>> CompileAsync(DxcCompileRequest r, CancellationToken ct = default)
+            => throw new NotSupportedException("codegen must not be reached on the FNA (vkd3d) path");
+
+        public Result<PlatformBlob, ShaderError> Compile(DxcCompileRequest r, CancellationToken ct = default)
+            => throw new NotSupportedException("codegen must not be reached on the FNA (vkd3d) path");
+
+        public Result<string, ShaderError> Preprocess(DxcPreprocessRequest r, CancellationToken ct = default)
+            => throw new NotSupportedException(
+                "DXC preprocess-only (-P) is not available on the WASM DXC backend yet.");
+    }
+
+    [Fact]
+    public async Task MacroProfile_WhenPreprocessThrows_SkipsValidationAndCompiles()
+    {
+        var fakeDxbc = new RecordingFailingDxbcCompiler();
+        var compiler = new EffectCompiler(
+            dxcCompilerFactory:  () => new PreprocessThrowingDxcCompiler(),
+            dxbcCompilerFactory: () => fakeDxbc);
+
+        // Before the fix this THREW NotSupportedException out of profile validation.
+        var result = await compiler.CompileAsync(FnaMacroProfileEffect, new CompilerOptions
+        {
+            Target         = PlatformTarget.Fna,
+            SourceFileName = "inline.fx",
+        });
+
+        // The compile reached the dxbc backend — proof the macro-profile check skipped
+        // (deferred) instead of throwing or rejecting when -P is unavailable.
+        fakeDxbc.Requests.Should().ContainSingle(
+            because: "an unavailable -P preprocessor must make the profile check defer, not block the compile");
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().ContainSingle(e => e.Code == "SDTEST",
+            because: "the failure must come from the (injected) codegen backend, not the profile check");
+        result.Error.Should().NotContain(e => e.Code == "SD0013" || e.Code == "SD0014",
+            because: "a defined macro profile must not be rejected just because -P could not run");
+    }
 }
