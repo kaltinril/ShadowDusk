@@ -77,20 +77,23 @@ internal sealed class HlslEmitter
                 ParamQualifier.InOut => "inout ",
                 _ => string.Empty,
             };
+            // F1: a param renamed for HLSL safety emits its safe name; type inference stays on the
+            // ORIGINAL name (the AST is unchanged), so EmitIdentifier maps value-refs at emit time.
+            string pname = MapLocal(p.Name);
             if (p.ArraySize is { } n)
             {
                 // G7c: an array parameter. HLSL spells the size on the declarator name: `T name[N]`.
-                ps.Add($"{qual}{HlslType(p.TypeName)} {p.Name}[{n}]");
+                ps.Add($"{qual}{HlslType(p.TypeName)} {pname}[{n}]");
                 _types.DeclareArray(p.Name, p.TypeName);
             }
             else
             {
-                ps.Add($"{qual}{HlslType(p.TypeName)} {p.Name}");
+                ps.Add($"{qual}{HlslType(p.TypeName)} {pname}");
                 _types.Declare(p.Name, p.TypeName);
             }
         }
 
-        Line($"{ret} {fn.Name}({string.Join(", ", ps)})");
+        Line($"{ret} {MapGlobal(fn.Name)}({string.Join(", ", ps)})");
         EmitBlock(fn.Body);
         _types.PopScope();
         return _sb.ToString();
@@ -102,14 +105,15 @@ internal sealed class HlslEmitter
         _sb.Clear();
         _indent = 0;
         string type = HlslType(g.TypeName);
+        string name = MapGlobal(g.Name);
         if (g.ArraySize is { } n)
         {
             // const float k[3] = float[](a,b,c)  ->  static const float k[3] = { a, b, c };
-            Line($"static const {type} {g.Name}[{n}] = {EmitExpr(g.Initializer)};");
+            Line($"static const {type} {name}[{n}] = {EmitExpr(g.Initializer)};");
         }
         else
         {
-            Line($"static const {type} {g.Name} = {EmitExpr(g.Initializer)};");
+            Line($"static const {type} {name} = {EmitExpr(g.Initializer)};");
         }
 
         return _sb.ToString();
@@ -125,20 +129,21 @@ internal sealed class HlslEmitter
         _sb.Clear();
         _indent = 0;
         string type = HlslType(g.TypeName);
+        string name = MapGlobal(g.Name);
         if (g.ArraySize is { } n)
         {
             // A non-const array global (G7): `static float k[3] [= { ... }];`.
             Line(g.Initializer is null
-                ? $"static {type} {g.Name}[{n}];"
-                : $"static {type} {g.Name}[{n}] = {EmitExpr(g.Initializer)};");
+                ? $"static {type} {name}[{n}];"
+                : $"static {type} {name}[{n}] = {EmitExpr(g.Initializer)};");
         }
         else if (g.Initializer is null)
         {
-            Line($"static {type} {g.Name};");
+            Line($"static {type} {name};");
         }
         else
         {
-            Line($"static {type} {g.Name} = {EmitInitializer(g.TypeName, g.Initializer)};");
+            Line($"static {type} {name} = {EmitInitializer(g.TypeName, g.Initializer)};");
         }
 
         return _sb.ToString();
@@ -231,25 +236,26 @@ internal sealed class HlslEmitter
     {
         string type = HlslType(v.TypeName);
         string prefix = v.IsConst ? "const " : string.Empty;
+        string name = MapLocal(v.Name); // F1: emit the safe name; type inference stays on the original
 
         if (v.ArraySize is { } n)
         {
             // G7: a local fixed-size array (`float arr[4];` / `const float k[3] = float[](...);`).
             _types.DeclareArray(v.Name, v.TypeName);
             Line(v.Initializer is null
-                ? $"{prefix}{type} {v.Name}[{n}];"
-                : $"{prefix}{type} {v.Name}[{n}] = {EmitExpr(v.Initializer)};");
+                ? $"{prefix}{type} {name}[{n}];"
+                : $"{prefix}{type} {name}[{n}] = {EmitExpr(v.Initializer)};");
             return;
         }
 
         _types.Declare(v.Name, v.TypeName);
         if (v.Initializer is null)
         {
-            Line($"{prefix}{type} {v.Name};");
+            Line($"{prefix}{type} {name};");
         }
         else
         {
-            Line($"{prefix}{type} {v.Name} = {EmitInitializer(v.TypeName, v.Initializer)};");
+            Line($"{prefix}{type} {name} = {EmitInitializer(v.TypeName, v.Initializer)};");
         }
     }
 
@@ -411,9 +417,10 @@ internal sealed class HlslEmitter
     {
         _types.Declare(v.Name, v.TypeName);
         string type = HlslType(v.TypeName);
+        string name = MapLocal(v.Name);
         return v.Initializer is null
-            ? $"{type} {v.Name}"
-            : $"{type} {v.Name} = {EmitInitializer(v.TypeName, v.Initializer)}";
+            ? $"{type} {name}"
+            : $"{type} {name} = {EmitInitializer(v.TypeName, v.Initializer)}";
     }
 
     private string RenderInlineMultiDecl(MultiDeclStmt m)
@@ -424,7 +431,8 @@ internal sealed class HlslEmitter
         foreach (VarDeclStmt d in m.Declarators)
         {
             _types.Declare(d.Name, d.TypeName);
-            parts.Add(d.Initializer is null ? d.Name : $"{d.Name} = {EmitInitializer(d.TypeName, d.Initializer)}");
+            string name = MapLocal(d.Name);
+            parts.Add(d.Initializer is null ? name : $"{name} = {EmitInitializer(d.TypeName, d.Initializer)}");
         }
 
         return $"{type} {string.Join(", ", parts)}";
@@ -567,6 +575,14 @@ internal sealed class HlslEmitter
 
     private string EmitIdentifier(IdentifierExpr id)
     {
+        // F1: a local renamed for HLSL safety is always a local VALUE reference here (a renamed local
+        // shadows every other meaning of the name in its scope; a call head goes through EmitCall, not
+        // here). Emit its safe name directly. Empty map for a shader with no collisions.
+        if (_localRenames.TryGetValue(id.Name, out string? renamedLocal))
+        {
+            return renamedLocal;
+        }
+
         // A glslViewer alias (e.g. u_time) resolves to the ShaderToy built-in it was folded onto, so it
         // emits as that built-in's global and is tracked as a referenced built-in.
         string resolved = _types.ResolveName(id.Name);
@@ -633,7 +649,9 @@ internal sealed class HlslEmitter
                 id.Line, id.Column, id.Name);
         }
 
-        return id.Name;
+        // F1: a top-level user identifier (a const/mutable global, or a function used as a value) whose
+        // name is an HLSL reserved keyword emits its safe renamed form. No-op for a clean name.
+        return MapGlobal(id.Name);
     }
 
     /// <summary>
@@ -818,10 +836,12 @@ internal sealed class HlslEmitter
             throw Reject(call, reason);
         }
 
-        // User-defined function (resolved/validated by the Converter). Emit verbatim.
+        // User-defined function (resolved/validated by the Converter). Emit verbatim, applying any F1
+        // reserved-word rename to the callee (a local rename never affects a call head — the call binds
+        // to the function it names, which is why a local that shadows a called function is renamed instead).
         if (_userFunctions.Contains(name))
         {
-            return $"{name}({string.Join(", ", args)})";
+            return $"{MapGlobal(name)}({string.Join(", ", args)})";
         }
 
         throw Reject(call,
@@ -854,6 +874,30 @@ internal sealed class HlslEmitter
     private readonly HashSet<string> _customUniforms = new(StringComparer.Ordinal);
     private readonly HashSet<string> _screenUvAliases = new(StringComparer.Ordinal);
     private readonly Dictionary<string, StructDecl> _structs = new(StringComparer.Ordinal);
+
+    // F1 identifier-safety renames (IdentifierSafety). _globalRenames maps a top-level user identifier
+    // (function / const-or-mutable global) whose name is an HLSL reserved keyword to a safe name, applied
+    // to its declaration AND every reference (value + call). _localRenames is the CURRENT function's
+    // local/param renames (set before each EmitFunction), applied to local declarations and VALUE
+    // references only — a call head stays bound to the function it names. Both are empty for a shader
+    // with no collisions, so they change nothing for a clean shader.
+    private IReadOnlyDictionary<string, string> _globalRenames =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+    private IReadOnlyDictionary<string, string> _localRenames =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>Register the top-level reserved-word renames (applied to declarations + references).</summary>
+    public void SetGlobalRenames(IReadOnlyDictionary<string, string> renames) => _globalRenames = renames;
+
+    /// <summary>Set the current function's local/param renames (call before <see cref="EmitFunction"/>).
+    /// Pass an empty map for a function with no renamed locals.</summary>
+    public void SetLocalRenames(IReadOnlyDictionary<string, string> renames) => _localRenames = renames;
+
+    private string MapGlobal(string name) =>
+        _globalRenames.TryGetValue(name, out string? r) ? r : name;
+
+    private string MapLocal(string name) =>
+        _localRenames.TryGetValue(name, out string? r) ? r : name;
 
     /// <summary>Register the user-defined structs (G6) so struct-typed declarations spell their HLSL
     /// type as the struct name and struct constructors route to the generated factory.</summary>

@@ -121,6 +121,67 @@ public sealed class CliShaderToyInputTest : IClassFixture<CliBinaryFixture>
     }
 
     [Fact]
+    public async Task Glsl_LocalShadowingFunction_AutoRenamed_Compiles_WithWarning()
+    {
+        // F1: a local that shadows a called function (mat3 rot = rot(...)) is auto-renamed at convert
+        // time, so the CLI compiles it instead of failing on generated HLSL with an opaque DXC error.
+        string sourceFile = Path.Combine(ShaderToyDir, "RotShadow.glsl");
+        string outputFile = Path.Combine(Path.GetTempPath(), $"RotShadow_{Guid.NewGuid():N}.mgfx");
+
+        try
+        {
+            var (exitCode, stdout, stderr) = await RunCliAsync(sourceFile, outputFile, "/Profile:OpenGL");
+
+            exitCode.Should().Be(0, $"the shadow is auto-renamed and the shader compiles; stderr: {stderr}");
+            stdout.Should().BeEmpty();
+            File.Exists(outputFile).Should().BeTrue();
+            // The rename surfaces as a located warning on the ORIGINAL .glsl (not a generated-HLSL line).
+            stderr.Should().MatchRegex(@"RotShadow\.glsl\(\d+,\d+(-\d+)?\): warning SD\d+:")
+                .And.Contain("shadows the function");
+        }
+        finally
+        {
+            if (File.Exists(outputFile)) File.Delete(outputFile);
+        }
+    }
+
+    [Fact]
+    public async Task Glsl_PipelineError_IsAttributedToGeneratedHlsl_NotTheGlslSource()
+    {
+        // F2: a shader that converts but fails the pipeline (DXC) compile must NOT stamp the .glsl
+        // filename onto generated-HLSL line numbers. It leads with an SD0003 note and attributes the
+        // error to "<name>.generated.fx".
+        string source = Path.Combine(Path.GetTempPath(), $"badtype_{Guid.NewGuid():N}.glsl");
+        string outputFile = Path.Combine(Path.GetTempPath(), $"badtype_{Guid.NewGuid():N}.mgfx");
+        await File.WriteAllTextAsync(source,
+            """
+            void mainImage( out vec4 fragColor, in vec2 fragCoord ) {
+              vec3 bad = vec3(1.0, fragCoord, 0.0);
+              fragColor = vec4(bad, 1.0);
+            }
+            """);
+
+        try
+        {
+            var (exitCode, stdout, stderr) = await RunCliAsync(source, outputFile, "/Profile:OpenGL");
+
+            exitCode.Should().Be(1);
+            stdout.Should().BeEmpty();
+            stderr.Should().Contain("SD0003", "the leading note explains the error is in generated HLSL");
+            stderr.Should().Contain(".generated.fx",
+                "pipeline errors are attributed to the generated HLSL, not the user's .glsl");
+            // The error line must NOT be stamped onto the original .glsl name.
+            stderr.Should().NotMatchRegex(@"badtype_[0-9a-f]+\.glsl\(\d+,\d+(-\d+)?\): error",
+                because: "a generated-HLSL line number must never carry the original .glsl filename");
+        }
+        finally
+        {
+            if (File.Exists(source)) File.Delete(source);
+            if (File.Exists(outputFile)) File.Delete(outputFile);
+        }
+    }
+
+    [Fact]
     public async Task InvalidInputFormatValue_ExitCode1()
     {
         var (exitCode, stdout, stderr) = await RunCliAsync(

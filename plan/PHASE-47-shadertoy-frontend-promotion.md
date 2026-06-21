@@ -361,15 +361,36 @@ input and the sample/runtime migration are planned in the two linked appendices.
 
 ---
 
-## Follow-up work (next session, 2026-06-21) — converter robustness + diagnostics
+## Follow-up work — converter robustness + diagnostics — DONE (2026-06-21)
 
 Two converter gaps surfaced while testing real third-party ShaderToy shaders through the new WASM-fiddle
 ShaderToy path (the fiddle now accepts ShaderToy/GLSL input and renders it fullscreen; see
-`samples/ShaderFiddle.Web`). Both are **converter** issues, NOT pipeline or WebGL-profile issues, and both
-violate the project's "never silently wrong / fail loudly with a clear, located diagnostic" rule because
-the converter emitted invalid HLSL and let DXC be the one to complain. Owner will pick these up next.
+`samples/ShaderFiddle.Web`). Both were **converter** issues, NOT pipeline or WebGL-profile issues, and both
+violated the project's "never silently wrong / fail loudly with a clear, located diagnostic" rule because
+the converter emitted invalid HLSL and let DXC be the one to complain. **Both are now implemented:**
 
-### F1. Identifier-safety pass (reserved-word / name-collision protection) [the actual bug]
+- **F1 (`src/ShadowDusk.ShaderToy/IdentifierSafety.cs`)** plans renames for a local that shadows a CALLED
+  function (`mat3 rot = rot(...)` -> local `rot_sd`, the call + function stay `rot`) and for any identifier
+  that is an HLSL reserved keyword (`matrix`/`sample`/`linear` -> `*_sd`), emitting a located **Warning**
+  per rename. `HlslEmitter` applies the maps at value-refs, declarations, and call heads; type inference
+  stays on the original names. It renames ONLY where HLSL genuinely breaks, so a shader that already
+  compiled is byte-for-byte unchanged (the 376 existing goldens are untouched). Tests:
+  `Phase47IdentifierSafetyTests` (5 cases incl. the no-false-positive uncalled-shadow), authored fixtures
+  `identifier_shadow_rot.glsl` + `reserved_word_identifiers.glsl` (+ goldens), and CLI integration
+  `Glsl_LocalShadowingFunction_AutoRenamed_Compiles_WithWarning`.
+- **F2 (`src/ShadowDusk.Cli/PipelineRunner.cs`)** stops stamping the `.glsl` filename onto generated-HLSL
+  line numbers: a pipeline (DXC) error on converted input is attributed to `<name>.generated.fx` and led
+  by an `SD0003` **note** ("the diagnostics below refer to the GENERATED HLSL, not your original source
+  lines"). Convert-stage diagnostics keep the real `.glsl` location. `SourceFileName` is diagnostics-only
+  (does not affect output bytes). Test: `Glsl_PipelineError_IsAttributedToGeneratedHlsl_NotTheGlslSource`.
+
+Validation: `dotnet test ShadowDusk.slnx` green (ShaderToy 385, Integration 496, 0 warnings); Windows
+render gates 4/4 (DX, DX-modern VTF, KNI-DX, FNA) re-confirmed green (the pipeline is untouched). Deferred
+tail (intrinsic-name local shadow like `vec3 min = ...; min(a,b)`, struct/custom-uniform reserved-word
+renames, and full GLSL source-mapping of generated-HLSL lines) is rare and still fails loudly with the F2
+attribution; revisit if a real shader needs it.
+
+### F1 (as planned). Identifier-safety pass (reserved-word / name-collision protection) [the actual bug]
 
 GLSL identifiers that are invalid as HLSL identifiers pass through the converter verbatim and produce
 HLSL that DXC rejects with an opaque error. Two flavors:

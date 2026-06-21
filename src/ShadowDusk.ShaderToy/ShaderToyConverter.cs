@@ -199,6 +199,12 @@ public static class ShaderToyConverter
         emitter.SetStructs(merged.Structs);
         emitter.SetScreenUvAliases(screenUvNames);
 
+        // F1: plan identifier renames for HLSL safety (a local shadowing a called function, or a name
+        // that is an HLSL reserved keyword). Each rename adds a located Warning; the maps are empty for a
+        // shader with no collisions, so a clean shader's emitted .fx is byte-for-byte unchanged.
+        IdentifierRenames renames = IdentifierSafety.Plan(merged, merged.Functions, diagnostics);
+        emitter.SetGlobalRenames(renames.Global);
+
         // G6: struct declarations + their factory functions are emitted first (before const globals and
         // functions) so every later use of the struct type / its constructor resolves.
         var structsSb = new StringBuilder();
@@ -233,14 +239,20 @@ public static class ShaderToyConverter
         }
 
         var fnSb = new StringBuilder();
-        foreach (FunctionDecl f in merged.Functions)
+        var noRenames = new Dictionary<string, string>(StringComparer.Ordinal);
+        for (int fi = 0; fi < merged.Functions.Count; fi++)
         {
+            FunctionDecl f = merged.Functions[fi];
+
             // Skip pure prototypes (empty body, no statements) — we only emit definitions.
             if (f.Body.Statements.Count == 0 && f.Parameters.Count >= 0 && IsPrototype(f, merged.Functions))
             {
                 continue;
             }
 
+            // F1: this function's local/param renames (keyed by its index in merged.Functions).
+            emitter.SetLocalRenames(
+                renames.LocalsByFunction.TryGetValue(fi, out Dictionary<string, string>? lm) ? lm : noRenames);
             fnSb.Append(emitter.EmitFunction(f));
             fnSb.AppendLine();
         }
