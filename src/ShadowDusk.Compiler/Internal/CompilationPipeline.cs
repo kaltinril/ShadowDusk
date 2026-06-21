@@ -311,6 +311,42 @@ internal sealed class CompilationPipeline
             AllowWarnings  = false,
         };
 
+        // Recognized-profile validation (SD0013, Phase 48): the compile target token in
+        // each pass must resolve — after macro expansion when it is a macro name — to a
+        // profile fxc/mgfxc accepts. The pre-parser runs before macro expansion and is
+        // deliberately lenient, so a typo ('compile A …') or an undefined '*_SHADERMODEL'
+        // macro silently fell back to SM3 (a divergence from mgfxc, which hard-errors).
+        // Cheap path: every literal known profile is accepted with no work; a profile-
+        // SHAPED-but-bogus token ('ps_9_9') is rejected here. Only a non-literal token (a
+        // macro name) pays for a DXC -P expansion, cached per token. Per the byte-identity
+        // invariant this ONLY adds rejections — every currently-compiling shader (literal
+        // profile or a macro defined to a real profile) still resolves to a known profile.
+        var profileExpansionCache = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (TechniqueInfo technique in fxParsed.Techniques)
+        {
+            foreach (PassInfo pass in technique.Passes)
+            {
+                if (pass.VertexEntryPoint is not null)
+                {
+                    var v = ValidateCompileProfile(
+                        pass.VertexProfile, pass.VertexProfileToken, pass.VertexProfileSpan, ShaderStage.Vertex,
+                        dxcCompiler, macros, preprocessed, sourceFileName,
+                        profileExpansionCache, enforceStagePrefix: true, cancellationToken);
+                    if (v is { } vErr)
+                        return Fail(vErr);
+                }
+                if (pass.PixelEntryPoint is not null)
+                {
+                    var p = ValidateCompileProfile(
+                        pass.PixelProfile, pass.PixelProfileToken, pass.PixelProfileSpan, ShaderStage.Pixel,
+                        dxcCompiler, macros, preprocessed, sourceFileName,
+                        profileExpansionCache, enforceStagePrefix: true, cancellationToken);
+                    if (p is { } pErr)
+                        return Fail(pErr);
+                }
+            }
+        }
+
         foreach (TechniqueInfo technique in fxParsed.Techniques)
         {
             var mgfxPasses = new List<MgfxPassInfo>();
@@ -748,6 +784,176 @@ internal sealed class CompilationPipeline
     }
 
     // -------------------------------------------------------------------------
+    // Recognized-profile validation (SD0013) — GL / DX / Vulkan path (Phase 48).
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Validates one pass stage's <c>compile &lt;target&gt;</c> token against the
+    /// recognized-profile set, returning a <see cref="ShaderError"/> when it is not a real
+    /// profile (after macro expansion) and <c>null</c> when it is acceptable. mgfxc/fxc
+    /// hard-error on an unrecognized target; ShadowDusk used to silently fall back to SM3.
+    /// </summary>
+    /// <remarks>
+    /// CHEAP path: a literal known profile (<c>ps_3_0</c>, <c>ps_4_0_level_9_1</c>, …) is
+    /// accepted with zero work; a profile-SHAPED-but-bogus token (<c>ps_9_9</c>) is rejected
+    /// without expansion. EXPENSIVE path: a non-literal token (a macro name like
+    /// <c>PS_SHADERMODEL</c>) is macro-expanded via DXC's <c>-P</c> preprocessor using the
+    /// target's <see cref="MacroSet"/> so the correct <c>#if OPENGL</c> branch is selected,
+    /// then re-checked. Expansions are cached per token so the common single-macro effect
+    /// pays for one expansion total, not one per pass.
+    /// </remarks>
+    private static ShaderError? ValidateCompileProfile(
+        string? profile,
+        string? profileToken,
+        SourceSpan? span,
+        ShaderStage stage,
+        Lazy<IDxcShaderCompiler> dxcCompiler,
+        MacroSet macros,
+        PreprocessedSource preprocessed,
+        string sourceFileName,
+        Dictionary<string, string?> expansionCache,
+        bool enforceStagePrefix,
+        CancellationToken cancellationToken)
+    {
+        // A missing profile cannot be validated (and never reaches a compile with a real
+        // target) — leave the existing SM3 fallback behavior untouched.
+        if (string.IsNullOrEmpty(profile))
+            return null;
+
+        // Cheap path: an already-known literal profile is accepted with no expansion.
+        // (IsKnownProfile is case-insensitive, so the lowercased form is fine here.)
+        if (FxPreParser.IsKnownProfile(profile))
+            return StagePrefixCheck(profile, stage, span, sourceFileName, enforceStagePrefix);
+
+        // Profile-SHAPED but NOT a known profile (e.g. 'ps_9_9', 'ps_2_5'): unconditionally
+        // invalid — no macro could rescue a literal that already looks like a profile — so
+        // reject here without paying for a preprocess.
+        if (FxPreParser.LooksLikeProfile(profile))
+            return ProfileError(profile, span, sourceFileName);
+
+        // Expensive path: a macro NAME (e.g. 'PS_SHADERMODEL'). Macro-expand it with the
+        // target's macros and re-check. C macros are CASE-SENSITIVE, so expand the token as
+        // written ('PS_SHADERMODEL'), not the lowercased profile. Cache per raw token so
+        // repeated passes (every pass uses the same *_SHADERMODEL macro) expand only once.
+        string rawToken = profileToken ?? profile;
+        if (!expansionCache.TryGetValue(rawToken, out string? expanded))
+        {
+            var expandResult = ExpandProfileToken(
+                rawToken, dxcCompiler, macros, preprocessed, sourceFileName, cancellationToken);
+            // A preprocess failure here is reported as-is (it is a real source error, e.g.
+            // a malformed #if the user wrote); a null expansion means 'still not a profile'.
+            if (expandResult.IsFailure)
+                return expandResult.Error;
+            expanded = expandResult.Value;
+            expansionCache[rawToken] = expanded;
+        }
+
+        if (expanded is not null && FxPreParser.IsKnownProfile(expanded))
+            return StagePrefixCheck(expanded, stage, span, sourceFileName, enforceStagePrefix);
+
+        return ProfileError(profile, span, sourceFileName);
+    }
+
+    /// <summary>
+    /// W3 (GL/DX/Vulkan): once a compile target resolves to a recognized profile, verify its
+    /// stage prefix matches the pass slot it is bound to — a <c>vs_*</c> profile in a
+    /// <c>VertexShader =</c> slot and a <c>ps_*</c> in a <c>PixelShader =</c> slot. mgfxc/fxc
+    /// reject a cross-stage binding (e.g. <c>VertexShader = compile ps_3_0 …</c>); ShadowDusk
+    /// previously ignored the declared prefix and compiled by slot. Returns <c>null</c> when
+    /// the prefix matches (or when <paramref name="enforceStagePrefix"/> is false — the FNA
+    /// path keeps this check in <see cref="ResolveFnaProfile"/> as SD0300). A recognized
+    /// profile is always <c>vs_</c> or <c>ps_</c> (KnownProfiles lists no other stages).
+    /// </summary>
+    private static ShaderError? StagePrefixCheck(
+        string knownProfile, ShaderStage stage, SourceSpan? span, string sourceFileName, bool enforceStagePrefix)
+    {
+        if (!enforceStagePrefix)
+            return null;
+
+        bool profileIsVertex = knownProfile.StartsWith("vs_", StringComparison.Ordinal);
+        bool slotIsVertex    = stage == ShaderStage.Vertex;
+        if (profileIsVertex == slotIsVertex)
+            return null;
+
+        string slot = slotIsVertex ? "VertexShader" : "PixelShader";
+        string want = slotIsVertex ? "vs_*" : "ps_*";
+        return new ShaderError(
+            File: sourceFileName,
+            Line: span?.StartLine ?? 0,
+            Column: span?.StartColumn ?? 0,
+            Code: "SD0014",
+            Message: $"compile target '{knownProfile}' is a {(profileIsVertex ? "vertex" : "pixel")} profile but " +
+                     $"is bound to the pass's {slot} slot — the profile's stage must match the slot it compiles " +
+                     $"(use a {want} profile)");
+    }
+
+    /// <summary>
+    /// Macro-expands a single compile-target token using DXC's <c>-P</c> preprocessor with
+    /// the target's macros, returning the lowercased expansion (or <c>null</c> when it does
+    /// not expand to a profile-shaped token). A unique sentinel wraps the probe so the
+    /// expansion is recovered unambiguously from the preprocessed output.
+    /// </summary>
+    private static Result<string?, ShaderError> ExpandProfileToken(
+        string token,
+        Lazy<IDxcShaderCompiler> dxcCompiler,
+        MacroSet macros,
+        PreprocessedSource preprocessed,
+        string sourceFileName,
+        CancellationToken cancellationToken)
+    {
+        const string sentinel = "__SD_PROFILE_PROBE__";
+
+        // preprocessed.Text still carries every '#define'/'#if' line (ShadowDusk's
+        // Preprocessor flattens #includes and prepends platform macros but leaves the
+        // conditionals for DXC). Append a probe that references the original token so DXC
+        // expands it through exactly the macros the real compile would see — including the
+        // correct '#if OPENGL' branch driven by the target's PlatformMacros below.
+        string probeSource = preprocessed.Text + $"\n{sentinel} {token} {sentinel}\n";
+
+        var request = new DxcPreprocessRequest
+        {
+            HlslSource     = probeSource,
+            SourceFileName = sourceFileName,
+            Macros         = macros.Macros
+                .Select(m => (m.Name, (string?)m.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)))
+                .ToList(),
+        };
+
+        Result<string, ShaderError> result = dxcCompiler.Value.Preprocess(request, cancellationToken);
+        if (result.IsFailure)
+            return Result<string?, ShaderError>.Fail(result.Error);
+
+        // Pull the text between the probe's two sentinels. The sentinel is a unique token
+        // that appears nowhere but the appended probe, so the FIRST occurrence opens the
+        // probe and the NEXT closes it. Trim + lowercase to compare against KnownProfiles
+        // (case-insensitive) and to keep the cache key canonical.
+        string text = result.Value;
+        int open = text.IndexOf(sentinel, StringComparison.Ordinal);
+        if (open < 0)
+            return Result<string?, ShaderError>.Ok(null);
+        int valueStart = open + sentinel.Length;
+        int close = text.IndexOf(sentinel, valueStart, StringComparison.Ordinal);
+        if (close < 0)
+            return Result<string?, ShaderError>.Ok(null);
+
+        string expanded = text.Substring(valueStart, close - valueStart).Trim().ToLowerInvariant();
+        // An unexpanded macro re-emits its own name (DXC leaves an undefined identifier
+        // verbatim); a defined macro yields its value. Either way, if it is not a
+        // recognized profile the caller rejects it. Return null for an empty expansion.
+        return Result<string?, ShaderError>.Ok(expanded.Length == 0 ? null : expanded);
+    }
+
+    private static ShaderError ProfileError(string profile, SourceSpan? span, string sourceFileName) =>
+        new(
+            File: sourceFileName,
+            Line: span?.StartLine ?? 0,
+            Column: span?.StartColumn ?? 0,
+            Code: "SD0013",
+            Message: $"compile target '{profile}' is not a recognized shader profile " +
+                     "(did you forget to #define VS_SHADERMODEL / PS_SHADERMODEL, e.g. via the " +
+                     "standard '#if OPENGL ... #else ...' header?)");
+
+    // -------------------------------------------------------------------------
     // FNA (fx_2_0) pipeline — Phase 39. HLSL (D3D9 style, preserved by the
     // PreserveSm3 pre-parse mode) → vkd3d D3D_BYTECODE at SM1–3 → CTAB reflection →
     // Fx2EffectBuilder → Fx2EffectWriter. Always vkd3d on every host (never the
@@ -810,6 +1016,51 @@ internal sealed class CompilationPipeline
         var shaders = new List<Fx2Shader>();
         var ctabs = new List<CtabTable>();
         var techniqueSources = new List<Fx2TechniqueSource>();
+
+        // Recognized-profile validation (SD0013, Phase 48) for FNA. A compile target that
+        // does not resolve (after macro expansion) to a real profile — 'compile A …', an
+        // undefined '*_SHADERMODEL', or a profile-shaped typo like 'ps_9_9' — is rejected
+        // here, matching mgfxc/fxc. A token that DOES resolve to a real profile then flows
+        // into ResolveFnaProfile unchanged, which applies the MojoShader SM2–3 ceiling.
+        // Expansion needs the C preprocessor only; DXC's -P is reused (lazy, macro-tokens
+        // only) — it never compiles, so the FNA path stays vkd3d-only for codegen.
+        var fnaDxcCompiler = new Lazy<IDxcShaderCompiler>(_dxcCompilerFactory);
+        MacroSet fnaMacros = PlatformMacros.For(PlatformTarget.Fna);
+        var fnaProfileExpansionCache = new Dictionary<string, string?>(StringComparer.Ordinal);
+        try
+        {
+            foreach (TechniqueInfo technique in fxParsed.Techniques)
+            {
+                foreach (PassInfo pass in technique.Passes)
+                {
+                    if (pass.VertexEntryPoint is not null)
+                    {
+                        // enforceStagePrefix: false — the FNA path's stage/profile prefix
+                        // cross-check stays in ResolveFnaProfile (SD0300, FNA range), unchanged.
+                        var v = ValidateCompileProfile(
+                            pass.VertexProfile, pass.VertexProfileToken, pass.VertexProfileSpan, ShaderStage.Vertex,
+                            fnaDxcCompiler, fnaMacros, preprocessed, sourceFileName,
+                            fnaProfileExpansionCache, enforceStagePrefix: false, cancellationToken);
+                        if (v is { } vErr)
+                            return Fail(vErr);
+                    }
+                    if (pass.PixelEntryPoint is not null)
+                    {
+                        var p = ValidateCompileProfile(
+                            pass.PixelProfile, pass.PixelProfileToken, pass.PixelProfileSpan, ShaderStage.Pixel,
+                            fnaDxcCompiler, fnaMacros, preprocessed, sourceFileName,
+                            fnaProfileExpansionCache, enforceStagePrefix: false, cancellationToken);
+                        if (p is { } pErr)
+                            return Fail(pErr);
+                    }
+                }
+            }
+        }
+        finally
+        {
+            if (fnaDxcCompiler.IsValueCreated)
+                (fnaDxcCompiler.Value as IDisposable)?.Dispose();
+        }
 
         foreach (TechniqueInfo technique in fxParsed.Techniques)
         {

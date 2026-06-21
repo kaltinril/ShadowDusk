@@ -23,6 +23,31 @@ public sealed record PassInfo
     /// <summary>Pixel shader profile string, e.g. "ps_3_0" or "ps_5_0".</summary>
     public required string? PixelProfile { get; init; }
 
+    /// <summary>
+    /// The vertex <c>compile &lt;target&gt;</c> token EXACTLY as written (original case),
+    /// e.g. <c>PS_SHADERMODEL</c>. <see cref="VertexProfile"/> is the lowercased form; the
+    /// raw token is needed for case-sensitive C macro expansion in the recognized-profile
+    /// check (SD0013). Null when the pass declares no vertex shader.
+    /// </summary>
+    public string? VertexProfileToken { get; init; }
+
+    /// <summary>The pixel <c>compile &lt;target&gt;</c> token exactly as written (see
+    /// <see cref="VertexProfileToken"/>). Null when the pass declares no pixel shader.</summary>
+    public string? PixelProfileToken { get; init; }
+
+    /// <summary>
+    /// Source location of the vertex <c>compile &lt;target&gt;</c> profile token, used to
+    /// point the recognized-profile diagnostic (SD0013) at the exact token. Null when the
+    /// pass declares no vertex shader.
+    /// </summary>
+    public SourceSpan? VertexProfileSpan { get; init; }
+
+    /// <summary>
+    /// Source location of the pixel <c>compile &lt;target&gt;</c> profile token (SD0013
+    /// diagnostic anchor). Null when the pass declares no pixel shader.
+    /// </summary>
+    public SourceSpan? PixelProfileSpan { get; init; }
+
     /// <summary>All non-shader render-state assignments in this pass.</summary>
     public required IReadOnlyList<RenderStateEntry> RenderStates { get; init; }
 

@@ -36,6 +36,40 @@ A small family of advanced **OpenGL-target** texture intrinsics — **3D-texture
 
 Sampling a texture **in a vertex shader** (e.g. displacement mapping via `SampleLevel`/`tex2Dlod` in the VS) fails loudly with **`SD0210`** for `Target = OpenGL`. This is deliberate: MonoGame 3.8.2's OpenGL runtime cannot bind vertex textures at all — its GL program link assigns texture units only for the *pixel* shader's sampler records, and there is no GL `VertexTextures` apply path — so any compiled output would silently sample whatever happens to sit on texture unit 0 (typically rendering black). A loud compile error is the only honest result. Move the fetch to the pixel stage, or pass the data through a uniform/vertex stream. The DirectX and FNA targets are unaffected by this MonoGame-GL-runtime limitation.
 
+## The `compile <target>` profile and the `#if OPENGL` header
+
+A technique pass names its shaders with `compile <target> Entry()`, where `<target>` is the shader profile:
+
+```hlsl
+pass P0
+{
+    VertexShader = compile VS_SHADERMODEL MainVS();
+    PixelShader  = compile PS_SHADERMODEL MainPS();
+}
+```
+
+`VS_SHADERMODEL` / `PS_SHADERMODEL` are not built-in — they come from the standard MonoGame cross-platform header, which picks the right profile per backend:
+
+```hlsl
+#if OPENGL
+    #define SV_POSITION POSITION
+    #define VS_SHADERMODEL vs_3_0
+    #define PS_SHADERMODEL ps_3_0
+#else
+    #define VS_SHADERMODEL vs_4_0_level_9_1
+    #define PS_SHADERMODEL ps_4_0_level_9_1
+#endif
+```
+
+The header expresses one split twice: the **profile** tokens (legacy SM3 on OpenGL, the feature-level-9 SM4 forms on DirectX) and the **position semantic** (`SV_POSITION` is a real Shader Model 4+ system-value on the DirectX side, so it is used as-is; on the SM3 OpenGL side it is mapped back to the D3D9-era `POSITION`).
+
+ShadowDusk validates the `compile` target exactly as `mgfxc`/`fxc` do: after macro expansion the token must resolve to a recognized profile. If it does not, the compile fails loudly with **`SD0013`** instead of silently falling back to SM3. The two ways to trip it:
+
+- A **typo** in the profile token (`compile A MainPS();`).
+- A **`*_SHADERMODEL` macro that is not defined** — most often because the `#if OPENGL … #else …` header above was removed or never added. Add the header (or `#define` the profile directly, e.g. `compile ps_3_0 MainPS();`).
+
+This is the same input `mgfxc` rejects with `unrecognized compiler target`; ShadowDusk surfaces it at compile time so the shader cannot silently ship broken.
+
 ## Uniform types on the OpenGL target (cbuffers, arrays, staged limits)
 
 Free uniforms, named `cbuffer`s (including one shared by both shader stages, or several in one stage), and **array uniforms** (`float4 Colors[4]`, `float4x4 Bones[N]`, `float`/`float2`/`float3` arrays) are fully modelled: array parameters expose their elements in `Effect.Parameters` — `Parameters["Colors"].SetValue(Vector4[])` and `Parameters["Colors"].Elements[i]` work exactly as with `mgfxc` output, on every target.
