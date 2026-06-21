@@ -48,6 +48,24 @@ public sealed class ShaderFiddleGame : Game
     private Texture2D _cat = null!;
     private Effect? _effect;
 
+    // A converted ShaderToy / GLSL effect carries its OWN fullscreen vertex shader and is driven by
+    // iResolution/iTime/fragCoord (not a SpriteBatch PS-only effect over the cat). When true, Draw
+    // renders a fullscreen NDC quad with the effect and feeds the ShaderToy uniforms each frame.
+    private bool _effectIsShaderToy;
+    private int _shaderToyFrame;
+
+    // Fullscreen quad in NDC ([-1,1]) — two triangles. The ShaderToy harness VS passes POSITION
+    // straight through (already NDC) and derives uv; CullNone makes the winding irrelevant.
+    private static readonly VertexPositionColor[] _fullscreenQuad =
+    {
+        new(new Vector3(-1f, -1f, 0f), Color.White),
+        new(new Vector3( 1f, -1f, 0f), Color.White),
+        new(new Vector3(-1f,  1f, 0f), Color.White),
+        new(new Vector3(-1f,  1f, 0f), Color.White),
+        new(new Vector3( 1f, -1f, 0f), Color.White),
+        new(new Vector3( 1f,  1f, 0f), Color.White),
+    };
+
     /// <summary>
     /// The graphics profile this game booted with. Exposed so callers / tests can
     /// confirm whether HiDef (WebGL2 / GLSL ES 3.00) was actually requested.
@@ -119,9 +137,16 @@ public sealed class ShaderFiddleGame : Game
             return $"new Effect(gd, bytes) failed in KNI WebGL: {ex.GetType().Name}: {ex.Message}";
         }
 
+        // A converted ShaderToy/GLSL harness always declares `iResolution` (the PS needs it to map uv ->
+        // fragCoord). Use that as the signal to render it fullscreen + drive its uniforms, rather than as
+        // a PS-only effect over the cat.
+        bool isShaderToy = candidate.Parameters["iResolution"] is not null;
         try
         {
-            WebShaderInputs.SetParams(candidate, _cat);
+            if (isShaderToy)
+                BindShaderToyChannels(candidate, _cat);
+            else
+                WebShaderInputs.SetParams(candidate, _cat);
         }
         catch
         {
@@ -130,7 +155,16 @@ public sealed class ShaderFiddleGame : Game
 
         _effect?.Dispose();
         _effect = candidate;
+        _effectIsShaderToy = isShaderToy;
         return null;
+    }
+
+    // Bind the cat to every iChannelN a ShaderToy shader might sample, so texture-reading shaders show
+    // something. A shader that ignores its channels is unaffected (the bind is a no-op when absent).
+    private static void BindShaderToyChannels(Effect e, Texture2D cat)
+    {
+        for (int i = 0; i < 4; i++)
+            e.Parameters[$"iChannel{i}Texture"]?.SetValue(cat);
     }
 
     /// <summary>
@@ -144,6 +178,7 @@ public sealed class ShaderFiddleGame : Game
         _pendingMgfx = null;
         _effect?.Dispose();
         _effect = null;
+        _effectIsShaderToy = false;
     }
 
     /// <summary>
@@ -245,6 +280,15 @@ public sealed class ShaderFiddleGame : Game
             return;
         }
 
+        // A ShaderToy/GLSL effect renders fullscreen with its own VS, driven by iResolution/iTime/…,
+        // not as a PS-only effect over the cat.
+        if (_effect is not null && _effectIsShaderToy)
+        {
+            DrawShaderToy(gameTime);
+            base.Draw(gameTime);
+            return;
+        }
+
         Rectangle dest = FitCentered(_cat.Width, _cat.Height,
             GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height);
 
@@ -275,6 +319,36 @@ public sealed class ShaderFiddleGame : Game
         }
 
         base.Draw(gameTime);
+    }
+
+    /// <summary>
+    /// Render a converted ShaderToy / GLSL effect: feed the ShaderToy uniforms (iResolution, iTime,
+    /// iTimeDelta, iFrame, iMouse) for this frame, then draw a fullscreen NDC quad through the effect's
+    /// own vertex+pixel shader. iChannelN textures were bound to the cat in <see cref="ApplyEffect"/>.
+    /// </summary>
+    private void DrawShaderToy(GameTime gameTime)
+    {
+        var gd = GraphicsDevice;
+        var vp = gd.Viewport;
+
+        // Drive the standard ShaderToy uniforms (each is a no-op if the shader didn't reference it).
+        _effect!.Parameters["iResolution"]?.SetValue(new Vector3(vp.Width, vp.Height, 1f));
+        _effect.Parameters["iTime"]?.SetValue((float)gameTime.TotalGameTime.TotalSeconds);
+        _effect.Parameters["iTimeDelta"]?.SetValue((float)gameTime.ElapsedGameTime.TotalSeconds);
+        _effect.Parameters["iFrame"]?.SetValue(_shaderToyFrame++);
+        _effect.Parameters["iMouse"]?.SetValue(Vector4.Zero);
+
+        // The harness draws a fullscreen pass: no culling/blending/depth, wrap sampling for iChannelN.
+        gd.RasterizerState   = RasterizerState.CullNone;
+        gd.BlendState        = BlendState.Opaque;
+        gd.DepthStencilState = DepthStencilState.None;
+        gd.SamplerStates[0]  = SamplerState.LinearWrap;
+
+        foreach (var pass in _effect.CurrentTechnique.Passes)
+        {
+            pass.Apply();
+            gd.DrawUserPrimitives(PrimitiveType.TriangleList, _fullscreenQuad, 0, 2);
+        }
     }
 
     /// <summary>Largest centered rect of (w,h) aspect fitting inside the viewport.</summary>

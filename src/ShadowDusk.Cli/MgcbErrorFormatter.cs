@@ -8,7 +8,12 @@ internal static class MgcbErrorFormatter
 {
     public static string Format(ShaderError error)
     {
-        string severity = error.Severity == ShaderErrorSeverity.Warning ? "warning" : "error";
+        string severity = error.Severity switch
+        {
+            ShaderErrorSeverity.Warning => "warning",
+            ShaderErrorSeverity.Note    => "note",
+            _                           => "error",
+        };
         string code = FormatCode(error.Code);
         string filename = Path.GetFileName(error.File);
 

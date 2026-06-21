@@ -1,0 +1,153 @@
+#nullable enable
+
+using System;
+using System.Collections.Generic;
+using System.IO;
+using Microsoft.Xna.Framework.Graphics;
+using ShadowDusk.Compiler;
+using ShadowDusk.Core;
+using ShadowDusk.ShaderToy.Runtime;
+
+namespace ShadowDusk.ShaderToy.Sample;
+
+/// <summary>The outcome of taking one ShaderToy <c>.glsl</c> all the way to a live effect.</summary>
+/// <param name="Ok">True when the effect loaded; false carries a human-readable <see cref="Error"/>.</param>
+/// <param name="Effect">The wrapped, drivable effect on success; <c>null</c> otherwise.</param>
+/// <param name="UsedUniforms">The ShaderToy/custom uniforms the shader actually references.</param>
+/// <param name="Error">The diagnostic text to show on failure; empty on success.</param>
+public sealed record CompiledShaderToy(
+    bool Ok,
+    ShaderToyEffect? Effect,
+    IReadOnlyList<string> UsedUniforms,
+    string Error);
+
+/// <summary>
+/// The heart of the capstone: at RUNTIME, with no build step and no <c>mgfxc</c>, take ShaderToy
+/// GLSL all the way to a live MonoGame <see cref="Effect"/>:
+/// <list type="number">
+/// <item><c>ShaderToyConverter.Convert(glsl)</c> -> HLSL <c>.fx</c> text,</item>
+/// <item><c>EffectCompiler.Compile(.fx, OpenGL)</c> -> <c>.mgfx</c> bytes IN MEMORY via ShadowDusk,</item>
+/// <item><c>new Effect(GraphicsDevice, mgfxBytes)</c> -> a real loaded effect,</item>
+/// <item>wrap it in <see cref="ShaderToyEffect"/> for the fullscreen ShaderToy pass.</item>
+/// </list>
+/// Convert or compile failures are returned as text (never thrown to the caller), so the host can
+/// show the diagnostic on screen instead of crashing.
+/// </summary>
+public static class SampleCompiler
+{
+    private static readonly IShaderCompiler Compiler = new EffectCompiler();
+
+    /// <summary>The directory the bundled <c>.glsl</c> files are copied to next to the binary.</summary>
+    public static string ShadersDirectory => Path.Combine(AppContext.BaseDirectory, "shaders");
+
+    /// <summary>
+    /// Run the full runtime path for one shader source (a bundled catalog entry or an arbitrary
+    /// external file). Returns a failure result (not an exception) when the file is missing, the
+    /// convert reports an error, or the in-memory compile fails.
+    /// </summary>
+    public static CompiledShaderToy Build(GraphicsDevice device, ShaderSource source)
+    {
+        if (device is null)
+            throw new ArgumentNullException(nameof(device));
+        if (source is null)
+            throw new ArgumentNullException(nameof(source));
+
+        if (!File.Exists(source.Path))
+            return Fail($"Shader source not found:\n{source.Path}");
+
+        string glsl;
+        try
+        {
+            glsl = File.ReadAllText(source.Path);
+        }
+        catch (IOException ex)
+        {
+            // A hot-reload can race the editor's save; surface it as a (transient) error, not a crash.
+            return Fail($"Could not read shader file:\n{source.Path}\n{ex.Message}");
+        }
+
+        return BuildFromGlsl(device, glsl, source.DisplayName);
+    }
+
+    /// <summary>
+    /// Run the full runtime path for one shader given its GLSL source text directly (used by both the
+    /// bundled-and-external file path and by callers that already hold the text). Never throws for a
+    /// bad shader: convert/compile/load failures come back as a failed <see cref="CompiledShaderToy"/>.
+    /// </summary>
+    public static CompiledShaderToy BuildFromGlsl(GraphicsDevice device, string glsl, string displayName)
+    {
+        if (device is null)
+            throw new ArgumentNullException(nameof(device));
+
+        // 1. ShaderToy GLSL -> HLSL .fx (no disk, no external tool).
+        ConvertResult conv = ShaderToyConverter.Convert(
+            glsl, new ConvertOptions { EffectName = SanitizeEffectName(displayName) });
+        if (!conv.Success || conv.Fx is null)
+            return Fail("Convert failed:\n" + FormatDiagnostics(conv.Diagnostics));
+
+        // 2. .fx -> .mgfx IN MEMORY via the ShadowDusk product compiler (OpenGL target).
+        Result<CompiledShader, ShaderError[]> compiled =
+            Compiler.Compile(conv.Fx, new CompilerOptions { Target = PlatformTarget.OpenGL });
+        if (!compiled.IsSuccess)
+            return Fail("In-memory compile failed:\n" + FormatErrors(compiled.Error));
+
+        // 3. .mgfx bytes -> a real MonoGame Effect, wrapped for the fullscreen ShaderToy pass.
+        Effect effect;
+        try
+        {
+            effect = new Effect(device, compiled.Value.Data);
+        }
+        catch (Exception ex)
+        {
+            return Fail($"new Effect() threw: {ex.GetType().Name}: {ex.Message}");
+        }
+
+        var helper = new ShaderToyEffect(device, effect, ownsEffect: true);
+        return new CompiledShaderToy(true, helper, conv.UsedUniforms, string.Empty);
+    }
+
+    private static CompiledShaderToy Fail(string error) =>
+        new(false, null, Array.Empty<string>(), error);
+
+    /// <summary>
+    /// Reduce an arbitrary display/file name to something safe to drop into the emitted <c>.fx</c>
+    /// metadata. The name is cosmetic (it appears in a comment), but an external file can be named
+    /// anything, so keep only identifier-friendly characters and fall back to a constant.
+    /// </summary>
+    private static string SanitizeEffectName(string displayName)
+    {
+        if (string.IsNullOrWhiteSpace(displayName))
+            return "ShaderToyEffect";
+
+        var sb = new System.Text.StringBuilder(displayName.Length);
+        foreach (char c in displayName)
+            sb.Append(char.IsLetterOrDigit(c) || c == '_' ? c : '_');
+
+        string cleaned = sb.ToString().Trim('_');
+        if (cleaned.Length == 0 || !char.IsLetter(cleaned[0]))
+            cleaned = "Shader_" + cleaned;
+        return cleaned;
+    }
+
+    private static string FormatDiagnostics(IReadOnlyList<ConvertDiagnostic> diagnostics)
+    {
+        if (diagnostics.Count == 0)
+            return "(no diagnostics)";
+
+        var lines = new List<string>(diagnostics.Count);
+        foreach (ConvertDiagnostic d in diagnostics)
+            lines.Add($"  {d.Severity} ({d.Line},{d.Column}): {d.Message}");
+        return string.Join('\n', lines);
+    }
+
+    private static string FormatErrors(IReadOnlyList<ShaderError> errors)
+    {
+        if (errors.Count == 0)
+            return "(no error detail)";
+
+        var lines = new List<string>(errors.Count);
+        foreach (ShaderError e in errors)
+            lines.Add("  " + e.Message);
+        return string.Join('\n', lines);
+    }
+}

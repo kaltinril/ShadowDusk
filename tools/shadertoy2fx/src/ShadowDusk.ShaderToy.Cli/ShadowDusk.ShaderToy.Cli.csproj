@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>shadertoy2fx</AssemblyName>
+    <RootNamespace>ShadowDusk.ShaderToy.Cli</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Phase 47: the converter library was promoted to src/ShadowDusk.ShaderToy (in ShadowDusk.slnx).
+         This standalone PoC CLI stays out-of-band and references it at its new product location. -->
+    <ProjectReference Include="..\..\..\..\src\ShadowDusk.ShaderToy\ShadowDusk.ShaderToy.csproj" />
+  </ItemGroup>
+</Project>

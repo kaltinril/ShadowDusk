@@ -10,7 +10,8 @@
     <section class="controls">
         <h1>ShadowDusk Shader Fiddle</h1>
         <p class="tagline">
-            Paste HLSL <code>.fx</code>, compile <strong>in the browser</strong>, see it on the cat.
+            Paste HLSL <code>.fx</code> <em>or</em> a <strong>ShaderToy</strong> shader, compile
+            <strong>in the browser</strong>, see it render.
             <a href="https://github.com/kaltinril/ShadowDusk" target="_blank">about</a>
         </p>
 
@@ -25,8 +26,8 @@
         </div>
 
         <div class="row">
-            <label for="sdFxUpload">…or upload your own <code>.fx</code> into the editor:</label>
-            <InputFile id="sdFxUpload" class="fx-upload" accept=".fx,.fxh,.hlsl"
+            <label for="sdFxUpload">…or upload your own <code>.fx</code> / ShaderToy <code>.glsl</code>:</label>
+            <InputFile id="sdFxUpload" class="fx-upload" accept=".fx,.fxh,.hlsl,.glsl,.frag,.fs"
                        OnChange="OnFxFileSelectedAsync" disabled="@(!_ready || _compiling || _exporting is not null)" />
         </div>
 
@@ -76,6 +77,9 @@
         <div class="row buttons">
             <button class="primary" @onclick="CompileAndApplyAsync" disabled="@(!_ready || _compiling || _exporting is not null)">
                 @(_compiling ? "Compiling…" : "Compile & Apply (mode 2)")
+            </button>
+            <button @onclick="LoadShaderToyExampleAsync" disabled="@(!_ready || _compiling || _exporting is not null)">
+                ShaderToy example
             </button>
             <button @onclick="ResetEffect" disabled="@(!_ready || _compiling || _exporting is not null)">
                 Reset (no shader)
@@ -164,14 +168,26 @@
         <details class="note">
             <summary>How does "Compile & Apply" work?</summary>
             <p>
-                It compiles the <code>.fx</code> in the editor <strong>entirely in the
-                browser</strong> via <code>WasmShaderCompiler</code> — the faithful
+                It compiles the editor source <strong>entirely in the browser</strong> via
+                <code>WasmShaderCompiler</code> — the faithful
                 HLSL&nbsp;→&nbsp;DXC&nbsp;(WASM)&nbsp;→&nbsp;SPIR-V&nbsp;→&nbsp;SPIRV-Cross&nbsp;→&nbsp;<code>.mgfx</code>
                 pipeline — then loads the result with a real KNI <code>Effect</code>. The
                 <strong>first</strong> click downloads the ~17&nbsp;MB DXC compiler once, so it may
-                pause on "Compiling…". Your shader must be a MonoGame-format effect (a
-                <code>SpriteTexture</code> sampler, a <code>MainPS</code>, and a
-                <code>technique</code>). Heads-up: this sample only sets the 10 built-in corpus
+                pause on "Compiling…".
+            </p>
+            <p>
+                <strong>ShaderToy / GLSL input:</strong> paste a single-pass <code>void mainImage(out
+                vec4 fragColor, in vec2 fragCoord)</code> (or a plain <code>void main()</code>) shader
+                and it is converted to <code>.fx</code> in-browser, then compiled and rendered
+                <strong>fullscreen</strong> with its <code>iResolution</code> / <code>iTime</code>
+                driven each frame (so it animates). <code>iChannel0..3</code> are bound to the cat
+                image. Click <em>ShaderToy example</em> to try one. Multipass (Buffer&nbsp;A–D),
+                audio/video/cubemap channels, and a few exotic constructs are out of scope and fail
+                with a located error. A real HLSL <code>.fx</code> (with a <code>technique</code>) is
+                detected automatically and compiled unchanged.
+            </p>
+            <p>
+                Heads-up for <code>.fx</code> input: this sample only sets the 10 built-in corpus
                 parameters — a custom global such as <code>float MyAmount = 0.35;</code> is
                 <em>not</em> set here (and its initializer isn't baked into the bytes), so inline
                 such constants if you want them to take effect.

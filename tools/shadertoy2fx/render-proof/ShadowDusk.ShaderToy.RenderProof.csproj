@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>ShadowDusk.ShaderToy.RenderProof</AssemblyName>
+    <RootNamespace>ShadowDusk.ShaderToy.RenderProof</RootNamespace>
+    <!-- Phase 46 experiment: out-of-band render driver, NOT packed and NOT in ShadowDusk.slnx. -->
+    <IsPackable>false</IsPackable>
+    <!-- MonoGame/SDL analyzers trip the repo-wide warnings-as-errors, same as validation/Baseline. -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MonoGame.Framework.DesktopGL" />
+    <!-- Phase 46 fidelity gate: raw Silk.NET GL ground-truth reference renderer + ImageSharp montage. -->
+    <PackageReference Include="Silk.NET.OpenGL" />
+    <PackageReference Include="Silk.NET.Windowing.Glfw" />
+    <PackageReference Include="SixLabors.ImageSharp" />
+  </ItemGroup>
+  <PropertyGroup>
+    <!-- Silk.NET unsafe blocks for the GL reference renderer (VBO upload, glReadPixels). -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Phase 47: converter library promoted to src/ShadowDusk.ShaderToy; render-proof stays out-of-band. -->
+    <ProjectReference Include="..\..\..\src\ShadowDusk.ShaderToy\ShadowDusk.ShaderToy.csproj" />
+    <ProjectReference Include="..\src\ShadowDusk.ShaderToy.Runtime\ShadowDusk.ShaderToy.Runtime.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="shaders\*.glsl" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="multipass\*.json" CopyToOutputDirectory="PreserveNewest" Link="multipass\%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

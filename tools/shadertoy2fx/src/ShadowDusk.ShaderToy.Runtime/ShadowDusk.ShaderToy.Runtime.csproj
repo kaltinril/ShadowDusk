@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>ShadowDusk.ShaderToy.Runtime</AssemblyName>
+    <RootNamespace>ShadowDusk.ShaderToy.Runtime</RootNamespace>
+    <!-- Phase 46 experiment: standalone runtime helper, NOT packed and NOT in ShadowDusk.slnx. -->
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MonoGame.Framework.DesktopGL" />
+  </ItemGroup>
+</Project>

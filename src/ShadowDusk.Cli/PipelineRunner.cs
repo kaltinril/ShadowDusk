@@ -3,6 +3,7 @@
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
+using ShadowDusk.ShaderToy;
 
 namespace ShadowDusk.Cli;
 
@@ -15,10 +16,10 @@ internal sealed class PipelineRunner
         // Stage 1: Read source file. UnauthorizedAccessException (ACL-denied path,
         // directory-as-file) is an input failure exactly like IOException — map it to
         // X0001 rather than letting it crash out as an internal X0099.
-        string hlslSource;
+        string sourceText;
         try
         {
-            hlslSource = await File.ReadAllTextAsync(args.SourceFile, ct).ConfigureAwait(false);
+            sourceText = await File.ReadAllTextAsync(args.SourceFile, ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -28,6 +29,26 @@ internal sealed class PipelineRunner
                 Column: 0,
                 Code: "X0001",
                 Message: ex.Message));
+        }
+
+        // Stage 1.5 (Phase 47): if the input is ShaderToy / GLSL, convert it to .fx text up front;
+        // a real .fx is passed straight through unchanged. Everything downstream (stage 2/3) is the
+        // EXACT .fx path — the converter is a front-end text transform, glsl -> .fx, nothing more.
+        var detection = InputFormatDetector.Detect(args.SourceFile, sourceText, args.InputFormat);
+        if (detection.IsFailure)
+            return Fail(detection.Error);
+
+        string hlslSource;
+        if (detection.Value == InputKind.Glsl)
+        {
+            var converted = ConvertShaderToy(args, sourceText);
+            if (converted.IsFailure)
+                return Result<byte[], IReadOnlyList<ShaderError>>.Fail(converted.Error);
+            hlslSource = converted.Value;
+        }
+        else
+        {
+            hlslSource = sourceText;
         }
 
         // Stage 2: Build options and delegate compilation to the library.
@@ -75,6 +96,100 @@ internal sealed class PipelineRunner
         }
 
         return Result<byte[], IReadOnlyList<ShaderError>>.Ok(mgfxBytes);
+    }
+
+    // Runs the ShaderToy/GLSL -> .fx converter and surfaces its diagnostics in the CLI's existing
+    // MGCB-parseable form, always pointing at the ORIGINAL .glsl source (the emitted .fx text's line
+    // numbers are meaningless to the author). On error, returns every diagnostic at once (the converter
+    // collects them); on success, returns the .fx text and emits non-fatal warnings (+ an optional
+    // drivable-uniforms note) to stderr without failing the build.
+    private static Result<string, IReadOnlyList<ShaderError>> ConvertShaderToy(
+        CliArguments args, string glsl)
+    {
+        string effectName = SanitizeIdentifier(Path.GetFileNameWithoutExtension(args.SourceFile));
+        var options = new ConvertOptions
+        {
+            EffectName    = effectName,
+            TechniqueName = effectName,
+        };
+
+        ConvertResult result = ShaderToyConverter.Convert(glsl, options);
+
+        if (!result.Success || result.Fx is null)
+        {
+            var errors = result.Diagnostics
+                .Select(d => MapDiagnostic(args.SourceFile, d))
+                .ToArray();
+
+            // Defensive: a failed convert with no diagnostics should still fail loudly, never silently.
+            if (errors.Length == 0)
+                errors = new[]
+                {
+                    new ShaderError(
+                        File: args.SourceFile, Line: 0, Column: 0, Code: "SD0010",
+                        Message: "ShaderToy/GLSL conversion failed without a diagnostic."),
+                };
+
+            return Result<string, IReadOnlyList<ShaderError>>.Fail(errors);
+        }
+
+        // Success: surface any non-fatal warnings (e.g. a dropped standalone void main() wrapper).
+        foreach (var d in result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Warning))
+            Console.Error.WriteLine(MgcbErrorFormatter.Format(MapDiagnostic(args.SourceFile, d)));
+
+        // The drivable effect parameters the consumer must set each frame at runtime. Gated behind
+        // --print-uniforms so the default success path keeps stderr empty for the MGCB contract.
+        if (args.PrintUniforms && result.UsedUniforms.Count > 0)
+        {
+            var note = new ShaderError(
+                File: args.SourceFile, Line: 0, Column: 0, Code: "SD0000",
+                Message: $"drivable effect parameters: {string.Join(", ", result.UsedUniforms)}",
+                Severity: ShaderErrorSeverity.Note);
+            Console.Error.WriteLine(MgcbErrorFormatter.Format(note));
+        }
+
+        return Result<string, IReadOnlyList<ShaderError>>.Ok(result.Fx);
+    }
+
+    // ShaderToy convert diagnostics get a dedicated SD#### code space so they are distinguishable from
+    // fxc / pipeline errors; MgcbErrorFormatter passes SD#### through unchanged and drops the
+    // file(line,col) prefix when Line <= 0. The File is the ORIGINAL .glsl path.
+    private static ShaderError MapDiagnostic(string sourceFile, ConvertDiagnostic d)
+    {
+        ShaderErrorSeverity severity = d.Severity == DiagnosticSeverity.Error
+            ? ShaderErrorSeverity.Error
+            : ShaderErrorSeverity.Warning;
+
+        string code = d.Severity == DiagnosticSeverity.Error ? "SD0010" : "SD0001";
+
+        string message = string.IsNullOrEmpty(d.Construct)
+            ? d.Message
+            : $"{d.Message} (near '{d.Construct}')";
+
+        return new ShaderError(
+            File: sourceFile,
+            Line: d.Line,
+            Column: d.Column,
+            Code: code,
+            Message: message,
+            Severity: severity);
+    }
+
+    // Derives a valid HLSL identifier for the emitted technique/effect name from the source file name
+    // (a file like '2d-noise.glsl' would otherwise yield a leading digit / hyphen).
+    private static string SanitizeIdentifier(string name)
+    {
+        if (string.IsNullOrEmpty(name))
+            return "ShaderToyEffect";
+
+        var sb = new System.Text.StringBuilder(name.Length + 1);
+        foreach (char c in name)
+            sb.Append(char.IsLetterOrDigit(c) || c == '_' ? c : '_');
+
+        if (char.IsDigit(sb[0]))
+            sb.Insert(0, '_');
+
+        return sb.ToString();
     }
 
     private static Result<byte[], IReadOnlyList<ShaderError>> Fail(ShaderError error) =>

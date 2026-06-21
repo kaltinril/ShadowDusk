@@ -45,4 +45,11 @@
     <ProjectReference Include="..\..\src\ShadowDusk.Wasm\ShadowDusk.Wasm.csproj" />
   </ItemGroup>
 
+  <ItemGroup Label="ShaderToy / GLSL front-end (Phase 47)">
+    <!-- Pure-managed ShaderToy/GLSL -> .fx converter. Lets the fiddle accept ShaderToy 'mainImage'
+         (or plain 'void main') source: it is converted to .fx in-browser, then compiled by the same
+         WasmShaderCompiler path. No native asset (the converter is managed-only). -->
+    <ProjectReference Include="..\..\src\ShadowDusk.ShaderToy\ShadowDusk.ShaderToy.csproj" />
+  </ItemGroup>
+
 </Project>
