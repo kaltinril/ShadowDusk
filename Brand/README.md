@@ -33,7 +33,7 @@ amber — a twilight horizon rendered as a 3D mesh. The "shadow + dusk" metaphor
 |---|---|---|
 | The project / product | **ShadowDusk** | The in-memory compiler library is the product. |
 | The CLI command / tool | **ShadowDuskCLI** | The `dotnet tool` command and the self-contained binary. PascalCase, no space. |
-| NuGet packages | **ShadowDusk.Core / .HLSL / .GLSL / .Compiler / .Cli / .Wasm** | Six packages, one shared version. |
+| NuGet packages | **ShadowDusk.Core / .HLSL / .GLSL / .ShaderToy / .Compiler / .Cli / .Wasm** | Seven packages, one shared version. |
 | Reference tool we emulate | `mgfxc` | MonoGame's compiler. We are a *drop-in replacement* for it — so `mgfxc` appears in prose about compatibility/fidelity, but it is **not** our command name. |
 
 ---

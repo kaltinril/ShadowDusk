@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ShadowDusk is a cross-platform, in-memory drop-in `mgfxc` replacement: a self-contained
 library that compiles `.fx` → `.mgfx` at runtime on Linux, macOS, and Windows, with output
-that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime. All six
+that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime. All seven
 `ShadowDusk.*` packages share a single version (see `Directory.Build.props` `<Version>`).
 
 ## [Unreleased]
@@ -17,6 +17,52 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 ### Changed
 
 ### Fixed
+
+## [0.9.0] - 2026-06-22
+
+Robustness pass on the **ShaderToy GLSL -> `.fx` converter** (`ShadowDusk.ShaderToy`): several real
+ShadowToy shaders that previously failed to convert now compile, and the cases that genuinely cannot be
+faithfully translated reject with a clear, located message instead of an opaque downstream parser error.
+The converter is a pure-managed front end that emits `.fx`; the core compile pipeline and all existing
+`.mgfx` / `.fxb` output are unchanged (zero golden churn).
+
+### Added
+
+- **`ShadowDusk.ShaderToy` is now a published NuGet package** (the seventh `ShadowDusk.*` package).
+  It is the standalone, **pure-managed, zero-native** ShaderToy/GLSL → `.fx` converter
+  (`ShaderToyConverter.Convert`), so anyone can convert ShaderToy shaders **in-process** (e.g. an
+  XNA/KNI web shader fiddle or an in-app importer) without the CLI. It is **optional and separate**:
+  `ShadowDusk.Compiler` does not depend on it, so existing consumers are unaffected. (The converter
+  also continues to ship embedded in the `ShadowDuskCLI` tool's `.glsl` input.)
+- Regression fixtures and unit tests for every case below: authored corpus shaders
+  (`matrix_from_vector`, `mirror_happy_accident`, `infinite_cube_starfield`, `abstract_waterfall`,
+  `chimera_final_pass`) auto-converted and golden-compared, plus reject fixtures
+  (`unsigned_int_literal`, `texture_cubemap_coord`) and targeted unit suites
+  (`MatrixConstructorTests`, `ForLoopScopingTests`, `ConstGlobalTests`, `TextureLodTests`).
+
+### Changed
+
+- **Clearer, located rejects for constructs outside the float-based subset.** An unsigned-integer
+  literal (`123U`, which drives uint/uvec bit-hash arithmetic) now rejects **at the literal** instead of
+  the stray `U` surfacing later as a confusing "expected `)`" parse error, and `texture(sampler, vec3)`
+  (a cubemap sample) rejects with a message naming the cubemap rather than truncating silently.
+
+### Fixed
+
+- **`mat2` constructed from a `vec4` now converts** (e.g. `mat2(someVec4)`): the four-component vector is
+  flattened into the `float2x2` instead of failing to emit.
+- **Reused `for`-loop induction variables now convert** under HLSL's legacy for-scope rule. GLSL scopes a
+  `for`-init declaration to its loop; legacy HLSL leaks it to the enclosing scope, so a second
+  `for (int i = ...)` in the same function tripped `-Wfor-redefinition` under `-WX`. The converter now
+  scope-renames reused induction variables per loop (first occurrence keeps its name), so multi-loop
+  raymarchers convert.
+- **Multi-declarator `const` globals now parse** (e.g. `const float A = 1., B = 2.;`). The additional
+  declarators were previously swallowed by the comma operator, surfacing as a misleading "Undeclared
+  identifier" error on later use.
+- **A base-level `textureLod(s, uv, 0.)` lowers to a plain `tex2D`.** The legacy `tex2Dlod` intrinsic
+  does not rewrite to a modern Texture method on the OpenGL/DirectX targets (`FX0012`); since the
+  single-pass harness binds each iChannelN without mipmaps, mip 0 is the only level, so the two are
+  equivalent and the shader now compiles on every backend. A non-zero LOD keeps the explicit `tex2Dlod`.
 
 ## [0.8.0] - 2026-06-18
 
@@ -523,7 +569,8 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.5.1...v0.6.0

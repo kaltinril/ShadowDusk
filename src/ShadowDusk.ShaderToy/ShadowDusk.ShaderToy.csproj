@@ -2,13 +2,29 @@
   <PropertyGroup>
     <AssemblyName>ShadowDusk.ShaderToy</AssemblyName>
     <RootNamespace>ShadowDusk.ShaderToy</RootNamespace>
-    <!-- Phase 47: promoted to a product library + tested in-solution; publishing deferred by owner.
-         To ship it, flip IsPackable to true and add it to the release set (see plan/PHASE-47). Do NOT
-         add a <Version>/<PackageVersion> property here: the single version source of truth is
-         Directory.Build.props <Version>, inherited like every other ShadowDusk.* package. -->
-    <IsPackable>false</IsPackable>
+    <!-- Phase 47 promoted this to a product library; 0.9.0 ships it as a STANDALONE, pure-managed
+         NuGet so it can be used in-process (e.g. an XNA/KNI web shader fiddle, or an in-app importer)
+         without the CLI. It carries NO native assets and NO ProjectReferences — it is deliberately
+         separate from the faithful mgfxc-replacement pipeline (ShadowDusk.Compiler does NOT depend on
+         it). The single version source of truth is Directory.Build.props <Version>, inherited like
+         every other ShadowDusk.* package: do NOT add a <Version>/<PackageVersion> property here. -->
+    <IsPackable>true</IsPackable>
+    <PackageId>ShadowDusk.ShaderToy</PackageId>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>ShadowDusk ShaderToy front-end: a pure-managed, zero-native converter that translates a ShaderToy / plain-GLSL fragment shader into a self-contained HLSL .fx source (ShaderToyConverter.Convert). The .fx then compiles to MonoGame/KNI (OpenGL/DirectX) and FNA via ShadowDusk.Compiler or the ShadowDuskCLI tool. Standalone and optional, not part of the faithful mgfxc-replacement pipeline.</Description>
+    <PackageTags>monogame kni fna shadertoy glsl hlsl shader converter fx transpiler</PackageTags>
+    <!-- Phase 26: emit the XML doc file for DocFX. CS1591 suppressed during the
+         doc-comment transition so the TreatWarningsAsErrors build stays green. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="ShadowDusk.ShaderToy.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 </Project>

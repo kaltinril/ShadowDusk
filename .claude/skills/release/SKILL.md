@@ -8,9 +8,9 @@ argument-hint: "<version> (e.g., 0.2.0)"
 
 Automate the full ShadowDusk release from version bump through PR merge to publish trigger.
 
-A release publishes **all six** `ShadowDusk.*` packages (`Core`, `HLSL`, `GLSL`, `Compiler`,
-`Cli`, `Wasm`) plus the `ShadowDuskCLI` `dotnet tool` to nuget.org, and attaches self-contained CLI
-binaries to a GitHub Release. The human runbook this automates is `RELEASING.md`.
+A release publishes **all seven** `ShadowDusk.*` packages (`Core`, `HLSL`, `GLSL`, `ShaderToy`,
+`Compiler`, `Cli`, `Wasm`) plus the `ShadowDuskCLI` `dotnet tool` to nuget.org, and attaches
+self-contained CLI binaries to a GitHub Release. The human runbook this automates is `RELEASING.md`.
 
 ## Input
 `$ARGUMENTS` is the version (e.g., `0.2.0`). If omitted, read the current `<Version>` from
@@ -68,9 +68,9 @@ binaries to a GitHub Release. The human runbook this automates is `RELEASING.md`
     - `git tag v<version> && git push origin v<version>`.
 
     The `validate` job checks the tag/input against `Directory.Build.props` `<Version>`; if
-    they match, all six packages + the `mgfxc` tool publish to nuget.org and a GitHub Release
+    they match, all seven packages + the `mgfxc` tool publish to nuget.org and a GitHub Release
     is cut. Point the user at `RELEASING.md` → "Verify after release" for the post-publish
-    checks (`dotnet tool install -g ShadowDusk.Cli` → `ShadowDuskCLI --help`, and all six packages on
+    checks (`dotnet tool install -g ShadowDusk.Cli` → `ShadowDuskCLI --help`, and all seven packages on
     nuget.org at `<version>`).
 
 ## ShadowDusk-specific notes

@@ -417,7 +417,11 @@ ShaderToy reference orientation. (Documented inline in `HarnessGenerator.EmitPix
 hashes / bit tricks, where the signed reinterpretation is behaviorally equivalent under the bitwise
 operators we pass through. (A FNA / fx_2_0 target has no integer-bitwise instruction set at all, so a
 `uint`-heavy bit-hash shader compiles on GL/DX but legitimately hits the SM3 ceiling on FNA — an
-inherent fx_2_0 limit, not a converter bug.)
+inherent fx_2_0 limit, not a converter bug.) The one exception is an **explicit unsigned-suffix integer
+literal** (`123U` / `0x9E3779B9u`): it is rejected **at the literal** (with line/column) because a
+`U`-suffixed constant signals true unsigned bit arithmetic (overflow / wraparound) the signed
+reinterpretation cannot faithfully reproduce, and a stray `U` would otherwise surface later as a
+confusing "expected `)`" parse error.
 
 **Vector splat (GLSL-only, expanded):** GLSL `vecN(scalar)` splats the scalar to all N components.
 HLSL has no single-scalar vector constructor, so `vecN(s)` → `((floatN)(s))`. A single **vector**
@@ -433,7 +437,12 @@ constructor, so the converter expands the GLSL forms to an explicit `floatNxN(..
   transposes cancel, so the HLSL components are copied directly). `mat3(mat4)` extracts the upper-left
   3x3; `mat4(mat3)` expands the 3x3 into a 4x4 with a 1 in the bottom-right.
 
-A single **vector** argument to a matrix constructor is not a defined GLSL form → loud reject.
+A single **vector** argument that supplies **exactly N×N components** is flattened into the matrix:
+GLSL fills column-major and HLSL's `floatNxN(...)` constructor flattens the vector in the same order, so
+(like the scalar-list path) it yields the transpose that the reversed `mul()` order cancels (trap 2) →
+the vector is passed straight through. The reachable case is `mat2(vec4)` → `float2x2(<vec4>)`. A single
+vector of the **wrong** width (not N×N components) is not a defined GLSL matrix constructor → loud
+reject.
 
 ## Operator mapping
 
@@ -491,8 +500,11 @@ emitted only when `mod` was used.
 ## Intrinsic mapping (trap 4 — explicit table; anything else calling-but-unmapped is rejected)
 
 **Renamed:** `mix`→`lerp`, `fract`→`frac`, `inversesqrt`→`rsqrt`, `dFdx`→`ddx`, `dFdy`→`ddy`,
-`texture`/`texture2D`→`tex2D`, `textureLod`→`tex2Dlod` (uv packed into `float4(uv,0,lod)`),
-`textureGrad`→`tex2Dgrad`.
+`texture`/`texture2D`→`tex2D`, `textureLod`→`tex2Dlod` (uv packed into `float4(uv,0,lod)`) — except a
+**base-level** `textureLod(s, uv, 0.)` lowers to a plain `tex2D`, since `tex2Dlod` does not rewrite to a
+modern Texture method on the OpenGL/DirectX targets (`FX0012`) and the single-pass harness binds each
+iChannelN without mipmaps, so mip 0 is the only level and the two are equivalent; a non-zero LOD keeps
+the explicit `tex2Dlod` form — `textureGrad`→`tex2Dgrad`.
 
 **Special-cased:** `atan(y,x)`→`atan2(y,x)`, `atan(x)`→`atan(x)`; `mod`→`glsl_mod` (see trap 3);
 `matrixCompMult(a,b)`→`(a * b)` (the **componentwise** matrix product: HLSL `*` on matrices is already
@@ -580,13 +592,20 @@ block `{}`, local var decl + init (incl. comma lists `float a=…, b=…;` kept 
 scope), expression statement, compound assignment, `if/else`, `for`, `while`, `do…while`, `return`,
 `break`, `continue`, `discard`, and **`switch`** (see *switch lowering* below). User-defined functions
 with `in`/`out`/`inout` params, `const`
-globals (emitted as `static const`), and **top-level non-`const` mutable globals** (emitted as
+globals (emitted as `static const`, including a comma multi-declarator `const float A = 1., B = 2.;`),
+and **top-level non-`const` mutable globals** (emitted as
 `static`, see *Top-level mutable globals* above) are supported. Function prototypes are accepted and
 the later definition is emitted. The GLSL **comma (sequence) operator** `a, b, c` is supported at
 full-expression sites (`for` headers `for (...; ...; i++, j--)`, the comma expression statement) and
 emitted as the same comma operator; it is distinct from the comma SEPARATORs in argument lists and
 declarators, which stay separators (G7 parser hardening). User **structs** (G6) and fixed-size
 **arrays** (G7) are supported as described above.
+
+**Reused `for`-loop induction variables (HLSL for-scope leak).** GLSL scopes a `for`-init declaration to
+its own loop, but legacy HLSL leaks it to the enclosing scope, so two loops in one function each writing
+`for (int i = ...; ...)` would trip `-Wfor-redefinition` under `-WX` (a hard error). The converter
+scope-renames each reused induction variable per loop (the first occurrence keeps its name, later ones
+become `i_sd`, `i_sd2`, …), so multi-loop raymarchers convert without a redefinition error.
 
 ### `switch` lowering (portable to SM3 / FNA)
 
