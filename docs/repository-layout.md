@@ -18,7 +18,7 @@ ShadowDusk/
 │   │                             #   the consumer-facing product NuGet (the in-memory library)
 │   ├── ShadowDusk.Cli/           # CLI entry-point (dotnet tool `ShadowDuskCLI`); also accepts ShaderToy/GLSL input
 │   ├── ShadowDusk.ShaderToy/     # Pure-managed ShaderToy/GLSL → .fx front-end (ShaderToyConverter.Convert); ZERO
-│   │                             #   native + ZERO MonoGame dep; additive, upstream of the pipeline. Publishing deferred.
+│   │                             #   native + ZERO MonoGame dep; additive, upstream of the pipeline. PUBLISHED standalone NuGet (0.9.0).
 │   ├── ShadowDusk.MgcbPlugin/    # MGCB content-processor plugin — STUB/scaffold (Tier-1 PATH override is the shipping MGCB path)
 │   └── ShadowDusk.Wasm/          # In-browser WASM IShaderCompiler (WasmShaderCompiler); [JSImport] to WASM-compiled DXC + SPIRV-Cross
 ├── tests/

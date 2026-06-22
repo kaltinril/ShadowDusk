@@ -17,7 +17,7 @@ ShadowDusk is a cross-platform HLSL shader compiler for MonoGame, KNI, and FNA: 
 
 ## Repository Layout
 
-`src/` holds the libraries (`ShadowDusk.{Core,HLSL,GLSL,Metal,Compiler,Cli,MgcbPlugin,Wasm}` — `Compiler` is the product NuGet, `Metal`/`MgcbPlugin` are stubs); `tests/` the xUnit projects + `fixtures/` (`shaders/`, `golden/`); `samples/` (`ShaderFiddle.Web`, `ShaderViewer`, `mgcb`); `tools/` the restored native binaries (`spirv-cross/`, `vkd3d/` — not committed); `docs/` the reference docs. **Full annotated tree: [docs/repository-layout.md](docs/repository-layout.md).**
+`src/` holds the libraries (`ShadowDusk.{Core,HLSL,GLSL,ShaderToy,Metal,Compiler,Cli,MgcbPlugin,Wasm}` — `Compiler` is the product NuGet, `ShaderToy` is the pure-managed ShaderToy/GLSL → `.fx` front-end (Phase 47, not yet published), `Metal`/`MgcbPlugin` are stubs); `tests/` the xUnit projects + `fixtures/` (`shaders/`, `golden/`); `samples/` (`ShaderFiddle.Web`, `ShaderViewer`, `mgcb`); `tools/` the restored native binaries (`spirv-cross/`, `vkd3d/` — not committed); `docs/` the reference docs. **Full annotated tree: [docs/repository-layout.md](docs/repository-layout.md).**
 
 ## Tech Stack
 
@@ -121,7 +121,7 @@ Standing rules the user has stated (kept here because this file is always loaded
 
 ## Releases (how a release works)
 
-ShadowDusk ships as **six NuGet packages** — `ShadowDusk.{Core,HLSL,GLSL,Compiler,Cli,Wasm}` — plus the `ShadowDuskCLI` dotnet tool, all at **one shared version**. **To cut a release, use the `/release` skill**; `RELEASING.md` is the human runbook and **[the full release mechanics reference](RELEASING.md)** (what triggers a publish, the validate-job version guard, what the publish does, CI matrix). The two footguns to remember:
+ShadowDusk ships as **seven NuGet packages** — `ShadowDusk.{Core,HLSL,GLSL,ShaderToy,Compiler,Cli,Wasm}` — plus the `ShadowDuskCLI` dotnet tool, all at **one shared version**. (`ShadowDusk.ShaderToy` is the standalone, pure-managed ShaderToy/GLSL → `.fx` front-end, added to the published set in 0.9.0; it is optional and not part of the `ShadowDusk.Compiler` dependency graph.) **To cut a release, use the `/release` skill**; `RELEASING.md` is the human runbook and **[the full release mechanics reference](RELEASING.md)** (what triggers a publish, the validate-job version guard, what the publish does, CI matrix). The two footguns to remember:
 
 - **Single source of version truth: `Directory.Build.props` `<Version>`.** Bump that one line. **NEVER** add a `<PackageVersion>` *property* to a csproj — it desyncs versions and collides with Central Package Management's `<PackageVersion Include=… />` *items* in `Directory.Packages.props`. `dotnet pack` flows `<Version>` to all packages.
 - Bump + merge the version **first**, *then* dispatch — `release.yml` is **dispatch-only** (a `v*.*.*` tag is only a marker; pushing one publishes nothing), and its `validate` job fails unless the dispatch `version` input equals `<Version>`. Release commits/PRs follow the **Git Commit Conventions** above (no co-author trailers).

@@ -9,9 +9,9 @@
 # Pipeline:
 #   validate          → resolve + guard the version
 #   build-and-test    → 3-OS build + full test gate
-#   pack-desktop      → pack the FIVE desktop packages (Core/HLSL/GLSL/Compiler/Cli)
+#   pack-desktop      → pack the SIX desktop packages (Core/HLSL/GLSL/ShaderToy/Compiler/Cli)
 #                       at the validated version, with symbols (.snupkg)
-#   pack-wasm         → pack ShadowDusk.Wasm (the SIXTH package) in THIS workflow —
+#   pack-wasm         → pack ShadowDusk.Wasm (the SEVENTH package) in THIS workflow —
 #                       its own job because it needs the wasm-tools workload and the
 #                       restored dxcompiler.wasm (its `VerifyDxcWasmPresent` MSBuild
 #                       target hard-fails the pack otherwise)
@@ -145,7 +145,7 @@ jobs:
           path: TestResults/*.trx
           retention-days: 30
 
-  # ── Pack the five desktop packages (Wasm is packed in wasm.yml) ────────────
+  # ── Pack the six desktop packages (Wasm is packed in wasm.yml) ─────────────
   pack-desktop:
     name: Pack desktop NuGet packages
     runs-on: ubuntu-latest
@@ -211,16 +211,20 @@ jobs:
       - name: dotnet restore
         run: dotnet restore ShadowDusk.slnx --locked-mode
 
-      # Pack the five desktop packages at the validated version, with symbol
+      # Pack the six desktop packages at the validated version, with symbol
       # packages (.snupkg). The Version override is belt-and-braces — it already
       # equals Directory.Build.props per the validate guard — but keeps the pack
       # explicit and matches a workflow_dispatch where the tag may not exist yet.
+      # ShadowDusk.ShaderToy is the standalone, pure-managed ShaderToy/GLSL -> .fx
+      # front-end (zero natives, no ProjectReferences): it is NOT in the
+      # ShadowDusk.Compiler dependency graph, so pack-consume.yml does not pull it.
       - name: Pack desktop packages
         run: |
           for proj in \
             src/ShadowDusk.Core/ShadowDusk.Core.csproj \
             src/ShadowDusk.HLSL/ShadowDusk.HLSL.csproj \
             src/ShadowDusk.GLSL/ShadowDusk.GLSL.csproj \
+            src/ShadowDusk.ShaderToy/ShadowDusk.ShaderToy.csproj \
             src/ShadowDusk.Compiler/ShadowDusk.Compiler.csproj \
             src/ShadowDusk.Cli/ShadowDusk.Cli.csproj ; do
               dotnet pack "$proj" -c Release --no-restore -o nupkg \
@@ -233,8 +237,8 @@ jobs:
           ls -la nupkg/
           count=$(find nupkg -maxdepth 1 -name '*.nupkg' | wc -l)
           echo "Found $count .nupkg files"
-          if [ "$count" -lt 5 ]; then
-            echo "::error::Expected 5 desktop .nupkg, found $count"
+          if [ "$count" -lt 6 ]; then
+            echo "::error::Expected 6 desktop .nupkg, found $count"
             exit 1
           fi
 
@@ -279,7 +283,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  # ── Pack the 6th package: ShadowDusk.Wasm (in-browser KNI/Blazor compiler) ──
+  # ── Pack the 7th package: ShadowDusk.Wasm (in-browser KNI/Blazor compiler) ──
   # Separate job because it needs the wasm-tools workload and the dxcompiler.wasm
   # restored into wwwroot/dxc/ (tools/restore copies the committed
   # .wasm-build/dxc-wasm-out/dxcompiler.wasm there; VerifyDxcWasmPresent gates pack).
@@ -532,8 +536,8 @@ jobs:
           name: nupkg-desktop
           path: nupkg/
 
-      # ShadowDusk.Wasm (the 6th package) is packed by the pack-wasm job in THIS run,
-      # so its artifact is available here. All six packages publish together.
+      # ShadowDusk.Wasm (the 7th package) is packed by the pack-wasm job in THIS run,
+      # so its artifact is available here. All seven packages publish together.
       - name: Download Wasm package
         uses: actions/download-artifact@v8
         with:

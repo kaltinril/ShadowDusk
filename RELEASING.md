@@ -4,7 +4,7 @@ This is the human runbook for cutting a ShadowDusk release. The `/release` skill
 (`.claude/skills/release/SKILL.md`) automates every step below; this document is the
 ground truth it follows, and the fallback when you cut a release by hand.
 
-A release publishes **all six** `ShadowDusk.*` NuGet packages plus the `ShadowDuskCLI` `dotnet tool`
+A release publishes **all seven** `ShadowDusk.*` NuGet packages plus the `ShadowDuskCLI` `dotnet tool`
 to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub Release.
 
 | Package | What it is |
@@ -12,6 +12,7 @@ to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub 
 | `ShadowDusk.Core` | Core types, contracts, MGFX writer, SPIR-V reflection |
 | `ShadowDusk.HLSL` | FX9 pre-parser, DXC integration, vkd3d-shader / `d3dcompiler_47` DXBC backends |
 | `ShadowDusk.GLSL` | SPIR-V → GLSL via SPIRV-Cross + MojoShader-dialect rewriter |
+| `ShadowDusk.ShaderToy` | Standalone pure-managed ShaderToy/GLSL → `.fx` converter (optional; not in the `Compiler` graph) |
 | `ShadowDusk.Compiler` | The consumer-facing product library (`EffectCompiler : IShaderCompiler`) |
 | `ShadowDusk.Cli` | The `ShadowDuskCLI` `dotnet tool` |
 | `ShadowDusk.Wasm` | The `net8.0-browser` in-browser compiler |
@@ -25,11 +26,13 @@ to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub 
    secret**. It must be an [nuget.org API key](https://www.nuget.org/account/apikeys) scoped
    to **Push** for the `ShadowDusk.*` package IDs (a glob-scoped key is simplest).
 
-2. **nuget.org owner rights on all six package IDs.** You must be an owner (or have push
+2. **nuget.org owner rights on all seven package IDs.** You must be an owner (or have push
    rights) of every ID — `ShadowDusk.Core`, `ShadowDusk.HLSL`, `ShadowDusk.GLSL`,
-   `ShadowDusk.Compiler`, `ShadowDusk.Cli`, `ShadowDusk.Wasm`. The **first** publish of each
-   ID reserves the name to your account; confirm all six are reserved before relying on the
-   automated push (an unreserved ID makes the `dotnet nuget push` for that package fail).
+   `ShadowDusk.ShaderToy`, `ShadowDusk.Compiler`, `ShadowDusk.Cli`, `ShadowDusk.Wasm`. The
+   **first** publish of each ID reserves the name to your account; confirm all seven are
+   reserved before relying on the automated push (an unreserved ID makes the `dotnet nuget
+   push` for that package fail). `ShadowDusk.ShaderToy` is **new in 0.9.0**, so its first
+   publish reserves the ID — the glob-scoped key in step 1 already covers it.
 
 3. **A green `main`.** CI (`ci.yml`) runs the 3-OS build + test matrix on every push/PR.
    Releases cut from `main` only after CI is green; local green is not sufficient.
@@ -59,21 +62,21 @@ ShadowDusk's package version lives in **exactly one place**:
 ```xml
 <!-- Directory.Build.props -->
 <PropertyGroup>
-  <Version>0.8.0</Version>
+  <Version>0.9.0</Version>
 </PropertyGroup>
 ```
 
 That single `<Version>` flows to every `ShadowDusk.*` project, so `dotnet pack` stamps all
-six packages (and their inter-package dependency ranges) at the same version.
+seven packages (and their inter-package dependency ranges) at the same version.
 
-> **Do NOT edit the six `.csproj` files.** They no longer carry a per-project version.
+> **Do NOT edit the seven `.csproj` files.** They no longer carry a per-project version.
 > Editing one csproj and not the others is exactly the desync this centralization removes.
 > (The `<PackageVersion Include=… />` *items* in `Directory.Packages.props` are unrelated —
 > those pin third-party dependency versions under Central Package Management. Leave them
 > alone.)
 
-To bump for a release, change that one line (e.g. `0.7.0` → `0.8.0`), update
-`CHANGELOG.md` (move `[Unreleased]` into a dated `[0.8.0]` section, leave a fresh empty
+To bump for a release, change that one line (e.g. `0.8.0` → `0.9.0`), update
+`CHANGELOG.md` (move `[Unreleased]` into a dated `[0.9.0]` section, leave a fresh empty
 `[Unreleased]`), update the version examples in this file, commit, and merge to `main` via PR.
 
 ---
@@ -87,14 +90,14 @@ marker; the workflow creates and pushes it itself on a successful release).
 ### Manual dispatch (the only trigger)
 
 After the version-bump PR is merged to `main`: **Actions → Release → Run workflow**, and
-enter the `version` input (e.g. `0.8.0`, no leading `v`). On dispatch the workflow also
+enter the `version` input (e.g. `0.9.0`, no leading `v`). On dispatch the workflow also
 creates and pushes the matching `v<version>` tag so the GitHub Release anchors to a tag.
 
 ### The `validate` guard (input ↔ version)
 
 Before anything is packed or pushed, the `validate` job compares the dispatch `version`
 input (stripping a leading `v`) against `Directory.Build.props` `<Version>`. **If they
-disagree, the workflow fails fast and publishes nothing.** Dispatching `0.8.0` against a
+disagree, the workflow fails fast and publishes nothing.** Dispatching `0.9.0` against a
 `Directory.Build.props` that still says `0.7.0` is rejected — merge the version-bump PR
 first (the `/release` skill does this for you).
 
@@ -106,7 +109,7 @@ first (the `/release` skill does this for you).
 2. **build + test** on the 3-OS matrix (Linux / macOS / Windows).
 3. **publish** self-contained `ShadowDuskCLI` binaries per RID (`win-x64`, `linux-x64`, `osx-x64`,
    `osx-arm64`) and archive them.
-4. **pack + push** all six `ShadowDusk.*` packages (`.nupkg` + `.snupkg` symbols) to
+4. **pack + push** all seven `ShadowDusk.*` packages (`.nupkg` + `.snupkg` symbols) to
    nuget.org at the validated version, with `--skip-duplicate` (re-running a release no-ops
    on already-published versions). `ShadowDusk.Wasm` is packed in the WASM job (it needs the
    `wasm-tools` workload + restored `dxcompiler.wasm`).
@@ -117,13 +120,13 @@ first (the `/release` skill does this for you).
 
 ## Verify after release
 
-1. **nuget.org shows all six at the new version.** Check each of
-   `ShadowDusk.{Core,HLSL,GLSL,Compiler,Cli,Wasm}` is listed at `<version>` (indexing can
-   take a few minutes after push).
+1. **nuget.org shows all seven at the new version.** Check each of
+   `ShadowDusk.{Core,HLSL,GLSL,ShaderToy,Compiler,Cli,Wasm}` is listed at `<version>` (indexing
+   can take a few minutes after push).
 2. **The `ShadowDuskCLI` tool installs and runs:**
 
    ```bash
-   dotnet tool install -g ShadowDusk.Cli --version 0.8.0
+   dotnet tool install -g ShadowDusk.Cli --version 0.9.0
    ShadowDuskCLI --help
    ```
 
@@ -131,7 +134,7 @@ first (the `/release` skill does this for you).
 3. **The consumer (GL) self-contained path works on a clean machine:**
 
    ```bash
-   dotnet add package ShadowDusk.Compiler --version 0.8.0
+   dotnet add package ShadowDusk.Compiler --version 0.9.0
    ```
 
    then compile a `.fx` → GL `.mgfx` in memory. This restores `Core/HLSL/GLSL` plus
