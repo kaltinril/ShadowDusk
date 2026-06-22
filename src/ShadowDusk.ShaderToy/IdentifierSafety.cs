@@ -20,7 +20,17 @@ internal sealed class IdentifierRenames
     /// function.</summary>
     public Dictionary<int, Dictionary<string, string>> LocalsByFunction { get; } = new();
 
-    public bool IsEmpty => Global.Count == 0 && LocalsByFunction.Count == 0;
+    /// <summary>Per-for-loop init-variable renames (legacy HLSL for-scope leak). GLSL scopes a for-loop's
+    /// variable to its own loop, so a function may reuse the same name across sibling/nested loops; HLSL
+    /// instead leaks the for-init into the enclosing scope, so the reuse is a <c>-Wfor-redefinition</c>
+    /// error (under <c>-WX</c>) regardless of type. The second-and-later loops to use a name get a fresh
+    /// one. Keyed by the loop node so the emitter applies the rename to that loop's init + body ONLY (the
+    /// name keeps its meaning everywhere else). Safe because a GLSL for-init is never read after its
+    /// loop.</summary>
+    public Dictionary<ForStmt, Dictionary<string, string>> ForLoopLocals { get; } =
+        new(ReferenceEqualityComparer.Instance);
+
+    public bool IsEmpty => Global.Count == 0 && LocalsByFunction.Count == 0 && ForLoopLocals.Count == 0;
 }
 
 /// <summary>
@@ -145,9 +155,102 @@ internal static class IdentifierSafety
             {
                 renames.LocalsByFunction[i] = map;
             }
+
+            // Legacy HLSL for-scope leak (independent of the reserved/shadow renames above): a function may
+            // reuse a for-loop's variable across loops (valid GLSL — each loop scopes its own variable), but
+            // HLSL leaks the for-init into the enclosing scope, so the reuse is a -Wfor-redefinition error.
+            // Rename the second-and-later loops' variable. localUsed already holds every local name; add the
+            // F1 rename targets too so a fresh name never collides with one.
+            localUsed.UnionWith(renames.Global.Values);
+            if (map is not null)
+            {
+                localUsed.UnionWith(map.Values);
+            }
+
+            PlanForLoopScopes(f.Body, new HashSet<string>(StringComparer.Ordinal), localUsed, renames, diagnostics);
         }
 
         return renames;
+    }
+
+    /// <summary>
+    /// Walk a function body in emit order, renaming each for-loop init variable whose name a PRIOR for-loop
+    /// in the same function already declared. <paramref name="seenForInits"/> accumulates the for-init names
+    /// (and minted replacements) already used; <paramref name="mintUsed"/> is the master set a fresh name
+    /// must avoid.
+    /// </summary>
+    private static void PlanForLoopScopes(
+        Stmt stmt,
+        HashSet<string> seenForInits,
+        HashSet<string> mintUsed,
+        IdentifierRenames renames,
+        List<ConvertDiagnostic> diagnostics)
+    {
+        switch (stmt)
+        {
+            case BlockStmt b:
+                foreach (Stmt s in b.Statements) PlanForLoopScopes(s, seenForInits, mintUsed, renames, diagnostics);
+                break;
+            case IfStmt i:
+                PlanForLoopScopes(i.Then, seenForInits, mintUsed, renames, diagnostics);
+                if (i.Else is not null) PlanForLoopScopes(i.Else, seenForInits, mintUsed, renames, diagnostics);
+                break;
+            case ForStmt f:
+                // Process THIS loop's init declarations before its body (matches the emitter's order, so the
+                // outer/earlier loop wins the original name and inner/later loops are the ones renamed).
+                PlanForInit(f, seenForInits, mintUsed, renames, diagnostics);
+                PlanForLoopScopes(f.Body, seenForInits, mintUsed, renames, diagnostics);
+                break;
+            case WhileStmt w:
+                PlanForLoopScopes(w.Body, seenForInits, mintUsed, renames, diagnostics);
+                break;
+            case DoWhileStmt d:
+                PlanForLoopScopes(d.Body, seenForInits, mintUsed, renames, diagnostics);
+                break;
+            case SwitchStmt sw:
+                foreach (SwitchCase c in sw.Cases)
+                {
+                    foreach (Stmt s in c.Body) PlanForLoopScopes(s, seenForInits, mintUsed, renames, diagnostics);
+                }
+
+                break;
+        }
+    }
+
+    /// <summary>Plan the rename (if any) for one for-loop's init variable(s).</summary>
+    private static void PlanForInit(
+        ForStmt f,
+        HashSet<string> seenForInits,
+        HashSet<string> mintUsed,
+        IdentifierRenames renames,
+        List<ConvertDiagnostic> diagnostics)
+    {
+        IReadOnlyList<VarDeclStmt> decls = f.Init switch
+        {
+            VarDeclStmt vd => new[] { vd },
+            MultiDeclStmt md => md.Declarators,
+            _ => Array.Empty<VarDeclStmt>(), // an expression init declares nothing
+        };
+
+        Dictionary<string, string>? map = null;
+        foreach (VarDeclStmt d in decls)
+        {
+            if (seenForInits.Add(d.Name))
+            {
+                continue; // first for-loop in this function to use this name: it keeps the original.
+            }
+
+            string fresh = Fresh(d.Name, mintUsed);
+            seenForInits.Add(fresh);
+            map ??= new Dictionary<string, string>(StringComparer.Ordinal);
+            map[d.Name] = fresh;
+            diagnostics.Add(ForScopeWarning(d.Name, fresh, d.Line, d.Column));
+        }
+
+        if (map is not null)
+        {
+            renames.ForLoopLocals[f] = map;
+        }
     }
 
     private static void AddGlobalReservedRename(
@@ -189,6 +292,14 @@ internal static class IdentifierSafety
             $"The local '{name}' shadows the function '{name}', which it also calls. HLSL (unlike GLSL) " +
             $"then reads the call as 'call the variable'; renamed the local to '{fresh}' so the call still " +
             "resolves to the function.",
+            line, col, name);
+
+    private static ConvertDiagnostic ForScopeWarning(string name, string fresh, int line, int col) =>
+        new(DiagnosticSeverity.Warning,
+            $"The for-loop variable '{name}' is also used by an earlier loop in this function. GLSL scopes " +
+            $"each loop's variable to its own loop, but HLSL leaks it into the enclosing scope (so reusing " +
+            $"the name is a redefinition error); renamed this loop's '{name}' to '{fresh}'. Your GLSL is " +
+            "valid; this is an internal rename so the converted .fx compiles.",
             line, col, name);
 
     // ── read-only collection walks (kept local so AstScan's entry-detection stays untouched) ──

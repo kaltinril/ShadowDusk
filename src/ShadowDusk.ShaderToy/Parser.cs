@@ -214,30 +214,35 @@ internal sealed class Parser
             return;
         }
 
-        // A `const` global: a single declarator with a required initializer (supported as-is, incl. a
-        // const array `const float k[3] = float[](...)`).
+        // A `const` global: one or more comma-separated declarators, each with a required initializer
+        // (`const float PI = 3.14159, TAU = 2.*PI;`). A later declarator may reference an earlier one (TAU
+        // uses PI) because each becomes its own GlobalConstDecl in source order. The initializer is parsed
+        // at assignment precedence (NOT the comma operator) so the `,` separates declarators rather than
+        // being swallowed into the first one's value. A const ARRAY (`const float k[3] = float[](...)`) is
+        // supported only as a single declarator (its size bookkeeping does not combine with a comma list).
         if (isConst)
         {
             Expect(TokenKind.Assign, "'=' (a const global requires an initializer)");
-            Expr cinit = arraySize is null ? ParseExpression() : ParseInitializer();
-            Expect(TokenKind.Semicolon, "';'");
+            Expr cinit = arraySize is null ? ParseAssignment() : ParseInitializer();
             ValidateArrayInit(arraySize, cinit, nameTok);
+            AddConstGlobal(globals, typeName, name, cinit, arraySize, start);
 
-            // Record a `const int NAME = <literal>;` so a later array size `[NAME]` resolves to it.
-            if (arraySize is null && typeName == "int")
+            while (arraySize is null && Match(TokenKind.Comma))
             {
-                RecordIntConstant(name, cinit);
+                Token declNameTok = Expect(TokenKind.Identifier, "a const name");
+                if (Check(TokenKind.LBracket))
+                {
+                    throw Reject(
+                        "An array 'const' must be declared on its own, not in a comma-separated list.",
+                        Current);
+                }
+
+                Expect(TokenKind.Assign, "'=' (a const declarator requires an initializer)");
+                Expr declInit = ParseAssignment();
+                AddConstGlobal(globals, typeName, declNameTok.Text, declInit, null, declNameTok);
             }
 
-            globals.Add(new GlobalConstDecl
-            {
-                TypeName = typeName,
-                Name = name,
-                Initializer = cinit,
-                ArraySize = arraySize,
-                Line = start.Line,
-                Column = start.Column,
-            });
+            Expect(TokenKind.Semicolon, "';'");
             return;
         }
 
@@ -709,6 +714,27 @@ internal sealed class Parser
         }
 
         Expect(TokenKind.Semicolon, "';'");
+    }
+
+    /// <summary>Add one <c>const</c>-global declarator. A scalar <c>const int NAME = &lt;literal&gt;;</c> is
+    /// also recorded as a compile-time int constant so a later array size <c>[NAME]</c> resolves to it.</summary>
+    private void AddConstGlobal(
+        List<GlobalConstDecl> globals, string typeName, string name, Expr init, int? arraySize, Token at)
+    {
+        if (arraySize is null && typeName == "int")
+        {
+            RecordIntConstant(name, init);
+        }
+
+        globals.Add(new GlobalConstDecl
+        {
+            TypeName = typeName,
+            Name = name,
+            Initializer = init,
+            ArraySize = arraySize,
+            Line = at.Line,
+            Column = at.Column,
+        });
     }
 
     /// <summary>

@@ -391,8 +391,7 @@ public partial class Index
         }
         """;
 
-    /// <summary>Load the bundled ShaderToy example into the editor and compile it, so the GLSL path is
-    /// one click to try.</summary>
+    /// <summary>Load the bundled cosine-palette ShaderToy example into the editor and compile it.</summary>
     private async Task LoadShaderToyExampleAsync()
     {
         _source = NormalizeNewlines(ShaderToyExample);
@@ -400,6 +399,38 @@ public partial class Index
         ClearDiagnostics();
         _exportStatus.Clear();
         await CompileAndApplyAsync();
+    }
+
+    /// <summary>Fetch a bundled ShaderToy shader from <c>wwwroot/shadertoy/</c>, drop it into the editor
+    /// verbatim, and compile + apply it. Used by the Flame / Self-reflect example buttons.</summary>
+    private async Task LoadShaderToyFileAsync(string fileName, string exportName)
+    {
+        string? src = await TryGetStringAsync($"shadertoy/{fileName}");
+        if (src is null)
+        {
+            SetError($"Could not fetch shadertoy/{fileName}.");
+            StateHasChanged();
+            return;
+        }
+
+        _source = NormalizeNewlines(src);
+        _exportName = exportName;
+        ClearDiagnostics();
+        _exportStatus.Clear();
+        await CompileAndApplyAsync();
+    }
+
+    /// <summary>True when the page booted in HiDef (WebGL2 / GLSL ES 3.00), needed by complex shaders
+    /// (raymarchers using isnan-bearing min/max or dynamic loops that WebGL1 rejects).</summary>
+    private bool IsHiDef => ResolveProfile() == GraphicsProfile.HiDef;
+
+    /// <summary>Toggle the WebGL profile by reloading at <c>?profile=hidef</c> (or back to Reach). KNI
+    /// fixes the GraphicsProfile at game boot, so switching requires a reload.</summary>
+    private void OnHiDefToggled(ChangeEventArgs e)
+    {
+        bool on = e.Value is bool b && b;
+        string path = Nav.ToAbsoluteUri(Nav.Uri).GetLeftPart(UriPartial.Path);
+        Nav.NavigateTo(on ? path + "?profile=hidef" : path, forceLoad: true);
     }
 
     /// <summary>
