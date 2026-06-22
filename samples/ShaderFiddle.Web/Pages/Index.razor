@@ -31,6 +31,28 @@
                        OnChange="OnFxFileSelectedAsync" disabled="@(!_ready || _compiling || _exporting is not null)" />
         </div>
 
+        <div class="row">
+            <label>…or load a ShaderToy example:</label>
+            <button @onclick="LoadShaderToyExampleAsync" disabled="@(!_ready || _compiling || _exporting is not null)">
+                Palette
+            </button>
+            <button @onclick='() => LoadShaderToyFileAsync("flame.glsl", "flame")'
+                    disabled="@(!_ready || _compiling || _exporting is not null)">
+                Flame
+            </button>
+            <button @onclick='() => LoadShaderToyFileAsync("self_reflect.glsl", "self_reflect")'
+                    disabled="@(!_ready || _compiling || _exporting is not null)">
+                Self-reflect
+            </button>
+        </div>
+
+        <div class="row">
+            <label for="sdHiDef" title="WebGL2 / GLSL ES 3.00. Complex shaders (raymarchers using isnan-bearing min/max or dynamic loops) need it; the Flame and Self-reflect examples do.">
+                <input id="sdHiDef" type="checkbox" checked="@IsHiDef" @onchange="OnHiDefToggled" disabled="@(!_ready)" />
+                WebGL2 (HiDef) — needed by the Flame / Self-reflect raymarchers
+            </label>
+        </div>
+
         @* Editor with a line-number gutter and a scroll-synced backdrop that
            draws wavy underlines under the lines the compiler flagged. The
            textarea is transparent and sits on top; the backdrop (behind it)
