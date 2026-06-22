@@ -1067,10 +1067,20 @@ internal sealed class HlslEmitter
                 return EmitDiagonalMatrix(hlsl, n, args[0]);
             }
 
-            // A single vector argument to a matrix constructor is not a defined GLSL form; reject.
+            // A single VECTOR whose component count fills the matrix (GLSL flattens components
+            // column-major): e.g. mat2(vec4) takes the 4 components. HLSL's floatNxN(...) constructor
+            // flattens a vector argument in the same component order, which (like the scalar-list path)
+            // yields the transpose of the GLSL matrix; the reversed mul() order cancels it (trap 2). So
+            // pass the vector straight through. A vector of the wrong width is a loud reject.
+            if (argType.IsVector && argType.Rows == n * n)
+            {
+                return $"{hlsl}({args[0]})";
+            }
+
+            // A single vector argument of the wrong width is not a defined GLSL matrix constructor.
             throw Reject(call,
                 $"Single-argument matrix constructor '{glslType}(x)' with a non-scalar, non-matrix " +
-                "argument is outside the supported subset.");
+                $"argument that does not supply exactly {n * n} components is outside the supported subset.");
         }
 
         return $"{hlsl}({string.Join(", ", args)})";
