@@ -204,6 +204,7 @@ public static class ShaderToyConverter
         // shader with no collisions, so a clean shader's emitted .fx is byte-for-byte unchanged.
         IdentifierRenames renames = IdentifierSafety.Plan(merged, merged.Functions, diagnostics);
         emitter.SetGlobalRenames(renames.Global);
+        emitter.SetForLoopRenames(renames.ForLoopLocals);
 
         // G6: struct declarations + their factory functions are emitted first (before const globals and
         // functions) so every later use of the struct type / its constructor resolves.

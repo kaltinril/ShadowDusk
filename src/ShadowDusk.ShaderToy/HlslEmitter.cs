@@ -398,6 +398,16 @@ internal sealed class HlslEmitter
 
     private void EmitFor(ForStmt f)
     {
+        // Legacy HLSL for-scope leak: if this loop reuses an init-variable name an earlier loop already
+        // used, IdentifierSafety planned a rename for it. Activate it for the whole loop (init + condition +
+        // increment + body) so the declaration and every reference inside emit the safe name, then pop it so
+        // it does not leak to following statements.
+        bool scoped = _forLoopRenames.TryGetValue(f, out Dictionary<string, string>? loopScope);
+        if (scoped)
+        {
+            _loopRenameScopes.Add(loopScope!);
+        }
+
         // Render init / cond / inc inline. A var-decl init is rendered without trailing newline.
         string init = f.Init switch
         {
@@ -411,6 +421,11 @@ internal sealed class HlslEmitter
         string inc = f.Increment is null ? string.Empty : EmitExpr(f.Increment);
         Line($"for ({init}; {cond}; {inc})");
         EmitBody(f.Body);
+
+        if (scoped)
+        {
+            _loopRenameScopes.RemoveAt(_loopRenameScopes.Count - 1);
+        }
     }
 
     private string RenderInlineVarDecl(VarDeclStmt v)
@@ -577,8 +592,9 @@ internal sealed class HlslEmitter
     {
         // F1: a local renamed for HLSL safety is always a local VALUE reference here (a renamed local
         // shadows every other meaning of the name in its scope; a call head goes through EmitCall, not
-        // here). Emit its safe name directly. Empty map for a shader with no collisions.
-        if (_localRenames.TryGetValue(id.Name, out string? renamedLocal))
+        // here). Emit its safe name directly. This also resolves an active for-loop variable rename (the
+        // legacy for-scope leak). Empty maps for a shader with no collisions.
+        if (TryRenameLocal(id.Name, out string renamedLocal))
         {
             return renamedLocal;
         }
@@ -886,6 +902,15 @@ internal sealed class HlslEmitter
     private IReadOnlyDictionary<string, string> _localRenames =
         new Dictionary<string, string>(StringComparer.Ordinal);
 
+    // Legacy HLSL for-scope renames (IdentifierSafety.ForLoopLocals): per-loop init-variable renames keyed
+    // by the loop node, applied while emitting that loop ONLY. _loopRenameScopes is the stack of currently
+    // active loop renames (innermost last, pushed/popped by EmitFor); it is consulted BEFORE the
+    // function-wide _localRenames so a renamed loop variable shadows every other meaning of the name within
+    // its loop. Empty for a shader that never reuses a for-loop variable.
+    private IReadOnlyDictionary<ForStmt, Dictionary<string, string>> _forLoopRenames =
+        new Dictionary<ForStmt, Dictionary<string, string>>(ReferenceEqualityComparer.Instance);
+    private readonly List<Dictionary<string, string>> _loopRenameScopes = new();
+
     /// <summary>Register the top-level reserved-word renames (applied to declarations + references).</summary>
     public void SetGlobalRenames(IReadOnlyDictionary<string, string> renames) => _globalRenames = renames;
 
@@ -893,11 +918,43 @@ internal sealed class HlslEmitter
     /// Pass an empty map for a function with no renamed locals.</summary>
     public void SetLocalRenames(IReadOnlyDictionary<string, string> renames) => _localRenames = renames;
 
+    /// <summary>Register the per-for-loop init-variable renames (keyed by loop node, applied to that loop's
+    /// init + body only). Set once for the whole shader; empty for a shader with no for-loop reuse.</summary>
+    public void SetForLoopRenames(IReadOnlyDictionary<ForStmt, Dictionary<string, string>> renames) =>
+        _forLoopRenames = renames;
+
     private string MapGlobal(string name) =>
         _globalRenames.TryGetValue(name, out string? r) ? r : name;
 
-    private string MapLocal(string name) =>
-        _localRenames.TryGetValue(name, out string? r) ? r : name;
+    private string MapLocal(string name)
+    {
+        TryRenameLocal(name, out string mapped);
+        return mapped;
+    }
+
+    /// <summary>Resolve a local/parameter name to its emitted form: an active for-loop variable rename
+    /// (innermost scope first) takes precedence over the function-wide F1 local rename. Returns false (and
+    /// the name unchanged) when nothing renames it.</summary>
+    private bool TryRenameLocal(string name, out string mapped)
+    {
+        for (int s = _loopRenameScopes.Count - 1; s >= 0; s--)
+        {
+            if (_loopRenameScopes[s].TryGetValue(name, out string? lr))
+            {
+                mapped = lr;
+                return true;
+            }
+        }
+
+        if (_localRenames.TryGetValue(name, out string? r))
+        {
+            mapped = r;
+            return true;
+        }
+
+        mapped = name;
+        return false;
+    }
 
     /// <summary>Register the user-defined structs (G6) so struct-typed declarations spell their HLSL
     /// type as the struct name and struct constructors route to the generated factory.</summary>
