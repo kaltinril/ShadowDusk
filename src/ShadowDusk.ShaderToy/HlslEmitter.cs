@@ -812,6 +812,20 @@ internal sealed class HlslEmitter
                     throw Reject(call, $"'{name}' expects (sampler, uv).");
                 }
 
+                // A 3D (vec3) coordinate means iChannelN is being sampled as a CUBEMAP (a direction lookup),
+                // e.g. texture(iChannel0, reflect(rd, n)). The single-pass 2D harness binds each iChannelN as
+                // a 2D sampler, so there is no faithful mapping. Reject it clearly here: otherwise the vec3
+                // coordinate silently truncates to 2D and the user sees an opaque "-Wconversion" truncation
+                // error on generated HLSL instead of the real reason.
+                GlslType texCoordType = _types.Infer(call.Args[1]);
+                if (texCoordType.IsVector && texCoordType.Rows >= 3)
+                {
+                    throw Reject(call,
+                        $"'{name}(sampler, vec3)' samples a CUBEMAP (a 3D direction lookup), which is outside " +
+                        "the supported subset: the single-pass 2D harness binds each iChannelN as a 2D " +
+                        "sampler, so a cubemap channel has no faithful 2D mapping.");
+                }
+
                 return $"tex2D({string.Join(", ", args)})";
 
             case "textureLod":

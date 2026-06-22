@@ -153,6 +153,7 @@ internal sealed class Lexer
                 Advance();
             }
 
+            RejectUnsignedSuffix(line, col, sb.ToString());
             return new Token(TokenKind.IntLiteral, sb.ToString(), line, col);
         }
 
@@ -203,8 +204,30 @@ internal sealed class Lexer
             isFloat = true;
             Advance();
         }
+        else
+        {
+            // An unsigned-integer suffix ('123u' / '0xFFu') marks uint/uvec bit arithmetic, which the
+            // float-based subset cannot map faithfully. Reject it with a clear, located message rather than
+            // leaving the stray 'u'/'U' to surface as a confusing "expected ')'" parse error downstream.
+            RejectUnsignedSuffix(line, col, sb.ToString());
+        }
 
         return new Token(isFloat ? TokenKind.FloatLiteral : TokenKind.IntLiteral, sb.ToString(), line, col);
+    }
+
+    /// <summary>Throw a clear, located diagnostic if a numeric literal is immediately followed by an
+    /// unsigned-integer suffix (<c>u</c>/<c>U</c>). Unsigned/uvec bit arithmetic (typically an integer hash)
+    /// is outside the supported float-based subset, so surface that precisely at the literal.</summary>
+    private void RejectUnsignedSuffix(int line, int col, string literal)
+    {
+        if (Current is 'u' or 'U')
+        {
+            throw new ConvertException(
+                $"Unsigned-integer literals ('{literal}{Current}') are outside the supported subset. This " +
+                "shader uses unsigned-integer (uint / uvec) bit arithmetic, typically an integer hash, which " +
+                "has no faithful mapping to the float-based shader subset.",
+                line, col, literal + Current);
+        }
     }
 
     private Token LexPunctuation(int line, int col)
