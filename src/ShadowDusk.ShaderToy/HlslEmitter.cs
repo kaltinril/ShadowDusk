@@ -733,6 +733,19 @@ internal sealed class HlslEmitter
         return $"({l} {bin.Op} {r})";
     }
 
+    /// <summary>True when an expression is a literal numeric zero (<c>0</c>, <c>0.</c>, <c>0.0</c>), used to
+    /// recognize a base-level <c>textureLod(s, uv, 0)</c> that can lower to a plain <c>tex2D</c>.</summary>
+    private static bool IsLiteralZero(Expr e) => e switch
+    {
+        IntLiteralExpr i => long.TryParse(i.Text, out long n) && n == 0,
+        FloatLiteralExpr f => double.TryParse(
+            f.Text.TrimEnd('f', 'F'),
+            System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out double d) && d == 0.0,
+        _ => false,
+    };
+
     private string EmitCall(CallExpr call)
     {
         string name = call.Callee;
@@ -834,6 +847,16 @@ internal sealed class HlslEmitter
                 if (call.Args.Count != 3)
                 {
                     throw Reject(call, "'textureLod' expects (sampler, uv, lod).");
+                }
+
+                // textureLod(s, uv, 0) is base-level sampling: emit a plain tex2D. The legacy tex2Dlod
+                // intrinsic does NOT rewrite to a modern Texture method on the OpenGL/DirectX targets (it
+                // compiles only on FNA's fx_2_0 path, FX0012), and the single-pass harness binds each
+                // iChannelN without mipmaps, so mip 0 is the only level and tex2D is equivalent. This keeps
+                // the common `textureLod(iChannel0, uv, 0.)` form working on every backend.
+                if (IsLiteralZero(call.Args[2]))
+                {
+                    return $"tex2D({args[0]}, {args[1]})";
                 }
 
                 return $"tex2Dlod({args[0]}, float4(({args[1]}), 0, ({args[2]})))";
