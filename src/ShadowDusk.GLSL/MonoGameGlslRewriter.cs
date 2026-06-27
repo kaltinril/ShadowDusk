@@ -1243,12 +1243,20 @@ public static class MonoGameGlslRewriter
             return $"ps_oC{slot}";
         });
 
+        // Slot-0 builtin is MRT-aware (matches mgfxc's goldens, verified):
+        //   * SINGLE output  -> slot 0 is gl_FragColor (every single-target golden:
+        //     Sepia/Dissolve/AlphaTestEffect/... emit `#define ps_oC0 gl_FragColor`).
+        //   * TRUE MRT (2+)   -> slot 0 is gl_FragData[0], like every other slot (the
+        //     mgfxc DeferredSprite GL golden emits `#define ps_oC0 gl_FragData[0]` AND
+        //     `#define ps_oC1 gl_FragData[1]`). This is render-CORRECTNESS, not cosmetic:
+        //     in legacy GLSL with multiple render targets bound, writing gl_FragColor
+        //     broadcasts to ALL color attachments and corrupts the other target(s);
+        //     gl_FragData[0] writes only attachment 0.
+        bool isMrt = slots.Count >= 2;
         var outputs = new List<FragmentOutput>(slots.Count);
         foreach (int slot in slots)
         {
-            // Slot 0 is the primary colour output (gl_FragColor); 1+ are MRT
-            // (gl_FragData[N]). Matches mgfxc's golden output exactly.
-            string builtin = slot == 0 ? "gl_FragColor" : $"gl_FragData[{slot}]";
+            string builtin = (slot == 0 && !isMrt) ? "gl_FragColor" : $"gl_FragData[{slot}]";
             outputs.Add(new FragmentOutput($"ps_oC{slot}", builtin));
         }
 

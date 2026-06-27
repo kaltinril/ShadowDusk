@@ -257,6 +257,18 @@ internal sealed class CompilationPipeline
         // byte-transparent — only the SOURCE of the ReflectedEffect changes.
         bool reflectFromSpirv = _reflectorFactory is not null && options.Target == PlatformTarget.OpenGL;
 
+        // GAP-2 (GL-only): retarget a pixel shader's MRT struct-output ': COLOR<n>' semantics to
+        // ': SV_Target<n>' for the OpenGL DXC compiles only. DXC's HLSL->SPIR-V (the GL backend)
+        // rejects COLOR as a PS output (vkd3d/DX accepts it), and the pre-parse is shared by both
+        // backends, so this rewrite runs HERE on a GL-private copy of the source and is fed ONLY to
+        // the OpenGL CompileEntryPoint calls below; the DX/Vulkan/FNA paths keep the untouched
+        // `preprocessed`, so their bytes are unchanged. The rewrite is a no-op (returns the same
+        // text) for any shader whose pixel entry does not return a COLOR-member struct, so every
+        // existing GL shader stays byte-identical. See GlStructOutputColorRewriter.
+        PreprocessedSource glCompileSource = monoGameGl
+            ? preprocessed with { Text = GlStructOutputColorRewriter.Rewrite(preprocessed.Text, fxParsed.Techniques) }
+            : preprocessed;
+
         // Stages 3–5: Compile each pass's entry points, reflect, and transpile.
         // The preprocessor has already flattened all #includes so no include handler is needed for DXC.
         // The dxcCompiler Lazy is hoisted above the zero-technique fallback (see Stage 2);
@@ -372,7 +384,7 @@ internal sealed class CompilationPipeline
                         dxcCompiler,
                         dxbcCompiler,
                         glslTranspiler,
-                        preprocessed,
+                        glCompileSource,
                         pass.VertexEntryPoint,
                         ShaderStage.Vertex,
                         options.Target,
@@ -409,7 +421,7 @@ internal sealed class CompilationPipeline
                         dxcCompiler,
                         dxbcCompiler,
                         glslTranspiler,
-                        preprocessed,
+                        glCompileSource,
                         pass.PixelEntryPoint,
                         ShaderStage.Pixel,
                         options.Target,

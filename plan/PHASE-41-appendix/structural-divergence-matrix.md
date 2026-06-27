@@ -21,9 +21,9 @@
 ## Headline
 
 - Golden-backed cells (fixture x target): **92**
-  - Structurally **clean**: **64**
+  - Structurally **clean**: **65**
   - **Divergent** (>=1 level): **17**
-  - Compile/parse **failures**: **11**
+  - Compile/parse **failures**: **10**
 - Non-golden census cells: **136** (**109** compile, **27** fail with a code)
 
 ## Golden-backed fixtures — per-level structural verdict
@@ -51,7 +51,7 @@ Legend: `OK` = match, `XX` = diverge, `--` = compile/parse failed (see notes). L
 | ClipShaderSpriteTarget | DirectX_11 | OK | OK | OK | OK | OK |  |
 | ClipShaderSpriteTarget | OpenGL | OK | OK | OK | OK | OK |  |
 | DeferredSprite | DirectX_11 | OK | OK | OK | OK | OK |  |
-| DeferredSprite | OpenGL | -- | -- | -- | -- | -- | COMPILE FAIL X0000: Semantic COLOR is invalid for shader model: ps |
+| DeferredSprite | OpenGL | OK | OK | OK | OK | OK |  |
 | Dissolve | DirectX_11 | OK | OK | OK | OK | OK |  |
 | Dissolve | OpenGL | OK | OK | OK | OK | OK |  |
 | Dots | DirectX_11 | OK | OK | OK | OK | OK |  |
@@ -134,7 +134,6 @@ produce a `.mgfx` for the target. Each is a real ShadowDusk limitation, not a ha
 |---|---|:--:|---|
 | AlphaTestEffect | OpenGL | SD0010 | Effect source contains no techniques |
 | BasicEffect | OpenGL | SD0010 | Effect source contains no techniques |
-| DeferredSprite | OpenGL | X0000 | Semantic COLOR is invalid for shader model: ps |
 | DualTextureEffect | OpenGL | SD0010 | Effect source contains no techniques |
 | EnvironmentMapEffect | OpenGL | SD0010 | Effect source contains no techniques |
 | PenumbraHull | OpenGL | SD0010 | Effect source contains no techniques |
@@ -159,8 +158,13 @@ the source and re-parses the expanded text, recovering the literal `technique` b
 DXC's native codegen), so that target is gated OUT of the recovery and keeps the loud SD0010. This
 is the documented GL macro-model gap (Phase 41 follow-up), not a PlatformMacros change.
 
-**DeferredSprite [OpenGL] (X0000):** a distinct, loud diagnostic ('Semantic COLOR is invalid for
-shader model: ps') from the GL path, unrelated to the SD0010 macro-technique cluster.
+**DeferredSprite [OpenGL] — FIXED (Phase 41 GAP-2, 2026-06-27).** This multi-render-target
+effect returns a struct whose members carry `: COLOR0`/`: COLOR1` output semantics, which DXC's
+HLSL -> SPIR-V GL backend rejected ('Semantic COLOR is invalid for shader model: ps'). A GL-only,
+PS-return-struct-aware rewrite (`GlStructOutputColorRewriter`) now retargets those members to
+`: SV_Target0`/`: SV_Target1` for the OpenGL DXC compiles only (DX/vkd3d output is byte-identical),
+and the GL rewriter emits `gl_FragData[0]`/`gl_FragData[1]` for true MRT (matching the mgfxc golden).
+The OpenGL cell now compiles and structural-matches the golden (see the matrix above).
 
 ## Divergence-class summary (the triage-feeding output)
 

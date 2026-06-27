@@ -602,8 +602,13 @@ public sealed class Phase41StructuralDivergenceMatrixTests
             sb.AppendLine("DXC's native codegen), so that target is gated OUT of the recovery and keeps the loud SD0010. This");
             sb.AppendLine("is the documented GL macro-model gap (Phase 41 follow-up), not a PlatformMacros change.");
             sb.AppendLine();
-            sb.AppendLine("**DeferredSprite [OpenGL] (X0000):** a distinct, loud diagnostic ('Semantic COLOR is invalid for");
-            sb.AppendLine("shader model: ps') from the GL path, unrelated to the SD0010 macro-technique cluster.");
+            sb.AppendLine("**DeferredSprite [OpenGL] — FIXED (Phase 41 GAP-2, 2026-06-27).** This multi-render-target");
+            sb.AppendLine("effect returns a struct whose members carry `: COLOR0`/`: COLOR1` output semantics, which DXC's");
+            sb.AppendLine("HLSL -> SPIR-V GL backend rejected ('Semantic COLOR is invalid for shader model: ps'). A GL-only,");
+            sb.AppendLine("PS-return-struct-aware rewrite (`GlStructOutputColorRewriter`) now retargets those members to");
+            sb.AppendLine("`: SV_Target0`/`: SV_Target1` for the OpenGL DXC compiles only (DX/vkd3d output is byte-identical),");
+            sb.AppendLine("and the GL rewriter emits `gl_FragData[0]`/`gl_FragData[1]` for true MRT (matching the mgfxc golden).");
+            sb.AppendLine("The OpenGL cell now compiles and structural-matches the golden (see the matrix above).");
             sb.AppendLine();
         }
 

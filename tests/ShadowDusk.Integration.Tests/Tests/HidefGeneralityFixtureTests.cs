@@ -180,4 +180,32 @@ public sealed class HidefGeneralityFixtureTests
         ascii.Should().MatchRegex(@"for \(int _spvonce_\d+ = 0; _spvonce_\d+ < 1;",
             because: "the SPIRV-Cross one-shot loop is lowered to the WebGL1-safe bounded for-loop");
     }
+
+    [Fact]
+    public async Task DeferredSprite_Mrt_CompilesOnGl_EmitsFragDataOutputs_Gap2()
+    {
+        // Phase 41 GAP-2: DeferredSprite.fx (a real Nez deferred MRT effect) returns a struct with
+        // `: COLOR0`/`: COLOR1` outputs. DXC's GL/SPIR-V backend rejected COLOR as a PS output, so
+        // the effect failed to compile on OpenGL ("Semantic COLOR is invalid for shader model: ps").
+        // The GL-only struct-output rewrite (GlStructOutputColorRewriter) retargets them to
+        // SV_Target0/1, and the rewriter emits gl_FragData[0]/[1] for true MRT (matching mgfxc's
+        // golden). End-to-end through the real OpenGL pipeline.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var result = await TestHelpers.CompileFixtureAsync("DeferredSprite.fx", "OpenGL", ct: cts.Token);
+
+        result.ExitCode.Should().Be(0,
+            because: $"the MRT struct-output COLOR semantics must be retargeted for GL; stderr: {result.Stderr}");
+        result.Mgfx.Should().NotBeEmpty();
+
+        string ascii = Ascii(result.Mgfx);
+        // TRUE MRT: BOTH outputs map to gl_FragData[N], including slot 0 (mgfxc golden form).
+        ascii.Should().Contain("#define ps_oC0 gl_FragData[0]",
+            because: "true MRT slot 0 is gl_FragData[0], not gl_FragColor (which would broadcast to all attachments)");
+        ascii.Should().Contain("#define ps_oC1 gl_FragData[1]");
+        // The PS-INPUT interpolant `Color : COLOR0` (VertexShaderOutput) must survive as a varying,
+        // never rewritten to an output semantic — proven by the effect compiling at all (DXC would
+        // reject SV_Target on a PS input). The two samplers (s0 + _normalMapSampler) are present.
+        ascii.Should().Contain("ps_s0");
+        ascii.Should().Contain("ps_s1", because: "DeferredSprite binds a second (normal-map) sampler");
+    }
 }

@@ -69,7 +69,14 @@ Non-golden census (26 fixtures × 2 = 52): **41 compile, 11 fail loudly with a c
 
 **Ready-made validation corpus:** all 10 fixtures HAVE committed 3.8.2.1105 goldens (DX + GL), so a fix converts directly into 20 rung-4-validatable cells — closing this gap would substantially expand validated coverage to the actual MonoGame stock-effect family. **This is the single highest-value follow-up surfaced by Phase 41.**
 
-### GAP-2 (MEDIUM) — DeferredSprite fails on the GL target with a COLOR semantic error
+### GAP-2 (MEDIUM) — DeferredSprite fails on the GL target with a COLOR semantic error — ✅ FIXED at compile + structural-match (2026-06-27)
+
+> **Status: closed at compile + golden-structural-match; a true 2-attachment MRT render proof is the one remaining rung.**
+> Two-part, byte-identity-safe fix (DX/vkd3d output verified byte-identical by md5; full suite green):
+> - **PART A — `GlStructOutputColorRewriter` (new, `src/ShadowDusk.Compiler/Internal/`):** a GL-ONLY HLSL rewrite that runs DOWNSTREAM of the shared `FxPreParser`, applied to a GL-private copy of the source fed only to the OpenGL DXC compiles. It retargets a PIXEL-entry RETURN struct's `: COLOR<n>` members to `: SV_Target<n>` (so DXC's GL/SPIR-V backend accepts them). PS-output structs are identified from the already-parsed `Techniques[].Passes[].PixelEntryPoint` -> the entry's return-type struct; the PS-INPUT interpolant (`VertexShaderOutput.Color : COLOR0`) is never touched. The DX path keeps the untouched source, so DX bytes are unchanged.
+> - **PART B — MRT slot-0 builtin (`MonoGameGlslRewriter`):** for true MRT (2+ outputs) slot 0 now emits `gl_FragData[0]` (not `gl_FragColor`). This is a RENDER-CORRECTNESS fix: in legacy GLSL with multiple render targets bound, `gl_FragColor` broadcasts to ALL attachments and corrupts the other target; `gl_FragData[0]` writes only attachment 0. Matches the mgfxc golden (`#define ps_oC0 gl_FragData[0]` + `[1]`). Single-output shaders keep `gl_FragColor`.
+> - **Result:** `DeferredSprite [OpenGL]` now compiles and structural-matches its golden (Phase 41 census `OpenGL = OK`). Pinned by `GlStructOutputColorRewriterTests` + `HidefGeneralityFixtureTests.DeferredSprite_Mrt_CompilesOnGl_EmitsFragDataOutputs_Gap2`.
+> - **Remaining rung:** a true MRT render proof (bind 2 render targets, draw, read back BOTH attachments, compare to mgfxc) needs a NEW render driver — the current GL render gates are single-target only. Tracked.
 
 **1 cell**: `DeferredSprite [OpenGL]` fails `X0000: Semantic COLOR is invalid for shader model: ps` (it compiles fine on DX, and has a GL golden, so mgfxc handles it). A multi-render-target sprite effect: its pixel shader returns a STRUCT (`PixelMultiTextureOut`) whose members carry `: COLOR0` / `: COLOR1` MRT output semantics. DXC's HLSL->SPIR-V (the GL path) rejects `COLOR` as a PS *output*; vkd3d (the DX path) accepts it, which is why DX passes.
 
