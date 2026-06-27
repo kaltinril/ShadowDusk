@@ -15,6 +15,17 @@ namespace ShadowDusk.Integration.Tests;
 /// see that directory's <c>LICENSE</c> / <c>NOTICE.md</c> and the "Third-party shader
 /// corpus" section of <c>docs/test-shader-corpus.md</c>).
 ///
+/// <para>Phase 49 adds two more vendored sets the Gum/Apos.Shapes ecosystem actually
+/// ships (requested by vchelaru, Gum's author): <c>third-party/Apos.Shapes/</c>
+/// (Gum's SDF shape renderer — MIT) and <c>third-party/Gum/</c> (Gum's own sample
+/// shaders — MIT). These are wired in below with FULL inline relative paths (the
+/// <c>Root</c> constant is Nez-specific). Their per-target classification came from an
+/// actual compile probe, recorded in each directory's NOTICE.md. One of them,
+/// <c>Gum/FnaSample-Shader.fx</c>, fails on every target because of the
+/// <c>TECHNIQUE()</c> macro idiom = Phase 41 GAP-1 (macro-defined techniques are
+/// invisible to <c>FxPreParser</c>); it is pinned as a KNOWN-FAILURE fact below so the
+/// gap is exercised and flips loudly when GAP-1 is fixed.</para>
+///
 /// <para>These are real shipping MonoGame post-process shaders, used here to broaden
 /// the corpus along the language features the project-owned fixtures under-covered:
 /// a literal-bounded <c>for</c>-loop (GaussianBlur), helper functions called from the
@@ -73,6 +84,9 @@ public sealed class ThirdPartyShaderCorpusTests
         Root + "SpriteLines.fx",        // VPOS + float % (compiles; render-equivalence not claimed)
         Root + "Twist.fx",              // relational if(dist<radius) + sin/cos
         Root + "Vignette.fx",
+        // Phase 49 (full inline paths — Root is Nez-specific):
+        "third-party/Apos.Shapes/apos-shapes.fx",        // Gum SDF renderer: VS+PS, 10 TEXCOORDs, Newton for-loop, discard
+        "third-party/Gum/MonoGameInCode-Grayscale.fx",   // vs/ps_4_0_level_9_1, Texture2D+sampler2D, dot-luminance
     };
 
     /// <summary>
@@ -97,6 +111,9 @@ public sealed class ThirdPartyShaderCorpusTests
         Root + "Crosshatch.fx",         // int uniform + VPOS + float % + nested if
         Root + "Noise.fx",              // helper fn rand(); compiles on DX (and GL since B10)
         Root + "Reflection.fx",         // two techniques, each VS+PS
+        // Phase 49 (full inline paths — Root is Nez-specific):
+        "third-party/Apos.Shapes/apos-shapes.fx",        // Gum SDF renderer (DX SM5 via vkd3d)
+        "third-party/Gum/MonoGameInCode-Grayscale.fx",   // vs/ps_4_0_level_9_1 grayscale
     };
 
     /// <summary>
@@ -120,6 +137,9 @@ public sealed class ThirdPartyShaderCorpusTests
         Root + "Crosshatch.fx",         // int uniform + VPOS + % compile natively at SM3
         Root + "Noise.fx",              // helper fn rand(); 'noise' is an ordinary SM3 const here
         Root + "PaletteCycler.fx",      // tex1D / sampler1D — FNA compiles it natively
+        // Phase 49 (full inline paths — Root is Nez-specific):
+        "third-party/Gum/KniInCode-Shader.fx",           // legacy D3D9 effect syntax (uniform extern texture, sampler_state, lowercase compile vs_2_0) — FNA only
+        "third-party/Gum/MonoGameInCode-Grayscale.fx",   // level_9_1 grayscale compiles at SM3 too
     };
 
     // -------------------------------------------------------------------------
@@ -208,5 +228,36 @@ public sealed class ThirdPartyShaderCorpusTests
             (shader.VersionToken & 0xFFFF).Should().BeLessThanOrEqualTo(0x0300u,
                 because: $"shader version token 0x{shader.VersionToken:X8} in '{fx}' must be SM <= 3 (MojoShader's hard ceiling)");
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Phase 49 — KNOWN-FAILURE PIN: Gum's FnaSample-Shader.fx defines its technique
+    // entirely inside a TECHNIQUE() #define macro. FxPreParser counts techniques
+    // BEFORE the preprocessor expands macros, so it sees none and rejects the effect
+    // with SD0010 ("Effect source contains no techniques"). This is the real product
+    // gap Phase 41 GAP-1 documents, surfaced here by a real Vic-authored shader.
+    //
+    // This test PINS the current (defective) behavior so the gap is exercised, not
+    // silently dropped. When Phase 41 GAP-1 is fixed, this shader should COMPILE on
+    // GL/DX/FNA — at which point this test will fail, and the fix is to DELETE it and
+    // move "third-party/Gum/FnaSample-Shader.fx" into the OpenGLShaders/DirectXShaders/
+    // FnaShaders sets above (run the probe to confirm the post-fix target classification).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    [Trait("Platform", "OpenGL")]
+    public async Task GumFnaSampleShader_MacroTechnique_CurrentlyRejectedBy_SD0010_Phase41Gap1()
+    {
+        const string fx = "third-party/Gum/FnaSample-Shader.fx";
+        using var cts = new CancellationTokenSource(CompileTimeout);
+
+        var result = await TestHelpers.CompileFixtureAsync(fx, "OpenGL", ct: cts.Token);
+
+        result.ExitCode.Should().NotBe(0,
+            because: "the TECHNIQUE() macro idiom is invisible to the pre-preprocess technique scan " +
+                     "(Phase 41 GAP-1); if this now compiles, GAP-1 is fixed — promote the shader into " +
+                     "the per-target sets and delete this pin");
+        result.Stderr.Should().Contain("SD0010",
+            because: "GAP-1 surfaces as 'Effect source contains no techniques' on the GL path");
     }
 }

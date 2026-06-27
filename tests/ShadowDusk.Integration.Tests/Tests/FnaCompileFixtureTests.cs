@@ -139,6 +139,12 @@ public sealed class FnaCompileFixtureTests
         "third-party/Nez/SpriteLines.fx",        // VPOS + float modulo, two techniques
         "third-party/Nez/Twist.fx",              // relational if(dist<radius) + sin/cos
         "third-party/Nez/Vignette.fx",
+        // Phase 49 — Gum's own sample shaders (MIT — see third-party/Gum/{LICENSE,
+        // NOTICE.md}). Only the all-runtime one is folded in here: Grayscale compiles
+        // on GL + DX + FNA. KniInCode-Shader.fx is FNA-ONLY (legacy D3D9 effect syntax
+        // the modern GL/DX path rejects) so it lives only in ThirdPartyShaderCorpusTests'
+        // FnaShaders set, and Apos.Shapes is GL+DX only (no SM3/FNA profile branch).
+        "third-party/Gum/MonoGameInCode-Grayscale.fx",
     };
 
     [FnaTheory]

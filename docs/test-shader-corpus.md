@@ -237,3 +237,38 @@ MojoShader-rule fx_2_0 validator). The all-runtime ones are also folded into
 > cross-host manifest gained only the new fixture's entries, with no existing hash changed).
 > Pinned by `ExReservedWordUniform.fx` (GL+DX+FNA), `ReservedWordUniformBridgeTests`, and the
 > re-enabled Nez `Noise.fx` GL arm. See `docs/glsl-uniform-naming.md` "Design notes".
+
+### Phase 49 — Gum / Apos.Shapes (the Gum-ecosystem shaders)
+
+Added 2026-06-27 (Phase 49, requested by **Victor Chelaru / vchelaru**, Gum's author,
+who uses **Apos.Shapes** for Gum's UI shape rendering). Two more vendored sets, both
+**MIT**, both classified by an actual compile probe on 2026-06-27:
+
+- `tests/fixtures/shaders/third-party/Apos.Shapes/` — Apos.Shapes' SDF shape renderer
+  (`Apostolique/Apos.Shapes`, MIT, Copyright (c) 2021 Jean-David Moisan, commit
+  `3fb73b8d…`, upstream `Source/Content/apos-shapes.fx`).
+- `tests/fixtures/shaders/third-party/Gum/` — Gum's own sample-project shaders
+  (`vchelaru/gum`, MIT, Copyright (c) 2013-2024 FlatRedBall LLC, commit `771bc5c3…`).
+
+| File | Upstream | Targets (compile) | Feature / gap covered | Classification |
+|---|---|---|---|---|
+| `Apos.Shapes/apos-shapes.fx` | Apos.Shapes (MIT) | GL + DX | One large **VS+PS** SDF effect: 10 `TEXCOORD` interpolants, `__KNIFX__`/`OPENGL` macro profile branch, a Newton-iteration `for`-loop (`EllipseSDF`), `int` locals, 11-way `if/else` shape dispatch, `%` modulo, ternaries, `discard`, `tex2D`, two samplers (one `register(s0)`), Oklab + gradient math. **Not FNA:** no SM3/FNA profile branch (its `#else` selects `ps_4_0`) + a dense PS exceeds the vkd3d `fx_2_0`/SM3 ceiling (`X0000`) — a legit SM limit (Apos.Shapes ships for MonoGame GL/DX, not FNA). | GL + DX |
+| `Gum/MonoGameInCode-Grayscale.fx` | Gum (MIT) | GL + DX + FNA | `vs/ps_4_0_level_9_1` profiles, `Texture2D` + `sampler2D` + `sampler_state`, `: COLOR0` output, PS-only technique, dot-luminance. | all-runtime |
+| `Gum/KniInCode-Shader.fx` | Gum (MIT) | FNA only | Legacy D3D9 **effect-framework syntax**: `uniform extern texture`, `sampler_state { Texture = <…> }`, `: VIEWPROJ` matrix semantic, `: COLOR` outputs, lowercase `pixelshader = compile ps_2_0`. **Not GL/DX:** DXC rejects effect syntax (`-Weffects-syntax`); only the FNA/`fx_2_0` native-effects path accepts it (same shape as `PaletteCycler` being FNA-only). | FNA only |
+| `Gum/FnaSample-Shader.fx` | Gum (MIT) | **none — known-failure (Phase 41 GAP-1)** | The `TECHNIQUE()`/`SAMPLE()` `#define` macro idiom (a `technique` defined inside a macro), `uniform extern texture`, `: VIEWPROJ`, `: COLOR`, `vs_1_1`/`ps_2_0`, premultiply-alpha helpers, many blend-mode passes. Fails `SD0010` "no techniques" on GL/FNA (and `X0000` on DX) because `FxPreParser` counts techniques **before** the preprocessor expands the macro = **Phase 41 GAP-1**. **Pinned as a known-failure test** so the gap is exercised and flips loudly when GAP-1 is fixed. | known-failure (GAP-1) |
+
+These are exercised by `ThirdPartyShaderCorpusTests` (the passing cells on their
+classified targets; `FnaSample-Shader.fx` via the dedicated
+`GumFnaSampleShader_MacroTechnique_CurrentlyRejectedBy_SD0010_Phase41Gap1` pin).
+`MonoGameInCode-Grayscale.fx` is also folded into `FnaCompileFixtureTests.Sm3Corpus()`,
+and all four files are auto-globbed by the GL+DX `Phase41StructuralDivergenceMatrixTests`
+structural census (passing or failing-with-a-code). Same **scope** as the Nez set above:
+a well-formed-container compile, not pixel-equivalence (no committed goldens). The one
+genuinely notable result is that **`apos-shapes.fx` — the shader Gum's shape rendering
+actually depends on — compiles on GL and DX**, the targets Gum ships on.
+
+> **Phase 41 GAP-1 surfaced by a real shader.** `Gum/FnaSample-Shader.fx` is the first
+> corpus member that fails purely because of the macro-defined-technique gap. If/when
+> GAP-1 is fixed (technique detection after macro expansion), re-run the probe, then
+> promote the shader from the known-failure pin into the per-target sets it then compiles
+> on. Until then it stays pinned so the regression direction is unambiguous.

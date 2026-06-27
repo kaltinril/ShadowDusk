@@ -24,7 +24,7 @@
   - Structurally **clean**: **64**
   - **Divergent** (>=1 level): **17**
   - Compile/parse **failures**: **11**
-- Non-golden census cells: **124** (**101** compile, **23** fail with a code)
+- Non-golden census cells: **132** (**105** compile, **27** fail with a code)
 
 ## Golden-backed fixtures — per-level structural verdict
 
@@ -302,6 +302,14 @@ is a CORRECT result, not a defect.
 | textured.fx | OpenGL | PASS |  |  |
 | textured_vs_ps.fx | DirectX_11 | FAIL | SD0010 | Effect source contains no techniques |
 | textured_vs_ps.fx | OpenGL | FAIL | SD0010 | Effect source contains no techniques |
+| third-party/Apos.Shapes/apos-shapes.fx | DirectX_11 | PASS |  |  |
+| third-party/Apos.Shapes/apos-shapes.fx | OpenGL | PASS |  |  |
+| third-party/Gum/FnaSample-Shader.fx | DirectX_11 | FAIL | X0000 | Shader compilation failed |
+| third-party/Gum/FnaSample-Shader.fx | OpenGL | FAIL | SD0010 | Effect source contains no techniques |
+| third-party/Gum/KniInCode-Shader.fx | DirectX_11 | FAIL | X0000 | Shader compilation failed |
+| third-party/Gum/KniInCode-Shader.fx | OpenGL | FAIL | X0000 | effect object ignored - effect syntax is deprecated [-Weffects-syntax] |
+| third-party/Gum/MonoGameInCode-Grayscale.fx | DirectX_11 | PASS |  |  |
+| third-party/Gum/MonoGameInCode-Grayscale.fx | OpenGL | PASS |  |  |
 | third-party/Nez/Bevels.fx | DirectX_11 | PASS |  |  |
 | third-party/Nez/Bevels.fx | OpenGL | PASS |  |  |
 | third-party/Nez/BloomCombine.fx | DirectX_11 | PASS |  |  |
@@ -335,9 +343,10 @@ is a CORRECT result, not a defect.
 
 ### Census failure codes
 
+- `SD0010`: 7 cell(s) — minimal_vs_ps.fx [DirectX_11], minimal_vs_ps.fx [OpenGL], passthrough_vs.fx [DirectX_11], passthrough_vs.fx [OpenGL], textured_vs_ps.fx [DirectX_11], textured_vs_ps.fx [OpenGL], third-party/Gum/FnaSample-Shader.fx [OpenGL]
 - `SD0013`: 6 cell(s) — examples/ExProfileBogusLiteral.fx [DirectX_11], examples/ExProfileBogusLiteral.fx [OpenGL], examples/ExProfileTypo.fx [DirectX_11], examples/ExProfileTypo.fx [OpenGL], examples/ExProfileUndefinedMacro.fx [DirectX_11], examples/ExProfileUndefinedMacro.fx [OpenGL]
-- `SD0010`: 6 cell(s) — minimal_vs_ps.fx [DirectX_11], minimal_vs_ps.fx [OpenGL], passthrough_vs.fx [DirectX_11], passthrough_vs.fx [OpenGL], textured_vs_ps.fx [DirectX_11], textured_vs_ps.fx [OpenGL]
 - `SD0210`: 4 cell(s) — examples/ExIntUniformMember.fx [OpenGL], examples/ExMat3UniformMember.fx [OpenGL], examples/ExVsTextureFetch.fx [OpenGL], third-party/Nez/Crosshatch.fx [OpenGL]
+- `X0000`: 3 cell(s) — third-party/Gum/FnaSample-Shader.fx [DirectX_11], third-party/Gum/KniInCode-Shader.fx [DirectX_11], third-party/Gum/KniInCode-Shader.fx [OpenGL]
 - `SD0001`: 2 cell(s) — MinimalWithInclude.fx [DirectX_11], MinimalWithInclude.fx [OpenGL]
 - `SD0014`: 2 cell(s) — examples/ExProfileStageMismatch.fx [DirectX_11], examples/ExProfileStageMismatch.fx [OpenGL]
 - `FX0012`: 2 cell(s) — third-party/Nez/PaletteCycler.fx [DirectX_11], third-party/Nez/PaletteCycler.fx [OpenGL]
