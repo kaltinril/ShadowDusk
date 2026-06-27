@@ -71,7 +71,15 @@ Non-golden census (26 fixtures × 2 = 52): **41 compile, 11 fail loudly with a c
 
 ### GAP-2 (MEDIUM) — DeferredSprite fails on the GL target with a COLOR semantic error
 
-**1 cell**: `DeferredSprite [OpenGL]` fails `X0000: Semantic COLOR is invalid for shader model: ps` (it compiles fine on DX, and has a GL golden, so mgfxc handles it). A multi-render-target sprite effect using `COLOR`-semantic pixel outputs that the GL path rejects. Needs its own investigation + fix (likely MRT/`COLOR[n]`-semantic handling on the GL branch); lower reach than GAP-1.
+**1 cell**: `DeferredSprite [OpenGL]` fails `X0000: Semantic COLOR is invalid for shader model: ps` (it compiles fine on DX, and has a GL golden, so mgfxc handles it). A multi-render-target sprite effect: its pixel shader returns a STRUCT (`PixelMultiTextureOut`) whose members carry `: COLOR0` / `: COLOR1` MRT output semantics. DXC's HLSL->SPIR-V (the GL path) rejects `COLOR` as a PS *output*; vkd3d (the DX path) accepts it, which is why DX passes.
+
+**Investigation (2026-06-27) — NOT a quick fix; constraints established empirically:**
+- The existing `): COLOR<n>` -> `): SV_Target<n>` rewrite (`FxPreParser`, B6) only handles the **function-return** form, not **struct-member** outputs, so it does not fire here. It is also entry-point-aware (skips VS entries) and mode-aware (kept verbatim in PreserveSm3/FNA).
+- A struct-member rewrite must be **struct-aware**: only the struct that is a PS entry's *return type* gets `COLOR<n>` -> `SV_Target<n>`. The SAME shader's `VertexShaderOutput.Color : COLOR0` is a PS *input* interpolant that DXC accepts and must NOT be rewritten. So the fix needs PS-entry -> return-type-struct -> members resolution (a deferred, multi-pass analysis like the existing B6 path).
+- **It must be GL-only.** Empirically, rewriting the struct members to `SV_Target0/1` makes **GL compile**, but **changes the DX output** (2007 -> 1999 bytes) - DX currently compiles with `COLOR0/1` via vkd3d and structurally matches the golden, so a universal (pre-parser, target-shared) rewrite would **regress DX**. The transform therefore belongs on the GL compile branch only, not the shared `FxPreParser`/`StrippedHlsl`.
+- **The GL MRT output needs verification.** The rewritten GL `.mgfx` is 1003 bytes vs the 1238-byte golden; a structural + **MRT render** proof (does MonoGame DesktopGL render both render targets like mgfxc?) is required before claiming correctness, and MRT is not covered by the current render gate.
+
+**Verdict:** a real, scoped fix but a genuine feature (GL-only struct-aware COLOR-output rewrite + MRT golden/render validation), not a safe one-liner. Lower reach than GAP-1; deferred as its own validated change.
 
 ## Definition of Done
 
