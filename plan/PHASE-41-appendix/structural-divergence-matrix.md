@@ -24,7 +24,7 @@
   - Structurally **clean**: **64**
   - **Divergent** (>=1 level): **17**
   - Compile/parse **failures**: **11**
-- Non-golden census cells: **134** (**107** compile, **27** fail with a code)
+- Non-golden census cells: **136** (**109** compile, **27** fail with a code)
 
 ## Golden-backed fixtures — per-level structural verdict
 
@@ -234,6 +234,8 @@ is a CORRECT result, not a defect.
 | examples/ExDualTexture.fx | OpenGL | PASS |  |  |
 | examples/ExIntUniformMember.fx | DirectX_11 | PASS |  |  |
 | examples/ExIntUniformMember.fx | OpenGL | FAIL | SD0210 | Unsupported uniform type in 'int Mode;': integer/boolean uniforms are not modelled for the MonoGame OpenGL target (MojoShader places them in the separate {vs,ps... |
+| examples/ExKnifxMacro.fx | DirectX_11 | PASS |  |  |
+| examples/ExKnifxMacro.fx | OpenGL | PASS |  |  |
 | examples/ExLegacyTextureAnnotation.fx | DirectX_11 | PASS |  |  |
 | examples/ExLegacyTextureAnnotation.fx | OpenGL | PASS |  |  |
 | examples/ExLegacyTextureDiscard.fx | DirectX_11 | PASS |  |  |

@@ -103,7 +103,11 @@ internal sealed class CompilationPipeline
                 Message: $"platform '{options.Target}' is not supported by ShadowDusk"));
         }
 
-        MacroSet macros = PlatformMacros.For(options.Target);
+        // The output container (honoring a CapabilityProfile when set) is needed up front so the
+        // macro set can define __KNIFX__ for a KNIFX-targeted compile (KNI's compiler always
+        // does — see PlatformMacros.For(target, container)). Same value reused at Seam 5 below.
+        EffectContainer effectiveContainer = options.Profile?.Container ?? options.Container;
+        MacroSet macros = PlatformMacros.For(options.Target, effectiveContainer);
 
         IIncludeResolver includeResolver = options.IncludeResolver ?? new FileSystemIncludeResolver();
         var preprocessor = new Preprocessor();
@@ -233,7 +237,8 @@ internal sealed class CompilationPipeline
         // (runtime, format) contract, so it selects the effect container and MGFX version too
         // (e.g. KniGL_4_02 -> KNIFX, MonoGameGL_3_8_5 -> MGFX v11). With no profile the existing
         // Container / MgfxVersion options apply unchanged, so Profile == null is byte-identical.
-        EffectContainer effectiveContainer = options.Profile?.Container ?? options.Container;
+        // (effectiveContainer is computed up front, near the macro set, so __KNIFX__ can be
+        // injected for a KNIFX compile.)
         int effectiveMgfxVersion = options.Profile?.MgfxVersion ?? options.MgfxVersion;
 
         // Seam 4: the feature axis. A profile may declare AllowedFeatures, but a feature is honored

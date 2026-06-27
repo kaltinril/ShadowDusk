@@ -38,6 +38,32 @@ Per nkast's blog — these are things a v10 consumer does *not* get:
 - Clearer exceptions for unsupported shaders.
 - Still loads MGFX v10 (migration); **legacy MGFX v09 dropped.**
 
+## The `__KNIFX__` compile macro (faithful KNIFX compile) — ✅ DONE (2026-06-27)
+KNIFX is not only a container format — KNI's effect compiler also compiles the HLSL with a
+**different macro set** than MonoGame's, and shaders branch on it. KNI's
+`MojoEffectProcessor.PreprocessSource` **unconditionally** calls `pp.AddMacro("__KNIFX__", "1")`
+for every KNI build (verified in `kniEngine/kni` source), and:
+- **KNI's own `Macros.fxh`** uses `#ifdef __KNIFX__` to make the `_vs(r)` / `_ps(r)` / `_cb(r)`
+  register-annotation macros **no-ops** (vs `: register(vs, r)` on the non-KNIFX path) — so the
+  MonoGame stock effects (which use `_vs(c0)` etc.) compile differently under KNIFX.
+- **Real shipping KNI shaders branch on it** — e.g. **Apos.Shapes** (used by **Gum**, vchelaru):
+  `#if __KNIFX__` selects the `vs_4_0`/`ps_4_0` profile (vs `vs_3_0` on plain OPENGL).
+
+ShadowDusk's `PlatformMacros.For(target)` did **not** define `__KNIFX__`, so a KNIFX-targeted
+compile silently took the wrong (non-KNIFX) branch — a seamless-fidelity gap hitting Vic's exact
+shader. **Fixed:** a container-aware `PlatformMacros.For(target, container)` overload appends
+`__KNIFX__ = 1` **iff** `container == EffectContainer.Knifx`, wired into `CompilationPipeline.Run`
+via the already-computed `effectiveContainer` (so the CLI `--target-runtime kni-knifx` /
+`CapabilityProfile.KniGL_4_02` path gets it too). **Seamless preserved:** the default/universal
+**MGFX** output is target-agnostic (loads on MonoGame AND KNI) and deliberately does **not** define
+`__KNIFX__` — only an explicit KNIFX target does, matching exactly when KNI's own compiler defines it.
+Byte-identity safe (the overload returns the base set unchanged for non-KNIFX; the existing KNIFX
+render corpus uses no `__KNIFX__` shader, so its output is unchanged). Pinned by
+`PlatformMacrosTests` (unit) + `CapabilityProfileByteIdentityTests.KnifxContainer_TakesKnifxBranch_*`
+(end-to-end) + the `examples/ExKnifxMacro.fx` fixture. **Remaining rung:** a real KNI render of a
+`__KNIFX__`-branching shader (the corpus proof shaders don't branch on it) — manual, like the other
+KNI render gates.
+
 ## Hard constraints (non-negotiable — from CLAUDE.md and the [main phase guardrails](../PHASE-35-forward-version-support.md))
 - **Seamless for the end user.** Never a required ShadowDusk-specific flag to get correct output. Any newer format must be **auto-selected from the target**, never a consumer-set switch. A flag may exist *only* as a non-required escape hatch.
 - **Default stays v10**, output format and the MonoGame 3.8.2.1105 pin unchanged. v10 is the one container every MGFX-lineage runtime loads; do not regress it.
