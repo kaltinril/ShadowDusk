@@ -231,22 +231,23 @@ public sealed class ThirdPartyShaderCorpusTests
     }
 
     // -------------------------------------------------------------------------
-    // Phase 49 — KNOWN-FAILURE PIN: Gum's FnaSample-Shader.fx defines its technique
-    // entirely inside a TECHNIQUE() #define macro. FxPreParser counts techniques
-    // BEFORE the preprocessor expands macros, so it sees none and rejects the effect
-    // with SD0010 ("Effect source contains no techniques"). This is the real product
-    // gap Phase 41 GAP-1 documents, surfaced here by a real Vic-authored shader.
+    // Phase 49 / GAP-1 — Gum's FnaSample-Shader.fx defines its technique entirely inside a
+    // TECHNIQUE() #define macro. FxPreParser counts techniques BEFORE macro expansion, so the
+    // raw pre-parse saw none. The FNA path now recovers macro techniques (GAP-1 fixed on FNA;
+    // see Phase41MacroTechniqueTests.Fna_GumFnaSample_* — on FNA this shader now reaches
+    // profile validation and is declined for its sub-SM2 vs_1_1 profile, SD0300).
     //
-    // This test PINS the current (defective) behavior so the gap is exercised, not
-    // silently dropped. When Phase 41 GAP-1 is fixed, this shader should COMPILE on
-    // GL/DX/FNA — at which point this test will fail, and the fix is to DELETE it and
-    // move "third-party/Gum/FnaSample-Shader.fx" into the OpenGLShaders/DirectXShaders/
-    // FnaShaders sets above (run the probe to confirm the post-fix target classification).
+    // The OpenGL pin below remains: GL still returns SD0010 because the OpenGL target is gated
+    // OUT of macro recovery (its macro set lacks SM4/SM6, so the stock effects would expand to
+    // a legacy DX9/SM2 branch that crashes DXC's SPIR-V codegen — the documented GL macro-model
+    // gap, distinct from the now-fixed FNA technique-blindness). If a future change closes the
+    // GL macro-model gap and this shader compiles on GL, this test will fail; promote the
+    // shader into OpenGLShaders() and delete this pin.
     // -------------------------------------------------------------------------
 
     [Fact]
     [Trait("Platform", "OpenGL")]
-    public async Task GumFnaSampleShader_MacroTechnique_CurrentlyRejectedBy_SD0010_Phase41Gap1()
+    public async Task GumFnaSampleShader_MacroTechnique_OpenGl_KeepsSd0010_GlMacroModelGap()
     {
         const string fx = "third-party/Gum/FnaSample-Shader.fx";
         using var cts = new CancellationTokenSource(CompileTimeout);
@@ -254,10 +255,10 @@ public sealed class ThirdPartyShaderCorpusTests
         var result = await TestHelpers.CompileFixtureAsync(fx, "OpenGL", ct: cts.Token);
 
         result.ExitCode.Should().NotBe(0,
-            because: "the TECHNIQUE() macro idiom is invisible to the pre-preprocess technique scan " +
-                     "(Phase 41 GAP-1); if this now compiles, GAP-1 is fixed — promote the shader into " +
-                     "the per-target sets and delete this pin");
+            because: "OpenGL is gated out of macro-technique recovery (the GL macro-model gap); " +
+                     "if this now compiles on GL, the gap is closed — promote the shader into " +
+                     "OpenGLShaders() and delete this pin");
         result.Stderr.Should().Contain("SD0010",
-            because: "GAP-1 surfaces as 'Effect source contains no techniques' on the GL path");
+            because: "on GL the macro technique is not recovered, so it surfaces as 'no techniques'");
     }
 }

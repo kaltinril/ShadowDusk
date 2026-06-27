@@ -17,7 +17,9 @@ Option A (compile-regression) is done on branch `phase-49-apos-gum-regression-co
 
 **Landed:** both `LICENSE` + `NOTICE.md` per directory (both MIT — Apos.Shapes commit `3fb73b8d…`, Gum commit `771bc5c3…`); shader bodies verbatim (verified); wiring in `ThirdPartyShaderCorpusTests` (full inline paths per §5.4) + `FnaCompileFixtureTests.Sm3Corpus()` (the all-runtime Grayscale); `Phase41StructuralDivergenceMatrixTests` census auto-regenerated; `docs/test-shader-corpus.md` §4 updated. `THIRD-PARTY-NOTICES.txt` deliberately NOT touched (it covers redistributed native binaries only; Nez isn't in it either). **No `src/` change** → no output-byte change → Windows render gate not triggered. Full `dotnet test ShadowDusk.slnx` green (1910 passed, 0 failed, 0 skipped).
 
-**Remaining:** Option B render-proof (deferred); `plan/plan.md` index row (add when merging); fixing GAP-1 is Phase 41's job (recommended as a follow-on).
+**Remaining:** Option B render-proof (deferred); `plan/plan.md` index row (add when merging).
+
+**Follow-on landed (2026-06-27): GAP-1 fixed on the FNA path.** Surfaced by Gum's `FnaSample-Shader.fx`, the macro-defined-technique gap (Phase 41 GAP-1) is now closed on FNA by extending the zero-technique macro recovery to `CompilationPipeline.RunFna` (PreserveSm3 re-parse, no modern-branch gate). The SM2-fitting MonoGame stock effects (SpriteEffect, AlphaTestEffect, DualTextureEffect, Penumbra*) now compile on FNA; BasicEffect/SkinnedEffect hit the honest SM2 register limit (SD0305) and FnaSample is declined for its `vs_1_1` profile (SD0300). DX was already closed by the existing fallback; the GL macro-model gap remains the one open part of GAP-1. Byte-identity preserved. See [Phase 41 GAP-1](PHASE-41-fxc-oracle-monogame-fidelity.md) status update.
 
 ---
 
