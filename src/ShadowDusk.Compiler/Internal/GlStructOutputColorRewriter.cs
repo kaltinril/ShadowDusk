@@ -62,6 +62,15 @@ internal static class GlStructOutputColorRewriter
         if (outputStructs.Count == 0)
             return hlsl;
 
+        // 2b) SAFETY: never rewrite a struct that is ALSO used as a function PARAMETER type — it
+        //     is a shader INPUT there (its COLOR0 is a valid DXC input interpolant), and rewriting
+        //     the shared definition to SV_Target would break that input use. A struct used as both
+        //     a PS return AND an input is pathological; we leave it unrewritten so the GL compile
+        //     surfaces the original, LOUD COLOR error rather than a silently-wrong rewrite.
+        outputStructs.RemoveWhere(s => IsUsedAsParameterType(hlsl, s));
+        if (outputStructs.Count == 0)
+            return hlsl;
+
         // 3) Rewrite the COLOR members of each resolved output struct only.
         string result = hlsl;
         foreach (string structName in outputStructs)
@@ -70,12 +79,69 @@ internal static class GlStructOutputColorRewriter
         return result;
     }
 
+    /// <summary>
+    /// True if <paramref name="structName"/> is used as a function PARAMETER type — i.e. the
+    /// pattern <c>( [in|out|inout|const] structName ident</c> or the same after a <c>,</c>. A
+    /// parameter position is the only place a bare <c>StructName identifier</c> follows <c>(</c>/
+    /// <c>,</c> (a CALL passes a value/expression, not <c>Type ident</c>; a cast is
+    /// <c>(StructName)</c> followed by <c>)</c>). A local declaration (<c>StructName o;</c> inside
+    /// a body) follows <c>{</c>/<c>;</c>, never <c>(</c>/<c>,</c>, so it does not match.
+    /// </summary>
+    private static bool IsUsedAsParameterType(string hlsl, string structName)
+    {
+        int i = 0;
+        while (i < hlsl.Length)
+        {
+            i = SkipCommentAt(hlsl, i, out bool skipped);
+            if (skipped) continue;
+            if (i >= hlsl.Length) break;
+
+            if (hlsl[i] == '(' || hlsl[i] == ',')
+            {
+                int t = SkipParamQualifiers(hlsl, SkipWsAndComments(hlsl, i + 1));
+                if (t < hlsl.Length && MatchesWordAt(hlsl, t, structName))
+                {
+                    int afterType = SkipWsAndComments(hlsl, t + structName.Length);
+                    if (afterType < hlsl.Length && IsIdentStart(hlsl[afterType]))
+                        return true; // 'structName <paramName>' in a parameter position
+                }
+            }
+            i++;
+        }
+        return false;
+    }
+
+    /// <summary>Skip leading HLSL parameter qualifiers (<c>in</c>/<c>out</c>/<c>inout</c>/
+    /// <c>const</c>/<c>uniform</c>) so a qualified parameter type is still recognized.</summary>
+    private static int SkipParamQualifiers(string s, int i)
+    {
+        while (true)
+        {
+            int matched = -1;
+            foreach (string q in ParamQualifiers)
+            {
+                if (MatchesWordAt(s, i, q)) { matched = i + q.Length; break; }
+            }
+            if (matched < 0) return i;
+            i = SkipWsAndComments(s, matched);
+        }
+    }
+
+    private static readonly string[] ParamQualifiers = { "in", "out", "inout", "const", "uniform" };
+
     // -- Member-semantic rewrite (only within the named struct's balanced braces). ---------
 
     // ': COLOR' or ': COLOR<digit>' as a complete token — the legacy D3D9 PS output semantic.
+    // CASE-INSENSITIVE: HLSL semantics are case-insensitive, and the sibling FxPreParser B6
+    // function-return rewrite matches the same way (OrdinalIgnoreCase), so a struct authored
+    // ': Color0' / ': color0' must be retargeted exactly like ': COLOR0'. The replacement always
+    // emits the canonical 'SV_Target', which DXC accepts regardless of the source case.
     private static readonly Regex ColorMemberSemantic =
-        new(@"(:\s*)COLOR(\d?)\b", RegexOptions.Compiled);
+        new(@"(:\s*)COLOR(\d?)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+    // Note: the COLOR-member regex runs over the whole struct body, so a COLOR token inside a
+    // COMMENT within the struct body (e.g. `/* legacy : COLOR1 */`) is also rewritten. This is
+    // harmless — DXC ignores comments — so it is not special-cased.
     private static string RewriteStructColorMembers(string hlsl, string structName)
     {
         if (!TryFindStructBodyOpen(hlsl, structName, out int openBrace))
