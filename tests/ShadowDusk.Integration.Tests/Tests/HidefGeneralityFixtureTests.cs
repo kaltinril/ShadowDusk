@@ -156,4 +156,28 @@ public sealed class HidefGeneralityFixtureTests
         ascii.Should().NotContain("samplerCube");
         ascii.Should().NotContain("sampler3D");
     }
+
+    [Fact]
+    public async Task EarlyReturnHelper_EmitsNoDoWhile_WebGlSafe_Issue107()
+    {
+        // Issue #107: a helper with a nested `if` that early-returns makes SPIRV-Cross
+        // emit a one-shot `do { … break; … } while(false);` loop. Desktop GL accepts
+        // it, but GLSL ES 1.00 (WebGL1 / KNI Reach) does not guarantee do-while, so the
+        // effect compiles + loads on desktop yet FAILS TO LOAD in WebGL. End-to-end
+        // through the real pipeline (DXC -> SPIRV-Cross -> rewriter), the emitted GL GLSL
+        // must contain NO do-while and instead the WebGL1-safe bounded for-loop form.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var result = await TestHelpers.CompileFixtureAsync(
+            "examples/Issue107DoWhile.fx", "OpenGL", ct: cts.Token);
+
+        result.ExitCode.Should().Be(0, because: $"the early-return helper must compile; stderr: {result.Stderr}");
+        result.Mgfx.Should().NotBeEmpty();
+
+        string ascii = Ascii(result.Mgfx);
+        ascii.Should().NotContain("while(false)",
+            because: "do-while is not guaranteed in GLSL ES 1.00 (WebGL1) — issue #107");
+        ascii.Should().NotContain("while (false)");
+        ascii.Should().MatchRegex(@"for \(int _spvonce_\d+ = 0; _spvonce_\d+ < 1;",
+            because: "the SPIRV-Cross one-shot loop is lowered to the WebGL1-safe bounded for-loop");
+    }
 }

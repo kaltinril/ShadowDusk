@@ -24,7 +24,7 @@
   - Structurally **clean**: **64**
   - **Divergent** (>=1 level): **17**
   - Compile/parse **failures**: **11**
-- Non-golden census cells: **132** (**105** compile, **27** fail with a code)
+- Non-golden census cells: **134** (**107** compile, **27** fail with a code)
 
 ## Golden-backed fixtures — per-level structural verdict
 
@@ -288,6 +288,8 @@ is a CORRECT result, not a defect.
 | examples/ExVsTextureFetch.fx | OpenGL | FAIL | SD0210 | Vertex-stage texture sampling is not supported for the MonoGame OpenGL target: MonoGame 3.8.2's GL runtime never assigns texture units to VERTEX-shader samplers... |
 | examples/Issue106Repro.fx | DirectX_11 | PASS |  |  |
 | examples/Issue106Repro.fx | OpenGL | PASS |  |  |
+| examples/Issue107DoWhile.fx | DirectX_11 | PASS |  |  |
+| examples/Issue107DoWhile.fx | OpenGL | PASS |  |  |
 | minimal_vs_ps.fx | DirectX_11 | FAIL | SD0010 | Effect source contains no techniques |
 | minimal_vs_ps.fx | OpenGL | FAIL | SD0010 | Effect source contains no techniques |
 | multipass.fx | DirectX_11 | PASS |  |  |
