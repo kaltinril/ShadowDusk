@@ -36,7 +36,16 @@ box before this merges — CI cannot run them).
   to `samples/`, keeping a MonoGame dependency OUT of the shipped libraries) — planned in
   **[plan/PHASE-47-appendix/sample-migration.md](PHASE-47-appendix/sample-migration.md)**.
 
-> This doc is the parent. The two appendices are written concurrently by sibling agents; this doc
+**Open converter-subset gap (one ACTIONABLE fix waiting to be picked up):** real-world ShaderToy
+triage recorded in
+**[plan/PHASE-47-appendix/converter-subset-gaps.md](PHASE-47-appendix/converter-subset-gaps.md)** —
+**initializer-sized arrays** (`const float a[] = float[](0.9, 0.25);`, size statically knowable) are
+currently rejected as "runtime-sized" but could be faithfully supported by inferring N from the
+initializer (`Parser.cs` → `ParseArraySuffix`). The other three triaged shaders are correctly
+out-of-subset (uint bit-hash, cubemap channel) or source UB (unsequenced side effect) and stay
+rejected.
+
+> This doc is the parent. The appendices are written concurrently by sibling agents; this doc
 > references them by path and does not duplicate their content.
 
 ---
