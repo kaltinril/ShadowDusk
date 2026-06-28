@@ -1,0 +1,170 @@
+@startuml shadowdusk-pipeline-overview
+!pragma layout smetana
+' ShadowDusk - full compile pipeline: inputs -> frontend -> per-target backends ->
+' writers -> containers -> real runtimes (and the OS / delivery shapes).
+' Render: VS Code PlantUML extension (Alt+D), or `plantuml docs/pipeline-overview.puml`.
+' Uses Smetana layout so it renders without Graphviz; install Graphviz + drop the
+' !pragma line above for a tidier `dot` layout.
+'
+' COLOR = ROLE of the box (see the legend), consistent across every layer:
+'   #BFD2E8 blue  = bundled NATIVE binary (DXC / SPIRV-Cross / vkd3d)
+'   #E7DFC9 tan   = ShadowDusk MANAGED step (our C#: parser, macros, rewriter, writers)
+'   #DCE6DC sage  = DATA artifact (the bytes between steps + the input/output files)
+'   #D9D9D9 gray  = EXTERNAL runtime (MonoGame / KNI / FNA)
+' Package boxes just group by pipeline LAYER and are kept neutral so the role colors read.
+
+title ShadowDusk - inputs, translation layers, containers, runtimes
+
+skinparam shadowing false
+skinparam roundCorner 8
+skinparam ArrowColor #6b7280
+skinparam defaultFontName "Segoe UI"
+skinparam defaultFontSize 12
+skinparam rectangle {
+  BorderColor #9aa3ad
+}
+skinparam package {
+  BackgroundColor #F4F4F0
+  BorderColor #b8c0c8
+  FontStyle bold
+}
+skinparam note {
+  BackgroundColor #FBFBF3
+  BorderColor #d8d8c8
+}
+
+' ===== 1. INPUTS =====
+package "1 - INPUTS  (what you give us)" {
+  rectangle "HLSL **.fx**\n(MonoGame / KNI / FNA source)" as FX #DCE6DC
+  rectangle "ShaderToy / raw GLSL\nimage shader (.glsl / pasted)" as GLSLIN #DCE6DC
+}
+
+' ===== 2. FRONTEND (shared) =====
+package "2 - FRONTEND  (shared, runs for every target)" {
+  rectangle "**ShaderToy frontend**  (ShadowDusk.ShaderToy)\nGLSL image shader -> .fx" as STOY #E7DFC9
+  rectangle "**FxPreParser** (FX9 pre-parse)\nfind technique/pass/sampler blocks;\nrecover macro-defined TECHNIQUE();\nFxSourceMode = RewriteToSm4 | PreserveSm3" as PRE #E7DFC9
+  rectangle "**PlatformMacros**  (inject per-target #defines)\nGL:{MGFX,GLSL,OPENGL}  DX:{MGFX,HLSL,SM4}\nFNA:{FNA,HLSL,SM3}   +__KNIFX__ when KNIFX" as MAC #E7DFC9
+  rectangle "**Preprocess** (DXC -P)\nflatten #include, expand macros" as PP #E7DFC9
+  rectangle "**ShaderIR**\ninternal representation" as IR #DCE6DC
+}
+
+' ===== 3. TRANSLATION LAYERS (tools inlined per branch) =====
+package "3 - TRANSLATION LAYERS  (target selects the branch)" {
+
+  package "OpenGL branch" {
+    rectangle "**DXC**\nHLSL -> SPIR-V" as GL_DXC #BFD2E8
+    rectangle "SPIR-V" as GL_SPV #DCE6DC
+    rectangle "**SPIRV-Cross**\nSPIR-V -> GLSL" as GL_SPVC #BFD2E8
+    rectangle "GLSL 1.10\n(MojoShader dialect)" as GL_GLSL #DCE6DC
+    rectangle "**MonoGameGlslRewriter**\nps_oC0 -> gl_FragColor / gl_FragData[n];\ndo-while -> for (#107); roundEven;\nstruct :COLOR -> :SV_Target (MRT, GAP-2)" as GL_RW #E7DFC9
+    GL_DXC -down-> GL_SPV
+    GL_SPV -down-> GL_SPVC
+    GL_SPVC -down-> GL_GLSL
+    GL_GLSL -down-> GL_RW
+  }
+
+  package "DirectX branch" {
+    rectangle "**vkd3d-shader**\nHLSL -> DXBC" as DX_VKD #BFD2E8
+    rectangle "DXBC (SM5 / SM4)" as DX_DXBC #DCE6DC
+    DX_VKD -down-> DX_DXBC
+  }
+
+  package "FNA branch" {
+    rectangle "**vkd3d-shader**\nHLSL(SM1-3) -> fx_2_0" as FNA_VKD #BFD2E8
+    rectangle "D3D9 fx_2_0 bytecode\n(PreserveSm3)" as FNA_FX2 #DCE6DC
+    FNA_VKD -down-> FNA_FX2
+  }
+
+  package "Vulkan branch (parked)" {
+    rectangle "**DXC**\nHLSL -> SPIR-V" as VK_DXC #BFD2E8
+    rectangle "SPIR-V\n(ext-blocked:\nMonoGame 3.8.5 stable)" as VK_SPV #DCE6DC
+    VK_DXC -down-> VK_SPV
+  }
+}
+
+' ===== 4. WRITERS =====
+package "4 - WRITERS  (serialize ShaderIR + blobs into a container)" {
+  rectangle "**MgfxWriter**\nMGFX v10 (default) / v11" as MGW #E7DFC9
+  rectangle "**KnifxWriter**\nKNIFX v11 (KNIF)\nmulti-backend dir + GL version dir" as KNW #E7DFC9
+  rectangle "**Fx2EffectWriter**\nD3D9 fx_2_0 (.fxb)" as FXW #E7DFC9
+}
+
+' ===== 5. OUTPUT CONTAINERS =====
+package "5 - OUTPUT CONTAINERS" {
+  rectangle "**.mgfx v10**  (sig MGFX, byte 0x0a)\nthe seamless default - loads everywhere" as O_MGFX10 #DCE6DC
+  rectangle "**.mgfx v11**  (MGFX, byte 0x0b)\n+2 diagnostic strings" as O_MGFX11 #DCE6DC
+  rectangle "**.knifx**  (sig KNIF, v11)\nKNI's native container" as O_KNIFX #DCE6DC
+  rectangle "**.fxb**  (D3D9 fx_2_0)\nFNA effect" as O_FXB #DCE6DC
+}
+
+' ===== 6. REAL RUNTIMES =====
+package "6 - REAL RUNTIMES  (the bar: loads + renders like mgfxc / fxc)" {
+  rectangle "MonoGame **DesktopGL** (OpenGL)" as R_MGGL #D9D9D9
+  rectangle "MonoGame **DirectX** (DX11)" as R_MGDX #D9D9D9
+  rectangle "KNI **Desktop** SDL2.GL" as R_KNIGL #D9D9D9
+  rectangle "KNI **Desktop** WinForms.DX11" as R_KNIDX #D9D9D9
+  rectangle "KNI **WebGL / Blazor WASM**\nReach=WebGL1/ES1.00 | HiDef=WebGL2/ES3.00" as R_KNIWEB #D9D9D9
+  rectangle "**FNA** (FNA3D: D3D11 / Vulkan / Metal / GL)" as R_FNA #D9D9D9
+}
+
+' ===== FLOWS =====
+GLSLIN --> STOY
+STOY --> PRE : ".fx"
+FX --> PRE
+PRE --> MAC
+MAC --> PP
+PP --> IR
+
+IR --> GL_DXC : "GL"
+IR --> DX_VKD : "DX"
+IR --> FNA_VKD : "FNA"
+IR ..> VK_DXC : "Vulkan"
+
+GL_RW --> MGW : "OpenGL profile"
+GL_RW --> KNW : "KNI target"
+DX_DXBC --> MGW : "DirectX_11 profile"
+FNA_FX2 --> FXW
+VK_SPV ..> MGW : "parked"
+
+MGW --> O_MGFX10
+MGW --> O_MGFX11
+KNW --> O_KNIFX
+FXW --> O_FXB
+
+O_MGFX10 --> R_MGGL
+O_MGFX10 --> R_MGDX
+O_MGFX10 --> R_KNIGL
+O_MGFX10 --> R_KNIDX
+O_MGFX10 --> R_KNIWEB : "KNI runtime-converts\nGLSL -> ES at load"
+O_MGFX11 --> R_MGGL
+O_MGFX11 --> R_MGDX
+O_KNIFX --> R_KNIGL
+O_KNIFX --> R_KNIDX
+O_KNIFX ..> R_KNIWEB #line:red : "GAP (KNIFX web):\nneeds BUILD-TIME ES in\nthe GL version directory"
+O_FXB --> R_FNA
+
+note as N1
+== Bundled native binaries (the blue boxes - ride inside the NuGet, no fxc / mgfxc / Wine / SDK)
+**DXC** = Vortice.Dxc (desktop) / DXC.wasm   |   **SPIRV-Cross** = Silk.NET P/Invoke / .wasm   |   **vkd3d-shader** (+ d3dcompiler_47)
+
+== Delivery shapes (one and the same library)
+**Library** IShaderCompiler.CompileAsync(fx) -> bytes  *(the product)*   |   **CLI** ShadowDuskCLI   |   **MGCB plugin**   |   **WASM** in-browser compile
+**OS:** self-contained on Linux / macOS / Windows  +  Browser (WASM)
+end note
+
+legend right
+  |= color |= what the box IS (its role) |
+  |<#BFD2E8>          | **native binary** bundled in the NuGet - DXC, SPIRV-Cross, vkd3d |
+  |<#E7DFC9>          | **managed step** (ShadowDusk C#) - FxPreParser, PlatformMacros, rewriter, writers |
+  |<#DCE6DC>          | **data artifact** - the .fx, SPIR-V, GLSL, DXBC, fx_2_0, .mgfx / .knifx / .fxb |
+  |<#D9D9D9>          | **external runtime** - MonoGame / KNI / FNA |
+  |          |          |
+  |= line |= what the ARROW means |
+  | solid | supported + proven path |
+  | dotted | parked / external-blocked / known gap |
+  |<color:#c0392b>**red**</color> | the KNIFX-on-KNI-WebGL gap |
+  Default output = **.mgfx v10** (loads on MonoGame + KNI desktop + KNI WebGL).
+  v11 / KNIFX / FNA are **additive, auto-selected from the target** - never a flag.
+endlegend
+
+@enduml
