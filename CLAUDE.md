@@ -17,7 +17,7 @@ ShadowDusk is a cross-platform HLSL shader compiler for MonoGame, KNI, and FNA: 
 
 ## Repository Layout
 
-`src/` holds the libraries (`ShadowDusk.{Core,HLSL,GLSL,ShaderToy,Metal,Compiler,Cli,MgcbPlugin,Wasm}` — `Compiler` is the product NuGet, `ShaderToy` is the pure-managed ShaderToy/GLSL → `.fx` front-end (Phase 47, not yet published), `Metal`/`MgcbPlugin` are stubs); `tests/` the xUnit projects + `fixtures/` (`shaders/`, `golden/`); `samples/` (`ShaderFiddle.Web`, `ShaderViewer`, `mgcb`); `tools/` the restored native binaries (`spirv-cross/`, `vkd3d/` — not committed); `docs/` the reference docs. **Full annotated tree: [docs/repository-layout.md](docs/repository-layout.md).**
+`src/` holds the libraries (`ShadowDusk.{Core,HLSL,GLSL,ShaderToy,Metal,Compiler,Cli,MgcbPlugin,Wasm}` — `Compiler` is the product NuGet, `ShaderToy` is the pure-managed ShaderToy/GLSL → `.fx` front-end (Phase 47, published since 0.9.0), `Metal`/`MgcbPlugin` are stubs); `tests/` the xUnit projects + `fixtures/` (`shaders/`, `golden/`); `samples/` (`ShaderFiddle.Web`, `ShaderViewer`, `mgcb`); `tools/` the restored native binaries (`spirv-cross/`, `vkd3d/` — not committed); `docs/` the reference docs. **Full annotated tree: [docs/repository-layout.md](docs/repository-layout.md).**
 
 ## Tech Stack
 
