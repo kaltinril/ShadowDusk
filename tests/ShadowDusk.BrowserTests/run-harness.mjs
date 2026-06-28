@@ -315,15 +315,61 @@ async function main() {
       results.mode1.push(row);
     }
 
-    // NOTE — KNIFX-container-in-KNI-WebGL is a KNOWN, code-documented refinement gap
-    // (KnifxWriter.cs: the GL ShaderCode currently carries only the desktop GLSL-1.10
-    // entry; GLES/WebGL converted 100/300es entries are deferred). The WebGL proof was
-    // run once and EMPIRICALLY confirmed it: KNI WebGL rejects the OpenGL-backend KNIFX
-    // with "Effect profile 'DirectX_11' is not compatible with the graphics backend
-    // 'WebGL'". The seamless DEFAULT (MGFX v10) DOES load + render in KNI WebGL (the
-    // corpus above + #107), so KNI-web consumers are covered by the default; KNIFX-web
-    // is an additive-target refinement, tracked in plan/PHASE-35 + the validation matrix.
-    // (Deliberately NOT wired into this all-green render gate, which would go red.)
+    // ---- Phase 35 KNIFX-container WebGL proof (SD corpus, Reach only) ----
+    // ExKnifxMacro is served as a KNIF-signature container (compiled --target-runtime
+    // kni-knifx) whose backend directory advertises the whole GL family (OpenGL + GLES +
+    // WebGL); the GLES/WebGL bodies use ShaderVersion (0,0) so KNI's runtime converts the
+    // GLSL to ES at load. Loading it via TestLoadCorpus proves KNI's WebGL Effect loader
+    // accepts the KNIFX container (KNI dispatches on the 4-byte signature, not the filename).
+    // The shader renders solid RED iff __KNIFX__ was defined at compile time (GREEN on the
+    // non-KNIFX branch), so a red quad with ZERO green pixels proves BOTH the container
+    // loaded in KNI WebGL AND the __KNIFX__ branch fired, in one render. Guarded to Reach
+    // (WebGL1) so the HiDef issue-#7 RED/GREEN logic stays clean.
+    const KNIFX_PROOF_SHADERS = (IS_SD && !IS_HIDEF) ? ['ExKnifxMacro'] : [];
+    for (const name of KNIFX_PROOF_SHADERS) {
+      const row = { name, loaded: false, loadError: null, rendered: false,
+        maxDelta: 0, differentPixels: null, totalPixels: null, verdict: 'FAIL',
+        note: 'KNIFX container + __KNIFX__ red-branch proof' };
+      try {
+        const loadErr = await page.evaluate(
+          async (n) => await window.theInstance.invokeMethodAsync('TestLoadCorpus', n), name);
+        if (loadErr !== null) {
+          row.loadError = String(loadErr);
+          row.note = 'KNI WebGL new Effect() REJECTED the KNIFX container';
+          console.log(`  [LOAD-FAIL] ${name} (KNIFX): ${loadErr}`);
+          results.mode1.push(row);
+          continue;
+        }
+        row.loaded = true;
+        await page.waitForTimeout(600);
+        const cap = await readback(page);
+        if (!cap) { row.note = 'readback returned null'; results.mode1.push(row); continue; }
+        await fs.writeFile(path.join(CAP_DIR, name + '.png'),
+          rgbaToPng(cap.data, cap.width, cap.height));
+        let red = 0, green = 0;
+        const d = cap.data;
+        for (let i = 0; i < d.length; i += 4) {
+          const r = d[i], g = d[i + 1], b = d[i + 2];
+          if (r > 200 && g < 60 && b < 60) red++;
+          else if (g > 200 && r < 60 && b < 60) green++;
+        }
+        row.rendered = true;
+        row.totalPixels = d.length / 4;
+        row.differentPixels = green;
+        if (red > 10000 && green === 0) {
+          row.verdict = 'PASS(knifx)';
+          row.note = `KNIFX container loaded in KNI WebGL; __KNIFX__ red branch rendered (${red} red px, 0 green)`;
+        } else {
+          row.verdict = 'FAIL';
+          row.note = `expected the solid-red __KNIFX__ branch but saw red=${red} green=${green} (green>0 => non-KNIFX branch, or container mis-loaded)`;
+        }
+        console.log(`  [${row.verdict}] ${name.padEnd(11)} red=${red} green=${green} — ${row.note}`);
+      } catch (e) {
+        row.note = `harness error: ${e.message}`;
+        console.log(`  [ERROR] ${name} (KNIFX): ${e.message}`);
+      }
+      results.mode1.push(row);
+    }
 
     // ---- FAITHFUL mode-2 proof (Phase 23 M3 / Gate G2): compile ALL 10 corpus
     // shaders in-browser via the FAITHFUL DXC->WASM frontend, render in KNI WebGL,

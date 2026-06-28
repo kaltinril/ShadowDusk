@@ -69,48 +69,90 @@ public sealed class KnifxWriter
         bool integersAsFloats = options.Backend is
             KnifxBackend.OpenGL or KnifxBackend.GLES or KnifxBackend.WebGL;
 
-        // Serialize the single backend body first so the directory's effectKey + offsets
-        // can be computed from it.
-        byte[] body = SerializeBody(ir, options.Backend, integersAsFloats);
+        // A non-GL target (DirectX/Vulkan/Metal) stays a single-backend directory with one body.
+        if (!IsGlBackend(options.Backend))
+        {
+            byte[] dxBody = SerializeBody(ir, options.Backend, integersAsFloats, rawGlShaderCode: false);
+            return WriteContainer(new[] { (options.Backend, dxBody) });
+        }
+
+        // A GL target advertises the WHOLE GL family so ONE .knifx loads on EVERY KNI GL host
+        // (the seamless "one artifact works everywhere" rule). It carries TWO bodies:
+        //   * OpenGL (desktop SDL2.GL): the faithful version-directory body — UNCHANGED, the
+        //     render-proven KNI-desktop output. KNI desktop reports backend OpenGL (0x0011) and
+        //     matches this entry.
+        //   * GLES (mobile) + WebGL (browser): a body whose per-shader ShaderVersion is (0,0),
+        //     which makes KNI's runtime treat the GL ShaderCode as RAW legacy GLSL and convert it
+        //     to the host's GL-ES dialect at load — the EXACT mechanism that loads MGFX v10 on KNI
+        //     WebGL (render-proven, Phase 33). The single OpenGL-only directory was why KNI WebGL
+        //     (backend 0x0014) used to reject our KNIFX. The browser then runtime-converts the
+        //     same MojoShader-dialect GLSL we already prove on WebGL via the v10 path.
+        byte[] desktopBody = SerializeBody(ir, KnifxBackend.OpenGL, integersAsFloats, rawGlShaderCode: false);
+        byte[] webBody     = SerializeBody(ir, KnifxBackend.WebGL,  integersAsFloats, rawGlShaderCode: true);
+
+        return WriteContainer(new[]
+        {
+            (KnifxBackend.OpenGL, desktopBody),
+            (KnifxBackend.GLES,   webBody),
+            (KnifxBackend.WebGL,  webBody),
+        });
+    }
+
+    // Serialize the "KNIF" header + a backend directory (one entry per item) followed by each
+    // DISTINCT body once; entries that share a body (by reference) share its file offset.
+    private Result<byte[], ShaderError> WriteContainer(
+        IReadOnlyList<(KnifxBackend Backend, byte[] Body)> entries)
+    {
+        var distinctBodies = new List<byte[]>();
+        var bodyIndex = new Dictionary<byte[], int>(ReferenceEqualityComparer.Instance);
+        foreach (var (_, body) in entries)
+            if (!bodyIndex.ContainsKey(body)) { bodyIndex[body] = distinctBodies.Count; distinctBodies.Add(body); }
+
+        const int headerSize = 10;               // "KNIF"(4) + version(2) + reserved(2) + count(2)
+        const int entrySize  = 10;               // backend(2) + effectKey(4) + fxOffset(4)
+        int dirSize = headerSize + entrySize * entries.Count;
+
+        // Absolute offset of each distinct body's length prefix (bodies follow the directory).
+        var bodyOffset = new int[distinctBodies.Count];
+        int running = dirSize;
+        for (int i = 0; i < distinctBodies.Count; i++)
+        {
+            bodyOffset[i] = running;
+            running += 4 + distinctBodies[i].Length;   // int32 length prefix + body bytes
+        }
 
         using var ms = new MemoryStream();
         using var bw = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);
 
-        // ---- Header: "KNIF" + version + reserved + a 1-entry backend directory --------
-        bw.Write(KnifxSignature.ToCharArray()); // 4 bytes (no length prefix; matches KNI)
-        bw.Write(KnifxVersion);                 // int16 = 11
-        bw.Write((short)0);                      // reserved
-        // Single-backend directory: one entry for the requested backend. A GL target emits
-        // KnifxBackend.OpenGL (0x0011), which KNI DESKTOP GL matches. KNI WebGL reports a
-        // distinct backend (KnifxBackend.WebGL = 0x0014) and finds no match here, so this
-        // KNIFX does not load on KNI WebGL — the documented refinement gap (see the long
-        // note in BuildGlShaderCode; the seamless MGFX v10 default covers KNI-web instead).
-        bw.Write((short)1);                      // backendCount (single backend)
+        bw.Write(KnifxSignature.ToCharArray());  // 4 bytes (no length prefix; matches KNI)
+        bw.Write(KnifxVersion);                  // int16 = 11
+        bw.Write((short)0);                       // reserved
+        bw.Write((short)entries.Count);           // backendCount
 
-        const int headerSize = 10;               // 4 + 2 + 2 + 2
-        const int entrySize  = 10;               // backend(2) + effectKey(4) + fxOffset(4)
-        int fxOffset = headerSize + entrySize;   // body's length prefix starts here (=20)
-
-        bw.Write((short)options.Backend);        // GraphicsBackend enum value
-        bw.Write(ComputeEffectKey(body));        // int32 FNV-1a (cache key; not validated)
-        bw.Write(fxOffset);                       // int32 absolute offset of the body
-
-        // ---- Body: int32 length prefix then the serialized effect ---------------------
-        bw.Write(body.Length);                    // int32
-        bw.Write(body);
+        foreach (var (backend, body) in entries)
+        {
+            bw.Write((short)backend);             // GraphicsBackend enum value
+            bw.Write(ComputeEffectKey(body));     // int32 FNV-1a (cache key; not validated)
+            bw.Write(bodyOffset[bodyIndex[body]]); // int32 absolute offset of the shared body
+        }
+        foreach (byte[] body in distinctBodies)
+        {
+            bw.Write(body.Length);                // int32
+            bw.Write(body);
+        }
 
         bw.Flush();
         return Result<byte[], ShaderError>.Ok(ms.ToArray());
     }
 
-    private static byte[] SerializeBody(ShaderIR ir, KnifxBackend backend, bool integersAsFloats)
+    private static byte[] SerializeBody(ShaderIR ir, KnifxBackend backend, bool integersAsFloats, bool rawGlShaderCode)
     {
         using var ms = new MemoryStream();
         using (var bw = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true))
         {
             bw.Write(integersAsFloats);           // bool (KNIFXWriter11.WriteEffect head)
             WriteConstantBuffers(bw, ir);
-            WriteShaders(bw, ir, backend);
+            WriteShaders(bw, ir, backend, rawGlShaderCode);
             WriteParameterList(bw, ir.Parameters);
             WriteTechniques(bw, ir);
             bw.Flush();
@@ -171,22 +213,28 @@ public sealed class KnifxWriter
         }
     }
 
-    private static void WriteShaders(BinaryWriter bw, ShaderIR ir, KnifxBackend backend)
+    private static void WriteShaders(BinaryWriter bw, ShaderIR ir, KnifxBackend backend, bool rawGlShaderCode)
     {
         bool isGl = IsGlBackend(backend);
         WritePacked(bw, ir.Shaders.Count);
         foreach (var blob in ir.Shaders)
         {
             bw.Write(KniStage(blob.Stage));                  // byte (Pixel=0, Vertex=1)
-            WritePacked(bw, blob.ShaderModel.Major);          // NEW vs v10 (also selects the
-            WritePacked(bw, blob.ShaderModel.Minor);          // GL directory-parse path below)
 
-            // CRITICAL: with a non-default ShaderVersion, KNI's GL runtime parses ShaderCode
-            // as a GLSL-version bytecode DIRECTORY (ConcreteShader.FindShaderByteCode), NOT as
-            // raw GLSL. So the GL ShaderCode must be the directory ShaderProfileGL.CreateGLSL
-            // emits (NOT ShadowDusk's raw GLSL bytes), or KNI throws "Invalid shader bytecode".
-            // The DXBC (DX) path takes ShaderCode verbatim.
-            byte[] shaderCode = isGl ? BuildGlShaderCode(backend, blob.Bytes) : blob.Bytes;
+            // ShaderVersion selects KNI's GL ShaderCode parse path. A NON-default version makes
+            // KNI parse ShaderCode as a GLSL-version DIRECTORY (ConcreteShader.FindShaderByteCode);
+            // (0,0) makes KNI treat ShaderCode as RAW legacy GLSL and run its load-time GL-ES
+            // converter (the MGFX-v10 path). The GLES/WebGL bodies use (0,0)+raw so KNI's runtime
+            // converts our MojoShader-dialect GLSL to ES on the browser, exactly as it does for v10.
+            (int major, int minor) = rawGlShaderCode ? (0, 0) : blob.ShaderModel;
+            WritePacked(bw, major);
+            WritePacked(bw, minor);
+
+            // GL ShaderCode: the version-directory wrapper (ShaderProfileGL.CreateGLSL form) for
+            // the desktop body, or the RAW MojoShader-dialect GLSL for the (0,0) runtime-convert
+            // body. DXBC (DX) takes ShaderCode verbatim. Raw GLSL with a non-(0,0) version would
+            // make KNI throw "Invalid shader bytecode", hence the pairing with (0,0) above.
+            byte[] shaderCode = (isGl && !rawGlShaderCode) ? BuildGlShaderCode(backend, blob.Bytes) : blob.Bytes;
             bw.Write(shaderCode.Length);                      // int32 (plain, unchanged)
             bw.Write(shaderCode);
 
@@ -241,23 +289,20 @@ public sealed class KnifxWriter
         bw.Write(st.MipMapLevelOfDetailBias);                 // single
     }
 
-    // The GL ShaderCode is a GLSL-version bytecode DIRECTORY, exactly as KNI's
-    // ShaderProfileGL.CreateGLSL emits it: a reserved int16, an int16 entry count, then
-    // per entry {byte Major, byte Minor, bool ES, int32 offset} (HeaderSize 4, EntrySize 7),
-    // then each blob as {int32 length, bytes}. The KNI runtime picks the entry matching its
-    // GL context. ShadowDusk's GL output is MojoShader-dialect GLSL 1.10, which IS KNI's
-    // OpenGL desktop entry (Major=1, Minor=1, ES=false) — the validated SDL2.GL target.
+    // Builds the DESKTOP OpenGL body's GL ShaderCode: a GLSL-version bytecode DIRECTORY,
+    // exactly as KNI's ShaderProfileGL.CreateGLSL emits it: a reserved int16, an int16 entry
+    // count, then per entry {byte Major, byte Minor, bool ES, int32 offset} (HeaderSize 4,
+    // EntrySize 7), then each blob as {int32 length, bytes}. The KNI runtime picks the entry
+    // matching its GL context. ShadowDusk's GL output is MojoShader-dialect GLSL 1.10, which IS
+    // KNI's OpenGL desktop entry (Major=1, Minor=1, ES=false) — the validated SDL2.GL target.
     //
-    // KNIFX-on-KNI-WebGL refinement gap (Phase 35, empirically confirmed 2026-06-27 by the
-    // browser render harness): this OpenGL-only KNIFX loads + renders on KNI DESKTOP GL but
-    // KNI WebGL REJECTS it — "Effect profile 'DirectX_11' is not compatible with the graphics
-    // backend 'WebGL'". Closing it needs BOTH (a) an outer WebGL backend-directory entry in
-    // Write() (KnifxBackend.WebGL = 0x0014, currently only OpenGL = 0x0011 is emitted) AND
-    // (b) inner converted ES entries here (ES=true: GLSL ES 1.00 for WebGL1 / 3.00es for
-    // WebGL2), which requires a desktop-GLSL -> ES converter ShadowDusk does not yet have
-    // (the MGFX path leans on KNI's *runtime* converter instead). NOT a blocker: the seamless
-    // DEFAULT MGFX v10 already loads + renders in KNI WebGL (render-proven), so KNI-web
-    // consumers are covered by the default; KNIFX-web is an additive-target refinement.
+    // This is paired with a NON-default ShaderVersion (the version-directory parse path) and is
+    // used ONLY for the OpenGL (desktop) body. KNI WebGL/GLES request a distinct backend, so the
+    // GLES + WebGL bodies instead use ShaderVersion (0,0) + RAW GLSL (NOT this directory), which
+    // routes KNI's runtime GL-ES converter — the proven MGFX-v10 path that loads on KNI WebGL.
+    // See Write(): one .knifx advertises the whole GL family (OpenGL desktop-directory body +
+    // GLES/WebGL runtime-convert body) so it loads on every KNI GL host. (Phase 35, 2026-06-27:
+    // KNIFX-on-KNI-WebGL render-proven via tests/ShadowDusk.BrowserTests, ExKnifxMacro red branch.)
     private static byte[] BuildGlShaderCode(KnifxBackend backend, byte[] glsl)
     {
         var entries = new List<(byte Major, byte Minor, bool Es, byte[] Code)>

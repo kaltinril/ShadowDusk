@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using FluentAssertions;
 using ShadowDusk.Core;
@@ -14,8 +15,15 @@ namespace ShadowDusk.Core.Tests;
 /// Byte-format tests for <see cref="KnifxWriter"/> (KNIFX v11). Each test decodes the
 /// emitted container the way KNI's runtime reader does (the multi-backend directory header
 /// + a packed-int body), so the assertions pin the exact on-disk layout reverse-engineered
-/// in <c>plan/PHASE-35-appendix/knifx-format-spec.md</c>. The render proof (loads + renders
-/// in real KNI) lives in the <c>validation/KniDesktopGL</c> rig; these pin the bytes.
+/// in <c>plan/PHASE-35-appendix/knifx-format-spec.md</c>.
+/// <para>
+/// A GL target advertises the whole GL family (OpenGL + GLES + WebGL) so one <c>.knifx</c>
+/// loads on every KNI GL host: the OpenGL (desktop) entry carries the faithful version-directory
+/// body, while the GLES + WebGL entries share a body whose <c>ShaderVersion</c> is (0,0) so KNI's
+/// runtime converts the raw GLSL to the host ES dialect at load (the MGFX-v10 path, proven to load
+/// on KNI WebGL). The render proof lives in <c>validation/KniDesktopGL</c> + the KNI WebGL harness;
+/// these pin the bytes.
+/// </para>
 /// </summary>
 public sealed class KnifxWriterTests
 {
@@ -58,6 +66,25 @@ public sealed class KnifxWriterTests
         }
     }
 
+    // Parse the backend directory. Returns one (backend, bodyStart) per entry, where bodyStart
+    // is the offset of the body's first CONTENT byte (just past its int32 length prefix).
+    private static List<(KnifxBackend Backend, int BodyStart)> Directory(byte[] knifx)
+    {
+        int count = BitConverter.ToInt16(knifx, 8);
+        var list = new List<(KnifxBackend, int)>();
+        for (int i = 0; i < count; i++)
+        {
+            int entry = 10 + i * 10;                              // header(10) + entrySize(10)*i
+            var backend = (KnifxBackend)BitConverter.ToInt16(knifx, entry);
+            int fxOffset = BitConverter.ToInt32(knifx, entry + 6); // backend(2) + effectKey(4)
+            list.Add((backend, fxOffset + 4));                    // +4: skip int32 body-length prefix
+        }
+        return list;
+    }
+
+    private static int BodyStart(byte[] knifx, KnifxBackend backend) =>
+        Directory(knifx).First(e => e.Backend == backend).BodyStart;
+
     // -------------------------------------------------------------------------------------
     // Header (multi-backend directory)
     // -------------------------------------------------------------------------------------
@@ -70,32 +97,54 @@ public sealed class KnifxWriterTests
     }
 
     [Fact]
-    public void Header_VersionIs11_ReservedZero_SingleBackendDirectory()
+    public void Header_VersionIs11_ReservedZero()
     {
-        var b = Write(new ShaderIR());
+        var b = Write(new ShaderIR(), KnifxBackend.DirectX11);
         BitConverter.ToInt16(b, 4).Should().Be(11);  // version
         BitConverter.ToInt16(b, 6).Should().Be(0);   // reserved
-        BitConverter.ToInt16(b, 8).Should().Be(1);   // backendCount (this writer emits one)
     }
 
-    [Theory]
-    [InlineData(KnifxBackend.OpenGL, 0x0011)]
-    [InlineData(KnifxBackend.GLES, 0x0012)]
-    [InlineData(KnifxBackend.WebGL, 0x0014)]
-    [InlineData(KnifxBackend.DirectX11, 0x0021)]
-    public void Header_DirectoryEntry_BackendValueAndOffsets(KnifxBackend backend, int expected)
+    [Fact]
+    public void Header_NonGlTarget_IsSingleBackendDirectory()
     {
-        var b = Write(new ShaderIR(), backend);
-        BitConverter.ToInt16(b, 10).Should().Be((short)expected);  // backend
-        BitConverter.ToInt32(b, 16).Should().Be(20);               // fxOffset = headerSize 10 + entrySize 10
-        int bodyLen = BitConverter.ToInt32(b, 20);                 // body length prefix at fxOffset
-        b.Length.Should().Be(24 + bodyLen);                        // header(10)+entry(10)+len(4)+body
+        var b = Write(MinimalIR(), KnifxBackend.DirectX11);
+        BitConverter.ToInt16(b, 8).Should().Be(1);              // backendCount
+        BitConverter.ToInt16(b, 10).Should().Be((short)0x0021); // DirectX11
+        BitConverter.ToInt32(b, 16).Should().Be(20);            // fxOffset = headerSize 10 + entrySize 10
+        int bodyLen = BitConverter.ToInt32(b, 20);              // body length prefix at fxOffset
+        b.Length.Should().Be(24 + bodyLen);                     // header(10)+entry(10)+len(4)+body
+    }
+
+    [Fact]
+    public void Header_GlTarget_AdvertisesWholeGlFamily()
+    {
+        // A GL target emits a 3-entry directory (OpenGL + GLES + WebGL) so one .knifx loads on
+        // KNI desktop GL, mobile GLES, AND the browser. Requesting ANY GL backend yields this.
+        foreach (var requested in new[] { KnifxBackend.OpenGL, KnifxBackend.GLES, KnifxBackend.WebGL })
+        {
+            var b = Write(MinimalIR(), requested);
+            BitConverter.ToInt16(b, 8).Should().Be(3);  // backendCount
+            Directory(b).Select(e => e.Backend).Should().Equal(
+                KnifxBackend.OpenGL, KnifxBackend.GLES, KnifxBackend.WebGL);
+        }
+    }
+
+    [Fact]
+    public void GlTarget_OpenGlHasOwnBody_GlesAndWebGlShareTheRuntimeConvertBody()
+    {
+        var dir = Directory(Write(MinimalIR(), KnifxBackend.OpenGL));
+        int openGl = dir.First(e => e.Backend == KnifxBackend.OpenGL).BodyStart;
+        int gles   = dir.First(e => e.Backend == KnifxBackend.GLES).BodyStart;
+        int webGl  = dir.First(e => e.Backend == KnifxBackend.WebGL).BodyStart;
+
+        gles.Should().Be(webGl, "GLES and WebGL share the one ShaderVersion(0,0) runtime-convert body");
+        openGl.Should().NotBe(webGl, "the desktop OpenGL body is the distinct version-directory body");
     }
 
     [Fact]
     public void Header_EffectKey_IsFnv1aOfTheBody()
     {
-        var b = Write(MinimalIR());
+        var b = Write(MinimalIR(), KnifxBackend.DirectX11);
         int bodyLen = BitConverter.ToInt32(b, 20);
         byte[] body = b[24..(24 + bodyLen)];
         BitConverter.ToInt32(b, 12).Should().Be(Fnv1a(body),
@@ -110,12 +159,12 @@ public sealed class KnifxWriterTests
     public void Body_IntegersAsFloats_FollowsBackend(KnifxBackend backend, bool expected)
     {
         var b = Write(new ShaderIR(), backend);
-        // body starts at 24; first body byte is the integersAsFloats bool.
-        (b[24] != 0).Should().Be(expected);
+        // First body byte (for the requested backend's body) is the integersAsFloats bool.
+        (b[BodyStart(b, backend)] != 0).Should().Be(expected);
     }
 
     // -------------------------------------------------------------------------------------
-    // Full structural round-trip of a representative effect
+    // Full structural round-trip of a representative effect (the OpenGL / desktop body)
     // -------------------------------------------------------------------------------------
 
     [Fact]
@@ -126,7 +175,7 @@ public sealed class KnifxWriterTests
 
         using var ms = new MemoryStream(b);
         using var r = new BinaryReader(ms, Encoding.UTF8);
-        r.BaseStream.Position = 24; // skip header(10) + directory entry(10) + body length(4)
+        r.BaseStream.Position = BodyStart(b, KnifxBackend.OpenGL); // the desktop version-directory body
 
         r.ReadBoolean().Should().BeTrue(); // integersAsFloats (OpenGL)
 
@@ -201,8 +250,6 @@ public sealed class KnifxWriterTests
         r.ReadBoolean().Should().BeFalse();     // blend state present?
         r.ReadBoolean().Should().BeFalse();     // depth-stencil present?
         r.ReadBoolean().Should().BeFalse();     // rasterizer present?
-
-        r.BaseStream.Position.Should().Be(r.BaseStream.Length, "the body decode consumed every byte");
     }
 
     [Fact]
@@ -217,7 +264,7 @@ public sealed class KnifxWriterTests
         };
         var b = Write(ir);
         using var r = new BinaryReader(new MemoryStream(b), Encoding.UTF8);
-        r.BaseStream.Position = 24;
+        r.BaseStream.Position = BodyStart(b, KnifxBackend.OpenGL);
         r.ReadBoolean();             // integersAsFloats
         ReadPacked(r);               // cbuffer count (0)
         ReadPacked(r).Should().Be(1); // shader count
@@ -225,11 +272,11 @@ public sealed class KnifxWriterTests
     }
 
     [Fact]
-    public void GlShaderCode_IsVersionedGlslDirectory_NotRawGlsl()
+    public void OpenGlBody_ShaderCode_IsVersionedGlslDirectory_NotRawGlsl()
     {
         // Regression guard for a critical KNIFX correctness gate: with a non-default
         // ShaderVersion, KNI's GL runtime parses ShaderCode as a GLSL-version directory, not
-        // raw GLSL. Emitting raw GLSL here would make KNI throw "Invalid shader bytecode".
+        // raw GLSL. The DESKTOP (OpenGL) body keeps this faithful version-directory form.
         byte[] glsl = Encoding.ASCII.GetBytes("void main(){}");
         var ir = new ShaderIR
         {
@@ -237,7 +284,7 @@ public sealed class KnifxWriterTests
         };
         var b = Write(ir, KnifxBackend.OpenGL);
 
-        byte[] code = ReadFirstShaderCode(b);
+        byte[] code = ReadShaderCode(b, KnifxBackend.OpenGL);
         code.Length.Should().BeGreaterThan(glsl.Length, "the GLSL is wrapped in a version directory");
         BitConverter.ToInt16(code, 0).Should().Be(0);   // reserved
         BitConverter.ToInt16(code, 2).Should().Be(1);   // one GLSL version entry
@@ -247,6 +294,31 @@ public sealed class KnifxWriterTests
         BitConverter.ToInt32(code, 7).Should().Be(11);   // blob offset = 4 + 7
         BitConverter.ToInt32(code, 11).Should().Be(glsl.Length); // blob length prefix
         Encoding.ASCII.GetString(code, 15, glsl.Length).Should().Be("void main(){}");
+    }
+
+    [Fact]
+    public void WebGlBody_UsesRawGlsl_WithZeroShaderVersion()
+    {
+        // The GLES/WebGL body carries ShaderVersion (0,0) + RAW GLSL so KNI's runtime treats it
+        // as legacy GLSL and converts it to the host ES dialect at load (the proven MGFX-v10
+        // path that makes KNIFX load on KNI WebGL). Contrast OpenGlBody_...VersionedGlslDirectory.
+        byte[] glsl = Encoding.ASCII.GetBytes("void main(){}");
+        var ir = new ShaderIR
+        {
+            Shaders = new[] { new CompiledShaderBlob(glsl, ShaderStage.Pixel) { ShaderModel = (3, 0) } },
+        };
+        var b = Write(ir, KnifxBackend.OpenGL);
+
+        using var r = new BinaryReader(new MemoryStream(b), Encoding.UTF8);
+        r.BaseStream.Position = BodyStart(b, KnifxBackend.WebGL);
+        r.ReadBoolean();              // integersAsFloats
+        ReadPacked(r);                // cbuffer count (0)
+        ReadPacked(r).Should().Be(1); // shader count
+        r.ReadByte();                 // stage
+        ReadPacked(r).Should().Be(0); // ShaderVersion.Major == 0 (raw-GLSL / runtime-convert path)
+        ReadPacked(r).Should().Be(0); // ShaderVersion.Minor == 0
+        int codeLen = r.ReadInt32();
+        r.ReadBytes(codeLen).Should().Equal(glsl, "the web body stores RAW GLSL, not a version directory");
     }
 
     [Fact]
@@ -260,14 +332,14 @@ public sealed class KnifxWriterTests
         };
         var b = Write(ir, KnifxBackend.DirectX11);
 
-        ReadFirstShaderCode(b).Should().Equal(dxbc);
+        ReadShaderCode(b, KnifxBackend.DirectX11).Should().Equal(dxbc);
     }
 
-    // Navigate the body to the first shader's ShaderCode bytes (0 cbuffers, >=1 shader).
-    private static byte[] ReadFirstShaderCode(byte[] knifx)
+    // Navigate a backend's body to its first shader's ShaderCode bytes (0 cbuffers, >=1 shader).
+    private static byte[] ReadShaderCode(byte[] knifx, KnifxBackend backend)
     {
         using var r = new BinaryReader(new MemoryStream(knifx), Encoding.UTF8);
-        r.BaseStream.Position = 24;   // header(10) + directory entry(10) + body length(4)
+        r.BaseStream.Position = BodyStart(knifx, backend);
         r.ReadBoolean();              // integersAsFloats
         ReadPacked(r);                // constant-buffer count
         ReadPacked(r);                // shader count
