@@ -99,12 +99,12 @@ package "5 - OUTPUT CONTAINERS" {
 
 ' ===== 6. REAL RUNTIMES =====
 package "6 - REAL RUNTIMES  (the bar: loads + renders like mgfxc / fxc)" {
-  rectangle "MonoGame **DesktopGL** (OpenGL)" as R_MGGL #D9D9D9
-  rectangle "MonoGame **DirectX** (DX11)" as R_MGDX #D9D9D9
-  rectangle "KNI **Desktop** SDL2.GL" as R_KNIGL #D9D9D9
-  rectangle "KNI **Desktop** WinForms.DX11" as R_KNIDX #D9D9D9
-  rectangle "KNI **WebGL / Blazor WASM**\nReach=WebGL1/ES1.00 | HiDef=WebGL2/ES3.00" as R_KNIWEB #D9D9D9
-  rectangle "**FNA** (FNA3D: D3D11 / Vulkan / Metal / GL)" as R_FNA #D9D9D9
+  rectangle "KNI **WebGL**\n(Blazor;\nReach+HiDef)" as R_KNIWEB #D9D9D9
+  rectangle "KNI\n**Desktop GL**\n(SDL2)" as R_KNIGL #D9D9D9
+  rectangle "KNI\n**Desktop DX11**" as R_KNIDX #D9D9D9
+  rectangle "MonoGame\n**DesktopGL**" as R_MGGL #D9D9D9
+  rectangle "MonoGame\n**DirectX 11**" as R_MGDX #D9D9D9
+  rectangle "**FNA**\n(FNA3D)" as R_FNA #D9D9D9
 }
 
 ' ===== FLOWS =====
