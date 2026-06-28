@@ -1,6 +1,10 @@
 # The Faithful Pipeline
 
-ShadowDusk runs **one faithful pipeline on every host** — desktop, CLI, and in-browser WASM. A host never swaps in a different frontend/compiler to "make a platform work": a different compiler produces different output and would silently break the "identical to `mgfxc`" promise.
+ShadowDusk runs **one faithful pipeline on every host** — desktop, CLI, in-browser WASM, and on-device Android. A host never swaps in a different frontend/compiler to "make a platform work": a different compiler produces different output and would silently break the "identical to `mgfxc`" promise.
+
+The whole picture — inputs, the shared frontend, the per-target translation layers, the container writers, and the real runtimes — at a glance:
+
+![ShadowDusk compile pipeline: inputs to the shared frontend, per-target translation layers (OpenGL/DirectX/FNA), container writers, and the real MonoGame / KNI / FNA / Android runtimes](../images/pipeline-overview.svg)
 
 ```text
 HLSL → [DXC] → SPIR-V → [SPIRV-Cross] → GLSL → [managed: reflect + MojoShader-dialect rewrite + MGFX writer] → .mgfx

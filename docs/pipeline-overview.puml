@@ -1,4 +1,4 @@
-@startuml shadowdusk-pipeline-overview
+@startuml pipeline-overview
 !pragma layout smetana
 ' ShadowDusk - full compile pipeline: inputs -> frontend -> per-target backends ->
 ' writers -> containers -> real runtimes (and the OS / delivery shapes).
