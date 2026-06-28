@@ -35,11 +35,26 @@ string[] names =
     "Pixelated", "Scanlines", "Fading", "Dots", "Dissolve",
 };
 
+// Optional regression-fixture renders: present ONLY on the SD corpus path (there is
+// no mgfxc golden for them), so a missing file is a clean skip, not a failure. The
+// required `names` above keep their strict missing-file == failure semantics.
+string[] optionalNames =
+{
+    // Issue #107 do-while -> for lowering proof (compile-corpus-sd.mjs compiles it).
+    "Issue107DoWhile",
+};
+
 var jobs = new List<(string Name, byte[]? Bytes)>();
 foreach (var name in names)
 {
     string p = Path.Combine(mgfxDir, name + ".mgfx");
     jobs.Add((name, File.Exists(p) ? File.ReadAllBytes(p) : null));
+}
+foreach (var name in optionalNames)
+{
+    string p = Path.Combine(mgfxDir, name + ".mgfx");
+    if (File.Exists(p))
+        jobs.Add((name, File.ReadAllBytes(p)));
 }
 
 Directory.CreateDirectory(outDir);

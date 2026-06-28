@@ -80,6 +80,11 @@ public sealed class KnifxWriter
         bw.Write(KnifxSignature.ToCharArray()); // 4 bytes (no length prefix; matches KNI)
         bw.Write(KnifxVersion);                 // int16 = 11
         bw.Write((short)0);                      // reserved
+        // Single-backend directory: one entry for the requested backend. A GL target emits
+        // KnifxBackend.OpenGL (0x0011), which KNI DESKTOP GL matches. KNI WebGL reports a
+        // distinct backend (KnifxBackend.WebGL = 0x0014) and finds no match here, so this
+        // KNIFX does not load on KNI WebGL — the documented refinement gap (see the long
+        // note in BuildGlShaderCode; the seamless MGFX v10 default covers KNI-web instead).
         bw.Write((short)1);                      // backendCount (single backend)
 
         const int headerSize = 10;               // 4 + 2 + 2 + 2
@@ -242,7 +247,17 @@ public sealed class KnifxWriter
     // then each blob as {int32 length, bytes}. The KNI runtime picks the entry matching its
     // GL context. ShadowDusk's GL output is MojoShader-dialect GLSL 1.10, which IS KNI's
     // OpenGL desktop entry (Major=1, Minor=1, ES=false) — the validated SDL2.GL target.
-    // (GLES/WebGL would carry converted 300es/100 entries; a documented future refinement.)
+    //
+    // KNIFX-on-KNI-WebGL refinement gap (Phase 35, empirically confirmed 2026-06-27 by the
+    // browser render harness): this OpenGL-only KNIFX loads + renders on KNI DESKTOP GL but
+    // KNI WebGL REJECTS it — "Effect profile 'DirectX_11' is not compatible with the graphics
+    // backend 'WebGL'". Closing it needs BOTH (a) an outer WebGL backend-directory entry in
+    // Write() (KnifxBackend.WebGL = 0x0014, currently only OpenGL = 0x0011 is emitted) AND
+    // (b) inner converted ES entries here (ES=true: GLSL ES 1.00 for WebGL1 / 3.00es for
+    // WebGL2), which requires a desktop-GLSL -> ES converter ShadowDusk does not yet have
+    // (the MGFX path leans on KNI's *runtime* converter instead). NOT a blocker: the seamless
+    // DEFAULT MGFX v10 already loads + renders in KNI WebGL (render-proven), so KNI-web
+    // consumers are covered by the default; KNIFX-web is an additive-target refinement.
     private static byte[] BuildGlShaderCode(KnifxBackend backend, byte[] glsl)
     {
         var entries = new List<(byte Major, byte Minor, bool Es, byte[] Code)>

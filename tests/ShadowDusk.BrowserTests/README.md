@@ -12,7 +12,7 @@ load and render in KNI WebGL, or is a `KNIF`-v11 writer needed?
 ## What it does
 
 1. **Reference (desktop):** `RefRenderer/` is a tiny DesktopGL console app that
-   renders each of the 10 precompiled OpenGL corpus `.mgfx`
+   renders each precompiled OpenGL corpus `.mgfx`
    (`samples/ShaderFiddle.Web/wwwroot/shaders/OpenGL/*.mgfx`) over the cat, using
    the **exact** draw recipe the browser uses (`ShaderFiddleGame.Draw`: fixed
    square viewport, black clear, fit-centered cat, `BlendState.Opaque` +
@@ -32,6 +32,16 @@ load and render in KNI WebGL, or is a `KNIF`-v11 writer needed?
      **labelled sample-only — not the faithful-path proof**.
 3. Writes `captures/*.png`, `diffs/*_diff.png`, and **`RESULTS.md`** (the Task-1c
    verdict).
+
+> **SD corpus = 11 shaders (since 2026-06-27).** The `--corpus=sd` / `--corpus=sd-hidef`
+> paths add an 11th shader, **`Issue107DoWhile`** (`tests/fixtures/shaders/examples/Issue107DoWhile.fx`),
+> the issue [#107](https://github.com/kaltinril/ShadowDusk/issues/107) regression: SPIRV-Cross
+> emits a one-shot `do{}while(false)` that WebGL1/GLSL ES 1.00 rejected at load. It is the
+> render-proof that `MonoGameGlslRewriter` Rule 9's do-while→for lowering **loads + renders in
+> real KNI WebGL** (Reach *and* HiDef, `maxDelta=0`). It rides the SD path only (no mgfxc golden
+> exists for it); the golden corpus stays 10. (A KNIFX-container WebGL proof was also prototyped
+> here and confirmed KNIFX does not yet load on KNI WebGL — a documented refinement, see the
+> validation matrix §7; the seamless MGFX v10 default does load in KNI WebGL.)
 
 ### Canvas capture (the de-risk)
 

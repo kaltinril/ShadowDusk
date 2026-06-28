@@ -20,7 +20,31 @@ const repoRoot = path.resolve(__dirname, '..', '..');
 export const SHADERS = [
   'Grayscale', 'Invert', 'TintShader', 'Sepia', 'Saturate',
   'Pixelated', 'Scanlines', 'Fading', 'Dots', 'Dissolve',
+  // Issue #107 WebGL render proof. SPIRV-Cross emits a one-shot `do {…} while(false)`
+  // for the nested-if early-return helper; GLSL ES 1.00 (WebGL1 / KNI Reach) does not
+  // guarantee do-while, so pre-fix this effect compiled + loaded on desktop yet FAILED
+  // TO LOAD in WebGL. MonoGameGlslRewriter Rule 9 lowers it to a WebGL1-safe bounded
+  // for-loop. Including it here renders ShadowDusk's OWN bytes in real KNI WebGL,
+  // proving the lowered GLSL loads + renders (the open rung the desktop gate can't reach).
+  'Issue107DoWhile',
 ];
+
+// Source-relative path for any corpus shader NOT at tests/fixtures/shaders/<name>.fx.
+// (The 10 original corpus shaders live at the top level; regression fixtures like the
+// #107 repro live under examples/.)
+const SOURCE_OVERRIDES = {
+  Issue107DoWhile: path.join('examples', 'Issue107DoWhile.fx'),
+};
+
+// NOTE — a KNIFX-container WebGL proof (compile ExKnifxMacro with --target-runtime
+// kni-knifx, load via the signature-sniffing KNI Effect path, assert the __KNIFX__ red
+// branch) was prototyped here and EMPIRICALLY confirmed a KNOWN, code-documented gap:
+// KNI WebGL rejects ShadowDusk's OpenGL-backend KNIFX ("Effect profile 'DirectX_11' is
+// not compatible with the graphics backend 'WebGL'") because the GL ShaderCode carries
+// only the desktop GLSL-1.10 entry, not converted GLES/WebGL ES entries (see
+// KnifxWriter.cs + plan/PHASE-35). The seamless DEFAULT MGFX v10 DOES load + render in
+// KNI WebGL (the corpus above + #107), so KNI-web consumers are covered by the default.
+// The KNIFX-web refinement is tracked in the validation matrix, not gated here.
 
 /**
  * Compile every corpus shader with ShadowDusk's own CLI into outDir.
@@ -42,7 +66,8 @@ export function compileCorpusSd(outDir) {
   let ok = 0;
   const failures = [];
   for (const name of SHADERS) {
-    const src = path.join(repoRoot, 'tests', 'fixtures', 'shaders', name + '.fx');
+    const rel = SOURCE_OVERRIDES[name] ?? (name + '.fx');
+    const src = path.join(repoRoot, 'tests', 'fixtures', 'shaders', rel);
     const dst = path.join(outDir, name + '.mgfx');
     const r = spawnSync('dotnet', [cliDll, src, dst, '/Profile:OpenGL'],
       { stdio: 'inherit', cwd: repoRoot, shell: false });

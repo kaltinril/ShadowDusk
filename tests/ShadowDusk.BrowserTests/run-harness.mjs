@@ -100,6 +100,10 @@ const PER_SHADER_PIXEL_BUDGET = {
 const SHADERS = [
   'Grayscale', 'Invert', 'TintShader', 'Sepia', 'Saturate',
   'Pixelated', 'Scanlines', 'Fading', 'Dots', 'Dissolve',
+  // Issue #107 do-while -> for lowering. Loaded ONLY on the SD corpus (it proves OUR
+  // emitted GLSL loads in WebGL1; there is no mgfxc golden for it). Deterministic
+  // grayscale, so it keeps the default 2-LSB tolerance. See compile-corpus-sd.mjs.
+  ...(IS_SD ? ['Issue107DoWhile'] : []),
 ];
 
 // Each corpus uses its own published wwwroot + references/captures/diffs/results so
@@ -310,6 +314,16 @@ async function main() {
       }
       results.mode1.push(row);
     }
+
+    // NOTE — KNIFX-container-in-KNI-WebGL is a KNOWN, code-documented refinement gap
+    // (KnifxWriter.cs: the GL ShaderCode currently carries only the desktop GLSL-1.10
+    // entry; GLES/WebGL converted 100/300es entries are deferred). The WebGL proof was
+    // run once and EMPIRICALLY confirmed it: KNI WebGL rejects the OpenGL-backend KNIFX
+    // with "Effect profile 'DirectX_11' is not compatible with the graphics backend
+    // 'WebGL'". The seamless DEFAULT (MGFX v10) DOES load + render in KNI WebGL (the
+    // corpus above + #107), so KNI-web consumers are covered by the default; KNIFX-web
+    // is an additive-target refinement, tracked in plan/PHASE-35 + the validation matrix.
+    // (Deliberately NOT wired into this all-green render gate, which would go red.)
 
     // ---- FAITHFUL mode-2 proof (Phase 23 M3 / Gate G2): compile ALL 10 corpus
     // shaders in-browser via the FAITHFUL DXC->WASM frontend, render in KNI WebGL,
