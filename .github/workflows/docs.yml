@@ -21,6 +21,7 @@ on:
       - 'api/index.md'
       - '.config/dotnet-tools.json'
       - '.github/workflows/docs.yml'
+      - 'tools/render-diagrams.sh'
       # Reused-as-source docs (single source of truth via [!INCLUDE]).
       - 'docs/**'
       - 'samples/ShaderFiddle.Web/README.md'
@@ -86,6 +87,14 @@ jobs:
 
       - name: Restore .NET local tools (pinned DocFX)
         run: dotnet tool restore
+
+      # Regenerate the docs diagrams from their .puml source so the published images are
+      # never stale. PlantUML is pinned + SHA-256-verified before it runs (ubuntu-latest
+      # ships a JRE; the .puml uses Smetana layout, so no Graphviz is needed).
+      - name: Render PlantUML diagrams (pinned + verified)
+        run: |
+          chmod +x tools/render-diagrams.sh
+          ./tools/render-diagrams.sh
 
       - name: Build documentation
         run: dotnet docfx docfx.json

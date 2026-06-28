@@ -186,6 +186,74 @@ restore_dxc_macos() {
 restore_dxc_macos
 
 # ---------------------------------------------------------------------------
+# Android natives (Phase 50): on-device DXC + SPIRV-Cross for arm64-v8a
+# ---------------------------------------------------------------------------
+# For an ON-DEVICE Android compile (Phase 50 — additive reach; build-time precompile is the
+# default and needs none of this) the OpenGL pipeline's two natives must exist for
+# android-arm64: OUR OWN libdxcompiler.so (the pinned DXC e043f4a1, an NDK port of the
+# .wasm-build cross-compile recipe) and libspirv-cross.so (NDK CMake from the pinned
+# SPIRV-Cross — Silk.NET.SPIRV.Cross.Native ships desktop RIDs only). Both are RESTORED
+# artifacts, Exists()-gated in the csprojs (ShadowDusk.HLSL packs
+# runtimes/android-arm64/native/libdxcompiler.so; ShadowDusk.GLSL packs the spirv-cross .so).
+# vkd3d is NOT needed (DirectX/FNA are desktop-only). DxcLoader/SpvcLoader resolve them by
+# bare SONAME from the APK's lib/arm64-v8a/ (Android W^X-safe).
+#
+# Pins are PLACEHOLDERS until the hosted NDK builds land (dxc-android-build.yml /
+# spirv-cross-android-build.yml). Until then these are inert (the restore_dxc_file PENDING
+# pattern) and the android RID is simply absent from the package — desktop/WASM packing is
+# unaffected. Re-running those build workflows re-pins the SHA-256s here.
+DXC_ANDROID_ARM64_SHA256="PENDING-FIRST-HOSTED-BUILD"
+SPVC_ANDROID_ARM64_SHA256="PENDING-FIRST-HOSTED-BUILD"
+
+# restore_spvc_android_file <asset-name> <dest-relative-to-tools/spirv-cross> <sha256>
+restore_spvc_android_file() {
+    local asset="$1" dest_rel="$2" sha="$3"
+    local dest="$REPO_ROOT/tools/spirv-cross/$dest_rel"
+
+    if [ "$sha" = "PENDING-FIRST-HOSTED-BUILD" ]; then
+        echo "restore.sh: NOTICE — Android SPIRV-Cross native ($dest_rel) pin is a placeholder (no hosted NDK build yet); skipping. On-device Android compile (Phase 50) stays unavailable until spirv-cross-android-build.yml lands."
+        return 0   # non-fatal by design while the pin is a placeholder
+    fi
+
+    mkdir -p "$(dirname "$dest")"
+    if [ -f "$dest" ]; then
+        local have
+        have="$(vkd3d_sha256 "$dest")"
+        if [ "$have" = "$sha" ]; then
+            echo "restore.sh: Android SPIRV-Cross native ($dest_rel) present, hash OK"
+            return 0
+        fi
+        echo "restore.sh: Android SPIRV-Cross native ($dest_rel) hash mismatch — deleting and re-downloading (had $have)"
+        rm -f "$dest"
+    fi
+
+    if ! curl -fsSLo "$dest.tmp" "$DXC_RELEASE_URL/$asset"; then
+        echo "restore.sh: WARNING — could not download $asset (offline?); on-device Android compile (Phase 50) will be unavailable." >&2
+        rm -f "$dest.tmp"
+        return 0   # non-fatal by design
+    fi
+    local got
+    got="$(vkd3d_sha256 "$dest.tmp")"
+    if [ "$got" != "$sha" ]; then
+        echo "restore.sh: ERROR — $asset SHA-256 mismatch (expected $sha, got $got); discarding." >&2
+        rm -f "$dest.tmp"
+        return 0
+    fi
+    mv -f "$dest.tmp" "$dest"
+    echo "restore.sh: Android SPIRV-Cross native ($dest_rel) downloaded, hash OK"
+}
+
+restore_android() {
+    # DXC reuses restore_dxc_file (it already handles the PENDING placeholder + tools/dxc layout).
+    restore_dxc_file "libdxcompiler.android-arm64.so" "android-arm64/libdxcompiler.so" \
+        "$DXC_ANDROID_ARM64_SHA256"
+    restore_spvc_android_file "libspirv-cross.android-arm64.so" "android-arm64/libspirv-cross.so" \
+        "$SPVC_ANDROID_ARM64_SHA256"
+}
+
+restore_android
+
+# ---------------------------------------------------------------------------
 # DXC -> WASM (faithful in-browser HLSL -> SPIR-V frontend, Phase 23 M0)
 # ---------------------------------------------------------------------------
 # The faithful in-browser frontend is the SAME DirectXShaderCompiler the desktop

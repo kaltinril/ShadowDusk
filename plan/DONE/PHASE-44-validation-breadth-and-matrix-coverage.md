@@ -1,5 +1,10 @@
 # Phase 44 — Validation breadth & matrix coverage
 
+> **📦 Archived to DONE (2026-06-28).** Every in-scope item is closed. The single remaining
+> item, the DX/FNA/KNI-DX render-in-CI gates (externally blocked on a WARP CI runner; already
+> enforced locally via `validation/run-windows-render-gates.ps1`), was **moved to
+> [Phase 51 (B4)](../PHASE-51-consolidated-remainder-backlog.md)**.
+
 **Status:** ✅ **Effectively done (2026-06-15)** — every in-scope item is closed; the only
 remaining work is **one externally-blocked** item documented below (per this phase's own
 Definition of Done, a cell may be "blocked on a real external dependency"). **A done; B (VTF)
@@ -9,13 +14,13 @@ side); C: GL render gates wired into CI 2026-06-15, DX/FNA/KNI-DX render-in-CI n
 software-driver/WARP story (external) but are now a baked-in local pre-release gate
 (`validation/run-windows-render-gates.ps1`); D (KNI v4.02 render) done across all three KNI
 paths: desktop GL 2026-06-14, DirectX 2026-06-15, WebGL Reach + HiDef refreshed 2026-06-15.**
-Owns the living [validation matrix](../docs/validation-matrix.md).
+Owns the living [validation matrix](../../docs/validation-matrix.md).
 **Track:** Validation / fidelity.
 
 ## Goal
 
 Make ShadowDusk's cross-runtime validation **programmatically enforceable and broader**, so the
-[validation matrix](../docs/validation-matrix.md) cells are backed by real tests rather than prose, and so
+[validation matrix](../../docs/validation-matrix.md) cells are backed by real tests rather than prose, and so
 the known proof gaps get closed where a runtime exists to close them. Zero product behavior change, this is
 test/validation infrastructure plus documentation.
 

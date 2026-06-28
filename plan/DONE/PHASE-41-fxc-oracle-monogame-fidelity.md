@@ -1,5 +1,11 @@
 # Phase 41 — `fxc.exe` oracle comparison & MonoGame fidelity matching
 
+> **📦 Archived to DONE (2026-06-28).** Research complete; GAP-1 (DX + FNA) and GAP-2
+> (compile + structural-match) closed. The remaining tails were **moved to
+> [Phase 51](../PHASE-51-consolidated-remainder-backlog.md)**: GAP-2's MRT render proof (A2),
+> GAP-1's faithfulness-blocked GL macro-techniques (B3), and the deferred `d3dcompiler_47`-vs-
+> `fxc` delta study (C1).
+
 **Status:** 🟢 **Research largely complete (2026-06-12).** The full-corpus structural divergence matrix (DX + GL) is built, committed, and triaged — see **Results** below and the data in [`PHASE-41-appendix/structural-divergence-matrix.md`](PHASE-41-appendix/structural-divergence-matrix.md). It found **two real product gaps** (macro-defined techniques; DeferredSprite GL COLOR semantic) and confirmed every other divergence is known-render-equivalent. The optional `d3dcompiler_47`-vs-`fxc.exe` DXBC delta study (OQ#2) is the one remaining research item, deferred as low-value given the structural fidelity result. *(Renumbered from Phase 39 → 41: while this shell sat unstarted, Phases 39–40 shipped the FNA fx_2_0 target and consumed the `fxc /T fx_2_0` oracle for it. This phase is now scoped to the **remaining DX11 + GL** full-corpus fidelity matrix.)*
 **Roadmap track:** Fidelity / completeness.
 
@@ -97,5 +103,5 @@ An honest, checked-in answer to "how close are we to genuine `fxc`/`mgfxc` acros
 
 ## Carry-forward / related
 
-- **FNA effect-format work is done**, not a carry-forward: the legacy D3D9 fx_2_0 `.fxb` path shipped in **Phases [39](DONE/PHASE-39-fna-fx2-output-target.md)–[40](DONE/PHASE-40-fna-fidelity-hardening.md)** (vkd3d-shader SM1–3 + `Fx2EffectWriter`), rung-4 validated against the `fxc /T fx_2_0` oracle in real FNA. See `docfx/guides/choosing-a-target.md` for the user-facing statement.
-- **XNB output** is deliberately **not** in ShadowDusk core — it belongs to the MGCB content-pipeline layer ([Phase 29](PHASE-29-mgcb-content-processor-plugin.md)). See the `.mgfx`-vs-`.xnb` decision in `plan.md` → *Key Decisions Already Made*.
+- **FNA effect-format work is done**, not a carry-forward: the legacy D3D9 fx_2_0 `.fxb` path shipped in **Phases [39](PHASE-39-fna-fx2-output-target.md)–[40](PHASE-40-fna-fidelity-hardening.md)** (vkd3d-shader SM1–3 + `Fx2EffectWriter`), rung-4 validated against the `fxc /T fx_2_0` oracle in real FNA. See `docfx/guides/choosing-a-target.md` for the user-facing statement.
+- **XNB output** is deliberately **not** in ShadowDusk core — it belongs to the MGCB content-pipeline layer ([Phase 29](../PHASE-29-mgcb-content-processor-plugin.md)). See the `.mgfx`-vs-`.xnb` decision in `plan.md` → *Key Decisions Already Made*.

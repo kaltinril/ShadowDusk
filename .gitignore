@@ -20,6 +20,9 @@ packages/
 # Native tool downloads (restored by tools/restore.sh / tools/restore.ps1)
 tools/dxc/
 tools/spirv-cross/
+# PlantUML jar (downloaded + SHA-256-verified by tools/render-diagrams.* to render the
+# docs diagrams; the jar is a cached, pinned artifact — not checked in).
+tools/plantuml/
 # vkd3d-shader DXBC backend native lib — restored, not checked in (the headers
 # alongside it are kept for binding reference; only the binaries are ignored).
 # `**` covers the per-arch macOS subdirs (tools/vkd3d/osx-{x64,arm64}/) too.

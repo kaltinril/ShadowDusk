@@ -191,6 +191,77 @@ function Restore-DxcMacos {
 Restore-DxcMacos
 
 # ---------------------------------------------------------------------------
+# Android natives (Phase 50): on-device DXC + SPIRV-Cross for arm64-v8a
+# ---------------------------------------------------------------------------
+# For an ON-DEVICE Android compile (Phase 50 — additive reach; build-time precompile is the
+# default and needs none of this) the OpenGL pipeline's two natives must exist for
+# android-arm64: OUR OWN libdxcompiler.so (the pinned DXC e043f4a1, an NDK port of the
+# .wasm-build cross-compile recipe) and libspirv-cross.so (NDK CMake from the pinned
+# SPIRV-Cross — Silk.NET.SPIRV.Cross.Native ships desktop RIDs only). Both are RESTORED
+# artifacts, Exists()-gated in the csprojs: ShadowDusk.HLSL packs
+# runtimes/android-arm64/native/libdxcompiler.so, ShadowDusk.GLSL packs the spirv-cross .so.
+# vkd3d is NOT needed (DirectX/FNA are desktop-only). DxcLoader/SpvcLoader resolve them by
+# bare SONAME from the APK's lib/arm64-v8a/ (Android W^X-safe).
+#
+# Pins are PLACEHOLDERS until the hosted NDK builds land (dxc-android-build.yml /
+# spirv-cross-android-build.yml). Until then these are inert (the Restore-DxcFile PENDING
+# pattern) and the android RID is simply absent from the package — desktop/WASM packing is
+# unaffected. Re-running those build workflows re-pins the SHA-256s here.
+$DxcAndroidArm64Sha256  = 'PENDING-FIRST-HOSTED-BUILD'
+$SpvcAndroidArm64Sha256 = 'PENDING-FIRST-HOSTED-BUILD'
+
+function Restore-SpvcAndroidFile([string]$Asset, [string]$DestRel, [string]$Sha256) {
+    $SpvcDir = Join-Path $RepoRoot 'tools' 'spirv-cross'
+    $Dest = Join-Path $SpvcDir $DestRel
+
+    if ($Sha256 -eq 'PENDING-FIRST-HOSTED-BUILD') {
+        Write-Host ("restore.ps1: NOTICE — Android SPIRV-Cross native ($DestRel) pin is a " +
+            "placeholder (no hosted NDK build yet); skipping. On-device Android compile " +
+            "(Phase 50) stays unavailable until spirv-cross-android-build.yml lands.")
+        return   # non-fatal by design while the pin is a placeholder
+    }
+
+    EnsureDir (Split-Path $Dest)
+    if (Test-Path $Dest) {
+        $have = (Get-FileHash -Algorithm SHA256 -Path $Dest).Hash.ToLowerInvariant()
+        if ($have -eq $Sha256) {
+            Write-Host "restore.ps1: Android SPIRV-Cross native ($DestRel) present, hash OK"
+            return
+        }
+        Write-Host "restore.ps1: Android SPIRV-Cross native ($DestRel) hash mismatch — deleting and re-downloading (had $have)"
+        Remove-Item -Force $Dest
+    }
+
+    $tmp = "$Dest.tmp"
+    try {
+        Invoke-WebRequest -Uri "$DxcReleaseUrl/$Asset" -OutFile $tmp -UseBasicParsing
+    } catch {
+        Write-Warning ("restore.ps1: could not download $Asset (offline?); on-device Android " +
+            "compile (Phase 50) will be unavailable. $_")
+        if (Test-Path $tmp) { Remove-Item -Force $tmp }
+        return   # non-fatal by design
+    }
+    $got = (Get-FileHash -Algorithm SHA256 -Path $tmp).Hash.ToLowerInvariant()
+    if ($got -ne $Sha256) {
+        Write-Warning "restore.ps1: $Asset SHA-256 mismatch (expected $Sha256, got $got); discarding."
+        Remove-Item -Force $tmp
+        return
+    }
+    Move-Item -Force $tmp $Dest
+    Write-Host "restore.ps1: Android SPIRV-Cross native ($DestRel) downloaded, hash OK"
+}
+
+function Restore-Android {
+    # DXC reuses Restore-DxcFile (it already handles the PENDING placeholder + tools/dxc layout).
+    Restore-DxcFile 'libdxcompiler.android-arm64.so' (Join-Path 'android-arm64' 'libdxcompiler.so') `
+        $DxcAndroidArm64Sha256
+    Restore-SpvcAndroidFile 'libspirv-cross.android-arm64.so' (Join-Path 'android-arm64' 'libspirv-cross.so') `
+        $SpvcAndroidArm64Sha256
+}
+
+Restore-Android
+
+# ---------------------------------------------------------------------------
 # DXC -> WASM (faithful in-browser HLSL -> SPIR-V frontend, Phase 23 M0)
 # ---------------------------------------------------------------------------
 # The faithful in-browser frontend is the SAME DirectXShaderCompiler the desktop

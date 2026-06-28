@@ -44,8 +44,7 @@
         "files": [
           "images/**"
         ],
-        "src": "docfx",
-        "dest": "images"
+        "src": "docfx"
       },
       {
         "files": [

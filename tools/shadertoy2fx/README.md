@@ -11,7 +11,7 @@ a standalone `void main()` wrapper (the common desktop-runner shape) prefers Sha
 (OpenGL/DirectX) and, within fx_2_0/SM3 limits, FNA — with zero pipeline changes and no native
 dependency.
 
-See [`plan/PHASE-46-shadertoy-to-fx-conversion-tool.md`](../../plan/PHASE-46-shadertoy-to-fx-conversion-tool.md)
+See [`plan/DONE/PHASE-46-shadertoy-to-fx-conversion-tool.md`](../../plan/DONE/PHASE-46-shadertoy-to-fx-conversion-tool.md)
 for the full design, scope, traps, and the bet being tested.
 
 ## Layout

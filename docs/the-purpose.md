@@ -60,7 +60,7 @@ MonoGame's stock content pipeline (`MGCB`) shells out to `mgfxc`, which depends 
 > MonoGame and KNI as of June 2026), so it rejects vertex texture fetch / texture arrays with `SD0210`. The
 > **DirectX** target has no such cap — it emits the SM4/5 features the GL path refuses (verified). So the
 > rejections are an OpenGL-runtime constraint, not a ShadowDusk limitation. Full state of the forks + which
-> backends are modern: [`../plan/PHASE-35-appendix/shader-pipeline-landscape-2026-06.md`](../plan/PHASE-35-appendix/shader-pipeline-landscape-2026-06.md).
+> backends are modern: [`../plan/DONE/PHASE-35-appendix/shader-pipeline-landscape-2026-06.md`](../plan/DONE/PHASE-35-appendix/shader-pipeline-landscape-2026-06.md).
 
 > **FNA's bar (Phase 39).** For FNA the reference compiler is not `mgfxc` but Microsoft's
 > `fxc.exe /T fx_2_0` (Windows-only, deprecated, FNA's blessed workflow runs it under Wine) —

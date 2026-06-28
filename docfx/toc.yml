@@ -20,6 +20,8 @@
       href: guides/mgcb-content-pipeline.md
     - name: In-Browser (KNI/Blazor WASM)
       href: guides/in-browser-kni-blazor.md
+    - name: On-Device (Android Runtime Compile)
+      href: guides/on-device-android.md
     - name: Parameters & Caveats
       href: guides/parameters-and-caveats.md
 - name: Architecture

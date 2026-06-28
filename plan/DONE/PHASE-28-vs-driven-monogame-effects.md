@@ -32,7 +32,7 @@ runtime cannot link. This phase closes that gap and confirms parity on DX.
 
 **Blocks:** nothing structurally, but it is a prerequisite for any sample/game whose effect
 has a custom VS (e.g. a transform + lit/skinned vertex path), and a prerequisite for the
-"VS-driven" backlog item to ever leave [Phase 100](../PHASE-100-deferred-backlog.md).
+"VS-driven" backlog item to ever leave [Phase 100](PHASE-100-deferred-backlog.md).
 
 > The product is the in-memory `IShaderCompiler` library (see `CLAUDE.md` → THE PURPOSE). A
 > compiler that can only handle PS-only post-process effects is materially incomplete; a custom
@@ -152,7 +152,7 @@ the `MonoGameGlslRewriter` emits the symmetric `vs_uniforms_vec4` block, the VS-
 attribute/varying I/O contract, and a complete matrix-uniform expansion; the `monoGameGl` gate no
 longer excludes VS-bearing passes; a VS-driven `.fx` renders pixel-equivalent to `mgfxc` in **both**
 real DesktopGL and real WindowsDX; and the PS-only corpus + Phase-16 anchors are unregressed. The
-"VS-driven MonoGame effects" item is removed from [Phase 100](../PHASE-100-deferred-backlog.md) and
+"VS-driven MonoGame effects" item is removed from [Phase 100](PHASE-100-deferred-backlog.md) and
 `docs/glsl-uniform-naming.md` is updated to as-built.
 
 ---

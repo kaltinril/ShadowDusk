@@ -12,7 +12,7 @@ The faithful path also surfaced + fixed a real reach bug: .NET 8 WASM has no BCL
 
 ---
 
-**Original framing (kept for history).** Status: Active (un-deferred 2026-05-31). Promotes the "Native WASM modules" tail out of [Phase 100](../PHASE-100-deferred-backlog.md) into a real, sequenced phase because [Phase 22](PHASE-22-wasm-shader-fiddle-sample.md)'s showcase needs it — the deferral was blocking the *reach* promise it's meant to prove.
+**Original framing (kept for history).** Status: Active (un-deferred 2026-05-31). Promotes the "Native WASM modules" tail out of [Phase 100](PHASE-100-deferred-backlog.md) into a real, sequenced phase because [Phase 22](PHASE-22-wasm-shader-fiddle-sample.md)'s showcase needs it — the deferral was blocking the *reach* promise it's meant to prove.
 
 **Depends on:** Phase 19 (the managed engine: injectable backend seams, the pure-managed `SpirvReflector`, the DXIL-free GL reflection path, `WasmShaderCompiler` + the `[JSImport]` contract), Phase 22 (the consumer/sample app), **Phase 24 (the headless-browser render harness — Gate 3's proof tool, which must come up *before* the faithful frontend lands so KNI-load risk is retired first)**, Phase 25 (untrusted web input), Phase 30 (CI wiring of the Phase 24 harness). Requires the **emscripten 3.1.34** toolchain (the exact version the .NET 8 WASM runtime is built with) and a real browser for the run-validation tail.
 

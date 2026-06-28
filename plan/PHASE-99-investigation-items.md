@@ -11,7 +11,7 @@ core surgery that the byte-identity guard alone would not catch every regression
 These are **post-1.0, non-blocking.** Each item starts with an INVESTIGATION step that must
 conclude before any code changes; the conclusion decides whether (and how) to implement.
 
-> Distinct from [Phase 100](PHASE-100-deferred-backlog.md), which is the *retired* historical
+> Distinct from [Phase 100](DONE/PHASE-100-deferred-backlog.md), which is the *retired* historical
 > deferral bucket (closed; do not add there). Phase 99 is the live home for new
 > investigation-grade backlog items.
 

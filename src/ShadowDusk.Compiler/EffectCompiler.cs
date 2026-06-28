@@ -63,14 +63,20 @@ public sealed class EffectCompiler : IShaderCompiler
     {
         _dxcCompilerFactory    = dxcCompilerFactory;
         _glslTranspilerFactory = glslTranspilerFactory;
-        // Default reflector is null → the OpenGL path reflects from the native
-        // DXIL oracle (cross-platform: the reflection runs inside dxcompiler,
-        // which Vortice.Dxc bundles per-RID). The WASM/browser path injects
-        // SpirvReflector explicitly (WasmShaderCompiler). Leaving this null is
-        // load-bearing: SpirvReflectionByteIdentityTests uses `new EffectCompiler()`
-        // as its DXIL baseline arm, so defaulting it to SpirvReflector would
-        // silently make that keystone DXIL≡SPIR-V test compare SPIR-V to itself.
-        _reflectorFactory      = reflectorFactory;
+        // Default reflector is null on desktop → the OpenGL path reflects from the native
+        // DXIL oracle (cross-platform: the reflection runs inside dxcompiler, which
+        // Vortice.Dxc bundles per-RID). The WASM/browser path injects SpirvReflector
+        // explicitly (WasmShaderCompiler). On ANDROID (Phase 50) the DXIL-oracle reflection
+        // throws (DXC's CreateReflection -> ID3D12ShaderReflection is not available on the
+        // .NET-for-Android runtime), so default to the pure-managed SpirvReflector there —
+        // the SAME reflector WASM uses, proven byte-identical to the DXIL path
+        // (SpirvReflectionByteIdentityTests). This keeps `new EffectCompiler()` SEAMLESS on
+        // Android (no flag, no injection). Desktop is UNCHANGED: OperatingSystem.IsAndroid()
+        // is false on Win/Linux/macOS, so the default stays the DXIL oracle — load-bearing
+        // because SpirvReflectionByteIdentityTests uses `new EffectCompiler()` as its DXIL
+        // baseline arm (defaulting it to SpirvReflector there would compare SPIR-V to itself).
+        _reflectorFactory      = reflectorFactory
+            ?? (OperatingSystem.IsAndroid() ? () => new SpirvReflector() : null);
         _dxbcCompilerFactory   = dxbcCompilerFactory;
     }
 

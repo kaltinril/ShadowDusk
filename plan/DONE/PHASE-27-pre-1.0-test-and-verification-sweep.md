@@ -13,7 +13,7 @@ e2e + attribution fixed, three explicit recorded decisions). Suite green on all 
 OSes for both PRs (integration matrix included). The **one open fidelity item** — the
 global-param default-VALUE gap (DXC drops cbuffer-global initializers; `fxc`/`mgfxc`
 captures them) — is **explicitly re-deferred to
-[Phase 41](../PHASE-41-fxc-oracle-monogame-fidelity.md)**, whose scope already names it; it
+[Phase 41](PHASE-41-fxc-oracle-monogame-fidelity.md)**, whose scope already names it; it
 is production-fidelity work needing the real-`mgfxc` oracle, not test coverage. Was:
 Planned (written 2026-06-03). A consolidation pass that closes the deferred
 unit/integration test-coverage and manual pack/CLI verification items parked across
@@ -43,7 +43,7 @@ deliberately does *not* duplicate).
 
 ## Overview
 
-[Phase 100](../PHASE-100-deferred-backlog.md) is the single deferred bucket. Items shouldn't
+[Phase 100](PHASE-100-deferred-backlog.md) is the single deferred bucket. Items shouldn't
 live there forever; the test/verification subset of it is being **promoted into this real
 plan** so it gets done (or gets an explicit, recorded re-deferral) before 1.0. Verification
 of the current tree (2026-06-03) found most of the referenced test *files* already exist
@@ -201,7 +201,7 @@ Verified against the tree on 2026-06-03 (cite real files):
       *(Done 2026-06-12 on win-x64: full suite 958/958 green (no skips), Phase 6 items
       0c/25/29/30 ticked, `/platform-check` over the Phase-6 surface + new tests: 0 BREAK,
       0 WARN.)*
-- [x] **RE-DEFERRED → [Phase 41](../PHASE-41-fxc-oracle-monogame-fidelity.md) (2026-06-12,
+- [x] **RE-DEFERRED → [Phase 41](PHASE-41-fxc-oracle-monogame-fidelity.md) (2026-06-12,
       phase closer):** needs a Windows box with a real `mgfxc` install to diff the
       reflected `DefaultValue`, and any fix is a production change (bake `$Globals`
       defaults) — production-fidelity work, exactly Phase 41's fxc-oracle scope (its
@@ -395,7 +395,7 @@ deferred these verification items here — they are exactly this phase's shape:
 - [x] No coverage gap that matters for the drop-in-`mgfxc` promise (diagnostics format,
       reflection parameter match, CLI↔in-process parity) is left silently open.
       *(2026-06-12: the one known fidelity gap — global-param default VALUES — is loudly
-      recorded and re-deferred to [Phase 41](../PHASE-41-fxc-oracle-monogame-fidelity.md);
+      recorded and re-deferred to [Phase 41](PHASE-41-fxc-oracle-monogame-fidelity.md);
       everything else is covered by passing tests.)*
 
 ## Definition of Done
