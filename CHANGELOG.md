@@ -18,6 +18,58 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+## [0.10.0] - 2026-06-28
+
+Fidelity fixes driven by real shipping shaders from the Gum / Apos.Shapes ecosystem (requested by
+vchelaru, Gum's author): several real-world effects that previously failed now compile and render on
+the targets they ship for, across FNA, OpenGL, and KNI WebGL. Every change is additive: the seamless
+MGFX v10 default and all existing OpenGL / DirectX / FNA output stay byte-identical (pinned by the
+cross-host byte-identity gate), and the new behavior only enables previously-failing shaders.
+
+### Added
+
+- Real, MIT-licensed **Apos.Shapes and Gum** `.fx` shaders vendored under
+  `tests/fixtures/shaders/third-party/` as **compile-level** regression inputs (Phase 49), each
+  classified by an actual GL / DX / FNA compile probe. These guard the compiler against the exact
+  shaders the Gum / Apos.Shapes ecosystem ships; provenance and per-shader target classification are
+  in `docs/test-shader-corpus.md`.
+
+### Changed
+
+- **`__KNIFX__` is now defined for a KNIFX-targeted compile** (`--target-runtime kni-knifx` /
+  `CapabilityProfile.KniGL_4_02`), matching KNI's own effect compiler, so a shader that branches on
+  `#ifdef __KNIFX__` (e.g. Apos.Shapes selecting its SM4 profile) takes the correct branch. The
+  seamless universal MGFX default deliberately does **not** define it, so default output is unchanged.
+
+### Fixed
+
+- **FNA: macro-defined techniques are now recovered** (Phase 41 GAP-1). An effect whose techniques
+  come only from a `TECHNIQUE(...)` `#define` (the stock-MonoGame / Gum idiom) previously failed
+  `SD0010` on FNA because techniques were counted before macro expansion. The zero-technique recovery
+  (preprocess then re-parse) now extends to the FNA path, so **7 MonoGame stock effects compile on
+  FNA** (SpriteEffect, AlphaTestEffect, DualTextureEffect, and the Penumbra hull/light/shadow/texture
+  effects). Effects that still fail now do so for honest shader-model reasons (register pressure /
+  sub-SM2 profiles), not technique-blindness. Only effects that returned zero bytes before are
+  affected, so existing FNA output is byte-identical.
+- **OpenGL: multi-render-target pixel shaders now compile** (Phase 41 GAP-2). A deferred-rendering
+  effect whose pixel shader returns a struct with `COLOR0` / `COLOR1` output semantics (e.g. Nez
+  `DeferredSprite.fx`) failed on the GL target with `Semantic COLOR is invalid`. A GL-only struct
+  output `COLOR` to `SV_Target` rewrite (applied only to the OpenGL compile, so DirectX bytes stay
+  identical) fixes it, and true multi-target slot 0 now emits `gl_FragData[0]` instead of
+  `gl_FragColor` so writing one target no longer corrupts the others.
+- **KNI WebGL: a one-shot `do { ... } while(false)` loop no longer breaks loading**
+  ([#107](https://github.com/kaltinril/ShadowDusk/issues/107)). A helper with a nested `if` that early
+  returns made SPIRV-Cross emit a `do/while(false)`, which compiles and loads on desktop GL but is not
+  guaranteed by GLSL ES 1.00, so the effect **failed to load in KNI WebGL / Reach**. The GL rewriter
+  now lowers it to an equivalent WebGL-safe bounded `for` loop (pixels unchanged); render-proven in
+  real KNI WebGL on both Reach (WebGL1) and HiDef (WebGL2). DirectX / FNA bytecode is unchanged.
+- **KNIFX now loads and renders on KNI WebGL and mobile GLES** (the opt-in KNIFX container). A
+  KNIFX-targeted compile previously advertised only the desktop OpenGL backend, so KNI WebGL rejected
+  it ("profile is not compatible with the graphics backend 'WebGL'"). The KNIFX writer now emits a
+  multi-backend GL-family directory (desktop OpenGL keeps its faithful body byte-for-byte; GLES and
+  WebGL share a body KNI's runtime converts to GL ES at load, the same proven path that already loads
+  MGFX v10 in KNI WebGL). One `.knifx` now loads on every KNI GL host; desktop KNI render is unchanged.
+
 ## [0.9.0] - 2026-06-22
 
 Robustness pass on the **ShaderToy GLSL -> `.fx` converter** (`ShadowDusk.ShaderToy`): several real
@@ -569,7 +621,8 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.6.0...v0.7.0
