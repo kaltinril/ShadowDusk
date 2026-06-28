@@ -85,7 +85,7 @@ package "3 - TRANSLATION LAYERS  (target selects the branch)" {
 ' ===== 4. WRITERS =====
 package "4 - WRITERS  (serialize ShaderIR + blobs into a container)" {
   rectangle "**MgfxWriter**\nMGFX v10 (default) / v11" as MGW #E7DFC9
-  rectangle "**KnifxWriter**\nKNIFX v11 (KNIF)\nmulti-backend dir + GL version dir" as KNW #E7DFC9
+  rectangle "**KnifxWriter**\nKNIFX v11 (KNIF)\nGL-family dir: OpenGL version-dir body\n+ GLES/WebGL raw (0,0) body" as KNW #E7DFC9
   rectangle "**Fx2EffectWriter**\nD3D9 fx_2_0 (.fxb)" as FXW #E7DFC9
 }
 
@@ -140,7 +140,7 @@ O_MGFX11 --> R_MGGL
 O_MGFX11 --> R_MGDX
 O_KNIFX --> R_KNIGL
 O_KNIFX --> R_KNIDX
-O_KNIFX ..> R_KNIWEB #line:red : "GAP (KNIFX web):\nneeds BUILD-TIME ES in\nthe GL version directory"
+O_KNIFX --> R_KNIWEB : "GL-family directory;\nKNI runtime-converts the\n(0,0) raw GL body -> ES"
 O_FXB --> R_FNA
 
 note as N1
@@ -161,10 +161,10 @@ legend right
   |          |          |
   |= line |= what the ARROW means |
   | solid | supported + proven path |
-  | dotted | parked / external-blocked / known gap |
-  |<color:#c0392b>**red**</color> | the KNIFX-on-KNI-WebGL gap |
+  | dotted | parked / external-blocked |
   Default output = **.mgfx v10** (loads on MonoGame + KNI desktop + KNI WebGL).
   v11 / KNIFX / FNA are **additive, auto-selected from the target** - never a flag.
+  KNIFX now loads on KNI desktop GL + mobile GLES + WebGL (one GL-family .knifx).
 endlegend
 
 @enduml
