@@ -18,11 +18,30 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Phase 50: SpvcLoaderTests asserts the pure RID map (incl. the android-* RIDs). -->
+    <InternalsVisibleTo Include="ShadowDusk.GLSL.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\ShadowDusk.Core\ShadowDusk.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Silk.NET.SPIRV.Cross.Native" />
+  </ItemGroup>
+
+  <!-- Android SPIRV-Cross native (Phase 50): Silk.NET.SPIRV.Cross.Native ships only desktop
+       RIDs, so for an on-device Android compile we bundle OUR OWN libspirv-cross.so built for
+       arm64-v8a from the pinned SPIRV-Cross source (NDK CMake). A RESTORED artifact
+       (tools/restore.*), Exists()-gated exactly like the vkd3d/DXC entries in
+       ShadowDusk.HLSL.csproj — a clean build with no restored binary stays green and the
+       entry is simply inert until the hosted NDK build lands. Packed under
+       runtimes/android-arm64/native so .NET-for-Android places it in the APK's lib/arm64-v8a/. -->
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)..\..\tools\spirv-cross\android-arm64\libspirv-cross.so"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\..\tools\spirv-cross\android-arm64\libspirv-cross.so')"
+          CopyToOutputDirectory="PreserveNewest" Link="android-arm64\libspirv-cross.so"
+          Pack="true" PackagePath="runtimes/android-arm64/native/libspirv-cross.so" />
   </ItemGroup>
 
   <ItemGroup>

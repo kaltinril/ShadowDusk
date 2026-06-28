@@ -113,4 +113,19 @@
           CopyToOutputDirectory="PreserveNewest" Link="osx-arm64\libdxcompiler.dylib"
           Pack="true" PackagePath="runtimes/osx-arm64/native/libdxcompiler.dylib" />
   </ItemGroup>
+
+  <!-- Android DXC native (Phase 50): Vortice.Dxc has no android RID, so for an on-device
+       Android compile we bundle OUR OWN libdxcompiler.so built for arm64-v8a from the exact
+       pinned DXC commit (e043f4a1 — the same compiler the macOS/WASM builds use, never a
+       substitute), via the NDK port of the .wasm-build cross-compile recipe. A RESTORED
+       artifact (tools/restore.*), Exists()-gated like the macOS/vkd3d entries above: inert
+       until the hosted NDK build lands, then packed under runtimes/android-arm64/native so
+       .NET-for-Android places it in the APK's lib/arm64-v8a/. DxcLoader resolves it by bare
+       SONAME from there (Android W^X-safe). -->
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)..\..\tools\dxc\android-arm64\libdxcompiler.so"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\..\tools\dxc\android-arm64\libdxcompiler.so')"
+          CopyToOutputDirectory="PreserveNewest" Link="android-arm64\libdxcompiler.so"
+          Pack="true" PackagePath="runtimes/android-arm64/native/libdxcompiler.so" />
+  </ItemGroup>
 </Project>

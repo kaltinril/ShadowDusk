@@ -98,4 +98,14 @@ public sealed class DxcLoaderTests
         DxcLoader.DxcLibraryName.Should().Be("dxcompiler.dll");
         DxcLoader.MacLibFileName.Should().Be("libdxcompiler.dylib");
     }
+
+    [Fact]
+    public void AndroidLibName_IsTheBareSonameTheApkLinkerResolves()
+    {
+        // Phase 50: on Android the resolver bare-loads this SONAME from the APK's
+        // lib/<abi>/ dir (never the desktop path-probing). It must match the file name
+        // tools/restore.* places and ShadowDusk.HLSL.csproj packs under
+        // runtimes/android-arm64/native.
+        DxcLoader.AndroidLibFileName.Should().Be("libdxcompiler.so");
+    }
 }

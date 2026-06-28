@@ -1,0 +1,95 @@
+# .github/workflows/spirv-cross-android-build.yml
+# Phase 50 — build the SPIRV-Cross C shared library for Android arm64-v8a, the easy half
+# of the on-device Android compile's two natives (the other is libdxcompiler.so, built by
+# dxc-android-build.yml). SPIRV-Cross is a small, portable C++ library and the Khronos
+# README lists Android as a tested platform, so this is a stock NDK CMake cross-compile.
+#
+# Silk.NET.SPIRV.Cross.Native ships DESKTOP RIDs only, so for Android we build OUR OWN
+# libspirv-cross.so. The artifact is uploaded to a FIXED GitHub Release tag (the
+# native-vkd3d/native-dxc pattern); its SHA-256 is then pinned into tools/restore.{sh,ps1}
+# (the SPVC_ANDROID_ARM64_SHA256 placeholder). Re-running this workflow does NOT republish —
+# publishing to the release tag is a deliberate manual step.
+#
+# BYTE-IDENTITY (the load-bearing constraint): SPIRV_CROSS_REF MUST be the exact SPIRV-Cross
+# revision the desktop Silk.NET.SPIRV.Cross.Native 2.23.0 package bundles, so the Android
+# GLSL is byte-identical to the desktop GLSL — that identity is what transfers the Phase-17
+# render proof to Android (the "no substitute compiler" rule). The Android CrossHostByteIdentity
+# gate is the proof it matches; the pin-guard below refuses to build the placeholder.
+name: Build SPIRV-Cross Android native (arm64-v8a)
+
+on:
+  workflow_dispatch:
+
+env:
+  SPIRV_CROSS_REPO: 'https://github.com/KhronosGroup/SPIRV-Cross.git'
+  # A commit SHA, never a moving branch. Confirm it equals what Silk.NET.SPIRV.Cross.Native
+  # 2.23.0 bundles before the first hosted build (see the byte-identity note above).
+  SPIRV_CROSS_REF: 'TBD-MATCH-SILK-NET-2.23.0'
+  ANDROID_ABI: 'arm64-v8a'
+  ANDROID_API: '21'   # = MyFiddle minSdk / GLES 2.0 baseline (Phase 50 §6.1)
+
+jobs:
+  build:
+    name: Build libspirv-cross.so (arm64-v8a, NDK)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Guard the byte-identity pin
+        run: |
+          if [ "$SPIRV_CROSS_REF" = "TBD-MATCH-SILK-NET-2.23.0" ]; then
+            echo "::error::SPIRV_CROSS_REF is still the placeholder. Pin the exact SPIRV-Cross"
+            echo "::error::commit that Silk.NET.SPIRV.Cross.Native 2.23.0 bundles before building"
+            echo "::error::(byte-identity with desktop GLSL is required for the render proof)."
+            exit 1
+          fi
+
+      - name: Clone SPIRV-Cross at the pinned revision
+        run: |
+          git init spirv-cross
+          cd spirv-cross
+          git remote add origin "$SPIRV_CROSS_REPO"
+          git fetch --depth 1 origin "$SPIRV_CROSS_REF"
+          git checkout FETCH_HEAD
+
+      - name: Configure (NDK toolchain, shared C API)
+        run: |
+          NDK="${ANDROID_NDK_LATEST_HOME:?NDK not found on runner}"
+          cmake -S spirv-cross -B build -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI="$ANDROID_ABI" \
+            -DANDROID_PLATFORM="android-$ANDROID_API" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSPIRV_CROSS_SHARED=ON \
+            -DSPIRV_CROSS_CLI=OFF \
+            -DSPIRV_CROSS_ENABLE_TESTS=OFF
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Verify it is an aarch64 shared object exporting the C API
+        run: |
+          so=$(find build -name 'libspirv-cross-c-shared.so*' -type f | head -1)
+          test -n "$so" || { echo "::error::built .so not found"; exit 1; }
+          file "$so"
+          readelf -h "$so" | grep -q 'AArch64' || { echo "::error::not AArch64"; exit 1; }
+          # The spvc_* C entry points ShadowDusk P/Invokes (SpvcNative) must be exported.
+          readelf -W --dyn-syms "$so" | grep -q 'spvc_context_create' \
+            || { echo "::error::spvc_* C API symbols missing"; exit 1; }
+
+      - name: "Stage artifact (named for the loader/csproj: libspirv-cross.so)"
+        run: |
+          mkdir -p out
+          so=$(find build -name 'libspirv-cross-c-shared.so*' -type f | head -1)
+          # ShadowDusk's DllImport("spirv-cross") + the SpvcLoader bare-name fallback both
+          # resolve "libspirv-cross.so" from the APK lib/<abi>/, so ship under exactly that
+          # name (ShadowDusk.GLSL.csproj packs it to runtimes/android-arm64/native).
+          cp "$so" out/libspirv-cross.so
+          sha256sum out/libspirv-cross.so | tee out/libspirv-cross.so.sha256
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: spirv-cross-android-arm64
+          path: out/*
+          if-no-files-found: error
+          retention-days: 30

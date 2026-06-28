@@ -40,8 +40,11 @@ namespace ShadowDusk.HLSL.Dxc;
 ///      framework-dependent consumers,
 ///   4. a bare load by file name (single-file publish extraction dir / OS paths).
 ///
-/// Only active on macOS — <see cref="Register"/> is a no-op on Windows/Linux, where
-/// the Vortice-shipped natives already resolve; zero behavior change there.
+/// Active on macOS and, since Phase 50, Android (Vortice ships no android RID either, so
+/// we load our own <c>libdxcompiler.so</c> by bare SONAME from the APK's per-ABI
+/// <c>lib/&lt;abi&gt;/</c> dir — never the desktop path-probing, which would violate
+/// Android W^X). <see cref="Register"/> is a no-op on Windows/Linux, where the
+/// Vortice-shipped natives already resolve; zero behavior change there.
 /// </summary>
 internal static class DxcLoader
 {
@@ -50,6 +53,14 @@ internal static class DxcLoader
 
     /// <summary>The file name our macOS DXC build ships under (both arches).</summary>
     internal const string MacLibFileName = "libdxcompiler.dylib";
+
+    /// <summary>
+    /// The file name our Android DXC build ships under (Phase 50). It rides in the APK's
+    /// per-ABI <c>lib/&lt;abi&gt;/</c> dir and the Android dynamic linker resolves it by this
+    /// SONAME — a bare-name load, never the desktop path-probing (which would violate
+    /// Android W^X and target the sandboxed app-data dir, not the read-only APK).
+    /// </summary>
+    internal const string AndroidLibFileName = "libdxcompiler.so";
 
     private static readonly object RegisterGate = new();
     private static volatile bool _registered;
@@ -65,7 +76,10 @@ internal static class DxcLoader
     /// </summary>
     public static void Register()
     {
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.OSX)) return;
+        // Active on macOS (Vortice ships no Mac native) and Android (Phase 50: Vortice has
+        // no android RID, so we ship our own libdxcompiler.so). A no-op on Windows/Linux,
+        // where the Vortice-bundled natives already resolve — zero behavior change there.
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.OSX) && !OperatingSystem.IsAndroid()) return;
         if (_registered) return;
         lock (RegisterGate)
         {
@@ -85,6 +99,14 @@ internal static class DxcLoader
         if (libraryName != DxcLibraryName) return IntPtr.Zero;
 
         IntPtr handle;
+
+        // Android (Phase 50): the native rides in the APK's per-ABI lib/<abi>/ dir and the
+        // Android dynamic linker resolves it by SONAME — a bare-name load, NOT the desktop
+        // path-probing below (Android W^X forbids loading executable code from a writable
+        // dir, and AppContext.BaseDirectory is the sandboxed app-data dir, not the APK).
+        if (OperatingSystem.IsAndroid())
+            return NativeLibrary.TryLoad(AndroidLibFileName, out handle) ? handle : IntPtr.Zero;
+
         // ProcessArchitecture, NOT OSArchitecture: the dylib must match the PROCESS.
         // Under Rosetta 2 (an osx-x64 binary on an arm64 Mac — GitHub's macOS runners
         // do exactly this) OSArchitecture reports Arm64, which made the resolver probe
