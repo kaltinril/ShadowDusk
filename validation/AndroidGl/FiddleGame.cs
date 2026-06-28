@@ -75,7 +75,10 @@ technique SpriteDrawing
         {
             Log.Info(Tag, "On-device compile: ShadowDusk EffectCompiler.CompileAsync(OpenGL) ...");
 
-            // The product call: HLSL text -> .mgfx bytes, fully in memory, on the device.
+            // The product call, SEAMLESS: plain new EffectCompiler(), no injection, no flag.
+            // On Android the compiler auto-selects the pure-managed SpirvReflector (the native
+            // DXIL-oracle reflection is unavailable on .NET-for-Android); on desktop it keeps
+            // the DXIL oracle. Either way the .mgfx is byte-identical.
             var result = new EffectCompiler()
                 .CompileAsync(UserHlsl, new CompilerOptions { Target = PlatformTarget.OpenGL })
                 .GetAwaiter().GetResult();

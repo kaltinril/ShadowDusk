@@ -1,10 +1,13 @@
 # Phase 50 — Android Runtime Target Support (compile `.fx` on-device)
 
-**Status:** Planned (Track: *OS / delivery-shape breadth, post-1.0*). Today ShadowDusk's
-self-contained library runs on **Windows, Linux, and macOS** (and the browser via WASM).
-This phase evaluates and plans **adding Android to that OS list** so the *same* faithful
-pipeline can compile `.fx` → `.mgfx` **at runtime, on an Android device**, inside a
-MonoGame or KNI game. Like [Phase 31](PHASE-31-metal-msl-backend.md) (Metal), the *easy*
+**Status:** 🟢 **On-device runtime compile PROVEN (2026-06-28)** — a real `pixel_7` API-34
+emulator compiled an HLSL string to a `.mgfx` and loaded it into a live MonoGame `Effect`
+entirely on the device, via seamless plain `new EffectCompiler()` (see §6.2). Productionization
+follow-ups (host the natives + flip the restore pins, CI workflow, on-device pixel-vs-`mgfxc`
+render diff) are open. (Track: *OS / delivery-shape breadth, post-1.0*.) Today ShadowDusk's
+self-contained library runs on **Windows, Linux, and macOS** (and the browser via WASM); this
+phase **adds Android to that OS list** so the *same* faithful pipeline compiles `.fx` → `.mgfx`
+**at runtime, on an Android device**, inside a MonoGame or KNI game. Like [Phase 31](PHASE-31-metal-msl-backend.md) (Metal), the *easy*
 half is the managed code; the *hard* half is producing the native binaries for the new
 host and defining how the result is render-validated against the reference compiler.
 
@@ -273,53 +276,62 @@ trimmed copy of this template (out-of-band, **not** in `ShadowDusk.slnx`, like e
 
 ---
 
-## 6.2 On-device live compile — the verified status (2026-06-28 experiment)
+## 6.2 On-device live compile — PROVEN WORKING (2026-06-28)
 
 The real product ask on Android is **shape 2 done live**: a user types HLSL into the app,
-ShadowDusk compiles it **in memory, on the device**, and the result renders immediately (an
-on-device shader fiddle). A hands-on experiment on a real dev machine (Android SDK + a booted
-`pixel_7` API-34 emulator) plus an adversarial 4-agent web verification pinned down exactly
-where this stands. **Bottom line: the managed half is ready; on-device live compile is blocked
-solely on producing the `android-arm64` DXC native — a code/native gap, not a wiring gap.**
+ShadowDusk compiles it **in memory, on the device**, and the result loads as a live `Effect` (an
+on-device shader fiddle). **This was achieved and proven end-to-end on a real `pixel_7` API-34
+emulator on 2026-06-28.** The `validation/AndroidGl` MonoGame app, calling plain
+`new EffectCompiler().CompileAsync(hlslText, OpenGL)`, logged on the device:
 
-**Proven working (host + managed half):**
-- ShadowDusk compiled `Pixelated.fx` → a valid **457-byte `MGFX` v10** on the host (the same
-  artifact MonoGame loads).
-- The integration shape is trivial and wired: a `RawContentManager`-style **`Effect` arm** that
-  turns `.mgfx` bytes into `new Effect(gd, bytes)` — the exact final step an on-device compile
-  feeds. (Demonstrated against the MyFiddle template; the app builds once the compile SDK is
-  pinned to an installed API level.)
-- The emulator boots; the loaders added this phase resolve the Android natives by bare SONAME
-  from the APK (unit-tested; full `dotnet test ShadowDusk.slnx` green).
-- `EffectCompiler.Compile(string)` is sync + in-memory + no child process → runs on
-  .NET-for-Android. **Nothing in C# blocks the live fiddle.**
+```
+SHADOWDUSK: On-device compile: ShadowDusk EffectCompiler.CompileAsync(OpenGL) ...
+SHADOWDUSK: ON-DEVICE COMPILE OK: 410 byte .mgfx -> Effect technique 'SpriteDrawing'
+```
 
-**The blocker, verified (4 agents, all high-confidence, none refuted, 2026-06-28):** on-device
-live compile is gated entirely on the two `android-arm64` natives, and one is a wall.
+i.e. an HLSL **string** → DXC → SPIR-V → SPIRV-Cross → GLSL → `.mgfx` (410 bytes), **entirely on
+the phone**, loaded into a live MonoGame `Effect` (green-screen success). Seamless: **no flag, no
+injection** — plain `new EffectCompiler()`.
 
-| Native | Verified finding |
-|---|---|
-| **SPIRV-Cross** | **Easy.** Upstream README lists Android as a tested platform; stock NDK CMake cross-compile; a vcpkg `arm64-android` triplet and a Conan recipe already exist. Not a blocker. |
-| **DXC** | **The wall.** *No* prebuilt `libdxcompiler.so` for android-arm64 exists **anywhere** — Microsoft DXC releases (v1.9.2602.24), the `Microsoft.Direct3D.DXC` NuGet, vcpkg `directx-dxc`, the NDK (ships Shaderc/glslc, not DXC), the LunarG Vulkan SDK, and the `DirectXShaderCompiler.NET`/`hassle-rs` wrappers are **all Windows/Linux/macOS only**. DXC is an LLVM/Clang fork, so an Android build is a heavy from-source cross-compile (host tablegen + a large `.so`) with **no turnkey recipe** — even the "easy DXC build" projects ship only desktop triples (no `.android` branch). |
+**How the wall (DXC for Android) was cleared.** DXC has no prebuilt for Android (verified: MS
+releases / NuGet / vcpkg / NDK / LunarG / wrappers are all desktop-only), so it was
+cross-compiled from the pinned source. The **existing `.wasm-build` DXC recipe ported almost
+directly to the NDK**: the host tablegen tools (`llvm-tblgen`/`clang-tblgen`) and the two
+`CMAKE_CROSSCOMPILING` patches it already built are reused verbatim; only Stage 1 swaps
+emscripten for the NDK `android.toolchain.cmake`. The one new fix is passing
+`LLVM_INFERRED_HOST_TRIPLE` to bypass DXC's `config.guess` (a shell script that can't run on
+Windows). Recipe: **`.wasm-build/build-dxc-android.ps1 -Abi arm64-v8a|x86_64`**. Output: a real
+`ELF aarch64`/`x86-64` Android `libdxcompiler.so` (~33 MB stripped, `DxcCreateInstance`
+exported). **SPIRV-Cross** is a stock NDK CMake build (~38 MB). Both ABIs were built (arm64-v8a
+for real devices; x86_64 for the emulator).
 
-**No faithful shortcut.** Substituting a non-DXC HLSL→SPIR-V frontend (glslang, Slang, naga,
-tint) is rejected by THE PURPOSE: they emit **different SPIR-V**, breaking byte/render fidelity
-to `mgfxc`. (glslang's HLSL frontend was in fact **deprecated 2026-04-06**, redirecting users to
-DXC/Slang; Khronos calls DXC "the reference HLSL→SPIR-V compiler".) The faithful Android answer
-is to port **DXC itself**, never swap it out.
+**The three fixes from "native built" to GREEN on-device:**
+1. **Loaders** — `DxcLoader`/`SpvcLoader` resolve the natives by **bare SONAME from the APK
+   `lib/<abi>/`** (the Android branches added earlier this phase).
+2. **Packaging** — the desktop NuGets ship `runtimes/linux-x64/native/*.so` that .NET-Android
+   wrongly maps into `lib/x86_64/` (Linux glibc binaries → `DllNotFoundException`). Dropped via
+   **`ExcludeAssets="native"`** on direct `Vortice.Dxc` / `Silk.NET.SPIRV.Cross.Native` refs,
+   replaced by our own Android `.so` (`<AndroidNativeLibrary Abi="...">`).
+3. **Reflection (the last bug)** — the default OpenGL reflector is the **native DXIL oracle**
+   (DXC `CreateReflection` → `ID3D12ShaderReflection`), which throws on .NET-for-Android
+   (`SD0102`, a wrapped `TargetInvocationException`). Fix: **`EffectCompiler` now auto-selects
+   the pure-managed `SpirvReflector` on Android** (`OperatingSystem.IsAndroid()`) — the same
+   reflector the WASM host uses, proven **byte-identical** to the DXIL path
+   (`SpirvReflectionByteIdentityTests`). Desktop is unchanged (the default stays the DXIL
+   oracle), so `new EffectCompiler()` is seamless on Android with no consumer flag.
 
-**Local-tooling reality (this dev box):** Android SDK + both emulators present, but **no NDK and
-no cmake installed**, so even the easy SPIRV-Cross native cannot be built locally until the NDK +
-cmake are installed first.
-
-**Definitive status & the most tractable route:** on-device live compile is **NOT achievable
-today**, gated entirely on the `android-arm64` **DXC** native (the §7 `dxc-android-build.yml`
-task) — a multi-hour LLVM-fork cross-compile never done for the NDK in this repo. Until it (and
-SPIRV-Cross) land and ship in the APK, a `Compile(text)` call on the device fails with
-`DllNotFoundException` at the first native call. The most promising lead surfaced by the
-verification is **`hexops/mach-dxcompiler`** (a cleaned-up DXC build system with desktop aarch64
-already working) — adding an Android target there is likely the least-painful path to the DXC
-native, with SPIRV-Cross a quick follow-on.
+**Status & remaining rungs (none are blockers to the proof):**
+- **arm64-v8a** (real-device deliverable) and **x86_64** (emulator) natives both built; on-device
+  compile + `Effect` load proven (green-screen). A finer **pixel-vs-`mgfxc`** on-device render
+  diff is the next rung (the harness today proves compile + `Effect` load, not a pixel compare).
+- **Productionization:** host the per-ABI natives on a pinned release tag and flip the
+  `tools/restore.*` `PENDING` SHAs (so other devs/CI restore them instead of building locally);
+  author the CI form `dxc-android-build.yml`; size-optimize; decide the minimum API level. The
+  local build recipe `build-dxc-android.ps1` is the durable artifact.
+- **Emulator gotchas hit & solved** (recorded so they don't bite again): the emulator's primary
+  ABI is **x86_64** (so x86_64 natives are needed to demo there); Debug **FastDeployment** keeps
+  assemblies outside the APK (use `-p:EmbedAssembliesIntoApk=true` for a self-contained
+  `adb install`); and the AVD's default ~5 GB data partition fills up (cold-boot `-wipe-data`).
 
 ---
 

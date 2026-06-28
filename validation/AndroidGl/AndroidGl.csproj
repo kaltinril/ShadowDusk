@@ -36,6 +36,13 @@
 
   <ItemGroup>
     <PackageReference Include="MonoGame.Framework.Android" Version="3.8.4.1" />
+    <!-- Direct refs ONLY to drop the DESKTOP (linux-x64) natives these packages ship under
+         runtimes/linux-x64/native: on Android, .NET maps those .so into lib/x86_64/, where
+         they are the WRONG platform (Linux glibc, not Android bionic) and fail to load with
+         DllNotFoundException. We keep the managed assemblies (compile + runtime assets) and
+         supply our own Android-native .so below. Versions match the transitive resolve. -->
+    <PackageReference Include="Vortice.Dxc" Version="3.3.4" ExcludeAssets="native" />
+    <PackageReference Include="Silk.NET.SPIRV.Cross.Native" Version="2.23.0" ExcludeAssets="native" />
   </ItemGroup>
 
   <ItemGroup>
@@ -47,6 +54,7 @@
        DllNotFoundException naming the missing .so). libspirv-cross.so is the easy NDK build;
        libdxcompiler.so is the DXC long pole. -->
   <ItemGroup>
+    <!-- arm64-v8a: the real-device product deliverable. -->
     <AndroidNativeLibrary Include="..\..\tools\spirv-cross\android-arm64\libspirv-cross.so"
                           Condition="Exists('..\..\tools\spirv-cross\android-arm64\libspirv-cross.so')">
       <Abi>arm64-v8a</Abi>
@@ -54,6 +62,15 @@
     <AndroidNativeLibrary Include="..\..\tools\dxc\android-arm64\libdxcompiler.so"
                           Condition="Exists('..\..\tools\dxc\android-arm64\libdxcompiler.so')">
       <Abi>arm64-v8a</Abi>
+    </AndroidNativeLibrary>
+    <!-- x86_64: for the Android emulator (whose primary ABI is x86_64 on an x86 host). -->
+    <AndroidNativeLibrary Include="..\..\tools\spirv-cross\android-x64\libspirv-cross.so"
+                          Condition="Exists('..\..\tools\spirv-cross\android-x64\libspirv-cross.so')">
+      <Abi>x86_64</Abi>
+    </AndroidNativeLibrary>
+    <AndroidNativeLibrary Include="..\..\tools\dxc\android-x64\libdxcompiler.so"
+                          Condition="Exists('..\..\tools\dxc\android-x64\libdxcompiler.so')">
+      <Abi>x86_64</Abi>
     </AndroidNativeLibrary>
   </ItemGroup>
 
