@@ -121,4 +121,52 @@ public sealed class CapabilityProfileByteIdentityTests
         viaProfile.Should().Equal(viaOption,
             "MonoGameGL_3_8_5 names MGFX v11, so it must emit identical bytes to MgfxVersion = 11");
     }
+
+    // -------------------------------------------------------------------------
+    // Phase 35 — __KNIFX__ macro fidelity. KNI's compiler always defines __KNIFX__; a
+    // KNIFX-targeted compile must take the __KNIFX__ branch, the default MGFX output must not.
+    // -------------------------------------------------------------------------
+
+    private static string Ascii(byte[] data) =>
+        System.Text.Encoding.ASCII.GetString(data.Select(b => (b >= 32 && b <= 126) ? b : (byte)' ').ToArray());
+
+    [Fact]
+    [Trait("Platform", "OpenGL")]
+    public async Task KnifxContainer_TakesKnifxBranch_DefaultMgfxDoesNot()
+    {
+        // ExKnifxMacro.fx: `#ifdef __KNIFX__` writes vec4(1,0,0,1) (KNIFX) else vec4(0,1,0,1).
+        byte[] knifx = await CompileBytesAsync("examples/ExKnifxMacro.fx", new CompilerOptions
+        {
+            Target    = PlatformTarget.OpenGL,
+            Container = EffectContainer.Knifx,
+        });
+        byte[] mgfx = await CompileBytesAsync("examples/ExKnifxMacro.fx", new CompilerOptions
+        {
+            Target = PlatformTarget.OpenGL,
+        });
+
+        string knifxGlsl = Ascii(knifx);
+        string mgfxGlsl  = Ascii(mgfx);
+
+        // KNIFX took the __KNIFX__ branch (the red constant); the universal MGFX output did not.
+        knifxGlsl.Should().Contain("vec4(1.0, 0.0",
+            because: "KNI's compiler defines __KNIFX__, so the KNIFX container must take the __KNIFX__ branch");
+        knifxGlsl.Should().NotContain("vec4(0.0, 1.0");
+        mgfxGlsl.Should().Contain("vec4(0.0, 1.0",
+            because: "the default MGFX output is target-agnostic and must NOT define __KNIFX__");
+        mgfxGlsl.Should().NotContain("vec4(1.0, 0.0");
+    }
+
+    [Fact]
+    [Trait("Platform", "OpenGL")]
+    public async Task KniProfile_TakesKnifxBranch_LikeContainerKnifx()
+    {
+        // The KniGL_4_02 capability profile (the --target-runtime kni-knifx path Vic would use)
+        // selects KNIFX, so it must take the __KNIFX__ branch exactly like Container = Knifx.
+        byte[] viaProfile = await CompileBytesAsync(
+            "examples/ExKnifxMacro.fx", PlatformTarget.OpenGL, CapabilityProfile.KniGL_4_02);
+
+        Ascii(viaProfile).Should().Contain("vec4(1.0, 0.0",
+            because: "KniGL_4_02 is a KNIFX (KNI) profile, so __KNIFX__ is defined");
+    }
 }

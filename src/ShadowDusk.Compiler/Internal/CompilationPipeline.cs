@@ -103,7 +103,11 @@ internal sealed class CompilationPipeline
                 Message: $"platform '{options.Target}' is not supported by ShadowDusk"));
         }
 
-        MacroSet macros = PlatformMacros.For(options.Target);
+        // The output container (honoring a CapabilityProfile when set) is needed up front so the
+        // macro set can define __KNIFX__ for a KNIFX-targeted compile (KNI's compiler always
+        // does — see PlatformMacros.For(target, container)). Same value reused at Seam 5 below.
+        EffectContainer effectiveContainer = options.Profile?.Container ?? options.Container;
+        MacroSet macros = PlatformMacros.For(options.Target, effectiveContainer);
 
         IIncludeResolver includeResolver = options.IncludeResolver ?? new FileSystemIncludeResolver();
         var preprocessor = new Preprocessor();
@@ -233,7 +237,8 @@ internal sealed class CompilationPipeline
         // (runtime, format) contract, so it selects the effect container and MGFX version too
         // (e.g. KniGL_4_02 -> KNIFX, MonoGameGL_3_8_5 -> MGFX v11). With no profile the existing
         // Container / MgfxVersion options apply unchanged, so Profile == null is byte-identical.
-        EffectContainer effectiveContainer = options.Profile?.Container ?? options.Container;
+        // (effectiveContainer is computed up front, near the macro set, so __KNIFX__ can be
+        // injected for a KNIFX compile.)
         int effectiveMgfxVersion = options.Profile?.MgfxVersion ?? options.MgfxVersion;
 
         // Seam 4: the feature axis. A profile may declare AllowedFeatures, but a feature is honored
@@ -251,6 +256,18 @@ internal sealed class CompilationPipeline
         // oracle. The SPIR-V compile + transpile remain identical, so .mgfx output is
         // byte-transparent — only the SOURCE of the ReflectedEffect changes.
         bool reflectFromSpirv = _reflectorFactory is not null && options.Target == PlatformTarget.OpenGL;
+
+        // GAP-2 (GL-only): retarget a pixel shader's MRT struct-output ': COLOR<n>' semantics to
+        // ': SV_Target<n>' for the OpenGL DXC compiles only. DXC's HLSL->SPIR-V (the GL backend)
+        // rejects COLOR as a PS output (vkd3d/DX accepts it), and the pre-parse is shared by both
+        // backends, so this rewrite runs HERE on a GL-private copy of the source and is fed ONLY to
+        // the OpenGL CompileEntryPoint calls below; the DX/Vulkan/FNA paths keep the untouched
+        // `preprocessed`, so their bytes are unchanged. The rewrite is a no-op (returns the same
+        // text) for any shader whose pixel entry does not return a COLOR-member struct, so every
+        // existing GL shader stays byte-identical. See GlStructOutputColorRewriter.
+        PreprocessedSource glCompileSource = monoGameGl
+            ? preprocessed with { Text = GlStructOutputColorRewriter.Rewrite(preprocessed.Text, fxParsed.Techniques) }
+            : preprocessed;
 
         // Stages 3–5: Compile each pass's entry points, reflect, and transpile.
         // The preprocessor has already flattened all #includes so no include handler is needed for DXC.
@@ -367,7 +384,7 @@ internal sealed class CompilationPipeline
                         dxcCompiler,
                         dxbcCompiler,
                         glslTranspiler,
-                        preprocessed,
+                        glCompileSource,
                         pass.VertexEntryPoint,
                         ShaderStage.Vertex,
                         options.Target,
@@ -404,7 +421,7 @@ internal sealed class CompilationPipeline
                         dxcCompiler,
                         dxbcCompiler,
                         glslTranspiler,
-                        preprocessed,
+                        glCompileSource,
                         pass.PixelEntryPoint,
                         ShaderStage.Pixel,
                         options.Target,
@@ -902,6 +919,79 @@ internal sealed class CompilationPipeline
     }
 
     /// <summary>
+    /// Zero-technique macro recovery (the FNA path's half of the Phase 41 GAP-1 fallback):
+    /// macro-expand the already-<c>#include</c>-flattened source through DXC's <c>-P</c>
+    /// preprocessor with <paramref name="macros"/>, then re-parse the expanded text in
+    /// <paramref name="mode"/>, so techniques that exist only as a <c>TECHNIQUE(...)</c> macro
+    /// call become visible. Tri-state result:
+    /// <list type="bullet">
+    /// <item><c>Ok(non-null)</c> — re-parsed; may itself have zero techniques (a genuinely
+    /// technique-free source), which the caller treats as the honest SD0010.</item>
+    /// <item><c>Ok(null)</c> — <c>-P</c> could not RUN on this backend (the WASM DXC shim
+    /// throws, or the DXC native is absent); recovery is skipped best-effort and the caller
+    /// keeps SD0010 (the WASM degrade-path).</item>
+    /// <item><c>Fail(error)</c> — <c>-P</c> RAN and reported a genuine source error (e.g. a
+    /// malformed <c>#if</c>), or the re-parse failed; the caller surfaces that exact diagnostic
+    /// rather than a misleading SD0010 (no later compile would re-report it). CLAUDE.md #5.</item>
+    /// </list>
+    /// Never crashes. The GL/DX path in <see cref="Run"/> inlines an equivalent recovery with
+    /// its own modern-branch gate.
+    /// </summary>
+    private Result<FxParseResult?, ShaderError> TryRecoverMacroTechniques(
+        string flattenedSource,
+        MacroSet macros,
+        string sourceFileName,
+        FxSourceMode mode,
+        CancellationToken cancellationToken)
+    {
+        var request = new DxcPreprocessRequest
+        {
+            HlslSource     = flattenedSource,
+            SourceFileName = sourceFileName,
+            Macros         = macros.Macros
+                .Select(m => (m.Name, (string?)m.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)))
+                .ToList(),
+        };
+
+        IDxcShaderCompiler? dxc = null;
+        try
+        {
+            dxc = _dxcCompilerFactory();
+            Result<string, ShaderError> expandResult = dxc.Preprocess(request, cancellationToken);
+            // A real -P preprocess error (the expander RAN and reported a genuine source error,
+            // e.g. a malformed #if) is SURFACED, not swallowed: unlike profile validation there
+            // is no subsequent compile to re-report it (we would otherwise return a misleading
+            // SD0010 'no techniques' instead of the actual diagnostic — CLAUDE.md constraint #5).
+            if (expandResult.IsFailure)
+                return Result<FxParseResult?, ShaderError>.Fail(expandResult.Error);
+
+            var reparse = FxPreParser.Parse(expandResult.Value, sourceFileName, mode);
+            if (reparse.IsFailure)
+                return Result<FxParseResult?, ShaderError>.Fail(FromFxParseError(reparse.Error));
+
+            // Ok(value) — value may legitimately have zero techniques (a genuinely
+            // technique-free source), in which case the caller keeps the honest SD0010.
+            return Result<FxParseResult?, ShaderError>.Ok(reparse.Value);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            // -P could not RUN on this backend (the WASM DXC shim throws NotSupportedException),
+            // or the DXC native could not be constructed. Distinct from a -P *failure* above:
+            // here we cannot tell whether techniques exist, so we skip recovery best-effort
+            // (Ok(null)) and let the honest SD0010 stand — exactly the WASM degrade-path.
+            return Result<FxParseResult?, ShaderError>.Ok(null);
+        }
+        finally
+        {
+            (dxc as IDisposable)?.Dispose();
+        }
+    }
+
+    /// <summary>
     /// W3 (GL/DX/Vulkan): once a compile target resolves to a recognized profile, verify its
     /// stage prefix matches the pass slot it is bound to — a <c>vs_*</c> profile in a
     /// <c>VertexShader =</c> slot and a <c>ps_*</c> in a <c>PixelShader =</c> slot. mgfxc/fxc
@@ -1022,10 +1112,53 @@ internal sealed class CompilationPipeline
 
         FxParseResult fxParsed = parseResult.Value;
 
-        // NOTE: the GL/DX macro-technique fallback (Phase 41 — DXC -P expand + re-parse for
-        // effects whose techniques come only from the TECHNIQUE(...) macro) is intentionally
-        // NOT applied here. FNA uses the SM1–3 vkd3d path with no DXC -P step; a tracked
-        // follow-up if a stock effect ever needs the FNA target.
+        IIncludeResolver includeResolver = options.IncludeResolver ?? new FileSystemIncludeResolver();
+        MacroSet fnaPlatformMacros = PlatformMacros.For(PlatformTarget.Fna);
+
+        // Zero-technique FNA macro fallback (Phase 41 GAP-1, extended to FNA). Mirrors the
+        // GL/DX recovery in Run(): an effect whose techniques come ONLY from a TECHNIQUE(...)
+        // macro — the MonoGame stock effects (BasicEffect.fx etc., via Macros.fxh) and the
+        // FlatRedBall/Gum FNA sample (its own #define TECHNIQUE) — yields zero literal
+        // techniques from the raw pre-parse, which used to be an immediate SD0010. Recover by
+        // #include-flattening + macro-expanding through DXC's -P preprocessor with the FNA
+        // macro set, then re-parsing the EXPANDED text in PreserveSm3 mode (FNA keeps the
+        // D3D9 constructs vkd3d compiles natively). Differences from the GL/DX path:
+        //   * NO modern-branch gate. FNA's vkd3d SM1-3 backend compiles the LEGACY
+        //     (vs_2_0 / ps_2_0) macro branch directly and never uses DXC for codegen, so the
+        //     GL legacy-branch SPIR-V crash that forces the GL gate cannot occur here.
+        //   * PreserveSm3 re-parse, so the recovered StrippedHlsl keeps the D3D9 forms.
+        // Best-effort on the WASM degrade-path: if -P cannot RUN (the WASM DXC shim throws),
+        // recovery is skipped and the honest SD0010 below stands. But a GENUINE source error
+        // (a bad #include, a malformed #if) IS surfaced with its real diagnostic rather than a
+        // misleading SD0010. The default (techniques already found) path never enters this
+        // block, so every FNA effect that compiles today is untouched.
+        // Note: a recovered StrippedHlsl carries DXC -P #line markers into the downstream
+        // Sm3StageReservationRewriter / vkd3d SM1-3 compile; vkd3d tolerates them (proven by the
+        // Phase 41 FNA macro-technique corpus), the same way the GL/DX recovery feeds -P output on.
+        PreprocessedSource? recoveredPreprocessed = null;
+        if (fxParsed.Techniques.Count == 0)
+        {
+            var flattenForExpand = new Preprocessor().Flatten(
+                fxParsed.StrippedHlsl, sourceFileName, fnaPlatformMacros,
+                includeResolver, options.AdditionalIncludePaths);
+            if (flattenForExpand.IsFailure)
+                return Fail(flattenForExpand.Error);   // a real #include error — surface it, not SD0010
+
+            var recovered = TryRecoverMacroTechniques(
+                flattenForExpand.Value.Text, fnaPlatformMacros, sourceFileName,
+                FxSourceMode.PreserveSm3, cancellationToken);
+            if (recovered.IsFailure)
+                return Fail(recovered.Error);          // a real -P / re-parse error — surface it
+
+            FxParseResult? expandedParsed = recovered.Value;
+            if (expandedParsed is { Techniques.Count: > 0 })
+            {
+                fxParsed = expandedParsed;
+                recoveredPreprocessed = new PreprocessedSource(
+                    expandedParsed.StrippedHlsl, fnaPlatformMacros.ToDxcFlags(), sourceFileName);
+            }
+        }
+
         if (fxParsed.Techniques.Count == 0)
             return Fail(new ShaderError(
                 File: sourceFileName,
@@ -1034,19 +1167,27 @@ internal sealed class CompilationPipeline
                 Code: "SD0010",
                 Message: "Effect source contains no techniques"));
 
-        // Stage 2: preprocess (flatten #includes, prepend the FNA macro set).
-        IIncludeResolver includeResolver = options.IncludeResolver ?? new FileSystemIncludeResolver();
-        var preprocessResult = new Preprocessor().Flatten(
-            fxParsed.StrippedHlsl,
-            sourceFileName,
-            PlatformMacros.For(PlatformTarget.Fna),
-            includeResolver,
-            options.AdditionalIncludePaths);
+        // Stage 2: preprocess (flatten #includes, prepend the FNA macro set) — unless the
+        // fallback above already produced the expanded, technique-stripped source.
+        PreprocessedSource preprocessed;
+        if (recoveredPreprocessed is not null)
+        {
+            preprocessed = recoveredPreprocessed;
+        }
+        else
+        {
+            var preprocessResult = new Preprocessor().Flatten(
+                fxParsed.StrippedHlsl,
+                sourceFileName,
+                fnaPlatformMacros,
+                includeResolver,
+                options.AdditionalIncludePaths);
 
-        if (preprocessResult.IsFailure)
-            return Fail(preprocessResult.Error);
+            if (preprocessResult.IsFailure)
+                return Fail(preprocessResult.Error);
 
-        PreprocessedSource preprocessed = preprocessResult.Value;
+            preprocessed = preprocessResult.Value;
+        }
 
         // Per-stage source: vkd3d 1.17 rejects D3D9 stage-scoped register reservations
         // (register(vs, c0)) — rewrite them per compiling stage. Lazy: most effects
@@ -1072,7 +1213,6 @@ internal sealed class CompilationPipeline
         // Expansion needs the C preprocessor only; DXC's -P is reused (lazy, macro-tokens
         // only) — it never compiles, so the FNA path stays vkd3d-only for codegen.
         var fnaDxcCompiler = new Lazy<IDxcShaderCompiler>(_dxcCompilerFactory);
-        MacroSet fnaMacros = PlatformMacros.For(PlatformTarget.Fna);
         var fnaProfileExpansionCache = new Dictionary<string, string?>(StringComparer.Ordinal);
         try
         {
@@ -1086,7 +1226,7 @@ internal sealed class CompilationPipeline
                         // cross-check stays in ResolveFnaProfile (SD0300, FNA range), unchanged.
                         var v = ValidateCompileProfile(
                             pass.VertexProfile, pass.VertexProfileToken, pass.VertexProfileSpan, ShaderStage.Vertex,
-                            fnaDxcCompiler, fnaMacros, preprocessed, sourceFileName,
+                            fnaDxcCompiler, fnaPlatformMacros, preprocessed, sourceFileName,
                             fnaProfileExpansionCache, enforceStagePrefix: false, cancellationToken);
                         if (v is { } vErr)
                             return Fail(vErr);
@@ -1095,7 +1235,7 @@ internal sealed class CompilationPipeline
                     {
                         var p = ValidateCompileProfile(
                             pass.PixelProfile, pass.PixelProfileToken, pass.PixelProfileSpan, ShaderStage.Pixel,
-                            fnaDxcCompiler, fnaMacros, preprocessed, sourceFileName,
+                            fnaDxcCompiler, fnaPlatformMacros, preprocessed, sourceFileName,
                             fnaProfileExpansionCache, enforceStagePrefix: false, cancellationToken);
                         if (p is { } pErr)
                             return Fail(pErr);

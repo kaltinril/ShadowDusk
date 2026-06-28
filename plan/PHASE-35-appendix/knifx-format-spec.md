@@ -5,6 +5,14 @@
 This **answers Area B open-question #2** ("what are KNIFX's exact signature bytes, header layout, and body
 deltas vs MGFX v10"). It is the implementation blueprint for ShadowDusk's faithful `KnifxWriter`.
 
+> **Compile-side note (2026-06-27): KNIFX is also a COMPILE-MACRO distinction, not only a container format.**
+> KNI's effect compiler **unconditionally defines `__KNIFX__ = 1`** for every KNI build, and KNI's `Macros.fxh`
+> + real KNI shaders (e.g. Apos.Shapes, used by Gum) branch on it (`#ifdef __KNIFX__` switches the `_vs/_ps/_cb`
+> register macros; `#if __KNIFX__` selects the SM4 profile). So a faithful KNIFX *output* needs the KNIFX
+> *compile* macro too. ShadowDusk now defines `__KNIFX__` when `Container == Knifx` (only) — see the
+> [kickoff brief → "The `__KNIFX__` compile macro"](knifx-area-b-kickoff-brief.md). This spec covers the
+> container bytes; the macro is the orthogonal compile-input half.
+
 **Why this matters:** Per the 2026-06-14 direction, emitting KNIFX is a **committed** additive output (see the
 [kickoff brief](knifx-area-b-kickoff-brief.md) and [main phase doc](../PHASE-35-forward-version-support.md)).
 The GLSL **dialect/text** is the same MojoShader-dialect code ShadowDusk already emits for v10 (KNIFX is a

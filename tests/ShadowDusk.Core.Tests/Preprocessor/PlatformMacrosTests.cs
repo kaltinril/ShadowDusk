@@ -52,6 +52,43 @@ public sealed class PlatformMacrosTests
     }
 
     // -------------------------------------------------------------------------
+    // 2.2b — Container-aware overload: __KNIFX__ for the KNIFX container (Phase 35).
+    // KNI's effect compiler always defines __KNIFX__=1; ShadowDusk targets KNI via the
+    // KNIFX container, so it defines __KNIFX__ there (and only there) to match KNI.
+    // -------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData(PlatformTarget.OpenGL)]
+    [InlineData(PlatformTarget.DirectX)]
+    public void For_KnifxContainer_AppendsKnifxMacro(PlatformTarget platform)
+    {
+        var macroSet = PlatformMacros.For(platform, EffectContainer.Knifx);
+
+        macroSet.Macros.Select(m => m.Name).Should().Contain("__KNIFX__",
+            because: "KNI's MojoEffectProcessor always defines __KNIFX__=1; ShadowDusk matches it for KNIFX");
+        macroSet.Macros.Single(m => m.Name == "__KNIFX__").Value.Should().Be(1,
+            because: "KNI defines it as __KNIFX__=1, so `#if __KNIFX__` (value check) also works");
+        // The base target macros are preserved (and come first).
+        macroSet.Macros.Select(m => m.Name).Should().StartWith(
+            PlatformMacros.For(platform).Macros.Select(m => m.Name));
+    }
+
+    [Theory]
+    [InlineData(PlatformTarget.OpenGL)]
+    [InlineData(PlatformTarget.DirectX)]
+    [InlineData(PlatformTarget.Vulkan)]
+    public void For_MgfxContainer_IsIdenticalToBaseOverload_NoKnifxMacro(PlatformTarget platform)
+    {
+        var withContainer = PlatformMacros.For(platform, EffectContainer.Mgfx);
+        var baseMacros    = PlatformMacros.For(platform);
+
+        // The default MGFX container is target-agnostic — it must NOT define __KNIFX__
+        // (that would make the universal output KNI-specific), and must equal the base set.
+        withContainer.Macros.Select(m => m.Name).Should().NotContain("__KNIFX__");
+        withContainer.Macros.Select(m => m.Name).Should().Equal(baseMacros.Macros.Select(m => m.Name));
+    }
+
+    // -------------------------------------------------------------------------
     // 2.3 — ToDxcFlags() produces interleaved -D NAME=VALUE strings
     // -------------------------------------------------------------------------
 

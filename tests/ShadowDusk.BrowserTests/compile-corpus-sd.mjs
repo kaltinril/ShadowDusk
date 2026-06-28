@@ -20,7 +20,36 @@ const repoRoot = path.resolve(__dirname, '..', '..');
 export const SHADERS = [
   'Grayscale', 'Invert', 'TintShader', 'Sepia', 'Saturate',
   'Pixelated', 'Scanlines', 'Fading', 'Dots', 'Dissolve',
+  // Issue #107 WebGL render proof. SPIRV-Cross emits a one-shot `do {…} while(false)`
+  // for the nested-if early-return helper; GLSL ES 1.00 (WebGL1 / KNI Reach) does not
+  // guarantee do-while, so pre-fix this effect compiled + loaded on desktop yet FAILED
+  // TO LOAD in WebGL. MonoGameGlslRewriter Rule 9 lowers it to a WebGL1-safe bounded
+  // for-loop. Including it here renders ShadowDusk's OWN bytes in real KNI WebGL,
+  // proving the lowered GLSL loads + renders (the open rung the desktop gate can't reach).
+  'Issue107DoWhile',
 ];
+
+// Source-relative path for any corpus shader NOT at tests/fixtures/shaders/<name>.fx.
+// (The 10 original corpus shaders live at the top level; regression fixtures like the
+// #107 repro live under examples/.)
+const SOURCE_OVERRIDES = {
+  Issue107DoWhile: path.join('examples', 'Issue107DoWhile.fx'),
+};
+
+// Phase 35 KNIFX-container WebGL proof: compiled with `--target-runtime kni-knifx` (KNIF
+// signature + __KNIFX__ defined) instead of `/Profile:OpenGL`. Written under the SAME
+// shaders/OpenGL/<name>.mgfx URL the sample's TestLoadCorpus fetches — KNI's Effect loader
+// dispatches on the 4-byte container signature ("KNIF" vs "MGFX"), NOT the filename, so
+// loading one of these through TestLoadCorpus proves the KNIFX container loads in REAL KNI
+// WebGL. The multi-backend KnifxWriter advertises the whole GL family and gives GLES/WebGL a
+// ShaderVersion(0,0) raw-GLSL body, so KNI's runtime converts to ES at load (the proven v10
+// path). ExKnifxMacro renders solid RED iff __KNIFX__ was defined, so run-harness.mjs asserts
+// the rendered quad is red — proving the container loads AND the __KNIFX__ branch fired.
+// (RefRenderer is MonoGame and cannot load KNIF, so these are NOT in its list and have no PNG
+// reference; the harness uses a reference-free solid-color assert.)
+export const KNIFX_PROOFS = {
+  ExKnifxMacro: path.join('examples', 'ExKnifxMacro.fx'),
+};
 
 /**
  * Compile every corpus shader with ShadowDusk's own CLI into outDir.
@@ -39,18 +68,29 @@ export function compileCorpusSd(outDir) {
       `dotnet build src/ShadowDusk.Cli`);
   }
 
+  // OpenGL corpus (incl. the #107 fixture) compiled with /Profile:OpenGL, plus the KNIFX
+  // container proofs compiled with --target-runtime kni-knifx.
+  const jobs = [
+    ...SHADERS.map((name) => ({
+      name, rel: SOURCE_OVERRIDES[name] ?? (name + '.fx'), cliArgs: ['/Profile:OpenGL'],
+    })),
+    ...Object.entries(KNIFX_PROOFS).map(([name, rel]) => ({
+      name, rel, cliArgs: ['--target-runtime', 'kni-knifx'],
+    })),
+  ];
+
   let ok = 0;
   const failures = [];
-  for (const name of SHADERS) {
-    const src = path.join(repoRoot, 'tests', 'fixtures', 'shaders', name + '.fx');
-    const dst = path.join(outDir, name + '.mgfx');
-    const r = spawnSync('dotnet', [cliDll, src, dst, '/Profile:OpenGL'],
+  for (const job of jobs) {
+    const src = path.join(repoRoot, 'tests', 'fixtures', 'shaders', job.rel);
+    const dst = path.join(outDir, job.name + '.mgfx');
+    const r = spawnSync('dotnet', [cliDll, src, dst, ...job.cliArgs],
       { stdio: 'inherit', cwd: repoRoot, shell: false });
-    if (r.status === 0) { ok++; console.log(`  [OK]   ${name} -> ${dst}`); }
-    else { failures.push(name); console.error(`  [FAIL] ${name} (exit ${r.status})`); }
+    if (r.status === 0) { ok++; console.log(`  [OK]   ${job.name} -> ${dst}`); }
+    else { failures.push(job.name); console.error(`  [FAIL] ${job.name} (exit ${r.status})`); }
   }
-  console.log(`[compile-corpus-sd] ${ok}/${SHADERS.length} compiled into ${outDir}`);
-  return { ok, total: SHADERS.length, failures };
+  console.log(`[compile-corpus-sd] ${ok}/${jobs.length} compiled into ${outDir}`);
+  return { ok, total: jobs.length, failures };
 }
 
 // Standalone entry point.

@@ -929,14 +929,21 @@ void main()
 """;
 
     [Fact]
-    public void FragmentOutput_TrueMrt_MapsZeroToFragColor_AndRestToFragData()
+    public void FragmentOutput_TrueMrt_MapsAllSlotsToFragData_IncludingZero()
     {
         var result = MonoGameGlslRewriter.Rewrite(MrtThreeOutputs, ShaderStage.Pixel);
 
-        // Primary (slot 0) → gl_FragColor; slot 1/2 → gl_FragData[N].
-        result.Glsl.Should().Contain("#define ps_oC0 gl_FragColor");
+        // TRUE MRT (2+ outputs): EVERY slot, including slot 0, maps to gl_FragData[N] —
+        // matching the mgfxc DeferredSprite GL golden (`#define ps_oC0 gl_FragData[0]`).
+        // Slot 0 must NOT be gl_FragColor here: in legacy GLSL with multiple render
+        // targets bound, gl_FragColor broadcasts to ALL attachments and corrupts the
+        // other target(s) (a real render bug, not cosmetic). gl_FragData[0] writes only
+        // attachment 0. (The single-output case keeps gl_FragColor — see the test below.)
+        result.Glsl.Should().Contain("#define ps_oC0 gl_FragData[0]");
         result.Glsl.Should().Contain("#define ps_oC1 gl_FragData[1]");
         result.Glsl.Should().Contain("#define ps_oC2 gl_FragData[2]");
+        result.Glsl.Should().NotContain("gl_FragColor",
+            because: "true MRT must not write gl_FragColor (it would broadcast to all attachments)");
 
         // All three writes go to the aliases.
         result.Glsl.Should().Contain("ps_oC0 = c;");
@@ -1365,5 +1372,109 @@ void main()
         Action act = () => MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
         act.Should().Throw<MonoGameGlslRewriteException>()
             .Which.Message.Should().NotContain("Tracked for Phase 34");
+    }
+
+    // ---- do { … } while(false) → for-loop lowering (WebGL1 reach fix, issue #107). ----
+    // SPIRV-Cross renders an early `return` (e.g. a nested `if` that returns) as a
+    // single-iteration `do { … break; … } while(false);` loop. Desktop GL accepts do-while
+    // but GLSL ES 1.00 (WebGL1 / KNI Reach) does not guarantee it, so the effect loads on
+    // desktop yet fails to load in WebGL. The rewriter lowers each one-shot loop to the
+    // WebGL1-safe `for (int _i = 0; _i < 1; _i++) { … }` form (semantics identical).
+
+    [Fact]
+    public void OneShotDoWhileFalse_IsLoweredToForLoop_BreaksPreserved()
+    {
+        // The verbatim SPIRV-Cross shape from issue #107 (nested-if early return).
+        const string src = """
+#version 140
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    float _v;
+    do
+    {
+        if (in_var_TEXCOORD0.x <= 0.5)
+        {
+            _v = 0.0;
+            break;
+        }
+        _v = in_var_TEXCOORD0.x;
+        break;
+    } while(false);
+    out_var_SV_Target = vec4(_v, _v, _v, 1.0);
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        // No do-while survives — it fails to load in WebGL1 (KNI Reach).
+        result.Glsl.Should().NotContain("while(false)", "do-while is unavailable in GLSL ES 1.00 (WebGL1)");
+        System.Text.RegularExpressions.Regex.IsMatch(result.Glsl, @"\bdo\b")
+            .Should().BeFalse("the do keyword must be gone");
+        // Replaced by a bounded single-iteration for-loop (Appendix-A allowed).
+        result.Glsl.Should().MatchRegex(@"for \(int _spvonce_0 = 0; _spvonce_0 < 1; _spvonce_0\+\+\)");
+        // The break statements (early exits) are preserved verbatim inside the loop body.
+        result.Glsl.Should().Contain("break;");
+    }
+
+    [Fact]
+    public void NestedOneShotDoWhile_BothLowered_WithUniqueLoopVars()
+    {
+        const string src = """
+#version 140
+
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    float _v = 0.0;
+    do
+    {
+        do
+        {
+            _v = 1.0;
+            break;
+        } while(false);
+        break;
+    } while(false);
+    out_var_SV_Target = vec4(_v);
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        result.Glsl.Should().NotContain("while(false)");
+        result.Glsl.Should().Contain("_spvonce_0");
+        result.Glsl.Should().Contain("_spvonce_1", "each nested one-shot loop gets a unique index var");
+    }
+
+    [Fact]
+    public void GenuineMultiIterationDoWhile_IsLeftUntouched()
+    {
+        // A real do-while (condition is NOT the literal `false`) must NOT be rewritten —
+        // only SPIRV-Cross's structured-early-return one-shot form is the target.
+        const string src = """
+#version 140
+
+uniform vec4 ps_uniforms_vec4[1];
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    float _v = 0.0;
+    int _i = 0;
+    do
+    {
+        _v += 0.1;
+        _i++;
+    } while(_i < 4);
+    out_var_SV_Target = vec4(_v);
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        result.Glsl.Should().Contain("while(_i < 4)", "a genuine multi-iteration do-while is preserved");
+        result.Glsl.Should().NotContain("_spvonce_", "no one-shot lowering should fire on a real loop");
     }
 }

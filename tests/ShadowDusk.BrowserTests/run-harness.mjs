@@ -100,6 +100,10 @@ const PER_SHADER_PIXEL_BUDGET = {
 const SHADERS = [
   'Grayscale', 'Invert', 'TintShader', 'Sepia', 'Saturate',
   'Pixelated', 'Scanlines', 'Fading', 'Dots', 'Dissolve',
+  // Issue #107 do-while -> for lowering. Loaded ONLY on the SD corpus (it proves OUR
+  // emitted GLSL loads in WebGL1; there is no mgfxc golden for it). Deterministic
+  // grayscale, so it keeps the default 2-LSB tolerance. See compile-corpus-sd.mjs.
+  ...(IS_SD ? ['Issue107DoWhile'] : []),
 ];
 
 // Each corpus uses its own published wwwroot + references/captures/diffs/results so
@@ -307,6 +311,62 @@ async function main() {
       } catch (e) {
         row.note = `harness error: ${e.message}`;
         console.log(`  [ERROR] ${name}: ${e.message}`);
+      }
+      results.mode1.push(row);
+    }
+
+    // ---- Phase 35 KNIFX-container WebGL proof (SD corpus, Reach only) ----
+    // ExKnifxMacro is served as a KNIF-signature container (compiled --target-runtime
+    // kni-knifx) whose backend directory advertises the whole GL family (OpenGL + GLES +
+    // WebGL); the GLES/WebGL bodies use ShaderVersion (0,0) so KNI's runtime converts the
+    // GLSL to ES at load. Loading it via TestLoadCorpus proves KNI's WebGL Effect loader
+    // accepts the KNIFX container (KNI dispatches on the 4-byte signature, not the filename).
+    // The shader renders solid RED iff __KNIFX__ was defined at compile time (GREEN on the
+    // non-KNIFX branch), so a red quad with ZERO green pixels proves BOTH the container
+    // loaded in KNI WebGL AND the __KNIFX__ branch fired, in one render. Guarded to Reach
+    // (WebGL1) so the HiDef issue-#7 RED/GREEN logic stays clean.
+    const KNIFX_PROOF_SHADERS = (IS_SD && !IS_HIDEF) ? ['ExKnifxMacro'] : [];
+    for (const name of KNIFX_PROOF_SHADERS) {
+      const row = { name, loaded: false, loadError: null, rendered: false,
+        maxDelta: 0, differentPixels: null, totalPixels: null, verdict: 'FAIL',
+        note: 'KNIFX container + __KNIFX__ red-branch proof' };
+      try {
+        const loadErr = await page.evaluate(
+          async (n) => await window.theInstance.invokeMethodAsync('TestLoadCorpus', n), name);
+        if (loadErr !== null) {
+          row.loadError = String(loadErr);
+          row.note = 'KNI WebGL new Effect() REJECTED the KNIFX container';
+          console.log(`  [LOAD-FAIL] ${name} (KNIFX): ${loadErr}`);
+          results.mode1.push(row);
+          continue;
+        }
+        row.loaded = true;
+        await page.waitForTimeout(600);
+        const cap = await readback(page);
+        if (!cap) { row.note = 'readback returned null'; results.mode1.push(row); continue; }
+        await fs.writeFile(path.join(CAP_DIR, name + '.png'),
+          rgbaToPng(cap.data, cap.width, cap.height));
+        let red = 0, green = 0;
+        const d = cap.data;
+        for (let i = 0; i < d.length; i += 4) {
+          const r = d[i], g = d[i + 1], b = d[i + 2];
+          if (r > 200 && g < 60 && b < 60) red++;
+          else if (g > 200 && r < 60 && b < 60) green++;
+        }
+        row.rendered = true;
+        row.totalPixels = d.length / 4;
+        row.differentPixels = green;
+        if (red > 10000 && green === 0) {
+          row.verdict = 'PASS(knifx)';
+          row.note = `KNIFX container loaded in KNI WebGL; __KNIFX__ red branch rendered (${red} red px, 0 green)`;
+        } else {
+          row.verdict = 'FAIL';
+          row.note = `expected the solid-red __KNIFX__ branch but saw red=${red} green=${green} (green>0 => non-KNIFX branch, or container mis-loaded)`;
+        }
+        console.log(`  [${row.verdict}] ${name.padEnd(11)} red=${red} green=${green} — ${row.note}`);
+      } catch (e) {
+        row.note = `harness error: ${e.message}`;
+        console.log(`  [ERROR] ${name} (KNIFX): ${e.message}`);
       }
       results.mode1.push(row);
     }

@@ -4,6 +4,7 @@ using FluentAssertions;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
+using ShadowDusk.Core.Tests.Fx2;
 using Xunit;
 
 namespace ShadowDusk.Integration.Tests.Tests;
@@ -22,6 +23,17 @@ namespace ShadowDusk.Integration.Tests.Tests;
 /// legacy DX9/SM2 branch which ShadowDusk's modern DXC -> SPIR-V GL backend cannot compile;
 /// that target is gated OUT of the recovery and keeps the honest SD0010 (documented GL
 /// macro-model gap). See <see cref="OpenGl_MacroTechniqueEffect_KeepsLoudSd0010_NoCrash"/>.</para>
+///
+/// <para><b>FNA extension (GAP-1 closed on the FNA path).</b> The FNA path (<c>RunFna</c>)
+/// now applies the same zero-technique macro recovery, with NO modern-branch gate: FNA's
+/// vkd3d SM1-3 backend compiles the legacy (vs_2_0/ps_2_0) macro branch directly and never
+/// uses DXC for codegen, so the GL legacy-branch SPIR-V crash cannot occur. The re-parse runs
+/// in PreserveSm3 mode. Result: the stock effects that fit SM2 (SpriteEffect, AlphaTestEffect,
+/// DualTextureEffect, Penumbra*) now compile on FNA; the ones that overflow the SM2 register
+/// file (BasicEffect/SkinnedEffect, SD0305) or use a sub-SM2 profile (Gum's FnaSample uses
+/// vs_1_1, SD0300) now fail for their HONEST downstream reason rather than the SD0010
+/// technique-blindness. See <see cref="Fna_StockMacroEffects_ThatFitSm2_NowCompile"/> and the
+/// two honest-limit pins below.</para>
 /// </summary>
 [Trait("Category", "Integration")]
 public sealed class Phase41MacroTechniqueTests
@@ -177,6 +189,100 @@ public sealed class Phase41MacroTechniqueTests
 
         result.IsFailure.Should().BeTrue();
         result.Error.Should().ContainSingle(e => e.Code == "SD0010");
+    }
+
+    // -----------------------------------------------------------------------
+    // FNA path — the GAP-1 fix (zero-technique macro recovery extended to RunFna).
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// The stock macro-technique effects that FIT the SM2 register file now compile on FNA
+    /// (they were SD0010 before the FNA fallback). Proves the macro recovery runs on the FNA
+    /// path and produces a well-formed fx_2_0 binary with techniques + SM&lt;=3 shaders.
+    /// </summary>
+    public static TheoryData<string> FnaCompilableStockEffects() => new()
+    {
+        "SpriteEffect.fx",
+        "AlphaTestEffect.fx",
+        "DualTextureEffect.fx",
+        "PenumbraHull.fx",
+        "PenumbraLight.fx",
+        "PenumbraShadow.fx",
+        "PenumbraTexture.fx",
+    };
+
+    [Theory]
+    [Trait("Platform", "FNA")]
+    [MemberData(nameof(FnaCompilableStockEffects))]
+    public async Task Fna_StockMacroEffects_ThatFitSm2_NowCompile(string fixtureFileName)
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+        CancellationToken ct = cts.Token;
+
+        var (data, error) = await CompileAsync(fixtureFileName, PlatformTarget.Fna, ct);
+
+        error.Should().BeNull(
+            $"'{fixtureFileName}' declares its techniques via the TECHNIQUE() macro; the FNA " +
+            "zero-technique recovery must detect them (not SD0010) and compile to fx_2_0");
+        data.Should().NotBeNull();
+
+        // The output must be a real fx_2_0 binary MojoShader can parse, with techniques and
+        // SM<=3 shader blobs (the FNA ceiling).
+        Fx2ParsedEffect effect = Fx2BinaryValidator.Parse(data!);
+        effect.Techniques.Should().NotBeEmpty($"'{fixtureFileName}' declares macro techniques");
+        effect.Shaders.Should().NotBeEmpty($"'{fixtureFileName}' declares at least one compiled pass");
+        foreach (Fx2ParsedShader shader in effect.Shaders)
+            (shader.VersionToken & 0xFFFF).Should().BeLessThanOrEqualTo(0x0300u,
+                $"shader version 0x{shader.VersionToken:X8} in '{fixtureFileName}' must be SM <= 3");
+    }
+
+    [Fact]
+    [Trait("Platform", "FNA")]
+    public async Task Fna_BasicEffect_MacroRecovered_ThenLoudSm2RegisterLimit_NotSd0010()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+        CancellationToken ct = cts.Token;
+
+        // The FNA recovery DETECTS BasicEffect's macro techniques (GAP-1 fixed), so it no
+        // longer returns SD0010. BasicEffect's SM2 (vs_2_0/ps_2_0) expansion then runs out of
+        // SM2 temp registers during the MojoShader texkill/texld canonicalization patch (the
+        // patcher needs one more temp than the SM2 12-temp limit allows), which surfaces as the
+        // honest, loud SD0305 (a real shader-model limit, documented Phase 40) - NOT the
+        // technique-blindness.
+        var (data, error) = await CompileAsync("BasicEffect.fx", PlatformTarget.Fna, ct);
+
+        data.Should().BeNull();
+        error.Should().NotBeNull();
+        error!.Code.Should().Be("SD0305",
+            "GAP-1 is fixed on FNA (techniques recovered); BasicEffect then fails on the honest " +
+            "SM2 register-pressure limit (SD0305), not SD0010");
+    }
+
+    [Fact]
+    [Trait("Platform", "FNA")]
+    public async Task Fna_GumFnaSample_MacroRecovered_ThenRejectsVs11_Sd0300_NotSd0010()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+        CancellationToken ct = cts.Token;
+
+        // Gum's FNA sample declares its technique via its own #define TECHNIQUE macro
+        // (VertexShader = compile vs_1_1 ...). The FNA recovery now detects it (GAP-1 fixed),
+        // so it reaches profile validation and is declined for using vs_1_1 (SM1) - below
+        // ShadowDusk's FNA SM2 floor - with the actionable SD0300, NOT SD0010.
+        //
+        // NOTE (current limit, not fxc-equivalent): real fxc /T fx_2_0 + MojoShader DO compile
+        // vs_1_1. ShadowDusk's SD0300 SM2 floor is a deliberate conservatism (vkd3d 1.17's SM1
+        // backend has known gaps and the SM1 output path is unvalidated against real FNA, Phase
+        // 40). Revisit this pin if/when the vkd3d SM1 path is validated; until then SD0300 with
+        // actionable guidance (use vs_2_0) is the honest, intended behavior.
+        var (data, error) = await CompileAsync(
+            "third-party/Gum/FnaSample-Shader.fx", PlatformTarget.Fna, ct);
+
+        data.Should().BeNull();
+        error.Should().NotBeNull();
+        error!.Code.Should().Be("SD0300",
+            "GAP-1 is fixed on FNA (the macro technique is recovered); the shader is then " +
+            "declined for its sub-SM2 vs_1_1 profile (SD0300), not SD0010");
     }
 
     // -----------------------------------------------------------------------

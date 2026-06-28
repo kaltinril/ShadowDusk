@@ -19,14 +19,16 @@ Reference = the SAME `.mgfx` bytes (ShadowDusk-compiled) rendered on desktop **D
 | Fading | OK (null) | OK | 1 | 0/262144 | PASS(tol) | max-delta 1 LSB everywhere — WebGL/DesktopGL precision drift |
 | Dots | OK (null) | OK | 11 | 8585/262144 | PASS(tol) | max-delta 11 <= documented per-shader tolerance 16; 8585/262144 (3.275%) px > 2 LSB — transcendental edge drift |
 | Dissolve | OK (null) | OK | 128 | 380/262144 | PASS(tol) | max-delta 128, only 380/262144 (0.145%) px > 2 LSB — localized drift (budget 1.5%) |
+| Issue107DoWhile | OK (null) | OK | 0 | 0/262144 | PASS(exact) |  |
+| ExKnifxMacro | OK (null) | OK | 0 | 0/262144 | PASS(knifx) | KNIFX container loaded in KNI WebGL; __KNIFX__ red branch rendered (196096 red px, 0 green) |
 
 ## Task 1c — KNIFX-v11 decision (the deliverable)
 
 **VERDICT: MGFX v10 is sufficient for KNI WebGL — no KNIFX-v11 (`KNIF`) writer needed.**
 
-All 10/10 corpus shaders **loaded** (KNI's forked `MGFXReader10` parsed our MGFX v10 — parse risk #1 resolved) and **rendered** within tolerance in headless KNI WebGL (dialect/render risk #2 resolved). The long-standing carry-forward ("KNI render parity unverified; may need a KNIFX-v11 writer") is **closed**.
+All 12/12 corpus shaders **loaded** (KNI's forked `MGFXReader10` parsed our MGFX v10 — parse risk #1 resolved) and **rendered** within tolerance in headless KNI WebGL (dialect/render risk #2 resolved). The long-standing carry-forward ("KNI render parity unverified; may need a KNIFX-v11 writer") is **closed**.
 
-- Exact (max-delta 0): 0/10
+- Exact (max-delta 0): 1/12
 - Within documented tolerance: 10
   - **Grayscale**: max-delta 1 LSB everywhere — WebGL/DesktopGL precision drift
   - **Invert**: max-delta 1 LSB everywhere — WebGL/DesktopGL precision drift

@@ -21,10 +21,10 @@
 ## Headline
 
 - Golden-backed cells (fixture x target): **92**
-  - Structurally **clean**: **64**
+  - Structurally **clean**: **65**
   - **Divergent** (>=1 level): **17**
-  - Compile/parse **failures**: **11**
-- Non-golden census cells: **124** (**101** compile, **23** fail with a code)
+  - Compile/parse **failures**: **10**
+- Non-golden census cells: **136** (**109** compile, **27** fail with a code)
 
 ## Golden-backed fixtures — per-level structural verdict
 
@@ -51,7 +51,7 @@ Legend: `OK` = match, `XX` = diverge, `--` = compile/parse failed (see notes). L
 | ClipShaderSpriteTarget | DirectX_11 | OK | OK | OK | OK | OK |  |
 | ClipShaderSpriteTarget | OpenGL | OK | OK | OK | OK | OK |  |
 | DeferredSprite | DirectX_11 | OK | OK | OK | OK | OK |  |
-| DeferredSprite | OpenGL | -- | -- | -- | -- | -- | COMPILE FAIL X0000: Semantic COLOR is invalid for shader model: ps |
+| DeferredSprite | OpenGL | OK | OK | OK | OK | OK |  |
 | Dissolve | DirectX_11 | OK | OK | OK | OK | OK |  |
 | Dissolve | OpenGL | OK | OK | OK | OK | OK |  |
 | Dots | DirectX_11 | OK | OK | OK | OK | OK |  |
@@ -134,7 +134,6 @@ produce a `.mgfx` for the target. Each is a real ShadowDusk limitation, not a ha
 |---|---|:--:|---|
 | AlphaTestEffect | OpenGL | SD0010 | Effect source contains no techniques |
 | BasicEffect | OpenGL | SD0010 | Effect source contains no techniques |
-| DeferredSprite | OpenGL | X0000 | Semantic COLOR is invalid for shader model: ps |
 | DualTextureEffect | OpenGL | SD0010 | Effect source contains no techniques |
 | EnvironmentMapEffect | OpenGL | SD0010 | Effect source contains no techniques |
 | PenumbraHull | OpenGL | SD0010 | Effect source contains no techniques |
@@ -159,8 +158,13 @@ the source and re-parses the expanded text, recovering the literal `technique` b
 DXC's native codegen), so that target is gated OUT of the recovery and keeps the loud SD0010. This
 is the documented GL macro-model gap (Phase 41 follow-up), not a PlatformMacros change.
 
-**DeferredSprite [OpenGL] (X0000):** a distinct, loud diagnostic ('Semantic COLOR is invalid for
-shader model: ps') from the GL path, unrelated to the SD0010 macro-technique cluster.
+**DeferredSprite [OpenGL] — FIXED (Phase 41 GAP-2, 2026-06-27).** This multi-render-target
+effect returns a struct whose members carry `: COLOR0`/`: COLOR1` output semantics, which DXC's
+HLSL -> SPIR-V GL backend rejected ('Semantic COLOR is invalid for shader model: ps'). A GL-only,
+PS-return-struct-aware rewrite (`GlStructOutputColorRewriter`) now retargets those members to
+`: SV_Target0`/`: SV_Target1` for the OpenGL DXC compiles only (DX/vkd3d output is byte-identical),
+and the GL rewriter emits `gl_FragData[0]`/`gl_FragData[1]` for true MRT (matching the mgfxc golden).
+The OpenGL cell now compiles and structural-matches the golden (see the matrix above).
 
 ## Divergence-class summary (the triage-feeding output)
 
@@ -234,6 +238,8 @@ is a CORRECT result, not a defect.
 | examples/ExDualTexture.fx | OpenGL | PASS |  |  |
 | examples/ExIntUniformMember.fx | DirectX_11 | PASS |  |  |
 | examples/ExIntUniformMember.fx | OpenGL | FAIL | SD0210 | Unsupported uniform type in 'int Mode;': integer/boolean uniforms are not modelled for the MonoGame OpenGL target (MojoShader places them in the separate {vs,ps... |
+| examples/ExKnifxMacro.fx | DirectX_11 | PASS |  |  |
+| examples/ExKnifxMacro.fx | OpenGL | PASS |  |  |
 | examples/ExLegacyTextureAnnotation.fx | DirectX_11 | PASS |  |  |
 | examples/ExLegacyTextureAnnotation.fx | OpenGL | PASS |  |  |
 | examples/ExLegacyTextureDiscard.fx | DirectX_11 | PASS |  |  |
@@ -288,6 +294,8 @@ is a CORRECT result, not a defect.
 | examples/ExVsTextureFetch.fx | OpenGL | FAIL | SD0210 | Vertex-stage texture sampling is not supported for the MonoGame OpenGL target: MonoGame 3.8.2's GL runtime never assigns texture units to VERTEX-shader samplers... |
 | examples/Issue106Repro.fx | DirectX_11 | PASS |  |  |
 | examples/Issue106Repro.fx | OpenGL | PASS |  |  |
+| examples/Issue107DoWhile.fx | DirectX_11 | PASS |  |  |
+| examples/Issue107DoWhile.fx | OpenGL | PASS |  |  |
 | minimal_vs_ps.fx | DirectX_11 | FAIL | SD0010 | Effect source contains no techniques |
 | minimal_vs_ps.fx | OpenGL | FAIL | SD0010 | Effect source contains no techniques |
 | multipass.fx | DirectX_11 | PASS |  |  |
@@ -302,6 +310,14 @@ is a CORRECT result, not a defect.
 | textured.fx | OpenGL | PASS |  |  |
 | textured_vs_ps.fx | DirectX_11 | FAIL | SD0010 | Effect source contains no techniques |
 | textured_vs_ps.fx | OpenGL | FAIL | SD0010 | Effect source contains no techniques |
+| third-party/Apos.Shapes/apos-shapes.fx | DirectX_11 | PASS |  |  |
+| third-party/Apos.Shapes/apos-shapes.fx | OpenGL | PASS |  |  |
+| third-party/Gum/FnaSample-Shader.fx | DirectX_11 | FAIL | X0000 | Shader compilation failed |
+| third-party/Gum/FnaSample-Shader.fx | OpenGL | FAIL | SD0010 | Effect source contains no techniques |
+| third-party/Gum/KniInCode-Shader.fx | DirectX_11 | FAIL | X0000 | Shader compilation failed |
+| third-party/Gum/KniInCode-Shader.fx | OpenGL | FAIL | X0000 | effect object ignored - effect syntax is deprecated [-Weffects-syntax] |
+| third-party/Gum/MonoGameInCode-Grayscale.fx | DirectX_11 | PASS |  |  |
+| third-party/Gum/MonoGameInCode-Grayscale.fx | OpenGL | PASS |  |  |
 | third-party/Nez/Bevels.fx | DirectX_11 | PASS |  |  |
 | third-party/Nez/Bevels.fx | OpenGL | PASS |  |  |
 | third-party/Nez/BloomCombine.fx | DirectX_11 | PASS |  |  |
@@ -335,9 +351,10 @@ is a CORRECT result, not a defect.
 
 ### Census failure codes
 
+- `SD0010`: 7 cell(s) — minimal_vs_ps.fx [DirectX_11], minimal_vs_ps.fx [OpenGL], passthrough_vs.fx [DirectX_11], passthrough_vs.fx [OpenGL], textured_vs_ps.fx [DirectX_11], textured_vs_ps.fx [OpenGL], third-party/Gum/FnaSample-Shader.fx [OpenGL]
 - `SD0013`: 6 cell(s) — examples/ExProfileBogusLiteral.fx [DirectX_11], examples/ExProfileBogusLiteral.fx [OpenGL], examples/ExProfileTypo.fx [DirectX_11], examples/ExProfileTypo.fx [OpenGL], examples/ExProfileUndefinedMacro.fx [DirectX_11], examples/ExProfileUndefinedMacro.fx [OpenGL]
-- `SD0010`: 6 cell(s) — minimal_vs_ps.fx [DirectX_11], minimal_vs_ps.fx [OpenGL], passthrough_vs.fx [DirectX_11], passthrough_vs.fx [OpenGL], textured_vs_ps.fx [DirectX_11], textured_vs_ps.fx [OpenGL]
 - `SD0210`: 4 cell(s) — examples/ExIntUniformMember.fx [OpenGL], examples/ExMat3UniformMember.fx [OpenGL], examples/ExVsTextureFetch.fx [OpenGL], third-party/Nez/Crosshatch.fx [OpenGL]
+- `X0000`: 3 cell(s) — third-party/Gum/FnaSample-Shader.fx [DirectX_11], third-party/Gum/KniInCode-Shader.fx [DirectX_11], third-party/Gum/KniInCode-Shader.fx [OpenGL]
 - `SD0001`: 2 cell(s) — MinimalWithInclude.fx [DirectX_11], MinimalWithInclude.fx [OpenGL]
 - `SD0014`: 2 cell(s) — examples/ExProfileStageMismatch.fx [DirectX_11], examples/ExProfileStageMismatch.fx [OpenGL]
 - `FX0012`: 2 cell(s) — third-party/Nez/PaletteCycler.fx [DirectX_11], third-party/Nez/PaletteCycler.fx [OpenGL]

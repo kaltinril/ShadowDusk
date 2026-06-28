@@ -766,6 +766,20 @@ public static class MonoGameGlslRewriter
         // reference compiler. See ROUNDEVEN-FIX.md.
         body = LowerRoundToFloorHalfUp(body);
 
+        // Rule 9: lower SPIRV-Cross's one-shot `do { … } while(false);` loops to a
+        // WebGL1-safe `for` loop (issue #107). SPIRV-Cross renders an early `return`
+        // inside an (inlined) helper — e.g. a nested `if` that returns — as a
+        // single-iteration loop so the `return` can become a `break`. Desktop GL accepts
+        // do-while, but GLSL ES 1.00 (WebGL1 / KNI Reach) only *guarantees* the restricted
+        // `for`-loop forms of Appendix A, so a do-while makes the effect compile + load on
+        // desktop yet FAIL TO LOAD in WebGL. Lower each `do { B } while(false);` to the
+        // canonical, Appendix-A-allowed `for (int _i = 0; _i < 1; _i++) { B }` — exactly one
+        // iteration, with `break`/`continue`/fall-through all exiting identically, so the
+        // pixels are unchanged. (mgfxc/MojoShader never emits a do-while either, so this is
+        // also more faithful to the reference compiler.) A genuine multi-iteration do-while
+        // — `while(<not false>)` — is left untouched.
+        body = LowerOneShotDoWhileToForLoop(body);
+
         // ---- Assemble final output: precision header + #define block + body. ----
         // The fragment-output `#define` aliases are emitted here, AFTER all Pass-2
         // regex rewrites, so nothing can mangle them. They sit at column 0 in the
@@ -1229,12 +1243,20 @@ public static class MonoGameGlslRewriter
             return $"ps_oC{slot}";
         });
 
+        // Slot-0 builtin is MRT-aware (matches mgfxc's goldens, verified):
+        //   * SINGLE output  -> slot 0 is gl_FragColor (every single-target golden:
+        //     Sepia/Dissolve/AlphaTestEffect/... emit `#define ps_oC0 gl_FragColor`).
+        //   * TRUE MRT (2+)   -> slot 0 is gl_FragData[0], like every other slot (the
+        //     mgfxc DeferredSprite GL golden emits `#define ps_oC0 gl_FragData[0]` AND
+        //     `#define ps_oC1 gl_FragData[1]`). This is render-CORRECTNESS, not cosmetic:
+        //     in legacy GLSL with multiple render targets bound, writing gl_FragColor
+        //     broadcasts to ALL color attachments and corrupts the other target(s);
+        //     gl_FragData[0] writes only attachment 0.
+        bool isMrt = slots.Count >= 2;
         var outputs = new List<FragmentOutput>(slots.Count);
         foreach (int slot in slots)
         {
-            // Slot 0 is the primary colour output (gl_FragColor); 1+ are MRT
-            // (gl_FragData[N]). Matches mgfxc's golden output exactly.
-            string builtin = slot == 0 ? "gl_FragColor" : $"gl_FragData[{slot}]";
+            string builtin = (slot == 0 && !isMrt) ? "gl_FragColor" : $"gl_FragData[{slot}]";
             outputs.Add(new FragmentOutput($"ps_oC{slot}", builtin));
         }
 
@@ -1482,6 +1504,175 @@ public static class MonoGameGlslRewriter
         }
 
         return body;
+    }
+
+    /// <summary>
+    /// Issue #107: lower SPIRV-Cross's one-shot <c>do { … } while(false);</c> loops (its
+    /// structured-early-return idiom) to the WebGL1-safe <c>for (int _i = 0; _i &lt; 1; _i++) { … }</c>
+    /// form. Semantically identical (exactly one iteration; <c>break</c>/<c>continue</c>/
+    /// fall-through all exit as before, so pixels are unchanged), but uses the GLSL ES 1.00
+    /// Appendix-A loop form WebGL1 / KNI Reach requires — so the effect loads in WebGL instead
+    /// of failing on the do-while. A genuine multi-iteration <c>do { } while(&lt;not false&gt;)</c>
+    /// is left untouched. Comment-aware (skips <c>//</c> and <c>/* */</c> while scanning).
+    /// </summary>
+    private static string LowerOneShotDoWhileToForLoop(string body)
+    {
+        int counter = 0;
+        int searchFrom = 0;
+        while (true)
+        {
+            int doIdx = FindDoBlock(body, searchFrom, out int braceIdx);
+            if (doIdx < 0)
+                break;
+
+            int closeBrace = FindMatchingBrace(body, braceIdx);
+            if (closeBrace < 0)
+                break; // unbalanced (should not happen in valid GLSL) — stop, do not corrupt
+
+            if (!TryMatchWhileFalseTrailer(body, closeBrace + 1, out int trailerEnd))
+            {
+                // `do { } while(<not false>)` — a real loop. Leave it; resume past this `do`.
+                searchFrom = braceIdx;
+                continue;
+            }
+
+            string loopVar = $"_spvonce_{counter++}";
+            string forHeader = $"for (int {loopVar} = 0; {loopVar} < 1; {loopVar}++) ";
+            string bodyBlock = body.Substring(braceIdx, closeBrace - braceIdx + 1); // "{ … }"
+
+            body = body.Substring(0, doIdx) + forHeader + bodyBlock + body.Substring(trailerEnd);
+            // Resume just after the inserted header so a nested one-shot do-while inside this
+            // body is lowered too (each becomes its own for-loop with a unique index var).
+            searchFrom = doIdx + forHeader.Length;
+        }
+
+        return body;
+    }
+
+    /// <summary>
+    /// Find the next <c>do</c> keyword (word-bounded, not inside a comment) immediately
+    /// followed (after whitespace/comments) by <c>{</c>. Returns the <c>do</c> index and, via
+    /// <paramref name="braceIdx"/>, that opening brace's index; -1 when none remains.
+    /// </summary>
+    private static int FindDoBlock(string s, int from, out int braceIdx)
+    {
+        braceIdx = -1;
+        int i = from;
+        while (i < s.Length)
+        {
+            if (s[i] == '/' && i + 1 < s.Length && s[i + 1] == '/')
+            {
+                i = s.IndexOf('\n', i);
+                if (i < 0) return -1;
+                continue;
+            }
+            if (s[i] == '/' && i + 1 < s.Length && s[i + 1] == '*')
+            {
+                int blockEnd = s.IndexOf("*/", i + 2, StringComparison.Ordinal);
+                if (blockEnd < 0) return -1;
+                i = blockEnd + 2;
+                continue;
+            }
+            if (s[i] == 'd' && i + 1 < s.Length && s[i + 1] == 'o' &&
+                (i == 0 || !IsIdentChar(s[i - 1])) &&
+                (i + 2 >= s.Length || !IsIdentChar(s[i + 2])))
+            {
+                int j = SkipWsAndComments(s, i + 2);
+                if (j >= 0 && j < s.Length && s[j] == '{')
+                {
+                    braceIdx = j;
+                    return i;
+                }
+                i += 2;
+                continue;
+            }
+            i++;
+        }
+        return -1;
+    }
+
+    /// <summary>Skip whitespace and <c>//</c> / <c>/* */</c> comments; returns the next
+    /// significant index, or -1 if an unterminated comment runs to end-of-string.</summary>
+    private static int SkipWsAndComments(string s, int i)
+    {
+        while (i < s.Length)
+        {
+            if (char.IsWhiteSpace(s[i])) { i++; continue; }
+            if (s[i] == '/' && i + 1 < s.Length && s[i + 1] == '/')
+            {
+                i = s.IndexOf('\n', i);
+                if (i < 0) return -1;
+                continue;
+            }
+            if (s[i] == '/' && i + 1 < s.Length && s[i + 1] == '*')
+            {
+                int blockEnd = s.IndexOf("*/", i + 2, StringComparison.Ordinal);
+                if (blockEnd < 0) return -1;
+                i = blockEnd + 2;
+                continue;
+            }
+            return i;
+        }
+        return i;
+    }
+
+    /// <summary>Brace-match from an opening <c>{</c> to its closing <c>}</c>, skipping
+    /// comments; -1 if unbalanced.</summary>
+    private static int FindMatchingBrace(string s, int open)
+    {
+        int depth = 0;
+        int i = open;
+        while (i < s.Length)
+        {
+            if (s[i] == '/' && i + 1 < s.Length && s[i + 1] == '/')
+            {
+                i = s.IndexOf('\n', i);
+                if (i < 0) return -1;
+                continue;
+            }
+            if (s[i] == '/' && i + 1 < s.Length && s[i + 1] == '*')
+            {
+                int blockEnd = s.IndexOf("*/", i + 2, StringComparison.Ordinal);
+                if (blockEnd < 0) return -1;
+                i = blockEnd + 2;
+                continue;
+            }
+            if (s[i] == '{') depth++;
+            else if (s[i] == '}' && --depth == 0) return i;
+            i++;
+        }
+        return -1;
+    }
+
+    /// <summary>Match a <c>while ( false ) ;</c> trailer at <paramref name="from"/> (ws/comment
+    /// tolerant between tokens). On success, <paramref name="end"/> is set just past the ';'.</summary>
+    private static bool TryMatchWhileFalseTrailer(string s, int from, out int end)
+    {
+        end = -1;
+        int i = SkipWsAndComments(s, from);
+        if (i < 0 || !MatchKeyword(s, i, "while")) return false;
+        i = SkipWsAndComments(s, i + 5);
+        if (i < 0 || i >= s.Length || s[i] != '(') return false;
+        i = SkipWsAndComments(s, i + 1);
+        if (i < 0 || !MatchKeyword(s, i, "false")) return false;
+        i = SkipWsAndComments(s, i + 5);
+        if (i < 0 || i >= s.Length || s[i] != ')') return false;
+        i = SkipWsAndComments(s, i + 1);
+        if (i < 0 || i >= s.Length || s[i] != ';') return false;
+        end = i + 1;
+        return true;
+    }
+
+    /// <summary>True if <paramref name="word"/> appears at <paramref name="i"/> with identifier
+    /// boundaries on both sides (ordinal, case-sensitive — GLSL keywords are case-sensitive).</summary>
+    private static bool MatchKeyword(string s, int i, string word)
+    {
+        if (i + word.Length > s.Length) return false;
+        if (string.CompareOrdinal(s, i, word, 0, word.Length) != 0) return false;
+        if (i > 0 && IsIdentChar(s[i - 1])) return false;
+        int after = i + word.Length;
+        if (after < s.Length && IsIdentChar(s[after])) return false;
+        return true;
     }
 
     /// <summary>
