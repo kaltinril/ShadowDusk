@@ -1,0 +1,60 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Phase 50 - on-device runtime-compile harness (the Android analogue of validation/Candidate).
+    A real .NET-for-Android MonoGame app that calls ShadowDusk's EffectCompiler IN MEMORY, AT
+    RUNTIME, on the device: it compiles an HLSL string to a .mgfx and loads it into a live
+    MonoGame Effect - the "shader fiddle on Android" shape. It logs the outcome to logcat
+    (tag SHADOWDUSK) and tints the screen: GREEN = compiled + Effect loaded on device,
+    ORANGE = the compiler ran but rejected the shader, RED = a native is missing.
+
+    Requires the two android-arm64 natives in the APK lib/arm64-v8a/: libspirv-cross.so
+    (built by spirv-cross-android-build.yml / tools/restore) and libdxcompiler.so (the DXC
+    long pole). Until libdxcompiler.so exists, the compile fails at the first native call with
+    DllNotFoundException - which this harness reports plainly, isolating the exact blocker.
+
+    Intentionally NOT in ShadowDusk.slnx (like every validation/* harness); it needs the
+    Android workload. Opted OUT of central package management so the MonoGame Android pin
+    stays local to this harness (the KniDesktopGL pattern).
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0-android35.0</TargetFramework>
+    <SupportedOSPlatformVersion>21</SupportedOSPlatformVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <!-- MonoGame/Android analyzers trip the repo-wide warnings-as-errors. -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RootNamespace>ShadowDusk.Validation.AndroidGl</RootNamespace>
+    <MonoGamePlatform>Android</MonoGamePlatform>
+    <ApplicationId>com.shadowdusk.androidgl</ApplicationId>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MonoGame.Framework.Android" Version="3.8.4.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
+  </ItemGroup>
+
+  <!-- Android-arm64 natives bundled into the APK lib/arm64-v8a/ (Phase 50). Exists()-gated so
+       the project builds before the natives land (it then fails at runtime with a clear
+       DllNotFoundException naming the missing .so). libspirv-cross.so is the easy NDK build;
+       libdxcompiler.so is the DXC long pole. -->
+  <ItemGroup>
+    <AndroidNativeLibrary Include="..\..\tools\spirv-cross\android-arm64\libspirv-cross.so"
+                          Condition="Exists('..\..\tools\spirv-cross\android-arm64\libspirv-cross.so')">
+      <Abi>arm64-v8a</Abi>
+    </AndroidNativeLibrary>
+    <AndroidNativeLibrary Include="..\..\tools\dxc\android-arm64\libdxcompiler.so"
+                          Condition="Exists('..\..\tools\dxc\android-arm64\libdxcompiler.so')">
+      <Abi>arm64-v8a</Abi>
+    </AndroidNativeLibrary>
+  </ItemGroup>
+
+</Project>
