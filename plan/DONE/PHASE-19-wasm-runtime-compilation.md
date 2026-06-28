@@ -1,6 +1,6 @@
 # Phase 19 — WASM Runtime Compilation (In-Browser `.fx` → `.mgfx`)
 
-**Status:** ✅ **Done** (2026-05-30, branch `phase19-wasm-runtime`) — **scope narrowed**: this phase now covers the **WASM-portable managed compile engine**, built and desktop-verified. The *browser-runtime* tail (real emscripten DXC/SPIRV-Cross modules + an actual Mode 1/Mode 2 browser run) was carved out to **[Phase 100](../PHASE-100-deferred-backlog.md)** because it is gated on a toolchain/browser not available in-session. This is a deliberate rescope, **not** a claim that in-browser compilation has been validated end-to-end — see *Progress* and the revised *Definition of Done*.
+**Status:** ✅ **Done** (2026-05-30, branch `phase19-wasm-runtime`) — **scope narrowed**: this phase now covers the **WASM-portable managed compile engine**, built and desktop-verified. The *browser-runtime* tail (real emscripten DXC/SPIRV-Cross modules + an actual Mode 1/Mode 2 browser run) was carved out to **[Phase 100](PHASE-100-deferred-backlog.md)** because it is gated on a toolchain/browser not available in-session. This is a deliberate rescope, **not** a claim that in-browser compilation has been validated end-to-end — see *Progress* and the revised *Definition of Done*.
 **Depends on:** Phase 8 (`ShadowDusk.Compiler` / `IShaderCompiler` abstraction — `ShadowDusk.Wasm` is the second implementation), Phase 17 (a browser-produced `.mgfx` must be exactly as MonoGame-loadable, and carry the same MojoShader-dialect GLSL, as a desktop-produced one — same format, same fidelity bar), Phase 25 (security hardening of the untrusted web/input path), Phase 30 (cross-platform CI / native-binary restore).
 **Blocks:** ShadowDusk's **Part 1 (reach)** promise for the browser — compiling `.fx` at runtime, in-browser, with **no server roundtrip** (e.g. Vic's XNA Fiddle / KNI web).
 
@@ -54,7 +54,7 @@ The **managed "reach engine"** — everything needed to compile `.fx` → `.mgfx
 
 ## Tasks
 
-### Mode 1 — precompiled bytes load in WASM → **moved to [Phase 100](../PHASE-100-deferred-backlog.md)**
+### Mode 1 — precompiled bytes load in WASM → **moved to [Phase 100](PHASE-100-deferred-backlog.md)**
 *(Requires a real browser to validate rendering, unavailable in-session. Tracked in Phase 100.)*
 - [→100] Stand up a **minimal, throwaway** MonoGame/KNI **WebGL** harness that calls `new Effect(gd, bytes)` on a Phase-9-compiled OpenGL `.mgfx` and draws a known quad.
 - [→100] Confirm the Phase-17 DesktopGL `.mgfx` **also** loads + renders in WebGL; record any DesktopGL-vs-WebGL divergence.
@@ -64,11 +64,11 @@ The **managed "reach engine"** — everything needed to compile `.fx` → `.mgfx
 - [x] Define the `[JSImport]` boundary (mirror the desktop native-interop surface) — **done**: `Phase19.js` contract + `JsDxcShaderCompiler`/`JsSpirvToGlslTranspiler`.
 - [x] Wire `WasmShaderCompiler` to call WASM-DXC (HLSL → SPIR-V) and WASM-SPIRV-Cross (SPIR-V → GLSL), then reuse the **shared managed** GLSL MojoShader rewrite + `MgfxWriter` to emit bytes — **done & compiles for `net8.0-browser`**.
 - [x] Assert WASM output is **byte-identical** to the CLI output — **proven on desktop**: routing the corpus through `SpirvReflector` (native DXC+SPIRV-Cross otherwise unchanged) yields `.mgfx` byte-identical to the DXIL-reflected default, 10/10. Remaining variable = the DXC/SPIRV-Cross *binary version* used in-browser → closed in Phase 100.
-- [→100] Source the emscripten DXC + SPIRV-Cross WASM modules — **moved to [Phase 100](../PHASE-100-deferred-backlog.md)** (external toolchain).
-- [→100] Measure download size, memory, and cold-start — **moved to [Phase 100](../PHASE-100-deferred-backlog.md)**.
+- [→100] Source the emscripten DXC + SPIRV-Cross WASM modules — **moved to [Phase 100](PHASE-100-deferred-backlog.md)** (external toolchain).
+- [→100] Measure download size, memory, and cold-start — **moved to [Phase 100](PHASE-100-deferred-backlog.md)**.
 
 ### Validation / CI
-- [→100] Headless-browser smoke test in [Phase 30 CI](PHASE-30-ci-and-nuget-release.md) for mode 1 — **moved to [Phase 100](../PHASE-100-deferred-backlog.md)**.
+- [→100] Headless-browser smoke test in [Phase 30 CI](PHASE-30-ci-and-nuget-release.md) for mode 1 — **moved to [Phase 100](PHASE-100-deferred-backlog.md)**.
 - [→100] Feed untrusted `.fx` through [Phase 25](PHASE-25-security-hardening.md) input validation — **closed 2026-06-15**: Phase 25 reframed, untrusted third-party `.fx` is the consumer's isolation responsibility, not library input validation.
 
 ---
@@ -76,9 +76,9 @@ The **managed "reach engine"** — everything needed to compile `.fx` → `.mgfx
 ## Acceptance Criteria
 
 - [x] `ShadowDusk.Wasm` produces `.mgfx` bytes **identical** to the CLI for the same source + OpenGL target — proven byte-transparent on desktop via the `SpirvReflector` reflection-source swap (10/10 corpus), modulo the in-browser DXC/SPIRV-Cross binary version.
-- [→100] **Mode 1:** a precompiled `.mgfx` loads via `new Effect(gd, bytes)` and renders in a real WebGL build — **moved to [Phase 100](../PHASE-100-deferred-backlog.md)** (needs a browser).
-- [→100] **Mode 2:** at least one shader compiles **fully in-browser** — **moved to [Phase 100](../PHASE-100-deferred-backlog.md)** (C# wired & browser-compiling; needs the emscripten modules + a browser run).
-- [→100] DesktopGL-vs-WebGL divergences documented — **moved to [Phase 100](../PHASE-100-deferred-backlog.md)**.
+- [→100] **Mode 1:** a precompiled `.mgfx` loads via `new Effect(gd, bytes)` and renders in a real WebGL build — **moved to [Phase 100](PHASE-100-deferred-backlog.md)** (needs a browser).
+- [→100] **Mode 2:** at least one shader compiles **fully in-browser** — **moved to [Phase 100](PHASE-100-deferred-backlog.md)** (C# wired & browser-compiling; needs the emscripten modules + a browser run).
+- [→100] DesktopGL-vs-WebGL divergences documented — **moved to [Phase 100](PHASE-100-deferred-backlog.md)**.
 - [x] No DirectX/DXBC promised in WASM (explicitly deferred) — only the OpenGL/SPIR-V path was built.
 
 ---
@@ -87,4 +87,4 @@ The **managed "reach engine"** — everything needed to compile `.fx` → `.mgfx
 
 The **WASM-portable managed compile engine** exists and is desktop-verified: `ShadowDusk.Wasm`'s `WasmShaderCompiler` composes the real pipeline with browser `[JSImport]` backends + the pure-managed `SpirvReflector`, **compiles for `net8.0-browser`**, and the GL pipeline produces `.mgfx` **byte-identical** to the CLI when reflection is sourced from SPIR-V instead of DXIL (10/10 corpus). The DXIL/`ID3D12ShaderReflection` Windows-only blocker is removed from the GL path. This is the engine for the *reach* axis.
 
-> **What this Done does NOT claim:** that in-browser compilation has been validated end-to-end. Proving a shader actually compiles+renders in a real browser — with real emscripten DXC/SPIRV-Cross modules behind the `Phase19.js` contract — is **[Phase 100](../PHASE-100-deferred-backlog.md)** (deferred; needs a browser/toolchain unavailable in-session). The polished user-facing Fiddle app is **[Phase 22](PHASE-22-wasm-shader-fiddle-sample.md)**.
+> **What this Done does NOT claim:** that in-browser compilation has been validated end-to-end. Proving a shader actually compiles+renders in a real browser — with real emscripten DXC/SPIRV-Cross modules behind the `Phase19.js` contract — is **[Phase 100](PHASE-100-deferred-backlog.md)** (deferred; needs a browser/toolchain unavailable in-session). The polished user-facing Fiddle app is **[Phase 22](PHASE-22-wasm-shader-fiddle-sample.md)**.

@@ -37,4 +37,4 @@ dotnet run --project validation/MonoGameV11 -- v10    # MGFX v10 -> output/mgfx-
 python validation/compare_mgfxv11.py
 ```
 
-Format spec: [`plan/PHASE-35-appendix/mgfx-v11-format-spec.md`](../../plan/PHASE-35-appendix/mgfx-v11-format-spec.md).
+Format spec: [`plan/DONE/PHASE-35-appendix/mgfx-v11-format-spec.md`](../../plan/DONE/PHASE-35-appendix/mgfx-v11-format-spec.md).

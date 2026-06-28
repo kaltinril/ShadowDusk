@@ -49,7 +49,7 @@ Almost every "task" in this document already maps to a written phase plan under 
 | §8 + §11.x + Task I — **WASM in-browser / runtime compilation** | [PHASE-19 WASM engine](plan/DONE/PHASE-19-wasm-runtime-compilation.md), [PHASE-22 fiddle sample](plan/DONE/PHASE-22-wasm-shader-fiddle-sample.md), [PHASE-23 in-browser compile](plan/DONE/PHASE-23-in-browser-compilation.md), [PHASE-24 browser render](plan/DONE/PHASE-24-browser-render-validation.md) | ✅ Done — the faithful in-browser frontend is the **pinned DirectXShaderCompiler compiled to WebAssembly** (byte-identical SPIR-V to desktop DXC); Slang was a sample-only spike and is **not** the product. Renders 10/10 in real headless KNI WebGL |
 | §15.4 native-binary distribution across OS | [PHASE-30 cross-platform CI](plan/DONE/PHASE-30-ci-and-nuget-release.md) | 🚧 Open |
 | §15.4 / §8 path-safety + untrusted shader-source input validation | [PHASE-25 security hardening](plan/DONE/PHASE-25-security-hardening.md) | ✅ Done (2026-06-15) — reframed: the input-validation items were security theater for the product's real threat model (the `.fx` author and the compiler-runner are the same developer); closed by a trust-model `SECURITY.md` |
-| §11.8 MSBuild precompile task | [PHASE-100 deferred backlog](plan/PHASE-100-deferred-backlog.md) | 🗒️ Backlog |
+| §11.8 MSBuild precompile task | [PHASE-100 deferred backlog](plan/DONE/PHASE-100-deferred-backlog.md) | 🗒️ Backlog |
 
 The two areas this document raised that originally lacked a phase plan — DirectX **DXBC** (now Phase 18) and **WASM in-browser compilation** (now Phases 19/22/23/24) — have since been planned *and* built (all moved to `plan/DONE/` as of 2026-06-02). Everything else is already planned or built.
 

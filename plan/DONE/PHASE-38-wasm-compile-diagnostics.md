@@ -1,5 +1,9 @@
 # Phase 38 — Surface real line/column compile diagnostics from the in-browser (WASM) compiler
 
+> **📦 Archived to DONE (2026-06-28).** Implemented and headless-verified. The single
+> remaining item, the in-browser squiggle confirmation rung, was **moved to
+> [Phase 51 (A1)](../PHASE-51-consolidated-remainder-backlog.md)**.
+
 **Status:** 🟢 **Implemented (2026-06-07)** — branch `phase38-wasm-compile-diagnostics`. Approach **B**. All code edits + the Stage-2 relink are done and verified headless: **G1 byte-identity 10/10** (no fidelity regression) and the new **G2 diagnostics gate** passes (bad HLSL now yields `file:line:col: error: message`, not the opaque blob). The final rung — seeing the squiggle in a real KNI/Blazor browser — is the only thing left.
 
 **Track:** Reach (Part 1 of THE PURPOSE — in-browser/in-memory) + diagnostics quality (Core Design Constraint 5: *fail loudly with file/line/column*). Consumer-facing: this is what lets a downstream KNI/Blazor tool (e.g. Vic's **XNAFiddle**) show *where* a shader is wrong, not just *that* it failed.
@@ -33,13 +37,13 @@ No line number, no squiggle, no indication of *what* or *where* the error is. (T
 ## Root cause (verified end-to-end)
 
 1. **DXC captures the diagnostics correctly.** The faithful C++ embind glue pulls DXC's `DXC_OUT_ERRORS` blob verbatim on failure — the same `file:line:col: error: message` text the desktop reformatter parses — then throws it:
-   - [`.wasm-build/dxc-wasm-glue.cpp:108-118`](../.wasm-build/dxc-wasm-glue.cpp#L108-L118) → `throw std::runtime_error(errText);`
+   - [`.wasm-build/dxc-wasm-glue.cpp:108-118`](../../.wasm-build/dxc-wasm-glue.cpp#L108-L118) → `throw std::runtime_error(errText);`
 2. **`-fwasm-exceptions` makes the thrown text opaque in JS.** Build flag confirmed in `.wasm-build/build-dxc-wasm.ps1` (lines ~164, ~217). A C++ exception thrown across embind under wasm-EH arrives in JS as a `WebAssembly.Exception` whose `.message` is the default `[object WebAssembly.Exception]`. Decoding the real `what()` requires emscripten's `Module.getExceptionMessage(e)` helper.
 3. **The decode helper was not exported.** `grep` over the shipped `src/ShadowDusk.Wasm/wwwroot/dxc/dxcompiler.js` finds **none** of `getExceptionMessage` / `getCppExceptionMessage` / `EXPORT_EXCEPTION_HANDLING_HELPERS`. So neither the JS shim nor .NET can read the text.
 4. **The C# WASM seam therefore can only wrap the opaque string.** It does not call the reformatter:
-   - [`src/ShadowDusk.Wasm/JsShaderBackends.cs:67-77`](../src/ShadowDusk.Wasm/JsShaderBackends.cs#L67) → `Line: 0`, `Message: $"WASM DXC backend failed: {ex.Message}"`.
+   - [`src/ShadowDusk.Wasm/JsShaderBackends.cs:67-77`](../../src/ShadowDusk.Wasm/JsShaderBackends.cs#L67) → `Line: 0`, `Message: $"WASM DXC backend failed: {ex.Message}"`.
 
-**Contrast — desktop already does it right:** [`src/ShadowDusk.HLSL/Dxc/DxcShaderCompiler.cs:58-75`](../src/ShadowDusk.HLSL/Dxc/DxcShaderCompiler.cs#L58-L75) runs `DxcDiagnosticReformatter.Reformat(errorText, sourceFileName)` and returns the primary parsed error with line/col. The parser itself is shared and correct: [`src/ShadowDusk.HLSL/Dxc/DxcDiagnosticReformatter.cs`](../src/ShadowDusk.HLSL/Dxc/DxcDiagnosticReformatter.cs) (Clang-style `^(?<file>.+):(?<line>\d+):(?<col>\d+):\s*(?<severity>error|warning|note):\s*(?<message>.+)$`).
+**Contrast — desktop already does it right:** [`src/ShadowDusk.HLSL/Dxc/DxcShaderCompiler.cs:58-75`](../../src/ShadowDusk.HLSL/Dxc/DxcShaderCompiler.cs#L58-L75) runs `DxcDiagnosticReformatter.Reformat(errorText, sourceFileName)` and returns the primary parsed error with line/col. The parser itself is shared and correct: [`src/ShadowDusk.HLSL/Dxc/DxcDiagnosticReformatter.cs`](../../src/ShadowDusk.HLSL/Dxc/DxcDiagnosticReformatter.cs) (Clang-style `^(?<file>.+):(?<line>\d+):(?<col>\d+):\s*(?<severity>error|warning|note):\s*(?<message>.+)$`).
 
 ## Fix (Approach B — chosen)
 

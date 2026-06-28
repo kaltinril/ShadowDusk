@@ -71,7 +71,7 @@ render** (`compare_kni.py`). The GLSL is the same MojoShader-dialect code, so fo
 the KNIFX picture is identical to v10, the **smoke test** that ShadowDusk's KNIFX container is
 valid and loadable. The KNIFX-specific fixes (optimized `Matrix4x4` via `columnsActual`,
 sampler-without-texture) are **not** exercised by this corpus and must be validated against a
-KNIFXC golden separately (see `plan/PHASE-35-appendix/knifx-format-spec.md`).
+KNIFXC golden separately (see `plan/DONE/PHASE-35-appendix/knifx-format-spec.md`).
 
 `compare_kni.py` exits non-zero if any image is missing or over tolerance, and writes magenta
 diffs to `validation/output/kni-diff/` for any over-tolerance pixels.

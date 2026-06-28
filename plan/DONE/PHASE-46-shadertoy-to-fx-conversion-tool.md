@@ -1,5 +1,12 @@
 # Phase 46 — ShaderToy → FX Conversion Tool (experiment / SPIKE)
 
+> **📦 Archived to DONE (2026-06-28).** The experiment succeeded (converter built,
+> compile-proven, and render/fidelity-proven) and was **promoted to
+> [Phase 47](../PHASE-47-shadertoy-frontend-promotion.md)**, which now owns the converter as an
+> in-solution product library and carries all forward ShaderToy work. This doc is retained as
+> the technique/coverage reference. Its own deferred items (host-uniform passthrough, broader
+> WebGL-reference validation) live with the active Phase 47.
+
 **Track:** Reach experiment (adoption/demo). **Not** the product pipeline.
 
 > ## ⏯️ SESSION HANDOFF — current state (2026-06-20)

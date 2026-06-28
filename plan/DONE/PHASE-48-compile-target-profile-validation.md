@@ -78,19 +78,19 @@ Because the two compilers parse the target at opposite ends of preprocessing, th
 ## Root cause (code walk — line refs against `main`)
 
 1. **The pre-parser accepts any identifier as the profile, by design.**
-   [`FxPreParser.Parse`](../src/ShadowDusk.HLSL/FxPreParser.cs#L998-L1004) only checks the profile token is an
+   [`FxPreParser.Parse`](../../src/ShadowDusk.HLSL/FxPreParser.cs#L998-L1004) only checks the profile token is an
    *identifier* (so `A` qualifies), then stores `profileTok.Text` verbatim. The comment at
-   [FxPreParser.cs:25-26](../src/ShadowDusk.HLSL/FxPreParser.cs#L25-L26) states the intent: *"All profiles
+   [FxPreParser.cs:25-26](../../src/ShadowDusk.HLSL/FxPreParser.cs#L25-L26) states the intent: *"All profiles
    accepted at pre-parse time; unrecognized profiles will be rejected by DXC later with a proper diagnostic."*
    That assumption is **false for the profile token** — it never reaches DXC as a target (see step 3).
 
 2. **A `KnownProfiles` set + `IsKnownProfile` helper already exist** but are **not called** by the
-   compile-statement parse: [FxPreParser.cs:27-46](../src/ShadowDusk.HLSL/FxPreParser.cs#L27-L46). The machinery
+   compile-statement parse: [FxPreParser.cs:27-46](../../src/ShadowDusk.HLSL/FxPreParser.cs#L27-L46). The machinery
    to validate is present; it is simply unused here. **Note:** this set currently lacks the `*_level_9_*`
    variants (see the load-bearing item W0 below).
 
 3. **The stored profile string never becomes a DXC `-T` target.** For the GL/DX path it is fed only to
-   [`ParseShaderModel`](../src/ShadowDusk.Compiler/Internal/CompilationPipeline.cs#L737-L748):
+   [`ParseShaderModel`](../../src/ShadowDusk.Compiler/Internal/CompilationPipeline.cs#L737-L748):
 
    ```csharp
    var m = Regex.Match(profile, @"_(\d)_(\d)");   // needs "_<digit>_<digit>"
@@ -100,27 +100,27 @@ Because the two compilers parse the target at opposite ends of preprocessing, th
 
    `A` and an un-expanded `PS_SHADERMODEL` match nothing → the method returns **(3, 0)**. The bogus token is
    swallowed and SM3 is assumed. (Used at
-   [CompilationPipeline.cs:358 / 389](../src/ShadowDusk.Compiler/Internal/CompilationPipeline.cs#L358).)
+   [CompilationPipeline.cs:358 / 389](../../src/ShadowDusk.Compiler/Internal/CompilationPipeline.cs#L358).)
 
 4. **Why ShadowDusk can't see the expanded value at parse time.** `FxPreParser` runs as **Stage 1**, on raw
-   source, *before* preprocessing ([CompilationPipeline.cs:87](../src/ShadowDusk.Compiler/Internal/CompilationPipeline.cs#L87)).
+   source, *before* preprocessing ([CompilationPipeline.cs:87](../../src/ShadowDusk.Compiler/Internal/CompilationPipeline.cs#L87)).
    ShadowDusk's own `Preprocessor` deliberately does **not** expand macros or evaluate `#if` — it flattens
    `#include`s and injects platform macros, *"leav[ing] #if/#define lines for DXC to evaluate"*
-   ([Preprocessor.cs:65](../src/ShadowDusk.Core/Preprocessor/Preprocessor.cs#L65)). Full macro expansion only
+   ([Preprocessor.cs:65](../../src/ShadowDusk.Core/Preprocessor/Preprocessor.cs#L65)). Full macro expansion only
    happens later, inside DXC's compile of each shader — by which point the profile token has already been
    consumed and discarded. So at the moment the profile is recorded, `PS_SHADERMODEL` is genuinely
    unknowable, which is *why* the lenient fallback exists. The fallback is reasonable; the missing piece is a
    **post-expansion re-check**.
 
 5. **The FNA path catches more but still not this.**
-   [`ResolveFnaProfile`](../src/ShadowDusk.Compiler/Internal/CompilationPipeline.cs#L950-L994) does a *shape*
+   [`ResolveFnaProfile`](../../src/ShadowDusk.Compiler/Internal/CompilationPipeline.cs#L950-L994) does a *shape*
    test and correctly rejects SM4+ literals and cross-stage misuse with `SD0300` — but anything that doesn't
    "look like a profile" (including `A` and an undefined `PS_SHADERMODEL`) is treated as an unexpanded macro
-   and **defaults to SM3** ([line 965](../src/ShadowDusk.Compiler/Internal/CompilationPipeline.cs#L965)), same
+   and **defaults to SM3** ([line 965](../../src/ShadowDusk.Compiler/Internal/CompilationPipeline.cs#L965)), same
    blind spot.
 
 6. **The existing re-parse-after-expansion path does not cover this.** There *is* a path that DXC-preprocesses
-   then re-parses ([CompilationPipeline.cs:157-197](../src/ShadowDusk.Compiler/Internal/CompilationPipeline.cs#L157-L197)),
+   then re-parses ([CompilationPipeline.cs:157-197](../../src/ShadowDusk.Compiler/Internal/CompilationPipeline.cs#L157-L197)),
    but it only triggers when Stage 1 found **zero** techniques **and** the target's macros select the modern
    (SM4/SM6) branch, and even then it only re-checks the technique *count* — it never re-validates the profile
    token. The bug-report shader has a literal `technique { … }` block, so this path is skipped entirely.
@@ -174,10 +174,10 @@ each pass, in every pipeline (GL, DX, FNA):
    **more** helpful than mgfxc's bare `unrecognized compiler target 'X'`.
 
 **Expansion source:** GL/DX reuse DXC's `Preprocess` (already used in the zero-technique fallback at
-[CompilationPipeline.cs:159-169](../src/ShadowDusk.Compiler/Internal/CompilationPipeline.cs#L159-L169)) with the
+[CompilationPipeline.cs:159-169](../../src/ShadowDusk.Compiler/Internal/CompilationPipeline.cs#L159-L169)) with the
 target's `PlatformMacros` so `#if OPENGL` resolves to the right branch. FNA (PreserveSm3) folds the
 recognized-profile reject into `ResolveFnaProfile`'s existing "doesn't look like a profile" branch
-([line 965](../src/ShadowDusk.Compiler/Internal/CompilationPipeline.cs#L965)); the FNA pre-parse already has
+([line 965](../../src/ShadowDusk.Compiler/Internal/CompilationPipeline.cs#L965)); the FNA pre-parse already has
 the source and its `#define`s — resolve the token via vkd3d's preprocessor or an equivalent object-like-macro
 lookup (decide during W1).
 
@@ -265,7 +265,7 @@ the byte-identity corpus). The three caveats the review surfaced, and their reso
 - **New DXC dependency on the validation step — this was WRONG in the first cut and BROKE `main`; now FIXED.**
   My original note here ("sound by construction") was incorrect. The recognized-profile check macro-expands a
   profile macro via DXC's `-P` preprocessor, but the **WASM DXC shim has no `-P` export and THROWS**
-  `NotSupportedException` ([JsShaderBackends.Preprocess](../src/ShadowDusk.Wasm/JsShaderBackends.cs#L95-L104)).
+  `NotSupportedException` ([JsShaderBackends.Preprocess](../../src/ShadowDusk.Wasm/JsShaderBackends.cs#L95-L104)).
   The check ran on every macro-profile compile, which the in-browser DX/FNA byte-identity corpus exercises, so
   the standing `wasm.yml` gate went RED on the PR-#113 merge (every macro-profile shader threw, including the
   "vkd3d path must not touch the other modules" isolation scenario). I deferred running that gate instead of

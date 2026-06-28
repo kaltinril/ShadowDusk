@@ -18,7 +18,7 @@ guard asserts no `src/*.csproj` depends on MonoGame. **Still owner-deferred:** N
 box before this merges — CI cannot run them).
 
 **Depends on:**
-- [Phase 46 — ShaderToy → FX Conversion Tool](PHASE-46-shadertoy-to-fx-conversion-tool.md): the
+- [Phase 46 — ShaderToy → FX Conversion Tool](DONE/PHASE-46-shadertoy-to-fx-conversion-tool.md): the
   converter being promoted. Phase 46 is render-proven (fidelity gate **46/46 @ mean 0.00/255** vs
   the original GLSL; **371 tests green**; gallery 72/72) and was deliberately shaped for this lift —
   a clean `ShadowDusk.ShaderToy` library, one public `ShaderToyConverter.Convert(glsl)` entry, the

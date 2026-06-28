@@ -1,5 +1,11 @@
 # Phase 35 — Forward-version support & validation (newer MonoGame / MGFX / DX — seamless)
 
+> **📦 Archived to DONE (2026-06-28).** Areas A + B are shipped and render-proven. The two
+> remaining items, Area C (DX12/DXIL render-validation) and Area D (un-park Vulkan) — both
+> externally blocked on MonoGame 3.8.5 going stable — were **moved to
+> [Phase 51 (B1 / B2)](../PHASE-51-consolidated-remainder-backlog.md)**. This doc is kept for
+> the A/B implementation record.
+
 **Status:** 🟡 **Area A + B DONE (B built + render-proven 2026-06-14); C/D externally blocked on MonoGame 3.8.5 going stable.** Scaffold created 2026-06-04. (Area B: MGFX v11 + KNIFX writers, the `CapabilityProfile` / `--target-runtime` selector, and `RuntimeProfileDetector` are all shipped and render-proven, see PRs #92-#98 and `validation/MonoGameV11` + `validation/KniDesktopGL knifx`.)
 **Roadmap track:** Forward-compatibility (newer versions, seamless).
 
