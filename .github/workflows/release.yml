@@ -200,7 +200,9 @@ jobs:
             'tools/vkd3d/osx-x64/libvkd3d-shader.1.dylib' \
             'tools/vkd3d/osx-arm64/libvkd3d-shader.1.dylib' \
             'tools/dxc/osx-x64/libdxcompiler.dylib' \
-            'tools/dxc/osx-arm64/libdxcompiler.dylib' ; do
+            'tools/dxc/osx-arm64/libdxcompiler.dylib' \
+            'tools/dxc/android-arm64/libdxcompiler.so' \
+            'tools/spirv-cross/android-arm64/libspirv-cross.so' ; do
               if [ ! -f "$f" ]; then
                 echo "::error::restored native missing: $f — tools/restore.sh failed to provision a hosted, pinned asset. Packing now would ship a package broken on that RID; failing the release instead."
                 missing=1
@@ -252,7 +254,7 @@ jobs:
       # pack-consume.yml's pack gate). tools/restore.sh provisions everything by pinned
       # download (Phase 37 A/C), so a clean CI runner satisfies this gate.
       # The LGPL-2.1 notice must ride along with the binaries it covers.
-      - name: Verify ShadowDusk.HLSL contains all natives (vkd3d ×4 RIDs + macOS DXC ×2) + LGPL notice
+      - name: Verify ShadowDusk.HLSL contains all natives (vkd3d ×4 RIDs + macOS DXC ×2 + android-arm64 DXC) + LGPL notice
         run: |
           pkg=$(find nupkg -maxdepth 1 -name 'ShadowDusk.HLSL.*.nupkg' ! -name '*.snupkg' | head -1)
           echo "Inspecting $pkg"
@@ -265,13 +267,28 @@ jobs:
             'runtimes/osx-arm64/native/libvkd3d-shader.1.dylib' \
             'runtimes/osx-x64/native/libdxcompiler.dylib' \
             'runtimes/osx-arm64/native/libdxcompiler.dylib' \
+            'runtimes/android-arm64/native/libdxcompiler.so' \
             'THIRD-PARTY-NOTICES.txt' ; do
               if ! grep -qF "$native" <<<"$listing"; then
-                echo "::error::$pkg is missing $native — a consumer on that RID gets a broken package (SD0211 for vkd3d paths; DllNotFoundException for the macOS OpenGL pipeline). Restore natives before packing (tools/restore.sh; RELEASING.md 'Native binaries')."
+                echo "::error::$pkg is missing $native — a consumer on that RID gets a broken package (SD0211 for vkd3d paths; DllNotFoundException for the macOS/Android OpenGL pipeline). Restore natives before packing (tools/restore.sh; RELEASING.md 'Native binaries')."
                 missing=1
               fi
           done
           exit $missing
+
+      # ShadowDusk.GLSL's only bundled native is the Phase 50 android-arm64 SPIRV-Cross .so
+      # (desktop SPIRV-Cross ships transitively via Silk.NET.SPIRV.Cross.Native; it is NOT
+      # packed here). It is restore-state-dependent the same way (Condition="Exists(...)"):
+      # a pack without the restored binary SILENTLY produces a package whose on-device
+      # Android compile dies with DllNotFoundException at the SPIR-V -> GLSL stage. Fail red.
+      - name: Verify ShadowDusk.GLSL contains the android-arm64 SPIRV-Cross native
+        run: |
+          pkg=$(find nupkg -maxdepth 1 -name 'ShadowDusk.GLSL.*.nupkg' ! -name '*.snupkg' | head -1)
+          echo "Inspecting $pkg"
+          if ! unzip -l "$pkg" | grep -qF 'runtimes/android-arm64/native/libspirv-cross.so'; then
+            echo "::error::$pkg is missing runtimes/android-arm64/native/libspirv-cross.so — an on-device Android compile would fail with DllNotFoundException at the SPIR-V to GLSL stage. Restore natives before packing (tools/restore.sh; RELEASING.md 'Native binaries')."
+            exit 1
+          fi
 
       - name: Upload packages
         uses: actions/upload-artifact@v7

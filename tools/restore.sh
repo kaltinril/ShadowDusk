@@ -198,12 +198,15 @@ restore_dxc_macos
 # vkd3d is NOT needed (DirectX/FNA are desktop-only). DxcLoader/SpvcLoader resolve them by
 # bare SONAME from the APK's lib/arm64-v8a/ (Android W^X-safe).
 #
-# Pins are PLACEHOLDERS until the hosted NDK builds land (dxc-android-build.yml /
-# spirv-cross-android-build.yml). Until then these are inert (the restore_dxc_file PENDING
-# pattern) and the android RID is simply absent from the package — desktop/WASM packing is
-# unaffected. Re-running those build workflows re-pins the SHA-256s here.
-DXC_ANDROID_ARM64_SHA256="PENDING-FIRST-HOSTED-BUILD"
-SPVC_ANDROID_ARM64_SHA256="PENDING-FIRST-HOSTED-BUILD"
+# Pins enforced since 2026-06-28 (Phase 50 hosting): the android-arm64 DXC + SPIRV-Cross
+# .so are hosted on the native-dxc-1.7.2212.40 tag (the DXC is the same e043f4a1 / 1.7.2212.40
+# family) and SHA-256-verified below. restore_android provisions them so ShadowDusk.HLSL packs
+# runtimes/android-arm64/native/libdxcompiler.so and ShadowDusk.GLSL packs the spirv-cross .so —
+# an on-device Android compile is then self-contained. Same pin-discipline as the macOS dylibs:
+# hash mismatch -> re-download; offline -> non-fatal warning. Re-running dxc-android-build.yml /
+# spirv-cross-android-build.yml re-pins the SHA-256s here.
+DXC_ANDROID_ARM64_SHA256="b3a25ca724f71155ba3ccc8d32f94bce11375a5f44dac9d5cb6e4636271cfe67"
+SPVC_ANDROID_ARM64_SHA256="7b1e5e366080b6ea9652debd1126b1a52d2d5779d7f8a1e06f0a7c6a9ce9870f"
 
 # restore_spvc_android_file <asset-name> <dest-relative-to-tools/spirv-cross> <sha256>
 restore_spvc_android_file() {

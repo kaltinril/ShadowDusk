@@ -18,6 +18,37 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+## [0.11.0] - 2026-06-28
+
+Android joins the supported runtime-compile platforms: ShadowDusk now compiles `.fx` -> `.mgfx`
+**in memory, at runtime, on an Android device** (the "shader fiddle on a phone" shape), through the
+same faithful HLSL -> DXC -> SPIR-V -> SPIRV-Cross -> GLSL -> MGFX pipeline used everywhere else, via
+the seamless `new EffectCompiler()`. This is additive and seamless: all existing OpenGL / DirectX /
+FNA / WASM output is byte-identical, the MGFX v10 default is unchanged, and desktop/WASM consumers are
+unaffected (the Android natives are RID-scoped, so they are never deployed into a non-Android app).
+
+### Added
+
+- **On-device runtime shader compilation on Android (arm64-v8a)** (Phase 50). A .NET-for-Android
+  MonoGame app can take a user's shader **text**, compile it to a MonoGame `.mgfx` on the device, and
+  load it into a live `Effect`, with no host precompile and no content pipeline. The two native pieces
+  the OpenGL pipeline needs (`libdxcompiler.so` and `libspirv-cross.so`, built for `android-arm64`)
+  now ship inside `ShadowDusk.HLSL` and `ShadowDusk.GLSL` under `runtimes/android-arm64/native/`, so
+  "add the package, call the API" is the entire setup, exactly as on desktop. Proven on-device by
+  compiling and rendering a pixel shader on an Android emulator.
+- A consumer guide, **"On-Device (Android Runtime Compile)"**, in the published documentation site,
+  with the integration recipe (`new EffectCompiler().CompileAsync(fx, new CompilerOptions { Target =
+  PlatformTarget.OpenGL })` -> `result.Value.Data` -> `new Effect(GraphicsDevice, mgfx)`) and notes for
+  embedding the compiler in an Android shader fiddle.
+
+### Changed
+
+- `EffectCompiler` **auto-selects the pure-managed `SpirvReflector` on Android** (the native
+  DXIL-oracle reflection path is unavailable there). The selection is automatic and produces the same
+  reflection result, so consumers do nothing and desktop behavior is unchanged.
+
+### Fixed
+
 ## [0.10.0] - 2026-06-28
 
 Fidelity fixes driven by real shipping shaders from the Gum / Apos.Shapes ecosystem (requested by
@@ -621,7 +652,8 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.7.0...v0.8.0

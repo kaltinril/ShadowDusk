@@ -158,6 +158,7 @@ jobs:
             'runtimes/osx-arm64/native/libvkd3d-shader.1.dylib' \
             'runtimes/osx-x64/native/libdxcompiler.dylib' \
             'runtimes/osx-arm64/native/libdxcompiler.dylib' \
+            'runtimes/android-arm64/native/libdxcompiler.so' \
             'THIRD-PARTY-NOTICES.txt' ; do
               if ! grep -qF "$native" <<<"$listing"; then
                 echo "::error::$pkg is missing $native — a consumer on that RID gets the 0.2.0 disaster (natives absent from the package). Restore natives before packing (tools/restore.*)."
@@ -165,6 +166,20 @@ jobs:
               fi
           done
           exit $missing
+
+      # ShadowDusk.GLSL's only bundled native is the Phase 50 android-arm64 SPIRV-Cross .so
+      # (desktop SPIRV-Cross ships transitively via Silk.NET.SPIRV.Cross.Native). Same
+      # Exists()-conditioned pack as HLSL, so gate it the same way.
+      - name: 'Pack gate: ShadowDusk.GLSL contains the android-arm64 SPIRV-Cross native'
+        shell: bash
+        run: |
+          pkg=$(find localfeed -maxdepth 1 -name 'ShadowDusk.GLSL.*.nupkg' | head -1)
+          echo "Inspecting $pkg"
+          py=$(command -v python3 || command -v python)
+          if ! "$py" -m zipfile -l "$pkg" | grep -qF 'runtimes/android-arm64/native/libspirv-cross.so'; then
+            echo "::error::$pkg is missing runtimes/android-arm64/native/libspirv-cross.so — an on-device Android compile would fail with DllNotFoundException at the SPIR-V to GLSL stage. Restore natives before packing (tools/restore.*)."
+            exit 1
+          fi
 
       # Scaffold the scratch consumer OUTSIDE the repo tree so none of the repo's
       # MSBuild/NuGet context (Directory.Build.props, Directory.Packages.props,
