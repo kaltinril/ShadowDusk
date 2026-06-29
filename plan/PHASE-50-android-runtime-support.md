@@ -2,9 +2,10 @@
 
 **Status:** 🟢 **On-device runtime compile PROVEN (2026-06-28)** — a real `pixel_7` API-34
 emulator compiled an HLSL string to a `.mgfx` and loaded it into a live MonoGame `Effect`
-entirely on the device, via seamless plain `new EffectCompiler()` (see §6.2). Productionization
-follow-ups (host the natives + flip the restore pins, CI workflow, on-device pixel-vs-`mgfxc`
-render diff) are open. (Track: *OS / delivery-shape breadth, post-1.0*.) Today ShadowDusk's
+entirely on the device, via seamless plain `new EffectCompiler()` (see §6.2). The `android-arm64`
+natives are now **hosted + pinned + packed (shipping in 0.11.0)**, so a NuGet consumer is
+self-contained; remaining follow-ups (the automated `dxc-android-build.yml` CI build, on-device
+pixel-vs-`mgfxc` render diff) are open. (Track: *OS / delivery-shape breadth, post-1.0*.) Today ShadowDusk's
 self-contained library runs on **Windows, Linux, and macOS** (and the browser via WASM); this
 phase **adds Android to that OS list** so the *same* faithful pipeline compiles `.fx` → `.mgfx`
 **at runtime, on an Android device**, inside a MonoGame or KNI game. Like [Phase 31](PHASE-31-metal-msl-backend.md) (Metal), the *easy*
@@ -324,10 +325,14 @@ for real devices; x86_64 for the emulator).
 - **arm64-v8a** (real-device deliverable) and **x86_64** (emulator) natives both built; on-device
   compile + `Effect` load proven (green-screen). A finer **pixel-vs-`mgfxc`** on-device render
   diff is the next rung (the harness today proves compile + `Effect` load, not a pixel compare).
-- **Productionization:** host the per-ABI natives on a pinned release tag and flip the
-  `tools/restore.*` `PENDING` SHAs (so other devs/CI restore them instead of building locally);
-  author the CI form `dxc-android-build.yml`; size-optimize; decide the minimum API level. The
-  local build recipe `build-dxc-android.ps1` is the durable artifact.
+- **Productionization:** the `android-arm64` natives are now **hosted on the
+  `native-dxc-1.7.2212.40` release tag, pinned in `tools/restore.*` (SHA-256), and packed into
+  `ShadowDusk.HLSL` / `ShadowDusk.GLSL` under `runtimes/android-arm64/native/` (shipping in
+  0.11.0)** — so other devs/CI/consumers restore them instead of building locally, and the
+  release/`pack-consume` CI hard-gates their presence. Still open: author the CI form
+  `dxc-android-build.yml` to rebuild them; size-optimize; decide the minimum API level; host the
+  `x86_64` emulator natives (currently a local-only dev convenience). The local build recipe
+  `build-dxc-android.ps1` is the durable artifact.
 - **Emulator gotchas hit & solved** (recorded so they don't bite again): the emulator's primary
   ABI is **x86_64** (so x86_64 natives are needed to demo there); Debug **FastDeployment** keeps
   assemblies outside the APK (use `-p:EmbedAssembliesIntoApk=true` for a self-contained
