@@ -58,6 +58,8 @@
       href: samples/mgcb.md
 - name: CLI Reference
   href: cli/index.md
+- name: Glossary
+  href: glossary.md
 - name: API Reference
   href: ../api/
   homepage: ../api/index.md

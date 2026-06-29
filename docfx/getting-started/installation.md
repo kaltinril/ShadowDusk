@@ -4,7 +4,7 @@
 
 - [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8) (≥ 8.0.100)
 
-That's it. DXC binaries come from the `Vortice.Dxc` NuGet package automatically, and the SPIRV-Cross native binary ships transitively through the `Silk.NET.SPIRV.Cross.Native` NuGet — both are restored by `dotnet restore` into the package cache. There is **no separate native install** for the in-memory OpenGL/WebGL path.
+That's it. Everything else, including the native compiler pieces, comes from NuGet automatically when you `dotnet restore`. There is **no separate native install**.
 
 ## The library (the product)
 
@@ -51,11 +51,11 @@ Two things differ from the MonoGame/KNI path, both on FNA's side, not ShadowDusk
 - **FNA is not a NuGet package.** Unlike MonoGame and KNI, FNA is consumed as a **project reference** — a git clone/submodule of [FNA-XNA/FNA](https://github.com/FNA-XNA/FNA) plus its native `fnalibs` (SDL3, FNA3D, FAudio) — per FNA's own setup docs. (Community/unofficial FNA NuGet builds exist, but the project reference is FNA's documented, supported path.) You add `ShadowDusk.Compiler` to that existing FNA project exactly as above.
 - **Different output container.** For `PlatformTarget.Fna`, ShadowDusk emits a D3D9 **fx_2_0 `.fxb`** (Shader Model ≤ 3), not the `.mgfx` MonoGame/KNI load. FNA reads it through MojoShader at runtime via `new Effect(graphicsDevice, fxbBytes)`. See [Compiling for FNA](in-memory-quickstart.md#compiling-for-fna) in the quickstart.
 
-The FNA path is cross-platform and uses the same `vkd3d-shader` native as the cross-platform DirectX backend — which **ships inside the NuGet package** for all four desktop RIDs, so there is nothing to restore or install (the [restore script](restore-native-tools.md) is only for building ShadowDusk itself from source).
+The FNA path is cross-platform and self-contained: it uses the same `vkd3d-shader` native as the DirectX backend, which ships inside the NuGet package, so there is nothing to restore or install.
 
 ## DirectX backend & native tools
 
-For **DirectX (DX11)**, the **default, cross-platform** backend is `vkd3d-shader` (`DxbcBackend.Vkd3d`); its native binaries for all four desktop RIDs (win-x64, linux-x64, osx-x64, osx-arm64) **ship inside the NuGet package** — nothing to install, and DX compilation works out of the box on Linux, macOS, and Windows with host-independent (byte-identical) output. The **Windows-only** `d3dcompiler_47` backend (a system DLL **already part of Windows** — you don't install it; the most `fxc`-faithful correctness oracle) is **opt-in** via `CompilerOptions.DxbcBackend = DxbcBackend.D3DCompiler`. (The [Restore Native Tools](restore-native-tools.md) script is only for building ShadowDusk itself from source.) See [DirectX DXBC (vkd3d) Path](../architecture/directx-dxbc-vkd3d.md). The OpenGL/WebGL in-memory path needs no extra restore and is cross-platform out of the box.
+For **DirectX 11**, the default backend is the cross-platform `vkd3d-shader`. Its natives for all four desktop RIDs (win-x64, linux-x64, osx-x64, osx-arm64) ship inside the NuGet package, so DirectX compiles out of the box on Linux, macOS, and Windows, with the same bytes everywhere. On Windows you can opt into Microsoft's `d3dcompiler_47` (a system DLL already present, the most `fxc`-faithful option) via `CompilerOptions.DxbcBackend = DxbcBackend.D3DCompiler`. See the [DirectX DXBC (vkd3d) Path](../architecture/directx-dxbc-vkd3d.md) for details. (The [restore script](restore-native-tools.md) is only for building ShadowDusk itself from source.)
 
 ## Building from source
 

@@ -1,6 +1,6 @@
 # Overview
 
-ShadowDusk is a **cross-platform, self-contained, in-memory HLSL shader compiler** for the **XNA-likes** — [MonoGame](https://monogame.net/), [KNI](https://github.com/kniEngine/kni), and [FNA](https://fna-xna.github.io/) (the XNA-derived runtimes; classic Microsoft XNA 4.0 is out of scope). It compiles `.fx` shaders into the format each runtime loads — `.mgfx` for MonoGame/KNI, the legacy D3D9 fx_2_0 `.fxb` for FNA — on **Linux, macOS, or Windows**, with no Wine, no Windows SDK, no `fxc.exe`, and no native toolchain the user has to install separately.
+ShadowDusk is a self-contained, in-memory HLSL shader compiler for [MonoGame](https://monogame.net/), [KNI](https://github.com/kniEngine/kni), and [FNA](https://fna-xna.github.io/). It compiles `.fx` shaders into the format each runtime loads (`.mgfx` for MonoGame/KNI, the D3D9 `.fxb` for FNA) on Linux, macOS, or Windows. Nothing extra to install: no Wine, no Windows SDK, no fxc.exe, no separate toolchain. (Classic Microsoft XNA 4.0 is out of scope.)
 
 ## The problem it solves
 
@@ -29,26 +29,28 @@ Every shape implements the same <xref:ShadowDusk.Core.IShaderCompiler> interface
 
 | Backend | Output | Status |
 |---|---|---|
-| OpenGL / DesktopGL | GLSL | Validated end-to-end in real MonoGame DesktopGL |
-| DirectX (Windows, DX11) | DXBC (SM5) via vkd3d-shader | Validated end-to-end in real MonoGame WindowsDX |
-| FNA | D3D9 fx_2_0 `.fxb` (SM ≤ 3) via vkd3d-shader | Validated end-to-end in real FNA (renders pixel-equivalent to `fxc /T fx_2_0`, PS-only and VS-driven corpora) |
-| WebGL (KNI browser) | GLSL ES | Validated end-to-end in real headless KNI WebGL |
-| [Metal (macOS / iOS)](../backends/metal.md) | MSL | Not yet implemented (future) |
-| [Vulkan](../backends/vulkan.md) | SPIR-V | Experimental (compiles to SPIR-V; no shipping runtime to render-validate against yet) |
+| OpenGL / DesktopGL | GLSL `.mgfx` | Supported |
+| DirectX 11 | DXBC `.mgfx` | Supported |
+| WebGL (KNI browser) | GLSL `.mgfx` | Supported |
+| Android (on-device) | GLSL `.mgfx` | Supported |
+| FNA | D3D9 `.fxb` | Supported |
+| [Metal (macOS / iOS)](../backends/metal.md) | MSL | Not yet |
+| [Vulkan](../backends/vulkan.md) | SPIR-V | Experimental |
 
-> **Output container.** The default is **MGFX v10**, which loads on every MonoGame 3.8.2+ and KNI
-> runtime — you never set a flag for correct output. Opt-in/experimental newer
-> containers are additionally available: a faithful MonoGame **MGFX v11** (`MgfxVersion = 11`, MonoGame
-> 3.8.5+) and KNI's **KNIFX v11** (`Container = EffectContainer.Knifx`, KNI v4.02+), both render-proven in
-> their real engines. See [Parameters & Caveats](../guides/parameters-and-caveats.md).
+Supported targets are tested end-to-end against the reference compiler and render identically. See [Validation](../contributing/validation.md) for how that's proven, and [Choosing a Target](../guides/choosing-a-target.md) to pick one.
 
-> **Cross-platform, machine-verified.** The OpenGL/WebGL, DirectX, and FNA targets all
-> compile on Windows, macOS, and Linux — ShadowDusk bundles its own pinned macOS DXC dylibs
-> and the per-RID vkd3d natives, the full test suite runs green on all three OSes in CI, and
-> the compiled bytes are machine-verified byte-identical across hosts.
+> **Output format.** The default is **MGFX v10**, which loads on MonoGame 3.8.2 and every newer
+> MonoGame, plus KNI — you never set a flag for correct output. Targeting a newer runtime?
+> `MgfxVersion = 11` (MonoGame 3.8.5+) and `Container = EffectContainer.Knifx` (KNI v4.02+) are optional
+> and load and render just like v10. See [Parameters & Caveats](../guides/parameters-and-caveats.md).
+
+> **Cross-platform.** Every target compiles on Windows, macOS, and Linux and produces the same
+> bytes on every OS — ShadowDusk bundles its own native pieces, and the full test suite runs green
+> on all three in CI.
 
 ## Next steps
 
 - [Installation](installation.md) — add the package / install the tool.
 - [In-Memory Quickstart](in-memory-quickstart.md) — compile a shader in C# in a few lines.
 - [The Faithful Pipeline](../architecture/the-faithful-pipeline.md) — how a `.fx` becomes a `.mgfx`.
+- [Glossary](../glossary.md) — quick definitions of the shader and compiler terms.
