@@ -2,6 +2,16 @@
 
 When you compile a `.fx`, the choice that changes the output bytes is mostly **which graphics backend** the result must run on — with one framework-level exception: **FNA**, which loads a different effect format entirely. `GraphicsProfile` (Reach / HiDef) feels like it should matter too, but it doesn't. This page untangles the three axes so you can pick the right target with confidence (e.g. when offering shader downloads from a tool like XnaFiddle).
 
+## Quick answer
+
+Most of the time, picking a target is one question: **which graphics backend does the game run?**
+
+- MonoGame or KNI on **DirectX** (WindowsDX) &rarr; `PlatformTarget.DirectX`
+- MonoGame or KNI on **OpenGL** (DesktopGL), **WebGL**, or **Android** &rarr; `PlatformTarget.OpenGL`
+- **FNA** &rarr; `PlatformTarget.Fna`
+
+That covers the common cases. `GraphicsProfile` (Reach vs HiDef) never changes the target. The rest of this page explains why, plus KNI's newer container and one-shot capability profiles.
+
 ## The three axes (which ones change the file)
 
 | Axis | Examples | Changes the compiled output? |
@@ -16,9 +26,9 @@ For MonoGame/KNI the bytes are dictated by **axis 2**. A DirectX `.mgfx` contain
 
 | Framework | Status |
 |---|---|
-| **MonoGame** | ✅ Supported and validated (DesktopGL + WindowsDX, 10/10 each in the real runtime). |
-| **KNI** | ✅ Supported — KNI reads the **same MGFX format** as MonoGame (its loader accepts MGFX v10), the default. Render-proven in real headless KNI WebGL **and** on a current KNI v4.02 desktop runtime. KNI's newer **KNIFX v11** container is also available as an opt-in (`CompilerOptions.Container = EffectContainer.Knifx`, KNI v4.02+); the default v10 needs no KNI-specific output. |
-| **FNA** | ✅ **Supported — but a different output format.** FNA's effect path differs from MonoGame's: it loads **legacy D3D9 fx_2_0 shader bytecode via MojoShader at runtime**, not the MGFX container. So ShadowDusk does **not** hand FNA a `.mgfx` — it emits the `.fxb` FNA actually loads (`new Effect(gd, bytes)`). Select it with `PlatformTarget.Fna` / CLI `/Profile:FNA` (D3D9-style `.fx`, SM ≤ 3). Validated end-to-end — renders pixel-equivalent to `fxc /T fx_2_0` in real FNA (PS-only and custom-vertex-shader effects, incl. multi-pass + in-pass render states). Shaders needing SM4+ features fail loudly with a clear diagnostic. |
+| **MonoGame** | ✅ Supported (DesktopGL and WindowsDX, validated in the real runtime). |
+| **KNI** | ✅ Supported — KNI reads the **same MGFX format** as MonoGame (its loader accepts MGFX v10), the default. Validated in real KNI WebGL **and** on a current KNI v4.02 desktop runtime. KNI's newer **KNIFX v11** container is also available as an opt-in (`CompilerOptions.Container = EffectContainer.Knifx`, KNI v4.02+); the default v10 needs no KNI-specific output. |
+| **FNA** | ✅ **Supported — but a different output format.** FNA's effect path differs from MonoGame's: it loads **legacy D3D9 fx_2_0 shader bytecode via MojoShader at runtime**, not the MGFX container. So ShadowDusk does **not** hand FNA a `.mgfx` — it emits the `.fxb` FNA actually loads (`new Effect(gd, bytes)`). Select it with `PlatformTarget.Fna` / CLI `/Profile:FNA` (D3D9-style `.fx`, SM ≤ 3). Validated against `fxc /T fx_2_0` in real FNA. Shaders needing SM4+ features fail loudly with a clear diagnostic. |
 | **Classic Microsoft XNA 4.0** | ❌ **Out of scope.** XNA's effect `.xnb` wraps legacy D3D9 bytecode produced by `fxc` — a different instruction set our pipeline does not emit, on a Windows-only framework abandoned in ~2013. There is no "reach" win (nothing to compile *where `mgfxc` can't*) and no fidelity oracle. (Note: "XnaFiddle" is named for the lineage — the runtime it ships is KNI/MonoGame, which **is** supported.) |
 
 ## Axis 2 — Graphics backend (the real matrix)

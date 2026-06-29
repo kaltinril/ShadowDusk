@@ -1,8 +1,8 @@
 # ShadowDusk.Compiler
 
-**Cross-platform, in-memory HLSL Effect compiler for MonoGame, KNI, and FNA** — a drop-in replacement for `mgfxc` that compiles `.fx` source to MonoGame/KNI `.mgfx` bytes (or FNA `.fxb`) **at runtime, on Linux, macOS, and Windows**, with no `fxc.exe`, no `mgfxc`, no Wine, and no Windows SDK. Add the package and call the API — every native piece rides inside the package set.
+**An in-memory HLSL shader compiler for MonoGame, KNI, and FNA.** Add the package, call `CompileAsync(fx)`, and get back `.mgfx` bytes (or an FNA `.fxb`) you can load straight into an `Effect` — on Linux, macOS, or Windows, at build time or live at runtime.
 
-The output loads in a real MonoGame/KNI `Effect` and renders equivalently to `mgfxc`'s — one faithful pipeline (DXC → SPIR-V → SPIRV-Cross → GLSL, or vkd3d-shader → DXBC/D3D9 bytecode) on every OS, byte-identical output across hosts.
+It's a drop-in replacement for mgfxc: the output loads in a real MonoGame/KNI `Effect` and renders the same as mgfxc's, on every OS. Nothing extra to install (no fxc.exe, no mgfxc, no Wine, no Windows SDK) — every native piece ships inside the package.
 
 ## Install
 
@@ -44,14 +44,16 @@ Need to compile from a **synchronous** call site (e.g. inside `Content.Load<Effe
 
 All three compile on every desktop OS and produce the same bytes on every OS. Errors come back as `ShaderError[]` with the file, line, column, and compiler message verbatim.
 
-### Output container (v10 default; opt-in v11 / KNIFX)
+### Output format
 
-The default container is **MGFX v10**, which loads on every MonoGame 3.8.2+ and KNI runtime — you never set a flag for correct output. For newer runtimes, two **opt-in, experimental** containers are available (additive; the v10 default is unchanged):
+By default you get **MGFX v10** (`.mgfx`), which loads on MonoGame 3.8.2 and every newer MonoGame, plus KNI. You never set a flag to get correct output.
 
-- `CompilerOptions.MgfxVersion = 11` — a faithful MonoGame **MGFX v11** container (MonoGame 3.8.5+).
-- `CompilerOptions.Container = EffectContainer.Knifx` — KNI's **KNIFX v11** container (KNI v4.02+).
+Targeting a newer runtime? Two optional formats load and render exactly like v10:
 
-Both render identically to v10 and are render-proven in their real engines; leave the default unless you specifically target a newer runtime.
+- MonoGame 3.8.5+ &rarr; `CompilerOptions.MgfxVersion = 11`
+- KNI v4.02+ &rarr; `CompilerOptions.Container = EffectContainer.Knifx`
+
+If you're not sure, keep the default.
 
 Prefer to pick a whole target (backend **and** container) in one value? Set `CompilerOptions.Profile` to a `CapabilityProfile` (e.g. `CapabilityProfile.KniGL_4_02` for KNIFX on OpenGL); a profile fully specifies the output and overrides `Target` / `Container` / `MgfxVersion`. For an in-app compile, `RuntimeProfileDetector.Recommend(typeof(Game).Assembly, target)` returns the proven profile for the loaded framework.
 

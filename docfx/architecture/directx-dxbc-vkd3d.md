@@ -15,7 +15,7 @@ DirectX compilation routes HLSL → DXBC through a backend behind the `IDxbcShad
 | `DxbcBackend` | Backend | Platform | Role |
 |---|---|---|---|
 | `Vkd3d` (**default**) | `vkd3d-shader` (the Wine project) | **Linux / macOS / Windows** | The **shipping cross-platform** backend — what makes the DX path compilable where `mgfxc` can't run; host-independent, so default output is byte-identical on every OS. |
-| `D3DCompiler` | `d3dcompiler_47` | **Windows-only** | Correctness **oracle** — the reference output (opt-in). |
+| `D3DCompiler` | `d3dcompiler_47` | **Windows-only** | Correctness **oracle** (the trusted reference output to match against); opt-in. |
 
 ```csharp
 var options = new CompilerOptions

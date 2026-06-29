@@ -8,95 +8,90 @@ A cross-platform HLSL shader compiler for [MonoGame](https://monogame.net/), [KN
 
 ## What it is
 
-**The product is a self-contained, in-memory, cross-platform compiler library** (the `ShadowDusk.Compiler` NuGet package): a developer adds the package and calls `IShaderCompiler.CompileAsync(fx)` to get `.mgfx` bytes on Linux, macOS, or Windows — needing nothing else (no `fxc.exe`, no `mgfxc`, no Wine, no Windows SDK, no native toolchain to install separately; the native pieces ride inside the package). The **CLI** (`mgfxc` dotnet tool) and the **MGCB plugin** are *delivery shapes of the same library* for build-time use. The **in-browser shader fiddle is only a sample of reach — not a separate product.**
-
-## What it does
-
-MonoGame's stock content pipeline shells out to `mgfxc`, a Windows-only tool that depends on `fxc.exe` from the DirectX SDK. ShadowDusk replaces that step with one portable pipeline that produces output a real MonoGame/KNI `Effect` loads and renders like `mgfxc`'s:
-
-```
-OpenGL / WebGL:
-  HLSL (.fx)
-    → DXC (via Vortice.Dxc)  →  SPIR-V
-    → SPIRV-Cross             →  GLSL (+ MojoShader-dialect rewrite)
-    → .mgfx binary            →  MonoGame Effect loader
-
-DirectX (DX11):
-  HLSL (.fx)
-    → vkd3d-shader            →  DXBC (SM5)
-    → .mgfx binary            →  MonoGame Effect loader
-
-FNA (fx_2_0):
-  HLSL (.fx, D3D9-style)
-    → vkd3d-shader            →  D3D9 bytecode (SM ≤ 3)
-    → .fxb (fx_2_0) binary    →  FNA Effect loader (FNA3D / MojoShader)
-```
-
-**OpenGL / WebGL is fully cross-platform and self-contained** — DXC + SPIRV-Cross ride inside the package, so it compiles on Linux, macOS, and Windows with nothing to install.
-
-**DirectX (DX11)** produces DXBC in-process (no `fxc.exe`/`mgfxc`) via two backends behind `IDxbcShaderCompiler`, chosen by `CompilerOptions.DxbcBackend`: the **default** is the cross-platform `vkd3d-shader` (`DxbcBackend.Vkd3d`) — its natives ship inside the package for all four desktop RIDs, so a default DirectX compile works on Linux, macOS, and Windows and produces the same bytes on every OS; `d3dcompiler_47` — Microsoft's HLSL compiler, a system DLL already present on Windows — remains the **opt-in correctness oracle** (`DxbcBackend.D3DCompiler`), giving the most `fxc`-faithful output where available. DXC is **not** used for DX11 (it emits DXIL/SM6, not the DXBC/SM ≤ 5 the DX11 runtime loads); its `ps_6_0`/`vs_6_0` output is retained only for the DX12/KNI path.
-
-Supported backends:
-
-| Backend | Output | Status |
-|---|---|---|
-| OpenGL / DesktopGL | GLSL | Validated end-to-end (10/10 in real MonoGame DesktopGL) |
-| DirectX (DX11) | DXBC (SM5) via vkd3d-shader — compiles on Windows, Linux, and macOS | Validated end-to-end (10/10 in real MonoGame WindowsDX) |
-| WebGL (XNA Fiddle / KNI browser) | GLSL ES | Validated end-to-end (10/10 in real headless KNI WebGL) |
-| FNA (`/Profile:FNA` → `.fxb`) | D3D9 fx_2_0 via vkd3d-shader | Validated end-to-end (pixel-identical to `fxc /T fx_2_0` in real FNA — PS-only and custom-vertex-shader effects, incl. multi-pass + in-pass render states) |
-| Metal (macOS / iOS) | MSL | Not yet implemented |
-| Vulkan | SPIR-V | Experimental: compiles to a SPIR-V `.mgfx`, but no shipping MonoGame/KNI Vulkan runtime exists to render-validate it yet |
-
-This table is the **graphics-backend** axis (the one that decides the output bytes). **Framework** is a separate axis: **MonoGame and KNI** share the MGFX format (both supported); **FNA** is also a supported target, but takes a different effect path — ShadowDusk emits the legacy D3D9 fx_2_0 `.fxb` it loads (see the FNA note below), not the MGFX container; classic Microsoft **XNA 4.0** is out of scope. For picking a target — or building a shader-download feature — the docs have a [Choosing a Target](https://kaltinril.github.io/ShadowDusk/guides/choosing-a-target.html) guide covering the framework / backend / `GraphicsProfile` axes and the `.mgfx`-vs-`.xnb` distinction.
-
-> **Detailed, per-cell validation status** (which library × format/version × target × OS is *render-proven*
-> vs *compile-only* vs *blocked*, with the test backing each cell): the living
-> **[Validation Matrix](docs/validation-matrix.md)**. The "Validated end-to-end" cells above are its ✅
-> rows; the matrix is the honest, complete tracker (e.g. KNI is now render-proven on a current **v4.02
-> desktop** runtime, and the DirectX vertex-texture-fetch feature is render-checked; the texture-array
-> render stays blocked on a MonoGame runtime-API gap).
-
-> **Output container (default v10; opt-in v11 / KNIFX).** ShadowDusk emits **MGFX v10** by default — the
-> seamless choice that loads on every MonoGame 3.8.2+ and KNI runtime, never a flag for correct output.
-> As of **0.6.0**, two opt-in/experimental newer containers are also available (additive; the v10 default
-> is unchanged): a faithful MonoGame **MGFX v11** (`CompilerOptions.MgfxVersion = 11`, MonoGame 3.8.5+) and
-> KNI's **KNIFX v11** (`CompilerOptions.Container = EffectContainer.Knifx`, KNI v4.02+), both render-proven
-> in their real engines. See [Parameters &amp; Caveats](https://kaltinril.github.io/ShadowDusk/guides/parameters-and-caveats.html).
-
-> **FNA note.** FNA's documented shader workflow is the deprecated Windows-only
-> `fxc.exe /T fx_2_0` (run under Wine on Linux/macOS). `PlatformTarget.Fna` removes that
-> entirely: ShadowDusk compiles D3D9-style `.fx` (SM ≤ 3 — `sampler_state`, `tex2D`,
-> `COLOR0` semantics) to the legacy fx_2_0 effects binary FNA loads via
-> `new Effect(gd, bytes)`, on every OS, with no Wine. One `.fxb` serves every FNA graphics
-> backend (FNA translates at load time). Validated against real fxc output rendering in
-> real FNA (`validation/FnaValidation`); shaders needing SM4+ features fail loudly with a
-> clear diagnostic.
-
-> **KNI HiDef / WebGL2 note.** A single ShadowDusk `.mgfx` loads in both KNI **Reach** (WebGL1) and **HiDef** (WebGL2 / GLSL ES 3.00) — no profile flag and no separate build. KNI converts the legacy GLSL to ES 3.00 at load time, and ShadowDusk emits the `#define`-aliased fragment output that converter expects (GitHub [#7](https://github.com/kaltinril/ShadowDusk/issues/7)). HiDef shader loading needs **KNI ≥ v3.14.9001** (the release that added KNI's runtime converter — any recent KNI qualifies); Reach and desktop GL have no version requirement. After upgrading ShadowDusk to pick up this fix, **recompile your `.fx`** — a `.mgfx` built by an older ShadowDusk keeps the old output and won't load under HiDef.
-
-## Drop-in `mgfxc` replacement
-
-ShadowDusk is a transparent substitute for MonoGame's `mgfxc`. Same CLI flags, same `.mgfx` output format, same exit codes, same MGCB-compatible error messages on stderr. Games using the MonoGame Content Pipeline require zero code changes to switch.
-
-## Delivery shapes
-
-**Library** (`ShadowDusk.Compiler`, type `EffectCompiler : IShaderCompiler`) — **the product.** Add the package, call `CompileAsync(fx)`, get `.mgfx` bytes in-memory:
+ShadowDusk is an in-memory shader compiler library for MonoGame, KNI, and FNA. Add the package to your game, call `CompileAsync(fx)`, and get back `.mgfx` bytes you can load straight into an `Effect` — on Linux, macOS, or Windows, at build time or live at runtime.
 
 ```csharp
 var compiler = new EffectCompiler();
-Result<CompiledShader, ShaderError[]> result =
-    await compiler.CompileAsync(hlslSource, new CompilerOptions { Target = PlatformTarget.OpenGL });
+var result = await compiler.CompileAsync(
+    hlslSource, new CompilerOptions { Target = PlatformTarget.OpenGL });
+
+// result.Value.Data is the .mgfx — hand it straight to MonoGame:
+var effect = new Effect(graphicsDevice, result.Value.Data);
 ```
 
-**CLI tool** (`dotnet tool` named `ShadowDuskCLI`) — the same library wrapped for build-time use from MGCB, scripts, or the terminal:
+Everything it needs ships inside the package. There's no separate install: no fxc.exe, no mgfxc, no Wine, no Windows SDK. The same library also ships as a **command-line tool** and an **MGCB plugin** for build-time use, and runs in the browser via WebAssembly (the in-browser fiddle is a sample of that reach, not a separate product).
+
+## Why it exists
+
+MonoGame's stock content pipeline shells out to mgfxc, a Windows-only tool that needs fxc.exe from the DirectX SDK. ShadowDusk replaces that one step with a portable pipeline whose output a real MonoGame, KNI, or FNA `Effect` loads and renders the same as mgfxc's — so the same shader build works on any OS, with nothing to install.
+
+## Supported targets
+
+ShadowDusk works with **MonoGame, KNI, and FNA** across these graphics backends. Pick your framework and backend; ShadowDusk emits the right output.
+
+| Backend             | Output       | Status       |
+|---------------------|--------------|--------------|
+| OpenGL / DesktopGL  | GLSL `.mgfx` | Supported    |
+| DirectX 11          | DXBC `.mgfx` | Supported    |
+| WebGL (KNI browser) | GLSL `.mgfx` | Supported    |
+| Android (on-device) | GLSL `.mgfx` | Supported    |
+| FNA                 | D3D9 `.fxb`  | Supported    |
+| Metal (macOS / iOS) | MSL          | Not yet      |
+| Vulkan              | SPIR-V       | Experimental |
+
+Supported targets are tested end-to-end against the reference compiler. For the exact per-version, per-OS proof status, see the [Validation Matrix](docs/validation-matrix.md). To choose a target (or build a shader-download feature), see the [Choosing a Target](https://kaltinril.github.io/ShadowDusk/guides/choosing-a-target.html) guide. Classic Microsoft XNA 4.0 is out of scope.
+
+<details>
+<summary><b>How the pipeline works</b> (you don't need this to use it)</summary>
+
+ShadowDusk runs one faithful pipeline per backend:
+
+```
+OpenGL / WebGL / Android:
+  HLSL (.fx)  ->  DXC  ->  SPIR-V  ->  SPIRV-Cross  ->  GLSL  ->  .mgfx
+DirectX 11:
+  HLSL (.fx)  ->  vkd3d-shader  ->  DXBC (SM5)  ->  .mgfx
+FNA:
+  HLSL (.fx, D3D9-style)  ->  vkd3d-shader  ->  D3D9 bytecode  ->  .fxb
+```
+
+For **DirectX 11**, the default compiler is the cross-platform **vkd3d-shader**, whose native ships inside the package for all four desktop RIDs, so a DirectX compile produces the same bytes on Linux, macOS, and Windows. On Windows you can opt into Microsoft's `d3dcompiler_47` (a system DLL already present) as a reference-faithful alternative via `CompilerOptions.DxbcBackend`. DXC is not used for DX11 — it emits a newer bytecode (DXIL/SM6) the DX11 runtime can't load — and is reserved for a future DirectX 12 path.
+</details>
+
+<details>
+<summary><b>Framework notes</b> (output format, FNA, KNI HiDef / WebGL)</summary>
+
+**Output format.** ShadowDusk emits **MGFX v10** by default, the format that loads on MonoGame 3.8.2 and every newer MonoGame, plus KNI. You never set a flag to get correct output. Targeting a newer runtime? Two optional formats load and render exactly like v10:
+
+- MonoGame 3.8.5+ &rarr; `CompilerOptions.MgfxVersion = 11`
+- KNI v4.02+ &rarr; `CompilerOptions.Container = EffectContainer.Knifx`
+
+If you're not sure, keep the default. See [Parameters &amp; Caveats](https://kaltinril.github.io/ShadowDusk/guides/parameters-and-caveats.html).
+
+**FNA.** FNA's documented workflow is the deprecated, Windows-only `fxc.exe /T fx_2_0` (run under Wine elsewhere). `PlatformTarget.Fna` removes that: ShadowDusk compiles D3D9-style `.fx` to the fx_2_0 binary FNA loads via `new Effect(gd, bytes)`, on every OS, with no Wine. One `.fxb` serves every FNA backend. Shaders that need SM4+ features fail with a clear diagnostic.
+
+**KNI HiDef / WebGL2.** A single `.mgfx` loads in both KNI Reach (WebGL1) and HiDef (WebGL2) — no profile flag, no separate build. HiDef loading needs KNI v3.14.9001 or newer (any recent KNI qualifies). After upgrading ShadowDusk, recompile your `.fx`: a `.mgfx` built by an older ShadowDusk keeps the old output and won't load under HiDef.
+</details>
+
+## Drop-in mgfxc replacement
+
+ShadowDusk is a transparent substitute for MonoGame's mgfxc: same CLI flags, same `.mgfx` output format, same exit codes, same MGCB-compatible error messages. Games using the MonoGame Content Pipeline need zero code changes to switch.
+
+## Delivery shapes
+
+All three shapes share the same `IShaderCompiler` interface and produce the same `.mgfx` bytes; only how you invoke them differs.
+
+**Library** (`ShadowDusk.Compiler`) — the product. Add the package, call `CompileAsync(fx)`, get `.mgfx` bytes in memory (see the example above).
+
+**CLI tool** (`ShadowDuskCLI` dotnet tool) — the same library for build-time use from MGCB, scripts, or the terminal:
 
 ```sh
 ShadowDuskCLI MyShader.fx MyShader.mgfx /Profile:OpenGL
 ```
 
-**WASM library** (`ShadowDusk.Wasm`, type `WasmShaderCompiler : IShaderCompiler`) — the same pipeline running inside .NET WASM for in-browser runtime compilation (the faithful pinned DXC→WASM + SPIRV-Cross→WASM + vkd3d-shader→WASM modules, all riding inside the package). All three targets compile in the browser, **byte-identical to the desktop output**: OpenGL `.mgfx` (renders live in KNI WebGL), plus DirectX `.mgfx` and FNA `.fxb` as **export targets** (a browser cannot render DXBC/D3D9 bytecode — the downloads render in your MonoGame WindowsDX / FNA game). Returns the bytes in-memory with no server roundtrip. The in-browser shader fiddle / export station ([samples/ShaderFiddle.Web](samples/ShaderFiddle.Web)) is a **sample** of this reach, not a separate product. See [`docs/HOWTO-WASM-KNI.md`](docs/HOWTO-WASM-KNI.md) for the KNI/Blazor walkthrough.
+**WASM library** (`ShadowDusk.Wasm`) — the same pipeline running in the browser via WebAssembly, for live in-browser compilation with no server roundtrip. OpenGL output renders live in KNI WebGL; DirectX and FNA output come back as downloads to run in your desktop game. The [in-browser fiddle](samples/ShaderFiddle.Web) is a sample of this. See [`docs/HOWTO-WASM-KNI.md`](docs/HOWTO-WASM-KNI.md) for the KNI/Blazor walkthrough.
 
-Every shape shares the same `IShaderCompiler` interface. "Same `.mgfx` output" means behaviorally equivalent and `Effect`-loadable — byte-identity is ShadowDusk's *own* reproducibility (same version + source + target → same bytes), never byte-equality with `mgfxc`.
+> "Same `.mgfx` output" means it loads and renders like mgfxc's, not that the bytes are identical. ShadowDusk's output is deterministic in its own right: the same version, source, and target always give the same bytes.
 
 ## Getting started
 
