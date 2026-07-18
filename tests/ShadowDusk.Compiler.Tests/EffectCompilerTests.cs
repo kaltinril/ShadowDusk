@@ -147,6 +147,46 @@ public sealed class EffectCompilerTests
         result.Value.Data.Should().NotBeEmpty("compiled output must contain bytes");
     }
 
+    [Fact]
+    [Trait("Platform", "Vulkan")]
+    public async Task Compile_Cbuffer_Vulkan_ReflectsParameters()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+        var result = await CompileFileAsync("cbuffer.fx", PlatformTarget.Vulkan, cancellationToken: cts.Token);
+
+        result.IsSuccess.Should().BeTrue(
+            because: result.IsFailure ? FormatErrors(result.Error) : "compilation must succeed");
+
+        // Before the CompilationPipeline reflection-gate fix, every Vulkan shader silently
+        // skipped reflection (the reflection loop's skip-gate checked the always-empty
+        // dxilBlob for Vulkan), so this count was always 0 regardless of the HLSL. Minimal.fx
+        // above can't catch that because it declares no cbuffers; cbuffer.fx does.
+        ReadConstantBufferCount(result.Value.Data).Should().BeGreaterThan(0,
+            "cbuffer.fx declares a 'Transforms' constant buffer that Vulkan reflection must recover");
+    }
+
+    [Fact]
+    [Trait("Platform", "Vulkan")]
+    public async Task Compile_Vulkan_Knifx_FailsLoudly()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+        var options = new CompilerOptions { Target = PlatformTarget.Vulkan, Container = EffectContainer.Knifx };
+        var result = await CompileFileAsync("Minimal.fx", PlatformTarget.Vulkan, options, cts.Token);
+
+        // KNI ships no Vulkan platform and KnifxBackend has no Vulkan value — this must fail
+        // loudly rather than silently emit a KnifxBackend.OpenGL-shaped container.
+        result.IsFailure.Should().BeTrue("Vulkan + KNIFX is not a supported combination");
+        result.Error.Should().Contain(e => e.Code == "SD0025");
+    }
+
+    /// <summary>
+    /// Minimal MGFX header parse: "MGFX"(4) + version(1) + profile(1) + effectKey(4), then
+    /// the constant-buffer count as an int32. Mirrors validation/decode_mgfx.py's model.
+    /// </summary>
+    private static int ReadConstantBufferCount(byte[] mgfxBytes) => BitConverter.ToInt32(mgfxBytes, 10);
+
     // ---------------------------------------------------------------------------
     // Determinism
     // ---------------------------------------------------------------------------

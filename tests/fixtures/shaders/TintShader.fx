@@ -3,8 +3,13 @@
 	#define VS_SHADERMODEL vs_3_0
 	#define PS_SHADERMODEL ps_3_0
 #else
-	#define VS_SHADERMODEL vs_4_0_level_9_1
-	#define PS_SHADERMODEL ps_4_0_level_9_1
+	#if VULKAN
+		#define VS_SHADERMODEL vs_6_0
+		#define PS_SHADERMODEL ps_6_0
+	#else
+		#define VS_SHADERMODEL vs_4_0_level_9_1
+		#define PS_SHADERMODEL ps_4_0_level_9_1
+	#endif
 #endif
 
 //	Variables can have storage class modifies given to them at the start
@@ -28,10 +33,14 @@ extern float4 TintColor;
 Texture2D SpriteTexture;
 
 //	The sampler object we'll use to sample the texture
+#if VULKAN
+SamplerState SpriteTextureSampler;
+#else
 sampler2D SpriteTextureSampler = sampler_state
 {
 	Texture = <SpriteTexture>;
 };
+#endif
 
 //	This is the "output" from the vertex shader that we'll use as the
 //	"input" to the pixel shader.  We don't have a vertex shader function
@@ -50,6 +59,19 @@ struct VertexShaderOutput
 
 //	This is our Pixel Shader function.  It takes in the output from the vertex shader
 //	and returns back a float4 containing the color data for the pixel.
+#if VULKAN
+float4 MainPS(VertexShaderOutput input) : SV_Target
+{
+	//	First we use Texture2D.Sample to get the color of the pixel
+	float4 pixelColor = SpriteTexture.Sample(SpriteTextureSampler, input.TextureCoordinates) * input.Color;
+
+	//	Next we'll multiply the pixelColor by the tint color that was passed int
+	float4 tintedPixelColor = pixelColor * TintColor;
+
+	//	And we return the value
+	return tintedPixelColor;
+}
+#else
 float4 MainPS(VertexShaderOutput input) : COLOR
 {
 	//	First we use the tex2D function to get the color of the pixel
@@ -61,6 +83,7 @@ float4 MainPS(VertexShaderOutput input) : COLOR
 	//	And we return the value
 	return tintedPixelColor;
 }
+#endif
 
 //	Here, I've renamed the technique to match what it is actually doing
 technique TintedSpriteDrawing

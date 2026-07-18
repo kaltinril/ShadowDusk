@@ -112,10 +112,10 @@ internal sealed class SpirvReflectionParser
         // value. Instead we bucket each resource by class, sort each bucket by its raw
         // SPIR-V Binding (== HLSL declaration order), and assign 0-based slots within
         // the class. This recovers the same t#/s#/b# the oracle reports.
-        var cbufferVars = new List<(uint Id, StructType Struct, int RawBinding)>();
-        var textureVars = new List<(uint Id, ImageType Image, int RawBinding)>();
-        var samplerVars = new List<(uint Id, int RawBinding)>();
-        var combinedVars = new List<(uint Id, ImageType Image, int RawBinding)>();
+        var cbufferVars = new List<(uint Id, StructType Struct, int RawBinding, int RawSet)>();
+        var textureVars = new List<(uint Id, ImageType Image, int RawBinding, int RawSet)>();
+        var samplerVars = new List<(uint Id, int RawBinding, int RawSet)>();
+        var combinedVars = new List<(uint Id, ImageType Image, int RawBinding, int RawSet)>();
 
         foreach (var (resultId, typeId, storage) in _variables)
         {
@@ -131,20 +131,21 @@ internal sealed class SpirvReflectionParser
                 continue;
 
             int rawBinding = _binding.TryGetValue(resultId, out int b) ? b : 0;
+            int rawSet     = _descriptorSet.TryGetValue(resultId, out int s) ? s : 0;
 
             switch (pointee)
             {
                 case StructType st when _blockStructs.Contains(st.Id):
-                    cbufferVars.Add((resultId, st, rawBinding));
+                    cbufferVars.Add((resultId, st, rawBinding, rawSet));
                     break;
                 case ImageType img:
-                    textureVars.Add((resultId, img, rawBinding));
+                    textureVars.Add((resultId, img, rawBinding, rawSet));
                     break;
                 case SamplerType:
-                    samplerVars.Add((resultId, rawBinding));
+                    samplerVars.Add((resultId, rawBinding, rawSet));
                     break;
                 case SampledImageType si:
-                    combinedVars.Add((resultId, si.Image, rawBinding));
+                    combinedVars.Add((resultId, si.Image, rawBinding, rawSet));
                     break;
             }
         }
@@ -155,51 +156,60 @@ internal sealed class SpirvReflectionParser
         // Separate-image textures get texture-class slots; separate samplers get
         // sampler-class slots. A combined sampled-image counts in BOTH classes.
         int textureSlot = 0;
-        foreach (var (id, image, _) in textureVars.OrderBy(t => t.RawBinding))
+        foreach (var (id, image, rawBinding, rawSet) in textureVars.OrderBy(t => t.RawBinding))
             textures.Add(new TextureReflection
             {
-                Name      = ResourceName(id),
-                BindSlot  = textureSlot++,
-                Dimension = image.Dimension,
+                Name             = ResourceName(id),
+                BindSlot         = textureSlot++,
+                Dimension        = image.Dimension,
+                RawBinding       = rawBinding,
+                RawDescriptorSet = rawSet,
             });
 
         int samplerSlot = 0;
-        foreach (var (id, _) in samplerVars.OrderBy(s => s.RawBinding))
+        foreach (var (id, rawBinding, rawSet) in samplerVars.OrderBy(s => s.RawBinding))
             samplers.Add(new SamplerReflection
             {
-                Name     = ResourceName(id),
-                BindSlot = samplerSlot++,
+                Name             = ResourceName(id),
+                BindSlot         = samplerSlot++,
+                RawBinding       = rawBinding,
+                RawDescriptorSet = rawSet,
             });
 
         // Combined texture+sampler (Texture.Sample with a SamplerState merged into one
         // SPIR-V resource): surface in both classes, each with its own class slot.
-        foreach (var (id, image, _) in combinedVars.OrderBy(c => c.RawBinding))
+        foreach (var (id, image, rawBinding, rawSet) in combinedVars.OrderBy(c => c.RawBinding))
         {
             string name = ResourceName(id);
             textures.Add(new TextureReflection
             {
-                Name      = name,
-                BindSlot  = textureSlot++,
-                Dimension = image.Dimension,
+                Name             = name,
+                BindSlot         = textureSlot++,
+                Dimension        = image.Dimension,
+                RawBinding       = rawBinding,
+                RawDescriptorSet = rawSet,
             });
             samplers.Add(new SamplerReflection
             {
-                Name     = name,
-                BindSlot = samplerSlot++,
+                Name             = name,
+                BindSlot         = samplerSlot++,
+                RawBinding       = rawBinding,
+                RawDescriptorSet = rawSet,
+                IsCombined       = true,
             });
         }
 
         var constantBuffers = new List<ConstantBufferReflection>();
         int cbufferSlot = 0;
-        foreach (var (id, st, _) in cbufferVars.OrderBy(c => c.RawBinding))
-            constantBuffers.Add(BuildConstantBuffer(id, st, cbufferSlot++));
+        foreach (var (id, st, rawBinding, _) in cbufferVars.OrderBy(c => c.RawBinding))
+            constantBuffers.Add(BuildConstantBuffer(id, st, cbufferSlot++, rawBinding));
 
         return (constantBuffers, textures, samplers);
     }
 
     // ---- Constant buffer reconstruction ---------------------------------------
 
-    private ConstantBufferReflection BuildConstantBuffer(uint variableId, StructType st, int bindSlot)
+    private ConstantBufferReflection BuildConstantBuffer(uint variableId, StructType st, int bindSlot, int rawBinding)
     {
         uint[] memberTypes = _structMembers.TryGetValue(st.Id, out uint[]? mt) ? mt : Array.Empty<uint>();
         _memberOffset.TryGetValue(st.Id, out Dictionary<int, int>? offsets);
@@ -227,10 +237,11 @@ internal sealed class SpirvReflectionParser
 
         return new ConstantBufferReflection
         {
-            Name      = cbName,
-            SizeBytes = sizeBytes,
-            BindSlot  = bindSlot,
-            Variables = variables,
+            Name       = cbName,
+            SizeBytes  = sizeBytes,
+            BindSlot   = bindSlot,
+            Variables  = variables,
+            RawBinding = rawBinding,
         };
     }
 

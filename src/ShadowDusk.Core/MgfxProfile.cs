@@ -19,6 +19,10 @@ public enum MgfxProfile : byte
     OpenGL    = 0,
     /// <summary>The DirectX 11 / DXBC profile (MGFX profile byte 1).</summary>
     DirectX11 = 1,
-    /// <summary>The Vulkan / SPIR-V profile (MGFX profile byte 3); reserved for a future backend.</summary>
-    Vulkan    = 3,
+    /// <summary>
+    /// The Vulkan / SPIR-V profile. Value <c>80</c> matches real MonoGame 3.8.5's own
+    /// <c>VulkanShaderProfile</c> (confirmed against its source, not guessed) — an
+    /// earlier placeholder value of <c>3</c> was wrong.
+    /// </summary>
+    Vulkan    = 80,
 }

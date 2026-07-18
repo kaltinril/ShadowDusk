@@ -259,6 +259,11 @@ public sealed class MgfxBlobReader
         for (int i = 0; i < shaderCount; i++)
         {
             bool isVertex = br.ReadBoolean();
+            if (version > 10)
+            {
+                br.ReadString(); // SourceFile (MGFX v11+ diagnostic-only)
+                br.ReadString(); // Entrypoint (MGFX v11+ diagnostic-only)
+            }
             int byteLen = br.ReadInt32();
             shaderBlobs.Add(br.ReadBytes(byteLen));
 

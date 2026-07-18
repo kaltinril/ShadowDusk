@@ -2,7 +2,11 @@
 	#define SV_POSITION POSITION
 	#define PS_SHADERMODEL ps_3_0
 #else
-	#define PS_SHADERMODEL ps_4_0_level_9_1
+	#if VULKAN
+		#define PS_SHADERMODEL ps_6_0
+	#else
+		#define PS_SHADERMODEL ps_4_0_level_9_1
+	#endif
 #endif
 
 #define BLOOM_THRESHOLD 0.25
@@ -13,7 +17,12 @@ float4 BloomThreshold;
 float BloomIntensity;
 float BloomSaturation;
 
+#if VULKAN
+Texture2D TextureSamplerTexture;
+SamplerState TextureSampler;
+#else
 sampler TextureSampler : register(s0);
+#endif
 
 struct VertexShaderOutput
 {
@@ -22,6 +31,16 @@ struct VertexShaderOutput
 	float2 TexCoord : TEXCOORD0;
 };
 
+#if VULKAN
+float4 BloomPass(VertexShaderOutput input) : SV_Target
+{
+	float4 color = TextureSamplerTexture.Sample(TextureSampler, input.TexCoord);
+	color = saturate(color - BloomThreshold) * BloomIntensity + color;
+	color = saturate(color);
+	color = lerp(color, color.rgba + color.rgba * BloomSaturation, BloomSaturation);
+	return color;
+}
+#else
 float4 BloomPass(VertexShaderOutput input) : COLOR
 {
 	float4 color = tex2D(TextureSampler, input.TexCoord);
@@ -30,6 +49,7 @@ float4 BloomPass(VertexShaderOutput input) : COLOR
 	color = lerp(color, color.rgba + color.rgba * BloomSaturation, BloomSaturation);
 	return color;
 }
+#endif
 
 technique Bloom
 {

@@ -3,16 +3,25 @@
 	#define VS_SHADERMODEL vs_3_0
 	#define PS_SHADERMODEL ps_3_0
 #else
-	#define VS_SHADERMODEL vs_4_0_level_9_1
-	#define PS_SHADERMODEL ps_4_0_level_9_1
+	#if VULKAN
+		#define VS_SHADERMODEL vs_6_0
+		#define PS_SHADERMODEL ps_6_0
+	#else
+		#define VS_SHADERMODEL vs_4_0_level_9_1
+		#define PS_SHADERMODEL ps_4_0_level_9_1
+	#endif
 #endif
 
 Texture2D SpriteTexture;
 
-sampler2D SpriteTextureSampler = sampler_state 
+#if VULKAN
+SamplerState SpriteTextureSampler;
+#else
+sampler2D SpriteTextureSampler = sampler_state
 {
     Texture = <SpriteTexture>;
 };
+#endif
 
 
 
@@ -25,6 +34,15 @@ struct VertexShaderOutput
 
 
 
+#if VULKAN
+float4 MainPS(VertexShaderOutput input) : SV_Target
+{
+    float4 col = SpriteTexture.Sample(SpriteTextureSampler, input.TextureCoordinates) * input.Color;
+    col.rgb = (col.r + col.g + col.b) / 3.0f;
+    return col;
+
+}
+#else
 float4 MainPS(VertexShaderOutput input) : COLOR
 {
     float4 col = tex2D(SpriteTextureSampler, input.TextureCoordinates) * input.Color;
@@ -32,6 +50,7 @@ float4 MainPS(VertexShaderOutput input) : COLOR
     return col;
 
 }
+#endif
 
 technique BasicColorDrawing
 {

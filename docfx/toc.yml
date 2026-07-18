@@ -44,7 +44,7 @@
   items:
     - name: Metal (future)
       href: backends/metal.md
-    - name: Vulkan (future)
+    - name: Vulkan
       href: backends/vulkan.md
     - name: DirectX & FNA in the Browser
       href: backends/directx-in-wasm.md

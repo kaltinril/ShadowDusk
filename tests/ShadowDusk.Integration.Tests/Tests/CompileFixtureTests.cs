@@ -10,10 +10,10 @@ namespace ShadowDusk.Integration.Tests.Tests;
 [Trait("Category", "Integration")]
 public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
 {
-    // ProfileId values from MgfxProfile enum: OpenGL=0, DirectX11=1, Vulkan=3
+    // ProfileId values from MgfxProfile enum: OpenGL=0, DirectX11=1, Vulkan=80
     private const byte ProfileOpenGL    = 0;
     private const byte ProfileDirectX11 = 1;
-    private const byte ProfileVulkan    = 3;
+    private const byte ProfileVulkan    = 80;
 
     private readonly CliBinaryFixture _cli;
 
@@ -117,7 +117,11 @@ public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
 
         var reader = MgfxBlobReader.Parse(result.Mgfx);
         reader.Signature.Should().Be("MGFX");
-        reader.MgfxVersion.Should().Be(10);
+        // Vulkan always writes the v11 shader-record shape (matching real MonoGame
+        // 3.8.5, which hardcodes version 11 for every profile) — DesktopVK is new in
+        // 3.8.5, so there is no older-version reader to stay compatible with. GL/DX
+        // keep the v10 default for backwards compatibility with MonoGame 3.8.2+.
+        reader.MgfxVersion.Should().Be(profile == "Vulkan" ? (byte)11 : (byte)10);
         reader.ProfileId.Should().Be(expectedProfileId, because: $"profile '{profile}' must produce ProfileId {expectedProfileId}");
     }
 

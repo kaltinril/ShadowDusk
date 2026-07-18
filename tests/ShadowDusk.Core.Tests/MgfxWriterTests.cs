@@ -172,7 +172,7 @@ public sealed class MgfxWriterTests
     public void Header_VulkanProfileId()
     {
         var bytes = Write(EmptyIR(), new MgfxWriterOptions(MgfxProfile.Vulkan));
-        bytes[5].Should().Be(3);
+        bytes[5].Should().Be(80);
     }
 
     // -------------------------------------------------------------------------

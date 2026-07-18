@@ -51,7 +51,7 @@ MonoGame's stock content pipeline (`MGCB`) shells out to `mgfxc`, which depends 
 | DirectX (Windows) | HLSL | vkd3d-shader → DXBC (SM5) |
 | OpenGL / DesktopGL | GLSL | DXC → SPIR-V → SPIRV-Cross → GLSL |
 | Metal (macOS / iOS) *(not yet implemented)* | MSL | DXC → SPIR-V → SPIRV-Cross → MSL |
-| Vulkan (future) | SPIR-V | DXC → SPIR-V (direct) |
+| Vulkan *(Phase 32 — **rung 4 proven** for MonoGame `DesktopVK`; KNI ships no Vulkan platform)* | SPIR-V | DXC → SPIR-V (direct) |
 | FNA *(Phase 39 — **rung 4 proven**, PS-only + VS-driven corpora; one `.fxb` serves all FNA backends)* | D3D9-style HLSL (SM ≤ 3) | vkd3d-shader → D3D9 bytecode → ShadowDusk `Fx2EffectWriter` → fx_2_0 (`.fxb`) |
 
 > **The feature ceiling is the *runtime's*, not the compiler's, and it differs by backend.** ShadowDusk's
@@ -109,10 +109,11 @@ where it does, so future work doesn't drift across it.)*
 - **One faithful pipeline, no substitute compilers** (the standing rule): leverage only
   works if every host runs the *same* upstream components — which is also exactly what
   makes cross-host byte-identity achievable.
-- Parked backends (Metal, Vulkan) stay parked **not** because the compilation is hard —
+- A parked backend (Metal) stays parked **not** because the compilation is hard —
   SPIRV-Cross/DXC already do it — but because there is no consumer runtime to
   rung-4-validate against yet. When one exists, the work is container plumbing +
-  validation, not compiler expertise. That's the strategy working as intended.
+  validation, not compiler expertise — Vulkan (Phase 32) is proof of exactly that: it
+  reopened and reached rung 4 the moment MonoGame 3.8.5 shipped a real `DesktopVK` runtime.
 
 ## Host × target matrix, and the browser-export principle
 
@@ -135,7 +136,8 @@ Where each host×target cell stands (updated 2026-06-12, post-Phase 37 A/B/C + P
 | OpenGL `.mgfx` | ✅ proven | ✅ compiles green in CI (37 B fixed the Vortice `wchar_t` marshalling; the browser-smoke renders its corpus on llvmpipe) — **with one carve-out, see the DXC-divergence note below**; rung-4 render-vs-`mgfxc` still Windows-proven only | ✅ compiles green in CI (37 A dylib + the 37 B fix; full integration suite passes) — **same DXC-divergence carve-out**; byte-identity-vs-win assertion + rung-4 render are the remaining tail | ✅ proven, byte-identical |
 | DX11 DXBC `.mgfx` | ✅ proven | ✅ compiles end-to-end (vkd3d backend + managed `RdefReader` reflection — Track A); render bar is the real WindowsDX runtime, Windows-only by nature | ✅ same as Linux (DX11 no longer constructs DXC, so 37 A doesn't gate it) | ✅ **export target** — vkd3d→WASM landed (Phase 4.1, 2026-06-12): real-browser gate 65-artifact byte-identity vs the cross-host manifest; render bar stays desktop-by-nature (no Direct3D in a browser) |
 | FNA fx_2_0 `.fxb` | ✅ proven | ✅ proven | ✅ natives ship + compile suite green in CI (37 C); render oracle (`fxc`) is Windows-only by nature | ✅ **export target** — same Phase 4.1 vkd3d→WASM module, same 2026-06-12 real-browser byte-identity proof (no D3D9 in a browser) |
-| Vulkan SPIR-V / Metal MSL | parked — no validatable consumer runtime yet (Phases 31/32) | | | |
+| Vulkan SPIR-V | ✅ **rung-4 proven** (Phase 32, 2026-07-18) — real MonoGame `DesktopVK`; no pixel-diff vs `mgfxc`'s own Vulkan output (that output crashes on load, a separate MonoGame bug, see `plan/PHASE-32-appendix/`) | untested on this host, no reason to expect divergence (same DXC→SPIR-V frontend as OpenGL) | untested on this host, no reason to expect divergence | not an export target yet — no Vulkan-capable browser consumer |
+| Metal MSL | parked — no validatable consumer runtime yet (Phase 31) | | | |
 
 > **The DXC-divergence carve-out (per-OS compile reach, open):** the Linux/macOS
 > "compiles green in CI" cells above hold for the normal corpus, but NOT for the
@@ -173,7 +175,8 @@ SHA-256-identical to the committed cross-host manifest — so render-equivalence
 from the desktop rung-4 proofs by transitivity (`plan/DONE/PHASE-4.1-SPIKE-wasm-directx-dxbc.md`).
 DX/FNA in the browser are **export targets** — a browser cannot render DXBC/D3D9 bytecode,
 by construction, so the browser-side bar is byte-identity, honestly stated. Of the old
-completion order, only **(4)** remains: Vulkan/Metal stay validation-gated; the desktop GL
-column's remaining tail is the Linux/macOS rung-4 render items noted in the matrix.
+completion order, Vulkan (Phase 32) is now rung-4 proven on MonoGame `DesktopVK`; Metal
+stays validation-gated; the desktop GL column's remaining tail is the Linux/macOS rung-4
+render items noted in the matrix.
 
 > **DirectX DXBC now works (Phase 18, done 2026-05-30).** DXC compiles to **DXIL (SM6)**, not the **DXBC (SM ≤ 5)** MonoGame 3.8's DX11 runtime loads — so the DX11 path no longer uses DXC. It routes through a DXBC backend behind `IDxbcShaderCompiler`: the cross-platform **vkd3d-shader** library (HLSL → DXBC_TPF) is the shipping backend, with Windows-only `d3dcompiler_47.dll` as a correctness oracle. DXC `ps_6_0`/`vs_6_0` (DXIL) is retained only for the DX12/KNI path. **Both OpenGL (Phase 17) and DirectX (Phase 18) are now validated end-to-end** in the real MonoGame runtime for the SM3/SM5 PS-only corpus (10/10 each); the DX backend's selector defaults to `DxbcBackend.Vkd3d` on every OS (host-independent default output, since 0.5.0), with the `d3dcompiler_47` oracle opt-in. WASM + DirectX DXBC, long the open problem, closed 2026-06-12: the same pinned vkd3d 1.17 compiled to WASM ships in `ShadowDusk.Wasm`, byte-identical to desktop (Phase 4.1).
