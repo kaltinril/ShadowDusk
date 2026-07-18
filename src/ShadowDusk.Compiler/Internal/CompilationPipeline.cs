@@ -1,6 +1,7 @@
 #nullable enable
 
 using System.Text;
+using System.Text.RegularExpressions;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
 using ShadowDusk.Core.Reflection;
@@ -255,7 +256,12 @@ internal sealed class CompilationPipeline
         // separate DXIL blob and reflecting it via the native ID3D12ShaderReflection
         // oracle. The SPIR-V compile + transpile remain identical, so .mgfx output is
         // byte-transparent — only the SOURCE of the ReflectedEffect changes.
-        bool reflectFromSpirv = _reflectorFactory is not null && options.Target == PlatformTarget.OpenGL;
+        // Vulkan has no DXIL-oracle alternative at all (CompileEntryPoint's generic
+        // else branch never compiles a companion DXIL blob for Vulkan), so it must
+        // reflect from SPIR-V unconditionally, unlike OpenGL which only does so when a
+        // reflector factory is injected.
+        bool reflectFromSpirv = options.Target == PlatformTarget.Vulkan
+            || (_reflectorFactory is not null && options.Target == PlatformTarget.OpenGL);
 
         // GAP-2 (GL-only): retarget a pixel shader's MRT struct-output ': COLOR<n>' semantics to
         // ': SV_Target<n>' for the OpenGL DXC compiles only. DXC's HLSL->SPIR-V (the GL backend)
@@ -265,9 +271,17 @@ internal sealed class CompilationPipeline
         // `preprocessed`, so their bytes are unchanged. The rewrite is a no-op (returns the same
         // text) for any shader whose pixel entry does not return a COLOR-member struct, so every
         // existing GL shader stays byte-identical. See GlStructOutputColorRewriter.
+        //
+        // Vulkan-only: force each texture+sampler pair onto matching explicit registers so
+        // DXC's -fvk-t-shift/-fvk-s-shift co-locate them at the same raw SPIR-V binding — the
+        // only pattern confirmed to draw correctly on real DesktopVK (see
+        // VulkanTextureSamplerBindingRewriter). No-op for GL/DX/FNA and for shaders with no
+        // Texture2D/SamplerState declarations.
         PreprocessedSource glCompileSource = monoGameGl
             ? preprocessed with { Text = GlStructOutputColorRewriter.Rewrite(preprocessed.Text, fxParsed.Techniques) }
-            : preprocessed;
+            : options.Target == PlatformTarget.Vulkan
+                ? preprocessed with { Text = VulkanTextureSamplerBindingRewriter.Rewrite(preprocessed.Text) }
+                : preprocessed;
 
         // Stages 3–5: Compile each pass's entry points, reflect, and transpile.
         // The preprocessor has already flattened all #includes so no include handler is needed for DXC.
@@ -468,8 +482,11 @@ internal sealed class CompilationPipeline
                         // (cbuffers/textures/samplers) from the SPIR-V blob, then run the
                         // SAME ParameterListBuilder step the DXIL path uses so Parameters
                         // are populated identically. Output is byte-transparent.
+                        // Vulkan reaches this branch unconditionally (see reflectFromSpirv
+                        // above) with no injected factory on desktop, so fall back to a
+                        // plain SpirvReflector rather than relying on caller injection.
                         Result<ReflectedEffect, ShaderError> baseResult =
-                            _reflectorFactory!().Reflect(spirvBlob);
+                            (_reflectorFactory?.Invoke() ?? new SpirvReflector()).Reflect(spirvBlob);
 
                         if (baseResult.IsSuccess)
                         {
@@ -716,8 +733,32 @@ internal sealed class CompilationPipeline
                 }
             }
 
+            // Vulkan: real mgfxc only supports one constant buffer per shader stage
+            // (VulkanShaderProfile.CreateShader throws on a second one) — fail loudly
+            // rather than silently drop or mis-bind a buffer the writer can't represent.
+            if (options.Target == PlatformTarget.Vulkan && cbIndices.Count > 1)
+                return Fail(new ShaderError(
+                    File: options.SourceFileName ?? "",
+                    Line: 0,
+                    Column: 0,
+                    Code: "SD0026",
+                    Message: "Vulkan does not support more than one constant buffer per shader " +
+                             "stage; consider merging globals into a single cbuffer."));
+
+            byte[] blobBytes = compiledShaderBlobs[i].Bytes;
+            if (options.Target == PlatformTarget.Vulkan)
+            {
+                blobBytes = VulkanShaderCodeWrapper.Wrap(
+                    blobBytes,
+                    compiledShaderBlobs[i].Stage,
+                    constantBuffer: cbIndices.Count > 0 ? allConstantBuffers[cbIndices[0]] : null,
+                    textures: shaderTextures.TryGetValue(i, out var vkTextures) ? vkTextures : [],
+                    samplers: shaderSamplers.TryGetValue(i, out var vkSamplers) ? vkSamplers : []);
+            }
+
             compiledShaderBlobs[i] = compiledShaderBlobs[i] with
             {
+                Bytes                 = blobBytes,
                 Samplers              = samplers,
                 ConstantBufferIndices = cbIndices,
             };
@@ -733,6 +774,17 @@ internal sealed class CompilationPipeline
         // different container; the default MGFX v10 path below is untouched. (Phase 35 B.)
         if (effectiveContainer == EffectContainer.Knifx)
         {
+            // KNI ships no Vulkan platform, and KnifxBackend has no Vulkan value to map
+            // to — without this guard a Vulkan+KNIFX request would silently fall through
+            // to KnifxBackend.OpenGL and emit a wrong-shaped container.
+            if (options.Target == PlatformTarget.Vulkan)
+                return Fail(new ShaderError(
+                    File: "",
+                    Line: 0,
+                    Column: 0,
+                    Code: "SD0025",
+                    Message: "The Vulkan target does not support the KNIFX container (KNI ships no Vulkan platform)."));
+
             KnifxBackend knifxBackend = options.Target switch
             {
                 PlatformTarget.DirectX => KnifxBackend.DirectX11,
@@ -753,6 +805,13 @@ internal sealed class CompilationPipeline
             PlatformTarget.Vulkan  => MgfxProfile.Vulkan,
             _ => MgfxProfile.OpenGL,
         };
+
+        // Real MonoGame 3.8.5 hardcodes version 11 for every profile (SourceFile/
+        // Entrypoint always written) — DesktopVK is new in 3.8.5 with no older-version
+        // reader to preserve compatibility with, so Vulkan always writes the v11 shape
+        // regardless of CompilerOptions.MgfxVersion.
+        if (options.Target == PlatformTarget.Vulkan)
+            effectiveMgfxVersion = 11;
 
         // Guard the byte cast (like the writer's SD0020/SD0021 size guards): a
         // MgfxVersion outside 0..255 would silently truncate into a bogus header.
@@ -1608,11 +1667,29 @@ internal sealed class CompilationPipeline
         {
             // Vulkan (and any future DX12/KNI SM6 profile): single DXC compile.
             // DX11 no longer reaches here — it takes the DXBC oracle branch above.
+            //
+            // Vulkan-only: real mgfxc renames every entry point to literally "main"
+            // before compiling (VulkanShaderProfile.CreateShader). Confirmed by a
+            // minimal repro against real DesktopVK (2026-07-18): the ONLY byte
+            // difference between a real-mgfxc-compiled SPIR-V module and ShadowDusk's
+            // (once the container/binding fixes above are applied) was the
+            // OpEntryPoint name — "main" vs the shader's real name (e.g. "MainPS") —
+            // and shipping the real name crashes MonoGame's native Vulkan pipeline
+            // creation (it evidently expects "main" unconditionally). GL/DX/FNA keep
+            // the shader's real entry name; this rename is Vulkan-only.
+            string hlslSource = preprocessed.Text;
+            string effectiveEntryPoint = entryPoint;
+            if (platform == PlatformTarget.Vulkan)
+            {
+                hlslSource = RenameEntryPointToMain(hlslSource, entryPoint);
+                effectiveEntryPoint = "main";
+            }
+
             var request = new DxcCompileRequest
             {
-                HlslSource     = preprocessed.Text,
+                HlslSource     = hlslSource,
                 SourceFileName = preprocessed.OriginalFilePath,
-                EntryPoint     = entryPoint,
+                EntryPoint     = effectiveEntryPoint,
                 Stage          = stage,
                 Platform       = platform,
                 Options        = compileOptions,
@@ -1629,6 +1706,15 @@ internal sealed class CompilationPipeline
             return (Result<byte[], ShaderError>.Ok(blob.ToArray()), dxilBlob, spirvBlob, noAttributes, noUniforms);
         }
     }
+
+    /// <summary>
+    /// Renames the top-level function definition named <paramref name="entryPoint"/> to
+    /// <c>main</c> — mirrors mgfxc's own <c>Regex.Replace(fileContent, entryPoint, "main")</c>
+    /// (<c>ShaderProfile.Vulkan.cs</c>). Matches only <c>&lt;whitespace&gt;entryPoint(</c>
+    /// (a function definition or call), never a substring inside another identifier.
+    /// </summary>
+    private static string RenameEntryPointToMain(string hlsl, string entryPoint) =>
+        Regex.Replace(hlsl, $@"(?<=\s){Regex.Escape(entryPoint)}(?=\s*\()", "main");
 
     /// <summary>
     /// mgfxc's <c>ConstantBufferData.SameAs</c> equivalence for the GL per-shader

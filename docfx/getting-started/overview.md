@@ -35,7 +35,7 @@ Every shape implements the same <xref:ShadowDusk.Core.IShaderCompiler> interface
 | Android (on-device) | GLSL `.mgfx` | Supported |
 | FNA | D3D9 `.fxb` | Supported |
 | [Metal (macOS / iOS)](../backends/metal.md) | MSL | Not yet |
-| [Vulkan](../backends/vulkan.md) | SPIR-V | Experimental |
+| [Vulkan](../backends/vulkan.md) | SPIR-V `.mgfx` | Supported (MonoGame `DesktopVK` only — KNI has no Vulkan platform) |
 
 Supported targets are tested end-to-end against the reference compiler and render identically. See [Validation](../contributing/validation.md) for how that's proven, and [Choosing a Target](../guides/choosing-a-target.md) to pick one.
 

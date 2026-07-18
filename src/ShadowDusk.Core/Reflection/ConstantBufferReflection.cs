@@ -11,6 +11,13 @@ public sealed record ConstantBufferReflection
     public required int                           SizeBytes { get; init; }
     /// <summary>The register/bind slot the buffer occupies.</summary>
     public required int                           BindSlot  { get; init; }
+    /// <summary>
+    /// The raw SPIR-V <c>Binding</c> decoration (unlike <see cref="BindSlot"/>, a
+    /// class-relative renumbering). Used only by the Vulkan container's descriptor-layout
+    /// table — Vulkan's cbuffer binding is NOT reliably 0; it must be reflected like any
+    /// other resource. Default 0 for non-Vulkan.
+    /// </summary>
+    public int RawBinding { get; init; }
     /// <summary>The variables packed into the buffer, in offset order.</summary>
     public required IReadOnlyList<VariableReflection> Variables { get; init; }
 }

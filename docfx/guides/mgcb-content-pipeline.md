@@ -33,7 +33,7 @@ MGCB passes the platform via `/Profile:`. ShadowDusk understands the MonoGame pr
 |---|---|
 | `DirectX_11` | DirectX (DXBC SM5) |
 | `OpenGL` | OpenGL / DesktopGL (GLSL) |
-| `Vulkan` | Vulkan (SM6 SPIR-V) - experimental, unvalidated (no shipping Vulkan runtime) |
+| `Vulkan` | Vulkan (SM6 SPIR-V), validated for MonoGame `DesktopVK` (KNI has no Vulkan platform) |
 
 Unsupported console profiles (`PlayStation4`, `XboxOne`, `Switch`) fail loudly with exit code 1, just as a portable tool should.
 

@@ -30,6 +30,15 @@
                                    its restore-fna.ps1 clones the FNA source tree (heavy) and the
                                    oracle needs the Windows SDK fxc. Run it for any release that
                                    could affect the FNA target.
+    * Vulkan (-IncludeVulkan)    - validation/CandidateVulkan (ShadowDusk's own Vulkan .mgfx
+                                   loaded in real MonoGame DesktopVK). OPT-IN because DesktopVK
+                                   needs a real Vulkan-capable GPU. NOTE: this asserts ShadowDusk's
+                                   OWN output renders correctly, not a pixel-diff against real
+                                   mgfxc's Vulkan oracle - that oracle currently crashes on this
+                                   corpus due to a confirmed, separate MonoGame bug (SlotOffset
+                                   arithmetic in VulkanShaderProfile.CreateShader; see
+                                   plan/PHASE-32-appendix/vulkan-mgfx-format-spec.md). Run it for
+                                   any release that could affect the Vulkan target.
 
   The OpenGL render gates are intentionally NOT here - CI already runs them (see
   validation-render.yml). Run them with `dotnet test` + that workflow, not this script.
@@ -37,6 +46,10 @@
 .PARAMETER IncludeFna
   Also run the FNA fx_2_0 gate (validation/FnaValidation). Requires the FNA restore
   (validation/FnaValidation/restore-fna.ps1) and a Windows SDK fxc on PATH. Off by default.
+
+.PARAMETER IncludeVulkan
+  Also run the Vulkan gate (validation/CandidateVulkan + validation/BaselineVulkan +
+  compare_vulkan.py). Requires a Vulkan-capable GPU. Off by default.
 
 .PARAMETER SkipRestore
   Skip `tools/restore.ps1` (the vkd3d-shader native the DX/KNI-DX/FNA gates P/Invoke). Use only
@@ -47,12 +60,13 @@
   Run the core DX + KNI-DX render gates (the standard pre-release gate).
 
 .EXAMPLE
-  ./validation/run-windows-render-gates.ps1 -IncludeFna
-  Also validate the FNA fx_2_0 target (for an FNA-affecting release).
+  ./validation/run-windows-render-gates.ps1 -IncludeFna -IncludeVulkan
+  Also validate the FNA fx_2_0 and Vulkan targets (for a release affecting either).
 #>
 [CmdletBinding()]
 param(
     [switch]$IncludeFna,
+    [switch]$IncludeVulkan,
     [switch]$SkipRestore
 )
 
@@ -110,6 +124,21 @@ if ($IncludeFna) {
 } else {
     Write-Host "NOTE: FNA gate not run (pass -IncludeFna). Required before an FNA-affecting release.`n" -ForegroundColor Yellow
 }
+if ($IncludeVulkan) {
+    $gates.Add(@{
+        Name   = 'Vulkan (ShadowDusk .mgfx, real MonoGame DesktopVK - own-output render proof, not a pixel-diff oracle)'
+        Action = {
+            Invoke-Checked 'dotnet' @('run', '--project', 'validation/CandidateVulkan', '-c', 'Release')
+            # BaselineVulkan is best-effort: real mgfxc's own Vulkan output currently crashes on
+            # this corpus (a confirmed, separate MonoGame bug), so its exit code is NOT part of
+            # this gate's pass/fail signal. compare_vulkan.py only fails on a CANDIDATE problem.
+            & dotnet run --project validation/BaselineVulkan -c Release
+            Invoke-Checked 'python' @('validation/compare_vulkan.py')
+        }
+    })
+} else {
+    Write-Host "NOTE: Vulkan gate not run (pass -IncludeVulkan). Required before a Vulkan-affecting release.`n" -ForegroundColor Yellow
+}
 
 $results = [System.Collections.Generic.List[object]]::new()
 foreach ($gate in $gates) {
@@ -141,6 +170,9 @@ $passed = $results.Count - $failed
 Write-Host ("`n{0}/{1} render gates passed." -f $passed, $results.Count)
 if (-not $IncludeFna) {
     Write-Host "(FNA gate skipped - rerun with -IncludeFna before an FNA-affecting release.)" -ForegroundColor Yellow
+}
+if (-not $IncludeVulkan) {
+    Write-Host "(Vulkan gate skipped - rerun with -IncludeVulkan before a Vulkan-affecting release.)" -ForegroundColor Yellow
 }
 
 if ($failed -gt 0) {

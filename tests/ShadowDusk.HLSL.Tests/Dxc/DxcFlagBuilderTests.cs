@@ -62,6 +62,10 @@ public sealed class DxcFlagBuilderTests
     [Fact] public void Vulkan_Vertex_HasSpirvFlag()
         => Build(PlatformTarget.Vulkan, ShaderStage.Vertex).Should().Contain("-spirv");
 
+    [Fact] public void Vulkan_Vertex_HasTAndSShift()
+        => Joined(Build(PlatformTarget.Vulkan, ShaderStage.Vertex))
+            .Should().Contain("-fvk-t-shift 32 all").And.Contain("-fvk-s-shift 32 all");
+
     // ── Vulkan Pixel ─────────────────────────────────────────────────────────
 
     [Fact] public void Vulkan_Pixel_HasProfile_ps6_0()
@@ -69,6 +73,10 @@ public sealed class DxcFlagBuilderTests
 
     [Fact] public void Vulkan_Pixel_HasFspvReflect()
         => Build(PlatformTarget.Vulkan, ShaderStage.Pixel).Should().Contain("-fspv-reflect");
+
+    [Fact] public void Vulkan_Pixel_HasTAndSShift()
+        => Joined(Build(PlatformTarget.Vulkan, ShaderStage.Pixel))
+            .Should().Contain("-fvk-t-shift 32 all").And.Contain("-fvk-s-shift 32 all");
 
     // ── DirectX ──────────────────────────────────────────────────────────────
 

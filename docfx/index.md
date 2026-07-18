@@ -43,7 +43,7 @@ FNA  (D3D9 fx_2_0):
 | WebGL (XNA Fiddle / KNI browser) | GLSL ES | Validated end-to-end (10/10 in real headless KNI WebGL) |
 | FNA (`/Profile:FNA` → `.fxb`) | D3D9 fx_2_0 via vkd3d-shader | Validated end-to-end (pixel-identical to `fxc /T fx_2_0` in real FNA — PS-only and custom-vertex-shader effects, incl. multi-pass + in-pass render states) |
 | [Metal (macOS / iOS)](backends/metal.md) | MSL | **Not yet implemented (future)** |
-| [Vulkan](backends/vulkan.md) | SPIR-V | **Future** |
+| [Vulkan](backends/vulkan.md) | SPIR-V | Validated end-to-end (10/10 in real MonoGame DesktopVK; MonoGame-only, KNI has no Vulkan platform) |
 
 The table above is the **graphics-backend** axis — the one that decides the output bytes for MonoGame/KNI. **Framework** is a separate axis: **MonoGame and KNI** read the same MGFX format (both supported); **FNA** is also supported, but via a different effect path — ShadowDusk emits the legacy D3D9 fx_2_0 `.fxb` (MojoShader) FNA loads, not the MGFX container; classic Microsoft **XNA 4.0** is **out of scope**. New to picking a target, or building a shader-download feature? See **[Choosing a Target](guides/choosing-a-target.md)** — it covers the framework / backend / `GraphicsProfile` axes and the `.mgfx`-vs-`.xnb` distinction.
 

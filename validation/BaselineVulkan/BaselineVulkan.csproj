@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Phase 32 v2 - Vulkan RENDER validation (rung-4 proof) against a real DesktopVK runtime.
+
+    MonoGame 3.8.5 shipped STABLE 2026-07-15 with DesktopVK as a production platform (not
+    preview/experimental) - confirmed via the NuGet API against MonoGame.Framework.Native and
+    MonoGame.Runtime.Windows.Vulkan, both published at stable 3.8.5. This harness loads the
+    real `dotnet-mgfxc 3.8.5 /Profile:Vulkan` goldens (tests/fixtures/golden/Vulkan/*.mgfx)
+    into a real DesktopVK Effect - the oracle side of the Baseline/Candidate pair every other
+    backend in this repo uses (see validation/Baseline, validation/KniDesktopGL).
+
+    Kept out of ShadowDusk.slnx and opted out of central package management, matching every
+    other validation/* harness - these are manual, GPU-required render gates, not part of
+    `dotnet test`.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RootNamespace>ShadowDusk.Validation.BaselineVulkan</RootNamespace>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <MonoGamePlatform>DesktopVK</MonoGamePlatform>
+  </PropertyGroup>
+
+  <ItemGroup Label="MonoGame 3.8.5 stable DesktopVK">
+    <PackageReference Include="MonoGame.Framework.Native" Version="3.8.5" />
+    <PackageReference Include="MonoGame.Runtime.Windows.Vulkan" Version="3.8.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Shared\*.cs" />
+  </ItemGroup>
+
+</Project>
