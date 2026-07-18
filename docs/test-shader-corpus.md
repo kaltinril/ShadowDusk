@@ -53,7 +53,7 @@ upstream verbatim (see the integrity caveat in §1).
 | Post-FX pack: `Grayscale.fx`, `Invert.fx`, `Sepia.fx`, `Saturate.fx`, `Pixelated.fx`, `Scanlines.fx`, `Fading.fx`, `Dots.fx` | A common MonoGame post-process tutorial pack; exact upstream not confidently identified | Unknown |
 | `Dissolve.fx`, `ForwardLighting.fx`, `PolygonLight.fx` | Nez-style 2D framework (underscore-prefixed sampler convention, discard-based dissolve); exact upstream not confidently identified | Unknown |
 | `Minimal.fx`, `cbuffer.fx`, `multipass.fx`, `multitechnique.fx`, `render-states.fx`, `annotations.fx`, `platform-macros.fx`, `basiceffect-mini.fx`, etc. | Purpose-built ShadowDusk structural fixtures (SM4/5 feature probes) | Project-owned |
-| `StateBlendAdditive.fx`, `StateDepthStencil.fx`, `StateRasterizer.fx`, `SamplerStatesFull.fx`, `AnnotatedTechnique.fx` | Phase 43 writer-fidelity corpus (pass blend/depth-stencil/rasterizer states incl. negative floats; baked `sampler_state` members; parameter/technique/pass annotations). All but `AnnotatedTechnique.fx` have real `mgfxc` 3.8.2.1105 goldens in `tests/fixtures/golden/{OpenGL,DirectX_11}/` (mgfxc's grammar cannot parse technique/pass annotations); validated by `MgfxStateGoldenMatchTests` (structural vs golden) and `validation/StateFidelity` (real MonoGame 3.8.2 `Effect` load + pixel-equal render vs the golden). | Project-owned |
+| `StateBlendAdditive.fx`, `StateDepthStencil.fx`, `StateRasterizer.fx`, `SamplerStatesFull.fx`, `AnnotatedTechnique.fx` | Writer-fidelity corpus (pass blend/depth-stencil/rasterizer states incl. negative floats; baked `sampler_state` members; parameter/technique/pass annotations). All but `AnnotatedTechnique.fx` have real `mgfxc` 3.8.2.1105 goldens in `tests/fixtures/golden/{OpenGL,DirectX_11}/` (mgfxc's grammar cannot parse technique/pass annotations); validated by `MgfxStateGoldenMatchTests` (structural vs golden) and `validation/StateFidelity` (real MonoGame 3.8.2 `Effect` load + pixel-equal render vs the golden). | Project-owned |
 
 > If you can supply the original source links for the "Unknown" rows, add them
 > here — that lets us diff the checked-in files against upstream and decide,
@@ -119,10 +119,10 @@ they prove **"ShadowDusk compiles them into a valid effect,"** not pixel-equival
 to `mgfxc`/`fxc` — the in-engine render-and-compare (a committed golden + a
 `validation/*` driver) is the follow-up.
 
-### Phase 45 FX pre-parser robustness set (dropped-operator bug class)
+### FX pre-parser robustness set (dropped-operator bug class)
 
-Authored from scratch for ShadowDusk on 2026-06-17 to pin the Phase 45 fixes
-(`plan/DONE/PHASE-45-fx-preparser-robustness.md`, items B2-B9). Same shared root
+Authored from scratch for ShadowDusk on 2026-06-17 to pin the dropped-operator
+fixes (`plan/DONE/PHASE-45-fx-preparser-robustness.md`, items B2-B9). Same shared root
 cause as #106: the `FxLexer` drops several operators (`: + [ ] & | ! ? % ^ ~`), so
 a flat heuristic in `FxPreParser` pattern-matched the fragmented token stream and
 acted wrongly. Each fixture is small, real (full technique + pass, renderable), and
@@ -167,7 +167,7 @@ pixel-equivalence to `mgfxc`/`fxc`.
 
 ## 4. Third-party shader corpus (vendored, real shipping shaders)
 
-Added 2026-06-17 (issue #106 / Phase 45 follow-up). Unlike the project-owned
+Added 2026-06-17 (issue #106 follow-up). Unlike the project-owned
 fixtures in §3, these are **NOT project-owned** — they are real, shipping MonoGame
 post-process shaders **vendored verbatim** from the **Nez** framework
 (`prime31/Nez`, **MIT**, Copyright (c) 2016 Mike), pinned at commit
@@ -207,7 +207,7 @@ the targets it actually compiles on (the rationale per shader is in the director
 | `Crosshatch.fx` | Nez (MIT) | DX + FNA | Nested `if` + `<` relationals + `VPOS` + float `%` + an `int` uniform. **Not GL:** `int` uniforms are not modelled on the MonoGame-GL path (loud `SD0210`, by design). | DX + FNA |
 | `PaletteCycler.fx` | Nez (MIT) | FNA only | Palette swap via a 1-D LUT (`tex1D` / `sampler1D`). **Not GL/DX:** `tex1D` has no 1:1 modern `Texture` method, rejected with a targeted `FX0012` that points to FNA (which compiles it natively). | FNA only |
 | `Reflection.fx` | Nez (MIT) | DX only | Two techniques, each **VS+PS** (mirror + water); world-space, `half2`, `frac`, relational `if`. **Not GL:** the multi-`TEXCOORD` interpolant block cannot be expressed in std140/std430 by SPIRV-Cross (`SD0100`). **Not FNA:** an int/relational construct hits the vkd3d 1.17 SM3 gap (`X0000`). | DX only |
-| `Noise.fx` | Nez (MIT) | GL + DX + FNA | Film-grain; helper fn `rand()` (`frac`/`sin`/`dot`) called from the entry. A uniform literally named `noise` collides with a GLSL reserved word and SPIRV-Cross renames it `_noise`; this used to break the GL cbuffer/parameter join (`SD0012`), but **Phase 45 B10 fixed it** (offset-bridge fallback — see below), so it now compiles on GL too. | all-runtime (B10) |
+| `Noise.fx` | Nez (MIT) | GL + DX + FNA | Film-grain; helper fn `rand()` (`frac`/`sin`/`dot`) called from the entry. A uniform literally named `noise` collides with a GLSL reserved word and SPIRV-Cross renames it `_noise`; this used to break the GL cbuffer/parameter join (`SD0012`), but the **B10 offset-bridge fallback fixed it** (see below), so it now compiles on GL too. | all-runtime (B10) |
 
 These are exercised by `tests/ShadowDusk.Integration.Tests/ThirdPartyShaderCorpusTests.cs`
 (compile-asserts each on its classified targets; FNA via `[FnaTheory]` + the
@@ -221,7 +221,7 @@ MojoShader-rule fx_2_0 validator). The all-runtime ones are also folded into
 > in particular compile on every target but their cross-path VPOS behavior is deliberately
 > left unclaimed.
 
-> **Phase-45 B10 — GLSL reserved-word uniform on GL (`Noise.fx`, formerly `SD0012`) — FIXED.**
+> **B10 — GLSL reserved-word uniform on GL (`Noise.fx`, formerly `SD0012`) — FIXED.**
 > A free uniform whose name is a GLSL reserved word (e.g. `noise`, which collides with the
 > deprecated `noise1`/`noise2`/... builtins) is renamed by SPIRV-Cross (to `_noise`). The GL
 > cbuffer-record builder joins the rewriter's uniform layout to the reflected effect-parameter
@@ -238,9 +238,9 @@ MojoShader-rule fx_2_0 validator). The all-runtime ones are also folded into
 > Pinned by `ExReservedWordUniform.fx` (GL+DX+FNA), `ReservedWordUniformBridgeTests`, and the
 > re-enabled Nez `Noise.fx` GL arm. See `docs/glsl-uniform-naming.md` "Design notes".
 
-### Phase 49 — Gum / Apos.Shapes (the Gum-ecosystem shaders)
+### Gum / Apos.Shapes (the Gum-ecosystem shaders)
 
-Added 2026-06-27 (Phase 49, requested by **Victor Chelaru / vchelaru**, Gum's author,
+Added 2026-06-27 (requested by **Victor Chelaru / vchelaru**, Gum's author,
 who uses **Apos.Shapes** for Gum's UI shape rendering). Two more vendored sets, both
 **MIT**, both classified by an actual compile probe on 2026-06-27:
 
@@ -268,9 +268,9 @@ a well-formed-container compile, not pixel-equivalence (no committed goldens). T
 genuinely notable result is that **`apos-shapes.fx` — the shader Gum's shape rendering
 actually depends on — compiles on GL and DX**, the targets Gum ships on.
 
-> **Phase 41 GAP-1 (macro-defined techniques) — fixed on the FNA path.** `Gum/FnaSample-Shader.fx`
+> **GAP-1 (macro-defined techniques) — fixed on the FNA path.** `Gum/FnaSample-Shader.fx`
 > surfaced GAP-1 with a real shader. The DX path already recovered macro techniques (the
-> existing Phase 41 fallback); the FNA path now does too (the zero-technique macro recovery
+> existing zero-technique fallback); the FNA path now does too (the zero-technique macro recovery
 > extended to `RunFna`, with no modern-branch gate — FNA's vkd3d SM1-3 compiles the legacy
 > macro branch directly). Result: the SM2-fitting MonoGame stock effects (SpriteEffect,
 > AlphaTestEffect, DualTextureEffect, Penumbra*) **now compile on FNA**; BasicEffect/SkinnedEffect

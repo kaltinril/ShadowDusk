@@ -25,8 +25,11 @@ ShadowDuskCLI MyShader.fx MyShader.mgfx /Profile:OpenGL
 | `/Profile:<Platform>` | Target platform. Valid: `DirectX_11`, `OpenGL`, `Vulkan`, `FNA` (the D3D9 fx_2_0 `.fxb` target — additive, not an `mgfxc` profile). | **`DirectX_11`** |
 | `/Debug` | Include debug information in the output. | off |
 | `/I <path>` | Additional include search path (repeatable). Also accepts `/I:<path>`. | none |
+| `/DxbcBackend:<Backend>` | DXBC backend for `DirectX_11`: `vkd3d` (cross-platform) or `d3dcompiler` (the Windows-only correctness oracle). Never required for correct output. | **`vkd3d`** |
 | `--mgfx-version <10\|11>` | MGFX container version (opt-in escape hatch). `10` (default) loads on every MonoGame 3.8.2+ and KNI runtime — leave it unset for correct output everywhere. `11` emits a faithful MonoGame **MGFX v11** container (MonoGame 3.8.5+, opt-in/experimental; renders identically to v10). | **`10`** |
 | `--target-runtime <name>` | Pick the output target (backend **and** container/version) with one name: `monogame-gl`, `monogame-dx`, `monogame-gl-v11` (MGFX v11), `kni-knifx` (KNI's KNIFX v11), `fna`. Overrides `/Profile` and `--mgfx-version`. Also accepts `/target-runtime:<name>`. | (use `/Profile`) |
+| `--input-format <auto\|fx\|glsl>` | Input language. `auto` detects a ShaderToy / plain-GLSL image shader — by extension (`.glsl`/`.frag`/`.fs`/`.glslf`) or content — and converts it to `.fx` before compiling. Never required for correct output; the explicit values are the escape hatch for genuinely ambiguous input. | **`auto`** |
+| `--print-uniforms` | Print the converted shader's drivable effect parameters (`iTime`, `iChannel0`, custom uniforms) to stderr. Only affects ShaderToy/GLSL input. | off |
 
 Unknown flags are **silently ignored** (not consuming a following value) so that future `mgfxc` flags MGCB may pass don't break existing pipelines.
 
@@ -59,7 +62,12 @@ ShadowDuskCLI effects/Lit.fx Content/Lit.mgfx /Profile:OpenGL /I shaders/common 
 
 # Pick backend + format together by name (KNI's KNIFX v11 container)
 ShadowDuskCLI effects/Cube.fx Content/Cube.knifx --target-runtime kni-knifx
+
+# ShaderToy / GLSL fragment shader — auto-detected, converted to .fx, then compiled
+ShadowDuskCLI shadertoy/Plasma.glsl Content/Plasma.mgfx /Profile:OpenGL --print-uniforms
 ```
+
+The ShaderToy/GLSL conversion is the same front-end the optional [`ShadowDusk.ShaderToy` package](https://www.nuget.org/packages/ShadowDusk.ShaderToy) exposes as a library — see [Installation](../getting-started/installation.md#optional-shadertoy-and-glsl-front-end).
 
 ## Exit codes & diagnostics
 

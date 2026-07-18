@@ -38,6 +38,21 @@ This provides a `ShadowDuskCLI` command with the same flags and `.mgfx` output a
 
 For in-browser runtime compilation (KNI / Blazor WebAssembly), add the `ShadowDusk.Wasm` package. It self-registers as Blazor static web assets — see [In-Browser (KNI/Blazor WASM)](../guides/in-browser-kni-blazor.md).
 
+## Optional ShaderToy and GLSL front-end
+
+`ShadowDusk.ShaderToy` is a standalone, **pure-managed (zero-native)** converter that turns a ShaderToy (`mainImage`) or plain-GLSL fragment shader into a self-contained HLSL `.fx` source. It is optional — it is *not* part of the faithful `mgfxc`-replacement pipeline, and `ShadowDusk.Compiler` does not depend on it. Install it when you want to convert ShaderToy/GLSL shaders in-process (a shader fiddle, an in-app importer):
+
+```sh
+dotnet add package ShadowDusk.ShaderToy
+```
+
+```csharp
+var converted = ShadowDusk.ShaderToy.ShaderToyConverter.Convert(glslSource);
+// converted.Fx is .fx source — compile it with EffectCompiler.CompileAsync(...)
+```
+
+Unsupported constructs fail loudly with a located (line/column) diagnostic rather than producing a silently-wrong `.fx`. The CLI has this front-end built in: `ShadowDuskCLI` auto-detects `.glsl`/`.frag`/`.fs` input and converts it before compiling — see the [CLI Reference](../cli/index.md).
+
 ## Targeting FNA
 
 [FNA](https://fna-xna.github.io/) uses the **same `ShadowDusk.Compiler` package** — there is nothing FNA-specific to install on ShadowDusk's side:
