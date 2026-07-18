@@ -4,6 +4,12 @@
 
 # ShadowDusk
 
+<p align="center">
+  <a href="https://www.nuget.org/packages/ShadowDusk.Compiler"><img src="https://img.shields.io/nuget/v/ShadowDusk.Compiler?label=ShadowDusk.Compiler" alt="ShadowDusk.Compiler on NuGet" /></a>
+  <a href="https://www.nuget.org/packages/ShadowDusk.Cli"><img src="https://img.shields.io/nuget/v/ShadowDusk.Cli?label=ShadowDuskCLI%20(dotnet%20tool)" alt="ShadowDuskCLI dotnet tool on NuGet" /></a>
+  <a href="https://www.nuget.org/packages/ShadowDusk.Wasm"><img src="https://img.shields.io/nuget/v/ShadowDusk.Wasm?label=ShadowDusk.Wasm" alt="ShadowDusk.Wasm on NuGet" /></a>
+</p>
+
 A cross-platform HLSL shader compiler for [MonoGame](https://monogame.net/), [KNI](https://github.com/kniEngine/kni), and [FNA](https://fna-xna.github.io/). Compile `.fx` shaders on Linux, macOS, or Windows — no Wine, no Windows SDK, no DirectX install required.
 
 ## What it is
@@ -19,7 +25,7 @@ var result = await compiler.CompileAsync(
 var effect = new Effect(graphicsDevice, result.Value.Data);
 ```
 
-Everything it needs ships inside the package. There's no separate install: no fxc.exe, no mgfxc, no Wine, no Windows SDK. The same library also ships as a **command-line tool** and an **MGCB plugin** for build-time use, and runs in the browser via WebAssembly (the in-browser fiddle is a sample of that reach, not a separate product).
+Everything it needs ships inside the package. There's no separate install: no fxc.exe, no mgfxc, no Wine, no Windows SDK. The same library also ships as a **command-line tool** for build-time use — including from MGCB's external-tool hook — and runs in the browser via WebAssembly (the in-browser fiddle is a sample of that reach, not a separate product).
 
 ## Why it exists
 
@@ -37,7 +43,7 @@ ShadowDusk works with **MonoGame, KNI, and FNA** across these graphics backends.
 | Android (on-device) | GLSL `.mgfx` | Supported    |
 | FNA                 | D3D9 `.fxb`  | Supported    |
 | Metal (macOS / iOS) | MSL          | Not yet      |
-| Vulkan              | SPIR-V       | Experimental |
+| Vulkan (MonoGame)   | SPIR-V `.mgfx` | Supported  |
 
 Supported targets are tested end-to-end against the reference compiler. For the exact per-version, per-OS proof status, see the [Validation Matrix](docs/validation-matrix.md). To choose a target (or build a shader-download feature), see the [Choosing a Target](https://kaltinril.github.io/ShadowDusk/guides/choosing-a-target.html) guide. Classic Microsoft XNA 4.0 is out of scope.
 
@@ -93,6 +99,20 @@ ShadowDuskCLI MyShader.fx MyShader.mgfx /Profile:OpenGL
 
 > "Same `.mgfx` output" means it loads and renders like mgfxc's, not that the bytes are identical. ShadowDusk's output is deterministic in its own right: the same version, source, and target always give the same bytes.
 
+## Packages
+
+All packages ship together at one shared version. Most projects only need one of the first three.
+
+| Package | NuGet | What it's for |
+|---|---|---|
+| `ShadowDusk.Compiler` | [![ShadowDusk.Compiler](https://img.shields.io/nuget/v/ShadowDusk.Compiler)](https://www.nuget.org/packages/ShadowDusk.Compiler) | **The product.** The in-memory `.fx` → `.mgfx` compiler library. This is the one to add to your game or tool. |
+| `ShadowDusk.Cli` | [![ShadowDusk.Cli](https://img.shields.io/nuget/v/ShadowDusk.Cli)](https://www.nuget.org/packages/ShadowDusk.Cli) | The `ShadowDuskCLI` dotnet tool — the same compiler as a command-line mgfxc replacement: `dotnet tool install -g ShadowDusk.Cli` |
+| `ShadowDusk.Wasm` | [![ShadowDusk.Wasm](https://img.shields.io/nuget/v/ShadowDusk.Wasm)](https://www.nuget.org/packages/ShadowDusk.Wasm) | The same pipeline compiled to WebAssembly, for in-browser compilation from Blazor / KNI web apps. |
+| `ShadowDusk.ShaderToy` | [![ShadowDusk.ShaderToy](https://img.shields.io/nuget/v/ShadowDusk.ShaderToy)](https://www.nuget.org/packages/ShadowDusk.ShaderToy) | Optional, standalone ShaderToy / GLSL → `.fx` front-end (pure managed, no native deps). |
+| `ShadowDusk.Core` | [![ShadowDusk.Core](https://img.shields.io/nuget/v/ShadowDusk.Core)](https://www.nuget.org/packages/ShadowDusk.Core) | Shared types (`IShaderCompiler`, `CompilerOptions`, `Result<T,E>`). Pulled in automatically as a dependency. |
+| `ShadowDusk.HLSL` | [![ShadowDusk.HLSL](https://img.shields.io/nuget/v/ShadowDusk.HLSL)](https://www.nuget.org/packages/ShadowDusk.HLSL) | HLSL front-end (FX pre-parser, DXC, DXBC backends). Pulled in automatically as a dependency. |
+| `ShadowDusk.GLSL` | [![ShadowDusk.GLSL](https://img.shields.io/nuget/v/ShadowDusk.GLSL)](https://www.nuget.org/packages/ShadowDusk.GLSL) | SPIR-V → GLSL transpilation and the MonoGame GLSL rewrite. Pulled in automatically as a dependency. |
+
 ## Getting started
 
 ### Prerequisites
@@ -132,23 +152,25 @@ ShadowDusk/
 │   ├── ShadowDusk.HLSL/         # FX9 pre-parser, preprocessor, DXC integration, reflection,
 │   │                            #   vkd3d-shader + d3dcompiler DXBC backends
 │   ├── ShadowDusk.GLSL/         # SPIR-V → GLSL via SPIRV-Cross + MonoGameGlslRewriter
+│   ├── ShadowDusk.ShaderToy/    # ShaderToy / GLSL → .fx front-end (optional, pure managed)
 │   ├── ShadowDusk.Metal/        # SPIR-V → MSL (stub — not yet implemented)
 │   ├── ShadowDusk.Compiler/     # EffectCompiler : IShaderCompiler — the consumer-facing product NuGet
 │   ├── ShadowDusk.Cli/          # dotnet tool entry point (mgfxc)
-│   ├── ShadowDusk.MgcbPlugin/   # MGCB content processor plugin (scaffold)
+│   ├── ShadowDusk.MgcbPlugin/   # MGCB content processor plugin (scaffold, not published)
 │   └── ShadowDusk.Wasm/         # In-browser WASM compiler (WasmShaderCompiler), [JSImport] DXC + SPIRV-Cross
 ├── samples/
 │   ├── ShaderFiddle.Web/        # KNI Blazor-WASM in-browser fiddle (sample of reach)
 │   ├── ShaderViewer/            # Desktop shader viewer
 │   └── mgcb/                    # MGCB content-pipeline sample
 ├── tests/
-│   ├── ShadowDusk.Core.Tests/
-│   ├── ShadowDusk.HLSL.Tests/
-│   ├── ShadowDusk.GLSL.Tests/
-│   ├── ShadowDusk.Integration.Tests/
+│   ├── ShadowDusk.*.Tests/      # Unit tests per library (Core, HLSL, GLSL, Compiler, ShaderToy)
+│   ├── ShadowDusk.Integration.Tests/  # End-to-end compiles (CLI, native DXC + SPIRV-Cross)
+│   ├── ShadowDusk.ImageTests/   # Offscreen-GL render comparisons
+│   ├── ShadowDusk.BrowserTests/ # Playwright KNI WebGL harness
 │   └── fixtures/
 │       ├── shaders/             # Canonical .fx test shaders
 │       └── golden/              # Reference .mgfx outputs (DirectX_11/ and OpenGL/)
+├── validation/                  # In-engine render-proof drivers (real MonoGame / KNI / FNA)
 ├── tools/                       # Native binary restore scripts
 └── docs/                        # Architecture docs and research (incl. HOWTO-WASM-KNI.md)
 ```

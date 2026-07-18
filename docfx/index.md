@@ -41,6 +41,7 @@ FNA  (D3D9 fx_2_0):
 | OpenGL / DesktopGL | GLSL | Validated end-to-end (10/10 in real MonoGame DesktopGL) |
 | DirectX (DX11) | DXBC (SM5) via `vkd3d-shader` (default, cross-platform) / `d3dcompiler_47` (Windows-only oracle, opt-in) | Validated end-to-end (10/10 in real MonoGame WindowsDX) |
 | WebGL (XNA Fiddle / KNI browser) | GLSL ES | Validated end-to-end (10/10 in real headless KNI WebGL) |
+| [Android on-device](guides/on-device-android.md) (MonoGame, KNI) | GLSL | Validated end-to-end (the same GL pipeline cross-compiled for Android; the `.mgfx` is byte-identical to the desktop build) |
 | FNA (`/Profile:FNA` → `.fxb`) | D3D9 fx_2_0 via vkd3d-shader | Validated end-to-end (pixel-identical to `fxc /T fx_2_0` in real FNA — PS-only and custom-vertex-shader effects, incl. multi-pass + in-pass render states) |
 | [Metal (macOS / iOS)](backends/metal.md) | MSL | **Not yet implemented (future)** |
 | [Vulkan](backends/vulkan.md) | SPIR-V | Validated end-to-end (10/10 in real MonoGame DesktopVK; MonoGame-only, KNI has no Vulkan platform) |
@@ -56,6 +57,8 @@ The table above is the **graphics-backend** axis — the one that decides the ou
 - **New here?** Start with [Overview](getting-started/overview.md) → [Installation](getting-started/installation.md) → [In-Memory Quickstart](getting-started/in-memory-quickstart.md).
 - **Using the content pipeline?** [Drop-in `mgfxc`](guides/dropin-mgfxc.md) and [MGCB Content Pipeline](guides/mgcb-content-pipeline.md).
 - **Compiling in the browser?** [In-Browser (KNI/Blazor WASM)](guides/in-browser-kni-blazor.md).
+- **Coming from ShaderToy?** The optional `ShadowDusk.ShaderToy` package converts ShaderToy / plain-GLSL fragment shaders to `.fx`, and the CLI auto-detects `.glsl` input — see [Installation](getting-started/installation.md#optional-shadertoy-and-glsl-front-end).
+- **Compiling on-device on Android?** [Runtime Compilation on Android](guides/on-device-android.md).
 - **How it works:** the [Architecture](architecture/the-faithful-pipeline.md) section.
 - **API:** the [API Reference](../api/index.md) (generated from the code's own XML doc-comments).
 - **CLI:** the [`mgfxc` CLI Reference](cli/index.md).

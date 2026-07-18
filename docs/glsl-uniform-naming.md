@@ -62,9 +62,9 @@ other targets keep the unmodified SPIRV-Cross dialect. The pixel-stage transform
 | 3 | `uniform sampler2D <id>;` | `uniform sampler2D ps_s{slot};` (by declaration order); uses renamed in the body |
 | 4 | `in <type> in_var_<SEM>;` | `varying vec4 <legacy>;` — `COLOR0`→`vFrontColor`, `COLOR1`→`vBackColor`, `TEXCOORD{n}`→`vTexCoord{n}`; uses get a width-truncating swizzle |
 | 5 | `out vec4 out_var_SV_Target<N?>;` | declaration dropped; uses → `gl_FragColor` (or `gl_FragData[N]`) |
-| 6 | `texture()` | dimension-specific legacy builtin per the sampler's declared type: `texture2D()` / `textureCube()` / `texture3D()` (Phase 34) |
-| 6b | `textureLod()` / `textureGrad()` / `textureProj()` | dimension-specific legacy names — `texture2DLod`/`textureCubeLod`/`texture3DLod`, `texture2DGrad` (2D only; cube/3D gradients fail loudly — no GLSL defines a legacy spelling), `texture2DProj`/`texture3DProj` — **plus** MojoShader's guarded extension header prepended once (Phase 43 F7): `#if __VERSION__ >= 300` maps the legacy names back to the generic builtins (KNI HiDef/WebGL2, mirroring MojoShader's GLSLES3 preflight), `#elif defined(GL_ARB_shader_texture_lod)` / `#elif defined(GL_EXT_gpu_shader4)` enable the fragment-stage builtins on legacy desktop GL (Mesa accepts this; the bare generic spelling was a Linux Effect-load failure), `#else` degrades to a plain `texture2D()`-family call — never a compile failure. One artifact serves Reach, HiDef and desktop. |
-| 7 | **every** `layout(binding=…, std140) uniform <Type> { … } <Inst>;` block — `type_Globals { … } _Globals` for loose globals AND `type_<Name> { … } <Name>` for each named cbuffer (Phase 43 F4/F5) | ONE merged `uniform vec4 ps_uniforms_vec4[N];` covering all blocks in declaration order (MojoShader's model: D3D9 has a single float-constant register file per stage); member uses `<Inst>.<m>` → `ps_uniforms_vec4[i]<swizzle>`; array members `<Inst>.<m>[idx]` → `ps_uniforms_vec4[base + idx]<swizzle>` (element stride 1 register; `mat4` arrays stride 4, reconstructed per element — Phase 43 F6); unmodelled member types (int/bool/mat3/struct/…), whole-array uses, and any surviving block-instance reference **fail loudly** (SD0210) instead of shipping GLSL that references a deleted block |
+| 6 | `texture()` | dimension-specific legacy builtin per the sampler's declared type: `texture2D()` / `textureCube()` / `texture3D()` |
+| 6b | `textureLod()` / `textureGrad()` / `textureProj()` | dimension-specific legacy names — `texture2DLod`/`textureCubeLod`/`texture3DLod`, `texture2DGrad` (2D only; cube/3D gradients fail loudly — no GLSL defines a legacy spelling), `texture2DProj`/`texture3DProj` — **plus** MojoShader's guarded extension header prepended once: `#if __VERSION__ >= 300` maps the legacy names back to the generic builtins (KNI HiDef/WebGL2, mirroring MojoShader's GLSLES3 preflight), `#elif defined(GL_ARB_shader_texture_lod)` / `#elif defined(GL_EXT_gpu_shader4)` enable the fragment-stage builtins on legacy desktop GL (Mesa accepts this; the bare generic spelling was a Linux Effect-load failure), `#else` degrades to a plain `texture2D()`-family call — never a compile failure. One artifact serves Reach, HiDef and desktop. |
+| 7 | **every** `layout(binding=…, std140) uniform <Type> { … } <Inst>;` block — `type_Globals { … } _Globals` for loose globals AND `type_<Name> { … } <Name>` for each named cbuffer | ONE merged `uniform vec4 ps_uniforms_vec4[N];` covering all blocks in declaration order (MojoShader's model: D3D9 has a single float-constant register file per stage); member uses `<Inst>.<m>` → `ps_uniforms_vec4[i]<swizzle>`; array members `<Inst>.<m>[idx]` → `ps_uniforms_vec4[base + idx]<swizzle>` (element stride 1 register; `mat4` arrays stride 4, reconstructed per element); unmodelled member types (int/bool/mat3/struct/…), whole-array uses, and any surviving block-instance reference **fail loudly** (SD0210) instead of shipping GLSL that references a deleted block |
 | 8 | `roundEven(x)` / `round(x)` (GLSL ES 3.00 / GL 1.30 only) | `floor((x) + 0.5)` — valid in every GLSL profile incl. WebGL1 / GLSL ES 1.00 (KNI's Reach profile), and exactly what mgfxc/MojoShader emits for HLSL `round`. Argument captured by a balanced-paren scan so nested calls lower correctly. |
 
 `Rewrite` returns the rewritten GLSL plus the discovered sampler list (`ps_s{slot}`) and the
@@ -103,7 +103,7 @@ in/out direction are the only stage knobs:
 | `layout(std140) uniform type_Globals { … }` | `uniform vec4 vs_uniforms_vec4[N];` (a `mat4` counts as four registers) |
 | `in <type> in_var_<SEM>;` (vertex **inputs**) | `attribute vec4 vs_v{k};` — renamed in declaration order; uses get a width-truncating swizzle (`vec4(vs_v0.xyz, 1.0)`) |
 | `out <type> out_var_<SEM>;` (vertex **outputs**) | `varying vec4 <legacy>;` — the SAME names the PS reads (`vFrontColor`/`vTexCoord{n}`), so MonoGame links VS→PS **by name**; a narrower output writes a swizzled LHS (`vTexCoord0.xy = vs_v2.xy;`). **Exception — `out_var_POSITION{0}` → `gl_Position`** (issue #70): a VS output carrying the legacy D3D9 `POSITION`/`POSITION0` semantic **is** the clip position (the stock MonoGame GL template emits this via `#define SV_POSITION POSITION`). DXC (Shader Model 6) treats `: POSITION` as an ordinary user output (only `: SV_Position` is the builtin position), so without this remap the transform would land in a dead `var_POSITION` varying and `gl_Position` would be left **unwritten** — silently-broken geometry. The rewriter (`IsPositionSemantic`) drops its varying decl and rewrites its uses to `gl_Position`, so `posFixup` then applies as for any SV_Position shader. mgfxc maps `: POSITION` to the position natively (D3D9 SM3). |
-| `gl_Position = … ;` (from `SV_Position`) | kept, then the mgfxc/MojoShader **`posFixup` contract** is injected (Phase 43 F3): `uniform vec4 posFixup;` (declared after `vs_uniforms_vec4[]`, the golden's order) and the two fixup lines `gl_Position.y = gl_Position.y * posFixup.y;` + `gl_Position.xy += posFixup.zw * gl_Position.ww;` immediately before SPIRV-Cross's kept depth-convention line. MonoGame's GL runtime sets the uniform per draw (`+1` backbuffer / `-1` render target, half-pixel offset in `.zw` when `UseHalfPixelOffset`) and skips programs without it. SPIRV-Cross's `FlipVertexY` is **off** — the old baked `-gl_Position.y` only matched the render-target case and rendered backbuffer draws (the normal game case) vertically inverted. `FixupDepthConvention` stays on. |
+| `gl_Position = … ;` (from `SV_Position`) | kept, then the mgfxc/MojoShader **`posFixup` contract** is injected: `uniform vec4 posFixup;` (declared after `vs_uniforms_vec4[]`, the golden's order) and the two fixup lines `gl_Position.y = gl_Position.y * posFixup.y;` + `gl_Position.xy += posFixup.zw * gl_Position.ww;` immediately before SPIRV-Cross's kept depth-convention line. MonoGame's GL runtime sets the uniform per draw (`+1` backbuffer / `-1` render target, half-pixel offset in `.zw` when `UseHalfPixelOffset`) and skips programs without it. SPIRV-Cross's `FlipVertexY` is **off** — the old baked `-gl_Position.y` only matched the render-target case and rendered backbuffer draws (the normal game case) vertically inverted. `FixupDepthConvention` stays on. |
 
 The VS rewrite also returns the **vertex-attribute table** (each `vs_v{k}` →
 `VertexElementUsage`+semantic-index: POSITION→0, COLOR→1, TEXCOORD→2, NORMAL→3) which the
@@ -111,7 +111,7 @@ pipeline writes into the `.mgfx` shader record so MonoGame binds each attribute 
 vertex element. The `.mgfx` cbuffer for a VS-bound buffer is named **`vs_uniforms_vec4`**
 (PS-bound stays `ps_uniforms_vec4`); attribution is from reflection, not a PS-only assumption.
 
-## The cbuffer record model (Phase 43 F4/F5/F6)
+## The cbuffer record model
 
 The `.mgfx` constant-buffer records are built **per shader, from the rewriter's own
 register layout** (`MonoGameGlslResult.Uniforms`), never by cross-stage reflection-name
@@ -123,14 +123,14 @@ and cannot diverge. mgfxc's model, pinned by its goldens:
   records may share a name (the SkinnedEffect golden has three `vs_uniforms_vec4`).
   The old cross-stage dedup named the single record `ps_uniforms_vec4` while the VS
   GLSL read `vs_uniforms_vec4[]` — MonoGame never uploaded the VS array and VS
-  uniforms silently read zero (F4).
-- **Multiple same-stage cbuffers → one merged record** in declaration order (F5);
+  uniforms silently read zero.
+- **Multiple same-stage cbuffers → one merged record** in declaration order;
   identical records dedupe across shaders mgfxc-style (`ConstantBufferData.SameAs`).
 - **Array members** occupy element-stride × count registers and the parameter carries
   N recursive **element sub-parameter records** (empty name/semantic, parent shape,
   zero-data leaf) — on every target, exactly MonoGame 3.8.2 `Effect.ReadParameters`'
   recursive wire format (elements first, then struct members), so
-  `Parameters["X"].SetValue(array)` and `.Elements[i]` work beyond element 0 (F6).
+  `Parameters["X"].SetValue(array)` and `.Elements[i]` work beyond element 0.
 - **Pinned divergence:** mgfxc's per-stage records contain only the constants fxc
   kept for that stage; ShadowDusk's carry the cbuffer's full declared layout per
   stage. Both are self-consistent with their own GLSL; parameters are set by name —
@@ -171,7 +171,7 @@ to both stages.
 loads in a **real** `MonoGame.Framework.DesktopGL` `Effect` and renders **pixel-identical**
 (max delta 0) to the mgfxc OpenGL golden, via a custom vertex-buffer draw path
 (`validation/VsDriven`) — in **both** the `RenderTarget2D` mode and the **backbuffer** mode
-(`GetBackBufferData`; Phase 43 F3 — the case the static Y-flip got wrong, where MonoGame sets
+(`GetBackBufferData` — the case the static Y-flip got wrong, where MonoGame sets
 `posFixup.y = +1`). The proxy-renderer evidence is `Phase43PosFixupRenderTests` (golden
 string match + orientation-flip render proof). The same `.fx` for DirectX loads in real `MonoGame.Framework.WindowsDX`
 and renders pixel-identical to the mgfxc DX golden via **both** the d3dcompiler oracle and the
