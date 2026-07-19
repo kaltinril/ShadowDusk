@@ -505,7 +505,7 @@ async function writeResults(rows, pass, failures, wasmFetch) {
   for (const c of syncApi.cold) {
     lines.push(`- COLD sync \`Compile()\` (${c.target}, before InitializeAsync): ` +
       (c.ok ? '**SD1903** — the clear "await InitializeAsync() first" error, no runtime abort. PASS'
-            : `**FAIL** — got \`${c.res.replace(/\|/g, '\\|')}\``));
+            : `**FAIL** — got \`${c.res.replace(/\\/g, '\\\\').replace(/\|/g, '\\|')}\``));
   }
   lines.push(`- \`InitializeAsync()\` (awaited twice — idempotency): ${syncApi.initialize === 'OK' ? '**OK**' : `**FAIL** — \`${syncApi.initialize}\``}`);
   lines.push(`- WARM **synchronous** \`Compile()\` over the full DX+FNA corpus: **${syncApi.pass}/${syncApi.total}** SHA-256 == committed manifest (sync bytes == async bytes == desktop render-proven bytes).`);
@@ -516,7 +516,7 @@ async function writeResults(rows, pass, failures, wasmFetch) {
   lines.push('browser analogue of "module not restored/hosted"):');
   lines.push('');
   for (const s of phase27) {
-    lines.push(`- ${s.name}: ${s.ok ? '**PASS**' : '**FAIL**'} — ${s.note.replace(/\|/g, '\\|')}`);
+    lines.push(`- ${s.name}: ${s.ok ? '**PASS**' : '**FAIL**'} — ${s.note.replace(/\\/g, '\\\\').replace(/\|/g, '\\|')}`);
   }
   lines.push('');
   lines.push('## Coverage');
@@ -533,7 +533,7 @@ async function writeResults(rows, pass, failures, wasmFetch) {
   for (const r of rows) {
     const hashCell = r.actual === null ? '—'
       : (r.actual === r.expected ? `yes (\`${r.actual.slice(0, 12)}…\`)` : `**NO** — browser \`${r.actual}\` vs manifest \`${r.expected}\``);
-    lines.push(`| ${r.key} | ${r.target} | ${r.bytes ?? '—'} | ${hashCell} | ${r.verdict}${r.note ? ` — ${r.note.replace(/\|/g, '\\|')}` : ''} |`);
+    lines.push(`| ${r.key} | ${r.target} | ${r.bytes ?? '—'} | ${hashCell} | ${r.verdict}${r.note ? ` — ${r.note.replace(/\\/g, '\\\\').replace(/\|/g, '\\|')}` : ''} |`);
   }
   lines.push('');
   lines.push('## How to re-run');
