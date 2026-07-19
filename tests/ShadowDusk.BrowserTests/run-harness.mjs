@@ -661,7 +661,7 @@ async function writeHidefResults(results) {
   lines.push('|---|---|---|---|---|---|');
   // Flatten newlines/whitespace and escape pipes so multi-line GLSL errors stay
   // inside a single markdown table cell.
-  const cell = (s) => (s ?? '').replace(/\s+/g, ' ').replace(/\|/g, '\\|').trim();
+  const cell = (s) => (s ?? '').replace(/\s+/g, ' ').replace(/\\/g, '\\\\').replace(/\|/g, '\\|').trim();
   for (const r of results.mode1) {
     const load = r.loaded ? 'OK' : 'FAIL';
     const rawErr = r.loaded ? '—'
