@@ -13,6 +13,7 @@ dotnet tool install --global ShadowDusk.Cli
 ```
 ShadowDuskCLI <input.fx> <output.mgfx> /Profile:OpenGL
 ShadowDuskCLI <input.fx> <output.mgfx> /Profile:DirectX_11
+ShadowDuskCLI <input.fx> <output.mgfx> /Profile:Vulkan
 ShadowDuskCLI <input.fx> <output.fxb>  /Profile:FNA
 ```
 
