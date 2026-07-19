@@ -6,7 +6,7 @@ with that shader applied — no server, no `mgfxc`, no native toolchain on the
 user's machine. Runtime is **KNI** (nkast's MonoGame fork) on
 **Blazor WebAssembly + WebGL**.
 
-It is also the **export station** (owner-directed, 2026-06-09): the *Export*
+It is also the **export station**: the *Export*
 panel compiles the editor source in-browser for **OpenGL** (`.mgfx`),
 **DirectX** (DX11 SM5 DXBC `.mgfx`), or **FNA** (fx_2_0 `.fxb`) and downloads
 the artifact — **byte-identical to ShadowDusk's desktop output** for the same
@@ -23,14 +23,13 @@ paste .fx ─▶ WasmShaderCompiler.CompileAsync(src, OpenGL)   ── faithful 
           ─▶ WebGL canvas
 ```
 
-## Status — this sample uses the faithful product compiler
+## Two modes, both on the faithful product compiler
 
-Both modes are live and use the **real ShadowDusk pipeline**:
-
-| Path | What it is | State |
-|---|---|---|
-| **Mode 1** — load a precompiled `.mgfx` and render | the *Load a precompiled sample* dropdown | **Done.** Renders one of the 10 corpus shaders through a real KNI `Effect`. |
-| **Mode 2** — compile `.fx` in-browser | the *Compile & Apply* button | **Done — faithful.** Compiles via `WasmShaderCompiler` (the **faithful pinned DXC→WASM → SPIR-V → SPIRV-Cross → MGFX** pipeline), then loads + renders the result. |
+- **Mode 1 — load a precompiled `.mgfx`**: the *Load a precompiled sample* dropdown
+  renders one of the corpus shaders through a real KNI `Effect`.
+- **Mode 2 — compile `.fx` in-browser**: the *Compile & Apply* button compiles via
+  `WasmShaderCompiler` (the faithful pinned **DXC→WASM → SPIR-V → SPIRV-Cross → MGFX**
+  pipeline), then loads + renders the result.
 
 **No substitute compilers.** Mode 2 runs the same faithful frontend as the desktop
 CLI — the in-browser SPIR-V is **byte-identical to desktop DXC**. The compiler ships
@@ -39,23 +38,9 @@ assets (`_content/ShadowDusk.Wasm/`); this sample adds only a `ProjectReference`
 **wires nothing** (no `JSHost.ImportAsync` — see `Pages/Index.razor.cs`). The first
 *Compile & Apply* lazily downloads the ~17 MB `dxcompiler.wasm` once.
 
-> The older Slang-wasm frontend (`wwwroot/shadowdusk-dxc.js` + `wwwroot/slang/`) is
-> **dead, sample-only reference** kept for history — it is **not registered** and
-> never runs. Slang was a *substitute* compiler (sample-only per THE PURPOSE); the
-> faithful DXC→WASM module replaced it.
-
-### Verified
-
-- ✅ **Builds and publishes** clean (`dotnet build`, `dotnet publish -c Release`),
-  `net8.0-browser` + BlazorWebAssembly SDK, referencing KNI (net8.0) and
-  `ShadowDusk.Wasm` (net8.0-browser).
-- ✅ **Faithful frontend byte-identical to desktop DXC** — the `.wasm-build` gates
-  (`node-test-dxc-wasm.mjs`, `node-test-dxc-shim.mjs`) are 10/10 exact on the corpus.
-- ✅ **Renders in real KNI WebGL** — a headless harness compiles + renders
-  the corpus **10/10** pixel-equivalent (after the Dissolve slot-1 sampler pin and the
-  `roundEven`→`floor(x+0.5)` WebGL1 lowering). KNI's forked `MGFXReader10` parses
-  ShadowDusk's MGFX v10 directly — **no KNIFX-v11 writer needed**.
-- ✅ **Live mode-2 compile confirmed in a real desktop browser.**
+> The old Slang-wasm files under `wwwroot/` (`shadowdusk-dxc.js`, `slang/`) are
+> **dead reference only** — never registered, never run. The faithful DXC→WASM
+> module replaced that experiment.
 
 ## Run it
 

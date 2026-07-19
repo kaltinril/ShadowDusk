@@ -347,21 +347,21 @@ reflected parameter is still `noise`, so a pure name match fails. DirectX and FN
 GLSL, so they are unaffected; and `mgfxc` never hits this because MojoShader packs constants by
 D3D9 register index and never emits named uniforms at all.
 
-The fix is to **fall back to binding by location** the moment the name match
-misses — never for a shader that already resolves by name, so existing output is byte-identical.
-The data is already in the reflection: a `ConstantBufferReflection` lists its `VariableReflection`
-members in offset order with both the original name and the byte `StartOffset`, and the GL uniform
-layout carries each member's base register. `CompilationPipeline.IndexOfParamByRegister` correlates
-the GL uniform's `BaseRegister × 16` to the cbuffer member's `StartOffset`, then takes that
-member's original name, recovering the parameter without ever trusting the SPIRV-Cross-emitted
-spelling and without replicating SPIRV-Cross's reserved-word list (the brittle alternative). The
-parameter stays exposed under its original name in the `.mgfx`, so `effect.Parameters["noise"]
-.SetValue(...)` binds. The bridge is restricted to the single-`$Globals` case (the reserved-word
-case is always a free global, where a variable's effective offset is exactly its `StartOffset`); a
-multi-cbuffer shape — where the rewriter's GLSL-declaration merge order is not guaranteed to match
-the reflection's cbuffer order — falls through and keeps the loud `SD0012` rather than risk
-mis-mapping (correctness over coverage). Only the previously-failing name-miss path is new, so the
-`mgfxc`-equivalence and cross-host byte-identity of every existing shader are untouched.
+The fix is to **fall back to binding by location** the moment the name match misses — never for
+a shader that already resolves by name, so existing output is byte-identical. The data is
+already in the reflection: a `ConstantBufferReflection` lists its members in offset order with
+both the original name and the byte `StartOffset`, and the GL uniform layout carries each
+member's base register. `CompilationPipeline.IndexOfParamByRegister` correlates the GL uniform's
+`BaseRegister × 16` to the cbuffer member's `StartOffset` and takes that member's original
+name — recovering the parameter without ever trusting the SPIRV-Cross-emitted spelling. The
+parameter stays exposed under its original name in the `.mgfx`, so
+`effect.Parameters["noise"].SetValue(...)` binds.
+
+The bridge is restricted to the single-`$Globals` case (the reserved-word case is always a free
+global, where a variable's effective offset is exactly its `StartOffset`). A multi-cbuffer
+shape — where the rewriter's GLSL-declaration merge order is not guaranteed to match the
+reflection's cbuffer order — falls through and keeps the loud `SD0012` rather than risk
+mis-mapping: correctness over coverage.
 
 ### Determinism and cross-host byte-identity
 

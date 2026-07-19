@@ -1,7 +1,5 @@
 # Test Shader Corpus — Provenance & Fresh Examples
 
-**Last updated:** 2026-06-18
-
 This document records (1) what is known about where the existing `.fx` test
 fixtures came from, (2) an integrity caveat about those fixtures, and (3) a set
 of **fresh, project-owned example shaders** authored from scratch for ShadowDusk
@@ -39,7 +37,7 @@ goldens and pass the in-engine comparison in `validation/`).
 
 ---
 
-## 2. Provenance of the existing fixtures (best effort, 2026-05-30)
+## 2. Provenance of the existing fixtures (best effort)
 
 Recovered by inspecting the shader code and confirming upstream repos by their
 distinctive shader sets / comment style. Treat "Confirmed" as "the upstream
@@ -53,7 +51,7 @@ upstream verbatim (see the integrity caveat in §1).
 | Post-FX pack: `Grayscale.fx`, `Invert.fx`, `Sepia.fx`, `Saturate.fx`, `Pixelated.fx`, `Scanlines.fx`, `Fading.fx`, `Dots.fx` | A common MonoGame post-process tutorial pack; exact upstream not confidently identified | Unknown |
 | `Dissolve.fx`, `ForwardLighting.fx`, `PolygonLight.fx` | Nez-style 2D framework (underscore-prefixed sampler convention, discard-based dissolve); exact upstream not confidently identified | Unknown |
 | `Minimal.fx`, `cbuffer.fx`, `multipass.fx`, `multitechnique.fx`, `render-states.fx`, `annotations.fx`, `platform-macros.fx`, `basiceffect-mini.fx`, etc. | Purpose-built ShadowDusk structural fixtures (SM4/5 feature probes) | Project-owned |
-| `StateBlendAdditive.fx`, `StateDepthStencil.fx`, `StateRasterizer.fx`, `SamplerStatesFull.fx`, `AnnotatedTechnique.fx` | Writer-fidelity corpus (pass blend/depth-stencil/rasterizer states incl. negative floats; baked `sampler_state` members; parameter/technique/pass annotations). All but `AnnotatedTechnique.fx` have real `mgfxc` 3.8.2.1105 goldens in `tests/fixtures/golden/{OpenGL,DirectX_11}/` (mgfxc's grammar cannot parse technique/pass annotations); validated by `MgfxStateGoldenMatchTests` (structural vs golden) and `validation/StateFidelity` (real MonoGame 3.8.2 `Effect` load + pixel-equal render vs the golden). | Project-owned |
+| `StateBlendAdditive.fx`, `StateDepthStencil.fx`, `StateRasterizer.fx`, `SamplerStatesFull.fx`, `AnnotatedTechnique.fx` | Writer-fidelity corpus: pass blend/depth-stencil/rasterizer states, baked `sampler_state` members, parameter/technique/pass annotations. All but `AnnotatedTechnique.fx` have real `mgfxc` goldens (mgfxc's grammar cannot parse technique/pass annotations). | Project-owned |
 
 > If you can supply the original source links for the "Unknown" rows, add them
 > here — that lets us diff the checked-in files against upstream and decide,
@@ -71,7 +69,7 @@ document does not change them.
 
 ## 3. Fresh, project-owned example shaders
 
-Authored from scratch for ShadowDusk on 2026-05-30. **Provenance is fully
+Authored from scratch for ShadowDusk. **Provenance is fully
 known: we wrote them.** They are licensed with the repository and derive from no
 third-party shader. They live in:
 
@@ -94,11 +92,9 @@ MonoGame's conventional `SpriteBatch`/`SpriteEffect` shape (the validated path).
 
 ### Issue #106 regression set (relationals / ternaries / helpers / loop)
 
-Authored from scratch for ShadowDusk on 2026-06-17 to pin issue #106 ("Shader
-should be able to return ternary values"). Before the fix, a relational operator
-(`<`, `<=`, `>`, `>=`), a ternary, an `if`/`else` branch, or a `for`-loop
-condition appearing in a shader **body** was misparsed by the `FxPreParser` as the
-start of an FX annotation and the compile failed loudly with **FX0001**. These
+Pins issue #106: a relational operator (`<`, `<=`, `>`, `>=`), a ternary, an
+`if`/`else` branch, or a `for`-loop condition appearing in a shader **body** was
+misparsed by the `FxPreParser` as the start of an FX annotation. These
 fixtures are small, real (full technique + pass, renderable), project-owned
 originals in the **all-runtime SM3/fx_2_0 subset**, so each compiles on **OpenGL
 (MonoGame-GL / KNI), DirectX_11 (MonoGame-DX), and FNA (D3D9 fx_2_0)** — verified
@@ -112,17 +108,15 @@ exit 0 with non-empty output on all three.
 | `ExRelationalBranch.fx` | A **relational-driven `if` / `else if` / `else`** branch in the body (not `clip()`) **and** a **nested / chained ternary** (4-band select). | GL + DX + FNA |
 | `ExLoopRelational.fx` | A **relational condition in a `for`-loop header** (`for (int i = 0; i < N; i++)`) — also closes the corpus's missing all-runtime SM3 loop case. Literal-bounded so fxc unrolls it at `ps_3_0`/`ps_2_0`. | GL + DX + FNA |
 
-These are exercised by `tests/ShadowDusk.Integration.Tests/Issue106RegressionCorpusTests.cs`
-(compile-asserts each on all three targets) and folded into the FNA SM3 corpus
-census in `FnaCompileFixtureTests.Sm3Corpus()`. As with the other fresh fixtures,
-they prove **"ShadowDusk compiles them into a valid effect,"** not pixel-equivalence
-to `mgfxc`/`fxc` — the in-engine render-and-compare (a committed golden + a
-`validation/*` driver) is the follow-up.
+These are exercised by `Issue106RegressionCorpusTests` (compile-asserts each on
+all three targets) and the FNA SM3 corpus census. As with the other fresh
+fixtures, they prove **"ShadowDusk compiles them into a valid effect,"** not
+pixel-equivalence to `mgfxc`/`fxc`.
 
 ### FX pre-parser robustness set (dropped-operator bug class)
 
-Authored from scratch for ShadowDusk on 2026-06-17 to pin the dropped-operator
-fixes (`plan/DONE/PHASE-45-fx-preparser-robustness.md`, items B2-B9). Same shared root
+Pins the dropped-operator bug class
+(`plan/DONE/PHASE-45-fx-preparser-robustness.md`). Same shared root
 cause as #106: the `FxLexer` drops several operators (`: + [ ] & | ! ? % ^ ~`), so
 a flat heuristic in `FxPreParser` pattern-matched the fragmented token stream and
 acted wrongly. Each fixture is small, real (full technique + pass, renderable), and
@@ -140,12 +134,9 @@ project-owned.
 | `ExArrayTernaryAssign.fx` | **B7** — an array-indexed relational with an assignment in a ternary arm inside a function body, `Thresholds[i] < x ? acc = w : acc;` (the issue-#106 residual). Once `?`/`:`/`[`/`]` are dropped, the `x acc =` tail satisfies the annotation-shape guard; the global annotation strip is now gated on brace depth 0, so an in-body expression can never be misread. | GL + DX + FNA |
 | `ExReservedWordUniform.fx` | **B10** (a DIFFERENT class — a GLSL reserved-word / reflection-join bug, not a dropped-operator pre-parser one) — a free uniform named after a GLSL reserved word, `float noise;`, used in the body. On GL, SPIRV-Cross renames it `_noise`, so the cbuffer/parameter join (matched by name) missed and failed `SD0012`. The join now falls back to an offset bridge that recovers the parameter by its `BaseRegister * 16` byte offset, keeping it exposed under `noise`. See the third-party `Noise.fx` note below. | GL + DX + FNA |
 
-These are exercised by `tests/ShadowDusk.Integration.Tests/Phase45PreParserRobustnessCorpusTests.cs`
-(compile-asserts each on its applicable targets); the all-runtime ones (B3/B4/B6/B7/B8/B9/B10)
-are also folded into `FnaCompileFixtureTests.Sm3Corpus()` (and `ExReservedWordUniform.fx` is in
-the cross-host byte-identity corpus, pinning the GL offset-bridge path's determinism). As with
-the other fresh fixtures, they prove **"ShadowDusk compiles them into a valid effect,"** not
-pixel-equivalence to `mgfxc`/`fxc`.
+These are exercised by `Phase45PreParserRobustnessCorpusTests` (compile-asserts
+each on its applicable targets); the all-runtime ones are also in the FNA SM3
+corpus census. Same scope as above: a valid-effect compile, not pixel-equivalence.
 
 ### How they are used
 
@@ -167,8 +158,7 @@ pixel-equivalence to `mgfxc`/`fxc`.
 
 ## 4. Third-party shader corpus (vendored, real shipping shaders)
 
-Added 2026-06-17 (issue #106 follow-up). Unlike the project-owned
-fixtures in §3, these are **NOT project-owned** — they are real, shipping MonoGame
+Unlike the project-owned fixtures in §3, these are **NOT project-owned** — they are real, shipping MonoGame
 post-process shaders **vendored verbatim** from the **Nez** framework
 (`prime31/Nez`, **MIT**, Copyright (c) 2016 Mike), pinned at commit
 `6c9d4a87ac62ce36e217cb5e4bbe36d1769dfa4c`, upstream dir
@@ -209,11 +199,9 @@ the targets it actually compiles on (the rationale per shader is in the director
 | `Reflection.fx` | Nez (MIT) | DX only | Two techniques, each **VS+PS** (mirror + water); world-space, `half2`, `frac`, relational `if`. **Not GL:** the multi-`TEXCOORD` interpolant block cannot be expressed in std140/std430 by SPIRV-Cross (`SD0100`). **Not FNA:** an int/relational construct hits the vkd3d 1.17 SM3 gap (`X0000`). | DX only |
 | `Noise.fx` | Nez (MIT) | GL + DX + FNA | Film-grain; helper fn `rand()` (`frac`/`sin`/`dot`) called from the entry. A uniform literally named `noise` collides with a GLSL reserved word and SPIRV-Cross renames it `_noise`; this used to break the GL cbuffer/parameter join (`SD0012`), but the **B10 offset-bridge fallback fixed it** (see below), so it now compiles on GL too. | all-runtime (B10) |
 
-These are exercised by `tests/ShadowDusk.Integration.Tests/ThirdPartyShaderCorpusTests.cs`
-(compile-asserts each on its classified targets; FNA via `[FnaTheory]` + the
-MojoShader-rule fx_2_0 validator). The all-runtime ones are also folded into
-`FnaCompileFixtureTests.Sm3Corpus()`, and all 15 are auto-globbed by the GL+DX
-`Phase41StructuralDivergenceMatrixTests` structural census.
+These are exercised by `ThirdPartyShaderCorpusTests` (compile-asserts each on its
+classified targets) and the GL+DX structural census; the all-runtime ones are
+also in the FNA SM3 corpus census.
 
 > **Scope (same as §3):** these prove **"ShadowDusk compiles them into a well-formed,
 > loadable container,"** not pixel-equivalence to `mgfxc`/`fxc`. There is no committed
@@ -221,28 +209,19 @@ MojoShader-rule fx_2_0 validator). The all-runtime ones are also folded into
 > in particular compile on every target but their cross-path VPOS behavior is deliberately
 > left unclaimed.
 
-> **B10 — GLSL reserved-word uniform on GL (`Noise.fx`, formerly `SD0012`) — FIXED.**
-> A free uniform whose name is a GLSL reserved word (e.g. `noise`, which collides with the
-> deprecated `noise1`/`noise2`/... builtins) is renamed by SPIRV-Cross (to `_noise`). The GL
-> cbuffer-record builder joins the rewriter's uniform layout to the reflected effect-parameter
-> list **by name** (`CompilationPipeline.IndexOfParam`); the reflected list still carries the
-> original `noise`, so the name join missed and emitted the internal `SD0012`. The fix
-> (`CompilationPipeline.IndexOfParamByRegister`) adds an **offset bridge** that runs only on a
-> name miss: the GL uniform's `BaseRegister * 16` byte offset locates the reflected `$Globals`
-> cbuffer variable, whose ORIGINAL name recovers the parameter index — so the parameter stays
-> exposed under `noise` and `effect.Parameters["noise"].SetValue(...)` binds. It is restricted
-> to the single-`$Globals` case (the reserved-word case is always a free global); a multi-cbuffer
-> shape falls through to keep `SD0012` rather than risk a mis-map (correctness over coverage).
-> Because shaders that compile today never hit the name miss, output is byte-identical (the
-> cross-host manifest gained only the new fixture's entries, with no existing hash changed).
-> Pinned by `ExReservedWordUniform.fx` (GL+DX+FNA), `ReservedWordUniformBridgeTests`, and the
-> re-enabled Nez `Noise.fx` GL arm. See `docs/glsl-uniform-naming.md` "Design notes".
+> **GLSL reserved-word uniforms on GL (`Noise.fx`).** A free uniform named after
+> a GLSL reserved word (e.g. `noise`) is renamed by SPIRV-Cross, which used to
+> break the GL parameter join by name. The pipeline now falls back to matching by
+> register offset, so the parameter stays exposed under its original name
+> (`effect.Parameters["noise"]` binds); an ambiguous multi-cbuffer shape still
+> fails loudly rather than risk a mis-map. Details: `docs/glsl-uniform-naming.md`
+> "Design notes".
 
 ### Gum / Apos.Shapes (the Gum-ecosystem shaders)
 
-Added 2026-06-27 (requested by **Victor Chelaru / vchelaru**, Gum's author,
-who uses **Apos.Shapes** for Gum's UI shape rendering). Two more vendored sets, both
-**MIT**, both classified by an actual compile probe on 2026-06-27:
+Requested by **Victor Chelaru / vchelaru** (Gum's author; Gum uses **Apos.Shapes**
+for its UI shape rendering). Two more vendored sets, both **MIT**, both classified
+by an actual compile probe:
 
 - `tests/fixtures/shaders/third-party/Apos.Shapes/` — Apos.Shapes' SDF shape renderer
   (`Apostolique/Apos.Shapes`, MIT, Copyright (c) 2021 Jean-David Moisan, commit
@@ -255,26 +234,17 @@ who uses **Apos.Shapes** for Gum's UI shape rendering). Two more vendored sets, 
 | `Apos.Shapes/apos-shapes.fx` | Apos.Shapes (MIT) | GL + DX | One large **VS+PS** SDF effect: 10 `TEXCOORD` interpolants, `__KNIFX__`/`OPENGL` macro profile branch, a Newton-iteration `for`-loop (`EllipseSDF`), `int` locals, 11-way `if/else` shape dispatch, `%` modulo, ternaries, `discard`, `tex2D`, two samplers (one `register(s0)`), Oklab + gradient math. **Not FNA:** no SM3/FNA profile branch (its `#else` selects `ps_4_0`) + a dense PS exceeds the vkd3d `fx_2_0`/SM3 ceiling (`X0000`) — a legit SM limit (Apos.Shapes ships for MonoGame GL/DX, not FNA). | GL + DX |
 | `Gum/MonoGameInCode-Grayscale.fx` | Gum (MIT) | GL + DX + FNA | `vs/ps_4_0_level_9_1` profiles, `Texture2D` + `sampler2D` + `sampler_state`, `: COLOR0` output, PS-only technique, dot-luminance. | all-runtime |
 | `Gum/KniInCode-Shader.fx` | Gum (MIT) | FNA only | Legacy D3D9 **effect-framework syntax**: `uniform extern texture`, `sampler_state { Texture = <…> }`, `: VIEWPROJ` matrix semantic, `: COLOR` outputs, lowercase `pixelshader = compile ps_2_0`. **Not GL/DX:** DXC rejects effect syntax (`-Weffects-syntax`); only the FNA/`fx_2_0` native-effects path accepts it (same shape as `PaletteCycler` being FNA-only). | FNA only |
-| `Gum/FnaSample-Shader.fx` | Gum (MIT) | **none, but for honest per-target reasons (GAP-1 fixed on FNA)** | The `TECHNIQUE()`/`SAMPLE()` `#define` macro idiom (a `technique` defined inside a macro), `uniform extern texture`, `: VIEWPROJ`, `: COLOR`, `vs_1_1`/`ps_2_0`, premultiply-alpha helpers, many blend-mode passes. **GAP-1 (technique-blindness) is now fixed on FNA** (the FNA macro recovery, below): on FNA the shader is now declined with **`SD0300`** for its sub-SM2 `vs_1_1` profile (ShadowDusk's documented FNA SM2 floor), not `SD0010`. **GL** keeps `SD0010` (the GL macro-model gap, distinct from GAP-1 — GL is gated out of recovery). **DX** fails `X0000` (its `vs_1_1`/`ps_2_0` profiles aren't compilable on the DX11 path). All three are documented limits, not the technique-blindness bug. | per-target limits |
+| `Gum/FnaSample-Shader.fx` | Gum (MIT) | none (honest per-target limits) | The `TECHNIQUE()`/`SAMPLE()` `#define` macro idiom (a `technique` defined inside a macro), legacy `uniform extern texture`, `: VIEWPROJ`, `vs_1_1`/`ps_2_0`. FNA recovers the macro technique but declines the sub-SM2 `vs_1_1` profile (`SD0300`); GL keeps `SD0010` (the GL macro-model gap, below); DX fails `X0000` (`vs_1_1`/`ps_2_0` aren't DX11-compilable). All documented limits, not technique-blindness. | per-target limits |
 
-These are exercised by `ThirdPartyShaderCorpusTests` (the passing cells on their
-classified targets; `FnaSample-Shader.fx`'s GL `SD0010` by the
-`GumFnaSampleShader_MacroTechnique_OpenGl_KeepsSd0010_GlMacroModelGap` pin, and its FNA
-`SD0300` by `Phase41MacroTechniqueTests.Fna_GumFnaSample_MacroRecovered_ThenRejectsVs11_Sd0300_NotSd0010`).
-`MonoGameInCode-Grayscale.fx` is also folded into `FnaCompileFixtureTests.Sm3Corpus()`,
-and all four files are auto-globbed by the GL+DX `Phase41StructuralDivergenceMatrixTests`
-structural census (passing or failing-with-a-code). Same **scope** as the Nez set above:
-a well-formed-container compile, not pixel-equivalence (no committed goldens). The one
-genuinely notable result is that **`apos-shapes.fx` — the shader Gum's shape rendering
-actually depends on — compiles on GL and DX**, the targets Gum ships on.
+These are exercised by `ThirdPartyShaderCorpusTests` on their classified targets
+(with dedicated pins for `FnaSample-Shader.fx`'s per-target rejections) and the
+GL+DX structural census. Same **scope** as the Nez set above: a well-formed-container
+compile, not pixel-equivalence (no committed goldens). The one genuinely notable
+result is that **`apos-shapes.fx` — the shader Gum's shape rendering actually
+depends on — compiles on GL and DX**, the targets Gum ships on.
 
-> **GAP-1 (macro-defined techniques) — fixed on the FNA path.** `Gum/FnaSample-Shader.fx`
-> surfaced GAP-1 with a real shader. The DX path already recovered macro techniques (the
-> existing zero-technique fallback); the FNA path now does too (the zero-technique macro recovery
-> extended to `RunFna`, with no modern-branch gate — FNA's vkd3d SM1-3 compiles the legacy
-> macro branch directly). Result: the SM2-fitting MonoGame stock effects (SpriteEffect,
-> AlphaTestEffect, DualTextureEffect, Penumbra*) **now compile on FNA**; BasicEffect/SkinnedEffect
-> hit the honest SM2 register-file limit (`SD0305`), and Gum's `FnaSample-Shader.fx` is declined
-> for its `vs_1_1` profile (`SD0300`). The **OpenGL** macro-model gap remains the one open part
-> of GAP-1 (GL is gated out of recovery because the legacy DX9/SM2 expansion crashes DXC's
-> SPIR-V codegen). See `Phase41MacroTechniqueTests` (FNA cases) and `CompilationPipeline.RunFna`.
+> **Macro-defined techniques.** The DX and FNA paths recover `TECHNIQUE()`-macro
+> techniques, so the SM2-fitting MonoGame stock effects compile on FNA (the ones
+> that don't fail for honest SM2-limit reasons). **OpenGL does not**: the legacy
+> DX9/SM2 branch these effects expand to on GL crashes DXC's SPIR-V codegen, so
+> GL keeps a loud `SD0010` instead. Tracked in `plan/` (Phase 41 GAP-1 / GL).
