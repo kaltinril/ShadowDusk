@@ -37,7 +37,7 @@
                                    mgfxc's Vulkan oracle - that oracle currently crashes on this
                                    corpus due to a confirmed, separate MonoGame bug (SlotOffset
                                    arithmetic in VulkanShaderProfile.CreateShader; see
-                                   plan/PHASE-32-appendix/vulkan-mgfx-format-spec.md). Run it for
+                                   plan/DONE/PHASE-32-appendix/vulkan-mgfx-format-spec.md). Run it for
                                    any release that could affect the Vulkan target.
 
   The OpenGL render gates are intentionally NOT here - CI already runs them (see

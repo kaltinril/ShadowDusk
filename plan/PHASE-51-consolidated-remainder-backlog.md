@@ -21,8 +21,8 @@ small tail, the tail moves here and the parent moves to DONE.
 | DeferredSprite GL MRT render proof (GAP-2) | [Phase 41](DONE/PHASE-41-fxc-oracle-monogame-fidelity.md) | Closed at compile + structural-match; render rung left |
 | Apos.Shapes render-proof (Option B) | [Phase 49](DONE/PHASE-49-apos-shapes-regression-corpus.md) | Option A shipped; Option B render-proof decision-gated |
 | GL macro-defined techniques (GAP-1 / GL) | [Phase 41](DONE/PHASE-41-fxc-oracle-monogame-fidelity.md) | DX + FNA closed; GL faithfulness-blocked |
-| DX12 / DXIL render-validation (Area C) | [Phase 35](DONE/PHASE-35-forward-version-support.md) | Built; ext-blocked on MonoGame 3.8.5 stable |
-| Un-park Vulkan trigger (Area D) | [Phase 35](DONE/PHASE-35-forward-version-support.md) | ext-blocked on MonoGame 3.8.5 stable |
+| DX12 / DXIL render-validation (Area C) — ➡️ promoted 2026-07-18 to [Phase 52](PHASE-52-monogame-3.8.5-support.md) Area D | [Phase 35](DONE/PHASE-35-forward-version-support.md) | Built; ext-blocked on MonoGame 3.8.5 stable (since shipped; see B1) |
+| Un-park Vulkan trigger (Area D) — ✅ done 2026-07-18 via [Phase 32](DONE/PHASE-32-vulkan-backend.md) | [Phase 35](DONE/PHASE-35-forward-version-support.md) | ext-blocked on MonoGame 3.8.5 stable (since shipped; see B2) |
 | DX/FNA/KNI-DX render-in-CI gates | [Phase 44](DONE/PHASE-44-validation-breadth-and-matrix-coverage.md) | Effectively done; ext-blocked on a WARP CI runner |
 | `d3dcompiler_47` vs `fxc.exe` DXBC delta study (OQ#2) | [Phase 41](DONE/PHASE-41-fxc-oracle-monogame-fidelity.md) | Deferred, low-value |
 
@@ -74,7 +74,7 @@ GL/DX (and FNA fx_2_0) via a vertex-buffer Apos.Shapes harness, behind the Windo
 
 ## B. Externally blocked (gated on an outside event)
 
-### B1 — DX12 / DXIL render-validation (Phase 35 Area C)
+### B1 — ➡️ Promoted (2026-07-18) to [Phase 52](PHASE-52-monogame-3.8.5-support.md) Area D — DX12 / DXIL render-validation (Phase 35 Area C)
 *From Phase 35.* The DXIL path is **already built**; what is missing is render-validation in
 a real MonoGame **DX12** runtime, which only MonoGame 3.8.5 provides — currently preview only.
 
@@ -87,14 +87,23 @@ reproduce-first."* DX11 DXBC (vkd3d) stays the default.
 
 **Blocked on:** MonoGame 3.8.5 going **stable** (do not target a preview as the product baseline).
 
-### B2 — Un-park Vulkan (Phase 35 Area D → trigger for Phase 32)
-*From Phase 35.* 3.8.5's Vulkan runtime + DXC→SPIR-V profile give [Phase 32](PHASE-32-vulkan-backend.md)
-a **render target + mgfxc oracle** — the exact blocker that parked it. When a consumer's game
-targets Vulkan, it just works (the platform the consumer already runs, not a ShadowDusk flag).
-This item is the **trigger/validation**; [Phase 32](PHASE-32-vulkan-backend.md) (still open) is
-the implementation.
+**Update (2026-07-18): gate cleared — MonoGame 3.8.5 shipped stable 2026-07-15.** Per this
+phase's definition of done ("promoted to its own scoped phase"), B1 is absorbed into
+[Phase 52](PHASE-52-monogame-3.8.5-support.md) **Area D**: source-inspect the 3.8.5 WindowsDX12
+effect load path first (the Phase-32 playbook — the Vulkan container assumptions were wrong on
+inspection), then build the rung-4 DX12 render driver, with an explicit decision gate to split
+into its own phase if the container research turns out Phase-32-sized. This item closes when
+Phase 52 Area D lands (or re-points it).
 
-**Blocked on:** MonoGame 3.8.5 going **stable**.
+### B2 — ✅ DONE (2026-07-18) — Un-park Vulkan (Phase 35 Area D → trigger for Phase 32)
+*From Phase 35.* **Landed:** MonoGame 3.8.5 shipped `DesktopVK` stable and
+[Phase 32](DONE/PHASE-32-vulkan-backend.md) implemented + render-proved the Vulkan target
+(real profile-80 container, 10/10 on real DesktopVK; PR #126, vchelaru). The one surviving
+tail is **externally blocked and tracked in the Phase 32 doc**: a literal pixel-diff vs
+`mgfxc`'s own Vulkan output (that output crashes in real DesktopVK — a confirmed upstream
+MonoGame `SlotOffset` bug; `compare_vulkan.py` auto-upgrades to a real pixel-diff once
+MonoGame fixes it). The half of the original mgfxc-oracle hope that DID materialize is the
+render target; the oracle half is what the MonoGame bug still withholds.
 
 ### B3 — GL macro-defined techniques (Phase 41 GAP-1 / GL) — faithfulness-blocked
 *From Phase 41.* GAP-1 (the `TECHNIQUE()` macro idiom invisible to the pre-preprocess

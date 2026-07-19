@@ -10,7 +10,7 @@ namespace ShadowDusk.Compiler.Internal;
 /// (<c>register(tN)</c> / <c>register(sN)</c>, same <c>N</c> for both halves of a pair).
 ///
 /// <para><b>Why this exists.</b> Confirmed by a minimal repro against a real DesktopVK
-/// runtime (2026-07-18, see <c>plan/PHASE-32-appendix/vulkan-mgfx-format-spec.md</c>): a
+/// runtime (2026-07-18, see <c>plan/DONE/PHASE-32-appendix/vulkan-mgfx-format-spec.md</c>): a
 /// texture/sampler pair declared WITHOUT explicit registers gets auto-numbered by DXC to
 /// DIFFERENT raw SPIR-V bindings, and MonoGame's native Vulkan draw path crashes
 /// (<c>AccessViolationException</c>) on that shape. The SAME pair with matching explicit

@@ -13,7 +13,7 @@ The load-bearing distinctions — internalize these, they have drifted before (f
 
 ## Project Overview
 
-ShadowDusk is a cross-platform HLSL shader compiler for MonoGame, KNI, and FNA: compile `.fx` on Linux/macOS/Windows (no Wine/SDK) for DirectX (DXBC) and OpenGL (GLSL) targets, as a drop-in `mgfxc` replacement — usable as the in-memory library (the product), the `ShadowDuskCLI` `dotnet tool`, or in-browser via WASM. The **additive FNA target** (Phase 39: `PlatformTarget.Fna` → D3D9 fx_2_0 `.fxb` via vkd3d SM1–3 + our `Fx2EffectWriter`) is **rung-4 proven for the PS-only and VS-driven corpora** — loads and renders pixel-equivalent (max Δ ≤ 1/255) to `fxc /T fx_2_0` in real FNA (`validation/FnaValidation`, gate 17/17 since the Phase-40 fidelity hardening; in-pass render states empirically honored); the pinned vkd3d natives for all four RIDs (win/linux/osx-x64/osx-arm64) are hosted + auto-restored + packed since Phase 37 C (2026-06-10), so FNA is self-contained on every desktop OS. Full statement of the five purposes, the two success axes, the backend pipeline table, and the FNA bar: **[docs/the-purpose.md](docs/the-purpose.md)**.
+ShadowDusk is a cross-platform HLSL shader compiler for MonoGame, KNI, and FNA: compile `.fx` on Linux/macOS/Windows (no Wine/SDK) for DirectX (DXBC), OpenGL (GLSL), and **Vulkan (SPIR-V — Phase 32, rung-4 proven on real MonoGame 3.8.5 `DesktopVK`, profile byte 80; MonoGame-only, KNI ships no Vulkan)** targets, as a drop-in `mgfxc` replacement — usable as the in-memory library (the product), the `ShadowDuskCLI` `dotnet tool`, or in-browser via WASM. The **additive FNA target** (Phase 39: `PlatformTarget.Fna` → D3D9 fx_2_0 `.fxb` via vkd3d SM1–3 + our `Fx2EffectWriter`) is **rung-4 proven for the PS-only and VS-driven corpora** — loads and renders pixel-equivalent (max Δ ≤ 1/255) to `fxc /T fx_2_0` in real FNA (`validation/FnaValidation`, gate 17/17 since the Phase-40 fidelity hardening; in-pass render states empirically honored); the pinned vkd3d natives for all four RIDs (win/linux/osx-x64/osx-arm64) are hosted + auto-restored + packed since Phase 37 C (2026-06-10), so FNA is self-contained on every desktop OS. Full statement of the five purposes, the two success axes, the backend pipeline table, and the FNA bar: **[docs/the-purpose.md](docs/the-purpose.md)**.
 
 ## Repository Layout
 
@@ -76,6 +76,7 @@ dotnet run --project validation/KniVsDriven    # real KNI v4.02 OpenGL, VS-drive
 > ```powershell
 > ./validation/run-windows-render-gates.ps1            # DX corpus + DX-modern (VTF) + KNI-DX, vs mgfxc/fxc
 > ./validation/run-windows-render-gates.ps1 -IncludeFna  # also the FNA fx_2_0 gate (for an FNA-affecting release)
+> ./validation/run-windows-render-gates.ps1 -IncludeVulkan  # also the Vulkan DesktopVK gate (for a Vulkan-affecting release)
 > ```
 >
 > It restores the vkd3d native, runs each Windows-GPU render driver, and exits non-zero if any render diverges from the reference compiler. A green run is the evidence CI structurally cannot produce. The `/release` skill requires this step.
@@ -86,6 +87,25 @@ The render gates above prove pixels; they do **not** prove the compiler still *a
 
 - **Every fixed bug earns a permanent regression fixture/test** so it can never silently return. Issue #106 added `FxPreParser` unit cases plus regression `.fx` fixtures covering relational / ternary / shift operators and helper-function bodies; that pattern is the rule, not the exception.
 - **Regression testing + the Windows render gate are the combined pre-merge bar** for any shader-output-affecting change: run `dotnet test ShadowDusk.slnx` (catches parse/compile regressions) **and** `./validation/run-windows-render-gates.ps1` (catches render regressions CI cannot). [`docs/validation-matrix.md`](docs/validation-matrix.md) is the authoritative tracker of what each is proven to cover (§6 lists the backing tests).
+
+### Support-surface docs are part of the change — update them in the same PR (owner directive)
+
+**Standing rule (owner directive, 2026-07-18): when a change alters what ShadowDusk supports or how it is proven, the support-surface docs below MUST be updated in the same PR — without being asked.** This has slipped twice (Phase 32 shipped Vulkan but left the pipeline diagram saying "parked" and `plan/plan.md` saying "Future"; the issue-#127 rewriter rules missed the rule table), and each slip costs an audit later. Triggering changes: a new/changed **backend, target, container, platform, or delivery shape**; a new **rewriter rule** or language-construct behavior; a new **validation driver/gate** or corpus classification; **completing, parking, or un-parking a phase**.
+
+The named support surfaces (check each; most changes touch only a few):
+
+- **`docs/pipeline-overview.puml`** — the flow-chart diagram — **and regenerate `docfx/images/pipeline-overview.svg`** (the site embeds the SVG; an un-regenerated SVG silently ships the old diagram).
+- **`docs/the-purpose.md`** — the backend pipeline table + the host × target matrix.
+- **`docs/validation-matrix.md`** — the compatibility/validation matrix: the per-target cells, the **§6 driver list** (every new `validation/*` driver gets a row with its exact run command), and the §7 gap rows.
+- **`docs/repository-layout.md`** — when adding drivers, tools, or directories.
+- **`README.md`** — the supported-targets table and the "How the pipeline works" block.
+- **The DocFX site (`docfx/`)** — `index.md` + `getting-started/overview.md` headline tables, `guides/choosing-a-target.md` (the consumer-facing compatibility matrix), the relevant `backends/*.md` page, `contributing/validation.md` (the rung-4 proven list), `glossary.md`, and the architecture pages — remembering that `architecture/the-faithful-pipeline.md` and `architecture/glsl-dialect-rewrite.md` transclude **`docs/references/compilation-pipeline.md`** and **`docs/glsl-uniform-naming.md`** (the rewriter-rule table lives in the latter).
+- **`CLAUDE.md` itself** — the Project Overview sentence and the gate commands in the HARD RULE block.
+- **`plan/plan.md`** — the phase index row (status + link), plus **moving the phase doc + its appendix to `plan/DONE/`** when a phase completes (fix relative links in the moved doc and every referrer), and updating any cross-referencing rows (Phase 51 collector, track lists).
+- **XML doc-comments on the public API** (`PlatformTarget`, `CompilerOptions`, …) — they render into the published API reference, so a stale "not yet implemented" ships to the site.
+- **`CHANGELOG.md`** — the `[Unreleased]` entry.
+
+The `/release` skill's docs-audit step checks this same list as a backstop, but the backstop catching drift is a process failure — the same-PR update is the rule.
 
 ### Integration-test performance (Phase 21)
 
@@ -113,7 +133,7 @@ Standing rules the user has stated (kept here because this file is always loaded
 
 - **Seamless for the end user — always.** The consumer adds the package, compiles their `.fx`, and it **just works** — they never choose a version/target/format, flip a flag, or take a manual step to get *correct* output. If any task would require the consumer to opt in / set a flag / pick a version to avoid broken output, that is a **DEFECT — reject it.** A flag may exist **only** as a non-required escape hatch (e.g. `--mgfx-version`, default v10), never the path to correct behavior. Preferred pattern: emit **one artifact that works everywhere** (e.g. the `#define ps_oC0 gl_FragColor` form that serves KNI Reach *and* HiDef) or auto-select from the target — never expose the choice. Supporting a **new platform the consumer's game already targets** (Metal/Vulkan/DX12) is seamless and fine; the bad kind of "opt-in" is a *ShadowDusk-specific* flag the consumer must set.
 
-- **Backwards compatibility — do not bump MonoGame or change the `.mgfx` format.** Keep the MonoGame pin at **3.8.2.1105** (`Directory.Packages.props`) and the output format at **MGFX v10** (`CompilerOptions.MgfxVersion` default = 10). A v10 `.mgfx` loads in MonoGame 3.8.2 *and* every newer MonoGame *and* KNI — it is the most backwards-compatible choice. Newer MonoGame exists (3.8.4.1 stable, 3.8.5-preview), but bumping is rejected. Any future new backend must be **additive and seamless** (a platform the consumer's game already targets, auto-handled), never a change to the existing OpenGL/DX11/v10 output a current consumer relies on. (Codified in `plan/plan.md` Key Decisions: "Default MGFXVersion: 10.")
+- **Backwards compatibility — do not bump MonoGame or change the `.mgfx` format.** Keep the MonoGame pin at **3.8.2.1105** (`Directory.Packages.props`) and the output format at **MGFX v10** (`CompilerOptions.MgfxVersion` default = 10). A v10 `.mgfx` loads in MonoGame 3.8.2 *and* every newer MonoGame *and* KNI — it is the most backwards-compatible choice. Newer MonoGame exists (3.8.5 stable since 2026-07-15), but bumping is rejected — supporting newer versions means *proving the unchanged v10 output on them* ([Phase 52](plan/PHASE-52-monogame-3.8.5-support.md)), never moving the pin. Any future new backend must be **additive and seamless** (a platform the consumer's game already targets, auto-handled), never a change to the existing OpenGL/DX11/v10 output a current consumer relies on. (Codified in `plan/plan.md` Key Decisions: "Default MGFXVersion: 10.")
 
 - **Do not rely on the local memory store.** All durable project knowledge — decisions, gotchas, status, working rules — goes into **source-controlled** files (this `CLAUDE.md`, `plan/`, phase docs, `docs/`, code comments), never the machine-local agent memory (which is lost between computers). Don't write new memories; capture findings in the appropriate source file instead.
 

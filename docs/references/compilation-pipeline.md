@@ -3,10 +3,10 @@
 How a `.fx` source becomes loadable shader bytes, stage by stage, with what each
 component is, how it works, and **why** it is done that way.
 
-ShadowDusk is **one faithful compiler** with three backend tails. The front half (read
+ShadowDusk is **one faithful compiler** with four backend tails. The front half (read
 the FX file, resolve includes, inject platform macros) is shared. The back half forks by
-target: **OpenGL/WebGL**, **DirectX 11**, and **FNA**. The headline pipeline is the
-OpenGL branch:
+target: **OpenGL/WebGL**, **DirectX 11**, **Vulkan**, and **FNA**. The headline pipeline
+is the OpenGL branch:
 
 ```
 HLSL  →[DXC]→  SPIR-V  →[SPIRV-Cross]→  GLSL  →[MonoGameGlslRewriter]→  .mgfx
@@ -34,30 +34,30 @@ INPUT  shader.fx  (HLSL + FX9 effect blocks)
         ▼
 ┌──────────────────────────────┐   Stage 2
 │  Preprocessor                │   flatten #includes; inject platform macros
-│  (managed; leaves #if to DXC)│   (DX: MGFX,HLSL,SM4 · GL: MGFX,GLSL,OPENGL · FNA: FNA,HLSL,SM3)
-└───────────────┬──────────────┘
+│  (managed; leaves #if to DXC)│   (DX: MGFX,HLSL,SM4 · GL: MGFX,GLSL,OPENGL · FNA: FNA,HLSL,SM3
+└───────────────┬──────────────┘    · Vulkan: MGFX,HLSL,VULKAN,SM6)
                 ▼
-        ┌───────────────── compile fork (by target) ─────────────────┐
-        ▼                          ▼                                  ▼
-   DirectX 11                 OpenGL / WebGL                        FNA
-        │                          │                                  │
-   vkd3d-shader               DXC (Vortice.Dxc)                  vkd3d-shader
-   (or d3dcompiler_47)        -spirv                             D3D_BYTECODE
-        │                          │                                  │
-        ▼                          ▼                                  ▼
-   DXBC (SM≤5)               SPIR-V ──[SPIRV-Cross]──► GLSL 140    D3D9 token stream
-        │                          │                                  │
-        │                          ▼                                  │
-        │                  MonoGameGlslRewriter                       │
-        │                  (MojoShader-dialect GLSL)                  │
-        │                          │                                  │
-        └────────────┬─────────────┘                                  │
-                     ▼                                                 ▼
-              Reflection (RdefReader / DXIL oracle /            CTAB reflection
-              SpirvReflector → one ReflectedEffect)                   │
-                     │                                                 ▼
-                     ▼                                          Fx2EffectWriter
-              MgfxWriter (.mgfx v10)                            (fx_2_0 .fxb)
+        ┌───────────────── compile fork (by target) ────────────────────────────────────────┐
+        ▼                          ▼                                  ▼                     ▼
+   DirectX 11                 OpenGL / WebGL                        FNA                  Vulkan
+        │                          │                                  │                     │
+   vkd3d-shader               DXC (Vortice.Dxc)                  vkd3d-shader       DXC (Vortice.Dxc)
+   (or d3dcompiler_47)        -spirv                             D3D_BYTECODE       -spirv
+        │                          │                                  │                     │
+        ▼                          ▼                                  ▼                     ▼
+   DXBC (SM≤5)               SPIR-V ──[SPIRV-Cross]──► GLSL 140    D3D9 token stream  SPIR-V (as-is)
+        │                          │                                  │                     │
+        │                          ▼                                  │                     ▼
+        │                  MonoGameGlslRewriter                       │              SpirvReflector
+        │                  (MojoShader-dialect GLSL)                  │               (reflection)
+        │                          │                                  │                     │
+        └────────────┬─────────────┘                                  │                     ▼
+                     ▼                                                 ▼         VulkanShaderCodeWrapper
+              Reflection (RdefReader / DXIL oracle /            CTAB reflection  (descriptor-layout header)
+              SpirvReflector → one ReflectedEffect)                   │                     │
+                     │                                                 ▼                    ▼
+                     ▼                                          Fx2EffectWriter   MgfxWriter (v11-shaped
+              MgfxWriter (.mgfx v10)                            (fx_2_0 .fxb)     record, profile byte 80)
                      │
             ┌────────┴────────┐
             ▼                 ▼
@@ -305,7 +305,7 @@ name, so whatever name SPIRV-Cross chose for a uniform is irrelevant to the GLSL
 
 **`.mgfx` (MonoGame/KNI)** — `src/ShadowDusk.Core/MgfxWriter.cs`. The body is serialized first so
 the header can hash it. Layout: the 4-byte signature `MGFX`, a version byte, a profile byte
-(OpenGL = 0, DirectX 11 = 1, Vulkan = 3), and a 4-byte effect key (a managed MD5 over the body,
+(OpenGL = 0, DirectX 11 = 1, Vulkan = 80 — matching MonoGame 3.8.5's own `VulkanShaderProfile`; never the `PlatformTarget` enum ordinal), and a 4-byte effect key (a managed MD5 over the body,
 managed because the WASM runtime lacks MD5); then the body, **constant buffers → shaders → parameters
 → techniques/passes (with their render-state blocks)**; then the trailing `MGFX` footer the
 runtime validates. The shader blob is **GLSL text for the GL profile and DXBC for the DX profile**.

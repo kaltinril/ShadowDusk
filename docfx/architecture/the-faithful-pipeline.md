@@ -4,7 +4,7 @@ ShadowDusk runs **one faithful pipeline on every host** — desktop, CLI, in-bro
 
 The whole picture — inputs, the shared frontend, the per-target translation layers, the container writers, and the real runtimes — at a glance:
 
-![ShadowDusk compile pipeline: inputs to the shared frontend, per-target translation layers (OpenGL/DirectX/FNA), container writers, and the real MonoGame / KNI / FNA / Android runtimes](../images/pipeline-overview.svg)
+![ShadowDusk compile pipeline: inputs to the shared frontend, per-target translation layers (OpenGL/DirectX/Vulkan/FNA), container writers, and the real MonoGame / KNI / FNA / Android / DesktopVK runtimes](../images/pipeline-overview.svg)
 
 ```text
 HLSL → [DXC] → SPIR-V → [SPIRV-Cross] → GLSL → [managed: reflect + MojoShader-dialect rewrite + MGFX writer] → .mgfx
@@ -13,6 +13,7 @@ HLSL → [DXC] → SPIR-V → [SPIRV-Cross] → GLSL → [managed: reflect + Moj
 
 - **OpenGL / WebGL:** HLSL → DXC → SPIR-V → SPIRV-Cross → GLSL, then the managed [`MonoGameGlslRewriter`](glsl-dialect-rewrite.md) (MojoShader dialect) and the [MGFX writer](mgfx-format.md).
 - **DirectX (DX11):** HLSL → **`vkd3d-shader`** → DXBC (SM5). **DXC is not used here** — it only emits SM6 DXIL, which MonoGame's DX11 runtime cannot load. See [DirectX DXBC (vkd3d) Path](directx-dxbc-vkd3d.md).
+- **Vulkan:** HLSL → DXC → SPIR-V, carried directly in the `.mgfx` (profile byte 80) — render-proven on MonoGame 3.8.5 DesktopVK.
 
 The diagram and per-phase notes below are maintained in the repository and reproduced here as the single source of truth:
 

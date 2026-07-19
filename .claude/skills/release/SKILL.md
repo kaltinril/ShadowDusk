@@ -31,11 +31,26 @@ self-contained CLI binaries to a GitHub Release. The human runbook this automate
    If Unreleased is empty, add "- Version bump and documentation updates". Update the
    bottom-of-file compare/release link references.
 5. **Update RELEASING.md** version examples to `<version>`.
-6. **Docs audit (Explore agent, report-only — do NOT auto-fix).** Check the `CLAUDE.md`
-   inventory (repo layout, the backend table, "What success actually means"), the root and
-   CLI READMEs, the DocFX site (Phase 26) and WASM HOWTO if present, and each packable
-   csproj's `<Description>` / `<PackageTags>` against the actual code. Report gaps; ask
-   whether to fix now or defer. Do not block the release on doc drift unless the user says so.
+6. **Docs audit (Explore agent, report-only — do NOT auto-fix).** Audit against the actual
+   code, in two parts:
+   - **The support-surface checklist (CLAUDE.md → "Support-surface docs are part of the
+     change") — check EVERY item by name; this is the backstop for the same-PR rule:**
+     `docs/pipeline-overview.puml` **+ whether `docfx/images/pipeline-overview.svg` was
+     regenerated after the last `.puml` edit**; `docs/the-purpose.md` (backend table +
+     host × target matrix); `docs/validation-matrix.md` (cells, §6 driver list — one row
+     per `validation/*` driver on disk — and §7 gap rows); `docs/repository-layout.md`;
+     `README.md` (supported-targets table + pipeline block); the DocFX site
+     (`docfx/index.md`, `getting-started/overview.md`, `guides/choosing-a-target.md`,
+     `backends/*.md`, `contributing/validation.md` rung-4 list, `glossary.md`, and the
+     transcluded `docs/references/compilation-pipeline.md` + `docs/glsl-uniform-naming.md`
+     rewriter-rule table); `CLAUDE.md` (Project Overview + HARD-RULE gate commands);
+     `plan/plan.md` phase-index rows vs each phase doc's own Status line (a Done phase
+     must sit in `plan/DONE/` with its row flipped); public-API XML doc-comments that
+     claim "not yet implemented" for shipped features.
+   - **The packaging surfaces:** each packable csproj's `<Description>` / `<PackageTags>`,
+     the CLI README, and the WASM HOWTO if present.
+   Report gaps; ask whether to fix now or defer. Do not block the release on doc drift
+   unless the user says so.
 7. **Build + test.**
    `dotnet build ShadowDusk.slnx -c Release` then
    `dotnet test ShadowDusk.slnx -c Release --no-build --settings ShadowDusk.runsettings`
@@ -45,9 +60,10 @@ self-contained CLI binaries to a GitHub Release. The human runbook this automate
    NOT sufficient: the DirectX / FNA / KNI-DirectX rung-4 render proofs have no headless CI
    driver (Mesa is GL-only), so the release MUST render them locally on a Windows+GPU box and
    confirm they still match the reference compiler. Run:
-   `./validation/run-windows-render-gates.ps1` (DX corpus + DX-modern/VTF + KNI-DX), and
+   `./validation/run-windows-render-gates.ps1` (DX corpus + DX-modern/VTF + KNI-DX),
    `./validation/run-windows-render-gates.ps1 -IncludeFna` if this release could affect the FNA
-   target. **Stop on a non-zero exit** (a render diverged from `mgfxc`/`fxc` — do not release).
+   target, and `-IncludeVulkan` if it could affect the Vulkan target (needs a Vulkan-capable
+   GPU). **Stop on a non-zero exit** (a render diverged from `mgfxc`/`fxc` — do not release).
    The OpenGL render gates already run in CI (`validation-render.yml`), so they are covered by
    the CI wait at step 10; this step is specifically the DX/FNA/KNI-DX gap CI cannot fill. See
    CLAUDE.md → "Validation render drivers are the real bar".

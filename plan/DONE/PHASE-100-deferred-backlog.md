@@ -19,7 +19,7 @@ one). This document is closed.
 | **`17-VS`** — VS-driven MonoGame effects (symmetric `vs_uniforms_vec4` remap, VS-side attribute/varying I/O, PS/VS `mat4` expansion, validation) | **[Phase 28 — VS-Driven MonoGame Effects](PHASE-28-vs-driven-monogame-effects.md)** |
 | **From Phase 9** — "Full MGCB content processor plugin (`ShadowDusk.MgcbPlugin`)" | **[Phase 29 — MGCB Content-Processor Plugin (Tier 2)](../PHASE-29-mgcb-content-processor-plugin.md)** |
 | **From Phase 9** — "Metal/MSL pipeline stage" (the empty `MslEmitter` stub) | **[Phase 31 — Metal / MSL Backend](../PHASE-31-metal-msl-backend.md)** |
-| **From Phase 4** — Vulkan compile-flag/SPIR-V items (most already covered by `DxcFlagBuilderTests` / `DxcShaderCompilerIntegrationTests`) + the Vulkan target wiring | **[Phase 32 — Vulkan Backend](../PHASE-32-vulkan-backend.md)** |
+| **From Phase 4** — Vulkan compile-flag/SPIR-V items (most already covered by `DxcFlagBuilderTests` / `DxcShaderCompilerIntegrationTests`) + the Vulkan target wiring | **[Phase 32 — Vulkan Backend](PHASE-32-vulkan-backend.md)** |
 | **From Phase 19** — WASM browser-runtime tail (emscripten modules + real in-browser run) | already moved out (2026-05-31) → **[Phase 23](PHASE-23-in-browser-compilation.md)** (faithful compile) + **[Phase 24](PHASE-24-browser-render-validation.md)** (render) + **[Phase 30 §16](PHASE-30-ci-and-nuget-release.md)** (CI) |
 | **From Phase 15** — cross-platform *runs* of the suite (Linux/macOS) | **[Phase 30 — Cross-Platform CI](PHASE-30-ci-and-nuget-release.md)** |
 

@@ -7,7 +7,7 @@ namespace ShadowDusk.Core;
 /// <summary>
 /// Wraps raw SPIR-V bytecode in the Vulkan descriptor-layout header MonoGame 3.8.5's
 /// real Vulkan writer prepends before the per-shader <c>ShaderCode</c> field (see
-/// <c>plan/PHASE-32-appendix/vulkan-mgfx-format-spec.md</c> — read from MonoGame's own
+/// <c>plan/DONE/PHASE-32-appendix/vulkan-mgfx-format-spec.md</c> — read from MonoGame's own
 /// source, not reverse-engineered). MonoGame's DesktopVK <c>Effect</c> reader expects
 /// this exact shape for the Vulkan profile; every other profile writes raw bytecode
 /// unwrapped.
