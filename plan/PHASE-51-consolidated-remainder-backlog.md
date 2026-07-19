@@ -25,6 +25,8 @@ small tail, the tail moves here and the parent moves to DONE.
 | Un-park Vulkan trigger (Area D) — ✅ done 2026-07-18 via [Phase 32](DONE/PHASE-32-vulkan-backend.md) | [Phase 35](DONE/PHASE-35-forward-version-support.md) | ext-blocked on MonoGame 3.8.5 stable (since shipped; see B2) |
 | DX/FNA/KNI-DX render-in-CI gates | [Phase 44](DONE/PHASE-44-validation-breadth-and-matrix-coverage.md) | Effectively done; ext-blocked on a WARP CI runner |
 | `d3dcompiler_47` vs `fxc.exe` DXBC delta study (OQ#2) | [Phase 41](DONE/PHASE-41-fxc-oracle-monogame-fidelity.md) | Deferred, low-value |
+| ShaderToy sample + runtime-helper migration to `samples/` | [Phase 47](DONE/PHASE-47-shadertoy-frontend-promotion.md) | Core shipped (NuGet since 0.9.0); the sample-migration appendix stayed Planned (moved 2026-07-18) |
+| CLI `.glsl`-route render-gate fixtures | [Phase 47](DONE/PHASE-47-shadertoy-frontend-promotion.md) | Deferred in the CLI appendix; tracked in validation-matrix §8 (moved 2026-07-18) |
 
 ---
 
@@ -69,6 +71,29 @@ to the reference compiler per the `validation/*` rung-4 pattern + the Windows re
 
 **Done = ** `apos-shapes.fx` rendered pixel-equivalent to `mgfxc`/`fxc` in real MonoGame
 GL/DX (and FNA fx_2_0) via a vertex-buffer Apos.Shapes harness, behind the Windows render gate.
+
+### A4 — ShaderToy sample + runtime-helper migration to `samples/` (ex-47)
+*From Phase 47 (moved 2026-07-18, at the 0.12.0 release docs audit).* The core promotion shipped
+(the `ShadowDusk.ShaderToy` library is in-solution and published as a NuGet since 0.9.0), but the
+MonoGame-dependent runtime helper + interactive viewer sample never moved out of
+`tools/shadertoy2fx/` — the [sample-migration appendix](DONE/PHASE-47-appendix/sample-migration.md)
+stayed **Planned**. Anchor constraint (verbatim from the appendix): *"No code in this appendix may
+end up in a shipped `ShadowDusk.*` package."*
+
+**Done = ** the runtime helper + interactive ShaderToy viewer sample live under `samples/` per the
+appendix, `tools/shadertoy2fx/` keeps only the out-of-band render-proof driver (or is retired), and
+`NoMonoGameInProductLibrariesTests` stays green (no shipped library gains a MonoGame dependency).
+
+### A5 — CLI `.glsl`-route render-gate fixtures (ex-47 CLI appendix)
+*From Phase 47 (moved 2026-07-18).* The CLI `.glsl` input is implemented + integration-tested
+(`CliShaderToyInputTest`: GL/DX compile, located rejects, CLI ≡ Convert+pipeline byte-identity), but
+the **render-gate fixture entries** for the `.glsl` route (Windows DX/FNA + GL gates) were deferred —
+recorded in the [CLI appendix](DONE/PHASE-47-appendix/cli-shadertoy-input.md) and
+`docs/validation-matrix.md` §8. (`--multipass` batch mode is a separate recorded deferral in the
+same appendix, not part of this rung.)
+
+**Done = ** at least one `.glsl`-route fixture renders through the Windows render gates (and the GL
+CI gates where applicable), pinning the converted-shader path at rung 4.
 
 ---
 

@@ -54,7 +54,7 @@ knowable length and **must** stay a loud reject. That truly-unsized form is the 
 
 ### Where the fix goes
 
-[`src/ShadowDusk.ShaderToy/Parser.cs`](../../src/ShadowDusk.ShaderToy/Parser.cs) →
+[`src/ShadowDusk.ShaderToy/Parser.cs`](../../../src/ShadowDusk.ShaderToy/Parser.cs) →
 `ParseArraySuffix()` (the `[` … `]` handling, ~line 440). Today it does:
 
 ```csharp

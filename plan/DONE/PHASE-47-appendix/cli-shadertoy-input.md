@@ -11,7 +11,7 @@ integration tests (`CliShaderToyInputTest`) cover OpenGL/DX compile, the located
 `--print-uniforms` note, `.txt`-forced-glsl, an invalid-value error, and CLI-output ≡ Convert+pipeline
 byte-identity — all green under `dotnet test ShadowDusk.slnx`. **Deferred:** multipass batch mode (`--multipass`)
 and the OpenGL/Windows render-gate fixture entries (run the Windows DX/FNA gates before merge). **Appendix** to the main Phase 47 plan
-(`plan/PHASE-47-shadertoy-frontend-promotion.md`, owned by a sibling agent). This appendix covers
+(`plan/DONE/PHASE-47-shadertoy-frontend-promotion.md`, owned by a sibling agent). This appendix covers
 **only** the `ShadowDuskCLI` (`src/ShadowDusk.Cli`) change that lets the drop-in `mgfxc` accept
 **ShaderToy / GLSL** input in addition to `.fx`, routing it through the promoted
 `ShadowDusk.ShaderToy` converter into the **existing** compile pipeline. It does **not** plan the
