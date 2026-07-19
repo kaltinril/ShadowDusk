@@ -44,6 +44,7 @@ ShadowDusk works with **MonoGame, KNI, and FNA** across these graphics backends.
 | FNA                 | D3D9 `.fxb`    | Supported    |
 | Metal (macOS / iOS) | MSL            | Not yet      |
 | Vulkan (MonoGame)   | SPIR-V `.mgfx` | Supported    |
+| DirectX 12 (MonoGame WindowsDX12) | — | Not yet |
 
 Supported targets are tested end-to-end against the reference compiler. For the exact per-version, per-OS proof status, see the [Validation Matrix](docs/validation-matrix.md). To choose a target (or build a shader-download feature), see the [Choosing a Target](https://kaltinril.github.io/ShadowDusk/guides/choosing-a-target.html) guide. Classic Microsoft XNA 4.0 is out of scope.
 

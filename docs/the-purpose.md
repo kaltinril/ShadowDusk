@@ -50,6 +50,7 @@ MonoGame's stock content pipeline (`MGCB`) shells out to `mgfxc`, which depends 
 |---|---|---|
 | DirectX (Windows) | HLSL | vkd3d-shader → DXBC (SM5) |
 | OpenGL / DesktopGL | GLSL | DXC → SPIR-V → SPIRV-Cross → GLSL |
+| DirectX 12 *(not yet a target — MonoGame 3.8.5 ships `WindowsDX12`; what its `Effect` path loads is unconfirmed — research-first, [Phase 52 Area D](../plan/PHASE-52-monogame-3.8.5-support.md))* | HLSL | TBD — likely DXC → DXIL (SM6), to be confirmed against the real runtime before any code |
 | Metal (macOS / iOS) *(not yet implemented)* | MSL | DXC → SPIR-V → SPIRV-Cross → MSL |
 | Vulkan *(Phase 32 — **rung 4 proven** for MonoGame `DesktopVK`; KNI ships no Vulkan platform)* | SPIR-V | DXC → SPIR-V (direct) |
 | FNA *(Phase 39 — **rung 4 proven**, PS-only + VS-driven corpora; one `.fxb` serves all FNA backends)* | D3D9-style HLSL (SM ≤ 3) | vkd3d-shader → D3D9 bytecode → ShadowDusk `Fx2EffectWriter` → fx_2_0 (`.fxb`) |
@@ -137,6 +138,7 @@ Where each host×target cell stands (updated 2026-06-12, post-Phase 37 A/B/C + P
 | DX11 DXBC `.mgfx` | ✅ proven | ✅ compiles end-to-end (vkd3d backend + managed `RdefReader` reflection — Track A); render bar is the real WindowsDX runtime, Windows-only by nature | ✅ same as Linux (DX11 no longer constructs DXC, so 37 A doesn't gate it) | ✅ **export target** — vkd3d→WASM landed (Phase 4.1, 2026-06-12): real-browser gate 65-artifact byte-identity vs the cross-host manifest; render bar stays desktop-by-nature (no Direct3D in a browser) |
 | FNA fx_2_0 `.fxb` | ✅ proven | ✅ proven | ✅ natives ship + compile suite green in CI (37 C); render oracle (`fxc`) is Windows-only by nature | ✅ **export target** — same Phase 4.1 vkd3d→WASM module, same 2026-06-12 real-browser byte-identity proof (no D3D9 in a browser) |
 | Vulkan SPIR-V | ✅ **rung-4 proven** (Phase 32, 2026-07-18) — real MonoGame `DesktopVK`; no pixel-diff vs `mgfxc`'s own Vulkan output (that output crashes on load, a separate MonoGame bug, see `plan/DONE/PHASE-32-appendix/`) | untested on this host, no reason to expect divergence (same DXC→SPIR-V frontend as OpenGL) | untested on this host, no reason to expect divergence | not an export target yet — no Vulkan-capable browser consumer |
+| DX12 | ⬛ not a target yet — MonoGame 3.8.5 (2026-07-15) shipped the `WindowsDX12` runtime, so the old "no runtime" blocker is gone; research-first rung tracked in [Phase 52 Area D](../plan/PHASE-52-monogame-3.8.5-support.md) | | | |
 | Metal MSL | parked — no validatable consumer runtime yet (Phase 31) | | | |
 
 > **The DXC-divergence carve-out (per-OS compile reach, open):** the Linux/macOS
