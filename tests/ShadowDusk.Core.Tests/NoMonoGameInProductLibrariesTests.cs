@@ -32,7 +32,7 @@ public sealed class NoMonoGameInProductLibrariesTests
 
         offenders.Should().BeEmpty(
             "no shipped ShadowDusk.* product library may depend on MonoGame; the runtime helper + " +
-            "sample belong under samples/ (see plan/PHASE-47 sample-migration). Offending projects: " +
+            "sample belong under samples/ (see the ShaderToy sample-migration item in plan/PHASE-51). Offending projects: " +
             string.Join(", ", offenders));
     }
 

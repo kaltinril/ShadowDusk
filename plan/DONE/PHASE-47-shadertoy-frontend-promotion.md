@@ -6,25 +6,27 @@ product library** — pure-managed, zero native dependency, strictly additive. T
 owns the **overall architecture** and the **library-migration** plan, and links to two sibling
 appendix docs that own the CLI-input and sample-migration slices.
 
-**Status:** IMPLEMENTED (2026-06-20). The converter library + its 380-test suite were promoted to
-`src/ShadowDusk.ShaderToy/` + `tests/ShadowDusk.ShaderToy.Tests/` (git mv, history preserved) and added
-to `ShadowDusk.slnx`; `dotnet build/test ShadowDusk.slnx` is green (ShaderToy 380, full suite passing, 0
-warnings). The out-of-band PoC CLI / render-proof / sample were repointed at the new `src/` path and
-still build; `shadertoy2fx.slnx` references the promoted library in place. The real `ShadowDuskCLI` now
-accepts ShaderToy/GLSL input (CLI appendix, implemented). A standing `NoMonoGameInProductLibrariesTests`
-guard asserts no `src/*.csproj` depends on MonoGame. **Still owner-deferred:** NuGet publication of
-`ShadowDusk.ShaderToy` (kept `IsPackable=false`), the sample/runtime migration to `samples/`
-(sample-migration appendix), and the Windows DX/FNA + fidelity render gates (must be run on a Windows GPU
-box before this merges — CI cannot run them).
+**Status:** ✅ **Done — archived to `plan/DONE/` 2026-07-18 (audited at the 0.12.0 release).**
+The core promotion was IMPLEMENTED 2026-06-20: the converter library + test suite promoted to
+`src/ShadowDusk.ShaderToy/` + `tests/ShadowDusk.ShaderToy.Tests/` (git mv, history preserved), added to
+`ShadowDusk.slnx`, and green in every full `dotnet test` since (410 tests as of 0.12.0). The out-of-band
+PoC CLI / render-proof / sample were repointed at the new `src/` path and still build. The real
+`ShadowDuskCLI` accepts ShaderToy/GLSL input (CLI appendix, implemented + integration-tested via
+`CliShaderToyInputTest`). A standing `NoMonoGameInProductLibrariesTests` guard asserts no `src/*.csproj`
+depends on MonoGame. **Superseded deferral:** NuGet publication was owner-deferred at writing, but
+**shipped in 0.9.0** (`IsPackable=true`; `ShadowDusk.ShaderToy` is one of the seven published packages).
+**Tails moved to [Phase 51](../PHASE-51-consolidated-remainder-backlog.md) A4/A5:** the sample /
+runtime-helper migration to `samples/` (its appendix stayed Planned; the interactive sample still lives
+under `tools/shadertoy2fx/`) and the `.glsl`-route render-gate fixtures (validation-matrix §8 follow-up).
 
 **Depends on:**
-- [Phase 46 — ShaderToy → FX Conversion Tool](DONE/PHASE-46-shadertoy-to-fx-conversion-tool.md): the
+- [Phase 46 — ShaderToy → FX Conversion Tool](PHASE-46-shadertoy-to-fx-conversion-tool.md): the
   converter being promoted. Phase 46 is render-proven (fidelity gate **46/46 @ mean 0.00/255** vs
   the original GLSL; **371 tests green**; gallery 72/72) and was deliberately shaped for this lift —
   a clean `ShadowDusk.ShaderToy` library, one public `ShaderToyConverter.Convert(glsl)` entry, the
   `Multipass/` batch API, **no product coupling, no native dependency.** Promotion is a wire-in, not
   a rewrite (Phase 46 SESSION HANDOFF, owner-clarified direction 2026-06-20).
-- [Phase 8 — Compiler Library](DONE/PHASE-8-compiler-library.md): the downstream `EffectCompiler :
+- [Phase 8 — Compiler Library](PHASE-8-compiler-library.md): the downstream `EffectCompiler :
   IShaderCompiler` the converter's `.fx` output feeds into. **Unchanged by this phase** — the
   converter remains upstream of the pipeline, emitting `.fx` *text*; the pipeline is not touched.
 
