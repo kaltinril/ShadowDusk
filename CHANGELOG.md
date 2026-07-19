@@ -18,6 +18,41 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+## [0.12.0] - 2026-07-18
+
+The headline: **a Vulkan backend**. MonoGame 3.8.5 (stable 2026-07-15) ships `DesktopVK`, a
+native Vulkan desktop platform — and ShadowDusk now compiles for it: the same faithful
+pipeline, one DXC compile straight to SPIR-V, wrapped in the real MonoGame Vulkan `.mgfx`
+container. Additive and seamless like every backend before it: existing OpenGL / DirectX /
+FNA / WASM output is byte-identical, and the MGFX v10 default is unchanged.
+
+### Added
+
+- **Vulkan output target** (`PlatformTarget.Vulkan` / CLI `/Profile:Vulkan`) — Phase 32,
+  contributed via PR #126 (Victor Chelaru / vchelaru). HLSL compiles through the pinned DXC
+  frontend directly to SPIR-V (`vs_6_0`/`ps_6_0`) and is emitted in MonoGame 3.8.5's own
+  Vulkan `.mgfx` container (profile byte 80, v11-shaped shader records, the SPIR-V wrapped in
+  the descriptor-layout header MonoGame's native Vulkan pipeline reads), with reflection from
+  the SPIR-V itself. Texture+sampler pairs bind as single combined image-sampler descriptors,
+  matching MonoGame's runtime. **Render-proven on real hardware:** the shader corpus loads and
+  renders correctly (10/10) in real MonoGame 3.8.5 `DesktopVK`
+  (`validation/CandidateVulkan`; local gate `./validation/run-windows-render-gates.ps1
+  -IncludeVulkan`). A pixel-diff against `mgfxc`'s own Vulkan output is blocked upstream —
+  that output currently crashes in real DesktopVK due to a confirmed MonoGame `SlotOffset`
+  bug. MonoGame-only: KNI ships no Vulkan platform (a KNI+Vulkan request fails loudly with
+  `SD0025`).
+
+### Changed
+
+- Documentation: **DirectX 12 (MonoGame 3.8.5 `WindowsDX12`) is now recorded as an explicit
+  not-yet-supported target** across the support matrix and site pages (planned,
+  research-first — see `plan/PHASE-52-monogame-3.8.5-support.md`). The validation matrix's
+  accumulated update trail moved to a compact bottom-of-page history, consumer-facing pages
+  were trimmed of internal status noise, and the `ShadowDusk.Compiler` / `ShadowDusk.Cli`
+  package READMEs now list the Vulkan target.
+
+### Fixed
+
 - **OpenGL codegen fidelity: `pow(x, 2.0)` strength-reduced to a multiply** (issue
   [#127](https://github.com/kaltinril/ShadowDusk/issues/127)). GLSL leaves `pow` undefined for a
   negative base (drivers lowering it to `exp2(y*log2(x))` return NaN), while fxc constant-folds
@@ -671,7 +706,8 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.8.0...v0.9.0
