@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>ShadowDusk issue-136 ANGLE probe</title></head>
+<body>
+<div id="out">running...</div>
+<canvas id="c" width="256" height="256"></canvas>
+<script>
+// Verifies, on THIS browser's real WebGL2 stack, that:
+//  A) a derivative at top level works (control; expect red=255)
+//  B) the PRE-FIX ShadowDusk shape (one-shot for-loop wrapper with a conditional
+//     break, fwidth inside) is poisoned on ANGLE D3D11 (expect red=0 there)
+//  C) the POST-FIX ShadowDusk shape (unwrapped plain blocks, conditional early
+//     returns, fwidth at top level) keeps derivatives alive (expect red=255)
+// The fragment bodies mirror the ACTUAL emitted GLSL of Issue136HelperGradient.fx
+// (helper with early return + fwidth) before and after the Rule-9a unwrap,
+// hand-converted to ES 3.00 exactly the way KNI's HiDef runtime converter does
+// (out vec4 for the ps_oC0 alias, in for varying).
+
+const VS = `#version 300 es
+in vec4 pos;
+out float v;
+void main() {
+  gl_Position = pos;
+  v = (pos.x * 0.5 + 0.5) * 256.0;  // changes by exactly 1.0 per pixel
+}`;
+
+// A: control, top-level derivative.
+const FS_CONTROL = `#version 300 es
+precision highp float;
+in float v; out vec4 o;
+void main() {
+  float g = length(vec2(dFdx(v), dFdy(v)));
+  o = vec4(g, 0.0, 0.0, 1.0);
+}`;
+
+// B: the PRE-FIX shape: Rule-9b one-shot for-loop with conditional break, the
+// helper's fwidth inside the loop (verbatim structure of the old emitted GLSL).
+const FS_PREFIX = `#version 300 es
+precision highp float;
+in float v; out vec4 o;
+void main() {
+  float _38 = 0.0;
+  {
+    float _29 = v;
+    float _36 = 0.0;
+    for (int _spvonce_0 = 0; _spvonce_0 < 1; _spvonce_0++) {
+      if (_29 > 100000.0)   // never taken
+      {
+        _36 = 0.0;
+        break;
+      }
+      _36 = length(vec2(dFdx(_29), dFdy(_29)));
+      break;
+    }
+    _38 = _36;
+  }
+  o = vec4(_38, 0.0, 0.0, 1.0);
+}`;
+
+// C: the POST-FIX shape: unwrapped plain blocks + conditional early returns,
+// derivative in straight-line code (verbatim structure of the new emitted GLSL).
+const FS_POSTFIX = `#version 300 es
+precision highp float;
+in float v; out vec4 o;
+void main() {
+  float _38;
+  {
+    if (v > 200000.0)      // never taken (entry wrapper early-out)
+    {
+      _38 = 0.0;
+      { o = vec4(_38, 0.0, 0.0, 1.0); return; }
+    }
+    float _29 = v;
+    float _36;
+    {
+      if (_29 > 100000.0)  // never taken (helper early-out)
+      {
+        _36 = 0.0;
+        { _38 = _36; o = vec4(_38, 0.0, 0.0, 1.0); return; }
+      }
+      _36 = length(vec2(dFdx(_29), dFdy(_29)));
+      { _38 = _36; o = vec4(_38, 0.0, 0.0, 1.0); return; }
+    }
+    _38 = _36;
+    { o = vec4(_38, 0.0, 0.0, 1.0); return; }
+  }
+  o = vec4(_38, 0.0, 0.0, 1.0);
+}`;
+
+function run() {
+  const canvas = document.getElementById('c');
+  const gl = canvas.getContext('webgl2', { antialias: false, preserveDrawingBuffer: true });
+  const lines = [];
+  if (!gl) { document.getElementById('out').textContent = 'RESULT: NO-WEBGL2'; return; }
+
+  const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+  const renderer = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
+  lines.push('RENDERER: ' + renderer);
+
+  const quad = new Float32Array([-1,-1, 3,-1, -1,3]);
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, quad, gl.STATIC_DRAW);
+
+  function probe(name, fsSrc) {
+    const p = gl.createProgram();
+    for (const [type, src] of [[gl.VERTEX_SHADER, VS], [gl.FRAGMENT_SHADER, fsSrc]]) {
+      const s = gl.createShader(type);
+      gl.shaderSource(s, src);
+      gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+        lines.push(name + ': COMPILE-FAIL ' + gl.getShaderInfoLog(s));
+        return;
+      }
+      gl.attachShader(p, s);
+    }
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+      lines.push(name + ': LINK-FAIL ' + gl.getProgramInfoLog(p));
+      return;
+    }
+    gl.useProgram(p);
+    const loc = gl.getAttribLocation(p, 'pos');
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+    gl.viewport(0, 0, 256, 256);
+    gl.clearColor(0, 1, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    const px = new Uint8Array(4);
+    gl.readPixels(128, 128, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    lines.push(name + ': red=' + px[0] + ' (v-gradient is 1/px so live derivatives -> ~181, dead -> 0)');
+  }
+
+  probe('A-control-toplevel', FS_CONTROL);
+  probe('B-prefix-oneshot-forloop', FS_PREFIX);
+  probe('C-postfix-unwrapped', FS_POSTFIX);
+  document.getElementById('out').textContent = 'RESULT:\n' + lines.join('\n');
+}
+run();
+</script>
+</body>
+</html>
