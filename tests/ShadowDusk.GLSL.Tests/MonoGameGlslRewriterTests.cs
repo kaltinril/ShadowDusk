@@ -1477,4 +1477,174 @@ void main()
         result.Glsl.Should().Contain("while(_i < 4)", "a genuine multi-iteration do-while is preserved");
         result.Glsl.Should().NotContain("_spvonce_", "no one-shot lowering should fire on a real loop");
     }
+
+    // ---- pow(x, 2.0) → multiply strength reduction (issue #127). ----
+    // GLSL leaves pow undefined for a negative base (drivers lowering to
+    // exp2(y*log2(x)) return NaN), while fxc constant-folds pow(x, 2) into a
+    // multiply — so HLSL squaring a possibly-negative value via pow() (Apos.Shapes'
+    // LinearGradient squares normalized-direction components) is well-defined
+    // through mgfxc but driver-dependent through native GLSL pow. The source below
+    // is the shape SPIRV-Cross emits for apos-shapes.fx (issue #127).
+
+    [Fact]
+    public void PowSquare_SimpleOperands_AreStrengthReducedToMultiply_Issue127()
+    {
+        const string src = """
+#version 140
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    float _1286 = in_var_TEXCOORD0.x - 0.5;
+    float _1293 = in_var_TEXCOORD0.y - 0.5;
+    float _d = sqrt(pow(_1286, 2.0) + pow(_1293, 2.0));
+    float _g = pow(abs(_1286), 2.400000095367431640625);
+    out_var_SV_Target = vec4(_d, _g, 0.0, 1.0);
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        result.Glsl.Should().NotMatchRegex(@"pow\([^,()]*, 2\.0\)",
+            because: "pow with a possibly-negative base is undefined in GLSL — it must become a multiply");
+        result.Glsl.Should().Contain("((_1286) * (_1286))");
+        result.Glsl.Should().Contain("((_1293) * (_1293))");
+
+        // Non-2.0 exponents keep their (abs-guarded) pow — only squaring is reduced.
+        result.Glsl.Should().Contain("pow(abs(_1286), 2.400000095367431640625)");
+    }
+
+    [Fact]
+    public void PowSquare_SwizzleAndSignedOperands_AreReduced()
+    {
+        const string src = """
+#version 140
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    float _a = pow(in_var_TEXCOORD0.x, 2.0) + pow(-in_var_TEXCOORD0.y, 2.0);
+    out_var_SV_Target = vec4(_a);
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        result.Glsl.Should().NotContain("2.0)", "both squares must be reduced to multiplies");
+        result.Glsl.Should().Contain("((vTexCoord0.x) * (vTexCoord0.x))");
+        result.Glsl.Should().Contain("((-vTexCoord0.y) * (-vTexCoord0.y))");
+    }
+
+    [Fact]
+    public void PowSquare_ComplexBase_IsLeftUntouched()
+    {
+        // A non-trivial base (a call or compound expression) must NOT be duplicated
+        // textually — the conservative gate leaves the original pow in place.
+        const string src = """
+#version 140
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    float _a = pow(in_var_TEXCOORD0.x + 0.25, 2.0);
+    float _b = pow(fract(in_var_TEXCOORD0.y), 2.0);
+    out_var_SV_Target = vec4(_a, _b, 0.0, 1.0);
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        result.Glsl.Should().Contain("pow(vTexCoord0.x + 0.25, 2.0)",
+            because: "a compound base is not a simple operand — duplication could change cost/semantics");
+        result.Glsl.Should().Contain("pow(fract(vTexCoord0.y), 2.0)",
+            because: "a call base is never duplicated");
+    }
+
+    // ---- 1.0 / (a / b) → b / a reciprocal-of-quotient fold (issue #127). ----
+    // SPIRV-Cross preserves the HLSL `1.0 / (aaSize / length(...))` shape literally
+    // (fxc folds it), costing an extra rounding at every SmoothDiscontinuity site in
+    // apos-shapes.fx. One correctly-rounded division replaces two; zero/infinity edge
+    // cases are value-identical.
+
+    [Fact]
+    public void ReciprocalOfQuotient_IsFoldedToSingleDivision_Issue127()
+    {
+        const string src = """
+#version 140
+
+in vec4 in_var_TEXCOORD5;
+in vec4 in_var_TEXCOORD3;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    float _1200 = 1.0 / (in_var_TEXCOORD5.y / (6.283185482025146484375 * length(in_var_TEXCOORD3.xy)));
+    float _1077 = 1.0 / (in_var_TEXCOORD5.y / length(in_var_TEXCOORD3.zw));
+    out_var_SV_Target = vec4(_1200, _1077, 0.0, 1.0);
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        result.Glsl.Should().NotContain("1.0 / (",
+            because: "the reciprocal-of-quotient must fold to a single division");
+        result.Glsl.Should().Contain("((6.283185482025146484375 * length(vTexCoord3.xy)) / (vTexCoord5.y))");
+        result.Glsl.Should().Contain("((length(vTexCoord3.zw)) / (vTexCoord5.y))");
+    }
+
+    [Fact]
+    public void ReciprocalOfQuotient_AmbiguousShapes_AreLeftUntouched()
+    {
+        // Shapes where the parenthesized group's root operator is not provably the
+        // division, or where 1.0 does not begin its term, must NOT be folded.
+        const string src = """
+#version 140
+
+in vec4 in_var_TEXCOORD5;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    float _a = 1.0 / (in_var_TEXCOORD5.x / in_var_TEXCOORD5.y * in_var_TEXCOORD5.z);
+    float _b = 1.0 / (in_var_TEXCOORD5.x + in_var_TEXCOORD5.y / in_var_TEXCOORD5.z);
+    float _c = in_var_TEXCOORD5.w * 1.0 / (in_var_TEXCOORD5.x / in_var_TEXCOORD5.y);
+    float _d = 21.0 / (in_var_TEXCOORD5.x / in_var_TEXCOORD5.y);
+    out_var_SV_Target = vec4(_a, _b, _c, _d);
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        result.Glsl.Should().Contain("1.0 / (vTexCoord5.x / vTexCoord5.y * vTexCoord5.z)",
+            because: "the trailing * makes the multiply, not the division, the group's root");
+        result.Glsl.Should().Contain("1.0 / (vTexCoord5.x + vTexCoord5.y / vTexCoord5.z)",
+            because: "a top-level additive operator means the division is not the root");
+        result.Glsl.Should().Contain("* 1.0 / (vTexCoord5.x / vTexCoord5.y)",
+            because: "here 1.0 is the right operand of a multiply, not the start of its term");
+        result.Glsl.Should().Contain("21.0 / (vTexCoord5.x / vTexCoord5.y)",
+            because: "21.0 is not the literal 1.0");
+    }
+
+    [Fact]
+    public void ReciprocalOfQuotient_MultiplicativeNumerator_IsFolded()
+    {
+        // `1.0 / (a * b / c)` — the last depth-0 multiplicative operator is the
+        // division, so the group's root IS the division: fold to c / (a * b).
+        const string src = """
+#version 140
+
+in vec4 in_var_TEXCOORD5;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    float _a = 1.0 / (in_var_TEXCOORD5.x * in_var_TEXCOORD5.y / in_var_TEXCOORD5.z);
+    out_var_SV_Target = vec4(_a);
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        result.Glsl.Should().Contain("((vTexCoord5.z) / (vTexCoord5.x * vTexCoord5.y))");
+    }
 }

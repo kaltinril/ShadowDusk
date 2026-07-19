@@ -780,6 +780,22 @@ public static class MonoGameGlslRewriter
         // — `while(<not false>)` — is left untouched.
         body = LowerOneShotDoWhileToForLoop(body);
 
+        // Rule 10: strength-reduce pow(x, 2.0) to a multiply (issue #127). GLSL defines
+        // pow(x, y) only for x > 0 — a negative base is undefined (drivers lowering to
+        // exp2(y*log2(x)) return NaN) — while fxc constant-folds pow(x, 2) into a
+        // multiply, so HLSL that squares a possibly-negative value via pow() (e.g.
+        // Apos.Shapes' LinearGradient squaring normalized-direction components) is
+        // well-defined through mgfxc but driver-dependent through a native GLSL pow.
+        // The multiply restores the reference compiler's semantics and is exact
+        // (correctly-rounded) where pow was merely approximate.
+        body = LowerPowSquareToMultiply(body);
+
+        // Rule 11: fold the reciprocal-of-quotient 1.0 / (a / b) to (b / a) — one
+        // correctly-rounded division instead of two (issue #127). SPIRV-Cross preserves
+        // the HLSL shape `1.0 / (aaSize / length(...))` literally where fxc folds it,
+        // leaving an extra rounding step on ShadowDusk's GL path at every such site.
+        body = FoldReciprocalOfQuotient(body);
+
         // ---- Assemble final output: precision header + #define block + body. ----
         // The fragment-output `#define` aliases are emitted here, AFTER all Pass-2
         // regex rewrites, so nothing can mangle them. They sit at column 0 in the
@@ -1673,6 +1689,330 @@ public static class MonoGameGlslRewriter
         int after = i + word.Length;
         if (after < s.Length && IsIdentChar(s[after])) return false;
         return true;
+    }
+
+    /// <summary>
+    /// Issue #127: rewrites <c>pow(<i>x</i>, 2.0)</c> to <c>((x) * (x))</c>. GLSL
+    /// (desktop 1.10 and ES 1.00 alike) leaves <c>pow</c> undefined for a negative
+    /// base, while fxc constant-folds <c>pow(x, 2)</c> into a multiply — so the
+    /// multiply is both the well-defined form and the reference compiler's semantics.
+    /// Only a SIMPLE base operand (optionally signed identifier / swizzle / numeric
+    /// literal — the only shape SPIRV-Cross emits here, its temps being SSA-named) is
+    /// rewritten, so the textual duplication can never re-evaluate a call or
+    /// side-effecting expression; a complex base is left as the original pow().
+    /// </summary>
+    private static string LowerPowSquareToMultiply(string body)
+    {
+        int searchFrom = 0;
+        while (true)
+        {
+            int callStart = FindCallStart(body, "pow", searchFrom);
+            if (callStart < 0)
+            {
+                break;
+            }
+
+            int openParen = callStart + "pow".Length;
+            while (openParen < body.Length && (body[openParen] == ' ' || body[openParen] == '\t'))
+            {
+                openParen++;
+            }
+
+            int closeParen = FindMatchingParen(body, openParen);
+            if (closeParen < 0)
+            {
+                break; // unbalanced (should not happen in valid GLSL) — stop, do not corrupt
+            }
+
+            searchFrom = openParen; // default: resume inside the args (covers nested pow)
+
+            string args = body.Substring(openParen + 1, closeParen - openParen - 1);
+            int comma = FindTopLevelComma(args);
+            if (comma < 0)
+            {
+                continue;
+            }
+
+            string baseArg  = args.Substring(0, comma).Trim();
+            string exponent = args.Substring(comma + 1).Trim();
+            if (!IsLiteralTwo(exponent) || !IsSimpleOperand(baseArg))
+            {
+                continue;
+            }
+
+            string replacement = $"(({baseArg}) * ({baseArg}))";
+            body = body.Substring(0, callStart) + replacement + body.Substring(closeParen + 1);
+            searchFrom = callStart + replacement.Length;
+        }
+
+        return body;
+    }
+
+    /// <summary>The index of the first depth-0 ',' in <paramref name="expr"/>, or -1.</summary>
+    private static int FindTopLevelComma(string expr)
+    {
+        int depth = 0;
+        for (int i = 0; i < expr.Length; i++)
+        {
+            char c = expr[i];
+            if (c == '(' || c == '[') depth++;
+            else if (c == ')' || c == ']') depth--;
+            else if (c == ',' && depth == 0) return i;
+        }
+        return -1;
+    }
+
+    /// <summary>True for a float literal that is exactly two: <c>2.0</c>, <c>2.00</c>, …</summary>
+    private static bool IsLiteralTwo(string expr)
+    {
+        if (expr.Length < 3 || expr[0] != '2' || expr[1] != '.')
+        {
+            return false;
+        }
+        for (int i = 2; i < expr.Length; i++)
+        {
+            if (expr[i] != '0')
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// True when <paramref name="expr"/> is a single pure operand — an optionally
+    /// signed identifier (with at most one <c>.member</c>/swizzle suffix) or numeric
+    /// literal — i.e. an expression that is trivially safe to duplicate textually.
+    /// </summary>
+    private static bool IsSimpleOperand(string expr)
+    {
+        int i = 0;
+        if (i < expr.Length && (expr[i] == '-' || expr[i] == '+'))
+        {
+            i++;
+        }
+        if (i >= expr.Length)
+        {
+            return false;
+        }
+
+        if (char.IsDigit(expr[i]))
+        {
+            bool seenDot = false;
+            for (; i < expr.Length; i++)
+            {
+                if (expr[i] == '.' && !seenDot) { seenDot = true; continue; }
+                if (!char.IsDigit(expr[i])) return false;
+            }
+            return true;
+        }
+
+        if (expr[i] != '_' && !char.IsLetter(expr[i]))
+        {
+            return false;
+        }
+        while (i < expr.Length && IsIdentChar(expr[i]))
+        {
+            i++;
+        }
+        if (i == expr.Length)
+        {
+            return true;
+        }
+        if (expr[i] != '.')
+        {
+            return false;
+        }
+        i++;
+        int suffix = 0;
+        while (i < expr.Length && IsIdentChar(expr[i]))
+        {
+            i++;
+            suffix++;
+        }
+        return i == expr.Length && suffix >= 1;
+    }
+
+    /// <summary>
+    /// Issue #127: folds <c>1.0 / (<i>a</i> / <i>b</i>)</c> to <c>((b) / (a))</c> —
+    /// one correctly-rounded division instead of two. Value-equivalent across the
+    /// zero/infinity edge cases (<c>1/(a/0) = +0 = 0/a</c>; <c>1/(0/b) = +inf = b/0</c>;
+    /// IEEE signs agree in every quadrant). Applied only when the <c>1.0</c> begins its
+    /// term (so the replacement keeps the surrounding precedence/evaluation order
+    /// intact) and the parenthesized group's top-level operator is provably that single
+    /// division; any ambiguity leaves the site untouched.
+    /// </summary>
+    private static string FoldReciprocalOfQuotient(string body)
+    {
+        int searchFrom = 0;
+        while (true)
+        {
+            int idx = body.IndexOf("1.0", searchFrom, StringComparison.Ordinal);
+            if (idx < 0)
+            {
+                break;
+            }
+            searchFrom = idx + 3;
+
+            // Literal boundary: not the tail/head of a longer number or identifier
+            // (21.0, 1.05, x1.0, 1.0e5 …).
+            if (idx > 0 && (IsIdentChar(body[idx - 1]) || body[idx - 1] == '.'))
+            {
+                continue;
+            }
+            int afterLit = idx + 3;
+            if (afterLit < body.Length &&
+                (char.IsDigit(body[afterLit]) || body[afterLit] == '.' ||
+                 body[afterLit] == 'e' || body[afterLit] == 'E'))
+            {
+                continue;
+            }
+
+            // The 1.0 must BEGIN its term — preceded (ignoring whitespace) by an
+            // assignment/opener/separator, never by an operand or a '*' '/' '%' whose
+            // right operand it would be.
+            int p = idx - 1;
+            while (p >= 0 && (body[p] == ' ' || body[p] == '\t'))
+            {
+                p--;
+            }
+            if (p >= 0)
+            {
+                char c = body[p];
+                bool termStart = c is '=' or '(' or ',' or '?' or ':' or '{' or ';' or '\n' or '\r' or '+' or '-';
+                if (!termStart)
+                {
+                    continue;
+                }
+            }
+
+            // Expect '/' then a parenthesized group.
+            int q = afterLit;
+            while (q < body.Length && (body[q] == ' ' || body[q] == '\t'))
+            {
+                q++;
+            }
+            if (q >= body.Length || body[q] != '/')
+            {
+                continue;
+            }
+            q++;
+            while (q < body.Length && (body[q] == ' ' || body[q] == '\t'))
+            {
+                q++;
+            }
+            if (q >= body.Length || body[q] != '(')
+            {
+                continue;
+            }
+
+            int close = FindMatchingParen(body, q);
+            if (close < 0)
+            {
+                continue;
+            }
+
+            string inner = body.Substring(q + 1, close - q - 1);
+            if (!TrySplitTopLevelDivision(inner, out string numerator, out string denominator))
+            {
+                continue;
+            }
+
+            string replacement = $"({Parenthesize(denominator)} / {Parenthesize(numerator)})";
+            body = body.Substring(0, idx) + replacement + body.Substring(close + 1);
+            searchFrom = idx + replacement.Length;
+        }
+
+        return body;
+    }
+
+    /// <summary>Wraps <paramref name="expr"/> in parentheses unless it already is one
+    /// fully parenthesized group (avoids stacking redundant parens).</summary>
+    private static string Parenthesize(string expr) =>
+        expr.Length >= 2 && expr[0] == '(' && FindMatchingParen(expr, 0) == expr.Length - 1
+            ? expr
+            : $"({expr})";
+
+    /// <summary>
+    /// Splits <paramref name="expr"/> at the division that is provably the root of its
+    /// expression tree: the LAST depth-0 multiplicative operator must be a <c>/</c>
+    /// (left-associativity makes the last one the root), and no depth-0 operator of
+    /// lower precedence — additive, relational, logical, ternary, comma — may exist.
+    /// A depth-0 <c>+</c>/<c>-</c> is tolerated only when clearly unary (preceded by
+    /// nothing or another operator); anything ambiguous (including a scientific-notation
+    /// exponent sign) rejects the split, which merely leaves the site unoptimized.
+    /// </summary>
+    private static bool TrySplitTopLevelDivision(string expr, out string left, out string right)
+    {
+        left = string.Empty;
+        right = string.Empty;
+
+        int depth = 0;
+        int rootDiv = -1;
+        for (int i = 0; i < expr.Length; i++)
+        {
+            char c = expr[i];
+            if (c == '(' || c == '[')
+            {
+                depth++;
+                continue;
+            }
+            if (c == ')' || c == ']')
+            {
+                depth--;
+                continue;
+            }
+            if (depth != 0)
+            {
+                continue;
+            }
+
+            switch (c)
+            {
+                case ',':
+                case '?':
+                case ':':
+                case '<':
+                case '>':
+                case '&':
+                case '|':
+                case '!':
+                case '^':
+                case '=':
+                    return false;
+                case '+':
+                case '-':
+                {
+                    int p = i - 1;
+                    while (p >= 0 && (expr[p] == ' ' || expr[p] == '\t'))
+                    {
+                        p--;
+                    }
+                    bool unary = p < 0 || expr[p] is '(' or ',' or '*' or '/' or '%' or '+' or '-';
+                    if (!unary)
+                    {
+                        return false;
+                    }
+                    break;
+                }
+                case '*':
+                case '%':
+                    rootDiv = -1;
+                    break;
+                case '/':
+                    rootDiv = i;
+                    break;
+            }
+        }
+
+        if (depth != 0 || rootDiv < 0)
+        {
+            return false;
+        }
+
+        left = expr.Substring(0, rootDiv).Trim();
+        right = expr.Substring(rootDiv + 1).Trim();
+        return left.Length > 0 && right.Length > 0;
     }
 
     /// <summary>
