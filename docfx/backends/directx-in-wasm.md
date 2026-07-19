@@ -19,8 +19,8 @@ The `vkd3d-shader.{js,wasm}` module rides inside the `ShadowDusk.Wasm` package a
 
 ## The evidence behind "byte-identical"
 
-- A real headless browser running the real `WasmShaderCompiler` over the **full** DirectX + FNA byte-identity corpus produces artifacts SHA-256-identical to the committed cross-host manifest — **65/65** (37 DX `.mgfx` + 28 FNA `.fxb`).
-- A node-level gate replays **every** vkd3d stage compile the real pipeline issues over that corpus through the product shim — **98/98** byte-identical to the desktop native.
+- A real headless browser running the real `WasmShaderCompiler` over the **full** DirectX + FNA byte-identity corpus produces artifacts SHA-256-identical to the committed cross-host manifest.
+- A node-level gate replays **every** vkd3d stage compile the real pipeline issues over that corpus through the product shim — all byte-identical to the desktop native.
 - The manifest itself is CI-asserted identical across Windows/Linux/macOS, and the desktop bytes are render-proven in real MonoGame WindowsDX and real FNA (see [Validation & Evidence Ladder](../contributing/validation.md)).
 
 So the bytes a browser user exports for DirectX/FNA *are* the render-proven desktop bytes — render-equivalence transfers by transitivity. **Explicitly not claimed:** rendering these targets inside the browser — impossible by construction. The browser's live-render path remains OpenGL/WebGL.

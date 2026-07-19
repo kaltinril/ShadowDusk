@@ -16,7 +16,7 @@ the user's machine. The faithful pinned-DXC→WASM pipeline is packaged so a con
 | MonoGame *proper* in the browser | ❌ MonoGame has no mature browser-WASM runtime; **use KNI** for WASM |
 | **DirectX/DXBC** compiled *in the browser* (`PlatformTarget.DirectX`) | ✅ supported — as an **export** target: the `.mgfx` is byte-identical to the desktop compile, but a browser cannot *render* DXBC; it renders in your MonoGame WindowsDX game |
 | **FNA fx_2_0 `.fxb`** compiled *in the browser* (`PlatformTarget.Fna`) | ✅ supported — likewise export-only (no D3D9 in a browser); renders in your FNA game |
-| Vertex-shader-driven effects (the corpus is pixel-shader-only) | ⚠️ untested in WASM — tracked (backlog 17-VS) |
+| Vertex-shader-driven effects (the corpus is pixel-shader-only) | ⚠️ untested in WASM |
 
 So: **KNI + Blazor WASM + OpenGL/WebGL**, pixel-shader effects — solid; that's the
 *render-in-the-browser* path this guide targets. The DirectX/FNA rows compile through
@@ -205,4 +205,4 @@ That's the whole integration. The full working version is
 You don't need to — the built module is committed. But the full reproducible recipe is
 `.wasm-build/DXC-WASM-BUILD.md` + `Invoke-DxcWasmBuild.ps1` (pinned DXC `e043f4a1` ==
 Vortice.Dxc 3.3.4, emscripten 3.1.34). It's a multi-hour LLVM-fork build and is
-**Windows/MSVC-only today**; a Linux/macOS rebuild + CI is planned future work (Phase 30 §16).
+**Windows/MSVC-only today**; a Linux/macOS rebuild + CI is planned future work.

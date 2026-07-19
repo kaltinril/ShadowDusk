@@ -87,12 +87,10 @@ other targets keep the unmodified SPIRV-Cross dialect. The pixel-stage transform
 
 ## Verification
 
-ShadowDusk's OpenGL `.mgfx` (this rewrite + the `MgfxWriter`
-format rework) loads into a **real** `MonoGame.Framework.DesktopGL` `Effect` and renders
-pixel-equivalent to the `mgfxc` goldens for all 10 SM3 PS-only shaders — including the
-uniform-driven ones (TintShader, Sepia, Saturate, Scanlines, Dots) with parameters **set by
-name** (`validation/Candidate` vs `validation/Baseline` + `compare.py`: 8 exact, Scanlines/Dots
-maxd 1). Unit coverage: `tests/ShadowDusk.GLSL.Tests/MonoGameGlslRewriterTests.cs`.
+ShadowDusk's OpenGL `.mgfx` (this rewrite + the `MgfxWriter` format rework) loads into a
+**real** `MonoGame.Framework.DesktopGL` `Effect` and renders pixel-equivalent to the `mgfxc`
+goldens, including the uniform-driven shaders with parameters **set by name**
+(`validation/Candidate`; unit coverage in `MonoGameGlslRewriterTests`).
 
 ## Vertex stage
 
@@ -137,7 +135,7 @@ and cannot diverge. mgfxc's model, pinned by its goldens:
 - **Pinned divergence:** mgfxc's per-stage records contain only the constants fxc
   kept for that stage; ShadowDusk's carry the cbuffer's full declared layout per
   stage. Both are self-consistent with their own GLSL; parameters are set by name —
-  render-proven equivalent (`validation/CbufferModel`, 5/5 maxd 0).
+  render-proven equivalent (`validation/CbufferModel`).
 - **mgfxc bug not replicated:** an array read at only SOME static indices is broken
   in mgfxc+MonoGame GL itself — fxc references only the used registers, MojoShader
   emits a **compacted** uniform array, but mgfxc's record keeps the full layout, so
@@ -163,23 +161,16 @@ per-row dot — and is correct for every mul order. `transpose()` is **not** use
 GLSL ES 1.00 / Reach / WebGL1 and versionless desktop GLSL 1.10). The register index is the
 running register total so a `mat4` correctly shifts every member after it, agreeing exactly with
 the `.mgfx` cbuffer packing (`BuildConstantBufferInfoList`). Unit-pinned in
-`MonoGameGlslRewriterTests` (`Matrix_ExpandsToFourConsecutiveRegisters_IndicesMatchCbufferLayout`,
-`Matrix_IsReconstructedTransposed_MatchingMgfxcDotForm_Issue70`,
-`PixelStage_Mat4Uniform_ExpandsToFourRegisters_NoTodoLeft`) and render-pinned by
-`Issue70MatrixTransposeRenderTests` (non-identity asymmetric matrix vs the mgfxc golden). Applies
-to both stages.
+`MonoGameGlslRewriterTests` and render-pinned by `Issue70MatrixTransposeRenderTests`
+(non-identity asymmetric matrix vs the mgfxc golden). Applies to both stages.
 
 **Verification:** the VS-driven fixture `VsTransformColorTexture.fx` (custom VS +
 `float4x4` transform + POSITION/COLOR0/TEXCOORD0 + textured/tinted PS) compiled by ShadowDusk
-loads in a **real** `MonoGame.Framework.DesktopGL` `Effect` and renders **pixel-identical**
-(max delta 0) to the mgfxc OpenGL golden, via a custom vertex-buffer draw path
-(`validation/VsDriven`) — in **both** the `RenderTarget2D` mode and the **backbuffer** mode
-(`GetBackBufferData` — the case the static Y-flip got wrong, where MonoGame sets
-`posFixup.y = +1`). The proxy-renderer evidence is `Phase43PosFixupRenderTests` (golden
-string match + orientation-flip render proof). The same `.fx` for DirectX loads in real `MonoGame.Framework.WindowsDX`
-and renders pixel-identical to the mgfxc DX golden via **both** the d3dcompiler oracle and the
-cross-platform vkd3d backend (`validation/VsDrivenDx`). The PS-only corpus and
-image-regression anchors remain unregressed (10/10).
+loads in a **real** `MonoGame.Framework.DesktopGL` `Effect` and renders pixel-identical to the
+mgfxc OpenGL golden via a custom vertex-buffer draw path (`validation/VsDriven`) — in **both**
+the `RenderTarget2D` mode and the **backbuffer** mode (the case the static Y-flip got wrong).
+The same `.fx` for DirectX renders pixel-identical to the mgfxc DX golden in real
+`MonoGame.Framework.WindowsDX` via both DXBC backends (`validation/VsDrivenDx`).
 
 ## Known limitations (future work)
 
