@@ -23,7 +23,8 @@ Rung 4 is **proven** for:
 - the **OpenGL SM3 PS-only corpus** — 10/10 render pixel-equivalent in real MonoGame DesktopGL;
 - the **DirectX SM5 PS-only corpus** — 10/10 DX `.mgfx` load in real MonoGame WindowsDX and render pixel-equivalent to `mgfxc`, via **both** the `d3dcompiler_47` oracle and the cross-platform `vkd3d-shader` backend;
 - the **KNI WebGL** path — render-equivalent in a real headless KNI WebGL run;
-- the **FNA** target — the PS-only and custom-vertex-shader corpora render pixel-equivalent (max Δ ≤ 1/255, an imperceptible difference) to `fxc /T fx_2_0` in real FNA, including multi-pass effects and in-pass render states.
+- the **FNA** target — the PS-only and custom-vertex-shader corpora render pixel-equivalent (max Δ ≤ 1/255, an imperceptible difference) to `fxc /T fx_2_0` in real FNA, including multi-pass effects and in-pass render states;
+- the **Vulkan SPIR-V** path — the 10/10 corpus `.mgfx` (profile byte 80) load and render correctly in a real MonoGame 3.8.5 **DesktopVK** `Effect`. This rung is in-engine render-proven rather than pixel-diffed against `mgfxc`, because `mgfxc`'s own Vulkan output currently crashes in real DesktopVK (a confirmed MonoGame-side `SlotOffset` bug), so no reference render exists to diff against.
 
 ## Compare same-backend, never cross-backend
 

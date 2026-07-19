@@ -10,7 +10,7 @@ namespace ShadowDusk.Core.Tests;
 /// <summary>
 /// Round-trip byte-shape tests for <see cref="VulkanShaderCodeWrapper"/> against the
 /// format read directly from MonoGame 3.8.5's own source
-/// (<c>plan/PHASE-32-appendix/vulkan-mgfx-format-spec.md</c>): a descriptor-layout
+/// (<c>plan/DONE/PHASE-32-appendix/vulkan-mgfx-format-spec.md</c>): a descriptor-layout
 /// header prepended to the raw SPIR-V, consumed by the real DesktopVK <c>Effect</c>
 /// reader.
 /// </summary>

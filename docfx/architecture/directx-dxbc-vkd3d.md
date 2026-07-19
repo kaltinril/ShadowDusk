@@ -6,7 +6,7 @@ The DirectX backend is the part of ShadowDusk that most often gets misremembered
 
 ## Why DXC is wrong for DX11
 
-DXC (the DirectX Shader Compiler, used on the OpenGL path to emit SPIR-V) only emits **DXIL** — shader model **6**. MonoGame 3.8's DX11 runtime loads **DXBC** — shader model **≤ 5**. So DXC's output simply will not load as a DX11 effect. DXC's `ps_6_0`/`vs_6_0` (DXIL) output is retained **only** for the Vulkan / DX12-KNI SM6 profile, never for DX11.
+DXC (the DirectX Shader Compiler, used on the OpenGL path to emit SPIR-V) only emits **DXIL** — shader model **6**. MonoGame 3.8's DX11 runtime loads **DXBC** — shader model **≤ 5**. So DXC's output simply will not load as a DX11 effect. DXC's `ps_6_0`/`vs_6_0` (DXIL) output is retained **only** for the DX12-KNI SM6 profile, never for DX11 (the Vulkan target uses DXC's SPIR-V directly, reflected via `SpirvReflector` — no DXIL involved).
 
 ## The DXBC backends
 

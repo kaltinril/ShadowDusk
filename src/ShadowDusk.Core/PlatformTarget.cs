@@ -24,7 +24,12 @@ public enum PlatformTarget
     /// <summary>Metal (macOS/iOS). Not yet implemented — reserved for a future backend.</summary>
     Metal   = 2,
 
-    /// <summary>Vulkan (SPIR-V). Not yet implemented — reserved for a future backend.</summary>
+    /// <summary>
+    /// Vulkan. Emits a <c>.mgfx</c> carrying SPIR-V directly (MGFX profile byte 80,
+    /// matching MonoGame 3.8.5's <c>VulkanShaderProfile</c> — never this enum ordinal),
+    /// render-proven end-to-end on real MonoGame 3.8.5 DesktopVK (Phase 32).
+    /// MonoGame-only: KNI ships no Vulkan platform.
+    /// </summary>
     Vulkan  = 3,
 
     /// <summary>

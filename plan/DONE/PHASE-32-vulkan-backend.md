@@ -5,12 +5,12 @@
 shipped `DesktopVK` as a stable production platform — see *History* below.
 
 **Depends on:**
-- **[Phase 4](DONE/PHASE-4-dxc-integration.md)** (DXC integration) — the Vulkan target is a single DXC compile to SPIR-V (`vs_6_0`/`ps_6_0` + `-spirv`); the whole frontend is shared with the OpenGL SPIR-V branch.
-- **[Phase 30](DONE/PHASE-30-ci-and-nuget-release.md)** (cross-platform CI) — the SPIR-V-validity unit/integration tests run on the Linux/macOS/Windows matrix; the render proof itself (below) is Windows-GPU-only, like DX/FNA/KNI-DX.
+- **[Phase 4](PHASE-4-dxc-integration.md)** (DXC integration) — the Vulkan target is a single DXC compile to SPIR-V (`vs_6_0`/`ps_6_0` + `-spirv`); the whole frontend is shared with the OpenGL SPIR-V branch.
+- **[Phase 30](PHASE-30-ci-and-nuget-release.md)** (cross-platform CI) — the SPIR-V-validity unit/integration tests run on the Linux/macOS/Windows matrix; the render proof itself (below) is Windows-GPU-only, like DX/FNA/KNI-DX.
 
 **Blocks:** nothing on the critical path. This was post-1.0 backend breadth; now shipped.
 
-**Sibling parked backend:** [Phase 4.1 — WASM + DirectX DXBC spike](DONE/PHASE-4.1-SPIKE-wasm-directx-dxbc.md)
+**Sibling parked backend:** [Phase 4.1 — WASM + DirectX DXBC spike](PHASE-4.1-SPIKE-wasm-directx-dxbc.md)
 remains parked for the same reason this phase used to be — no runtime to validate against. This
 phase is proof that "parked" is not "abandoned": it reopens the moment the missing runtime exists.
 
@@ -115,7 +115,7 @@ doing a real pixel-diff with no changes needed.
   remains unconfirmed and separate — do not read anything here as a KNI claim.
 - **A pixel-diff against real mgfxc's Vulkan output.** Blocked upstream (see above) until MonoGame
   fixes the `SlotOffset` bug. ShadowDusk's own render correctness is the evidence tier reached.
-- A SPIR-V → MSL/Metal path (that is [Phase 31 — Metal/MSL backend](PHASE-31-metal-msl-backend.md)).
+- A SPIR-V → MSL/Metal path (that is [Phase 31 — Metal/MSL backend](../PHASE-31-metal-msl-backend.md)).
 - Vulkan-in-WASM specifics (the WASM DXC already emits SPIR-V; no separate spike needed).
 
 ---
@@ -166,7 +166,7 @@ weaker proxy claim. KNI Vulkan parity is explicitly out of scope and unconfirmed
 
 - **KNI Vulkan story unclear.** Whether KNI ever ships a Vulkan backend (desktop or WASM via
   WebGPU) is unknown — coordinate with the KNI runtime question raised in
-  [Phase 4.1](DONE/PHASE-4.1-SPIKE-wasm-directx-dxbc.md) Option D before investing further.
+  [Phase 4.1](PHASE-4.1-SPIKE-wasm-directx-dxbc.md) Option D before investing further.
 - **The mgfxc `SlotOffset` bug is worth reporting upstream** (repro is isolated and minimal — see
   the appendix doc) but has not yet been filed with MonoGame maintainers as of this writing.
 - **`-fvk-bind-globals`'s vertex-stage space (`0`) is unexercised by the current corpus** — no

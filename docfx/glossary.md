@@ -14,11 +14,12 @@ Plain-language definitions of the shader and compiler terms used across these do
 - **MGFX** — MonoGame's compiled-effect format. **v10** is the default ShadowDusk emits and loads on MonoGame 3.8.2+ and KNI; **v11** is a newer optional container for MonoGame 3.8.5+.
 - **KNIFX** — KNI's own newer effect container, an optional target for KNI v4.02+.
 - **fx_2_0** — the legacy Direct3D 9 effect format FNA uses (Shader Model 3 and below).
+- **Vulkan / DesktopVK** — MonoGame 3.8.5's Vulkan platform (`DesktopVK`). ShadowDusk's Vulkan target emits a `.mgfx` with **profile byte 80** (matching MonoGame's own `VulkanShaderProfile`) carrying SPIR-V directly; validated end-to-end in a real DesktopVK `Effect`. MonoGame-only — KNI has no Vulkan platform.
 - **Shader Model (SM)** — a versioned GPU feature level. SM3 and below are the old Direct3D 9 era (FNA); SM5 is Direct3D 11. Higher numbers mean more features.
 
 ## Intermediate representations
 
-- **SPIR-V** — a portable, binary shader intermediate language. ShadowDusk compiles HLSL to SPIR-V, then converts that to GLSL for the OpenGL path.
+- **SPIR-V** — a portable, binary shader intermediate language. ShadowDusk compiles HLSL to SPIR-V, then converts that to GLSL for the OpenGL path. For the **Vulkan** target the SPIR-V *is* the shipped shader payload — the `.mgfx` carries it directly, no GLSL conversion.
 - **GLSL** — the OpenGL Shading Language (source text). What a `.mgfx` carries for the OpenGL, WebGL, and Android targets.
 - **DXBC** — Direct3D **bytecode**, the compiled GPU program the DirectX 11 runtime loads. What a DirectX `.mgfx` carries.
 - **DXIL** — a newer DirectX intermediate (Direct3D 12 / Shader Model 6). The DX11 runtime can't load it, which is why ShadowDusk doesn't use DXC for the DX11 path.
