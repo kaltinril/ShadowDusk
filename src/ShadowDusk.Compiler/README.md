@@ -19,7 +19,7 @@ using ShadowDusk.Compiler;
 IShaderCompiler compiler = new EffectCompiler();
 var result = await compiler.CompileAsync(fxSource, new CompilerOptions
 {
-    Target = PlatformTarget.OpenGL,   // or DirectX, or Fna
+    Target = PlatformTarget.OpenGL,   // or DirectX, Vulkan, or Fna
 });
 
 if (result.IsFailure)
@@ -41,8 +41,9 @@ Need to compile from a **synchronous** call site (e.g. inside `Content.Load<Effe
 | `OpenGL` | `.mgfx` (GLSL) | MonoGame DesktopGL, KNI (incl. WebGL) |
 | `DirectX` | `.mgfx` (SM5 DXBC) | MonoGame WindowsDX, KNI | 
 | `Fna` | `.fxb` (D3D9 fx_2_0) | FNA |
+| `Vulkan` | `.mgfx` (SPIR-V) | MonoGame DesktopVK (3.8.5+) |
 
-All three compile on every desktop OS and produce the same bytes on every OS. Errors come back as `ShaderError[]` with the file, line, column, and compiler message verbatim.
+Every target compiles on every desktop OS with deterministic output — the same source, compiler version, and target produce the same bytes. Errors come back as `ShaderError[]` with the file, line, column, and compiler message verbatim.
 
 ### Output format
 
