@@ -245,6 +245,39 @@ public sealed class ThirdPartyShaderCorpusTests
     // shader into OpenGLShaders() and delete this pin.
     // -------------------------------------------------------------------------
 
+    // -------------------------------------------------------------------------
+    // Issue #127 — GL codegen fidelity pins for apos-shapes.fx. Reported by the
+    // shader's own author: ShadowDusk's GL output rendered with small (<= 4/255)
+    // deviations vs mgfxc. Two mechanical contributors were fixed in the GLSL
+    // rewriter and are pinned here end-to-end through the real pipeline:
+    //   (1) pow(x, 2.0) with a possibly-negative base (LinearGradient squares
+    //       normalized-direction components) — undefined in GLSL, folded to a
+    //       multiply by fxc; ShadowDusk now strength-reduces it the same way.
+    //   (2) 1.0 / (aaSize / length(...)) double division (SmoothDiscontinuity) —
+    //       fxc folds it; ShadowDusk now emits the single division b / a.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    [Trait("Platform", "OpenGL")]
+    public async Task AposShapes_OpenGl_EmitsNoPowSquare_NoReciprocalOfQuotient_Issue127()
+    {
+        using var cts = new CancellationTokenSource(CompileTimeout);
+
+        var result = await TestHelpers.CompileFixtureAsync(
+            "third-party/Apos.Shapes/apos-shapes.fx", "OpenGL", ct: cts.Token);
+
+        result.ExitCode.Should().Be(0, because: $"apos-shapes must compile on GL; stderr: {result.Stderr}");
+
+        string ascii = System.Text.Encoding.ASCII.GetString(
+            result.Mgfx.Select(b => (b >= 9 && b <= 126) ? b : (byte)' ').ToArray());
+
+        ascii.Should().NotMatchRegex(@"pow\([^,()]*, 2\.0\)",
+            because: "pow(x, 2.0) is undefined for the negative bases LinearGradient feeds it — " +
+                     "it must be strength-reduced to a multiply (issue #127)");
+        ascii.Should().NotContain("1.0 / (",
+            because: "every 1.0 / (a / b) reciprocal-of-quotient must fold to a single division (issue #127)");
+    }
+
     [Fact]
     [Trait("Platform", "OpenGL")]
     public async Task GumFnaSampleShader_MacroTechnique_OpenGl_KeepsSd0010_GlMacroModelGap()

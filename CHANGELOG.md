@@ -18,6 +18,25 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **OpenGL codegen fidelity: `pow(x, 2.0)` strength-reduced to a multiply** (issue
+  [#127](https://github.com/kaltinril/ShadowDusk/issues/127)). GLSL leaves `pow` undefined for a
+  negative base (drivers lowering it to `exp2(y*log2(x))` return NaN), while fxc constant-folds
+  `pow(x, 2)` into a multiply — so HLSL that squares a possibly-negative value via `pow` (e.g.
+  Apos.Shapes' `LinearGradient` squaring normalized-direction components) was well-defined through
+  mgfxc but a latent driver-dependent hazard through ShadowDusk's GL output. `MonoGameGlslRewriter`
+  Rule 10 now emits the multiply (exact, and the reference compiler's semantics); simple-operand
+  bases only, so no expression is ever duplicated unsafely.
+- **OpenGL codegen fidelity: `1.0 / (a / b)` folded to `b / a`** (issue
+  [#127](https://github.com/kaltinril/ShadowDusk/issues/127)). SPIRV-Cross preserves the HLSL
+  reciprocal-of-quotient shape literally (fxc folds it), costing an extra rounding step at every
+  such site (all 8 `SmoothDiscontinuity` call sites in apos-shapes.fx). Rule 11 emits the single
+  correctly-rounded division; value-equivalent across the zero/infinity edge cases, applied only
+  when the division is provably the group's root operator. Both rules are pinned by rewriter unit
+  tests and an end-to-end regression test compiling the vendored `apos-shapes.fx` on GL
+  (`AposShapes_OpenGl_EmitsNoPowSquare_NoReciprocalOfQuotient_Issue127`); the full suite, the
+  Windows DX render gates, and every GL render gate (corpus vs mgfxc, VS-driven at 1/255, KNI
+  desktop GL, state/cbuffer/texture/reserved-word) stayed green.
+
 ## [0.11.0] - 2026-06-28
 
 Android joins the supported runtime-compile platforms: ShadowDusk now compiles `.fx` -> `.mgfx`
