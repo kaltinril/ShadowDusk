@@ -17,7 +17,7 @@ That covers the common cases. `GraphicsProfile` (Reach vs HiDef) never changes t
 | Axis | Examples | Changes the compiled output? |
 |---|---|---|
 | **1. Framework** | MonoGame, KNI, FNA | **Mostly no** — MonoGame and KNI read the same MGFX container. **FNA is the exception**: it loads the legacy D3D9 fx_2_0 `.fxb`, so it gets its own output (see below). |
-| **2. Graphics backend / API** | DirectX 11, OpenGL/DesktopGL, WebGL, Metal, Vulkan | **YES — for MonoGame/KNI this is the axis that picks the bytes** |
+| **2. Graphics backend / API** | DirectX 11, DirectX 12, OpenGL/DesktopGL, WebGL, Metal, Vulkan | **YES — for MonoGame/KNI this is the axis that picks the bytes** |
 | **3. `GraphicsProfile`** | Reach, HiDef | **No** — a runtime setting, not a compile target |
 
 For MonoGame/KNI the bytes are dictated by **axis 2**. A DirectX `.mgfx` contains **DXBC GPU bytecode**; an OpenGL `.mgfx` contains **GLSL source text**. They are not interchangeable — MonoGame's `Effect` loader reads a profile byte in the header and routes to a completely different code path. So for MonoGame/KNI the one thing you must know to pick a target is **which graphics backend the consuming game runs**. For **FNA**, axis 1 decides it: pick `PlatformTarget.Fna` and you get the `.fxb` FNA loads — one file serves every backend FNA itself runs on (FNA translates at load time).
@@ -42,6 +42,7 @@ Select the backend with <xref:ShadowDusk.Core.CompilerOptions.Target> (library) 
 | **FNA** | `PlatformTarget.Fna` | `FNA` | `.fxb`, **D3D9 fx_2_0** (SM ≤ 3) | ✅ Validated |
 | **Metal** | `PlatformTarget.Metal` | — | MSL | ❌ Not implemented ([future](../backends/metal.md)) |
 | **Vulkan** | `PlatformTarget.Vulkan` | `Vulkan` | `.mgfx`, **SPIR-V** | ✅ Validated (MonoGame `DesktopVK` only — KNI has no Vulkan platform; see [Vulkan](../backends/vulkan.md)) |
+| **DirectX 12** | — | — | — | ❌ Not yet supported (new in MonoGame 3.8.5 `WindowsDX12`; planned, research-first) |
 
 For the MonoGame/KNI targets, the on-disk **profile byte** in the MGFX header encodes the backend choice (`OpenGL = 0`, `DirectX11 = 1`, `Vulkan = 80`). The runtime reads it to pick the shader path, so the target must be chosen **at compile time** — there is no universal `.mgfx` that serves both DirectX and OpenGL. A DirectX `.mgfx` is useless to a DesktopGL game and vice versa. FNA is selected differently (it's a whole separate format, `.fxb` — see Axis 1) and is **not** byte-compatible with the `.mgfx` targets.
 
