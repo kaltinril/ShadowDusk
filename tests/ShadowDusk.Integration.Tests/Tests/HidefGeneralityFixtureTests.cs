@@ -158,14 +158,16 @@ public sealed class HidefGeneralityFixtureTests
     }
 
     [Fact]
-    public async Task EarlyReturnHelper_EmitsNoDoWhile_WebGlSafe_Issue107()
+    public async Task EarlyReturnHelper_EmitsNoDoWhile_NoWrapperLoop_Issues107And136()
     {
         // Issue #107: a helper with a nested `if` that early-returns makes SPIRV-Cross
         // emit a one-shot `do { … break; … } while(false);` loop. Desktop GL accepts
         // it, but GLSL ES 1.00 (WebGL1 / KNI Reach) does not guarantee do-while, so the
-        // effect compiles + loads on desktop yet FAILS TO LOAD in WebGL. End-to-end
-        // through the real pipeline (DXC -> SPIRV-Cross -> rewriter), the emitted GL GLSL
-        // must contain NO do-while and instead the WebGL1-safe bounded for-loop form.
+        // effect compiles + loads on desktop yet FAILS TO LOAD in WebGL.
+        // Issue #136 sharpened the requirement: the for-loop lowering that replaced the
+        // do-while is itself derivative-poison on ANGLE D3D11 (any loop with a
+        // conditional break/discard zeroes dFdx/dFdy). The entry wrapper must now be
+        // UNWRAPPED into straight-line main with real early returns — no loop at all.
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var result = await TestHelpers.CompileFixtureAsync(
             "examples/Issue107DoWhile.fx", "OpenGL", ct: cts.Token);
@@ -177,8 +179,40 @@ public sealed class HidefGeneralityFixtureTests
         ascii.Should().NotContain("while(false)",
             because: "do-while is not guaranteed in GLSL ES 1.00 (WebGL1) — issue #107");
         ascii.Should().NotContain("while (false)");
-        ascii.Should().MatchRegex(@"for \(int _spvonce_\d+ = 0; _spvonce_\d+ < 1;",
-            because: "the SPIRV-Cross one-shot loop is lowered to the WebGL1-safe bounded for-loop");
+        ascii.Should().NotContain("_spvonce_",
+            because: "the entry wrapper must be unwrapped, not lowered to a for-loop — a " +
+                     "one-shot for-loop with a divergent exit poisons gradient ops on " +
+                     "ANGLE D3D11 (issue #136)");
+        ascii.Should().MatchRegex(@"ps_oC0 = [^;]+; return; \}",
+            because: "each wrapper-level break becomes the output-write tail plus an early return");
+    }
+
+    [Fact]
+    public async Task EarlyReturnHelperGradient_NoGradientInsideDivergentLoop_Issue136()
+    {
+        // Issue #136, nested-wrapper case (found in the fix's adversarial review): a
+        // helper that BOTH early-returns AND takes a derivative gets its own one-shot
+        // wrapper nested inside the entry wrapper. Rule 9a must recurse through the
+        // plain block the outer unwrap leaves behind and unwrap the helper's wrapper
+        // too — otherwise the 9b for-loop fallback recreates exactly the poisoned
+        // shape (fwidth inside a loop with a conditional break reads 0.0 on ANGLE
+        // D3D11, silently disabling derivative-based AA in Windows browsers).
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var result = await TestHelpers.CompileFixtureAsync(
+            "examples/Issue136HelperGradient.fx", "OpenGL", ct: cts.Token);
+
+        result.ExitCode.Should().Be(0, because: $"the gradient helper must compile; stderr: {result.Stderr}");
+
+        string ascii = Ascii(result.Mgfx);
+        ascii.Should().MatchRegex(@"\bfwidth\s*\(",
+            because: "the fixture's fwidth must reach the GL output — otherwise it no longer exercises issue #136");
+        ascii.Should().NotContain("while(false)");
+        ascii.Should().NotContain("while (false)");
+
+        var poisoned = ThirdPartyShaderCorpusTests.FindGradientOpsInsideDivergentLoops(ascii);
+        poisoned.Should().BeEmpty(
+            because: "no gradient op may sit inside a loop with a divergent exit — ANGLE D3D11 " +
+                     "zeroes it there (issue #136, nested-helper case)");
     }
 
     [Fact]

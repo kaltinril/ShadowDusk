@@ -766,18 +766,32 @@ public static class MonoGameGlslRewriter
         // reference compiler. See ROUNDEVEN-FIX.md.
         body = LowerRoundToFloorHalfUp(body);
 
-        // Rule 9: lower SPIRV-Cross's one-shot `do { … } while(false);` loops to a
-        // WebGL1-safe `for` loop (issue #107). SPIRV-Cross renders an early `return`
-        // inside an (inlined) helper — e.g. a nested `if` that returns — as a
-        // single-iteration loop so the `return` can become a `break`. Desktop GL accepts
-        // do-while, but GLSL ES 1.00 (WebGL1 / KNI Reach) only *guarantees* the restricted
-        // `for`-loop forms of Appendix A, so a do-while makes the effect compile + load on
-        // desktop yet FAIL TO LOAD in WebGL. Lower each `do { B } while(false);` to the
-        // canonical, Appendix-A-allowed `for (int _i = 0; _i < 1; _i++) { B }` — exactly one
-        // iteration, with `break`/`continue`/fall-through all exiting identically, so the
-        // pixels are unchanged. (mgfxc/MojoShader never emits a do-while either, so this is
-        // also more faithful to the reference compiler.) A genuine multi-iteration do-while
-        // — `while(<not false>)` — is left untouched.
+        // Rule 9: eliminate SPIRV-Cross's one-shot `do { … } while(false);` loops (its
+        // structured-early-return idiom). SPIRV-Cross renders an early `return` — the
+        // entry point's own, or a nested `if` that returns inside an inlined helper — as
+        // a single-iteration loop so the `return` can become a `break`. Two problems:
+        // GLSL ES 1.00 (WebGL1 / KNI Reach) only *guarantees* the restricted `for`-loop
+        // forms of Appendix A, so a do-while FAILS TO LOAD in WebGL (issue #107); and on
+        // ANGLE's D3D11 backend (WebGL in every Windows browser) ANY loop with a
+        // divergent exit — a conditional `break` OR a conditional `discard` — silently
+        // zeroes every gradient op (dFdx/dFdy, and implicit-LOD mip selection) in the
+        // loop body (issue #136), so wrapping main's body in a loop kills
+        // derivative-based AA with no compile or link error.
+        //
+        // Rule 9a (#136): when the one-shot loop is a direct child of main's body and is
+        // followed only by simple statements (the return-value-phi output writes),
+        // UNWRAP it — keep the body as a plain brace block and turn each loop-level
+        // `break` into those tail statements + `return;`. Straight-line `main` with
+        // conditional early returns is valid in every GLSL profile incl. ESSL 1.00,
+        // keeps derivatives alive on ANGLE (its loop restriction no longer applies),
+        // and is the exact shape mgfxc/MojoShader emits — strictly more faithful.
+        body = UnwrapMainOneShotDoWhile(body);
+        // Rule 9b (#107): any one-shot loop 9a could not prove safe to unwrap (nested
+        // inside another construct, loop-level `continue`, non-simple tail) falls back
+        // to the canonical Appendix-A-allowed `for (int _i = 0; _i < 1; _i++) { B }` —
+        // semantically identical to the do-while, so pixels are unchanged, and loads in
+        // WebGL1. A genuine multi-iteration do-while — `while(<not false>)` — is left
+        // untouched.
         body = LowerOneShotDoWhileToForLoop(body);
 
         // Rule 10: strength-reduce pow(x, 2.0) to a multiply (issue #127). GLSL defines
@@ -1523,13 +1537,575 @@ public static class MonoGameGlslRewriter
     }
 
     /// <summary>
-    /// Issue #107: lower SPIRV-Cross's one-shot <c>do { … } while(false);</c> loops (its
+    /// Issue #136 (Rule 9a): unwrap one-shot <c>do { … } while(false);</c> loops —
+    /// SPIRV-Cross's wrapper for early returns (the entry point's own, and each inlined
+    /// helper's) — into plain brace blocks with real early exits. Each <c>break</c>
+    /// whose nearest enclosing loop/switch is the one-shot loop becomes the statements
+    /// control would run after the loop (the return-value-phi output writes, flattened
+    /// through any enclosing plain blocks and through a trailing <c>{ … return; }</c>
+    /// block a previous unwrap produced) plus <c>return;</c>; the fall-through path
+    /// runs the in-place tail unchanged. Unwraps iterate outside-in: the entry wrapper
+    /// first, then helper wrappers inside the plain block it leaves behind. Any loop
+    /// the strict preconditions cannot prove safe (inside an if/else/loop/switch body,
+    /// a loop-level <c>continue</c>, an unparseable tail, a tail whose duplication
+    /// would move a gradient op or implicit-LOD sample into divergent flow) is left for
+    /// the Rule-9b for-loop lowering — never corrupted. See the Rule 9 comment at the
+    /// call site for why the loop must go entirely on ANGLE D3D11 (a conditional break
+    /// alone poisons gradient ops).
+    /// </summary>
+    private static string UnwrapMainOneShotDoWhile(string body)
+    {
+        // Each successful unwrap removes one `do` from main's direct children, so this
+        // terminates; a pass that unwraps nothing ends the loop.
+        while (TryUnwrapOneMainOneShot(body, out string rewritten))
+        {
+            body = rewritten;
+        }
+        return body;
+    }
+
+    private static bool TryUnwrapOneMainOneShot(string body, out string rewritten)
+    {
+        rewritten = body;
+
+        if (!TryFindMainBody(body, out int mainOpen, out int mainClose))
+        {
+            return false;
+        }
+
+        // At main's top level, falling off the end returns implicitly, so the exit
+        // context carried into the scan is empty-and-valid.
+        return TryUnwrapInBlock(body, mainOpen, mainClose, exitStatements: "", exitValid: true, out rewritten);
+    }
+
+    /// <summary>
+    /// Scan the block <c>(open, close)</c> — <c>main</c>'s body, or a PLAIN nested block
+    /// reached recursively — for an unwrappable one-shot do-while among its direct
+    /// children. Plain blocks (not the body of an if/else/loop/switch) are transparent:
+    /// an earlier 9a unwrap turns the entry wrapper into exactly such a block, and the
+    /// one-shot wrapper of an inlined helper's early return then sits inside it — the
+    /// issue-#136 poisoning shape would otherwise survive there via the 9b fallback.
+    /// Construct bodies (a <c>{</c> preceded by <c>)</c>, <c>else</c>, or <c>do</c>) are
+    /// skipped wholesale: control leaving a conditional's body is not statically "the
+    /// rest of the scope", so nothing inside is provable.
+    /// <paramref name="exitStatements"/> is the flattened statement text that executes
+    /// (before an implicit <c>return;</c>) when control falls off THIS block's end;
+    /// <paramref name="exitValid"/> is false when that context could not be proven.
+    /// </summary>
+    private static bool TryUnwrapInBlock(
+        string body, int open, int close, string exitStatements, bool exitValid, out string rewritten)
+    {
+        rewritten = body;
+        int p = open + 1;
+        bool nextBraceIsConstructBody = false; // set after ')' or `else`
+        while (p < close)
+        {
+            p = SkipWsAndComments(body, p);
+            if (p < 0 || p >= close)
+            {
+                break;
+            }
+            char c = body[p];
+            if (c == '{')
+            {
+                int bClose = FindMatchingBrace(body, p);
+                if (bClose < 0)
+                {
+                    return false;
+                }
+                if (!nextBraceIsConstructBody)
+                {
+                    // PLAIN block. Its exit context = the trailing region between the
+                    // block and this scope's close: either it ends in a `{ … return; }`
+                    // block (terminating — the parent context is irrelevant) or it is
+                    // all simple statements followed by the parent's own exit.
+                    string childExit = "";
+                    bool childValid = false;
+                    if (TryParseExitTail(body, bClose + 1, close, out string simple, out bool terminating, out string retStmts))
+                    {
+                        if (terminating)
+                        {
+                            childExit = JoinStatements(simple, retStmts);
+                            childValid = true;
+                        }
+                        else if (exitValid)
+                        {
+                            childExit = JoinStatements(simple, exitStatements);
+                            childValid = true;
+                        }
+                    }
+                    if (TryUnwrapInBlock(body, p, bClose, childExit, childValid, out rewritten))
+                    {
+                        return true;
+                    }
+                }
+                nextBraceIsConstructBody = false;
+                p = bClose + 1;
+                continue;
+            }
+            if (c == ')')
+            {
+                nextBraceIsConstructBody = true;
+                p++;
+                continue;
+            }
+            if (IsIdentChar(c))
+            {
+                int wordEnd = p;
+                while (wordEnd < body.Length && IsIdentChar(body[wordEnd]))
+                {
+                    wordEnd++;
+                }
+                if (wordEnd - p == 2 && body[p] == 'd' && body[p + 1] == 'o')
+                {
+                    int braceIdx = SkipWsAndComments(body, wordEnd);
+                    if (braceIdx >= 0 && braceIdx < close && body[braceIdx] == '{')
+                    {
+                        int closeBrace = FindMatchingBrace(body, braceIdx);
+                        if (closeBrace < 0)
+                        {
+                            return false;
+                        }
+                        if (TryMatchWhileFalseTrailer(body, closeBrace + 1, out int trailerEnd) &&
+                            TryUnwrapAt(body, p, braceIdx, closeBrace, trailerEnd, close,
+                                        exitStatements, exitValid, out rewritten))
+                        {
+                            return true;
+                        }
+                        // Genuine do-while, or preconditions failed — skip the whole
+                        // construct (its trailer tokens are inert to this scan).
+                        nextBraceIsConstructBody = false;
+                        p = closeBrace + 1;
+                        continue;
+                    }
+                }
+                nextBraceIsConstructBody =
+                    wordEnd - p == 4 && string.CompareOrdinal(body, p, "else", 0, 4) == 0;
+                p = wordEnd;
+                continue;
+            }
+            nextBraceIsConstructBody = false;
+            p++;
+        }
+        return false;
+    }
+
+    private static string JoinStatements(string a, string b) =>
+        a.Length == 0 ? b : b.Length == 0 ? a : a + " " + b;
+
+    /// <summary>
+    /// Statements whose textual duplication into a conditional (divergent) branch
+    /// changes their semantics: gradient ops and implicit-LOD texture samples are
+    /// undefined in non-uniform control flow (GLSL §8.13.1 / ESSL §8.14.1) — in the
+    /// original do-while they executed AFTER the loop, convergently, and fxc/mgfxc
+    /// evaluate the same post-merge code convergently too. A tail containing one must
+    /// keep the 9b for-loop form, which leaves it outside the loop. (The explicit-LOD
+    /// spellings — texture2DLod/texture2DGrad/… — are safe and intentionally absent.)
+    /// </summary>
+    private static readonly Regex DivergenceSensitiveOp = new(
+        @"\b(dFdx|dFdy|fwidth|texture|texture2D|texture3D|textureCube|texture2DProj|texture3DProj)\s*\(",
+        RegexOptions.Compiled);
+
+    /// <summary>Locate <c>main</c>'s body braces: the <c>main</c> keyword, its parameter
+    /// parens, then the opening <c>{</c> and its match.</summary>
+    private static bool TryFindMainBody(string body, out int open, out int close)
+    {
+        open = -1;
+        close = -1;
+        int i = 0;
+        while ((i = body.IndexOf("main", i, StringComparison.Ordinal)) >= 0)
+        {
+            if (MatchKeyword(body, i, "main"))
+            {
+                int j = SkipWsAndComments(body, i + 4);
+                if (j >= 0 && j < body.Length && body[j] == '(')
+                {
+                    int closeParen = FindMatchingParen(body, j);
+                    if (closeParen > 0)
+                    {
+                        int k = SkipWsAndComments(body, closeParen + 1);
+                        if (k >= 0 && k < body.Length && body[k] == '{')
+                        {
+                            close = FindMatchingBrace(body, k);
+                            if (close < 0)
+                            {
+                                return false;
+                            }
+                            open = k;
+                            return true;
+                        }
+                    }
+                }
+            }
+            i += 4;
+        }
+        return false;
+    }
+
+    private static bool TryUnwrapAt(
+        string body, int doIdx, int braceIdx, int closeBrace, int trailerEnd, int scopeClose,
+        string exitStatements, bool exitValid, out string rewritten)
+    {
+        rewritten = body;
+
+        // The tail — everything between the loop and its scope's closing brace — is
+        // what a loop-level break jumps to: simple `;`-terminated statements (the phi
+        // output writes), optionally ending in ONE `{ … return; }` block (the shape a
+        // previous 9a unwrap leaves behind). Terminating tails are complete in
+        // themselves; a fall-through tail continues into the enclosing scope's exit
+        // context. Anything else means "rest of execution" isn't statically this text
+        // — bail to 9b.
+        if (!TryParseExitTail(body, trailerEnd, scopeClose, out string simple, out bool terminating, out string retStmts))
+        {
+            return false;
+        }
+        string tail;
+        if (terminating)
+        {
+            tail = JoinStatements(simple, retStmts);
+        }
+        else if (exitValid)
+        {
+            tail = JoinStatements(simple, exitStatements);
+        }
+        else
+        {
+            return false;
+        }
+
+        // Duplicating a gradient op / implicit-LOD sample into a conditional branch
+        // would move it from convergent into divergent control flow — undefined, and a
+        // divergence from both the previous output and fxc/mgfxc. Keep the 9b form.
+        if (DivergenceSensitiveOp.IsMatch(tail))
+        {
+            return false;
+        }
+
+        // Find every break whose nearest enclosing loop/switch is THIS loop; bail on a
+        // loop-level `continue` (identical exit semantics in a one-shot loop, but the
+        // for-loop fallback preserves it without needing a rewrite here).
+        if (!TryCollectLoopLevelBreaks(body, braceIdx, closeBrace, out List<(int Start, int End)> breaks))
+        {
+            return false;
+        }
+
+        string breakReplacement = tail.Length == 0 ? "return;" : "{ " + tail + " return; }";
+
+        var sb = new StringBuilder(body.Length + breaks.Count * (breakReplacement.Length + 8));
+        sb.Append(body, 0, doIdx);                     // drop the `do` keyword
+        int prev = braceIdx;                           // keep the braces: a plain block
+        foreach ((int start, int end) in breaks)
+        {
+            sb.Append(body, prev, start - prev);
+            sb.Append(breakReplacement);
+            prev = end;
+        }
+        sb.Append(body, prev, closeBrace + 1 - prev);  // through the closing '}'
+        sb.Append(body, trailerEnd, body.Length - trailerEnd); // drop `while(false);`
+        rewritten = sb.ToString();
+        return true;
+    }
+
+    /// <summary>
+    /// Parse <c>[from, to)</c> as an exit tail: zero or more simple <c>;</c>-terminated
+    /// statements (no braces, no control-flow/jump keywords), optionally ENDING with a
+    /// single <c>{ &lt;simple statements&gt; return; }</c> block — the exact shape a
+    /// previous 9a unwrap emits for an outer break — with nothing after it.
+    /// <paramref name="simple"/> receives the leading statements (whitespace-collapsed),
+    /// <paramref name="terminating"/> is true when the trailing return-block was
+    /// present, and <paramref name="retStmts"/> its inner statements (without the
+    /// <c>return;</c>). Returns false on any shape outside this grammar.
+    /// </summary>
+    private static bool TryParseExitTail(
+        string body, int from, int to, out string simple, out bool terminating, out string retStmts)
+    {
+        simple = "";
+        terminating = false;
+        retStmts = "";
+
+        if (!TryScanSimpleStatements(body, from, to, allowTrailingReturn: false,
+                out string leading, out int stopAt))
+        {
+            return false;
+        }
+        if (stopAt >= to)
+        {
+            simple = leading;
+            return true; // all-simple tail; falls through into the enclosing context
+        }
+        if (body[stopAt] != '{')
+        {
+            return false;
+        }
+        int bClose = FindMatchingBrace(body, stopAt);
+        if (bClose < 0 || bClose >= to)
+        {
+            return false;
+        }
+        // The block must be `{ <simple> return; }` and the LAST thing in the region.
+        if (!TryScanSimpleStatements(body, stopAt + 1, bClose, allowTrailingReturn: true,
+                out string inner, out int innerStop) ||
+            innerStop < bClose) // stopped early on something other than the close
+        {
+            return false;
+        }
+        int after = SkipWsAndComments(body, bClose + 1);
+        if (after >= 0 && after < to)
+        {
+            return false; // something follows the return-block — not statically the exit
+        }
+        simple = leading;
+        terminating = true;
+        retStmts = inner;
+        return true;
+    }
+
+    /// <summary>
+    /// Scan <c>[from, to)</c> as whitespace-collapsed simple statements, stopping at the
+    /// first <c>{</c> (reported via <paramref name="stopAt"/>; <c>stopAt >= to</c> means
+    /// the whole region was consumed). Control-flow/jump keywords fail the scan — except
+    /// that with <paramref name="allowTrailingReturn"/> a final <c>return ;</c> is
+    /// accepted and consumed (used for the <c>{ … return; }</c> block's contents, which
+    /// are captured WITHOUT the return). A region ending mid-statement (last significant
+    /// char not <c>;</c>) fails.
+    /// </summary>
+    private static bool TryScanSimpleStatements(
+        string body, int from, int to, bool allowTrailingReturn, out string text, out int stopAt)
+    {
+        text = "";
+        stopAt = to;
+        int i = from;
+        char lastSignificant = ';';
+        bool sawReturn = false;
+        var sb = new StringBuilder(Math.Max(0, to - from));
+        bool pendingSpace = false;
+        while (i < to)
+        {
+            int next = SkipWsAndComments(body, i);
+            if (next < 0)
+            {
+                return false;
+            }
+            if (next >= to)
+            {
+                break;
+            }
+            if (next > i)
+            {
+                pendingSpace = sb.Length > 0;
+            }
+            i = next;
+            char c = body[i];
+            if (sawReturn && c != ';')
+            {
+                return false; // only `;` may follow the trailing return keyword
+            }
+            if (c == '{')
+            {
+                if (sawReturn || lastSignificant != ';')
+                {
+                    return false;
+                }
+                stopAt = i;
+                text = sb.ToString();
+                return true;
+            }
+            if (c == '}')
+            {
+                return false;
+            }
+            if (IsIdentChar(c))
+            {
+                int wordEnd = i;
+                while (wordEnd < to && IsIdentChar(body[wordEnd]))
+                {
+                    wordEnd++;
+                }
+                string word = body.Substring(i, wordEnd - i);
+                switch (word)
+                {
+                    case "return" when allowTrailingReturn:
+                        sawReturn = true;
+                        i = wordEnd;
+                        continue; // not captured — the caller re-adds its own return
+                    case "if" or "else" or "for" or "while" or "do" or "switch"
+                        or "return" or "discard" or "break" or "continue":
+                        return false;
+                }
+                if (pendingSpace)
+                {
+                    sb.Append(' ');
+                    pendingSpace = false;
+                }
+                sb.Append(word);
+                lastSignificant = body[wordEnd - 1];
+                i = wordEnd;
+                continue;
+            }
+            if (c == ';' && sawReturn)
+            {
+                // Consume the trailing `return ;` without capturing it; nothing but
+                // whitespace/comments may remain.
+                int after = SkipWsAndComments(body, i + 1);
+                if (after >= 0 && after < to)
+                {
+                    return false;
+                }
+                text = sb.ToString();
+                stopAt = to;
+                return true;
+            }
+            if (pendingSpace)
+            {
+                sb.Append(' ');
+                pendingSpace = false;
+            }
+            sb.Append(c);
+            lastSignificant = c;
+            i++;
+        }
+        if (sawReturn || lastSignificant != ';')
+        {
+            return false; // `return` without its `;`, or region ended mid-statement
+        }
+        text = sb.ToString();
+        stopAt = to;
+        return true;
+    }
+
+    /// <summary>
+    /// Scan a one-shot loop's body <c>(open, close)</c> for <c>break;</c> statements
+    /// whose nearest enclosing loop/switch is that loop. Nested <c>for</c>/<c>while</c>/
+    /// <c>do</c>/<c>switch</c> constructs are skipped wholesale (their breaks are
+    /// theirs); <c>if</c>/<c>else</c> bodies and plain blocks are walked through (breaks
+    /// there ARE loop-level). Returns false — caller falls back to the for-loop
+    /// lowering — on a loop-level <c>continue</c> or any construct shape it cannot
+    /// prove (unbraced nested-loop body, missing trailer, unbalanced delimiters).
+    /// </summary>
+    private static bool TryCollectLoopLevelBreaks(
+        string body, int open, int close, out List<(int Start, int End)> breaks)
+    {
+        breaks = new List<(int, int)>();
+        int i = open + 1;
+        while (i < close)
+        {
+            int next = SkipWsAndComments(body, i);
+            if (next < 0)
+            {
+                return false;
+            }
+            if (next >= close)
+            {
+                break;
+            }
+            i = next;
+            char c = body[i];
+            if (!IsIdentChar(c))
+            {
+                i++;
+                continue;
+            }
+            int wordEnd = i;
+            while (wordEnd < body.Length && IsIdentChar(body[wordEnd]))
+            {
+                wordEnd++;
+            }
+            string word = body.Substring(i, wordEnd - i);
+            switch (word)
+            {
+                case "for":
+                case "while":
+                case "switch":
+                {
+                    int paren = SkipWsAndComments(body, wordEnd);
+                    if (paren < 0 || paren >= close || body[paren] != '(')
+                    {
+                        return false;
+                    }
+                    int parenClose = FindMatchingParen(body, paren);
+                    if (parenClose < 0)
+                    {
+                        return false;
+                    }
+                    int bodyBrace = SkipWsAndComments(body, parenClose + 1);
+                    if (bodyBrace < 0 || bodyBrace >= close || body[bodyBrace] != '{')
+                    {
+                        return false; // unbraced nested body — cannot prove; bail
+                    }
+                    int bodyClose = FindMatchingBrace(body, bodyBrace);
+                    if (bodyClose < 0)
+                    {
+                        return false;
+                    }
+                    i = bodyClose + 1;
+                    continue;
+                }
+                case "do":
+                {
+                    int bodyBrace = SkipWsAndComments(body, wordEnd);
+                    if (bodyBrace < 0 || bodyBrace >= close || body[bodyBrace] != '{')
+                    {
+                        return false;
+                    }
+                    int bodyClose = FindMatchingBrace(body, bodyBrace);
+                    if (bodyClose < 0)
+                    {
+                        return false;
+                    }
+                    int w = SkipWsAndComments(body, bodyClose + 1);
+                    if (w < 0 || !MatchKeyword(body, w, "while"))
+                    {
+                        return false;
+                    }
+                    int paren = SkipWsAndComments(body, w + 5);
+                    if (paren < 0 || body[paren] != '(')
+                    {
+                        return false;
+                    }
+                    int parenClose = FindMatchingParen(body, paren);
+                    if (parenClose < 0)
+                    {
+                        return false;
+                    }
+                    int semi = SkipWsAndComments(body, parenClose + 1);
+                    if (semi < 0 || semi >= body.Length || body[semi] != ';')
+                    {
+                        return false;
+                    }
+                    i = semi + 1;
+                    continue;
+                }
+                case "break":
+                {
+                    int semi = SkipWsAndComments(body, wordEnd);
+                    if (semi < 0 || semi >= close || body[semi] != ';')
+                    {
+                        return false;
+                    }
+                    breaks.Add((i, semi + 1));
+                    i = semi + 1;
+                    continue;
+                }
+                case "continue":
+                    return false; // loop-level continue — fall back to for-loop lowering
+                default:
+                    i = wordEnd;
+                    continue;
+            }
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Issue #107 (Rule 9b): lower SPIRV-Cross's one-shot <c>do { … } while(false);</c> loops (its
     /// structured-early-return idiom) to the WebGL1-safe <c>for (int _i = 0; _i &lt; 1; _i++) { … }</c>
     /// form. Semantically identical (exactly one iteration; <c>break</c>/<c>continue</c>/
     /// fall-through all exit as before, so pixels are unchanged), but uses the GLSL ES 1.00
     /// Appendix-A loop form WebGL1 / KNI Reach requires — so the effect loads in WebGL instead
     /// of failing on the do-while. A genuine multi-iteration <c>do { } while(&lt;not false&gt;)</c>
     /// is left untouched. Comment-aware (skips <c>//</c> and <c>/* */</c> while scanning).
+    /// Since issue #136 this is the FALLBACK: <see cref="UnwrapMainOneShotDoWhile"/> (Rule 9a)
+    /// unwraps the entry-point wrapper first; only loops it could not prove safe reach here.
     /// </summary>
     private static string LowerOneShotDoWhileToForLoop(string body)
     {

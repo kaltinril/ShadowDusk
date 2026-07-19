@@ -6,23 +6,35 @@ SDF shape-rendering library that **Gum** (the UI tool) uses. It is used here as 
 Victor Chelaru / vchelaru, Gum's author). It is NOT a render-equivalence proof —
 see `docs/test-shader-corpus.md` for what it covers and on which targets.
 
+Two revisions are vendored (both from the same upstream path,
+`Source/Content/apos-shapes.fx`):
+
+- **`apos-shapes.fx`** — the Phase 49 pin. Keeps the issue-#127 GL codegen
+  fidelity tests (`pow`-square, reciprocal-of-quotient) anchored to the exact
+  revision they were written against.
+- **`apos-shapes-aa.fx`** — the later derivative-based-antialiasing revision
+  (issue #136): `ddx`/`ddy` of the SDF and of an interpolated position drive the
+  AA footprint. Pins that no gradient op lands inside a loop with a divergent
+  exit in the emitted GLSL (ANGLE's D3D11 backend silently zeroes derivatives
+  there — the issue-#136 poisoning).
+
 ## Upstream project
 
 - **Project:** Apos.Shapes
 - **Author / copyright:** Copyright (c) 2021 Jean-David Moisan (Apostolique)
 - **Repository:** <https://github.com/Apostolique/Apos.Shapes>
 - **License:** MIT (verbatim text in `./LICENSE`)
-- **Commit fetched (pinned for reproducibility):**
-  `3fb73b8d0a51f86678269a4ad28391459cc771b1`
+- **Commits fetched (pinned for reproducibility):**
+  - `apos-shapes.fx`: `3fb73b8d0a51f86678269a4ad28391459cc771b1` (fetched 2026-06-27)
+  - `apos-shapes-aa.fx`: `d507a73487335b6afceec4b2f518d167df28544a` (fetched 2026-07-19)
 - **Upstream path:** `Source/Content/apos-shapes.fx`
-- **Fetched:** 2026-06-27
 
 Fetched with:
 
 ```sh
-SHA=3fb73b8d0a51f86678269a4ad28391459cc771b1
+SHA=<commit above>
 gh api "repos/Apostolique/Apos.Shapes/contents/Source/Content/apos-shapes.fx?ref=$SHA" \
-  --jq '.content' | base64 -d > apos-shapes.fx
+  --jq '.content' | base64 -d > <file>
 ```
 
 ## Modifications
@@ -45,6 +57,7 @@ legitimate shader-model limitation (noted), not a ShadowDusk parser defect.
 | File | License | Targets (compile) | Why a target is excluded |
 |---|---|---|---|
 | `apos-shapes.fx` | MIT | **GL + DX** | **FNA:** the shader has no SM3 / FNA profile branch — its `#if OPENGL` arm selects `ps_3_0`, the `#else` selects `ps_4_0` (SM4), and the FNA target takes the SM4 arm. Combined with the dense pixel shader (the `EllipseSDF` Newton-iteration `for` loop, the 11-branch shape dispatch, the Oklab + ~11 gradient functions, 10 `TEXCOORD` interpolants), it exceeds the vkd3d `fx_2_0` / SM3 ceiling and is rejected (`X0000`). This is consistent with Apos.Shapes shipping for MonoGame OpenGL/DX, not FNA — a legitimate SM limit, not a ShadowDusk defect. |
+| `apos-shapes-aa.fx` | MIT | **GL + DX** (probe 2026-07-19) | **FNA:** same as above, plus `ddx`/`ddy` gradient intrinsics (SM3+ only in fx_2_0 terms) and a third sampler (`BlueNoiseSampler : register(s2)`). |
 
 **What it exercises (GL + DX):** a single large **VS + PS** effect with a 10-interpolant
 I/O struct (`TEXCOORD0..9` + `SV_Position`); a `float4x4 view_projection` applied with

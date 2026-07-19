@@ -14,9 +14,32 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- Vendored the derivative-based-antialiasing revision of Apos.Shapes' shader
+  (`apos-shapes-aa.fx`, upstream `d507a73`) into the third-party corpus (GL + DX compile
+  pins), plus a structural pin that fails if any gradient op ever again lands inside a
+  loop with a divergent exit in emitted GL GLSL (issue #136).
+
 ### Changed
 
 ### Fixed
+
+- **`dFdx`/`dFdy` no longer return 0 in Windows browsers (ANGLE D3D11)** — issue #136,
+  reported by Jean-David Moisan (Apostolique). ANGLE's D3D11 backend silently zeroes every
+  gradient op inside a loop with a divergent exit (a conditional `break` or `discard`), and
+  the issue-#107 for-loop lowering of SPIRV-Cross's entry-point `do { … } while(false);`
+  wrapper put the whole fragment body inside exactly such a loop, disabling derivative-based
+  antialiasing (Apos.Shapes SDF shapes) on KNI BlazorGL with no compile or link error. The
+  GLSL rewriter now **unwraps** the wrapper when it can prove it safe: plain brace block,
+  each loop-level `break` → duplicated tail + `return;` — straight-line `main` with real
+  early exits, valid in every GLSL profile including ESSL 1.00, and the same shape
+  mgfxc/MojoShader emits. The unwrap recurses through the plain blocks it creates, so an
+  **inlined helper that both early-returns and takes a derivative** (its wrapper nests
+  inside the entry wrapper) unwraps too — the shape the fix's adversarial review found
+  still poisoned. A tail whose duplication would move a gradient op or implicit-LOD
+  sample into divergent flow (undefined per GLSL §8.13.1) is never unwrapped; those and
+  all other unprovable shapes keep the WebGL1-safe for-loop fallback. Desktop GL/KNI
+  output remains render-equivalent (Windows render gates + KNI desktop GL/VS-driven
+  drivers + Linux CI GL gates).
 
 ## [0.12.0] - 2026-07-18
 
