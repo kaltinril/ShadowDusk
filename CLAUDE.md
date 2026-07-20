@@ -69,12 +69,12 @@ dotnet pack src/ShadowDusk.Cli/ShadowDusk.Cli.csproj
 dotnet run --project validation/KniVsDriven    # real KNI v4.02 OpenGL, VS-driven, vs mgfxc golden
 ```
 
-**What runs where (Phase 44):** the **OpenGL** in-process render gates now run in CI on Linux (Mesa llvmpipe) via `.github/workflows/validation-render.yml`, and the KNI **WebGL** smoke runs in `wasm.yml`. But the **DirectX / FNA / KNI-DirectX render gates have NO headless CI driver** (Mesa is GL-only; there is no verified headless D3D/WARP path on the runners). They can only render on a real Windows box with a GPU — so **the developer's machine is the gate.**
+**What runs where (Phase 44):** the **OpenGL** in-process render gates now run in CI on Linux (Mesa llvmpipe) via `.github/workflows/validation-render.yml`, and the KNI **WebGL** smoke runs in `wasm.yml`. But the **DirectX / FNA / KNI-DirectX / real-KNI-desktop-GL / browser-ANGLE render gates have NO headless CI driver** (Mesa is GL-only; there is no verified headless D3D/WARP path on the runners, and CI's browser smoke renders on SwiftShader — structurally blind to ANGLE-D3D11 behavior like the issue-#136 gradient poisoning). They can only render on a real Windows box with a GPU — so **the developer's machine is the gate.** All of them are default-ON in the one gate script below (KNI-GL and the ANGLE probe were folded in 2026-07-19 so GL-affecting changes cannot rely on someone remembering to run them separately).
 
 > **HARD RULE — Windows render gate before release / before merging shader-output changes.** Because CI cannot run the DX/FNA/KNI-DX render proofs, you MUST run them locally and confirm green **before cutting a release**, and before merging any change that touches shader output / transpilation / the MGFX-FNA writers / render state / matrix handling. One command does all of them:
 >
 > ```powershell
-> ./validation/run-windows-render-gates.ps1            # DX corpus + DX-modern (VTF) + KNI-DX, vs mgfxc/fxc
+> ./validation/run-windows-render-gates.ps1            # DX corpus + DX-modern (VTF) + KNI-DX + KNI-GL desktop + KNI-GL VS-driven + the ANGLE-D3D11 derivative probe (issue #136), vs mgfxc/fxc
 > ./validation/run-windows-render-gates.ps1 -IncludeFna  # also the FNA fx_2_0 gate (for an FNA-affecting release)
 > ./validation/run-windows-render-gates.ps1 -IncludeVulkan  # also the Vulkan DesktopVK gate (for a Vulkan-affecting release)
 > ```

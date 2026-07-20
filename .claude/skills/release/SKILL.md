@@ -57,15 +57,19 @@ self-contained CLI binaries to a GitHub Release. The human runbook this automate
    (the runsettings carry the 5-min `TestSessionTimeout` — see CLAUDE.md Phase 21, matching
    the `/test` skill). Stop on failure.
 7b. **Windows render gate (CI CANNOT do this — required).** `dotnet test` is necessary but
-   NOT sufficient: the DirectX / FNA / KNI-DirectX rung-4 render proofs have no headless CI
-   driver (Mesa is GL-only), so the release MUST render them locally on a Windows+GPU box and
-   confirm they still match the reference compiler. Run:
-   `./validation/run-windows-render-gates.ps1` (DX corpus + DX-modern/VTF + KNI-DX),
+   NOT sufficient: the DirectX / FNA / KNI-DirectX / real-KNI-desktop-GL / browser-ANGLE
+   rung-4 render proofs have no headless CI driver (Mesa covers only the in-process GL gates;
+   CI's browser smoke renders on SwiftShader, blind to ANGLE-D3D11 behavior), so the release
+   MUST render them locally on a Windows+GPU box and confirm they still match the reference
+   compiler. Run:
+   `./validation/run-windows-render-gates.ps1` (DX corpus + DX-modern/VTF + KNI-DX + KNI-GL
+   desktop + KNI-GL VS-driven + the ANGLE derivative probe),
    `./validation/run-windows-render-gates.ps1 -IncludeFna` if this release could affect the FNA
    target, and `-IncludeVulkan` if it could affect the Vulkan target (needs a Vulkan-capable
    GPU). **Stop on a non-zero exit** (a render diverged from `mgfxc`/`fxc` — do not release).
-   The OpenGL render gates already run in CI (`validation-render.yml`), so they are covered by
-   the CI wait at step 10; this step is specifically the DX/FNA/KNI-DX gap CI cannot fill. See
+   The in-process OpenGL render gates already run in CI (`validation-render.yml`), so they are
+   covered by the CI wait at step 10; this step is the DX/FNA/KNI-DX/KNI-GL/ANGLE gap CI
+   cannot fill. See
    CLAUDE.md → "Validation render drivers are the real bar".
 8. **Commit.** Stage the release files only (`Directory.Build.props`, `CHANGELOG.md`,
    `RELEASING.md`, and any doc fixes the user approved). Use a conventional message such as

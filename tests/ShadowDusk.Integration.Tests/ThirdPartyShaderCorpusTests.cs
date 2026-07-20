@@ -1,5 +1,6 @@
 #nullable enable
 
+using System.Text.RegularExpressions;
 using FluentAssertions;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
@@ -86,6 +87,7 @@ public sealed class ThirdPartyShaderCorpusTests
         Root + "Vignette.fx",
         // Phase 49 (full inline paths — Root is Nez-specific):
         "third-party/Apos.Shapes/apos-shapes.fx",        // Gum SDF renderer: VS+PS, 10 TEXCOORDs, Newton for-loop, discard
+        "third-party/Apos.Shapes/apos-shapes-aa.fx",     // derivative-AA revision: ddx/ddy + discard (issue #136)
         "third-party/Gum/MonoGameInCode-Grayscale.fx",   // vs/ps_4_0_level_9_1, Texture2D+sampler2D, dot-luminance
     };
 
@@ -113,6 +115,7 @@ public sealed class ThirdPartyShaderCorpusTests
         Root + "Reflection.fx",         // two techniques, each VS+PS
         // Phase 49 (full inline paths — Root is Nez-specific):
         "third-party/Apos.Shapes/apos-shapes.fx",        // Gum SDF renderer (DX SM5 via vkd3d)
+        "third-party/Apos.Shapes/apos-shapes-aa.fx",     // derivative-AA revision (issue #136)
         "third-party/Gum/MonoGameInCode-Grayscale.fx",   // vs/ps_4_0_level_9_1 grayscale
     };
 
@@ -276,6 +279,105 @@ public sealed class ThirdPartyShaderCorpusTests
                      "it must be strength-reduced to a multiply (issue #127)");
         ascii.Should().NotContain("1.0 / (",
             because: "every 1.0 / (a / b) reciprocal-of-quotient must fold to a single division (issue #127)");
+    }
+
+    // -------------------------------------------------------------------------
+    // Issue #136 — ANGLE D3D11 gradient poisoning. On ANGLE's D3D11 backend
+    // (WebGL in every Windows browser), ANY gradient op (dFdx/dFdy/fwidth)
+    // lexically inside a loop whose body has a divergent exit (a conditional
+    // `break` OR `discard`) silently evaluates to 0.0 — no compile or link error.
+    // SPIRV-Cross's entry-point one-shot `do{…}while(false)` wrapper, lowered to a
+    // for-loop (issue #107), put EVERY derivative in an affected shader inside such
+    // a loop, disabling Apos.Shapes' derivative-based antialiasing in browsers.
+    // The rewriter now unwraps the wrapper (Rule 9a); this pin analyzes the emitted
+    // GLSL of the real derivative-AA shader and fails if any gradient op is ever
+    // again inside a divergent loop.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    [Trait("Platform", "OpenGL")]
+    public async Task AposShapesAa_OpenGl_NoGradientOpInsideDivergentLoop_Issue136()
+    {
+        using var cts = new CancellationTokenSource(CompileTimeout);
+
+        var result = await TestHelpers.CompileFixtureAsync(
+            "third-party/Apos.Shapes/apos-shapes-aa.fx", "OpenGL", ct: cts.Token);
+
+        result.ExitCode.Should().Be(0,
+            because: $"the derivative-AA apos-shapes must compile on GL; stderr: {result.Stderr}");
+
+        string ascii = System.Text.Encoding.ASCII.GetString(
+            result.Mgfx.Select(b => (b >= 9 && b <= 126) ? b : (byte)' ').ToArray());
+
+        ascii.Should().MatchRegex(@"\bdFd[xy]\s*\(",
+            because: "the fixture's ddx/ddy AA must reach the GL output as dFdx/dFdy — if " +
+                     "this fails the fixture no longer exercises issue #136");
+
+        var poisoned = FindGradientOpsInsideDivergentLoops(ascii);
+        poisoned.Should().BeEmpty(
+            because: "ANGLE D3D11 (WebGL on Windows) zeroes every gradient op inside a loop " +
+                     "with a conditional break/discard — issue #136");
+    }
+
+    /// <summary>
+    /// Lexical detector for the issue-#136 ANGLE poisoning shape: returns a description
+    /// of every <c>dFdx</c>/<c>dFdy</c>/<c>fwidth</c> call that sits inside the body of
+    /// any <c>for</c>/<c>while</c>/<c>do</c> loop whose body also contains a
+    /// <c>break;</c> or <c>discard;</c>. (Internal: also used by the
+    /// <c>Issue136HelperGradient</c> pin in <c>HidefGeneralityFixtureTests</c>.)
+    /// </summary>
+    internal static List<string> FindGradientOpsInsideDivergentLoops(string glsl)
+    {
+        // Collect every loop body span: for/while header parens then { … }, and do { … }.
+        var loopBodies = new List<(int Start, int End, string Header)>();
+        foreach (Match m in Regex.Matches(glsl, @"\b(for|while)\s*\("))
+        {
+            int parenDepth = 0;
+            int close = -1;
+            for (int i = m.Index + m.Length - 1; i < glsl.Length; i++)
+            {
+                if (glsl[i] == '(') parenDepth++;
+                else if (glsl[i] == ')' && --parenDepth == 0) { close = i; break; }
+            }
+            if (close < 0) continue;
+            int b = close + 1;
+            while (b < glsl.Length && char.IsWhiteSpace(glsl[b])) b++;
+            if (b >= glsl.Length || glsl[b] != '{') continue;
+            int end = MatchBrace(glsl, b);
+            if (end > 0) loopBodies.Add((b, end, glsl.Substring(m.Index, Math.Min(48, close + 1 - m.Index))));
+        }
+        foreach (Match m in Regex.Matches(glsl, @"\bdo\s*\{"))
+        {
+            int b = glsl.IndexOf('{', m.Index);
+            int end = MatchBrace(glsl, b);
+            if (end > 0) loopBodies.Add((b, end, "do{…}while"));
+        }
+
+        var poisoned = new List<string>();
+        foreach (Match g in Regex.Matches(glsl, @"\b(dFdx|dFdy|fwidth)\s*\("))
+        {
+            foreach (var (start, end, header) in loopBodies)
+            {
+                if (g.Index <= start || g.Index >= end) continue;
+                string bodyText = glsl.Substring(start, end - start + 1);
+                if (Regex.IsMatch(bodyText, @"\b(break|discard)\s*;"))
+                {
+                    poisoned.Add($"{g.Groups[1].Value} at offset {g.Index} inside divergent loop '{header}'");
+                }
+            }
+        }
+        return poisoned;
+    }
+
+    private static int MatchBrace(string s, int open)
+    {
+        int depth = 0;
+        for (int i = open; i < s.Length; i++)
+        {
+            if (s[i] == '{') depth++;
+            else if (s[i] == '}' && --depth == 0) return i;
+        }
+        return -1;
     }
 
     [Fact]

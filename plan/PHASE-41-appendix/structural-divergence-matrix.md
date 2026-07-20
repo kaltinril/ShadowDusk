@@ -24,7 +24,7 @@
   - Structurally **clean**: **65**
   - **Divergent** (>=1 level): **17**
   - Compile/parse **failures**: **10**
-- Non-golden census cells: **136** (**109** compile, **27** fail with a code)
+- Non-golden census cells: **140** (**113** compile, **27** fail with a code)
 
 ## Golden-backed fixtures — per-level structural verdict
 
@@ -296,6 +296,8 @@ is a CORRECT result, not a defect.
 | examples/Issue106Repro.fx | OpenGL | PASS |  |  |
 | examples/Issue107DoWhile.fx | DirectX_11 | PASS |  |  |
 | examples/Issue107DoWhile.fx | OpenGL | PASS |  |  |
+| examples/Issue136HelperGradient.fx | DirectX_11 | PASS |  |  |
+| examples/Issue136HelperGradient.fx | OpenGL | PASS |  |  |
 | minimal_vs_ps.fx | DirectX_11 | FAIL | SD0010 | Effect source contains no techniques |
 | minimal_vs_ps.fx | OpenGL | FAIL | SD0010 | Effect source contains no techniques |
 | multipass.fx | DirectX_11 | PASS |  |  |
@@ -310,6 +312,8 @@ is a CORRECT result, not a defect.
 | textured.fx | OpenGL | PASS |  |  |
 | textured_vs_ps.fx | DirectX_11 | FAIL | SD0010 | Effect source contains no techniques |
 | textured_vs_ps.fx | OpenGL | FAIL | SD0010 | Effect source contains no techniques |
+| third-party/Apos.Shapes/apos-shapes-aa.fx | DirectX_11 | PASS |  |  |
+| third-party/Apos.Shapes/apos-shapes-aa.fx | OpenGL | PASS |  |  |
 | third-party/Apos.Shapes/apos-shapes.fx | DirectX_11 | PASS |  |  |
 | third-party/Apos.Shapes/apos-shapes.fx | OpenGL | PASS |  |  |
 | third-party/Gum/FnaSample-Shader.fx | DirectX_11 | FAIL | X0000 | Shader compilation failed |

@@ -1374,17 +1374,23 @@ void main()
             .Which.Message.Should().NotContain("Tracked for Phase 34");
     }
 
-    // ---- do { … } while(false) → for-loop lowering (WebGL1 reach fix, issue #107). ----
-    // SPIRV-Cross renders an early `return` (e.g. a nested `if` that returns) as a
-    // single-iteration `do { … break; … } while(false);` loop. Desktop GL accepts do-while
-    // but GLSL ES 1.00 (WebGL1 / KNI Reach) does not guarantee it, so the effect loads on
-    // desktop yet fails to load in WebGL. The rewriter lowers each one-shot loop to the
-    // WebGL1-safe `for (int _i = 0; _i < 1; _i++) { … }` form (semantics identical).
+    // ---- do { … } while(false) elimination (issues #107 + #136). ----
+    // SPIRV-Cross renders an early `return` (the entry point's own, or a nested `if`
+    // that returns inside an inlined helper) as a single-iteration
+    // `do { … break; … } while(false);` loop. Rule 9a (#136) UNWRAPS the loop when it
+    // is a direct child of main followed only by simple tail statements: plain block +
+    // loop-level `break` → tail + `return;`. Any loop 9a cannot prove safe falls back
+    // to Rule 9b (#107): the WebGL1-safe `for (int _i = 0; _i < 1; _i++) { … }` form.
+    // The unwrap matters because ANGLE's D3D11 backend (WebGL on every Windows
+    // browser) silently zeroes ALL gradient ops (dFdx/dFdy) inside any loop with a
+    // divergent exit — a conditional break OR discard — so the for-loop form is
+    // load-safe but derivative-poisoned there.
 
     [Fact]
-    public void OneShotDoWhileFalse_IsLoweredToForLoop_BreaksPreserved()
+    public void MainOneShotDoWhile_IsUnwrapped_BreaksBecomeTailPlusReturn()
     {
-        // The verbatim SPIRV-Cross shape from issue #107 (nested-if early return).
+        // The verbatim SPIRV-Cross shape from issue #107 (nested-if early return),
+        // which is also the issue-#136 poisoning shape when lowered to a for-loop.
         const string src = """
 #version 140
 
@@ -1413,14 +1419,19 @@ void main()
         result.Glsl.Should().NotContain("while(false)", "do-while is unavailable in GLSL ES 1.00 (WebGL1)");
         System.Text.RegularExpressions.Regex.IsMatch(result.Glsl, @"\bdo\b")
             .Should().BeFalse("the do keyword must be gone");
-        // Replaced by a bounded single-iteration for-loop (Appendix-A allowed).
-        result.Glsl.Should().MatchRegex(@"for \(int _spvonce_0 = 0; _spvonce_0 < 1; _spvonce_0\+\+\)");
-        // The break statements (early exits) are preserved verbatim inside the loop body.
-        result.Glsl.Should().Contain("break;");
+        // Issue #136: no loop wrapper either — a for-loop with a conditional break
+        // poisons every gradient op on ANGLE D3D11. The loop is unwrapped and each
+        // loop-level break becomes the duplicated output-write tail + return.
+        result.Glsl.Should().NotContain("_spvonce_",
+            "the main wrapper must be UNWRAPPED, not lowered to a for-loop (issue #136)");
+        result.Glsl.Should().Contain("{ ps_oC0 = vec4(_v, _v, _v, 1.0); return; }",
+            "each loop-level break becomes the tail statements plus an early return");
+        // The in-place tail still serves the fall-through path.
+        result.Glsl.Should().Contain("\n    ps_oC0 = vec4(_v, _v, _v, 1.0);");
     }
 
     [Fact]
-    public void NestedOneShotDoWhile_BothLowered_WithUniqueLoopVars()
+    public void NestedOneShotDoWhile_BothUnwrapped_NoLoopsRemain()
     {
         const string src = """
 #version 140
@@ -1445,8 +1456,325 @@ void main()
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
         result.Glsl.Should().NotContain("while(false)");
-        result.Glsl.Should().Contain("_spvonce_0");
-        result.Glsl.Should().Contain("_spvonce_1", "each nested one-shot loop gets a unique index var");
+        // The outer (main-level) wrapper unwraps first; the inner one-shot then sits in
+        // the plain block 9a left behind, whose tail ends in the outer break's
+        // `{ … return; }` — a terminating exit the recursive scan flattens through, so
+        // the inner loop unwraps too. NO loop of any kind survives (issue #136).
+        result.Glsl.Should().NotContain("_spvonce_");
+        result.Glsl.Should().Contain("{ ps_oC0 = vec4(_v); return; }");
+    }
+
+    [Fact]
+    public void InlinedHelperGradient_InnerOneShotUnwrapped_GradientNotInAnyLoop()
+    {
+        // The issue-#136 residual shape found in review: a helper that BOTH
+        // early-returns AND takes a derivative. SPIRV-Cross nests the helper's one-shot
+        // wrapper inside the entry wrapper; v1 of the unwrap left the inner one as a 9b
+        // for-loop — with fwidth inside a loop with a conditional break, i.e. exactly
+        // the ANGLE-poisoned shape the fix exists to remove.
+        const string src = """
+#version 140
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    vec4 _38;
+    do
+    {
+        if (in_var_TEXCOORD0.x > 0.99)
+        {
+            _38 = vec4(0.0);
+            break;
+        }
+        float _29 = in_var_TEXCOORD0.y * 30.0;
+        float _36;
+        do
+        {
+            if (_29 > 100.0)
+            {
+                _36 = 0.0;
+                break;
+            }
+            _36 = fwidth(_29);
+            break;
+        } while(false);
+        _38 = vec4(_36, 0.0, 0.0, 1.0);
+        break;
+    } while(false);
+    out_var_SV_Target = _38;
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        result.Glsl.Should().NotContain("while(false)");
+        result.Glsl.Should().NotContain("_spvonce_",
+            "both the entry wrapper AND the inlined helper's wrapper must unwrap — a " +
+            "for-loop with a conditional break around fwidth is ANGLE-poisoned (issue #136)");
+        result.Glsl.Should().Contain("fwidth(_29)", "the derivative itself is untouched");
+        // The inner loop's breaks got the FLATTENED tail: the statements after the
+        // inner loop plus the contents of the outer break's return-block.
+        result.Glsl.Should().Contain("{ _38 = vec4(_36, 0.0, 0.0, 1.0); ps_oC0 = _38; return; }");
+    }
+
+    [Fact]
+    public void TailContainingGradientOp_FallsBackToForLoop_KeepsItConvergent()
+    {
+        // Review finding: duplicating the tail into a break site moves its statements
+        // into a divergent branch. A gradient op (or implicit-LOD sample) there is
+        // undefined (GLSL §8.13.1) — in the original do-while it executed AFTER the
+        // loop, convergently. Such tails must keep the 9b for-loop form.
+        const string src = """
+#version 140
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    float _29;
+    do
+    {
+        if (in_var_TEXCOORD0.x > 0.75)
+        {
+            _29 = 0.0;
+            break;
+        }
+        _29 = length(in_var_TEXCOORD0.xy) - 0.5;
+        break;
+    } while(false);
+    out_var_SV_Target = vec4(fwidth(_29), _29, 0.0, 1.0);
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        result.Glsl.Should().MatchRegex(@"for \(int _spvonce_0 = 0; _spvonce_0 < 1; _spvonce_0\+\+\)",
+            "a tail containing fwidth must not be duplicated into divergent branches");
+        result.Glsl.Should().NotContain("return;");
+        // The gradient stays where it was: after the loop, in convergent flow (which
+        // ANGLE does NOT poison — only ops inside the divergent loop are affected).
+        result.Glsl.Should().MatchRegex(@"\}\s*\n\s*ps_oC0 = vec4\(fwidth\(_29\)");
+    }
+
+    [Fact]
+    public void TailContainingImplicitLodSample_FallsBackToForLoop()
+    {
+        // Same rationale as the gradient-tail case: implicit-LOD texture sampling
+        // derives its mip level from screen-space derivatives, so it is equally
+        // divergence-sensitive. (texture( is rewritten to texture2D( by Rule 6 before
+        // Rule 9 runs, so the guard sees the legacy spelling.)
+        const string src = """
+#version 140
+
+uniform sampler2D SpriteTexture;
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    float _33;
+    do
+    {
+        if (in_var_TEXCOORD0.x > 0.75)
+        {
+            _33 = 0.0;
+            break;
+        }
+        _33 = in_var_TEXCOORD0.x * 2.0;
+        break;
+    } while(false);
+    out_var_SV_Target = texture(SpriteTexture, in_var_TEXCOORD0) * _33;
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        result.Glsl.Should().MatchRegex(@"for \(int _spvonce_0 = 0; _spvonce_0 < 1; _spvonce_0\+\+\)",
+            "a tail containing an implicit-LOD sample must not be duplicated into divergent branches");
+        result.Glsl.Should().NotContain("return;");
+        result.Glsl.Should().Contain("texture2D(ps_s0", "the sample stays after the loop, convergent");
+    }
+
+    [Fact]
+    public void GenuineInnerLoopBreak_IsPreserved_WhileMainWrapperUnwraps()
+    {
+        // The apos-shapes shape: the entry wrapper contains a REAL bounded loop (the
+        // ellipse-SDF Newton iteration) with its own conditional break. That break's
+        // nearest enclosing loop is the inner for — it must stay a break; only the
+        // wrapper-level breaks become returns.
+        const string src = """
+#version 140
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    float _v;
+    do
+    {
+        float acc = 0.0;
+        for (int i = 0; i < 8; i++)
+        {
+            acc += in_var_TEXCOORD0.x;
+            if (acc > 4.0)
+            {
+                break;
+            }
+        }
+        if (acc < 0.5)
+        {
+            _v = 0.0;
+            break;
+        }
+        _v = acc;
+        break;
+    } while(false);
+    out_var_SV_Target = vec4(_v);
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        result.Glsl.Should().NotContain("while(false)");
+        result.Glsl.Should().NotContain("_spvonce_", "the main wrapper must unwrap, not lower");
+        // The genuine inner loop and its own break are untouched.
+        result.Glsl.Should().Contain("for (int i = 0; i < 8; i++)");
+        result.Glsl.Should().MatchRegex(@"if \(acc > 4\.0\)\s*\{\s*break;\s*\}",
+            "the inner for-loop's break binds to the inner loop and must be preserved");
+        // The wrapper-level breaks became tail + return.
+        result.Glsl.Should().Contain("{ ps_oC0 = vec4(_v); return; }");
+    }
+
+    [Fact]
+    public void MultiStatementTail_IsDuplicatedWholeBeforeReturn()
+    {
+        const string src = """
+#version 140
+
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    float _v;
+    float _w;
+    do
+    {
+        _v = 1.0;
+        break;
+    } while(false);
+    _w = _v * 2.0;
+    out_var_SV_Target = vec4(_w);
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        result.Glsl.Should().NotContain("while(false)");
+        result.Glsl.Should().NotContain("_spvonce_");
+        result.Glsl.Should().Contain("{ _w = _v * 2.0; ps_oC0 = vec4(_w); return; }",
+            "ALL tail statements are duplicated, in order, before the return");
+    }
+
+    [Fact]
+    public void LoopLevelContinue_FallsBackToForLoopLowering()
+    {
+        // A `continue` at the one-shot loop's level exits identically to break in a
+        // do-while(false) — the for-loop fallback preserves that without a rewrite,
+        // so the unwrap must NOT fire.
+        const string src = """
+#version 140
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    float _v = 0.0;
+    do
+    {
+        if (in_var_TEXCOORD0.x > 0.5)
+        {
+            continue;
+        }
+        _v = 1.0;
+    } while(false);
+    out_var_SV_Target = vec4(_v);
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        result.Glsl.Should().NotContain("while(false)");
+        result.Glsl.Should().MatchRegex(@"for \(int _spvonce_0 = 0; _spvonce_0 < 1; _spvonce_0\+\+\)");
+        result.Glsl.Should().Contain("continue;", "the fallback keeps the continue's exit semantics");
+    }
+
+    [Fact]
+    public void OneShotNotDirectChildOfMain_FallsBackToForLoopLowering()
+    {
+        // Inside an if, "everything after the loop" is not statically main's tail —
+        // the unwrap cannot prove a return-rewrite, so Rule 9b handles it.
+        const string src = """
+#version 140
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    float _v = 0.0;
+    if (in_var_TEXCOORD0.y > 0.0)
+    {
+        do
+        {
+            if (in_var_TEXCOORD0.x <= 0.5)
+            {
+                break;
+            }
+            _v = 1.0;
+        } while(false);
+        _v += 0.25;
+    }
+    out_var_SV_Target = vec4(_v);
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        result.Glsl.Should().NotContain("while(false)");
+        result.Glsl.Should().MatchRegex(@"for \(int _spvonce_0 = 0; _spvonce_0 < 1; _spvonce_0\+\+\)");
+        result.Glsl.Should().NotContain("return;",
+            "no return may be synthesized for a loop that is not main's own wrapper");
+    }
+
+    [Fact]
+    public void DiscardInsideWrapper_SurvivesTheUnwrap()
+    {
+        const string src = """
+#version 140
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    float _v;
+    do
+    {
+        if (in_var_TEXCOORD0.x < 0.0)
+        {
+            discard;
+        }
+        _v = in_var_TEXCOORD0.x;
+        break;
+    } while(false);
+    out_var_SV_Target = vec4(_v);
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        result.Glsl.Should().NotContain("while(false)");
+        result.Glsl.Should().NotContain("_spvonce_");
+        result.Glsl.Should().Contain("discard;", "discard is stage-terminating and needs no rewrite");
+        result.Glsl.Should().Contain("{ ps_oC0 = vec4(_v); return; }");
     }
 
     [Fact]
