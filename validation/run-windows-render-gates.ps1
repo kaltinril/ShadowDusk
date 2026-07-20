@@ -20,12 +20,20 @@
   results, and exits non-zero if ANY gate failed. A green run is the evidence a release needs
   that CI cannot provide.
 
-  Gates (all default ON except FNA):
+  Gates (all default ON except FNA and Vulkan):
     * MonoGame WindowsDX corpus  - validation/BaselineDx + CandidateDx + compare_dx.py
                                    (ShadowDusk DX vs mgfxc DX golden, real MonoGame WindowsDX).
     * DX modern features (VTF)   - validation/DxModernFeatures (vkd3d vs fxc oracle, maxd 0).
     * KNI DirectX                - validation/KniWinFormsDX (ShadowDusk DX vs mgfxc, real KNI
                                    WinForms.DX11).
+    * KNI OpenGL desktop         - validation/KniDesktopGL + compare_kni.py (ShadowDusk v10 vs
+                                   mgfxc + MonoGame, real KNI SDL2.GL - the real-KNI-runtime GL
+                                   proof CI's llvmpipe lane does not cover).
+    * KNI OpenGL VS-driven       - validation/KniVsDriven (issue #70 matrix/POSITION rig,
+                                   in-process compare).
+    * ANGLE D3D11 derivatives    - validation/AngleDerivativeProbe (issue #136: the emitted
+                                   fragment control-flow shapes keep dFdx/dFdy alive on the
+                                   real browser WebGL backend; headless Edge/Chrome).
     * FNA fx_2_0 (-IncludeFna)   - validation/FnaValidation (vs fxc /T fx_2_0). OPT-IN because
                                    its restore-fna.ps1 clones the FNA source tree (heavy) and the
                                    oracle needs the Windows SDK fxc. Run it for any release that
@@ -111,6 +119,30 @@ $gates.Add(@{
 $gates.Add(@{
     Name   = 'KNI DirectX (ShadowDusk DX vs mgfxc, real KNI WinForms.DX11)'
     Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/KniWinFormsDX', '-c', 'Release') }
+})
+# KNI OpenGL gates: CI's llvmpipe lane covers the in-process MonoGame GL gates, but the
+# real-KNI-runtime GL proofs (SDL2.GL desktop + the VS-driven issue-#70 rig) have no CI
+# driver and previously relied on someone REMEMBERING to run them for GL-affecting
+# changes. Default ON here so a GL render regression cannot slip through this script.
+$gates.Add(@{
+    Name   = 'KNI OpenGL desktop (ShadowDusk v10 vs mgfxc + MonoGame, real KNI SDL2.GL)'
+    Action = {
+        Invoke-Checked 'dotnet' @('run', '--project', 'validation/KniDesktopGL', '-c', 'Release')
+        Invoke-Checked 'python' @('validation/compare_kni.py')
+    }
+})
+$gates.Add(@{
+    Name   = 'KNI OpenGL VS-driven (issue #70 matrix/POSITION rig, real KNI SDL2.GL, in-process compare)'
+    Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/KniVsDriven', '-c', 'Release') }
+})
+# ANGLE D3D11 derivative-shape probe (issue #136): renders the emitted fragment
+# control-flow shapes in headless Edge/Chrome forced onto ANGLE Direct3D11 (the WebGL
+# backend of every Windows browser) and asserts gradient ops stay alive in ShadowDusk's
+# unwrapped shape. Shape-level, seconds to run, and the ONLY gate that sees the browser
+# backend, so it is default ON.
+$gates.Add(@{
+    Name   = 'ANGLE D3D11 derivative shapes (issue #136 probe, headless Edge/Chrome)'
+    Action = { Invoke-Checked 'powershell' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'validation/AngleDerivativeProbe/run-angle-probe.ps1') }
 })
 if ($IncludeFna) {
     $gates.Add(@{

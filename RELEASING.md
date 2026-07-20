@@ -38,20 +38,23 @@ to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub 
    Releases cut from `main` only after CI is green; local green is not sufficient.
 
 4. **A green Windows render gate (CI structurally cannot run this).** The DirectX / FNA /
-   KNI-DirectX rung-4 render proofs ("renders like `mgfxc`/`fxc` in the real engine") have no
-   headless CI driver — Mesa covers OpenGL on the Linux lane, but there is no verified headless
-   D3D/WARP path on the runners. So before cutting a release you MUST render them locally on a
-   Windows+GPU box and confirm they still match the reference compiler:
+   KNI-DirectX / real-KNI-desktop-GL / browser-ANGLE rung-4 render proofs ("renders like
+   `mgfxc`/`fxc` in the real engine") have no headless CI driver — Mesa covers the in-process
+   OpenGL gates on the Linux lane, but there is no verified headless D3D/WARP path on the
+   runners, the real-KNI SDL2.GL rigs are not wired there, and CI's browser smoke renders on
+   SwiftShader (blind to ANGLE-D3D11 behavior like the issue-#136 gradient poisoning). So
+   before cutting a release you MUST render them locally on a Windows+GPU box and confirm they
+   still match the reference compiler:
 
    ```powershell
-   ./validation/run-windows-render-gates.ps1             # DX corpus + DX-modern (VTF) + KNI-DX
+   ./validation/run-windows-render-gates.ps1             # DX corpus + DX-modern (VTF) + KNI-DX + KNI-GL desktop + KNI-GL VS-driven + ANGLE derivative probe
    ./validation/run-windows-render-gates.ps1 -IncludeFna   # also FNA fx_2_0, for an FNA-affecting release
    ```
 
-   A non-zero exit means a render diverged from `mgfxc`/`fxc` — **do not release.** (The OpenGL
-   render gates DO run in CI via `validation-render.yml`, so they are covered by item 3; this
-   item is specifically the DX/FNA/KNI-DX gap. See `CLAUDE.md` → "Validation render drivers are
-   the real bar". The `/release` skill performs this as step 7b.)
+   A non-zero exit means a render diverged from `mgfxc`/`fxc` — **do not release.** (The
+   in-process OpenGL render gates DO run in CI via `validation-render.yml`, so they are covered
+   by item 3; this item is the DX/FNA/KNI-DX/KNI-GL/ANGLE gap. See `CLAUDE.md` → "Validation
+   render drivers are the real bar". The `/release` skill performs this as step 7b.)
 
 ---
 

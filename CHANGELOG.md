@@ -18,6 +18,13 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   (`apos-shapes-aa.fx`, upstream `d507a73`) into the third-party corpus (GL + DX compile
   pins), plus a structural pin that fails if any gradient op ever again lands inside a
   loop with a divergent exit in emitted GL GLSL (issue #136).
+- `validation/AngleDerivativeProbe`: a self-asserting headless-browser gate that renders
+  the emitted fragment control-flow shapes on real ANGLE Direct3D11 (the WebGL backend of
+  every Windows browser) and fails if ShadowDusk's shape loses derivatives — the first
+  gate that sees the browser backend the issue-#136 bug lives on. Wired into
+  `run-windows-render-gates.ps1` as default-ON, alongside the real-KNI OpenGL desktop and
+  VS-driven drivers (previously manual-only, now impossible to forget for GL-affecting
+  changes).
 
 ### Changed
 
