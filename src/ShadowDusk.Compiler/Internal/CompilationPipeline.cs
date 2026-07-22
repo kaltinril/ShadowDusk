@@ -426,7 +426,7 @@ internal sealed class CompilationPipeline
                         cancellationToken);
 
                     if (compileOutput.Blob.IsFailure)
-                        return Fail(compileOutput.Blob.Error);
+                        return Fail(compileOutput.Blob.Error, runWarnings);
 
                     AccumulateWarnings(runWarnings, seenWarnings, compileOutput.Warnings);
                     if (monoGameGl)
@@ -473,7 +473,7 @@ internal sealed class CompilationPipeline
                         cancellationToken);
 
                     if (compileOutput.Blob.IsFailure)
-                        return Fail(compileOutput.Blob.Error);
+                        return Fail(compileOutput.Blob.Error, runWarnings);
 
                     AccumulateWarnings(runWarnings, seenWarnings, compileOutput.Warnings);
                     if (monoGameGl)
@@ -566,7 +566,7 @@ internal sealed class CompilationPipeline
                     }
 
                     if (reflectResult.IsFailure)
-                        return Fail(reflectResult.Error);
+                        return Fail(reflectResult.Error, runWarnings);
 
                     ReflectedEffect reflected = reflectResult.Value;
 
@@ -595,7 +595,7 @@ internal sealed class CompilationPipeline
                     renderStateKvp[rs.Key] = rs.Value;
                 var renderStateResult = renderStateParser.Parse(renderStateKvp);
                 if (renderStateResult.IsFailure)
-                    return Fail(renderStateResult.Error);
+                    return Fail(renderStateResult.Error, runWarnings);
 
                 var passAnnotations = MapAnnotationEntries(pass.Annotations);
 
@@ -672,7 +672,7 @@ internal sealed class CompilationPipeline
                             Code: "SD0012",
                             Message: $"internal: GL uniform '{u.Name}' (shader #{i}) has no " +
                                      "matching effect parameter — the GLSL uniform layout and " +
-                                     "the reflected parameter list diverged"));
+                                     "the reflected parameter list diverged"), runWarnings);
                     paramIndices.Add(paramIndex);
                     paramOffsets.Add((ushort)(u.BaseRegister * 16));
                 }
@@ -714,7 +714,7 @@ internal sealed class CompilationPipeline
                 parsedSampler.StateEntries.Select(e => (e.Key, e.Value)),
                 options.SourceFileName ?? "<source>");
             if (resolved.IsFailure)
-                return Fail(resolved.Error);
+                return Fail(resolved.Error, runWarnings);
             if (resolved.Value is { } samplerState)
                 samplerStateByName[parsedSampler.Name] = samplerState;
         }
@@ -787,7 +787,7 @@ internal sealed class CompilationPipeline
                     Column: 0,
                     Code: "SD0026",
                     Message: "Vulkan does not support more than one constant buffer per shader " +
-                             "stage; consider merging globals into a single cbuffer."));
+                             "stage; consider merging globals into a single cbuffer."), runWarnings);
 
             byte[] blobBytes = compiledShaderBlobs[i].Bytes;
             if (options.Target == PlatformTarget.Vulkan)
@@ -827,7 +827,7 @@ internal sealed class CompilationPipeline
                     Line: 0,
                     Column: 0,
                     Code: "SD0025",
-                    Message: "The Vulkan target does not support the KNIFX container (KNI ships no Vulkan platform)."));
+                    Message: "The Vulkan target does not support the KNIFX container (KNI ships no Vulkan platform)."), runWarnings);
 
             KnifxBackend knifxBackend = options.Target switch
             {
@@ -836,7 +836,7 @@ internal sealed class CompilationPipeline
             };
             var knifxResult = new KnifxWriter().Write(ir, new KnifxWriterOptions(knifxBackend));
             if (knifxResult.IsFailure)
-                return Fail(knifxResult.Error);
+                return Fail(knifxResult.Error, runWarnings);
             return Result<CompiledShader, ShaderError[]>.Ok(
                 new CompiledShader(options.Target, knifxResult.Value) { Warnings = runWarnings });
         }
@@ -865,7 +865,7 @@ internal sealed class CompilationPipeline
                 Line: 0,
                 Column: 0,
                 Code: "SD0023",
-                Message: $"MgfxVersion {effectiveMgfxVersion} is outside the MGFX header's byte range (0-255)"));
+                Message: $"MgfxVersion {effectiveMgfxVersion} is outside the MGFX header's byte range (0-255)"), runWarnings);
 
         var mgfxWriter  = new MgfxWriter();
         var writeResult = mgfxWriter.Write(ir, new MgfxWriterOptions(
@@ -873,7 +873,7 @@ internal sealed class CompilationPipeline
             MgfxVersion: (byte)effectiveMgfxVersion));
 
         if (writeResult.IsFailure)
-            return Fail(writeResult.Error);
+            return Fail(writeResult.Error, runWarnings);
 
         byte[] mgfxBytes = writeResult.Value;
 
@@ -1376,7 +1376,7 @@ internal sealed class CompilationPipeline
                         pass.VertexEntryPoint, pass.VertexProfile, ShaderStage.Vertex,
                         cancellationToken);
                     if (compiled.IsFailure)
-                        return Fail(compiled.Error);
+                        return Fail(compiled.Error, fnaWarnings);
 
                     AccumulateWarnings(fnaWarnings, fnaSeenWarnings, compiled.Value.Warnings);
                     vsIndex = shaders.Count;
@@ -1392,7 +1392,7 @@ internal sealed class CompilationPipeline
                         pass.PixelEntryPoint, pass.PixelProfile, ShaderStage.Pixel,
                         cancellationToken);
                     if (compiled.IsFailure)
-                        return Fail(compiled.Error);
+                        return Fail(compiled.Error, fnaWarnings);
 
                     AccumulateWarnings(fnaWarnings, fnaSeenWarnings, compiled.Value.Warnings);
                     psIndex = shaders.Count;
@@ -1407,7 +1407,7 @@ internal sealed class CompilationPipeline
                     renderStateKvp[rs.Key] = rs.Value;
                 var renderStateResult = renderStateParser.Parse(renderStateKvp);
                 if (renderStateResult.IsFailure)
-                    return Fail(renderStateResult.Error);
+                    return Fail(renderStateResult.Error, fnaWarnings);
 
                 passSources.Add(new Fx2PassSource(
                     Name: pass.Name,
@@ -1423,11 +1423,11 @@ internal sealed class CompilationPipeline
         var buildResult = Fx2EffectBuilder.Build(
             techniqueSources, shaders, ctabs, fxParsed.Samplers, sourceFileName);
         if (buildResult.IsFailure)
-            return Fail(buildResult.Error);
+            return Fail(buildResult.Error, fnaWarnings);
 
         var writeResult = new Fx2EffectWriter().Write(buildResult.Value);
         if (writeResult.IsFailure)
-            return Fail(writeResult.Error);
+            return Fail(writeResult.Error, fnaWarnings);
 
         return Result<CompiledShader, ShaderError[]>.Ok(
             new CompiledShader(PlatformTarget.Fna, writeResult.Value) { Warnings = fnaWarnings });
@@ -2036,6 +2036,27 @@ internal sealed class CompilationPipeline
 
     private static Result<CompiledShader, ShaderError[]> Fail(ShaderError error) =>
         Result<CompiledShader, ShaderError[]>.Fail(new ShaderError[] { error });
+
+    // Fails with the fatal error PLUS any warnings already accumulated from earlier,
+    // successfully-compiled stages in the SAME effect (e.g. an earlier technique's
+    // pass compiled fine but with a warning; a later technique's pass then hard-
+    // failed) — otherwise those warnings would just be dropped on the floor. The
+    // error stays first (the actionable line); accumulated warnings ride along after
+    // it in the same array a caller already iterates severity-aware (CLI/MGCB
+    // formatting, ShaderValidationReport). Skips the allocation entirely when there
+    // are no accumulated warnings, so the ordinary single-error path is unchanged.
+    private static Result<CompiledShader, ShaderError[]> Fail(
+        ShaderError error, IReadOnlyList<ShaderError> accumulatedWarnings)
+    {
+        if (accumulatedWarnings.Count == 0)
+            return Fail(error);
+
+        var all = new ShaderError[accumulatedWarnings.Count + 1];
+        all[0] = error;
+        for (int i = 0; i < accumulatedWarnings.Count; i++)
+            all[i + 1] = accumulatedWarnings[i];
+        return Result<CompiledShader, ShaderError[]>.Fail(all);
+    }
 
     // Maps an FX9 pre-parser error to the pipeline's ShaderError, formatting the FX
     // diagnostic code as the four-digit "FXnnnn" string. Shared by every FxPreParser

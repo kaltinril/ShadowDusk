@@ -28,8 +28,8 @@ public sealed record ShaderTargetValidation(
 
 /// <summary>
 /// Everything wrong — and everything worth knowing — about one shader, across one or
-/// more targets. Produced by <see cref="IShaderCompiler.ValidateAsync(string, CompilerOptions?, CancellationToken)"/>
-/// / <see cref="IShaderCompiler.Validate(string, CompilerOptions?, CancellationToken)"/>.
+/// more targets. Produced by <see cref="ShaderCompilerValidationExtensions.ValidateAsync(IShaderCompiler, string, CompilerOptions?, CancellationToken)"/>
+/// / <see cref="ShaderCompilerValidationExtensions.Validate(IShaderCompiler, string, CompilerOptions?, CancellationToken)"/>.
 /// The simplest use is to print it: <see cref="ToString"/> renders the complete
 /// human-readable report (per-target status, every error with its source location and
 /// the compiler's verbatim text, every warning). For structured access walk
@@ -166,10 +166,9 @@ public sealed class ShaderValidationReport
 
         // The underlying compiler's complete output, when it says more than the
         // message already did (constraint 5: show the compiler's own words).
-        if (!string.IsNullOrWhiteSpace(e.RawDiagnostics) &&
-            !e.Message.Contains(e.RawDiagnostics.TrimEnd(), StringComparison.Ordinal))
+        if (e.HasAdditionalRawDiagnostics)
         {
-            foreach (string raw in e.RawDiagnostics.TrimEnd().Replace("\r\n", "\n").Split('\n'))
+            foreach (string raw in e.RawDiagnostics!.TrimEnd().Replace("\r\n", "\n").Split('\n'))
                 sb.Append("      | ").AppendLine(raw);
         }
     }

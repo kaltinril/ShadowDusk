@@ -94,32 +94,47 @@ public static class GlslPortabilityAnalyzer
     private static void CheckGradientOpsInsideDivergentLoops(
         string glsl, string entry, string sourceFileName, List<ShaderError> findings)
     {
-        foreach ((int bodyStart, int bodyEnd, string header) in CollectLoopBodies(glsl))
+        // Bodies with a conditional break/discard, computed once up front (not one
+        // finding per enclosing loop): a gradient call nested inside two such loops —
+        // an outer one-shot wrapper AND an inner divergent loop, say — must surface
+        // ONE warning, not one per enclosing loop. Pick the INNERMOST qualifying body
+        // per gradient call for the most specific "emitted GL loop" snippet.
+        var divergentBodies = new List<(int Start, int End, string Header)>();
+        foreach (var body in CollectLoopBodies(glsl))
         {
-            string bodyText = glsl.Substring(bodyStart, bodyEnd - bodyStart + 1);
-            if (!DivergentExit.IsMatch(bodyText))
+            string bodyText = glsl.Substring(body.Start, body.End - body.Start + 1);
+            if (DivergentExit.IsMatch(bodyText))
+                divergentBodies.Add(body);
+        }
+
+        foreach (Match g in GradientCall.Matches(glsl))
+        {
+            (int Start, int End, string Header)? innermost = null;
+            foreach (var body in divergentBodies)
+            {
+                if (g.Index <= body.Start || g.Index >= body.End)
+                    continue;
+                if (innermost is null || body.End - body.Start < innermost.Value.End - innermost.Value.Start)
+                    innermost = body;
+            }
+
+            if (innermost is not { } found)
                 continue;
 
-            foreach (Match g in GradientCall.Matches(glsl))
-            {
-                if (g.Index <= bodyStart || g.Index >= bodyEnd)
-                    continue;
-
-                findings.Add(new ShaderError(
-                    File: sourceFileName,
-                    Line: 0,
-                    Column: 0,
-                    Code: "SD0400",
-                    Message:
-                        $"In {entry}, {g.Groups[1].Value}() is inside a loop with a conditional " +
-                        $"break/discard (emitted GL loop: \"{header}\"). On ANGLE Direct3D11 — " +
-                        "WebGL in every Windows browser — every derivative inside such a loop " +
-                        "silently evaluates to 0.0, with no compile or link error (fxc warns " +
-                        "X3553 and force-unrolls the same shape; a runtime-bounded loop cannot " +
-                        "be unrolled here). If the effect targets browsers, compute the " +
-                        "derivative before the loop and reuse the value inside it.",
-                    Severity: ShaderErrorSeverity.Warning));
-            }
+            findings.Add(new ShaderError(
+                File: sourceFileName,
+                Line: 0,
+                Column: 0,
+                Code: "SD0400",
+                Message:
+                    $"In {entry}, {g.Groups[1].Value}() is inside a loop with a conditional " +
+                    $"break/discard (emitted GL loop: \"{found.Header}\"). On ANGLE Direct3D11 — " +
+                    "WebGL in every Windows browser — every derivative inside such a loop " +
+                    "silently evaluates to 0.0, with no compile or link error (fxc warns " +
+                    "X3553 and force-unrolls the same shape; a runtime-bounded loop cannot " +
+                    "be unrolled here). If the effect targets browsers, compute the " +
+                    "derivative before the loop and reuse the value inside it.",
+                Severity: ShaderErrorSeverity.Warning));
         }
     }
 

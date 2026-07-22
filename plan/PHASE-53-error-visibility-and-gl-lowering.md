@@ -103,8 +103,6 @@ must not reject working desktop shaders); the known-fatal shapes keep their exis
 loud `SD0210` errors.
 
 ### D6 — `Validate` / `ValidateAsync`: one call, all issues
-Default interface methods on `IShaderCompiler` (no implementor breakage; desktop, CLI
-runner, and WASM compiler all inherit it):
 ```csharp
 ShaderValidationReport report = await compiler.ValidateAsync(fxSource);
 Console.WriteLine(report);            // human-readable, per-target, everything
@@ -119,6 +117,51 @@ if (!report.IsValid) { /* report.Targets[i].Errors / .Warnings */ }
 - `ShaderValidationReport.ToString()` renders the friendly multi-line report so "print
   one thing" is the whole consumer story. Sync `Validate` mirrors it (same
   WASM `InitializeAsync` precondition as `Compile`).
+- **Correction (post-review, same phase):** the first cut implemented these as C# 8
+  default interface methods on `IShaderCompiler`. Default interface methods are only
+  reachable through an interface-TYPED reference — `var compiler = new
+  EffectCompiler();` (the exact pattern the README/quickstarts use for `CompileAsync`)
+  fails to compile against `compiler.ValidateAsync(...)` with `CS1061`, because the
+  compile-time type is `EffectCompiler`, not `IShaderCompiler`. Verified by building the
+  README's snippet as written. Fixed by moving both methods to
+  `ShaderCompilerValidationExtensions`, a public extension-method class over
+  `IShaderCompiler` in `ShadowDusk.Core` — extension methods resolve through any type
+  that implements the extended interface, so the same call now works whether the
+  variable is typed as `IShaderCompiler` or as the concrete `EffectCompiler` /
+  `WasmShaderCompiler`, with nothing for either implementer to add. Permanent regression:
+  `tests/ShadowDusk.Compiler.Tests/EffectCompilerValidateApiSurfaceTests.cs` calls
+  `ValidateAsync`/`Validate` on a `var compiler = new EffectCompiler();` — if the API
+  regresses to a default interface method, this file stops compiling.
+
+### Post-review follow-ups (same phase, from the 2026-07-22 review)
+- **Warnings survive a later hard failure.** `CompilationPipeline.Fail(error)` used to
+  drop the warnings already accumulated in `runWarnings`/`fnaWarnings` when a LATER
+  stage failed (e.g. technique 1's pass compiled and warned SD0401; technique 2's pass
+  then failed). A `Fail(error, accumulatedWarnings)` overload appends them after the
+  fatal error (error stays FIRST — the actionable line leads; zero-warning path
+  allocates nothing extra). Note the reachable failure classes are POST-compile stages
+  (render-state parse SD0011, reflection, writers, SD0012/SD0025/SD0026) — an
+  HLSL-level error in another function can NOT exercise this, because DXC semantically
+  checks the whole translation unit on every entry-point compile, so a bad body fails
+  the FIRST compile before any warning exists. Severity-aware consumers updated:
+  `ShaderCompilerValidationExtensions.ToTargetValidation` splits the failure array into
+  Errors/Warnings; the ShaderFiddle summary counts only error-severity entries; the CLI
+  formatter already prints per-severity. Regression:
+  `Phase53ErrorVisibilityRegressionTests.EarlierTechniquesWarning_SurvivesALaterTechniquesHardFailure`.
+- **Raw-diagnostic duplication suppressed on the common path.** The
+  print-the-complete-raw-text logic (CLI indented block, report `| ` block, Fiddle
+  `<pre>`) used `!Message.Contains(RawDiagnostics)`, which only suppressed the
+  unparseable-verbatim case — an ordinary single located error printed its one
+  diagnostic line TWICE (formatted + raw). Centralized as
+  `ShaderError.HasAdditionalRawDiagnostics`: false when there is no raw text, when the
+  message already contains it, or when the raw text is a single line ENDING with the
+  message (the common single-diagnostic shape); true for anything multi-line
+  (leading warnings, source-echo/caret context). All three surfaces now share it.
+  Regression: `ShaderErrorHasAdditionalRawDiagnosticsTests`.
+- **SD0400 deduped across nested loops.** A gradient call nested inside two divergent
+  loops produced one finding PER enclosing loop; now one finding, attributed to the
+  innermost qualifying loop. Regression:
+  `Sd0400_GradientNestedInsideTwoDivergentLoops_FlaggedOnce`.
 
 ### D7 — Fix the emission classes themselves (the lint is the net, not the fix)
 - **#137**: run the stage-agnostic body lowerings on the **vertex** stage too —
@@ -179,11 +222,12 @@ value, file becomes text again.
       SD0400/0401/0402 registered. The for-header classification splits at top-level
       semicolons (paren-safe), so Rule 9b's own loop and `i < f(x)` conditions never
       false-positive.
-- [x] W6 — D6 `Validate`/`ValidateAsync` (default interface methods; default targets
-      OpenGL+DirectX; a set `CompilerOptions.Profile` pins the single profile target) +
-      `ShaderValidationReport` (`IsValid`/`IsClean`/`AllDiagnostics`/friendly
-      `ToString`) + end-to-end tests (the int-uniform "DX works, GL doesn't" report
-      shape, and warnings surfacing).
+- [x] W6 — D6 `Validate`/`ValidateAsync` (extension methods over `IShaderCompiler` —
+      see the D6 correction above; default targets OpenGL+DirectX; a set
+      `CompilerOptions.Profile` pins the single profile target) + `ShaderValidationReport`
+      (`IsValid`/`IsClean`/`AllDiagnostics`/friendly `ToString`) + end-to-end tests (the
+      int-uniform "DX works, GL doesn't" report shape, and warnings surfacing), plus the
+      `EffectCompiler`-typed-variable API-surface regression test.
 - [x] W7 — D8 NUL-byte fix (`"\0"` escape; value identical, file greps as text again).
 - [x] W8 — Full `dotnet test ShadowDusk.slnx` green: **2038 tests** (was 1990;
       +40 unit, +15 integration, 2 reformatter pins updated to the new verbatim

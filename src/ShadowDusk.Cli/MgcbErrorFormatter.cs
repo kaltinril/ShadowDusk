@@ -34,10 +34,9 @@ internal static class MgcbErrorFormatter
             // default — no verbose flag to find). Indented so MGCB's line parser
             // cannot mistake it for a second diagnostic; the parseable line above
             // stays first and unchanged.
-            if (!string.IsNullOrWhiteSpace(error.RawDiagnostics) &&
-                !error.Message.Contains(error.RawDiagnostics.TrimEnd(), StringComparison.Ordinal))
+            if (error.HasAdditionalRawDiagnostics)
             {
-                foreach (string raw in error.RawDiagnostics.TrimEnd().Replace("\r\n", "\n").Split('\n'))
+                foreach (string raw in error.RawDiagnostics!.TrimEnd().Replace("\r\n", "\n").Split('\n'))
                     yield return "    " + raw;
             }
         }

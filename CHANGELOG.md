@@ -19,15 +19,23 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   wrong with a shader — every error and every warning, per target, with source locations
   and the underlying compiler's complete verbatim text. Defaults to OpenGL + DirectX (the
   classic "compiles for DirectX, fails for OpenGL" field report in one screen); explicit
-  target sets (FNA, Vulkan) via an overload. Implemented as default interface methods over
-  the one real pipeline (never a fork), so what validates is exactly what compiles; works
-  on desktop and the browser/WASM compiler alike.
+  target sets (FNA, Vulkan) via an overload. Implemented as extension methods over
+  `IShaderCompiler` (not default interface methods — those are only reachable through an
+  interface-typed reference, which would have broken the `var compiler = new
+  EffectCompiler();` pattern the rest of the docs use) over the one real pipeline (never a
+  fork), so what validates is exactly what compiles; works on desktop and the browser/WASM
+  compiler alike, and on any variable typed as the concrete compiler class.
 - **`CompiledShader.Warnings`** — successful compiles now carry their non-fatal
   diagnostics instead of discarding them: the underlying compiler's own warnings
   (DXC, d3dcompiler, and vkd3d's message buffer, which was previously thrown away on
   success) plus the new GL portability findings. The CLI prints them as MGCB-parseable
   `warning` lines on stderr with exit 0; the ShaderFiddle sample lists them in the
-  diagnostics panel.
+  diagnostics panel. Warnings also survive a LATER hard failure in the same effect:
+  when an earlier technique/pass compiled (and warned) but a later stage then fails,
+  the failure's `ShaderError[]` carries the fatal error FIRST plus the
+  already-gathered warning-severity entries — nothing is silently dropped, and
+  severity-aware consumers (the CLI formatter, `ValidateAsync`) keep counting only
+  true errors as errors.
 - **GL portability lint (`SD0400`–`SD0402`)**: compile-time warnings for constructs that
   compile fine but are known to fail or misbehave at RUNTIME on narrower GL stacks —
   where the consumer's only signal used to be MonoGame's generic draw-time

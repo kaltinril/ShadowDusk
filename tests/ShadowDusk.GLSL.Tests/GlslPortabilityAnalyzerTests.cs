@@ -68,6 +68,38 @@ void main()
     }
 
     [Fact]
+    public void Sd0400_GradientNestedInsideTwoDivergentLoops_FlaggedOnce()
+    {
+        // Both the outer and inner loop have a conditional break, and the gradient
+        // call sits inside both — this must surface ONE finding (the innermost loop),
+        // not one per enclosing loop.
+        const string glsl = """
+void main()
+{
+    for (int i = 0; i < 8; i++)
+    {
+        if (vTexCoord0.x > 0.9)
+        {
+            break;
+        }
+        for (int j = 0; j < 4; j++)
+        {
+            if (vTexCoord0.y > 0.5)
+            {
+                break;
+            }
+            ps_oC0 = vec4(dFdx(vTexCoord0.x));
+        }
+    }
+}
+""";
+        var findings = AnalyzePixel(glsl);
+
+        findings.Should().ContainSingle(f => f.Code == "SD0400",
+            "one gradient call nested in two divergent loops is one issue, not two");
+    }
+
+    [Fact]
     public void Sd0400_GradientOutsideLoop_NotFlagged()
     {
         const string glsl = """

@@ -203,6 +203,88 @@ public sealed class Phase53ErrorVisibilityRegressionTests
     }
 
     // -------------------------------------------------------------------------
+    // Warnings from an earlier, already-compiled technique must survive a LATER
+    // technique's hard failure in the same effect (post-review follow-up: these used
+    // to be silently dropped because CompilationPipeline.Fail(error) had no slot to
+    // carry along the warnings already accumulated in runWarnings/fnaWarnings).
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task EarlierTechniquesWarning_SurvivesALaterTechniquesHardFailure()
+    {
+        // "Warns" compiles cleanly but trips SD0401 (PS-only pass reading TEXCOORD1,
+        // an interpolant SpriteBatch's built-in VS never writes). "Broken" — processed
+        // SECOND — then hard-fails on a bogus render-state VALUE (SD0011), a failure
+        // class that genuinely occurs AFTER earlier stages compiled. (An HLSL-level
+        // error would not exercise this: DXC semantically checks the WHOLE file on
+        // every entry-point compile, so a bad function body fails the FIRST compile
+        // before any warning exists.) The SD0401 warning gathered while compiling
+        // "Warns" must still reach the caller alongside the fatal SD0011.
+        const string fx = """
+            Texture2D SpriteTexture;
+            sampler2D SpriteTextureSampler = sampler_state
+            {
+                Texture = <SpriteTexture>;
+            };
+
+            struct PixelInput
+            {
+                float4 Color     : COLOR0;
+                float2 TexCoord  : TEXCOORD0;
+                float2 TexCoord1 : TEXCOORD1;
+            };
+
+            float4 WarnsPS(PixelInput input) : COLOR0
+            {
+                float4 a = tex2D(SpriteTextureSampler, input.TexCoord);
+                float4 b = tex2D(SpriteTextureSampler, input.TexCoord1);
+                return lerp(a, b, 0.5) * input.Color;
+            }
+
+            float4 PlainPS(PixelInput input) : COLOR0
+            {
+                return tex2D(SpriteTextureSampler, input.TexCoord) * input.Color;
+            }
+
+            technique Warns
+            {
+                pass P0
+                {
+                    PixelShader = compile ps_3_0 WarnsPS();
+                }
+            }
+
+            technique Broken
+            {
+                pass P0
+                {
+                    AlphaBlendEnable = NotAValidValue;
+                    PixelShader = compile ps_3_0 PlainPS();
+                }
+            }
+            """;
+
+        IShaderCompiler compiler = new EffectCompiler();
+        var options = new CompilerOptions
+        {
+            Target = PlatformTarget.OpenGL,
+            SourceFileName = "warnings-then-fail.fx",
+        };
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        var result = await compiler.CompileAsync(fx, options, cts.Token);
+
+        result.IsFailure.Should().BeTrue("the Broken technique has a bogus render-state value");
+        result.Error.Should().Contain(
+            e => e.Severity == ShaderErrorSeverity.Error && e.Code == "SD0011",
+            "the fatal render-state error from the Broken technique must still be reported");
+        result.Error.Should().Contain(e => e.Code == "SD0401",
+            "the Warns technique's warning, gathered before the later failure, must not be silently dropped");
+        result.Error[0].Severity.Should().Be(ShaderErrorSeverity.Error,
+            "the fatal error stays FIRST in the array — the actionable line leads");
+    }
+
+    // -------------------------------------------------------------------------
     // ValidateAsync — one call, all issues, across targets (the field-report shape:
     // "compiles for DirectX, fails for OpenGL").
     // -------------------------------------------------------------------------
