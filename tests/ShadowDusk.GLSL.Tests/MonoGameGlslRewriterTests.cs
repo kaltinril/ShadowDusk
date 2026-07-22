@@ -1975,4 +1975,174 @@ void main()
 
         result.Glsl.Should().Contain("((vTexCoord5.z) / (vTexCoord5.x * vTexCoord5.y))");
     }
+
+    // ---- Issue #140: a round() nested inside another round()'s ARGUMENT. Rule 8
+    // used to resume the scan past the whole replacement, so the inner call
+    // survived as roundEven() — a WebGL1/Mesa load failure with exit code 0. ----
+
+    [Fact]
+    public void Round_NestedInsideAnotherRoundArgument_BothLowered_Issue140()
+    {
+        const string src = """
+#version 140
+
+uniform sampler2D _10;
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    out_var_SV_Target = texture(_10, vec2(roundEven(roundEven(in_var_TEXCOORD0.x * 7.0) * 0.5) * 0.25, in_var_TEXCOORD0.y));
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        System.Text.RegularExpressions.Regex
+            .IsMatch(result.Glsl, @"\bround(Even)?\s*\(")
+            .Should().BeFalse("the INNER nested round must be lowered too (issue #140)");
+        result.Glsl.Should().Contain("floor((floor((vTexCoord0.x * 7.0) + 0.5) * 0.5) + 0.5)");
+
+        int open  = result.Glsl.Count(c => c == '(');
+        int close = result.Glsl.Count(c => c == ')');
+        open.Should().Be(close, "the nested lowering must keep parentheses balanced");
+    }
+
+    // ---- Issue #137: the stage-agnostic body lowerings (Rules 8, 9b, 10, 11) must
+    // run on the VERTEX stage too — a VS round() shipped roundEven() and a VS
+    // early-return helper shipped the raw do{}while(false), both silent
+    // Effect-load failures on Mesa / WebGL1 with compile exit 0. ----
+
+    [Fact]
+    public void VertexStage_Round_IsLoweredToFloorHalfUp_Issue137()
+    {
+        const string src = """
+#version 140
+
+layout(binding = 0, std140) uniform type_Globals
+{
+    mat4 WorldViewProjection;
+    vec4 Tint;
+} _Globals;
+
+in vec4 in_var_POSITION0;
+in vec4 in_var_COLOR0;
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_COLOR0;
+out vec2 out_var_TEXCOORD0;
+
+void main()
+{
+    gl_Position = _Globals.WorldViewProjection * in_var_POSITION0;
+    gl_Position.xy = roundEven(gl_Position.xy * 8.0) * 0.125;
+    out_var_COLOR0 = in_var_COLOR0 * _Globals.Tint;
+    out_var_TEXCOORD0 = in_var_TEXCOORD0;
+    gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Vertex);
+
+        System.Text.RegularExpressions.Regex
+            .IsMatch(result.Glsl, @"\bround(Even)?\s*\(")
+            .Should().BeFalse("Rule 8 must run on the vertex stage too (issue #137)");
+        result.Glsl.Should().Contain("floor((gl_Position.xy * 8.0) + 0.5)");
+
+        // The posFixup contract is untouched by the VS lowering.
+        result.Glsl.Should().Contain("uniform vec4 posFixup;");
+        result.Glsl.Should().Contain("gl_Position.y = gl_Position.y * posFixup.y;");
+    }
+
+    [Fact]
+    public void VertexStage_OneShotDoWhile_IsLoweredToForLoop_Issue137()
+    {
+        // SPIRV-Cross's early-return wrapper in a VERTEX body (an inlined helper
+        // with a conditional early return). Rule 9b must lower it to the
+        // Appendix-A-allowed one-shot for; Rule 9a (break -> early `return;`)
+        // must NOT run here — an early return would skip the posFixup tail.
+        const string src = """
+#version 140
+
+layout(binding = 0, std140) uniform type_Globals
+{
+    mat4 WorldViewProjection;
+    vec4 Tint;
+} _Globals;
+
+in vec4 in_var_POSITION0;
+in vec4 in_var_COLOR0;
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_COLOR0;
+out vec2 out_var_TEXCOORD0;
+
+void main()
+{
+    vec4 pos = _Globals.WorldViewProjection * in_var_POSITION0;
+    do
+    {
+        if (pos.w <= 0.0)
+        {
+            break;
+        }
+        pos.xy += vec2(0.001, 0.001) * pos.w;
+    } while(false);
+    gl_Position = pos;
+    out_var_COLOR0 = in_var_COLOR0 * _Globals.Tint;
+    out_var_TEXCOORD0 = in_var_TEXCOORD0;
+    gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Vertex);
+
+        System.Text.RegularExpressions.Regex
+            .IsMatch(result.Glsl, @"\bdo\s*\{")
+            .Should().BeFalse("a raw do-while fails to load on WebGL1/KNI Reach (issues #107/#137)");
+        result.Glsl.Should().NotContain("while(false)");
+        result.Glsl.Should().NotContain("while (false)");
+        System.Text.RegularExpressions.Regex
+            .IsMatch(result.Glsl, @"for \(int \w+ = 0; \w+ < 1; \w+\+\+\)")
+            .Should().BeTrue("Rule 9b lowers the one-shot wrapper to the Appendix-A for form");
+
+        // The posFixup lines must sit AFTER the lowered loop, on the single
+        // fall-through path — never inside it, never skippable by an early return.
+        int loopIndex   = result.Glsl.IndexOf("for (int", StringComparison.Ordinal);
+        int fixupIndex  = result.Glsl.IndexOf("gl_Position.y = gl_Position.y * posFixup.y;", StringComparison.Ordinal);
+        loopIndex.Should().BeGreaterThan(0);
+        fixupIndex.Should().BeGreaterThan(loopIndex, "the posFixup tail must run after the lowered loop");
+        result.Glsl.Should().NotContain("\n    return;", "Rule 9a's early-return unwrap must stay pixel-only in a VS");
+    }
+
+    // ---- Issue #139: fragment shaders using derivative builtins must ship the
+    // GL_OES_standard_derivatives header as the FIRST line (mgfxc parity;
+    // strict ESSL 1.00 rejects derivative builtins without it). ----
+
+    [Fact]
+    public void PixelStage_DerivativeBuiltins_EmitStandardDerivativesHeaderFirst_Issue139()
+    {
+        const string src = """
+#version 140
+
+uniform sampler2D _10;
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    float w = fwidth(in_var_TEXCOORD0.x) + abs(dFdx(in_var_TEXCOORD0.y));
+    out_var_SV_Target = texture(_10, in_var_TEXCOORD0) * vec4(w);
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        result.Glsl.Should().StartWith("#extension GL_OES_standard_derivatives : enable\n",
+            "mgfxc prepends the derivatives extension as the FIRST line (issue #139), and " +
+            "fwidth counts too — SPIRV-Cross emits it directly");
+    }
+
+    [Fact]
+    public void PixelStage_NoDerivatives_OmitsStandardDerivativesHeader_Issue139()
+    {
+        var result = MonoGameGlslRewriter.Rewrite(PixelatedRoundEven, ShaderStage.Pixel);
+
+        result.Glsl.Should().NotContain("GL_OES_standard_derivatives",
+            "the header is emitted only when a derivative builtin is present (mgfxc parity)");
+    }
 }

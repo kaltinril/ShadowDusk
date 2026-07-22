@@ -25,6 +25,13 @@ var result = await compiler.CompileAsync(
 var effect = new Effect(graphicsDevice, result.Value.Data);
 ```
 
+Shader not working? One call shows everything wrong with it — every error and every
+warning, for OpenGL and DirectX side by side, with the underlying compiler's full text:
+
+```csharp
+Console.WriteLine(await compiler.ValidateAsync(hlslSource));
+```
+
 Everything it needs ships inside the package. There's no separate install: no fxc.exe, no mgfxc, no Wine, no Windows SDK. The same library also ships as a **command-line tool** for build-time use — including from MGCB's external-tool hook — and runs in the browser via WebAssembly (the in-browser fiddle is a sample of that reach, not a separate product).
 
 ## Why it exists

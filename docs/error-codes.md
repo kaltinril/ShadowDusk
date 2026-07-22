@@ -18,6 +18,7 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 | `SD0100`–`SD0199` | Reflection / transpilation backends |
 | `SD0200`–`SD0299` | Platform / backend availability |
 | `SD0300`–`SD0399` | FNA (fx_2_0) target |
+| `SD0400`–`SD0499` | GL portability lint (`GlslPortabilityAnalyzer`) — always warnings, never errors |
 | `SD1900`–`SD1999` | Browser/WASM host backends |
 | `X0000`–`X0099` | CLI and pipeline general errors (mgfxc-style) |
 
@@ -62,12 +63,15 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 | `SD0201` | A capability-profile shader feature (e.g. vertex texture fetch, texture arrays) has no shipping runtime support yet and cannot be enabled. Reserved for a future runtime proven to consume it. | `ShaderFeatureSupport` |
 | `SD0210` | **Two historical meanings (known shared code):** (a) the d3dcompiler_47 oracle backend refused the request (requires Windows, or a `ProfileOverride` it never serves); (b) the MonoGame GLSL rewriter could not lower a construct to MonoGame's GL dialect — incl. (Phase 43C) int/bool/mat3/struct uniform-block members, a whole-array uniform use, or any surviving reference to a rewritten uniform block. | `D3DCompilerShaderCompiler`, `CompilationPipeline` |
 | `SD0211` | vkd3d-shader native library missing or unloadable (run `tools/restore.ps1`). | `Vkd3dShaderCompiler` |
-| `SD0212` | vkd3d-shader compile failed without parseable diagnostics. | `Vkd3dCompileContract` |
+| `SD0212` | vkd3d-shader compile failed and emitted no diagnostic text at all (unparseable non-empty text passes through verbatim as `X0000` since Phase 53). | `Vkd3dCompileContract` |
 | `SD0300` | FNA profile policy violation (SM4+/SM1 profile, or stage/profile prefix mismatch). | `CompilationPipeline.ResolveFnaProfile` |
 | `SD0301` | D3D9 CTAB reflection failed. | `CtabReader` |
 | `SD0302` | fx_2_0 effect validation failed at write time. | `Fx2EffectWriter` |
 | `SD0303` | FNA effect build failed. | `Fx2EffectBuilder` |
 | `SD0305` | MojoShader-compatibility bytecode patch failed. | `D3d9BytecodePatcher` |
+| `SD0400` | **Warning.** A gradient op (`dFdx`/`dFdy`/`fwidth`) sits inside a loop with a divergent exit (conditional `break`/`discard`) in the emitted GL fragment source. ANGLE Direct3D11 (WebGL in every Windows browser) silently evaluates such derivatives to 0.0; fxc warns X3553 and force-unrolls the same HLSL (issue #141). | `GlslPortabilityAnalyzer` |
+| `SD0401` | **Warning.** A pass with no vertex shader whose pixel shader reads interpolants SpriteBatch's built-in SpriteEffect VS never writes (anything beyond COLOR0 → `vFrontColor` / TEXCOORD0 → `vTexCoord0`). Drawn with SpriteBatch on GL, the program link fails on strict drivers at the FIRST draw with the engine's generic exception. | `GlslPortabilityAnalyzer` |
+| `SD0402` | **Warning.** A loop shape outside GLSL ES 1.00 Appendix A in the emitted GL source (header-less `for (;;)`, empty-increment `for` with the index advanced in the body, `while`, or a genuine `do-while`) — may fail to load on WebGL1 / KNI Reach (issue #138); desktop GL, WebGL2, and KNI HiDef are unaffected. | `GlslPortabilityAnalyzer` |
 | `SD1900` | Browser/WASM DXC backend failed. | `JsDxcShaderCompiler` |
 | `SD1901` | Browser/WASM SPIRV-Cross backend failed. | `JsSpirvToGlslTranspiler` |
 | `SD1902` | Browser/WASM vkd3d backend failed. | `WasmVkd3dShaderCompiler` |
@@ -77,7 +81,7 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 
 | Code | Meaning |
 |---|---|
-| `X0000` | Underlying compiler failed but emitted no parseable diagnostics. |
+| `X0000` | A diagnostic from the underlying compiler, passed through as-is: either a parsed `file:line:col` entry (DXC emits no per-diagnostic codes) or, when nothing parses, the compiler's complete text VERBATIM as the message (Phase 53 — never a generic sentence). The `…with no diagnostics` message form means the compiler failed while emitting no text at all. |
 | `X0001` | Source file could not be read (I/O or access denied). |
 | `X0002` | Output file could not be written (I/O or access denied). |
 | `X0003` | Missing required CLI argument (`<SourceFile>` / `<OutputFile>`). |

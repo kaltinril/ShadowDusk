@@ -168,7 +168,18 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
 
                 var dxbc = new byte[checked((int)output.Size)];
                 Marshal.Copy(output.Code, dxbc, 0, dxbc.Length);
-                return Result<PlatformBlob, ShaderError>.Ok(new PlatformBlob(blobKind, dxbc));
+
+                // vkd3d's message buffer is populated on SUCCESS too (LogLevel is
+                // Warning) — non-fatal diagnostics were previously discarded here.
+                // Capture verbatim; the pipeline surfaces them via
+                // CompiledShader.Warnings (constraint 5).
+                IReadOnlyList<ShaderError> warnings = string.IsNullOrWhiteSpace(messages)
+                    ? Array.Empty<ShaderError>()
+                    : D3DCompilerDiagnosticReformatter.ReformatAsWarnings(
+                        messages, request.SourceFileName);
+
+                return Result<PlatformBlob, ShaderError>.Ok(
+                    new PlatformBlob(blobKind, dxbc) { Warnings = warnings });
             }
             finally
             {

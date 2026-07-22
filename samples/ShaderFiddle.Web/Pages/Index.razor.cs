@@ -545,10 +545,16 @@ public partial class Index
 
             if (result.IsSuccess)
             {
+                // Non-fatal diagnostics (the compiler's own warnings + the GL
+                // portability findings, e.g. a SpriteBatch-incompatible interpolant):
+                // same panel and squiggle machinery, warning styling via severity.
+                SetDiagnostics(result.Value.Warnings);
                 var err = _game?.ApplyEffect(result.Value.Data);
                 if (err is null)
                 {
-                    _status = "Compiled in-browser and applied (mode 2).";
+                    _status = result.Value.Warnings.Count > 0
+                        ? $"Compiled in-browser and applied (mode 2) — {result.Value.Warnings.Count} warning(s) below."
+                        : "Compiled in-browser and applied (mode 2).";
                     _statusIsError = false;
                     RefreshParams();
                 }

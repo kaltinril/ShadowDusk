@@ -74,22 +74,11 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
 
             if (status.Failure)
             {
-                IReadOnlyList<ShaderError> errors = DxcDiagnosticReformatter.Reformat(
-                    errorText,
-                    request.SourceFileName);
-
-                ShaderError primary = errors.Count > 0
-                    ? errors[0]
-                    : new ShaderError(
-                        File: request.SourceFileName,
-                        Line: 0,
-                        Column: 0,
-                        Code: "X0000",
-                        Message: "Shader preprocessing failed with no diagnostics",
-                        Severity: ShaderErrorSeverity.Error,
-                        RawDiagnostics: errorText);
-
-                return Result<string, ShaderError>.Fail(primary);
+                return Result<string, ShaderError>.Fail(
+                    DxcDiagnosticReformatter.SelectPrimary(
+                        errorText,
+                        request.SourceFileName,
+                        noDiagnosticsFallback: "Shader preprocessing failed with no diagnostics"));
             }
 
             // -P writes the expanded HLSL text to the Hlsl output (not the Object blob).
@@ -137,22 +126,14 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
 
             if (status.Failure)
             {
-                IReadOnlyList<ShaderError> errors = DxcDiagnosticReformatter.Reformat(
-                    errorText,
-                    request.SourceFileName);
-
-                ShaderError primary = errors.Count > 0
-                    ? errors[0]
-                    : new ShaderError(
-                        File: request.SourceFileName,
-                        Line: 0,
-                        Column: 0,
-                        Code: "X0000",
-                        Message: "Shader compilation failed with no diagnostics",
-                        Severity: ShaderErrorSeverity.Error,
-                        RawDiagnostics: errorText);
-
-                return Result<PlatformBlob, ShaderError>.Fail(primary);
+                // First error-severity diagnostic wins (never a leading warning), and
+                // the COMPLETE verbatim DXC text rides on RawDiagnostics so the
+                // single-error contract drops nothing — the surfaces print it.
+                return Result<PlatformBlob, ShaderError>.Fail(
+                    DxcDiagnosticReformatter.SelectPrimary(
+                        errorText,
+                        request.SourceFileName,
+                        noDiagnosticsFallback: "Shader compilation failed with no diagnostics"));
             }
 
             // Copy the bytecode into a managed array BEFORE disposal: the previous
@@ -169,7 +150,15 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
                 ? BlobKind.Dxbc
                 : BlobKind.Spirv;
 
-            return Result<PlatformBlob, ShaderError>.Ok(new PlatformBlob(kind, bytes));
+            // A successful compile can still carry diagnostic text (warnings — the
+            // pipeline no longer forces -WX, matching mgfxc's fxc invocation, which
+            // never passed /WX). Capture them verbatim instead of discarding; they
+            // flow to CompiledShader.Warnings.
+            IReadOnlyList<ShaderError> warnings = DxcDiagnosticReformatter.ReformatAsWarnings(
+                errorText, request.SourceFileName);
+
+            return Result<PlatformBlob, ShaderError>.Ok(
+                new PlatformBlob(kind, bytes) { Warnings = warnings });
         }
         finally
         {

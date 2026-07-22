@@ -73,4 +73,57 @@ public sealed class D3DCompilerDiagnosticReformatterTests
         errors.Should().ContainSingle();
         errors[0].RawDiagnostics.Should().Contain("catastrophic failure");
     }
+
+    // ---- Phase 53: verbatim promotion + primary selection. ----
+
+    [Fact]
+    public void UnparseableTextOnly_MessageIsTheVerbatimText()
+    {
+        const string text = "internal error: catastrophic failure";
+
+        var errors = D3DCompilerDiagnosticReformatter.Reformat(text, "shader.fx");
+
+        errors.Should().ContainSingle();
+        errors[0].Message.Should().Be("internal error: catastrophic failure",
+            "the compiler's own words are the message — never a generic sentence");
+    }
+
+    [Fact]
+    public void SelectPrimary_PrefersFirstErrorOverLeadingWarning()
+    {
+        const string raw = """
+            shader.fx(3,1): warning X3206: implicit truncation of vector type
+            shader.fx(10,5): error X3004: undeclared identifier 'x'
+            """;
+        var primary = D3DCompilerDiagnosticReformatter.SelectPrimary(raw, "shader.fx", "no diagnostics");
+
+        primary.Severity.Should().Be(ShaderErrorSeverity.Error);
+        primary.Code.Should().Be("X3004");
+        primary.RawDiagnostics.Should().Contain("X3206", "the complete text rides on the primary");
+    }
+
+    [Fact]
+    public void SelectPrimary_EmptyText_UsesFallbackCode_TheVkd3dSd0212Contract()
+    {
+        // Vkd3dCompileContract.MapCompileFailure delegates here with SD0212 — the
+        // code now fires ONLY when vkd3d emitted no text at all.
+        var primary = D3DCompilerDiagnosticReformatter.SelectPrimary(
+            "", "shader.fx", "vkd3d-shader DXBC compilation failed with no diagnostics",
+            fallbackCode: "SD0212");
+
+        primary.Code.Should().Be("SD0212");
+        primary.Message.Should().Contain("no diagnostics");
+    }
+
+    [Fact]
+    public void ReformatAsWarnings_ParsedWarningStaysLocatedAndVerbatim()
+    {
+        var warnings = D3DCompilerDiagnosticReformatter.ReformatAsWarnings(
+            "shader.fx(3,1): warning X3206: implicit truncation of vector type", "shader.fx");
+
+        warnings.Should().ContainSingle();
+        warnings[0].Severity.Should().Be(ShaderErrorSeverity.Warning);
+        warnings[0].Code.Should().Be("X3206");
+        warnings[0].Line.Should().Be(3);
+    }
 }

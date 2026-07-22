@@ -182,6 +182,14 @@
                          @onclick="() => GotoLineAsync(d.Line)"
                          title="@(d.Line > 0 ? $"Click to jump to line {d.Line}" : null)">
                         @(d.Line > 0 ? $"Line {d.Line}, Col {d.Column}: " : "")@d.Message
+                        @* The underlying compiler's complete output, whenever it says
+                           more than the message (verbatim — constraint 5). *@
+                        @if (!string.IsNullOrWhiteSpace(d.RawDiagnostics) &&
+                             !d.Message.Contains(d.RawDiagnostics!.TrimEnd(), StringComparison.Ordinal))
+                        {
+                            <pre class="diag-raw"
+                                 style="margin:4px 0 0; padding:4px 6px; white-space:pre-wrap; font-size:0.85em; opacity:0.85; border-left:2px solid currentColor;">@d.RawDiagnostics!.TrimEnd()</pre>
+                        }
                     </div>
                 }
             </div>
