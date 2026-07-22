@@ -113,6 +113,23 @@ all three targets) and the FNA SM3 corpus census. As with the other fresh
 fixtures, they prove **"ShadowDusk compiles them into a valid effect,"** not
 pixel-equivalence to `mgfxc`/`fxc`.
 
+### One-shot do-while / ANGLE-derivative set (issues #107 + #136)
+
+Pins the SPIRV-Cross structured-early-return idiom (`do { … } while(false)`) that
+its GLSL backend wraps around an entry point / inlined helper containing an early
+`return`. These fixtures drive the GL-stage `MonoGameGlslRewriter` Rule-9 handling
+(9a unwrap, 9b for-loop fallback) end-to-end through the real pipeline.
+
+| File | Bug-class it guards | Runtimes |
+|---|---|---|
+| `Issue107DoWhile.fx` | The verbatim #107 reporter helper (`TestEarlyReturn`, nested-`if` early return): the wrapper must not survive as a raw `do { … } while(false)` (WebGL1 / KNI Reach rejects it at load). Pinned by `HidefGeneralityFixtureTests` to be do-while-free and, since #136, wrapper-loop-free (unwrapped, not lowered to a for-loop). | GL (KNI Reach + HiDef) |
+| `Issue136HelperGradient.fx` | An inlined helper that **both early-returns and takes a derivative** (`fwidth`) with an entry-point early return around it — the nested-wrapper shape that ANGLE D3D11 (WebGL on Windows) poisons if left as a divergent loop. Pinned by `EarlyReturnHelperGradient…Issue136` so no gradient op lands inside a loop with a divergent exit in the emitted GL GLSL. | GL (KNI Reach + HiDef) |
+
+These are compile + structural pins (emitted-GLSL shape), not pixel-equivalence
+claims; the render side is proven separately by `validation/AngleDerivativeProbe`
+and the KNI GL drivers. The vendored `apos-shapes-aa.fx` (below) is the real-world
+derivative-AA shader of the same class.
+
 ### FX pre-parser robustness set (dropped-operator bug class)
 
 Pins the dropped-operator bug class
