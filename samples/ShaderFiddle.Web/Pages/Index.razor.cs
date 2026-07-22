@@ -545,10 +545,16 @@ public partial class Index
 
             if (result.IsSuccess)
             {
+                // Non-fatal diagnostics (the compiler's own warnings + the GL
+                // portability findings, e.g. a SpriteBatch-incompatible interpolant):
+                // same panel and squiggle machinery, warning styling via severity.
+                SetDiagnostics(result.Value.Warnings);
                 var err = _game?.ApplyEffect(result.Value.Data);
                 if (err is null)
                 {
-                    _status = "Compiled in-browser and applied (mode 2).";
+                    _status = result.Value.Warnings.Count > 0
+                        ? $"Compiled in-browser and applied (mode 2) — {result.Value.Warnings.Count} warning(s) below."
+                        : "Compiled in-browser and applied (mode 2).";
                     _statusIsError = false;
                     RefreshParams();
                 }
@@ -561,9 +567,13 @@ public partial class Index
             else
             {
                 // Keep the structured diagnostics so the editor can squiggle the
-                // offending lines and the gutter can show the reason on hover.
+                // offending lines and the gutter can show the reason on hover. The
+                // array can carry warnings from OTHER already-compiled passes riding
+                // along with the fatal error (Phase 53 follow-up) — count only the
+                // actual errors so the summary doesn't call a warning an error.
                 SetDiagnostics(result.Error);
-                SetError($"{result.Error.Length} compile error(s) — last good render kept.");
+                int errorCount = result.Error.Count(e => e.Severity != ShaderErrorSeverity.Warning);
+                SetError($"{errorCount} compile error(s) — last good render kept.");
             }
         }
         catch (Exception ex)
@@ -636,10 +646,11 @@ public partial class Index
                 // SD1902 = the vkd3d WASM module is genuinely absent (not restored /
                 // not hosted). Surface that clearly instead of a generic failure; the
                 // verbatim diagnostic with the restore pointer is in the panel below.
+                int errorCount = result.Error.Count(e => e.Severity != ShaderErrorSeverity.Warning);
                 _exportStatus[target.Target] = result.Error.Any(e => e.Code == "SD1902")
                     ? ("The vkd3d-shader WASM module could not be loaded (SD1902), so DirectX/FNA " +
                        "export is unavailable in this session — details in the diagnostics below.", true)
-                    : ($"{result.Error.Length} compile error(s) — see diagnostics below.", true);
+                    : ($"{errorCount} compile error(s) — see diagnostics below.", true);
             }
         }
         catch (Exception ex)

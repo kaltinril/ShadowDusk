@@ -79,7 +79,7 @@ public sealed class DxcDiagnosticReformatterTests
     }
 
     [Fact]
-    public void MultipleErrors_ReturnsMultipleShaderErrors()
+    public void MultipleErrors_ReturnsExactlyTheParsedErrors()
     {
         const string input = """
             shader.fx:1:1: error: first error
@@ -87,8 +87,11 @@ public sealed class DxcDiagnosticReformatterTests
             """;
         var errors = DxcDiagnosticReformatter.Reformat(input, "shader.fx");
 
-        // At minimum the two parsed errors; there may also be a catch-all entry
-        errors.Count(e => e.Message != "Shader compilation failed").Should().BeGreaterThanOrEqualTo(2);
+        // Exactly the two parsed errors — Phase 53 removed the fabricated
+        // catch-all entry that used to ride along.
+        errors.Should().HaveCount(2);
+        errors[0].Message.Should().Be("first error");
+        errors[1].Message.Should().Be("second error");
     }
 
     [Fact]
@@ -118,5 +121,103 @@ public sealed class DxcDiagnosticReformatterTests
         var parsed = errors.FirstOrDefault(e => e.Line == 5);
         if (parsed is not null)
             parsed.File.Should().Be("<source>");
+    }
+
+    // ---- Phase 53: verbatim promotion + primary selection (the "shader
+    // compilation failed with no detail" field-report class). ----
+
+    [Fact]
+    public void UnparseableTextOnly_MessageIsTheVerbatimText_NeverAGenericSentence()
+    {
+        const string raw = """
+            Internal Compiler error: llvm-ir verification failed
+            module has invalid SPIR-V
+            """;
+        var errors = DxcDiagnosticReformatter.Reformat(raw, "shader.fx");
+
+        errors.Should().ContainSingle();
+        errors[0].Message.Should().Contain("Internal Compiler error: llvm-ir verification failed");
+        errors[0].Message.Should().Contain("module has invalid SPIR-V");
+        errors[0].Message.Should().NotBe("Shader compilation failed",
+            "the compiler's own words are the message now — never a generic sentence");
+    }
+
+    [Fact]
+    public void ParsedPlusUnmatchedContext_NoFabricatedExtraEntry()
+    {
+        // DXC prints the source line + caret under each diagnostic; that context
+        // must not become a fake standalone error.
+        const string raw = """
+            shader.fx:10:5: error: undeclared identifier 'x'
+                float y = x;
+                          ^
+            """;
+        var errors = DxcDiagnosticReformatter.Reformat(raw, "shader.fx");
+
+        errors.Should().ContainSingle();
+        errors[0].Line.Should().Be(10);
+    }
+
+    [Fact]
+    public void SelectPrimary_PrefersFirstErrorOverLeadingWarning()
+    {
+        const string raw = """
+            shader.fx:3:1: warning: implicit truncation of vector type
+            shader.fx:10:5: error: undeclared identifier 'x'
+            """;
+        var primary = DxcDiagnosticReformatter.SelectPrimary(raw, "shader.fx", "no diagnostics");
+
+        primary.Severity.Should().Be(ShaderErrorSeverity.Error,
+            "a warning must never masquerade as the failure");
+        primary.Line.Should().Be(10);
+    }
+
+    [Fact]
+    public void SelectPrimary_CarriesTheCompleteRawText()
+    {
+        const string raw = """
+            shader.fx:3:1: warning: implicit truncation of vector type
+            shader.fx:10:5: error: undeclared identifier 'x'
+            """;
+        var primary = DxcDiagnosticReformatter.SelectPrimary(raw, "shader.fx", "no diagnostics");
+
+        primary.RawDiagnostics.Should().Contain("implicit truncation")
+            .And.Contain("undeclared identifier",
+                "the single-error backend contract must not drop the other diagnostics");
+    }
+
+    [Fact]
+    public void SelectPrimary_EmptyText_UsesFallbackMessageAndCode()
+    {
+        var primary = DxcDiagnosticReformatter.SelectPrimary(
+            "", "shader.fx", "compile failed with no diagnostics", fallbackCode: "SD9999");
+
+        primary.Message.Should().Be("compile failed with no diagnostics");
+        primary.Code.Should().Be("SD9999");
+        primary.RawDiagnostics.Should().BeNull();
+    }
+
+    [Fact]
+    public void ReformatAsWarnings_NormalizesUnlocatedVerbatimEntryToWarning()
+    {
+        // On a SUCCESSFUL compile any unlocated verbatim entry cannot be an error.
+        var warnings = DxcDiagnosticReformatter.ReformatAsWarnings(
+            "note-ish free text the compiler printed on success", "shader.fx");
+
+        warnings.Should().ContainSingle();
+        warnings[0].Severity.Should().Be(ShaderErrorSeverity.Warning);
+        warnings[0].Message.Should().Contain("note-ish free text");
+    }
+
+    [Fact]
+    public void ReformatAsWarnings_KeepsParsedWarningsVerbatim()
+    {
+        var warnings = DxcDiagnosticReformatter.ReformatAsWarnings(
+            "shader.fx:3:1: warning: implicit truncation of vector type", "shader.fx");
+
+        warnings.Should().ContainSingle();
+        warnings[0].Severity.Should().Be(ShaderErrorSeverity.Warning);
+        warnings[0].Line.Should().Be(3);
+        warnings[0].Message.Should().Be("implicit truncation of vector type");
     }
 }

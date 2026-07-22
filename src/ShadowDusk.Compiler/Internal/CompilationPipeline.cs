@@ -336,10 +336,17 @@ internal sealed class CompilationPipeline
         // mgfxc's model — Phase 43 F4/F5), never from cross-stage name dedup.
         var shaderUniformLayouts = new Dictionary<int, IReadOnlyList<MonoGameGlslUniform>>();
 
+        // AllowWarnings = true (Phase 53): mgfxc's fxc front end never passes /WX, so
+        // forcing -WX here made the GL/Vulkan leg STRICTER than the reference
+        // compiler — warning-grade HLSL (e.g. an implicit truncation) compiled for
+        // DirectX but hard-failed for OpenGL, a confirmed "DX works, GL doesn't"
+        // divergence class from the field reports. Warnings are captured verbatim
+        // instead (PlatformBlob.Warnings) and surfaced via CompiledShader.Warnings —
+        // visible by default, never fatal, never discarded.
         var compileOptions = new DxcCompileOptions
         {
             EmbedDebugInfo = options.Debug,
-            AllowWarnings  = false,
+            AllowWarnings  = true,
         };
 
         // Recognized-profile validation (SD0013, Phase 48): the compile target token in
@@ -378,6 +385,14 @@ internal sealed class CompilationPipeline
             }
         }
 
+        // Non-fatal diagnostics for the whole effect: the underlying compilers'
+        // verbatim warnings (deduped — VS and PS compile the same preprocessed source,
+        // so a source-level warning re-surfaces once per entry point) plus the GL
+        // portability lint findings (SD0400–SD0402). Returned on
+        // CompiledShader.Warnings; never gates output.
+        var runWarnings  = new List<ShaderError>();
+        var seenWarnings = new HashSet<(string File, int Line, int Column, string Code, string Message)>();
+
         foreach (TechniqueInfo technique in fxParsed.Techniques)
         {
             var mgfxPasses = new List<MgfxPassInfo>();
@@ -411,7 +426,20 @@ internal sealed class CompilationPipeline
                         cancellationToken);
 
                     if (compileOutput.Blob.IsFailure)
-                        return Fail(compileOutput.Blob.Error);
+                        return Fail(compileOutput.Blob.Error, runWarnings);
+
+                    AccumulateWarnings(runWarnings, seenWarnings, compileOutput.Warnings);
+                    if (monoGameGl)
+                    {
+                        // GL portability lint over the emitted vertex GLSL (loop
+                        // shapes; the SpriteBatch/derivative checks are pixel-stage).
+                        AccumulateWarnings(runWarnings, seenWarnings, GlslPortabilityAnalyzer.Analyze(
+                            Encoding.UTF8.GetString(compileOutput.Blob.Value),
+                            ShaderStage.Vertex,
+                            passHasVertexShader: true,
+                            options.SourceFileName ?? "<source>",
+                            pass.VertexEntryPoint));
+                    }
 
                     vsIndex     = compiledShaderBlobs.Count;
                     vsDxilBlob  = compileOutput.DxilBlob;
@@ -445,7 +473,23 @@ internal sealed class CompilationPipeline
                         cancellationToken);
 
                     if (compileOutput.Blob.IsFailure)
-                        return Fail(compileOutput.Blob.Error);
+                        return Fail(compileOutput.Blob.Error, runWarnings);
+
+                    AccumulateWarnings(runWarnings, seenWarnings, compileOutput.Warnings);
+                    if (monoGameGl)
+                    {
+                        // GL portability lint over the emitted pixel GLSL: gradient
+                        // ops in divergent loops (SD0400), SpriteBatch-incompatible
+                        // interpolants on a PS-only pass (SD0401), and non-Appendix-A
+                        // loop shapes (SD0402) — the classes that otherwise surface
+                        // only as the engine's generic draw-time exception.
+                        AccumulateWarnings(runWarnings, seenWarnings, GlslPortabilityAnalyzer.Analyze(
+                            Encoding.UTF8.GetString(compileOutput.Blob.Value),
+                            ShaderStage.Pixel,
+                            passHasVertexShader: pass.VertexEntryPoint is not null,
+                            options.SourceFileName ?? "<source>",
+                            pass.PixelEntryPoint));
+                    }
 
                     psIndex     = compiledShaderBlobs.Count;
                     psDxilBlob  = compileOutput.DxilBlob;
@@ -522,7 +566,7 @@ internal sealed class CompilationPipeline
                     }
 
                     if (reflectResult.IsFailure)
-                        return Fail(reflectResult.Error);
+                        return Fail(reflectResult.Error, runWarnings);
 
                     ReflectedEffect reflected = reflectResult.Value;
 
@@ -551,7 +595,7 @@ internal sealed class CompilationPipeline
                     renderStateKvp[rs.Key] = rs.Value;
                 var renderStateResult = renderStateParser.Parse(renderStateKvp);
                 if (renderStateResult.IsFailure)
-                    return Fail(renderStateResult.Error);
+                    return Fail(renderStateResult.Error, runWarnings);
 
                 var passAnnotations = MapAnnotationEntries(pass.Annotations);
 
@@ -628,7 +672,7 @@ internal sealed class CompilationPipeline
                             Code: "SD0012",
                             Message: $"internal: GL uniform '{u.Name}' (shader #{i}) has no " +
                                      "matching effect parameter — the GLSL uniform layout and " +
-                                     "the reflected parameter list diverged"));
+                                     "the reflected parameter list diverged"), runWarnings);
                     paramIndices.Add(paramIndex);
                     paramOffsets.Add((ushort)(u.BaseRegister * 16));
                 }
@@ -670,7 +714,7 @@ internal sealed class CompilationPipeline
                 parsedSampler.StateEntries.Select(e => (e.Key, e.Value)),
                 options.SourceFileName ?? "<source>");
             if (resolved.IsFailure)
-                return Fail(resolved.Error);
+                return Fail(resolved.Error, runWarnings);
             if (resolved.Value is { } samplerState)
                 samplerStateByName[parsedSampler.Name] = samplerState;
         }
@@ -743,7 +787,7 @@ internal sealed class CompilationPipeline
                     Column: 0,
                     Code: "SD0026",
                     Message: "Vulkan does not support more than one constant buffer per shader " +
-                             "stage; consider merging globals into a single cbuffer."));
+                             "stage; consider merging globals into a single cbuffer."), runWarnings);
 
             byte[] blobBytes = compiledShaderBlobs[i].Bytes;
             if (options.Target == PlatformTarget.Vulkan)
@@ -783,7 +827,7 @@ internal sealed class CompilationPipeline
                     Line: 0,
                     Column: 0,
                     Code: "SD0025",
-                    Message: "The Vulkan target does not support the KNIFX container (KNI ships no Vulkan platform)."));
+                    Message: "The Vulkan target does not support the KNIFX container (KNI ships no Vulkan platform)."), runWarnings);
 
             KnifxBackend knifxBackend = options.Target switch
             {
@@ -792,9 +836,9 @@ internal sealed class CompilationPipeline
             };
             var knifxResult = new KnifxWriter().Write(ir, new KnifxWriterOptions(knifxBackend));
             if (knifxResult.IsFailure)
-                return Fail(knifxResult.Error);
+                return Fail(knifxResult.Error, runWarnings);
             return Result<CompiledShader, ShaderError[]>.Ok(
-                new CompiledShader(options.Target, knifxResult.Value));
+                new CompiledShader(options.Target, knifxResult.Value) { Warnings = runWarnings });
         }
 
         // Stage 6: MGFX binary writer.
@@ -821,7 +865,7 @@ internal sealed class CompilationPipeline
                 Line: 0,
                 Column: 0,
                 Code: "SD0023",
-                Message: $"MgfxVersion {effectiveMgfxVersion} is outside the MGFX header's byte range (0-255)"));
+                Message: $"MgfxVersion {effectiveMgfxVersion} is outside the MGFX header's byte range (0-255)"), runWarnings);
 
         var mgfxWriter  = new MgfxWriter();
         var writeResult = mgfxWriter.Write(ir, new MgfxWriterOptions(
@@ -829,11 +873,12 @@ internal sealed class CompilationPipeline
             MgfxVersion: (byte)effectiveMgfxVersion));
 
         if (writeResult.IsFailure)
-            return Fail(writeResult.Error);
+            return Fail(writeResult.Error, runWarnings);
 
         byte[] mgfxBytes = writeResult.Value;
 
-        return Result<CompiledShader, ShaderError[]>.Ok(new CompiledShader(options.Target, mgfxBytes));
+        return Result<CompiledShader, ShaderError[]>.Ok(
+            new CompiledShader(options.Target, mgfxBytes) { Warnings = runWarnings });
         }
         finally
         {
@@ -939,7 +984,7 @@ internal sealed class CompilationPipeline
     /// run on the active DXC backend (e.g. the WASM shim has no <c>-P</c> export). Distinct
     /// from a <c>null</c> expansion (which is a definitive "not a profile" → reject).
     /// </summary>
-    private const string ExpansionUnavailable = " __sd_expansion_unavailable__";
+    private const string ExpansionUnavailable = "\0__sd_expansion_unavailable__";
 
     /// <summary>
     /// Macro-expands a compile-target token, returning the expansion, <c>null</c> when it does
@@ -1308,6 +1353,12 @@ internal sealed class CompilationPipeline
                 (fnaDxcCompiler.Value as IDisposable)?.Dispose();
         }
 
+        // Verbatim vkd3d warnings for the whole effect, deduped across entry points
+        // (same policy as the GL/DX path's runWarnings) — returned on
+        // CompiledShader.Warnings.
+        var fnaWarnings     = new List<ShaderError>();
+        var fnaSeenWarnings = new HashSet<(string File, int Line, int Column, string Code, string Message)>();
+
         foreach (TechniqueInfo technique in fxParsed.Techniques)
         {
             var passSources = new List<Fx2PassSource>();
@@ -1325,8 +1376,9 @@ internal sealed class CompilationPipeline
                         pass.VertexEntryPoint, pass.VertexProfile, ShaderStage.Vertex,
                         cancellationToken);
                     if (compiled.IsFailure)
-                        return Fail(compiled.Error);
+                        return Fail(compiled.Error, fnaWarnings);
 
+                    AccumulateWarnings(fnaWarnings, fnaSeenWarnings, compiled.Value.Warnings);
                     vsIndex = shaders.Count;
                     shaders.Add(compiled.Value.Shader);
                     ctabs.Add(compiled.Value.Ctab);
@@ -1340,8 +1392,9 @@ internal sealed class CompilationPipeline
                         pass.PixelEntryPoint, pass.PixelProfile, ShaderStage.Pixel,
                         cancellationToken);
                     if (compiled.IsFailure)
-                        return Fail(compiled.Error);
+                        return Fail(compiled.Error, fnaWarnings);
 
+                    AccumulateWarnings(fnaWarnings, fnaSeenWarnings, compiled.Value.Warnings);
                     psIndex = shaders.Count;
                     shaders.Add(compiled.Value.Shader);
                     ctabs.Add(compiled.Value.Ctab);
@@ -1354,7 +1407,7 @@ internal sealed class CompilationPipeline
                     renderStateKvp[rs.Key] = rs.Value;
                 var renderStateResult = renderStateParser.Parse(renderStateKvp);
                 if (renderStateResult.IsFailure)
-                    return Fail(renderStateResult.Error);
+                    return Fail(renderStateResult.Error, fnaWarnings);
 
                 passSources.Add(new Fx2PassSource(
                     Name: pass.Name,
@@ -1370,17 +1423,17 @@ internal sealed class CompilationPipeline
         var buildResult = Fx2EffectBuilder.Build(
             techniqueSources, shaders, ctabs, fxParsed.Samplers, sourceFileName);
         if (buildResult.IsFailure)
-            return Fail(buildResult.Error);
+            return Fail(buildResult.Error, fnaWarnings);
 
         var writeResult = new Fx2EffectWriter().Write(buildResult.Value);
         if (writeResult.IsFailure)
-            return Fail(writeResult.Error);
+            return Fail(writeResult.Error, fnaWarnings);
 
         return Result<CompiledShader, ShaderError[]>.Ok(
-            new CompiledShader(PlatformTarget.Fna, writeResult.Value));
+            new CompiledShader(PlatformTarget.Fna, writeResult.Value) { Warnings = fnaWarnings });
     }
 
-    private static Result<(Fx2Shader Shader, CtabTable Ctab), ShaderError>
+    private static Result<(Fx2Shader Shader, CtabTable Ctab, IReadOnlyList<ShaderError> Warnings), ShaderError>
         CompileFnaStage(
             IDxbcShaderCompiler compiler,
             string source,
@@ -1393,7 +1446,7 @@ internal sealed class CompilationPipeline
         Result<string, ShaderError> profileResult =
             ResolveFnaProfile(declaredProfile, stage, sourceFileName);
         if (profileResult.IsFailure)
-            return Result<(Fx2Shader, CtabTable), ShaderError>.Fail(profileResult.Error);
+            return Result<(Fx2Shader, CtabTable, IReadOnlyList<ShaderError>), ShaderError>.Fail(profileResult.Error);
 
         var request = new D3DCompileRequest
         {
@@ -1411,7 +1464,7 @@ internal sealed class CompilationPipeline
 
         var compileResult = compiler.Compile(request, ct);
         if (compileResult.IsFailure)
-            return Result<(Fx2Shader, CtabTable), ShaderError>.Fail(compileResult.Error);
+            return Result<(Fx2Shader, CtabTable, IReadOnlyList<ShaderError>), ShaderError>.Fail(compileResult.Error);
 
         // Canonicalize the instruction forms MojoShader rejects but vkd3d emits
         // (texkill partial writemask; texld src0 swizzle below SM3) — found by the
@@ -1419,16 +1472,18 @@ internal sealed class CompilationPipeline
         var patchResult = D3d9BytecodePatcher.PatchForMojoShader(
             compileResult.Value.Bytes.ToArray(), sourceFileName);
         if (patchResult.IsFailure)
-            return Result<(Fx2Shader, CtabTable), ShaderError>.Fail(patchResult.Error);
+            return Result<(Fx2Shader, CtabTable, IReadOnlyList<ShaderError>), ShaderError>.Fail(patchResult.Error);
 
         byte[] bytecode = patchResult.Value;
 
         var ctabResult = CtabReader.Read(bytecode, sourceFileName);
         if (ctabResult.IsFailure)
-            return Result<(Fx2Shader, CtabTable), ShaderError>.Fail(ctabResult.Error);
+            return Result<(Fx2Shader, CtabTable, IReadOnlyList<ShaderError>), ShaderError>.Fail(ctabResult.Error);
 
-        return Result<(Fx2Shader, CtabTable), ShaderError>.Ok(
-            (new Fx2Shader(stage, bytecode), ctabResult.Value));
+        return Result<(Fx2Shader, CtabTable, IReadOnlyList<ShaderError>), ShaderError>.Ok(
+            // vkd3d populates its message buffer on success too — carry the verbatim
+            // warnings up so the FNA path surfaces them like every other target.
+            (new Fx2Shader(stage, bytecode), ctabResult.Value, compileResult.Value.Warnings));
     }
 
     /// <summary>
@@ -1509,7 +1564,25 @@ internal sealed class CompilationPipeline
         return Result<string, ShaderError>.Ok(declaredProfile);
     }
 
-    private static (Result<byte[], ShaderError> Blob, ReadOnlyMemory<byte> DxilBlob, ReadOnlyMemory<byte> SpirvBlob, IReadOnlyList<MgfxVertexAttributeInfo> Attributes, IReadOnlyList<MonoGameGlslUniform> Uniforms)
+    /// <summary>
+    /// Appends <paramref name="incoming"/> diagnostics to <paramref name="accumulated"/>,
+    /// skipping entries already seen. VS and PS entry points compile the same
+    /// preprocessed source, so a source-level compiler warning re-surfaces once per
+    /// entry-point compile — the consumer should read it once.
+    /// </summary>
+    private static void AccumulateWarnings(
+        List<ShaderError> accumulated,
+        HashSet<(string File, int Line, int Column, string Code, string Message)> seen,
+        IReadOnlyList<ShaderError> incoming)
+    {
+        foreach (ShaderError w in incoming)
+        {
+            if (seen.Add((w.File, w.Line, w.Column, w.Code, w.Message)))
+                accumulated.Add(w);
+        }
+    }
+
+    private static (Result<byte[], ShaderError> Blob, ReadOnlyMemory<byte> DxilBlob, ReadOnlyMemory<byte> SpirvBlob, IReadOnlyList<MgfxVertexAttributeInfo> Attributes, IReadOnlyList<MonoGameGlslUniform> Uniforms, IReadOnlyList<ShaderError> Warnings)
         CompileEntryPoint(
             Lazy<IDxcShaderCompiler> dxcCompiler,
             IDxbcShaderCompiler dxbcCompiler,
@@ -1525,6 +1598,7 @@ internal sealed class CompilationPipeline
     {
         IReadOnlyList<MgfxVertexAttributeInfo> noAttributes = Array.Empty<MgfxVertexAttributeInfo>();
         IReadOnlyList<MonoGameGlslUniform>     noUniforms   = Array.Empty<MonoGameGlslUniform>();
+        IReadOnlyList<ShaderError>             noWarnings   = Array.Empty<ShaderError>();
 
         if (platform == PlatformTarget.DirectX)
         {
@@ -1546,10 +1620,10 @@ internal sealed class CompilationPipeline
 
             var dxbcResult = dxbcCompiler.Compile(dxbcRequest, ct);
             if (dxbcResult.IsFailure)
-                return (Result<byte[], ShaderError>.Fail(dxbcResult.Error), default, default, noAttributes, noUniforms);
+                return (Result<byte[], ShaderError>.Fail(dxbcResult.Error), default, default, noAttributes, noUniforms, noWarnings);
 
             ReadOnlyMemory<byte> dxbc = dxbcResult.Value.Bytes;
-            return (Result<byte[], ShaderError>.Ok(dxbc.ToArray()), dxbc, default, noAttributes, noUniforms);
+            return (Result<byte[], ShaderError>.Ok(dxbc.ToArray()), dxbc, default, noAttributes, noUniforms, dxbcResult.Value.Warnings);
         }
 
         if (platform == PlatformTarget.OpenGL)
@@ -1576,7 +1650,7 @@ internal sealed class CompilationPipeline
 
                 var dxilResult = dxcCompiler.Value.Compile(dxilRequest, ct);
                 if (dxilResult.IsFailure)
-                    return (Result<byte[], ShaderError>.Fail(dxilResult.Error), default, default, noAttributes, noUniforms);
+                    return (Result<byte[], ShaderError>.Fail(dxilResult.Error), default, default, noAttributes, noUniforms, noWarnings);
 
                 dxilBlob = dxilResult.Value.Bytes;
             }
@@ -1594,12 +1668,12 @@ internal sealed class CompilationPipeline
 
             var spirvResult = dxcCompiler.Value.Compile(spirvRequest, ct);
             if (spirvResult.IsFailure)
-                return (Result<byte[], ShaderError>.Fail(spirvResult.Error), default, default, noAttributes, noUniforms);
+                return (Result<byte[], ShaderError>.Fail(spirvResult.Error), default, default, noAttributes, noUniforms, noWarnings);
 
             // Transpile SPIR-V → GLSL.
             var transpileResult = glslTranspiler.Transpile(spirvResult.Value.Bytes, ct);
             if (transpileResult.IsFailure)
-                return (Result<byte[], ShaderError>.Fail(transpileResult.Error), default, default, noAttributes, noUniforms);
+                return (Result<byte[], ShaderError>.Fail(transpileResult.Error), default, default, noAttributes, noUniforms, noWarnings);
 
             // Rewrite SPIRV-Cross GLSL into MonoGame/MojoShader-compatible GLSL so it
             // links with MonoGame's GL runtime. Per-stage (Phase 28): the PIXEL stage
@@ -1647,7 +1721,7 @@ internal sealed class CompilationPipeline
                         Line:    0,
                         Column:  0,
                         Code:    "SD0210",
-                        Message: ex.Message)), default, default, noAttributes, noUniforms);
+                        Message: ex.Message)), default, default, noAttributes, noUniforms, noWarnings);
                 }
             }
             else
@@ -1661,7 +1735,10 @@ internal sealed class CompilationPipeline
                 dxilBlob,
                 spirvResult.Value.Bytes,
                 attributes,
-                uniforms);
+                uniforms,
+                // The SPIR-V compile's warnings only — the DXIL-for-reflection compile
+                // sees the same source, so its warnings would be duplicates.
+                spirvResult.Value.Warnings);
         }
         else
         {
@@ -1697,13 +1774,13 @@ internal sealed class CompilationPipeline
 
             var result = dxcCompiler.Value.Compile(request, ct);
             if (result.IsFailure)
-                return (Result<byte[], ShaderError>.Fail(result.Error), default, default, noAttributes, noUniforms);
+                return (Result<byte[], ShaderError>.Fail(result.Error), default, default, noAttributes, noUniforms, noWarnings);
 
             ReadOnlyMemory<byte> blob      = result.Value.Bytes;
             ReadOnlyMemory<byte> dxilBlob  = platform == PlatformTarget.DirectX ? blob : default;
             ReadOnlyMemory<byte> spirvBlob = platform != PlatformTarget.DirectX ? blob : default;
 
-            return (Result<byte[], ShaderError>.Ok(blob.ToArray()), dxilBlob, spirvBlob, noAttributes, noUniforms);
+            return (Result<byte[], ShaderError>.Ok(blob.ToArray()), dxilBlob, spirvBlob, noAttributes, noUniforms, result.Value.Warnings);
         }
     }
 
@@ -1959,6 +2036,27 @@ internal sealed class CompilationPipeline
 
     private static Result<CompiledShader, ShaderError[]> Fail(ShaderError error) =>
         Result<CompiledShader, ShaderError[]>.Fail(new ShaderError[] { error });
+
+    // Fails with the fatal error PLUS any warnings already accumulated from earlier,
+    // successfully-compiled stages in the SAME effect (e.g. an earlier technique's
+    // pass compiled fine but with a warning; a later technique's pass then hard-
+    // failed) — otherwise those warnings would just be dropped on the floor. The
+    // error stays first (the actionable line); accumulated warnings ride along after
+    // it in the same array a caller already iterates severity-aware (CLI/MGCB
+    // formatting, ShaderValidationReport). Skips the allocation entirely when there
+    // are no accumulated warnings, so the ordinary single-error path is unchanged.
+    private static Result<CompiledShader, ShaderError[]> Fail(
+        ShaderError error, IReadOnlyList<ShaderError> accumulatedWarnings)
+    {
+        if (accumulatedWarnings.Count == 0)
+            return Fail(error);
+
+        var all = new ShaderError[accumulatedWarnings.Count + 1];
+        all[0] = error;
+        for (int i = 0; i < accumulatedWarnings.Count; i++)
+            all[i + 1] = accumulatedWarnings[i];
+        return Result<CompiledShader, ShaderError[]>.Fail(all);
+    }
 
     // Maps an FX9 pre-parser error to the pipeline's ShaderError, formatting the FX
     // diagnostic code as the four-digit "FXnnnn" string. Shared by every FxPreParser

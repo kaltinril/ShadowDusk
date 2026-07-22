@@ -24,7 +24,7 @@
   - Structurally **clean**: **65**
   - **Divergent** (>=1 level): **17**
   - Compile/parse **failures**: **10**
-- Non-golden census cells: **140** (**113** compile, **27** fail with a code)
+- Non-golden census cells: **152** (**125** compile, **27** fail with a code)
 
 ## Golden-backed fixtures — per-level structural verdict
 
@@ -298,6 +298,18 @@ is a CORRECT result, not a defect.
 | examples/Issue107DoWhile.fx | OpenGL | PASS |  |  |
 | examples/Issue136HelperGradient.fx | DirectX_11 | PASS |  |  |
 | examples/Issue136HelperGradient.fx | OpenGL | PASS |  |  |
+| examples/Issue137VsEarlyReturn.fx | DirectX_11 | PASS |  |  |
+| examples/Issue137VsEarlyReturn.fx | OpenGL | PASS |  |  |
+| examples/Issue137VsRound.fx | DirectX_11 | PASS |  |  |
+| examples/Issue137VsRound.fx | OpenGL | PASS |  |  |
+| examples/Issue139DerivativeExtension.fx | DirectX_11 | PASS |  |  |
+| examples/Issue139DerivativeExtension.fx | OpenGL | PASS |  |  |
+| examples/Issue140NestedRound.fx | DirectX_11 | PASS |  |  |
+| examples/Issue140NestedRound.fx | OpenGL | PASS |  |  |
+| examples/Sd0400GradientInDivergentLoop.fx | DirectX_11 | PASS |  |  |
+| examples/Sd0400GradientInDivergentLoop.fx | OpenGL | PASS |  |  |
+| examples/Sd0401SpriteBatchInterpolant.fx | DirectX_11 | PASS |  |  |
+| examples/Sd0401SpriteBatchInterpolant.fx | OpenGL | PASS |  |  |
 | minimal_vs_ps.fx | DirectX_11 | FAIL | SD0010 | Effect source contains no techniques |
 | minimal_vs_ps.fx | OpenGL | FAIL | SD0010 | Effect source contains no techniques |
 | multipass.fx | DirectX_11 | PASS |  |  |
@@ -316,10 +328,10 @@ is a CORRECT result, not a defect.
 | third-party/Apos.Shapes/apos-shapes-aa.fx | OpenGL | PASS |  |  |
 | third-party/Apos.Shapes/apos-shapes.fx | DirectX_11 | PASS |  |  |
 | third-party/Apos.Shapes/apos-shapes.fx | OpenGL | PASS |  |  |
-| third-party/Gum/FnaSample-Shader.fx | DirectX_11 | FAIL | X0000 | Shader compilation failed |
+| third-party/Gum/FnaSample-Shader.fx | DirectX_11 | FAIL | X0000 | C:\git\ShadowDusk\tests\ShadowDusk.Integration.Tests\bin\Debug\net8.0\fixtures\shaders\third-party/Gum/FnaSample-Shader.fx:117:24: E5005: Identifier "pointTextu... |
 | third-party/Gum/FnaSample-Shader.fx | OpenGL | FAIL | SD0010 | Effect source contains no techniques |
-| third-party/Gum/KniInCode-Shader.fx | DirectX_11 | FAIL | X0000 | Shader compilation failed |
-| third-party/Gum/KniInCode-Shader.fx | OpenGL | FAIL | X0000 | effect object ignored - effect syntax is deprecated [-Weffects-syntax] |
+| third-party/Gum/KniInCode-Shader.fx | DirectX_11 | FAIL | X0000 | C:\git\ShadowDusk\tests\ShadowDusk.Integration.Tests\bin\Debug\net8.0\fixtures\shaders\third-party/Gum/KniInCode-Shader.fx:72:33: E5005: Method 'Sample' is not ... |
+| third-party/Gum/KniInCode-Shader.fx | OpenGL | FAIL | X0000 | use of undeclared identifier 'CurrentTexture' |
 | third-party/Gum/MonoGameInCode-Grayscale.fx | DirectX_11 | PASS |  |  |
 | third-party/Gum/MonoGameInCode-Grayscale.fx | OpenGL | PASS |  |  |
 | third-party/Nez/Bevels.fx | DirectX_11 | PASS |  |  |

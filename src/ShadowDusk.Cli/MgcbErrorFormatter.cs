@@ -26,7 +26,20 @@ internal static class MgcbErrorFormatter
     public static IEnumerable<string> FormatAll(IEnumerable<ShaderError> errors)
     {
         foreach (var error in errors)
+        {
             yield return Format(error);
+
+            // The underlying compiler's COMPLETE output, whenever it says more than
+            // the one-line summary (constraint 5: the compiler's own words, shown by
+            // default — no verbose flag to find). Indented so MGCB's line parser
+            // cannot mistake it for a second diagnostic; the parseable line above
+            // stays first and unchanged.
+            if (error.HasAdditionalRawDiagnostics)
+            {
+                foreach (string raw in error.RawDiagnostics!.TrimEnd().Replace("\r\n", "\n").Split('\n'))
+                    yield return "    " + raw;
+            }
+        }
     }
 
     // If the code already matches X followed by exactly 4 digits, pass it through unchanged.

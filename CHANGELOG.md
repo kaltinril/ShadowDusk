@@ -14,9 +14,85 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **One-call shader validation: `Validate()` / `ValidateAsync()`** on `IShaderCompiler`
+  (Phase 53). `Console.WriteLine(await compiler.ValidateAsync(fx))` prints everything
+  wrong with a shader — every error and every warning, per target, with source locations
+  and the underlying compiler's complete verbatim text. Defaults to OpenGL + DirectX (the
+  classic "compiles for DirectX, fails for OpenGL" field report in one screen); explicit
+  target sets (FNA, Vulkan) via an overload. Implemented as extension methods over
+  `IShaderCompiler` (not default interface methods — those are only reachable through an
+  interface-typed reference, which would have broken the `var compiler = new
+  EffectCompiler();` pattern the rest of the docs use) over the one real pipeline (never a
+  fork), so what validates is exactly what compiles; works on desktop and the browser/WASM
+  compiler alike, and on any variable typed as the concrete compiler class.
+- **`CompiledShader.Warnings`** — successful compiles now carry their non-fatal
+  diagnostics instead of discarding them: the underlying compiler's own warnings
+  (DXC, d3dcompiler, and vkd3d's message buffer, which was previously thrown away on
+  success) plus the new GL portability findings. The CLI prints them as MGCB-parseable
+  `warning` lines on stderr with exit 0; the ShaderFiddle sample lists them in the
+  diagnostics panel. Warnings also survive a LATER hard failure in the same effect:
+  when an earlier technique/pass compiled (and warned) but a later stage then fails,
+  the failure's `ShaderError[]` carries the fatal error FIRST plus the
+  already-gathered warning-severity entries — nothing is silently dropped, and
+  severity-aware consumers (the CLI formatter, `ValidateAsync`) keep counting only
+  true errors as errors.
+- **GL portability lint (`SD0400`–`SD0402`)**: compile-time warnings for constructs that
+  compile fine but are known to fail or misbehave at RUNTIME on narrower GL stacks —
+  where the consumer's only signal used to be MonoGame's generic draw-time
+  `"Shader Compilation Failed"` with the real driver log hidden in `Debug.WriteLine`
+  ("an error on the SpriteBatch call"). `SD0400` (issue
+  [#141](https://github.com/kaltinril/ShadowDusk/issues/141)): a user-written gradient op
+  inside a divergent loop — silently 0.0 on ANGLE Direct3D11, i.e. WebGL in every Windows
+  browser; fxc warns X3553 on the same shape. `SD0401`: a pass with no vertex shader whose
+  pixel shader reads interpolants SpriteBatch's built-in vertex shader never writes
+  (anything beyond COLOR0/TEXCOORD0) — a strict-driver link failure at the first draw.
+  `SD0402` (issue [#138](https://github.com/kaltinril/ShadowDusk/issues/138), diagnostic
+  half): loop shapes outside GLSL ES 1.00 Appendix A that may fail to load on WebGL1 /
+  KNI Reach. Warnings only — the lint never rejects a shader.
+
 ### Changed
 
+- **Compile errors are verbatim, everywhere, by default** (Phase 53, from the field
+  reports of a bare "shader compilation failed"). Diagnostic text the reformatters cannot
+  parse into file:line:col entries — DXC SPIR-V codegen/legalization failures,
+  disproportionately the OpenGL leg — used to collapse into a fixed
+  `X0000: "Shader compilation failed"` with the real text hidden in a field no surface
+  printed. The compiler's own words are now the message; the single primary error prefers
+  the first error-severity diagnostic (a leading DXC warning can no longer masquerade as
+  the failure) and always carries the COMPLETE raw compiler output, which the CLI and the
+  ShaderFiddle sample now print by default (no verbose flag to find — there still is
+  none, deliberately).
+- **The OpenGL/Vulkan leg no longer forces `-WX` (warnings-as-errors)** — mgfxc's fxc
+  front end never passed `/WX`, so ShadowDusk's GL leg was *stricter than the reference
+  compiler*: warning-grade HLSL (e.g. an implicit truncation) compiled for DirectX but
+  hard-failed for OpenGL, a confirmed "DX works, GL doesn't" divergence class. Warnings
+  now surface through `CompiledShader.Warnings` instead of failing the compile. Output
+  bytes for previously-compiling shaders are unchanged (pinned by the cross-host
+  byte-identity manifest, which stayed green without regeneration).
+
 ### Fixed
+
+- **Vertex shaders now get the stage-agnostic GL body lowerings** (issue
+  [#137](https://github.com/kaltinril/ShadowDusk/issues/137)). The rewriter returned early
+  for the vertex stage before Rules 8, 9b, 10, and 11 ran, so a VS using `round()` shipped
+  `roundEven()` (absent from GLSL ES 1.00 and rejected by Mesa's strict versionless-1.10
+  front end) and a VS with an inlined early-return helper shipped the raw
+  `do { … } while(false);` Appendix A forbids — both silent Effect-load failures on
+  Mesa/WebGL1 with compile exit 0. Rule 9a (the #136 unwrap to early `return;`) stays
+  deliberately pixel-only: the posFixup lines are appended at end-of-main and an early
+  return would skip the Y-flip; the Rule-9b for-loop form has a single fall-through exit,
+  so the fixup always runs. VS regression fixtures pin both shapes.
+- **Derivative-using fragment shaders ship `#extension GL_OES_standard_derivatives :
+  enable`** as the first line of the emitted GL source, exactly where mgfxc puts it
+  (issue [#139](https://github.com/kaltinril/ShadowDusk/issues/139)). Strict ESSL 1.00
+  compilers (native GLES 2.0) reject derivative builtins without it. The scan covers
+  `fwidth` too — SPIRV-Cross emits it directly, which mgfxc's two-token dFdx/dFdy scan
+  never had to handle.
+- **A `round()` nested inside another `round()`'s argument is now fully lowered** (issue
+  [#140](https://github.com/kaltinril/ShadowDusk/issues/140)). Rule 8 resumed its scan
+  past the whole replacement, so the inner call survived as `roundEven()` — the exact
+  WebGL1/Mesa load failure Rule 8 exists to prevent, resurfacing for the nested shape.
+  The scan now resumes inside the replacement (the same policy Rule 10 already had).
 
 ## [0.12.1] - 2026-07-21
 

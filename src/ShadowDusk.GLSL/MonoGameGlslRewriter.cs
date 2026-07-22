@@ -588,12 +588,30 @@ public static class MonoGameGlslRewriter
             }
         }
 
-        // Vertex stage: assemble + return now. No fragment-output / texture / round
-        // passes — those are pixel-stage rules. The precision header for a VS uses
-        // highp float (matching the mgfxc VS golden, which needs full precision for
-        // the position transform) rather than the mediump the PS uses.
+        // Vertex stage: assemble + return now. No fragment-output / texture passes —
+        // those are pixel-stage rules — but the stage-agnostic body lowerings DO run
+        // here (below). The precision header for a VS uses highp float (matching the
+        // mgfxc VS golden, which needs full precision for the position transform)
+        // rather than the mediump the PS uses.
         if (isVertex)
         {
+            // Issue #137: the stage-agnostic body lowerings must run for the vertex
+            // stage too. A VS using round() otherwise ships roundEven() — absent from
+            // GLSL ES 1.00 (WebGL1 / KNI Reach) and rejected by Mesa's strict
+            // versionless-1.10 front end — and a VS with an (inlined) early-return
+            // helper ships the raw do{…}while(false) Appendix A forbids: both are
+            // silent Effect-load failures with compile exit 0. Rule 9a (the #136
+            // unwrap, which turns loop breaks into early `return;`) stays PIXEL-only:
+            // InjectPosFixup appends the posFixup lines at end-of-main, and an early
+            // return would skip them (the Y-flip / half-pixel contract). The Rule 9b
+            // for-loop form has a single fall-through exit, so the fixup always runs.
+            // (No derivative ops exist in the vertex stage, so skipping 9a loses no
+            // #136 coverage here.)
+            body = LowerRoundToFloorHalfUp(body);       // Rule 8  (issue #137)
+            body = LowerOneShotDoWhileToForLoop(body);  // Rule 9b (issues #107/#137)
+            body = LowerPowSquareToMultiply(body);      // Rule 10 (issue #127)
+            body = FoldReciprocalOfQuotient(body);      // Rule 11 (issue #127)
+
             // Phase 43 F3: inject mgfxc/MojoShader's runtime posFixup contract.
             // SPIRV-Cross's FlipVertexY is OFF (see SpirvCrossGlslTranspiler), so the
             // Y-flip is performed at draw time by MonoGame's GL runtime via the
@@ -825,8 +843,12 @@ public static class MonoGameGlslRewriter
         // preserving a single blank line separation. The texlod extension header (when
         // needed) sits between the precision header and the #define block — the same
         // preflight position MojoShader gives prepend_glsl_texlod_extensions' output.
+        // The derivatives extension header (issue #139) goes FIRST, before the
+        // precision header — the position mgfxc gives it.
         var trimmedBody = body.TrimStart('\n');
-        var finalGlsl = PrecisionHeader
+        bool needsDerivativesHeader = DerivativeBuiltinUse.IsMatch(body);
+        var finalGlsl = (needsDerivativesHeader ? StandardDerivativesExtensionHeader : "")
+            + PrecisionHeader
             + (needsTexLodHeader ? TexLodExtensionHeader : "")
             + "\n" + defineBlock + trimmedBody;
         if (!finalGlsl.EndsWith("\n"))
@@ -1120,6 +1142,24 @@ public static class MonoGameGlslRewriter
         "#define textureCubeLod(a,b,c) textureCube(a,b)\n" +
         "#define texture3DLod(a,b,c) texture3D(a,b)\n" +
         "#endif\n";
+
+    // mgfxc parity (issue #139): MonoGame 3.8.2 mgfxc (ShaderData.mojo.cs) prepends
+    // this as the FIRST line of the fragment GLSL whenever the MojoShader output
+    // contains dFdx/dFdy. In ESSL 1.00 the derivative built-ins exist only under this
+    // extension, so a strict GLES2 compiler (native Android/iOS GL, some Mesa ES
+    // paths) rejects a derivative-using fragment shader that lacks the header, at
+    // Effect-load time, with compile exit 0 on our side. Our scan also includes
+    // fwidth: SPIRV-Cross emits fwidth() directly, which mgfxc's two-token dFdx/dFdy
+    // scan never had to handle. Where derivatives are core (ES 3.00 / desktop 1.30+)
+    // an enable of this known extension is at most a warning, so the ONE emitted
+    // artifact still serves Reach, HiDef, and desktop (the Phase 33 promise).
+    private const string StandardDerivativesExtensionHeader =
+        "#extension GL_OES_standard_derivatives : enable\n";
+
+    // Matches a use of any derivative builtin in the rewritten fragment body.
+    private static readonly Regex DerivativeBuiltinUse = new(
+        @"\b(dFdx|dFdy|fwidth)\s*\(",
+        RegexOptions.Compiled);
 
     // The SPIRV-Cross depth-convention fixup line (FixupDepthConvention option), used
     // as the insertion anchor so the posFixup lines land in mgfxc's order (Y-flip,
@@ -1529,7 +1569,13 @@ public static class MonoGameGlslRewriter
                 string arg = body.Substring(openParen + 1, closeParen - openParen - 1);
                 string replacement = $"floor(({arg}) + 0.5)";
                 body = body.Substring(0, callStart) + replacement + body.Substring(closeParen + 1);
-                searchFrom = callStart + replacement.Length;
+                // Resume INSIDE the replacement, not past it (issue #140): the argument
+                // was copied verbatim into floor((arg) + 0.5), so a same-named call
+                // nested in the argument — round(round(x) * 0.5) — must still be
+                // visited. The replacement starts with "floor((", which can never
+                // re-match "round"/"roundEven", so each pass still eliminates one call
+                // and the scan terminates. (Rule 10 already resumes inside its args.)
+                searchFrom = callStart;
             }
         }
 

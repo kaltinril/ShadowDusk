@@ -98,6 +98,39 @@ public sealed record ShaderError(
     /// </summary>
     public string FxcFormattedMessage =>
         $"{File}({Line},{Column}-{Column}): {Severity.ToString().ToLowerInvariant()} {Code}: {Message}";
+
+    /// <summary>
+    /// Whether <see cref="RawDiagnostics"/> says something beyond <see cref="Message"/> and is
+    /// therefore worth printing a second time under the one-line summary. False for the two
+    /// cases where it would be pure duplication: no raw text at all, or a single located
+    /// diagnostic line whose tail already IS <see cref="Message"/> (the common single-error
+    /// compile failure — the underlying compiler's one line was already fully absorbed into
+    /// <see cref="Message"/>/<see cref="FxcFormattedMessage"/>). True for everything else,
+    /// notably a multi-line raw blob (other diagnostics, e.g. a leading warning before the
+    /// error that failed the compile, or source-echo/caret context) and the "no location
+    /// parsed" verbatim path once <see cref="Message"/> stops matching it exactly.
+    /// </summary>
+    public bool HasAdditionalRawDiagnostics
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(RawDiagnostics))
+                return false;
+
+            string raw = RawDiagnostics.TrimEnd();
+            if (raw.Equals(Message, StringComparison.Ordinal) || Message.Contains(raw, StringComparison.Ordinal))
+                return false;
+
+            // A single located diagnostic line ends with the same message text the
+            // compiler reported (e.g. "shader.fx:10:5: error: undeclared identifier
+            // 'x'" for a Message of "undeclared identifier 'x'") — printing it again
+            // verbatim below the already-formatted summary line adds nothing.
+            if (!raw.Contains('\n') && raw.EndsWith(Message, StringComparison.Ordinal))
+                return false;
+
+            return true;
+        }
+    }
 }
 
 /// <summary>The severity level of a <see cref="ShaderError"/>.</summary>

@@ -138,7 +138,9 @@ public static class TestHelpers
         byte[] mgfxBytes = compileResult.Value.Data;
         await File.WriteAllBytesAsync(outputPath, mgfxBytes, ct).ConfigureAwait(false);
 
-        return new CompileResult(0, mgfxBytes, string.Empty);
+        // Mirror the CLI surface (PipelineRunner): non-fatal warnings print to stderr
+        // with exit 0, so warning assertions hold identically in BOTH invocation modes.
+        return new CompileResult(0, mgfxBytes, FormatErrors(compileResult.Value.Warnings));
     }
 
     private static string FormatErrors(IEnumerable<ShaderError> errors)
@@ -146,11 +148,17 @@ public static class TestHelpers
         var sb = new StringBuilder();
         foreach (ShaderError e in errors)
         {
+            string severity = e.Severity switch
+            {
+                ShaderErrorSeverity.Warning => "warning",
+                ShaderErrorSeverity.Note    => "note",
+                _                           => "error",
+            };
             string fileName = Path.GetFileName(e.File);
             if (e.Line > 0)
-                sb.AppendLine($"{fileName}({e.Line},{e.Column}): error {e.Code}: {e.Message}");
+                sb.AppendLine($"{fileName}({e.Line},{e.Column}): {severity} {e.Code}: {e.Message}");
             else
-                sb.AppendLine($"error {e.Code}: {e.Message}");
+                sb.AppendLine($"{severity} {e.Code}: {e.Message}");
         }
         return sb.ToString();
     }

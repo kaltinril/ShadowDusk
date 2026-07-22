@@ -78,20 +78,14 @@ internal static class Vkd3dCompileContract
         string sourceFileName,
         string noDiagnosticsFallback)
     {
-        IReadOnlyList<ShaderError> errors =
-            D3DCompilerDiagnosticReformatter.Reformat(messages, sourceFileName);
-
-        if (errors.Count > 0)
-            return errors[0];
-
-        return new ShaderError(
-            File:    sourceFileName,
-            Line:    0,
-            Column:  0,
-            Code:    "SD0212",
-            Message: string.IsNullOrWhiteSpace(messages)
-                ? noDiagnosticsFallback
-                : messages.Trim(),
-            RawDiagnostics: string.IsNullOrWhiteSpace(messages) ? null : messages);
+        // Shared selection policy (Phase 53): the first error-severity parsed
+        // diagnostic wins (vkd3d prints warnings before the fatal line), unparseable
+        // text is surfaced verbatim as the message, and the COMPLETE text rides on
+        // RawDiagnostics. SD0212 now fires only when vkd3d emitted no text at all.
+        return D3DCompilerDiagnosticReformatter.SelectPrimary(
+            messages,
+            sourceFileName,
+            noDiagnosticsFallback,
+            fallbackCode: "SD0212");
     }
 }

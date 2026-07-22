@@ -105,6 +105,14 @@ internal sealed class PipelineRunner
 
         byte[] mgfxBytes = compileResult.Value.Data;
 
+        // Non-fatal diagnostics — the underlying compiler's verbatim warnings plus
+        // the GL portability findings (SD0400-SD0402). Printed to stderr in the
+        // MGCB-parseable warning form without failing the build, the same contract
+        // as the ShaderToy convert warnings below; a warning-free compile keeps
+        // stderr empty.
+        foreach (string line in MgcbErrorFormatter.FormatAll(compileResult.Value.Warnings))
+            Console.Error.WriteLine(line);
+
         // Stage 3: Write output file.
         try
         {

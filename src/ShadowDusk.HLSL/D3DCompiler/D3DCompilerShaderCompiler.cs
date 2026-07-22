@@ -128,24 +128,25 @@ public sealed class D3DCompilerShaderCompiler : IDxbcShaderCompiler
 
             if (status.Failure || code is null)
             {
-                IReadOnlyList<ShaderError> errors =
-                    D3DCompilerDiagnosticReformatter.Reformat(errorText, request.SourceFileName);
-
-                ShaderError primary = errors.Count > 0
-                    ? errors[0]
-                    : new ShaderError(
-                        File:    request.SourceFileName,
-                        Line:    0,
-                        Column:  0,
-                        Code:    "X0000",
-                        Message: "DXBC compilation failed with no diagnostics",
-                        RawDiagnostics: errorText);
-
-                return Result<PlatformBlob, ShaderError>.Fail(primary);
+                // First error-severity diagnostic wins (never a leading warning); the
+                // COMPLETE verbatim fxc text rides on RawDiagnostics.
+                return Result<PlatformBlob, ShaderError>.Fail(
+                    D3DCompilerDiagnosticReformatter.SelectPrimary(
+                        errorText,
+                        request.SourceFileName,
+                        noDiagnosticsFallback: "DXBC compilation failed with no diagnostics"));
             }
 
             byte[] dxbc = code.AsBytes();
-            return Result<PlatformBlob, ShaderError>.Ok(new PlatformBlob(BlobKind.Dxbc, dxbc));
+
+            // A successful compile can still carry warning text (this backend no
+            // longer defaults to WarningsAreErrors — fxc under mgfxc never used /WX).
+            // Capture verbatim; the pipeline surfaces it via CompiledShader.Warnings.
+            IReadOnlyList<ShaderError> warnings = D3DCompilerDiagnosticReformatter.ReformatAsWarnings(
+                errorText, request.SourceFileName);
+
+            return Result<PlatformBlob, ShaderError>.Ok(
+                new PlatformBlob(BlobKind.Dxbc, dxbc) { Warnings = warnings });
         }
         finally
         {

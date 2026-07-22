@@ -65,18 +65,90 @@ internal static partial class D3DCompilerDiagnosticReformatter
                 RawDiagnostics: line));
         }
 
-        if (unmatched.Length > 0)
+        if (unmatched.Length > 0 && errors.Count == 0)
         {
+            // Constraint 5: text that doesn't parse into file(line,col) entries is
+            // surfaced VERBATIM as the message — never the old fixed "Shader
+            // compilation failed" with the real text hidden in RawDiagnostics.
+            // When located diagnostics DID parse, the unmatched remainder is their
+            // context and rides on the complete raw text SelectPrimary attaches.
+            string verbatim = unmatched.ToString().TrimEnd();
             errors.Add(new ShaderError(
                 File: sourceFileName,
                 Line: 0,
                 Column: 0,
                 Code: "X0000",
-                Message: "Shader compilation failed",
+                Message: verbatim,
                 Severity: ShaderErrorSeverity.Error,
-                RawDiagnostics: unmatched.ToString().TrimEnd()));
+                RawDiagnostics: verbatim));
         }
 
         return errors;
+    }
+
+    /// <summary>
+    /// Selects the single primary <see cref="ShaderError"/> for a FAILED compile: the
+    /// first <see cref="ShaderErrorSeverity.Error"/>-severity entry (fxc/vkd3d print
+    /// warnings before the fatal diagnostic), else the first entry — with
+    /// <see cref="ShaderError.RawDiagnostics"/> always set to the COMPLETE text so the
+    /// single-error backend contract loses nothing. Falls back to
+    /// <paramref name="noDiagnosticsFallback"/> (code <paramref name="fallbackCode"/>)
+    /// only when the compiler emitted no text at all.
+    /// </summary>
+    public static ShaderError SelectPrimary(
+        string errorText,
+        string sourceFileName,
+        string noDiagnosticsFallback,
+        string fallbackCode = "X0000")
+    {
+        IReadOnlyList<ShaderError> errors = Reformat(errorText, sourceFileName);
+        string? raw = string.IsNullOrWhiteSpace(errorText) ? null : errorText.TrimEnd();
+
+        ShaderError? primary = null;
+        foreach (ShaderError e in errors)
+        {
+            if (e.Severity == ShaderErrorSeverity.Error)
+            {
+                primary = e;
+                break;
+            }
+        }
+        primary ??= errors.Count > 0 ? errors[0] : null;
+
+        if (primary is not null)
+            return primary with { RawDiagnostics = raw ?? primary.RawDiagnostics };
+
+        return new ShaderError(
+            File: sourceFileName,
+            Line: 0,
+            Column: 0,
+            Code: fallbackCode,
+            Message: noDiagnosticsFallback,
+            Severity: ShaderErrorSeverity.Error,
+            RawDiagnostics: raw);
+    }
+
+    /// <summary>
+    /// Parses the diagnostic text of a SUCCESSFUL compile into warning diagnostics.
+    /// A successful compile cannot carry errors, so an unlocated verbatim entry is
+    /// normalized to <see cref="ShaderErrorSeverity.Warning"/> — the text stays
+    /// verbatim.
+    /// </summary>
+    public static IReadOnlyList<ShaderError> ReformatAsWarnings(
+        string errorText,
+        string sourceFileName)
+    {
+        IReadOnlyList<ShaderError> parsed = Reformat(errorText, sourceFileName);
+        if (parsed.Count == 0)
+            return parsed;
+
+        var warnings = new List<ShaderError>(parsed.Count);
+        foreach (ShaderError e in parsed)
+        {
+            warnings.Add(e.Severity == ShaderErrorSeverity.Error
+                ? e with { Severity = ShaderErrorSeverity.Warning }
+                : e);
+        }
+        return warnings;
     }
 }

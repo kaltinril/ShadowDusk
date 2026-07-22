@@ -114,32 +114,16 @@ internal sealed class JsDxcShaderCompiler : IDxcShaderCompiler
     /// </summary>
     internal static ShaderError MapJsException(JSException ex, string sourceFileName)
     {
-        IReadOnlyList<ShaderError> parsed =
-            DxcDiagnosticReformatter.Reformat(ex.Message, sourceFileName);
-
-        // Prefer a located diagnostic (has a source line); fall back to the first
-        // parsed entry, then to an explicit backend error carrying the raw text.
-        ShaderError? located = null;
-        foreach (ShaderError e in parsed)
-        {
-            if (e.Line > 0)
-            {
-                located = e;
-                break;
-            }
-        }
-
-        return located
-            ?? (parsed.Count > 0
-                ? parsed[0]
-                : new ShaderError(
-                    File: sourceFileName,
-                    Line: 0,
-                    Column: 0,
-                    Code: "SD1900",
-                    Message: $"WASM DXC backend failed: {ex.Message}",
-                    Severity: ShaderErrorSeverity.Error,
-                    RawDiagnostics: ex.Message));
+        // One selection policy with desktop (Phase 38 + Phase 53): the first
+        // error-severity parsed diagnostic wins, unparseable text is surfaced
+        // VERBATIM as the message (never a generic sentence), and the complete text
+        // rides on RawDiagnostics. The SD1900 fallback fires only when the exception
+        // carried no text at all.
+        return DxcDiagnosticReformatter.SelectPrimary(
+            ex.Message,
+            sourceFileName,
+            noDiagnosticsFallback: "WASM DXC backend failed with no diagnostics",
+            fallbackCode: "SD1900");
     }
 }
 
