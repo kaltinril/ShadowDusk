@@ -14,6 +14,14 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.12.1] - 2026-07-21
+
+### Added
+
 - Vendored the derivative-based-antialiasing revision of Apos.Shapes' shader
   (`apos-shapes-aa.fx`, upstream `d507a73`) into the third-party corpus (GL + DX compile
   pins), plus a structural pin that fails if any gradient op ever again lands inside a
@@ -736,7 +744,8 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.12.1...HEAD
+[0.12.1]: https://github.com/kaltinril/ShadowDusk/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.9.0...v0.10.0
