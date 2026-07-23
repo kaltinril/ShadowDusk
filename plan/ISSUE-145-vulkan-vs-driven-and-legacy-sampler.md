@@ -668,15 +668,21 @@ crashed`. Established, not assumed:
   the macOS dylib resolver: `DxcLoader.Register` is properly locked and already carries a comment
   about a previous intermittent macOS `DllNotFoundException` under test parallelism.
 
-**Resolution taken:** the sweep is gated off macOS via `CorpusSweepTheoryAttribute`, with the
-reason stated in the skip message rather than hidden. This does **not** lose coverage:
-ShadowDusk's output is proven **byte-identical across hosts** by `CrossHostByteIdentityTests`
-in this same suite on all three OSes, so a structural gate over the emitted bytes cannot find
-anything on macOS that ubuntu and windows do not already find. The sweep runs in full on both
-of those lanes and locally.
+**First attempt, and why it was wrong.** Gating the corpus sweep off macOS did NOT fix the lane:
+it failed again with the sweep skipped. So the sweep was never the trigger. The real driver is
+the **enlarged corpus itself** — the 18 new fixtures also feed the pre-existing corpus-globbing
+suites (`Phase41StructuralDivergenceMatrixTests` compiles every fixture for DX *and* GL,
+`ThirdPartyShaderCorpusTests`, `FnaCompileFixtureTests`), so total native compilation went up
+across the whole assembly regardless of the new class. Worth recording: the obvious suspect was
+not the culprit, and skipping it would have shipped a coverage loss that bought nothing.
 
-**Follow-up (not this issue):** root-cause the macOS host crash under sustained DXC load. Likely
-candidates are peak memory across parallel xUnit collections (the corpus includes large SM6
-shaders such as `apos-shapes-sm6.fx`, whose PS SPIR-V alone is ~136 KB) and DXC's behaviour on
-the Rosetta-2 x64 runners GitHub provides. Worth fixing on its own merits: it bounds how much
-native compilation the integration suite can ever do on macOS.
+**Resolution taken:** cap xUnit's cross-collection parallelism to 1 **on the macOS lane only**
+(`-- xUnit.MaxParallelThreads=1` in `ci.yml`), and run the corpus sweep on every platform. Linux
+and Windows keep full parallelism. This targets the actual mechanism (concurrent native
+compilation, not any one fixture) and keeps macOS coverage intact.
+
+**Follow-up (not this issue):** root-cause why concurrent DXC compilation destabilises the macOS
+test host at all. Likely candidates are peak memory across parallel xUnit collections (the corpus
+includes large SM6 shaders such as `apos-shapes-sm6.fx`, whose PS SPIR-V alone is ~136 KB) and
+DXC's behaviour on the Rosetta-2 x64 runners GitHub provides. Worth fixing on its own merits: it
+bounds how much native compilation the integration suite can ever do on macOS.

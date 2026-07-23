@@ -1,41 +1,11 @@
 #nullable enable
 
-using System.Runtime.InteropServices;
 using FluentAssertions;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using Xunit;
 
 namespace ShadowDusk.Integration.Tests.Tests;
-
-/// <summary>
-/// A theory that runs the corpus sweep everywhere EXCEPT macOS, where compiling the whole
-/// fixture corpus through DXC alongside the rest of the parallel integration suite takes the
-/// test host down (`Test host process crashed`, reproducibly, ~11s into the assembly run and
-/// at a DIFFERENT test each time — the signature of resource exhaustion, not a bad fixture).
-/// Every case passes on macOS when it gets to run; the host dies underneath them.
-///
-/// <para><b>Why skipping here does not lose coverage.</b> ShadowDusk's output is proven
-/// BYTE-IDENTICAL across hosts by <c>CrossHostByteIdentityTests</c> in this same suite, on all
-/// three OSes. A structural gate over the emitted bytes therefore cannot find anything on macOS
-/// that Linux and Windows do not already find — the bytes are the same bytes. The sweep still
-/// runs in full on ubuntu-latest and windows-latest, and locally.</para>
-///
-/// <para>The macOS host crash under sustained DXC load is a real, separate issue and is tracked
-/// in <c>plan/ISSUE-145-vulkan-vs-driven-and-legacy-sampler.md</c>; it is NOT a ShadowDusk
-/// output defect (the same compiles succeed on every platform, and every case passes before the
-/// host dies).</para>
-/// </summary>
-public sealed class CorpusSweepTheoryAttribute : TheoryAttribute
-{
-    public CorpusSweepTheoryAttribute()
-    {
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-            Skip = "macOS test host crashes under the whole-corpus DXC sweep; output is proven " +
-                   "byte-identical across hosts (CrossHostByteIdentityTests), so ubuntu + windows " +
-                   "cover this. See plan/ISSUE-145-vulkan-vs-driven-and-legacy-sampler.md.";
-    }
-}
 
 /// <summary>
 /// <b>The corpus-wide Vulkan structural gate (issue #145, F7.1).</b> Compiles EVERY <c>.fx</c>
@@ -97,7 +67,7 @@ public sealed class VulkanCorpusStructuralTests
             "the whole fixture corpus must reach this gate, not a hand-picked subset");
     }
 
-    [CorpusSweepTheory]
+    [Theory]
     [MemberData(nameof(AllFixtures))]
     public async Task EveryFixture_EitherCompilesToAValidVulkanContainer_OrFailsLoudly(string relativePath)
     {
