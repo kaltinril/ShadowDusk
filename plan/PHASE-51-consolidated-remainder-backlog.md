@@ -98,16 +98,17 @@ vkd3d-shader's Shader Model 3 ceiling (`fx_2_0`/SM3, a real DirectX-9-era instru
 limit) — a legitimate, documented rejection (`SD0305`), the same honest shader-model ceiling
 the other vendored Apos.Shapes revisions hit. There is no further FNA work to schedule here.
 
-**A distinct, real gap surfaced while closing this GL slice, tracked in its own doc, NOT as a
-Phase 51 item: [`ISSUE-149-gl-isnan-versionless-glsl.md`](ISSUE-149-gl-isnan-versionless-glsl.md).**
-The GL candidate GLSL for `apos-shapes.fx` — the exact fixture this render-proof uses — emits
-`isnan()` with no `#version` directive, which Apple's strict GL compiler rejects. This does NOT
-invalidate the maxd 2/255 render-proof above (that pixel-diff is real, on this repo's established
-Windows/Linux GL evidence ladder), and it is not new/caused by this work — it is pre-existing in
+**A distinct, real gap surfaced while closing this GL slice — FIXED the same day, tracked in its
+own doc, NOT as a Phase 51 item:
+[`DONE/ISSUE-149-gl-isnan-versionless-glsl.md`](DONE/ISSUE-149-gl-isnan-versionless-glsl.md).**
+The GL candidate GLSL for `apos-shapes.fx` — the exact fixture this render-proof uses — emitted
+`isnan()` with no `#version` directive, which Apple's strict GL compiler rejects. This never
+invalidated the maxd 2/255 render-proof above (that pixel-diff is real, on this repo's established
+Windows/Linux GL evidence ladder), and it was not caused by this work — it was pre-existing in
 the GL backend's NaN-lowering and was simply invisible on the lenient desktop drivers every GL
-render gate runs on. It is a fresh, externally-filed correctness bug affecting any GL shader
-using `min`/`max`/`clamp` (not specific to Apos.Shapes or to Phase 51's leftover-scope tails), so
-it gets the same standalone-doc treatment issues #70 and #145 did, not a Phase 51 sub-item.
+render gate runs on. It affected any GL shader using `min`/`max`/`clamp`, not just Apos.Shapes,
+so it got the same standalone-doc treatment issues #70 and #145 did (not a Phase 51 sub-item),
+and is now fixed by defaulting SPIRV-Cross's `RELAX_NAN_CHECKS` option on for the OpenGL profile.
 
 **Done = ** `apos-shapes-sm6.fx` rendered pixel-equivalent to `mgfxc` in real MonoGame DX and
 Vulkan (maxd 0 on both), and `apos-shapes.fx` rendered pixel-equivalent to `mgfxc` in real

@@ -282,6 +282,42 @@ public sealed class ThirdPartyShaderCorpusTests
     }
 
     // -------------------------------------------------------------------------
+    // Issue #149 — OpenGL profile emitted isnan() into versionless GLSL, rejected on
+    // macOS. DXC compiles HLSL min/max/clamp to NaN-aware SPIR-V (NMin/NMax/NClamp);
+    // SPIRV-Cross's stock GLSL lowering for those is an isnan(...)-ternary, which needs
+    // GLSL 1.30+ — but MonoGameGlslRewriter strips the #version line entirely to match
+    // mgfxc's legacy versionless GL dialect. Desktop NVIDIA/AMD/Intel drivers tolerated
+    // isnan() in versionless GLSL anyway; Apple's strict compiler does not, so every GL
+    // shader using min/max/clamp failed to load on macOS (real breakage: Apos.Shapes
+    // 0.7.6). Fixed by setting SPIRV-Cross's RelaxNanChecks option
+    // (SpirvCrossGlslTranspiler), so it emits plain min/max/clamp instead — matching
+    // mgfxc's own output exactly (see plan/ISSUE-149-gl-isnan-versionless-glsl.md).
+    // apos-shapes.fx is the real shader the bug was found on (28 isnan() occurrences
+    // before this fix, in a fixture that heavily uses min/max/clamp via BoxSDF,
+    // RoundBoxSDF, EllipseSDF, etc.), so it is the regression fixture here too.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    [Trait("Platform", "OpenGL")]
+    public async Task AposShapes_OpenGl_EmitsNoIsnan_Issue149()
+    {
+        using var cts = new CancellationTokenSource(CompileTimeout);
+
+        var result = await TestHelpers.CompileFixtureAsync(
+            "third-party/Apos.Shapes/apos-shapes.fx", "OpenGL", ct: cts.Token);
+
+        result.ExitCode.Should().Be(0, because: $"apos-shapes must compile on GL; stderr: {result.Stderr}");
+
+        string ascii = System.Text.Encoding.ASCII.GetString(
+            result.Mgfx.Select(b => (b >= 9 && b <= 126) ? b : (byte)' ').ToArray());
+
+        ascii.Should().NotContain("isnan(",
+            because: "isnan() needs GLSL 1.30+, but this profile's GLSL has no #version " +
+                     "directive — Apple's strict GL compiler rejects isnan() there, breaking " +
+                     "every shader that uses min/max/clamp on macOS (issue #149)");
+    }
+
+    // -------------------------------------------------------------------------
     // Issue #136 — ANGLE D3D11 gradient poisoning. On ANGLE's D3D11 backend
     // (WebGL in every Windows browser), ANY gradient op (dFdx/dFdy/fwidth)
     // lexically inside a loop whose body has a divergent exit (a conditional
