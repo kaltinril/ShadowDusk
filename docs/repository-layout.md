@@ -52,7 +52,8 @@ ShadowDusk/
 │                                  #   the interactive sample, and the fidelity/gallery render-proof driver.
 ├── validation/                    # Rung-4 render-proof console drivers (NOT in ShadowDusk.slnx, not run by `dotnet test`):
 │                                  #   GL (VsDriven, StateFidelity, CbufferModel, ReservedWordGl, …), DX (VsDrivenDx,
-│                                  #   DxModernFeatures, …), FNA (FnaValidation), KNI (KniDesktopGL, KniWinFormsDX, KniVsDriven),
+│                                  #   DxModernFeatures, …), DX12 (BaselineDx12, CandidateDx12, VsDrivenDx12
+│                                  #     + compare_dx12.py), FNA (FnaValidation), KNI (KniDesktopGL, KniWinFormsDX, KniVsDriven),
 │                                  #   Vulkan (BaselineVulkan, CandidateVulkan, VsDrivenVulkan
 │                                  #     + compare_vulkan.py/decode_mgfx_vulkan.py),
 │                                  #   Android (AndroidGl), v11 (MonoGameV11), browser-ANGLE (AngleDerivativeProbe)

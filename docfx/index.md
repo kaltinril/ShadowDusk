@@ -45,7 +45,7 @@ FNA  (D3D9 fx_2_0):
 | FNA (`/Profile:FNA` → `.fxb`) | D3D9 fx_2_0 via vkd3d-shader | Validated end-to-end |
 | [Metal (macOS / iOS)](backends/metal.md) | MSL | **Not yet implemented (future)** |
 | [Vulkan](backends/vulkan.md) | SPIR-V | Validated end-to-end (MonoGame `DesktopVK` only — KNI has no Vulkan platform) |
-| DirectX 12 (MonoGame `WindowsDX12`) | — | **Not yet supported** (new in MonoGame 3.8.5; planned) |
+| [DirectX 12](backends/directx12.md) (MonoGame `WindowsDX12`) | DXIL (SM6) | Validated end-to-end (MonoGame `WindowsDX12` only — KNI has no DirectX 12 platform) |
 
 *Validated end-to-end* means rendered in the **real engine** and compared against the reference compiler's output — [Validation &amp; the Evidence Ladder](contributing/validation.md) has the per-target proof detail.
 

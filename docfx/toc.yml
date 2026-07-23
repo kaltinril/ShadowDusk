@@ -46,6 +46,8 @@
       href: backends/metal.md
     - name: Vulkan
       href: backends/vulkan.md
+    - name: DirectX 12
+      href: backends/directx12.md
     - name: DirectX & FNA in the Browser
       href: backends/directx-in-wasm.md
 - name: Samples

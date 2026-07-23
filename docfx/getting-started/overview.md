@@ -36,7 +36,7 @@ Every shape implements the same <xref:ShadowDusk.Core.IShaderCompiler> interface
 | FNA | D3D9 `.fxb` | Supported |
 | [Metal (macOS / iOS)](../backends/metal.md) | MSL | Not yet |
 | [Vulkan](../backends/vulkan.md) | SPIR-V `.mgfx` | Supported (MonoGame `DesktopVK` only — KNI has no Vulkan platform) |
-| DirectX 12 (MonoGame `WindowsDX12`) | — | Not yet (new in MonoGame 3.8.5; planned) |
+| [DirectX 12](../backends/directx12.md) (MonoGame `WindowsDX12`) | DXIL `.mgfx` | Supported (MonoGame `WindowsDX12` only — KNI has no DirectX 12 platform) |
 
 Supported targets are tested end-to-end against the reference compiler and render identically. See [Validation](../contributing/validation.md) for how that's proven, and [Choosing a Target](../guides/choosing-a-target.md) to pick one.
 
