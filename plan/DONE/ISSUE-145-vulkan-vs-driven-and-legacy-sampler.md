@@ -3,6 +3,7 @@
 **Status:** ✅ Root causes isolated, reproduced, **FIXED, and RENDER-PROVEN** — ShadowDusk's VS-driven
 Vulkan output now renders **pixel-identical (maxd 0)** to the real mgfxc 3.8.5 golden on a real MonoGame
 3.8.5 DesktopVK device (`validation/VsDrivenVulkan`), and restoring the bug turns that gate red at maxd 255.
+Merged to `main` in [PR #146](https://github.com/kaltinril/ShadowDusk/pull/146) (`67a1dc47`, 2026-07-23); GitHub issue #145 CLOSED. Ships in 0.13.0.
 See *§ What was implemented* and *§ Second pass* for the change record and what remains.
 Driven by GitHub issue [#145](https://github.com/kaltinril/ShadowDusk/issues/145) (Apostolique / Jean-David Moisan,
 author of Apos.Shapes): `apos-shapes.fx` compiled with ShadowDusk 0.12.1 `/Profile:Vulkan` does not work on a real
