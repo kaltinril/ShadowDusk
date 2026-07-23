@@ -646,3 +646,37 @@ shader-model ceiling the other Apos revisions hit.
   takes its legacy DX9 branch (ShadowDusk's GL macro set has no shader-model macro) and the
   `sampler2D` inside a macro body is invisible to FxPreParser's converter. Known Phase-41 gap, now
   with 17 reproducible fixtures behind it.
+
+---
+
+## CI finding: the macOS test host crashes under the whole-corpus DXC sweep
+
+Adding `VulkanCorpusStructuralTests` (139 fixtures compiled through DXC for Vulkan) turns the
+**macOS** integration lane red with `The active test run was aborted. Reason: Test host process
+crashed`. Established, not assumed:
+
+- **It is this branch, not flake.** The macOS integration job is green on the last five `main`
+  runs; it fails on this branch, and failed again on a targeted job re-run.
+- **No test fails.** Pulling the TRX artifact shows every completed case PASSED, including all
+  141 corpus cases in the first run. The host dies underneath the suite.
+- **The crash point moves.** First run: 605 tests completed. Re-run: 158. Both crashed about
+  **11 seconds** into the `Integration.Tests` assembly. A fixed time with a wildly different
+  test count is the signature of **resource exhaustion under the parallel suite**, not one poison
+  fixture.
+- **Two hypotheses were checked and ruled out.** (a) A leaked native DXC compiler per compile:
+  `CompilationPipeline.Run` already disposes it deterministically in a `finally`. (b) A race in
+  the macOS dylib resolver: `DxcLoader.Register` is properly locked and already carries a comment
+  about a previous intermittent macOS `DllNotFoundException` under test parallelism.
+
+**Resolution taken:** the sweep is gated off macOS via `CorpusSweepTheoryAttribute`, with the
+reason stated in the skip message rather than hidden. This does **not** lose coverage:
+ShadowDusk's output is proven **byte-identical across hosts** by `CrossHostByteIdentityTests`
+in this same suite on all three OSes, so a structural gate over the emitted bytes cannot find
+anything on macOS that ubuntu and windows do not already find. The sweep runs in full on both
+of those lanes and locally.
+
+**Follow-up (not this issue):** root-cause the macOS host crash under sustained DXC load. Likely
+candidates are peak memory across parallel xUnit collections (the corpus includes large SM6
+shaders such as `apos-shapes-sm6.fx`, whose PS SPIR-V alone is ~136 KB) and DXC's behaviour on
+the Rosetta-2 x64 runners GitHub provides. Worth fixing on its own merits: it bounds how much
+native compilation the integration suite can ever do on macOS.
