@@ -126,27 +126,25 @@ tool pin (if output is unchanged / only known-equivalent drift) or (b) keep 3.8.
 the drift in the structural-divergence matrix. Either outcome is fine; an unexamined stale oracle
 is not.
 
-### Area D — DX12 / DXIL render-validation (absorbed Phase 51 B1, ex-Phase 35 Area C)
+### Area D — DX12 / DXIL render-validation (absorbed Phase 51 B1, ex-Phase 35 Area C) — ➡️ split to Phase 54 (2026-07-23)
 
-The DXIL path is **already built**; what was missing was a real MonoGame **DX12 runtime**, which
-3.8.5 stable now provides (`MonoGame.Runtime.Windows.DX12`, `<MonoGamePlatform>WindowsDX12</MonoGamePlatform>`).
-Carried scope, verbatim from Phase 35/51: *"Seamless means ShadowDusk emits whatever the
-consumer's DirectX runtime loads (DXBC for DX11, DXIL for DX12) automatically — the consumer
-never picks DXBC vs DXIL or SM5 vs SM6"*, with the open design question *"can one artifact serve
-both, or must it be auto-detected from the target? Resolve reproduce-first."*
+**Decision gate resolved: split.** Source inspection (this area's own required first step) found
+no `PlatformTarget.DirectX12` anywhere in the codebase — "the DXIL path is already built" was
+accurate only for a DXC-to-SM6-DXIL reflection side-path already used by the DirectX11 target,
+not for an actual DX12 container/writer/`PlatformTarget`. That is a full new-backend build on the
+scale of Phase 32's Vulkan work, exactly the condition this area's decision gate named for
+splitting out. Filed as **[Phase 54 — DirectX 12 (DXIL) backend](DONE/PHASE-54-dx12-dxil-backend.md)**,
+research committed to
+[`PHASE-54-appendix/dx12-dxil-container-research.md`](DONE/PHASE-54-appendix/dx12-dxil-container-research.md).
+This phase closes on Areas A/B/C/E/F; the Phase 51 B1 tail now points at Phase 54 instead of here.
 
-**Method — follow the Phase 32 playbook, research before code:** Phase 32 found on inspection
-that the "provisional" container assumptions were wrong (real profile byte `80`, a genuinely
-distinct shader-record shape). Expect the same: **source-inspect MonoGame 3.8.5's WindowsDX12
-effect/shader load path first** — what container profile does it declare, what bytecode does it
-actually feed to D3D12 (DXIL? DXBC-on-12? a wrapped descriptor header like Vulkan's?) — then
-build the rung-4 driver pair (`validation/BaselineDx12`-style, per the existing DX pattern,
-Windows-GPU-only) and wire it into `run-windows-render-gates.ps1` once proven.
-
-**Decision gate:** if the source inspection reveals a full new container format on the scale of
-Phase 32's Vulkan work, split Area D into its own scoped phase (committing the research here) —
-this phase then closes on Areas A/B/C/E/F, and the Phase 51 B1 tail points at the new phase
-instead. Do not let a large DX12 build-out hold the 3.8.5 support sweep open.
+Original scope (carried into Phase 54 verbatim): The DXIL path is **already built**; what was
+missing was a real MonoGame **DX12 runtime**, which 3.8.5 stable now provides
+(`MonoGame.Runtime.Windows.DX12`, `<MonoGamePlatform>WindowsDX12</MonoGamePlatform>`). Carried
+scope, verbatim from Phase 35/51: *"Seamless means ShadowDusk emits whatever the consumer's
+DirectX runtime loads (DXBC for DX11, DXIL for DX12) automatically — the consumer never picks
+DXBC vs DXIL or SM5 vs SM6"*, with the open design question *"can one artifact serve both, or
+must it be auto-detected from the target? Resolve reproduce-first."*
 
 ### Area E — the drop-in story under 3.8.5's new Content Builder
 

@@ -14,6 +14,12 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **New target: DirectX 12 (MonoGame `WindowsDX12`), rung-4 proven (Phase 54).**
+  `PlatformTarget.DirectX12` compiles to plain SM6 DXIL via DXC and is auto-selected for
+  consumers targeting MonoGame's `WindowsDX12` runtime (3.8.5+) — seamless, no flag to pick.
+  Render-proven maxd 0 against a real `mgfxc` `DirectX_12` golden, for both the 10-shader
+  PS/SpriteBatch corpus and Apos.Shapes/VS-driven custom-vertex-shader effects
+  (`validation/BaselineDx12`/`CandidateDx12`/`compare_dx12.py`, `validation/VsDrivenDx12`).
 - **Apos.Shapes (Gum's SDF shape renderer) render-proof — DX and GL (Phase 51 A3).** Vulkan
   already shipped in 0.13.0 (`validation/VsDrivenVulkan -- apos`, maxd 0). This release closes
   the remaining two slices:

@@ -69,6 +69,12 @@ package "3 - TRANSLATION LAYERS  (target selects the branch)" {
     DX_VKD -down-> DX_DXBC
   }
 
+  package "DirectX12 branch" {
+    rectangle "**DXC**\nHLSL -> DXIL (SM6)" as DX12_DXC #BFD2E8
+    rectangle "DXIL (SM6)\n(carried as-is, no DXBC step)" as DX12_DXIL #DCE6DC
+    DX12_DXC -down-> DX12_DXIL
+  }
+
   package "FNA branch" {
     rectangle "**vkd3d-shader**\nHLSL(SM1-3) -> fx_2_0" as FNA_VKD #BFD2E8
     rectangle "D3D9 fx_2_0 bytecode\n(PreserveSm3)" as FNA_FX2 #DCE6DC
@@ -96,6 +102,7 @@ package "5 - OUTPUT CONTAINERS" {
   rectangle "**.knifx**  (sig KNIF, v11)\nKNI's native container" as O_KNIFX #DCE6DC
   rectangle "**.fxb**  (D3D9 fx_2_0)\nFNA effect" as O_FXB #DCE6DC
   rectangle ".mgfx **Vulkan**\n(v11-shaped record,\nprofile byte 80, SPIR-V)" as O_MGFXVK #DCE6DC
+  rectangle ".mgfx **DirectX12**\n(profile byte 2, DXIL)" as O_MGFXDX12 #DCE6DC
 }
 
 ' ===== 6. REAL RUNTIMES =====
@@ -105,6 +112,7 @@ package "6 - REAL RUNTIMES  (the bar: loads + renders like mgfxc / fxc)" {
   rectangle "KNI\n**Desktop DX11**" as R_KNIDX #D9D9D9
   rectangle "MonoGame\n**DesktopGL**" as R_MGGL #D9D9D9
   rectangle "MonoGame\n**DirectX 11**" as R_MGDX #D9D9D9
+  rectangle "MonoGame\n**WindowsDX12**" as R_MGDX12 #D9D9D9
   rectangle "MonoGame\n**DesktopVK**\n(Vulkan)" as R_MGVK #D9D9D9
   rectangle "**FNA**\n(FNA3D)" as R_FNA #D9D9D9
   rectangle "MonoGame / KNI\n**Android**\n(GL ES,\non-device compile)" as R_ANDROID #D9D9D9
@@ -120,18 +128,21 @@ PP --> IR
 
 IR --> GL_DXC : "GL"
 IR --> DX_VKD : "DX"
+IR --> DX12_DXC : "DX12"
 IR --> FNA_VKD : "FNA"
 IR --> VK_DXC : "Vulkan"
 
 GL_RW --> MGW : "OpenGL profile"
 GL_RW --> KNW : "KNI target"
 DX_DXBC --> MGW : "DirectX_11 profile"
+DX12_DXIL --> MGW : "DirectX12ShaderCodeWrapper\n(profile byte 2)"
 FNA_FX2 --> FXW
 VK_SPV --> MGW : "descriptor-layout header\n(VulkanShaderCodeWrapper)"
 
 MGW --> O_MGFX10
 MGW --> O_MGFX11
 MGW --> O_MGFXVK
+MGW --> O_MGFXDX12
 KNW --> O_KNIFX
 FXW --> O_FXB
 
@@ -147,6 +158,7 @@ O_KNIFX --> R_KNIDX
 O_KNIFX --> R_KNIWEB : "GL-family directory;\nKNI runtime-converts the\n(0,0) raw GL body -> ES"
 O_FXB --> R_FNA
 O_MGFXVK --> R_MGVK : "render-proven 10/10;\nmgfxc pixel-diff maxd 0 with\nexplicit registers (#145), blocked\nfor auto-numbered (MonoGame\nSlotOffset bug)"
+O_MGFXDX12 --> R_MGDX12 : "render-proven: PS/SpriteBatch\ncorpus 10/10 + VS-driven +\nApos.Shapes; mgfxc pixel-diff\nmaxd 0 (Phase 54)"
 O_MGFX10 --> R_ANDROID : "GL ES; one v10 .mgfx.\non-device compile (android DXC\n+ SPIRV-Cross), or build-time\nprecompile on a host"
 
 note as N1

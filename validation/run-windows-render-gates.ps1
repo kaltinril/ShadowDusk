@@ -27,6 +27,23 @@
     * DX Apos.Shapes             - validation/VsDrivenDx -- apos (Phase 51 A3: Gum's SDF shape
                                    renderer, apos-shapes-sm6.fx, both DXBC backends vs the mgfxc
                                    DirectX_11 golden, real MonoGame WindowsDX, maxd 0).
+    * DirectX12 PS corpus        - validation/BaselineDx12 + CandidateDx12 + compare_dx12.py
+                                   (Phase 54: ShadowDusk DX12 vs a REAL mgfxc DirectX_12 golden -
+                                   built by MonoGame 3.8.5's own content pipeline,
+                                   /Platform:WindowsDX12 - real MonoGame WindowsDX12, maxd 0).
+    * DirectX12 VS-driven + Apos.Shapes - validation/VsDrivenDx12 (+ `-- apos`) (Phase 54: a
+                                   ShadowDusk-compiled DX12 effect with its OWN custom vertex
+                                   shader vs a REAL mgfxc DirectX_12 golden, real MonoGame 3.8.5
+                                   WindowsDX12, maxd 0). Was a confirmed E_INVALIDARG crash in
+                                   MGG_GraphicsDevice_DrawIndexed; root-caused by reading
+                                   MonoGame's real v3.8.5 source directly (not the rootsig
+                                   hypothesis - that was a red herring) to a DX12 vertex shader
+                                   shipping an EMPTY vertex-attribute table, which MonoGame's
+                                   shared VertexInputLayout.GenerateInputElements needs to build
+                                   the D3D12 input layout; an empty table silently yields a
+                                   zero-element layout that fails CreateGraphicsPipelineState at
+                                   the first Draw. Fixed by wiring DXIL-based vertex-attribute
+                                   reflection for DirectX12 (DxilVertexInputReflector).
     * KNI DirectX                - validation/KniWinFormsDX (ShadowDusk DX vs mgfxc, real KNI
                                    WinForms.DX11).
     * KNI OpenGL desktop         - validation/KniDesktopGL + compare_kni.py (ShadowDusk v10 vs
@@ -141,6 +158,21 @@ $gates.Add(@{
 $gates.Add(@{
     Name   = 'DX Apos.Shapes (Phase 51 A3: ShadowDusk vs mgfxc DirectX_11 golden, real MonoGame WindowsDX)'
     Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenDx', '-c', 'Release', '--', 'apos') }
+})
+$gates.Add(@{
+    Name   = 'DX12 WindowsDX12 corpus, pixel-only (Phase 54: ShadowDusk vs REAL mgfxc DirectX_12 golden, real MonoGame 3.8.5 WindowsDX12)'
+    Action = {
+        Invoke-Checked 'dotnet' @('run', '--project', 'validation/BaselineDx12', '-c', 'Release')
+        Invoke-Checked 'dotnet' @('run', '--project', 'validation/CandidateDx12', '-c', 'Release')
+        Invoke-Checked 'python' @('validation/compare_dx12.py')
+    }
+})
+$gates.Add(@{
+    Name   = 'DX12 VS-driven + Apos.Shapes (Phase 54: ShadowDusk custom-VS DX12 effect vs REAL mgfxc DirectX_12 golden, real MonoGame 3.8.5 WindowsDX12)'
+    Action = {
+        Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenDx12', '-c', 'Release')
+        Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenDx12', '-c', 'Release', '--', 'apos')
+    }
 })
 $gates.Add(@{
     Name   = 'KNI DirectX (ShadowDusk DX vs mgfxc, real KNI WinForms.DX11)'

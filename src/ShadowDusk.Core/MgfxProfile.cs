@@ -25,4 +25,9 @@ public enum MgfxProfile : byte
     /// earlier placeholder value of <c>3</c> was wrong.
     /// </summary>
     Vulkan    = 80,
+    /// <summary>
+    /// The DirectX 12 / DXIL profile. Value <c>2</c> matches real MonoGame 3.8.5's own
+    /// <c>DirectX12ShaderProfile</c> (confirmed against its source: `base("DirectX_12", 2)`).
+    /// </summary>
+    DirectX12 = 2,
 }

@@ -84,6 +84,31 @@ internal static class DxcFlagBuilder
                 platformFlags = Array.Empty<string>();
                 break;
 
+            // DirectX 12: same SM6 DXIL compile as the DirectX case above (no -spirv), but this
+            // one is the SHIPPED bytecode (wrapped by DirectX12ShaderCodeWrapper), not a
+            // reflection-only side path. A prior pass here added mgfxc's rootsig-embedding
+            // flags (-force-rootsig-ver / -rootsig-define / -D_MG_ROOT_SIGNATURE) on the
+            // THEORY that MonoGame's WindowsDX12 PSO creation validates a shader's embedded
+            // RTS0 against its own fixed root signature. That theory is falsified by directly
+            // decoding a REAL mgfxc-compiled DirectX_12 golden (Phase 54 follow-up,
+            // 2026-07-23): its DXIL container carries NO RTS0 part at all (6 parts: SFI0/
+            // ISG1/OSG1/PSV0/HASH/DXIL) — mgfxc's own DirectX12ShaderProfile passes those
+            // flags too, but since no `.fx` source (mgfxc's or ours) carries a
+            // `[RootSignature(_MG_ROOT_SIGNATURE)]` attribute referencing the macro, DXC never
+            // actually attaches one; the flags are vestigial on the reference compiler's own
+            // command line. Adding them here made ShadowDusk's output diverge from the real
+            // golden (ours carried a spurious RTS0 + STAT part the reference never ships) —
+            // no -spirv, no rootsig flags, matches the real compiled reference exactly.
+            case (PlatformTarget.DirectX12, ShaderStage.Vertex):
+                profile = "vs_6_0";
+                platformFlags = Array.Empty<string>();
+                break;
+
+            case (PlatformTarget.DirectX12, ShaderStage.Pixel):
+                profile = "ps_6_0";
+                platformFlags = Array.Empty<string>();
+                break;
+
             // Metal goes through SPIR-V so use the same profile/flags as OpenGL
             case (PlatformTarget.Metal, ShaderStage.Vertex):
                 profile = ShaderProfiles.Sm5Vertex;
@@ -122,7 +147,11 @@ internal static class DxcFlagBuilder
         // decorates the cbuffer matrix SPIR-V RowMajor (= HLSL column-major; DXC inverts the term
         // because SPIR-V stores matrices as column vectors), ShadowDusk decorated it ColMajor.
         // Dropping the flag here makes the two match with no other container change.
-        if (platform != PlatformTarget.Vulkan)
+        //
+        // DirectX12 must ALSO not have it — the reference compiler's DirectX12ShaderProfile
+        // passes "/Zpc" (column-major) explicitly (Phase 54 research), the same convention
+        // Vulkan uses by omission.
+        if (platform != PlatformTarget.Vulkan && platform != PlatformTarget.DirectX12)
             args.Add("-Zpr");
 
         if (!options.AllowWarnings)

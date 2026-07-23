@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net8.0": {
+      "MonoGame.Framework.Native": {
+        "type": "Direct",
+        "requested": "[3.8.5, )",
+        "resolved": "3.8.5",
+        "contentHash": "fobFZ8nfhCmt98HD0FNX+nP1IOoJ2N/Zk/JHY6148i4CEpIThv+OJeiR8W+zba+Xz5NkPC2pmWHRum0jN37boQ=="
+      },
+      "MonoGame.Runtime.Windows.DX12": {
+        "type": "Direct",
+        "requested": "[3.8.5, )",
+        "resolved": "3.8.5",
+        "contentHash": "Yh3H1V7FtV6X1JkyUu++I1fyllykhg1d5GBmKt4eg0LC8nJWWl5pZBvpGz7DhrRmG+sIe0ZVmssBrijSlbOL5A=="
+      }
+    }
+  }
+}

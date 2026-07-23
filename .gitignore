@@ -129,6 +129,8 @@ validation/output-vs-kni/
 validation/output-state/
 validation/output-apos-gl/
 validation/output-apos-dx/
+validation/output-apos-dx12/
+validation/output-vs-dx12/
 
 # Python
 __pycache__/

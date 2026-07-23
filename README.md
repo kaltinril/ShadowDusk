@@ -53,7 +53,7 @@ ShadowDusk works with **MonoGame, KNI, and FNA** across these graphics backends.
 | FNA                 | D3D9 `.fxb`    | Supported    |
 | Metal (macOS / iOS) | MSL            | Not yet      |
 | Vulkan (MonoGame)   | SPIR-V `.mgfx` | Supported    |
-| DirectX 12 (MonoGame WindowsDX12) | — | Not yet |
+| DirectX 12 (MonoGame WindowsDX12) | SM6 DXIL `.mgfx` | Supported |
 
 Supported targets are tested end-to-end against the reference compiler. For the exact per-version, per-OS proof status, see the [Validation Matrix](docs/validation-matrix.md). To choose a target (or build a shader-download feature), see the [Choosing a Target](https://kaltinril.github.io/ShadowDusk/guides/choosing-a-target.html) guide. Classic Microsoft XNA 4.0 is out of scope.
 
@@ -73,7 +73,7 @@ FNA:
   HLSL (.fx, D3D9-style)  ->  vkd3d-shader  ->  D3D9 bytecode  ->  .fxb
 ```
 
-For **DirectX 11**, the default compiler is the cross-platform **vkd3d-shader**, whose native ships inside the package for all four desktop RIDs, so a DirectX compile produces the same bytes on Linux, macOS, and Windows. On Windows you can opt into Microsoft's `d3dcompiler_47` (a system DLL already present) as a reference-faithful alternative via `CompilerOptions.DxbcBackend`. DXC is not used for DX11 — it emits a newer bytecode (DXIL/SM6) the DX11 runtime can't load — and is reserved for a future DirectX 12 path.
+For **DirectX 11**, the default compiler is the cross-platform **vkd3d-shader**, whose native ships inside the package for all four desktop RIDs, so a DirectX compile produces the same bytes on Linux, macOS, and Windows. On Windows you can opt into Microsoft's `d3dcompiler_47` (a system DLL already present) as a reference-faithful alternative via `CompilerOptions.DxbcBackend`. DXC is not used for DX11 — it emits a newer bytecode (DXIL/SM6) the DX11 runtime can't load — that DXIL output is instead what the DirectX 12 target ships directly (`PlatformTarget.DirectX12`, auto-selected for consumers targeting `WindowsDX12`).
 </details>
 
 <details>

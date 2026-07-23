@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Phase 54 - DirectX12 RENDER validation, candidate side (own-output render proof,
+       same evidence shape CandidateVulkan established before a working mgfxc oracle
+       existed for that corpus). Windows-only: MonoGame.Runtime.Windows.DX12 is a
+       DX12 (Windows) native runtime. This project is intentionally NOT in
+       ShadowDusk.slnx, so cross-platform `dotnet build ShadowDusk.slnx` never sees it. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RootNamespace>ShadowDusk.Validation.CandidateDx12</RootNamespace>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <MonoGamePlatform>WindowsDX12</MonoGamePlatform>
+  </PropertyGroup>
+
+  <ItemGroup Label="MonoGame 3.8.5 stable WindowsDX12">
+    <PackageReference Include="MonoGame.Framework.Native" Version="3.8.5" />
+    <PackageReference Include="MonoGame.Runtime.Windows.DX12" Version="3.8.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Shared\*.cs" />
+  </ItemGroup>
+
+</Project>

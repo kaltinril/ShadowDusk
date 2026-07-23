@@ -42,9 +42,9 @@ Select the backend with <xref:ShadowDusk.Core.CompilerOptions.Target> (library) 
 | **FNA** | `PlatformTarget.Fna` | `FNA` | `.fxb`, **D3D9 fx_2_0** (SM ≤ 3) | ✅ Validated |
 | **Metal** | `PlatformTarget.Metal` | — | MSL | ❌ Not implemented ([future](../backends/metal.md)) |
 | **Vulkan** | `PlatformTarget.Vulkan` | `Vulkan` | `.mgfx`, **SPIR-V** | ✅ Validated (MonoGame `DesktopVK` only — KNI has no Vulkan platform; see [Vulkan](../backends/vulkan.md)) |
-| **DirectX 12** | — | — | — | ❌ Not yet supported (new in MonoGame 3.8.5 `WindowsDX12`; planned, research-first) |
+| **DirectX 12** | `PlatformTarget.DirectX12` | `DirectX_12` | `.mgfx`, **DXIL** (SM6) | ✅ Validated (MonoGame `WindowsDX12` only — KNI has no DirectX 12 platform; see [DirectX 12](../backends/directx12.md)) |
 
-For the MonoGame/KNI targets, the on-disk **profile byte** in the MGFX header encodes the backend choice (`OpenGL = 0`, `DirectX11 = 1`, `Vulkan = 80`). The runtime reads it to pick the shader path, so the target must be chosen **at compile time** — there is no universal `.mgfx` that serves both DirectX and OpenGL. A DirectX `.mgfx` is useless to a DesktopGL game and vice versa. FNA is selected differently (it's a whole separate format, `.fxb` — see Axis 1) and is **not** byte-compatible with the `.mgfx` targets.
+For the MonoGame/KNI targets, the on-disk **profile byte** in the MGFX header encodes the backend choice (`OpenGL = 0`, `DirectX11 = 1`, `DirectX12 = 2`, `Vulkan = 80`). The runtime reads it to pick the shader path, so the target must be chosen **at compile time** — there is no universal `.mgfx` that serves both DirectX and OpenGL. A DirectX `.mgfx` is useless to a DesktopGL game and vice versa. FNA is selected differently (it's a whole separate format, `.fxb` — see Axis 1) and is **not** byte-compatible with the `.mgfx` targets.
 
 > **Practical rule for shader downloads:** first ask *which framework* — if it's **FNA**, emit the `.fxb` (`PlatformTarget.Fna`) and you're done (one file, all FNA backends). For **MonoGame/KNI**, the only remaining question is *"DirectX (WindowsDX) or OpenGL/DesktopGL/Web?"* — offer one `.mgfx` per backend. `GraphicsProfile` never matters.
 >

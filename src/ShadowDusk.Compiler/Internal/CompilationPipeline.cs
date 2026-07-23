@@ -562,7 +562,16 @@ internal sealed class CompilationPipeline
                             FxAnnotations = fxParsed.ParameterAnnotations,
                         };
 
-                        reflectResult = reflectionPipeline.Reflect(reflectionInput, cancellationToken);
+                        // DirectX12 folds a sampler+texture pair into the single texture
+                        // parameter, matching DirectX11's DXBC path and the real mgfxc
+                        // DirectX_12 golden (confirmed by decoding it directly, Phase 54
+                        // follow-up) — real mgfxc's DX12 golden has no standalone sampler
+                        // parameter. OpenGL/Vulkan keep the existing (Phase 17/32 proven)
+                        // behavior of emitting one.
+                        bool includeSamplerParameters = options.Target != PlatformTarget.DirectX12;
+
+                        reflectResult = reflectionPipeline.Reflect(
+                            reflectionInput, cancellationToken, includeSamplerParameters);
                     }
 
                     if (reflectResult.IsFailure)
@@ -799,6 +808,13 @@ internal sealed class CompilationPipeline
                     textures: shaderTextures.TryGetValue(i, out var vkTextures) ? vkTextures : [],
                     samplers: shaderSamplers.TryGetValue(i, out var vkSamplers) ? vkSamplers : []);
             }
+            else if (options.Target == PlatformTarget.DirectX12)
+            {
+                blobBytes = DirectX12ShaderCodeWrapper.Wrap(
+                    blobBytes,
+                    textures: shaderTextures.TryGetValue(i, out var dxTextures) ? dxTextures : [],
+                    samplers: shaderSamplers.TryGetValue(i, out var dxSamplers) ? dxSamplers : []);
+            }
 
             compiledShaderBlobs[i] = compiledShaderBlobs[i] with
             {
@@ -829,6 +845,15 @@ internal sealed class CompilationPipeline
                     Code: "SD0025",
                     Message: "The Vulkan target does not support the KNIFX container (KNI ships no Vulkan platform)."), runWarnings);
 
+            // Same reasoning as Vulkan above: KNI ships no DX12 platform either.
+            if (options.Target == PlatformTarget.DirectX12)
+                return Fail(new ShaderError(
+                    File: "",
+                    Line: 0,
+                    Column: 0,
+                    Code: "SD0027",
+                    Message: "The DirectX12 target does not support the KNIFX container (KNI ships no DX12 platform)."), runWarnings);
+
             KnifxBackend knifxBackend = options.Target switch
             {
                 PlatformTarget.DirectX => KnifxBackend.DirectX11,
@@ -844,17 +869,19 @@ internal sealed class CompilationPipeline
         // Stage 6: MGFX binary writer.
         MgfxProfile mgfxProfile = options.Target switch
         {
-            PlatformTarget.DirectX => MgfxProfile.DirectX11,
-            PlatformTarget.OpenGL  => MgfxProfile.OpenGL,
-            PlatformTarget.Vulkan  => MgfxProfile.Vulkan,
+            PlatformTarget.DirectX   => MgfxProfile.DirectX11,
+            PlatformTarget.OpenGL    => MgfxProfile.OpenGL,
+            PlatformTarget.Vulkan    => MgfxProfile.Vulkan,
+            PlatformTarget.DirectX12 => MgfxProfile.DirectX12,
             _ => MgfxProfile.OpenGL,
         };
 
         // Real MonoGame 3.8.5 hardcodes version 11 for every profile (SourceFile/
         // Entrypoint always written) — DesktopVK is new in 3.8.5 with no older-version
         // reader to preserve compatibility with, so Vulkan always writes the v11 shape
-        // regardless of CompilerOptions.MgfxVersion.
-        if (options.Target == PlatformTarget.Vulkan)
+        // regardless of CompilerOptions.MgfxVersion. DirectX12 is new in 3.8.5 too, same
+        // reasoning (Phase 54).
+        if (options.Target is PlatformTarget.Vulkan or PlatformTarget.DirectX12)
             effectiveMgfxVersion = 11;
 
         // Guard the byte cast (like the writer's SD0020/SD0021 size guards): a
@@ -1777,19 +1804,36 @@ internal sealed class CompilationPipeline
                 return (Result<byte[], ShaderError>.Fail(result.Error), default, default, noAttributes, noUniforms, noWarnings);
 
             ReadOnlyMemory<byte> blob      = result.Value.Bytes;
-            ReadOnlyMemory<byte> dxilBlob  = platform == PlatformTarget.DirectX ? blob : default;
-            ReadOnlyMemory<byte> spirvBlob = platform != PlatformTarget.DirectX ? blob : default;
+            // DirectX12 ships raw SM6 DXIL directly (no transpile) and reflects from it via
+            // the same DXIL reflection path DirectX11's companion compile already uses (Phase
+            // 54) — so it belongs on the dxilBlob side, not the spirvBlob side, alongside the
+            // (dead, DX11 no longer reaches here) DirectX case above.
+            bool isDxilOutput = platform is PlatformTarget.DirectX or PlatformTarget.DirectX12;
+            ReadOnlyMemory<byte> dxilBlob  = isDxilOutput ? blob : default;
+            ReadOnlyMemory<byte> spirvBlob = isDxilOutput ? default : blob;
 
             // Vulkan vertex shaders carry an attribute table in the .mgfx shader record, built
-            // from the SPIR-V input semantics exactly as mgfxc builds it (issue #145, S1). It is
-            // inert on MonoGame 3.8.5's native backend — which lays out vertex inputs positionally
-            // from the VertexDeclaration — but the reference compiler emits it, so we do too.
-            IReadOnlyList<MgfxVertexAttributeInfo> vkAttributes =
-                platform == PlatformTarget.Vulkan && stage == ShaderStage.Vertex
-                    ? SpirvVertexInputReflector.Read(spirvBlob)
-                    : noAttributes;
+            // from the SPIR-V input semantics exactly as mgfxc builds it (issue #145, S1).
+            //
+            // DirectX12 vertex shaders MUST carry this table too — it is NOT cosmetic on the new
+            // native backend. MonoGame's managed VertexInputLayout.GenerateInputElements (shared
+            // by every native backend) iterates this exact table to build the D3D12 input layout;
+            // an empty table silently produces a zero-element input layout (its "missing input"
+            // check only runs inside the per-attribute loop, so it never fires when the table is
+            // empty), which then fails CreateGraphicsPipelineState — called lazily right before
+            // the first Draw — with E_INVALIDARG. Confirmed root cause by reading MonoGame's real
+            // v3.8.5 source directly (Phase 54 follow-up, 2026-07-23): VertexInputLayout.Native.cs
+            // and Shader.Native.cs's GetOrCreateLayout.
+            IReadOnlyList<MgfxVertexAttributeInfo> vertexAttributes = stage != ShaderStage.Vertex
+                ? noAttributes
+                : platform switch
+                {
+                    PlatformTarget.Vulkan    => SpirvVertexInputReflector.Read(spirvBlob),
+                    PlatformTarget.DirectX12 => DxilVertexInputReflector.Read(dxilBlob, new DxilReflectionExtractor()),
+                    _                        => noAttributes,
+                };
 
-            return (Result<byte[], ShaderError>.Ok(blob.ToArray()), dxilBlob, spirvBlob, vkAttributes, noUniforms, result.Value.Warnings);
+            return (Result<byte[], ShaderError>.Ok(blob.ToArray()), dxilBlob, spirvBlob, vertexAttributes, noUniforms, result.Value.Warnings);
         }
     }
 
