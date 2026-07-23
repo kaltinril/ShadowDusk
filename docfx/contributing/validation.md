@@ -20,7 +20,7 @@ The measure is **what a player sees in a real MonoGame game**, not "ShadowDusk's
 
 Rung 4 is **proven** for:
 
-- the **OpenGL SM3 PS-only corpus** — 10/10 render pixel-equivalent in real MonoGame DesktopGL;
+- the **OpenGL SM3 PS-only corpus** — 10/10 render pixel-equivalent in real MonoGame DesktopGL; **Apos.Shapes (Gum's SDF shape renderer)** also render-proven on real MonoGame DesktopGL (max Δ 2/255 — documented transcendental-math GLSL-dialect drift on the shader's OkLab round-trip), via `apos-shapes.fx` — a different, older vendored revision than the DX/Vulkan Apos.Shapes proof uses, because the later revision's real `mgfxc` GL compile is confirmed to render solid black (a MojoShader/fxc codegen bug, not a ShadowDusk defect);
 - the **DirectX SM5 PS-only corpus** — 10/10 DX `.mgfx` load in real MonoGame WindowsDX and render pixel-equivalent to `mgfxc`, via **both** the `d3dcompiler_47` oracle and the cross-platform `vkd3d-shader` backend; the same is now also true for the real-world **`Apos.Shapes`** SDF shape renderer through its own 13-element vertex layout (**max Δ 0**, both DXBC backends);
 - the **KNI WebGL** path — render-equivalent in a real headless KNI WebGL run;
 - the **FNA** target — the PS-only and custom-vertex-shader corpora render pixel-equivalent (max Δ ≤ 1/255, an imperceptible difference) to `fxc /T fx_2_0` in real FNA, including multi-pass effects and in-pass render states;

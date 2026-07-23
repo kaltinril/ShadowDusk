@@ -34,6 +34,13 @@
                                    proof CI's llvmpipe lane does not cover).
     * KNI OpenGL VS-driven       - validation/KniVsDriven (issue #70 matrix/POSITION rig,
                                    in-process compare).
+    * Apos.Shapes GL render-proof - validation/VsDriven -- apos (Phase 51 A3, GL slice). Real
+                                   MonoGame DesktopGL vs the mgfxc OpenGL golden for
+                                   apos-shapes.fx (the Phase 49 pin, NOT the same fixture the
+                                   DX/Vulkan Apos.Shapes gates use - see AposShapesRenderer's
+                                   remarks for why the DX/Vulkan fixture's real mgfxc GL output
+                                   is confirmed wrong). Tolerance 2/255 (documented transcendental-
+                                   math GLSL-dialect drift), not the maxd-0 bar DX/Vulkan hit.
     * ANGLE D3D11 derivatives    - validation/AngleDerivativeProbe (issue #136: the emitted
                                    fragment control-flow shapes keep dFdx/dFdy alive on the
                                    real browser WebGL backend; headless Edge/Chrome).
@@ -153,6 +160,10 @@ $gates.Add(@{
 $gates.Add(@{
     Name   = 'KNI OpenGL VS-driven (issue #70 matrix/POSITION rig, real KNI SDL2.GL, in-process compare)'
     Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/KniVsDriven', '-c', 'Release') }
+})
+$gates.Add(@{
+    Name   = 'Apos.Shapes GL render-proof (Phase 51 A3, real MonoGame DesktopGL vs mgfxc OpenGL golden)'
+    Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDriven', '-c', 'Release', '--', 'apos') }
 })
 # ANGLE D3D11 derivative-shape probe (issue #136): renders the emitted fragment
 # control-flow shapes in headless Edge/Chrome forced onto ANGLE Direct3D11 (the WebGL

@@ -250,6 +250,7 @@ by an actual compile probe:
 |---|---|---|---|---|
 | `Apos.Shapes/apos-shapes.fx` | Apos.Shapes (MIT) | GL + DX | One large **VS+PS** SDF effect: 10 `TEXCOORD` interpolants, `__KNIFX__`/`OPENGL` macro profile branch, a Newton-iteration `for`-loop (`EllipseSDF`), `int` locals, 11-way `if/else` shape dispatch, `%` modulo, ternaries, `discard`, `tex2D`, two samplers (one `register(s0)`), Oklab + gradient math. **Not FNA:** no SM3/FNA profile branch (its `#else` selects `ps_4_0`) + a dense PS exceeds the vkd3d `fx_2_0`/SM3 ceiling (`X0000`) — a legit SM limit (Apos.Shapes ships for MonoGame GL/DX, not FNA). | GL + DX |
 | `Apos.Shapes/apos-shapes-aa.fx` | Apos.Shapes (MIT) | GL + DX | The later **derivative-based-antialiasing** revision (commit `d507a734…`, issue #136): `ddx`/`ddy` of the SDF and of an interpolated position drive the AA footprint, alongside conditional `discard`, inlined-helper early returns (SPIRV-Cross's one-shot do-while), genuine Newton loops, and a third sampler (`register(s2)` blue-noise dither). Carries the `AposShapesAa_OpenGl_NoGradientOpInsideDivergentLoop_Issue136` pin: the emitted GL GLSL must never place a gradient op inside a loop with a divergent exit (ANGLE D3D11 zeroes derivatives there). **Not FNA:** same SM ceiling as above plus the gradient intrinsics. | GL + DX |
+| `Apos.Shapes/apos-shapes-sm6.fx` | Apos.Shapes (MIT) | GL + DX + Vulkan | The CURRENT upstream revision (commit `ea38c6d8…`, the issue #145 reproducer): an `#elif SM6` branch for Vulkan (`vs_6_0`/`ps_6_0`, three `Texture2D`/`SamplerState` pairs), a base-2048 packed-color quantization (`Pack11`/`DecodeDigit`) replacing the earlier `apos-shapes.fx`'s Cantor-pair packing, a 13-element vertex input, and blue-noise dithering. **Render-proven on DX and Vulkan** (maxd 0, `docs/validation-matrix.md` §1/§6) but deliberately **NOT** the fixture GL's render-proof uses (see the callout above) — its real mgfxc GL compile renders solid black, a confirmed MojoShader/fxc codegen bug. **Not FNA:** exceeds the vkd3d `fx_2_0`/SM3 instruction ceiling (`SD0305`). | GL + DX + Vulkan (compile); DX + Vulkan (render-proof) |
 | `Gum/MonoGameInCode-Grayscale.fx` | Gum (MIT) | GL + DX + FNA | `vs/ps_4_0_level_9_1` profiles, `Texture2D` + `sampler2D` + `sampler_state`, `: COLOR0` output, PS-only technique, dot-luminance. | all-runtime |
 | `Gum/KniInCode-Shader.fx` | Gum (MIT) | FNA only | Legacy D3D9 **effect-framework syntax**: `uniform extern texture`, `sampler_state { Texture = <…> }`, `: VIEWPROJ` matrix semantic, `: COLOR` outputs, lowercase `pixelshader = compile ps_2_0`. **Not GL/DX:** DXC rejects effect syntax (`-Weffects-syntax`); only the FNA/`fx_2_0` native-effects path accepts it (same shape as `PaletteCycler` being FNA-only). | FNA only |
 | `Gum/FnaSample-Shader.fx` | Gum (MIT) | none (honest per-target limits) | The `TECHNIQUE()`/`SAMPLE()` `#define` macro idiom (a `technique` defined inside a macro), legacy `uniform extern texture`, `: VIEWPROJ`, `vs_1_1`/`ps_2_0`. FNA recovers the macro technique but declines the sub-SM2 `vs_1_1` profile (`SD0300`); GL keeps `SD0010` (the GL macro-model gap, below); DX fails `X0000` (`vs_1_1`/`ps_2_0` aren't DX11-compilable). All documented limits, not technique-blindness. | per-target limits |
@@ -261,14 +262,19 @@ compile, not pixel-equivalence (no committed goldens). The one genuinely notable
 result is that **`apos-shapes.fx` — the shader Gum's shape rendering actually
 depends on — compiles on GL and DX**, the targets Gum ships on.
 
-**DirectX render-proof (Phase 51 A3, 2026-07-23):** the current-upstream revision
-`apos-shapes-sm6.fx` (see `third-party/Apos.Shapes/NOTICE.md` — it also compiles GL/DX/Vulkan,
-FNA excluded on a legitimate SM ceiling) is now pixel-diffed against the real `mgfxc`
-DirectX_11 golden, not just compile-asserted: `validation/VsDrivenDx -- apos` renders it
-through a bespoke 13-element vertex-buffer harness and matches the golden at **maxd 0** on
-both ShadowDusk DXBC backends. This is the same fixture and the same render-proof shape
-Vulkan already had (`validation/VsDrivenVulkan -- apos`, also maxd 0); the GL and FNA
-render-proofs remain open (`plan/PHASE-51-consolidated-remainder-backlog.md` A3).
+**Beyond compile-only: Apos.Shapes is now render-proven on DX, Vulkan, and GL (Phase 51 A3,
+2026-07-23).** The current-upstream revision `apos-shapes-sm6.fx` (see
+`third-party/Apos.Shapes/NOTICE.md` — it also compiles GL/DX/Vulkan, FNA excluded on a
+legitimate SM ceiling) is pixel-diffed against the real `mgfxc` golden on **DirectX**
+(`validation/VsDrivenDx -- apos`, through a bespoke 13-element vertex-buffer harness, **maxd 0**
+on both ShadowDusk DXBC backends) and **Vulkan** (`validation/VsDrivenVulkan -- apos`, also
+maxd 0). **GL uses a different fixture on purpose:** `apos-shapes.fx` (the Phase 49 pin, below),
+not `apos-shapes-sm6.fx` — that later revision's real mgfxc GL compile is confirmed to render
+solid black, a MojoShader/fxc codegen bug, not a ShadowDusk defect. `validation/VsDriven --
+apos` pixel-diffs `apos-shapes.fx` against the real mgfxc OpenGL golden at **maxd 2/255** (see
+`docs/validation-matrix.md` §1/§6). See `NOTICE.md` and `validation/VsDriven`'s
+`AposShapesRenderer` for the full trace. FNA is permanently excluded (a legitimate SM3
+instruction-slot ceiling, not an open rung).
 
 > **Macro-defined techniques.** The DX and FNA paths recover `TECHNIQUE()`-macro
 > techniques, so the SM2-fitting MonoGame stock effects compile on FNA (the ones

@@ -1,10 +1,21 @@
 // Phase 28 rung-4 validation for a VS-DRIVEN effect.
 //
-// Compiles the VS-driven fixture with ShadowDusk (candidate) AND loads the mgfxc
-// OpenGL golden (baseline) for the SAME .fx, renders BOTH through the identical
-// custom vertex-buffer draw path (VsEffectImageRenderer), and reports each side's
-// load+render result. A separate compare step (validation/compare.py) diffs the two
-// PNGs pixel-for-pixel — same-backend GL↔GL, the rung-4 bar.
+// mode "vs" (default): compiles the VS-driven fixture with ShadowDusk (candidate) AND loads
+// the mgfxc OpenGL golden (baseline) for the SAME .fx, renders BOTH through the identical
+// custom vertex-buffer draw path (VsEffectImageRenderer), and reports each side's load+render
+// result. A separate compare step (validation/compare.py) diffs the two PNGs pixel-for-pixel —
+// same-backend GL<->GL, the rung-4 bar.
+//
+// mode "apos": the Phase 51 A3 GL slice — Apos.Shapes (Gum's SDF shape renderer), the same
+// apos-shapes-sm6.fx fixture the DX (validation/VsDrivenDx -- apos) and Vulkan
+// (validation/VsDrivenVulkan -- apos) gates use. OpenGL's macro set is {MGFX, GLSL, OPENGL}
+// (PlatformMacros.For(OpenGL); no SM4/SM6/__KNIFX__), so the fixture's `#elif OPENGL` branch
+// applies — cosmetically vs_3_0/ps_3_0, but the sampler declarations are gated on a separate
+// `#if SM6` that OPENGL never takes, so GL lands on the same legacy sampler/tex2D branch DX
+// does. See AposShapesRenderer for the bespoke vertex-buffer harness.
+//
+// dotnet run --project validation/VsDriven            -> the VS rig
+// dotnet run --project validation/VsDriven -- apos     -> the Apos.Shapes GL render-proof
 
 using System;
 using System.Collections.Generic;
@@ -15,7 +26,25 @@ using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
 using ShadowDusk.Validation;
 
+string mode = args.Length > 0 ? args[0].Trim().ToLowerInvariant() : "vs";
+if (mode is not ("vs" or "apos"))
+{
+    Console.Error.WriteLine($"unknown mode '{mode}' — expected 'vs' or 'apos'");
+    return 2;
+}
+
 string repoRoot = ShaderInputs.FindRepoRoot();
+
+if (mode == "apos")
+    return await RunAposPhase();
+
+return await RunVsPhase();
+
+// ---------------------------------------------------------------------------------------
+// Phase 28 — the simple VS rig (POSITION/COLOR/TEXCOORD + a float4x4), vs the mgfxc golden.
+// ---------------------------------------------------------------------------------------
+async Task<int> RunVsPhase()
+{
 string shaderDir = Path.Combine(repoRoot, "tests", "fixtures", "shaders");
 string goldenDir = Path.Combine(repoRoot, "tests", "fixtures", "golden", "OpenGL");
 string catPath = ShaderInputs.CatPath(repoRoot);
@@ -147,3 +176,122 @@ bool pass = bRt == 1 && cRt == 1 && bBb == 1 && cBb == 1 && rtMaxd <= 1 && bbMax
             && lRt == 1 && legacyMaxd <= 1;
 Console.WriteLine($"[vs] verdict: {(pass ? "PASS" : "FAIL")}");
 return pass ? 0 : 1;
+}
+
+// ---------------------------------------------------------------------------------------
+// Phase 51 A3 — Apos.Shapes OpenGL render-proof: the GL analogue of VsDrivenDx's and
+// VsDrivenVulkan's "apos" phase, but NOT the same fixture. `apos-shapes-sm6.fx` (the DX/Vulkan
+// fixture) compiles fine on GL, but the real mgfxc OpenGL golden's compiled output diverges
+// completely (maxd 255, solid black) for a confirmed reason unrelated to ShadowDusk: MojoShader's
+// GL translation of that revision's fxc-optimized shape dispatch hinges on a
+// `-0.0 >= 0.0` comparison that this GPU/driver evaluates false, permanently selecting a
+// hard-zeroed color branch — a genuine mgfxc/MojoShader bug (see AposShapesRenderer's remarks
+// for the full trace). `apos-shapes.fx` (the Phase 49 pin, upstream commit 3fb73b8d — the
+// older, non-fxc-SM3-optimizer-mangled revision) sidesteps it: plain sequential shape dispatch,
+// Cantor-pair color packing instead of the sm6 revision's base-2048 quantization. Same
+// non-identity matrix discipline as DX/Vulkan; the vertex layout and packing differ because
+// this is upstream's earlier VertexInput shape (10 elements, no clip-distance split).
+// ---------------------------------------------------------------------------------------
+async Task<int> RunAposPhase()
+{
+const string AposFixture = "apos-shapes";
+
+string aposFx = Path.Combine(repoRoot, "tests", "fixtures", "shaders", "third-party", "Apos.Shapes", AposFixture + ".fx");
+string aposGoldenDir = Path.Combine(repoRoot, "tests", "fixtures", "golden", "OpenGL");
+string aposGolden = Path.Combine(aposGoldenDir, AposFixture + ".mgfx");
+string aposOutBase = Path.Combine(repoRoot, "validation", "output-apos-gl");
+
+Console.WriteLine($"[apos-gl] fixture: {aposFx}");
+Console.WriteLine($"[apos-gl] golden:  {aposGolden}\n");
+
+string aposSrc = await File.ReadAllTextAsync(aposFx);
+
+byte[]? aposCandidate = null;
+string? aposCandErr = null;
+{
+    var compiler = new EffectCompiler();
+    var result = await compiler.CompileAsync(aposSrc, new CompilerOptions
+    {
+        Target = PlatformTarget.OpenGL,
+        IncludeResolver = new FileSystemIncludeResolver(),
+        SourceFileName = aposFx,
+    });
+    if (result.IsFailure)
+        aposCandErr = string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}"));
+    else
+    {
+        aposCandidate = result.Value.Data;
+        Directory.CreateDirectory(aposOutBase);
+        await File.WriteAllBytesAsync(Path.Combine(aposOutBase, AposFixture + ".candidate.mgfx"), aposCandidate);
+    }
+}
+
+byte[]? aposBaseline = File.Exists(aposGolden) ? await File.ReadAllBytesAsync(aposGolden) : null;
+string? aposBaseErr = aposBaseline is null ? $"golden not found: {aposGolden}" : null;
+
+Console.WriteLine($"[apos-gl] baseline:  {(aposBaseline is null ? aposBaseErr : aposBaseline.Length + " bytes")}");
+Console.WriteLine($"[apos-gl] candidate: {(aposCandidate is null ? "FAIL: " + aposCandErr : aposCandidate.Length + " bytes")}\n");
+
+var jobs = new List<(string Name, byte[]? Bytes, string? Error)>
+{
+    ("baseline-mgfxc", aposBaseline,  aposBaseErr),
+    ("candidate-sd",   aposCandidate, aposCandErr),
+};
+
+using var game = new ShadowDusk.Validation.VsDriven.AposShapesRenderer(aposOutBase, jobs);
+game.Run();
+
+Console.WriteLine("[apos-gl] load + render results:");
+foreach (var o in game.Outcomes)
+    Console.WriteLine($"  [{(o is { Loaded: true, Rendered: true } ? "OK  " : "FAIL")}] {o.Name,-16} {o.Error ?? "rendered"}");
+
+var caps = game.Captures.ToDictionary(c => c.Name, c => c);
+bool haveBoth = caps.ContainsKey("baseline-mgfxc") && caps.ContainsKey("candidate-sd");
+
+int aposMaxd = haveBoth ? AposMaxDelta(caps["baseline-mgfxc"], caps["candidate-sd"]) : int.MaxValue;
+bool aposDrew = caps.TryGetValue("candidate-sd", out var aposCand) && AposHasVisibleContent(aposCand);
+
+Console.WriteLine();
+Console.WriteLine($"[apos-gl] baseline-vs-candidate maxd: {(aposMaxd == int.MaxValue ? "n/a" : aposMaxd)}");
+Console.WriteLine($"[apos-gl] candidate drew visible content: {aposDrew}");
+
+// Tolerance 2/255, NOT the maxd-0 bar the DX/Vulkan Apos.Shapes gates hit: this fixture's
+// SpritePixelShader always round-trips fill/border colors through RgbToOklab/OkLabToRgb
+// (cube roots + fractional pow()), and measured drift here is maxd 2, only 216/16384 pixels
+// (1.3%), concentrated at 1-2/255 — the documented GLSL-dialect precision drift between
+// ShadowDusk's SPIRV-Cross output and mgfxc's MojoShader GLSL on transcendental math (see
+// plan/DONE/PHASE-17-monogame-runtime-validation.md), not a structural mismatch. This is
+// a real, explained drift, not a silently-widened bar.
+const int AposTolerance = 2;
+
+bool allLoaded = game.Outcomes.All(o => o is { Loaded: true, Rendered: true });
+bool pass2 = haveBoth && aposMaxd <= AposTolerance && aposDrew;
+Console.WriteLine($"\n[apos-gl] {(allLoaded && pass2 ? "PASS" : "FAIL")} — load+render {(allLoaded ? "2/2" : "<2")}, pixel-match vs golden {(pass2 ? $"OK (maxd {aposMaxd} <= {AposTolerance})" : "DIVERGED")}.");
+return (allLoaded && pass2) ? 0 : 1;
+}
+
+static int AposMaxDelta(
+    (string Name, Microsoft.Xna.Framework.Color[] Pixels, int Width, int Height) a,
+    (string Name, Microsoft.Xna.Framework.Color[] Pixels, int Width, int Height) b)
+{
+    if (a.Width != b.Width || a.Height != b.Height)
+        return int.MaxValue;
+
+    int maxd = 0;
+    for (int i = 0; i < a.Pixels.Length; i++)
+    {
+        maxd = Math.Max(maxd, Math.Abs(a.Pixels[i].R - b.Pixels[i].R));
+        maxd = Math.Max(maxd, Math.Abs(a.Pixels[i].G - b.Pixels[i].G));
+        maxd = Math.Max(maxd, Math.Abs(a.Pixels[i].B - b.Pixels[i].B));
+        maxd = Math.Max(maxd, Math.Abs(a.Pixels[i].A - b.Pixels[i].A));
+    }
+    return maxd;
+}
+
+// "Visible" = at least 1% of pixels are non-transparent AND not pure black — the same
+// non-vacuity bar the DX and Vulkan Apos.Shapes phases use.
+static bool AposHasVisibleContent((string Name, Microsoft.Xna.Framework.Color[] Pixels, int Width, int Height) c)
+{
+    int visible = c.Pixels.Count(p => p.A > 8 && (p.R > 8 || p.G > 8 || p.B > 8));
+    return visible > c.Pixels.Length / 100;
+}
