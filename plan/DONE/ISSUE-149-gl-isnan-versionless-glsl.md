@@ -1,6 +1,7 @@
 # Issue #149 — OpenGL profile emits `isnan()` into versionless GLSL, rejected on macOS
 
-**Status: FIXED (2026-07-23).** Merged to `main` in PR #153. GitHub issue #149 can be closed.
+**Status: FIXED (2026-07-23).** Shipped in PR #152 (the fix landed as a follow-up commit on the
+same branch/PR that first tracked this issue). GitHub issue #149 can be closed once merged.
 
 Reported by **Apostolique (Jean-David Moisan)** — GitHub issue
 [#149](https://github.com/kaltinril/ShadowDusk/issues/149). Same reporter and shader family as
@@ -112,5 +113,5 @@ forms are behaviorally identical here.
 - `tests/fixtures/shaders/third-party/Apos.Shapes/NOTICE.md` — the same evidence, in context of
   the Apos.Shapes render-proof it was found alongside.
 - `CHANGELOG.md` `[Unreleased]` — moved from "Known issues" to "Fixed".
-- PRs #151 (the A3 GL render-proof that surfaced this), #152 (initial docs-only tracking, since
-  folded into this doc), #153 (the fix).
+- PR #151 (the A3 GL render-proof that surfaced this) and PR #152 (docs-only tracking, then the
+  fix itself, landed as follow-up commits on the same branch).
