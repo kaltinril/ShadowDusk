@@ -1,6 +1,6 @@
 # Phase 53 — Error visibility & GL lowering completeness
 
-**Status: 🟡 In progress (opened 2026-07-21)**
+**Status: ✅ Complete (opened 2026-07-21, closed 2026-07-23)**
 **Track: Correctness / drop-in `mgfxc` fidelity + consumer UX.**
 
 ## 1. Why this phase exists (the field evidence)
@@ -235,8 +235,21 @@ value, file becomes text again.
       regeneration** — none of its fixtures contain the affected shapes, proving the
       output changes are confined to the intended classes (and that dropping `-WX`
       changes no bytes for warning-free shaders).
-- [ ] W9 — Windows render gates green (`./validation/run-windows-render-gates.ps1`) —
+- [x] W9 — Windows render gates green (`./validation/run-windows-render-gates.ps1`) —
       required: #137/#139 change emitted GL bytes (VS lowering, extension header).
+      **Run 2026-07-23 on a Windows box with an RTX 3080: 8/8 PASS.** The two gates that
+      exercise this phase's GL emission changes are the KNI OpenGL desktop gate
+      (`KniDesktopGL` + `compare_kni.py`) and the KNI OpenGL VS-driven gate
+      (`KniVsDriven`, the issue-#70 matrix/POSITION rig, which is what actually renders a
+      VERTEX stage through the newly-applied Rules 8/9b/10/11) — both **maxd 0** against
+      the mgfxc golden in real KNI v4.2.9001.0. The ANGLE D3D11 derivative probe (the
+      backend where the #139 extension header and the Rule-9a shape matter) also passed.
+      The `[FAIL]` lines inside the Vulkan PS-corpus gate are mgfxc's OWN output failing to
+      load (`[baseline-vulkan] 0/10 rendered`, the upstream MonoGame `SlotOffset` bug);
+      that arm is best-effort by design and "All candidate renders succeeded".
+      **Note the merge order slip:** this box went unticked when the phase merged (PR #144)
+      and was only closed by the 2026-07-23 post-merge review. The gate is the pre-merge
+      bar, not a post-merge formality.
 - [x] W10 — Support-surface docs (same PR): CHANGELOG `[Unreleased]`,
       `docs/error-codes.md` (X0000/SD0212 meaning updates, SD0400–SD0402 + range row),
       `docs/glsl-uniform-naming.md` (Rule 8 nested-resume note, new Rule 12 derivatives

@@ -47,9 +47,9 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 | `SD0002` | Circular `#include` (true cycle on the include stack; a diamond include is legal). | `ShaderError.CircularInclude` |
 | `SD0010` | Effect source contains no techniques. | `CompilationPipeline` |
 | `SD0011` | Unrecognised value for a render-state key. | `RenderStateParser` |
-| `SD0012` | Internal (Phase 43C): a GL uniform in the rewriter's register layout has no matching reflected effect parameter — the GLSL uniform layout and the reflection diverged. A ShadowDusk bug if ever seen. | `CompilationPipeline` |
-| `SD0013` | A pass `compile <target>` token does not resolve (after macro expansion) to a recognized shader profile — e.g. a typo (`compile A …`), an undefined `*_SHADERMODEL` macro (the `#if OPENGL … #else …` header was removed), or a profile-shaped-but-bogus literal (`ps_9_9`). Matches mgfxc/fxc's `unrecognized compiler target` (Phase 48). Fires on the GL/DX/Vulkan AND the FNA path. | `CompilationPipeline` |
-| `SD0014` | A pass `compile <target>` resolves to a profile whose stage prefix does not match the slot it is bound to — e.g. `VertexShader = compile ps_3_0 …` (a `ps_*` profile in a `VertexShader` slot) or `PixelShader = compile vs_3_0 …`. mgfxc/fxc reject this cross-stage binding (Phase 48, W3). GL/DX/Vulkan path; the FNA path reports the same condition as `SD0300` via `ResolveFnaProfile`. | `CompilationPipeline` |
+| `SD0012` | Internal: a GL uniform in the rewriter's register layout has no matching reflected effect parameter — the GLSL uniform layout and the reflection diverged. A ShadowDusk bug if ever seen. | `CompilationPipeline` |
+| `SD0013` | A pass `compile <target>` token does not resolve (after macro expansion) to a recognized shader profile — e.g. a typo (`compile A …`), an undefined `*_SHADERMODEL` macro (the `#if OPENGL … #else …` header was removed), or a profile-shaped-but-bogus literal (`ps_9_9`). Matches mgfxc/fxc's `unrecognized compiler target`. Fires on the GL/DX/Vulkan AND the FNA path. | `CompilationPipeline` |
+| `SD0014` | A pass `compile <target>` resolves to a profile whose stage prefix does not match the slot it is bound to — e.g. `VertexShader = compile ps_3_0 …` (a `ps_*` profile in a `VertexShader` slot) or `PixelShader = compile vs_3_0 …`. mgfxc/fxc reject this cross-stage binding. GL/DX/Vulkan path; the FNA path reports the same condition as `SD0300` via `ResolveFnaProfile`. | `CompilationPipeline` |
 | `SD0020` | Constant-buffer size exceeds the MGFX int16 maximum. | `MgfxWriter` |
 | `SD0021` | Shader index exceeds the MGFX int16 maximum. | `MgfxWriter` |
 | `SD0022` | A count/index serialized as a single byte in the `.mgfx` shader record is outside 0–255 (samplers, constant-buffer indices, vertex attributes, sampler parameter index). | `MgfxWriter` |
@@ -61,9 +61,9 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 | `SD0103` | SPIRV-Cross native library missing or unloadable (run `tools/restore.ps1`). | `SpirvCrossGlslTranspiler` |
 | `SD0200` | Metal target not yet supported. | `CompilationPipeline` |
 | `SD0201` | A capability-profile shader feature (e.g. vertex texture fetch, texture arrays) has no shipping runtime support yet and cannot be enabled. Reserved for a future runtime proven to consume it. | `ShaderFeatureSupport` |
-| `SD0210` | **Two historical meanings (known shared code):** (a) the d3dcompiler_47 oracle backend refused the request (requires Windows, or a `ProfileOverride` it never serves); (b) the MonoGame GLSL rewriter could not lower a construct to MonoGame's GL dialect — incl. (Phase 43C) int/bool/mat3/struct uniform-block members, a whole-array uniform use, or any surviving reference to a rewritten uniform block. | `D3DCompilerShaderCompiler`, `CompilationPipeline` |
+| `SD0210` | **Two historical meanings (known shared code):** (a) the d3dcompiler_47 oracle backend refused the request (requires Windows, or a `ProfileOverride` it never serves); (b) the MonoGame GLSL rewriter could not lower a construct to MonoGame's GL dialect — incl. int/bool/mat3/struct uniform-block members, a whole-array uniform use, or any surviving reference to a rewritten uniform block. | `D3DCompilerShaderCompiler`, `CompilationPipeline` |
 | `SD0211` | vkd3d-shader native library missing or unloadable (run `tools/restore.ps1`). | `Vkd3dShaderCompiler` |
-| `SD0212` | vkd3d-shader compile failed and emitted no diagnostic text at all (unparseable non-empty text passes through verbatim as `X0000` since Phase 53). | `Vkd3dCompileContract` |
+| `SD0212` | vkd3d-shader compile failed and emitted no diagnostic text at all (unparseable non-empty text passes through verbatim as `X0000`). | `Vkd3dCompileContract` |
 | `SD0300` | FNA profile policy violation (SM4+/SM1 profile, or stage/profile prefix mismatch). | `CompilationPipeline.ResolveFnaProfile` |
 | `SD0301` | D3D9 CTAB reflection failed. | `CtabReader` |
 | `SD0302` | fx_2_0 effect validation failed at write time. | `Fx2EffectWriter` |
@@ -81,7 +81,7 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 
 | Code | Meaning |
 |---|---|
-| `X0000` | A diagnostic from the underlying compiler, passed through as-is: either a parsed `file:line:col` entry (DXC emits no per-diagnostic codes) or, when nothing parses, the compiler's complete text VERBATIM as the message (Phase 53 — never a generic sentence). The `…with no diagnostics` message form means the compiler failed while emitting no text at all. |
+| `X0000` | A diagnostic from the underlying compiler, passed through as-is: either a parsed `file:line:col` entry (DXC emits no per-diagnostic codes) or, when nothing parses, the compiler's complete text VERBATIM as the message (never a generic sentence). The `…with no diagnostics` message form means the compiler failed while emitting no text at all. |
 | `X0001` | Source file could not be read (I/O or access denied). |
 | `X0002` | Output file could not be written (I/O or access denied). |
 | `X0003` | Missing required CLI argument (`<SourceFile>` / `<OutputFile>`). |
