@@ -153,6 +153,40 @@ public sealed class MgcbErrorFormatterTests
     // -------------------------------------------------------------------------
 
     [Fact]
+    public void FormatAll_MultiLineMessage_IndentsEveryContinuationLine()
+    {
+        // A verbatim compiler blob becomes the Message, so Message CAN be multi-line. Only
+        // its first line is the parseable diagnostic; the rest must be indented, which is the
+        // contract the CLI reference documents. Without this the continuation lines are
+        // emitted flush-left, indistinguishable from a new diagnostic.
+        var error = new ShaderError(
+            File: "Bloom.fx",
+            Line: 0,
+            Column: 0,
+            Code: "X0000",
+            Message: "error: first problem\nerror: second problem\nerror: third problem");
+
+        var lines = MgcbErrorFormatter.FormatAll([error]).ToList();
+
+        lines.Should().HaveCount(3);
+        lines[0].Should().Be("Bloom.fx: error X0000: error: first problem");
+        lines[1].Should().Be("    error: second problem");
+        lines[2].Should().Be("    error: third problem");
+    }
+
+    [Fact]
+    public void FormatAll_SingleLineMessage_IsNotIndented()
+    {
+        var error = new ShaderError(
+            File: "Bloom.fx", Line: 3, Column: 1, Code: "X0001", Message: "one line");
+
+        var lines = MgcbErrorFormatter.FormatAll([error]).ToList();
+
+        lines.Should().ContainSingle();
+        lines[0].Should().NotStartWith(" ", "the parseable diagnostic must stay flush-left");
+    }
+
+    [Fact]
     public void FormatAll_EmptyList_ReturnsEmptyEnumerable()
     {
         var result = MgcbErrorFormatter.FormatAll([]);

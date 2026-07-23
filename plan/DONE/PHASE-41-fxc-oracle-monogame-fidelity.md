@@ -49,12 +49,12 @@
 
 Full data: [`PHASE-41-appendix/structural-divergence-matrix.md`](../PHASE-41-appendix/structural-divergence-matrix.md). Headline over the 46 golden-backed fixtures × {DirectX_11, OpenGL} = **92 cells**:
 
-- **64 structurally clean** (parameters, cbuffers, samplers, techniques/passes + render states, annotation counts all match the mgfxc golden). Bytecode bytes differ by construction (vkd3d/SPIRV-Cross vs fxc/MojoShader) and are correctly excluded — the bar is structural/behavioral equivalence, not byte-identity.
-- **7 divergent, ALL known and render-equivalent** (no new fidelity problem):
+- **65 structurally clean** (parameters, cbuffers, samplers, techniques/passes + render states, annotation counts all match the mgfxc golden). Bytecode bytes differ by construction (vkd3d/SPIRV-Cross vs fxc/MojoShader) and are correctly excluded — the bar is structural/behavioral equivalence, not byte-identity.
+- **17 divergent, ALL known and render-equivalent** (no new fidelity problem):
   - *GL per-stage cbuffer sizing* (3: PolygonLight, SharedCbuffer, VertexAndPixel on GL) — mgfxc sizes `{vs,ps}_uniforms_vec4` to used-only members; ShadowDusk emits the full declared layout. Both internally consistent; the pinned, deliberate divergence already tolerated by `Phase43CbufferModelTests` (F4) and recorded in `docs/glsl-uniform-naming.md` (mgfxc+MonoGame GL is in fact broken for statically-partially-read uniform arrays; ShadowDusk emits the correct full layout).
   - *Anonymous-pass naming* (2: ClipShaderNew DX+GL) — mgfxc stores empty name, ShadowDusk synthesizes `P0`; MonoGame addresses passes by index. Irrelevant.
   - *Annotation counts* (2: annotations DX+GL) — mgfxc drops to 0, ShadowDusk preserves the declared count (Phase 43 F2 metadata). Irrelevant.
-- **21 compile failures** — the real findings (see Gap register).
+- **10 compile/parse failures** — the real findings (see Gap register).
 
 Non-golden census (26 fixtures × 2 = 52): **41 compile, 11 fail loudly with a code, none unexpectedly.** Of the 11: 3 SD0210 are correct GL guards (int/mat3/VS-texture, by design); 6 SD0010 are genuinely techniqueless fixtures (`minimal_vs_ps`, `passthrough_vs`, `textured_vs_ps` contain NO `technique` keyword — verified; correct behavior); 2 SD0001 are a **harness artifact** (`MinimalWithInclude.fx` needs `/I includes`, which the matrix runner did not pass — not a ShadowDusk defect).
 

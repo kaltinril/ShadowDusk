@@ -37,10 +37,12 @@ internal static class MgcbErrorFormatter
         foreach (var error in errors)
         {
             // Message is deliberately verbatim and CAN be multi-line (an unparseable
-            // compiler blob becomes the message). Emit line 1 as the parseable diagnostic
-            // and INDENT the rest: an unindented continuation line lets compiler-controlled
-            // text start a stderr line, which MGCB's and an IDE's line parsers would read as
-            // a second diagnostic attributed to whatever file that text names.
+            // compiler blob becomes the message). Emit line 1 as the parseable diagnostic and
+            // indent the rest, matching how the raw block below is presented, so a reader can
+            // see at a glance which lines belong to one diagnostic. Note this is presentation,
+            // not a guarantee: MSBuild's canonical-diagnostic regex is anchored `^\s*`, so
+            // indentation alone does not stop an MSBuild-family parser from picking up a
+            // continuation line that happens to look like a diagnostic.
             string formatted = Format(error);
             string[] lines = formatted.Replace("\r\n", "\n").Split('\n');
             yield return lines[0];

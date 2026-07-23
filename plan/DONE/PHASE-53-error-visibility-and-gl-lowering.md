@@ -241,8 +241,10 @@ value, file becomes text again.
       exercise this phase's GL emission changes are the KNI OpenGL desktop gate
       (`KniDesktopGL` + `compare_kni.py`) and the KNI OpenGL VS-driven gate
       (`KniVsDriven`, the issue-#70 matrix/POSITION rig, which is what actually renders a
-      VERTEX stage through the newly-applied Rules 8/9b/10/11) — both **maxd 0** against
-      the mgfxc golden in real KNI v4.2.9001.0. The ANGLE D3D11 derivative probe (the
+      VERTEX stage through the newly-applied Rules 8/9b/10/11). `KniVsDriven` compares
+      in-process at **maxd 0**; `KniDesktopGL` matches **within tolerance** — max Δ 1 on
+      Scanlines and Dots against the mgfxc goldens, maxd 0 against the MonoGame render —
+      in real KNI v4.2.9001.0. The ANGLE D3D11 derivative probe (the
       backend where the #139 extension header and the Rule-9a shape matter) also passed.
       The `[FAIL]` lines inside the Vulkan PS-corpus gate are mgfxc's OWN output failing to
       load (`[baseline-vulkan] 0/10 rendered`, the upstream MonoGame `SlotOffset` bug);

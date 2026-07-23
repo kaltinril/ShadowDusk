@@ -104,12 +104,17 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   different pair — two textures on one binding, the invalid descriptor layout that
   access-violates in MonoGame's descriptor writer. Pair co-location now outranks a
   disagreeing explicit register (the runtime binds by slot index, not by the source's
-  register number). Two textures still legitimately share an index when they share a sampler
-  across mutually-exclusive `#if` branches.
+  register number), and explicitly-registered textures are assigned first so the guard cannot
+  be defeated by declaration order. Two textures still share an index when they name the same
+  sampler, which is the same-sampler-in-two-`#if`-branches shape where only one branch
+  survives the compile. No shader in the test corpus changes output: every fixture is
+  byte-identical through the rewrite on all four targets.
 - **Vulkan: `Gather*` calls, `Texture2DArray`/`TextureCubeArray`/`Texture2DMS` declarations,
-  and `SamplerComparisonState` are now seen by the pairing pass.** All three appear in
-  MonoGame's own vendored test effects; being invisible to the scan meant those pairs were
-  left at separate bindings and their explicit registers were never reserved.
+  and `SamplerComparisonState` are now seen by the pairing pass.** Being invisible to the
+  scan meant those pairs were left at separate bindings and their explicit registers were
+  never reserved. `Texture2DArray` and `SamplerComparisonState` appear in MonoGame's own
+  vendored test effects (both already carry agreeing registers, so no corpus output changes);
+  the rest are covered defensively.
 - **A `while` loop following any block no longer loses its `SD0402` warning.** The do-while
   tail check accepted *any* `while` preceded by `}`, so `if (…) { … } while (…) { … }` was
   misread as a do-while's trailing clause and the finding silently dropped.
@@ -124,7 +129,7 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   are derived from emitted GLSL and carry no line mapping, so the CLI printed a bare
   `warning SD0401: …` with no way to tell which effect produced it in a build compiling many.
 - **Anonymous techniques (`technique { pass { … } }`) are accepted** — legal FX that mgfxc
-  compiles, and what most of MonoGame's own test effects use, previously rejected with
+  compiles, and what 8 of MonoGame's 17 own test effects use, previously rejected with
   `FX0001: Expected technique name`. Relatedly, the FNA writer no longer rejects an empty
   technique name, which `d3dcompiler_47` at `fx_2_0` compiles cleanly.
 - **A native process crash on the FNA path is now a diagnostic.** `SamplerComparisonState`

@@ -97,4 +97,5 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 | `X0007` | CLI compile timed out (5-minute watchdog). |
 | `X0008` | Invalid `--target-runtime` value (only `monogame-gl`, `monogame-dx`, `monogame-gl-v11`, `kni-knifx`, `fna`). |
 | `X0010` | Platform not supported by ShadowDusk (e.g. PlayStation4, XboxOne, Switch). |
+| `X0011` | Invalid `--input-format` value (only `auto`, `fx`, `glsl`). |
 | `X0099` | Unexpected internal error (catch-all; a bug if a consumer ever sees it). |

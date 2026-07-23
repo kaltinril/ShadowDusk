@@ -31,9 +31,15 @@ Full regression suite green throughout (whole `dotnet test ShadowDusk.slnx`, ~19
 one gap that remains, not a ShadowDusk defect: real mgfxc's own compiled Vulkan output crashes on
 all 10 corpus shaders in real DesktopVK (a separate, confirmed MonoGame bug — the `SlotOffset`
 arithmetic wraparound, § *An apparent real-mgfxc edge case* / § *Step 8 render attempt*), so a
-literal pixel-diff against the reference compiler's own output isn't currently possible — ShadowDusk's
-own render correctness is the evidence tier reached, `validation/compare_vulkan.py` reports this
-plainly rather than masking it.
+literal pixel-diff against the reference compiler's own output isn't possible **for this corpus** —
+ShadowDusk's own render correctness is the evidence tier reached, `validation/compare_vulkan.py`
+reports this plainly rather than masking it.
+
+> **Superseded in part (2026-07-22, issue #145).** The blocker is specific to **auto-numbered**
+> resources. Giving a fixture **explicit registers** keeps mgfxc's `SlotOffset` arithmetic in range,
+> so its output loads and CAN be diffed: `validation/VsDrivenVulkan` now pixel-diffs ShadowDusk
+> against the mgfxc 3.8.5 golden at **maxd 0**, on a VS-driven transform and on the upstream
+> `Apos.Shapes` effect. Only this 10-shader auto-numbered PS corpus remains own-output-proven.
 
 ## Headline finding
 

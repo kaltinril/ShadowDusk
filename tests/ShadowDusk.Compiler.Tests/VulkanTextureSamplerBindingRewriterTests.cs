@@ -44,6 +44,36 @@ public sealed class VulkanTextureSamplerBindingRewriterTests
     }
 
     [Fact]
+    public void Rewrite_InheritedIndexNeverCollides_EvenWhenTheInheritingPairIsDeclaredFirst()
+    {
+        // The mirror image of the test below, and the order the first fix missed: the
+        // collision guard only runs on the INHERITING path, so when that pair is processed
+        // first it claims the index and the later explicitly-registered texture is dropped
+        // on top of it. Explicit textures are now assigned before inheriting ones.
+        const string hlsl = """
+            Texture2D TexB;
+            SamplerState SampB : register(s1);
+            Texture2D TexA : register(t1);
+            SamplerState SampA;
+
+            float4 PS(float2 uv : TEXCOORD0) : SV_Target
+            {
+                return TexA.Sample(SampA, uv) * TexB.Sample(SampB, uv);
+            }
+            """;
+
+        string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
+
+        int texA = IndexOf(result, "TexA", 't');
+        int texB = IndexOf(result, "TexB", 't');
+
+        texA.Should().NotBe(texB, "two textures on one binding is an invalid descriptor set");
+        IndexOf(result, "SampA", 's').Should().Be(texA, "a pair must stay co-located");
+        IndexOf(result, "SampB", 's').Should().Be(texB, "a pair must stay co-located");
+        texA.Should().Be(1, "an explicit texture register stays authoritative among textures");
+    }
+
+    [Fact]
     public void Rewrite_InheritedIndexNeverCollidesWithAnotherPairsExplicitRegister()
     {
         // The "explicit registers are reserved" guarantee had a hole: `reserved` was only

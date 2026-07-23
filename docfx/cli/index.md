@@ -77,7 +77,7 @@ The ShaderToy/GLSL conversion is the same front-end the optional [`ShadowDusk.Sh
 Warnings use the same parseable format with `warning` as the severity:
 
 ```
-Bloom.fx: warning SD0401: The pass has no vertex shader, and pixel shader 'MainPS' reads vTexCoord1 (TEXCOORD1) - interpolants SpriteBatch's built-in vertex shader never writes ...
+Bloom.fx: warning SD0401: The pass has no vertex shader, and pixel shader 'MainPS' reads vTexCoord1 (TEXCOORD1) — interpolants SpriteBatch's built-in vertex shader never writes ...
 ```
 
 When the underlying compiler says more than the one-line summary — leading warnings, a source echo with a caret — its **complete output follows the parseable line, indented**, so nothing it told us is hidden from you. There is no verbosity flag to discover: the compiler's own words are shown by default.

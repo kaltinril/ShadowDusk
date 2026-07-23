@@ -28,13 +28,18 @@ namespace ShadowDusk.Compiler.Internal;
 /// separate <c>VK_DESCRIPTOR_TYPE_SAMPLER</c> half additionally falls into an unhandled
 /// <c>assert(0)</c> branch, leaving an uninitialised <c>VkWriteDescriptorSet</c>.</para>
 ///
-/// <para><b>Existing explicit registers are authoritative and are never renumbered.</b> A
-/// declaration that already carries <c>register(tN)</c>/<c>register(sN)</c> is left
-/// byte-identical; its index is RESERVED so an auto-assigned pair can never collide with it
-/// (two descriptor-set-layout bindings at the same binding number is invalid regardless of
-/// shape). Note <c>-fvk-t-shift</c> and <c>-fvk-s-shift</c> both add 32, so <c>t2</c> and
-/// <c>s2</c> occupy the SAME raw binding — texture and sampler indices share ONE reservation
-/// space, and an index is only shared deliberately, by the two halves of a pair.</para>
+/// <para><b>Existing explicit registers are honoured wherever they can be.</b> A declaration
+/// that already carries <c>register(tN)</c>/<c>register(sN)</c> keeps its index, and that
+/// index is RESERVED so an auto-assigned pair can never collide with it (two
+/// descriptor-set-layout bindings at the same binding number is invalid regardless of shape).
+/// Explicitly-registered TEXTURES are assigned first, so their index is authoritative among
+/// textures. The one case where an explicit register IS overridden: when honouring it would
+/// split a pair or put two textures on one binding — pair co-location and binding uniqueness
+/// are correctness, whereas the literal register number is not (the runtime binds by slot
+/// index, which this rewrite assigns, and never reads the source's number back). Note
+/// <c>-fvk-t-shift</c> and <c>-fvk-s-shift</c> both add 32, so <c>t2</c> and <c>s2</c> occupy
+/// the SAME raw binding — texture and sampler indices share ONE reservation space, and an
+/// index is only shared deliberately, by the two halves of a pair.</para>
 ///
 /// <para><b>Deliberately whole-file, not <c>#if VULKAN</c>-scoped.</b> A texture
 /// declaration is often shared/unconditional across all targets (only its sampler differs
@@ -46,9 +51,10 @@ namespace ShadowDusk.Compiler.Internal;
 /// <see cref="SynthesizedTextureSuffix"/>.</para>
 ///
 /// <para>Runs on a Vulkan-private copy of the source, like <see cref="GlStructOutputColorRewriter"/>
-/// does for GL — DirectX/OpenGL/FNA bytes are unaffected. A shader with no
-/// <c>Texture2D</c>/<c>SamplerState</c> declarations, or where every declaration already
-/// carries an explicit register, is a no-op (returns the input unchanged).</para>
+/// does for GL — DirectX/OpenGL/FNA bytes are unaffected. A shader with no texture/sampler
+/// declarations is a no-op, as is one whose declarations already carry explicit registers
+/// that agree with the assignment this rewrite computes (the overwhelmingly common case:
+/// every corpus fixture is byte-identical through it).</para>
 /// </summary>
 internal static class VulkanTextureSamplerBindingRewriter
 {
@@ -135,14 +141,34 @@ internal static class VulkanTextureSamplerBindingRewriter
         // takes the lowest index nobody has reserved or been given.
         var registerIndex = new Dictionary<string, int>(StringComparer.Ordinal);
         // index -> the sampler the texture holding it is paired with (null if unpaired).
-        // Two textures may legitimately share an index ONLY when they share that sampler:
-        // that is the same-sampler-in-two-#if-branches case below, where just one branch
-        // survives the compile. Two textures paired to DIFFERENT samplers on one binding is
-        // an invalid descriptor-set layout.
+        // Two textures may share an index ONLY when they name the same sampler: that is the
+        // same-sampler-in-two-#if-branches case below, where just one branch survives the
+        // compile. Two textures paired to DIFFERENT samplers on one binding is an invalid
+        // descriptor-set layout.
+        //
+        // KNOWN LIMITATION (pre-existing, not covered by this rule): two textures sharing ONE
+        // sampler within a SINGLE branch also land on one index, leaving the second texture
+        // unbound. Vulkan's combined-image-sampler model needs a distinct descriptor per
+        // texture, so that shape needs its own handling (or a diagnostic) rather than the
+        // silent co-location it gets today.
         var indexPairSampler = new Dictionary<int, string?>();
         int next = 0;
 
+        // Textures whose register the SOURCE pins are assigned FIRST. Their index is
+        // authoritative among textures, so a pair that INHERITS an index must be the one that
+        // moves. Walking plain declaration order made the collision check order-dependent: if
+        // the inheriting pair came first it took the index, and the explicitly-registered
+        // texture was then dropped on top of it (the check below only guards the inheriting
+        // path). Declaration order is preserved within each group, so output stays deterministic.
+        var texturesExplicitFirst = new List<string>(textureNames.Count);
         foreach (string tex in textureNames)
+            if (explicitIndex.ContainsKey(tex))
+                texturesExplicitFirst.Add(tex);
+        foreach (string tex in textureNames)
+            if (!explicitIndex.ContainsKey(tex))
+                texturesExplicitFirst.Add(tex);
+
+        foreach (string tex in texturesExplicitFirst)
         {
             if (registerIndex.ContainsKey(tex))
                 continue;
