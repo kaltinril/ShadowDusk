@@ -44,6 +44,125 @@ public sealed class VulkanTextureSamplerBindingRewriterTests
     }
 
     [Fact]
+    public void Rewrite_InheritedIndexNeverCollidesWithAnotherPairsExplicitRegister()
+    {
+        // The "explicit registers are reserved" guarantee had a hole: `reserved` was only
+        // consulted by the auto-assign path, so a pair that INHERITED its index from an
+        // explicitly-registered half could land on an index another texture already held.
+        // Here TexA is fixed at t1, and TexB inherits 1 from SampB's explicit s1 — both
+        // textures ended up on binding 33, the invalid descriptor layout that
+        // access-violates in MonoGame's descriptor writer (the issue #145 crash shape).
+        const string hlsl = """
+            Texture2D TexA : register(t1);
+            SamplerState SampA;
+            Texture2D TexB;
+            SamplerState SampB : register(s1);
+
+            float4 PS(float2 uv : TEXCOORD0) : SV_Target
+            {
+                return TexA.Sample(SampA, uv) * TexB.Sample(SampB, uv);
+            }
+            """;
+
+        string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
+
+        int texA = IndexOf(result, "TexA", 't');
+        int texB = IndexOf(result, "TexB", 't');
+        int sampA = IndexOf(result, "SampA", 's');
+        int sampB = IndexOf(result, "SampB", 's');
+
+        texA.Should().NotBe(texB, "two textures on one binding is an invalid descriptor set");
+        sampA.Should().Be(texA, "a pair must stay co-located");
+        sampB.Should().Be(texB, "a pair must stay co-located, even if that overrides its own explicit register");
+    }
+
+    [Fact]
+    public void Rewrite_GatherCall_PairsTheTextureWithItsSampler()
+    {
+        // Gather/GatherRed/GatherCmp take a sampler exactly as Sample does. The pairing scan
+        // matched only Sample*, so a Gather-only texture/sampler pair was left un-co-located
+        // at two separate bindings — the same split-descriptor shape as the legacy-sampler bug.
+        const string hlsl = """
+            Texture2D ShadowMap;
+            SamplerState ShadowSampler;
+
+            float4 PS(float2 uv : TEXCOORD0) : SV_Target
+            {
+                return ShadowMap.Gather(ShadowSampler, uv);
+            }
+            """;
+
+        string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
+
+        IndexOf(result, "ShadowMap", 't').Should().Be(IndexOf(result, "ShadowSampler", 's'));
+    }
+
+    [Theory]
+    [InlineData("Texture2DArray", "SamplerState")]
+    [InlineData("Texture2D", "SamplerComparisonState")]
+    public void Rewrite_ArrayAndComparisonDeclarations_AreSeenAndPaired(string textureType, string samplerType)
+    {
+        // Both shapes exist in MonoGame's own vendored corpus (TextureArrayEffect.fx,
+        // CustomSpriteBatchEffectComparisonSampler.fx). Neither matched the declaration
+        // regexes, so they were invisible: never paired, and their explicit registers never
+        // added to the reserved set (so an auto-assigned pair could be handed the same index).
+        string hlsl = $$"""
+            {{textureType}} Tex;
+            {{samplerType}} Samp;
+
+            float4 PS(float2 uv : TEXCOORD0) : SV_Target
+            {
+                return Tex.Sample(Samp, float3(uv, 0));
+            }
+            """;
+
+        string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
+
+        result.Should().Contain($"{textureType} Tex : register(t0);");
+        result.Should().Contain($"{samplerType} Samp : register(s0);");
+    }
+
+    /// <summary>Reads back the register index a declaration was assigned.</summary>
+    private static int IndexOf(string hlsl, string name, char kind)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(
+            hlsl, $@"\b{name}\s*:\s*register\s*\(\s*{kind}(\d+)\s*\)");
+        m.Success.Should().BeTrue($"{name} must carry a {kind}-register; source was:\n{hlsl}");
+        return int.Parse(m.Groups[1].Value);
+    }
+
+    [Theory]
+    [InlineData("Texture1D")]
+    [InlineData("Texture3D")]
+    [InlineData("TextureCube")]
+    [InlineData("Texture2D<float4>")]
+    public void Rewrite_EveryTextureDimensionality_IsPaired(string textureType)
+    {
+        // Issue #145 widened the declaration match beyond plain Texture2D: an unpaired
+        // TextureCube/Texture3D auto-numbered to raw binding 0/1 while its sampler moved to
+        // 32/33, and MonoGame recovers the texture slot as (binding - 32), indexing its
+        // texture array at -32 (a native access violation at draw). Every dimensionality and
+        // the templated form must therefore be paired. All existing unit tests use plain
+        // Texture2D, so narrowing the regex back left them green.
+        string hlsl = $$"""
+            #if VULKAN
+            {{textureType}} SpriteTexture;
+            SamplerState SpriteTextureSampler;
+
+            float4 PS() : SV_Target
+            {
+                return SpriteTexture.Sample(SpriteTextureSampler, float3(0, 0, 0));
+            }
+            #endif
+            """;
+
+        string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
+
+        result.Should().Contain($"{textureType} SpriteTexture : register(t0);");
+        result.Should().Contain("SamplerState SpriteTextureSampler : register(s0);");
+    }
+
+    [Fact]
     public void Rewrite_TwoDistinctPairs_GetDistinctSharedIndices()
     {
         const string hlsl = """

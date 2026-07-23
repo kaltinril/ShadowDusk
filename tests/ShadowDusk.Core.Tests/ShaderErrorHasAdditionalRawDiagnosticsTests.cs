@@ -26,6 +26,48 @@ public sealed class ShaderErrorHasAdditionalRawDiagnosticsTests
     }
 
     [Fact]
+    public void MultiLineVerbatim_MessageBuiltWithCrlfAndNoBlankLines_StillMatchesRaw_False()
+    {
+        // Regression: the multi-line Message is assembled with AppendLine (CRLF on Windows)
+        // and skips blank lines, while RawDiagnostics keeps the compiler's original LF text
+        // and its blank lines. Comparing the two unnormalized never matched, so the "already
+        // said this" guard never fired on the very path it exists for (unparseable verbatim
+        // text) and every surface printed the compiler's output twice.
+        const string raw = "error: first problem\n\nerror: second problem\n";
+        string message = "error: first problem" + Environment.NewLine + "error: second problem";
+
+        var error = new ShaderError(
+            File: "shader.fx",
+            Line: 0,
+            Column: 0,
+            Code: "X0000",
+            Message: message,
+            RawDiagnostics: raw);
+
+        error.HasAdditionalRawDiagnostics.Should().BeFalse(
+            "the raw blob carries no information the message does not already show");
+    }
+
+    [Fact]
+    public void MultiLineRaw_WithRealExtraContext_True()
+    {
+        // The normalization must not swallow genuinely-extra content: a source echo and
+        // caret line are more than the message says, so they still print.
+        var error = new ShaderError(
+            File: "shader.fx",
+            Line: 10,
+            Column: 5,
+            Code: "X0000",
+            Message: "undeclared identifier 'x'",
+            RawDiagnostics:
+                "shader.fx:10:5: error: undeclared identifier 'x'\n"
+                + "    float y = x;\n"
+                + "              ^");
+
+        error.HasAdditionalRawDiagnostics.Should().BeTrue();
+    }
+
+    [Fact]
     public void SingleLocatedDiagnostic_RawIsJustTheSameLineReformatted_False()
     {
         // The ordinary case: one compiler diagnostic, already fully represented by

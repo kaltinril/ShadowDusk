@@ -98,6 +98,28 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 - **A `round()` nested inside another `round()`'s argument is now fully lowered** (issue
   [#140](https://github.com/kaltinril/ShadowDusk/issues/140)); the inner call previously
   survived as `roundEven()`, the exact load failure the lowering exists to prevent.
+- **Vulkan: a texture/sampler pair could still be handed a binding another texture already
+  held.** Explicit `register` indices were only honoured by the auto-assign path, so a pair
+  that *inherited* its index from an explicitly-registered half could collide with a
+  different pair — two textures on one binding, the invalid descriptor layout that
+  access-violates in MonoGame's descriptor writer. Pair co-location now outranks a
+  disagreeing explicit register (the runtime binds by slot index, not by the source's
+  register number). Two textures still legitimately share an index when they share a sampler
+  across mutually-exclusive `#if` branches.
+- **Vulkan: `Gather*` calls, `Texture2DArray`/`TextureCubeArray`/`Texture2DMS` declarations,
+  and `SamplerComparisonState` are now seen by the pairing pass.** All three appear in
+  MonoGame's own vendored test effects; being invisible to the scan meant those pairs were
+  left at separate bindings and their explicit registers were never reserved.
+- **A `while` loop following any block no longer loses its `SD0402` warning.** The do-while
+  tail check accepted *any* `while` preceded by `}`, so `if (…) { … } while (…) { … }` was
+  misread as a do-while's trailing clause and the finding silently dropped.
+- **The compiler's diagnostic text no longer prints twice.** The "the message already says
+  this" check compared the raw blob and the message without normalizing line endings or
+  blank lines, so it never matched on multi-line diagnostics — exactly the unparseable-text
+  path the verbatim work was built for. Multi-line messages are also indented under their
+  parseable first line now, so compiler-controlled text can no longer start a stderr line and
+  be misread by a build-log parser as a separate diagnostic.
+- **`Validate` reports name the file for line-less findings**, matching the CLI.
 - **Warnings without a line number now name their source file.** The GL portability warnings
   are derived from emitted GLSL and carry no line mapping, so the CLI printed a bare
   `warning SD0401: …` with no way to tell which effect produced it in a build compiling many.

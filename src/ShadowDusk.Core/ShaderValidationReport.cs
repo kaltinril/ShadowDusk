@@ -156,6 +156,11 @@ public sealed class ShaderValidationReport
         sb.Append("  ").Append(severity).Append(' ').Append(e.Code);
         if (e.Line > 0)
             sb.Append(" at ").Append(e.File).Append('(').Append(e.Line).Append(',').Append(e.Column).Append(')');
+        else if (!string.IsNullOrEmpty(e.File))
+            // File-scoped but line-less (the GL portability lint reads emitted GLSL, which has
+            // no line mapping back to the .fx). Still name the file: a report covering several
+            // targets is otherwise full of unattributed "warning SD0401: ... 'MainPS' ..." lines.
+            sb.Append(" in ").Append(e.File);
         sb.Append(": ");
 
         // A verbatim multi-line message keeps its lines, indented under the entry.

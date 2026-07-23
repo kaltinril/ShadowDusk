@@ -166,8 +166,12 @@ GL); it never produces the DX11 shader payload.
 **How it works.** Each entry point is compiled with `-T <profile>` and `-E <entry>` (the
 `.fx`-declared name flows straight through, no mangling). For OpenGL the profile is `ps_5_0` /
 `vs_5_0` with `-spirv -fvk-use-dx-layout` (and `-auto-binding-space 1` for the pixel stage),
-so SPIR-V carries D3D constant-buffer offsets and clip-space conventions. Matrices are packed
-**row-major** (`-Zpr`). On the desktop GL path the source is actually compiled **twice**: once
+so SPIR-V carries D3D constant-buffer offsets and clip-space conventions. On the **OpenGL** path
+matrices are packed **row-major** (`-Zpr`), which is what the GL rewriter's uniform upload assumes.
+The **Vulkan** path deliberately omits `-Zpr`, keeping HLSL's column-major default: that is what
+`mgfxc` emits and what MonoGame's runtime uploads a `Matrix` parameter for, so forcing row-major
+there transposed every vertex transform and rendered nothing.
+On the desktop GL path the source is actually compiled **twice**: once
 to DXIL (used only to feed the native reflection oracle) and once to SPIR-V (fed to SPIRV-Cross);
 the DXIL compile is skipped when a managed SPIR-V reflector is injected (the browser path). DXC
 is constructed lazily and invoked through a per-platform raw vtable call rather than Vortice's

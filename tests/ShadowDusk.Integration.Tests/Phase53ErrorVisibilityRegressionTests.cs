@@ -33,11 +33,16 @@ namespace ShadowDusk.Integration.Tests;
 /// render gates; these tests keep the class from silently returning).
 /// </summary>
 [Trait("Category", "Integration")]
-public sealed class Phase53ErrorVisibilityRegressionTests
+public sealed class Phase53ErrorVisibilityRegressionTests : IClassFixture<CliBinaryFixture>
 {
     private const byte ProfileOpenGL = 0; // MgfxProfile.OpenGL
 
     private static readonly TimeSpan CompileTimeout = TimeSpan.FromSeconds(60);
+
+    // Needed only by the one test that asserts the REAL CLI's stderr contract.
+    private readonly CliBinaryFixture _cli;
+
+    public Phase53ErrorVisibilityRegressionTests(CliBinaryFixture cli) => _cli = cli;
 
     /// <summary>Printable-ASCII view of an effect binary, for structural scans of the embedded GLSL.</summary>
     private static string AsciiOf(byte[] blob) =>
@@ -182,6 +187,29 @@ public sealed class Phase53ErrorVisibilityRegressionTests
         result.Stderr.Should().Contain("warning SD0401");
         result.Stderr.Should().Contain("TEXCOORD1");
         result.Stderr.Should().Contain("SpriteBatch");
+    }
+
+    [Fact]
+    [Trait("Platform", "OpenGL")]
+    public async Task Sd0402_NonAppendixALoop_WarnsAndStillCompiles_ThroughTheRealCli()
+    {
+        // SD0402 was the only lint code with NO end-to-end pin: it could stop firing, start
+        // firing on everything, or change its text with every test still green. It is also
+        // the flag that must flip when issue #138's deferred emission fix lands.
+        // Runs through the REAL CLI process (not DirectPipeline) so this doubles as the
+        // end-to-end proof of the warning-on-stderr-with-exit-0 contract, including the
+        // file attribution a line-less diagnostic now carries.
+        using var cts = new CancellationTokenSource(CompileTimeout);
+        var result = await TestHelpers.CompileFixtureAsync(
+            "third-party/Nez/GaussianBlur.fx", "OpenGL",
+            mode: InvocationMode.CliProcess, ct: cts.Token, cliBinaryPath: _cli.ExecutablePath);
+
+        result.ExitCode.Should().Be(0,
+            because: "the lint warns, never rejects; stderr: " + result.Stderr);
+        result.Mgfx.Should().NotBeEmpty();
+        result.Stderr.Should().Contain("warning SD0402");
+        result.Stderr.Should().Contain("GaussianBlur.fx: warning SD0402",
+            "a line-less diagnostic must still name the effect it came from");
     }
 
     [Theory]

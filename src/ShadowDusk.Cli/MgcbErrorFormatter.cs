@@ -36,7 +36,16 @@ internal static class MgcbErrorFormatter
     {
         foreach (var error in errors)
         {
-            yield return Format(error);
+            // Message is deliberately verbatim and CAN be multi-line (an unparseable
+            // compiler blob becomes the message). Emit line 1 as the parseable diagnostic
+            // and INDENT the rest: an unindented continuation line lets compiler-controlled
+            // text start a stderr line, which MGCB's and an IDE's line parsers would read as
+            // a second diagnostic attributed to whatever file that text names.
+            string formatted = Format(error);
+            string[] lines = formatted.Replace("\r\n", "\n").Split('\n');
+            yield return lines[0];
+            for (int i = 1; i < lines.Length; i++)
+                yield return "    " + lines[i];
 
             // The underlying compiler's COMPLETE output, whenever it says more than
             // the one-line summary (constraint 5: the compiler's own words, shown by

@@ -3,6 +3,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
+using ShadowDusk.Cli;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
@@ -143,23 +144,15 @@ public static class TestHelpers
         return new CompileResult(0, mgfxBytes, FormatErrors(compileResult.Value.Warnings));
     }
 
+    // Delegates to the REAL CLI formatter rather than reimplementing it. The former local
+    // copy drifted: it never learned the file-scoped-but-line-less form
+    // ("Bloom.fx: warning SD0401: ..."), so DirectPipeline assertions were mirroring a
+    // stderr shape the CLI had stopped producing.
     private static string FormatErrors(IEnumerable<ShaderError> errors)
     {
         var sb = new StringBuilder();
-        foreach (ShaderError e in errors)
-        {
-            string severity = e.Severity switch
-            {
-                ShaderErrorSeverity.Warning => "warning",
-                ShaderErrorSeverity.Note    => "note",
-                _                           => "error",
-            };
-            string fileName = Path.GetFileName(e.File);
-            if (e.Line > 0)
-                sb.AppendLine($"{fileName}({e.Line},{e.Column}): {severity} {e.Code}: {e.Message}");
-            else
-                sb.AppendLine($"{severity} {e.Code}: {e.Message}");
-        }
+        foreach (string line in MgcbErrorFormatter.FormatAll(errors))
+            sb.AppendLine(line);
         return sb.ToString();
     }
 

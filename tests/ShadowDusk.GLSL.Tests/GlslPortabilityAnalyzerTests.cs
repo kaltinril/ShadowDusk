@@ -328,6 +328,61 @@ void main()
     }
 
     [Fact]
+    public void Sd0402_WhileLoopFollowingAnIfBlock_IsStillFlagged()
+    {
+        // Regression: IsDoWhileTail used to return true for ANY `while` whose preceding
+        // non-whitespace character was '}'. A `while` that merely follows an if-block was
+        // therefore misread as a do-while's trailing clause and its SD0402 dropped —
+        // silently losing the finding on the exact shape WebGL1 rejects.
+        const string glsl = """
+void main()
+{
+    int i = 0;
+    if (vTexCoord0.x > 0.5)
+    {
+        i = 1;
+    }
+    while (i < 4)
+    {
+        i++;
+    }
+    ps_oC0 = vec4(float(i));
+}
+""";
+        var findings = AnalyzePixel(glsl).Where(f => f.Code == "SD0402").ToList();
+
+        findings.Should().ContainSingle("the while loop after an if-block is a real Appendix A violation");
+        findings[0].Message.Should().Contain("while loop");
+    }
+
+    [Fact]
+    public void Sd0400_GradientInOuterLoop_BreakOnlyInNestedInnerLoop_IsStillFlagged()
+    {
+        // Pins the DELIBERATE over-approximation documented in the analyzer: the outer
+        // loop's own exit is uniform and the inner loop reconverges before the gradient,
+        // so this is a surplus finding. It is the intended trade (a missed SD0400 renders
+        // black gradients in every Windows browser). If this ever becomes a false-positive
+        // complaint, narrowing it needs a browser render proof first.
+        const string glsl = """
+void main()
+{
+    for (int i = 0; i < 8; i++)
+    {
+        for (int j = 0; j < 4; j++)
+        {
+            if (vTexCoord0.y > 0.5)
+            {
+                break;
+            }
+        }
+        ps_oC0 = vec4(dFdx(vTexCoord0.x));
+    }
+}
+""";
+        AnalyzePixel(glsl).Should().Contain(f => f.Code == "SD0400");
+    }
+
+    [Fact]
     public void Sd0402_WhileLoop_Flagged()
     {
         const string glsl = """

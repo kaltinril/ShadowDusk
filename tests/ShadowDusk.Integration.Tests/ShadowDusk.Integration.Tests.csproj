@@ -28,6 +28,13 @@
          One validator, two consumers — the unit tests calibrate it against the fxc
          goldens; the FNA integration tests apply it to real pipeline output. -->
     <Compile Include="..\ShadowDusk.Core.Tests\Fx2\Fx2BinaryValidator.cs" Link="Fx2\Fx2BinaryValidator.cs" />
+    <!-- Source-link the CLI's diagnostic formatter (BCL + ShadowDusk.Core only) so the
+         DirectPipeline test surface uses the SAME formatter the CLI does. TestHelpers used
+         to carry a hand-written copy, which drifted: it never learned the file-scoped
+         line-less form, so DirectPipeline assertions mirrored a stderr shape the CLI had
+         stopped producing. The Cli ProjectReference stays ReferenceOutputAssembly=false
+         (Phase 21) - this links the one file, not the tool. -->
+    <Compile Include="..\..\src\ShadowDusk.Cli\MgcbErrorFormatter.cs" Link="Cli\MgcbErrorFormatter.cs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -31,8 +31,10 @@ ShadowDusk/
 │   ├── ShadowDusk.ImageTests/          # Offscreen-render image regression
 │   ├── ShadowDusk.BrowserTests/        # Headless KNI WebGL render validation (Playwright)
 │   └── fixtures/
-│       ├── shaders/                    # Canonical .fx test shaders (103 .fx total + 5 .fxh headers):
-│       │                               #   60 in the root + examples/ (28) + third-party/Nez/ (15 vendored MIT Nez shaders)
+│       ├── shaders/                    # Canonical .fx test shaders (140 .fx total + 7 .fxh headers):
+│       │                               #   60 in the root + examples/ (42) + third-party/: Nez (15, MIT),
+│       │                               #   MonoGame (17, Ms-PL — the reference compiler's own acceptance set),
+│       │                               #   Gum (3), Apos.Shapes (3)
 │       └── golden/                     # Reference outputs: .mgfx (DirectX_11/, OpenGL/) + fxc fx_2_0 .fxb (FNA/) + byte-identity/
 ├── samples/
 │   ├── ShaderFiddle.Web/               # KNI Blazor-WASM in-browser fiddle (sample of reach)
@@ -42,6 +44,8 @@ ShadowDusk/
 │   ├── dxc/                       # unused — desktop DXC comes from Vortice.Dxc NuGet
 │   ├── spirv-cross/               # libspirv-cross-c-shared (.dll/.so/.dylib)
 │   ├── vkd3d/                     # vkd3d-shader native (cross-platform DXBC backend)
+│   ├── vkd3d-wasm/                # vkd3d-shader compiled to WASM (browser DXBC + FNA export)
+│   ├── plantuml/                  # PlantUML jar for regenerating docs/*.puml diagrams
 │   └── shadertoy2fx/             # ShaderToy experiment SHELLS (out-of-band, NOT in ShadowDusk.slnx):
 │                                  #   the converter LIBRARY + tests were promoted to src/+tests/ (Phase 47);
 │                                  #   what remains is the standalone PoC CLI, the MonoGame Runtime helper,

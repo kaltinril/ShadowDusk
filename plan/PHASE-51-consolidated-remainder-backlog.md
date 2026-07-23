@@ -57,7 +57,7 @@ GL render gates are single-target only."*
 
 **Done = ** a new `validation/*` GL driver that binds 2 render targets, draws DeferredSprite,
 reads back BOTH attachments, and asserts pixel-equivalence to the `mgfxc` golden (rung-4
-pattern). Background: [structural-divergence-matrix.md](DONE/PHASE-41-appendix/structural-divergence-matrix.md).
+pattern). Background: [structural-divergence-matrix.md](PHASE-41-appendix/structural-divergence-matrix.md).
 
 ### A3 — Apos.Shapes render-proof (Phase 49 Option B, decision-gated stretch)
 *From Phase 49.* Option A (the Gum / Apos.Shapes compile-regression corpus) shipped

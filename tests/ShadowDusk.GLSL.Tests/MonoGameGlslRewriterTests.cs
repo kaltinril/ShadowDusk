@@ -2052,6 +2052,47 @@ void main()
     }
 
     [Fact]
+    public void VertexStage_PowSquareAndReciprocalOfQuotient_AreLowered_Issue137()
+    {
+        // Issue #137 made Rules 10 (pow-square) and 11 (reciprocal-fold) run on the vertex
+        // stage as well, but every existing test for them passes ShaderStage.Pixel — so
+        // deleting the two vertex-branch calls left the whole suite green. Pin both here.
+        const string src = """
+#version 140
+
+layout(binding = 0, std140) uniform type_Globals
+{
+    mat4 WorldViewProjection;
+    float Scale;
+} _Globals;
+
+in vec4 in_var_POSITION0;
+out vec2 out_var_TEXCOORD0;
+
+void main()
+{
+    gl_Position = _Globals.WorldViewProjection * in_var_POSITION0;
+    float falloff = pow(gl_Position.w, 2.0);
+    float inv = 1.0 / (_Globals.Scale / falloff);
+    out_var_TEXCOORD0 = vec2(falloff, inv);
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Vertex);
+
+        // Rule 10: pow(x, 2.0) becomes the explicit multiply (the uniform is separately
+        // rewritten into the vs_uniforms_vec4 register file, so match on shape not names).
+        System.Text.RegularExpressions.Regex
+            .IsMatch(result.Glsl, @"\bpow\s*\([^,()]*,\s*2\.0\s*\)")
+            .Should().BeFalse("Rule 10 must run on the vertex stage too (issue #137)");
+        result.Glsl.Should().Contain("((gl_Position.w) * (gl_Position.w))");
+
+        // Rule 11: 1.0 / (a / b) folds to b / a.
+        result.Glsl.Should().NotContain("1.0 / (",
+            "Rule 11 must run on the vertex stage too (issue #137)");
+        result.Glsl.Should().MatchRegex(@"float inv = \(\(falloff\) / \(.+\)\);");
+    }
+
+    [Fact]
     public void VertexStage_OneShotDoWhile_IsLoweredToForLoop_Issue137()
     {
         // SPIRV-Cross's early-return wrapper in a VERTEX body (an inlined helper

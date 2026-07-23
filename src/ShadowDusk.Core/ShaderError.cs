@@ -29,7 +29,16 @@ public enum ShaderErrorKind
 /// <param name="IncludingLineNumber">For include errors, the line of the <c>#include</c> directive.</param>
 /// <param name="RequestedPath">For include errors, the path that was requested.</param>
 /// <param name="SearchedPaths">For <see cref="ShaderErrorKind.IncludeNotFound"/>, the directories searched.</param>
-/// <param name="RawDiagnostics">The raw, unparsed diagnostic text from the underlying compiler, when available.</param>
+/// <param name="RawDiagnostics">
+/// The raw, unparsed diagnostic text from the underlying compiler, when available.
+/// <para><b>Do not forward this verbatim to an untrusted caller.</b> It is the compiler's
+/// own output, so it can contain host <i>absolute paths</i> and <i>echoed source lines</i> —
+/// including lines from any file the shader pulled in with <c>#include</c>, which (matching
+/// <c>mgfxc</c>/<c>fxc</c>) resolves relative paths without restricting them to the source
+/// directory. That is harmless when you compile your own shaders; if you compile shaders you
+/// did not write, and publish the diagnostics (a CI log, a hosted compile service), treat this
+/// field as untrusted output and log <see cref="Message"/> alone.</para>
+/// </param>
 public sealed record ShaderError(
     string File,
     int Line,
@@ -118,7 +127,19 @@ public sealed record ShaderError(
                 return false;
 
             string raw = RawDiagnostics.TrimEnd();
-            if (raw.Equals(Message, StringComparison.Ordinal) || Message.Contains(raw, StringComparison.Ordinal))
+
+            // Compare NORMALIZED text. Message is assembled with AppendLine (CRLF on Windows)
+            // and skips blank lines, while RawDiagnostics is the compiler's original LF text
+            // with blank lines intact — so a raw blob that IS the message compared unequal on
+            // every multi-line diagnostic, and the "already said this" guard never fired on
+            // exactly the unparseable-verbatim path it exists for. The result was the compiler's
+            // text printed twice.
+            string normalizedRaw = NormalizeForComparison(raw);
+            string normalizedMessage = NormalizeForComparison(Message);
+            if (normalizedRaw.Length == 0)
+                return false;
+            if (normalizedRaw.Equals(normalizedMessage, StringComparison.Ordinal) ||
+                normalizedMessage.Contains(normalizedRaw, StringComparison.Ordinal))
                 return false;
 
             // A single located diagnostic line ends with the same message text the
@@ -130,6 +151,22 @@ public sealed record ShaderError(
 
             return true;
         }
+    }
+
+    /// <summary>
+    /// Collapses EOL style and blank lines so a raw blob and a message assembled from it
+    /// compare equal regardless of how each was built.
+    /// </summary>
+    private static string NormalizeForComparison(string text)
+    {
+        var kept = new List<string>();
+        foreach (string line in text.Replace("\r\n", "\n").Split('\n'))
+        {
+            string trimmed = line.Trim();
+            if (trimmed.Length > 0)
+                kept.Add(trimmed);
+        }
+        return string.Join('\n', kept);
     }
 }
 

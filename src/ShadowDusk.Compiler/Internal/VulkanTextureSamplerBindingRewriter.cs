@@ -62,22 +62,30 @@ internal static class VulkanTextureSamplerBindingRewriter
     // examples/ExCubeSamplerHidef.fx and ExVolumeTextureHidef.fx, issue #145). The optional
     // template argument covers the "Texture2D<float4> Name : register(t0);" form MonoGame's
     // own Macros/Include layer emits.
+    // The Array/MS suffixes matter: "Texture2DArray" is a real declaration in MonoGame's own
+    // TextureArrayEffect.fx, and without them the `\s+` after the type simply fails to match,
+    // so the declaration is invisible — not paired, and its explicit register never reserved.
     private static readonly Regex TextureDecl =
-        new(@"\b(?<type>Texture(?:1D|2D|3D|Cube))(?<tmpl>\s*<[^>;{}]*>)?\s+(?<name>\w+)\s*(?::\s*register\s*\(\s*t(?<idx>\d+)\s*\)\s*)?;",
+        new(@"\b(?<type>Texture(?:1D|2D|3D|Cube)(?:Array)?(?:MS(?:Array)?)?)(?<tmpl>\s*<[^>;{}]*>)?\s+(?<name>\w+)\s*(?::\s*register\s*\(\s*t(?<idx>\d+)\s*\)\s*)?;",
             RegexOptions.Compiled);
 
     // Both the modern "SamplerState S;" and the SM4/SM6 shorthand "sampler S;" (what
     // MonoGame's Include.fxh/Macros.fxh declare next to a Texture2D) — the latter is a real
     // sampler object at SM6, not the legacy FX9 sampler2D form FxPreParser converts earlier.
+    // SamplerComparisonState is included: it is a real sampler object competing for the same
+    // s-register space (MonoGame's CustomSpriteBatchEffectComparisonSampler.fx declares one),
+    // so leaving it out both skipped its pairing and let its register go unreserved.
     private static readonly Regex SamplerDecl =
-        new(@"\b(?<type>SamplerState|sampler)\s+(?<name>\w+)\s*(?::\s*register\s*\(\s*s(?<idx>\d+)\s*\)\s*)?;",
+        new(@"\b(?<type>SamplerComparisonState|SamplerState|sampler)\s+(?<name>\w+)\s*(?::\s*register\s*\(\s*s(?<idx>\d+)\s*\)\s*)?;",
             RegexOptions.Compiled);
 
     // texture.Sample(sampler, ...) — the pairing signal. FxPreParser's legacy conversion
     // emits exactly this shape for a converted tex2D call, so legacy-source pairs are
     // discovered here too.
+    // Gather* is included alongside Sample*: Tex.Gather(Samp, uv) / GatherRed / GatherCmp all
+    // take a sampler, and missing them left the pair un-co-located at separate bindings.
     private static readonly Regex SampleCall =
-        new(@"(\w+)\s*\.\s*Sample\w*\s*\(\s*(\w+)\s*[,)]", RegexOptions.Compiled);
+        new(@"(\w+)\s*\.\s*(?:Sample|Gather)\w*\s*\(\s*(\w+)\s*[,)]", RegexOptions.Compiled);
 
     /// <summary>
     /// The suffix FxPreParser's legacy-<c>sampler2D</c> conversion (<c>SynthTextureName</c>)
@@ -126,6 +134,12 @@ internal static class VulkanTextureSamplerBindingRewriter
         // An explicit register on EITHER half fixes the pair's index; otherwise the pair
         // takes the lowest index nobody has reserved or been given.
         var registerIndex = new Dictionary<string, int>(StringComparer.Ordinal);
+        // index -> the sampler the texture holding it is paired with (null if unpaired).
+        // Two textures may legitimately share an index ONLY when they share that sampler:
+        // that is the same-sampler-in-two-#if-branches case below, where just one branch
+        // survives the compile. Two textures paired to DIFFERENT samplers on one binding is
+        // an invalid descriptor-set layout.
+        var indexPairSampler = new Dictionary<int, string?>();
         int next = 0;
 
         foreach (string tex in textureNames)
@@ -136,22 +150,42 @@ internal static class VulkanTextureSamplerBindingRewriter
             pairedSampler.TryGetValue(tex, out string? samp);
 
             int index;
+            bool inherited = false;
             if (explicitIndex.TryGetValue(tex, out int fixedTex))
                 index = fixedTex;
             else if (samp is not null && explicitIndex.TryGetValue(samp, out int fixedSamp))
-                index = fixedSamp;
+                (index, inherited) = (fixedSamp, true);
             // The paired sampler may already be assigned because the SAME sampler name is
             // declared in two mutually-exclusive #if branches (e.g. a modern SamplerState
             // for Vulkan and FxPreParser's converted form for the legacy branch). Follow it
             // so BOTH branches stay co-located — only one of them survives the compile.
             else if (samp is not null && registerIndex.TryGetValue(samp, out int assignedSamp))
-                index = assignedSamp;
+                (index, inherited) = (assignedSamp, true);
             else
                 index = NextFree(ref next, reserved, registerIndex);
 
+            // An inherited index bypasses `reserved`, so it can collide with a DIFFERENT
+            // pair's explicit register: `Texture2D A : register(t1)` paired with an
+            // auto sampler, plus an auto `Texture2D B` paired with `Sampler : register(s1)`,
+            // put BOTH textures on binding 33 — the invalid layout that access-violates in
+            // MonoGame's descriptor writer. Pair co-location is the invariant that must
+            // hold, so move this pair to a free index instead.
+            if (inherited
+                && indexPairSampler.TryGetValue(index, out string? owner)
+                && !(owner is not null && samp is not null && owner == samp))
+            {
+                index = NextFree(ref next, reserved, registerIndex);
+            }
+
             registerIndex[tex] = index;
+            indexPairSampler[index] = samp;
+
+            // The sampler always follows its texture. Honouring the sampler's OWN explicit
+            // register here would re-split a pair we just moved, and would also silently
+            // split a pair whose two halves carry disagreeing explicit registers — the exact
+            // separate-descriptor shape this rewriter exists to prevent.
             if (samp is not null && !registerIndex.ContainsKey(samp))
-                registerIndex[samp] = explicitIndex.TryGetValue(samp, out int own) ? own : index;
+                registerIndex[samp] = index;
         }
 
         foreach (string samp in samplerNames)
@@ -164,17 +198,24 @@ internal static class VulkanTextureSamplerBindingRewriter
                 : NextFree(ref next, reserved, registerIndex);
         }
 
-        // Only declarations that DON'T already carry a register are rewritten; an
-        // explicitly-registered declaration is returned byte-identical. The declared type
-        // (and any template argument) is preserved verbatim — only the register clause is
-        // added.
+        // A declaration is rewritten when it carries no register, or when co-locating its
+        // pair required a different index than the one it declared. An explicit register
+        // that already agrees with the assignment is returned byte-identical.
+        // Overriding a disagreeing explicit register is deliberate: an invalid descriptor
+        // layout access-violates at draw, so pair co-location outranks the source's literal
+        // register number (which the runtime never reads back - it binds by slot index).
+        static bool NeedsRewrite(Match m, Dictionary<string, int> assigned, out int index) =>
+            assigned.TryGetValue(m.Groups["name"].Value, out index)
+            && (!m.Groups["idx"].Success
+                || int.Parse(m.Groups["idx"].Value, System.Globalization.CultureInfo.InvariantCulture) != index);
+
         string result = TextureDecl.Replace(hlsl, m =>
-            !m.Groups["idx"].Success && registerIndex.TryGetValue(m.Groups["name"].Value, out int ti)
+            NeedsRewrite(m, registerIndex, out int ti)
                 ? $"{m.Groups["type"].Value}{m.Groups["tmpl"].Value} {m.Groups["name"].Value} : register(t{ti});"
                 : m.Value);
 
         result = SamplerDecl.Replace(result, m =>
-            !m.Groups["idx"].Success && registerIndex.TryGetValue(m.Groups["name"].Value, out int si)
+            NeedsRewrite(m, registerIndex, out int si)
                 ? $"{m.Groups["type"].Value} {m.Groups["name"].Value} : register(s{si});"
                 : m.Value);
 

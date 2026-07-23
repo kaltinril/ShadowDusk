@@ -12,9 +12,10 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 | Range | Owner |
 |---|---|
 | `FX0001`–`FX0099` | FX9 pre-parser (`FxPreParser` / `FxLexer`) |
-| `SD0001`–`SD0009` | Preprocessor (`#include` handling) |
+| `SD0000` | CLI informational notes (severity `Note`, never a failure) |
+| `SD0001`–`SD0009` | Preprocessor (`#include` handling) and source-provenance notes |
 | `SD0010`–`SD0019` | Pipeline-level effect validation |
-| `SD0020`–`SD0029` | MGFX writer range guards |
+| `SD0020`–`SD0029` | MGFX writer range guards and container/target guards |
 | `SD0100`–`SD0199` | Reflection / transpilation backends |
 | `SD0200`–`SD0299` | Platform / backend availability |
 | `SD0300`–`SD0399` | FNA (fx_2_0) target |
@@ -38,13 +39,16 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 | `FX0010` | Unrecognized render-state key (non-fatal). |
 | `FX0011` | Unknown character in effect source (e.g. `@`, `` ` ``). |
 | `FX0012` | Legacy D3D9 sampling intrinsic (e.g. `tex2Dlod`) whose arguments cannot be rewritten 1:1 to a modern `Texture2D` method. |
+| `FX0013` | An SM4+ resource or sampler type (e.g. `SamplerComparisonState`) appeared in a shader targeting FNA's D3D9 `fx_2_0` profile, where no SM1–3 lowering exists. Raised *before* the source reaches vkd3d, which does not reject these cleanly (a `SamplerComparisonState` makes its SM1 lowering take the whole process down with an access violation). |
 
 ## SD — ShadowDusk pipeline
 
 | Code | Meaning | Emitted by |
 |---|---|---|
+| `SD0000` | **Note.** Informational output from the CLI, never a failure — currently the drivable effect parameters listed by `--print-uniforms`. | `PipelineRunner` |
 | `SD0001` | `#include` file not found on any search path. | `ShaderError.IncludeNotFound` |
 | `SD0002` | Circular `#include` (true cycle on the include stack; a diamond include is legal). | `ShaderError.CircularInclude` |
+| `SD0003` | **Note.** A ShaderToy/GLSL input was converted to `.fx` and that generated HLSL failed to compile — the diagnostics that follow refer to the **generated** source, not your original line numbers. | `PipelineRunner` |
 | `SD0010` | Effect source contains no techniques. | `CompilationPipeline` |
 | `SD0011` | Unrecognised value for a render-state key. | `RenderStateParser` |
 | `SD0012` | Internal: a GL uniform in the rewriter's register layout has no matching reflected effect parameter — the GLSL uniform layout and the reflection diverged. A ShadowDusk bug if ever seen. | `CompilationPipeline` |
@@ -55,6 +59,8 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 | `SD0022` | A count/index serialized as a single byte in the `.mgfx` shader record is outside 0–255 (samplers, constant-buffer indices, vertex attributes, sampler parameter index). | `MgfxWriter` |
 | `SD0023` | `CompilerOptions.MgfxVersion` is outside the MGFX header's byte range (0–255). | `CompilationPipeline` |
 | `SD0024` | A `sampler_state` member has an unparseable value for a recognized key (MinFilter/MagFilter/MipFilter/Filter, AddressU/V/W, BorderColor, MaxAnisotropy, MaxMipLevel, MipLodBias). | `MgfxSamplerStateResolver` |
+| `SD0025` | The Vulkan target was requested together with the KNIFX container (KNI ships no Vulkan platform). | `CompilationPipeline` |
+| `SD0026` | A shader declares more than one constant buffer for a single stage on the Vulkan target, which the format does not support — merge the globals into one `cbuffer`. | `CompilationPipeline` |
 | `SD0100` | SPIRV-Cross SPIR-V→GLSL transpilation failed (includes a SPIR-V blob whose byte length is not a multiple of 4). | `SpirvCrossGlslTranspiler` |
 | `SD0101` | Pure-managed reflection failed (DXBC `RdefReader`, `SpirvReflector`). | `RdefReader`, `SpirvReflector` |
 | `SD0102` | Native DXIL reflection (`ID3D12ShaderReflection`) failed. | `DxilReflectionExtractor` |
