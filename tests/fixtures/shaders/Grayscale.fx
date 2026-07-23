@@ -3,7 +3,7 @@
 	#define VS_SHADERMODEL vs_3_0
 	#define PS_SHADERMODEL ps_3_0
 #else
-	#if VULKAN
+	#if SM6
 		#define VS_SHADERMODEL vs_6_0
 		#define PS_SHADERMODEL ps_6_0
 	#else
@@ -14,7 +14,7 @@
 
 Texture2D SpriteTexture;
 
-#if VULKAN
+#if SM6
 SamplerState SpriteTextureSampler;
 #else
 sampler2D SpriteTextureSampler = sampler_state
@@ -34,7 +34,7 @@ struct VertexShaderOutput
 
 
 
-#if VULKAN
+#if SM6
 float4 MainPS(VertexShaderOutput input) : SV_Target
 {
     float4 col = SpriteTexture.Sample(SpriteTextureSampler, input.TextureCoordinates) * input.Color;

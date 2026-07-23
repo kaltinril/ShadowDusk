@@ -3,7 +3,7 @@
 	#define VS_SHADERMODEL vs_3_0
 	#define PS_SHADERMODEL ps_3_0
 #else
-	#if VULKAN
+	#if SM6
 		#define VS_SHADERMODEL vs_6_0
 		#define PS_SHADERMODEL ps_6_0
 	#else
@@ -12,7 +12,7 @@
 	#endif
 #endif
 
-#if VULKAN
+#if SM6
 Texture2D s0Texture;
 SamplerState s0;
 Texture2D _dissolveTex;
@@ -36,7 +36,7 @@ struct VertexShaderOutput
 	float2 TexCoord : TEXCOORD0;
 };
 
-#if VULKAN
+#if SM6
 float4 mainPixel( VertexShaderOutput input ) : SV_Target
 {
 	float progress = _progress + _dissolveThreshold;

@@ -16,7 +16,7 @@
 #if OPENGL
 #define VS_SHADERMODEL vs_3_0
 #define PS_SHADERMODEL ps_3_0
-#elif VULKAN
+#elif SM6
 #define VS_SHADERMODEL vs_6_0
 #define PS_SHADERMODEL ps_6_0
 #else
@@ -39,7 +39,7 @@ float4   Tint;
 // underflows to 224/225 and its own container is then unloadable — the upstream bug that
 // blocked a Vulkan baseline render in Phase 32. With explicit registers, mgfxc's output
 // loads and renders, so this fixture can be diffed against it.
-#if VULKAN
+#if SM6
 Texture2D    SpriteTexture        : register(t0);
 SamplerState SpriteTextureSampler : register(s0);
 #else
@@ -73,7 +73,7 @@ VertexShaderOutput MainVS(VertexShaderInput input)
     return output;
 }
 
-#if VULKAN
+#if SM6
 float4 MainPS(VertexShaderOutput input) : SV_Target0
 {
     return SpriteTexture.Sample(SpriteTextureSampler, input.TexCoord) * input.Color;

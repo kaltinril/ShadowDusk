@@ -3,7 +3,7 @@
 	#define VS_SHADERMODEL vs_3_0
 	#define PS_SHADERMODEL ps_3_0
 #else
-	#if VULKAN
+	#if SM6
 		#define VS_SHADERMODEL vs_6_0
 		#define PS_SHADERMODEL ps_6_0
 	#else
@@ -33,7 +33,7 @@ extern float4 TintColor;
 Texture2D SpriteTexture;
 
 //	The sampler object we'll use to sample the texture
-#if VULKAN
+#if SM6
 SamplerState SpriteTextureSampler;
 #else
 sampler2D SpriteTextureSampler = sampler_state
@@ -59,7 +59,7 @@ struct VertexShaderOutput
 
 //	This is our Pixel Shader function.  It takes in the output from the vertex shader
 //	and returns back a float4 containing the color data for the pixel.
-#if VULKAN
+#if SM6
 float4 MainPS(VertexShaderOutput input) : SV_Target
 {
 	//	First we use Texture2D.Sample to get the color of the pixel

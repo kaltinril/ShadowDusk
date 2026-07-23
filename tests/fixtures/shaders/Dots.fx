@@ -2,14 +2,14 @@
 	#define SV_POSITION POSITION
 	#define PS_SHADERMODEL ps_3_0
 #else
-	#if VULKAN
+	#if SM6
 		#define PS_SHADERMODEL ps_6_0
 	#else
 		#define PS_SHADERMODEL ps_4_0_level_9_1
 	#endif
 #endif
 
-#if VULKAN
+#if SM6
 Texture2D s0Texture;
 SamplerState s0;
 #else
@@ -37,7 +37,7 @@ struct VertexShaderOutput
 	float2 TexCoord : TEXCOORD0;
 };
 
-#if VULKAN
+#if SM6
 float4 PixelShaderFunction(VertexShaderOutput input) : SV_Target
 {
     float4 color = s0Texture.Sample( s0, input.TexCoord );
