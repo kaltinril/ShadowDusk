@@ -21,7 +21,7 @@ small tail, the tail moves here and the parent moves to DONE.
 | DeferredSprite GL MRT render proof (GAP-2) | [Phase 41](DONE/PHASE-41-fxc-oracle-monogame-fidelity.md) | Closed at compile + structural-match; render rung left |
 | Apos.Shapes render-proof (Option B) | [Phase 49](DONE/PHASE-49-apos-shapes-regression-corpus.md) | Option A shipped; Option B render-proof decision-gated |
 | GL macro-defined techniques (GAP-1 / GL) | [Phase 41](DONE/PHASE-41-fxc-oracle-monogame-fidelity.md) | DX + FNA closed; GL faithfulness-blocked |
-| DX12 / DXIL render-validation (Area C) — ➡️ promoted 2026-07-18 to [Phase 52](PHASE-52-monogame-3.8.5-support.md) Area D | [Phase 35](DONE/PHASE-35-forward-version-support.md) | Built; ext-blocked on MonoGame 3.8.5 stable (since shipped; see B1) |
+| DX12 / DXIL render-validation (Area C) — ➡️ promoted 2026-07-18 to [Phase 52](PHASE-52-monogame-3.8.5-support.md) Area D, split 2026-07-23 to [Phase 54](PHASE-54-dx12-dxil-backend.md) | [Phase 35](DONE/PHASE-35-forward-version-support.md) | New-backend build (not a render-validation rung); see B1 |
 | Un-park Vulkan trigger (Area D) — ✅ done 2026-07-18 via [Phase 32](DONE/PHASE-32-vulkan-backend.md) | [Phase 35](DONE/PHASE-35-forward-version-support.md) | ext-blocked on MonoGame 3.8.5 stable (since shipped; see B2) |
 | DX/FNA/KNI-DX render-in-CI gates | [Phase 44](DONE/PHASE-44-validation-breadth-and-matrix-coverage.md) | Effectively done; ext-blocked on a WARP CI runner |
 | `d3dcompiler_47` vs `fxc.exe` DXBC delta study (OQ#2) | [Phase 41](DONE/PHASE-41-fxc-oracle-monogame-fidelity.md) | Deferred, low-value |
@@ -197,12 +197,16 @@ reproduce-first."* DX11 DXBC (vkd3d) stays the default.
 **Blocked on:** MonoGame 3.8.5 going **stable** (do not target a preview as the product baseline).
 
 **Update (2026-07-18): gate cleared — MonoGame 3.8.5 shipped stable 2026-07-15.** Per this
-phase's definition of done ("promoted to its own scoped phase"), B1 is absorbed into
+phase's definition of done ("promoted to its own scoped phase"), B1 was absorbed into
 [Phase 52](PHASE-52-monogame-3.8.5-support.md) **Area D**: source-inspect the 3.8.5 WindowsDX12
 effect load path first (the Phase-32 playbook — the Vulkan container assumptions were wrong on
 inspection), then build the rung-4 DX12 render driver, with an explicit decision gate to split
-into its own phase if the container research turns out Phase-32-sized. This item closes when
-Phase 52 Area D lands (or re-points it).
+into its own phase if the container research turns out Phase-32-sized.
+
+**Update (2026-07-23): decision gate tripped — re-pointed to [Phase 54](PHASE-54-dx12-dxil-backend.md).**
+Source inspection found no `PlatformTarget.DirectX12` anywhere in the codebase — genuine
+new-backend work on Phase-32's scale, not a render-validation rung. B1 closes here; tracked at
+Phase 54 from now on.
 
 ### B2 — ✅ DONE (2026-07-18) — Un-park Vulkan (Phase 35 Area D → trigger for Phase 32)
 *From Phase 35.* **Landed:** MonoGame 3.8.5 shipped `DesktopVK` stable and
