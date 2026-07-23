@@ -98,6 +98,15 @@ vkd3d-shader's Shader Model 3 ceiling (`fx_2_0`/SM3, a real DirectX-9-era instru
 limit) — a legitimate, documented rejection (`SD0305`), the same honest shader-model ceiling
 the other vendored Apos.Shapes revisions hit. There is no further FNA work to schedule here.
 
+**A distinct, real gap surfaced while closing this GL slice, tracked separately as A7 below
+(issue #149): the GL candidate GLSL for `apos-shapes.fx` — the exact fixture this render-proof
+uses — emits `isnan()` with no `#version` directive, which Apple's strict GL compiler rejects.**
+This does NOT invalidate the maxd 2/255 render-proof above (that pixel-diff is real, on this
+repo's established Windows/Linux GL evidence ladder), and it is not new/caused by this work —
+it is pre-existing in the GL backend's NaN-lowering and was simply invisible on the lenient
+desktop drivers every GL render gate runs on. It is broader than Apos.Shapes (any GL shader
+using `min`/`max`/`clamp`), so it is scoped as its own item rather than folded into A3.
+
 **Done = ** `apos-shapes-sm6.fx` rendered pixel-equivalent to `mgfxc` in real MonoGame DX and
 Vulkan (maxd 0 on both), and `apos-shapes.fx` rendered pixel-equivalent to `mgfxc` in real
 MonoGame GL (maxd 2/255, documented drift) — all three behind the Windows render gate. FNA is
@@ -166,6 +175,41 @@ regression test using a traversing `#include`.
 *Interim mitigation (shipped 2026-07-23):* the exposure is documented on `ShaderError.RawDiagnostics`
 — it may carry host absolute paths and echoed source, and should not be forwarded verbatim to
 untrusted callers.
+
+### A7 — OpenGL profile emits `isnan()` into versionless GLSL, rejected on macOS (issue #149)
+
+*Discovered/confirmed 2026-07-23, while closing A3 above.* Reported by Apostolique
+(Jean-David Moisan): DXC compiles HLSL `min`/`max`/`clamp` to the NaN-aware SPIR-V ops
+`NMin`/`NMax`/`NClamp` (HLSL semantics — return the non-NaN operand). SPIRV-Cross's stock GLSL
+lowering for those is an `isnan(a) ? b : (isnan(b) ? a : max(a, b))` ternary, which needs
+GLSL 1.30+. ShadowDusk's OpenGL profile emits **versionless** GLSL (correct for the legacy
+MonoGame GL runtime otherwise, so targeting 1.30+ is not a fix), with no `#version` directive —
+so `isnan` is unavailable. Desktop NVIDIA/AMD/Intel drivers (Windows/Linux, this repo's entire
+GL evidence ladder) accept it leniently anyway; Apple's strict GLSL compiler rejects it outright,
+so every affected shader fails to load on macOS. Real downstream breakage: Apos.Shapes 0.7.6
+ships a ShadowDusk-compiled GL effect that is unusable on Mac
+(Apostolique/Apos.Shapes#34).
+
+**Confirmed independently while closing A3**, not just from the issue report: ShadowDusk's own
+GL candidate for `apos-shapes.fx` — the exact fixture A3's GL render-proof uses — contains
+**28 `isnan(` occurrences and no `#version` directive**; the real mgfxc golden for the same
+file has **zero**. A3's maxd 2/255 render-proof is genuine and stands — it proves pixel
+correctness on the lenient desktop driver this repo's GL evidence ladder has always used — but
+it neither exercises nor can catch this: the bug is invisible on exactly the class of driver
+every `validation/*` GL gate runs on. **Not a regression from A3's work and not specific to
+Apos.Shapes** — pre-existing in the GL backend's NaN-lowering, latent for any GL shader using
+`min`/`max`/`clamp` (i.e. most shaders), just never noticed because desktop drivers tolerate it.
+
+**Suggested fix (from the issue):** lower `NMin`/`NMax`/`NClamp` to plain `min`/`max`/`clamp`
+(and NaN-aware comparisons to ordinary ones) for the OpenGL profile, as the **default** — not an
+opt-in flag. This is the *faithful* choice, not a relaxation: mgfxc's own OpenGL golden for the
+same file has zero `isnan` occurrences, so matching it is what "identical to `mgfxc`" already
+requires.
+
+**Done = ** `ShadowDuskCLI <fx> out.mgfx /Profile:OpenGL` produces GLSL with zero `isnan`
+occurrences (and no other 1.30+-only builtins from the same lowering) for every shader that
+exercises `min`/`max`/`clamp` on GL, output still pixel-verifies against the existing GL
+render gates, and a regression fixture/test pins it so it cannot silently return.
 
 ---
 

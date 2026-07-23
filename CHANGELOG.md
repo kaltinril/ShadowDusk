@@ -25,6 +25,16 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   `run-windows-render-gates.ps1`. Apos.Shapes is now render-proven on DX, Vulkan, and GL; FNA
   stays permanently excluded (SM3 instruction-slot ceiling).
 
+### Known issues
+
+- **GL profile emits `isnan()` into versionless GLSL; rejected on macOS (issue #149).** Found
+  while closing the render-proof above: ShadowDusk's own GL candidate for `apos-shapes.fx`
+  contains 28 `isnan(` occurrences and no `#version` directive (the real mgfxc golden has zero
+  of either). Desktop NVIDIA/AMD/Intel drivers tolerate it; Apple's strict GL compiler does not,
+  breaking any GL shader using `min`/`max`/`clamp` on macOS — real downstream breakage
+  (Apos.Shapes 0.7.6). Pre-existing, not caused by this change, not fixed by it. Tracked as
+  Phase 51 A7.
+
 ### Changed
 
 ### Fixed
