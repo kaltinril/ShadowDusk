@@ -57,7 +57,7 @@ GL render gates are single-target only."*
 
 **Done = ** a new `validation/*` GL driver that binds 2 render targets, draws DeferredSprite,
 reads back BOTH attachments, and asserts pixel-equivalence to the `mgfxc` golden (rung-4
-pattern). Background: [structural-divergence-matrix.md](DONE/PHASE-41-appendix/structural-divergence-matrix.md).
+pattern). Background: [structural-divergence-matrix.md](PHASE-41-appendix/structural-divergence-matrix.md).
 
 ### A3 — Apos.Shapes render-proof (Phase 49 Option B, decision-gated stretch)
 *From Phase 49.* Option A (the Gum / Apos.Shapes compile-regression corpus) shipped
@@ -94,6 +94,47 @@ same appendix, not part of this rung.)
 
 **Done = ** at least one `.glsl`-route fixture renders through the Windows render gates (and the GL
 CI gates where applicable), pinning the converted-shader path at rung 4.
+
+### A6 — `#include` path containment for untrusted-shader hosts (from the 2026-07-23 review)
+
+*Raised by the security review of the Phase 53 error-visibility work.* Two pre-existing pieces
+became a chain once diagnostics started printing verbatim by default:
+
+- `FileSystemIncludeResolver.Resolve` canonicalizes an include path
+  (`Path.GetFullPath(Path.Combine(dir, includePath))`) but **never bounds-checks it**, so `..`
+  traversal and absolute paths both resolve; and
+- the preprocessor injects the resolved **absolute** path as `#line`, so DXC attributes and
+  **echoes the offending source line**, which the CLI, the validation report, and ShaderFiddle
+  now print.
+
+Net effect: a shader can disclose the existence and one-or-two lines of content of any readable
+file into whatever consumes the diagnostics. `#include "/any/path"` is additionally a reliable
+file-existence oracle (`SD0001` vs a compile error).
+
+**Scope — who this actually affects.** Not the ordinary consumer compiling their own shaders
+(reading your own files is a non-event), and not the browser/WASM host (empty VFS, synthetic
+source names). It matters for a **trusted build compiling an untrusted shader**: this repo's own
+CI compiling PR-supplied fixtures, or any hosted compile service.
+
+**Why it is not simply fixed by restricting includes.** `mgfxc`/`fxc` resolve relative includes
+without containment, so `#include "../shared/common.fxh"` is legal, common in real projects, and
+part of the drop-in promise. Restricting it by default would break working shaders and diverge
+from the reference compiler — rejected under the seamless rule.
+
+**Candidate directions** (either alone breaks the chain; pick one when this is scoped):
+1. An **opt-in** containment option (bound includes to the source directory plus the explicit
+   `/I` paths) — a non-required hardening escape hatch, never the path to correct output.
+2. Filter the raw-diagnostic block so **echoed source lines from files other than the primary
+   source** are dropped, keeping the compiler's diagnostic text verbatim but not its file
+   contents.
+
+**Done = ** an untrusted `.fx` can no longer surface another file's contents through diagnostics
+on a host that opts in, with `mgfxc`-parity include resolution unchanged by default, plus a
+regression test using a traversing `#include`.
+
+*Interim mitigation (shipped 2026-07-23):* the exposure is documented on `ShaderError.RawDiagnostics`
+— it may carry host absolute paths and echoed source, and should not be forwarded verbatim to
+untrusted callers.
 
 ---
 

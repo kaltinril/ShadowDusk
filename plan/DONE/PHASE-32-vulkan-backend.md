@@ -74,11 +74,18 @@ scope.
   Vulkan-capable GPU, not merely "doesn't crash."
 - Full regression suite green (whole `dotnet test ShadowDusk.slnx`, ~1970 tests) at every stage.
 
-## The one honest gap: no mgfxc-Vulkan pixel-diff oracle
+## The one honest gap: no mgfxc-Vulkan pixel-diff oracle *(for auto-numbered resources)*
+
+> **Superseded in part (2026-07-22, issue #145).** This gap turned out to be scoped to
+> **auto-numbered** resources, not to Vulkan as such. With **explicit registers** mgfxc's
+> `SlotOffset` arithmetic stays in range, its output loads, and the pixel-diff runs:
+> `validation/VsDrivenVulkan` matches the mgfxc 3.8.5 golden at **maxd 0** on a VS-driven
+> transform and on the upstream `Apos.Shapes` effect. The text below still describes this
+> corpus correctly — all 10 of its shaders use auto-numbered resources.
 
 Every other backend's rung-4 proof is a pixel-diff: ShadowDusk's output vs. the reference
 compiler's output, both rendered by the same real engine. For Vulkan, **that comparison is
-currently impossible** — not because ShadowDusk's validation is incomplete, but because **real
+impossible for this corpus** — not because ShadowDusk's validation is incomplete, but because **real
 mgfxc's own compiled Vulkan output crashes on all 10 corpus shaders** when loaded into real
 DesktopVK (`IndexOutOfRangeException` in `TextureCollection.set_Item`), a confirmed, independent,
 upstream MonoGame bug: `VulkanShaderProfile.CreateShader`'s `SlotOffset` arithmetic subtracts a

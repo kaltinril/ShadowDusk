@@ -14,7 +14,7 @@ The **product is the in-memory `IShaderCompiler` library** (`ShadowDusk.Compiler
 | `src/ShadowDusk.HLSL` | FX9 pre-parser, preprocessor, DXC integration, HLSL reflection, `vkd3d-shader` + `d3dcompiler_47` DXBC backends. |
 | `src/ShadowDusk.GLSL` | SPIR-V → GLSL via SPIRV-Cross + the `MonoGameGlslRewriter` (MojoShader dialect). |
 | `src/ShadowDusk.Compiler` | `EffectCompiler : IShaderCompiler` — **the product NuGet**. |
-| `src/ShadowDusk.Cli` | the `mgfxc` dotnet tool. |
+| `src/ShadowDusk.Cli` | the `ShadowDuskCLI` dotnet tool (exposed as `mgfxc` on `PATH` for MGCB). |
 | `src/ShadowDusk.Wasm` | in-browser `WasmShaderCompiler` ([JSImport] DXC + SPIRV-Cross). |
 | `src/ShadowDusk.Metal`, `src/ShadowDusk.MgcbPlugin` | **stubs** (not implemented). |
 | `tests/` | `Core`/`HLSL`/`GLSL`/`Compiler` unit tests, `Integration.Tests`, `ImageTests`, `BrowserTests`, and `fixtures/` (the `.fx` corpus + golden `.mgfx`). |

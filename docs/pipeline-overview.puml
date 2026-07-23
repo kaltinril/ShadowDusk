@@ -56,7 +56,7 @@ package "3 - TRANSLATION LAYERS  (target selects the branch)" {
     rectangle "SPIR-V" as GL_SPV #DCE6DC
     rectangle "**SPIRV-Cross**\nSPIR-V -> GLSL" as GL_SPVC #BFD2E8
     rectangle "GLSL 1.10\n(MojoShader dialect)" as GL_GLSL #DCE6DC
-    rectangle "**MonoGameGlslRewriter**\nps_oC0 -> gl_FragColor / gl_FragData[n];\ndo-while -> for (#107); roundEven;\nstruct :COLOR -> :SV_Target (MRT, GAP-2)" as GL_RW #E7DFC9
+    rectangle "**MonoGameGlslRewriter**\nps_oC0 -> gl_FragColor / gl_FragData[n];\nunwrap one-shot do-while (#136), else -> for (#107);\nroundEven -> floor+0.5; derivatives #extension (#139);\nstruct :COLOR -> :SV_Target (MRT, GAP-2)" as GL_RW #E7DFC9
     GL_DXC -down-> GL_SPV
     GL_SPV -down-> GL_SPVC
     GL_SPVC -down-> GL_GLSL
@@ -146,7 +146,7 @@ O_KNIFX --> R_KNIGL
 O_KNIFX --> R_KNIDX
 O_KNIFX --> R_KNIWEB : "GL-family directory;\nKNI runtime-converts the\n(0,0) raw GL body -> ES"
 O_FXB --> R_FNA
-O_MGFXVK --> R_MGVK : "render-proven 10/10\n(mgfxc pixel-diff ext-blocked:\nMonoGame SlotOffset bug)"
+O_MGFXVK --> R_MGVK : "render-proven 10/10;\nmgfxc pixel-diff maxd 0 with\nexplicit registers (#145), blocked\nfor auto-numbered (MonoGame\nSlotOffset bug)"
 O_MGFX10 --> R_ANDROID : "GL ES; one v10 .mgfx.\non-device compile (android DXC\n+ SPIRV-Cross), or build-time\nprecompile on a host"
 
 note as N1

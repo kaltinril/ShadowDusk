@@ -71,8 +71,18 @@ The ShaderToy/GLSL conversion is the same front-end the optional [`ShadowDusk.Sh
 
 ## Exit codes & diagnostics
 
-- **0** — success.
-- **non-zero** — failure; diagnostics are written to **stderr** in `mgfxc`-compatible `file(line,col-col): severity CODE: message` form, which MGCB parses.
+- **0** — success. Note that a successful compile **can still write to stderr**: warnings are reported there and do not fail the build. Treat the **exit code**, not the presence of stderr output, as the pass/fail signal — a CI step that fails on any stderr will trip over warnings.
+- **non-zero** — failure; diagnostics are written to **stderr** in `mgfxc`-compatible `file(line,col-col): severity CODE: message` form, which MGCB parses. Diagnostics that apply to a whole file rather than one line (the GL portability warnings, for example) drop the line/column and read `file: severity CODE: message`.
+
+Warnings use the same parseable format with `warning` as the severity:
+
+```
+Bloom.fx: warning SD0401: The pass has no vertex shader, and pixel shader 'MainPS' reads vTexCoord1 (TEXCOORD1) — interpolants SpriteBatch's built-in vertex shader never writes ...
+```
+
+When the underlying compiler says more than the one-line summary — leading warnings, a source echo with a caret — its **complete output follows the parseable line, indented**, so nothing it told us is hidden from you. There is no verbosity flag to discover: the compiler's own words are shown by default.
+
+Every code is listed in the [Diagnostic Codes](../diagnostics.md) registry.
 
 ## Using it from MGCB
 

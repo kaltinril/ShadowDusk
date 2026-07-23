@@ -14,145 +14,131 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
-- **A VS-driven Vulkan render gate with a real reference-compiler oracle** (`validation/VsDrivenVulkan`,
-  issue #145). Renders a non-identity asymmetric transform on a real MonoGame 3.8.5 DesktopVK device and
-  pixel-diffs ShadowDusk against the checked-in `mgfxc 3.8.5` golden: **maxd 0**. This is the first Vulkan
-  pixel-diff against the reference compiler — Phase 32 could not do it because mgfxc's own output is
-  unloadable for auto-numbered resources (its `SlotOffset` arithmetic underflows); giving the fixture's
-  Vulkan branch matching explicit registers keeps that arithmetic in range, so the baseline loads and can
-  be diffed. A second phase (`-- apos`) renders **the issue-#145 reproducer itself** — upstream
-  `Apos.Shapes` at commit `ea38c6d8`, vendored as `apos-shapes-sm6.fx` — through its own 13-element vertex
-  layout: also **maxd 0** vs the mgfxc golden, with a non-vacuity check that rejects the blank frame the
-  issue reported. Both phases are mutation-proven (restoring the bug turns them red at maxd 255). Both
-  Vulkan gates are now **default-ON** in `run-windows-render-gates.ps1` (`-SkipVulkan` to opt out on a box
-  without a Vulkan GPU); `-IncludeVulkan` is kept as an accepted no-op.
-- **A corpus-wide, device-free Vulkan structural gate** (`VulkanCorpusStructuralTests`, issue
-  #145). Every `.fx` fixture in the corpus is now a test case: it must either compile to a
-  structurally valid Vulkan container (combined image-samplers at binding ≥ 32, unique binding
-  numbers, uniform buffer at 0, column-major matrices, `main` entry point, no `SPV_GOOGLE_*`
-  extensions) **or fail with a real diagnostic** — never an exception, never a crash. No skip
-  list, plus a guard test that fails if the enumeration ever silently shrinks. Both bugs in
-  issue #145 are caught by it without a GPU.
-- **MonoGame's own test effects vendored into the corpus** (`tests/fixtures/shaders/
-  third-party/MonoGame/`, Ms-PL, tag `v3.8.5`): 17 `.fx` + 2 `.fxh`, including `Instancing.fx`
-  (VS-driven with a `float4x4` vertex input), `VertexTextureEffect.fx`, `ParameterTypes.fx`,
-  `TextureArrayEffect.fx`, and the reference compiler's own `ParserTest` / `PreprocessorTest` /
-  `DefinesTest`. Upstream's per-profile `.mgcb` files state which effects each backend must
-  compile, so the corpus now carries mgfxc's own acceptance set. They found two real defects on
-  the day they landed (anonymous techniques, and the vkd3d comparison-sampler crash).
-- **One-call shader validation: `Validate()` / `ValidateAsync()`** on `IShaderCompiler`
-  (Phase 53). `Console.WriteLine(await compiler.ValidateAsync(fx))` prints everything
-  wrong with a shader — every error and every warning, per target, with source locations
-  and the underlying compiler's complete verbatim text. Defaults to OpenGL + DirectX (the
-  classic "compiles for DirectX, fails for OpenGL" field report in one screen); explicit
-  target sets (FNA, Vulkan) via an overload. Implemented as extension methods over
-  `IShaderCompiler` (not default interface methods — those are only reachable through an
-  interface-typed reference, which would have broken the `var compiler = new
-  EffectCompiler();` pattern the rest of the docs use) over the one real pipeline (never a
-  fork), so what validates is exactly what compiles; works on desktop and the browser/WASM
-  compiler alike, and on any variable typed as the concrete compiler class.
-- **`CompiledShader.Warnings`** — successful compiles now carry their non-fatal
-  diagnostics instead of discarding them: the underlying compiler's own warnings
-  (DXC, d3dcompiler, and vkd3d's message buffer, which was previously thrown away on
-  success) plus the new GL portability findings. The CLI prints them as MGCB-parseable
-  `warning` lines on stderr with exit 0; the ShaderFiddle sample lists them in the
-  diagnostics panel. Warnings also survive a LATER hard failure in the same effect:
-  when an earlier technique/pass compiled (and warned) but a later stage then fails,
-  the failure's `ShaderError[]` carries the fatal error FIRST plus the
-  already-gathered warning-severity entries — nothing is silently dropped, and
-  severity-aware consumers (the CLI formatter, `ValidateAsync`) keep counting only
-  true errors as errors.
+- **One-call shader validation: `Validate()` / `ValidateAsync()`.**
+  `Console.WriteLine(await compiler.ValidateAsync(fx))` prints everything wrong with a
+  shader: every error and every warning, per target, with source locations and the
+  underlying compiler's complete verbatim text. Defaults to OpenGL + DirectX, putting the
+  classic "compiles for DirectX, fails for OpenGL" report on one screen; an overload takes
+  explicit targets (FNA, Vulkan). It runs the real compile pipeline per target, so what
+  validates is exactly what compiles, and works on desktop and in the browser alike.
+- **`CompiledShader.Warnings`** — successful compiles now carry their non-fatal diagnostics
+  instead of discarding them: the underlying compiler's own warnings (DXC, d3dcompiler, and
+  vkd3d's message buffer, previously thrown away on success) plus the new GL portability
+  findings. The CLI prints them as MGCB-parseable `warning` lines on stderr with exit 0, and
+  the ShaderFiddle sample lists them in its diagnostics panel. Warnings raised by an earlier
+  technique also survive a later hard failure in the same effect instead of being dropped.
 - **GL portability lint (`SD0400`–`SD0402`)**: compile-time warnings for constructs that
-  compile fine but are known to fail or misbehave at RUNTIME on narrower GL stacks —
-  where the consumer's only signal used to be MonoGame's generic draw-time
-  `"Shader Compilation Failed"` with the real driver log hidden in `Debug.WriteLine`
-  ("an error on the SpriteBatch call"). `SD0400` (issue
-  [#141](https://github.com/kaltinril/ShadowDusk/issues/141)): a user-written gradient op
-  inside a divergent loop — silently 0.0 on ANGLE Direct3D11, i.e. WebGL in every Windows
-  browser; fxc warns X3553 on the same shape. `SD0401`: a pass with no vertex shader whose
-  pixel shader reads interpolants SpriteBatch's built-in vertex shader never writes
-  (anything beyond COLOR0/TEXCOORD0) — a strict-driver link failure at the first draw.
-  `SD0402` (issue [#138](https://github.com/kaltinril/ShadowDusk/issues/138), diagnostic
-  half): loop shapes outside GLSL ES 1.00 Appendix A that may fail to load on WebGL1 /
-  KNI Reach. Warnings only — the lint never rejects a shader.
+  compile fine but are known to fail or misbehave at *runtime* on narrower GL stacks, where
+  the only previous signal was the engine's generic draw-time "Shader Compilation Failed"
+  with the real driver log hidden in `Debug.WriteLine`.
+  `SD0400` ([#141](https://github.com/kaltinril/ShadowDusk/issues/141)): a gradient op inside
+  a divergent loop, silently 0.0 on ANGLE Direct3D11 (WebGL in every Windows browser).
+  `SD0401`: a pass with no vertex shader whose pixel shader reads interpolants SpriteBatch's
+  built-in vertex shader never writes, a strict-driver link failure at the first draw.
+  `SD0402` ([#138](https://github.com/kaltinril/ShadowDusk/issues/138)): loop shapes outside
+  GLSL ES 1.00 Appendix A that may fail to load on WebGL1 / KNI Reach.
+  Warnings only; the lint never rejects a shader.
+- **The published documentation now includes the [Diagnostic Codes](https://kaltinril.github.io/ShadowDusk/diagnostics.html)
+  registry**, so any code seen in build output can be looked up.
+- **A VS-driven Vulkan render gate with a real reference-compiler oracle**
+  (`validation/VsDrivenVulkan`, issue #145): pixel-diffs ShadowDusk against the `mgfxc 3.8.5`
+  golden on a real MonoGame DesktopVK device at **max Δ 0**, both for a non-identity
+  asymmetric transform and for the upstream `Apos.Shapes` reproducer through its own
+  13-element vertex layout. This is the first Vulkan comparison against the reference
+  compiler; it works because explicit registers keep mgfxc's slot arithmetic in range. Both
+  Vulkan gates are now default-ON in `run-windows-render-gates.ps1`.
+- **A corpus-wide, device-free Vulkan structural gate** plus **MonoGame's own 17 test effects
+  vendored into the corpus** (Ms-PL, tag `v3.8.5`), which carry the reference compiler's
+  acceptance set. Every fixture must now either produce a structurally valid Vulkan container
+  or fail with a real diagnostic, never an exception. They found two real defects on the day
+  they landed.
 
 ### Changed
 
-- **Compile errors are verbatim, everywhere, by default** (Phase 53, from the field
-  reports of a bare "shader compilation failed"). Diagnostic text the reformatters cannot
-  parse into file:line:col entries — DXC SPIR-V codegen/legalization failures,
-  disproportionately the OpenGL leg — used to collapse into a fixed
-  `X0000: "Shader compilation failed"` with the real text hidden in a field no surface
-  printed. The compiler's own words are now the message; the single primary error prefers
-  the first error-severity diagnostic (a leading DXC warning can no longer masquerade as
-  the failure) and always carries the COMPLETE raw compiler output, which the CLI and the
-  ShaderFiddle sample now print by default (no verbose flag to find — there still is
-  none, deliberately).
-- **The OpenGL/Vulkan leg no longer forces `-WX` (warnings-as-errors)** — mgfxc's fxc
-  front end never passed `/WX`, so ShadowDusk's GL leg was *stricter than the reference
-  compiler*: warning-grade HLSL (e.g. an implicit truncation) compiled for DirectX but
-  hard-failed for OpenGL, a confirmed "DX works, GL doesn't" divergence class. Warnings
-  now surface through `CompiledShader.Warnings` instead of failing the compile. Output
-  bytes for previously-compiling shaders are unchanged (pinned by the cross-host
-  byte-identity manifest, which stayed green without regeneration).
+- **Compile errors are verbatim, everywhere, by default.** Diagnostic text that could not be
+  parsed into file:line:col entries (DXC SPIR-V codegen failures, disproportionately the
+  OpenGL leg) used to collapse into a fixed `X0000: "Shader compilation failed"`, with the
+  real text hidden in a field no surface printed. The compiler's own words are now the
+  message; the primary error prefers the first error-severity diagnostic, so a leading
+  warning can no longer masquerade as the failure, and always carries the complete raw
+  output, which the CLI and the ShaderFiddle sample print by default. There is no verbosity
+  flag to find, deliberately.
+- **The OpenGL/Vulkan leg no longer forces `-WX` (warnings-as-errors).** mgfxc's fxc front
+  end never passed `/WX`, so ShadowDusk's GL leg was *stricter than the reference compiler*:
+  warning-grade HLSL such as an implicit truncation compiled for DirectX but hard-failed for
+  OpenGL, a confirmed "DX works, GL doesn't" divergence class. Those warnings now surface
+  through `CompiledShader.Warnings` instead of failing the compile. Output bytes for
+  previously-compiling shaders are unchanged.
 
 ### Fixed
 
 - **Vulkan: matrices were packed row-major, so every VS-driven effect rendered nothing**
   (issue [#145](https://github.com/kaltinril/ShadowDusk/issues/145)). `-Zpr` was applied to
-  every DXC compile, Vulkan included, but MonoGame's runtime uploads a `Matrix` parameter for
-  HLSL's **column-major** default (`EffectParameter.SetValue(Matrix)` transposes on
-  assignment) — so a Vulkan vertex shader read `mul(pos, worldViewProj)` transposed and threw
-  its geometry out of clip space: loads fine, draws without error, renders nothing. mgfxc's
-  Vulkan command line carries no `-Zpr`; now neither does ShadowDusk's. OpenGL keeps the flag
-  (its rewriter compensates, the issue-#70 fix) and DirectX never used DXC. **This is the
-  Vulkan repeat of issue #70**, invisible until now because the Vulkan corpus was PS-only and
-  matrix-free.
+  every DXC compile, Vulkan included, but MonoGame uploads a `Matrix` parameter for HLSL's
+  column-major default, so a Vulkan vertex shader read `mul(pos, worldViewProj)` transposed
+  and threw its geometry out of clip space: loads fine, draws without error, renders nothing.
+  mgfxc's Vulkan command line carries no `-Zpr`; now neither does ShadowDusk's. OpenGL keeps
+  the flag (its rewriter compensates) and DirectX never used DXC.
 - **Vulkan: legacy `tex2D` shaders access-violated inside `GraphicsDevice_DrawIndexed`**
-  (issue #145). The `Texture2D` that FxPreParser synthesizes for a legacy `sampler` was
-  excluded from the register-pairing rewrite, so the image auto-numbered to raw binding 0/1
-  while its sampler shifted to 32/33 — two separate descriptors, and MonoGame's native
-  descriptor writer recovers the texture slot as `binding - 32`, indexing its texture array at
-  **-32**. Pairs are now always co-located, explicit `register(tN)`/`register(sN)` indices are
-  reserved so an auto-assigned pair can never collide with them, and **every** texture
-  dimensionality is covered (`TextureCube`/`Texture3D` were previously unpaired too, the same
-  crash shape for cube/volume shaders).
-- **The FNA writer was stricter than `fxc` about technique names.** `SD0302` rejected an empty technique
-  name, but `d3dcompiler_47` at `fx_2_0` compiles an anonymous technique cleanly (S_OK, only the usual
-  X4717 deprecation warning). It now rejects only a non-ASCII name.
-- **Anonymous techniques (`technique { pass { … } }`) are accepted.** Legal FX that mgfxc
-  compiles — and what most of MonoGame's own test effects use — but ShadowDusk rejected it
-  with `FX0001: Expected technique name`. The container now carries an empty technique name,
-  matching mgfxc 3.8.5 byte-for-byte.
+  (issue #145). The `Texture2D` synthesized for a legacy `sampler` was excluded from the
+  register-pairing rewrite, so the image auto-numbered to binding 0/1 while its sampler
+  shifted to 32/33; MonoGame recovers the texture slot as `binding - 32` and indexed its
+  texture array at -32. Pairs are now always co-located, explicit `register` indices are
+  reserved so an auto-assigned pair cannot collide with them, and every texture
+  dimensionality is covered (`TextureCube`/`Texture3D` had the same crash shape).
+- **Vertex shaders now get the stage-agnostic GL body lowerings** (issue
+  [#137](https://github.com/kaltinril/ShadowDusk/issues/137)). The rewriter returned early
+  for the vertex stage, so a VS using `round()` shipped `roundEven()` (absent from GLSL ES
+  1.00) and a VS with an inlined early-return helper shipped the raw `do { … } while(false)`
+  Appendix A forbids, both silent Effect-load failures on Mesa/WebGL1 with compile exit 0.
+- **Derivative-using fragment shaders ship `#extension GL_OES_standard_derivatives : enable`**
+  as the first line of the emitted GL source, where mgfxc puts it (issue
+  [#139](https://github.com/kaltinril/ShadowDusk/issues/139)). Strict ESSL 1.00 compilers
+  reject derivative builtins without it. The scan covers `fwidth` too.
+- **A `round()` nested inside another `round()`'s argument is now fully lowered** (issue
+  [#140](https://github.com/kaltinril/ShadowDusk/issues/140)); the inner call previously
+  survived as `roundEven()`, the exact load failure the lowering exists to prevent.
+- **Vulkan: a texture/sampler pair could still be handed a binding another texture already
+  held.** Explicit `register` indices were only honoured by the auto-assign path, so a pair
+  that *inherited* its index from an explicitly-registered half could collide with a
+  different pair — two textures on one binding, the invalid descriptor layout that
+  access-violates in MonoGame's descriptor writer. Pair co-location now outranks a
+  disagreeing explicit register (the runtime binds by slot index, not by the source's
+  register number), and explicitly-registered textures are assigned first so the guard cannot
+  be defeated by declaration order. Two textures still share an index when they name the same
+  sampler, which is the same-sampler-in-two-`#if`-branches shape where only one branch
+  survives the compile. No shader in the test corpus changes output: every fixture is
+  byte-identical through the rewrite on all four targets.
+- **Vulkan: `Gather*` calls, `Texture2DArray`/`TextureCubeArray`/`Texture2DMS` declarations,
+  and `SamplerComparisonState` are now seen by the pairing pass.** Being invisible to the
+  scan meant those pairs were left at separate bindings and their explicit registers were
+  never reserved. `Texture2DArray` and `SamplerComparisonState` appear in MonoGame's own
+  vendored test effects (both already carry agreeing registers, so no corpus output changes);
+  the rest are covered defensively.
+- **A `while` loop following any block no longer loses its `SD0402` warning.** The do-while
+  tail check accepted *any* `while` preceded by `}`, so `if (…) { … } while (…) { … }` was
+  misread as a do-while's trailing clause and the finding silently dropped.
+- **The compiler's diagnostic text no longer prints twice.** The "the message already says
+  this" check compared the raw blob and the message without normalizing line endings or
+  blank lines, so it never matched on multi-line diagnostics — exactly the unparseable-text
+  path the verbatim work was built for. Multi-line messages are also indented under their
+  parseable first line now, so compiler-controlled text can no longer start a stderr line and
+  be misread by a build-log parser as a separate diagnostic.
+- **`Validate` reports name the file for line-less findings**, matching the CLI.
+- **Warnings without a line number now name their source file.** The GL portability warnings
+  are derived from emitted GLSL and carry no line mapping, so the CLI printed a bare
+  `warning SD0401: …` with no way to tell which effect produced it in a build compiling many.
+- **Anonymous techniques (`technique { pass { … } }`) are accepted** — legal FX that mgfxc
+  compiles, and what 8 of MonoGame's 17 own test effects use, previously rejected with
+  `FX0001: Expected technique name`. Relatedly, the FNA writer no longer rejects an empty
+  technique name, which `d3dcompiler_47` at `fx_2_0` compiles cleanly.
 - **A native process crash on the FNA path is now a diagnostic.** `SamplerComparisonState`
-  made vkd3d's SM1 lowering hit "Unreachable code reached" and take the whole process down
+  made vkd3d's SM1 lowering hit "Unreachable code reached" and took the whole process down
   with an access violation; it is rejected up front with the new `FX0013` instead.
 - **Vulkan container faithfulness:** vertex shaders now carry the attribute table mgfxc emits
   (recovered from the SPIR-V input semantics), a combined image-sampler sets both the texture
   and sampler slot masks, and the shipped SPIR-V no longer carries `-fspv-reflect`'s
-  `SPV_GOOGLE_*` extensions (mgfxc strips them with a second compile; ShadowDusk simply never
-  requests them, since it reflects from core decorations).
-- **Vertex shaders now get the stage-agnostic GL body lowerings** (issue
-  [#137](https://github.com/kaltinril/ShadowDusk/issues/137)). The rewriter returned early
-  for the vertex stage before Rules 8, 9b, 10, and 11 ran, so a VS using `round()` shipped
-  `roundEven()` (absent from GLSL ES 1.00 and rejected by Mesa's strict versionless-1.10
-  front end) and a VS with an inlined early-return helper shipped the raw
-  `do { … } while(false);` Appendix A forbids — both silent Effect-load failures on
-  Mesa/WebGL1 with compile exit 0. Rule 9a (the #136 unwrap to early `return;`) stays
-  deliberately pixel-only: the posFixup lines are appended at end-of-main and an early
-  return would skip the Y-flip; the Rule-9b for-loop form has a single fall-through exit,
-  so the fixup always runs. VS regression fixtures pin both shapes.
-- **Derivative-using fragment shaders ship `#extension GL_OES_standard_derivatives :
-  enable`** as the first line of the emitted GL source, exactly where mgfxc puts it
-  (issue [#139](https://github.com/kaltinril/ShadowDusk/issues/139)). Strict ESSL 1.00
-  compilers (native GLES 2.0) reject derivative builtins without it. The scan covers
-  `fwidth` too — SPIRV-Cross emits it directly, which mgfxc's two-token dFdx/dFdy scan
-  never had to handle.
-- **A `round()` nested inside another `round()`'s argument is now fully lowered** (issue
-  [#140](https://github.com/kaltinril/ShadowDusk/issues/140)). Rule 8 resumed its scan
-  past the whole replacement, so the inner call survived as `roundEven()` — the exact
-  WebGL1/Mesa load failure Rule 8 exists to prevent, resurfacing for the nested shape.
-  The scan now resumes inside the replacement (the same policy Rule 10 already had).
+  `SPV_GOOGLE_*` extensions.
 
 ## [0.12.1] - 2026-07-21
 

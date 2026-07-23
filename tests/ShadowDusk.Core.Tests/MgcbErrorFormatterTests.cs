@@ -44,6 +44,45 @@ public sealed class MgcbErrorFormatterTests
     }
 
     [Fact]
+    public void Format_FileButNoLine_StillLeadsWithTheFilename()
+    {
+        // The GL portability lint (SD0400-SD0402) reads the EMITTED GLSL, so its findings
+        // have a source file but no line mapping back to the .fx. They must still say WHICH
+        // effect they came from: an MGCB build compiling many effects previously printed a
+        // bare "warning SD0401: ..." with no attribution.
+        var warning = new ShaderError(
+            File: "Bloom.fx",
+            Line: 0,
+            Column: 0,
+            Code: "SD0401",
+            Message: "The pass has no vertex shader, and pixel shader 'MainPS' reads vTexCoord1",
+            Severity: ShaderErrorSeverity.Warning);
+
+        var formatted = MgcbErrorFormatter.Format(warning);
+
+        formatted.Should().Be(
+            "Bloom.fx: warning SD0401: The pass has no vertex shader, "
+            + "and pixel shader 'MainPS' reads vTexCoord1");
+    }
+
+    [Fact]
+    public void Format_FileButNoLine_StripsDirectoryLikeTheLocatedForm()
+    {
+        var warning = new ShaderError(
+            File: "/abs/path/to/Bloom.fx",
+            Line: 0,
+            Column: 0,
+            Code: "SD0400",
+            Message: "gradient in a divergent loop",
+            Severity: ShaderErrorSeverity.Warning);
+
+        var formatted = MgcbErrorFormatter.Format(warning);
+
+        formatted.Should().StartWith("Bloom.fx: warning SD0400:");
+        formatted.Should().NotContain("/abs/path/to/");
+    }
+
+    [Fact]
     public void Format_WarningLevel_UsesWarningKeyword()
     {
         var error = new ShaderError(
@@ -112,6 +151,40 @@ public sealed class MgcbErrorFormatterTests
     // -------------------------------------------------------------------------
     // FormatAll — collection overload
     // -------------------------------------------------------------------------
+
+    [Fact]
+    public void FormatAll_MultiLineMessage_IndentsEveryContinuationLine()
+    {
+        // A verbatim compiler blob becomes the Message, so Message CAN be multi-line. Only
+        // its first line is the parseable diagnostic; the rest must be indented, which is the
+        // contract the CLI reference documents. Without this the continuation lines are
+        // emitted flush-left, indistinguishable from a new diagnostic.
+        var error = new ShaderError(
+            File: "Bloom.fx",
+            Line: 0,
+            Column: 0,
+            Code: "X0000",
+            Message: "error: first problem\nerror: second problem\nerror: third problem");
+
+        var lines = MgcbErrorFormatter.FormatAll([error]).ToList();
+
+        lines.Should().HaveCount(3);
+        lines[0].Should().Be("Bloom.fx: error X0000: error: first problem");
+        lines[1].Should().Be("    error: second problem");
+        lines[2].Should().Be("    error: third problem");
+    }
+
+    [Fact]
+    public void FormatAll_SingleLineMessage_IsNotIndented()
+    {
+        var error = new ShaderError(
+            File: "Bloom.fx", Line: 3, Column: 1, Code: "X0001", Message: "one line");
+
+        var lines = MgcbErrorFormatter.FormatAll([error]).ToList();
+
+        lines.Should().ContainSingle();
+        lines[0].Should().NotStartWith(" ", "the parseable diagnostic must stay flush-left");
+    }
 
     [Fact]
     public void FormatAll_EmptyList_ReturnsEmptyEnumerable()

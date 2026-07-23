@@ -99,6 +99,14 @@ public static class GlslPortabilityAnalyzer
         // an outer one-shot wrapper AND an inner divergent loop, say — must surface
         // ONE warning, not one per enclosing loop. Pick the INNERMOST qualifying body
         // per gradient call for the most specific "emitted GL loop" snippet.
+        // DELIBERATELY OVER-APPROXIMATE: the divergent-exit scan covers the body's FULL text,
+        // including any nested loop's own `break`. So a gradient in an outer loop whose only
+        // `break` belongs to an inner loop is flagged, even though that inner loop reconverges
+        // before the gradient and the outer trip count stays uniform. Erring toward a warning
+        // is the intended trade for SD0400: a missed finding is a shader that silently renders
+        // black gradients in every Windows browser, while a surplus finding is one warning line
+        // on a shader that still compiles and ships. Narrowing this must not be done without a
+        // browser render proof for the shapes it would stop flagging.
         var divergentBodies = new List<(int Start, int End, string Header)>();
         foreach (var body in CollectLoopBodies(glsl))
         {
@@ -298,13 +306,26 @@ public static class GlslPortabilityAnalyzer
         return (init, increment, true);
     }
 
+    // A do-while's trailing `} while (...)` is the ONLY `while` whose preceding `}` closes a
+    // `do { ... }` block. Testing merely that the previous non-whitespace char is '}' also
+    // matches a `while` that follows ANY other block — `if (c) { … } while (i < n) { … }` —
+    // and silently suppressed that loop's SD0402. Match the do-blocks exactly instead.
     private static bool IsDoWhileTail(string glsl, int whileIndex)
     {
-        for (int i = whileIndex - 1; i >= 0; i--)
+        foreach (Match d in DoBlock.Matches(glsl))
         {
-            if (char.IsWhiteSpace(glsl[i]))
+            int open = glsl.IndexOf('{', d.Index);
+            if (open < 0)
                 continue;
-            return glsl[i] == '}';
+            int end = FindMatchingBrace(glsl, open);
+            if (end < 0)
+                continue;
+
+            int i = end + 1;
+            while (i < glsl.Length && char.IsWhiteSpace(glsl[i]))
+                i++;
+            if (i == whileIndex)
+                return true;
         }
         return false;
     }

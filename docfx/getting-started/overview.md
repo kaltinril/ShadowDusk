@@ -20,7 +20,7 @@ ShadowDusk replaces that step with one **portable, faithful pipeline** whose out
 | Shape | Package / Tool | Use |
 |---|---|---|
 | **Library (the product)** | `ShadowDusk.Compiler` — `EffectCompiler : IShaderCompiler` | Add the package, call `CompileAsync(fx)`, get `.mgfx` bytes in-memory. |
-| **CLI tool** | `ShadowDusk.Cli` — `dotnet tool` named `mgfxc` | The same library for build-time use from MGCB, scripts, or a terminal. |
+| **CLI tool** | `ShadowDusk.Cli` — `dotnet tool` named `ShadowDuskCLI` | The same library for build-time use from MGCB, scripts, or a terminal. For MGCB, expose it on `PATH` under the name `mgfxc`. |
 | **WASM library** | `ShadowDusk.Wasm` — `WasmShaderCompiler : IShaderCompiler` | The same pipeline inside .NET WASM for in-browser runtime compilation. |
 
 Every shape implements the same <xref:ShadowDusk.Core.IShaderCompiler> interface and runs the **same faithful pipeline** — no substitute compilers. The in-browser [ShaderFiddle.Web](../samples/shaderfiddle-web.md) is a **sample** of the WASM reach, not a separate product.

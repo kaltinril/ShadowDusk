@@ -31,8 +31,10 @@ ShadowDusk/
 │   ├── ShadowDusk.ImageTests/          # Offscreen-render image regression
 │   ├── ShadowDusk.BrowserTests/        # Headless KNI WebGL render validation (Playwright)
 │   └── fixtures/
-│       ├── shaders/                    # Canonical .fx test shaders (103 .fx total + 5 .fxh headers):
-│       │                               #   60 in the root + examples/ (28) + third-party/Nez/ (15 vendored MIT Nez shaders)
+│       ├── shaders/                    # Canonical .fx test shaders (140 .fx total + 7 .fxh headers):
+│       │                               #   60 in the root + examples/ (42) + third-party/: Nez (15, MIT),
+│       │                               #   MonoGame (17, Ms-PL — the reference compiler's own acceptance set),
+│       │                               #   Gum (3), Apos.Shapes (3)
 │       └── golden/                     # Reference outputs: .mgfx (DirectX_11/, OpenGL/) + fxc fx_2_0 .fxb (FNA/) + byte-identity/
 ├── samples/
 │   ├── ShaderFiddle.Web/               # KNI Blazor-WASM in-browser fiddle (sample of reach)
@@ -42,6 +44,8 @@ ShadowDusk/
 │   ├── dxc/                       # unused — desktop DXC comes from Vortice.Dxc NuGet
 │   ├── spirv-cross/               # libspirv-cross-c-shared (.dll/.so/.dylib)
 │   ├── vkd3d/                     # vkd3d-shader native (cross-platform DXBC backend)
+│   ├── vkd3d-wasm/                # vkd3d-shader compiled to WASM (browser DXBC + FNA export)
+│   ├── plantuml/                  # PlantUML jar for regenerating docs/*.puml diagrams
 │   └── shadertoy2fx/             # ShaderToy experiment SHELLS (out-of-band, NOT in ShadowDusk.slnx):
 │                                  #   the converter LIBRARY + tests were promoted to src/+tests/ (Phase 47);
 │                                  #   what remains is the standalone PoC CLI, the MonoGame Runtime helper,
@@ -49,7 +53,8 @@ ShadowDusk/
 ├── validation/                    # Rung-4 render-proof console drivers (NOT in ShadowDusk.slnx, not run by `dotnet test`):
 │                                  #   GL (VsDriven, StateFidelity, CbufferModel, ReservedWordGl, …), DX (VsDrivenDx,
 │                                  #   DxModernFeatures, …), FNA (FnaValidation), KNI (KniDesktopGL, KniWinFormsDX, KniVsDriven),
-│                                  #   Vulkan (BaselineVulkan, CandidateVulkan + compare_vulkan.py/decode_mgfx_vulkan.py),
+│                                  #   Vulkan (BaselineVulkan, CandidateVulkan, VsDrivenVulkan
+│                                  #     + compare_vulkan.py/decode_mgfx_vulkan.py),
 │                                  #   Android (AndroidGl), v11 (MonoGameV11), browser-ANGLE (AngleDerivativeProbe)
 │                                  #   + the compare_*.py oracles. See docs/validation-matrix.md §6.
 ├── docs/                          # Architecture / reference docs (the-purpose, validation-matrix, references/, HOWTO-WASM-KNI, …)

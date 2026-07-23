@@ -8,7 +8,7 @@ title: ShadowDusk
 
 > **The "XNA-likes."** Throughout these docs, **MonoGame, KNI, and FNA** — the XNA-derived runtimes ShadowDusk targets — are collectively the **XNA-likes**. Classic Microsoft XNA 4.0 itself is **out of scope** (a different, abandoned, Windows-only toolchain). The three share a heritage but **not** one effect format: MonoGame and KNI load the `.mgfx` (MGFX) container, while FNA loads the legacy D3D9 fx_2_0 `.fxb` — so where the output format matters, the docs name the runtime explicitly rather than say "XNA-likes."
 
-> The product is the in-memory `IShaderCompiler` library (the `ShadowDusk.Compiler` NuGet package): add the package and call `CompileAsync(fx)` to get the compiled effect bytes (`.mgfx`, or `.fxb` for FNA) — nothing else to install. The **CLI** (`mgfxc` dotnet tool) is a delivery shape of the same library for build-time use (an **MGCB plugin** is a future scaffold, not yet shipped). The **in-browser shader fiddle is only a sample of reach — not a separate product.**
+> The product is the in-memory `IShaderCompiler` library (the `ShadowDusk.Compiler` NuGet package): add the package and call `CompileAsync(fx)` to get the compiled effect bytes (`.mgfx`, or `.fxb` for FNA) — nothing else to install. The **CLI** (the `ShadowDuskCLI` dotnet tool, which MGCB can call under the name `mgfxc`) is a delivery shape of the same library for build-time use (an **MGCB plugin** is a future scaffold, not yet shipped). The **in-browser shader fiddle is only a sample of reach — not a separate product.**
 
 ## What it does
 
@@ -64,7 +64,7 @@ The table above is the **graphics-backend** axis — the one that decides the ou
 - **Compiling on-device on Android?** [Runtime Compilation on Android](guides/on-device-android.md).
 - **How it works:** the [Architecture](architecture/the-faithful-pipeline.md) section.
 - **API:** the [API Reference](../api/index.md) (generated from the code's own XML doc-comments).
-- **CLI:** the [`mgfxc` CLI Reference](cli/index.md).
+- **CLI:** the [`ShadowDuskCLI` CLI Reference](cli/index.md).
 
 ## In-memory in five lines
 

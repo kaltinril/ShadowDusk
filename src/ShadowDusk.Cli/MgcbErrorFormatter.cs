@@ -20,6 +20,15 @@ internal static class MgcbErrorFormatter
         if (error.Line > 0)
             return $"{filename}({error.Line},{error.Column}-{error.Column}): {severity} {code}: {error.Message}";
 
+        // File-scoped but line-less: still lead with the file. The GL portability lint
+        // (SD0400-SD0402) derives its findings from the EMITTED GLSL, which has no line
+        // mapping back to the .fx, so those warnings carry a file and no line. Without
+        // this branch an MGCB build compiling many effects printed a bare
+        // "warning SD0401: ... pixel shader 'MainPS' ..." with no way to tell WHICH
+        // effect it came from (and 'MainPS' is a near-universal entry-point name).
+        if (!string.IsNullOrEmpty(filename))
+            return $"{filename}: {severity} {code}: {error.Message}";
+
         return $"{severity} {code}: {error.Message}";
     }
 
@@ -27,7 +36,18 @@ internal static class MgcbErrorFormatter
     {
         foreach (var error in errors)
         {
-            yield return Format(error);
+            // Message is deliberately verbatim and CAN be multi-line (an unparseable
+            // compiler blob becomes the message). Emit line 1 as the parseable diagnostic and
+            // indent the rest, matching how the raw block below is presented, so a reader can
+            // see at a glance which lines belong to one diagnostic. Note this is presentation,
+            // not a guarantee: MSBuild's canonical-diagnostic regex is anchored `^\s*`, so
+            // indentation alone does not stop an MSBuild-family parser from picking up a
+            // continuation line that happens to look like a diagnostic.
+            string formatted = Format(error);
+            string[] lines = formatted.Replace("\r\n", "\n").Split('\n');
+            yield return lines[0];
+            for (int i = 1; i < lines.Length; i++)
+                yield return "    " + lines[i];
 
             // The underlying compiler's COMPLETE output, whenever it says more than
             // the one-line summary (constraint 5: the compiler's own words, shown by
