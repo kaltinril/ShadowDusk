@@ -14,6 +14,14 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.13.0] - 2026-07-23
+
+### Added
+
 - **One-call shader validation: `Validate()` / `ValidateAsync()`.**
   `Console.WriteLine(await compiler.ValidateAsync(fx))` prints everything wrong with a
   shader: every error and every warning, per target, with source locations and the
@@ -866,7 +874,8 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.12.1...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.12.1...v0.13.0
 [0.12.1]: https://github.com/kaltinril/ShadowDusk/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.10.0...v0.11.0
