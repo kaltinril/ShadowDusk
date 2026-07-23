@@ -14,6 +14,17 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **Apos.Shapes (Gum's SDF shape renderer) render-proof, OpenGL slice (Phase 51 A3).**
+  `validation/VsDriven -- apos` renders Apos.Shapes on a real MonoGame DesktopGL device and
+  pixel-diffs it against the real `mgfxc` OpenGL golden: max Δ 2/255 (documented
+  transcendental-math GLSL-dialect drift on the shader's OkLab round-trip). Uses
+  `apos-shapes.fx` (the Phase 49 pin), a different vendored revision than the existing DX/
+  Vulkan Apos.Shapes proofs use (`apos-shapes-sm6.fx`) — that revision's real mgfxc GL compile
+  is confirmed to render solid black, a MojoShader/fxc codegen bug unrelated to ShadowDusk (see
+  `tests/fixtures/shaders/third-party/Apos.Shapes/NOTICE.md`). Wired into
+  `run-windows-render-gates.ps1`. Apos.Shapes is now render-proven on DX, Vulkan, and GL; FNA
+  stays permanently excluded (SM3 instruction-slot ceiling).
+
 ### Changed
 
 ### Fixed
