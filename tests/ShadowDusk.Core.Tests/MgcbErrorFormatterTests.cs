@@ -44,6 +44,45 @@ public sealed class MgcbErrorFormatterTests
     }
 
     [Fact]
+    public void Format_FileButNoLine_StillLeadsWithTheFilename()
+    {
+        // The GL portability lint (SD0400-SD0402) reads the EMITTED GLSL, so its findings
+        // have a source file but no line mapping back to the .fx. They must still say WHICH
+        // effect they came from: an MGCB build compiling many effects previously printed a
+        // bare "warning SD0401: ..." with no attribution.
+        var warning = new ShaderError(
+            File: "Bloom.fx",
+            Line: 0,
+            Column: 0,
+            Code: "SD0401",
+            Message: "The pass has no vertex shader, and pixel shader 'MainPS' reads vTexCoord1",
+            Severity: ShaderErrorSeverity.Warning);
+
+        var formatted = MgcbErrorFormatter.Format(warning);
+
+        formatted.Should().Be(
+            "Bloom.fx: warning SD0401: The pass has no vertex shader, "
+            + "and pixel shader 'MainPS' reads vTexCoord1");
+    }
+
+    [Fact]
+    public void Format_FileButNoLine_StripsDirectoryLikeTheLocatedForm()
+    {
+        var warning = new ShaderError(
+            File: "/abs/path/to/Bloom.fx",
+            Line: 0,
+            Column: 0,
+            Code: "SD0400",
+            Message: "gradient in a divergent loop",
+            Severity: ShaderErrorSeverity.Warning);
+
+        var formatted = MgcbErrorFormatter.Format(warning);
+
+        formatted.Should().StartWith("Bloom.fx: warning SD0400:");
+        formatted.Should().NotContain("/abs/path/to/");
+    }
+
+    [Fact]
     public void Format_WarningLevel_UsesWarningKeyword()
     {
         var error = new ShaderError(
