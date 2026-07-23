@@ -63,10 +63,13 @@ self-contained CLI binaries to a GitHub Release. The human runbook this automate
    MUST render them locally on a Windows+GPU box and confirm they still match the reference
    compiler. Run:
    `./validation/run-windows-render-gates.ps1` (DX corpus + DX-modern/VTF + KNI-DX + KNI-GL
-   desktop + KNI-GL VS-driven + the ANGLE derivative probe),
+   desktop + KNI-GL VS-driven + the ANGLE derivative probe + BOTH Vulkan gates: the PS corpus
+   and the VS-driven/Apos.Shapes pixel diff vs the mgfxc goldens), and
    `./validation/run-windows-render-gates.ps1 -IncludeFna` if this release could affect the FNA
-   target, and `-IncludeVulkan` if it could affect the Vulkan target (needs a Vulkan-capable
-   GPU). **Stop on a non-zero exit** (a render diverged from `mgfxc`/`fxc` — do not release).
+   target. The Vulkan gates are DEFAULT-ON as of issue #145 and need a Vulkan-capable GPU;
+   `-SkipVulkan` opts out and must only be used on a box without one (`-IncludeVulkan` is still
+   accepted as a no-op). **Stop on a non-zero exit** (a render diverged from `mgfxc`/`fxc` — do
+   not release).
    The in-process OpenGL render gates already run in CI (`validation-render.yml`), so they are
    covered by the CI wait at step 10; this step is the DX/FNA/KNI-DX/KNI-GL/ANGLE gap CI
    cannot fill. See
