@@ -26,6 +26,16 @@ internal static class SpvcCompilerOption
     public const uint GlslVersion          = 0x2000008u;
     public const uint GlslEs               = 0x2000009u;
     public const uint GlslVulkanSemantics  = 0x200000Au;
+
+    /// <summary>
+    /// <c>SPVC_COMPILER_OPTION_RELAX_NAN_CHECKS</c> (issue #149). Value confirmed against
+    /// upstream KhronosGroup/SPIRV-Cross <c>spirv_cross_c.h</c>:
+    /// <c>SPVC_COMPILER_OPTION_RELAX_NAN_CHECKS = 78 | SPVC_COMPILER_OPTION_COMMON_BIT</c>
+    /// (<c>COMMON_BIT = 0x1000000</c>), i.e. <c>0x100004E</c>. It is a COMMON-bit option (not
+    /// GLSL-bit) even though it only affects the GLSL backend's NaN-aware min/max/clamp
+    /// lowering.
+    /// </summary>
+    public const uint RelaxNanChecks       = 0x100004Eu;
 }
 
 internal static class SpvcNative

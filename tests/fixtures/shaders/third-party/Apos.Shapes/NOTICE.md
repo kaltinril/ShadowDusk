@@ -149,3 +149,19 @@ precision drift between SPIRV-Cross and MojoShader on the shader's `RgbToOklab`/
 round-trip (cube roots + fractional `pow()`), not a structural mismatch. GL, DX, and Vulkan are
 all now render-proven for Apos.Shapes; FNA stays permanently excluded (see the compile-status
 paragraph above).
+
+**A separate, real GL portability gap surfaced by this same render-proof, FIXED same day: issue
+[#149](https://github.com/kaltinril/ShadowDusk/issues/149).**
+ShadowDusk's GL candidate for `apos-shapes.fx` — this exact fixture — contained 28 `isnan(`
+occurrences and no `#version` directive (the real mgfxc golden has zero of either). `isnan`
+needs GLSL 1.30+; this repo's versionless GL output is otherwise correct for the legacy
+MonoGame GL runtime, but it meant the desktop NVIDIA/AMD/Intel drivers this render-proof runs
+on tolerated `isnan` leniently while Apple's strict GL compiler rejected it outright — real
+breakage for Apos.Shapes 0.7.6 on macOS, reported independently by Apostolique. This never
+invalidated the maxd 2/255 pixel-diff above (a real result on this repo's established GL
+evidence ladder); it was a pre-existing GL-backend gap (any shader using `min`/`max`/`clamp`),
+not something this render-proof could have caught on this hardware, and not specific to
+Apos.Shapes. **Fixed** by defaulting SPIRV-Cross's `RELAX_NAN_CHECKS` compiler option on for
+the whole OpenGL profile: `apos-shapes.fx` now emits zero `isnan(` (was 28), with zero byte
+changes anywhere else in the corpus and no change to this render-proof's maxd 2/255 result.
+Full writeup: `plan/DONE/ISSUE-149-gl-isnan-versionless-glsl.md`.

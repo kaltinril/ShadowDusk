@@ -106,6 +106,21 @@ public sealed class SpirvCrossGlslTranspiler : ISpirvToGlslTranspiler
                 != SpvcResult.Success)
                 return Result<GlslSource, ShaderError>.Fail(GetLastError(ctx, "set_option GlslVulkanSemantics"));
 
+            // Issue #149: DXC compiles HLSL min/max/clamp to NaN-aware SPIR-V (NMin/NMax/
+            // NClamp). SPIRV-Cross's stock lowering for those is an isnan(...)-ternary, which
+            // needs GLSL 1.30+ — but MonoGameGlslRewriter (Rule 1, below) unconditionally
+            // strips the #version line to match mgfxc's legacy versionless GL dialect, so
+            // isnan() ends up in GLSL that cannot declare the version it needs. Desktop
+            // NVIDIA/AMD/Intel drivers accept it anyway; Apple's strict GLSL compiler does not,
+            // so every GL shader using min/max/clamp failed to load on macOS. RelaxNanChecks
+            // makes SPIRV-Cross emit plain min/max/clamp instead — matching mgfxc's own output
+            // (its D3D9-era pipeline never produces NaN-aware ops), so this is the faithful
+            // choice, not a relaxation of correctness: a real shader never legitimately depends
+            // on min/max/clamp's NaN tie-break, so the two are behaviorally identical here.
+            if (SpvcNative.spvc_compiler_options_set_bool(options, SpvcCompilerOption.RelaxNanChecks, true)
+                != SpvcResult.Success)
+                return Result<GlslSource, ShaderError>.Fail(GetLastError(ctx, "set_option RelaxNanChecks"));
+
             if (SpvcNative.spvc_compiler_install_compiler_options(compiler, options)
                 != SpvcResult.Success)
                 return Result<GlslSource, ShaderError>.Fail(GetLastError(ctx, "install_compiler_options"));
