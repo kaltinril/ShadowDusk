@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Issue #145 - VS-DRIVEN Vulkan render gate. The Vulkan proof before this was
+    validation/CandidateVulkan: 10 PS-only, matrix-free shaders, so no ShadowDusk-produced
+    VERTEX shader had ever rendered on a real DesktopVK device. That gap is exactly why the
+    row-major matrix bug (every VS-driven Vulkan effect rendered nothing) shipped unnoticed.
+
+    Same DesktopVK package set as BaselineVulkan/CandidateVulkan.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RootNamespace>ShadowDusk.Validation.VsDrivenVulkan</RootNamespace>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <MonoGamePlatform>DesktopVK</MonoGamePlatform>
+  </PropertyGroup>
+
+  <ItemGroup Label="MonoGame 3.8.5 stable DesktopVK">
+    <PackageReference Include="MonoGame.Framework.Native" Version="3.8.5" />
+    <PackageReference Include="MonoGame.Runtime.Windows.Vulkan" Version="3.8.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Shared\*.cs" />
+  </ItemGroup>
+
+</Project>

@@ -81,3 +81,31 @@ pixel-equivalence claim to `mgfxc`/`fxc`. There is no committed golden for this 
 (yet); a rung-4 render-proof against the `mgfxc` oracle is a documented Phase 49 stretch
 (it needs a bespoke vertex-buffer render driver because Apos.Shapes packs its shape
 parameters into the vertex `TEXCOORD` attributes).
+
+## `apos-shapes-sm6.fx` — the issue #145 reproducer (added 2026-07-22)
+
+A THIRD revision of the same upstream file, vendored alongside the other two rather than
+replacing them, because each pins a distinct regression shape:
+
+| File | Upstream commit | What it pins |
+|---|---|---|
+| `apos-shapes.fx` | `3fb73b8d` | the LEGACY `sampler` / `tex2D` revision — the shape that access-violated on Vulkan (issue #145 bug 2) |
+| `apos-shapes-aa.fx` | `d507a734` | the derivative-AA revision — the ANGLE-D3D11 gradient pin (issue #136) |
+| `apos-shapes-sm6.fx` | `ea38c6d8` | the CURRENT upstream revision with the `#elif SM6` branch — the exact shader from issue #145 |
+
+`apos-shapes-sm6.fx` is what the reporter compiled: `vs_6_0`/`ps_6_0`, three
+`Texture2D`/`SamplerState` pairs at explicit registers, wrapper functions around `.Sample`, a
+13-element vertex input, a `float4x4 view_projection`, the `FixSnorm` workaround for MonoGame's
+SSCALED vertex-format bug, plus `ddx`/`ddy` footprints, Newton loops, dash SDFs and Oklab
+gradients.
+
+**Compile status** (measured 2026-07-22): OpenGL OK, DirectX_11 OK, Vulkan OK. FNA fails with
+`E5017` — the dense pixel shader exceeds what vkd3d can lower to `fx_2_0`/SM3, the same honest
+shader-model ceiling the other two Apos revisions hit (Apos.Shapes ships for MonoGame GL/DX/VK,
+not FNA).
+
+**Render-proven on Vulkan.** `validation/VsDrivenVulkan -- apos` renders it on a real MonoGame
+3.8.5 DesktopVK device through its own 13-element vertex layout, with a non-identity asymmetric
+`view_projection`, and pixel-diffs ShadowDusk against the checked-in `mgfxc 3.8.5` golden
+(`tests/fixtures/golden/Vulkan/apos-shapes-sm6.mgfx`): **maxd 0**, with a non-vacuity check that
+rejects the blank frame the issue reported. Restoring the `-Zpr` bug turns it red at maxd 255.

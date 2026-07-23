@@ -24,7 +24,7 @@
   - Structurally **clean**: **65**
   - **Divergent** (>=1 level): **17**
   - Compile/parse **failures**: **10**
-- Non-golden census cells: **152** (**125** compile, **27** fail with a code)
+- Non-golden census cells: **184** (**138** compile, **46** fail with a code)
 
 ## Golden-backed fixtures — per-level structural verdict
 
@@ -326,6 +326,8 @@ is a CORRECT result, not a defect.
 | textured_vs_ps.fx | OpenGL | FAIL | SD0010 | Effect source contains no techniques |
 | third-party/Apos.Shapes/apos-shapes-aa.fx | DirectX_11 | PASS |  |  |
 | third-party/Apos.Shapes/apos-shapes-aa.fx | OpenGL | PASS |  |  |
+| third-party/Apos.Shapes/apos-shapes-sm6.fx | DirectX_11 | PASS |  |  |
+| third-party/Apos.Shapes/apos-shapes-sm6.fx | OpenGL | PASS |  |  |
 | third-party/Apos.Shapes/apos-shapes.fx | DirectX_11 | PASS |  |  |
 | third-party/Apos.Shapes/apos-shapes.fx | OpenGL | PASS |  |  |
 | third-party/Gum/FnaSample-Shader.fx | DirectX_11 | FAIL | X0000 | C:\git\ShadowDusk\tests\ShadowDusk.Integration.Tests\bin\Debug\net8.0\fixtures\shaders\third-party/Gum/FnaSample-Shader.fx:117:24: E5005: Identifier "pointTextu... |
@@ -334,6 +336,36 @@ is a CORRECT result, not a defect.
 | third-party/Gum/KniInCode-Shader.fx | OpenGL | FAIL | X0000 | use of undeclared identifier 'CurrentTexture' |
 | third-party/Gum/MonoGameInCode-Grayscale.fx | DirectX_11 | PASS |  |  |
 | third-party/Gum/MonoGameInCode-Grayscale.fx | OpenGL | PASS |  |  |
+| third-party/MonoGame/Bevels.fx | DirectX_11 | PASS |  |  |
+| third-party/MonoGame/Bevels.fx | OpenGL | FAIL | X0000 | unknown type name 'sampler2D'; did you mean 'sampler'? |
+| third-party/MonoGame/BlackOut.fx | DirectX_11 | PASS |  |  |
+| third-party/MonoGame/BlackOut.fx | OpenGL | FAIL | X0000 | unknown type name 'sampler2D'; did you mean 'sampler'? |
+| third-party/MonoGame/ColorFlip.fx | DirectX_11 | PASS |  |  |
+| third-party/MonoGame/ColorFlip.fx | OpenGL | FAIL | X0000 | unknown type name 'sampler2D'; did you mean 'sampler'? |
+| third-party/MonoGame/CustomSpriteBatchEffect.fx | DirectX_11 | PASS |  |  |
+| third-party/MonoGame/CustomSpriteBatchEffect.fx | OpenGL | FAIL | X0000 | unknown type name 'sampler2D'; did you mean 'sampler'? |
+| third-party/MonoGame/CustomSpriteBatchEffectComparisonSampler.fx | DirectX_11 | PASS |  |  |
+| third-party/MonoGame/CustomSpriteBatchEffectComparisonSampler.fx | OpenGL | FAIL | X0000 | invalid semantic 'COLOR' for ps 6.0 |
+| third-party/MonoGame/DefinesTest.fx | DirectX_11 | FAIL | X0000 | C:\git\ShadowDusk\tests\ShadowDusk.Integration.Tests\bin\Debug\net8.0\fixtures\shaders\third-party/MonoGame/DefinesTest.fx:84:1: E5030: Unknown modifier "Bar". ... |
+| third-party/MonoGame/DefinesTest.fx | OpenGL | FAIL | X0000 | HLSL requires a type specifier for all declarations |
+| third-party/MonoGame/HighContrast.fx | DirectX_11 | PASS |  |  |
+| third-party/MonoGame/HighContrast.fx | OpenGL | FAIL | X0000 | unknown type name 'sampler2D'; did you mean 'sampler'? |
+| third-party/MonoGame/Instancing.fx | DirectX_11 | PASS |  |  |
+| third-party/MonoGame/Instancing.fx | OpenGL | FAIL | X0000 | invalid semantic 'COLOR' for ps 6.0 |
+| third-party/MonoGame/NoEffect.fx | DirectX_11 | PASS |  |  |
+| third-party/MonoGame/NoEffect.fx | OpenGL | FAIL | X0000 | unknown type name 'sampler2D'; did you mean 'sampler'? |
+| third-party/MonoGame/ParameterTypes.fx | DirectX_11 | FAIL | X0000 | C:\git\ShadowDusk\tests\ShadowDusk.Integration.Tests\bin\Debug\net8.0\fixtures\shaders\third-party/MonoGame/ParameterTypes.fx:138:22: E5017: Aborting due to not... |
+| third-party/MonoGame/ParameterTypes.fx | OpenGL | FAIL | SD0010 | Effect source contains no techniques |
+| third-party/MonoGame/ParserTest.fx | DirectX_11 | PASS |  |  |
+| third-party/MonoGame/ParserTest.fx | OpenGL | FAIL | X0000 | invalid semantic 'COLOR' for ps 6.0 |
+| third-party/MonoGame/PreprocessorTest.fx | DirectX_11 | FAIL | X0000 | C:\git\ShadowDusk\tests\ShadowDusk.Integration.Tests\bin\Debug\net8.0\fixtures\shaders\third-party/MonoGame/PreprocessorTest.fx:59:5: E4000: syntax error, unexp... |
+| third-party/MonoGame/PreprocessorTest.fx | OpenGL | FAIL | X0000 | token is not a valid binary operator in a preprocessor subexpression |
+| third-party/MonoGame/RainbowH.fx | DirectX_11 | PASS |  |  |
+| third-party/MonoGame/RainbowH.fx | OpenGL | FAIL | X0000 | unknown type name 'sampler2D'; did you mean 'sampler'? |
+| third-party/MonoGame/TextureArrayEffect.fx | DirectX_11 | PASS |  |  |
+| third-party/MonoGame/TextureArrayEffect.fx | OpenGL | FAIL | SD0210 | Unsupported sampler type for the MonoGame/KNI GL target: 'sampler2DArray'. The MojoShader-dialect rewrite models 'sampler2D', 'samplerCube' and 'sampler3D'; a '... |
+| third-party/MonoGame/VertexTextureEffect.fx | DirectX_11 | FAIL | FX0012 | The legacy D3D9 sampling intrinsic 'tex2Dlod' is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot r... |
+| third-party/MonoGame/VertexTextureEffect.fx | OpenGL | FAIL | FX0012 | The legacy D3D9 sampling intrinsic 'tex2Dlod' is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot r... |
 | third-party/Nez/Bevels.fx | DirectX_11 | PASS |  |  |
 | third-party/Nez/Bevels.fx | OpenGL | PASS |  |  |
 | third-party/Nez/BloomCombine.fx | DirectX_11 | PASS |  |  |
@@ -367,12 +399,12 @@ is a CORRECT result, not a defect.
 
 ### Census failure codes
 
-- `SD0010`: 7 cell(s) — minimal_vs_ps.fx [DirectX_11], minimal_vs_ps.fx [OpenGL], passthrough_vs.fx [DirectX_11], passthrough_vs.fx [OpenGL], textured_vs_ps.fx [DirectX_11], textured_vs_ps.fx [OpenGL], third-party/Gum/FnaSample-Shader.fx [OpenGL]
+- `X0000`: 18 cell(s) — third-party/Gum/FnaSample-Shader.fx [DirectX_11], third-party/Gum/KniInCode-Shader.fx [DirectX_11], third-party/Gum/KniInCode-Shader.fx [OpenGL], third-party/MonoGame/Bevels.fx [OpenGL], third-party/MonoGame/BlackOut.fx [OpenGL], third-party/MonoGame/ColorFlip.fx [OpenGL], third-party/MonoGame/CustomSpriteBatchEffect.fx [OpenGL], third-party/MonoGame/CustomSpriteBatchEffectComparisonSampler.fx [OpenGL], third-party/MonoGame/DefinesTest.fx [DirectX_11], third-party/MonoGame/DefinesTest.fx [OpenGL], third-party/MonoGame/HighContrast.fx [OpenGL], third-party/MonoGame/Instancing.fx [OpenGL], third-party/MonoGame/NoEffect.fx [OpenGL], third-party/MonoGame/ParameterTypes.fx [DirectX_11], third-party/MonoGame/ParserTest.fx [OpenGL], third-party/MonoGame/PreprocessorTest.fx [DirectX_11], third-party/MonoGame/PreprocessorTest.fx [OpenGL], third-party/MonoGame/RainbowH.fx [OpenGL]
+- `SD0010`: 8 cell(s) — minimal_vs_ps.fx [DirectX_11], minimal_vs_ps.fx [OpenGL], passthrough_vs.fx [DirectX_11], passthrough_vs.fx [OpenGL], textured_vs_ps.fx [DirectX_11], textured_vs_ps.fx [OpenGL], third-party/Gum/FnaSample-Shader.fx [OpenGL], third-party/MonoGame/ParameterTypes.fx [OpenGL]
 - `SD0013`: 6 cell(s) — examples/ExProfileBogusLiteral.fx [DirectX_11], examples/ExProfileBogusLiteral.fx [OpenGL], examples/ExProfileTypo.fx [DirectX_11], examples/ExProfileTypo.fx [OpenGL], examples/ExProfileUndefinedMacro.fx [DirectX_11], examples/ExProfileUndefinedMacro.fx [OpenGL]
-- `SD0210`: 4 cell(s) — examples/ExIntUniformMember.fx [OpenGL], examples/ExMat3UniformMember.fx [OpenGL], examples/ExVsTextureFetch.fx [OpenGL], third-party/Nez/Crosshatch.fx [OpenGL]
-- `X0000`: 3 cell(s) — third-party/Gum/FnaSample-Shader.fx [DirectX_11], third-party/Gum/KniInCode-Shader.fx [DirectX_11], third-party/Gum/KniInCode-Shader.fx [OpenGL]
+- `SD0210`: 5 cell(s) — examples/ExIntUniformMember.fx [OpenGL], examples/ExMat3UniformMember.fx [OpenGL], examples/ExVsTextureFetch.fx [OpenGL], third-party/MonoGame/TextureArrayEffect.fx [OpenGL], third-party/Nez/Crosshatch.fx [OpenGL]
+- `FX0012`: 4 cell(s) — third-party/MonoGame/VertexTextureEffect.fx [DirectX_11], third-party/MonoGame/VertexTextureEffect.fx [OpenGL], third-party/Nez/PaletteCycler.fx [DirectX_11], third-party/Nez/PaletteCycler.fx [OpenGL]
 - `SD0001`: 2 cell(s) — MinimalWithInclude.fx [DirectX_11], MinimalWithInclude.fx [OpenGL]
 - `SD0014`: 2 cell(s) — examples/ExProfileStageMismatch.fx [DirectX_11], examples/ExProfileStageMismatch.fx [OpenGL]
-- `FX0012`: 2 cell(s) — third-party/Nez/PaletteCycler.fx [DirectX_11], third-party/Nez/PaletteCycler.fx [OpenGL]
 - `SD0100`: 1 cell(s) — third-party/Nez/Reflection.fx [OpenGL]
 

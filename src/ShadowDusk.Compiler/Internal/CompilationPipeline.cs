@@ -1780,7 +1780,16 @@ internal sealed class CompilationPipeline
             ReadOnlyMemory<byte> dxilBlob  = platform == PlatformTarget.DirectX ? blob : default;
             ReadOnlyMemory<byte> spirvBlob = platform != PlatformTarget.DirectX ? blob : default;
 
-            return (Result<byte[], ShaderError>.Ok(blob.ToArray()), dxilBlob, spirvBlob, noAttributes, noUniforms, result.Value.Warnings);
+            // Vulkan vertex shaders carry an attribute table in the .mgfx shader record, built
+            // from the SPIR-V input semantics exactly as mgfxc builds it (issue #145, S1). It is
+            // inert on MonoGame 3.8.5's native backend — which lays out vertex inputs positionally
+            // from the VertexDeclaration — but the reference compiler emits it, so we do too.
+            IReadOnlyList<MgfxVertexAttributeInfo> vkAttributes =
+                platform == PlatformTarget.Vulkan && stage == ShaderStage.Vertex
+                    ? SpirvVertexInputReflector.Read(spirvBlob)
+                    : noAttributes;
+
+            return (Result<byte[], ShaderError>.Ok(blob.ToArray()), dxilBlob, spirvBlob, vkAttributes, noUniforms, result.Value.Warnings);
         }
     }
 

@@ -136,4 +136,190 @@ public sealed class VulkanEffectCompilerTests
         result.IsFailure.Should().BeTrue("Vulkan does not support more than one constant buffer per shader stage");
         result.Error.Select(e => e.Code).Should().Contain("SD0026");
     }
+
+    // ── Issue #145 regressions ────────────────────────────────────────────────
+    //
+    // apos-shapes.fx on real MonoGame 3.8.5 DesktopVK: the SM6 branch loaded and drew but
+    // rendered nothing, and the legacy tex2D branch access-violated inside native
+    // GraphicsDevice_DrawIndexed. Both were ShadowDusk bugs, both invisible to a PS-only,
+    // matrix-free, modern-syntax-only Vulkan corpus. Each test below fails on the pre-fix
+    // compiler.
+
+    private const string MatrixVertexShader = """
+        float4x4 view_projection;
+
+        struct VOut { float4 Pos : SV_POSITION; float2 UV : TEXCOORD0; };
+
+        VOut VS(float4 pos : POSITION0, float2 uv : TEXCOORD0)
+        {
+            VOut o;
+            o.Pos = mul(pos, view_projection);
+            o.UV = uv;
+            return o;
+        }
+
+        float4 PS(VOut i) : SV_Target0 { return float4(i.UV, 0, 1); }
+
+        technique T
+        {
+            pass P { VertexShader = compile vs_6_0 VS(); PixelShader = compile ps_6_0 PS(); }
+        }
+        """;
+
+    [Fact]
+    public async Task Compile_Vulkan_PacksMatricesColumnMajorLikeMgfxc()
+    {
+        // BUG 1. -Zpr (row-major) was applied to every DXC compile, Vulkan included, but
+        // MonoGame uploads a Matrix parameter for HLSL's COLUMN-major default
+        // (EffectParameter.SetValue(Matrix) transposes on assignment; ConstantBuffer
+        // .SetParameter's own comment says "HLSL assumes matrices are column-major … TODO:
+        // HLSL can be told to use row-major. We should handle that too."). So every matrix
+        // arrived transposed and a VS-driven effect threw its geometry out of clip space.
+        // mgfxc's Vulkan command line carries no -Zpr; the shipped SPIR-V must agree.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+        var result = await new EffectCompiler().CompileAsync(MatrixVertexShader, new CompilerOptions
+        {
+            Target = PlatformTarget.Vulkan,
+            SourceFileName = "VulkanMatrixVs.fx",
+        }, cts.Token);
+
+        result.IsSuccess.Should().BeTrue(
+            result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+
+        var reader = MgfxBlobReader.Parse(result.Value.Data);
+        var vertexShader = reader.Shaders.Single(s => s.IsVertex);
+        byte[] spirv = VulkanShaderCodeReader.Parse(vertexShader.Bytecode).Spirv;
+
+        SpirvDecorationScanner.AllMatrixMembersAreSpirvRowMajor(spirv).Should().BeTrue(
+            "DXC emits the SPIR-V RowMajor decoration for an HLSL COLUMN-major matrix, which is " +
+            "what mgfxc ships and what MonoGame's runtime uploads for; a ColMajor decoration " +
+            "means -Zpr leaked back in and every matrix will be read transposed");
+    }
+
+    [Fact]
+    public async Task Compile_Vulkan_ShipsNoGoogleReflectionExtensions()
+    {
+        // DIVERGENCE S3. mgfxc compiles twice so the SHIPPED module has no -fspv-reflect
+        // Google extensions; ShadowDusk reflects from core decorations only, so it simply
+        // never requests them.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+        var result = await new EffectCompiler().CompileAsync(MatrixVertexShader, new CompilerOptions
+        {
+            Target = PlatformTarget.Vulkan,
+            SourceFileName = "VulkanNoGoogleExt.fx",
+        }, cts.Token);
+
+        result.IsSuccess.Should().BeTrue();
+
+        var reader = MgfxBlobReader.Parse(result.Value.Data);
+        foreach (var shader in reader.Shaders)
+        {
+            byte[] spirv = VulkanShaderCodeReader.Parse(shader.Bytecode).Spirv;
+
+            SpirvDecorationScanner.Extensions(spirv).Should().NotContain(
+                e => e.StartsWith("SPV_GOOGLE", StringComparison.Ordinal),
+                "the shipped module must match mgfxc's reflect-free second compile");
+            SpirvDecorationScanner.EntryPointName(spirv).Should().Be("main",
+                "MonoGame's native Vulkan pipeline creation expects the entry point to be named main");
+        }
+    }
+
+    [Fact]
+    public async Task Compile_Vulkan_VertexShader_EmitsTheAttributeTable()
+    {
+        // DIVERGENCE S1. mgfxc emits one attribute entry per VS input location (usage +
+        // semantic index); ShadowDusk emitted an empty table.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+        var result = await new EffectCompiler().CompileAsync(MatrixVertexShader, new CompilerOptions
+        {
+            Target = PlatformTarget.Vulkan,
+            SourceFileName = "VulkanAttributes.fx",
+        }, cts.Token);
+
+        result.IsSuccess.Should().BeTrue();
+
+        var reader = MgfxBlobReader.Parse(result.Value.Data);
+        var vertexShader = reader.Shaders.Single(s => s.IsVertex);
+
+        // POSITION0 -> usage 0 index 0, TEXCOORD0 -> usage 2 index 0, ordered by location.
+        vertexShader.Attributes.Should().HaveCount(2);
+        vertexShader.Attributes[0].Usage.Should().Be(0);
+        vertexShader.Attributes[0].Index.Should().Be(0);
+        vertexShader.Attributes[1].Usage.Should().Be(2);
+        vertexShader.Attributes[1].Index.Should().Be(0);
+
+        reader.Shaders.Single(s => !s.IsVertex).Attributes.Should().BeEmpty(
+            "only vertex shaders carry an attribute table");
+    }
+
+    [Fact]
+    public async Task Compile_Vulkan_LegacyTex2DSource_EmitsOnlyCombinedImageSamplers()
+    {
+        // BUG 2 — the native access violation. FxPreParser converts legacy sampler/tex2D
+        // source to modern syntax, synthesizing "<sampler>_SDTexture" textures. Those were
+        // excluded from the register-pairing rewrite, so the image auto-numbered to raw
+        // binding 0/1 while its sampler shifted to 32/33 — two separate descriptors, and
+        // MonoGame's MGVK_UpdateDescriptors turns a binding-0 image into
+        // device->textures[stage][0 - 32] (plus an unhandled VK_DESCRIPTOR_TYPE_SAMPLER
+        // branch). Every legacy-syntax shader crashed on Vulkan.
+        const string legacy = """
+            float4x4 view_projection;
+            sampler TextureSampler : register(s0);
+            sampler FontSampler;
+
+            struct VOut { float4 Pos : SV_POSITION; float2 UV : TEXCOORD0; };
+
+            VOut VS(float4 pos : POSITION0, float2 uv : TEXCOORD0)
+            {
+                VOut o;
+                o.Pos = mul(pos, view_projection);
+                o.UV = uv;
+                return o;
+            }
+
+            float4 PS(VOut i) : SV_Target0
+            {
+                return tex2D(TextureSampler, i.UV) + tex2D(FontSampler, i.UV);
+            }
+
+            technique T
+            {
+                pass P { VertexShader = compile vs_6_0 VS(); PixelShader = compile ps_6_0 PS(); }
+            }
+            """;
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+        var result = await new EffectCompiler().CompileAsync(legacy, new CompilerOptions
+        {
+            Target = PlatformTarget.Vulkan,
+            SourceFileName = "VulkanLegacySamplers.fx",
+        }, cts.Token);
+
+        result.IsSuccess.Should().BeTrue(
+            result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+
+        var reader = MgfxBlobReader.Parse(result.Value.Data);
+        var vk = VulkanShaderCodeReader.Parse(reader.Shaders.Single(s => !s.IsVertex).Bytecode);
+
+        vk.Bindings.Should().HaveCount(2, "two texture/sampler pairs, one combined descriptor each");
+
+        foreach (var binding in vk.Bindings)
+        {
+            binding.DescriptorType.Should().Be(1,
+                "VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER — a separate SAMPLED_IMAGE/SAMPLER pair " +
+                "hits an unhandled branch in MonoGame's native descriptor writer");
+            binding.Binding.Should().BeGreaterThanOrEqualTo(32,
+                "the runtime recovers the texture slot as (binding - 32); anything below 32 indexes " +
+                "the texture array out of bounds");
+        }
+
+        vk.Bindings.Select(b => b.Binding).Should().OnlyHaveUniqueItems(
+            "two descriptor-set-layout bindings at the same binding number is invalid");
+        vk.SamplerSlots.Should().Be(vk.TextureSlots,
+            "a combined descriptor occupies both the texture and sampler slot masks, as mgfxc writes them");
+    }
 }

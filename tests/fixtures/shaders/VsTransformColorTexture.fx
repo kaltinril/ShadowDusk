@@ -16,6 +16,9 @@
 #if OPENGL
 #define VS_SHADERMODEL vs_3_0
 #define PS_SHADERMODEL ps_3_0
+#elif VULKAN
+#define VS_SHADERMODEL vs_6_0
+#define PS_SHADERMODEL ps_6_0
 #else
 #define VS_SHADERMODEL vs_4_0_level_9_1
 #define PS_SHADERMODEL ps_4_0_level_9_1
@@ -24,11 +27,28 @@
 float4x4 WorldViewProjection;
 float4   Tint;
 
+// Vulkan compiles at SM6 through DXC, which dropped the FX9 sampler_state/tex2D forms.
+// ShadowDusk's pre-parser CAN convert them, but the reference compiler (mgfxc) cannot —
+// so the modern branch is written out explicitly here, exactly as the PS-only corpus
+// fixtures do. That is what lets BOTH compilers build this shader for Vulkan, which is
+// what makes a reference-compiler pixel A/B possible on this target (issue #145).
+//
+// The MATCHING EXPLICIT REGISTERS are load-bearing for the reference side: mgfxc 3.8.5
+// computes a Vulkan texture slot as (rawBinding - 32) and only -fvk-t-shift/-fvk-s-shift
+// shifted (i.e. explicitly annotated) resources come out ≥ 32. An auto-numbered pair
+// underflows to 224/225 and its own container is then unloadable — the upstream bug that
+// blocked a Vulkan baseline render in Phase 32. With explicit registers, mgfxc's output
+// loads and renders, so this fixture can be diffed against it.
+#if VULKAN
+Texture2D    SpriteTexture        : register(t0);
+SamplerState SpriteTextureSampler : register(s0);
+#else
 Texture2D SpriteTexture;
 sampler2D SpriteTextureSampler = sampler_state
 {
     Texture = <SpriteTexture>;
 };
+#endif
 
 struct VertexShaderInput
 {
@@ -53,10 +73,17 @@ VertexShaderOutput MainVS(VertexShaderInput input)
     return output;
 }
 
+#if VULKAN
+float4 MainPS(VertexShaderOutput input) : SV_Target0
+{
+    return SpriteTexture.Sample(SpriteTextureSampler, input.TexCoord) * input.Color;
+}
+#else
 float4 MainPS(VertexShaderOutput input) : SV_Target0
 {
     return tex2D(SpriteTextureSampler, input.TexCoord) * input.Color;
 }
+#endif
 
 technique SpriteDrawing
 {

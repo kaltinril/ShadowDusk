@@ -499,8 +499,14 @@ public sealed class Fx2EffectWriter
         for (int t = 0; t < effect.Techniques.Count; t++)
         {
             Fx2Technique technique = effect.Techniques[t];
-            if (string.IsNullOrEmpty(technique.Name) || !System.Text.Ascii.IsValid(technique.Name))
-                return Error($"technique #{t} has an empty or non-ASCII name");
+
+            // An EMPTY name is legal: `technique { pass { … } }` (anonymous) compiles under the
+            // reference compiler — d3dcompiler_47 at fx_2_0 returns S_OK for it, with only the
+            // usual X4717 deprecation warning (probed 2026-07-22, issue #145). AddString maps
+            // null/empty to pool offset 0, which readers already interpret as "no string", so the
+            // container handles it. Only a non-ASCII name is rejected (the pool is ASCII).
+            if (!System.Text.Ascii.IsValid(technique.Name ?? string.Empty))
+                return Error($"technique #{t} has a non-ASCII name");
 
             for (int p = 0; p < technique.Passes.Count; p++)
             {

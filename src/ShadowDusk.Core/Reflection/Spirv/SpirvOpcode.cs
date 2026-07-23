@@ -35,6 +35,7 @@ internal enum SpirvDecoration
 {
     Block          = 2,
     RowMajor       = 4,
+    Location       = 30,
     ColMajor       = 5,
     ArrayStride    = 6,
     MatrixStride   = 7,
@@ -48,6 +49,7 @@ internal enum SpirvDecoration
 internal enum SpirvStorageClass
 {
     UniformConstant = 0,
+    Input           = 1,
     Uniform         = 2,
     PushConstant    = 9,
     StorageBuffer   = 12,

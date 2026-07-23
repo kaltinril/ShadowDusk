@@ -20,7 +20,7 @@
   results, and exits non-zero if ANY gate failed. A green run is the evidence a release needs
   that CI cannot provide.
 
-  Gates (all default ON except FNA and Vulkan):
+  Gates (all default ON except FNA):
     * MonoGame WindowsDX corpus  - validation/BaselineDx + CandidateDx + compare_dx.py
                                    (ShadowDusk DX vs mgfxc DX golden, real MonoGame WindowsDX).
     * DX modern features (VTF)   - validation/DxModernFeatures (vkd3d vs fxc oracle, maxd 0).
@@ -38,15 +38,22 @@
                                    its restore-fna.ps1 clones the FNA source tree (heavy) and the
                                    oracle needs the Windows SDK fxc. Run it for any release that
                                    could affect the FNA target.
-    * Vulkan (-IncludeVulkan)    - validation/CandidateVulkan (ShadowDusk's own Vulkan .mgfx
-                                   loaded in real MonoGame DesktopVK). OPT-IN because DesktopVK
-                                   needs a real Vulkan-capable GPU. NOTE: this asserts ShadowDusk's
-                                   OWN output renders correctly, not a pixel-diff against real
-                                   mgfxc's Vulkan oracle - that oracle currently crashes on this
-                                   corpus due to a confirmed, separate MonoGame bug (SlotOffset
-                                   arithmetic in VulkanShaderProfile.CreateShader; see
-                                   plan/DONE/PHASE-32-appendix/vulkan-mgfx-format-spec.md). Run it for
-                                   any release that could affect the Vulkan target.
+    * Vulkan PS corpus           - validation/CandidateVulkan (ShadowDusk's own Vulkan .mgfx
+                                   loaded in real MonoGame DesktopVK). Asserts ShadowDusk's OWN
+                                   output renders correctly; NOT a pixel-diff against mgfxc, whose
+                                   own output is unloadable for THIS corpus (its SlotOffset
+                                   arithmetic underflows for auto-numbered resources - a confirmed,
+                                   separate MonoGame bug; see
+                                   plan/DONE/PHASE-32-appendix/vulkan-mgfx-format-spec.md).
+    * Vulkan VS-driven           - validation/VsDrivenVulkan (issue #145). A real reference-compiler
+                                   oracle on Vulkan: renders a NON-IDENTITY asymmetric transform and
+                                   pixel-diffs ShadowDusk against the checked-in mgfxc 3.8.5 golden.
+                                   Its fixture uses explicit registers, which keeps mgfxc's slot
+                                   arithmetic in range, so the baseline actually loads. This is the
+                                   gate that catches "VS-driven Vulkan effects render nothing".
+
+  Both Vulkan gates are DEFAULT-ON (issue #145: a Vulkan-affecting change must not depend on
+  someone remembering a switch). Pass -SkipVulkan only on a box with no Vulkan-capable GPU.
 
   The OpenGL render gates are intentionally NOT here - CI already runs them (see
   validation-render.yml). Run them with `dotnet test` + that workflow, not this script.
@@ -56,8 +63,12 @@
   (validation/FnaValidation/restore-fna.ps1) and a Windows SDK fxc on PATH. Off by default.
 
 .PARAMETER IncludeVulkan
-  Also run the Vulkan gate (validation/CandidateVulkan + validation/BaselineVulkan +
-  compare_vulkan.py). Requires a Vulkan-capable GPU. Off by default.
+  Retained for compatibility. The Vulkan gates are default-ON as of issue #145, so this
+  switch changes nothing; passing it is harmless.
+
+.PARAMETER SkipVulkan
+  Skip both Vulkan gates. Use ONLY on a machine with no Vulkan-capable GPU - a
+  Vulkan-affecting change is not validated without them.
 
 .PARAMETER SkipRestore
   Skip `tools/restore.ps1` (the vkd3d-shader native the DX/KNI-DX/FNA gates P/Invoke). Use only
@@ -65,16 +76,17 @@
 
 .EXAMPLE
   ./validation/run-windows-render-gates.ps1
-  Run the core DX + KNI-DX render gates (the standard pre-release gate).
+  Run the core DX + KNI-DX + Vulkan render gates (the standard pre-release gate).
 
 .EXAMPLE
-  ./validation/run-windows-render-gates.ps1 -IncludeFna -IncludeVulkan
-  Also validate the FNA fx_2_0 and Vulkan targets (for a release affecting either).
+  ./validation/run-windows-render-gates.ps1 -IncludeFna
+  Also validate the FNA fx_2_0 target (for a release affecting FNA).
 #>
 [CmdletBinding()]
 param(
     [switch]$IncludeFna,
     [switch]$IncludeVulkan,
+    [switch]$SkipVulkan,
     [switch]$SkipRestore
 )
 
@@ -156,20 +168,36 @@ if ($IncludeFna) {
 } else {
     Write-Host "NOTE: FNA gate not run (pass -IncludeFna). Required before an FNA-affecting release.`n" -ForegroundColor Yellow
 }
-if ($IncludeVulkan) {
+if (-not $SkipVulkan) {
     $gates.Add(@{
-        Name   = 'Vulkan (ShadowDusk .mgfx, real MonoGame DesktopVK - own-output render proof, not a pixel-diff oracle)'
+        Name   = 'Vulkan PS corpus (ShadowDusk .mgfx, real MonoGame DesktopVK - own-output render proof)'
         Action = {
             Invoke-Checked 'dotnet' @('run', '--project', 'validation/CandidateVulkan', '-c', 'Release')
-            # BaselineVulkan is best-effort: real mgfxc's own Vulkan output currently crashes on
-            # this corpus (a confirmed, separate MonoGame bug), so its exit code is NOT part of
-            # this gate's pass/fail signal. compare_vulkan.py only fails on a CANDIDATE problem.
+            # BaselineVulkan is best-effort: real mgfxc's own Vulkan output crashes on THIS corpus
+            # (its SlotOffset arithmetic underflows for auto-numbered resources - a confirmed,
+            # separate MonoGame bug), so its exit code is NOT part of this gate's pass/fail signal.
+            # compare_vulkan.py only fails on a CANDIDATE problem. The VS-driven gate below DOES
+            # have a working mgfxc oracle, because its fixture uses explicit registers.
             & dotnet run --project validation/BaselineVulkan -c Release
             Invoke-Checked 'python' @('validation/compare_vulkan.py')
         }
     })
+    $gates.Add(@{
+        Name   = 'Vulkan VS-driven + Apos.Shapes #145 reproducer (ShadowDusk vs mgfxc 3.8.5 goldens, real MonoGame DesktopVK)'
+        Action = {
+            # Issue #145: the PS-only corpus above could not see a vertex shader OR a matrix, which
+            # is why row-major matrix packing shipped and every VS-driven Vulkan effect rendered
+            # nothing. This gate renders a non-identity ASYMMETRIC transform and pixel-diffs against
+            # the real mgfxc golden - a genuine reference-compiler oracle on Vulkan.
+            Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenVulkan', '-c', 'Release')
+            # Phase 2 is a SEPARATE process on purpose: DesktopVK does not survive a second
+            # GraphicsDevice in one process. This one renders the issue-#145 reproducer itself -
+            # upstream Apos.Shapes at its current revision - against the mgfxc golden.
+            Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenVulkan', '-c', 'Release', '--', 'apos')
+        }
+    })
 } else {
-    Write-Host "NOTE: Vulkan gate not run (pass -IncludeVulkan). Required before a Vulkan-affecting release.`n" -ForegroundColor Yellow
+    Write-Host "NOTE: Vulkan gates SKIPPED by -SkipVulkan. They are default-ON; only skip them on a box with no Vulkan GPU.`n" -ForegroundColor Yellow
 }
 
 $results = [System.Collections.Generic.List[object]]::new()
@@ -203,8 +231,8 @@ Write-Host ("`n{0}/{1} render gates passed." -f $passed, $results.Count)
 if (-not $IncludeFna) {
     Write-Host "(FNA gate skipped - rerun with -IncludeFna before an FNA-affecting release.)" -ForegroundColor Yellow
 }
-if (-not $IncludeVulkan) {
-    Write-Host "(Vulkan gate skipped - rerun with -IncludeVulkan before a Vulkan-affecting release.)" -ForegroundColor Yellow
+if ($SkipVulkan) {
+    Write-Host "(Vulkan gates skipped by -SkipVulkan - rerun without it before a Vulkan-affecting release.)" -ForegroundColor Yellow
 }
 
 if ($failed -gt 0) {

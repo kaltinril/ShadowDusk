@@ -78,6 +78,7 @@ internal sealed class SpirvReflectionParser
     private readonly Dictionary<uint, int>    _binding      = new();
     private readonly Dictionary<uint, int>    _descriptorSet = new();
     private readonly Dictionary<uint, int>    _arrayStride  = new();
+    private readonly Dictionary<uint, int>    _location     = new();
 
     // Member decorations: target struct id -> (member index -> value).
     private readonly Dictionary<uint, Dictionary<int, int>>  _memberOffset      = new();
@@ -459,8 +460,15 @@ internal sealed class SpirvReflectionParser
 
     // ---- Instruction collection ------------------------------------------------
 
+    private bool _collected;
+
     private void CollectInstructions()
     {
+        // Idempotent: Reflect() and ReflectVertexInputs() may both be called on one parser.
+        if (_collected)
+            return;
+        _collected = true;
+
         foreach (SpirvModule.Instruction instr in _module.Instructions)
         {
             uint[] ops = instr.Operands;
@@ -623,6 +631,9 @@ internal sealed class SpirvReflectionParser
             case SpirvDecoration.ArrayStride when ops.Length >= 3:
                 _arrayStride[target] = (int)ops[2];
                 break;
+            case SpirvDecoration.Location when ops.Length >= 3:
+                _location[target] = (int)ops[2];
+                break;
         }
     }
 
@@ -661,6 +672,65 @@ internal sealed class SpirvReflectionParser
             map[structId] = dict = new Dictionary<int, bool>();
         dict[member] = value;
     }
+
+    /// <summary>
+    /// The vertex-stage INPUT variables, ordered by <c>Location</c>: the HLSL semantic
+    /// (recovered from DXC's <c>OpName</c>, e.g. <c>in.var.TEXCOORD3</c> → <c>TEXCOORD3</c>),
+    /// its location, and how many consecutive locations it consumes (a matrix input takes one
+    /// per column, an array one per element). This is the same recovery real mgfxc performs
+    /// when it builds a Vulkan shader's attribute table (<c>ShaderProfile.Vulkan.cs</c>,
+    /// <c>input.HlslSemantic ?? input.Id.Replace("%in_var_", "")</c>).
+    ///
+    /// <para>Built-ins (<c>gl_VertexIndex</c> …) carry no <c>Location</c> decoration and are
+    /// skipped. Debug names are required: DXC emits them unless the module is stripped, and
+    /// ShadowDusk never asks DXC to strip them.</para>
+    /// </summary>
+    public IReadOnlyList<(string Semantic, int Location, int LocationCount)> ReflectVertexInputs()
+    {
+        CollectInstructions();
+
+        var inputs = new List<(string Semantic, int Location, int LocationCount)>();
+
+        foreach (var (resultId, typeId, storage) in _variables)
+        {
+            if (storage != SpirvStorageClass.Input)
+                continue;
+
+            if (!_location.TryGetValue(resultId, out int location))
+                continue; // a built-in, not a user semantic
+
+            string semantic = StripInputPrefix(_names.GetValueOrDefault(resultId) ?? string.Empty);
+            if (semantic.Length == 0)
+                continue;
+
+            int locationCount = 1;
+            if (_types.TryGetValue(typeId, out SpirvType? ptrType) &&
+                ptrType is PointerType ptr &&
+                _types.TryGetValue(ptr.PointeeId, out SpirvType? pointee))
+            {
+                locationCount = LocationCount(pointee);
+            }
+
+            inputs.Add((semantic, location, locationCount));
+        }
+
+        return inputs.OrderBy(i => i.Location).ToList();
+    }
+
+    private static string StripInputPrefix(string name)
+    {
+        foreach (string prefix in new[] { "in.var.", "in_var_" })
+            if (name.StartsWith(prefix, StringComparison.Ordinal))
+                return name[prefix.Length..];
+        return name;
+    }
+
+    private static int LocationCount(SpirvType type) => type switch
+    {
+        MatrixType m => m.ColumnCount,
+        ArrayType a  => Math.Max(1, a.Length) * (a.Element is MatrixType em ? em.ColumnCount : 1),
+        _            => 1,
+    };
 
     private static TextureDimension MapDim(SpirvDim dim) => dim switch
     {

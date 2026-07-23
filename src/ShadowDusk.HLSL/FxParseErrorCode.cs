@@ -44,4 +44,14 @@ public enum FxParseErrorCode
     /// forward for DXC. (The FNA target compiles these natively and never raises this.)
     /// </summary>
     UnsupportedLegacyIntrinsic = 12,
+
+    /// <summary>
+    /// FX0013: An SM4+ resource/sampler type appeared in a shader targeting FNA's D3D9
+    /// <c>fx_2_0</c> profile, where no SM1-3 lowering exists. Raised BEFORE the source
+    /// reaches vkd3d, which does not reject these cleanly — a
+    /// <c>SamplerComparisonState</c> makes its SM1 lowering hit "Unreachable code reached"
+    /// and take the whole process down with an access violation, so the user would get a
+    /// crash instead of a diagnostic.
+    /// </summary>
+    UnsupportedSm4TypeForFx2 = 13,
 }

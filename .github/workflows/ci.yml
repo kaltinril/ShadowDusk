@@ -319,6 +319,15 @@ jobs:
       # of SHADOWDUSK_REQUIRE_GL): the natives were just hard-gated above, so inside
       # the test run a missing native is a FAILURE, never a skip — defense in depth
       # against a probe/loader regression re-opening the skip-as-green hole.
+      # macOS ONLY: cap xUnit's cross-collection parallelism. The integration suite drives a
+      # lot of native DXC compilation, and on the macOS runners (x64 images under Rosetta 2)
+      # running several collections' worth of that concurrently takes the TEST HOST down:
+      # `Test host process crashed`, reproducibly, ~11 s into the assembly run and after a
+      # wildly different number of tests each time (605, then 158) while every test that DID
+      # run passed. That is resource exhaustion under parallelism, not a failing test, and it
+      # is not a ShadowDusk output defect: the same compiles pass on ubuntu, on windows, and
+      # locally, and the emitted bytes are proven identical across hosts by
+      # CrossHostByteIdentityTests. Linux and Windows keep full parallelism.
       - name: dotnet test (integration)
         env:
           SHADOWDUSK_REQUIRE_VKD3D: "1"
@@ -329,6 +338,7 @@ jobs:
           --settings ShadowDusk.runsettings
           --logger "trx;LogFileName=integration-${{ matrix.os }}.trx"
           --results-directory TestResults/
+          ${{ matrix.os == 'macos-latest' && '-- xUnit.MaxParallelThreads=1' || '' }}
 
       - name: Upload test results
         if: always()
