@@ -110,6 +110,16 @@ not FNA).
 (`tests/fixtures/golden/Vulkan/apos-shapes-sm6.mgfx`): **maxd 0**, with a non-vacuity check that
 rejects the blank frame the issue reported. Restoring the `-Zpr` bug turns it red at maxd 255.
 
+**Render-proven on DirectX (Phase 51 A3, added 2026-07-23).** `validation/VsDrivenDx -- apos`
+renders the SAME `apos-shapes-sm6.fx` fixture — no separate DX variant was needed, since the
+DirectX macro set (`{MGFX, HLSL, SM4}`) takes the fixture's `#else` branch (legacy `sampler`/
+`tex2D` syntax, `vs_4_0`/`ps_4_0`), the same branch a DirectX_11-profile `mgfxc` compile takes —
+through the same 13-element vertex layout and the same non-identity asymmetric
+`view_projection`, and pixel-diffs BOTH ShadowDusk DXBC backends (the `d3dcompiler_47` oracle
+and `vkd3d-shader`) against the checked-in `mgfxc` golden
+(`tests/fixtures/golden/DirectX_11/apos-shapes-sm6.mgfx`): **maxd 0** on both backends, no
+tolerance needed.
+
 **GL: compiles, but its real mgfxc golden renders wrong (Phase 51 A3, discovered 2026-07-23).**
 `apos-shapes-sm6.fx` compiles cleanly on OpenGL (confirmed above), and a `validation/VsDriven --
 apos` attempt against it was built first, matching the DX/Vulkan pattern. It diverged completely

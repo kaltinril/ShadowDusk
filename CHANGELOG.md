@@ -14,28 +14,32 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
-- **Apos.Shapes (Gum's SDF shape renderer) render-proof, OpenGL slice (Phase 51 A3).**
-  `validation/VsDriven -- apos` renders Apos.Shapes on a real MonoGame DesktopGL device and
-  pixel-diffs it against the real `mgfxc` OpenGL golden: max Δ 2/255 (documented
-  transcendental-math GLSL-dialect drift on the shader's OkLab round-trip). Uses
-  `apos-shapes.fx` (the Phase 49 pin), a different vendored revision than the existing DX/
-  Vulkan Apos.Shapes proofs use (`apos-shapes-sm6.fx`) — that revision's real mgfxc GL compile
-  is confirmed to render solid black, a MojoShader/fxc codegen bug unrelated to ShadowDusk (see
-  `tests/fixtures/shaders/third-party/Apos.Shapes/NOTICE.md`). Wired into
-  `run-windows-render-gates.ps1`. Apos.Shapes is now render-proven on DX, Vulkan, and GL; FNA
-  stays permanently excluded (SM3 instruction-slot ceiling).
+- **Apos.Shapes (Gum's SDF shape renderer) render-proof — DX and GL (Phase 51 A3).** Vulkan
+  already shipped in 0.13.0 (`validation/VsDrivenVulkan -- apos`, maxd 0). This release closes
+  the remaining two slices:
+  - **DirectX.** `validation/VsDrivenDx -- apos` renders `apos-shapes-sm6.fx` (the current
+    upstream revision, also used by the Vulkan proof) through a bespoke 13-element
+    vertex-buffer harness on real MonoGame WindowsDX and pixel-diffs both ShadowDusk DXBC
+    backends (`d3dcompiler_47` and `vkd3d-shader`) against the real `mgfxc` DirectX_11 golden:
+    **maxd 0** on both.
+  - **OpenGL.** `validation/VsDriven -- apos` renders Apos.Shapes on a real MonoGame DesktopGL
+    device and pixel-diffs it against the real `mgfxc` OpenGL golden: **max Δ 2/255**
+    (documented transcendental-math GLSL-dialect drift on the shader's OkLab round-trip). Uses
+    `apos-shapes.fx` (the Phase 49 pin) — deliberately **not** the same fixture the DX/Vulkan
+    proofs use (`apos-shapes-sm6.fx`): that revision's real mgfxc GL compile is confirmed to
+    render solid black, a MojoShader/fxc codegen bug unrelated to ShadowDusk (see
+    `tests/fixtures/shaders/third-party/Apos.Shapes/NOTICE.md`).
 
-### Fixed
-
-- **GL profile emitted `isnan()` into versionless GLSL; rejected on macOS (issue #149).** Found
-  while closing the render-proof above: ShadowDusk's own GL candidate for `apos-shapes.fx`
-  contained 28 `isnan(` occurrences and no `#version` directive (the real mgfxc golden has zero
-  of either). Desktop NVIDIA/AMD/Intel drivers tolerated it; Apple's strict GL compiler did not,
-  breaking any GL shader using `min`/`max`/`clamp` on macOS — real downstream breakage
-  (Apos.Shapes 0.7.6). Pre-existing, not caused by the render-proof above. Fixed by defaulting
-  SPIRV-Cross's `RELAX_NAN_CHECKS` compiler option on for the whole OpenGL profile: zero
-  `isnan(` now, zero byte changes anywhere else in the corpus. See
-  `plan/DONE/ISSUE-149-gl-isnan-versionless-glsl.md`.
+  Both wired into `run-windows-render-gates.ps1`. Apos.Shapes is now render-proven on DX,
+  Vulkan, and GL; FNA stays permanently excluded (SM3 instruction-slot ceiling).
+- **Fixed: GL profile emitted `isnan()` into versionless GLSL; rejected on macOS (issue
+  #149).** Found while closing the GL slice above: ShadowDusk's own GL candidate for
+  `apos-shapes.fx` contained 28 `isnan(` occurrences and no `#version` directive (the real
+  mgfxc golden has zero of either). Desktop NVIDIA/AMD/Intel drivers tolerated it; Apple's
+  strict GL compiler did not, breaking any GL shader using `min`/`max`/`clamp` on macOS — real
+  downstream breakage (Apos.Shapes 0.7.6). Fixed by defaulting SPIRV-Cross's
+  `RELAX_NAN_CHECKS` compiler option on for the whole OpenGL profile: zero `isnan(` now, zero
+  byte changes anywhere else in the corpus. See `plan/DONE/ISSUE-149-gl-isnan-versionless-glsl.md`.
 
 ### Changed
 
