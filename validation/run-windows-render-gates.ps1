@@ -27,6 +27,9 @@
     * DX Apos.Shapes             - validation/VsDrivenDx -- apos (Phase 51 A3: Gum's SDF shape
                                    renderer, apos-shapes-sm6.fx, both DXBC backends vs the mgfxc
                                    DirectX_11 golden, real MonoGame WindowsDX, maxd 0).
+    * DirectX12 PS corpus        - validation/CandidateDx12 (Phase 54: ShadowDusk's own SM6 DXIL
+                                   .mgfx, real MonoGame WindowsDX12, 10/10 own-output render proof -
+                                   no mgfxc DirectX_12 golden exists yet for a pixel-diff).
     * KNI DirectX                - validation/KniWinFormsDX (ShadowDusk DX vs mgfxc, real KNI
                                    WinForms.DX11).
     * KNI OpenGL desktop         - validation/KniDesktopGL + compare_kni.py (ShadowDusk v10 vs
@@ -141,6 +144,10 @@ $gates.Add(@{
 $gates.Add(@{
     Name   = 'DX Apos.Shapes (Phase 51 A3: ShadowDusk vs mgfxc DirectX_11 golden, real MonoGame WindowsDX)'
     Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenDx', '-c', 'Release', '--', 'apos') }
+})
+$gates.Add(@{
+    Name   = 'DirectX12 PS corpus (Phase 54: ShadowDusk own-output, real MonoGame WindowsDX12 - no mgfxc DirectX_12 golden exists yet)'
+    Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/CandidateDx12', '-c', 'Release') }
 })
 $gates.Add(@{
     Name   = 'KNI DirectX (ShadowDusk DX vs mgfxc, real KNI WinForms.DX11)'

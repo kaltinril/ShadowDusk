@@ -126,6 +126,41 @@ corpus and the Apos.Shapes/VS-driven corpus, same bar every other backend was he
 
 ## Status
 
-See the implementation commit(s) on this phase's branch for exactly how far task 3 onward
-reached in this pass — recorded honestly rather than pre-claimed here (a stale "done" in a plan
-doc is worse than an accurate "in progress").
+**In progress (2026-07-23).** Landed this pass:
+
+- Tasks 1-2 (research, phase doc, plan.md cross-references): done.
+- Task 3 (`PlatformTarget.DirectX12`/`MgfxProfile.DirectX12`, DXC compile routing, the
+  `0xB00B00` wrapper, KNIFX guard, CLI `--profile DirectX_12`): done. Full
+  `dotnet test ShadowDusk.slnx` green.
+- Task 5 (test coverage): a `DirectX12EffectCompilerTests` integration test asserting the real
+  profile byte, wrapper header, DXBC-container-shaped DXIL payload, and reflection.
+- Task 6 (validation driver): `validation/CandidateDx12` built and **run on real MonoGame 3.8.5
+  `WindowsDX12`** — the 10-shader PS/SpriteBatch corpus renders correctly, 10/10, visually
+  confirmed (grayscale/sepia/tint all correct), first attempt.
+- Task 8 (root-signature open question): **resolved empirically — no embedded root signature
+  is needed.** MonoGame's native DX12 layer binds its own independently-built fixed root
+  signature; a plain DXC SM6 DXIL compile with no `-rootsig-define`/`-force-rootsig-ver` links
+  and renders correctly against it.
+- Task 9 (docs): `docs/validation-matrix.md` (cell + §6 driver row + update history) and
+  `docs/error-codes.md` (SD0027) updated to match this real evidence. `run-windows-render-gates.ps1`
+  gained the new gate (verified green in a full local run alongside every pre-existing gate,
+  confirming byte-identity for every other target is unaffected).
+
+**Not done / next steps:**
+- No `mgfxc` `DirectX_12` golden exists in this repo's corpus yet, so DX12 has **own-output**
+  proof only (same starting evidence tier Vulkan had before `VsDrivenVulkan` landed a golden) —
+  no pixel-diff oracle. Generating one needs `dotnet-mgcb` 3.8.5 (the pinned oracle tool is
+  3.8.4.1, which predates `DirectX12ShaderProfile`) — this is the same oracle-version question
+  already open in [Phase 52 Area C](PHASE-52-monogame-3.8.5-support.md); resolve there rather
+  than bumping the pin ad hoc here.
+- Apos.Shapes + VS-driven DX12 coverage (task 7) not started — `VsDrivenDx`'s `-- apos` mode
+  needs a DirectX12 arm added, reusing the same `apos-shapes-sm6.fx` SM6 branch the Vulkan/DX11
+  proofs already use.
+- `docs/the-purpose.md` backend table, `CHANGELOG.md`, `README.md`, and the DocFX site are not
+  yet updated — deliberately deferred until a golden/pixel-diff oracle exists, per the standing
+  rule against pre-claiming "supported" in consumer-facing docs ahead of real evidence. The
+  validation-matrix and error-codes updates (internal, evidence-tracking docs) are done now
+  because they already state the evidence honestly (own-output only, no oracle yet).
+- Vertex attribute table (mgfxc's DX12 profile collects one, though its own comment says the
+  native runtime doesn't use it) is not built for ShadowDusk's DX12 output — deferred as a
+  structural-parity nicety, not a render-blocking gap (nothing observed needs it).
