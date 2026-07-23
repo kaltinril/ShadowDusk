@@ -14,6 +14,32 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **A VS-driven Vulkan render gate with a real reference-compiler oracle** (`validation/VsDrivenVulkan`,
+  issue #145). Renders a non-identity asymmetric transform on a real MonoGame 3.8.5 DesktopVK device and
+  pixel-diffs ShadowDusk against the checked-in `mgfxc 3.8.5` golden: **maxd 0**. This is the first Vulkan
+  pixel-diff against the reference compiler — Phase 32 could not do it because mgfxc's own output is
+  unloadable for auto-numbered resources (its `SlotOffset` arithmetic underflows); giving the fixture's
+  Vulkan branch matching explicit registers keeps that arithmetic in range, so the baseline loads and can
+  be diffed. A second phase (`-- apos`) renders **the issue-#145 reproducer itself** — upstream
+  `Apos.Shapes` at commit `ea38c6d8`, vendored as `apos-shapes-sm6.fx` — through its own 13-element vertex
+  layout: also **maxd 0** vs the mgfxc golden, with a non-vacuity check that rejects the blank frame the
+  issue reported. Both phases are mutation-proven (restoring the bug turns them red at maxd 255). Both
+  Vulkan gates are now **default-ON** in `run-windows-render-gates.ps1` (`-SkipVulkan` to opt out on a box
+  without a Vulkan GPU); `-IncludeVulkan` is kept as an accepted no-op.
+- **A corpus-wide, device-free Vulkan structural gate** (`VulkanCorpusStructuralTests`, issue
+  #145). Every `.fx` fixture in the corpus is now a test case: it must either compile to a
+  structurally valid Vulkan container (combined image-samplers at binding ≥ 32, unique binding
+  numbers, uniform buffer at 0, column-major matrices, `main` entry point, no `SPV_GOOGLE_*`
+  extensions) **or fail with a real diagnostic** — never an exception, never a crash. No skip
+  list, plus a guard test that fails if the enumeration ever silently shrinks. Both bugs in
+  issue #145 are caught by it without a GPU.
+- **MonoGame's own test effects vendored into the corpus** (`tests/fixtures/shaders/
+  third-party/MonoGame/`, Ms-PL, tag `v3.8.5`): 17 `.fx` + 2 `.fxh`, including `Instancing.fx`
+  (VS-driven with a `float4x4` vertex input), `VertexTextureEffect.fx`, `ParameterTypes.fx`,
+  `TextureArrayEffect.fx`, and the reference compiler's own `ParserTest` / `PreprocessorTest` /
+  `DefinesTest`. Upstream's per-profile `.mgcb` files state which effects each backend must
+  compile, so the corpus now carries mgfxc's own acceptance set. They found two real defects on
+  the day they landed (anonymous techniques, and the vkd3d comparison-sampler crash).
 - **One-call shader validation: `Validate()` / `ValidateAsync()`** on `IShaderCompiler`
   (Phase 53). `Console.WriteLine(await compiler.ValidateAsync(fx))` prints everything
   wrong with a shader — every error and every warning, per target, with source locations
@@ -72,6 +98,40 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **Vulkan: matrices were packed row-major, so every VS-driven effect rendered nothing**
+  (issue [#145](https://github.com/kaltinril/ShadowDusk/issues/145)). `-Zpr` was applied to
+  every DXC compile, Vulkan included, but MonoGame's runtime uploads a `Matrix` parameter for
+  HLSL's **column-major** default (`EffectParameter.SetValue(Matrix)` transposes on
+  assignment) — so a Vulkan vertex shader read `mul(pos, worldViewProj)` transposed and threw
+  its geometry out of clip space: loads fine, draws without error, renders nothing. mgfxc's
+  Vulkan command line carries no `-Zpr`; now neither does ShadowDusk's. OpenGL keeps the flag
+  (its rewriter compensates, the issue-#70 fix) and DirectX never used DXC. **This is the
+  Vulkan repeat of issue #70**, invisible until now because the Vulkan corpus was PS-only and
+  matrix-free.
+- **Vulkan: legacy `tex2D` shaders access-violated inside `GraphicsDevice_DrawIndexed`**
+  (issue #145). The `Texture2D` that FxPreParser synthesizes for a legacy `sampler` was
+  excluded from the register-pairing rewrite, so the image auto-numbered to raw binding 0/1
+  while its sampler shifted to 32/33 — two separate descriptors, and MonoGame's native
+  descriptor writer recovers the texture slot as `binding - 32`, indexing its texture array at
+  **-32**. Pairs are now always co-located, explicit `register(tN)`/`register(sN)` indices are
+  reserved so an auto-assigned pair can never collide with them, and **every** texture
+  dimensionality is covered (`TextureCube`/`Texture3D` were previously unpaired too, the same
+  crash shape for cube/volume shaders).
+- **The FNA writer was stricter than `fxc` about technique names.** `SD0302` rejected an empty technique
+  name, but `d3dcompiler_47` at `fx_2_0` compiles an anonymous technique cleanly (S_OK, only the usual
+  X4717 deprecation warning). It now rejects only a non-ASCII name.
+- **Anonymous techniques (`technique { pass { … } }`) are accepted.** Legal FX that mgfxc
+  compiles — and what most of MonoGame's own test effects use — but ShadowDusk rejected it
+  with `FX0001: Expected technique name`. The container now carries an empty technique name,
+  matching mgfxc 3.8.5 byte-for-byte.
+- **A native process crash on the FNA path is now a diagnostic.** `SamplerComparisonState`
+  made vkd3d's SM1 lowering hit "Unreachable code reached" and take the whole process down
+  with an access violation; it is rejected up front with the new `FX0013` instead.
+- **Vulkan container faithfulness:** vertex shaders now carry the attribute table mgfxc emits
+  (recovered from the SPIR-V input semantics), a combined image-sampler sets both the texture
+  and sampler slot masks, and the shipped SPIR-V no longer carries `-fspv-reflect`'s
+  `SPV_GOOGLE_*` extensions (mgfxc strips them with a second compile; ShadowDusk simply never
+  requests them, since it reflects from core decorations).
 - **Vertex shaders now get the stage-agnostic GL body lowerings** (issue
   [#137](https://github.com/kaltinril/ShadowDusk/issues/137)). The rewriter returned early
   for the vertex stage before Rules 8, 9b, 10, and 11 ran, so a VS using `round()` shipped

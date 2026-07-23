@@ -77,7 +77,16 @@ public sealed record MgfxShaderRecord(
     int Index,
     bool IsVertex,
     byte[] Bytecode,
-    IReadOnlyList<int> ConstantBufferIndices);
+    IReadOnlyList<int> ConstantBufferIndices,
+    IReadOnlyList<MgfxAttributeRecord> Attributes);
+
+/// <summary>
+/// One vertex-attribute table entry: the <c>VertexElementUsage</c> byte + semantic index a
+/// vertex input maps to. MonoGame's GL runtime binds through these; the Vulkan backend lays
+/// vertex inputs out positionally from the VertexDeclaration and ignores them, but the
+/// reference compiler emits them for both, so ShadowDusk does too (issue #145).
+/// </summary>
+public sealed record MgfxAttributeRecord(string Name, byte Usage, byte Index, short Location);
 
 /// <summary>One shader-record sampler entry, including its baked state (Phase 43, F9).</summary>
 public sealed record MgfxSamplerRecord(
@@ -303,15 +312,17 @@ public sealed class MgfxBlobReader
 
             // Vertex-attribute table.
             int attrCount = br.ReadByte();
+            var attributes = new List<MgfxAttributeRecord>(attrCount);
             for (int a = 0; a < attrCount; a++)
             {
-                br.ReadString();       // name
-                br.ReadByte();         // usage
-                br.ReadByte();         // index
-                br.ReadInt16();        // location
+                attributes.Add(new MgfxAttributeRecord(
+                    Name:     br.ReadString(),
+                    Usage:    br.ReadByte(),
+                    Index:    br.ReadByte(),
+                    Location: br.ReadInt16()));
             }
 
-            shaderRecords.Add(new MgfxShaderRecord(i, isVertex, shaderBlobs[i], cbIndices));
+            shaderRecords.Add(new MgfxShaderRecord(i, isVertex, shaderBlobs[i], cbIndices, attributes));
         }
 
         // Parameters — MonoGame 3.8.2's recursive layout: elements then struct

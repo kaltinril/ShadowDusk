@@ -135,15 +135,18 @@ public sealed class VulkanTextureSamplerBindingRewriterTests
     }
 
     [Fact]
-    public void Rewrite_IgnoresFxPreParserSynthesizedTextureName()
+    public void Rewrite_PairsFxPreParserSynthesizedTextureWithItsSampler()
     {
-        // Confirmed root cause (2026-07-18): FxPreParser's existing legacy-sampler2D-to-
-        // modern-syntax conversion runs over the whole file BEFORE this rewrite, and for
-        // a bare `sampler s0;` (no texture reference) it synthesizes a paired texture
-        // named "<sampler>_SDTexture" — here, in the #else (non-Vulkan) branch. This
-        // rewrite must never touch that synthesized name, or it corrupts a declaration
-        // DXC discards anyway for a Vulkan compile, while still correctly pairing the
-        // real #if-VULKAN-branch declarations ("s0Texture"/"s0").
+        // FxPreParser's legacy-sampler2D-to-modern-syntax conversion runs over the whole file
+        // BEFORE this rewrite, and for a bare `sampler s0;` (no texture reference) it
+        // synthesizes a paired texture named "<sampler>_SDTexture".
+        //
+        // These synthesized names were once EXCLUDED from the rewrite outright, which was the
+        // root cause of issue #145's native access violation: the exclusion left the pair
+        // un-co-located (image auto-numbered at raw binding 0, sampler shifted to 32), and
+        // MonoGame's native descriptor writer turns a binding-0 image into
+        // `device->textures[stage][0 - 32]`. They are now paired like any other declaration —
+        // BOTH branches end up on the same index, and only one survives the compile.
         const string hlsl = """
             #if VULKAN
             Texture2D s0Texture;
@@ -169,11 +172,80 @@ public sealed class VulkanTextureSamplerBindingRewriterTests
         string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
 
         result.Should().Contain("Texture2D s0Texture : register(t0);");
-        // "s0" appears in both branches; only the pairing with the real Vulkan-branch
-        // texture ("s0Texture", index 0) determines its register.
         result.Should().Contain("SamplerState s0 : register(s0);");
-        // The synthesized name is never registered — left exactly as FxPreParser wrote it.
-        result.Should().Contain("Texture2D s0_SDTexture;");
-        result.Should().NotContain("s0_SDTexture : register");
+        // The synthesized texture shares its sampler's index, so whichever branch survives
+        // yields ONE combined image-sampler descriptor.
+        result.Should().Contain("Texture2D s0_SDTexture : register(t0);");
+    }
+
+    [Fact]
+    public void Rewrite_LegacyOnlySource_PairsEverySynthesizedTexture()
+    {
+        // The issue-#145 legacy shape: no #if VULKAN branch at all, so every texture in the
+        // file is one FxPreParser synthesized. Each must land on its sampler's index.
+        const string hlsl = """
+            Texture2D TextureSampler_SDTexture; SamplerState TextureSampler;
+            Texture2D FontSampler_SDTexture; SamplerState FontSampler;
+
+            float4 PS() : SV_Target
+            {
+                return TextureSampler_SDTexture.Sample(TextureSampler, float2(0, 0))
+                     + FontSampler_SDTexture.Sample(FontSampler, float2(0, 0));
+            }
+            """;
+
+        string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
+
+        result.Should().Contain("Texture2D TextureSampler_SDTexture : register(t0);");
+        result.Should().Contain("SamplerState TextureSampler : register(s0);");
+        result.Should().Contain("Texture2D FontSampler_SDTexture : register(t1);");
+        result.Should().Contain("SamplerState FontSampler : register(s1);");
+    }
+
+    [Fact]
+    public void Rewrite_AutoAssignedPair_NeverCollidesWithAnExplicitRegister()
+    {
+        // -fvk-t-shift and -fvk-s-shift both add 32, so t2 and s2 occupy the SAME raw binding:
+        // an auto-assigned pair that reused index 2 would collide with the explicitly
+        // registered pair and produce two descriptor-set-layout bindings at one binding
+        // number, which is invalid. Explicit indices are reserved. (Upstream apos-shapes.fx
+        // is exactly this shape: register(s0), an unregistered sampler, and register(s2).)
+        const string hlsl = """
+            Texture2D ATex : register(t0); SamplerState ASamp : register(s0);
+            Texture2D BTex; SamplerState BSamp;
+            Texture2D CTex : register(t2); SamplerState CSamp : register(s2);
+
+            float4 PS() : SV_Target
+            {
+                return ATex.Sample(ASamp, float2(0, 0))
+                     + BTex.Sample(BSamp, float2(0, 0))
+                     + CTex.Sample(CSamp, float2(0, 0));
+            }
+            """;
+
+        string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
+
+        // Explicit declarations are byte-identical…
+        result.Should().Contain("Texture2D ATex : register(t0);");
+        result.Should().Contain("Texture2D CTex : register(t2);");
+        // …and the auto-assigned pair skips both reserved indices (0 and 2) onto 1.
+        result.Should().Contain("Texture2D BTex : register(t1);");
+        result.Should().Contain("SamplerState BSamp : register(s1);");
+    }
+
+    [Fact]
+    public void Rewrite_UnregisteredTexturePairedWithRegisteredSampler_MirrorsTheSamplerIndex()
+    {
+        const string hlsl = """
+            Texture2D Tex;
+            SamplerState Samp : register(s3);
+
+            float4 PS() : SV_Target { return Tex.Sample(Samp, float2(0, 0)); }
+            """;
+
+        string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
+
+        result.Should().Contain("Texture2D Tex : register(t3);");
+        result.Should().Contain("SamplerState Samp : register(s3);");
     }
 }

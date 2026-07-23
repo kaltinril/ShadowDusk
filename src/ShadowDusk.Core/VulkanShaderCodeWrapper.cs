@@ -58,6 +58,15 @@ public static class VulkanShaderCodeWrapper
             // regardless of the underlying SPIR-V shape — confirmed by a minimal
             // repro against a real DesktopVK runtime (2026-07-18).
             SamplerReflection? paired = samplers.FirstOrDefault(s => s.RawBinding == tex.RawBinding);
+
+            // A combined descriptor occupies BOTH the texture and the sampler slot masks —
+            // mgfxc sets both (`textureSlots |= 1 << slot; samplerSlots |= 1 << slot;`) for the
+            // same-slot case. The masks drive MGVK_UpdateDescriptors' dirty early-out
+            // (`textureSamplerDirty & samplerSlots`), so leaving samplerSlots clear made a
+            // sampler-only state change look non-dirty (issue #145 audit, divergence S2).
+            if (paired is not null && tex.BindSlot is >= 0 and < 32)
+                samplerSlots |= 1u << tex.BindSlot;
+
             bindings.Add(((uint)tex.RawBinding, paired is not null ? CombinedImageSampler : SampledImage, stageFlags));
         }
 

@@ -74,9 +74,9 @@ dotnet run --project validation/KniVsDriven    # real KNI v4.02 OpenGL, VS-drive
 > **HARD RULE — Windows render gate before release / before merging shader-output changes.** Because CI cannot run the DX/FNA/KNI-DX render proofs, you MUST run them locally and confirm green **before cutting a release**, and before merging any change that touches shader output / transpilation / the MGFX-FNA writers / render state / matrix handling. One command does all of them:
 >
 > ```powershell
-> ./validation/run-windows-render-gates.ps1            # DX corpus + DX-modern (VTF) + KNI-DX + KNI-GL desktop + KNI-GL VS-driven + the ANGLE-D3D11 derivative probe (issue #136), vs mgfxc/fxc
+> ./validation/run-windows-render-gates.ps1            # DX corpus + DX-modern (VTF) + KNI-DX + KNI-GL desktop + KNI-GL VS-driven + the ANGLE-D3D11 derivative probe (issue #136) + BOTH Vulkan gates (PS corpus + VS-driven vs the mgfxc golden), vs mgfxc/fxc
 > ./validation/run-windows-render-gates.ps1 -IncludeFna  # also the FNA fx_2_0 gate (for an FNA-affecting release)
-> ./validation/run-windows-render-gates.ps1 -IncludeVulkan  # also the Vulkan DesktopVK gate (for a Vulkan-affecting release)
+> ./validation/run-windows-render-gates.ps1 -SkipVulkan  # ONLY on a box with no Vulkan-capable GPU (Vulkan is default-ON since issue #145)
 > ```
 >
 > It restores the vkd3d native, runs each Windows-GPU render driver, and exits non-zero if any render diverges from the reference compiler. A green run is the evidence CI structurally cannot produce. The `/release` skill requires this step.

@@ -45,11 +45,19 @@ internal static class DxcFlagBuilder
             // a minimal repro (Sepia.fx, 2026-07-18): forcing the cbuffer to an explicit
             // register(b0) fixed the crash outright, isolating the auto-numbered raw binding
             // value (not the descriptor shape, already fixed separately) as the cause.
+            // NOTE on -fspv-reflect: mgfxc compiles TWICE — once with it (to dump a reflection
+            // listing it parses) and once WITHOUT it for the bytecode it actually ships, because
+            // (its comment) the flag "forces Google VK extensions into the binary". ShadowDusk
+            // reflects from the SPIR-V itself and reads only core decorations (Binding,
+            // DescriptorSet, Offset, MatrixStride, RowMajor/ColMajor) plus OpName debug names —
+            // none of which come from SPV_GOOGLE_hlsl_functionality1 — so it simply never asks
+            // for the flag and ships the same clean module mgfxc does, in one compile instead of
+            // two (issue #145, divergence S3; resolves Phase 32's open item 5).
             case (PlatformTarget.Vulkan, ShaderStage.Vertex):
                 profile = "vs_6_0";
                 platformFlags = new[]
                 {
-                    "-spirv", "-fvk-use-dx-layout", "-fvk-invert-y", "-fvk-use-dx-position-w", "-fspv-reflect",
+                    "-spirv", "-fvk-use-dx-layout", "-fvk-invert-y", "-fvk-use-dx-position-w",
                     "-fvk-t-shift", "32", "all", "-fvk-s-shift", "32", "all",
                     "-fvk-bind-globals", "0", "0",
                 };
@@ -59,7 +67,7 @@ internal static class DxcFlagBuilder
                 profile = "ps_6_0";
                 platformFlags = new[]
                 {
-                    "-spirv", "-fvk-use-dx-layout", "-auto-binding-space", "1", "-fspv-reflect",
+                    "-spirv", "-fvk-use-dx-layout", "-auto-binding-space", "1",
                     "-fvk-t-shift", "32", "all", "-fvk-s-shift", "32", "all",
                     "-fvk-bind-globals", "0", "1",
                 };
@@ -96,7 +104,26 @@ internal static class DxcFlagBuilder
 
         args.AddRange(platformFlags);
 
-        args.Add("-Zpr");
+        // Matrix packing. -Zpr (row-major) is REQUIRED by the OpenGL path — MonoGameGlslRewriter's
+        // BuildUploadedMat4 reconstructs the uploaded registers assuming it (the issue-#70 fix) —
+        // and irrelevant to DirectX (that target compiles through d3dcompiler_47 with
+        // ShaderFlags.PackMatrixColumnMajor, not through DXC at all).
+        //
+        // Vulkan must NOT have it (issue #145). Real mgfxc's Vulkan DXC command line carries no
+        // -Zpr, so its SPIR-V uses HLSL's column-major default; MonoGame's runtime uploads a
+        // Matrix parameter to match that convention and says so explicitly — EffectParameter
+        // .SetValue(Matrix) "HLSL expects matrices to be transposed by default" (it writes
+        // M11,M21,M31,M41,…) and ConstantBuffer.SetParameter "HLSL assumes matrices are
+        // column-major, whereas in-memory we use row-major. TODO: HLSL can be told to use
+        // row-major. We should handle that too." That TODO is exactly the case -Zpr created here:
+        // the runtime has no idea the shader was built row-major, so every matrix arrived
+        // TRANSPOSED and any VS-driven Vulkan effect threw its geometry out of clip space and
+        // rendered nothing. Verified against real mgfxc 3.8.5 output on the same shader: mgfxc
+        // decorates the cbuffer matrix SPIR-V RowMajor (= HLSL column-major; DXC inverts the term
+        // because SPIR-V stores matrices as column vectors), ShadowDusk decorated it ColMajor.
+        // Dropping the flag here makes the two match with no other container change.
+        if (platform != PlatformTarget.Vulkan)
+            args.Add("-Zpr");
 
         if (!options.AllowWarnings)
             args.Add("-WX");

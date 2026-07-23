@@ -81,14 +81,17 @@ public static class ReferenceFx2Compiler
     /// program ShadowDusk's FNA arm compiles; otherwise a human-readable reason the
     /// shader is macro-parity-unsafe. Safe means: every <c>#if OPENGL</c>/<c>#ifdef
     /// OPENGL</c> block contains only SHADERMODEL / SV_POSITION defines (plus blanks
-    /// and comments) in BOTH branches, with no nesting and no other directive
-    /// mentioning OPENGL.
+    /// and comments) in BOTH branches, and no other directive mentions OPENGL.
+    /// Conditionals nested INSIDE the block (e.g. the <c>#if VULKAN</c> profile branch
+    /// Phase 32 added to every corpus fixture) are fine — they still only ever select
+    /// between those same allowed defines, which is exactly the property being proved.
     /// </summary>
     public static string? CheckOpenGlParity(string source)
     {
         string[] lines = source.Replace("\r\n", "\n").Split('\n');
         int state = 0;        // 0 = outside, 1 = inside OPENGL block (either branch)
         int otherIfDepth = 0; // non-OPENGL conditional nesting (outside OPENGL blocks)
+        int nestedIfDepth = 0; // conditional nesting INSIDE an OPENGL block (e.g. #if VULKAN)
 
         for (int i = 0; i < lines.Length; i++)
         {
@@ -113,6 +116,7 @@ public static class ReferenceFx2Compiler
                         if (!Regex.IsMatch(trimmed, @"^\s*#\s*(if|ifdef)\s+OPENGL\s*(//.*)?$"))
                             return $"line {i + 1}: complex OPENGL condition '{trimmed.Trim()}'";
                         state = 1;
+                        nestedIfDepth = 0;
                         break;
                     case "ifndef" when mentionsOpenGl:
                     case "elif" when mentionsOpenGl:
@@ -144,11 +148,31 @@ public static class ReferenceFx2Compiler
                 {
                     case "else":
                         break; // the #else branch must satisfy the same allowed set
+                    case "endif" when nestedIfDepth > 0:
+                        nestedIfDepth--;
+                        break;
                     case "endif":
                         state = 0;
                         break;
                     case "define" when AllowedDefineRx.IsMatch(trimmed):
                         break;
+
+                    // A NESTED conditional is allowed as long as it does not mention OPENGL
+                    // and everything it guards is still an allowed define (the checks above
+                    // and below keep enforcing that at every depth). Parity still holds: the
+                    // whole block only ever selects between SHADERMODEL / SV_POSITION
+                    // defines, which is the property this method exists to prove.
+                    //
+                    // This shape is not hypothetical — Phase 32 gave all ten corpus fixtures
+                    // a `#if VULKAN` profile branch nested inside the `#else` of `#if OPENGL`,
+                    // and rejecting it silently dropped those ten shaders from the FNA render
+                    // gate (17/17 quietly became 7/17). Found while validating issue #145.
+                    case "if" or "ifdef" or "ifndef" when !Regex.IsMatch(rest, @"\bOPENGL\b"):
+                        nestedIfDepth++;
+                        break;
+                    case "elif" when !Regex.IsMatch(rest, @"\bOPENGL\b"):
+                        break;
+
                     default:
                         return $"line {i + 1}: disallowed directive inside the OPENGL block: '{trimmed.Trim()}'";
                 }

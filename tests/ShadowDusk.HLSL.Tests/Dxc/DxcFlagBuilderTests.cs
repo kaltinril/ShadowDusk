@@ -56,8 +56,12 @@ public sealed class DxcFlagBuilderTests
     [Fact] public void Vulkan_Vertex_HasInvertY()
         => Build(PlatformTarget.Vulkan, ShaderStage.Vertex).Should().Contain("-fvk-invert-y");
 
-    [Fact] public void Vulkan_Vertex_HasFspvReflect()
-        => Build(PlatformTarget.Vulkan, ShaderStage.Vertex).Should().Contain("-fspv-reflect");
+    // Issue #145 (divergence S3): mgfxc ships SPIR-V compiled WITHOUT -fspv-reflect (it
+    // compiles a second time to strip the Google VK extensions the flag forces into the
+    // binary). ShadowDusk reads only core decorations + OpName debug names when reflecting,
+    // so it never asks for the flag and ships the same clean module in ONE compile.
+    [Fact] public void Vulkan_Vertex_HasNoFspvReflect()
+        => Build(PlatformTarget.Vulkan, ShaderStage.Vertex).Should().NotContain("-fspv-reflect");
 
     [Fact] public void Vulkan_Vertex_HasSpirvFlag()
         => Build(PlatformTarget.Vulkan, ShaderStage.Vertex).Should().Contain("-spirv");
@@ -71,8 +75,8 @@ public sealed class DxcFlagBuilderTests
     [Fact] public void Vulkan_Pixel_HasProfile_ps6_0()
         => Build(PlatformTarget.Vulkan, ShaderStage.Pixel).Should().Contain("ps_6_0");
 
-    [Fact] public void Vulkan_Pixel_HasFspvReflect()
-        => Build(PlatformTarget.Vulkan, ShaderStage.Pixel).Should().Contain("-fspv-reflect");
+    [Fact] public void Vulkan_Pixel_HasNoFspvReflect()
+        => Build(PlatformTarget.Vulkan, ShaderStage.Pixel).Should().NotContain("-fspv-reflect");
 
     [Fact] public void Vulkan_Pixel_HasTAndSShift()
         => Joined(Build(PlatformTarget.Vulkan, ShaderStage.Pixel))
@@ -117,8 +121,20 @@ public sealed class DxcFlagBuilderTests
 
     // ── Invariant flags ───────────────────────────────────────────────────────
 
-    [Fact] public void ZprAlwaysPresent()
+    [Fact] public void ZprPresentForOpenGL()
         => Build(PlatformTarget.OpenGL, ShaderStage.Vertex).Should().Contain("-Zpr");
+
+    // Issue #145 (bug 1): -Zpr made DXC pack matrices ROW-major, but MonoGame's runtime
+    // uploads a Matrix parameter for HLSL's COLUMN-major default (EffectParameter
+    // .SetValue(Matrix) transposes on assignment), so every matrix reached a Vulkan shader
+    // transposed and VS-driven effects rendered nothing. mgfxc's Vulkan command line has no
+    // -Zpr; neither may ours. OpenGL keeps it (MonoGameGlslRewriter.BuildUploadedMat4
+    // compensates, the issue-#70 fix) and DirectX never reaches DxcFlagBuilder.
+    [Theory]
+    [InlineData(ShaderStage.Vertex)]
+    [InlineData(ShaderStage.Pixel)]
+    public void ZprAbsentForVulkan(ShaderStage stage)
+        => Build(PlatformTarget.Vulkan, stage).Should().NotContain("-Zpr");
 
     [Fact] public void WxPresentByDefault()
         => Build(PlatformTarget.OpenGL, ShaderStage.Vertex).Should().Contain("-WX");

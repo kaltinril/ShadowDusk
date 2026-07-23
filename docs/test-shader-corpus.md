@@ -266,3 +266,38 @@ depends on — compiles on GL and DX**, the targets Gum ships on.
 > that don't fail for honest SM2-limit reasons). **OpenGL does not**: the legacy
 > DX9/SM2 branch these effects expand to on GL crashes DXC's SPIR-V codegen, so
 > GL keeps a loud `SD0010` instead. Tracked in `plan/` (Phase 41 GAP-1 / GL).
+
+### MonoGame's own test effects — the reference compiler's acceptance set (issue #145)
+
+`tests/fixtures/shaders/third-party/MonoGame/` vendors the 17 `.fx` + 2 `.fxh` assets from
+`MonoGame/MonoGame` `Tests/Assets/Effects/` at tag `v3.8.5` (**Ms-PL**, Copyright (C) MonoGame
+Foundation, Inc). These are what MonoGame itself builds in its own test suite, and upstream's
+per-profile `.mgcb` files state exactly which effects each backend must compile — including a
+**`Vulkan.mgcb`**, which is why they were added: issue #145 exposed that the Vulkan proof ran
+ten PS-only, matrix-free, modern-syntax fixtures and therefore could not see either bug.
+
+Per-file upstream paths, the `.mgcb` membership, the measured per-target compile status, and
+the reasons behind each non-compile are in the directory's `NOTICE.md`. The headline additions
+to corpus coverage:
+
+- **`Instancing.fx`** — VS-driven with a **`float4x4` vertex input** on `BLENDWEIGHT` (four
+  consecutive input locations) plus View/Projection matrices. Exactly the shape issue #145's
+  bug 1 (a transposed matrix on Vulkan) needed to be visible.
+- **`VertexTextureEffect.fx`** — vertex-texture fetch with an SM6/SM4/SM3 profile branch.
+- **`ParameterTypes.fx`** — the parameter-class/type sweep (scalars, vectors, matrices, arrays,
+  structs).
+- **`ParserTest.fx` / `PreprocessorTest.fx` / `DefinesTest.fx`** — the reference compiler's own
+  parser and preprocessor torture tests.
+- **`TextureArrayEffect.fx`, `CustomSpriteBatchEffect*.fx`** — array textures, two
+  texture/sampler pairs, and a comparison sampler.
+
+**Two real defects surfaced the day they landed**, both fixed in the same change: anonymous
+`technique { … }` blocks were rejected outright (`FX0001`) even though mgfxc compiles them and
+writes an empty technique name; and `SamplerComparisonState` on the FNA target crashed the
+whole process inside vkd3d's SM1 lowering (now a loud `FX0013`).
+
+Coverage note: every fixture in the corpus — these included — is exercised by the corpus-wide
+**`VulkanCorpusStructuralTests`** gate, which requires each one to either produce a
+structurally valid Vulkan container (combined descriptors at binding ≥ 32, unique bindings,
+column-major matrices, `main` entry point, no `SPV_GOOGLE_*` extensions) or fail with a real
+diagnostic. There is no skip list to quietly grow.

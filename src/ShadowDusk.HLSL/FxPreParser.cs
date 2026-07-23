@@ -133,6 +133,18 @@ public sealed class FxPreParser
         "texCUBE", "texCUBEbias", "texCUBEgrad", "texCUBElod", "texCUBEproj",
     };
 
+    // SM4+ resource/sampler types with no fx_2_0 (D3D9 SM1-3) equivalent. Only the FNA
+    // target (PreserveSm3) rejects these — see the FX0013 guard in the token loop for why
+    // this must happen BEFORE vkd3d sees the source.
+    private static readonly HashSet<string> UnsupportedFx2ResourceTypes = new(StringComparer.Ordinal)
+    {
+        "SamplerComparisonState",
+        "Texture2DArray", "Texture1DArray", "TextureCubeArray",
+        "Texture2DMS", "Texture2DMSArray",
+        "RWTexture1D", "RWTexture2D", "RWTexture3D",
+        "StructuredBuffer", "RWStructuredBuffer", "ByteAddressBuffer", "RWByteAddressBuffer",
+    };
+
     // -------------------------------------------------------------------------
     // Legacy effect-framework texture object types
     // -------------------------------------------------------------------------
@@ -791,6 +803,25 @@ public sealed class FxPreParser
                     "compiles this intrinsic natively.", tok);
             }
 
+            // SM4+ resource/sampler types that the FNA (fx_2_0) target cannot lower. vkd3d's
+            // SM1 backend does not reject these cleanly: a SamplerComparisonState makes
+            // hlsl_sm1_base_type log "Invalid dimension" then hit "Unreachable code reached",
+            // which takes the whole PROCESS down with an AccessViolationException (confirmed
+            // 2026-07-22 on MonoGame's own CustomSpriteBatchEffectComparisonSampler.fx). A
+            // crash gives the user nothing, so catch it here and fail loudly instead —
+            // ShadowDusk's "fail loudly with diagnostics" rule. Non-FNA targets compile these
+            // fine and never reach this check.
+            if (_mode == FxSourceMode.PreserveSm3 &&
+                tok.Kind == TokenKind.Identifier &&
+                UnsupportedFx2ResourceTypes.Contains(tok.Text))
+            {
+                return Fail<FxParseResult>(FxParseErrorCode.UnsupportedSm4TypeForFx2,
+                    $"'{tok.Text}' is a shader-model 4+ type and has no equivalent in the D3D9 " +
+                    "fx_2_0 profile the FNA target compiles to. Use a plain sampler/sampler2D " +
+                    "(and tex2D) for the FNA target, or compile this effect for the DirectX_11 / " +
+                    "Vulkan targets, which support it.", tok);
+            }
+
             // DXC 6.x dropped the legacy 'tex2D(s, uv)' / 'tex2Dgrad(s, uv, ddx, ddy)'
             // sampling intrinsics. Rewrite them to '<texture>.Sample(…)' /
             // '<texture>.SampleGrad(…)', where <texture> is the Texture2D the sampler
@@ -875,12 +906,28 @@ public sealed class FxPreParser
 
         SkipNonCodeTokens();
 
+        // Technique name is OPTIONAL, exactly like the pass name below: `technique { ... }`
+        // and `technique < annotations > { ... }` are legal FX and are what MonoGame's own
+        // test effects use (Tests/Assets/Effects/CustomSpriteBatchEffect.fx, Instancing.fx,
+        // ParserTest.fx, …). Verified against the reference compiler: mgfxc 3.8.5 compiles
+        // them and writes an EMPTY technique name into the container, so an anonymous
+        // technique carries "" here too rather than a synthesized identifier.
+        string name;
         var nameTok = Peek();
-        if (nameTok.Kind != TokenKind.Identifier)
+        if (nameTok.Kind == TokenKind.Identifier)
+        {
+            name = nameTok.Text;
+            Consume();
+        }
+        else if (nameTok.Kind is TokenKind.LBrace or TokenKind.LAngle)
+        {
+            name = string.Empty;
+        }
+        else
+        {
             return Fail<TechniqueInfo>(FxParseErrorCode.UnexpectedToken,
                 $"Expected technique name but found '{nameTok.Text}'", nameTok);
-        string name = nameTok.Text;
-        Consume();
+        }
 
         SkipNonCodeTokens();
 
