@@ -109,3 +109,13 @@ not FNA).
 `view_projection`, and pixel-diffs ShadowDusk against the checked-in `mgfxc 3.8.5` golden
 (`tests/fixtures/golden/Vulkan/apos-shapes-sm6.mgfx`): **maxd 0**, with a non-vacuity check that
 rejects the blank frame the issue reported. Restoring the `-Zpr` bug turns it red at maxd 255.
+
+**Render-proven on DirectX (Phase 51 A3, added 2026-07-23).** `validation/VsDrivenDx -- apos`
+renders the SAME `apos-shapes-sm6.fx` fixture — no separate DX variant was needed, since the
+DirectX macro set (`{MGFX, HLSL, SM4}`) takes the fixture's `#else` branch (legacy `sampler`/
+`tex2D` syntax, `vs_4_0`/`ps_4_0`), the same branch a DirectX_11-profile `mgfxc` compile takes —
+through the same 13-element vertex layout and the same non-identity asymmetric
+`view_projection`, and pixel-diffs BOTH ShadowDusk DXBC backends (the `d3dcompiler_47` oracle
+and `vkd3d-shader`) against the checked-in `mgfxc` golden
+(`tests/fixtures/golden/DirectX_11/apos-shapes-sm6.mgfx`): **maxd 0** on both backends, no
+tolerance needed. GL and FNA render-proofs remain open (`plan/PHASE-51-consolidated-remainder-backlog.md` A3).

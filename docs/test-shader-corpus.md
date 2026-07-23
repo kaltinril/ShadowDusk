@@ -261,6 +261,15 @@ compile, not pixel-equivalence (no committed goldens). The one genuinely notable
 result is that **`apos-shapes.fx` — the shader Gum's shape rendering actually
 depends on — compiles on GL and DX**, the targets Gum ships on.
 
+**DirectX render-proof (Phase 51 A3, 2026-07-23):** the current-upstream revision
+`apos-shapes-sm6.fx` (see `third-party/Apos.Shapes/NOTICE.md` — it also compiles GL/DX/Vulkan,
+FNA excluded on a legitimate SM ceiling) is now pixel-diffed against the real `mgfxc`
+DirectX_11 golden, not just compile-asserted: `validation/VsDrivenDx -- apos` renders it
+through a bespoke 13-element vertex-buffer harness and matches the golden at **maxd 0** on
+both ShadowDusk DXBC backends. This is the same fixture and the same render-proof shape
+Vulkan already had (`validation/VsDrivenVulkan -- apos`, also maxd 0); the GL and FNA
+render-proofs remain open (`plan/PHASE-51-consolidated-remainder-backlog.md` A3).
+
 > **Macro-defined techniques.** The DX and FNA paths recover `TECHNIQUE()`-macro
 > techniques, so the SM2-fitting MonoGame stock effects compile on FNA (the ones
 > that don't fail for honest SM2-limit reasons). **OpenGL does not**: the legacy

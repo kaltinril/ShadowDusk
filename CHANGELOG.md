@@ -14,6 +14,13 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **Apos.Shapes DirectX render-proof (Phase 51 A3, DX slice).** `validation/VsDrivenDx -- apos`
+  renders Gum's SDF shape renderer (`apos-shapes-sm6.fx`) through a bespoke 13-element
+  vertex-buffer harness on real MonoGame WindowsDX and pixel-diffs both ShadowDusk DXBC
+  backends (`d3dcompiler_47` and `vkd3d-shader`) against the real `mgfxc` DirectX_11 golden:
+  **maxd 0** on both. Wired into `run-windows-render-gates.ps1`. GL and FNA render-proofs
+  remain open (`plan/PHASE-51-consolidated-remainder-backlog.md` A3).
+
 ### Changed
 
 ### Fixed

@@ -24,6 +24,9 @@
     * MonoGame WindowsDX corpus  - validation/BaselineDx + CandidateDx + compare_dx.py
                                    (ShadowDusk DX vs mgfxc DX golden, real MonoGame WindowsDX).
     * DX modern features (VTF)   - validation/DxModernFeatures (vkd3d vs fxc oracle, maxd 0).
+    * DX Apos.Shapes             - validation/VsDrivenDx -- apos (Phase 51 A3: Gum's SDF shape
+                                   renderer, apos-shapes-sm6.fx, both DXBC backends vs the mgfxc
+                                   DirectX_11 golden, real MonoGame WindowsDX, maxd 0).
     * KNI DirectX                - validation/KniWinFormsDX (ShadowDusk DX vs mgfxc, real KNI
                                    WinForms.DX11).
     * KNI OpenGL desktop         - validation/KniDesktopGL + compare_kni.py (ShadowDusk v10 vs
@@ -127,6 +130,10 @@ $gates.Add(@{
 $gates.Add(@{
     Name   = 'DX modern features / vertex texture fetch (vkd3d vs fxc oracle)'
     Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/DxModernFeatures', '-c', 'Release') }
+})
+$gates.Add(@{
+    Name   = 'DX Apos.Shapes (Phase 51 A3: ShadowDusk vs mgfxc DirectX_11 golden, real MonoGame WindowsDX)'
+    Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenDx', '-c', 'Release', '--', 'apos') }
 })
 $gates.Add(@{
     Name   = 'KNI DirectX (ShadowDusk DX vs mgfxc, real KNI WinForms.DX11)'

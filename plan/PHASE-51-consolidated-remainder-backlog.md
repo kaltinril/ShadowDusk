@@ -63,14 +63,29 @@ pattern). Background: [structural-divergence-matrix.md](PHASE-41-appendix/struct
 *From Phase 49.* Option A (the Gum / Apos.Shapes compile-regression corpus) shipped
 2026-06-27. Option B is a real but owner-decision-gated render-proof stretch — **not blocked**.
 
-**Remaining (verbatim from Phase 49):** *"generate the `mgfxc` (GL/DX) and `fxc /T fx_2_0`
-(FNA) goldens for `apos-shapes.fx`, build/extend a render driver that draws Apos.Shapes
-geometry (its vertex format carries the shape parameters in the `TEXCOORD` attributes, so
-this is a real vertex-buffer harness, not a fullscreen triangle), and assert pixel-equivalence
-to the reference compiler per the `validation/*` rung-4 pattern + the Windows render gate."*
+**DX slice DONE (2026-07-23).** `validation/VsDrivenDx -- apos` renders `apos-shapes-sm6.fx`
+(the current-upstream revision, also used by the Vulkan proof — its DirectX macro set
+`{MGFX, HLSL, SM4}` takes the fixture's `#else` branch, `vs_4_0`/`ps_4_0` legacy `sampler`/
+`tex2D` syntax, so no separate DX fixture variant was needed) through a bespoke 13-element
+vertex-buffer harness, pixel-diffed against the real `mgfxc` DirectX_11 golden
+(`tests/fixtures/golden/DirectX_11/apos-shapes-sm6.mgfx`) on BOTH ShadowDusk DXBC backends
+(`d3dcompiler_47` oracle and `vkd3d-shader`): **maxd 0** on both, wired into
+`run-windows-render-gates.ps1`. See `docs/validation-matrix.md` §1/§6 and
+`tests/fixtures/shaders/third-party/Apos.Shapes/NOTICE.md`.
 
-**Done = ** `apos-shapes.fx` rendered pixel-equivalent to `mgfxc`/`fxc` in real MonoGame
-GL/DX (and FNA fx_2_0) via a vertex-buffer Apos.Shapes harness, behind the Windows render gate.
+**Remaining: GL and FNA.** *(verbatim from Phase 49, GL/FNA portion)* *"generate the `mgfxc`
+(GL) and `fxc /T fx_2_0` (FNA) goldens for the fixture, build/extend a render driver that
+draws Apos.Shapes geometry (its vertex format carries the shape parameters in the `TEXCOORD`
+attributes, so this is a real vertex-buffer harness, not a fullscreen triangle), and assert
+pixel-equivalence to the reference compiler per the `validation/*` rung-4 pattern + the
+Windows render gate."* The DX slice's `AposShapesRenderer` (vertex layout, non-identity
+transform, dithering-off discipline) is the template; GL's own analogue of the DX/Vulkan
+sampler-parameter-naming gotcha (the fixture's `#elif OPENGL` branch takes `vs_3_0`/`ps_3_0`,
+also legacy `sampler` syntax) is the main thing to verify before assuming GL is a copy-paste.
+
+**Done = ** `apos-shapes-sm6.fx` (or its target-appropriate variant) rendered pixel-equivalent
+to `mgfxc`/`fxc` in real MonoGame GL (and FNA fx_2_0) via a vertex-buffer Apos.Shapes harness,
+behind the Windows render gate.
 
 ### A4 — ShaderToy sample + runtime-helper migration to `samples/` (ex-47)
 *From Phase 47 (moved 2026-07-18, at the 0.12.0 release docs audit).* The core promotion shipped
