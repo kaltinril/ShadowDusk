@@ -59,18 +59,49 @@ GL render gates are single-target only."*
 reads back BOTH attachments, and asserts pixel-equivalence to the `mgfxc` golden (rung-4
 pattern). Background: [structural-divergence-matrix.md](PHASE-41-appendix/structural-divergence-matrix.md).
 
-### A3 — Apos.Shapes render-proof (Phase 49 Option B, decision-gated stretch)
+### A3 — ✅ CLOSED (2026-07-23) — Apos.Shapes render-proof (Phase 49 Option B, decision-gated stretch)
 *From Phase 49.* Option A (the Gum / Apos.Shapes compile-regression corpus) shipped
-2026-06-27. Option B is a real but owner-decision-gated render-proof stretch — **not blocked**.
+2026-06-27. Option B was a real but owner-decision-gated render-proof stretch — now **closed
+on every target ShadowDusk supports for this shader.**
 
-**Remaining (verbatim from Phase 49):** *"generate the `mgfxc` (GL/DX) and `fxc /T fx_2_0`
-(FNA) goldens for `apos-shapes.fx`, build/extend a render driver that draws Apos.Shapes
-geometry (its vertex format carries the shape parameters in the `TEXCOORD` attributes, so
-this is a real vertex-buffer harness, not a fullscreen triangle), and assert pixel-equivalence
-to the reference compiler per the `validation/*` rung-4 pattern + the Windows render gate."*
+**DX slice DONE (2026-07-23).** `validation/VsDrivenDx -- apos` renders `apos-shapes-sm6.fx`
+(the current-upstream revision, also used by the Vulkan proof — its DirectX macro set
+`{MGFX, HLSL, SM4}` takes the fixture's `#else` branch, `vs_4_0`/`ps_4_0` legacy `sampler`/
+`tex2D` syntax, so no separate DX fixture variant was needed) through a bespoke 13-element
+vertex-buffer harness, pixel-diffed against the real `mgfxc` DirectX_11 golden
+(`tests/fixtures/golden/DirectX_11/apos-shapes-sm6.mgfx`) on BOTH ShadowDusk DXBC backends
+(`d3dcompiler_47` oracle and `vkd3d-shader`): **maxd 0** on both, wired into
+`run-windows-render-gates.ps1`.
 
-**Done = ** `apos-shapes.fx` rendered pixel-equivalent to `mgfxc`/`fxc` in real MonoGame
-GL/DX (and FNA fx_2_0) via a vertex-buffer Apos.Shapes harness, behind the Windows render gate.
+**Vulkan slice DONE (2026-07-22, issue #145).** `validation/VsDrivenVulkan -- apos` renders the
+same `apos-shapes-sm6.fx` on real MonoGame 3.8.5 DesktopVK, pixel-diffed against the checked-in
+`mgfxc 3.8.5` Vulkan golden: **maxd 0**, with a non-vacuity check.
+
+**GL slice DONE (2026-07-23).** `validation/VsDriven -- apos` renders Apos.Shapes on real
+MonoGame DesktopGL — but deliberately NOT the same fixture the DX/Vulkan slices use.
+`apos-shapes-sm6.fx` compiles fine on GL, but its real `mgfxc /Profile:OpenGL` golden renders
+completely wrong (maxd 255, solid black): reverse-engineering the golden's embedded GLSL found
+MojoShader's translation of that revision's fxc-optimized shape dispatch hinges on a
+`-0.0 >= 0.0` comparison this GPU/driver evaluates false, permanently selecting a hard-zeroed
+color branch — a confirmed mgfxc/MojoShader bug (independently verified by recomputing the
+shader's OkLab math in double precision, which matches ShadowDusk's candidate, not the golden),
+not a ShadowDusk defect. `apos-shapes.fx` (the Phase 49 pin — upstream's older, non-fxc-SM3-
+optimizer-mangled revision: plain sequential shape dispatch, Cantor-pair color packing) renders
+correctly: pixel-diffed against the real `mgfxc` OpenGL golden
+(`tests/fixtures/golden/OpenGL/apos-shapes.mgfx`) through its own 10-element vertex-buffer
+harness at **maxd 2/255** (documented transcendental-math GLSL-dialect drift on the shader's
+OkLab round-trip, not a structural mismatch), wired into `run-windows-render-gates.ps1`. See
+`tests/fixtures/shaders/third-party/Apos.Shapes/NOTICE.md` for the full trace.
+
+**FNA is permanently excluded, not a remaining rung.** Apos.Shapes' instruction count exceeds
+vkd3d-shader's Shader Model 3 ceiling (`fx_2_0`/SM3, a real DirectX-9-era instruction-slot
+limit) — a legitimate, documented rejection (`SD0305`), the same honest shader-model ceiling
+the other vendored Apos.Shapes revisions hit. There is no further FNA work to schedule here.
+
+**Done = ** `apos-shapes-sm6.fx` rendered pixel-equivalent to `mgfxc` in real MonoGame DX and
+Vulkan (maxd 0 on both), and `apos-shapes.fx` rendered pixel-equivalent to `mgfxc` in real
+MonoGame GL (maxd 2/255, documented drift) — all three behind the Windows render gate. FNA is
+excluded by a real SM3 instruction-count ceiling, not left open-ended.
 
 ### A4 — ShaderToy sample + runtime-helper migration to `samples/` (ex-47)
 *From Phase 47 (moved 2026-07-18, at the 0.12.0 release docs audit).* The core promotion shipped

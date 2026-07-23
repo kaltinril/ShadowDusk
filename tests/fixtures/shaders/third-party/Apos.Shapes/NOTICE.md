@@ -109,3 +109,33 @@ not FNA).
 `view_projection`, and pixel-diffs ShadowDusk against the checked-in `mgfxc 3.8.5` golden
 (`tests/fixtures/golden/Vulkan/apos-shapes-sm6.mgfx`): **maxd 0**, with a non-vacuity check that
 rejects the blank frame the issue reported. Restoring the `-Zpr` bug turns it red at maxd 255.
+
+**GL: compiles, but its real mgfxc golden renders wrong (Phase 51 A3, discovered 2026-07-23).**
+`apos-shapes-sm6.fx` compiles cleanly on OpenGL (confirmed above), and a `validation/VsDriven --
+apos` attempt against it was built first, matching the DX/Vulkan pattern. It diverged completely
+(maxd 255, solid black) against the real `mgfxc /Profile:OpenGL` golden. Reverse-engineering the
+golden's embedded GLSL (MojoShader's ps_3_0 translation) found the final pixel-shader output is
+`ps_oC0 = ((-ps_r0.w >= 0.0) ? ps_r1 : ps_r4)`, where `ps_r4` is hardcoded to zero for every
+non-texture shape (which is every shape this render-proof exercises) and `ps_r0.w` is set from
+the same hardcoded `0.0` in that case — so the branch condition is `-0.0 >= 0.0`, which IEEE-754
+defines as true (`-0.0 == 0.0`) but which this GPU/driver's evaluation of MojoShader's translated
+comparison resolves false, permanently selecting the hard-zeroed branch. An independent
+double-precision recomputation of the shader's OkLab conversion (bypassing the shader entirely)
+confirmed ShadowDusk's GL candidate is the mathematically correct one. This is a genuine bug in
+mgfxc's own GL/MojoShader compile of this specific fxc-optimized revision — the same class of
+"the reference compiler's own output is wrong" situation the Vulkan `SlotOffset` bug already is —
+not a ShadowDusk defect. It is specific to `apos-shapes-sm6.fx`'s fxc-SM3-optimized shape
+dispatch; it is not exercised by, and does not indicate a gap in, ShadowDusk's own GL codegen.
+
+**Render-proven on GL via the older `apos-shapes.fx` pin instead.** That revision's plain
+sequential `if/else if` shape dispatch and Cantor-pair color packing (`Unpair`, not
+`apos-shapes-sm6.fx`'s `Pack11`/`DecodeDigit`) sidestep the codegen quirk above. `validation/
+VsDriven -- apos` renders it on a real MonoGame DesktopGL device through its own 10-element
+vertex layout (`POSITION0, TEXCOORD0-8` — this earlier revision predates the sm6 fixture's
+clip-distance split), with the same non-identity asymmetric transform, and pixel-diffs ShadowDusk
+against the checked-in `mgfxc` golden (`tests/fixtures/golden/OpenGL/apos-shapes.mgfx`): **maxd
+2/255** (216/16384 pixels, 1-2/255 drift) — the documented transcendental-math GLSL-dialect
+precision drift between SPIRV-Cross and MojoShader on the shader's `RgbToOklab`/`OkLabToRgb`
+round-trip (cube roots + fractional `pow()`), not a structural mismatch. GL, DX, and Vulkan are
+all now render-proven for Apos.Shapes; FNA stays permanently excluded (see the compile-status
+paragraph above).
