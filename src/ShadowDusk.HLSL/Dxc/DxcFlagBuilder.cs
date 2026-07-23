@@ -6,24 +6,6 @@ namespace ShadowDusk.HLSL.Dxc;
 
 internal static class DxcFlagBuilder
 {
-    // Verbatim from MonoGame 3.8.5's ShaderProfile.DirectX12.cs (the reference compiler),
-    // read directly from source during Phase 54's research — the fixed root signature every
-    // DirectX12 shader must embed to pass real WindowsDX12 PSO creation for VS-driven effects.
-    private static readonly string[] Dx12RootSignatureFlags =
-    {
-        "-force-rootsig-ver", "rootsig_1_0",
-        "-rootsig-define", "_MG_ROOT_SIGNATURE",
-        "-D_MG_ROOT_SIGNATURE=" +
-            "RootFlags(ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT | DENY_DOMAIN_SHADER_ROOT_ACCESS | " +
-            "DENY_GEOMETRY_SHADER_ROOT_ACCESS | DENY_HULL_SHADER_ROOT_ACCESS), " +
-            "CBV(b0, visibility = SHADER_VISIBILITY_VERTEX), " +
-            "CBV(b0, visibility = SHADER_VISIBILITY_PIXEL), " +
-            "DescriptorTable(SRV(t0, numDescriptors = unbounded), visibility = SHADER_VISIBILITY_VERTEX), " +
-            "DescriptorTable(SRV(t0, numDescriptors = unbounded), visibility = SHADER_VISIBILITY_PIXEL), " +
-            "DescriptorTable(Sampler(s0, numDescriptors = unbounded), visibility = SHADER_VISIBILITY_VERTEX), " +
-            "DescriptorTable(Sampler(s0, numDescriptors = unbounded), visibility = SHADER_VISIBILITY_PIXEL)",
-    };
-
     public static IReadOnlyList<string> Build(
         PlatformTarget platform,
         ShaderStage stage,
@@ -104,26 +86,27 @@ internal static class DxcFlagBuilder
 
             // DirectX 12: same SM6 DXIL compile as the DirectX case above (no -spirv), but this
             // one is the SHIPPED bytecode (wrapped by DirectX12ShaderCodeWrapper), not a
-            // reflection-only side path. MUST carry the same root-signature flags real mgfxc's
-            // DirectX12ShaderProfile embeds (-force-rootsig-ver / -rootsig-define /
-            // -D_MG_ROOT_SIGNATURE) — confirmed load-bearing (Phase 54 follow-up, 2026-07-23):
-            // omitting them compiles and LOADS fine (own-output pixel-only proof), but a real
-            // MonoGame WindowsDX12 PSO creation for any shader carrying a CUSTOM VERTEX shader
-            // (VS-driven effects, e.g. Apos.Shapes) throws E_INVALIDARG (0x80070057) at Draw
-            // time. MonoGame's native CommandContext::CreateDefaultRootSignature binds an
-            // explicit fixed root signature independent of any embedded one, but
-            // CreateGraphicsPipelineState still validates a shader's embedded RTS0 against it
-            // when the shader carries one at all — SpriteBatch's own precompiled vertex shader
-            // (used by the pixel-only corpus) already embeds a compatible one; a
-            // ShadowDusk-compiled custom vertex shader must too.
+            // reflection-only side path. A prior pass here added mgfxc's rootsig-embedding
+            // flags (-force-rootsig-ver / -rootsig-define / -D_MG_ROOT_SIGNATURE) on the
+            // THEORY that MonoGame's WindowsDX12 PSO creation validates a shader's embedded
+            // RTS0 against its own fixed root signature. That theory is falsified by directly
+            // decoding a REAL mgfxc-compiled DirectX_12 golden (Phase 54 follow-up,
+            // 2026-07-23): its DXIL container carries NO RTS0 part at all (6 parts: SFI0/
+            // ISG1/OSG1/PSV0/HASH/DXIL) — mgfxc's own DirectX12ShaderProfile passes those
+            // flags too, but since no `.fx` source (mgfxc's or ours) carries a
+            // `[RootSignature(_MG_ROOT_SIGNATURE)]` attribute referencing the macro, DXC never
+            // actually attaches one; the flags are vestigial on the reference compiler's own
+            // command line. Adding them here made ShadowDusk's output diverge from the real
+            // golden (ours carried a spurious RTS0 + STAT part the reference never ships) —
+            // no -spirv, no rootsig flags, matches the real compiled reference exactly.
             case (PlatformTarget.DirectX12, ShaderStage.Vertex):
                 profile = "vs_6_0";
-                platformFlags = Dx12RootSignatureFlags;
+                platformFlags = Array.Empty<string>();
                 break;
 
             case (PlatformTarget.DirectX12, ShaderStage.Pixel):
                 profile = "ps_6_0";
-                platformFlags = Dx12RootSignatureFlags;
+                platformFlags = Array.Empty<string>();
                 break;
 
             // Metal goes through SPIR-V so use the same profile/flags as OpenGL

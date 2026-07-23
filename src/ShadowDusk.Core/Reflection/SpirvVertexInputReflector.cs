@@ -11,24 +11,30 @@ namespace ShadowDusk.Core.Reflection;
 /// byte plus its semantic index, and an input that spans several locations (a matrix, an array)
 /// contributes one entry per location with a running index.
 ///
-/// <para><b>Faithfulness, not runtime behaviour (issue #145, divergence S1).</b> MonoGame
-/// 3.8.5's native Vulkan backend builds its vertex input layout positionally from the
-/// <c>VertexDeclaration</c> (<c>MGG_InputLayout_Create</c> sets <c>attrib.location = i</c>) and
-/// never reads this table — mgfxc's own writer even calls the <c>name</c>/<c>location</c> fields
-/// unused under the native backends. ShadowDusk previously wrote an EMPTY table for Vulkan; it
-/// now writes the same one mgfxc does, so the container matches the reference compiler and a
-/// future runtime that does consume it is not silently mis-served.</para>
+/// <para><b>This table IS load-bearing on the new native backend (correction, Phase 54 follow-up,
+/// 2026-07-23).</b> An earlier version of this remark claimed MonoGame's native backends build
+/// their vertex input layout positionally and never read this table — that is false. The shared
+/// managed <c>VertexInputLayout.GenerateInputElements</c> (used by every native backend,
+/// including DirectX12) iterates this exact table to match declared vertex-buffer elements
+/// against the shader's required inputs; an empty table silently yields a zero-element input
+/// layout (its "missing input" check only runs inside the per-attribute loop, so it never fires
+/// when the table itself is empty), which then fails DirectX12's
+/// <c>CreateGraphicsPipelineState</c> — called lazily right before the first Draw — with
+/// <c>E_INVALIDARG</c>. Confirmed by reading MonoGame's real v3.8.5 source directly
+/// (<c>VertexInputLayout.Native.cs</c>, <c>Shader.Native.cs</c>). Always populate this table for
+/// a native-backend vertex shader; never assume it is decorative.</para>
 ///
 /// <para>The <c>Name</c> and <c>Location</c> fields are written as <c>""</c> / <c>0</c> —
 /// exactly what mgfxc emits for a Vulkan shader (its GL profile is the one that populates
-/// them).</para>
+/// them); <c>Usage</c>/<c>Index</c> are what <c>GenerateInputElements</c> actually matches on.</para>
 /// </summary>
 public static class SpirvVertexInputReflector
 {
     /// <summary>
     /// Reads the vertex attribute table from <paramref name="spirvBlob"/>. Returns an empty
-    /// list if the blob is not parseable SPIR-V or declares no located inputs — never throws,
-    /// because a missing attribute table is not fatal on this backend (see class remarks).
+    /// list if the blob is not parseable SPIR-V or declares no located inputs — this is a
+    /// last-resort fallback, not a safe default (see class remarks); a real reflection failure
+    /// here will surface as a load/draw failure downstream, not silently.
     /// </summary>
     public static IReadOnlyList<MgfxVertexAttributeInfo> Read(ReadOnlyMemory<byte> spirvBlob)
     {
@@ -50,7 +56,7 @@ public static class SpirvVertexInputReflector
 
         foreach ((string semantic, _, int locationCount) in inputs)
         {
-            (byte usage, int baseIndex) = MapSemantic(semantic);
+            (byte usage, int baseIndex) = VertexSemanticMapper.Map(semantic);
 
             for (int i = 0; i < locationCount; i++)
             {
@@ -63,61 +69,5 @@ public static class SpirvVertexInputReflector
         }
 
         return attributes;
-    }
-
-    /// <summary>
-    /// Semantic → (<c>VertexElementUsage</c> byte, semantic index). The usage values are
-    /// MonoGame's <c>VertexElementUsage</c> enum: Position=0, Color=1, TextureCoordinate=2,
-    /// Normal=3, Binormal=4, Tangent=5, BlendIndices=6, BlendWeight=7, Depth=8, Fog=9,
-    /// PointSize=10, Sample=11, TessellateFactor=12.
-    ///
-    /// <para>An unrecognised semantic falls back to TextureCoordinate — deliberately matching
-    /// mgfxc, which warns and defaults rather than failing the build. (The OpenGL path throws
-    /// instead, because there the table IS load-bearing: MonoGame's GL runtime binds vertex
-    /// data through it, so a wrong guess silently mis-binds. On Vulkan the table is inert.)</para>
-    /// </summary>
-    private static (byte Usage, int Index) MapSemantic(string semantic)
-    {
-        (string Name, byte Usage)[] known =
-        {
-            ("SV_POSITION",      0),
-            ("POSITION",         0),
-            ("COLOR",            1),
-            ("TEXCOORD",         2),
-            ("NORMAL",           3),
-            ("BINORMAL",         4),
-            ("TANGENT",          5),
-            ("BLENDINDICES",     6),
-            ("BLENDWEIGHT",      7),
-            ("DEPTH",            8),
-            ("FOG",              9),
-            ("POINTSIZE",       10),
-            ("TESSELLATEFACTOR",12),
-        };
-
-        string upper = semantic.ToUpperInvariant();
-
-        foreach ((string name, byte usage) in known)
-        {
-            if (!upper.StartsWith(name, StringComparison.Ordinal))
-                continue;
-
-            string tail = upper[name.Length..];
-            // "POSITION" must not swallow a longer unrelated semantic; a match is only valid
-            // when what follows is the (optional) numeric semantic index.
-            if (tail.Length > 0 && !tail.All(char.IsDigit))
-                continue;
-
-            return (usage, tail.Length == 0 ? 0 : int.Parse(tail, System.Globalization.CultureInfo.InvariantCulture));
-        }
-
-        // Unknown semantic: default to TextureCoordinate with a trailing-digit index, as mgfxc does.
-        int digits = 0;
-        while (digits < upper.Length && char.IsDigit(upper[^(digits + 1)]))
-            digits++;
-
-        return (2, digits == 0
-            ? 0
-            : int.Parse(upper[^digits..], System.Globalization.CultureInfo.InvariantCulture));
     }
 }

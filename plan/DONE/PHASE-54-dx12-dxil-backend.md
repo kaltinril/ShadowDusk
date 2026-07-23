@@ -1,9 +1,9 @@
 # Phase 54 — DirectX 12 (DXIL) backend
 
-**Track:** Backend breadth (post-1.0), same shape as [Phase 32](DONE/PHASE-32-vulkan-backend.md)
+**Track:** Backend breadth (post-1.0), same shape as [Phase 32](PHASE-32-vulkan-backend.md)
 (Vulkan).
 **Status:** In progress (created 2026-07-23). Split out of
-[Phase 52](PHASE-52-monogame-3.8.5-support.md) Area D per that area's own decision gate ("if
+[Phase 52](../PHASE-52-monogame-3.8.5-support.md) Area D per that area's own decision gate ("if
 source inspection reveals a full new container format on the scale of Phase 32's Vulkan work,
 split Area D into its own scoped phase") — source inspection (see
 [appendix](PHASE-54-appendix/dx12-dxil-container-research.md)) confirmed no `PlatformTarget
@@ -11,18 +11,18 @@ split Area D into its own scoped phase") — source inspection (see
 already-built target.
 
 **Depends on:**
-- [Phase 4](DONE/PHASE-4-dxc-integration.md) — DXC integration; DX12 is a single DXC compile to
+- [Phase 4](PHASE-4-dxc-integration.md) — DXC integration; DX12 is a single DXC compile to
   SM6 DXIL (`vs_6_0`/`ps_6_0`, no `-spirv`), reusing the same DXC invocation shape the existing
   `(PlatformTarget.DirectX, *)` reflection-only case already proves works.
-- [Phase 18](DONE/PHASE-18-directx-dxbc.md) — the existing DirectX11/DXBC target's
+- [Phase 18](PHASE-18-directx-dxbc.md) — the existing DirectX11/DXBC target's
   `DxilReflectionExtractor`/`ReflectionPipeline` reflection code, reused unchanged for DX12 (same
   DXIL reflection-comment format, same SM6 profile).
-- [Phase 32](DONE/PHASE-32-vulkan-backend.md) — prior art for the method (source-inspect the real
+- [Phase 32](PHASE-32-vulkan-backend.md) — prior art for the method (source-inspect the real
   container before writing code) and for the reused SM6 `apos-shapes-sm6.fx` fixture branch.
-- [Phase 52](PHASE-52-monogame-3.8.5-support.md) — MonoGame 3.8.5 stable is the runtime this phase
+- [Phase 52](../PHASE-52-monogame-3.8.5-support.md) — MonoGame 3.8.5 stable is the runtime this phase
   validates against (`MonoGame.Runtime.Windows.DX12`, `<MonoGamePlatform>WindowsDX12</MonoGamePlatform>`).
 
-**Blocks:** [Phase 51](PHASE-51-consolidated-remainder-backlog.md) B1 close-out (now points here
+**Blocks:** [Phase 51](../PHASE-51-consolidated-remainder-backlog.md) B1 close-out (now points here
 instead of Phase 52 Area D).
 
 > The product is the in-memory `IShaderCompiler` library (CLAUDE.md → THE PURPOSE). DX12 is a
@@ -126,11 +126,15 @@ corpus and the Apos.Shapes/VS-driven corpus, same bar every other backend was he
 
 ## Status
 
-**In progress (2026-07-23, second pass).** The first pass shipped own-output-only evidence for
-the PS corpus and left Apos.Shapes/VS-driven untouched; the user rejected own-output-only as a
+**Done (2026-07-23, third pass).** The first pass shipped own-output-only evidence for the PS
+corpus and left Apos.Shapes/VS-driven untouched; the user rejected own-output-only as a
 completion bar ("if it's not tested, it's not done, period, end of story" — matching the same
-oracle rigor DX11/GL/Vulkan are held to), so this pass replaced it with a real reference-compiler
-oracle and, in doing so, surfaced a genuine unresolved defect. Both are recorded here honestly.
+oracle rigor DX11/GL/Vulkan are held to). The second pass replaced it with a real
+reference-compiler oracle and, in doing so, surfaced a genuine VS-driven draw-crash defect that
+it could not root-cause. This third pass root-caused and fixed it by reading MonoGame's actual
+current v3.8.5 source directly (not a stale/cached clone — see below) — DX12 is now rung-4 proven
+for **both** the PS/SpriteBatch corpus and the Apos.Shapes/VS-driven corpus, maxd 0 against the
+real `mgfxc` `DirectX_12` golden, same bar as DX11/GL/Vulkan.
 
 **Real oracle now exists — PS/SpriteBatch corpus is genuinely oracle-proven:**
 - **`dotnet-mgcb` 3.8.5's own `mgcb.dll` content builder can build a real `DirectX_12` profile
@@ -140,7 +144,7 @@ oracle and, in doing so, surfaced a genuine unresolved defect. Both are recorded
   DX12 directly). This resolves the oracle-tool-version question **for DX12 specifically** by
   installing `dotnet-mgcb-editor-windows`/`dotnet-mgcb` 3.8.5 as a **scratch, non-pinned** tool for
   golden generation only — `.config/dotnet-tools.json`'s pinned 3.8.4.1 oracle is untouched (that
-  pin is [Phase 52 Area C](PHASE-52-monogame-3.8.5-support.md)'s decision to make, not this phase's).
+  pin is [Phase 52 Area C](../PHASE-52-monogame-3.8.5-support.md)'s decision to make, not this phase's).
 - Real goldens for all 10 PS/SpriteBatch shaders + `VsTransformColorTexture.fx` +
   `apos-shapes-sm6.fx` were built via the real 3.8.5 content pipeline, extracted from the XNB
   wrapper (`EffectReader`'s raw `.mgfx` payload — same byte format used everywhere else in this
@@ -157,47 +161,81 @@ oracle and, in doing so, surfaced a genuine unresolved defect. Both are recorded
   full `run-windows-render-gates.ps1` (every pre-existing gate still green, including both Vulkan
   gates at maxd 0).
 
-**Confirmed, UNRESOLVED defect — Apos.Shapes/VS-driven DX12 (task 7):**
+**Apos.Shapes/VS-driven DX12 (task 7): FIXED, root-caused against MonoGame's real current source.**
 - The prior pass's Task 8 conclusion ("root signature empirically resolved — not needed") was
   **premature**: it was drawn from the PS/SpriteBatch corpus only, and every one of those passes
   has **no `VertexShader` line at all** (falls back to SpriteBatch's own built-in vertex shader),
   so it never actually exercised a ShadowDusk-*compiled* DX12 vertex shader.
-- `validation/VsDrivenDx12` (new — mirrors `VsDrivenDx`'s `vs`/`apos` modes) is the first real test
-  of that path, using the real `DirectX_12` goldens above as the oracle. Result: **both modes
-  load their baseline (real mgfxc) golden and render correctly**, but **ShadowDusk's own compiled
-  vertex shader crashes real `WindowsDX12` at draw time** — a native `E_INVALIDARG` (`0x80070057`)
-  inside `MGG_GraphicsDevice_DrawIndexed`. `new Effect()` and PSO creation (`pass.Apply()`)
-  succeed; the actual `DrawIndexedInstanced` call does not. Reproduces identically for the simple
-  `VsTransformColorTexture` rig and for `apos-shapes-sm6.fx` — not fixture-specific.
-- Added the missing DXC root-signature-embedding flags real mgfxc's `DirectX12ShaderProfile`
-  carries (`-force-rootsig-ver rootsig_1_0 -rootsig-define _MG_ROOT_SIGNATURE -D_MG_ROOT_SIGNATURE=
-  "..."`, verbatim from the appendix) as the leading hypothesis — `DxcFlagBuilder`'s
-  `Dx12RootSignatureFlags`. **This did NOT fix the crash** (confirmed by direct retest; compiled
-  size grew as expected, showing the flag took effect, but the draw still throws identically).
-  Does not regress the PS corpus (re-verified maxd 0 after the change).
-  Root cause is **still open** — ruled out so far: root-signature embedding (tried, insufficient),
-  descriptor-table binding order (code-read: both VS/PS SRV+sampler root tables are bound
-  unconditionally whenever any texture/sampler is set, regardless of which stage owns it, so an
-  unbound-root-parameter theory doesn't hold up either). Input-layout / vertex-shader input-
-  signature mismatch between ShadowDusk's and mgfxc's DXC output remains the leading open
-  hypothesis but is unconfirmed — needs either a debug-layer-enabled native DX12 build (the
-  shipped `MonoGame.Runtime.Windows.DX12` NuGet is a release build; `_DEBUG`-gated
-  `EnableDebugLayer()` is compiled out) or a byte-level DXIL signature-chunk diff.
-- **Do not claim DX12 "done" for VS-driven content until this is fixed and `VsDrivenDx12` is
-  green.** It is deliberately NOT wired into `run-windows-render-gates.ps1` (which only gates
-  proven-green drivers) — run it manually to reproduce: `dotnet run --project
-  validation/VsDrivenDx12` and `-- apos`.
+- `validation/VsDrivenDx12` (mirrors `VsDrivenDx`'s `vs`/`apos` modes) is the first real test of
+  that path, using the real `DirectX_12` goldens above as the oracle. It reproduced a crash:
+  ShadowDusk's own compiled vertex shader threw a native `E_INVALIDARG` (`0x80070057`) inside
+  `MGG_GraphicsDevice_DrawIndexed` on real `WindowsDX12`, for both `VsTransformColorTexture` and
+  `apos-shapes-sm6.fx` — not fixture-specific. `new Effect()` succeeded; the draw call did not.
+- **Root cause, confirmed by reading MonoGame's real, current source directly** (the previous
+  pass's local clone of `github.com/MonoGame/MonoGame` was stale — its `develop` HEAD predated
+  the real DX12 shader-wrapper code entirely, which is why grepping it for `0xB00B00` came up
+  empty; re-fetched `upstream` and checked out the real `v3.8.5` tag, dated 2026-07-15, matching
+  the actual release): MonoGame's shared managed `VertexInputLayout.GenerateInputElements`
+  (`MonoGame.Framework/Platform/Native/VertexInputLayout.Native.cs`, used by every native
+  backend including DirectX12 and Vulkan) builds the D3D12 input layout by iterating the vertex
+  shader's own per-shader **vertex attribute table** — the same `.mgfx` "attributes" field DX11's
+  GL path and Vulkan already populate. ShadowDusk's DirectX12 compile path left this table
+  **empty** for every vertex shader (`CompilationPipeline.cs`'s DXIL branch only ever populated
+  it for Vulkan). With zero attributes, `GenerateInputElements`'s per-attribute loop
+  (`for (i=0; i<inputs.Length; i++)`) never runs — producing a **zero-element input layout** and,
+  because its "missing shader input" check lives *inside* that same loop, no error is reported
+  either. That empty input layout later fails `CreateGraphicsPipelineState` — called lazily via
+  `PipelineStateManager::ApplyCurrentPipelineState()` right before the first `DrawIndexedInstanced`
+  — with exactly the observed `E_INVALIDARG`. Confirmed end-to-end: a from-scratch standalone
+  D3D12 repro (debug layer + GPU-based validation enabled, MonoGame's exact
+  `CreateDefaultRootSignature` root-signature layout reproduced by hand) built a **correct**,
+  hand-authored input layout for ShadowDusk's exact shader bytecode and created the PSO cleanly
+  with zero validation messages — proving the shader/root-signature was never the problem, only
+  the input layout MonoGame derives from the (empty) attribute table.
+- Two other real (but non-causal) divergences from the reference compiler were found and fixed
+  along the way via direct byte-level comparison against the real `DirectX_12` golden:
+  - The DXC root-signature-embedding flags (`-force-rootsig-ver` / `-rootsig-define` /
+    `-D_MG_ROOT_SIGNATURE=...`) added in the prior pass were a red herring — the real mgfxc
+    golden's compiled DXIL carries **no `RTS0` part at all** (confirmed by decoding it directly),
+    so mgfxc's own `DirectX12ShaderProfile` flags are vestigial (no `.fx` source, upstream's or
+    ours, carries a `[RootSignature(...)]` attribute referencing the macro, so DXC never actually
+    attaches one). Reverted to a plain compile (`Array.Empty<string>()`, matching the `DirectX`
+    case), removing the spurious `RTS0`/`STAT` parts our output was carrying that the reference
+    never ships.
+  - `ParameterListBuilder` was emitting a **4th, standalone `SpriteTextureSampler` parameter**
+    the real golden does not have (3 parameters: `WorldViewProjection`, `Tint`, `SpriteTexture` —
+    confirmed by decoding the golden's parameter list directly). DirectX11's DXBC reflection path
+    already folds sampler+texture into one parameter (`includeSamplerParameters: false`); DX12
+    was routed through the generic DXIL `ReflectionPipeline` branch, which defaulted to `true`.
+    `ReflectionPipeline.Reflect` now takes an `includeSamplerParameters` flag, set `false` for
+    DirectX12 in `CompilationPipeline.cs` (OpenGL/Vulkan behavior unchanged).
+- **The fix**: added `DxilVertexInputReflector` (`ShadowDusk.HLSL.Reflection`, mirrors
+  `SpirvVertexInputReflector`'s shape but reads `ReflectedEffect.InputSignature` from
+  `DxilReflectionExtractor` instead of parsing SPIR-V) and wired it into
+  `CompilationPipeline.cs`'s vertex-attribute branch for `PlatformTarget.DirectX12`. Extracted the
+  semantic → `VertexElementUsage` mapping shared by both reflectors into
+  `ShadowDusk.Core.Reflection.VertexSemanticMapper` so it cannot drift between backends.
+  Corrected `SpirvVertexInputReflector`'s doc comment, which had claimed (based on an
+  unverified/stale finding) that this table is "inert" on the native backend — false, per the
+  above.
+- **Verified, all green**: `validation/VsDrivenDx12` (tolerance 4, matching the existing rig) and
+  `validation/VsDrivenDx12 -- apos` (**maxd 0**) both pass against the real `DirectX_12` golden.
+  The PS/SpriteBatch corpus was re-verified unaffected (`BaselineDx12`/`CandidateDx12`/
+  `compare_dx12.py`: still 10/10, maxd 0). Full `dotnet test ShadowDusk.slnx`: 2222/2222 green.
+  Full `run-windows-render-gates.ps1` run: every other gate still green (two isolated,
+  reproducibility-checked exceptions on this run — Vulkan PS corpus and the ANGLE probe each
+  failed on exactly one of several consecutive full-script runs and passed clean standalone and
+  on retry; pre-existing environmental flakiness from rapid back-to-back GPU-device churn across
+  ~10 heavy render gates in one script invocation, unrelated to this change — neither touches
+  vertex-attribute or DX12 code at all). The one **consistently** failing gate, KNI OpenGL
+  desktop, is a separate pre-existing "missing reference images" environmental gap, also
+  unrelated to DX12.
+- Both `VsDrivenDx12` modes are now wired into `run-windows-render-gates.ps1` alongside the PS
+  corpus gate (default-ON, matching every other proven backend).
 
 **Still not done / next steps:**
-- Root-cause and fix the VS-driven DX12 draw crash above (task 7 blocker).
-- `docs/the-purpose.md` backend table, `CHANGELOG.md`, `README.md`, and the DocFX site remain
-  deliberately NOT updated to claim DX12 "supported" — the PS-corpus-only proof is real but
-  partial, and the standing rule is never to pre-claim support ahead of full evidence. Once
-  VS-driven is fixed and green, do the consumer-facing docs sweep in the same PR as that fix.
-- `docs/validation-matrix.md` and `docs/error-codes.md` updated this pass to state the evidence
-  honestly (PS corpus: real oracle, maxd 0; VS-driven: confirmed broken, not just untested).
-- Vertex attribute table (mgfxc's DX12 profile collects one, though its own comment says the
-  native runtime doesn't use it) is still not built for ShadowDusk's DX12 output — worth
-  revisiting once the VS-driven crash is root-caused, in case it turns out to be relevant after
-  all (this pass's code-reading did not find where D3D12 would consume it, but the draw-time
-  crash means some VS-related assumption in this phase is wrong).
+- `docs/the-purpose.md` backend table, `CHANGELOG.md`, `README.md`, and the DocFX site: now
+  updateable to claim DX12 "supported" per the seamless-support rule, since both corpora are
+  rung-4 proven — do in the docs-audit pass for this PR.
+- `docs/validation-matrix.md` and `docs/error-codes.md`: update the DX12 row/cell from "PS corpus
+  only" to fully proven.

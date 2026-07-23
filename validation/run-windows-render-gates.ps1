@@ -31,9 +31,19 @@
                                    (Phase 54: ShadowDusk DX12 vs a REAL mgfxc DirectX_12 golden -
                                    built by MonoGame 3.8.5's own content pipeline,
                                    /Platform:WindowsDX12 - real MonoGame WindowsDX12, maxd 0).
-                                   PIXEL-ONLY: these passes carry no VertexShader line and fall
-                                   back to SpriteBatch's own built-in VS - see the VsDrivenDx12
-                                   note below for the DX12 vertex-shader gap this does NOT cover.
+    * DirectX12 VS-driven + Apos.Shapes - validation/VsDrivenDx12 (+ `-- apos`) (Phase 54: a
+                                   ShadowDusk-compiled DX12 effect with its OWN custom vertex
+                                   shader vs a REAL mgfxc DirectX_12 golden, real MonoGame 3.8.5
+                                   WindowsDX12, maxd 0). Was a confirmed E_INVALIDARG crash in
+                                   MGG_GraphicsDevice_DrawIndexed; root-caused by reading
+                                   MonoGame's real v3.8.5 source directly (not the rootsig
+                                   hypothesis - that was a red herring) to a DX12 vertex shader
+                                   shipping an EMPTY vertex-attribute table, which MonoGame's
+                                   shared VertexInputLayout.GenerateInputElements needs to build
+                                   the D3D12 input layout; an empty table silently yields a
+                                   zero-element layout that fails CreateGraphicsPipelineState at
+                                   the first Draw. Fixed by wiring DXIL-based vertex-attribute
+                                   reflection for DirectX12 (DxilVertexInputReflector).
     * KNI DirectX                - validation/KniWinFormsDX (ShadowDusk DX vs mgfxc, real KNI
                                    WinForms.DX11).
     * KNI OpenGL desktop         - validation/KniDesktopGL + compare_kni.py (ShadowDusk v10 vs
@@ -157,16 +167,13 @@ $gates.Add(@{
         Invoke-Checked 'python' @('validation/compare_dx12.py')
     }
 })
-# NOTE: validation/VsDrivenDx12 (VS-driven + Apos.Shapes DX12) is deliberately NOT wired in
-# here yet. It is a CONFIRMED-BROKEN gate (Phase 54 follow-up, 2026-07-23): any ShadowDusk-
-# compiled DX12 effect carrying its OWN custom vertex shader (as opposed to the pixel-only
-# corpus above, whose passes have no VertexShader line and fall back to SpriteBatch's own
-# built-in one) throws a native E_INVALIDARG (0x80070057) inside MGG_GraphicsDevice_DrawIndexed
-# on a real WindowsDX12 device - PSO creation succeeds, the draw call itself does not. The
-# missing DXC root-signature-embedding flags were the leading hypothesis and have been added
-# (DxcFlagBuilder's Dx12RootSignatureFlags) but did NOT fix it - root cause is still open. Run
-# it manually (`dotnet run --project validation/VsDrivenDx12` / `-- apos`) to reproduce; do not
-# add it here until it is green, and do not claim DX12 "done" for VS-driven content until it is.
+$gates.Add(@{
+    Name   = 'DX12 VS-driven + Apos.Shapes (Phase 54: ShadowDusk custom-VS DX12 effect vs REAL mgfxc DirectX_12 golden, real MonoGame 3.8.5 WindowsDX12)'
+    Action = {
+        Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenDx12', '-c', 'Release')
+        Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenDx12', '-c', 'Release', '--', 'apos')
+    }
+})
 $gates.Add(@{
     Name   = 'KNI DirectX (ShadowDusk DX vs mgfxc, real KNI WinForms.DX11)'
     Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/KniWinFormsDX', '-c', 'Release') }

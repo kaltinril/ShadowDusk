@@ -562,7 +562,16 @@ internal sealed class CompilationPipeline
                             FxAnnotations = fxParsed.ParameterAnnotations,
                         };
 
-                        reflectResult = reflectionPipeline.Reflect(reflectionInput, cancellationToken);
+                        // DirectX12 folds a sampler+texture pair into the single texture
+                        // parameter, matching DirectX11's DXBC path and the real mgfxc
+                        // DirectX_12 golden (confirmed by decoding it directly, Phase 54
+                        // follow-up) — real mgfxc's DX12 golden has no standalone sampler
+                        // parameter. OpenGL/Vulkan keep the existing (Phase 17/32 proven)
+                        // behavior of emitting one.
+                        bool includeSamplerParameters = options.Target != PlatformTarget.DirectX12;
+
+                        reflectResult = reflectionPipeline.Reflect(
+                            reflectionInput, cancellationToken, includeSamplerParameters);
                     }
 
                     if (reflectResult.IsFailure)
@@ -1804,15 +1813,27 @@ internal sealed class CompilationPipeline
             ReadOnlyMemory<byte> spirvBlob = isDxilOutput ? default : blob;
 
             // Vulkan vertex shaders carry an attribute table in the .mgfx shader record, built
-            // from the SPIR-V input semantics exactly as mgfxc builds it (issue #145, S1). It is
-            // inert on MonoGame 3.8.5's native backend — which lays out vertex inputs positionally
-            // from the VertexDeclaration — but the reference compiler emits it, so we do too.
-            IReadOnlyList<MgfxVertexAttributeInfo> vkAttributes =
-                platform == PlatformTarget.Vulkan && stage == ShaderStage.Vertex
-                    ? SpirvVertexInputReflector.Read(spirvBlob)
-                    : noAttributes;
+            // from the SPIR-V input semantics exactly as mgfxc builds it (issue #145, S1).
+            //
+            // DirectX12 vertex shaders MUST carry this table too — it is NOT cosmetic on the new
+            // native backend. MonoGame's managed VertexInputLayout.GenerateInputElements (shared
+            // by every native backend) iterates this exact table to build the D3D12 input layout;
+            // an empty table silently produces a zero-element input layout (its "missing input"
+            // check only runs inside the per-attribute loop, so it never fires when the table is
+            // empty), which then fails CreateGraphicsPipelineState — called lazily right before
+            // the first Draw — with E_INVALIDARG. Confirmed root cause by reading MonoGame's real
+            // v3.8.5 source directly (Phase 54 follow-up, 2026-07-23): VertexInputLayout.Native.cs
+            // and Shader.Native.cs's GetOrCreateLayout.
+            IReadOnlyList<MgfxVertexAttributeInfo> vertexAttributes = stage != ShaderStage.Vertex
+                ? noAttributes
+                : platform switch
+                {
+                    PlatformTarget.Vulkan    => SpirvVertexInputReflector.Read(spirvBlob),
+                    PlatformTarget.DirectX12 => DxilVertexInputReflector.Read(dxilBlob, new DxilReflectionExtractor()),
+                    _                        => noAttributes,
+                };
 
-            return (Result<byte[], ShaderError>.Ok(blob.ToArray()), dxilBlob, spirvBlob, vkAttributes, noUniforms, result.Value.Warnings);
+            return (Result<byte[], ShaderError>.Ok(blob.ToArray()), dxilBlob, spirvBlob, vertexAttributes, noUniforms, result.Value.Warnings);
         }
     }
 

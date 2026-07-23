@@ -133,9 +133,9 @@ no `PlatformTarget.DirectX12` anywhere in the codebase — "the DXIL path is alr
 accurate only for a DXC-to-SM6-DXIL reflection side-path already used by the DirectX11 target,
 not for an actual DX12 container/writer/`PlatformTarget`. That is a full new-backend build on the
 scale of Phase 32's Vulkan work, exactly the condition this area's decision gate named for
-splitting out. Filed as **[Phase 54 — DirectX 12 (DXIL) backend](PHASE-54-dx12-dxil-backend.md)**,
+splitting out. Filed as **[Phase 54 — DirectX 12 (DXIL) backend](DONE/PHASE-54-dx12-dxil-backend.md)**,
 research committed to
-[`PHASE-54-appendix/dx12-dxil-container-research.md`](PHASE-54-appendix/dx12-dxil-container-research.md).
+[`PHASE-54-appendix/dx12-dxil-container-research.md`](DONE/PHASE-54-appendix/dx12-dxil-container-research.md).
 This phase closes on Areas A/B/C/E/F; the Phase 51 B1 tail now points at Phase 54 instead of here.
 
 Original scope (carried into Phase 54 verbatim): The DXIL path is **already built**; what was
