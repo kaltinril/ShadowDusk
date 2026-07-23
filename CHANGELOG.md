@@ -32,8 +32,9 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   contains 28 `isnan(` occurrences and no `#version` directive (the real mgfxc golden has zero
   of either). Desktop NVIDIA/AMD/Intel drivers tolerate it; Apple's strict GL compiler does not,
   breaking any GL shader using `min`/`max`/`clamp` on macOS — real downstream breakage
-  (Apos.Shapes 0.7.6). Pre-existing, not caused by this change, not fixed by it. Tracked as
-  Phase 51 A7.
+  (Apos.Shapes 0.7.6). Pre-existing, not caused by this change, not fixed by it. Tracked in
+  `plan/ISSUE-149-gl-isnan-versionless-glsl.md` (not Phase 51 — the same standalone-doc
+  treatment issues #70/#145 got).
 
 ### Changed
 

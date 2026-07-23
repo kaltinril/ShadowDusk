@@ -150,4 +150,5 @@ breakage for Apos.Shapes 0.7.6 on macOS, reported independently by Apostolique. 
 invalidate the maxd 2/255 pixel-diff above (a real result on this repo's established GL
 evidence ladder); it is a pre-existing GL-backend gap (any shader using `min`/`max`/`clamp`),
 not something this render-proof could have caught on this hardware, and not specific to
-Apos.Shapes. Tracked as Phase 51 A7, not part of this render-proof's scope.
+Apos.Shapes. Tracked in its own doc, `plan/ISSUE-149-gl-isnan-versionless-glsl.md` (not Phase 51
+— a fresh, externally-filed correctness bug, not this render-proof's scope).
