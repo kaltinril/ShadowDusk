@@ -262,14 +262,19 @@ compile, not pixel-equivalence (no committed goldens). The one genuinely notable
 result is that **`apos-shapes.fx` — the shader Gum's shape rendering actually
 depends on — compiles on GL and DX**, the targets Gum ships on.
 
-> **Beyond compile-only: `apos-shapes.fx` is also render-proven on real MonoGame OpenGL**
-> (Phase 51 A3, 2026-07-23) — `validation/VsDriven -- apos` pixel-diffs it against the real
-> `mgfxc` OpenGL golden at maxd 2/255 (see `docs/validation-matrix.md` §1/§6). DX and Vulkan
-> have their own render-proofs too, but against a different, later vendored revision
-> (`apos-shapes-sm6.fx`, below) — GL uses THIS file specifically because that later revision's
-> real mgfxc GL compile is confirmed to render solid black (a MojoShader/fxc codegen bug, not
-> a ShadowDusk defect); see `NOTICE.md` and `validation/VsDriven`'s `AposShapesRenderer` for
-> the full trace.
+**Beyond compile-only: Apos.Shapes is now render-proven on DX, Vulkan, and GL (Phase 51 A3,
+2026-07-23).** The current-upstream revision `apos-shapes-sm6.fx` (see
+`third-party/Apos.Shapes/NOTICE.md` — it also compiles GL/DX/Vulkan, FNA excluded on a
+legitimate SM ceiling) is pixel-diffed against the real `mgfxc` golden on **DirectX**
+(`validation/VsDrivenDx -- apos`, through a bespoke 13-element vertex-buffer harness, **maxd 0**
+on both ShadowDusk DXBC backends) and **Vulkan** (`validation/VsDrivenVulkan -- apos`, also
+maxd 0). **GL uses a different fixture on purpose:** `apos-shapes.fx` (the Phase 49 pin, below),
+not `apos-shapes-sm6.fx` — that later revision's real mgfxc GL compile is confirmed to render
+solid black, a MojoShader/fxc codegen bug, not a ShadowDusk defect. `validation/VsDriven --
+apos` pixel-diffs `apos-shapes.fx` against the real mgfxc OpenGL golden at **maxd 2/255** (see
+`docs/validation-matrix.md` §1/§6). See `NOTICE.md` and `validation/VsDriven`'s
+`AposShapesRenderer` for the full trace. FNA is permanently excluded (a legitimate SM3
+instruction-slot ceiling, not an open rung).
 
 > **Macro-defined techniques.** The DX and FNA paths recover `TECHNIQUE()`-macro
 > techniques, so the SM2-fitting MonoGame stock effects compile on FNA (the ones
