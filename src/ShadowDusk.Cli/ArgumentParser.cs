@@ -350,6 +350,10 @@ internal static class ArgumentParser
         if (value.Equals("Vulkan", StringComparison.OrdinalIgnoreCase))
             return Result<PlatformTarget, ShaderError>.Ok(PlatformTarget.Vulkan);
 
+        // Matches real mgfxc's own DirectX12ShaderProfile registration name exactly.
+        if (value.Equals("DirectX_12", StringComparison.OrdinalIgnoreCase))
+            return Result<PlatformTarget, ShaderError>.Ok(PlatformTarget.DirectX12);
+
         // FNA's D3D9 fx_2_0 effects target (.fxb). Not an mgfxc profile — additive,
         // so mgfxc drop-in parity is unaffected.
         if (value.Equals("FNA", StringComparison.OrdinalIgnoreCase))

@@ -61,6 +61,7 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 | `SD0024` | A `sampler_state` member has an unparseable value for a recognized key (MinFilter/MagFilter/MipFilter/Filter, AddressU/V/W, BorderColor, MaxAnisotropy, MaxMipLevel, MipLodBias). | `MgfxSamplerStateResolver` |
 | `SD0025` | The Vulkan target was requested together with the KNIFX container (KNI ships no Vulkan platform). | `CompilationPipeline` |
 | `SD0026` | A shader declares more than one constant buffer for a single stage on the Vulkan target, which the format does not support — merge the globals into one `cbuffer`. | `CompilationPipeline` |
+| `SD0027` | The DirectX12 target was requested together with the KNIFX container (KNI ships no DX12 platform). | `CompilationPipeline` |
 | `SD0100` | SPIRV-Cross SPIR-V→GLSL transpilation failed (includes a SPIR-V blob whose byte length is not a multiple of 4). | `SpirvCrossGlslTranspiler` |
 | `SD0101` | Pure-managed reflection failed (DXBC `RdefReader`, `SpirvReflector`). | `RdefReader`, `SpirvReflector` |
 | `SD0102` | Native DXIL reflection (`ID3D12ShaderReflection`) failed. | `DxilReflectionExtractor` |

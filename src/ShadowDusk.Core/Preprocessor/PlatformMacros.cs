@@ -26,6 +26,11 @@ public static class PlatformMacros
         // MGFX (the output is not an .mgfx container) nor SM4/SM6/OPENGL/VULKAN, so
         // MonoGame-template sources (Macros.fxh) fall through to their DX9/SM2 branch.
         PlatformTarget.Fna     => new MacroSet([new("FNA"), new("HLSL"), new("SM3")]),
+        // Matches real mgfxc's DirectX12ShaderProfile.AddMacros exactly: HLSL + SM6, no
+        // VULKAN-equivalent macro (Phase 54 research) — a shader gated on #if SM6 takes
+        // the same branch Vulkan does; one gated on #if VULKAN falls to its #else, which
+        // is correct (DX12 doesn't share Vulkan's native-backend format quirks).
+        PlatformTarget.DirectX12 => new MacroSet([new("MGFX"), new("HLSL"), new("SM6")]),
         _ => throw new ArgumentOutOfRangeException(nameof(platform))
     };
 
@@ -61,5 +66,6 @@ public static class PlatformMacros
         is PlatformTarget.DirectX
         or PlatformTarget.OpenGL
         or PlatformTarget.Vulkan
-        or PlatformTarget.Fna;
+        or PlatformTarget.Fna
+        or PlatformTarget.DirectX12;
 }

@@ -41,4 +41,14 @@ public enum PlatformTarget
     /// <see cref="CompilerOptions.DxbcBackend"/> are ignored for this target.
     /// </summary>
     Fna     = 4,
+
+    /// <summary>
+    /// DirectX 12 (Windows). Emits a <c>.mgfx</c> carrying SM6 DXIL directly (MGFX profile byte
+    /// 2, matching MonoGame 3.8.5's <c>DirectX12ShaderProfile</c> — never this enum ordinal),
+    /// compiled by DXC with no <c>-spirv</c> and no <c>-Zpr</c> (HLSL's default column-major
+    /// packing, matching the reference compiler's <c>/Zpc</c>). MonoGame-only (KNI ships no
+    /// DX12 platform), Windows desktop <c>WindowsDX12</c> runtime only (not Xbox, which reports
+    /// a distinct shader profile). Phase 54.
+    /// </summary>
+    DirectX12 = 5,
 }
