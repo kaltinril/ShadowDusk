@@ -31,12 +31,14 @@ Confirmed by the same source read: `LoadEmbeddedEffect` never touches `ContentMa
 
 ## 4. Scope
 
+**GL decision (locked in 2026-07-23):** the `Apos.Shapes` package's current shader revision (`a85a31c`, byte-identical to our vendored `apos-shapes-sm6.fx` modulo one comment) is the ONLY shader `ShapeBatch` can drive on any backend — its `VertexShape` struct (13 fixed elements: `Position`, `TextureCoordinate`, Oklab-packed `FillA/FillB/BorderA/BorderB`, `FillCoord`, `BorderCoord`, `Meta1-3`, `ClipDistances`, `ClipRounding`, `ClipAaSize`) is emitted identically regardless of graphics backend, so there is no way to substitute the older, GL-safe `apos-shapes.fx` (3fb73b8d) revision the way the existing single-shape GL proof does — that revision predates this vertex contract. And Phase 51 A3 already found, independently, that `mgfxc`'s own GL compile of this exact shader revision renders **solid black for every non-textured shape** (a confirmed MojoShader `-0.0 >= 0.0` codegen bug, not a ShadowDusk defect) — which is nearly the entire gallery. **Conclusion: there is no trustworthy `mgfxc` GL oracle for this gallery.** GL therefore does NOT get a golden pixel-diff in this phase: render the gallery through ShadowDusk's GL candidate only, and assert it loads, renders without crashing, and produces visible (non-black, non-transparent) output per shape — rung 2-3, not rung 4. The existing single-shape GL proof (against the older `apos-shapes.fx` revision) is UNCHANGED and remains the one pixel-diffed GL data point for Apos.Shapes.
+
 **In scope:**
 - Add a `PackageReference` to `Apos.Shapes` (the plain MonoGame build, not the KNI variant) in `validation/VsDriven`, `VsDrivenDx`, `VsDrivenDx12`, `VsDrivenVulkan`.
-- Vendor the upstream `apos-shapes.fx` revision matching the pinned `Apos.Shapes` NuGet version (new pin, new `NOTICE.md` row — same verbatim-vendoring rule as Phase 49) if it differs from the existing pinned fixtures.
+- Vendor the upstream `apos-shapes.fx` revision matching the pinned `Apos.Shapes` NuGet version (new pin, new `NOTICE.md` row — same verbatim-vendoring rule as Phase 49) if it differs from the existing pinned fixtures. (Already checked 2026-07-23: NuGet 0.7.7 pins commit `a85a31c`, which IS `apos-shapes-sm6.fx` modulo one comment line — no new fixture needed.)
 - Build a shape-gallery scene: one `ShapeBatch.Draw*` call per shape kind × {solid fill+border, gradient fill, dashed border, rotated, non-default `aaSize`} — enough permutations to hit every branch in the shader's shape dispatch and style dispatch, not an exhaustive cross-product.
-- Render the gallery through both arms (golden embedded effect, ShadowDusk-compiled effect) on GL, DirectX_11, DirectX_12, and Vulkan; pixel-diff per the existing rung-4 pattern (`maxd`, non-vacuity check).
-- Retire the hand-rolled `AposVertex`/`BuildCircleQuad`/`Pack11`/`Unpair` code in all four `AposShapesRenderer.cs` once the `ShapeBatch`-driven gallery covers the same ground.
+- Render the gallery through both arms (golden embedded effect, ShadowDusk-compiled effect) on DirectX_11, DirectX_12, and Vulkan; pixel-diff per the existing rung-4 pattern (`maxd`, non-vacuity check). On GL, render through ShadowDusk only (no golden arm) per the decision above.
+- Retire the hand-rolled `AposVertex`/`BuildCircleQuad`/`Pack11`/`Unpair` code in all four `AposShapesRenderer.cs` once the `ShapeBatch`-driven gallery covers the same ground (GL's existing single-shape pixel-diff harness is kept as its own thing, since it targets the different, older fixture revision).
 - Update `docs/validation-matrix.md`, `docs/test-shader-corpus.md`, `tests/fixtures/shaders/third-party/Apos.Shapes/NOTICE.md`, and `plan/plan.md` per `CLAUDE.md`'s support-surface rule.
 
 **Out of scope (explicit, not silently dropped):**
@@ -46,20 +48,21 @@ Confirmed by the same source read: `LoadEmbeddedEffect` never touches `ContentMa
 
 ## 5. Tasks
 
-- [ ] 5.1 Resolve the exact `Apos.Shapes` NuGet version to pin, fetch its matching upstream `Source/Content/apos-shapes.fx` commit, vendor it (provenance header, `LICENSE`, `NOTICE.md` update) if it's a new revision vs. the existing three pinned fixtures.
-- [ ] 5.2 Confirm the embedded per-profile resources really are `mgfxc`-produced bytes (not some other tool) before trusting them as goldens — a quick `decode_mgfx.py`-style header/profile-byte check is enough.
+- [x] 5.1 Resolve the exact `Apos.Shapes` NuGet version to pin, fetch its matching upstream `Source/Content/apos-shapes.fx` commit, vendor it if new. **Done 2026-07-23:** latest is 0.7.7, nuspec pins commit `a85a31ca4ccbdcb4a5cf2321ea039d5352e5edcd` — diffed against the vendored `apos-shapes-sm6.fx` (commit `ea38c6d8`) and it is identical except one comment line (`"Vulkan compiles"` → `"Vulkan and DirectX 12 compile"`). No new fixture needed; `NOTICE.md` still gets a line recording the 0.7.7/`a85a31c` confirmation.
+- [ ] 5.2 Confirm the embedded per-profile resources really are `mgfxc`-produced bytes (not some other tool) before trusting them as goldens — a quick `decode_mgfx.py`-style header/profile-byte check is enough. (GL's embedded resource does NOT need this check — it is not used as a golden per the §4 decision.)
 - [ ] 5.3 Add the `Apos.Shapes` `PackageReference` to the four `validation/VsDriven*` projects.
-- [ ] 5.4 Build the shared shape-gallery scene builder (likely belongs in `validation/Shared`/`SharedDx` given it's identical across backends) driving `ShapeBatch` through both a golden and a candidate instance.
-- [ ] 5.5 Wire each backend's `-- apos` mode to render the gallery through both arms and pixel-diff, replacing the single-circle draw.
-- [ ] 5.6 Delete the now-unnecessary hand-rolled vertex/packing code from each `AposShapesRenderer.cs`.
+- [ ] 5.4 Build the shared shape-gallery scene builder (likely belongs in `validation/Shared`/`SharedDx` given it's identical across backends) driving `ShapeBatch` through both a golden and a candidate instance (DX11/DX12/Vulkan) or a candidate-only instance (GL).
+- [ ] 5.5 Wire each backend's `-- apos` mode: DX11/DX12/Vulkan render the gallery through both arms and pixel-diff; GL renders candidate-only and asserts per-shape visibility (no black/blank frames). None of this replaces GL's existing single-circle pixel-diff harness (different fixture revision, keeps its own code path).
+- [ ] 5.6 Delete the now-unnecessary hand-rolled vertex/packing code from the DX11/DX12/Vulkan `AposShapesRenderer.cs` files (GL's stays, since it still drives the older fixture for its own proof).
 - [ ] 5.7 Run `dotnet test ShadowDusk.slnx` (this doesn't touch `src/`, so no output-byte change is expected, but confirm) and `./validation/run-windows-render-gates.ps1`.
 - [ ] 5.8 Update the support-surface docs listed in §4 per `CLAUDE.md`.
 
 ## 6. Acceptance criteria
 
-- All four backends (GL, DirectX_11, DirectX_12, Vulkan) render the full shape gallery through a real `ShapeBatch` at `maxd` within each backend's already-established tolerance (0 for DX/DX12/Vulkan, the documented ≤2/255 transcendental drift for GL), with the existing non-vacuity check.
+- DirectX_11, DirectX_12, and Vulkan render the full shape gallery through a real `ShapeBatch` at `maxd 0` against the package's own embedded golden effect, with the existing non-vacuity check.
+- GL renders the full shape gallery through a real `ShapeBatch` with ShadowDusk's compiled effect and every shape produces visible (non-black, non-transparent) output; no golden comparison claimed or implied.
 - Every `ShapeBatch.Draw*`/`Fill*`/`Border*` shape method is exercised at least once, with gradient, dash, rotation, and corner-radius variants each hit at least once somewhere in the gallery.
-- No hand-rolled vertex-packing code remains in any `AposShapesRenderer.cs`.
+- No hand-rolled vertex-packing code remains in the DX11/DX12/Vulkan `AposShapesRenderer.cs` files. GL's existing single-shape harness is untouched.
 - Support-surface docs updated; `plan/plan.md` gets a Phase 55 index row.
 
 ## 7. Notes / risks
