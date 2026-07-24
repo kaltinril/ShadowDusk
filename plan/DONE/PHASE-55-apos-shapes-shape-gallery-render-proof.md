@@ -51,7 +51,7 @@ Confirmed by the same source read: `LoadEmbeddedEffect` never touches `ContentMa
 ## 5. Tasks
 
 - [x] 5.1 Resolve the exact `Apos.Shapes` NuGet version to pin, fetch its matching upstream `Source/Content/apos-shapes.fx` commit, vendor it if new. **Done 2026-07-23:** latest is 0.7.7, nuspec pins commit `a85a31ca4ccbdcb4a5cf2321ea039d5352e5edcd` — diffed against the vendored `apos-shapes-sm6.fx` (commit `ea38c6d8`) and it is identical except one comment line (`"Vulkan compiles"` → `"Vulkan and DirectX 12 compile"`). No new fixture needed; `NOTICE.md` records the 0.7.7/`a85a31c` confirmation.
-- [x] 5.2 Confirm the embedded per-profile resources really are `mgfxc`-produced bytes before trusting them as goldens. **Done implicitly:** the measured maxd-0 results on Vulkan and DX11-vkd3d, against ShadowDusk's OWN independently-compiled candidate, are only explainable if the embedded resource is a faithful DXBC/SPIR-V compile of the identical HLSL — a non-`mgfxc`-family tool producing different bytecode would not agree pixel-for-pixel.
+- [x] 5.2 Confirm the embedded per-profile resources really are `mgfxc`-produced bytes before trusting them as goldens. **Originally marked done on a flawed inference (that maxd-0 agreement implies mgfxc provenance) — corrected same day.** Actually disassembling the DX11 embedded resource found it is a `vkd3d-shader`-compiled artifact, NOT `mgfxc`/`d3dcompiler_47`. It remains the correct baseline for the DX11 `vkd3d-shader` candidate (same toolchain family) but is NOT a valid oracle for the `d3dcompiler_47` candidate — see §8. This is exactly the failure mode this task existed to prevent; it was skipped rather than actually done, and the gap wasn't caught until asked to investigate the resulting "divergence" further.
 - [x] 5.3 Add the `Apos.Shapes` `PackageReference` to all four `validation/VsDriven*` projects (feasibility-checked first — clean restore/build on GL, DX11, DX12, Vulkan; the flagged MonoGame-flavor incompatibility risk did not materialize).
 - [x] 5.4 Built `validation/SharedDx/AposGalleryRenderer.cs` — ONE file, linked unmodified into all four projects, driving `ShapeBatch` through a golden + candidate arm (DX11/DX12/Vulkan) or a candidate-only arm (GL).
 - [x] 5.5 Wired: DX11/DX12/Vulkan's `-- apos` mode now renders the gallery through both arms and pixel-diffs; GL got a NEW `-- apos-gallery` mode (candidate-only, per-shape visibility). GL's existing `-- apos` single-circle harness is untouched and reconfirmed green (maxd 2/255, unchanged).
@@ -61,8 +61,8 @@ Confirmed by the same source read: `LoadEmbeddedEffect` never touches `ContentMa
 
 ## 6. Acceptance criteria
 
-- [x] DirectX_11 (vkd3d arm) and Vulkan render the full shape gallery through a real `ShapeBatch` at `maxd 0` against the package's own embedded golden effect, with the existing non-vacuity check.
-- [x] ~~DirectX_11 oracle arm and DirectX_12 at maxd 0~~ — **revised, see §8**: both land at `maxd 1` on a subset of cells, two distinct, root-caused, documented 1-ULP transcendental-math findings between independently-built toolchains. Not the maxd-0 bar originally targeted, but a real, explained result, not silently smoothed over. Tolerance adjusted to 1 for these two arms specifically.
+- [x] DirectX_11 (both `d3dcompiler_47` oracle and `vkd3d-shader` arms) and Vulkan render the full shape gallery at `maxd 0`, with the existing non-vacuity check. (The oracle arm's baseline is the real, locally-generated `mgfxc` golden, not the package's embedded effect — see §8 correction.)
+- [x] ~~DirectX_12 at maxd 0~~ — **revised, see §8**: lands at `maxd 1` on 2/30 cells, a genuine, still-unresolved finding confirmed against the REAL local `mgfxc` golden (not a methodology artifact). Tolerance adjusted to 1 for this arm.
 - [x] GL renders the full shape gallery through a real `ShapeBatch` with ShadowDusk's compiled effect and every shape produces visible (non-black, non-transparent) output (30/30); no golden comparison claimed or implied.
 - [x] Every `ShapeBatch.Draw*`/`Fill*`/`Border*` shape method is exercised at least once, with gradient, dash, rotation, and corner-radius variants each hit at least once somewhere in the gallery (30 cells: 10 shape kinds × Draw/Fill/Border).
 - [x] No hand-rolled vertex-packing code remains in the DX11/DX12/Vulkan `AposShapesRenderer.cs` files (deleted). GL's existing single-shape harness is untouched.
@@ -74,28 +74,32 @@ Confirmed by the same source read: `LoadEmbeddedEffect` never touches `ContentMa
 |---|---|---|
 | Vulkan | `Apos.Shapes`' own embedded Vulkan effect | **maxd 0**, all 30 cells |
 | DirectX_11 (`vkd3d-shader`) | `Apos.Shapes`' own embedded DX11 effect | **maxd 0**, all 30 cells |
-| DirectX_11 (`d3dcompiler_47` oracle) | same | **maxd 1** on 14/30 cells |
-| DirectX_12 | `Apos.Shapes`' own embedded DX12 effect | **maxd 1** on 2/30 cells (`DrawCircle`, `FillArc`) |
+| DirectX_11 (`d3dcompiler_47` oracle) | the real, locally-generated `mgfxc` golden | **maxd 0**, all 30 cells |
+| DirectX_12 | the real, locally-generated `mgfxc` golden | **maxd 1** on 2/30 cells (`DrawCircle`, `FillArc`) |
 | OpenGL | none (candidate-only) | 30/30 shapes visible; no pixel-diff attempted |
 
-**The two `maxd 1` findings, root-caused, not fixed here:**
+**Correction, same day: the original "DX11 oracle maxd 1 on 14/30 cells" finding was a
+methodology bug, not a fidelity gap — found by doing exactly what this phase's own §7 warned
+against (trusting the embedded resource as a golden without verifying it).** Disassembling
+Apos.Shapes' embedded DX11 effect (via `Vortice.D3DCompiler`'s `D3DDisassemble`) found its
+header reads `// Generated by vkd3d-shader 1.17` — it is a `vkd3d-shader` artifact, not an
+`mgfxc`/`d3dcompiler_47` one. So the original comparison pitted the `d3dcompiler_47` oracle
+against an independent compiler implementation's output; the DX11 vkd3d-shader arm's maxd-0
+"match" against the same resource was likewise vkd3d-vs-vkd3d agreement, not evidence of
+`mgfxc` fidelity. A prior attempted fix (adding `ShaderFlags.OptimizationLevel3` to
+`D3DCompilerShaderCompiler`, hypothesizing a missing mgfxc-matching flag) was tried, measured
+to make zero difference to the compiled bytes, and reverted — consistent with the real
+explanation being "wrong reference," not "wrong flag." `validation/VsDrivenDx`'s `-- apos`
+mode now compares the oracle candidate against the real, already-checked-in
+`tests/fixtures/golden/DirectX_11/apos-shapes-sm6.mgfx` (the same golden Phase 51 A3's
+single-shape proof used) instead of the embedded resource, and gets **maxd 0 across the full
+gallery**. No ShadowDusk defect. No follow-up needed for DX11.
 
-- **DX11 oracle:** MonoGame's own `mgfxc` (`Tools/MonoGame.Effect.Compiler/Effect/EffectObject.hlsl.cs`
-  in `MonoGame/MonoGame`) sets `ShaderFlags.OptimizationLevel3` for release compiles.
-  `src/ShadowDusk.HLSL/D3DCompiler/D3DCompilerShaderCompiler.cs` sets no explicit optimization-level
-  flag (defaults to level 1). Different optimization levels reassociate this shader's heavy
-  transcendental math (Oklab conversion, `atan2`, `pow`, the Newton-iteration loop) differently at
-  the 1-ULP level — the single-shape Phase 51 A3 proof never exercised enough of the math to hit
-  it. **Real, fixable, and a legitimate DX11-oracle-backend fidelity gap** (matching mgfxc's flag
-  would very likely close it) — but fixing it is a `src/` change with repo-wide blast radius
-  across every DX11 oracle compile (would change DXBC bytes for the entire corpus, needing a full
-  `dotnet test` + Windows render gate re-verification), squarely outside this phase's own stated
-  scope ("no change to shipped `ShadowDusk.*` library code," §4). **Tracked as a follow-up.**
-- **DX12:** both sides compile through DXC→DXIL, so this is almost certainly the same CLASS of
-  finding — two independently-built DXC toolchains (ShadowDusk's `Vortice.Dxc` vs whatever DXC
-  build Apos.Shapes' own CI used to bake the embedded resource) drifting at 1 ULP on 2 of 30
-  cells. Phase 54's own `maxd 0` result against a LOCALLY-generated `mgfxc` golden is unaffected
-  and stands — this is specific to comparing against a third party's independently-built artifact.
+**DX12's `maxd 1` on 2/30 cells is real and still open**, reconfirmed against ITS real,
+locally-generated `mgfxc` golden (`tests/fixtures/golden/DirectX_12/apos-shapes-sm6.mgfx`) —
+not a repeat of the DX11 methodology bug. Both sides compile through DXC→DXIL, so an
+independent-DXC-build/version drift on this shader's transcendental math remains the leading
+hypothesis, but it has not been root-caused. Genuinely tracked as a follow-up.
 
 **Files touched:** `Directory.Packages.props` (Apos.Shapes 0.7.7 pin), all four
 `validation/VsDriven*/*.csproj` (package reference + `Compile Include`), new
