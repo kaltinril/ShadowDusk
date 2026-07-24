@@ -14,8 +14,19 @@
 // `#if SM6` that OPENGL never takes, so GL lands on the same legacy sampler/tex2D branch DX
 // does. See AposShapesRenderer for the bespoke vertex-buffer harness.
 //
-// dotnet run --project validation/VsDriven            -> the VS rig
-// dotnet run --project validation/VsDriven -- apos     -> the Apos.Shapes GL render-proof
+// mode "apos-gallery": Phase 55 — renders Apos.Shapes' full ShapeBatch shape gallery through
+// ShadowDusk's GL compile ONLY (no golden arm). GL gets no pixel-diff for this gallery: the
+// package's own embedded GL effect drives the SAME shader revision DX/Vulkan use, and
+// mgfxc's own GL compile of that revision is a confirmed MojoShader bug rendering solid
+// black for every non-textured shape (Phase 51 A3, tests/fixtures/shaders/third-party/
+// Apos.Shapes/NOTICE.md) — not a ShadowDusk defect, but no trustworthy GL oracle exists for
+// this gallery. This mode instead asserts every gallery cell renders visible (non-black,
+// non-transparent) content through ShadowDusk. It does NOT replace or touch the existing
+// "apos" mode above, which stays the one pixel-diffed GL data point for Apos.Shapes.
+//
+// dotnet run --project validation/VsDriven                   -> the VS rig
+// dotnet run --project validation/VsDriven -- apos            -> the Apos.Shapes GL render-proof (unchanged)
+// dotnet run --project validation/VsDriven -- apos-gallery     -> the Phase 55 GL gallery visibility check
 
 using System;
 using System.Collections.Generic;
@@ -27,9 +38,9 @@ using ShadowDusk.Core.Preprocessor;
 using ShadowDusk.Validation;
 
 string mode = args.Length > 0 ? args[0].Trim().ToLowerInvariant() : "vs";
-if (mode is not ("vs" or "apos"))
+if (mode is not ("vs" or "apos" or "apos-gallery"))
 {
-    Console.Error.WriteLine($"unknown mode '{mode}' — expected 'vs' or 'apos'");
+    Console.Error.WriteLine($"unknown mode '{mode}' — expected 'vs', 'apos', or 'apos-gallery'");
     return 2;
 }
 
@@ -37,8 +48,96 @@ string repoRoot = ShaderInputs.FindRepoRoot();
 
 if (mode == "apos")
     return await RunAposPhase();
+if (mode == "apos-gallery")
+    return await RunAposGalleryPhase();
 
 return await RunVsPhase();
+
+// ---------------------------------------------------------------------------------------
+// Phase 55 — Apos.Shapes full shape-gallery GL visibility check (candidate-only, no golden;
+// see the mode "apos-gallery" remarks above for why GL has no trustworthy oracle here).
+// ---------------------------------------------------------------------------------------
+async Task<int> RunAposGalleryPhase()
+{
+const string AposFixture = "apos-shapes-sm6";
+
+string aposFx = Path.Combine(repoRoot, "tests", "fixtures", "shaders", "third-party", "Apos.Shapes", AposFixture + ".fx");
+string aposOutBase = Path.Combine(repoRoot, "validation", "output-apos-gl-gallery");
+
+Console.WriteLine($"[apos-gl-gallery] fixture: {aposFx}\n");
+
+string aposSrc = await File.ReadAllTextAsync(aposFx);
+
+byte[]? candidateBytes = null;
+string? candidateErr = null;
+{
+    var compiler = new EffectCompiler();
+    var result = await compiler.CompileAsync(aposSrc, new CompilerOptions
+    {
+        Target = PlatformTarget.OpenGL,
+        IncludeResolver = new FileSystemIncludeResolver(),
+        SourceFileName = aposFx,
+    });
+    if (result.IsFailure)
+        candidateErr = string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}"));
+    else
+        candidateBytes = result.Value.Data;
+}
+
+Console.WriteLine($"[apos-gl-gallery] candidate: {(candidateBytes is null ? "FAIL: " + candidateErr : candidateBytes.Length + " bytes")}\n");
+
+var arms = new List<ShadowDusk.Validation.AposGallery.AposGalleryRenderer.Arm>
+{
+    new("candidate", UseEmbeddedGolden: false, candidateBytes, candidateErr),
+};
+
+using var game = new ShadowDusk.Validation.AposGallery.AposGalleryRenderer(aposOutBase, arms);
+game.Run();
+
+Console.WriteLine("[apos-gl-gallery] load + render results:");
+foreach (var o in game.Outcomes)
+    Console.WriteLine($"  [{(o is { Loaded: true, Rendered: true } ? "OK  " : "FAIL")}] {o.Name,-16} {o.Error ?? "rendered"}");
+
+var caps = game.Captures.ToDictionary(c => c.Name, c => c);
+bool loaded = game.Outcomes.All(o => o is { Loaded: true, Rendered: true });
+
+int failCount = 0;
+if (caps.TryGetValue("candidate", out var candidate))
+{
+    Console.WriteLine("[apos-gl-gallery] per-shape visibility (non-black, non-transparent pixels present):");
+    foreach (var (name, cell) in ShadowDusk.Validation.AposGallery.AposGalleryRenderer.Cells)
+    {
+        bool visible = CellHasVisibleContent(candidate.Pixels, candidate.Width, cell);
+        if (!visible) failCount++;
+        Console.WriteLine($"  [{(visible ? "OK  " : "FAIL")}] {name}");
+    }
+}
+else
+{
+    failCount = ShadowDusk.Validation.AposGallery.AposGalleryRenderer.Cells.Count;
+}
+
+bool pass = loaded && failCount == 0;
+Console.WriteLine($"\n[apos-gl-gallery] {(pass ? "PASS" : "FAIL")} — load+render {(loaded ? "OK" : "FAIL")}, {ShadowDusk.Validation.AposGallery.AposGalleryRenderer.Cells.Count - failCount}/{ShadowDusk.Validation.AposGallery.AposGalleryRenderer.Cells.Count} shapes visible.");
+Console.WriteLine("[apos-gl-gallery] NOTE: no mgfxc golden comparison — see the mode remarks above for why GL has no trustworthy oracle for this gallery.");
+return pass ? 0 : 1;
+}
+
+static bool CellHasVisibleContent(Microsoft.Xna.Framework.Color[] pixels, int width, Microsoft.Xna.Framework.Rectangle cell)
+{
+    int visible = 0, total = 0;
+    for (int y = cell.Top; y < cell.Bottom; y++)
+    for (int x = cell.Left; x < cell.Right; x++)
+    {
+        var p = pixels[y * width + x];
+        total++;
+        if (p.A > 8 && (p.R > 8 || p.G > 8 || p.B > 8))
+            visible++;
+    }
+    // At least 1% of the cell must be non-black/non-transparent — the same non-vacuity
+    // bar the other Apos.Shapes render-proofs use, applied per-cell instead of whole-image.
+    return total > 0 && visible > total / 100;
+}
 
 // ---------------------------------------------------------------------------------------
 // Phase 28 — the simple VS rig (POSITION/COLOR/TEXCOORD + a float4x4), vs the mgfxc golden.
