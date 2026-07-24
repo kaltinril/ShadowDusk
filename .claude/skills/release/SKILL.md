@@ -74,27 +74,43 @@ history, not just SemVer's letter):
      (`docfx/index.md`, `getting-started/overview.md`, `guides/choosing-a-target.md`,
      `backends/*.md`, `contributing/validation.md` rung-4 list, `glossary.md`, and the
      transcluded `docs/references/compilation-pipeline.md` + `docs/glsl-uniform-naming.md`
-     rewriter-rule table); `CLAUDE.md` (Project Overview + HARD-RULE gate commands);
-     **the render-gate commands in THIS skill's step 2** (they drift whenever a driver or a
-     switch changes — that is exactly how `-IncludeVulkan` went stale); `plan/plan.md`
-     phase-index rows vs each phase doc's own Status line (a Done phase must sit in
-     `plan/DONE/` with its row flipped); public-API XML doc-comments that claim "not yet
-     implemented" for shipped features.
+     rewriter-rule table); `docs/test-shader-corpus.md` (fixture/corpus counts and the
+     last-updated date — touched in 0.8.0 and 0.12.1 for exactly this); `CLAUDE.md` (Project
+     Overview + HARD-RULE gate commands); **the render-gate commands in THIS skill's step 2**
+     (they drift whenever a driver or a switch changes — that is exactly how `-IncludeVulkan`
+     went stale); `plan/plan.md` phase-index rows vs each phase doc's own Status line (a Done
+     phase must sit in `plan/DONE/` with its row flipped) — AND whether the phase doc's own
+     body needs a tracker refresh reflecting what actually shipped, not just its Status line
+     (0.11.0 refreshed Phase 50's own trackers, not only its plan.md row); public-API XML
+     doc-comments that claim "not yet implemented" for shipped features.
    - **The packaging surfaces:** each packable csproj's `<Description>` / `<PackageTags>`,
      the CLI README, and the WASM HOWTO if present.
+   - **If this release adds a new published package, a new required native dependency, or a
+     new platform/target** (the class of change 0.9.0's ShaderToy promotion and 0.11.0's
+     Android natives both were): also check `.github/workflows/release.yml` (the pack-job
+     list and any package-count validation gate), `.github/workflows/pack-consume.yml` (native-
+     presence gates), `Brand/README.md`, and every "seven packages" / package-count mention in
+     `CLAUDE.md` and `RELEASING.md` — these encode a specific count and silently go stale
+     otherwise.
    Report gaps; ask whether to fix now or defer. Do not block the release on doc drift
    unless the user says so.
 8. **Build + test.**
    `dotnet build ShadowDusk.slnx -c Release` then
    `dotnet test ShadowDusk.slnx -c Release --no-build --settings ShadowDusk.runsettings`
    (the runsettings carry the 5-min `TestSessionTimeout` — see CLAUDE.md Phase 21, matching
-   the `/test` skill). Stop on failure.
-9. **Commit.** Stage the release files only (`Directory.Build.props`, `CHANGELOG.md`,
-   `RELEASING.md`, and any doc fixes the user approved). Use a conventional message such as
-   `chore(release): <version>`. Per CLAUDE.md Git Commit Conventions, the commit carries
-   **NO `Co-Authored-By` trailer of any kind** (not Claude/Anthropic/Opus, not the user) and
-   **no "Generated with Claude Code" / tool-attribution line**. There is no `/commit` skill
-   here — commit directly with `git commit`.
+   the `/test` skill). Stop on failure. **This run regenerates
+   `plan/PHASE-41-appendix/structural-divergence-matrix.md`'s "ShadowDusk version:" stamp to
+   the new version** (`Phase41StructuralDivergenceMatrixTests` reads it off the built
+   assembly) — check `git status` after this step and carry that file into step 9. Two of the
+   last eight releases (0.12.0, 0.13.0) missed this and needed a separate follow-up commit;
+   don't repeat it.
+9. **Commit.** Stage the release files (`Directory.Build.props`, `CHANGELOG.md`,
+   `RELEASING.md`, the regenerated `structural-divergence-matrix.md` from step 8, and any doc
+   fixes the user approved). Use a conventional message such as `chore(release): <version>`.
+   Per CLAUDE.md Git Commit Conventions, the commit carries **NO `Co-Authored-By` trailer of
+   any kind** (not Claude/Anthropic/Opus, not the user) and **no "Generated with Claude Code" /
+   tool-attribution line**. There is no `/commit` skill here — commit directly with
+   `git commit`.
 10. **Push + PR.** `git push -u origin version/<version>`; `gh pr create` with a
    summary-bullets body (what changed at this version). No test-plan section and no
    tool-attribution footer in the PR body.
@@ -119,6 +135,11 @@ history, not just SemVer's letter):
   kind** (CLAUDE.md Git Commit Conventions).
 - **Tests pass `--settings ShadowDusk.runsettings`** (the Phase 21 suite-timeout guardrail),
   matching the `/test` skill.
+- **The release-build test run regenerates `structural-divergence-matrix.md`'s version
+  stamp — it must ride in the same commit as the version bump**, not a follow-up (step 8).
+- **A new package/native/target in this release means checking `release.yml`,
+  `pack-consume.yml`, `Brand/README.md`, and every hardcoded package-count mention too**
+  (step 7's audit) — not just the usual docs list.
 - **The Windows render gate (step 2) is not optional and CI cannot replace it.** The DX / FNA /
   KNI-DX rung-4 render proofs run only on a Windows+GPU box (`validation/run-windows-render-gates.ps1`);
   a green `dotnet test` + green CI does NOT cover them. Skipping it can ship a silently broken
