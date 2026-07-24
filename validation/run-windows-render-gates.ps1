@@ -24,26 +24,37 @@
     * MonoGame WindowsDX corpus  - validation/BaselineDx + CandidateDx + compare_dx.py
                                    (ShadowDusk DX vs mgfxc DX golden, real MonoGame WindowsDX).
     * DX modern features (VTF)   - validation/DxModernFeatures (vkd3d vs fxc oracle, maxd 0).
-    * DX Apos.Shapes             - validation/VsDrivenDx -- apos (Phase 51 A3: Gum's SDF shape
-                                   renderer, apos-shapes-sm6.fx, both DXBC backends vs the mgfxc
-                                   DirectX_11 golden, real MonoGame WindowsDX, maxd 0).
+    * DX Apos.Shapes gallery     - validation/VsDrivenDx -- apos (Phase 55: the FULL Apos.Shapes
+                                   ShapeBatch shape gallery - every Draw*/Fill*/Border* shape
+                                   method - through the REAL Apos.Shapes NuGet package, both DXBC
+                                   backends vs the package's own embedded golden effect, real
+                                   MonoGame WindowsDX. vkd3d-shader: maxd 0. d3dcompiler_47 oracle:
+                                   maxd <= 1 (documented 1-ULP transcendental-math drift from a
+                                   missing ShaderFlags.OptimizationLevel3 vs mgfxc - see
+                                   VsDrivenDx's Program.cs remarks; a real, tracked, out-of-scope-
+                                   for-Phase-55 fidelity gap, not silently smoothed over).
     * DirectX12 PS corpus        - validation/BaselineDx12 + CandidateDx12 + compare_dx12.py
                                    (Phase 54: ShadowDusk DX12 vs a REAL mgfxc DirectX_12 golden -
                                    built by MonoGame 3.8.5's own content pipeline,
                                    /Platform:WindowsDX12 - real MonoGame WindowsDX12, maxd 0).
-    * DirectX12 VS-driven + Apos.Shapes - validation/VsDrivenDx12 (+ `-- apos`) (Phase 54: a
-                                   ShadowDusk-compiled DX12 effect with its OWN custom vertex
-                                   shader vs a REAL mgfxc DirectX_12 golden, real MonoGame 3.8.5
-                                   WindowsDX12, maxd 0). Was a confirmed E_INVALIDARG crash in
-                                   MGG_GraphicsDevice_DrawIndexed; root-caused by reading
-                                   MonoGame's real v3.8.5 source directly (not the rootsig
-                                   hypothesis - that was a red herring) to a DX12 vertex shader
-                                   shipping an EMPTY vertex-attribute table, which MonoGame's
-                                   shared VertexInputLayout.GenerateInputElements needs to build
-                                   the D3D12 input layout; an empty table silently yields a
-                                   zero-element layout that fails CreateGraphicsPipelineState at
+    * DirectX12 VS-driven + Apos.Shapes gallery - validation/VsDrivenDx12 (+ `-- apos`) (Phase 54
+                                   built the VS-driven DX12 path; Phase 55 upgraded `-- apos` to
+                                   the FULL ShapeBatch shape gallery vs the package's own embedded
+                                   golden, real MonoGame 3.8.5 WindowsDX12). Was a confirmed
+                                   E_INVALIDARG crash in MGG_GraphicsDevice_DrawIndexed;
+                                   root-caused by reading MonoGame's real v3.8.5 source directly
+                                   (not the rootsig hypothesis - that was a red herring) to a DX12
+                                   vertex shader shipping an EMPTY vertex-attribute table, which
+                                   MonoGame's shared VertexInputLayout.GenerateInputElements needs
+                                   to build the D3D12 input layout; an empty table silently yields
+                                   a zero-element layout that fails CreateGraphicsPipelineState at
                                    the first Draw. Fixed by wiring DXIL-based vertex-attribute
-                                   reflection for DirectX12 (DxilVertexInputReflector).
+                                   reflection for DirectX12 (DxilVertexInputReflector). Gallery
+                                   tolerance is maxd <= 1 (2/30 cells, same class of 1-ULP
+                                   transcendental-math drift as the DX11 oracle finding, between
+                                   two independently-built DXC toolchains - see VsDrivenDx12's
+                                   Program.cs remarks), not the maxd-0 bar Phase 54's own
+                                   locally-generated-golden result hit.
     * KNI DirectX                - validation/KniWinFormsDX (ShadowDusk DX vs mgfxc, real KNI
                                    WinForms.DX11).
     * KNI OpenGL desktop         - validation/KniDesktopGL + compare_kni.py (ShadowDusk v10 vs
@@ -58,6 +69,16 @@
                                    remarks for why the DX/Vulkan fixture's real mgfxc GL output
                                    is confirmed wrong). Tolerance 2/255 (documented transcendental-
                                    math GLSL-dialect drift), not the maxd-0 bar DX/Vulkan hit.
+    * Apos.Shapes GL gallery     - validation/VsDriven -- apos-gallery (Phase 55). The FULL
+                                   ShapeBatch shape gallery through ShadowDusk's GL compile ONLY -
+                                   no golden arm, no pixel-diff. GL is stuck driving the SAME
+                                   current shader revision DX/Vulkan use (ShapeBatch's vertex
+                                   layout is identical on every backend), and mgfxc's own GL
+                                   compile of that revision is the SAME confirmed MojoShader bug
+                                   above, rendering solid black for every non-textured shape - so
+                                   there is no trustworthy GL oracle for this gallery. Asserts
+                                   every one of the 30 shapes renders visible (non-black,
+                                   non-transparent) content.
     * ANGLE D3D11 derivatives    - validation/AngleDerivativeProbe (issue #136: the emitted
                                    fragment control-flow shapes keep dFdx/dFdy alive on the
                                    real browser WebGL backend; headless Edge/Chrome).
@@ -196,6 +217,10 @@ $gates.Add(@{
 $gates.Add(@{
     Name   = 'Apos.Shapes GL render-proof (Phase 51 A3, real MonoGame DesktopGL vs mgfxc OpenGL golden)'
     Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDriven', '-c', 'Release', '--', 'apos') }
+})
+$gates.Add(@{
+    Name   = 'Apos.Shapes GL full shape-gallery (Phase 55, real ShapeBatch, candidate-only visibility check)'
+    Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDriven', '-c', 'Release', '--', 'apos-gallery') }
 })
 # ANGLE D3D11 derivative-shape probe (issue #136): renders the emitted fragment
 # control-flow shapes in headless Edge/Chrome forced onto ANGLE Direct3D11 (the WebGL
