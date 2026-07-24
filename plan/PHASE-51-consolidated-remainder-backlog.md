@@ -119,7 +119,7 @@ excluded by a real SM3 instruction-count ceiling, not left open-ended.
 (a circle) per backend via a hand-rolled vertex struct. Expanding to the full Apos.Shapes
 shape/feature surface, using the real `Apos.Shapes` NuGet package's `ShapeBatch` effect-injection
 constructor as both harness and golden, is tracked as its own phase:
-[Phase 55](PHASE-55-apos-shapes-shape-gallery-render-proof.md).
+[Phase 55](DONE/PHASE-55-apos-shapes-shape-gallery-render-proof.md).
 
 ### A4 — ShaderToy sample + runtime-helper migration to `samples/` (ex-47)
 *From Phase 47 (moved 2026-07-18, at the 0.12.0 release docs audit).* The core promotion shipped

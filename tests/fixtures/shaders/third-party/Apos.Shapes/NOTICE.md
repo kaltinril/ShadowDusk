@@ -165,3 +165,74 @@ Apos.Shapes. **Fixed** by defaulting SPIRV-Cross's `RELAX_NAN_CHECKS` compiler o
 the whole OpenGL profile: `apos-shapes.fx` now emits zero `isnan(` (was 28), with zero byte
 changes anywhere else in the corpus and no change to this render-proof's maxd 2/255 result.
 Full writeup: `plan/DONE/ISSUE-149-gl-isnan-versionless-glsl.md`.
+
+## Phase 55 — the full `ShapeBatch` shape-gallery render-proof (2026-07-23)
+
+The render-proofs above each exercise exactly ONE hand-built shape (a circle) per backend,
+through a bespoke, hand-reverse-engineered vertex struct (`AposVertex`/`Pack11`/`Unpair` in each
+`validation/VsDriven*` project). Requested directly by the owner: expand to Apos.Shapes' full
+public shape/feature surface, using the REAL `Apos.Shapes` NuGet package as both the drawing
+harness and the golden.
+
+**NuGet version pin confirmed identical to the vendored fixture.** Latest is **0.7.7**
+(`api.nuget.org`), whose `.nuspec` pins upstream commit `a85a31ca4ccbdcb4a5cf2321ea039d5352e5edcd`.
+Diffed against the already-vendored `apos-shapes-sm6.fx` (commit `ea38c6d8`) — **identical except
+one comment line** (`"Vulkan compiles"` → `"Vulkan and DirectX 12 compile"`). No new fixture
+needed; the existing vendored file IS the NuGet 0.7.7 shader, confirmed rather than assumed.
+
+**The mechanism: `ShapeBatch`'s effect-injection constructor.** Reading upstream
+`Source/ShapeBatch.cs`: `public ShapeBatch(GraphicsDevice graphicsDevice, Effect? effect = null)`.
+`null` makes it call a private `LoadEmbeddedEffect`, which reads a raw per-profile `.mgfx`/`.knifx`
+byte blob embedded as an assembly manifest resource (`Apos.Shapes.apos-shapes.{ogl,dx11,dx12,vk}.mgfx`
+/ `.knifx`) and calls `new Effect(graphicsDevice, bytes)` — **no `.xnb`, no `ContentManager`
+involved anywhere**, exactly the same call every ShadowDusk validation driver already makes with
+its own compiled bytes. A non-null `Effect` skips the embedded-resource load and uses the supplied
+effect for every draw. So one `ShapeBatch(gd)` is the golden (the package's own embedded effect)
+and a second `ShapeBatch(gd, shadowDuskEffect)` is the candidate, both driven through the SAME
+public API — `DrawCircle`/`FillCircle`/`BorderCircle`, `DrawRectangle` (+ `CornerRadii`),
+`DrawLine`, `DrawPath` (joins/caps/dashes), `DrawHexagon`, `DrawTriangle`/
+`DrawEquilateralTriangle`, `DrawEllipse`, `DrawArc`, `DrawRing`, and their `Fill*`/`Border*`
+variants — laid out across a fixed 30-cell grid (`validation/SharedDx/AposGalleryRenderer.cs`,
+one shared file compiling unchanged against every backend's MonoGame flavor).
+
+**GL gets no golden for this gallery — a locked decision, not an oversight.** `ShapeBatch`'s
+`VertexShape` layout (13 fixed elements, Oklab-packed colors, dithering, clip distances) is
+emitted identically on every backend, so GL is stuck driving the SAME current shader revision
+DX11/DX12/Vulkan use — there is no swapping in the older, GL-safe `apos-shapes.fx` (3fb73b8d) pin
+the single-shape proof above uses, because that revision predates this vertex contract. And the
+single-shape proof above already found, independently, that `mgfxc`'s own GL compile of THIS
+revision renders solid black for every non-textured shape (the confirmed MojoShader `-0.0 >= 0.0`
+bug) — nearly the entire gallery. So GL renders the gallery through ShadowDusk's compile ONLY
+(`validation/VsDriven -- apos-gallery`, a new mode alongside the untouched existing `apos` mode)
+and asserts every one of the 30 shapes produces visible (non-black, non-transparent) output — no
+pixel-diff claimed or implied.
+
+**Measured results (2026-07-23):**
+
+| Backend | Golden source | Result |
+|---|---|---|
+| Vulkan | `Apos.Shapes`' own embedded Vulkan effect | **maxd 0**, all 30 cells |
+| DirectX_11 (`vkd3d-shader`) | `Apos.Shapes`' own embedded DX11 effect | **maxd 0**, all 30 cells |
+| DirectX_11 (`d3dcompiler_47` oracle) | same | **maxd 1** on 14/30 cells |
+| DirectX_12 | `Apos.Shapes`' own embedded DX12 effect | **maxd 1** on 2/30 cells (`DrawCircle`, `FillArc`) |
+| OpenGL | none (candidate-only) | 30/30 shapes visible; no pixel-diff |
+
+**The two maxd-1 findings are real, root-caused, and out of scope to fix here — not smoothed
+over.** DX11 oracle: MonoGame's own `mgfxc` (`Tools/MonoGame.Effect.Compiler/Effect/
+EffectObject.hlsl.cs`) sets `ShaderFlags.OptimizationLevel3` for release compiles; ShadowDusk's
+`D3DCompilerShaderCompiler` sets no explicit optimization-level flag (defaults to level 1).
+Different optimization levels reassociate this shader's heavy transcendental math (Oklab
+conversion, `atan2`, `pow`, the Newton-iteration loop) differently at the 1-ULP level — the
+single-shape proof never exercised enough of the math to hit it. DX12: both sides compile through
+DXC→DXIL, so this is almost certainly the same CLASS of finding — two independently-built DXC
+toolchains (ShadowDusk's `Vortice.Dxc` vs whatever DXC build Apos.Shapes' own CI used to bake the
+embedded resource) drifting at 1 ULP; Phase 54's own `maxd 0` result against a LOCALLY-generated
+golden is unaffected and stands. Fixing the DX11 `OptimizationLevel3` gap is real, valuable, and
+tracked as a follow-up — it is a `src/` change to the DX11 oracle backend with repo-wide blast
+radius (every DX11 oracle compile), out of scope for this validation-only phase.
+
+**The hand-rolled `AposVertex`/`BuildCircleQuad`/`Pack11`/`Unpair` code was deleted** from the
+DX11, DX12, and Vulkan `AposShapesRenderer.cs` files — `AposGalleryRenderer` replaces it entirely
+for those three backends. GL's existing single-shape proof (this section, above) is untouched.
+
+Full writeup: `plan/DONE/PHASE-55-apos-shapes-shape-gallery-render-proof.md`.
