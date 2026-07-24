@@ -24,7 +24,7 @@
   - Structurally **clean**: **65**
   - **Divergent** (>=1 level): **17**
   - Compile/parse **failures**: **10**
-- Non-golden census cells: **184** (**138** compile, **46** fail with a code)
+- Non-golden census cells: **186** (**140** compile, **46** fail with a code)
 
 ## Golden-backed fixtures — per-level structural verdict
 
@@ -310,6 +310,8 @@ is a CORRECT result, not a defect.
 | examples/Sd0400GradientInDivergentLoop.fx | OpenGL | PASS |  |  |
 | examples/Sd0401SpriteBatchInterpolant.fx | DirectX_11 | PASS |  |  |
 | examples/Sd0401SpriteBatchInterpolant.fx | OpenGL | PASS |  |  |
+| examples/Sd0402UniformBoundedLoop.fx | DirectX_11 | PASS |  |  |
+| examples/Sd0402UniformBoundedLoop.fx | OpenGL | PASS |  |  |
 | minimal_vs_ps.fx | DirectX_11 | FAIL | SD0010 | Effect source contains no techniques |
 | minimal_vs_ps.fx | OpenGL | FAIL | SD0010 | Effect source contains no techniques |
 | multipass.fx | DirectX_11 | PASS |  |  |
@@ -330,9 +332,9 @@ is a CORRECT result, not a defect.
 | third-party/Apos.Shapes/apos-shapes-sm6.fx | OpenGL | PASS |  |  |
 | third-party/Apos.Shapes/apos-shapes.fx | DirectX_11 | PASS |  |  |
 | third-party/Apos.Shapes/apos-shapes.fx | OpenGL | PASS |  |  |
-| third-party/Gum/FnaSample-Shader.fx | DirectX_11 | FAIL | X0000 | C:\git\ShadowDusk\tests\ShadowDusk.Integration.Tests\bin\Debug\net8.0\fixtures\shaders\third-party/Gum/FnaSample-Shader.fx:117:24: E5005: Identifier "pointTextu... |
+| third-party/Gum/FnaSample-Shader.fx | DirectX_11 | FAIL | X0000 | C:\Users\vchel\Documents\GitHub\ShadowDusk\tests\ShadowDusk.Integration.Tests\bin\Debug\net8.0\fixtures\shaders\third-party/Gum/FnaSample-Shader.fx:117:24: E500... |
 | third-party/Gum/FnaSample-Shader.fx | OpenGL | FAIL | SD0010 | Effect source contains no techniques |
-| third-party/Gum/KniInCode-Shader.fx | DirectX_11 | FAIL | X0000 | C:\git\ShadowDusk\tests\ShadowDusk.Integration.Tests\bin\Debug\net8.0\fixtures\shaders\third-party/Gum/KniInCode-Shader.fx:72:33: E5005: Method 'Sample' is not ... |
+| third-party/Gum/KniInCode-Shader.fx | DirectX_11 | FAIL | X0000 | C:\Users\vchel\Documents\GitHub\ShadowDusk\tests\ShadowDusk.Integration.Tests\bin\Debug\net8.0\fixtures\shaders\third-party/Gum/KniInCode-Shader.fx:72:33: E5005... |
 | third-party/Gum/KniInCode-Shader.fx | OpenGL | FAIL | X0000 | use of undeclared identifier 'CurrentTexture' |
 | third-party/Gum/MonoGameInCode-Grayscale.fx | DirectX_11 | PASS |  |  |
 | third-party/Gum/MonoGameInCode-Grayscale.fx | OpenGL | PASS |  |  |
@@ -346,7 +348,7 @@ is a CORRECT result, not a defect.
 | third-party/MonoGame/CustomSpriteBatchEffect.fx | OpenGL | FAIL | X0000 | unknown type name 'sampler2D'; did you mean 'sampler'? |
 | third-party/MonoGame/CustomSpriteBatchEffectComparisonSampler.fx | DirectX_11 | PASS |  |  |
 | third-party/MonoGame/CustomSpriteBatchEffectComparisonSampler.fx | OpenGL | FAIL | X0000 | invalid semantic 'COLOR' for ps 6.0 |
-| third-party/MonoGame/DefinesTest.fx | DirectX_11 | FAIL | X0000 | C:\git\ShadowDusk\tests\ShadowDusk.Integration.Tests\bin\Debug\net8.0\fixtures\shaders\third-party/MonoGame/DefinesTest.fx:84:1: E5030: Unknown modifier "Bar". ... |
+| third-party/MonoGame/DefinesTest.fx | DirectX_11 | FAIL | X0000 | C:\Users\vchel\Documents\GitHub\ShadowDusk\tests\ShadowDusk.Integration.Tests\bin\Debug\net8.0\fixtures\shaders\third-party/MonoGame/DefinesTest.fx:84:1: E5030:... |
 | third-party/MonoGame/DefinesTest.fx | OpenGL | FAIL | X0000 | HLSL requires a type specifier for all declarations |
 | third-party/MonoGame/HighContrast.fx | DirectX_11 | PASS |  |  |
 | third-party/MonoGame/HighContrast.fx | OpenGL | FAIL | X0000 | unknown type name 'sampler2D'; did you mean 'sampler'? |
@@ -354,11 +356,11 @@ is a CORRECT result, not a defect.
 | third-party/MonoGame/Instancing.fx | OpenGL | FAIL | X0000 | invalid semantic 'COLOR' for ps 6.0 |
 | third-party/MonoGame/NoEffect.fx | DirectX_11 | PASS |  |  |
 | third-party/MonoGame/NoEffect.fx | OpenGL | FAIL | X0000 | unknown type name 'sampler2D'; did you mean 'sampler'? |
-| third-party/MonoGame/ParameterTypes.fx | DirectX_11 | FAIL | X0000 | C:\git\ShadowDusk\tests\ShadowDusk.Integration.Tests\bin\Debug\net8.0\fixtures\shaders\third-party/MonoGame/ParameterTypes.fx:138:22: E5017: Aborting due to not... |
+| third-party/MonoGame/ParameterTypes.fx | DirectX_11 | FAIL | X0000 | C:\Users\vchel\Documents\GitHub\ShadowDusk\tests\ShadowDusk.Integration.Tests\bin\Debug\net8.0\fixtures\shaders\third-party/MonoGame/ParameterTypes.fx:138:22: E... |
 | third-party/MonoGame/ParameterTypes.fx | OpenGL | FAIL | SD0010 | Effect source contains no techniques |
 | third-party/MonoGame/ParserTest.fx | DirectX_11 | PASS |  |  |
 | third-party/MonoGame/ParserTest.fx | OpenGL | FAIL | X0000 | invalid semantic 'COLOR' for ps 6.0 |
-| third-party/MonoGame/PreprocessorTest.fx | DirectX_11 | FAIL | X0000 | C:\git\ShadowDusk\tests\ShadowDusk.Integration.Tests\bin\Debug\net8.0\fixtures\shaders\third-party/MonoGame/PreprocessorTest.fx:59:5: E4000: syntax error, unexp... |
+| third-party/MonoGame/PreprocessorTest.fx | DirectX_11 | FAIL | X0000 | C:\Users\vchel\Documents\GitHub\ShadowDusk\tests\ShadowDusk.Integration.Tests\bin\Debug\net8.0\fixtures\shaders\third-party/MonoGame/PreprocessorTest.fx:59:5: E... |
 | third-party/MonoGame/PreprocessorTest.fx | OpenGL | FAIL | X0000 | token is not a valid binary operator in a preprocessor subexpression |
 | third-party/MonoGame/RainbowH.fx | DirectX_11 | PASS |  |  |
 | third-party/MonoGame/RainbowH.fx | OpenGL | FAIL | X0000 | unknown type name 'sampler2D'; did you mean 'sampler'? |

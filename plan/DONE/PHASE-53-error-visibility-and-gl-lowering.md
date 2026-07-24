@@ -271,6 +271,37 @@ the loop-bearing corpus (GaussianBlur, apos EllipseSDF). SD0402 covers the class
 compile-time warning today (verified live: compiling `apos-shapes-aa.fx` on GL prints
 the `for (;;)` warning). Issue #138 stays open for the emission half, pointing here.
 
+**Follow-on landed (2026-07-24): both known shapes are now fixed where provably safe,
+not just warned about.**
+
+- **Shape 2 (empty increment, `GaussianBlur.fx`).** `MonoGameGlslRewriter` Rule 12
+  (`LowerEmptyIncrementForLoop`) hoists the trailing `<index>++; continue;` (or
+  `+= k; continue;`) into the for-header's increment clause whenever it can prove the
+  rewrite safe (no other write to the index, no other `continue` in the body) —
+  semantically exact, pixels unchanged. Confirmed end-to-end: compiling the real
+  vendored `Nez/GaussianBlur.fx` through the CLI no longer emits `SD0402` at all.
+- **Shape 1 (header-less `for (;;)`, e.g. Apos.Shapes' Newton-iteration SDF).**
+  Reconsidered after first being written off as needing a "static-bound analysis
+  threaded through from HLSL/DXC" — that turned out to be an overstatement, found by
+  actually reading the real compiled GLSL rather than reasoning about it abstractly.
+  `newton_steps`, the loop's "runtime" trip count, is compiled to
+  `int _555 = _553 ? 0 : 12;` one line above the loop — a ternary between two
+  literals, sitting right there in the emitted text. SPIRV-Cross hadn't erased the
+  compile-time bound at all; it had just renamed it. `MonoGameGlslRewriter` Rule 13
+  (`LowerBoundedHeaderlessForLoop`) traces the bound variable back to its declaration
+  and, when it resolves to a literal or a ternary-of-two-literals, gives the header
+  that real, exact ceiling while keeping the original runtime guard inside as-is — not
+  an approximation, since the derived bound IS the shader's true maximum. Confirmed
+  end-to-end: compiling the real vendored `Apos.Shapes/apos-shapes.fx` through the CLI
+  no longer emits `SD0402` either, and the existing GL render-proof
+  (`validation/VsDriven -- apos`) still matches the `mgfxc` golden at the same
+  max Δ 2/255 — pixels unchanged, as expected from an exact rewrite.
+
+**What's still genuinely open:** a loop bounded by a plain runtime uniform with no
+compile-time ceiling anywhere in the shader — there's no safe constant to derive there.
+A fresh regression fixture, `examples/Sd0402UniformBoundedLoop.fx`, pins that this
+still (and correctly) warns through the real CLI.
+
 ## 5. Validation
 
 - Unit: reformatter promotion/selection; rewriter rules (VS lowering, nested round,

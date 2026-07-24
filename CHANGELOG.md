@@ -20,24 +20,31 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   Render-proven maxd 0 against a real `mgfxc` `DirectX_12` golden, for both the 10-shader
   PS/SpriteBatch corpus and Apos.Shapes/VS-driven custom-vertex-shader effects
   (`validation/BaselineDx12`/`CandidateDx12`/`compare_dx12.py`, `validation/VsDrivenDx12`).
-- **Apos.Shapes (Gum's SDF shape renderer) render-proof — DX and GL (Phase 51 A3).** Vulkan
-  already shipped in 0.13.0 (`validation/VsDrivenVulkan -- apos`, maxd 0). This release closes
-  the remaining two slices:
-  - **DirectX.** `validation/VsDrivenDx -- apos` renders `apos-shapes-sm6.fx` (the current
-    upstream revision, also used by the Vulkan proof) through a bespoke 13-element
-    vertex-buffer harness on real MonoGame WindowsDX and pixel-diffs both ShadowDusk DXBC
-    backends (`d3dcompiler_47` and `vkd3d-shader`) against the real `mgfxc` DirectX_11 golden:
-    **maxd 0** on both.
-  - **OpenGL.** `validation/VsDriven -- apos` renders Apos.Shapes on a real MonoGame DesktopGL
-    device and pixel-diffs it against the real `mgfxc` OpenGL golden: **max Δ 2/255**
-    (documented transcendental-math GLSL-dialect drift on the shader's OkLab round-trip). Uses
-    `apos-shapes.fx` (the Phase 49 pin) — deliberately **not** the same fixture the DX/Vulkan
-    proofs use (`apos-shapes-sm6.fx`): that revision's real mgfxc GL compile is confirmed to
-    render solid black, a MojoShader/fxc codegen bug unrelated to ShadowDusk (see
-    `tests/fixtures/shaders/third-party/Apos.Shapes/NOTICE.md`).
+- **Apos.Shapes (Gum's SDF shape renderer) render-proof — DX and GL (Phase 51 A3), then
+  expanded to the full shape gallery (Phase 55).** Vulkan already shipped in 0.13.0
+  (`validation/VsDrivenVulkan -- apos`, maxd 0). This release closes the remaining single-shape
+  DX/GL slices, then supersedes all of them with a 30-cell gallery driven through the REAL
+  `Apos.Shapes` NuGet package's `ShapeBatch(GraphicsDevice, Effect?)` effect-injection
+  constructor — every `Draw*`/`Fill*`/`Border*` shape kind, not one hand-built circle:
+  - **DirectX 11 and DirectX 12.** Both pixel-diffed against a real, locally-generated `mgfxc`
+    golden at **maxd 0** across all 30 cells for DX11 (`d3dcompiler_47` oracle and
+    `vkd3d-shader`), and 28/30 at maxd 0 for DX12 (2 cells at 1/255, an open, unexplained
+    finding — see `tests/fixtures/shaders/third-party/Apos.Shapes/NOTICE.md`). Along the way,
+    found that Apos.Shapes' own embedded DX11 effect is compiled by `vkd3d-shader`, not
+    `mgfxc` — comparing the `d3dcompiler_47` oracle against it was comparing two independent
+    compilers, not a ShadowDusk fidelity gap; fixed by comparing against the real local
+    `mgfxc` golden instead.
+  - **Vulkan.** Full 30-cell gallery at **maxd 0** against Apos.Shapes' own (DXC-family)
+    embedded golden.
+  - **OpenGL.** No trustworthy `mgfxc` oracle exists for this shader revision on GL (a
+    confirmed MojoShader codegen bug renders every non-textured shape solid black, unrelated
+    to ShadowDusk) — the gallery renders through ShadowDusk's compile only, confirming all 30
+    shapes produce visible output. The original single-shape GL proof (against an older,
+    MojoShader-safe fixture revision) stays in place: **max Δ 2/255** (documented
+    transcendental-math GLSL-dialect drift on the shader's OkLab round-trip).
 
-  Both wired into `run-windows-render-gates.ps1`. Apos.Shapes is now render-proven on DX,
-  Vulkan, and GL; FNA stays permanently excluded (SM3 instruction-slot ceiling).
+  Wired into `run-windows-render-gates.ps1`. FNA stays permanently excluded (SM3
+  instruction-slot ceiling).
 - **Fixed: GL profile emitted `isnan()` into versionless GLSL; rejected on macOS (issue
   #149).** Found while closing the GL slice above: ShadowDusk's own GL candidate for
   `apos-shapes.fx` contained 28 `isnan(` occurrences and no `#version` directive (the real
@@ -50,6 +57,35 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 ### Changed
 
 ### Fixed
+
+- **GL loop shapes outside GLSL ES 1.00 Appendix A: both shapes SD0402 covers are now
+  auto-fixed where provably safe, not just warned about (issue #138).** GLSL ES 1.00
+  (WebGL1 / KNI Reach) requires a loop's increment to live in the for-header and its bound
+  to be a compile-time constant; SPIRV-Cross emits two shapes that violate this, and both
+  used to fail to *load* there (desktop GL, WebGL2, and KNI HiDef were unaffected) while
+  Phase 53 only added a compile-time warning (`SD0402`) for them.
+  - **Constant-bounded, empty increment** (`for (int i = 0; i < N; ) { …; i++; continue;
+    }`, the index advanced in the body). `MonoGameGlslRewriter` now hoists the increment
+    into the header whenever it can prove the rewrite safe (no other write to the index, no
+    other `continue` in the body). Confirmed end-to-end on the real vendored
+    `Nez/GaussianBlur.fx`: compiling it through the CLI no longer emits `SD0402` at all.
+  - **Header-less, runtime-looking trip count** (`for (;;) { if (i < bound) {…} else
+    break; }`). Turns out "runtime" doesn't always mean unprovable: when `bound`'s own
+    value is traceable to a compile-time-constant expression (a literal, or a ternary
+    between two literals), the shader's real ceiling is still knowable even though
+    SPIRV-Cross renamed it into a runtime-looking temporary. `MonoGameGlslRewriter` now
+    gives the header that real, exact bound and hoists the increment the same way — not an
+    approximation, since the derived bound IS the shader's true maximum. Confirmed on the
+    real vendored `Apos.Shapes/apos-shapes.fx` (its Newton-iteration SDF): compiling it
+    through the CLI no longer emits `SD0402` either, and the existing GL render-proof
+    (`validation/VsDriven -- apos`) still matches the `mgfxc` golden at the same max Δ
+    2/255 — pixels unchanged, as expected from an exact rewrite.
+
+  A genuinely unfixable case remains: a loop bounded by a plain runtime uniform with no
+  compile-time ceiling anywhere in the shader. There's no safe constant to derive there, so
+  it keeps warning via `SD0402` — pinned by a fresh regression fixture,
+  `examples/Sd0402UniformBoundedLoop.fx`, compiling clean while still warning through the
+  real CLI.
 
 ## [0.13.0] - 2026-07-23
 
