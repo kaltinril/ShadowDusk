@@ -2,6 +2,16 @@
   "version": 2,
   "dependencies": {
     "net8.0": {
+      "Apos.Shapes": {
+        "type": "Direct",
+        "requested": "[0.7.7, )",
+        "resolved": "0.7.7",
+        "contentHash": "Bipf9dw33P7xmJZ6n6WW0xAioh4+HweLgIA2BgpWI9KlwNcgGlkHbCOHqVs0oozPxDdhxiaI9daUaV6DwUYJ/g==",
+        "dependencies": {
+          "FontStashSharp.MonoGame": "1.5.2",
+          "MonoGame.Extended": "5.3.1"
+        }
+      },
       "MonoGame.Framework.DesktopGL": {
         "type": "Direct",
         "requested": "[3.8.2.1105, )",
@@ -11,6 +21,41 @@
           "MonoGame.Library.SDL": "2.26.5.5",
           "NVorbis": "0.10.4"
         }
+      },
+      "Cyotek.Drawing.BitmapFont": {
+        "type": "Transitive",
+        "resolved": "2.0.4",
+        "contentHash": "iA6WehGVdMUuNbfsQQDq/Bt+mMd/OqHjiMUtKFLIQd/0pyYh4ehT7FEjTxN9/4OXNKQZsp9bAJgltP2nnswUJg=="
+      },
+      "FontStashSharp.Base": {
+        "type": "Transitive",
+        "resolved": "1.2.2",
+        "contentHash": "t2PT+/Sat9WPLm4AVYU1Aa/PrOgNQ4npSUGDHTYufXzLUHxrN3+BaRhAU0DZXkJNfuGCS5iKaQNopNXe9ES24g=="
+      },
+      "FontStashSharp.MonoGame": {
+        "type": "Transitive",
+        "resolved": "1.5.2",
+        "contentHash": "+bhbAZ52L2fIWTRrHnSCNccB7ArKVH6Wa7c/kzO4YybrzXxgmDbLjuOwS49FgN9qsEp/7/Xqalc3YyquXs9uwA==",
+        "dependencies": {
+          "Cyotek.Drawing.BitmapFont": "2.0.4",
+          "FontStashSharp.Base": "1.2.2",
+          "FontStashSharp.Rasterizers.StbTrueTypeSharp": "1.2.2",
+          "StbImageSharp": "2.30.15"
+        }
+      },
+      "FontStashSharp.Rasterizers.StbTrueTypeSharp": {
+        "type": "Transitive",
+        "resolved": "1.2.2",
+        "contentHash": "OoXoGkxNMhyQeYR/wjeN6Bs8Guea7FisKXLcVJdeNtSYT+5iKxIh4ETi9x9OIk7GEQtNbE0yVhG3rb8RS04Kmg==",
+        "dependencies": {
+          "FontStashSharp.Base": "1.2.2",
+          "StbTrueTypeSharp": "1.26.12"
+        }
+      },
+      "MonoGame.Extended": {
+        "type": "Transitive",
+        "resolved": "5.3.1",
+        "contentHash": "/61Jvhpr9fogQEma3/DWrxMEt5SGsq5H48WrISi2e2lb9J4j+xF6DOl+MkMxZcDHiVVN/noOfyTTirdqCGbm3g=="
       },
       "MonoGame.Library.SDL": {
         "type": "Transitive",
@@ -38,6 +83,16 @@
         "dependencies": {
           "SharpGen.Runtime": "2.1.2-beta"
         }
+      },
+      "StbImageSharp": {
+        "type": "Transitive",
+        "resolved": "2.30.15",
+        "contentHash": "7QqbupVhz2kcFUPTgMw4iHR9rYDHGundzzee19Mwmd1typ2Lnv8EVJcLJxlkeBM2+4ex0NwsMtdbGSJctp1XCQ=="
+      },
+      "StbTrueTypeSharp": {
+        "type": "Transitive",
+        "resolved": "1.26.12",
+        "contentHash": "hCc6/OsfcPa5VsLECcEU2m78WOshBrKwK42nAodSm9Z5wH68f7n66SoiRLCdGCkDaqbWz2TlX4zYHIjogj1HJA=="
       },
       "System.Memory": {
         "type": "Transitive",
@@ -76,9 +131,9 @@
       "shadowdusk.compiler": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[0.4.0, )",
-          "ShadowDusk.GLSL": "[0.4.0, )",
-          "ShadowDusk.HLSL": "[0.4.0, )"
+          "ShadowDusk.Core": "[0.13.0, )",
+          "ShadowDusk.GLSL": "[0.13.0, )",
+          "ShadowDusk.HLSL": "[0.13.0, )"
         }
       },
       "shadowdusk.core": {
@@ -87,14 +142,14 @@
       "shadowdusk.glsl": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[0.4.0, )",
+          "ShadowDusk.Core": "[0.13.0, )",
           "Silk.NET.SPIRV.Cross.Native": "[2.23.0, )"
         }
       },
       "shadowdusk.hlsl": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[0.4.0, )",
+          "ShadowDusk.Core": "[0.13.0, )",
           "Vortice.D3DCompiler": "[3.3.4, )",
           "Vortice.Direct3D12": "[3.5.0, )",
           "Vortice.Dxc": "[3.3.4, )"
