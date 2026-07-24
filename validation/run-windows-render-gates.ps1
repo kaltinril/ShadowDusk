@@ -57,9 +57,9 @@
                                    locally-generated-golden result hit.
     * KNI DirectX                - validation/KniWinFormsDX (ShadowDusk DX vs mgfxc, real KNI
                                    WinForms.DX11).
-    * KNI OpenGL desktop         - validation/KniDesktopGL + compare_kni.py (ShadowDusk v10 vs
-                                   mgfxc + MonoGame, real KNI SDL2.GL - the real-KNI-runtime GL
-                                   proof CI's llvmpipe lane does not cover).
+    * KNI OpenGL desktop         - validation/Baseline + Candidate + KniDesktopGL + compare_kni.py
+                                   (ShadowDusk v10 vs mgfxc + MonoGame, real KNI SDL2.GL - the
+                                   real-KNI-runtime GL proof CI's llvmpipe lane does not cover).
     * KNI OpenGL VS-driven       - validation/KniVsDriven (issue #70 matrix/POSITION rig,
                                    in-process compare).
     * Apos.Shapes GL render-proof - validation/VsDriven -- apos (Phase 51 A3, GL slice). Real
@@ -206,6 +206,8 @@ $gates.Add(@{
 $gates.Add(@{
     Name   = 'KNI OpenGL desktop (ShadowDusk v10 vs mgfxc + MonoGame, real KNI SDL2.GL)'
     Action = {
+        Invoke-Checked 'dotnet' @('run', '--project', 'validation/Baseline', '-c', 'Release')
+        Invoke-Checked 'dotnet' @('run', '--project', 'validation/Candidate', '-c', 'Release')
         Invoke-Checked 'dotnet' @('run', '--project', 'validation/KniDesktopGL', '-c', 'Release')
         Invoke-Checked 'python' @('validation/compare_kni.py')
     }

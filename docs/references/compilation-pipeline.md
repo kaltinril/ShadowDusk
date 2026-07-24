@@ -3,10 +3,10 @@
 How a `.fx` source becomes loadable shader bytes, stage by stage, with what each
 component is, how it works, and **why** it is done that way.
 
-ShadowDusk is **one faithful compiler** with four backend tails. The front half (read
+ShadowDusk is **one faithful compiler** with five backend tails. The front half (read
 the FX file, resolve includes, inject platform macros) is shared. The back half forks by
-target: **OpenGL/WebGL**, **DirectX 11**, **Vulkan**, and **FNA**. The headline pipeline
-is the OpenGL branch:
+target: **OpenGL/WebGL**, **DirectX 11**, **DirectX 12**, **Vulkan**, and **FNA**. The
+headline pipeline is the OpenGL branch:
 
 ```
 HLSL  →[DXC]→  SPIR-V  →[SPIRV-Cross]→  GLSL  →[MonoGameGlslRewriter]→  .mgfx
@@ -63,6 +63,30 @@ INPUT  shader.fx  (HLSL + FX9 effect blocks)
             ▼                 ▼
       file on disk      byte[] in memory
       (CLI)             (library / WASM / KNI)
+```
+
+The fifth tail, **DirectX 12** (Phase 54), forks at the same Stage 2 preprocessor output but
+is its own short branch — DXC emits SM6 DXIL directly, so unlike DirectX 11 there is no
+DXBC backend and unlike OpenGL/Vulkan there is no SPIR-V/SPIRV-Cross step:
+
+```
+        Preprocessor output (target = DirectX12)
+                     │
+                     ▼
+              DXC (Vortice.Dxc), -T sm6 profile
+                     │
+                     ▼
+              DXIL (raw, no transpile — this IS the shader payload)
+                     │
+                     ▼
+              DxilReflectionExtractor (ID3D12ShaderReflection oracle)
+                     │
+                     ▼
+              DirectX12ShaderCodeWrapper (folds sampler+texture pairs into one
+              texture parameter, matching the real mgfxc DirectX_12 golden)
+                     │
+                     ▼
+              MgfxWriter (v11-shaped record, profile byte 2)
 ```
 
 ---
@@ -151,6 +175,7 @@ load different bytecode:
 |---|---|---|---|
 | **OpenGL / WebGL** | DXC → SPIR-V → SPIRV-Cross → GLSL → rewriter | MojoShader-dialect GLSL text | MonoGame/KNI GL runtime |
 | **DirectX 11** | vkd3d-shader (default) or `d3dcompiler_47` | DXBC (SM ≤ 5) | MonoGame/KNI DX11 runtime |
+| **DirectX 12** | DXC, direct DXIL emission (no transpile) | SM6 DXIL | MonoGame WindowsDX12 runtime (3.8.5+) |
 | **FNA** | vkd3d-shader (D3D_BYTECODE) | D3D9 token stream in an fx_2_0 container | FNA3D + MojoShader |
 
 A pass's VS and PS entry points are compiled **separately**, one native invocation per
@@ -382,9 +407,11 @@ bytes.
 
 ## Notes and cross-references
 
-- **DirectX does not use DXC.** DXC only emits SM6 DXIL, but MonoGame 3.8's DX11 runtime loads
-  DXBC (SM ≤ 5), so the DX path routes HLSL → DXBC through vkd3d-shader (cross-platform default)
-  with `d3dcompiler_47` as a Windows-only oracle. The DXBC bytes are also the reflection source.
+- **DirectX 11 does not use DXC; DirectX 12 does.** DXC only emits SM6 DXIL, but MonoGame 3.8's
+  DX11 runtime loads DXBC (SM ≤ 5), so the DX11 path routes HLSL → DXBC through vkd3d-shader
+  (cross-platform default) with `d3dcompiler_47` as a Windows-only oracle; the DXBC bytes are
+  also the reflection source. DirectX 12's `WindowsDX12` runtime (3.8.5+) loads DXIL directly, so
+  that path is DXC straight through with no DXBC step at all.
 - **In the browser.** The same pinned DXC and vkd3d-shader are compiled to WebAssembly and ship in
   `ShadowDusk.Wasm`, so every target compiles in-browser byte-identically to the desktop output;
   SPIRV-Cross runs as a JS-interop call there. The in-browser shader-fiddle is a *sample* of this
