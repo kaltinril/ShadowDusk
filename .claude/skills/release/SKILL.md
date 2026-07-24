@@ -16,6 +16,17 @@ self-contained CLI binaries to a GitHub Release. The human runbook this automate
 `$ARGUMENTS` is the version (e.g., `0.2.0`). If omitted, read the current `<Version>` from
 `Directory.Build.props` and ask the user for the new one.
 
+**Choosing the version bump** (0.y.z, pre-1.0 — verified against the actual CHANGELOG.md
+history, not just SemVer's letter):
+- **MINOR** (`0.X.0`) — the release ships a genuine new capability: a new backend/target,
+  a new frontend, a new consumer-facing feature.
+- **PATCH** (`0.X.Y`) — fixes/maintenance only: bug fixes, doc corrections, CI/tooling
+  reliability. A patch release can still carry a small accompanying addition (a README, a
+  regression fixture) as long as the headline is a fix, not a feature.
+- **MAJOR** (1.0.0) is a deliberate decision the owner makes, not a numbering consequence of
+  accumulated features — see `plan/plan.md`'s named v1.0-gate phases for what "ready" means.
+- If a release doesn't cleanly fit one bucket, ask the user rather than guessing.
+
 ## Steps
 
 1. **Validate clean tree.** `git status`; if dirty, warn and stop. Show current `<Version>`
