@@ -19,5 +19,6 @@
     <Compile Include="..\Shared\EffectImageRenderer.cs" />
     <Compile Include="..\Shared\ShaderInputs.cs" />
     <Compile Include="..\Shared\VsEffectImageRenderer.cs" />
+    <Compile Include="..\SharedDx\AposGalleryRenderer.cs" />
   </ItemGroup>
 </Project>

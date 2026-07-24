@@ -20,5 +20,6 @@
   <ItemGroup>
     <Compile Include="..\SharedDx\DxEffectImageRenderer.cs" />
     <Compile Include="..\SharedDx\VsDxEffectImageRenderer.cs" />
+    <Compile Include="..\SharedDx\AposGalleryRenderer.cs" />
   </ItemGroup>
 </Project>

@@ -35,6 +35,7 @@
 
   <ItemGroup>
     <Compile Include="..\Shared\*.cs" />
+    <Compile Include="..\SharedDx\AposGalleryRenderer.cs" />
   </ItemGroup>
 
 </Project>
