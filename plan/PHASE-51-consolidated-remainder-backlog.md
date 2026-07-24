@@ -115,6 +115,12 @@ Vulkan (maxd 0 on both), and `apos-shapes.fx` rendered pixel-equivalent to `mgfx
 MonoGame GL (maxd 2/255, documented drift) — all three behind the Windows render gate. FNA is
 excluded by a real SM3 instruction-count ceiling, not left open-ended.
 
+**Depth follow-on (2026-07-23):** this render-proof exercises exactly one hand-built shape
+(a circle) per backend via a hand-rolled vertex struct. Expanding to the full Apos.Shapes
+shape/feature surface, using the real `Apos.Shapes` NuGet package's `ShapeBatch` effect-injection
+constructor as both harness and golden, is tracked as its own phase:
+[Phase 55](PHASE-55-apos-shapes-shape-gallery-render-proof.md).
+
 ### A4 — ShaderToy sample + runtime-helper migration to `samples/` (ex-47)
 *From Phase 47 (moved 2026-07-18, at the 0.12.0 release docs audit).* The core promotion shipped
 (the `ShadowDusk.ShaderToy` library is in-solution and published as a NuGet since 0.9.0), but the
