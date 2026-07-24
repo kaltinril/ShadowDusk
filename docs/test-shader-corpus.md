@@ -276,6 +276,22 @@ apos` pixel-diffs `apos-shapes.fx` against the real mgfxc OpenGL golden at **max
 `AposShapesRenderer` for the full trace. FNA is permanently excluded (a legitimate SM3
 instruction-slot ceiling, not an open rung).
 
+**Phase 55 (2026-07-23): the render-proof above exercised exactly one shape (a circle) — now
+expanded to the FULL `ShapeBatch` shape gallery** (every `Draw*`/`Fill*`/`Border*` method:
+circle, rectangle+corner-radii, line, path, hexagon, triangle, ellipse, arc, ring; gradients,
+dashes, rotation), using the REAL `Apos.Shapes` NuGet package (0.7.7, confirmed byte-identical to
+`apos-shapes-sm6.fx` above modulo one comment) as both harness and golden via its
+`ShapeBatch(GraphicsDevice, Effect?)` effect-injection constructor — no more hand-rolled vertex
+structs. Vulkan and DX11's vkd3d arm: **maxd 0** across all 30 cells. DX11's `d3dcompiler_47`
+oracle arm and DX12: **maxd 1** on a subset of cells — two distinct, root-caused, documented
+1-ULP transcendental-math findings between independently-built toolchains (DX11: ShadowDusk's
+oracle backend lacks mgfxc's `ShaderFlags.OptimizationLevel3`; DX12: two independent DXC builds),
+not ShadowDusk defects, tracked as a follow-up rather than fixed in this validation-only phase.
+GL gets a candidate-only visibility check (30/30 shapes render visible content) — no golden
+exists for this gallery on GL (the same confirmed MojoShader black-render bug applies to nearly
+every shape). See `third-party/Apos.Shapes/NOTICE.md` §"Phase 55" and
+`plan/DONE/PHASE-55-apos-shapes-shape-gallery-render-proof.md`.
+
 > **Macro-defined techniques.** The DX and FNA paths recover `TECHNIQUE()`-macro
 > techniques, so the SM2-fitting MonoGame stock effects compile on FNA (the ones
 > that don't fail for honest SM2-limit reasons). **OpenGL does not**: the legacy

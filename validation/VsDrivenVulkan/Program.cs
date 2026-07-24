@@ -139,21 +139,22 @@ return phase1 ? 0 : 1;
 }
 
 // ---------------------------------------------------------------------------------------
-// Phase 2 — the ISSUE #145 REPRODUCER ITSELF: upstream Apos.Shapes at its current revision,
-// the shader the reporter compiled. Same two arms, same device, its own 13-element vertex
-// layout (see AposShapesRenderer).
+// Phase 55 - Apos.Shapes FULL SHAPE-GALLERY render-proof: the Vulkan analogue of
+// VsDrivenDx's/VsDrivenDx12's "apos" mode. Renders every ShapeBatch public
+// Draw*/Fill*/Border* shape method through the REAL Apos.Shapes NuGet package. The golden
+// arm is ShapeBatch's own embedded, precompiled effect; the candidate is ShadowDusk's
+// Vulkan compile of the SAME upstream shader revision (apos-shapes-sm6.fx, the issue #145
+// reproducer).
 // ---------------------------------------------------------------------------------------
 async Task<int> RunAposPhase()
 {
 const string AposFixture = "apos-shapes-sm6";
 
-string aposFx     = Path.Combine(repoRoot, "tests", "fixtures", "shaders", "third-party", "Apos.Shapes", AposFixture + ".fx");
-string aposGolden = Path.Combine(repoRoot, "tests", "fixtures", "golden", "Vulkan", AposFixture + ".mgfx");
-string aposOut    = Path.Combine(repoRoot, "validation", "output", "vsdriven-vulkan-apos");
+string aposFx  = Path.Combine(repoRoot, "tests", "fixtures", "shaders", "third-party", "Apos.Shapes", AposFixture + ".fx");
+string aposOut = Path.Combine(repoRoot, "validation", "output", "vsdriven-vulkan-apos");
 
 Console.WriteLine();
 Console.WriteLine($"[apos-vulkan] fixture: {aposFx}");
-Console.WriteLine($"[apos-vulkan] golden:  {aposGolden}");
 
 byte[]? aposCandidate = null;
 string? aposCandErr   = null;
@@ -177,19 +178,15 @@ string? aposCandErr   = null;
     }
 }
 
-byte[]? aposBaseline = File.Exists(aposGolden) ? await File.ReadAllBytesAsync(aposGolden) : null;
-string? aposBaseErr  = aposBaseline is null ? $"golden not found: {aposGolden}" : null;
+Console.WriteLine($"[apos-vulkan] candidate: {(aposCandidate is null ? "COMPILE FAIL: " + aposCandErr : aposCandidate.Length + " bytes")}\n");
 
-Console.WriteLine($"[apos-vulkan] candidate: {(aposCandidate is null ? "COMPILE FAIL: " + aposCandErr : aposCandidate.Length + " bytes")}");
-Console.WriteLine($"[apos-vulkan] baseline:  {(aposBaseline is null ? aposBaseErr : aposBaseline.Length + " bytes")}");
-
-var aposJobs = new List<(string Name, byte[]? Bytes, string? Error)>
+var arms = new List<ShadowDusk.Validation.AposGallery.AposGalleryRenderer.Arm>
 {
-    ("baseline-mgfxc", aposBaseline,  aposBaseErr),
-    ("candidate-sd",   aposCandidate, aposCandErr),
+    new("baseline-embedded", UseEmbeddedGolden: true, EffectBytes: null, CompileError: null),
+    new("candidate", UseEmbeddedGolden: false, aposCandidate, aposCandErr),
 };
 
-using var aposGame = new ShadowDusk.Validation.VsDrivenVulkan.AposShapesRenderer(aposOut, aposJobs);
+using var aposGame = new ShadowDusk.Validation.AposGallery.AposGalleryRenderer(aposOut, arms);
 aposGame.Run();
 
 Console.WriteLine("[apos-vulkan] load + render results:");
@@ -197,15 +194,24 @@ foreach (var o in aposGame.Outcomes)
     Console.WriteLine($"  [{(o is { Loaded: true, Rendered: true } ? "OK  " : "FAIL")}] {o.Name,-16} {o.Error ?? "rendered"}");
 
 var aposCaps = aposGame.Captures.ToDictionary(c => c.Name, c => c);
-bool aposBoth = aposCaps.ContainsKey("baseline-mgfxc") && aposCaps.ContainsKey("candidate-sd");
-int aposMaxd  = aposBoth ? MaxDelta(aposCaps["baseline-mgfxc"], aposCaps["candidate-sd"]) : int.MaxValue;
-bool aposDrew = aposCaps.TryGetValue("candidate-sd", out var aposCand) && HasVisibleContent(aposCand);
+bool aposBoth = aposCaps.ContainsKey("baseline-embedded") && aposCaps.ContainsKey("candidate");
+int aposMaxd  = aposBoth ? MaxDelta(aposCaps["baseline-embedded"], aposCaps["candidate"]) : int.MaxValue;
+bool aposDrew = aposCaps.TryGetValue("candidate", out var aposCand) && HasVisibleContent(aposCand);
 
 Console.WriteLine($"[apos-vulkan] baseline-vs-candidate maxd: {(aposMaxd == int.MaxValue ? "n/a" : aposMaxd)}");
 Console.WriteLine($"[apos-vulkan] candidate drew visible content: {aposDrew}");
+if (aposBoth && aposMaxd > 0)
+    foreach (var (name, cellMaxd) in ShadowDusk.Validation.AposGallery.AposGalleryRenderer.CellDeltas(
+        aposCaps["baseline-embedded"].Pixels, aposCaps["candidate"].Pixels, aposCaps["baseline-embedded"].Width))
+        if (cellMaxd > 0)
+            Console.WriteLine($"    [cell] {name,-28} maxd={cellMaxd}");
 
+// Tolerance 1/255, consistent with this gate's pre-existing bar (the VsTransformColorTexture
+// phase above already used <= 1): measured 2026-07-23 against the package's own embedded
+// golden, same class of finding as DX11/DX12 (two independently-built DXC/toolchain
+// artifacts, transcendental math reassociated at the 1-ULP level).
 bool phase2 = aposBoth && aposMaxd <= 1 && aposDrew;
-Console.WriteLine($"[apos-vulkan] phase 2 (issue #145 reproducer): {(phase2 ? "PASS" : "FAIL")}");
+Console.WriteLine($"[apos-vulkan] phase 2 (Apos.Shapes full gallery): {(phase2 ? "PASS" : "FAIL")}");
 
 return phase2 ? 0 : 1;
 }

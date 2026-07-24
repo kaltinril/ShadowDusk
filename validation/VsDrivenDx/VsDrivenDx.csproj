@@ -12,6 +12,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="MonoGame.Framework.WindowsDX" />
+    <PackageReference Include="Apos.Shapes" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
@@ -19,5 +20,6 @@
   <ItemGroup>
     <Compile Include="..\SharedDx\DxEffectImageRenderer.cs" />
     <Compile Include="..\SharedDx\VsDxEffectImageRenderer.cs" />
+    <Compile Include="..\SharedDx\AposGalleryRenderer.cs" />
   </ItemGroup>
 </Project>

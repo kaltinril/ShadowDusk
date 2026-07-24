@@ -20,6 +20,10 @@
     <PackageReference Include="MonoGame.Runtime.Windows.DX12" Version="3.8.5" />
   </ItemGroup>
 
+  <ItemGroup Label="Apos.Shapes (Phase 55 - real ShapeBatch gallery render-proof)">
+    <PackageReference Include="Apos.Shapes" Version="0.7.7" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
   </ItemGroup>
@@ -27,6 +31,7 @@
   <ItemGroup>
     <Compile Include="..\SharedDx\DxEffectImageRenderer.cs" />
     <Compile Include="..\SharedDx\VsDxEffectImageRenderer.cs" />
+    <Compile Include="..\SharedDx\AposGalleryRenderer.cs" />
   </ItemGroup>
 
 </Project>

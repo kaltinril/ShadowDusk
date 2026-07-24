@@ -10,6 +10,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="MonoGame.Framework.DesktopGL" />
+    <PackageReference Include="Apos.Shapes" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
@@ -18,5 +19,6 @@
     <Compile Include="..\Shared\EffectImageRenderer.cs" />
     <Compile Include="..\Shared\ShaderInputs.cs" />
     <Compile Include="..\Shared\VsEffectImageRenderer.cs" />
+    <Compile Include="..\SharedDx\AposGalleryRenderer.cs" />
   </ItemGroup>
 </Project>
