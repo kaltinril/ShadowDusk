@@ -88,8 +88,10 @@ nothing.**
 
 - **3.8.2.1105** — product pin / matrix floor (unchanged).
 - **3.8.4.1** — latest **stable** 3.8.x on nuget.org; in the matrix.
-- **3.8.5-*** — only `-develop` / `-preview` published (Vulkan + DX12). Not stable;
-  not in the matrix (don't gate on a preview). When 3.8.5 goes stable, add it to
-  `-Versions` (and Areas C/D of Phase 35 unblock). Source-verified that 3.8.5's
-  loader accepts the MGFX range `[10, 11]` (it adds `MGFXMinVersion = 10`), so our
-  v10 output stays forward-safe into 3.8.5 too.
+- **3.8.5** — shipped **STABLE 2026-07-15** (was develop/preview-only, Vulkan + DX12,
+  when this doc was first written 2026-06-05). Not yet added to `-Versions` here —
+  a real render re-sweep against the stable build is separate, tracked work (Phase 52
+  Area A); the live matrix result above still reflects the 3.8.2.1105/3.8.4.1
+  floor-plus-latest-stable pair from that date. Source-verified that 3.8.5's loader
+  accepts the MGFX range `[10, 11]` (it adds `MGFXMinVersion = 10`), so our v10
+  output stays forward-safe into 3.8.5 too.

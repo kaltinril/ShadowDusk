@@ -4,7 +4,7 @@ Proves ShadowDusk's **MGFX v11** output loads + renders in a **v11-capable MonoG
 
 ## What it proves
 
-MonoGame **3.8.5** (develop/preview line) is the version that shipped MGFX v11 (PR #8813: the per-shader
+MonoGame **3.8.5** (stable since 2026-07-15; develop/preview when this harness was first built) is the version that shipped MGFX v11 (PR #8813: the per-shader
 `SourceFile` + `Entrypoint` diagnostic strings; its `Effect` loader accepts version range `[10, 11]`). This
 harness compiles the 10-shader SM3 PS-only corpus with ShadowDusk's `EffectCompiler` at **`MgfxVersion = 11`**
 (or 10 via the `v10` arg) and renders those bytes in **real `MonoGame.Framework.DesktopGL 3.8.5-preview.6`**.
@@ -28,8 +28,10 @@ v10. A runtime-integrity guard asserts the loaded runtime is MonoGame >= 3.8.5 (
 
 ## How to run
 
-3.8.5 is **pre-release** — this is validation only, NOT the product baseline (still 3.8.2.1105 / v10). The
-project is not in `ShadowDusk.slnx` and opts out of central package management so the preview pin stays local.
+3.8.5 shipped **stable** on 2026-07-15 (this harness still pins the `-preview.6` build it validated
+against; re-pinning to the stable release is separate, tracked work — Phase 52 Area B). Either way,
+this is validation only, NOT the product baseline (still 3.8.2.1105 / v10). The project is not in
+`ShadowDusk.slnx` and opts out of central package management so the version pin stays local.
 
 ```pwsh
 dotnet run --project validation/MonoGameV11           # MGFX v11 -> output/mgfx-v11
