@@ -231,6 +231,48 @@ void main()
     }
 
     [Fact]
+    public void Sd0402_HeaderlessFor_NoLongerFlagged_AfterRule13Rewrite_ProvableBound_Issue138()
+    {
+        // Same shape as the Apos.Shapes Newton loop: the "runtime" trip count is
+        // actually a ternary between two literals. Run through the real rewriter first
+        // (as the pipeline does) — Rule 13 proves the bound and gives the header a
+        // real constant, so the analyzer must no longer flag it.
+        const string glsl = """
+#version 140
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    float result;
+    bool _553 = in_var_TEXCOORD0.x > 0.0;
+    int _555 = _553 ? 0 : 12;
+    int _564 = 0;
+    for (;;)
+    {
+        if (_564 < _555)
+        {
+            result = float(_564);
+            _564++;
+            continue;
+        }
+        else
+        {
+            result = 1.0;
+            break;
+        }
+    }
+    out_var_SV_Target = vec4(result);
+}
+""";
+        var rewritten = MonoGameGlslRewriter.Rewrite(glsl, ShaderStage.Pixel);
+
+        AnalyzePixel(rewritten.Glsl).Should().NotContain(f => f.Code == "SD0402",
+            "Rule 13 proves the loop's real ceiling and gives the header a literal bound");
+    }
+
+    [Fact]
     public void Sd0402_EmptyIncrementFor_Flagged()
     {
         // The GaussianBlur shape: constant bound, index advanced in the body.

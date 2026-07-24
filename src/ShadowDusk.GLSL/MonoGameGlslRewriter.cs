@@ -612,6 +612,7 @@ public static class MonoGameGlslRewriter
             body = LowerPowSquareToMultiply(body);      // Rule 10 (issue #127)
             body = FoldReciprocalOfQuotient(body);      // Rule 11 (issue #127)
             body = LowerEmptyIncrementForLoop(body);    // Rule 12 (issue #138, shape 2)
+            body = LowerBoundedHeaderlessForLoop(body); // Rule 13 (issue #138, shape 1)
 
             // Phase 43 F3: inject mgfxc/MojoShader's runtime posFixup contract.
             // SPIRV-Cross's FlipVertexY is OFF (see SpirvCrossGlslTranspiler), so the
@@ -839,6 +840,16 @@ public static class MonoGameGlslRewriter
         // anywhere else in the body — the same safety bar SD0402's own message asks
         // for — so an unprovable shape is left as a documented warning, not guessed at.
         body = LowerEmptyIncrementForLoop(body);
+
+        // Rule 13 (issue #138, shape 1): give a header-less `for (;;)` a real,
+        // Appendix-A-legal bound when the runtime "trip count" variable it guards
+        // against is provably a compile-time constant (a literal, or a ternary between
+        // two literals) — SPIRV-Cross has just renamed it into a runtime-looking
+        // temporary, the shader's true ceiling is still knowable. Rewritten only when
+        // that ceiling can be proven and the surrounding shape matches exactly what
+        // SPIRV-Cross emits for this idiom; anything else is left for SD0402 to keep
+        // warning about.
+        body = LowerBoundedHeaderlessForLoop(body);
 
         // ---- Assemble final output: precision header + #define block + body. ----
         // The fragment-output `#define` aliases are emitted here, AFTER all Pass-2
@@ -2904,6 +2915,339 @@ public static class MonoGameGlslRewriter
     /// <paramref name="body"/> (identifier-boundary aware).</summary>
     private static bool ContainsWordToken(string body, string word) =>
         Regex.IsMatch(body, @"\b" + Regex.Escape(word) + @"\b");
+
+    /// <summary>
+    /// Issue #138 (Rule 13), shape 1 — Apos.Shapes' Newton-iteration style: SPIRV-Cross
+    /// emits a header-less <c>for (;;)</c> whose entire body is one
+    /// <c>if (idx &lt; boundVar) { …; idx++; continue; } else { …; break; }</c>, with
+    /// <c>idx</c> declared as its own statement immediately above the loop and
+    /// <c>boundVar</c> itself set, immediately above THAT, from a compile-time-constant
+    /// expression (a bare literal, or a ternary between two literals) — the shader's
+    /// real iteration ceiling hasn't actually been lost, it's just been renamed into a
+    /// runtime-looking SSA temporary by the time this text is emitted.
+    ///
+    /// Rewriting to <c>for (int idx = 0; idx &lt; provenMax; idx++) { if (idx &lt;
+    /// boundVar) {…} else {…} }</c> is EXACT, not an approximation: GLSL ES 1.00
+    /// Appendix A requires the header's bound to be a literal (a provably-bounded
+    /// variable doesn't satisfy the syntax), but <c>provenMax</c> IS the shader's true
+    /// maximum, so the loop still runs exactly as many iterations as before — the
+    /// runtime check against the real (possibly smaller) <c>boundVar</c> survives
+    /// unchanged inside the body. Only rewritten when every piece of this shape is
+    /// present and provable; anything else is left for SD0402 to keep warning about.
+    /// </summary>
+    private static string LowerBoundedHeaderlessForLoop(string body)
+    {
+        int searchFrom = 0;
+        while (true)
+        {
+            int forIdx = FindForKeyword(body, searchFrom);
+            if (forIdx < 0)
+            {
+                break;
+            }
+
+            int openParen = SkipWsAndComments(body, forIdx + 3);
+            if (openParen < 0 || openParen >= body.Length || body[openParen] != '(')
+            {
+                searchFrom = forIdx + 3;
+                continue;
+            }
+
+            int closeParen = FindMatchingParen(body, openParen);
+            if (closeParen < 0)
+            {
+                break; // unbalanced — stop, do not corrupt
+            }
+
+            searchFrom = openParen + 1; // default resume point
+
+            (string init, string cond, string incr, bool wellFormed) =
+                SplitForHeaderThreeParts(body, openParen, closeParen);
+            if (!wellFormed || init.Trim().Length != 0 || cond.Trim().Length != 0 || incr.Trim().Length != 0)
+            {
+                continue; // only the fully header-less "for (;;)" shape (Rule 12 handles the other one)
+            }
+
+            if (!TryFindImmediatelyPrecedingIntDecl(body, forIdx, out string idxVar, out string idxInit, out int idxDeclStart))
+            {
+                continue;
+            }
+
+            int braceIdx = SkipWsAndComments(body, closeParen + 1);
+            if (braceIdx < 0 || braceIdx >= body.Length || body[braceIdx] != '{')
+            {
+                continue;
+            }
+
+            int bodyClose = FindMatchingBrace(body, braceIdx);
+            if (bodyClose < 0)
+            {
+                break; // unbalanced — stop, do not corrupt
+            }
+
+            string innerBody = body.Substring(braceIdx + 1, bodyClose - braceIdx - 1);
+            if (!TryParseSoleIfElse(innerBody, out string condIdx, out string cmpOp, out string boundVar,
+                    out string trueBranch, out string falseBranch) ||
+                condIdx != idxVar)
+            {
+                continue;
+            }
+
+            if (!TryFindPrecedingDecl(body, idxDeclStart, boundVar, out string boundExpr) ||
+                !TryResolveLiteralMax(boundExpr, out int provenMax))
+            {
+                continue; // no compile-time-provable ceiling — SD0402 keeps warning, honestly
+            }
+
+            if (!TryHoistTrailingIncrement(trueBranch, idxVar, out string incrExpr, out string newTrueBranch))
+            {
+                continue;
+            }
+
+            // The false branch must end in `break;` with nothing else risky before it
+            // (no other break/continue, no write to the index) — the same conservative
+            // bar as everywhere else in this rewriter: an unrecognized shape is left
+            // untouched rather than guessed at.
+            int lastBreak = falseBranch.LastIndexOf("break", StringComparison.Ordinal);
+            if (lastBreak < 0)
+            {
+                continue;
+            }
+            string falseTail = falseBranch[(lastBreak + 5)..].TrimStart();
+            if (falseTail.Length == 0 || falseTail[0] != ';')
+            {
+                continue; // not a bare `break;` — an unexpected shape
+            }
+            string falseBeforeBreak = falseBranch[..lastBreak];
+            if (WritesVariable(falseBeforeBreak, idxVar) ||
+                ContainsWordToken(falseBeforeBreak, "break") ||
+                ContainsWordToken(falseBeforeBreak, "continue"))
+            {
+                continue;
+            }
+
+            string newFor = $"for (int {idxVar} = {idxInit}; {idxVar} < {provenMax}; {incrExpr})";
+            string newInner = $"if ({idxVar} {cmpOp} {boundVar}) {{{newTrueBranch}}} else {{{falseBranch}}}";
+            body = body[..idxDeclStart] + newFor + " {" + newInner + "}" + body[(bodyClose + 1)..];
+            searchFrom = idxDeclStart + newFor.Length;
+        }
+
+        return body;
+    }
+
+    /// <summary>
+    /// If the statement immediately preceding <paramref name="beforeIndex"/> (skipping
+    /// whitespace/comments) is a plain <c>int &lt;name&gt; = &lt;expr&gt;;</c> declaration,
+    /// returns its variable name, initializer expression, and the statement's start index.
+    /// </summary>
+    private static bool TryFindImmediatelyPrecedingIntDecl(
+        string body, int beforeIndex, out string varName, out string initExpr, out int declStart)
+    {
+        varName = string.Empty;
+        initExpr = string.Empty;
+        declStart = -1;
+
+        if (!TryFindPrecedingStatement(body, beforeIndex, out int start, out int semiIdx))
+        {
+            return false;
+        }
+
+        var m = IntDeclPattern.Match(body[start..semiIdx].Trim());
+        if (!m.Success)
+        {
+            return false;
+        }
+
+        varName = m.Groups[1].Value;
+        initExpr = m.Groups[2].Value.Trim();
+        declStart = start;
+        return true;
+    }
+
+    /// <summary>
+    /// Walks backward through the SAME straight-line block (never crossing a <c>{</c>/
+    /// <c>}</c> scope boundary) from <paramref name="beforeIndex"/>, statement by
+    /// statement, looking for a plain <c>int &lt;variable&gt; = &lt;expr&gt;;</c>
+    /// declaration of the exact name requested. Returns its initializer expression.
+    /// </summary>
+    private static bool TryFindPrecedingDecl(string body, int beforeIndex, string variable, out string expr)
+    {
+        expr = string.Empty;
+        var declRegex = new Regex(@"^int\s+" + Regex.Escape(variable) + @"\s*=\s*(.+)$", RegexOptions.Singleline);
+
+        int pos = beforeIndex;
+        while (TryFindPrecedingStatement(body, pos, out int start, out int semiIdx))
+        {
+            var m = declRegex.Match(body[start..semiIdx].Trim());
+            if (m.Success)
+            {
+                expr = m.Groups[1].Value.Trim();
+                return true;
+            }
+
+            if (start == 0 || body[start - 1] != ';')
+            {
+                return false; // crossed a scope boundary ('{'/'}') or reached the start — stop
+            }
+
+            pos = start;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Finds the statement immediately ending before <paramref name="beforeIndex"/>
+    /// (skipping trailing whitespace/comments) — i.e. one bounded by a <c>;</c>
+    /// terminator, itself preceded by the start of the block (<c>{</c>/<c>}</c>/start-
+    /// of-string) or an earlier <c>;</c>. Returns its trimmed text span as
+    /// <paramref name="start"/>/<paramref name="semiEnd"/> (the index of its own
+    /// terminating <c>;</c>); false if <paramref name="beforeIndex"/> isn't directly
+    /// preceded by a <c>;</c>-terminated statement at all.
+    /// </summary>
+    private static bool TryFindPrecedingStatement(string body, int beforeIndex, out int start, out int semiEnd)
+    {
+        start = -1;
+        semiEnd = -1;
+
+        int end = beforeIndex;
+        while (end > 0 && char.IsWhiteSpace(body[end - 1]))
+        {
+            end--;
+        }
+        if (end == 0 || body[end - 1] != ';')
+        {
+            return false;
+        }
+
+        semiEnd = end - 1;
+        int s = semiEnd;
+        while (s > 0 && body[s - 1] != ';' && body[s - 1] != '{' && body[s - 1] != '}')
+        {
+            s--;
+        }
+
+        start = s;
+        return true;
+    }
+
+    private static readonly Regex IntDeclPattern =
+        new(@"^int\s+([A-Za-z_]\w*)\s*=\s*(.+)$", RegexOptions.Singleline);
+
+    /// <summary>
+    /// Parses <paramref name="innerBody"/> as EXACTLY one statement,
+    /// <c>if (idx CMP boundVar) { trueBranch } else { falseBranch }</c> — nothing before
+    /// the <c>if</c>, nothing after the <c>else</c> block but whitespace. <c>idx</c> and
+    /// <c>boundVar</c> must each be a simple identifier (SPIRV-Cross's SSA temporaries
+    /// always are); anything more complex in the condition declines the match.
+    /// </summary>
+    private static bool TryParseSoleIfElse(
+        string innerBody, out string idxVar, out string cmpOp, out string boundVar,
+        out string trueBranch, out string falseBranch)
+    {
+        idxVar = cmpOp = boundVar = trueBranch = falseBranch = string.Empty;
+
+        int i = SkipWsAndComments(innerBody, 0);
+        if (i < 0 || i >= innerBody.Length || !MatchKeyword(innerBody, i, "if"))
+        {
+            return false;
+        }
+
+        int paren = SkipWsAndComments(innerBody, i + 2);
+        if (paren < 0 || paren >= innerBody.Length || innerBody[paren] != '(')
+        {
+            return false;
+        }
+
+        int parenClose = FindMatchingParen(innerBody, paren);
+        if (parenClose < 0)
+        {
+            return false;
+        }
+
+        var m = IfConditionPattern.Match(innerBody[(paren + 1)..parenClose].Trim());
+        if (!m.Success)
+        {
+            return false;
+        }
+
+        int braceOpen = SkipWsAndComments(innerBody, parenClose + 1);
+        if (braceOpen < 0 || braceOpen >= innerBody.Length || innerBody[braceOpen] != '{')
+        {
+            return false;
+        }
+
+        int braceClose = FindMatchingBrace(innerBody, braceOpen);
+        if (braceClose < 0)
+        {
+            return false;
+        }
+
+        int elseIdx = SkipWsAndComments(innerBody, braceClose + 1);
+        if (elseIdx < 0 || !MatchKeyword(innerBody, elseIdx, "else"))
+        {
+            return false;
+        }
+
+        int elseBraceOpen = SkipWsAndComments(innerBody, elseIdx + 4);
+        if (elseBraceOpen < 0 || elseBraceOpen >= innerBody.Length || innerBody[elseBraceOpen] != '{')
+        {
+            return false;
+        }
+
+        int elseBraceClose = FindMatchingBrace(innerBody, elseBraceOpen);
+        if (elseBraceClose < 0)
+        {
+            return false;
+        }
+
+        int tail = SkipWsAndComments(innerBody, elseBraceClose + 1);
+        if (tail < innerBody.Length)
+        {
+            return false; // something besides whitespace follows the else-block
+        }
+
+        idxVar = m.Groups[1].Value;
+        cmpOp = m.Groups[2].Value;
+        boundVar = m.Groups[3].Value;
+        trueBranch = innerBody[(braceOpen + 1)..braceClose];
+        falseBranch = innerBody[(elseBraceOpen + 1)..elseBraceClose];
+        return true;
+    }
+
+    private static readonly Regex IfConditionPattern =
+        new(@"^([A-Za-z_]\w*)\s*(<=|>=|<|>)\s*([A-Za-z_]\w*)$");
+
+    /// <summary>
+    /// Resolves the provable maximum of a for-header bound expression: a bare integer
+    /// literal, or a ternary between exactly two integer literals (<c>cond ? a : b</c>)
+    /// — the only two shapes SPIRV-Cross emits for a compile-time-constant trip count.
+    /// Anything else (a uniform, a computed expression, a nested ternary) declines —
+    /// there is no safe constant to derive.
+    /// </summary>
+    private static bool TryResolveLiteralMax(string expr, out int max)
+    {
+        max = 0;
+        expr = expr.Trim();
+
+        if (int.TryParse(expr, out int lit))
+        {
+            max = lit;
+            return true;
+        }
+
+        var m = TernaryLiteralPattern.Match(expr);
+        if (m.Success && int.TryParse(m.Groups[1].Value, out int a) && int.TryParse(m.Groups[2].Value, out int b))
+        {
+            max = Math.Max(a, b);
+            return true;
+        }
+
+        return false;
+    }
+
+    private static readonly Regex TernaryLiteralPattern =
+        new(@"^[A-Za-z_]\w*\s*\?\s*(-?\d+)\s*:\s*(-?\d+)\s*$");
 
     /// <summary>
     /// Finds the next whole-identifier occurrence of <paramref name="fn"/> in

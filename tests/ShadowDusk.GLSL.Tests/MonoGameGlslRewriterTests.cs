@@ -2361,4 +2361,223 @@ void main()
         result.Glsl.Should().MatchRegex(@"for\s*\(int _7 = 0;\s*_7\s*<\s*4\s*;\s*_7\+\+\s*\)",
             "Rule 12 must run on the vertex stage too");
     }
+
+    // ---- Issue #138 (Rule 13), shape 1 — Apos.Shapes' Newton-iteration style:
+    // SPIRV-Cross emits a HEADER-LESS `for (;;)` whose body is a single
+    // `if (idx < boundVar) { ...; idx++; continue; } else { ...; break; }`, with the
+    // index declared as a separate statement just above and `boundVar` itself set,
+    // just above THAT, from a compile-time-constant expression (a literal, or a
+    // ternary between two literals) — the shader's true iteration ceiling is knowable,
+    // it's just been renamed into a runtime-looking variable by SPIRV-Cross. Rewriting
+    // to `for (int idx = 0; idx < <provenMax>; idx++) { if (idx < boundVar) {...} else
+    // {...} }` is exact (not an approximation): <provenMax> IS the shader's real
+    // maximum, so the loop can never run one iteration more or fewer than before. ----
+
+    [Fact]
+    public void PixelStage_BoundedHeaderlessForLoop_TernaryLiteralBound_IsHoisted_Issue138()
+    {
+        // The exact shape found in the real, vendored apos-shapes.fx.
+        const string src = """
+#version 140
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    float result;
+    bool _553 = in_var_TEXCOORD0.x > 0.0;
+    int _555 = _553 ? 0 : 12;
+    int _564 = 0;
+    for (;;)
+    {
+        if (_564 < _555)
+        {
+            float _569 = float(_564) * 0.5;
+            if (_569 < 0.001)
+            {
+                result = _569;
+                break;
+            }
+            _564++;
+            continue;
+        }
+        else
+        {
+            result = 1.0;
+            break;
+        }
+    }
+    out_var_SV_Target = vec4(result);
+}
+""";
+        var rewritten = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        rewritten.Glsl.Should().NotContain("for (;;)", "the header-less loop must be given a real bound");
+        rewritten.Glsl.Should().NotContain("int _564 = 0;\n    for",
+            "the index declaration moves INTO the for-header, not stay as a separate statement");
+        rewritten.Glsl.Should().MatchRegex(@"for\s*\(int _564 = 0;\s*_564\s*<\s*12\s*;\s*_564\+\+\s*\)",
+            "12 is _555's true maximum (the ternary's larger literal) — an exact bound, not an approximation");
+        rewritten.Glsl.Should().Contain("if (_564 < _555)",
+            "the original runtime guard against the REAL (possibly smaller) bound must survive inside the loop");
+        rewritten.Glsl.Should().NotContain("_564++;\n            continue;",
+            "the trailing increment+continue is hoisted into the header, not left duplicated in the body");
+    }
+
+    [Fact]
+    public void PixelStage_BoundedHeaderlessForLoop_PlainLiteralBound_IsHoisted_Issue138()
+    {
+        const string src = """
+#version 140
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    float result;
+    int _30 = 8;
+    int _31 = 0;
+    for (;;)
+    {
+        if (_31 < _30)
+        {
+            result += float(_31);
+            _31++;
+            continue;
+        }
+        else
+        {
+            result = 0.0;
+            break;
+        }
+    }
+    out_var_SV_Target = vec4(result);
+}
+""";
+        var rewritten = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        rewritten.Glsl.Should().MatchRegex(@"for\s*\(int _31 = 0;\s*_31\s*<\s*8\s*;\s*_31\+\+\s*\)",
+            "a plain literal bound (no ternary) hoists the same way");
+    }
+
+    [Fact]
+    public void PixelStage_BoundedHeaderlessForLoop_NonLiteralBound_IsLeftUntouched_Issue138()
+    {
+        // The bound comes from a computed, non-literal expression with no
+        // compile-time-provable ceiling — there is no safe constant to put in the
+        // header, so Rule 13 must decline (SD0402 keeps warning, which is the honest
+        // outcome here).
+        const string src = """
+#version 140
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    float result;
+    int _30 = int(in_var_TEXCOORD0.x * 100.0);
+    int _31 = 0;
+    for (;;)
+    {
+        if (_31 < _30)
+        {
+            result += float(_31);
+            _31++;
+            continue;
+        }
+        else
+        {
+            result = 0.0;
+            break;
+        }
+    }
+    out_var_SV_Target = vec4(result);
+}
+""";
+        var rewritten = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        rewritten.Glsl.Should().Contain("for (;;)",
+            "a non-literal bound has no provable ceiling, so the loop must be left untouched");
+    }
+
+    [Fact]
+    public void PixelStage_BoundedHeaderlessForLoop_OtherWriteToIndexInTrueBranch_IsLeftUntouched_Issue138()
+    {
+        const string src = """
+#version 140
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    float result;
+    int _30 = 8;
+    int _31 = 0;
+    for (;;)
+    {
+        if (_31 < _30)
+        {
+            if (result > 4.0)
+            {
+                _31 += 3;
+            }
+            result += float(_31);
+            _31++;
+            continue;
+        }
+        else
+        {
+            result = 0.0;
+            break;
+        }
+    }
+    out_var_SV_Target = vec4(result);
+}
+""";
+        var rewritten = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        rewritten.Glsl.Should().Contain("for (;;)",
+            "a second write to the index makes hoisting unsafe, so the shape is left untouched");
+    }
+
+    [Fact]
+    public void PixelStage_BoundedHeaderlessForLoop_FalseBranchDoesNotEndInBreak_IsLeftUntouched_Issue138()
+    {
+        // An unexpected shape (SPIRV-Cross always emits a trailing break here in
+        // practice) — Rule 13 must not guess at a rewrite for anything else.
+        const string src = """
+#version 140
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    float result;
+    int _30 = 8;
+    int _31 = 0;
+    for (;;)
+    {
+        if (_31 < _30)
+        {
+            result += float(_31);
+            _31++;
+            continue;
+        }
+        else
+        {
+            result = 0.0;
+        }
+    }
+    out_var_SV_Target = vec4(result);
+}
+""";
+        var rewritten = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        rewritten.Glsl.Should().Contain("for (;;)",
+            "the false branch must end in break for this rewrite to be provably safe");
+    }
 }

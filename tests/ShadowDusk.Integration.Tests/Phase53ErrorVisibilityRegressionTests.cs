@@ -217,23 +217,25 @@ public sealed class Phase53ErrorVisibilityRegressionTests : IClassFixture<CliBin
     {
         // SD0402 was the only lint code with NO end-to-end pin: it could stop firing, start
         // firing on everything, or change its text with every test still green. Issue #138's
-        // shape 2 (empty increment) is now fixed outright (see the sibling test above); shape
-        // 1 (a runtime-bounded trip count, header-less `for(;;)`) is NOT — by the time the
-        // GLSL rewriter sees it, SPIRV-Cross has already erased any compile-time bound into an
-        // opaque runtime value, so there is no provably-safe mechanical rewrite here. Apos.Shapes'
-        // Newton-iteration SDF (`newton_steps`) is the real vendored shape-1 example, so it keeps
-        // this end-to-end warn-and-still-compile contract pinned, including the file attribution
-        // a line-less diagnostic carries.
+        // shape 2 (empty increment) is now fixed outright (see the sibling test above); Rule 13
+        // also fixed shape 1 (header-less `for (;;)`) for its real known corpus example — even
+        // Apos.Shapes' own Newton-iteration SDF turned out to have a provable compile-time bound
+        // (a ternary between two literals, `newton_steps = converged ? 0 : 12`), once actually
+        // looked at, so it no longer needs this pin either. `Sd0402UniformBoundedLoop.fx` (a
+        // fresh, project-owned fixture) is the genuinely unfixable case: its trip count comes
+        // straight from a uniform with no compile-time ceiling anywhere in the shader, so Rule 13
+        // correctly declines and this keeps the end-to-end warn-and-still-compile contract
+        // pinned, including the file attribution a line-less diagnostic carries.
         using var cts = new CancellationTokenSource(CompileTimeout);
         var result = await TestHelpers.CompileFixtureAsync(
-            "third-party/Apos.Shapes/apos-shapes.fx", "OpenGL",
+            "examples/Sd0402UniformBoundedLoop.fx", "OpenGL",
             mode: InvocationMode.CliProcess, ct: cts.Token, cliBinaryPath: _cli.ExecutablePath);
 
         result.ExitCode.Should().Be(0,
             because: "the lint warns, never rejects; stderr: " + result.Stderr);
         result.Mgfx.Should().NotBeEmpty();
         result.Stderr.Should().Contain("warning SD0402");
-        result.Stderr.Should().Contain("apos-shapes.fx: warning SD0402",
+        result.Stderr.Should().Contain("Sd0402UniformBoundedLoop.fx: warning SD0402",
             "a line-less diagnostic must still name the effect it came from");
     }
 

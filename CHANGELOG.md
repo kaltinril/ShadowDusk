@@ -58,23 +58,34 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
-- **GL loop shape outside GLSL ES 1.00 Appendix A: the constant-bounded, empty-increment
-  case is now auto-fixed, not just warned about (issue #138, shape 2).** SPIRV-Cross emits
-  some constant-bounded loops as `for (int i = 0; i < N; ) { …; i++; continue; }` — a
-  declared, non-empty init clause but an EMPTY increment clause, with the index instead
-  advanced by the body's last two statements. GLSL ES 1.00 (WebGL1 / KNI Reach) requires the
-  increment in the for-header and forbids any other write to the index, so this shape used to
-  fail to *load* there (desktop GL, WebGL2, and KNI HiDef were unaffected) — Phase 53 added a
-  compile-time warning (`SD0402`) for it but deferred the actual fix. `MonoGameGlslRewriter`
-  now hoists the increment into the header and removes the trailing pair whenever it can prove
-  the rewrite safe (no other write to the index, no other `continue` in the body) — semantically
-  exact, so pixels are unchanged. Confirmed end-to-end on the real vendored `Nez/GaussianBlur.fx`:
-  compiling it through the CLI no longer emits `SD0402` at all. The other loop shape SD0402
-  covers (a genuinely runtime-bounded trip count, e.g. Apos.Shapes' Newton-iteration SDF) is
-  NOT fixed by this — by the time the GLSL reaches the rewriter, SPIRV-Cross has already erased
-  any compile-time bound into an opaque runtime value, so there's no provably-safe mechanical
-  rewrite; it keeps warning via `SD0402`, pinned by `apos-shapes.fx` continuing to warn through
-  the real CLI.
+- **GL loop shapes outside GLSL ES 1.00 Appendix A: both shapes SD0402 covers are now
+  auto-fixed where provably safe, not just warned about (issue #138).** GLSL ES 1.00
+  (WebGL1 / KNI Reach) requires a loop's increment to live in the for-header and its bound
+  to be a compile-time constant; SPIRV-Cross emits two shapes that violate this, and both
+  used to fail to *load* there (desktop GL, WebGL2, and KNI HiDef were unaffected) while
+  Phase 53 only added a compile-time warning (`SD0402`) for them.
+  - **Constant-bounded, empty increment** (`for (int i = 0; i < N; ) { …; i++; continue;
+    }`, the index advanced in the body). `MonoGameGlslRewriter` now hoists the increment
+    into the header whenever it can prove the rewrite safe (no other write to the index, no
+    other `continue` in the body). Confirmed end-to-end on the real vendored
+    `Nez/GaussianBlur.fx`: compiling it through the CLI no longer emits `SD0402` at all.
+  - **Header-less, runtime-looking trip count** (`for (;;) { if (i < bound) {…} else
+    break; }`). Turns out "runtime" doesn't always mean unprovable: when `bound`'s own
+    value is traceable to a compile-time-constant expression (a literal, or a ternary
+    between two literals), the shader's real ceiling is still knowable even though
+    SPIRV-Cross renamed it into a runtime-looking temporary. `MonoGameGlslRewriter` now
+    gives the header that real, exact bound and hoists the increment the same way — not an
+    approximation, since the derived bound IS the shader's true maximum. Confirmed on the
+    real vendored `Apos.Shapes/apos-shapes.fx` (its Newton-iteration SDF): compiling it
+    through the CLI no longer emits `SD0402` either, and the existing GL render-proof
+    (`validation/VsDriven -- apos`) still matches the `mgfxc` golden at the same max Δ
+    2/255 — pixels unchanged, as expected from an exact rewrite.
+
+  A genuinely unfixable case remains: a loop bounded by a plain runtime uniform with no
+  compile-time ceiling anywhere in the shader. There's no safe constant to derive there, so
+  it keeps warning via `SD0402` — pinned by a fresh regression fixture,
+  `examples/Sd0402UniformBoundedLoop.fx`, compiling clean while still warning through the
+  real CLI.
 
 ## [0.13.0] - 2026-07-23
 
