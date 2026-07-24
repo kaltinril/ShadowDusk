@@ -191,24 +191,49 @@ public sealed class Phase53ErrorVisibilityRegressionTests : IClassFixture<CliBin
 
     [Fact]
     [Trait("Platform", "OpenGL")]
-    public async Task Sd0402_NonAppendixALoop_WarnsAndStillCompiles_ThroughTheRealCli()
+    public async Task Sd0402_EmptyIncrementShape_NoLongerFlagged_ThroughTheRealCli_Issue138()
     {
-        // SD0402 was the only lint code with NO end-to-end pin: it could stop firing, start
-        // firing on everything, or change its text with every test still green. It is also
-        // the flag that must flip when issue #138's deferred emission fix lands.
-        // Runs through the REAL CLI process (not DirectPipeline) so this doubles as the
-        // end-to-end proof of the warning-on-stderr-with-exit-0 contract, including the
-        // file attribution a line-less diagnostic now carries.
+        // This is the flag that flipped when issue #138's shape-2 fix (Rule 12,
+        // MonoGameGlslRewriter.LowerEmptyIncrementForLoop) landed: GaussianBlur.fx's
+        // `for (int _40 = 0; _40 < 15; ) { …; _40++; continue; }` used to warn SD0402
+        // (empty increment); Rule 12 now hoists the increment into the header, so the
+        // real CLI compile of this real vendored shader no longer warns AT ALL. Runs
+        // through the REAL CLI process (not DirectPipeline) as the end-to-end proof.
         using var cts = new CancellationTokenSource(CompileTimeout);
         var result = await TestHelpers.CompileFixtureAsync(
             "third-party/Nez/GaussianBlur.fx", "OpenGL",
+            mode: InvocationMode.CliProcess, ct: cts.Token, cliBinaryPath: _cli.ExecutablePath);
+
+        result.ExitCode.Should().Be(0, because: "stderr: " + result.Stderr);
+        result.Mgfx.Should().NotBeEmpty();
+        result.Stderr.Should().NotContain("SD0402",
+            "Rule 12 hoists the empty-increment shape into the for-header, so this real " +
+            "shader's loop no longer triggers the warning");
+    }
+
+    [Fact]
+    [Trait("Platform", "OpenGL")]
+    public async Task Sd0402_HeaderlessLoopShape_StillWarnsAndStillCompiles_ThroughTheRealCli()
+    {
+        // SD0402 was the only lint code with NO end-to-end pin: it could stop firing, start
+        // firing on everything, or change its text with every test still green. Issue #138's
+        // shape 2 (empty increment) is now fixed outright (see the sibling test above); shape
+        // 1 (a runtime-bounded trip count, header-less `for(;;)`) is NOT — by the time the
+        // GLSL rewriter sees it, SPIRV-Cross has already erased any compile-time bound into an
+        // opaque runtime value, so there is no provably-safe mechanical rewrite here. Apos.Shapes'
+        // Newton-iteration SDF (`newton_steps`) is the real vendored shape-1 example, so it keeps
+        // this end-to-end warn-and-still-compile contract pinned, including the file attribution
+        // a line-less diagnostic carries.
+        using var cts = new CancellationTokenSource(CompileTimeout);
+        var result = await TestHelpers.CompileFixtureAsync(
+            "third-party/Apos.Shapes/apos-shapes.fx", "OpenGL",
             mode: InvocationMode.CliProcess, ct: cts.Token, cliBinaryPath: _cli.ExecutablePath);
 
         result.ExitCode.Should().Be(0,
             because: "the lint warns, never rejects; stderr: " + result.Stderr);
         result.Mgfx.Should().NotBeEmpty();
         result.Stderr.Should().Contain("warning SD0402");
-        result.Stderr.Should().Contain("GaussianBlur.fx: warning SD0402",
+        result.Stderr.Should().Contain("apos-shapes.fx: warning SD0402",
             "a line-less diagnostic must still name the effect it came from");
     }
 

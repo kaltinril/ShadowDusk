@@ -271,6 +271,21 @@ the loop-bearing corpus (GaussianBlur, apos EllipseSDF). SD0402 covers the class
 compile-time warning today (verified live: compiling `apos-shapes-aa.fx` on GL prints
 the `for (;;)` warning). Issue #138 stays open for the emission half, pointing here.
 
+**Follow-on landed (2026-07-24): the empty-increment shape (shape 2, `GaussianBlur.fx`)
+is now fixed, not just warned about.** `MonoGameGlslRewriter` Rule 12
+(`LowerEmptyIncrementForLoop`) hoists the trailing `<index>++; continue;` (or
+`+= k; continue;`) into the for-header's increment clause whenever it can prove the
+rewrite safe (no other write to the index, no other `continue` in the body) —
+semantically exact, pixels unchanged. Confirmed end-to-end: compiling the real
+vendored `Nez/GaussianBlur.fx` through the CLI no longer emits `SD0402` at all.
+**Shape 1 (a genuinely runtime-bounded trip count, e.g. Apos.Shapes' Newton-iteration
+SDF) is NOT fixed and stays open** — by the time the GLSL reaches the rewriter,
+SPIRV-Cross has already erased any compile-time bound into an opaque runtime SSA
+value, so there is no provably-safe mechanical rewrite available at this stage; a real
+fix would need a static-bound analysis threaded through from HLSL/DXC, a materially
+bigger project. `apos-shapes.fx` continuing to warn `SD0402` through the real CLI is
+pinned as the regression for this still-open half.
+
 ## 5. Validation
 
 - Unit: reformatter promotion/selection; rewriter rules (VS lowering, nested round,

@@ -252,6 +252,42 @@ void main()
     }
 
     [Fact]
+    public void Sd0402_EmptyIncrementFor_NoLongerFlagged_AfterRule12Rewrite_Issue138()
+    {
+        // End-to-end: the SAME GaussianBlur shape as Sd0402_EmptyIncrementFor_Flagged,
+        // but run through MonoGameGlslRewriter.Rewrite first (as the real pipeline
+        // does). Rule 12 hoists the increment into the header, so the analyzer run
+        // afterward — the same check a real compile performs — must no longer warn.
+        const string glsl = """
+#version 140
+
+layout(binding = 0, std140) uniform type_Globals
+{
+    vec4 ps_uniforms_vec4[15];
+} _Globals;
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    vec4 acc = vec4(0.0);
+    for (int _40 = 0; _40 < 15; )
+    {
+        acc += _Globals.ps_uniforms_vec4[1 + _40];
+        _40++;
+        continue;
+    }
+    out_var_SV_Target = acc;
+}
+""";
+        var rewritten = MonoGameGlslRewriter.Rewrite(glsl, ShaderStage.Pixel);
+
+        AnalyzePixel(rewritten.Glsl).Should().NotContain(f => f.Code == "SD0402",
+            "Rule 12 hoists the increment into the header, so the shape SD0402 flagged no longer exists");
+    }
+
+    [Fact]
     public void Sd0402_ConformantFor_NotFlagged()
     {
         const string glsl = """
