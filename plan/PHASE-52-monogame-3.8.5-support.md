@@ -164,18 +164,26 @@ to feed Phase 29, not a defect of this phase.
 Every repo statement that 3.8.5 is preview/unreleased is now stale. Known sites (grep for
 `3.8.5` to catch stragglers):
 - `CLAUDE.md` — "Newer MonoGame exists (3.8.4.1 stable, 3.8.5-preview), but bumping is rejected"
-  → update to "(3.8.5 stable)" while keeping the directive itself untouched.
+  → update to "(3.8.5 stable)" while keeping the directive itself untouched. **Already correct**
+  (found already saying "3.8.5 stable since 2026-07-15" — fixed in an earlier, untracked pass).
 - `validation/ForwardCompat/README.md` — "Version landscape" section + the extend-the-matrix
-  note; refresh with the Area A results.
-- `validation/MonoGameV11/*` — csproj comment + README (Area B).
-- `docs/validation-matrix.md` — v10-on-3.8.5-stable and v11-on-3.8.5-stable rows once Areas A/B
-  are green; DX12 row when Area D lands.
-- `README.md` / `src/ShadowDusk.Wasm/README.md` — the "MonoGame 3.8.5+ → `MgfxVersion = 11`"
-  guidance is now about a stable version; check wording.
-- `plan/plan.md` — Phase 51 B1/B2 status notes (B1 → here, B2 → Phase 32 done).
+  note; refresh with the Area A results. **Wording fixed 2026-07-24** (status corrected to
+  "shipped STABLE 2026-07-15"); the actual re-sweep against the stable build is still Area A2,
+  not done here.
+- `validation/MonoGameV11/*` — csproj comment + README (Area B). **Wording fixed 2026-07-24**
+  (status corrected; the project still pins `-preview.6` and the actual bump-and-re-run is still
+  Area B, not done here — see the task list below).
+- `docs/validation-matrix.md` — checked 2026-07-24, no stale preview wording found (already
+  clean); v10-on-3.8.5-stable and v11-on-3.8.5-stable rows still land once Areas A/B are green;
+  DX12 row when Area D lands.
+- `README.md` / `src/ShadowDusk.Wasm/README.md` — checked 2026-07-24: the "MonoGame 3.8.5+ →
+  `MgfxVersion = 11`" guidance is a version threshold, not a preview/stable claim — not stale,
+  no change needed.
+- `plan/plan.md` — Phase 51 B1/B2 status notes (B1 → here, B2 → Phase 32 done). **Already
+  correct** — both already carry their "gate cleared 2026-07-18" update annotations.
 - Optional: `validation/AndroidGl` pins `MonoGame.Framework.Android 3.8.4.1` — check whether a
   3.8.5 stable Android package exists and bump the validation driver if it does (low priority,
-  feeds [Phase 50](PHASE-50-android-runtime-support.md)).
+  feeds [Phase 50](PHASE-50-android-runtime-support.md)). Not checked; tracked as F2 below.
 
 ## 5. Tasks
 
@@ -206,8 +214,11 @@ Sequenced; A/B/C/F are small and independent, D is the big rung, E is investigat
   `ExternalTool`/PATH mgfxc override with a scratch consumer; investigate the new code-centric
   Content Builder's external-shader-compiler seam; document both outcomes (feed Phase 29 if the
   new builder needs the in-process plugin).
-- [ ] **F1** — documentation staleness sweep per Area F list (grep `3.8.5` for stragglers);
-  includes the CLAUDE.md wording fix and Phase 51 B1/B2 notes.
+- [x] **F1** — documentation staleness sweep per Area F list (grep `3.8.5` for stragglers);
+  includes the CLAUDE.md wording fix and Phase 51 B1/B2 notes. **Done 2026-07-24** — every
+  "known site" checked; the only two that were actually stale (`validation/ForwardCompat/README.md`,
+  `validation/MonoGameV11/*`) had their status wording corrected. Note: this is the *wording* sweep
+  only — the actual version bumps + re-validation (Areas A2/B2) remain open, tracked below.
 - [ ] **F2** — check `MonoGame.Framework.Android` for a 3.8.5 stable package; bump
   `validation/AndroidGl` if it exists (optional, non-blocking).
 - [ ] **Guard** — confirm the product is byte-untouched: `Directory.Packages.props` still
@@ -227,8 +238,8 @@ Sequenced; A/B/C/F are small and independent, D is the big rung, E is investigat
   with Phase 51 B1 repointed (decision gate exercised, not ignored).
 - [ ] The 3.8.5 Content Builder drop-in story is verified and documented (classic path confirmed;
   new-builder seam answered honestly, feeding Phase 29 if needed).
-- [ ] No repo doc still describes MonoGame 3.8.5 as preview/unreleased; `docs/validation-matrix.md`
-  carries the new stable rows.
+- [x] No repo doc still describes MonoGame 3.8.5 as preview/unreleased (**done 2026-07-24**, F1);
+  `docs/validation-matrix.md` still needs the new stable rows once Areas A/B land.
 - [ ] The product is untouched: pin `3.8.2.1105`, default MGFX v10, full test suite green, zero
   output-byte churn (byte-identity manifest unchanged) — except any explicitly render-gated D3 work.
 
