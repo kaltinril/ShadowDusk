@@ -14,6 +14,14 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.14.0] - 2026-07-24
+
+### Added
+
 - **New target: DirectX 12 (MonoGame `WindowsDX12`), rung-4 proven (Phase 54).**
   `PlatformTarget.DirectX12` compiles to plain SM6 DXIL via DXC and is auto-selected for
   consumers targeting MonoGame's `WindowsDX12` runtime (3.8.5+) — seamless, no flag to pick.
@@ -943,7 +951,8 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.12.1...v0.13.0
 [0.12.1]: https://github.com/kaltinril/ShadowDusk/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.11.0...v0.12.0

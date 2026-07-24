@@ -19,6 +19,7 @@
     <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="..\SharedDx\*.cs" />
+    <Compile Include="..\SharedDx\DxShaderInputs.cs" />
+    <Compile Include="..\SharedDx\DxEffectImageRenderer.cs" />
   </ItemGroup>
 </Project>

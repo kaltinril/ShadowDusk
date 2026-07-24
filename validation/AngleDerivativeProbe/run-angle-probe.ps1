@@ -46,10 +46,22 @@ Write-Host "[angle-probe] browser: $browsers"
 # reads to end-of-stream. (PowerShell 7 is unaffected, but the render-gate script invokes
 # this file with powershell.exe.)
 $udd = Join-Path $env:TEMP 'shadowdusk-angle-probe'
-$dom = & $browsers --headless=new --use-angle=d3d11 --no-sandbox --disable-gpu-sandbox `
-    --no-first-run "--user-data-dir=$udd" `
-    --virtual-time-budget=8000 --timeout=20000 --dump-dom $fileUrl 2>$null |
-    ForEach-Object { $_ }
+# Windows PowerShell 5.1 escalates ANY native-command stderr line into a terminating
+# NativeCommandError under $ErrorActionPreference = 'Stop', even when redirected to $null
+# (the escalation happens before the redirect is applied). Chromium can emit incidental,
+# non-fatal stderr logging (e.g. a benign task-manager warning) on an otherwise-successful
+# run, so this call must run under 'Continue' - the probe's own pass/fail assertions below
+# (renderer + A/B/C values), not $ErrorActionPreference, are what decide the gate.
+$previousEap = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+try {
+    $dom = & $browsers --headless=new --use-angle=d3d11 --no-sandbox --disable-gpu-sandbox `
+        --no-first-run "--user-data-dir=$udd" `
+        --virtual-time-budget=8000 --timeout=20000 --dump-dom $fileUrl 2>$null |
+        ForEach-Object { $_ }
+} finally {
+    $ErrorActionPreference = $previousEap
+}
 
 function Get-ProbeValue([string[]]$Lines, [string]$Prefix) {
     $line = $Lines | Where-Object { $_ -match [regex]::Escape($Prefix) } | Select-Object -First 1
