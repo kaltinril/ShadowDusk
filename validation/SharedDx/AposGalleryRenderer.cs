@@ -51,6 +51,28 @@ public sealed class AposGalleryRenderer : Game
     /// emits them — built from the same source list so the two can never drift out of sync.</summary>
     public static IReadOnlyList<(string Name, Rectangle Cell)> Cells { get; } = BuildCellLayout();
 
+    /// <summary>Per-cell max channel delta between two same-size captures, keyed by gallery entry
+    /// name — diagnostic breakdown for when a whole-image maxd is nonzero, so a divergence can be
+    /// attributed to a specific shape/style combination instead of just "somewhere in the image".</summary>
+    public static IReadOnlyList<(string Name, int MaxDelta)> CellDeltas(Color[] a, Color[] b, int width)
+    {
+        var result = new List<(string, int)>();
+        foreach (var (name, cell) in Cells)
+        {
+            int maxd = 0;
+            for (int y = cell.Top; y < cell.Bottom; y++)
+            for (int x = cell.Left; x < cell.Right; x++)
+            {
+                int i = y * width + x;
+                int d = Math.Max(Math.Max(Math.Abs(a[i].R - b[i].R), Math.Abs(a[i].G - b[i].G)),
+                                  Math.Max(Math.Abs(a[i].B - b[i].B), Math.Abs(a[i].A - b[i].A)));
+                if (d > maxd) maxd = d;
+            }
+            result.Add((name, maxd));
+        }
+        return result;
+    }
+
     public AposGalleryRenderer(string outDir, IReadOnlyList<Arm> arms)
     {
         _outDir = outDir;
