@@ -18,6 +18,12 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- OpenGL: `trunc()` (which SPIRV-Cross emits when lowering HLSL's truncating `%`/`fmod`) is now
+  lowered to `sign(x)*floor(abs(x))`, a GLSL ES 1.00-safe expression. `trunc()` is a GLSL ES 3.00 /
+  GL 1.30+ builtin, absent from the versionless legacy dialect ShadowDusk targets; strict GLSL ES
+  1.00 front ends (ANGLE on macOS DesktopGL) rejected it as an undeclared identifier where lenient
+  desktop drivers did not (Apos.Shapes issue #34).
+
 ## [0.14.1] - 2026-07-25
 
 ### Added

@@ -275,6 +275,61 @@ void main()
         open.Should().Be(close, "the lowered GLSL must keep parentheses balanced");
     }
 
+    // ---- trunc() → sign(x)*floor(abs(x)) lowering (Apos.Shapes issue #34). SPIRV-Cross
+    // inlines HLSL's truncating `%`/fmod as `a - b * trunc(a / b)` (no GLSL builtin has
+    // fmod's sign-follows-dividend semantics). trunc() is GLSL ES 3.00 / GL 1.30+ only —
+    // absent from GLSL ES 1.00, which strict front ends (ANGLE on macOS DesktopGL)
+    // reject as an undeclared identifier, unlike lenient desktop drivers. ----
+
+    [Fact]
+    public void Trunc_FromFmodLowering_IsLoweredToSignFloorAbs_AndNoTruncRemains()
+    {
+        // The verbatim SPIRV-Cross shape for HLSL `(x % m + m) % m` (Apos.Shapes' Mod()).
+        const string src = """
+#version 140
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    float _16 = (in_var_TEXCOORD0.x - 3.0 * trunc(in_var_TEXCOORD0.x / 3.0)) + 3.0;
+    float _17 = _16 - 3.0 * trunc(_16 / 3.0);
+    out_var_SV_Target = vec4(_17);
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        System.Text.RegularExpressions.Regex
+            .IsMatch(result.Glsl, @"\btrunc\s*\(")
+            .Should().BeFalse("trunc is unavailable in GLSL ES 1.00 (WebGL1) / desktop GLSL < 1.30");
+        result.Glsl.Should().Contain("sign((vTexCoord0.x / 3.0)) * floor(abs((vTexCoord0.x / 3.0)))");
+
+        int open  = result.Glsl.Count(c => c == '(');
+        int close = result.Glsl.Count(c => c == ')');
+        open.Should().Be(close, "the lowered GLSL must keep parentheses balanced");
+    }
+
+    [Fact]
+    public void Trunc_NestedArgument_BalancedParensLoweredCorrectly()
+    {
+        const string src = """
+#version 140
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    out_var_SV_Target = vec4(trunc(abs(in_var_TEXCOORD0.x) * 8.0));
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        result.Glsl.Should().NotContain("trunc(");
+        result.Glsl.Should().Contain("sign((abs(vTexCoord0.x) * 8.0)) * floor(abs((abs(vTexCoord0.x) * 8.0)))");
+    }
+
     // ---- Vertex stage (Phase 28, posFixup contract since Phase 43 F3). SPIRV-Cross
     // VS output for a custom VS taking a float4x4 transform + the SpriteBatch vertex
     // set (POSITION0 / COLOR0 / TEXCOORD0), captured verbatim from DXC→SPIRV-Cross for
