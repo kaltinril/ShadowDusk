@@ -6,13 +6,13 @@
 // result. A separate compare step (validation/compare.py) diffs the two PNGs pixel-for-pixel —
 // same-backend GL<->GL, the rung-4 bar.
 //
-// mode "apos": the Phase 51 A3 GL slice — Apos.Shapes (Gum's SDF shape renderer), the same
-// apos-shapes-sm6.fx fixture the DX (validation/VsDrivenDx -- apos) and Vulkan
-// (validation/VsDrivenVulkan -- apos) gates use. OpenGL's macro set is {MGFX, GLSL, OPENGL}
-// (PlatformMacros.For(OpenGL); no SM4/SM6/__KNIFX__), so the fixture's `#elif OPENGL` branch
-// applies — cosmetically vs_3_0/ps_3_0, but the sampler declarations are gated on a separate
-// `#if SM6` that OPENGL never takes, so GL lands on the same legacy sampler/tex2D branch DX
-// does. See AposShapesRenderer for the bespoke vertex-buffer harness.
+// mode "apos": the Phase 51 A3 GL slice — Apos.Shapes (Gum's SDF shape renderer). Compiles
+// apos-shapes.fx for OpenGL and compares ShadowDusk's candidate to the mgfxc GL golden, same-
+// backend GL<->GL, on two shapes: a CIRCLE (the original Phase 51 proof) and, since issue #160, a
+// needle-thin ELLIPSE (the shape whose Newton/bisect SDF exercises the header-less-loop rewrite).
+// The ellipse slice is supplementary — the bug it targets is undefined behavior whose pixel
+// manifestation is driver-dependent (see RunAposPhase's caveat); the rewriter unit test is the
+// authoritative guard. See AposShapesRenderer for the bespoke vertex-buffer harness.
 //
 // mode "apos-gallery": Phase 55 — renders Apos.Shapes' full ShapeBatch shape gallery through
 // ShadowDusk's GL compile ONLY (no golden arm). GL gets no pixel-diff for this gallery: the
@@ -350,9 +350,31 @@ bool haveBoth = caps.ContainsKey("baseline-mgfxc") && caps.ContainsKey("candidat
 int aposMaxd = haveBoth ? AposMaxDelta(caps["baseline-mgfxc"], caps["candidate-sd"]) : int.MaxValue;
 bool aposDrew = caps.TryGetValue("candidate-sd", out var aposCand) && AposHasVisibleContent(aposCand);
 
+// Issue #160: the NEEDLE-THIN ELLIPSE slice — SUPPLEMENTARY coverage, not the authoritative
+// guard. Same same-backend GL<->GL comparison against the mgfxc golden, on the shape whose
+// Newton/bisect SDF exercises the header-less-loop rewrite (the circle above converges in ~3
+// iterations and never reaches the loop's finalizer else-branch).
+//
+// CAVEAT: the 0.14.0 bug was an UNINITIALIZED read (the rewrite dropped the else that assigns the
+// solver's phi output), i.e. undefined behavior. On the reporter's Intel GL driver it surfaced as
+// garbage (tips vanished, whole-image maxd ~200); on other drivers (this box included) the driver
+// zero-inits the register and the stalled tip `t` is ~0, so buggy and fixed render identically and
+// this gate stays green regardless. So it CANNOT be relied on to red on every machine. The
+// authoritative, driver-independent regression guard is the rewriter unit test
+// (MonoGameGlslRewriterTests.PixelStage_BoundedHeaderlessForLoop_ElseBranchStillReachableAtMaxTripCount_Issue160),
+// which asserts the emitted loop keeps the else reachable. This render slice adds real value on
+// drivers that DO expose the UB and against future ellipse regressions that are deterministic.
+bool haveEllipse = caps.ContainsKey("baseline-mgfxc.ellipse") && caps.ContainsKey("candidate-sd.ellipse");
+int ellipseMaxd = haveEllipse
+    ? AposMaxDelta(caps["baseline-mgfxc.ellipse"], caps["candidate-sd.ellipse"])
+    : int.MaxValue;
+bool ellipseDrew = caps.TryGetValue("candidate-sd.ellipse", out var ellCand) && AposHasVisibleContent(ellCand);
+
 Console.WriteLine();
 Console.WriteLine($"[apos-gl] baseline-vs-candidate maxd: {(aposMaxd == int.MaxValue ? "n/a" : aposMaxd)}");
 Console.WriteLine($"[apos-gl] candidate drew visible content: {aposDrew}");
+Console.WriteLine($"[apos-gl] thin-ellipse baseline-vs-candidate maxd: {(ellipseMaxd == int.MaxValue ? "n/a" : ellipseMaxd)} (issue #160)");
+Console.WriteLine($"[apos-gl] thin-ellipse candidate drew visible content: {ellipseDrew}");
 
 // Tolerance 2/255, NOT the maxd-0 bar the DX/Vulkan Apos.Shapes gates hit: this fixture's
 // SpritePixelShader always round-trips fill/border colors through RgbToOklab/OkLabToRgb
@@ -363,10 +385,21 @@ Console.WriteLine($"[apos-gl] candidate drew visible content: {aposDrew}");
 // a real, explained drift, not a silently-widened bar.
 const int AposTolerance = 2;
 
+// The thin ellipse shares the fill/border color path (RgbToOklab/OkLabToRgb) with the circle, so
+// its transcendental drift vs the golden is the same class. Measured maxd is 1 on this box; the
+// tolerance leaves a little headroom for AA-edge drift on other GL drivers. On a driver that
+// exposes the issue-#160 UB the divergence is whole-image maxd ~200, so a real regression there is
+// far above this bar; on a driver that masks the UB the slice simply stays green (see the CAVEAT
+// above) and the unit test carries the guard.
+const int EllipseTolerance = 4;
+
 bool allLoaded = game.Outcomes.All(o => o is { Loaded: true, Rendered: true });
 bool pass2 = haveBoth && aposMaxd <= AposTolerance && aposDrew;
-Console.WriteLine($"\n[apos-gl] {(allLoaded && pass2 ? "PASS" : "FAIL")} — load+render {(allLoaded ? "2/2" : "<2")}, pixel-match vs golden {(pass2 ? $"OK (maxd {aposMaxd} <= {AposTolerance})" : "DIVERGED")}.");
-return (allLoaded && pass2) ? 0 : 1;
+bool passEllipse = haveEllipse && ellipseMaxd <= EllipseTolerance && ellipseDrew;
+Console.WriteLine($"\n[apos-gl] circle:      {(pass2 ? $"OK (maxd {aposMaxd} <= {AposTolerance})" : "DIVERGED")}");
+Console.WriteLine($"[apos-gl] thin ellipse: {(passEllipse ? $"OK (maxd {ellipseMaxd} <= {EllipseTolerance})" : "DIVERGED")} (issue #160)");
+Console.WriteLine($"[apos-gl] {(allLoaded && pass2 && passEllipse ? "PASS" : "FAIL")} — load+render {(allLoaded ? "OK" : "FAIL")}.");
+return (allLoaded && pass2 && passEllipse) ? 0 : 1;
 }
 
 static int AposMaxDelta(

@@ -2926,13 +2926,16 @@ public static class MonoGameGlslRewriter
     /// real iteration ceiling hasn't actually been lost, it's just been renamed into a
     /// runtime-looking SSA temporary by the time this text is emitted.
     ///
-    /// Rewriting to <c>for (int idx = 0; idx &lt; provenMax; idx++) { if (idx &lt;
+    /// Rewriting to <c>for (int idx = 0; idx &lt;= provenMax; idx++) { if (idx &lt;
     /// boundVar) {…} else {…} }</c> is EXACT, not an approximation: GLSL ES 1.00
     /// Appendix A requires the header's bound to be a literal (a provably-bounded
     /// variable doesn't satisfy the syntax), but <c>provenMax</c> IS the shader's true
     /// maximum, so the loop still runs exactly as many iterations as before — the
     /// runtime check against the real (possibly smaller) <c>boundVar</c> survives
-    /// unchanged inside the body. Only rewritten when every piece of this shape is
+    /// unchanged inside the body. The bound is <c>&lt;= provenMax</c> (not <c>&lt;</c>)
+    /// so the header-less loop's <c>else</c> branch — which the original runs at
+    /// <c>idx == boundVar</c>, and boundVar can equal provenMax — stays reachable
+    /// (issue #160). Only rewritten when every piece of this shape is
     /// present and provable; anything else is left for SD0402 to keep warning about.
     /// </summary>
     private static string LowerBoundedHeaderlessForLoop(string body)
@@ -3026,7 +3029,15 @@ public static class MonoGameGlslRewriter
                 continue;
             }
 
-            string newFor = $"for (int {idxVar} = {idxInit}; {idxVar} < {provenMax}; {incrExpr})";
+            // `<=`, not `<`: the original `for (;;)` runs its `else` branch when the index
+            // REACHES the runtime bound (idx == boundVar), and boundVar can be provenMax
+            // itself (the ternary's larger literal — the non-degenerate case). A `< provenMax`
+            // header exits one iteration too early and skips that terminal else, which
+            // finalizes the loop's phi output on the no-early-break path; the result is then
+            // read uninitialized (issue #160). `<= provenMax` keeps the else reachable while
+            // staying exact: the inner `if (idx < boundVar)` still runs the true branch
+            // exactly boundVar times, since boundVar <= provenMax always.
+            string newFor = $"for (int {idxVar} = {idxInit}; {idxVar} <= {provenMax}; {incrExpr})";
             string newInner = $"if ({idxVar} {cmpOp} {boundVar}) {{{newTrueBranch}}} else {{{falseBranch}}}";
             body = body[..idxDeclStart] + newFor + " {" + newInner + "}" + body[(bodyClose + 1)..];
             searchFrom = idxDeclStart + newFor.Length;

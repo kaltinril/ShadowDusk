@@ -2416,12 +2416,75 @@ void main()
         rewritten.Glsl.Should().NotContain("for (;;)", "the header-less loop must be given a real bound");
         rewritten.Glsl.Should().NotContain("int _564 = 0;\n    for",
             "the index declaration moves INTO the for-header, not stay as a separate statement");
-        rewritten.Glsl.Should().MatchRegex(@"for\s*\(int _564 = 0;\s*_564\s*<\s*12\s*;\s*_564\+\+\s*\)",
-            "12 is _555's true maximum (the ternary's larger literal) — an exact bound, not an approximation");
+        rewritten.Glsl.Should().MatchRegex(@"for\s*\(int _564 = 0;\s*_564\s*<=\s*12\s*;\s*_564\+\+\s*\)",
+            "12 is _555's true maximum (the ternary's larger literal); the bound is <= so the terminal else stays reachable at the full trip count (issue #160)");
         rewritten.Glsl.Should().Contain("if (_564 < _555)",
             "the original runtime guard against the REAL (possibly smaller) bound must survive inside the loop");
         rewritten.Glsl.Should().NotContain("_564++;\n            continue;",
             "the trailing increment+continue is hoisted into the header, not left duplicated in the body");
+    }
+
+    [Fact]
+    public void PixelStage_BoundedHeaderlessForLoop_ElseBranchStillReachableAtMaxTripCount_Issue160()
+    {
+        // Regression for issue #160. This is the exact apos-shapes.fx EllipseSDF shape:
+        // `_555` is the runtime trip count (0 in the degenerate case, else 12), and the
+        // loop's `else` branch is the FINALIZER that assigns the phi output `_604` on the
+        // path where the loop runs to its ceiling without the inner convergence break.
+        //
+        // The original `for (;;)` runs that else at _564 == _555. When _555 == 12 (the
+        // eccentric-ellipse case, which needs the full Newton budget), a rewrite to
+        // `for (_564 = 0; _564 < 12; _564++)` exits at _564 == 12 WITHOUT running the
+        // else, leaving `_604` read uninitialized downstream. The header bound must let
+        // _564 REACH 12 so the finalizer still executes — otherwise thin ellipses render
+        // from garbage distances (0.14.0's GL-only regression).
+        const string src = """
+#version 140
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    float _604;
+    bool _553 = in_var_TEXCOORD0.x > 0.0;
+    int _555 = _553 ? 0 : 12;
+    float _562 = 0.5;
+    int _564 = 0;
+    for (;;)
+    {
+        if (_564 < _555)
+        {
+            float _563 = _562 + 0.1;
+            if (_563 < 0.001)
+            {
+                _604 = _563;
+                break;
+            }
+            _562 = _563;
+            _564++;
+            continue;
+        }
+        else
+        {
+            _604 = _562;
+            break;
+        }
+    }
+    out_var_SV_Target = vec4(_604);
+}
+""";
+        var rewritten = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        rewritten.Glsl.Should().NotContain("for (;;)", "the header-less loop must be given a real bound");
+        // The finalizer `else { _604 = _562; }` must still be reachable at the full trip
+        // count, i.e. _564 must be able to equal 12 inside the loop. `_564 < 12` drops it;
+        // `_564 <= 12` (or `_564 < 13`) keeps it.
+        rewritten.Glsl.Should().MatchRegex(
+            @"for\s*\(int _564 = 0;\s*_564\s*(<=\s*12|<\s*13)\s*;\s*_564\+\+\s*\)",
+            "the terminal else-branch finalizer must remain reachable when the loop runs its full ceiling");
+        rewritten.Glsl.Should().Contain("_604 = _562;",
+            "the else-branch finalizer that assigns the phi output must survive the rewrite");
     }
 
     [Fact]
@@ -2457,8 +2520,8 @@ void main()
 """;
         var rewritten = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        rewritten.Glsl.Should().MatchRegex(@"for\s*\(int _31 = 0;\s*_31\s*<\s*8\s*;\s*_31\+\+\s*\)",
-            "a plain literal bound (no ternary) hoists the same way");
+        rewritten.Glsl.Should().MatchRegex(@"for\s*\(int _31 = 0;\s*_31\s*<=\s*8\s*;\s*_31\+\+\s*\)",
+            "a plain literal bound (no ternary) hoists the same way; <= keeps the terminal else reachable (issue #160)");
     }
 
     [Fact]

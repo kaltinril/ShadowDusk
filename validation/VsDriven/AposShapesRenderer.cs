@@ -59,7 +59,7 @@ public sealed class AposShapesRenderer : Game
     public List<(string Name, bool Loaded, bool Rendered, string? Error)> Outcomes { get; } = new();
     public List<(string Name, Color[] Pixels, int Width, int Height)> Captures { get; } = new();
 
-    private const int Size = 128;
+    private const int Size = 384;
 
     public AposShapesRenderer(string outDir, IReadOnlyList<(string Name, byte[]? Bytes, string? Error)> jobs)
     {
@@ -156,11 +156,45 @@ public sealed class AposShapesRenderer : Game
     {
         // meta = 0 selects the plain (undashed, ungradiented) CIRCLE branch: Unpair(0) = (0, 0),
         // so shape 0, gradientStyles/fillStyles/borderStyles all 0.
-        const float Meta     = 0f;
-        const float Rounded  = 0f;
         const float LineSize = 0.10f;   // border band width, world units
         const float AaSize   = 1.0f;    // AA footprint size
         const float SdfSize  = 0.70f;   // circle radius, world units
+
+        // meta = 0, minor axis unused (0) — CircleSDF ignores Meta1.w.
+        return BuildShapeQuad(meta: 0f, sdfSize: SdfSize, minorAxis: 0f, lineSize: LineSize, aaSize: AaSize);
+    }
+
+    /// <summary>
+    /// A NEEDLE-THIN ELLIPSE, the issue-#160 regression shape. meta = 42 selects shape 6
+    /// (EllipseSDF): Szudzik-pairing (6, 0) = 6*6 + 6 + 0 = 42, and Unpair(42) = (6, 0) so
+    /// gradient/fill/border styles are all 0. The ellipse's semi-axes are
+    /// <c>ab = (sdfSize, Meta1.w)</c>; an aspect ratio near 18:1 forces the SDF's Newton/bisect
+    /// solver to run its full iteration budget near the tips (round shapes converge in ~3), which
+    /// is exactly where the header-less-loop rewrite dropped the loop's finalizer else-branch,
+    /// leaving the distance read from an uninitialized temporary. Because that read is undefined
+    /// behavior, whether the tips visibly diverge is DRIVER-DEPENDENT (garbage on the reporter's
+    /// Intel GL, benign zero-init on others) — so this render slice is supplementary coverage, not
+    /// the authoritative issue-#160 guard. See Program.cs's RunAposPhase caveat and the rewriter
+    /// unit test for the driver-independent guard.
+    /// </summary>
+    private static AposVertex[] BuildThinEllipseQuad()
+    {
+        const float Meta      = 42f;    // Szudzik pair of (shape=6 ellipse, styleY=0)
+        const float LineSize  = 0.01f;  // thin border band, world units
+        const float AaSize    = 0.02f;  // ~1px AA so the thin tips stay crisp, not a soft blob
+        const float MajorAxis = 0.90f;  // semi-major (x), world units
+        const float MinorAxis = 0.05f;  // semi-minor (y) — aspect ~18:1, needle-thin
+
+        return BuildShapeQuad(meta: Meta, sdfSize: MajorAxis, minorAxis: MinorAxis, lineSize: LineSize, aaSize: AaSize);
+    }
+
+    /// <summary>Builds the 4-corner quad for one SDF shape, packing the fixed fill/border colors
+    /// and the given per-shape knobs. <paramref name="meta"/> selects the shape branch (see
+    /// <c>Unpair</c>); <paramref name="minorAxis"/> feeds Meta1.w (the ellipse minor axis / box
+    /// half-height, ignored by shapes that don't read it).</summary>
+    private static AposVertex[] BuildShapeQuad(float meta, float sdfSize, float minorAxis, float lineSize, float aaSize)
+    {
+        const float Rounded = 0f; // TexCoord.z, the `d -= TexCoord.z` rounding offset
 
         var fill   = new Vector4(1.00f, 0.25f, 0.50f, 1f); // distinctive so a blank frame is obvious
         var border = new Vector4(0.00f, 0.40f, 1.00f, 1f);
@@ -182,10 +216,10 @@ public sealed class AposShapesRenderer : Game
 
         AposVertex Corner(float x, float y) => new(
             position:    new Vector4(x, y, 0f, 1f),
-            texCoord:    new Vector4(x, y, Rounded, Meta),
+            texCoord:    new Vector4(x, y, Rounded, meta),
             fill:        fillPacked, border: borderPacked,
             fillCoord:   coord, borderCoord: coord,
-            meta1:       new Vector4(LineSize, AaSize, SdfSize, 0f),
+            meta1:       new Vector4(lineSize, aaSize, sdfSize, minorAxis),
             meta2:       zero, meta3: zero,
             clipRect:    clipRect);
 
@@ -208,6 +242,21 @@ public sealed class AposShapesRenderer : Game
             return;
         }
 
+        try
+        {
+            // The original circle capture keeps the job's bare name (the pre-issue-#160 proof,
+            // unchanged); the thin ellipse is a second capture under "<name>.ellipse".
+            RenderShape(effect, job.Name, BuildCircleQuad());
+            RenderShape(effect, job.Name + ".ellipse", BuildThinEllipseQuad());
+        }
+        finally
+        {
+            effect.Dispose();
+        }
+    }
+
+    private void RenderShape(Effect effect, string captureName, AposVertex[] verts)
+    {
         using var rt = new RenderTarget2D(GraphicsDevice, Size, Size, false, SurfaceFormat.Color, DepthFormat.None);
         try
         {
@@ -233,7 +282,6 @@ public sealed class AposShapesRenderer : Game
             effect.Parameters["TextureSampler"]?.SetValue(_white);
             effect.Parameters["FontSampler"]?.SetValue(_white);
 
-            var verts   = BuildCircleQuad();
             var indices = new short[] { 0, 1, 2, 2, 1, 3 };
 
             foreach (var pass in effect.CurrentTechnique.Passes)
@@ -247,22 +295,18 @@ public sealed class AposShapesRenderer : Game
             var pixels = new Color[Size * Size];
             GraphicsDevice.SetRenderTarget(null);
             rt.GetData(pixels);
-            Captures.Add((job.Name, pixels, Size, Size));
+            Captures.Add((captureName, pixels, Size, Size));
 
-            string png = Path.Combine(_outDir, job.Name + ".png");
+            string png = Path.Combine(_outDir, captureName + ".png");
             using (var fs = File.Create(png))
                 rt.SaveAsPng(fs, Size, Size);
 
-            Outcomes.Add((job.Name, true, true, null));
+            Outcomes.Add((captureName, true, true, null));
         }
         catch (Exception ex)
         {
             GraphicsDevice.SetRenderTarget(null);
-            Outcomes.Add((job.Name, true, false, $"render threw: {ex.GetType().Name}: {ex.Message}"));
-        }
-        finally
-        {
-            effect.Dispose();
+            Outcomes.Add((captureName, true, false, $"render threw: {ex.GetType().Name}: {ex.Message}"));
         }
     }
 }
