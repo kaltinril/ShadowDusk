@@ -14,9 +14,22 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- Thin-ellipse slice in the OpenGL Apos.Shapes render gate (`validation/VsDriven -- apos`),
+  supplementing the existing circle with a needle-thin ellipse compared same-backend against the
+  mgfxc GL golden. Supplementary coverage for the issue #160 shape; the authoritative guard is a
+  rewriter unit test.
+
 ### Changed
 
 ### Fixed
+
+- **OpenGL regression from 0.14.0: thin/eccentric ellipses in iterative SDF shaders rendered from
+  garbage distances (issue #160).** The issue #138 GL loop rewrite (`LowerBoundedHeaderlessForLoop`)
+  bounded the hoisted `for` header with `< provenMax` instead of `<= provenMax`, so when the
+  runtime trip count equalled the loop's ceiling the rewritten loop exited one iteration early and
+  skipped the `else` branch that finalizes the solver's result, leaving it read from an
+  uninitialized variable. Affected only OpenGL, only shaders whose SPIRV-Cross output takes this
+  header-less-loop shape (e.g. Apos.Shapes' `EllipseSDF`); DirectX/DX12/Vulkan were never affected.
 
 ## [0.14.0] - 2026-07-24
 

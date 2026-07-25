@@ -67,8 +67,10 @@
                                    apos-shapes.fx (the Phase 49 pin, NOT the same fixture the
                                    DX/Vulkan Apos.Shapes gates use - see AposShapesRenderer's
                                    remarks for why the DX/Vulkan fixture's real mgfxc GL output
-                                   is confirmed wrong). Tolerance 2/255 (documented transcendental-
-                                   math GLSL-dialect drift), not the maxd-0 bar DX/Vulkan hit.
+                                   is confirmed wrong). Compares a circle (tol 2/255, documented
+                                   transcendental-math drift) plus, since issue #160, a needle-thin
+                                   ellipse (supplementary; the bug it targets is driver-dependent
+                                   UB - the rewriter unit test is the authoritative guard).
     * Apos.Shapes GL gallery     - validation/VsDriven -- apos-gallery (Phase 55). The FULL
                                    ShapeBatch shape gallery through ShadowDusk's GL compile ONLY -
                                    no golden arm, no pixel-diff. GL is stuck driving the SAME
