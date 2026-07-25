@@ -73,6 +73,7 @@ other targets keep the unmodified SPIRV-Cross dialect. The pixel-stage transform
 | 12 | a `for` loop whose index is advanced in the **body**, not the header — `for (int i = 0; i < N; ) { …; i++; continue; }` (constant-bounded, empty increment) | the increment is **hoisted into the header** (`for (int i = 0; i < N; i++)`) whenever the rewrite can prove it safe (no other write to the index, no other `continue` in the body) — GLSL ES 1.00 Appendix A (WebGL1 / KNI Reach) requires the increment to live in the header, so the unrewritten shape used to fail to *load* there even though it warned only (`SD0402`, issue #138, shape 2). Left as-is (still warns via `SD0402`) when the safety proof fails. |
 | 13 | a header-less `for (;;) { if (i < bound) {…} else break; }` whose `bound` is traceable to a compile-time-constant expression (a literal, or a ternary between two literals) | the header is given that real, exact bound and the increment is hoisted the same way as Rule 12 — SPIRV-Cross renamed the bound into a runtime-looking temporary, but since its value is still knowable at compile time the rewrite is exact, not an approximation (issue #138, shape 1, e.g. `Apos.Shapes`' Newton-iteration SDF). A loop bounded by a genuine runtime uniform has no derivable constant and is left for `SD0402` to keep warning about. |
 | 14 | any `dFdx(` / `dFdy(` / `fwidth(` use in the rewritten fragment body | `#extension GL_OES_standard_derivatives : enable` prepended as the **first line**, before the precision header — mgfxc's exact behavior and position (`ShaderData.mojo.cs`; issue #139). In ESSL 1.00 the derivative builtins exist only under this extension, so strict GLES2 compilers reject derivative shaders without it; where derivatives are core (ES 3.00 / desktop 1.30+) the enable is at most a warning, so the one artifact still serves Reach, HiDef, and desktop. The scan includes `fwidth`, which SPIRV-Cross emits directly and mgfxc's two-token dFdx/dFdy scan never had to handle. |
+| 15 | `trunc(x)` (GLSL ES 3.00 / GL 1.30 only) | `sign((x)) * floor(abs((x)))` — truncate-toward-zero built from `sign`/`floor`/`abs`, all available since GLSL ES 1.00 / GLSL 1.10, component-wise for `float`/`vecN` alike. SPIRV-Cross emits bare `trunc()` when lowering HLSL's truncating `%`/`fmod` (`a - b * trunc(a / b)`; GLSL's own `mod()` is floored with sign-follows-divisor, so it can't stand in for fmod's sign-follows-dividend). Strict GLSL ES 1.00 front ends (ANGLE on macOS DesktopGL) reject `trunc` as an undeclared identifier where lenient desktop drivers accept it (Apos.Shapes issue #34). Argument captured by the same balanced-paren, resume-inside-replacement scan as Rule 8. |
 
 `Rewrite` returns the rewritten GLSL plus the discovered sampler list (`ps_s{slot}`) and the
 `ps_uniforms_vec4` register count. The pipeline pairs this with the `.mgfx` side:
@@ -102,8 +103,9 @@ goldens, including the uniform-driven shaders with parameters **set by name**
 MojoShader dialect that MonoGame's GL runtime links against. The shared passes run here
 too — version/420pack strip, matrix expansion, and (since issue #137) the stage-agnostic
 body lowerings **Rule 8** (round), **Rule 9b** (one-shot do-while → for), **Rule 10**
-(pow-square), **Rule 11** (reciprocal fold), and (since issue #138) **Rule 12** /
-**Rule 13** (loop-hoist fixes), applied before `posFixup` injection.
+(pow-square), **Rule 11** (reciprocal fold), (since issue #138) **Rule 12** /
+**Rule 13** (loop-hoist fixes), and (since Apos.Shapes issue #34) **Rule 15**
+(`trunc()` → `sign(x)*floor(abs(x))`), applied before `posFixup` injection.
 **Rule 9a is deliberately pixel-only**: it turns loop breaks into early `return;`
 statements, and an early return in a VS would skip the posFixup tail appended at
 end-of-main (the Y-flip / half-pixel contract); the 9b for-loop form has a single

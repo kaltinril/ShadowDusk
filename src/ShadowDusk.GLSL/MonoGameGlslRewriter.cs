@@ -613,6 +613,7 @@ public static class MonoGameGlslRewriter
             body = FoldReciprocalOfQuotient(body);      // Rule 11 (issue #127)
             body = LowerEmptyIncrementForLoop(body);    // Rule 12 (issue #138, shape 2)
             body = LowerBoundedHeaderlessForLoop(body); // Rule 13 (issue #138, shape 1)
+            body = LowerTruncToSignFloorAbs(body);      // Rule 15 (Apos.Shapes #34)
 
             // Phase 43 F3: inject mgfxc/MojoShader's runtime posFixup contract.
             // SPIRV-Cross's FlipVertexY is OFF (see SpirvCrossGlslTranspiler), so the
@@ -850,6 +851,18 @@ public static class MonoGameGlslRewriter
         // SPIRV-Cross emits for this idiom; anything else is left for SD0402 to keep
         // warning about.
         body = LowerBoundedHeaderlessForLoop(body);
+
+        // Rule 15 (Apos.Shapes #34): lower trunc() to a legacy-GLSL-valid expression.
+        // SPIRV-Cross has no GLSL operator for HLSL's truncating `%`/fmod (OpFRem —
+        // sign follows the dividend; GLSL's own mod() is floored and sign-follows-
+        // divisor, so it can't be reused), so it inlines the remainder by hand as
+        // `a - b * trunc(a / b)`. trunc() is a GLSL 1.30 / GLSL ES 3.00 builtin —
+        // absent from the versionless legacy dialect this rewriter targets (Rule 1
+        // strips the #version line) — so it loads on lenient desktop drivers but
+        // fails as an undeclared identifier on strict GLSL ES 1.00 front ends
+        // (ANGLE on macOS DesktopGL). Lowered here, not via a header, since (unlike
+        // roundEven/round in Rule 8) there is no builtin name to fall back to.
+        body = LowerTruncToSignFloorAbs(body);
 
         // ---- Assemble final output: precision header + #define block + body. ----
         // The fragment-output `#define` aliases are emitted here, AFTER all Pass-2
@@ -1600,6 +1613,51 @@ public static class MonoGameGlslRewriter
                 // and the scan terminates. (Rule 10 already resumes inside its args.)
                 searchFrom = callStart;
             }
+        }
+
+        return body;
+    }
+
+    /// <summary>
+    /// Rewrites every <c>trunc(<i>expr</i>)</c> call to <c>sign((<i>expr</i>)) *
+    /// floor(abs((<i>expr</i>)))</c> — truncate-toward-zero built from
+    /// <c>sign</c>/<c>floor</c>/<c>abs</c>, all available since GLSL ES 1.00 / GLSL
+    /// 1.10, unlike <c>trunc</c> itself (GLSL ES 3.00 / GL 1.30+). SPIRV-Cross emits
+    /// bare <c>trunc()</c> calls when lowering HLSL's truncating <c>%</c>/<c>fmod</c>
+    /// (there is no GLSL builtin with fmod's sign-follows-dividend semantics — GLSL's
+    /// own <c>mod()</c> is floored, sign-follows-divisor). Component-wise, so it holds
+    /// for <c>float</c>/<c>vec2</c>/<c>vec3</c>/<c>vec4</c> arguments alike. The
+    /// argument is captured with a balanced-parenthesis scan so a nested call is
+    /// lowered correctly, and the scan resumes inside the replacement so a nested
+    /// same-named call is still visited (mirrors <see cref="LowerRoundToFloorHalfUp"/>).
+    /// </summary>
+    private static string LowerTruncToSignFloorAbs(string body)
+    {
+        int searchFrom = 0;
+        while (true)
+        {
+            int callStart = FindCallStart(body, "trunc", searchFrom);
+            if (callStart < 0)
+            {
+                break;
+            }
+
+            int openParen = callStart + "trunc".Length;
+            while (openParen < body.Length && (body[openParen] == ' ' || body[openParen] == '\t'))
+            {
+                openParen++;
+            }
+
+            int closeParen = FindMatchingParen(body, openParen);
+            if (closeParen < 0)
+            {
+                break;
+            }
+
+            string arg = body.Substring(openParen + 1, closeParen - openParen - 1);
+            string replacement = $"sign(({arg})) * floor(abs(({arg})))";
+            body = body.Substring(0, callStart) + replacement + body.Substring(closeParen + 1);
+            searchFrom = callStart;
         }
 
         return body;
