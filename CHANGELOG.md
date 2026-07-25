@@ -18,6 +18,14 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+## [0.14.2] - 2026-07-25
+
+### Added
+
+### Changed
+
+### Fixed
+
 - OpenGL: `trunc()` (which SPIRV-Cross emits when lowering HLSL's truncating `%`/`fmod`) is now
   lowered to `sign(x)*floor(abs(x))`, a GLSL ES 1.00-safe expression. `trunc()` is a GLSL ES 3.00 /
   GL 1.30+ builtin, absent from the versionless legacy dialect ShadowDusk targets; strict GLSL ES
@@ -978,7 +986,8 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.14.1...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.14.2...HEAD
+[0.14.2]: https://github.com/kaltinril/ShadowDusk/compare/v0.14.1...v0.14.2
 [0.14.1]: https://github.com/kaltinril/ShadowDusk/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.12.1...v0.13.0
