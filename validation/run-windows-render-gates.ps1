@@ -6,7 +6,7 @@
 
 .DESCRIPTION
   ShadowDusk's real product bar is "loads + renders like the reference compiler in the REAL
-  engine" (CLAUDE.md -> "Validation render drivers are the real bar"). The OpenGL render gates
+  engine" (CLAUDE.md -> "The pre-merge bar has TWO halves"). The OpenGL render gates
   now run in CI on Linux via Mesa llvmpipe (`.github/workflows/validation-render.yml`), but the
   DirectX / FNA / KNI-DirectX render proofs have NO headless software driver we can run on a
   GitHub runner (Mesa is GL-only; a verified headless D3D/WARP story does not exist yet). So

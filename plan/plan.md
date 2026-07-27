@@ -149,32 +149,9 @@ Phase 1  (scaffold)
 
 ## Key Decisions Already Made
 
-- **Option B pipeline:** DXC → SPIR-V → SPIRV-Cross → GLSL/MSL. Option A (FXC/MojoShader) rejected — requires Wine on Linux/macOS.
-- **DXC wrapper:** `Vortice.Dxc` NuGet package (bundles prebuilt native binaries for all platforms).
-- **SPIRV-Cross binding:** Raw P/Invoke against the SPIRV-Cross C API (not Veldrid.SPIRV).
-- **Default MGFXVersion:** `10` (MonoGame 3.8.2 stable) — the one format both MonoGame and KNI load, so it stays the **default**. **DONE (2026-06-14): faithful writers for *both* "v11" formats are BUILT + render-proven** as **additive, opt-in** outputs: **MonoGame `MGFX` v11** (`CompilerOptions.MgfxVersion = 11` — v10 body + the two per-shader `SourceFile`/`Entrypoint` strings from PR #8813; render-proven in MonoGame 3.8.5, [spec](DONE/PHASE-35-appendix/mgfx-v11-format-spec.md)) and **KNI `KNIFX` v11** (`CompilerOptions.Container = Knifx`; render-proven in KNI 4.02, [spec](DONE/PHASE-35-appendix/knifx-format-spec.md)). The *old* `--mgfx-version 11` was actually **corrupt** (v10 body + version byte 11 desyncs a v11 reader); now fixed. Default v10 is unchanged and seamless; v11/KNIFX are opt-in, never required for correct output. See [validation-matrix.md §2](../docs/validation-matrix.md).
-- **Metal scope:** Out of scope until the OpenGL path is working and validated.
-- **MGCB integration:** Tier 1 only (PATH-based drop-in binary named `mgfxc`). Tier 2 content processor plugin is a separate future undertaking.
-- **Dual delivery targets:** CLI (`ShadowDusk.Cli`) and WASM library (`ShadowDusk.Wasm`). Output is always a `.mgfx` blob; `IShaderCompiler.CompileAsync` abstracts the difference. WASM implementation uses JS interop to call WASM-compiled DXC and SPIRV-Cross.
-- **`.mgfx`, not `.xnb`, from core (2026-06-08):** ShadowDusk (library + CLI) emits the **raw `.mgfx`** effect blob, matching `mgfxc` — it does **not** wrap output in the Content Pipeline `.xnb` container. `.xnb` wrapping is the content-pipeline layer's job and its home is **[Phase 29](PHASE-29-mgcb-content-processor-plugin.md)** (MGCB Tier-2 plugin → MonoGame's own `ContentWriter`). A hand-rolled XNB writer in core was considered and rejected: it would be the first divergence from `mgfxc` parity and would duplicate/risk-desync Phase 29's validated envelope. Consumers loading via `new Effect(gd, bytes)` use the `.mgfx` directly; those needing `Content.Load<Effect>` build through MGCB (or wrap the bytes themselves). Revisit only as a deliberate, explicitly-scoped feature if a downstream (e.g. XnaFiddle project export) needs pre-wrapped `.xnb`. (FNA's `PlatformTarget.Fna` is the one non-`.mgfx` output — the raw `.fxb` effect binary, likewise unwrapped.) User-facing explanation: `docfx/guides/choosing-a-target.md` + `parameters-and-caveats.md`.
-- **FNA target (Phase 39):** `PlatformTarget.Fna` emits the legacy D3D9 fx_2_0 effects binary (`.fxb`) FNA/MojoShader loads — vkd3d-shader `D3D_BYTECODE` SM1–3 blobs (same pinned 1.17 binary as the DX backend; **no version bump** — empirically sufficient) wrapped by ShadowDusk's own `Fx2EffectWriter` (MojoShader's parser is the byte spec, `docs/fx2-binary-format.md`). Always vkd3d on every host (never the d3dcompiler oracle ⇒ host-independent bytes); `fxc /T fx_2_0` is a Windows test-oracle only. Purely additive — the fully separate `RunFnaAsync` pipeline cannot change existing GL/DX output. Option B (waiting for upstream vkd3d's stubbed fx_2_0 writer) stays a background watch.
-- **Compiler-leverage strategy (owner-directed, 2026-06-09):** ShadowDusk **never owns
-  compiler internals** — HLSL compilation is DXC + vkd3d-shader, cross-compilation is
-  SPIRV-Cross; we own only the container writers (`.mgfx`/`.fxb`), the runtime-dialect
-  adapters, and the **real-runtime validation that is the actual moat**. Upstream gaps get
-  loud failures or minimal byte-tested patches (the `D3d9BytecodePatcher` pattern) plus an
-  upstream-fix follow-up — never a fork. Full statement + the host×target matrix:
-  `docs/the-purpose.md` → *Compiler-leverage strategy*.
-- **Browser = export station (owner-directed, 2026-06-09):** compile-target ≠
-  render-backend; every host can emit every target whose upstream compilers exist for that
-  host, with a host-appropriate default and an explicit override (the allowed kind of
-  choice). A `ShadowDusk.Wasm` website should let users upload `.fx` and download
-  MonoGame GL/DX **and FNA** artifacts, byte-identical to desktop output. The single
-  keystone is **vkd3d→WASM (Phase 4.1, un-parked)** — it closes both the DX and FNA
-  browser cells at once; the rest of those pipelines is managed code that already runs in
-  WASM. Completion order: 37 C (+ macOS vkd3d) ✅ done 2026-06-10 → 37 A/B → 4.1 →
-  Metal/Vulkan stay validation-gated.
-- **KNI compatibility:** KNI uses the same `.mgfx` format as MonoGame. No special output path needed for KNI — **with one caveat (Phase 33):** KNI's **HiDef** profile uses a WebGL2 / GLSL ES 3.00 context and relies on its runtime converter (`ConvertGLSLToGLSL300es`) rewriting `mgfxc`'s `#define ps_oC0 gl_FragColor` form to `out vec4`. ShadowDusk must emit that exact `#define` form (not a raw `gl_FragColor` write) for the same `.mgfx` to load in both Reach and HiDef. See [Phase 33](DONE/PHASE-33-webgl2-es300-hidef-output.md).
+Moved to **[`../project_decisions.md`](../project_decisions.md)** (2026-07-27) so every decision has exactly one home. That file carries each entry in the `decided X (not Y) because Z` form, plus the decisions that were previously only recorded in phase docs. Consult it before re-litigating anything.
+
+Related source-of-truth files: **[`../project_facts.md`](../project_facts.md)** for what is true (targets, pins, proof status, known gaps) and **[`../project_rules.md`](../project_rules.md)** for how to work on the project.
 
 ---
 

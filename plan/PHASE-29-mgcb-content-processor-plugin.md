@@ -15,7 +15,7 @@ the MGCB plugin are *delivery shapes* of it).
 
 **Blocks:** Nothing in the product pipeline. This is an ergonomics deliverable for MGCB users who prefer a `/reference`'d plugin over a PATH/`ExternalTool` override. The single combined-proof goal (compile where `mgfxc` can't + render like `mgfxc`) is fully met without it.
 
-> Reference decision — `plan/plan.md` Key Decisions: *"MGCB integration: Tier 1 only (PATH-based drop-in binary named `mgfxc`). Tier 2 content processor plugin is a separate future undertaking."* This phase **is** that undertaking.
+> Reference decision — [`project_decisions.md`](../project_decisions.md): MGCB integration is **Tier 1 only** (a PATH-based drop-in binary named `mgfxc`), because Tier 1 delivers the drop-in promise with no MonoGame integration; the Tier 2 content-processor plugin is a separate future undertaking. This phase **is** that undertaking.
 
 ---
 

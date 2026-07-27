@@ -19,7 +19,7 @@ render-validation, ex-Phase 35 Area C) is **absorbed here as Area D**; **B2** (u
 already landed via Phase 32.
 
 > The product is unchanged by this phase. The pin stays **MonoGame 3.8.2.1105** and the default
-> output stays **MGFX v10** (CLAUDE.md → *Backwards compatibility*; `plan.md` Key Decisions).
+> output stays **MGFX v10** (CLAUDE.md → *Standing owner directives*; [`project_decisions.md`](../project_decisions.md)).
 > A v10 `.mgfx` loads in 3.8.2 **and** every newer MonoGame **and** KNI — that is the product's
 > compat promise, and 3.8.5's own loader accepts the range `[MGFXMinVersion=10, 11]`, so the
 > promise extends into 3.8.5 by design. "Supporting 3.8.5" therefore means **proving** (rung-4
