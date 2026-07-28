@@ -73,6 +73,18 @@ It renders the same image `mgfxc`'s output would.
 
 > **Newer runtimes (optional).** The default v10 container loads on MonoGame 3.8.2+ and KNI, so you usually do nothing. To target a newer runtime, set `CompilerOptions.MgfxVersion = 11` (MonoGame 3.8.5+) or `CompilerOptions.Container = EffectContainer.Knifx` (KNI v4.02+) — both render identically to v10. See [Parameters & Caveats](../guides/parameters-and-caveats.md#effect-container-mgfx-v10-default-and-opt-in-mgfx-v11--knifx).
 
+> **Preprocessor macros.** If your `.fx` has `#ifdef`-guarded branches, define the macros with <xref:ShadowDusk.Core.CompilerOptions.Defines> — the library equivalent of `mgfxc`'s `/Defines:` flag:
+>
+> ```csharp
+> var options = new CompilerOptions
+> {
+>     Target  = PlatformTarget.OpenGL,
+>     Defines = [new UserDefine("HIGH_QUALITY"), new UserDefine("SAMPLE_COUNT", "8")],
+> };
+> ```
+>
+> A bare `UserDefine("NAME")` defines `1`. The macros apply on every target (including FNA), riding through both the `#define` prepend and the DXC `-D` flags.
+
 For **FNA**, you pass the `.fxb` produced by `PlatformTarget.Fna` (see [below](#compiling-for-fna)); FNA loads it through MojoShader:
 
 ```csharp

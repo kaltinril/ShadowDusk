@@ -25,13 +25,14 @@ ShadowDuskCLI MyShader.fx MyShader.mgfx /Profile:OpenGL
 | `/Profile:<Platform>` | Target platform. Valid: `DirectX_11`, `DirectX_12` (SM6 DXIL for MonoGame `WindowsDX12` — real `mgfxc`'s own registration name), `OpenGL`, `Vulkan`, `FNA` (the D3D9 fx_2_0 `.fxb` target — additive, not an `mgfxc` profile). | **`DirectX_11`** |
 | `/Debug` | Include debug information in the output. | off |
 | `/I <path>` | Additional include search path (repeatable). Also accepts `/I:<path>`. | none |
+| `/Defines:<name=value;...>` | Preprocessor macros, matching `mgfxc` (MGCB's `EffectProcessor` forwards its `Defines` property in exactly this form). Entries are `;`-separated (`,` also tolerated); a bare `NAME` defines `1`; the flag is repeatable and entries accumulate. Applies on every target, including `FNA`. The library equivalent is <xref:ShadowDusk.Core.CompilerOptions.Defines>. | none |
 | `/DxbcBackend:<Backend>` | DXBC backend for `DirectX_11`: `vkd3d` (cross-platform) or `d3dcompiler` (the Windows-only correctness oracle). Never required for correct output. | **`vkd3d`** |
 | `--mgfx-version <10\|11>` | MGFX container version (opt-in escape hatch). `10` (default) loads on every MonoGame 3.8.2+ and KNI runtime — leave it unset for correct output everywhere. `11` emits a faithful MonoGame **MGFX v11** container (MonoGame 3.8.5+, opt-in/experimental; renders identically to v10). | **`10`** |
 | `--target-runtime <name>` | Pick the output target (backend **and** container/version) with one name: `monogame-gl`, `monogame-dx`, `monogame-gl-v11` (MGFX v11), `kni-knifx` (KNI's KNIFX v11), `fna`. Overrides `/Profile` and `--mgfx-version`. Also accepts `/target-runtime:<name>`. | (use `/Profile`) |
 | `--input-format <auto\|fx\|glsl>` | Input language. `auto` detects a ShaderToy / plain-GLSL image shader — by extension (`.glsl`/`.frag`/`.fs`/`.glslf`) or content — and converts it to `.fx` before compiling. Never required for correct output; the explicit values are the escape hatch for genuinely ambiguous input. | **`auto`** |
 | `--print-uniforms` | Print the converted shader's drivable effect parameters (`iTime`, `iChannel0`, custom uniforms) to stderr. Only affects ShaderToy/GLSL input. | off |
 
-Unknown flags are **silently ignored** (not consuming a following value) so that future `mgfxc` flags MGCB may pass don't break existing pipelines.
+Unknown flags are **silently ignored** (not consuming a following value) so that future `mgfxc` flags MGCB may pass don't break existing pipelines. A *known* flag that is missing its required value is a different case and fails loudly with **`X0009`** rather than silently compiling with the default.
 
 ### Unsupported platforms
 

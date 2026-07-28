@@ -13,11 +13,14 @@ dotnet tool install --global ShadowDusk.Cli
 ```
 ShadowDuskCLI <input.fx> <output.mgfx> /Profile:OpenGL
 ShadowDuskCLI <input.fx> <output.mgfx> /Profile:DirectX_11
+ShadowDuskCLI <input.fx> <output.mgfx> /Profile:DirectX_12
 ShadowDuskCLI <input.fx> <output.mgfx> /Profile:Vulkan
 ShadowDuskCLI <input.fx> <output.fxb>  /Profile:FNA
 ```
 
-Flags mirror `mgfxc` (`/Profile`, `/Debug`, `/I`, `/DxbcBackend`, `--mgfx-version`), plus `--target-runtime` to pick the backend + format together by name. Run `ShadowDuskCLI --help` for the full list.
+Flags mirror `mgfxc` (`/Profile`, `/Debug`, `/I`, `/Defines`, `/DxbcBackend`, `--mgfx-version`), plus `--target-runtime` to pick the backend + format together by name. Run `ShadowDuskCLI --help` for the full list.
+
+> `/Profile:DirectX_12` should be compiled **on Windows**: DXIL signing runs through the Windows-only `dxil.dll`, so a non-Windows DX12 compile emits unsigned DXIL that retail D3D12 rejects (warned as `SD0214`). Other targets are host-independent.
 
 ### ShaderToy / GLSL input
 

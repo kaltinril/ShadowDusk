@@ -8,7 +8,7 @@
     <IsPackable>true</IsPackable>
     <PackageId>ShadowDusk.Compiler</PackageId>
     <Description>Cross-platform, self-contained HLSL Effect compiler for MonoGame, KNI, and FNA. Compiles .fx shaders to .mgfx binaries (MonoGame/KNI) or D3D9 fx_2_0 .fxb binaries (FNA) in memory at runtime — on Linux, macOS, or Windows — with no Wine, Windows SDK, fxc.exe, or mgfxc required. Add the package and call EffectCompiler.CompileAsync; feed the bytes to new Effect(gd, bytes). Pulls the ShadowDusk.* set and the native DXC + SPIRV-Cross + vkd3d-shader binaries transitively.</Description>
-    <PackageTags>monogame kni fna hlsl shader compiler mgfx fxb cross-platform runtime in-memory</PackageTags>
+    <PackageTags>monogame kni fna hlsl shader compiler mgfx fxb cross-platform runtime in-memory opengl directx dx11 dx12 vulkan spirv</PackageTags>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
