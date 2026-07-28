@@ -7,13 +7,11 @@ Source of truth for statements about the project. One short fact per line. Updat
 - ShadowDusk is a cross-platform HLSL shader compiler for MonoGame, KNI, and FNA, delivered as a drop-in `mgfxc` replacement.
 - The product is the in-memory library (`IShaderCompiler.CompileAsync(fx) -> .mgfx bytes`); the CLI and the MGCB plugin are delivery shapes of it.
 - The browser/WASM shader-fiddle is only a sample of reach, never the product; sample work must not redefine the goal.
-- "Works" means rung 4 of the evidence ladder: our `.mgfx` loads in a real MonoGame/KNI `Effect` and renders like `mgfxc`'s. Our own tests and our own renderer are proxies, not the bar.
-- The four evidence rungs are: compiles -> structurally well-formed -> matches the reference compiler's output in our own renderer -> renders correctly in the real runtime.
+- "Works" means the real-engine render proof (the evidence ladder in CLAUDE.md, rung 4), not a green test suite; our own tests and our own renderer are proxies.
 - "Same as `mgfxc`" means behaviorally equivalent and `Effect`-loadable, never byte-identical; byte-identity with `mgfxc` is an explicit non-goal.
 - Determinism means ShadowDusk-vs-itself: same version + same source + same target = same bytes, on every host.
 - Repository is github.com/kaltinril/ShadowDusk; the owner/operator is Jeremy Swartwood (GitHub `kaltinril`).
 - Ships as seven NuGet packages (`ShadowDusk.{Core,HLSL,GLSL,ShaderToy,Compiler,Cli,Wasm}`) at one shared version, plus the `ShadowDuskCLI` dotnet tool.
-- Version at last update of this file: 0.14.2; the project is pre-1.0.
 - `ShadowDusk.Metal` and `ShadowDusk.MgcbPlugin` are stubs, not shipped packages.
 
 ## The drop-in contract
@@ -38,13 +36,13 @@ Source of truth for statements about the project. One short fact per line. Updat
 - Effect technique: one or more named passes; maps to MonoGame's `Technique`.
 - Platform blob: the platform-specific compiled binary (DXBC, SPIR-V, DXIL, or MSL source).
 - ShaderIR: ShadowDusk's internal representation between parsed HLSL and platform emission.
-- Rung 4: the real-runtime render proof; the only rung that proves the promise.
+- Rung 4 / render-proven: the real-engine render proof. The full four-rung ladder is defined in CLAUDE.md.
 
 ## Targets and how far each is proven
 
-- Rung-4 render-proven: OpenGL (SM3), DirectX 11 (SM5 DXBC), Vulkan (SPIR-V), DirectX 12 (DXIL), FNA (fx_2_0 `.fxb`).
+- Shader model and output format per target: OpenGL SM3 GLSL, DirectX 11 SM5 DXBC, DirectX 12 SM6 DXIL, Vulkan SPIR-V, FNA SM1-3 fx_2_0. Proof status per target lives in CLAUDE.md so it cannot drift between two files.
 - Metal is unimplemented and parked; `PlatformTarget.Metal` is hard-rejected with SD0200.
-- Android on-device compile is proven on a real API-34 emulator and shipped in 0.11.0, with a productionization tail open (CI rebuild, x86_64 natives, on-device pixel diff).
+- Android on-device compile is proven on a real API-34 emulator and shipped in 0.11.0; three hardening items remain open (CI rebuild of the natives, x86_64 emulator natives, on-device pixel diff).
 - Vulkan uses MGFX profile byte 80 and DX12 profile byte 2; both are MonoGame-only because KNI ships neither platform (`SD0025` guards it).
 - FNA's reference compiler is `fxc.exe /T fx_2_0`, not `mgfxc`; its evidence ladder is separate but mirrors the MonoGame one.
 - FNA output is a raw `.fxb`, the one non-`.mgfx` output; both are unwrapped, never `.xnb`.

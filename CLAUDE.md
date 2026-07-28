@@ -4,12 +4,25 @@
 
 **The product is a drop-in `mgfxc` replacement: a self-contained library** a user adds to their **MonoGame/KNI project on Linux, macOS, or Windows**, that compiles **`.fx` → `.mgfx` in memory at runtime**, requiring **nothing but the library itself** — no `fxc.exe`, no `mgfxc`, no Wine, no Windows SDK, no native toolchain the user has to install separately. Its output **loads and renders identically to `mgfxc`'s** in the **real MonoGame/KNI runtime**. **One faithful compiler; the same `mgfxc`-equivalent result everywhere.**
 
-The load-bearing distinctions — internalize these, they have drifted before (full detail, success criteria, evidence ladder, and backend table in **[docs/the-purpose.md](docs/the-purpose.md)**):
+The distinctions that carry the most weight — internalize these, they have drifted before (full detail, success criteria, and the backend table in **[docs/the-purpose.md](docs/the-purpose.md)**):
 
 - **The library *is* the product.** The deliverable is the in-memory compiler called at runtime (`IShaderCompiler.CompileAsync(fx) → .mgfx bytes`). The **CLI** and **MGCB plugin** are *delivery shapes of the same library*; the **browser / WASM shader-fiddle is ONLY a sample of reach — never the product.** Don't let sample work redefine the goal.
 - **One pipeline, everywhere — NO substitute compilers.** Every host runs the same faithful pipeline (HLSL →`[DXC]`→ SPIR-V →`[SPIRV-Cross]`→ GLSL →`[managed rewrite + MGFX writer]`→ `.mgfx`; or `vkd3d-shader` → DXBC for DirectX). A host must **not** swap in a different frontend/compiler to make a platform "work" — different compiler ⇒ different output ⇒ silently breaks the "identical to `mgfxc`" promise. If a faithful component can't run on a host yet, that host's runtime-compile is **not done** — never a licence to substitute.
 - **"Self-contained" is a hard requirement.** Native pieces ride *inside* the NuGet package (transitive native assets), never a separate manual install. "Add the package, call the API" is the entire setup.
 - **The bar is the real runtime, not our tests.** Only ShadowDusk's `.mgfx` loading in MonoGame's `Effect` and rendering like `mgfxc`'s proves the promise. Tests/our-own-renderer images are **proxies, not the bar**. Compare same-backend only (GL↔GL, DX↔DX), never cross-backend. "Same as `mgfxc`" = behaviorally equivalent + `Effect`-loadable, **NOT** byte-identical (that's a non-goal).
+
+### The evidence ladder — what "rung 4" means
+
+Docs, phase notes, and commit messages say **"rung 4"** constantly. It is the four-step scale of how strongly a target is proven, weakest to strongest:
+
+| Rung | What it proves |
+|---|---|
+| **1** | The shader **compiles** without error. |
+| **2** | The output file is **structurally well-formed** (a real reader can parse it). |
+| **3** | Our output **matches the reference compiler's** (`mgfxc`/`fxc`) when rendered in **our own** test renderer. |
+| **4** | The output **loads in the real engine** (MonoGame/KNI `Effect`, or FNA) and **renders the same image** as the reference compiler's build. |
+
+**Only rung 4 proves the promise.** Rungs 1-3 are proxies: every one of them can be green while the product is broken for a real player. "Rung-4 proven" and "render-proven" mean the same thing.
 
 ## Source-of-truth files
 
@@ -24,6 +37,22 @@ The rules below stay in this file *because they must fire without anyone opening
 ## Repository Layout
 
 `src/` libraries · `tests/` xUnit + `fixtures/` · `samples/` · `validation/` real-runtime render drivers · `tools/` restored natives (not committed) · `docs/` reference docs · `plan/` phase docs. **Full annotated tree: [docs/repository-layout.md](docs/repository-layout.md).** Phase status index: [plan/plan.md](plan/plan.md).
+
+**Stack:** C# 12 / .NET 8 (LTS), xUnit + FluentAssertions, warnings-as-errors. Native interop: `Vortice.Dxc` (DXC), `Silk.NET` P/Invoke (SPIRV-Cross), `vkd3d-shader` (DXBC). Ships as seven `ShadowDusk.*` NuGet packages at one shared version plus the `ShadowDuskCLI` dotnet tool.
+
+## What ShadowDusk compiles for today
+
+| Target | Where it stands |
+|---|---|
+| **OpenGL** (MonoGame/KNI DesktopGL, WebGL) | rung 4 |
+| **DirectX 11** (WindowsDX) | rung 4 |
+| **DirectX 12** (WindowsDX12) | rung 4 — MonoGame only, KNI ships no DX12 |
+| **Vulkan** (DesktopVK) | rung 4 — MonoGame only, KNI ships no Vulkan |
+| **FNA** (`fx_2_0` `.fxb`) | rung 4 — reference compiler is `fxc /T fx_2_0`, not `mgfxc` |
+| **Metal** | not implemented, parked (no consumer runtime to validate against) |
+| **Android** (compile on-device) | proven on an emulator; still needs production hardening |
+
+Per-target detail, pins, and the known gaps: **[project_facts.md](project_facts.md)**.
 
 ## Build & Test
 
@@ -82,6 +111,15 @@ The `/release` skill's docs-audit step checks this list as a backstop, but the b
 - **Backwards compatibility — do not bump MonoGame or change the `.mgfx` format.** Keep the MonoGame pin at **3.8.2.1105** (`Directory.Packages.props`) and the output default at **MGFX v10**. Supporting a newer MonoGame means *proving the unchanged v10 output on it* ([Phase 52](plan/PHASE-52-monogame-3.8.5-support.md)), never moving the pin. Any new backend must be **additive and seamless**, never a change to the OpenGL/DX11/v10 output a current consumer relies on.
 - **Chasing a stated backend/target-completion goal: fix bugs found along the way, don't stop to ask.** A bug or render divergence found while making target X work is *expected work*, not a decision point — diagnose it, fix it, re-verify the gate, report it. Only a genuine judgment call outside the stated goal (scope change, a fix requiring a backwards-compat break) warrants stopping.
 - **Never destroy a background agent's uncommitted output.** Do not `TaskStop` + `git worktree remove --force` until its output is committed or copied out — **commit first, clean up last.** Preserve build scripts/glue/recipe above compiled artifacts. Verify a "done" claim by re-running its gate; don't trust a stale estimate (this once nearly destroyed a *succeeded* DXC→WASM build). `.wasm-build/` is gitignored scratch — durable build code there must be `git add -f`'d or it's one cleanup away from gone.
+
+## Coding Conventions
+
+- `sealed` by default unless inheritance is explicitly required.
+- `#nullable enable` in every file; all public APIs nullable-annotated.
+- `async`/`await` all the way down for child-process work — never `.Result` or `.Wait()`.
+- Errors use a `Result<T, TError>` union, never exception-as-control-flow. Compiler errors use `Result<CompiledShader, ShaderError[]>`.
+- **Fail loudly.** An input shape we don't model gets a registered diagnostic code, never a silent pass-through. Never swallow or reformat a compiler's own message — keep its file, line, column, and text verbatim.
+- Unit tests are pure (no disk, no process); integration tests are tagged `[Trait("Category","Integration")]`; no `Thread.Sleep` in tests.
 
 ## Git Commit Conventions
 

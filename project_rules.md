@@ -2,7 +2,7 @@
 
 How to work on this project. One short rule per line. These OVERRIDE default behavior.
 
-> The rules that must fire **without anyone opening a file** stay in [CLAUDE.md](CLAUDE.md) and are deliberately NOT repeated here: the purpose, the seamless-for-the-consumer and backwards-compatibility directives, the pre-merge/pre-release gate commands, the support-surface docs checklist, the git commit conventions, and the no-local-memory directive. Every rule has exactly one home.
+> The rules that must fire **without anyone opening a file** stay in [CLAUDE.md](CLAUDE.md) and are deliberately NOT repeated here: the purpose and the evidence ladder, the seamless-for-the-consumer and backwards-compatibility directives, the pre-merge/pre-release gate commands, the support-surface docs checklist, the **C# coding conventions**, the git commit conventions, and the no-local-memory directive. Every rule has exactly one home.
 
 ## Never
 
@@ -28,16 +28,9 @@ How to work on this project. One short rule per line. These OVERRIDE default beh
 - No `Thread.Sleep` in tests; use `CancellationToken` with reasonable timeouts.
 - Treat a slow integration run as environmental (antivirus scanning cold natives) before treating it as algorithmic; see `docs/integration-test-performance.md`.
 
-## Code conventions
-
-- `sealed` by default unless inheritance is explicitly required.
-- `#nullable enable` in every file; all public APIs nullable-annotated.
-- `async`/`await` all the way down for child-process invocations; never `.Result` or `.Wait()`.
-- Errors use `Result<T, TError>`; no exception-as-control-flow. Compiler errors use `Result<CompiledShader, ShaderError[]>`.
-- Unmodelled shapes fail loudly with a registered diagnostic code, never silently pass through.
-- Keep XML doc-comments on public API accurate; they render into the published API reference, so a stale "not yet implemented" ships to the site.
-
 ## Docs and phases
+
+- Keep XML doc-comments on public API accurate; they render into the published API reference, so a stale "not yet implemented" ships to the site.
 
 - Read `plan/plan.md` first for phase status; each phase's own doc is the detail.
 - When a phase completes, move its doc and appendix to `plan/DONE/` and fix relative links in the moved doc and in every referrer.
