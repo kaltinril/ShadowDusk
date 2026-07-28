@@ -1,6 +1,7 @@
 #nullable enable
 
 using ShadowDusk.Core;
+using ShadowDusk.Core.Preprocessor;
 
 namespace ShadowDusk.Cli;
 
@@ -12,8 +13,10 @@ internal static class ArgumentParser
 
         Options:
           /Profile:<Platform>       Target platform. Default: DirectX_11
-                                    Platforms: DirectX_11, OpenGL, Vulkan, FNA
+                                    Platforms: DirectX_11, DirectX_12, OpenGL, Vulkan, FNA
           /Debug                    Include debug information in output
+          /Defines:<name=value;...> Preprocessor macros (mgfxc parity; ';' or ','
+                                    separated; a bare name defines 1; repeatable)
           /I <path>                 Additional include search path (repeatable)
           /DxbcBackend:<Backend>    DXBC backend for DirectX_11. Default: vkd3d
                                     (cross-platform). d3dcompiler is the Windows-only
@@ -45,6 +48,7 @@ internal static class ArgumentParser
         CapabilityProfile? profile = null;
         InputFormat inputFormat = InputFormat.Auto;
         bool printUniforms = false;
+        var defines = new List<UserDefine>();
 
         int i = 0;
         while (i < args.Length)
@@ -93,6 +97,28 @@ internal static class ArgumentParser
                     continue;
                 }
 
+                if (flagBody.StartsWith("Defines:", StringComparison.OrdinalIgnoreCase))
+                {
+                    // mgfxc parity: MGCB's EffectProcessor forwards its Defines property as
+                    // /Defines:NAME=VALUE;NAME2 (';'-joined; ',' tolerated). This real mgfxc
+                    // flag used to fall into the unknown-flag ignore below, so the macros were
+                    // silently dropped and #ifdef branches compiled out with exit 0 (bug-hunt
+                    // 2026-07-27 M9). Repeatable; entries accumulate.
+                    string definesValue = flagBody.Substring("Defines:".Length);
+                    foreach (string entry in definesValue.Split(';', ','))
+                    {
+                        string trimmed = entry.Trim();
+                        if (trimmed.Length == 0)
+                            continue;
+                        int eq = trimmed.IndexOf('=');
+                        defines.Add(eq < 0
+                            ? new UserDefine(trimmed)
+                            : new UserDefine(trimmed[..eq].Trim(), trimmed[(eq + 1)..].Trim()));
+                    }
+                    i++;
+                    continue;
+                }
+
                 if (flagBody.StartsWith("I:", StringComparison.OrdinalIgnoreCase))
                 {
                     string path = flagBody.Substring(2);
@@ -109,8 +135,10 @@ internal static class ArgumentParser
                     {
                         includePaths.Add(args[i]);
                         i++;
+                        continue;
                     }
-                    continue;
+                    return Result<CliArguments, ShaderError>.Fail(
+                        MissingFlagValue("/I", "an include path"));
                 }
 
                 if (flagBody.Equals("mgfx-version", StringComparison.OrdinalIgnoreCase))
@@ -131,8 +159,10 @@ internal static class ArgumentParser
                         }
                         mgfxVersion = parsedVersion;
                         i++;
+                        continue;
                     }
-                    continue;
+                    return Result<CliArguments, ShaderError>.Fail(
+                        MissingFlagValue("--mgfx-version", "10 or 11"));
                 }
 
                 if (flagBody.StartsWith("mgfx-version:", StringComparison.OrdinalIgnoreCase))
@@ -163,8 +193,10 @@ internal static class ArgumentParser
                             return Result<CliArguments, ShaderError>.Fail(trResult.Error);
                         profile = trResult.Value;
                         i++;
+                        continue;
                     }
-                    continue;
+                    return Result<CliArguments, ShaderError>.Fail(
+                        MissingFlagValue("--target-runtime", "a runtime name"));
                 }
 
                 if (flagBody.StartsWith("target-runtime:", StringComparison.OrdinalIgnoreCase))
@@ -232,8 +264,19 @@ internal static class ArgumentParser
             DxbcBackend: dxbcBackend,
             Profile: profile,
             InputFormat: inputFormat,
-            PrintUniforms: printUniforms));
+            PrintUniforms: printUniforms,
+            Defines: defines));
     }
+
+    // Bug-hunt 2026-07-27 (N12): a flag that requires a value but reaches the end of the
+    // argument list used to be silently ignored, so the compile ran with the DEFAULT —
+    // the wrong artifact with exit 0. Loud, like every other bad-value path here.
+    private static ShaderError MissingFlagValue(string flag, string expected) => new(
+        File: "",
+        Line: 0,
+        Column: 0,
+        Code: "X0009",
+        Message: $"Flag '{flag}' requires a value ({expected}) but none was supplied");
 
     // Reads a long option that carries a value in any of the three forms the CLI accepts:
     //   --name value   (space) | --name:value (colon) | --name=value (equals)
@@ -376,7 +419,7 @@ internal static class ArgumentParser
             Line: 0,
             Column: 0,
             Code: "X0004",
-            Message: $"Unknown profile '{value}'. Valid profiles: DirectX_11, OpenGL, Vulkan, FNA"));
+            Message: $"Unknown profile '{value}'. Valid profiles: DirectX_11, DirectX_12, OpenGL, Vulkan, FNA"));
     }
 
     // Maps the friendly --target-runtime names to a proven CapabilityProfile. The profile fully

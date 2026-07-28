@@ -19,4 +19,11 @@ public enum BlobKind
     /// vkd3d-shader's D3D_BYTECODE target emits and what the FNA fx_2_0 container embeds.
     /// </summary>
     D3dBytecode,
+    /// <summary>
+    /// A Shader Model 6 DXIL container — what DXC emits for the DirectX12 target (shipped
+    /// in the <c>.mgfx</c>) and for DirectX11's reflection-only companion compile (never
+    /// shipped; vkd3d produces DX11's DXBC). Added by the 2026-07-27 bug hunt (N10): these
+    /// blobs were previously mislabeled <see cref="Dxbc"/> / <see cref="Spirv"/>.
+    /// </summary>
+    Dxil,
 }

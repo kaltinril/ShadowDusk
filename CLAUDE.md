@@ -46,13 +46,13 @@ dotnet pack src/ShadowDusk.Cli/ShadowDusk.Cli.csproj
 
 ### The pre-merge bar has TWO halves — `dotnet test` is only one of them
 
-The **rung-4 render proofs** — the actual product bar (*"loads + renders like `mgfxc`/`fxc` in the real engine"*) — live in the **`validation/*` console drivers**, which are deliberately **not in `ShadowDusk.slnx` and not run by `dotnet test`**. The **OpenGL** gates run in CI on Linux (Mesa llvmpipe); the **DirectX / DX12 / FNA / KNI-DirectX / real-KNI-desktop-GL / Vulkan / browser-ANGLE** gates have **no headless CI driver at all** — so **the developer's Windows + GPU machine is the gate.** Authoritative driver list + exact commands: [docs/validation-matrix.md](docs/validation-matrix.md) §6.
+The **rung-4 render proofs** — the actual product bar (*"loads + renders like `mgfxc`/`fxc` in the real engine"*) — live in the **`validation/*` console drivers**, which are deliberately **not in `ShadowDusk.slnx` and not run by `dotnet test`**. The **OpenGL** gates run in CI on Linux (Mesa llvmpipe); the **DirectX / DX12 / FNA / KNI-DirectX / real-KNI-desktop-GL / Vulkan / browser-ANGLE** gates have **no headless CI driver at all** — so **the developer's Windows box with a DX12-capable GPU is the gate.** Authoritative driver list + exact commands: [docs/validation-matrix.md](docs/validation-matrix.md) §6.
 
 > **HARD RULE — both halves, before merging any change that touches shader output / transpilation / the MGFX-KNIFX-FNA writers / render state / matrix handling, and before cutting a release:**
 >
 > ```powershell
 > dotnet test ShadowDusk.slnx                            # FULL suite, never a filtered subset
-> ./validation/run-windows-render-gates.ps1              # DX + DX-modern (VTF) + DX12 + DX12 VS-driven/Apos.Shapes + KNI-DX + KNI-GL desktop + KNI-GL VS-driven + ANGLE-D3D11 derivative probe (issue #136) + BOTH Vulkan gates, vs mgfxc/fxc
+> ./validation/run-windows-render-gates.ps1              # DX corpus + DX-modern (VTF) + DX Apos gallery + DX12 corpus + DX12 VS-driven/Apos gallery + KNI-DX + KNI-GL desktop + KNI-GL VS-driven + GL Apos + GL Apos gallery + ANGLE-D3D11 derivative probe (issue #136) + BOTH Vulkan gates, vs mgfxc/fxc
 > ./validation/run-windows-render-gates.ps1 -IncludeFna  # also the FNA fx_2_0 gate (for an FNA-affecting release)
 > ./validation/run-windows-render-gates.ps1 -SkipVulkan  # ONLY on a box with no Vulkan-capable GPU
 > ```

@@ -48,9 +48,10 @@ internal static class IdentifierSafety
     /// <summary>
     /// HLSL reserved keywords / type-modifiers that are valid GLSL identifiers and so can legally appear
     /// as a name in a ShaderToy shader, but are NOT valid HLSL identifiers. A declaration with one of
-    /// these names must be renamed. (GLSL-reserved words can't reach here; intrinsic names like
-    /// <c>min</c>/<c>lerp</c> are NOT included — they are not reserved, a variable may shadow them unless
-    /// it is also called, which the function-shadow rule covers for user functions.)
+    /// these names must be renamed. (GLSL-reserved words can't reach here; same-name intrinsics like
+    /// <c>min</c> are NOT included — they are not reserved, and shadowing one breaks only where the
+    /// GLSL was already broken. The names the CONVERTER ITSELF introduces are the separate
+    /// <see cref="EmitterIntroducedNames"/> set below.)
     /// </summary>
     private static readonly HashSet<string> HlslReserved = new(StringComparer.Ordinal)
     {
@@ -62,6 +63,29 @@ internal static class IdentifierSafety
         "class", "namespace", "pixelshader", "vertexshader", "pixelfragment", "vertexfragment",
         "asm", "asm_fragment", "typedef", "template", "this", "inline",
     };
+
+    /// <summary>
+    /// Names that are NOT HLSL-reserved but that the converter's OWN OUTPUT references: the HLSL
+    /// intrinsics the intrinsic renames target (<c>fract</c>→<c>frac</c>, <c>mix</c>→<c>lerp</c>,
+    /// <c>texture</c>→<c>tex2D</c>, 2-arg <c>atan</c>→<c>atan2</c>, …) and the symbols the harness /
+    /// emitter synthesizes. A user identifier with one of these names is valid GLSL AND valid plain
+    /// HLSL, but HLSL resolves a call against the nearest declaration, so it would capture the
+    /// converter-introduced references (e.g. <c>float frac = fract(x);</c> emits
+    /// <c>float frac = frac(x);</c> — "call the variable"). Renamed exactly like a reserved word.
+    /// </summary>
+    private static readonly HashSet<string> EmitterIntroducedNames = new(StringComparer.Ordinal)
+    {
+        // HLSL intrinsics the rename table / special-case rewrites emit:
+        "frac", "lerp", "tex2D", "tex2Dlod", "tex2Dgrad", "atan2", "rsqrt", "ddx", "ddy",
+        "fmod", "saturate", "mad",
+        // Symbols the generated harness declares around the translated body:
+        "PSMain", "VSMain", "VSInput", "VSOutput", "glsl_mod", "sd_ScreenUV",
+    };
+
+    /// <summary>True when a user identifier must be renamed regardless of how it is used: an HLSL
+    /// reserved word, or a name the converter's own output references.</summary>
+    private static bool IsUnsafeName(string name) =>
+        HlslReserved.Contains(name) || EmitterIntroducedNames.Contains(name);
 
     /// <summary>
     /// Plan the renames for the merged translation unit. <paramref name="diagnostics"/> receives a located
@@ -86,15 +110,17 @@ internal static class IdentifierSafety
         used.UnionWith(unit.CustomUniforms.Select(c => c.Name));
         used.UnionWith(unit.Structs.Select(s => s.Name));
         used.UnionWith(HlslReserved);
+        used.UnionWith(EmitterIntroducedNames);
 
-        // ── Global renames: top-level user functions + const/mutable globals named an HLSL keyword. ──
+        // ── Global renames: top-level user functions + const/mutable globals whose name is an HLSL
+        //    keyword or a name the converter's output uses (an intrinsic rename target / harness symbol). ──
         foreach (FunctionDecl f in functions)
         {
-            if (HlslReserved.Contains(f.Name) && !renames.Global.ContainsKey(f.Name))
+            if (IsUnsafeName(f.Name) && !renames.Global.ContainsKey(f.Name))
             {
                 string fresh = Fresh(f.Name, used);
                 renames.Global[f.Name] = fresh;
-                diagnostics.Add(ReservedWarning("function", f.Name, fresh, f.Line, f.Column));
+                diagnostics.Add(UnsafeNameWarning("function", f.Name, fresh, f.Line, f.Column));
             }
         }
 
@@ -136,9 +162,9 @@ internal static class IdentifierSafety
                     continue; // already renamed in this function (block-shadowed re-declaration)
                 }
 
-                bool reserved = HlslReserved.Contains(name);
+                bool unsafeName = IsUnsafeName(name);
                 bool shadowsCalledFunction = userFunctionNames.Contains(name) && calledNames.Contains(name);
-                if (!reserved && !shadowsCalledFunction)
+                if (!unsafeName && !shadowsCalledFunction)
                 {
                     continue;
                 }
@@ -146,8 +172,8 @@ internal static class IdentifierSafety
                 string fresh = Fresh(name, localUsed);
                 map ??= new Dictionary<string, string>(StringComparer.Ordinal);
                 map[name] = fresh;
-                diagnostics.Add(reserved
-                    ? ReservedWarning("local", name, fresh, line, column)
+                diagnostics.Add(unsafeName
+                    ? UnsafeNameWarning("local", name, fresh, line, column)
                     : ShadowWarning(name, fresh, line, column));
             }
 
@@ -257,14 +283,14 @@ internal static class IdentifierSafety
         string name, int line, int column, string kind,
         IdentifierRenames renames, HashSet<string> used, List<ConvertDiagnostic> diagnostics)
     {
-        if (!HlslReserved.Contains(name) || renames.Global.ContainsKey(name))
+        if (!IsUnsafeName(name) || renames.Global.ContainsKey(name))
         {
             return;
         }
 
         string fresh = Fresh(name, used);
         renames.Global[name] = fresh;
-        diagnostics.Add(ReservedWarning(kind, name, fresh, line, column));
+        diagnostics.Add(UnsafeNameWarning(kind, name, fresh, line, column));
     }
 
     private static string Fresh(string name, HashSet<string> used)
@@ -280,6 +306,21 @@ internal static class IdentifierSafety
         used.Add(candidate);
         return candidate;
     }
+
+    /// <summary>Pick the right warning wording for an unconditionally-renamed name: reserved word vs.
+    /// converter-introduced intrinsic/harness collision.</summary>
+    private static ConvertDiagnostic UnsafeNameWarning(string kind, string name, string fresh, int line, int col) =>
+        HlslReserved.Contains(name)
+            ? ReservedWarning(kind, name, fresh, line, col)
+            : CollisionWarning(kind, name, fresh, line, col);
+
+    private static ConvertDiagnostic CollisionWarning(string kind, string name, string fresh, int line, int col) =>
+        new(DiagnosticSeverity.Warning,
+            $"'{name}' collides with an HLSL intrinsic or generated harness symbol the converted " +
+            $"shader itself uses; renamed the {kind} to '{fresh}' so the converter-introduced " +
+            "references still resolve. (Valid in GLSL, but the generated HLSL would bind them to " +
+            "your declaration instead.)",
+            line, col, name);
 
     private static ConvertDiagnostic ReservedWarning(string kind, string name, string fresh, int line, int col) =>
         new(DiagnosticSeverity.Warning,

@@ -60,7 +60,8 @@ exercises **one** feature or translation trap so a failure points at a single ca
 | `array_constructor.glsl` | **G7**: the GLSL array-constructor expression in both the unsized `T[](...)` and sized `T[N](...)` forms, used as a declaration initializer (-> HLSL brace list). |
 | `bitwise_ops.glsl` | **Bitwise**: `& \| ^ << >>` and the compound forms `&= \|= ^= <<= >>=` pass straight through to HLSL (valid on int), distinct from logical `&&`/`\|\|`. |
 | `glfragcoord_in_body.glsl` | **G3c**: `gl_FragCoord` referenced directly in a `mainImage` body (a `float4`: `.xy` = pixel coord, `.z` = 0, `.w` = 1); the harness publishes a `static float4 gl_FragCoord;` and sets it before calling `mainImage`. |
-| `uint_type.glsl` | **uint mapping**: `uint` -> `int` and `uvec2/3/4` -> `int2/3/4` (treated as signed int; common hash idiom). |
+| `uint_type.glsl` | **uint mapping**: `uint` -> `uint` and `uvec2/3/4` -> `uint2/3/4` (HLSL's real unsigned types, so `>>` zero-fills and `float(h)` matches GLSL; common hash idiom — bug-hunt M16). |
+| `uint_literal_suffix.glsl` | **uint literal suffixes**: `747796405u` / `0xFFu` lex as part of the literal and are emitted verbatim (a valid HLSL uint literal); the standard PCG-hash idiom. Previously a reject (while uint mapped to signed int). |
 | `redeclare_ichannel.glsl` | **Channel redeclare**: a redundant `uniform sampler2D iChannel0;` re-declaration is accepted-and-ignored (the built-in channel is already injected). |
 | `uniform_multi_declarator.glsl` | **Multi-declarator uniform**: a comma list `uniform float uA, uB, uC;` (each becomes its own custom uniform) plus a redundant built-in WITH an initializer (`uniform vec3 iResolution = vec3(...);`) dropped. |
 | `stage_in_varying_ignored.glsl` | **Stage I/O ignore**: a top-level `varying vec2 vUv;` (vertex-stage leftover) is ignored, and `vUv` (a conventional coordinate-varying name) used as the UV resolves to the harness normalized screen UV; an unreferenced non-coordinate `varying vec3` just vanishes. |
@@ -76,4 +77,4 @@ exercises **one** feature or translation trap so a failure points at a single ca
 | `matrix_from_scalar.glsl` | **Final wave — single-arg matrix ctor**: `mat3(1.0)` (identity diagonal), `mat2(2.0)` (scaled diagonal), and `mat3(mat4)` (upper-left submatrix) each expand to an explicit `floatNxN(...)` grid. |
 | `self_referential_macro.glsl` | **Final wave — macro C-rule**: a self-referential `#define` chain expands per the C "blue-paint" rule (a macro's own name in its expansion is left as a plain identifier, not re-expanded). |
 
-Total: 68 authored shaders.
+Total: 69 authored shaders.

@@ -629,6 +629,7 @@ public static class MonoGameGlslRewriter
             {
                 vsGlsl += "\n";
             }
+            ThrowIfUnrewrittenStageIo(vsGlsl);
             return new MonoGameGlslResult(vsGlsl, Array.Empty<MonoGameGlslSampler>(), reg, attributes, uniformLayout);
         }
 
@@ -892,6 +893,7 @@ public static class MonoGameGlslRewriter
             finalGlsl += "\n";
         }
 
+        ThrowIfUnrewrittenStageIo(finalGlsl);
         return new MonoGameGlslResult(finalGlsl, samplers, reg, Array.Empty<MonoGameGlslAttribute>(), uniformLayout);
     }
 
@@ -1428,7 +1430,12 @@ public static class MonoGameGlslRewriter
     /// </summary>
     private static bool IsPositionSemantic(string identifier)
     {
-        var sem = StripInterfacePrefix(identifier);
+        // HLSL semantics are case-insensitive and DXC mirrors the author's spelling
+        // (": Position" => out_var_Position), so normalize before matching — the same
+        // treatment OutputDecl already gives SV_Target. Without it a mixed-case
+        // position semantic silently became a varying instead of gl_Position and the
+        // geometry rendered from garbage (bug-hunt 2026-07-27 M3).
+        var sem = StripInterfacePrefix(identifier).ToUpperInvariant();
         return sem is "POSITION" or "POSITION0";
     }
 
@@ -1437,8 +1444,11 @@ public static class MonoGameGlslRewriter
         // identifier looks like "in_var_TEXCOORD0" (PS input) or "out_var_COLOR0"
         // (VS output). Strip either interface prefix to the bare HLSL semantic so a
         // VS output and the PS input it feeds resolve to the SAME varying name (the
-        // basis of MonoGame's name-based VS→PS link).
-        var sem = StripInterfacePrefix(identifier);
+        // basis of MonoGame's name-based VS→PS link). Uppercased because HLSL
+        // semantics are case-insensitive and DXC mirrors the author's spelling —
+        // ": TexCoord0" (VS) and ": TEXCOORD0" (PS) must produce the SAME varying or
+        // the GL link fails at Effect load (bug-hunt 2026-07-27 M3).
+        var sem = StripInterfacePrefix(identifier).ToUpperInvariant();
 
         switch (sem)
         {
@@ -1456,6 +1466,28 @@ public static class MonoGameGlslRewriter
 
         // Unknown semantic — pass through (won't occur in our corpus).
         return $"var_{sem}";
+    }
+
+    /// <summary>
+    /// Final leak guard (bug-hunt 2026-07-27 M13): the stage-I/O declaration regexes
+    /// model unqualified <c>float/vec2/vec3/vec4</c> shapes only, so a declaration they
+    /// don't match (a <c>flat</c> interpolant, an int/uint/mat varying, a non-vec4
+    /// SV_Target) used to fall through with its modern <c>in</c>/<c>out</c> syntax and
+    /// <c>in_var_</c>/<c>out_var_</c> uses intact — GLSL that versionless front ends
+    /// reject only at Effect-load time, silently. Any survivor is a rewrite gap: fail
+    /// the compile loudly instead, like the uniform-block leftover guard.
+    /// </summary>
+    private static void ThrowIfUnrewrittenStageIo(string finalGlsl)
+    {
+        Match survivor = Regex.Match(finalGlsl, @"\b(?:in_var_|out_var_)\w+");
+        if (survivor.Success)
+        {
+            throw new MonoGameGlslRewriteException(
+                $"GLSL rewrite: stage interface identifier '{survivor.Value}' survived the " +
+                "I/O rewrite — its declaration shape (qualifier or type) is not modelled by " +
+                "the MojoShader-dialect lowering, and the emitted GLSL would fail to load " +
+                "on the GL runtime. This is a ShadowDusk gap; please report the shader shape.");
+        }
     }
 
     private static string StripInterfacePrefix(string identifier)
@@ -1479,7 +1511,9 @@ public static class MonoGameGlslRewriter
     /// </summary>
     private static (byte Usage, byte Index) SemanticToVertexUsage(string identifier)
     {
-        var sem = StripInterfacePrefix(identifier);
+        // Uppercased: HLSL semantics are case-insensitive and DXC mirrors the author's
+        // spelling, so ": position" must map like ": POSITION" (bug-hunt 2026-07-27 M3).
+        var sem = StripInterfacePrefix(identifier).ToUpperInvariant();
 
         if (sem.StartsWith("POSITION"))
             return (0, ParseTrailingIndex(sem, "POSITION"));
@@ -1502,7 +1536,18 @@ public static class MonoGameGlslRewriter
     private static byte ParseTrailingIndex(string sem, string baseName)
     {
         var tail = sem[baseName.Length..];
-        return tail.Length == 0 ? (byte)0 : (byte)int.Parse(tail);
+        if (tail.Length == 0)
+            return 0;
+        // TryParse: a non-numeric tail (e.g. POSITIONT, which shares POSITION's prefix)
+        // must surface as the loud unsupported-semantic rewrite error below, not as a raw
+        // FormatException that bypasses the pipeline's MonoGameGlslRewriteException catch
+        // and escapes the library as an unhandled throw (bug-hunt 2026-07-27 N4).
+        // byte.TryParse also rejects indices above 255, which the record cannot carry.
+        if (byte.TryParse(tail, out byte index))
+            return index;
+        throw new MonoGameGlslRewriteException(
+            $"Unsupported vertex-input semantic '{sem}' for the MonoGame GL target: " +
+            $"'{tail}' is not a supported numeric semantic index.");
     }
 
     /// <summary>
@@ -2964,10 +3009,13 @@ public static class MonoGameGlslRewriter
         RegexOptions.Singleline);
 
     /// <summary>True if <paramref name="body"/> writes <paramref name="variable"/> anywhere
-    /// (assignment, compound assignment, or <c>++</c>/<c>--</c>) — a plain read, or the
-    /// identifier appearing as a substring of a longer name, does not count.</summary>
+    /// (assignment, any compound assignment including <c>%=</c>/shift/bitwise forms, or
+    /// prefix/postfix <c>++</c>/<c>--</c>) — a plain read, or the identifier appearing as
+    /// a substring of a longer name, does not count.</summary>
     private static bool WritesVariable(string body, string variable) =>
-        Regex.IsMatch(body, @"\b" + Regex.Escape(variable) + @"\s*(?:\+\+|--|[-+*/]?=(?!=))");
+        Regex.IsMatch(body,
+            @"(?:\+\+|--)\s*" + Regex.Escape(variable) + @"\b|\b" + Regex.Escape(variable) +
+            @"\s*(?:\+\+|--|(?:<<|>>)=|[-+*/%&|^]?=(?!=))");
 
     /// <summary>True if the whole word <paramref name="word"/> occurs anywhere in
     /// <paramref name="body"/> (identifier-boundary aware).</summary>
@@ -2990,11 +3038,16 @@ public static class MonoGameGlslRewriter
     /// variable doesn't satisfy the syntax), but <c>provenMax</c> IS the shader's true
     /// maximum, so the loop still runs exactly as many iterations as before — the
     /// runtime check against the real (possibly smaller) <c>boundVar</c> survives
-    /// unchanged inside the body. The bound is <c>&lt;= provenMax</c> (not <c>&lt;</c>)
+    /// unchanged inside the body. The cap is <c>&lt;= provenMax</c> (not <c>&lt;</c>)
     /// so the header-less loop's <c>else</c> branch — which the original runs at
     /// <c>idx == boundVar</c>, and boundVar can equal provenMax — stays reachable
-    /// (issue #160). Only rewritten when every piece of this shape is
-    /// present and provable; anything else is left for SD0402 to keep warning about.
+    /// (issue #160); an inclusive inner comparison (<c>&lt;=</c>) rejects first at
+    /// <c>boundVar + 1</c>, so its cap is <c>provenMax + 1</c>. Only an ascending
+    /// step-1 walk (<c>idx++</c> / <c>idx += 1</c>) with a literal init the cap
+    /// admits, an ascending (<c>&lt;</c> / <c>&lt;=</c>) comparison, and no
+    /// post-loop read of the index is rewritten — anything else (descending walks,
+    /// wider steps, an index used after the loop) is left for SD0402 to keep
+    /// warning about, because an unprovable rewrite here is how issue #160 shipped.
     /// </summary>
     private static string LowerBoundedHeaderlessForLoop(string body)
     {
@@ -3087,15 +3140,49 @@ public static class MonoGameGlslRewriter
                 continue;
             }
 
-            // `<=`, not `<`: the original `for (;;)` runs its `else` branch when the index
-            // REACHES the runtime bound (idx == boundVar), and boundVar can be provenMax
-            // itself (the ternary's larger literal — the non-degenerate case). A `< provenMax`
-            // header exits one iteration too early and skips that terminal else, which
-            // finalizes the loop's phi output on the no-early-break path; the result is then
-            // read uninitialized (issue #160). `<= provenMax` keeps the else reachable while
-            // staying exact: the inner `if (idx < boundVar)` still runs the true branch
-            // exactly boundVar times, since boundVar <= provenMax always.
-            string newFor = $"for (int {idxVar} = {idxInit}; {idxVar} <= {provenMax}; {incrExpr})";
+            // The header cap below is exact ONLY for an ascending step-1 walk: the else
+            // fires at the first index the inner comparison rejects, and the header must
+            // still admit that index. Every other combination the patterns can match
+            // either skips the terminal else (a step > 1 can jump past the cap; `>`/`>=`
+            // walks descend) or needs a bigger cap (`<=` rejects first at boundVar + 1).
+            // Anything unprovable declines to SD0402's honest warning — emitting a loop
+            // that drops its finalizer is exactly how issue #160 happened.
+            if (!Regex.IsMatch(incrExpr, @"^" + Regex.Escape(idxVar) + @"\s*(?:\+\+|\+=\s*1)$"))
+            {
+                continue; // not an ascending step-1 walk
+            }
+
+            int headerMax;
+            if (cmpOp == "<")
+            {
+                headerMax = provenMax; // else fires at idx == boundVar, and boundVar <= provenMax
+            }
+            else if (cmpOp == "<=" && provenMax < int.MaxValue)
+            {
+                headerMax = provenMax + 1; // else fires at idx == boundVar + 1 <= provenMax + 1
+            }
+            else
+            {
+                continue; // descending comparison — the ascending cap would invert the walk
+            }
+
+            // The header must admit the first iteration: the original always enters its
+            // body once (running the else immediately when the comparison rejects), so a
+            // cap below the init would erase an iteration the original performed — the
+            // bare-negative-literal and init-past-bound shapes.
+            if (!int.TryParse(idxInit, out int idxInitValue) || idxInitValue > headerMax)
+            {
+                continue;
+            }
+
+            // Moving the declaration into the for-header ends its scope at the loop's
+            // closing brace; any later read of the index would become undeclared.
+            if (Regex.IsMatch(body[(bodyClose + 1)..], @"\b" + Regex.Escape(idxVar) + @"\b"))
+            {
+                continue;
+            }
+
+            string newFor = $"for (int {idxVar} = {idxInit}; {idxVar} <= {headerMax}; {incrExpr})";
             string newInner = $"if ({idxVar} {cmpOp} {boundVar}) {{{newTrueBranch}}} else {{{falseBranch}}}";
             body = body[..idxDeclStart] + newFor + " {" + newInner + "}" + body[(bodyClose + 1)..];
             searchFrom = idxDeclStart + newFor.Length;

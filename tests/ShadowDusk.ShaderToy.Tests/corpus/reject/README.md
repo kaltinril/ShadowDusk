@@ -24,14 +24,17 @@ assert the tool rejects for that specific reason.
 | `array_nonconst_size.glsl` | **G7 boundary**: an array sized by a non-constant expression (`float a[n];` where `n` is a variable) — a fixed-size array (`float k[3];`) is supported, but a non-constant / macro size has no compile-time length, so it stays a loud reject. |
 | `sampler_param.glsl` | **Final wave boundary**: a `sampler2D` FUNCTION PARAMETER (`vec4 f(sampler2D tex, ...)`) — valid HLSL but uncompilable through the legacy-FX9 → GL/DX pipeline (a sampler cannot be a function argument there, the same class as the mip-bias reject), so it is a loud, named reject (inline the `tex2D` on the global sampler instead). |
 | `intrinsic_texturecube.glsl` | **Final wave**: `textureCube` samples a CUBEMAP — no faithful 2D `sampler2D` map. Named reject. |
-| `unsigned_int_literal.glsl` | An **unsigned-integer literal** (`374761393U`) — drives uint/uvec bit arithmetic (an integer hash) with no faithful float mapping. Rejected AT the literal, not as a stray-`U` parse error. |
 | `texture_cubemap_coord.glsl` | `texture(iChannel0, vec3)` samples a **CUBEMAP** (a 3D direction lookup). The generic `texture` form with a 3D coord is named-rejected (it would otherwise truncate the coord to 2D and emit an opaque HLSL `-Wconversion` error). |
 | `feedback_lastframe.glsl` | **Final wave**: `getLastFrameColor` reads the shader's own previous-frame output (feedback / multipass) — a single image pass cannot supply it. Named reject. |
 | `gl_fragdepth_builtin.glsl` | **Final wave**: `gl_FragDepth` (per-fragment depth output) has no meaning for a 2D fullscreen pass — a known GL stage built-in, named-rejected rather than a generic undeclared-identifier message. |
 | `host_specific_uniform.glsl` | **Final wave**: a host-specific global (`iCurrentCursor`, like a terminal-cursor uniform) the converter cannot invent a value for — stays a loud "undeclared identifier ... depends on a host-provided value" reject (we do NOT auto-expose arbitrary unknowns). |
 | `host_template_placeholder.glsl` | **Final wave**: a host-template `$placeholder` token (`#define speed $speed`) the converter cannot resolve to a host-substituted value — a loud, named reject (NOT a runaway macro expansion; the C blue-paint rule is honored first). |
 
-Total: 21 reject shaders.
+Total: 22 reject shaders.
+
+> `unsigned_int_literal.glsl` used to live here: unsigned literals (`374761393u`) were rejected while
+> `uint` mapped to signed `int`. Since the faithful `uint` → HLSL `uint` mapping (bug-hunt M16), the
+> `u` suffix is accepted and emitted verbatim — see `authored/uint_literal_suffix.glsl`.
 
 Note: a shader that defines **BOTH** a ShaderToy `mainImage` AND a standalone `void main()` wrapper is
 **no longer a reject** (the former `both_entry_points.glsl`, now retired). It PREFERS ShaderToy mode,

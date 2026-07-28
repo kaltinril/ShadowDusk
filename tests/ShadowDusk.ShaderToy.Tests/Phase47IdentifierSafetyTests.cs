@@ -129,6 +129,90 @@ public sealed class Phase47IdentifierSafetyTests
         r.Diagnostics.Should().BeEmpty("a shader with no collisions triggers no identifier-safety renames");
     }
 
+    // ── converter-introduced names (intrinsic rename targets + harness symbols, bug-hunt N20) ──
+
+    [Fact]
+    public void LocalNamedFrac_IsRenamed_SoTheEmittedFracIntrinsicStillResolves()
+    {
+        // `float frac = fract(x);` is valid GLSL (frac is not a GLSL builtin), but the converter
+        // emits fract() as HLSL frac(), which the local would capture ("call the variable").
+        const string glsl = """
+            void mainImage( out vec4 fragColor, in vec2 fragCoord ) {
+              float frac = fract(fragCoord.x);
+              fragColor = vec4(frac, frac, frac, 1.0);
+            }
+            """;
+
+        ConvertResult r = Convert(glsl);
+
+        r.Success.Should().BeTrue(Because(r));
+        r.Fx!.Should().Contain("float frac_sd = frac(", "the local is renamed; the intrinsic call is not");
+        r.Fx!.Should().NotContain("float frac =", "the bare local name would shadow the frac intrinsic");
+
+        r.Diagnostics.Should().Contain(d =>
+            d.Severity == DiagnosticSeverity.Warning && d.Construct == "frac" &&
+            d.Line > 0 && d.Message.Contains("collides", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void FunctionNamedLerp_IsRenamed_WhileTheMixIntrinsicKeepsEmittingLerp()
+    {
+        const string glsl = """
+            float lerp(float t) { return t * 2.0; }
+            void mainImage( out vec4 fragColor, in vec2 fragCoord ) {
+              float a = lerp(0.25);
+              float b = mix(0.0, 1.0, a);
+              fragColor = vec4(a, b, 0.0, 1.0);
+            }
+            """;
+
+        ConvertResult r = Convert(glsl);
+
+        r.Success.Should().BeTrue(Because(r));
+        r.Fx!.Should().Contain("float lerp_sd(float t)", "the user function is renamed at its declaration");
+        r.Fx!.Should().Contain("lerp_sd(0.25)", "calls to the user function follow the rename");
+        r.Fx!.Should().Contain("lerp(0.0, 1.0, a)", "mix() still emits the real lerp intrinsic");
+    }
+
+    [Fact]
+    public void LocalNamedGlslMod_IsRenamed_SoTheEmittedHelperStillResolves()
+    {
+        // The mod() rewrite emits calls to the generated glsl_mod helper; a local of that name
+        // in the same function would capture them.
+        const string glsl = """
+            void mainImage( out vec4 fragColor, in vec2 fragCoord ) {
+              float glsl_mod = mod(fragCoord.x, 4.0);
+              fragColor = vec4(glsl_mod, 0.0, 0.0, 1.0);
+            }
+            """;
+
+        ConvertResult r = Convert(glsl);
+
+        r.Success.Should().BeTrue(Because(r));
+        r.Fx!.Should().Contain("float glsl_mod_sd = glsl_mod(");
+        r.Diagnostics.Should().Contain(d =>
+            d.Severity == DiagnosticSeverity.Warning && d.Construct == "glsl_mod");
+    }
+
+    [Fact]
+    public void GlobalNamedPSMain_IsRenamed_AwayFromTheHarnessEntry()
+    {
+        const string glsl = """
+            float PSMain = 0.5;
+            void mainImage( out vec4 fragColor, in vec2 fragCoord ) {
+              fragColor = vec4(PSMain, PSMain, PSMain, 1.0);
+            }
+            """;
+
+        ConvertResult r = Convert(glsl);
+
+        r.Success.Should().BeTrue(Because(r));
+        r.Fx!.Should().Contain("static float PSMain_sd", "the user global must not collide with the harness PS");
+        r.Fx!.Should().Contain("float4 PSMain(VSOutput input)", "the harness entry keeps its name");
+        r.Diagnostics.Should().Contain(d =>
+            d.Severity == DiagnosticSeverity.Warning && d.Construct == "PSMain");
+    }
+
     private static string Because(ConvertResult r) =>
         "conversion must succeed; diagnostics: " +
         string.Join("; ", r.Diagnostics.Select(d => $"{d.Severity}:{d.Message}"));

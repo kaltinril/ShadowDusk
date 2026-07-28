@@ -194,7 +194,9 @@ internal sealed class TypeInference
     /// <summary>Infer the <see cref="GlslType"/> of an expression (best-effort).</summary>
     public GlslType Infer(Expr expr) => expr switch
     {
-        IntLiteralExpr => GlslType.ScalarOf(ScalarKind.Int),
+        // A 'u'/'U'-suffixed integer literal is uint (the suffix stays in the token text).
+        IntLiteralExpr i => GlslType.ScalarOf(
+            i.Text.EndsWith('u') || i.Text.EndsWith('U') ? ScalarKind.Uint : ScalarKind.Int),
         FloatLiteralExpr => GlslType.ScalarOf(ScalarKind.Float),
         BoolLiteralExpr => GlslType.ScalarOf(ScalarKind.Bool),
         IdentifierExpr id => LookupVar(id.Name),
@@ -389,11 +391,13 @@ internal sealed class TypeInference
             return a;
         }
 
-        // Vector wins over scalar; float wins over int for component kind.
+        // Vector wins over scalar; float wins over the integer kinds; uint wins over int (GLSL
+        // implicitly converts int to uint in a mixed unsigned expression).
         int rows = Math.Max(a.Rows, b.Rows);
         int cols = Math.Max(a.Cols, b.Cols);
-        ScalarKind scalar = (a.Scalar == ScalarKind.Float || b.Scalar == ScalarKind.Float)
-            ? ScalarKind.Float
+        ScalarKind scalar =
+            (a.Scalar == ScalarKind.Float || b.Scalar == ScalarKind.Float) ? ScalarKind.Float
+            : (a.Scalar == ScalarKind.Uint || b.Scalar == ScalarKind.Uint) ? ScalarKind.Uint
             : a.Scalar;
         return new GlslType(scalar, rows, cols);
     }

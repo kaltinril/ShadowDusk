@@ -29,6 +29,7 @@ const OPT_FIXUP_DEPTH_CONVENTION = 0x1000003;
 const OPT_GLSL_VERSION           = 0x2000008;
 const OPT_GLSL_ES                = 0x2000009;
 const OPT_GLSL_VULKAN_SEMANTICS  = 0x200000A;
+const OPT_RELAX_NAN_CHECKS       = 0x100004E;
 
 // --------------------------------------------------------------------------
 // Eagerly instantiate the WASM module. JSHost.ImportAsync awaits this ES module's
@@ -85,7 +86,7 @@ function lastError(ctx, stage) {
  * @returns {string} GLSL source text.
  * @throws on any SPIRV-Cross failure (message carries the last-error string).
  */
-export function transpileToGlsl(spirv, flipVertexY, fixupDepthConvention, glslVersion, glslEs, vulkanSemantics) {
+export function transpileToGlsl(spirv, flipVertexY, fixupDepthConvention, glslVersion, glslEs, vulkanSemantics, relaxNanChecks) {
     const bytes = spirv instanceof Uint8Array ? spirv : new Uint8Array(spirv);
     if ((bytes.length & 3) !== 0)
         throw new Error(`SPIRV-Cross: SPIR-V byte length ${bytes.length} is not a multiple of 4`);
@@ -150,6 +151,12 @@ export function transpileToGlsl(spirv, flipVertexY, fixupDepthConvention, glslVe
             throw new Error(lastError(ctx, 'set_option GlslEs'));
         if (spvc_compiler_options_set_bool(options, OPT_GLSL_VULKAN_SEMANTICS, vulkanSemantics ? 1 : 0) !== SPVC_SUCCESS)
             throw new Error(lastError(ctx, 'set_option GlslVulkanSemantics'));
+        // Issue #149 parity (bug-hunt 2026-07-27 C4): the desktop transpiler sets
+        // RelaxNanChecks so SPIRV-Cross emits plain min/max/clamp instead of the
+        // isnan()-ternary that versionless GLSL cannot declare. Omitting it here made
+        // browser output diverge from desktop and reopened the #149 macOS load failure.
+        if (spvc_compiler_options_set_bool(options, OPT_RELAX_NAN_CHECKS, relaxNanChecks ? 1 : 0) !== SPVC_SUCCESS)
+            throw new Error(lastError(ctx, 'set_option RelaxNanChecks'));
 
         if (spvc_compiler_install_compiler_options(compiler, options) !== SPVC_SUCCESS)
             throw new Error(lastError(ctx, 'install_compiler_options'));

@@ -1,5 +1,6 @@
-// Exercises the uint -> int and uvec2/3/4 -> int2/3/4 type mapping (treated as signed int; the
-// supported subset has no unsigned type). A common hash idiom uses uint + bitwise ops.
+// Exercises the faithful uint -> uint and uvec2/3/4 -> uint2/3/4 type mapping (HLSL's real
+// unsigned types, so >> zero-fills and float(h) never goes negative — bug-hunt M16). A common
+// hash idiom uses uint + bitwise ops.
 uint hash(uint x)
 {
     x ^= x >> 16;

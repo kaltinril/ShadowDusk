@@ -414,7 +414,9 @@ internal static class DxcTestGate
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
             return true;
 
-        string arch = RuntimeInformation.OSArchitecture == Architecture.Arm64 ? "osx-arm64" : "osx-x64";
+        // ProcessArchitecture, NOT OSArchitecture (bug-hunt 2026-07-27 N19): under Rosetta 2 the OS
+        // reports Arm64 while the process can only load the x64 native (same fix as DxcLoader).
+        string arch = RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "osx-arm64" : "osx-x64";
         foreach (string subdir in new[] { arch, "" })
         {
             if (File.Exists(Path.Combine(AppContext.BaseDirectory, subdir, "libdxcompiler.dylib")))

@@ -39,7 +39,7 @@ float fbm(float2 p)
 {
     float sum = 0.0;
     float amp = 0.5;
-    for (int i = 0; (i < 4); i++)
+    for (int i = 0; i < 4; i++)
     {
         sum += (amp * valueNoise(p));
         p *= 2.0;

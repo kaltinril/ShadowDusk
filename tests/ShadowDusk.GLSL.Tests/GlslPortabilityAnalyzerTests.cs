@@ -518,4 +518,103 @@ void main()
 """;
         AnalyzePixel(glsl, passHasVertexShader: false).Should().BeEmpty();
     }
+
+    // -------------------------------------------------------------------------
+    // SD0403 (bug-hunt 2026-07-27 M4): GLSL-1.30+/ES-3.00 constructs surviving
+    // into the versionless output — the class behind issues #149 and #163.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Sd0403_TransposeCall_Flagged()
+    {
+        const string glsl = """
+varying vec4 vTexCoord0;
+uniform vec4 ps_uniforms_vec4[4];
+
+void main()
+{
+    mat3 n = transpose(mat3(ps_uniforms_vec4[0].xyz, ps_uniforms_vec4[1].xyz, ps_uniforms_vec4[2].xyz));
+    gl_FragColor = vec4(n[0], 1.0);
+}
+""";
+        var findings = AnalyzePixel(glsl, passHasVertexShader: true);
+
+        findings.Should().Contain(f => f.Code == "SD0403" && f.Message.Contains("transpose"));
+        findings.Should().OnlyContain(f => f.Severity == ShaderErrorSeverity.Warning);
+    }
+
+    [Fact]
+    public void Sd0403_SinhAndIsnan_EachFlagged()
+    {
+        const string glsl = """
+varying vec4 vTexCoord0;
+
+void main()
+{
+    float a = sinh(vTexCoord0.x);
+    if (isnan(a)) a = 0.0;
+    gl_FragColor = vec4(a);
+}
+""";
+        var findings = AnalyzePixel(glsl, passHasVertexShader: true);
+
+        findings.Should().Contain(f => f.Code == "SD0403" && f.Message.Contains("sinh"));
+        findings.Should().Contain(f => f.Code == "SD0403" && f.Message.Contains("isnan"));
+    }
+
+    [Fact]
+    public void Sd0403_SwitchStatement_Flagged()
+    {
+        const string glsl = """
+varying vec4 vTexCoord0;
+
+void main()
+{
+    int mode = int(vTexCoord0.x);
+    switch (mode)
+    {
+        case 0: gl_FragColor = vec4(1.0); break;
+        default: gl_FragColor = vec4(0.0); break;
+    }
+}
+""";
+        AnalyzePixel(glsl, passHasVertexShader: true)
+            .Should().Contain(f => f.Code == "SD0403" && f.Message.Contains("switch"));
+    }
+
+    [Fact]
+    public void Sd0403_SurvivingRoundCall_Flagged_LoweringBackstop()
+    {
+        // round() HAS a lowering (Rule 8); its presence in the FINAL text means a
+        // rewrite missed a shape (the issue-#140 nesting class) — worth a warning.
+        const string glsl = """
+varying vec4 vTexCoord0;
+
+void main()
+{
+    gl_FragColor = vec4(round(vTexCoord0.x));
+}
+""";
+        AnalyzePixel(glsl, passHasVertexShader: true)
+            .Should().Contain(f => f.Code == "SD0403" && f.Message.Contains("round"));
+    }
+
+    [Fact]
+    public void Sd0403_LoweredDialect_NoFindings()
+    {
+        // The lowered forms themselves (floor(x + 0.5), sign()*floor(abs()), texture2D)
+        // must never trip the detector.
+        const string glsl = """
+varying vec4 vTexCoord0;
+
+void main()
+{
+    float r = floor(vTexCoord0.x + 0.5);
+    float t = sign(vTexCoord0.y) * floor(abs(vTexCoord0.y));
+    gl_FragColor = texture2D(ps_s0, vec2(r, t));
+}
+""";
+        AnalyzePixel(glsl, passHasVertexShader: true)
+            .Should().NotContain(f => f.Code == "SD0403");
+    }
 }

@@ -546,7 +546,11 @@ public static class ShaderToyConverter
 
     /// <summary>
     /// Reject the non-image ShaderToy entry points and multipass buffers up front. These are
-    /// matched as whole-word occurrences so they are not confused with substrings.
+    /// matched as whole-word occurrences so they are not confused with substrings, on a copy of the
+    /// source with comments blanked out — a token that only appears in a <c>//</c> or
+    /// <c>/* … */</c> comment (e.g. "// removed the old mainSound experiment") must not fail an
+    /// otherwise-convertible shader. Blanking preserves every character position, so the reported
+    /// line/column still points at the original source.
     /// </summary>
     private static void RejectUnsupportedEntryPoints(string source, List<ConvertDiagnostic> diagnostics)
     {
@@ -557,13 +561,65 @@ public static class ShaderToyConverter
             ("mainCubemap", "Cubemap shaders ('mainCubemap') are outside the supported subset (single-pass image only)."),
         };
 
+        string scannable = BlankComments(source);
         foreach ((string token, string message) in banned)
         {
-            if (FindWholeWord(source, token, out int line, out int col))
+            if (FindWholeWord(scannable, token, out int line, out int col))
             {
                 diagnostics.Add(new ConvertDiagnostic(DiagnosticSeverity.Error, message, line, col, token));
             }
         }
+    }
+
+    /// <summary>
+    /// Replace the contents of C-style comments (<c>// …</c> to end of line, <c>/* … */</c> across
+    /// lines) with spaces, keeping every newline and every non-comment character at its original
+    /// index — a position-preserving blank-out, so scans over the result report line/column values
+    /// valid for the original source. (The lexer strips comments the same way later; this exists for
+    /// the raw-text scans that run BEFORE preprocessing/lexing.)
+    /// </summary>
+    private static string BlankComments(string source)
+    {
+        var sb = new StringBuilder(source.Length);
+        int i = 0;
+        while (i < source.Length)
+        {
+            char c = source[i];
+            if (c == '/' && i + 1 < source.Length && source[i + 1] == '/')
+            {
+                while (i < source.Length && source[i] != '\n')
+                {
+                    sb.Append(' ');
+                    i++;
+                }
+
+                continue;
+            }
+
+            if (c == '/' && i + 1 < source.Length && source[i + 1] == '*')
+            {
+                sb.Append("  ");
+                i += 2;
+                while (i < source.Length && !(source[i] == '*' && i + 1 < source.Length && source[i + 1] == '/'))
+                {
+                    sb.Append(source[i] == '\n' ? '\n' : ' ');
+                    i++;
+                }
+
+                if (i < source.Length)
+                {
+                    sb.Append("  "); // the closing "*/" (an unterminated comment just runs out)
+                    i += 2;
+                }
+
+                continue;
+            }
+
+            sb.Append(c);
+            i++;
+        }
+
+        return sb.ToString();
     }
 
     private static bool FindWholeWord(string text, string word, out int line, out int col)

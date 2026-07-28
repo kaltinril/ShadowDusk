@@ -108,7 +108,24 @@ public sealed class EffectCompiler : IShaderCompiler
     {
         var pipeline = new CompilationPipeline(
             _dxcCompilerFactory, _glslTranspilerFactory, _reflectorFactory, _dxbcCompilerFactory);
-        return pipeline.Run(hlslSource, options, cancellationToken);
+        try
+        {
+            return pipeline.Run(hlslSource, options, cancellationToken);
+        }
+        catch (VulkanSamplerSharingException ex)
+        {
+            // The Vulkan texture/sampler rewriter declines a shape that would render
+            // silently wrong (two textures sharing one sampler in one code path,
+            // bug-hunt 2026-07-27 M5). Its located SD0028 travels as an exception
+            // (the rewriter's string -> string signature cannot return a Result) and is
+            // folded back into the Result contract here. The #line-derived file is
+            // preferred; fall back to the caller's source name when the rewrite ran on
+            // marker-less text.
+            ShaderError error = ex.Error.File.Length == 0
+                ? ex.Error with { File = options.SourceFileName ?? "<source>" }
+                : ex.Error;
+            return Result<CompiledShader, ShaderError[]>.Fail(new[] { error });
+        }
     }
 
     /// <inheritdoc/>

@@ -89,6 +89,26 @@ public sealed class DxcLoaderTests
             "every candidate must target the macOS dylib file name");
     }
 
+    [Theory]
+    [InlineData(Architecture.Arm64, "osx-arm64")]
+    [InlineData(Architecture.X64, "osx-x64")]
+    public void SearchDirectoryCandidates_ProbePerArchSubdirBeforeFlat(
+        Architecture arch, string expectedRid)
+    {
+        // Bug-hunt 2026-07-27 C3: the csproj Links the dylib into a per-arch subdir
+        // and single-file extraction preserves that relative path, so each host
+        // native-search directory (which includes the extraction dir) must be probed
+        // per-arch first, then flat. A flat-only probe never sees the extracted dylib
+        // and the released macOS archives could not load their own bundled natives.
+        string dir = Path.Combine(Path.GetTempPath(), "extract");
+
+        var candidates = DxcLoader.GetSearchDirectoryCandidates(dir, arch).ToList();
+
+        candidates.Should().Equal(
+            Path.Combine(dir, expectedRid, DxcLoader.MacLibFileName),
+            Path.Combine(dir, DxcLoader.MacLibFileName));
+    }
+
     [Fact]
     public void LibraryNames_MatchTheVorticePinvokeAndOurShippedDylib()
     {

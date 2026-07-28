@@ -130,7 +130,7 @@ the *allowed* kind of choice (picking a platform the user's game targets — per
 desktop-compiled one (proven for GL — the G1 gate — and, since Phase 4.1 (2026-06-12),
 for DX and FNA via the real-browser byte-identity gate; the bar for every future host).
 
-Where each host×target cell stands (updated 2026-06-12, post-Phase 37 A/B/C + Phase 18 Track A + Phase 4.1):
+Where each host×target cell stands (updated 2026-07-27; proven cells carry their own dates):
 
 | Emit ↓ / Host → | Windows | Linux | macOS | Browser (WASM) |
 |---|---|---|---|---|

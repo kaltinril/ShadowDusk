@@ -79,8 +79,67 @@ public static class GlslPortabilityAnalyzer
         }
 
         CheckEssl100LoopShapes(glsl, entry, sourceFileName, findings);
+        CheckVersionGatedConstructs(glsl, entry, sourceFileName, findings);
 
         return findings;
+    }
+
+    /// <summary>
+    /// SD0403 (bug-hunt 2026-07-27 M4): a GLSL-1.30+/ES-3.00-only construct survived into
+    /// the versionless output. SPIRV-Cross emits GLSL 1.40 and the rewriter strips the
+    /// <c>#version</c> line, but only a handful of constructs are lowered (round, trunc,
+    /// the loop shapes) — anything else 1.30-gated parses on lenient desktop drivers and
+    /// fails to load on strict front ends (macOS Apple GL, Mesa, WebGL1) with the
+    /// engine's generic load exception. Issues #149 (<c>isnan</c>) and #163
+    /// (<c>trunc</c>) were exactly this class, discovered one construct at a time; this
+    /// check makes the remainder loud up front. It also backstops the lowerings
+    /// themselves: a surviving <c>round()</c>/<c>roundEven()</c>/<c>trunc()</c> means a
+    /// rewrite missed a shape (the issue-#140 nesting class).
+    /// </summary>
+    private static void CheckVersionGatedConstructs(
+        string glsl, string entry, string sourceFileName, List<ShaderError> findings)
+    {
+        void Warn(string detail) => findings.Add(new ShaderError(
+            File: sourceFileName,
+            Line: 0,
+            Column: 0,
+            Code: "SD0403",
+            Message:
+                $"In {entry}, the emitted GL contains {detail} — a construct introduced in " +
+                "GLSL 1.30+/ES 3.00, which the versionless MonoGame GL dialect cannot " +
+                "declare. Lenient desktop drivers accept it; strict front ends (macOS " +
+                "OpenGL, Mesa, WebGL1) reject it at Effect-load time with the engine's " +
+                "generic \"Shader Compilation Failed\" exception. No ShadowDusk lowering " +
+                "exists for this construct yet — restructure the shader to avoid it, or " +
+                "report the shader shape.",
+            Severity: ShaderErrorSeverity.Warning));
+
+        // Builtin functions absent below GLSL 1.30 / ES 3.00. round, roundEven, and trunc
+        // DO have lowerings — their presence in the FINAL text means a rewrite missed a
+        // shape, which is exactly worth a warning too.
+        string[] gatedBuiltins =
+        [
+            "transpose", "determinant", "inverse", "outerProduct",
+            "sinh", "cosh", "tanh", "asinh", "acosh", "atanh",
+            "isnan", "isinf", "texelFetch", "textureSize",
+            "floatBitsToInt", "floatBitsToUint", "intBitsToFloat", "uintBitsToFloat",
+            "packHalf2x16", "unpackHalf2x16", "packUnorm2x16", "unpackUnorm2x16",
+            "modf", "round", "roundEven", "trunc",
+        ];
+        foreach (string builtin in gatedBuiltins)
+        {
+            if (Regex.IsMatch(glsl, $@"\b{builtin}\s*\("))
+                Warn($"a call to '{builtin}()'");
+        }
+
+        if (Regex.IsMatch(glsl, @"\bswitch\s*\("))
+            Warn("a 'switch' statement");
+        if (Regex.IsMatch(glsl, @"\buint\b|\buvec[234]\b|\b\d+[uU]\b"))
+            Warn("an unsigned integer type or literal");
+        if (Regex.IsMatch(glsl, @"\bmat[234]x[234]\b"))
+            Warn("a non-square matrix type");
+        if (Regex.IsMatch(glsl, @"<<|>>"))
+            Warn("an integer shift operator ('<<' or '>>')");
     }
 
     /// <summary>

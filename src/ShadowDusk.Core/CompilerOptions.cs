@@ -89,6 +89,14 @@ public sealed class CompilerOptions
     public DxbcBackend DxbcBackend { get; init; } = DxbcBackend.Vkd3d;
 
     /// <summary>
+    /// User preprocessor macros injected into the compile after the platform macros —
+    /// the library-level equivalent of mgfxc's <c>/Defines:</c> flag (which the CLI maps
+    /// here). They ride through both macro renderers (the <c>#define</c> prepend and the
+    /// DXC <c>-D</c> flags), so every backend sees them. Empty by default.
+    /// </summary>
+    public IReadOnlyList<Preprocessor.UserDefine> Defines { get; init; } = [];
+
+    /// <summary>
     /// Returns a copy with <see cref="Target"/> replaced by <paramref name="graphicsTarget"/>,
     /// preserving every other setting. The pipeline uses this to apply a
     /// <see cref="CapabilityProfile.GraphicsTarget"/> (a profile fully specifies its output

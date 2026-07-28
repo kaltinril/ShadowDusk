@@ -59,13 +59,15 @@ public sealed class DxcShaderCompilerIntegrationTests
 
     [Fact]
     [Trait("Platform", "DirectX")]
-    public async Task CompileMinimalVertex_DirectX_ReturnsDxbcBlob()
+    public async Task CompileMinimalVertex_DirectX_ReturnsDxilBlob()
     {
         using var compiler = new DxcShaderCompiler();
         var result = await compiler.CompileAsync(VertexRequest(MinimalVs, PlatformTarget.DirectX));
 
         result.IsSuccess.Should().BeTrue(because: result.IsFailure ? result.Error.FxcFormattedMessage : "");
-        result.Value.Kind.Should().Be(BlobKind.Dxbc);
+        // INTENTIONAL behavior change (bug-hunt 2026-07-27 N10): DXC's SM6 output IS
+        // DXIL; the old Dxbc label was a mislabel this test pinned.
+        result.Value.Kind.Should().Be(BlobKind.Dxil);
         result.Value.Bytes.Length.Should().BeGreaterThan(0);
     }
 

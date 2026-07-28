@@ -289,13 +289,13 @@ public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
     }
 
     // -------------------------------------------------------------------------
-    // annotations.fx — annotation COUNT survives; bodies are never written
-    // (MGFX v10 stores only the count — Phase 43, F2)
+    // annotations.fx — annotation count is always 0 (mgfxc parity); bodies are never
+    // written (MGFX v10 stores only the count — Phase 43 F2; bug-hunt 2026-07-27 M15)
     // -------------------------------------------------------------------------
 
     [Fact]
     [Trait("Platform", "OpenGL")]
-    public async Task Annotations_OpenGL_CountPreserved_NoBodies()
+    public async Task Annotations_OpenGL_ZeroCount_NoBodies()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
@@ -308,9 +308,12 @@ public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
         var reader = MgfxBlobReader.Parse(result.Mgfx);
         reader.ParameterNames.Should().Contain("TintColor");
 
-        reader.ParameterAnnotationCounts.Should().ContainKey("TintColor");
-        reader.ParameterAnnotationCounts["TintColor"].Should().Be(2,
-            because: "TintColor declares <string UIName; int UIOrder;> — two annotations");
+        // INTENTIONAL behavior change (bug-hunt 2026-07-27 M15): the count is always 0
+        // like mgfxc's (a real count handed MonoGame consumers NULL EffectAnnotation
+        // slots that NRE on first touch, and KNI's writer asserts count == 0). This
+        // test previously pinned the preserved count (2).
+        reader.ParameterAnnotationCounts.Should().BeEmpty(
+            because: "annotation counts are always written 0, matching mgfxc");
     }
 
     // -------------------------------------------------------------------------

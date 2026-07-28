@@ -57,9 +57,9 @@ float StarLayer(float2 uv)
     float2 gv = (frac(uv) - 0.5);
     float2 id = floor(uv);
     float m = 0.0;
-    for (int y = -1; (y <= 1); y++)
+    for (int y = -1; y <= 1; y++)
     {
-        for (int x = -1; (x <= 1); x++)
+        for (int x = -1; x <= 1; x++)
         {
             float2 offset = float2(x, y);
             float n = Hash21((id + offset));
@@ -93,7 +93,7 @@ float3 renderScene(float2 screenUV, float2 mouseM)
     float3 rd = normalize(float3((screenUV - (mouseM * 0.15)), 1.5));
     float d3;
     float t3 = 0.0;
-    for (int i = 0; (i < 80); i++)
+    for (int i = 0; i < 80; i++)
     {
         float3 p = (ro + (rd * t3));
         p.xz = mul(rot((iTime * 0.15)), p.xz);
@@ -166,7 +166,7 @@ float3 renderScene(float2 screenUV, float2 mouseM)
         float d = dot((uv3 - float2(0.5, 0.0)), nVec);
         uv3 -= ((nVec * max(0.0, d)) * 2.0);
         nVec = N(((2.0 / 3.0) * 3.14159265359));
-        for (int i_sd = 0; (i_sd < 4); i_sd++)
+        for (int i_sd = 0; i_sd < 4; i_sd++)
         {
             uv3 *= 1.25;
             uv3.x -= 0.6;
@@ -178,7 +178,7 @@ float3 renderScene(float2 screenUV, float2 mouseM)
         uv3 += (mouseM * 0.5);
         uv3 = mul(Rot(t), uv3);
         float3 col4 = ((float3)(0.0));
-        for (float i_sd2 = 0.0; (i_sd2 < 1.0); i_sd2 += (1.0 / 4.0))
+        for (float i_sd2 = 0.0; i_sd2 < 1.0; i_sd2 += (1.0 / 4.0))
         {
             float depth = frac((i_sd2 + t));
             float scale = lerp(15.0, 0.5, depth);
@@ -187,7 +187,7 @@ float3 renderScene(float2 screenUV, float2 mouseM)
         }
         M(uv);
         float2 uv0 = uv;
-        for (float i_sd3 = 0.0; (i_sd3 < 4.0); i_sd3++)
+        for (float i_sd3 = 0.0; i_sd3 < 4.0; i_sd3++)
         {
             uv = (frac((uv * 1.5)) - 0.5);
             Q(uv);

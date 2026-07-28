@@ -73,7 +73,7 @@ float3 lines(float3 F, float3 P, float A, float AA, float T)
     const float N = 4.;
     const float2 Z0 = float2(5e-3, (TAU / 6.));
     const float2 Z1 = (.2 * Z0);
-    for (float j = 0.; (j < N); ++j)
+    for (float j = 0.; j < N; ++j)
     {
         float3 p = P;
         float3 b;

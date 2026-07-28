@@ -32,13 +32,13 @@ Every shape implements the same <xref:ShadowDusk.Core.IShaderCompiler> interface
 | OpenGL / DesktopGL | GLSL `.mgfx` | Supported |
 | DirectX 11 | DXBC `.mgfx` | Supported |
 | WebGL (KNI browser) | GLSL `.mgfx` | Supported |
-| Android (on-device) | GLSL `.mgfx` | Supported |
+| Android (on-device) | GLSL `.mgfx` | Supported (byte-identical to the desktop build) |
 | FNA | D3D9 `.fxb` | Supported |
 | [Metal (macOS / iOS)](../backends/metal.md) | MSL | Not yet |
 | [Vulkan](../backends/vulkan.md) | SPIR-V `.mgfx` | Supported (MonoGame `DesktopVK` only — KNI has no Vulkan platform) |
 | [DirectX 12](../backends/directx12.md) (MonoGame `WindowsDX12`) | DXIL `.mgfx` | Supported (MonoGame `WindowsDX12` only — KNI has no DirectX 12 platform) |
 
-Supported targets are tested end-to-end against the reference compiler and render identically. See [Validation](../contributing/validation.md) for how that's proven, and [Choosing a Target](../guides/choosing-a-target.md) to pick one.
+Supported targets are tested end-to-end against the reference compiler and render identically (on-device Android via byte-identity: its output is byte-identical to the desktop build, whose renders are proven — the on-device pixel diff is a tracked follow-up). See [Validation](../contributing/validation.md) for how that's proven, and [Choosing a Target](../guides/choosing-a-target.md) to pick one.
 
 > **Output format.** The default is **MGFX v10**, which loads on MonoGame 3.8.2 and every newer
 > MonoGame, plus KNI — you never set a flag for correct output. Targeting a newer runtime?
