@@ -22,7 +22,7 @@ void mainImage(out float4 fragColor, float2 fragCoord)
     float2 uv = (fragCoord / iResolution.xy);
     float2 corners[4] = { float2(0.0, 0.0), float2(1.0, 0.0), float2(0.0, 1.0), float2(1.0, 1.0) };
     float acc = 0.0;
-    for (int i = 0; (i < 4); i++)
+    for (int i = 0; i < 4; i++)
     {
         acc += distance(uv, corners[i]);
     }

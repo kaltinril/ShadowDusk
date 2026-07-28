@@ -49,7 +49,7 @@ void mainImage(out float4 fragColor, float2 fragCoord)
     float t = 0.0;
     float d = 0.0;
     bool hit = false;
-    for (int i = 0; (i < 64); i++)
+    for (int i = 0; i < 64; i++)
     {
         float3 p = (ro + (rd * t));
         d = map(p);

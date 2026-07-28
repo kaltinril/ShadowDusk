@@ -167,11 +167,17 @@ internal sealed class HlslEmitter
     {
         Line("{");
         _indent++;
+        // A brace block is a real scope in BOTH languages: push an inference scope so a nested-block
+        // local that shadows an outer variable stops poisoning inference once the block closes (the
+        // outer declaration wins again, e.g. a vec2 shadowed by a mat2 must not turn a later `*`
+        // into mul()).
+        _types.PushScope();
         foreach (Stmt s in block.Statements)
         {
             EmitStatement(s);
         }
 
+        _types.PopScope();
         _indent--;
         Line("}");
     }
@@ -374,6 +380,7 @@ internal sealed class HlslEmitter
             {
                 ScalarKind.Bool => "bool",
                 ScalarKind.Float => "float",
+                ScalarKind.Uint => "uint",
                 _ => "int",
             };
         }
@@ -385,11 +392,15 @@ internal sealed class HlslEmitter
     {
         Line("{");
         _indent++;
+        // The synthesized braces are a real HLSL scope; mirror them in inference so a declaration
+        // inside one lowered arm does not leak into inference for the code after the switch.
+        _types.PushScope();
         foreach (Stmt s in body)
         {
             EmitStatement(s);
         }
 
+        _types.PopScope();
         _indent--;
         Line("}");
     }
@@ -417,7 +428,11 @@ internal sealed class HlslEmitter
             ExprStmt es => EmitExpr(es.Expression),
             _ => string.Empty,
         };
-        string cond = f.Condition is null ? string.Empty : EmitExpr(f.Condition);
+        // A for-condition is a boolean context exactly like if/while/do…while (B2/B3): route it
+        // through EmitCondition so a top-level equality is not wrapped in extraneous parens
+        // (`for (…; (i != n); …)` trips -Werror,-Wparentheses-equality) and a vector compare is
+        // scalarized with all()/any().
+        string cond = f.Condition is null ? string.Empty : EmitCondition(f.Condition);
         string inc = f.Increment is null ? string.Empty : EmitExpr(f.Increment);
         Line($"for ({init}; {cond}; {inc})");
         EmitBody(f.Body);
@@ -464,7 +479,11 @@ internal sealed class HlslEmitter
         {
             Line("{");
             _indent++;
+            // The synthesized braces are a real HLSL scope; mirror them in inference (same reason
+            // as EmitBlock) so a declaration here does not leak past the wrapped statement.
+            _types.PushScope();
             EmitStatement(body);
+            _types.PopScope();
             _indent--;
             Line("}");
         }
@@ -555,18 +574,10 @@ internal sealed class HlslEmitter
         switch (expr)
         {
             case BinaryExpr bin when bin.Op is "==" or "!=":
-            {
-                GlslType lt = _types.Infer(bin.Left);
-                GlslType rt = _types.Infer(bin.Right);
-                if (lt.IsVector || rt.IsVector)
-                {
-                    string reducer = bin.Op == "==" ? "all" : "any";
-                    return $"{reducer}({EmitExpr(bin.Left)} {bin.Op} {EmitExpr(bin.Right)})";
-                }
-
-                // Scalar equality: emit without the redundant outer parens (B2).
-                return $"{EmitExpr(bin.Left)} {bin.Op} {EmitExpr(bin.Right)}";
-            }
+                // A vector compare reduces via the shared B3 helper (so this site and EmitBinary
+                // cannot drift); scalar equality emits without the redundant outer parens (B2).
+                return TryReduceVectorEquality(bin)
+                    ?? $"{EmitExpr(bin.Left)} {bin.Op} {EmitExpr(bin.Right)}";
 
             case BinaryExpr bin when bin.Op is "&&" or "||":
                 // Recurse so a vector comparison on either side is still scalarized; keep parens
@@ -701,8 +712,42 @@ internal sealed class HlslEmitter
         return un.IsPostfix ? $"{operand}{un.Op}" : $"{un.Op}{operand}";
     }
 
+    /// <summary>
+    /// B3 — vector equality reduction, shared by <see cref="EmitCondition"/> and
+    /// <see cref="EmitBinary"/> so the two sites cannot drift. GLSL <c>vecA == vecB</c> yields a
+    /// SINGLE bool (all components equal) in EVERY context — conditions, assignments, initializers,
+    /// returns, call arguments — but HLSL <c>==</c> on vectors yields a bool-vector, so it must be
+    /// reduced with <c>all(a == b)</c> (and <c>!=</c> with <c>any(a != b)</c>). Returns null when
+    /// neither operand infers as a vector: scalar compares, and operands whose types are unknown,
+    /// emit unchanged (the conservative pass-through).
+    /// </summary>
+    private string? TryReduceVectorEquality(BinaryExpr bin)
+    {
+        if (bin.Op is not ("==" or "!="))
+        {
+            return null;
+        }
+
+        GlslType lt = _types.Infer(bin.Left);
+        GlslType rt = _types.Infer(bin.Right);
+        if (!lt.IsVector && !rt.IsVector)
+        {
+            return null;
+        }
+
+        string reducer = bin.Op == "==" ? "all" : "any";
+        return $"{reducer}({EmitExpr(bin.Left)} {bin.Op} {EmitExpr(bin.Right)})";
+    }
+
     private string EmitBinary(BinaryExpr bin)
     {
+        // B3 applies outside condition contexts too (a GLSL vector ==/!= is a single bool in an
+        // assignment / initializer / return / call argument as well); reduce via the shared helper.
+        if (TryReduceVectorEquality(bin) is { } reduced)
+        {
+            return reduced;
+        }
+
         string l = EmitExpr(bin.Left);
         string r = EmitExpr(bin.Right);
 
@@ -737,7 +782,8 @@ internal sealed class HlslEmitter
     /// recognize a base-level <c>textureLod(s, uv, 0)</c> that can lower to a plain <c>tex2D</c>.</summary>
     private static bool IsLiteralZero(Expr e) => e switch
     {
-        IntLiteralExpr i => long.TryParse(i.Text, out long n) && n == 0,
+        // An unsigned suffix ('0u') is part of the token text; trim it before the numeric parse.
+        IntLiteralExpr i => long.TryParse(i.Text.TrimEnd('u', 'U'), out long n) && n == 0,
         FloatLiteralExpr f => double.TryParse(
             f.Text.TrimEnd('f', 'F'),
             System.Globalization.NumberStyles.Float,
@@ -859,7 +905,16 @@ internal sealed class HlslEmitter
                     return $"tex2D({args[0]}, {args[1]})";
                 }
 
-                return $"tex2Dlod({args[0]}, float4(({args[1]}), 0, ({args[2]})))";
+                // A NON-zero LOD would emit the legacy tex2Dlod intrinsic, which — exactly like the
+                // mip-bias form rejected above — does NOT compile through the OpenGL/DirectX
+                // legacy-FX9 pipeline (FX0012: its arguments do not rewrite 1:1 to a modern Texture
+                // method). Emitting it would fail later with an error pointing at generated HLSL, so
+                // reject loudly at convert time instead, keeping the boundary explicit and located.
+                throw Reject(call,
+                    "The explicit-LOD texture form 'textureLod(sampler, uv, lod)' with a non-zero " +
+                    "lod is outside the supported subset (its tex2Dlod mapping does not compile on " +
+                    "the OpenGL/DirectX targets). A base-level 'textureLod(sampler, uv, 0.)' is " +
+                    "supported and lowers to a plain tex2D.");
 
             case "textureGrad":
                 RegisterChannelArg(call);

@@ -67,7 +67,6 @@ public sealed class RejectCorpusTests
             "pp_include" => "#include",
             "main_no_output" => "fragment output",
             "intrinsic_texturecube" => "textureCube",
-            "unsigned_int_literal" => "unsigned-integer",
             "texture_cubemap_coord" => "CUBEMAP",
             "feedback_lastframe" => "getLastFrameColor",
             "gl_fragdepth_builtin" => "gl_FragDepth",

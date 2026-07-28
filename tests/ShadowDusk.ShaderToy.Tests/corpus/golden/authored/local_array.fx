@@ -27,7 +27,7 @@ void mainImage(out float4 fragColor, float2 fragCoord)
     samples[3] = (1.0 - uv.x);
     const float kGain[4] = { 0.4, 0.3, 0.2, 0.1 };
     float v = 0.0;
-    for (int i = 0; (i < 4); i++)
+    for (int i = 0; i < 4; i++)
     {
         v += (samples[i] * kGain[i]);
     }

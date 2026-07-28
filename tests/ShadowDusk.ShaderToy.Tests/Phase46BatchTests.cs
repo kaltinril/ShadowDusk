@@ -6,8 +6,9 @@ namespace ShadowDusk.ShaderToy.Tests;
 /// <summary>
 /// Unit coverage for the Phase 46 LOW-RISK / HIGH-YIELD converter batch (from a 160-shader failure
 /// analysis): sized arrays in all three contexts + the GLSL array constructor / brace initializer,
-/// bitwise operators (binary + compound assign), gl_FragCoord as a body built-in, uint/uvec -> int
-/// mapping, the redundant `uniform sampler2D iChannelN` redeclaration drop, the redundant built-in
+/// bitwise operators (binary + compound assign), gl_FragCoord as a body built-in, the faithful
+/// uint/uvec -> uint/uintN mapping (with 'u' literal suffixes emitted verbatim),
+/// the redundant `uniform sampler2D iChannelN` redeclaration drop, the redundant built-in
 /// with an initializer drop, multi-declarator uniforms, and the openFrameworks header-token strip.
 /// Each asserts the emitted HLSL for a hand-written minimal snippet (or a located reject when unsure).
 /// </summary>
@@ -240,10 +241,14 @@ public sealed class Phase46BatchTests
         fx.Should().NotContain("static float4 gl_FragCoord;");
     }
 
-    // ── 4: uint / uvec -> int mapping ───────────────────────────────────────────────────────
+    // ── 4: uint / uvec -> uint / uintN mapping ──────────────────────────────────────────────
+    // HLSL has real uint types with exactly GLSL's unsigned semantics (the pipeline compiles SM6
+    // via DXC). Mapping to signed int was NOT behaviorally equivalent: `>>` sign-extends signed
+    // where GLSL zero-fills unsigned, and `float(h)` on a high-bit hash value goes negative —
+    // silently different noise for the hash/PRNG shader class (bug-hunt M16).
 
     [Fact]
-    public void UintAndUvec_MapToInt()
+    public void UintAndUvec_MapToUint()
     {
         const string glsl = """
         uint h(uint x) { return x ^ (x >> 5); }
@@ -256,10 +261,66 @@ public sealed class Phase46BatchTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("int h(int x)");
-        fx.Should().Contain("int2 p =");
-        fx.Should().NotContain("uint");
-        fx.Should().NotContain("uvec");
+        fx.Should().Contain("uint h(uint x)", "uint maps to HLSL's real uint so >> zero-fills");
+        fx.Should().Contain("uint2 p =", "uvec2 maps to uint2");
+        fx.Should().NotContain("uvec", "the GLSL spelling must not survive");
+    }
+
+    [Fact]
+    public void UnsignedLiteralSuffix_IsAcceptedAndEmittedVerbatim()
+    {
+        // The `u` suffix (the standard uint-hash idiom) is a valid HLSL uint literal spelling too;
+        // it lexes as part of the literal and is emitted verbatim.
+        const string glsl = """
+        uint hash(uint x)
+        {
+            x ^= x >> 16;
+            x = x * 747796405u;
+            return x;
+        }
+        void mainImage(out vec4 fragColor, in vec2 fragCoord)
+        {
+            uint h = hash(uint(fragCoord.x) + 1920u * uint(fragCoord.y));
+            fragColor = vec4(float(h & 255u) / 255.0, 0.0, 0.0, 1.0);
+        }
+        """;
+
+        string fx = ConvertOk(glsl);
+        fx.Should().Contain("747796405u");
+        fx.Should().Contain("1920u");
+        fx.Should().Contain("(h & 255u)");
+    }
+
+    [Fact]
+    public void UnsignedSuffix_OnFloatLiteral_RejectsLoudly()
+    {
+        // `1.5u` is malformed GLSL; keep the loud, located reject rather than a stray-token error.
+        const string glsl = """
+        void mainImage(out vec4 fragColor, in vec2 fragCoord)
+        {
+            float v = 1.5u;
+            fragColor = vec4(v, v, v, 1.0);
+        }
+        """;
+
+        ConvertResult r = ConvertReject(glsl);
+        r.Diagnostics.Should().Contain(d => d.Message.Contains("floating-point", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void TextureLod_ZeroLodWithUnsignedSuffix_StillLowersToTex2D()
+    {
+        // `0u` is still literal zero for the base-level textureLod lowering.
+        const string glsl = """
+        void mainImage(out vec4 fragColor, in vec2 fragCoord)
+        {
+            fragColor = textureLod(iChannel0, fragCoord / iResolution.xy, 0u);
+        }
+        """;
+
+        string fx = ConvertOk(glsl);
+        fx.Should().Contain("tex2D(iChannel0");
+        fx.Should().NotContain("tex2Dlod");
     }
 
     // ── 5: redundant `uniform sampler2D iChannelN` redeclaration ─────────────────────────────

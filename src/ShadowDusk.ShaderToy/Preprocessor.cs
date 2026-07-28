@@ -29,6 +29,11 @@ internal sealed class Preprocessor
     /// <summary>Guards against runaway recursive macro expansion (a pathological self-referential set).</summary>
     private const int MaxExpansionPasses = 256;
 
+    /// <summary>How many following lines a multi-line function-like macro CALL may splice before we
+    /// give up and let the loud "Unterminated macro argument list" reject fire (a genuinely-unclosed
+    /// '(' must not silently swallow the rest of the file).</summary>
+    private const int MaxMacroCallContinuationLines = 64;
+
     /// <summary>A defined macro: object-like (no parameters) or function-like (with a parameter list).</summary>
     private sealed record Macro(string Name, IReadOnlyList<string>? Parameters, string Body)
     {
@@ -83,8 +88,9 @@ internal sealed class Preprocessor
         var physicalOut = new List<string>(rawLines.Length);
         var condStack = new Stack<CondFrame>();
 
-        foreach ((string text, int physicalCount, int firstLineNo) in logical)
+        for (int li = 0; li < logical.Count; li++)
         {
+            (string text, int physicalCount, int firstLineNo) = logical[li];
             string trimmed = text.TrimStart();
             bool active = condStack.Count == 0 || condStack.Peek().CurrentActive;
 
@@ -100,6 +106,44 @@ internal sealed class Preprocessor
                 // Inactive branch: drop the content but keep the line count.
                 EmitBlankPhysicalLines(physicalOut, physicalCount);
                 continue;
+            }
+
+            // A function-like macro CALL may legally span physical lines (`ROT(\n t * 0.3\n)`), but
+            // expansion is per-logical-line, which used to throw "Unterminated macro argument list".
+            // When this line ends INSIDE such a call's argument list, splice the following content
+            // lines onto it (comments stripped so a trailing `//` cannot swallow the splice, joined
+            // with a space so the expansion stays on ONE physical line) until the call closes. The
+            // consumed lines emit as blanks below, keeping the physical line count and downstream
+            // line numbers exact. A directive line stops the splice, and a call the file never
+            // closes still reaches the loud "Unterminated macro argument list" reject unchanged.
+            if (EndsInsideMacroCall(text))
+            {
+                var mergedSb = new StringBuilder(StripComments(text));
+                int lookahead = li + 1;
+                int splicedPhysical = 0;
+                while (lookahead < logical.Count &&
+                       lookahead - li <= MaxMacroCallContinuationLines &&
+                       EndsInsideMacroCall(mergedSb.ToString()))
+                {
+                    string nextText = logical[lookahead].Text;
+                    if (nextText.TrimStart().StartsWith('#'))
+                    {
+                        break; // a directive cannot continue a call; fall through to the loud reject
+                    }
+
+                    mergedSb.Append(' ');
+                    mergedSb.Append(StripComments(nextText));
+                    splicedPhysical += logical[lookahead].PhysicalCount;
+                    lookahead++;
+                }
+
+                string merged = mergedSb.ToString();
+                if (!EndsInsideMacroCall(merged))
+                {
+                    text = merged;
+                    physicalCount += splicedPhysical;
+                    li = lookahead - 1;
+                }
             }
 
             string expanded = ExpandLine(text, firstLineNo);
@@ -708,6 +752,92 @@ internal sealed class Preprocessor
         }
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// True when <paramref name="text"/> ends INSIDE the argument list of a function-like macro call:
+    /// a defined function-like macro name followed by '(' whose parentheses do not balance before the
+    /// end of the text. Mirrors the walk <see cref="ExpandText"/> performs at the top level
+    /// (identifier tokens, the '//' comment cut-off, paren depth) without expanding anything, so the
+    /// Process loop can splice the physical continuation lines of a multi-line call before expansion.
+    /// </summary>
+    private bool EndsInsideMacroCall(string text)
+    {
+        int i = 0;
+        while (i < text.Length)
+        {
+            char c = text[i];
+            if (c == '/' && i + 1 < text.Length && text[i + 1] == '/')
+            {
+                return false; // the rest of the line is a comment
+            }
+
+            if (!(char.IsLetter(c) || c == '_'))
+            {
+                i++;
+                continue;
+            }
+
+            int start = i;
+            while (i < text.Length && (char.IsLetterOrDigit(text[i]) || text[i] == '_'))
+            {
+                i++;
+            }
+
+            string word = text[start..i];
+            if (!_macros.TryGetValue(word, out Macro? macro) || !macro.IsFunctionLike)
+            {
+                continue;
+            }
+
+            int j = i;
+            while (j < text.Length && (text[j] == ' ' || text[j] == '\t'))
+            {
+                j++;
+            }
+
+            if (j >= text.Length || text[j] != '(')
+            {
+                continue; // not an invocation (C rule); the name stays as-is
+            }
+
+            // Scan the argument list with the same depth rule ReadCallArguments uses; a '//' inside
+            // the still-open list means the line ends (comment to EOL) with the call unterminated.
+            int depth = 0;
+            while (j < text.Length)
+            {
+                char a = text[j];
+                if (a == '/' && j + 1 < text.Length && text[j + 1] == '/')
+                {
+                    return depth > 0;
+                }
+
+                if (a == '(')
+                {
+                    depth++;
+                }
+                else if (a == ')')
+                {
+                    depth--;
+                    if (depth == 0)
+                    {
+                        j++;
+                        break;
+                    }
+                }
+
+                j++;
+            }
+
+            if (depth > 0)
+            {
+                return true;
+            }
+
+            i = j;
+        }
+
+        return false;
     }
 
     /// <summary>Return a hide set that is <paramref name="existing"/> plus <paramref name="name"/>.</summary>

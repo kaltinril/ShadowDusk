@@ -226,6 +226,66 @@ public sealed class PreprocessorTests
         outp.Should().Contain("int x = A;");
     }
 
+    // ── function-like macro calls spanning physical lines (bug-hunt N20) ──────────────────────
+
+    [Fact]
+    public void FunctionMacro_CallSpanningLines_Expands()
+    {
+        // The call's argument list continues on following lines; the splice keeps the expansion on
+        // the FIRST physical line and blanks the consumed lines, so line numbers stay exact.
+        string outp = Pp("#define ROT(a) mat2(cos(a), -sin(a), sin(a), cos(a))\nvec2 q = p * ROT(\n  t * 0.3\n);");
+
+        outp.Should().Contain("mat2(cos((t * 0.3)), -sin((t * 0.3)), sin((t * 0.3)), cos((t * 0.3)))");
+        string[] lines = outp.Split('\n');
+        lines.Should().HaveCount(4, "every physical source line maps to one output line");
+        lines[1].Should().Contain("vec2 q = p * mat2(", "the expansion lands on the line the call started on");
+        lines[2].Should().BeEmpty("a spliced continuation line is blanked");
+        lines[3].Should().BeEmpty();
+    }
+
+    [Fact]
+    public void FunctionMacro_CallSpanningLines_TrailingCommentIsStripped()
+    {
+        // A `//` comment at the end of a continued line must not swallow the spliced remainder.
+        string outp = Pp("#define DBL(x) ((x) * 2.0)\nfloat y = DBL( // doubled\n  3.0\n);");
+
+        outp.Should().Contain("((3.0) * 2.0)");
+        outp.Should().NotContain("doubled");
+    }
+
+    [Fact]
+    public void FunctionMacro_CallSpanningLines_NestedCallAndCommas()
+    {
+        // Nested parens and commas across the splice must still split arguments correctly.
+        string outp = Pp("#define MIXC(a, b, t) mix(a, b, t)\nvec3 c = MIXC(p,\n  q,\n  f(u, v)\n);");
+
+        outp.Should().Contain("mix(p, q, (f(u, v)))");
+    }
+
+    [Fact]
+    public void FunctionMacro_GenuinelyUnterminatedCall_StillRejectsLoudly()
+    {
+        // A '(' the file never closes must not be silently swallowed by the splice.
+        Action act = () => Pp("#define F(x) (x)\nfloat y = F(\n  1.0");
+        act.Should().Throw<ConvertException>().WithMessage("*Unterminated macro argument list*");
+    }
+
+    [Fact]
+    public void EndToEnd_MultiLineMacroCall_Converts()
+    {
+        string glsl =
+            "#define ROT(a) mat2(cos(a), -sin(a), sin(a), cos(a))\n" +
+            "void mainImage(out vec4 fragColor, in vec2 fragCoord) {\n" +
+            "  vec2 p = fragCoord / iResolution.xy;\n" +
+            "  p = ROT(\n" +
+            "      iTime * 0.3\n" +
+            "  ) * p;\n" +
+            "  fragColor = vec4(p, 0.0, 1.0);\n}";
+        ConvertResult r = ShaderToyConverter.Convert(glsl);
+        r.Success.Should().BeTrue(string.Join("; ", r.Diagnostics.Select(d => d.Message)));
+        r.Fx.Should().Contain("mul(", "the expanded mat2 still routes through the matrix-order trap");
+    }
+
     [Fact]
     public void EndToEnd_IfdefGatedCode_ConvertsAndExcludesInactiveBranch()
     {

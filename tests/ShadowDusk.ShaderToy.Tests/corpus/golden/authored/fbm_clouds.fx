@@ -40,7 +40,7 @@ float fbm(float2 p)
     float sum = 0.0;
     float amp = 0.5;
     float2x2 rot = float2x2(1.6, 1.2, -1.2, 1.6);
-    for (int i = 0; (i < 5); i++)
+    for (int i = 0; i < 5; i++)
     {
         sum += (amp * valueNoise(p));
         p = mul(p, rot);

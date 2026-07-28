@@ -38,7 +38,7 @@ void mainImage(out float4 O, float2 C)
     float z = (frac(dot(C, sin(C))) - 0.5);
     float4 col = ((float4)(0.0));
     float4 p;
-    for (float i = 0.0; (i < 77.0); i++)
+    for (float i = 0.0; i < 77.0; i++)
     {
         p = float4((z * normalize(float3((C - (0.7 * r)), r.y))), (0.1 * t));
         p.z += t;
