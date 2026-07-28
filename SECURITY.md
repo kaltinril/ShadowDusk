@@ -54,10 +54,12 @@ distributes** (you trust our package). Those are version-pinned and integrity-ch
   module. `tools/restore.ps1` / `tools/restore.sh` download these from **fixed GitHub Release
   tags** (`native-vkd3d-1.17`, `native-dxc-1.7.2212.40`, `native-vkd3d-wasm-1.17`), check each
   file's SHA-256 against a hash embedded in the script, and **discard a mismatched file**
-  (re-downloading rather than using it). The packaging workflows then gate on the verified file
-  being present (`release.yml`), and `wasm.yml` additionally **re-hashes** the vkd3d WASM module
-  against the pinned value at gate time, so a package cannot ship without the pinned, hash-checked
-  native.
+  (re-downloading rather than using it). The **release** workflow then **re-hashes** the vkd3d
+  WASM module against the pins read out of `tools/restore.sh` before it packs `ShadowDusk.Wasm`
+  (`release.yml` → `pack-wasm`, `sha256sum -c`), and gates on the other restored natives being
+  present, so a package cannot ship without the pinned, hash-checked native. (`wasm.yml`'s browser
+  job additionally hard-gates on the restored modules being present, but does not re-hash them; it
+  packs nothing that ships.)
 - **Committed-in-repository WASM frontend modules** — `dxcompiler.wasm` (the in-browser
   HLSL → SPIR-V DXC frontend, ~17 MB) and `spirv-cross.wasm` (SPIR-V → GLSL). These are built
   out-of-band (recipes in `tools/`) and **committed to the repository** rather than downloaded at

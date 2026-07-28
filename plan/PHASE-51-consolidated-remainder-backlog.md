@@ -17,6 +17,8 @@ small tail, the tail moves here and the parent moves to DONE.
 
 | Item | Source phase (now archived) | Original status when moved |
 |---|---|---|
+| OpenGL sampler records per (texture, sampler) PAIR (**A7**) | [2026-07-27 full-project review](../plan/BUG-HUNT-2026-07-27.md) sibling sweep | 🟡 Interim `SD0216` shipped (loud, not silent); the parity fix is open |
+| **PENDING MIGRATION — the `BUG-HUNT-2026-07-27.md` DEFERRED residue** | [`BUG-HUNT-2026-07-27.md`](BUG-HUNT-2026-07-27.md) | ⚠️ **Not yet moved in.** That doc's own `DEFERRED, with reasons` block is still the authority on ~13 open items (C2, M2, M4/M13 lowerings, M6, M8, N2, N6, N7, N8, N16, N17's Android half, M12's Linux case-insensitive fallback, M14's SD0011 span plumbing). **The doc cannot move to `plan/DONE/` until they are migrated here** — filing it as done while it is the sole home for 13 open items would bury them. Migrating them is this phase's stated job ("so no phase sits open at 95% for 1-2 items"); it needs one focused pass to give each item a scope and a done bar, not a bulk paste. |
 | Browser diagnostics squiggle confirmation | [Phase 38](DONE/PHASE-38-wasm-compile-diagnostics.md) | 🟢 Implemented; only the in-browser confirmation rung left |
 | DeferredSprite GL MRT render proof (GAP-2) | [Phase 41](DONE/PHASE-41-fxc-oracle-monogame-fidelity.md) | Closed at compile + structural-match; render rung left |
 | Apos.Shapes render-proof (Option B) | [Phase 49](DONE/PHASE-49-apos-shapes-regression-corpus.md) | Option A shipped; Option B render-proof decision-gated |
@@ -184,6 +186,56 @@ regression test using a traversing `#include`.
 *Interim mitigation (shipped 2026-07-23):* the exposure is documented on `ShaderError.RawDiagnostics`
 — it may carry host absolute paths and echoed source, and should not be forwarded verbatim to
 untrusted callers.
+
+---
+
+### A7 — OpenGL sampler records per (texture, sampler) PAIR (from the 2026-07-27 full-project review)
+
+*`mgfxc` compiles this and we do not — a fidelity gap on our side, not a reference-compiler bug.*
+
+Several textures read through **one shared `SamplerState`** (the classic diffuse+lightmap shape)
+is ordinary HLSL. SPIRV-Cross expands it into one **combined sampler per (texture, sampler)
+pair**, so the emitted GLSL declares `ps_s0` AND `ps_s1`, and `MonoGameGlslRewriter` numbers them
+in declaration order. ShadowDusk's GL sampler table is keyed on the reflected **samplers**, of
+which there is only one, so it emitted a single record: `ps_s1` never received a texture unit and
+silently sampled unit 0. `mgfxc`'s own golden for this shape
+(`tests/fixtures/golden/OpenGL/PenumbraTexture.mgfx`) carries **two** records, `ps_s0`/`ps_s1`,
+with parameters named `TextureSampler+DiffuseMap` / `TextureSampler+Lightmap` — MojoShader's
+`<sampler>+<texture>` naming, which is literally the pair identity.
+
+**Interim (shipped 2026-07-27):** `SD0216` turns that silent mis-bind into a loud compile error
+naming the one-line workaround (give each texture its own `SamplerState`, which is
+behavior-identical and produces exactly `mgfxc`'s structure). DirectX and DirectX 12 are already
+correct — they key on the reflected textures, as `mgfxc` does.
+
+**Why it was not fixed in the same change.** The pair list exists but is discarded: the pipeline
+calls `spvc_compiler_build_combined_image_samplers` for its side effect and never reads
+`spvc_compiler_get_combined_image_samplers`. Adding that P/Invoke would fix the desktop path
+only — **`src/ShadowDusk.Wasm/wwwroot/spirv-cross/spirv-cross.wasm` exports exactly 11 functions
+and that is not one of them**, and it is an out-of-band emscripten build. A desktop-only fix
+would therefore break the CLI-vs-WASM byte-identity promise (`project_facts.md`) for this shape,
+which is why this needs its own scoped effort rather than a same-PR add-on.
+
+**Candidate directions:**
+1. **Pure-managed pair extraction** (preferred, and the precedent this project has already set
+   twice with `RdefReader` and `SpirvReflector`): derive the (image, sampler) pairs from the
+   SPIR-V ourselves by walking `OpSampledImage` back through `OpLoad` to the variables. Host-
+   independent by construction, so byte-identity holds. **The hard part is not extraction, it is
+   reproducing SPIRV-Cross's combined-sampler DECLARATION ORDER exactly** — `ps_s{k}` must name
+   the uniform the GLSL actually declares, and getting the order subtly wrong silently binds the
+   wrong texture, which is the very bug class this item exists to close. Pin it against real
+   SPIRV-Cross output before trusting it.
+2. Rebuild `spirv-cross.wasm` with the pairs API exported and use the native call on both hosts.
+   Removes the ordering guesswork entirely, at the cost of an emscripten rebuild and a new pinned
+   artifact.
+
+**Done = ** a `.fx` reading N textures through one shared `SamplerState` compiles for OpenGL,
+emits N records naming every `ps_s{k}` the GLSL declares with the right texture parameter and
+baked state per pair, is render-proven against the `mgfxc` OpenGL golden, produces identical
+bytes on the CLI and in the browser, and `SD0216` is deleted as unnecessary. Note the separate,
+pre-existing parameter-naming divergence in the same area (`mgfxc` emits `TextureSampler+DiffuseMap`
+where we emit `DiffuseMap`); decide deliberately whether to match it, since changing parameter
+names breaks existing consumers' `Parameters[...]` lookups.
 
 ---
 

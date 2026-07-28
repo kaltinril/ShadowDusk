@@ -7,14 +7,20 @@
     <PublishReadyToRun>false</PublishReadyToRun>
     <TieredCompilation>false</TieredCompilation>
     <UseWindowsForms>true</UseWindowsForms>
+    <!-- Pins its own MonoGame versions (it models a CONSUMER's project), so it opts out of
+         the repo-root Directory.Packages.props. Without this, restore fails NU1008 and the
+         sample cannot be built or run at all. -->
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <PropertyGroup>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Icon.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="MonoGame.Framework.WindowsDX" Version="3.8.*" />
-    <PackageReference Include="MonoGame.Content.Builder.Task" Version="3.8.*" />
+    <!-- Pinned, not floating: a `3.8.*` float would silently resolve to a newer MonoGame
+         than the 3.8.2.1105 the whole repo is proven against. -->
+    <PackageReference Include="MonoGame.Framework.WindowsDX" Version="3.8.2.1105" />
+    <PackageReference Include="MonoGame.Content.Builder.Task" Version="3.8.2.1105" />
   </ItemGroup>
   <!-- Copy cat image to output -->
   <ItemGroup>

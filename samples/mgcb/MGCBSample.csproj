@@ -6,6 +6,11 @@
     <Nullable>enable</Nullable>
     <RootNamespace>MGCBSample</RootNamespace>
     <AssemblyName>MGCBSample</AssemblyName>
+    <!-- This sample pins its own MonoGame versions (it demonstrates a CONSUMER's project,
+         which has no relationship to ShadowDusk's central package versions), so it opts out
+         of the repo-root Directory.Packages.props. Without this, restore fails NU1008 and
+         the sample cannot be built or run at all. -->
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
   </PropertyGroup>
 
   <ItemGroup>

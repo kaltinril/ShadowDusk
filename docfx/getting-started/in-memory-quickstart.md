@@ -40,7 +40,7 @@ else
 
 The result is a [`Result<CompiledShader, ShaderError[]>`](xref:ShadowDusk.Core.Result`2) — a discriminated union. On success, <xref:ShadowDusk.Core.CompiledShader.Data> is the `.mgfx` byte array (and <xref:ShadowDusk.Core.CompiledShader.Target> echoes the platform). On failure you get an array of <xref:ShadowDusk.Core.ShaderError> with the file, line, column, code, and message exactly as the underlying compiler emitted them — the first entry is the fatal error; when earlier passes of the same effect had already compiled with warnings, those ride along after it so nothing is lost.
 
-A successful compile can still have things worth knowing: <xref:ShadowDusk.Core.CompiledShader.Warnings> carries the underlying compiler's own warnings verbatim, plus ShadowDusk's GL portability findings (`SD0400`–`SD0402`) — constructs that compile fine but are known to fail or silently misbehave **at runtime** on narrower GL stacks (WebGL1 / KNI Reach, ANGLE Direct3D11 in Windows browsers, strict Mesa), where the engine's only signal is a generic draw-time exception. Warnings never gate output; the bytes are valid regardless.
+A successful compile can still have things worth knowing: <xref:ShadowDusk.Core.CompiledShader.Warnings> carries the underlying compiler's own warnings verbatim, plus ShadowDusk's GL portability findings (`SD0400`–`SD0499`) — constructs that compile fine but are known to fail or silently misbehave **at runtime** on narrower GL stacks (WebGL1 / KNI Reach, ANGLE Direct3D11 in Windows browsers, strict Mesa), where the engine's only signal is a generic draw-time exception. Warnings never gate output; the bytes are valid regardless.
 
 ## Shader not working? Validate it in one call
 

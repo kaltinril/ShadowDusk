@@ -82,7 +82,7 @@ Legend: `OK` = match, `XX` = diverge, `--` = compile/parse failed (see notes). L
 | PenumbraLight | OpenGL | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
 | PenumbraShadow | DirectX_11 | OK | OK | OK | XX | OK | `Main` pass[0] name `P0` vs ``; `Debug` pass[0] name `P0` vs `` |
 | PenumbraShadow | OpenGL | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
-| PenumbraTexture | DirectX_11 | OK | OK | XX | XX | OK | sampler slot 1 missing (golden ``); `Main` pass[0] name `P0` vs `` |
+| PenumbraTexture | DirectX_11 | OK | OK | OK | XX | OK | `Main` pass[0] name `P0` vs `` |
 | PenumbraTexture | OpenGL | -- | -- | -- | -- | -- | COMPILE FAIL SD0010: Effect source contains no techniques |
 | Pixelated | DirectX_11 | OK | OK | OK | OK | OK |  |
 | Pixelated | OpenGL | OK | OK | OK | OK | OK |  |
@@ -187,12 +187,6 @@ Affected cells: PolygonLight [OpenGL], SharedCbuffer [OpenGL], VertexAndPixel [O
 A constant buffer size or a per-parameter byte offset differs OUTSIDE the known GL per-stage sizing model. Worth triage: cbuffer offsets are the runtime SetValue layout.
 
 Affected cells: PenumbraHull [DirectX_11]
-
-### Sampler slot / baked-state delta (1 cell(s))
-
-A sampler slot is missing/extra or its baked sampler_state differs.
-
-Affected cells: PenumbraTexture [DirectX_11]
 
 > Note on bytecode: every cell's shader bytecode differs from the golden (vkd3d vs fxc on DX,
 > SPIRV-Cross GLSL vs MojoShader on GL). This is EXPECTED and is not counted as a divergence anywhere above.

@@ -243,20 +243,10 @@ public static class MgfxSamplerStateResolver
     }
 
     private static bool TryParseMgfxcFloat(string value, out float result)
-    {
-        // mgfxc ParseTreeTools.ParseFloat: strip whitespace and a trailing f/F.
-        string s = value.Replace(" ", "").TrimEnd('f', 'F');
-        return float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out result);
-    }
+        => MgfxcNumericParse.TryParseFloat(value, out result);
 
     private static bool TryParseMgfxcInt(string value, out int result)
-    {
-        result = 0;
-        if (!TryParseMgfxcFloat(value, out float f))
-            return false;
-        result = (int)Math.Floor(f);
-        return true;
-    }
+        => MgfxcNumericParse.TryParseInt(value, out result);
 
     // SD0024 — sampler_state member with an unparseable value (registered in
     // docs/error-codes.md). Distinct from SD0011 (render-state value).

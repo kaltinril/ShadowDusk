@@ -497,28 +497,58 @@ jobs:
           # unable to load their bundled dylibs, and this smoke stayed green).
           fx="$PWD/tests/fixtures/shaders/Minimal.fx"
           cp "publish/${{ matrix.rid }}/ShadowDuskCLI" "$RUNNER_TEMP/"
+          # BOTH native loaders must be exercised, or half the bundle is unguarded:
+          # OpenGL drives DXC + SPIRV-Cross, DirectX_11 drives vkd3d-shader (which is
+          # also what /Profile:FNA and the CLI's DEFAULT profile use). They ride into
+          # the bundle through the same per-arch Link paths, so a break in either
+          # resolves to the same shipped-archive failure.
           (cd "$RUNNER_TEMP" && ./ShadowDuskCLI "$fx" "$out" /Profile:OpenGL)
           if [ ! -s "$out" ]; then
             echo "::error::published ${{ matrix.rid }} CLI exited 0 but produced a missing/empty .mgfx — the single-file bundle is broken."
             exit 1
           fi
-          echo "smoke OK: $(stat -c%s "$out" 2>/dev/null || stat -f%z "$out") bytes"
+          out_dx="$RUNNER_TEMP/smoke-${{ matrix.rid }}-dx.mgfx"
+          (cd "$RUNNER_TEMP" && ./ShadowDuskCLI "$fx" "$out_dx" /Profile:DirectX_11)
+          if [ ! -s "$out_dx" ]; then
+            echo "::error::published ${{ matrix.rid }} CLI could not compile DirectX_11 from outside a checkout — the bundled vkd3d-shader native does not resolve from the extraction directory (bug-hunt 2026-07-27 C3 class)."
+            exit 1
+          fi
+          echo "smoke OK: $(stat -c%s "$out" 2>/dev/null || stat -f%z "$out") bytes (GL), $(stat -c%s "$out_dx" 2>/dev/null || stat -f%z "$out_dx") bytes (DX)"
 
       - name: Smoke-run published CLI (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $out = Join-Path $env:RUNNER_TEMP "smoke-${{ matrix.rid }}.mgfx"
-          & ".\publish\${{ matrix.rid }}\ShadowDuskCLI.exe" tests\fixtures\shaders\Minimal.fx $out /Profile:OpenGL
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "published ${{ matrix.rid }} CLI exited $LASTEXITCODE"
-            exit 1
+          $out   = Join-Path $env:RUNNER_TEMP "smoke-${{ matrix.rid }}.mgfx"
+          $outDx = Join-Path $env:RUNNER_TEMP "smoke-${{ matrix.rid }}-dx.mgfx"
+          $fx    = Join-Path $PWD "tests\fixtures\shaders\Minimal.fx"
+          # Run from OUTSIDE the checkout, same reason as the Linux/macOS step: the
+          # native loaders walk up from the binary's directory and would otherwise find
+          # the repo's restored tools/, masking a broken in-bundle native resolve.
+          Copy-Item ".\publish\${{ matrix.rid }}\ShadowDuskCLI.exe" $env:RUNNER_TEMP
+          Push-Location $env:RUNNER_TEMP
+          try {
+            & ".\ShadowDuskCLI.exe" $fx $out /Profile:OpenGL
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "published ${{ matrix.rid }} CLI exited $LASTEXITCODE"
+              exit 1
+            }
+            # DirectX_11 forces the vkd3d-shader loader — the other half of the bundle.
+            & ".\ShadowDuskCLI.exe" $fx $outDx /Profile:DirectX_11
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "published ${{ matrix.rid }} CLI could not compile DirectX_11 from outside a checkout (exit $LASTEXITCODE) — the bundled vkd3d-shader native does not resolve."
+              exit 1
+            }
+          } finally {
+            Pop-Location
           }
-          if (-not (Test-Path $out) -or (Get-Item $out).Length -eq 0) {
-            Write-Error "published ${{ matrix.rid }} CLI exited 0 but produced a missing/empty .mgfx — the single-file bundle is broken."
-            exit 1
+          foreach ($f in @($out, $outDx)) {
+            if (-not (Test-Path $f) -or (Get-Item $f).Length -eq 0) {
+              Write-Error "published ${{ matrix.rid }} CLI exited 0 but produced a missing/empty $f — the single-file bundle is broken."
+              exit 1
+            }
           }
-          Write-Host "smoke OK: $((Get-Item $out).Length) bytes"
+          Write-Host "smoke OK: $((Get-Item $out).Length) bytes (GL), $((Get-Item $outDx).Length) bytes (DX)"
 
       - name: Archive publish output (Linux / macOS)
         if: runner.os != 'Windows'

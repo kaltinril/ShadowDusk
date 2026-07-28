@@ -21,9 +21,10 @@ public sealed record CompiledShader(
     /// <summary>
     /// Non-fatal diagnostics produced while compiling: the underlying compiler's own
     /// warnings (verbatim — never reworded) plus ShadowDusk's GL portability findings
-    /// (<c>SD0400</c>–<c>SD0402</c>: constructs that compile here but are known to fail
+    /// (<c>SD0400</c>–<c>SD0499</c>: constructs that compile here but are known to fail
     /// or misbehave at runtime on some GL stacks — e.g. WebGL1/KNI Reach loop limits,
-    /// ANGLE derivative zeroing, a SpriteBatch-incompatible pixel-shader input). Empty
+    /// ANGLE derivative zeroing, a SpriteBatch-incompatible pixel-shader input, a
+    /// GLSL-1.30+/ES-3.00-only construct in the versionless GL source). Empty
     /// when there is nothing to report. The effect bytes in <see cref="Data"/> are
     /// valid regardless — warnings never gate output.
     /// </summary>

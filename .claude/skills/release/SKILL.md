@@ -83,7 +83,9 @@ history, not just SemVer's letter):
      (`docfx/index.md`, `getting-started/overview.md`, `guides/choosing-a-target.md`,
      `backends/*.md`, `contributing/validation.md` rung-4 list, `glossary.md`, and the
      transcluded `docs/references/compilation-pipeline.md` + `docs/glsl-uniform-naming.md`
-     rewriter-rule table); `docs/test-shader-corpus.md` (fixture/corpus counts and the
+     rewriter-rule table + `docs/error-codes.md`, which `docfx/diagnostics.md` transcludes —
+     every code raised in `src/` must have a row, and every documented code must still be
+     raised); `docs/test-shader-corpus.md` (fixture/corpus counts and the
      last-updated date — touched in 0.8.0 and 0.12.1 for exactly this); `CLAUDE.md` (Project
      Overview + HARD-RULE gate commands); **the render-gate commands in THIS skill's step 2**
      (they drift whenever a driver or a switch changes — that is exactly how `-IncludeVulkan`

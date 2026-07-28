@@ -107,7 +107,7 @@ internal sealed class PipelineRunner
         byte[] mgfxBytes = compileResult.Value.Data;
 
         // Non-fatal diagnostics — the underlying compiler's verbatim warnings plus
-        // the GL portability findings (SD0400-SD0402). Printed to stderr in the
+        // the GL portability findings (SD0400-SD0499). Printed to stderr in the
         // MGCB-parseable warning form without failing the build, the same contract
         // as the ShaderToy convert warnings below; a warning-free compile keeps
         // stderr empty.
@@ -164,7 +164,7 @@ internal sealed class PipelineRunner
                 errors = new[]
                 {
                     new ShaderError(
-                        File: args.SourceFile, Line: 0, Column: 0, Code: "SD0010",
+                        File: args.SourceFile, Line: 0, Column: 0, Code: "SD0006",
                         Message: "ShaderToy/GLSL conversion failed without a diagnostic."),
                 };
 
@@ -198,7 +198,12 @@ internal sealed class PipelineRunner
             ? ShaderErrorSeverity.Error
             : ShaderErrorSeverity.Warning;
 
-        string code = d.Severity == DiagnosticSeverity.Error ? "SD0010" : "SD0001";
+        // SD0006 / SD0007 are this stage's OWN codes. They used to be SD0010 and SD0001,
+        // which are already allocated to "effect source contains no techniques" and
+        // "#include file not found" — so a converter failure printed a code whose
+        // published meaning was unrelated and unactionable, breaking the registry's
+        // one-code-one-condition invariant.
+        string code = d.Severity == DiagnosticSeverity.Error ? "SD0006" : "SD0007";
 
         string message = string.IsNullOrEmpty(d.Construct)
             ? d.Message

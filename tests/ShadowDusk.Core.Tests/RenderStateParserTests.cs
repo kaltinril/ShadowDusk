@@ -166,6 +166,24 @@ public sealed class RenderStateParserTests
         block.SlopeScaleDepthBias.Should().BeApproximately(1.0f, 1e-6f);
     }
 
+    [Theory]
+    [InlineData("0.0001f", 0.0001f)]
+    [InlineData("0.5F",    0.5f)]
+    [InlineData("-2.0f",  -2.0f)]
+    public void Parse_DepthBias_AcceptsHlslFloatSuffix(string value, float expected)
+    {
+        // The FxLexer deliberately keeps the HLSL `f`/`F` suffix inside the Number token,
+        // and mgfxc's ParseTreeTools.ParseFloat strips it. A raw float.TryParse rejected
+        // it, so `pass P { DepthBias = 0.0001f; }` — ordinary HLSL that mgfxc compiles —
+        // failed SD0011 and aborted the whole compile.
+        Parse(("DepthBias", value)).DepthBias.Should().BeApproximately(expected, 1e-9f);
+    }
+
+    [Fact]
+    public void Parse_SlopeScaleDepthBias_AcceptsHlslFloatSuffix()
+        => Parse(("SlopeScaleDepthBias", "2.0f")).SlopeScaleDepthBias
+               .Should().BeApproximately(2.0f, 1e-6f);
+
     // -------------------------------------------------------------------------
     // BlendState
     // -------------------------------------------------------------------------
@@ -254,6 +272,15 @@ public sealed class RenderStateParserTests
     [InlineData("Red | Green | Blue",       7)]  // OR'd symbolic flags
     [InlineData("All",                      15)] // the ALL alias (RED|GREEN|BLUE|ALPHA)
     [InlineData("RED | 0x8",                9)]  // flag + integer mixed
+    // mgfxc's grammar admits `None` and a Boolean wherever a colour flag is legal
+    // (ParseNode.EvalColors_None / EvalColors_Boolean). `ColorWriteEnable = None;` is the
+    // idiomatic depth-only / stencil-only pass; it used to hard-fail SD0011 here while
+    // mgfxc compiled the same .fx.
+    [InlineData("None",                     0)]
+    [InlineData("none",                     0)]
+    [InlineData("false",                    0)]
+    [InlineData("true",                     15)]
+    [InlineData("Red | None",               1)]  // None is OR-identity inside a mask
     public void Parse_ColorWriteEnable(string value, int expected)
     {
         var block = Parse(("ColorWriteEnable", value));

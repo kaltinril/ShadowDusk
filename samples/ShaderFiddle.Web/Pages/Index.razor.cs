@@ -817,7 +817,9 @@ public partial class Index
         var severity = d.Severity == DiagnosticSeverity.Error
             ? ShaderErrorSeverity.Error
             : ShaderErrorSeverity.Warning;
-        string code = d.Severity == DiagnosticSeverity.Error ? "SD0010" : "SD0001";
+        // SD0006/SD0007 — the ShaderToy/GLSL convert stage's own codes (see PipelineRunner
+        // and docs/error-codes.md). Not SD0010/SD0001, which mean something else entirely.
+        string code = d.Severity == DiagnosticSeverity.Error ? "SD0006" : "SD0007";
         string message = string.IsNullOrEmpty(d.Construct) ? d.Message : $"{d.Message} (near '{d.Construct}')";
         return new ShaderError("fiddle.glsl", d.Line, d.Column, code, message, severity);
     }

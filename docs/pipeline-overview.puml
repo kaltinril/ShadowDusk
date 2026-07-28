@@ -43,7 +43,7 @@ package "1 - INPUTS  (what you give us)" {
 package "2 - FRONTEND  (shared, runs for every target)" {
   rectangle "**ShaderToy frontend**  (ShadowDusk.ShaderToy)\nGLSL image shader -> .fx" as STOY #E7DFC9
   rectangle "**FxPreParser** (FX9 pre-parse)\nfind technique/pass/sampler blocks;\nrecover macro-defined TECHNIQUE();\nFxSourceMode = RewriteToSm4 | PreserveSm3" as PRE #E7DFC9
-  rectangle "**PlatformMacros**  (inject per-target #defines)\nGL:{MGFX,GLSL,OPENGL}  DX:{MGFX,HLSL,SM4}\nFNA:{FNA,HLSL,SM3}   +__KNIFX__ when KNIFX" as MAC #E7DFC9
+  rectangle "**PlatformMacros**  (inject per-target #defines)\nGL:{MGFX,GLSL,OPENGL}  DX11:{MGFX,HLSL,SM4}\nDX12:{MGFX,HLSL,SM6}  VK:{MGFX,HLSL,VULKAN,SM6}\nFNA:{FNA,HLSL,SM3}   +__KNIFX__ when KNIFX" as MAC #E7DFC9
   rectangle "**Preprocess** (DXC -P)\nflatten #include, expand macros" as PP #E7DFC9
   rectangle "**ShaderIR**\ninternal representation" as IR #DCE6DC
 }

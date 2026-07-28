@@ -22,6 +22,15 @@ internal sealed class CompilationPipeline
     private readonly Func<IShaderReflector>? _reflectorFactory;
     private readonly Func<IDxbcShaderCompiler>? _dxbcCompilerFactory;
 
+    /// <summary>
+    /// A sampler uniform declaration in the rewritten MonoGame-GL source, as
+    /// <c>MonoGameGlslRewriter</c> emits it (<c>uniform sampler2D ps_s0;</c>). Used to
+    /// cross-check the emitted GLSL against the <c>.mgfx</c> sampler table (SD0216).
+    /// </summary>
+    private static readonly Regex GlslSamplerDeclaration = new(
+        @"^\s*uniform\s+sampler(?:1D|2D|3D|Cube)\s+\w+\s*;",
+        RegexOptions.Compiled | RegexOptions.Multiline);
+
     public CompilationPipeline(
         Func<IDxcShaderCompiler>? dxcCompilerFactory = null,
         Func<ISpirvToGlslTranspiler>? glslTranspilerFactory = null,
@@ -395,7 +404,7 @@ internal sealed class CompilationPipeline
         // Non-fatal diagnostics for the whole effect: the underlying compilers'
         // verbatim warnings (deduped — VS and PS compile the same preprocessed source,
         // so a source-level warning re-surfaces once per entry point) plus the GL
-        // portability lint findings (SD0400–SD0402). Returned on
+        // portability lint findings (SD0400–SD0499). Returned on
         // CompiledShader.Warnings; never gates output.
         var runWarnings  = new List<ShaderError>();
         var seenWarnings = new HashSet<(string File, int Line, int Column, string Code, string Message)>();
@@ -775,69 +784,148 @@ internal sealed class CompilationPipeline
                     }
                 }
 
-                // GL binds samplers BY NAME: the .mgfx record must name the exact uniform
-                // the emitted GLSL declares, and the rewriter numbers ps_s{k} positionally
-                // (declaration order). The two namings agree only when the reflected
-                // sampler registers are contiguous from s0. Sparse/offset explicit
-                // registers (`register(s3)` with no s0-s2) would make this record name a
-                // uniform the GLSL never declares — MonoGame's glGetUniformLocation
-                // misses (-1) and the shader silently samples a stale texture unit
-                // (bug-hunt 2026-07-27 M1). Fail loudly until both namings derive from
-                // one source.
-                if (!directX && options.Target == PlatformTarget.OpenGL)
+                // The two targets disagree about what a sampler record IS, so the table is
+                // built two different ways — deliberately, and each way matches its own
+                // runtime's binding model:
+                //
+                //  * DirectX / DirectX12 — one record per reflected TEXTURE, keyed on the
+                //    texture's bind point. That is what mgfxc does (ShaderData.DX11 walks
+                //    the RDEF texture bindings), and the goldens prove it: a sampler-driven
+                //    table emits ONE record for N textures sharing a single `SamplerState`
+                //    (the classic diffuse+lightmap shape), so MonoGame's ApplySamplers never
+                //    binds textures 1..N-1 and `Parameters["Lightmap"].SetValue(tex)`
+                //    silently does nothing. See tests/fixtures/golden/DirectX_11/
+                //    PenumbraTexture.mgfx, which carries TWO records.
+                //
+                //  * OpenGL — one record per reflected SAMPLER, because GL binds by NAME
+                //    and the record must name a uniform the emitted GLSL actually declares.
+                //    SPIRV-Cross emits one COMBINED sampler per (texture, sampler) PAIR and
+                //    the rewriter numbers those ps_s{k} in declaration order, so a
+                //    texture-driven table would drop records for the mirror shape (ONE
+                //    texture read through TWO SamplerStates — the linear+point idiom):
+                //    the GLSL declares ps_s0 AND ps_s1 while the table names only ps_s0,
+                //    leaving ps_s1 at its default texture unit 0 with unit 0's state.
+                //
+                // Neither list is the pairs themselves, so neither is right in general. The
+                // GL guard below closes the remaining gap loudly rather than shipping a
+                // silently-wrong table.
+                if (directX)
                 {
-                    var orderedSlots = samplerRefs.Select(s => s.BindSlot).OrderBy(s => s).ToList();
-                    if (!orderedSlots.SequenceEqual(Enumerable.Range(0, orderedSlots.Count)))
+                    foreach (TextureReflection tex in textureRefs)
                     {
-                        return Fail(new ShaderError(
-                            File: options.SourceFileName ?? "<source>",
-                            Line: 0,
-                            Column: 0,
-                            Code: "SD0215",
-                            Message: "OpenGL target: sampler registers are not contiguous from s0 (" +
-                                     string.Join(", ", samplerRefs.Select(s => $"'{s.Name}' at s{s.BindSlot}")) +
-                                     "). The GL runtime binds samplers by positional name " +
-                                     "(ps_s0, ps_s1, ...), so a sparse register layout would " +
-                                     "silently bind the wrong texture units. Use contiguous " +
-                                     "sampler registers starting at s0, or omit the explicit " +
-                                     "register assignments."), runWarnings);
+                        int slot = tex.BindSlot;
+                        // The sampler paired with this texture, for the baked sampler_state.
+                        // Slot first (the 1:1 modern shape), then the sole shared sampler.
+                        SamplerReflection? matchedSamp =
+                            samplerRefs.FirstOrDefault(s => s.BindSlot == slot)
+                            ?? (samplerRefs.Count == 1 ? samplerRefs[0] : null);
+                        // No Math.Max(0, …) clamp (bug-hunt 2026-07-27 N11): a failed
+                        // name→parameter join used to be silently coerced to parameter 0 —
+                        // the sampler then pointed at whatever parameter 0 happened to be.
+                        // A -1 miss now flows to the writer's SD0022 byte-range guard and
+                        // fails the compile loudly instead.
+                        samplers.Add(new MgfxSamplerInfo(
+                            // MonoGame SamplerType byte: 2D=0, Cube=1, Volume(3D)=2 (1D=3).
+                            // Critical for binding — cube/3D won't bind at runtime if left 0.
+                            Type:        SamplerTypeByte(tex.Dimension),
+                            TextureSlot: (byte)slot,
+                            SamplerSlot: (byte)slot,
+                            // DX binds samplers via the DXBC resource table, not by GLSL
+                            // uniform name, so the sampler name is empty for DirectX.
+                            Name:        string.Empty,
+                            Parameter:   IndexOfParam(allParameters, tex.Name),
+                            State:       matchedSamp is null
+                                             ? null
+                                             : samplerStateByName.GetValueOrDefault(matchedSamp.Name)));
                     }
                 }
-
-                foreach (SamplerReflection samp in samplerRefs)
+                else
                 {
-                    int slot = samp.BindSlot;
-                    // Pair the sampler with its texture (by slot, then by name fallback)
-                    // so the sampler-type byte can carry the texture's DIMENSION. The
-                    // dimension is reflected identically by BOTH the DXIL oracle and the
-                    // pure-managed SpirvReflector, so this stays byte-transparent across
-                    // the desktop and WASM reflection paths.
-                    TextureReflection? matchedTex =
-                        textureRefs.FirstOrDefault(t => t.BindSlot == slot)
-                        ?? (samp.TextureName is not null
-                                ? textureRefs.FirstOrDefault(t => t.Name == samp.TextureName)
-                                : null)
-                        ?? textureRefs.FirstOrDefault();
-                    string? texName = samp.TextureName ?? matchedTex?.Name;
-                    // No Math.Max(0, …) clamp (bug-hunt 2026-07-27 N11): a failed
-                    // name→parameter join used to be silently coerced to parameter 0 —
-                    // the sampler then pointed at whatever parameter 0 happened to be.
-                    // A -1 miss now flows to the writer's SD0022 byte-range guard and
-                    // fails the compile loudly instead.
-                    int paramIndex = texName is null ? 0 : IndexOfParam(allParameters, texName);
-                    samplers.Add(new MgfxSamplerInfo(
-                        // MonoGame SamplerType byte: 2D=0, Cube=1, Volume(3D)=2 (1D=3).
-                        // Critical for binding — cube/3D won't bind at runtime if left 0.
-                        Type:        SamplerTypeByte(matchedTex?.Dimension),
-                        TextureSlot: (byte)slot,
-                        SamplerSlot: (byte)slot,
-                        // DX binds samplers via the DXBC resource table, not by GLSL
-                        // uniform name, so the sampler name is empty for DirectX.
-                        Name:        directX ? string.Empty : $"ps_s{slot}",
-                        Parameter:   paramIndex,
-                        // The reflected sampler name is the .fx sampler identifier —
-                        // the key the parsed sampler_state members were resolved under.
-                        State:       samplerStateByName.GetValueOrDefault(samp.Name)));
+                    // GL binds samplers BY NAME, and the rewriter numbers ps_s{k}
+                    // positionally. The two namings agree only when the reflected sampler
+                    // registers are contiguous from s0. Sparse/offset explicit registers
+                    // (`register(s3)` with no s0-s2) would make this record name a uniform
+                    // the GLSL never declares — MonoGame's glGetUniformLocation misses (-1)
+                    // and the shader silently samples a stale texture unit (bug-hunt
+                    // 2026-07-27 M1). Fail loudly until both namings derive from one source.
+                    if (options.Target == PlatformTarget.OpenGL)
+                    {
+                        var orderedSlots = samplerRefs.Select(s => s.BindSlot).OrderBy(s => s).ToList();
+                        if (!orderedSlots.SequenceEqual(Enumerable.Range(0, orderedSlots.Count)))
+                        {
+                            return Fail(new ShaderError(
+                                File: options.SourceFileName ?? "<source>",
+                                Line: 0,
+                                Column: 0,
+                                Code: "SD0215",
+                                Message: "OpenGL target: sampler registers are not contiguous from s0 (" +
+                                         string.Join(", ", samplerRefs.Select(s => $"'{s.Name}' at s{s.BindSlot}")) +
+                                         "). The GL runtime binds samplers by positional name " +
+                                         "(ps_s0, ps_s1, ...), so a sparse register layout would " +
+                                         "silently bind the wrong texture units. Use contiguous " +
+                                         "sampler registers starting at s0, or omit the explicit " +
+                                         "register assignments."), runWarnings);
+                        }
+                    }
+
+                    foreach (SamplerReflection samp in samplerRefs)
+                    {
+                        int slot = samp.BindSlot;
+                        // Pair the sampler with its texture (by slot, then first) so the
+                        // sampler-type byte can carry the texture's DIMENSION. The dimension
+                        // is reflected identically by BOTH the DXIL oracle and the pure-managed
+                        // SpirvReflector, so this stays byte-transparent across the desktop
+                        // and WASM reflection paths.
+                        TextureReflection? matchedTex =
+                            textureRefs.FirstOrDefault(t => t.BindSlot == slot)
+                            ?? textureRefs.FirstOrDefault();
+                        // No Math.Max(0, …) clamp — see the DirectX branch (bug-hunt N11).
+                        int paramIndex = matchedTex is null
+                            ? 0
+                            : IndexOfParam(allParameters, matchedTex.Name);
+                        samplers.Add(new MgfxSamplerInfo(
+                            Type:        SamplerTypeByte(matchedTex?.Dimension),
+                            TextureSlot: (byte)slot,
+                            SamplerSlot: (byte)slot,
+                            Name:        $"ps_s{slot}",
+                            Parameter:   paramIndex,
+                            // The reflected sampler name is the .fx sampler identifier —
+                            // the key the parsed sampler_state members were resolved under.
+                            State:       samplerStateByName.GetValueOrDefault(samp.Name)));
+                    }
+
+                    // The record list and the emitted GLSL must name the SAME set of
+                    // uniforms. They can diverge because SPIRV-Cross declares one combined
+                    // sampler per (texture, sampler) PAIR while this table is built from the
+                    // reflected samplers: N textures read through ONE shared `SamplerState`
+                    // yield N declared uniforms but a single record, so every ps_s{k} above
+                    // ps_s0 keeps its default texture unit 0 and silently samples the wrong
+                    // texture. There is no pair list to build from here, so rather than ship
+                    // a table that cannot bind, say so. Counted off the emitted GLSL itself,
+                    // which is the authority on what the shader declares.
+                    if (options.Target == PlatformTarget.OpenGL)
+                    {
+                        string emittedGlsl = Encoding.UTF8.GetString(compiledShaderBlobs[i].Bytes);
+                        int declaredSamplers = GlslSamplerDeclaration.Matches(emittedGlsl).Count;
+                        if (declaredSamplers != samplers.Count)
+                        {
+                            return Fail(new ShaderError(
+                                File: options.SourceFileName ?? "<source>",
+                                Line: 0,
+                                Column: 0,
+                                Code: "SD0216",
+                                Message: $"OpenGL target: the emitted GLSL declares {declaredSamplers} " +
+                                         $"sampler uniform(s) but the effect's sampler table has " +
+                                         $"{samplers.Count} record(s), so " +
+                                         $"{Math.Abs(declaredSamplers - samplers.Count)} uniform(s) would " +
+                                         "never be assigned a texture unit and would silently sample " +
+                                         "texture unit 0. This happens when several textures are read " +
+                                         "through ONE shared SamplerState: SPIRV-Cross emits a combined " +
+                                         "sampler per (texture, sampler) pair, but the GL sampler table " +
+                                         "is keyed on samplers. Give each texture its own SamplerState " +
+                                         "until per-pair GL sampler records ship."), runWarnings);
+                        }
+                    }
                 }
             }
 

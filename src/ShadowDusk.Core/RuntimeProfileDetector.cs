@@ -65,9 +65,27 @@ public static class RuntimeProfileDetector
 
         // Every MGFX-lineage runtime (MonoGame, KNI, or unknown) gets the universally-loadable
         // MGFX v10 contract. Promote a runtime to its newer container here once it is fully proven.
-        return target == PlatformTarget.DirectX
-            ? CapabilityProfile.MonoGameDX_SM5
-            : CapabilityProfile.MonoGameGL_3_8_2;
+        //
+        // Only the targets the closed CapabilityProfile set actually models are mapped. A
+        // fall-through `else` used to hand back the OpenGL profile for Vulkan, DirectX12,
+        // and Metal — and because CompilationPipeline applies a set Profile's
+        // GraphicsTarget OVER options.Target, that silently rewrote the requested backend:
+        // a DesktopVK or WindowsDX12 game got a MojoShader-GLSL .mgfx its runtime cannot
+        // load, compiled with exit 0 and no diagnostic, and PlatformTarget.Metal bypassed
+        // the pipeline's own loud SD0200 rejection. Refusing loudly is the only honest
+        // answer: Vulkan and DirectX12 compile correctly by setting Target directly and
+        // leaving Profile null, which is what the message says.
+        return target switch
+        {
+            PlatformTarget.DirectX => CapabilityProfile.MonoGameDX_SM5,
+            PlatformTarget.OpenGL  => CapabilityProfile.MonoGameGL_3_8_2,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(target), target,
+                $"No CapabilityProfile models the {target} target, and returning a profile for a " +
+                "different backend would silently compile the wrong output. Leave " +
+                "CompilerOptions.Profile null and set CompilerOptions.Target directly — that is " +
+                "the supported path for Vulkan and DirectX12."),
+        };
     }
 
     /// <summary>Recommends a profile from the runtime assembly's simple name.</summary>

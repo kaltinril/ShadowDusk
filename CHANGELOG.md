@@ -14,9 +14,116 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- New `SD0216` diagnostic: on the OpenGL target, the emitted GLSL declares a different number of
+  sampler uniforms than the effect's sampler table has records, so some `ps_s{k}` would never be
+  assigned a texture unit and would silently sample unit 0. It fires for several textures read
+  through one shared `SamplerState`, which SPIRV-Cross expands into a combined sampler per
+  (texture, sampler) pair while the GL table is keyed on samplers. Previously that shipped a
+  table that could not bind; now it is a compile error naming the fix.
+- New `SD0006` / `SD0007` diagnostics for the ShaderToy/GLSL front end. Its convert errors and
+  warnings were emitted under `SD0010` and `SD0001`, which are already allocated to "effect
+  source contains no techniques" and "`#include` file not found" — so a converter failure
+  printed a code whose published meaning was unrelated and unactionable. Registered in
+  `docs/error-codes.md`.
+- `SD0403` now also flags the integer bitwise and modulo operators (`&`, `|`, `^`, `~`, `%`).
+  They are reserved below GLSL 1.30 / ES 3.00 by the same specification sentence as the shifts
+  it already flagged, and SPIRV-Cross emits them verbatim for signed-`int` operands, where no
+  `uint` token appears for the existing unsigned check to catch — so an ordinary
+  checkerboard/hash/mask shader shipped with no signal and failed `Effect`-load on Mesa, macOS
+  OpenGL, and WebGL1.
+
 ### Changed
 
+- Security: the vkd3d-shader loader's dev-convenience `tools/vkd3d/` probe now runs **after**
+  the packaged-native probe and is bounded to a directory that actually looks like a ShadowDusk
+  checkout. It previously walked to the filesystem root ahead of the NuGet
+  `runtimes/<rid>/native` lookup, so on Windows — where the volume root is add-subdirectory
+  writable by ordinary users — a planted `C:\tools\vkd3d\libvkd3d-shader-1.dll` would have been
+  loaded and executed inside a framework-dependent consumer's process, and any unrelated
+  `tools/vkd3d` on the path could silently displace the pinned, hash-verified native.
+- `RuntimeProfileDetector.Recommend` now refuses a target no `CapabilityProfile` models instead
+  of falling through to the OpenGL profile. Because a set `Profile` overrides
+  `CompilerOptions.Target`, `Vulkan` and `DirectX12` silently compiled to a MojoShader-GLSL
+  `.mgfx` the consumer's runtime cannot load, and `Metal` bypassed the pipeline's own `SD0200`
+  rejection. Setting `Target` directly with `Profile` left null is unaffected and remains the
+  supported path for both.
+- The release workflow's published-CLI smoke now also compiles `/Profile:DirectX_11` (and runs
+  from outside the checkout on Windows too, as it already did elsewhere). It only ever compiled
+  `/Profile:OpenGL`, which drives DXC and SPIRV-Cross but never vkd3d-shader — so half the
+  single-file bundle's native surface had no guard on any platform.
+- `wasm.yml` now fails hard when the DXC→WASM module is missing, instead of warning and silently
+  skipping the entire `ShadowDusk.Wasm` build and pack. The module is force-committed, so its
+  absence is a repo regression; the old guard let a green run cover nothing.
+
 ### Fixed
+
+- **DirectX / DirectX 12: two textures sharing one `SamplerState` now emit one `.mgfx` sampler
+  record per texture.** The table was built from the reflected samplers, so the classic
+  diffuse+lightmap shape got a single record: MonoGame's `ApplySamplers` only binds the slots it
+  is handed, so every texture after the first was never bound and
+  `Parameters["Lightmap"].SetValue(tex)` silently did nothing, with exit 0. `mgfxc` keys its own
+  DX table on the reflected textures and its golden carries one record per texture; this closes
+  the last "sampler slot / baked-state" divergence in the Phase-41 structural matrix.
+  The OpenGL table stays keyed on samplers, because there a record must NAME a `ps_s{k}` uniform
+  the emitted GLSL actually declares, and SPIRV-Cross declares one combined sampler per
+  (texture, sampler) **pair** — a texture-keyed GL table would drop the mirror shape (one texture
+  read through two `SamplerState`s, the linear+point idiom), leaving `ps_s1` on texture unit 0.
+  The new `SD0216` makes the residual GL case loud instead of silent (see Added).
+- `--target-runtime=<name>` (the `=` form) is now parsed. It fell through to the silent
+  unknown-flag branch, so `--target-runtime=monogame-gl` compiled with the default profile and
+  exit 0: the wrong artifact, with no diagnostic. The space and `:` forms were unaffected, and
+  every other long option already accepted all three spellings.
+- OpenGL: `trunc()` lowering is now fully parenthesized. `trunc(x)` is a primary expression, so
+  splicing the bare product `sign(x) * floor(abs(x))` over it re-associated wherever the
+  surrounding operator bound at least as tightly — `1.0 / trunc(x)` became
+  `(1.0 / sign(x)) * floor(abs(x))`, valid GLSL with a silently wrong value.
+- OpenGL: an omitted HLSL semantic index is now correctly treated as index 0 when naming
+  varyings (`: COLOR` ≡ `COLOR0`, `: TEXCOORD` ≡ `TEXCOORD0`, as fxc/mgfxc treat them). DXC
+  passes the author's spelling through verbatim, so a SpriteBatch-style pixel-only pass
+  declaring `: COLOR` emitted `var_COLOR` instead of `vFrontColor` — a hard link failure against
+  MonoGame's built-in SpriteEffect on strict drivers, and garbage on lenient ones.
+- OpenGL: the Rule 13 bounded-loop rewrite now also proves the loop bound is **invariant**. It
+  derived the ceiling from the bound's initializer without checking that the bound never
+  changes, so a body that raised it made the synthesized header exit before the terminal `else`
+  finalizer ever ran, leaving its output undefined — issue #160's failure mode, reachable
+  through the one property the rewrite's correctness rested on. Those shapes now decline to the
+  honest `SD0402` warning.
+- `ColorWriteEnable = None;` (and `true` / `false`) now compiles instead of failing `SD0011`.
+  `None` is the idiomatic depth-only or stencil-only pass and `mgfxc` accepts all three.
+- Render-state and FNA sampler-state values now accept the HLSL float suffix and float-spelled
+  integers, via one shared mgfxc-parity numeric parse. `DepthBias = 0.0001f;` hard-failed the
+  compile on every target, and `MipMapLodBias = -2.0f;` / `MaxAnisotropy = 4.0;` compiled for
+  OpenGL and DirectX but failed for FNA — source `fxc /T fx_2_0` itself accepts.
+- `CompilerOptions.WithGraphicsTarget` no longer drops `Defines`, despite documenting that it
+  preserves every other setting. The pipeline calls it whenever a `Profile` implies a different
+  backend and `Validate`/`ValidateAsync` call it once per target, so
+  `--target-runtime monogame-gl /Defines:HIGH_QUALITY=1` compiled with the macro undefined and
+  wrote the wrong artifact with exit 0.
+- An `#include` resolver's own diagnostic is no longer overwritten with a synthesized `SD0001`
+  "cannot find include". A present-but-unreadable header (locked, ACL-denied, or deleted mid-read)
+  reported a missing file, making the registered `SD0004` unreachable, and any diagnostic from a
+  consumer-supplied `IIncludeResolver` was silently discarded.
+- A dropped `#pragma once` line, and a skipped duplicate `#include`, are now blanked rather than
+  deleted, so every later line of the enclosing file keeps its `#line`-relative number. DXC
+  reported the whole file's diagnostics one line too low, and the CLI, MGCB, and IDE
+  jump-to-line all trust that location verbatim.
+- DXIL reflection no longer converts a cancellation into an `SD0102` "Reflection failed" error.
+  The CLI's watchdog never reported `X0007` "Compilation timed out", and a library consumer's own
+  `CancellationToken` stopped behaving per the .NET contract.
+- ShaderToy: a parenthesized assignment or comma sequence used as a sub-expression keeps its
+  parentheses. The parser drops the source's grouping parens, so the common raymarching idiom
+  `if ((d = map(p)) < 0.001)` emitted `if (d = map(p) < 0.001)` — HLSL binds `<` tighter than
+  `=`, so `d` received a bool 0/1 instead of the distance and the shader rendered a different
+  image with no diagnostic.
+- ShaderToy: a `#if` / `#ifdef` / `#ifndef` inside a **skipped** conditional group is no longer
+  evaluated, per C11 6.10.1p6 (which the GLSL preprocessor inherits). An expression the evaluator
+  could not handle inside a dead `#if 0` branch aborted conversion of a shader every real GLSL
+  compiler accepts.
+- `samples/mgcb` and `samples/ShaderViewer` can be restored and built again. Both declared
+  `Version` on `PackageReference` while inheriting Central Package Management, so `dotnet
+  restore` failed `NU1008` and neither sample — including the repo's only demonstration of the
+  Tier-1 drop-in delivery shape — could run at all, contrary to their published instructions.
+  `ShaderViewer`'s floating `3.8.*` MonoGame reference is also now pinned to 3.8.2.1105.
 
 ## [0.15.0] - 2026-07-27
 

@@ -113,10 +113,13 @@ public sealed class RenderStateParser
             return Ok();
         }
 
+        // The two float render states go through mgfxc's own ParseTreeTools.ParseFloat
+        // semantics, not a raw float.TryParse: the FxLexer deliberately keeps the HLSL
+        // float suffix in the Number token, so `DepthBias = 0.0001f;` — which mgfxc
+        // compiles — otherwise failed SD0011 and aborted the whole compile.
         if (key.Equals("DepthBias", StringComparison.OrdinalIgnoreCase))
         {
-            if (!float.TryParse(value, System.Globalization.NumberStyles.Float,
-                    System.Globalization.CultureInfo.InvariantCulture, out var v))
+            if (!MgfxcNumericParse.TryParseFloat(value, out var v))
                 return UnknownValue(key, value);
             block = block with { DepthBias = v };
             return Ok();
@@ -124,8 +127,7 @@ public sealed class RenderStateParser
 
         if (key.Equals("SlopeScaleDepthBias", StringComparison.OrdinalIgnoreCase))
         {
-            if (!float.TryParse(value, System.Globalization.NumberStyles.Float,
-                    System.Globalization.CultureInfo.InvariantCulture, out var v))
+            if (!MgfxcNumericParse.TryParseFloat(value, out var v))
                 return UnknownValue(key, value);
             block = block with { SlopeScaleDepthBias = v };
             return Ok();
@@ -530,6 +532,14 @@ public sealed class RenderStateParser
             else if (token.Equals("Blue", StringComparison.OrdinalIgnoreCase))  result |= 4;
             else if (token.Equals("Alpha", StringComparison.OrdinalIgnoreCase)) result |= 8;
             else if (token.Equals("All", StringComparison.OrdinalIgnoreCase))   result |= 0xF;
+            // mgfxc's grammar admits `None` and a Boolean anywhere a colour flag is legal
+            // (ParseNode.EvalColors_None / EvalColors_Boolean), so `ColorWriteEnable = None;`
+            // — the idiomatic depth-only or stencil-only pass — must compile, not fail
+            // SD0011. They are OR-ed like every other token because the rule is
+            // `Colors ('|' Colors){0,3}`, so `Red | None` is legal input.
+            else if (token.Equals("None", StringComparison.OrdinalIgnoreCase))  result |= 0;
+            else if (token.Equals("False", StringComparison.OrdinalIgnoreCase)) result |= 0;
+            else if (token.Equals("True", StringComparison.OrdinalIgnoreCase))  result |= 0xF;
             else if (TryParseDword(token, out uint bits))                       result |= unchecked((int)bits);
             else { result = 0; return false; }
         }

@@ -337,14 +337,21 @@ internal sealed class Preprocessor
 
         switch (keyword)
         {
+            // A group-opening directive inside a SKIPPED group is processed only far
+            // enough to track nesting (C11 6.10.1p6, which the GLSL preprocessor
+            // inherits) — its remaining tokens are never evaluated or diagnosed. The
+            // `&&` short-circuit is what enforces that: without it, an expression the
+            // evaluator cannot handle inside a dead branch (`#if 0` … `#if 1.5` …)
+            // aborted conversion of a shader every real GLSL compiler accepts. `#elif`
+            // has always short-circuited on ParentActive; these three now match it.
             case "if":
-                PushConditional(EvaluateCondition(rest, lineNo, col), condStack);
+                PushConditional(active && EvaluateCondition(rest, lineNo, col), condStack);
                 return;
             case "ifdef":
-                PushConditional(IsDefinedName(rest, lineNo, col), condStack);
+                PushConditional(active && IsDefinedName(rest, lineNo, col), condStack);
                 return;
             case "ifndef":
-                PushConditional(!IsDefinedName(rest, lineNo, col), condStack);
+                PushConditional(active && !IsDefinedName(rest, lineNo, col), condStack);
                 return;
             case "elif":
                 HandleElif(rest, lineNo, col, condStack);

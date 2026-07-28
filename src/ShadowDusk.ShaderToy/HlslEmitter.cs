@@ -200,7 +200,7 @@ internal sealed class HlslEmitter
 
                 break;
             case ExprStmt e:
-                Line($"{EmitExpr(e.Expression)};");
+                Line($"{EmitStatementExpr(e.Expression)};");
                 break;
             case IfStmt i:
                 EmitIf(i);
@@ -425,7 +425,7 @@ internal sealed class HlslEmitter
             null => string.Empty,
             VarDeclStmt vd => RenderInlineVarDecl(vd),
             MultiDeclStmt md => RenderInlineMultiDecl(md),
-            ExprStmt es => EmitExpr(es.Expression),
+            ExprStmt es => EmitStatementExpr(es.Expression),
             _ => string.Empty,
         };
         // A for-condition is a boolean context exactly like if/while/do…while (B2/B3): route it
@@ -433,7 +433,7 @@ internal sealed class HlslEmitter
         // (`for (…; (i != n); …)` trips -Werror,-Wparentheses-equality) and a vector compare is
         // scalarized with all()/any().
         string cond = f.Condition is null ? string.Empty : EmitCondition(f.Condition);
-        string inc = f.Increment is null ? string.Empty : EmitExpr(f.Increment);
+        string inc = f.Increment is null ? string.Empty : EmitStatementExpr(f.Increment);
         Line($"for ({init}; {cond}; {inc})");
         EmitBody(f.Body);
 
@@ -506,9 +506,30 @@ internal sealed class HlslEmitter
         UnaryExpr un => EmitUnary(un),
         BinaryExpr bin => EmitBinary(bin),
         ConditionalExpr c => $"({EmitCondition(c.Condition)} ? {EmitExpr(c.WhenTrue)} : {EmitExpr(c.WhenFalse)})",
-        SequenceExpr seq => string.Join(", ", seq.Items.Select(EmitExpr)),
-        AssignExpr a => EmitAssign(a),
+        // Assignment and comma are the two LOWEST-precedence operators in both GLSL and
+        // HLSL, and the parser drops the source's grouping parens (`( … )` yields the
+        // inner Expr, there is no ParenExpr node). So in sub-expression position they
+        // must re-parenthesize themselves or the surrounding operator silently binds
+        // tighter than it did in the GLSL: the raymarching idiom
+        // `if ((d = map(p)) < 0.001)` would emit `if (d = map(p) < 0.001)`, assigning a
+        // bool 0/1 to d instead of the distance — valid HLSL, wrong image, no diagnostic.
+        // EmitStatementExpr keeps the statement-level spelling bare.
+        SequenceExpr seq => $"({string.Join(", ", seq.Items.Select(EmitExpr))})",
+        AssignExpr a => $"({EmitAssign(a)})",
         _ => throw new ConvertException("Internal: unhandled expression.", expr.Line, expr.Column),
+    };
+
+    /// <summary>
+    /// Emits an expression in STATEMENT position (an expression statement, or a
+    /// <c>for</c> header's init/increment slot), where an assignment or comma sequence
+    /// is already unambiguous and the redundant parens <see cref="EmitExpr"/> adds would
+    /// only be noise.
+    /// </summary>
+    private string EmitStatementExpr(Expr expr) => expr switch
+    {
+        AssignExpr a => EmitAssign(a),
+        SequenceExpr seq => string.Join(", ", seq.Items.Select(EmitExpr)),
+        _ => EmitExpr(expr),
     };
 
     /// <summary>
