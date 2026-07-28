@@ -37,10 +37,19 @@ history, not just SemVer's letter):
    actual product promise, and `release.yml` does not check it, so a divergence must stop the
    release before any version churn, commit, PR, or CI time is spent.
 
+   **Run these from PowerShell 7 (`pwsh`), not Windows PowerShell 5.1.** The script shells out
+   to `tools/restore.ps1`, which carries `#requires -Version 7.0`; under 5.1 the run dies at the
+   restore step with a `ScriptRequiresUnmatchedPSVersion` error that looks nothing like a render
+   divergence.
+
    ```powershell
-   ./validation/run-windows-render-gates.ps1              # DX + DX-modern + KNI-DX + KNI-GL x2 + ANGLE + both Vulkan gates
+   ./validation/run-windows-render-gates.ps1              # DX corpus + DX-modern (VTF) + DX Apos gallery + DX12 corpus + DX12 VS-driven/Apos gallery + KNI-DX + KNI-GL desktop + KNI-GL VS-driven + GL Apos + GL Apos gallery + ANGLE derivative probe + BOTH Vulkan gates
    ./validation/run-windows-render-gates.ps1 -IncludeFna  # add FNA fx_2_0; include it when in doubt
+   ./validation/run-windows-render-gates.ps1 -SkipVulkan  # ONLY on a box with no Vulkan-capable GPU
    ```
+
+   Other switches the script accepts: `-IncludeVulkan` (accepted as a no-op; Vulkan is default-ON
+   since issue #145) and `-SkipRestore`.
 
    **`RELEASING.md` → Prerequisites item 4 is the authoritative description** of what these
    gates cover, which switches apply, and why CI cannot replace them — read it there rather
@@ -117,13 +126,17 @@ history, not just SemVer's letter):
 11. **Wait for PR CI.** `gh pr checks <pr> --watch`. Do **not** merge on red. Local green is
     not enough — CI runs the 3-OS matrix (`ci.yml`).
 12. **Merge.** `gh pr merge <pr> --merge`.
-13. **Wait for post-merge main CI**, then trigger publish. Tell the user to either:
-    - run **Actions → Release → Run workflow** with version `<version>`, **or**
-    - `git tag v<version> && git push origin v<version>`.
+13. **Wait for post-merge main CI**, then tell the user to trigger the publish via
+    **Actions → Release → Run workflow** with version `<version>` (no leading `v`).
 
-    The `validate` job checks the tag/input against `Directory.Build.props` `<Version>`; if
-    they match, all seven packages + the `mgfxc` tool publish to nuget.org and a GitHub Release
-    is cut. Point the user at `RELEASING.md` → "Verify after release" for the post-publish
+    **`release.yml` is dispatch-ONLY — there is no tag-push trigger.** Do not tell the user to
+    `git tag && git push` instead: that publishes nothing while looking like it worked. The
+    workflow creates and pushes the `v<version>` tag itself on a successful run; a tag is a
+    marker, never a trigger. (`RELEASING.md` → "Triggering a release" is authoritative.)
+
+    The `validate` job checks the dispatch input against `Directory.Build.props` `<Version>`; if
+    they match, all seven packages + the `ShadowDuskCLI` tool publish to nuget.org and a GitHub
+    Release is cut. Point the user at `RELEASING.md` → "Verify after release" for the post-publish
     checks (`dotnet tool install -g ShadowDusk.Cli` → `ShadowDuskCLI --help`, and all seven packages on
     nuget.org at `<version>`).
 
@@ -144,8 +157,12 @@ history, not just SemVer's letter):
   KNI-DX rung-4 render proofs run only on a Windows+GPU box (`validation/run-windows-render-gates.ps1`);
   a green `dotnet test` + green CI does NOT cover them. Skipping it can ship a silently broken
   render against the "renders like `mgfxc`/`fxc`" promise.
-- **The publish trigger is the tag-or-dispatch `release.yml` workflow** whose `validate` job
-  guards the tag against the centralized `<Version>`.
+- **The publish trigger is the DISPATCH-ONLY `release.yml` workflow** whose `validate` job
+  guards the dispatch input against the centralized `<Version>`. Pushing a `v<version>` tag
+  triggers nothing; the workflow pushes that tag itself on success.
+- **Run the render gates under `pwsh` (PowerShell 7)**, not Windows PowerShell 5.1 — the
+  `#requires -Version 7.0` in `tools/restore.ps1` aborts the run with an error that does not
+  resemble a render failure.
 
 ## Edge cases
 

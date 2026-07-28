@@ -67,6 +67,8 @@ OpenGL / WebGL / Android:
   HLSL (.fx)  ->  DXC  ->  SPIR-V  ->  SPIRV-Cross  ->  GLSL  ->  .mgfx
 DirectX 11:
   HLSL (.fx)  ->  vkd3d-shader  ->  DXBC (SM5)  ->  .mgfx
+DirectX 12 (MonoGame WindowsDX12):
+  HLSL (.fx)  ->  DXC  ->  DXIL (SM6)  ->  .mgfx (profile 2)
 Vulkan (MonoGame DesktopVK):
   HLSL (.fx)  ->  DXC  ->  SPIR-V  ->  .mgfx (profile 80)
 FNA:

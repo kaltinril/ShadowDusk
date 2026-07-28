@@ -35,6 +35,8 @@ Validation always compares ShadowDusk vs `mgfxc` on the **same** target (GL↔GL
 
 "Same `.mgfx` output" means **behaviorally equivalent and `Effect`-loadable**. ShadowDusk and `mgfxc` are different compilers; byte-equality with `mgfxc` is neither expected nor a goal. The "deterministic / byte-identical" constraint refers only to **ShadowDusk's own** reproducibility: same ShadowDusk version + same source + same target → same bytes.
 
+**One carve-out: `DirectX12`.** DXIL signing is Windows-only (`dxil.dll`), so DX12 output *is* host-dependent — a Linux/macOS compile emits unsigned DXIL that retail D3D12 rejects, warned as `SD0214`. The byte-identity manifest covers `DirectX_Vkd3d`, `FNA`, and `OpenGL` only.
+
 ## Where the harnesses live
 
 - The render-validation harness is under `validation/` in the repository.

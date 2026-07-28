@@ -15,7 +15,7 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 | `SD0000` | CLI informational notes (severity `Note`, never a failure) |
 | `SD0001`–`SD0009` | Preprocessor (`#include` handling) and source-provenance notes |
 | `SD0010`–`SD0019` | Pipeline-level effect validation |
-| `SD0020`–`SD0029` | MGFX writer range guards and container/target guards |
+| `SD0020`–`SD0029` | MGFX writer range guards, container/target guards, and source-level target-binding guards (e.g. `SD0028`) |
 | `SD0100`–`SD0199` | Reflection / transpilation backends |
 | `SD0200`–`SD0299` | Platform / backend availability |
 | `SD0300`–`SD0399` | FNA (fx_2_0) target |

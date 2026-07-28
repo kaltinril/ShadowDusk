@@ -127,6 +127,16 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   deleted 13-element harness; `DirectX_12` is listed in the CLI usage/help and error text;
   Android's status wording matches the validation matrix; the 0.14.0 changelog's #149 fix is
   filed under Fixed.
+- Docs: `/Defines` and `CompilerOptions.Defines` are documented on the published site (the CLI
+  option table previously listed every flag *except* this one and closed with "unknown flags
+  are silently ignored", so a consumer would conclude it was unsupported). The `SD0214`
+  DirectX 12 constraint is now stated wherever it matters: the DX12 backend page, the
+  per-OS caveats guide, the host x target matrix, and a new validation-matrix gap row. Three
+  blanket "output bytes are OS-independent" claims (`the-purpose`, `validation-matrix`,
+  contributor validation page) gained the DX12 carve-out they now need, since the byte-identity
+  manifest covers `DirectX_Vkd3d`/`FNA`/`OpenGL` only. Also: the README pipeline block and CLI
+  README list DirectX 12, the `SD0400`-`SD0403` gap row covers the new code, and package tags
+  mention `dx12`/`vulkan`.
 
 ## [0.14.2] - 2026-07-25
 
