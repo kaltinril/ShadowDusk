@@ -25,6 +25,81 @@ public sealed class FxPreParserTests
     }
 
     // -------------------------------------------------------------------------
+    // Bug-hunt 2026-07-27 M14 — fxc-parity shapes
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_VertexShaderNull_IsTreatedAsAbsentStage()
+    {
+        // fxc parity: `VertexShader = NULL;` is the D3D9 idiom for "no shader bound
+        // to this stage in this pass"; it used to fail FX0001 ("Expected 'compile'").
+        const string source = """
+            technique T
+            {
+                pass P
+                {
+                    VertexShader = NULL;
+                    PixelShader  = compile ps_3_0 PSMain();
+                }
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        var pass = result.Value.Techniques[0].Passes[0];
+        pass.VertexEntryPoint.Should().BeNull();
+        pass.PixelEntryPoint.Should().Be("PSMain");
+    }
+
+    [Fact]
+    public void Parse_SamplerTextureNull_LeavesTextureReferenceUnset()
+    {
+        // fxc parity: `Texture = NULL;` means "the app binds the texture at runtime".
+        // The literal identifier used to become the reference, producing
+        // `NULL.Sample(...)` in the rewritten HLSL — an undeclared-identifier DXC error.
+        const string source = """
+            sampler2D DiffuseSampler = sampler_state
+            {
+                Texture = NULL;
+                MinFilter = Linear;
+            };
+
+            technique T { pass P { PixelShader = compile ps_3_0 PSMain(); } }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Samplers.Should().ContainSingle()
+            .Which.TextureReference.Should().BeNull();
+    }
+
+    [Fact]
+    public void Parse_Technique10_IsRecognized()
+    {
+        // fxc accepts technique10 (fx_4_0); the block used to pass through unrecognized
+        // and leak its pass body into the DXC input.
+        const string source = """
+            technique10 Render
+            {
+                pass P0
+                {
+                    VertexShader = compile vs_4_0 VSMain();
+                    PixelShader  = compile ps_4_0 PSMain();
+                }
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Techniques.Should().ContainSingle()
+            .Which.Name.Should().Be("Render");
+        result.Value.Techniques[0].IsEffect11.Should().BeTrue();
+    }
+
+    // -------------------------------------------------------------------------
     // T02 — single technique, one pass — Snippet A
     // -------------------------------------------------------------------------
 
