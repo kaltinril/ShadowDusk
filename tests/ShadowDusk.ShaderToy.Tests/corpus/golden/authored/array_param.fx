@@ -19,7 +19,7 @@ float3 iResolution;
 
 void scale(inout float k[4], float s)
 {
-    for (int i = 0; (i < 4); i++)
+    for (int i = 0; i < 4; i++)
     {
         k[i] = (k[i] * s);
     }

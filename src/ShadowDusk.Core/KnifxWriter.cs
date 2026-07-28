@@ -396,9 +396,13 @@ public sealed class KnifxWriter
 
     private static void WriteAnnotations(BinaryWriter bw, IReadOnlyList<AnnotationInfo> annotations)
     {
-        // KNIFX (like MGFX v10) writes only the annotation COUNT and no bodies
-        // (KNIFXWriter11.WriteAnnotations asserts count == 0; ShadowDusk's are empty).
-        WritePacked(bw, annotations.Count);
+        // KNIFX (like MGFX v10) writes only the annotation COUNT and no bodies — and
+        // KNI's KNIFXWriter11.WriteAnnotations asserts count == 0, so a nonzero count
+        // from an FX-annotated parameter was a guaranteed KNI load failure (bug-hunt
+        // 2026-07-27 M15; "ShadowDusk's are empty" was wrong — the FX pre-parser DOES
+        // attach annotations). Always 0; the annotations stay in the IR as metadata.
+        _ = annotations;
+        WritePacked(bw, 0);
     }
 
     // ShadowDusk ShaderStage (Vertex=0, Pixel=1) -> KNI ShaderStage (Pixel=0, Vertex=1).

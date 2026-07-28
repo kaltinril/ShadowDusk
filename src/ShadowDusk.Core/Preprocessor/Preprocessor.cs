@@ -113,7 +113,11 @@ public sealed class Preprocessor
                         return Result<Unit, ShaderError>.Fail(
                             ShaderError.CircularInclude(filePath, lineNumber, includePath));
 
-                    output.AppendLine($"#line 1 \"{resolvedPath.Replace('\\', '/')}\"");
+                    // '\n', not AppendLine: body lines below join with '\n', and an
+                    // Environment.NewLine here made the flattened compiler input differ
+                    // by build OS (CRLF-mixed on Windows), which leaks into debug-mode
+                    // artifacts via embedded source (bug-hunt 2026-07-27 N17).
+                    output.Append($"#line 1 \"{resolvedPath.Replace('\\', '/')}\"\n");
 
                     var recurseResult = FlattenFile(
                         resolveResult.Value.Text,
@@ -126,7 +130,7 @@ public sealed class Preprocessor
                     if (recurseResult.IsFailure)
                         return recurseResult;
 
-                    output.AppendLine($"#line {lineNumber + 1} \"{filePath.Replace('\\', '/')}\"");
+                    output.Append($"#line {lineNumber + 1} \"{filePath.Replace('\\', '/')}\"\n");
                     continue;
                 }
 

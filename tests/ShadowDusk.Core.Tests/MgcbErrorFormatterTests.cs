@@ -66,8 +66,12 @@ public sealed class MgcbErrorFormatterTests
     }
 
     [Fact]
-    public void Format_FileButNoLine_StripsDirectoryLikeTheLocatedForm()
+    public void Format_FileButNoLine_KeepsPathAsGiven()
     {
+        // INTENTIONAL behavior change (bug-hunt 2026-07-27 N15): the formatter used to
+        // strip the directory, which made two same-named includes indistinguishable and
+        // broke IDE/MSBuild jump-to-file from the MGCB log. fxc/mgfxc echo the path they
+        // were given; so do we now. This test previously pinned the stripping behavior.
         var warning = new ShaderError(
             File: "/abs/path/to/Bloom.fx",
             Line: 0,
@@ -78,8 +82,7 @@ public sealed class MgcbErrorFormatterTests
 
         var formatted = MgcbErrorFormatter.Format(warning);
 
-        formatted.Should().StartWith("Bloom.fx: warning SD0400:");
-        formatted.Should().NotContain("/abs/path/to/");
+        formatted.Should().StartWith("/abs/path/to/Bloom.fx: warning SD0400:");
     }
 
     [Fact]
@@ -99,8 +102,12 @@ public sealed class MgcbErrorFormatterTests
     }
 
     [Fact]
-    public void Format_PathStrippedToFilename_OnlyBasenameInOutput()
+    public void Format_PathKeptVerbatim_FullPathInOutput()
     {
+        // INTENTIONAL behavior change (bug-hunt 2026-07-27 N15): the located form keeps
+        // the full path exactly as the compiler was given it — two same-named includes
+        // from different directories must stay distinguishable. This test previously
+        // pinned the basename-only behavior.
         var error = new ShaderError(
             File: "/abs/path/to/Foo.fx",
             Line: 1,
@@ -110,9 +117,7 @@ public sealed class MgcbErrorFormatterTests
 
         var formatted = MgcbErrorFormatter.Format(error);
 
-        // The filename segment must be just "Foo.fx", not the full absolute path
-        formatted.Should().StartWith("Foo.fx(");
-        formatted.Should().NotContain("/abs/path/to/");
+        formatted.Should().StartWith("/abs/path/to/Foo.fx(1,1-1): error X0001:");
     }
 
     [Fact]

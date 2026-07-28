@@ -17,19 +17,18 @@
 
 float3 iResolution;
 
-static const float kWeights[3] = { 0.25, 0.5, 0.25 };
-static const float3 kPalette[2] = { float3(0.1, 0.2, 0.9), float3(0.9, 0.4, 0.1) };
+uint pcg(uint v)
+{
+    uint state = ((v * 747796405u) + 2891336453u);
+    uint word = (((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u);
+    return ((word >> 22u) ^ word);
+}
 
 void mainImage(out float4 fragColor, float2 fragCoord)
 {
-    float2 uv = (fragCoord / iResolution.xy);
-    float acc = 0.0;
-    for (int i = 0; i < 3; i++)
-    {
-        acc += (kWeights[i] * uv.x);
-    }
-    float3 col = lerp(kPalette[0], kPalette[1], acc);
-    fragColor = float4(col, 1.0);
+    uint h = pcg((uint(fragCoord.x) + (1920u * uint(fragCoord.y))));
+    float v = (float((h & 0xFFu)) / 255.0);
+    fragColor = float4(v, v, v, 1.0);
 }
 
 

@@ -20,21 +20,31 @@ public static class DxilVertexInputReflector
 {
     /// <summary>
     /// Reads the vertex attribute table from <paramref name="dxilBlob"/>'s reflected input
-    /// signature. Returns an empty list if reflection fails — never throws, so a reflection
-    /// hiccup surfaces as a load/render failure MonoGame's own error message explains, not an
-    /// opaque exception here.
+    /// signature. A reflection FAILURE is a compile-time error (bug-hunt 2026-07-27 M11):
+    /// the previous empty-table fallback shipped exactly the delayed, unattributed
+    /// <c>E_INVALIDARG</c> draw-time crash the class remarks describe. A shader that
+    /// genuinely declares no vertex-buffer inputs still returns an empty table.
     /// </summary>
-    public static IReadOnlyList<MgfxVertexAttributeInfo> Read(
+    public static Result<IReadOnlyList<MgfxVertexAttributeInfo>, ShaderError> Read(
         ReadOnlyMemory<byte> dxilBlob,
         DxilReflectionExtractor extractor)
     {
         Result<ReflectedEffect, ShaderError> result = extractor.Extract(dxilBlob);
         if (result.IsFailure)
-            return Array.Empty<MgfxVertexAttributeInfo>();
+            return Result<IReadOnlyList<MgfxVertexAttributeInfo>, ShaderError>.Fail(result.Error);
 
         var attributes = new List<MgfxVertexAttributeInfo>(result.Value.InputSignature.Count);
         foreach (SignatureParameterReflection param in result.Value.InputSignature)
         {
+            // System-GENERATED values (SV_VertexID / SV_InstanceID) are produced by the
+            // GPU, not fed from a vertex buffer. Mapping them through the unknown-semantic
+            // fallback minted a phantom TEXCOORD attribute MonoGame then demanded from the
+            // vertex declaration (bug-hunt 2026-07-27 M10). The SPIR-V path already skips
+            // builtins the same way (SpirvReflectionParser: no Location => builtin).
+            if (param.SemanticName.Equals("SV_VertexID", StringComparison.OrdinalIgnoreCase) ||
+                param.SemanticName.Equals("SV_InstanceID", StringComparison.OrdinalIgnoreCase))
+                continue;
+
             // DXIL reflection already separates the semantic name from its numeric index
             // (unlike SPIR-V's concatenated "TEXCOORD0" string), so only the name needs mapping.
             (byte usage, _) = VertexSemanticMapper.Map(param.SemanticName);
@@ -45,6 +55,6 @@ public static class DxilVertexInputReflector
                 Location: 0));
         }
 
-        return attributes;
+        return Result<IReadOnlyList<MgfxVertexAttributeInfo>, ShaderError>.Ok(attributes);
     }
 }

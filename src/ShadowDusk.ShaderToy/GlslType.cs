@@ -6,6 +6,11 @@ internal enum ScalarKind
     Void,
     Bool,
     Int,
+
+    /// <summary>GLSL <c>uint</c>/<c>uvecN</c>. Mapped to HLSL's real <c>uint</c>/<c>uintN</c> (the
+    /// pipeline compiles SM6 via DXC), whose <c>&gt;&gt;</c> zero-fill and float-conversion semantics
+    /// match GLSL exactly — a signed reinterpretation does NOT (sign-extension, negative floats).</summary>
+    Uint,
     Float,
     Sampler,
     Struct,

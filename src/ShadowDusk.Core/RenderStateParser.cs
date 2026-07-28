@@ -234,7 +234,7 @@ public sealed class RenderStateParser
 
         if (key.Equals("StencilRef", StringComparison.OrdinalIgnoreCase))
         {
-            if (!int.TryParse(value, out var v))
+            if (!TryParseStateInt(value, out var v))
                 return UnknownValue(key, value);
             block = block with { ReferenceStencil = v };
             return Ok();
@@ -242,7 +242,7 @@ public sealed class RenderStateParser
 
         if (key.Equals("StencilMask", StringComparison.OrdinalIgnoreCase))
         {
-            if (!int.TryParse(value, out var v))
+            if (!TryParseStateInt(value, out var v))
                 return UnknownValue(key, value);
             block = block with { StencilMask = v };
             return Ok();
@@ -250,7 +250,7 @@ public sealed class RenderStateParser
 
         if (key.Equals("StencilWriteMask", StringComparison.OrdinalIgnoreCase))
         {
-            if (!int.TryParse(value, out var v))
+            if (!TryParseStateInt(value, out var v))
                 return UnknownValue(key, value);
             block = block with { StencilWriteMask = v };
             return Ok();
@@ -388,8 +388,24 @@ public sealed class RenderStateParser
     {
         if (value.Equals("True", StringComparison.OrdinalIgnoreCase))  { result = true;  return true; }
         if (value.Equals("False", StringComparison.OrdinalIgnoreCase)) { result = false; return true; }
+        // mgfxc parity (bug-hunt 2026-07-27 M14): MonoGame's ParseTreeTools.ParseBool also
+        // accepts the ubiquitous XNA-era numeric forms (`AlphaBlendEnable = 1;`).
+        if (value == "1") { result = true;  return true; }
+        if (value == "0") { result = false; return true; }
         result = default;
         return false;
+    }
+
+    // fxc accepts hex wherever an integer state value is legal, and real-world stencil
+    // masks are routinely written `0xFF` (bug-hunt 2026-07-27 M14). Invariant culture on
+    // both paths: state values must parse identically on every machine.
+    private static bool TryParseStateInt(string value, out int result)
+    {
+        if (value.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            return int.TryParse(value[2..], System.Globalization.NumberStyles.HexNumber,
+                System.Globalization.CultureInfo.InvariantCulture, out result);
+        return int.TryParse(value, System.Globalization.NumberStyles.Integer,
+            System.Globalization.CultureInfo.InvariantCulture, out result);
     }
 
     private static bool TryParseCullMode(string value, out CullModeValue result)

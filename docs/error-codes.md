@@ -49,6 +49,8 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 | `SD0001` | `#include` file not found on any search path. | `ShaderError.IncludeNotFound` |
 | `SD0002` | Circular `#include` (true cycle on the include stack; a diamond include is legal). | `ShaderError.CircularInclude` |
 | `SD0003` | **Note.** A ShaderToy/GLSL input was converted to `.fx` and that generated HLSL failed to compile — the diagnostics that follow refer to the **generated** source, not your original line numbers. | `PipelineRunner` |
+| `SD0004` | `#include` file was found on a search path but could not be read (locked, access denied, or deleted between the existence check and the read). | `FileSystemIncludeResolver` |
+| `SD0005` | Input format could not be detected: the source has no HLSL `technique` block and no ShaderToy `mainImage` / `void main` entry point. Pass `--input-format fx` or `--input-format glsl`. | `InputFormatDetector` |
 | `SD0010` | Effect source contains no techniques. | `CompilationPipeline` |
 | `SD0011` | Unrecognised value for a render-state key. | `RenderStateParser` |
 | `SD0012` | Internal: a GL uniform in the rewriter's register layout has no matching reflected effect parameter — the GLSL uniform layout and the reflection diverged. A ShadowDusk bug if ever seen. | `CompilationPipeline` |
@@ -62,6 +64,7 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 | `SD0025` | The Vulkan target was requested together with the KNIFX container (KNI ships no Vulkan platform). | `CompilationPipeline` |
 | `SD0026` | A shader declares more than one constant buffer for a single stage on the Vulkan target, which the format does not support — merge the globals into one `cbuffer`. | `CompilationPipeline` |
 | `SD0027` | The DirectX12 target was requested together with the KNIFX container (KNI ships no DX12 platform). | `CompilationPipeline` |
+| `SD0028` | Vulkan target: two distinct textures are sampled through one shared sampler in the same live code path — both would land on one combined-image-sampler descriptor, leaving the second unbound at draw. Located at the offending `Sample` call; give each texture its own `SamplerState`. (`SD0213` is this condition's post-compile reflection backstop.) | `VulkanTextureSamplerBindingRewriter` |
 | `SD0100` | SPIRV-Cross SPIR-V→GLSL transpilation failed (includes a SPIR-V blob whose byte length is not a multiple of 4). | `SpirvCrossGlslTranspiler` |
 | `SD0101` | Pure-managed reflection failed (DXBC `RdefReader`, `SpirvReflector`). | `RdefReader`, `SpirvReflector` |
 | `SD0102` | Native DXIL reflection (`ID3D12ShaderReflection`) failed. | `DxilReflectionExtractor` |
@@ -71,6 +74,9 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 | `SD0210` | **Two historical meanings (known shared code):** (a) the d3dcompiler_47 oracle backend refused the request (requires Windows, or a `ProfileOverride` it never serves); (b) the MonoGame GLSL rewriter could not lower a construct to MonoGame's GL dialect — incl. int/bool/mat3/struct uniform-block members, a whole-array uniform use, or any surviving reference to a rewritten uniform block. | `D3DCompilerShaderCompiler`, `CompilationPipeline` |
 | `SD0211` | vkd3d-shader native library missing or unloadable (run `tools/restore.ps1`). | `Vkd3dShaderCompiler` |
 | `SD0212` | vkd3d-shader compile failed and emitted no diagnostic text at all (unparseable non-empty text passes through verbatim as `X0000`). | `Vkd3dCompileContract` |
+| `SD0213` | Vulkan target: reflection shows two distinct textures co-located onto a single combined-image-sampler binding — the second texture would silently sample the first's data on DesktopVK. The post-compile backstop of `SD0028`, for shared-sampler shapes the source-level scan cannot see. Give each texture its own `SamplerState` (or explicit register). | `CompilationPipeline` |
+| `SD0215` | OpenGL target: sampler registers are not contiguous from `s0`. The GL runtime binds samplers by positional name (`ps_s0`, `ps_s1`, …), so a sparse explicit-register layout (`register(s3)` with no `s0`–`s2`) would silently bind the wrong texture units. Use contiguous sampler registers from `s0`, or omit the explicit assignments. | `CompilationPipeline` |
+| `SD0214` | **Warning.** DirectX12 DXIL compiled on a non-Windows host is unsigned (`dxil.dll` validation/signing is Windows-only): it loads only with Windows Developer Mode enabled, and retail D3D12 rejects it at pipeline-state creation. Compile DirectX12 effects on Windows. | `DxcShaderCompiler` |
 | `SD0300` | FNA profile policy violation (SM4+/SM1 profile, or stage/profile prefix mismatch). | `CompilationPipeline.ResolveFnaProfile` |
 | `SD0301` | D3D9 CTAB reflection failed. | `CtabReader` |
 | `SD0302` | fx_2_0 effect validation failed at write time. | `Fx2EffectWriter` |
@@ -79,6 +85,7 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 | `SD0400` | **Warning.** A gradient op (`dFdx`/`dFdy`/`fwidth`) sits inside a loop with a divergent exit (conditional `break`/`discard`) in the emitted GL fragment source. ANGLE Direct3D11 (WebGL in every Windows browser) silently evaluates such derivatives to 0.0; fxc warns X3553 and force-unrolls the same HLSL (issue #141). | `GlslPortabilityAnalyzer` |
 | `SD0401` | **Warning.** A pass with no vertex shader whose pixel shader reads interpolants SpriteBatch's built-in SpriteEffect VS never writes (anything beyond COLOR0 → `vFrontColor` / TEXCOORD0 → `vTexCoord0`). Drawn with SpriteBatch on GL, the program link fails on strict drivers at the FIRST draw with the engine's generic exception. | `GlslPortabilityAnalyzer` |
 | `SD0402` | **Warning.** A loop shape outside GLSL ES 1.00 Appendix A in the emitted GL source (header-less `for (;;)`, empty-increment `for` with the index advanced in the body, `while`, or a genuine `do-while`) — may fail to load on WebGL1 / KNI Reach (issue #138); desktop GL, WebGL2, and KNI HiDef are unaffected. | `GlslPortabilityAnalyzer` |
+| `SD0403` | **Warning.** A GLSL-1.30+/ES-3.00-only construct survived into the versionless emitted GL source (`transpose`, `sinh`-family, `isnan`/`isinf`, `texelFetch`, bit-cast builtins, `switch`, `uint` types/literals, non-square matrices, integer shifts, or a `round`/`roundEven`/`trunc` a lowering missed). Lenient desktop drivers accept it; strict front ends (macOS OpenGL, Mesa, WebGL1) reject it at Effect-load time — the class behind issues #149 and #163. | `GlslPortabilityAnalyzer` |
 | `SD1900` | Browser/WASM DXC backend failed. | `JsDxcShaderCompiler` |
 | `SD1901` | Browser/WASM SPIRV-Cross backend failed. | `JsSpirvToGlslTranspiler` |
 | `SD1902` | Browser/WASM vkd3d backend failed. | `WasmVkd3dShaderCompiler` |
@@ -97,6 +104,7 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 | `X0006` | Invalid `/DxbcBackend` value (only `vkd3d`, `d3dcompiler`). |
 | `X0007` | CLI compile timed out (5-minute watchdog). |
 | `X0008` | Invalid `--target-runtime` value (only `monogame-gl`, `monogame-dx`, `monogame-gl-v11`, `kni-knifx`, `fna`). |
+| `X0009` | A CLI flag that requires a value (`/I`, `--mgfx-version`, `--target-runtime`, …) reached the end of the argument list with no value supplied. |
 | `X0010` | Platform not supported by ShadowDusk (e.g. PlayStation4, XboxOne, Switch). |
 | `X0011` | Invalid `--input-format` value (only `auto`, `fx`, `glsl`). |
 | `X0099` | Unexpected internal error (catch-all; a bug if a consumer ever sees it). |

@@ -119,12 +119,18 @@ internal static class DxcLoader
         }
 
         // NuGet runtimes/<rid>/native asset for framework-dependent consumers (the
-        // natives live in the package cache, never the app base directory).
+        // natives live in the package cache, never the app base directory) — and the
+        // single-file extraction dir, where the csproj's per-arch Link paths survive
+        // as subdirectories (bug-hunt 2026-07-27 C3: the dylib extracts to
+        // <extractionDir>/osx-<arch>/libdxcompiler.dylib, which a flat probe never sees).
         foreach (string dir in GetNativeSearchDirectories())
         {
-            string candidate = Path.Combine(dir, MacLibFileName);
-            if (File.Exists(candidate) && NativeLibrary.TryLoad(candidate, out handle))
-                return handle;
+            foreach (string candidate in GetSearchDirectoryCandidates(
+                         dir, RuntimeInformation.ProcessArchitecture))
+            {
+                if (File.Exists(candidate) && NativeLibrary.TryLoad(candidate, out handle))
+                    return handle;
+            }
         }
 
         // Bare name (single-file publish temp dir / OS search path).
@@ -159,6 +165,20 @@ internal static class DxcLoader
             yield return Path.Combine(dir.FullName, "tools", "dxc", rid, MacLibFileName);
             yield return Path.Combine(dir.FullName, "tools", "dxc", MacLibFileName);
         }
+    }
+
+    /// <summary>
+    /// The candidates probed inside ONE host native-search directory: the per-arch
+    /// subdirectory the csproj Link paths produce (which single-file extraction
+    /// preserves — bug-hunt 2026-07-27 C3), then flat. Pure (no I/O) so the order
+    /// is unit-testable, like <see cref="GetProbeCandidates"/>.
+    /// </summary>
+    internal static IEnumerable<string> GetSearchDirectoryCandidates(
+        string directory, Architecture processArchitecture)
+    {
+        string rid = processArchitecture == Architecture.Arm64 ? "osx-arm64" : "osx-x64";
+        yield return Path.Combine(directory, rid, MacLibFileName);
+        yield return Path.Combine(directory, MacLibFileName);
     }
 
     private static string[] GetNativeSearchDirectories()

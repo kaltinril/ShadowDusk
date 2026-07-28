@@ -74,7 +74,9 @@ internal static class FnaTestGate
     {
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
             return [""];
-        string arch = RuntimeInformation.OSArchitecture == Architecture.Arm64
+        // ProcessArchitecture, NOT OSArchitecture (bug-hunt 2026-07-27 N19): under Rosetta 2 the OS
+        // reports Arm64 while the process can only load the x64 native (same fix as DxcLoader).
+        string arch = RuntimeInformation.ProcessArchitecture == Architecture.Arm64
             ? "osx-arm64" : "osx-x64";
         return [arch, ""];
     }

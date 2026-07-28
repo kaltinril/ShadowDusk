@@ -7,11 +7,16 @@ using ShadowDusk.Core;
 namespace ShadowDusk.HLSL.D3DCompiler;
 
 /// <summary>
-/// Reformats d3dcompiler_47 (fxc) error-blob text into <see cref="ShaderError"/>s.
-/// fxc emits MSVC-style diagnostics: <c>&lt;file&gt;(&lt;line&gt;,&lt;col&gt;): error X0000: &lt;message&gt;</c>
-/// (the column may be a range, e.g. <c>(12,5-9)</c>). The file part can contain a
-/// drive letter, so the line/col group is anchored to the parenthesised suffix.
-/// Constraint 5: surface file/line/column/message verbatim — no swallowing.
+/// Reformats compiler error-blob text into <see cref="ShaderError"/>s. Two dialects:
+/// d3dcompiler_47 (fxc) emits MSVC-style diagnostics —
+/// <c>&lt;file&gt;(&lt;line&gt;,&lt;col&gt;): error X0000: &lt;message&gt;</c> (the column may be a
+/// range, e.g. <c>(12,5-9)</c>) — while vkd3d-shader emits GCC/colon-style —
+/// <c>&lt;file&gt;:&lt;line&gt;:&lt;col&gt;: E5005: &lt;message&gt;</c>, with a leading code or
+/// severity word instead of the fixed <c>error</c>/<c>warning</c> token (bug-hunt
+/// 2026-07-27 N9: colon-style lines used to collapse into one line-less X0000 entry,
+/// losing the file/line/column contract on the DX11/FNA error path). The file part
+/// can contain a drive letter, so both patterns anchor on the trailing numeric
+/// groups. Constraint 5: surface file/line/column/message verbatim — no swallowing.
 /// </summary>
 internal static partial class D3DCompilerDiagnosticReformatter
 {
@@ -19,6 +24,18 @@ internal static partial class D3DCompilerDiagnosticReformatter
         @"^(?<file>.+)\((?<line>\d+)(?:,(?<col>\d+)(?:-\d+)?)?\)\s*:\s*(?<severity>error|warning)\s+(?<code>[A-Za-z0-9]+)\s*:\s*(?<message>.+)$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant)]
     private static partial Regex DiagnosticLine();
+
+    [GeneratedRegex(
+        @"^(?<file>.+?):(?<line>\d+):(?<col>\d+):\s*(?<rest>.+)$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant)]
+    private static partial Regex ColonDiagnosticLine();
+
+    // The colon dialect's payload: an optional severity word, an optional letter-prefixed
+    // code (vkd3d's E####/W####), then the message. W-codes are warnings.
+    [GeneratedRegex(
+        @"^(?:(?<severity>error|warning|note)\s*:\s*)?(?:(?<code>[A-Za-z]{1,2}\d{3,5})\s*:\s*)?(?<message>.+)$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
+    private static partial Regex ColonRestParts();
 
     public static IReadOnlyList<ShaderError> Reformat(string fxcErrorText, string sourceFileName)
     {
@@ -37,6 +54,35 @@ internal static partial class D3DCompilerDiagnosticReformatter
             Match m = DiagnosticLine().Match(line);
             if (!m.Success)
             {
+                Match cm = ColonDiagnosticLine().Match(line);
+                if (cm.Success)
+                {
+                    Match rest = ColonRestParts().Match(cm.Groups["rest"].Value);
+                    string cCode = rest.Groups["code"].Success ? rest.Groups["code"].Value : "X0000";
+                    ShaderErrorSeverity cSeverity =
+                        rest.Groups["severity"].Success &&
+                        rest.Groups["severity"].Value.Equals("note", StringComparison.OrdinalIgnoreCase)
+                            ? ShaderErrorSeverity.Note
+                        : (rest.Groups["severity"].Success &&
+                           rest.Groups["severity"].Value.StartsWith("w", StringComparison.OrdinalIgnoreCase)) ||
+                          (rest.Groups["code"].Success &&
+                           rest.Groups["code"].Value.StartsWith("W", StringComparison.OrdinalIgnoreCase))
+                            ? ShaderErrorSeverity.Warning
+                            : ShaderErrorSeverity.Error;
+                    string cFile = cm.Groups["file"].Value;
+                    if (string.Equals(cFile, sourceFileName, StringComparison.OrdinalIgnoreCase))
+                        cFile = sourceFileName;
+                    errors.Add(new ShaderError(
+                        File: cFile,
+                        Line: int.Parse(cm.Groups["line"].Value),
+                        Column: int.Parse(cm.Groups["col"].Value),
+                        Code: cCode,
+                        Message: rest.Groups["message"].Value,
+                        Severity: cSeverity,
+                        RawDiagnostics: line));
+                    continue;
+                }
+
                 unmatched.AppendLine(line);
                 continue;
             }

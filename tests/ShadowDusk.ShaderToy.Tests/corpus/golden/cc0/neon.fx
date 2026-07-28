@@ -114,7 +114,7 @@ float city(float2 p)
     float cd = 1E6;
     const float count = 5.0;
     const float width = 0.1;
-    for (float i = 0.0; (i < count); ++i)
+    for (float i = 0.0; i < count; ++i)
     {
         float2 pp = p;
         pp.x += ((i * width) / count);

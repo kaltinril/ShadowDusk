@@ -439,11 +439,12 @@ public sealed class FxPreParser
         {
             var tok = Peek();
 
-            // technique / technique11 — but NOT macro calls like TECHNIQUE(name, vs, ps).
+            // technique / technique10 / technique11 — but NOT macro calls like TECHNIQUE(name, vs, ps).
             // A real technique declaration is followed by an identifier name (or annotation '<' or body '{'),
             // never by '(' which would indicate a preprocessor macro invocation.
             if (tok.Kind == TokenKind.Identifier &&
                 (string.Equals(tok.Text, "technique", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(tok.Text, "technique10", StringComparison.OrdinalIgnoreCase) ||
                  string.Equals(tok.Text, "technique11", StringComparison.OrdinalIgnoreCase)))
             {
                 int la = 1;
@@ -901,8 +902,12 @@ public sealed class FxPreParser
     private Result<TechniqueInfo, FxParseError> ParseTechnique()
     {
         var startTok = Peek();
-        bool isEffect11 = string.Equals(startTok.Text, "technique11", StringComparison.OrdinalIgnoreCase);
-        Consume(); // consume "technique"/"technique11"
+        // technique10 (fx_4_0) parses identically to technique11 — fxc accepts both and
+        // ShadowDusk's own IdentifierSafety reserves the word, but the block used to pass
+        // through unrecognized and leak its pass body into the DXC input (bug-hunt
+        // 2026-07-27 M14).
+        bool isEffect11 = !string.Equals(startTok.Text, "technique", StringComparison.OrdinalIgnoreCase);
+        Consume(); // consume "technique"/"technique10"/"technique11"
 
         SkipNonCodeTokens();
 
@@ -1066,6 +1071,21 @@ public sealed class FxPreParser
 
             if (isVs || isPs)
             {
+                // fxc parity (bug-hunt 2026-07-27 M14): `VertexShader = NULL;` is the
+                // D3D9 idiom for "no shader bound to this stage in this pass" (the app
+                // binds one at runtime, or the stage is fixed-function). fxc and mgfxc
+                // accept it; treat it exactly like an absent assignment.
+                if (PeekIsKeyword("NULL"))
+                {
+                    Consume(); // NULL
+                    SkipNonCodeTokens();
+                    var nullSemi = Expect(TokenKind.Semicolon);
+                    if (nullSemi.IsFailure)
+                        return Result<PassInfo, FxParseError>.Fail(nullSemi.Error);
+                    SkipNonCodeTokens();
+                    continue;
+                }
+
                 // compile <profile> <entrypoint>( )
                 if (!PeekIsKeyword("compile"))
                     return Fail<PassInfo>(FxParseErrorCode.UnexpectedToken,
@@ -1301,7 +1321,12 @@ public sealed class FxPreParser
                     if (texTok.Kind != TokenKind.Identifier)
                         return Fail<SamplerInfo>(FxParseErrorCode.UnexpectedToken,
                             $"Expected texture name inside '()' but found '{texTok.Text}'", texTok);
-                    textureRef = texTok.Text;
+                    // fxc parity (bug-hunt 2026-07-27 M14): `Texture = NULL;` means "the
+                    // app binds the texture at runtime". Leave the reference unset so the
+                    // sampler binds its synthesized texture parameter, instead of carrying
+                    // a literal identifier named NULL into the rewritten HLSL
+                    // (`NULL.Sample(...)` — an undeclared-identifier DXC error).
+                    textureRef = IsNullKeyword(texTok.Text) ? null : texTok.Text;
                     Consume();
                     SkipNonCodeTokens();
                     var rp = Expect(TokenKind.RParen);
@@ -1314,7 +1339,8 @@ public sealed class FxPreParser
                     if (texTok.Kind != TokenKind.Identifier)
                         return Fail<SamplerInfo>(FxParseErrorCode.UnexpectedToken,
                             $"Expected texture name but found '{texTok.Text}'", texTok);
-                    textureRef = texTok.Text;
+                    // Same NULL semantics as the parenthesized form above.
+                    textureRef = IsNullKeyword(texTok.Text) ? null : texTok.Text;
                     Consume();
                 }
             }
@@ -1562,6 +1588,11 @@ public sealed class FxPreParser
         while (Peek().Kind is TokenKind.LineComment or TokenKind.BlockComment or TokenKind.Preprocessor)
             Consume();
     }
+
+    /// <summary>True for the D3D9 effect-framework <c>NULL</c> keyword (case-insensitive,
+    /// matching fxc) used in <c>VertexShader = NULL;</c> / <c>Texture = NULL;</c>.</summary>
+    private static bool IsNullKeyword(string text) =>
+        string.Equals(text, "NULL", StringComparison.OrdinalIgnoreCase);
 
     private bool PeekIsKeywordAt(int offset, string keyword)
     {

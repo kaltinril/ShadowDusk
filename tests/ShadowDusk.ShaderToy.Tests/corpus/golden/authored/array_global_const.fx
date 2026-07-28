@@ -24,7 +24,7 @@ void mainImage(out float4 fragColor, float2 fragCoord)
 {
     float2 uv = (fragCoord / iResolution.xy);
     float acc = 0.0;
-    for (int i = 0; (i < 4); i++)
+    for (int i = 0; i < 4; i++)
     {
         acc += (kWeights[i] * uv.x);
     }

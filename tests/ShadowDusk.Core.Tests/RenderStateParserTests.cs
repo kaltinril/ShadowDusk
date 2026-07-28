@@ -44,6 +44,32 @@ public sealed class RenderStateParserTests
         block.HasRasterizerState.Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData("1", true)]
+    [InlineData("0", false)]
+    public void Parse_BoolState_AcceptsNumericForms(string value, bool expected)
+    {
+        // mgfxc parity (bug-hunt 2026-07-27 M14): MonoGame's ParseTreeTools.ParseBool
+        // accepts 1/0, and XNA-era effects write numeric bools (`AlphaBlendEnable = 1;`)
+        // ubiquitously — these used to fail the whole effect with SD0011.
+        var block = Parse(("StencilEnable", value));
+        block.StencilEnable.Should().Be(expected);
+    }
+
+    [Fact]
+    public void Parse_StencilValues_AcceptHexForms()
+    {
+        // fxc accepts hex wherever an integer state value is legal, and real-world
+        // stencil masks are routinely written 0xFF (bug-hunt 2026-07-27 M14).
+        var block = Parse(
+            ("StencilMask", "0xFF"),
+            ("StencilWriteMask", "0x0F"),
+            ("StencilRef", "0x10"));
+        block.StencilMask.Should().Be(0xFF);
+        block.StencilWriteMask.Should().Be(0x0F);
+        block.ReferenceStencil.Should().Be(0x10);
+    }
+
     [Fact]
     public void Parse_UnknownKey_IsIgnored()
     {

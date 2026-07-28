@@ -38,19 +38,20 @@ to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub 
    Releases cut from `main` only after CI is green; local green is not sufficient.
 
 4. **A green Windows render gate — RUN IT FIRST (CI structurally cannot run this).** The
-   DirectX / FNA / KNI-DirectX / real-KNI-desktop-GL / **Vulkan** / browser-ANGLE rung-4 render
-   proofs ("renders like `mgfxc`/`fxc` in the real engine") have no headless CI driver — Mesa
+   DirectX / DirectX 12 / FNA / KNI-DirectX / real-KNI-desktop-GL / **Vulkan** / browser-ANGLE
+   rung-4 render proofs ("renders like `mgfxc`/`fxc` in the real engine") have no headless CI driver — Mesa
    covers the in-process OpenGL gates on the Linux lane, but there is no verified headless
    D3D/WARP path on the runners, the real-KNI SDL2.GL rigs are not wired there, DesktopVK needs
    a real Vulkan GPU, and CI's browser smoke renders on SwiftShader (blind to ANGLE-D3D11
    behavior like the issue-#136 gradient poisoning). **`release.yml` does not check any of this
    either**, so this gate is the only thing between a render regression and nuget.org. Run it on
-   a Windows + GPU box **before** bumping the version — it is the longest and most likely step
+   a Windows box with a **DX12-capable GPU** (the DirectX 12 gates are default-ON; Vulkan-capable
+   too, unless `-SkipVulkan`) **before** bumping the version — it is the longest and most likely step
    to fail, so a divergence should stop the release before any version churn, commit, PR, or CI
    time is spent:
 
    ```powershell
-   ./validation/run-windows-render-gates.ps1              # DX corpus + DX-modern (VTF) + KNI-DX + KNI-GL desktop + KNI-GL VS-driven + ANGLE derivative probe + BOTH Vulkan gates
+   ./validation/run-windows-render-gates.ps1              # DX corpus + DX-modern (VTF) + DX Apos gallery + DX12 corpus + DX12 VS-driven/Apos gallery + KNI-DX + KNI-GL desktop + KNI-GL VS-driven + GL Apos + GL Apos gallery + ANGLE derivative probe + BOTH Vulkan gates
    ./validation/run-windows-render-gates.ps1 -IncludeFna  # also FNA fx_2_0, for an FNA-affecting release (include it when in doubt)
    ```
 
@@ -62,7 +63,7 @@ to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub 
 
    A non-zero exit means a render diverged from `mgfxc`/`fxc` — **do not release.** (The
    in-process OpenGL render gates DO run in CI via `validation-render.yml`, so they are covered
-   by item 3; this item is the DX/FNA/KNI-DX/KNI-GL/Vulkan/ANGLE gap. See `CLAUDE.md` →
+   by item 3; this item is the DX/DX12/FNA/KNI-DX/KNI-GL/Vulkan/ANGLE gap. See `CLAUDE.md` →
    "Validation render drivers are the real bar". The `/release` skill performs this as its
    step 2, before the version bump.)
 

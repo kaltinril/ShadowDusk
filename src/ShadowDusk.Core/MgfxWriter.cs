@@ -433,10 +433,14 @@ public sealed class MgfxWriter
     {
         // MGFX v10 annotations are the int32 count and NOTHING else (Phase 43, F2).
         // MonoGame 3.8.2's ReadAnnotations reads only the count ("TODO: Annotations
-        // are not implemented!") and never any bodies; mgfxc likewise writes none
-        // (its annotation_handles are always null). Writing name/type/value bodies
-        // here desynced the reader stream and bricked any annotated effect.
-        bw.Write(annotations.Count);
+        // are not implemented!") and materializes that many NULL EffectAnnotation
+        // slots; mgfxc always writes 0 (its annotation_handles are always null). A
+        // nonzero count here both diverged from mgfxc's bytes and handed the
+        // consumer's game a collection of nulls that NREs on first touch (bug-hunt
+        // 2026-07-27 M15). Always 0 — the parsed annotations stay in the IR as
+        // metadata until MonoGame actually implements annotation reading.
+        _ = annotations;
+        bw.Write(0);
     }
 
 }

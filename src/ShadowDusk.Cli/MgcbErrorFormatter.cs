@@ -15,7 +15,11 @@ internal static class MgcbErrorFormatter
             _                           => "error",
         };
         string code = FormatCode(error.Code);
-        string filename = Path.GetFileName(error.File);
+        // The path exactly as the compiler was given it — never just the file name
+        // (bug-hunt 2026-07-27 N15): two same-named includes from different directories
+        // must stay distinguishable, and IDE/MSBuild jump-to-file needs the directory.
+        // fxc/mgfxc echo the path they were given the same way.
+        string filename = error.File;
 
         if (error.Line > 0)
             return $"{filename}({error.Line},{error.Column}-{error.Column}): {severity} {code}: {error.Message}";

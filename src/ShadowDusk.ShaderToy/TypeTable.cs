@@ -13,10 +13,12 @@ internal static class TypeTable
             ["void"] = "void",
             ["bool"] = "bool",
             ["int"] = "int",
-            // GLSL unsigned types are mapped to signed int (the supported subset has no unsigned
-            // type; ShaderToy image shaders use uint/uvec only for hashes / bit tricks where the
-            // signed reinterpretation is behaviorally equivalent under the bitwise ops we pass through).
-            ["uint"] = "int",
+            // GLSL unsigned types map to HLSL's real uint/uintN (SM6 via DXC), which carry exactly
+            // GLSL's unsigned semantics. A signed-int reinterpretation is NOT behaviorally
+            // equivalent: `>>` sign-extends signed where GLSL zero-fills unsigned, and `float(h)`
+            // on a high-bit hash value goes negative — silently different noise in the huge
+            // hash/PRNG ShaderToy class.
+            ["uint"] = "uint",
             ["float"] = "float",
             ["vec2"] = "float2",
             ["vec3"] = "float3",
@@ -27,9 +29,9 @@ internal static class TypeTable
             ["bvec2"] = "bool2",
             ["bvec3"] = "bool3",
             ["bvec4"] = "bool4",
-            ["uvec2"] = "int2",
-            ["uvec3"] = "int3",
-            ["uvec4"] = "int4",
+            ["uvec2"] = "uint2",
+            ["uvec3"] = "uint3",
+            ["uvec4"] = "uint4",
             ["mat2"] = "float2x2",
             ["mat3"] = "float3x3",
             ["mat4"] = "float4x4",
@@ -47,7 +49,7 @@ internal static class TypeTable
         "void" => GlslType.ScalarOf(ScalarKind.Void),
         "bool" => GlslType.ScalarOf(ScalarKind.Bool),
         "int" => GlslType.ScalarOf(ScalarKind.Int),
-        "uint" => GlslType.ScalarOf(ScalarKind.Int),
+        "uint" => GlslType.ScalarOf(ScalarKind.Uint),
         "float" => GlslType.ScalarOf(ScalarKind.Float),
         "vec2" => GlslType.Vector(ScalarKind.Float, 2),
         "vec3" => GlslType.Vector(ScalarKind.Float, 3),
@@ -58,9 +60,9 @@ internal static class TypeTable
         "bvec2" => GlslType.Vector(ScalarKind.Bool, 2),
         "bvec3" => GlslType.Vector(ScalarKind.Bool, 3),
         "bvec4" => GlslType.Vector(ScalarKind.Bool, 4),
-        "uvec2" => GlslType.Vector(ScalarKind.Int, 2),
-        "uvec3" => GlslType.Vector(ScalarKind.Int, 3),
-        "uvec4" => GlslType.Vector(ScalarKind.Int, 4),
+        "uvec2" => GlslType.Vector(ScalarKind.Uint, 2),
+        "uvec3" => GlslType.Vector(ScalarKind.Uint, 3),
+        "uvec4" => GlslType.Vector(ScalarKind.Uint, 4),
         "mat2" => GlslType.Matrix(2),
         "mat3" => GlslType.Matrix(3),
         "mat4" => GlslType.Matrix(4),

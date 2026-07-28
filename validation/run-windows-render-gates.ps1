@@ -8,9 +8,10 @@
   ShadowDusk's real product bar is "loads + renders like the reference compiler in the REAL
   engine" (CLAUDE.md -> "Validation render drivers are the real bar"). The OpenGL render gates
   now run in CI on Linux via Mesa llvmpipe (`.github/workflows/validation-render.yml`), but the
-  DirectX / FNA / KNI-DirectX render proofs have NO headless software driver we can run on a
-  GitHub runner (Mesa is GL-only; a verified headless D3D/WARP story does not exist yet). So
-  those gates can only run on a real Windows box with a GPU - which means the DEVELOPER'S
+  DirectX / DirectX12 / FNA / KNI-DirectX render proofs have NO headless software driver we can
+  run on a GitHub runner (Mesa is GL-only; a verified headless D3D/WARP story does not exist
+  yet). So those gates can only run on a real Windows box with a DX12-capable GPU (Vulkan-capable
+  too, unless -SkipVulkan) - which means the DEVELOPER'S
   machine is the gate, and it must be run BEFORE a release (and before merging any change that
   touches shader output / transpilation / the MGFX-FNA writers / render state / matrix handling).
 
@@ -20,41 +21,22 @@
   results, and exits non-zero if ANY gate failed. A green run is the evidence a release needs
   that CI cannot provide.
 
-  Gates (all default ON except FNA):
+  Gates (all default ON except FNA). Each entry below is only the what-and-versus; per-gate
+  history and evidence detail lives in docs/validation-matrix.md section 6.
     * MonoGame WindowsDX corpus  - validation/BaselineDx + CandidateDx + compare_dx.py
                                    (ShadowDusk DX vs mgfxc DX golden, real MonoGame WindowsDX).
     * DX modern features (VTF)   - validation/DxModernFeatures (vkd3d vs fxc oracle, maxd 0).
-    * DX Apos.Shapes gallery     - validation/VsDrivenDx -- apos (Phase 55: the FULL Apos.Shapes
-                                   ShapeBatch shape gallery - every Draw*/Fill*/Border* shape
-                                   method - through the REAL Apos.Shapes NuGet package, both DXBC
-                                   backends vs the package's own embedded golden effect, real
-                                   MonoGame WindowsDX. vkd3d-shader: maxd 0. d3dcompiler_47 oracle:
-                                   maxd <= 1 (documented 1-ULP transcendental-math drift from a
-                                   missing ShaderFlags.OptimizationLevel3 vs mgfxc - see
-                                   VsDrivenDx's Program.cs remarks; a real, tracked, out-of-scope-
-                                   for-Phase-55 fidelity gap, not silently smoothed over).
+    * DX Apos.Shapes gallery     - validation/VsDrivenDx -- apos: the full 30-cell Apos.Shapes
+                                   ShapeBatch gallery through the real NuGet package; d3dcompiler_47
+                                   arm vs the real mgfxc DirectX_11 golden, vkd3d arm vs the
+                                   package's embedded (itself vkd3d-compiled) effect - both tol 0.
     * DirectX12 PS corpus        - validation/BaselineDx12 + CandidateDx12 + compare_dx12.py
-                                   (Phase 54: ShadowDusk DX12 vs a REAL mgfxc DirectX_12 golden -
-                                   built by MonoGame 3.8.5's own content pipeline,
-                                   /Platform:WindowsDX12 - real MonoGame WindowsDX12, maxd 0).
-    * DirectX12 VS-driven + Apos.Shapes gallery - validation/VsDrivenDx12 (+ `-- apos`) (Phase 54
-                                   built the VS-driven DX12 path; Phase 55 upgraded `-- apos` to
-                                   the FULL ShapeBatch shape gallery vs the package's own embedded
-                                   golden, real MonoGame 3.8.5 WindowsDX12). Was a confirmed
-                                   E_INVALIDARG crash in MGG_GraphicsDevice_DrawIndexed;
-                                   root-caused by reading MonoGame's real v3.8.5 source directly
-                                   (not the rootsig hypothesis - that was a red herring) to a DX12
-                                   vertex shader shipping an EMPTY vertex-attribute table, which
-                                   MonoGame's shared VertexInputLayout.GenerateInputElements needs
-                                   to build the D3D12 input layout; an empty table silently yields
-                                   a zero-element layout that fails CreateGraphicsPipelineState at
-                                   the first Draw. Fixed by wiring DXIL-based vertex-attribute
-                                   reflection for DirectX12 (DxilVertexInputReflector). Gallery
-                                   tolerance is maxd <= 1 (2/30 cells, same class of 1-ULP
-                                   transcendental-math drift as the DX11 oracle finding, between
-                                   two independently-built DXC toolchains - see VsDrivenDx12's
-                                   Program.cs remarks), not the maxd-0 bar Phase 54's own
-                                   locally-generated-golden result hit.
+                                   (ShadowDusk DX12 vs a real mgfxc DirectX_12 golden, real
+                                   MonoGame 3.8.5 WindowsDX12, maxd 0).
+    * DirectX12 VS-driven + Apos.Shapes gallery - validation/VsDrivenDx12 (+ `-- apos`): the VS rig
+                                   vs the real mgfxc DirectX_12 golden (maxd 0); the gallery vs the
+                                   same local golden at tol 1 (2/30 cells at 1/255 - an open,
+                                   not-yet-root-caused follow-up).
     * KNI DirectX                - validation/KniWinFormsDX (ShadowDusk DX vs mgfxc, real KNI
                                    WinForms.DX11).
     * KNI OpenGL desktop         - validation/Baseline + Candidate + KniDesktopGL + compare_kni.py
@@ -62,25 +44,13 @@
                                    real-KNI-runtime GL proof CI's llvmpipe lane does not cover).
     * KNI OpenGL VS-driven       - validation/KniVsDriven (issue #70 matrix/POSITION rig,
                                    in-process compare).
-    * Apos.Shapes GL render-proof - validation/VsDriven -- apos (Phase 51 A3, GL slice). Real
-                                   MonoGame DesktopGL vs the mgfxc OpenGL golden for
-                                   apos-shapes.fx (the Phase 49 pin, NOT the same fixture the
-                                   DX/Vulkan Apos.Shapes gates use - see AposShapesRenderer's
-                                   remarks for why the DX/Vulkan fixture's real mgfxc GL output
-                                   is confirmed wrong). Compares a circle (tol 2/255, documented
-                                   transcendental-math drift) plus, since issue #160, a needle-thin
-                                   ellipse (supplementary; the bug it targets is driver-dependent
-                                   UB - the rewriter unit test is the authoritative guard).
-    * Apos.Shapes GL gallery     - validation/VsDriven -- apos-gallery (Phase 55). The FULL
-                                   ShapeBatch shape gallery through ShadowDusk's GL compile ONLY -
-                                   no golden arm, no pixel-diff. GL is stuck driving the SAME
-                                   current shader revision DX/Vulkan use (ShapeBatch's vertex
-                                   layout is identical on every backend), and mgfxc's own GL
-                                   compile of that revision is the SAME confirmed MojoShader bug
-                                   above, rendering solid black for every non-textured shape - so
-                                   there is no trustworthy GL oracle for this gallery. Asserts
-                                   every one of the 30 shapes renders visible (non-black,
-                                   non-transparent) content.
+    * Apos.Shapes GL render-proof - validation/VsDriven -- apos: a single shape plus a needle-thin
+                                   ellipse vs the mgfxc OpenGL golden, tol 2/255. Uses the older
+                                   apos-shapes.fx pin - the current revision's mgfxc GL compile is
+                                   a confirmed MojoShader bug (see AposShapesRenderer's remarks).
+    * Apos.Shapes GL gallery     - validation/VsDriven -- apos-gallery: the 30-cell ShapeBatch
+                                   gallery through ShadowDusk's GL compile only (no trustworthy GL
+                                   oracle exists); asserts all 30 shapes render visible content.
     * ANGLE D3D11 derivatives    - validation/AngleDerivativeProbe (issue #136: the emitted
                                    fragment control-flow shapes keep dFdx/dFdy alive on the
                                    real browser WebGL backend; headless Edge/Chrome).
@@ -88,24 +58,18 @@
                                    its restore-fna.ps1 clones the FNA source tree (heavy) and the
                                    oracle needs the Windows SDK fxc. Run it for any release that
                                    could affect the FNA target.
-    * Vulkan PS corpus           - validation/CandidateVulkan (ShadowDusk's own Vulkan .mgfx
-                                   loaded in real MonoGame DesktopVK). Asserts ShadowDusk's OWN
-                                   output renders correctly; NOT a pixel-diff against mgfxc, whose
-                                   own output is unloadable for THIS corpus (its SlotOffset
-                                   arithmetic underflows for auto-numbered resources - a confirmed,
-                                   separate MonoGame bug; see
-                                   plan/DONE/PHASE-32-appendix/vulkan-mgfx-format-spec.md).
-    * Vulkan VS-driven           - validation/VsDrivenVulkan (issue #145). A real reference-compiler
-                                   oracle on Vulkan: renders a NON-IDENTITY asymmetric transform and
-                                   pixel-diffs ShadowDusk against the checked-in mgfxc 3.8.5 golden.
-                                   Its fixture uses explicit registers, which keeps mgfxc's slot
-                                   arithmetic in range, so the baseline actually loads. This is the
-                                   gate that catches "VS-driven Vulkan effects render nothing".
+    * Vulkan PS corpus           - validation/CandidateVulkan (ShadowDusk's OWN output rendered on
+                                   real MonoGame DesktopVK; not an mgfxc diff - mgfxc's output is
+                                   unloadable for this corpus, a confirmed MonoGame SlotOffset bug).
+    * Vulkan VS-driven + gallery - validation/VsDrivenVulkan (+ `-- apos`): a NON-IDENTITY
+                                   asymmetric transform pixel-diffed vs the mgfxc 3.8.5 golden
+                                   (maxd 0), plus the 30-cell ShapeBatch gallery (maxd 0).
 
   Both Vulkan gates are DEFAULT-ON (issue #145: a Vulkan-affecting change must not depend on
   someone remembering a switch). Pass -SkipVulkan only on a box with no Vulkan-capable GPU.
 
-  The OpenGL render gates are intentionally NOT here - CI already runs them (see
+  The in-process MonoGame OpenGL render gates (StateFidelity / CbufferModel /
+  TextureBreadthValidation) are intentionally NOT here - CI already runs them (see
   validation-render.yml). Run them with `dotnet test` + that workflow, not this script.
 
 .PARAMETER IncludeFna

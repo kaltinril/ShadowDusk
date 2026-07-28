@@ -4,7 +4,8 @@ namespace ShadowDusk.ShaderToy;
 
 /// <summary>
 /// A hand-written lexer for the supported GLSL subset. Tokenizes identifiers, numeric/bool
-/// literals (including exponent forms and a tolerated trailing <c>f</c>/<c>F</c> suffix), and the
+/// literals (including exponent forms, a tolerated trailing <c>f</c>/<c>F</c> suffix, and the
+/// unsigned <c>u</c>/<c>U</c> suffix on integer literals, kept in the token text), and the
 /// punctuation / operator set the parser needs. Comments and whitespace are skipped. 1-based
 /// line/column is tracked on every token for diagnostics.
 /// </summary>
@@ -153,7 +154,7 @@ internal sealed class Lexer
                 Advance();
             }
 
-            RejectUnsignedSuffix(line, col, sb.ToString());
+            ConsumeUnsignedSuffix(sb);
             return new Token(TokenKind.IntLiteral, sb.ToString(), line, col);
         }
 
@@ -204,29 +205,35 @@ internal sealed class Lexer
             isFloat = true;
             Advance();
         }
-        else
+        else if (Current is 'u' or 'U')
         {
-            // An unsigned-integer suffix ('123u' / '0xFFu') marks uint/uvec bit arithmetic, which the
-            // float-based subset cannot map faithfully. Reject it with a clear, located message rather than
-            // leaving the stray 'u'/'U' to surface as a confusing "expected ')'" parse error downstream.
-            RejectUnsignedSuffix(line, col, sb.ToString());
+            // An unsigned-integer suffix ('123u' / '0xFFu') marks a uint literal. On an integer it is
+            // kept in the token text and emitted verbatim (HLSL spells uint literals identically, with
+            // GLSL's exact unsigned semantics under the SM6 pipeline). On a floating literal the
+            // suffix is malformed GLSL: reject it loudly rather than leave a stray 'u' to surface as a
+            // confusing "expected ')'" parse error downstream.
+            if (isFloat)
+            {
+                throw new ConvertException(
+                    $"Malformed numeric literal '{sb}{Current}': an unsigned-integer suffix " +
+                    "('u'/'U') is not valid on a floating-point literal.",
+                    line, col, sb.ToString() + Current);
+            }
+
+            ConsumeUnsignedSuffix(sb);
         }
 
         return new Token(isFloat ? TokenKind.FloatLiteral : TokenKind.IntLiteral, sb.ToString(), line, col);
     }
 
-    /// <summary>Throw a clear, located diagnostic if a numeric literal is immediately followed by an
-    /// unsigned-integer suffix (<c>u</c>/<c>U</c>). Unsigned/uvec bit arithmetic (typically an integer hash)
-    /// is outside the supported float-based subset, so surface that precisely at the literal.</summary>
-    private void RejectUnsignedSuffix(int line, int col, string literal)
+    /// <summary>Consume a trailing unsigned-integer suffix (<c>u</c>/<c>U</c>), if present, into the
+    /// literal text so it survives into the emitted HLSL uint literal.</summary>
+    private void ConsumeUnsignedSuffix(StringBuilder sb)
     {
         if (Current is 'u' or 'U')
         {
-            throw new ConvertException(
-                $"Unsigned-integer literals ('{literal}{Current}') are outside the supported subset. This " +
-                "shader uses unsigned-integer (uint / uvec) bit arithmetic, typically an integer hash, which " +
-                "has no faithful mapping to the float-based shader subset.",
-                line, col, literal + Current);
+            sb.Append(Current);
+            Advance();
         }
     }
 

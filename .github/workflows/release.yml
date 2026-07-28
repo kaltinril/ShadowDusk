@@ -490,7 +490,14 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           out="$RUNNER_TEMP/smoke-${{ matrix.rid }}.mgfx"
-          ./publish/${{ matrix.rid }}/ShadowDuskCLI tests/fixtures/shaders/Minimal.fx "$out" /Profile:OpenGL
+          # Run the binary from OUTSIDE the checkout. The native loaders walk UP from
+          # the binary's own directory and would find the repo's restored tools/ from
+          # publish/<rid>/, silently masking a broken in-bundle native resolve — the
+          # exact failure mode of bug-hunt 2026-07-27 C3 (macOS archives shipped
+          # unable to load their bundled dylibs, and this smoke stayed green).
+          fx="$PWD/tests/fixtures/shaders/Minimal.fx"
+          cp "publish/${{ matrix.rid }}/ShadowDuskCLI" "$RUNNER_TEMP/"
+          (cd "$RUNNER_TEMP" && ./ShadowDuskCLI "$fx" "$out" /Profile:OpenGL)
           if [ ! -s "$out" ]; then
             echo "::error::published ${{ matrix.rid }} CLI exited 0 but produced a missing/empty .mgfx — the single-file bundle is broken."
             exit 1
