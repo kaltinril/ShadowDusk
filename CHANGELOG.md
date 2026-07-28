@@ -14,6 +14,14 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.15.1] - 2026-07-28
+
+### Added
+
 - New `SD0216` diagnostic: on the OpenGL target, the emitted GLSL declares a different number of
   sampler uniforms than the effect's sampler table has records, so some `ps_s{k}` would never be
   assigned a texture unit and would silently sample unit 0. It fires for several textures read
@@ -1206,7 +1214,8 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.15.1...HEAD
+[0.15.1]: https://github.com/kaltinril/ShadowDusk/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.14.2...v0.15.0
 [0.14.2]: https://github.com/kaltinril/ShadowDusk/compare/v0.14.1...v0.14.2
 [0.14.1]: https://github.com/kaltinril/ShadowDusk/compare/v0.14.0...v0.14.1
