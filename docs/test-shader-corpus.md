@@ -266,9 +266,8 @@ depends on — compiles on GL and DX**, the targets Gum ships on.
 2026-07-23).** The current-upstream revision `apos-shapes-sm6.fx` (see
 `third-party/Apos.Shapes/NOTICE.md` — it also compiles GL/DX/Vulkan, FNA excluded on a
 legitimate SM ceiling) is pixel-diffed against the real `mgfxc` golden on **DirectX**
-(`validation/VsDrivenDx -- apos`, through a bespoke 13-element vertex-buffer harness, **maxd 0**
-on both ShadowDusk DXBC backends) and **Vulkan** (`validation/VsDrivenVulkan -- apos`, also
-maxd 0). **GL uses a different fixture on purpose:** `apos-shapes.fx` (the Phase 49 pin, below),
+(`validation/VsDrivenDx -- apos`, **maxd 0** on both ShadowDusk DXBC backends) and **Vulkan**
+(`validation/VsDrivenVulkan -- apos`, also maxd 0). **GL uses a different fixture on purpose:** `apos-shapes.fx` (the Phase 49 pin, below),
 not `apos-shapes-sm6.fx` — that later revision's real mgfxc GL compile is confirmed to render
 solid black, a MojoShader/fxc codegen bug, not a ShadowDusk defect. `validation/VsDriven --
 apos` pixel-diffs `apos-shapes.fx` against the real mgfxc OpenGL golden at **maxd 2/255** (see
@@ -280,13 +279,14 @@ instruction-slot ceiling, not an open rung).
 expanded to the FULL `ShapeBatch` shape gallery** (every `Draw*`/`Fill*`/`Border*` method:
 circle, rectangle+corner-radii, line, path, hexagon, triangle, ellipse, arc, ring; gradients,
 dashes, rotation), using the REAL `Apos.Shapes` NuGet package (0.7.7, confirmed byte-identical to
-`apos-shapes-sm6.fx` above modulo one comment) as both harness and golden via its
+`apos-shapes-sm6.fx` above modulo one comment) as the render harness via its
 `ShapeBatch(GraphicsDevice, Effect?)` effect-injection constructor — no more hand-rolled vertex
-structs. Vulkan and DX11's vkd3d arm: **maxd 0** across all 30 cells. DX11's `d3dcompiler_47`
-oracle arm and DX12: **maxd 1** on a subset of cells — two distinct, root-caused, documented
-1-ULP transcendental-math findings between independently-built toolchains (DX11: ShadowDusk's
-oracle backend lacks mgfxc's `ShaderFlags.OptimizationLevel3`; DX12: two independent DXC builds),
-not ShadowDusk defects, tracked as a follow-up rather than fixed in this validation-only phase.
+structs. DX11: **maxd 0** across all 30 cells on both DXBC backends — the `d3dcompiler_47`
+oracle arm against the real, locally-generated `mgfxc` golden, the vkd3d arm against the
+package's own embedded effect (which disassembles as itself vkd3d-shader-compiled, so it serves
+only as a same-toolchain baseline, never an oracle). Vulkan: **maxd 0** against the package's
+DXC-family embedded effect. DX12: 28/30 cells at maxd 0 against the real local `mgfxc` golden,
+**2 cells at 1/255 — an open, not-yet-root-caused follow-up** (`docs/validation-matrix.md` §6).
 GL gets a candidate-only visibility check (30/30 shapes render visible content) — no golden
 exists for this gallery on GL (the same confirmed MojoShader black-render bug applies to nearly
 every shape). See `third-party/Apos.Shapes/NOTICE.md` §"Phase 55" and

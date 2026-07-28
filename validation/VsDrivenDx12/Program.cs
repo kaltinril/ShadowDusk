@@ -10,7 +10,8 @@
 //
 // mode "apos": Apos.Shapes (Gum's SDF shape renderer), the same apos-shapes-sm6.fx fixture
 // the Vulkan and DX11 gates use. DX12's macro set is {MGFX, HLSL, SM6} - the SAME branch
-// Vulkan takes (vs_6_0/ps_6_0, Texture2D/SamplerState pairs) - see AposShapesRenderer.
+// Vulkan takes (vs_6_0/ps_6_0, Texture2D/SamplerState pairs) - see SharedDx/AposGalleryRenderer
+// (Phase 55: the full 30-cell ShapeBatch gallery through the real Apos.Shapes package).
 //
 // dotnet run --project validation/VsDrivenDx12            -> the VS rig
 // dotnet run --project validation/VsDrivenDx12 -- apos     -> the Apos.Shapes DX12 render-proof

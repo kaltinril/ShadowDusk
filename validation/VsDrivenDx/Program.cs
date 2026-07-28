@@ -14,7 +14,8 @@
 // `#else` shader-model branch (not __KNIFX__, not OPENGL, not SM6) is vs_4_0/ps_4_0 with the
 // legacy sampler/tex2D syntax, which is exactly the branch a DirectX_11-profile compile takes
 // (PlatformMacros.For(DirectX) = {MGFX, HLSL, SM4}, no OPENGL/SM6/__KNIFX__), so DX needs no
-// separate fixture variant — see AposShapesRenderer for the bespoke vertex-buffer harness.
+// separate fixture variant — since Phase 55 rendered through the real Apos.Shapes package's
+// ShapeBatch gallery (AposGalleryRenderer; the RunAposPhase remarks below cover the two baselines).
 //
 // dotnet run --project validation/VsDrivenDx            -> the VS rig
 // dotnet run --project validation/VsDrivenDx -- apos     -> the Apos.Shapes DX render-proof

@@ -22,7 +22,7 @@ ShadowDuskCLI MyShader.fx MyShader.mgfx /Profile:OpenGL
 
 | Option | Description | Default |
 |---|---|---|
-| `/Profile:<Platform>` | Target platform. Valid: `DirectX_11`, `OpenGL`, `Vulkan`, `FNA` (the D3D9 fx_2_0 `.fxb` target — additive, not an `mgfxc` profile). | **`DirectX_11`** |
+| `/Profile:<Platform>` | Target platform. Valid: `DirectX_11`, `DirectX_12` (SM6 DXIL for MonoGame `WindowsDX12` — real `mgfxc`'s own registration name), `OpenGL`, `Vulkan`, `FNA` (the D3D9 fx_2_0 `.fxb` target — additive, not an `mgfxc` profile). | **`DirectX_11`** |
 | `/Debug` | Include debug information in the output. | off |
 | `/I <path>` | Additional include search path (repeatable). Also accepts `/I:<path>`. | none |
 | `/DxbcBackend:<Backend>` | DXBC backend for `DirectX_11`: `vkd3d` (cross-platform) or `d3dcompiler` (the Windows-only correctness oracle). Never required for correct output. | **`vkd3d`** |

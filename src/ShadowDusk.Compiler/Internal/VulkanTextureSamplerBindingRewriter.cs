@@ -1,6 +1,7 @@
 #nullable enable
 
 using System.Text.RegularExpressions;
+using ShadowDusk.Core;
 
 namespace ShadowDusk.Compiler.Internal;
 
@@ -93,6 +94,19 @@ internal static class VulkanTextureSamplerBindingRewriter
     private static readonly Regex SampleCall =
         new(@"(\w+)\s*\.\s*(?:Sample|Gather)\w*\s*\(\s*(\w+)\s*[,)]", RegexOptions.Compiled);
 
+    // Preprocessor conditionals, tracked so the shared-sampler diagnostic below can tell
+    // "two textures + one sampler in ONE live code path" (broken on Vulkan, SD0028) apart
+    // from "the same sampler re-paired across mutually-exclusive #if branches" (legal —
+    // only one branch survives the compile).
+    private static readonly Regex ConditionalDirective =
+        new(@"^[ \t]*#[ \t]*(?<d>ifdef|ifndef|if|elif|else|endif)\b",
+            RegexOptions.Compiled | RegexOptions.Multiline);
+
+    // #line N ["file"] — the preprocessor plants these (macro prelude + include flattening),
+    // so a diagnostic offset in the flattened text can be mapped back to the author's file/line.
+    private static readonly Regex LineDirective =
+        new(@"^[ \t]*#[ \t]*line[ \t]+(?<n>\d+)(?:[ \t]+""(?<f>[^""]*)"")?", RegexOptions.Compiled);
+
     /// <summary>
     /// The suffix FxPreParser's legacy-<c>sampler2D</c> conversion (<c>SynthTextureName</c>)
     /// gives the <c>Texture2D</c> it synthesizes for a bare <c>sampler S;</c>.
@@ -126,13 +140,43 @@ internal static class VulkanTextureSamplerBindingRewriter
         if (textureNames.Count == 0 && samplerNames.Count == 0)
             return hlsl;
 
-        // First texture.Sample(sampler, ...) pairing wins per texture name.
+        // First texture.Sample(sampler, ...) pairing wins per texture name. Alongside the
+        // pairing, every call is checked against the earlier calls on the same sampler:
+        // a SECOND texture on one sampler in the same live code path would co-locate both
+        // textures on one combined descriptor, leaving the later one unbound at draw
+        // (bug-hunt 2026-07-27 M5) — fail loudly (SD0028) instead. Calls in mutually
+        // exclusive #if branches are exempt: only one branch survives the compile, which
+        // is exactly the legal cross-branch re-pairing shape the assignment below supports.
         var pairedSampler = new Dictionary<string, string>(StringComparer.Ordinal);
+        var callsBySampler = new Dictionary<string, List<(string Texture, int Offset, (int Group, int Branch)[] Branches)>>(StringComparer.Ordinal);
+        MatchCollection directives = ConditionalDirective.Matches(hlsl);
+        var branchStack = new List<(int Group, int Branch)>();
+        int nextDirective = 0, nextGroup = 0;
+
         foreach (Match m in SampleCall.Matches(hlsl))
         {
+            // Advance the conditional-branch cursor to this call's position.
+            while (nextDirective < directives.Count && directives[nextDirective].Index < m.Index)
+                ApplyDirective(directives[nextDirective++].Groups["d"].Value, branchStack, ref nextGroup);
+
             string tex = m.Groups[1].Value, samp = m.Groups[2].Value;
-            if (textureNames.Contains(tex) && samplerNames.Contains(samp) && !pairedSampler.ContainsKey(tex))
+            if (!textureNames.Contains(tex) || !samplerNames.Contains(samp))
+                continue;
+
+            if (!pairedSampler.ContainsKey(tex))
                 pairedSampler[tex] = samp;
+
+            (int, int)[] branches = branchStack.ToArray();
+            if (!callsBySampler.TryGetValue(samp, out var calls))
+                callsBySampler[samp] = calls = new List<(string, int, (int, int)[])>();
+
+            foreach (var (earlierTex, _, earlierBranches) in calls)
+            {
+                if (earlierTex != tex && !MutuallyExclusive(earlierBranches, branches))
+                    ThrowSharedSampler(hlsl, samp, earlierTex, tex, m.Index);
+            }
+
+            calls.Add((tex, m.Index, branches));
         }
 
         // Assign a shared index per pair (or a fresh one for an unpaired resource) in
@@ -144,13 +188,9 @@ internal static class VulkanTextureSamplerBindingRewriter
         // Two textures may share an index ONLY when they name the same sampler: that is the
         // same-sampler-in-two-#if-branches case below, where just one branch survives the
         // compile. Two textures paired to DIFFERENT samplers on one binding is an invalid
-        // descriptor-set layout.
-        //
-        // KNOWN LIMITATION (pre-existing, not covered by this rule): two textures sharing ONE
-        // sampler within a SINGLE branch also land on one index, leaving the second texture
-        // unbound. Vulkan's combined-image-sampler model needs a distinct descriptor per
-        // texture, so that shape needs its own handling (or a diagnostic) rather than the
-        // silent co-location it gets today.
+        // descriptor-set layout. (Two textures sharing one sampler within a SINGLE branch —
+        // the shape that would silently co-locate and leave the second texture unbound —
+        // was rejected above with SD0028, so it can never reach this assignment.)
         var indexPairSampler = new Dictionary<int, string?>();
         int next = 0;
 
@@ -274,5 +314,97 @@ internal static class VulkanTextureSamplerBindingRewriter
         while (reserved.Contains(next) || assigned.ContainsValue(next))
             next++;
         return next;
+    }
+
+    // ---- Shared-sampler detection (bug-hunt 2026-07-27 M5) ---------------------------
+
+    /// <summary>
+    /// Advances the conditional-branch stack over one preprocessor directive. Each
+    /// <c>#if/#ifdef/#ifndef</c> opens a new group at branch 0; <c>#elif/#else</c> moves the
+    /// innermost group to its next branch; <c>#endif</c> closes the group.
+    /// </summary>
+    private static void ApplyDirective(string directive, List<(int Group, int Branch)> stack, ref int nextGroup)
+    {
+        switch (directive)
+        {
+            case "if" or "ifdef" or "ifndef":
+                stack.Add((nextGroup++, 0));
+                break;
+            case "elif" or "else" when stack.Count > 0:
+                stack[^1] = (stack[^1].Group, stack[^1].Branch + 1);
+                break;
+            case "endif" when stack.Count > 0:
+                stack.RemoveAt(stack.Count - 1);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Whether two code positions can never both survive one compile: true only when, at
+    /// the first point their conditional paths diverge, they sit in DIFFERENT branches of
+    /// the SAME <c>#if</c> group. Sibling <c>#if</c> groups (or one position nested inside
+    /// the other's path) can both be live, so they are NOT exclusive.
+    /// </summary>
+    private static bool MutuallyExclusive((int Group, int Branch)[] a, (int Group, int Branch)[] b)
+    {
+        int common = Math.Min(a.Length, b.Length);
+        for (int i = 0; i < common; i++)
+        {
+            if (a[i].Group != b[i].Group)
+                return false;
+            if (a[i].Branch != b[i].Branch)
+                return true;
+        }
+        return false;
+    }
+
+    private static void ThrowSharedSampler(string hlsl, string sampler, string firstTexture, string secondTexture, int offset)
+    {
+        var (file, line, column) = Locate(hlsl, offset);
+        throw new VulkanSamplerSharingException(new ShaderError(
+            File:    file,
+            Line:    line,
+            Column:  column,
+            Code:    "SD0028",
+            Message: $"Vulkan: textures '{firstTexture}' and '{secondTexture}' are both sampled through the single "
+                   + $"sampler '{sampler}' in the same code path. Vulkan's combined image-sampler binding model "
+                   + $"needs a distinct descriptor per texture, so both textures would land on one binding, "
+                   + $"leaving '{secondTexture}' unbound at draw (a silent wrong render on DesktopVK). Give each "
+                   + $"texture its own SamplerState (e.g. 'SamplerState {secondTexture}Sampler;') and sample each "
+                   + $"texture through its own sampler."));
+    }
+
+    /// <summary>
+    /// Maps a character offset in the (possibly preprocessor-flattened) source to a
+    /// file/line/column, honouring the <c>#line N "file"</c> markers the preprocessor
+    /// plants after its macro prelude and around flattened includes. With no markers the
+    /// file is empty and the line/column are physical (the caller fills the file in).
+    /// </summary>
+    private static (string File, int Line, int Column) Locate(string text, int offset)
+    {
+        string file = "";
+        int line = 1;
+        int pos = 0;
+        while (true)
+        {
+            int newline = text.IndexOf('\n', pos);
+            int end = newline < 0 ? text.Length : newline;
+            if (offset <= end)
+                return (file, line, offset - pos + 1);
+
+            Match m = LineDirective.Match(text, pos, end - pos);
+            if (m.Success)
+            {
+                line = int.Parse(m.Groups["n"].Value, System.Globalization.CultureInfo.InvariantCulture);
+                if (m.Groups["f"].Success)
+                    file = m.Groups["f"].Value;
+            }
+            else
+            {
+                line++;
+            }
+
+            pos = newline + 1;
+        }
     }
 }

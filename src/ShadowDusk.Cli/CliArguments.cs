@@ -1,6 +1,7 @@
 #nullable enable
 
 using ShadowDusk.Core;
+using ShadowDusk.Core.Preprocessor;
 
 namespace ShadowDusk.Cli;
 
@@ -17,5 +18,7 @@ internal sealed record CliArguments(
     // detect from extension/content); PrintUniforms gates the drivable-uniforms note so the default
     // success path keeps stderr empty for the MGCB contract.
     InputFormat           InputFormat = InputFormat.Auto,
-    bool                  PrintUniforms = false
+    bool                  PrintUniforms = false,
+    // mgfxc's /Defines: macros (bug-hunt 2026-07-27 M9 — previously silently dropped).
+    IReadOnlyList<UserDefine>? Defines = null
 );

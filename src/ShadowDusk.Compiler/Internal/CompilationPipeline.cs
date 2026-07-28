@@ -109,6 +109,13 @@ internal sealed class CompilationPipeline
         // does — see PlatformMacros.For(target, container)). Same value reused at Seam 5 below.
         EffectContainer effectiveContainer = options.Profile?.Container ?? options.Container;
         MacroSet macros = PlatformMacros.For(options.Target, effectiveContainer);
+        if (options.Defines.Count > 0)
+        {
+            // mgfxc /Defines: parity (bug-hunt 2026-07-27 M9). User macros ride with the
+            // platform macros through BOTH renderers (the #define prepend and the DXC -D
+            // flags), so every backend sees them; previously they were dropped silently.
+            macros = macros with { UserDefines = options.Defines };
+        }
 
         IIncludeResolver includeResolver = options.IncludeResolver ?? new FileSystemIncludeResolver();
         var preprocessor = new Preprocessor();
@@ -736,6 +743,67 @@ internal sealed class CompilationPipeline
             if (shaderSamplers.TryGetValue(i, out var samplerRefs) &&
                 shaderTextures.TryGetValue(i, out var textureRefs))
             {
+                if (options.Target == PlatformTarget.Vulkan)
+                {
+                    // Two distinct textures on ONE raw SPIR-V binding = one combined
+                    // descriptor serving two images: the second texture is never bound
+                    // and silently samples the first's data on DesktopVK (bug-hunt
+                    // 2026-07-27 M5 — the shape is two textures sampled through one
+                    // shared SamplerState). Detected HERE, post-compile, because
+                    // reflection sees only the SURVIVING #if branch — at binding-rewrite
+                    // time the legal dual-branch shared-sampler pattern is textually
+                    // indistinguishable from this invalid one.
+                    var colocated = textureRefs
+                        .GroupBy(t => t.RawBinding)
+                        .FirstOrDefault(g => g.Select(t => t.Name).Distinct().Count() > 1);
+                    if (colocated is not null)
+                    {
+                        return Fail(new ShaderError(
+                            File: options.SourceFileName ?? "<source>",
+                            Line: 0,
+                            Column: 0,
+                            Code: "SD0213",
+                            Message: "Vulkan target: textures " +
+                                     string.Join(" and ", colocated.Select(t => $"'{t.Name}'").Distinct()) +
+                                     " share one sampler and were co-located onto a single " +
+                                     "descriptor binding. Vulkan's combined-image-sampler " +
+                                     "model needs a distinct descriptor per texture, so the " +
+                                     "second texture would silently sample the first's " +
+                                     "data. Give each texture its own SamplerState (or its " +
+                                     "own explicit register) until per-texture descriptor " +
+                                     "duplication ships."), runWarnings);
+                    }
+                }
+
+                // GL binds samplers BY NAME: the .mgfx record must name the exact uniform
+                // the emitted GLSL declares, and the rewriter numbers ps_s{k} positionally
+                // (declaration order). The two namings agree only when the reflected
+                // sampler registers are contiguous from s0. Sparse/offset explicit
+                // registers (`register(s3)` with no s0-s2) would make this record name a
+                // uniform the GLSL never declares — MonoGame's glGetUniformLocation
+                // misses (-1) and the shader silently samples a stale texture unit
+                // (bug-hunt 2026-07-27 M1). Fail loudly until both namings derive from
+                // one source.
+                if (!directX && options.Target == PlatformTarget.OpenGL)
+                {
+                    var orderedSlots = samplerRefs.Select(s => s.BindSlot).OrderBy(s => s).ToList();
+                    if (!orderedSlots.SequenceEqual(Enumerable.Range(0, orderedSlots.Count)))
+                    {
+                        return Fail(new ShaderError(
+                            File: options.SourceFileName ?? "<source>",
+                            Line: 0,
+                            Column: 0,
+                            Code: "SD0215",
+                            Message: "OpenGL target: sampler registers are not contiguous from s0 (" +
+                                     string.Join(", ", samplerRefs.Select(s => $"'{s.Name}' at s{s.BindSlot}")) +
+                                     "). The GL runtime binds samplers by positional name " +
+                                     "(ps_s0, ps_s1, ...), so a sparse register layout would " +
+                                     "silently bind the wrong texture units. Use contiguous " +
+                                     "sampler registers starting at s0, or omit the explicit " +
+                                     "register assignments."), runWarnings);
+                    }
+                }
+
                 foreach (SamplerReflection samp in samplerRefs)
                 {
                     int slot = samp.BindSlot;
@@ -751,7 +819,12 @@ internal sealed class CompilationPipeline
                                 : null)
                         ?? textureRefs.FirstOrDefault();
                     string? texName = samp.TextureName ?? matchedTex?.Name;
-                    int paramIndex = texName is null ? 0 : Math.Max(0, IndexOfParam(allParameters, texName));
+                    // No Math.Max(0, …) clamp (bug-hunt 2026-07-27 N11): a failed
+                    // name→parameter join used to be silently coerced to parameter 0 —
+                    // the sampler then pointed at whatever parameter 0 happened to be.
+                    // A -1 miss now flows to the writer's SD0022 byte-range guard and
+                    // fails the compile loudly instead.
+                    int paramIndex = texName is null ? 0 : IndexOfParam(allParameters, texName);
                     samplers.Add(new MgfxSamplerInfo(
                         // MonoGame SamplerType byte: 2D=0, Cube=1, Volume(3D)=2 (1D=3).
                         // Critical for binding — cube/3D won't bind at runtime if left 0.
@@ -1245,6 +1318,11 @@ internal sealed class CompilationPipeline
 
         IIncludeResolver includeResolver = options.IncludeResolver ?? new FileSystemIncludeResolver();
         MacroSet fnaPlatformMacros = PlatformMacros.For(PlatformTarget.Fna);
+        if (options.Defines.Count > 0)
+        {
+            // mgfxc /Defines: parity on the FNA path too (bug-hunt 2026-07-27 M9).
+            fnaPlatformMacros = fnaPlatformMacros with { UserDefines = options.Defines };
+        }
 
         // Zero-technique FNA macro fallback (Phase 41 GAP-1, extended to FNA). Mirrors the
         // GL/DX recovery in Run(): an effect whose techniques come ONLY from a TECHNIQUE(...)
@@ -1824,14 +1902,29 @@ internal sealed class CompilationPipeline
             // the first Draw — with E_INVALIDARG. Confirmed root cause by reading MonoGame's real
             // v3.8.5 source directly (Phase 54 follow-up, 2026-07-23): VertexInputLayout.Native.cs
             // and Shader.Native.cs's GetOrCreateLayout.
-            IReadOnlyList<MgfxVertexAttributeInfo> vertexAttributes = stage != ShaderStage.Vertex
-                ? noAttributes
-                : platform switch
+            IReadOnlyList<MgfxVertexAttributeInfo> vertexAttributes;
+            if (stage != ShaderStage.Vertex)
+            {
+                vertexAttributes = noAttributes;
+            }
+            else
+            {
+                // A reflection FAILURE here is a compile-time error (bug-hunt 2026-07-27
+                // M11): the old empty-table fallback shipped exactly the delayed
+                // E_INVALIDARG-at-first-Draw crash described above, with no pointer back
+                // to the shader. A shader that genuinely declares no vertex inputs still
+                // gets an empty table (Ok) — a zero-element layout is valid when nothing
+                // is consumed.
+                Result<IReadOnlyList<MgfxVertexAttributeInfo>, ShaderError> attrResult = platform switch
                 {
                     PlatformTarget.Vulkan    => SpirvVertexInputReflector.Read(spirvBlob),
                     PlatformTarget.DirectX12 => DxilVertexInputReflector.Read(dxilBlob, new DxilReflectionExtractor()),
-                    _                        => noAttributes,
+                    _                        => Result<IReadOnlyList<MgfxVertexAttributeInfo>, ShaderError>.Ok(noAttributes),
                 };
+                if (attrResult.IsFailure)
+                    return (Result<byte[], ShaderError>.Fail(attrResult.Error), default, default, noAttributes, noUniforms, noWarnings);
+                vertexAttributes = attrResult.Value;
+            }
 
             return (Result<byte[], ShaderError>.Ok(blob.ToArray()), dxilBlob, spirvBlob, vertexAttributes, noUniforms, result.Value.Warnings);
         }

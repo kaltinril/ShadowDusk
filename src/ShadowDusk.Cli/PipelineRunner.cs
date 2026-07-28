@@ -73,6 +73,7 @@ internal sealed class PipelineRunner
             Debug                  = args.Debug,
             MgfxVersion            = args.MgfxVersion,
             DxbcBackend            = args.DxbcBackend,
+            Defines                = args.Defines ?? [],
             // A --target-runtime profile fully specifies the output target; when set it overrides
             // Target / MgfxVersion (resolved in the pipeline, since the profile implies its backend).
             Profile                = args.Profile,

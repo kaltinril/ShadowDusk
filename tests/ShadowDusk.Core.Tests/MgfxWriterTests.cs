@@ -891,8 +891,14 @@ public sealed class MgfxWriterTests
     // -------------------------------------------------------------------------
 
     [Fact]
-    public void Annotations_WriteCountOnly_NoBodies()
+    public void Annotations_WriteZeroCount_NoBodies()
     {
+        // INTENTIONAL behavior change (bug-hunt 2026-07-27 M15): the count is now
+        // always 0, matching mgfxc (its annotation_handles are always null). MonoGame
+        // 3.8.2's ReadAnnotations materializes `count` NULL EffectAnnotation slots, so
+        // the previously-written real count handed the consumer's game a collection of
+        // nulls that NREs on first touch — and KNI's KNIFXWriter11 asserts count == 0.
+        // This test previously pinned "the annotation COUNT is preserved" (2).
         var annotations = new List<AnnotationInfo>
         {
             new(Name: "UIName",  Type: 4, StringValue: "Tint Color", FloatValue: null, IntValue: null, BoolValue: null),
@@ -915,7 +921,7 @@ public sealed class MgfxWriterTests
         br.ReadByte(); br.ReadByte();           // class, type
         br.ReadString().Should().Be("TintColor");
         br.ReadString();                        // semantic
-        br.ReadInt32().Should().Be(2, because: "the annotation COUNT is preserved");
+        br.ReadInt32().Should().Be(0, because: "the annotation count is always 0, like mgfxc's");
 
         // MonoGame 3.8.2 ReadAnnotations reads ONLY the count — the very next bytes
         // must be the parameter's RowCount/ColumnCount, not annotation bodies.

@@ -49,13 +49,13 @@ ShadowDusk works with **MonoGame, KNI, and FNA** across these graphics backends.
 | OpenGL / DesktopGL  | GLSL `.mgfx`   | Supported    |
 | DirectX 11          | DXBC `.mgfx`   | Supported    |
 | WebGL (KNI browser) | GLSL `.mgfx`   | Supported    |
-| Android (on-device) | GLSL `.mgfx`   | Supported    |
+| Android (on-device) | GLSL `.mgfx`   | Supported (byte-identical to the desktop build) |
 | FNA                 | D3D9 `.fxb`    | Supported    |
 | Metal (macOS / iOS) | MSL            | Not yet      |
 | Vulkan (MonoGame)   | SPIR-V `.mgfx` | Supported    |
 | DirectX 12 (MonoGame WindowsDX12) | SM6 DXIL `.mgfx` | Supported |
 
-Supported targets are tested end-to-end against the reference compiler. For the exact per-version, per-OS proof status, see the [Validation Matrix](docs/validation-matrix.md). To choose a target (or build a shader-download feature), see the [Choosing a Target](https://kaltinril.github.io/ShadowDusk/guides/choosing-a-target.html) guide. Classic Microsoft XNA 4.0 is out of scope.
+Supported targets are tested end-to-end against the reference compiler (on-device Android via byte-identity: its output is byte-identical to the desktop build, whose renders are proven — the on-device pixel diff is a tracked follow-up). For the exact per-version, per-OS proof status, see the [Validation Matrix](docs/validation-matrix.md). To choose a target (or build a shader-download feature), see the [Choosing a Target](https://kaltinril.github.io/ShadowDusk/guides/choosing-a-target.html) guide. Classic Microsoft XNA 4.0 is out of scope.
 
 <details>
 <summary><b>How the pipeline works</b> (you don't need this to use it)</summary>

@@ -3,6 +3,7 @@
 using FluentAssertions;
 using ShadowDusk.Cli;
 using ShadowDusk.Core;
+using ShadowDusk.Core.Preprocessor;
 using Xunit;
 
 namespace ShadowDusk.Core.Tests;
@@ -26,6 +27,42 @@ public sealed class ArgumentParserTests
         result.Value.IncludePaths.Should().BeEmpty();
         result.Value.MgfxVersion.Should().Be(10);
         result.Value.Profile.Should().BeNull();
+    }
+
+    // -------------------------------------------------------------------------
+    // /Defines: (mgfxc parity) and missing-value flags — bug-hunt 2026-07-27 M9/N12
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_DefinesFlag_CollectsMacros()
+    {
+        // /Defines: is a real mgfxc flag MGCB's EffectProcessor forwards; it used to
+        // fall into the unknown-flag ignore, silently dropping the macros (M9).
+        var result = ArgumentParser.Parse(
+            ["Shader.fx", "Out.mgfx", "/Defines:SKINNED=1;HIGH_QUALITY", "/Defines:EXTRA=abc"]);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Defines.Should().BeEquivalentTo(new[]
+        {
+            new ShadowDusk.Core.Preprocessor.UserDefine("SKINNED", "1"),
+            new ShadowDusk.Core.Preprocessor.UserDefine("HIGH_QUALITY"), // bare name -> "1"
+            new ShadowDusk.Core.Preprocessor.UserDefine("EXTRA", "abc"),
+        });
+    }
+
+    [Theory]
+    [InlineData("--target-runtime")]
+    [InlineData("--mgfx-version")]
+    [InlineData("/I")]
+    public void Parse_ValuedFlagWithNoValue_FailsLoudlyWithX0009(string flag)
+    {
+        // A required-value flag ending the argument list used to be silently ignored,
+        // compiling with the DEFAULT — the wrong artifact with exit 0 (N12).
+        var result = ArgumentParser.Parse(["Shader.fx", "Out.mgfx", flag]);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("X0009");
+        result.Error.Message.Should().Contain(flag);
     }
 
     // -------------------------------------------------------------------------
@@ -391,5 +428,86 @@ public sealed class ArgumentParserTests
         result.IsFailure.Should().BeTrue();
         result.Error.Code.Should().Be("X0006");
         result.Error.Message.Should().Contain("vkd3d").And.Contain("d3dcompiler");
+    }
+
+    // -------------------------------------------------------------------------
+    // /Defines (bug-hunt 2026-07-27 M9): mgfxc's real flag, previously silently
+    // swallowed by the unknown-flag rule.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_Defines_ParsesNameValuePairsAndBareNames()
+    {
+        var result = ArgumentParser.Parse(
+            ["Shader.fx", "Out.mgfx", "/Defines:SKINNED=1;HIGH_QUALITY,BONES=4"]);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Defines.Should().Equal(
+            new UserDefine("SKINNED", "1"),
+            new UserDefine("HIGH_QUALITY"),
+            new UserDefine("BONES", "4"));
+    }
+
+    [Fact]
+    public void Parse_Defines_Repeatable_Accumulates()
+    {
+        var result = ArgumentParser.Parse(
+            ["Shader.fx", "Out.mgfx", "/Defines:A=1", "/Defines:B=two"]);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Defines.Should().Equal(
+            new UserDefine("A", "1"),
+            new UserDefine("B", "two"));
+    }
+
+    [Fact]
+    public void Parse_NoDefines_YieldsEmptyList()
+    {
+        var result = ArgumentParser.Parse(["Shader.fx", "Out.mgfx"]);
+
+        result.IsSuccess.Should().BeTrue();
+        (result.Value.Defines ?? []).Should().BeEmpty();
+    }
+
+    // -------------------------------------------------------------------------
+    // DirectX_12 in the profile surface (bug-hunt 2026-07-27 D1)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_DirectX12Profile_Accepted()
+    {
+        var result = ArgumentParser.Parse(["Shader.fx", "Out.mgfx", "/Profile:DirectX_12"]);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Platform.Should().Be(PlatformTarget.DirectX12);
+    }
+
+    [Fact]
+    public void Parse_UnknownProfile_ErrorListsDirectX12()
+    {
+        var result = ArgumentParser.Parse(["Shader.fx", "Out.mgfx", "/Profile:Nonsense"]);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("X0004");
+        result.Error.Message.Should().Contain("DirectX_12");
+    }
+
+    // -------------------------------------------------------------------------
+    // X0009 (bug-hunt 2026-07-27 N12): a flag that requires a value but reaches
+    // the end of the argument list used to be silently ignored — the compile ran
+    // with the DEFAULT and exit 0.
+    // -------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("--mgfx-version")]
+    [InlineData("--target-runtime")]
+    [InlineData("/I")]
+    public void Parse_ValuedFlagAtEndOfArgs_FailsLoudlyWithX0009(string flag)
+    {
+        var result = ArgumentParser.Parse(["Shader.fx", "Out.mgfx", flag]);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("X0009");
+        result.Error.Message.Should().Contain(flag);
     }
 }

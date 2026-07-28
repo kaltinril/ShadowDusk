@@ -23,6 +23,75 @@ namespace ShadowDusk.Compiler.Tests;
 public sealed class VulkanTextureSamplerBindingRewriterTests
 {
     [Fact]
+    public void Rewrite_TwoTexturesThroughOneSamplerInOnePath_FailsLoudlyWithSD0028()
+    {
+        // Bug-hunt 2026-07-27 M5: this shape used to co-locate both textures onto ONE
+        // combined descriptor, leaving the second texture unbound at draw — a silent
+        // wrong render on DesktopVK (the rewriter's own KNOWN LIMITATION comment).
+        const string hlsl = """
+            Texture2D DiffuseTex;
+            Texture2D LightmapTex;
+            SamplerState SharedSampler;
+
+            float4 PS() : SV_Target
+            {
+                return DiffuseTex.Sample(SharedSampler, float2(0, 0))
+                     + LightmapTex.Sample(SharedSampler, float2(0, 0));
+            }
+            """;
+
+        var act = () => VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
+
+        var error = act.Should().Throw<VulkanSamplerSharingException>().Which.Error;
+        error.Code.Should().Be("SD0028");
+        error.Line.Should().BeGreaterThan(0, "the diagnostic must point at the offending Sample call");
+        error.Message.Should().Contain("DiffuseTex").And.Contain("LightmapTex").And.Contain("SharedSampler");
+    }
+
+    [Fact]
+    public void Rewrite_SameSamplerAcrossMutuallyExclusiveBranches_IsStillLegal()
+    {
+        // The legal shape the detector must NOT flag: only one #if branch survives a
+        // compile, so cross-branch re-pairing can never co-locate two live textures.
+        const string hlsl = """
+            Texture2D TexA;
+            Texture2D TexB;
+            SamplerState SharedSampler;
+
+            float4 PS() : SV_Target
+            {
+            #if VARIANT_A
+                return TexA.Sample(SharedSampler, float2(0, 0));
+            #else
+                return TexB.Sample(SharedSampler, float2(0, 0));
+            #endif
+            }
+            """;
+
+        var act = () => VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Rewrite_OneTextureSampledRepeatedlyThroughOneSampler_IsLegal()
+    {
+        const string hlsl = """
+            Texture2D Tex;
+            SamplerState Samp;
+
+            float4 PS() : SV_Target
+            {
+                return Tex.Sample(Samp, float2(0, 0)) + Tex.Sample(Samp, float2(1, 1));
+            }
+            """;
+
+        var act = () => VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
     public void Rewrite_PairedTextureAndSampler_GetMatchingRegisters()
     {
         const string hlsl = """

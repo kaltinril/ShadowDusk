@@ -94,7 +94,10 @@ internal static class InputFormatDetector
             File: sourcePath,
             Line: 0,
             Column: 0,
-            Code: "SD0002",
+            // SD0005, not SD0002: SD0002 is exclusively "circular #include" in the
+            // registry, and reusing it here made this condition read as one
+            // (bug-hunt 2026-07-27 N13; one code = one condition).
+            Code: "SD0005",
             Message: message));
 
     // Whole-word, case-sensitive (GLSL/HLSL identifiers are case-sensitive) match of an identifier.

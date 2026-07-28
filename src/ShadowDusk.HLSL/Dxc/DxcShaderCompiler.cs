@@ -146,8 +146,13 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
                 bytes = objectBlob.AsBytes();
             }
 
-            BlobKind kind = request.Platform == PlatformTarget.DirectX
-                ? BlobKind.Dxbc
+            // DXC emits SM6 DXIL for both DirectX targets (the DirectX case here is the
+            // reflection-only companion compile; vkd3d produces DX11's shipped DXBC) and
+            // SPIR-V for the GL/Vulkan targets. These were mislabeled Dxbc/Spirv — no
+            // consumer branched on them yet, but a future Kind-keyed dispatch would have
+            // routed DXIL down a SPIR-V path (bug-hunt 2026-07-27 N10).
+            BlobKind kind = request.Platform is PlatformTarget.DirectX or PlatformTarget.DirectX12
+                ? BlobKind.Dxil
                 : BlobKind.Spirv;
 
             // A successful compile can still carry diagnostic text (warnings — the
@@ -156,6 +161,32 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
             // flow to CompiledShader.Warnings.
             IReadOnlyList<ShaderError> warnings = DxcDiagnosticReformatter.ReformatAsWarnings(
                 errorText, request.SourceFileName);
+
+            // DXIL signing (bug-hunt 2026-07-27 M7): dxil.dll validation/signing runs on
+            // Windows only (LoadDxil is a no-op elsewhere, and macOS ships no dxil at
+            // all), so a DirectX12 compile on Linux/macOS produces UNSIGNED DXIL. That
+            // loads only on machines with Developer Mode enabled — retail D3D12 rejects
+            // unsigned DXIL at pipeline-state creation. Same source, different build
+            // host, differently-broken artifact: surface it instead of shipping silently.
+            if (request.Platform == PlatformTarget.DirectX12 && !OperatingSystem.IsWindows())
+            {
+                warnings =
+                [
+                    .. warnings,
+                    new ShaderError(
+                        File: request.SourceFileName,
+                        Line: 0,
+                        Column: 0,
+                        Code: "SD0214",
+                        Message: "DirectX12 DXIL compiled on a non-Windows host is unsigned " +
+                                 "(dxil.dll validation/signing is Windows-only): the .mgfx " +
+                                 "will load only with Windows Developer Mode enabled, and " +
+                                 "retail D3D12 rejects it at pipeline-state creation. " +
+                                 "Compile DirectX12 effects on Windows until cross-platform " +
+                                 "signing ships.",
+                        Severity: ShaderErrorSeverity.Warning),
+                ];
+            }
 
             return Result<PlatformBlob, ShaderError>.Ok(
                 new PlatformBlob(kind, bytes) { Warnings = warnings });

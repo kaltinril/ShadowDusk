@@ -31,25 +31,43 @@ namespace ShadowDusk.Core.Reflection;
 public static class SpirvVertexInputReflector
 {
     /// <summary>
-    /// Reads the vertex attribute table from <paramref name="spirvBlob"/>. Returns an empty
-    /// list if the blob is not parseable SPIR-V or declares no located inputs — this is a
-    /// last-resort fallback, not a safe default (see class remarks); a real reflection failure
-    /// here will surface as a load/draw failure downstream, not silently.
+    /// Reads the vertex attribute table from <paramref name="spirvBlob"/>. Unparseable
+    /// SPIR-V or a reflection failure is a compile-time ERROR (bug-hunt 2026-07-27 M11):
+    /// the previous empty-table fallback shipped a <c>.mgfx</c> whose zero-element input
+    /// layout failed at the consumer's first Draw with an unattributed
+    /// <c>E_INVALIDARG</c> (see class remarks). A module that genuinely declares no
+    /// located inputs still returns an empty table — a zero-element layout is valid
+    /// when the shader consumes nothing.
     /// </summary>
-    public static IReadOnlyList<MgfxVertexAttributeInfo> Read(ReadOnlyMemory<byte> spirvBlob)
+    public static Result<IReadOnlyList<MgfxVertexAttributeInfo>, ShaderError> Read(
+        ReadOnlyMemory<byte> spirvBlob)
     {
         SpirvModule? module = SpirvModule.TryParse(spirvBlob.Span);
         if (module is null)
-            return Array.Empty<MgfxVertexAttributeInfo>();
+        {
+            return Result<IReadOnlyList<MgfxVertexAttributeInfo>, ShaderError>.Fail(new ShaderError(
+                File: "",
+                Line: 0,
+                Column: 0,
+                Code: "SD0101",
+                Message: "Vertex-input reflection failed: the vertex shader blob is not " +
+                         "parseable SPIR-V, so the .mgfx attribute table cannot be built"));
+        }
 
         IReadOnlyList<(string Semantic, int Location, int LocationCount)> inputs;
         try
         {
             inputs = new SpirvReflectionParser(module).ReflectVertexInputs();
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            return Array.Empty<MgfxVertexAttributeInfo>();
+            return Result<IReadOnlyList<MgfxVertexAttributeInfo>, ShaderError>.Fail(new ShaderError(
+                File: "",
+                Line: 0,
+                Column: 0,
+                Code: "SD0101",
+                Message: "Vertex-input reflection failed while reading the SPIR-V input " +
+                         $"interface: {ex.Message}"));
         }
 
         var attributes = new List<MgfxVertexAttributeInfo>(inputs.Count);
@@ -68,6 +86,6 @@ public static class SpirvVertexInputReflector
             }
         }
 
-        return attributes;
+        return Result<IReadOnlyList<MgfxVertexAttributeInfo>, ShaderError>.Ok(attributes);
     }
 }

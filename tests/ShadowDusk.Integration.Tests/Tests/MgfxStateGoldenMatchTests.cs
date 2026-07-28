@@ -101,12 +101,15 @@ public sealed class MgfxStateGoldenMatchTests
 
         // MgfxBlobReader reads annotations exactly as MonoGame 3.8.2 does (count only)
         // and verifies the trailing MGFX signature, so a successful parse of BOTH
-        // files proves neither carries annotation bodies. The counts legitimately
-        // differ: mgfxc drops annotations entirely (0), ShadowDusk preserves the
-        // declared count (metadata-only; MonoGame allocates the slots and reads on).
+        // files proves neither carries annotation bodies. INTENTIONAL behavior change
+        // (bug-hunt 2026-07-27 M15): the counts no longer differ — ShadowDusk now
+        // writes 0 like mgfxc (a real count made MonoGame materialize that many NULL
+        // EffectAnnotation slots, an NRE for any consumer touching .Annotations, and
+        // KNI's writer asserts count == 0). This test previously pinned the preserved
+        // count (2) on the subject side.
         golden.ParameterAnnotationCounts.Should().BeEmpty("mgfxc writes annotation count 0");
-        subject.ParameterAnnotationCounts.Should().ContainKey("TintColor");
-        subject.ParameterAnnotationCounts["TintColor"].Should().Be(2);
+        subject.ParameterAnnotationCounts.Should().BeEmpty(
+            "ShadowDusk now writes annotation count 0, matching mgfxc byte-for-byte here");
     }
 
     private static async Task<(MgfxBlobReader Subject, MgfxBlobReader Golden)>

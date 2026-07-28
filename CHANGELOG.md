@@ -14,15 +14,113 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- CLI: mgfxc's `/Defines:<name=value;...>` flag is now implemented (previously the flag was
+  silently ignored and `#ifdef` branches compiled out with exit 0). Library consumers get the
+  same via the new `CompilerOptions.Defines` property; the macros ride through both the
+  `#define` prepend and the DXC `-D` flags on every backend, including FNA.
+- New `SD0403` portability warning: a GLSL-1.30+/ES-3.00-only construct that survived into the
+  versionless emitted GL source (`transpose`, `sinh`-family, `isnan`/`isinf`, `texelFetch`,
+  bit-casts, `switch`, `uint`, non-square matrices, integer shifts) is now flagged at compile
+  time instead of failing at Effect-load only on strict drivers (macOS/Mesa/WebGL1) — the
+  class behind issues #149 and #163, made loud up front. Also backstops the round/trunc
+  lowerings by flagging any call a rewrite missed.
+- FX parser accepts more real-world fxc/mgfxc syntax: `VertexShader = NULL;` /
+  `PixelShader = NULL;`, `Texture = NULL;` in `sampler_state` blocks (binds the synthesized
+  runtime texture instead of emitting `NULL.Sample(...)`), `technique10` blocks, numeric
+  booleans (`AlphaBlendEnable = 1;`), and hex stencil values (`StencilMask = 0xFF;`).
+- New diagnostics, all registered in `docs/error-codes.md`: `SD0004` (unreadable include),
+  `SD0005` (undetectable input format — was mis-filed under `SD0002`), `SD0028` (Vulkan
+  shared-sampler co-location, located at the offending `Sample` call) with `SD0213` as its
+  post-compile reflection backstop, `SD0215` (OpenGL sparse sampler registers), `X0009` (CLI
+  flag missing its required value — previously silently ignored, compiling with the default),
+  and the `SD0214` warning: DirectX12 DXIL compiled on a non-Windows host is unsigned
+  (`dxil.dll` signing is Windows-only) and retail D3D12 rejects it at pipeline-state
+  creation — previously shipped silently as a per-host output divergence.
+- `BlobKind.Dxil`: DXC's SM6 output blobs were mislabeled `Dxbc`/`Spirv` (harmless today,
+  a trap for any future kind-keyed dispatch).
+
 ### Changed
+
+- CLI diagnostics print the file path exactly as given instead of stripping to the basename,
+  so two same-named includes stay distinguishable and IDE/MSBuild jump-to-file works.
+- The CLI's `X0099` internal-error catch-all now prints the full exception (type and stack) in
+  release builds — it marks a ShadowDusk bug, and the detail is what a bug report needs.
+- `.mgfx`/KNIFX annotation counts are now always written as 0, matching mgfxc (MonoGame
+  materializes `count` null `EffectAnnotation` slots, so a real count could NRE consumer code,
+  and KNI's writer asserts count == 0). Parsed annotations stay in the IR as metadata.
 
 ### Fixed
 
+- OpenGL: the issue-#138/#160 bounded-loop rewrite (Rule 13) is now provable for exactly the
+  shapes it accepts. An inclusive (`<=`) inner comparison gets a `provenMax + 1` header cap so
+  the loop's else-finalizer stays reachable (the #160 dropped-finalizer failure re-created one
+  operator over); descending walks, non-unit steps, bounds below the init, and loops whose
+  index is read afterward now decline to the honest `SD0402` warning instead of rewriting
+  wrong.
+- macOS: the released single-file CLI archives could not load their own bundled DXC/vkd3d
+  dylibs outside a repo checkout (the per-arch bundle subdirs were never probed in the
+  extraction directory). Both loaders now probe `osx-<arch>/` inside every host native-search
+  directory, and the release smoke test runs from outside the checkout so CI can catch this
+  class.
+- Browser/WASM: the SPIRV-Cross shim now sets `RelaxNanChecks` like the desktop transpiler
+  (issue #149) — in-browser output for min/max/clamp shaders re-converges with desktop bytes
+  and no longer carries the `isnan()` lowering that strict GL front ends reject.
+- Vulkan/DirectX 12: a vertex-attribute reflection failure is now a compile-time `SD0101`
+  error instead of a silent empty attribute table that crashed at the consumer's first Draw
+  with an unattributed `E_INVALIDARG`.
+- DirectX 12: `SV_VertexID`/`SV_InstanceID` are no longer minted as phantom TEXCOORD vertex
+  attributes (the SPIR-V path already skipped builtins; the DXIL path now matches).
+- Vulkan: two textures sampled through one shared `SamplerState` in the same code path now
+  fail loudly with a located `SD0028` (the rewriter tracks `#if` branches, so the legal
+  cross-branch re-pairing shape still compiles) plus an `SD0213` reflection backstop —
+  instead of silently co-locating onto one descriptor and sampling the wrong texture.
+- Test infrastructure: the macOS test gates pick the dylib arch by `ProcessArchitecture`
+  (not `OSArchitecture`), fixing silently mis-targeted gating under Rosetta 2.
+- OpenGL: sparse explicit sampler registers (`register(s3)` with no `s0`) now fail loudly
+  (`SD0215`) instead of silently binding the wrong texture units (the `.mgfx` record and the
+  emitted GLSL numbered samplers from different sources).
+- OpenGL: HLSL semantics are matched case-insensitively in the GL rewriter (`: Position`,
+  `: TexCoord0`), matching HLSL's own rules — mixed-case position semantics no longer render
+  garbage and mixed-case varyings link correctly; `POSITIONT`-style non-numeric semantic tails
+  are a located unsupported-semantic error instead of an unhandled `FormatException`; any
+  stage-interface identifier that survives the rewrite is now a loud error instead of invalid
+  GLSL that failed only at Effect-load.
+- `#include`: Windows-style backslash paths now resolve on Linux/macOS hosts, and an include
+  that exists but cannot be read (locked/ACL-denied) returns a located `SD0004` error instead
+  of throwing a raw `IOException` through `CompileAsync`.
+- Vertex semantics: `PSIZE` (the real D3D9 point-size semantic) now maps to PointSize instead
+  of falling through to the TEXCOORD default and colliding with real texture coordinates;
+  absurd numeric semantic suffixes no longer throw `OverflowException`.
+- DX11/FNA diagnostics: vkd3d-shader's colon-style messages (`file:line:col: E5005: ...`) are
+  now parsed into real file/line/column diagnostics instead of collapsing into a single
+  line-less `X0000`.
+- CLI: a compile wedged inside a native compiler is now hard-terminated by the watchdog with a
+  proper `X0007` (previously the documented timeout could never fire on a hung native call and
+  MGCB waited forever). A failed sampler-to-texture parameter join now fails the compile via
+  the writer's range guard instead of silently pointing the sampler at parameter 0.
+- Native loading: the SPIRV-Cross fallback RID map now distinguishes `win-arm64` and
+  `linux-arm64` instead of collapsing them to x64; four macOS test gates now key on
+  `ProcessArchitecture` instead of the Rosetta-2 `OSArchitecture` trap the production
+  loaders already avoid (they silently skipped or mis-targeted coverage on Apple Silicon).
+- Determinism: injected `#line` directives and the platform-macro prepend now use `\n` like
+  the body they join, so the flattened compiler input no longer differs by build OS
+  (previously CRLF-mixed on Windows, visible in debug-mode artifacts via embedded source).
+- ShaderToy front-end: `uint`/`uvecN` now map to real HLSL `uint` types with faithful
+  unsigned semantics (`>>` zero-fills, `float(x)` is unsigned) and `u`-suffix literals are
+  accepted — hash/PRNG shaders no longer silently produce different noise; vector `==`/`!=`
+  scalarizes with `all()`/`any()` in every context (not just `if` conditions);
+  `for`-conditions get the same paren/vector handling as other conditions; function-like
+  macro calls may span lines; `mainSound`/`mainVR` in comments no longer false-reject;
+  non-zero `textureLod` is a located convert-time reject instead of doomed generated HLSL;
+  nested-block shadowing no longer poisons type inference; locals shadowing emitter intrinsics
+  (`frac`, `lerp`, ...) are renamed like reserved words.
+- Docs: the validation matrix, gate-script header, `RELEASING.md` gate list, and contributor
+  validation page no longer describe the pre-0.14.0 Apos.Shapes golden-arm setup or the
+  deleted 13-element harness; `DirectX_12` is listed in the CLI usage/help and error text;
+  Android's status wording matches the validation matrix; the 0.14.0 changelog's #149 fix is
+  filed under Fixed.
+
 ## [0.14.2] - 2026-07-25
-
-### Added
-
-### Changed
 
 ### Fixed
 
@@ -40,8 +138,6 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   supplementing the existing circle with a needle-thin ellipse compared same-backend against the
   mgfxc GL golden. Supplementary coverage for the issue #160 shape; the authoritative guard is a
   rewriter unit test.
-
-### Changed
 
 ### Fixed
 
@@ -88,18 +184,17 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
   Wired into `run-windows-render-gates.ps1`. FNA stays permanently excluded (SM3
   instruction-slot ceiling).
-- **Fixed: GL profile emitted `isnan()` into versionless GLSL; rejected on macOS (issue
-  #149).** Found while closing the GL slice above: ShadowDusk's own GL candidate for
+
+### Fixed
+
+- **GL profile emitted `isnan()` into versionless GLSL; rejected on macOS (issue #149).**
+  Found while closing the GL slice above: ShadowDusk's own GL candidate for
   `apos-shapes.fx` contained 28 `isnan(` occurrences and no `#version` directive (the real
   mgfxc golden has zero of either). Desktop NVIDIA/AMD/Intel drivers tolerated it; Apple's
   strict GL compiler did not, breaking any GL shader using `min`/`max`/`clamp` on macOS — real
   downstream breakage (Apos.Shapes 0.7.6). Fixed by defaulting SPIRV-Cross's
   `RELAX_NAN_CHECKS` compiler option on for the whole OpenGL profile: zero `isnan(` now, zero
   byte changes anywhere else in the corpus. See `plan/DONE/ISSUE-149-gl-isnan-versionless-glsl.md`.
-
-### Changed
-
-### Fixed
 
 - **GL loop shapes outside GLSL ES 1.00 Appendix A: both shapes SD0402 covers are now
   auto-fixed where provably safe, not just warned about (issue #138).** GLSL ES 1.00

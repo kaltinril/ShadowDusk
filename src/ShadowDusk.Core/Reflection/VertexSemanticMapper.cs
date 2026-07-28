@@ -18,8 +18,10 @@ public static class VertexSemanticMapper
     /// Normal=3, Binormal=4, Tangent=5, BlendIndices=6, BlendWeight=7, Depth=8, Fog=9,
     /// PointSize=10, Sample=11, TessellateFactor=12.
     ///
-    /// <para>An unrecognised semantic falls back to TextureCoordinate — deliberately matching
-    /// mgfxc, which warns and defaults rather than failing the build.</para>
+    /// <para>An unrecognised semantic falls back to TextureCoordinate, the same default
+    /// mgfxc applies. mgfxc also prints a warning when it defaults; ShadowDusk does not yet
+    /// (tracked in plan/BUG-HUNT-2026-07-27.md N5 — this mapper is pure and has no warning
+    /// channel to thread through).</para>
     /// </summary>
     public static (byte Usage, int Index) Map(string semantic)
     {
@@ -37,6 +39,11 @@ public static class VertexSemanticMapper
             ("DEPTH",            8),
             ("FOG",              9),
             ("POINTSIZE",       10),
+            // The REAL HLSL vertex semantic for point size is PSIZE (D3D9 era);
+            // POINTSIZE is kept as a tolerated alias (bug-hunt 2026-07-27 N5 — PSIZE
+            // used to fall through to the TextureCoordinate default and collide with
+            // a genuine TEXCOORD0 attribute).
+            ("PSIZE",           10),
             ("TESSELLATEFACTOR",12),
         };
 
@@ -53,7 +60,15 @@ public static class VertexSemanticMapper
             if (tail.Length > 0 && !tail.All(char.IsDigit))
                 continue;
 
-            return (usage, tail.Length == 0 ? 0 : int.Parse(tail, System.Globalization.CultureInfo.InvariantCulture));
+            if (tail.Length == 0)
+                return (usage, 0);
+            // TryParse, not Parse: an absurdly long numeric suffix must not throw
+            // OverflowException out of a pure mapper (bug-hunt 2026-07-27 N5); it falls
+            // through to the unknown-semantic default instead.
+            if (int.TryParse(tail, System.Globalization.NumberStyles.None,
+                    System.Globalization.CultureInfo.InvariantCulture, out int index))
+                return (usage, index);
+            break;
         }
 
         // Unknown semantic: default to TextureCoordinate with a trailing-digit index, as mgfxc does.
@@ -61,8 +76,10 @@ public static class VertexSemanticMapper
         while (digits < upper.Length && char.IsDigit(upper[^(digits + 1)]))
             digits++;
 
-        return (2, digits == 0
-            ? 0
-            : int.Parse(upper[^digits..], System.Globalization.CultureInfo.InvariantCulture));
+        return (2, digits > 0 &&
+                   int.TryParse(upper[^digits..], System.Globalization.NumberStyles.None,
+                       System.Globalization.CultureInfo.InvariantCulture, out int unknownIndex)
+            ? unknownIndex
+            : 0);
     }
 }
