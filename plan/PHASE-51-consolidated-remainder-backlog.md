@@ -187,6 +187,56 @@ untrusted callers.
 
 ---
 
+### A7 — OpenGL sampler records per (texture, sampler) PAIR (from the 2026-07-27 full-project review)
+
+*`mgfxc` compiles this and we do not — a fidelity gap on our side, not a reference-compiler bug.*
+
+Several textures read through **one shared `SamplerState`** (the classic diffuse+lightmap shape)
+is ordinary HLSL. SPIRV-Cross expands it into one **combined sampler per (texture, sampler)
+pair**, so the emitted GLSL declares `ps_s0` AND `ps_s1`, and `MonoGameGlslRewriter` numbers them
+in declaration order. ShadowDusk's GL sampler table is keyed on the reflected **samplers**, of
+which there is only one, so it emitted a single record: `ps_s1` never received a texture unit and
+silently sampled unit 0. `mgfxc`'s own golden for this shape
+(`tests/fixtures/golden/OpenGL/PenumbraTexture.mgfx`) carries **two** records, `ps_s0`/`ps_s1`,
+with parameters named `TextureSampler+DiffuseMap` / `TextureSampler+Lightmap` — MojoShader's
+`<sampler>+<texture>` naming, which is literally the pair identity.
+
+**Interim (shipped 2026-07-27):** `SD0216` turns that silent mis-bind into a loud compile error
+naming the one-line workaround (give each texture its own `SamplerState`, which is
+behavior-identical and produces exactly `mgfxc`'s structure). DirectX and DirectX 12 are already
+correct — they key on the reflected textures, as `mgfxc` does.
+
+**Why it was not fixed in the same change.** The pair list exists but is discarded: the pipeline
+calls `spvc_compiler_build_combined_image_samplers` for its side effect and never reads
+`spvc_compiler_get_combined_image_samplers`. Adding that P/Invoke would fix the desktop path
+only — **`src/ShadowDusk.Wasm/wwwroot/spirv-cross/spirv-cross.wasm` exports exactly 11 functions
+and that is not one of them**, and it is an out-of-band emscripten build. A desktop-only fix
+would therefore break the CLI-vs-WASM byte-identity promise (`project_facts.md`) for this shape,
+which is why this needs its own scoped effort rather than a same-PR add-on.
+
+**Candidate directions:**
+1. **Pure-managed pair extraction** (preferred, and the precedent this project has already set
+   twice with `RdefReader` and `SpirvReflector`): derive the (image, sampler) pairs from the
+   SPIR-V ourselves by walking `OpSampledImage` back through `OpLoad` to the variables. Host-
+   independent by construction, so byte-identity holds. **The hard part is not extraction, it is
+   reproducing SPIRV-Cross's combined-sampler DECLARATION ORDER exactly** — `ps_s{k}` must name
+   the uniform the GLSL actually declares, and getting the order subtly wrong silently binds the
+   wrong texture, which is the very bug class this item exists to close. Pin it against real
+   SPIRV-Cross output before trusting it.
+2. Rebuild `spirv-cross.wasm` with the pairs API exported and use the native call on both hosts.
+   Removes the ordering guesswork entirely, at the cost of an emscripten rebuild and a new pinned
+   artifact.
+
+**Done = ** a `.fx` reading N textures through one shared `SamplerState` compiles for OpenGL,
+emits N records naming every `ps_s{k}` the GLSL declares with the right texture parameter and
+baked state per pair, is render-proven against the `mgfxc` OpenGL golden, produces identical
+bytes on the CLI and in the browser, and `SD0216` is deleted as unnecessary. Note the separate,
+pre-existing parameter-naming divergence in the same area (`mgfxc` emits `TextureSampler+DiffuseMap`
+where we emit `DiffuseMap`); decide deliberately whether to match it, since changing parameter
+names breaks existing consumers' `Parameters[...]` lookups.
+
+---
+
 ## B. Externally blocked (gated on an outside event)
 
 ### B1 — ➡️ Promoted (2026-07-18) to [Phase 52](PHASE-52-monogame-3.8.5-support.md) Area D — DX12 / DXIL render-validation (Phase 35 Area C)
