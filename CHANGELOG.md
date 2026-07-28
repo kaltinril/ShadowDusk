@@ -14,6 +14,14 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.15.0] - 2026-07-27
+
+### Added
+
 - CLI: mgfxc's `/Defines:<name=value;...>` flag is now implemented (previously the flag was
   silently ignored and `#ifdef` branches compiled out with exit 0). Library consumers get the
   same via the new `CompilerOptions.Defines` property; the macros ride through both the
@@ -1081,7 +1089,8 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.14.2...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.14.2...v0.15.0
 [0.14.2]: https://github.com/kaltinril/ShadowDusk/compare/v0.14.1...v0.14.2
 [0.14.1]: https://github.com/kaltinril/ShadowDusk/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.13.0...v0.14.0
