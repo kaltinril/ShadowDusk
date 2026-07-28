@@ -617,4 +617,54 @@ void main()
         AnalyzePixel(glsl, passHasVertexShader: true)
             .Should().NotContain(f => f.Code == "SD0403");
     }
+
+    [Theory]
+    [InlineData("int m = i & 255;",  "bitwise")]
+    [InlineData("int m = i | 8;",    "bitwise")]
+    [InlineData("int m = i ^ 61;",   "bitwise")]
+    [InlineData("int m = ~i;",       "bitwise")]
+    [InlineData("int m = i % 2;",    "modulo")]
+    public void Sd0403_IntegerBitwiseAndModuloOperators_AreFlagged(string stmt, string kind)
+    {
+        // GLSL 1.10 §5.1 / ESSL 1.00 reserve % & ^ | ~ for future use in the SAME sentence
+        // that reserves << and >>. SPIRV-Cross emits them verbatim for signed-int operands,
+        // where no `uint` token appears for the unsigned check to catch, so these shipped
+        // with no signal at all and failed Effect-load on Mesa / macOS GL / WebGL1.
+        string glsl = $$"""
+varying vec4 vTexCoord0;
+
+void main()
+{
+    int i = int(vTexCoord0.x * 8.0);
+    {{stmt}}
+    gl_FragColor = vec4(float(m));
+}
+""";
+        AnalyzePixel(glsl, passHasVertexShader: true)
+            .Should().Contain(f => f.Code == "SD0403" && f.Message.Contains(kind));
+    }
+
+    [Fact]
+    public void Sd0403_LogicalOperators_AreNotFlaggedAsBitwise()
+    {
+        // &&, || and ^^ are all legal in GLSL 1.10 — the bitwise check's lookarounds must
+        // not fire on them, or every ordinary branching shader gets a bogus warning.
+        const string glsl = """
+varying vec4 vTexCoord0;
+
+void main()
+{
+    bool a = vTexCoord0.x > 0.5;
+    bool b = vTexCoord0.y > 0.5;
+    if ((a && b) || (a ^^ b))
+    {
+        gl_FragColor = vec4(1.0);
+        return;
+    }
+    gl_FragColor = vec4(0.0);
+}
+""";
+        AnalyzePixel(glsl, passHasVertexShader: true)
+            .Should().NotContain(f => f.Code == "SD0403");
+    }
 }

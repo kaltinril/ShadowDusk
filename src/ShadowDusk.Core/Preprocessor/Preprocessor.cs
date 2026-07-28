@@ -88,6 +88,12 @@ public sealed class Preprocessor
                 if (pragmaMatch.Success)
                 {
                     ctx.PragmaOnceFiles.Add(filePath);
+                    // BLANK the directive, do not delete it. The line slot has to survive
+                    // or every later line of this file is one lower than the `#line`
+                    // anchor says, and DXC reports the whole file's diagnostics at the
+                    // wrong line — which the CLI, MGCB, and IDE jump-to-line all trust
+                    // verbatim. Same convention as Vkd3dShaderCompiler and FxPreParser.
+                    output.Append('\n');
                     continue;
                 }
 
@@ -99,6 +105,19 @@ public sealed class Preprocessor
                     if (resolveResult.IsFailure)
                     {
                         var err = resolveResult.Error;
+                        // Only a genuine "not found" is re-minted here. The resolver cannot
+                        // know the #include's line number, so this stamps the location —
+                        // but it must DECORATE, not REPLACE. Rewriting every failure into
+                        // SD0001 made FileSystemIncludeResolver's SD0004 ("exists but could
+                        // not be read") unreachable, so a locked or ACL-denied header told
+                        // the user a file that is right there was not found; and it silently
+                        // overwrote whatever diagnostic a consumer's own IIncludeResolver
+                        // returned, against the "never swallow another compiler's message"
+                        // rule.
+                        if (err.Kind != ShaderErrorKind.IncludeNotFound)
+                            return Result<Unit, ShaderError>.Fail(
+                                err with { File = filePath, Line = lineNumber });
+
                         IReadOnlyList<string> searched = err.SearchedPaths ?? [];
                         return Result<Unit, ShaderError>.Fail(
                             ShaderError.IncludeNotFound(filePath, lineNumber, includePath, searched));
@@ -107,7 +126,14 @@ public sealed class Preprocessor
                     string resolvedPath = resolveResult.Value.FilePath;
 
                     if (ctx.PragmaOnceFiles.Contains(resolvedPath))
+                    {
+                        // Same reason as the `#pragma once` blank above: this suppressed
+                        // #include still occupied a line in the INCLUDING file, and unlike
+                        // the taken branch below there is no `#line {lineNumber + 1}`
+                        // re-anchor afterwards to absorb the drift.
+                        output.Append('\n');
                         continue;
+                    }
 
                     if (ctx.IncludeStack.Contains(resolvedPath))
                         return Result<Unit, ShaderError>.Fail(

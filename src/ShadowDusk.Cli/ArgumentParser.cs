@@ -183,29 +183,21 @@ internal static class ArgumentParser
                     continue;
                 }
 
-                if (flagBody.Equals("target-runtime", StringComparison.OrdinalIgnoreCase))
+                // Space, ':' AND '=' forms, like every other long option here. The '=' form
+                // used to fall through to the silent unknown-flag branch below, so
+                // `--target-runtime=monogame-gl` compiled with the DEFAULT profile and exit
+                // 0 — the wrong artifact, silently, which is exactly what X0009 exists to
+                // prevent for the other value-carrying flags.
+                if (TryReadValuedFlag(flagBody, "target-runtime", args, ref i, out string? runtimeValue))
                 {
-                    i++;
-                    if (i < args.Length)
-                    {
-                        var trResult = ParseTargetRuntime(args[i]);
-                        if (trResult.IsFailure)
-                            return Result<CliArguments, ShaderError>.Fail(trResult.Error);
-                        profile = trResult.Value;
-                        i++;
-                        continue;
-                    }
-                    return Result<CliArguments, ShaderError>.Fail(
-                        MissingFlagValue("--target-runtime", "a runtime name"));
-                }
+                    if (string.IsNullOrEmpty(runtimeValue))
+                        return Result<CliArguments, ShaderError>.Fail(
+                            MissingFlagValue("--target-runtime", "a runtime name"));
 
-                if (flagBody.StartsWith("target-runtime:", StringComparison.OrdinalIgnoreCase))
-                {
-                    var trResult = ParseTargetRuntime(flagBody.Substring("target-runtime:".Length));
+                    var trResult = ParseTargetRuntime(runtimeValue);
                     if (trResult.IsFailure)
                         return Result<CliArguments, ShaderError>.Fail(trResult.Error);
                     profile = trResult.Value;
-                    i++;
                     continue;
                 }
 

@@ -17,7 +17,7 @@ namespace ShadowDusk.Core;
 /// </param>
 /// <param name="Warnings">
 /// Non-fatal diagnostics: the underlying compiler's own warnings plus ShadowDusk's GL
-/// portability findings (<c>SD0400</c>–<c>SD0402</c>) — constructs that compile but are
+/// portability findings (<c>SD0400</c>–<c>SD0499</c>) — constructs that compile but are
 /// known to fail or misbehave at runtime on some GL stacks.
 /// </param>
 public sealed record ShaderTargetValidation(

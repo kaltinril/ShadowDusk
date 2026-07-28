@@ -20,6 +20,9 @@
   <ItemGroup>
     <!-- Expose internal helpers (e.g. ManagedMd5) to the unit tests. -->
     <InternalsVisibleTo Include="ShadowDusk.Core.Tests" />
+    <!-- MgfxcNumericParse: the FNA fx_2_0 builder must parse state values with the
+         same mgfxc semantics as the MGFX path, from one shared implementation. -->
+    <InternalsVisibleTo Include="ShadowDusk.Compiler" />
   </ItemGroup>
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" />

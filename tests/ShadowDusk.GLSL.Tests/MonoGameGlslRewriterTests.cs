@@ -330,6 +330,183 @@ void main()
         result.Glsl.Should().Contain("sign((abs(vTexCoord0.x) * 8.0)) * floor(abs((abs(vTexCoord0.x) * 8.0)))");
     }
 
+    // ---- 2026-07-27 review regressions -------------------------------------------
+
+    [Fact]
+    public void Trunc_AsDivisor_IsParenthesized_SoPrecedenceIsPreserved()
+    {
+        // `trunc(x)` is a PRIMARY expression; splicing a bare `a * b` over it
+        // re-associates wherever the surrounding operator binds at least as tightly.
+        // `1.0 / trunc(x)` became `(1.0 / sign(x)) * floor(abs(x))` — valid GLSL, wrong
+        // value (3.0 instead of 0.333 for x = 3.7), no compile or link error.
+        const string src = """
+#version 140
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    float _12 = 1.0 / trunc(in_var_TEXCOORD0.x);
+    out_var_SV_Target = vec4(_12);
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        result.Glsl.Should().NotContain("trunc(");
+        result.Glsl.Should().Contain("1.0 / (sign(");
+        result.Glsl.Should().NotContain("1.0 / sign(");
+
+        int open  = result.Glsl.Count(c => c == '(');
+        int close = result.Glsl.Count(c => c == ')');
+        open.Should().Be(close);
+    }
+
+    [Fact]
+    public void PixelStage_BareColorAndTexcoordSemantics_MapToTheIndexZeroVaryings()
+    {
+        // An omitted HLSL semantic index IS index 0, and DXC mirrors the author's
+        // spelling, so `: COLOR` / `: TEXCOORD` arrive bare. They used to become
+        // `var_COLOR` / `vTexCoord` — varyings MonoGame's built-in SpriteEffect VS
+        // (which writes vFrontColor / vTexCoord0) can never link against.
+        const string src = """
+#version 140
+
+uniform sampler2D _39;
+
+in vec4 in_var_COLOR;
+in vec2 in_var_TEXCOORD;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    out_var_SV_Target = texture(_39, in_var_TEXCOORD) * in_var_COLOR;
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        result.Glsl.Should().Contain("vFrontColor");
+        result.Glsl.Should().Contain("vTexCoord0");
+        result.Glsl.Should().NotContain("var_COLOR;");
+        result.Glsl.Should().NotContain("vTexCoord;");
+    }
+
+    [Fact]
+    public void BoundedHeaderlessForLoop_InvariantBound_IsStillRewritten()
+    {
+        // POSITIVE CONTROL for the two decline tests below: the identical loop with an
+        // untouched bound must still get its real header. Without this, a change that
+        // stopped Rule 13 rewriting anything at all would leave those tests green.
+        const string src = """
+#version 140
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    int _30 = 4;
+    int _40 = 0;
+    for (;;)
+    {
+        if (_40 < _30)
+        {
+            _40++;
+            continue;
+        }
+        else
+        {
+            out_var_SV_Target = vec4(float(_40));
+            break;
+        }
+    }
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        result.Glsl.Should().NotContain("for (;;)");
+        result.Glsl.Should().Contain("_40 <= 4");
+    }
+
+    [Fact]
+    public void BoundedHeaderlessForLoop_BoundReassignedInBody_IsNotRewritten()
+    {
+        // Rule 13 proves the ceiling from the bound's INITIALIZER, so the rewrite is only
+        // sound while the bound is loop-invariant. A body that raises it past that literal
+        // makes the synthesized header exit before the terminal `else` finalizer runs,
+        // leaving the output undefined — issue #160's exact failure mode. Decline instead.
+        const string src = """
+#version 140
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    int _30 = 4;
+    int _40 = 0;
+    for (;;)
+    {
+        if (_40 < _30)
+        {
+            _30 = 12;
+            _40++;
+            continue;
+        }
+        else
+        {
+            out_var_SV_Target = vec4(float(_40));
+            break;
+        }
+    }
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        result.Glsl.Should().Contain("for (;;)",
+            "a bound the body reassigns is not provable, so the loop must be left alone");
+        result.Glsl.Should().NotContain("_40 <= 4");
+    }
+
+    [Fact]
+    public void BoundedHeaderlessForLoop_BoundOverwrittenBeforeLoop_IsNotRewritten()
+    {
+        // Same hole reached through straight-line code: the declaration walk must not step
+        // PAST a statement that writes the bound and then trust the stale literal.
+        const string src = """
+#version 140
+
+uniform vec4 ps_uniforms_vec4[1];
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    int _30 = 4;
+    _30 = int(ps_uniforms_vec4[0].x);
+    int _40 = 0;
+    for (;;)
+    {
+        if (_40 < _30)
+        {
+            _40++;
+            continue;
+        }
+        else
+        {
+            out_var_SV_Target = vec4(float(_40));
+            break;
+        }
+    }
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        result.Glsl.Should().Contain("for (;;)");
+        result.Glsl.Should().NotContain("_40 <= 4");
+    }
+
     // ---- Vertex stage (Phase 28, posFixup contract since Phase 43 F3). SPIRV-Cross
     // VS output for a custom VS taking a float4x4 transform + the SpriteBatch vertex
     // set (POSITION0 / COLOR0 / TEXCOORD0), captured verbatim from DXC→SPIRV-Cross for

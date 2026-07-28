@@ -1452,6 +1452,14 @@ public static class MonoGameGlslRewriter
 
         switch (sem)
         {
+            // An omitted HLSL semantic index IS index 0: ": COLOR" and ": COLOR0" are the
+            // same semantic, and fxc/mgfxc treat them identically. DXC mirrors the author's
+            // spelling verbatim, so the bare form arrives as `in_var_COLOR`. Collapsing it
+            // here is the same normalization IsPositionSemantic (POSITION ≡ POSITION0),
+            // ParseTrailingIndex, and the SV_Target rewrite already perform — without it a
+            // pixel-only pass declaring `: COLOR` emits `var_COLOR`, which MonoGame's
+            // built-in SpriteEffect VS (writing vFrontColor) can never link against.
+            case "COLOR":
             case "COLOR0":
                 return "vFrontColor";
             case "COLOR1":
@@ -1461,6 +1469,10 @@ public static class MonoGameGlslRewriter
         if (sem.StartsWith("TEXCOORD"))
         {
             var n = sem["TEXCOORD".Length..];
+            if (n.Length == 0)
+            {
+                n = "0";    // ": TEXCOORD" is TEXCOORD0
+            }
             return $"vTexCoord{n}";
         }
 
@@ -1700,7 +1712,14 @@ public static class MonoGameGlslRewriter
             }
 
             string arg = body.Substring(openParen + 1, closeParen - openParen - 1);
-            string replacement = $"sign(({arg})) * floor(abs(({arg})))";
+            // The whole product is parenthesized: `trunc(x)` was a primary expression, and
+            // splicing a bare `a * b` into its place re-associates wherever the surrounding
+            // operator binds at least as tightly. `1.0 / trunc(x)` would become
+            // `(1.0 / sign(x)) * floor(abs(x))` — valid GLSL, silently wrong pixels — and
+            // `trunc(v).x` would attach the swizzle to only the second factor. (The main
+            // producer, SPIRV-Cross's `a - b * trunc(a / b)` fmod expansion, is unaffected
+            // either way; this is the latent case reachable from user HLSL.)
+            string replacement = $"(sign(({arg})) * floor(abs(({arg}))))";
             body = body.Substring(0, callStart) + replacement + body.Substring(closeParen + 1);
             searchFrom = callStart;
         }
@@ -3113,6 +3132,18 @@ public static class MonoGameGlslRewriter
                 continue; // no compile-time-provable ceiling — SD0402 keeps warning, honestly
             }
 
+            // provenMax comes from the bound's INITIALIZER, so it is only a real ceiling
+            // while the bound never changes. SPIRV-Cross emits loop-carried values as
+            // `int _b = <literal>;` plus a reassignment in the body — the very shape this
+            // rule reads for the index itself — and a bound that grows past provenMax
+            // would let the synthesized header exit before the terminal `else` finalizer
+            // ever runs, leaving its output undefined. That is issue #160's exact failure
+            // mode, so decline to the honest SD0402 warning instead of rewriting wrong.
+            if (WritesVariable(trueBranch, boundVar) || WritesVariable(falseBranch, boundVar))
+            {
+                continue;
+            }
+
             if (!TryHoistTrailingIncrement(trueBranch, idxVar, out string incrExpr, out string newTrueBranch))
             {
                 continue;
@@ -3234,11 +3265,21 @@ public static class MonoGameGlslRewriter
         int pos = beforeIndex;
         while (TryFindPrecedingStatement(body, pos, out int start, out int semiIdx))
         {
-            var m = declRegex.Match(body[start..semiIdx].Trim());
+            string stmt = body[start..semiIdx].Trim();
+            var m = declRegex.Match(stmt);
             if (m.Success)
             {
                 expr = m.Groups[1].Value.Trim();
                 return true;
+            }
+
+            // A statement that WRITES the variable stands between us and its declaration,
+            // so the declaration's initializer is no longer the variable's value at the
+            // loop. Walking past it would resolve a stale literal as the proven ceiling
+            // (`int _b = 4; _b = int(runtime); …`). Decline instead.
+            if (WritesVariable(stmt, variable))
+            {
+                return false;
             }
 
             if (start == 0 || body[start - 1] != ';')

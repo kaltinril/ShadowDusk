@@ -154,8 +154,13 @@ It then prepends the platform macro set for the target. The macros are simple pr
 |---|---|
 | **DirectX** | `MGFX`, `HLSL`, `SM4` |
 | **OpenGL** | `MGFX`, `GLSL`, `OPENGL` |
+| **DirectX 12** | `MGFX`, `HLSL`, `SM6` (deliberately **no** `VULKAN` — matches mgfxc's own `DirectX12ShaderProfile.AddMacros`) |
 | **Vulkan** | `MGFX`, `HLSL`, `VULKAN`, `SM6` |
 | **FNA** | `FNA`, `HLSL`, `SM3` (intentionally no `MGFX`) |
+
+> **Gate a modern branch on `#if SM6`, not `#if VULKAN`.** `SM6` is defined by BOTH SM6 targets;
+> `VULKAN` is Vulkan-only, so a `#if VULKAN … #else /* legacy SM2/SM3 */ #endif` shader silently
+> falls into its legacy branch on a `DirectX_12` compile.
 
 **Why.** Flattening to one self-contained translation unit means no include handler has to be
 threaded into the native compilers, and all three backends see identical pre-resolved source.
@@ -334,7 +339,7 @@ name, so whatever name SPIRV-Cross chose for a uniform is irrelevant to the GLSL
 
 **`.mgfx` (MonoGame/KNI)** — `src/ShadowDusk.Core/MgfxWriter.cs`. The body is serialized first so
 the header can hash it. Layout: the 4-byte signature `MGFX`, a version byte, a profile byte
-(OpenGL = 0, DirectX 11 = 1, Vulkan = 80 — matching MonoGame 3.8.5's own `VulkanShaderProfile`; never the `PlatformTarget` enum ordinal), and a 4-byte effect key (a managed MD5 over the body,
+(OpenGL = 0, DirectX 11 = 1, DirectX 12 = 2, Vulkan = 80 — matching MonoGame 3.8.5's own `DirectX12ShaderProfile` / `VulkanShaderProfile`; never the `PlatformTarget` enum ordinal), and a 4-byte effect key (a managed MD5 over the body,
 managed because the WASM runtime lacks MD5); then the body, **constant buffers → shaders → parameters
 → techniques/passes (with their render-state blocks)**; then the trailing `MGFX` footer the
 runtime validates. The shader blob is **GLSL text for the GL profile and DXBC for the DX profile**.

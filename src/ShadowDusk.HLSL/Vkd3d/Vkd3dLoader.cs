@@ -82,14 +82,9 @@ internal static class Vkd3dLoader
                         string baseCandidate = Path.Combine(AppContext.BaseDirectory, subdir, fileName);
                         if (NativeLibrary.TryLoad(baseCandidate, out handle))
                             return handle;
-
-                        // 2. A tools/vkd3d folder above the base directory (dev/test runs).
-                        string? toolsCandidate = FindToolsVkd3d(Path.Combine(subdir, fileName));
-                        if (toolsCandidate is not null && NativeLibrary.TryLoad(toolsCandidate, out handle))
-                            return handle;
                     }
 
-                    // 3. The host's native search directories — resolves the NuGet
+                    // 2. The host's native search directories — resolves the NuGet
                     // runtimes/<rid>/native asset for framework-dependent consumers,
                     // and the single-file extraction dir, where the csproj's per-arch
                     // macOS Link paths survive as subdirectories (bug-hunt 2026-07-27
@@ -103,6 +98,25 @@ internal static class Vkd3dLoader
                             if (File.Exists(candidate) && NativeLibrary.TryLoad(candidate, out handle))
                                 return handle;
                         }
+                    }
+
+                    // 3. A tools/vkd3d folder above the base directory (repo dev/test runs).
+                    //
+                    // DELIBERATELY LAST of the directory probes. This walk ascends toward
+                    // the filesystem root, and on Windows the volume root is
+                    // add-subdirectory-writable by ordinary users, so `C:\tools\vkd3d\` is
+                    // a directory any local account can create. Running it AHEAD of the
+                    // packaged-asset probe made that an uncontrolled search path
+                    // (CWE-427): a framework-dependent consumer — whose native lives in
+                    // the NuGet cache and is only reachable via step 2 — would have loaded
+                    // and executed the planted DLL instead. It is also bounded to a real
+                    // ShadowDusk checkout now, so an unrelated `tools/vkd3d` on the path
+                    // can no longer silently override the pinned, hash-verified native.
+                    foreach (string subdir in GetProbeSubdirectories())
+                    {
+                        string? toolsCandidate = FindToolsVkd3d(Path.Combine(subdir, fileName));
+                        if (toolsCandidate is not null && NativeLibrary.TryLoad(toolsCandidate, out handle))
+                            return handle;
                     }
 
                     // 4. Bare name (single-file publish temp dir / OS search path).
@@ -128,17 +142,69 @@ internal static class Vkd3dLoader
             : [];
     }
 
+    /// <summary>
+    /// Finds <c>tools/vkd3d/&lt;relativePath&gt;</c> in an ancestor of the base directory —
+    /// the layout <c>tools/restore.{ps1,sh}</c> produces in a repo checkout, so dev and
+    /// test runs find the restored native without a copy step.
+    ///
+    /// <para>The ancestor must ALSO look like a ShadowDusk checkout (it carries the
+    /// solution file or a <c>.git</c> entry). Without that marker the walk ran all the way
+    /// to the volume root, where <c>C:\tools\vkd3d\</c> is a path any unprivileged local
+    /// account can create — an uncontrolled search path that would have let a planted DLL
+    /// execute inside another user's process, and that could silently displace the pinned,
+    /// hash-verified native whose byte-stability is a product promise.</para>
+    /// </summary>
     private static string? FindToolsVkd3d(string relativePath)
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null)
         {
-            string candidate = Path.Combine(dir.FullName, "tools", "vkd3d", relativePath);
-            if (File.Exists(candidate))
-                return candidate;
+            if (IsRepositoryRoot(dir))
+            {
+                string candidate = Path.Combine(dir.FullName, "tools", "vkd3d", relativePath);
+                if (File.Exists(candidate))
+                    return candidate;
+            }
             dir = dir.Parent;
         }
         return null;
+    }
+
+    /// <summary>
+    /// A marker that an unprivileged user cannot cheaply forge in a directory they do not
+    /// already own. A bare <c>.git</c> ENTRY is not enough: <c>C:\.git</c> is a directory
+    /// any local account can create, which would re-open the very search path this bound
+    /// exists to close. So the solution file is the primary marker, and a <c>.git</c> is
+    /// accepted only when it is structurally a real repository (a directory containing
+    /// <c>objects</c>, or the <c>gitdir:</c> pointer file a worktree/submodule uses).
+    /// </summary>
+    private static bool IsRepositoryRoot(DirectoryInfo dir)
+    {
+        if (File.Exists(Path.Combine(dir.FullName, "ShadowDusk.slnx")))
+            return true;
+
+        string dotGit = Path.Combine(dir.FullName, ".git");
+        if (Directory.Exists(dotGit))
+            return Directory.Exists(Path.Combine(dotGit, "objects"));
+
+        if (File.Exists(dotGit))
+        {
+            try
+            {
+                // git worktree / submodule: a one-line file `gitdir: <path>`.
+                return File.ReadAllText(dotGit).StartsWith("gitdir:", StringComparison.Ordinal);
+            }
+            catch (IOException)
+            {
+                return false;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return false;
+            }
+        }
+
+        return false;
     }
 
     private static string[] GetLibFileNames()

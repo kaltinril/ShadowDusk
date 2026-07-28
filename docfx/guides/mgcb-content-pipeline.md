@@ -32,6 +32,7 @@ MGCB passes the platform via `/Profile:`. ShadowDusk understands the MonoGame pr
 | MGCB `/Profile:` | ShadowDusk target |
 |---|---|
 | `DirectX_11` | DirectX (DXBC SM5) |
+| `DirectX_12` | DirectX 12 (SM6 DXIL), validated for MonoGame `WindowsDX12` (KNI has no DirectX 12 platform). **Build DX12 content on Windows** — DXIL signing needs the Windows-only `dxil.dll`, or the output is unsigned and retail D3D12 rejects it (`SD0214`); see [DirectX 12](../backends/directx12.md) |
 | `OpenGL` | OpenGL / DesktopGL (GLSL) |
 | `Vulkan` | Vulkan (SM6 SPIR-V), validated for MonoGame `DesktopVK` (KNI has no Vulkan platform) |
 

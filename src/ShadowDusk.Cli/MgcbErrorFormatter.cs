@@ -25,7 +25,7 @@ internal static class MgcbErrorFormatter
             return $"{filename}({error.Line},{error.Column}-{error.Column}): {severity} {code}: {error.Message}";
 
         // File-scoped but line-less: still lead with the file. The GL portability lint
-        // (SD0400-SD0402) derives its findings from the EMITTED GLSL, which has no line
+        // (SD0400-SD0499) derives its findings from the EMITTED GLSL, which has no line
         // mapping back to the .fx, so those warnings carry a file and no line. Without
         // this branch an MGCB build compiling many effects printed a bare
         // "warning SD0401: ... pixel shader 'MainPS' ..." with no way to tell WHICH

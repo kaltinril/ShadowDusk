@@ -307,9 +307,13 @@ internal static class Fx2EffectBuilder
                 "MaxMipLevel, MaxAnisotropy, Texture");
         }
 
+        // mgfxc semantics, shared with the MGFX path's MgfxSamplerStateResolver: the
+        // FxLexer keeps the HLSL float suffix in the token, so a raw float/int.TryParse
+        // rejected `MipMapLodBias = -2.0f;` and `MaxAnisotropy = 4.0;` on the FNA target
+        // while the very same sampler_state block compiled for OpenGL and DirectX.
         if (op == OpMipMapLodBias)
         {
-            if (!float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out float f))
+            if (!MgfxcNumericParse.TryParseFloat(value, out float f))
                 return FailState(sourceFile, entry,
                     $"sampler '{samplerName}' state '{key}' has non-numeric value '{value}'");
             return Result<Fx2SamplerState, ShaderError>.Ok(
@@ -317,7 +321,7 @@ internal static class Fx2EffectBuilder
         }
 
         int intValue;
-        if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed))
+        if (MgfxcNumericParse.TryParseInt(value, out int parsed))
         {
             intValue = parsed;
         }

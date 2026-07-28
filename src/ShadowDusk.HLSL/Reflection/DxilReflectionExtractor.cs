@@ -33,6 +33,16 @@ public sealed class DxilReflectionExtractor
         {
             return ExtractCore(dxilBlob, ct);
         }
+        catch (OperationCanceledException)
+        {
+            // Cancellation is not a reflection failure. ExtractCore's own
+            // ThrowIfCancellationRequested lands in the catch-all below otherwise, turning
+            // a cancelled token into an SD0102 "Reflection failed" compile error: the CLI's
+            // watchdog then never reports X0007 "Compilation timed out", and a library
+            // consumer's own CTS stops behaving per the .NET contract. Matches
+            // DxbcReflectionExtractor and the guards in CompilationPipeline.
+            throw;
+        }
         catch (Exception ex)
         {
             return Result<ReflectedEffect, ShaderError>.Fail(new ShaderError(

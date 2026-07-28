@@ -45,9 +45,16 @@ Supported targets are tested end-to-end against the reference compiler and rende
 > `MgfxVersion = 11` (MonoGame 3.8.5+) and `Container = EffectContainer.Knifx` (KNI v4.02+) are optional
 > and load and render just like v10. See [Parameters & Caveats](../guides/parameters-and-caveats.md).
 
-> **Cross-platform.** Every target compiles on Windows, macOS, and Linux and produces the same
-> bytes on every OS — ShadowDusk bundles its own native pieces, and the full test suite runs green
-> on all three in CI.
+> **Cross-platform.** Every target compiles on Windows, macOS, and Linux, and OpenGL, DirectX 11,
+> and FNA produce the same bytes on every OS — ShadowDusk bundles its own native pieces, and the
+> full test suite runs green on all three in CI.
+>
+> **Two carve-outs.** Build **DirectX 12** content on Windows: DXIL validation and signing run
+> through the Windows-only `dxil.dll`, so a non-Windows DX12 compile still succeeds but emits
+> *unsigned* DXIL (warned as `SD0214`) that retail D3D12 rejects at pipeline-state creation — see
+> [DirectX 12](../backends/directx12.md). And a small family of advanced-texture intrinsics
+> (`tex3D`, `tex2Dlod`, `tex2Dgrad`) currently fails to compile on the Linux/macOS DXC builds — see
+> [Parameters & Caveats](../guides/parameters-and-caveats.md).
 
 ## Next steps
 

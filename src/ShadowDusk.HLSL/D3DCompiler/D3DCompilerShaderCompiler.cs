@@ -11,8 +11,11 @@ namespace ShadowDusk.HLSL.D3DCompiler;
 /// Compiles preprocessed HLSL to SM5 DXBC via d3dcompiler_47.dll (the fxc
 /// engine). This is the Windows-only "oracle" DXBC backend (Phase 18): it emits
 /// the real Shader-Model-5 bytecode MonoGame's DX11 runtime loads, which DXC
-/// cannot produce (DXC's minimum is SM6 DXIL). A cross-platform vkd3d-shader
-/// backend is intended to replace it behind <see cref="IDxbcShaderCompiler"/>.
+/// cannot produce (DXC's minimum is SM6 DXIL). The cross-platform
+/// <c>Vkd3dShaderCompiler</c> is the shipping DXBC backend behind
+/// <see cref="IDxbcShaderCompiler"/> (the default on every OS since 0.5.0); this type
+/// stays an opt-in Windows-only correctness oracle (<c>DxbcBackend.D3DCompiler</c>)
+/// and never ships to consumers.
 ///
 /// Off Windows the package restores fine (managed wrapper) but the native
 /// d3dcompiler_47.dll is absent; <see cref="CompileAsync"/> returns a clear

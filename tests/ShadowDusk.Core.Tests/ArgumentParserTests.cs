@@ -94,6 +94,26 @@ public sealed class ArgumentParserTests
     }
 
     [Fact]
+    public void Parse_TargetRuntime_EqualsForm_Works()
+    {
+        // The '=' form used to fall through to the silent unknown-flag branch, so this
+        // compiled with the DEFAULT profile and exit 0 — the wrong artifact, no diagnostic.
+        var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "--target-runtime=kni-knifx"]);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Profile.Should().Be(CapabilityProfile.KniGL_4_02);
+    }
+
+    [Fact]
+    public void Parse_TargetRuntime_EqualsForm_UnknownValue_StillFailsLoudly()
+    {
+        var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "--target-runtime=nope"]);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("X0008");
+    }
+
+    [Fact]
     public void Parse_TargetRuntime_Unknown_FailsWithX0008()
     {
         var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "--target-runtime", "nope"]);

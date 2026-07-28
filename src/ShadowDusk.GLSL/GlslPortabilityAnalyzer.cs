@@ -17,7 +17,7 @@ namespace ShadowDusk.GLSL;
 /// <para>Every finding is a <see cref="ShaderErrorSeverity.Warning"/>, never an
 /// error: the artifact is valid and renders on the stacks that accept it — the lint
 /// exists so the narrower stacks stop being a silent field failure. Findings surface
-/// through <c>CompiledShader.Warnings</c>. Codes <c>SD0400</c>–<c>SD0402</c>
+/// through <c>CompiledShader.Warnings</c>. Codes <c>SD0400</c>–<c>SD0499</c>
 /// (registered in <c>docs/error-codes.md</c>).</para>
 /// </summary>
 public static class GlslPortabilityAnalyzer
@@ -140,6 +140,16 @@ public static class GlslPortabilityAnalyzer
             Warn("a non-square matrix type");
         if (Regex.IsMatch(glsl, @"<<|>>"))
             Warn("an integer shift operator ('<<' or '>>')");
+        // GLSL 1.10 §5.1 / ESSL 1.00 reserve %, &, ^, |, ~ (and their OP= forms) for
+        // future use in the same sentence that reserves the shifts above, so they belong
+        // to the same class — SPIRV-Cross emits them verbatim for OpBitwiseAnd/Or/Xor/Not
+        // and OpUMod, and on `int` operands no `uint` token appears for the check above to
+        // catch. The lookarounds keep the logical operators &&, ||, ^^ (all legal in 1.10)
+        // from matching; '~' is unambiguous because GLSL has no other use for it.
+        if (Regex.IsMatch(glsl, @"(?<![&])&(?![&])|(?<![|])\|(?![|])|(?<!\^)\^(?!\^)|~"))
+            Warn("an integer bitwise operator ('&', '|', '^' or '~')");
+        if (glsl.Contains('%'))
+            Warn("an integer modulo operator ('%')");
     }
 
     /// <summary>

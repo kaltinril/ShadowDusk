@@ -113,5 +113,12 @@ public sealed class CompilerOptions
         MgfxVersion            = MgfxVersion,
         Container              = Container,
         DxbcBackend            = DxbcBackend,
+        // Every property above MUST be copied — "preserving every other setting" is the
+        // documented contract, and this is the pipeline's own normalization step, so a
+        // dropped property silently changes what gets compiled. Defines was missed once:
+        // `--target-runtime monogame-gl /Defines:X` compiled with X undefined, and
+        // ValidateAsync (which calls this per target) reported on a different source than
+        // CompileAsync would produce. A round-trip test pins this.
+        Defines                = Defines,
     };
 }

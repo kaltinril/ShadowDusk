@@ -13,7 +13,7 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 |---|---|
 | `FX0001`–`FX0099` | FX9 pre-parser (`FxPreParser` / `FxLexer`) |
 | `SD0000` | CLI informational notes (severity `Note`, never a failure) |
-| `SD0001`–`SD0009` | Preprocessor (`#include` handling) and source-provenance notes |
+| `SD0001`–`SD0009` | Preprocessor (`#include` handling), input-format detection, source-provenance notes, and the ShaderToy/GLSL front end |
 | `SD0010`–`SD0019` | Pipeline-level effect validation |
 | `SD0020`–`SD0029` | MGFX writer range guards, container/target guards, and source-level target-binding guards (e.g. `SD0028`) |
 | `SD0100`–`SD0199` | Reflection / transpilation backends |
@@ -51,6 +51,8 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 | `SD0003` | **Note.** A ShaderToy/GLSL input was converted to `.fx` and that generated HLSL failed to compile — the diagnostics that follow refer to the **generated** source, not your original line numbers. | `PipelineRunner` |
 | `SD0004` | `#include` file was found on a search path but could not be read (locked, access denied, or deleted between the existence check and the read). | `FileSystemIncludeResolver` |
 | `SD0005` | Input format could not be detected: the source has no HLSL `technique` block and no ShaderToy `mainImage` / `void main` entry point. Pass `--input-format fx` or `--input-format glsl`. | `InputFormatDetector` |
+| `SD0006` | ShaderToy/GLSL front-end conversion failed: a construct outside the supported single-pass image subset (e.g. `mainSound` / `mainVR` / `mainCubemap`, or a malformed `mainImage` signature). Located on the **original** `.glsl`, not the generated `.fx`. | `PipelineRunner`, `ShaderFiddle.Web` |
+| `SD0007` | **Warning.** A non-fatal ShaderToy/GLSL conversion adjustment (e.g. a local auto-renamed because it shadows a called function, or a dropped standalone `void main()` wrapper). Located on the **original** `.glsl`. | `PipelineRunner`, `ShaderFiddle.Web` |
 | `SD0010` | Effect source contains no techniques. | `CompilationPipeline` |
 | `SD0011` | Unrecognised value for a render-state key. | `RenderStateParser` |
 | `SD0012` | Internal: a GL uniform in the rewriter's register layout has no matching reflected effect parameter — the GLSL uniform layout and the reflection diverged. A ShadowDusk bug if ever seen. | `CompilationPipeline` |
@@ -75,6 +77,7 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 | `SD0211` | vkd3d-shader native library missing or unloadable (run `tools/restore.ps1`). | `Vkd3dShaderCompiler` |
 | `SD0212` | vkd3d-shader compile failed and emitted no diagnostic text at all (unparseable non-empty text passes through verbatim as `X0000`). | `Vkd3dCompileContract` |
 | `SD0213` | Vulkan target: reflection shows two distinct textures co-located onto a single combined-image-sampler binding — the second texture would silently sample the first's data on DesktopVK. The post-compile backstop of `SD0028`, for shared-sampler shapes the source-level scan cannot see. Give each texture its own `SamplerState` (or explicit register). | `CompilationPipeline` |
+| `SD0216` | OpenGL target: the emitted GLSL declares a different number of sampler uniforms than the effect's sampler table has records, so some `ps_s{k}` would never be assigned a texture unit and would silently sample unit 0. Raised when several textures are read through one shared `SamplerState` (SPIRV-Cross emits a combined sampler per texture/sampler **pair**, while the GL table is keyed on samplers). Give each texture its own `SamplerState`. | `CompilationPipeline` |
 | `SD0215` | OpenGL target: sampler registers are not contiguous from `s0`. The GL runtime binds samplers by positional name (`ps_s0`, `ps_s1`, …), so a sparse explicit-register layout (`register(s3)` with no `s0`–`s2`) would silently bind the wrong texture units. Use contiguous sampler registers from `s0`, or omit the explicit assignments. | `CompilationPipeline` |
 | `SD0214` | **Warning.** DirectX12 DXIL compiled on a non-Windows host is unsigned (`dxil.dll` validation/signing is Windows-only): it loads only with Windows Developer Mode enabled, and retail D3D12 rejects it at pipeline-state creation. Compile DirectX12 effects on Windows. | `DxcShaderCompiler` |
 | `SD0300` | FNA profile policy violation (SM4+/SM1 profile, or stage/profile prefix mismatch). | `CompilationPipeline.ResolveFnaProfile` |
@@ -85,7 +88,7 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 | `SD0400` | **Warning.** A gradient op (`dFdx`/`dFdy`/`fwidth`) sits inside a loop with a divergent exit (conditional `break`/`discard`) in the emitted GL fragment source. ANGLE Direct3D11 (WebGL in every Windows browser) silently evaluates such derivatives to 0.0; fxc warns X3553 and force-unrolls the same HLSL (issue #141). | `GlslPortabilityAnalyzer` |
 | `SD0401` | **Warning.** A pass with no vertex shader whose pixel shader reads interpolants SpriteBatch's built-in SpriteEffect VS never writes (anything beyond COLOR0 → `vFrontColor` / TEXCOORD0 → `vTexCoord0`). Drawn with SpriteBatch on GL, the program link fails on strict drivers at the FIRST draw with the engine's generic exception. | `GlslPortabilityAnalyzer` |
 | `SD0402` | **Warning.** A loop shape outside GLSL ES 1.00 Appendix A in the emitted GL source (header-less `for (;;)`, empty-increment `for` with the index advanced in the body, `while`, or a genuine `do-while`) — may fail to load on WebGL1 / KNI Reach (issue #138); desktop GL, WebGL2, and KNI HiDef are unaffected. | `GlslPortabilityAnalyzer` |
-| `SD0403` | **Warning.** A GLSL-1.30+/ES-3.00-only construct survived into the versionless emitted GL source (`transpose`, `sinh`-family, `isnan`/`isinf`, `texelFetch`, bit-cast builtins, `switch`, `uint` types/literals, non-square matrices, integer shifts, or a `round`/`roundEven`/`trunc` a lowering missed). Lenient desktop drivers accept it; strict front ends (macOS OpenGL, Mesa, WebGL1) reject it at Effect-load time — the class behind issues #149 and #163. | `GlslPortabilityAnalyzer` |
+| `SD0403` | **Warning.** A GLSL-1.30+/ES-3.00-only construct survived into the versionless emitted GL source (`transpose`, `sinh`-family, `isnan`/`isinf`, `texelFetch`, bit-cast builtins, `switch`, `uint` types/literals, non-square matrices, integer shifts, the integer bitwise/modulo operators `&` `|` `^` `~` `%`, or a `round`/`roundEven`/`trunc` a lowering missed). Lenient desktop drivers accept it; strict front ends (macOS OpenGL, Mesa, WebGL1) reject it at Effect-load time — the class behind issues #149 and #163. | `GlslPortabilityAnalyzer` |
 | `SD1900` | Browser/WASM DXC backend failed. | `JsDxcShaderCompiler` |
 | `SD1901` | Browser/WASM SPIRV-Cross backend failed. | `JsSpirvToGlslTranspiler` |
 | `SD1902` | Browser/WASM vkd3d backend failed. | `WasmVkd3dShaderCompiler` |

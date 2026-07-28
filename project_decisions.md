@@ -16,6 +16,8 @@ Decisions made, with the why - consult before re-litigating anything. One per li
 - Chose `RELAX_NAN_CHECKS` on the OpenGL SPIRV-Cross profile to fix issue #149, not a managed rewrite stripping `isnan()`, because flipping the upstream option produced zero byte changes anywhere else in the corpus.
 - Chose to own only the container writers, the runtime-dialect adapters, and real-runtime validation, not compiler internals, because HLSL compilation and cross-compilation are multi-year efforts maintained by the people who own the formats, and the validation is the actual moat. (operator, 2026-06-09)
 - Chose to treat the browser as a full export station (any host may emit any target), not a WebGL-only compiler, because compile-target and render-backend are independent; the in-browser artifact must be byte-identical to the desktop one, which is the bar for every future host. (operator, 2026-06-09)
+- Chose to key the `.mgfx` sampler table on the reflected TEXTURES for DirectX/DirectX 12 but on the reflected SAMPLERS for OpenGL, not one rule for both, because the two runtimes bind differently: mgfxc keys its DX table on the texture's bind point (so a sampler-keyed table drops textures sharing one `SamplerState`), while GL binds by NAME and the record must name a `ps_s{k}` uniform the emitted GLSL declares. Neither list is the (texture, sampler) PAIR list SPIRV-Cross actually declares, so each is wrong for the other's mirror shape; the residual GL case is made loud as `SD0216` rather than silently mis-bound. The 1:1 case is byte-identical under either rule.
+- Chose to make `RuntimeProfileDetector.Recommend` throw for a target no `CapabilityProfile` models, not return the OpenGL profile, because a set `Profile` overrides `CompilerOptions.Target`: the fall-through silently compiled Vulkan/DX12/Metal to a GL artifact the consumer's runtime cannot load. Setting `Target` directly with `Profile` left null stays the supported path.
 
 ## Output format and compatibility
 
@@ -36,6 +38,7 @@ Decisions made, with the why - consult before re-litigating anything. One per li
 - Chose to judge the ShaderToy frontend by pixel-fidelity against the original GLSL, not by mgfxc-equivalence, because `mgfxc` never compiles ShaderToy GLSL and so provides no oracle; calling it an mgfxc-equivalence proof would be dishonest.
 - Chose build-time precompile to `.mgfx` as the documented default for shipping Android games, not on-device compile, because build-time works today with zero Android-specific work; on-device stays additive reach.
 - Chose to vendor Gum and Apos.Shapes shaders verbatim as fixtures, not to synthesize approximations, because the real third-party shaders surfaced real gaps our own corpus could not (the Gum FnaSample shader is what exposed Phase 41 GAP-1).
+- Chose to bound the native loaders' dev-convenience `tools/` walk-up to a directory carrying a repo marker, and to run it AFTER the packaged-native probe, not before and unbounded, because the unbounded form reached the Windows volume root (a `tools/vkd3d/` directory directly under `C:\`), which any local user can create: an uncontrolled search path that both enabled DLL planting across a privilege boundary and could silently displace the pinned, hash-verified native.
 
 ## Process and infrastructure
 

@@ -6,8 +6,9 @@ description: "Edit/maintain ShadowDusk's published documentation (the DocFX site
 # Docs Maintenance
 
 ## Scope: published = the DocFX site
-- In scope: `docfx/**/*.md` + the 5 files it pulls in via `[!INCLUDE]`:
+- In scope: `docfx/**/*.md` + the 6 files it pulls in via `[!INCLUDE]`:
   - `docs/HOWTO-WASM-KNI.md`
+  - `docs/error-codes.md`
   - `docs/glsl-uniform-naming.md`
   - `docs/references/compilation-pipeline.md`
   - `docs/test-shader-corpus.md`
