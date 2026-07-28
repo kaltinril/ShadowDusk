@@ -64,7 +64,7 @@ to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub 
    A non-zero exit means a render diverged from `mgfxc`/`fxc` — **do not release.** (The
    in-process OpenGL render gates DO run in CI via `validation-render.yml`, so they are covered
    by item 3; this item is the DX/DX12/FNA/KNI-DX/KNI-GL/Vulkan/ANGLE gap. See `CLAUDE.md` →
-   "Validation render drivers are the real bar". The `/release` skill performs this as its
+   "The pre-merge bar has TWO halves". The `/release` skill performs this as its
    step 2, before the version bump.)
 
 ---

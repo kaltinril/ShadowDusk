@@ -12,7 +12,7 @@ against `mgfxc` (the bar) and must **not** declare "done" on unvalidated output.
 
 **Depends on:**
 - [Phase 6](DONE/PHASE-6-spirv-cross-glsl-transpilation.md) — SPIRV-Cross C-API P/Invoke (`SpvcLoader`/`SpvcNative`). MSL reuses the same context/parse/compile flow, swapping the backend enum.
-- [Phase 17](DONE/PHASE-17-monogame-runtime-validation.md) — the OpenGL PS-only corpus is render-validated in the real MonoGame runtime; the *prerequisite gate in `plan.md` Key Decisions* ("Metal scope: out of scope until the OpenGL path is working and validated") is now satisfied, which is what unblocks starting this phase.
+- [Phase 17](DONE/PHASE-17-monogame-runtime-validation.md) — the OpenGL PS-only corpus is render-validated in the real MonoGame runtime; the original *prerequisite gate* ("Metal scope: out of scope until the OpenGL path is working and validated") is now satisfied, which is what unblocks starting this phase. Metal nonetheless stays parked for a second reason recorded in [`project_decisions.md`](../project_decisions.md): there is no consumer runtime to rung-4-validate against.
 
 **Blocks:** nothing in the product pipeline. Metal is a *breadth* target, parallel to OpenGL/DirectX, not on the critical path to 1.0.
 

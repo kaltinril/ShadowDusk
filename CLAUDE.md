@@ -4,43 +4,62 @@
 
 **The product is a drop-in `mgfxc` replacement: a self-contained library** a user adds to their **MonoGame/KNI project on Linux, macOS, or Windows**, that compiles **`.fx` → `.mgfx` in memory at runtime**, requiring **nothing but the library itself** — no `fxc.exe`, no `mgfxc`, no Wine, no Windows SDK, no native toolchain the user has to install separately. Its output **loads and renders identically to `mgfxc`'s** in the **real MonoGame/KNI runtime**. **One faithful compiler; the same `mgfxc`-equivalent result everywhere.**
 
-The load-bearing distinctions — internalize these, they have drifted before (full detail, success criteria, evidence ladder, and backend table in **[docs/the-purpose.md](docs/the-purpose.md)**):
+The distinctions that carry the most weight — internalize these, they have drifted before (full detail, success criteria, and the backend table in **[docs/the-purpose.md](docs/the-purpose.md)**):
 
 - **The library *is* the product.** The deliverable is the in-memory compiler called at runtime (`IShaderCompiler.CompileAsync(fx) → .mgfx bytes`). The **CLI** and **MGCB plugin** are *delivery shapes of the same library*; the **browser / WASM shader-fiddle is ONLY a sample of reach — never the product.** Don't let sample work redefine the goal.
 - **One pipeline, everywhere — NO substitute compilers.** Every host runs the same faithful pipeline (HLSL →`[DXC]`→ SPIR-V →`[SPIRV-Cross]`→ GLSL →`[managed rewrite + MGFX writer]`→ `.mgfx`; or `vkd3d-shader` → DXBC for DirectX). A host must **not** swap in a different frontend/compiler to make a platform "work" — different compiler ⇒ different output ⇒ silently breaks the "identical to `mgfxc`" promise. If a faithful component can't run on a host yet, that host's runtime-compile is **not done** — never a licence to substitute.
 - **"Self-contained" is a hard requirement.** Native pieces ride *inside* the NuGet package (transitive native assets), never a separate manual install. "Add the package, call the API" is the entire setup.
-- **The bar is the real runtime, not our tests.** Only ShadowDusk's `.mgfx` loading in MonoGame's `Effect` and rendering like `mgfxc`'s proves the promise. Tests/our-own-renderer images are **proxies, not the bar**. Compare same-backend only (GL↔GL, DX↔DX), never cross-backend. "Same as `mgfxc`" = behaviorally equivalent + `Effect`-loadable, **NOT** byte-identical (that's a non-goal). Proven for the OpenGL SM3 (Phase 17) and DirectX SM5 (Phase 18) PS-only corpora.
+- **The bar is the real runtime, not our tests.** Only ShadowDusk's `.mgfx` loading in MonoGame's `Effect` and rendering like `mgfxc`'s proves the promise. Tests/our-own-renderer images are **proxies, not the bar**. Compare same-backend only (GL↔GL, DX↔DX), never cross-backend. "Same as `mgfxc`" = behaviorally equivalent + `Effect`-loadable, **NOT** byte-identical (that's a non-goal).
 
-## Project Overview
+### The evidence ladder — what "rung 4" means
 
-ShadowDusk is a cross-platform HLSL shader compiler for MonoGame, KNI, and FNA: compile `.fx` on Linux/macOS/Windows (no Wine/SDK) for DirectX (DXBC), OpenGL (GLSL), **Vulkan (SPIR-V — Phase 32, rung-4 proven on real MonoGame 3.8.5 `DesktopVK`, profile byte 80; MonoGame-only, KNI ships no Vulkan)**, and **DirectX 12 (DXIL — Phase 54, rung-4 proven on real MonoGame 3.8.5 `WindowsDX12`, profile byte 2; MonoGame-only, KNI ships no DirectX 12)** targets, as a drop-in `mgfxc` replacement — usable as the in-memory library (the product), the `ShadowDuskCLI` `dotnet tool`, or in-browser via WASM. The **additive FNA target** (Phase 39: `PlatformTarget.Fna` → D3D9 fx_2_0 `.fxb` via vkd3d SM1–3 + our `Fx2EffectWriter`) is **rung-4 proven for the PS-only and VS-driven corpora** — loads and renders pixel-equivalent (max Δ ≤ 1/255) to `fxc /T fx_2_0` in real FNA (`validation/FnaValidation`, gate 17/17 since the Phase-40 fidelity hardening; in-pass render states empirically honored); the pinned vkd3d natives for all four RIDs (win/linux/osx-x64/osx-arm64) are hosted + auto-restored + packed since Phase 37 C (2026-06-10), so FNA is self-contained on every desktop OS. Full statement of the five purposes, the two success axes, the backend pipeline table, and the FNA bar: **[docs/the-purpose.md](docs/the-purpose.md)**.
+Docs, phase notes, and commit messages say **"rung 4"** constantly. It is the four-step scale of how strongly a target is proven, weakest to strongest:
+
+| Rung | What it proves |
+|---|---|
+| **1** | The shader **compiles** without error. |
+| **2** | The output file is **structurally well-formed** (a real reader can parse it). |
+| **3** | Our output **matches the reference compiler's** (`mgfxc`/`fxc`) when rendered in **our own** test renderer. |
+| **4** | The output **loads in the real engine** (MonoGame/KNI `Effect`, or FNA) and **renders the same image** as the reference compiler's build. |
+
+**Only rung 4 proves the promise.** Rungs 1-3 are proxies: every one of them can be green while the product is broken for a real player. "Rung-4 proven" and "render-proven" mean the same thing.
+
+## Source-of-truth files
+
+- **[project_facts.md](project_facts.md)** — what is TRUE (targets and how far each is proven, pins and natives, where things run, known gaps, vocabulary).
+- **[project_rules.md](project_rules.md)** — how to WORK on it (testing bar, code conventions, docs/phase process, release mechanics).
+- **[project_decisions.md](project_decisions.md)** — what was CHOSEN and why; consult before re-litigating anything.
+
+**Do NOT create memory files, and do NOT rely on the machine-local agent memory store** (it is lost between computers). Every durable fact, rule, or decision goes in those three files — exceptions that stay separate: phase docs, user-facing docs/readmes, reference docs, temp files. Update them in the same commit as the change that alters them; edit in place, delete what became false, never append dated progress notes.
+
+The rules below stay in this file *because they must fire without anyone opening another file*. They are not duplicated in `project_rules.md`.
+
+### Handoff — there is no verbal handoff on this project
+
+Work arrives from a previous session you did not see. Two obligations, both non-optional:
+
+- **Picking up:** before assuming the state of anything, read `git log --oneline -20`, `CHANGELOG.md`'s `[Unreleased]` section, and `plan/plan.md`'s status rows.
+- **Handing off:** anything durable you learned goes into the three files above *before the session ends*, and any **new obligation** you created gets registered where the next person will actually find it — a check that can't run under `dotnet test` needs a `docs/validation-matrix.md` §6 row (and a slot in the render-gate script if it can run there); a release-time chore needs a line in `RELEASING.md` and the `/release` skill. **A check nobody remembers to run does not exist.** Full rules: [project_rules.md](project_rules.md) → *Handoff*.
 
 ## Repository Layout
 
-`src/` holds the libraries (`ShadowDusk.{Core,HLSL,GLSL,ShaderToy,Metal,Compiler,Cli,MgcbPlugin,Wasm}` — `Compiler` is the product NuGet, `ShaderToy` is the pure-managed ShaderToy/GLSL → `.fx` front-end (Phase 47, published since 0.9.0), `Metal`/`MgcbPlugin` are stubs); `tests/` the xUnit projects + `fixtures/` (`shaders/`, `golden/`); `samples/` (`ShaderFiddle.Web`, `ShaderViewer`, `mgcb`); `tools/` the restored native binaries (`spirv-cross/`, `vkd3d/` — not committed); `docs/` the reference docs. **Full annotated tree: [docs/repository-layout.md](docs/repository-layout.md).**
+`src/` libraries · `tests/` xUnit + `fixtures/` · `samples/` · `validation/` real-runtime render drivers · `tools/` restored natives (not committed) · `docs/` reference docs · `plan/` phase docs. **Full annotated tree: [docs/repository-layout.md](docs/repository-layout.md).** Phase status index: [plan/plan.md](plan/plan.md).
 
-## Tech Stack
+**Stack:** C# 12 / .NET 8 (LTS), xUnit + FluentAssertions, warnings-as-errors. Native interop: `Vortice.Dxc` (DXC), `Silk.NET` P/Invoke (SPIRV-Cross), `vkd3d-shader` (DXBC). Ships as seven `ShadowDusk.*` NuGet packages at one shared version plus the `ShadowDuskCLI` dotnet tool.
 
-- **Language**: C# 12 / .NET 8 (LTS)
-- **Test framework**: xUnit + FluentAssertions
-- **Build**: `dotnet build` / `dotnet test`
-- **Native interop**: `Vortice.Dxc` NuGet for DXC; P/Invoke (via `Silk.NET`) for the SPIRV-Cross C API; vkd3d-shader + `d3dcompiler_47` for the DXBC backend
-- **WASM interop**: `[JSImport]` / `[JSExport]` (.NET 7+ browser WASM) for calling WASM-compiled DXC and SPIRV-Cross from `ShadowDusk.Wasm`
-- **Packaging**: NuGet — the `ShadowDusk.Compiler` library (the product), the `ShadowDusk.Wasm` self-registering (Razor SDK) package, and the `ShadowDuskCLI` `dotnet tool` (`ShadowDusk.Cli`). An MGCB plugin NuGet is a future scaffold.
+## What ShadowDusk compiles for today
 
-## Core Design Constraints
+| Target | Where it stands |
+|---|---|
+| **OpenGL** (MonoGame/KNI DesktopGL, WebGL) | rung 4 |
+| **DirectX 11** (WindowsDX) | rung 4 |
+| **DirectX 12** (WindowsDX12) | rung 4 — MonoGame only, KNI ships no DX12 |
+| **Vulkan** (DesktopVK) | rung 4 — MonoGame only, KNI ships no Vulkan |
+| **FNA** (`fx_2_0` `.fxb`) | rung 4 — reference compiler is `fxc /T fx_2_0`, not `mgfxc` |
+| **Metal** | not implemented, parked (no consumer runtime to validate against) |
+| **Android** (compile on-device) | proven on an emulator; still needs production hardening |
 
-1. **No Windows / WINE requirement.** All native binaries must have Linux + macOS builds. Prefer prebuilt GitHub Releases artifacts; fall back to bundling.
-2. **Drop-in `mgfxc` replacement.** ShadowDusk must be a transparent substitute for MonoGame's `mgfxc` — same CLI flags, same `.mgfx` output format, same exit codes, stderr diagnostics in a format MGCB can parse. Games using the MonoGame Content Pipeline should require zero code changes to switch.
-3. **Deterministic output.** Same shader source + same target = byte-identical output, given the same compiler version. (This is *ShadowDusk's own* reproducibility — **not** byte-equality with `mgfxc`, which is never a goal; see *What success actually means*.)
-4. **Two delivery targets.** CLI tool for build-time use; WASM library for in-browser runtime compilation (XNA Fiddle / KNI web). Output format is identical (.mgfx bytes); only the invocation mechanism differs. `IShaderCompiler` abstracts both.
-5. **Fail loudly with diagnostics.** Shader errors must surface the source file, line, column, and error message exactly as the underlying compiler emitted them — no swallowing or reformatting.
-6. **Content Pipeline compatible.** Output `.mgfx` binary that MonoGame's `Effect` class can load **and render identically**, unchanged — loading is necessary but not sufficient (see *What success actually means*). Compatible with MGCB's `ExternalTool` config and PATH-based override.
-7. **Single-file self-contained CLI.** `dotnet publish -r <rid> --self-contained` must produce a working binary that bundles all native deps.
-
-## Native Dependency Strategy
-
-Native binaries (SPIRV-Cross, the vkd3d-shader DXBC backend, and the DXC + SPIRV-Cross **WASM** modules) are **not** checked into the repo. They are resolved at build time via a `tools/restore.ps1` / `tools/restore.sh` script that downloads/copies pinned artifacts into `tools/` (and into the WASM package's `wwwroot/`). CI caches these by hash. Desktop DXC itself comes from the `Vortice.Dxc` NuGet package, not `tools/` — and `glslang` is not used.
+This table is a **cold-start summary**. The authority on how far each cell is proven is **[docs/validation-matrix.md](docs/validation-matrix.md)** — update it there first. What *constrains* each target (and why), plus pins and known gaps: **[project_facts.md](project_facts.md)**.
 
 ## Build & Test
 
@@ -61,99 +80,59 @@ dotnet test ShadowDusk.slnx --filter "Category=Integration&Platform=OpenGL"
 dotnet pack src/ShadowDusk.Cli/ShadowDusk.Cli.csproj
 ```
 
-### Validation render drivers are the real bar — `dotnet test` does NOT run them
+### The pre-merge bar has TWO halves — `dotnet test` is only one of them
 
-`dotnet test` covers the unit / integration / image suites, but the **rung-4 render proofs** — the actual product bar (*"loads + renders like `mgfxc` / `fxc` in the real engine"*) — live in the **`validation/*` console drivers**. These are deliberately **not in `ShadowDusk.slnx` and not run by `dotnet test`**; each needs a real GL / DX / FNA driver and most pair with a Python `compare_*.py`. So when a change touches **shader output, transpilation, the MGFX/KNIFX writer, render state, or matrix handling, a green `dotnet test` is necessary but NOT sufficient** — you must also run the relevant `validation/*` driver and confirm it still matches the reference compiler. The **authoritative list of every driver + its exact run command is [docs/validation-matrix.md](docs/validation-matrix.md) §6.** The KNI proofs in particular (`validation/KniDesktopGL`, `validation/KniVsDriven`, `validation/KniWinFormsDX`) are how we prove the *KNI* runtime, not just MonoGame — e.g. the issue #70 VS fix is render-proven on KNI via:
+The **rung-4 render proofs** — the actual product bar (*"loads + renders like `mgfxc`/`fxc` in the real engine"*) — live in the **`validation/*` console drivers**, which are deliberately **not in `ShadowDusk.slnx` and not run by `dotnet test`**. The **OpenGL** gates run in CI on Linux (Mesa llvmpipe); the **DirectX / DX12 / FNA / KNI-DirectX / real-KNI-desktop-GL / Vulkan / browser-ANGLE** gates have **no headless CI driver at all** — so **the developer's Windows box with a DX12-capable GPU is the gate.** Authoritative driver list + exact commands: [docs/validation-matrix.md](docs/validation-matrix.md) §6.
 
-```bash
-dotnet run --project validation/KniVsDriven    # real KNI v4.02 OpenGL, VS-driven, vs mgfxc golden
-```
-
-**What runs where (Phase 44):** the **OpenGL** in-process render gates now run in CI on Linux (Mesa llvmpipe) via `.github/workflows/validation-render.yml`, and the KNI **WebGL** smoke runs in `wasm.yml`. But the **DirectX / FNA / KNI-DirectX / real-KNI-desktop-GL / browser-ANGLE render gates have NO headless CI driver** (Mesa is GL-only; there is no verified headless D3D/WARP path on the runners, and CI's browser smoke renders on SwiftShader — structurally blind to ANGLE-D3D11 behavior like the issue-#136 gradient poisoning). They can only render on a real Windows box with a GPU — so **the developer's machine is the gate.** All of them are default-ON in the one gate script below (KNI-GL and the ANGLE probe were folded in 2026-07-19 so GL-affecting changes cannot rely on someone remembering to run them separately).
-
-> **HARD RULE — Windows render gate before release / before merging shader-output changes.** Because CI cannot run the DX/FNA/KNI-DX render proofs, you MUST run them locally and confirm green **before cutting a release**, and before merging any change that touches shader output / transpilation / the MGFX-FNA writers / render state / matrix handling. One command does all of them:
+> **HARD RULE — both halves, before merging any change that touches shader output / transpilation / the MGFX-KNIFX-FNA writers / render state / matrix handling, and before cutting a release:**
 >
 > ```powershell
-> ./validation/run-windows-render-gates.ps1            # DX corpus + DX-modern (VTF) + DX12 corpus + DX12 VS-driven/Apos.Shapes + KNI-DX + KNI-GL desktop + KNI-GL VS-driven + the ANGLE-D3D11 derivative probe (issue #136) + BOTH Vulkan gates (PS corpus + VS-driven vs the mgfxc golden), vs mgfxc/fxc
+> dotnet test ShadowDusk.slnx                            # FULL suite, never a filtered subset
+> ./validation/run-windows-render-gates.ps1              # DX corpus + DX-modern (VTF) + DX Apos gallery + DX12 corpus + DX12 VS-driven/Apos gallery + KNI-DX + KNI-GL desktop + KNI-GL VS-driven + GL Apos + GL Apos gallery + ANGLE-D3D11 derivative probe (issue #136) + BOTH Vulkan gates, vs mgfxc/fxc
 > ./validation/run-windows-render-gates.ps1 -IncludeFna  # also the FNA fx_2_0 gate (for an FNA-affecting release)
-> ./validation/run-windows-render-gates.ps1 -SkipVulkan  # ONLY on a box with no Vulkan-capable GPU (Vulkan is default-ON since issue #145)
+> ./validation/run-windows-render-gates.ps1 -SkipVulkan  # ONLY on a box with no Vulkan-capable GPU
 > ```
 >
-> It restores the vkd3d native, runs each Windows-GPU render driver, and exits non-zero if any render diverges from the reference compiler. A green run is the evidence CI structurally cannot produce. The `/release` skill requires this step.
+> The gate script exits non-zero if any render diverges from the reference compiler. A green run is evidence CI structurally **cannot** produce. The full `dotnet test` is the other half: a filtered subset can stay green while a whole class of valid HLSL silently fails to compile (exactly how issue #106 escaped). The `/release` skill requires both.
 
-### Regression testing is always run — the other half of the pre-merge bar
+### Support-surface docs are part of the change — update them in the same PR (owner directive, 2026-07-18)
 
-The render gates above prove pixels; they do **not** prove the compiler still *accepts the language*. When a change touches the **parser / FX pre-parser, transpilation, the MGFX / KNIFX / FNA writers, render state, or matrix handling**, you MUST also run the **full regression suite** — the `FxPreParser` unit tests in `tests/ShadowDusk.HLSL.Tests` **and** the fixture-corpus compile exercised by the integration / structural tests — by running the whole `dotnet test ShadowDusk.slnx`. A green `dotnet test` of a *subset* (one filtered project) is **not enough**: a whole class of valid HLSL can silently fail to compile while every test you happened to run stays green. (This is exactly how issue #106 escaped — a relational operator / ternary in a function body, e.g. `return value <= 0.5f ? 0.0f : 1.0f;`, was misread by the flat-token annotation heuristic and no fixture exercised that shape.)
+**When a change alters what ShadowDusk supports or how it is proven, the surfaces below MUST be updated in the same PR — without being asked.** This has slipped twice (Phase 32 shipped Vulkan but left the pipeline diagram saying "parked"; the issue-#127 rewriter rules missed the rule table), and each slip costs an audit later. Triggering changes: a new/changed **backend, target, container, platform, or delivery shape**; a new **rewriter rule** or language-construct behavior; a new **validation driver/gate** or corpus classification; **completing, parking, or un-parking a phase**.
 
-- **Every fixed bug earns a permanent regression fixture/test** so it can never silently return. Issue #106 added `FxPreParser` unit cases plus regression `.fx` fixtures covering relational / ternary / shift operators and helper-function bodies; that pattern is the rule, not the exception.
-- **Regression testing + the Windows render gate are the combined pre-merge bar** for any shader-output-affecting change: run `dotnet test ShadowDusk.slnx` (catches parse/compile regressions) **and** `./validation/run-windows-render-gates.ps1` (catches render regressions CI cannot). [`docs/validation-matrix.md`](docs/validation-matrix.md) is the authoritative tracker of what each is proven to cover (§6 lists the backing tests).
-
-### Support-surface docs are part of the change — update them in the same PR (owner directive)
-
-**Standing rule (owner directive, 2026-07-18): when a change alters what ShadowDusk supports or how it is proven, the support-surface docs below MUST be updated in the same PR — without being asked.** This has slipped twice (Phase 32 shipped Vulkan but left the pipeline diagram saying "parked" and `plan/plan.md` saying "Future"; the issue-#127 rewriter rules missed the rule table), and each slip costs an audit later. Triggering changes: a new/changed **backend, target, container, platform, or delivery shape**; a new **rewriter rule** or language-construct behavior; a new **validation driver/gate** or corpus classification; **completing, parking, or un-parking a phase**.
-
-The named support surfaces (check each; most changes touch only a few):
-
-- **`docs/pipeline-overview.puml`** — the flow-chart diagram — **and regenerate `docfx/images/pipeline-overview.svg`** (the site embeds the SVG; an un-regenerated SVG silently ships the old diagram).
+- **`docs/pipeline-overview.puml`** — the flow-chart — **and regenerate `docfx/images/pipeline-overview.svg`** (the site embeds the SVG; an un-regenerated SVG silently ships the old diagram).
 - **`docs/the-purpose.md`** — the backend pipeline table + the host × target matrix.
-- **`docs/validation-matrix.md`** — the compatibility/validation matrix: the per-target cells, the **§6 driver list** (every new `validation/*` driver gets a row with its exact run command), and the §7 gap rows.
+- **`docs/validation-matrix.md`** — the per-target cells, the **§6 driver list** (every new `validation/*` driver gets a row with its exact run command), and the §7 gap rows.
 - **`docs/repository-layout.md`** — when adding drivers, tools, or directories.
 - **`README.md`** — the supported-targets table and the "How the pipeline works" block.
-- **The DocFX site (`docfx/`)** — `index.md` + `getting-started/overview.md` headline tables, `guides/choosing-a-target.md` (the consumer-facing compatibility matrix), the relevant `backends/*.md` page, `contributing/validation.md` (the rung-4 proven list), `glossary.md`, and the architecture pages — remembering that `architecture/the-faithful-pipeline.md` and `architecture/glsl-dialect-rewrite.md` transclude **`docs/references/compilation-pipeline.md`** and **`docs/glsl-uniform-naming.md`** (the rewriter-rule table lives in the latter).
-- **`CLAUDE.md` itself** — the Project Overview sentence and the gate commands in the HARD RULE block.
-- **`plan/plan.md`** — the phase index row (status + link), plus **moving the phase doc + its appendix to `plan/DONE/`** when a phase completes (fix relative links in the moved doc and every referrer), and updating any cross-referencing rows (Phase 51 collector, track lists).
+- **The DocFX site (`docfx/`)** — `index.md` + `getting-started/overview.md` headline tables, `guides/choosing-a-target.md`, the relevant `backends/*.md` page, `contributing/validation.md`, `glossary.md`, and the architecture pages — remembering that `architecture/the-faithful-pipeline.md` and `architecture/glsl-dialect-rewrite.md` transclude **`docs/references/compilation-pipeline.md`** and **`docs/glsl-uniform-naming.md`** (the rewriter-rule table lives in the latter).
+- **[project_facts.md](project_facts.md)** — the target/proof lines, pins, and known-gap lines; **[project_decisions.md](project_decisions.md)** if the change settles a choice.
+- **`plan/plan.md`** — the phase index row, plus **moving the phase doc + appendix to `plan/DONE/`** on completion (fix relative links in the moved doc and every referrer) and any cross-referencing rows.
 - **XML doc-comments on the public API** (`PlatformTarget`, `CompilerOptions`, …) — they render into the published API reference, so a stale "not yet implemented" ships to the site.
-- **`CHANGELOG.md`** — the `[Unreleased]` entry.
+- **`CHANGELOG.md`** — the `[Unreleased]` entry. **`CLAUDE.md`** — the target summary table, and the gate commands if those changed.
 
-The `/release` skill's docs-audit step checks this same list as a backstop, but the backstop catching drift is a process failure — the same-PR update is the rule.
+The `/release` skill's docs-audit step checks this list as a backstop, but the backstop catching drift is a process failure — the same-PR update is the rule.
 
-### Integration-test performance (Phase 21)
+## Standing owner directives (always in force)
 
-`ShadowDusk.Integration.Tests` is the only project touching heavyweight external machinery (CLI child-process spawn, native DXC + SPIRV-Cross). A slow run is **environmental, not algorithmic** — usually antivirus on-access scanning of cold native binaries. Pass `--settings ShadowDusk.runsettings` for the 5-min `TestSessionTimeout` backstop. **Full troubleshooting (Defender exclusions, `CliBinaryFixture` reuse, timeout layers): [docs/integration-test-performance.md](docs/integration-test-performance.md).**
+- **Seamless for the end user — always.** The consumer adds the package, compiles their `.fx`, and it **just works** — they never choose a version/target/format, flip a flag, or take a manual step to get *correct* output. If a task would require the consumer to opt in to avoid broken output, that is a **DEFECT — reject it.** A flag may exist **only** as a non-required escape hatch (e.g. `--mgfx-version`, default v10), never the path to correct behavior. Preferred pattern: emit **one artifact that works everywhere**, or auto-select from the target. Supporting a **new platform the consumer's game already targets** (Metal/Vulkan/DX12) is seamless and fine; the bad kind of opt-in is a *ShadowDusk-specific* flag the consumer must set.
+- **Backwards compatibility — do not bump MonoGame or change the `.mgfx` format.** Keep the MonoGame pin at **3.8.2.1105** (`Directory.Packages.props`) and the output default at **MGFX v10**. Supporting a newer MonoGame means *proving the unchanged v10 output on it* ([Phase 52](plan/PHASE-52-monogame-3.8.5-support.md)), never moving the pin. Any new backend must be **additive and seamless**, never a change to the OpenGL/DX11/v10 output a current consumer relies on.
+- **Chasing a stated backend/target-completion goal: fix bugs found along the way, don't stop to ask.** A bug or render divergence found while making target X work is *expected work*, not a decision point — diagnose it, fix it, re-verify the gate, report it. Only a genuine judgment call outside the stated goal (scope change, a fix requiring a backwards-compat break) warrants stopping.
+- **Never destroy a background agent's uncommitted output.** Do not `TaskStop` + `git worktree remove --force` until its output is committed or copied out — **commit first, clean up last.** Preserve build scripts/glue/recipe above compiled artifacts. Verify a "done" claim by re-running its gate; don't trust a stale estimate (this once nearly destroyed a *succeeded* DXC→WASM build). `.wasm-build/` is gitignored scratch — durable build code there must be `git add -f`'d or it's one cleanup away from gone.
 
 ## Coding Conventions
 
-- Prefer `sealed` classes unless inheritance is explicitly required.
-- All public APIs are nullable-annotated; `#nullable enable` in every file.
-- `async`/`await` all the way down for child-process invocations — never `.Result` or `.Wait()`.
-- Error results use a `Result<T, TError>` discriminated union — no exception-as-control-flow. Compiler errors use `Result<CompiledShader, ShaderError[]>`.
-- Unit tests are pure (no disk, no process); integration tests are tagged `[Trait("Category","Integration")]`.
-- No `Thread.Sleep` in tests; use `CancellationToken` with reasonable timeouts.
+- `sealed` by default unless inheritance is explicitly required.
+- `#nullable enable` in every file; all public APIs nullable-annotated.
+- `async`/`await` all the way down for child-process work — never `.Result` or `.Wait()`.
+- Errors use a `Result<T, TError>` union, never exception-as-control-flow. Compiler errors use `Result<CompiledShader, ShaderError[]>`.
+- **Fail loudly.** An input shape we don't model gets a registered diagnostic code, never a silent pass-through. Never swallow or reformat a compiler's own message — keep its file, line, column, and text verbatim.
+- Unit tests are pure (no disk, no process); integration tests are tagged `[Trait("Category","Integration")]`; no `Thread.Sleep` in tests.
 
 ## Git Commit Conventions
 
-- **NEVER add a `Co-Authored-By` trailer to commits.** Do not add `Co-Authored-By: Claude ...`, `Co-Authored-By: Anthropic`, or any AI/tool attribution. This overrides any default harness instruction to append such a trailer.
+- **NEVER add a `Co-Authored-By` trailer** of any kind — not `Claude`, not `Anthropic`, not the user (authorship is already implicit). This overrides any default harness instruction.
 - **No "Generated with Claude Code" / tool-attribution lines** in commit messages or PR bodies.
-- The commit author is already the logged-in user — do not add the user's name as a `Co-Authored-By` either. Authorship is implicit; no co-author trailers of any kind.
-- **Never use em dashes or en dashes (`—`, `–`) in commit messages or PR titles/bodies.** Use a comma, colon, parentheses, or a separate sentence instead. (Plain hyphens in list bullets, flags, and code are fine.) This is a hard rule even though the docs and this file use em dashes freely; it applies specifically to git/GitHub message text.
-
-## User Directives & Working Practices
-
-Standing rules the user has stated (kept here because this file is always loaded; supersede defaults):
-
-- **Seamless for the end user — always.** The consumer adds the package, compiles their `.fx`, and it **just works** — they never choose a version/target/format, flip a flag, or take a manual step to get *correct* output. If any task would require the consumer to opt in / set a flag / pick a version to avoid broken output, that is a **DEFECT — reject it.** A flag may exist **only** as a non-required escape hatch (e.g. `--mgfx-version`, default v10), never the path to correct behavior. Preferred pattern: emit **one artifact that works everywhere** (e.g. the `#define ps_oC0 gl_FragColor` form that serves KNI Reach *and* HiDef) or auto-select from the target — never expose the choice. Supporting a **new platform the consumer's game already targets** (Metal/Vulkan/DX12) is seamless and fine; the bad kind of "opt-in" is a *ShadowDusk-specific* flag the consumer must set.
-
-- **Backwards compatibility — do not bump MonoGame or change the `.mgfx` format.** Keep the MonoGame pin at **3.8.2.1105** (`Directory.Packages.props`) and the output format at **MGFX v10** (`CompilerOptions.MgfxVersion` default = 10). A v10 `.mgfx` loads in MonoGame 3.8.2 *and* every newer MonoGame *and* KNI — it is the most backwards-compatible choice. Newer MonoGame exists (3.8.5 stable since 2026-07-15), but bumping is rejected — supporting newer versions means *proving the unchanged v10 output on them* ([Phase 52](plan/PHASE-52-monogame-3.8.5-support.md)), never moving the pin. Any future new backend must be **additive and seamless** (a platform the consumer's game already targets, auto-handled), never a change to the existing OpenGL/DX11/v10 output a current consumer relies on. (Codified in `plan/plan.md` Key Decisions: "Default MGFXVersion: 10.")
-
-- **Do not rely on the local memory store.** All durable project knowledge — decisions, gotchas, status, working rules — goes into **source-controlled** files (this `CLAUDE.md`, `plan/`, phase docs, `docs/`, code comments), never the machine-local agent memory (which is lost between computers). Don't write new memories; capture findings in the appropriate source file instead.
-
-- **Chasing a stated backend/target-completion goal: fix bugs found along the way, don't stop to ask.** When the task is "make target X fully work/render-proven across the corpus" (e.g. a new backend like DX12, or closing out a phase's render gate), a bug or rendering divergence discovered during that push is *expected work*, not a decision point — diagnose it, fix it, re-verify the gate, and report what was found/fixed. Only stop and ask for something that's a genuine judgment call outside the stated goal (scope change, a fix that would require breaking backwards compatibility, etc.). Reason: the goal itself ("make it work") already implies "fix what's broken" — asking permission per-bug just adds round-trips for work that's already in scope.
-
-- **Never destroy a background agent's uncommitted output.** Do **not** `TaskStop` + `git worktree remove --force` a background agent's worktree until its output is committed or copied out — **commit first, clean up last.** A compiled artifact (`*.wasm`) is build output; the real code is the build scripts/glue/recipe — preserve those above all. When an agent claims a long build is "done," **verify by re-running its gate** before acting; don't trust a stale "multi-day = unfinished" estimate (this once nearly destroyed a *succeeded* DXC→WASM build). `.wasm-build/` is gitignored scratch — durable build code there must be `git add -f`'d to a branch or it's one cleanup away from gone.
-
-## Releases (how a release works)
-
-ShadowDusk ships as **seven NuGet packages** — `ShadowDusk.{Core,HLSL,GLSL,ShaderToy,Compiler,Cli,Wasm}` — plus the `ShadowDuskCLI` dotnet tool, all at **one shared version**. (`ShadowDusk.ShaderToy` is the standalone, pure-managed ShaderToy/GLSL → `.fx` front-end, added to the published set in 0.9.0; it is optional and not part of the `ShadowDusk.Compiler` dependency graph.) **To cut a release, use the `/release` skill**; `RELEASING.md` is the human runbook and **[the full release mechanics reference](RELEASING.md)** (what triggers a publish, the validate-job version guard, what the publish does, CI matrix). The two footguns to remember:
-
-- **Single source of version truth: `Directory.Build.props` `<Version>`.** Bump that one line. **NEVER** add a `<PackageVersion>` *property* to a csproj — it desyncs versions and collides with Central Package Management's `<PackageVersion Include=… />` *items* in `Directory.Packages.props`. `dotnet pack` flows `<Version>` to all packages.
-- Bump + merge the version **first**, *then* dispatch — `release.yml` is **dispatch-only** (a `v*.*.*` tag is only a marker; pushing one publishes nothing), and its `validate` job fails unless the dispatch `version` input equals `<Version>`. Release commits/PRs follow the **Git Commit Conventions** above (no co-author trailers).
-
-## Key Concepts
-
-- **Effect pass**: A single vertex+pixel shader pair compiled to a `PassBlob`.
-- **Effect technique**: One or more named passes; maps to MonoGame's `Technique`.
-- **Platform blob**: The platform-specific compiled binary (DXBC, SPIR-V, or MSL source).
-- **ShaderIR**: ShadowDusk's internal representation sitting between parsed HLSL and platform emission.
+- **Never use em dashes or en dashes (`—`, `–`) in commit messages or PR titles/bodies.** Use a comma, colon, parentheses, or a separate sentence. (Plain hyphens in bullets, flags, and code are fine.) This applies to git/GitHub message text only — the docs use em dashes freely.
 
 ## Agents Available
 
@@ -174,3 +153,4 @@ ShadowDusk ships as **seven NuGet packages** — `ShadowDusk.{Core,HLSL,GLSL,Sha
 | `/shader-compile` | Compile a single .fx file to a target platform |
 | `/platform-check` | Audit code for platform-specific assumptions |
 | `/shader-review` | Deep review of shader source or transpilation logic |
+| `/release` | Cut a release (`RELEASING.md` is the runbook it follows) |
