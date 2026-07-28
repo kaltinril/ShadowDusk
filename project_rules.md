@@ -55,4 +55,5 @@ How to work on this project. One short rule per line. These OVERRIDE default beh
 - Edit in place and delete entries that become false; never append changelogs or dated progress notes, since history lives in git.
 - When a conversation surfaces a new durable fact, a correction to behavior, or a resolved choice, write it to the right file immediately without being asked.
 - Facts state what is true; rules state how to work; decisions state what was chosen and why. An entry with no rejected alternative and no reason is a fact, not a decision.
-- Record only what reading the code cannot tell you; folder layout and file names are derivable and belong in `docs/repository-layout.md`.
+- Record only what reading the code cannot tell you; folder layout, file names, diagnostic codes, and format constants are derivable and belong in the code or `docs/repository-layout.md`.
+- Never record per-target **proof status** in these three files; `docs/validation-matrix.md` is its only home (CLAUDE.md carries a cold-start summary table that the support-surface rule keeps in sync). Status changes as evidence advances, so a second copy always drifts.

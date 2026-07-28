@@ -38,18 +38,16 @@ Source of truth for statements about the project. One short fact per line. Updat
 - ShaderIR: ShadowDusk's internal representation between parsed HLSL and platform emission.
 - Rung 4 / render-proven: the real-engine render proof. The full four-rung ladder is defined in CLAUDE.md.
 
-## Targets and how far each is proven
+## Targets, and what constrains them
 
-- Shader model and output format per target: OpenGL SM3 GLSL, DirectX 11 SM5 DXBC, DirectX 12 SM6 DXIL, Vulkan SPIR-V, FNA SM1-3 fx_2_0. Proof status per target lives in CLAUDE.md so it cannot drift between two files.
-- Metal is unimplemented and parked; `PlatformTarget.Metal` is hard-rejected with SD0200.
-- Android on-device compile is proven on a real API-34 emulator and shipped in 0.11.0; three hardening items remain open (CI rebuild of the natives, x86_64 emulator natives, on-device pixel diff).
-- Vulkan uses MGFX profile byte 80 and DX12 profile byte 2; both are MonoGame-only because KNI ships neither platform (`SD0025` guards it).
-- FNA's reference compiler is `fxc.exe /T fx_2_0`, not `mgfxc`; its evidence ladder is separate but mirrors the MonoGame one.
-- FNA output is a raw `.fxb`, the one non-`.mgfx` output; both are unwrapped, never `.xnb`.
-- The OpenGL feature ceiling is the consumer runtime's, not ours: MonoGame and KNI both still use MojoShader for GL, so SD0210 rejections (vertex texture fetch, texture arrays) are a runtime constraint, not a compiler limitation.
-- The DirectX target has no such cap and emits the SM4/5 features the GL path refuses.
-- KNI uses the same `.mgfx` format as MonoGame; the only divergence is HiDef, which needs `mgfxc`'s `#define ps_oC0 gl_FragColor` form for KNI's ES 3.00 converter to rewrite.
-- The ShaderToy frontend (`ShadowDusk.ShaderToy`) is pure-managed with zero native dependencies and is not in the `ShadowDusk.Compiler` dependency graph.
+> **Proof status is NOT recorded here.** How far each target is proven changes as evidence advances, so it has one home: `docs/validation-matrix.md` (with a cold-start summary table in CLAUDE.md). This section records only what constrains the targets, which does not change when a gate goes green.
+
+- Shader model and output format per target: OpenGL SM3 GLSL, DirectX 11 SM5 DXBC, DirectX 12 SM6 DXIL, Vulkan SPIR-V, FNA SM1-3 fx_2_0.
+- The OpenGL feature ceiling is the consumer runtime's, not ours: MonoGame and KNI both still use MojoShader for GL, so an SD0210 rejection (vertex texture fetch, texture arrays) is a runtime constraint to respect, never a compiler gap to fix. The DirectX target has no such cap and emits the SM4/5 features the GL path refuses.
+- KNI ships no Vulkan platform and no DirectX 12 platform, which is why those two targets are MonoGame-only.
+- KNI loads the same `.mgfx` as MonoGame; the only divergence is its HiDef profile, whose runtime converter rewrites `mgfxc`'s `#define ps_oC0 gl_FragColor` form and nothing else.
+- FNA is proven against a different oracle: `fxc.exe /T fx_2_0`, not `mgfxc`.
+- Reach and WebGL1 cannot do 3D textures or fragment LOD at all; that is a platform wall, not a gap to close.
 
 ## Pins, natives, and supply chain
 
@@ -94,4 +92,3 @@ Source of truth for statements about the project. One short fact per line. Updat
 - The Linux and macOS Vortice DXC builds reject `tex3D`, `tex2Dlod`, and `tex2Dgrad` family intrinsics that the Windows DXC accepts; `Phase34TextureBreadthTests` is Windows-only for that reason.
 - The DX11 `d3dcompiler_47` oracle arm lacks `mgfxc`'s `ShaderFlags.OptimizationLevel3`, giving maxd 1 on some gallery cells.
 - GL macro-defined techniques (Phase 41 GAP-1, GL half) remain blocked on DXC legacy-SM2 codegen.
-- Reach/WebGL1 cannot do 3D textures or fragment LOD; that is a platform wall, documented, not a gap to close.

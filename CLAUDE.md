@@ -52,7 +52,7 @@ The rules below stay in this file *because they must fire without anyone opening
 | **Metal** | not implemented, parked (no consumer runtime to validate against) |
 | **Android** (compile on-device) | proven on an emulator; still needs production hardening |
 
-Per-target detail, pins, and the known gaps: **[project_facts.md](project_facts.md)**.
+This table is a **cold-start summary**. The authority on how far each cell is proven is **[docs/validation-matrix.md](docs/validation-matrix.md)** — update it there first. What *constrains* each target (and why), plus pins and known gaps: **[project_facts.md](project_facts.md)**.
 
 ## Build & Test
 
@@ -101,7 +101,7 @@ The **rung-4 render proofs** — the actual product bar (*"loads + renders like 
 - **[project_facts.md](project_facts.md)** — the target/proof lines, pins, and known-gap lines; **[project_decisions.md](project_decisions.md)** if the change settles a choice.
 - **`plan/plan.md`** — the phase index row, plus **moving the phase doc + appendix to `plan/DONE/`** on completion (fix relative links in the moved doc and every referrer) and any cross-referencing rows.
 - **XML doc-comments on the public API** (`PlatformTarget`, `CompilerOptions`, …) — they render into the published API reference, so a stale "not yet implemented" ships to the site.
-- **`CHANGELOG.md`** — the `[Unreleased]` entry. **`CLAUDE.md`** — only if the gate commands themselves changed.
+- **`CHANGELOG.md`** — the `[Unreleased]` entry. **`CLAUDE.md`** — the target summary table, and the gate commands if those changed.
 
 The `/release` skill's docs-audit step checks this list as a backstop, but the backstop catching drift is a process failure — the same-PR update is the rule.
 
