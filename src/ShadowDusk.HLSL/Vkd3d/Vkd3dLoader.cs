@@ -90,12 +90,19 @@ internal static class Vkd3dLoader
                     }
 
                     // 3. The host's native search directories — resolves the NuGet
-                    // runtimes/<rid>/native asset for framework-dependent consumers.
+                    // runtimes/<rid>/native asset for framework-dependent consumers,
+                    // and the single-file extraction dir, where the csproj's per-arch
+                    // macOS Link paths survive as subdirectories (bug-hunt 2026-07-27
+                    // C3: the dylib extracts to <extractionDir>/osx-<arch>/, which a
+                    // flat probe never sees).
                     foreach (string dir in GetNativeSearchDirectories())
                     {
-                        string candidate = Path.Combine(dir, fileName);
-                        if (File.Exists(candidate) && NativeLibrary.TryLoad(candidate, out handle))
-                            return handle;
+                        foreach (string subdir in GetProbeSubdirectories())
+                        {
+                            string candidate = Path.Combine(dir, subdir, fileName);
+                            if (File.Exists(candidate) && NativeLibrary.TryLoad(candidate, out handle))
+                                return handle;
+                        }
                     }
 
                     // 4. Bare name (single-file publish temp dir / OS search path).

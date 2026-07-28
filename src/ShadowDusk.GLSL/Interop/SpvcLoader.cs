@@ -71,6 +71,10 @@ internal static class SpvcLoader
     internal static string MapRid(bool isWindows, bool isOsx, bool isAndroid, Architecture arch) =>
         (isWindows, isOsx, isAndroid, arch) switch
         {
+            // Per-arch on every OS (bug-hunt 2026-07-27 N18): Silk.NET.SPIRV.Cross.Native
+            // ships win-arm64 and linux-arm64 natives too, and collapsing them to x64 made
+            // this fallback probe a binary the process can never load.
+            (true,  _,    _,    Architecture.Arm64) => "win-arm64",
             (true,  _,    _,    _)                  => "win-x64",
             (_,     true, _,    Architecture.Arm64) => "osx-arm64",
             (_,     true, _,    _)                  => "osx-x64",
@@ -78,6 +82,7 @@ internal static class SpvcLoader
             (_,     _,    true, Architecture.Arm64) => "android-arm64",
             (_,     _,    true, Architecture.X64)   => "android-x64",
             (_,     _,    true, _)                  => "android-arm",
+            (_,     _,    _,    Architecture.Arm64) => "linux-arm64",
             _                                       => "linux-x64",
         };
 

@@ -154,7 +154,11 @@ internal sealed class JsSpirvToGlslTranspiler : ISpirvToGlslTranspiler
                 fixupDepthConvention: true,
                 glslVersion: 140,
                 glslEs: false,
-                vulkanSemantics: false);
+                vulkanSemantics: false,
+                // Issue #149 (bug-hunt 2026-07-27 C4): must mirror the desktop
+                // transpiler's RelaxNanChecks, or min/max/clamp shaders get the
+                // isnan()-ternary lowering that versionless GLSL cannot declare.
+                relaxNanChecks: true);
 
             return Result<GlslSource, ShaderError>.Ok(new GlslSource(glsl));
         }
@@ -267,5 +271,6 @@ internal static partial class SpirvCrossInterop
         [JSMarshalAs<JSType.Boolean>] bool fixupDepthConvention,
         [JSMarshalAs<JSType.Number>] int glslVersion,
         [JSMarshalAs<JSType.Boolean>] bool glslEs,
-        [JSMarshalAs<JSType.Boolean>] bool vulkanSemantics);
+        [JSMarshalAs<JSType.Boolean>] bool vulkanSemantics,
+        [JSMarshalAs<JSType.Boolean>] bool relaxNanChecks);
 }
