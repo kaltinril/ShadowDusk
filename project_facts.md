@@ -7,7 +7,7 @@ Source of truth for statements about the project. One short fact per line. Updat
 - ShadowDusk is a cross-platform HLSL shader compiler for MonoGame, KNI, and FNA, delivered as a drop-in `mgfxc` replacement.
 - The product is the in-memory library (`IShaderCompiler.CompileAsync(fx) -> .mgfx bytes`); the CLI and the MGCB plugin are delivery shapes of it.
 - The browser/WASM shader-fiddle is only a sample of reach, never the product; sample work must not redefine the goal.
-- "Works" means the real-engine render proof (the evidence ladder in CLAUDE.md, rung 4), not a green test suite; our own tests and our own renderer are proxies.
+- "Works" means the real-engine render proof (the evidence ladder in CLAUDE.md, rung 4), not a green test suite.
 - "Same as `mgfxc`" means behaviorally equivalent and `Effect`-loadable, never byte-identical; byte-identity with `mgfxc` is an explicit non-goal.
 - Determinism means ShadowDusk-vs-itself: same version + same source + same target = same bytes, on every host.
 - Repository is github.com/kaltinril/ShadowDusk; the owner/operator is Jeremy Swartwood (GitHub `kaltinril`).
@@ -18,14 +18,11 @@ Source of truth for statements about the project. One short fact per line. Updat
 
 - Drop-in means the whole `mgfxc` surface: same CLI flags, same `.mgfx` output format, same exit codes, and stderr diagnostics in a format MGCB can parse.
 - A game using the MonoGame Content Pipeline requires zero code changes to switch; ShadowDusk works via MGCB's `ExternalTool` config or a PATH-based override of `mgfxc`.
-- Loading in `Effect` is necessary but not sufficient; it must also render identically.
-- Two delivery shapes cover the same output: the CLI for build-time use and the WASM library for in-browser runtime compilation. Output bytes are identical; only the invocation differs, and `IShaderCompiler` abstracts both.
+- The CLI and the WASM library produce byte-identical output; only the invocation differs, and `IShaderCompiler` abstracts both.
 - `dotnet publish -r <rid> --self-contained` must produce a working single-file CLI that bundles every native dependency.
 
-## Stack and conventions the code assumes
+## Packaging and WASM interop
 
-- C# 12 / .NET 8 LTS; xUnit + FluentAssertions; `TreatWarningsAsErrors` is on.
-- Native interop: `Vortice.Dxc` for DXC, `Silk.NET` P/Invoke for the SPIRV-Cross C API, vkd3d-shader plus `d3dcompiler_47` for DXBC.
 - WASM interop uses `[JSImport]`/`[JSExport]` to reach WASM-compiled DXC, SPIRV-Cross, and vkd3d.
 - `ShadowDusk.Wasm` is a self-registering Razor SDK package: a consumer needs only a `PackageReference`, no wiring.
 - Central Package Management is on; third-party versions live in `Directory.Packages.props`, the ShadowDusk version in `Directory.Build.props`.
@@ -53,8 +50,9 @@ Source of truth for statements about the project. One short fact per line. Updat
 
 - MonoGame is pinned at 3.8.2.1105 and the default output format is MGFX v10; MGFX v11 and KNIFX exist as additive opt-ins.
 - vkd3d-shader is pinned at 1.17 for all four desktop RIDs plus the WASM build.
-- Native binaries are never committed; `tools/restore.{ps1,sh}` downloads them from fixed GitHub Release tags (`native-vkd3d-1.17`, `native-dxc-1.7.2212.40`, `native-vkd3d-wasm-1.17`) and verifies SHA-256 against pins embedded in the scripts.
-- CI caches restored natives by hash; a clean CI runner is only pack-ready after the restore step; NuGet packing of natives is `Exists(...)`-conditioned, and `release.yml` fails red if a packed nupkg is missing any native or the third-party notices.
+- `tools/restore.{ps1,sh}` downloads the natives from fixed GitHub Release tags (`native-vkd3d-1.17`, `native-dxc-1.7.2212.40`, `native-vkd3d-wasm-1.17`) and verifies SHA-256 against pins embedded in the scripts.
+- CI caches restored natives by hash, so a clean runner is only pack-ready after the restore step.
+- Packing natives into the NuGet is `Exists(...)`-conditioned, and `release.yml` fails red if a packed nupkg is missing any native or the third-party notices.
 - Desktop DXC comes from the `Vortice.Dxc` NuGet, except macOS, which uses our own pinned `libdxcompiler.dylib` (DXC `e043f4a1`, matching Vortice 3.3.4).
 - `d3dcompiler_47.dll` and `fxc.exe` are Windows-only test oracles and never ship to consumers.
 - DXC cannot produce DXBC at all: it only emits SM6 DXIL, and `ID3D11Device::CreateVertexShader` rejects DXIL unconditionally.
@@ -67,8 +65,7 @@ Source of truth for statements about the project. One short fact per line. Updat
 
 - `validation/*` drivers are deliberately outside `ShadowDusk.slnx`, so `dotnet test` never runs them.
 - The in-process OpenGL render gates run in CI on Linux via Mesa llvmpipe (`validation-render.yml`); the KNI WebGL smoke runs in `wasm.yml`.
-- DX11, DX12, FNA, KNI-DirectX, real-KNI-desktop-GL, Vulkan, and the ANGLE-D3D11 probe have no headless CI driver; the developer's Windows + GPU machine is the only gate.
-- CI's browser smoke renders on SwiftShader, which is structurally blind to ANGLE-D3D11 behavior such as the issue-#136 gradient poisoning.
+- CI's browser smoke renders on SwiftShader, which is structurally blind to ANGLE-D3D11 behavior such as the issue-#136 gradient poisoning. (This is *why* the ANGLE probe in the local gate cannot move to CI.)
 - The integration lane runs automatically on pushes to `main` but on PRs only when the `run-integration` label is applied.
 - Slow `ShadowDusk.Integration.Tests` runs are environmental (antivirus scanning cold native binaries), not algorithmic; `--settings ShadowDusk.runsettings` gives a 5-minute session backstop.
 - Publishing is driven by the `NUGET_API_KEY` repository secret; no credentials live in the repo.
@@ -83,12 +80,12 @@ Source of truth for statements about the project. One short fact per line. Updat
 
 ## Known upstream bugs we live with (not ours)
 
-- MonoGame's Vulkan runtime has a `SlotOffset` byte-wrap bug that crashes on `mgfxc`'s own auto-numbered output, blocking the Vulkan pixel diff for auto-numbered resources (explicit-register effects already diff at maxd 0).
+- MonoGame's Vulkan runtime has a `SlotOffset` byte-wrap bug that crashes on `mgfxc`'s own auto-numbered output, blocking the Vulkan pixel diff for auto-numbered resources (effects using explicit registers already diff pixel-for-pixel).
 - `mgfxc` + MonoGame GL mis-handles statically-partially-read uniform arrays (MojoShader register compaction); we deliberately emit the correct full layout instead.
 - `mgfxc`'s own GL compile of the current Apos.Shapes revision renders solid black, so GL has no trustworthy golden for that shader.
 
 ## Known gaps in our own reach
 
 - The Linux and macOS Vortice DXC builds reject `tex3D`, `tex2Dlod`, and `tex2Dgrad` family intrinsics that the Windows DXC accepts; `Phase34TextureBreadthTests` is Windows-only for that reason.
-- The DX11 `d3dcompiler_47` oracle arm lacks `mgfxc`'s `ShaderFlags.OptimizationLevel3`, giving maxd 1 on some gallery cells.
+- The DX11 `d3dcompiler_47` oracle arm lacks `mgfxc`'s `ShaderFlags.OptimizationLevel3`, so some gallery cells differ by 1/255 in a channel.
 - GL macro-defined techniques (Phase 41 GAP-1, GL half) remain blocked on DXC legacy-SM2 codegen.

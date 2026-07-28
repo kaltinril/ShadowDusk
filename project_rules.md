@@ -10,29 +10,25 @@ How to work on this project. One short rule per line. These OVERRIDE default beh
 - Never fork or own compiler internals; fail loudly, patch minimally and reversibly on our side of the boundary (the `D3d9BytecodePatcher` pattern), and record an upstream-fix follow-up.
 - Never bump a pinned native version casually; pins exist because output byte-stability is a product promise, and a bump re-baselines every golden and re-runs rung 4.
 - Never commit native binaries; they are restored, pinned, and hash-verified.
+- Never take on a native dependency that has no Linux and macOS build; prefer a pinned prebuilt GitHub Release artifact, and fall back to building and hosting it ourselves.
 - Never destroy a background agent's uncommitted output; commit or copy out first, clean up last, and verify a "done" claim by re-running its gate rather than trusting an estimate. (operator)
 - Never add a `PackageVersion` **property** to a csproj; the ShadowDusk version lives only in `Directory.Build.props`.
-- Never swallow or reformat a compiler diagnostic; surface file, line, column, and the underlying compiler's own message text.
-- Never require a native toolchain, Wine, or a Windows SDK on the consumer's machine; every native piece rides inside the NuGet package.
 
 ## Testing and validation
 
 - A green `dotnet test` is necessary but NOT sufficient for any change to shader output, transpilation, the MGFX/KNIFX/FNA writers, render state, or matrix handling; the render gates in CLAUDE.md are the other half of the bar.
 - Run the full `dotnet test ShadowDusk.slnx`, never a filtered subset, when touching the parser, pre-parser, writers, or render state; a whole class of valid HLSL can fail to compile while every test you happened to run stays green (this is how issue #106 escaped).
 - Every fixed bug earns a permanent regression fixture or test so it can never silently return.
-- Compare same-backend only (GL against GL, DX against DX); a green OpenGL result says nothing about DirectX.
 - A test that cannot fail is worse than no test: a soft-skip reported as PASS is indistinguishable from real coverage. `SHADOWDUSK_REQUIRE_GL` exists because headless ImageTests soft-skipped as passes and masked three latent failures, including a GLFW registration race on real Windows hosts.
 - A corpus that cannot see a bug class proves nothing about it: PS-only, matrix-free, modern-syntax-only corpora hid issue #70 and issue #145 entirely. Widening the corpus is part of the fix, not a follow-up.
-- A green proxy is never the bar; unit tests, structural checks, and our own renderer can all pass while the real-runtime promise is unmet.
 - Unit tests stay pure (no disk, no process); integration tests are tagged `[Trait("Category","Integration")]`.
 - No `Thread.Sleep` in tests; use `CancellationToken` with reasonable timeouts.
 - Treat a slow integration run as environmental (antivirus scanning cold natives) before treating it as algorithmic; see `docs/integration-test-performance.md`.
 
 ## Docs and phases
 
-- Keep XML doc-comments on public API accurate; they render into the published API reference, so a stale "not yet implemented" ships to the site.
-
 - Read `plan/plan.md` first for phase status; each phase's own doc is the detail.
+- Keep XML doc-comments on the public API accurate; they render into the published API reference, so a stale "not yet implemented" ships to the site.
 - When a phase completes, move its doc and appendix to `plan/DONE/` and fix relative links in the moved doc and in every referrer.
 - Update the phase index row in `plan/plan.md` in the same commit as the status change.
 - Add the change to the `[Unreleased]` section of `CHANGELOG.md` in the same PR.
@@ -47,6 +43,17 @@ How to work on this project. One short rule per line. These OVERRIDE default beh
 - Use `/release` to cut a release; `RELEASING.md` is the human runbook and the ground truth it follows.
 - Bump the single `<Version>` line in `Directory.Build.props`, merge that PR to `main`, and only then dispatch `release.yml`; the workflow is dispatch-only and a pushed tag publishes nothing.
 - Run the Windows render gate before bumping the version, not after: it is the longest and most likely step to fail, so a divergence should stop the release before any version churn.
+
+## Handoff — leave nothing that only you know
+
+The next person or agent starts with CLAUDE.md and these three files and nothing else. Anything you know that they do not is lost work. These rules exist because a check nobody remembers to run is the same as a check that does not exist.
+
+- **A check that cannot run under `dotnet test` must be registered somewhere it will be found, or it will never run again.** Put it in `validation/run-windows-render-gates.ps1` if it can run there, and give it a `docs/validation-matrix.md` §6 row with its exact command either way. Adding the driver is not finishing the work.
+- **If a check is deliberately opt-in or excluded** (needs hardware, a heavy restore, a specific OS), say so in its §6 row *with the reason and the exact opt-in flag* — an unexplained exclusion reads as "not needed" to the next reader.
+- **Anything that must be refreshed at release time** (a regenerated artifact, a version-stamped doc, a manual verification) goes into `RELEASING.md` **and** the `/release` skill in the same PR that creates the need. Your memory is not a release step.
+- **A new always-on obligation goes in CLAUDE.md, not in a phase doc.** Phase docs are read when someone works that phase; CLAUDE.md is read every session. If it must happen on *every* relevant change, it belongs in the support-surface checklist or the gate block.
+- **Before ending a work session, write what you learned into these three files.** A fact you discovered, a rule you were corrected on, a choice you settled. If it only exists in the conversation, it is gone when the session ends.
+- **When picking up unfamiliar work**, read `git log --oneline -20`, `CHANGELOG.md`'s `[Unreleased]` section, and `plan/plan.md`'s status rows before assuming the state of anything.
 
 ## Maintaining the three source-of-truth files
 

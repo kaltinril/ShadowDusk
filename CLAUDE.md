@@ -34,6 +34,13 @@ Docs, phase notes, and commit messages say **"rung 4"** constantly. It is the fo
 
 The rules below stay in this file *because they must fire without anyone opening another file*. They are not duplicated in `project_rules.md`.
 
+### Handoff — there is no verbal handoff on this project
+
+Work arrives from a previous session you did not see. Two obligations, both non-optional:
+
+- **Picking up:** before assuming the state of anything, read `git log --oneline -20`, `CHANGELOG.md`'s `[Unreleased]` section, and `plan/plan.md`'s status rows.
+- **Handing off:** anything durable you learned goes into the three files above *before the session ends*, and any **new obligation** you created gets registered where the next person will actually find it — a check that can't run under `dotnet test` needs a `docs/validation-matrix.md` §6 row (and a slot in the render-gate script if it can run there); a release-time chore needs a line in `RELEASING.md` and the `/release` skill. **A check nobody remembers to run does not exist.** Full rules: [project_rules.md](project_rules.md) → *Handoff*.
+
 ## Repository Layout
 
 `src/` libraries · `tests/` xUnit + `fixtures/` · `samples/` · `validation/` real-runtime render drivers · `tools/` restored natives (not committed) · `docs/` reference docs · `plan/` phase docs. **Full annotated tree: [docs/repository-layout.md](docs/repository-layout.md).** Phase status index: [plan/plan.md](plan/plan.md).

@@ -32,9 +32,9 @@ Decisions made, with the why - consult before re-litigating anything. One per li
 
 - Chose to treat `.fx` compilation as same-trust-domain, not untrusted input, because compiling a shader you chose to run is like compiling copied C++ or C#; the earlier path-traversal, size-limit, and macro-validation findings were removed as not-real-harm rather than answered with input-validation theater. (2026-06-12, closed by `SECURITY.md` 2026-06-15)
 - Chose a synchronous `CompilationPipeline.Run` core with `CompileAsync` as a thin shell over it, not two pipelines, because sync and async output must be byte-identical by construction rather than by test; the only genuinely async work is the one-time WASM module load.
-- Chose to publish `ShadowDusk.ShaderToy` as a standalone NuGet from 0.9.0, superseding the earlier "packaging deferred" decision, because it is pure-managed with zero native dependencies and purely additive to the pipeline.
+- Chose to publish `ShadowDusk.ShaderToy` as a standalone NuGet from 0.9.0, not to leave it unpackaged as originally deferred, because it is pure-managed with zero native dependencies and purely additive to the pipeline, so shipping it costs nothing.
 - Chose to judge the ShaderToy frontend by pixel-fidelity against the original GLSL, not by mgfxc-equivalence, because `mgfxc` never compiles ShaderToy GLSL and so provides no oracle; calling it an mgfxc-equivalence proof would be dishonest.
-- Chose build-time precompile to `.mgfx` as the documented default for shipping Android games, with on-device compile as additive reach, because build-time works today with zero Android-specific work.
+- Chose build-time precompile to `.mgfx` as the documented default for shipping Android games, not on-device compile, because build-time works today with zero Android-specific work; on-device stays additive reach.
 - Chose to vendor Gum and Apos.Shapes shaders verbatim as fixtures, not to synthesize approximations, because the real third-party shaders surfaced real gaps our own corpus could not (the Gum FnaSample shader is what exposed Phase 41 GAP-1).
 
 ## Process and infrastructure
