@@ -365,6 +365,49 @@ void main()
 """;
 
     [Fact]
+    public void VertexStage_MixedCaseSemantics_MapLikeUppercase()
+    {
+        // Bug-hunt 2026-07-27 M3: HLSL semantics are case-insensitive and DXC mirrors
+        // the author's spelling into the interface names. `: Position0` / `: TexCoord0`
+        // used to miss the ordinal POSITION/TEXCOORD matches — the position input threw
+        // a misleading "unsupported semantic" error and a mixed-case TexCoord output
+        // shipped a var_TexCoord0 varying the pixel stage's vTexCoord0 could never link.
+        const string src = """
+#version 140
+
+layout(binding = 0, std140) uniform type_Globals
+{
+    mat4 WorldViewProjection;
+} _Globals;
+
+in vec4 in_var_Position0;
+in vec4 in_var_Color0;
+in vec2 in_var_TexCoord0;
+out vec4 out_var_Color0;
+out vec2 out_var_TexCoord0;
+
+void main()
+{
+    gl_Position = _Globals.WorldViewProjection * in_var_Position0;
+    out_var_Color0 = in_var_Color0;
+    out_var_TexCoord0 = in_var_TexCoord0;
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Vertex);
+
+        // The mixed-case attribute names map to the same usages as their uppercase forms.
+        result.Glsl.Should().Contain("attribute vec4 vs_v0;");
+        result.Glsl.Should().Contain("attribute vec4 vs_v1;");
+        result.Glsl.Should().Contain("attribute vec4 vs_v2;");
+
+        // The varyings converge on the canonical names the pixel stage reads.
+        result.Glsl.Should().Contain("varying vec4 vFrontColor;");
+        result.Glsl.Should().Contain("varying vec4 vTexCoord0;");
+        result.Glsl.Should().NotContain("var_TexCoord0",
+            "a mixed-case TEXCOORD must not fall through to the unknown-semantic passthrough");
+    }
+
+    [Fact]
     public void VertexStage_EmitsMojoShaderDialect()
     {
         var result = MonoGameGlslRewriter.Rewrite(VertexExample, ShaderStage.Vertex);
@@ -2577,6 +2620,217 @@ void main()
 
         rewritten.Glsl.Should().MatchRegex(@"for\s*\(int _31 = 0;\s*_31\s*<=\s*8\s*;\s*_31\+\+\s*\)",
             "a plain literal bound (no ternary) hoists the same way; <= keeps the terminal else reachable (issue #160)");
+    }
+
+    [Fact]
+    public void PixelStage_BoundedHeaderlessForLoop_InclusiveComparison_CapExtendedSoElseStaysReachable()
+    {
+        // Bug-hunt 2026-07-27 (C1): an INCLUSIVE inner comparison rejects first at
+        // boundVar + 1, so a `<= provenMax` cap would exit the header before the index
+        // ever reaches the else-triggering value — the issue-#160 dropped-finalizer
+        // failure re-created one operator over. The cap must be provenMax + 1.
+        const string src = """
+#version 140
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    float _604;
+    int _30 = 8;
+    int _31 = 0;
+    for (;;)
+    {
+        if (_31 <= _30)
+        {
+            _604 = float(_31);
+            _31++;
+            continue;
+        }
+        else
+        {
+            _604 = 1.0;
+            break;
+        }
+    }
+    out_var_SV_Target = vec4(_604);
+}
+""";
+        var rewritten = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        rewritten.Glsl.Should().NotContain("for (;;)", "the header-less loop must be given a real bound");
+        rewritten.Glsl.Should().MatchRegex(@"for\s*\(int _31 = 0;\s*_31\s*(<=\s*9|<\s*10)\s*;\s*_31\+\+\s*\)",
+            "the inclusive comparison runs its else at _31 == 9, so the header cap must admit 9");
+        rewritten.Glsl.Should().Contain("if (_31 <= _30)",
+            "the original runtime guard survives unchanged inside the loop");
+        rewritten.Glsl.Should().Contain("_604 = 1.0;",
+            "the else-branch finalizer must survive and stay reachable");
+    }
+
+    [Fact]
+    public void PixelStage_BoundedHeaderlessForLoop_DescendingWalk_IsLeftUntouched()
+    {
+        // Bug-hunt 2026-07-27 (C1): a descending walk (`>` with `--`) matched the
+        // patterns but the ascending `<= cap` header would run ZERO iterations,
+        // erasing the loop and its finalizer entirely. Rule 13 must decline.
+        const string src = """
+#version 140
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    float result;
+    int _30 = 0;
+    int _31 = 8;
+    for (;;)
+    {
+        if (_31 > _30)
+        {
+            result += float(_31);
+            _31--;
+            continue;
+        }
+        else
+        {
+            result = 0.0;
+            break;
+        }
+    }
+    out_var_SV_Target = vec4(result);
+}
+""";
+        var rewritten = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        rewritten.Glsl.Should().Contain("for (;;)",
+            "a descending walk has no provable ascending header form; declining keeps SD0402's honest warning");
+    }
+
+    [Fact]
+    public void PixelStage_BoundedHeaderlessForLoop_CompoundStep_IsLeftUntouched()
+    {
+        // Bug-hunt 2026-07-27 (C1): a step > 1 can jump PAST the header cap without
+        // ever landing on the else-triggering index (e.g. bound 7 stepping 2 rejects
+        // first at 8, but the cap is 7) — the finalizer would be skipped. Only the
+        // step-1 walk is provable; wider steps must decline.
+        const string src = """
+#version 140
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    float result;
+    int _30 = 7;
+    int _31 = 0;
+    for (;;)
+    {
+        if (_31 < _30)
+        {
+            result += float(_31);
+            _31 += 2;
+            continue;
+        }
+        else
+        {
+            result = 0.0;
+            break;
+        }
+    }
+    out_var_SV_Target = vec4(result);
+}
+""";
+        var rewritten = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        rewritten.Glsl.Should().Contain("for (;;)",
+            "a non-unit step can overshoot the header cap and skip the terminal else; declining is the only safe choice");
+    }
+
+    [Fact]
+    public void PixelStage_BoundedHeaderlessForLoop_BoundBelowInit_IsLeftUntouched()
+    {
+        // Bug-hunt 2026-07-27 (C1): with the bound below the init (here a bare negative
+        // literal) the ORIGINAL loop still enters once and runs the else immediately;
+        // a `for (int _31 = 0; _31 <= -1;)` header runs zero iterations and erases
+        // that else execution. Rule 13 must decline when the cap cannot admit the init.
+        const string src = """
+#version 140
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    float _604;
+    int _30 = -1;
+    int _31 = 0;
+    for (;;)
+    {
+        if (_31 < _30)
+        {
+            _604 = float(_31);
+            _31++;
+            continue;
+        }
+        else
+        {
+            _604 = 1.0;
+            break;
+        }
+    }
+    out_var_SV_Target = vec4(_604);
+}
+""";
+        var rewritten = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        rewritten.Glsl.Should().Contain("for (;;)",
+            "the original ran the finalizer else once; a header that admits zero iterations would erase it");
+    }
+
+    [Fact]
+    public void PixelStage_BoundedHeaderlessForLoop_IndexReadAfterLoop_IsLeftUntouched()
+    {
+        // Bug-hunt 2026-07-27 (N1): the rewrite moves the index declaration into the
+        // for-header, ending its scope at the loop's closing brace. If the index is
+        // read after the loop, the moved declaration would leave that read undeclared
+        // on strict GLSL front ends — Rule 13 must decline instead.
+        const string src = """
+#version 140
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    float result;
+    int _30 = 8;
+    int _31 = 0;
+    for (;;)
+    {
+        if (_31 < _30)
+        {
+            result += float(_31);
+            _31++;
+            continue;
+        }
+        else
+        {
+            result = 0.0;
+            break;
+        }
+    }
+    out_var_SV_Target = vec4(result + float(_31));
+}
+""";
+        var rewritten = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        rewritten.Glsl.Should().Contain("for (;;)",
+            "moving the declaration into the header would leave the post-loop read of _31 undeclared");
+        rewritten.Glsl.Should().Contain("int _31 = 0;",
+            "the standalone declaration must survive so the post-loop read stays legal");
     }
 
     [Fact]
