@@ -4,7 +4,7 @@ ShadowDusk is a self-contained, in-memory HLSL shader compiler for [MonoGame](ht
 
 ## The problem it solves
 
-MonoGame's stock content pipeline (`MGCB`) shells out to **`mgfxc`**, which depends on **`fxc.exe`** from the DirectX SDK and therefore only runs on Windows. That makes shader compilation a Windows-only build step: it cannot run on **Linux or macOS**, and it cannot run **at runtime or in a browser** at all. (FNA's equivalent path leans on `fxc` and has the same Windows-only constraint.)
+MonoGame's stock content pipeline (`MGCB`) compiles `.fx` with the same effect compiler **`mgfxc`** wraps, which depends on **`fxc.exe`** from the DirectX SDK and therefore only runs on Windows. That makes shader compilation a Windows-only build step: it cannot run on **Linux or macOS**, and it cannot run **at runtime or in a browser** at all. (FNA's equivalent path leans on `fxc` and has the same Windows-only constraint.)
 
 ShadowDusk replaces that step with one **portable, faithful pipeline** whose output a real MonoGame, KNI, or FNA `Effect` loads and **renders like the reference compiler's** (`mgfxc` for MonoGame/KNI, `fxc` for FNA).
 

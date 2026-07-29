@@ -4,10 +4,28 @@
 **Status:** Planned (written 2026-06-03). Promote `src/ShadowDusk.MgcbPlugin` from a stub to a
 real MonoGame Content Builder **Tier-2** integration — an `EffectImporter`/`EffectProcessor`
 (or equivalent `IContentProcessor`) that lets **MGCB invoke ShadowDusk natively in-process**,
-without shelling out to a PATH-resolved `mgfxc` binary. This is a **convenience delivery shape**
-layered on top of the already-working Tier-1 drop-in, not a new product surface and not required
-for the core promise (see `CLAUDE.md` → THE PURPOSE: the **library is the product**; the CLI and
-the MGCB plugin are *delivery shapes* of it).
+without shelling out to a PATH-resolved `mgfxc` binary.
+
+> ⚠️ **PRIORITY RAISED 2026-07-28 — this is no longer a convenience.** This doc was written
+> believing it layered on "the already-working Tier-1 drop-in." **Tier-1 does not work.**
+> [Phase 52](DONE/PHASE-52-monogame-3.8.5-support.md) Area E measured `dotnet mgcb` at 3.8.2.1105,
+> 3.8.4.1, and 3.8.5 with a real logging `mgfxc.exe` first on `PATH`: **zero invocations** in all
+> three, because MGCB compiles `.fx` **in-process** and never launches an external effect compiler.
+> No `mgcb`/`Content.Pipeline` assembly in any of those versions even references `mgfxc`. 3.8.5's
+> new code-centric Content Builder has no external-tool seam either.
+>
+> So **this phase is the only route to MGCB integration at all**, not a nicer second one. Read every
+> "Tier 1 already works / stays the baseline" sentence below as historical — the sections that need
+> rewriting on pickup are *Overview*, *Scope & Non-Goals* (the "never replaces Tier 1" line), and
+> the acceptance criterion that compares plugin bytes to "Tier-1/CLI" bytes (the **CLI** half of
+> that comparison is still perfectly valid and is the right bar).
+>
+> What consumers do meanwhile: invoke the ShadowDusk CLI directly and `/copy:` the `.mgfx`, or
+> compile at runtime with `EffectCompiler` — both documented in `docfx/guides/mgcb-content-pipeline.md`.
+
+This remains a **delivery shape**, not a new product surface (see `CLAUDE.md` → THE PURPOSE: the
+**library is the product**; the CLI and the MGCB plugin are *delivery shapes* of it) — but it is now
+the delivery shape that a `.mgcb`-based consumer has no substitute for.
 
 **Depends on:**
 - [Phase 8 — Compiler Library](DONE/PHASE-8-compiler-library.md): the `EffectCompiler : IShaderCompiler` entry point the plugin wraps (`src/ShadowDusk.Compiler/EffectCompiler.cs`). The plugin adds zero new compilation logic — it is an adapter onto `CompileAsync`.

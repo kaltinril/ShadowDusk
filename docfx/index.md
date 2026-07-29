@@ -12,7 +12,7 @@ title: ShadowDusk
 
 ## What it does
 
-MonoGame's stock content pipeline shells out to `mgfxc`, a Windows-only tool that depends on `fxc.exe` from the DirectX SDK. ShadowDusk replaces that step with one portable pipeline whose output a real XNA-like `Effect` — MonoGame, KNI, or FNA — loads and **renders like the reference compiler's** (`mgfxc` for MonoGame/KNI, `fxc` for FNA):
+MonoGame's stock content pipeline compiles shaders with the same engine as `mgfxc`, which depends on `fxc.exe` from the DirectX SDK and only runs on Windows. ShadowDusk replaces that step with one portable pipeline whose output a real XNA-like `Effect` — MonoGame, KNI, or FNA — loads and **renders like the reference compiler's** (`mgfxc` for MonoGame/KNI, `fxc` for FNA):
 
 ```text
 OpenGL / WebGL  (MonoGame, KNI):

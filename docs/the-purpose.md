@@ -44,7 +44,7 @@ The product is the **combination**: *the same result `mgfxc` gives, produced whe
 
 ## Backend pipeline table
 
-MonoGame's stock content pipeline (`MGCB`) shells out to `mgfxc`, which depends on `fxc.exe` (DirectX SDK) on Windows. ShadowDusk replaces that pipeline step with a portable toolchain that transpiles and cross-compiles shaders for each supported MonoGame/KNI backend:
+MonoGame's stock content pipeline (`MGCB`) compiles `.fx` with the same effect compiler `mgfxc` wraps, which depends on `fxc.exe` (DirectX SDK) on Windows. ShadowDusk replaces that pipeline step with a portable toolchain that transpiles and cross-compiles shaders for each supported MonoGame/KNI backend:
 
 | Consumer runtime / backend | Shader Language | Compiler Target |
 |---|---|---|

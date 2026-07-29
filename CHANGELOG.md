@@ -12,11 +12,105 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ## [Unreleased]
 
+> Validation, tooling, and documentation only. **No `src/` file changed**, so no compiler behavior
+> and no output bytes changed: the MonoGame pin stays 3.8.2.1105, the default output stays MGFX v10,
+> and the golden corpus and byte-identity manifest are untouched.
+
 ### Added
+
+- **The shipped libraries now multi-target `net8.0` and `net10.0`.** `ShadowDusk.Core`, `.HLSL`,
+  `.GLSL`, `.Compiler`, `.Metal`, and `.ShaderToy` build for both, and all seven test projects run
+  against both — **4762 tests green (2381 on each)** — with the compiler's output verified
+  byte-identical across them. This is deliberately multi-targeting rather than a move to .NET 10:
+  a `net10.0`-only package cannot be referenced from a `net8.0` project, which is what most
+  MonoGame/KNI games still target, so bumping would have broken existing consumers. .NET 8 reaching
+  end of support in November 2026 no longer strands the packages. `ShadowDusk.Cli` (a dotnet tool,
+  which rolls forward onto newer runtimes), `ShadowDusk.MgcbPlugin` (a stub), and
+  `ShadowDusk.Wasm` (`net8.0-browser`) stay single-TFM for now.
+- The forward-compatibility matrix now covers **every MonoGame release that can load ShadowDusk's
+  output, not one anchor version**. One unchanged **v10** build renders **pixel-identically (max
+  delta 0) across seven consecutive releases — 3.8.1.263, 3.8.1.303, 3.8.2.1105, 3.8.3, 3.8.4,
+  3.8.4.1, and 3.8.5 stable** — 70 renders in total, all within tolerance of the mgfxc goldens
+  (`validation/ForwardCompat`). The **floor is now measured rather than assumed**: every stable
+  `MonoGame.Framework.DesktopGL` release was probed, and 3.8.0.1641 is the one that rejects our
+  output (*"This MGFX effect seems to be for a newer release of MonoGame"* — its loader predates
+  MGFX v10), which makes **3.8.1.263** the true floor. Nothing about the product changed to earn
+  this; it is the same compiler, the same default options, and the same bytes.
+- The opt-in **MGFX v11** output is re-proven against **3.8.5 stable** instead of
+  `3.8.5-preview.6`, with the result table unchanged cell for cell (`validation/MonoGameV11`).
+- `validation/AndroidGl` moved to `MonoGame.Framework.Android` 3.8.5. Build-verified only: the
+  on-device proof was taken on 3.8.4.1 and has not been repeated, which the csproj, the Phase 50
+  notes, and the validation matrix all state so the pin is not misread as render evidence.
 
 ### Changed
 
+- Dependency currency pass. **Nothing a consumer downloads changed**: the only packages the shipped
+  `ShadowDusk.*` libraries reference are `Silk.NET.SPIRV.Cross.Native` (already latest) and
+  `Vortice.*` (the DXC pin, deliberately held — see below). Everything updated here is
+  test/validation/build-only: `xunit` 2.9.2 → 2.9.3, `xunit.runner.visualstudio` 2.8.2 → 3.1.5,
+  `Microsoft.NET.Test.Sdk` 17.11.1 → 18.8.1, `coverlet.collector` 6.0.3 → 10.0.1,
+  `FluentAssertions` 6.12.2 → 7.2.2, `docfx` 2.78.3 → 2.78.5.
+  No vulnerable or security-deprecated package was found anywhere before or after.
+- **Two dependencies are now explicitly capped for licensing reasons, with the reason recorded at
+  the pin** so a future currency sweep does not undo it. `FluentAssertions` stays on the **7.x**
+  line because 7.2.2 is the last Apache-2.0 release and **8.x** relicensed to an Xceed
+  non-commercial community licence that requires payment for commercial use.
+  `SixLabors.ImageSharp` stays on **3.1.12** because **4.0.0 refuses to build at all** without a
+  paid Six Labors licence key. `Vortice.*` stays at 3.3.4/3.5.0 because that version *is* the
+  pinned DXC commit (`e043f4a1`) our macOS/Android/WASM natives are built from; moving it is an
+  output-affecting change, not a routine bump.
+- **`Apos.Shapes` stays at 0.7.7 — it is an evidence pin, and the reason is now recorded at the
+  pin.** A bump to 0.7.12 was attempted and reverted: the Phase 55 shape-gallery proof uses the
+  package's own embedded effect as its baseline arm, which is only a valid comparison because
+  0.7.7's shader *is* the vendored `apos-shapes-sm6.fx` (upstream `a85a31c`). 0.7.12 pins a
+  different upstream commit (`b69bd73`) whose shader differs by ~1150 lines and adds a **fourth
+  sampler** (`ArcTex` at `t2`, displacing `BlueNoiseTex` to `t3`) — so the bump would have
+  silently pointed the baseline arm at a different shader than the candidate. Re-pinning it means
+  vendoring the new upstream revision and re-running that phase's proof.
+- The `mgfxc` used to generate the golden corpus is now **pinned and version-checked** rather than
+  discovered as "the newest `mgfxc.exe` in the NuGet cache". `tools/compile-fixtures.ps1` resolves
+  it from the `dotnet-mgcb` version in `.config/dotnet-tools.json`, invokes it through the `dotnet`
+  host so it behaves the same on every OS, and **asserts the MGFX version byte of every file it
+  writes**, refusing to overwrite the v10 corpus with a different container version.
+  `validation/ReservedWordGl` uses the same pin for its reference-compiler arm. Verified: mgfxc
+  3.8.2.1105 and 3.8.4.1 each reproduce all 46 committed goldens byte-for-byte on both OpenGL and
+  DirectX_11.
+- Documentation correction across `docfx/guides/mgcb-content-pipeline.md`, `docfx/samples/mgcb.md`,
+  `docfx/guides/dropin-mgfxc.md`, and `docfx/cli/index.md`: the **"expose ShadowDusk as `mgfxc` on
+  `PATH` and MGCB will use it" integration does not work**, and these pages had documented it as the
+  shipping path. Measured against `dotnet mgcb` 3.8.2.1105, 3.8.4.1, and 3.8.5 with a real logging
+  `mgfxc.exe` first on `PATH`: zero invocations in all three, and a valid `.xnb` produced each time.
+  MGCB compiles `.fx` in-process and launches no external effect compiler; MonoGame 3.8.5's new
+  code-centric Content Builder has no external-tool seam either. The pages now document the routes
+  that do work: invoke the CLI directly and `/copy:` the resulting `.mgfx`, or compile at runtime and
+  hand the bytes to `Effect`. Compiling with the ShadowDusk CLI or library is unaffected.
+
 ### Fixed
+
+- The out-of-band ShaderToy render-proof driver (`tools/shadertoy2fx/render-proof`) had been dead
+  since Phase 47, in two stacked ways. **(1)** That phase promoted the converter and its corpus
+  in-solution to `tests/ShadowDusk.ShaderToy.Tests/`, but the driver kept looking under
+  `tools/shadertoy2fx/tests/…` and exited with "authored corpus not found" before rendering
+  anything; it now probes the current location first and falls back to the legacy one.
+  **(2)** With that fixed, it then hung indefinitely. All four of its child-process helpers drained
+  the CLI's stdout to EOF *before* reading stderr, which deadlocks as soon as the child writes more
+  to stderr than the pipe buffer holds: the child blocks writing, so it never exits, so stdout never
+  reaches EOF. Latent until Phase 53 made warnings print by default — a corpus shader that trips
+  `SD0402` on a dozen loops now emits well past the buffer. **The compiler was never implicated**
+  (the shader that hung it compiles in 0.38 s when run directly); all four call sites now drain both
+  pipes concurrently through a shared `ProcessCapture` helper. Nothing caught either failure because
+  the driver is deliberately not in `ShadowDusk.slnx`. With both fixed the gate is green again and
+  broader than when it last ran: **53/53 shaders match the original GLSL within tolerance, 0
+  diverged, 0 errored** (Phase 47 recorded 46/46; the extra seven are corpus growth and they pass
+  too, so the converter never regressed).
+- `tools/compile-fixtures.ps1` could not regenerate the golden corpus at all, in two independent
+  ways. Its mgfxc probe selected the highest version in the NuGet cache, which resolved to
+  `dotnet-mgcb-editor-windows` 3.8.4.1's `mgfxc.exe` - a binary that throws
+  `Could not load file or assembly 'SharpDX.D3DCompiler'` on every shader because that package ships
+  it without its dependency, so a regeneration would have compiled 0 of 46 and reported them all as
+  failures. Separately, a bare no-argument run globbed **0 shader files**: a `[string]` parameter
+  defaulted to `$null` arrives as an empty string, so the `$ShaderDir ?? (default)` fallback never
+  fired and the script only worked when every path was passed explicitly.
 
 ## [0.15.1] - 2026-07-28
 

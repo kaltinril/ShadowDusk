@@ -30,12 +30,14 @@ ShadowDuskCLI MyShader.fx MyShader.mgfx /Profile:DirectX_11
 
 ## Replacing `mgfxc` in a build
 
-Two common patterns:
+1. **Explicit invocation (the one that works everywhere).** Call `ShadowDuskCLI` directly from your build script / Makefile / CI step. Because the flags, output, and exit codes match `mgfxc`'s, nothing downstream needs to know it swapped tools.
+2. **PATH override**, for a build step that genuinely launches a process named `mgfxc`: expose ShadowDusk's CLI under that name (a renamed copy/symlink of a published build, or a wrapper script forwarding to `ShadowDuskCLI`) ahead of MonoGame's on `PATH` — such scripts look for the *name* `mgfxc`, not `ShadowDuskCLI`, so the installed tool command alone is not picked up.
 
-1. **PATH override (Tier-1).** Expose ShadowDusk's CLI **under the name `mgfxc`** (a renamed copy/symlink of a published build, or a wrapper script named `mgfxc` that forwards to `ShadowDuskCLI`) ahead of MonoGame's `mgfxc` on `PATH` — MGCB and `mgfxc`-shelling scripts look for the *name* `mgfxc`, not `ShadowDuskCLI`, so the tool command alone is not picked up. This is the shipping MGCB integration path — see [MGCB Content Pipeline](mgcb-content-pipeline.md) for the exact steps.
-2. **Explicit invocation.** Call `ShadowDuskCLI` directly from your build script / Makefile / CI step.
-
-Because the flags, output, and exit codes match, nothing downstream needs to know it swapped tools.
+> [!WARNING]
+> **The PATH override does not work for MGCB.** It was documented as the shipping MGCB integration until
+> 2026-07-28, when measurement showed `dotnet mgcb` (3.8.2.1105, 3.8.4.1, and 3.8.5 alike) compiles `.fx`
+> **in-process** and never launches an external `mgfxc` — so there is no process for the alias to intercept.
+> Use explicit invocation, or compile at runtime. See [MGCB Content Pipeline](mgcb-content-pipeline.md).
 
 ## Why it works where `mgfxc` can't
 
