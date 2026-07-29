@@ -12,14 +12,15 @@ through the SAME renderer, any pixel difference between two version cells is
 attributable solely to the MonoGame runtime. The matrix proves two things:
 
   1. Forward-compat: every version renders pixel-identical to the floor version
-     (default 3.8.2.1105) — the existing v10 output keeps working forward, zero
-     consumer action.
+     (the OLDEST runtime that accepts MGFX v10) — one build of the output works
+     across every supported MonoGame, with zero consumer action.
   2. Fidelity (--vs-baseline): every version stays within tolerance of the mgfxc
      goldens — the same bar as the original Phase 17 candidate-vs-mgfxc check.
 
 Usage:
-  python compare_forwardcompat.py --versions 3.8.2.1105 3.8.4.1 [--tolerance N] [--vs-baseline]
-  (--versions defaults to "3.8.2.1105 3.8.4.1"; first entry is the forward-compat reference floor)
+  python compare_forwardcompat.py --versions 3.8.1.263 3.8.2.1105 3.8.5 [--tolerance N] [--vs-baseline]
+  (--versions defaults to the full proven range 3.8.1.263 .. 3.8.5; the first entry is the
+   forward-compat reference floor, i.e. the OLDEST runtime whose loader accepts MGFX v10)
 Requires: pillow, numpy   (pip install pillow numpy)
 """
 import argparse
@@ -94,8 +95,10 @@ def vdir(version):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--versions", nargs="+", default=["3.8.2.1105", "3.8.4.1"],
-                    help="MonoGame versions in the matrix; the FIRST is the forward-compat reference floor")
+    ap.add_argument("--versions", nargs="+",
+                    default=["3.8.1.263", "3.8.1.303", "3.8.2.1105", "3.8.3", "3.8.4", "3.8.4.1", "3.8.5"],
+                    help="MonoGame versions in the matrix; the FIRST is the forward-compat reference "
+                         "floor (the oldest runtime that accepts MGFX v10)")
     ap.add_argument("--tolerance", type=int, default=4,
                     help="max per-channel delta still counted as a match (default 4)")
     ap.add_argument("--vs-baseline", action="store_true",

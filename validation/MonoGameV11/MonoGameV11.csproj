@@ -7,14 +7,14 @@
     Compiler Errors": the per-shader SourceFile + Entrypoint strings). Its Effect loader accepts
     the range [MGFXMinVersion=10, MGFXVersion=11]. This harness compiles the SM3 PS-only corpus
     with ShadowDusk's EffectCompiler at MgfxVersion 11 (or 10 via the `v10` arg) and renders
-    those bytes in real MonoGame DesktopGL 3.8.5-preview.6, to prove the v11 byte stream LOADS +
-    renders (a malformed v11 throws on load). Comparing the v11 render to the v10 render (both
-    in 3.8.5) confirms the diagnostic-only v11 strings don't change the picture.
+    those bytes in real MonoGame DesktopGL 3.8.5, to prove the v11 byte stream LOADS + renders
+    (a malformed v11 throws on load). Comparing the v11 render to the v10 render (both in 3.8.5)
+    confirms the diagnostic-only v11 strings don't change the picture.
 
-    3.8.5 shipped STABLE on 2026-07-15 (it was develop/preview-only when this harness was first
-    built). This project still pins the -preview.6 build it validated against; re-pinning to the
-    stable release and re-running is separate, tracked work (Phase 52 Area B), not done here.
-    Either way, this is VALIDATION only, NOT the product baseline (still 3.8.2.1105 / v10).
+    Pinned to 3.8.5 STABLE (shipped 2026-07-15) since Phase 52 Area B, 2026-07-28. The original
+    proof ran against 3.8.5-preview.6 because that was the only v11-capable build in existence
+    when this harness was written; the re-run on stable is recorded in README.md.
+    This is VALIDATION only, NOT the product baseline (still 3.8.2.1105 / v10).
     Intentionally NOT in ShadowDusk.slnx; opted out of central package management so the
     version pin stays local to this harness.
   -->
@@ -29,8 +29,8 @@
     <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
   </PropertyGroup>
 
-  <ItemGroup Label="MonoGame 3.8.5 (the develop/preview line that shipped MGFX v11)">
-    <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.5-preview.6" />
+  <ItemGroup Label="MonoGame 3.8.5 stable (the release line that shipped MGFX v11)">
+    <PackageReference Include="MonoGame.Framework.DesktopGL" Version="3.8.5" />
   </ItemGroup>
 
   <ItemGroup>

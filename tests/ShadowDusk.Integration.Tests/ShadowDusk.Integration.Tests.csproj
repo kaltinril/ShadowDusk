@@ -1,5 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <!-- Clears the single-TFM default from Directory.Build.props: when TargetFramework is
+         non-empty MSBuild single-targets and ignores TargetFrameworks entirely. -->
+    <TargetFramework></TargetFramework>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
     <AssemblyName>ShadowDusk.Integration.Tests</AssemblyName>
     <RootNamespace>ShadowDusk.Integration.Tests</RootNamespace>
     <IsPackable>false</IsPackable>

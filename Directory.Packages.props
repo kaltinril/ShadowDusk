@@ -17,6 +17,13 @@
     <PackageVersion Include="Silk.NET.SPIRV.Cross.Native" Version="2.23.0" />
   </ItemGroup>
 
+  <!--
+    ImageSharp is deliberately capped at the 3.1.x line. 4.0.0 is not a technical upgrade
+    problem, it is a LICENCE gate: its build targets hard-fail with "No Six Labors license
+    found ... obtain a license from https://sixlabors.com/pricing/" unless a paid licence key
+    or `sixlabors.lic` is present. 3.1.12 is the newest release that builds without one, and
+    it is the current tip of 3.1.x. Same reasoning as the FluentAssertions 7.x cap below.
+  -->
   <ItemGroup Label="Rendering">
     <PackageVersion Include="Silk.NET.OpenGL"          Version="2.23.0" />
     <PackageVersion Include="Silk.NET.Windowing.Glfw"  Version="2.23.0" />
@@ -28,15 +35,38 @@
     <PackageVersion Include="MonoGame.Framework.WindowsDX" Version="3.8.2.1105" />
   </ItemGroup>
 
+  <!--
+    Apos.Shapes is an EVIDENCE PIN, not a currency pin - do not bump it as part of a routine
+    dependency sweep. Phase 55 uses the package's own embedded effect as the gallery baseline
+    arm, which is only a valid comparison because the package's shader IS our vendored
+    tests/fixtures/shaders/third-party/Apos.Shapes/apos-shapes-sm6.fx.
+
+    0.7.7 pins upstream commit a85a31c, which matches that fixture modulo one comment line.
+    Checked 2026-07-28: 0.7.12 pins a DIFFERENT commit (b69bd73) whose apos-shapes.fx differs by
+    ~1150 lines and adds a FOURTH sampler - a new `ArcTex` at register t2 that pushes
+    `BlueNoiseTex` to t3. Bumping therefore silently points the baseline arm at a different
+    shader than the candidate. Moving this pin means vendoring the new upstream revision and
+    re-running the whole Phase 55 proof; it is that phase's work, not a version bump.
+  -->
   <ItemGroup Label="Apos.Shapes (Phase 55 - real ShapeBatch gallery render-proof)">
     <PackageVersion Include="Apos.Shapes" Version="0.7.7" />
   </ItemGroup>
 
+  <!--
+    Test-only. None of these reach a consumer: the shipped src/ projects reference exactly
+    Silk.NET.SPIRV.Cross.Native and Vortice.*, nothing here.
+
+    FluentAssertions is deliberately capped at the 7.x line: 7.2.2 is the last Apache-2.0
+    release (verified in the package nuspec). 8.x relicensed to the Xceed "Community License
+    Agreement (for Non-Commercial Use)", which requires a paid commercial licence for any use
+    by an organisation that earns revenue - a licence obligation, not a technical one, so it is
+    not taken no matter how far ahead 8.x gets.
+  -->
   <ItemGroup Label="Test">
-    <PackageVersion Include="xunit"                        Version="2.9.2" />
-    <PackageVersion Include="xunit.runner.visualstudio"    Version="2.8.2" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk"       Version="17.11.1" />
-    <PackageVersion Include="FluentAssertions"             Version="6.12.2" />
-    <PackageVersion Include="coverlet.collector"           Version="6.0.3" />
+    <PackageVersion Include="xunit"                        Version="2.9.3" />
+    <PackageVersion Include="xunit.runner.visualstudio"    Version="3.1.5" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk"       Version="18.8.1" />
+    <PackageVersion Include="FluentAssertions"             Version="7.2.2" />
+    <PackageVersion Include="coverlet.collector"           Version="10.0.1" />
   </ItemGroup>
 </Project>

@@ -38,7 +38,7 @@ Everything it needs ships inside the package. There's no separate install: no fx
 
 ## Why it exists
 
-MonoGame's stock content pipeline shells out to mgfxc, a Windows-only tool that needs fxc.exe from the DirectX SDK. ShadowDusk replaces that one step with a portable pipeline whose output a real MonoGame, KNI, or FNA `Effect` loads and renders the same as mgfxc's — so the same shader build works on any OS, with nothing to install.
+MonoGame's stock content pipeline compiles shaders with the same engine as mgfxc, which needs fxc.exe from the DirectX SDK and only runs on Windows. ShadowDusk replaces that one step with a portable pipeline whose output a real MonoGame, KNI, or FNA `Effect` loads and renders the same as mgfxc's — so the same shader build works on any OS, with nothing to install.
 
 ## Supported targets
 

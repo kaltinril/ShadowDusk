@@ -53,9 +53,7 @@ public static class GalleryRunner
 
     public static int Run(string cliDll, string repoRoot, string outDir)
     {
-        string authoredDir = Path.Combine(
-            repoRoot, "tools", "shadertoy2fx", "tests",
-            "ShadowDusk.ShaderToy.Tests", "corpus", "authored");
+        string authoredDir = CorpusLocator.FindAuthored(repoRoot);
 
         if (!Directory.Exists(authoredDir))
         {
@@ -284,15 +282,11 @@ public static class GalleryRunner
         psi.ArgumentList.Add(mgfxPath);
         psi.ArgumentList.Add("/Profile:OpenGL");
 
-        using var proc = Process.Start(psi)
-            ?? throw new InvalidOperationException("Failed to start the ShadowDusk CLI process.");
-        string stdout = proc.StandardOutput.ReadToEnd();
-        string stderr = proc.StandardError.ReadToEnd();
-        proc.WaitForExit();
+        (int exitCode, string stdout, string stderr) = ProcessCapture.Run(psi);
 
-        if (proc.ExitCode != 0)
+        if (exitCode != 0)
         {
-            return $"exit={proc.ExitCode}\n{stderr}\n{stdout}".Trim();
+            return $"exit={exitCode}\n{stderr}\n{stdout}".Trim();
         }
 
         if (!File.Exists(mgfxPath))

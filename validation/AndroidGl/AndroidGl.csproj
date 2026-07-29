@@ -35,7 +35,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="MonoGame.Framework.Android" Version="3.8.4.1" />
+    <!-- Bumped 3.8.4.1 -> 3.8.5 stable on 2026-07-28 (Phase 52 Area F2). BUILD-verified only:
+         this project compiles and packages an APK against 3.8.5 with no source change. The
+         ON-DEVICE proof recorded in plan/PHASE-50-android-runtime-support.md section 6.2 was
+         taken on 3.8.4.1 and has NOT been re-run on 3.8.5 - do not read this pin as
+         "proven on 3.8.5". Re-running the emulator harness is Phase 50 work. -->
+    <PackageReference Include="MonoGame.Framework.Android" Version="3.8.5" />
     <!-- Direct refs ONLY to drop the DESKTOP (linux-x64) natives these packages ship under
          runtimes/linux-x64/native: on Android, .NET maps those .so into lib/x86_64/, where
          they are the WRONG platform (Linux glibc, not Android bionic) and fail to load with

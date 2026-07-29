@@ -337,6 +337,18 @@ for real devices; x86_64 for the emulator).
   ABI is **x86_64** (so x86_64 natives are needed to demo there); Debug **FastDeployment** keeps
   assemblies outside the APK (use `-p:EmbedAssembliesIntoApk=true` for a self-contained
   `adb install`); and the AVD's default ~5 GB data partition fills up (cold-boot `-wipe-data`).
+- **MonoGame pin moved to 3.8.5 stable, BUILD-verified only (2026-07-28, Phase 52 Area F2).**
+  `validation/AndroidGl` now references `MonoGame.Framework.Android` **3.8.5**; it compiles and
+  packages an APK with no source change. The **on-device proof above was taken on 3.8.4.1 and has
+  not been re-run on 3.8.5** — re-running the emulator harness against the new pin is Phase 50
+  work, and until it happens the pin is a build fact, not a render fact.
+- **NEW blocker for the productionization tail — `libdxcompiler.so` is not 16 KB-page-size
+  aligned** (surfaced by the 3.8.5 build as `XA0141`): *"Android 16 will require 16 KB page sizes,
+  shared library 'libdxcompiler.so' does not have a 16 KB page size."* Our own NDK build produced
+  it, so this is ours to fix, and it lands squarely on the open `dxc-android-build.yml` /
+  minimum-API-level items above: the rebuild must pass the NDK 16 KB alignment link flags
+  (`-Wl,-z,max-page-size=16384`) or on-device compile breaks on Android 16 devices. Applies to
+  both the arm64-v8a and x86_64 natives.
 
 ---
 

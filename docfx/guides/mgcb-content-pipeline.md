@@ -1,29 +1,55 @@
-# MGCB Content Pipeline (Tier-1)
+# MGCB Content Pipeline
 
-MonoGame's content build tool, **MGCB**, compiles `.fx` shaders by shelling out to **`mgfxc`**. Because ShadowDusk's CLI is a [drop-in `mgfxc` replacement](dropin-mgfxc.md), you can make MGCB use ShadowDusk **without changing your `.mgcb` file or any game code**.
+> [!IMPORTANT]
+> **This page used to document a "Tier-1 `PATH` override" as the shipping MGCB integration. It does not work.**
+> Measured on 2026-07-28 against `dotnet mgcb` **3.8.2.1105, 3.8.4.1, and 3.8.5**: with a real `mgfxc`
+> executable placed first on `PATH`, a `.mgcb` content build **never invoked it once** and still produced a
+> valid `.xnb`. **MGCB compiles `.fx` in-process** — it does not shell out to an external `mgfxc` — so
+> there is nothing for a `PATH` alias to intercept. MonoGame 3.8.5's new code-centric Content Builder is a
+> C# project over `MonoGame.Framework.Content.Pipeline` and has no external-tool seam either.
+>
+> **What to do instead — see [Using ShadowDusk with MGCB today](#using-shadowdusk-with-mgcb-today).**
 
-## Tier-1: PATH override (the shipping path)
+## Why the override cannot work
 
-MGCB invokes the executable **named `mgfxc`** that it finds on `PATH` — it does not know the name `ShadowDuskCLI`. ShadowDusk's tool command is `ShadowDuskCLI` (so it can coexist with a real `mgfxc`), which means the override is two steps: install the tool, then expose it **under the name `mgfxc`** ahead of MonoGame's:
+MGCB's `EffectProcessor` compiles effects inside the build tool's own process (via SharpDX `D3DCompiler`
+through 3.8.4.1, and bundled DXC + MojoShader native tool packages from 3.8.5). No `mgcb` or
+`MonoGame.Framework.Content.Pipeline` assembly in any of those versions even contains the string `mgfxc`;
+`MonoGame.Content.Builder.Task`'s MSBuild targets only ever exec `mgcb`. The `mgfxc` tool still exists — at
+3.8.5 it moved into its own `dotnet-mgfxc` package — but MGCB does not call it.
+
+The measurement was taken on Windows. The Linux/macOS behaviour is inferred from the identical package
+payloads rather than run directly.
+
+## Using ShadowDusk with MGCB today
+
+ShadowDusk's CLI is still a faithful [drop-in `mgfxc` replacement](dropin-mgfxc.md) — the issue is purely
+that MGCB has no hook to call it through. Two routes work now:
+
+**1. Compile shaders with ShadowDusk directly, and let MGCB copy the result.** Build your `.fx` to `.mgfx`
+with the ShadowDusk CLI as a pre-build step, then have the content project copy that `.mgfx` instead of
+processing the `.fx`:
 
 ```sh
-dotnet tool install --global ShadowDusk.Cli   # installs the `ShadowDuskCLI` command
+ShadowDuskCLI Content/MyEffect.fx Content/MyEffect.mgfx /Profile:OpenGL
 ```
 
-Then place an `mgfxc`-named alias for it first on `PATH` — e.g. a copy/symlink of a [published single-file build](../cli/index.md) renamed to `mgfxc` (`mgfxc.exe` on Windows), or a tiny wrapper script named `mgfxc` that forwards all arguments to `ShadowDuskCLI`:
-
-```sh
-# Linux / macOS wrapper, placed in a directory that precedes MonoGame's tools on PATH
-printf '#!/bin/sh\nexec ShadowDuskCLI "$@"\n' > ~/bin/mgfxc && chmod +x ~/bin/mgfxc
+```
+#begin MyEffect.mgfx
+/copy:MyEffect.mgfx
 ```
 
-Then run your content build as usual:
+**2. Skip the content pipeline for shaders entirely** — compile at runtime and hand the bytes to `Effect`,
+which is [what the library is for](../getting-started/overview.md):
 
-```sh
-dotnet mgcb /@:Content.mgcb
+```csharp
+var result = await new EffectCompiler().CompileAsync(File.ReadAllText("MyEffect.fx"),
+    new CompilerOptions { Target = PlatformTarget.OpenGL });
+var effect = new Effect(GraphicsDevice, result.Value.Data);
 ```
 
-MGCB calls `mgfxc <SourceFile> <OutputFile> /Profile:<Platform> …` exactly as before; ShadowDusk answers with the same flags, the same `.mgfx` output, and the same exit codes. This is the **shipping** MGCB integration: it requires no plugin and no `.mgcb` edits.
+Native in-process MGCB integration is tracked as the (unimplemented) content-processor plugin — see
+[the stub note below](#the-mgcb-plugin-is-a-stub-future).
 
 ## The `.mgcb` `Profile` ↔ ShadowDusk mapping
 
@@ -38,10 +64,15 @@ MGCB passes the platform via `/Profile:`. ShadowDusk understands the MonoGame pr
 
 Unsupported console profiles (`PlayStation4`, `XboxOne`, `Switch`) fail loudly with exit code 1, just as a portable tool should.
 
+These profile names are what the [ShadowDusk CLI](../cli/index.md) accepts, so they apply to the direct-compile
+route above just as they did to the `mgfxc` invocation MGCB was believed to make.
+
 ## A worked sample
 
-The repository's [`samples/mgcb`](../samples/mgcb.md) sample shows a content project building its `.fx` through ShadowDusk via the PATH override.
+The repository's [`samples/mgcb`](../samples/mgcb.md) sample is a standard MonoGame content project over the
+shader corpus. Note that its shaders build through **MGCB's own in-process compiler**, not ShadowDusk — see
+the correction at the top of this page.
 
 ## The MGCB plugin is a stub (future)
 
-A dedicated `ShadowDusk.MgcbPlugin` content-processor NuGet is **scaffolded but not implemented** — it is a stub with no working processor today. **The Tier-1 PATH override above is the supported MGCB path.** Do not expect a shipping MGCB plugin package; track its status in the [Contributing Guide](../contributing/index.md).
+A dedicated `ShadowDusk.MgcbPlugin` content-processor NuGet is **scaffolded but not implemented** — it is a stub with no working processor today. Since the `PATH` override turns out not to fire, this plugin is the only route to *native* in-process MGCB integration, which raises its priority from convenience to the real gap; it is still unimplemented, so do not expect a shipping package. Track its status in the [Contributing Guide](../contributing/index.md) and `plan/PHASE-29-mgcb-content-processor-plugin.md`.

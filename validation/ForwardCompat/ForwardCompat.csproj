@@ -27,10 +27,17 @@
     is never packed.
 
     The version is a property so the regression guard / README can re-point it
-    (e.g. to a future 3.8.5 stable) without editing the reference.
+    without editing the reference.
+
+    This default is only what a BARE `dotnet build/run` of this project picks up.
+    run-forwardcompat.ps1 always passes -p:ForwardCompatMonoGameVersion per cell,
+    so packages.lock.json here reflects whichever matrix cell ran last and its
+    churn is expected, not a signal. (These validation projects are not in
+    ShadowDusk.slnx, which is the only thing CI restores in locked mode.)
+    Kept at the newest cell in the matrix: 3.8.5 stable, added 2026-07-28.
   -->
   <PropertyGroup>
-    <ForwardCompatMonoGameVersion>3.8.4.1</ForwardCompatMonoGameVersion>
+    <ForwardCompatMonoGameVersion>3.8.5</ForwardCompatMonoGameVersion>
   </PropertyGroup>
 
   <ItemGroup>

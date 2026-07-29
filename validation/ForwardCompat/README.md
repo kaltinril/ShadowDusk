@@ -2,8 +2,8 @@
 
 Proves ShadowDusk's **existing, unchanged** v10 OpenGL `.mgfx` output
 **loads into a real `Effect` and renders pixel-identically on every MonoGame
-version we support** — the product's pinned floor *and* the latest stable — with
-**zero consumer action**.
+version that can load it** — currently **seven consecutive releases, 3.8.1.263
+through 3.8.5** — with **zero consumer action**.
 
 This is validation-only. It does **not** change the product:
 
@@ -42,56 +42,83 @@ version it:
 pwsh validation/ForwardCompat/run-forwardcompat.ps1
 
 # Override the matrix (first entry is the forward-compat reference floor):
-pwsh validation/ForwardCompat/run-forwardcompat.ps1 -Versions 3.8.2.1105,3.8.4.1 -Tolerance 4
+pwsh validation/ForwardCompat/run-forwardcompat.ps1 -Versions 3.8.1.263,3.8.5 -Tolerance 4
 
-# Just one cell (writes output/versionmatrix/3.8.4.1/*.png):
-$env:MATRIX_VERSION_LABEL='3.8.4.1'
-dotnet run --project validation/ForwardCompat/ForwardCompat.csproj -c Debug -p:ForwardCompatMonoGameVersion=3.8.4.1
+# Just one cell (writes output/versionmatrix/3.8.5/*.png):
+$env:MATRIX_VERSION_LABEL='3.8.5'
+dotnet run --project validation/ForwardCompat/ForwardCompat.csproj -c Debug -p:ForwardCompatMonoGameVersion=3.8.5
 
 # Just the compare (after the cells + baseline exist):
-python validation/compare_forwardcompat.py --versions 3.8.2.1105 3.8.4.1 --vs-baseline
+python validation/compare_forwardcompat.py --versions 3.8.1.263 3.8.2.1105 3.8.5 --vs-baseline
 ```
 
 Requires a real GPU / DesktopGL context (rung-4 render, like Phase 17/33/34) and
 Python with `pillow` + `numpy` for the pixel compare.
 
-**Extending the matrix:** add the NuGet version string to `-Versions` (e.g. a
-future `3.8.5` stable). The first entry is the forward-compat reference floor and
-must stay `3.8.2.1105` (the product's compat promise).
+**Extending the matrix:** append the NuGet version string to `-Versions` when a new
+MonoGame ships. The first entry is the forward-compat reference floor — the *oldest*
+runtime that accepts MGFX v10 (see the floor measurement below); prepending anything
+older than `3.8.1.263` will fail for a real MonoGame reason.
 
-## Result — version matrix (recorded 2026-06-05, Windows DesktopGL)
+## Result — the FULL supported range (swept 2026-07-28, Windows DesktopGL)
 
-ShadowDusk compiler unchanged; same v10 `.mgfx` bytes across all cells (one compile
-per shader). `tolerance = 4/255`. Loaded runtimes verified by the integrity guard:
-`3.8.2.1105` and `3.8.4.1+f3420072…`.
+ShadowDusk compiler unchanged; the **same v10 `.mgfx` bytes** in every cell (one compile
+per shader, then seven runtimes load those identical bytes). `tolerance = 4/255`. Every
+loaded runtime was confirmed by the integrity guard.
 
-| Shader     | Compile (ShadowDusk v10) | Render 3.8.2.1105 (floor) | Render **3.8.4.1** | 3.8.4.1 vs floor (same bytes) | each vs mgfxc golden |
-|------------|:------------------------:|:-------------------------:|:------------------:|:-----------------------------:|:--------------------:|
-| Grayscale  | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 0) |
-| Invert     | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 0) |
-| TintShader | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 0) |
-| Sepia      | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 0) |
-| Saturate   | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 0) |
-| Pixelated  | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 0) |
-| Scanlines  | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 1) |
-| Fading     | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 0) |
-| Dots       | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 1) |
-| Dissolve   | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 0) |
+**7 versions × 10 shaders = 70 renders, all green.**
 
-**10/10** load and render on **both** MonoGame **3.8.2.1105** and **3.8.4.1**,
-**pixel-identical** between the two runtimes (max per-channel delta **0**), and
-within tolerance of the mgfxc goldens (max delta ≤ 1, same as the original Phase 17
-result). **The existing v10 output works forward unchanged — the consumer does
-nothing.**
+| Shader     | 3.8.1.263 (floor) | 3.8.1.303 | 3.8.2.1105 | 3.8.3 | 3.8.4 | 3.8.4.1 | 3.8.5 | each vs floor | each vs mgfxc golden |
+|------------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:-------------:|:--------------------:|
+| Grayscale  | OK | OK | OK | OK | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 0) |
+| Invert     | OK | OK | OK | OK | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 0) |
+| TintShader | OK | OK | OK | OK | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 0) |
+| Sepia      | OK | OK | OK | OK | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 0) |
+| Saturate   | OK | OK | OK | OK | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 0) |
+| Pixelated  | OK | OK | OK | OK | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 0) |
+| Scanlines  | OK | OK | OK | OK | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 1) |
+| Fading     | OK | OK | OK | OK | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 0) |
+| Dots       | OK | OK | OK | OK | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 1) |
+| Dissolve   | OK | OK | OK | OK | OK | OK | OK | MATCH (maxΔ 0) | MATCH (maxΔ 0) |
 
-## Version landscape (verified live 2026-06-05 against nuget.org)
+One build of the output renders **pixel-identically on every MonoGame release that can
+load it** (max per-channel delta **0** between runtimes), and every cell stays within
+tolerance of the mgfxc goldens (`Scanlines` and `Dots` at 1/255, the other eight at 0 —
+unchanged from the original Phase 17 result). **The consumer does nothing.**
 
-- **3.8.2.1105** — product pin / matrix floor (unchanged).
-- **3.8.4.1** — latest **stable** 3.8.x on nuget.org; in the matrix.
-- **3.8.5** — shipped **STABLE 2026-07-15** (was develop/preview-only, Vulkan + DX12,
-  when this doc was first written 2026-06-05). Not yet added to `-Versions` here —
-  a real render re-sweep against the stable build is separate, tracked work (Phase 52
-  Area A); the live matrix result above still reflects the 3.8.2.1105/3.8.4.1
-  floor-plus-latest-stable pair from that date. Source-verified that 3.8.5's loader
-  accepts the MGFX range `[10, 11]` (it adds `MGFXMinVersion = 10`), so our v10
-  output stays forward-safe into 3.8.5 too.
+## The floor is measured, not assumed
+
+Every stable `MonoGame.Framework.DesktopGL` release was probed on 2026-07-28 by running
+this harness against it:
+
+| MonoGame | v10 `.mgfx` loads + renders? |
+|---|---|
+| 3.8.0.1641 | ❌ **0/10** — `new Effect()` throws *"This MGFX effect seems to be for a newer release of MonoGame."* Its loader predates MGFX v10. |
+| **3.8.1.263 → 3.8.5** (7 releases) | ✅ **10/10 each**, all pixel-identical |
+
+So **3.8.1.263 is the true floor** and is the matrix's forward-compat reference. 3.8.0's
+rejection is a real MonoGame version boundary, not a ShadowDusk defect — it is recorded
+here so nobody has to rediscover it, and so the floor is a measured fact rather than a
+number someone once picked.
+
+> **This matrix is not tied to any single MonoGame version.** `Directory.Packages.props`
+> names `3.8.2.1105`, but that is only the default the *other* GL harnesses render
+> against — no project referencing it is even in `ShadowDusk.slnx`, and no shipped
+> `ShadowDusk.*` package depends on MonoGame at all. The product's actual commitment is
+> the **output format (MGFX v10)**, and this matrix is what establishes its range.
+
+## Version landscape (verified live 2026-07-28 against nuget.org)
+
+- Stable DesktopGL releases: 3.5.0.1678, 3.5.1.1679, 3.6.0.1625, 3.7.0.1708, 3.7.1.189,
+  3.8.0.1641, 3.8.1.263, 3.8.1.303, 3.8.2.1105, 3.8.3, 3.8.4, 3.8.4.1, **3.8.5**.
+  3.7.x and older are pre-`net8.0`-era and out of scope; 3.8.0 is the measured
+  floor-minus-one above; everything from 3.8.1.263 up is in the matrix.
+- **3.8.5** — shipped **STABLE 2026-07-15**, latest on nuget.org, in the matrix since
+  2026-07-28. The classic `MonoGame.Framework.DesktopGL` package continues at 3.8.5, so
+  this harness needed no structural change — only the version string. Source-verified
+  that its loader accepts the MGFX range `[10, 11]` (it adds `MGFXMinVersion = 10`), and
+  now render-verified too.
+- 3.8.5 also introduced the additive `MonoGame.Framework.Native` + `MonoGame.Runtime.*`
+  architecture (`DesktopVK`, `WindowsDX12`). Those are separate targets with their own
+  harnesses (`validation/CandidateVulkan`, `validation/CandidateDx12`), not cells here —
+  this matrix is specifically about the classic DesktopGL runtime loading unchanged v10.

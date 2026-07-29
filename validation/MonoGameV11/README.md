@@ -4,17 +4,17 @@ Proves ShadowDusk's **MGFX v11** output loads + renders in a **v11-capable MonoG
 
 ## What it proves
 
-MonoGame **3.8.5** (stable since 2026-07-15; develop/preview when this harness was first built) is the version that shipped MGFX v11 (PR #8813: the per-shader
+MonoGame **3.8.5** (stable since 2026-07-15) is the version that shipped MGFX v11 (PR #8813: the per-shader
 `SourceFile` + `Entrypoint` diagnostic strings; its `Effect` loader accepts version range `[10, 11]`). This
 harness compiles the 10-shader SM3 PS-only corpus with ShadowDusk's `EffectCompiler` at **`MgfxVersion = 11`**
-(or 10 via the `v10` arg) and renders those bytes in **real `MonoGame.Framework.DesktopGL 3.8.5-preview.6`**.
+(or 10 via the `v10` arg) and renders those bytes in **real `MonoGame.Framework.DesktopGL 3.8.5`**.
 
 A malformed v11 file (e.g. the old header-byte-only stub) throws on `new Effect(...)` because the reader's
 `ReadString()` desyncs the stream, so **10/10 load + render is the proof the v11 byte stream is correct.**
 Comparing the v11 render to the v10 render in the same runtime confirms the diagnostic-only strings don't
 change the picture.
 
-## Result (2026-06-14, real MonoGame 3.8.5.0)
+## Result (re-proven 2026-07-28 on MonoGame 3.8.5 **stable**)
 
 **10/10 load + render.** `compare_mgfxv11.py` (tolerance 4/255):
 
@@ -26,11 +26,15 @@ change the picture.
 So ShadowDusk emits a **faithful MGFX v11** that loads + renders in real MonoGame 3.8.5, pixel-equivalent to
 v10. A runtime-integrity guard asserts the loaded runtime is MonoGame >= 3.8.5 (v11-capable), not KNI/3.8.2.
 
+**Preview → stable (Phase 52 Area B).** The original 2026-06-14 proof ran against
+`3.8.5-preview.6`, the only v11-capable build that existed at the time. The pin is now
+`3.8.5` stable and both arms were re-run on 2026-07-28: **the result table above is
+unchanged, cell for cell** — same 10/10 load+render, same max deltas. The v11 claim no
+longer rests on a pre-release runtime.
+
 ## How to run
 
-3.8.5 shipped **stable** on 2026-07-15 (this harness still pins the `-preview.6` build it validated
-against; re-pinning to the stable release is separate, tracked work — Phase 52 Area B). Either way,
-this is validation only, NOT the product baseline (still 3.8.2.1105 / v10). The project is not in
+This is validation only, NOT the product baseline (still 3.8.2.1105 / v10). The project is not in
 `ShadowDusk.slnx` and opts out of central package management so the version pin stays local.
 
 ```pwsh

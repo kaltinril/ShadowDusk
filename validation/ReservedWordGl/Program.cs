@@ -121,22 +121,24 @@ return allPassed ? 0 : 1;
 
 static byte[]? TryCompileWithMgfxc(string fxPath, string outDir, out string note)
 {
-    string? mgfxc = LocateMgfxc();
-    if (mgfxc is null)
+    string? mgfxcDll = LocateMgfxc(out string locateNote);
+    if (mgfxcDll is null)
     {
-        note = "not found on PATH or in NuGet cache (bonus arm skipped; exact-pixel check still applies)";
+        note = $"{locateNote} (bonus arm skipped; exact-pixel check still applies)";
         return null;
     }
 
     string outFile = Path.Combine(outDir, "mgfxc-gl.mgfx");
     try
     {
-        var psi = new ProcessStartInfo(mgfxc)
+        // mgfxc ships as a framework-dependent .dll; run it through the dotnet host.
+        var psi = new ProcessStartInfo("dotnet")
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
         };
+        psi.ArgumentList.Add(mgfxcDll);
         psi.ArgumentList.Add(fxPath);
         psi.ArgumentList.Add(outFile);
         psi.ArgumentList.Add("/Profile:OpenGL");
@@ -152,7 +154,7 @@ static byte[]? TryCompileWithMgfxc(string fxPath, string outDir, out string note
             return null;
         }
 
-        note = $"compiled by {Path.GetFileName(mgfxc)} -> {outFile}";
+        note = $"compiled by {locateNote} -> {outFile}";
         return File.ReadAllBytes(outFile);
     }
     catch (Exception ex)
@@ -162,43 +164,54 @@ static byte[]? TryCompileWithMgfxc(string fxPath, string outDir, out string note
     }
 }
 
-static string? LocateMgfxc()
+// Resolve the PINNED reference mgfxc (Phase 52 Area C). This deliberately does NOT
+// take the newest mgfxc it can find, which is what it used to do:
+//   * mgfxc 3.8.5 emits MGFX v11, so it is not a comparison partner for the v10
+//     bytes this gate renders; and
+//   * the dotnet-mgcb-editor-windows 3.8.4.1 package ships an mgfxc.exe missing
+//     SharpDX.D3DCompiler.dll, which throws on every shader.
+// The dotnet-mgcb package pinned in .config/dotnet-tools.json carries a working
+// mgfxc.dll; that pin is the single source of truth for "the reference compiler".
+static string? LocateMgfxc(out string note)
 {
-    // 1. dotnet global tool shim on PATH (this box: ~/.dotnet/tools/mgfxc).
-    foreach (string exe in new[] { "mgfxc", "mgfxc.exe" })
+    string repoRoot = ShaderInputs.FindRepoRoot();
+    string toolsJson = Path.Combine(repoRoot, ".config", "dotnet-tools.json");
+    if (!File.Exists(toolsJson))
     {
-        string? onPath = FindOnPath(exe);
-        if (onPath is not null)
-            return onPath;
+        note = $"no {toolsJson} to read the mgfxc pin from";
+        return null;
     }
 
-    // 2. mgfxc.exe in the NuGet cache (the tools/compile-fixtures.ps1 fallback).
+    string? version;
+    try
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse(File.ReadAllText(toolsJson));
+        version = doc.RootElement.GetProperty("tools").GetProperty("dotnet-mgcb")
+            .GetProperty("version").GetString();
+    }
+    catch (Exception ex)
+    {
+        note = $"could not read the dotnet-mgcb pin from {toolsJson}: {ex.Message}";
+        return null;
+    }
+
+    if (string.IsNullOrWhiteSpace(version))
+    {
+        note = $"no dotnet-mgcb version pinned in {toolsJson}";
+        return null;
+    }
+
     string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-    string nugetDir = Path.Combine(userProfile, ".nuget", "packages", "dotnet-mgcb-editor-windows");
-    if (Directory.Exists(nugetDir))
+    string dll = Path.Combine(userProfile, ".nuget", "packages", "dotnet-mgcb", version,
+                              "tools", "net8.0", "any", "mgfxc.dll");
+    if (!File.Exists(dll))
     {
-        string? found = Directory.EnumerateFiles(nugetDir, "mgfxc.exe", SearchOption.AllDirectories)
-            .OrderByDescending(p => p)
-            .FirstOrDefault();
-        if (found is not null)
-            return found;
+        note = $"pinned mgfxc {version} not restored (run `dotnet tool restore`)";
+        return null;
     }
 
-    return null;
-}
-
-static string? FindOnPath(string fileName)
-{
-    string? pathEnv = Environment.GetEnvironmentVariable("PATH");
-    if (pathEnv is null) return null;
-    foreach (string dir in pathEnv.Split(Path.PathSeparator))
-    {
-        if (string.IsNullOrWhiteSpace(dir)) continue;
-        string candidate = Path.Combine(dir.Trim(), fileName);
-        if (File.Exists(candidate))
-            return candidate;
-    }
-    return null;
+    note = $"mgfxc {version}";
+    return dll;
 }
 
 /// <summary>One asserted check (a single noise value, or a cross-compiler/differentiation check).</summary>

@@ -23,7 +23,7 @@ small tail, the tail moves here and the parent moves to DONE.
 | DeferredSprite GL MRT render proof (GAP-2) | [Phase 41](DONE/PHASE-41-fxc-oracle-monogame-fidelity.md) | Closed at compile + structural-match; render rung left |
 | Apos.Shapes render-proof (Option B) | [Phase 49](DONE/PHASE-49-apos-shapes-regression-corpus.md) | Option A shipped; Option B render-proof decision-gated |
 | GL macro-defined techniques (GAP-1 / GL) | [Phase 41](DONE/PHASE-41-fxc-oracle-monogame-fidelity.md) | DX + FNA closed; GL faithfulness-blocked |
-| DX12 / DXIL render-validation (Area C) — ➡️ promoted 2026-07-18 to [Phase 52](PHASE-52-monogame-3.8.5-support.md) Area D, split 2026-07-23 to [Phase 54](DONE/PHASE-54-dx12-dxil-backend.md) | [Phase 35](DONE/PHASE-35-forward-version-support.md) | New-backend build (not a render-validation rung); see B1 |
+| DX12 / DXIL render-validation (Area C) — ➡️ promoted 2026-07-18 to [Phase 52](DONE/PHASE-52-monogame-3.8.5-support.md) Area D, split 2026-07-23 to [Phase 54](DONE/PHASE-54-dx12-dxil-backend.md) | [Phase 35](DONE/PHASE-35-forward-version-support.md) | New-backend build (not a render-validation rung); see B1 |
 | Un-park Vulkan trigger (Area D) — ✅ done 2026-07-18 via [Phase 32](DONE/PHASE-32-vulkan-backend.md) | [Phase 35](DONE/PHASE-35-forward-version-support.md) | ext-blocked on MonoGame 3.8.5 stable (since shipped; see B2) |
 | DX/FNA/KNI-DX render-in-CI gates | [Phase 44](DONE/PHASE-44-validation-breadth-and-matrix-coverage.md) | Effectively done; ext-blocked on a WARP CI runner |
 | `d3dcompiler_47` vs `fxc.exe` DXBC delta study (OQ#2) | [Phase 41](DONE/PHASE-41-fxc-oracle-monogame-fidelity.md) | Deferred, low-value |
@@ -146,6 +146,22 @@ same appendix, not part of this rung.)
 **Done = ** at least one `.glsl`-route fixture renders through the Windows render gates (and the GL
 CI gates where applicable), pinning the converted-shader path at rung 4.
 
+**Why this is worth more than it looks (2026-07-28).** Running `tools/shadertoy2fx/render-proof`
+during the Phase 52 full-test sweep found it had been **dead since Phase 47** and nobody knew:
+first it exited immediately on a corpus path the Phase-47 promotion had moved, and once that was
+fixed it **hung forever** on a stdout-before-stderr pipe deadlock in all four of its child-process
+helpers — latent until Phase 53 made warnings print by default and a corpus shader started emitting
+more `SD0402` text than the pipe buffer holds. Both are fixed, but they are a textbook case of
+`CLAUDE.md`'s *"a check nobody remembers to run does not exist"*: this driver is deliberately outside
+`ShadowDusk.slnx`, so no suite and no gate touched it for over a month. Wiring the `.glsl` route into
+a real gate is what stops the next month of silent rot.
+
+**With both fixed, the gate is green and broader than when it was last run:
+`render-proof --fidelity` reports 53/53 shaders MATCH (0 diverged, 0 errored)** — mean abs diff
+0.00-0.11/255, >= 99.9% of pixels within tolerance on every shader — against Phase 47's recorded
+46/46. The extra seven are corpus growth since, and they pass too; the converter itself never
+regressed.
+
 ### A6 — `#include` path containment for untrusted-shader hosts (from the 2026-07-23 review)
 
 *Raised by the security review of the Phase 53 error-visibility work.* Two pre-existing pieces
@@ -239,9 +255,41 @@ names breaks existing consumers' `Parameters[...]` lookups.
 
 ---
 
+### A8 — Dependency currency: the two items with a real deadline (audited 2026-07-28)
+
+*Not a phase tail — filed here because this is the de-facto backlog and these otherwise have no
+home. Full audit recorded in [`project_facts.md`](../project_facts.md).*
+
+The 2026-07-28 audit found **zero vulnerable and zero security-deprecated packages** anywhere, so
+nothing is urgent. Two items nonetheless have a clock on them:
+
+1. ~~**.NET 8 end of support, November 2026.**~~ ✅ **RESOLVED 2026-07-28** — the shipped libraries
+   and all test projects now multi-target `net8.0;net10.0`, suite green on both (4762 tests),
+   output byte-identical. Multi-targeting rather than a bump, because a `net10.0`-only package
+   cannot be referenced from the `net8.0` projects most MonoGame/KNI games are. Remaining tail
+   (small, not urgent): `ShadowDusk.Wasm` is still `net8.0-browser` only — adding
+   `net10.0-browser` needs the .NET 10 wasm workload; `ShadowDusk.Cli` stays net8.0 as a dotnet
+   tool (rolls forward onto newer runtimes).
+2. ~~**vkd3d-shader is pinned at 1.17; upstream is at 2.0.**~~ ➡️ **PROMOTED 2026-07-28 to its own
+   scoped phase: [Phase 56](PHASE-56-vkd3d-shader-2.0-upgrade.md).** The compatibility research is
+   done and lives there (short version: "2.0" is a project-version bump, **not** an ABI break — the
+   soname stays `1` and our interop needs no change; the real cost is that every DirectX and FNA
+   byte moves, and the real upside is that the new register allocator may lift the `SD0305`
+   rejections blocking `BasicEffect`/`SkinnedEffect` on FNA). Nothing left to track here.
+
+**Deliberate non-bumps, recorded so they are not "fixed" by a well-meaning sweep:** `Vortice.*`
+(3.3.4 *is* the DXC pin — same commit as our macOS/Android/WASM builds), `FluentAssertions` (v8
+moved to a paid commercial licence; stay on the Apache-2.0 line), and `Apos.Shapes` 0.7.7 (a
+Phase 55 evidence pin).
+
+**Done = ** a decision recorded for the `net8.0` floor before November 2026, and vkd3d either
+bumped-and-re-proven or explicitly deferred with a reason.
+
+---
+
 ## B. Externally blocked (gated on an outside event)
 
-### B1 — ➡️ Promoted (2026-07-18) to [Phase 52](PHASE-52-monogame-3.8.5-support.md) Area D — DX12 / DXIL render-validation (Phase 35 Area C)
+### B1 — ➡️ Promoted (2026-07-18) to [Phase 52](DONE/PHASE-52-monogame-3.8.5-support.md) Area D — DX12 / DXIL render-validation (Phase 35 Area C)
 *From Phase 35.* The DXIL path is **already built**; what is missing is render-validation in
 a real MonoGame **DX12** runtime, which only MonoGame 3.8.5 provides — currently preview only.
 
@@ -256,7 +304,7 @@ reproduce-first."* DX11 DXBC (vkd3d) stays the default.
 
 **Update (2026-07-18): gate cleared — MonoGame 3.8.5 shipped stable 2026-07-15.** Per this
 phase's definition of done ("promoted to its own scoped phase"), B1 was absorbed into
-[Phase 52](PHASE-52-monogame-3.8.5-support.md) **Area D**: source-inspect the 3.8.5 WindowsDX12
+[Phase 52](DONE/PHASE-52-monogame-3.8.5-support.md) **Area D**: source-inspect the 3.8.5 WindowsDX12
 effect load path first (the Phase-32 playbook — the Vulkan container assumptions were wrong on
 inspection), then build the rung-4 DX12 render driver, with an explicit decision gate to split
 into its own phase if the container research turns out Phase-32-sized.
