@@ -361,8 +361,30 @@ discriminator checked position-by-position against the emitted GLSL; explicit/sp
 registers now compiling; and the DX12 shared-sampler record count.
 
 **Rung 4:** [`validation/SamplerPairsGl`](../validation/SamplerPairsGl/) — both arms pass on real
-MonoGame DesktopGL, wired into `validation-render.yml` and `docs/validation-matrix.md` §6. See that
-§6 row for what each arm discriminates and why arm B needs two textures.
+MonoGame DesktopGL at **maxd 0 against the real `mgfxc` `OpenGL` goldens**, wired into
+`validation-render.yml` and `docs/validation-matrix.md` §6. See that §6 row for what each arm
+discriminates and the two measured harness details that are load-bearing.
+
+**A third finding, from generating those goldens: `mgfxc` numbers `ps_s{k}` by SAMPLER REGISTER,
+SPIRV-Cross by FIRST USE.** They coincide whenever use order matches register order — which is the
+entire existing corpus, hence zero golden churn — but `SamplerPairMirror.fx` is built to make them
+disagree, and there `mgfxc`'s golden makes `ps_s0` the Linear pair while ours makes it the Point
+pair. **ShadowDusk must follow SPIRV-Cross**, because the record has to name the uniform *our own*
+GLSL declares; each build is internally consistent, so the renumbering is invisible in the picture,
+and arm B exists to hold exactly that claim (maxd 0). Worth noting what this says about the old
+code: it numbered by register *like `mgfxc`* while its GLSL was SPIRV-Cross-ordered — internally
+inconsistent, which is the bug. Matching `mgfxc`'s numbering is not even possible without matching
+its GLSL generator.
+
+**Two structural-matrix cells are now expected-divergent and render-proven benign** (so a future
+reader triaging `plan/PHASE-41-appendix/structural-divergence-matrix.md` does not re-open them):
+
+| Cell | Divergence | Why it is fine |
+|---|---|---|
+| `SharedSamplerPair [OpenGL]` | object-class param shape: `mgfxc` names the texture params `TextureSampler+DiffuseMap` / `+Lightmap`, we name them `DiffuseMap` / `Lightmap` and add the `TextureSampler` sampler param | The deliberate parameter-naming decision above. Sampler *records* match `mgfxc` exactly; maxd 0. |
+| `SamplerPairMirror [OpenGL]` | sampler slot 0/1 baked-state differs | The register-order vs first-use renumbering above. Each build self-consistent; maxd 0. |
+
+Both DirectX_11 cells for these fixtures are structurally **clean**.
 
 **The parameter-naming question was decided: do NOT adopt `<sampler>+<texture>`.** Recorded with
 its reasoning in [`project_decisions.md`](../project_decisions.md). Short version: MonoGame resolves

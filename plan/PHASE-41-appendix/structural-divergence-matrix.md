@@ -20,9 +20,9 @@
 
 ## Headline
 
-- Golden-backed cells (fixture x target): **92**
-  - Structurally **clean**: **67**
-  - **Divergent** (>=1 level): **15**
+- Golden-backed cells (fixture x target): **96**
+  - Structurally **clean**: **69**
+  - **Divergent** (>=1 level): **17**
   - Compile/parse **failures**: **10**
 - Non-golden census cells: **186** (**140** compile, **46** fail with a code)
 
@@ -88,6 +88,8 @@ Legend: `OK` = match, `XX` = diverge, `--` = compile/parse failed (see notes). L
 | Pixelated | OpenGL | OK | OK | OK | OK | OK |  |
 | PolygonLight | DirectX_11 | OK | OK | OK | OK | OK |  |
 | PolygonLight | OpenGL | OK | XX | OK | OK | OK | cbuffer `ps_uniforms_vec4` size 112 vs 48; cbuffer `vs_uniforms_vec4` size 112 vs 64; param `viewProjectionMatrix` cbuffer offset 48 vs 0 |
+| SamplerPairMirror | DirectX_11 | OK | OK | OK | OK | OK |  |
+| SamplerPairMirror | OpenGL | OK | OK | XX | OK | OK | sampler slot 0 baked-state differs; sampler slot 1 baked-state differs |
 | SamplerStatesFull | DirectX_11 | OK | OK | OK | OK | OK |  |
 | SamplerStatesFull | OpenGL | OK | OK | OK | OK | OK |  |
 | Saturate | DirectX_11 | OK | OK | OK | OK | OK |  |
@@ -98,6 +100,8 @@ Legend: `OK` = match, `XX` = diverge, `--` = compile/parse failed (see notes). L
 | Sepia | OpenGL | OK | OK | OK | OK | OK |  |
 | SharedCbuffer | DirectX_11 | OK | OK | OK | OK | OK |  |
 | SharedCbuffer | OpenGL | OK | XX | OK | OK | OK | cbuffer `ps_uniforms_vec4` size 80 vs 16; cbuffer `vs_uniforms_vec4` size 80 vs 64; param `DiffuseColor` cbuffer offset 64 vs 0 |
+| SharedSamplerPair | DirectX_11 | OK | OK | OK | OK | OK |  |
+| SharedSamplerPair | OpenGL | XX | OK | OK | OK | OK | param `TextureSampler+DiffuseMap` missing (golden class=3 type=7); param `TextureSampler+Lightmap` missing (golden class=3 type=7); extra value-class param `DiffuseMap` (class=3 type=7); extra value-class param `Lightmap` (class=3 type=7) |
 | SimpleLightShader | DirectX_11 | OK | OK | OK | OK | OK |  |
 | SimpleLightShader | OpenGL | OK | OK | OK | OK | OK |  |
 | SkinnedEffect | DirectX_11 | OK | OK | OK | XX | OK | `SkinnedEffect_VertexLighting_OneBone` pass[0] name `P0` vs ``; `SkinnedEffect_VertexLighting_OneBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_VertexLighting_TwoBone` pass[0] name `P0` vs ``; `SkinnedEffect_VertexLighting_TwoBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_VertexLighting_FourBone` pass[0] name `P0` vs ``; `SkinnedEffect_VertexLighting_FourBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_OneLight_OneBone` pass[0] name `P0` vs ``; `SkinnedEffect_OneLight_OneBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_OneLight_TwoBone` pass[0] name `P0` vs ``; `SkinnedEffect_OneLight_TwoBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_OneLight_FourBone` pass[0] name `P0` vs ``; `SkinnedEffect_OneLight_FourBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_PixelLighting_OneBone` pass[0] name `P0` vs ``; `SkinnedEffect_PixelLighting_OneBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_PixelLighting_TwoBone` pass[0] name `P0` vs ``; `SkinnedEffect_PixelLighting_TwoBone_NoFog` pass[0] name `P0` vs ``; `SkinnedEffect_PixelLighting_FourBone` pass[0] name `P0` vs ``; `SkinnedEffect_PixelLighting_FourBone_NoFog` pass[0] name `P0` vs `` |
@@ -187,6 +191,24 @@ Affected cells: PolygonLight [OpenGL], SharedCbuffer [OpenGL], VertexAndPixel [O
 A constant buffer size or a per-parameter byte offset differs OUTSIDE the known GL per-stage sizing model. Worth triage: cbuffer offsets are the runtime SetValue layout.
 
 Affected cells: PenumbraHull [DirectX_11]
+
+### Sampler slot / baked-state delta (1 cell(s))
+
+A sampler slot is missing/extra or its baked sampler_state differs.
+
+Affected cells: SamplerPairMirror [OpenGL]
+
+### Object-class (texture/sampler) parameter shape (1 cell(s))
+
+A texture/sampler (object-class) parameter diverges beyond the two pinned, render-proven shapes (extra sampler params; legacy `sampler s0;` -> synthesized `_SDTexture`).
+
+Affected cells: SharedSamplerPair [OpenGL]
+
+### Value-class parameter metadata delta (1 cell(s))
+
+A Scalar/Vector/Matrix parameter's reflection metadata (class/type/rows/cols/elements/members) or an unexpected extra value-class parameter diverges. This is the SetValue fidelity surface and should be triaged.
+
+Affected cells: SharedSamplerPair [OpenGL]
 
 > Note on bytecode: every cell's shader bytecode differs from the golden (vkd3d vs fxc on DX,
 > SPIRV-Cross GLSL vs MojoShader on GL). This is EXPECTED and is not counted as a divergence anywhere above.

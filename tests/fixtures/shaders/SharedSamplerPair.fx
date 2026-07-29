@@ -19,6 +19,16 @@
 // swap, so it could not prove the binding at all.
 //-----------------------------------------------------------------------------
 
+// Dual-profile the way the rest of the corpus does it, so the same fixture yields real
+// mgfxc goldens for OpenGL AND the DirectX family. That matters here beyond tidiness:
+// DirectX 12 had this exact shape silently wrong too (one record, Lightmap never bound),
+// so the DX goldens are the reference-compiler check on that fix.
+#if OPENGL
+	#define PS_SHADERMODEL ps_3_0
+#else
+	#define PS_SHADERMODEL ps_4_0_level_9_1
+#endif
+
 Texture2D DiffuseMap;
 Texture2D Lightmap;
 SamplerState TextureSampler;
@@ -34,6 +44,6 @@ technique SharedSampler
 {
 	pass P0
 	{
-		PixelShader = compile ps_3_0 PS();
+		PixelShader = compile PS_SHADERMODEL PS();
 	}
 }

@@ -104,18 +104,27 @@ catch (Exception ex)
 }
 Console.WriteLine($"[pairs] compiled OK: shared {sharedMgfx.Length} B, mirror {mirrorMgfx.Length} B");
 
-// The mgfxc golden for arm A, when one has been generated (tools/compile-fixtures.ps1).
-string sharedGoldenPath = Path.Combine(goldenDir, "SharedSamplerPair.mgfx");
-byte[]? sharedGolden = File.Exists(sharedGoldenPath)
-    ? await File.ReadAllBytesAsync(sharedGoldenPath)
-    : null;
-Console.WriteLine(sharedGolden is null
-    ? $"[pairs] no mgfxc golden at {sharedGoldenPath} — arm A runs in-runtime-only (see header)"
-    : $"[pairs] mgfxc golden: {sharedGolden.Length} B — arm A also pixel-diffs vs mgfxc");
+// The mgfxc goldens, when generated (tools/compile-fixtures.ps1). Each arm reports whether
+// it ran with or without one, so a missing golden can never pass as a completed diff.
+async System.Threading.Tasks.Task<byte[]?> GoldenAsync(string name)
+{
+    string path = Path.Combine(goldenDir, name + ".mgfx");
+    if (!File.Exists(path))
+    {
+        Console.WriteLine($"[pairs] no mgfxc golden at {path} — that arm runs in-runtime-only");
+        return null;
+    }
+    byte[] bytes = await File.ReadAllBytesAsync(path);
+    Console.WriteLine($"[pairs] mgfxc golden {name}: {bytes.Length} B — that arm also pixel-diffs vs mgfxc");
+    return bytes;
+}
+
+byte[]? sharedGolden = await GoldenAsync("SharedSamplerPair");
+byte[]? mirrorGolden = await GoldenAsync("SamplerPairMirror");
 
 Directory.CreateDirectory(outDir);
 
-using var game = new SamplerPairsGame(sharedMgfx, mirrorMgfx, sharedGolden, outDir, tolerance);
+using var game = new SamplerPairsGame(sharedMgfx, mirrorMgfx, sharedGolden, mirrorGolden, outDir, tolerance);
 game.Run();
 
 if (game.Skipped)
@@ -154,7 +163,7 @@ sealed class SamplerPairsGame : Game
 
     private readonly GraphicsDeviceManager _gdm;
     private readonly byte[] _sharedMgfx, _mirrorMgfx;
-    private readonly byte[]? _sharedGolden;
+    private readonly byte[]? _sharedGolden, _mirrorGolden;
     private readonly string _outDir;
     private readonly int _tolerance;
     private bool _done;
@@ -165,11 +174,13 @@ sealed class SamplerPairsGame : Game
     public List<string> Report { get; } = new();
 
     public SamplerPairsGame(
-        byte[] sharedMgfx, byte[] mirrorMgfx, byte[]? sharedGolden, string outDir, int tolerance)
+        byte[] sharedMgfx, byte[] mirrorMgfx,
+        byte[]? sharedGolden, byte[]? mirrorGolden, string outDir, int tolerance)
     {
         _sharedMgfx = sharedMgfx;
         _mirrorMgfx = mirrorMgfx;
         _sharedGolden = sharedGolden;
+        _mirrorGolden = mirrorGolden;
         _outDir = outDir;
         _tolerance = tolerance;
         _gdm = new GraphicsDeviceManager(this)
@@ -306,12 +317,21 @@ sealed class SamplerPairsGame : Game
         // distinct texture OBJECTS: MonoGame 3.8.2's GL backend has no sampler objects and
         // applies filtering with glTexParameteri on the bound texture, so one texture bound
         // to two units gets whichever filter was applied last (see the fixture header).
+        // THREE distinct texture objects with identical content, not two. SpriteBatch forces
+        // the sprite onto unit 0 after EffectPass.Apply(), so if the sprite were the same
+        // OBJECT as one of the parameter textures, that object could end up on two units at
+        // once — and then the glTexParameteri-on-the-texture behaviour above collapses the two
+        // filters into whichever was applied last. That is not hypothetical: it is exactly what
+        // made the mgfxc arm render (255,255,0) before this was separated out, because mgfxc
+        // numbers ps_s{k} by sampler register and therefore puts PointTexture on unit 1 while
+        // the sprite override put the same object on unit 0. A dedicated sprite ramp keeps every
+        // unit backed by a distinct object on BOTH arms, so the comparison measures the shaders
+        // rather than the harness.
+        using Texture2D spriteTex = Ramp(gd);
         using Texture2D pointTex = Ramp(gd);
         using Texture2D linearTex = Ramp(gd);
 
-        // PointTexture is the ps_s0 pair, and SpriteBatch re-binds unit 0 to the sprite after
-        // EffectPass.Apply() — so pass it AS the sprite rather than fighting that.
-        Color[] img = RenderSprite(gd, effect, pointTex, e =>
+        Color[] img = RenderSprite(gd, effect, spriteTex, e =>
         {
             e.Parameters["PointTexture"]?.SetValue(pointTex);
             e.Parameters["LinearTexture"]?.SetValue(linearTex);
@@ -331,8 +351,53 @@ sealed class SamplerPairsGame : Game
                    "pairs are sampled in reverse declaration order, so only a per-pair baked state " +
                    "applied in the right order can make the channels disagree.");
 
+        bool all = snapped && blended && differ;
+
+        // Same-scene pixel diff vs the real mgfxc build. This arm is where our ps_s{k}
+        // NUMBERING deliberately differs from mgfxc's: mgfxc numbers by sampler REGISTER
+        // (its golden makes ps_s0 the first-declared LinearSampler's pair), while
+        // SPIRV-Cross numbers combined samplers by FIRST USE (ours makes ps_s0 the
+        // first-sampled PointSampler's pair). Each build is internally consistent -- its
+        // records name the uniforms its own GLSL declares -- so the renumbering must be
+        // invisible in the picture. THAT is what this diff proves, and it is only
+        // apples-to-apples because the two textures hold identical pixels, so which unit
+        // each lands on cannot affect the result.
+        if (_mirrorGolden is not null)
+        {
+            Effect golden;
+            try { golden = new Effect(gd, _mirrorGolden); }
+            catch (Exception ex)
+            {
+                Report.Add($"[B mirror] GOLDEN new Effect() threw (control failure): {ex.Message}");
+                effect.Dispose();
+                return false;
+            }
+
+            Color[] goldImg = RenderSprite(gd, golden, spriteTex, e =>
+            {
+                e.Parameters["PointTexture"]?.SetValue(pointTex);
+                e.Parameters["LinearTexture"]?.SetValue(linearTex);
+            });
+            SavePng(gd, goldImg, "mirror_golden.png");
+
+            (int maxDelta, int diffCount) = Compare(img, goldImg);
+            bool match = diffCount == 0;
+            Report.Add($"[B mirror] golden centre = {Fmt(goldImg[Px(Size / 2, Size / 2)])} " +
+                       $"(candidate {Fmt(centre)}), golden params = [" +
+                       string.Join(", ", golden.Parameters.Select(p => p.Name)) + "]");
+            Report.Add($"[B mirror] vs mgfxc golden: maxd {maxDelta}, {diffCount} px over tolerance " +
+                       $"{_tolerance} -> {OkWrong(match)} (proves our first-use ps_s{{k}} numbering is " +
+                       "behaviorally equivalent to mgfxc's register-order numbering)");
+            all &= match;
+            golden.Dispose();
+        }
+        else
+        {
+            Report.Add("[B mirror] vs mgfxc golden: SKIPPED (no golden committed) — in-runtime arm only");
+        }
+
         effect.Dispose();
-        return snapped && blended && differ;
+        return all;
     }
 
     // ---- shared ---------------------------------------------------------------
