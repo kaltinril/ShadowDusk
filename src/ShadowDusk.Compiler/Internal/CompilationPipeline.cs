@@ -346,6 +346,13 @@ internal sealed class CompilationPipeline
         var shaderSamplers      = new Dictionary<int, IReadOnlyList<SamplerReflection>>();
         var shaderCbufferNames  = new Dictionary<int, IReadOnlyList<string>>();
 
+        // Per-shader (by blob index) SPIR-V, kept for the OpenGL sampler table: the GL records
+        // must mirror the COMBINED samplers SPIRV-Cross declares (one per texture+sampler pair),
+        // and the pair list plus its order is derivable only from the SPIR-V — see
+        // SpirvCombinedSamplerPairs. Captured on every target that produces SPIR-V; only the GL
+        // branch reads it.
+        var shaderSpirv         = new Dictionary<int, ReadOnlyMemory<byte>>();
+
         // Per-shader (by blob index) GL uniform register layout returned by the
         // MonoGameGlslRewriter — the allocation the emitted GLSL actually indexes.
         // The GL .mgfx cbuffer records are built from THIS (one record per shader,
@@ -611,6 +618,7 @@ internal sealed class CompilationPipeline
                     shaderTextures[blobIndex]     = reflected.Textures;
                     shaderSamplers[blobIndex]     = reflected.Samplers;
                     shaderCbufferNames[blobIndex] = reflected.ConstantBuffers.Select(c => c.Name).ToList();
+                    shaderSpirv[blobIndex]        = spirvBlob;
                 }
 
                 // Last assignment wins on a duplicated state key — fxc's semantics — instead
@@ -784,9 +792,9 @@ internal sealed class CompilationPipeline
                     }
                 }
 
-                // The two targets disagree about what a sampler record IS, so the table is
-                // built two different ways — deliberately, and each way matches its own
-                // runtime's binding model:
+                // The targets disagree about what a sampler record IS, so the table is built
+                // three different ways — deliberately, and each way matches its own runtime's
+                // binding model:
                 //
                 //  * DirectX / DirectX12 — one record per reflected TEXTURE, keyed on the
                 //    texture's bind point. That is what mgfxc does (ShaderData.DX11 walks
@@ -795,21 +803,26 @@ internal sealed class CompilationPipeline
                 //    (the classic diffuse+lightmap shape), so MonoGame's ApplySamplers never
                 //    binds textures 1..N-1 and `Parameters["Lightmap"].SetValue(tex)`
                 //    silently does nothing. See tests/fixtures/golden/DirectX_11/
-                //    PenumbraTexture.mgfx, which carries TWO records.
+                //    PenumbraTexture.mgfx, which carries TWO records. DirectX12 was left out
+                //    of this branch until Phase 51 A7 and silently had exactly that bug.
                 //
-                //  * OpenGL — one record per reflected SAMPLER, because GL binds by NAME
-                //    and the record must name a uniform the emitted GLSL actually declares.
-                //    SPIRV-Cross emits one COMBINED sampler per (texture, sampler) PAIR and
-                //    the rewriter numbers those ps_s{k} in declaration order, so a
-                //    texture-driven table would drop records for the mirror shape (ONE
-                //    texture read through TWO SamplerStates — the linear+point idiom):
-                //    the GLSL declares ps_s0 AND ps_s1 while the table names only ps_s0,
-                //    leaving ps_s1 at its default texture unit 0 with unit 0's state.
+                //  * OpenGL — one record per (texture, sampler) PAIR, in the order SPIRV-Cross
+                //    declares the combined samplers it folds each pair into, because the GL
+                //    runtime binds a texture unit to a sampler by GLSL uniform NAME
+                //    (glGetUniformLocation("ps_s{k}")) and MonoGameGlslRewriter names those
+                //    positionally in emitted-declaration order. NEITHER reflected list is that
+                //    pair list: N textures through one shared SamplerState is N uniforms but one
+                //    reflected sampler, and the mirror shape (one texture, N SamplerStates — the
+                //    linear+point idiom) is N uniforms but one reflected texture. The pairs come
+                //    from SpirvCombinedSamplerPairs, which derives them from the SPIR-V so the
+                //    desktop and WASM hosts agree byte-for-byte.
                 //
-                // Neither list is the pairs themselves, so neither is right in general. The
-                // GL guard below closes the remaining gap loudly rather than shipping a
-                // silently-wrong table.
-                if (directX)
+                //  * Vulkan — one record per reflected SAMPLER. Vulkan binds through the
+                //    descriptor layout in VulkanShaderCodeWrapper (raw SPIR-V bindings), not by
+                //    GLSL name, and VulkanTextureSamplerBindingRewriter has already forced each
+                //    pair onto matching registers, so the reflected list IS the binding list.
+                bool textureKeyed = directX || options.Target == PlatformTarget.DirectX12;
+                if (textureKeyed)
                 {
                     foreach (TextureReflection tex in textureRefs)
                     {
@@ -830,44 +843,118 @@ internal sealed class CompilationPipeline
                             Type:        SamplerTypeByte(tex.Dimension),
                             TextureSlot: (byte)slot,
                             SamplerSlot: (byte)slot,
-                            // DX binds samplers via the DXBC resource table, not by GLSL
-                            // uniform name, so the sampler name is empty for DirectX.
-                            Name:        string.Empty,
+                            // DX11 binds samplers via the DXBC resource table, not by name, so
+                            // the name is empty — matching the mgfxc DirectX_11 goldens. DX12
+                            // keeps the positional form it has been rung-4 proven with (Phase
+                            // 54); real mgfxc writes the HLSL sampler name there instead, a
+                            // separate divergence tracked in Phase 51, not changed here because
+                            // it needs its own DX12 render re-proof.
+                            Name:        directX ? string.Empty : $"ps_s{slot}",
                             Parameter:   IndexOfParam(allParameters, tex.Name),
                             State:       matchedSamp is null
                                              ? null
                                              : samplerStateByName.GetValueOrDefault(matchedSamp.Name)));
                     }
                 }
-                else
+                else if (options.Target == PlatformTarget.OpenGL)
                 {
-                    // GL binds samplers BY NAME, and the rewriter numbers ps_s{k}
-                    // positionally. The two namings agree only when the reflected sampler
-                    // registers are contiguous from s0. Sparse/offset explicit registers
-                    // (`register(s3)` with no s0-s2) would make this record name a uniform
-                    // the GLSL never declares — MonoGame's glGetUniformLocation misses (-1)
-                    // and the shader silently samples a stale texture unit (bug-hunt
-                    // 2026-07-27 M1). Fail loudly until both namings derive from one source.
-                    if (options.Target == PlatformTarget.OpenGL)
+                    // One record per (texture, sampler) PAIR, in SPIRV-Cross's own
+                    // combined-sampler declaration order — the only list that can be correct,
+                    // because it is literally the list of uniforms the emitted GLSL declares
+                    // and the GL runtime looks up by name. Derived from the SPIR-V so the
+                    // desktop and WASM hosts produce identical bytes (Phase 51 A7).
+                    if (!shaderSpirv.TryGetValue(i, out ReadOnlyMemory<byte> glSpirv) || glSpirv.IsEmpty)
                     {
-                        var orderedSlots = samplerRefs.Select(s => s.BindSlot).OrderBy(s => s).ToList();
-                        if (!orderedSlots.SequenceEqual(Enumerable.Range(0, orderedSlots.Count)))
+                        return Fail(new ShaderError(
+                            File: options.SourceFileName ?? "<source>",
+                            Line: 0,
+                            Column: 0,
+                            Code: "SD0217",
+                            Message: "OpenGL target: the SPIR-V for this shader stage is " +
+                                     "unavailable, so the combined-sampler declaration order " +
+                                     "the GL sampler table must mirror cannot be determined."),
+                            runWarnings);
+                    }
+
+                    Result<IReadOnlyList<CombinedSamplerPair>, ShaderError> pairResult =
+                        SpirvCombinedSamplerPairs.Extract(glSpirv);
+                    if (pairResult.IsFailure)
+                        return Fail(pairResult.Error with { File = options.SourceFileName ?? "<source>" }, runWarnings);
+
+                    IReadOnlyList<CombinedSamplerPair> pairs = pairResult.Value;
+
+                    for (int k = 0; k < pairs.Count; k++)
+                    {
+                        CombinedSamplerPair pair = pairs[k];
+
+                        // Dimension comes from the REFLECTED texture (not from the SPIR-V walk)
+                        // so it has a single source: both the native DXIL oracle and the
+                        // pure-managed SpirvReflector report it identically, which is what keeps
+                        // the sampler-type byte byte-transparent across hosts.
+                        TextureReflection? tex =
+                            textureRefs.FirstOrDefault(t => string.Equals(t.Name, pair.TextureName, StringComparison.Ordinal));
+                        if (tex is null)
                         {
                             return Fail(new ShaderError(
                                 File: options.SourceFileName ?? "<source>",
                                 Line: 0,
                                 Column: 0,
-                                Code: "SD0215",
-                                Message: "OpenGL target: sampler registers are not contiguous from s0 (" +
-                                         string.Join(", ", samplerRefs.Select(s => $"'{s.Name}' at s{s.BindSlot}")) +
-                                         "). The GL runtime binds samplers by positional name " +
-                                         "(ps_s0, ps_s1, ...), so a sparse register layout would " +
-                                         "silently bind the wrong texture units. Use contiguous " +
-                                         "sampler registers starting at s0, or omit the explicit " +
-                                         "register assignments."), runWarnings);
+                                Code: "SD0217",
+                                Message: $"OpenGL target: texture '{pair.TextureName}' is sampled " +
+                                         $"through '{pair.SamplerName}' but is not in this stage's " +
+                                         "reflected texture list, so its combined sampler cannot be " +
+                                         "bound to an effect parameter."), runWarnings);
                         }
+
+                        // No Math.Max(0, …) clamp — see the DirectX branch (bug-hunt N11); a -1
+                        // miss reaches the writer's SD0022 guard and fails loudly.
+                        samplers.Add(new MgfxSamplerInfo(
+                            Type:        SamplerTypeByte(tex.Dimension),
+                            // The record index IS the GL texture unit: MonoGame's GL runtime does
+                            // glUniform1i(location("ps_s{k}"), TextureSlot) and then binds
+                            // Parameters[Parameter]'s texture to that unit. Each pair needs its
+                            // own unit even when several pairs share one texture or one sampler.
+                            TextureSlot: (byte)k,
+                            SamplerSlot: (byte)k,
+                            Name:        $"ps_s{k}",
+                            Parameter:   IndexOfParam(allParameters, pair.TextureName),
+                            // Keyed on the .fx sampler identifier, which survives the SM4
+                            // rewrite verbatim, so the baked sampler_state follows the SAMPLER
+                            // half of the pair — two pairs sharing one texture but different
+                            // SamplerStates (the linear+point idiom) get their own state each.
+                            State:       samplerStateByName.GetValueOrDefault(pair.SamplerName)));
                     }
 
+                    // Cross-check the model against the artifact it is predicting: the emitted
+                    // GLSL is the authority on how many sampler uniforms exist, and every one
+                    // must have a record naming it or it silently keeps texture unit 0. This can
+                    // only fire if the declaration-order model in SpirvCombinedSamplerPairs has
+                    // drifted from the pinned SPIRV-Cross, which is exactly the regression worth
+                    // catching loudly rather than shipping a mis-bound table.
+                    string emittedGlsl = Encoding.UTF8.GetString(compiledShaderBlobs[i].Bytes);
+                    int declaredSamplers = GlslSamplerDeclaration.Matches(emittedGlsl).Count;
+                    if (declaredSamplers != samplers.Count)
+                    {
+                        return Fail(new ShaderError(
+                            File: options.SourceFileName ?? "<source>",
+                            Line: 0,
+                            Column: 0,
+                            Code: "SD0217",
+                            Message: $"OpenGL target: the emitted GLSL declares {declaredSamplers} " +
+                                     $"sampler uniform(s) but {samplers.Count} combined " +
+                                     "(texture, sampler) pair(s) were derived from the SPIR-V. The " +
+                                     "two must agree exactly, so this is an internal " +
+                                     "declaration-order mismatch, not a problem with the shader."),
+                            runWarnings);
+                    }
+                }
+                else
+                {
+                    // Vulkan: one record per reflected SAMPLER. Binding goes through the
+                    // descriptor layout VulkanShaderCodeWrapper writes (raw SPIR-V bindings),
+                    // never by GLSL name, and VulkanTextureSamplerBindingRewriter has already
+                    // co-located each texture+sampler pair on matching registers — so the
+                    // reflected sampler list IS the binding list here.
                     foreach (SamplerReflection samp in samplerRefs)
                     {
                         int slot = samp.BindSlot;
@@ -892,39 +979,6 @@ internal sealed class CompilationPipeline
                             // The reflected sampler name is the .fx sampler identifier —
                             // the key the parsed sampler_state members were resolved under.
                             State:       samplerStateByName.GetValueOrDefault(samp.Name)));
-                    }
-
-                    // The record list and the emitted GLSL must name the SAME set of
-                    // uniforms. They can diverge because SPIRV-Cross declares one combined
-                    // sampler per (texture, sampler) PAIR while this table is built from the
-                    // reflected samplers: N textures read through ONE shared `SamplerState`
-                    // yield N declared uniforms but a single record, so every ps_s{k} above
-                    // ps_s0 keeps its default texture unit 0 and silently samples the wrong
-                    // texture. There is no pair list to build from here, so rather than ship
-                    // a table that cannot bind, say so. Counted off the emitted GLSL itself,
-                    // which is the authority on what the shader declares.
-                    if (options.Target == PlatformTarget.OpenGL)
-                    {
-                        string emittedGlsl = Encoding.UTF8.GetString(compiledShaderBlobs[i].Bytes);
-                        int declaredSamplers = GlslSamplerDeclaration.Matches(emittedGlsl).Count;
-                        if (declaredSamplers != samplers.Count)
-                        {
-                            return Fail(new ShaderError(
-                                File: options.SourceFileName ?? "<source>",
-                                Line: 0,
-                                Column: 0,
-                                Code: "SD0216",
-                                Message: $"OpenGL target: the emitted GLSL declares {declaredSamplers} " +
-                                         $"sampler uniform(s) but the effect's sampler table has " +
-                                         $"{samplers.Count} record(s), so " +
-                                         $"{Math.Abs(declaredSamplers - samplers.Count)} uniform(s) would " +
-                                         "never be assigned a texture unit and would silently sample " +
-                                         "texture unit 0. This happens when several textures are read " +
-                                         "through ONE shared SamplerState: SPIRV-Cross emits a combined " +
-                                         "sampler per (texture, sampler) pair, but the GL sampler table " +
-                                         "is keyed on samplers. Give each texture its own SamplerState " +
-                                         "until per-pair GL sampler records ship."), runWarnings);
-                        }
                     }
                 }
             }

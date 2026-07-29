@@ -245,6 +245,68 @@ which is why this needs its own scoped effort rather than a same-PR add-on.
    Removes the ordering guesswork entirely, at the cost of an emscripten rebuild and a new pinned
    artifact.
 
+#### Ground truth established 2026-07-29 (direction 1 confirmed viable; scope grew)
+
+Read from the pinned SPIRV-Cross source (`.wasm-build/spirv-cross-src`, tag
+`vulkan-sdk-1.4.335.0`, the same tree the WASM module is built from) and then confirmed against
+real transpiler output. **The ordering rule is not a guess:**
+
+- **`Compiler::build_combined_image_samplers`** (`spirv_cross.cpp:3261`) runs
+  `traverse_all_reachable_opcodes` from the single entry-point function: **blocks in binary
+  order, ops in binary order, recursing into each `OpFunctionCall` target** and pushing a
+  parameter→argument remapping for the callee's scope.
+- The only trigger is **`OpSampledImage`** (`spirv_cross.cpp:3124`). Its image/sampler operands
+  are resolved to global variables through `remap_parameter` → `maybe_get_backing_variable`
+  (i.e. back through `OpLoad`/`OpAccessChain`), then the `(image, sampler)` pair is appended to
+  `combined_image_samplers` **if not already present**. So the order is **first-use order,
+  deduplicated** — nothing to do with declaration order, bind slots, or binding numbers.
+- The synthesized variable ids come from `ir.increase_bound_by(2)`, so they are monotonic in
+  first-use order and sort **after** every original module id; `CompilerGLSL::emit_resources`
+  walks variables in id order and **skips every separate image/sampler** when
+  `vulkan_semantics` is off (`spirv_glsl.cpp:3893`). Hence **emitted declaration order ==
+  first-use pair order**, exactly.
+- **Naming is a red herring.** SPIRV-Cross's `SPIRV_Cross_Combined<Image><Sampler>` name is
+  applied by its **CLI** (`main.cpp`), not by `build_combined_image_samplers`, so through the C
+  API the combined uniforms come out as bare `_<id>` (`uniform sampler2D _40;`) and carry **no
+  pair identity at all**. The emitted GLSL therefore cannot be used to recover which pair each
+  declaration is — the extraction must be done from the SPIR-V.
+
+Empirically confirmed with a three-texture/two-sampler probe whose textures have **different
+dimensions**, so the emitted decl kinds (`samplerCube` / `sampler2D` / `sampler3D`) identify each
+pair unambiguously: the cube texture, declared *second* in HLSL but sampled *first*, is emitted
+first. First-use order, confirmed.
+
+**Two findings that grow the scope beyond the shared-sampler shape:**
+
+1. **A worse, silent sibling bug that `SD0216` cannot see.** Two textures + two samplers sampled
+   in **reverse declaration order** produces matching counts (2 GLSL uniforms, 2 records), so the
+   `SD0216` count check passes — but the slot-keyed table assigns `ps_s0` the `t0`/`s0` texture
+   while the GLSL's `ps_s0` is the *first-sampled* pair. Both the **texture parameter** and the
+   **sampler-type byte** come out swapped, with **no diagnostic**. Probed with a
+   `Texture2D` + `TextureCube` pair: the GLSL declares `ps_s0` as `samplerCube` while the record
+   claims `ps_s0` is `Type=0` (2D) pointing at the 2D texture. A 2D texture would be bound to a
+   cube sampler unit. The same mis-numbering hits any shader mixing legacy `sampler2D` and modern
+   `Texture2D`+`SamplerState` declarations. **This is the real reason the table must be keyed on
+   the pair list rather than on either reflected list.**
+2. **`DirectX12` is NOT already correct** — the claim above (and in `docs/validation-matrix.md`)
+   is wrong. `bool directX` at `CompilationPipeline.cs:316` is `Target == PlatformTarget.DirectX`
+   only, so **DX12 falls through to the sampler-keyed branch**, and the shared-sampler shape
+   emits **one** record on DX12: `Lightmap` never binds, silently, with no diagnostic (DX11 emits
+   two and is correct). Vulkan is fine (loud `SD0028` for the shared shape, correct records
+   otherwise).
+
+**No legacy/pre-combined case exists on the GL path.** The pre-parser's `RewriteToSm4` mode
+(every target except FNA) rewrites `sampler2D`/`tex2D` into `SamplerState` +
+`<texture>.Sample(...)` before DXC ever sees the source, and SM6 HLSL has no combined sampler
+type, so **every** GLSL sampler uniform on the GL path is a synthesized pair. A module-level
+`OpTypeSampledImage` variable is therefore an input shape we do not model and must fail loudly on
+rather than mis-number.
+
+**`SD0215` also becomes unnecessary.** It rejects sampler registers that are not contiguous from
+`s0`, purely because the old table named `ps_s{samp.BindSlot}`. Once the record index is the
+pair's declaration position, bind slots are never consulted for GL naming and a
+`register(s3)`-only shader numbers correctly.
+
 **Done = ** a `.fx` reading N textures through one shared `SamplerState` compiles for OpenGL,
 emits N records naming every `ps_s{k}` the GLSL declares with the right texture parameter and
 baked state per pair, is render-proven against the `mgfxc` OpenGL golden, produces identical
