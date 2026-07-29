@@ -441,6 +441,36 @@ bumped-and-re-proven or explicitly deferred with a reason.
 
 ---
 
+### A9 — Stop the `Integration Tests (ubuntu-latest)` test-host crash costing reruns (filed 2026-07-29)
+
+*Not a phase tail — filed here for the same reason A8 was: this is the de-facto backlog and the
+item otherwise has no home.*
+
+The ubuntu integration lane intermittently aborts with *"Test host process crashed"* and passes on
+rerun every time. **Three occurrences** (PR #170 once, PR #173 twice), and the third was on a commit
+that changed **only a markdown file** — so it is conclusively environmental, and the standing
+instruction is to rerun rather than re-diagnose. The full observation is in
+[`project_facts.md`](../project_facts.md); it is registered here so the *mitigation* is a scheduled
+decision instead of a note that gets re-derived every time.
+
+**Why it was not just fixed inline.** Both candidates change CI behavior repo-wide on an unproven
+hypothesis, which does not belong bundled into an unrelated feature PR:
+
+1. **Bound VSTest parallelism** in `ShadowDusk.runsettings` (it caps only `TestSessionTimeout`
+   today, not host count). Non-brittle and cannot silently skip anything, but costs CI wall-clock
+   and is aimed at a hypothesis rather than a measured root cause.
+2. **Scope the integration filter to the assemblies that actually carry `Category=Integration`**
+   (8 of 14 currently spawn a host only to match nothing, and the crash always lands on one of
+   those). Removes the waste *and* the crash surface, but it is exactly the shape this project
+   warns about — a new assembly gaining integration tests would be silently skipped — so it needs a
+   guard test asserting the filter's assembly list still covers every assembly that has such tests.
+
+**Done = ** the ubuntu lane stops needing reruns, with whichever option is chosen justified against
+the other, and option 2 (if chosen) carrying the guard that stops it becoming a check that cannot
+fail.
+
+---
+
 ## B. Externally blocked (gated on an outside event)
 
 ### B1 — ➡️ Promoted (2026-07-18) to [Phase 52](DONE/PHASE-52-monogame-3.8.5-support.md) Area D — DX12 / DXIL render-validation (Phase 35 Area C)
