@@ -4,15 +4,15 @@
     "net9.0-android35.0": {
       "Microsoft.NET.ILLink.Tasks": {
         "type": "Direct",
-        "requested": "[9.0.17, )",
-        "resolved": "9.0.17",
-        "contentHash": "P5qY/hIYMlo0+QRM0W3Gd/SRf20TX+z5W5NwpdzkOk0FtgcbSTNwNcYBRNDgfThFcLpcDFslz65RcGqWOq00/w=="
+        "requested": "[9.0.18, )",
+        "resolved": "9.0.18",
+        "contentHash": "ztGVXB28bi8SeplFmAx+4MkqP1ieA4UNzj/M3qyyz5tLa37Ln8x8LuaXdxzzoOdaucjQBKXSdCMFSbpQaNGIEg=="
       },
       "MonoGame.Framework.Android": {
         "type": "Direct",
-        "requested": "[3.8.4.1, )",
-        "resolved": "3.8.4.1",
-        "contentHash": "p2q8o9PTch4ptWv81o8hJFo6cd7/voll7FsILCi2z1PUe6Go7UgRmQrb2WJ1KtKaIYxqRdiCGoCNXQ7mFx+MIg==",
+        "requested": "[3.8.5, )",
+        "resolved": "3.8.5",
+        "contentHash": "0+KlA99j/xe+YuHVMuPDSClgN8XgC8XXPLWe1xpzUQ5/31VJ+D+4jSshUBaszGoWjSQgxYefZPQ/d5isOSsoMg==",
         "dependencies": {
           "MonoGame.Library.OpenAL": "1.24.3.2"
         }
@@ -98,9 +98,9 @@
       "shadowdusk.compiler": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[0.10.0, )",
-          "ShadowDusk.GLSL": "[0.10.0, )",
-          "ShadowDusk.HLSL": "[0.10.0, )"
+          "ShadowDusk.Core": "[0.15.1, )",
+          "ShadowDusk.GLSL": "[0.15.1, )",
+          "ShadowDusk.HLSL": "[0.15.1, )"
         }
       },
       "shadowdusk.core": {
@@ -109,14 +109,14 @@
       "shadowdusk.glsl": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[0.10.0, )",
+          "ShadowDusk.Core": "[0.15.1, )",
           "Silk.NET.SPIRV.Cross.Native": "[2.23.0, )"
         }
       },
       "shadowdusk.hlsl": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[0.10.0, )",
+          "ShadowDusk.Core": "[0.15.1, )",
           "Vortice.D3DCompiler": "[3.3.4, )",
           "Vortice.Direct3D12": "[3.5.0, )",
           "Vortice.Dxc": "[3.3.4, )"

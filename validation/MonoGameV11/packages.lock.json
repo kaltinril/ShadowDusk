@@ -4,9 +4,9 @@
     "net8.0": {
       "MonoGame.Framework.DesktopGL": {
         "type": "Direct",
-        "requested": "[3.8.5-preview.6, )",
-        "resolved": "3.8.5-preview.6",
-        "contentHash": "O1xKxaH8ual49llt06uJ7zGjZyDTzzTeYLtnRIehndn4HEOlDupx2UqRWl9hAV4oryChnupA9izDtdqUQ37xbQ==",
+        "requested": "[3.8.5, )",
+        "resolved": "3.8.5",
+        "contentHash": "oG5Thkic4i/6kX3OWtq2p6DEATflP71yM0p/1ymIoFaIp1xNFOqAd4jW2D9GIQLIMT6mn5RmJknYPqJnOQbi5w==",
         "dependencies": {
           "MonoGame.Library.OpenAL": "1.24.3.4",
           "MonoGame.Library.SDL": "2.32.10.2",
@@ -116,9 +116,9 @@
       "shadowdusk.compiler": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[0.5.1, )",
-          "ShadowDusk.GLSL": "[0.5.1, )",
-          "ShadowDusk.HLSL": "[0.5.1, )"
+          "ShadowDusk.Core": "[0.15.1, )",
+          "ShadowDusk.GLSL": "[0.15.1, )",
+          "ShadowDusk.HLSL": "[0.15.1, )"
         }
       },
       "shadowdusk.core": {
@@ -127,14 +127,14 @@
       "shadowdusk.glsl": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[0.5.1, )",
+          "ShadowDusk.Core": "[0.15.1, )",
           "Silk.NET.SPIRV.Cross.Native": "[2.23.0, )"
         }
       },
       "shadowdusk.hlsl": {
         "type": "Project",
         "dependencies": {
-          "ShadowDusk.Core": "[0.5.1, )",
+          "ShadowDusk.Core": "[0.15.1, )",
           "Vortice.D3DCompiler": "[3.3.4, )",
           "Vortice.Direct3D12": "[3.5.0, )",
           "Vortice.Dxc": "[3.3.4, )"

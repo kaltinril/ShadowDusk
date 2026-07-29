@@ -12,18 +12,33 @@
 #
 # Usage (from anywhere):
 #   pwsh validation/ForwardCompat/run-forwardcompat.ps1
-#   pwsh validation/ForwardCompat/run-forwardcompat.ps1 -Versions 3.8.2.1105,3.8.4.1 -Tolerance 4
+#   pwsh validation/ForwardCompat/run-forwardcompat.ps1 -Versions 3.8.2.1105,3.8.5 -Tolerance 4
 #   pwsh validation/ForwardCompat/run-forwardcompat.ps1 -SkipBaseline
 #
-# Extending the matrix: add the NuGet version string to -Versions (e.g. a future
-# 3.8.5 stable). The first entry is the forward-compat reference floor and MUST
-# stay 3.8.2.1105 (the product's compat promise).
+# THE MATRIX IS THE FULL PROVEN RANGE, NOT ONE ANCHOR VERSION. The default below is
+# every MonoGame release whose Effect loader accepts MGFX v10, measured 2026-07-28 by
+# running this harness against all stable DesktopGL releases:
+#
+#   3.8.0.1641  REJECTS - "This MGFX effect seems to be for a newer release of
+#               MonoGame" (0/10). Its loader predates MGFX v10. This is the honest
+#               floor-minus-one, not a defect.
+#   3.8.1.263 .. 3.8.5   ALL LOAD + RENDER 10/10.
+#
+# So the first entry is the OLDEST SUPPORTED runtime (3.8.1.263), and it is the
+# forward-compat reference every other cell must match pixel-for-pixel. Do not
+# confuse it with Directory.Packages.props' MonoGame version - that is only the
+# default the other GL harnesses render against, not a product commitment. The
+# product commitment is the OUTPUT FORMAT (MGFX v10), and this matrix is what
+# proves its range.
+#
+# Extending the matrix: append the NuGet version string to -Versions when a new
+# MonoGame ships. Prepending below 3.8.1.263 will fail for the real reason above.
 #
 # Requires: a real GPU/DesktopGL context (rung-4 render, like Phase 17/33/34),
 #           Python with pillow + numpy for the pixel compare.
 
 param(
-    [string[]]$Versions = @("3.8.2.1105", "3.8.4.1"),
+    [string[]]$Versions = @("3.8.1.263", "3.8.1.303", "3.8.2.1105", "3.8.3", "3.8.4", "3.8.4.1", "3.8.5"),
     [int]$Tolerance = 4,
     [switch]$SkipBaseline
 )
@@ -54,8 +69,8 @@ foreach ($v in $Versions) {
     Invoke-MatrixCell $v
 }
 
-# mgfxc goldens on 3.8.2.1105, so each version cell is held to the same bar as the
-# original Phase 17 candidate-vs-mgfxc comparison.
+# The mgfxc goldens are rendered on the centrally-pinned MonoGame, so each version
+# cell is held to the same bar as the original Phase 17 candidate-vs-mgfxc check.
 $compareArgs = @("--versions") + $Versions + @("--tolerance", "$Tolerance")
 if (-not $SkipBaseline) {
     Write-Host "==> rendering Baseline (mgfxc goldens -> MonoGame 3.8.2.1105)" -ForegroundColor Cyan
