@@ -116,14 +116,10 @@ internal static class MultipassChain2Proof
         psi.ArgumentList.Add(mgfxPath);
         psi.ArgumentList.Add("/Profile:OpenGL");
 
-        using Process proc = Process.Start(psi)
-            ?? throw new InvalidOperationException("Failed to start the ShadowDusk CLI process.");
-        string stdout = proc.StandardOutput.ReadToEnd();
-        string stderr = proc.StandardError.ReadToEnd();
-        proc.WaitForExit();
+        (int exitCode, string stdout, string stderr) = ProcessCapture.Run(psi);
 
-        if (proc.ExitCode != 0)
-            return $"exit={proc.ExitCode}\n{stderr}\n{stdout}".Trim();
+        if (exitCode != 0)
+            return $"exit={exitCode}\n{stderr}\n{stdout}".Trim();
         if (!File.Exists(mgfxPath))
             return $"CLI exited 0 but produced no .mgfx at {mgfxPath}".Trim();
         return string.Empty;
