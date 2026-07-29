@@ -20,6 +20,10 @@
 #   * ReservedWordGl         — Phase 45 B10 reserved-word free uniform ('float noise;')
 #                              binds by name + drives the output on the GL offset-bridge
 #                              path (exact expected pixels; no mgfxc needed in CI).
+#   * SamplerPairsGl         — Phase 51 A7 per-(texture, sampler)-PAIR sampler records:
+#                              each pair binds its own texture, and each carries its own
+#                              baked sampler state, in SPIRV-Cross's declaration order
+#                              (asymmetric scenes with exact expected pixels).
 #
 # NOT here (no headless driver story yet — tracked as the Phase 44 C tail):
 #   * DirectX (validation/CandidateDx, VsDrivenDx, DxModernFeatures) + FNA
@@ -115,6 +119,7 @@ jobs:
           dotnet build validation/CbufferModel/CbufferModel.csproj -c Release
           dotnet build validation/TextureBreadthValidation/TextureBreadthValidation.csproj -c Release
           dotnet build validation/ReservedWordGl/ReservedWordGl.csproj -c Release
+          dotnet build validation/SamplerPairsGl/SamplerPairsGl.csproj -c Release
 
       # Each driver self-asserts (exit 0 iff every row loaded + matched its reference
       # within tolerance). Run all of them even if an earlier one fails, then fail the job
@@ -125,13 +130,13 @@ jobs:
           LIBGL_ALWAYS_SOFTWARE: "1"
           # No GL context => hard FAIL, never a pass-by-skip. StateFidelity/CbufferModel/
           # ReservedWordGl throw on a missing device (MonoGame NoSuitableGraphicsDevice ->
-          # natural red); TextureBreadthValidation catches+skips, so this flag turns its
-          # skip into a failure too (it reads SHADOWDUSK_REQUIRE_GL).
+          # natural red); TextureBreadthValidation and SamplerPairsGl catch+skip, so this
+          # flag turns their skip into a failure too (both read SHADOWDUSK_REQUIRE_GL).
           SHADOWDUSK_REQUIRE_GL: "1"
         run: |
           set +e
           rc=0
-          for proj in StateFidelity CbufferModel TextureBreadthValidation ReservedWordGl; do
+          for proj in StateFidelity CbufferModel TextureBreadthValidation ReservedWordGl SamplerPairsGl; do
             echo "::group::$proj"
             xvfb-run -a dotnet run --project "validation/$proj" -c Release --no-build
             this=$?
@@ -153,5 +158,6 @@ jobs:
             validation/output-cbuffer/**
             validation/output-texbreadth/**
             validation/output-reservedword/**
+            validation/output-samplerpairs/**
           if-no-files-found: ignore
           retention-days: 7

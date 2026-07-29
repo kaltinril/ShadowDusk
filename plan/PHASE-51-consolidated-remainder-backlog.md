@@ -205,9 +205,22 @@ untrusted callers.
 
 ---
 
-### A7 — OpenGL sampler records per (texture, sampler) PAIR (from the 2026-07-27 full-project review)
+### A7 — ✅ DONE (2026-07-29) — OpenGL sampler records per (texture, sampler) PAIR
 
-*`mgfxc` compiles this and we do not — a fidelity gap on our side, not a reference-compiler bug.*
+**Landed.** The GL sampler table is keyed on the (texture, sampler) pairs SPIRV-Cross folds into
+combined samplers, in **its** declaration order, derived from the SPIR-V by the pure-managed
+`SpirvCombinedSamplerPairs` (host-independent, so CLI and browser bytes agree). `SD0215` and
+`SD0216` are retired; `SD0217` covers the unmodelled shapes plus an internal cross-check against
+the sampler uniforms the emitted GLSL actually declares. Rung 4 is
+[`validation/SamplerPairsGl`](../validation/SamplerPairsGl/) on real MonoGame DesktopGL, wired
+into `validation-render.yml`. **The scope grew twice while closing it** — see the two findings
+recorded below; both were silent, undiagnosed bugs, and one of them was in DirectX 12.
+
+Kept in full below because the reasoning (why not a native P/Invoke, why the ordering rule is what
+it is, why the parameter naming was NOT changed) is the durable part.
+
+*Original framing: `mgfxc` compiles this and we do not — a fidelity gap on our side, not a
+reference-compiler bug.*
 
 Several textures read through **one shared `SamplerState`** (the classic diffuse+lightmap shape)
 is ordinary HLSL. SPIRV-Cross expands it into one **combined sampler per (texture, sampler)
@@ -314,6 +327,63 @@ bytes on the CLI and in the browser, and `SD0216` is deleted as unnecessary. Not
 pre-existing parameter-naming divergence in the same area (`mgfxc` emits `TextureSampler+DiffuseMap`
 where we emit `DiffuseMap`); decide deliberately whether to match it, since changing parameter
 names breaks existing consumers' `Parameters[...]` lookups.
+
+#### How it was closed (2026-07-29)
+
+**Direction 1 (pure-managed extraction), as preferred.**
+[`SpirvCombinedSamplerPairs`](../src/ShadowDusk.Core/Reflection/SpirvCombinedSamplerPairs.cs)
+reproduces the traversal transcribed above and returns the pairs keyed by HLSL **name** (the key
+both reflection paths agree on — the DXIL oracle and `SpirvReflector` assign different raw binding
+numbers, so a binding-keyed join would not be host-independent). Direction 2 (rebuilding
+`spirv-cross.wasm` with the pairs API exported) was **not needed**, so the emscripten artifact is
+untouched.
+
+The GL branch of `CompilationPipeline` now emits one record per pair: `Name = ps_s{k}`,
+`TextureSlot = SamplerSlot = k` (the record index **is** the GL texture unit — each pair needs its
+own unit even when several pairs share a texture or a sampler), `Type` from the reflected texture's
+dimension (one source, so it stays byte-transparent across hosts), `Parameter` = the pair's texture,
+`State` = the pair's **sampler** half.
+
+**Diagnostics.** `SD0215` and `SD0216` are retired with their numbers marked do-not-reuse in
+`docs/error-codes.md`; both of their tests were rewritten as positive assertions. `SD0217` covers
+the shapes the model does not cover, plus an internal cross-check of the derived pair count against
+the sampler uniforms the emitted GLSL actually declares — that cross-check is the thing that would
+catch a drift from the pinned SPIRV-Cross instead of shipping a mis-bound table.
+
+**Evidence.** Full suite green on `net8.0` and `net10.0` with **no corpus shader's bytes moved**
+(the 1:1 texture/sampler case is byte-identical under the old and new rules, which is why the whole
+golden corpus is unchanged). Seven new regression tests in `ReviewRegressionTests` pin: the
+shared-sampler shape against `mgfxc`'s own record structure; reverse-use-order with a
+`Texture2D`+`TextureCube` pair (asserting the record type byte against the kind the GLSL declares);
+the one-texture-two-samplers baked-state order; mixed legacy/modern declarations; sampling inside
+called functions (the `OpFunctionCall` remapping branch); a four-pair 2D/Cube/3D/2D ordering
+discriminator checked position-by-position against the emitted GLSL; explicit/sparse sampler
+registers now compiling; and the DX12 shared-sampler record count.
+
+**Rung 4:** [`validation/SamplerPairsGl`](../validation/SamplerPairsGl/) — both arms pass on real
+MonoGame DesktopGL, wired into `validation-render.yml` and `docs/validation-matrix.md` §6. See that
+§6 row for what each arm discriminates and why arm B needs two textures.
+
+**The parameter-naming question was decided: do NOT adopt `<sampler>+<texture>`.** Recorded with
+its reasoning in [`project_decisions.md`](../project_decisions.md). Short version: MonoGame resolves
+a sampler's texture through the record's `Parameter` **index**, never the name, so the two spellings
+are behaviorally identical; renaming would break every existing consumer's `Parameters["DiffuseMap"]`
+lookup; and ours is the same name the DX/DX12/Vulkan/FNA targets use, whereas `mgfxc`'s spelling is
+GL-only and makes parameter names backend-dependent. Note this divergence is **not** specific to the
+shared-sampler shape — `mgfxc` uses `<sampler>+<texture>` for *every* modern-syntax GL shader (e.g.
+its `PenumbraLight.mgfx` golden says `TextureSampler+Texture`), so it was never A7-shaped.
+
+#### Two things found here and deliberately NOT fixed (each needs its own scope)
+
+- **DX12's sampler-record NAME.** Real `mgfxc`'s `DirectX_12` goldens put the HLSL sampler name
+  there (`SpriteTextureSampler`); we write the GL-style positional `ps_s{k}`. Harmless (DX12 binds
+  through the resource table) and rung-4 proven in that form by Phase 54, but a real divergence
+  from the golden. Changing it moves DX12 bytes and needs its own DX12 render re-proof.
+- **One texture, two `SamplerState`s on DirectX/DirectX 12** emits one record, so only the slot-0
+  sampler's baked state is applied and the second sampler's state is silently dropped. Pre-existing
+  and unchanged here. The DX table is texture-keyed for good reason (it matches `mgfxc` and the
+  DXBC resource table), so fixing this is not "key it on pairs too" — it needs a decision about
+  what `mgfxc` itself does with that shape on DX first.
 
 ---
 
