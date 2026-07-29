@@ -132,6 +132,7 @@ validation/output-apos-gl-gallery/
 validation/output-apos-dx/
 validation/output-apos-dx12/
 validation/output-vs-dx12/
+validation/output-samplerpairs/
 
 # Python
 __pycache__/

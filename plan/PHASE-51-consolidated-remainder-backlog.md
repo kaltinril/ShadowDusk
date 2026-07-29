@@ -205,9 +205,22 @@ untrusted callers.
 
 ---
 
-### A7 — OpenGL sampler records per (texture, sampler) PAIR (from the 2026-07-27 full-project review)
+### A7 — ✅ DONE (2026-07-29) — OpenGL sampler records per (texture, sampler) PAIR
 
-*`mgfxc` compiles this and we do not — a fidelity gap on our side, not a reference-compiler bug.*
+**Landed.** The GL sampler table is keyed on the (texture, sampler) pairs SPIRV-Cross folds into
+combined samplers, in **its** declaration order, derived from the SPIR-V by the pure-managed
+`SpirvCombinedSamplerPairs` (host-independent, so CLI and browser bytes agree). `SD0215` and
+`SD0216` are retired; `SD0217` covers the unmodelled shapes plus an internal cross-check against
+the sampler uniforms the emitted GLSL actually declares. Rung 4 is
+[`validation/SamplerPairsGl`](../validation/SamplerPairsGl/) on real MonoGame DesktopGL, wired
+into `validation-render.yml`. **The scope grew twice while closing it** — see the two findings
+recorded below; both were silent, undiagnosed bugs, and one of them was in DirectX 12.
+
+Kept in full below because the reasoning (why not a native P/Invoke, why the ordering rule is what
+it is, why the parameter naming was NOT changed) is the durable part.
+
+*Original framing: `mgfxc` compiles this and we do not — a fidelity gap on our side, not a
+reference-compiler bug.*
 
 Several textures read through **one shared `SamplerState`** (the classic diffuse+lightmap shape)
 is ordinary HLSL. SPIRV-Cross expands it into one **combined sampler per (texture, sampler)
@@ -245,6 +258,68 @@ which is why this needs its own scoped effort rather than a same-PR add-on.
    Removes the ordering guesswork entirely, at the cost of an emscripten rebuild and a new pinned
    artifact.
 
+#### Ground truth established 2026-07-29 (direction 1 confirmed viable; scope grew)
+
+Read from the pinned SPIRV-Cross source (`.wasm-build/spirv-cross-src`, tag
+`vulkan-sdk-1.4.335.0`, the same tree the WASM module is built from) and then confirmed against
+real transpiler output. **The ordering rule is not a guess:**
+
+- **`Compiler::build_combined_image_samplers`** (`spirv_cross.cpp:3261`) runs
+  `traverse_all_reachable_opcodes` from the single entry-point function: **blocks in binary
+  order, ops in binary order, recursing into each `OpFunctionCall` target** and pushing a
+  parameter→argument remapping for the callee's scope.
+- The only trigger is **`OpSampledImage`** (`spirv_cross.cpp:3124`). Its image/sampler operands
+  are resolved to global variables through `remap_parameter` → `maybe_get_backing_variable`
+  (i.e. back through `OpLoad`/`OpAccessChain`), then the `(image, sampler)` pair is appended to
+  `combined_image_samplers` **if not already present**. So the order is **first-use order,
+  deduplicated** — nothing to do with declaration order, bind slots, or binding numbers.
+- The synthesized variable ids come from `ir.increase_bound_by(2)`, so they are monotonic in
+  first-use order and sort **after** every original module id; `CompilerGLSL::emit_resources`
+  walks variables in id order and **skips every separate image/sampler** when
+  `vulkan_semantics` is off (`spirv_glsl.cpp:3893`). Hence **emitted declaration order ==
+  first-use pair order**, exactly.
+- **Naming is a red herring.** SPIRV-Cross's `SPIRV_Cross_Combined<Image><Sampler>` name is
+  applied by its **CLI** (`main.cpp`), not by `build_combined_image_samplers`, so through the C
+  API the combined uniforms come out as bare `_<id>` (`uniform sampler2D _40;`) and carry **no
+  pair identity at all**. The emitted GLSL therefore cannot be used to recover which pair each
+  declaration is — the extraction must be done from the SPIR-V.
+
+Empirically confirmed with a three-texture/two-sampler probe whose textures have **different
+dimensions**, so the emitted decl kinds (`samplerCube` / `sampler2D` / `sampler3D`) identify each
+pair unambiguously: the cube texture, declared *second* in HLSL but sampled *first*, is emitted
+first. First-use order, confirmed.
+
+**Two findings that grow the scope beyond the shared-sampler shape:**
+
+1. **A worse, silent sibling bug that `SD0216` cannot see.** Two textures + two samplers sampled
+   in **reverse declaration order** produces matching counts (2 GLSL uniforms, 2 records), so the
+   `SD0216` count check passes — but the slot-keyed table assigns `ps_s0` the `t0`/`s0` texture
+   while the GLSL's `ps_s0` is the *first-sampled* pair. Both the **texture parameter** and the
+   **sampler-type byte** come out swapped, with **no diagnostic**. Probed with a
+   `Texture2D` + `TextureCube` pair: the GLSL declares `ps_s0` as `samplerCube` while the record
+   claims `ps_s0` is `Type=0` (2D) pointing at the 2D texture. A 2D texture would be bound to a
+   cube sampler unit. The same mis-numbering hits any shader mixing legacy `sampler2D` and modern
+   `Texture2D`+`SamplerState` declarations. **This is the real reason the table must be keyed on
+   the pair list rather than on either reflected list.**
+2. **`DirectX12` is NOT already correct** — the claim above (and in `docs/validation-matrix.md`)
+   is wrong. `bool directX` at `CompilationPipeline.cs:316` is `Target == PlatformTarget.DirectX`
+   only, so **DX12 falls through to the sampler-keyed branch**, and the shared-sampler shape
+   emits **one** record on DX12: `Lightmap` never binds, silently, with no diagnostic (DX11 emits
+   two and is correct). Vulkan is fine (loud `SD0028` for the shared shape, correct records
+   otherwise).
+
+**No legacy/pre-combined case exists on the GL path.** The pre-parser's `RewriteToSm4` mode
+(every target except FNA) rewrites `sampler2D`/`tex2D` into `SamplerState` +
+`<texture>.Sample(...)` before DXC ever sees the source, and SM6 HLSL has no combined sampler
+type, so **every** GLSL sampler uniform on the GL path is a synthesized pair. A module-level
+`OpTypeSampledImage` variable is therefore an input shape we do not model and must fail loudly on
+rather than mis-number.
+
+**`SD0215` also becomes unnecessary.** It rejects sampler registers that are not contiguous from
+`s0`, purely because the old table named `ps_s{samp.BindSlot}`. Once the record index is the
+pair's declaration position, bind slots are never consulted for GL naming and a
+`register(s3)`-only shader numbers correctly.
+
 **Done = ** a `.fx` reading N textures through one shared `SamplerState` compiles for OpenGL,
 emits N records naming every `ps_s{k}` the GLSL declares with the right texture parameter and
 baked state per pair, is render-proven against the `mgfxc` OpenGL golden, produces identical
@@ -252,6 +327,85 @@ bytes on the CLI and in the browser, and `SD0216` is deleted as unnecessary. Not
 pre-existing parameter-naming divergence in the same area (`mgfxc` emits `TextureSampler+DiffuseMap`
 where we emit `DiffuseMap`); decide deliberately whether to match it, since changing parameter
 names breaks existing consumers' `Parameters[...]` lookups.
+
+#### How it was closed (2026-07-29)
+
+**Direction 1 (pure-managed extraction), as preferred.**
+[`SpirvCombinedSamplerPairs`](../src/ShadowDusk.Core/Reflection/SpirvCombinedSamplerPairs.cs)
+reproduces the traversal transcribed above and returns the pairs keyed by HLSL **name** (the key
+both reflection paths agree on — the DXIL oracle and `SpirvReflector` assign different raw binding
+numbers, so a binding-keyed join would not be host-independent). Direction 2 (rebuilding
+`spirv-cross.wasm` with the pairs API exported) was **not needed**, so the emscripten artifact is
+untouched.
+
+The GL branch of `CompilationPipeline` now emits one record per pair: `Name = ps_s{k}`,
+`TextureSlot = SamplerSlot = k` (the record index **is** the GL texture unit — each pair needs its
+own unit even when several pairs share a texture or a sampler), `Type` from the reflected texture's
+dimension (one source, so it stays byte-transparent across hosts), `Parameter` = the pair's texture,
+`State` = the pair's **sampler** half.
+
+**Diagnostics.** `SD0215` and `SD0216` are retired with their numbers marked do-not-reuse in
+`docs/error-codes.md`; both of their tests were rewritten as positive assertions. `SD0217` covers
+the shapes the model does not cover, plus an internal cross-check of the derived pair count against
+the sampler uniforms the emitted GLSL actually declares — that cross-check is the thing that would
+catch a drift from the pinned SPIRV-Cross instead of shipping a mis-bound table.
+
+**Evidence.** Full suite green on `net8.0` and `net10.0` with **no corpus shader's bytes moved**
+(the 1:1 texture/sampler case is byte-identical under the old and new rules, which is why the whole
+golden corpus is unchanged). Seven new regression tests in `ReviewRegressionTests` pin: the
+shared-sampler shape against `mgfxc`'s own record structure; reverse-use-order with a
+`Texture2D`+`TextureCube` pair (asserting the record type byte against the kind the GLSL declares);
+the one-texture-two-samplers baked-state order; mixed legacy/modern declarations; sampling inside
+called functions (the `OpFunctionCall` remapping branch); a four-pair 2D/Cube/3D/2D ordering
+discriminator checked position-by-position against the emitted GLSL; explicit/sparse sampler
+registers now compiling; and the DX12 shared-sampler record count.
+
+**Rung 4:** [`validation/SamplerPairsGl`](../validation/SamplerPairsGl/) — both arms pass on real
+MonoGame DesktopGL at **maxd 0 against the real `mgfxc` `OpenGL` goldens**, wired into
+`validation-render.yml` and `docs/validation-matrix.md` §6. See that §6 row for what each arm
+discriminates and the two measured harness details that are load-bearing.
+
+**A third finding, from generating those goldens: `mgfxc` numbers `ps_s{k}` by SAMPLER REGISTER,
+SPIRV-Cross by FIRST USE.** They coincide whenever use order matches register order — which is the
+entire existing corpus, hence zero golden churn — but `SamplerPairMirror.fx` is built to make them
+disagree, and there `mgfxc`'s golden makes `ps_s0` the Linear pair while ours makes it the Point
+pair. **ShadowDusk must follow SPIRV-Cross**, because the record has to name the uniform *our own*
+GLSL declares; each build is internally consistent, so the renumbering is invisible in the picture,
+and arm B exists to hold exactly that claim (maxd 0). Worth noting what this says about the old
+code: it numbered by register *like `mgfxc`* while its GLSL was SPIRV-Cross-ordered — internally
+inconsistent, which is the bug. Matching `mgfxc`'s numbering is not even possible without matching
+its GLSL generator.
+
+**Two structural-matrix cells are now expected-divergent and render-proven benign** (so a future
+reader triaging `plan/PHASE-41-appendix/structural-divergence-matrix.md` does not re-open them):
+
+| Cell | Divergence | Why it is fine |
+|---|---|---|
+| `SharedSamplerPair [OpenGL]` | object-class param shape: `mgfxc` names the texture params `TextureSampler+DiffuseMap` / `+Lightmap`, we name them `DiffuseMap` / `Lightmap` and add the `TextureSampler` sampler param | The deliberate parameter-naming decision above. Sampler *records* match `mgfxc` exactly; maxd 0. |
+| `SamplerPairMirror [OpenGL]` | sampler slot 0/1 baked-state differs | The register-order vs first-use renumbering above. Each build self-consistent; maxd 0. |
+
+Both DirectX_11 cells for these fixtures are structurally **clean**.
+
+**The parameter-naming question was decided: do NOT adopt `<sampler>+<texture>`.** Recorded with
+its reasoning in [`project_decisions.md`](../project_decisions.md). Short version: MonoGame resolves
+a sampler's texture through the record's `Parameter` **index**, never the name, so the two spellings
+are behaviorally identical; renaming would break every existing consumer's `Parameters["DiffuseMap"]`
+lookup; and ours is the same name the DX/DX12/Vulkan/FNA targets use, whereas `mgfxc`'s spelling is
+GL-only and makes parameter names backend-dependent. Note this divergence is **not** specific to the
+shared-sampler shape — `mgfxc` uses `<sampler>+<texture>` for *every* modern-syntax GL shader (e.g.
+its `PenumbraLight.mgfx` golden says `TextureSampler+Texture`), so it was never A7-shaped.
+
+#### Two things found here and deliberately NOT fixed (each needs its own scope)
+
+- **DX12's sampler-record NAME.** Real `mgfxc`'s `DirectX_12` goldens put the HLSL sampler name
+  there (`SpriteTextureSampler`); we write the GL-style positional `ps_s{k}`. Harmless (DX12 binds
+  through the resource table) and rung-4 proven in that form by Phase 54, but a real divergence
+  from the golden. Changing it moves DX12 bytes and needs its own DX12 render re-proof.
+- **One texture, two `SamplerState`s on DirectX/DirectX 12** emits one record, so only the slot-0
+  sampler's baked state is applied and the second sampler's state is silently dropped. Pre-existing
+  and unchanged here. The DX table is texture-keyed for good reason (it matches `mgfxc` and the
+  DXBC resource table), so fixing this is not "key it on pairs too" — it needs a decision about
+  what `mgfxc` itself does with that shape on DX first.
 
 ---
 
@@ -284,6 +438,36 @@ Phase 55 evidence pin).
 
 **Done = ** a decision recorded for the `net8.0` floor before November 2026, and vkd3d either
 bumped-and-re-proven or explicitly deferred with a reason.
+
+---
+
+### A9 — Stop the `Integration Tests (ubuntu-latest)` test-host crash costing reruns (filed 2026-07-29)
+
+*Not a phase tail — filed here for the same reason A8 was: this is the de-facto backlog and the
+item otherwise has no home.*
+
+The ubuntu integration lane intermittently aborts with *"Test host process crashed"* and passes on
+rerun every time. **Three occurrences** (PR #170 once, PR #173 twice), and the third was on a commit
+that changed **only a markdown file** — so it is conclusively environmental, and the standing
+instruction is to rerun rather than re-diagnose. The full observation is in
+[`project_facts.md`](../project_facts.md); it is registered here so the *mitigation* is a scheduled
+decision instead of a note that gets re-derived every time.
+
+**Why it was not just fixed inline.** Both candidates change CI behavior repo-wide on an unproven
+hypothesis, which does not belong bundled into an unrelated feature PR:
+
+1. **Bound VSTest parallelism** in `ShadowDusk.runsettings` (it caps only `TestSessionTimeout`
+   today, not host count). Non-brittle and cannot silently skip anything, but costs CI wall-clock
+   and is aimed at a hypothesis rather than a measured root cause.
+2. **Scope the integration filter to the assemblies that actually carry `Category=Integration`**
+   (8 of 14 currently spawn a host only to match nothing, and the crash always lands on one of
+   those). Removes the waste *and* the crash surface, but it is exactly the shape this project
+   warns about — a new assembly gaining integration tests would be silently skipped — so it needs a
+   guard test asserting the filter's assembly list still covers every assembly that has such tests.
+
+**Done = ** the ubuntu lane stops needing reruns, with whichever option is chosen justified against
+the other, and option 2 (if chosen) carrying the guard that stops it becoming a check that cannot
+fail.
 
 ---
 

@@ -53,7 +53,7 @@ ShadowDusk/
 │                                  #   what remains is the standalone PoC CLI, the MonoGame Runtime helper,
 │                                  #   the interactive sample, and the fidelity/gallery render-proof driver.
 ├── validation/                    # Rung-4 render-proof console drivers (NOT in ShadowDusk.slnx, not run by `dotnet test`):
-│                                  #   GL (VsDriven, StateFidelity, CbufferModel, ReservedWordGl, …), DX (VsDrivenDx,
+│                                  #   GL (VsDriven, StateFidelity, CbufferModel, ReservedWordGl, SamplerPairsGl, …), DX (VsDrivenDx,
 │                                  #   DxModernFeatures, …), DX12 (BaselineDx12, CandidateDx12, VsDrivenDx12
 │                                  #     + compare_dx12.py), FNA (FnaValidation), KNI (KniDesktopGL, KniWinFormsDX, KniVsDriven),
 │                                  #   Vulkan (BaselineVulkan, CandidateVulkan, VsDrivenVulkan

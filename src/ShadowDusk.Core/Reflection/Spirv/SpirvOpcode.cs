@@ -25,9 +25,18 @@ internal enum SpirvOpcode : ushort
     OpTypeStruct        = 30,
     OpTypePointer       = 32,
     OpConstant          = 43,
+    OpFunction          = 54,
+    OpFunctionParameter = 55,
+    OpFunctionEnd       = 56,
+    OpFunctionCall      = 57,
     OpVariable          = 59,
+    OpLoad              = 61,
+    OpAccessChain       = 65,
+    OpInBoundsAccessChain = 66,
+    OpPtrAccessChain    = 67,
     OpDecorate          = 71,
     OpMemberDecorate    = 72,
+    OpSampledImage      = 86,
 }
 
 /// <summary>SPIR-V decoration tokens used by the reflection parser.</summary>

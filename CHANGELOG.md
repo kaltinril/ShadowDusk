@@ -12,11 +12,62 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ## [Unreleased]
 
-> Validation, tooling, and documentation only. **No `src/` file changed**, so no compiler behavior
-> and no output bytes changed: the MonoGame pin stays 3.8.2.1105, the default output stays MGFX v10,
-> and the golden corpus and byte-identity manifest are untouched.
+> The MonoGame pin stays 3.8.2.1105 and the default output stays MGFX v10. The golden corpus and
+> the byte-identity manifest are **untouched**: the OpenGL and DirectX 12 sampler-table fix below
+> changes output only for shapes that previously failed to compile or were silently mis-bound, and
+> every 1:1 texture/sampler shader (which is the whole golden corpus) is byte-identical.
 
 ### Added
+
+- **`SamplerPairsGl`, a new OpenGL rung-4 render gate** for per-(texture, sampler)-pair sampler
+  records, wired into `validation-render.yml` so it runs in CI on Mesa llvmpipe. Both of its arms
+  render an *asymmetric* function of two samplers so that a mis-binding changes the picture (a
+  symmetric `diffuse * light` would render identically under a swap and prove nothing), and arm A
+  reports *which* failure mode a wrong colour corresponds to rather than just "wrong".
+
+### Fixed (compiler)
+
+- **OpenGL now compiles several textures read through one shared `SamplerState`** — the classic
+  diffuse+lightmap shape, ordinary HLSL that `mgfxc` has always compiled (its own golden for the
+  shape carries two sampler records). ShadowDusk rejected it outright with `SD0216`. The GL sampler
+  table is now keyed on the **(texture, sampler) pairs** SPIRV-Cross folds into combined samplers
+  rather than on the reflected samplers, which is the only list that can be right: the GL runtime
+  looks each record up by GLSL uniform name, and there is one uniform per pair.
+- **A second, silent OpenGL mis-binding that the `SD0216` guard could not see.** SPIRV-Cross
+  declares combined samplers in **first-use** order, not declaration order, so a shader sampling
+  two textures through two samplers in reverse order produced matching counts — two uniforms, two
+  records, guard satisfied — while both the texture parameter and the sampler-type byte came out
+  **swapped**. Probed with a `Texture2D` + `TextureCube` pair: the emitted GLSL declared `ps_s0` as
+  `samplerCube` while the record claimed 2D, so MonoGame bound a 2D texture to a cube sampler unit.
+  It compiled cleanly with no diagnostic. The same mis-numbering affected any shader mixing legacy
+  `sampler2D` with modern `Texture2D` + `SamplerState` declarations.
+- **DirectX 12 had the shared-`SamplerState` bug too**, and silently: it was never included in the
+  texture-keyed branch, so the diffuse+lightmap shape emitted one record and the second texture was
+  never bound, with no diagnostic. DirectX 11 was always correct. Found while closing the OpenGL
+  work.
+- The pair list is derived in **pure managed code** from the SPIR-V (`SpirvCombinedSamplerPairs`),
+  not by calling SPIRV-Cross's own `spvc_compiler_get_combined_image_samplers`, because the browser
+  host's `spirv-cross.wasm` does not export that function — a native call would have fixed desktop
+  only and broken the guarantee that the CLI and the browser emit identical bytes.
+
+### Changed
+
+- **`SD0215` and `SD0216` are retired**, and their numbers are marked do-not-reuse in
+  `docs/error-codes.md`. Both existed only because of the old sampler-keyed GL table: `SD0216`
+  rejected the shared-`SamplerState` shape, and `SD0215` rejected sampler registers that were not
+  contiguous from `s0` (the record used to be named after the sampler's bind slot). Neither
+  restriction applies now — a `register(s3)`-only shader compiles correctly. The new **`SD0217`**
+  covers input shapes the declaration-order model does not cover, plus an internal cross-check of
+  the derived pair count against the sampler uniforms the emitted GLSL actually declares; ordinary
+  HLSL never raises it.
+- OpenGL texture parameters **keep the plain texture name** (`DiffuseMap`) rather than adopting
+  `mgfxc`'s MojoShader `<sampler>+<texture>` spelling (`TextureSampler+DiffuseMap`), which its
+  OpenGL goldens use for every modern-syntax shader. This is a deliberate, recorded decision:
+  MonoGame resolves a sampler's texture through the record's parameter *index* and never its name,
+  so the two spellings behave identically; renaming would break every existing consumer's
+  `Parameters["DiffuseMap"]` lookup; and ours is the same name the DirectX, DirectX 12, Vulkan, and
+  FNA targets use, whereas `mgfxc`'s is OpenGL-only and makes an effect's parameter names depend on
+  the backend.
 
 - **The shipped libraries now multi-target `net8.0` and `net10.0`.** `ShadowDusk.Core`, `.HLSL`,
   `.GLSL`, `.Compiler`, `.Metal`, and `.ShaderToy` build for both, and all seven test projects run
