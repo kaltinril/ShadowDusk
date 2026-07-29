@@ -25,6 +25,17 @@ How to work on this project. One short rule per line. These OVERRIDE default beh
 - No `Thread.Sleep` in tests; use `CancellationToken` with reasonable timeouts.
 - Treat a slow integration run as environmental (antivirus scanning cold natives) before treating it as algorithmic; see `docs/integration-test-performance.md`.
 
+### A green PR with `skipping` jobs is NOT a green PR (learned the hard way, PR #170)
+
+The heavyweight CI jobs are label-gated, so the default PR run comes back all-green while silently skipping them. Merging on that is how an unverified change ships.
+
+- **`Pack & Consume` is the one that bites.** It is gated on the **`run-integration`** label **and has NO push-to-main trigger** (only a weekly cron), so *merging does not run it either*. It is the only check that proves the NuGet packages actually pack and a cold consumer can install and use them, and its own header calls it "the check that would have caught the 0.2.0 disaster". **Apply the label on any PR that changes packaging, TFMs, project files, or natives.**
+- The labels: **`run-integration`** (cross-OS integration tests + Pack & Consume), **`run-validation-render`** (GL render gates on ubuntu/Mesa llvmpipe), **`run-browser`** (browser render smoke + WASM).
+- **Adding a label does not retrigger anything.** Those workflows listen only to the default `pull_request` types (`opened`/`synchronize`/`reopened`), not `labeled`, so the job `if:` was already evaluated on the earlier run. **`gh run rerun` does not help either** - it replays the original event payload, which had no labels.
+- **To make them run:** push another commit (fires `synchronize`), or `gh pr close && gh pr reopen` (fires `reopened` with the labels present, no fake commit). `pack-consume.yml` additionally accepts `workflow_dispatch`, so it can be dispatched directly against the branch.
+- `vkd3d export gate (standing)` is push-to-main + schedule only. It cannot run on a PR by design; it fires after the merge. Its local equivalents are `node-test-vkd3d-wasm.mjs` and `browser-vkd3d-gate.mjs`.
+- Read the check list, not just the overall verdict: count `skipping` and decide whether each one matters for what you changed.
+
 ## Docs and phases
 
 - Read `plan/plan.md` first for phase status; each phase's own doc is the detail.
