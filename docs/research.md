@@ -740,11 +740,21 @@ WebGL 1.0 requires GLSL ES 1.00 (`#version 100`); WebGL 2.0 requires GLSL ES 3.0
 
 The load-bearing requirement: the fragment colour output must be emitted as a `#define`-aliased form (`#define ps_oC0 gl_FragColor`), because KNI's converter rewrites *only* that form — a raw `gl_FragColor` write survives untouched into ES 3.00 and fails to compile (GitHub issue #7). See [`plan/DONE/PHASE-33-webgl2-es300-hidef-output.md`](../plan/DONE/PHASE-33-webgl2-es300-hidef-output.md).
 
+### KNI GraphicsProfile → GL/WebGL context mapping (verified against KNI source, 2026-07-30)
+
+Confirmed by reading `kniEngine/kni` source directly (not documented upstream):
+
+**Desktop (`.GL.SDL`):** the SDL GL context request is unconditional and identical to upstream MonoGame — `ContextMajorVersion=2, ContextMinorVersion=1` (`Platforms/Game/.SDL2/ConcreteGraphicsDeviceManager.cs`), with **no branch on `GraphicsProfile`**. `IsProfileSupported` (`Platforms/Graphics/.GL.SDL/ConcreteGraphicsAdapter.cs`) is a separate, after-the-fact capability check against the actually-queried `MaxTextureSize`, not the requested context: `Reach` always `true`; `HiDef` needs `>=4096`; `FL10_0` needs `>=8192`; `FL10_1`/`FL11_0` need `>=16384`; `FL11_1` is unsupported on GL. The `GraphicsProfile`→GLSL-dialect branch in `Platforms/Graphics/.GL/Shader/ConcreteShader.cs` (`ConvertGLSLToGLSL300es`) only fires for `GraphicsBackend.GLES`/`WebGL` — **on desktop OpenGL, Reach vs. HiDef never changes the emitted GLSL dialect or the requested context version.**
+
+**Web (`.BlazorGL`):** `GraphicsProfile` *is* the context-version request — `Platforms/Graphics/.BlazorGL/ConcreteGraphicsDevice.cs` calls `canvas.GetContext<IWebGLRenderingContext>()` for `Reach` (WebGL1) and `canvas.GetContext<IWebGL2RenderingContext>()` for `HiDef`/`FL10_0` (WebGL2). `FL10_1`/`FL11_0`/`FL11_1` are not implemented on Blazor (`default: throw NotSupportedException`) — **KNI Web is hard-capped at WebGL2/GLSL ES 3.00; there is no path past it, and KNI has no WebGPU backend.**
+
+Practical implication: the "GL2 vs GL3/4" ambiguity discussed elsewhere in this doc (§7, GLSL version targeting) is a **desktop-only** phenomenon — the requested context version is a floor most drivers over-deliver on, except strict ones (macOS/ANGLE, Mesa). On web there is no such ambiguity: `Reach`/`HiDef` deterministically selects WebGL1 or WebGL2, matching the mapping already given above under "GLSL version for WebGL".
+
 ### Key references
 
 | Resource | URL |
 |----------|-----|
-| KNI repo (nkast) | https://github.com/nkast/Kni |
+| KNI repo | https://github.com/kniEngine/kni |
 | .NET WASM JS interop | https://learn.microsoft.com/en-us/aspnet/core/blazor/javascript-interoperability/import-export-interop |
 | Shader Playground (uses DXC WASM) | https://shader-playground.timjones.io/ |
 | SPIRV-Cross Emscripten build | https://github.com/KhronosGroup/SPIRV-Cross/tree/main/wasm |
