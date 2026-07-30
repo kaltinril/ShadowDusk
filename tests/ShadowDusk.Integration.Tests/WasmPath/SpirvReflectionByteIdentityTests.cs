@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
@@ -74,7 +74,7 @@ public sealed class SpirvReflectionByteIdentityTests
         var ct = cts.Token;
 
         string fxPath = Path.Combine(AppContext.BaseDirectory, "fixtures", "shaders", fixtureStem + ".fx");
-        File.Exists(fxPath).Should().BeTrue($".fx fixture must exist at {fxPath}");
+        File.Exists(fxPath).ShouldBeTrue($".fx fixture must exist at {fxPath}");
 
         string source = await File.ReadAllTextAsync(fxPath, ct);
 
@@ -88,8 +88,7 @@ public sealed class SpirvReflectionByteIdentityTests
         // (A) Desktop default: native DXC + SPIRV-Cross, reflection sourced from DXIL.
         var defaultCompiler = new EffectCompiler();
         var resultA = await defaultCompiler.CompileAsync(source, options, ct);
-        resultA.IsSuccess.Should().BeTrue(
-            because: resultA.IsFailure
+        resultA.IsSuccess.ShouldBeTrue(resultA.IsFailure
                 ? string.Join("; ", resultA.Error.Select(e => $"{e.Code}: {e.Message}"))
                 : "DXIL-reflection compile must succeed");
         byte[] bytesA = resultA.Value.Data;
@@ -97,8 +96,7 @@ public sealed class SpirvReflectionByteIdentityTests
         // (B) WASM path: native DXC + SPIRV-Cross UNCHANGED, ONLY reflection swapped to SPIR-V.
         var spirvCompiler = new EffectCompiler(reflectorFactory: () => new SpirvReflector());
         var resultB = await spirvCompiler.CompileAsync(source, options, ct);
-        resultB.IsSuccess.Should().BeTrue(
-            because: resultB.IsFailure
+        resultB.IsSuccess.ShouldBeTrue(resultB.IsFailure
                 ? string.Join("; ", resultB.Error.Select(e => $"{e.Code}: {e.Message}"))
                 : "SPIR-V-reflection compile must succeed");
         byte[] bytesB = resultB.Value.Data;
@@ -120,7 +118,6 @@ public sealed class SpirvReflectionByteIdentityTests
         // The reflection-source swap MUST be byte-transparent. If a shader is NOT
         // byte-identical, this assertion fails honestly (see the // DIVERGENCE: log
         // above) rather than being weakened.
-        bytesB.Should().Equal(bytesA,
-            because: "swapping reflection from DXIL to SPIR-V must produce byte-identical .mgfx");
+        bytesB.ShouldBe(bytesA, customMessage: "swapping reflection from DXIL to SPIR-V must produce byte-identical .mgfx");
     }
 }

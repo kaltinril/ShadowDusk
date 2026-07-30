@@ -1,4 +1,4 @@
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.ShaderToy.Tests;
@@ -32,11 +32,11 @@ public sealed class GoldenRegressionTests
         string glsl = File.ReadAllText(path);
 
         ConvertResult result = ShaderToyConverter.Convert(glsl);
-        result.Success.Should().BeTrue(
+        result.Success.ShouldBeTrue(string.Format(
             "'{0}' is in-subset and must convert; diagnostics: {1}",
             relName,
-            string.Join("; ", result.Diagnostics.Select(d => $"{d.Severity}:{d.Message}")));
-        result.Fx.Should().NotBeNull();
+            string.Join("; ", result.Diagnostics.Select(d => $"{d.Severity}:{d.Message}"))));
+        result.Fx.ShouldNotBeNull();
 
         string actual = CorpusLocator.NormalizeNewlines(result.Fx!);
         string goldenPath = GoldenPathFor(relName);
@@ -48,12 +48,12 @@ public sealed class GoldenRegressionTests
             return;
         }
 
-        File.Exists(goldenPath).Should().BeTrue(
+        File.Exists(goldenPath).ShouldBeTrue(string.Format(
             "golden '{0}' must exist; run the suite once with SHADERTOY2FX_UPDATE_GOLDENS=1 to generate it",
-            goldenPath);
+            goldenPath));
 
         string expected = CorpusLocator.NormalizeNewlines(File.ReadAllText(goldenPath));
-        actual.Should().Be(expected, "the emitted .fx for '{0}' must match its committed golden", relName);
+        actual.ShouldBe(expected, customMessage: string.Format( "the emitted .fx for '{0}' must match its committed golden", relName));
     }
 
     [Theory]
@@ -65,9 +65,9 @@ public sealed class GoldenRegressionTests
         ConvertResult first = ShaderToyConverter.Convert(glsl);
         ConvertResult second = ShaderToyConverter.Convert(glsl);
 
-        first.Success.Should().BeTrue();
-        second.Success.Should().BeTrue();
-        second.Fx.Should().Be(first.Fx, "conversion of '{0}' must be deterministic", relName);
+        first.Success.ShouldBeTrue();
+        second.Success.ShouldBeTrue();
+        second.Fx.ShouldBe(first.Fx, customMessage: string.Format( "conversion of '{0}' must be deterministic", relName));
     }
 
     /// <summary>The relative name (e.g. <c>authored/gradient_uv.glsl</c>) used in the display name.</summary>

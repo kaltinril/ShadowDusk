@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler.Internal;
 using ShadowDusk.HLSL.Ast;
 using Xunit;
@@ -57,10 +57,10 @@ public sealed class GlStructOutputColorRewriterTests
 
         string result = GlStructOutputColorRewriter.Rewrite(hlsl, WithPixelEntry("PS"));
 
-        result.Should().Contain("float4 color : SV_Target0;");
-        result.Should().Contain("float4 normal : SV_Target1;");
-        result.Should().NotContain("COLOR0");
-        result.Should().NotContain("COLOR1");
+        result.ShouldContain("float4 color : SV_Target0;", Case.Sensitive);
+        result.ShouldContain("float4 normal : SV_Target1;", Case.Sensitive);
+        result.ShouldNotContain("COLOR0", Case.Sensitive);
+        result.ShouldNotContain("COLOR1", Case.Sensitive);
     }
 
     [Fact]
@@ -84,11 +84,10 @@ public sealed class GlStructOutputColorRewriterTests
         string result = GlStructOutputColorRewriter.Rewrite(hlsl, WithPixelEntry("PS"));
 
         // The PS-input interpolant keeps COLOR0.
-        result.Should().Contain("float4 Color : COLOR0;",
-            because: "a PS-input/VS-output interpolant struct is not a PS return type and must not be rewritten");
+        result.ShouldContain("float4 Color : COLOR0;", Case.Sensitive, "a PS-input/VS-output interpolant struct is not a PS return type and must not be rewritten");
         // The PS-output struct is retargeted.
-        result.Should().Contain("float4 color : SV_Target0;");
-        result.Should().Contain("float4 normal : SV_Target1;");
+        result.ShouldContain("float4 color : SV_Target0;", Case.Sensitive);
+        result.ShouldContain("float4 normal : SV_Target1;", Case.Sensitive);
     }
 
     [Fact]
@@ -100,7 +99,7 @@ public sealed class GlStructOutputColorRewriterTests
 
         string result = GlStructOutputColorRewriter.Rewrite(hlsl, WithPixelEntry("PS"));
 
-        result.Should().Be(hlsl, because: "a non-struct PS return has no COLOR members to rewrite");
+        result.ShouldBe(hlsl, customMessage: "a non-struct PS return has no COLOR members to rewrite");
     }
 
     [Fact]
@@ -115,8 +114,8 @@ public sealed class GlStructOutputColorRewriterTests
 
         string result = GlStructOutputColorRewriter.Rewrite(hlsl, WithPixelEntry("PS"));
 
-        result.Should().Be(hlsl);
-        result.Should().Contain("float4 a : COLOR0;");
+        result.ShouldBe(hlsl);
+        result.ShouldContain("float4 a : COLOR0;", Case.Sensitive);
     }
 
     [Fact]
@@ -124,8 +123,8 @@ public sealed class GlStructOutputColorRewriterTests
     {
         const string hlsl = "struct PixelOut { float4 color : COLOR0; };";
 
-        GlStructOutputColorRewriter.Rewrite(hlsl, WithPixelEntry(null)).Should().Be(hlsl);
-        GlStructOutputColorRewriter.Rewrite(hlsl, Array.Empty<TechniqueInfo>()).Should().Be(hlsl);
+        GlStructOutputColorRewriter.Rewrite(hlsl, WithPixelEntry(null)).ShouldBe(hlsl);
+        GlStructOutputColorRewriter.Rewrite(hlsl, Array.Empty<TechniqueInfo>()).ShouldBe(hlsl);
     }
 
     [Fact]
@@ -141,10 +140,10 @@ public sealed class GlStructOutputColorRewriterTests
 
         string result = GlStructOutputColorRewriter.Rewrite(hlsl, WithPixelEntry("PS"));
 
-        result.Should().Contain("float4 color : SV_Target0;");
-        result.Should().Contain("float4 normal : SV_Target1;");
+        result.ShouldContain("float4 color : SV_Target0;", Case.Sensitive);
+        result.ShouldContain("float4 normal : SV_Target1;", Case.Sensitive);
         System.Text.RegularExpressions.Regex.IsMatch(result, @":\s*[Cc]olor\d?\b")
-            .Should().BeFalse("no COLOR-cased output semantic may survive in any casing");
+            .ShouldBeFalse("no COLOR-cased output semantic may survive in any casing");
     }
 
     [Fact]
@@ -162,8 +161,8 @@ public sealed class GlStructOutputColorRewriterTests
 
         string result = GlStructOutputColorRewriter.Rewrite(hlsl, WithPixelEntry("PS"));
 
-        result.Should().Be(hlsl, because: "a shared input/output struct must not be rewritten");
-        result.Should().Contain("float4 c : COLOR0;");
+        result.ShouldBe(hlsl, customMessage: "a shared input/output struct must not be rewritten");
+        result.ShouldContain("float4 c : COLOR0;", Case.Sensitive);
     }
 
     [Fact]
@@ -178,7 +177,7 @@ public sealed class GlStructOutputColorRewriterTests
 
         string result = GlStructOutputColorRewriter.Rewrite(hlsl, WithPixelEntry("PS"));
 
-        result.Should().Be(hlsl);
+        result.ShouldBe(hlsl);
     }
 
     [Fact]
@@ -199,7 +198,7 @@ public sealed class GlStructOutputColorRewriterTests
 
         string result = GlStructOutputColorRewriter.Rewrite(hlsl, WithPixelEntry("PS"));
 
-        result.Should().Contain("float4 color : SV_Target0;");
-        result.Should().NotContain("COLOR0");
+        result.ShouldContain("float4 color : SV_Target0;", Case.Sensitive);
+        result.ShouldNotContain("COLOR0", Case.Sensitive);
     }
 }

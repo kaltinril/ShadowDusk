@@ -45,7 +45,7 @@ Work arrives from a previous session you did not see. Two obligations, both non-
 
 `src/` libraries · `tests/` xUnit + `fixtures/` · `samples/` · `validation/` real-runtime render drivers · `tools/` restored natives (not committed) · `docs/` reference docs · `plan/` phase docs. **Full annotated tree: [docs/repository-layout.md](docs/repository-layout.md).** Phase status index: [plan/plan.md](plan/plan.md).
 
-**Stack:** C# 12 / .NET 8 (LTS), xUnit + FluentAssertions, warnings-as-errors. Native interop: `Vortice.Dxc` (DXC), `Silk.NET` P/Invoke (SPIRV-Cross), `vkd3d-shader` (DXBC). Ships as seven `ShadowDusk.*` NuGet packages at one shared version plus the `ShadowDuskCLI` dotnet tool.
+**Stack:** C# 12 / .NET 8 (LTS), xUnit + Shouldly (**FluentAssertions is banned — issue #171, licence; see [project_facts.md](project_facts.md)**), warnings-as-errors. Native interop: `Vortice.Dxc` (DXC), `Silk.NET` P/Invoke (SPIRV-Cross), `vkd3d-shader` (DXBC). Ships as seven `ShadowDusk.*` NuGet packages at one shared version plus the `ShadowDuskCLI` dotnet tool.
 
 ## What ShadowDusk compiles for today
 
@@ -128,6 +128,7 @@ The `/release` skill's docs-audit step checks this list as a backstop, but the b
 - Errors use a `Result<T, TError>` union, never exception-as-control-flow. Compiler errors use `Result<CompiledShader, ShaderError[]>`.
 - **Fail loudly.** An input shape we don't model gets a registered diagnostic code, never a silent pass-through. Never swallow or reformat a compiler's own message — keep its file, line, column, and text verbatim.
 - Unit tests are pure (no disk, no process); integration tests are tagged `[Trait("Category","Integration")]`; no `Thread.Sleep` in tests.
+- **Assertions use Shouldly; never FluentAssertions** — banned (issue #171), a licence obligation, not a preference. Never add the package back and never write `.Should()`; Shouldly's assertions hang off the value itself. On string receivers pass `Case.Sensitive` to `ShouldContain`/`ShouldNotContain`: Shouldly's default is case-*insensitive*, which silently weakens assertions over generated shader source.
 
 ## Git Commit Conventions
 

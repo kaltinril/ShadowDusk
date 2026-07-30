@@ -1,4 +1,4 @@
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.ShaderToy.Tests;
@@ -15,21 +15,20 @@ public sealed class StructArrayTests
     private static string ConvertOk(string glsl)
     {
         ConvertResult r = ShaderToyConverter.Convert(glsl);
-        r.Success.Should().BeTrue(
+        r.Success.ShouldBeTrue(string.Format(
             "the shader is in-subset; diagnostics: {0}",
-            string.Join("; ", r.Diagnostics.Select(d => $"{d.Severity}:{d.Message}")));
-        r.Fx.Should().NotBeNull();
+            string.Join("; ", r.Diagnostics.Select(d => $"{d.Severity}:{d.Message}"))));
+        r.Fx.ShouldNotBeNull();
         return r.Fx!;
     }
 
     private static ConvertResult ConvertReject(string glsl)
     {
         ConvertResult r = ShaderToyConverter.Convert(glsl);
-        r.Success.Should().BeFalse();
-        r.Fx.Should().BeNull();
-        r.Diagnostics.Should().Contain(d =>
-            d.Severity == DiagnosticSeverity.Error && d.Line > 0 && d.Column > 0,
-            "a reject must carry a located error");
+        r.Success.ShouldBeFalse();
+        r.Fx.ShouldBeNull();
+        r.Diagnostics.ShouldContain(d =>
+            d.Severity == DiagnosticSeverity.Error && d.Line > 0 && d.Column > 0, "a reject must carry a located error");
         return r;
     }
 
@@ -49,13 +48,13 @@ public sealed class StructArrayTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("struct Ray");
-        fx.Should().Contain("Ray make_Ray(float3 origin, float3 dir)");
+        fx.ShouldContain("struct Ray", Case.Sensitive);
+        fx.ShouldContain("Ray make_Ray(float3 origin, float3 dir)", Case.Sensitive);
         // The GLSL Name(...) constructor must route to the generated factory, never Ray(...).
-        fx.Should().Contain("make_Ray(float3(uv, 0.0), float3(0.0, 0.0, 1.0))");
+        fx.ShouldContain("make_Ray(float3(uv, 0.0), float3(0.0, 0.0, 1.0))", Case.Sensitive);
         // Member access is emitted verbatim (no swizzle mangling on the field name).
-        fx.Should().Contain("r.origin.xy");
-        fx.Should().Contain("r.dir.z");
+        fx.ShouldContain("r.origin.xy", Case.Sensitive);
+        fx.ShouldContain("r.dir.z", Case.Sensitive);
     }
 
     [Fact]
@@ -76,8 +75,8 @@ public sealed class StructArrayTests
 
         string fx = ConvertOk(glsl);
         // mul(v, M) order: the vector member must be the first mul() argument, the matrix member second.
-        fx.Should().Contain("mul(x.off, x.rot)");
-        fx.Should().NotContain("x.rot * x.off");
+        fx.ShouldContain("mul(x.off, x.rot)", Case.Sensitive);
+        fx.ShouldNotContain("x.rot * x.off", Case.Sensitive);
     }
 
     [Fact]
@@ -95,8 +94,8 @@ public sealed class StructArrayTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("Hit trace(float2 uv)");
-        fx.Should().Contain("float3 shade(Hit h)");
+        fx.ShouldContain("Hit trace(float2 uv)", Case.Sensitive);
+        fx.ShouldContain("float3 shade(Hit h)", Case.Sensitive);
     }
 
     [Fact]
@@ -112,7 +111,7 @@ public sealed class StructArrayTests
         """;
 
         ConvertResult r = ConvertReject(glsl);
-        r.Diagnostics.Should().Contain(d => d.Message.Contains("expects 2 argument", StringComparison.Ordinal));
+        r.Diagnostics.ShouldContain(d => d.Message.Contains("expects 2 argument", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -127,7 +126,7 @@ public sealed class StructArrayTests
         """;
 
         ConvertResult r = ConvertReject(glsl);
-        r.Diagnostics.Should().Contain(d => d.Message.Contains("struct", StringComparison.OrdinalIgnoreCase));
+        r.Diagnostics.ShouldContain(d => d.Message.Contains("struct", StringComparison.OrdinalIgnoreCase));
     }
 
     // ── G7: arrays ────────────────────────────────────────────────────────────
@@ -145,7 +144,7 @@ public sealed class StructArrayTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("static const float k[3] = { 0.2, 0.5, 0.3 };");
+        fx.ShouldContain("static const float k[3] = { 0.2, 0.5, 0.3 };", Case.Sensitive);
     }
 
     [Fact]
@@ -160,7 +159,7 @@ public sealed class StructArrayTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("static const float2 pts[2] = { ((float2)(0.0)), ((float2)(1.0)) };");
+        fx.ShouldContain("static const float2 pts[2] = { ((float2)(0.0)), ((float2)(1.0)) };", Case.Sensitive);
     }
 
     [Fact]
@@ -178,7 +177,7 @@ public sealed class StructArrayTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("float a[2];");
+        fx.ShouldContain("float a[2];", Case.Sensitive);
     }
 
     [Fact]
@@ -193,7 +192,7 @@ public sealed class StructArrayTests
         """;
 
         ConvertResult r = ConvertReject(glsl);
-        r.Diagnostics.Should().Contain(d => d.Message.Contains("Unsized", StringComparison.Ordinal));
+        r.Diagnostics.ShouldContain(d => d.Message.Contains("Unsized", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -209,7 +208,7 @@ public sealed class StructArrayTests
 
         // The array constructor declares 3 but the parser catches the size/element mismatch.
         ConvertResult r = ConvertReject(glsl);
-        r.Diagnostics.Should().Contain(d => d.Message.Contains("size", StringComparison.OrdinalIgnoreCase));
+        r.Diagnostics.ShouldContain(d => d.Message.Contains("size", StringComparison.OrdinalIgnoreCase));
     }
 
     // ── G7: added intrinsics ──────────────────────────────────────────────────
@@ -227,7 +226,7 @@ public sealed class StructArrayTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("fwidth(uv.x)");
+        fx.ShouldContain("fwidth(uv.x)", Case.Sensitive);
     }
 
     [Fact]
@@ -245,7 +244,7 @@ public sealed class StructArrayTests
 
         string fx = ConvertOk(glsl);
         // matrixCompMult is componentwise: emit (a * b), NOT a mul()-reordered product.
-        fx.Should().Contain("float2x2 c = (a * b);");
+        fx.ShouldContain("float2x2 c = (a * b);", Case.Sensitive);
     }
 
     [Fact]
@@ -260,7 +259,7 @@ public sealed class StructArrayTests
         """;
 
         ConvertResult r = ConvertReject(glsl);
-        r.Diagnostics.Should().Contain(d => d.Message.Contains("roundEven", StringComparison.Ordinal));
+        r.Diagnostics.ShouldContain(d => d.Message.Contains("roundEven", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -277,7 +276,7 @@ public sealed class StructArrayTests
         """;
 
         ConvertResult r = ConvertReject(glsl);
-        r.Diagnostics.Should().Contain(d => d.Message.Contains("mip-bias", StringComparison.Ordinal));
+        r.Diagnostics.ShouldContain(d => d.Message.Contains("mip-bias", StringComparison.Ordinal));
     }
 
     // ── G7: parser hardening ──────────────────────────────────────────────────
@@ -298,6 +297,6 @@ public sealed class StructArrayTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("i++, j--");
+        fx.ShouldContain("i++, j--", Case.Sensitive);
     }
 }

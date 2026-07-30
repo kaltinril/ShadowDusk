@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using Xunit;
@@ -120,7 +120,7 @@ public sealed class SyncCompileByteIdentityTests
 
         AssertSuccess(syncResult, "Minimal.fx", "sync/oracle");
         AssertSuccess(asyncResult, "Minimal.fx", "async/oracle");
-        syncResult.Value.Data.Should().Equal(asyncResult.Value.Data);
+        syncResult.Value.Data.ShouldBe(asyncResult.Value.Data);
     }
 
     /// <summary>
@@ -142,7 +142,7 @@ public sealed class SyncCompileByteIdentityTests
         var result = compiler.Compile(source, BuildOptions("Minimal.fx", PlatformTarget.OpenGL), cts.Token);
 
         AssertSuccess(result, "Minimal.fx", "sync after InitializeAsync");
-        result.Value.Data.Should().NotBeEmpty();
+        result.Value.Data.ShouldNotBeEmpty();
     }
 
     // -------------------------------------------------------------------------
@@ -168,8 +168,7 @@ public sealed class SyncCompileByteIdentityTests
             AssertSuccess(syncResult, fx, $"sync/{target}");
             AssertSuccess(asyncResult, fx, $"async/{target}");
 
-            syncResult.Value.Data.Should().Equal(asyncResult.Value.Data,
-                because: $"'{fx}' for {target} must compile to byte-identical output through " +
+            syncResult.Value.Data.ShouldBe(asyncResult.Value.Data, customMessage: $"'{fx}' for {target} must compile to byte-identical output through " +
                          "Compile and CompileAsync — they share ONE pipeline core (issue #28); " +
                          "a mismatch means the implementations forked");
         }
@@ -193,8 +192,7 @@ public sealed class SyncCompileByteIdentityTests
     private static void AssertSuccess(
         Result<CompiledShader, ShaderError[]> result, string fx, string arm)
     {
-        result.IsSuccess.Should().BeTrue(
-            because: $"'{fx}' ({arm}) is in the corpus and must compile; errors: " +
+        result.IsSuccess.ShouldBeTrue($"'{fx}' ({arm}) is in the corpus and must compile; errors: " +
                      (result.IsFailure
                          ? string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}"))
                          : "<none>"));

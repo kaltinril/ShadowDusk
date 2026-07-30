@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
 using Xunit;
@@ -31,13 +31,10 @@ public sealed class FileSystemIncludeResolverTests
             includingFilePath: RootFxPath,
             additionalSearchPaths: [IncludesDir]);
 
-        result.IsSuccess.Should().BeTrue(
-            because: result.IsFailure ? result.Error.Message : "the header exists on disk");
-        result.Value.Text.Should().Contain("ApplyIdentity",
-            because: "the resolved text must be the real on-disk header contents");
-        Path.GetFullPath(result.Value.FilePath).Should().Be(
-            Path.GetFullPath(Path.Combine(IncludesDir, "TestHelper.fxh")),
-            because: "the resolved path must be the canonicalized on-disk location");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : "the header exists on disk");
+        result.Value.Text.ShouldContain("ApplyIdentity", Case.Sensitive, "the resolved text must be the real on-disk header contents");
+        Path.GetFullPath(result.Value.FilePath).ShouldBe(
+            Path.GetFullPath(Path.Combine(IncludesDir, "TestHelper.fxh")), customMessage: "the resolved path must be the canonicalized on-disk location");
     }
 
     [Fact]
@@ -53,9 +50,8 @@ public sealed class FileSystemIncludeResolverTests
             includingFilePath: includingFile,
             additionalSearchPaths: []);
 
-        result.IsSuccess.Should().BeTrue(
-            because: result.IsFailure ? result.Error.Message : "sibling-directory resolution must find the header");
-        result.Value.Text.Should().Contain("ApplyIdentity");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : "sibling-directory resolution must find the header");
+        result.Value.Text.ShouldContain("ApplyIdentity", Case.Sensitive);
     }
 
     [Fact]
@@ -68,13 +64,11 @@ public sealed class FileSystemIncludeResolverTests
             includingFilePath: RootFxPath,
             additionalSearchPaths: [IncludesDir]);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Kind.Should().Be(ShaderErrorKind.IncludeNotFound);
-        result.Error.RequestedPath.Should().Be("DoesNotExist.fxh");
-        result.Error.SearchedPaths.Should().NotBeNullOrEmpty(
-            because: "the diagnostic must say where it looked (Core Design Constraint 5)");
-        result.Error.Message.Should().Contain("DoesNotExist.fxh",
-            because: "the diagnostic must name the unresolvable include");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Kind.ShouldBe(ShaderErrorKind.IncludeNotFound);
+        result.Error.RequestedPath.ShouldBe("DoesNotExist.fxh");
+        result.Error.SearchedPaths.ShouldNotBeEmpty("the diagnostic must say where it looked (Core Design Constraint 5)");
+        result.Error.Message.ShouldContain("DoesNotExist.fxh", Case.Sensitive, "the diagnostic must name the unresolvable include");
     }
 
     [Fact]
@@ -93,11 +87,8 @@ public sealed class FileSystemIncludeResolverTests
             new FileSystemIncludeResolver(),
             [IncludesDir]);
 
-        result.IsSuccess.Should().BeTrue(
-            because: result.IsFailure ? result.Error.Message : "the include resolves from disk");
-        result.Value.Text.Should().Contain("ApplyIdentity",
-            because: "the header body must be inlined");
-        result.Value.Text.Should().NotContain("#include",
-            because: "flattening must leave no unresolved #include directives");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : "the include resolves from disk");
+        result.Value.Text.ShouldContain("ApplyIdentity", Case.Sensitive, "the header body must be inlined");
+        result.Value.Text.ShouldNotContain("#include", Case.Sensitive, "flattening must leave no unresolved #include directives");
     }
 }

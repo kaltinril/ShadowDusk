@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using Xunit;
@@ -37,7 +37,7 @@ public sealed class CapabilityProfileByteIdentityTests
     {
         string source = await File.ReadAllTextAsync(ShaderPath(fixture));
         var result = await new EffectCompiler().CompileAsync(source, options);
-        result.IsSuccess.Should().BeTrue(
+        result.IsSuccess.ShouldBeTrue(
             $"{fixture} should compile for {options.Target} (profile: {options.Profile?.ToString() ?? "none"})");
         return result.Value.Data;
     }
@@ -52,8 +52,7 @@ public sealed class CapabilityProfileByteIdentityTests
         byte[] withoutProfile = await CompileBytesAsync("Minimal.fx", PlatformTarget.OpenGL, profile: null);
         byte[] withProfile = await CompileBytesAsync("Minimal.fx", PlatformTarget.OpenGL, CapabilityProfile.MonoGameGL_3_8_2);
 
-        withProfile.Should().Equal(withoutProfile,
-            "MonoGameGL_3_8_2 is the proven default GL contract, so selecting it explicitly must emit identical bytes");
+        withProfile.ShouldBe(withoutProfile, customMessage: "MonoGameGL_3_8_2 is the proven default GL contract, so selecting it explicitly must emit identical bytes");
     }
 
     [Fact]
@@ -65,13 +64,11 @@ public sealed class CapabilityProfileByteIdentityTests
         // Target is the default OpenGL, and a GL profile emits OpenGL even when Target is DirectX.
         byte[] dxViaTarget  = await CompileBytesAsync("Minimal.fx", PlatformTarget.DirectX, profile: null);
         byte[] dxViaProfile = await CompileBytesAsync("Minimal.fx", PlatformTarget.OpenGL, CapabilityProfile.MonoGameDX_SM5);
-        dxViaProfile.Should().Equal(dxViaTarget,
-            "MonoGameDX_SM5 names the DirectX backend, so it emits DirectX output even when Target is OpenGL");
+        dxViaProfile.ShouldBe(dxViaTarget, customMessage: "MonoGameDX_SM5 names the DirectX backend, so it emits DirectX output even when Target is OpenGL");
 
         byte[] glViaTarget  = await CompileBytesAsync("Minimal.fx", PlatformTarget.OpenGL, profile: null);
         byte[] glViaProfile = await CompileBytesAsync("Minimal.fx", PlatformTarget.DirectX, CapabilityProfile.MonoGameGL_3_8_2);
-        glViaProfile.Should().Equal(glViaTarget,
-            "MonoGameGL_3_8_2 names the OpenGL backend, so it emits OpenGL output even when Target is DirectX");
+        glViaProfile.ShouldBe(glViaTarget, customMessage: "MonoGameGL_3_8_2 names the OpenGL backend, so it emits OpenGL output even when Target is DirectX");
     }
 
     [Fact]
@@ -84,8 +81,7 @@ public sealed class CapabilityProfileByteIdentityTests
         byte[] viaDetectedProfile = await CompileBytesAsync("Minimal.fx", new CompilerOptions { Profile = detected });
         byte[] viaExplicitTarget  = await CompileBytesAsync("Minimal.fx", new CompilerOptions { Target = PlatformTarget.DirectX });
 
-        viaDetectedProfile.Should().Equal(viaExplicitTarget,
-            "an auto-detected DirectX profile must compile to DirectX even though Target defaulted to OpenGL");
+        viaDetectedProfile.ShouldBe(viaExplicitTarget, customMessage: "an auto-detected DirectX profile must compile to DirectX even though Target defaulted to OpenGL");
     }
 
     [Fact]
@@ -101,8 +97,7 @@ public sealed class CapabilityProfileByteIdentityTests
         });
         byte[] viaProfile = await CompileBytesAsync("Minimal.fx", PlatformTarget.OpenGL, CapabilityProfile.KniGL_4_02);
 
-        viaProfile.Should().Equal(viaOption,
-            "KniGL_4_02 names the KNIFX container, so it must emit identical bytes to Container = Knifx");
+        viaProfile.ShouldBe(viaOption, customMessage: "KniGL_4_02 names the KNIFX container, so it must emit identical bytes to Container = Knifx");
     }
 
     [Fact]
@@ -118,8 +113,7 @@ public sealed class CapabilityProfileByteIdentityTests
         });
         byte[] viaProfile = await CompileBytesAsync("Minimal.fx", PlatformTarget.OpenGL, CapabilityProfile.MonoGameGL_3_8_5);
 
-        viaProfile.Should().Equal(viaOption,
-            "MonoGameGL_3_8_5 names MGFX v11, so it must emit identical bytes to MgfxVersion = 11");
+        viaProfile.ShouldBe(viaOption, customMessage: "MonoGameGL_3_8_5 names MGFX v11, so it must emit identical bytes to MgfxVersion = 11");
     }
 
     // -------------------------------------------------------------------------
@@ -149,12 +143,10 @@ public sealed class CapabilityProfileByteIdentityTests
         string mgfxGlsl  = Ascii(mgfx);
 
         // KNIFX took the __KNIFX__ branch (the red constant); the universal MGFX output did not.
-        knifxGlsl.Should().Contain("vec4(1.0, 0.0",
-            because: "KNI's compiler defines __KNIFX__, so the KNIFX container must take the __KNIFX__ branch");
-        knifxGlsl.Should().NotContain("vec4(0.0, 1.0");
-        mgfxGlsl.Should().Contain("vec4(0.0, 1.0",
-            because: "the default MGFX output is target-agnostic and must NOT define __KNIFX__");
-        mgfxGlsl.Should().NotContain("vec4(1.0, 0.0");
+        knifxGlsl.ShouldContain("vec4(1.0, 0.0", Case.Sensitive, "KNI's compiler defines __KNIFX__, so the KNIFX container must take the __KNIFX__ branch");
+        knifxGlsl.ShouldNotContain("vec4(0.0, 1.0", Case.Sensitive);
+        mgfxGlsl.ShouldContain("vec4(0.0, 1.0", Case.Sensitive, "the default MGFX output is target-agnostic and must NOT define __KNIFX__");
+        mgfxGlsl.ShouldNotContain("vec4(1.0, 0.0", Case.Sensitive);
     }
 
     [Fact]
@@ -166,7 +158,6 @@ public sealed class CapabilityProfileByteIdentityTests
         byte[] viaProfile = await CompileBytesAsync(
             "examples/ExKnifxMacro.fx", PlatformTarget.OpenGL, CapabilityProfile.KniGL_4_02);
 
-        Ascii(viaProfile).Should().Contain("vec4(1.0, 0.0",
-            because: "KniGL_4_02 is a KNIFX (KNI) profile, so __KNIFX__ is defined");
+        Ascii(viaProfile).ShouldContain("vec4(1.0, 0.0", Case.Sensitive, "KniGL_4_02 is a KNIFX (KNI) profile, so __KNIFX__ is defined");
     }
 }

@@ -1,4 +1,4 @@
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.ShaderToy.Tests;
@@ -24,9 +24,9 @@ public sealed class BannedEntryScanTests
         """;
 
         ConvertResult r = ShaderToyConverter.Convert(glsl);
-        r.Success.Should().BeTrue(
+        r.Success.ShouldBeTrue(string.Format(
             "a banned token inside a comment is not a banned entry point; diagnostics: {0}",
-            string.Join("; ", r.Diagnostics.Select(d => $"{d.Severity}:{d.Message}")));
+            string.Join("; ", r.Diagnostics.Select(d => $"{d.Severity}:{d.Message}"))));
     }
 
     [Fact]
@@ -42,9 +42,9 @@ public sealed class BannedEntryScanTests
         """;
 
         ConvertResult r = ShaderToyConverter.Convert(glsl);
-        r.Success.Should().BeTrue(
+        r.Success.ShouldBeTrue(string.Format(
             "banned tokens inside a block comment are not banned entry points; diagnostics: {0}",
-            string.Join("; ", r.Diagnostics.Select(d => $"{d.Severity}:{d.Message}")));
+            string.Join("; ", r.Diagnostics.Select(d => $"{d.Severity}:{d.Message}"))));
     }
 
     [Fact]
@@ -64,13 +64,13 @@ public sealed class BannedEntryScanTests
 
         ConvertResult r = ShaderToyConverter.Convert(glsl);
 
-        r.Success.Should().BeFalse("a real mainSound definition is still a banned entry point");
-        ConvertDiagnostic error = r.Diagnostics.Should().ContainSingle(d =>
-            d.Severity == DiagnosticSeverity.Error).Subject;
-        error.Construct.Should().Be("mainSound");
+        r.Success.ShouldBeFalse("a real mainSound definition is still a banned entry point");
+        ConvertDiagnostic error = r.Diagnostics.Where(d =>
+            d.Severity == DiagnosticSeverity.Error).ShouldHaveSingleItem();
+        error.Construct.ShouldBe("mainSound");
         // Blanking comments preserves positions: the error points at the REAL definition (line 2),
         // not the comment mention on line 1.
-        error.Line.Should().Be(2);
-        error.Column.Should().Be(6);
+        error.Line.ShouldBe(2);
+        error.Column.ShouldBe(6);
     }
 }

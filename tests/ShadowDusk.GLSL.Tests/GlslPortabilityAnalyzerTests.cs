@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core;
 using ShadowDusk.GLSL;
 using Xunit;
@@ -42,10 +42,11 @@ void main()
 """;
         var findings = AnalyzePixel(glsl);
 
-        findings.Should().ContainSingle(f => f.Code == "SD0400");
+        findings.Where(f => f.Code == "SD0400").ShouldHaveSingleItem();
         var f = findings.Single(f => f.Code == "SD0400");
-        f.Severity.Should().Be(ShaderErrorSeverity.Warning, "lint findings never reject output");
-        f.Message.Should().Contain("dFdx").And.Contain("ANGLE");
+        f.Severity.ShouldBe(ShaderErrorSeverity.Warning, customMessage: "lint findings never reject output");
+        f.Message.ShouldContain("dFdx", Case.Sensitive);
+        f.Message.ShouldContain("ANGLE", Case.Sensitive);
     }
 
     [Fact]
@@ -64,7 +65,7 @@ void main()
     }
 }
 """;
-        AnalyzePixel(glsl).Should().Contain(f => f.Code == "SD0400");
+        AnalyzePixel(glsl).ShouldContain(f => f.Code == "SD0400");
     }
 
     [Fact]
@@ -95,8 +96,7 @@ void main()
 """;
         var findings = AnalyzePixel(glsl);
 
-        findings.Should().ContainSingle(f => f.Code == "SD0400",
-            "one gradient call nested in two divergent loops is one issue, not two");
+        findings.Where(f => f.Code == "SD0400").ShouldHaveSingleItem("one gradient call nested in two divergent loops is one issue, not two");
     }
 
     [Fact]
@@ -117,8 +117,7 @@ void main()
     ps_oC0 = vec4(w);
 }
 """;
-        AnalyzePixel(glsl).Should().NotContain(f => f.Code == "SD0400",
-            "the derivative is computed BEFORE the loop — the recommended fix shape");
+        AnalyzePixel(glsl).ShouldNotContain(f => f.Code == "SD0400", "the derivative is computed BEFORE the loop — the recommended fix shape");
     }
 
     [Fact]
@@ -135,8 +134,7 @@ void main()
     ps_oC0 = vec4(acc);
 }
 """;
-        AnalyzePixel(glsl).Should().NotContain(f => f.Code == "SD0400",
-            "ANGLE's zeroing applies only to loops with a divergent exit (break/discard)");
+        AnalyzePixel(glsl).ShouldNotContain(f => f.Code == "SD0400", "ANGLE's zeroing applies only to loops with a divergent exit (break/discard)");
     }
 
     // ---- SD0401: PS-only pass reading interpolants SpriteBatch's VS never writes. ----
@@ -156,11 +154,13 @@ void main()
 """;
         var findings = AnalyzePixel(glsl, passHasVertexShader: false);
 
-        findings.Should().ContainSingle(f => f.Code == "SD0401");
+        findings.Where(f => f.Code == "SD0401").ShouldHaveSingleItem();
         var f = findings.Single(f => f.Code == "SD0401");
-        f.Severity.Should().Be(ShaderErrorSeverity.Warning);
-        f.Message.Should().Contain("vTexCoord1").And.Contain("TEXCOORD1").And.Contain("SpriteBatch");
-        f.Message.Should().NotContain("vTexCoord0 (", "the SpriteEffect-provided varyings are not listed as missing");
+        f.Severity.ShouldBe(ShaderErrorSeverity.Warning);
+        f.Message.ShouldContain("vTexCoord1", Case.Sensitive);
+        f.Message.ShouldContain("TEXCOORD1", Case.Sensitive);
+        f.Message.ShouldContain("SpriteBatch", Case.Sensitive);
+        f.Message.ShouldNotContain("vTexCoord0 (", Case.Sensitive, "the SpriteEffect-provided varyings are not listed as missing");
     }
 
     [Fact]
@@ -174,8 +174,7 @@ void main()
     ps_oC0 = vTexCoord1;
 }
 """;
-        AnalyzePixel(glsl, passHasVertexShader: true).Should().NotContain(f => f.Code == "SD0401",
-            "a pass with its own VS defines its own varying contract");
+        AnalyzePixel(glsl, passHasVertexShader: true).ShouldNotContain(f => f.Code == "SD0401", "a pass with its own VS defines its own varying contract");
     }
 
     [Fact]
@@ -190,7 +189,7 @@ void main()
     ps_oC0 = vTexCoord0 * vFrontColor;
 }
 """;
-        AnalyzePixel(glsl, passHasVertexShader: false).Should().NotContain(f => f.Code == "SD0401");
+        AnalyzePixel(glsl, passHasVertexShader: false).ShouldNotContain(f => f.Code == "SD0401");
     }
 
     [Fact]
@@ -205,8 +204,8 @@ void main()
 }
 """;
         var findings = AnalyzePixel(glsl, passHasVertexShader: false);
-        findings.Should().ContainSingle(f => f.Code == "SD0401");
-        findings.Single(f => f.Code == "SD0401").Message.Should().Contain("NORMAL0");
+        findings.Where(f => f.Code == "SD0401").ShouldHaveSingleItem();
+        findings.Single(f => f.Code == "SD0401").Message.ShouldContain("NORMAL0", Case.Sensitive);
     }
 
     // ---- SD0402: loop shapes outside GLSL ES 1.00 Appendix A (issue #138). ----
@@ -227,7 +226,7 @@ void main()
 }
 """;
         var findings = AnalyzePixel(glsl);
-        findings.Should().Contain(f => f.Code == "SD0402" && f.Message.Contains("header-less"));
+        findings.ShouldContain(f => f.Code == "SD0402" && f.Message.Contains("header-less"));
     }
 
     [Fact]
@@ -268,8 +267,7 @@ void main()
 """;
         var rewritten = MonoGameGlslRewriter.Rewrite(glsl, ShaderStage.Pixel);
 
-        AnalyzePixel(rewritten.Glsl).Should().NotContain(f => f.Code == "SD0402",
-            "Rule 13 proves the loop's real ceiling and gives the header a literal bound");
+        AnalyzePixel(rewritten.Glsl).ShouldNotContain(f => f.Code == "SD0402", "Rule 13 proves the loop's real ceiling and gives the header a literal bound");
     }
 
     [Fact]
@@ -290,7 +288,7 @@ void main()
 }
 """;
         var findings = AnalyzePixel(glsl);
-        findings.Should().Contain(f => f.Code == "SD0402" && f.Message.Contains("empty increment"));
+        findings.ShouldContain(f => f.Code == "SD0402" && f.Message.Contains("empty increment"));
     }
 
     [Fact]
@@ -325,8 +323,7 @@ void main()
 """;
         var rewritten = MonoGameGlslRewriter.Rewrite(glsl, ShaderStage.Pixel);
 
-        AnalyzePixel(rewritten.Glsl).Should().NotContain(f => f.Code == "SD0402",
-            "Rule 12 hoists the increment into the header, so the shape SD0402 flagged no longer exists");
+        AnalyzePixel(rewritten.Glsl).ShouldNotContain(f => f.Code == "SD0402", "Rule 12 hoists the increment into the header, so the shape SD0402 flagged no longer exists");
     }
 
     [Fact]
@@ -343,7 +340,7 @@ void main()
     ps_oC0 = acc;
 }
 """;
-        AnalyzePixel(glsl).Should().NotContain(f => f.Code == "SD0402");
+        AnalyzePixel(glsl).ShouldNotContain(f => f.Code == "SD0402");
     }
 
     [Fact]
@@ -364,8 +361,7 @@ void main()
     }
 }
 """;
-        AnalyzePixel(glsl).Should().NotContain(f => f.Code == "SD0402",
-            "the rewriter's own Rule 9b output is Appendix-A-conformant");
+        AnalyzePixel(glsl).ShouldNotContain(f => f.Code == "SD0402", "the rewriter's own Rule 9b output is Appendix-A-conformant");
     }
 
     [Fact]
@@ -383,7 +379,7 @@ void main()
     ps_oC0 = acc;
 }
 """;
-        AnalyzePixel(glsl).Should().NotContain(f => f.Code == "SD0402");
+        AnalyzePixel(glsl).ShouldNotContain(f => f.Code == "SD0402");
     }
 
     [Fact]
@@ -401,8 +397,8 @@ void main()
 }
 """;
         var findings = AnalyzePixel(glsl).Where(f => f.Code == "SD0402").ToList();
-        findings.Should().ContainSingle("the do-while's trailing 'while (...)' must not double-count");
-        findings[0].Message.Should().Contain("do-while");
+        findings.ShouldHaveSingleItem("the do-while's trailing 'while (...)' must not double-count");
+        findings[0].Message.ShouldContain("do-while", Case.Sensitive);
     }
 
     [Fact]
@@ -429,8 +425,8 @@ void main()
 """;
         var findings = AnalyzePixel(glsl).Where(f => f.Code == "SD0402").ToList();
 
-        findings.Should().ContainSingle("the while loop after an if-block is a real Appendix A violation");
-        findings[0].Message.Should().Contain("while loop");
+        findings.ShouldHaveSingleItem("the while loop after an if-block is a real Appendix A violation");
+        findings[0].Message.ShouldContain("while loop", Case.Sensitive);
     }
 
     [Fact]
@@ -457,7 +453,7 @@ void main()
     }
 }
 """;
-        AnalyzePixel(glsl).Should().Contain(f => f.Code == "SD0400");
+        AnalyzePixel(glsl).ShouldContain(f => f.Code == "SD0400");
     }
 
     [Fact]
@@ -474,7 +470,7 @@ void main()
     ps_oC0 = vec4(float(i));
 }
 """;
-        AnalyzePixel(glsl).Should().Contain(f => f.Code == "SD0402" && f.Message.Contains("while"));
+        AnalyzePixel(glsl).ShouldContain(f => f.Code == "SD0402" && f.Message.Contains("while"));
     }
 
     [Fact]
@@ -500,8 +496,8 @@ void main()
         var findings = GlslPortabilityAnalyzer.Analyze(
             glsl, ShaderStage.Vertex, passHasVertexShader: true, "shader.fx", "MainVS");
 
-        findings.Should().Contain(f => f.Code == "SD0402");
-        findings.Should().NotContain(f => f.Code == "SD0400" || f.Code == "SD0401");
+        findings.ShouldContain(f => f.Code == "SD0402");
+        findings.ShouldNotContain(f => f.Code == "SD0400" || f.Code == "SD0401");
     }
 
     [Fact]
@@ -516,7 +512,7 @@ void main()
     ps_oC0 = texture2D(ps_s0, vTexCoord0.xy) * vFrontColor;
 }
 """;
-        AnalyzePixel(glsl, passHasVertexShader: false).Should().BeEmpty();
+        AnalyzePixel(glsl, passHasVertexShader: false).ShouldBeEmpty();
     }
 
     // -------------------------------------------------------------------------
@@ -539,8 +535,8 @@ void main()
 """;
         var findings = AnalyzePixel(glsl, passHasVertexShader: true);
 
-        findings.Should().Contain(f => f.Code == "SD0403" && f.Message.Contains("transpose"));
-        findings.Should().OnlyContain(f => f.Severity == ShaderErrorSeverity.Warning);
+        findings.ShouldContain(f => f.Code == "SD0403" && f.Message.Contains("transpose"));
+        findings.ShouldAllBe(f => f.Severity == ShaderErrorSeverity.Warning);
     }
 
     [Fact]
@@ -558,8 +554,8 @@ void main()
 """;
         var findings = AnalyzePixel(glsl, passHasVertexShader: true);
 
-        findings.Should().Contain(f => f.Code == "SD0403" && f.Message.Contains("sinh"));
-        findings.Should().Contain(f => f.Code == "SD0403" && f.Message.Contains("isnan"));
+        findings.ShouldContain(f => f.Code == "SD0403" && f.Message.Contains("sinh"));
+        findings.ShouldContain(f => f.Code == "SD0403" && f.Message.Contains("isnan"));
     }
 
     [Fact]
@@ -579,7 +575,7 @@ void main()
 }
 """;
         AnalyzePixel(glsl, passHasVertexShader: true)
-            .Should().Contain(f => f.Code == "SD0403" && f.Message.Contains("switch"));
+            .ShouldContain(f => f.Code == "SD0403" && f.Message.Contains("switch"));
     }
 
     [Fact]
@@ -596,7 +592,7 @@ void main()
 }
 """;
         AnalyzePixel(glsl, passHasVertexShader: true)
-            .Should().Contain(f => f.Code == "SD0403" && f.Message.Contains("round"));
+            .ShouldContain(f => f.Code == "SD0403" && f.Message.Contains("round"));
     }
 
     [Fact]
@@ -615,7 +611,7 @@ void main()
 }
 """;
         AnalyzePixel(glsl, passHasVertexShader: true)
-            .Should().NotContain(f => f.Code == "SD0403");
+            .ShouldNotContain(f => f.Code == "SD0403");
     }
 
     [Theory]
@@ -641,7 +637,7 @@ void main()
 }
 """;
         AnalyzePixel(glsl, passHasVertexShader: true)
-            .Should().Contain(f => f.Code == "SD0403" && f.Message.Contains(kind));
+            .ShouldContain(f => f.Code == "SD0403" && f.Message.Contains(kind));
     }
 
     [Fact]
@@ -665,6 +661,6 @@ void main()
 }
 """;
         AnalyzePixel(glsl, passHasVertexShader: true)
-            .Should().NotContain(f => f.Code == "SD0403");
+            .ShouldNotContain(f => f.Code == "SD0403");
     }
 }

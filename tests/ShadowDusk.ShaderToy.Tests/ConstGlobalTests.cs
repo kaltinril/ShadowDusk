@@ -1,4 +1,4 @@
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.ShaderToy.Tests;
@@ -25,20 +25,19 @@ public sealed class ConstGlobalTests
 
         ConvertResult r = ShaderToyConverter.Convert(glsl);
 
-        r.Success.Should().BeTrue(
+        r.Success.ShouldBeTrue(string.Format(
             "all three const declarators are valid; diagnostics: {0}",
-            string.Join("; ", r.Diagnostics.Select(d => $"{d.Severity}:{d.Message}")));
+            string.Join("; ", r.Diagnostics.Select(d => $"{d.Severity}:{d.Message}"))));
 
         // Each declarator emits its own const, in source order (PI before the consts that use it).
-        r.Fx!.Should().Contain("static const float PI");
-        r.Fx!.Should().Contain("static const float TAU");
-        r.Fx!.Should().Contain("static const float HALF_PI");
-        r.Fx!.IndexOf("float PI", StringComparison.Ordinal).Should().BeLessThan(
-            r.Fx!.IndexOf("float TAU", StringComparison.Ordinal),
-            "PI must be declared before TAU, which references it");
+        r.Fx!.ShouldContain("static const float PI", Case.Sensitive);
+        r.Fx!.ShouldContain("static const float TAU", Case.Sensitive);
+        r.Fx!.ShouldContain("static const float HALF_PI", Case.Sensitive);
+        r.Fx!.IndexOf("float PI", StringComparison.Ordinal).ShouldBeLessThan(
+            r.Fx!.IndexOf("float TAU", StringComparison.Ordinal), customMessage: "PI must be declared before TAU, which references it");
 
         // No "Undeclared identifier" misfire on the later declarators.
-        r.Diagnostics.Should().NotContain(d => d.Message.Contains("Undeclared", StringComparison.Ordinal));
+        r.Diagnostics.ShouldNotContain(d => d.Message.Contains("Undeclared", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -54,7 +53,7 @@ public sealed class ConstGlobalTests
 
         ConvertResult r = ShaderToyConverter.Convert(glsl);
 
-        r.Success.Should().BeTrue();
-        r.Fx!.Should().Contain("static const float K = 0.75");
+        r.Success.ShouldBeTrue();
+        r.Fx!.ShouldContain("static const float K = 0.75", Case.Sensitive);
     }
 }

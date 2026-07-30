@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
@@ -172,7 +172,7 @@ public sealed class MatrixConventionSweepTests
                 IncludeResolver = new FileSystemIncludeResolver(),
                 SourceFileName = fxPath,
             });
-        result.IsSuccess.Should().BeTrue(result.IsFailure
+        result.IsSuccess.ShouldBeTrue(result.IsFailure
             ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "compile ok");
         GlslShaderPair sd = GlslShaderExtractor.Extract(result.Value.Data);
         string goldenPath = Path.Combine(repoRoot, "tests", "fixtures", "golden", "OpenGL", fixture + ".mgfx");
@@ -196,7 +196,7 @@ public sealed class MatrixConventionSweepTests
             sd   = Render(_fixture.Gl, sdVs, gPs, vsRegs, ps, textured);
         }
         var cmp = ImageComparer.Compare(gold, sd, tolerance: (byte)tol);
-        cmp.Matches.Should().BeTrue(
+        cmp.Matches.ShouldBeTrue(
             $"[{fixture}] {label}: ShadowDusk's VS must render equivalent to the mgfxc golden " +
             $"(diff {cmp.DifferentPixels}/{cmp.TotalPixels}, maxd {cmp.MaxChannelDelta}, tol {tol})");
     }
@@ -229,9 +229,9 @@ public sealed class MatrixConventionSweepTests
             mImg  = Render(_fixture.Gl, gVs, gPs, mRegs, ps, textured);
             tImg  = Render(_fixture.Gl, gVs, gPs, tRegs, ps, textured);
         }
-        ImageComparer.Compare(idImg, mImg, tolerance: 4).Matches.Should().BeFalse(
+        ImageComparer.Compare(idImg, mImg, tolerance: 4).Matches.ShouldBeFalse(
             $"[{fixture}] a non-identity matrix must render differently from identity (the transform must run)");
-        ImageComparer.Compare(mImg, tImg, tolerance: 4).Matches.Should().BeFalse(
+        ImageComparer.Compare(mImg, tImg, tolerance: 4).Matches.ShouldBeFalse(
             $"[{fixture}] an asymmetric matrix must render differently from its transpose (transpose-sensitive scene)");
     }
 

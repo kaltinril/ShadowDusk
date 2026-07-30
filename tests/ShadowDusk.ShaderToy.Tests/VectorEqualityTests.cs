@@ -1,4 +1,4 @@
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.ShaderToy.Tests;
@@ -16,10 +16,10 @@ public sealed class VectorEqualityTests
     private static string ConvertOk(string glsl)
     {
         ConvertResult r = ShaderToyConverter.Convert(glsl);
-        r.Success.Should().BeTrue(
+        r.Success.ShouldBeTrue(string.Format(
             "the shader is in-subset; diagnostics: {0}",
-            string.Join("; ", r.Diagnostics.Select(d => $"{d.Severity}:{d.Message}")));
-        r.Fx.Should().NotBeNull();
+            string.Join("; ", r.Diagnostics.Select(d => $"{d.Severity}:{d.Message}"))));
+        r.Fx.ShouldNotBeNull();
         return r.Fx!;
     }
 
@@ -39,8 +39,8 @@ public sealed class VectorEqualityTests
 
         string fx = ConvertOk(glsl);
         // The double-paren form `for (...; (i != 8); ...)` trips -Werror,-Wparentheses-equality.
-        fx.Should().Contain("for (int i = 0; i != 8; i++)");
-        fx.Should().NotContain("(i != 8)");
+        fx.ShouldContain("for (int i = 0; i != 8; i++)", Case.Sensitive);
+        fx.ShouldNotContain("(i != 8)", Case.Sensitive);
     }
 
     [Fact]
@@ -63,7 +63,7 @@ public sealed class VectorEqualityTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("any(p != target)", "a vector != in a for-condition is a single GLSL bool");
+        fx.ShouldContain("any(p != target)", Case.Sensitive, "a vector != in a for-condition is a single GLSL bool");
     }
 
     // ── vector ==/!= outside condition contexts (bug 2) ───────────────────────────────────────
@@ -82,8 +82,7 @@ public sealed class VectorEqualityTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("bool hit = all(p == q)",
-            "GLSL vec3 == vec3 is a single bool; HLSL needs the all() reduction");
+        fx.ShouldContain("bool hit = all(p == q)", Case.Sensitive, "GLSL vec3 == vec3 is a single bool; HLSL needs the all() reduction");
     }
 
     [Fact]
@@ -99,7 +98,7 @@ public sealed class VectorEqualityTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("return all(a == b);");
+        fx.ShouldContain("return all(a == b);", Case.Sensitive);
     }
 
     [Fact]
@@ -117,7 +116,7 @@ public sealed class VectorEqualityTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("pick(any(p != q))");
+        fx.ShouldContain("pick(any(p != q))", Case.Sensitive);
     }
 
     [Fact]
@@ -135,7 +134,7 @@ public sealed class VectorEqualityTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("hit = all(p == q)");
+        fx.ShouldContain("hit = all(p == q)", Case.Sensitive);
     }
 
     // ── the conservative path is untouched ────────────────────────────────────────────────────
@@ -154,9 +153,9 @@ public sealed class VectorEqualityTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("bool b = (x == y)");
-        fx.Should().NotContain("all(");
-        fx.Should().NotContain("any(");
+        fx.ShouldContain("bool b = (x == y)", Case.Sensitive);
+        fx.ShouldNotContain("all(", Case.Sensitive);
+        fx.ShouldNotContain("any(", Case.Sensitive);
     }
 
     [Fact]
@@ -172,7 +171,7 @@ public sealed class VectorEqualityTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("t != 4.0;");
-        fx.Should().NotContain("any(");
+        fx.ShouldContain("t != 4.0;", Case.Sensitive);
+        fx.ShouldNotContain("any(", Case.Sensitive);
     }
 }

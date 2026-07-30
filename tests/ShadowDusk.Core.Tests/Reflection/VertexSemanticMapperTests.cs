@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core.Reflection;
 using Xunit;
 
@@ -35,7 +35,7 @@ public sealed class VertexSemanticMapperTests
     [InlineData("FOG",       9, 0)]
     [InlineData("TESSELLATEFACTOR", 12, 0)]
     public void Map_KnownSemantics(string semantic, byte usage, int index)
-        => VertexSemanticMapper.Map(semantic).Should().Be((usage, index));
+        => VertexSemanticMapper.Map(semantic).ShouldBe((usage, index));
 
     [Theory]
     [InlineData("PSIZE")]
@@ -47,19 +47,19 @@ public sealed class VertexSemanticMapperTests
         // PSIZE is the real D3D9-era HLSL spelling. It used to fall through to the
         // TextureCoordinate default, where it collided with a genuine TEXCOORD0 attribute
         // and silently produced a wrong vertex layout.
-        VertexSemanticMapper.Map(semantic).Should().Be(((byte)10, 0));
+        VertexSemanticMapper.Map(semantic).ShouldBe(((byte)10, 0));
     }
 
     [Fact]
     public void Map_IsCaseInsensitive()
-        => VertexSemanticMapper.Map("TexCoord2").Should().Be(((byte)2, 2));
+        => VertexSemanticMapper.Map("TexCoord2").ShouldBe(((byte)2, 2));
 
     [Fact]
     public void Map_UnknownSemantic_FallsBackToTextureCoordinate()
     {
         // mgfxc's own default for a semantic it does not model.
-        VertexSemanticMapper.Map("POSITIONT").Should().Be(((byte)2, 0));
-        VertexSemanticMapper.Map("MYTHING7").Should().Be(((byte)2, 7));
+        VertexSemanticMapper.Map("POSITIONT").ShouldBe(((byte)2, 0));
+        VertexSemanticMapper.Map("MYTHING7").ShouldBe(((byte)2, 7));
     }
 
     [Fact]
@@ -72,6 +72,6 @@ public sealed class VertexSemanticMapperTests
 
         var act = () => VertexSemanticMapper.Map(semantic);
 
-        act.Should().NotThrow();
+        Should.NotThrow(act);
     }
 }

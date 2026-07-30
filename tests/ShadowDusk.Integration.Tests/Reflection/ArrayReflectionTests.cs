@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Reflection;
 using ShadowDusk.HLSL.Dxc;
@@ -35,8 +35,7 @@ public sealed class ArrayReflectionTests
             Platform       = PlatformTarget.DirectX,
         };
         var result = await compiler.CompileAsync(request);
-        result.IsSuccess.Should().BeTrue(
-            because: result.IsFailure ? result.Error.FxcFormattedMessage : "compilation must succeed");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.FxcFormattedMessage : "compilation must succeed");
         return result.Value.Bytes;
     }
 
@@ -47,7 +46,7 @@ public sealed class ArrayReflectionTests
 
         var result = new DxilReflectionExtractor().Extract(dxilBlob);
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
     }
 
     [Fact]
@@ -57,7 +56,7 @@ public sealed class ArrayReflectionTests
 
         var reflected = new DxilReflectionExtractor().Extract(dxilBlob).Value;
 
-        reflected.ConstantBuffers.Should().ContainSingle();
+        reflected.ConstantBuffers.ShouldHaveSingleItem();
     }
 
     [Fact]
@@ -68,7 +67,7 @@ public sealed class ArrayReflectionTests
         var cbuffer = new DxilReflectionExtractor().Extract(dxilBlob).Value.ConstantBuffers[0];
         var variable = cbuffer.Variables.Single(v => v.Name == "PointLights");
 
-        variable.Elements.Should().Be(4);
+        variable.Elements.ShouldBe(4);
     }
 
     [Fact]
@@ -80,7 +79,7 @@ public sealed class ArrayReflectionTests
         var cbuffer = new DxilReflectionExtractor().Extract(dxilBlob).Value.ConstantBuffers[0];
         var variable = cbuffer.Variables.Single(v => v.Name == "PointLights");
 
-        variable.SizeBytes.Should().Be(64);
+        variable.SizeBytes.ShouldBe(64);
     }
 
     [Fact]
@@ -91,7 +90,7 @@ public sealed class ArrayReflectionTests
         var cbuffer = new DxilReflectionExtractor().Extract(dxilBlob).Value.ConstantBuffers[0];
         var variable = cbuffer.Variables.Single(v => v.Name == "PointLights");
 
-        variable.ParameterClass.Should().Be(EffectParameterClass.Scalar);
-        variable.ParameterType.Should().Be(EffectParameterType.Single);
+        variable.ParameterClass.ShouldBe(EffectParameterClass.Scalar);
+        variable.ParameterType.ShouldBe(EffectParameterType.Single);
     }
 }

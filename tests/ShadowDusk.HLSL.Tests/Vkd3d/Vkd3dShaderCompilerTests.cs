@@ -1,7 +1,7 @@
 #nullable enable
 
 using System.Text;
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core;
 using ShadowDusk.HLSL.D3DCompiler;
 using ShadowDusk.HLSL.Dxc;
@@ -51,12 +51,11 @@ public sealed class Vkd3dShaderCompilerTests
             AllowWarnings  = true,
         });
 
-        result.IsSuccess.Should().BeTrue(
-            because: result.IsFailure ? result.Error.Message : "vkd3d should compile a valid PS");
-        result.Value.Kind.Should().Be(BlobKind.Dxbc);
-        result.Value.Bytes.Length.Should().BeGreaterThan(4);
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : "vkd3d should compile a valid PS");
+        result.Value.Kind.ShouldBe(BlobKind.Dxbc);
+        result.Value.Bytes.Length.ShouldBeGreaterThan(4);
         // DXBC_TPF is a standard DXBC container — fourcc "DXBC".
-        result.Value.Bytes.ToArray().Take(4).Should().Equal(Dxbc4cc);
+        result.Value.Bytes.ToArray().Take(4).ShouldBe(Dxbc4cc);
     }
 
     [Vkd3dFact]
@@ -72,8 +71,8 @@ public sealed class Vkd3dShaderCompilerTests
             Stage          = ShaderStage.Pixel,
         });
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Message.Should().NotBeNullOrEmpty();
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Message.ShouldNotBeNullOrEmpty();
     }
 
     [Vkd3dFact]
@@ -91,19 +90,17 @@ public sealed class Vkd3dShaderCompilerTests
             Stage          = ShaderStage.Pixel,
             AllowWarnings  = true,
         });
-        compileResult.IsSuccess.Should().BeTrue(
-            because: compileResult.IsFailure ? compileResult.Error.Message : "vkd3d should compile");
+        compileResult.IsSuccess.ShouldBeTrue(compileResult.IsFailure ? compileResult.Error.Message : "vkd3d should compile");
 
         var extractor = new DxbcReflectionExtractor();
         var reflectResult = extractor.Extract(compileResult.Value.Bytes);
 
-        reflectResult.IsSuccess.Should().BeTrue(
-            because: reflectResult.IsFailure ? reflectResult.Error.Message : "the managed reader should accept vkd3d DXBC");
+        reflectResult.IsSuccess.ShouldBeTrue(reflectResult.IsFailure ? reflectResult.Error.Message : "the managed reader should accept vkd3d DXBC");
         var effect = reflectResult.Value;
 
-        effect.Textures.Select(t => t.Name).Should().Contain("SpriteTexture");
-        effect.Samplers.Select(s => s.Name).Should().Contain("SpriteTextureSampler");
+        effect.Textures.Select(t => t.Name).ShouldContain("SpriteTexture");
+        effect.Samplers.Select(s => s.Name).ShouldContain("SpriteTextureSampler");
         effect.ConstantBuffers.SelectMany(c => c.Variables).Select(v => v.Name)
-            .Should().Contain("TintColor");
+            .ShouldContain("TintColor");
     }
 }

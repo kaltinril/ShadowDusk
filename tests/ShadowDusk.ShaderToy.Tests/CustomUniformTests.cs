@@ -1,4 +1,4 @@
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.ShaderToy.Tests;
@@ -17,9 +17,9 @@ public sealed class CustomUniformTests
     private static ConvertResult ConvertOk(string glsl)
     {
         ConvertResult r = Convert(glsl);
-        r.Success.Should().BeTrue(
+        r.Success.ShouldBeTrue(string.Format(
             "the shader is in-subset; diagnostics: {0}",
-            string.Join("; ", r.Diagnostics.Select(d => $"{d.Severity}:{d.Message}")));
+            string.Join("; ", r.Diagnostics.Select(d => $"{d.Severity}:{d.Message}"))));
         return r;
     }
 
@@ -39,11 +39,11 @@ public sealed class CustomUniformTests
         ConvertResult r = ConvertOk(glsl);
         string fx = r.Fx!;
 
-        fx.Should().Contain("float uIntensity;");
-        fx.Should().Contain("float3 uTint;");
+        fx.ShouldContain("float uIntensity;", Case.Sensitive);
+        fx.ShouldContain("float3 uTint;", Case.Sensitive);
 
-        r.UsedUniforms.Should().Contain("uIntensity");
-        r.UsedUniforms.Should().Contain("uTint");
+        r.UsedUniforms.ShouldContain("uIntensity");
+        r.UsedUniforms.ShouldContain("uTint");
     }
 
     [Fact]
@@ -60,8 +60,8 @@ public sealed class CustomUniformTests
         """;
 
         ConvertResult r = ConvertOk(glsl);
-        r.Fx!.Should().Contain("float3x3 uRot;");
-        r.UsedUniforms.Should().Contain("uRot");
+        r.Fx!.ShouldContain("float3x3 uRot;", Case.Sensitive);
+        r.UsedUniforms.ShouldContain("uRot");
     }
 
     [Fact]
@@ -79,12 +79,12 @@ public sealed class CustomUniformTests
         ConvertResult r = ConvertOk(glsl);
         string fx = r.Fx!;
 
-        fx.Should().Contain("texture uNoiseTexture;");
-        fx.Should().Contain("sampler2D uNoise = sampler_state");
-        fx.Should().Contain("Texture = <uNoiseTexture>;");
-        fx.Should().Contain("tex2D(uNoise, uv)");
+        fx.ShouldContain("texture uNoiseTexture;", Case.Sensitive);
+        fx.ShouldContain("sampler2D uNoise = sampler_state", Case.Sensitive);
+        fx.ShouldContain("Texture = <uNoiseTexture>;", Case.Sensitive);
+        fx.ShouldContain("tex2D(uNoise, uv)", Case.Sensitive);
 
-        r.UsedUniforms.Should().Contain("uNoise");
+        r.UsedUniforms.ShouldContain("uNoise");
     }
 
     [Fact]
@@ -100,8 +100,8 @@ public sealed class CustomUniformTests
         """;
 
         ConvertResult r = ConvertOk(glsl);
-        r.Fx!.Should().Contain("float uUnused;");
-        r.UsedUniforms.Should().Contain("uUnused");
+        r.Fx!.ShouldContain("float uUnused;", Case.Sensitive);
+        r.UsedUniforms.ShouldContain("uUnused");
     }
 
     [Fact]
@@ -119,12 +119,12 @@ public sealed class CustomUniformTests
         string fx = r.Fx!;
 
         // The alias resolves to the built-in: iTime is declared and referenced; no u_time global.
-        fx.Should().Contain("float iTime;");
-        fx.Should().Contain("sin(iTime)");
-        fx.Should().NotContain("float u_time;");
+        fx.ShouldContain("float iTime;", Case.Sensitive);
+        fx.ShouldContain("sin(iTime)", Case.Sensitive);
+        fx.ShouldNotContain("float u_time;");
 
-        r.UsedUniforms.Should().Contain("iTime");
-        r.UsedUniforms.Should().NotContain("u_time");
+        r.UsedUniforms.ShouldContain("iTime");
+        r.UsedUniforms.ShouldNotContain("u_time");
     }
 
     [Fact]
@@ -139,13 +139,13 @@ public sealed class CustomUniformTests
         """;
 
         ConvertResult r = Convert(glsl);
-        r.Success.Should().BeFalse();
-        r.Fx.Should().BeNull();
+        r.Success.ShouldBeFalse();
+        r.Fx.ShouldBeNull();
 
         var error = r.Diagnostics.Single(d => d.Severity == DiagnosticSeverity.Error);
-        error.Line.Should().BeGreaterThan(0);
-        error.Column.Should().BeGreaterThan(0);
-        error.Message.Should().ContainEquivalentOf("sampler");
+        error.Line.ShouldBeGreaterThan(0);
+        error.Column.ShouldBeGreaterThan(0);
+        error.Message.ShouldContain("sampler", Shouldly.Case.Insensitive);
     }
 
     [Fact]
@@ -160,8 +160,8 @@ public sealed class CustomUniformTests
         """;
 
         ConvertResult r = Convert(glsl);
-        r.Success.Should().BeFalse();
-        r.Diagnostics.Should().Contain(d =>
+        r.Success.ShouldBeFalse();
+        r.Diagnostics.ShouldContain(d =>
             d.Severity == DiagnosticSeverity.Error && d.Line > 0 && d.Column > 0);
     }
 
@@ -179,8 +179,8 @@ public sealed class CustomUniformTests
         """;
 
         ConvertResult r = ConvertOk(glsl);
-        r.Fx!.Should().Contain("float uK = 1.0;");
-        r.UsedUniforms.Should().Contain("uK");
+        r.Fx!.ShouldContain("float uK = 1.0;", Case.Sensitive);
+        r.UsedUniforms.ShouldContain("uK");
     }
 
     [Fact]
@@ -195,8 +195,8 @@ public sealed class CustomUniformTests
         """;
 
         ConvertResult r = Convert(glsl);
-        r.Success.Should().BeFalse();
-        r.Diagnostics.Should().Contain(d =>
+        r.Success.ShouldBeFalse();
+        r.Diagnostics.ShouldContain(d =>
             d.Severity == DiagnosticSeverity.Error &&
             d.Message.Contains("RENDERSIZE", StringComparison.Ordinal));
     }
@@ -216,10 +216,10 @@ public sealed class CustomUniformTests
         """;
 
         ConvertResult r = Convert(glsl);
-        r.Success.Should().BeTrue();
-        r.Fx!.Should().NotContain("vCustom");
-        r.UsedUniforms.Should().NotContain("vCustom");
-        r.Diagnostics.Should().NotContain(d => d.Severity == DiagnosticSeverity.Error);
+        r.Success.ShouldBeTrue();
+        r.Fx!.ShouldNotContain("vCustom", Case.Sensitive);
+        r.UsedUniforms.ShouldNotContain("vCustom");
+        r.Diagnostics.ShouldNotContain(d => d.Severity == DiagnosticSeverity.Error);
     }
 
     [Fact]
@@ -236,7 +236,7 @@ public sealed class CustomUniformTests
         """;
 
         ConvertResult r = Convert(glsl);
-        r.Success.Should().BeFalse();
-        r.Diagnostics.Should().Contain(d => d.Severity == DiagnosticSeverity.Error);
+        r.Success.ShouldBeFalse();
+        r.Diagnostics.ShouldContain(d => d.Severity == DiagnosticSeverity.Error);
     }
 }

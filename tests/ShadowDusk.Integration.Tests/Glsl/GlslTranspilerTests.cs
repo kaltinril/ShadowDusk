@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core;
 using ShadowDusk.GLSL;
 using ShadowDusk.HLSL.Dxc;
@@ -38,8 +38,8 @@ public sealed class GlslTranspilerTests
             Platform = PlatformTarget.OpenGL,
         };
         var result = await compiler.CompileAsync(request);
-        result.IsSuccess.Should().BeTrue(because: result.IsFailure ? result.Error.FxcFormattedMessage : "");
-        result.Value.Kind.Should().Be(BlobKind.Spirv);
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.FxcFormattedMessage : "");
+        result.Value.Kind.ShouldBe(BlobKind.Spirv);
         return result.Value.Bytes;
     }
 
@@ -51,8 +51,8 @@ public sealed class GlslTranspilerTests
 
         var result = transpiler.Transpile(spirvBytes);
 
-        result.IsSuccess.Should().BeTrue(because: result.IsFailure ? result.Error.Message : "");
-        result.Value.Text.Should().Contain("void main(");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : "");
+        result.Value.Text.ShouldContain("void main(", Case.Sensitive);
     }
 
     [Fact]
@@ -63,8 +63,8 @@ public sealed class GlslTranspilerTests
 
         var result = transpiler.Transpile(spirvBytes);
 
-        result.IsSuccess.Should().BeTrue(because: result.IsFailure ? result.Error.Message : "");
-        result.Value.Text.Should().StartWith("#version 140");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : "");
+        result.Value.Text.ShouldStartWith("#version 140");
     }
 
     [Fact]
@@ -75,8 +75,8 @@ public sealed class GlslTranspilerTests
 
         var result = transpiler.Transpile(spirvBytes);
 
-        result.IsSuccess.Should().BeTrue(because: result.IsFailure ? result.Error.Message : "");
-        result.Value.Text.Should().Contain("void main(");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : "");
+        result.Value.Text.ShouldContain("void main(", Case.Sensitive);
     }
 
     [Fact]
@@ -87,8 +87,8 @@ public sealed class GlslTranspilerTests
 
         var result = transpiler.Transpile(spirvBytes);
 
-        result.IsSuccess.Should().BeTrue(because: result.IsFailure ? result.Error.Message : "");
-        result.Value.Text.Should().Contain("sampler2D");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : "");
+        result.Value.Text.ShouldContain("sampler2D", Case.Sensitive);
     }
 
     [Fact]
@@ -101,7 +101,7 @@ public sealed class GlslTranspilerTests
         // would DOUBLE-flip the render-target case and stay wrong on the backbuffer.
         // The depth-convention fixup (FixupDepthConvention) must remain.
         string fxPath = Path.Combine(AppContext.BaseDirectory, "fixtures", "shaders", "passthrough_vs.fx");
-        File.Exists(fxPath).Should().BeTrue($"fixture must exist at {fxPath}");
+        File.Exists(fxPath).ShouldBeTrue($"fixture must exist at {fxPath}");
         string hlsl = await File.ReadAllTextAsync(fxPath);
 
         var spirvBytes = await CompileToSpirvAsync(hlsl, ShaderStage.Vertex, "VSMain");
@@ -109,11 +109,9 @@ public sealed class GlslTranspilerTests
 
         var result = transpiler.Transpile(spirvBytes);
 
-        result.IsSuccess.Should().BeTrue(because: result.IsFailure ? result.Error.Message : "");
-        result.Value.Text.Should().NotContain("gl_Position.y = -gl_Position.y",
-            because: "FlipVertexY is off — the Y-flip belongs to the runtime posFixup contract");
-        result.Value.Text.Should().Contain("gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;",
-            because: "FixupDepthConvention (DX [0,1] depth to GL [-1,1]) must stay on");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : "");
+        result.Value.Text.ShouldNotContain("gl_Position.y = -gl_Position.y", Case.Sensitive, "FlipVertexY is off — the Y-flip belongs to the runtime posFixup contract");
+        result.Value.Text.ShouldContain("gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;", Case.Sensitive, "FixupDepthConvention (DX [0,1] depth to GL [-1,1]) must stay on");
     }
 
     [Fact]
@@ -124,8 +122,8 @@ public sealed class GlslTranspilerTests
 
         var result = transpiler.Transpile(garbage);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Message.Should().NotBeNullOrEmpty();
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Message.ShouldNotBeNullOrEmpty();
     }
 
     [Fact]
@@ -135,7 +133,7 @@ public sealed class GlslTranspilerTests
 
         var result = transpiler.Transpile(ReadOnlySpan<uint>.Empty);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Message.Should().NotBeNullOrEmpty();
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Message.ShouldNotBeNullOrEmpty();
     }
 }

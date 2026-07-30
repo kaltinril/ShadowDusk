@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core.Reflection;
 using Xunit;
 
@@ -21,10 +21,10 @@ public sealed class SpirvVertexInputReflectorTests
 
         var result = SpirvVertexInputReflector.Read(garbage);
 
-        result.IsFailure.Should().BeTrue(
+        result.IsFailure.ShouldBeTrue(
             "unparseable SPIR-V must fail the compile, not silently produce an empty attribute table");
-        result.Error.Code.Should().Be("SD0101");
-        result.Error.Message.Should().Contain("SPIR-V");
+        result.Error.Code.ShouldBe("SD0101");
+        result.Error.Message.ShouldContain("SPIR-V", Case.Sensitive);
     }
 
     [Fact]
@@ -32,7 +32,7 @@ public sealed class SpirvVertexInputReflectorTests
     {
         var result = SpirvVertexInputReflector.Read(System.ReadOnlyMemory<byte>.Empty);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("SD0101");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("SD0101");
     }
 }

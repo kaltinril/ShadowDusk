@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core;
 using ShadowDusk.GLSL;
 using Xunit;
@@ -55,8 +55,7 @@ public sealed class DuplicateRenderStateTests
 
         var result = compiler.Compile(source, OpenGlOptions);
 
-        result.IsSuccess.Should().BeTrue(
-            because: "a duplicated render-state key is valid fxc input (last assignment wins); errors: " +
+        result.IsSuccess.ShouldBeTrue("a duplicated render-state key is valid fxc input (last assignment wins); errors: " +
                      (result.IsFailure ? string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "<none>"));
     }
 
@@ -89,12 +88,12 @@ public sealed class DuplicateRenderStateTests
         var duplicatedResult = compiler.Compile(duplicated, OpenGlOptions);
         var lastOnlyResult   = compiler.Compile(lastOnly, OpenGlOptions);
 
-        duplicatedResult.IsSuccess.Should().BeTrue();
-        lastOnlyResult.IsSuccess.Should().BeTrue();
+        duplicatedResult.IsSuccess.ShouldBeTrue();
+        lastOnlyResult.IsSuccess.ShouldBeTrue();
 
         // fxc semantics: the duplicated pass serializes EXACTLY like a pass declaring
         // only the last value — proving last-wins, not first-wins.
-        duplicatedResult.Value.Data.Should().Equal(lastOnlyResult.Value.Data);
+        duplicatedResult.Value.Data.ShouldBe(lastOnlyResult.Value.Data);
     }
 
     [Fact]
@@ -116,8 +115,7 @@ public sealed class DuplicateRenderStateTests
 
         var result = compiler.Compile(duplicated, OpenGlOptions);
 
-        result.IsSuccess.Should().BeTrue(
-            because: "case-insensitive duplicate state keys must not throw; errors: " +
+        result.IsSuccess.ShouldBeTrue("case-insensitive duplicate state keys must not throw; errors: " +
                      (result.IsFailure ? string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "<none>"));
     }
 }

@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Reflection;
 using ShadowDusk.HLSL.Dxc;
@@ -36,8 +36,7 @@ public sealed class TextureSamplerReflectionTests
             Platform       = PlatformTarget.DirectX,
         };
         var result = await compiler.CompileAsync(request);
-        result.IsSuccess.Should().BeTrue(
-            because: result.IsFailure ? result.Error.FxcFormattedMessage : "compilation must succeed");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.FxcFormattedMessage : "compilation must succeed");
         return result.Value.Bytes;
     }
 
@@ -48,7 +47,7 @@ public sealed class TextureSamplerReflectionTests
 
         var result = new DxilReflectionExtractor().Extract(dxilBlob);
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
     }
 
     [Fact]
@@ -58,8 +57,8 @@ public sealed class TextureSamplerReflectionTests
 
         var reflected = new DxilReflectionExtractor().Extract(dxilBlob).Value;
 
-        reflected.Textures.Should().ContainSingle();
-        reflected.Textures[0].Name.Should().Be("Albedo");
+        reflected.Textures.ShouldHaveSingleItem();
+        reflected.Textures[0].Name.ShouldBe("Albedo");
     }
 
     [Fact]
@@ -69,7 +68,7 @@ public sealed class TextureSamplerReflectionTests
 
         var reflected = new DxilReflectionExtractor().Extract(dxilBlob).Value;
 
-        reflected.Textures[0].BindSlot.Should().Be(0);
+        reflected.Textures[0].BindSlot.ShouldBe(0);
     }
 
     [Fact]
@@ -79,7 +78,7 @@ public sealed class TextureSamplerReflectionTests
 
         var reflected = new DxilReflectionExtractor().Extract(dxilBlob).Value;
 
-        reflected.Textures[0].Dimension.Should().Be(TextureDimension.Texture2D);
+        reflected.Textures[0].Dimension.ShouldBe(TextureDimension.Texture2D);
     }
 
     [Fact]
@@ -89,8 +88,8 @@ public sealed class TextureSamplerReflectionTests
 
         var reflected = new DxilReflectionExtractor().Extract(dxilBlob).Value;
 
-        reflected.Samplers.Should().ContainSingle();
-        reflected.Samplers[0].Name.Should().Be("AlbedoSampler");
+        reflected.Samplers.ShouldHaveSingleItem();
+        reflected.Samplers[0].Name.ShouldBe("AlbedoSampler");
     }
 
     [Fact]
@@ -100,7 +99,7 @@ public sealed class TextureSamplerReflectionTests
 
         var reflected = new DxilReflectionExtractor().Extract(dxilBlob).Value;
 
-        reflected.Samplers[0].BindSlot.Should().Be(0);
+        reflected.Samplers[0].BindSlot.ShouldBe(0);
     }
 
     [Fact]
@@ -110,6 +109,6 @@ public sealed class TextureSamplerReflectionTests
 
         var reflected = new DxilReflectionExtractor().Extract(dxilBlob).Value;
 
-        reflected.ConstantBuffers.Should().BeEmpty();
+        reflected.ConstantBuffers.ShouldBeEmpty();
     }
 }

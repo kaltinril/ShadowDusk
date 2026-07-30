@@ -1,4 +1,4 @@
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.ShaderToy.Tests;
@@ -21,7 +21,7 @@ public sealed class UniformDetectionTests
         }
         """;
         ConvertResult result = ShaderToyConverter.Convert(glsl);
-        result.Success.Should().BeTrue();
+        result.Success.ShouldBeTrue();
         return result;
     }
 
@@ -31,10 +31,10 @@ public sealed class UniformDetectionTests
         ConvertResult result = Convert(
             "    vec2 uv = fragCoord / iResolution.xy; float t = iTime; fragColor = vec4(uv, t, 1.0);");
 
-        result.UsedUniforms.Should().Contain("iResolution");
-        result.UsedUniforms.Should().Contain("iTime");
-        result.UsedUniforms.Should().NotContain("iMouse");
-        result.UsedUniforms.Should().NotContain("iChannel0");
+        result.UsedUniforms.ShouldContain("iResolution");
+        result.UsedUniforms.ShouldContain("iTime");
+        result.UsedUniforms.ShouldNotContain("iMouse");
+        result.UsedUniforms.ShouldNotContain("iChannel0");
     }
 
     [Fact]
@@ -44,13 +44,13 @@ public sealed class UniformDetectionTests
             "    vec2 uv = fragCoord / iResolution.xy; float t = iTime; fragColor = vec4(uv, t, 1.0);");
 
         string fx = result.Fx!;
-        fx.Should().Contain("float iTime;");
-        fx.Should().Contain("float3 iResolution;");
+        fx.ShouldContain("float iTime;", Case.Sensitive);
+        fx.ShouldContain("float3 iResolution;", Case.Sensitive);
 
         // Unreferenced uniforms must not be declared.
-        fx.Should().NotContain("float4 iMouse;");
-        fx.Should().NotContain("float iTimeDelta;");
-        fx.Should().NotContain("int iFrame;");
+        fx.ShouldNotContain("float4 iMouse;", Case.Sensitive);
+        fx.ShouldNotContain("float iTimeDelta;", Case.Sensitive);
+        fx.ShouldNotContain("int iFrame;", Case.Sensitive);
     }
 
     [Fact]
@@ -59,8 +59,8 @@ public sealed class UniformDetectionTests
         ConvertResult result = Convert(
             "    vec2 m = iMouse.xy; vec2 uv = fragCoord / iResolution.xy; fragColor = vec4(uv - m, 0.0, 1.0);");
 
-        result.UsedUniforms.Should().Contain("iMouse");
-        result.Fx!.Should().Contain("float4 iMouse;");
+        result.UsedUniforms.ShouldContain("iMouse");
+        result.Fx!.ShouldContain("float4 iMouse;", Case.Sensitive);
     }
 
     [Fact]
@@ -69,8 +69,8 @@ public sealed class UniformDetectionTests
         // The body uses no uniform; iResolution is still declared because the harness PS needs it.
         ConvertResult result = Convert("    fragColor = vec4(fragCoord.x, fragCoord.y, 0.0, 1.0);");
 
-        result.UsedUniforms.Should().NotContain("iResolution");
-        result.Fx!.Should().Contain("float3 iResolution;");
+        result.UsedUniforms.ShouldNotContain("iResolution");
+        result.Fx!.ShouldContain("float3 iResolution;", Case.Sensitive);
     }
 
     [Fact]
@@ -79,14 +79,14 @@ public sealed class UniformDetectionTests
         ConvertResult result = Convert(
             "    vec2 uv = fragCoord / iResolution.xy; fragColor = texture(iChannel0, uv);");
 
-        result.UsedUniforms.Should().Contain("iChannel0");
-        result.UsedUniforms.Should().NotContain("iChannel1");
+        result.UsedUniforms.ShouldContain("iChannel0");
+        result.UsedUniforms.ShouldNotContain("iChannel1");
 
         string fx = result.Fx!;
-        fx.Should().Contain("texture iChannel0Texture;");
-        fx.Should().Contain("sampler2D iChannel0 = sampler_state");
-        fx.Should().NotContain("iChannel1");
-        fx.Should().NotContain("iChannel2");
-        fx.Should().NotContain("iChannel3");
+        fx.ShouldContain("texture iChannel0Texture;", Case.Sensitive);
+        fx.ShouldContain("sampler2D iChannel0 = sampler_state", Case.Sensitive);
+        fx.ShouldNotContain("iChannel1", Case.Sensitive);
+        fx.ShouldNotContain("iChannel2", Case.Sensitive);
+        fx.ShouldNotContain("iChannel3", Case.Sensitive);
     }
 }

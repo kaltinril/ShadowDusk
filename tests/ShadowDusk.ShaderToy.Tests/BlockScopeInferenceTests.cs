@@ -1,4 +1,4 @@
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.ShaderToy.Tests;
@@ -14,10 +14,10 @@ public sealed class BlockScopeInferenceTests
     private static string ConvertOk(string glsl)
     {
         ConvertResult r = ShaderToyConverter.Convert(glsl);
-        r.Success.Should().BeTrue(
+        r.Success.ShouldBeTrue(string.Format(
             "the shader is in-subset; diagnostics: {0}",
-            string.Join("; ", r.Diagnostics.Select(d => $"{d.Severity}:{d.Message}")));
-        r.Fx.Should().NotBeNull();
+            string.Join("; ", r.Diagnostics.Select(d => $"{d.Severity}:{d.Message}"))));
+        r.Fx.ShouldNotBeNull();
         return r.Fx!;
     }
 
@@ -41,13 +41,11 @@ public sealed class BlockScopeInferenceTests
         string fx = ConvertOk(glsl);
 
         // Inside the block, `p` is the mat2: the matrix-order trap applies (GLSL M*v -> mul(v, M)).
-        fx.Should().Contain("mul(fragCoord, p)", "inside the block p is the shadowing mat2");
+        fx.ShouldContain("mul(fragCoord, p)", Case.Sensitive, "inside the block p is the shadowing mat2");
 
         // After the block, `p` is the OUTER vec2 again: componentwise multiply, NOT mul().
-        fx.Should().Contain("float2 q = (p * float2(2.0, 3.0));",
-            "after the block the outer vec2 declaration wins again");
-        fx.Should().NotContain("mul(float2(2.0, 3.0), p)",
-            "the block-local mat2 must not leak into inference after the block");
+        fx.ShouldContain("float2 q = (p * float2(2.0, 3.0));", Case.Sensitive, "after the block the outer vec2 declaration wins again");
+        fx.ShouldNotContain("mul(float2(2.0, 3.0), p)", Case.Sensitive, "the block-local mat2 must not leak into inference after the block");
     }
 
     [Fact]
@@ -68,7 +66,6 @@ public sealed class BlockScopeInferenceTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("float2 w = (v * float2(0.5, 0.5));",
-            "the if-block mat2 shadow must not survive past its block");
+        fx.ShouldContain("float2 w = (v * float2(0.5, 0.5));", Case.Sensitive, "the if-block mat2 shadow must not survive past its block");
     }
 }

@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
@@ -74,9 +74,8 @@ public sealed class EffectCompilerTests
 
         var result = await CompileFileAsync("Minimal.fx", PlatformTarget.OpenGL, cancellationToken: cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
-            because: result.IsFailure ? FormatErrors(result.Error) : "compilation must succeed");
-        result.Value.Data.Should().NotBeEmpty("compiled output must contain bytes");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? FormatErrors(result.Error) : "compilation must succeed");
+        result.Value.Data.ShouldNotBeEmpty("compiled output must contain bytes");
     }
 
     [Fact]
@@ -90,9 +89,8 @@ public sealed class EffectCompilerTests
         // Windows-only d3dcompiler_47 oracle is exercised by its own opt-in tests.
         var result = await CompileFileAsync("Minimal.fx", PlatformTarget.DirectX, cancellationToken: cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
-            because: result.IsFailure ? FormatErrors(result.Error) : "compilation must succeed");
-        result.Value.Data.Should().NotBeEmpty("compiled output must contain bytes");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? FormatErrors(result.Error) : "compilation must succeed");
+        result.Value.Data.ShouldNotBeEmpty("compiled output must contain bytes");
     }
 
     [Fact]
@@ -103,9 +101,8 @@ public sealed class EffectCompilerTests
 
         var result = await CompileFileAsync("textured.fx", PlatformTarget.OpenGL, cancellationToken: cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
-            because: result.IsFailure ? FormatErrors(result.Error) : "compilation must succeed");
-        result.Value.Data.Should().NotBeEmpty("compiled output must contain bytes");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? FormatErrors(result.Error) : "compilation must succeed");
+        result.Value.Data.ShouldNotBeEmpty("compiled output must contain bytes");
     }
 
     [Fact]
@@ -116,9 +113,8 @@ public sealed class EffectCompilerTests
 
         var result = await CompileFileAsync("cbuffer.fx", PlatformTarget.OpenGL, cancellationToken: cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
-            because: result.IsFailure ? FormatErrors(result.Error) : "compilation must succeed");
-        result.Value.Data.Should().NotBeEmpty("compiled output must contain bytes");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? FormatErrors(result.Error) : "compilation must succeed");
+        result.Value.Data.ShouldNotBeEmpty("compiled output must contain bytes");
     }
 
     [Fact]
@@ -129,9 +125,8 @@ public sealed class EffectCompilerTests
 
         var result = await CompileFileAsync("multipass.fx", PlatformTarget.OpenGL, cancellationToken: cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
-            because: result.IsFailure ? FormatErrors(result.Error) : "compilation must succeed");
-        result.Value.Data.Should().NotBeEmpty("compiled output must contain bytes");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? FormatErrors(result.Error) : "compilation must succeed");
+        result.Value.Data.ShouldNotBeEmpty("compiled output must contain bytes");
     }
 
     [Fact]
@@ -142,9 +137,8 @@ public sealed class EffectCompilerTests
 
         var result = await CompileFileAsync("Minimal.fx", PlatformTarget.Vulkan, cancellationToken: cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
-            because: result.IsFailure ? FormatErrors(result.Error) : "compilation must succeed");
-        result.Value.Data.Should().NotBeEmpty("compiled output must contain bytes");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? FormatErrors(result.Error) : "compilation must succeed");
+        result.Value.Data.ShouldNotBeEmpty("compiled output must contain bytes");
     }
 
     [Fact]
@@ -155,15 +149,13 @@ public sealed class EffectCompilerTests
 
         var result = await CompileFileAsync("cbuffer.fx", PlatformTarget.Vulkan, cancellationToken: cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
-            because: result.IsFailure ? FormatErrors(result.Error) : "compilation must succeed");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? FormatErrors(result.Error) : "compilation must succeed");
 
         // Before the CompilationPipeline reflection-gate fix, every Vulkan shader silently
         // skipped reflection (the reflection loop's skip-gate checked the always-empty
         // dxilBlob for Vulkan), so this count was always 0 regardless of the HLSL. Minimal.fx
         // above can't catch that because it declares no cbuffers; cbuffer.fx does.
-        ReadConstantBufferCount(result.Value.Data).Should().BeGreaterThan(0,
-            "cbuffer.fx declares a 'Transforms' constant buffer that Vulkan reflection must recover");
+        ReadConstantBufferCount(result.Value.Data).ShouldBeGreaterThan(0, customMessage: "cbuffer.fx declares a 'Transforms' constant buffer that Vulkan reflection must recover");
     }
 
     [Fact]
@@ -177,8 +169,8 @@ public sealed class EffectCompilerTests
 
         // KNI ships no Vulkan platform and KnifxBackend has no Vulkan value — this must fail
         // loudly rather than silently emit a KnifxBackend.OpenGL-shaped container.
-        result.IsFailure.Should().BeTrue("Vulkan + KNIFX is not a supported combination");
-        result.Error.Should().Contain(e => e.Code == "SD0025");
+        result.IsFailure.ShouldBeTrue("Vulkan + KNIFX is not a supported combination");
+        result.Error.ShouldContain(e => e.Code == "SD0025");
     }
 
     /// <summary>
@@ -204,13 +196,10 @@ public sealed class EffectCompilerTests
         var first  = await compiler.CompileAsync(source, options, cts.Token);
         var second = await compiler.CompileAsync(source, options, cts.Token);
 
-        first.IsSuccess.Should().BeTrue(
-            because: first.IsFailure ? FormatErrors(first.Error) : "first compilation must succeed");
-        second.IsSuccess.Should().BeTrue(
-            because: second.IsFailure ? FormatErrors(second.Error) : "second compilation must succeed");
+        first.IsSuccess.ShouldBeTrue(first.IsFailure ? FormatErrors(first.Error) : "first compilation must succeed");
+        second.IsSuccess.ShouldBeTrue(second.IsFailure ? FormatErrors(second.Error) : "second compilation must succeed");
 
-        first.Value.Data.Should().Equal(second.Value.Data,
-            because: "identical inputs must produce byte-identical output (determinism)");
+        first.Value.Data.ShouldBe(second.Value.Data, customMessage: "identical inputs must produce byte-identical output (determinism)");
     }
 
     // ---------------------------------------------------------------------------
@@ -233,9 +222,8 @@ public sealed class EffectCompilerTests
 
         var result = await compiler.CompileAsync(source, options, cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
-            because: result.IsFailure ? FormatErrors(result.Error) : "debug compilation must succeed");
-        result.Value.Data.Should().NotBeEmpty("debug compilation must produce output bytes");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? FormatErrors(result.Error) : "debug compilation must succeed");
+        result.Value.Data.ShouldNotBeEmpty("debug compilation must produce output bytes");
     }
 
     // ---------------------------------------------------------------------------
@@ -297,9 +285,8 @@ public sealed class EffectCompilerTests
         var compiler = new EffectCompiler();
         var result   = await compiler.CompileAsync(shaderSource, options, cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
-            because: result.IsFailure ? FormatErrors(result.Error) : "in-memory include must resolve successfully");
-        result.Value.Data.Should().NotBeEmpty("compilation with resolved include must produce bytes");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? FormatErrors(result.Error) : "in-memory include must resolve successfully");
+        result.Value.Data.ShouldNotBeEmpty("compilation with resolved include must produce bytes");
     }
 
     // ---------------------------------------------------------------------------
@@ -325,10 +312,10 @@ public sealed class EffectCompilerTests
         var compiler = new EffectCompiler();
         var result   = await compiler.CompileAsync(badHlsl, new CompilerOptions { Target = PlatformTarget.OpenGL }, cts.Token);
 
-        result.IsFailure.Should().BeTrue("invalid HLSL must produce a failure result");
-        result.Error.Should().NotBeEmpty("at least one error must be reported");
-        result.Error[0].Line.Should().BeGreaterThan(0, "error must carry a source line number");
-        result.Error[0].Message.Should().NotBeNullOrWhiteSpace("error must carry the compiler's message text");
+        result.IsFailure.ShouldBeTrue("invalid HLSL must produce a failure result");
+        result.Error.ShouldNotBeEmpty("at least one error must be reported");
+        result.Error[0].Line.ShouldBeGreaterThan(0, customMessage: "error must carry a source line number");
+        result.Error[0].Message.ShouldNotBeNullOrWhiteSpace("error must carry the compiler's message text");
     }
 
     [Fact]
@@ -347,8 +334,8 @@ public sealed class EffectCompilerTests
         var compiler = new EffectCompiler();
         var result   = await compiler.CompileAsync(shaderSource, new CompilerOptions { Target = PlatformTarget.OpenGL }, cts.Token);
 
-        result.IsFailure.Should().BeTrue("a missing include must produce a failure result");
-        result.Error.Should().NotBeEmpty("at least one error must be reported for the missing include");
+        result.IsFailure.ShouldBeTrue("a missing include must produce a failure result");
+        result.Error.ShouldNotBeEmpty("at least one error must be reported for the missing include");
     }
 
     // ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.ShaderToy.Tests;
@@ -24,16 +24,15 @@ public sealed class RejectCorpusTests
 
         ConvertResult result = ShaderToyConverter.Convert(glsl);
 
-        result.Success.Should().BeFalse("'{0}' contains an out-of-scope construct", fileName);
-        result.Fx.Should().BeNull();
+        result.Success.ShouldBeFalse(string.Format("'{0}' contains an out-of-scope construct", fileName));
+        result.Fx.ShouldBeNull();
 
         var errors = result.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).ToList();
-        errors.Should().NotBeEmpty("a rejected shader must emit at least one Error diagnostic");
+        errors.ShouldNotBeEmpty("a rejected shader must emit at least one Error diagnostic");
 
         // At least one error must carry a plausible 1-based source location.
-        errors.Should().Contain(
-            e => e.Line > 0 && e.Column > 0,
-            "at least one error should point at a real line/column in the source");
+        errors.ShouldContain(
+            e => e.Line > 0 && e.Column > 0, "at least one error should point at a real line/column in the source");
     }
 
     [Theory]
@@ -78,9 +77,9 @@ public sealed class RejectCorpusTests
 
         if (expectedKeyword.Length > 0)
         {
-            allText.Should().ContainEquivalentOf(
-                expectedKeyword,
-                "the diagnostic for '{0}' should mention its specific rejection reason", fileName);
+            allText.ShouldContain(
+                expectedKeyword, Shouldly.Case.Insensitive, string.Format(
+                "the diagnostic for '{0}' should mention its specific rejection reason", fileName));
         }
     }
 }

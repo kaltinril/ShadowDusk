@@ -1,7 +1,7 @@
 #nullable enable
 
 using System.Reflection;
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core;
 using Xunit;
 
@@ -24,14 +24,14 @@ public sealed class RuntimeProfileDetectorTests
     [InlineData(null, DetectedRuntime.Unknown)]
     public void Classify_MapsAssemblyNameToRuntime(string? assemblyName, DetectedRuntime expected)
     {
-        RuntimeProfileDetector.Classify(assemblyName).Should().Be(expected);
+        RuntimeProfileDetector.Classify(assemblyName).ShouldBe(expected);
     }
 
     [Fact]
     public void Classify_KniBeforeMonoGame()
     {
         // KNI's assemblies could theoretically share a prefix; ensure the nkast check wins.
-        RuntimeProfileDetector.Classify("nkast.Xna.Framework").Should().Be(DetectedRuntime.Kni);
+        RuntimeProfileDetector.Classify("nkast.Xna.Framework").ShouldBe(DetectedRuntime.Kni);
     }
 
     [Theory]
@@ -43,7 +43,7 @@ public sealed class RuntimeProfileDetectorTests
     [InlineData(DetectedRuntime.MonoGame, PlatformTarget.Fna, "Fna_Fx2")]
     public void Recommend_PicksTheProvenProfile(DetectedRuntime runtime, PlatformTarget target, string expectedProfileName)
     {
-        RuntimeProfileDetector.Recommend(runtime, target).Name.Should().Be(expectedProfileName);
+        RuntimeProfileDetector.Recommend(runtime, target).Name.ShouldBe(expectedProfileName);
     }
 
     [Fact]
@@ -52,9 +52,9 @@ public sealed class RuntimeProfileDetectorTests
         // Until v11/KNIFX are promoted, auto-detect never returns them: it only ever returns the
         // universally-loadable v10 (or fx_2_0) contract, so a consumer is never silently upgraded.
         RuntimeProfileDetector.Recommend(DetectedRuntime.Kni, PlatformTarget.OpenGL)
-            .Container.Should().Be(EffectContainer.Mgfx);
+            .Container.ShouldBe(EffectContainer.Mgfx);
         RuntimeProfileDetector.Recommend(DetectedRuntime.MonoGame, PlatformTarget.OpenGL)
-            .MgfxVersion.Should().Be(10);
+            .MgfxVersion.ShouldBe(10);
     }
 
     [Theory]
@@ -67,14 +67,14 @@ public sealed class RuntimeProfileDetectorTests
         // Auto-detect stays consistent with Profile-implies-backend: the recommended profile's
         // GraphicsTarget equals the requested target, so passing it as Profile alone compiles to the
         // detected backend (regression guard for the "don't break auto-detect" change).
-        RuntimeProfileDetector.Recommend(runtime, target).GraphicsTarget.Should().Be(target);
+        RuntimeProfileDetector.Recommend(runtime, target).GraphicsTarget.ShouldBe(target);
     }
 
     [Fact]
     public void Recommend_Fna_AlwaysTargetsFnaBackend()
     {
         RuntimeProfileDetector.Recommend(DetectedRuntime.Fna, PlatformTarget.OpenGL)
-            .GraphicsTarget.Should().Be(PlatformTarget.Fna);
+            .GraphicsTarget.ShouldBe(PlatformTarget.Fna);
     }
 
     [Fact]
@@ -83,6 +83,6 @@ public sealed class RuntimeProfileDetectorTests
         // The test assembly is not an XNA runtime, so it classifies Unknown -> the v10 default.
         Assembly self = typeof(RuntimeProfileDetectorTests).Assembly;
         RuntimeProfileDetector.Recommend(self, PlatformTarget.OpenGL)
-            .Should().Be(CapabilityProfile.MonoGameGL_3_8_2);
+            .ShouldBe(CapabilityProfile.MonoGameGL_3_8_2);
     }
 }

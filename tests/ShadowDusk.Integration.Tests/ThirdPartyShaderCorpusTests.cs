@@ -1,7 +1,7 @@
 #nullable enable
 
 using System.Text.RegularExpressions;
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Tests.Fx2;
@@ -158,15 +158,14 @@ public sealed class ThirdPartyShaderCorpusTests
 
         var result = await TestHelpers.CompileFixtureAsync(fx, "OpenGL", ct: cts.Token);
 
-        result.ExitCode.Should().Be(0,
-            because: $"vendored '{fx}' is classified GL-compilable; stderr: {result.Stderr}");
-        result.Mgfx.Should().NotBeEmpty(because: "a successful compile must emit output bytes");
+        result.ExitCode.ShouldBe(0, customMessage: $"vendored '{fx}' is classified GL-compilable; stderr: {result.Stderr}");
+        result.Mgfx.ShouldNotBeEmpty("a successful compile must emit output bytes");
 
         var reader = MgfxBlobReader.Parse(result.Mgfx);
-        reader.Signature.Should().Be("MGFX");
-        reader.MgfxVersion.Should().Be(10);
-        reader.ProfileId.Should().Be(ProfileOpenGL);
-        reader.TotalShaderBlobCount.Should().BeGreaterThan(0, because: "each shader declares a pixel shader pass");
+        reader.Signature.ShouldBe("MGFX");
+        reader.MgfxVersion.ShouldBe((byte)(10));
+        reader.ProfileId.ShouldBe(ProfileOpenGL);
+        reader.TotalShaderBlobCount.ShouldBeGreaterThan(0, customMessage: "each shader declares a pixel shader pass");
     }
 
     // -------------------------------------------------------------------------
@@ -182,15 +181,14 @@ public sealed class ThirdPartyShaderCorpusTests
 
         var result = await TestHelpers.CompileFixtureAsync(fx, "DirectX_11", ct: cts.Token);
 
-        result.ExitCode.Should().Be(0,
-            because: $"vendored '{fx}' is classified DX-compilable; stderr: {result.Stderr}");
-        result.Mgfx.Should().NotBeEmpty(because: "a successful compile must emit output bytes");
+        result.ExitCode.ShouldBe(0, customMessage: $"vendored '{fx}' is classified DX-compilable; stderr: {result.Stderr}");
+        result.Mgfx.ShouldNotBeEmpty("a successful compile must emit output bytes");
 
         var reader = MgfxBlobReader.Parse(result.Mgfx);
-        reader.Signature.Should().Be("MGFX");
-        reader.MgfxVersion.Should().Be(10);
-        reader.ProfileId.Should().Be(ProfileDirectX11);
-        reader.TotalShaderBlobCount.Should().BeGreaterThan(0, because: "each shader declares at least one shader pass");
+        reader.Signature.ShouldBe("MGFX");
+        reader.MgfxVersion.ShouldBe((byte)(10));
+        reader.ProfileId.ShouldBe(ProfileDirectX11);
+        reader.TotalShaderBlobCount.ShouldBeGreaterThan(0, customMessage: "each shader declares at least one shader pass");
     }
 
     // -------------------------------------------------------------------------
@@ -215,21 +213,18 @@ public sealed class ThirdPartyShaderCorpusTests
 
         var result = await new EffectCompiler().CompileAsync(source, options, cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
-            because: $"vendored '{fx}' is classified FNA-compilable (SM <= 3); " +
+        result.IsSuccess.ShouldBeTrue($"vendored '{fx}' is classified FNA-compilable (SM <= 3); " +
                      $"errors: {(result.IsFailure ? string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "<none>")}");
 
         Func<Fx2ParsedEffect> parse = () => Fx2BinaryValidator.Parse(result.Value.Data);
-        Fx2ParsedEffect effect = parse.Should().NotThrow(
-            because: $"'{fx}' must produce an fx_2_0 binary that satisfies every MojoShader parse rule").Subject;
+        Fx2ParsedEffect effect = Should.NotThrow(parse, $"'{fx}' must produce an fx_2_0 binary that satisfies every MojoShader parse rule");
 
-        effect.Techniques.Should().NotBeEmpty(because: $"'{fx}' declares at least one technique");
-        effect.Shaders.Should().NotBeEmpty(because: $"'{fx}' declares at least one compiled shader pass");
+        effect.Techniques.ShouldNotBeEmpty($"'{fx}' declares at least one technique");
+        effect.Shaders.ShouldNotBeEmpty($"'{fx}' declares at least one compiled shader pass");
 
         foreach (Fx2ParsedShader shader in effect.Shaders)
         {
-            (shader.VersionToken & 0xFFFF).Should().BeLessThanOrEqualTo(0x0300u,
-                because: $"shader version token 0x{shader.VersionToken:X8} in '{fx}' must be SM <= 3 (MojoShader's hard ceiling)");
+            (shader.VersionToken & 0xFFFF).ShouldBeLessThanOrEqualTo(0x0300u, customMessage: $"shader version token 0x{shader.VersionToken:X8} in '{fx}' must be SM <= 3 (MojoShader's hard ceiling)");
         }
     }
 
@@ -269,16 +264,14 @@ public sealed class ThirdPartyShaderCorpusTests
         var result = await TestHelpers.CompileFixtureAsync(
             "third-party/Apos.Shapes/apos-shapes.fx", "OpenGL", ct: cts.Token);
 
-        result.ExitCode.Should().Be(0, because: $"apos-shapes must compile on GL; stderr: {result.Stderr}");
+        result.ExitCode.ShouldBe(0, customMessage: $"apos-shapes must compile on GL; stderr: {result.Stderr}");
 
         string ascii = System.Text.Encoding.ASCII.GetString(
             result.Mgfx.Select(b => (b >= 9 && b <= 126) ? b : (byte)' ').ToArray());
 
-        ascii.Should().NotMatchRegex(@"pow\([^,()]*, 2\.0\)",
-            because: "pow(x, 2.0) is undefined for the negative bases LinearGradient feeds it — " +
+        ascii.ShouldNotMatch(@"pow\([^,()]*, 2\.0\)", customMessage: "pow(x, 2.0) is undefined for the negative bases LinearGradient feeds it — " +
                      "it must be strength-reduced to a multiply (issue #127)");
-        ascii.Should().NotContain("1.0 / (",
-            because: "every 1.0 / (a / b) reciprocal-of-quotient must fold to a single division (issue #127)");
+        ascii.ShouldNotContain("1.0 / (", Case.Sensitive, "every 1.0 / (a / b) reciprocal-of-quotient must fold to a single division (issue #127)");
     }
 
     // -------------------------------------------------------------------------
@@ -306,13 +299,12 @@ public sealed class ThirdPartyShaderCorpusTests
         var result = await TestHelpers.CompileFixtureAsync(
             "third-party/Apos.Shapes/apos-shapes.fx", "OpenGL", ct: cts.Token);
 
-        result.ExitCode.Should().Be(0, because: $"apos-shapes must compile on GL; stderr: {result.Stderr}");
+        result.ExitCode.ShouldBe(0, customMessage: $"apos-shapes must compile on GL; stderr: {result.Stderr}");
 
         string ascii = System.Text.Encoding.ASCII.GetString(
             result.Mgfx.Select(b => (b >= 9 && b <= 126) ? b : (byte)' ').ToArray());
 
-        ascii.Should().NotContain("isnan(",
-            because: "isnan() needs GLSL 1.30+, but this profile's GLSL has no #version " +
+        ascii.ShouldNotContain("isnan(", Case.Sensitive, "isnan() needs GLSL 1.30+, but this profile's GLSL has no #version " +
                      "directive — Apple's strict GL compiler rejects isnan() there, breaking " +
                      "every shader that uses min/max/clamp on macOS (issue #149)");
     }
@@ -339,19 +331,16 @@ public sealed class ThirdPartyShaderCorpusTests
         var result = await TestHelpers.CompileFixtureAsync(
             "third-party/Apos.Shapes/apos-shapes-aa.fx", "OpenGL", ct: cts.Token);
 
-        result.ExitCode.Should().Be(0,
-            because: $"the derivative-AA apos-shapes must compile on GL; stderr: {result.Stderr}");
+        result.ExitCode.ShouldBe(0, customMessage: $"the derivative-AA apos-shapes must compile on GL; stderr: {result.Stderr}");
 
         string ascii = System.Text.Encoding.ASCII.GetString(
             result.Mgfx.Select(b => (b >= 9 && b <= 126) ? b : (byte)' ').ToArray());
 
-        ascii.Should().MatchRegex(@"\bdFd[xy]\s*\(",
-            because: "the fixture's ddx/ddy AA must reach the GL output as dFdx/dFdy — if " +
+        ascii.ShouldMatch(@"\bdFd[xy]\s*\(", customMessage: "the fixture's ddx/ddy AA must reach the GL output as dFdx/dFdy — if " +
                      "this fails the fixture no longer exercises issue #136");
 
         var poisoned = FindGradientOpsInsideDivergentLoops(ascii);
-        poisoned.Should().BeEmpty(
-            because: "ANGLE D3D11 (WebGL on Windows) zeroes every gradient op inside a loop " +
+        poisoned.ShouldBeEmpty("ANGLE D3D11 (WebGL on Windows) zeroes every gradient op inside a loop " +
                      "with a conditional break/discard — issue #136");
     }
 
@@ -425,11 +414,9 @@ public sealed class ThirdPartyShaderCorpusTests
 
         var result = await TestHelpers.CompileFixtureAsync(fx, "OpenGL", ct: cts.Token);
 
-        result.ExitCode.Should().NotBe(0,
-            because: "OpenGL is gated out of macro-technique recovery (the GL macro-model gap); " +
+        result.ExitCode.ShouldNotBe(0, customMessage: "OpenGL is gated out of macro-technique recovery (the GL macro-model gap); " +
                      "if this now compiles on GL, the gap is closed — promote the shader into " +
                      "OpenGLShaders() and delete this pin");
-        result.Stderr.Should().Contain("SD0010",
-            because: "on GL the macro technique is not recovered, so it surfaces as 'no techniques'");
+        result.Stderr.ShouldContain("SD0010", Case.Sensitive, "on GL the macro technique is not recovered, so it surfaces as 'no techniques'");
     }
 }

@@ -1,7 +1,7 @@
 #nullable enable
 
 using System;
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Cli;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
@@ -32,8 +32,8 @@ public sealed class ReviewRegressionTests
 
         var copy = options.WithGraphicsTarget(PlatformTarget.OpenGL);
 
-        copy.Target.Should().Be(PlatformTarget.OpenGL);
-        copy.Defines.Should().BeEquivalentTo(options.Defines);
+        copy.Target.ShouldBe(PlatformTarget.OpenGL);
+        copy.Defines.ShouldBe(options.Defines, ignoreOrder: true);
     }
 
     [Fact]
@@ -56,7 +56,22 @@ public sealed class ReviewRegressionTests
 
         var copy = options.WithGraphicsTarget(PlatformTarget.DirectX);
 
-        copy.Should().BeEquivalentTo(options, o => o.Excluding(x => x.Target));
+        // Shouldly has no "compare every member except this one", so the guard is kept
+        // reflective on purpose: it enumerates CompilerOptions' public properties at
+        // runtime, so a property added later is compared automatically (the whole point
+        // of this test) rather than needing to be listed here.
+        foreach (System.Reflection.PropertyInfo property in
+                 typeof(CompilerOptions).GetProperties().Where(p => p.Name != nameof(CompilerOptions.Target)))
+        {
+            object? expected = property.GetValue(options);
+            object? actual = property.GetValue(copy);
+
+            if (expected is System.Collections.IEnumerable expectedItems and not string)
+                ((IEnumerable<object?>)actual!.ShouldBeAssignableTo<System.Collections.IEnumerable>()!.Cast<object?>())
+                    .ShouldBe(expectedItems.Cast<object?>(), customMessage: property.Name);
+            else
+                actual.ShouldBe(expected, customMessage: property.Name);
+        }
     }
 
     // ── RuntimeProfileDetector must never substitute a different backend ─────────────
@@ -74,20 +89,19 @@ public sealed class ReviewRegressionTests
         // loud SD0200 rejection.
         Action act = () => RuntimeProfileDetector.Recommend(DetectedRuntime.MonoGame, target);
 
-        act.Should().Throw<ArgumentOutOfRangeException>()
-           .WithMessage("*Profile*null*Target*");
+        Should.Throw<ArgumentOutOfRangeException>(act).Message.ShouldMatch("(?s)Profile.*null.*Target");
     }
 
     [Fact]
     public void Recommend_StillMapsTheModelledTargets()
     {
         RuntimeProfileDetector.Recommend(DetectedRuntime.MonoGame, PlatformTarget.OpenGL)
-            .GraphicsTarget.Should().Be(PlatformTarget.OpenGL);
+            .GraphicsTarget.ShouldBe(PlatformTarget.OpenGL);
         RuntimeProfileDetector.Recommend(DetectedRuntime.MonoGame, PlatformTarget.DirectX)
-            .GraphicsTarget.Should().Be(PlatformTarget.DirectX);
+            .GraphicsTarget.ShouldBe(PlatformTarget.DirectX);
         // FNA short-circuits ahead of the switch and is deliberately target-independent.
         RuntimeProfileDetector.Recommend(DetectedRuntime.Fna, PlatformTarget.Vulkan)
-            .GraphicsTarget.Should().Be(PlatformTarget.Fna);
+            .GraphicsTarget.ShouldBe(PlatformTarget.Fna);
     }
 
     // ── SD0005: undetectable input format ───────────────────────────────────────────
@@ -100,9 +114,9 @@ public sealed class ReviewRegressionTests
         var result = InputFormatDetector.Detect(
             "Mystery.txt", "float x = 1.0;\n", InputFormat.Auto);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("SD0005");
-        result.Error.Message.Should().Contain("--input-format");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("SD0005");
+        result.Error.Message.ShouldContain("--input-format", Case.Sensitive);
     }
 
     [Fact]
@@ -110,9 +124,9 @@ public sealed class ReviewRegressionTests
     {
         // The over-fire direction: SD0005 must not start rejecting valid input.
         InputFormatDetector.Detect("a.fx", "technique T { pass P { } }", InputFormat.Auto)
-            .IsSuccess.Should().BeTrue();
+            .IsSuccess.ShouldBeTrue();
         InputFormatDetector.Detect(
                 "a.glsl", "void mainImage(out vec4 c, in vec2 p) { c = vec4(1); }", InputFormat.Auto)
-            .IsSuccess.Should().BeTrue();
+            .IsSuccess.ShouldBeTrue();
     }
 }

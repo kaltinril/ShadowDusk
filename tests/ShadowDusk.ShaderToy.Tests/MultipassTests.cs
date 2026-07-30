@@ -1,5 +1,5 @@
 using System.Text.Json;
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.ShaderToy.Multipass;
 using Xunit;
 
@@ -36,30 +36,30 @@ public sealed class MultipassTests
     {
         ShaderToyProject project = ShaderToyProject.Parse(Chain2Json);
 
-        project.Name.Should().Contain("chain2");
+        project.Name!.ShouldContain("chain2", Case.Sensitive);
         // Common + Buffer A + Image + Sound = 4 raw passes.
-        project.Passes.Should().HaveCount(4);
-        project.Common.Should().NotBeNull();
-        project.Common!.Type.Should().Be(ShaderToyPassType.Common);
+        project.Passes.Count().ShouldBe(4);
+        project.Common.ShouldNotBeNull();
+        project.Common!.Type.ShouldBe(ShaderToyPassType.Common);
 
         ShaderToyPass image = project.Passes.Single(p => p.Name == "Image");
-        image.Type.Should().Be(ShaderToyPassType.Image);
-        image.Inputs.Should().HaveCount(2);
+        image.Type.ShouldBe(ShaderToyPassType.Image);
+        image.Inputs.Count().ShouldBe(2);
         ShaderToyInput ch0 = image.Inputs.Single(i => i.Channel == 0);
-        ch0.Ctype.Should().Be(ShaderToyChannelType.Buffer);
-        ch0.Id.Should().Be("bufferA-out");
-        ch0.Sampler.Should().NotBeNull();
-        ch0.Sampler!.Wrap.Should().Be("clamp");
-        ch0.Sampler.Filter.Should().Be("linear");
+        ch0.Ctype.ShouldBe(ShaderToyChannelType.Buffer);
+        ch0.Id.ShouldBe("bufferA-out");
+        ch0.Sampler.ShouldNotBeNull();
+        ch0.Sampler!.Wrap.ShouldBe("clamp");
+        ch0.Sampler.Filter.ShouldBe("linear");
     }
 
     [Fact]
     public void Parse_InvalidJson_FailsGracefully()
     {
         bool ok = ShaderToyProject.TryParse("{ not valid json", out ShaderToyProject? project, out string? error);
-        ok.Should().BeFalse();
-        project.Should().BeNull();
-        error.Should().NotBeNullOrEmpty();
+        ok.ShouldBeFalse();
+        project.ShouldBeNull();
+        error.ShouldNotBeNullOrEmpty();
     }
 
     [Fact]
@@ -69,7 +69,7 @@ public sealed class MultipassTests
         { "ver": "0.1", "renderpass": [ { "name": "X", "type": "raytrace", "code": "" } ] }
         """;
         Action act = () => ShaderToyProject.Parse(json);
-        act.Should().Throw<JsonException>();
+        Should.Throw<JsonException>(act);
     }
 
     // ── Pass count / order ──────────────────────────────────────────────────────
@@ -80,8 +80,8 @@ public sealed class MultipassTests
         MultipassResult result = ConvertChain2();
 
         // Only the buffer + image passes are rendered; Common and Sound are not.
-        result.Passes.Select(p => p.Name).Should().Equal("Buffer A", "Image");
-        result.Passes.Last().Name.Should().Be("Image", "the Image pass is always last (renders to screen)");
+        result.Passes.Select(p => p.Name).ShouldBe(new[] {"Buffer A", "Image"});
+        result.Passes.Last().Name.ShouldBe("Image", customMessage: "the Image pass is always last (renders to screen)");
     }
 
     [Fact]
@@ -99,7 +99,7 @@ public sealed class MultipassTests
         }
         """;
         MultipassResult result = MultipassConverter.Convert(ShaderToyProject.Parse(json));
-        result.Passes.Select(p => p.Name).Should().Equal("Buffer A", "Buffer B", "Image");
+        result.Passes.Select(p => p.Name).ShouldBe(new[] {"Buffer A", "Buffer B", "Image"});
     }
 
     // ── Common is prepended to passes ──────────────────────────────────────────
@@ -112,10 +112,10 @@ public sealed class MultipassTests
         // Image calls tint() which is declared ONLY in the Common tab; conversion must succeed because
         // the Common code is prepended to the Image pass before translation.
         MultipassPassResult image = result.Passes.Single(p => p.Name == "Image");
-        image.Success.Should().BeTrue(
+        image.Success.ShouldBeTrue(string.Format(
             "Common is prepended so tint() resolves; diagnostics: {0}",
-            string.Join("; ", image.Diagnostics.Select(d => $"{d.Severity}:{d.Message}")));
-        image.Fx!.Should().Contain("tint", "the Common helper is emitted into the pass .fx");
+            string.Join("; ", image.Diagnostics.Select(d => $"{d.Severity}:{d.Message}"))));
+        image.Fx!.ShouldContain("tint", Case.Sensitive, "the Common helper is emitted into the pass .fx");
     }
 
     [Fact]
@@ -133,8 +133,8 @@ public sealed class MultipassTests
         }
         """;
         MultipassResult result = MultipassConverter.Convert(ShaderToyProject.Parse(json));
-        result.Success.Should().BeFalse();
-        result.Passes.Single().Success.Should().BeFalse();
+        result.Success.ShouldBeFalse();
+        result.Passes.Single().Success.ShouldBeFalse();
     }
 
     // ── Buffer wiring A -> Image ───────────────────────────────────────────────
@@ -146,12 +146,12 @@ public sealed class MultipassTests
 
         MultipassPassResult image = result.Passes.Single(p => p.Name == "Image");
         ChannelWiring ch0 = image.Channels.Single(c => c.Channel == 0);
-        ch0.Kind.Should().Be(ChannelSourceKind.BufferPass);
-        ch0.IsFeedback.Should().BeFalse();
-        ch0.SourcePassName.Should().Be("Buffer A");
-        ch0.SourceOutputFile.Should().Be("BufferA.fx");
-        ch0.Wrap.Should().Be("clamp");
-        ch0.Filter.Should().Be("linear");
+        ch0.Kind.ShouldBe(ChannelSourceKind.BufferPass);
+        ch0.IsFeedback.ShouldBeFalse();
+        ch0.SourcePassName.ShouldBe("Buffer A");
+        ch0.SourceOutputFile.ShouldBe("BufferA.fx");
+        ch0.Wrap.ShouldBe("clamp");
+        ch0.Filter.ShouldBe("linear");
     }
 
     // ── Feedback channel detection ─────────────────────────────────────────────
@@ -162,17 +162,17 @@ public sealed class MultipassTests
         MultipassResult result = ConvertFeedback();
 
         MultipassPassResult bufferA = result.Passes.Single(p => p.Name == "Buffer A");
-        bufferA.HasFeedback.Should().BeTrue();
+        bufferA.HasFeedback.ShouldBeTrue();
         ChannelWiring ch0 = bufferA.Channels.Single(c => c.Channel == 0);
-        ch0.Kind.Should().Be(ChannelSourceKind.Feedback);
-        ch0.IsFeedback.Should().BeTrue();
-        ch0.SourcePassName.Should().Be("Buffer A", "feedback source is the pass itself");
+        ch0.Kind.ShouldBe(ChannelSourceKind.Feedback);
+        ch0.IsFeedback.ShouldBeTrue();
+        ch0.SourcePassName.ShouldBe("Buffer A", customMessage: "feedback source is the pass itself");
 
-        result.HasFeedback.Should().BeTrue();
+        result.HasFeedback.ShouldBeTrue();
 
         // The Image's iChannel0 also reads Buffer A but is NOT feedback (different pass).
         MultipassPassResult image = result.Passes.Single(p => p.Name == "Image");
-        image.Channels.Single(c => c.Channel == 0).Kind.Should().Be(ChannelSourceKind.BufferPass);
+        image.Channels.Single(c => c.Channel == 0).Kind.ShouldBe(ChannelSourceKind.BufferPass);
     }
 
     [Fact]
@@ -181,9 +181,9 @@ public sealed class MultipassTests
         MultipassResult result = ConvertFeedback();
         MultipassPassResult image = result.Passes.Single(p => p.Name == "Image");
         ChannelWiring ch1 = image.Channels.Single(c => c.Channel == 1);
-        ch1.Kind.Should().Be(ChannelSourceKind.Texture);
-        ch1.TextureSrc.Should().Be("/media/a/rocks.jpg");
-        ch1.Note.Should().Contain("supply your own");
+        ch1.Kind.ShouldBe(ChannelSourceKind.Texture);
+        ch1.TextureSrc.ShouldBe("/media/a/rocks.jpg");
+        ch1.Note!.ShouldContain("supply your own", Case.Sensitive);
     }
 
     // ── Sound / cubemap skipped with a warning ─────────────────────────────────
@@ -193,8 +193,8 @@ public sealed class MultipassTests
     {
         MultipassResult result = ConvertChain2();
 
-        result.Passes.Should().NotContain(p => p.Name == "Sound");
-        result.Diagnostics.Should().Contain(d =>
+        result.Passes.ShouldNotContain(p => p.Name == "Sound");
+        result.Diagnostics.ShouldContain(d =>
             d.Severity == DiagnosticSeverity.Warning &&
             d.Message.Contains("Sound", StringComparison.OrdinalIgnoreCase) &&
             d.Message.Contains("out of v1 scope", StringComparison.OrdinalIgnoreCase));
@@ -213,8 +213,8 @@ public sealed class MultipassTests
         }
         """;
         MultipassResult result = MultipassConverter.Convert(ShaderToyProject.Parse(json));
-        result.Passes.Should().NotContain(p => p.Name == "Cubemap A");
-        result.Diagnostics.Should().Contain(d =>
+        result.Passes.ShouldNotContain(p => p.Name == "Cubemap A");
+        result.Diagnostics.ShouldContain(d =>
             d.Severity == DiagnosticSeverity.Warning &&
             d.Message.Contains("Cubemap A", StringComparison.Ordinal));
     }
@@ -228,8 +228,8 @@ public sealed class MultipassTests
 
         MultipassPassResult image = result.Passes.Single(p => p.Name == "Image");
         ChannelWiring ch1 = image.Channels.Single(c => c.Channel == 1);
-        ch1.Kind.Should().Be(ChannelSourceKind.Unsupported);
-        image.Diagnostics.Should().Contain(d =>
+        ch1.Kind.ShouldBe(ChannelSourceKind.Unsupported);
+        image.Diagnostics.ShouldContain(d =>
             d.Severity == DiagnosticSeverity.Warning &&
             d.Message.Contains("keyboard", StringComparison.OrdinalIgnoreCase) &&
             d.Message.Contains("unsupported", StringComparison.OrdinalIgnoreCase));
@@ -243,13 +243,13 @@ public sealed class MultipassTests
     public void Convert_EveryRenderedPassEmitsFx(string fixture)
     {
         MultipassResult result = fixture == "chain2" ? ConvertChain2() : ConvertFeedback();
-        result.Success.Should().BeTrue();
-        result.Passes.Should().NotBeEmpty();
+        result.Success.ShouldBeTrue();
+        result.Passes.ShouldNotBeEmpty();
         foreach (MultipassPassResult pass in result.Passes)
         {
-            pass.Success.Should().BeTrue("'{0}' must convert", pass.Name);
-            pass.Fx.Should().NotBeNullOrWhiteSpace();
-            pass.Fx!.Should().Contain("technique", "each pass .fx is a complete effect");
+            pass.Success.ShouldBeTrue(string.Format("'{0}' must convert", pass.Name));
+            pass.Fx.ShouldNotBeNullOrWhiteSpace();
+            pass.Fx!.ShouldContain("technique", Case.Sensitive, "each pass .fx is a complete effect");
         }
     }
 
@@ -297,9 +297,9 @@ public sealed class MultipassTests
             return;
         }
 
-        File.Exists(goldenPath).Should().BeTrue(
-            "golden '{0}' must exist; run once with SHADERTOY2FX_UPDATE_GOLDENS=1 to generate it", goldenPath);
+        File.Exists(goldenPath).ShouldBeTrue(string.Format(
+            "golden '{0}' must exist; run once with SHADERTOY2FX_UPDATE_GOLDENS=1 to generate it", goldenPath));
         string expected = CorpusLocator.NormalizeNewlines(File.ReadAllText(goldenPath));
-        actual.Should().Be(expected, "the emitted output for '{0}' must match its committed golden", label);
+        actual.ShouldBe(expected, customMessage: string.Format( "the emitted output for '{0}' must match its committed golden", label));
     }
 }

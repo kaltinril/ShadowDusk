@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using Xunit;
@@ -80,15 +80,14 @@ public sealed class MgfxParameterMatchTests
 
         // --- ShadowDusk side: compile the same .fx source mgfxc compiled ---
         string fxPath = TestHelpers.FixturePath(fixtureStem + ".fx");
-        File.Exists(fxPath).Should().BeTrue($".fx fixture must exist at {fxPath}");
+        File.Exists(fxPath).ShouldBeTrue($".fx fixture must exist at {fxPath}");
         string source = await File.ReadAllTextAsync(fxPath, ct);
 
         var result = await new EffectCompiler().CompileAsync(
             source,
             new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = fxPath },
             ct);
-        result.IsSuccess.Should().BeTrue(
-            because: result.IsFailure
+        result.IsSuccess.ShouldBeTrue(result.IsFailure
                 ? string.Join(" | ", result.Error.Select(e => e.FxcFormattedMessage))
                 : "the corpus shader must compile");
 
@@ -97,7 +96,7 @@ public sealed class MgfxParameterMatchTests
         // --- mgfxc side: the committed reference golden ---
         string goldenPath = Path.Combine(
             FindRepoRoot(), "tests", "fixtures", "golden", "OpenGL", fixtureStem + ".mgfx");
-        File.Exists(goldenPath).Should().BeTrue($"mgfxc golden must exist at {goldenPath}");
+        File.Exists(goldenPath).ShouldBeTrue($"mgfxc golden must exist at {goldenPath}");
 
         MgfxBlobReader golden = MgfxBlobReader.Parse(await File.ReadAllBytesAsync(goldenPath, ct));
 
@@ -115,38 +114,35 @@ public sealed class MgfxParameterMatchTests
 
         foreach (MgfxParameterRecord gold in golden.Parameters)
         {
-            subjectByName.Should().ContainKey(gold.Name,
-                because: $"every mgfxc parameter must be reachable by name ('{gold.Name}')");
+            subjectByName.ContainsKey(gold.Name).ShouldBeTrue(customMessage: $"every mgfxc parameter must be reachable by name ('{gold.Name}')");
             MgfxParameterRecord sub = subjectByName[gold.Name];
 
             if (gold.Class != ClassObject)
             {
                 // Value-class parameter (SetValue surface): EXACT match, no exceptions.
-                sub.Class.Should().Be(gold.Class,               $"parameter '{gold.Name}' Class");
-                sub.Type.Should().Be(gold.Type,                 $"parameter '{gold.Name}' Type");
-                sub.Rows.Should().Be(gold.Rows,                 $"parameter '{gold.Name}' Rows");
-                sub.Columns.Should().Be(gold.Columns,           $"parameter '{gold.Name}' Columns");
-                sub.ElementCount.Should().Be(gold.ElementCount, $"parameter '{gold.Name}' Elements");
-                sub.MemberCount.Should().Be(gold.MemberCount,   $"parameter '{gold.Name}' Members");
+                sub.Class.ShouldBe(gold.Class, customMessage: $"parameter '{gold.Name}' Class");
+                sub.Type.ShouldBe(gold.Type, customMessage: $"parameter '{gold.Name}' Type");
+                sub.Rows.ShouldBe(gold.Rows, customMessage: $"parameter '{gold.Name}' Rows");
+                sub.Columns.ShouldBe(gold.Columns, customMessage: $"parameter '{gold.Name}' Columns");
+                sub.ElementCount.ShouldBe(gold.ElementCount, customMessage: $"parameter '{gold.Name}' Elements");
+                sub.MemberCount.ShouldBe(gold.MemberCount, customMessage: $"parameter '{gold.Name}' Members");
                 continue;
             }
 
             // Object-class parameter (texture).
-            sub.Class.Should().Be(ClassObject, $"parameter '{gold.Name}' must stay object-class");
+            sub.Class.ShouldBe(ClassObject, customMessage: $"parameter '{gold.Name}' must stay object-class");
             if (sub.Type == gold.Type)
                 continue; // identical texture parameter — done.
 
             // Pinned divergence 2: mgfxc's texture param name is ShadowDusk's sampler
             // param; the texture itself is the synthesized companion parameter.
-            sub.Type.Should().Be(TypeSampler,
-                because: $"'{gold.Name}': the only allowed type divergence is mgfxc-texture vs " +
+            sub.Type.ShouldBe(TypeSampler, customMessage: $"'{gold.Name}': the only allowed type divergence is mgfxc-texture vs " +
                          "ShadowDusk-sampler (legacy `sampler s0;` shape)");
             string companion = gold.Name + SynthesizedTextureSuffix;
-            subjectByName.Should().ContainKey(companion,
-                because: $"the sampler '{gold.Name}' must be backed by the synthesized texture " +
+            subjectByName.ContainsKey(companion).ShouldBeTrue(customMessage: $"the sampler '{gold.Name}' must be backed by the synthesized texture " +
                          $"parameter '{companion}'");
-            subjectByName[companion].Class.Should().Be(ClassObject, $"'{companion}' Class");
-            subjectByName[companion].Type.Should().Be(gold.Type,    $"'{companion}' Type");
+            subjectByName[companion].Class.ShouldBe(ClassObject, customMessage: $"'{companion}' Class");
+            subjectByName[companion].Type.ShouldBe(gold.Type, customMessage: $"'{companion}' Type");
         }
 
         // Extras: pinned divergence 1 — ShadowDusk may additionally expose object-class
@@ -155,13 +151,11 @@ public sealed class MgfxParameterMatchTests
         var goldenNames = golden.Parameters.Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
         foreach (MgfxParameterRecord extra in subject.Parameters.Where(p => !goldenNames.Contains(p.Name)))
         {
-            extra.Class.Should().Be(ClassObject,
-                because: $"extra parameter '{extra.Name}' must be object-class (sampler/texture) — " +
+            extra.Class.ShouldBe(ClassObject, customMessage: $"extra parameter '{extra.Name}' must be object-class (sampler/texture) — " +
                          "extra value-class parameters are never allowed");
             bool isSampler   = extra.Type == TypeSampler;
             bool isSynthTex  = extra.Name.EndsWith(SynthesizedTextureSuffix, StringComparison.Ordinal);
-            (isSampler || isSynthTex).Should().BeTrue(
-                because: $"extra parameter '{extra.Name}' (type={extra.Type}) must be either a " +
+            (isSampler || isSynthTex).ShouldBeTrue($"extra parameter '{extra.Name}' (type={extra.Type}) must be either a " +
                          "sampler parameter or a synthesized *_SDTexture companion");
         }
     }

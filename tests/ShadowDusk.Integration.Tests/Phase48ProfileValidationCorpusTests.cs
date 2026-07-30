@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using ShadowDusk.Integration.Tests.Tests;
@@ -48,10 +48,8 @@ public sealed class Phase48ProfileValidationCorpusTests
 
         var result = await CompileAsync(fx, PlatformTarget.OpenGL, cts.Token);
 
-        result.IsFailure.Should().BeTrue(
-            because: $"'{fx}' has an unrecognized compile target; mgfxc rejects it");
-        result.Error.Should().Contain(e => e.Code == "SD0013",
-            because: "the unrecognized-profile diagnostic must surface as SD0013");
+        result.IsFailure.ShouldBeTrue($"'{fx}' has an unrecognized compile target; mgfxc rejects it");
+        result.Error.ShouldContain(e => e.Code == "SD0013", "the unrecognized-profile diagnostic must surface as SD0013");
     }
 
     [Theory]
@@ -63,9 +61,8 @@ public sealed class Phase48ProfileValidationCorpusTests
 
         var result = await CompileAsync(fx, PlatformTarget.DirectX, cts.Token);
 
-        result.IsFailure.Should().BeTrue(
-            because: $"'{fx}' has an unrecognized compile target; mgfxc rejects it");
-        result.Error.Should().Contain(e => e.Code == "SD0013");
+        result.IsFailure.ShouldBeTrue($"'{fx}' has an unrecognized compile target; mgfxc rejects it");
+        result.Error.ShouldContain(e => e.Code == "SD0013");
     }
 
     // -------------------------------------------------------------------------
@@ -81,9 +78,8 @@ public sealed class Phase48ProfileValidationCorpusTests
 
         var result = await CompileAsync(fx, PlatformTarget.Fna, cts.Token);
 
-        result.IsFailure.Should().BeTrue(
-            because: $"'{fx}' has an unrecognized compile target; fxc rejects it");
-        result.Error.Should().Contain(e => e.Code == "SD0013");
+        result.IsFailure.ShouldBeTrue($"'{fx}' has an unrecognized compile target; fxc rejects it");
+        result.Error.ShouldContain(e => e.Code == "SD0013");
     }
 
     // -------------------------------------------------------------------------
@@ -102,10 +98,8 @@ public sealed class Phase48ProfileValidationCorpusTests
 
         var result = await CompileAsync("examples/ExProfileStageMismatch.fx", target, cts.Token);
 
-        result.IsFailure.Should().BeTrue(
-            because: "a ps_* profile in the VertexShader slot is a cross-stage binding mgfxc rejects");
-        result.Error.Should().Contain(e => e.Code == "SD0014",
-            because: "the stage/slot prefix mismatch must surface as SD0014");
+        result.IsFailure.ShouldBeTrue("a ps_* profile in the VertexShader slot is a cross-stage binding mgfxc rejects");
+        result.Error.ShouldContain(e => e.Code == "SD0014", "the stage/slot prefix mismatch must surface as SD0014");
     }
 
     // -------------------------------------------------------------------------
@@ -124,9 +118,8 @@ public sealed class Phase48ProfileValidationCorpusTests
         var result = await TestHelpers.CompileFixtureAsync(
             "examples/ExProfileLevel9Header.fx", profile, ct: cts.Token);
 
-        result.ExitCode.Should().Be(0,
-            because: $"the standard *_level_9_1 header must remain accepted on {profile}; stderr: {result.Stderr}");
-        result.Mgfx.Should().NotBeEmpty();
+        result.ExitCode.ShouldBe(0, customMessage: $"the standard *_level_9_1 header must remain accepted on {profile}; stderr: {result.Stderr}");
+        result.Mgfx.ShouldNotBeEmpty();
     }
 
     [FnaFact]
@@ -138,8 +131,7 @@ public sealed class Phase48ProfileValidationCorpusTests
         var result = await CompileAsync(
             "examples/ExProfileLevel9Header.fx", PlatformTarget.Fna, cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
-            because: "PS_SHADERMODEL resolves to a recognized profile, so FNA must compile it (SM3 ceiling); " +
+        result.IsSuccess.ShouldBeTrue("PS_SHADERMODEL resolves to a recognized profile, so FNA must compile it (SM3 ceiling); " +
                      $"errors: {(result.IsFailure ? string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "<none>")}");
     }
 

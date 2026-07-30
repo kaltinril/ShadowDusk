@@ -1,7 +1,7 @@
 #nullable enable
 
 using System.Text;
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using Xunit;
@@ -53,8 +53,7 @@ public sealed class Phase43CbufferModelTests
         string source = await File.ReadAllTextAsync(fxPath, ct);
         var result = await new EffectCompiler().CompileAsync(
             source, new CompilerOptions { Target = target, SourceFileName = fxPath }, ct);
-        result.IsSuccess.Should().BeTrue(
-            because: result.IsFailure
+        result.IsSuccess.ShouldBeTrue(result.IsFailure
                 ? string.Join(" | ", result.Error.Select(e => e.FxcFormattedMessage))
                 : $"{stem} must compile for {target}");
         return MgfxBlobReader.Parse(result.Value.Data);
@@ -64,7 +63,7 @@ public sealed class Phase43CbufferModelTests
     {
         string path = Path.Combine(
             FindRepoRoot(), "tests", "fixtures", "golden", profileDir, stem + ".mgfx");
-        File.Exists(path).Should().BeTrue($"mgfxc golden must exist at {path}");
+        File.Exists(path).ShouldBeTrue($"mgfxc golden must exist at {path}");
         return MgfxBlobReader.Parse(File.ReadAllBytes(path));
     }
 
@@ -91,21 +90,18 @@ public sealed class Phase43CbufferModelTests
 
         // mgfxc's model: one record per stage. The golden has exactly
         // {ps_uniforms_vec4, vs_uniforms_vec4}; so must we.
-        golden.ConstantBuffers.Select(c => c.Name).Should().BeEquivalentTo(
-            new[] { "ps_uniforms_vec4", "vs_uniforms_vec4" },
-            because: "the golden pins mgfxc's per-stage record model");
-        subject.ConstantBuffers.Select(c => c.Name).Should().BeEquivalentTo(
-            new[] { "ps_uniforms_vec4", "vs_uniforms_vec4" },
-            because: "a shared cbuffer must yield a record per stage (F4) — the cross-stage " +
+        golden.ConstantBuffers.Select(c => c.Name).ShouldBe(
+            new[] { "ps_uniforms_vec4", "vs_uniforms_vec4" }, ignoreOrder: true, customMessage: "the golden pins mgfxc's per-stage record model");
+        subject.ConstantBuffers.Select(c => c.Name).ShouldBe(
+            new[] { "ps_uniforms_vec4", "vs_uniforms_vec4" }, ignoreOrder: true, customMessage: "a shared cbuffer must yield a record per stage (F4) — the cross-stage " +
                      "dedup left the VS array unbindable and VS uniforms silently zero");
 
         // Each stage's shader binds ITS record (by index), exactly like the golden.
         foreach (MgfxShaderRecord shader in subject.Shaders)
         {
-            shader.ConstantBufferIndices.Should().HaveCount(1);
+            shader.ConstantBufferIndices.Count().ShouldBe(1);
             string expected = shader.IsVertex ? "vs_uniforms_vec4" : "ps_uniforms_vec4";
-            subject.ConstantBuffers[shader.ConstantBufferIndices[0]].Name.Should().Be(expected,
-                $"the {(shader.IsVertex ? "VS" : "PS")} must bind its own stage's record");
+            subject.ConstantBuffers[shader.ConstantBufferIndices[0]].Name.ShouldBe(expected, customMessage: $"the {(shader.IsVertex ? "VS" : "PS")} must bind its own stage's record");
         }
 
         // The VS record and the VS GLSL share one allocation: WorldViewProjection at
@@ -114,19 +110,18 @@ public sealed class Phase43CbufferModelTests
         // full-declared-layout divergence in the class doc.)
         MgfxConstantBufferRecord vsRecord = subject.ConstantBuffers.Single(c => c.Name == "vs_uniforms_vec4");
         MgfxShaderRecord vsShader = subject.Shaders.Single(s => s.IsVertex);
-        OffsetsByName(subject, vsRecord)["WorldViewProjection"].Should().Be(0);
+        OffsetsByName(subject, vsRecord)["WorldViewProjection"].ShouldBe(0);
         OffsetsByName(golden, golden.ConstantBuffers.Single(c => c.Name == "vs_uniforms_vec4"))
-            ["WorldViewProjection"].Should().Be(0, "golden agreement on the used VS member's offset");
+            ["WorldViewProjection"].ShouldBe(0, customMessage: "golden agreement on the used VS member's offset");
 
         string vsGlsl = Ascii(vsShader.Bytecode);
-        vsGlsl.Should().Contain($"uniform vec4 vs_uniforms_vec4[{vsRecord.Size / 16}];",
-            because: "the VS GLSL must declare the exact array the record describes (the F4 smoking gun)");
+        vsGlsl.ShouldContain($"uniform vec4 vs_uniforms_vec4[{vsRecord.Size / 16}];", Case.Sensitive, "the VS GLSL must declare the exact array the record describes (the F4 smoking gun)");
 
         // PS side likewise.
         MgfxConstantBufferRecord psRecord = subject.ConstantBuffers.Single(c => c.Name == "ps_uniforms_vec4");
-        OffsetsByName(subject, psRecord).Should().ContainKey("DiffuseColor");
+        OffsetsByName(subject, psRecord).ContainsKey("DiffuseColor").ShouldBeTrue();
         string psGlsl = Ascii(subject.Shaders.Single(s => !s.IsVertex).Bytecode);
-        psGlsl.Should().Contain($"uniform vec4 ps_uniforms_vec4[{psRecord.Size / 16}];");
+        psGlsl.ShouldContain($"uniform vec4 ps_uniforms_vec4[{psRecord.Size / 16}];", Case.Sensitive);
     }
 
     // ------------------------------------------------------------------ F5 ----
@@ -140,21 +135,21 @@ public sealed class Phase43CbufferModelTests
 
         // ONE merged ps record (no member of either cbuffer is unused, so layout
         // matches the golden EXACTLY: TintA@0, TintB@16, MixAmount@32, size 48).
-        subject.ConstantBuffers.Should().HaveCount(1);
-        golden.ConstantBuffers.Should().HaveCount(1, "the golden pins mgfxc's merge model");
+        subject.ConstantBuffers.Count().ShouldBe(1);
+        golden.ConstantBuffers.Count().ShouldBe(1, customMessage: "the golden pins mgfxc's merge model");
 
         MgfxConstantBufferRecord sub = subject.ConstantBuffers[0];
         MgfxConstantBufferRecord gold = golden.ConstantBuffers[0];
-        sub.Name.Should().Be("ps_uniforms_vec4");
-        sub.Size.Should().Be(gold.Size);
-        OffsetsByName(subject, sub).Should().BeEquivalentTo(OffsetsByName(golden, gold));
+        sub.Name.ShouldBe("ps_uniforms_vec4");
+        sub.Size.ShouldBe(gold.Size);
+        OffsetsByName(subject, sub).ShouldBe(OffsetsByName(golden, gold), ignoreOrder: true);
 
         // No raw std140 block may survive in the GLSL (the F5 Effect-load failure),
         // and the merged array must carry the record's register count.
         string glsl = Ascii(subject.ShaderBlobs[0]);
-        glsl.Should().NotContain("std140");
-        glsl.Should().NotContain("type_");
-        glsl.Should().Contain($"uniform vec4 ps_uniforms_vec4[{sub.Size / 16}];");
+        glsl.ShouldNotContain("std140", Case.Sensitive);
+        glsl.ShouldNotContain("type_", Case.Sensitive);
+        glsl.ShouldContain($"uniform vec4 ps_uniforms_vec4[{sub.Size / 16}];", Case.Sensitive);
     }
 
     [Fact]
@@ -166,15 +161,14 @@ public sealed class Phase43CbufferModelTests
 
         MgfxConstantBufferRecord sub  = subject.ConstantBuffers.Single();
         MgfxConstantBufferRecord gold = golden.ConstantBuffers.Single();
-        sub.Name.Should().Be("vs_uniforms_vec4");
-        gold.Name.Should().Be("vs_uniforms_vec4");
-        sub.Size.Should().Be(gold.Size);
-        OffsetsByName(subject, sub).Should().BeEquivalentTo(OffsetsByName(golden, gold),
-            because: "both cbuffers' members must fold into one vs register space in declaration order");
+        sub.Name.ShouldBe("vs_uniforms_vec4");
+        gold.Name.ShouldBe("vs_uniforms_vec4");
+        sub.Size.ShouldBe(gold.Size);
+        OffsetsByName(subject, sub).ShouldBe(OffsetsByName(golden, gold), ignoreOrder: true, customMessage: "both cbuffers' members must fold into one vs register space in declaration order");
 
         string vsGlsl = Ascii(subject.Shaders.Single(s => s.IsVertex).Bytecode);
-        vsGlsl.Should().NotContain("std140");
-        vsGlsl.Should().Contain($"uniform vec4 vs_uniforms_vec4[{sub.Size / 16}];");
+        vsGlsl.ShouldNotContain("std140", Case.Sensitive);
+        vsGlsl.ShouldContain($"uniform vec4 vs_uniforms_vec4[{sub.Size / 16}];", Case.Sensitive);
     }
 
     // ------------------------------------------------------------------ F6 ----
@@ -196,13 +190,12 @@ public sealed class Phase43CbufferModelTests
         {
             _output.WriteLine($"{stem}/{target}: comparing array parameter '{gold.Name}' " +
                               $"({gold.ElementCount} elements)");
-            subjectByName.Should().ContainKey(gold.Name);
+            subjectByName.ContainsKey(gold.Name).ShouldBeTrue();
             AssertParameterTreeEqual(subjectByName[gold.Name], gold, gold.Name);
         }
 
         // At least one array parameter must exist in the golden, or the test is vacuous.
-        golden.Parameters.Should().Contain(p => p.ElementCount > 0,
-            "the fixture exists to pin the array model");
+        golden.Parameters.ShouldContain(p => p.ElementCount > 0, "the fixture exists to pin the array model");
     }
 
     [Fact]
@@ -214,14 +207,13 @@ public sealed class Phase43CbufferModelTests
 
         MgfxConstantBufferRecord sub  = subject.ConstantBuffers.Single();
         MgfxConstantBufferRecord gold = golden.ConstantBuffers.Single();
-        sub.Name.Should().Be("ps_uniforms_vec4");
-        sub.Size.Should().Be(gold.Size, "float4[4] = 4 registers, float[4] = 4 registers (stride 16)");
-        OffsetsByName(subject, sub).Should().BeEquivalentTo(OffsetsByName(golden, gold));
+        sub.Name.ShouldBe("ps_uniforms_vec4");
+        sub.Size.ShouldBe(gold.Size, customMessage: "float4[4] = 4 registers, float[4] = 4 registers (stride 16)");
+        OffsetsByName(subject, sub).ShouldBe(OffsetsByName(golden, gold), ignoreOrder: true);
 
         string glsl = Ascii(subject.ShaderBlobs[0]);
-        glsl.Should().Contain($"uniform vec4 ps_uniforms_vec4[{sub.Size / 16}];");
-        glsl.Should().NotContain("_Globals",
-            because: "no reference to the deleted SPIRV-Cross block may survive (the F6 failure)");
+        glsl.ShouldContain($"uniform vec4 ps_uniforms_vec4[{sub.Size / 16}];", Case.Sensitive);
+        glsl.ShouldNotContain("_Globals", Case.Sensitive, "no reference to the deleted SPIRV-Cross block may survive (the F6 failure)");
     }
 
     [Fact]
@@ -233,23 +225,20 @@ public sealed class Phase43CbufferModelTests
 
         MgfxConstantBufferRecord sub  = subject.ConstantBuffers.Single();
         MgfxConstantBufferRecord gold = golden.ConstantBuffers.Single();
-        sub.Name.Should().Be("vs_uniforms_vec4");
-        sub.Size.Should().Be(gold.Size, "float4x4[2] = 8 registers + float4[2] = 2 registers");
-        OffsetsByName(subject, sub).Should().BeEquivalentTo(OffsetsByName(golden, gold),
-            because: "Bones@0 and PosOffsets@128 — mat4 array elements stride FOUR registers");
+        sub.Name.ShouldBe("vs_uniforms_vec4");
+        sub.Size.ShouldBe(gold.Size, customMessage: "float4x4[2] = 8 registers + float4[2] = 2 registers");
+        OffsetsByName(subject, sub).ShouldBe(OffsetsByName(golden, gold), ignoreOrder: true, customMessage: "Bones@0 and PosOffsets@128 — mat4 array elements stride FOUR registers");
 
         // The VS GLSL reads BOTH elements of both arrays at the packed offsets. The mat4
         // elements are reconstructed TRANSPOSED (issue #70): the registers become the
         // matrix ROWS, so each transposed-matrix column is vec4(reg[a].c, reg[b].c, …).
         string vsGlsl = Ascii(subject.Shaders.Single(s => s.IsVertex).Bytecode);
-        vsGlsl.Should().Contain(
-            "vec4(vs_uniforms_vec4[0].x, vs_uniforms_vec4[1].x, vs_uniforms_vec4[2].x, vs_uniforms_vec4[3].x)",
-            because: "Bones[0] sits at registers 0-3, reconstructed transposed");
-        vsGlsl.Should().Contain(
-            "vec4(vs_uniforms_vec4[4].x, vs_uniforms_vec4[5].x, vs_uniforms_vec4[6].x, vs_uniforms_vec4[7].x)",
-            because: "Bones[1] sits at registers 4-7 (mat4 array elements stride FOUR), transposed");
-        vsGlsl.Should().Contain("vs_uniforms_vec4[8]", because: "PosOffsets[0] sits at register 8");
-        vsGlsl.Should().Contain("vs_uniforms_vec4[9]", because: "PosOffsets[1] sits at register 9");
+        vsGlsl.ShouldContain(
+            "vec4(vs_uniforms_vec4[0].x, vs_uniforms_vec4[1].x, vs_uniforms_vec4[2].x, vs_uniforms_vec4[3].x)", Case.Sensitive, "Bones[0] sits at registers 0-3, reconstructed transposed");
+        vsGlsl.ShouldContain(
+            "vec4(vs_uniforms_vec4[4].x, vs_uniforms_vec4[5].x, vs_uniforms_vec4[6].x, vs_uniforms_vec4[7].x)", Case.Sensitive, "Bones[1] sits at registers 4-7 (mat4 array elements stride FOUR), transposed");
+        vsGlsl.ShouldContain("vs_uniforms_vec4[8]", Case.Sensitive, "PosOffsets[0] sits at register 8");
+        vsGlsl.ShouldContain("vs_uniforms_vec4[9]", Case.Sensitive, "PosOffsets[1] sits at register 9");
     }
 
     /// <summary>
@@ -258,17 +247,16 @@ public sealed class Phase43CbufferModelTests
     /// </summary>
     private static void AssertParameterTreeEqual(MgfxParameterRecord sub, MgfxParameterRecord gold, string path)
     {
-        sub.Class.Should().Be(gold.Class,     $"{path}.Class");
-        sub.Type.Should().Be(gold.Type,       $"{path}.Type");
-        sub.Rows.Should().Be(gold.Rows,       $"{path}.Rows");
-        sub.Columns.Should().Be(gold.Columns, $"{path}.Columns");
-        sub.Semantic.Should().Be(gold.Semantic, $"{path}.Semantic");
-        sub.ElementCount.Should().Be(gold.ElementCount, $"{path}.ElementCount");
-        sub.MemberCount.Should().Be(gold.MemberCount,   $"{path}.MemberCount");
+        sub.Class.ShouldBe(gold.Class, customMessage: $"{path}.Class");
+        sub.Type.ShouldBe(gold.Type, customMessage: $"{path}.Type");
+        sub.Rows.ShouldBe(gold.Rows, customMessage: $"{path}.Rows");
+        sub.Columns.ShouldBe(gold.Columns, customMessage: $"{path}.Columns");
+        sub.Semantic.ShouldBe(gold.Semantic, customMessage: $"{path}.Semantic");
+        sub.ElementCount.ShouldBe(gold.ElementCount, customMessage: $"{path}.ElementCount");
+        sub.MemberCount.ShouldBe(gold.MemberCount, customMessage: $"{path}.MemberCount");
         for (int i = 0; i < gold.Elements.Count; i++)
         {
-            sub.Elements[i].Name.Should().Be(gold.Elements[i].Name,
-                $"{path}[{i}].Name (mgfxc gives elements EMPTY names)");
+            sub.Elements[i].Name.ShouldBe(gold.Elements[i].Name, customMessage: $"{path}[{i}].Name (mgfxc gives elements EMPTY names)");
             AssertParameterTreeEqual(sub.Elements[i], gold.Elements[i], $"{path}[{i}]");
         }
         for (int i = 0; i < gold.Members.Count; i++)
@@ -286,12 +274,10 @@ public sealed class Phase43CbufferModelTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var result = await TestHelpers.CompileFixtureAsync(fx, "OpenGL", ct: cts.Token);
 
-        result.ExitCode.Should().NotBe(0,
-            because: "an unmodelled uniform member previously shipped invalid GLSL (a reference " +
+        result.ExitCode.ShouldNotBe(0, customMessage: "an unmodelled uniform member previously shipped invalid GLSL (a reference " +
                      "to the deleted block) with exit code 0, failing only at Effect-load time");
-        result.Stderr.Should().Contain("SD0210");
-        result.Stderr.Should().Contain(expectedFragment,
-            because: "the diagnostic must name the actual limitation");
+        result.Stderr.ShouldContain("SD0210", Case.Sensitive);
+        result.Stderr.ShouldContain(expectedFragment, Case.Sensitive, "the diagnostic must name the actual limitation");
     }
 
     private static string FindRepoRoot()

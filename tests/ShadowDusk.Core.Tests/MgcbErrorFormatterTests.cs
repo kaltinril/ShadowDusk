@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Cli;
 using ShadowDusk.Core;
 using Xunit;
@@ -25,7 +25,7 @@ public sealed class MgcbErrorFormatterTests
 
         var formatted = MgcbErrorFormatter.Format(error);
 
-        formatted.Should().Be("Foo.fx(11,44-44): error X4502: bad semantic");
+        formatted.ShouldBe("Foo.fx(11,44-44): error X4502: bad semantic");
     }
 
     [Fact]
@@ -40,7 +40,7 @@ public sealed class MgcbErrorFormatterTests
 
         var formatted = MgcbErrorFormatter.Format(error);
 
-        formatted.Should().Be("error X0003: message");
+        formatted.ShouldBe("error X0003: message");
     }
 
     [Fact]
@@ -60,7 +60,7 @@ public sealed class MgcbErrorFormatterTests
 
         var formatted = MgcbErrorFormatter.Format(warning);
 
-        formatted.Should().Be(
+        formatted.ShouldBe(
             "Bloom.fx: warning SD0401: The pass has no vertex shader, "
             + "and pixel shader 'MainPS' reads vTexCoord1");
     }
@@ -82,7 +82,7 @@ public sealed class MgcbErrorFormatterTests
 
         var formatted = MgcbErrorFormatter.Format(warning);
 
-        formatted.Should().StartWith("/abs/path/to/Bloom.fx: warning SD0400:");
+        formatted.ShouldStartWith("/abs/path/to/Bloom.fx: warning SD0400:");
     }
 
     [Fact]
@@ -98,7 +98,7 @@ public sealed class MgcbErrorFormatterTests
 
         var formatted = MgcbErrorFormatter.Format(error);
 
-        formatted.Should().Be("Foo.fx(3,1-1): warning X1234: msg");
+        formatted.ShouldBe("Foo.fx(3,1-1): warning X1234: msg");
     }
 
     [Fact]
@@ -117,7 +117,7 @@ public sealed class MgcbErrorFormatterTests
 
         var formatted = MgcbErrorFormatter.Format(error);
 
-        formatted.Should().StartWith("/abs/path/to/Foo.fx(1,1-1): error X0001:");
+        formatted.ShouldStartWith("/abs/path/to/Foo.fx(1,1-1): error X0001:");
     }
 
     [Fact]
@@ -133,7 +133,7 @@ public sealed class MgcbErrorFormatterTests
         var formatted = MgcbErrorFormatter.Format(error);
 
         // Raw integer "501" must be formatted as "X0501"
-        formatted.Should().Contain("X0501");
+        formatted.ShouldContain("X0501", Case.Sensitive);
     }
 
     [Fact]
@@ -149,8 +149,8 @@ public sealed class MgcbErrorFormatterTests
         var formatted = MgcbErrorFormatter.Format(error);
 
         // Already-formatted "X4502" must not be double-prefixed or altered
-        formatted.Should().Contain("X4502");
-        formatted.Should().NotContain("XX4502");
+        formatted.ShouldContain("X4502", Case.Sensitive);
+        formatted.ShouldNotContain("XX4502", Case.Sensitive);
     }
 
     // -------------------------------------------------------------------------
@@ -173,10 +173,10 @@ public sealed class MgcbErrorFormatterTests
 
         var lines = MgcbErrorFormatter.FormatAll([error]).ToList();
 
-        lines.Should().HaveCount(3);
-        lines[0].Should().Be("Bloom.fx: error X0000: error: first problem");
-        lines[1].Should().Be("    error: second problem");
-        lines[2].Should().Be("    error: third problem");
+        lines.Count().ShouldBe(3);
+        lines[0].ShouldBe("Bloom.fx: error X0000: error: first problem");
+        lines[1].ShouldBe("    error: second problem");
+        lines[2].ShouldBe("    error: third problem");
     }
 
     [Fact]
@@ -187,8 +187,8 @@ public sealed class MgcbErrorFormatterTests
 
         var lines = MgcbErrorFormatter.FormatAll([error]).ToList();
 
-        lines.Should().ContainSingle();
-        lines[0].Should().NotStartWith(" ", "the parseable diagnostic must stay flush-left");
+        lines.ShouldHaveSingleItem();
+        lines[0].ShouldNotStartWith(" ", customMessage: "the parseable diagnostic must stay flush-left");
     }
 
     [Fact]
@@ -196,7 +196,7 @@ public sealed class MgcbErrorFormatterTests
     {
         var result = MgcbErrorFormatter.FormatAll([]);
 
-        result.Should().BeEmpty();
+        result.ShouldBeEmpty();
     }
 
     [Fact]
@@ -211,9 +211,9 @@ public sealed class MgcbErrorFormatterTests
 
         var result = MgcbErrorFormatter.FormatAll(errors).ToList();
 
-        result.Should().HaveCount(3);
-        result[0].Should().Contain("first");
-        result[1].Should().Contain("second");
-        result[2].Should().Contain("third");
+        result.Count().ShouldBe(3);
+        result[0].ShouldContain("first", Case.Sensitive);
+        result[1].ShouldContain("second", Case.Sensitive);
+        result[2].ShouldContain("third", Case.Sensitive);
     }
 }

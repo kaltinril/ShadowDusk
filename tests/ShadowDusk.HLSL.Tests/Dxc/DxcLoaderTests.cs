@@ -1,7 +1,7 @@
 #nullable enable
 
 using System.Runtime.InteropServices;
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.HLSL.Dxc;
 using Xunit;
 
@@ -29,9 +29,8 @@ public sealed class DxcLoaderTests
     {
         var candidates = DxcLoader.GetProbeCandidates(Base, arch).ToList();
 
-        candidates[0].Should().Be(
-            Path.Combine(Base, expectedRid, DxcLoader.MacLibFileName),
-            "the csproj copies the restored dylib to a per-arch subdir next to the binaries");
+        candidates[0].ShouldBe(
+            Path.Combine(Base, expectedRid, DxcLoader.MacLibFileName), customMessage: "the csproj copies the restored dylib to a per-arch subdir next to the binaries");
     }
 
     [Fact]
@@ -39,9 +38,8 @@ public sealed class DxcLoaderTests
     {
         var candidates = DxcLoader.GetProbeCandidates(Base, Architecture.Arm64).ToList();
 
-        candidates[1].Should().Be(
-            Path.Combine(Base, DxcLoader.MacLibFileName),
-            "a manually-placed flat dylib next to the binaries must still win over tools/dxc");
+        candidates[1].ShouldBe(
+            Path.Combine(Base, DxcLoader.MacLibFileName), customMessage: "a manually-placed flat dylib next to the binaries must still win over tools/dxc");
     }
 
     [Fact]
@@ -49,9 +47,8 @@ public sealed class DxcLoaderTests
     {
         var candidates = DxcLoader.GetProbeCandidates(Base, Architecture.X64).ToList();
 
-        candidates[2].Should().Be(
-            Path.Combine(Base, "runtimes", "osx-x64", "native", DxcLoader.MacLibFileName),
-            "self-contained publish keeps the NuGet runtimes/<rid>/native layout under the app base");
+        candidates[2].ShouldBe(
+            Path.Combine(Base, "runtimes", "osx-x64", "native", DxcLoader.MacLibFileName), customMessage: "self-contained publish keeps the NuGet runtimes/<rid>/native layout under the app base");
     }
 
     [Fact]
@@ -64,17 +61,17 @@ public sealed class DxcLoaderTests
         int ancestorCount = 0;
         for (DirectoryInfo? dir = new(Base); dir is not null; dir = dir.Parent)
             ancestorCount++;
-        toolsCandidates.Should().HaveCount(ancestorCount * 2);
+        toolsCandidates.Count().ShouldBe(ancestorCount * 2);
 
         // The nearest ancestor is probed first (bin-adjacent tools/ beats repo-root tools/),
         // and within each ancestor the per-arch subdir beats the flat path.
-        toolsCandidates[0].Should().Be(
+        toolsCandidates[0].ShouldBe(
             Path.Combine(Base, "tools", "dxc", "osx-arm64", DxcLoader.MacLibFileName));
-        toolsCandidates[1].Should().Be(
+        toolsCandidates[1].ShouldBe(
             Path.Combine(Base, "tools", "dxc", DxcLoader.MacLibFileName));
 
         string? parent = new DirectoryInfo(Base).Parent!.FullName;
-        toolsCandidates[2].Should().Be(
+        toolsCandidates[2].ShouldBe(
             Path.Combine(parent, "tools", "dxc", "osx-arm64", DxcLoader.MacLibFileName));
     }
 
@@ -83,10 +80,9 @@ public sealed class DxcLoaderTests
     {
         var candidates = DxcLoader.GetProbeCandidates(Base, Architecture.X64).ToList();
 
-        candidates.Should().OnlyHaveUniqueItems("duplicate probes waste dlopen attempts");
-        candidates.Should().OnlyContain(
-            c => c.EndsWith(DxcLoader.MacLibFileName),
-            "every candidate must target the macOS dylib file name");
+        candidates.ShouldBeUnique("duplicate probes waste dlopen attempts");
+        candidates.ShouldAllBe(
+            c => c.EndsWith(DxcLoader.MacLibFileName), customMessage: "every candidate must target the macOS dylib file name");
     }
 
     [Theory]
@@ -104,9 +100,9 @@ public sealed class DxcLoaderTests
 
         var candidates = DxcLoader.GetSearchDirectoryCandidates(dir, arch).ToList();
 
-        candidates.Should().Equal(
+        candidates.ShouldBe(new[] {
             Path.Combine(dir, expectedRid, DxcLoader.MacLibFileName),
-            Path.Combine(dir, DxcLoader.MacLibFileName));
+            Path.Combine(dir, DxcLoader.MacLibFileName)});
     }
 
     [Fact]
@@ -115,8 +111,8 @@ public sealed class DxcLoaderTests
         // Load-bearing constants: the Vortice.Dxc P/Invokes declare "dxcompiler.dll"
         // on every OS, and our macOS build ships the plain (unversioned) dylib name
         // the workflow stages and tools/restore.* place.
-        DxcLoader.DxcLibraryName.Should().Be("dxcompiler.dll");
-        DxcLoader.MacLibFileName.Should().Be("libdxcompiler.dylib");
+        DxcLoader.DxcLibraryName.ShouldBe("dxcompiler.dll");
+        DxcLoader.MacLibFileName.ShouldBe("libdxcompiler.dylib");
     }
 
     [Fact]
@@ -126,6 +122,6 @@ public sealed class DxcLoaderTests
         // lib/<abi>/ dir (never the desktop path-probing). It must match the file name
         // tools/restore.* places and ShadowDusk.HLSL.csproj packs under
         // runtimes/android-arm64/native.
-        DxcLoader.AndroidLibFileName.Should().Be("libdxcompiler.so");
+        DxcLoader.AndroidLibFileName.ShouldBe("libdxcompiler.so");
     }
 }

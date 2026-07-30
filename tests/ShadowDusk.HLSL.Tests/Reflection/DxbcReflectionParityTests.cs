@@ -1,7 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
-using FluentAssertions.Execution;
+using Shouldly;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Reflection;
 using ShadowDusk.HLSL.D3DCompiler;
@@ -175,8 +174,7 @@ public sealed class DxbcReflectionParityTests
                 AllowWarnings  = true,
             });
 
-            compiled.IsSuccess.Should().BeTrue(
-                because: compiled.IsFailure
+            compiled.IsSuccess.ShouldBeTrue(compiled.IsFailure
                     ? $"{name}: {compiled.Error.Message}"
                     : $"{name} must compile via d3dcompiler_47");
 
@@ -200,8 +198,7 @@ public sealed class DxbcReflectionParityTests
                 AllowWarnings  = true,
             });
 
-            compiled.IsSuccess.Should().BeTrue(
-                because: compiled.IsFailure
+            compiled.IsSuccess.ShouldBeTrue(compiled.IsFailure
                     ? $"{name}: {compiled.Error.Message}"
                     : $"{name} must compile via vkd3d-shader");
 
@@ -217,25 +214,21 @@ public sealed class DxbcReflectionParityTests
             throw new PlatformNotSupportedException("The D3DReflect oracle requires Windows.");
 
         Result<ReflectedEffect, ShaderError> oracle = D3DReflectOracle.Extract(dxbc);
-        oracle.IsSuccess.Should().BeTrue(
-            because: oracle.IsFailure
+        oracle.IsSuccess.ShouldBeTrue(oracle.IsFailure
                 ? $"{name}: D3DReflect oracle failed: {oracle.Error.Message}"
                 : $"{name} must reflect via D3DReflect");
 
         Result<ReflectedEffect, ShaderError> managed = RdefReader.Read(dxbc.Span, $"{name}.hlsl");
-        managed.IsSuccess.Should().BeTrue(
-            because: managed.IsFailure
+        managed.IsSuccess.ShouldBeTrue(managed.IsFailure
                 ? $"{name}: managed RdefReader failed: {managed.Error.Message}"
                 : $"{name} must reflect via the managed reader");
 
-        using (new AssertionScope(name))
-        {
-            // Deep equality, order-sensitive everywhere: cbuffer/variable/binding order
-            // is meaningful (it drives parameter order in the .mgfx).
-            managed.Value.Should().BeEquivalentTo(
-                oracle.Value,
-                options => options.WithStrictOrdering(),
-                because: $"the managed reader must match the D3DReflect oracle for {name}");
-        }
+        // Deep equality, order-sensitive everywhere: cbuffer/variable/binding order
+        // is meaningful (it drives parameter order in the .mgfx). Shouldly's
+        // ShouldBeEquivalentTo is strictly ordered for sequences, which is what
+        // FluentAssertions' WithStrictOrdering() opted into here.
+        managed.Value.ShouldBeEquivalentTo(
+            oracle.Value,
+            customMessage: $"the managed reader must match the D3DReflect oracle for {name}");
     }
 }

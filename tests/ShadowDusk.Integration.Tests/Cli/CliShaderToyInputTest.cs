@@ -1,7 +1,7 @@
 #nullable enable
 
 using System.Diagnostics;
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using ShadowDusk.ShaderToy;
@@ -36,13 +36,13 @@ public sealed class CliShaderToyInputTest : IClassFixture<CliBinaryFixture>
         {
             var (exitCode, stdout, stderr) = await RunCliAsync(sourceFile, outputFile, $"/Profile:{profile}");
 
-            stdout.Should().BeEmpty("nothing must be written to stdout (MGCB contract)");
-            stderr.Should().BeEmpty(
+            stdout.ShouldBeEmpty("nothing must be written to stdout (MGCB contract)");
+            stderr.ShouldBeEmpty(
                 "a successful .glsl compile with no warnings must keep stderr empty " +
                 $"(the MGCB empty-stderr contract); actual: {stderr}");
-            exitCode.Should().Be(0, "ShaderToy/GLSL input is auto-detected and needs no flag");
-            File.Exists(outputFile).Should().BeTrue("a loadable effect blob must be produced");
-            new FileInfo(outputFile).Length.Should().BeGreaterThan(0);
+            exitCode.ShouldBe(0, customMessage: "ShaderToy/GLSL input is auto-detected and needs no flag");
+            File.Exists(outputFile).ShouldBeTrue("a loadable effect blob must be produced");
+            new FileInfo(outputFile).Length.ShouldBeGreaterThan(0);
         }
         finally
         {
@@ -60,14 +60,13 @@ public sealed class CliShaderToyInputTest : IClassFixture<CliBinaryFixture>
         {
             var (exitCode, stdout, stderr) = await RunCliAsync(sourceFile, outputFile, "/Profile:OpenGL");
 
-            exitCode.Should().Be(1, "an unsupported construct must fail loudly, never silently");
-            stdout.Should().BeEmpty("nothing must ever go to stdout");
+            exitCode.ShouldBe(1, customMessage: "an unsupported construct must fail loudly, never silently");
+            stdout.ShouldBeEmpty("nothing must ever go to stdout");
             // The MGCB contract, but pointing at the ORIGINAL .glsl with a real line/col (not the
             // synthetic .fx) and a dedicated SD#### convert code.
-            stderr.Should().MatchRegex(@"\.glsl\(\d+,\d+(-\d+)?\): error SD\d+:",
-                because: "convert errors must use the MGCB 'file(line,col-col): error SDxxxx: message' " +
+            stderr.ShouldMatch(@"\.glsl\(\d+,\d+(-\d+)?\): error SD\d+:", customMessage: "convert errors must use the MGCB 'file(line,col-col): error SDxxxx: message' " +
                          $"form with the original .glsl filename; actual stderr: {stderr}");
-            File.Exists(outputFile).Should().BeFalse("no output must be written on a convert failure");
+            File.Exists(outputFile).ShouldBeFalse("no output must be written on a convert failure");
         }
         finally
         {
@@ -85,13 +84,13 @@ public sealed class CliShaderToyInputTest : IClassFixture<CliBinaryFixture>
         {
             var (exitWith, _, stderrWith) = await RunCliAsync(
                 sourceFile, outputFile, "/Profile:OpenGL", "--print-uniforms");
-            exitWith.Should().Be(0);
-            stderrWith.Should().Contain("note", "the drivable-uniforms note prints with --print-uniforms");
-            stderrWith.Should().Contain("iResolution", "the gradient references iResolution");
+            exitWith.ShouldBe(0);
+            stderrWith.ShouldContain("note", Case.Sensitive, "the drivable-uniforms note prints with --print-uniforms");
+            stderrWith.ShouldContain("iResolution", Case.Sensitive, "the gradient references iResolution");
 
             var (exitOff, _, stderrOff) = await RunCliAsync(sourceFile, outputFile, "/Profile:OpenGL");
-            exitOff.Should().Be(0);
-            stderrOff.Should().BeEmpty("the note is OFF by default, preserving the empty-stderr contract");
+            exitOff.ShouldBe(0);
+            stderrOff.ShouldBeEmpty("the note is OFF by default, preserving the empty-stderr contract");
         }
         finally
         {
@@ -110,8 +109,8 @@ public sealed class CliShaderToyInputTest : IClassFixture<CliBinaryFixture>
         try
         {
             var (exitCode, _, stderr) = await RunCliAsync(txt, outputFile, "/Profile:OpenGL", "--input-format", "glsl");
-            exitCode.Should().Be(0, $"--input-format glsl forces the converter on a .txt; stderr: {stderr}");
-            File.Exists(outputFile).Should().BeTrue();
+            exitCode.ShouldBe(0, customMessage: $"--input-format glsl forces the converter on a .txt; stderr: {stderr}");
+            File.Exists(outputFile).ShouldBeTrue();
         }
         finally
         {
@@ -132,12 +131,12 @@ public sealed class CliShaderToyInputTest : IClassFixture<CliBinaryFixture>
         {
             var (exitCode, stdout, stderr) = await RunCliAsync(sourceFile, outputFile, "/Profile:OpenGL");
 
-            exitCode.Should().Be(0, $"the shadow is auto-renamed and the shader compiles; stderr: {stderr}");
-            stdout.Should().BeEmpty();
-            File.Exists(outputFile).Should().BeTrue();
+            exitCode.ShouldBe(0, customMessage: $"the shadow is auto-renamed and the shader compiles; stderr: {stderr}");
+            stdout.ShouldBeEmpty();
+            File.Exists(outputFile).ShouldBeTrue();
             // The rename surfaces as a located warning on the ORIGINAL .glsl (not a generated-HLSL line).
-            stderr.Should().MatchRegex(@"RotShadow\.glsl\(\d+,\d+(-\d+)?\): warning SD\d+:")
-                .And.Contain("shadows the function");
+            stderr.ShouldMatch(@"RotShadow\.glsl\(\d+,\d+(-\d+)?\): warning SD\d+:");
+            stderr.ShouldContain("shadows the function", Case.Sensitive);
         }
         finally
         {
@@ -165,14 +164,12 @@ public sealed class CliShaderToyInputTest : IClassFixture<CliBinaryFixture>
         {
             var (exitCode, stdout, stderr) = await RunCliAsync(source, outputFile, "/Profile:OpenGL");
 
-            exitCode.Should().Be(1);
-            stdout.Should().BeEmpty();
-            stderr.Should().Contain("SD0003", "the leading note explains the error is in generated HLSL");
-            stderr.Should().Contain(".generated.fx",
-                "pipeline errors are attributed to the generated HLSL, not the user's .glsl");
+            exitCode.ShouldBe(1);
+            stdout.ShouldBeEmpty();
+            stderr.ShouldContain("SD0003", Case.Sensitive, "the leading note explains the error is in generated HLSL");
+            stderr.ShouldContain(".generated.fx", Case.Sensitive, "pipeline errors are attributed to the generated HLSL, not the user's .glsl");
             // The error line must NOT be stamped onto the original .glsl name.
-            stderr.Should().NotMatchRegex(@"badtype_[0-9a-f]+\.glsl\(\d+,\d+(-\d+)?\): error",
-                because: "a generated-HLSL line number must never carry the original .glsl filename");
+            stderr.ShouldNotMatch(@"badtype_[0-9a-f]+\.glsl\(\d+,\d+(-\d+)?\): error", customMessage: "a generated-HLSL line number must never carry the original .glsl filename");
         }
         finally
         {
@@ -187,9 +184,9 @@ public sealed class CliShaderToyInputTest : IClassFixture<CliBinaryFixture>
         var (exitCode, stdout, stderr) = await RunCliAsync(
             "Shader.glsl", "Out.mgfx", "--input-format", "nonsense");
 
-        exitCode.Should().Be(1);
-        stdout.Should().BeEmpty();
-        stderr.Should().Contain("X0011", "an invalid --input-format value is a loud parse error");
+        exitCode.ShouldBe(1);
+        stdout.ShouldBeEmpty();
+        stderr.ShouldContain("X0011", Case.Sensitive, "an invalid --input-format value is a loud parse error");
     }
 
     [Fact]
@@ -203,7 +200,7 @@ public sealed class CliShaderToyInputTest : IClassFixture<CliBinaryFixture>
         try
         {
             var (exitCode, _, stderr) = await RunCliAsync(sourceFile, cliOutput, "/Profile:OpenGL");
-            exitCode.Should().Be(0, $"CLI .glsl compile must succeed; stderr: {stderr}");
+            exitCode.ShouldBe(0, customMessage: $"CLI .glsl compile must succeed; stderr: {stderr}");
             byte[] cliBytes = await File.ReadAllBytesAsync(cliOutput);
 
             // Replicate the CLI's derivation: EffectName/TechniqueName = sanitized file-name-no-ext.
@@ -213,7 +210,7 @@ public sealed class CliShaderToyInputTest : IClassFixture<CliBinaryFixture>
                 EffectName    = "GradientToy",
                 TechniqueName = "GradientToy",
             });
-            convert.Success.Should().BeTrue();
+            convert.Success.ShouldBeTrue();
 
             var compiler = new EffectCompiler();
             var result = await compiler.CompileAsync(convert.Fx!, new CompilerOptions
@@ -221,10 +218,9 @@ public sealed class CliShaderToyInputTest : IClassFixture<CliBinaryFixture>
                 Target         = PlatformTarget.OpenGL,
                 SourceFileName = sourceFile,
             });
-            result.IsSuccess.Should().BeTrue();
+            result.IsSuccess.ShouldBeTrue();
 
-            cliBytes.Should().Equal(result.Value.Data,
-                "the CLI must be a thin front-end transform + the existing pipeline, adding no behavior");
+            cliBytes.ShouldBe(result.Value.Data, customMessage: "the CLI must be a thin front-end transform + the existing pipeline, adding no behavior");
         }
         finally
         {

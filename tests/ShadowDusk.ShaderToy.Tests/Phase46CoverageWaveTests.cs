@@ -1,4 +1,4 @@
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.ShaderToy.Tests;
@@ -17,21 +17,20 @@ public sealed class Phase46CoverageWaveTests
     private static string ConvertOk(string glsl)
     {
         ConvertResult r = ShaderToyConverter.Convert(glsl);
-        r.Success.Should().BeTrue(
+        r.Success.ShouldBeTrue(string.Format(
             "the shader is in-subset; diagnostics: {0}",
-            string.Join("; ", r.Diagnostics.Select(d => $"{d.Severity}:{d.Message}")));
-        r.Fx.Should().NotBeNull();
+            string.Join("; ", r.Diagnostics.Select(d => $"{d.Severity}:{d.Message}"))));
+        r.Fx.ShouldNotBeNull();
         return r.Fx!;
     }
 
     private static ConvertResult ConvertReject(string glsl)
     {
         ConvertResult r = ShaderToyConverter.Convert(glsl);
-        r.Success.Should().BeFalse();
-        r.Fx.Should().BeNull();
-        r.Diagnostics.Should().Contain(d =>
-            d.Severity == DiagnosticSeverity.Error && d.Line > 0 && d.Column > 0,
-            "a reject must carry a located error");
+        r.Success.ShouldBeFalse();
+        r.Fx.ShouldBeNull();
+        r.Diagnostics.ShouldContain(d =>
+            d.Severity == DiagnosticSeverity.Error && d.Line > 0 && d.Column > 0, "a reject must carry a located error");
         return r;
     }
 
@@ -51,8 +50,8 @@ public sealed class Phase46CoverageWaveTests
 
         string fx = ConvertOk(glsl);
         // ShaderToy harness PS calls mainImage; the void main() wrapper is dropped (not emitted).
-        fx.Should().Contain("mainImage(fragColor, fragCoord);");
-        fx.Should().NotContain("void main(");
+        fx.ShouldContain("mainImage(fragColor, fragCoord);", Case.Sensitive);
+        fx.ShouldNotContain("void main(", Case.Sensitive);
     }
 
     [Fact]
@@ -64,7 +63,7 @@ public sealed class Phase46CoverageWaveTests
         """;
 
         ConvertResult r = ConvertReject(glsl);
-        r.Diagnostics.Should().Contain(d => d.Message.Contains("Multiple 'mainImage'", StringComparison.Ordinal));
+        r.Diagnostics.ShouldContain(d => d.Message.Contains("Multiple 'mainImage'", StringComparison.Ordinal));
     }
 
     // ── 2: the "returning" mainImage form (vec3/vec4 mainImage(vec2)) ───────────────────────
@@ -81,8 +80,8 @@ public sealed class Phase46CoverageWaveTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("float3 rgb = mainImage(fragCoord);");
-        fx.Should().Contain("return float4(rgb, 1.0);");
+        fx.ShouldContain("float3 rgb = mainImage(fragCoord);", Case.Sensitive);
+        fx.ShouldContain("return float4(rgb, 1.0);", Case.Sensitive);
     }
 
     [Fact]
@@ -97,7 +96,7 @@ public sealed class Phase46CoverageWaveTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("return mainImage(fragCoord);");
+        fx.ShouldContain("return mainImage(fragCoord);", Case.Sensitive);
     }
 
     // ── 3: user-function overloading ────────────────────────────────────────────────────────
@@ -116,8 +115,8 @@ public sealed class Phase46CoverageWaveTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("float f(float x)");
-        fx.Should().Contain("float2 f(float2 v)");
+        fx.ShouldContain("float f(float x)", Case.Sensitive);
+        fx.ShouldContain("float2 f(float2 v)", Case.Sensitive);
     }
 
     // ── 4: macro / const-int array sizes (incl. const-expressions) ──────────────────────────
@@ -139,9 +138,9 @@ public sealed class Phase46CoverageWaveTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("float a[4];");
-        fx.Should().Contain("float2 b[3];");
-        fx.Should().Contain("float c[6];");
+        fx.ShouldContain("float a[4];", Case.Sensitive);
+        fx.ShouldContain("float2 b[3];", Case.Sensitive);
+        fx.ShouldContain("float c[6];", Case.Sensitive);
     }
 
     [Fact]
@@ -157,7 +156,7 @@ public sealed class Phase46CoverageWaveTests
         """;
 
         ConvertResult r = ConvertReject(glsl);
-        r.Diagnostics.Should().Contain(d => d.Message.Contains("constant integer", StringComparison.Ordinal));
+        r.Diagnostics.ShouldContain(d => d.Message.Contains("constant integer", StringComparison.Ordinal));
     }
 
     // ── 5: struct array members ─────────────────────────────────────────────────────────────
@@ -177,10 +176,10 @@ public sealed class Phase46CoverageWaveTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("float w[4];");
+        fx.ShouldContain("float w[4];", Case.Sensitive);
         // The factory copies the array element by element (no whole-array assignment in FX9/SM3).
-        fx.Should().Contain("result.w[0] = w[0];");
-        fx.Should().Contain("result.w[3] = w[3];");
+        fx.ShouldContain("result.w[0] = w[0];", Case.Sensitive);
+        fx.ShouldContain("result.w[3] = w[3];", Case.Sensitive);
     }
 
     // ── 6: single-argument matrix constructors ──────────────────────────────────────────────
@@ -198,7 +197,7 @@ public sealed class Phase46CoverageWaveTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("float3x3(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)");
+        fx.ShouldContain("float3x3(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0)", Case.Sensitive);
     }
 
     [Fact]
@@ -219,7 +218,7 @@ public sealed class Phase46CoverageWaveTests
         string fx = ConvertOk(glsl);
         // Upper-left 3x3 submatrix read directly from the HLSL matrix components (the two transposes
         // cancel — see EmitMatrixFromMatrix).
-        fx.Should().Contain("float3x3(big[0][0], big[0][1], big[0][2], big[1][0]");
+        fx.ShouldContain("float3x3(big[0][0], big[0][1], big[0][2], big[1][0]", Case.Sensitive);
     }
 
     // ── 7: sampler2D function parameter (out of scope on GL/DX — named reject) ───────────────
@@ -239,7 +238,7 @@ public sealed class Phase46CoverageWaveTests
         """;
 
         ConvertResult r = ConvertReject(glsl);
-        r.Diagnostics.Should().Contain(d =>
+        r.Diagnostics.ShouldContain(d =>
             d.Message.Contains("sampler2D", StringComparison.Ordinal) &&
             d.Message.Contains("function parameter", StringComparison.Ordinal));
     }
@@ -259,7 +258,7 @@ public sealed class Phase46CoverageWaveTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("(2.0 + 1.0)");
+        fx.ShouldContain("(2.0 + 1.0)", Case.Sensitive);
     }
 
     // ── 9: named out-of-scope rejects ───────────────────────────────────────────────────────
@@ -275,7 +274,7 @@ public sealed class Phase46CoverageWaveTests
         """;
 
         ConvertResult r = ConvertReject(glsl);
-        r.Diagnostics.Should().Contain(d =>
+        r.Diagnostics.ShouldContain(d =>
             d.Message.Contains("textureCube", StringComparison.Ordinal) &&
             d.Message.Contains("CUBEMAP", StringComparison.Ordinal));
     }
@@ -291,7 +290,7 @@ public sealed class Phase46CoverageWaveTests
         """;
 
         ConvertResult r = ConvertReject(glsl);
-        r.Diagnostics.Should().Contain(d => d.Message.Contains("feedback", StringComparison.Ordinal));
+        r.Diagnostics.ShouldContain(d => d.Message.Contains("feedback", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -306,7 +305,7 @@ public sealed class Phase46CoverageWaveTests
         """;
 
         ConvertResult r = ConvertReject(glsl);
-        r.Diagnostics.Should().Contain(d => d.Message.Contains("gl_FragDepth", StringComparison.Ordinal));
+        r.Diagnostics.ShouldContain(d => d.Message.Contains("gl_FragDepth", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -320,7 +319,7 @@ public sealed class Phase46CoverageWaveTests
         """;
 
         ConvertResult r = ConvertReject(glsl);
-        r.Diagnostics.Should().Contain(d =>
+        r.Diagnostics.ShouldContain(d =>
             d.Message.Contains("iCurrentCursor", StringComparison.Ordinal) &&
             d.Message.Contains("host-provided value", StringComparison.Ordinal));
     }
@@ -337,6 +336,6 @@ public sealed class Phase46CoverageWaveTests
         """;
 
         ConvertResult r = ConvertReject(glsl);
-        r.Diagnostics.Should().Contain(d => d.Message.Contains("host-template placeholder", StringComparison.Ordinal));
+        r.Diagnostics.ShouldContain(d => d.Message.Contains("host-template placeholder", StringComparison.Ordinal));
     }
 }

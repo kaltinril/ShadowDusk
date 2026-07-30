@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.Core.Tests;
@@ -32,8 +32,8 @@ public sealed class ShaderValidationReportRenderingTests
 
         string text = report.ToString();
 
-        text.Should().Contain("Bloom.fx", "a line-less finding must still say which effect it came from");
-        text.Should().Contain("SD0401");
+        text.ShouldContain("Bloom.fx", Case.Sensitive, "a line-less finding must still say which effect it came from");
+        text.ShouldContain("SD0401", Case.Sensitive);
     }
 
     [Fact]
@@ -49,7 +49,7 @@ public sealed class ShaderValidationReportRenderingTests
         var report = new ShaderValidationReport(
             [new ShaderTargetValidation(PlatformTarget.OpenGL, Succeeded: false, [error], [])]);
 
-        report.ToString().Should().Contain("Bloom.fx(12,5)");
+        report.ToString().ShouldContain("Bloom.fx(12,5)", Case.Sensitive);
     }
 
     [Fact]
@@ -64,8 +64,8 @@ public sealed class ShaderValidationReportRenderingTests
         var lines = report.ToString().Replace("\r\n", "\n").Split('\n');
         string diagnosticLine = lines.Single(l => l.Contains("SD0025"));
 
-        diagnosticLine.Should().Contain("no file for this one");
-        diagnosticLine.Should().NotContain(" in ", "there is no file to name");
-        diagnosticLine.Should().NotContain(" at ", "there is no location to name");
+        diagnosticLine.ShouldContain("no file for this one", Case.Sensitive);
+        diagnosticLine.ShouldNotContain(" in ", Case.Sensitive, "there is no file to name");
+        diagnosticLine.ShouldNotContain(" at ", Case.Sensitive, "there is no location to name");
     }
 }

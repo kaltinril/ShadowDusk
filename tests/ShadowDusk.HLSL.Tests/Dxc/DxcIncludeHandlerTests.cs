@@ -3,7 +3,7 @@
 using System.Runtime.InteropServices;
 using System.Text;
 // (System.Runtime.InteropServices is used by the macOS gate below.)
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core.Preprocessor;
 using ShadowDusk.HLSL;
 using Vortice.Dxc;
@@ -45,13 +45,12 @@ public sealed class DxcIncludeHandlerTests
         {
             SharpGen.Runtime.Result result = handler.LoadSource("Helpers.fxh", out IDxcBlob? blob);
 
-            result.Success.Should().BeTrue(because: "the resolver holds Helpers.fxh");
-            blob.Should().NotBeNull();
+            result.Success.ShouldBeTrue("the resolver holds Helpers.fxh");
+            blob.ShouldNotBeNull();
 
             byte[] bytes = blob!.AsBytes();
 
-            bytes.Should().Equal(Encoding.UTF8.GetBytes(HeaderText),
-                because: "the blob must carry the resolved header text verbatim as UTF-8");
+            bytes.ShouldBe(Encoding.UTF8.GetBytes(HeaderText), customMessage: "the blob must carry the resolved header text verbatim as UTF-8");
             blob!.Dispose();
         }
         finally
@@ -70,8 +69,8 @@ public sealed class DxcIncludeHandlerTests
         {
             SharpGen.Runtime.Result result = handler.LoadSource("Missing.fxh", out IDxcBlob? blob);
 
-            result.Failure.Should().BeTrue(because: "an unresolvable include must fail loudly");
-            blob.Should().BeNull();
+            result.Failure.ShouldBeTrue("an unresolvable include must fail loudly");
+            blob.ShouldBeNull();
         }
         finally
         {

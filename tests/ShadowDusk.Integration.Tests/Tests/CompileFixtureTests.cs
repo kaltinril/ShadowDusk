@@ -2,7 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Text;
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.Integration.Tests.Tests;
@@ -112,17 +112,17 @@ public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
 
         var result = await GetOrCompileAsync(fx, profile, mode, cts.Token);
 
-        result.ExitCode.Should().Be(0, because: $"compilation of '{fx}' for '{profile}' via {mode} should succeed; stderr: {result.Stderr}");
-        result.Mgfx.Should().NotBeEmpty(because: "successful compile must produce output bytes");
+        result.ExitCode.ShouldBe(0, customMessage: $"compilation of '{fx}' for '{profile}' via {mode} should succeed; stderr: {result.Stderr}");
+        result.Mgfx.ShouldNotBeEmpty("successful compile must produce output bytes");
 
         var reader = MgfxBlobReader.Parse(result.Mgfx);
-        reader.Signature.Should().Be("MGFX");
+        reader.Signature.ShouldBe("MGFX");
         // Vulkan always writes the v11 shader-record shape (matching real MonoGame
         // 3.8.5, which hardcodes version 11 for every profile) — DesktopVK is new in
         // 3.8.5, so there is no older-version reader to stay compatible with. GL/DX
         // keep the v10 default for backwards compatibility with MonoGame 3.8.2+.
-        reader.MgfxVersion.Should().Be(profile == "Vulkan" ? (byte)11 : (byte)10);
-        reader.ProfileId.Should().Be(expectedProfileId, because: $"profile '{profile}' must produce ProfileId {expectedProfileId}");
+        reader.MgfxVersion.ShouldBe(profile == "Vulkan" ? (byte)11 : (byte)10);
+        reader.ProfileId.ShouldBe(expectedProfileId, customMessage: $"profile '{profile}' must produce ProfileId {expectedProfileId}");
     }
 
     /// <summary>
@@ -143,12 +143,11 @@ public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
         var pipeline = await GetOrCompileAsync(fx, profile, InvocationMode.DirectPipeline, cts.Token);
         var cli      = await GetOrCompileAsync(fx, profile, InvocationMode.CliProcess, cts.Token);
 
-        pipeline.ExitCode.Should().Be(0, because: $"pipeline stderr: {pipeline.Stderr}");
-        cli.ExitCode.Should().Be(0, because: $"CLI stderr: {cli.Stderr}");
-        cli.Stderr.Should().BeEmpty(because: "a successful CLI compile is silent (the mgfxc contract)");
+        pipeline.ExitCode.ShouldBe(0, customMessage: $"pipeline stderr: {pipeline.Stderr}");
+        cli.ExitCode.ShouldBe(0, customMessage: $"CLI stderr: {cli.Stderr}");
+        cli.Stderr.ShouldBeEmpty("a successful CLI compile is silent (the mgfxc contract)");
 
-        cli.Mgfx.Should().Equal(pipeline.Mgfx,
-            because: $"the CLI is a delivery shape of the same library — '{fx}' for '{profile}' " +
+        cli.Mgfx.ShouldBe(pipeline.Mgfx, customMessage: $"the CLI is a delivery shape of the same library — '{fx}' for '{profile}' " +
                      "must produce byte-identical .mgfx through both invocation modes");
     }
 
@@ -163,12 +162,12 @@ public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         var result = await TestHelpers.CompileFixtureAsync("Minimal.fx", "OpenGL", ct: cts.Token);
-        result.ExitCode.Should().Be(0, because: $"stderr: {result.Stderr}");
+        result.ExitCode.ShouldBe(0, customMessage: $"stderr: {result.Stderr}");
 
         var reader = MgfxBlobReader.Parse(result.Mgfx);
-        reader.TechniqueCount.Should().Be(1);
-        reader.Techniques[0].PassCount.Should().Be(1);
-        reader.TotalShaderBlobCount.Should().Be(2);
+        reader.TechniqueCount.ShouldBe(1);
+        reader.Techniques[0].PassCount.ShouldBe(1);
+        reader.TotalShaderBlobCount.ShouldBe(2);
     }
 
     // -------------------------------------------------------------------------
@@ -182,16 +181,16 @@ public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         var result = await TestHelpers.CompileFixtureAsync("textured.fx", "OpenGL", ct: cts.Token);
-        result.ExitCode.Should().Be(0, because: $"stderr: {result.Stderr}");
+        result.ExitCode.ShouldBe(0, customMessage: $"stderr: {result.Stderr}");
 
         var reader = MgfxBlobReader.Parse(result.Mgfx);
-        reader.TotalShaderBlobCount.Should().Be(2);
+        reader.TotalShaderBlobCount.ShouldBe(2);
 
         // GLSL shader blobs are UTF-8 encoded GLSL text; the combined sampler2D declaration
         // must appear in the pixel shader blob (SPIRV-Cross merges texture + sampler objects).
         bool anyBlobContainsSampler2D = reader.ShaderBlobs
             .Any(blob => Encoding.UTF8.GetString(blob).Contains("sampler2D", StringComparison.Ordinal));
-        anyBlobContainsSampler2D.Should().BeTrue(because: "SPIRV-Cross must combine Texture2D+SamplerState into a sampler2D");
+        anyBlobContainsSampler2D.ShouldBeTrue("SPIRV-Cross must combine Texture2D+SamplerState into a sampler2D");
     }
 
     // -------------------------------------------------------------------------
@@ -205,15 +204,15 @@ public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         var result = await TestHelpers.CompileFixtureAsync("cbuffer.fx", "OpenGL", ct: cts.Token);
-        result.ExitCode.Should().Be(0, because: $"stderr: {result.Stderr}");
+        result.ExitCode.ShouldBe(0, customMessage: $"stderr: {result.Stderr}");
 
         var reader = MgfxBlobReader.Parse(result.Mgfx);
-        reader.ParameterNames.Should().Contain("WorldViewProj");
-        reader.ParameterNames.Should().Contain("DiffuseColor");
+        reader.ParameterNames.ShouldContain("WorldViewProj");
+        reader.ParameterNames.ShouldContain("DiffuseColor");
 
         // WorldViewProj is a float4x4: 4 columns × 4 rows × 4 bytes = 64 bytes.
-        reader.ParameterSizes.Should().ContainKey("WorldViewProj");
-        reader.ParameterSizes["WorldViewProj"].Should().Be(64);
+        reader.ParameterSizes.ContainsKey("WorldViewProj").ShouldBeTrue();
+        reader.ParameterSizes["WorldViewProj"].ShouldBe(64);
     }
 
     // -------------------------------------------------------------------------
@@ -227,12 +226,12 @@ public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         var result = await TestHelpers.CompileFixtureAsync("multipass.fx", "OpenGL", ct: cts.Token);
-        result.ExitCode.Should().Be(0, because: $"stderr: {result.Stderr}");
+        result.ExitCode.ShouldBe(0, customMessage: $"stderr: {result.Stderr}");
 
         var reader = MgfxBlobReader.Parse(result.Mgfx);
-        reader.TechniqueCount.Should().Be(1);
-        reader.Techniques[0].PassCount.Should().Be(2);
-        reader.TotalShaderBlobCount.Should().Be(4);
+        reader.TechniqueCount.ShouldBe(1);
+        reader.Techniques[0].PassCount.ShouldBe(2);
+        reader.TotalShaderBlobCount.ShouldBe(4);
     }
 
     // -------------------------------------------------------------------------
@@ -246,13 +245,13 @@ public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         var result = await TestHelpers.CompileFixtureAsync("multitechnique.fx", "OpenGL", ct: cts.Token);
-        result.ExitCode.Should().Be(0, because: $"stderr: {result.Stderr}");
+        result.ExitCode.ShouldBe(0, customMessage: $"stderr: {result.Stderr}");
 
         var reader = MgfxBlobReader.Parse(result.Mgfx);
-        reader.TechniqueCount.Should().Be(3);
-        reader.Techniques[0].Name.Should().Be("TechA");
-        reader.Techniques[1].Name.Should().Be("TechB");
-        reader.Techniques[2].Name.Should().Be("TechC");
+        reader.TechniqueCount.ShouldBe(3);
+        reader.Techniques[0].Name.ShouldBe("TechA");
+        reader.Techniques[1].Name.ShouldBe("TechB");
+        reader.Techniques[2].Name.ShouldBe("TechC");
     }
 
     // -------------------------------------------------------------------------
@@ -266,26 +265,26 @@ public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         var result = await TestHelpers.CompileFixtureAsync("render-states.fx", "OpenGL", ct: cts.Token);
-        result.ExitCode.Should().Be(0, because: $"stderr: {result.Stderr}");
+        result.ExitCode.ShouldBe(0, customMessage: $"stderr: {result.Stderr}");
 
         var reader = MgfxBlobReader.Parse(result.Mgfx);
-        reader.TechniqueCount.Should().Be(1);
-        reader.Techniques[0].PassCount.Should().Be(1);
+        reader.TechniqueCount.ShouldBe(1);
+        reader.Techniques[0].PassCount.ShouldBe(1);
 
         // MonoGame 3.8.2 CullMode ordinals: None=0, CW=1, CCW=2 (Phase 43, F1b —
         // the reader casts the byte straight to its enum, so D3D9's None=1 would
         // load as CullClockwiseFace).
-        reader.CullMode.Should().Be(0, because: "CullMode = None is MonoGame ordinal 0");
-        reader.DepthBufferEnable.Should().BeFalse(because: "DepthBufferEnable = False was declared in the pass");
+        reader.CullMode.ShouldBe(0, customMessage: "CullMode = None is MonoGame ordinal 0");
+        reader.DepthBufferEnable.ShouldBe(false,"DepthBufferEnable = False was declared in the pass");
 
         // AlphaBlendEnable = True materializes mgfxc's premultiplied preset
         // (One / InverseSourceAlpha on both channels) — MonoGame's BlendState has
         // no enable flag; the factors ARE the enable.
-        reader.BlendState.Should().NotBeNull();
-        reader.BlendState!.ColorSourceBlend.Should().Be(0, because: "Blend.One == 0");
-        reader.BlendState.ColorDestinationBlend.Should().Be(5, because: "Blend.InverseSourceAlpha == 5");
-        reader.BlendState.AlphaSourceBlend.Should().Be(0);
-        reader.BlendState.AlphaDestinationBlend.Should().Be(5);
+        reader.BlendState.ShouldNotBeNull();
+        reader.BlendState!.ColorSourceBlend.ShouldBe((byte)(0), customMessage: "Blend.One == 0");
+        reader.BlendState.ColorDestinationBlend.ShouldBe((byte)(5), customMessage: "Blend.InverseSourceAlpha == 5");
+        reader.BlendState.AlphaSourceBlend.ShouldBe((byte)(0));
+        reader.BlendState.AlphaDestinationBlend.ShouldBe((byte)(5));
     }
 
     // -------------------------------------------------------------------------
@@ -300,20 +299,19 @@ public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         var result = await TestHelpers.CompileFixtureAsync("annotations.fx", "OpenGL", ct: cts.Token);
-        result.ExitCode.Should().Be(0, because: $"stderr: {result.Stderr}");
+        result.ExitCode.ShouldBe(0, customMessage: $"stderr: {result.Stderr}");
 
         // MgfxBlobReader.Parse reads annotations as MonoGame 3.8.2 does (count only)
         // and verifies the trailing MGFX signature — if bodies were written the
         // stream would desync and this parse would throw.
         var reader = MgfxBlobReader.Parse(result.Mgfx);
-        reader.ParameterNames.Should().Contain("TintColor");
+        reader.ParameterNames.ShouldContain("TintColor");
 
         // INTENTIONAL behavior change (bug-hunt 2026-07-27 M15): the count is always 0
         // like mgfxc's (a real count handed MonoGame consumers NULL EffectAnnotation
         // slots that NRE on first touch, and KNI's writer asserts count == 0). This
         // test previously pinned the preserved count (2).
-        reader.ParameterAnnotationCounts.Should().BeEmpty(
-            because: "annotation counts are always written 0, matching mgfxc");
+        reader.ParameterAnnotationCounts.ShouldBeEmpty("annotation counts are always written 0, matching mgfxc");
     }
 
     // -------------------------------------------------------------------------
@@ -328,10 +326,10 @@ public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
 
         // The GLSL macro is injected for the OpenGL target; the #if GLSL branch must compile.
         var result = await TestHelpers.CompileFixtureAsync("platform-macros.fx", "OpenGL", ct: cts.Token);
-        result.ExitCode.Should().Be(0, because: $"GLSL macro branch should compile; stderr: {result.Stderr}");
+        result.ExitCode.ShouldBe(0, customMessage: $"GLSL macro branch should compile; stderr: {result.Stderr}");
 
         var reader = MgfxBlobReader.Parse(result.Mgfx);
-        reader.TotalShaderBlobCount.Should().BeGreaterThan(0);
+        reader.TotalShaderBlobCount.ShouldBeGreaterThan(0);
     }
 
     [Fact]
@@ -342,7 +340,7 @@ public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
 
         // SM4 macro is injected for DirectX; the #elif SM4 branch must compile.
         var result = await TestHelpers.CompileFixtureAsync("platform-macros.fx", "DirectX_11", ct: cts.Token);
-        result.ExitCode.Should().Be(0, because: $"SM4 macro branch should compile; stderr: {result.Stderr}");
+        result.ExitCode.ShouldBe(0, customMessage: $"SM4 macro branch should compile; stderr: {result.Stderr}");
     }
 
     [Fact]
@@ -353,7 +351,7 @@ public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
 
         // Vulkan has neither GLSL nor SM4 defined, so the #else branch is selected.
         var result = await TestHelpers.CompileFixtureAsync("platform-macros.fx", "Vulkan", ct: cts.Token);
-        result.ExitCode.Should().Be(0, because: $"else fallback branch should compile; stderr: {result.Stderr}");
+        result.ExitCode.ShouldBe(0, customMessage: $"else fallback branch should compile; stderr: {result.Stderr}");
     }
 
     // -------------------------------------------------------------------------
@@ -367,19 +365,19 @@ public sealed class CompileFixtureTests : IClassFixture<CliBinaryFixture>
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 
         var result = await TestHelpers.CompileFixtureAsync("basiceffect-mini.fx", "OpenGL", ct: cts.Token);
-        result.ExitCode.Should().Be(0, because: $"stderr: {result.Stderr}");
+        result.ExitCode.ShouldBe(0, customMessage: $"stderr: {result.Stderr}");
 
         var reader = MgfxBlobReader.Parse(result.Mgfx);
-        reader.TechniqueCount.Should().Be(4);
-        reader.Techniques[0].Name.Should().Be("Tech0");
-        reader.Techniques[1].Name.Should().Be("Tech1");
-        reader.Techniques[2].Name.Should().Be("Tech2");
-        reader.Techniques[3].Name.Should().Be("Tech3");
+        reader.TechniqueCount.ShouldBe(4);
+        reader.Techniques[0].Name.ShouldBe("Tech0");
+        reader.Techniques[1].Name.ShouldBe("Tech1");
+        reader.Techniques[2].Name.ShouldBe("Tech2");
+        reader.Techniques[3].Name.ShouldBe("Tech3");
 
         for (int i = 0; i < 4; i++)
-            reader.Techniques[i].PassCount.Should().Be(1, because: $"Tech{i} has exactly one pass");
+            reader.Techniques[i].PassCount.ShouldBe(1, customMessage: $"Tech{i} has exactly one pass");
 
         // All 4 techniques should produce distinct shader blobs (no deduplication).
-        reader.TotalShaderBlobCount.Should().Be(8, because: "4 techniques × 1 pass × 2 shaders (VS+PS) = 8");
+        reader.TotalShaderBlobCount.ShouldBe(8, customMessage: "4 techniques × 1 pass × 2 shaders (VS+PS) = 8");
     }
 }

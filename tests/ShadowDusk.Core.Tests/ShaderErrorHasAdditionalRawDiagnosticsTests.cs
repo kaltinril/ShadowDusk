@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core;
 using Xunit;
 
@@ -22,7 +22,7 @@ public sealed class ShaderErrorHasAdditionalRawDiagnosticsTests
     {
         var error = new ShaderError(File: "s.fx", Line: 1, Column: 1, Code: "X0001", Message: "m");
 
-        error.HasAdditionalRawDiagnostics.Should().BeFalse();
+        error.HasAdditionalRawDiagnostics.ShouldBeFalse();
     }
 
     [Fact]
@@ -44,7 +44,7 @@ public sealed class ShaderErrorHasAdditionalRawDiagnosticsTests
             Message: message,
             RawDiagnostics: raw);
 
-        error.HasAdditionalRawDiagnostics.Should().BeFalse(
+        error.HasAdditionalRawDiagnostics.ShouldBeFalse(
             "the raw blob carries no information the message does not already show");
     }
 
@@ -64,7 +64,7 @@ public sealed class ShaderErrorHasAdditionalRawDiagnosticsTests
                 + "    float y = x;\n"
                 + "              ^");
 
-        error.HasAdditionalRawDiagnostics.Should().BeTrue();
+        error.HasAdditionalRawDiagnostics.ShouldBeTrue();
     }
 
     [Fact]
@@ -81,7 +81,7 @@ public sealed class ShaderErrorHasAdditionalRawDiagnosticsTests
             Message: "undeclared identifier 'x'",
             RawDiagnostics: "shader.fx:10:5: error: undeclared identifier 'x'");
 
-        error.HasAdditionalRawDiagnostics.Should().BeFalse(
+        error.HasAdditionalRawDiagnostics.ShouldBeFalse(
             "the raw line adds nothing beyond what Message/File/Line/Column already say");
     }
 
@@ -93,7 +93,7 @@ public sealed class ShaderErrorHasAdditionalRawDiagnosticsTests
             File: "shader.fx", Line: 0, Column: 0, Code: "X0000",
             Message: verbatim, RawDiagnostics: verbatim);
 
-        error.HasAdditionalRawDiagnostics.Should().BeFalse(
+        error.HasAdditionalRawDiagnostics.ShouldBeFalse(
             "Message already IS the complete raw text for the no-location path");
     }
 
@@ -112,7 +112,7 @@ public sealed class ShaderErrorHasAdditionalRawDiagnosticsTests
             RawDiagnostics: "shader.fx:3:1: warning: implicit truncation of vector type\n" +
                             "shader.fx:10:5: error: undeclared identifier 'x'");
 
-        error.HasAdditionalRawDiagnostics.Should().BeTrue(
+        error.HasAdditionalRawDiagnostics.ShouldBeTrue(
             "the leading warning line is information the one-liner never shows");
     }
 
@@ -129,7 +129,7 @@ public sealed class ShaderErrorHasAdditionalRawDiagnosticsTests
                             "    float y = x;\n" +
                             "              ^");
 
-        error.HasAdditionalRawDiagnostics.Should().BeTrue(
+        error.HasAdditionalRawDiagnostics.ShouldBeTrue(
             "the source line + caret is context the one-liner does not carry");
     }
 }

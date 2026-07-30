@@ -1,4 +1,4 @@
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.ShaderToy.Tests;
@@ -24,10 +24,10 @@ public sealed class TextureLodTests
 
         ConvertResult r = ShaderToyConverter.Convert(glsl);
 
-        r.Success.Should().BeTrue(
-            "diagnostics: {0}", string.Join("; ", r.Diagnostics.Select(d => $"{d.Severity}:{d.Message}")));
-        r.Fx!.Should().Contain("tex2D(iChannel0", "a base-level textureLod lowers to a plain tex2D");
-        r.Fx!.Should().NotContain("tex2Dlod", "the unsupported tex2Dlod must not be emitted for lod 0");
+        r.Success.ShouldBeTrue(string.Format(
+            "diagnostics: {0}", string.Join("; ", r.Diagnostics.Select(d => $"{d.Severity}:{d.Message}"))));
+        r.Fx!.ShouldContain("tex2D(iChannel0", Case.Sensitive, "a base-level textureLod lowers to a plain tex2D");
+        r.Fx!.ShouldNotContain("tex2Dlod", Case.Sensitive, "the unsupported tex2Dlod must not be emitted for lod 0");
     }
 
     [Fact]
@@ -44,13 +44,14 @@ public sealed class TextureLodTests
         // The tex2Dlod it used to emit does not compile through the OpenGL/DirectX pipeline
         // (FX0012), so the boundary is now rejected HERE, located in the user's GLSL, exactly like
         // the mip-bias texture(s, uv, bias) form.
-        r.Success.Should().BeFalse("a non-zero LOD has no compilable mapping on the primary targets");
-        r.Fx.Should().BeNull();
-        ConvertDiagnostic error = r.Diagnostics.Should().ContainSingle(d =>
-            d.Severity == DiagnosticSeverity.Error).Subject;
-        error.Message.Should().Contain("textureLod").And.Contain("non-zero");
-        error.Line.Should().BeGreaterThan(0, "the reject must point at the user's GLSL, not generated HLSL");
-        error.Column.Should().BeGreaterThan(0);
+        r.Success.ShouldBeFalse("a non-zero LOD has no compilable mapping on the primary targets");
+        r.Fx.ShouldBeNull();
+        ConvertDiagnostic error = r.Diagnostics.Where(d =>
+            d.Severity == DiagnosticSeverity.Error).ShouldHaveSingleItem();
+        error.Message.ShouldContain("textureLod", Case.Sensitive);
+        error.Message.ShouldContain("non-zero", Case.Sensitive);
+        error.Line.ShouldBeGreaterThan(0, customMessage: "the reject must point at the user's GLSL, not generated HLSL");
+        error.Column.ShouldBeGreaterThan(0);
     }
 
     [Fact]
@@ -66,8 +67,8 @@ public sealed class TextureLodTests
 
         ConvertResult r = ShaderToyConverter.Convert(glsl);
 
-        r.Success.Should().BeFalse();
-        r.Diagnostics.Should().Contain(d =>
+        r.Success.ShouldBeFalse();
+        r.Diagnostics.ShouldContain(d =>
             d.Severity == DiagnosticSeverity.Error &&
             d.Message.Contains("textureLod", StringComparison.Ordinal) && d.Line > 0);
     }

@@ -1,4 +1,4 @@
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.ShaderToy.Tests;
@@ -16,9 +16,9 @@ public sealed class CoverageGapTests
     private static ConvertResult ConvertOk(string glsl)
     {
         ConvertResult r = Convert(glsl);
-        r.Success.Should().BeTrue(
+        r.Success.ShouldBeTrue(string.Format(
             "the shader is in-subset; diagnostics: {0}",
-            string.Join("; ", r.Diagnostics.Select(d => $"{d.Severity}:{d.Message}")));
+            string.Join("; ", r.Diagnostics.Select(d => $"{d.Severity}:{d.Message}"))));
         return r;
     }
 
@@ -37,9 +37,9 @@ public sealed class CoverageGapTests
         """;
 
         ConvertResult r = ConvertOk(glsl);
-        r.Fx!.Should().Contain("static float gAccum;");
+        r.Fx!.ShouldContain("static float gAccum;");
         // A mutable global is internal state, NOT a host-driven parameter.
-        r.UsedUniforms.Should().NotContain("gAccum");
+        r.UsedUniforms.ShouldNotContain("gAccum");
     }
 
     [Fact]
@@ -54,7 +54,7 @@ public sealed class CoverageGapTests
         """;
 
         ConvertResult r = ConvertOk(glsl);
-        r.Fx!.Should().Contain("static float3 gTint = float3(0.2, 0.4, 0.8);");
+        r.Fx!.ShouldContain("static float3 gTint = float3(0.2, 0.4, 0.8);", Case.Sensitive);
     }
 
     [Fact]
@@ -71,9 +71,9 @@ public sealed class CoverageGapTests
 
         ConvertResult r = ConvertOk(glsl);
         string fx = r.Fx!;
-        fx.Should().Contain("static float gA = 0.0;");
-        fx.Should().Contain("static float gB = 1.0;");
-        fx.Should().Contain("static float gC;");
+        fx.ShouldContain("static float gA = 0.0;", Case.Sensitive);
+        fx.ShouldContain("static float gB = 1.0;", Case.Sensitive);
+        fx.ShouldContain("static float gC;", Case.Sensitive);
     }
 
     [Fact]
@@ -88,9 +88,9 @@ public sealed class CoverageGapTests
         """;
 
         ConvertResult r = Convert(glsl);
-        r.Success.Should().BeFalse();
-        r.Fx.Should().BeNull();
-        r.Diagnostics.Should().Contain(d =>
+        r.Success.ShouldBeFalse();
+        r.Fx.ShouldBeNull();
+        r.Diagnostics.ShouldContain(d =>
             d.Severity == DiagnosticSeverity.Error && d.Line > 0 && d.Column > 0 &&
             d.Message.Contains("double", StringComparison.OrdinalIgnoreCase));
     }
@@ -110,11 +110,11 @@ public sealed class CoverageGapTests
 
         ConvertResult r = ConvertOk(glsl);
         string fx = r.Fx!;
-        fx.Should().Contain("float iTime;");
-        fx.Should().Contain("sin(iTime)");
-        fx.Should().NotContain("float time;");
-        r.UsedUniforms.Should().Contain("iTime");
-        r.UsedUniforms.Should().NotContain("time");
+        fx.ShouldContain("float iTime;", Case.Sensitive);
+        fx.ShouldContain("sin(iTime)", Case.Sensitive);
+        fx.ShouldNotContain("float time;");
+        r.UsedUniforms.ShouldContain("iTime");
+        r.UsedUniforms.ShouldNotContain("time");
     }
 
     [Fact]
@@ -134,8 +134,8 @@ public sealed class CoverageGapTests
 
         ConvertResult r = ConvertOk(glsl);
         string fx = r.Fx!;
-        fx.Should().Contain("float2 u_resolution;");
-        r.UsedUniforms.Should().Contain("u_resolution");
+        fx.ShouldContain("float2 u_resolution;", Case.Sensitive);
+        r.UsedUniforms.ShouldContain("u_resolution");
     }
 
     // ── G4: custom uniform with default initializer ───────────────────────────
@@ -154,10 +154,10 @@ public sealed class CoverageGapTests
 
         ConvertResult r = ConvertOk(glsl);
         string fx = r.Fx!;
-        fx.Should().Contain("float uGain = 1.5;");
-        fx.Should().Contain("float3 uColor = float3(0.9, 0.3, 0.1);");
-        r.UsedUniforms.Should().Contain("uGain");
-        r.UsedUniforms.Should().Contain("uColor");
+        fx.ShouldContain("float uGain = 1.5;", Case.Sensitive);
+        fx.ShouldContain("float3 uColor = float3(0.9, 0.3, 0.1);", Case.Sensitive);
+        r.UsedUniforms.ShouldContain("uGain");
+        r.UsedUniforms.ShouldContain("uColor");
     }
 
     [Fact]
@@ -172,8 +172,8 @@ public sealed class CoverageGapTests
         """;
 
         ConvertResult r = Convert(glsl);
-        r.Success.Should().BeFalse();
-        r.Diagnostics.Should().Contain(d =>
+        r.Success.ShouldBeFalse();
+        r.Diagnostics.ShouldContain(d =>
             d.Severity == DiagnosticSeverity.Error && d.Line > 0 && d.Column > 0);
     }
 
@@ -194,9 +194,9 @@ public sealed class CoverageGapTests
 
         ConvertResult r = ConvertOk(glsl);
         string fx = r.Fx!;
-        fx.Should().NotContain("#version");
-        fx.Should().NotContain("#extension");
-        fx.Should().NotContain("#pragma optimize");
+        fx.ShouldNotContain("#version", Case.Sensitive);
+        fx.ShouldNotContain("#extension", Case.Sensitive);
+        fx.ShouldNotContain("#pragma optimize", Case.Sensitive);
     }
 
     [Fact]
@@ -212,7 +212,7 @@ public sealed class CoverageGapTests
         """;
 
         ConvertResult r = ConvertOk(glsl);
-        r.Fx!.Should().NotContain("#iChannel0");
+        r.Fx!.ShouldNotContain("#iChannel0", Case.Sensitive);
     }
 
     [Fact]
@@ -227,8 +227,8 @@ public sealed class CoverageGapTests
         """;
 
         ConvertResult r = Convert(glsl);
-        r.Success.Should().BeFalse();
-        r.Diagnostics.Should().Contain(d =>
+        r.Success.ShouldBeFalse();
+        r.Diagnostics.ShouldContain(d =>
             d.Severity == DiagnosticSeverity.Error &&
             d.Message.Contains("#include", StringComparison.Ordinal));
     }
@@ -246,8 +246,8 @@ public sealed class CoverageGapTests
         """;
 
         ConvertResult r = Convert(glsl);
-        r.Success.Should().BeFalse();
-        r.Diagnostics.Should().Contain(d =>
+        r.Success.ShouldBeFalse();
+        r.Diagnostics.ShouldContain(d =>
             d.Severity == DiagnosticSeverity.Error &&
             d.Message.Contains("TOTALLY_UNDECLARED", StringComparison.Ordinal));
     }

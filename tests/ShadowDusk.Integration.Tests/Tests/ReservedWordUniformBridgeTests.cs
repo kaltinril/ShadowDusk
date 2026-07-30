@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
@@ -110,34 +110,28 @@ public sealed class ReservedWordUniformBridgeTests
 
         var result = await CompileGlAsync(ReservedWordSource, cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
-            because: $"the B10 offset bridge must resolve the renamed '_noise' uniform back to " +
+        result.IsSuccess.ShouldBeTrue($"the B10 offset bridge must resolve the renamed '_noise' uniform back to " +
                      $"the 'noise' parameter (no more SD0012); errors: {DescribeErrors(result)}");
 
         var reader = MgfxBlobReader.Parse(result.Value.Data);
-        reader.ProfileId.Should().Be(ProfileOpenGL);
+        reader.ProfileId.ShouldBe(ProfileOpenGL);
 
         // The parameter is exposed under the ORIGINAL HLSL name — never the SPIRV-Cross
         // rename — so the consumer's effect.Parameters["noise"].SetValue(...) binds.
-        reader.ParameterNames.Should().Contain("noise",
-            because: "the offset bridge recovers the parameter index but the .mgfx parameter " +
+        reader.ParameterNames.ShouldContain("noise", "the offset bridge recovers the parameter index but the .mgfx parameter " +
                      "keeps its original declared name");
-        reader.ParameterNames.Should().NotContain("_noise",
-            because: "the SPIRV-Cross reserved-word rename must never leak into the parameter table");
+        reader.ParameterNames.ShouldNotContain("_noise", "the SPIRV-Cross reserved-word rename must never leak into the parameter table");
 
         // The single $Globals free uniform packs into ps_uniforms_vec4[0] -> byte offset 0,
         // and that cbuffer record must point at the 'noise' parameter index.
-        reader.ParameterOffsets.Should().ContainKey("noise")
-            .WhoseValue.Should().Be(0,
-                because: "'noise' is the only free uniform, so it occupies register 0 (byte offset 0)");
+        reader.ParameterOffsets.ContainsKey("noise").ShouldBeTrue();
+        reader.ParameterOffsets["noise"].ShouldBe(0, customMessage: "'noise' is the only free uniform, so it occupies register 0 (byte offset 0)");
 
         int noiseIndex = reader.ParameterNames
             .Select((n, i) => (n, i)).First(t => t.n == "noise").i;
         MgfxConstantBufferRecord ps = reader.ConstantBuffers
-            .Should().ContainSingle(c => c.Name == "ps_uniforms_vec4",
-                because: "the pixel free-uniform cbuffer is named ps_uniforms_vec4").Subject;
-        ps.ParameterIndices.Should().Contain(noiseIndex,
-            because: "the ps_uniforms_vec4 record must reference the 'noise' parameter by index " +
+            .Where(c => c.Name == "ps_uniforms_vec4").ShouldHaveSingleItem("the pixel free-uniform cbuffer is named ps_uniforms_vec4");
+        ps.ParameterIndices.ShouldContain(noiseIndex, "the ps_uniforms_vec4 record must reference the 'noise' parameter by index " +
                      "so MonoGame uploads its value into register 0");
     }
 
@@ -152,13 +146,12 @@ public sealed class ReservedWordUniformBridgeTests
         var result = await TestHelpers.CompileFixtureAsync(
             "examples/ExReservedWordUniform.fx", profile, ct: cts.Token);
 
-        result.ExitCode.Should().Be(0,
-            because: $"ExReservedWordUniform.fx (B10 regression) must compile on {profile}; stderr: {result.Stderr}");
+        result.ExitCode.ShouldBe(0, customMessage: $"ExReservedWordUniform.fx (B10 regression) must compile on {profile}; stderr: {result.Stderr}");
 
         var reader = MgfxBlobReader.Parse(result.Mgfx);
-        reader.ProfileId.Should().Be(expectedProfileId);
-        reader.ParameterNames.Should().Contain("noise");
-        reader.ParameterNames.Should().NotContain("_noise");
+        reader.ProfileId.ShouldBe(expectedProfileId);
+        reader.ParameterNames.ShouldContain("noise");
+        reader.ParameterNames.ShouldNotContain("_noise");
     }
 
     // -------------------------------------------------------------------------
@@ -172,14 +165,12 @@ public sealed class ReservedWordUniformBridgeTests
 
         var result = await CompileGlAsync(PlainUniformSource, cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
-            because: $"an ordinary free uniform must resolve by the primary NAME match, the same " +
+        result.IsSuccess.ShouldBeTrue($"an ordinary free uniform must resolve by the primary NAME match, the same " +
                      $"path it always took; errors: {DescribeErrors(result)}");
 
         var reader = MgfxBlobReader.Parse(result.Value.Data);
-        reader.ParameterNames.Should().Contain("Intensity",
-            because: "the uniform name needs no rename, so it is matched and exposed directly");
-        reader.ParameterOffsets.Should().ContainKey("Intensity")
-            .WhoseValue.Should().Be(0);
+        reader.ParameterNames.ShouldContain("Intensity", "the uniform name needs no rename, so it is matched and exposed directly");
+        reader.ParameterOffsets.ContainsKey("Intensity").ShouldBeTrue();
+        reader.ParameterOffsets["Intensity"].ShouldBe(0);
     }
 }

@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
 using Xunit;
@@ -23,7 +23,7 @@ public sealed class InMemoryIncludeResolverTests
 
         var result = resolver.Resolve("common.fxh", includingFilePath: "root/main.fx", additionalSearchPaths: []);
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
     }
 
     [Fact]
@@ -36,7 +36,7 @@ public sealed class InMemoryIncludeResolverTests
 
         var result = resolver.Resolve("common.fxh", includingFilePath: "root/main.fx", additionalSearchPaths: []);
 
-        result.Value.Text.Should().Be("float4 color;");
+        result.Value.Text.ShouldBe("float4 color;");
     }
 
     [Fact]
@@ -49,7 +49,7 @@ public sealed class InMemoryIncludeResolverTests
 
         var result = resolver.Resolve("common.fxh", includingFilePath: "root/main.fx", additionalSearchPaths: []);
 
-        result.Value.FilePath.Should().NotBeNullOrEmpty();
+        result.Value.FilePath.ShouldNotBeNullOrEmpty();
     }
 
     [Fact]
@@ -65,11 +65,11 @@ public sealed class InMemoryIncludeResolverTests
         var resultA = resolver.Resolve("a.fxh", includingFilePath: null, additionalSearchPaths: []);
         var resultC = resolver.Resolve("c.fxh", includingFilePath: null, additionalSearchPaths: []);
 
-        resultA.IsSuccess.Should().BeTrue();
-        resultA.Value.Text.Should().Be("int a;");
+        resultA.IsSuccess.ShouldBeTrue();
+        resultA.Value.Text.ShouldBe("int a;");
 
-        resultC.IsSuccess.Should().BeTrue();
-        resultC.Value.Text.Should().Be("int c;");
+        resultC.IsSuccess.ShouldBeTrue();
+        resultC.Value.Text.ShouldBe("int c;");
     }
 
     // -------------------------------------------------------------------------
@@ -86,7 +86,7 @@ public sealed class InMemoryIncludeResolverTests
 
         var result = resolver.Resolve("missing.fxh", includingFilePath: "root/main.fx", additionalSearchPaths: []);
 
-        result.IsFailure.Should().BeTrue();
+        result.IsFailure.ShouldBeTrue();
     }
 
     [Fact]
@@ -96,7 +96,7 @@ public sealed class InMemoryIncludeResolverTests
 
         var result = resolver.Resolve("missing.fxh", includingFilePath: "root/main.fx", additionalSearchPaths: []);
 
-        result.Error.Kind.Should().Be(ShaderErrorKind.IncludeNotFound);
+        result.Error.Kind.ShouldBe(ShaderErrorKind.IncludeNotFound);
     }
 
     [Fact]
@@ -106,7 +106,7 @@ public sealed class InMemoryIncludeResolverTests
 
         var result = resolver.Resolve("missing.fxh", includingFilePath: "root/main.fx", additionalSearchPaths: []);
 
-        result.Error.RequestedPath.Should().Be("missing.fxh");
+        result.Error.RequestedPath.ShouldBe("missing.fxh");
     }
 
     [Fact]
@@ -119,8 +119,8 @@ public sealed class InMemoryIncludeResolverTests
 
         var result = resolver.Resolve("missing.fxh", includingFilePath: "root/main.fx", additionalSearchPaths: []);
 
-        result.Error.SearchedPaths.Should().NotBeNull();
-        result.Error.SearchedPaths.Should().NotBeEmpty();
+        result.Error.SearchedPaths.ShouldNotBeNull();
+        result.Error.SearchedPaths.ShouldNotBeEmpty();
     }
 
     [Fact]
@@ -130,8 +130,8 @@ public sealed class InMemoryIncludeResolverTests
 
         var result = resolver.Resolve("anything.fxh", includingFilePath: null, additionalSearchPaths: []);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Kind.Should().Be(ShaderErrorKind.IncludeNotFound);
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Kind.ShouldBe(ShaderErrorKind.IncludeNotFound);
     }
 
     [Fact]
@@ -144,7 +144,7 @@ public sealed class InMemoryIncludeResolverTests
 
         var result = resolver.Resolve("standalone.fxh", includingFilePath: null, additionalSearchPaths: []);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Text.Should().Be("bool flag;");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Text.ShouldBe("bool flag;");
     }
 }

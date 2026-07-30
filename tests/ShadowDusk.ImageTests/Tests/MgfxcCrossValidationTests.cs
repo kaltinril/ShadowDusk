@@ -1,7 +1,7 @@
 #nullable enable
 
 using System.Text;
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
@@ -106,8 +106,8 @@ public sealed class MgfxcCrossValidationTests
         string fxPath        = Path.Combine(repoRoot, "tests", "fixtures", "shaders", fixtureStem + ".fx");
         string goldenMgfxPath = Path.Combine(repoRoot, "tests", "fixtures", "golden", "OpenGL", fixtureStem + ".mgfx");
 
-        File.Exists(fxPath)        .Should().BeTrue($".fx source must exist at {fxPath}");
-        File.Exists(goldenMgfxPath).Should().BeTrue($"golden mgfx must exist at {goldenMgfxPath}");
+        File.Exists(fxPath)        .ShouldBeTrue($".fx source must exist at {fxPath}");
+        File.Exists(goldenMgfxPath).ShouldBeTrue($"golden mgfx must exist at {goldenMgfxPath}");
 
         // 1. ShadowDusk side — compile. These 10 fixtures are known-good (they compile on
         //    every other GL harness), so a compile failure here is a real regression and the
@@ -130,7 +130,7 @@ public sealed class MgfxcCrossValidationTests
             _output.WriteLine($"FAIL {fixtureStem}: ShadowDusk compile failed.\n{diag}");
             // A known-good fixture failing to compile is exactly the regression this gate
             // exists to catch — surface it, do not skip-as-green.
-            sdResult.IsSuccess.Should().BeTrue(
+            sdResult.IsSuccess.ShouldBeTrue(
                 $"known-good fixture '{fixtureStem}' must compile for OpenGL:\n{diag}");
         }
 
@@ -139,7 +139,7 @@ public sealed class MgfxcCrossValidationTests
         // 2. mgfxc side — extract GLSL text from the golden .mgfx.
         byte[]  goldenBytes = await File.ReadAllBytesAsync(goldenMgfxPath, ct);
         var     mgfxcReader = MgfxcMgfxReader.Parse(goldenBytes);
-        mgfxcReader.GlslShaders.Should().NotBeEmpty(
+        mgfxcReader.GlslShaders.ShouldNotBeEmpty(
             $"golden {fixtureStem}.mgfx must embed at least one GLSL blob");
         string mgfxcPs = mgfxcReader.GlslShaders[0];
 
@@ -178,7 +178,7 @@ public sealed class MgfxcCrossValidationTests
 
         // 6. Compare.
         var cmp = ImageComparer.Compare(mgfxcPixels, sdPixels, tolerance: 4);
-        cmp.Matches.Should().BeTrue(
+        cmp.Matches.ShouldBeTrue(
             $"ShadowDusk and mgfxc renderings of '{fixtureStem}' should match within tolerance 4/255. " +
             $"Different pixels: {cmp.DifferentPixels}/{cmp.TotalPixels}, " +
             $"max channel delta: {cmp.MaxChannelDelta}.");
@@ -207,11 +207,11 @@ public sealed class MgfxcCrossValidationTests
         byte[] bytes    = await File.ReadAllBytesAsync(path, ct);
 
         var reader = MgfxcMgfxReader.Parse(bytes);
-        reader.GlslShaders.Should().NotBeEmpty();
+        reader.GlslShaders.ShouldNotBeEmpty();
         string ps = reader.GlslShaders[0];
-        ps.Should().Contain("#ifdef GL_ES");
-        ps.Should().Contain("gl_FragColor");
-        ps.Should().Contain("texture2D");
+        ps.ShouldContain("#ifdef GL_ES", Case.Sensitive);
+        ps.ShouldContain("gl_FragColor", Case.Sensitive);
+        ps.ShouldContain("texture2D", Case.Sensitive);
     }
 
     /// <summary>
@@ -237,7 +237,7 @@ public sealed class MgfxcCrossValidationTests
         byte[] bytes    = await File.ReadAllBytesAsync(path, ct);
 
         var reader = MgfxcMgfxReader.Parse(bytes);
-        reader.GlslShaders.Should().NotBeEmpty();
+        reader.GlslShaders.ShouldNotBeEmpty();
         string ps = reader.GlslShaders[0];
 
         SceneRender scene = MakeSceneFor("Grayscale");
@@ -247,7 +247,7 @@ public sealed class MgfxcCrossValidationTests
         var renderer       = new ShaderSceneRenderer(_fixture.Gl, fbo);
 
         byte[] pixels = renderer.Render(new GlslShaderPair(null, ps), scene);
-        pixels.Length.Should().Be(OffscreenRenderer.Width * OffscreenRenderer.Height * 4);
+        pixels.Length.ShouldBe(OffscreenRenderer.Width * OffscreenRenderer.Height * 4);
 
         // Sanity check: the output should not be the cleared color across
         // every pixel — the PS samples a non-trivial texture, so we expect
@@ -258,7 +258,7 @@ public sealed class MgfxcCrossValidationTests
         {
             if (pixels[i] != first) { allSame = false; break; }
         }
-        allSame.Should().BeFalse("rendered framebuffer should not be one solid color");
+        allSame.ShouldBeFalse("rendered framebuffer should not be one solid color");
 
         // Diagnostic save.
         if (Environment.GetEnvironmentVariable("SHADOWDUSK_SAVE_DIAGNOSTICS") == "1")

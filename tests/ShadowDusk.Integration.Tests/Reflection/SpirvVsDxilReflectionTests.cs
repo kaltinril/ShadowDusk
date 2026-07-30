@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
 using ShadowDusk.Core.Reflection;
@@ -62,18 +62,17 @@ public sealed class SpirvVsDxilReflectionTests
 
         // --- Read + FX9 pre-parse + preprocess (OpenGL macros, as the GL path does) ---
         string fxPath = Path.Combine(AppContext.BaseDirectory, "fixtures", "shaders", fixtureStem + ".fx");
-        File.Exists(fxPath).Should().BeTrue($".fx fixture must exist at {fxPath}");
+        File.Exists(fxPath).ShouldBeTrue($".fx fixture must exist at {fxPath}");
 
         string source = await File.ReadAllTextAsync(fxPath, ct);
 
         var parsed = FxPreParser.Parse(source, fxPath);
-        parsed.IsSuccess.Should().BeTrue(
-            because: parsed.IsFailure ? parsed.Error.Message : "FX pre-parse must succeed");
+        parsed.IsSuccess.ShouldBeTrue(parsed.IsFailure ? parsed.Error.Message : "FX pre-parse must succeed");
         FxParseResult fx = parsed.Value;
 
-        fx.Techniques.Should().NotBeEmpty();
+        fx.Techniques.ShouldNotBeEmpty();
         ShadowDusk.HLSL.Ast.PassInfo pass = fx.Techniques.SelectMany(t => t.Passes).First();
-        pass.PixelEntryPoint.Should().NotBeNull(because: "corpus shaders are PS-only");
+        pass.PixelEntryPoint.ShouldNotBeNull("corpus shaders are PS-only");
         string psEntry = pass.PixelEntryPoint!;
 
         // Fully qualified: the sibling ShadowDusk.Integration.Tests.Preprocessor test
@@ -85,22 +84,19 @@ public sealed class SpirvVsDxilReflectionTests
             PlatformMacros.For(PlatformTarget.OpenGL),
             new FileSystemIncludeResolver(),
             Array.Empty<string>());
-        pre.IsSuccess.Should().BeTrue(
-            because: pre.IsFailure ? pre.Error.Message : "preprocess must succeed");
+        pre.IsSuccess.ShouldBeTrue(pre.IsFailure ? pre.Error.Message : "preprocess must succeed");
         string hlsl = pre.Value.Text;
 
         // --- (a) Oracle: DXIL → DxilReflectionExtractor (+ ParameterListBuilder) ---
         ReadOnlyMemory<byte> dxil = await CompileAsync(hlsl, fxPath, psEntry, PlatformTarget.DirectX, ct);
         var oracleResult = new DxilReflectionExtractor().Extract(dxil, ct);
-        oracleResult.IsSuccess.Should().BeTrue(
-            because: oracleResult.IsFailure ? oracleResult.Error.Message : "DXIL reflection must succeed");
+        oracleResult.IsSuccess.ShouldBeTrue(oracleResult.IsFailure ? oracleResult.Error.Message : "DXIL reflection must succeed");
         ReflectedEffect oracle = oracleResult.Value;
 
         // --- (b) Subject: SPIR-V → SpirvReflector ---
         ReadOnlyMemory<byte> spirv = await CompileAsync(hlsl, fxPath, psEntry, PlatformTarget.OpenGL, ct);
         var subjectResult = new SpirvReflector().Reflect(spirv);
-        subjectResult.IsSuccess.Should().BeTrue(
-            because: subjectResult.IsFailure ? subjectResult.Error.Message : "SPIR-V reflection must succeed");
+        subjectResult.IsSuccess.ShouldBeTrue(subjectResult.IsFailure ? subjectResult.Error.Message : "SPIR-V reflection must succeed");
         ReflectedEffect subject = subjectResult.Value;
 
         DumpDiff(fixtureStem, oracle, subject);
@@ -113,34 +109,32 @@ public sealed class SpirvVsDxilReflectionTests
 
     private static void AssertConstantBuffersEquivalent(ReflectedEffect oracle, ReflectedEffect subject)
     {
-        subject.ConstantBuffers.Should().HaveCount(oracle.ConstantBuffers.Count,
-            "SPIR-V and DXIL must report the same number of constant buffers");
+        subject.ConstantBuffers.Count().ShouldBe(oracle.ConstantBuffers.Count, customMessage: "SPIR-V and DXIL must report the same number of constant buffers");
 
         var oracleByName = oracle.ConstantBuffers.ToDictionary(c => c.Name, StringComparer.Ordinal);
 
         foreach (ConstantBufferReflection sub in subject.ConstantBuffers)
         {
-            oracleByName.Should().ContainKey(sub.Name);
+            oracleByName.ContainsKey(sub.Name).ShouldBeTrue();
             ConstantBufferReflection ora = oracleByName[sub.Name];
 
-            sub.SizeBytes.Should().Be(ora.SizeBytes, $"cbuffer '{sub.Name}' size must match");
+            sub.SizeBytes.ShouldBe(ora.SizeBytes, customMessage: $"cbuffer '{sub.Name}' size must match");
 
             var oraVars = ora.Variables.ToDictionary(v => v.Name, StringComparer.Ordinal);
-            sub.Variables.Should().HaveCount(ora.Variables.Count,
-                $"cbuffer '{sub.Name}' variable count must match");
+            sub.Variables.Count().ShouldBe(ora.Variables.Count, customMessage: $"cbuffer '{sub.Name}' variable count must match");
 
             foreach (VariableReflection sv in sub.Variables)
             {
-                oraVars.Should().ContainKey(sv.Name);
+                oraVars.ContainsKey(sv.Name).ShouldBeTrue();
                 VariableReflection ov = oraVars[sv.Name];
 
-                sv.StartOffset.Should().Be(ov.StartOffset,    $"'{sub.Name}.{sv.Name}' StartOffset");
-                sv.SizeBytes.Should().Be(ov.SizeBytes,        $"'{sub.Name}.{sv.Name}' SizeBytes");
-                sv.ParameterClass.Should().Be(ov.ParameterClass, $"'{sub.Name}.{sv.Name}' ParameterClass");
-                sv.ParameterType.Should().Be(ov.ParameterType,   $"'{sub.Name}.{sv.Name}' ParameterType");
-                sv.Rows.Should().Be(ov.Rows,                  $"'{sub.Name}.{sv.Name}' Rows");
-                sv.Columns.Should().Be(ov.Columns,            $"'{sub.Name}.{sv.Name}' Columns");
-                sv.Elements.Should().Be(ov.Elements,          $"'{sub.Name}.{sv.Name}' Elements");
+                sv.StartOffset.ShouldBe(ov.StartOffset, customMessage: $"'{sub.Name}.{sv.Name}' StartOffset");
+                sv.SizeBytes.ShouldBe(ov.SizeBytes, customMessage: $"'{sub.Name}.{sv.Name}' SizeBytes");
+                sv.ParameterClass.ShouldBe(ov.ParameterClass, customMessage: $"'{sub.Name}.{sv.Name}' ParameterClass");
+                sv.ParameterType.ShouldBe(ov.ParameterType, customMessage: $"'{sub.Name}.{sv.Name}' ParameterType");
+                sv.Rows.ShouldBe(ov.Rows, customMessage: $"'{sub.Name}.{sv.Name}' Rows");
+                sv.Columns.ShouldBe(ov.Columns, customMessage: $"'{sub.Name}.{sv.Name}' Columns");
+                sv.Elements.ShouldBe(ov.Elements, customMessage: $"'{sub.Name}.{sv.Name}' Elements");
                 AssertMembersEquivalent(ov, sv, $"{sub.Name}.{sv.Name}");
             }
         }
@@ -152,26 +146,26 @@ public sealed class SpirvVsDxilReflectionTests
     {
         if (oracle.Members is null)
         {
-            subject.Members.Should().BeNull($"'{path}' is not a struct in the oracle");
+            subject.Members.ShouldBeNull($"'{path}' is not a struct in the oracle");
             return;
         }
 
-        subject.Members.Should().NotBeNull($"'{path}' has struct members in the oracle");
-        subject.Members!.Count.Should().Be(oracle.Members.Count, $"'{path}' member count");
+        subject.Members.ShouldNotBeNull($"'{path}' has struct members in the oracle");
+        subject.Members!.Count.ShouldBe(oracle.Members.Count, customMessage: $"'{path}' member count");
 
         var oraByName = oracle.Members.ToDictionary(m => m.Name, StringComparer.Ordinal);
         foreach (VariableReflection sm in subject.Members)
         {
-            oraByName.Should().ContainKey(sm.Name, $"'{path}' must contain member '{sm.Name}'");
+            oraByName.ContainsKey(sm.Name).ShouldBeTrue(customMessage: $"'{path}' must contain member '{sm.Name}'");
             VariableReflection om = oraByName[sm.Name];
 
-            sm.StartOffset.Should().Be(om.StartOffset,       $"'{path}.{sm.Name}' StartOffset (within struct)");
-            sm.SizeBytes.Should().Be(om.SizeBytes,           $"'{path}.{sm.Name}' SizeBytes");
-            sm.ParameterClass.Should().Be(om.ParameterClass, $"'{path}.{sm.Name}' ParameterClass");
-            sm.ParameterType.Should().Be(om.ParameterType,   $"'{path}.{sm.Name}' ParameterType");
-            sm.Rows.Should().Be(om.Rows,                     $"'{path}.{sm.Name}' Rows");
-            sm.Columns.Should().Be(om.Columns,               $"'{path}.{sm.Name}' Columns");
-            sm.Elements.Should().Be(om.Elements,             $"'{path}.{sm.Name}' Elements");
+            sm.StartOffset.ShouldBe(om.StartOffset, customMessage: $"'{path}.{sm.Name}' StartOffset (within struct)");
+            sm.SizeBytes.ShouldBe(om.SizeBytes, customMessage: $"'{path}.{sm.Name}' SizeBytes");
+            sm.ParameterClass.ShouldBe(om.ParameterClass, customMessage: $"'{path}.{sm.Name}' ParameterClass");
+            sm.ParameterType.ShouldBe(om.ParameterType, customMessage: $"'{path}.{sm.Name}' ParameterType");
+            sm.Rows.ShouldBe(om.Rows, customMessage: $"'{path}.{sm.Name}' Rows");
+            sm.Columns.ShouldBe(om.Columns, customMessage: $"'{path}.{sm.Name}' Columns");
+            sm.Elements.ShouldBe(om.Elements, customMessage: $"'{path}.{sm.Name}' Elements");
             AssertMembersEquivalent(om, sm, $"{path}.{sm.Name}");
         }
     }
@@ -209,15 +203,13 @@ public sealed class SpirvVsDxilReflectionTests
         ReadOnlyMemory<byte> dxil = await CompileAsync(
             StructCbufferHlsl, "struct_cbuffer.hlsl", "PSMain", PlatformTarget.DirectX, ct);
         var oracleResult = new DxilReflectionExtractor().Extract(dxil, ct);
-        oracleResult.IsSuccess.Should().BeTrue(
-            because: oracleResult.IsFailure ? oracleResult.Error.Message : "DXIL reflection must succeed");
+        oracleResult.IsSuccess.ShouldBeTrue(oracleResult.IsFailure ? oracleResult.Error.Message : "DXIL reflection must succeed");
         ReflectedEffect oracle = oracleResult.Value;
 
         ReadOnlyMemory<byte> spirv = await CompileAsync(
             StructCbufferHlsl, "struct_cbuffer.hlsl", "PSMain", PlatformTarget.OpenGL, ct);
         var subjectResult = new SpirvReflector().Reflect(spirv);
-        subjectResult.IsSuccess.Should().BeTrue(
-            because: subjectResult.IsFailure ? subjectResult.Error.Message : "SPIR-V reflection must succeed");
+        subjectResult.IsSuccess.ShouldBeTrue(subjectResult.IsFailure ? subjectResult.Error.Message : "SPIR-V reflection must succeed");
         ReflectedEffect subject = subjectResult.Value;
 
         DumpDiff("struct_cbuffer (inline)", oracle, subject);
@@ -226,36 +218,36 @@ public sealed class SpirvVsDxilReflectionTests
         // (guards against a vacuous pass if reflection shapes ever change).
         VariableReflection oracleLight = oracle.ConstantBuffers
             .SelectMany(cb => cb.Variables).Single(v => v.Name == "Light");
-        oracleLight.Members.Should().NotBeNull("the DXIL oracle reports struct members");
-        oracleLight.Members!.Should().HaveCount(3);
+        oracleLight.Members.ShouldNotBeNull("the DXIL oracle reports struct members");
+        oracleLight.Members!.Count().ShouldBe(3);
 
         AssertConstantBuffersEquivalent(oracle, subject);
     }
 
     private static void AssertTexturesEquivalent(ReflectedEffect oracle, ReflectedEffect subject)
     {
-        subject.Textures.Should().HaveCount(oracle.Textures.Count, "texture count must match");
+        subject.Textures.Count().ShouldBe(oracle.Textures.Count, customMessage: "texture count must match");
 
         var oraByName = oracle.Textures.ToDictionary(t => t.Name, StringComparer.Ordinal);
         foreach (TextureReflection st in subject.Textures)
         {
-            oraByName.Should().ContainKey(st.Name);
+            oraByName.ContainsKey(st.Name).ShouldBeTrue();
             TextureReflection ot = oraByName[st.Name];
-            st.BindSlot.Should().Be(ot.BindSlot,   $"texture '{st.Name}' BindSlot");
-            st.Dimension.Should().Be(ot.Dimension, $"texture '{st.Name}' Dimension");
+            st.BindSlot.ShouldBe(ot.BindSlot, customMessage: $"texture '{st.Name}' BindSlot");
+            st.Dimension.ShouldBe(ot.Dimension, customMessage: $"texture '{st.Name}' Dimension");
         }
     }
 
     private static void AssertSamplersEquivalent(ReflectedEffect oracle, ReflectedEffect subject)
     {
-        subject.Samplers.Should().HaveCount(oracle.Samplers.Count, "sampler count must match");
+        subject.Samplers.Count().ShouldBe(oracle.Samplers.Count, customMessage: "sampler count must match");
 
         var oraByName = oracle.Samplers.ToDictionary(s => s.Name, StringComparer.Ordinal);
         foreach (SamplerReflection ss in subject.Samplers)
         {
-            oraByName.Should().ContainKey(ss.Name);
+            oraByName.ContainsKey(ss.Name).ShouldBeTrue();
             SamplerReflection os = oraByName[ss.Name];
-            ss.BindSlot.Should().Be(os.BindSlot, $"sampler '{ss.Name}' BindSlot");
+            ss.BindSlot.ShouldBe(os.BindSlot, customMessage: $"sampler '{ss.Name}' BindSlot");
         }
     }
 
@@ -310,8 +302,7 @@ public sealed class SpirvVsDxilReflectionTests
             Options        = new DxcCompileOptions { AllowWarnings = true },
         };
         var result = await compiler.CompileAsync(request, ct);
-        result.IsSuccess.Should().BeTrue(
-            because: result.IsFailure ? result.Error.FxcFormattedMessage : "compilation must succeed");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.FxcFormattedMessage : "compilation must succeed");
         return result.Value.Bytes;
     }
 }

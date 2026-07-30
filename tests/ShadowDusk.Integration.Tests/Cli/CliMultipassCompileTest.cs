@@ -1,7 +1,7 @@
 #nullable enable
 
 using System.Diagnostics;
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.ShaderToy.Multipass;
 using Xunit;
 
@@ -43,11 +43,11 @@ public sealed class CliMultipassCompileTest : IClassFixture<CliBinaryFixture>
         {
             var (exitCode, stdout, stderr) = await RunCliAsync(fxPath, mgfxPath, "/Profile:OpenGL");
 
-            exitCode.Should().Be(0,
+            exitCode.ShouldBe(0, customMessage: string.Format(
                 "the converted .fx for {0}/{1} must compile on OpenGL via the real ShadowDusk CLI; stderr: {2}{3}",
-                fixture, fileName, stderr, stdout);
-            File.Exists(mgfxPath).Should().BeTrue("the CLI must produce a .mgfx on success");
-            new FileInfo(mgfxPath).Length.Should().BeGreaterThan(0);
+                fixture, fileName, stderr, stdout));
+            File.Exists(mgfxPath).ShouldBeTrue("the CLI must produce a .mgfx on success");
+            new FileInfo(mgfxPath).Length.ShouldBeGreaterThan(0);
         }
         finally
         {

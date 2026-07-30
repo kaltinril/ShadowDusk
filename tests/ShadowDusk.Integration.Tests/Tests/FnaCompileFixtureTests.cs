@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Tests.Fx2;
@@ -155,26 +155,20 @@ public sealed class FnaCompileFixtureTests
 
         var result = await CompileFnaFileAsync(TestHelpers.FixturePath(fx), cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
-            because: $"'{fx}' is in the SM ≤ 3 FNA corpus and must compile; errors: {DescribeErrors(result)}");
+        result.IsSuccess.ShouldBeTrue($"'{fx}' is in the SM ≤ 3 FNA corpus and must compile; errors: {DescribeErrors(result)}");
 
         Func<Fx2ParsedEffect> parse = () => Fx2BinaryValidator.Parse(result.Value.Data);
-        Fx2ParsedEffect effect = parse.Should().NotThrow(
-            because: $"'{fx}' must produce an fx_2_0 binary that satisfies every MojoShader parse rule").Subject;
+        Fx2ParsedEffect effect = Should.NotThrow(parse, $"'{fx}' must produce an fx_2_0 binary that satisfies every MojoShader parse rule");
 
-        effect.Techniques.Should().NotBeEmpty(
-            because: $"'{fx}' declares at least one technique");
-        effect.Shaders.Should().NotBeEmpty(
-            because: $"'{fx}' declares at least one compiled shader pass");
+        effect.Techniques.ShouldNotBeEmpty($"'{fx}' declares at least one technique");
+        effect.Shaders.ShouldNotBeEmpty($"'{fx}' declares at least one compiled shader pass");
 
         foreach (Fx2ParsedShader shader in effect.Shaders)
         {
             uint kind = shader.VersionToken >> 16;
-            (kind is 0xFFFF or 0xFFFE).Should().BeTrue(
-                because: $"shader version token 0x{shader.VersionToken:X8} in '{fx}' must be a D3D9 " +
+            (kind is 0xFFFF or 0xFFFE).ShouldBeTrue($"shader version token 0x{shader.VersionToken:X8} in '{fx}' must be a D3D9 " +
                          "pixel (0xFFFF) or vertex (0xFFFE) token stream");
-            (shader.VersionToken & 0xFFFF).Should().BeLessThanOrEqualTo(0x0300u,
-                because: $"shader version token 0x{shader.VersionToken:X8} in '{fx}' must be SM ≤ 3 " +
+            (shader.VersionToken & 0xFFFF).ShouldBeLessThanOrEqualTo(0x0300u, customMessage: $"shader version token 0x{shader.VersionToken:X8} in '{fx}' must be SM ≤ 3 " +
                          "(MojoShader's hard ceiling)");
         }
     }
@@ -193,15 +187,15 @@ public sealed class FnaCompileFixtureTests
 
         var result = await CompileFnaFileAsync(
             TestHelpers.FixturePath("FnaMultiPassStates.fx"), cts.Token);
-        result.IsSuccess.Should().BeTrue(because: $"errors: {DescribeErrors(result)}");
+        result.IsSuccess.ShouldBeTrue($"errors: {DescribeErrors(result)}");
 
         Fx2ParsedEffect effect = Fx2BinaryValidator.Parse(result.Value.Data);
 
         // Two techniques, declared names, source order.
-        effect.Techniques.Select(t => t.Name).Should().Equal("MultiPass", "SinglePass");
+        effect.Techniques.Select(t => t.Name).ShouldBe(new[] {"MultiPass", "SinglePass"});
         // The first technique declares two passes, in source order.
-        effect.Techniques[0].Passes.Select(p => p.Name).Should().Equal("Blend", "Solid");
-        effect.Techniques[1].Passes.Select(p => p.Name).Should().Equal("Only");
+        effect.Techniques[0].Passes.Select(p => p.Name).ShouldBe(new[] {"Blend", "Solid"});
+        effect.Techniques[1].Passes.Select(p => p.Name).ShouldBe(new[] { "Only" });
 
         // The state-bearing pass: render states in the D3D9 value domain
         // (docs/fx2-binary-format.md §8.2) plus both shader-binding states.
@@ -209,36 +203,32 @@ public sealed class FnaCompileFixtureTests
         blend.States
             .Where(s => s.DwordValue is not null)
             .Select(s => (s.Operation, s.DwordValue!.Value))
-            .Should().BeEquivalentTo(new[]
+            .ShouldBe(new[]
             {
                 (13, 1u), // AlphaBlendEnable = TRUE   → D3DRS_ALPHABLENDENABLE, TRUE
                 (6, 5u),  // SrcBlend  = SRCALPHA      → D3DRS_SRCBLEND,  D3DBLEND_SRCALPHA
                 (7, 6u),  // DestBlend = INVSRCALPHA   → D3DRS_DESTBLEND, D3DBLEND_INVSRCALPHA
                 (8, 1u),  // CullMode  = NONE          → D3DRS_CULLMODE,  D3DCULL_NONE
-            },
-            because: "each in-pass render state must arrive as its (op, D3D9 value) pair");
-        blend.States.Should().ContainSingle(s => s.Operation == 146,
-            because: "the pass compiles a vertex shader (VertexShader state)");
-        blend.States.Should().ContainSingle(s => s.Operation == 147,
-            because: "the pass compiles a pixel shader (PixelShader state)");
+            }, ignoreOrder: true, customMessage: "each in-pass render state must arrive as its (op, D3D9 value) pair");
+        blend.States.Where(s => s.Operation == 146).ShouldHaveSingleItem("the pass compiles a vertex shader (VertexShader state)");
+        blend.States.Where(s => s.Operation == 147).ShouldHaveSingleItem("the pass compiles a pixel shader (PixelShader state)");
         // Full deterministic state order: render states first (the large-object shader
         // records back-reference the 146/147 state indices, so shader states come last).
-        blend.States.Select(s => s.Operation).Should().Equal(13, 6, 7, 8, 146, 147);
+        blend.States.Select(s => s.Operation).ShouldBe(new[] {13, 6, 7, 8, 146, 147});
 
         // The other passes are PS-only and state-free.
-        effect.Techniques[0].Passes[1].States.Select(s => s.Operation).Should().Equal(147);
-        effect.Techniques[1].Passes[0].States.Select(s => s.Operation).Should().Equal(147);
+        effect.Techniques[0].Passes[1].States.Select(s => s.Operation).ShouldBe(new[] { 147 });
+        effect.Techniques[1].Passes[0].States.Select(s => s.Operation).ShouldBe(new[] { 147 });
 
         // Sampler→texture name map (the usage==1 large-object record).
-        effect.SamplerTextureMap.Should().HaveCount(1)
-            .And.ContainKey("TexSampler").WhoseValue.Should().Be("SceneTexture");
+        effect.SamplerTextureMap.Count().ShouldBe(1);
+        effect.SamplerTextureMap["TexSampler"].ShouldBe("SceneTexture");
 
         // One embedded shader object per compiled pass-stage binding, no sharing:
         // Blend (VS+PS) + Solid (PS) + Only (PS) = 4.
-        effect.Shaders.Should().HaveCount(4,
-            because: "every pass-stage binding embeds its own shader object");
-        effect.Shaders.Count(s => s.Stage == ShaderStage.Vertex).Should().Be(1);
-        effect.Shaders.Count(s => s.Stage == ShaderStage.Pixel).Should().Be(3);
+        effect.Shaders.Count().ShouldBe(4, customMessage: "every pass-stage binding embeds its own shader object");
+        effect.Shaders.Count(s => s.Stage == ShaderStage.Vertex).ShouldBe(1);
+        effect.Shaders.Count(s => s.Stage == ShaderStage.Pixel).ShouldBe(3);
     }
 
     // -------------------------------------------------------------------------
@@ -259,11 +249,10 @@ public sealed class FnaCompileFixtureTests
         var first  = await CompileFnaFileAsync(path, cts.Token);
         var second = await CompileFnaFileAsync(path, cts.Token);
 
-        first.IsSuccess.Should().BeTrue(because: $"errors: {DescribeErrors(first)}");
-        second.IsSuccess.Should().BeTrue(because: $"errors: {DescribeErrors(second)}");
+        first.IsSuccess.ShouldBeTrue($"errors: {DescribeErrors(first)}");
+        second.IsSuccess.ShouldBeTrue($"errors: {DescribeErrors(second)}");
 
-        second.Value.Data.Should().Equal(first.Value.Data,
-            because: "same shader source + same target must produce byte-identical output " +
+        second.Value.Data.ShouldBe(first.Value.Data, customMessage: "same shader source + same target must produce byte-identical output " +
                      "(Core Design Constraint 3: ShadowDusk's own determinism)");
     }
 
@@ -280,8 +269,7 @@ public sealed class FnaCompileFixtureTests
         using var cts = new CancellationTokenSource(CompileTimeout);
 
         var result = await CompileFnaFileAsync(GoldenPath($"{name}.fx"), cts.Token);
-        result.IsSuccess.Should().BeTrue(
-            because: $"golden source '{name}.fx' must compile for FNA; errors: {DescribeErrors(result)}");
+        result.IsSuccess.ShouldBeTrue($"golden source '{name}.fx' must compile for FNA; errors: {DescribeErrors(result)}");
 
         byte[] goldenBytes = await File.ReadAllBytesAsync(GoldenPath($"{name}.fxb"), cts.Token);
         Fx2ParsedEffect ours   = Fx2BinaryValidator.Parse(result.Value.Data);
@@ -289,37 +277,31 @@ public sealed class FnaCompileFixtureTests
 
         // Structural equivalence, never byte equality — different compilers (vkd3d vs fxc)
         // legitimately produce different bytecode and layout (docs/the-purpose.md).
-        ours.Parameters.Select(p => (p.Name, p.Class, p.Type)).Should().BeEquivalentTo(
-            golden.Parameters.Select(p => (p.Name, p.Class, p.Type)),
-            because: "the parameter table (name/class/type) must match fxc's so FNA binds identically");
+        ours.Parameters.Select(p => (p.Name, p.Class, p.Type)).ShouldBe(
+            golden.Parameters.Select(p => (p.Name, p.Class, p.Type)), ignoreOrder: true, customMessage: "the parameter table (name/class/type) must match fxc's so FNA binds identically");
 
-        ours.Techniques.Select(t => t.Name).Should().Equal(
-            golden.Techniques.Select(t => t.Name),
-            because: "technique names and order must match fxc's");
+        ours.Techniques.Select(t => t.Name).ShouldBe(
+            golden.Techniques.Select(t => t.Name), customMessage: "technique names and order must match fxc's");
 
         for (int t = 0; t < golden.Techniques.Count; t++)
         {
             Fx2ParsedTechnique ot = ours.Techniques[t];
             Fx2ParsedTechnique gt = golden.Techniques[t];
 
-            ot.Passes.Select(p => p.Name).Should().Equal(
-                gt.Passes.Select(p => p.Name),
-                because: $"pass names of technique '{gt.Name}' must match fxc's");
+            ot.Passes.Select(p => p.Name).ShouldBe(
+                gt.Passes.Select(p => p.Name), customMessage: $"pass names of technique '{gt.Name}' must match fxc's");
 
             for (int p = 0; p < gt.Passes.Count; p++)
             {
-                ot.Passes[p].States.Select(s => s.Operation).Should().BeEquivalentTo(
-                    gt.Passes[p].States.Select(s => s.Operation),
-                    because: $"pass '{gt.Passes[p].Name}' must carry the same state operations as fxc's output");
+                ot.Passes[p].States.Select(s => s.Operation).ShouldBe(
+                    gt.Passes[p].States.Select(s => s.Operation), ignoreOrder: true, customMessage: $"pass '{gt.Passes[p].Name}' must carry the same state operations as fxc's output");
             }
         }
 
-        ours.SamplerTextureMap.Should().BeEquivalentTo(golden.SamplerTextureMap,
-            because: "the sampler→texture name map drives FNA's texture binding and must match fxc's");
+        ours.SamplerTextureMap.ShouldBe(golden.SamplerTextureMap, ignoreOrder: true, customMessage: "the sampler→texture name map drives FNA's texture binding and must match fxc's");
 
-        ours.Shaders.Select(s => (s.Stage, s.VersionToken)).Should().BeEquivalentTo(
-            golden.Shaders.Select(s => (s.Stage, s.VersionToken)),
-            because: "the same shader stages at the same SM versions must be embedded " +
+        ours.Shaders.Select(s => (s.Stage, s.VersionToken)).ShouldBe(
+            golden.Shaders.Select(s => (s.Stage, s.VersionToken)), ignoreOrder: true, customMessage: "the same shader stages at the same SM versions must be embedded " +
                      "(the literal ps_2_0 profile in the source is honored as written)");
     }
 
@@ -339,12 +321,9 @@ public sealed class FnaCompileFixtureTests
         // above MojoShader's vs_3_0/ps_3_0 ceiling, so the FNA profile policy rejects it.
         var result = await CompileFnaFileAsync(TestHelpers.FixturePath("textured.fx"), cts.Token);
 
-        result.IsFailure.Should().BeTrue(
-            because: "a literal SM4+ profile under the FNA target must fail loudly, not silently degrade");
-        result.Error.Should().Contain(e => e.Code == "SD0300",
-            because: $"the documented FNA profile-policy error is SD0300; got: {DescribeErrors(result)}");
-        result.Error.First(e => e.Code == "SD0300").Message.Should().Contain("Shader Model 2–3",
-            because: "the diagnostic must tell the user what the FNA target supports (SM1 is " +
+        result.IsFailure.ShouldBeTrue("a literal SM4+ profile under the FNA target must fail loudly, not silently degrade");
+        result.Error.ShouldContain(e => e.Code == "SD0300", $"the documented FNA profile-policy error is SD0300; got: {DescribeErrors(result)}");
+        result.Error.First(e => e.Code == "SD0300").Message.ShouldContain("Shader Model 2–3", Case.Sensitive, "the diagnostic must tell the user what the FNA target supports (SM1 is " +
                      "rejected too — vkd3d 1.17 SM1 gaps; never validated)");
     }
 
@@ -375,12 +354,9 @@ public sealed class FnaCompileFixtureTests
 
         var result = await CompileFnaSourceAsync(source, sourcePath: null, cts.Token);
 
-        result.IsFailure.Should().BeTrue(
-            because: "a literal ps_4_0_level_9_1 profile is above MojoShader's SM3 ceiling");
-        result.Error.Should().Contain(e => e.Code == "SD0300",
-            because: $"the documented FNA profile-policy error is SD0300; got: {DescribeErrors(result)}");
-        result.Error.First(e => e.Code == "SD0300").Message.Should().Contain("ps_4_0_level_9_1",
-            because: "the diagnostic must name the offending profile as written");
+        result.IsFailure.ShouldBeTrue("a literal ps_4_0_level_9_1 profile is above MojoShader's SM3 ceiling");
+        result.Error.ShouldContain(e => e.Code == "SD0300", $"the documented FNA profile-policy error is SD0300; got: {DescribeErrors(result)}");
+        result.Error.First(e => e.Code == "SD0300").Message.ShouldContain("ps_4_0_level_9_1", Case.Sensitive, "the diagnostic must name the offending profile as written");
     }
 
     [FnaFact]
@@ -409,16 +385,13 @@ public sealed class FnaCompileFixtureTests
 
         var result = await CompileFnaSourceAsync(source, sourcePath: null, cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
-            because: $"a duplicated render-state key must compile (last wins, fxc semantics); " +
+        result.IsSuccess.ShouldBeTrue($"a duplicated render-state key must compile (last wins, fxc semantics); " +
                      $"errors: {DescribeErrors(result)}");
 
         Fx2ParsedPass pass = Fx2BinaryValidator.Parse(result.Value.Data).Techniques[0].Passes[0];
         var cullStates = pass.States.Where(s => s.Operation == 8).ToList();
-        cullStates.Should().HaveCount(1,
-            because: "the duplicated CullMode must collapse to one state record");
-        cullStates[0].DwordValue.Should().Be(1u,
-            because: "the LAST assignment (NONE = D3DCULL_NONE = 1) wins, not CW (2)");
+        cullStates.Count().ShouldBe(1, customMessage: "the duplicated CullMode must collapse to one state record");
+        cullStates[0].DwordValue.ShouldBe(1u, customMessage: "the LAST assignment (NONE = D3DCULL_NONE = 1) wins, not CW (2)");
     }
 
     // DeferredSprite.fx and ForwardLighting.fx hit the documented vkd3d 1.17 construct
@@ -441,13 +414,10 @@ public sealed class FnaCompileFixtureTests
 
         var result = await CompileFnaFileAsync(TestHelpers.FixturePath(fx), cts.Token);
 
-        result.IsFailure.Should().BeTrue(
-            because: $"'{fx}' uses an int-typed ternary, a known vkd3d 1.17 SM ≤ 3 gap");
-        result.Error.Should().NotBeEmpty(because: "the failure must surface diagnostics");
-        result.Error.Should().Contain(e => Path.GetFileName(e.File) == fx,
-            because: "the diagnostic must name the offending source file");
-        result.Error.Should().OnlyContain(e => !string.IsNullOrWhiteSpace(e.Message),
-            because: "every surfaced error must carry a message, not be swallowed");
+        result.IsFailure.ShouldBeTrue($"'{fx}' uses an int-typed ternary, a known vkd3d 1.17 SM ≤ 3 gap");
+        result.Error.ShouldNotBeEmpty("the failure must surface diagnostics");
+        result.Error.ShouldContain(e => Path.GetFileName(e.File) == fx, "the diagnostic must name the offending source file");
+        result.Error.ShouldAllBe(e => !string.IsNullOrWhiteSpace(e.Message), customMessage: "every surfaced error must carry a message, not be swallowed");
     }
 
     [FnaFact]
@@ -477,9 +447,8 @@ public sealed class FnaCompileFixtureTests
 
         var result = await CompileFnaSourceAsync(sm4Source, sourcePath: null, cts.Token);
 
-        result.IsFailure.Should().BeTrue(
-            because: "SM4-style source must fail loudly under the FNA target, never silently degrade");
-        result.Error.Should().NotBeEmpty(because: "the failure must carry diagnostics");
+        result.IsFailure.ShouldBeTrue("SM4-style source must fail loudly under the FNA target, never silently degrade");
+        result.Error.ShouldNotBeEmpty("the failure must carry diagnostics");
     }
 
     // -------------------------------------------------------------------------
@@ -495,15 +464,14 @@ public sealed class FnaCompileFixtureTests
         // TintShader.fx has a float4 uniform (TintColor) and a texture+sampler pair —
         // both CTAB constant kinds (FLOAT4 and SAMPLER register sets).
         var result = await CompileFnaFileAsync(TestHelpers.FixturePath("TintShader.fx"), cts.Token);
-        result.IsSuccess.Should().BeTrue(because: $"errors: {DescribeErrors(result)}");
+        result.IsSuccess.ShouldBeTrue($"errors: {DescribeErrors(result)}");
 
         Fx2ParsedEffect effect = Fx2BinaryValidator.Parse(result.Value.Data);
 
         var parameterNames = effect.Parameters.Select(p => p.Name).ToList();
         foreach (Fx2ParsedShader shader in effect.Shaders)
         {
-            shader.CtabConstantNames.Should().BeSubsetOf(parameterNames,
-                because: "MojoShader binds every CTAB constant to an effect parameter by exact " +
+            shader.CtabConstantNames.ShouldBeSubsetOf(parameterNames, customMessage: "MojoShader binds every CTAB constant to an effect parameter by exact " +
                          "strcmp name match — a miss is release-mode memory corruption in FNA");
         }
     }
@@ -549,23 +517,22 @@ public sealed class FnaCompileFixtureTests
             """;
 
         var result = await CompileFnaSourceAsync(source, sourcePath: null, cts.Token);
-        result.IsSuccess.Should().BeTrue(because: $"errors: {DescribeErrors(result)}");
+        result.IsSuccess.ShouldBeTrue($"errors: {DescribeErrors(result)}");
 
         Fx2ParsedEffect effect = Fx2BinaryValidator.Parse(result.Value.Data);
 
         // Pass render state: DepthBias = -0.5 must serialize the float bits of -0.5,
         // not +0.5 (the silently-wrong pre-fix output).
         Fx2ParsedState depthBias = effect.Techniques.Single().Passes.Single().States
-            .Should().ContainSingle(s => s.Operation == RsDepthBiasOp).Subject;
-        depthBias.DwordValue.Should().Be(BitConverter.SingleToUInt32Bits(-0.5f));
-        depthBias.DwordValue.Should().NotBe(BitConverter.SingleToUInt32Bits(0.5f));
+            .Where(s => s.Operation == RsDepthBiasOp).ShouldHaveSingleItem();
+        depthBias.DwordValue.ShouldBe(BitConverter.SingleToUInt32Bits(-0.5f));
+        depthBias.DwordValue.ShouldNotBe(BitConverter.SingleToUInt32Bits(0.5f));
 
         // Sampler state: MipMapLodBias = -2 must serialize the float bits of -2.
         var samplerStates = effect.Parameters
             .SelectMany(p => p.SamplerStates)
             .Where(s => s.Operation == OpMipMapLodBiasOp)
             .ToList();
-        samplerStates.Should().ContainSingle()
-            .Which.DwordValue.Should().Be(BitConverter.SingleToUInt32Bits(-2.0f));
+        samplerStates.ShouldHaveSingleItem().DwordValue.ShouldBe(BitConverter.SingleToUInt32Bits(-2.0f));
     }
 }

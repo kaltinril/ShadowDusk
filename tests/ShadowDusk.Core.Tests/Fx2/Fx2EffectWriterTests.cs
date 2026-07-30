@@ -2,7 +2,7 @@
 
 using System.IO;
 using System.Text;
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.Core.Tests.Fx2;
@@ -258,16 +258,15 @@ public sealed class Fx2EffectWriterTests
     private static byte[] WriteOk(Fx2EffectDesc desc)
     {
         var result = new Fx2EffectWriter().Write(desc);
-        result.IsSuccess.Should().BeTrue(
-            because: "the desc is valid{0}", result.IsFailure ? $" but failed: {result.Error.Message}" : "");
+        result.IsSuccess.ShouldBeTrue(string.Format("the desc is valid{0}", result.IsFailure ? $" but failed: {result.Error.Message}" : ""));
         return result.Value;
     }
 
     private static ShaderError WriteFails(Fx2EffectDesc desc)
     {
         var result = new Fx2EffectWriter().Write(desc);
-        result.IsFailure.Should().BeTrue(because: "the desc violates an fx_2_0 constraint");
-        result.Error.Code.Should().Be("SD0302");
+        result.IsFailure.ShouldBeTrue("the desc violates an fx_2_0 constraint");
+        result.Error.Code.ShouldBe("SD0302");
         return result.Error;
     }
 
@@ -282,34 +281,33 @@ public sealed class Fx2EffectWriterTests
 
         var effect = Fx2BinaryValidator.Parse(bytes);
 
-        effect.Parameters.Should().HaveCount(2);
-        effect.Parameters[0].Name.Should().Be("t");
-        effect.Parameters[0].Class.Should().Be(4);
-        effect.Parameters[0].Type.Should().Be(5);
-        effect.Parameters[1].Name.Should().Be("s0");
-        effect.Parameters[1].Class.Should().Be(4);
-        effect.Parameters[1].Type.Should().Be(12);
+        effect.Parameters.Count().ShouldBe(2);
+        effect.Parameters[0].Name.ShouldBe("t");
+        effect.Parameters[0].Class.ShouldBe(4);
+        effect.Parameters[0].Type.ShouldBe(5);
+        effect.Parameters[1].Name.ShouldBe("s0");
+        effect.Parameters[1].Class.ShouldBe(4);
+        effect.Parameters[1].Type.ShouldBe(12);
 
         var samplerStates = effect.Parameters[1].SamplerStates;
-        samplerStates.Should().HaveCount(2);
-        samplerStates.Should().ContainSingle(s => s.Operation == 164)
-            .Which.ObjectIndex.Should().NotBeNull();
-        samplerStates.Should().ContainSingle(s => s.Operation == 171)
-            .Which.DwordValue.Should().Be(2);
+        samplerStates.Count().ShouldBe(2);
+        samplerStates.Where(s => s.Operation == 164).ShouldHaveSingleItem().ObjectIndex.ShouldNotBeNull();
+        samplerStates.Where(s => s.Operation == 171).ShouldHaveSingleItem().DwordValue.ShouldBe((uint?)(2));
 
-        effect.SamplerTextureMap.Should().HaveCount(1).And.ContainKey("s0").WhoseValue.Should().Be("t");
+        effect.SamplerTextureMap.Count().ShouldBe(1);
+        effect.SamplerTextureMap["s0"].ShouldBe("t");
 
-        var technique = effect.Techniques.Should().ContainSingle().Subject;
-        technique.Name.Should().Be("T");
-        var pass = technique.Passes.Should().ContainSingle().Subject;
-        pass.Name.Should().Be("P");
-        var state = pass.States.Should().ContainSingle().Subject;
-        state.Operation.Should().Be(147);
+        var technique = effect.Techniques.ShouldHaveSingleItem();
+        technique.Name.ShouldBe("T");
+        var pass = technique.Passes.ShouldHaveSingleItem();
+        pass.Name.ShouldBe("P");
+        var state = pass.States.ShouldHaveSingleItem();
+        state.Operation.ShouldBe(147);
 
-        var shader = effect.Shaders.Should().ContainSingle().Subject;
-        shader.Stage.Should().Be(ShaderStage.Pixel);
-        shader.VersionToken.Should().Be(0xFFFF0200);
-        shader.CtabConstantNames.Should().Equal("s0");
+        var shader = effect.Shaders.ShouldHaveSingleItem();
+        shader.Stage.ShouldBe(ShaderStage.Pixel);
+        shader.VersionToken.ShouldBe(0xFFFF0200);
+        shader.CtabConstantNames.ShouldBe(new[] { "s0" });
     }
 
     [Fact]
@@ -320,7 +318,7 @@ public sealed class Fx2EffectWriterTests
         var first = WriteOk(desc);
         var second = WriteOk(desc);
 
-        second.Should().Equal(first); // deterministic output is a core design constraint
+        second.ShouldBe(first); // deterministic output is a core design constraint
     }
 
     [Fact]
@@ -332,8 +330,8 @@ public sealed class Fx2EffectWriterTests
 
         var pass = Fx2BinaryValidator.Parse(bytes).Techniques[0].Passes[0];
 
-        pass.States.Should().NotContain(s => s.Operation == 146);
-        pass.States.Should().ContainSingle(s => s.Operation == 147);
+        pass.States.ShouldNotContain(s => s.Operation == 146);
+        pass.States.Where(s => s.Operation == 147).ShouldHaveSingleItem();
     }
 
     [Fact]
@@ -357,8 +355,7 @@ public sealed class Fx2EffectWriterTests
 
         ShaderError error = WriteFails(desc);
 
-        error.Message.Should().Contain("version token",
-            because: "the diagnostic must say the blob's actual kind contradicts its stage tag");
+        error.Message.ShouldContain("version token", Case.Sensitive, "the diagnostic must say the blob's actual kind contradicts its stage tag");
     }
 
     [Fact]
@@ -385,13 +382,13 @@ public sealed class Fx2EffectWriterTests
 
         var effect = Fx2BinaryValidator.Parse(WriteOk(desc));
 
-        var p = effect.Parameters.Should().ContainSingle().Subject;
-        p.Name.Should().Be("m");
-        p.Class.Should().Be(2, because: "MATRIX_ROWS class must survive the round trip");
-        p.Type.Should().Be(3);
-        p.Rows.Should().Be(4, because: "the validator reads rows from typedef dword6 (the MojoShader order)");
-        p.Columns.Should().Be(4, because: "the validator reads columns from typedef dword5");
-        effect.Shaders.Should().ContainSingle().Which.CtabConstantNames.Should().Equal("m");
+        var p = effect.Parameters.ShouldHaveSingleItem();
+        p.Name.ShouldBe("m");
+        p.Class.ShouldBe(2, customMessage: "MATRIX_ROWS class must survive the round trip");
+        p.Type.ShouldBe(3);
+        p.Rows.ShouldBe(4, customMessage: "the validator reads rows from typedef dword6 (the MojoShader order)");
+        p.Columns.ShouldBe(4, customMessage: "the validator reads columns from typedef dword5");
+        effect.Shaders.ShouldHaveSingleItem().CtabConstantNames.ShouldBe(new[] { "m" });
     }
 
     // -------------------------------------------------------------------------
@@ -420,10 +417,10 @@ public sealed class Fx2EffectWriterTests
 
         var pass = Fx2BinaryValidator.Parse(WriteOk(desc)).Techniques[0].Passes[0];
 
-        pass.States.Should().ContainSingle(s => s.Operation == 13).Which.DwordValue.Should().Be(1);
-        pass.States.Should().ContainSingle(s => s.Operation == 6).Which.DwordValue.Should().Be(5);
-        pass.States.Should().ContainSingle(s => s.Operation == 98).Which.DwordValue.Should().Be(depthBiasBits);
-        pass.States.Should().ContainSingle(s => s.Operation == 147);
+        pass.States.Where(s => s.Operation == 13).ShouldHaveSingleItem().DwordValue.ShouldBe((uint?)(1));
+        pass.States.Where(s => s.Operation == 6).ShouldHaveSingleItem().DwordValue.ShouldBe((uint?)(5));
+        pass.States.Where(s => s.Operation == 98).ShouldHaveSingleItem().DwordValue.ShouldBe(depthBiasBits);
+        pass.States.Where(s => s.Operation == 147).ShouldHaveSingleItem();
     }
 
     // -------------------------------------------------------------------------
@@ -435,7 +432,7 @@ public sealed class Fx2EffectWriterTests
     {
         var error = WriteFails(TexturedDesc() with { Techniques = [] });
 
-        error.Message.Should().ContainEquivalentOf("technique");
+        error.Message.ShouldContain("technique", Shouldly.Case.Insensitive);
     }
 
     [Fact]
@@ -455,7 +452,7 @@ public sealed class Fx2EffectWriterTests
 
         var error = WriteFails(desc);
 
-        error.Message.Should().ContainEquivalentOf("matrix");
+        error.Message.ShouldContain("matrix", Shouldly.Case.Insensitive);
     }
 
     [Fact]
@@ -473,7 +470,7 @@ public sealed class Fx2EffectWriterTests
 
         var error = WriteFails(desc);
 
-        error.Message.Should().ContainEquivalentOf("168");
+        error.Message.ShouldContain("168", Shouldly.Case.Insensitive);
     }
 
     [Fact]
@@ -490,7 +487,7 @@ public sealed class Fx2EffectWriterTests
 
         var error = WriteFails(desc);
 
-        error.Message.Should().ContainEquivalentOf("4");
+        error.Message.ShouldContain("4", Shouldly.Case.Insensitive);
     }
 
     [Fact]
@@ -508,8 +505,8 @@ public sealed class Fx2EffectWriterTests
 
         var error = WriteFails(desc);
 
-        error.Message.Should().ContainEquivalentOf("s0");
-        error.Message.Should().ContainEquivalentOf("t");
+        error.Message.ShouldContain("s0", Shouldly.Case.Insensitive);
+        error.Message.ShouldContain("t", Shouldly.Case.Insensitive);
     }
 
     [Fact]
@@ -522,7 +519,7 @@ public sealed class Fx2EffectWriterTests
 
         var error = WriteFails(desc);
 
-        error.Message.Should().ContainEquivalentOf("references shader");
+        error.Message.ShouldContain("references shader", Shouldly.Case.Insensitive);
     }
 
     [Fact]
@@ -535,7 +532,7 @@ public sealed class Fx2EffectWriterTests
 
         var error = WriteFails(desc);
 
-        error.Message.Should().ContainEquivalentOf("vertex");
+        error.Message.ShouldContain("vertex", Shouldly.Case.Insensitive);
     }
 
     [Fact]
@@ -553,7 +550,7 @@ public sealed class Fx2EffectWriterTests
 
         var error = WriteFails(desc);
 
-        error.Message.Should().ContainEquivalentOf("t");
+        error.Message.ShouldContain("t", Shouldly.Case.Insensitive);
     }
 
     [Fact]
@@ -575,7 +572,7 @@ public sealed class Fx2EffectWriterTests
 
         var error = WriteFails(desc);
 
-        error.Message.Should().ContainEquivalentOf("sampler");
+        error.Message.ShouldContain("sampler", Shouldly.Case.Insensitive);
     }
 
     // -------------------------------------------------------------------------
@@ -626,11 +623,9 @@ public sealed class Fx2EffectWriterTests
         var bytes = WriteOk(ScalarOnlyDesc(type, defaultValue));
 
         // Sanity: the file must still satisfy every MojoShader parse rule.
-        Fx2BinaryValidator.Parse(bytes).Parameters.Should().ContainSingle()
-            .Which.Name.Should().Be("p");
+        Fx2BinaryValidator.Parse(bytes).Parameters.ShouldHaveSingleItem().Name.ShouldBe("p");
 
-        FirstParameterValueDword(bytes).Should().Be(expectedDword,
-            because: $"a type-{type} scalar default of {defaultValue} must be stored as " +
+        FirstParameterValueDword(bytes).ShouldBe(expectedDword, customMessage: $"a type-{type} scalar default of {defaultValue} must be stored as " +
                      $"dword 0x{expectedDword:X8} (type-aware encoding, not always float bits)");
     }
 
@@ -654,8 +649,8 @@ public sealed class Fx2EffectWriterTests
 
         var error = WriteFails(desc);
 
-        error.Message.Should().ContainEquivalentOf("negative");
-        error.Message.Should().Contain("f");
+        error.Message.ShouldContain("negative", Shouldly.Case.Insensitive);
+        error.Message.ShouldContain("f", Case.Sensitive);
     }
 
     [Fact]
@@ -675,8 +670,8 @@ public sealed class Fx2EffectWriterTests
 
         var error = WriteFails(desc);
 
-        error.Message.Should().ContainEquivalentOf("implausibly large");
-        error.Message.Should().Contain("huge");
+        error.Message.ShouldContain("implausibly large", Shouldly.Case.Insensitive);
+        error.Message.ShouldContain("huge", Case.Sensitive);
     }
 
     [Fact]
@@ -696,8 +691,8 @@ public sealed class Fx2EffectWriterTests
 
         var error = WriteFails(desc);
 
-        error.Message.Should().ContainEquivalentOf("non-ASCII");
-        error.Message.Should().Contain("Tönung");
+        error.Message.ShouldContain("non-ASCII", Shouldly.Case.Insensitive);
+        error.Message.ShouldContain("Tönung", Case.Sensitive);
     }
 
     [Fact]
@@ -718,7 +713,7 @@ public sealed class Fx2EffectWriterTests
 
         var error = WriteFails(desc);
 
-        error.Message.Should().ContainEquivalentOf("non-ASCII");
+        error.Message.ShouldContain("non-ASCII", Shouldly.Case.Insensitive);
     }
 
     [Fact]
@@ -731,7 +726,7 @@ public sealed class Fx2EffectWriterTests
 
         var error = WriteFails(desc);
 
-        error.Message.Should().ContainEquivalentOf("non-ASCII");
+        error.Message.ShouldContain("non-ASCII", Shouldly.Case.Insensitive);
     }
 
     [Fact]
@@ -744,7 +739,7 @@ public sealed class Fx2EffectWriterTests
 
         var error = WriteFails(desc);
 
-        error.Message.Should().ContainEquivalentOf("non-ASCII");
+        error.Message.ShouldContain("non-ASCII", Shouldly.Case.Insensitive);
     }
 
     [Fact]
@@ -763,8 +758,8 @@ public sealed class Fx2EffectWriterTests
 
         var error = WriteFails(desc);
 
-        error.Message.Should().Contain("Ghost");
-        error.Message.Should().ContainEquivalentOf("no matching effect");
+        error.Message.ShouldContain("Ghost", Case.Sensitive);
+        error.Message.ShouldContain("no matching effect", Shouldly.Case.Insensitive);
     }
 
     [Fact]
@@ -783,7 +778,7 @@ public sealed class Fx2EffectWriterTests
 
         var error = WriteFails(desc);
 
-        error.Message.Should().Contain("CTAB");
+        error.Message.ShouldContain("CTAB", Case.Sensitive);
     }
 
     // -------------------------------------------------------------------------
@@ -815,29 +810,28 @@ public sealed class Fx2EffectWriterTests
 
         var effect = Fx2BinaryValidator.Parse(WriteOk(desc));
 
-        effect.Techniques.Select(t => t.Name).Should().Equal("First", "Second");
-        effect.Techniques[0].Passes.Select(p => p.Name).Should().Equal("A");
-        effect.Techniques[1].Passes.Select(p => p.Name).Should().Equal("B", "C");
+        effect.Techniques.Select(t => t.Name).ShouldBe(new[] {"First", "Second"});
+        effect.Techniques[0].Passes.Select(p => p.Name).ShouldBe(new[] { "A" });
+        effect.Techniques[1].Passes.Select(p => p.Name).ShouldBe(new[] {"B", "C"});
 
         Fx2ParsedPass a = effect.Techniques[0].Passes[0];
-        a.States.Select(s => s.Operation).Should().BeEquivalentTo(new[] { 13, 147 });
-        a.States.Should().ContainSingle(s => s.Operation == 13).Which.DwordValue.Should().Be(1);
+        a.States.Select(s => s.Operation).ShouldBe(new[] { 13, 147 }, ignoreOrder: true);
+        a.States.Where(s => s.Operation == 13).ShouldHaveSingleItem().DwordValue.ShouldBe((uint?)(1));
 
         Fx2ParsedPass b = effect.Techniques[1].Passes[0];
-        b.States.Select(s => s.Operation).Should().BeEquivalentTo(new[] { 6, 147 });
-        b.States.Should().ContainSingle(s => s.Operation == 6).Which.DwordValue.Should().Be(5);
+        b.States.Select(s => s.Operation).ShouldBe(new[] { 6, 147 }, ignoreOrder: true);
+        b.States.Where(s => s.Operation == 6).ShouldHaveSingleItem().DwordValue.ShouldBe((uint?)(5));
 
         Fx2ParsedPass c = effect.Techniques[1].Passes[1];
-        c.States.Select(s => s.Operation).Should().BeEquivalentTo(new[] { 8, 147 });
-        c.States.Should().ContainSingle(s => s.Operation == 8).Which.DwordValue.Should().Be(1);
+        c.States.Select(s => s.Operation).ShouldBe(new[] { 8, 147 }, ignoreOrder: true);
+        c.States.Where(s => s.Operation == 8).ShouldHaveSingleItem().DwordValue.ShouldBe((uint?)(1));
 
         // All three passes bind shader index 0, but each pass-stage reference owns a
         // distinct object with its own embedded copy of the bytecode.
-        effect.Shaders.Should().HaveCount(3,
-            because: "one shader object is embedded per pass-stage reference, never shared");
-        effect.Shaders.Should().OnlyContain(s =>
+        effect.Shaders.Count().ShouldBe(3, customMessage: "one shader object is embedded per pass-stage reference, never shared");
+        effect.Shaders.ShouldAllBe(s =>
             s.Stage == ShaderStage.Pixel && s.VersionToken == Fx2SyntheticShaders.Ps20VersionToken);
         foreach (Fx2ParsedShader shader in effect.Shaders)
-            shader.CtabConstantNames.Should().Equal("Tint");
+            shader.CtabConstantNames.ShouldBe(new[] { "Tint" });
     }
 }

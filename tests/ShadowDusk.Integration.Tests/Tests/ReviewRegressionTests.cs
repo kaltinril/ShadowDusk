@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using Xunit;
@@ -79,7 +79,7 @@ public sealed class ReviewRegressionTests
             SourceFileName = "TwoSamplersOneTexture.fx",
         }, cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
+        result.IsSuccess.ShouldBeTrue(
             result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
 
         var reader = MgfxBlobReader.Parse(result.Value.Data);
@@ -89,11 +89,10 @@ public sealed class ReviewRegressionTests
         int declared = System.Text.RegularExpressions.Regex
             .Matches(glsl, @"^\s*uniform\s+sampler\w+\s+\w+\s*;", System.Text.RegularExpressions.RegexOptions.Multiline)
             .Count;
-        declared.Should().Be(2, "both sampler states are used, so SPIRV-Cross emits two combined samplers");
+        declared.ShouldBe(2, customMessage: "both sampler states are used, so SPIRV-Cross emits two combined samplers");
 
         var names = reader.Samplers.Where(s => s.ShaderIndex == ps.Index).Select(s => s.Name).ToList();
-        names.Should().BeEquivalentTo(new[] { "ps_s0", "ps_s1" },
-            "every sampler uniform the GLSL declares must be named by a record, or it never gets a texture unit");
+        names.ShouldBe(new[] { "ps_s0", "ps_s1" }, ignoreOrder: true, customMessage: "every sampler uniform the GLSL declares must be named by a record, or it never gets a texture unit");
     }
 
     [Theory]
@@ -115,7 +114,7 @@ public sealed class ReviewRegressionTests
             SourceFileName = "SharedSampler.fx",
         }, cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
+        result.IsSuccess.ShouldBeTrue(
             result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
 
         var reader = MgfxBlobReader.Parse(result.Value.Data);
@@ -123,10 +122,9 @@ public sealed class ReviewRegressionTests
             .Where(s => s.ShaderIndex == reader.Shaders.Single(sh => !sh.IsVertex).Index)
             .ToList();
 
-        pixelSamplers.Should().HaveCount(2,
-            "two textures are sampled, so two texture slots must be bindable even though they share one SamplerState");
-        pixelSamplers.Select(s => s.TextureSlot).Should().BeEquivalentTo(new byte[] { 0, 1 });
-        pixelSamplers.Select(s => s.Parameter).Should().OnlyHaveUniqueItems(
+        pixelSamplers.Count().ShouldBe(2, customMessage: "two textures are sampled, so two texture slots must be bindable even though they share one SamplerState");
+        pixelSamplers.Select(s => s.TextureSlot).ShouldBe(new byte[] { 0, 1 }, ignoreOrder: true);
+        pixelSamplers.Select(s => s.Parameter).ShouldBeUnique(
             "each record must point at its OWN texture parameter, not both at the first");
     }
 
@@ -171,7 +169,7 @@ public sealed class ReviewRegressionTests
             SourceFileName = "SuffixedSamplerState.fx",
         }, cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
+        result.IsSuccess.ShouldBeTrue(
             result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
     }
 
@@ -210,7 +208,7 @@ public sealed class ReviewRegressionTests
             SourceFileName = "SuffixedRenderState.fx",
         }, cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
+        result.IsSuccess.ShouldBeTrue(
             result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
     }
 
@@ -247,18 +245,17 @@ public sealed class ReviewRegressionTests
             SourceFileName = "SparseSamplerRegister.fx",
         }, cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
+        result.IsSuccess.ShouldBeTrue(
             result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
 
         var reader = MgfxBlobReader.Parse(result.Value.Data);
         var ps = reader.Shaders.Single(s => !s.IsVertex);
         var records = reader.Samplers.Where(s => s.ShaderIndex == ps.Index).ToList();
 
-        records.Should().ContainSingle("one texture through one sampler is exactly one pair");
-        records[0].Name.Should().Be("ps_s0",
-            "the record must name the uniform the GLSL declares, which is numbered from 0 " +
+        records.ShouldHaveSingleItem("one texture through one sampler is exactly one pair");
+        records[0].Name.ShouldBe("ps_s0", customMessage: "the record must name the uniform the GLSL declares, which is numbered from 0 " +
             "regardless of the s3 register");
-        records[0].TextureSlot.Should().Be(0);
+        records[0].TextureSlot.ShouldBe((byte)(0));
     }
 
     [Fact]
@@ -279,23 +276,23 @@ public sealed class ReviewRegressionTests
             SourceFileName = "SharedSamplerGl.fx",
         }, cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
+        result.IsSuccess.ShouldBeTrue(
             result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
 
         var reader = MgfxBlobReader.Parse(result.Value.Data);
         var ps = reader.Shaders.Single(s => !s.IsVertex);
         var records = reader.Samplers.Where(s => s.ShaderIndex == ps.Index).ToList();
 
-        records.Select(s => s.Name).Should().Equal("ps_s0", "ps_s1");
+        records.Select(s => s.Name).ShouldBe(new[] {"ps_s0", "ps_s1"});
         // Each pair needs its own GL texture unit even though they share one SamplerState.
-        records.Select(s => s.TextureSlot).Should().Equal(new byte[] { 0, 1 });
-        records.Select(s => s.Parameter).Should().OnlyHaveUniqueItems(
+        records.Select(s => s.TextureSlot).ShouldBe(new byte[] { 0, 1 });
+        records.Select(s => s.Parameter).ShouldBeUnique(
             "each record must point at its OWN texture parameter, not both at the first");
 
         // DiffuseMap is sampled first, so it is the first-declared combined sampler.
         string ParamName(byte index) => reader.Parameters[index].Name;
-        ParamName(records[0].Parameter).Should().Be("DiffuseMap");
-        ParamName(records[1].Parameter).Should().Be("Lightmap");
+        ParamName(records[0].Parameter).ShouldBe("DiffuseMap");
+        ParamName(records[1].Parameter).ShouldBe("Lightmap");
     }
 
     [Theory]
@@ -329,7 +326,7 @@ public sealed class ReviewRegressionTests
             SourceFileName = "ContiguousSamplerRegister.fx",
         }, cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
+        result.IsSuccess.ShouldBeTrue(
             result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
     }
 
@@ -383,7 +380,7 @@ public sealed class ReviewRegressionTests
             SourceFileName = "ReverseUseOrder.fx",
         }, cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
+        result.IsSuccess.ShouldBeTrue(
             result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
 
         var reader = MgfxBlobReader.Parse(result.Value.Data);
@@ -391,19 +388,17 @@ public sealed class ReviewRegressionTests
         var records = reader.Samplers.Where(s => s.ShaderIndex == ps.Index).ToList();
         string glsl = System.Text.Encoding.UTF8.GetString(ps.Bytecode);
 
-        records.Select(s => s.Name).Should().Equal("ps_s0", "ps_s1");
+        records.Select(s => s.Name).ShouldBe(new[] {"ps_s0", "ps_s1"});
 
         // The emitted GLSL is the authority: whichever kind it declares first is what ps_s0 IS.
-        glsl.Should().MatchRegex(@"uniform\s+samplerCube\s+ps_s0\s*;",
-            "EnvMap is sampled first, so SPIRV-Cross declares its combined sampler first");
-        glsl.Should().MatchRegex(@"uniform\s+sampler2D\s+ps_s1\s*;");
+        glsl.ShouldMatch(@"uniform\s+samplerCube\s+ps_s0\s*;", customMessage: "EnvMap is sampled first, so SPIRV-Cross declares its combined sampler first");
+        glsl.ShouldMatch(@"uniform\s+sampler2D\s+ps_s1\s*;");
 
-        records[0].Type.Should().Be(SamplerTypeCube,
-            "ps_s0 is the cube pair, so its sampler-type byte must say cube or the texture will not bind");
-        records[1].Type.Should().Be(SamplerType2D);
+        records[0].Type.ShouldBe(SamplerTypeCube, customMessage: "ps_s0 is the cube pair, so its sampler-type byte must say cube or the texture will not bind");
+        records[1].Type.ShouldBe(SamplerType2D);
 
-        reader.Parameters[records[0].Parameter].Name.Should().Be("EnvMap");
-        reader.Parameters[records[1].Parameter].Name.Should().Be("DiffuseMap");
+        reader.Parameters[records[0].Parameter].Name.ShouldBe("EnvMap");
+        reader.Parameters[records[1].Parameter].Name.ShouldBe("DiffuseMap");
     }
 
     /// <summary>
@@ -440,24 +435,24 @@ public sealed class ReviewRegressionTests
             SourceFileName = "OneTextureTwoSamplers.fx",
         }, cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
+        result.IsSuccess.ShouldBeTrue(
             result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
 
         var reader = MgfxBlobReader.Parse(result.Value.Data);
         var ps = reader.Shaders.Single(s => !s.IsVertex);
         var records = reader.Samplers.Where(s => s.ShaderIndex == ps.Index).ToList();
 
-        records.Select(s => s.Name).Should().Equal("ps_s0", "ps_s1");
+        records.Select(s => s.Name).ShouldBe(new[] {"ps_s0", "ps_s1"});
         // One texture bound to two units, so each pair can carry its own sampler state.
-        records.Select(s => s.TextureSlot).Should().Equal(new byte[] { 0, 1 });
-        records.Select(s => reader.Parameters[s.Parameter].Name).Should()
-            .Equal("CurrentTexture", "CurrentTexture");
+        records.Select(s => s.TextureSlot).ShouldBe(new byte[] { 0, 1 });
+        records.Select(s => reader.Parameters[s.Parameter].Name)
+            .ShouldBe(new[] {"CurrentTexture", "CurrentTexture"});
 
         // MonoGame TextureFilter: Point = 1, Linear = 0. PointSampler is sampled first.
-        records[0].State.Should().NotBeNull();
-        records[1].State.Should().NotBeNull();
-        records[0].State!.Filter.Should().Be(1, "ps_s0 is the PointSampler pair (sampled first)");
-        records[1].State!.Filter.Should().Be(0, "ps_s1 is the LinearSampler pair");
+        records[0].State.ShouldNotBeNull();
+        records[1].State.ShouldNotBeNull();
+        records[0].State!.Filter.ShouldBe((byte)(1), customMessage: "ps_s0 is the PointSampler pair (sampled first)");
+        records[1].State!.Filter.ShouldBe((byte)(0), customMessage: "ps_s1 is the LinearSampler pair");
     }
 
     /// <summary>
@@ -496,17 +491,16 @@ public sealed class ReviewRegressionTests
             SourceFileName = "MixedSamplerDeclarations.fx",
         }, cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
+        result.IsSuccess.ShouldBeTrue(
             result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
 
         var reader = MgfxBlobReader.Parse(result.Value.Data);
         var ps = reader.Shaders.Single(s => !s.IsVertex);
         var records = reader.Samplers.Where(s => s.ShaderIndex == ps.Index).ToList();
 
-        records.Select(s => s.Name).Should().Equal("ps_s0", "ps_s1");
-        reader.Parameters[records[0].Parameter].Name.Should().Be("ModernTex",
-            "ModernTex is sampled first, so its combined sampler is declared first");
-        reader.Parameters[records[1].Parameter].Name.Should().Be("LegacyTex");
+        records.Select(s => s.Name).ShouldBe(new[] {"ps_s0", "ps_s1"});
+        reader.Parameters[records[0].Parameter].Name.ShouldBe("ModernTex", customMessage: "ModernTex is sampled first, so its combined sampler is declared first");
+        reader.Parameters[records[1].Parameter].Name.ShouldBe("LegacyTex");
     }
 
     /// <summary>
@@ -545,18 +539,18 @@ public sealed class ReviewRegressionTests
             SourceFileName = "SamplingInFunctions.fx",
         }, cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
+        result.IsSuccess.ShouldBeTrue(
             result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
 
         var reader = MgfxBlobReader.Parse(result.Value.Data);
         var ps = reader.Shaders.Single(s => !s.IsVertex);
         var records = reader.Samplers.Where(s => s.ShaderIndex == ps.Index).ToList();
 
-        records.Select(s => s.Name).Should().Equal("ps_s0", "ps_s1");
-        records[0].Type.Should().Be(SamplerTypeCube, "FetchCube is called first");
-        records[1].Type.Should().Be(SamplerType2D);
-        reader.Parameters[records[0].Parameter].Name.Should().Be("TexB");
-        reader.Parameters[records[1].Parameter].Name.Should().Be("TexA");
+        records.Select(s => s.Name).ShouldBe(new[] {"ps_s0", "ps_s1"});
+        records[0].Type.ShouldBe(SamplerTypeCube, customMessage: "FetchCube is called first");
+        records[1].Type.ShouldBe(SamplerType2D);
+        reader.Parameters[records[0].Parameter].Name.ShouldBe("TexB");
+        reader.Parameters[records[1].Parameter].Name.ShouldBe("TexA");
     }
 
     /// <summary>
@@ -604,7 +598,7 @@ public sealed class ReviewRegressionTests
             SourceFileName = "CombinedSamplerOrder.fx",
         }, cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
+        result.IsSuccess.ShouldBeTrue(
             result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
 
         var reader = MgfxBlobReader.Parse(result.Value.Data);
@@ -614,7 +608,7 @@ public sealed class ReviewRegressionTests
 
         // Four distinct (texture, sampler) pairs are sampled. (Equal's params overload would
         // swallow a `because` string as a fifth expected element, so the reason stays a comment.)
-        records.Select(s => s.Name).Should().Equal("ps_s0", "ps_s1", "ps_s2", "ps_s3");
+        records.Select(s => s.Name).ShouldBe(new[] {"ps_s0", "ps_s1", "ps_s2", "ps_s3"});
 
         // The emitted GLSL is the oracle: read the declared kind for each ps_s{k} out of it and
         // require the record's sampler-type byte and texture parameter to agree.
@@ -629,11 +623,10 @@ public sealed class ReviewRegressionTests
         for (int k = 0; k < expected.Length; k++)
         {
             var (glslKind, typeByte, textureName) = expected[k];
-            glsl.Should().MatchRegex($@"uniform\s+{glslKind}\s+ps_s{k}\s*;",
-                $"ps_s{k} must be the {textureName} pair in SPIRV-Cross's declaration order");
-            records[k].Type.Should().Be(typeByte, $"ps_s{k}'s sampler-type byte must match its declaration");
-            reader.Parameters[records[k].Parameter].Name.Should().Be(textureName);
-            records[k].TextureSlot.Should().Be((byte)k, "the record index is the GL texture unit");
+            glsl.ShouldMatch($@"uniform\s+{glslKind}\s+ps_s{k}\s*;", customMessage: $"ps_s{k} must be the {textureName} pair in SPIRV-Cross's declaration order");
+            records[k].Type.ShouldBe(typeByte, customMessage: $"ps_s{k}'s sampler-type byte must match its declaration");
+            reader.Parameters[records[k].Parameter].Name.ShouldBe(textureName);
+            records[k].TextureSlot.ShouldBe((byte)k, customMessage: "the record index is the GL texture unit");
         }
     }
 
@@ -654,17 +647,16 @@ public sealed class ReviewRegressionTests
             SourceFileName = "SharedSamplerDx12.fx",
         }, cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
+        result.IsSuccess.ShouldBeTrue(
             result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
 
         var reader = MgfxBlobReader.Parse(result.Value.Data);
         var ps = reader.Shaders.Single(s => !s.IsVertex);
         var records = reader.Samplers.Where(s => s.ShaderIndex == ps.Index).ToList();
 
-        records.Should().HaveCount(2,
-            "two textures are sampled, so both texture slots must be bindable even though they " +
+        records.Count().ShouldBe(2, customMessage: "two textures are sampled, so both texture slots must be bindable even though they " +
             "share one SamplerState");
-        records.Select(s => s.TextureSlot).Should().Equal((byte)0, (byte)1);
-        records.Select(s => reader.Parameters[s.Parameter].Name).Should().Equal("DiffuseMap", "Lightmap");
+        records.Select(s => s.TextureSlot).ShouldBe(new[] {(byte)0, (byte)1});
+        records.Select(s => reader.Parameters[s.Parameter].Name).ShouldBe(new[] {"DiffuseMap", "Lightmap"});
     }
 }

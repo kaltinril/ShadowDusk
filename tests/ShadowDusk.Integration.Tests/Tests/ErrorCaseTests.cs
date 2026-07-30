@@ -1,7 +1,7 @@
 #nullable enable
 
 using System.Text.RegularExpressions;
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.Integration.Tests.Tests;
@@ -44,15 +44,13 @@ public sealed class ErrorCaseTests
 
         var result = await CompileSourceAsync(source, "OpenGL", cts.Token);
 
-        result.ExitCode.Should().Be(1);
+        result.ExitCode.ShouldBe(1);
         // DXC emits (line,col) diagnostics; the formatter preserves this. Pin the FULL
         // MGCB-parseable shape (`file(line,col[-col]): error CODE: message`) — the
         // drop-in-mgfxc promise (Core Design Constraint 2/5) is the format, not merely
         // that a line/column appears somewhere.
-        result.Stderr.Should().MatchRegex(@"\.fx\(\d+,\d+(-\d+)?\): error [A-Z]+\d+:",
-            because: $"stderr must carry the MGCB-parseable diagnostic form; actual stderr: {result.Stderr}");
-        result.Stderr.Should().NotMatchRegex(@"at \S+\.\S+\(",
-            because: "internal stack traces must not appear in stderr");
+        result.Stderr.ShouldMatch(@"\.fx\(\d+,\d+(-\d+)?\): error [A-Z]+\d+:", customMessage: $"stderr must carry the MGCB-parseable diagnostic form; actual stderr: {result.Stderr}");
+        result.Stderr.ShouldNotMatch(@"at \S+\.\S+\(", customMessage: "internal stack traces must not appear in stderr");
     }
 
     [Fact]
@@ -69,11 +67,9 @@ public sealed class ErrorCaseTests
 
         var result = await CompileSourceAsync(source, "OpenGL", cts.Token);
 
-        result.ExitCode.Should().Be(1);
-        result.Stderr.Should().Contain("UndeclaredVar",
-            because: "the undeclared identifier name must appear in the error message");
-        Regex.IsMatch(result.Stderr, @"\d+").Should().BeTrue(
-            because: "a line number must appear somewhere in the diagnostic");
+        result.ExitCode.ShouldBe(1);
+        result.Stderr.ShouldContain("UndeclaredVar", Case.Sensitive, "the undeclared identifier name must appear in the error message");
+        Regex.IsMatch(result.Stderr, @"\d+").ShouldBeTrue("a line number must appear somewhere in the diagnostic");
     }
 
     [Fact]
@@ -91,15 +87,13 @@ public sealed class ErrorCaseTests
 
         var result = await CompileSourceAsync(source, "OpenGL", cts.Token);
 
-        result.ExitCode.Should().Be(1);
+        result.ExitCode.ShouldBe(1);
         // The source file name (not just the include path) must appear in the diagnostic.
-        result.Stderr.Should().Contain("test_shader.fx",
-            because: "the including file name must be referenced in the error");
+        result.Stderr.ShouldContain("test_shader.fx", Case.Sensitive, "the including file name must be referenced in the error");
         // Pin the diagnostic CODE: a missing include is SD0001 (ShaderError.IncludeNotFound)
         // — the documented contract (docfx guides reference SD0001/SD0002 by name), so a
         // code drift would break consumers matching on it.
-        result.Stderr.Should().Contain("SD0001",
-            because: "a missing include must surface the documented SD0001 diagnostic code");
+        result.Stderr.ShouldContain("SD0001", Case.Sensitive, "a missing include must surface the documented SD0001 diagnostic code");
     }
 
     [Fact]
@@ -110,9 +104,8 @@ public sealed class ErrorCaseTests
         var result = await TestHelpers.CompileFixtureAsync(
             "Minimal.fx", "PS5_NotAReal_Target", ct: cts.Token);
 
-        result.ExitCode.Should().Be(1);
-        result.Stderr.Should().Contain("PS5_NotAReal_Target",
-            because: "the unrecognised profile name must be included in the error");
+        result.ExitCode.ShouldBe(1);
+        result.Stderr.ShouldContain("PS5_NotAReal_Target", Case.Sensitive, "the unrecognised profile name must be included in the error");
     }
 
     [Fact]
@@ -122,11 +115,10 @@ public sealed class ErrorCaseTests
 
         var result = await CompileSourceAsync(string.Empty, "OpenGL", cts.Token);
 
-        result.ExitCode.Should().Be(1);
-        result.Stderr.Should().NotBeNullOrWhiteSpace(because: "empty source must produce a diagnostic message");
+        result.ExitCode.ShouldBe(1);
+        result.Stderr.ShouldNotBeNullOrWhiteSpace("empty source must produce a diagnostic message");
         // The pipeline reports SD0010 "Effect source contains no techniques".
-        result.Stderr.Should().MatchRegex("no techniques|empty source",
-            because: "empty source must produce a human-readable 'no techniques' message");
+        result.Stderr.ShouldMatch("no techniques|empty source", customMessage: "empty source must produce a human-readable 'no techniques' message");
     }
 
     [Fact]
@@ -142,8 +134,7 @@ public sealed class ErrorCaseTests
 
         var result = await CompileSourceAsync(source, "OpenGL", cts.Token);
 
-        result.ExitCode.Should().Be(1);
-        result.Stderr.Should().MatchRegex("no techniques|technique",
-            because: "missing technique must produce a diagnostic referencing techniques");
+        result.ExitCode.ShouldBe(1);
+        result.Stderr.ShouldMatch("no techniques|technique", customMessage: "missing technique must produce a diagnostic referencing techniques");
     }
 }

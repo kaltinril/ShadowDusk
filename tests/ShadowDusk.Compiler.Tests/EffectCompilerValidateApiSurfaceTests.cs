@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using Xunit;
@@ -48,7 +48,7 @@ public sealed class EffectCompilerValidateApiSurfaceTests
 
         ShaderValidationReport report = await compiler.ValidateAsync(ValidFx);
 
-        report.IsValid.Should().BeTrue();
+        report.IsValid.ShouldBeTrue();
     }
 
     [Fact]
@@ -58,6 +58,6 @@ public sealed class EffectCompilerValidateApiSurfaceTests
 
         ShaderValidationReport report = compiler.Validate(ValidFx);
 
-        report.IsValid.Should().BeTrue();
+        report.IsValid.ShouldBeTrue();
     }
 }

@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core;
 using ShadowDusk.HLSL.Dxc;
 using Xunit;
@@ -23,79 +23,85 @@ public sealed class DxcFlagBuilderTests
     // ── OpenGL Vertex ────────────────────────────────────────────────────────
 
     [Fact] public void OpenGL_Vertex_HasSpirvFlag()
-        => Build(PlatformTarget.OpenGL, ShaderStage.Vertex).Should().Contain("-spirv");
+        => Build(PlatformTarget.OpenGL, ShaderStage.Vertex).ShouldContain("-spirv");
 
     [Fact] public void OpenGL_Vertex_HasProfile_vs5_0()
-        => Build(PlatformTarget.OpenGL, ShaderStage.Vertex).Should().Contain("vs_5_0");
+        => Build(PlatformTarget.OpenGL, ShaderStage.Vertex).ShouldContain("vs_5_0");
 
     [Fact] public void OpenGL_Vertex_HasDxLayout()
-        => Build(PlatformTarget.OpenGL, ShaderStage.Vertex).Should().Contain("-fvk-use-dx-layout");
+        => Build(PlatformTarget.OpenGL, ShaderStage.Vertex).ShouldContain("-fvk-use-dx-layout");
 
     [Fact] public void OpenGL_Vertex_HasDxPositionW()
-        => Build(PlatformTarget.OpenGL, ShaderStage.Vertex).Should().Contain("-fvk-use-dx-position-w");
+        => Build(PlatformTarget.OpenGL, ShaderStage.Vertex).ShouldContain("-fvk-use-dx-position-w");
 
     [Fact] public void OpenGL_Vertex_DoesNotHaveInvertY()
-        => Build(PlatformTarget.OpenGL, ShaderStage.Vertex).Should().NotContain("-fvk-invert-y");
+        => Build(PlatformTarget.OpenGL, ShaderStage.Vertex).ShouldNotContain("-fvk-invert-y");
 
     // ── OpenGL Pixel ─────────────────────────────────────────────────────────
 
     [Fact] public void OpenGL_Pixel_HasProfile_ps5_0()
-        => Build(PlatformTarget.OpenGL, ShaderStage.Pixel).Should().Contain("ps_5_0");
+        => Build(PlatformTarget.OpenGL, ShaderStage.Pixel).ShouldContain("ps_5_0");
 
     [Fact] public void OpenGL_Pixel_HasAutoBindingSpace1()
-        => Joined(Build(PlatformTarget.OpenGL, ShaderStage.Pixel)).Should().Contain("-auto-binding-space");
+        => Joined(Build(PlatformTarget.OpenGL, ShaderStage.Pixel)).ShouldContain("-auto-binding-space");
 
     [Fact] public void OpenGL_Pixel_DoesNotHaveInvertY()
-        => Build(PlatformTarget.OpenGL, ShaderStage.Pixel).Should().NotContain("-fvk-invert-y");
+        => Build(PlatformTarget.OpenGL, ShaderStage.Pixel).ShouldNotContain("-fvk-invert-y");
 
     // ── Vulkan Vertex ────────────────────────────────────────────────────────
 
     [Fact] public void Vulkan_Vertex_HasProfile_vs6_0()
-        => Build(PlatformTarget.Vulkan, ShaderStage.Vertex).Should().Contain("vs_6_0");
+        => Build(PlatformTarget.Vulkan, ShaderStage.Vertex).ShouldContain("vs_6_0");
 
     [Fact] public void Vulkan_Vertex_HasInvertY()
-        => Build(PlatformTarget.Vulkan, ShaderStage.Vertex).Should().Contain("-fvk-invert-y");
+        => Build(PlatformTarget.Vulkan, ShaderStage.Vertex).ShouldContain("-fvk-invert-y");
 
     // Issue #145 (divergence S3): mgfxc ships SPIR-V compiled WITHOUT -fspv-reflect (it
     // compiles a second time to strip the Google VK extensions the flag forces into the
     // binary). ShadowDusk reads only core decorations + OpName debug names when reflecting,
     // so it never asks for the flag and ships the same clean module in ONE compile.
     [Fact] public void Vulkan_Vertex_HasNoFspvReflect()
-        => Build(PlatformTarget.Vulkan, ShaderStage.Vertex).Should().NotContain("-fspv-reflect");
+        => Build(PlatformTarget.Vulkan, ShaderStage.Vertex).ShouldNotContain("-fspv-reflect");
 
     [Fact] public void Vulkan_Vertex_HasSpirvFlag()
-        => Build(PlatformTarget.Vulkan, ShaderStage.Vertex).Should().Contain("-spirv");
+        => Build(PlatformTarget.Vulkan, ShaderStage.Vertex).ShouldContain("-spirv");
 
     [Fact] public void Vulkan_Vertex_HasTAndSShift()
-        => Joined(Build(PlatformTarget.Vulkan, ShaderStage.Vertex))
-            .Should().Contain("-fvk-t-shift 32 all").And.Contain("-fvk-s-shift 32 all");
+    {
+        string joined = Joined(Build(PlatformTarget.Vulkan, ShaderStage.Vertex));
+        joined.ShouldContain("-fvk-t-shift 32 all", Case.Sensitive);
+        joined.ShouldContain("-fvk-s-shift 32 all", Case.Sensitive);
+    }
 
     // ── Vulkan Pixel ─────────────────────────────────────────────────────────
 
     [Fact] public void Vulkan_Pixel_HasProfile_ps6_0()
-        => Build(PlatformTarget.Vulkan, ShaderStage.Pixel).Should().Contain("ps_6_0");
+        => Build(PlatformTarget.Vulkan, ShaderStage.Pixel).ShouldContain("ps_6_0");
 
     [Fact] public void Vulkan_Pixel_HasNoFspvReflect()
-        => Build(PlatformTarget.Vulkan, ShaderStage.Pixel).Should().NotContain("-fspv-reflect");
+        => Build(PlatformTarget.Vulkan, ShaderStage.Pixel).ShouldNotContain("-fspv-reflect");
 
     [Fact] public void Vulkan_Pixel_HasTAndSShift()
-        => Joined(Build(PlatformTarget.Vulkan, ShaderStage.Pixel))
-            .Should().Contain("-fvk-t-shift 32 all").And.Contain("-fvk-s-shift 32 all");
+    {
+        string joined = Joined(Build(PlatformTarget.Vulkan, ShaderStage.Pixel));
+        joined.ShouldContain("-fvk-t-shift 32 all", Case.Sensitive);
+        joined.ShouldContain("-fvk-s-shift 32 all", Case.Sensitive);
+    }
 
     // ── DirectX ──────────────────────────────────────────────────────────────
 
     // DXC minimum supported profile is SM6 — vs_6_0/ps_6_0 (not vs_5_0 DXBC)
     [Fact] public void DirectX_Vertex_HasProfile_vs6_0()
-        => Build(PlatformTarget.DirectX, ShaderStage.Vertex).Should().Contain("vs_6_0");
+        => Build(PlatformTarget.DirectX, ShaderStage.Vertex).ShouldContain("vs_6_0");
 
     [Fact] public void DirectX_Vertex_DoesNotHaveSpirvFlag()
-        => Build(PlatformTarget.DirectX, ShaderStage.Vertex).Should().NotContain("-spirv");
+        => Build(PlatformTarget.DirectX, ShaderStage.Vertex).ShouldNotContain("-spirv");
 
     [Fact] public void DirectX_Pixel_HasProfile_ps6_0()
-        => Build(PlatformTarget.DirectX, ShaderStage.Pixel).Should().Contain("ps_6_0");
+        => Build(PlatformTarget.DirectX, ShaderStage.Pixel).ShouldContain("ps_6_0");
 
     [Fact] public void DirectX_Pixel_DoesNotHaveSpirvFlag()
-        => Build(PlatformTarget.DirectX, ShaderStage.Pixel).Should().NotContain("-spirv");
+        => Build(PlatformTarget.DirectX, ShaderStage.Pixel).ShouldNotContain("-spirv");
 
     // ── Entry point ───────────────────────────────────────────────────────────
 
@@ -104,8 +110,8 @@ public sealed class DxcFlagBuilderTests
     {
         var flags = Build(PlatformTarget.OpenGL, ShaderStage.Vertex, entryPoint: "VSMain");
         int idx = flags.ToList().IndexOf("-E");
-        idx.Should().BeGreaterThanOrEqualTo(0, "'-E' must be present");
-        flags[idx + 1].Should().Be("VSMain");
+        idx.ShouldBeGreaterThanOrEqualTo(0, customMessage: "'-E' must be present");
+        flags[idx + 1].ShouldBe("VSMain");
     }
 
     [Fact]
@@ -115,14 +121,14 @@ public sealed class DxcFlagBuilderTests
         var flags = Build(PlatformTarget.OpenGL, ShaderStage.Vertex, entryPoint: "VSMain").ToList();
         int entryIdx   = flags.IndexOf("-E");
         int profileIdx = flags.IndexOf("-T");
-        entryIdx.Should().BeGreaterThanOrEqualTo(0, "'-E' must be present");
-        profileIdx.Should().BeGreaterThan(entryIdx, "'-T <profile>' must follow '-E <entryPoint>'");
+        entryIdx.ShouldBeGreaterThanOrEqualTo(0, customMessage: "'-E' must be present");
+        profileIdx.ShouldBeGreaterThan(entryIdx, customMessage: "'-T <profile>' must follow '-E <entryPoint>'");
     }
 
     // ── Invariant flags ───────────────────────────────────────────────────────
 
     [Fact] public void ZprPresentForOpenGL()
-        => Build(PlatformTarget.OpenGL, ShaderStage.Vertex).Should().Contain("-Zpr");
+        => Build(PlatformTarget.OpenGL, ShaderStage.Vertex).ShouldContain("-Zpr");
 
     // Issue #145 (bug 1): -Zpr made DXC pack matrices ROW-major, but MonoGame's runtime
     // uploads a Matrix parameter for HLSL's COLUMN-major default (EffectParameter
@@ -134,27 +140,27 @@ public sealed class DxcFlagBuilderTests
     [InlineData(ShaderStage.Vertex)]
     [InlineData(ShaderStage.Pixel)]
     public void ZprAbsentForVulkan(ShaderStage stage)
-        => Build(PlatformTarget.Vulkan, stage).Should().NotContain("-Zpr");
+        => Build(PlatformTarget.Vulkan, stage).ShouldNotContain("-Zpr");
 
     [Fact] public void WxPresentByDefault()
-        => Build(PlatformTarget.OpenGL, ShaderStage.Vertex).Should().Contain("-WX");
+        => Build(PlatformTarget.OpenGL, ShaderStage.Vertex).ShouldContain("-WX");
 
     [Fact] public void WxAbsentWhenAllowWarnings()
         => Build(PlatformTarget.OpenGL, ShaderStage.Vertex, options: new DxcCompileOptions { AllowWarnings = true })
-            .Should().NotContain("-WX");
+            .ShouldNotContain("-WX");
 
     [Fact] public void DebugFlags_AbsentByDefault()
     {
         var flags = Build(PlatformTarget.OpenGL, ShaderStage.Vertex);
-        flags.Should().NotContain("-Zi");
-        flags.Should().NotContain("-Qembed_debug");
+        flags.ShouldNotContain("-Zi");
+        flags.ShouldNotContain("-Qembed_debug");
     }
 
     [Fact] public void DebugFlags_PresentWhenEmbedDebugInfo()
     {
         var flags = Build(PlatformTarget.OpenGL, ShaderStage.Vertex, options: new DxcCompileOptions { EmbedDebugInfo = true });
-        flags.Should().Contain("-Zi");
-        flags.Should().Contain("-Qembed_debug");
+        flags.ShouldContain("-Zi");
+        flags.ShouldContain("-Qembed_debug");
     }
 
     // ── Macros ────────────────────────────────────────────────────────────────
@@ -164,7 +170,7 @@ public sealed class DxcFlagBuilderTests
     {
         var flags = Build(PlatformTarget.OpenGL, ShaderStage.Vertex,
             macros: [("FOO", "1")]);
-        flags.Should().Contain("-DFOO=1");
+        flags.ShouldContain("-DFOO=1");
     }
 
     [Fact]
@@ -172,7 +178,7 @@ public sealed class DxcFlagBuilderTests
     {
         var flags = Build(PlatformTarget.OpenGL, ShaderStage.Vertex,
             macros: [("BAR", null)]);
-        flags.Should().Contain("-DBAR");
-        flags.Should().NotContain("-DBAR=");
+        flags.ShouldContain("-DBAR");
+        flags.ShouldNotContain("-DBAR=");
     }
 }

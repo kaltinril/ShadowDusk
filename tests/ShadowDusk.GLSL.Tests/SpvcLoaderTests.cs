@@ -1,7 +1,7 @@
 #nullable enable
 
 using System.Runtime.InteropServices;
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.GLSL.Interop;
 using Xunit;
 
@@ -37,7 +37,7 @@ public sealed class SpvcLoaderTests
     public void MapRid_ReturnsCanonicalRid(
         bool isWindows, bool isOsx, bool isAndroid, Architecture arch, string expected)
     {
-        SpvcLoader.MapRid(isWindows, isOsx, isAndroid, arch).Should().Be(expected);
+        SpvcLoader.MapRid(isWindows, isOsx, isAndroid, arch).ShouldBe(expected);
     }
 
     [Fact]
@@ -47,8 +47,8 @@ public sealed class SpvcLoaderTests
         // Windows > macOS > Android > Linux. The production caller never sets two, but the
         // switch ordering is load-bearing, so pin it.
         SpvcLoader.MapRid(isWindows: true, isOsx: true, isAndroid: true, Architecture.Arm64)
-            .Should().Be("win-arm64");
+            .ShouldBe("win-arm64");
         SpvcLoader.MapRid(isWindows: false, isOsx: true, isAndroid: true, Architecture.Arm64)
-            .Should().Be("osx-arm64");
+            .ShouldBe("osx-arm64");
     }
 }

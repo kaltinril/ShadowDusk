@@ -1,4 +1,4 @@
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.ShaderToy.Tests;
@@ -25,8 +25,8 @@ public sealed class OptionsTests
         ConvertResult result = ShaderToyConverter.Convert(
             MinimalImage, new ConvertOptions { EffectName = "MyCustomEffect" });
 
-        result.Success.Should().BeTrue();
-        result.Fx!.Should().Contain("MyCustomEffect");
+        result.Success.ShouldBeTrue();
+        result.Fx!.ShouldContain("MyCustomEffect", Case.Sensitive);
     }
 
     [Fact]
@@ -35,9 +35,9 @@ public sealed class OptionsTests
         ConvertResult result = ShaderToyConverter.Convert(
             MinimalImage, new ConvertOptions { TechniqueName = "MyTechnique" });
 
-        result.Success.Should().BeTrue();
-        result.Fx!.Should().Contain("technique MyTechnique");
-        result.Fx!.Should().NotContain("technique ShaderToy");
+        result.Success.ShouldBeTrue();
+        result.Fx!.ShouldContain("technique MyTechnique", Case.Sensitive);
+        result.Fx!.ShouldNotContain("technique ShaderToy", Case.Sensitive);
     }
 
     [Fact]
@@ -45,8 +45,8 @@ public sealed class OptionsTests
     {
         ConvertResult result = ShaderToyConverter.Convert(MinimalImage);
 
-        result.Success.Should().BeTrue();
-        result.Fx!.Should().Contain("technique ShaderToy");
+        result.Success.ShouldBeTrue();
+        result.Fx!.ShouldContain("technique ShaderToy", Case.Sensitive);
     }
 
     [Fact]
@@ -66,10 +66,10 @@ public sealed class OptionsTests
         ConvertResult result = ShaderToyConverter.Convert(
             image, new ConvertOptions { CommonSource = common });
 
-        result.Success.Should().BeTrue(
+        result.Success.ShouldBeTrue(string.Format(
             "the image tab references a Common-tab helper; diagnostics: {0}",
-            string.Join("; ", result.Diagnostics.Select(d => $"{d.Severity}:{d.Message}")));
-        result.Fx!.Should().Contain("commonHelper");
+            string.Join("; ", result.Diagnostics.Select(d => $"{d.Severity}:{d.Message}"))));
+        result.Fx!.ShouldContain("commonHelper", Case.Sensitive);
     }
 
     [Fact]
@@ -86,12 +86,12 @@ public sealed class OptionsTests
         ConvertResult result = ShaderToyConverter.Convert(
             image, new ConvertOptions { CommonSource = common });
 
-        result.Success.Should().BeTrue();
+        result.Success.ShouldBeTrue();
         string fx = result.Fx!;
         int helperIdx = fx.IndexOf("float commonHelper", StringComparison.Ordinal);
         int mainIdx = fx.IndexOf("void mainImage", StringComparison.Ordinal);
-        helperIdx.Should().BeGreaterThan(-1);
-        mainIdx.Should().BeGreaterThan(-1);
-        helperIdx.Should().BeLessThan(mainIdx, "the Common tab is prepended before the image tab");
+        helperIdx.ShouldBeGreaterThan(-1);
+        mainIdx.ShouldBeGreaterThan(-1);
+        helperIdx.ShouldBeLessThan(mainIdx, customMessage: "the Common tab is prepended before the image tab");
     }
 }

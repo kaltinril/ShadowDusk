@@ -1,7 +1,7 @@
 #nullable enable
 
 using System.Text;
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
@@ -74,9 +74,9 @@ public sealed class ImageRegressionTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         CancellationToken ct = cts.Token;
 
-        SceneCatalog.All.Should().ContainKey(fixtureStem, "MemberData was driven by SceneCatalog.All");
+        SceneCatalog.All.ContainsKey(fixtureStem).ShouldBeTrue(customMessage: "MemberData was driven by SceneCatalog.All");
         SceneDescriptor descriptor = SceneCatalog.All[fixtureStem];
-        sceneIndex.Should().BeInRange(0, descriptor.Renders.Count - 1);
+        sceneIndex.ShouldBeInRange(0, descriptor.Renders.Count - 1);
 
         SceneRender render = descriptor.Renders[sceneIndex];
 
@@ -86,7 +86,7 @@ public sealed class ImageRegressionTests
         //    context stays valid.
         string repoRoot = TestPaths.FindRepoRoot();
         string fxPath   = Path.Combine(repoRoot, "tests", "fixtures", "shaders", fixtureStem + ".fx");
-        File.Exists(fxPath).Should().BeTrue($"fixture source must exist at {fxPath}");
+        File.Exists(fxPath).ShouldBeTrue($"fixture source must exist at {fxPath}");
 
         byte[] mgfx = await CompileFixtureToMgfxAsync(fxPath, ct);
 
@@ -116,7 +116,7 @@ public sealed class ImageRegressionTests
         // 4. Compare.
         ImageComparison comparison = ImageComparer.Compare(expected, actual, render.Tolerance);
 
-        comparison.Matches.Should().BeTrue(
+        comparison.Matches.ShouldBeTrue(
             $"rendered image for '{fixtureStem}{render.OutputStemSuffix}' must match reference within tolerance {render.Tolerance}. " +
             $"Different pixels: {comparison.DifferentPixels}/{comparison.TotalPixels}, " +
             $"max channel delta: {comparison.MaxChannelDelta}. " +

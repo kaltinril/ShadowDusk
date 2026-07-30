@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core.Reflection;
 using Xunit;
 
@@ -42,10 +42,10 @@ public sealed class CbufferPackingTests
             Elements       = 0,
         };
 
-        variable.StartOffset.Should().Be(0);
-        variable.SizeBytes.Should().Be(4);
-        variable.ParameterClass.Should().Be(EffectParameterClass.Scalar);
-        variable.ParameterType.Should().Be(EffectParameterType.Single);
+        variable.StartOffset.ShouldBe(0);
+        variable.SizeBytes.ShouldBe(4);
+        variable.ParameterClass.ShouldBe(EffectParameterClass.Scalar);
+        variable.ParameterType.ShouldBe(EffectParameterType.Single);
     }
 
     [Fact]
@@ -65,11 +65,11 @@ public sealed class CbufferPackingTests
             Elements       = 0,
         };
 
-        variable.StartOffset.Should().Be(4);
-        variable.SizeBytes.Should().Be(12);
-        variable.Columns.Should().Be(3);
+        variable.StartOffset.ShouldBe(4);
+        variable.SizeBytes.ShouldBe(12);
+        variable.Columns.ShouldBe(3);
         // Verify the variable fits inside the first 16-byte row
-        (variable.StartOffset + variable.SizeBytes).Should().BeLessThanOrEqualTo(16);
+        (variable.StartOffset + variable.SizeBytes).ShouldBeLessThanOrEqualTo(16);
     }
 
     [Fact]
@@ -88,9 +88,9 @@ public sealed class CbufferPackingTests
             Elements       = 0,
         };
 
-        variable.StartOffset.Should().Be(16);
-        variable.SizeBytes.Should().Be(16);
-        (variable.StartOffset % 16).Should().Be(0, because: "float4 must start on a 16-byte boundary");
+        variable.StartOffset.ShouldBe(16);
+        variable.SizeBytes.ShouldBe(16);
+        (variable.StartOffset % 16).ShouldBe(0, customMessage: "float4 must start on a 16-byte boundary");
     }
 
     [Fact]
@@ -108,10 +108,10 @@ public sealed class CbufferPackingTests
             Elements       = 0,
         };
 
-        variable.SizeBytes.Should().Be(64);
-        variable.Rows.Should().Be(4);
-        variable.Columns.Should().Be(4);
-        (variable.StartOffset % 16).Should().Be(0, because: "matrix must start on a 16-byte boundary");
+        variable.SizeBytes.ShouldBe(64);
+        variable.Rows.ShouldBe(4);
+        variable.Columns.ShouldBe(4);
+        (variable.StartOffset % 16).ShouldBe(0, customMessage: "matrix must start on a 16-byte boundary");
     }
 
     [Fact]
@@ -132,7 +132,7 @@ public sealed class CbufferPackingTests
 
         var last = variables.Last();
         var totalSize = last.StartOffset + last.SizeBytes;
-        totalSize.Should().Be(96);
+        totalSize.ShouldBe(96);
     }
 
     [Fact]
@@ -151,8 +151,8 @@ public sealed class CbufferPackingTests
             Elements       = 4,
         };
 
-        variable.Elements.Should().Be(4);
-        variable.SizeBytes.Should().Be(64, because: "each float array element is padded to 16 bytes");
-        (variable.SizeBytes / variable.Elements).Should().Be(16);
+        variable.Elements.ShouldBe(4);
+        variable.SizeBytes.ShouldBe(64, customMessage: "each float array element is padded to 16 bytes");
+        (variable.SizeBytes / variable.Elements).ShouldBe(16);
     }
 }

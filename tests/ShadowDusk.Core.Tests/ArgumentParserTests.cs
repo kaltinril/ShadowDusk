@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Cli;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
@@ -19,14 +19,14 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["Shader.fx", "Out.mgfx"]);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.SourceFile.Should().Be("Shader.fx");
-        result.Value.OutputFile.Should().Be("Out.mgfx");
-        result.Value.Platform.Should().Be(PlatformTarget.DirectX);
-        result.Value.Debug.Should().BeFalse();
-        result.Value.IncludePaths.Should().BeEmpty();
-        result.Value.MgfxVersion.Should().Be(10);
-        result.Value.Profile.Should().BeNull();
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.SourceFile.ShouldBe("Shader.fx");
+        result.Value.OutputFile.ShouldBe("Out.mgfx");
+        result.Value.Platform.ShouldBe(PlatformTarget.DirectX);
+        result.Value.Debug.ShouldBeFalse();
+        result.Value.IncludePaths.ShouldBeEmpty();
+        result.Value.MgfxVersion.ShouldBe(10);
+        result.Value.Profile.ShouldBeNull();
     }
 
     // -------------------------------------------------------------------------
@@ -41,13 +41,13 @@ public sealed class ArgumentParserTests
         var result = ArgumentParser.Parse(
             ["Shader.fx", "Out.mgfx", "/Defines:SKINNED=1;HIGH_QUALITY", "/Defines:EXTRA=abc"]);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Defines.Should().BeEquivalentTo(new[]
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Defines.ShouldBe(new[]
         {
             new ShadowDusk.Core.Preprocessor.UserDefine("SKINNED", "1"),
             new ShadowDusk.Core.Preprocessor.UserDefine("HIGH_QUALITY"), // bare name -> "1"
             new ShadowDusk.Core.Preprocessor.UserDefine("EXTRA", "abc"),
-        });
+        }, ignoreOrder: true);
     }
 
     [Theory]
@@ -60,9 +60,9 @@ public sealed class ArgumentParserTests
         // compiling with the DEFAULT — the wrong artifact with exit 0 (N12).
         var result = ArgumentParser.Parse(["Shader.fx", "Out.mgfx", flag]);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("X0009");
-        result.Error.Message.Should().Contain(flag);
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("X0009");
+        result.Error.Message.ShouldContain(flag, Case.Sensitive);
     }
 
     // -------------------------------------------------------------------------
@@ -79,9 +79,9 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "--target-runtime", name]);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Profile.Should().NotBeNull();
-        result.Value.Profile!.Name.Should().Be(expectedProfileName);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Profile.ShouldNotBeNull();
+        result.Value.Profile!.Name.ShouldBe(expectedProfileName);
     }
 
     [Fact]
@@ -89,8 +89,8 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "/target-runtime:kni-knifx"]);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Profile.Should().Be(CapabilityProfile.KniGL_4_02);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Profile.ShouldBe(CapabilityProfile.KniGL_4_02);
     }
 
     [Fact]
@@ -100,8 +100,8 @@ public sealed class ArgumentParserTests
         // compiled with the DEFAULT profile and exit 0 — the wrong artifact, no diagnostic.
         var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "--target-runtime=kni-knifx"]);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Profile.Should().Be(CapabilityProfile.KniGL_4_02);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Profile.ShouldBe(CapabilityProfile.KniGL_4_02);
     }
 
     [Fact]
@@ -109,8 +109,8 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "--target-runtime=nope"]);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("X0008");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("X0008");
     }
 
     [Fact]
@@ -118,8 +118,8 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "--target-runtime", "nope"]);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("X0008");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("X0008");
     }
 
     // -------------------------------------------------------------------------
@@ -131,8 +131,8 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "/Profile:OpenGL"]);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Platform.Should().Be(PlatformTarget.OpenGL);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Platform.ShouldBe(PlatformTarget.OpenGL);
     }
 
     [Fact]
@@ -140,8 +140,8 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "--Profile:OpenGL"]);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Platform.Should().Be(PlatformTarget.OpenGL);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Platform.ShouldBe(PlatformTarget.OpenGL);
     }
 
     [Fact]
@@ -149,8 +149,8 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["S.fx", "O.mgfx"]);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Platform.Should().Be(PlatformTarget.DirectX);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Platform.ShouldBe(PlatformTarget.DirectX);
     }
 
     [Fact]
@@ -158,8 +158,8 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "/Profile:opengl"]);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Platform.Should().Be(PlatformTarget.OpenGL);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Platform.ShouldBe(PlatformTarget.OpenGL);
     }
 
     [Fact]
@@ -167,8 +167,8 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["S.fx", "O.fxb", "/Profile:FNA"]);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Platform.Should().Be(PlatformTarget.Fna);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Platform.ShouldBe(PlatformTarget.Fna);
     }
 
     [Fact]
@@ -176,8 +176,8 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["S.fx", "O.fxb", "/Profile:fna"]);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Platform.Should().Be(PlatformTarget.Fna);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Platform.ShouldBe(PlatformTarget.Fna);
     }
 
     // -------------------------------------------------------------------------
@@ -189,8 +189,8 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "/Debug"]);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Debug.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Debug.ShouldBeTrue();
     }
 
     [Fact]
@@ -198,8 +198,8 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "--Debug"]);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Debug.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Debug.ShouldBeTrue();
     }
 
     // -------------------------------------------------------------------------
@@ -211,8 +211,8 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "/I", "include/"]);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.IncludePaths.Should().ContainSingle().Which.Should().Be("include/");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.IncludePaths.ShouldHaveSingleItem().ShouldBe("include/");
     }
 
     [Fact]
@@ -220,8 +220,8 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "/I:include/"]);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.IncludePaths.Should().ContainSingle().Which.Should().Be("include/");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.IncludePaths.ShouldHaveSingleItem().ShouldBe("include/");
     }
 
     [Fact]
@@ -229,8 +229,8 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "/I", "a", "/I", "b"]);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.IncludePaths.Should().Equal("a", "b");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.IncludePaths.ShouldBe(new[] {"a", "b"});
     }
 
     // -------------------------------------------------------------------------
@@ -242,8 +242,8 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "--mgfx-version", "10"]);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.MgfxVersion.Should().Be(10);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.MgfxVersion.ShouldBe(10);
     }
 
     [Fact]
@@ -251,8 +251,8 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "--mgfx-version", "11"]);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.MgfxVersion.Should().Be(11);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.MgfxVersion.ShouldBe(11);
     }
 
     [Fact]
@@ -260,8 +260,8 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "--mgfx-version", "99"]);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("X0005");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("X0005");
     }
 
     // -------------------------------------------------------------------------
@@ -274,8 +274,8 @@ public sealed class ArgumentParserTests
         // Only one positional arg — treated as source, but no output file
         var result = ArgumentParser.Parse(["Out.mgfx"]);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("X0003");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("X0003");
     }
 
     [Fact]
@@ -283,8 +283,8 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse([]);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("X0003");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("X0003");
     }
 
     // -------------------------------------------------------------------------
@@ -300,9 +300,9 @@ public sealed class ArgumentParserTests
             ["/home/runner/work/ShadowDusk/tests/fixtures/shaders/Grayscale.fx",
              "/tmp/out/Grayscale.mgfx"]);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.SourceFile.Should().Be("/home/runner/work/ShadowDusk/tests/fixtures/shaders/Grayscale.fx");
-        result.Value.OutputFile.Should().Be("/tmp/out/Grayscale.mgfx");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.SourceFile.ShouldBe("/home/runner/work/ShadowDusk/tests/fixtures/shaders/Grayscale.fx");
+        result.Value.OutputFile.ShouldBe("/tmp/out/Grayscale.mgfx");
     }
 
     [Fact]
@@ -311,10 +311,10 @@ public sealed class ArgumentParserTests
         var result = ArgumentParser.Parse(
             ["/abs/src/Shader.fx", "/abs/out/Shader.mgfx", "/Profile:OpenGL"]);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.SourceFile.Should().Be("/abs/src/Shader.fx");
-        result.Value.OutputFile.Should().Be("/abs/out/Shader.mgfx");
-        result.Value.Platform.Should().Be(PlatformTarget.OpenGL);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.SourceFile.ShouldBe("/abs/src/Shader.fx");
+        result.Value.OutputFile.ShouldBe("/abs/out/Shader.mgfx");
+        result.Value.Platform.ShouldBe(PlatformTarget.OpenGL);
     }
 
     [Fact]
@@ -322,8 +322,8 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "/I:/usr/local/include"]);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.IncludePaths.Should().ContainSingle().Which.Should().Be("/usr/local/include");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.IncludePaths.ShouldHaveSingleItem().ShouldBe("/usr/local/include");
     }
 
     // -------------------------------------------------------------------------
@@ -335,7 +335,7 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "--future-flag", "value"]);
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
     }
 
     // -------------------------------------------------------------------------
@@ -347,8 +347,8 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "/Profile:PlayStation4"]);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("X0010");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("X0010");
     }
 
     [Fact]
@@ -356,8 +356,8 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "/Profile:XboxOne"]);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("X0010");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("X0010");
     }
 
     // -------------------------------------------------------------------------
@@ -369,8 +369,8 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "/Profile:DOS"]);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("X0004");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("X0004");
     }
 
     [Fact]
@@ -378,8 +378,8 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "/Profile:DOS"]);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Message.Should().Contain("FNA");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Message.ShouldContain("FNA", Case.Sensitive);
     }
 
     // -------------------------------------------------------------------------
@@ -393,9 +393,9 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["/data", "/out"]);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.SourceFile.Should().Be("/data");
-        result.Value.OutputFile.Should().Be("/out");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.SourceFile.ShouldBe("/data");
+        result.Value.OutputFile.ShouldBe("/out");
     }
 
     [Fact]
@@ -404,9 +404,9 @@ public sealed class ArgumentParserTests
         // A future mgfxc flag shape ("/Defines:FOO=1") keeps being tolerated.
         var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "/Defines:FOO=1"]);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.SourceFile.Should().Be("S.fx");
-        result.Value.OutputFile.Should().Be("O.mgfx");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.SourceFile.ShouldBe("S.fx");
+        result.Value.OutputFile.ShouldBe("O.mgfx");
     }
 
     // -------------------------------------------------------------------------
@@ -418,8 +418,8 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["S.fx", "O.mgfx"]);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.DxbcBackend.Should().Be(DxbcBackend.Vkd3d);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.DxbcBackend.ShouldBe(DxbcBackend.Vkd3d);
     }
 
     [Fact]
@@ -427,8 +427,8 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "/DxbcBackend:d3dcompiler"]);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.DxbcBackend.Should().Be(DxbcBackend.D3DCompiler);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.DxbcBackend.ShouldBe(DxbcBackend.D3DCompiler);
     }
 
     [Fact]
@@ -436,8 +436,8 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "/dxbcbackend:VKD3D"]);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.DxbcBackend.Should().Be(DxbcBackend.Vkd3d);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.DxbcBackend.ShouldBe(DxbcBackend.Vkd3d);
     }
 
     [Fact]
@@ -445,9 +445,10 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["S.fx", "O.mgfx", "/DxbcBackend:fxc"]);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("X0006");
-        result.Error.Message.Should().Contain("vkd3d").And.Contain("d3dcompiler");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("X0006");
+        result.Error.Message.ShouldContain("vkd3d", Case.Sensitive);
+        result.Error.Message.ShouldContain("d3dcompiler", Case.Sensitive);
     }
 
     // -------------------------------------------------------------------------
@@ -461,11 +462,11 @@ public sealed class ArgumentParserTests
         var result = ArgumentParser.Parse(
             ["Shader.fx", "Out.mgfx", "/Defines:SKINNED=1;HIGH_QUALITY,BONES=4"]);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Defines.Should().Equal(
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Defines.ShouldBe(new[] {
             new UserDefine("SKINNED", "1"),
             new UserDefine("HIGH_QUALITY"),
-            new UserDefine("BONES", "4"));
+            new UserDefine("BONES", "4")});
     }
 
     [Fact]
@@ -474,10 +475,10 @@ public sealed class ArgumentParserTests
         var result = ArgumentParser.Parse(
             ["Shader.fx", "Out.mgfx", "/Defines:A=1", "/Defines:B=two"]);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Defines.Should().Equal(
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Defines.ShouldBe(new[] {
             new UserDefine("A", "1"),
-            new UserDefine("B", "two"));
+            new UserDefine("B", "two")});
     }
 
     [Fact]
@@ -485,8 +486,8 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["Shader.fx", "Out.mgfx"]);
 
-        result.IsSuccess.Should().BeTrue();
-        (result.Value.Defines ?? []).Should().BeEmpty();
+        result.IsSuccess.ShouldBeTrue();
+        (result.Value.Defines ?? []).ShouldBeEmpty();
     }
 
     // -------------------------------------------------------------------------
@@ -498,8 +499,8 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["Shader.fx", "Out.mgfx", "/Profile:DirectX_12"]);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Platform.Should().Be(PlatformTarget.DirectX12);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Platform.ShouldBe(PlatformTarget.DirectX12);
     }
 
     [Fact]
@@ -507,9 +508,9 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["Shader.fx", "Out.mgfx", "/Profile:Nonsense"]);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("X0004");
-        result.Error.Message.Should().Contain("DirectX_12");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("X0004");
+        result.Error.Message.ShouldContain("DirectX_12", Case.Sensitive);
     }
 
     // -------------------------------------------------------------------------
@@ -526,8 +527,8 @@ public sealed class ArgumentParserTests
     {
         var result = ArgumentParser.Parse(["Shader.fx", "Out.mgfx", flag]);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("X0009");
-        result.Error.Message.Should().Contain(flag);
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("X0009");
+        result.Error.Message.ShouldContain(flag, Case.Sensitive);
     }
 }

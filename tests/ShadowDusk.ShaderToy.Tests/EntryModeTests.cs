@@ -1,4 +1,4 @@
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.ShaderToy.Tests;
@@ -16,9 +16,9 @@ public sealed class EntryModeTests
     private static ConvertResult ConvertOk(string glsl)
     {
         ConvertResult r = Convert(glsl);
-        r.Success.Should().BeTrue(
+        r.Success.ShouldBeTrue(string.Format(
             "the shader is in-subset; diagnostics: {0}",
-            string.Join("; ", r.Diagnostics.Select(d => $"{d.Severity}:{d.Message}")));
+            string.Join("; ", r.Diagnostics.Select(d => $"{d.Severity}:{d.Message}"))));
         return r;
     }
 
@@ -36,10 +36,10 @@ public sealed class EntryModeTests
 
         ConvertResult r = ConvertOk(glsl);
         // The translated entry is emitted as a `void main()` function and the PS calls it.
-        r.Fx!.Should().Contain("void main()");
-        r.Fx!.Should().Contain("main();", "the synthesized PS must invoke the plain-GLSL main()");
+        r.Fx!.ShouldContain("void main()", Case.Sensitive);
+        r.Fx!.ShouldContain("main();", Case.Sensitive, "the synthesized PS must invoke the plain-GLSL main()");
         // And NOT the ShaderToy mainImage wrapper.
-        r.Fx!.Should().NotContain("mainImage(");
+        r.Fx!.ShouldNotContain("mainImage(", Case.Sensitive);
     }
 
     [Fact]
@@ -54,8 +54,8 @@ public sealed class EntryModeTests
 
         ConvertResult r = ConvertOk(glsl);
         // ShaderToy mode keeps its existing harness: declares a local fragColor and calls mainImage.
-        r.Fx!.Should().Contain("mainImage(fragColor, fragCoord);");
-        r.Fx!.Should().NotContain("static float4 gl_FragCoord;");
+        r.Fx!.ShouldContain("mainImage(fragColor, fragCoord);", Case.Sensitive);
+        r.Fx!.ShouldNotContain("static float4 gl_FragCoord;", Case.Sensitive);
     }
 
     // ── gl_FragColor as the PS return ─────────────────────────────────────────
@@ -72,8 +72,8 @@ public sealed class EntryModeTests
 
         ConvertResult r = ConvertOk(glsl);
         // gl_FragColor is bridged as a static float4 the body writes and the PS returns.
-        r.Fx!.Should().Contain("static float4 gl_FragColor;");
-        r.Fx!.Should().Contain("return gl_FragColor;");
+        r.Fx!.ShouldContain("static float4 gl_FragColor;", Case.Sensitive);
+        r.Fx!.ShouldContain("return gl_FragColor;", Case.Sensitive);
     }
 
     // ── user-declared out vec4 is consumed, becomes the return ────────────────
@@ -91,13 +91,13 @@ public sealed class EntryModeTests
 
         ConvertResult r = ConvertOk(glsl);
         // The out var becomes the bridged output static + the PS return.
-        r.Fx!.Should().Contain("static float4 myColor;");
-        r.Fx!.Should().Contain("return myColor;");
+        r.Fx!.ShouldContain("static float4 myColor;", Case.Sensitive);
+        r.Fx!.ShouldContain("return myColor;");
         // It must NOT leak as a custom-uniform effect parameter or a top-level `out`/global decl.
-        r.UsedUniforms.Should().NotContain("myColor");
-        r.Fx!.Should().NotContain("out vec4 myColor");
+        r.UsedUniforms.ShouldNotContain("myColor");
+        r.Fx!.ShouldNotContain("out vec4 myColor", Case.Sensitive);
         // The default gl_FragColor name is NOT used when a user output is declared.
-        r.Fx!.Should().NotContain("return gl_FragColor;");
+        r.Fx!.ShouldNotContain("return gl_FragColor;", Case.Sensitive);
     }
 
     [Fact]
@@ -112,8 +112,8 @@ public sealed class EntryModeTests
         """;
 
         ConvertResult r = ConvertOk(glsl);
-        r.Fx!.Should().Contain("static float4 fragColor;");
-        r.Fx!.Should().Contain("return fragColor;");
+        r.Fx!.ShouldContain("static float4 fragColor;", Case.Sensitive);
+        r.Fx!.ShouldContain("return fragColor;", Case.Sensitive);
     }
 
     // ── gl_FragCoord resolves to the harness pixel coord ──────────────────────
@@ -130,10 +130,10 @@ public sealed class EntryModeTests
 
         ConvertResult r = ConvertOk(glsl);
         // The body's gl_FragCoord.xy reference is emitted verbatim (bridged via the static global)...
-        r.Fx!.Should().Contain("gl_FragCoord.xy");
+        r.Fx!.ShouldContain("gl_FragCoord.xy", Case.Sensitive);
         // ...and the PS computes it with the SAME bottom-left Y-flip the ShaderToy harness uses.
-        r.Fx!.Should().Contain("float2 pixel = float2(input.UV.x, 1.0 - input.UV.y) * iResolution.xy;");
-        r.Fx!.Should().Contain("gl_FragCoord = float4(pixel, 0.0, 1.0);");
+        r.Fx!.ShouldContain("float2 pixel = float2(input.UV.x, 1.0 - input.UV.y) * iResolution.xy;", Case.Sensitive);
+        r.Fx!.ShouldContain("gl_FragCoord = float4(pixel, 0.0, 1.0);", Case.Sensitive);
     }
 
     // ── rejects ───────────────────────────────────────────────────────────────
@@ -157,18 +157,18 @@ public sealed class EntryModeTests
         ConvertResult r = ConvertOk(glsl);
 
         // ShaderToy mode is chosen: the harness wraps mainImage directly (its standard ShaderToy PS).
-        r.Fx!.Should().Contain("mainImage(fragColor, fragCoord);");
+        r.Fx!.ShouldContain("mainImage(fragColor, fragCoord);", Case.Sensitive);
         // The user `void main()` wrapper is dropped: it is NOT translated/emitted, and the plain-GLSL
         // bridging globals (gl_FragColor / gl_FragCoord statics) are NOT present in ShaderToy mode.
-        r.Fx!.Should().NotContain("void main()");
-        r.Fx!.Should().NotContain("static float4 gl_FragColor;");
-        r.Fx!.Should().NotContain("static float4 gl_FragCoord;");
+        r.Fx!.ShouldNotContain("void main()", Case.Sensitive);
+        r.Fx!.ShouldNotContain("static float4 gl_FragColor;", Case.Sensitive);
+        r.Fx!.ShouldNotContain("static float4 gl_FragCoord;");
         // A Warning explains the wrapper was ignored in favor of mainImage.
-        r.Diagnostics.Should().Contain(d =>
+        r.Diagnostics.ShouldContain(d =>
             d.Severity == DiagnosticSeverity.Warning &&
             d.Message.Contains("mainImage") && d.Message.Contains("main()"));
         // No errors.
-        r.Diagnostics.Should().NotContain(d => d.Severity == DiagnosticSeverity.Error);
+        r.Diagnostics.ShouldNotContain(d => d.Severity == DiagnosticSeverity.Error);
     }
 
     [Fact]
@@ -198,7 +198,7 @@ public sealed class EntryModeTests
         ConvertResult both = ConvertOk(withWrapper);
 
         // Dropping the wrapper must leave the mainImage translation (and the whole harness) byte-identical.
-        both.Fx.Should().Be(plain.Fx, "dropping the void main() wrapper must not change the mainImage output");
+        both.Fx.ShouldBe(plain.Fx, customMessage: "dropping the void main() wrapper must not change the mainImage output");
     }
 
     [Fact]
@@ -220,9 +220,9 @@ public sealed class EntryModeTests
         """;
 
         ConvertResult r = ConvertOk(glsl);
-        r.Fx!.Should().Contain("mainImage(fragColor, fragCoord);");
-        r.Fx!.Should().NotContain("void main()");
-        r.Diagnostics.Should().Contain(d => d.Severity == DiagnosticSeverity.Warning);
+        r.Fx!.ShouldContain("mainImage(fragColor, fragCoord);", Case.Sensitive);
+        r.Fx!.ShouldNotContain("void main()", Case.Sensitive);
+        r.Diagnostics.ShouldContain(d => d.Severity == DiagnosticSeverity.Warning);
     }
 
     [Fact]
@@ -237,9 +237,9 @@ public sealed class EntryModeTests
         """;
 
         ConvertResult r = Convert(glsl);
-        r.Success.Should().BeFalse();
-        r.Fx.Should().BeNull();
-        r.Diagnostics.Should().Contain(d =>
+        r.Success.ShouldBeFalse();
+        r.Fx.ShouldBeNull();
+        r.Diagnostics.ShouldContain(d =>
             d.Severity == DiagnosticSeverity.Error && d.Message.Contains("fragment output"));
     }
 
@@ -251,10 +251,10 @@ public sealed class EntryModeTests
         """;
 
         ConvertResult r = Convert(glsl);
-        r.Success.Should().BeFalse();
+        r.Success.ShouldBeFalse();
         // With no `main` either, detection defaults to ShaderToy mode, whose validator reports the
         // missing mainImage entry. (A `main`-only shader with no output hits the main-mode reject above.)
-        r.Diagnostics.Should().Contain(d =>
+        r.Diagnostics.ShouldContain(d =>
             d.Severity == DiagnosticSeverity.Error &&
             d.Message.Contains("mainImage") && d.Message.Contains("found"));
     }
@@ -271,8 +271,8 @@ public sealed class EntryModeTests
         """;
 
         ConvertResult r = Convert(glsl);
-        r.Success.Should().BeFalse();
-        r.Diagnostics.Should().Contain(d =>
+        r.Success.ShouldBeFalse();
+        r.Diagnostics.ShouldContain(d =>
             d.Severity == DiagnosticSeverity.Error && d.Message.Contains("no parameters"));
     }
 }

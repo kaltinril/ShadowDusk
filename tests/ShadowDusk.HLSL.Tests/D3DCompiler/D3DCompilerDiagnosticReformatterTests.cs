@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core;
 using ShadowDusk.HLSL.D3DCompiler;
 using Xunit;
@@ -20,14 +20,14 @@ public sealed class D3DCompilerDiagnosticReformatterTests
         IReadOnlyList<ShaderError> errors =
             D3DCompilerDiagnosticReformatter.Reformat(text, "shader.fx");
 
-        errors.Should().HaveCount(1);
+        errors.Count().ShouldBe(1);
         ShaderError e = errors[0];
-        e.File.Should().Be("shader.fx");
-        e.Line.Should().Be(30);
-        e.Column.Should().Be(12);
-        e.Code.Should().Be("X3004");
-        e.Message.Should().Be("undeclared identifier 'foo'");
-        e.Severity.Should().Be(ShaderErrorSeverity.Error);
+        e.File.ShouldBe("shader.fx");
+        e.Line.ShouldBe(30);
+        e.Column.ShouldBe(12);
+        e.Code.ShouldBe("X3004");
+        e.Message.ShouldBe("undeclared identifier 'foo'");
+        e.Severity.ShouldBe(ShaderErrorSeverity.Error);
     }
 
     [Fact]
@@ -38,10 +38,10 @@ public sealed class D3DCompilerDiagnosticReformatterTests
         IReadOnlyList<ShaderError> errors =
             D3DCompilerDiagnosticReformatter.Reformat(text, @"C:\path\shader.fx");
 
-        errors.Should().HaveCount(1);
-        errors[0].Line.Should().Be(12);
-        errors[0].Column.Should().Be(5);
-        errors[0].Code.Should().Be("X3018");
+        errors.Count().ShouldBe(1);
+        errors[0].Line.ShouldBe(12);
+        errors[0].Column.ShouldBe(5);
+        errors[0].Code.ShouldBe("X3018");
     }
 
     [Fact]
@@ -52,14 +52,14 @@ public sealed class D3DCompilerDiagnosticReformatterTests
         IReadOnlyList<ShaderError> errors =
             D3DCompilerDiagnosticReformatter.Reformat(text, "shader.fx");
 
-        errors.Should().HaveCount(1);
-        errors[0].Severity.Should().Be(ShaderErrorSeverity.Warning);
+        errors.Count().ShouldBe(1);
+        errors[0].Severity.ShouldBe(ShaderErrorSeverity.Warning);
     }
 
     [Fact]
     public void EmptyTextProducesNoErrors()
     {
-        D3DCompilerDiagnosticReformatter.Reformat("", "shader.fx").Should().BeEmpty();
+        D3DCompilerDiagnosticReformatter.Reformat("", "shader.fx").ShouldBeEmpty();
     }
 
     [Fact]
@@ -70,8 +70,8 @@ public sealed class D3DCompilerDiagnosticReformatterTests
         IReadOnlyList<ShaderError> errors =
             D3DCompilerDiagnosticReformatter.Reformat(text, "shader.fx");
 
-        errors.Should().ContainSingle();
-        errors[0].RawDiagnostics.Should().Contain("catastrophic failure");
+        errors.ShouldHaveSingleItem();
+        errors[0].RawDiagnostics!.ShouldContain("catastrophic failure", Case.Sensitive);
     }
 
     // ---- Phase 53: verbatim promotion + primary selection. ----
@@ -83,9 +83,8 @@ public sealed class D3DCompilerDiagnosticReformatterTests
 
         var errors = D3DCompilerDiagnosticReformatter.Reformat(text, "shader.fx");
 
-        errors.Should().ContainSingle();
-        errors[0].Message.Should().Be("internal error: catastrophic failure",
-            "the compiler's own words are the message — never a generic sentence");
+        errors.ShouldHaveSingleItem();
+        errors[0].Message.ShouldBe("internal error: catastrophic failure", customMessage: "the compiler's own words are the message — never a generic sentence");
     }
 
     [Fact]
@@ -97,9 +96,9 @@ public sealed class D3DCompilerDiagnosticReformatterTests
             """;
         var primary = D3DCompilerDiagnosticReformatter.SelectPrimary(raw, "shader.fx", "no diagnostics");
 
-        primary.Severity.Should().Be(ShaderErrorSeverity.Error);
-        primary.Code.Should().Be("X3004");
-        primary.RawDiagnostics.Should().Contain("X3206", "the complete text rides on the primary");
+        primary.Severity.ShouldBe(ShaderErrorSeverity.Error);
+        primary.Code.ShouldBe("X3004");
+        primary.RawDiagnostics!.ShouldContain("X3206", Case.Sensitive, "the complete text rides on the primary");
     }
 
     [Fact]
@@ -111,8 +110,8 @@ public sealed class D3DCompilerDiagnosticReformatterTests
             "", "shader.fx", "vkd3d-shader DXBC compilation failed with no diagnostics",
             fallbackCode: "SD0212");
 
-        primary.Code.Should().Be("SD0212");
-        primary.Message.Should().Contain("no diagnostics");
+        primary.Code.ShouldBe("SD0212");
+        primary.Message.ShouldContain("no diagnostics", Case.Sensitive);
     }
 
     [Fact]
@@ -121,10 +120,10 @@ public sealed class D3DCompilerDiagnosticReformatterTests
         var warnings = D3DCompilerDiagnosticReformatter.ReformatAsWarnings(
             "shader.fx(3,1): warning X3206: implicit truncation of vector type", "shader.fx");
 
-        warnings.Should().ContainSingle();
-        warnings[0].Severity.Should().Be(ShaderErrorSeverity.Warning);
-        warnings[0].Code.Should().Be("X3206");
-        warnings[0].Line.Should().Be(3);
+        warnings.ShouldHaveSingleItem();
+        warnings[0].Severity.ShouldBe(ShaderErrorSeverity.Warning);
+        warnings[0].Code.ShouldBe("X3206");
+        warnings[0].Line.ShouldBe(3);
     }
 
     // -------------------------------------------------------------------------
@@ -140,14 +139,14 @@ public sealed class D3DCompilerDiagnosticReformatterTests
         IReadOnlyList<ShaderError> errors =
             D3DCompilerDiagnosticReformatter.Reformat(text, "shader.fx");
 
-        errors.Should().HaveCount(1);
+        errors.Count().ShouldBe(1);
         ShaderError e = errors[0];
-        e.File.Should().Be("shader.fx");
-        e.Line.Should().Be(12);
-        e.Column.Should().Be(5);
-        e.Code.Should().Be("E5005");
-        e.Message.Should().Be("Wrong type for argument 1 of 'mul'.");
-        e.Severity.Should().Be(ShaderErrorSeverity.Error);
+        e.File.ShouldBe("shader.fx");
+        e.Line.ShouldBe(12);
+        e.Column.ShouldBe(5);
+        e.Code.ShouldBe("E5005");
+        e.Message.ShouldBe("Wrong type for argument 1 of 'mul'.");
+        e.Severity.ShouldBe(ShaderErrorSeverity.Error);
     }
 
     [Fact]
@@ -157,11 +156,11 @@ public sealed class D3DCompilerDiagnosticReformatterTests
 
         var errors = D3DCompilerDiagnosticReformatter.Reformat(text, "shader.fx");
 
-        errors.Should().ContainSingle();
-        errors[0].Severity.Should().Be(ShaderErrorSeverity.Warning);
-        errors[0].Code.Should().Be("W5300");
-        errors[0].Line.Should().Be(3);
-        errors[0].Column.Should().Be(1);
+        errors.ShouldHaveSingleItem();
+        errors[0].Severity.ShouldBe(ShaderErrorSeverity.Warning);
+        errors[0].Code.ShouldBe("W5300");
+        errors[0].Line.ShouldBe(3);
+        errors[0].Column.ShouldBe(1);
     }
 
     [Fact]
@@ -171,10 +170,10 @@ public sealed class D3DCompilerDiagnosticReformatterTests
 
         var errors = D3DCompilerDiagnosticReformatter.Reformat(text, "shader.fx");
 
-        errors.Should().ContainSingle();
-        errors[0].Severity.Should().Be(ShaderErrorSeverity.Warning);
-        errors[0].Code.Should().Be("X0000");
-        errors[0].Message.Should().Be("implicit truncation of vector type");
+        errors.ShouldHaveSingleItem();
+        errors[0].Severity.ShouldBe(ShaderErrorSeverity.Warning);
+        errors[0].Code.ShouldBe("X0000");
+        errors[0].Message.ShouldBe("implicit truncation of vector type");
     }
 
     [Fact]
@@ -184,9 +183,9 @@ public sealed class D3DCompilerDiagnosticReformatterTests
 
         var errors = D3DCompilerDiagnosticReformatter.Reformat(text, "shader.fx");
 
-        errors.Should().ContainSingle();
-        errors[0].File.Should().Be(@"C:\game\Content\shader.fx");
-        errors[0].Line.Should().Be(12);
-        errors[0].Column.Should().Be(5);
+        errors.ShouldHaveSingleItem();
+        errors[0].File.ShouldBe(@"C:\game\Content\shader.fx");
+        errors[0].Line.ShouldBe(12);
+        errors[0].Column.ShouldBe(5);
     }
 }

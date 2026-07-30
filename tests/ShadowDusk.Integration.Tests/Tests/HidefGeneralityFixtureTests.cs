@@ -1,7 +1,7 @@
 #nullable enable
 
 using System.Text;
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.Integration.Tests.Tests;
@@ -50,15 +50,13 @@ public sealed class HidefGeneralityFixtureTests
         var result = await TestHelpers.CompileFixtureAsync(
             "examples/ExCubeSamplerHidef.fx", "OpenGL", ct: cts.Token);
 
-        result.ExitCode.Should().Be(0,
-            because: $"cube maps are supported on every GL profile now; stderr: {result.Stderr}");
-        result.Mgfx.Should().NotBeEmpty();
+        result.ExitCode.ShouldBe(0, customMessage: $"cube maps are supported on every GL profile now; stderr: {result.Stderr}");
+        result.Mgfx.ShouldNotBeEmpty();
 
         string ascii = Ascii(result.Mgfx);
-        ascii.Should().Contain("uniform samplerCube ps_s0;");
-        ascii.Should().Contain("textureCube(ps_s0,");
-        ascii.Should().NotContain("texture2D(",
-            because: "a cube sampler must not be down-rewritten to texture2D()");
+        ascii.ShouldContain("uniform samplerCube ps_s0;", Case.Sensitive);
+        ascii.ShouldContain("textureCube(ps_s0,", Case.Sensitive);
+        ascii.ShouldNotContain("texture2D(", Case.Sensitive, "a cube sampler must not be down-rewritten to texture2D()");
     }
 
     [Fact]
@@ -68,14 +66,13 @@ public sealed class HidefGeneralityFixtureTests
         var result = await TestHelpers.CompileFixtureAsync(
             "examples/ExVolumeTextureHidef.fx", "OpenGL", ct: cts.Token);
 
-        result.ExitCode.Should().Be(0,
-            because: $"3D textures are supported on Desktop + HiDef now; stderr: {result.Stderr}");
-        result.Mgfx.Should().NotBeEmpty();
+        result.ExitCode.ShouldBe(0, customMessage: $"3D textures are supported on Desktop + HiDef now; stderr: {result.Stderr}");
+        result.Mgfx.ShouldNotBeEmpty();
 
         string ascii = Ascii(result.Mgfx);
-        ascii.Should().Contain("uniform sampler3D ps_s0;");
-        ascii.Should().Contain("texture3D(ps_s0,");
-        ascii.Should().NotContain("texture2D(");
+        ascii.ShouldContain("uniform sampler3D ps_s0;", Case.Sensitive);
+        ascii.ShouldContain("texture3D(ps_s0,", Case.Sensitive);
+        ascii.ShouldNotContain("texture2D(", Case.Sensitive);
     }
 
     [Theory]
@@ -86,9 +83,8 @@ public sealed class HidefGeneralityFixtureTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var result = await TestHelpers.CompileFixtureAsync(fx, "OpenGL", ct: cts.Token);
 
-        result.ExitCode.Should().Be(0,
-            because: $"explicit-LOD/gradient sampling is supported on Desktop + HiDef; stderr: {result.Stderr}");
-        result.Mgfx.Should().NotBeEmpty();
+        result.ExitCode.ShouldBe(0, customMessage: $"explicit-LOD/gradient sampling is supported on Desktop + HiDef; stderr: {result.Stderr}");
+        result.Mgfx.ShouldNotBeEmpty();
 
         // Phase 43 F7: the generic textureLod/textureGrad forms only exist from GLSL
         // 1.30 / ES 3.00 — Mesa's strict front-end rejects them in the versionless
@@ -98,15 +94,13 @@ public sealed class HidefGeneralityFixtureTests
         // back to the generic builtin for KNI HiDef/WebGL2 — one artifact, both
         // profiles (the Phase 33 promise).
         string ascii = Ascii(result.Mgfx);
-        ascii.Should().Contain(expectedCall,
-            because: "the dimension-specific legacy spelling is the Mesa-valid MojoShader form");
-        ascii.Should().NotContain(genericCall,
-            because: "no generic call site may survive (Mesa rejects it in versionless GLSL)");
+        ascii.ShouldContain(expectedCall, Case.Sensitive, "the dimension-specific legacy spelling is the Mesa-valid MojoShader form");
+        ascii.ShouldNotContain(genericCall, Case.Sensitive, "no generic call site may survive (Mesa rejects it in versionless GLSL)");
 
         // The guarded header: HiDef mapping + ARB/EXT extension ladder + degrade.
-        ascii.Should().Contain("#if __VERSION__ >= 300");
-        ascii.Should().Contain("#elif defined(GL_ARB_shader_texture_lod)");
-        ascii.Should().Contain("#define texture2DLod(a,b,c) texture2D(a,b)");
+        ascii.ShouldContain("#if __VERSION__ >= 300", Case.Sensitive);
+        ascii.ShouldContain("#elif defined(GL_ARB_shader_texture_lod)", Case.Sensitive);
+        ascii.ShouldContain("#define texture2DLod(a,b,c) texture2D(a,b)", Case.Sensitive);
     }
 
     [Fact]
@@ -122,11 +116,9 @@ public sealed class HidefGeneralityFixtureTests
         var result = await TestHelpers.CompileFixtureAsync(
             "examples/ExVsTextureFetch.fx", "OpenGL", ct: cts.Token);
 
-        result.ExitCode.Should().NotBe(0,
-            because: "a VS texture fetch cannot work in MonoGame 3.8.2's GL runtime and must not compile silently");
-        result.Stderr.Should().Contain("SD0210");
-        result.Stderr.Should().Contain("Vertex-stage texture sampling",
-            because: "the diagnostic must name the actual limitation, not a generic rewrite error");
+        result.ExitCode.ShouldNotBe(0, customMessage: "a VS texture fetch cannot work in MonoGame 3.8.2's GL runtime and must not compile silently");
+        result.Stderr.ShouldContain("SD0210", Case.Sensitive);
+        result.Stderr.ShouldContain("Vertex-stage texture sampling", Case.Sensitive, "the diagnostic must name the actual limitation, not a generic rewrite error");
     }
 
     [Fact]
@@ -137,24 +129,22 @@ public sealed class HidefGeneralityFixtureTests
         var result = await TestHelpers.CompileFixtureAsync(
             "examples/ExMultiSamplerHidef.fx", "OpenGL", ct: cts.Token);
 
-        result.ExitCode.Should().Be(0,
-            because: $"an ordinary 4-sampler 2D shader must still compile; stderr: {result.Stderr}");
-        result.Mgfx.Should().NotBeEmpty();
+        result.ExitCode.ShouldBe(0, customMessage: $"an ordinary 4-sampler 2D shader must still compile; stderr: {result.Stderr}");
+        result.Mgfx.ShouldNotBeEmpty();
 
         // The emitted GLSL is embedded as ASCII in the .mgfx — assert the Phase-33
         // single-output alias form and the scaled sampler remap, and that NO non-2D
         // construct leaked in.
         string ascii = Ascii(result.Mgfx);
 
-        ascii.Should().Contain("#define ps_oC0 gl_FragColor",
-            because: "the single fragment output must use mgfxc's #define alias (KNI HiDef converts it)");
-        ascii.Should().Contain("ps_s0");
-        ascii.Should().Contain("ps_s3", because: "the sampler remap must scale to 4 samplers");
-        ascii.Should().NotContain("gl_FragData", because: "this is a single-output shader, not MRT");
-        ascii.Should().NotContain("texture2DLod");
-        ascii.Should().NotContain("textureGrad");
-        ascii.Should().NotContain("samplerCube");
-        ascii.Should().NotContain("sampler3D");
+        ascii.ShouldContain("#define ps_oC0 gl_FragColor", Case.Sensitive, "the single fragment output must use mgfxc's #define alias (KNI HiDef converts it)");
+        ascii.ShouldContain("ps_s0", Case.Sensitive);
+        ascii.ShouldContain("ps_s3", Case.Sensitive, "the sampler remap must scale to 4 samplers");
+        ascii.ShouldNotContain("gl_FragData", Case.Sensitive, "this is a single-output shader, not MRT");
+        ascii.ShouldNotContain("texture2DLod", Case.Sensitive);
+        ascii.ShouldNotContain("textureGrad", Case.Sensitive);
+        ascii.ShouldNotContain("samplerCube", Case.Sensitive);
+        ascii.ShouldNotContain("sampler3D", Case.Sensitive);
     }
 
     [Fact]
@@ -172,19 +162,16 @@ public sealed class HidefGeneralityFixtureTests
         var result = await TestHelpers.CompileFixtureAsync(
             "examples/Issue107DoWhile.fx", "OpenGL", ct: cts.Token);
 
-        result.ExitCode.Should().Be(0, because: $"the early-return helper must compile; stderr: {result.Stderr}");
-        result.Mgfx.Should().NotBeEmpty();
+        result.ExitCode.ShouldBe(0, customMessage: $"the early-return helper must compile; stderr: {result.Stderr}");
+        result.Mgfx.ShouldNotBeEmpty();
 
         string ascii = Ascii(result.Mgfx);
-        ascii.Should().NotContain("while(false)",
-            because: "do-while is not guaranteed in GLSL ES 1.00 (WebGL1) — issue #107");
-        ascii.Should().NotContain("while (false)");
-        ascii.Should().NotContain("_spvonce_",
-            because: "the entry wrapper must be unwrapped, not lowered to a for-loop — a " +
+        ascii.ShouldNotContain("while(false)", Case.Sensitive, "do-while is not guaranteed in GLSL ES 1.00 (WebGL1) — issue #107");
+        ascii.ShouldNotContain("while (false)", Case.Sensitive);
+        ascii.ShouldNotContain("_spvonce_", Case.Sensitive, "the entry wrapper must be unwrapped, not lowered to a for-loop — a " +
                      "one-shot for-loop with a divergent exit poisons gradient ops on " +
                      "ANGLE D3D11 (issue #136)");
-        ascii.Should().MatchRegex(@"ps_oC0 = [^;]+; return; \}",
-            because: "each wrapper-level break becomes the output-write tail plus an early return");
+        ascii.ShouldMatch(@"ps_oC0 = [^;]+; return; \}", customMessage: "each wrapper-level break becomes the output-write tail plus an early return");
     }
 
     [Fact]
@@ -201,17 +188,15 @@ public sealed class HidefGeneralityFixtureTests
         var result = await TestHelpers.CompileFixtureAsync(
             "examples/Issue136HelperGradient.fx", "OpenGL", ct: cts.Token);
 
-        result.ExitCode.Should().Be(0, because: $"the gradient helper must compile; stderr: {result.Stderr}");
+        result.ExitCode.ShouldBe(0, customMessage: $"the gradient helper must compile; stderr: {result.Stderr}");
 
         string ascii = Ascii(result.Mgfx);
-        ascii.Should().MatchRegex(@"\bfwidth\s*\(",
-            because: "the fixture's fwidth must reach the GL output — otherwise it no longer exercises issue #136");
-        ascii.Should().NotContain("while(false)");
-        ascii.Should().NotContain("while (false)");
+        ascii.ShouldMatch(@"\bfwidth\s*\(", customMessage: "the fixture's fwidth must reach the GL output — otherwise it no longer exercises issue #136");
+        ascii.ShouldNotContain("while(false)", Case.Sensitive);
+        ascii.ShouldNotContain("while (false)", Case.Sensitive);
 
         var poisoned = ThirdPartyShaderCorpusTests.FindGradientOpsInsideDivergentLoops(ascii);
-        poisoned.Should().BeEmpty(
-            because: "no gradient op may sit inside a loop with a divergent exit — ANGLE D3D11 " +
+        poisoned.ShouldBeEmpty("no gradient op may sit inside a loop with a divergent exit — ANGLE D3D11 " +
                      "zeroes it there (issue #136, nested-helper case)");
     }
 
@@ -227,19 +212,17 @@ public sealed class HidefGeneralityFixtureTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var result = await TestHelpers.CompileFixtureAsync("DeferredSprite.fx", "OpenGL", ct: cts.Token);
 
-        result.ExitCode.Should().Be(0,
-            because: $"the MRT struct-output COLOR semantics must be retargeted for GL; stderr: {result.Stderr}");
-        result.Mgfx.Should().NotBeEmpty();
+        result.ExitCode.ShouldBe(0, customMessage: $"the MRT struct-output COLOR semantics must be retargeted for GL; stderr: {result.Stderr}");
+        result.Mgfx.ShouldNotBeEmpty();
 
         string ascii = Ascii(result.Mgfx);
         // TRUE MRT: BOTH outputs map to gl_FragData[N], including slot 0 (mgfxc golden form).
-        ascii.Should().Contain("#define ps_oC0 gl_FragData[0]",
-            because: "true MRT slot 0 is gl_FragData[0], not gl_FragColor (which would broadcast to all attachments)");
-        ascii.Should().Contain("#define ps_oC1 gl_FragData[1]");
+        ascii.ShouldContain("#define ps_oC0 gl_FragData[0]", Case.Sensitive, "true MRT slot 0 is gl_FragData[0], not gl_FragColor (which would broadcast to all attachments)");
+        ascii.ShouldContain("#define ps_oC1 gl_FragData[1]", Case.Sensitive);
         // The PS-INPUT interpolant `Color : COLOR0` (VertexShaderOutput) must survive as a varying,
         // never rewritten to an output semantic — proven by the effect compiling at all (DXC would
         // reject SV_Target on a PS input). The two samplers (s0 + _normalMapSampler) are present.
-        ascii.Should().Contain("ps_s0");
-        ascii.Should().Contain("ps_s1", because: "DeferredSprite binds a second (normal-map) sampler");
+        ascii.ShouldContain("ps_s0", Case.Sensitive);
+        ascii.ShouldContain("ps_s1", Case.Sensitive, "DeferredSprite binds a second (normal-map) sampler");
     }
 }

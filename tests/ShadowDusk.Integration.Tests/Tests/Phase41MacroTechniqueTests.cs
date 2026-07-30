@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
@@ -85,16 +85,15 @@ public sealed class Phase41MacroTechniqueTests
         var (mgfx, error) = await CompileAsync("BasicEffect.fx", PlatformTarget.DirectX, ct);
 
         // No SD0010: the macro-declared techniques are recovered for the DX (SM4) target.
-        error.Should().BeNull(
+        error.ShouldBeNull(
             "BasicEffect's TECHNIQUE(...) macro techniques must be recovered on DirectX, not SD0010");
-        mgfx.Should().NotBeNull();
+        mgfx.ShouldNotBeNull();
 
         MgfxBlobReader subject = MgfxBlobReader.Parse(mgfx!);
 
-        subject.TechniqueCount.Should().Be(32, "BasicEffect.fx declares 32 TECHNIQUE() blocks");
-        subject.Techniques.Select(t => t.Name).Should().Equal(
-            s_basicEffectTechniqueOrder,
-            "techniques must appear in BasicEffect.fx declaration order (technique[0]=BasicEffect, [1]=BasicEffect_NoFog, ...)");
+        subject.TechniqueCount.ShouldBe(32, customMessage: "BasicEffect.fx declares 32 TECHNIQUE() blocks");
+        subject.Techniques.Select(t => t.Name).ShouldBe(
+            s_basicEffectTechniqueOrder, customMessage: "techniques must appear in BasicEffect.fx declaration order (technique[0]=BasicEffect, [1]=BasicEffect_NoFog, ...)");
     }
 
     [Fact]
@@ -104,29 +103,27 @@ public sealed class Phase41MacroTechniqueTests
         CancellationToken ct = cts.Token;
 
         var (mgfx, error) = await CompileAsync("BasicEffect.fx", PlatformTarget.DirectX, ct);
-        error.Should().BeNull();
+        error.ShouldBeNull();
 
         string goldenPath = Path.Combine(
             FindRepoRoot(), "tests", "fixtures", "golden", "DirectX_11", "BasicEffect.mgfx");
-        File.Exists(goldenPath).Should().BeTrue($"golden expected at {goldenPath}");
+        File.Exists(goldenPath).ShouldBeTrue($"golden expected at {goldenPath}");
 
         MgfxBlobReader subject = MgfxBlobReader.Parse(mgfx!);
         MgfxBlobReader golden = MgfxBlobReader.Parse(await File.ReadAllBytesAsync(goldenPath, ct));
 
         // Technique shape must match the golden exactly (count, names, order, pass counts).
-        subject.TechniqueCount.Should().Be(golden.TechniqueCount);
-        subject.Techniques.Select(t => t.Name).Should().Equal(golden.Techniques.Select(t => t.Name));
+        subject.TechniqueCount.ShouldBe(golden.TechniqueCount);
+        subject.Techniques.Select(t => t.Name).ShouldBe(golden.Techniques.Select(t => t.Name));
         for (int t = 0; t < golden.TechniqueCount; t++)
-            subject.Techniques[t].PassCount.Should().Be(golden.Techniques[t].PassCount,
-                $"technique '{golden.Techniques[t].Name}' pass count must match the golden");
+            subject.Techniques[t].PassCount.ShouldBe(golden.Techniques[t].PassCount, customMessage: $"technique '{golden.Techniques[t].Name}' pass count must match the golden");
 
         // Constant-buffer SIZE must match the golden on DX (the runtime SetValue layout).
         var goldCbBySize = golden.ConstantBuffers.GroupBy(c => c.Name).ToDictionary(g => g.Key, g => g.First());
         foreach (var sub in subject.ConstantBuffers)
         {
             if (goldCbBySize.TryGetValue(sub.Name, out var gold))
-                sub.Size.Should().Be(gold.Size,
-                    $"cbuffer '{sub.Name}' size must match the golden on DirectX");
+                sub.Size.ShouldBe(gold.Size, customMessage: $"cbuffer '{sub.Name}' size must match the golden on DirectX");
         }
 
         // Every golden value-class parameter must be reachable by name with matching shape.
@@ -138,12 +135,10 @@ public sealed class Phase41MacroTechniqueTests
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
         foreach (var gold in golden.Parameters.Where(p => p.Class != ClassObject))
         {
-            subjByName.Should().ContainKey(gold.Name,
-                $"golden value-class parameter '{gold.Name}' must be reachable by name");
+            subjByName.ContainsKey(gold.Name).ShouldBeTrue(customMessage: $"golden value-class parameter '{gold.Name}' must be reachable by name");
             var sub = subjByName[gold.Name];
-            (sub.Class, sub.Type, sub.Rows, sub.Columns).Should().Be(
-                (gold.Class, gold.Type, gold.Rows, gold.Columns),
-                $"parameter '{gold.Name}' value-class shape must match the golden");
+            (sub.Class, sub.Type, sub.Rows, sub.Columns).ShouldBe(
+                (gold.Class, gold.Type, gold.Rows, gold.Columns), customMessage: $"parameter '{gold.Name}' value-class shape must match the golden");
         }
     }
 
@@ -159,10 +154,9 @@ public sealed class Phase41MacroTechniqueTests
         // crashing the process. This documents the GL macro-model gap (Phase 41 follow-up).
         var (mgfx, error) = await CompileAsync("BasicEffect.fx", PlatformTarget.OpenGL, ct);
 
-        mgfx.Should().BeNull();
-        error.Should().NotBeNull();
-        error!.Code.Should().Be("SD0010",
-            "the OpenGL macro-model gap surfaces as a loud SD0010, never a native crash");
+        mgfx.ShouldBeNull();
+        error.ShouldNotBeNull();
+        error!.Code.ShouldBe("SD0010", customMessage: "the OpenGL macro-model gap surfaces as a loud SD0010, never a native crash");
     }
 
     [Fact]
@@ -187,8 +181,8 @@ public sealed class Phase41MacroTechniqueTests
 
         var result = await new EffectCompiler().CompileAsync(source, options, ct);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Should().ContainSingle(e => e.Code == "SD0010");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Where(e => e.Code == "SD0010").ShouldHaveSingleItem();
     }
 
     // -----------------------------------------------------------------------
@@ -221,19 +215,18 @@ public sealed class Phase41MacroTechniqueTests
 
         var (data, error) = await CompileAsync(fixtureFileName, PlatformTarget.Fna, ct);
 
-        error.Should().BeNull(
+        error.ShouldBeNull(
             $"'{fixtureFileName}' declares its techniques via the TECHNIQUE() macro; the FNA " +
             "zero-technique recovery must detect them (not SD0010) and compile to fx_2_0");
-        data.Should().NotBeNull();
+        data.ShouldNotBeNull();
 
         // The output must be a real fx_2_0 binary MojoShader can parse, with techniques and
         // SM<=3 shader blobs (the FNA ceiling).
         Fx2ParsedEffect effect = Fx2BinaryValidator.Parse(data!);
-        effect.Techniques.Should().NotBeEmpty($"'{fixtureFileName}' declares macro techniques");
-        effect.Shaders.Should().NotBeEmpty($"'{fixtureFileName}' declares at least one compiled pass");
+        effect.Techniques.ShouldNotBeEmpty($"'{fixtureFileName}' declares macro techniques");
+        effect.Shaders.ShouldNotBeEmpty($"'{fixtureFileName}' declares at least one compiled pass");
         foreach (Fx2ParsedShader shader in effect.Shaders)
-            (shader.VersionToken & 0xFFFF).Should().BeLessThanOrEqualTo(0x0300u,
-                $"shader version 0x{shader.VersionToken:X8} in '{fixtureFileName}' must be SM <= 3");
+            (shader.VersionToken & 0xFFFF).ShouldBeLessThanOrEqualTo(0x0300u, customMessage: $"shader version 0x{shader.VersionToken:X8} in '{fixtureFileName}' must be SM <= 3");
     }
 
     [Fact]
@@ -251,10 +244,9 @@ public sealed class Phase41MacroTechniqueTests
         // technique-blindness.
         var (data, error) = await CompileAsync("BasicEffect.fx", PlatformTarget.Fna, ct);
 
-        data.Should().BeNull();
-        error.Should().NotBeNull();
-        error!.Code.Should().Be("SD0305",
-            "GAP-1 is fixed on FNA (techniques recovered); BasicEffect then fails on the honest " +
+        data.ShouldBeNull();
+        error.ShouldNotBeNull();
+        error!.Code.ShouldBe("SD0305", customMessage: "GAP-1 is fixed on FNA (techniques recovered); BasicEffect then fails on the honest " +
             "SM2 register-pressure limit (SD0305), not SD0010");
     }
 
@@ -278,10 +270,9 @@ public sealed class Phase41MacroTechniqueTests
         var (data, error) = await CompileAsync(
             "third-party/Gum/FnaSample-Shader.fx", PlatformTarget.Fna, ct);
 
-        data.Should().BeNull();
-        error.Should().NotBeNull();
-        error!.Code.Should().Be("SD0300",
-            "GAP-1 is fixed on FNA (the macro technique is recovered); the shader is then " +
+        data.ShouldBeNull();
+        error.ShouldNotBeNull();
+        error!.Code.ShouldBe("SD0300", customMessage: "GAP-1 is fixed on FNA (the macro technique is recovered); the shader is then " +
             "declined for its sub-SM2 vs_1_1 profile (SD0300), not SD0010");
     }
 

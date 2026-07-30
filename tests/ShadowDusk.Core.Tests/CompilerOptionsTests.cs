@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
 using Xunit;
@@ -16,7 +16,7 @@ public sealed class CompilerOptionsTests
         // vkd3d-shader backend — a bare DirectX compile (and the bare CLI invocation)
         // must work identically on Linux, macOS, and Windows. The Windows-only
         // d3dcompiler_47 oracle is opt-in only.
-        new CompilerOptions().DxbcBackend.Should().Be(DxbcBackend.Vkd3d);
+        new CompilerOptions().DxbcBackend.ShouldBe(DxbcBackend.Vkd3d);
     }
 
     [Theory]
@@ -27,14 +27,14 @@ public sealed class CompilerOptionsTests
     [InlineData(PlatformTarget.Metal,   false)]
     public void PlatformMacros_IsSupported_MatchesFor(PlatformTarget target, bool expected)
     {
-        PlatformMacros.IsSupported(target).Should().Be(expected);
+        PlatformMacros.IsSupported(target).ShouldBe(expected);
 
         // IsSupported is the pre-check for For (no exception-as-control-flow): the two
         // must agree exactly.
         Action act = () => PlatformMacros.For(target);
         if (expected)
-            act.Should().NotThrow();
+            Should.NotThrow(act);
         else
-            act.Should().Throw<ArgumentOutOfRangeException>();
+            Should.Throw<ArgumentOutOfRangeException>(act);
     }
 }

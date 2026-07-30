@@ -1,4 +1,4 @@
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.ShaderToy.Tests;
@@ -27,12 +27,12 @@ public sealed class MatrixConstructorTests
 
         ConvertResult r = ShaderToyConverter.Convert(glsl);
 
-        r.Success.Should().BeTrue(
+        r.Success.ShouldBeTrue(string.Format(
             "mat2(vec4) is a valid GLSL matrix constructor; diagnostics: {0}",
-            string.Join("; ", r.Diagnostics.Select(d => $"{d.Severity}:{d.Message}")));
-        r.Fx!.Should().Contain("float2x2(", "the vector is passed through to the HLSL matrix constructor");
+            string.Join("; ", r.Diagnostics.Select(d => $"{d.Severity}:{d.Message}"))));
+        r.Fx!.ShouldContain("float2x2(", Case.Sensitive, "the vector is passed through to the HLSL matrix constructor");
         // The reject message for an unsupported single-arg matrix constructor must NOT appear.
-        r.Diagnostics.Should().NotContain(d => d.Message.Contains("Single-argument matrix constructor", StringComparison.Ordinal));
+        r.Diagnostics.ShouldNotContain(d => d.Message.Contains("Single-argument matrix constructor", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -48,8 +48,8 @@ public sealed class MatrixConstructorTests
 
         ConvertResult r = ShaderToyConverter.Convert(glsl);
 
-        r.Success.Should().BeFalse();
-        r.Diagnostics.Should().Contain(d =>
+        r.Success.ShouldBeFalse();
+        r.Diagnostics.ShouldContain(d =>
             d.Severity == DiagnosticSeverity.Error && d.Line > 0 &&
             d.Message.Contains("components", StringComparison.Ordinal));
     }

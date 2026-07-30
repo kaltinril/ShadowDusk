@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Reflection;
 using ShadowDusk.HLSL.Dxc;
@@ -36,8 +36,7 @@ public sealed class SpvBindingVerificationTests
             Platform       = platform,
         };
         var result = await compiler.CompileAsync(request);
-        result.IsSuccess.Should().BeTrue(
-            because: result.IsFailure ? result.Error.FxcFormattedMessage : "compilation must succeed");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.FxcFormattedMessage : "compilation must succeed");
         return result.Value.Bytes;
     }
 
@@ -49,7 +48,7 @@ public sealed class SpvBindingVerificationTests
         var verifier = new SpvReflectionVerifier();
         var result = verifier.GetBindings(spirvBlob);
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
     }
 
     [Fact]
@@ -60,8 +59,8 @@ public sealed class SpvBindingVerificationTests
         var verifier = new SpvReflectionVerifier();
         var result = verifier.GetBindings(spirvBlob);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Should().NotBeNull();
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.ShouldNotBeNull();
     }
 
     [Fact]
@@ -72,8 +71,8 @@ public sealed class SpvBindingVerificationTests
         var dxilBlob  = await CompileAsync(TexSamplerHlsl, PlatformTarget.DirectX);
         var spirvBlob = await CompileAsync(TexSamplerHlsl, PlatformTarget.OpenGL);
 
-        dxilBlob.Length.Should().BeGreaterThan(0,  because: "DXIL blob must be non-empty");
-        spirvBlob.Length.Should().BeGreaterThan(0, because: "SPIR-V blob must be non-empty");
+        dxilBlob.Length.ShouldBeGreaterThan(0, customMessage: "DXIL blob must be non-empty");
+        spirvBlob.Length.ShouldBeGreaterThan(0, customMessage: "SPIR-V blob must be non-empty");
     }
 
     // -------------------------------------------------------------------------
@@ -99,9 +98,9 @@ public sealed class SpvBindingVerificationTests
 
         var result = new SpirvReflector().Reflect(garbage);
 
-        result.IsFailure.Should().BeTrue(because: "garbage bytes are not a SPIR-V module");
-        result.Error.Code.Should().Be("SD0101");
-        result.Error.Message.Should().NotBeNullOrEmpty();
+        result.IsFailure.ShouldBeTrue("garbage bytes are not a SPIR-V module");
+        result.Error.Code.ShouldBe("SD0101");
+        result.Error.Message.ShouldNotBeNullOrEmpty();
     }
 
     [Fact]
@@ -133,27 +132,24 @@ public sealed class SpvBindingVerificationTests
         ReadOnlyMemory<byte> spirvBlob = await CompileAsync(shiftedHlsl, PlatformTarget.OpenGL);
 
         var dxilResult = new DxilReflectionExtractor().Extract(dxilBlob);
-        dxilResult.IsSuccess.Should().BeTrue(
-            because: dxilResult.IsFailure ? dxilResult.Error.Message : "DXIL reflection must succeed");
+        dxilResult.IsSuccess.ShouldBeTrue(dxilResult.IsFailure ? dxilResult.Error.Message : "DXIL reflection must succeed");
 
         var spirvResult = new SpirvReflector().Reflect(spirvBlob);
-        spirvResult.IsSuccess.Should().BeTrue(
-            because: spirvResult.IsFailure ? spirvResult.Error.Message : "SPIR-V reflection must succeed");
+        spirvResult.IsSuccess.ShouldBeTrue(spirvResult.IsFailure ? spirvResult.Error.Message : "SPIR-V reflection must succeed");
 
-        var dxilTexture  = dxilResult.Value.Textures.Should().ContainSingle().Subject;
-        var dxilSampler  = dxilResult.Value.Samplers.Should().ContainSingle().Subject;
-        var spirvTexture = spirvResult.Value.Textures.Should()
-            .ContainSingle(t => t.Name == "Albedo").Subject;
-        var spirvSampler = spirvResult.Value.Samplers.Should()
-            .ContainSingle(s => s.Name == "AlbedoSampler").Subject;
+        var dxilTexture  = dxilResult.Value.Textures.ShouldHaveSingleItem();
+        var dxilSampler  = dxilResult.Value.Samplers.ShouldHaveSingleItem();
+        var spirvTexture = spirvResult.Value.Textures
+            .Where(t => t.Name == "Albedo").ShouldHaveSingleItem();
+        var spirvSampler = spirvResult.Value.Samplers
+            .Where(s => s.Name == "AlbedoSampler").ShouldHaveSingleItem();
 
-        dxilTexture.BindSlot.Should().Be(0, because: "the DXIL side binds Albedo to t0");
-        spirvTexture.BindSlot.Should().Be(1, because: "the SPIR-V side binds Albedo at rank t1");
-        dxilSampler.BindSlot.Should().Be(0, because: "the DXIL side binds AlbedoSampler to s0");
-        spirvSampler.BindSlot.Should().Be(1, because: "the SPIR-V side binds AlbedoSampler at rank s1");
+        dxilTexture.BindSlot.ShouldBe(0, customMessage: "the DXIL side binds Albedo to t0");
+        spirvTexture.BindSlot.ShouldBe(1, customMessage: "the SPIR-V side binds Albedo at rank t1");
+        dxilSampler.BindSlot.ShouldBe(0, customMessage: "the DXIL side binds AlbedoSampler to s0");
+        spirvSampler.BindSlot.ShouldBe(1, customMessage: "the SPIR-V side binds AlbedoSampler at rank s1");
 
-        spirvTexture.BindSlot.Should().NotBe(dxilTexture.BindSlot,
-            because: "a deliberately divergent layout must surface as differing reflected slots " +
+        spirvTexture.BindSlot.ShouldNotBe(dxilTexture.BindSlot, customMessage: "a deliberately divergent layout must surface as differing reflected slots " +
                      "(this is exactly the comparison SpirvVsDxilReflectionTests enforces corpus-wide)");
     }
 }

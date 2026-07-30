@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Reflection;
 using ShadowDusk.HLSL.Dxc;
@@ -39,8 +39,7 @@ public sealed class BasicCbufferReflectionTests
             Platform       = PlatformTarget.DirectX,
         };
         var result = await compiler.CompileAsync(request);
-        result.IsSuccess.Should().BeTrue(
-            because: result.IsFailure ? result.Error.FxcFormattedMessage : "compilation must succeed");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.FxcFormattedMessage : "compilation must succeed");
         return result.Value.Bytes;
     }
 
@@ -52,7 +51,7 @@ public sealed class BasicCbufferReflectionTests
         var extractor = new DxilReflectionExtractor();
         var result = extractor.Extract(dxilBlob);
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
     }
 
     [Fact]
@@ -63,8 +62,8 @@ public sealed class BasicCbufferReflectionTests
         var extractor = new DxilReflectionExtractor();
         var reflected = extractor.Extract(dxilBlob).Value;
 
-        reflected.ConstantBuffers.Should().ContainSingle();
-        reflected.ConstantBuffers[0].Name.Should().Be("Params");
+        reflected.ConstantBuffers.ShouldHaveSingleItem();
+        reflected.ConstantBuffers[0].Name.ShouldBe("Params");
     }
 
     [Fact]
@@ -75,7 +74,7 @@ public sealed class BasicCbufferReflectionTests
         var extractor = new DxilReflectionExtractor();
         var cbuffer = extractor.Extract(dxilBlob).Value.ConstantBuffers[0];
 
-        cbuffer.Variables.Should().HaveCount(4);
+        cbuffer.Variables.Count().ShouldBe(4);
     }
 
     [Fact]
@@ -87,11 +86,11 @@ public sealed class BasicCbufferReflectionTests
         var variables = extractor.Extract(dxilBlob).Value.ConstantBuffers[0].Variables;
 
         var scale = variables.Single(v => v.Name == "Scale");
-        scale.StartOffset.Should().Be(0);
-        scale.SizeBytes.Should().Be(4);
-        scale.ParameterClass.Should().Be(EffectParameterClass.Scalar);
-        scale.ParameterType.Should().Be(EffectParameterType.Single);
-        scale.Columns.Should().Be(1);
+        scale.StartOffset.ShouldBe(0);
+        scale.SizeBytes.ShouldBe(4);
+        scale.ParameterClass.ShouldBe(EffectParameterClass.Scalar);
+        scale.ParameterType.ShouldBe(EffectParameterType.Single);
+        scale.Columns.ShouldBe(1);
     }
 
     [Fact]
@@ -103,11 +102,11 @@ public sealed class BasicCbufferReflectionTests
         var variables = extractor.Extract(dxilBlob).Value.ConstantBuffers[0].Variables;
 
         var direction = variables.Single(v => v.Name == "Direction");
-        direction.StartOffset.Should().Be(4);
-        direction.SizeBytes.Should().Be(12);
-        direction.ParameterClass.Should().Be(EffectParameterClass.Vector);
-        direction.ParameterType.Should().Be(EffectParameterType.Single);
-        direction.Columns.Should().Be(3);
+        direction.StartOffset.ShouldBe(4);
+        direction.SizeBytes.ShouldBe(12);
+        direction.ParameterClass.ShouldBe(EffectParameterClass.Vector);
+        direction.ParameterType.ShouldBe(EffectParameterType.Single);
+        direction.Columns.ShouldBe(3);
     }
 
     [Fact]
@@ -119,11 +118,11 @@ public sealed class BasicCbufferReflectionTests
         var variables = extractor.Extract(dxilBlob).Value.ConstantBuffers[0].Variables;
 
         var color = variables.Single(v => v.Name == "Color");
-        color.StartOffset.Should().Be(16);
-        color.SizeBytes.Should().Be(16);
-        color.ParameterClass.Should().Be(EffectParameterClass.Vector);
-        color.ParameterType.Should().Be(EffectParameterType.Single);
-        color.Columns.Should().Be(4);
+        color.StartOffset.ShouldBe(16);
+        color.SizeBytes.ShouldBe(16);
+        color.ParameterClass.ShouldBe(EffectParameterClass.Vector);
+        color.ParameterType.ShouldBe(EffectParameterType.Single);
+        color.Columns.ShouldBe(4);
     }
 
     [Fact]
@@ -135,12 +134,12 @@ public sealed class BasicCbufferReflectionTests
         var variables = extractor.Extract(dxilBlob).Value.ConstantBuffers[0].Variables;
 
         var world = variables.Single(v => v.Name == "World");
-        world.StartOffset.Should().Be(32);
-        world.SizeBytes.Should().Be(64);
-        world.ParameterClass.Should().Be(EffectParameterClass.Matrix);
-        world.ParameterType.Should().Be(EffectParameterType.Single);
-        world.Rows.Should().Be(4);
-        world.Columns.Should().Be(4);
+        world.StartOffset.ShouldBe(32);
+        world.SizeBytes.ShouldBe(64);
+        world.ParameterClass.ShouldBe(EffectParameterClass.Matrix);
+        world.ParameterType.ShouldBe(EffectParameterType.Single);
+        world.Rows.ShouldBe(4);
+        world.Columns.ShouldBe(4);
     }
 
     [Fact]
@@ -151,6 +150,6 @@ public sealed class BasicCbufferReflectionTests
         var extractor = new DxilReflectionExtractor();
         var cbuffer = extractor.Extract(dxilBlob).Value.ConstantBuffers[0];
 
-        cbuffer.SizeBytes.Should().Be(96);
+        cbuffer.SizeBytes.ShouldBe(96);
     }
 }

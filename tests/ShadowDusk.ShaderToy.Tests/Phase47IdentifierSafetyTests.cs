@@ -1,4 +1,4 @@
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.ShaderToy.Tests;
@@ -32,16 +32,16 @@ public sealed class Phase47IdentifierSafetyTests
 
         ConvertResult r = Convert(glsl);
 
-        r.Success.Should().BeTrue(Because(r));
+        r.Success.ShouldBeTrue(Because(r));
         // The local was renamed...
-        r.Fx!.Should().Contain("rot_sd", "the shadowing local 'rot' is renamed");
+        r.Fx!.ShouldContain("rot_sd", Case.Sensitive, "the shadowing local 'rot' is renamed");
         // ...its value reference too (g_rot-style use)...
-        r.Fx!.Should().Contain("mul(", "the 'rot * v' use is preserved (matrix-order trap), referencing the local");
+        r.Fx!.ShouldContain("mul(", Case.Sensitive, "the 'rot * v' use is preserved (matrix-order trap), referencing the local");
         // ...but the FUNCTION decl + call head keep the original name so the call still resolves.
-        r.Fx!.Should().Contain("rot(", "the call head and function decl stay bound to the 'rot' function");
+        r.Fx!.ShouldContain("rot(", Case.Sensitive, "the call head and function decl stay bound to the 'rot' function");
 
         // A located warning explains the rename, pointing at the original GLSL.
-        r.Diagnostics.Should().Contain(d =>
+        r.Diagnostics.ShouldContain(d =>
             d.Severity == DiagnosticSeverity.Warning &&
             d.Construct == "rot" && d.Line > 0 && d.Column > 0 &&
             d.Message.Contains("shadows the function", StringComparison.Ordinal));
@@ -60,15 +60,17 @@ public sealed class Phase47IdentifierSafetyTests
 
         ConvertResult r = Convert(glsl);
 
-        r.Success.Should().BeTrue(Because(r));
-        r.Fx!.Should().Contain("matrix_sd").And.Contain("sample_sd");
+        r.Success.ShouldBeTrue(Because(r));
+        r.Fx!.ShouldContain("matrix_sd", Case.Sensitive);
+        r.Fx!.ShouldContain("sample_sd", Case.Sensitive);
         // The bare reserved words must not survive as HLSL identifiers (a declarator or use).
-        r.Fx!.Should().NotContain("float2 matrix ").And.NotContain("float sample ");
+        r.Fx!.ShouldNotContain("float2 matrix ", Case.Sensitive);
+        r.Fx!.ShouldNotContain("float sample ");
 
-        r.Diagnostics.Should().Contain(d =>
+        r.Diagnostics.ShouldContain(d =>
             d.Severity == DiagnosticSeverity.Warning && d.Construct == "matrix" &&
             d.Line > 0 && d.Message.Contains("reserved word", StringComparison.Ordinal));
-        r.Diagnostics.Should().Contain(d =>
+        r.Diagnostics.ShouldContain(d =>
             d.Severity == DiagnosticSeverity.Warning && d.Construct == "sample");
     }
 
@@ -85,11 +87,11 @@ public sealed class Phase47IdentifierSafetyTests
 
         ConvertResult r = Convert(glsl);
 
-        r.Success.Should().BeTrue(Because(r));
-        r.Fx!.Should().Contain("linear_sd(", "the function decl and every call use the safe name");
-        r.Fx!.Should().NotContain("linear(", "the reserved 'linear' name must not survive as a callable");
+        r.Success.ShouldBeTrue(Because(r));
+        r.Fx!.ShouldContain("linear_sd(", Case.Sensitive, "the function decl and every call use the safe name");
+        r.Fx!.ShouldNotContain("linear(", Case.Sensitive, "the reserved 'linear' name must not survive as a callable");
 
-        r.Diagnostics.Should().Contain(d =>
+        r.Diagnostics.ShouldContain(d =>
             d.Severity == DiagnosticSeverity.Warning && d.Construct == "linear" && d.Line > 0);
     }
 
@@ -108,9 +110,9 @@ public sealed class Phase47IdentifierSafetyTests
 
         ConvertResult r = Convert(glsl);
 
-        r.Success.Should().BeTrue(Because(r));
-        r.Fx!.Should().NotContain("helper_sd", "an uncalled shadow does not break HLSL, so no rename");
-        r.Diagnostics.Should().NotContain(d => d.Severity == DiagnosticSeverity.Warning && d.Construct == "helper");
+        r.Success.ShouldBeTrue(Because(r));
+        r.Fx!.ShouldNotContain("helper_sd", Case.Sensitive, "an uncalled shadow does not break HLSL, so no rename");
+        r.Diagnostics.ShouldNotContain(d => d.Severity == DiagnosticSeverity.Warning && d.Construct == "helper");
     }
 
     [Fact]
@@ -125,8 +127,8 @@ public sealed class Phase47IdentifierSafetyTests
 
         ConvertResult r = Convert(glsl);
 
-        r.Success.Should().BeTrue(Because(r));
-        r.Diagnostics.Should().BeEmpty("a shader with no collisions triggers no identifier-safety renames");
+        r.Success.ShouldBeTrue(Because(r));
+        r.Diagnostics.ShouldBeEmpty("a shader with no collisions triggers no identifier-safety renames");
     }
 
     // ── converter-introduced names (intrinsic rename targets + harness symbols, bug-hunt N20) ──
@@ -145,11 +147,11 @@ public sealed class Phase47IdentifierSafetyTests
 
         ConvertResult r = Convert(glsl);
 
-        r.Success.Should().BeTrue(Because(r));
-        r.Fx!.Should().Contain("float frac_sd = frac(", "the local is renamed; the intrinsic call is not");
-        r.Fx!.Should().NotContain("float frac =", "the bare local name would shadow the frac intrinsic");
+        r.Success.ShouldBeTrue(Because(r));
+        r.Fx!.ShouldContain("float frac_sd = frac(", Case.Sensitive, "the local is renamed; the intrinsic call is not");
+        r.Fx!.ShouldNotContain("float frac =", Case.Sensitive, "the bare local name would shadow the frac intrinsic");
 
-        r.Diagnostics.Should().Contain(d =>
+        r.Diagnostics.ShouldContain(d =>
             d.Severity == DiagnosticSeverity.Warning && d.Construct == "frac" &&
             d.Line > 0 && d.Message.Contains("collides", StringComparison.Ordinal));
     }
@@ -168,10 +170,10 @@ public sealed class Phase47IdentifierSafetyTests
 
         ConvertResult r = Convert(glsl);
 
-        r.Success.Should().BeTrue(Because(r));
-        r.Fx!.Should().Contain("float lerp_sd(float t)", "the user function is renamed at its declaration");
-        r.Fx!.Should().Contain("lerp_sd(0.25)", "calls to the user function follow the rename");
-        r.Fx!.Should().Contain("lerp(0.0, 1.0, a)", "mix() still emits the real lerp intrinsic");
+        r.Success.ShouldBeTrue(Because(r));
+        r.Fx!.ShouldContain("float lerp_sd(float t)", Case.Sensitive, "the user function is renamed at its declaration");
+        r.Fx!.ShouldContain("lerp_sd(0.25)", Case.Sensitive, "calls to the user function follow the rename");
+        r.Fx!.ShouldContain("lerp(0.0, 1.0, a)", Case.Sensitive, "mix() still emits the real lerp intrinsic");
     }
 
     [Fact]
@@ -188,9 +190,9 @@ public sealed class Phase47IdentifierSafetyTests
 
         ConvertResult r = Convert(glsl);
 
-        r.Success.Should().BeTrue(Because(r));
-        r.Fx!.Should().Contain("float glsl_mod_sd = glsl_mod(");
-        r.Diagnostics.Should().Contain(d =>
+        r.Success.ShouldBeTrue(Because(r));
+        r.Fx!.ShouldContain("float glsl_mod_sd = glsl_mod(", Case.Sensitive);
+        r.Diagnostics.ShouldContain(d =>
             d.Severity == DiagnosticSeverity.Warning && d.Construct == "glsl_mod");
     }
 
@@ -206,10 +208,10 @@ public sealed class Phase47IdentifierSafetyTests
 
         ConvertResult r = Convert(glsl);
 
-        r.Success.Should().BeTrue(Because(r));
-        r.Fx!.Should().Contain("static float PSMain_sd", "the user global must not collide with the harness PS");
-        r.Fx!.Should().Contain("float4 PSMain(VSOutput input)", "the harness entry keeps its name");
-        r.Diagnostics.Should().Contain(d =>
+        r.Success.ShouldBeTrue(Because(r));
+        r.Fx!.ShouldContain("static float PSMain_sd", Case.Sensitive, "the user global must not collide with the harness PS");
+        r.Fx!.ShouldContain("float4 PSMain(VSOutput input)", Case.Sensitive, "the harness entry keeps its name");
+        r.Diagnostics.ShouldContain(d =>
             d.Severity == DiagnosticSeverity.Warning && d.Construct == "PSMain");
     }
 

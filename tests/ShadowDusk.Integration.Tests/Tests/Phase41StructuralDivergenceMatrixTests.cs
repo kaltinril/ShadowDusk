@@ -1,7 +1,7 @@
 #nullable enable
 
 using System.Text;
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
@@ -86,9 +86,9 @@ public sealed class Phase41StructuralDivergenceMatrixTests
         // Sanity: the run must cover the expected corpus shape so a future fixture
         // add/remove is noticed. (46 golden-backed * 2 targets, 30 non-golden * 2 —
         // the count grows as Phase-45 example fixtures are added under shaders/examples.)
-        matrixRows.Count.Should().Be(goldenBacked.Count * 2);
-        censusRows.Count.Should().Be(nonGolden.Count * 2);
-        File.Exists(reportPath).Should().BeTrue();
+        matrixRows.Count.ShouldBe(goldenBacked.Count * 2);
+        censusRows.Count.ShouldBe(nonGolden.Count * 2);
+        File.Exists(reportPath).ShouldBeTrue();
     }
 
     // -----------------------------------------------------------------------
