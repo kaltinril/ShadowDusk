@@ -182,6 +182,47 @@ same appendix, not part of this rung.)
 **Done = ** at least one `.glsl`-route fixture renders through the Windows render gates (and the GL
 CI gates where applicable), pinning the converted-shader path at rung 4.
 
+#### ✅ CLOSED for OpenGL (2026-07-29)
+
+[`validation/ShaderToyRouteGl`](../validation/ShaderToyRouteGl/) runs the real frontend in process
+(`ShaderToyConverter.Convert` on `tests/fixtures/shaders/shadertoy/GradientToy.glsl`), compiles the
+converted `.fx` through the real pipeline, and pixel-diffs it against **`mgfxc`'s own build of that
+same converted `.fx`** on real MonoGame DesktopGL: **maxd 0**. Wired into `validation-render.yml`, so
+it runs in CI on Mesa llvmpipe.
+
+**There IS an mgfxc oracle here, and the distinction matters.** `docs/validation-matrix.md` §8 says
+there is no `mgfxc` oracle for the ShaderToy route — that is true of the **input** (a `.glsl` is not
+an mgfxc input, so on the input side there is nothing to be equivalent *to*), but the converter's
+**output** is ordinary HLSL `.fx`, which mgfxc compiles like any other. So the route's downstream
+half can be, and now is, held to the real product bar. The claim is deliberately narrow: *a shader
+the converter produced compiles to the same picture as the reference compiler's build of the same
+`.fx`.* Whether the converter faithfully reproduces the original ShaderToy is the separate
+fidelity axis with its own oracle, and this gate does not touch it.
+
+**The golden is pinned to a specific `.fx`, on purpose.** The golden is mgfxc's build of one file; if
+converter output drifted with nothing checking, the golden would quietly stop corresponding to what
+the route emits and the diff would be comparing two different shaders while still reporting a number.
+So the driver asserts the in-process conversion still equals the committed
+`tests/fixtures/shaders/shadertoy/GradientToy.fx` **before** it renders anything, and writes the
+current output to the results directory on mismatch, with the regeneration command in the message.
+
+**Two harness facts that are load-bearing:**
+
+- **`SpriteBatch` cannot drive this effect.** The converted effect is VS-driven and its generated
+  header states the host contract outright ("the host draws a quad/triangle whose POSITION is already
+  in NDC"). `SpriteBatch` feeds screen-space positions expecting the effect to apply its own
+  transform, and this VS applies none, so the quad lands outside the frustum and nothing renders. The
+  driver draws a real NDC fullscreen quad with a vertex declaration of exactly `POSITION` and nothing
+  else — which is also what an actual consumer of this route does.
+- **The absolute arm asserts the gradient's SHAPE, not its orientation** (|variation| per axis, plus
+  `B==0`/`A==255`). ShaderToy's Y origin is bottom-left and the converter flips it; that is the
+  fidelity gate's claim to make, not this one's. Asserting shape still refuses a flat, black, or
+  single-axis frame, so "it rendered nothing" cannot pass as agreement. The golden gets the same
+  check, so a diff failure is attributed to the right side.
+
+**Still open:** the Windows DX/FNA render-gate fixtures for this route. The **DirectX** one is
+blocked by A10 below (there is no mgfxc DirectX golden to diff against, for a real reason).
+
 **Why this is worth more than it looks (2026-07-28).** Running `tools/shadertoy2fx/render-proof`
 during the Phase 52 full-test sweep found it had been **dead since Phase 47** and nobody knew:
 first it exited immediately on a corpus path the Phase-47 promotion had moved, and once that was
@@ -538,6 +579,54 @@ signature above rather than the disproven one. **Next step:** on the next occurr
 per-assembly `.trx` artifact (now preserved) for `Compiler.Tests (net10.0)` before choosing a
 mitigation — the concentration on one assembly + TFM is the lead worth pulling, and a `net10.0`-only
 failure of an assembly whose `net8.0` twin passes in the same run is not obviously environmental.
+
+---
+
+### A10 — A converted ShaderToy `.fx` compiles on DirectX for us and is REJECTED by `mgfxc` (found 2026-07-29)
+
+*Surfaced by A5, and only because the new fixture joined the auto-globbed corpus. Filed rather than
+fixed, because each half moves something with its own blast radius.*
+
+Trying to generate a `DirectX_11` golden for the converted `GradientToy.fx` — so the fixture would be
+golden-backed on both profiles like the rest of the corpus — failed on the reference compiler:
+
+```
+mgfxc /Profile:DirectX_11 GradientToy.fx
+  Invalid profile 'vs_3_0'. Vertex shader 'VSMain' must be SM 4.0 level 9.1 or higher!
+```
+
+**ShadowDusk compiles the identical file for `DirectX_11` successfully** — measured through the CLI,
+exit 0, 2033 bytes. The structural-divergence census records the same split: `shadertoy/GradientToy.fx
+| DirectX_11 | PASS` on our side, no golden on mgfxc's.
+
+**Two separable defects:**
+
+1. **The converter's emitted profile header.** `ShaderToyConverter` writes `vs_3_0`/`ps_3_0` in *both*
+   arms of its `#if OPENGL … #else … #endif`, so the DirectX arm asks for a profile below MonoGame's
+   DirectX floor. The stock MonoGame convention — and what mgfxc requires — is
+   `vs_4_0_level_9_1`/`ps_4_0_level_9_1` in the `#else` arm. As emitted, a converted shader is not
+   `mgfxc`-compilable for DirectX at all, which also means the DX slice of A5 has no available oracle.
+   The generated file's own header comment says the legacy style is "so the existing ShadowDusk
+   pipeline can target OpenGL, DirectX, and FNA fx_2_0" — true of *our* pipeline, misleading about
+   portability. **Blast radius:** changing the emission moves every ShaderToy converter golden and the
+   A5 fixture + golden with them, so it wants its own change with a full converter-corpus regen.
+2. **The reject-fidelity gap.** ShadowDusk accepts a vertex profile for the DirectX target that
+   `mgfxc` refuses. This is exactly the class [Phase 48](DONE/PHASE-48-compile-target-profile-validation.md)
+   exists for, but it is a different check from the two that phase shipped: `SD0013` catches an
+   *unrecognized* profile and `SD0014` a cross-stage mismatch, whereas `vs_3_0` is a perfectly
+   recognized profile that is simply **below the target's floor**. **Blast radius:** this turns a
+   currently-succeeding compile into a loud rejection, so it needs the Phase 48 treatment — establish
+   the floor per target from mgfxc's actual behavior, sweep the corpus for what would start failing,
+   and land it as a deliberate reject-set change.
+
+**Which is the real bug is itself a decision.** If (2) is fixed alone, the converter's own output stops
+compiling for DirectX and the `.glsl` route loses a target — so (1) should almost certainly land first
+or alongside. Do not fix (2) in isolation.
+
+**Done = ** the converter emits a DirectX-valid profile header (its output compilable by real `mgfxc`
+for `DirectX_11`), a DirectX golden exists for the A5 fixture and the DX arm of `ShaderToyRouteGl` is
+wired, and ShadowDusk's DirectX target rejects sub-floor vertex profiles the way `mgfxc` does, with
+the corpus sweep showing exactly what changed.
 
 ---
 
