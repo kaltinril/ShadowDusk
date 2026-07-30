@@ -62,6 +62,21 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   host's `spirv-cross.wasm` does not export that function — a native call would have fixed desktop
   only and broken the guarantee that the CLI and the browser emit identical bytes.
 
+### Fixed (CI / evidence)
+
+- **Test-results artifacts stopped discarding 13 of every 14 assemblies' results.** Every
+  `dotnet test` invocation in `ci.yml` and `release.yml` passed a fixed
+  `--logger "trx;LogFileName=…"` while running 14 assemblies (7 projects across `net8.0` and
+  `net10.0`) concurrently, so they all wrote the same file — the logs were full of
+  `WARNING: Overwriting results file` — and the uploaded artifact held whichever assembly
+  happened to finish last. All five invocations now use `LogFilePrefix`, which emits one
+  `<prefix>_<tfm>_<timestamp>.trx` per assembly (measured on the real solution: 14 files, zero
+  overwrite warnings). A guard step fails the integration job if only one `.trx` lands, so a
+  revert cannot silently re-lose the results. This matters beyond tidiness: the ubuntu
+  integration lane intermittently crashes a test host, and the crashed assembly's `.trx` was
+  precisely the one guaranteed to be overwritten, which is why that crash had been re-derived
+  from log adjacency three times — and mis-attributed each time. No product code is affected.
+
 ### Changed
 
 - **`SD0215` and `SD0216` are retired**, and their numbers are marked do-not-reuse in
