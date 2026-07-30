@@ -134,7 +134,7 @@ jobs:
           dotnet test ShadowDusk.slnx --no-build -c Release
           --filter "Category!=Integration"
           --settings ShadowDusk.runsettings
-          --logger "trx;LogFileName=release-test-${{ matrix.os }}.trx"
+          --logger "trx;LogFilePrefix=release-test-${{ matrix.os }}"
           --results-directory TestResults/
 
       - name: Upload test results

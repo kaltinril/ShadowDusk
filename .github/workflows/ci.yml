@@ -157,12 +157,19 @@ jobs:
       #   * macos   — SOFT-SKIPS (visibly) BY PLATFORM DESIGN: Apple caps the native GL
       #               Compatibility profile at 2.1 and GLFW cannot exit cleanly headless
       #               (see GlContextFixture). This is the remaining platform wall.
+      # LogFilePrefix, NOT LogFileName. `dotnet test` on the solution runs 14 assemblies
+      # (7 projects x net8.0/net10.0) concurrently, and a fixed LogFileName makes all 14
+      # write ONE file: the logs were full of "WARNING: Overwriting results file", and the
+      # uploaded artifact held whichever assembly happened to finish last — 13 results
+      # silently lost. LogFilePrefix emits <prefix>_<tfm>_<timestamp>.trx per assembly
+      # (measured: 14 files, zero overwrite warnings). See the integration job below for
+      # why this is more than tidiness.
       - name: dotnet test (unit, Windows — full; GL renders only on GPU-equipped hosts)
         if: runner.os == 'Windows'
         run: >
           dotnet test ShadowDusk.slnx --no-build -c Release
           --filter "(Category!=Integration|Category=Fidelity)"
-          --logger "trx;LogFileName=unit-${{ matrix.os }}.trx"
+          --logger "trx;LogFilePrefix=unit-${{ matrix.os }}"
           --results-directory TestResults/
 
       # Diagnostic for the GLFW native (the previous, pre-xvfb soft-skip reason on this
@@ -204,7 +211,7 @@ jobs:
         run: >
           xvfb-run -a dotnet test ShadowDusk.slnx --no-build -c Release
           --filter "(Category!=Integration|Category=Fidelity)&FullyQualifiedName!~Phase34TextureBreadthTests"
-          --logger "trx;LogFileName=unit-${{ matrix.os }}.trx"
+          --logger "trx;LogFilePrefix=unit-${{ matrix.os }}"
           --results-directory TestResults/
 
       - name: dotnet test (unit, macOS — advanced-texture compile tests excluded; GL proxy N/A)
@@ -212,7 +219,7 @@ jobs:
         run: >
           dotnet test ShadowDusk.slnx --no-build -c Release
           --filter "(Category!=Integration|Category=Fidelity)&FullyQualifiedName!~Phase34TextureBreadthTests"
-          --logger "trx;LogFileName=unit-${{ matrix.os }}.trx"
+          --logger "trx;LogFilePrefix=unit-${{ matrix.os }}"
           --results-directory TestResults/
 
       - name: Upload test results
@@ -328,6 +335,14 @@ jobs:
       # is not a ShadowDusk output defect: the same compiles pass on ubuntu, on windows, and
       # locally, and the emitted bytes are proven identical across hosts by
       # CrossHostByteIdentityTests. Linux and Windows keep full parallelism.
+      # LogFilePrefix is load-bearing HERE, not cosmetic. The ubuntu lane intermittently
+      # aborts with "Test host process crashed" (Phase 51 A9), and the crashed assembly's
+      # .trx is exactly the artifact needed to diagnose it — but under the old fixed
+      # LogFileName every assembly wrote the same file, so the crashed one was overwritten
+      # by whichever assembly finished afterwards. That is why the crash has been
+      # re-derived from scratch three times from log adjacency alone (and mis-attributed:
+      # see project_facts.md). One file per assembly means the next occurrence leaves
+      # evidence instead of a guess.
       - name: dotnet test (integration)
         env:
           SHADOWDUSK_REQUIRE_VKD3D: "1"
@@ -336,9 +351,27 @@ jobs:
           dotnet test ShadowDusk.slnx --no-build -c Release
           --filter "Category=Integration"
           --settings ShadowDusk.runsettings
-          --logger "trx;LogFileName=integration-${{ matrix.os }}.trx"
+          --logger "trx;LogFilePrefix=integration-${{ matrix.os }}"
           --results-directory TestResults/
           ${{ matrix.os == 'macos-latest' && '-- xUnit.MaxParallelThreads=1' || '' }}
+
+      # Guard the line above: if someone reverts to a fixed LogFileName, the run still goes
+      # green while 13 of 14 assemblies' results vanish. The solution always has more than
+      # one test assembly, so "exactly one .trx" can only mean they collided. `always()` so
+      # this also runs after the crash it exists to make diagnosable.
+      - name: Assert per-assembly test results were kept
+        if: always()
+        # This job's matrix includes windows-latest, where `run:` would otherwise be pwsh.
+        shell: bash
+        run: |
+          shopt -s nullglob
+          files=(TestResults/*.trx)
+          n=${#files[@]}
+          echo "trx files: $n"
+          if [ "$n" -le 1 ]; then
+            echo "::error::Expected one .trx per test assembly, found $n — the trx logger is writing a single shared file again (use LogFilePrefix, not LogFileName)."
+            exit 1
+          fi
 
       - name: Upload test results
         if: always()

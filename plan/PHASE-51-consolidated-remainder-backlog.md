@@ -483,27 +483,61 @@ bumped-and-re-proven or explicitly deferred with a reason.
 item otherwise has no home.*
 
 The ubuntu integration lane intermittently aborts with *"Test host process crashed"* and passes on
-rerun every time. **Three occurrences** (PR #170 once, PR #173 twice), and the third was on a commit
-that changed **only a markdown file** — so it is conclusively environmental, and the standing
-instruction is to rerun rather than re-diagnose. The full observation is in
-[`project_facts.md`](../project_facts.md); it is registered here so the *mitigation* is a scheduled
-decision instead of a note that gets re-derived every time.
+rerun every time. Registered here so the *mitigation* is a scheduled decision instead of a note that
+gets re-derived every time. The full observation lives in [`project_facts.md`](../project_facts.md).
 
-**Why it was not just fixed inline.** Both candidates change CI behavior repo-wide on an unproven
-hypothesis, which does not belong bundled into an unrelated feature PR:
+#### Evidence re-read from the actual job logs (2026-07-29) — the recorded signature was wrong
 
-1. **Bound VSTest parallelism** in `ShadowDusk.runsettings` (it caps only `TestSessionTimeout`
-   today, not host count). Non-brittle and cannot silently skip anything, but costs CI wall-clock
-   and is aimed at a hypothesis rather than a measured root cause.
-2. **Scope the integration filter to the assemblies that actually carry `Category=Integration`**
-   (8 of 14 currently spawn a host only to match nothing, and the crash always lands on one of
-   those). Removes the waste *and* the crash surface, but it is exactly the shape this project
-   warns about — a new assembly gaining integration tests would be silently skipped — so it needs a
-   guard test asserting the filter's assembly list still covers every assembly that has such tests.
+Both occurrences whose logs are still retrievable (PR #170 run `30422038170`, PR #173 run
+`30490728997`, attempt 1 of each) abort on **`ShadowDusk.Compiler.Tests`, the `net10.0` build
+specifically** — the same assembly and the same TFM, twice, while its own `net8.0` build passes in
+the same run.
 
-**Done = ** the ubuntu lane stops needing reruns, with whichever option is chosen justified against
-the other, and option 2 (if chosen) carrying the guard that stops it becoming a check that cannot
-fail.
+Attribution is by elimination, not by eye: of the 14 assemblies, the **8** that carry no
+`Category=Integration` tests each log *"No test matches the given testcase filter"* and are fully
+accounted for; **5** of the 6 that do carry them log a `Passed!` summary; `Compiler.Tests (net10.0)`
+logs **neither**. Identical in both runs.
+
+**The previous reading — "the abort lands on an assembly with zero integration tests" — came from
+log adjacency and does not survive checking.** The abort line happens to sit next to a *"Test run
+for … GLSL.Tests/net8.0"* line, but 14 assemblies run concurrently and VSTest interleaves their
+output; that same GLSL.Tests assembly logs its own no-match line a second later, so it plainly did
+not crash.
+
+**This invalidates both candidate mitigations as written:**
+
+1. **Bound VSTest parallelism.** Still possible, but it was justified as a shot at generic resource
+   exhaustion. Two runs failing on the *same assembly and TFM* is not that shape, so applying it now
+   would be treating a symptom whose description has changed.
+2. **Scope the integration filter to assemblies that carry `Category=Integration`.** Its entire
+   rationale was *"the crash always lands on one of the wasted hosts"*, which is false.
+   `Compiler.Tests` carries integration tests, so it would remain in any scoped list and **this
+   change would not have prevented either observed crash.** It would still remove ~8 wasted hosts,
+   but that is now a tidiness argument, not a fix.
+
+#### What was fixed here (2026-07-29): the evidence was being destroyed
+
+The reason this kept being re-derived from log-reading is that **the crashed assembly's `.trx` was
+overwritten every time.** Every `dotnet test` invocation in `ci.yml` and `release.yml` passed a fixed
+`--logger "trx;LogFileName=…"` while running 14 assemblies concurrently, so all of them wrote **one**
+file — the logs are full of *"WARNING: Overwriting results file"* — and the uploaded artifact held
+whichever assembly finished last. The one artifact anyone would want after a crash is the one
+guaranteed to be clobbered.
+
+All five invocations now use **`LogFilePrefix`**, which emits `<prefix>_<tfm>_<timestamp>.trx` per
+assembly. Measured locally on the real solution: **14 files, zero overwrite warnings**, against 1
+file and 13 overwrite warnings before. A guard step fails the integration job if only one `.trx`
+lands, so a revert to `LogFileName` turns the lane red instead of silently losing 13 results again.
+
+This is deliberately *not* claimed as a fix for the crash. It is what makes the next occurrence
+diagnosable, and it repairs a real evidence defect that was costing every test-results artifact in
+the repo, not just this lane's.
+
+**Done = ** the ubuntu lane stops needing reruns, from a mitigation justified against the *measured*
+signature above rather than the disproven one. **Next step:** on the next occurrence, read the
+per-assembly `.trx` artifact (now preserved) for `Compiler.Tests (net10.0)` before choosing a
+mitigation — the concentration on one assembly + TFM is the lead worth pulling, and a `net10.0`-only
+failure of an assembly whose `net8.0` twin passes in the same run is not obviously environmental.
 
 ---
 
