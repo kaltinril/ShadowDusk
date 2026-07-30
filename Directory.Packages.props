@@ -66,9 +66,9 @@
     the choice was "migrate now" or "migrate later from a frozen, unmaintained dependency".
     We migrated. Shouldly is BSD-3-Clause at every version, with no commercial gate.
 
-    Do not re-add FluentAssertions - not at 7.x, not "just for one test". The ban is enforced
-    by NoFluentAssertionsTests in ShadowDusk.Core.Tests, which scans every csproj/props and
-    every .cs file in the repo. See project_decisions.md for the full rationale.
+    Do not re-add FluentAssertions - not at 7.x, not "just for one test". Shouldly's entry
+    points are ShouldBe/ShouldContain/... on the value itself, never .Should().
+    See project_facts.md and project_decisions.md for the full rationale.
   -->
   <ItemGroup Label="Test">
     <PackageVersion Include="xunit"                        Version="2.9.3" />

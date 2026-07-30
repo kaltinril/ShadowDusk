@@ -513,7 +513,7 @@ nothing is urgent. Two items nonetheless have a clock on them:
 Phase 55 evidence pin). **`FluentAssertions` is no longer on this list — it is gone entirely**: the
 "stay on the Apache-2.0 7.x line" holding pattern was resolved on 2026-07-30 by migrating the whole
 suite to `Shouldly` (issue #171), because a frozen line only defers the problem. It is now BANNED
-and enforced by `NoFluentAssertionsTests`.
+outright; see `project_facts.md`.
 
 **Done = ** a decision recorded for the `net8.0` floor before November 2026, and vkd3d either
 bumped-and-re-proven or explicitly deferred with a reason.

@@ -117,8 +117,10 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
     have silently weakened, and no test failure would have revealed it. And FA's `BeEquivalentTo`
     compared structurally where Shouldly's `ShouldBe(…, ignoreOrder: true)` compares with `Equals`,
     so collections of reference types without value equality use `ShouldBeEquivalentTo`.
-  - A standing guard, `NoFluentAssertionsTests`, fails the build if the package reference or the
-    `.Should()` entry point reappears anywhere in the repository.
+  - FluentAssertions is now **banned** by standing rule, recorded in `project_facts.md`,
+    `project_rules.md`, `CLAUDE.md`, and the `Directory.Packages.props` comment. Deliberately a
+    written rule rather than a repo-scanning test: the thing being prevented is an author
+    reaching for the familiar `.Should()` API, which the rule addresses where authors read.
 - **`SD0215` and `SD0216` are retired**, and their numbers are marked do-not-reuse in
   `docs/error-codes.md`. Both existed only because of the old sampler-keyed GL table: `SD0216`
   rejected the shared-`SamplerState` shape, and `SD0215` rejected sampler registers that were not

@@ -128,7 +128,7 @@ The `/release` skill's docs-audit step checks this list as a backstop, but the b
 - Errors use a `Result<T, TError>` union, never exception-as-control-flow. Compiler errors use `Result<CompiledShader, ShaderError[]>`.
 - **Fail loudly.** An input shape we don't model gets a registered diagnostic code, never a silent pass-through. Never swallow or reformat a compiler's own message — keep its file, line, column, and text verbatim.
 - Unit tests are pure (no disk, no process); integration tests are tagged `[Trait("Category","Integration")]`; no `Thread.Sleep` in tests.
-- **Assertions use Shouldly; never FluentAssertions** (banned, issue #171 — a licence obligation, enforced by `NoFluentAssertionsTests`). On string receivers pass `Case.Sensitive` to `ShouldContain`/`ShouldNotContain`: Shouldly's default is case-*insensitive*, which silently weakens assertions over generated shader source.
+- **Assertions use Shouldly; never FluentAssertions** — banned (issue #171), a licence obligation, not a preference. Never add the package back and never write `.Should()`; Shouldly's assertions hang off the value itself. On string receivers pass `Case.Sensitive` to `ShouldContain`/`ShouldNotContain`: Shouldly's default is case-*insensitive*, which silently weakens assertions over generated shader source.
 
 ## Git Commit Conventions
 
