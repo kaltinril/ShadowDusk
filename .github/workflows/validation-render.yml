@@ -24,6 +24,11 @@
 #                              each pair binds its own texture, and each carries its own
 #                              baked sampler state, in SPIRV-Cross's declaration order
 #                              (asymmetric scenes with exact expected pixels).
+#   * DeferredSpriteMrtGl    — Phase 51 A2 true MULTIPLE-RENDER-TARGET proof: the ONLY
+#                              gate here that binds two render targets and reads BOTH
+#                              attachments back. Every other GL gate is single-target, so
+#                              nothing else can tell "COLOR1 reached attachment 1" from
+#                              "the second output went nowhere".
 #
 # NOT here (no headless driver story yet — tracked as the Phase 44 C tail):
 #   * DirectX (validation/CandidateDx, VsDrivenDx, DxModernFeatures) + FNA
@@ -120,6 +125,7 @@ jobs:
           dotnet build validation/TextureBreadthValidation/TextureBreadthValidation.csproj -c Release
           dotnet build validation/ReservedWordGl/ReservedWordGl.csproj -c Release
           dotnet build validation/SamplerPairsGl/SamplerPairsGl.csproj -c Release
+          dotnet build validation/DeferredSpriteMrtGl/DeferredSpriteMrtGl.csproj -c Release
 
       # Each driver self-asserts (exit 0 iff every row loaded + matched its reference
       # within tolerance). Run all of them even if an earlier one fails, then fail the job
@@ -130,13 +136,14 @@ jobs:
           LIBGL_ALWAYS_SOFTWARE: "1"
           # No GL context => hard FAIL, never a pass-by-skip. StateFidelity/CbufferModel/
           # ReservedWordGl throw on a missing device (MonoGame NoSuitableGraphicsDevice ->
-          # natural red); TextureBreadthValidation and SamplerPairsGl catch+skip, so this
-          # flag turns their skip into a failure too (both read SHADOWDUSK_REQUIRE_GL).
+          # natural red); TextureBreadthValidation, SamplerPairsGl and DeferredSpriteMrtGl
+          # catch+skip, so this flag turns their skip into a failure too (all three read
+          # SHADOWDUSK_REQUIRE_GL).
           SHADOWDUSK_REQUIRE_GL: "1"
         run: |
           set +e
           rc=0
-          for proj in StateFidelity CbufferModel TextureBreadthValidation ReservedWordGl SamplerPairsGl; do
+          for proj in StateFidelity CbufferModel TextureBreadthValidation ReservedWordGl SamplerPairsGl DeferredSpriteMrtGl; do
             echo "::group::$proj"
             xvfb-run -a dotnet run --project "validation/$proj" -c Release --no-build
             this=$?
@@ -159,5 +166,6 @@ jobs:
             validation/output-texbreadth/**
             validation/output-reservedword/**
             validation/output-samplerpairs/**
+            validation/output-mrt/**
           if-no-files-found: ignore
           retention-days: 7

@@ -20,7 +20,7 @@ small tail, the tail moves here and the parent moves to DONE.
 | OpenGL sampler records per (texture, sampler) PAIR (**A7**) | [2026-07-27 full-project review](../plan/BUG-HUNT-2026-07-27.md) sibling sweep | 🟡 Interim `SD0216` shipped (loud, not silent); the parity fix is open |
 | **PENDING MIGRATION — the `BUG-HUNT-2026-07-27.md` DEFERRED residue** | [`BUG-HUNT-2026-07-27.md`](BUG-HUNT-2026-07-27.md) | ⚠️ **Not yet moved in.** That doc's own `DEFERRED, with reasons` block is still the authority on ~13 open items (C2, M2, M4/M13 lowerings, M6, M8, N2, N6, N7, N8, N16, N17's Android half, M12's Linux case-insensitive fallback, M14's SD0011 span plumbing). **The doc cannot move to `plan/DONE/` until they are migrated here** — filing it as done while it is the sole home for 13 open items would bury them. Migrating them is this phase's stated job ("so no phase sits open at 95% for 1-2 items"); it needs one focused pass to give each item a scope and a done bar, not a bulk paste. |
 | Browser diagnostics squiggle confirmation | [Phase 38](DONE/PHASE-38-wasm-compile-diagnostics.md) | 🟢 Implemented; only the in-browser confirmation rung left |
-| DeferredSprite GL MRT render proof (GAP-2) | [Phase 41](DONE/PHASE-41-fxc-oracle-monogame-fidelity.md) | Closed at compile + structural-match; render rung left |
+| DeferredSprite GL MRT render proof (GAP-2) — ✅ done 2026-07-29 (A2) | [Phase 41](DONE/PHASE-41-fxc-oracle-monogame-fidelity.md) | Closed at compile + structural-match; render rung left |
 | Apos.Shapes render-proof (Option B) | [Phase 49](DONE/PHASE-49-apos-shapes-regression-corpus.md) | Option A shipped; Option B render-proof decision-gated |
 | GL macro-defined techniques (GAP-1 / GL) | [Phase 41](DONE/PHASE-41-fxc-oracle-monogame-fidelity.md) | DX + FNA closed; GL faithfulness-blocked |
 | DX12 / DXIL render-validation (Area C) — ➡️ promoted 2026-07-18 to [Phase 52](DONE/PHASE-52-monogame-3.8.5-support.md) Area D, split 2026-07-23 to [Phase 54](DONE/PHASE-54-dx12-dxil-backend.md) | [Phase 35](DONE/PHASE-35-forward-version-support.md) | New-backend build (not a render-validation rung); see B1 |
@@ -47,19 +47,55 @@ the format matches, so this is a confirmation rung, not a risk)."*
 **Done = ** the `samples/ShaderFiddle.Web` sample, run in a real KNI/Blazor browser, shows
 the diagnostic squiggle/gutter on the offending line for a deliberately-broken `.fx`.
 
-### A2 — DeferredSprite GL true 2-attachment MRT render proof (Phase 41 GAP-2)
+### A2 — ✅ DONE (2026-07-29) — DeferredSprite GL true 2-attachment MRT render proof (Phase 41 GAP-2)
 *From Phase 41.* GAP-2 (Nez DeferredSprite failed on GL with `Semantic COLOR is invalid`)
-is **closed at compile + golden-structural-match (2026-06-27)** via the GL-only
+was **closed at compile + golden-structural-match (2026-06-27)** via the GL-only
 `GlStructOutputColorRewriter` (DX byte-identical) plus the true-MRT `gl_FragData[0]` slot-0
-fix. One render rung remains.
+fix. The render rung is now closed too.
 
-**Remaining (verbatim from Phase 41):** *"a true MRT render proof (bind 2 render targets,
+**Was remaining (verbatim from Phase 41):** *"a true MRT render proof (bind 2 render targets,
 draw, read back BOTH attachments, compare to mgfxc) needs a NEW render driver — the current
 GL render gates are single-target only."*
 
-**Done = ** a new `validation/*` GL driver that binds 2 render targets, draws DeferredSprite,
-reads back BOTH attachments, and asserts pixel-equivalence to the `mgfxc` golden (rung-4
-pattern). Background: [structural-divergence-matrix.md](PHASE-41-appendix/structural-divergence-matrix.md).
+**Landed.** [`validation/DeferredSpriteMrtGl`](../validation/DeferredSpriteMrtGl/) binds two
+render targets on real MonoGame DesktopGL, draws `DeferredSprite.fx`, reads **both**
+attachments back, and pixel-diffs each against the real `mgfxc` `OpenGL` golden
+(`tests/fixtures/golden/OpenGL/DeferredSprite.mgfx`): **maxd 0 on both attachments**, on the
+first run. Wired into `validation-render.yml`, so it runs in CI on Mesa llvmpipe alongside the
+other in-process GL gates. Validation-only — no `src/` change, no output-byte churn.
+
+**Why this needed its own driver, restated so it is not re-litigated:** every other GL gate in
+the repo binds ONE render target. A single-target gate cannot distinguish "`COLOR1` reached
+attachment 1" from "the second output went nowhere", and neither can a structural match,
+because the second output lives in the emitted GLSL (`gl_FragData[1]`) and not in the `.mgfx`
+record tables. That is exactly why Phase 41 left the rung open rather than calling the
+structural match sufficient.
+
+**How the scene was built to discriminate.** The sprite is drawn **1:1 texel-to-pixel**, so no
+filter and no build's baked sampler state can shift a boundary; its left half is opaque and its
+right half sits below `_alphaCutoff`, so the shader's own `clip()` splits the surface in a
+single draw. The normal map is a different colour AND a different alpha, run through the
+shader's own arithmetic (`normal.a *= _alphaAsSelfIllumination * _selfIlluminationPower`, 0.25)
+to land on exactly 50 — a value neither the clear colour nor a copy of attachment 0 can
+produce. Both targets clear to **transparent** black, so "never written" is a nameable outcome
+rather than something that blends into a correct result. Arm A reports which of five failure
+modes a wrong picture corresponds to (attachment 1 unwritten / attachment 1 == attachment 0 /
+slots swapped / `clip()` discarded only attachment 0 / `clip()` never fired) plus a non-vacuity
+count, rather than just "wrong".
+
+**The mutation check earned the absolute arm its place.** Binding one render target instead of
+two leaves the mgfxc pixel-diff reporting **maxd 0 and OK** — both sides are broken
+*identically*, so the diff cannot see it — while arm A turns red and names it. A gate built
+only on "same picture as mgfxc" would have passed the mutation. Arm A therefore also runs
+against the golden itself, so a future diff failure is attributed to the right side instead of
+blaming the candidate by default (Phase 51 A3 already found one case where the `mgfxc` GL
+golden, not ShadowDusk, was the wrong one).
+
+**MRT stays a desktop-only rung, by platform limit rather than by omission.** KNI's WebGL
+Blazor backend exposes no public multi-render-target binding API to a consumer — the same shape
+as the MonoGame `Texture2DArray` limitation — so there is no browser arm to add.
+
+Background: [structural-divergence-matrix.md](PHASE-41-appendix/structural-divergence-matrix.md).
 
 ### A3 — ✅ CLOSED (2026-07-23) — Apos.Shapes render-proof (Phase 49 Option B, decision-gated stretch)
 *From Phase 49.* Option A (the Gum / Apos.Shapes compile-regression corpus) shipped

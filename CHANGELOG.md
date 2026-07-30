@@ -19,6 +19,18 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **`DeferredSpriteMrtGl`, the first render gate in the repo that binds more than one render
+  target**, closing the multiple-render-target render rung that had been open since the
+  `DeferredSprite.fx` compile fix in June. It draws the shader on real MonoGame DesktopGL with
+  two targets bound, reads **both** attachments back, and pixel-diffs each against the real
+  `mgfxc` OpenGL golden: maxd 0 on both. Every other GL gate binds one target, so none of them
+  could tell "the second output reached attachment 1" from "the second output went nowhere",
+  and a structural match cannot either — that output lives in the emitted GLSL, not in the
+  `.mgfx` record tables. Wired into `validation-render.yml` so it runs in CI on Mesa llvmpipe.
+  Alongside the mgfxc diff it asserts the exact values the HLSL implies and names which failure
+  mode a wrong picture is, because the mutation check (binding one target instead of two) leaves
+  the diff arm reporting maxd 0 — both sides broken identically — and only the absolute arm
+  catches it.
 - **`SamplerPairsGl`, a new OpenGL rung-4 render gate** for per-(texture, sampler)-pair sampler
   records, wired into `validation-render.yml` so it runs in CI on Mesa llvmpipe. Both of its arms
   render an *asymmetric* function of two samplers so that a mis-binding changes the picture (a
