@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
@@ -98,7 +98,7 @@ public sealed class Issue70MatrixTransposeRenderTests
         // (a) THE FIX: ShadowDusk's VS, given the asymmetric matrix's columns, renders
         // pixel-equivalent to the mgfxc golden. (Pre-fix, this produced goldenTransposedImg.)
         var cmp = ImageComparer.Compare(goldenImg, shadowDuskImg, tolerance: 4);
-        cmp.Matches.Should().BeTrue(
+        cmp.Matches.ShouldBeTrue(
             "for a non-identity WorldViewProjection, ShadowDusk's vertex transform must match the " +
             $"mgfxc golden (same-backend GL↔GL); diff {cmp.DifferentPixels}/{cmp.TotalPixels}, " +
             $"maxd {cmp.MaxChannelDelta}");
@@ -106,7 +106,7 @@ public sealed class Issue70MatrixTransposeRenderTests
         // (b) NON-VACUOUS: the asymmetric matrix and its transpose render DIFFERENT images, so a
         // transposed-matrix regression genuinely changes pixels (this scene can catch it).
         var transposeCmp = ImageComparer.Compare(goldenImg, goldenTransposedImg, tolerance: 4);
-        transposeCmp.Matches.Should().BeFalse(
+        transposeCmp.Matches.ShouldBeFalse(
             "the asymmetric matrix must render differently from its transpose, else the test could " +
             "not distinguish the issue #70 bug from the fix");
     }
@@ -124,7 +124,7 @@ public sealed class Issue70MatrixTransposeRenderTests
             SourceFileName  = fxPath,
         }, ct);
 
-        result.IsSuccess.Should().BeTrue(result.IsFailure
+        result.IsSuccess.ShouldBeTrue(result.IsFailure
             ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "compile ok");
         return result.Value.Data;
     }
@@ -224,14 +224,14 @@ public sealed class Issue70MatrixTransposeRenderTests
     private static void SetVec4(GL gl, uint program, string name, float x, float y, float z, float w)
     {
         int loc = gl.GetUniformLocation(program, name);
-        loc.Should().BeGreaterThanOrEqualTo(0, $"uniform '{name}' must be active in the program");
+        loc.ShouldBeGreaterThanOrEqualTo(0, customMessage: $"uniform '{name}' must be active in the program");
         gl.Uniform4(loc, x, y, z, w);
     }
 
     private static void BindAttrib(GL gl, uint program, string name, int size, uint stride, int byteOffset)
     {
         int loc = gl.GetAttribLocation(program, name);
-        loc.Should().BeGreaterThanOrEqualTo(0, $"attribute '{name}' must be active in the program");
+        loc.ShouldBeGreaterThanOrEqualTo(0, customMessage: $"attribute '{name}' must be active in the program");
         gl.EnableVertexAttribArray((uint)loc);
         unsafe
         {

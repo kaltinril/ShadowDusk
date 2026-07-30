@@ -1,7 +1,7 @@
 #nullable enable
 
 using System.Buffers.Binary;
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core;
 using Xunit;
 
@@ -62,17 +62,17 @@ public sealed class D3d9BytecodePatcherTests
 
         var result = D3d9BytecodePatcher.PatchForMojoShader(input, "t.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         uint[] tokens = Tokens(result.Value);
         // version, mov, texkill→(mov + texkill), end → 1 + 3 + (3 + 2) + 1
-        tokens.Should().HaveCount(10, because: "one compensating mov (3 tokens) is inserted");
+        tokens.Count().ShouldBe(10, customMessage: "one compensating mov (3 tokens) is inserted");
 
-        tokens[4].Should().Be(MovToken, because: "a mov precedes the canonicalized texkill");
-        tokens[5].Should().Be(TempDest(2, 0xF), because: "the fresh temp is r2 (max used was r1) with a full writemask");
+        tokens[4].ShouldBe(MovToken, customMessage: "a mov precedes the canonicalized texkill");
+        tokens[5].ShouldBe(TempDest(2, 0xF), customMessage: "the fresh temp is r2 (max used was r1) with a full writemask");
         // Source = r1 with .yyyy (component 1 replicated: lanes 01 01 01 01 = 0x55).
-        tokens[6].Should().Be(TempSrc(1, 0x55));
-        tokens[7].Should().Be(TexKillToken);
-        tokens[8].Should().Be(TempDest(2, 0xF), because: "texkill now targets the fresh temp with .xyzw");
+        tokens[6].ShouldBe(TempSrc(1, 0x55));
+        tokens[7].ShouldBe(TexKillToken);
+        tokens[8].ShouldBe(TempDest(2, 0xF), customMessage: "texkill now targets the fresh temp with .xyzw");
     }
 
     [Fact]
@@ -82,8 +82,8 @@ public sealed class D3d9BytecodePatcherTests
 
         var result = D3d9BytecodePatcher.PatchForMojoShader(input, "t.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Should().BeSameAs(input, because: "a clean stream is returned unchanged, zero-copy");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.ShouldBeSameAs(input, customMessage: "a clean stream is returned unchanged, zero-copy");
     }
 
     [Fact]
@@ -94,12 +94,12 @@ public sealed class D3d9BytecodePatcherTests
 
         var result = D3d9BytecodePatcher.PatchForMojoShader(input, "t.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         uint[] tokens = Tokens(result.Value);
-        tokens[1].Should().Be(MovToken);
-        tokens[2].Should().Be(TempDest(0, 0xF), because: "no temps were in use, so r0 is fresh");
-        tokens[3].Should().Be(0x9000_0000u | (0xE4u << 16), because: "the mov reads v0 with the identity swizzle (full mask → xyzw)");
-        tokens[5].Should().Be(TempDest(0, 0xF));
+        tokens[1].ShouldBe(MovToken);
+        tokens[2].ShouldBe(TempDest(0, 0xF), customMessage: "no temps were in use, so r0 is fresh");
+        tokens[3].ShouldBe(0x9000_0000u | (0xE4u << 16), customMessage: "the mov reads v0 with the identity swizzle (full mask → xyzw)");
+        tokens[5].ShouldBe(TempDest(0, 0xF));
     }
 
     [Fact]
@@ -113,15 +113,15 @@ public sealed class D3d9BytecodePatcherTests
 
         var result = D3d9BytecodePatcher.PatchForMojoShader(input, "t.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         uint[] tokens = Tokens(result.Value);
-        tokens[1].Should().Be(MovToken);
-        tokens[2].Should().Be(TempDest(2, 0xF), because: "fresh temp above r0/r1");
-        tokens[3].Should().Be(TempSrc(1, 0x04), because: "the mov keeps src0's original swizzle");
-        tokens[4].Should().Be(TexLdToken);
-        tokens[5].Should().Be(TempDest(0, 0xF));
-        tokens[6].Should().Be(TempSrc(2, 0xE4), because: "texld's coord source is now the unswizzled temp");
-        tokens[7].Should().Be(SamplerSrc(0));
+        tokens[1].ShouldBe(MovToken);
+        tokens[2].ShouldBe(TempDest(2, 0xF), customMessage: "fresh temp above r0/r1");
+        tokens[3].ShouldBe(TempSrc(1, 0x04), customMessage: "the mov keeps src0's original swizzle");
+        tokens[4].ShouldBe(TexLdToken);
+        tokens[5].ShouldBe(TempDest(0, 0xF));
+        tokens[6].ShouldBe(TempSrc(2, 0xE4), customMessage: "texld's coord source is now the unswizzled temp");
+        tokens[7].ShouldBe(SamplerSrc(0));
     }
 
     [Fact]
@@ -134,8 +134,8 @@ public sealed class D3d9BytecodePatcherTests
 
         var result = D3d9BytecodePatcher.PatchForMojoShader(input, "t.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Should().BeSameAs(input, because: "SM3 allows texld src0 swizzles — MojoShader only rejects them below SM3");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.ShouldBeSameAs(input, customMessage: "SM3 allows texld src0 swizzles — MojoShader only rejects them below SM3");
     }
 
     [Fact]
@@ -152,17 +152,17 @@ public sealed class D3d9BytecodePatcherTests
 
         var result = D3d9BytecodePatcher.PatchForMojoShader(input, "t.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         uint[] tokens = Tokens(result.Value);
-        tokens.Should().HaveCount(9, because: "one compensating mov (3 tokens) is inserted");
-        tokens[1].Should().Be(MovToken);
-        tokens[2].Should().Be(TempDest(2, 0xF), because: "fresh temp above r0/r1");
-        tokens[3].Should().Be(negatedSrc, because: "the mov keeps src0's swizzle AND modifier — the negate moves onto the mov");
-        tokens[4].Should().Be(TexLdToken);
-        tokens[5].Should().Be(TempDest(0, 0xF));
-        tokens[6].Should().Be(TempSrc(2, 0xE4), because: "texld's coord source is now an unswizzled, unmodified temp");
-        tokens[7].Should().Be(SamplerSrc(0));
-        tokens[8].Should().Be(End);
+        tokens.Count().ShouldBe(9, customMessage: "one compensating mov (3 tokens) is inserted");
+        tokens[1].ShouldBe(MovToken);
+        tokens[2].ShouldBe(TempDest(2, 0xF), customMessage: "fresh temp above r0/r1");
+        tokens[3].ShouldBe(negatedSrc, customMessage: "the mov keeps src0's swizzle AND modifier — the negate moves onto the mov");
+        tokens[4].ShouldBe(TexLdToken);
+        tokens[5].ShouldBe(TempDest(0, 0xF));
+        tokens[6].ShouldBe(TempSrc(2, 0xE4), customMessage: "texld's coord source is now an unswizzled, unmodified temp");
+        tokens[7].ShouldBe(SamplerSrc(0));
+        tokens[8].ShouldBe(End);
     }
 
     [Fact]
@@ -177,9 +177,9 @@ public sealed class D3d9BytecodePatcherTests
 
         var result = D3d9BytecodePatcher.PatchForMojoShader(input, "t.fx");
 
-        result.IsFailure.Should().BeTrue(because: "the SD0305 contract says a predicated patch site fails loudly, never silently skipped");
-        result.Error.Code.Should().Be("SD0305");
-        result.Error.Message.Should().Contain("predicated");
+        result.IsFailure.ShouldBeTrue("the SD0305 contract says a predicated patch site fails loudly, never silently skipped");
+        result.Error.Code.ShouldBe("SD0305");
+        result.Error.Message.ShouldContain("predicated", Case.Sensitive);
     }
 
     [Fact]
@@ -193,8 +193,8 @@ public sealed class D3d9BytecodePatcherTests
 
         var result = D3d9BytecodePatcher.PatchForMojoShader(input, "t.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Should().BeSameAs(input, because: "a predicated instruction that needs no patching passes through untouched");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.ShouldBeSameAs(input, customMessage: "a predicated instruction that needs no patching passes through untouched");
     }
 
     [Fact]
@@ -209,9 +209,9 @@ public sealed class D3d9BytecodePatcherTests
 
         var result = D3d9BytecodePatcher.PatchForMojoShader(input, "t.fx");
 
-        result.IsFailure.Should().BeTrue(because: "a truncated stream must fail as a Result — never throw, never emit corrupt bytes");
-        result.Error.Code.Should().Be("SD0305");
-        result.Error.Message.Should().Contain("truncated or desynchronized");
+        result.IsFailure.ShouldBeTrue("a truncated stream must fail as a Result — never throw, never emit corrupt bytes");
+        result.Error.Code.ShouldBe("SD0305");
+        result.Error.Message.ShouldContain("truncated or desynchronized", Case.Sensitive);
     }
 
     [Fact]
@@ -227,9 +227,9 @@ public sealed class D3d9BytecodePatcherTests
 
         var result = D3d9BytecodePatcher.PatchForMojoShader(input, "t.fx");
 
-        result.IsFailure.Should().BeTrue(because: "a comment length overrun must fail as a Result — never throw, never emit corrupt bytes");
-        result.Error.Code.Should().Be("SD0305");
-        result.Error.Message.Should().Contain("truncated or desynchronized");
+        result.IsFailure.ShouldBeTrue("a comment length overrun must fail as a Result — never throw, never emit corrupt bytes");
+        result.Error.Code.ShouldBe("SD0305");
+        result.Error.Message.ShouldContain("truncated or desynchronized", Case.Sensitive);
     }
 
     [Fact]
@@ -245,9 +245,9 @@ public sealed class D3d9BytecodePatcherTests
 
         var result = D3d9BytecodePatcher.PatchForMojoShader(input, "t.fx");
 
-        result.IsFailure.Should().BeTrue(because: "a def with no operands must fail as a Result — never duplicate bytes into the output");
-        result.Error.Code.Should().Be("SD0305");
-        result.Error.Message.Should().Contain("truncated or desynchronized");
+        result.IsFailure.ShouldBeTrue("a def with no operands must fail as a Result — never duplicate bytes into the output");
+        result.Error.Code.ShouldBe("SD0305");
+        result.Error.Message.ShouldContain("truncated or desynchronized", Case.Sensitive);
     }
 
     [Fact]
@@ -262,12 +262,12 @@ public sealed class D3d9BytecodePatcherTests
 
         var result = D3d9BytecodePatcher.PatchForMojoShader(input, "t.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         uint[] tokens = Tokens(result.Value);
-        tokens[1].Should().Be(0x0003FFFE);
-        tokens[2].Should().Be(0x42415443u);
-        tokens[3].Should().Be(0xDEADBEEFu);
-        tokens[4].Should().Be(0x12345678u, because: "comment payloads (the CTAB) must never be altered");
+        tokens[1].ShouldBe((uint)(0x0003FFFE));
+        tokens[2].ShouldBe(0x42415443u);
+        tokens[3].ShouldBe(0xDEADBEEFu);
+        tokens[4].ShouldBe(0x12345678u, customMessage: "comment payloads (the CTAB) must never be altered");
     }
 
     [Fact]
@@ -283,11 +283,11 @@ public sealed class D3d9BytecodePatcherTests
 
         var result = D3d9BytecodePatcher.PatchForMojoShader(input, "t.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         uint[] tokens = Tokens(result.Value);
         // Fresh temp must be r1 (only r0 in use) — if the def floats were parsed as
         // parameter tokens the temp index would be inflated or wrong.
-        tokens[8].Should().Be(TempDest(1, 0xF));
+        tokens[8].ShouldBe(TempDest(1, 0xF));
     }
 
     [Fact]
@@ -303,12 +303,12 @@ public sealed class D3d9BytecodePatcherTests
 
         var result = D3d9BytecodePatcher.PatchForMojoShader(input, "t.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         uint[] tokens = Tokens(result.Value);
-        tokens[3].Should().Be(0xCF7FFFFFu, because: "−2³² clamps to −4294967040.0, keeping the sign texkill tests");
-        tokens[4].Should().Be(0x4F7FFFFFu, because: "+2³² clamps to +4294967040.0");
-        tokens[5].Should().Be(0x4F7FFFFFu, because: "the largest float below 2³² is already printable — unchanged");
-        tokens[6].Should().Be(0x7F800000u, because: "infinity is not in the misprint domain and stays untouched");
+        tokens[3].ShouldBe(0xCF7FFFFFu, customMessage: "−2³² clamps to −4294967040.0, keeping the sign texkill tests");
+        tokens[4].ShouldBe(0x4F7FFFFFu, customMessage: "+2³² clamps to +4294967040.0");
+        tokens[5].ShouldBe(0x4F7FFFFFu, customMessage: "the largest float below 2³² is already printable — unchanged");
+        tokens[6].ShouldBe(0x7F800000u, customMessage: "infinity is not in the misprint domain and stays untouched");
     }
 
     [Fact]
@@ -322,8 +322,8 @@ public sealed class D3d9BytecodePatcherTests
 
         var result = D3d9BytecodePatcher.PatchForMojoShader(input, "t.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Should().BeSameAs(input, because: "defi carries integers, not floats — no clamping applies");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.ShouldBeSameAs(input, customMessage: "defi carries integers, not floats — no clamping applies");
     }
 
     [Fact]
@@ -333,8 +333,8 @@ public sealed class D3d9BytecodePatcherTests
 
         var result = D3d9BytecodePatcher.PatchForMojoShader(input, "t.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Should().BeSameAs(input);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.ShouldBeSameAs(input);
     }
 
     [Fact]
@@ -349,8 +349,8 @@ public sealed class D3d9BytecodePatcherTests
 
         var result = D3d9BytecodePatcher.PatchForMojoShader(input, "t.fx");
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("SD0305");
-        result.Error.Message.Should().Contain("free temporary register");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("SD0305");
+        result.Error.Message.ShouldContain("free temporary register", Case.Sensitive);
     }
 }

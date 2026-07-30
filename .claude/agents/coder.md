@@ -18,7 +18,7 @@ Write production-quality C# 12 / .NET 8 code for the ShadowDusk compiler tool. Y
 
 ## Tech Stack
 - C# 12, .NET 8 (LTS), nullable references enabled
-- xUnit + FluentAssertions for tests
+- xUnit + Shouldly for tests (FluentAssertions is BANNED - issue #171, licence; see project_facts.md)
 - Child-process interop via `System.Diagnostics.Process` (async)
 - P/Invoke for tight native integration where needed
 - `Result<T, ShaderError>` discriminated union — never use exceptions for expected compiler errors

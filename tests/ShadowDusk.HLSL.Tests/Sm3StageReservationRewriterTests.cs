@@ -1,7 +1,7 @@
 #nullable enable
 using ShadowDusk.Core;
 using ShadowDusk.HLSL;
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.HLSL.Tests;
@@ -27,7 +27,7 @@ public sealed class Sm3StageReservationRewriterTests
 
         string rewritten = Sm3StageReservationRewriter.Rewrite(source, ShaderStage.Vertex);
 
-        rewritten.Should().Be("float4 WorldViewProj : register(c0);");
+        rewritten.ShouldBe("float4 WorldViewProj : register(c0);");
     }
 
     [Fact]
@@ -37,7 +37,7 @@ public sealed class Sm3StageReservationRewriterTests
 
         string rewritten = Sm3StageReservationRewriter.Rewrite(source, ShaderStage.Pixel);
 
-        rewritten.Should().Be("float4 Tint : register(c1);");
+        rewritten.ShouldBe("float4 Tint : register(c1);");
     }
 
     // -------------------------------------------------------------------------
@@ -51,8 +51,8 @@ public sealed class Sm3StageReservationRewriterTests
 
         string rewritten = Sm3StageReservationRewriter.Rewrite(source, ShaderStage.Vertex);
 
-        rewritten.Should().Be("float4 Tint ;");
-        rewritten.Should().NotContain("register");
+        rewritten.ShouldBe("float4 Tint ;");
+        rewritten.ShouldNotContain("register", Case.Sensitive);
     }
 
     [Fact]
@@ -62,8 +62,8 @@ public sealed class Sm3StageReservationRewriterTests
 
         string rewritten = Sm3StageReservationRewriter.Rewrite(source, ShaderStage.Pixel);
 
-        rewritten.Should().Be("float4 WorldViewProj ;");
-        rewritten.Should().NotContain("register");
+        rewritten.ShouldBe("float4 WorldViewProj ;");
+        rewritten.ShouldNotContain("register", Case.Sensitive);
     }
 
     // -------------------------------------------------------------------------
@@ -79,7 +79,7 @@ public sealed class Sm3StageReservationRewriterTests
 
         string rewritten = Sm3StageReservationRewriter.Rewrite(source, stage);
 
-        rewritten.Should().Be(source);
+        rewritten.ShouldBe(source);
     }
 
     // -------------------------------------------------------------------------
@@ -93,8 +93,8 @@ public sealed class Sm3StageReservationRewriterTests
 
         string rewritten = Sm3StageReservationRewriter.Rewrite(source, ShaderStage.Vertex);
 
-        rewritten.Should().Be("float4 C : register(c0) ;");
-        rewritten.Should().NotContain("c4");
+        rewritten.ShouldBe("float4 C : register(c0) ;");
+        rewritten.ShouldNotContain("c4", Case.Sensitive);
     }
 
     [Fact]
@@ -104,8 +104,8 @@ public sealed class Sm3StageReservationRewriterTests
 
         string rewritten = Sm3StageReservationRewriter.Rewrite(source, ShaderStage.Pixel);
 
-        rewritten.Should().Be("float4 C  : register(c4);");
-        rewritten.Should().NotContain("c0");
+        rewritten.ShouldBe("float4 C  : register(c4);");
+        rewritten.ShouldNotContain("c0", Case.Sensitive);
     }
 
     // -------------------------------------------------------------------------
@@ -119,7 +119,7 @@ public sealed class Sm3StageReservationRewriterTests
 
         string rewritten = Sm3StageReservationRewriter.Rewrite(source, ShaderStage.Vertex);
 
-        rewritten.Should().Be("float4 X : register(c2);");
+        rewritten.ShouldBe("float4 X : register(c2);");
     }
 
     [Fact]
@@ -129,7 +129,7 @@ public sealed class Sm3StageReservationRewriterTests
 
         string rewritten = Sm3StageReservationRewriter.Rewrite(source, ShaderStage.Pixel);
 
-        rewritten.Should().Be("float4 X : register(c3);");
+        rewritten.ShouldBe("float4 X : register(c3);");
     }
 
     // -------------------------------------------------------------------------
@@ -143,7 +143,7 @@ public sealed class Sm3StageReservationRewriterTests
 
         string rewritten = Sm3StageReservationRewriter.Rewrite(source, ShaderStage.Vertex);
 
-        rewritten.Should().Be("float4 Y : register(c0) ;");
+        rewritten.ShouldBe("float4 Y : register(c0) ;");
     }
 
     // -------------------------------------------------------------------------
@@ -157,7 +157,7 @@ public sealed class Sm3StageReservationRewriterTests
 
         string rewritten = Sm3StageReservationRewriter.Rewrite(source, ShaderStage.Vertex);
 
-        rewritten.Should().Be(source);
+        rewritten.ShouldBe(source);
     }
 
     [Fact]
@@ -167,7 +167,7 @@ public sealed class Sm3StageReservationRewriterTests
 
         string rewritten = Sm3StageReservationRewriter.Rewrite(source, ShaderStage.Vertex);
 
-        rewritten.Should().Be("/* float4 X : register(ps, c0); */ float4 Y : register(c1);");
+        rewritten.ShouldBe("/* float4 X : register(ps, c0); */ float4 Y : register(c1);");
     }
 
     [Fact]
@@ -177,7 +177,7 @@ public sealed class Sm3StageReservationRewriterTests
 
         string rewritten = Sm3StageReservationRewriter.Rewrite(source, ShaderStage.Pixel);
 
-        rewritten.Should().Be(source);
+        rewritten.ShouldBe(source);
     }
 
     // -------------------------------------------------------------------------
@@ -191,7 +191,7 @@ public sealed class Sm3StageReservationRewriterTests
 
         string rewritten = Sm3StageReservationRewriter.Rewrite(source, ShaderStage.Pixel);
 
-        rewritten.Should().Be("sampler TextureSampler : register(s0);");
+        rewritten.ShouldBe("sampler TextureSampler : register(s0);");
     }
 
     [Fact]
@@ -201,7 +201,7 @@ public sealed class Sm3StageReservationRewriterTests
 
         string rewritten = Sm3StageReservationRewriter.Rewrite(source, ShaderStage.Vertex);
 
-        rewritten.Should().Be("sampler TextureSampler ;");
+        rewritten.ShouldBe("sampler TextureSampler ;");
     }
 
     // -------------------------------------------------------------------------
@@ -217,6 +217,6 @@ public sealed class Sm3StageReservationRewriterTests
 
         string rewritten = Sm3StageReservationRewriter.Rewrite(source, ShaderStage.Pixel);
 
-        rewritten.Should().Be(source);
+        rewritten.ShouldBe(source);
     }
 }

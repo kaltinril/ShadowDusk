@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
@@ -64,7 +64,7 @@ public sealed class Phase34LodGradRenderTests
             IncludeResolver = new FileSystemIncludeResolver(),
             SourceFileName = fxPath,
         }, ct);
-        result.IsSuccess.Should().BeTrue(result.IsFailure
+        result.IsSuccess.ShouldBeTrue(result.IsFailure
             ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "compile ok");
         return GlslShaderExtractor.Extract(result.Value.Data).FragmentSource;
     }
@@ -80,8 +80,8 @@ public sealed class Phase34LodGradRenderTests
         // MojoShader-faithful form Mesa's strict front-end accepts (the generic
         // textureLod does not exist in versionless legacy GLSL).
         string ps = await ExtractFragmentAsync("examples/ExSampleLevelHidef.fx", cts.Token);
-        ps.Should().Contain("texture2DLod(", "the SampleLevel fixture must emit the legacy texture2DLod");
-        ps.Should().Contain("GL_ARB_shader_texture_lod", "the guarded extension header must be prepended");
+        ps.ShouldContain("texture2DLod(", Case.Sensitive, "the SampleLevel fixture must emit the legacy texture2DLod");
+        ps.ShouldContain("GL_ARB_shader_texture_lod", Case.Sensitive, "the guarded extension header must be prepended");
 
         (byte r, byte g, byte b) center;
         using (_fixture.MakeContextCurrent())
@@ -89,8 +89,7 @@ public sealed class Phase34LodGradRenderTests
 
         _output.WriteLine($"SampleLevel textureLod(…,2.0) center = ({center.r},{center.g},{center.b}); mip2 = (0,0,255)");
         // The explicit LOD 2.0 must select mip 2 (Blue), NOT mip 0 (White).
-        center.Should().Be(MipColors[2],
-            "ShadowDusk's emitted textureLod(…, 2.0) must sample mip level 2 in the real GL driver");
+        center.ShouldBe(MipColors[2], customMessage: "ShadowDusk's emitted textureLod(…, 2.0) must sample mip level 2 in the real GL driver");
     }
 
     [Fact]
@@ -129,8 +128,7 @@ public sealed class Phase34LodGradRenderTests
         // A large gradient must NOT resolve to mip 0 (White) — it must select a higher
         // (smaller) mip. (We don't pin the exact level — driver LOD rounding varies —
         // only that the gradient is HONORED, i.e. it left mip 0.)
-        center.Should().NotBe(MipColors[0],
-            "a large textureGrad derivative must select a higher mip, not mip 0");
+        center.ShouldNotBe(MipColors[0], customMessage: "a large textureGrad derivative must select a higher mip, not mip 0");
     }
 
     /// <summary>

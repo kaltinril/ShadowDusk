@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core;
 using ShadowDusk.HLSL.D3DCompiler;
 using ShadowDusk.HLSL.Dxc;
@@ -36,8 +36,7 @@ public sealed class Vkd3dCompileContractTests
     [InlineData(ShaderStage.Pixel,  "ps_5_0")]
     public void ResolveProfile_DefaultsToSm5ForStage(ShaderStage stage, string expected)
     {
-        Vkd3dCompileContract.ResolveProfile(Request(stage)).Should().Be(expected,
-            because: "the MonoGame DX11 path compiles at SM5 when no override is given — " +
+        Vkd3dCompileContract.ResolveProfile(Request(stage)).ShouldBe(expected, customMessage: "the MonoGame DX11 path compiles at SM5 when no override is given — " +
                      "the desktop Vkd3dShaderCompiler default the WASM backend must mirror");
     }
 
@@ -48,7 +47,7 @@ public sealed class Vkd3dCompileContractTests
     public void ResolveProfile_OverrideWins(string profileOverride)
     {
         Vkd3dCompileContract.ResolveProfile(Request(ShaderStage.Pixel, profileOverride))
-            .Should().Be(profileOverride, because: "ProfileOverride (the FNA SM ≤ 3 path) is verbatim");
+            .ShouldBe(profileOverride, customMessage: "ProfileOverride (the FNA SM ≤ 3 path) is verbatim");
     }
 
     [Fact]
@@ -56,8 +55,7 @@ public sealed class Vkd3dCompileContractTests
     {
         var act = () => Vkd3dCompileContract.ResolveProfile(Request((ShaderStage)99));
 
-        act.Should().Throw<ArgumentOutOfRangeException>(
-            because: "an unmapped stage is a programming error, not a compile diagnostic");
+        Should.Throw<ArgumentOutOfRangeException>(act, "an unmapped stage is a programming error, not a compile diagnostic");
     }
 
     // -------------------------------------------------------------------------
@@ -71,10 +69,10 @@ public sealed class Vkd3dCompileContractTests
     [InlineData("vs_3_0")]
     public void Sm3OrBelow_RoutesToD3dBytecode(string profile)
     {
-        Vkd3dCompileContract.IsSm3OrBelow(profile).Should().BeTrue();
+        Vkd3dCompileContract.IsSm3OrBelow(profile).ShouldBeTrue();
         Vkd3dCompileContract.ResolveTargetType(profile)
-            .Should().Be(Vkd3dCompileContract.TargetTypeD3dBytecode);
-        Vkd3dCompileContract.ResolveBlobKind(profile).Should().Be(BlobKind.D3dBytecode);
+            .ShouldBe(Vkd3dCompileContract.TargetTypeD3dBytecode);
+        Vkd3dCompileContract.ResolveBlobKind(profile).ShouldBe(BlobKind.D3dBytecode);
     }
 
     [Theory]
@@ -83,10 +81,10 @@ public sealed class Vkd3dCompileContractTests
     [InlineData("vs_5_0")]
     public void Sm4AndUp_RoutesToDxbcTpf(string profile)
     {
-        Vkd3dCompileContract.IsSm3OrBelow(profile).Should().BeFalse();
+        Vkd3dCompileContract.IsSm3OrBelow(profile).ShouldBeFalse();
         Vkd3dCompileContract.ResolveTargetType(profile)
-            .Should().Be(Vkd3dCompileContract.TargetTypeDxbcTpf);
-        Vkd3dCompileContract.ResolveBlobKind(profile).Should().Be(BlobKind.Dxbc);
+            .ShouldBe(Vkd3dCompileContract.TargetTypeDxbcTpf);
+        Vkd3dCompileContract.ResolveBlobKind(profile).ShouldBe(BlobKind.Dxbc);
     }
 
     [Theory]
@@ -97,9 +95,9 @@ public sealed class Vkd3dCompileContractTests
     {
         // Constraint 5: an unparseable profile must reach vkd3d (DXBC_TPF arm) so the
         // consumer gets vkd3d's own diagnostic — never a silent reroute.
-        Vkd3dCompileContract.IsSm3OrBelow(profile).Should().BeFalse();
+        Vkd3dCompileContract.IsSm3OrBelow(profile).ShouldBeFalse();
         Vkd3dCompileContract.ResolveTargetType(profile)
-            .Should().Be(Vkd3dCompileContract.TargetTypeDxbcTpf);
+            .ShouldBe(Vkd3dCompileContract.TargetTypeDxbcTpf);
     }
 
     [Fact]
@@ -108,10 +106,10 @@ public sealed class Vkd3dCompileContractTests
         // 4/5 are pinned by BOTH the vkd3d 1.17 enum (Vkd3dNative.cs, verified against
         // vkd3d_shader.h) and the Phase 4.1 sdw_vkd3d_compile wrapper contract. If this
         // ever fails, one side of the [JSImport]/P-Invoke split has drifted.
-        Vkd3dCompileContract.TargetTypeD3dBytecode.Should().Be((int)Vkd3dTargetType.D3dBytecode);
-        Vkd3dCompileContract.TargetTypeDxbcTpf.Should().Be((int)Vkd3dTargetType.DxbcTpf);
-        Vkd3dCompileContract.TargetTypeD3dBytecode.Should().Be(4);
-        Vkd3dCompileContract.TargetTypeDxbcTpf.Should().Be(5);
+        Vkd3dCompileContract.TargetTypeD3dBytecode.ShouldBe((int)Vkd3dTargetType.D3dBytecode);
+        Vkd3dCompileContract.TargetTypeDxbcTpf.ShouldBe((int)Vkd3dTargetType.DxbcTpf);
+        Vkd3dCompileContract.TargetTypeD3dBytecode.ShouldBe(4);
+        Vkd3dCompileContract.TargetTypeDxbcTpf.ShouldBe(5);
     }
 
     // -------------------------------------------------------------------------
@@ -125,12 +123,11 @@ public sealed class Vkd3dCompileContractTests
 
         ShaderError error = Vkd3dCompileContract.MapCompileFailure(messages, "test.fx", "fallback");
 
-        error.File.Should().Be("test.fx");
-        error.Line.Should().Be(12);
-        error.Column.Should().Be(5);
-        error.Code.Should().Be("E5005");
-        error.Message.Should().Be("variable 'foo' is undefined",
-            because: "constraint 5: the message is surfaced exactly as the compiler emitted it");
+        error.File.ShouldBe("test.fx");
+        error.Line.ShouldBe(12);
+        error.Column.ShouldBe(5);
+        error.Code.ShouldBe("E5005");
+        error.Message.ShouldBe("variable 'foo' is undefined", customMessage: "constraint 5: the message is surfaced exactly as the compiler emitted it");
     }
 
     [Fact]
@@ -139,9 +136,9 @@ public sealed class Vkd3dCompileContractTests
         ShaderError error = Vkd3dCompileContract.MapCompileFailure(
             "", "test.fx", "vkd3d-shader DXBC compilation failed (rc=-4) with no diagnostics");
 
-        error.Code.Should().Be("SD0212");
-        error.Message.Should().Be("vkd3d-shader DXBC compilation failed (rc=-4) with no diagnostics");
-        error.RawDiagnostics.Should().BeNull();
+        error.Code.ShouldBe("SD0212");
+        error.Message.ShouldBe("vkd3d-shader DXBC compilation failed (rc=-4) with no diagnostics");
+        error.RawDiagnostics.ShouldBeNull();
     }
 
     [Fact]
@@ -153,6 +150,6 @@ public sealed class Vkd3dCompileContractTests
 
         // The reformatter wraps unmatched text as a raw-diagnostics error — the text
         // must remain reachable (constraint 5), whatever the wrapper shape.
-        error.RawDiagnostics.Should().Contain(messages);
+        error.RawDiagnostics!.ShouldContain(messages, Case.Sensitive);
     }
 }

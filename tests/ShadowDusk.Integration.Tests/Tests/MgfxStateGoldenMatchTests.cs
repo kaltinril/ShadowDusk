@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using Xunit;
@@ -41,12 +41,12 @@ public sealed class MgfxStateGoldenMatchTests
     {
         (MgfxBlobReader subject, MgfxBlobReader golden) = await CompileAndLoadGoldenAsync(stem, profile);
 
-        subject.TechniqueCount.Should().Be(golden.TechniqueCount);
+        subject.TechniqueCount.ShouldBe(golden.TechniqueCount);
         for (int t = 0; t < golden.TechniqueCount; t++)
         {
             TechniqueInfo gTech = golden.Techniques[t];
             TechniqueInfo sTech = subject.Techniques[t];
-            sTech.PassCount.Should().Be(gTech.PassCount, $"technique '{gTech.Name}' pass count");
+            sTech.PassCount.ShouldBe(gTech.PassCount, customMessage: $"technique '{gTech.Name}' pass count");
 
             for (int p = 0; p < gTech.PassCount; p++)
             {
@@ -55,12 +55,9 @@ public sealed class MgfxStateGoldenMatchTests
 
                 // Record equality — every field of MonoGame's fixed layout, including
                 // the defaulted ones (mgfxc's state-object constructor defaults).
-                sPass.BlendState.Should().Be(gPass.BlendState,
-                    $"pass '{gPass.Name}' blend state must match the mgfxc golden");
-                sPass.DepthStencilState.Should().Be(gPass.DepthStencilState,
-                    $"pass '{gPass.Name}' depth-stencil state must match the mgfxc golden");
-                sPass.RasterizerState.Should().Be(gPass.RasterizerState,
-                    $"pass '{gPass.Name}' rasterizer state must match the mgfxc golden");
+                sPass.BlendState.ShouldBe(gPass.BlendState, customMessage: $"pass '{gPass.Name}' blend state must match the mgfxc golden");
+                sPass.DepthStencilState.ShouldBe(gPass.DepthStencilState, customMessage: $"pass '{gPass.Name}' depth-stencil state must match the mgfxc golden");
+                sPass.RasterizerState.ShouldBe(gPass.RasterizerState, customMessage: $"pass '{gPass.Name}' rasterizer state must match the mgfxc golden");
             }
         }
     }
@@ -79,14 +76,13 @@ public sealed class MgfxStateGoldenMatchTests
         var goldenBySlot  = golden.Samplers.ToDictionary(s => s.SamplerSlot);
         var subjectBySlot = subject.Samplers.ToDictionary(s => s.SamplerSlot);
 
-        subjectBySlot.Keys.Should().BeEquivalentTo(goldenBySlot.Keys, "same sampler slots");
+        subjectBySlot.Keys.ShouldBe(goldenBySlot.Keys, ignoreOrder: true, customMessage: "same sampler slots");
         foreach ((byte slot, MgfxSamplerRecord gold) in goldenBySlot)
         {
             MgfxSamplerRecord sub = subjectBySlot[slot];
-            sub.State.Should().Be(gold.State,
-                $"sampler slot {slot}: the baked sampler_state must match the mgfxc golden " +
+            sub.State.ShouldBe(gold.State, customMessage: $"sampler slot {slot}: the baked sampler_state must match the mgfxc golden " +
                 "(hasState, addressing, border color, combined filter, anisotropy, mip fields)");
-            sub.State.Should().NotBeNull(
+            sub.State.ShouldNotBeNull(
                 $"sampler slot {slot} declares sampler_state members — hasState must be 1");
         }
     }
@@ -107,8 +103,8 @@ public sealed class MgfxStateGoldenMatchTests
         // EffectAnnotation slots, an NRE for any consumer touching .Annotations, and
         // KNI's writer asserts count == 0). This test previously pinned the preserved
         // count (2) on the subject side.
-        golden.ParameterAnnotationCounts.Should().BeEmpty("mgfxc writes annotation count 0");
-        subject.ParameterAnnotationCounts.Should().BeEmpty(
+        golden.ParameterAnnotationCounts.ShouldBeEmpty("mgfxc writes annotation count 0");
+        subject.ParameterAnnotationCounts.ShouldBeEmpty(
             "ShadowDusk now writes annotation count 0, matching mgfxc byte-for-byte here");
     }
 
@@ -119,7 +115,7 @@ public sealed class MgfxStateGoldenMatchTests
         var ct = cts.Token;
 
         string fxPath = TestHelpers.FixturePath(stem + ".fx");
-        File.Exists(fxPath).Should().BeTrue($".fx fixture must exist at {fxPath}");
+        File.Exists(fxPath).ShouldBeTrue($".fx fixture must exist at {fxPath}");
         string source = await File.ReadAllTextAsync(fxPath, ct);
 
         PlatformTarget target = profile == "OpenGL" ? PlatformTarget.OpenGL : PlatformTarget.DirectX;
@@ -127,14 +123,13 @@ public sealed class MgfxStateGoldenMatchTests
             source,
             new CompilerOptions { Target = target, SourceFileName = fxPath },
             ct);
-        result.IsSuccess.Should().BeTrue(
-            because: result.IsFailure
+        result.IsSuccess.ShouldBeTrue(result.IsFailure
                 ? string.Join(" | ", result.Error.Select(e => e.FxcFormattedMessage))
                 : "the fixture must compile");
 
         string goldenPath = Path.Combine(
             FindRepoRoot(), "tests", "fixtures", "golden", profile, stem + ".mgfx");
-        File.Exists(goldenPath).Should().BeTrue($"mgfxc golden must exist at {goldenPath}");
+        File.Exists(goldenPath).ShouldBeTrue($"mgfxc golden must exist at {goldenPath}");
 
         return (
             MgfxBlobReader.Parse(result.Value.Data),

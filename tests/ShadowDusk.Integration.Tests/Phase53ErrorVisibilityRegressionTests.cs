@@ -1,7 +1,7 @@
 #nullable enable
 
 using System.Text.RegularExpressions;
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Tests.Fx2;
@@ -60,15 +60,13 @@ public sealed class Phase53ErrorVisibilityRegressionTests : IClassFixture<CliBin
         var result = await TestHelpers.CompileFixtureAsync(
             "examples/Issue137VsRound.fx", "OpenGL", ct: cts.Token);
 
-        result.ExitCode.Should().Be(0, because: $"stderr: {result.Stderr}");
+        result.ExitCode.ShouldBe(0, customMessage: $"stderr: {result.Stderr}");
         string ascii = AsciiOf(result.Mgfx);
 
-        ascii.Should().NotContain("roundEven",
-            "a VS round() shipping roundEven() is the issue-#137 Mesa/WebGL1 load failure");
-        Regex.IsMatch(ascii, @"floor\(\([^)]{0,60}\) \+ 0\.5\)").Should().BeTrue(
+        ascii.ShouldNotContain("roundEven", Case.Sensitive, "a VS round() shipping roundEven() is the issue-#137 Mesa/WebGL1 load failure");
+        Regex.IsMatch(ascii, @"floor\(\([^)]{0,60}\) \+ 0\.5\)").ShouldBeTrue(
             "the VS round() must be lowered to the floor(x + 0.5) form Rule 8 emits");
-        ascii.Should().Contain("posFixup",
-            "the VS lowering must not disturb the posFixup contract");
+        ascii.ShouldContain("posFixup", Case.Sensitive, "the VS lowering must not disturb the posFixup contract");
     }
 
     [Fact]
@@ -79,18 +77,17 @@ public sealed class Phase53ErrorVisibilityRegressionTests : IClassFixture<CliBin
         var result = await TestHelpers.CompileFixtureAsync(
             "examples/Issue137VsEarlyReturn.fx", "OpenGL", ct: cts.Token);
 
-        result.ExitCode.Should().Be(0, because: $"stderr: {result.Stderr}");
+        result.ExitCode.ShouldBe(0, customMessage: $"stderr: {result.Stderr}");
         string ascii = AsciiOf(result.Mgfx);
 
-        Regex.IsMatch(ascii, @"\bdo\s*\{").Should().BeFalse(
+        Regex.IsMatch(ascii, @"\bdo\s*\{").ShouldBeFalse(
             "a raw do{{...}}while(false) in the VS is the issue-#107/#137 WebGL1/Reach load failure");
-        ascii.Should().NotContain("while(false)");
-        ascii.Should().NotContain("while (false)");
-        Regex.IsMatch(ascii, @"for \(int \w+ = 0; \w+ < 1; \w+\+\+\)").Should().BeTrue(
+        ascii.ShouldNotContain("while(false)", Case.Sensitive);
+        ascii.ShouldNotContain("while (false)", Case.Sensitive);
+        Regex.IsMatch(ascii, @"for \(int \w+ = 0; \w+ < 1; \w+\+\+\)").ShouldBeTrue(
             "Rule 9b must lower the wrapper to the Appendix-A one-shot for form in the VS too");
-        ascii.Should().Contain("posFixup");
-        result.Stderr.Should().NotContain("SD0402",
-            "the Rule-9b loop is Appendix-A-conformant and must not self-flag the lint");
+        ascii.ShouldContain("posFixup", Case.Sensitive);
+        result.Stderr.ShouldNotContain("SD0402", Case.Sensitive, "the Rule-9b loop is Appendix-A-conformant and must not self-flag the lint");
     }
 
     // -------------------------------------------------------------------------
@@ -105,13 +102,11 @@ public sealed class Phase53ErrorVisibilityRegressionTests : IClassFixture<CliBin
         var result = await TestHelpers.CompileFixtureAsync(
             "examples/Issue140NestedRound.fx", "OpenGL", ct: cts.Token);
 
-        result.ExitCode.Should().Be(0, because: $"stderr: {result.Stderr}");
+        result.ExitCode.ShouldBe(0, customMessage: $"stderr: {result.Stderr}");
         string ascii = AsciiOf(result.Mgfx);
 
-        ascii.Should().NotContain("roundEven",
-            "the INNER nested round surviving as roundEven() is the issue-#140 load failure");
-        ascii.Should().Contain("floor((floor((",
-            "both nested calls must lower to the floor(x + 0.5) form");
+        ascii.ShouldNotContain("roundEven", Case.Sensitive, "the INNER nested round surviving as roundEven() is the issue-#140 load failure");
+        ascii.ShouldContain("floor((floor((", Case.Sensitive, "both nested calls must lower to the floor(x + 0.5) form");
     }
 
     // -------------------------------------------------------------------------
@@ -126,15 +121,13 @@ public sealed class Phase53ErrorVisibilityRegressionTests : IClassFixture<CliBin
         var result = await TestHelpers.CompileFixtureAsync(
             "examples/Issue139DerivativeExtension.fx", "OpenGL", ct: cts.Token);
 
-        result.ExitCode.Should().Be(0, because: $"stderr: {result.Stderr}");
+        result.ExitCode.ShouldBe(0, customMessage: $"stderr: {result.Stderr}");
         string ascii = AsciiOf(result.Mgfx);
 
         int header = ascii.IndexOf("#extension GL_OES_standard_derivatives : enable", StringComparison.Ordinal);
-        header.Should().BeGreaterThan(0,
-            "mgfxc emits the derivatives extension header and strict ESSL 1.00 requires it");
+        header.ShouldBeGreaterThan(0, customMessage: "mgfxc emits the derivatives extension header and strict ESSL 1.00 requires it");
         int precision = ascii.IndexOf("#ifdef GL_ES", StringComparison.Ordinal);
-        precision.Should().BeGreaterThan(header,
-            "the header goes FIRST, before the precision block — mgfxc's position");
+        precision.ShouldBeGreaterThan(header, customMessage: "the header goes FIRST, before the precision block — mgfxc's position");
     }
 
     [Fact]
@@ -145,9 +138,8 @@ public sealed class Phase53ErrorVisibilityRegressionTests : IClassFixture<CliBin
         var result = await TestHelpers.CompileFixtureAsync(
             "examples/Issue140NestedRound.fx", "OpenGL", ct: cts.Token);
 
-        result.ExitCode.Should().Be(0);
-        AsciiOf(result.Mgfx).Should().NotContain("GL_OES_standard_derivatives",
-            "the header is conditional on a derivative builtin being present (mgfxc parity)");
+        result.ExitCode.ShouldBe(0);
+        AsciiOf(result.Mgfx).ShouldNotContain("GL_OES_standard_derivatives", Case.Sensitive, "the header is conditional on a derivative builtin being present (mgfxc parity)");
     }
 
     // -------------------------------------------------------------------------
@@ -162,12 +154,10 @@ public sealed class Phase53ErrorVisibilityRegressionTests : IClassFixture<CliBin
         var result = await TestHelpers.CompileFixtureAsync(
             "examples/Sd0400GradientInDivergentLoop.fx", "OpenGL", ct: cts.Token);
 
-        result.ExitCode.Should().Be(0,
-            because: "the lint warns, never rejects; stderr: " + result.Stderr);
-        result.Mgfx.Should().NotBeEmpty();
-        result.Stderr.Should().Contain("warning SD0400",
-            "fxc warns X3553 on this shape; staying silent was issue #141");
-        result.Stderr.Should().Contain("dFdx");
+        result.ExitCode.ShouldBe(0, customMessage: "the lint warns, never rejects; stderr: " + result.Stderr);
+        result.Mgfx.ShouldNotBeEmpty();
+        result.Stderr.ShouldContain("warning SD0400", Case.Sensitive, "fxc warns X3553 on this shape; staying silent was issue #141");
+        result.Stderr.ShouldContain("dFdx", Case.Sensitive);
     }
 
     [Fact]
@@ -178,15 +168,14 @@ public sealed class Phase53ErrorVisibilityRegressionTests : IClassFixture<CliBin
         var result = await TestHelpers.CompileFixtureAsync(
             "examples/Sd0401SpriteBatchInterpolant.fx", "OpenGL", ct: cts.Token);
 
-        result.ExitCode.Should().Be(0,
-            because: "the lint warns, never rejects; stderr: " + result.Stderr);
+        result.ExitCode.ShouldBe(0, customMessage: "the lint warns, never rejects; stderr: " + result.Stderr);
         var reader = MgfxBlobReader.Parse(result.Mgfx);
-        reader.Signature.Should().Be("MGFX");
-        reader.ProfileId.Should().Be(ProfileOpenGL);
+        reader.Signature.ShouldBe("MGFX");
+        reader.ProfileId.ShouldBe(ProfileOpenGL);
 
-        result.Stderr.Should().Contain("warning SD0401");
-        result.Stderr.Should().Contain("TEXCOORD1");
-        result.Stderr.Should().Contain("SpriteBatch");
+        result.Stderr.ShouldContain("warning SD0401", Case.Sensitive);
+        result.Stderr.ShouldContain("TEXCOORD1", Case.Sensitive);
+        result.Stderr.ShouldContain("SpriteBatch", Case.Sensitive);
     }
 
     [Fact]
@@ -204,10 +193,9 @@ public sealed class Phase53ErrorVisibilityRegressionTests : IClassFixture<CliBin
             "third-party/Nez/GaussianBlur.fx", "OpenGL",
             mode: InvocationMode.CliProcess, ct: cts.Token, cliBinaryPath: _cli.ExecutablePath);
 
-        result.ExitCode.Should().Be(0, because: "stderr: " + result.Stderr);
-        result.Mgfx.Should().NotBeEmpty();
-        result.Stderr.Should().NotContain("SD0402",
-            "Rule 12 hoists the empty-increment shape into the for-header, so this real " +
+        result.ExitCode.ShouldBe(0, customMessage: "stderr: " + result.Stderr);
+        result.Mgfx.ShouldNotBeEmpty();
+        result.Stderr.ShouldNotContain("SD0402", Case.Sensitive, "Rule 12 hoists the empty-increment shape into the for-header, so this real " +
             "shader's loop no longer triggers the warning");
     }
 
@@ -231,12 +219,10 @@ public sealed class Phase53ErrorVisibilityRegressionTests : IClassFixture<CliBin
             "examples/Sd0402UniformBoundedLoop.fx", "OpenGL",
             mode: InvocationMode.CliProcess, ct: cts.Token, cliBinaryPath: _cli.ExecutablePath);
 
-        result.ExitCode.Should().Be(0,
-            because: "the lint warns, never rejects; stderr: " + result.Stderr);
-        result.Mgfx.Should().NotBeEmpty();
-        result.Stderr.Should().Contain("warning SD0402");
-        result.Stderr.Should().Contain("Sd0402UniformBoundedLoop.fx: warning SD0402",
-            "a line-less diagnostic must still name the effect it came from");
+        result.ExitCode.ShouldBe(0, customMessage: "the lint warns, never rejects; stderr: " + result.Stderr);
+        result.Mgfx.ShouldNotBeEmpty();
+        result.Stderr.ShouldContain("warning SD0402", Case.Sensitive);
+        result.Stderr.ShouldContain("Sd0402UniformBoundedLoop.fx: warning SD0402", Case.Sensitive, "a line-less diagnostic must still name the effect it came from");
     }
 
     [Theory]
@@ -252,9 +238,8 @@ public sealed class Phase53ErrorVisibilityRegressionTests : IClassFixture<CliBin
         using var cts = new CancellationTokenSource(CompileTimeout);
         var result = await TestHelpers.CompileFixtureAsync(fx, "DirectX_11", ct: cts.Token);
 
-        result.ExitCode.Should().Be(0, because: $"'{fx}' must stay DX-compiling; stderr: {result.Stderr}");
-        result.Stderr.Should().NotContain("SD040",
-            "the GL portability lint is a MonoGame-GL-dialect concept and must not fire on DirectX");
+        result.ExitCode.ShouldBe(0, customMessage: $"'{fx}' must stay DX-compiling; stderr: {result.Stderr}");
+        result.Stderr.ShouldNotContain("SD040", Case.Sensitive, "the GL portability lint is a MonoGame-GL-dialect concept and must not fire on DirectX");
     }
 
     // -------------------------------------------------------------------------
@@ -329,14 +314,11 @@ public sealed class Phase53ErrorVisibilityRegressionTests : IClassFixture<CliBin
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         var result = await compiler.CompileAsync(fx, options, cts.Token);
 
-        result.IsFailure.Should().BeTrue("the Broken technique has a bogus render-state value");
-        result.Error.Should().Contain(
-            e => e.Severity == ShaderErrorSeverity.Error && e.Code == "SD0011",
-            "the fatal render-state error from the Broken technique must still be reported");
-        result.Error.Should().Contain(e => e.Code == "SD0401",
-            "the Warns technique's warning, gathered before the later failure, must not be silently dropped");
-        result.Error[0].Severity.Should().Be(ShaderErrorSeverity.Error,
-            "the fatal error stays FIRST in the array — the actionable line leads");
+        result.IsFailure.ShouldBeTrue("the Broken technique has a bogus render-state value");
+        result.Error.ShouldContain(
+            e => e.Severity == ShaderErrorSeverity.Error && e.Code == "SD0011", "the fatal render-state error from the Broken technique must still be reported");
+        result.Error.ShouldContain(e => e.Code == "SD0401", "the Warns technique's warning, gathered before the later failure, must not be silently dropped");
+        result.Error[0].Severity.ShouldBe(ShaderErrorSeverity.Error, customMessage: "the fatal error stays FIRST in the array — the actionable line leads");
     }
 
     // -------------------------------------------------------------------------
@@ -372,21 +354,20 @@ public sealed class Phase53ErrorVisibilityRegressionTests : IClassFixture<CliBin
 
         ShaderValidationReport report = await compiler.ValidateAsync(fx, cancellationToken: cts.Token);
 
-        report.IsValid.Should().BeFalse();
-        report.Targets.Should().HaveCount(2, "the default validation set is OpenGL + DirectX");
+        report.IsValid.ShouldBeFalse();
+        report.Targets.Count().ShouldBe(2, customMessage: "the default validation set is OpenGL + DirectX");
 
         var gl = report.Targets.Single(t => t.Target == PlatformTarget.OpenGL);
         var dx = report.Targets.Single(t => t.Target == PlatformTarget.DirectX);
 
-        gl.Succeeded.Should().BeFalse("int uniforms are unmodelled in the MonoGame-GL dialect");
-        gl.Errors.Should().Contain(e => e.Code == "SD0210");
-        dx.Succeeded.Should().BeTrue($"errors: {string.Join(" | ", dx.Errors.Select(e => e.Message))}");
+        gl.Succeeded.ShouldBeFalse("int uniforms are unmodelled in the MonoGame-GL dialect");
+        gl.Errors.ShouldContain(e => e.Code == "SD0210");
+        dx.Succeeded.ShouldBeTrue($"errors: {string.Join(" | ", dx.Errors.Select(e => e.Message))}");
 
         string rendered = report.ToString();
-        rendered.Should().Contain("[OpenGL] FAILED");
-        rendered.Should().Contain("[DirectX] OK");
-        rendered.Should().Contain("integer/boolean uniforms",
-            "the report carries the actionable rewriter message verbatim");
+        rendered.ShouldContain("[OpenGL] FAILED", Case.Sensitive);
+        rendered.ShouldContain("[DirectX] OK", Case.Sensitive);
+        rendered.ShouldContain("integer/boolean uniforms", Case.Sensitive, "the report carries the actionable rewriter message verbatim");
     }
 
     [Fact]
@@ -403,12 +384,13 @@ public sealed class Phase53ErrorVisibilityRegressionTests : IClassFixture<CliBin
 
         ShaderValidationReport report = await compiler.ValidateAsync(fx, cancellationToken: cts.Token);
 
-        report.IsValid.Should().BeTrue("the shader compiles everywhere — the lint never rejects");
-        report.IsClean.Should().BeFalse("the GL target must carry the SD0401 warning");
+        report.IsValid.ShouldBeTrue("the shader compiles everywhere — the lint never rejects");
+        report.IsClean.ShouldBeFalse("the GL target must carry the SD0401 warning");
 
         var gl = report.Targets.Single(t => t.Target == PlatformTarget.OpenGL);
-        gl.Warnings.Should().Contain(w => w.Code == "SD0401");
+        gl.Warnings.ShouldContain(w => w.Code == "SD0401");
 
-        report.ToString().Should().Contain("SD0401").And.Contain("SpriteBatch");
+        report.ToString().ShouldContain("SD0401", Case.Sensitive);
+        report.ToString().ShouldContain("SpriteBatch", Case.Sensitive);
     }
 }

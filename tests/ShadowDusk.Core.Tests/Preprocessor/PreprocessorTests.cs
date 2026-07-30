@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
 using Xunit;
@@ -32,10 +32,10 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Text.Should().Contain("#define MGFX 1");
-        result.Value.Text.Should().Contain("#define HLSL 1");
-        result.Value.Text.Should().Contain("#define SM4 1");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Text.ShouldContain("#define MGFX 1", Case.Sensitive);
+        result.Value.Text.ShouldContain("#define HLSL 1", Case.Sensitive);
+        result.Value.Text.ShouldContain("#define SM4 1", Case.Sensitive);
     }
 
     [Fact]
@@ -51,10 +51,10 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Text.Should().Contain("#define MGFX 1");
-        result.Value.Text.Should().Contain("#define GLSL 1");
-        result.Value.Text.Should().Contain("#define OPENGL 1");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Text.ShouldContain("#define MGFX 1", Case.Sensitive);
+        result.Value.Text.ShouldContain("#define GLSL 1", Case.Sensitive);
+        result.Value.Text.ShouldContain("#define OPENGL 1", Case.Sensitive);
     }
 
     [Fact]
@@ -71,16 +71,14 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
 
         var text = result.Value.Text;
         var lineDirectiveIndex = text.IndexOf("#line 1 \"root.fx\"", StringComparison.Ordinal);
         var shaderBodyIndex    = text.IndexOf("marker_token", StringComparison.Ordinal);
 
-        lineDirectiveIndex.Should().BeGreaterThanOrEqualTo(0,
-            because: "a #line reset directive must appear before the shader body");
-        lineDirectiveIndex.Should().BeLessThan(shaderBodyIndex,
-            because: "the #line directive must precede the first shader token");
+        lineDirectiveIndex.ShouldBeGreaterThanOrEqualTo(0, customMessage: "a #line reset directive must appear before the shader body");
+        lineDirectiveIndex.ShouldBeLessThan(shaderBodyIndex, customMessage: "the #line directive must precede the first shader token");
     }
 
     [Theory]
@@ -99,7 +97,7 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
     }
 
     // -------------------------------------------------------------------------
@@ -123,8 +121,8 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Text.Should().Contain("float c;");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Text.ShouldContain("float c;", Case.Sensitive);
     }
 
     [Fact]
@@ -144,8 +142,8 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Text.Should().NotContain("#include");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Text.ShouldNotContain("#include", Case.Sensitive);
     }
 
     [Fact]
@@ -165,9 +163,9 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         // There must be a #line directive referencing common.fxh to mark where the included content starts
-        result.Value.Text.Should().Contain("common.fxh");
+        result.Value.Text.ShouldContain("common.fxh", Case.Sensitive);
     }
 
     // -------------------------------------------------------------------------
@@ -192,10 +190,10 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Text.Should().Contain("float from_b;");
-        result.Value.Text.Should().Contain("float from_a;");
-        result.Value.Text.Should().Contain("float root_var;");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Text.ShouldContain("float from_b;", Case.Sensitive);
+        result.Value.Text.ShouldContain("float from_a;", Case.Sensitive);
+        result.Value.Text.ShouldContain("float root_var;", Case.Sensitive);
     }
 
     [Fact]
@@ -216,8 +214,8 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Text.Should().NotContain("#include");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Text.ShouldNotContain("#include", Case.Sensitive);
     }
 
     [Fact]
@@ -238,8 +236,8 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Text.Should().Contain("b.fxh");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Text.ShouldContain("b.fxh", Case.Sensitive);
     }
 
     // -------------------------------------------------------------------------
@@ -262,7 +260,7 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsFailure.Should().BeTrue();
+        result.IsFailure.ShouldBeTrue();
     }
 
     [Fact]
@@ -281,7 +279,7 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.Error.Kind.Should().Be(ShaderErrorKind.CircularInclude);
+        result.Error.Kind.ShouldBe(ShaderErrorKind.CircularInclude);
     }
 
     [Fact]
@@ -300,7 +298,7 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.Error.RequestedPath.Should().Contain("self.fx");
+        result.Error.RequestedPath!.ShouldContain("self.fx", Case.Sensitive);
     }
 
     // -------------------------------------------------------------------------
@@ -324,8 +322,8 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Kind.Should().Be(ShaderErrorKind.CircularInclude);
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Kind.ShouldBe(ShaderErrorKind.CircularInclude);
     }
 
     // -------------------------------------------------------------------------
@@ -350,15 +348,15 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
 
         // Count occurrences of the guarded content
         var text = result.Value.Text;
         var firstIndex  = text.IndexOf("float x;", StringComparison.Ordinal);
         var secondIndex = text.IndexOf("float x;", firstIndex + 1, StringComparison.Ordinal);
 
-        firstIndex.Should().BeGreaterThanOrEqualTo(0, because: "the content must appear at least once");
-        secondIndex.Should().BeLessThan(0, because: "#pragma once must prevent a second inclusion");
+        firstIndex.ShouldBeGreaterThanOrEqualTo(0, customMessage: "the content must appear at least once");
+        secondIndex.ShouldBeLessThan(0, customMessage: "#pragma once must prevent a second inclusion");
     }
 
     [Fact]
@@ -380,15 +378,14 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
 
         var text = result.Value.Text;
         var firstIndex  = text.IndexOf("float shared_val;", StringComparison.Ordinal);
         var secondIndex = text.IndexOf("float shared_val;", firstIndex + 1, StringComparison.Ordinal);
 
-        firstIndex.Should().BeGreaterThanOrEqualTo(0);
-        secondIndex.Should().BeLessThan(0,
-            because: "shared.fxh has #pragma once and must not be emitted twice even via different include paths");
+        firstIndex.ShouldBeGreaterThanOrEqualTo(0);
+        secondIndex.ShouldBeLessThan(0, customMessage: "shared.fxh has #pragma once and must not be emitted twice even via different include paths");
     }
 
     // -------------------------------------------------------------------------
@@ -409,8 +406,8 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Text.Should().Contain(pragmaLine);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Text.ShouldContain(pragmaLine, Case.Sensitive);
     }
 
     // -------------------------------------------------------------------------
@@ -431,8 +428,8 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Text.Should().Contain(pragmaLine);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Text.ShouldContain(pragmaLine, Case.Sensitive);
     }
 
     // -------------------------------------------------------------------------
@@ -459,7 +456,7 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsFailure.Should().BeTrue();
+        result.IsFailure.ShouldBeTrue();
     }
 
     [Fact]
@@ -482,7 +479,7 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.Error.Kind.Should().Be(ShaderErrorKind.IncludeNotFound);
+        result.Error.Kind.ShouldBe(ShaderErrorKind.IncludeNotFound);
     }
 
     [Fact]
@@ -499,7 +496,7 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.Error.IncludingFilePath.Should().NotBeNullOrEmpty();
+        result.Error.IncludingFilePath.ShouldNotBeNullOrEmpty();
     }
 
     [Fact]
@@ -522,7 +519,7 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.Error.IncludingLineNumber.Should().Be(5);
+        result.Error.IncludingLineNumber.ShouldBe(5);
     }
 
     [Fact]
@@ -539,7 +536,7 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.Error.RequestedPath.Should().Be("missing.fxh");
+        result.Error.RequestedPath.ShouldBe("missing.fxh");
     }
 
     [Fact]
@@ -556,8 +553,8 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.Error.SearchedPaths.Should().NotBeNull();
-        result.Error.SearchedPaths.Should().NotBeEmpty();
+        result.Error.SearchedPaths.ShouldNotBeNull();
+        result.Error.SearchedPaths.ShouldNotBeEmpty();
     }
 
     // -------------------------------------------------------------------------
@@ -578,9 +575,9 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         result.Value.DxcMacroFlags
-            .Should().Equal(macros.ToDxcFlags());
+            .ShouldBe(macros.ToDxcFlags());
     }
 
     [Theory]
@@ -599,8 +596,8 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.DxcMacroFlags.Should().Equal(macros.ToDxcFlags());
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.DxcMacroFlags.ShouldBe(macros.ToDxcFlags());
     }
 
     [Fact]
@@ -616,8 +613,8 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.OriginalFilePath.Should().Be("my/shader.fx");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.OriginalFilePath.ShouldBe("my/shader.fx");
     }
 
     // -------------------------------------------------------------------------
@@ -645,11 +642,11 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
 
         // After the included content there must be a #line directive resuming root.fx
         // at line 3 (the line after the #include directive).
-        result.Value.Text.Should().Contain("#line 3 \"root.fx\"");
+        result.Value.Text.ShouldContain("#line 3 \"root.fx\"", Case.Sensitive);
     }
 
     [Fact]
@@ -674,10 +671,10 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
 
         // The resume directive after the 3-line header must point to line 3 of root.fx
-        result.Value.Text.Should().Contain("#line 3 \"root.fx\"");
+        result.Value.Text.ShouldContain("#line 3 \"root.fx\"", Case.Sensitive);
     }
 
     [Fact]
@@ -697,14 +694,13 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
 
         var text = result.Value.Text;
         var lineDirectiveForHeader = text.IndexOf("hdr.fxh", StringComparison.Ordinal);
         var includedTokenIndex     = text.IndexOf("included_token", StringComparison.Ordinal);
 
-        lineDirectiveForHeader.Should().BeLessThan(includedTokenIndex,
-            because: "the #line directive for the included file must precede the included content");
+        lineDirectiveForHeader.ShouldBeLessThan(includedTokenIndex, customMessage: "the #line directive for the included file must precede the included content");
     }
 
     // -------------------------------------------------------------------------
@@ -732,15 +728,14 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsSuccess.Should().BeTrue(
-            because: $"a diamond include is not a cycle; error: {(result.IsFailure ? result.Error.Message : "<none>")}");
+        result.IsSuccess.ShouldBeTrue($"a diamond include is not a cycle; error: {(result.IsFailure ? result.Error.Message : "<none>")}");
 
         var text = result.Value.Text;
-        text.Should().Contain("from_b");
-        text.Should().Contain("from_c");
+        text.ShouldContain("from_b", Case.Sensitive);
+        text.ShouldContain("from_c", Case.Sensitive);
         // No #pragma once / guards → the textual inclusion happens twice, exactly
         // like fxc's preprocessor (guards, when present, are evaluated by DXC later).
-        CountOccurrences(text, "common_token").Should().Be(2);
+        CountOccurrences(text, "common_token").ShouldBe(2);
     }
 
     [Fact]
@@ -762,8 +757,8 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsSuccess.Should().BeTrue();
-        CountOccurrences(result.Value.Text, "common_token").Should().Be(1);
+        result.IsSuccess.ShouldBeTrue();
+        CountOccurrences(result.Value.Text, "common_token").ShouldBe(1);
     }
 
     [Fact]
@@ -782,8 +777,8 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("SD0002");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("SD0002");
     }
 
     [Fact]
@@ -803,8 +798,8 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("SD0002");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("SD0002");
     }
 
     [Fact]
@@ -826,8 +821,8 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsSuccess.Should().BeTrue();
-        CountOccurrences(result.Value.Text, "common_token").Should().Be(2);
+        result.IsSuccess.ShouldBeTrue();
+        CountOccurrences(result.Value.Text, "common_token").ShouldBe(2);
     }
 
     // -------------------------------------------------------------------------
@@ -852,10 +847,9 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsSuccess.Should().BeTrue(
-            because: $"a commented-out #include must not be processed; error: {(result.IsFailure ? result.Error.Message : "<none>")}");
+        result.IsSuccess.ShouldBeTrue($"a commented-out #include must not be processed; error: {(result.IsFailure ? result.Error.Message : "<none>")}");
         // The comment passes through verbatim (DXC strips it later).
-        result.Value.Text.Should().Contain("#include \"ghost.fxh\"");
+        result.Value.Text.ShouldContain("#include \"ghost.fxh\"", Case.Sensitive);
     }
 
     [Fact]
@@ -876,8 +870,8 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsSuccess.Should().BeTrue();
-        CountOccurrences(result.Value.Text, "hdr_token").Should().Be(2);
+        result.IsSuccess.ShouldBeTrue();
+        CountOccurrences(result.Value.Text, "hdr_token").ShouldBe(2);
     }
 
     [Fact]
@@ -897,8 +891,8 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Text.Should().Contain("hdr_token");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Text.ShouldContain("hdr_token", Case.Sensitive);
     }
 
     [Fact]
@@ -918,8 +912,8 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Text.Should().Contain("hdr_token");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Text.ShouldContain("hdr_token", Case.Sensitive);
     }
 
     [Fact]
@@ -941,8 +935,8 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Text.Should().Contain("hdr_token");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Text.ShouldContain("hdr_token", Case.Sensitive);
     }
 
     [Fact]
@@ -959,8 +953,8 @@ public sealed class PreprocessorTests
             includeResolver: resolver,
             additionalPaths: []);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Text.Should().Contain("// #include \"ghost.fxh\"");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Text.ShouldContain("// #include \"ghost.fxh\"", Case.Sensitive);
     }
 
     private static int CountOccurrences(string text, string token)

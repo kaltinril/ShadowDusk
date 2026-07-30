@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.Integration.Tests.Tests;
@@ -41,13 +41,13 @@ public sealed class CompileExampleFixtureTests
 
         var result = await TestHelpers.CompileFixtureAsync(fx, "OpenGL", ct: cts.Token);
 
-        result.ExitCode.Should().Be(0, because: $"'{fx}' should compile for OpenGL; stderr: {result.Stderr}");
-        result.Mgfx.Should().NotBeEmpty(because: "a successful compile must emit output bytes");
+        result.ExitCode.ShouldBe(0, customMessage: $"'{fx}' should compile for OpenGL; stderr: {result.Stderr}");
+        result.Mgfx.ShouldNotBeEmpty("a successful compile must emit output bytes");
 
         var reader = MgfxBlobReader.Parse(result.Mgfx);
-        reader.Signature.Should().Be("MGFX");
-        reader.MgfxVersion.Should().Be(10);
-        reader.ProfileId.Should().Be(ProfileOpenGL);
-        reader.TotalShaderBlobCount.Should().BeGreaterThan(0, because: "each example declares a pixel shader pass");
+        reader.Signature.ShouldBe("MGFX");
+        reader.MgfxVersion.ShouldBe((byte)(10));
+        reader.ProfileId.ShouldBe(ProfileOpenGL);
+        reader.TotalShaderBlobCount.ShouldBeGreaterThan(0, customMessage: "each example declares a pixel shader pass");
     }
 }

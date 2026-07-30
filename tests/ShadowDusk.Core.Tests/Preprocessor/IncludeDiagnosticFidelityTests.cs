@@ -3,7 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
 using Xunit;
@@ -48,14 +48,13 @@ public sealed class IncludeDiagnosticFidelityTests
 
         var result = Flatten(new FailingResolver(sd0004));
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("SD0004",
-            "an unreadable-but-present include must not be reported as 'cannot find'");
-        result.Error.Message.Should().Contain("could not be read");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("SD0004", customMessage: "an unreadable-but-present include must not be reported as 'cannot find'");
+        result.Error.Message.ShouldContain("could not be read", Case.Sensitive);
         // The one thing the preprocessor legitimately adds: the location the resolver
         // could not know.
-        result.Error.File.Should().Be("Shader.fx");
-        result.Error.Line.Should().Be(1);
+        result.Error.File.ShouldBe("Shader.fx");
+        result.Error.Line.ShouldBe(1);
     }
 
     [Fact]
@@ -71,9 +70,9 @@ public sealed class IncludeDiagnosticFidelityTests
 
         var result = Flatten(new FailingResolver(custom));
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("MYAPP0042");
-        result.Error.Message.Should().Be("virtual include store is offline");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("MYAPP0042");
+        result.Error.Message.ShouldBe("virtual include store is offline");
     }
 
     [Fact]
@@ -86,11 +85,11 @@ public sealed class IncludeDiagnosticFidelityTests
 
         var result = Flatten(new FailingResolver(notFound));
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("SD0001");
-        result.Error.Kind.Should().Be(ShaderErrorKind.IncludeNotFound);
-        result.Error.SearchedPaths.Should().BeEquivalentTo(["/a", "/b"]);
-        result.Error.Line.Should().Be(1);
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("SD0001");
+        result.Error.Kind.ShouldBe(ShaderErrorKind.IncludeNotFound);
+        result.Error.SearchedPaths.ShouldBe(["/a", "/b"], ignoreOrder: true);
+        result.Error.Line.ShouldBe(1);
     }
 
     [Fact]
@@ -113,10 +112,9 @@ public sealed class IncludeDiagnosticFidelityTests
                 File.ReadAllText(source), source, PlatformMacros.For(PlatformTarget.OpenGL),
                 new FileSystemIncludeResolver(), []);
 
-            result.IsFailure.Should().BeTrue();
-            result.Error.Code.Should().Be("SD0004",
-                "the header is present — reporting SD0001 would send the user hunting a missing file");
-            result.Error.Message.Should().Contain("could not be read");
+            result.IsFailure.ShouldBeTrue();
+            result.Error.Code.ShouldBe("SD0004", customMessage: "the header is present — reporting SD0001 would send the user hunting a missing file");
+            result.Error.Message.ShouldContain("could not be read", Case.Sensitive);
         }
         finally
         {

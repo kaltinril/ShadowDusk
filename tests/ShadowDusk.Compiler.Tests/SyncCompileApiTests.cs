@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using Xunit;
@@ -38,8 +38,7 @@ public sealed class SyncCompileApiTests
         await compiler.InitializeAsync();
         await compiler.InitializeAsync();
 
-        compiler.InitializeAsync().IsCompletedSuccessfully.Should().BeTrue(
-            because: "the desktop InitializeAsync is a documented no-op");
+        compiler.InitializeAsync().IsCompletedSuccessfully.ShouldBeTrue("the desktop InitializeAsync is a documented no-op");
     }
 
     [Fact]
@@ -51,7 +50,7 @@ public sealed class SyncCompileApiTests
 
         Task initialize = compiler.InitializeAsync(cts.Token);
 
-        initialize.IsCanceled.Should().BeTrue();
+        initialize.IsCanceled.ShouldBeTrue();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => initialize);
     }
 
@@ -64,12 +63,12 @@ public sealed class SyncCompileApiTests
         var syncResult  = compiler.Compile(NoTechniqueSource, options);
         var asyncResult = await compiler.CompileAsync(NoTechniqueSource, options);
 
-        syncResult.IsFailure.Should().BeTrue();
-        syncResult.Error.Should().ContainSingle(e => e.Code == "SD0200");
+        syncResult.IsFailure.ShouldBeTrue();
+        syncResult.Error.Where(e => e.Code == "SD0200").ShouldHaveSingleItem();
 
         // One pipeline core ⇒ identical diagnostics from both entry points.
-        asyncResult.IsFailure.Should().BeTrue();
-        asyncResult.Error.Should().BeEquivalentTo(syncResult.Error);
+        asyncResult.IsFailure.ShouldBeTrue();
+        asyncResult.Error.ShouldBe(syncResult.Error, ignoreOrder: true);
     }
 
     [Fact]
@@ -85,11 +84,11 @@ public sealed class SyncCompileApiTests
         var syncResult  = compiler.Compile(NoTechniqueSource, options);
         var asyncResult = await compiler.CompileAsync(NoTechniqueSource, options);
 
-        syncResult.IsFailure.Should().BeTrue();
-        syncResult.Error.Should().ContainSingle(e => e.Code == "SD0010");
+        syncResult.IsFailure.ShouldBeTrue();
+        syncResult.Error.Where(e => e.Code == "SD0010").ShouldHaveSingleItem();
 
-        asyncResult.IsFailure.Should().BeTrue();
-        asyncResult.Error.Should().BeEquivalentTo(syncResult.Error);
+        asyncResult.IsFailure.ShouldBeTrue();
+        asyncResult.Error.ShouldBe(syncResult.Error, ignoreOrder: true);
     }
 
     [Fact]
@@ -102,6 +101,6 @@ public sealed class SyncCompileApiTests
         Action act = () => compiler.Compile(
             NoTechniqueSource, new CompilerOptions { Target = PlatformTarget.OpenGL }, cts.Token);
 
-        act.Should().Throw<OperationCanceledException>();
+        Should.Throw<OperationCanceledException>(act);
     }
 }

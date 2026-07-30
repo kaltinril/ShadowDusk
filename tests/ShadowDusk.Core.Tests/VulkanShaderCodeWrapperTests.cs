@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Reflection;
 using Xunit;
@@ -36,14 +36,14 @@ public sealed class VulkanShaderCodeWrapperTests
             textures: Array.Empty<TextureReflection>(), samplers: Array.Empty<SamplerReflection>());
 
         var r = new R(wrapped);
-        r.Int32().Should().Be(0, "no constant buffer");
-        r.UInt32().Should().Be(0u, "uniformSlots");
-        r.UInt32().Should().Be(0u, "textureSlots");
-        r.UInt32().Should().Be(0u, "samplerSlots");
+        r.Int32().ShouldBe(0, customMessage: "no constant buffer");
+        r.UInt32().ShouldBe(0u, customMessage: "uniformSlots");
+        r.UInt32().ShouldBe(0u, customMessage: "textureSlots");
+        r.UInt32().ShouldBe(0u, customMessage: "samplerSlots");
         for (int i = 0; i < 16; i++)
-            r.UInt32().Should().Be(0u, $"textureTypes[{i}]");
-        r.UInt32().Should().Be(0u, "bindingCount");
-        r.Rest().Should().Equal(Spirv);
+            r.UInt32().ShouldBe(0u, customMessage: $"textureTypes[{i}]");
+        r.UInt32().ShouldBe(0u, customMessage: "bindingCount");
+        r.Rest().ShouldBe(Spirv);
     }
 
     [Fact]
@@ -63,16 +63,16 @@ public sealed class VulkanShaderCodeWrapperTests
             textures: Array.Empty<TextureReflection>(), samplers: Array.Empty<SamplerReflection>());
 
         var r = new R(wrapped);
-        r.Int32().Should().Be(1, "one constant buffer");
-        r.UInt32().Should().Be(1u, "uniformSlots bit 0 set");
+        r.Int32().ShouldBe(1, customMessage: "one constant buffer");
+        r.UInt32().ShouldBe(1u, customMessage: "uniformSlots bit 0 set");
         r.UInt32(); r.UInt32(); // textureSlots, samplerSlots
         for (int i = 0; i < 16; i++) r.UInt32(); // textureTypes
-        r.UInt32().Should().Be(1u, "bindingCount");
-        r.UInt32().Should().Be(3u, "binding == the cbuffer's real RawBinding, not 0");
-        r.UInt32().Should().Be(8u, "descriptorType == UNIFORM_BUFFER_DYNAMIC");
-        r.UInt32().Should().Be(1u, "descriptorCount");
-        r.UInt32().Should().Be(0x10u, "stageFlags == FRAGMENT_BIT for Pixel stage");
-        r.UInt64().Should().Be(0ul, "pImmutableSamplers");
+        r.UInt32().ShouldBe(1u, customMessage: "bindingCount");
+        r.UInt32().ShouldBe(3u, customMessage: "binding == the cbuffer's real RawBinding, not 0");
+        r.UInt32().ShouldBe(8u, customMessage: "descriptorType == UNIFORM_BUFFER_DYNAMIC");
+        r.UInt32().ShouldBe(1u, customMessage: "descriptorCount");
+        r.UInt32().ShouldBe(0x10u, customMessage: "stageFlags == FRAGMENT_BIT for Pixel stage");
+        r.UInt64().ShouldBe(0ul, customMessage: "pImmutableSamplers");
     }
 
     [Fact]
@@ -95,7 +95,7 @@ public sealed class VulkanShaderCodeWrapperTests
         r.UInt32(); // binding
         r.UInt32(); // descriptorType
         r.UInt32(); // descriptorCount
-        r.UInt32().Should().Be(0x01u, "stageFlags == VERTEX_BIT for Vertex stage");
+        r.UInt32().ShouldBe(0x01u, customMessage: "stageFlags == VERTEX_BIT for Vertex stage");
     }
 
     [Fact]
@@ -117,14 +117,14 @@ public sealed class VulkanShaderCodeWrapperTests
         var r = new R(wrapped);
         r.Int32(); r.UInt32(); r.UInt32(); r.UInt32();
         for (int i = 0; i < 16; i++) r.UInt32();
-        r.UInt32().Should().Be(2u, "one SAMPLED_IMAGE + one SAMPLER binding");
+        r.UInt32().ShouldBe(2u, customMessage: "one SAMPLED_IMAGE + one SAMPLER binding");
 
-        r.UInt32().Should().Be(5u, "texture's own RawBinding");
-        r.UInt32().Should().Be(2u, "descriptorType == SAMPLED_IMAGE (separate, not combined)");
+        r.UInt32().ShouldBe(5u, customMessage: "texture's own RawBinding");
+        r.UInt32().ShouldBe(2u, customMessage: "descriptorType == SAMPLED_IMAGE (separate, not combined)");
         r.UInt32(); r.UInt32(); r.UInt64();
 
-        r.UInt32().Should().Be(7u, "sampler's own RawBinding");
-        r.UInt32().Should().Be(0u, "descriptorType == SAMPLER");
+        r.UInt32().ShouldBe(7u, customMessage: "sampler's own RawBinding");
+        r.UInt32().ShouldBe(0u, customMessage: "descriptorType == SAMPLER");
     }
 
     [Fact]
@@ -146,9 +146,9 @@ public sealed class VulkanShaderCodeWrapperTests
         var r = new R(wrapped);
         r.Int32(); r.UInt32(); r.UInt32(); r.UInt32();
         for (int i = 0; i < 16; i++) r.UInt32();
-        r.UInt32().Should().Be(1u, "combined resource is ONE binding, not two");
-        r.UInt32().Should().Be(4u, "shared RawBinding");
-        r.UInt32().Should().Be(1u, "descriptorType == COMBINED_IMAGE_SAMPLER");
+        r.UInt32().ShouldBe(1u, customMessage: "combined resource is ONE binding, not two");
+        r.UInt32().ShouldBe(4u, customMessage: "shared RawBinding");
+        r.UInt32().ShouldBe(1u, customMessage: "descriptorType == COMBINED_IMAGE_SAMPLER");
     }
 
     [Fact]
@@ -182,9 +182,9 @@ public sealed class VulkanShaderCodeWrapperTests
         var r = new R(wrapped);
         r.Int32(); r.UInt32(); r.UInt32(); r.UInt32();
         for (int i = 0; i < 16; i++) r.UInt32();
-        r.UInt32().Should().Be(1u, "same raw binding must combine into ONE entry, not two duplicate-binding entries");
-        r.UInt32().Should().Be(32u, "shared RawBinding");
-        r.UInt32().Should().Be(1u, "descriptorType == COMBINED_IMAGE_SAMPLER");
+        r.UInt32().ShouldBe(1u, customMessage: "same raw binding must combine into ONE entry, not two duplicate-binding entries");
+        r.UInt32().ShouldBe(32u, customMessage: "shared RawBinding");
+        r.UInt32().ShouldBe(1u, customMessage: "descriptorType == COMBINED_IMAGE_SAMPLER");
     }
 
     [Fact]
@@ -200,6 +200,6 @@ public sealed class VulkanShaderCodeWrapperTests
         r.Int32(); r.UInt32(); r.UInt32(); r.UInt32();
         var textureTypes = new uint[16];
         for (int i = 0; i < 16; i++) textureTypes[i] = r.UInt32();
-        textureTypes[5].Should().Be(2u, "MGTextureType Cube == 2");
+        textureTypes[5].ShouldBe(2u, customMessage: "MGTextureType Cube == 2");
     }
 }

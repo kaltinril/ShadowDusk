@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core;
 using Xunit;
 
@@ -17,13 +17,13 @@ public sealed class ShaderFeatureSupportTests
     {
         // The load-bearing invariant: no shipping runtime consumes any of these features yet, so
         // none may be emitted. Flipping a flag here is a deliberate, render-proven version event.
-        ShaderFeatureSupport.RuntimeSupported.Should().Be(ShaderFeatures.None);
+        ShaderFeatureSupport.RuntimeSupported.ShouldBe(ShaderFeatures.None);
     }
 
     [Fact]
     public void Validate_None_ReturnsNull()
     {
-        ShaderFeatureSupport.Validate(ShaderFeatures.None).Should().BeNull();
+        ShaderFeatureSupport.Validate(ShaderFeatures.None).ShouldBeNull();
     }
 
     [Theory]
@@ -34,9 +34,9 @@ public sealed class ShaderFeatureSupportTests
     {
         ShaderError? error = ShaderFeatureSupport.Validate(feature);
 
-        error.Should().NotBeNull("no shipping runtime consumes this feature yet, so it must be rejected");
-        error!.Code.Should().Be("SD0201");
-        error.Message.Should().Contain(feature.ToString());
+        error.ShouldNotBeNull("no shipping runtime consumes this feature yet, so it must be rejected");
+        error!.Code.ShouldBe("SD0201");
+        error.Message.ShouldContain(feature.ToString(), Case.Sensitive);
     }
 
     [Fact]
@@ -45,8 +45,8 @@ public sealed class ShaderFeatureSupportTests
         ShaderError? error = ShaderFeatureSupport.Validate(
             ShaderFeatures.VertexTextureFetch | ShaderFeatures.TextureArrays);
 
-        error.Should().NotBeNull();
-        error!.Message.Should().Contain("VertexTextureFetch");
-        error.Message.Should().Contain("TextureArrays");
+        error.ShouldNotBeNull();
+        error!.Message.ShouldContain("VertexTextureFetch", Case.Sensitive);
+        error.Message.ShouldContain("TextureArrays", Case.Sensitive);
     }
 }

@@ -1,7 +1,7 @@
 #nullable enable
 
 using System.Collections.Generic;
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core;
 using Xunit;
 
@@ -17,7 +17,7 @@ public sealed class RenderStateParserTests
         foreach (var (k, v) in pairs) dict[k] = v;
 
         var result = Parser.Parse(dict);
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         return result.Value;
     }
 
@@ -27,7 +27,7 @@ public sealed class RenderStateParserTests
         foreach (var (k, v) in pairs) dict[k] = v;
 
         var result = Parser.Parse(dict);
-        result.IsFailure.Should().BeTrue();
+        result.IsFailure.ShouldBeTrue();
         return result.Error;
     }
 
@@ -39,9 +39,9 @@ public sealed class RenderStateParserTests
     public void Parse_EmptyDictionary_ReturnsEmptyBlock()
     {
         var block = Parse();
-        block.HasBlendState.Should().BeFalse();
-        block.HasDepthStencilState.Should().BeFalse();
-        block.HasRasterizerState.Should().BeFalse();
+        block.HasBlendState.ShouldBeFalse();
+        block.HasDepthStencilState.ShouldBeFalse();
+        block.HasRasterizerState.ShouldBeFalse();
     }
 
     [Theory]
@@ -53,7 +53,7 @@ public sealed class RenderStateParserTests
         // accepts 1/0, and XNA-era effects write numeric bools (`AlphaBlendEnable = 1;`)
         // ubiquitously — these used to fail the whole effect with SD0011.
         var block = Parse(("StencilEnable", value));
-        block.StencilEnable.Should().Be(expected);
+        block.StencilEnable.ShouldBe(expected);
     }
 
     [Fact]
@@ -65,18 +65,18 @@ public sealed class RenderStateParserTests
             ("StencilMask", "0xFF"),
             ("StencilWriteMask", "0x0F"),
             ("StencilRef", "0x10"));
-        block.StencilMask.Should().Be(0xFF);
-        block.StencilWriteMask.Should().Be(0x0F);
-        block.ReferenceStencil.Should().Be(0x10);
+        block.StencilMask.ShouldBe(0xFF);
+        block.StencilWriteMask.ShouldBe(0x0F);
+        block.ReferenceStencil.ShouldBe(0x10);
     }
 
     [Fact]
     public void Parse_UnknownKey_IsIgnored()
     {
         var block = Parse(("UnknownRenderKey", "SomeValue"));
-        block.HasBlendState.Should().BeFalse();
-        block.HasRasterizerState.Should().BeFalse();
-        block.HasDepthStencilState.Should().BeFalse();
+        block.HasBlendState.ShouldBeFalse();
+        block.HasRasterizerState.ShouldBeFalse();
+        block.HasDepthStencilState.ShouldBeFalse();
     }
 
     // -------------------------------------------------------------------------
@@ -90,23 +90,23 @@ public sealed class RenderStateParserTests
     public void Parse_CullMode(string value, CullModeValue expected)
     {
         var block = Parse(("CullMode", value));
-        block.CullMode.Should().Be(expected);
+        block.CullMode.ShouldBe(expected);
     }
 
     [Fact]
     public void Parse_CullMode_CaseInsensitive()
     {
         var block = Parse(("cullmode", "none"));
-        block.CullMode.Should().Be(CullModeValue.None);
+        block.CullMode.ShouldBe(CullModeValue.None);
     }
 
     [Fact]
     public void Parse_CullMode_InvalidValue_ReturnsError()
     {
         var error = ParseExpectError(("CullMode", "Backwards"));
-        error.Code.Should().Be("SD0011");
-        error.Message.Should().Contain("CullMode");
-        error.Message.Should().Contain("Backwards");
+        error.Code.ShouldBe("SD0011");
+        error.Message.ShouldContain("CullMode", Case.Sensitive);
+        error.Message.ShouldContain("Backwards", Case.Sensitive);
     }
 
     [Theory]
@@ -115,7 +115,7 @@ public sealed class RenderStateParserTests
     public void Parse_FillMode(string value, FillModeValue expected)
     {
         var block = Parse(("FillMode", value));
-        block.FillMode.Should().Be(expected);
+        block.FillMode.ShouldBe(expected);
     }
 
     [Theory]
@@ -126,7 +126,7 @@ public sealed class RenderStateParserTests
     public void Parse_ScissorTestEnable(string value, bool expected)
     {
         var block = Parse(("ScissorTestEnable", value));
-        block.ScissorTestEnable.Should().Be(expected);
+        block.ScissorTestEnable.ShouldBe(expected);
     }
 
     [Theory]
@@ -135,35 +135,35 @@ public sealed class RenderStateParserTests
     public void Parse_MultiSampleAntiAlias(string value, bool expected)
     {
         var block = Parse(("MultiSampleAntiAlias", value));
-        block.MultiSampleAntiAlias.Should().Be(expected);
+        block.MultiSampleAntiAlias.ShouldBe(expected);
     }
 
     [Fact]
     public void Parse_DepthBias()
     {
         var block = Parse(("DepthBias", "0.5"));
-        block.DepthBias.Should().BeApproximately(0.5f, 1e-6f);
+        block.DepthBias!.Value.ShouldBe(0.5f, 1e-6);
     }
 
     [Fact]
     public void Parse_DepthBias_Negative()
     {
         var block = Parse(("DepthBias", "-0.5"));
-        block.DepthBias.Should().BeApproximately(-0.5f, 1e-6f);
+        block.DepthBias!.Value.ShouldBe(-0.5f, 1e-6);
     }
 
     [Fact]
     public void Parse_DepthBias_Exponent()
     {
         var block = Parse(("DepthBias", "1e-4"));
-        block.DepthBias.Should().BeApproximately(1e-4f, 1e-9f);
+        block.DepthBias!.Value.ShouldBe(1e-4f, 1e-9);
     }
 
     [Fact]
     public void Parse_SlopeScaleDepthBias()
     {
         var block = Parse(("SlopeScaleDepthBias", "1.0"));
-        block.SlopeScaleDepthBias.Should().BeApproximately(1.0f, 1e-6f);
+        block.SlopeScaleDepthBias!.Value.ShouldBe(1.0f, 1e-6);
     }
 
     [Theory]
@@ -176,13 +176,13 @@ public sealed class RenderStateParserTests
         // and mgfxc's ParseTreeTools.ParseFloat strips it. A raw float.TryParse rejected
         // it, so `pass P { DepthBias = 0.0001f; }` — ordinary HLSL that mgfxc compiles —
         // failed SD0011 and aborted the whole compile.
-        Parse(("DepthBias", value)).DepthBias.Should().BeApproximately(expected, 1e-9f);
+        Parse(("DepthBias", value)).DepthBias!.Value.ShouldBe(expected, 1e-9);
     }
 
     [Fact]
     public void Parse_SlopeScaleDepthBias_AcceptsHlslFloatSuffix()
-        => Parse(("SlopeScaleDepthBias", "2.0f")).SlopeScaleDepthBias
-               .Should().BeApproximately(2.0f, 1e-6f);
+        => Parse(("SlopeScaleDepthBias", "2.0f")).SlopeScaleDepthBias!.Value
+               .ShouldBe(2.0f, 1e-6);
 
     // -------------------------------------------------------------------------
     // BlendState
@@ -194,7 +194,7 @@ public sealed class RenderStateParserTests
     public void Parse_AlphaBlendEnable(string value, bool expected)
     {
         var block = Parse(("AlphaBlendEnable", value));
-        block.AlphaBlendEnable.Should().Be(expected);
+        block.AlphaBlendEnable.ShouldBe(expected);
     }
 
     [Theory]
@@ -214,7 +214,7 @@ public sealed class RenderStateParserTests
     public void Parse_SrcBlend(string value, BlendValue expected)
     {
         var block = Parse(("SrcBlend", value));
-        block.ColorSourceBlend.Should().Be(expected);
+        block.ColorSourceBlend.ShouldBe(expected);
     }
 
     [Theory]
@@ -224,7 +224,7 @@ public sealed class RenderStateParserTests
     public void Parse_DestBlend(string value, BlendValue expected)
     {
         var block = Parse(("DestBlend", value));
-        block.ColorDestinationBlend.Should().Be(expected);
+        block.ColorDestinationBlend.ShouldBe(expected);
     }
 
     [Theory]
@@ -236,28 +236,28 @@ public sealed class RenderStateParserTests
     public void Parse_BlendOp(string value, BlendFunctionValue expected)
     {
         var block = Parse(("BlendOp", value));
-        block.ColorBlendFunction.Should().Be(expected);
+        block.ColorBlendFunction.ShouldBe(expected);
     }
 
     [Fact]
     public void Parse_SrcBlendAlpha()
     {
         var block = Parse(("SrcBlendAlpha", "SrcAlpha"));
-        block.AlphaSourceBlend.Should().Be(BlendValue.SourceAlpha);
+        block.AlphaSourceBlend.ShouldBe(BlendValue.SourceAlpha);
     }
 
     [Fact]
     public void Parse_DestBlendAlpha()
     {
         var block = Parse(("DestBlendAlpha", "InvSrcAlpha"));
-        block.AlphaDestinationBlend.Should().Be(BlendValue.InverseSourceAlpha);
+        block.AlphaDestinationBlend.ShouldBe(BlendValue.InverseSourceAlpha);
     }
 
     [Fact]
     public void Parse_BlendOpAlpha()
     {
         var block = Parse(("BlendOpAlpha", "Add"));
-        block.AlphaBlendFunction.Should().Be(BlendFunctionValue.Add);
+        block.AlphaBlendFunction.ShouldBe(BlendFunctionValue.Add);
     }
 
     // Phase 45 B3: the bare ColorWriteEnable key now uses TryParseColorWriteMask
@@ -284,7 +284,7 @@ public sealed class RenderStateParserTests
     public void Parse_ColorWriteEnable(string value, int expected)
     {
         var block = Parse(("ColorWriteEnable", value));
-        block.ColorWriteChannels.Should().Be(expected);
+        block.ColorWriteChannels.ShouldBe(expected);
     }
 
     [Theory]
@@ -293,7 +293,7 @@ public sealed class RenderStateParserTests
     public void Parse_ColorWriteEnable_InvalidValue_ReturnsError(string value)
     {
         var error = ParseExpectError(("ColorWriteEnable", value));
-        error.Code.Should().Be("SD0011");
+        error.Code.ShouldBe("SD0011");
     }
 
     // -------------------------------------------------------------------------
@@ -306,7 +306,7 @@ public sealed class RenderStateParserTests
     public void Parse_ZEnable(string value, bool expected)
     {
         var block = Parse(("ZEnable", value));
-        block.DepthBufferEnable.Should().Be(expected);
+        block.DepthBufferEnable.ShouldBe(expected);
     }
 
     [Theory]
@@ -315,7 +315,7 @@ public sealed class RenderStateParserTests
     public void Parse_ZWriteEnable(string value, bool expected)
     {
         var block = Parse(("ZWriteEnable", value));
-        block.DepthBufferWriteEnable.Should().Be(expected);
+        block.DepthBufferWriteEnable.ShouldBe(expected);
     }
 
     [Theory]
@@ -330,15 +330,15 @@ public sealed class RenderStateParserTests
     public void Parse_ZFunc(string value, CompareFunctionValue expected)
     {
         var block = Parse(("ZFunc", value));
-        block.DepthBufferFunction.Should().Be(expected);
+        block.DepthBufferFunction.ShouldBe(expected);
     }
 
     [Fact]
     public void Parse_ZFunc_InvalidValue_ReturnsError()
     {
         var error = ParseExpectError(("ZFunc", "Bogus"));
-        error.Code.Should().Be("SD0011");
-        error.Message.Should().Contain("ZFunc");
+        error.Code.ShouldBe("SD0011");
+        error.Message.ShouldContain("ZFunc", Case.Sensitive);
     }
 
     [Theory]
@@ -347,28 +347,28 @@ public sealed class RenderStateParserTests
     public void Parse_StencilEnable(string value, bool expected)
     {
         var block = Parse(("StencilEnable", value));
-        block.StencilEnable.Should().Be(expected);
+        block.StencilEnable.ShouldBe(expected);
     }
 
     [Fact]
     public void Parse_StencilRef()
     {
         var block = Parse(("StencilRef", "128"));
-        block.ReferenceStencil.Should().Be(128);
+        block.ReferenceStencil.ShouldBe(128);
     }
 
     [Fact]
     public void Parse_StencilMask()
     {
         var block = Parse(("StencilMask", "255"));
-        block.StencilMask.Should().Be(255);
+        block.StencilMask.ShouldBe(255);
     }
 
     [Fact]
     public void Parse_StencilWriteMask()
     {
         var block = Parse(("StencilWriteMask", "255"));
-        block.StencilWriteMask.Should().Be(255);
+        block.StencilWriteMask.ShouldBe(255);
     }
 
     [Theory]
@@ -383,21 +383,21 @@ public sealed class RenderStateParserTests
     public void Parse_StencilFail(string value, StencilOperationValue expected)
     {
         var block = Parse(("StencilFail", value));
-        block.StencilFail.Should().Be(expected);
+        block.StencilFail.ShouldBe(expected);
     }
 
     [Fact]
     public void Parse_StencilZFail()
     {
         var block = Parse(("StencilZFail", "Replace"));
-        block.StencilDepthBufferFail.Should().Be(StencilOperationValue.Replace);
+        block.StencilDepthBufferFail.ShouldBe(StencilOperationValue.Replace);
     }
 
     [Fact]
     public void Parse_StencilPass()
     {
         var block = Parse(("StencilPass", "Keep"));
-        block.StencilPass.Should().Be(StencilOperationValue.Keep);
+        block.StencilPass.ShouldBe(StencilOperationValue.Keep);
     }
 
     [Theory]
@@ -407,7 +407,7 @@ public sealed class RenderStateParserTests
     public void Parse_StencilFunc(string value, CompareFunctionValue expected)
     {
         var block = Parse(("StencilFunc", value));
-        block.StencilFunction.Should().Be(expected);
+        block.StencilFunction.ShouldBe(expected);
     }
 
     // -------------------------------------------------------------------------
@@ -427,33 +427,33 @@ public sealed class RenderStateParserTests
             ("BlendOpAlpha",     "Add"),
             ("ColorWriteEnable", "15"));
 
-        block.AlphaBlendEnable.Should().BeTrue();
-        block.ColorSourceBlend.Should().Be(BlendValue.SourceAlpha);
-        block.ColorDestinationBlend.Should().Be(BlendValue.InverseSourceAlpha);
-        block.ColorBlendFunction.Should().Be(BlendFunctionValue.Add);
-        block.AlphaSourceBlend.Should().Be(BlendValue.One);
-        block.AlphaDestinationBlend.Should().Be(BlendValue.Zero);
-        block.AlphaBlendFunction.Should().Be(BlendFunctionValue.Add);
-        block.ColorWriteChannels.Should().Be(15);
-        block.HasBlendState.Should().BeTrue();
+        block.AlphaBlendEnable.ShouldBe(true);
+        block.ColorSourceBlend.ShouldBe(BlendValue.SourceAlpha);
+        block.ColorDestinationBlend.ShouldBe(BlendValue.InverseSourceAlpha);
+        block.ColorBlendFunction.ShouldBe(BlendFunctionValue.Add);
+        block.AlphaSourceBlend.ShouldBe(BlendValue.One);
+        block.AlphaDestinationBlend.ShouldBe(BlendValue.Zero);
+        block.AlphaBlendFunction.ShouldBe(BlendFunctionValue.Add);
+        block.ColorWriteChannels.ShouldBe(15);
+        block.HasBlendState.ShouldBeTrue();
     }
 
     [Fact]
     public void Parse_HasRasterizerState_WhenCullModeSet()
     {
         var block = Parse(("CullMode", "CCW"));
-        block.HasRasterizerState.Should().BeTrue();
-        block.HasBlendState.Should().BeFalse();
-        block.HasDepthStencilState.Should().BeFalse();
+        block.HasRasterizerState.ShouldBeTrue();
+        block.HasBlendState.ShouldBeFalse();
+        block.HasDepthStencilState.ShouldBeFalse();
     }
 
     [Fact]
     public void Parse_HasDepthStencilState_WhenZEnableSet()
     {
         var block = Parse(("ZEnable", "True"));
-        block.HasDepthStencilState.Should().BeTrue();
-        block.HasBlendState.Should().BeFalse();
-        block.HasRasterizerState.Should().BeFalse();
+        block.HasDepthStencilState.ShouldBeTrue();
+        block.HasBlendState.ShouldBeFalse();
+        block.HasRasterizerState.ShouldBeFalse();
     }
 
     // -------------------------------------------------------------------------
@@ -466,7 +466,7 @@ public sealed class RenderStateParserTests
     public void Parse_SeparateAlphaBlendEnable(string value, bool expected)
     {
         var block = Parse(("SeparateAlphaBlendEnable", value));
-        block.SeparateAlphaBlendEnable.Should().Be(expected);
+        block.SeparateAlphaBlendEnable.ShouldBe(expected);
     }
 
     [Theory]
@@ -476,7 +476,7 @@ public sealed class RenderStateParserTests
     public void Parse_BlendFactor(string value, uint expected)
     {
         var block = Parse(("BlendFactor", value));
-        block.BlendFactor.Should().Be(expected);
+        block.BlendFactor.ShouldBe(expected);
     }
 
     [Theory]
@@ -486,8 +486,8 @@ public sealed class RenderStateParserTests
     public void Parse_BlendFactor_InvalidValue_ReturnsError(string value)
     {
         var error = ParseExpectError(("BlendFactor", value));
-        error.Code.Should().Be("SD0011");
-        error.Message.Should().Contain("BlendFactor");
+        error.Code.ShouldBe("SD0011");
+        error.Message.ShouldContain("BlendFactor", Case.Sensitive);
     }
 
     [Theory]
@@ -496,7 +496,7 @@ public sealed class RenderStateParserTests
     public void Parse_MultiSampleMask(string value, uint expected)
     {
         var block = Parse(("MultiSampleMask", value));
-        block.MultiSampleMask.Should().Be(expected);
+        block.MultiSampleMask.ShouldBe(expected);
     }
 
     [Theory]
@@ -505,7 +505,7 @@ public sealed class RenderStateParserTests
     public void Parse_TwoSidedStencilMode(string value, bool expected)
     {
         var block = Parse(("TwoSidedStencilMode", value));
-        block.TwoSidedStencilMode.Should().Be(expected);
+        block.TwoSidedStencilMode.ShouldBe(expected);
     }
 
     [Theory]
@@ -520,21 +520,21 @@ public sealed class RenderStateParserTests
     public void Parse_CcwStencilFail(string value, StencilOperationValue expected)
     {
         var block = Parse(("CCW_StencilFail", value));
-        block.CounterClockwiseStencilFail.Should().Be(expected);
+        block.CounterClockwiseStencilFail.ShouldBe(expected);
     }
 
     [Fact]
     public void Parse_CcwStencilZFail()
     {
         var block = Parse(("CCW_StencilZFail", "Replace"));
-        block.CounterClockwiseStencilDepthBufferFail.Should().Be(StencilOperationValue.Replace);
+        block.CounterClockwiseStencilDepthBufferFail.ShouldBe(StencilOperationValue.Replace);
     }
 
     [Fact]
     public void Parse_CcwStencilPass()
     {
         var block = Parse(("CCW_StencilPass", "IncrSat"));
-        block.CounterClockwiseStencilPass.Should().Be(StencilOperationValue.IncrementSaturation);
+        block.CounterClockwiseStencilPass.ShouldBe(StencilOperationValue.IncrementSaturation);
     }
 
     [Theory]
@@ -544,7 +544,7 @@ public sealed class RenderStateParserTests
     public void Parse_CcwStencilFunc(string value, CompareFunctionValue expected)
     {
         var block = Parse(("CCW_StencilFunc", value));
-        block.CounterClockwiseStencilFunction.Should().Be(expected);
+        block.CounterClockwiseStencilFunction.ShouldBe(expected);
     }
 
     [Theory]
@@ -558,21 +558,21 @@ public sealed class RenderStateParserTests
     public void Parse_ColorWriteEnable1(string value, int expected)
     {
         var block = Parse(("ColorWriteEnable1", value));
-        block.ColorWriteChannels1.Should().Be(expected);
+        block.ColorWriteChannels1.ShouldBe(expected);
     }
 
     [Fact]
     public void Parse_ColorWriteEnable2()
     {
         var block = Parse(("ColorWriteEnable2", "RED | BLUE"));
-        block.ColorWriteChannels2.Should().Be(5);
+        block.ColorWriteChannels2.ShouldBe(5);
     }
 
     [Fact]
     public void Parse_ColorWriteEnable3()
     {
         var block = Parse(("ColorWriteEnable3", "GREEN"));
-        block.ColorWriteChannels3.Should().Be(2);
+        block.ColorWriteChannels3.ShouldBe(2);
     }
 
     [Theory]
@@ -581,8 +581,8 @@ public sealed class RenderStateParserTests
     public void Parse_ColorWriteEnable1_InvalidValue_ReturnsError(string value)
     {
         var error = ParseExpectError(("ColorWriteEnable1", value));
-        error.Code.Should().Be("SD0011");
-        error.Message.Should().Contain("ColorWriteEnable1");
+        error.Code.ShouldBe("SD0011");
+        error.Message.ShouldContain("ColorWriteEnable1", Case.Sensitive);
     }
 
     [Fact]
@@ -603,9 +603,9 @@ public sealed class RenderStateParserTests
             ("ColorWriteEnable2",        "BLUE"),
             ("ColorWriteEnable3",        "0xF"));
 
-        block.HasBlendState.Should().BeFalse();
-        block.HasDepthStencilState.Should().BeFalse();
-        block.HasRasterizerState.Should().BeFalse();
+        block.HasBlendState.ShouldBeFalse();
+        block.HasDepthStencilState.ShouldBeFalse();
+        block.HasRasterizerState.ShouldBeFalse();
     }
 
     // -------------------------------------------------------------------------
@@ -629,10 +629,10 @@ public sealed class RenderStateParserTests
     public void Parse_KnownFnaThrowingKey_IsRecordedNotErrored(string key, string value)
     {
         var block = Parse((key, value));
-        block.KnownFnaThrowingStates.Should().ContainSingle().Which.Should().Be(key);
-        block.HasBlendState.Should().BeFalse(because: "throwing keys map to no block field");
-        block.HasDepthStencilState.Should().BeFalse();
-        block.HasRasterizerState.Should().BeFalse();
+        block.KnownFnaThrowingStates.ShouldHaveSingleItem().ShouldBe(key);
+        block.HasBlendState.ShouldBeFalse("throwing keys map to no block field");
+        block.HasDepthStencilState.ShouldBeFalse();
+        block.HasRasterizerState.ShouldBeFalse();
     }
 
     [Fact]
@@ -641,7 +641,7 @@ public sealed class RenderStateParserTests
         // The key is the defect; the value never gets parsed (fxc would accept it and
         // FNA would throw at runtime regardless of the value).
         var block = Parse(("AlphaTestEnable", "garbage-value"));
-        block.KnownFnaThrowingStates.Should().Equal("AlphaTestEnable");
+        block.KnownFnaThrowingStates.ShouldBe(new[] { "AlphaTestEnable" });
     }
 
     [Fact]
@@ -652,20 +652,20 @@ public sealed class RenderStateParserTests
             ("AlphaTestEnable",   "True"),
             ("FogEnable",         "True"));
 
-        block.KnownFnaThrowingStates.Should().Equal("AlphaTestEnable", "FogEnable", "PointSpriteEnable");
+        block.KnownFnaThrowingStates.ShouldBe(new[] {"AlphaTestEnable", "FogEnable", "PointSpriteEnable"});
     }
 
     [Fact]
     public void Parse_UnknownKey_IsNotRecordedAsFnaThrowing()
     {
         var block = Parse(("UnknownRenderKey", "SomeValue"));
-        block.KnownFnaThrowingStates.Should().BeEmpty();
+        block.KnownFnaThrowingStates.ShouldBeEmpty();
     }
 
     [Fact]
     public void Parse_HonoredKeys_AreNotRecordedAsFnaThrowing()
     {
         var block = Parse(("ZEnable", "True"), ("BlendFactor", "0x01020304"));
-        block.KnownFnaThrowingStates.Should().BeEmpty();
+        block.KnownFnaThrowingStates.ShouldBeEmpty();
     }
 }

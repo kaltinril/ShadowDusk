@@ -195,7 +195,7 @@ ShadowDusk/
 - [Vortice.Dxc](https://github.com/amerkoleci/Vortice.Windows) — managed DXC wrapper (cross-platform, no Windows SDK required)
 - [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross) — SPIR-V → GLSL transpilation via P/Invoke
 - [vkd3d-shader](https://gitlab.winehq.org/wine/vkd3d) — cross-platform HLSL → DXBC (SM5) for the DirectX backend
-- xUnit + FluentAssertions
+- xUnit + Shouldly
 
 ## Design principles
 
@@ -219,7 +219,7 @@ ShadowDusk stands on a lot of excellent prior work. The faithful compilation pip
 - **[Emscripten](https://emscripten.org/)** — used to compile DXC and SPIRV-Cross to WebAssembly.
 - **[Slang](https://github.com/shader-slang/slang)** (shader-slang) — used **only** in the in-browser sample as an early spike frontend; it is *not* part of the product pipeline (which uses faithful DXC everywhere).
 - **[DocFX](https://github.com/dotnet/docfx)** (the .NET Foundation) — generates the published [documentation site](https://kaltinril.github.io/ShadowDusk/).
-- **[xUnit](https://github.com/xunit/xunit)** and **[FluentAssertions](https://github.com/fluentassertions/fluentassertions)** — the test suite.
+- **[xUnit](https://github.com/xunit/xunit)** and **[Shouldly](https://github.com/shouldly/shouldly)** — the test suite.
 
 The test-shader corpus is derived from community MonoGame/HLSL examples, with thanks to:
 

@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core.Reflection;
 using Xunit;
 using static ShadowDusk.Core.Tests.Reflection.DxbcSyntheticBlobs;
@@ -52,38 +52,38 @@ public sealed class RdefReaderTests
 
         var result = RdefReader.Read(dxbc, SourceFile);
 
-        result.IsSuccess.Should().BeTrue(because: result.IsFailure ? result.Error.Message : "valid blob");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : "valid blob");
         ReflectedEffect effect = result.Value;
 
-        effect.Textures.Should().ContainSingle().Which.Should().BeEquivalentTo(new TextureReflection
+        effect.Textures.ShouldHaveSingleItem().ShouldBeEquivalentTo(new TextureReflection
         {
             Name      = "SpriteTexture",
             BindSlot  = 0,
             Dimension = TextureDimension.Texture2D,
         });
-        effect.Samplers.Should().ContainSingle().Which.Should().BeEquivalentTo(new SamplerReflection
+        effect.Samplers.ShouldHaveSingleItem().ShouldBeEquivalentTo(new SamplerReflection
         {
             Name     = "SpriteTextureSampler",
             BindSlot = 0,
         });
 
-        ConstantBufferReflection cb = effect.ConstantBuffers.Should().ContainSingle().Subject;
-        cb.Name.Should().Be("$Globals");
-        cb.SizeBytes.Should().Be(16);
-        cb.BindSlot.Should().Be(1, because: "the bind slot comes from the resource-binding table");
-        VariableReflection tint = cb.Variables.Should().ContainSingle().Subject;
-        tint.Name.Should().Be("TintColor");
-        tint.StartOffset.Should().Be(0);
-        tint.SizeBytes.Should().Be(16);
-        tint.ParameterClass.Should().Be(EffectParameterClass.Vector);
-        tint.ParameterType.Should().Be(EffectParameterType.Single);
-        tint.Rows.Should().Be(1);
-        tint.Columns.Should().Be(4);
-        tint.Elements.Should().Be(0);
-        tint.Members.Should().BeNull();
+        ConstantBufferReflection cb = effect.ConstantBuffers.ShouldHaveSingleItem();
+        cb.Name.ShouldBe("$Globals");
+        cb.SizeBytes.ShouldBe(16);
+        cb.BindSlot.ShouldBe(1, customMessage: "the bind slot comes from the resource-binding table");
+        VariableReflection tint = cb.Variables.ShouldHaveSingleItem();
+        tint.Name.ShouldBe("TintColor");
+        tint.StartOffset.ShouldBe(0);
+        tint.SizeBytes.ShouldBe(16);
+        tint.ParameterClass.ShouldBe(EffectParameterClass.Vector);
+        tint.ParameterType.ShouldBe(EffectParameterType.Single);
+        tint.Rows.ShouldBe(1);
+        tint.Columns.ShouldBe(4);
+        tint.Elements.ShouldBe(0);
+        tint.Members.ShouldBeNull();
 
-        effect.InputSignature.Should().HaveCount(2);
-        effect.InputSignature[0].Should().BeEquivalentTo(new SignatureParameterReflection
+        effect.InputSignature.Count().ShouldBe(2);
+        effect.InputSignature[0].ShouldBeEquivalentTo(new SignatureParameterReflection
         {
             SemanticName  = "SV_POSITION",
             SemanticIndex = 0,
@@ -92,14 +92,12 @@ public sealed class RdefReaderTests
             ComponentType = "Float32",
             Mask          = 0x0F,
         });
-        effect.InputSignature[1].SemanticName.Should().Be("TEXCOORD");
-        effect.InputSignature[1].SystemValue.Should().Be("Undefined");
+        effect.InputSignature[1].SemanticName.ShouldBe("TEXCOORD");
+        effect.InputSignature[1].SystemValue.ShouldBe("Undefined");
 
-        effect.OutputSignature.Should().ContainSingle()
-            .Which.SystemValue.Should().Be("Target",
-                because: "D3DReflect fixes up SV_Target's stored 0 by semantic name");
+        effect.OutputSignature.ShouldHaveSingleItem().SystemValue.ShouldBe("Target", customMessage: "D3DReflect fixes up SV_Target's stored 0 by semantic name");
 
-        effect.Parameters.Should().BeEmpty(because: "the parameter list is assembled downstream");
+        effect.Parameters.ShouldBeEmpty("the parameter list is assembled downstream");
     }
 
     [Fact]
@@ -120,10 +118,10 @@ public sealed class RdefReaderTests
 
         var result = RdefReader.Read(dxbc, SourceFile);
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         VariableReflection arr = result.Value.ConstantBuffers[0].Variables[0];
-        arr.SizeBytes.Should().Be(48);
-        arr.Elements.Should().Be(3);
+        arr.SizeBytes.ShouldBe(48);
+        arr.Elements.ShouldBe(3);
     }
 
     [Fact]
@@ -139,7 +137,7 @@ public sealed class RdefReaderTests
                 ])));
 
         RdefReader.Read(dxbc, SourceFile).Value
-            .ConstantBuffers[0].Variables[0].SizeBytes.Should().Be(4);
+            .ConstantBuffers[0].Variables[0].SizeBytes.ShouldBe(4);
     }
 
     [Fact]
@@ -170,28 +168,30 @@ public sealed class RdefReaderTests
 
         var result = RdefReader.Read(dxbc, SourceFile);
 
-        result.IsSuccess.Should().BeTrue(because: result.IsFailure ? result.Error.Message : "valid blob");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : "valid blob");
         VariableReflection variable = result.Value.ConstantBuffers[0].Variables[0];
-        variable.ParameterClass.Should().Be(EffectParameterClass.Struct);
-        variable.ParameterType.Should().Be(EffectParameterType.Void);
-        variable.Members.Should().NotBeNull().And.HaveCount(3);
+        variable.ParameterClass.ShouldBe(EffectParameterClass.Struct);
+        variable.ParameterType.ShouldBe(EffectParameterType.Void);
+        variable.Members.ShouldNotBeNull();
+        variable.Members.Count().ShouldBe(3);
 
-        variable.Members![0].Name.Should().Be("Dir");
-        variable.Members[0].StartOffset.Should().Be(0);
-        variable.Members[0].SizeBytes.Should().Be(0, because: "D3DReflect exposes no member size");
-        variable.Members[0].ParameterClass.Should().Be(EffectParameterClass.Vector);
-        variable.Members[0].Columns.Should().Be(3);
+        variable.Members![0].Name.ShouldBe("Dir");
+        variable.Members[0].StartOffset.ShouldBe(0);
+        variable.Members[0].SizeBytes.ShouldBe(0, customMessage: "D3DReflect exposes no member size");
+        variable.Members[0].ParameterClass.ShouldBe(EffectParameterClass.Vector);
+        variable.Members[0].Columns.ShouldBe(3);
 
-        variable.Members[1].Name.Should().Be("Intensity");
-        variable.Members[1].StartOffset.Should().Be(12);
+        variable.Members[1].Name.ShouldBe("Intensity");
+        variable.Members[1].StartOffset.ShouldBe(12);
 
         VariableReflection nested = variable.Members[2];
-        nested.Name.Should().Be("Atten");
-        nested.StartOffset.Should().Be(16);
-        nested.ParameterClass.Should().Be(EffectParameterClass.Struct);
-        nested.Members.Should().NotBeNull().And.HaveCount(2);
-        nested.Members![1].Name.Should().Be("Linear");
-        nested.Members[1].StartOffset.Should().Be(4);
+        nested.Name.ShouldBe("Atten");
+        nested.StartOffset.ShouldBe(16);
+        nested.ParameterClass.ShouldBe(EffectParameterClass.Struct);
+        nested.Members.ShouldNotBeNull();
+        nested.Members.Count().ShouldBe(2);
+        nested.Members![1].Name.ShouldBe("Linear");
+        nested.Members[1].StartOffset.ShouldBe(4);
     }
 
     [Fact]
@@ -203,7 +203,7 @@ public sealed class RdefReaderTests
                 bindings: [new SynthBinding("$Globals", BindCbuffer, 0, 0)],
                 cbuffers: [new SynthCbuffer("$Globals", Size: 0, Vars: [])])));
 
-        RdefReader.Read(dxbc, SourceFile).Value.ConstantBuffers.Should().BeEmpty();
+        RdefReader.Read(dxbc, SourceFile).Value.ConstantBuffers.ShouldBeEmpty();
     }
 
     [Fact]
@@ -219,11 +219,11 @@ public sealed class RdefReaderTests
 
         var result = RdefReader.Read(dxbc, SourceFile);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.OutputSignature.Should().HaveCount(2);
-        result.Value.OutputSignature[0].SystemValue.Should().Be("Target");
-        result.Value.OutputSignature[1].SystemValue.Should().Be("Depth");
-        result.Value.OutputSignature[1].Register.Should().Be(-1);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.OutputSignature.Count().ShouldBe(2);
+        result.Value.OutputSignature[0].SystemValue.ShouldBe("Target");
+        result.Value.OutputSignature[1].SystemValue.ShouldBe("Depth");
+        result.Value.OutputSignature[1].Register.ShouldBe(-1);
     }
 
     [Fact]
@@ -244,14 +244,14 @@ public sealed class RdefReaderTests
 
         var textures = RdefReader.Read(dxbc, SourceFile).Value.Textures;
 
-        textures.Select(t => t.Dimension).Should().Equal(
+        textures.Select(t => t.Dimension).ShouldBe(new[] {
             TextureDimension.Texture1D,
             TextureDimension.Texture2D,
             TextureDimension.Texture3D,
             TextureDimension.TextureCube,
             TextureDimension.TextureCube,
-            TextureDimension.Unknown);
-        textures.Select(t => t.BindSlot).Should().Equal(0, 1, 2, 3, 4, 5);
+            TextureDimension.Unknown});
+        textures.Select(t => t.BindSlot).ShouldBe(new[] {0, 1, 2, 3, 4, 5});
     }
 
     [Fact]
@@ -269,8 +269,8 @@ public sealed class RdefReaderTests
 
         var result = RdefReader.Read(dxbc, SourceFile);
 
-        result.IsSuccess.Should().BeTrue(because: result.IsFailure ? result.Error.Message : "valid SM4 blob");
-        result.Value.ConstantBuffers[0].Variables[0].Name.Should().Be("Color");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : "valid SM4 blob");
+        result.Value.ConstantBuffers[0].Variables[0].Name.ShouldBe("Color");
     }
 
     [Fact]
@@ -286,8 +286,8 @@ public sealed class RdefReaderTests
 
         var sig = RdefReader.Read(dxbc, SourceFile).Value.InputSignature[0];
 
-        sig.SystemValue.Should().Be("99");
-        sig.ComponentType.Should().Be("7");
+        sig.SystemValue.ShouldBe("99");
+        sig.ComponentType.ShouldBe("7");
     }
 
     [Fact]
@@ -297,9 +297,9 @@ public sealed class RdefReaderTests
 
         var result = RdefReader.Read(dxbc, SourceFile);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.InputSignature.Should().BeEmpty();
-        result.Value.OutputSignature.Should().BeEmpty();
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.InputSignature.ShouldBeEmpty();
+        result.Value.OutputSignature.ShouldBeEmpty();
     }
 
     // -------------------------------------------------------------------------
@@ -311,16 +311,16 @@ public sealed class RdefReaderTests
     {
         var result = RdefReader.Read(new byte[64], SourceFile);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("SD0101");
-        result.Error.File.Should().Be(SourceFile);
-        result.Error.Message.Should().Contain("not a DXBC container");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("SD0101");
+        result.Error.File.ShouldBe(SourceFile);
+        result.Error.Message.ShouldContain("not a DXBC container", Case.Sensitive);
     }
 
     [Fact]
     public void Read_TooShortForHeader_Fails()
     {
-        RdefReader.Read(new byte[8], SourceFile).IsFailure.Should().BeTrue();
+        RdefReader.Read(new byte[8], SourceFile).IsFailure.ShouldBeTrue();
     }
 
     [Fact]
@@ -330,8 +330,8 @@ public sealed class RdefReaderTests
 
         var result = RdefReader.Read(dxbc, SourceFile);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Message.Should().Contain("no RDEF chunk");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Message.ShouldContain("no RDEF chunk", Case.Sensitive);
     }
 
     [Fact]
@@ -343,8 +343,8 @@ public sealed class RdefReaderTests
 
         var result = RdefReader.Read(dxbc, SourceFile);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Message.Should().Contain("out of bounds");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Message.ShouldContain("out of bounds", Case.Sensitive);
     }
 
     [Fact]
@@ -359,7 +359,7 @@ public sealed class RdefReaderTests
             ]);
         byte[] dxbc = Container(("RDEF", rdef.AsSpan(0, 32).ToArray()));
 
-        RdefReader.Read(dxbc, SourceFile).IsFailure.Should().BeTrue();
+        RdefReader.Read(dxbc, SourceFile).IsFailure.ShouldBeTrue();
     }
 
     [Fact]
@@ -378,8 +378,8 @@ public sealed class RdefReaderTests
 
         var result = RdefReader.Read(dxbc, SourceFile);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Message.Should().Contain("unmapped shader variable class");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Message.ShouldContain("unmapped shader variable class", Case.Sensitive);
     }
 
     [Fact]
@@ -396,7 +396,7 @@ public sealed class RdefReaderTests
                             new SynthType(Class: 0, Type: 39, Rows: 1, Cols: 1, Elements: 0))]),
                 ])));
 
-        RdefReader.Read(dxbc, SourceFile).IsFailure.Should().BeTrue();
+        RdefReader.Read(dxbc, SourceFile).IsFailure.ShouldBeTrue();
     }
 
     [Fact]
@@ -414,7 +414,9 @@ public sealed class RdefReaderTests
         var first  = RdefReader.Read(dxbc, SourceFile);
         var second = RdefReader.Read(dxbc, SourceFile);
 
-        first.IsSuccess.Should().BeTrue();
-        second.Value.Should().BeEquivalentTo(first.Value, options => options.WithStrictOrdering());
+        first.IsSuccess.ShouldBeTrue();
+        // Shouldly's ShouldBeEquivalentTo is strictly ordered for sequences, which is
+        // what FluentAssertions' WithStrictOrdering() opted into here.
+        second.Value.ShouldBeEquivalentTo(first.Value);
     }
 }

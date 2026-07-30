@@ -1,7 +1,7 @@
 #nullable enable
 
 using System.Text.RegularExpressions;
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.Core.Tests;
@@ -20,7 +20,7 @@ public sealed class NoMonoGameInProductLibrariesTests
     public void NoSrcProjectReferencesMonoGame()
     {
         string srcDir = Path.Combine(FindRepoRoot(), "src");
-        Directory.Exists(srcDir).Should().BeTrue($"the product source tree must exist at {srcDir}");
+        Directory.Exists(srcDir).ShouldBeTrue($"the product source tree must exist at {srcDir}");
 
         var offenders = new List<string>();
         foreach (string csproj in Directory.EnumerateFiles(srcDir, "*.csproj", SearchOption.AllDirectories))
@@ -30,7 +30,7 @@ public sealed class NoMonoGameInProductLibrariesTests
                 offenders.Add(Path.GetFileName(csproj));
         }
 
-        offenders.Should().BeEmpty(
+        offenders.ShouldBeEmpty(
             "no shipped ShadowDusk.* product library may depend on MonoGame; the runtime helper + " +
             "sample belong under samples/ (see the ShaderToy sample-migration item in plan/PHASE-51). Offending projects: " +
             string.Join(", ", offenders));

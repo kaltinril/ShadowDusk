@@ -1,7 +1,7 @@
 #nullable enable
 
 using System.Text;
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core.Reflection;
 using Xunit;
 
@@ -28,31 +28,31 @@ public sealed class CtabReaderTests
 
         var result = CtabReader.Read(blob, SourceFile);
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         var table = result.Value;
-        table.VersionToken.Should().Be(0xFFFF0200);
-        table.TargetProfile.Should().Be("ps_2_0");
-        table.Creator.Should().Be(Fx2SyntheticShaders.Creator);
-        table.Constants.Should().HaveCount(2);
+        table.VersionToken.ShouldBe(0xFFFF0200);
+        table.TargetProfile.ShouldBe("ps_2_0");
+        table.Creator.ShouldBe(Fx2SyntheticShaders.Creator);
+        table.Constants.Count().ShouldBe(2);
 
         var tint = table.Constants[0];
-        tint.Name.Should().Be("Tint");
-        tint.RegisterSet.Should().Be(CtabRegisterSet.Float4);
-        tint.RegisterIndex.Should().Be(5);
-        tint.RegisterCount.Should().Be(1);
-        tint.Class.Should().Be(1);  // VECTOR
-        tint.Type.Should().Be(3);   // FLOAT
-        tint.Rows.Should().Be(1);
-        tint.Columns.Should().Be(4);
-        tint.Elements.Should().Be(1);
+        tint.Name.ShouldBe("Tint");
+        tint.RegisterSet.ShouldBe(CtabRegisterSet.Float4);
+        tint.RegisterIndex.ShouldBe(5);
+        tint.RegisterCount.ShouldBe(1);
+        tint.Class.ShouldBe(1);  // VECTOR
+        tint.Type.ShouldBe(3);   // FLOAT
+        tint.Rows.ShouldBe(1);
+        tint.Columns.ShouldBe(4);
+        tint.Elements.ShouldBe(1);
 
         var sampler = table.Constants[1];
-        sampler.Name.Should().Be("s0");
-        sampler.RegisterSet.Should().Be(CtabRegisterSet.Sampler);
-        sampler.RegisterIndex.Should().Be(2);
-        sampler.RegisterCount.Should().Be(1);
-        sampler.Class.Should().Be(4); // OBJECT
-        sampler.Type.Should().Be(12); // SAMPLER2D
+        sampler.Name.ShouldBe("s0");
+        sampler.RegisterSet.ShouldBe(CtabRegisterSet.Sampler);
+        sampler.RegisterIndex.ShouldBe(2);
+        sampler.RegisterCount.ShouldBe(1);
+        sampler.Class.ShouldBe(4); // OBJECT
+        sampler.Type.ShouldBe(12); // SAMPLER2D
     }
 
     // -------------------------------------------------------------------------
@@ -67,9 +67,8 @@ public sealed class CtabReaderTests
 
         var result = CtabReader.Read(blob, SourceFile);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Constants.Should().ContainSingle()
-            .Which.DefaultValue.Should().Equal(1f, 0.5f, 0.25f, 1f);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Constants.ShouldHaveSingleItem().DefaultValue.ShouldBe(new[] {1f, 0.5f, 0.25f, 1f});
     }
 
     [Fact]
@@ -82,8 +81,8 @@ public sealed class CtabReaderTests
 
         var result = CtabReader.Read(blob, SourceFile);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Constants.Should().ContainSingle().Which.DefaultValue.Should().BeNull();
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Constants.ShouldHaveSingleItem().DefaultValue.ShouldBeNull();
     }
 
     // -------------------------------------------------------------------------
@@ -97,9 +96,9 @@ public sealed class CtabReaderTests
 
         var result = CtabReader.Read(blob, SourceFile);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("SD0301");
-        result.Error.Message.Should().ContainEquivalentOf("no CTAB");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("SD0301");
+        result.Error.Message.ShouldContain("no CTAB", Shouldly.Case.Insensitive);
     }
 
     [Fact]
@@ -111,8 +110,8 @@ public sealed class CtabReaderTests
         // the blob holds.
         var result = CtabReader.Read(blob.AsSpan(0, 16), SourceFile);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("SD0301");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("SD0301");
     }
 
     [Fact]
@@ -127,9 +126,9 @@ public sealed class CtabReaderTests
 
         var result = CtabReader.Read(blob, SourceFile);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("SD0301");
-        result.Error.Message.Should().ContainEquivalentOf("version");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("SD0301");
+        result.Error.Message.ShouldContain("version", Shouldly.Case.Insensitive);
     }
 
     [Fact]
@@ -141,9 +140,9 @@ public sealed class CtabReaderTests
 
         var result = CtabReader.Read(blob, SourceFile);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("SD0301");
-        result.Error.Message.Should().ContainEquivalentOf("not a D3D9 token stream");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("SD0301");
+        result.Error.Message.ShouldContain("not a D3D9 token stream", Shouldly.Case.Insensitive);
     }
 
     // -------------------------------------------------------------------------
@@ -162,8 +161,8 @@ public sealed class CtabReaderTests
 
         var result = CtabReader.Read(blob, SourceFile);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("SD0301");
-        result.Error.Message.Should().ContainEquivalentOf("no CTAB");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("SD0301");
+        result.Error.Message.ShouldContain("no CTAB", Shouldly.Case.Insensitive);
     }
 }

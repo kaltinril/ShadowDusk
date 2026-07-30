@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using ShadowDusk.HLSL.D3DCompiler;
@@ -89,17 +89,14 @@ public sealed class DxbcCompilerInjectionTests
             // HOST decision and must take precedence over the desktop backend selector.
         });
 
-        fake.Requests.Should().ContainSingle(
-            because: "the single PS entry point must compile through the injected backend");
+        fake.Requests.ShouldHaveSingleItem("the single PS entry point must compile through the injected backend");
         D3DCompileRequest request = fake.Requests[0];
-        request.Stage.Should().Be(ShaderStage.Pixel);
-        request.EntryPoint.Should().Be("MainPS");
-        request.ProfileOverride.Should().BeNull(
-            because: "the DirectX target compiles at the SM5 stage default, never an override");
+        request.Stage.ShouldBe(ShaderStage.Pixel);
+        request.EntryPoint.ShouldBe("MainPS");
+        request.ProfileOverride.ShouldBeNull("the DirectX target compiles at the SM5 stage default, never an override");
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Should().ContainSingle(e => e.Code == "SDTEST",
-            because: "the injected backend's error must propagate unswallowed (constraint 5)");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Where(e => e.Code == "SDTEST").ShouldHaveSingleItem("the injected backend's error must propagate unswallowed (constraint 5)");
     }
 
     [Fact]
@@ -114,16 +111,15 @@ public sealed class DxbcCompilerInjectionTests
             SourceFileName = "inline.fx",
         });
 
-        fake.Requests.Should().ContainSingle();
+        fake.Requests.ShouldHaveSingleItem();
         D3DCompileRequest request = fake.Requests[0];
-        request.Stage.Should().Be(ShaderStage.Pixel);
-        request.EntryPoint.Should().Be("MainPS");
-        request.ProfileOverride.Should().Be("ps_2_0",
-            because: "the FNA path honors the pass's declared SM ≤ 3 profile verbatim — " +
+        request.Stage.ShouldBe(ShaderStage.Pixel);
+        request.EntryPoint.ShouldBe("MainPS");
+        request.ProfileOverride.ShouldBe("ps_2_0", customMessage: "the FNA path honors the pass's declared SM ≤ 3 profile verbatim — " +
                      "this is what makes the injected (WASM) backend emit D3D_BYTECODE");
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Should().ContainSingle(e => e.Code == "SDTEST");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Where(e => e.Code == "SDTEST").ShouldHaveSingleItem();
     }
 
     /// <summary>
@@ -143,12 +139,12 @@ public sealed class DxbcCompilerInjectionTests
             SourceFileName = "inline.fx",
         });
 
-        fake.Requests.Should().ContainSingle();
-        fake.Requests[0].Stage.Should().Be(ShaderStage.Pixel);
-        fake.Requests[0].EntryPoint.Should().Be("MainPS");
+        fake.Requests.ShouldHaveSingleItem();
+        fake.Requests[0].Stage.ShouldBe(ShaderStage.Pixel);
+        fake.Requests[0].EntryPoint.ShouldBe("MainPS");
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Should().ContainSingle(e => e.Code == "SDTEST");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Where(e => e.Code == "SDTEST").ShouldHaveSingleItem();
     }
 
     /// <inheritdoc cref="DirectXTarget_SyncCompile_RoutesThroughInjectedDxbcCompiler"/>
@@ -164,11 +160,11 @@ public sealed class DxbcCompilerInjectionTests
             SourceFileName = "inline.fx",
         });
 
-        fake.Requests.Should().ContainSingle();
-        fake.Requests[0].ProfileOverride.Should().Be("ps_2_0");
+        fake.Requests.ShouldHaveSingleItem();
+        fake.Requests[0].ProfileOverride.ShouldBe("ps_2_0");
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Should().ContainSingle(e => e.Code == "SDTEST");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Where(e => e.Code == "SDTEST").ShouldHaveSingleItem();
     }
 
     // NOTE deliberately absent: a "no injection still uses the desktop backends" test
@@ -233,12 +229,9 @@ public sealed class DxbcCompilerInjectionTests
 
         // The compile reached the dxbc backend — proof the macro-profile check skipped
         // (deferred) instead of throwing or rejecting when -P is unavailable.
-        fakeDxbc.Requests.Should().ContainSingle(
-            because: "an unavailable -P preprocessor must make the profile check defer, not block the compile");
-        result.IsFailure.Should().BeTrue();
-        result.Error.Should().ContainSingle(e => e.Code == "SDTEST",
-            because: "the failure must come from the (injected) codegen backend, not the profile check");
-        result.Error.Should().NotContain(e => e.Code == "SD0013" || e.Code == "SD0014",
-            because: "a defined macro profile must not be rejected just because -P could not run");
+        fakeDxbc.Requests.ShouldHaveSingleItem("an unavailable -P preprocessor must make the profile check defer, not block the compile");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Where(e => e.Code == "SDTEST").ShouldHaveSingleItem("the failure must come from the (injected) codegen backend, not the profile check");
+        result.Error.ShouldNotContain(e => e.Code == "SD0013" || e.Code == "SD0014", "a defined macro profile must not be rejected just because -P could not run");
     }
 }

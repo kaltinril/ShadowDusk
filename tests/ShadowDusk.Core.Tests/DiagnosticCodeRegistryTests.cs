@@ -1,7 +1,7 @@
 #nullable enable
 
 using System.Text.RegularExpressions;
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.Core.Tests;
@@ -37,11 +37,11 @@ public sealed class DiagnosticCodeRegistryTests
         var registered = CollectRegistered(repoRoot);
         var emitted = CollectEmitted(repoRoot);
 
-        emitted.Should().NotBeEmpty("the scan must actually find codes, or this test is vacuous");
+        emitted.ShouldNotBeEmpty("the scan must actually find codes, or this test is vacuous");
 
         var missing = emitted.Except(registered).OrderBy(c => c, StringComparer.Ordinal).ToList();
 
-        missing.Should().BeEmpty(
+        missing.ShouldBeEmpty(
             "every diagnostic code must be registered in docs/error-codes.md, which is published "
             + "as the consumer-facing Diagnostic Codes page. Missing: " + string.Join(", ", missing));
     }

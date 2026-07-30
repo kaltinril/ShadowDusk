@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using Xunit;
@@ -189,8 +189,7 @@ public sealed class CrossHostByteIdentityTests
         byte[] absoluteStyle = await CompileAsync("Minimal.fx", PlatformTarget.OpenGL, cts.Token,
             sourceFileNameOverride: "/some/host/specific/path/Minimal.fx");
 
-        absoluteStyle.Should().Equal(relative,
-            because: "SourceFileName feeds include resolution and diagnostics only — a " +
+        absoluteStyle.ShouldBe(relative, customMessage: "SourceFileName feeds include resolution and diagnostics only — a " +
                      "host path leaking into the compiled bytes would break cross-host " +
                      "byte identity");
     }
@@ -207,8 +206,7 @@ public sealed class CrossHostByteIdentityTests
             byte[] absoluteStyle = await CompileAsync("Grayscale.fx", target, cts.Token,
                 sourceFileNameOverride: "C:\\some\\host\\specific\\path\\Grayscale.fx");
 
-            absoluteStyle.Should().Equal(relative,
-                because: $"for target {target}, SourceFileName feeds diagnostics only — a " +
+            absoluteStyle.ShouldBe(relative, customMessage: $"for target {target}, SourceFileName feeds diagnostics only — a " +
                          "host path leaking into the compiled bytes would break cross-host " +
                          "byte identity");
         }
@@ -272,8 +270,7 @@ public sealed class CrossHostByteIdentityTests
         foreach (string key in actual.Keys.Where(k => !expected.ContainsKey(k)))
             discrepancies.Add($"UNTRACKED {key}: compiled to {actual[key]} but the committed manifest has no entry");
 
-        discrepancies.Should().BeEmpty(
-            because: $"every '{targetKey}' output on {RuntimeInformation.OSDescription} " +
+        discrepancies.ShouldBeEmpty($"every '{targetKey}' output on {RuntimeInformation.OSDescription} " +
                      $"({RuntimeInformation.OSArchitecture}) must be byte-identical to the " +
                      "committed win-x64 manifest (Core Design Constraint 3; Phase 37 tail 1). " +
                      "A mismatch is a REAL per-OS fidelity finding — do not regenerate the " +
@@ -309,8 +306,7 @@ public sealed class CrossHostByteIdentityTests
         var compiler = new EffectCompiler();
         var result = await compiler.CompileAsync(source, options, ct);
 
-        result.IsSuccess.Should().BeTrue(
-            because: $"'{fx}' for {target} is in the byte-identity corpus and must compile; " +
+        result.IsSuccess.ShouldBeTrue($"'{fx}' for {target} is in the byte-identity corpus and must compile; " +
                      $"errors: {(result.IsFailure ? string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "<none>")}");
 
         return result.Value.Data;
@@ -325,8 +321,7 @@ public sealed class CrossHostByteIdentityTests
 
     private static IReadOnlyDictionary<string, string> LoadCommittedManifest()
     {
-        File.Exists(CopiedManifestPath).Should().BeTrue(
-            because: $"the committed manifest must be copied to test output at '{CopiedManifestPath}' " +
+        File.Exists(CopiedManifestPath).ShouldBeTrue($"the committed manifest must be copied to test output at '{CopiedManifestPath}' " +
                      $"(generate it with {RegenerateEnvVar}=1 on win-x64 if it does not exist yet)");
 
         return JsonSerializer.Deserialize<SortedDictionary<string, string>>(

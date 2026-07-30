@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.Integration.Tests.Tests;
@@ -34,10 +34,10 @@ public sealed class DeterminismTests
         var first  = await TestHelpers.CompileFixtureAsync("Minimal.fx", "OpenGL", ct: cts.Token);
         var second = await TestHelpers.CompileFixtureAsync("Minimal.fx", "OpenGL", ct: cts.Token);
 
-        first.ExitCode.Should().Be(0, because: $"first compile must succeed; stderr: {first.Stderr}");
-        second.ExitCode.Should().Be(0, because: $"second compile must succeed; stderr: {second.Stderr}");
+        first.ExitCode.ShouldBe(0, customMessage: $"first compile must succeed; stderr: {first.Stderr}");
+        second.ExitCode.ShouldBe(0, customMessage: $"second compile must succeed; stderr: {second.Stderr}");
 
-        first.Mgfx.Should().Equal(second.Mgfx, because: "output must be byte-identical across two compilations");
+        first.Mgfx.ShouldBe(second.Mgfx, customMessage: "output must be byte-identical across two compilations");
     }
 
     [Fact]
@@ -48,10 +48,10 @@ public sealed class DeterminismTests
         var first  = await TestHelpers.CompileFixtureAsync("Minimal.fx", "DirectX_11", ct: cts.Token);
         var second = await TestHelpers.CompileFixtureAsync("Minimal.fx", "DirectX_11", ct: cts.Token);
 
-        first.ExitCode.Should().Be(0, because: $"first compile must succeed; stderr: {first.Stderr}");
-        second.ExitCode.Should().Be(0, because: $"second compile must succeed; stderr: {second.Stderr}");
+        first.ExitCode.ShouldBe(0, customMessage: $"first compile must succeed; stderr: {first.Stderr}");
+        second.ExitCode.ShouldBe(0, customMessage: $"second compile must succeed; stderr: {second.Stderr}");
 
-        first.Mgfx.Should().Equal(second.Mgfx, because: "output must be byte-identical across two compilations");
+        first.Mgfx.ShouldBe(second.Mgfx, customMessage: "output must be byte-identical across two compilations");
     }
 
     [Fact]
@@ -62,11 +62,10 @@ public sealed class DeterminismTests
         var first  = await TestHelpers.CompileFixtureAsync("cbuffer.fx", "OpenGL", ct: cts.Token);
         var second = await TestHelpers.CompileFixtureAsync("cbuffer.fx", "OpenGL", ct: cts.Token);
 
-        first.ExitCode.Should().Be(0, because: $"first compile must succeed; stderr: {first.Stderr}");
-        second.ExitCode.Should().Be(0, because: $"second compile must succeed; stderr: {second.Stderr}");
+        first.ExitCode.ShouldBe(0, customMessage: $"first compile must succeed; stderr: {first.Stderr}");
+        second.ExitCode.ShouldBe(0, customMessage: $"second compile must succeed; stderr: {second.Stderr}");
 
-        first.Mgfx.Should().Equal(second.Mgfx,
-            because: "constant buffer offset order must be deterministic across runs");
+        first.Mgfx.ShouldBe(second.Mgfx, customMessage: "constant buffer offset order must be deterministic across runs");
     }
 
     [Fact]
@@ -77,10 +76,9 @@ public sealed class DeterminismTests
         var first  = await TestHelpers.CompileFixtureAsync("multitechnique.fx", "OpenGL", ct: cts.Token);
         var second = await TestHelpers.CompileFixtureAsync("multitechnique.fx", "OpenGL", ct: cts.Token);
 
-        first.ExitCode.Should().Be(0, because: $"first compile must succeed; stderr: {first.Stderr}");
-        second.ExitCode.Should().Be(0, because: $"second compile must succeed; stderr: {second.Stderr}");
+        first.ExitCode.ShouldBe(0, customMessage: $"first compile must succeed; stderr: {first.Stderr}");
+        second.ExitCode.ShouldBe(0, customMessage: $"second compile must succeed; stderr: {second.Stderr}");
 
-        first.Mgfx.Should().Equal(second.Mgfx,
-            because: "technique and pass ordering must be unaffected by dictionary/hash iteration order");
+        first.Mgfx.ShouldBe(second.Mgfx, customMessage: "technique and pass ordering must be unaffected by dictionary/hash iteration order");
     }
 }

@@ -1,4 +1,4 @@
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.ShaderToy.Tests;
@@ -18,37 +18,37 @@ public sealed class PreprocessorTests
     public void Ifdef_UndefinedMacro_BlockRemoved()
     {
         string outp = Pp("#ifdef FOO\nint kept = 1;\n#endif\nint always = 2;");
-        outp.Should().NotContain("kept");
-        outp.Should().Contain("always");
+        outp.ShouldNotContain("kept", Case.Sensitive);
+        outp.ShouldContain("always", Case.Sensitive);
     }
 
     [Fact]
     public void Ifdef_DefinedMacro_BlockKept()
     {
         string outp = Pp("#define FOO\n#ifdef FOO\nint kept = 1;\n#endif");
-        outp.Should().Contain("kept");
+        outp.ShouldContain("kept", Case.Sensitive);
     }
 
     [Fact]
     public void Ifndef_UndefinedMacro_BlockKept()
     {
         string outp = Pp("#ifndef BAR\nint kept = 1;\n#endif");
-        outp.Should().Contain("kept");
+        outp.ShouldContain("kept", Case.Sensitive);
     }
 
     [Fact]
     public void If_ArithmeticTrue_BlockKept()
     {
         string outp = Pp("#if 1+1==2\nint kept = 1;\n#endif");
-        outp.Should().Contain("kept");
+        outp.ShouldContain("kept", Case.Sensitive);
     }
 
     [Fact]
     public void If_ArithmeticFalse_BlockRemoved()
     {
         string outp = Pp("#if 1+1==3\nint dropped = 1;\n#endif\nint kept = 2;");
-        outp.Should().NotContain("dropped");
-        outp.Should().Contain("kept");
+        outp.ShouldNotContain("dropped", Case.Sensitive);
+        outp.ShouldContain("kept", Case.Sensitive);
     }
 
     [Fact]
@@ -56,15 +56,15 @@ public sealed class PreprocessorTests
     {
         // Standard C rule: an undefined macro name in an #if expression is 0.
         string outp = Pp("#if NOT_DEFINED\nint dropped = 1;\n#else\nint kept = 2;\n#endif");
-        outp.Should().NotContain("dropped");
-        outp.Should().Contain("kept");
+        outp.ShouldNotContain("dropped", Case.Sensitive);
+        outp.ShouldContain("kept", Case.Sensitive);
     }
 
     [Fact]
     public void If_MacroExpandedInExpression()
     {
         string outp = Pp("#define N 4\n#if N > 2\nint kept = 1;\n#endif");
-        outp.Should().Contain("kept");
+        outp.ShouldContain("kept", Case.Sensitive);
     }
 
     [Theory]
@@ -76,14 +76,14 @@ public sealed class PreprocessorTests
     [InlineData("#if 0x10 == 16\nok\n#endif")]             // hex literal
     public void If_OperatorMix_TrueBranchKept(string src)
     {
-        Pp(src).Should().Contain("ok");
+        Pp(src).ShouldContain("ok", Case.Sensitive);
     }
 
     [Fact]
     public void Defined_Operator_BothForms()
     {
         string src = "#define A\n#if defined(A) && !defined B\nint kept = 1;\n#endif";
-        Pp(src).Should().Contain("kept");
+        Pp(src).ShouldContain("kept", Case.Sensitive);
     }
 
     [Fact]
@@ -93,18 +93,18 @@ public sealed class PreprocessorTests
             "#define MODE 2\n" +
             "#if MODE == 1\nbad1\n#elif MODE == 2\n#if 0\nbad2\n#else\ngoodInner\n#endif\n#else\nbad3\n#endif";
         string outp = Pp(src);
-        outp.Should().Contain("goodInner");
-        outp.Should().NotContain("bad1");
-        outp.Should().NotContain("bad2");
-        outp.Should().NotContain("bad3");
+        outp.ShouldContain("goodInner", Case.Sensitive);
+        outp.ShouldNotContain("bad1", Case.Sensitive);
+        outp.ShouldNotContain("bad2", Case.Sensitive);
+        outp.ShouldNotContain("bad3", Case.Sensitive);
     }
 
     [Fact]
     public void ObjectMacro_Expands()
     {
         string outp = Pp("#define PI 3.14159\nfloat x = PI;");
-        outp.Should().Contain("3.14159");
-        outp.Should().NotContain("PI");
+        outp.ShouldContain("3.14159", Case.Sensitive);
+        outp.ShouldNotContain("PI", Case.Sensitive);
     }
 
     [Fact]
@@ -113,7 +113,7 @@ public sealed class PreprocessorTests
         // A multi-token argument is hygienically wrapped in parentheses, so 'a + b' -> '(a + b)'
         // before it lands in the (x) slots of the body.
         string outp = Pp("#define SQR(x) ((x) * (x))\nfloat y = SQR(a + b);");
-        outp.Should().Contain("(((a + b)) * ((a + b)))");
+        outp.ShouldContain("(((a + b)) * ((a + b)))", Case.Sensitive);
     }
 
     [Fact]
@@ -122,7 +122,7 @@ public sealed class PreprocessorTests
         // A comma inside nested parens must not split arguments. A non-atom argument (a call) is
         // hygienically parenthesized so call-site precedence is preserved.
         string outp = Pp("#define MIXC(a, b, t) mix(a, b, t)\nvec3 c = MIXC(p, q, f(u, v));");
-        outp.Should().Contain("mix(p, q, (f(u, v)))");
+        outp.ShouldContain("mix(p, q, (f(u, v)))", Case.Sensitive);
     }
 
     [Fact]
@@ -130,7 +130,7 @@ public sealed class PreprocessorTests
     {
         // A function-like macro name not followed by '(' is not an invocation (C rule).
         string outp = Pp("#define F(x) (x)\nint F = 3;");
-        outp.Should().Contain("int F = 3;");
+        outp.ShouldContain("int F = 3;", Case.Sensitive);
     }
 
     [Fact]
@@ -138,23 +138,23 @@ public sealed class PreprocessorTests
     {
         // `#define X 0 // note` must define X as `0`, not `0 // note`; an #if X then evaluates cleanly.
         string outp = Pp("#define X 0 // enable feature\n#if X\nbad\n#else\ngood\n#endif");
-        outp.Should().Contain("good");
-        outp.Should().NotContain("bad");
+        outp.ShouldContain("good", Case.Sensitive);
+        outp.ShouldNotContain("bad", Case.Sensitive);
     }
 
     [Fact]
     public void If_TrailingComment_Ignored()
     {
         string outp = Pp("#if 1 /* on */\nkept\n#endif");
-        outp.Should().Contain("kept");
+        outp.ShouldContain("kept", Case.Sensitive);
     }
 
     [Fact]
     public void Undef_StopsExpansion()
     {
         string outp = Pp("#define K 2.0\nfloat a = K;\n#undef K\nfloat b = K;");
-        outp.Should().Contain("float a = 2.0;");
-        outp.Should().Contain("float b = K;");
+        outp.ShouldContain("float a = 2.0;", Case.Sensitive);
+        outp.ShouldContain("float b = K;", Case.Sensitive);
     }
 
     [Fact]
@@ -162,12 +162,12 @@ public sealed class PreprocessorTests
     {
         string src = "#define FOO\nline2\n#ifdef FOO\nline4\n#else\nline6\n#endif\nline8";
         string outp = Pp(src);
-        outp.Split('\n').Should().HaveCount(8, "every physical source line maps to one output line");
+        outp.Split('\n').Count().ShouldBe(8, customMessage: "every physical source line maps to one output line");
         string[] lines = outp.Split('\n');
-        lines[1].Should().Be("line2");
-        lines[3].Should().Be("line4");
-        lines[5].Should().BeEmpty("the inactive #else branch is blanked");
-        lines[7].Should().Be("line8");
+        lines[1].ShouldBe("line2");
+        lines[3].ShouldBe("line4");
+        lines[5].ShouldBeEmpty("the inactive #else branch is blanked");
+        lines[7].ShouldBe("line8");
     }
 
     [Fact]
@@ -175,35 +175,35 @@ public sealed class PreprocessorTests
     {
         // A macro body split across two physical lines via '\' is one logical define.
         string outp = Pp("#define LONG 1 + \\\n2\nint x = LONG;");
-        outp.Should().Contain("1 + 2");
+        outp.ShouldContain("1 + 2", Case.Sensitive);
     }
 
     [Fact]
     public void UnterminatedIf_IsRejected()
     {
         Action act = () => Pp("#if 1\nint x = 1;");
-        act.Should().Throw<ConvertException>().WithMessage("*#endif*");
+        Should.Throw<ConvertException>(act).Message.ShouldContain("#endif", Case.Sensitive);
     }
 
     [Fact]
     public void EndifWithoutIf_IsRejected()
     {
         Action act = () => Pp("int x = 1;\n#endif");
-        act.Should().Throw<ConvertException>().WithMessage("*#endif*");
+        Should.Throw<ConvertException>(act).Message.ShouldContain("#endif", Case.Sensitive);
     }
 
     [Fact]
     public void TokenPaste_InMacroBody_IsRejected()
     {
         Action act = () => Pp("#define CAT(a, b) a ## b\n");
-        act.Should().Throw<ConvertException>().WithMessage("*##*");
+        Should.Throw<ConvertException>(act).Message.ShouldContain("##", Case.Sensitive);
     }
 
     [Fact]
     public void Include_IsRejected()
     {
         Action act = () => Pp("#include \"common.glsl\"\n");
-        act.Should().Throw<ConvertException>().WithMessage("*#include*");
+        Should.Throw<ConvertException>(act).Message.ShouldContain("#include", Case.Sensitive);
     }
 
     [Fact]
@@ -214,7 +214,7 @@ public sealed class PreprocessorTests
         // `#define A A + 1` expands `A` to `A + 1` (and stops), rather than looping forever. This is the
         // correct behavior; the previous runaway-reject was a false positive.
         string outp = Pp("#define A A + 1\nint x = A;");
-        outp.Should().Contain("int x = A + 1;");
+        outp.ShouldContain("int x = A + 1;", Case.Sensitive);
     }
 
     [Fact]
@@ -223,7 +223,7 @@ public sealed class PreprocessorTests
         // Indirect self-reference (`#define A B` / `#define B A`) also terminates per the hide-set rule:
         // expanding A -> B -> (A is hidden) leaves A. No runaway.
         string outp = Pp("#define A B\n#define B A\nint x = A;");
-        outp.Should().Contain("int x = A;");
+        outp.ShouldContain("int x = A;", Case.Sensitive);
     }
 
     // ── function-like macro calls spanning physical lines (bug-hunt N20) ──────────────────────
@@ -235,12 +235,12 @@ public sealed class PreprocessorTests
         // the FIRST physical line and blanks the consumed lines, so line numbers stay exact.
         string outp = Pp("#define ROT(a) mat2(cos(a), -sin(a), sin(a), cos(a))\nvec2 q = p * ROT(\n  t * 0.3\n);");
 
-        outp.Should().Contain("mat2(cos((t * 0.3)), -sin((t * 0.3)), sin((t * 0.3)), cos((t * 0.3)))");
+        outp.ShouldContain("mat2(cos((t * 0.3)), -sin((t * 0.3)), sin((t * 0.3)), cos((t * 0.3)))", Case.Sensitive);
         string[] lines = outp.Split('\n');
-        lines.Should().HaveCount(4, "every physical source line maps to one output line");
-        lines[1].Should().Contain("vec2 q = p * mat2(", "the expansion lands on the line the call started on");
-        lines[2].Should().BeEmpty("a spliced continuation line is blanked");
-        lines[3].Should().BeEmpty();
+        lines.Count().ShouldBe(4, customMessage: "every physical source line maps to one output line");
+        lines[1].ShouldContain("vec2 q = p * mat2(", Case.Sensitive, "the expansion lands on the line the call started on");
+        lines[2].ShouldBeEmpty("a spliced continuation line is blanked");
+        lines[3].ShouldBeEmpty();
     }
 
     [Fact]
@@ -249,8 +249,8 @@ public sealed class PreprocessorTests
         // A `//` comment at the end of a continued line must not swallow the spliced remainder.
         string outp = Pp("#define DBL(x) ((x) * 2.0)\nfloat y = DBL( // doubled\n  3.0\n);");
 
-        outp.Should().Contain("((3.0) * 2.0)");
-        outp.Should().NotContain("doubled");
+        outp.ShouldContain("((3.0) * 2.0)", Case.Sensitive);
+        outp.ShouldNotContain("doubled", Case.Sensitive);
     }
 
     [Fact]
@@ -259,7 +259,7 @@ public sealed class PreprocessorTests
         // Nested parens and commas across the splice must still split arguments correctly.
         string outp = Pp("#define MIXC(a, b, t) mix(a, b, t)\nvec3 c = MIXC(p,\n  q,\n  f(u, v)\n);");
 
-        outp.Should().Contain("mix(p, q, (f(u, v)))");
+        outp.ShouldContain("mix(p, q, (f(u, v)))", Case.Sensitive);
     }
 
     [Fact]
@@ -267,7 +267,7 @@ public sealed class PreprocessorTests
     {
         // A '(' the file never closes must not be silently swallowed by the splice.
         Action act = () => Pp("#define F(x) (x)\nfloat y = F(\n  1.0");
-        act.Should().Throw<ConvertException>().WithMessage("*Unterminated macro argument list*");
+        Should.Throw<ConvertException>(act).Message.ShouldContain("Unterminated macro argument list", Case.Sensitive);
     }
 
     [Fact]
@@ -282,8 +282,8 @@ public sealed class PreprocessorTests
             "  ) * p;\n" +
             "  fragColor = vec4(p, 0.0, 1.0);\n}";
         ConvertResult r = ShaderToyConverter.Convert(glsl);
-        r.Success.Should().BeTrue(string.Join("; ", r.Diagnostics.Select(d => d.Message)));
-        r.Fx.Should().Contain("mul(", "the expanded mat2 still routes through the matrix-order trap");
+        r.Success.ShouldBeTrue(string.Join("; ", r.Diagnostics.Select(d => d.Message)));
+        r.Fx!.ShouldContain("mul(", Case.Sensitive, "the expanded mat2 still routes through the matrix-order trap");
     }
 
     [Fact]
@@ -299,8 +299,8 @@ public sealed class PreprocessorTests
             "#endif\n" +
             "  fragColor = vec4(v, v, v, 1.0);\n}";
         ConvertResult r = ShaderToyConverter.Convert(glsl);
-        r.Success.Should().BeTrue(string.Join("; ", r.Diagnostics.Select(d => d.Message)));
-        r.Fx.Should().NotContain("0.123456", "the inactive #else branch must not reach the emitted .fx");
+        r.Success.ShouldBeTrue(string.Join("; ", r.Diagnostics.Select(d => d.Message)));
+        r.Fx!.ShouldNotContain("0.123456", Case.Sensitive, "the inactive #else branch must not reach the emitted .fx");
     }
 
     [Fact]
@@ -313,8 +313,8 @@ public sealed class PreprocessorTests
             "  float v = SQR(uv.x);\n" +
             "  fragColor = vec4(v, v, v, 1.0);\n}";
         ConvertResult r = ShaderToyConverter.Convert(glsl);
-        r.Success.Should().BeTrue(string.Join("; ", r.Diagnostics.Select(d => d.Message)));
+        r.Success.ShouldBeTrue(string.Join("; ", r.Diagnostics.Select(d => d.Message)));
         // SQR(uv.x) expands to (uv.x) * (uv.x); the emitter then drops the redundant atom parens.
-        r.Fx.Should().Contain("uv.x * uv.x");
+        r.Fx!.ShouldContain("uv.x * uv.x", Case.Sensitive);
     }
 }

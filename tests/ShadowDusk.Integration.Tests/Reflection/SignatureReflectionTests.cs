@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core;
 using ShadowDusk.HLSL.Dxc;
 using ShadowDusk.HLSL.Reflection;
@@ -39,8 +39,7 @@ public sealed class SignatureReflectionTests
             Platform       = PlatformTarget.DirectX,
         };
         var result = await compiler.CompileAsync(request);
-        result.IsSuccess.Should().BeTrue(
-            because: result.IsFailure ? result.Error.FxcFormattedMessage : "compilation must succeed");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.FxcFormattedMessage : "compilation must succeed");
         return result.Value.Bytes;
     }
 
@@ -51,7 +50,7 @@ public sealed class SignatureReflectionTests
 
         var result = new DxilReflectionExtractor().Extract(dxilBlob);
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
     }
 
     [Fact]
@@ -61,7 +60,7 @@ public sealed class SignatureReflectionTests
 
         var reflected = new DxilReflectionExtractor().Extract(dxilBlob).Value;
 
-        reflected.InputSignature.Should().HaveCount(3);
+        reflected.InputSignature.Count().ShouldBe(3);
     }
 
     [Fact]
@@ -71,7 +70,7 @@ public sealed class SignatureReflectionTests
 
         var reflected = new DxilReflectionExtractor().Extract(dxilBlob).Value;
 
-        reflected.InputSignature.Should().Contain(p =>
+        reflected.InputSignature.ShouldContain(p =>
             p.SemanticName == "POSITION" && p.SemanticIndex == 0);
     }
 
@@ -82,7 +81,7 @@ public sealed class SignatureReflectionTests
 
         var reflected = new DxilReflectionExtractor().Extract(dxilBlob).Value;
 
-        reflected.InputSignature.Should().Contain(p =>
+        reflected.InputSignature.ShouldContain(p =>
             p.SemanticName == "NORMAL" && p.SemanticIndex == 0);
     }
 
@@ -93,7 +92,7 @@ public sealed class SignatureReflectionTests
 
         var reflected = new DxilReflectionExtractor().Extract(dxilBlob).Value;
 
-        reflected.InputSignature.Should().Contain(p =>
+        reflected.InputSignature.ShouldContain(p =>
             p.SemanticName == "TEXCOORD" && p.SemanticIndex == 0);
     }
 }

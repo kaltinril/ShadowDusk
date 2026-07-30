@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Tests.Shared;
 using Xunit;
 
@@ -27,7 +27,7 @@ public sealed class NativeRequirementTests
     [InlineData("FALSE")]
     public void IsRequired_UnsetOrDisabledValues_AreNotRequired(string? value)
     {
-        NativeRequirement.IsRequired(value).Should().BeFalse(
+        NativeRequirement.IsRequired(value).ShouldBeFalse(
             "unset/empty/0/false must keep the skip-with-reason behavior for local runs");
     }
 
@@ -39,28 +39,28 @@ public sealed class NativeRequirementTests
     [InlineData(" 1 ")]
     public void IsRequired_SetValues_AreRequired(string value)
     {
-        NativeRequirement.IsRequired(value).Should().BeTrue(
+        NativeRequirement.IsRequired(value).ShouldBeTrue(
             "any set value other than 0/false must make a missing native a hard failure");
     }
 
     [Fact]
     public void ShouldSkip_NativeAvailable_NeverSkips()
     {
-        NativeRequirement.ShouldSkip(nativeAvailable: true, envValue: null).Should().BeFalse();
-        NativeRequirement.ShouldSkip(nativeAvailable: true, envValue: "1").Should().BeFalse();
+        NativeRequirement.ShouldSkip(nativeAvailable: true, envValue: null).ShouldBeFalse();
+        NativeRequirement.ShouldSkip(nativeAvailable: true, envValue: "1").ShouldBeFalse();
     }
 
     [Fact]
     public void ShouldSkip_NativeMissing_GateUnset_Skips()
     {
-        NativeRequirement.ShouldSkip(nativeAvailable: false, envValue: null).Should().BeTrue(
+        NativeRequirement.ShouldSkip(nativeAvailable: false, envValue: null).ShouldBeTrue(
             "local runs without the restored native must keep the truthful skip");
     }
 
     [Fact]
     public void ShouldSkip_NativeMissing_GateSet_DoesNotSkip()
     {
-        NativeRequirement.ShouldSkip(nativeAvailable: false, envValue: "1").Should().BeFalse(
+        NativeRequirement.ShouldSkip(nativeAvailable: false, envValue: "1").ShouldBeFalse(
             "with the gate set, a missing native must let the test RUN and fail loudly " +
             "at the native boundary instead of skipping green (CI restore-failure net)");
     }
@@ -70,7 +70,7 @@ public sealed class NativeRequirementTests
     {
         // ci.yml's integration job sets exactly these names — a rename here without a
         // workflow update would silently disable the CI hard gate.
-        NativeRequirement.Vkd3dEnvVar.Should().Be("SHADOWDUSK_REQUIRE_VKD3D");
-        NativeRequirement.DxcEnvVar.Should().Be("SHADOWDUSK_REQUIRE_DXC");
+        NativeRequirement.Vkd3dEnvVar.ShouldBe("SHADOWDUSK_REQUIRE_VKD3D");
+        NativeRequirement.DxcEnvVar.ShouldBe("SHADOWDUSK_REQUIRE_DXC");
     }
 }

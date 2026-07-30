@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.Core.Tests.Fx2;
@@ -51,24 +51,24 @@ public sealed class Fx2BinaryValidatorTests
     {
         var effect = Fx2BinaryValidator.Parse(MinimalGolden());
 
-        effect.Parameters.Should().BeEmpty();
-        effect.ObjectCount.Should().Be(2); // reserved index 0 + the pixel-shader object
-        effect.SamplerTextureMap.Should().BeEmpty();
+        effect.Parameters.ShouldBeEmpty();
+        effect.ObjectCount.ShouldBe(2); // reserved index 0 + the pixel-shader object
+        effect.SamplerTextureMap.ShouldBeEmpty();
 
-        var technique = effect.Techniques.Should().ContainSingle().Subject;
-        technique.Name.Should().Be("T");
-        var pass = technique.Passes.Should().ContainSingle().Subject;
-        pass.Name.Should().Be("P");
+        var technique = effect.Techniques.ShouldHaveSingleItem();
+        technique.Name.ShouldBe("T");
+        var pass = technique.Passes.ShouldHaveSingleItem();
+        pass.Name.ShouldBe("P");
 
-        var state = pass.States.Should().ContainSingle().Subject;
-        state.Operation.Should().Be(147); // PIXELSHADER
-        state.ObjectIndex.Should().Be(1);
+        var state = pass.States.ShouldHaveSingleItem();
+        state.Operation.ShouldBe(147); // PIXELSHADER
+        state.ObjectIndex.ShouldBe(1);
 
-        var shader = effect.Shaders.Should().ContainSingle().Subject;
-        shader.Stage.Should().Be(ShaderStage.Pixel);
-        shader.VersionToken.Should().Be(0xFFFF0200); // ps_2_0
-        shader.CtabConstantNames.Should().BeEmpty();
-        shader.BytecodeLength.Should().Be(0x80);
+        var shader = effect.Shaders.ShouldHaveSingleItem();
+        shader.Stage.ShouldBe(ShaderStage.Pixel);
+        shader.VersionToken.ShouldBe(0xFFFF0200); // ps_2_0
+        shader.CtabConstantNames.ShouldBeEmpty();
+        shader.BytecodeLength.ShouldBe(0x80);
     }
 
     // -------------------------------------------------------------------------
@@ -80,41 +80,42 @@ public sealed class Fx2BinaryValidatorTests
     {
         var effect = Fx2BinaryValidator.Parse(TexturedGolden());
 
-        effect.ObjectCount.Should().Be(4);
-        effect.Parameters.Should().HaveCount(2);
+        effect.ObjectCount.ShouldBe(4);
+        effect.Parameters.Count().ShouldBe(2);
 
         var texture = effect.Parameters[0];
-        texture.Name.Should().Be("t");
-        texture.Class.Should().Be(4); // OBJECT
-        texture.Type.Should().Be(5);  // TEXTURE
-        texture.SamplerStates.Should().BeEmpty();
+        texture.Name.ShouldBe("t");
+        texture.Class.ShouldBe(4); // OBJECT
+        texture.Type.ShouldBe(5);  // TEXTURE
+        texture.SamplerStates.ShouldBeEmpty();
 
         var sampler = effect.Parameters[1];
-        sampler.Name.Should().Be("s0");
-        sampler.Class.Should().Be(4);
-        sampler.Type.Should().Be(10); // fxc writes the undimensioned SAMPLER for `sampler s0`
+        sampler.Name.ShouldBe("s0");
+        sampler.Class.ShouldBe(4);
+        sampler.Type.ShouldBe(10); // fxc writes the undimensioned SAMPLER for `sampler s0`
 
-        sampler.SamplerStates.Should().HaveCount(2);
+        sampler.SamplerStates.Count().ShouldBe(2);
         var textureState = sampler.SamplerStates[0];
-        textureState.Operation.Should().Be(164); // Texture
-        textureState.ObjectIndex.Should().Be(2);
+        textureState.Operation.ShouldBe(164); // Texture
+        textureState.ObjectIndex.ShouldBe(2);
         var mipFilterState = sampler.SamplerStates[1];
-        mipFilterState.Operation.Should().Be(171); // MipFilter
-        mipFilterState.DwordValue.Should().Be(2);  // LINEAR
+        mipFilterState.Operation.ShouldBe(171); // MipFilter
+        mipFilterState.DwordValue.ShouldBe((uint?)(2));  // LINEAR
 
-        effect.SamplerTextureMap.Should().HaveCount(1).And.ContainKey("s0").WhoseValue.Should().Be("t");
+        effect.SamplerTextureMap.Count().ShouldBe(1);
+        effect.SamplerTextureMap["s0"].ShouldBe("t");
 
-        var pass = effect.Techniques.Should().ContainSingle().Subject
-            .Passes.Should().ContainSingle().Subject;
-        var state = pass.States.Should().ContainSingle().Subject;
-        state.Operation.Should().Be(147);
-        state.ObjectIndex.Should().Be(3);
+        var pass = effect.Techniques.ShouldHaveSingleItem()
+            .Passes.ShouldHaveSingleItem();
+        var state = pass.States.ShouldHaveSingleItem();
+        state.Operation.ShouldBe(147);
+        state.ObjectIndex.ShouldBe(3);
 
-        var shader = effect.Shaders.Should().ContainSingle().Subject;
-        shader.Stage.Should().Be(ShaderStage.Pixel);
-        shader.VersionToken.Should().Be(0xFFFF0200);
-        shader.CtabConstantNames.Should().Equal("s0");
-        shader.BytecodeLength.Should().Be(0xB8);
+        var shader = effect.Shaders.ShouldHaveSingleItem();
+        shader.Stage.ShouldBe(ShaderStage.Pixel);
+        shader.VersionToken.ShouldBe(0xFFFF0200);
+        shader.CtabConstantNames.ShouldBe(new[] { "s0" });
+        shader.BytecodeLength.ShouldBe(0xB8);
     }
 
     // -------------------------------------------------------------------------
@@ -132,8 +133,8 @@ public sealed class Fx2BinaryValidatorTests
 
         var effect = Fx2BinaryValidator.Parse(bytes);
 
-        effect.Parameters.Should().HaveCount(2);
-        effect.Techniques.Should().ContainSingle();
+        effect.Parameters.Count().ShouldBe(2);
+        effect.Techniques.ShouldHaveSingleItem();
     }
 
     // (The goldens themselves already exercise two more ignored fields: fxc writes 0x100
@@ -151,8 +152,7 @@ public sealed class Fx2BinaryValidatorTests
 
         var act = () => Fx2BinaryValidator.Parse(bytes);
 
-        act.Should().Throw<Fx2ValidationException>()
-           .WithMessage("*not an Effects Framework binary*");
+        Should.Throw<Fx2ValidationException>(act).Message.ShouldContain("not an Effects Framework binary", Case.Sensitive);
     }
 
     [Fact]
@@ -167,7 +167,7 @@ public sealed class Fx2BinaryValidatorTests
 
         var act = () => Fx2BinaryValidator.Parse(bytes);
 
-        act.Should().Throw<Fx2ValidationException>().WithMessage("*XNA4 wrapper*");
+        Should.Throw<Fx2ValidationException>(act).Message.ShouldContain("XNA4 wrapper", Case.Sensitive);
     }
 
     // -------------------------------------------------------------------------
@@ -186,7 +186,7 @@ public sealed class Fx2BinaryValidatorTests
 
         var act = () => Fx2BinaryValidator.Parse(bytes);
 
-        act.Should().Throw<Fx2ValidationException>();
+        Should.Throw<Fx2ValidationException>(act);
     }
 
     // -------------------------------------------------------------------------
@@ -203,7 +203,7 @@ public sealed class Fx2BinaryValidatorTests
 
         var act = () => Fx2BinaryValidator.Parse(bytes);
 
-        act.Should().Throw<Fx2ValidationException>().WithMessage("*object index 255 out of range*");
+        Should.Throw<Fx2ValidationException>(act).Message.ShouldContain("object index 255 out of range", Case.Sensitive);
     }
 
     [Fact]
@@ -216,7 +216,7 @@ public sealed class Fx2BinaryValidatorTests
 
         var act = () => Fx2BinaryValidator.Parse(bytes);
 
-        act.Should().Throw<Fx2ValidationException>().WithMessage("*pass state op 4*");
+        Should.Throw<Fx2ValidationException>(act).Message.ShouldContain("pass state op 4", Case.Sensitive);
     }
 
     [Fact]
@@ -229,7 +229,7 @@ public sealed class Fx2BinaryValidatorTests
 
         var act = () => Fx2BinaryValidator.Parse(bytes);
 
-        act.Should().Throw<Fx2ValidationException>().WithMessage("*op 168*");
+        Should.Throw<Fx2ValidationException>(act).Message.ShouldContain("op 168", Case.Sensitive);
     }
 
     [Fact]
@@ -243,6 +243,6 @@ public sealed class Fx2BinaryValidatorTests
 
         var act = () => Fx2BinaryValidator.Parse(bytes);
 
-        act.Should().Throw<Fx2ValidationException>().WithMessage("*CTAB constant 'z0'*");
+        Should.Throw<Fx2ValidationException>(act).Message.ShouldContain("CTAB constant 'z0'", Case.Sensitive);
     }
 }

@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core;
 using ShadowDusk.GLSL;
 using Xunit;
@@ -72,21 +72,21 @@ void main()
     {
         var result = MonoGameGlslRewriter.Rewrite(ExampleA, ShaderStage.Pixel);
 
-        result.Glsl.Should().Contain("varying vec4 vTexCoord0;");
-        result.Glsl.Should().Contain("varying vec4 vFrontColor;");
-        result.Glsl.Should().Contain("uniform sampler2D ps_s0;");
-        result.Glsl.Should().Contain("texture2D(ps_s0, vTexCoord0.xy)");
+        result.Glsl.ShouldContain("varying vec4 vTexCoord0;", Case.Sensitive);
+        result.Glsl.ShouldContain("varying vec4 vFrontColor;", Case.Sensitive);
+        result.Glsl.ShouldContain("uniform sampler2D ps_s0;", Case.Sensitive);
+        result.Glsl.ShouldContain("texture2D(ps_s0, vTexCoord0.xy)", Case.Sensitive);
         // mgfxc form: #define alias + write to ps_oC0 (NOT a raw gl_FragColor write).
-        result.Glsl.Should().Contain("#define ps_oC0 gl_FragColor");
-        result.Glsl.Should().Contain("ps_oC0 = vec4(");
+        result.Glsl.ShouldContain("#define ps_oC0 gl_FragColor", Case.Sensitive);
+        result.Glsl.ShouldContain("ps_oC0 = vec4(", Case.Sensitive);
 
         // vec4 input -> no swizzle.
-        result.Glsl.Should().Contain("* vFrontColor;");
+        result.Glsl.ShouldContain("* vFrontColor;", Case.Sensitive);
 
-        result.Glsl.Should().NotContain("#version");
-        result.Glsl.Should().NotContain("in_var_");
-        result.Glsl.Should().NotContain("out_var_");
-        result.Glsl.Should().NotContain("GL_ARB_shading_language_420pack");
+        result.Glsl.ShouldNotContain("#version", Case.Sensitive);
+        result.Glsl.ShouldNotContain("in_var_", Case.Sensitive);
+        result.Glsl.ShouldNotContain("out_var_", Case.Sensitive);
+        result.Glsl.ShouldNotContain("GL_ARB_shading_language_420pack", Case.Sensitive);
     }
 
     [Fact]
@@ -95,13 +95,13 @@ void main()
         var result = MonoGameGlslRewriter.Rewrite(ExampleA, ShaderStage.Pixel);
 
         // No leftover "in "/"out " input/output qualifier declarations.
-        result.Glsl.Should().NotContain("\nin ");
-        result.Glsl.Should().NotContain("\nout ");
+        result.Glsl.ShouldNotContain("\nin ", Case.Sensitive);
+        result.Glsl.ShouldNotContain("\nout ", Case.Sensitive);
 
         // No bare texture( — only texture2D(.
         System.Text.RegularExpressions.Regex
             .IsMatch(result.Glsl, @"(?<![A-Za-z0-9_])texture\s*\(")
-            .Should().BeFalse("only texture2D( should remain");
+            .ShouldBeFalse("only texture2D( should remain");
     }
 
     [Fact]
@@ -109,10 +109,10 @@ void main()
     {
         var result = MonoGameGlslRewriter.Rewrite(ExampleA, ShaderStage.Pixel);
 
-        result.UniformRegisterCount.Should().Be(0);
-        result.Samplers.Should().ContainSingle();
-        result.Samplers[0].Slot.Should().Be(0);
-        result.Samplers[0].Name.Should().Be("ps_s0");
+        result.UniformRegisterCount.ShouldBe(0);
+        result.Samplers.ShouldHaveSingleItem();
+        result.Samplers[0].Slot.ShouldBe(0);
+        result.Samplers[0].Name.ShouldBe("ps_s0");
     }
 
     [Fact]
@@ -120,21 +120,21 @@ void main()
     {
         var result = MonoGameGlslRewriter.Rewrite(ExampleB, ShaderStage.Pixel);
 
-        result.Glsl.Should().Contain("uniform vec4 ps_uniforms_vec4[1];");
-        result.Glsl.Should().Contain("ps_uniforms_vec4[0]");
-        result.UniformRegisterCount.Should().Be(1);
+        result.Glsl.ShouldContain("uniform vec4 ps_uniforms_vec4[1];", Case.Sensitive);
+        result.Glsl.ShouldContain("ps_uniforms_vec4[0]", Case.Sensitive);
+        result.UniformRegisterCount.ShouldBe(1);
 
-        result.Glsl.Should().Contain("varying vec4 vTexCoord0;");
-        result.Glsl.Should().Contain("varying vec4 vFrontColor;");
-        result.Glsl.Should().Contain("uniform sampler2D ps_s0;");
-        result.Glsl.Should().Contain("texture2D(ps_s0, vTexCoord0.xy)");
-        result.Glsl.Should().Contain("gl_FragColor");
+        result.Glsl.ShouldContain("varying vec4 vTexCoord0;", Case.Sensitive);
+        result.Glsl.ShouldContain("varying vec4 vFrontColor;", Case.Sensitive);
+        result.Glsl.ShouldContain("uniform sampler2D ps_s0;", Case.Sensitive);
+        result.Glsl.ShouldContain("texture2D(ps_s0, vTexCoord0.xy)", Case.Sensitive);
+        result.Glsl.ShouldContain("gl_FragColor", Case.Sensitive);
 
-        result.Glsl.Should().NotContain("#version");
-        result.Glsl.Should().NotContain("in_var_");
-        result.Glsl.Should().NotContain("out_var_");
-        result.Glsl.Should().NotContain("_Globals");
-        result.Glsl.Should().NotContain("type_Globals");
+        result.Glsl.ShouldNotContain("#version", Case.Sensitive);
+        result.Glsl.ShouldNotContain("in_var_", Case.Sensitive);
+        result.Glsl.ShouldNotContain("out_var_", Case.Sensitive);
+        result.Glsl.ShouldNotContain("_Globals", Case.Sensitive);
+        result.Glsl.ShouldNotContain("type_Globals", Case.Sensitive);
     }
 
     [Fact]
@@ -143,11 +143,11 @@ void main()
         var result = MonoGameGlslRewriter.Rewrite(ExampleA, ShaderStage.Pixel);
 
         // vec2 TEXCOORD0 use should be truncated with .xy.
-        result.Glsl.Should().Contain("vTexCoord0.xy");
+        result.Glsl.ShouldContain("vTexCoord0.xy", Case.Sensitive);
 
         // vec4 COLOR0 use should NOT get a swizzle appended.
-        result.Glsl.Should().NotContain("vFrontColor.xyzw");
-        result.Glsl.Should().Contain("* vFrontColor;");
+        result.Glsl.ShouldNotContain("vFrontColor.xyzw", Case.Sensitive);
+        result.Glsl.ShouldContain("* vFrontColor;", Case.Sensitive);
     }
 
     [Fact]
@@ -155,9 +155,9 @@ void main()
     {
         var result = MonoGameGlslRewriter.Rewrite(ExampleA, ShaderStage.Pixel);
 
-        result.Glsl.Should().StartWith("#ifdef GL_ES");
-        result.Glsl.Should().Contain("precision mediump float;");
-        result.Glsl.Should().Contain("precision mediump int;");
+        result.Glsl.ShouldStartWith("#ifdef GL_ES");
+        result.Glsl.ShouldContain("precision mediump float;", Case.Sensitive);
+        result.Glsl.ShouldContain("precision mediump int;", Case.Sensitive);
     }
 
     // ---- roundEven/round → floor(x+0.5) lowering (WebGL1 reach fix). ----
@@ -190,11 +190,11 @@ void main()
 
         // roundEven() is GLSL ES 3.00+ only and MUST NOT survive — it makes the
         // shader fail to load in WebGL1 (KNI Reach profile).
-        result.Glsl.Should().NotContain("roundEven", "roundEven is unavailable in GLSL ES 1.00 (WebGL1)");
+        result.Glsl.ShouldNotContain("roundEven", Case.Sensitive, "roundEven is unavailable in GLSL ES 1.00 (WebGL1)");
 
         // Each roundEven(expr) becomes floor((expr) + 0.5).
-        result.Glsl.Should().Contain("floor((vTexCoord0.x * 32.0) + 0.5)");
-        result.Glsl.Should().Contain("floor((vTexCoord0.y * 32.0) + 0.5)");
+        result.Glsl.ShouldContain("floor((vTexCoord0.x * 32.0) + 0.5)", Case.Sensitive);
+        result.Glsl.ShouldContain("floor((vTexCoord0.y * 32.0) + 0.5)", Case.Sensitive);
     }
 
     [Fact]
@@ -218,8 +218,8 @@ void main()
         // No round(/roundEven( call survives; only floor( remains.
         System.Text.RegularExpressions.Regex
             .IsMatch(result.Glsl, @"\bround(Even)?\s*\(")
-            .Should().BeFalse("round/roundEven are unavailable in GLSL ES 1.00 (WebGL1)");
-        result.Glsl.Should().Contain("floor((vTexCoord0.x) + 0.5)");
+            .ShouldBeFalse("round/roundEven are unavailable in GLSL ES 1.00 (WebGL1)");
+        result.Glsl.ShouldContain("floor((vTexCoord0.x) + 0.5)", Case.Sensitive);
     }
 
     [Fact]
@@ -240,8 +240,8 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().NotContain("roundEven");
-        result.Glsl.Should().Contain("floor((abs(vTexCoord0.x) * 8.0) + 0.5)");
+        result.Glsl.ShouldNotContain("roundEven", Case.Sensitive);
+        result.Glsl.ShouldContain("floor((abs(vTexCoord0.x) * 8.0) + 0.5)", Case.Sensitive);
     }
 
     [Fact]
@@ -266,13 +266,13 @@ void main()
 
         System.Text.RegularExpressions.Regex
             .IsMatch(result.Glsl, @"\bround(Even)?\s*\(")
-            .Should().BeFalse("round/roundEven are unavailable in GLSL ES 1.00 (WebGL1)");
-        result.Glsl.Should().Contain("floor((vTexCoord0.x) + 0.5)");
+            .ShouldBeFalse("round/roundEven are unavailable in GLSL ES 1.00 (WebGL1)");
+        result.Glsl.ShouldContain("floor((vTexCoord0.x) + 0.5)", Case.Sensitive);
 
         // Balanced parens throughout — the historical bug dropped the closing paren.
         int open  = result.Glsl.Count(c => c == '(');
         int close = result.Glsl.Count(c => c == ')');
-        open.Should().Be(close, "the lowered GLSL must keep parentheses balanced");
+        open.ShouldBe(close, customMessage: "the lowered GLSL must keep parentheses balanced");
     }
 
     // ---- trunc() → sign(x)*floor(abs(x)) lowering (Apos.Shapes issue #34). SPIRV-Cross
@@ -302,12 +302,12 @@ void main()
 
         System.Text.RegularExpressions.Regex
             .IsMatch(result.Glsl, @"\btrunc\s*\(")
-            .Should().BeFalse("trunc is unavailable in GLSL ES 1.00 (WebGL1) / desktop GLSL < 1.30");
-        result.Glsl.Should().Contain("sign((vTexCoord0.x / 3.0)) * floor(abs((vTexCoord0.x / 3.0)))");
+            .ShouldBeFalse("trunc is unavailable in GLSL ES 1.00 (WebGL1) / desktop GLSL < 1.30");
+        result.Glsl.ShouldContain("sign((vTexCoord0.x / 3.0)) * floor(abs((vTexCoord0.x / 3.0)))", Case.Sensitive);
 
         int open  = result.Glsl.Count(c => c == '(');
         int close = result.Glsl.Count(c => c == ')');
-        open.Should().Be(close, "the lowered GLSL must keep parentheses balanced");
+        open.ShouldBe(close, customMessage: "the lowered GLSL must keep parentheses balanced");
     }
 
     [Fact]
@@ -326,8 +326,8 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().NotContain("trunc(");
-        result.Glsl.Should().Contain("sign((abs(vTexCoord0.x) * 8.0)) * floor(abs((abs(vTexCoord0.x) * 8.0)))");
+        result.Glsl.ShouldNotContain("trunc(", Case.Sensitive);
+        result.Glsl.ShouldContain("sign((abs(vTexCoord0.x) * 8.0)) * floor(abs((abs(vTexCoord0.x) * 8.0)))", Case.Sensitive);
     }
 
     // ---- 2026-07-27 review regressions -------------------------------------------
@@ -353,13 +353,13 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().NotContain("trunc(");
-        result.Glsl.Should().Contain("1.0 / (sign(");
-        result.Glsl.Should().NotContain("1.0 / sign(");
+        result.Glsl.ShouldNotContain("trunc(", Case.Sensitive);
+        result.Glsl.ShouldContain("1.0 / (sign(", Case.Sensitive);
+        result.Glsl.ShouldNotContain("1.0 / sign(", Case.Sensitive);
 
         int open  = result.Glsl.Count(c => c == '(');
         int close = result.Glsl.Count(c => c == ')');
-        open.Should().Be(close);
+        open.ShouldBe(close);
     }
 
     [Fact]
@@ -385,10 +385,10 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().Contain("vFrontColor");
-        result.Glsl.Should().Contain("vTexCoord0");
-        result.Glsl.Should().NotContain("var_COLOR;");
-        result.Glsl.Should().NotContain("vTexCoord;");
+        result.Glsl.ShouldContain("vFrontColor", Case.Sensitive);
+        result.Glsl.ShouldContain("vTexCoord0", Case.Sensitive);
+        result.Glsl.ShouldNotContain("var_COLOR;", Case.Sensitive);
+        result.Glsl.ShouldNotContain("vTexCoord;", Case.Sensitive);
     }
 
     [Fact]
@@ -424,8 +424,8 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().NotContain("for (;;)");
-        result.Glsl.Should().Contain("_40 <= 4");
+        result.Glsl.ShouldNotContain("for (;;)", Case.Sensitive);
+        result.Glsl.ShouldContain("_40 <= 4", Case.Sensitive);
     }
 
     [Fact]
@@ -463,9 +463,8 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().Contain("for (;;)",
-            "a bound the body reassigns is not provable, so the loop must be left alone");
-        result.Glsl.Should().NotContain("_40 <= 4");
+        result.Glsl.ShouldContain("for (;;)", Case.Sensitive, "a bound the body reassigns is not provable, so the loop must be left alone");
+        result.Glsl.ShouldNotContain("_40 <= 4", Case.Sensitive);
     }
 
     [Fact]
@@ -503,8 +502,8 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().Contain("for (;;)");
-        result.Glsl.Should().NotContain("_40 <= 4");
+        result.Glsl.ShouldContain("for (;;)", Case.Sensitive);
+        result.Glsl.ShouldNotContain("_40 <= 4", Case.Sensitive);
     }
 
     // ---- Vertex stage (Phase 28, posFixup contract since Phase 43 F3). SPIRV-Cross
@@ -573,15 +572,14 @@ void main()
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Vertex);
 
         // The mixed-case attribute names map to the same usages as their uppercase forms.
-        result.Glsl.Should().Contain("attribute vec4 vs_v0;");
-        result.Glsl.Should().Contain("attribute vec4 vs_v1;");
-        result.Glsl.Should().Contain("attribute vec4 vs_v2;");
+        result.Glsl.ShouldContain("attribute vec4 vs_v0;", Case.Sensitive);
+        result.Glsl.ShouldContain("attribute vec4 vs_v1;", Case.Sensitive);
+        result.Glsl.ShouldContain("attribute vec4 vs_v2;", Case.Sensitive);
 
         // The varyings converge on the canonical names the pixel stage reads.
-        result.Glsl.Should().Contain("varying vec4 vFrontColor;");
-        result.Glsl.Should().Contain("varying vec4 vTexCoord0;");
-        result.Glsl.Should().NotContain("var_TexCoord0",
-            "a mixed-case TEXCOORD must not fall through to the unknown-semantic passthrough");
+        result.Glsl.ShouldContain("varying vec4 vFrontColor;", Case.Sensitive);
+        result.Glsl.ShouldContain("varying vec4 vTexCoord0;", Case.Sensitive);
+        result.Glsl.ShouldNotContain("var_TexCoord0", Case.Sensitive, "a mixed-case TEXCOORD must not fall through to the unknown-semantic passthrough");
     }
 
     [Fact]
@@ -591,35 +589,35 @@ void main()
 
         // Vertex constant buffer is named vs_uniforms_vec4 (NOT ps_), and a mat4
         // occupies four registers + Tint one => array length 5.
-        result.Glsl.Should().Contain("uniform vec4 vs_uniforms_vec4[5];");
+        result.Glsl.ShouldContain("uniform vec4 vs_uniforms_vec4[5];", Case.Sensitive);
 
         // Inputs become legacy attributes vs_v{k} (vec4, declaration order).
-        result.Glsl.Should().Contain("attribute vec4 vs_v0;");
-        result.Glsl.Should().Contain("attribute vec4 vs_v1;");
-        result.Glsl.Should().Contain("attribute vec4 vs_v2;");
+        result.Glsl.ShouldContain("attribute vec4 vs_v0;", Case.Sensitive);
+        result.Glsl.ShouldContain("attribute vec4 vs_v1;", Case.Sensitive);
+        result.Glsl.ShouldContain("attribute vec4 vs_v2;", Case.Sensitive);
 
         // Outputs become legacy varyings matching the names the PS reads.
-        result.Glsl.Should().Contain("varying vec4 vFrontColor;");
-        result.Glsl.Should().Contain("varying vec4 vTexCoord0;");
+        result.Glsl.ShouldContain("varying vec4 vFrontColor;", Case.Sensitive);
+        result.Glsl.ShouldContain("varying vec4 vTexCoord0;", Case.Sensitive);
 
         // gl_Position is written; the matrix is reconstructed (transposed, issue #70)
         // from 4 registers, then multiplied by the position attribute.
-        result.Glsl.Should().Contain($"gl_Position = {Mat4("vs_uniforms_vec4", 0, 1, 2, 3)} * vs_v0;");
+        result.Glsl.ShouldContain($"gl_Position = {Mat4("vs_uniforms_vec4", 0, 1, 2, 3)} * vs_v0;", Case.Sensitive);
 
         // Tint follows the mat4 at register 4.
-        result.Glsl.Should().Contain("vs_uniforms_vec4[4]");
+        result.Glsl.ShouldContain("vs_uniforms_vec4[4]", Case.Sensitive);
 
         // vec2 TEXCOORD output write is swizzled to .xy (matches mgfxc's vs_oT0.xy form).
-        result.Glsl.Should().Contain("vTexCoord0.xy = vs_v2.xy;");
+        result.Glsl.ShouldContain("vTexCoord0.xy = vs_v2.xy;", Case.Sensitive);
 
         // No modern qualifiers / interface names / UBO survive.
-        result.Glsl.Should().NotContain("#version");
-        result.Glsl.Should().NotContain("in_var_");
-        result.Glsl.Should().NotContain("out_var_");
-        result.Glsl.Should().NotContain("type_Globals");
-        result.Glsl.Should().NotContain("_Globals");
-        result.Glsl.Should().NotContain("\nin ");
-        result.Glsl.Should().NotContain("\nout ");
+        result.Glsl.ShouldNotContain("#version", Case.Sensitive);
+        result.Glsl.ShouldNotContain("in_var_", Case.Sensitive);
+        result.Glsl.ShouldNotContain("out_var_", Case.Sensitive);
+        result.Glsl.ShouldNotContain("type_Globals", Case.Sensitive);
+        result.Glsl.ShouldNotContain("_Globals", Case.Sensitive);
+        result.Glsl.ShouldNotContain("\nin ", Case.Sensitive);
+        result.Glsl.ShouldNotContain("\nout ", Case.Sensitive);
     }
 
     // ---- Issue #70: a float4x4 must be reconstructed TRANSPOSED so the vertex
@@ -661,14 +659,14 @@ void main()
 
         // The transpose: each gl_Position component i becomes dot(register[i], position),
         // matching the mgfxc golden's `vs_o0.x = dot(vs_v0, vs_c0); …` exactly.
-        result.Glsl.Should().Contain(Mat4("vs_uniforms_vec4", 0, 1, 2, 3));
+        result.Glsl.ShouldContain(Mat4("vs_uniforms_vec4", 0, 1, 2, 3), Case.Sensitive);
 
         // The naive column reconstruction (the transposed/garbled form) must NOT appear.
-        result.Glsl.Should().NotContain(
-            "mat4(vs_uniforms_vec4[0], vs_uniforms_vec4[1], vs_uniforms_vec4[2], vs_uniforms_vec4[3])");
+        result.Glsl.ShouldNotContain(
+            "mat4(vs_uniforms_vec4[0], vs_uniforms_vec4[1], vs_uniforms_vec4[2], vs_uniforms_vec4[3])", Case.Sensitive);
 
         // transpose() must never be emitted — absent in GLSL ES 1.00 (Reach) / desktop 110.
-        result.Glsl.Should().NotContain("transpose(");
+        result.Glsl.ShouldNotContain("transpose(", Case.Sensitive);
     }
 
     // ---- A VS output carrying the legacy D3D9 POSITION/POSITION0 semantic (the form the stock
@@ -703,14 +701,14 @@ void main()
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Vertex);
 
         // The position write targets the gl_Position builtin...
-        result.Glsl.Should().Contain("gl_Position =");
+        result.Glsl.ShouldContain("gl_Position =", Case.Sensitive);
         // ...and the runtime posFixup is appended (proof gl_Position is actually written).
-        result.Glsl.Should().Contain("gl_Position.y = gl_Position.y * posFixup.y;");
+        result.Glsl.ShouldContain("gl_Position.y = gl_Position.y * posFixup.y;", Case.Sensitive);
         // The position output is NOT emitted as a dead varying, and no interface name survives.
-        result.Glsl.Should().NotContain("var_POSITION");
-        result.Glsl.Should().NotContain(positionOut);
+        result.Glsl.ShouldNotContain("var_POSITION", Case.Sensitive);
+        result.Glsl.ShouldNotContain(positionOut, Case.Sensitive);
         // A genuine non-position varying (COLOR0) still lowers to its legacy varying.
-        result.Glsl.Should().Contain("varying vec4 vFrontColor;");
+        result.Glsl.ShouldContain("varying vec4 vFrontColor;", Case.Sensitive);
     }
 
     // ---- Phase 43 F3: the dynamic posFixup contract. The OpenGL golden
@@ -729,23 +727,22 @@ void main()
         var result = MonoGameGlslRewriter.Rewrite(VertexExample, ShaderStage.Vertex);
 
         // Declaration directly after the constant-register array (golden order).
-        result.Glsl.Should().Contain("uniform vec4 vs_uniforms_vec4[5];\nuniform vec4 posFixup;");
+        result.Glsl.ShouldContain("uniform vec4 vs_uniforms_vec4[5];\nuniform vec4 posFixup;", Case.Sensitive);
 
         // The two fixup lines, byte-for-byte the golden's form.
-        result.Glsl.Should().Contain("gl_Position.y = gl_Position.y * posFixup.y;");
-        result.Glsl.Should().Contain("gl_Position.xy += posFixup.zw * gl_Position.ww;");
+        result.Glsl.ShouldContain("gl_Position.y = gl_Position.y * posFixup.y;", Case.Sensitive);
+        result.Glsl.ShouldContain("gl_Position.xy += posFixup.zw * gl_Position.ww;", Case.Sensitive);
 
         // No static flip survives anywhere (FlipVertexY off + nothing re-bakes it).
-        result.Glsl.Should().NotContain("-gl_Position.y");
+        result.Glsl.ShouldNotContain("-gl_Position.y", Case.Sensitive);
 
         // Golden line ORDER: Y-flip, then half-pixel, then the depth-convention line.
         int yFlip  = result.Glsl.IndexOf("gl_Position.y = gl_Position.y * posFixup.y;", StringComparison.Ordinal);
         int halfPx = result.Glsl.IndexOf("gl_Position.xy += posFixup.zw * gl_Position.ww;", StringComparison.Ordinal);
         int depth  = result.Glsl.IndexOf("gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;", StringComparison.Ordinal);
-        yFlip.Should().BePositive();
-        halfPx.Should().BeGreaterThan(yFlip);
-        depth.Should().BeGreaterThan(halfPx,
-            "the depth-convention line must stay LAST, matching the mgfxc golden's statement order");
+        yFlip.ShouldBePositive();
+        halfPx.ShouldBeGreaterThan(yFlip);
+        depth.ShouldBeGreaterThan(halfPx, customMessage: "the depth-convention line must stay LAST, matching the mgfxc golden's statement order");
     }
 
     [Fact]
@@ -764,9 +761,9 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Vertex);
 
-        result.Glsl.Should().Contain("uniform vec4 posFixup;");
-        result.Glsl.Should().Contain("gl_Position.y = gl_Position.y * posFixup.y;");
-        result.Glsl.Should().Contain("gl_Position.xy += posFixup.zw * gl_Position.ww;");
+        result.Glsl.ShouldContain("uniform vec4 posFixup;", Case.Sensitive);
+        result.Glsl.ShouldContain("gl_Position.y = gl_Position.y * posFixup.y;", Case.Sensitive);
+        result.Glsl.ShouldContain("gl_Position.xy += posFixup.zw * gl_Position.ww;", Case.Sensitive);
     }
 
     [Fact]
@@ -782,8 +779,7 @@ void main()
 }
 """;
         var act = () => MonoGameGlslRewriter.Rewrite(src, ShaderStage.Vertex);
-        act.Should().Throw<MonoGameGlslRewriteException>()
-            .WithMessage("*posFixup*");
+        Should.Throw<MonoGameGlslRewriteException>(act).Message.ShouldContain("posFixup", Case.Sensitive);
     }
 
     [Fact]
@@ -791,11 +787,20 @@ void main()
     {
         var result = MonoGameGlslRewriter.Rewrite(VertexExample, ShaderStage.Vertex);
 
-        result.Attributes.Should().HaveCount(3);
+        result.Attributes.Count().ShouldBe(3);
         // POSITION0 -> Position(0)/index 0; COLOR0 -> Color(1)/0; TEXCOORD0 -> TexCoord(2)/0.
-        result.Attributes[0].Should().BeEquivalentTo(new { Slot = 0, Name = "vs_v0", Usage = (byte)0, Index = (byte)0 });
-        result.Attributes[1].Should().BeEquivalentTo(new { Slot = 1, Name = "vs_v1", Usage = (byte)1, Index = (byte)0 });
-        result.Attributes[2].Should().BeEquivalentTo(new { Slot = 2, Name = "vs_v2", Usage = (byte)2, Index = (byte)0 });
+        AssertAttribute(result.Attributes[0], slot: 0, name: "vs_v0", usage: 0, index: 0);
+        AssertAttribute(result.Attributes[1], slot: 1, name: "vs_v1", usage: 1, index: 0);
+        AssertAttribute(result.Attributes[2], slot: 2, name: "vs_v2", usage: 2, index: 0);
+    }
+
+    private static void AssertAttribute(
+        MonoGameGlslAttribute attribute, int slot, string name, byte usage, byte index)
+    {
+        attribute.Slot.ShouldBe(slot);
+        attribute.Name.ShouldBe(name);
+        attribute.Usage.ShouldBe(usage);
+        attribute.Index.ShouldBe(index);
     }
 
     [Fact]
@@ -825,15 +830,15 @@ void main()
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Vertex);
 
         // Array length = 4 (A) + 1 (B) + 4 (C) = 9 registers.
-        result.Glsl.Should().Contain("uniform vec4 vs_uniforms_vec4[9];");
-        result.UniformRegisterCount.Should().Be(9);
+        result.Glsl.ShouldContain("uniform vec4 vs_uniforms_vec4[9];", Case.Sensitive);
+        result.UniformRegisterCount.ShouldBe(9);
 
         // A -> registers 0..3.
-        result.Glsl.Should().Contain(Mat4("vs_uniforms_vec4", 0, 1, 2, 3));
+        result.Glsl.ShouldContain(Mat4("vs_uniforms_vec4", 0, 1, 2, 3), Case.Sensitive);
         // B -> register 4 (scalar, .x swizzle).
-        result.Glsl.Should().Contain("vs_uniforms_vec4[4].x");
+        result.Glsl.ShouldContain("vs_uniforms_vec4[4].x", Case.Sensitive);
         // C -> registers 5..8 (shifted PAST the mat4 A + scalar B).
-        result.Glsl.Should().Contain(Mat4("vs_uniforms_vec4", 5, 6, 7, 8));
+        result.Glsl.ShouldContain(Mat4("vs_uniforms_vec4", 5, 6, 7, 8), Case.Sensitive);
     }
 
     [Fact]
@@ -858,9 +863,9 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().NotContain("TODO mat");
-        result.Glsl.Should().Contain(Mat4("ps_uniforms_vec4", 0, 1, 2, 3));
-        result.UniformRegisterCount.Should().Be(4);
+        result.Glsl.ShouldNotContain("TODO mat", Case.Sensitive);
+        result.Glsl.ShouldContain(Mat4("ps_uniforms_vec4", 0, 1, 2, 3), Case.Sensitive);
+        result.UniformRegisterCount.ShouldBe(4);
     }
 
     [Fact]
@@ -875,8 +880,7 @@ void main()
 }
 """;
         var act = () => MonoGameGlslRewriter.Rewrite(src, ShaderStage.Vertex);
-        act.Should().Throw<MonoGameGlslRewriteException>()
-            .WithMessage("*BLENDWEIGHT0*");
+        Should.Throw<MonoGameGlslRewriteException>(act).Message.ShouldContain("BLENDWEIGHT0", Case.Sensitive);
     }
 
     // ---- Phase 43 F4/F5/F6: the GL cbuffer/array model. ----
@@ -957,16 +961,16 @@ void main()
         var result = MonoGameGlslRewriter.Rewrite(NamedCbufferPs, ShaderStage.Pixel);
 
         // mat4 (4 registers) + vec4 (1 register) = 5; DiffuseColor reads register 4.
-        result.Glsl.Should().Contain("uniform vec4 ps_uniforms_vec4[5];");
-        result.Glsl.Should().Contain("ps_oC0 = ps_uniforms_vec4[4];");
-        result.Glsl.Should().NotContain("Transforms");
-        result.Glsl.Should().NotContain("std140");
-        result.UniformRegisterCount.Should().Be(5);
+        result.Glsl.ShouldContain("uniform vec4 ps_uniforms_vec4[5];", Case.Sensitive);
+        result.Glsl.ShouldContain("ps_oC0 = ps_uniforms_vec4[4];", Case.Sensitive);
+        result.Glsl.ShouldNotContain("Transforms", Case.Sensitive);
+        result.Glsl.ShouldNotContain("std140", Case.Sensitive);
+        result.UniformRegisterCount.ShouldBe(5);
 
         // The layout the pipeline builds the .mgfx cbuffer record from.
-        result.Uniforms.Should().HaveCount(2);
-        result.Uniforms[0].Should().Be(new MonoGameGlslUniform("WorldViewProj", 0, 4));
-        result.Uniforms[1].Should().Be(new MonoGameGlslUniform("DiffuseColor", 4, 1));
+        result.Uniforms.Count().ShouldBe(2);
+        result.Uniforms[0].ShouldBe(new MonoGameGlslUniform("WorldViewProj", 0, 4));
+        result.Uniforms[1].ShouldBe(new MonoGameGlslUniform("DiffuseColor", 4, 1));
     }
 
     [Fact]
@@ -975,16 +979,16 @@ void main()
         var result = MonoGameGlslRewriter.Rewrite(TwoCbuffersPs, ShaderStage.Pixel);
 
         // BufA.TintA -> reg 0; BufB.TintB -> reg 1; BufB.MixAmount -> reg 2.x.
-        result.Glsl.Should().Contain("uniform vec4 ps_uniforms_vec4[3];");
-        result.Glsl.Should().Contain("mix(ps_uniforms_vec4[0], ps_uniforms_vec4[1], vec4(ps_uniforms_vec4[2].x))");
-        result.Glsl.Should().NotContain("BufA");
-        result.Glsl.Should().NotContain("BufB");
-        result.Glsl.Should().NotContain("layout(");
+        result.Glsl.ShouldContain("uniform vec4 ps_uniforms_vec4[3];", Case.Sensitive);
+        result.Glsl.ShouldContain("mix(ps_uniforms_vec4[0], ps_uniforms_vec4[1], vec4(ps_uniforms_vec4[2].x))", Case.Sensitive);
+        result.Glsl.ShouldNotContain("BufA", Case.Sensitive);
+        result.Glsl.ShouldNotContain("BufB", Case.Sensitive);
+        result.Glsl.ShouldNotContain("layout(", Case.Sensitive);
 
-        result.Uniforms.Should().Equal(
+        result.Uniforms.ShouldBe(new[] {
             new MonoGameGlslUniform("TintA", 0, 1),
             new MonoGameGlslUniform("TintB", 1, 1),
-            new MonoGameGlslUniform("MixAmount", 2, 1));
+            new MonoGameGlslUniform("MixAmount", 2, 1)});
     }
 
     [Fact]
@@ -994,30 +998,30 @@ void main()
 
         // Colors[4] @ 0..3, Weights[4] @ 4..7, Dirs[2] @ 8..9, Mats[2] @ 10..17,
         // Selector @ 18 — total 19 registers.
-        result.Glsl.Should().Contain("uniform vec4 ps_uniforms_vec4[19];");
+        result.Glsl.ShouldContain("uniform vec4 ps_uniforms_vec4[19];", Case.Sensitive);
 
         // Literal indices fold to constant registers.
-        result.Glsl.Should().Contain("ps_uniforms_vec4[1] * ps_uniforms_vec4[6].x");
-        result.Glsl.Should().Contain("ps_uniforms_vec4[9].xyz * 0.25");
+        result.Glsl.ShouldContain("ps_uniforms_vec4[1] * ps_uniforms_vec4[6].x", Case.Sensitive);
+        result.Glsl.ShouldContain("ps_uniforms_vec4[9].xyz * 0.25", Case.Sensitive);
 
         // Dynamic indices keep the arithmetic in GLSL (MojoShader's relative form).
-        result.Glsl.Should().Contain("ps_uniforms_vec4[0 + (_40)]");
-        result.Glsl.Should().Contain("ps_uniforms_vec4[4 + (_40)].x");
+        result.Glsl.ShouldContain("ps_uniforms_vec4[0 + (_40)]", Case.Sensitive);
+        result.Glsl.ShouldContain("ps_uniforms_vec4[4 + (_40)].x", Case.Sensitive);
 
         // mat4 array elements reconstruct (transposed, issue #70) at stride 4.
-        result.Glsl.Should().Contain(Mat4("ps_uniforms_vec4", 14, 15, 16, 17));
+        result.Glsl.ShouldContain(Mat4("ps_uniforms_vec4", 14, 15, 16, 17), Case.Sensitive);
 
         // Scalar after the arrays lands at the shifted register.
-        result.Glsl.Should().Contain("ps_uniforms_vec4[18].x");
-        result.Glsl.Should().NotContain("_Globals");
+        result.Glsl.ShouldContain("ps_uniforms_vec4[18].x", Case.Sensitive);
+        result.Glsl.ShouldNotContain("_Globals", Case.Sensitive);
 
-        result.Uniforms.Should().Equal(
+        result.Uniforms.ShouldBe(new[] {
             new MonoGameGlslUniform("Colors", 0, 4),
             new MonoGameGlslUniform("Weights", 4, 4),
             new MonoGameGlslUniform("Dirs", 8, 2),
             new MonoGameGlslUniform("Mats", 10, 8),
-            new MonoGameGlslUniform("Selector", 18, 1));
-        result.UniformRegisterCount.Should().Be(19);
+            new MonoGameGlslUniform("Selector", 18, 1)});
+        result.UniformRegisterCount.ShouldBe(19);
     }
 
     [Fact]
@@ -1042,23 +1046,23 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Vertex);
 
-        result.Glsl.Should().Contain("uniform vec4 vs_uniforms_vec4[10];");
-        result.Glsl.Should().Contain(Mat4("vs_uniforms_vec4", 6, 7, 8, 9));
-        result.Glsl.Should().Contain("vs_uniforms_vec4[1]");
+        result.Glsl.ShouldContain("uniform vec4 vs_uniforms_vec4[10];", Case.Sensitive);
+        result.Glsl.ShouldContain(Mat4("vs_uniforms_vec4", 6, 7, 8, 9), Case.Sensitive);
+        result.Glsl.ShouldContain("vs_uniforms_vec4[1]", Case.Sensitive);
         // posFixup still injected after the merged declaration.
-        result.Glsl.Should().Contain("uniform vec4 posFixup;");
+        result.Glsl.ShouldContain("uniform vec4 posFixup;", Case.Sensitive);
 
-        result.Uniforms.Should().Equal(
+        result.Uniforms.ShouldBe(new[] {
             new MonoGameGlslUniform("Offsets", 0, 2),
-            new MonoGameGlslUniform("Bones", 2, 8));
+            new MonoGameGlslUniform("Bones", 2, 8)});
     }
 
     [Theory]
-    [InlineData("    int Mode;", "*integer/boolean uniforms*")]
-    [InlineData("    bool Flag;", "*integer/boolean uniforms*")]
-    [InlineData("    ivec4 Counts;", "*integer/boolean uniforms*")]
-    [InlineData("    mat3 Rot;", "*float4x4*")]
-    [InlineData("    mat2 Small;", "*float4x4*")]
+    [InlineData("    int Mode;", "integer/boolean uniforms")]
+    [InlineData("    bool Flag;", "integer/boolean uniforms")]
+    [InlineData("    ivec4 Counts;", "integer/boolean uniforms")]
+    [InlineData("    mat3 Rot;", "float4x4")]
+    [InlineData("    mat2 Small;", "float4x4")]
     public void UnmodeledUniformMember_FailsLoudly(string memberLine, string expectedMessage)
     {
         string src = $$"""
@@ -1078,7 +1082,7 @@ void main()
 }
 """;
         var act = () => MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
-        act.Should().Throw<MonoGameGlslRewriteException>().WithMessage(expectedMessage);
+        Should.Throw<MonoGameGlslRewriteException>(act).Message.ShouldContain(expectedMessage, Case.Sensitive);
     }
 
     [Fact]
@@ -1102,8 +1106,7 @@ void main()
 }
 """;
         var act = () => MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
-        act.Should().Throw<MonoGameGlslRewriteException>()
-            .WithMessage("*whole-array use*");
+        Should.Throw<MonoGameGlslRewriteException>(act).Message.ShouldContain("whole-array use", Case.Sensitive);
     }
 
     [Fact]
@@ -1127,8 +1130,7 @@ void main()
 }
 """;
         var act = () => MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
-        act.Should().Throw<MonoGameGlslRewriteException>()
-            .WithMessage("*_Globals*");
+        Should.Throw<MonoGameGlslRewriteException>(act).Message.ShouldContain("_Globals", Case.Sensitive);
     }
 
     // ---- Phase 33: fragment output as mgfxc's `#define ps_oC{N}` alias ----
@@ -1145,21 +1147,21 @@ void main()
         var result = MonoGameGlslRewriter.Rewrite(ExampleA, ShaderStage.Pixel);
 
         // The #define alias mgfxc emits (and KNI's ES-3.00 converter needs).
-        result.Glsl.Should().Contain("#define ps_oC0 gl_FragColor");
+        result.Glsl.ShouldContain("#define ps_oC0 gl_FragColor", Case.Sensitive);
 
         // The body writes to the alias, not the builtin.
-        result.Glsl.Should().Contain("ps_oC0 = vec4(");
+        result.Glsl.ShouldContain("ps_oC0 = vec4(", Case.Sensitive);
 
         // CRITICAL: no RAW `gl_FragColor =` write may remain — that is exactly what
         // breaks under KNI HiDef/WebGL2 (issue #7). The literal `gl_FragColor` may
         // appear ONLY inside the #define line.
         System.Text.RegularExpressions.Regex
             .IsMatch(result.Glsl, @"gl_FragColor\s*[.\[]?\s*[a-z]*\s*=")
-            .Should().BeFalse("a raw gl_FragColor write must not survive — only the #define alias");
+            .ShouldBeFalse("a raw gl_FragColor write must not survive — only the #define alias");
 
         // gl_FragColor appears exactly once, on the #define line.
         var occurrences = System.Text.RegularExpressions.Regex.Matches(result.Glsl, "gl_FragColor").Count;
-        occurrences.Should().Be(1, "gl_FragColor should appear only in the #define alias");
+        occurrences.ShouldBe(1, customMessage: "gl_FragColor should appear only in the #define alias");
     }
 
     [Fact]
@@ -1168,20 +1170,20 @@ void main()
         var result = MonoGameGlslRewriter.Rewrite(ExampleA, ShaderStage.Pixel);
 
         int defineIdx = result.Glsl.IndexOf("#define ps_oC0", StringComparison.Ordinal);
-        defineIdx.Should().BeGreaterThanOrEqualTo(0);
+        defineIdx.ShouldBeGreaterThanOrEqualTo(0);
 
         // KNI's converter regex is `^#define …` (Multiline) → the alias MUST be at
         // column 0 (line start). And the post-conversion `out vec4 ps_oC0;` must be at
         // global scope before main(), so the #define precedes both main() and the
         // first ps_oC0 use.
         bool atColumnZero = defineIdx == 0 || result.Glsl[defineIdx - 1] == '\n';
-        atColumnZero.Should().BeTrue("KNI's converter only matches `#define` at column 0");
+        atColumnZero.ShouldBeTrue("KNI's converter only matches `#define` at column 0");
 
         int firstUseIdx = result.Glsl.IndexOf("ps_oC0 =", StringComparison.Ordinal);
-        firstUseIdx.Should().BeGreaterThan(defineIdx, "the #define must precede the first ps_oC0 use");
+        firstUseIdx.ShouldBeGreaterThan(defineIdx, customMessage: "the #define must precede the first ps_oC0 use");
 
         int mainIdx = result.Glsl.IndexOf("void main", StringComparison.Ordinal);
-        defineIdx.Should().BeLessThan(mainIdx, "the #define must be in the header, before main()");
+        defineIdx.ShouldBeLessThan(mainIdx, customMessage: "the #define must be in the header, before main()");
     }
 
     // Synthetic true-MRT case: three distinct SV_Target outputs.
@@ -1214,22 +1216,21 @@ void main()
         // targets bound, gl_FragColor broadcasts to ALL attachments and corrupts the
         // other target(s) (a real render bug, not cosmetic). gl_FragData[0] writes only
         // attachment 0. (The single-output case keeps gl_FragColor — see the test below.)
-        result.Glsl.Should().Contain("#define ps_oC0 gl_FragData[0]");
-        result.Glsl.Should().Contain("#define ps_oC1 gl_FragData[1]");
-        result.Glsl.Should().Contain("#define ps_oC2 gl_FragData[2]");
-        result.Glsl.Should().NotContain("gl_FragColor",
-            because: "true MRT must not write gl_FragColor (it would broadcast to all attachments)");
+        result.Glsl.ShouldContain("#define ps_oC0 gl_FragData[0]", Case.Sensitive);
+        result.Glsl.ShouldContain("#define ps_oC1 gl_FragData[1]", Case.Sensitive);
+        result.Glsl.ShouldContain("#define ps_oC2 gl_FragData[2]", Case.Sensitive);
+        result.Glsl.ShouldNotContain("gl_FragColor", Case.Sensitive, "true MRT must not write gl_FragColor (it would broadcast to all attachments)");
 
         // All three writes go to the aliases.
-        result.Glsl.Should().Contain("ps_oC0 = c;");
-        result.Glsl.Should().Contain("ps_oC1 = c.yxzw;");
-        result.Glsl.Should().Contain("ps_oC2 = c.zzzw;");
+        result.Glsl.ShouldContain("ps_oC0 = c;", Case.Sensitive);
+        result.Glsl.ShouldContain("ps_oC1 = c.yxzw;", Case.Sensitive);
+        result.Glsl.ShouldContain("ps_oC2 = c.zzzw;", Case.Sensitive);
 
         // No raw builtins survive as writes.
-        result.Glsl.Should().NotContain("out_var_");
+        result.Glsl.ShouldNotContain("out_var_", Case.Sensitive);
         System.Text.RegularExpressions.Regex
             .IsMatch(result.Glsl, @"gl_FragData\[\d+\]\s*=")
-            .Should().BeFalse("MRT writes target ps_oC{N}, not raw gl_FragData[N]");
+            .ShouldBeFalse("MRT writes target ps_oC{N}, not raw gl_FragData[N]");
     }
 
     // Single output spelled `SV_Target0` (with the 0) — DXC's name for HLSL `: COLOR0`.
@@ -1255,10 +1256,10 @@ void main()
 
         // SV_Target0 is the PRIMARY single output → gl_FragColor (like mgfxc's golden
         // for Sepia/Dissolve), NOT gl_FragData[0].
-        result.Glsl.Should().Contain("#define ps_oC0 gl_FragColor");
-        result.Glsl.Should().Contain("ps_oC0 = texture2D(");
-        result.Glsl.Should().NotContain("gl_FragData", "a single SV_Target0 output is primary, not MRT");
-        result.Glsl.Should().NotContain("#define ps_oC1");
+        result.Glsl.ShouldContain("#define ps_oC0 gl_FragColor", Case.Sensitive);
+        result.Glsl.ShouldContain("ps_oC0 = texture2D(", Case.Sensitive);
+        result.Glsl.ShouldNotContain("gl_FragData", Case.Sensitive, "a single SV_Target0 output is primary, not MRT");
+        result.Glsl.ShouldNotContain("#define ps_oC1", Case.Sensitive);
     }
 
     // Discard-only PS: no colour output at all.
@@ -1302,11 +1303,11 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().Contain("#define ps_oC0 gl_FragColor");
-        result.Glsl.Should().Contain("ps_oC0 = texture2D(");
+        result.Glsl.ShouldContain("#define ps_oC0 gl_FragColor", Case.Sensitive);
+        result.Glsl.ShouldContain("ps_oC0 = texture2D(", Case.Sensitive);
         // The raw out_var_* declaration AND use must both be gone (no leak).
-        result.Glsl.Should().NotContain("out_var_", "the output decl + uses must be rewritten regardless of case");
-        result.Glsl.Should().NotContain("gl_FragData");
+        result.Glsl.ShouldNotContain("out_var_", Case.Sensitive, "the output decl + uses must be rewritten regardless of case");
+        result.Glsl.ShouldNotContain("gl_FragData", Case.Sensitive);
     }
 
     [Fact]
@@ -1314,10 +1315,10 @@ void main()
     {
         var result = MonoGameGlslRewriter.Rewrite(DiscardOnly, ShaderStage.Pixel);
 
-        result.Glsl.Should().NotContain("#define ps_oC", "a no-output shader has no fragment-output alias");
-        result.Glsl.Should().NotContain("gl_FragColor");
-        result.Glsl.Should().NotContain("gl_FragData");
-        result.Glsl.Should().Contain("discard");
+        result.Glsl.ShouldNotContain("#define ps_oC", Case.Sensitive, "a no-output shader has no fragment-output alias");
+        result.Glsl.ShouldNotContain("gl_FragColor", Case.Sensitive);
+        result.Glsl.ShouldNotContain("gl_FragData", Case.Sensitive);
+        result.Glsl.ShouldContain("discard", Case.Sensitive);
     }
 
     // Name-collision: the (pathological) source already contains a ps_oC0 identifier.
@@ -1340,8 +1341,7 @@ void main()
     {
         // Must NOT silently shadow — fail loudly with a clear message.
         Action act = () => MonoGameGlslRewriter.Rewrite(CollidingPsOc0, ShaderStage.Pixel);
-        act.Should().Throw<MonoGameGlslRewriteException>()
-            .WithMessage("*collision*ps_oC0*");
+        Should.Throw<MonoGameGlslRewriteException>(act).Message.ShouldMatch("(?s)collision.*ps_oC0");
     }
 
     // ---- Phase 34: per-dimension texture support (cube / 3D) + LOD/grad ----
@@ -1369,16 +1369,13 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().Contain("uniform samplerCube ps_s0;",
-            "the cube sampler decl must keep its kind and be renamed to ps_s{k}");
-        result.Glsl.Should().Contain("textureCube(ps_s0,",
-            "a cube sampler must be sampled with textureCube(), not texture2D()");
-        result.Glsl.Should().NotContain("texture2D(",
-            "the generic texture() must NOT be down-rewritten to texture2D() for a cube sampler");
+        result.Glsl.ShouldContain("uniform samplerCube ps_s0;", Case.Sensitive, "the cube sampler decl must keep its kind and be renamed to ps_s{k}");
+        result.Glsl.ShouldContain("textureCube(ps_s0,", Case.Sensitive, "a cube sampler must be sampled with textureCube(), not texture2D()");
+        result.Glsl.ShouldNotContain("texture2D(", Case.Sensitive, "the generic texture() must NOT be down-rewritten to texture2D() for a cube sampler");
 
-        result.Samplers.Should().ContainSingle();
-        result.Samplers[0].Name.Should().Be("ps_s0");
-        result.Samplers[0].Dimension.Should().Be(MonoGameSamplerDimension.TextureCube);
+        result.Samplers.ShouldHaveSingleItem();
+        result.Samplers[0].Name.ShouldBe("ps_s0");
+        result.Samplers[0].Dimension.ShouldBe(MonoGameSamplerDimension.TextureCube);
     }
 
     [Fact]
@@ -1398,12 +1395,12 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().Contain("uniform sampler3D ps_s0;");
-        result.Glsl.Should().Contain("texture3D(ps_s0,");
-        result.Glsl.Should().NotContain("texture2D(");
+        result.Glsl.ShouldContain("uniform sampler3D ps_s0;", Case.Sensitive);
+        result.Glsl.ShouldContain("texture3D(ps_s0,", Case.Sensitive);
+        result.Glsl.ShouldNotContain("texture2D(", Case.Sensitive);
 
-        result.Samplers.Should().ContainSingle();
-        result.Samplers[0].Dimension.Should().Be(MonoGameSamplerDimension.TextureVolume);
+        result.Samplers.ShouldHaveSingleItem();
+        result.Samplers[0].Dimension.ShouldBe(MonoGameSamplerDimension.TextureVolume);
     }
 
     [Fact]
@@ -1428,14 +1425,14 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().Contain("uniform sampler2D ps_s0;");
-        result.Glsl.Should().Contain("uniform samplerCube ps_s1;");
-        result.Glsl.Should().Contain("texture2D(ps_s0,");
-        result.Glsl.Should().Contain("textureCube(ps_s1,");
+        result.Glsl.ShouldContain("uniform sampler2D ps_s0;", Case.Sensitive);
+        result.Glsl.ShouldContain("uniform samplerCube ps_s1;", Case.Sensitive);
+        result.Glsl.ShouldContain("texture2D(ps_s0,", Case.Sensitive);
+        result.Glsl.ShouldContain("textureCube(ps_s1,", Case.Sensitive);
 
-        result.Samplers.Should().HaveCount(2);
-        result.Samplers[0].Dimension.Should().Be(MonoGameSamplerDimension.Texture2D);
-        result.Samplers[1].Dimension.Should().Be(MonoGameSamplerDimension.TextureCube);
+        result.Samplers.Count().ShouldBe(2);
+        result.Samplers[0].Dimension.ShouldBe(MonoGameSamplerDimension.Texture2D);
+        result.Samplers[1].Dimension.ShouldBe(MonoGameSamplerDimension.TextureCube);
     }
 
     [Theory]
@@ -1464,22 +1461,21 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().Contain($"{legacy}(ps_s0,",
-            "the dimension-specific legacy spelling is the MojoShader-faithful, Mesa-valid form");
+        result.Glsl.ShouldContain($"{legacy}(ps_s0,", Case.Sensitive, "the dimension-specific legacy spelling is the MojoShader-faithful, Mesa-valid form");
 
         // No generic CALL survives (the header's `#define texture2DLod textureLod`
         // mention is fine — it is not a call site).
         System.Text.RegularExpressions.Regex.IsMatch(result.Glsl, $@"\b{builtin}\s*\(")
-            .Should().BeFalse($"no generic {builtin}( call site may survive in the body");
+            .ShouldBeFalse($"no generic {builtin}( call site may survive in the body");
 
         // The guarded extension header (MojoShader prepend_glsl_texlod_extensions +
         // its GLSLES3 mapping): graceful degrade, never a compile failure.
-        result.Glsl.Should().Contain("#if __VERSION__ >= 300");
-        result.Glsl.Should().Contain($"#define {legacy} {builtin}");
-        result.Glsl.Should().Contain("#elif defined(GL_ARB_shader_texture_lod)");
-        result.Glsl.Should().Contain("#extension GL_ARB_shader_texture_lod : enable");
-        result.Glsl.Should().Contain("#elif defined(GL_EXT_gpu_shader4)");
-        result.Glsl.Should().Contain("#define texture2DLod(a,b,c) texture2D(a,b)");
+        result.Glsl.ShouldContain("#if __VERSION__ >= 300", Case.Sensitive);
+        result.Glsl.ShouldContain($"#define {legacy} {builtin}", Case.Sensitive);
+        result.Glsl.ShouldContain("#elif defined(GL_ARB_shader_texture_lod)", Case.Sensitive);
+        result.Glsl.ShouldContain("#extension GL_ARB_shader_texture_lod : enable", Case.Sensitive);
+        result.Glsl.ShouldContain("#elif defined(GL_EXT_gpu_shader4)", Case.Sensitive);
+        result.Glsl.ShouldContain("#define texture2DLod(a,b,c) texture2D(a,b)", Case.Sensitive);
     }
 
     [Theory]
@@ -1506,7 +1502,7 @@ void main()
 }
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
-        result.Glsl.Should().Contain(expected);
+        result.Glsl.ShouldContain(expected, Case.Sensitive);
     }
 
     [Fact]
@@ -1527,8 +1523,7 @@ void main()
 }
 """;
         var act = () => MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
-        act.Should().Throw<MonoGameGlslRewriteException>()
-            .WithMessage("*Gradient sampling*cube*");
+        Should.Throw<MonoGameGlslRewriteException>(act).Message.ShouldMatch("(?s)Gradient\\ sampling.*cube");
     }
 
     [Fact]
@@ -1537,8 +1532,8 @@ void main()
         // The guarded header is emitted ONLY when a LOD/grad/proj call was rewritten —
         // the ordinary corpus output must stay byte-identical to the pre-F7 form.
         var result = MonoGameGlslRewriter.Rewrite(ExampleA, ShaderStage.Pixel);
-        result.Glsl.Should().NotContain("GL_ARB_shader_texture_lod");
-        result.Glsl.Should().NotContain("__VERSION__");
+        result.Glsl.ShouldNotContain("GL_ARB_shader_texture_lod", Case.Sensitive);
+        result.Glsl.ShouldNotContain("__VERSION__", Case.Sensitive);
     }
 
     // ---- Phase 33 → Phase 34: guards remain ONLY for kinds still unmodeled ----
@@ -1564,9 +1559,9 @@ void main()
 }
 """;
         Action act = () => MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
-        act.Should().Throw<MonoGameGlslRewriteException>()
-            .WithMessage("*Unsupported sampler type*",
-                "unmodeled samplers would be silently rewritten to texture2D() — invalid GLSL");
+        Should.Throw<MonoGameGlslRewriteException>(act).Message.ShouldContain(
+            "Unsupported sampler type", Case.Sensitive,
+            "unmodeled samplers would be silently rewritten to texture2D() — invalid GLSL");
     }
 
     [Theory]
@@ -1588,7 +1583,7 @@ void main()
 }
 """;
         Action act = () => MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
-        act.Should().NotThrow();
+        Should.NotThrow(act);
     }
 
     [Fact]
@@ -1616,8 +1611,7 @@ void main()
 }
 """;
         var act = () => MonoGameGlslRewriter.Rewrite(src, ShaderStage.Vertex);
-        act.Should().Throw<MonoGameGlslRewriteException>()
-            .WithMessage("*Vertex-stage texture sampling*");
+        Should.Throw<MonoGameGlslRewriteException>(act).Message.ShouldContain("Vertex-stage texture sampling", Case.Sensitive);
     }
 
     [Fact]
@@ -1625,7 +1619,7 @@ void main()
     {
         // Regression: the guard must NOT trip on the normal sampler2D shape.
         Action act = () => MonoGameGlslRewriter.Rewrite(ExampleA, ShaderStage.Pixel);
-        act.Should().NotThrow();
+        Should.NotThrow(act);
     }
 
     [Fact]
@@ -1645,8 +1639,7 @@ void main()
 }
 """;
         Action act = () => MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
-        act.Should().Throw<MonoGameGlslRewriteException>()
-            .Which.Message.Should().NotContain("Tracked for Phase 34");
+        Should.Throw<MonoGameGlslRewriteException>(act).Message.ShouldNotContain("Tracked for Phase 34", Case.Sensitive);
     }
 
     // ---- do { … } while(false) elimination (issues #107 + #136). ----
@@ -1691,18 +1684,16 @@ void main()
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
         // No do-while survives — it fails to load in WebGL1 (KNI Reach).
-        result.Glsl.Should().NotContain("while(false)", "do-while is unavailable in GLSL ES 1.00 (WebGL1)");
+        result.Glsl.ShouldNotContain("while(false)", Case.Sensitive, "do-while is unavailable in GLSL ES 1.00 (WebGL1)");
         System.Text.RegularExpressions.Regex.IsMatch(result.Glsl, @"\bdo\b")
-            .Should().BeFalse("the do keyword must be gone");
+            .ShouldBeFalse("the do keyword must be gone");
         // Issue #136: no loop wrapper either — a for-loop with a conditional break
         // poisons every gradient op on ANGLE D3D11. The loop is unwrapped and each
         // loop-level break becomes the duplicated output-write tail + return.
-        result.Glsl.Should().NotContain("_spvonce_",
-            "the main wrapper must be UNWRAPPED, not lowered to a for-loop (issue #136)");
-        result.Glsl.Should().Contain("{ ps_oC0 = vec4(_v, _v, _v, 1.0); return; }",
-            "each loop-level break becomes the tail statements plus an early return");
+        result.Glsl.ShouldNotContain("_spvonce_", Case.Sensitive, "the main wrapper must be UNWRAPPED, not lowered to a for-loop (issue #136)");
+        result.Glsl.ShouldContain("{ ps_oC0 = vec4(_v, _v, _v, 1.0); return; }", Case.Sensitive, "each loop-level break becomes the tail statements plus an early return");
         // The in-place tail still serves the fall-through path.
-        result.Glsl.Should().Contain("\n    ps_oC0 = vec4(_v, _v, _v, 1.0);");
+        result.Glsl.ShouldContain("\n    ps_oC0 = vec4(_v, _v, _v, 1.0);", Case.Sensitive);
     }
 
     [Fact]
@@ -1730,13 +1721,13 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().NotContain("while(false)");
+        result.Glsl.ShouldNotContain("while(false)", Case.Sensitive);
         // The outer (main-level) wrapper unwraps first; the inner one-shot then sits in
         // the plain block 9a left behind, whose tail ends in the outer break's
         // `{ … return; }` — a terminating exit the recursive scan flattens through, so
         // the inner loop unwraps too. NO loop of any kind survives (issue #136).
-        result.Glsl.Should().NotContain("_spvonce_");
-        result.Glsl.Should().Contain("{ ps_oC0 = vec4(_v); return; }");
+        result.Glsl.ShouldNotContain("_spvonce_", Case.Sensitive);
+        result.Glsl.ShouldContain("{ ps_oC0 = vec4(_v); return; }", Case.Sensitive);
     }
 
     [Fact]
@@ -1783,14 +1774,13 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().NotContain("while(false)");
-        result.Glsl.Should().NotContain("_spvonce_",
-            "both the entry wrapper AND the inlined helper's wrapper must unwrap — a " +
+        result.Glsl.ShouldNotContain("while(false)", Case.Sensitive);
+        result.Glsl.ShouldNotContain("_spvonce_", Case.Sensitive, "both the entry wrapper AND the inlined helper's wrapper must unwrap — a " +
             "for-loop with a conditional break around fwidth is ANGLE-poisoned (issue #136)");
-        result.Glsl.Should().Contain("fwidth(_29)", "the derivative itself is untouched");
+        result.Glsl.ShouldContain("fwidth(_29)", Case.Sensitive, "the derivative itself is untouched");
         // The inner loop's breaks got the FLATTENED tail: the statements after the
         // inner loop plus the contents of the outer break's return-block.
-        result.Glsl.Should().Contain("{ _38 = vec4(_36, 0.0, 0.0, 1.0); ps_oC0 = _38; return; }");
+        result.Glsl.ShouldContain("{ _38 = vec4(_36, 0.0, 0.0, 1.0); ps_oC0 = _38; return; }", Case.Sensitive);
     }
 
     [Fact]
@@ -1824,12 +1814,11 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().MatchRegex(@"for \(int _spvonce_0 = 0; _spvonce_0 < 1; _spvonce_0\+\+\)",
-            "a tail containing fwidth must not be duplicated into divergent branches");
-        result.Glsl.Should().NotContain("return;");
+        result.Glsl.ShouldMatch(@"for \(int _spvonce_0 = 0; _spvonce_0 < 1; _spvonce_0\+\+\)", customMessage: "a tail containing fwidth must not be duplicated into divergent branches");
+        result.Glsl.ShouldNotContain("return;", Case.Sensitive);
         // The gradient stays where it was: after the loop, in convergent flow (which
         // ANGLE does NOT poison — only ops inside the divergent loop are affected).
-        result.Glsl.Should().MatchRegex(@"\}\s*\n\s*ps_oC0 = vec4\(fwidth\(_29\)");
+        result.Glsl.ShouldMatch(@"\}\s*\n\s*ps_oC0 = vec4\(fwidth\(_29\)");
     }
 
     [Fact]
@@ -1865,10 +1854,9 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().MatchRegex(@"for \(int _spvonce_0 = 0; _spvonce_0 < 1; _spvonce_0\+\+\)",
-            "a tail containing an implicit-LOD sample must not be duplicated into divergent branches");
-        result.Glsl.Should().NotContain("return;");
-        result.Glsl.Should().Contain("texture2D(ps_s0", "the sample stays after the loop, convergent");
+        result.Glsl.ShouldMatch(@"for \(int _spvonce_0 = 0; _spvonce_0 < 1; _spvonce_0\+\+\)", customMessage: "a tail containing an implicit-LOD sample must not be duplicated into divergent branches");
+        result.Glsl.ShouldNotContain("return;", Case.Sensitive);
+        result.Glsl.ShouldContain("texture2D(ps_s0", Case.Sensitive, "the sample stays after the loop, convergent");
     }
 
     [Fact]
@@ -1911,14 +1899,13 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().NotContain("while(false)");
-        result.Glsl.Should().NotContain("_spvonce_", "the main wrapper must unwrap, not lower");
+        result.Glsl.ShouldNotContain("while(false)", Case.Sensitive);
+        result.Glsl.ShouldNotContain("_spvonce_", Case.Sensitive, "the main wrapper must unwrap, not lower");
         // The genuine inner loop and its own break are untouched.
-        result.Glsl.Should().Contain("for (int i = 0; i < 8; i++)");
-        result.Glsl.Should().MatchRegex(@"if \(acc > 4\.0\)\s*\{\s*break;\s*\}",
-            "the inner for-loop's break binds to the inner loop and must be preserved");
+        result.Glsl.ShouldContain("for (int i = 0; i < 8; i++)", Case.Sensitive);
+        result.Glsl.ShouldMatch(@"if \(acc > 4\.0\)\s*\{\s*break;\s*\}", customMessage: "the inner for-loop's break binds to the inner loop and must be preserved");
         // The wrapper-level breaks became tail + return.
-        result.Glsl.Should().Contain("{ ps_oC0 = vec4(_v); return; }");
+        result.Glsl.ShouldContain("{ ps_oC0 = vec4(_v); return; }", Case.Sensitive);
     }
 
     [Fact]
@@ -1944,10 +1931,9 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().NotContain("while(false)");
-        result.Glsl.Should().NotContain("_spvonce_");
-        result.Glsl.Should().Contain("{ _w = _v * 2.0; ps_oC0 = vec4(_w); return; }",
-            "ALL tail statements are duplicated, in order, before the return");
+        result.Glsl.ShouldNotContain("while(false)", Case.Sensitive);
+        result.Glsl.ShouldNotContain("_spvonce_", Case.Sensitive);
+        result.Glsl.ShouldContain("{ _w = _v * 2.0; ps_oC0 = vec4(_w); return; }", Case.Sensitive, "ALL tail statements are duplicated, in order, before the return");
     }
 
     [Fact]
@@ -1978,9 +1964,9 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().NotContain("while(false)");
-        result.Glsl.Should().MatchRegex(@"for \(int _spvonce_0 = 0; _spvonce_0 < 1; _spvonce_0\+\+\)");
-        result.Glsl.Should().Contain("continue;", "the fallback keeps the continue's exit semantics");
+        result.Glsl.ShouldNotContain("while(false)", Case.Sensitive);
+        result.Glsl.ShouldMatch(@"for \(int _spvonce_0 = 0; _spvonce_0 < 1; _spvonce_0\+\+\)");
+        result.Glsl.ShouldContain("continue;", Case.Sensitive, "the fallback keeps the continue's exit semantics");
     }
 
     [Fact]
@@ -2014,10 +2000,9 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().NotContain("while(false)");
-        result.Glsl.Should().MatchRegex(@"for \(int _spvonce_0 = 0; _spvonce_0 < 1; _spvonce_0\+\+\)");
-        result.Glsl.Should().NotContain("return;",
-            "no return may be synthesized for a loop that is not main's own wrapper");
+        result.Glsl.ShouldNotContain("while(false)", Case.Sensitive);
+        result.Glsl.ShouldMatch(@"for \(int _spvonce_0 = 0; _spvonce_0 < 1; _spvonce_0\+\+\)");
+        result.Glsl.ShouldNotContain("return;", Case.Sensitive, "no return may be synthesized for a loop that is not main's own wrapper");
     }
 
     [Fact]
@@ -2046,10 +2031,10 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().NotContain("while(false)");
-        result.Glsl.Should().NotContain("_spvonce_");
-        result.Glsl.Should().Contain("discard;", "discard is stage-terminating and needs no rewrite");
-        result.Glsl.Should().Contain("{ ps_oC0 = vec4(_v); return; }");
+        result.Glsl.ShouldNotContain("while(false)", Case.Sensitive);
+        result.Glsl.ShouldNotContain("_spvonce_", Case.Sensitive);
+        result.Glsl.ShouldContain("discard;", Case.Sensitive, "discard is stage-terminating and needs no rewrite");
+        result.Glsl.ShouldContain("{ ps_oC0 = vec4(_v); return; }", Case.Sensitive);
     }
 
     [Fact]
@@ -2077,8 +2062,8 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().Contain("while(_i < 4)", "a genuine multi-iteration do-while is preserved");
-        result.Glsl.Should().NotContain("_spvonce_", "no one-shot lowering should fire on a real loop");
+        result.Glsl.ShouldContain("while(_i < 4)", Case.Sensitive, "a genuine multi-iteration do-while is preserved");
+        result.Glsl.ShouldNotContain("_spvonce_", Case.Sensitive, "no one-shot lowering should fire on a real loop");
     }
 
     // ---- pow(x, 2.0) → multiply strength reduction (issue #127). ----
@@ -2109,13 +2094,12 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().NotMatchRegex(@"pow\([^,()]*, 2\.0\)",
-            because: "pow with a possibly-negative base is undefined in GLSL — it must become a multiply");
-        result.Glsl.Should().Contain("((_1286) * (_1286))");
-        result.Glsl.Should().Contain("((_1293) * (_1293))");
+        result.Glsl.ShouldNotMatch(@"pow\([^,()]*, 2\.0\)", customMessage: "pow with a possibly-negative base is undefined in GLSL — it must become a multiply");
+        result.Glsl.ShouldContain("((_1286) * (_1286))", Case.Sensitive);
+        result.Glsl.ShouldContain("((_1293) * (_1293))", Case.Sensitive);
 
         // Non-2.0 exponents keep their (abs-guarded) pow — only squaring is reduced.
-        result.Glsl.Should().Contain("pow(abs(_1286), 2.400000095367431640625)");
+        result.Glsl.ShouldContain("pow(abs(_1286), 2.400000095367431640625)", Case.Sensitive);
     }
 
     [Fact]
@@ -2135,9 +2119,9 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().NotContain("2.0)", "both squares must be reduced to multiplies");
-        result.Glsl.Should().Contain("((vTexCoord0.x) * (vTexCoord0.x))");
-        result.Glsl.Should().Contain("((-vTexCoord0.y) * (-vTexCoord0.y))");
+        result.Glsl.ShouldNotContain("2.0)", Case.Sensitive, "both squares must be reduced to multiplies");
+        result.Glsl.ShouldContain("((vTexCoord0.x) * (vTexCoord0.x))", Case.Sensitive);
+        result.Glsl.ShouldContain("((-vTexCoord0.y) * (-vTexCoord0.y))", Case.Sensitive);
     }
 
     [Fact]
@@ -2160,10 +2144,8 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().Contain("pow(vTexCoord0.x + 0.25, 2.0)",
-            because: "a compound base is not a simple operand — duplication could change cost/semantics");
-        result.Glsl.Should().Contain("pow(fract(vTexCoord0.y), 2.0)",
-            because: "a call base is never duplicated");
+        result.Glsl.ShouldContain("pow(vTexCoord0.x + 0.25, 2.0)", Case.Sensitive, "a compound base is not a simple operand — duplication could change cost/semantics");
+        result.Glsl.ShouldContain("pow(fract(vTexCoord0.y), 2.0)", Case.Sensitive, "a call base is never duplicated");
     }
 
     // ---- 1.0 / (a / b) → b / a reciprocal-of-quotient fold (issue #127). ----
@@ -2191,10 +2173,9 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().NotContain("1.0 / (",
-            because: "the reciprocal-of-quotient must fold to a single division");
-        result.Glsl.Should().Contain("((6.283185482025146484375 * length(vTexCoord3.xy)) / (vTexCoord5.y))");
-        result.Glsl.Should().Contain("((length(vTexCoord3.zw)) / (vTexCoord5.y))");
+        result.Glsl.ShouldNotContain("1.0 / (", Case.Sensitive, "the reciprocal-of-quotient must fold to a single division");
+        result.Glsl.ShouldContain("((6.283185482025146484375 * length(vTexCoord3.xy)) / (vTexCoord5.y))", Case.Sensitive);
+        result.Glsl.ShouldContain("((length(vTexCoord3.zw)) / (vTexCoord5.y))", Case.Sensitive);
     }
 
     [Fact]
@@ -2219,14 +2200,10 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().Contain("1.0 / (vTexCoord5.x / vTexCoord5.y * vTexCoord5.z)",
-            because: "the trailing * makes the multiply, not the division, the group's root");
-        result.Glsl.Should().Contain("1.0 / (vTexCoord5.x + vTexCoord5.y / vTexCoord5.z)",
-            because: "a top-level additive operator means the division is not the root");
-        result.Glsl.Should().Contain("* 1.0 / (vTexCoord5.x / vTexCoord5.y)",
-            because: "here 1.0 is the right operand of a multiply, not the start of its term");
-        result.Glsl.Should().Contain("21.0 / (vTexCoord5.x / vTexCoord5.y)",
-            because: "21.0 is not the literal 1.0");
+        result.Glsl.ShouldContain("1.0 / (vTexCoord5.x / vTexCoord5.y * vTexCoord5.z)", Case.Sensitive, "the trailing * makes the multiply, not the division, the group's root");
+        result.Glsl.ShouldContain("1.0 / (vTexCoord5.x + vTexCoord5.y / vTexCoord5.z)", Case.Sensitive, "a top-level additive operator means the division is not the root");
+        result.Glsl.ShouldContain("* 1.0 / (vTexCoord5.x / vTexCoord5.y)", Case.Sensitive, "here 1.0 is the right operand of a multiply, not the start of its term");
+        result.Glsl.ShouldContain("21.0 / (vTexCoord5.x / vTexCoord5.y)", Case.Sensitive, "21.0 is not the literal 1.0");
     }
 
     [Fact]
@@ -2248,7 +2225,7 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().Contain("((vTexCoord5.z) / (vTexCoord5.x * vTexCoord5.y))");
+        result.Glsl.ShouldContain("((vTexCoord5.z) / (vTexCoord5.x * vTexCoord5.y))", Case.Sensitive);
     }
 
     // ---- Issue #140: a round() nested inside another round()'s ARGUMENT. Rule 8
@@ -2274,12 +2251,12 @@ void main()
 
         System.Text.RegularExpressions.Regex
             .IsMatch(result.Glsl, @"\bround(Even)?\s*\(")
-            .Should().BeFalse("the INNER nested round must be lowered too (issue #140)");
-        result.Glsl.Should().Contain("floor((floor((vTexCoord0.x * 7.0) + 0.5) * 0.5) + 0.5)");
+            .ShouldBeFalse("the INNER nested round must be lowered too (issue #140)");
+        result.Glsl.ShouldContain("floor((floor((vTexCoord0.x * 7.0) + 0.5) * 0.5) + 0.5)", Case.Sensitive);
 
         int open  = result.Glsl.Count(c => c == '(');
         int close = result.Glsl.Count(c => c == ')');
-        open.Should().Be(close, "the nested lowering must keep parentheses balanced");
+        open.ShouldBe(close, customMessage: "the nested lowering must keep parentheses balanced");
     }
 
     // ---- Issue #137: the stage-agnostic body lowerings (Rules 8, 9b, 10, 11) must
@@ -2318,12 +2295,12 @@ void main()
 
         System.Text.RegularExpressions.Regex
             .IsMatch(result.Glsl, @"\bround(Even)?\s*\(")
-            .Should().BeFalse("Rule 8 must run on the vertex stage too (issue #137)");
-        result.Glsl.Should().Contain("floor((gl_Position.xy * 8.0) + 0.5)");
+            .ShouldBeFalse("Rule 8 must run on the vertex stage too (issue #137)");
+        result.Glsl.ShouldContain("floor((gl_Position.xy * 8.0) + 0.5)", Case.Sensitive);
 
         // The posFixup contract is untouched by the VS lowering.
-        result.Glsl.Should().Contain("uniform vec4 posFixup;");
-        result.Glsl.Should().Contain("gl_Position.y = gl_Position.y * posFixup.y;");
+        result.Glsl.ShouldContain("uniform vec4 posFixup;", Case.Sensitive);
+        result.Glsl.ShouldContain("gl_Position.y = gl_Position.y * posFixup.y;", Case.Sensitive);
     }
 
     [Fact]
@@ -2358,13 +2335,12 @@ void main()
         // rewritten into the vs_uniforms_vec4 register file, so match on shape not names).
         System.Text.RegularExpressions.Regex
             .IsMatch(result.Glsl, @"\bpow\s*\([^,()]*,\s*2\.0\s*\)")
-            .Should().BeFalse("Rule 10 must run on the vertex stage too (issue #137)");
-        result.Glsl.Should().Contain("((gl_Position.w) * (gl_Position.w))");
+            .ShouldBeFalse("Rule 10 must run on the vertex stage too (issue #137)");
+        result.Glsl.ShouldContain("((gl_Position.w) * (gl_Position.w))", Case.Sensitive);
 
         // Rule 11: 1.0 / (a / b) folds to b / a.
-        result.Glsl.Should().NotContain("1.0 / (",
-            "Rule 11 must run on the vertex stage too (issue #137)");
-        result.Glsl.Should().MatchRegex(@"float inv = \(\(falloff\) / \(.+\)\);");
+        result.Glsl.ShouldNotContain("1.0 / (", Case.Sensitive, "Rule 11 must run on the vertex stage too (issue #137)");
+        result.Glsl.ShouldMatch(@"float inv = \(\(falloff\) / \(.+\)\);");
     }
 
     [Fact]
@@ -2410,20 +2386,20 @@ void main()
 
         System.Text.RegularExpressions.Regex
             .IsMatch(result.Glsl, @"\bdo\s*\{")
-            .Should().BeFalse("a raw do-while fails to load on WebGL1/KNI Reach (issues #107/#137)");
-        result.Glsl.Should().NotContain("while(false)");
-        result.Glsl.Should().NotContain("while (false)");
+            .ShouldBeFalse("a raw do-while fails to load on WebGL1/KNI Reach (issues #107/#137)");
+        result.Glsl.ShouldNotContain("while(false)", Case.Sensitive);
+        result.Glsl.ShouldNotContain("while (false)", Case.Sensitive);
         System.Text.RegularExpressions.Regex
             .IsMatch(result.Glsl, @"for \(int \w+ = 0; \w+ < 1; \w+\+\+\)")
-            .Should().BeTrue("Rule 9b lowers the one-shot wrapper to the Appendix-A for form");
+            .ShouldBeTrue("Rule 9b lowers the one-shot wrapper to the Appendix-A for form");
 
         // The posFixup lines must sit AFTER the lowered loop, on the single
         // fall-through path — never inside it, never skippable by an early return.
         int loopIndex   = result.Glsl.IndexOf("for (int", StringComparison.Ordinal);
         int fixupIndex  = result.Glsl.IndexOf("gl_Position.y = gl_Position.y * posFixup.y;", StringComparison.Ordinal);
-        loopIndex.Should().BeGreaterThan(0);
-        fixupIndex.Should().BeGreaterThan(loopIndex, "the posFixup tail must run after the lowered loop");
-        result.Glsl.Should().NotContain("\n    return;", "Rule 9a's early-return unwrap must stay pixel-only in a VS");
+        loopIndex.ShouldBeGreaterThan(0);
+        fixupIndex.ShouldBeGreaterThan(loopIndex, customMessage: "the posFixup tail must run after the lowered loop");
+        result.Glsl.ShouldNotContain("\n    return;", Case.Sensitive, "Rule 9a's early-return unwrap must stay pixel-only in a VS");
     }
 
     // ---- Issue #139: fragment shaders using derivative builtins must ship the
@@ -2448,8 +2424,7 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().StartWith("#extension GL_OES_standard_derivatives : enable\n",
-            "mgfxc prepends the derivatives extension as the FIRST line (issue #139), and " +
+        result.Glsl.ShouldStartWith("#extension GL_OES_standard_derivatives : enable\n", customMessage: "mgfxc prepends the derivatives extension as the FIRST line (issue #139), and " +
             "fwidth counts too — SPIRV-Cross emits it directly");
     }
 
@@ -2458,8 +2433,7 @@ void main()
     {
         var result = MonoGameGlslRewriter.Rewrite(PixelatedRoundEven, ShaderStage.Pixel);
 
-        result.Glsl.Should().NotContain("GL_OES_standard_derivatives",
-            "the header is emitted only when a derivative builtin is present (mgfxc parity)");
+        result.Glsl.ShouldNotContain("GL_OES_standard_derivatives", Case.Sensitive, "the header is emitted only when a derivative builtin is present (mgfxc parity)");
     }
 
     // ---- Issue #138 (Rule 12), shape 2 — GaussianBlur-style: a constant-bounded for
@@ -2497,10 +2471,8 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().MatchRegex(@"for\s*\(int _40 = 0;\s*_40\s*<\s*15\s*;\s*_40\+\+\s*\)",
-            "the increment hoists into the for-header, making it Appendix-A-legal");
-        result.Glsl.Should().NotContain("_40++;\n        continue;",
-            "the trailing increment+continue pair is removed once hoisted");
+        result.Glsl.ShouldMatch(@"for\s*\(int _40 = 0;\s*_40\s*<\s*15\s*;\s*_40\+\+\s*\)", customMessage: "the increment hoists into the for-header, making it Appendix-A-legal");
+        result.Glsl.ShouldNotContain("_40++;\n        continue;", Case.Sensitive, "the trailing increment+continue pair is removed once hoisted");
     }
 
     [Fact]
@@ -2526,9 +2498,8 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().MatchRegex(@"for\s*\(int _12 = 0;\s*_12\s*<\s*8\s*;\s*_12\s*\+=\s*2\s*\)",
-            "a `+= k` body increment hoists into the header the same way `++` does");
-        result.Glsl.Should().NotContain("continue;");
+        result.Glsl.ShouldMatch(@"for\s*\(int _12 = 0;\s*_12\s*<\s*8\s*;\s*_12\s*\+=\s*2\s*\)", customMessage: "a `+= k` body increment hoists into the header the same way `++` does");
+        result.Glsl.ShouldNotContain("continue;", Case.Sensitive);
     }
 
     [Fact]
@@ -2562,10 +2533,8 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().Contain("_40++;\n        continue;",
-            "a second write to the index makes hoisting unsafe, so the shape is left untouched");
-        result.Glsl.Should().MatchRegex(@"for\s*\(int _40 = 0;\s*_40\s*<\s*15\s*;\s*\)",
-            "the header keeps its empty increment clause");
+        result.Glsl.ShouldContain("_40++;\n        continue;", Case.Sensitive, "a second write to the index makes hoisting unsafe, so the shape is left untouched");
+        result.Glsl.ShouldMatch(@"for\s*\(int _40 = 0;\s*_40\s*<\s*15\s*;\s*\)", customMessage: "the header keeps its empty increment clause");
     }
 
     [Fact]
@@ -2598,8 +2567,7 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        result.Glsl.Should().Contain("_40++;\n        continue;",
-            "a second continue makes hoisting unsafe, so the shape is left untouched");
+        result.Glsl.ShouldContain("_40++;\n        continue;", Case.Sensitive, "a second continue makes hoisting unsafe, so the shape is left untouched");
     }
 
     [Fact]
@@ -2633,8 +2601,7 @@ void main()
 """;
         var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Vertex);
 
-        result.Glsl.Should().MatchRegex(@"for\s*\(int _7 = 0;\s*_7\s*<\s*4\s*;\s*_7\+\+\s*\)",
-            "Rule 12 must run on the vertex stage too");
+        result.Glsl.ShouldMatch(@"for\s*\(int _7 = 0;\s*_7\s*<\s*4\s*;\s*_7\+\+\s*\)", customMessage: "Rule 12 must run on the vertex stage too");
     }
 
     // ---- Issue #138 (Rule 13), shape 1 — Apos.Shapes' Newton-iteration style:
@@ -2688,15 +2655,11 @@ void main()
 """;
         var rewritten = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        rewritten.Glsl.Should().NotContain("for (;;)", "the header-less loop must be given a real bound");
-        rewritten.Glsl.Should().NotContain("int _564 = 0;\n    for",
-            "the index declaration moves INTO the for-header, not stay as a separate statement");
-        rewritten.Glsl.Should().MatchRegex(@"for\s*\(int _564 = 0;\s*_564\s*<=\s*12\s*;\s*_564\+\+\s*\)",
-            "12 is _555's true maximum (the ternary's larger literal); the bound is <= so the terminal else stays reachable at the full trip count (issue #160)");
-        rewritten.Glsl.Should().Contain("if (_564 < _555)",
-            "the original runtime guard against the REAL (possibly smaller) bound must survive inside the loop");
-        rewritten.Glsl.Should().NotContain("_564++;\n            continue;",
-            "the trailing increment+continue is hoisted into the header, not left duplicated in the body");
+        rewritten.Glsl.ShouldNotContain("for (;;)", Case.Sensitive, "the header-less loop must be given a real bound");
+        rewritten.Glsl.ShouldNotContain("int _564 = 0;\n    for", Case.Sensitive, "the index declaration moves INTO the for-header, not stay as a separate statement");
+        rewritten.Glsl.ShouldMatch(@"for\s*\(int _564 = 0;\s*_564\s*<=\s*12\s*;\s*_564\+\+\s*\)", customMessage: "12 is _555's true maximum (the ternary's larger literal); the bound is <= so the terminal else stays reachable at the full trip count (issue #160)");
+        rewritten.Glsl.ShouldContain("if (_564 < _555)", Case.Sensitive, "the original runtime guard against the REAL (possibly smaller) bound must survive inside the loop");
+        rewritten.Glsl.ShouldNotContain("_564++;\n            continue;", Case.Sensitive, "the trailing increment+continue is hoisted into the header, not left duplicated in the body");
     }
 
     [Fact]
@@ -2751,15 +2714,13 @@ void main()
 """;
         var rewritten = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        rewritten.Glsl.Should().NotContain("for (;;)", "the header-less loop must be given a real bound");
+        rewritten.Glsl.ShouldNotContain("for (;;)", Case.Sensitive, "the header-less loop must be given a real bound");
         // The finalizer `else { _604 = _562; }` must still be reachable at the full trip
         // count, i.e. _564 must be able to equal 12 inside the loop. `_564 < 12` drops it;
         // `_564 <= 12` (or `_564 < 13`) keeps it.
-        rewritten.Glsl.Should().MatchRegex(
-            @"for\s*\(int _564 = 0;\s*_564\s*(<=\s*12|<\s*13)\s*;\s*_564\+\+\s*\)",
-            "the terminal else-branch finalizer must remain reachable when the loop runs its full ceiling");
-        rewritten.Glsl.Should().Contain("_604 = _562;",
-            "the else-branch finalizer that assigns the phi output must survive the rewrite");
+        rewritten.Glsl.ShouldMatch(
+            @"for\s*\(int _564 = 0;\s*_564\s*(<=\s*12|<\s*13)\s*;\s*_564\+\+\s*\)", customMessage: "the terminal else-branch finalizer must remain reachable when the loop runs its full ceiling");
+        rewritten.Glsl.ShouldContain("_604 = _562;", Case.Sensitive, "the else-branch finalizer that assigns the phi output must survive the rewrite");
     }
 
     [Fact]
@@ -2795,8 +2756,7 @@ void main()
 """;
         var rewritten = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        rewritten.Glsl.Should().MatchRegex(@"for\s*\(int _31 = 0;\s*_31\s*<=\s*8\s*;\s*_31\+\+\s*\)",
-            "a plain literal bound (no ternary) hoists the same way; <= keeps the terminal else reachable (issue #160)");
+        rewritten.Glsl.ShouldMatch(@"for\s*\(int _31 = 0;\s*_31\s*<=\s*8\s*;\s*_31\+\+\s*\)", customMessage: "a plain literal bound (no ternary) hoists the same way; <= keeps the terminal else reachable (issue #160)");
     }
 
     [Fact]
@@ -2836,13 +2796,10 @@ void main()
 """;
         var rewritten = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        rewritten.Glsl.Should().NotContain("for (;;)", "the header-less loop must be given a real bound");
-        rewritten.Glsl.Should().MatchRegex(@"for\s*\(int _31 = 0;\s*_31\s*(<=\s*9|<\s*10)\s*;\s*_31\+\+\s*\)",
-            "the inclusive comparison runs its else at _31 == 9, so the header cap must admit 9");
-        rewritten.Glsl.Should().Contain("if (_31 <= _30)",
-            "the original runtime guard survives unchanged inside the loop");
-        rewritten.Glsl.Should().Contain("_604 = 1.0;",
-            "the else-branch finalizer must survive and stay reachable");
+        rewritten.Glsl.ShouldNotContain("for (;;)", Case.Sensitive, "the header-less loop must be given a real bound");
+        rewritten.Glsl.ShouldMatch(@"for\s*\(int _31 = 0;\s*_31\s*(<=\s*9|<\s*10)\s*;\s*_31\+\+\s*\)", customMessage: "the inclusive comparison runs its else at _31 == 9, so the header cap must admit 9");
+        rewritten.Glsl.ShouldContain("if (_31 <= _30)", Case.Sensitive, "the original runtime guard survives unchanged inside the loop");
+        rewritten.Glsl.ShouldContain("_604 = 1.0;", Case.Sensitive, "the else-branch finalizer must survive and stay reachable");
     }
 
     [Fact]
@@ -2881,8 +2838,7 @@ void main()
 """;
         var rewritten = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        rewritten.Glsl.Should().Contain("for (;;)",
-            "a descending walk has no provable ascending header form; declining keeps SD0402's honest warning");
+        rewritten.Glsl.ShouldContain("for (;;)", Case.Sensitive, "a descending walk has no provable ascending header form; declining keeps SD0402's honest warning");
     }
 
     [Fact]
@@ -2922,8 +2878,7 @@ void main()
 """;
         var rewritten = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        rewritten.Glsl.Should().Contain("for (;;)",
-            "a non-unit step can overshoot the header cap and skip the terminal else; declining is the only safe choice");
+        rewritten.Glsl.ShouldContain("for (;;)", Case.Sensitive, "a non-unit step can overshoot the header cap and skip the terminal else; declining is the only safe choice");
     }
 
     [Fact]
@@ -2963,8 +2918,7 @@ void main()
 """;
         var rewritten = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        rewritten.Glsl.Should().Contain("for (;;)",
-            "the original ran the finalizer else once; a header that admits zero iterations would erase it");
+        rewritten.Glsl.ShouldContain("for (;;)", Case.Sensitive, "the original ran the finalizer else once; a header that admits zero iterations would erase it");
     }
 
     [Fact]
@@ -3004,10 +2958,8 @@ void main()
 """;
         var rewritten = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        rewritten.Glsl.Should().Contain("for (;;)",
-            "moving the declaration into the header would leave the post-loop read of _31 undeclared");
-        rewritten.Glsl.Should().Contain("int _31 = 0;",
-            "the standalone declaration must survive so the post-loop read stays legal");
+        rewritten.Glsl.ShouldContain("for (;;)", Case.Sensitive, "moving the declaration into the header would leave the post-loop read of _31 undeclared");
+        rewritten.Glsl.ShouldContain("int _31 = 0;", Case.Sensitive, "the standalone declaration must survive so the post-loop read stays legal");
     }
 
     [Fact]
@@ -3047,8 +2999,7 @@ void main()
 """;
         var rewritten = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        rewritten.Glsl.Should().Contain("for (;;)",
-            "a non-literal bound has no provable ceiling, so the loop must be left untouched");
+        rewritten.Glsl.ShouldContain("for (;;)", Case.Sensitive, "a non-literal bound has no provable ceiling, so the loop must be left untouched");
     }
 
     [Fact]
@@ -3088,8 +3039,7 @@ void main()
 """;
         var rewritten = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        rewritten.Glsl.Should().Contain("for (;;)",
-            "a second write to the index makes hoisting unsafe, so the shape is left untouched");
+        rewritten.Glsl.ShouldContain("for (;;)", Case.Sensitive, "a second write to the index makes hoisting unsafe, so the shape is left untouched");
     }
 
     [Fact]
@@ -3126,7 +3076,6 @@ void main()
 """;
         var rewritten = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
 
-        rewritten.Glsl.Should().Contain("for (;;)",
-            "the false branch must end in break for this rewrite to be provably safe");
+        rewritten.Glsl.ShouldContain("for (;;)", Case.Sensitive, "the false branch must end in break for this rewrite to be provably safe");
     }
 }

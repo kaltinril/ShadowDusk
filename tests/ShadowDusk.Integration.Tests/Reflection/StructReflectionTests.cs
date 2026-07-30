@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Reflection;
 using ShadowDusk.HLSL.Dxc;
@@ -45,8 +45,7 @@ public sealed class StructReflectionTests
             Platform       = PlatformTarget.DirectX,
         };
         var result = await compiler.CompileAsync(request);
-        result.IsSuccess.Should().BeTrue(
-            because: result.IsFailure ? result.Error.FxcFormattedMessage : "compilation must succeed");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.FxcFormattedMessage : "compilation must succeed");
         return result.Value.Bytes;
     }
 
@@ -57,7 +56,7 @@ public sealed class StructReflectionTests
 
         var result = new DxilReflectionExtractor().Extract(dxilBlob);
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
     }
 
     [Fact]
@@ -67,8 +66,8 @@ public sealed class StructReflectionTests
 
         var reflected = new DxilReflectionExtractor().Extract(dxilBlob).Value;
 
-        reflected.ConstantBuffers.Should().ContainSingle();
-        reflected.ConstantBuffers[0].Name.Should().Be("LightParams");
+        reflected.ConstantBuffers.ShouldHaveSingleItem();
+        reflected.ConstantBuffers[0].Name.ShouldBe("LightParams");
     }
 
     [Fact]
@@ -79,7 +78,7 @@ public sealed class StructReflectionTests
         var cbuffer = new DxilReflectionExtractor().Extract(dxilBlob).Value.ConstantBuffers[0];
         var light = cbuffer.Variables.Single(v => v.Name == "Light");
 
-        light.ParameterClass.Should().Be(EffectParameterClass.Struct);
+        light.ParameterClass.ShouldBe(EffectParameterClass.Struct);
     }
 
     [Fact]
@@ -90,7 +89,7 @@ public sealed class StructReflectionTests
         var cbuffer = new DxilReflectionExtractor().Extract(dxilBlob).Value.ConstantBuffers[0];
         var light = cbuffer.Variables.Single(v => v.Name == "Light");
 
-        light.Members.Should().HaveCount(3);
+        light.Members!.Count().ShouldBe(3);
     }
 
     [Fact]
@@ -102,9 +101,9 @@ public sealed class StructReflectionTests
         var light = cbuffer.Variables.Single(v => v.Name == "Light");
         var dir = light.Members!.Single(m => m.Name == "Dir");
 
-        dir.ParameterClass.Should().Be(EffectParameterClass.Vector);
-        dir.ParameterType.Should().Be(EffectParameterType.Single);
-        dir.Columns.Should().Be(3);
+        dir.ParameterClass.ShouldBe(EffectParameterClass.Vector);
+        dir.ParameterType.ShouldBe(EffectParameterType.Single);
+        dir.Columns.ShouldBe(3);
     }
 
     [Fact]
@@ -116,9 +115,9 @@ public sealed class StructReflectionTests
         var light = cbuffer.Variables.Single(v => v.Name == "Light");
         var color = light.Members!.Single(m => m.Name == "Color");
 
-        color.ParameterClass.Should().Be(EffectParameterClass.Vector);
-        color.ParameterType.Should().Be(EffectParameterType.Single);
-        color.Columns.Should().Be(3);
+        color.ParameterClass.ShouldBe(EffectParameterClass.Vector);
+        color.ParameterType.ShouldBe(EffectParameterType.Single);
+        color.Columns.ShouldBe(3);
     }
 
     [Fact]
@@ -130,7 +129,7 @@ public sealed class StructReflectionTests
         var light = cbuffer.Variables.Single(v => v.Name == "Light");
         var intensity = light.Members!.Single(m => m.Name == "Intensity");
 
-        intensity.ParameterClass.Should().Be(EffectParameterClass.Scalar);
-        intensity.ParameterType.Should().Be(EffectParameterType.Single);
+        intensity.ParameterClass.ShouldBe(EffectParameterClass.Scalar);
+        intensity.ParameterType.ShouldBe(EffectParameterType.Single);
     }
 }

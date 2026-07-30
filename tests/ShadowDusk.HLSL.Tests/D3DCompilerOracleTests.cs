@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core;
 using ShadowDusk.HLSL.D3DCompiler;
 using ShadowDusk.HLSL.Dxc;
@@ -34,10 +34,10 @@ public sealed class D3DCompilerOracleTests
 
         var result = await compiler.CompileAsync(request);
 
-        result.IsFailure.Should().BeTrue(
-            because: "the oracle must refuse ProfileOverride loudly, never silently ignore it");
-        result.Error.Code.Should().Be("SD0210");
-        result.Error.Message.Should().Contain(profile)
-            .And.Contain("vkd3d", because: "the diagnostic must point at the backend that owns SM1–3");
+        result.IsFailure.ShouldBeTrue("the oracle must refuse ProfileOverride loudly, never silently ignore it");
+        result.Error.Code.ShouldBe("SD0210");
+        result.Error.Message.ShouldContain(profile, Case.Sensitive);
+        result.Error.Message.ShouldContain(
+            "vkd3d", Case.Sensitive, "the diagnostic must point at the backend that owns SM1–3");
     }
 }

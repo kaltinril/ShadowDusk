@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Compiler.Internal;
 using ShadowDusk.Core;
@@ -38,10 +38,8 @@ public sealed class ShaderIRBuilderTests
             new CompilerOptions { Target = PlatformTarget.OpenGL },
             cts.Token);
 
-        result.IsFailure.Should().BeTrue(
-            because: "an empty source string contains no techniques and must be rejected");
-        result.Error.Should().NotBeEmpty(
-            because: "at least one diagnostic must be reported when the source is empty");
+        result.IsFailure.ShouldBeTrue("an empty source string contains no techniques and must be rejected");
+        result.Error.ShouldNotBeEmpty("at least one diagnostic must be reported when the source is empty");
     }
 
     // ---------------------------------------------------------------------------
@@ -103,13 +101,11 @@ public sealed class ShaderIRBuilderTests
             new CompilerOptions { Target = PlatformTarget.OpenGL },
             cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
-            because: result.IsFailure
+        result.IsSuccess.ShouldBeTrue(result.IsFailure
                 ? string.Join("; ", result.Error.Select(e => e.FxcFormattedMessage))
                 : "multipass compilation must succeed");
 
-        result.Value.Data.Should().NotBeEmpty(
-            because: "a multipass effect must produce a non-empty output blob");
+        result.Value.Data.ShouldNotBeEmpty("a multipass effect must produce a non-empty output blob");
     }
 
     // ---------------------------------------------------------------------------
@@ -148,23 +144,23 @@ public sealed class ShaderIRBuilderTests
 
         ShaderIR ir = ShaderIRBuilder.Build(blobs, [technique], [], []);
 
-        ir.Shaders.Should().HaveCount(4);
-        ir.Techniques.Should().ContainSingle().Which.Passes.Should().HaveCount(2);
+        ir.Shaders.Count().ShouldBe(4);
+        ir.Techniques.ShouldHaveSingleItem().Passes.Count().ShouldBe(2);
 
         MgfxPassInfo pass0 = ir.Techniques[0].Passes[0];
         MgfxPassInfo pass1 = ir.Techniques[0].Passes[1];
 
-        pass0.VertexShaderIndex.Should().Be(0, because: "shader indices are zero-based");
-        pass0.PixelShaderIndex.Should().Be(1);
-        pass1.VertexShaderIndex.Should().Be(2);
-        pass1.PixelShaderIndex.Should().Be(3);
+        pass0.VertexShaderIndex.ShouldBe(0, customMessage: "shader indices are zero-based");
+        pass0.PixelShaderIndex.ShouldBe(1);
+        pass1.VertexShaderIndex.ShouldBe(2);
+        pass1.PixelShaderIndex.ShouldBe(3);
 
         foreach (MgfxPassInfo pass in ir.Techniques[0].Passes)
         {
-            pass.VertexShaderIndex.Should().BeInRange(0, ir.Shaders.Count - 1);
-            pass.PixelShaderIndex.Should().BeInRange(0, ir.Shaders.Count - 1);
-            ir.Shaders[pass.VertexShaderIndex].Stage.Should().Be(ShaderStage.Vertex);
-            ir.Shaders[pass.PixelShaderIndex].Stage.Should().Be(ShaderStage.Pixel);
+            pass.VertexShaderIndex.ShouldBeInRange(0, ir.Shaders.Count - 1);
+            pass.PixelShaderIndex.ShouldBeInRange(0, ir.Shaders.Count - 1);
+            ir.Shaders[pass.VertexShaderIndex].Stage.ShouldBe(ShaderStage.Vertex);
+            ir.Shaders[pass.PixelShaderIndex].Stage.ShouldBe(ShaderStage.Pixel);
         }
     }
 
@@ -181,10 +177,12 @@ public sealed class ShaderIRBuilderTests
         var act = () => ShaderIRBuilder.Build(
             [Blob(ShaderStage.Vertex), Blob(ShaderStage.Pixel)], [technique], [], []);
 
-        ShaderIR ir = act.Should().NotThrow().Subject;
-        ir.Techniques[0].Annotations.Should().NotBeNull().And.BeEmpty();
-        ir.Techniques[0].Passes[0].Annotations.Should().NotBeNull().And.BeEmpty();
-        ir.Parameters.Should().BeEmpty();
-        ir.ConstantBuffers.Should().BeEmpty();
+        ShaderIR ir = Should.NotThrow(act);
+        ir.Techniques[0].Annotations.ShouldNotBeNull();
+        ir.Techniques[0].Annotations.ShouldBeEmpty();
+        ir.Techniques[0].Passes[0].Annotations.ShouldNotBeNull();
+        ir.Techniques[0].Passes[0].Annotations.ShouldBeEmpty();
+        ir.Parameters.ShouldBeEmpty();
+        ir.ConstantBuffers.ShouldBeEmpty();
     }
 }

@@ -1,7 +1,7 @@
 #nullable enable
 
 using System.Text;
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core;
 using ShadowDusk.HLSL.D3DCompiler;
 using ShadowDusk.HLSL.Dxc;
@@ -46,10 +46,10 @@ public sealed class D3DCompilerShaderCompilerTests
             AllowWarnings  = true,
         });
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Kind.Should().Be(BlobKind.Dxbc);
-        result.Value.Bytes.Length.Should().BeGreaterThan(4);
-        result.Value.Bytes.ToArray().Take(4).Should().Equal(Dxbc4cc);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Kind.ShouldBe(BlobKind.Dxbc);
+        result.Value.Bytes.Length.ShouldBeGreaterThan(4);
+        result.Value.Bytes.ToArray().Take(4).ShouldBe(Dxbc4cc);
     }
 
     [WindowsFact]
@@ -65,9 +65,9 @@ public sealed class D3DCompilerShaderCompilerTests
             Stage          = ShaderStage.Pixel,
         });
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Line.Should().BeGreaterThan(0);
-        result.Error.Message.Should().NotBeNullOrEmpty();
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Line.ShouldBeGreaterThan(0);
+        result.Error.Message.ShouldNotBeNullOrEmpty();
     }
 
     [WindowsFact]
@@ -82,25 +82,22 @@ public sealed class D3DCompilerShaderCompilerTests
             Stage          = ShaderStage.Pixel,
             AllowWarnings  = true,
         });
-        compileResult.IsSuccess.Should().BeTrue();
+        compileResult.IsSuccess.ShouldBeTrue();
 
         var extractor = new DxbcReflectionExtractor();
         var reflectResult = extractor.Extract(compileResult.Value.Bytes);
 
-        reflectResult.IsSuccess.Should().BeTrue();
+        reflectResult.IsSuccess.ShouldBeTrue();
         var effect = reflectResult.Value;
 
-        effect.Textures.Should().ContainSingle()
-            .Which.Name.Should().Be("SpriteTexture");
-        effect.Samplers.Should().ContainSingle()
-            .Which.Name.Should().Be("SpriteTextureSampler");
+        effect.Textures.ShouldHaveSingleItem().Name.ShouldBe("SpriteTexture");
+        effect.Samplers.ShouldHaveSingleItem().Name.ShouldBe("SpriteTextureSampler");
 
         // TintColor lives in the implicit $Globals cbuffer (size 16, one float4).
-        effect.ConstantBuffers.Should().ContainSingle();
+        effect.ConstantBuffers.ShouldHaveSingleItem();
         var cb = effect.ConstantBuffers[0];
-        cb.SizeBytes.Should().Be(16);
-        cb.Variables.Should().ContainSingle()
-            .Which.Name.Should().Be("TintColor");
+        cb.SizeBytes.ShouldBe(16);
+        cb.Variables.ShouldHaveSingleItem().Name.ShouldBe("TintColor");
     }
 
     [WindowsFact]
@@ -115,15 +112,15 @@ public sealed class D3DCompilerShaderCompilerTests
             Stage          = ShaderStage.Pixel,
             AllowWarnings  = true,
         });
-        compileResult.IsSuccess.Should().BeTrue();
+        compileResult.IsSuccess.ShouldBeTrue();
 
         var pipeline = new DxbcReflectionPipeline(new DxbcReflectionExtractor());
         var result = await pipeline.ReflectAsync(compileResult.Value.Bytes, fxAnnotations: null);
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         // mgfxc folds the sampler into the texture: parameters are TintColor +
         // SpriteTexture only — NO standalone SpriteTextureSampler parameter.
         result.Value.Parameters.Select(p => p.Name)
-            .Should().BeEquivalentTo(new[] { "TintColor", "SpriteTexture" });
+            .ShouldBe(new[] { "TintColor", "SpriteTexture" }, ignoreOrder: true);
     }
 }

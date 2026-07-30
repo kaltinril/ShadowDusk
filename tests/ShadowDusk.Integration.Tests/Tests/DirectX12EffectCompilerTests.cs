@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using Xunit;
@@ -57,26 +57,26 @@ public sealed class DirectX12EffectCompilerTests
             SourceFileName = "DirectX12Parameterized.fx",
         }, cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
+        result.IsSuccess.ShouldBeTrue(
             result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
 
         var reader = MgfxBlobReader.Parse(result.Value.Data);
-        reader.ProfileId.Should().Be(2, "MgfxProfile.DirectX12 is 2, matching real MonoGame 3.8.5's DirectX12ShaderProfile");
-        reader.MgfxVersion.Should().Be(11, "DirectX12 always writes the v11 shader-record shape");
+        reader.ProfileId.ShouldBe((byte)(2), customMessage: "MgfxProfile.DirectX12 is 2, matching real MonoGame 3.8.5's DirectX12ShaderProfile");
+        reader.MgfxVersion.ShouldBe((byte)(11), customMessage: "DirectX12 always writes the v11 shader-record shape");
 
-        reader.Shaders.Should().HaveCount(2, "one vertex + one pixel shader");
+        reader.Shaders.Count().ShouldBe(2, customMessage: "one vertex + one pixel shader");
         foreach (var shader in reader.Shaders)
         {
             var dx12 = DirectX12ShaderCodeReader.Parse(shader.Bytecode);
-            dx12.DxilMagicOk.Should().BeTrue($"shader #{shader.Index} (isVertex={shader.IsVertex}) must wrap a DXBC-container-shaped DXIL blob");
+            dx12.DxilMagicOk.ShouldBeTrue($"shader #{shader.Index} (isVertex={shader.IsVertex}) must wrap a DXBC-container-shaped DXIL blob");
         }
 
-        reader.ConstantBuffers.Should().NotBeEmpty("Tint must be reflected into a constant buffer");
-        reader.Samplers.Should().NotBeEmpty("SpriteTexture/SpriteTextureSampler must be reflected");
-        reader.ParameterNames.Should().Contain("Tint");
+        reader.ConstantBuffers.ShouldNotBeEmpty("Tint must be reflected into a constant buffer");
+        reader.Samplers.ShouldNotBeEmpty("SpriteTexture/SpriteTextureSampler must be reflected");
+        reader.ParameterNames.ShouldContain("Tint");
 
         var pixelShader = reader.Shaders.Single(s => !s.IsVertex);
-        pixelShader.ConstantBufferIndices.Should().NotBeEmpty("the pixel shader stage must bind its constant buffer");
+        pixelShader.ConstantBufferIndices.ShouldNotBeEmpty("the pixel shader stage must bind its constant buffer");
     }
 
     // A vertex shader that reads a GPU-generated system value alongside real attributes.
@@ -116,16 +116,15 @@ public sealed class DirectX12EffectCompilerTests
             SourceFileName = "DirectX12SystemValue.fx",
         }, cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
+        result.IsSuccess.ShouldBeTrue(
             result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
 
         var reader = MgfxBlobReader.Parse(result.Value.Data);
         var vertexShader = reader.Shaders.Single(s => s.IsVertex);
 
-        vertexShader.Attributes.Should().HaveCount(2,
-            "only POSITION0 and TEXCOORD0 come from the vertex buffer; SV_VertexID is GPU-generated");
+        vertexShader.Attributes.Count().ShouldBe(2, customMessage: "only POSITION0 and TEXCOORD0 come from the vertex buffer; SV_VertexID is GPU-generated");
         vertexShader.Attributes.Select(a => (a.Usage, a.Index))
-            .Should().BeEquivalentTo(new[] { ((byte)0, (byte)0), ((byte)2, (byte)0) });
+            .ShouldBe(new[] { ((byte)0, (byte)0), ((byte)2, (byte)0) }, ignoreOrder: true);
     }
 
     [Fact]
@@ -144,19 +143,19 @@ public sealed class DirectX12EffectCompilerTests
             SourceFileName = "DirectX12Signing.fx",
         }, cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
+        result.IsSuccess.ShouldBeTrue(
             result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
 
         bool warned = result.Value.Warnings.Any(w => w.Code == "SD0214");
 
         if (OperatingSystem.IsWindows())
         {
-            warned.Should().BeFalse(
+            warned.ShouldBeFalse(
                 "dxil.dll signs the blob on Windows, so warning here would be a false positive");
         }
         else
         {
-            warned.Should().BeTrue(
+            warned.ShouldBeTrue(
                 "dxil.dll signing is Windows-only, so this DXIL is unsigned and retail D3D12 "
                 + "rejects it at pipeline-state creation — shipping that silently is the defect");
         }

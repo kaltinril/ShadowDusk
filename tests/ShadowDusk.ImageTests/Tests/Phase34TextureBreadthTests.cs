@@ -1,7 +1,7 @@
 #nullable enable
 
 using System.Text;
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
@@ -57,7 +57,7 @@ public sealed class Phase34TextureBreadthTests
     private static async Task<byte[]> CompileFixtureAsync(string relativeFxPath, CancellationToken ct)
     {
         string fxPath = Path.Combine(AppContext.BaseDirectory, "fixtures", "shaders", relativeFxPath);
-        File.Exists(fxPath).Should().BeTrue($".fx fixture must exist at {fxPath}");
+        File.Exists(fxPath).ShouldBeTrue($".fx fixture must exist at {fxPath}");
         string source = await File.ReadAllTextAsync(fxPath, ct);
 
         var options = new CompilerOptions
@@ -67,8 +67,7 @@ public sealed class Phase34TextureBreadthTests
             SourceFileName  = fxPath,
         };
         var result = await new EffectCompiler().CompileAsync(source, options, ct);
-        result.IsSuccess.Should().BeTrue(
-            because: result.IsFailure
+        result.IsSuccess.ShouldBeTrue(result.IsFailure
                 ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}"))
                 : "compile must succeed");
         return result.Value.Data;
@@ -87,32 +86,26 @@ public sealed class Phase34TextureBreadthTests
         // EnvironmentMap (slot 1). Confirm the ORACLE itself first.
         string goldenPath = Path.Combine(
             AppContext.BaseDirectory, "fixtures", "golden", "OpenGL", "EnvironmentMapEffect.mgfx");
-        File.Exists(goldenPath).Should().BeTrue(
+        File.Exists(goldenPath).ShouldBeTrue(
             $"the mgfxc cube golden must exist at {goldenPath} (the same-backend oracle)");
         byte[] golden = await File.ReadAllBytesAsync(goldenPath, cts.Token);
 
         var goldenSamplers = SamplerTableDecoder.Decode(golden);
-        goldenSamplers.Should().Contain(s => s.Type == 1,
-            because: "mgfxc encodes the cube sampler with SamplerType.SamplerCube (byte 1)");
+        goldenSamplers.ShouldContain(s => s.Type == 1, "mgfxc encodes the cube sampler with SamplerType.SamplerCube (byte 1)");
         string goldenAscii = Ascii(golden);
-        goldenAscii.Should().Contain("samplerCube ps_s",
-            because: "mgfxc's own cube golden declares samplerCube ps_s{k}");
-        goldenAscii.Should().Contain("textureCube(ps_s",
-            because: "mgfxc samples the cube via textureCube(ps_s{k}, …)");
+        goldenAscii.ShouldContain("samplerCube ps_s", Case.Sensitive, "mgfxc's own cube golden declares samplerCube ps_s{k}");
+        goldenAscii.ShouldContain("textureCube(ps_s", Case.Sensitive, "mgfxc samples the cube via textureCube(ps_s{k}, …)");
 
         // ShadowDusk's cube fixture must produce the SAME backend form + type byte.
         byte[] sd = await CompileFixtureAsync("examples/ExCubeSamplerHidef.fx", cts.Token);
 
         var sdSamplers = SamplerTableDecoder.Decode(sd);
-        sdSamplers.Should().ContainSingle();
-        sdSamplers[0].Type.Should().Be(1,
-            because: "ShadowDusk must encode the cube sampler with the SAME SamplerType byte as mgfxc (1)");
+        sdSamplers.ShouldHaveSingleItem();
+        sdSamplers[0].Type.ShouldBe((byte)(1), customMessage: "ShadowDusk must encode the cube sampler with the SAME SamplerType byte as mgfxc (1)");
 
         string sdAscii = Ascii(sd);
-        sdAscii.Should().Contain("uniform samplerCube ps_s0;",
-            because: "same legacy decl form as the mgfxc cube golden");
-        sdAscii.Should().Contain("textureCube(ps_s0,",
-            because: "same dimension-specific builtin as the mgfxc cube golden");
+        sdAscii.ShouldContain("uniform samplerCube ps_s0;", Case.Sensitive, "same legacy decl form as the mgfxc cube golden");
+        sdAscii.ShouldContain("textureCube(ps_s0,", Case.Sensitive, "same dimension-specific builtin as the mgfxc cube golden");
 
         _output.WriteLine(
             $"cube golden sampler types = [{string.Join(", ", goldenSamplers.Select(s => s.Type))}]; " +
@@ -126,9 +119,8 @@ public sealed class Phase34TextureBreadthTests
         byte[] sd = await CompileFixtureAsync("examples/ExVolumeTextureHidef.fx", cts.Token);
 
         var samplers = SamplerTableDecoder.Decode(sd);
-        samplers.Should().ContainSingle();
-        samplers[0].Type.Should().Be(2,
-            because: "a 3D texture maps to MonoGame SamplerType.SamplerVolume (byte 2)");
+        samplers.ShouldHaveSingleItem();
+        samplers[0].Type.ShouldBe((byte)(2), customMessage: "a 3D texture maps to MonoGame SamplerType.SamplerVolume (byte 2)");
     }
 
     [Theory]
@@ -140,9 +132,8 @@ public sealed class Phase34TextureBreadthTests
         byte[] sd = await CompileFixtureAsync(fx, cts.Token);
 
         var samplers = SamplerTableDecoder.Decode(sd);
-        samplers.Should().ContainSingle();
-        samplers[0].Type.Should().Be(0,
-            because: "LOD/grad sampling still uses a 2D sampler (SamplerType.Sampler2D, byte 0)");
+        samplers.ShouldHaveSingleItem();
+        samplers[0].Type.ShouldBe((byte)(0), customMessage: "LOD/grad sampling still uses a 2D sampler (SamplerType.Sampler2D, byte 0)");
     }
 
     // ---------------------------------------------------------------------
@@ -173,8 +164,7 @@ public sealed class Phase34TextureBreadthTests
         // the cube/3D PS reads vTexCoord0.xyz (a 3-component direction), exactly what
         // a cube/3D sample needs.
         GlslShaderPair pair = GlslShaderExtractor.Extract(sd);
-        pair.FragmentSource.Should().Contain(expectedBuiltin,
-            because: $"{fx} must emit the dimension-specific builtin {expectedBuiltin}");
+        pair.FragmentSource.ShouldContain(expectedBuiltin, Case.Sensitive, $"{fx} must emit the dimension-specific builtin {expectedBuiltin}");
 
         string vs = pair.VertexSource ?? PassthroughVertexShader.PickFor(pair.FragmentSource);
 
@@ -185,7 +175,7 @@ public sealed class Phase34TextureBreadthTests
             // error would surface HERE. Success == the legacy dimension-specific builtin
             // is valid in the real driver.
             using var program = GlslShaderProgram.Compile(_fixture.Gl, vs, pair.FragmentSource);
-            program.Handle.Should().NotBe(0u);
+            program.Handle.ShouldNotBe(0u);
         }
 
         _output.WriteLine($"{fx}: emitted {expectedBuiltin}; PS compiled + linked OK in the real driver.");

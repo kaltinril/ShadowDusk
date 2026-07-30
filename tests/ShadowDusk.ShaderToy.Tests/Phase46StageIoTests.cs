@@ -1,4 +1,4 @@
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.ShaderToy.Tests;
@@ -16,21 +16,20 @@ public sealed class Phase46StageIoTests
     private static string ConvertOk(string glsl)
     {
         ConvertResult r = ShaderToyConverter.Convert(glsl);
-        r.Success.Should().BeTrue(
+        r.Success.ShouldBeTrue(string.Format(
             "the shader is in-subset; diagnostics: {0}",
-            string.Join("; ", r.Diagnostics.Select(d => $"{d.Severity}:{d.Message}")));
-        r.Fx.Should().NotBeNull();
+            string.Join("; ", r.Diagnostics.Select(d => $"{d.Severity}:{d.Message}"))));
+        r.Fx.ShouldNotBeNull();
         return r.Fx!;
     }
 
     private static ConvertResult ConvertReject(string glsl)
     {
         ConvertResult r = ShaderToyConverter.Convert(glsl);
-        r.Success.Should().BeFalse();
-        r.Fx.Should().BeNull();
-        r.Diagnostics.Should().Contain(d =>
-            d.Severity == DiagnosticSeverity.Error && d.Line > 0 && d.Column > 0,
-            "a reject must carry a located error");
+        r.Success.ShouldBeFalse();
+        r.Fx.ShouldBeNull();
+        r.Diagnostics.ShouldContain(d =>
+            d.Severity == DiagnosticSeverity.Error && d.Line > 0 && d.Column > 0, "a reject must carry a located error");
         return r;
     }
 
@@ -48,12 +47,12 @@ public sealed class Phase46StageIoTests
         """;
 
         ConvertResult r = ShaderToyConverter.Convert(glsl);
-        r.Success.Should().BeTrue();
+        r.Success.ShouldBeTrue();
         // The ignored varying is NOT emitted as a global/parameter and NOT a drivable uniform.
-        r.Fx!.Should().NotContain("vNormalUnused");
-        r.UsedUniforms.Should().NotContain("vNormalUnused");
+        r.Fx!.ShouldNotContain("vNormalUnused", Case.Sensitive);
+        r.UsedUniforms.ShouldNotContain("vNormalUnused");
         // No error/warning is raised for the ignored declaration.
-        r.Diagnostics.Should().NotContain(d => d.Severity == DiagnosticSeverity.Error);
+        r.Diagnostics.ShouldNotContain(d => d.Severity == DiagnosticSeverity.Error);
     }
 
     [Fact]
@@ -69,10 +68,10 @@ public sealed class Phase46StageIoTests
 
         string fx = ConvertOk(glsl);
         // The varying reference resolves to the harness normalized screen UV static.
-        fx.Should().Contain("static float2 sd_ScreenUV;");
-        fx.Should().Contain("sd_ScreenUV = fragCoord / iResolution.xy;");
-        fx.Should().Contain("fragColor = float4(sd_ScreenUV, 0.5, 1.0);");
-        fx.Should().NotContain("vUv");
+        fx.ShouldContain("static float2 sd_ScreenUV;", Case.Sensitive);
+        fx.ShouldContain("sd_ScreenUV = fragCoord / iResolution.xy;", Case.Sensitive);
+        fx.ShouldContain("fragColor = float4(sd_ScreenUV, 0.5, 1.0);", Case.Sensitive);
+        fx.ShouldNotContain("vUv", Case.Sensitive);
     }
 
     [Fact]
@@ -87,9 +86,9 @@ public sealed class Phase46StageIoTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("static float2 sd_ScreenUV;");
-        fx.Should().Contain("float4(sd_ScreenUV, 0.0, 1.0)");
-        fx.Should().NotContain("texCoord");
+        fx.ShouldContain("static float2 sd_ScreenUV;", Case.Sensitive);
+        fx.ShouldContain("float4(sd_ScreenUV, 0.0, 1.0)", Case.Sensitive);
+        fx.ShouldNotContain("texCoord", Case.Sensitive);
     }
 
     [Fact]
@@ -104,7 +103,7 @@ public sealed class Phase46StageIoTests
         """;
 
         ConvertResult r = ConvertReject(glsl);
-        r.Diagnostics.Should().Contain(d =>
+        r.Diagnostics.ShouldContain(d =>
             d.Message.Contains("Undeclared", StringComparison.Ordinal) &&
             d.Message.Contains("vWorldNormal", StringComparison.Ordinal));
     }
@@ -125,15 +124,15 @@ public sealed class Phase46StageIoTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().NotContain("#pragma header");
+        fx.ShouldNotContain("#pragma header", Case.Sensitive);
         // openfl_TextureCoordv -> the harness screen UV static.
-        fx.Should().Contain("static float2 sd_ScreenUV;");
-        fx.Should().Contain("float2 uv = sd_ScreenUV;");
+        fx.ShouldContain("static float2 sd_ScreenUV;", Case.Sensitive);
+        fx.ShouldContain("float2 uv = sd_ScreenUV;", Case.Sensitive);
         // openfl_TextureSize -> iResolution.xy.
-        fx.Should().Contain("float2 res = iResolution.xy;");
+        fx.ShouldContain("float2 res = iResolution.xy;", Case.Sensitive);
         // The openfl_* identifiers are fully rewritten in the translated body (a comment in the harness
         // may still name openfl_TextureCoordv, so we assert on the assignment statements specifically).
-        fx.Should().NotContain("= openfl_");
+        fx.ShouldNotContain("= openfl_", Case.Sensitive);
     }
 
     // ── 3: Godot / GdShaders 4-arg mainImage ────────────────────────────────────────────────
@@ -149,18 +148,18 @@ public sealed class Phase46StageIoTests
         """;
 
         ConvertResult r = ShaderToyConverter.Convert(glsl);
-        r.Success.Should().BeTrue(
+        r.Success.ShouldBeTrue(string.Format(
             "diagnostics: {0}",
-            string.Join("; ", r.Diagnostics.Select(d => $"{d.Severity}:{d.Message}")));
+            string.Join("; ", r.Diagnostics.Select(d => $"{d.Severity}:{d.Message}"))));
         string fx = r.Fx!;
         // The harness derives Godot's SCREEN_UV, samples iChannel0 as inputColor, calls the 3-arg entry.
-        fx.Should().Contain("float2 uv = fragCoord / iResolution.xy;");
-        fx.Should().Contain("float4 inputColor = tex2D(iChannel0, uv);");
-        fx.Should().Contain("mainImage(inputColor, uv, outputColor);");
-        fx.Should().Contain("return outputColor;");
+        fx.ShouldContain("float2 uv = fragCoord / iResolution.xy;", Case.Sensitive);
+        fx.ShouldContain("float4 inputColor = tex2D(iChannel0, uv);", Case.Sensitive);
+        fx.ShouldContain("mainImage(inputColor, uv, outputColor);", Case.Sensitive);
+        fx.ShouldContain("return outputColor;", Case.Sensitive);
         // iChannel0 (the screen texture) is exposed as a drivable channel.
-        fx.Should().Contain("sampler2D iChannel0");
-        r.UsedUniforms.Should().Contain("iChannel0");
+        fx.ShouldContain("sampler2D iChannel0", Case.Sensitive);
+        r.UsedUniforms.ShouldContain("iChannel0");
     }
 
     [Fact]
@@ -174,7 +173,7 @@ public sealed class Phase46StageIoTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("mainImage(inputColor, uv, outputColor);");
+        fx.ShouldContain("mainImage(inputColor, uv, outputColor);", Case.Sensitive);
     }
 
     [Fact]
@@ -189,8 +188,8 @@ public sealed class Phase46StageIoTests
 
         string fx = ConvertOk(glsl);
         // The standard 2-arg harness call, NOT the Godot 3-arg one.
-        fx.Should().Contain("mainImage(fragColor, fragCoord);");
-        fx.Should().NotContain("float4 inputColor = tex2D");
+        fx.ShouldContain("mainImage(fragColor, fragCoord);", Case.Sensitive);
+        fx.ShouldNotContain("float4 inputColor = tex2D", Case.Sensitive);
     }
 
     [Fact]
@@ -205,7 +204,7 @@ public sealed class Phase46StageIoTests
         """;
 
         ConvertResult r = ConvertReject(glsl);
-        r.Diagnostics.Should().Contain(d => d.Message.Contains("Godot", StringComparison.Ordinal));
+        r.Diagnostics.ShouldContain(d => d.Message.Contains("Godot", StringComparison.Ordinal));
     }
 
     // ── 4: libretro VERTEX/FRAGMENT stage split ─────────────────────────────────────────────
@@ -227,9 +226,9 @@ public sealed class Phase46StageIoTests
 
         string fx = ConvertOk(glsl);
         // The fragment branch (mainImage) survives; the vertex branch was stripped.
-        fx.Should().Contain("mainImage(fragColor, fragCoord);");
-        fx.Should().NotContain("vert_unused");
-        fx.Should().NotContain("aPos");
+        fx.ShouldContain("mainImage(fragColor, fragCoord);", Case.Sensitive);
+        fx.ShouldNotContain("vert_unused", Case.Sensitive);
+        fx.ShouldNotContain("aPos", Case.Sensitive);
     }
 
     [Fact]
@@ -248,8 +247,8 @@ public sealed class Phase46StageIoTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("mainImage(fragColor, fragCoord);");
-        fx.Should().NotContain("vert_unused");
+        fx.ShouldContain("mainImage(fragColor, fragCoord);", Case.Sensitive);
+        fx.ShouldNotContain("vert_unused", Case.Sensitive);
     }
 
     [Fact]
@@ -267,7 +266,7 @@ public sealed class Phase46StageIoTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("mainImage(fragColor, fragCoord);");
+        fx.ShouldContain("mainImage(fragColor, fragCoord);", Case.Sensitive);
     }
 
     // ── 5: switch lowered to if/else; fall-through rejects ───────────────────────────────────
@@ -292,13 +291,13 @@ public sealed class Phase46StageIoTests
 
         string fx = ConvertOk(glsl);
         // The selector is hoisted once and the cases become an if / else if / else chain.
-        fx.Should().Contain("int sd_sw0 = band;");
-        fx.Should().Contain("if (sd_sw0 == 0)");
-        fx.Should().Contain("else if (sd_sw0 == 1)");
-        fx.Should().Contain("else");
+        fx.ShouldContain("int sd_sw0 = band;", Case.Sensitive);
+        fx.ShouldContain("if (sd_sw0 == 0)", Case.Sensitive);
+        fx.ShouldContain("else if (sd_sw0 == 1)", Case.Sensitive);
+        fx.ShouldContain("else", Case.Sensitive);
         // No native switch / case / break (break outside a loop is illegal HLSL) leaks through.
-        fx.Should().NotContain("switch");
-        fx.Should().NotContain("case ");
+        fx.ShouldNotContain("switch", Case.Sensitive);
+        fx.ShouldNotContain("case ", Case.Sensitive);
     }
 
     [Fact]
@@ -325,7 +324,7 @@ public sealed class Phase46StageIoTests
 
         string fx = ConvertOk(glsl);
         // Stacked case 1 / case 2 share one body -> OR'd condition.
-        fx.Should().Contain("if (sd_sw0 == 1 || sd_sw0 == 2)");
+        fx.ShouldContain("if (sd_sw0 == 1 || sd_sw0 == 2)", Case.Sensitive);
     }
 
     [Fact]
@@ -346,8 +345,8 @@ public sealed class Phase46StageIoTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("if (sd_sw0 == 0)");
-        fx.Should().Contain("else if (sd_sw0 == 1)");
+        fx.ShouldContain("if (sd_sw0 == 0)", Case.Sensitive);
+        fx.ShouldContain("else if (sd_sw0 == 1)", Case.Sensitive);
     }
 
     [Fact]
@@ -374,6 +373,6 @@ public sealed class Phase46StageIoTests
         """;
 
         ConvertResult r = ConvertReject(glsl);
-        r.Diagnostics.Should().Contain(d => d.Message.Contains("fall-through", StringComparison.Ordinal));
+        r.Diagnostics.ShouldContain(d => d.Message.Contains("fall-through", StringComparison.Ordinal));
     }
 }

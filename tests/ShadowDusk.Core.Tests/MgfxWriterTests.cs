@@ -2,7 +2,7 @@
 
 using System.IO;
 using System.Text;
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core;
 using Xunit;
 
@@ -21,7 +21,7 @@ public sealed class MgfxWriterTests
     {
         var writer = new MgfxWriter();
         var result = writer.Write(ir, options ?? DefaultOptions);
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         return result.Value;
     }
 
@@ -73,24 +73,24 @@ public sealed class MgfxWriterTests
         var bytes = Write(EmptyIR());
 
         // Forward "MGFX" — the exact byte sequence MonoGame's EffectReader requires.
-        bytes[0].Should().Be(0x4D); // 'M'
-        bytes[1].Should().Be(0x47); // 'G'
-        bytes[2].Should().Be(0x46); // 'F'
-        bytes[3].Should().Be(0x58); // 'X'
+        bytes[0].ShouldBe((byte)(0x4D)); // 'M'
+        bytes[1].ShouldBe((byte)(0x47)); // 'G'
+        bytes[2].ShouldBe((byte)(0x46)); // 'F'
+        bytes[3].ShouldBe((byte)(0x58)); // 'X'
     }
 
     [Fact]
     public void Header_DefaultVersionIs10()
     {
         var bytes = Write(EmptyIR());
-        bytes[4].Should().Be(10);
+        bytes[4].ShouldBe((byte)(10));
     }
 
     [Fact]
     public void Header_Version11WhenRequested()
     {
         var bytes = Write(EmptyIR(), new MgfxWriterOptions(MgfxProfile.OpenGL, MgfxVersion: 11));
-        bytes[4].Should().Be(11);
+        bytes[4].ShouldBe((byte)(11));
     }
 
     // -------------------------------------------------------------------------
@@ -119,10 +119,10 @@ public sealed class MgfxWriterTests
             new MgfxWriterOptions(MgfxProfile.OpenGL, MgfxVersion: 10));
         using var r = ReaderFor(bytes);
         r.BaseStream.Position = 10;       // skip header
-        r.ReadInt32().Should().Be(0);     // constant-buffer count
-        r.ReadInt32().Should().Be(1);     // shader count
+        r.ReadInt32().ShouldBe(0);     // constant-buffer count
+        r.ReadInt32().ShouldBe(1);     // shader count
         r.ReadBoolean();                  // isVertexShader
-        r.ReadInt32().Should().Be(3);     // v10: bytecode length immediately (no strings)
+        r.ReadInt32().ShouldBe(3);     // v10: bytecode length immediately (no strings)
     }
 
     [Fact]
@@ -132,12 +132,12 @@ public sealed class MgfxWriterTests
             new MgfxWriterOptions(MgfxProfile.OpenGL, MgfxVersion: 11));
         using var r = ReaderFor(bytes);
         r.BaseStream.Position = 10;
-        r.ReadInt32().Should().Be(0);          // constant-buffer count
-        r.ReadInt32().Should().Be(1);          // shader count
+        r.ReadInt32().ShouldBe(0);          // constant-buffer count
+        r.ReadInt32().ShouldBe(1);          // shader count
         r.ReadBoolean();                       // isVertexShader
-        r.ReadString().Should().Be("foo.fx");  // v11: SourceFile
-        r.ReadString().Should().Be("PSMain");  // v11: Entrypoint
-        r.ReadInt32().Should().Be(3);          // then bytecode length
+        r.ReadString().ShouldBe("foo.fx");  // v11: SourceFile
+        r.ReadString().ShouldBe("PSMain");  // v11: Entrypoint
+        r.ReadInt32().ShouldBe(3);          // then bytecode length
     }
 
     [Fact]
@@ -150,29 +150,29 @@ public sealed class MgfxWriterTests
         r.ReadInt32();                          // cbuffer count
         r.ReadInt32();                          // shader count
         r.ReadBoolean();                        // isVertexShader
-        r.ReadString().Should().Be("<unknown>");  // SourceFile default (mgfxc's own fallback)
-        r.ReadString().Should().Be("<unknown>");  // Entrypoint default
+        r.ReadString().ShouldBe("<unknown>");  // SourceFile default (mgfxc's own fallback)
+        r.ReadString().ShouldBe("<unknown>");  // Entrypoint default
     }
 
     [Fact]
     public void Header_OpenGlProfileId()
     {
         var bytes = Write(EmptyIR(), new MgfxWriterOptions(MgfxProfile.OpenGL));
-        bytes[5].Should().Be(0);
+        bytes[5].ShouldBe((byte)(0));
     }
 
     [Fact]
     public void Header_DirectX11ProfileId()
     {
         var bytes = Write(EmptyIR(), new MgfxWriterOptions(MgfxProfile.DirectX11));
-        bytes[5].Should().Be(1);
+        bytes[5].ShouldBe((byte)(1));
     }
 
     [Fact]
     public void Header_VulkanProfileId()
     {
         var bytes = Write(EmptyIR(), new MgfxWriterOptions(MgfxProfile.Vulkan));
-        bytes[5].Should().Be(80);
+        bytes[5].ShouldBe((byte)(80));
     }
 
     // -------------------------------------------------------------------------
@@ -195,12 +195,12 @@ public sealed class MgfxWriterTests
         SkipShaders(br);
 
         var count = br.ReadInt32();
-        count.Should().Be(1);
+        count.ShouldBe(1);
 
         br.ReadByte(); // Class
         br.ReadByte(); // Type
         var name = br.ReadString();
-        name.Should().BeEmpty();
+        name.ShouldBeEmpty();
     }
 
     [Fact]
@@ -226,10 +226,10 @@ public sealed class MgfxWriterTests
         // Peek at the raw stream position to verify the prefix byte
         var ms = (MemoryStream)br.BaseStream;
         var prefixByte = bytes[ms.Position];
-        prefixByte.Should().Be(0x05, because: "5 chars fits in a single 7-bit length byte");
+        prefixByte.ShouldBe((byte)(0x05), customMessage: "5 chars fits in a single 7-bit length byte");
 
         var name = br.ReadString();
-        name.Should().Be("World");
+        name.ShouldBe("World");
     }
 
     [Fact]
@@ -255,10 +255,10 @@ public sealed class MgfxWriterTests
         // 200 chars > 127 so the 7-bit encoding uses two bytes; first byte has high bit set
         var ms = (MemoryStream)br.BaseStream;
         var prefixByte = bytes[ms.Position];
-        (prefixByte & 0x80).Should().NotBe(0, because: "200-char string needs a two-byte 7-bit encoded prefix");
+        (prefixByte & 0x80).ShouldNotBe(0, customMessage: "200-char string needs a two-byte 7-bit encoded prefix");
 
         var name = br.ReadString();
-        name.Should().Be(longName);
+        name.ShouldBe(longName);
     }
 
     [Fact]
@@ -278,21 +278,21 @@ public sealed class MgfxWriterTests
         SkipShaders(br);
 
         var count = br.ReadInt32();
-        count.Should().Be(20);
+        count.ShouldBe(20);
         for (var i = 0; i < 20; i++)
         {
             br.ReadByte(); // Class
             br.ReadByte(); // Type
-            br.ReadString().Should().Be(names[i]);
+            br.ReadString().ShouldBe(names[i]);
             br.ReadString(); // semantic
             var annCount = br.ReadInt32();
-            annCount.Should().Be(0);
+            annCount.ShouldBe(0);
             br.ReadByte(); // RowCount
             br.ReadByte(); // ColumnCount
             var memberCount = br.ReadInt32();
-            memberCount.Should().Be(0);
+            memberCount.ShouldBe(0);
             var elemCount = br.ReadInt32();
-            elemCount.Should().Be(0);
+            elemCount.ShouldBe(0);
         }
     }
 
@@ -316,7 +316,7 @@ public sealed class MgfxWriterTests
         br.ReadByte(); // Type
         br.ReadString(); // name
         var semantic = br.ReadString();
-        semantic.Should().BeEmpty(because: "null semantic must be written as empty string");
+        semantic.ShouldBeEmpty("null semantic must be written as empty string");
     }
 
     // -------------------------------------------------------------------------
@@ -338,7 +338,7 @@ public sealed class MgfxWriterTests
 
         var bytes = Write(ir);
         var names = ReadTechniqueNames(bytes);
-        names.Should().ContainInOrder("C", "A", "B");
+        names.ShouldBe(new[] { "C", "A", "B" });
     }
 
     [Fact]
@@ -351,7 +351,7 @@ public sealed class MgfxWriterTests
 
         var bytes = Write(ir);
         var names = ReadTechniqueNames(bytes);
-        names.Should().ContainSingle().Which.Should().Be("Only");
+        names.ShouldHaveSingleItem().ShouldBe("Only");
     }
 
     [Fact]
@@ -374,18 +374,18 @@ public sealed class MgfxWriterTests
         SkipParameters(br);
 
         var techCount = br.ReadInt32();
-        techCount.Should().Be(2);
+        techCount.ShouldBe(2);
 
         br.ReadString(); // T1 name
         ReadAnnotationList(br); // T1 annotations
         var passCount1 = br.ReadInt32();
-        passCount1.Should().Be(3);
+        passCount1.ShouldBe(3);
         for (var i = 0; i < 3; i++) SkipPass(br);
 
         br.ReadString(); // T2 name
         ReadAnnotationList(br); // T2 annotations
         var passCount2 = br.ReadInt32();
-        passCount2.Should().Be(1);
+        passCount2.ShouldBe(1);
     }
 
     // -------------------------------------------------------------------------
@@ -408,12 +408,12 @@ public sealed class MgfxWriterTests
         SkipConstantBuffers(br);
 
         var count = br.ReadInt32();
-        count.Should().Be(1);
+        count.ShouldBe(1);
         br.ReadBoolean(); // isVertexShader
         var length = br.ReadInt32();
-        length.Should().Be(64);
+        length.ShouldBe(64);
         var blob = br.ReadBytes(64);
-        blob.Should().HaveCount(64);
+        blob.Count().ShouldBe(64);
     }
 
     [Fact]
@@ -426,7 +426,7 @@ public sealed class MgfxWriterTests
         SkipConstantBuffers(br);
 
         var count = br.ReadInt32();
-        count.Should().Be(0);
+        count.ShouldBe(0);
     }
 
     [Fact]
@@ -454,7 +454,7 @@ public sealed class MgfxWriterTests
         SkipConstantBuffers(br);
 
         var count = br.ReadInt32();
-        count.Should().Be(3);
+        count.ShouldBe(3);
 
         static (int Len, byte First) ReadShaderRecord(BinaryReader r)
         {
@@ -467,9 +467,9 @@ public sealed class MgfxWriterTests
             return (len, first);
         }
 
-        var (len1, first1) = ReadShaderRecord(br); len1.Should().Be(8);  first1.Should().Be(0xAA);
-        var (len2, first2) = ReadShaderRecord(br); len2.Should().Be(16); first2.Should().Be(0xBB);
-        var (len3, first3) = ReadShaderRecord(br); len3.Should().Be(32); first3.Should().Be(0xCC);
+        var (len1, first1) = ReadShaderRecord(br); len1.ShouldBe(8);  first1.ShouldBe((byte)(0xAA));
+        var (len2, first2) = ReadShaderRecord(br); len2.ShouldBe(16); first2.ShouldBe((byte)(0xBB));
+        var (len3, first3) = ReadShaderRecord(br); len3.ShouldBe(32); first3.ShouldBe((byte)(0xCC));
     }
 
     // -------------------------------------------------------------------------
@@ -485,7 +485,7 @@ public sealed class MgfxWriterTests
         SkipHeader(br);
 
         var count = br.ReadInt32();
-        count.Should().Be(0);
+        count.ShouldBe(0);
     }
 
     [Fact]
@@ -509,22 +509,22 @@ public sealed class MgfxWriterTests
         SkipHeader(br);
 
         var count = br.ReadInt32();
-        count.Should().Be(1);
+        count.ShouldBe(1);
 
         var name = br.ReadString();
-        name.Should().Be("Globals");
+        name.ShouldBe("Globals");
 
         var size = br.ReadInt16();
-        size.Should().Be(64);
+        size.ShouldBe((short)(64));
 
         var paramCount = br.ReadInt32();
-        paramCount.Should().Be(2);
+        paramCount.ShouldBe(2);
 
         // Interleaved: index(int32) then offset(uint16) per parameter.
-        br.ReadInt32().Should().Be(0);
-        br.ReadUInt16().Should().Be(0);
-        br.ReadInt32().Should().Be(1);
-        br.ReadUInt16().Should().Be(16);
+        br.ReadInt32().ShouldBe(0);
+        br.ReadUInt16().ShouldBe((ushort)(0));
+        br.ReadInt32().ShouldBe(1);
+        br.ReadUInt16().ShouldBe((ushort)(16));
     }
 
     [Fact]
@@ -554,7 +554,7 @@ public sealed class MgfxWriterTests
         br.ReadInt32();  // index 0
 
         var offset = br.ReadUInt16();
-        offset.Should().Be(65000, because: "uint16 can represent values up to 65535");
+        offset.ShouldBe((ushort)(65000), customMessage: "uint16 can represent values up to 65535");
     }
 
     [Fact]
@@ -573,8 +573,8 @@ public sealed class MgfxWriterTests
         };
 
         var result = new MgfxWriter().Write(ir, new MgfxWriterOptions(MgfxProfile.OpenGL));
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("SD0020");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("SD0020");
     }
 
     [Fact]
@@ -591,8 +591,8 @@ public sealed class MgfxWriterTests
         };
 
         var result = new MgfxWriter().Write(ir, new MgfxWriterOptions(MgfxProfile.OpenGL));
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("SD0021");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("SD0021");
     }
 
     [Fact]
@@ -612,8 +612,8 @@ public sealed class MgfxWriterTests
         };
 
         var result = new MgfxWriter().Write(ir, new MgfxWriterOptions(MgfxProfile.OpenGL));
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("SD0022");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("SD0022");
     }
 
     [Fact]
@@ -639,8 +639,8 @@ public sealed class MgfxWriterTests
         };
 
         var result = new MgfxWriter().Write(ir, new MgfxWriterOptions(MgfxProfile.OpenGL));
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("SD0022");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("SD0022");
     }
 
     [Fact]
@@ -659,7 +659,7 @@ public sealed class MgfxWriterTests
         };
 
         var result = new MgfxWriter().Write(ir, new MgfxWriterOptions(MgfxProfile.OpenGL));
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
     }
 
     // -------------------------------------------------------------------------
@@ -692,9 +692,9 @@ public sealed class MgfxWriterTests
         br.ReadInt32(); // ps index
 
         // Three presence bytes should all be zero
-        br.ReadByte().Should().Be(0, because: "blend state not specified");
-        br.ReadByte().Should().Be(0, because: "depth stencil state not specified");
-        br.ReadByte().Should().Be(0, because: "rasterizer state not specified");
+        br.ReadByte().ShouldBe((byte)(0), customMessage: "blend state not specified");
+        br.ReadByte().ShouldBe((byte)(0), customMessage: "depth stencil state not specified");
+        br.ReadByte().ShouldBe((byte)(0), customMessage: "rasterizer state not specified");
     }
 
     // The fixed field layouts below mirror MonoGame 3.8.2 Effect.ReadPasses
@@ -726,18 +726,18 @@ public sealed class MgfxWriterTests
 
         SkipToFirstPassRenderState(br);
 
-        br.ReadBoolean().Should().BeFalse(because: "no blend state");
-        br.ReadBoolean().Should().BeFalse(because: "no depth stencil state");
-        br.ReadBoolean().Should().BeTrue(because: "rasterizer state present");
+        br.ReadBoolean().ShouldBeFalse("no blend state");
+        br.ReadBoolean().ShouldBeFalse("no depth stencil state");
+        br.ReadBoolean().ShouldBeTrue("rasterizer state present");
 
         // MonoGame reads: CullMode, DepthBias, FillMode, MultiSampleAntiAlias,
         // ScissorTestEnable, SlopeScaleDepthBias.
-        br.ReadByte().Should().Be((byte)CullModeValue.None, because: "MonoGame CullMode.None == 0");
-        br.ReadSingle().Should().Be(0f, because: "DepthBias defaults to 0 (RasterizerState ctor)");
-        br.ReadByte().Should().Be((byte)FillModeValue.Solid);
-        br.ReadBoolean().Should().BeTrue(because: "MultiSampleAntiAlias defaults to true");
-        br.ReadBoolean().Should().BeFalse(because: "ScissorTestEnable defaults to false");
-        br.ReadSingle().Should().Be(0f);
+        br.ReadByte().ShouldBe((byte)CullModeValue.None, customMessage: "MonoGame CullMode.None == 0");
+        br.ReadSingle().ShouldBe(0f, customMessage: "DepthBias defaults to 0 (RasterizerState ctor)");
+        br.ReadByte().ShouldBe((byte)FillModeValue.Solid);
+        br.ReadBoolean().ShouldBeTrue("MultiSampleAntiAlias defaults to true");
+        br.ReadBoolean().ShouldBeFalse("ScissorTestEnable defaults to false");
+        br.ReadSingle().ShouldBe(0f);
     }
 
     [Fact]
@@ -758,24 +758,24 @@ public sealed class MgfxWriterTests
 
         SkipToFirstPassRenderState(br);
 
-        br.ReadBoolean().Should().BeTrue(because: "blend state present");
+        br.ReadBoolean().ShouldBeTrue("blend state present");
         var blend = ReadBlendBlock(br);
 
-        blend.ColorSrc.Should().Be((byte)BlendValue.SourceAlpha);
-        blend.ColorDst.Should().Be((byte)BlendValue.InverseSourceAlpha);
+        blend.ColorSrc.ShouldBe((byte)BlendValue.SourceAlpha);
+        blend.ColorDst.ShouldBe((byte)BlendValue.InverseSourceAlpha);
         // mgfxc derives the alpha channel from SrcBlend/DestBlend via ToAlphaBlend
         // (identity for the alpha-form blends used here).
-        blend.AlphaSrc.Should().Be((byte)BlendValue.SourceAlpha);
-        blend.AlphaDst.Should().Be((byte)BlendValue.InverseSourceAlpha);
-        blend.ColorFunc.Should().Be((byte)BlendFunctionValue.Add);
-        blend.AlphaFunc.Should().Be((byte)BlendFunctionValue.Add);
-        blend.BlendFactor.Should().Equal(255, 255, 255, 255); // Color.White default
-        blend.Cwc0.Should().Be(15); blend.Cwc1.Should().Be(15);
-        blend.Cwc2.Should().Be(15); blend.Cwc3.Should().Be(15);
-        blend.MultiSampleMask.Should().Be(int.MaxValue);
+        blend.AlphaSrc.ShouldBe((byte)BlendValue.SourceAlpha);
+        blend.AlphaDst.ShouldBe((byte)BlendValue.InverseSourceAlpha);
+        blend.ColorFunc.ShouldBe((byte)BlendFunctionValue.Add);
+        blend.AlphaFunc.ShouldBe((byte)BlendFunctionValue.Add);
+        blend.BlendFactor.ShouldBe(new byte[] { 255, 255, 255, 255 }); // Color.White default
+        blend.Cwc0.ShouldBe((byte)(15)); blend.Cwc1.ShouldBe((byte)(15));
+        blend.Cwc2.ShouldBe((byte)(15)); blend.Cwc3.ShouldBe((byte)(15));
+        blend.MultiSampleMask.ShouldBe(int.MaxValue);
 
-        br.ReadBoolean().Should().BeFalse(because: "no depth stencil state");
-        br.ReadBoolean().Should().BeFalse(because: "no rasterizer state");
+        br.ReadBoolean().ShouldBeFalse("no depth stencil state");
+        br.ReadBoolean().ShouldBeFalse("no rasterizer state");
     }
 
     [Fact]
@@ -793,12 +793,12 @@ public sealed class MgfxWriterTests
 
         SkipToFirstPassRenderState(br);
 
-        br.ReadBoolean().Should().BeTrue();
+        br.ReadBoolean().ShouldBeTrue();
         var blend = ReadBlendBlock(br);
-        blend.ColorSrc.Should().Be((byte)BlendValue.One);
-        blend.AlphaSrc.Should().Be((byte)BlendValue.One);
-        blend.ColorDst.Should().Be((byte)BlendValue.InverseSourceAlpha);
-        blend.AlphaDst.Should().Be((byte)BlendValue.InverseSourceAlpha);
+        blend.ColorSrc.ShouldBe((byte)BlendValue.One);
+        blend.AlphaSrc.ShouldBe((byte)BlendValue.One);
+        blend.ColorDst.ShouldBe((byte)BlendValue.InverseSourceAlpha);
+        blend.AlphaDst.ShouldBe((byte)BlendValue.InverseSourceAlpha);
     }
 
     [Fact]
@@ -817,10 +817,10 @@ public sealed class MgfxWriterTests
 
         SkipToFirstPassRenderState(br);
 
-        br.ReadBoolean().Should().BeTrue();
+        br.ReadBoolean().ShouldBeTrue();
         var blend = ReadBlendBlock(br);
-        blend.AlphaFunc.Should().Be((byte)BlendFunctionValue.ReverseSubtract);
-        blend.ColorFunc.Should().Be((byte)BlendFunctionValue.Add);
+        blend.AlphaFunc.ShouldBe((byte)BlendFunctionValue.ReverseSubtract);
+        blend.ColorFunc.ShouldBe((byte)BlendFunctionValue.Add);
     }
 
     [Fact]
@@ -837,31 +837,31 @@ public sealed class MgfxWriterTests
 
         SkipToFirstPassRenderState(br);
 
-        br.ReadBoolean().Should().BeFalse(); // blend not present
-        br.ReadBoolean().Should().BeTrue();  // depth-stencil present
+        br.ReadBoolean().ShouldBeFalse(); // blend not present
+        br.ReadBoolean().ShouldBeTrue();  // depth-stencil present
 
         // MonoGame reads: CCWStencilDepthBufferFail, CCWStencilFail, CCWStencilFunction,
         // CCWStencilPass, DepthBufferEnable, DepthBufferFunction, DepthBufferWriteEnable,
         // ReferenceStencil, StencilDepthBufferFail, StencilEnable, StencilFail,
         // StencilFunction, StencilMask, StencilPass, StencilWriteMask, TwoSidedStencilMode.
-        br.ReadByte().Should().Be((byte)StencilOperationValue.Keep);
-        br.ReadByte().Should().Be((byte)StencilOperationValue.Keep);
-        br.ReadByte().Should().Be((byte)CompareFunctionValue.Always);
-        br.ReadByte().Should().Be((byte)StencilOperationValue.Keep);
-        br.ReadBoolean().Should().BeFalse(because: "DepthBufferEnable was set to false");
-        br.ReadByte().Should().Be((byte)CompareFunctionValue.LessEqual, because: "DepthStencilState ctor default");
-        br.ReadBoolean().Should().BeTrue(because: "DepthBufferWriteEnable defaults to true");
-        br.ReadInt32().Should().Be(0, because: "ReferenceStencil defaults to 0");
-        br.ReadByte().Should().Be((byte)StencilOperationValue.Keep);
-        br.ReadBoolean().Should().BeFalse(because: "StencilEnable defaults to false");
-        br.ReadByte().Should().Be((byte)StencilOperationValue.Keep);
-        br.ReadByte().Should().Be((byte)CompareFunctionValue.Always);
-        br.ReadInt32().Should().Be(int.MaxValue, because: "StencilMask defaults to Int32.MaxValue");
-        br.ReadByte().Should().Be((byte)StencilOperationValue.Keep);
-        br.ReadInt32().Should().Be(int.MaxValue, because: "StencilWriteMask defaults to Int32.MaxValue");
-        br.ReadBoolean().Should().BeFalse(because: "TwoSidedStencilMode defaults to false");
+        br.ReadByte().ShouldBe((byte)StencilOperationValue.Keep);
+        br.ReadByte().ShouldBe((byte)StencilOperationValue.Keep);
+        br.ReadByte().ShouldBe((byte)CompareFunctionValue.Always);
+        br.ReadByte().ShouldBe((byte)StencilOperationValue.Keep);
+        br.ReadBoolean().ShouldBeFalse("DepthBufferEnable was set to false");
+        br.ReadByte().ShouldBe((byte)CompareFunctionValue.LessEqual, customMessage: "DepthStencilState ctor default");
+        br.ReadBoolean().ShouldBeTrue("DepthBufferWriteEnable defaults to true");
+        br.ReadInt32().ShouldBe(0, customMessage: "ReferenceStencil defaults to 0");
+        br.ReadByte().ShouldBe((byte)StencilOperationValue.Keep);
+        br.ReadBoolean().ShouldBeFalse("StencilEnable defaults to false");
+        br.ReadByte().ShouldBe((byte)StencilOperationValue.Keep);
+        br.ReadByte().ShouldBe((byte)CompareFunctionValue.Always);
+        br.ReadInt32().ShouldBe(int.MaxValue, customMessage: "StencilMask defaults to Int32.MaxValue");
+        br.ReadByte().ShouldBe((byte)StencilOperationValue.Keep);
+        br.ReadInt32().ShouldBe(int.MaxValue, customMessage: "StencilWriteMask defaults to Int32.MaxValue");
+        br.ReadBoolean().ShouldBeFalse("TwoSidedStencilMode defaults to false");
 
-        br.ReadBoolean().Should().BeFalse(); // rasterizer not present
+        br.ReadBoolean().ShouldBeFalse(); // rasterizer not present
     }
 
     [Fact]
@@ -878,12 +878,12 @@ public sealed class MgfxWriterTests
 
         SkipToFirstPassRenderState(br);
 
-        br.ReadBoolean().Should().BeFalse(); // blend not present
-        br.ReadBoolean().Should().BeTrue();  // depth-stencil present
+        br.ReadBoolean().ShouldBeFalse(); // blend not present
+        br.ReadBoolean().ShouldBeTrue();  // depth-stencil present
 
         br.ReadBytes(4);                     // CCW stencil quad
-        br.ReadBoolean().Should().BeTrue(because: "DepthBufferEnable defaults to true");
-        br.ReadByte().Should().Be((byte)CompareFunctionValue.Greater);
+        br.ReadBoolean().ShouldBeTrue("DepthBufferEnable defaults to true");
+        br.ReadByte().ShouldBe((byte)CompareFunctionValue.Greater);
     }
 
     // -------------------------------------------------------------------------
@@ -917,18 +917,18 @@ public sealed class MgfxWriterTests
         SkipConstantBuffers(br);
         SkipShaders(br);
 
-        br.ReadInt32().Should().Be(1);          // parameter count
+        br.ReadInt32().ShouldBe(1);          // parameter count
         br.ReadByte(); br.ReadByte();           // class, type
-        br.ReadString().Should().Be("TintColor");
+        br.ReadString().ShouldBe("TintColor");
         br.ReadString();                        // semantic
-        br.ReadInt32().Should().Be(0, because: "the annotation count is always 0, like mgfxc's");
+        br.ReadInt32().ShouldBe(0, customMessage: "the annotation count is always 0, like mgfxc's");
 
         // MonoGame 3.8.2 ReadAnnotations reads ONLY the count — the very next bytes
         // must be the parameter's RowCount/ColumnCount, not annotation bodies.
-        br.ReadByte().Should().Be(0, because: "RowCount follows the count immediately");
-        br.ReadByte().Should().Be(0, because: "ColumnCount follows");
-        br.ReadInt32().Should().Be(0);          // member indices
-        br.ReadInt32().Should().Be(0);          // element indices
+        br.ReadByte().ShouldBe((byte)(0), customMessage: "RowCount follows the count immediately");
+        br.ReadByte().ShouldBe((byte)(0), customMessage: "ColumnCount follows");
+        br.ReadInt32().ShouldBe(0);          // member indices
+        br.ReadInt32().ShouldBe(0);          // element indices
     }
 
     // -------------------------------------------------------------------------
@@ -967,57 +967,57 @@ public sealed class MgfxWriterTests
         using var br = ReaderFor(bytes);
 
         // Header — forward "MGFX" reads little-endian as 0x5846474D
-        br.ReadUInt32().Should().Be(0x5846474Du);
-        br.ReadByte().Should().Be(10); // version
-        br.ReadByte().Should().Be(1);  // DirectX11 profile
+        br.ReadUInt32().ShouldBe(0x5846474Du);
+        br.ReadByte().ShouldBe((byte)(10)); // version
+        br.ReadByte().ShouldBe((byte)(1));  // DirectX11 profile
         br.ReadInt32();                // EffectKey (content-derived)
 
         // Constant buffers: count = 0
-        br.ReadInt32().Should().Be(0);
+        br.ReadInt32().ShouldBe(0);
 
         // Shaders: count = 2 (full per-shader record: stage flag + blob + empty tables)
-        br.ReadInt32().Should().Be(2);
-        br.ReadBoolean().Should().BeTrue();  // VS isVertexShader
-        br.ReadInt32().Should().Be(8);       // VS blob length
-        br.ReadBytes(8).Should().Equal(vsBytes);
-        br.ReadByte().Should().Be(0); br.ReadByte().Should().Be(0); br.ReadByte().Should().Be(0);
-        br.ReadBoolean().Should().BeFalse(); // PS isVertexShader
-        br.ReadInt32().Should().Be(8);       // PS blob length
-        br.ReadBytes(8).Should().Equal(psBytes);
-        br.ReadByte().Should().Be(0); br.ReadByte().Should().Be(0); br.ReadByte().Should().Be(0);
+        br.ReadInt32().ShouldBe(2);
+        br.ReadBoolean().ShouldBeTrue();  // VS isVertexShader
+        br.ReadInt32().ShouldBe(8);       // VS blob length
+        br.ReadBytes(8).ShouldBe(vsBytes);
+        br.ReadByte().ShouldBe((byte)(0)); br.ReadByte().ShouldBe((byte)(0)); br.ReadByte().ShouldBe((byte)(0));
+        br.ReadBoolean().ShouldBeFalse(); // PS isVertexShader
+        br.ReadInt32().ShouldBe(8);       // PS blob length
+        br.ReadBytes(8).ShouldBe(psBytes);
+        br.ReadByte().ShouldBe((byte)(0)); br.ReadByte().ShouldBe((byte)(0)); br.ReadByte().ShouldBe((byte)(0));
 
         // Parameters: count = 1
-        br.ReadInt32().Should().Be(1);
-        br.ReadByte().Should().Be(0);  // Class
-        br.ReadByte().Should().Be(0);  // Type
-        br.ReadString().Should().Be("Texture0");
-        br.ReadString().Should().BeEmpty(); // semantic
-        br.ReadInt32().Should().Be(0); // annotations count
-        br.ReadByte().Should().Be(0);  // RowCount
-        br.ReadByte().Should().Be(0);  // ColumnCount
-        br.ReadInt32().Should().Be(0); // member count
-        br.ReadInt32().Should().Be(0); // element count
+        br.ReadInt32().ShouldBe(1);
+        br.ReadByte().ShouldBe((byte)(0));  // Class
+        br.ReadByte().ShouldBe((byte)(0));  // Type
+        br.ReadString().ShouldBe("Texture0");
+        br.ReadString().ShouldBeEmpty(); // semantic
+        br.ReadInt32().ShouldBe(0); // annotations count
+        br.ReadByte().ShouldBe((byte)(0));  // RowCount
+        br.ReadByte().ShouldBe((byte)(0));  // ColumnCount
+        br.ReadInt32().ShouldBe(0); // member count
+        br.ReadInt32().ShouldBe(0); // element count
         // (Class 0 / 0x0 rows*cols => zero-length default-value blob)
 
         // Techniques: count = 1
-        br.ReadInt32().Should().Be(1);
-        br.ReadString().Should().Be("Technique0");
-        br.ReadInt32().Should().Be(0); // technique annotations count
-        br.ReadInt32().Should().Be(1); // pass count
+        br.ReadInt32().ShouldBe(1);
+        br.ReadString().ShouldBe("Technique0");
+        br.ReadInt32().ShouldBe(0); // technique annotations count
+        br.ReadInt32().ShouldBe(1); // pass count
 
         // Pass
-        br.ReadString().Should().Be("Pass0");
-        br.ReadInt32().Should().Be(0); // pass annotations count
-        br.ReadInt32().Should().Be(0); // VS index (int32)
-        br.ReadInt32().Should().Be(1); // PS index (int32)
+        br.ReadString().ShouldBe("Pass0");
+        br.ReadInt32().ShouldBe(0); // pass annotations count
+        br.ReadInt32().ShouldBe(0); // VS index (int32)
+        br.ReadInt32().ShouldBe(1); // PS index (int32)
 
         // Render state: all three blocks absent
-        br.ReadByte().Should().Be(0);
-        br.ReadByte().Should().Be(0);
-        br.ReadByte().Should().Be(0);
+        br.ReadByte().ShouldBe((byte)(0));
+        br.ReadByte().ShouldBe((byte)(0));
+        br.ReadByte().ShouldBe((byte)(0));
 
         // Footer: trailing "MGFX"
-        br.ReadUInt32().Should().Be(0x5846474Du);
+        br.ReadUInt32().ShouldBe(0x5846474Du);
     }
 
     // -------------------------------------------------------------------------

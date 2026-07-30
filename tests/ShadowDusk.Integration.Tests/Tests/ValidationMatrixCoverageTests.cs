@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using Xunit;
@@ -112,17 +112,16 @@ public sealed class ValidationMatrixCoverageTests
 
         if (expected == Outcome.Compiles)
         {
-            result.IsSuccess.Should().BeTrue(
+            result.IsSuccess.ShouldBeTrue(
                 $"[{shaderName} -> {target}] must compile per the validation matrix; got: " +
                 (result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok"));
-            result.Value.Data.Length.Should().BeGreaterThan(0);
+            result.Value.Data.Length.ShouldBeGreaterThan(0);
         }
         else
         {
-            result.IsFailure.Should().BeTrue(
+            result.IsFailure.ShouldBeTrue(
                 $"[{shaderName} -> {target}] must be rejected with {expectedCode} per the validation matrix, but it compiled");
-            result.Error.Select(e => e.Code).Should().Contain(expectedCode,
-                $"[{shaderName} -> {target}] the documented rejection code is {expectedCode}; got " +
+            result.Error.Select(e => e.Code).ShouldContain(expectedCode, $"[{shaderName} -> {target}] the documented rejection code is {expectedCode}; got " +
                 string.Join(", ", result.Error.Select(e => e.Code)));
         }
     }

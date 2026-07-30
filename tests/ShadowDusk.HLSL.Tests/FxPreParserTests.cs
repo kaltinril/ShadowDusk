@@ -2,7 +2,7 @@
 using ShadowDusk.HLSL;
 using ShadowDusk.HLSL.Ast;
 using ShadowDusk.Core;
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.HLSL.Tests;
@@ -18,10 +18,10 @@ public sealed class FxPreParserTests
     {
         var result = FxPreParser.Parse("", sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Techniques.Should().BeEmpty();
-        result.Value.Samplers.Should().BeEmpty();
-        result.Value.StrippedHlsl.Should().Be("");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Techniques.ShouldBeEmpty();
+        result.Value.Samplers.ShouldBeEmpty();
+        result.Value.StrippedHlsl.ShouldBe("");
     }
 
     // -------------------------------------------------------------------------
@@ -46,10 +46,10 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         var pass = result.Value.Techniques[0].Passes[0];
-        pass.VertexEntryPoint.Should().BeNull();
-        pass.PixelEntryPoint.Should().Be("PSMain");
+        pass.VertexEntryPoint.ShouldBeNull();
+        pass.PixelEntryPoint.ShouldBe("PSMain");
     }
 
     [Fact]
@@ -70,9 +70,8 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Samplers.Should().ContainSingle()
-            .Which.TextureReference.Should().BeNull();
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Samplers.ShouldHaveSingleItem().TextureReference.ShouldBeNull();
     }
 
     [Fact]
@@ -93,10 +92,9 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Techniques.Should().ContainSingle()
-            .Which.Name.Should().Be("Render");
-        result.Value.Techniques[0].IsEffect11.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Techniques.ShouldHaveSingleItem().Name.ShouldBe("Render");
+        result.Value.Techniques[0].IsEffect11.ShouldBeTrue();
     }
 
     // -------------------------------------------------------------------------
@@ -119,21 +117,21 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
 
         var techniques = result.Value.Techniques;
-        techniques.Should().HaveCount(1);
+        techniques.Count().ShouldBe(1);
 
         var tech = techniques[0];
-        tech.Name.Should().Be("MyTechnique");
-        tech.Passes.Should().HaveCount(1);
+        tech.Name.ShouldBe("MyTechnique");
+        tech.Passes.Count().ShouldBe(1);
 
         var pass = tech.Passes[0];
-        pass.Name.Should().Be("Pass1");
-        pass.VertexEntryPoint.Should().Be("VSMain");
-        pass.VertexProfile.Should().Be("vs_3_0");
-        pass.PixelEntryPoint.Should().Be("PSMain");
-        pass.PixelProfile.Should().Be("ps_3_0");
+        pass.Name.ShouldBe("Pass1");
+        pass.VertexEntryPoint.ShouldBe("VSMain");
+        pass.VertexProfile.ShouldBe("vs_3_0");
+        pass.PixelEntryPoint.ShouldBe("PSMain");
+        pass.PixelProfile.ShouldBe("ps_3_0");
     }
 
     // -------------------------------------------------------------------------
@@ -153,13 +151,13 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Techniques.Should().HaveCount(1);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Techniques.Count().ShouldBe(1);
 
         var passes = result.Value.Techniques[0].Passes;
-        passes.Should().HaveCount(2);
-        passes[0].Name.Should().Be("A");
-        passes[1].Name.Should().Be("B");
+        passes.Count().ShouldBe(2);
+        passes[0].Name.ShouldBe("A");
+        passes[1].Name.ShouldBe("B");
     }
 
     // -------------------------------------------------------------------------
@@ -182,10 +180,10 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Techniques.Should().HaveCount(2);
-        result.Value.Techniques[0].Name.Should().Be("TechOne");
-        result.Value.Techniques[1].Name.Should().Be("TechTwo");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Techniques.Count().ShouldBe(2);
+        result.Value.Techniques[0].Name.ShouldBe("TechOne");
+        result.Value.Techniques[1].Name.ShouldBe("TechTwo");
     }
 
     // -------------------------------------------------------------------------
@@ -208,12 +206,12 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
 
         var renderStates = result.Value.Techniques[0].Passes[0].RenderStates;
-        renderStates.Should().HaveCount(2);
-        renderStates.Should().Contain(rs => rs.Key == "CullMode" && rs.Value == "None");
-        renderStates.Should().Contain(rs => rs.Key == "AlphaBlendEnable" && rs.Value == "True");
+        renderStates.Count().ShouldBe(2);
+        renderStates.ShouldContain(rs => rs.Key == "CullMode" && rs.Value == "None");
+        renderStates.ShouldContain(rs => rs.Key == "AlphaBlendEnable" && rs.Value == "True");
     }
 
     // -------------------------------------------------------------------------
@@ -234,13 +232,13 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Samplers.Should().HaveCount(1);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Samplers.Count().ShouldBe(1);
 
         var sampler = result.Value.Samplers[0];
-        sampler.Name.Should().Be("MySampler");
-        sampler.SamplerType.Should().Be("sampler2D");
-        sampler.TextureReference.Should().Be("MyTexture");
+        sampler.Name.ShouldBe("MySampler");
+        sampler.SamplerType.ShouldBe("sampler2D");
+        sampler.TextureReference.ShouldBe("MyTexture");
     }
 
     // -------------------------------------------------------------------------
@@ -259,15 +257,15 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
 
         var tech = result.Value.Techniques[0];
-        tech.Annotations.Should().HaveCount(1);
+        tech.Annotations.Count().ShouldBe(1);
 
         var annotation = tech.Annotations[0];
-        annotation.Name.Should().Be("UIName");
-        annotation.Type.Should().Be("string");
-        annotation.Value.Should().Be("\"X\"");
+        annotation.Name.ShouldBe("UIName");
+        annotation.Type.ShouldBe("string");
+        annotation.Value.ShouldBe("\"X\"");
     }
 
     // -------------------------------------------------------------------------
@@ -281,18 +279,18 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.ParameterAnnotations.Should().HaveCount(1);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.ParameterAnnotations.Count().ShouldBe(1);
 
         var pa = result.Value.ParameterAnnotations[0];
-        pa.ParameterName.Should().Be("P");
-        pa.Entries.Should().HaveCount(1);
-        pa.Entries[0].Name.Should().Be("UIMin");
+        pa.ParameterName.ShouldBe("P");
+        pa.Entries.Count().ShouldBe(1);
+        pa.Entries[0].Name.ShouldBe("UIMin");
 
         // The annotation block (angle brackets and contents) must be stripped
         // so DXC never sees it; the assignment "= 0.5;" must survive.
-        result.Value.StrippedHlsl.Should().NotContain("<");
-        result.Value.StrippedHlsl.Should().Contain("= 0.5");
+        result.Value.StrippedHlsl.ShouldNotContain("<", Case.Sensitive);
+        result.Value.StrippedHlsl.ShouldContain("= 0.5", Case.Sensitive);
     }
 
     // -------------------------------------------------------------------------
@@ -315,13 +313,13 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
 
         var stripped = result.Value.StrippedHlsl;
         var lines = stripped.Split('\n');
 
         // The HLSL declaration must remain on line 1 (index 0)
-        lines[0].Should().Contain("MyColor");
+        lines[0].ShouldContain("MyColor", Case.Sensitive);
     }
 
     // -------------------------------------------------------------------------
@@ -342,8 +340,8 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be(FxParseErrorCode.UnexpectedEof);
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe(FxParseErrorCode.UnexpectedEof);
     }
 
     // -------------------------------------------------------------------------
@@ -365,8 +363,8 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be(FxParseErrorCode.MalformedCompileExpression);
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe(FxParseErrorCode.MalformedCompileExpression);
     }
 
     // -------------------------------------------------------------------------
@@ -390,8 +388,8 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Techniques[0].Passes[0].VertexProfile.Should().Be("vs_99_0");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Techniques[0].Passes[0].VertexProfile.ShouldBe("vs_99_0");
     }
 
     // -------------------------------------------------------------------------
@@ -414,8 +412,8 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be(FxParseErrorCode.DuplicateTechniqueName);
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe(FxParseErrorCode.DuplicateTechniqueName);
     }
 
     // -------------------------------------------------------------------------
@@ -435,8 +433,8 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be(FxParseErrorCode.DuplicatePassName);
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe(FxParseErrorCode.DuplicatePassName);
     }
 
     // -------------------------------------------------------------------------
@@ -456,8 +454,8 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be(FxParseErrorCode.UnclosedAnnotationBlock);
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe(FxParseErrorCode.UnclosedAnnotationBlock);
     }
 
     // -------------------------------------------------------------------------
@@ -480,8 +478,8 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be(FxParseErrorCode.MissingSemicolon);
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe(FxParseErrorCode.MissingSemicolon);
     }
 
     // -------------------------------------------------------------------------
@@ -502,9 +500,9 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.StrippedHlsl.Should().Contain("#if SM4");
-        result.Value.StrippedHlsl.Should().Contain("#endif");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.StrippedHlsl.ShouldContain("#if SM4", Case.Sensitive);
+        result.Value.StrippedHlsl.ShouldContain("#endif", Case.Sensitive);
     }
 
     // -------------------------------------------------------------------------
@@ -527,12 +525,12 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
 
         var pass = result.Value.Techniques[0].Passes[0];
         // The commented-out VS line must NOT be parsed as a real entry-point
-        pass.VertexEntryPoint.Should().BeNull();
-        pass.PixelEntryPoint.Should().Be("PSMain");
+        pass.VertexEntryPoint.ShouldBeNull();
+        pass.PixelEntryPoint.ShouldBe("PSMain");
     }
 
     // -------------------------------------------------------------------------
@@ -555,11 +553,11 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
 
         var pass = result.Value.Techniques[0].Passes[0];
-        pass.VertexProfile.Should().Be("vs_3_0");
-        pass.PixelProfile.Should().Be("ps_3_0");
+        pass.VertexProfile.ShouldBe("vs_3_0");
+        pass.PixelProfile.ShouldBe("ps_3_0");
     }
 
     // -------------------------------------------------------------------------
@@ -580,8 +578,8 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(sb.ToString(), sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Techniques.Should().HaveCount(32);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Techniques.Count().ShouldBe(32);
     }
 
     // -------------------------------------------------------------------------
@@ -599,9 +597,9 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Samplers.Should().HaveCount(1);
-        result.Value.Samplers[0].TextureReference.Should().Be("MyTex");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Samplers.Count().ShouldBe(1);
+        result.Value.Samplers[0].TextureReference.ShouldBe("MyTex");
     }
 
     // -------------------------------------------------------------------------
@@ -619,9 +617,9 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Samplers.Should().HaveCount(1);
-        result.Value.Samplers[0].TextureReference.Should().Be("MyTex");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Samplers.Count().ShouldBe(1);
+        result.Value.Samplers[0].TextureReference.ShouldBe("MyTex");
     }
 
     // -------------------------------------------------------------------------
@@ -644,11 +642,11 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Line.Should().BeGreaterThan(0);
-        result.Error.Column.Should().BeGreaterThan(0);
-        result.Error.SourceFile.Should().Be("test.fx");
-        result.Error.Message.Should().NotBeNullOrEmpty();
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Line.ShouldBeGreaterThan(0);
+        result.Error.Column.ShouldBeGreaterThan(0);
+        result.Error.SourceFile.ShouldBe("test.fx");
+        result.Error.Message.ShouldNotBeNullOrEmpty();
     }
 
     // -------------------------------------------------------------------------
@@ -670,9 +668,9 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.StrippedHlsl.Should().Contain(": SV_Target");
-        result.Value.StrippedHlsl.Should().NotContain(": COLOR");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.StrippedHlsl.ShouldContain(": SV_Target", Case.Sensitive);
+        result.Value.StrippedHlsl.ShouldNotContain(": COLOR", Case.Sensitive);
     }
 
     [Fact]
@@ -687,9 +685,9 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.StrippedHlsl.Should().Contain(": SV_Target3");
-        result.Value.StrippedHlsl.Should().NotContain("COLOR3");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.StrippedHlsl.ShouldContain(": SV_Target3", Case.Sensitive);
+        result.Value.StrippedHlsl.ShouldNotContain("COLOR3", Case.Sensitive);
     }
 
     [Fact]
@@ -714,14 +712,14 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
 
         // The struct member's ': COLOR0;' must survive verbatim.
-        result.Value.StrippedHlsl.Should().Contain("float4 Color    : COLOR0;");
+        result.Value.StrippedHlsl.ShouldContain("float4 Color    : COLOR0;", Case.Sensitive);
 
         // The function return ': COLOR0' must be rewritten to ': SV_Target0'.
-        result.Value.StrippedHlsl.Should().Contain(": SV_Target0");
-        result.Value.StrippedHlsl.Should().NotContain("input) : COLOR0");
+        result.Value.StrippedHlsl.ShouldContain(": SV_Target0", Case.Sensitive);
+        result.Value.StrippedHlsl.ShouldNotContain("input) : COLOR0", Case.Sensitive);
     }
 
     // -------------------------------------------------------------------------
@@ -754,24 +752,24 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         string stripped = result.Value.StrippedHlsl;
 
         // Declaration rewritten: legacy form gone, modern SamplerState left behind.
-        stripped.Should().Contain("SamplerState SpriteTextureSampler;");
-        stripped.Should().NotContain("sampler_state");
-        stripped.Should().NotContain("sampler2D");
+        stripped.ShouldContain("SamplerState SpriteTextureSampler;", Case.Sensitive);
+        stripped.ShouldNotContain("sampler_state", Case.Sensitive);
+        stripped.ShouldNotContain("sampler2D", Case.Sensitive);
 
         // No synthesized texture — the sampler_state bound an existing Texture2D.
-        stripped.Should().NotContain("_SDTexture");
+        stripped.ShouldNotContain("_SDTexture", Case.Sensitive);
 
         // tex2D rewritten to a Sample call on the bound texture; args preserved.
-        stripped.Should().Contain("SpriteTexture.Sample(SpriteTextureSampler, uv)");
-        stripped.Should().NotContain("tex2D");
+        stripped.ShouldContain("SpriteTexture.Sample(SpriteTextureSampler, uv)", Case.Sensitive);
+        stripped.ShouldNotContain("tex2D", Case.Sensitive);
 
         // Metadata still extracted as before.
-        result.Value.Samplers.Should().ContainSingle();
-        result.Value.Samplers[0].TextureReference.Should().Be("SpriteTexture");
+        result.Value.Samplers.ShouldHaveSingleItem();
+        result.Value.Samplers[0].TextureReference.ShouldBe("SpriteTexture");
     }
 
     [Fact]
@@ -789,16 +787,16 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         string stripped = result.Value.StrippedHlsl;
 
         // A Texture2D is synthesized and paired with a modern SamplerState.
-        stripped.Should().Contain("Texture2D s0_SDTexture;");
-        stripped.Should().Contain("SamplerState s0;");
+        stripped.ShouldContain("Texture2D s0_SDTexture;", Case.Sensitive);
+        stripped.ShouldContain("SamplerState s0;", Case.Sensitive);
 
         // tex2D rewritten to sample the synthesized texture.
-        stripped.Should().Contain("s0_SDTexture.Sample(s0, uv)");
-        stripped.Should().NotContain("tex2D");
+        stripped.ShouldContain("s0_SDTexture.Sample(s0, uv)", Case.Sensitive);
+        stripped.ShouldNotContain("tex2D", Case.Sensitive);
     }
 
     [Fact]
@@ -817,14 +815,14 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         string stripped = result.Value.StrippedHlsl;
 
-        stripped.Should().Contain("Texture2D TextureSampler_SDTexture;");
-        stripped.Should().Contain("SamplerState TextureSampler;");
-        stripped.Should().Contain("TextureSampler_SDTexture.Sample(TextureSampler, uv)");
-        stripped.Should().NotContain("tex2D");
-        stripped.Should().NotContain("register");
+        stripped.ShouldContain("Texture2D TextureSampler_SDTexture;", Case.Sensitive);
+        stripped.ShouldContain("SamplerState TextureSampler;", Case.Sensitive);
+        stripped.ShouldContain("TextureSampler_SDTexture.Sample(TextureSampler, uv)", Case.Sensitive);
+        stripped.ShouldNotContain("tex2D", Case.Sensitive);
+        stripped.ShouldNotContain("register", Case.Sensitive);
     }
 
     [Fact]
@@ -848,18 +846,18 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         var lines = result.Value.StrippedHlsl.Replace("\r\n", "\n").Split('\n');
 
         // Same number of lines as the source.
-        lines.Length.Should().Be(source.Replace("\r\n", "\n").Split('\n').Length);
+        lines.Length.ShouldBe(source.Replace("\r\n", "\n").Split('\n').Length);
 
         // The rewritten declaration sits on the original first line (line 3 → index 2).
-        lines[2].Should().Contain("SamplerState SpriteTextureSampler;");
+        lines[2].ShouldContain("SamplerState SpriteTextureSampler;", Case.Sensitive);
 
         // The MainPS signature and body stay on their original lines.
-        lines[7].Should().Contain("float4 MainPS");
-        lines[9].Should().Contain(".Sample(SpriteTextureSampler, uv)");
+        lines[7].ShouldContain("float4 MainPS", Case.Sensitive);
+        lines[9].ShouldContain(".Sample(SpriteTextureSampler, uv)", Case.Sensitive);
     }
 
     [Fact]
@@ -878,16 +876,16 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         string stripped = result.Value.StrippedHlsl;
 
-        stripped.Should().NotContain("sampler_state");
-        stripped.Should().NotContain("SamplerState UnusedSampler;");
-        stripped.Should().NotContain("_SDTexture");
+        stripped.ShouldNotContain("sampler_state", Case.Sensitive);
+        stripped.ShouldNotContain("SamplerState UnusedSampler;", Case.Sensitive);
+        stripped.ShouldNotContain("_SDTexture", Case.Sensitive);
 
         // Metadata is still extracted regardless of rewriting.
-        result.Value.Samplers.Should().ContainSingle();
-        result.Value.Samplers[0].Name.Should().Be("UnusedSampler");
+        result.Value.Samplers.ShouldHaveSingleItem();
+        result.Value.Samplers[0].Name.ShouldBe("UnusedSampler");
     }
 
     [Fact]
@@ -902,11 +900,11 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         string stripped = result.Value.StrippedHlsl;
 
-        stripped.Should().Contain("sampler unusedS;");
-        stripped.Should().NotContain("_SDTexture");
+        stripped.ShouldContain("sampler unusedS;", Case.Sensitive);
+        stripped.ShouldNotContain("_SDTexture", Case.Sensitive);
     }
 
     [Fact]
@@ -927,11 +925,11 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
 
         // Byte-identical: nothing in this source matches any rewrite rule.
-        result.Value.StrippedHlsl.Should().Be(source);
-        result.Value.Samplers.Should().BeEmpty();
+        result.Value.StrippedHlsl.ShouldBe(source);
+        result.Value.Samplers.ShouldBeEmpty();
     }
 
     [Fact]
@@ -954,16 +952,16 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         string stripped = result.Value.StrippedHlsl;
 
-        stripped.Should().Contain("Texture2D s0_SDTexture;");
-        stripped.Should().Contain("SamplerState s0;");
-        stripped.Should().Contain("SamplerState _secondTextureSampler;");
+        stripped.ShouldContain("Texture2D s0_SDTexture;", Case.Sensitive);
+        stripped.ShouldContain("SamplerState s0;", Case.Sensitive);
+        stripped.ShouldContain("SamplerState _secondTextureSampler;", Case.Sensitive);
 
-        stripped.Should().Contain("s0_SDTexture.Sample(s0, uv)");
-        stripped.Should().Contain("_secondTexture.Sample(_secondTextureSampler, uv)");
-        stripped.Should().NotContain("tex2D");
+        stripped.ShouldContain("s0_SDTexture.Sample(s0, uv)", Case.Sensitive);
+        stripped.ShouldContain("_secondTexture.Sample(_secondTextureSampler, uv)", Case.Sensitive);
+        stripped.ShouldNotContain("tex2D", Case.Sensitive);
     }
 
     [Fact]
@@ -981,11 +979,11 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         string stripped = result.Value.StrippedHlsl;
 
-        stripped.Should().Contain("sampler s0;");
-        stripped.Should().NotContain("_SDTexture");
+        stripped.ShouldContain("sampler s0;", Case.Sensitive);
+        stripped.ShouldNotContain("_SDTexture", Case.Sensitive);
     }
 
     // -------------------------------------------------------------------------
@@ -1007,12 +1005,12 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         string stripped = result.Value.StrippedHlsl;
 
-        stripped.Should().Contain("Texture2D _dissolveTex;");
+        stripped.ShouldContain("Texture2D _dissolveTex;", Case.Sensitive);
         // The bare legacy 'texture ' keyword must be gone (Texture2D is fine).
-        stripped.Should().NotContain("texture _dissolveTex");
+        stripped.ShouldNotContain("texture _dissolveTex", Case.Sensitive);
     }
 
     [Fact]
@@ -1033,16 +1031,16 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         string stripped = result.Value.StrippedHlsl;
 
-        stripped.Should().Contain("Texture2D _dissolveTex;");
-        stripped.Should().Contain("SamplerState _dissolveTexSampler;");
-        stripped.Should().Contain("_dissolveTex.Sample(_dissolveTexSampler, uv)");
-        stripped.Should().NotContain("sampler_state");
-        stripped.Should().NotContain("tex2D");
+        stripped.ShouldContain("Texture2D _dissolveTex;", Case.Sensitive);
+        stripped.ShouldContain("SamplerState _dissolveTexSampler;", Case.Sensitive);
+        stripped.ShouldContain("_dissolveTex.Sample(_dissolveTexSampler, uv)", Case.Sensitive);
+        stripped.ShouldNotContain("sampler_state", Case.Sensitive);
+        stripped.ShouldNotContain("tex2D", Case.Sensitive);
         // No synthesized texture — the sampler_state bound the explicit texture.
-        stripped.Should().NotContain("_SDTexture");
+        stripped.ShouldNotContain("_SDTexture", Case.Sensitive);
     }
 
     [Fact]
@@ -1058,12 +1056,12 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         string stripped = result.Value.StrippedHlsl;
 
-        stripped.Should().Contain("Texture2D Diffuse;");
-        stripped.Should().NotContain("<");
-        stripped.Should().NotContain("ResourceName");
+        stripped.ShouldContain("Texture2D Diffuse;", Case.Sensitive);
+        stripped.ShouldNotContain("<", Case.Sensitive);
+        stripped.ShouldNotContain("ResourceName", Case.Sensitive);
     }
 
     [Fact]
@@ -1078,12 +1076,12 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         var lines = result.Value.StrippedHlsl.Replace("\r\n", "\n").Split('\n');
 
-        lines.Length.Should().Be(source.Replace("\r\n", "\n").Split('\n').Length);
-        lines[0].Should().Contain("Texture2D _dissolveTex;");
-        lines[2].Should().Contain("float4 PS");
+        lines.Length.ShouldBe(source.Replace("\r\n", "\n").Split('\n').Length);
+        lines[0].ShouldContain("Texture2D _dissolveTex;", Case.Sensitive);
+        lines[2].ShouldContain("float4 PS", Case.Sensitive);
     }
 
     [Fact]
@@ -1102,8 +1100,8 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.StrippedHlsl.Should().Be(source);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.StrippedHlsl.ShouldBe(source);
     }
 
     // -------------------------------------------------------------------------
@@ -1125,9 +1123,9 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Samplers.Should().HaveCount(1);
-        result.Value.Samplers[0].TextureReference.Should().Be("MyTex");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Samplers.Count().ShouldBe(1);
+        result.Value.Samplers[0].TextureReference.ShouldBe("MyTex");
     }
 
     [Fact]
@@ -1151,25 +1149,25 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         string stripped = result.Value.StrippedHlsl;
 
         // Same rewrite the keyword form gets: modern SamplerState, legacy block gone.
-        stripped.Should().Contain("SamplerState MaskSampler;");
-        stripped.Should().NotContain("MinFilter");
+        stripped.ShouldContain("SamplerState MaskSampler;", Case.Sensitive);
+        stripped.ShouldNotContain("MinFilter", Case.Sensitive);
 
         // No synthesized texture — the block bound the existing Texture2D, and
         // tex2D resolves to a Sample call on it.
-        stripped.Should().NotContain("_SDTexture");
-        stripped.Should().Contain("Mask.Sample(MaskSampler, uv)");
-        stripped.Should().NotContain("tex2D");
+        stripped.ShouldNotContain("_SDTexture", Case.Sensitive);
+        stripped.ShouldContain("Mask.Sample(MaskSampler, uv)", Case.Sensitive);
+        stripped.ShouldNotContain("tex2D", Case.Sensitive);
 
         // Metadata capture is identical to the keyword form.
-        result.Value.Samplers.Should().ContainSingle();
-        result.Value.Samplers[0].Name.Should().Be("MaskSampler");
-        result.Value.Samplers[0].TextureReference.Should().Be("Mask");
-        result.Value.Samplers[0].StateEntries.Should().ContainSingle(
-            e => e.Key == "MinFilter" && e.Value == "LINEAR");
+        result.Value.Samplers.ShouldHaveSingleItem();
+        result.Value.Samplers[0].Name.ShouldBe("MaskSampler");
+        result.Value.Samplers[0].TextureReference.ShouldBe("Mask");
+        result.Value.Samplers[0].StateEntries.Where(
+            e => e.Key == "MinFilter" && e.Value == "LINEAR").ShouldHaveSingleItem();
     }
 
     [Fact]
@@ -1194,18 +1192,18 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         string stripped = result.Value.StrippedHlsl;
 
-        stripped.Should().Contain("Texture2D t;");
-        stripped.Should().Contain("SamplerState s;");
-        stripped.Should().Contain("t.Sample(s, uv)");
-        stripped.Should().NotContain("tex2D");
-        stripped.Should().NotContain("register");
-        stripped.Should().NotContain("AddressU");
+        stripped.ShouldContain("Texture2D t;", Case.Sensitive);
+        stripped.ShouldContain("SamplerState s;", Case.Sensitive);
+        stripped.ShouldContain("t.Sample(s, uv)", Case.Sensitive);
+        stripped.ShouldNotContain("tex2D", Case.Sensitive);
+        stripped.ShouldNotContain("register", Case.Sensitive);
+        stripped.ShouldNotContain("AddressU", Case.Sensitive);
 
-        result.Value.Samplers.Should().ContainSingle();
-        result.Value.Samplers[0].TextureReference.Should().Be("t");
+        result.Value.Samplers.ShouldHaveSingleItem();
+        result.Value.Samplers[0].TextureReference.ShouldBe("t");
     }
 
     [Fact]
@@ -1224,16 +1222,16 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         string stripped = result.Value.StrippedHlsl;
 
-        stripped.Should().NotContain("UnusedSampler");
-        stripped.Should().NotContain("SomeTexture");
-        stripped.Should().NotContain("_SDTexture");
+        stripped.ShouldNotContain("UnusedSampler", Case.Sensitive);
+        stripped.ShouldNotContain("SomeTexture", Case.Sensitive);
+        stripped.ShouldNotContain("_SDTexture", Case.Sensitive);
 
-        result.Value.Samplers.Should().ContainSingle();
-        result.Value.Samplers[0].Name.Should().Be("UnusedSampler");
-        result.Value.Samplers[0].TextureReference.Should().Be("SomeTexture");
+        result.Value.Samplers.ShouldHaveSingleItem();
+        result.Value.Samplers[0].Name.ShouldBe("UnusedSampler");
+        result.Value.Samplers[0].TextureReference.ShouldBe("SomeTexture");
     }
 
     [Fact]
@@ -1263,19 +1261,19 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
 
         // No sampler declaration was (mis)captured…
-        result.Value.Samplers.Should().BeEmpty();
+        result.Value.Samplers.ShouldBeEmpty();
 
         // …and the bodies survive: struct fields intact, both sampler-typed
         // parameters untouched (only the function return ': COLOR0' is rewritten,
         // which is the pre-existing SV_Target treatment, not sampler handling).
         string stripped = result.Value.StrippedHlsl;
-        stripped.Should().Contain("float4 Color : COLOR0;");
-        stripped.Should().Contain("(sampler2D s, float2 uv)");
-        stripped.Should().Contain("(float2 uv, sampler2D s)");
-        stripped.Should().Contain("return float4(uv, 0, 1);");
+        stripped.ShouldContain("float4 Color : COLOR0;", Case.Sensitive);
+        stripped.ShouldContain("(sampler2D s, float2 uv)", Case.Sensitive);
+        stripped.ShouldContain("(float2 uv, sampler2D s)", Case.Sensitive);
+        stripped.ShouldContain("return float4(uv, 0, 1);", Case.Sensitive);
     }
 
     // -------------------------------------------------------------------------
@@ -1300,10 +1298,10 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         var states = result.Value.Techniques[0].Passes[0].RenderStates;
-        states.Should().ContainSingle(s => s.Key == "DepthBias").Which.Value.Should().Be("-0.5");
-        states.Should().ContainSingle(s => s.Key == "SlopeScaleDepthBias").Which.Value.Should().Be("-2");
+        states.Where(s => s.Key == "DepthBias").ShouldHaveSingleItem().Value.ShouldBe("-0.5");
+        states.Where(s => s.Key == "SlopeScaleDepthBias").ShouldHaveSingleItem().Value.ShouldBe("-2");
     }
 
     [Fact]
@@ -1323,10 +1321,9 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        var sampler = result.Value.Samplers.Should().ContainSingle().Subject;
-        sampler.StateEntries.Should().ContainSingle(e => e.Key == "MipMapLodBias")
-            .Which.Value.Should().Be("-2");
+        result.IsSuccess.ShouldBeTrue();
+        var sampler = result.Value.Samplers.ShouldHaveSingleItem();
+        sampler.StateEntries.Where(e => e.Key == "MipMapLodBias").ShouldHaveSingleItem().Value.ShouldBe("-2");
     }
 
     [Fact]
@@ -1342,10 +1339,9 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        var annotation = result.Value.ParameterAnnotations.Should().ContainSingle().Subject;
-        annotation.Entries.Should().ContainSingle(e => e.Name == "UIMin")
-            .Which.Value.Should().Be("-1.0");
+        result.IsSuccess.ShouldBeTrue();
+        var annotation = result.Value.ParameterAnnotations.ShouldHaveSingleItem();
+        annotation.Entries.Where(e => e.Name == "UIMin").ShouldHaveSingleItem().Value.ShouldBe("-1.0");
     }
 
     [Fact]
@@ -1365,9 +1361,9 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.StrippedHlsl.Should().Contain("float a = 1.0 - 0.25;");
-        result.Value.StrippedHlsl.Should().Contain("return float4(-a, a - 1.0, 0, 1);");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.StrippedHlsl.ShouldContain("float a = 1.0 - 0.25;", Case.Sensitive);
+        result.Value.StrippedHlsl.ShouldContain("return float4(-a, a - 1.0, 0, 1);", Case.Sensitive);
     }
 
     // -------------------------------------------------------------------------
@@ -1390,10 +1386,9 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         result.Value.Techniques[0].Passes[0].RenderStates
-            .Should().ContainSingle(s => s.Key == "BlendFactor")
-            .Which.Value.Should().Be("0x80FF8080");
+            .Where(s => s.Key == "BlendFactor").ShouldHaveSingleItem().Value.ShouldBe("0x80FF8080");
     }
 
     [Fact]
@@ -1412,10 +1407,9 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         result.Value.Techniques[0].Passes[0].RenderStates
-            .Should().ContainSingle(s => s.Key == "DepthBias")
-            .Which.Value.Should().Be("1e-4");
+            .Where(s => s.Key == "DepthBias").ShouldHaveSingleItem().Value.ShouldBe("1e-4");
     }
 
     // -------------------------------------------------------------------------
@@ -1435,9 +1429,9 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be(FxParseErrorCode.UnknownCharacter);
-        result.Error.Message.Should().Contain("'@'");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe(FxParseErrorCode.UnknownCharacter);
+        result.Error.Message.ShouldContain("'@'", Case.Sensitive);
     }
 
     [Fact]
@@ -1461,8 +1455,8 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.StrippedHlsl.Should().Contain("int mask = (3 & 1) | (4 ^ 2);");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.StrippedHlsl.ShouldContain("int mask = (3 & 1) | (4 ^ 2);", Case.Sensitive);
     }
 
     // -------------------------------------------------------------------------
@@ -1491,10 +1485,10 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "Shader.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         // The relational operator must survive verbatim so DXC/vkd3d see the original '<='.
-        result.Value.StrippedHlsl.Should().Contain("value <= 0.5f");
-        result.Value.ParameterAnnotations.Should().BeEmpty();
+        result.Value.StrippedHlsl.ShouldContain("value <= 0.5f", Case.Sensitive);
+        result.Value.ParameterAnnotations.ShouldBeEmpty();
     }
 
     [Theory]
@@ -1520,10 +1514,10 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         // The operator must reach DXC/vkd3d unchanged (not consumed as an annotation).
-        result.Value.StrippedHlsl.Should().Contain(mustSurvive);
-        result.Value.ParameterAnnotations.Should().BeEmpty();
+        result.Value.StrippedHlsl.ShouldContain(mustSurvive, Case.Sensitive);
+        result.Value.ParameterAnnotations.ShouldBeEmpty();
     }
 
     [Fact]
@@ -1534,15 +1528,14 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.ParameterAnnotations.Should().HaveCount(1);
-        result.Value.ParameterAnnotations[0].ParameterName.Should().Be("P");
-        result.Value.ParameterAnnotations[0].Entries.Should().ContainSingle()
-            .Which.Name.Should().Be("UIMin");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.ParameterAnnotations.Count().ShouldBe(1);
+        result.Value.ParameterAnnotations[0].ParameterName.ShouldBe("P");
+        result.Value.ParameterAnnotations[0].Entries.ShouldHaveSingleItem().Name.ShouldBe("UIMin");
 
         // The '< ... >' block is stripped; the assignment survives.
-        result.Value.StrippedHlsl.Should().NotContain("<");
-        result.Value.StrippedHlsl.Should().Contain("= 0.5");
+        result.Value.StrippedHlsl.ShouldNotContain("<", Case.Sensitive);
+        result.Value.StrippedHlsl.ShouldContain("= 0.5", Case.Sensitive);
     }
 
     [Fact]
@@ -1554,12 +1547,11 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.ParameterAnnotations.Should().ContainSingle()
-            .Which.ParameterName.Should().Be("P");
-        result.Value.ParameterAnnotations[0].Entries.Should().BeEmpty();
-        result.Value.StrippedHlsl.Should().NotContain("<");
-        result.Value.StrippedHlsl.Should().Contain("= 0.5");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.ParameterAnnotations.ShouldHaveSingleItem().ParameterName.ShouldBe("P");
+        result.Value.ParameterAnnotations[0].Entries.ShouldBeEmpty();
+        result.Value.StrippedHlsl.ShouldNotContain("<", Case.Sensitive);
+        result.Value.StrippedHlsl.ShouldContain("= 0.5", Case.Sensitive);
     }
 
     // -------------------------------------------------------------------------
@@ -1602,10 +1594,10 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         // The operator/expression must reach DXC unchanged (not consumed as annotation).
-        result.Value.StrippedHlsl.Should().Contain(mustSurvive);
-        result.Value.ParameterAnnotations.Should().BeEmpty();
+        result.Value.StrippedHlsl.ShouldContain(mustSurvive, Case.Sensitive);
+        result.Value.ParameterAnnotations.ShouldBeEmpty();
     }
 
     [Fact]
@@ -1628,9 +1620,9 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.StrippedHlsl.Should().Contain("length(v) < radius ? 1.0f : 0.0f");
-        result.Value.ParameterAnnotations.Should().BeEmpty();
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.StrippedHlsl.ShouldContain("length(v) < radius ? 1.0f : 0.0f", Case.Sensitive);
+        result.Value.ParameterAnnotations.ShouldBeEmpty();
     }
 
     [Fact]
@@ -1654,9 +1646,9 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.StrippedHlsl.Should().Contain("return a > 0.5f;");
-        result.Value.ParameterAnnotations.Should().BeEmpty();
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.StrippedHlsl.ShouldContain("return a > 0.5f;", Case.Sensitive);
+        result.Value.ParameterAnnotations.ShouldBeEmpty();
     }
 
     [Fact]
@@ -1678,9 +1670,9 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.StrippedHlsl.Should().Contain("SomeDefine < 4;");
-        result.Value.ParameterAnnotations.Should().BeEmpty();
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.StrippedHlsl.ShouldContain("SomeDefine < 4;", Case.Sensitive);
+        result.Value.ParameterAnnotations.ShouldBeEmpty();
     }
 
     [Fact]
@@ -1702,10 +1694,10 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         // The generic template survives verbatim; nothing was captured as annotation.
-        result.Value.StrippedHlsl.Should().Contain("Texture2D<float4> Tex;");
-        result.Value.ParameterAnnotations.Should().BeEmpty();
+        result.Value.StrippedHlsl.ShouldContain("Texture2D<float4> Tex;", Case.Sensitive);
+        result.Value.ParameterAnnotations.ShouldBeEmpty();
     }
 
     // -------------------------------------------------------------------------
@@ -1726,15 +1718,15 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        var pa = result.Value.ParameterAnnotations.Should().ContainSingle().Subject;
-        pa.ParameterName.Should().Be("P");
-        pa.Entries.Select(e => e.Name).Should().Equal("UIName", "UIMin", "UIMax");
+        result.IsSuccess.ShouldBeTrue();
+        var pa = result.Value.ParameterAnnotations.ShouldHaveSingleItem();
+        pa.ParameterName.ShouldBe("P");
+        pa.Entries.Select(e => e.Name).ShouldBe(new[] {"UIName", "UIMin", "UIMax"});
 
         // The whole '< ... >' block is stripped; only the assignment survives.
-        result.Value.StrippedHlsl.Should().NotContain("<");
-        result.Value.StrippedHlsl.Should().NotContain("UIName");
-        result.Value.StrippedHlsl.Should().Contain("= 0.5");
+        result.Value.StrippedHlsl.ShouldNotContain("<", Case.Sensitive);
+        result.Value.StrippedHlsl.ShouldNotContain("UIName", Case.Sensitive);
+        result.Value.StrippedHlsl.ShouldContain("= 0.5", Case.Sensitive);
     }
 
     [Fact]
@@ -1753,13 +1745,13 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        var pa = result.Value.ParameterAnnotations.Should().ContainSingle().Subject;
-        pa.ParameterName.Should().Be("Intensity");
-        pa.Entries.Should().ContainSingle(e => e.Name == "UIMin").Which.Value.Should().Be("-1.0");
+        result.IsSuccess.ShouldBeTrue();
+        var pa = result.Value.ParameterAnnotations.ShouldHaveSingleItem();
+        pa.ParameterName.ShouldBe("Intensity");
+        pa.Entries.Where(e => e.Name == "UIMin").ShouldHaveSingleItem().Value.ShouldBe("-1.0");
 
-        result.Value.StrippedHlsl.Should().NotContain("<");
-        result.Value.StrippedHlsl.Should().Contain("= 0.5");
+        result.Value.StrippedHlsl.ShouldNotContain("<", Case.Sensitive);
+        result.Value.StrippedHlsl.ShouldContain("= 0.5", Case.Sensitive);
     }
 
     [Fact]
@@ -1784,20 +1776,20 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
 
         // The genuine annotation was captured and its '<...>' stripped...
-        var pa = result.Value.ParameterAnnotations.Should().ContainSingle().Subject;
-        pa.ParameterName.Should().Be("Threshold");
-        pa.Entries.Select(e => e.Name).Should().Equal("UIMin", "UIMax");
+        var pa = result.Value.ParameterAnnotations.ShouldHaveSingleItem();
+        pa.ParameterName.ShouldBe("Threshold");
+        pa.Entries.Select(e => e.Name).ShouldBe(new[] {"UIMin", "UIMax"});
 
         // ...while the body's relational operator survived verbatim.
         string stripped = result.Value.StrippedHlsl;
-        stripped.Should().Contain("return a <= Threshold ? 0.0f : 1.0f;");
+        stripped.ShouldContain("return a <= Threshold ? 0.0f : 1.0f;", Case.Sensitive);
         // Only the annotation '<...>' was removed; the body '<=' remains, so exactly
         // one '<' (from '<=') is left in the output.
-        stripped.Should().Contain("<=");
-        stripped.Should().NotContain("UIMin");
+        stripped.ShouldContain("<=", Case.Sensitive);
+        stripped.ShouldNotContain("UIMin", Case.Sensitive);
     }
 
     // -------------------------------------------------------------------------
@@ -1824,9 +1816,9 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.StrippedHlsl.Should().Contain("SpriteTexture.SampleGrad(TexSampler, uv, ddx(uv), ddy(uv))");
-        result.Value.StrippedHlsl.Should().NotContain("tex2Dgrad");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.StrippedHlsl.ShouldContain("SpriteTexture.SampleGrad(TexSampler, uv, ddx(uv), ddy(uv))", Case.Sensitive);
+        result.Value.StrippedHlsl.ShouldNotContain("tex2Dgrad", Case.Sensitive);
     }
 
     [Theory]
@@ -1852,9 +1844,9 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be(FxParseErrorCode.UnsupportedLegacyIntrinsic);
-        result.Error.Message.Should().Contain($"'{intrinsic}'");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe(FxParseErrorCode.UnsupportedLegacyIntrinsic);
+        result.Error.Message.ShouldContain($"'{intrinsic}'", Case.Sensitive);
     }
 
     [Fact]
@@ -1871,7 +1863,7 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
     }
 
     // =========================================================================
@@ -1903,21 +1895,21 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         string stripped = result.Value.StrippedHlsl;
 
         // The legacy initializer is gone, but the declaration survives as a
         // passthrough SamplerState (NOT erased) so the .Sample call resolves.
-        stripped.Should().Contain("SamplerState SpriteTextureSampler;");
-        stripped.Should().NotContain("sampler_state");
+        stripped.ShouldContain("SamplerState SpriteTextureSampler;", Case.Sensitive);
+        stripped.ShouldNotContain("sampler_state", Case.Sensitive);
         // No Texture2D is synthesized — the shader declares its own and uses it.
-        stripped.Should().NotContain("_SDTexture");
+        stripped.ShouldNotContain("_SDTexture", Case.Sensitive);
         // The modern call is untouched (it is not a tex2D rewrite).
-        stripped.Should().Contain("SpriteTexture.Sample(SpriteTextureSampler, uv)");
+        stripped.ShouldContain("SpriteTexture.Sample(SpriteTextureSampler, uv)", Case.Sensitive);
 
         // Metadata is still captured.
-        result.Value.Samplers.Should().ContainSingle();
-        result.Value.Samplers[0].Name.Should().Be("SpriteTextureSampler");
+        result.Value.Samplers.ShouldHaveSingleItem();
+        result.Value.Samplers[0].Name.ShouldBe("SpriteTextureSampler");
     }
 
     [Fact]
@@ -1941,13 +1933,13 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         string stripped = result.Value.StrippedHlsl;
 
-        stripped.Should().Contain("SamplerState S;");
-        stripped.Should().NotContain("Filter");
-        stripped.Should().NotContain("_SDTexture");
-        stripped.Should().Contain("Tex.SampleLevel(S, uv, 0)");
+        stripped.ShouldContain("SamplerState S;", Case.Sensitive);
+        stripped.ShouldNotContain("Filter", Case.Sensitive);
+        stripped.ShouldNotContain("_SDTexture", Case.Sensitive);
+        stripped.ShouldContain("Tex.SampleLevel(S, uv, 0)", Case.Sensitive);
     }
 
     [Fact]
@@ -1968,11 +1960,11 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         string stripped = result.Value.StrippedHlsl;
 
-        stripped.Should().NotContain("sampler_state");
-        stripped.Should().NotContain("SamplerState UnusedSampler;");
+        stripped.ShouldNotContain("sampler_state", Case.Sensitive);
+        stripped.ShouldNotContain("SamplerState UnusedSampler;", Case.Sensitive);
     }
 
     // -------------------------------------------------------------------------
@@ -1998,20 +1990,20 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         string stripped = result.Value.StrippedHlsl;
 
         // Sampler is tex2D-referenced, so the whole decl (register clause + state
         // block) is replaced by a SamplerState; nothing of the block leaks.
-        stripped.Should().Contain("SamplerState SpriteTextureSampler;");
-        stripped.Should().NotContain("sampler_state");
-        stripped.Should().NotContain("register");
-        stripped.Should().Contain("SpriteTexture.Sample(SpriteTextureSampler, uv)");
+        stripped.ShouldContain("SamplerState SpriteTextureSampler;", Case.Sensitive);
+        stripped.ShouldNotContain("sampler_state", Case.Sensitive);
+        stripped.ShouldNotContain("register", Case.Sensitive);
+        stripped.ShouldContain("SpriteTexture.Sample(SpriteTextureSampler, uv)", Case.Sensitive);
 
         // Metadata captured (including the texture binding).
-        result.Value.Samplers.Should().ContainSingle();
-        result.Value.Samplers[0].Name.Should().Be("SpriteTextureSampler");
-        result.Value.Samplers[0].TextureReference.Should().Be("SpriteTexture");
+        result.Value.Samplers.ShouldHaveSingleItem();
+        result.Value.Samplers[0].Name.ShouldBe("SpriteTextureSampler");
+        result.Value.Samplers[0].TextureReference.ShouldBe("SpriteTexture");
     }
 
     // -------------------------------------------------------------------------
@@ -2037,20 +2029,20 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         string stripped = result.Value.StrippedHlsl;
 
         // The annotation block is metadata: it must not reach DXC.
-        stripped.Should().NotContain("UIName");
-        stripped.Should().NotContain("UIOrder");
+        stripped.ShouldNotContain("UIName", Case.Sensitive);
+        stripped.ShouldNotContain("UIOrder", Case.Sensitive);
         // The declaration still rewrites normally (tex2D-referenced).
-        stripped.Should().Contain("SamplerState SpriteTextureSampler;");
-        stripped.Should().Contain("SpriteTexture.Sample(SpriteTextureSampler, uv)");
+        stripped.ShouldContain("SamplerState SpriteTextureSampler;", Case.Sensitive);
+        stripped.ShouldContain("SpriteTexture.Sample(SpriteTextureSampler, uv)", Case.Sensitive);
 
         // SamplerInfo is unaffected by the annotation.
-        result.Value.Samplers.Should().ContainSingle();
-        result.Value.Samplers[0].Name.Should().Be("SpriteTextureSampler");
-        result.Value.Samplers[0].TextureReference.Should().Be("SpriteTexture");
+        result.Value.Samplers.ShouldHaveSingleItem();
+        result.Value.Samplers[0].Name.ShouldBe("SpriteTextureSampler");
+        result.Value.Samplers[0].TextureReference.ShouldBe("SpriteTexture");
     }
 
     // -------------------------------------------------------------------------
@@ -2075,9 +2067,9 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         var rs = result.Value.Techniques[0].Passes[0].RenderStates;
-        rs.Should().ContainSingle(e => e.Key == "ColorWriteEnable" && e.Value == "Red|Green|Blue");
+        rs.Where(e => e.Key == "ColorWriteEnable" && e.Value == "Red|Green|Blue").ShouldHaveSingleItem();
     }
 
     [Fact]
@@ -2096,9 +2088,9 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         var rs = result.Value.Techniques[0].Passes[0].RenderStates;
-        rs.Should().ContainSingle(e => e.Key == "ColorWriteEnable" && e.Value == "Red");
+        rs.Where(e => e.Key == "ColorWriteEnable" && e.Value == "Red").ShouldHaveSingleItem();
     }
 
     [Fact]
@@ -2117,9 +2109,9 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         var rs = result.Value.Techniques[0].Passes[0].RenderStates;
-        rs.Should().ContainSingle(e => e.Key == "ColorWriteEnable1" && e.Value == "Red|Alpha");
+        rs.Where(e => e.Key == "ColorWriteEnable1" && e.Value == "Red|Alpha").ShouldHaveSingleItem();
     }
 
     [Fact]
@@ -2140,9 +2132,9 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         var rs = result.Value.Techniques[0].Passes[0].RenderStates;
-        rs.Should().ContainSingle(e => e.Key == "CullMode" && e.Value == "None");
+        rs.Where(e => e.Key == "CullMode" && e.Value == "None").ShouldHaveSingleItem();
     }
 
     // -------------------------------------------------------------------------
@@ -2167,15 +2159,15 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         string stripped = result.Value.StrippedHlsl;
 
-        stripped.Should().Contain("Texture2D Tex;");
+        stripped.ShouldContain("Texture2D Tex;", Case.Sensitive);
         // The whole legacy declaration (incl. annotation) is gone — no stray '>'
         // or ';'-leftover, no annotation contents.
-        stripped.Should().NotContain(">");
-        stripped.Should().NotContain("Name");
-        stripped.Should().NotContain("texture Tex");
+        stripped.ShouldNotContain(">", Case.Sensitive);
+        stripped.ShouldNotContain("Name", Case.Sensitive);
+        stripped.ShouldNotContain("texture Tex", Case.Sensitive);
     }
 
     [Fact]
@@ -2191,12 +2183,12 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         string stripped = result.Value.StrippedHlsl;
 
-        stripped.Should().Contain("Texture2D Tex;");
-        stripped.Should().NotContain(">");
-        stripped.Should().NotContain("Dim");
+        stripped.ShouldContain("Texture2D Tex;", Case.Sensitive);
+        stripped.ShouldNotContain(">", Case.Sensitive);
+        stripped.ShouldNotContain("Dim", Case.Sensitive);
     }
 
     [Fact]
@@ -2209,7 +2201,7 @@ public sealed class FxPreParserTests
             float4 PS() : COLOR { return 0; }
             """;
         FxPreParser.Parse(bareSource, sourceFile: "test.fx").Value.StrippedHlsl
-            .Should().Contain("Texture2D Tex;");
+            .ShouldContain("Texture2D Tex;", Case.Sensitive);
 
         const string registerSource = """
             texture Tex : register(t0);
@@ -2217,8 +2209,8 @@ public sealed class FxPreParserTests
             float4 PS() : COLOR { return 0; }
             """;
         string registerStripped = FxPreParser.Parse(registerSource, sourceFile: "test.fx").Value.StrippedHlsl;
-        registerStripped.Should().Contain("Texture2D Tex;");
-        registerStripped.Should().NotContain("register");
+        registerStripped.ShouldContain("Texture2D Tex;", Case.Sensitive);
+        registerStripped.ShouldNotContain("register", Case.Sensitive);
     }
 
     // B5 — a modern resource whose VARIABLE NAME is a legacy texture keyword
@@ -2244,11 +2236,11 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         string stripped = result.Value.StrippedHlsl;
 
-        stripped.Should().Contain("Texture2D Texture : register(t0);");
-        stripped.Should().NotContain("Texture2D Texture2D");
+        stripped.ShouldContain("Texture2D Texture : register(t0);", Case.Sensitive);
+        stripped.ShouldNotContain("Texture2D Texture2D", Case.Sensitive);
     }
 
     [Fact]
@@ -2263,9 +2255,9 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.StrippedHlsl.Should().Contain("Texture2D Texture : TEXCOORD0;");
-        result.Value.StrippedHlsl.Should().NotContain("Texture2D Texture2D");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.StrippedHlsl.ShouldContain("Texture2D Texture : TEXCOORD0;", Case.Sensitive);
+        result.Value.StrippedHlsl.ShouldNotContain("Texture2D Texture2D", Case.Sensitive);
     }
 
     [Fact]
@@ -2283,9 +2275,9 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.StrippedHlsl.Should().Contain("Texture2D Foo;");
-        result.Value.StrippedHlsl.Should().NotContain("texture Foo");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.StrippedHlsl.ShouldContain("Texture2D Foo;", Case.Sensitive);
+        result.Value.StrippedHlsl.ShouldNotContain("texture Foo", Case.Sensitive);
     }
 
     // B6 — a VERTEX shader whose function-return semantic is ': COLOR' (e.g. it
@@ -2322,13 +2314,13 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         string stripped = result.Value.StrippedHlsl;
 
         // The VS return semantic stays ': COLOR0' (NOT rewritten).
-        stripped.Should().Contain("out float4 outPos : SV_POSITION) : COLOR0");
+        stripped.ShouldContain("out float4 outPos : SV_POSITION) : COLOR0", Case.Sensitive);
         // The PS return semantic IS still rewritten to ': SV_Target0'.
-        stripped.Should().Contain("float4 color : COLOR0) : SV_Target0");
+        stripped.ShouldContain("float4 color : COLOR0) : SV_Target0", Case.Sensitive);
     }
 
     [Fact]
@@ -2346,9 +2338,9 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.StrippedHlsl.Should().Contain(": SV_Target");
-        result.Value.StrippedHlsl.Should().NotContain(": COLOR");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.StrippedHlsl.ShouldContain(": SV_Target", Case.Sensitive);
+        result.Value.StrippedHlsl.ShouldNotContain(": COLOR", Case.Sensitive);
     }
 
     [Fact]
@@ -2372,11 +2364,11 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         // The struct field 'COLOR0' is an output-struct member, not a function-return
         // semantic, so it is untouched.
-        result.Value.StrippedHlsl.Should().Contain("float4 Col : COLOR0;");
-        result.Value.StrippedHlsl.Should().NotContain("SV_Target");
+        result.Value.StrippedHlsl.ShouldContain("float4 Col : COLOR0;", Case.Sensitive);
+        result.Value.StrippedHlsl.ShouldNotContain("SV_Target", Case.Sensitive);
     }
 
     // B7 — an array-indexed relational with an assignment in a ternary arm inside a
@@ -2404,11 +2396,11 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         // The in-body expression survives verbatim (no annotation stripping).
-        result.Value.StrippedHlsl.Should().Contain("float r = arr[i] < y ? z = w : q;");
+        result.Value.StrippedHlsl.ShouldContain("float r = arr[i] < y ? z = w : q;", Case.Sensitive);
         // It was never captured as a parameter annotation.
-        result.Value.ParameterAnnotations.Should().BeEmpty();
+        result.Value.ParameterAnnotations.ShouldBeEmpty();
     }
 
     [Fact]
@@ -2424,12 +2416,12 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.ParameterAnnotations.Should().ContainSingle(a => a.ParameterName == "P");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.ParameterAnnotations.Where(a => a.ParameterName == "P").ShouldHaveSingleItem();
         // The '< … >' block is stripped from the global declaration.
-        result.Value.StrippedHlsl.Should().NotContain("UIMin");
-        result.Value.StrippedHlsl.Should().Contain("float P");
-        result.Value.StrippedHlsl.Should().Contain("= 0.5;");
+        result.Value.StrippedHlsl.ShouldNotContain("UIMin", Case.Sensitive);
+        result.Value.StrippedHlsl.ShouldContain("float P", Case.Sensitive);
+        result.Value.StrippedHlsl.ShouldContain("= 0.5;", Case.Sensitive);
     }
 
     [Fact]
@@ -2446,9 +2438,9 @@ public sealed class FxPreParserTests
 
         var result = FxPreParser.Parse(source, sourceFile: "test.fx");
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.ParameterAnnotations.Should().ContainSingle(a => a.ParameterName == "P");
-        result.Value.StrippedHlsl.Should().NotContain("UIMin");
-        result.Value.StrippedHlsl.Should().Contain("float3 Tint = {1, 1, 1};");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.ParameterAnnotations.Where(a => a.ParameterName == "P").ShouldHaveSingleItem();
+        result.Value.StrippedHlsl.ShouldNotContain("UIMin", Case.Sensitive);
+        result.Value.StrippedHlsl.ShouldContain("float3 Tint = {1, 1, 1};", Case.Sensitive);
     }
 }

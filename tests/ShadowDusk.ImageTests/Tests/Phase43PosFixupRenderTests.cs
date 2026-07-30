@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
@@ -63,7 +63,7 @@ public sealed class Phase43PosFixupRenderTests
             SourceFileName  = fxPath,
         }, ct);
 
-        result.IsSuccess.Should().BeTrue(result.IsFailure
+        result.IsSuccess.ShouldBeTrue(result.IsFailure
             ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "compile ok");
         return result.Value.Data;
     }
@@ -88,7 +88,7 @@ public sealed class Phase43PosFixupRenderTests
         GlslShaderPair sd       = GlslShaderExtractor.Extract(sdMgfx);
         (string goldenVs, _)    = ReadGoldenPair();
 
-        sd.VertexSource.Should().NotBeNull("the VS-driven fixture must ship a compiled VS");
+        sd.VertexSource.ShouldNotBeNull("the VS-driven fixture must ship a compiled VS");
         string sdVs = sd.VertexSource!;
 
         // The golden's posFixup lines, READ from the golden itself (trimmed —
@@ -99,22 +99,20 @@ public sealed class Phase43PosFixupRenderTests
             .Where(l => l.Contains("posFixup", StringComparison.Ordinal))
             .ToArray();
 
-        goldenFixupLines.Should().BeEquivalentTo(new[]
+        goldenFixupLines.ShouldBe(new[]
         {
             "uniform vec4 posFixup;",
             "gl_Position.y = gl_Position.y * posFixup.y;",
             "gl_Position.xy += posFixup.zw * gl_Position.ww;",
-        }, "the golden is the oracle for the exact posFixup form");
+        }, ignoreOrder: true, customMessage: "the golden is the oracle for the exact posFixup form");
 
         string[] sdLines = sdVs.Split('\n').Select(l => l.Trim()).ToArray();
         foreach (string goldenLine in goldenFixupLines)
         {
-            sdLines.Should().Contain(goldenLine,
-                $"ShadowDusk's VS must carry the golden's posFixup form line '{goldenLine}'");
+            sdLines.ShouldContain(goldenLine, $"ShadowDusk's VS must carry the golden's posFixup form line '{goldenLine}'");
         }
 
-        sdVs.Should().NotContain("-gl_Position.y",
-            "the static FlipVertexY negation must be gone — the flip is posFixup's job");
+        sdVs.ShouldNotContain("-gl_Position.y", Case.Sensitive, "the static FlipVertexY negation must be gone — the flip is posFixup's job");
     }
 
     [Fact]
@@ -138,7 +136,7 @@ public sealed class Phase43PosFixupRenderTests
         // (a) Render-target case == the mgfxc golden, same-backend (this is also the
         // pre-Phase-43 static-flip image: y = -1 reproduces the baked negation).
         var cmp = ImageComparer.Compare(goldenRt, sdRt, tolerance: 4);
-        cmp.Matches.Should().BeTrue(
+        cmp.Matches.ShouldBeTrue(
             "with the render-target fixup (y = -1) ShadowDusk must render pixel-equivalent " +
             $"to the mgfxc golden; diff {cmp.DifferentPixels}/{cmp.TotalPixels}, maxd {cmp.MaxChannelDelta}");
 
@@ -147,13 +145,13 @@ public sealed class Phase43PosFixupRenderTests
         // static flip could not provide).
         byte[] sdRtMirrored = FlipRows(sdRt, OffscreenRenderer.Width, OffscreenRenderer.Height);
         var mirrorCmp = ImageComparer.Compare(sdRtMirrored, sdBackbuffer, tolerance: 4);
-        mirrorCmp.Matches.Should().BeTrue(
+        mirrorCmp.Matches.ShouldBeTrue(
             "the backbuffer fixup (y = +1) must render the vertical mirror of the render-target " +
             $"fixup (y = -1); diff {mirrorCmp.DifferentPixels}/{mirrorCmp.TotalPixels}, maxd {mirrorCmp.MaxChannelDelta}");
 
         // (c) And the two cases must actually DIFFER (the test texture is vertically
         // asymmetric, so identical images would mean posFixup is dead).
-        ImageComparer.Compare(sdRt, sdBackbuffer, tolerance: 4).Matches.Should().BeFalse(
+        ImageComparer.Compare(sdRt, sdBackbuffer, tolerance: 4).Matches.ShouldBeFalse(
             "y = +1 and y = -1 must produce different orientations for an asymmetric scene");
     }
 
@@ -256,14 +254,14 @@ public sealed class Phase43PosFixupRenderTests
     private static void SetVec4(GL gl, uint program, string name, float x, float y, float z, float w)
     {
         int loc = gl.GetUniformLocation(program, name);
-        loc.Should().BeGreaterThanOrEqualTo(0, $"uniform '{name}' must be active in the program");
+        loc.ShouldBeGreaterThanOrEqualTo(0, customMessage: $"uniform '{name}' must be active in the program");
         gl.Uniform4(loc, x, y, z, w);
     }
 
     private static void BindAttrib(GL gl, uint program, string name, int size, uint stride, int byteOffset)
     {
         int loc = gl.GetAttribLocation(program, name);
-        loc.Should().BeGreaterThanOrEqualTo(0, $"attribute '{name}' must be active in the program");
+        loc.ShouldBeGreaterThanOrEqualTo(0, customMessage: $"attribute '{name}' must be active in the program");
         gl.EnableVertexAttribArray((uint)loc);
         unsafe
         {

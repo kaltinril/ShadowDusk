@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core;
 using ShadowDusk.GLSL;
 using Xunit;
@@ -25,8 +25,8 @@ public sealed class SpirvCrossGlslTranspilerGuardTests
 
         var result = transpiler.Transpile(new byte[byteLength]);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("SD0100");
-        result.Error.Message.Should().Contain("multiple of 4");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("SD0100");
+        result.Error.Message.ShouldContain("multiple of 4", Case.Sensitive);
     }
 }

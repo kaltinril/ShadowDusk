@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using Xunit;
@@ -58,30 +58,30 @@ public sealed class VulkanEffectCompilerTests
             SourceFileName = "VulkanParameterized.fx",
         }, cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
+        result.IsSuccess.ShouldBeTrue(
             result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
 
         var reader = MgfxBlobReader.Parse(result.Value.Data);
-        reader.ProfileId.Should().Be(80, "MgfxProfile.Vulkan is 80, matching real MonoGame 3.8.5 (not the old wrong placeholder 3)");
-        reader.MgfxVersion.Should().Be(11, "Vulkan always writes the v11 shader-record shape");
+        reader.ProfileId.ShouldBe((byte)(80), customMessage: "MgfxProfile.Vulkan is 80, matching real MonoGame 3.8.5 (not the old wrong placeholder 3)");
+        reader.MgfxVersion.ShouldBe((byte)(11), customMessage: "Vulkan always writes the v11 shader-record shape");
 
-        reader.Shaders.Should().HaveCount(2, "one vertex + one pixel shader");
+        reader.Shaders.Count().ShouldBe(2, customMessage: "one vertex + one pixel shader");
         foreach (var shader in reader.Shaders)
         {
             var vk = VulkanShaderCodeReader.Parse(shader.Bytecode);
-            vk.SpirvMagicOk.Should().BeTrue($"shader #{shader.Index} (isVertex={shader.IsVertex}) must wrap valid SPIR-V");
+            vk.SpirvMagicOk.ShouldBeTrue($"shader #{shader.Index} (isVertex={shader.IsVertex}) must wrap valid SPIR-V");
         }
 
         // The pixel shader reflects both the texture/sampler AND the Tint parameter
         // (packed into $Globals) — this is exactly what the reflection-gate fix
         // (CompilationPipeline.cs) makes possible; before it, every Vulkan shader's
         // reflection was silently empty regardless of what the HLSL declared.
-        reader.ConstantBuffers.Should().NotBeEmpty("Tint must be reflected into a constant buffer");
-        reader.Samplers.Should().NotBeEmpty("SpriteTexture/SpriteTextureSampler must be reflected");
-        reader.ParameterNames.Should().Contain("Tint");
+        reader.ConstantBuffers.ShouldNotBeEmpty("Tint must be reflected into a constant buffer");
+        reader.Samplers.ShouldNotBeEmpty("SpriteTexture/SpriteTextureSampler must be reflected");
+        reader.ParameterNames.ShouldContain("Tint");
 
         var pixelShader = reader.Shaders.Single(s => !s.IsVertex);
-        pixelShader.ConstantBufferIndices.Should().NotBeEmpty("the pixel shader stage must bind its constant buffer");
+        pixelShader.ConstantBufferIndices.ShouldNotBeEmpty("the pixel shader stage must bind its constant buffer");
     }
 
     [Fact]
@@ -99,15 +99,14 @@ public sealed class VulkanEffectCompilerTests
         // rather than a source-level workaround.
         var result = await TestHelpers.CompileFixtureAsync("Sepia.fx", "Vulkan");
 
-        result.ExitCode.Should().Be(0, result.Stderr);
+        result.ExitCode.ShouldBe(0, customMessage: result.Stderr);
 
         var reader = MgfxBlobReader.Parse(result.Mgfx);
         var pixelShader = reader.Shaders.Single(s => !s.IsVertex);
         var vk = VulkanShaderCodeReader.Parse(pixelShader.Bytecode);
 
-        vk.Bindings.Should().Contain(
-            b => b.DescriptorType == 8 && b.Binding == 0,
-            "the implicit $Globals cbuffer (VkDescriptorType UNIFORM_BUFFER_DYNAMIC=8) must always bind to 0, " +
+        vk.Bindings.ShouldContain(
+            b => b.DescriptorType == 8 && b.Binding == 0, "the implicit $Globals cbuffer (VkDescriptorType UNIFORM_BUFFER_DYNAMIC=8) must always bind to 0, " +
             "regardless of where DXC would otherwise auto-number it");
     }
 
@@ -133,8 +132,8 @@ public sealed class VulkanEffectCompilerTests
             SourceFileName = "VulkanTwoCbuffers.fx",
         }, cts.Token);
 
-        result.IsFailure.Should().BeTrue("Vulkan does not support more than one constant buffer per shader stage");
-        result.Error.Select(e => e.Code).Should().Contain("SD0026");
+        result.IsFailure.ShouldBeTrue("Vulkan does not support more than one constant buffer per shader stage");
+        result.Error.Select(e => e.Code).ShouldContain("SD0026");
     }
 
     // ── Issue #145 regressions ────────────────────────────────────────────────
@@ -184,14 +183,14 @@ public sealed class VulkanEffectCompilerTests
             SourceFileName = "VulkanMatrixVs.fx",
         }, cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
+        result.IsSuccess.ShouldBeTrue(
             result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
 
         var reader = MgfxBlobReader.Parse(result.Value.Data);
         var vertexShader = reader.Shaders.Single(s => s.IsVertex);
         byte[] spirv = VulkanShaderCodeReader.Parse(vertexShader.Bytecode).Spirv;
 
-        SpirvDecorationScanner.AllMatrixMembersAreSpirvRowMajor(spirv).Should().BeTrue(
+        SpirvDecorationScanner.AllMatrixMembersAreSpirvRowMajor(spirv).ShouldBeTrue(
             "DXC emits the SPIR-V RowMajor decoration for an HLSL COLUMN-major matrix, which is " +
             "what mgfxc ships and what MonoGame's runtime uploads for; a ColMajor decoration " +
             "means -Zpr leaked back in and every matrix will be read transposed");
@@ -211,18 +210,16 @@ public sealed class VulkanEffectCompilerTests
             SourceFileName = "VulkanNoGoogleExt.fx",
         }, cts.Token);
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
 
         var reader = MgfxBlobReader.Parse(result.Value.Data);
         foreach (var shader in reader.Shaders)
         {
             byte[] spirv = VulkanShaderCodeReader.Parse(shader.Bytecode).Spirv;
 
-            SpirvDecorationScanner.Extensions(spirv).Should().NotContain(
-                e => e.StartsWith("SPV_GOOGLE", StringComparison.Ordinal),
-                "the shipped module must match mgfxc's reflect-free second compile");
-            SpirvDecorationScanner.EntryPointName(spirv).Should().Be("main",
-                "MonoGame's native Vulkan pipeline creation expects the entry point to be named main");
+            SpirvDecorationScanner.Extensions(spirv).ShouldNotContain(
+                e => e.StartsWith("SPV_GOOGLE", StringComparison.Ordinal), "the shipped module must match mgfxc's reflect-free second compile");
+            SpirvDecorationScanner.EntryPointName(spirv).ShouldBe("main", customMessage: "MonoGame's native Vulkan pipeline creation expects the entry point to be named main");
         }
     }
 
@@ -239,19 +236,19 @@ public sealed class VulkanEffectCompilerTests
             SourceFileName = "VulkanAttributes.fx",
         }, cts.Token);
 
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
 
         var reader = MgfxBlobReader.Parse(result.Value.Data);
         var vertexShader = reader.Shaders.Single(s => s.IsVertex);
 
         // POSITION0 -> usage 0 index 0, TEXCOORD0 -> usage 2 index 0, ordered by location.
-        vertexShader.Attributes.Should().HaveCount(2);
-        vertexShader.Attributes[0].Usage.Should().Be(0);
-        vertexShader.Attributes[0].Index.Should().Be(0);
-        vertexShader.Attributes[1].Usage.Should().Be(2);
-        vertexShader.Attributes[1].Index.Should().Be(0);
+        vertexShader.Attributes.Count().ShouldBe(2);
+        vertexShader.Attributes[0].Usage.ShouldBe((byte)(0));
+        vertexShader.Attributes[0].Index.ShouldBe((byte)(0));
+        vertexShader.Attributes[1].Usage.ShouldBe((byte)(2));
+        vertexShader.Attributes[1].Index.ShouldBe((byte)(0));
 
-        reader.Shaders.Single(s => !s.IsVertex).Attributes.Should().BeEmpty(
+        reader.Shaders.Single(s => !s.IsVertex).Attributes.ShouldBeEmpty(
             "only vertex shaders carry an attribute table");
     }
 
@@ -299,27 +296,24 @@ public sealed class VulkanEffectCompilerTests
             SourceFileName = "VulkanLegacySamplers.fx",
         }, cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
+        result.IsSuccess.ShouldBeTrue(
             result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
 
         var reader = MgfxBlobReader.Parse(result.Value.Data);
         var vk = VulkanShaderCodeReader.Parse(reader.Shaders.Single(s => !s.IsVertex).Bytecode);
 
-        vk.Bindings.Should().HaveCount(2, "two texture/sampler pairs, one combined descriptor each");
+        vk.Bindings.Count().ShouldBe(2, customMessage: "two texture/sampler pairs, one combined descriptor each");
 
         foreach (var binding in vk.Bindings)
         {
-            binding.DescriptorType.Should().Be(1,
-                "VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER — a separate SAMPLED_IMAGE/SAMPLER pair " +
+            binding.DescriptorType.ShouldBe((uint)(1), customMessage: "VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER — a separate SAMPLED_IMAGE/SAMPLER pair " +
                 "hits an unhandled branch in MonoGame's native descriptor writer");
-            binding.Binding.Should().BeGreaterThanOrEqualTo(32,
-                "the runtime recovers the texture slot as (binding - 32); anything below 32 indexes " +
+            binding.Binding.ShouldBeGreaterThanOrEqualTo(32u, customMessage: "the runtime recovers the texture slot as (binding - 32); anything below 32 indexes " +
                 "the texture array out of bounds");
         }
 
-        vk.Bindings.Select(b => b.Binding).Should().OnlyHaveUniqueItems(
+        vk.Bindings.Select(b => b.Binding).ShouldBeUnique(
             "two descriptor-set-layout bindings at the same binding number is invalid");
-        vk.SamplerSlots.Should().Be(vk.TextureSlots,
-            "a combined descriptor occupies both the texture and sampler slot masks, as mgfxc writes them");
+        vk.SamplerSlots.ShouldBe(vk.TextureSlots, customMessage: "a combined descriptor occupies both the texture and sampler slot masks, as mgfxc writes them");
     }
 }

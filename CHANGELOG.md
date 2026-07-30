@@ -100,6 +100,25 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Changed
 
+- **The test suite moved off `FluentAssertions` onto `Shouldly` 4.3.0, and FluentAssertions is now
+  banned** (issue #171). This is a licence obligation, not a preference: FluentAssertions 8.x
+  relicensed to the Xceed "Community License Agreement (for Non-Commercial Use)", which requires a
+  paid commercial licence for any organisation that earns revenue. We had been capped at 7.2.2 (the
+  last Apache-2.0 release), but that line receives no further fixes, so the cap only deferred the
+  work onto a frozen dependency. Shouldly is BSD-3-Clause at every version with no commercial gate.
+  All 7 test projects and ~4,000 assertion sites across 132 files were converted; the suite is green
+  at the same 2,394 tests per target framework as before the migration. Nothing shipped changes:
+  no `ShadowDusk.*` package ever referenced FluentAssertions, so consumer output and dependency
+  graphs are untouched.
+  - Two Shouldly differences were **not** mechanical and are worth knowing when writing new tests.
+    String `ShouldContain`/`ShouldNotContain` default to **case-insensitive** where FA's
+    `Contain`/`NotContain` were case-sensitive, so every string-receiver site now passes
+    `Case.Sensitive` explicitly — without it roughly 900 assertions over generated GLSL/HLSL would
+    have silently weakened, and no test failure would have revealed it. And FA's `BeEquivalentTo`
+    compared structurally where Shouldly's `ShouldBe(…, ignoreOrder: true)` compares with `Equals`,
+    so collections of reference types without value equality use `ShouldBeEquivalentTo`.
+  - A standing guard, `NoFluentAssertionsTests`, fails the build if the package reference or the
+    `.Should()` entry point reappears anywhere in the repository.
 - **`SD0215` and `SD0216` are retired**, and their numbers are marked do-not-reuse in
   `docs/error-codes.md`. Both existed only because of the old sampler-keyed GL table: `SD0216`
   rejected the shared-`SamplerState` shape, and `SD0215` rejected sampler registers that were not

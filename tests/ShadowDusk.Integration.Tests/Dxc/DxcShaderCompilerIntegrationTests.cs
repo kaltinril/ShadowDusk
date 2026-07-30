@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core;
 using ShadowDusk.HLSL.Dxc;
 using Xunit;
@@ -40,9 +40,9 @@ public sealed class DxcShaderCompilerIntegrationTests
         using var compiler = new DxcShaderCompiler();
         var result = await compiler.CompileAsync(VertexRequest(MinimalVs, PlatformTarget.OpenGL));
 
-        result.IsSuccess.Should().BeTrue(because: result.IsFailure ? result.Error.FxcFormattedMessage : "");
-        result.Value.Kind.Should().Be(BlobKind.Spirv);
-        result.Value.Bytes.Length.Should().BeGreaterThan(0);
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.FxcFormattedMessage : "");
+        result.Value.Kind.ShouldBe(BlobKind.Spirv);
+        result.Value.Bytes.Length.ShouldBeGreaterThan(0);
     }
 
     [Fact]
@@ -52,9 +52,9 @@ public sealed class DxcShaderCompilerIntegrationTests
         using var compiler = new DxcShaderCompiler();
         var result = await compiler.CompileAsync(PixelRequest(MinimalPs, PlatformTarget.OpenGL));
 
-        result.IsSuccess.Should().BeTrue(because: result.IsFailure ? result.Error.FxcFormattedMessage : "");
-        result.Value.Kind.Should().Be(BlobKind.Spirv);
-        result.Value.Bytes.Length.Should().BeGreaterThan(0);
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.FxcFormattedMessage : "");
+        result.Value.Kind.ShouldBe(BlobKind.Spirv);
+        result.Value.Bytes.Length.ShouldBeGreaterThan(0);
     }
 
     [Fact]
@@ -64,11 +64,11 @@ public sealed class DxcShaderCompilerIntegrationTests
         using var compiler = new DxcShaderCompiler();
         var result = await compiler.CompileAsync(VertexRequest(MinimalVs, PlatformTarget.DirectX));
 
-        result.IsSuccess.Should().BeTrue(because: result.IsFailure ? result.Error.FxcFormattedMessage : "");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.FxcFormattedMessage : "");
         // INTENTIONAL behavior change (bug-hunt 2026-07-27 N10): DXC's SM6 output IS
         // DXIL; the old Dxbc label was a mislabel this test pinned.
-        result.Value.Kind.Should().Be(BlobKind.Dxil);
-        result.Value.Bytes.Length.Should().BeGreaterThan(0);
+        result.Value.Kind.ShouldBe(BlobKind.Dxil);
+        result.Value.Bytes.Length.ShouldBeGreaterThan(0);
     }
 
     [Fact]
@@ -78,9 +78,9 @@ public sealed class DxcShaderCompilerIntegrationTests
         using var compiler = new DxcShaderCompiler();
         var result = await compiler.CompileAsync(VertexRequest(MinimalVs, PlatformTarget.Vulkan));
 
-        result.IsSuccess.Should().BeTrue(because: result.IsFailure ? result.Error.FxcFormattedMessage : "");
-        result.Value.Kind.Should().Be(BlobKind.Spirv);
-        result.Value.Bytes.Length.Should().BeGreaterThan(0);
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.FxcFormattedMessage : "");
+        result.Value.Kind.ShouldBe(BlobKind.Spirv);
+        result.Value.Bytes.Length.ShouldBeGreaterThan(0);
     }
 
     [Fact]
@@ -93,8 +93,8 @@ public sealed class DxcShaderCompilerIntegrationTests
         using var compiler = new DxcShaderCompiler();
         var result = await compiler.CompileAsync(VertexRequest(badHlsl, PlatformTarget.OpenGL));
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.FxcFormattedMessage.Should().Contain("(");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.FxcFormattedMessage.ShouldContain("(", Case.Sensitive);
     }
 
     [Fact]
@@ -106,8 +106,8 @@ public sealed class DxcShaderCompilerIntegrationTests
         using var compiler = new DxcShaderCompiler();
         var result = await compiler.CompileAsync(PixelRequest(badHlsl, PlatformTarget.OpenGL));
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.FxcFormattedMessage.Should().Contain("(");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.FxcFormattedMessage.ShouldContain("(", Case.Sensitive);
     }
 
     [Fact]
@@ -138,7 +138,7 @@ public sealed class DxcShaderCompilerIntegrationTests
         };
         var result = await compiler.CompileAsync(request);
 
-        result.IsSuccess.Should().BeTrue(because: result.IsFailure ? result.Error.FxcFormattedMessage : "");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.FxcFormattedMessage : "");
     }
 
     [Fact]
@@ -150,6 +150,6 @@ public sealed class DxcShaderCompilerIntegrationTests
         using var compiler = new DxcShaderCompiler();
         var act = () => compiler.CompileAsync(VertexRequest(MinimalVs, PlatformTarget.OpenGL), cts.Token);
 
-        await act.Should().ThrowAsync<OperationCanceledException>();
+        await Should.ThrowAsync<OperationCanceledException>(act);
     }
 }

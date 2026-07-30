@@ -22,6 +22,7 @@ How to work on this project. One short rule per line. These OVERRIDE default beh
 - A test that cannot fail is worse than no test: a soft-skip reported as PASS is indistinguishable from real coverage. `SHADOWDUSK_REQUIRE_GL` exists because headless ImageTests soft-skipped as passes and masked three latent failures, including a GLFW registration race on real Windows hosts.
 - A corpus that cannot see a bug class proves nothing about it: PS-only, matrix-free, modern-syntax-only corpora hid issue #70 and issue #145 entirely. Widening the corpus is part of the fix, not a follow-up.
 - Unit tests stay pure (no disk, no process); integration tests are tagged `[Trait("Category","Integration")]`.
+- **Assertions use Shouldly. `FluentAssertions` is banned** (issue #171) — it is a licence obligation, not a style preference; see `project_facts.md`. `NoFluentAssertionsTests` fails the build if it reappears in a project file or a `.cs` file. Two Shouldly gotchas the migration paid for: string `ShouldContain`/`ShouldNotContain` default to **case-insensitive**, so pass `Case.Sensitive` explicitly on every string receiver; and `ShouldBe(…, ignoreOrder: true)` compares with `Equals`, so reference types without value equality need `ShouldBeEquivalentTo`.
 - No `Thread.Sleep` in tests; use `CancellationToken` with reasonable timeouts.
 - Treat a slow integration run as environmental (antivirus scanning cold natives) before treating it as algorithmic; see `docs/integration-test-performance.md`.
 

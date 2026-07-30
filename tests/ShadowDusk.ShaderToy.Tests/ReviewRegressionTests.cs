@@ -1,5 +1,5 @@
 using System.Linq;
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.ShaderToy.Tests;
@@ -21,9 +21,9 @@ public sealed class ReviewRegressionTests
         """;
 
         ConvertResult result = ShaderToyConverter.Convert(glsl);
-        result.Success.Should().BeTrue(
+        result.Success.ShouldBeTrue(string.Format(
             "the snippet is in-subset; diagnostics: {0}",
-            string.Join("; ", result.Diagnostics.Select(d => $"{d.Severity}:{d.Message}")));
+            string.Join("; ", result.Diagnostics.Select(d => $"{d.Severity}:{d.Message}"))));
         return result.Fx!;
     }
 
@@ -44,7 +44,7 @@ public sealed class ReviewRegressionTests
         """);
 
         // The assignment must be wrapped so `<` cannot bind tighter than `=`.
-        fx.Should().Contain("((d = (p * 0.5)) < 0.001)");
+        fx.ShouldContain("((d = (p * 0.5)) < 0.001)", Case.Sensitive);
     }
 
     [Fact]
@@ -57,8 +57,8 @@ public sealed class ReviewRegressionTests
             fragColor = vec4(acc, e, 0.0, 1.0);
         """);
 
-        fx.Should().Contain("(acc = 1.0) + 2.0");
-        fx.Should().NotContain("acc = 1.0 + 2.0");
+        fx.ShouldContain("(acc = 1.0) + 2.0", Case.Sensitive);
+        fx.ShouldNotContain("acc = 1.0 + 2.0", Case.Sensitive);
     }
 
     [Fact]
@@ -68,8 +68,8 @@ public sealed class ReviewRegressionTests
         // statement must not churn into `(fragColor = ...);`.
         string fx = ConvertBody("    fragColor = vec4(1.0, 0.0, 0.0, 1.0);");
 
-        fx.Should().Contain("fragColor = float4(1.0, 0.0, 0.0, 1.0);");
-        fx.Should().NotContain("(fragColor = float4(1.0, 0.0, 0.0, 1.0));");
+        fx.ShouldContain("fragColor = float4(1.0, 0.0, 0.0, 1.0);", Case.Sensitive);
+        fx.ShouldNotContain("(fragColor = float4(1.0, 0.0, 0.0, 1.0));", Case.Sensitive);
     }
 
     // ── A directive inside a skipped conditional group is not evaluated ──────────────
@@ -95,9 +95,9 @@ public sealed class ReviewRegressionTests
 
         ConvertResult result = ShaderToyConverter.Convert(glsl);
 
-        result.Success.Should().BeTrue(
+        result.Success.ShouldBeTrue(string.Format(
             "diagnostics: {0}",
-            string.Join("; ", result.Diagnostics.Select(d => $"{d.Severity}:{d.Message}")));
+            string.Join("; ", result.Diagnostics.Select(d => $"{d.Severity}:{d.Message}"))));
     }
 
     [Fact]
@@ -115,7 +115,7 @@ public sealed class ReviewRegressionTests
         }
         """;
 
-        ShaderToyConverter.Convert(glsl).Success.Should().BeTrue();
+        ShaderToyConverter.Convert(glsl).Success.ShouldBeTrue();
     }
 
     [Fact]
@@ -133,7 +133,7 @@ public sealed class ReviewRegressionTests
         }
         """;
 
-        ShaderToyConverter.Convert(glsl).Success.Should().BeFalse();
+        ShaderToyConverter.Convert(glsl).Success.ShouldBeFalse();
     }
 
     [Fact]
@@ -156,8 +156,8 @@ public sealed class ReviewRegressionTests
 
         ConvertResult result = ShaderToyConverter.Convert(glsl);
 
-        result.Success.Should().BeTrue();
-        result.Fx.Should().NotContain("dead");
-        result.Fx.Should().Contain("0.25");
+        result.Success.ShouldBeTrue();
+        result.Fx!.ShouldNotContain("dead", Case.Sensitive);
+        result.Fx!.ShouldContain("0.25", Case.Sensitive);
     }
 }

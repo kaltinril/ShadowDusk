@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.ImageTests.GlContext;
 using Xunit;
 
@@ -26,7 +26,7 @@ public sealed class GlRequirementTests
     [InlineData("FALSE")]
     public void IsRequired_UnsetOrDisabledValues_AreNotRequired(string? value)
     {
-        GlRequirement.IsRequired(value).Should().BeFalse(
+        GlRequirement.IsRequired(value).ShouldBeFalse(
             "unset/empty/0/false must keep the visible soft-skip behavior");
     }
 
@@ -38,7 +38,7 @@ public sealed class GlRequirementTests
     [InlineData(" 1 ")]
     public void IsRequired_SetValues_AreRequired(string value)
     {
-        GlRequirement.IsRequired(value).Should().BeTrue(
+        GlRequirement.IsRequired(value).ShouldBeTrue(
             "any set value other than 0/false must make a missing GL context a hard failure");
     }
 
@@ -47,16 +47,16 @@ public sealed class GlRequirementTests
     {
         string msg = GlRequirement.BuildFailureMessage("GLFW init failed: no display");
 
-        msg.Should().Contain(GlRequirement.EnvVar);
-        msg.Should().Contain("GLFW init failed: no display", "the underlying cause must not be swallowed");
-        msg.Should().Contain("LIBGL_ALWAYS_SOFTWARE", "the message must point at the working headless recipe");
+        msg.ShouldContain(GlRequirement.EnvVar, Case.Sensitive);
+        msg.ShouldContain("GLFW init failed: no display", Case.Sensitive, "the underlying cause must not be swallowed");
+        msg.ShouldContain("LIBGL_ALWAYS_SOFTWARE", Case.Sensitive, "the message must point at the working headless recipe");
     }
 
     [Fact]
     public void BuildFailureMessage_NullReason_StillProducesAMessage()
     {
         string msg = GlRequirement.BuildFailureMessage(null);
-        msg.Should().Contain("unknown");
+        msg.ShouldContain("unknown", Case.Sensitive);
     }
 
     [Fact]
@@ -64,9 +64,9 @@ public sealed class GlRequirementTests
     {
         string notice = GlRequirement.BuildSoftSkipNotice("headless");
 
-        notice.Should().Contain("rendered 0", "a log reader must see that PASS meant no rendering");
-        notice.Should().Contain("WITHOUT RENDERING");
-        notice.Should().Contain("headless");
-        notice.Should().Contain(GlRequirement.EnvVar, "the notice must advertise the hardening switch");
+        notice.ShouldContain("rendered 0", Case.Sensitive, "a log reader must see that PASS meant no rendering");
+        notice.ShouldContain("WITHOUT RENDERING", Case.Sensitive);
+        notice.ShouldContain("headless", Case.Sensitive);
+        notice.ShouldContain(GlRequirement.EnvVar, Case.Sensitive, "the notice must advertise the hardening switch");
     }
 }

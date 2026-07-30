@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler.Internal;
 using ShadowDusk.Core;
 using Xunit;
@@ -28,8 +28,8 @@ public sealed class FnaProfilePolicyTests
     {
         var result = CompilationPipeline.ResolveFnaProfile(profile, stage, File);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Should().Be(profile, because: "fxc fidelity: a literal SM 2–3 profile is honored verbatim");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.ShouldBe(profile, customMessage: "fxc fidelity: a literal SM 2–3 profile is honored verbatim");
     }
 
     [Theory]
@@ -43,9 +43,8 @@ public sealed class FnaProfilePolicyTests
     {
         var result = CompilationPipeline.ResolveFnaProfile(profile, stage, File);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Should().Be(expected,
-            because: "macro-indirected profiles are unknowable pre-expansion and default to the SM3 ceiling");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.ShouldBe(expected, customMessage: "macro-indirected profiles are unknowable pre-expansion and default to the SM3 ceiling");
     }
 
     [Theory]
@@ -57,10 +56,9 @@ public sealed class FnaProfilePolicyTests
     {
         var result = CompilationPipeline.ResolveFnaProfile(profile, stage, File);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("SD0300");
-        result.Error.Message.Should().Contain(profile,
-            because: "the diagnostic must name the offending profile as written");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("SD0300");
+        result.Error.Message.ShouldContain(profile, Case.Sensitive, "the diagnostic must name the offending profile as written");
     }
 
     [Theory]
@@ -74,10 +72,9 @@ public sealed class FnaProfilePolicyTests
         // silently-wrong output (Constraint 5).
         var result = CompilationPipeline.ResolveFnaProfile(profile, stage, File);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("SD0300");
-        result.Error.Message.Should().Contain("ps_2_0",
-            because: "the diagnostic must point at the safest supported profile");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("SD0300");
+        result.Error.Message.ShouldContain("ps_2_0", Case.Sensitive, "the diagnostic must point at the safest supported profile");
     }
 
     [Theory]
@@ -92,10 +89,11 @@ public sealed class FnaProfilePolicyTests
         // break only inside the consumer's FNA at load/draw.
         var result = CompilationPipeline.ResolveFnaProfile(profile, stage, File);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("SD0300");
-        result.Error.Message.Should().Contain(profile)
-            .And.Contain("prefix", because: "the diagnostic must explain the stage/prefix mismatch");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("SD0300");
+        result.Error.Message.ShouldContain(profile, Case.Sensitive);
+        result.Error.Message.ShouldContain(
+            "prefix", Case.Sensitive, "the diagnostic must explain the stage/prefix mismatch");
     }
 
     [Fact]
@@ -105,7 +103,7 @@ public sealed class FnaProfilePolicyTests
         // rejects it with its own (more specific) diagnostic.
         var result = CompilationPipeline.ResolveFnaProfile("ps_3_9", ShaderStage.Pixel, File);
 
-        result.IsSuccess.Should().BeTrue();
-        result.Value.Should().Be("ps_3_9");
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.ShouldBe("ps_3_9");
     }
 }

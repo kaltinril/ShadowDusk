@@ -1,7 +1,7 @@
 #nullable enable
 
 using System.Text;
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
@@ -131,7 +131,7 @@ public sealed class ReferenceImageGenerator
         }
 
         _output.WriteLine($"Generated {totalGenerated} reference image(s).");
-        totalGenerated.Should().BeGreaterThan(0, "at least one fixture should produce a reference PNG");
+        totalGenerated.ShouldBeGreaterThan(0, customMessage: "at least one fixture should produce a reference PNG");
     }
 
     private static async Task<byte[]> CompileFixtureToMgfxAsync(string fxPath, CancellationToken ct)

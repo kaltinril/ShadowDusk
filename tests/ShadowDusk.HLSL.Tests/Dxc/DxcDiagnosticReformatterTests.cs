@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core;
 using ShadowDusk.HLSL.Dxc;
 using Xunit;
@@ -13,8 +13,8 @@ public sealed class DxcDiagnosticReformatterTests
     [Fact]
     public void EmptyInput_ReturnsEmptyList()
     {
-        DxcDiagnosticReformatter.Reformat("", "shader.fx").Should().BeEmpty();
-        DxcDiagnosticReformatter.Reformat("   ", "shader.fx").Should().BeEmpty();
+        DxcDiagnosticReformatter.Reformat("", "shader.fx").ShouldBeEmpty();
+        DxcDiagnosticReformatter.Reformat("   ", "shader.fx").ShouldBeEmpty();
     }
 
     [Fact]
@@ -24,12 +24,12 @@ public sealed class DxcDiagnosticReformatterTests
             "shader.fx:10:5: error: undeclared identifier 'x'",
             "shader.fx");
 
-        errors.Should().ContainSingle();
+        errors.ShouldHaveSingleItem();
         var e = errors[0];
-        e.File.Should().Be("shader.fx");
-        e.Line.Should().Be(10);
-        e.Column.Should().Be(5);
-        e.Severity.Should().Be(ShaderErrorSeverity.Error);
+        e.File.ShouldBe("shader.fx");
+        e.Line.ShouldBe(10);
+        e.Column.ShouldBe(5);
+        e.Severity.ShouldBe(ShaderErrorSeverity.Error);
     }
 
     [Fact]
@@ -39,11 +39,11 @@ public sealed class DxcDiagnosticReformatterTests
             "shader.fx:10:5: error: undeclared identifier 'x'",
             "shader.fx");
 
-        errors.Should().ContainSingle();
+        errors.ShouldHaveSingleItem();
         var msg = errors[0].FxcFormattedMessage;
-        msg.Should().Contain("(10,5");
-        msg.Should().Contain("error");
-        msg.Should().Contain("undeclared identifier 'x'");
+        msg.ShouldContain("(10,5", Case.Sensitive);
+        msg.ShouldContain("error", Case.Sensitive);
+        msg.ShouldContain("undeclared identifier 'x'", Case.Sensitive);
     }
 
     [Fact]
@@ -53,8 +53,8 @@ public sealed class DxcDiagnosticReformatterTests
             "shader.fx:3:1: warning: implicit truncation",
             "shader.fx");
 
-        errors.Should().ContainSingle();
-        errors[0].Severity.Should().Be(ShaderErrorSeverity.Warning);
+        errors.ShouldHaveSingleItem();
+        errors[0].Severity.ShouldBe(ShaderErrorSeverity.Warning);
     }
 
     [Fact]
@@ -64,8 +64,8 @@ public sealed class DxcDiagnosticReformatterTests
             "shader.fx:3:1: note: see declaration here",
             "shader.fx");
 
-        errors.Should().ContainSingle();
-        errors[0].Severity.Should().Be(ShaderErrorSeverity.Note);
+        errors.ShouldHaveSingleItem();
+        errors[0].Severity.ShouldBe(ShaderErrorSeverity.Note);
     }
 
     [Fact]
@@ -74,8 +74,8 @@ public sealed class DxcDiagnosticReformatterTests
         const string rawLine = "fatal error: this is not a clang-format line";
         var errors = DxcDiagnosticReformatter.Reformat(rawLine, "shader.fx");
 
-        errors.Should().NotBeEmpty();
-        errors.Should().Contain(e => e.RawDiagnostics != null && e.RawDiagnostics.Contains(rawLine));
+        errors.ShouldNotBeEmpty();
+        errors.ShouldContain(e => e.RawDiagnostics != null && e.RawDiagnostics.Contains(rawLine));
     }
 
     [Fact]
@@ -89,9 +89,9 @@ public sealed class DxcDiagnosticReformatterTests
 
         // Exactly the two parsed errors — Phase 53 removed the fabricated
         // catch-all entry that used to ride along.
-        errors.Should().HaveCount(2);
-        errors[0].Message.Should().Be("first error");
-        errors[1].Message.Should().Be("second error");
+        errors.Count().ShouldBe(2);
+        errors[0].Message.ShouldBe("first error");
+        errors[1].Message.ShouldBe("second error");
     }
 
     [Fact]
@@ -102,9 +102,9 @@ public sealed class DxcDiagnosticReformatterTests
             "SHADER.FX:5:10: error: undefined",
             "shader.fx");    // lower-case override
 
-        errors.Should().ContainSingle();
+        errors.ShouldHaveSingleItem();
         // The reformatter normalizes to the sourceFileName param when they match case-insensitively
-        errors[0].File.Should().Be("shader.fx");
+        errors[0].File.ShouldBe("shader.fx");
     }
 
     [Fact]
@@ -116,11 +116,11 @@ public sealed class DxcDiagnosticReformatterTests
             "<source>:5:10: error: undefined",
             "override.fx");
 
-        errors.Should().NotBeEmpty();
+        errors.ShouldNotBeEmpty();
         // The reformatter has no match on "<source>" vs "override.fx", so file stays as emitted
         var parsed = errors.FirstOrDefault(e => e.Line == 5);
         if (parsed is not null)
-            parsed.File.Should().Be("<source>");
+            parsed.File.ShouldBe("<source>");
     }
 
     // ---- Phase 53: verbatim promotion + primary selection (the "shader
@@ -135,11 +135,10 @@ public sealed class DxcDiagnosticReformatterTests
             """;
         var errors = DxcDiagnosticReformatter.Reformat(raw, "shader.fx");
 
-        errors.Should().ContainSingle();
-        errors[0].Message.Should().Contain("Internal Compiler error: llvm-ir verification failed");
-        errors[0].Message.Should().Contain("module has invalid SPIR-V");
-        errors[0].Message.Should().NotBe("Shader compilation failed",
-            "the compiler's own words are the message now — never a generic sentence");
+        errors.ShouldHaveSingleItem();
+        errors[0].Message.ShouldContain("Internal Compiler error: llvm-ir verification failed", Case.Sensitive);
+        errors[0].Message.ShouldContain("module has invalid SPIR-V", Case.Sensitive);
+        errors[0].Message.ShouldNotBe("Shader compilation failed", customMessage: "the compiler's own words are the message now — never a generic sentence");
     }
 
     [Fact]
@@ -154,8 +153,8 @@ public sealed class DxcDiagnosticReformatterTests
             """;
         var errors = DxcDiagnosticReformatter.Reformat(raw, "shader.fx");
 
-        errors.Should().ContainSingle();
-        errors[0].Line.Should().Be(10);
+        errors.ShouldHaveSingleItem();
+        errors[0].Line.ShouldBe(10);
     }
 
     [Fact]
@@ -167,9 +166,8 @@ public sealed class DxcDiagnosticReformatterTests
             """;
         var primary = DxcDiagnosticReformatter.SelectPrimary(raw, "shader.fx", "no diagnostics");
 
-        primary.Severity.Should().Be(ShaderErrorSeverity.Error,
-            "a warning must never masquerade as the failure");
-        primary.Line.Should().Be(10);
+        primary.Severity.ShouldBe(ShaderErrorSeverity.Error, customMessage: "a warning must never masquerade as the failure");
+        primary.Line.ShouldBe(10);
     }
 
     [Fact]
@@ -181,9 +179,10 @@ public sealed class DxcDiagnosticReformatterTests
             """;
         var primary = DxcDiagnosticReformatter.SelectPrimary(raw, "shader.fx", "no diagnostics");
 
-        primary.RawDiagnostics.Should().Contain("implicit truncation")
-            .And.Contain("undeclared identifier",
-                "the single-error backend contract must not drop the other diagnostics");
+        primary.RawDiagnostics!.ShouldContain("implicit truncation", Case.Sensitive);
+        primary.RawDiagnostics!.ShouldContain(
+            "undeclared identifier", Case.Sensitive,
+            "the single-error backend contract must not drop the other diagnostics");
     }
 
     [Fact]
@@ -192,9 +191,9 @@ public sealed class DxcDiagnosticReformatterTests
         var primary = DxcDiagnosticReformatter.SelectPrimary(
             "", "shader.fx", "compile failed with no diagnostics", fallbackCode: "SD9999");
 
-        primary.Message.Should().Be("compile failed with no diagnostics");
-        primary.Code.Should().Be("SD9999");
-        primary.RawDiagnostics.Should().BeNull();
+        primary.Message.ShouldBe("compile failed with no diagnostics");
+        primary.Code.ShouldBe("SD9999");
+        primary.RawDiagnostics.ShouldBeNull();
     }
 
     [Fact]
@@ -204,9 +203,9 @@ public sealed class DxcDiagnosticReformatterTests
         var warnings = DxcDiagnosticReformatter.ReformatAsWarnings(
             "note-ish free text the compiler printed on success", "shader.fx");
 
-        warnings.Should().ContainSingle();
-        warnings[0].Severity.Should().Be(ShaderErrorSeverity.Warning);
-        warnings[0].Message.Should().Contain("note-ish free text");
+        warnings.ShouldHaveSingleItem();
+        warnings[0].Severity.ShouldBe(ShaderErrorSeverity.Warning);
+        warnings[0].Message.ShouldContain("note-ish free text", Case.Sensitive);
     }
 
     [Fact]
@@ -215,9 +214,9 @@ public sealed class DxcDiagnosticReformatterTests
         var warnings = DxcDiagnosticReformatter.ReformatAsWarnings(
             "shader.fx:3:1: warning: implicit truncation of vector type", "shader.fx");
 
-        warnings.Should().ContainSingle();
-        warnings[0].Severity.Should().Be(ShaderErrorSeverity.Warning);
-        warnings[0].Line.Should().Be(3);
-        warnings[0].Message.Should().Be("implicit truncation of vector type");
+        warnings.ShouldHaveSingleItem();
+        warnings[0].Severity.ShouldBe(ShaderErrorSeverity.Warning);
+        warnings[0].Line.ShouldBe(3);
+        warnings[0].Message.ShouldBe("implicit truncation of vector type");
     }
 }

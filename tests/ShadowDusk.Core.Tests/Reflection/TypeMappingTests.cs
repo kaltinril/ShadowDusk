@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core.Reflection;
 using Xunit;
 
@@ -19,11 +19,11 @@ public sealed class TypeMappingTests
     [InlineData(EffectParameterClass.Object, 3)]
     [InlineData(EffectParameterClass.Struct, 4)]
     public void EffectParameterClass_Values_MatchMonoGame(EffectParameterClass cls, int expected)
-        => ((int)cls).Should().Be(expected);
+        => ((int)cls).ShouldBe(expected);
 
     [Fact]
     public void EffectParameterClass_HasExactlyFiveMembers()
-        => Enum.GetValues<EffectParameterClass>().Should().HaveCount(5);
+        => Enum.GetValues<EffectParameterClass>().Count().ShouldBe(5);
 
     // -------------------------------------------------------------------------
     // EffectParameterType — values must match MonoGame's EffectParameterType
@@ -41,11 +41,11 @@ public sealed class TypeMappingTests
     [InlineData(EffectParameterType.Texture3D,   8)]
     [InlineData(EffectParameterType.TextureCube, 9)]
     public void EffectParameterType_Values_MatchMonoGame(EffectParameterType type, int expected)
-        => ((int)type).Should().Be(expected);
+        => ((int)type).ShouldBe(expected);
 
     [Fact]
     public void EffectParameterType_HasExactlyTenMembers()
-        => Enum.GetValues<EffectParameterType>().Should().HaveCount(10);
+        => Enum.GetValues<EffectParameterType>().Count().ShouldBe(10);
 
     // -------------------------------------------------------------------------
     // TextureDimension — sanity-check that Unknown is the zero value
@@ -53,7 +53,7 @@ public sealed class TypeMappingTests
 
     [Fact]
     public void TextureDimension_Unknown_IsZeroValue()
-        => ((int)TextureDimension.Unknown).Should().Be(0);
+        => ((int)TextureDimension.Unknown).ShouldBe(0);
 
     [Theory]
     [InlineData(TextureDimension.Texture1D)]
@@ -61,5 +61,5 @@ public sealed class TypeMappingTests
     [InlineData(TextureDimension.Texture3D)]
     [InlineData(TextureDimension.TextureCube)]
     public void TextureDimension_KnownValues_AreNonZero(TextureDimension dim)
-        => ((int)dim).Should().BeGreaterThan(0);
+        => ((int)dim).ShouldBeGreaterThan(0);
 }

@@ -1,7 +1,7 @@
 #nullable enable
 
 using System.Text;
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler.Internal;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Reflection;
@@ -97,37 +97,36 @@ public sealed class Fx2EffectBuilderTests
             ctabs: [PsCtab(Constant("Tint"), SamplerConstant("s0"))],
             samplerInfos: [Sampler("s0", "tex", ("MipFilter", "LINEAR"))]);
 
-        result.IsSuccess.Should().BeTrue(because: result.IsFailure ? result.Error.Message : "input is valid");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : "input is valid");
 
         IReadOnlyList<Fx2Parameter> parameters = result.Value.Parameters;
-        parameters.Select(p => p.Name).Should().Equal(["Tint", "tex", "s0"],
-            because: "FNA's loader requires textures to precede the samplers that bind them");
+        parameters.Select(p => p.Name).ShouldBe(["Tint", "tex", "s0"], customMessage: "FNA's loader requires textures to precede the samplers that bind them");
 
         Fx2Parameter tint = parameters[0];
-        tint.Class.Should().Be(1, because: "CTAB class VECTOR flows through");
-        tint.Type.Should().Be(3, because: "CTAB type FLOAT flows through");
-        tint.Rows.Should().Be(1);
-        tint.Columns.Should().Be(4);
-        tint.SamplerStates.Should().BeEmpty();
+        tint.Class.ShouldBe(1, customMessage: "CTAB class VECTOR flows through");
+        tint.Type.ShouldBe(3, customMessage: "CTAB type FLOAT flows through");
+        tint.Rows.ShouldBe(1);
+        tint.Columns.ShouldBe(4);
+        tint.SamplerStates.ShouldBeEmpty();
 
         Fx2Parameter tex = parameters[1];
-        tex.Class.Should().Be(4, because: "texture parameters are OBJECT class");
-        tex.Type.Should().Be(5, because: "the undimensioned TEXTURE type is emitted");
-        tex.SamplerStates.Should().BeEmpty();
+        tex.Class.ShouldBe(4, customMessage: "texture parameters are OBJECT class");
+        tex.Type.ShouldBe(5, customMessage: "the undimensioned TEXTURE type is emitted");
+        tex.SamplerStates.ShouldBeEmpty();
 
         Fx2Parameter s0 = parameters[2];
-        s0.Class.Should().Be(4);
-        s0.Type.Should().Be(12, because: "the sampler type comes from the CTAB (SAMPLER2D)");
+        s0.Class.ShouldBe(4);
+        s0.Type.ShouldBe(12, customMessage: "the sampler type comes from the CTAB (SAMPLER2D)");
 
-        s0.SamplerStates.Should().HaveCount(2);
-        s0.SamplerStates[0].Operation.Should().Be(164, because: "the Texture state must come first");
-        s0.SamplerStates[0].TextureParameterName.Should().Be("tex");
-        s0.SamplerStates[0].IntValue.Should().BeNull();
-        s0.SamplerStates[0].FloatValue.Should().BeNull();
-        s0.SamplerStates[1].Operation.Should().Be(171, because: "MipFilter is on-disk op 171");
-        s0.SamplerStates[1].IntValue.Should().Be(2, because: "LINEAR is D3DTEXF_LINEAR = 2");
-        s0.SamplerStates[1].TextureParameterName.Should().BeNull();
-        s0.SamplerStates[1].FloatValue.Should().BeNull();
+        s0.SamplerStates.Count().ShouldBe(2);
+        s0.SamplerStates[0].Operation.ShouldBe(164, customMessage: "the Texture state must come first");
+        s0.SamplerStates[0].TextureParameterName.ShouldBe("tex");
+        s0.SamplerStates[0].IntValue.ShouldBeNull();
+        s0.SamplerStates[0].FloatValue.ShouldBeNull();
+        s0.SamplerStates[1].Operation.ShouldBe(171, customMessage: "MipFilter is on-disk op 171");
+        s0.SamplerStates[1].IntValue.ShouldBe(2, customMessage: "LINEAR is D3DTEXF_LINEAR = 2");
+        s0.SamplerStates[1].TextureParameterName.ShouldBeNull();
+        s0.SamplerStates[1].FloatValue.ShouldBeNull();
     }
 
     // ---------------------------------------------------------------------------
@@ -141,17 +140,16 @@ public sealed class Fx2EffectBuilderTests
         var result = Build(
             ctabs: [VsCtab(MatrixConstant("WorldViewProj")), PsCtab(MatrixConstant("WorldViewProj"))]);
 
-        result.IsSuccess.Should().BeTrue(because: result.IsFailure ? result.Error.Message : "shapes agree");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : "shapes agree");
 
-        Fx2Parameter merged = result.Value.Parameters.Should().ContainSingle().Subject;
-        merged.Name.Should().Be("WorldViewProj");
-        merged.Class.Should().Be(2,
-            because: "the parameter-table class for matrices is MATRIX_ROWS — fxc's " +
+        Fx2Parameter merged = result.Value.Parameters.ShouldHaveSingleItem();
+        merged.Name.ShouldBe("WorldViewProj");
+        merged.Class.ShouldBe(2, customMessage: "the parameter-table class for matrices is MATRIX_ROWS — fxc's " +
                      "declaration-level D3DX convention, pinned by the matrix.fxb golden " +
                      "(the CTAB's MATRIX_COLUMNS describes the shader's register layout, " +
                      "not the parameter typedef; Phase 40)");
-        merged.Rows.Should().Be(4);
-        merged.Columns.Should().Be(4);
+        merged.Rows.ShouldBe(4);
+        merged.Columns.ShouldBe(4);
     }
 
     [Fact]
@@ -164,12 +162,11 @@ public sealed class Fx2EffectBuilderTests
                 PsCtab(Constant("WorldViewProj", rows: 1, columns: 4)), // vector in the PS
             ]);
 
-        result.IsFailure.Should().BeTrue(because: "a 4x4 matrix cannot merge with a 1x4 vector");
-        result.Error.Code.Should().Be("SD0303");
-        result.Error.File.Should().Be(SourceFile);
-        result.Error.Message.Should().Contain("WorldViewProj",
-            because: "the diagnostic must name the conflicting global");
-        result.Error.Message.Should().Contain("conflicting shapes");
+        result.IsFailure.ShouldBeTrue("a 4x4 matrix cannot merge with a 1x4 vector");
+        result.Error.Code.ShouldBe("SD0303");
+        result.Error.File.ShouldBe(SourceFile);
+        result.Error.Message.ShouldContain("WorldViewProj", Case.Sensitive, "the diagnostic must name the conflicting global");
+        result.Error.Message.ShouldContain("conflicting shapes", Case.Sensitive);
     }
 
     [Fact]
@@ -183,10 +180,8 @@ public sealed class Fx2EffectBuilderTests
                 PsCtab(Constant("Tint", defaultValue: psDefault)),
             ]);
 
-        result.IsSuccess.Should().BeTrue(because: result.IsFailure ? result.Error.Message : "shapes agree");
-        result.Value.Parameters.Should().ContainSingle()
-            .Which.DefaultValue.Should().Equal(psDefault,
-                because: "the first non-null default value wins");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : "shapes agree");
+        result.Value.Parameters.ShouldHaveSingleItem().DefaultValue.ShouldBe(psDefault, customMessage: "the first non-null default value wins");
     }
 
     [Fact]
@@ -200,10 +195,8 @@ public sealed class Fx2EffectBuilderTests
                 PsCtab(Constant("Tint", defaultValue: [1f, 2f, 3f, 4f])),
             ]);
 
-        result.IsSuccess.Should().BeTrue(because: result.IsFailure ? result.Error.Message : "shapes agree");
-        result.Value.Parameters.Should().ContainSingle()
-            .Which.DefaultValue.Should().Equal(vsDefault,
-                because: "an already-present default must not be overwritten by a later stage");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : "shapes agree");
+        result.Value.Parameters.ShouldHaveSingleItem().DefaultValue.ShouldBe(vsDefault, customMessage: "an already-present default must not be overwritten by a later stage");
     }
 
     // ---------------------------------------------------------------------------
@@ -218,9 +211,8 @@ public sealed class Fx2EffectBuilderTests
     {
         var result = Build(ctabs: [PsCtab(Constant("Values", elements: ctabElements))]);
 
-        result.IsSuccess.Should().BeTrue(because: result.IsFailure ? result.Error.Message : "input is valid");
-        result.Value.Parameters.Should().ContainSingle()
-            .Which.Elements.Should().Be(expectedElements);
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : "input is valid");
+        result.Value.Parameters.ShouldHaveSingleItem().Elements.ShouldBe(expectedElements);
     }
 
     // ---------------------------------------------------------------------------
@@ -232,10 +224,10 @@ public sealed class Fx2EffectBuilderTests
     {
         var result = Build(ctabs: [PsCtab(Constant("Material", @class: 5))]);
 
-        result.IsFailure.Should().BeTrue(because: "struct effect parameters are unsupported for FNA");
-        result.Error.Code.Should().Be("SD0303");
-        result.Error.Message.Should().Contain("Material");
-        result.Error.Message.Should().Contain("struct");
+        result.IsFailure.ShouldBeTrue("struct effect parameters are unsupported for FNA");
+        result.Error.Code.ShouldBe("SD0303");
+        result.Error.Message.ShouldContain("Material", Case.Sensitive);
+        result.Error.Message.ShouldContain("struct", Case.Sensitive);
     }
 
     // ---------------------------------------------------------------------------
@@ -251,12 +243,10 @@ public sealed class Fx2EffectBuilderTests
             ctabs: [PsCtab(Constant("samps", CtabRegisterSet.Sampler,
                 @class: 4, type: 12, rows: 1, columns: 1, elements: 2))]);
 
-        result.IsFailure.Should().BeTrue(because: "sampler arrays are unsupported for the FNA target");
-        result.Error.Code.Should().Be("SD0303");
-        result.Error.Message.Should().Contain("samps",
-            because: "the diagnostic must name the offending sampler");
-        result.Error.Message.Should().Contain("[2]",
-            because: "the diagnostic must show the array element count");
+        result.IsFailure.ShouldBeTrue("sampler arrays are unsupported for the FNA target");
+        result.Error.Code.ShouldBe("SD0303");
+        result.Error.Message.ShouldContain("samps", Case.Sensitive, "the diagnostic must name the offending sampler");
+        result.Error.Message.ShouldContain("[2]", Case.Sensitive, "the diagnostic must show the array element count");
     }
 
     // ---------------------------------------------------------------------------
@@ -268,14 +258,13 @@ public sealed class Fx2EffectBuilderTests
     {
         var result = Build(ctabs: [PsCtab(SamplerConstant("s0"))]);
 
-        result.IsSuccess.Should().BeTrue(because: result.IsFailure ? result.Error.Message : "a bare sampler is valid");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : "a bare sampler is valid");
 
-        Fx2Parameter s0 = result.Value.Parameters.Should().ContainSingle().Subject;
-        s0.Name.Should().Be("s0");
-        s0.Class.Should().Be(4);
-        s0.Type.Should().Be(12);
-        s0.SamplerStates.Should().BeEmpty(
-            because: "no SamplerInfo means no Texture state and no state entries");
+        Fx2Parameter s0 = result.Value.Parameters.ShouldHaveSingleItem();
+        s0.Name.ShouldBe("s0");
+        s0.Class.ShouldBe(4);
+        s0.Type.ShouldBe(12);
+        s0.SamplerStates.ShouldBeEmpty("no SamplerInfo means no Texture state and no state entries");
     }
 
     [Fact]
@@ -285,15 +274,13 @@ public sealed class Fx2EffectBuilderTests
             ctabs: [PsCtab(SamplerConstant("s0"))],
             samplerInfos: [Sampler("s0", textureReference: null, ("MinFilter", "Point"))]);
 
-        result.IsSuccess.Should().BeTrue(because: result.IsFailure ? result.Error.Message : "input is valid");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : "input is valid");
 
-        Fx2Parameter s0 = result.Value.Parameters.Should().ContainSingle(
-            because: "no texture reference means no texture parameter is synthesized").Subject;
-        Fx2SamplerState state = s0.SamplerStates.Should().ContainSingle(
-            because: "only the MinFilter entry maps; op 164 requires a texture reference").Subject;
-        state.Operation.Should().Be(170);
-        state.IntValue.Should().Be(1);
-        state.TextureParameterName.Should().BeNull();
+        Fx2Parameter s0 = result.Value.Parameters.ShouldHaveSingleItem("no texture reference means no texture parameter is synthesized");
+        Fx2SamplerState state = s0.SamplerStates.ShouldHaveSingleItem("only the MinFilter entry maps; op 164 requires a texture reference");
+        state.Operation.ShouldBe(170);
+        state.IntValue.ShouldBe(1);
+        state.TextureParameterName.ShouldBeNull();
     }
 
     // ---------------------------------------------------------------------------
@@ -319,14 +306,14 @@ public sealed class Fx2EffectBuilderTests
             ctabs: [PsCtab(SamplerConstant("s0"))],
             samplerInfos: [Sampler("s0", textureReference: null, (key, value))]);
 
-        result.IsSuccess.Should().BeTrue(because: result.IsFailure ? result.Error.Message : "input is valid");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : "input is valid");
 
         Fx2SamplerState state = result.Value.Parameters.Single().SamplerStates
-            .Should().ContainSingle().Subject;
-        state.Operation.Should().Be(expectedOp);
-        state.IntValue.Should().Be(expectedIntValue);
-        state.FloatValue.Should().BeNull();
-        state.TextureParameterName.Should().BeNull();
+            .ShouldHaveSingleItem();
+        state.Operation.ShouldBe(expectedOp);
+        state.IntValue.ShouldBe(expectedIntValue);
+        state.FloatValue.ShouldBeNull();
+        state.TextureParameterName.ShouldBeNull();
     }
 
     [Fact]
@@ -336,13 +323,13 @@ public sealed class Fx2EffectBuilderTests
             ctabs: [PsCtab(SamplerConstant("s0"))],
             samplerInfos: [Sampler("s0", textureReference: null, ("MipMapLodBias", "0.5"))]);
 
-        result.IsSuccess.Should().BeTrue(because: result.IsFailure ? result.Error.Message : "input is valid");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : "input is valid");
 
         Fx2SamplerState state = result.Value.Parameters.Single().SamplerStates
-            .Should().ContainSingle().Subject;
-        state.Operation.Should().Be(172);
-        state.FloatValue.Should().Be(0.5f, because: "MipMapLodBias is the float-valued state");
-        state.IntValue.Should().BeNull();
+            .ShouldHaveSingleItem();
+        state.Operation.ShouldBe(172);
+        state.FloatValue.ShouldBe(0.5f, customMessage: "MipMapLodBias is the float-valued state");
+        state.IntValue.ShouldBeNull();
     }
 
     [Theory]
@@ -356,13 +343,10 @@ public sealed class Fx2EffectBuilderTests
             ctabs: [PsCtab(SamplerConstant("s0"))],
             samplerInfos: [Sampler("s0", textureReference: null, (key, value))]);
 
-        result.IsFailure.Should().BeTrue(
-            because: $"FNA's runtime throws NotImplementedException on '{key}'");
-        result.Error.Code.Should().Be("SD0303");
-        result.Error.Message.Should().Contain(key,
-            because: "the diagnostic must name the offending state");
-        result.Error.Message.Should().Contain("s0",
-            because: "the diagnostic must name the sampler");
+        result.IsFailure.ShouldBeTrue($"FNA's runtime throws NotImplementedException on '{key}'");
+        result.Error.Code.ShouldBe("SD0303");
+        result.Error.Message.ShouldContain(key, Case.Sensitive, "the diagnostic must name the offending state");
+        result.Error.Message.ShouldContain("s0", Case.Sensitive, "the diagnostic must name the sampler");
     }
 
     [Fact]
@@ -372,11 +356,10 @@ public sealed class Fx2EffectBuilderTests
             ctabs: [PsCtab(SamplerConstant("s0"))],
             samplerInfos: [Sampler("s0", textureReference: null, ("Filter", "LINEAR"))]);
 
-        result.IsFailure.Should().BeTrue(because: "'Filter' is not a recognized fx_2_0 sampler state");
-        result.Error.Code.Should().Be("SD0303");
-        result.Error.Message.Should().Contain("Filter");
-        result.Error.Message.Should().Contain("MinFilter",
-            because: "the diagnostic should steer the user to the supported keys");
+        result.IsFailure.ShouldBeTrue("'Filter' is not a recognized fx_2_0 sampler state");
+        result.Error.Code.ShouldBe("SD0303");
+        result.Error.Message.ShouldContain("Filter", Case.Sensitive);
+        result.Error.Message.ShouldContain("MinFilter", Case.Sensitive, "the diagnostic should steer the user to the supported keys");
     }
 
     [Fact]
@@ -386,10 +369,9 @@ public sealed class Fx2EffectBuilderTests
             ctabs: [PsCtab(SamplerConstant("s0"))],
             samplerInfos: [Sampler("s0", textureReference: null, ("MaxAnisotropy", "fast"))]);
 
-        result.IsFailure.Should().BeTrue(because: "MaxAnisotropy requires an integer value");
-        result.Error.Code.Should().Be("SD0303");
-        result.Error.Message.Should().Contain("fast",
-            because: "the diagnostic must show the offending value");
+        result.IsFailure.ShouldBeTrue("MaxAnisotropy requires an integer value");
+        result.Error.Code.ShouldBe("SD0303");
+        result.Error.Message.ShouldContain("fast", Case.Sensitive, "the diagnostic must show the offending value");
     }
 
     // ---------------------------------------------------------------------------
@@ -399,11 +381,11 @@ public sealed class Fx2EffectBuilderTests
 
     private static void AssertSingleRenderState(RenderStateBlock block, Fx2RenderState expected)
         => Fx2EffectBuilder.MapRenderStates(block)
-            .Should().ContainSingle().Which.Should().Be(expected);
+            .ShouldHaveSingleItem().ShouldBe(expected);
 
     [Fact]
     public void MapRenderStates_EmptyBlock_ProducesNoStates()
-        => Fx2EffectBuilder.MapRenderStates(new RenderStateBlock()).Should().BeEmpty();
+        => Fx2EffectBuilder.MapRenderStates(new RenderStateBlock()).ShouldBeEmpty();
 
     // Blend.
     [Fact]
@@ -623,7 +605,7 @@ public sealed class Fx2EffectBuilderTests
             MultiSampleMask = 0xFFFF0000u,
         };
 
-        Fx2EffectBuilder.MapRenderStates(block).Should().Equal(
+        Fx2EffectBuilder.MapRenderStates(block).ShouldBe(new[] {
             // Blend group.
             new Fx2RenderState(13, 1),            // AlphaBlendEnable = true
             new Fx2RenderState(6, 5),             // SrcBlend = SrcAlpha
@@ -646,7 +628,7 @@ public sealed class Fx2EffectBuilderTests
             new Fx2RenderState(8, 1),             // CullMode = None
             new Fx2RenderState(67, 0),            // MultiSampleAntiAlias = false
             new Fx2RenderState(68, 0xFFFF0000u),  // MultiSampleMask
-            new Fx2RenderState(98, BitConverter.SingleToUInt32Bits(0.5f), IsFloat: true)); // DepthBias
+            new Fx2RenderState(98, BitConverter.SingleToUInt32Bits(0.5f), IsFloat: true)}); // DepthBias
     }
 
     [Fact]
@@ -677,8 +659,7 @@ public sealed class Fx2EffectBuilderTests
         };
 
         var written = new Fx2EffectWriter().Write(effect);
-        written.IsSuccess.Should().BeTrue(
-            because: written.IsFailure ? written.Error.Message : "all new ops are in FNA's honored set");
+        written.IsSuccess.ShouldBeTrue(written.IsFailure ? written.Error.Message : "all new ops are in FNA's honored set");
     }
 
     // ---------------------------------------------------------------------------
@@ -704,16 +685,12 @@ public sealed class Fx2EffectBuilderTests
                 ]),
             ]);
 
-        result.IsFailure.Should().BeTrue(
-            because: "FNA throws NotImplementedException on AlphaTestEnable at EffectPass.Apply");
-        result.Error.Code.Should().Be("SD0303");
-        result.Error.File.Should().Be(SourceFile);
-        result.Error.Message.Should().Contain("AlphaTestEnable",
-            because: "the diagnostic must name the offending state");
-        result.Error.Message.Should().Contain("P0",
-            because: "the diagnostic must name the pass");
-        result.Error.Message.Should().Contain("NotImplementedException",
-            because: "the diagnostic must explain that FNA throws on it at runtime");
+        result.IsFailure.ShouldBeTrue("FNA throws NotImplementedException on AlphaTestEnable at EffectPass.Apply");
+        result.Error.Code.ShouldBe("SD0303");
+        result.Error.File.ShouldBe(SourceFile);
+        result.Error.Message.ShouldContain("AlphaTestEnable", Case.Sensitive, "the diagnostic must name the offending state");
+        result.Error.Message.ShouldContain("P0", Case.Sensitive, "the diagnostic must name the pass");
+        result.Error.Message.ShouldContain("NotImplementedException", Case.Sensitive, "the diagnostic must explain that FNA throws on it at runtime");
     }
 
     [Fact]
@@ -732,9 +709,11 @@ public sealed class Fx2EffectBuilderTests
                 ]),
             ]);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("SD0303");
-        result.Error.Message.Should().ContainAll("AlphaTestEnable", "FogEnable", "PointSpriteEnable");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("SD0303");
+        result.Error.Message.ShouldContain("AlphaTestEnable", Case.Sensitive);
+        result.Error.Message.ShouldContain("FogEnable", Case.Sensitive);
+        result.Error.Message.ShouldContain("PointSpriteEnable", Case.Sensitive);
     }
 
     [Fact]
@@ -744,16 +723,15 @@ public sealed class Fx2EffectBuilderTests
         // key as metadata, and the builder turns it into the loud SD0303.
         var parsed = new RenderStateParser().Parse(
             new Dictionary<string, string> { ["AlphaTestEnable"] = "True" });
-        parsed.IsSuccess.Should().BeTrue(
-            because: "the parser records the key as metadata rather than failing");
+        parsed.IsSuccess.ShouldBeTrue("the parser records the key as metadata rather than failing");
 
         var result = Build(
             ctabs: [],
             techniques: [new Fx2TechniqueSource("T", [new Fx2PassSource("P0", -1, 0, parsed.Value)])]);
 
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("SD0303");
-        result.Error.Message.Should().Contain("AlphaTestEnable");
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("SD0303");
+        result.Error.Message.ShouldContain("AlphaTestEnable", Case.Sensitive);
     }
 
     // ---------------------------------------------------------------------------
@@ -779,22 +757,23 @@ public sealed class Fx2EffectBuilderTests
                 ]),
             ]);
 
-        result.IsSuccess.Should().BeTrue(because: result.IsFailure ? result.Error.Message : "input is valid");
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.Message : "input is valid");
 
         IReadOnlyList<Fx2Technique> techniques = result.Value.Techniques;
-        techniques.Select(t => t.Name).Should().Equal("TechA", "TechB");
+        techniques.Select(t => t.Name).ShouldBe(new[] {"TechA", "TechB"});
 
-        techniques[0].Passes.Select(p => p.Name).Should().Equal("P0", "P1");
-        techniques[0].Passes[0].VertexShaderIndex.Should().Be(0);
-        techniques[0].Passes[0].PixelShaderIndex.Should().Be(1);
-        techniques[0].Passes[1].VertexShaderIndex.Should().Be(-1, because: "-1 (stage absent) must survive");
-        techniques[0].Passes[1].PixelShaderIndex.Should().Be(2);
+        techniques[0].Passes.Select(p => p.Name).ShouldBe(new[] {"P0", "P1"});
+        techniques[0].Passes[0].VertexShaderIndex.ShouldBe(0);
+        techniques[0].Passes[0].PixelShaderIndex.ShouldBe(1);
+        techniques[0].Passes[1].VertexShaderIndex.ShouldBe(-1, customMessage: "-1 (stage absent) must survive");
+        techniques[0].Passes[1].PixelShaderIndex.ShouldBe(2);
 
-        techniques[1].Passes.Should().ContainSingle().Which.Should().BeEquivalentTo(
-            new { Name = "Only", VertexShaderIndex = 3, PixelShaderIndex = -1 });
+        Fx2Pass only = techniques[1].Passes.ShouldHaveSingleItem();
+        only.Name.ShouldBe("Only");
+        only.VertexShaderIndex.ShouldBe(3);
+        only.PixelShaderIndex.ShouldBe(-1);
 
-        techniques[0].Passes[0].RenderStates.Should().BeEmpty(
-            because: "an empty RenderStateBlock maps to an empty state list");
+        techniques[0].Passes[0].RenderStates.ShouldBeEmpty("an empty RenderStateBlock maps to an empty state list");
     }
 
     // ---------------------------------------------------------------------------
@@ -815,10 +794,9 @@ public sealed class Fx2EffectBuilderTests
 
         // The synthetic blob must be valid per §11 — prove it with the project's own reader.
         var ctab = CtabReader.Read(psBlob, SourceFile);
-        ctab.IsSuccess.Should().BeTrue(
-            because: ctab.IsFailure ? ctab.Error.Message : "the hand-assembled CTAB must parse");
-        ctab.Value.TargetProfile.Should().Be("ps_2_0");
-        ctab.Value.Constants.Select(c => c.Name).Should().Equal("Tint", "s0");
+        ctab.IsSuccess.ShouldBeTrue(ctab.IsFailure ? ctab.Error.Message : "the hand-assembled CTAB must parse");
+        ctab.Value.TargetProfile.ShouldBe("ps_2_0");
+        ctab.Value.Constants.Select(c => c.Name).ShouldBe(new[] {"Tint", "s0"});
 
         var built = Fx2EffectBuilder.Build(
             techniques:
@@ -837,15 +815,12 @@ public sealed class Fx2EffectBuilderTests
             samplerInfos: [Sampler("s0", "tex", ("MipFilter", "LINEAR"))],
             sourceFile: SourceFile);
 
-        built.IsSuccess.Should().BeTrue(
-            because: built.IsFailure ? built.Error.Message : "the builder input is valid");
+        built.IsSuccess.ShouldBeTrue(built.IsFailure ? built.Error.Message : "the builder input is valid");
 
         var written = new Fx2EffectWriter().Write(built.Value);
-        written.IsSuccess.Should().BeTrue(
-            because: written.IsFailure ? written.Error.Message : "the writer must accept the builder's output");
-        written.Value.Should().NotBeEmpty();
-        BitConverter.ToUInt32(written.Value, 0).Should().Be(0xFEFF0901,
-            because: "the file must lead with the fx_2_0 version token");
+        written.IsSuccess.ShouldBeTrue(written.IsFailure ? written.Error.Message : "the writer must accept the builder's output");
+        written.Value.ShouldNotBeEmpty();
+        BitConverter.ToUInt32(written.Value, 0).ShouldBe(0xFEFF0901, customMessage: "the file must lead with the fx_2_0 version token");
     }
 
     /// <summary>

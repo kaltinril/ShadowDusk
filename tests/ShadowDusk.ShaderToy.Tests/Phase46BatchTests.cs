@@ -1,4 +1,4 @@
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.ShaderToy.Tests;
@@ -17,21 +17,20 @@ public sealed class Phase46BatchTests
     private static string ConvertOk(string glsl)
     {
         ConvertResult r = ShaderToyConverter.Convert(glsl);
-        r.Success.Should().BeTrue(
+        r.Success.ShouldBeTrue(string.Format(
             "the shader is in-subset; diagnostics: {0}",
-            string.Join("; ", r.Diagnostics.Select(d => $"{d.Severity}:{d.Message}")));
-        r.Fx.Should().NotBeNull();
+            string.Join("; ", r.Diagnostics.Select(d => $"{d.Severity}:{d.Message}"))));
+        r.Fx.ShouldNotBeNull();
         return r.Fx!;
     }
 
     private static ConvertResult ConvertReject(string glsl)
     {
         ConvertResult r = ShaderToyConverter.Convert(glsl);
-        r.Success.Should().BeFalse();
-        r.Fx.Should().BeNull();
-        r.Diagnostics.Should().Contain(d =>
-            d.Severity == DiagnosticSeverity.Error && d.Line > 0 && d.Column > 0,
-            "a reject must carry a located error");
+        r.Success.ShouldBeFalse();
+        r.Fx.ShouldBeNull();
+        r.Diagnostics.ShouldContain(d =>
+            d.Severity == DiagnosticSeverity.Error && d.Line > 0 && d.Column > 0, "a reject must carry a located error");
         return r;
     }
 
@@ -49,7 +48,7 @@ public sealed class Phase46BatchTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("static const float3 s[2] = { float3(0.1, 0.2, 0.9), float3(0.9, 0.4, 0.1) };");
+        fx.ShouldContain("static const float3 s[2] = { float3(0.1, 0.2, 0.9), float3(0.9, 0.4, 0.1) };", Case.Sensitive);
     }
 
     [Fact]
@@ -66,7 +65,7 @@ public sealed class Phase46BatchTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("float2 c[2] = { float2(0.0, 0.0), float2(1.0, 1.0) };");
+        fx.ShouldContain("float2 c[2] = { float2(0.0, 0.0), float2(1.0, 1.0) };", Case.Sensitive);
     }
 
     [Fact]
@@ -88,7 +87,7 @@ public sealed class Phase46BatchTests
 
         string fx = ConvertOk(glsl);
         // HLSL spells the array size on the declarator NAME, not the type.
-        fx.Should().Contain("void scale(inout float k[3], float s)");
+        fx.ShouldContain("void scale(inout float k[3], float s)", Case.Sensitive);
     }
 
     [Fact]
@@ -108,7 +107,7 @@ public sealed class Phase46BatchTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("float sum3(float k[3])");
+        fx.ShouldContain("float sum3(float k[3])", Case.Sensitive);
     }
 
     [Fact]
@@ -124,8 +123,8 @@ public sealed class Phase46BatchTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("float a[3] = { 0.2, 0.5, 0.3 };");
-        fx.Should().Contain("float2 b[2] = { ((float2)(0.0)), ((float2)(1.0)) };");
+        fx.ShouldContain("float a[3] = { 0.2, 0.5, 0.3 };", Case.Sensitive);
+        fx.ShouldContain("float2 b[2] = { ((float2)(0.0)), ((float2)(1.0)) };", Case.Sensitive);
     }
 
     [Fact]
@@ -140,7 +139,7 @@ public sealed class Phase46BatchTests
         """;
 
         ConvertResult r = ConvertReject(glsl);
-        r.Diagnostics.Should().Contain(d => d.Message.Contains("OR the name", StringComparison.Ordinal));
+        r.Diagnostics.ShouldContain(d => d.Message.Contains("OR the name", StringComparison.Ordinal));
     }
 
     // ── 2: bitwise operators (binary + compound assign) ─────────────────────────────────────
@@ -159,10 +158,10 @@ public sealed class Phase46BatchTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("(x & 7)");
-        fx.Should().Contain("(x ^ 3)");
-        fx.Should().Contain("(x << 2)");
-        fx.Should().Contain(">> 1");
+        fx.ShouldContain("(x & 7)", Case.Sensitive);
+        fx.ShouldContain("(x ^ 3)", Case.Sensitive);
+        fx.ShouldContain("(x << 2)", Case.Sensitive);
+        fx.ShouldContain(">> 1", Case.Sensitive);
     }
 
     [Fact]
@@ -182,11 +181,11 @@ public sealed class Phase46BatchTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("h &= 255");
-        fx.Should().Contain("h |= 1");
-        fx.Should().Contain("h ^= 7");
-        fx.Should().Contain("h <<= 2");
-        fx.Should().Contain("h >>= 1");
+        fx.ShouldContain("h &= 255", Case.Sensitive);
+        fx.ShouldContain("h |= 1", Case.Sensitive);
+        fx.ShouldContain("h ^= 7", Case.Sensitive);
+        fx.ShouldContain("h <<= 2", Case.Sensitive);
+        fx.ShouldContain("h >>= 1", Case.Sensitive);
     }
 
     [Fact]
@@ -203,8 +202,8 @@ public sealed class Phase46BatchTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("&&");
-        fx.Should().Contain("(x & 1)");
+        fx.ShouldContain("&&", Case.Sensitive);
+        fx.ShouldContain("(x & 1)", Case.Sensitive);
     }
 
     // ── 3: gl_FragCoord as a body built-in ──────────────────────────────────────────────────
@@ -222,9 +221,9 @@ public sealed class Phase46BatchTests
 
         string fx = ConvertOk(glsl);
         // The body's gl_FragCoord references resolve; the harness publishes the static and sets it.
-        fx.Should().Contain("static float4 gl_FragCoord;");
-        fx.Should().Contain("gl_FragCoord = float4(fragCoord, 0.0, 1.0);");
-        fx.Should().Contain("gl_FragCoord.xy");
+        fx.ShouldContain("static float4 gl_FragCoord;", Case.Sensitive);
+        fx.ShouldContain("gl_FragCoord = float4(fragCoord, 0.0, 1.0);", Case.Sensitive);
+        fx.ShouldContain("gl_FragCoord.xy", Case.Sensitive);
     }
 
     [Fact]
@@ -238,7 +237,7 @@ public sealed class Phase46BatchTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().NotContain("static float4 gl_FragCoord;");
+        fx.ShouldNotContain("static float4 gl_FragCoord;", Case.Sensitive);
     }
 
     // ── 4: uint / uvec -> uint / uintN mapping ──────────────────────────────────────────────
@@ -261,9 +260,9 @@ public sealed class Phase46BatchTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("uint h(uint x)", "uint maps to HLSL's real uint so >> zero-fills");
-        fx.Should().Contain("uint2 p =", "uvec2 maps to uint2");
-        fx.Should().NotContain("uvec", "the GLSL spelling must not survive");
+        fx.ShouldContain("uint h(uint x)", Case.Sensitive, "uint maps to HLSL's real uint so >> zero-fills");
+        fx.ShouldContain("uint2 p =", Case.Sensitive, "uvec2 maps to uint2");
+        fx.ShouldNotContain("uvec", Case.Sensitive, "the GLSL spelling must not survive");
     }
 
     [Fact]
@@ -286,9 +285,9 @@ public sealed class Phase46BatchTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("747796405u");
-        fx.Should().Contain("1920u");
-        fx.Should().Contain("(h & 255u)");
+        fx.ShouldContain("747796405u", Case.Sensitive);
+        fx.ShouldContain("1920u", Case.Sensitive);
+        fx.ShouldContain("(h & 255u)", Case.Sensitive);
     }
 
     [Fact]
@@ -304,7 +303,7 @@ public sealed class Phase46BatchTests
         """;
 
         ConvertResult r = ConvertReject(glsl);
-        r.Diagnostics.Should().Contain(d => d.Message.Contains("floating-point", StringComparison.Ordinal));
+        r.Diagnostics.ShouldContain(d => d.Message.Contains("floating-point", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -319,8 +318,8 @@ public sealed class Phase46BatchTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("tex2D(iChannel0");
-        fx.Should().NotContain("tex2Dlod");
+        fx.ShouldContain("tex2D(iChannel0", Case.Sensitive);
+        fx.ShouldNotContain("tex2Dlod", Case.Sensitive);
     }
 
     // ── 5: redundant `uniform sampler2D iChannelN` redeclaration ─────────────────────────────
@@ -339,11 +338,11 @@ public sealed class Phase46BatchTests
         string fx = ConvertOk(glsl);
         // The harness still emits the built-in channel exactly once; the redeclaration is dropped
         // (it is NOT exposed as a custom uniform).
-        fx.Split("sampler2D iChannel0").Length.Should().Be(2, "iChannel0 sampler declared exactly once");
-        fx.Should().Contain("tex2D(iChannel0,");
+        fx.Split("sampler2D iChannel0").Length.ShouldBe(2, customMessage: "iChannel0 sampler declared exactly once");
+        fx.ShouldContain("tex2D(iChannel0,", Case.Sensitive);
 
         ConvertResult r = ShaderToyConverter.Convert(glsl);
-        r.UsedUniforms.Should().Contain("iChannel0");
+        r.UsedUniforms.ShouldContain("iChannel0");
     }
 
     [Fact]
@@ -358,8 +357,8 @@ public sealed class Phase46BatchTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("texture uNoiseTexture;");
-        fx.Should().Contain("sampler2D uNoise = sampler_state");
+        fx.ShouldContain("texture uNoiseTexture;", Case.Sensitive);
+        fx.ShouldContain("sampler2D uNoise = sampler_state", Case.Sensitive);
     }
 
     // ── 6: redundant built-in with initializer + multi-declarator uniforms ──────────────────
@@ -377,8 +376,8 @@ public sealed class Phase46BatchTests
 
         string fx = ConvertOk(glsl);
         // The harness injects iResolution exactly once; the initializer value is irrelevant and dropped.
-        fx.Should().Contain("float3 iResolution;");
-        fx.Should().NotContain("1920.0");
+        fx.ShouldContain("float3 iResolution;", Case.Sensitive);
+        fx.ShouldNotContain("1920.0", Case.Sensitive);
     }
 
     [Fact]
@@ -394,12 +393,14 @@ public sealed class Phase46BatchTests
         """;
 
         ConvertResult r = ShaderToyConverter.Convert(glsl);
-        r.Success.Should().BeTrue();
+        r.Success.ShouldBeTrue();
         string fx = r.Fx!;
-        fx.Should().Contain("float uA;");
-        fx.Should().Contain("float uB;");
-        fx.Should().Contain("float uC;");
-        r.UsedUniforms.Should().Contain("uA").And.Contain("uB").And.Contain("uC");
+        fx.ShouldContain("float uA;", Case.Sensitive);
+        fx.ShouldContain("float uB;", Case.Sensitive);
+        fx.ShouldContain("float uC;", Case.Sensitive);
+        r.UsedUniforms.ShouldContain("uA");
+        r.UsedUniforms.ShouldContain("uB");
+        r.UsedUniforms.ShouldContain("uC");
     }
 
     [Fact]
@@ -414,8 +415,8 @@ public sealed class Phase46BatchTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().Contain("float uA;");
-        fx.Should().Contain("float uB = 2.0;");
+        fx.ShouldContain("float uA;", Case.Sensitive);
+        fx.ShouldContain("float uB = 2.0;", Case.Sensitive);
     }
 
     // ── 7: openFrameworks header token strip ────────────────────────────────────────────────
@@ -432,7 +433,7 @@ public sealed class Phase46BatchTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().NotContain("OF_GLSL_SHADER_HEADER");
+        fx.ShouldNotContain("OF_GLSL_SHADER_HEADER", Case.Sensitive);
     }
 
     [Fact]
@@ -448,6 +449,6 @@ public sealed class Phase46BatchTests
         """;
 
         string fx = ConvertOk(glsl);
-        fx.Should().NotContain("#pragma header");
+        fx.ShouldNotContain("#pragma header", Case.Sensitive);
     }
 }

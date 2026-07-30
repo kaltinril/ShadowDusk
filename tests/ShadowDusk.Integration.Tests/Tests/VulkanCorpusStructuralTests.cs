@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using Xunit;
@@ -63,8 +63,7 @@ public sealed class VulkanCorpusStructuralTests
     {
         // Guards the guard: a broken glob or a missing content-copy would turn the theory
         // below into a silent no-op that still reports green.
-        AllFixtures().Count.Should().BeGreaterThanOrEqualTo(MinimumExpectedFixtures,
-            "the whole fixture corpus must reach this gate, not a hand-picked subset");
+        AllFixtures().Count.ShouldBeGreaterThanOrEqualTo(MinimumExpectedFixtures, customMessage: "the whole fixture corpus must reach this gate, not a hand-picked subset");
     }
 
     [Theory]
@@ -87,26 +86,25 @@ public sealed class VulkanCorpusStructuralTests
 
         if (result.IsFailure)
         {
-            result.Error.Should().NotBeEmpty("a failed compile must carry at least one diagnostic");
-            result.Error.Should().OnlyContain(e => !string.IsNullOrWhiteSpace(e.Code) &&
-                                                   !string.IsNullOrWhiteSpace(e.Message),
-                "every diagnostic must name a code and say what went wrong");
+            result.Error.ShouldNotBeEmpty("a failed compile must carry at least one diagnostic");
+            result.Error.ShouldAllBe(e => !string.IsNullOrWhiteSpace(e.Code) &&
+                                                   !string.IsNullOrWhiteSpace(e.Message), customMessage: "every diagnostic must name a code and say what went wrong");
             return;
         }
 
         var reader = MgfxBlobReader.Parse(result.Value.Data);
 
-        reader.ProfileId.Should().Be(80, "the Vulkan profile byte");
-        reader.MgfxVersion.Should().Be(11, "Vulkan always writes the v11 shader-record shape");
+        reader.ProfileId.ShouldBe((byte)(80), customMessage: "the Vulkan profile byte");
+        reader.MgfxVersion.ShouldBe((byte)(11), customMessage: "Vulkan always writes the v11 shader-record shape");
 
         foreach (var shader in reader.Shaders)
         {
             string who = $"{relativePath} shader #{shader.Index} (isVertex={shader.IsVertex})";
 
             var vk = VulkanShaderCodeReader.Parse(shader.Bytecode);
-            vk.SpirvMagicOk.Should().BeTrue($"{who} must wrap valid SPIR-V");
+            vk.SpirvMagicOk.ShouldBeTrue($"{who} must wrap valid SPIR-V");
 
-            vk.Bindings.Select(b => b.Binding).Should().OnlyHaveUniqueItems(
+            vk.Bindings.Select(b => b.Binding).ShouldBeUnique(
                 $"{who}: two descriptor-set-layout bindings at one binding number is invalid");
 
             foreach (var binding in vk.Bindings)
@@ -114,13 +112,11 @@ public sealed class VulkanCorpusStructuralTests
                 switch (binding.DescriptorType)
                 {
                     case 8: // UNIFORM_BUFFER_DYNAMIC
-                        binding.Binding.Should().Be(0,
-                            $"{who}: the native pipeline reads device->uniforms[stage + binding]");
+                        binding.Binding.ShouldBe((uint)(0), customMessage: $"{who}: the native pipeline reads device->uniforms[stage + binding]");
                         break;
 
                     case 1: // COMBINED_IMAGE_SAMPLER
-                        binding.Binding.Should().BeGreaterThanOrEqualTo(32,
-                            $"{who}: the runtime recovers the texture slot as (binding - 32)");
+                        binding.Binding.ShouldBeGreaterThanOrEqualTo(32u, customMessage: $"{who}: the runtime recovers the texture slot as (binding - 32)");
                         break;
 
                     default:
@@ -135,21 +131,18 @@ public sealed class VulkanCorpusStructuralTests
 
             if (vk.Bindings.Any(b => b.DescriptorType == 1))
             {
-                vk.SamplerSlots.Should().Be(vk.TextureSlots,
-                    $"{who}: a combined descriptor occupies both slot masks, as mgfxc writes them");
+                vk.SamplerSlots.ShouldBe(vk.TextureSlots, customMessage: $"{who}: a combined descriptor occupies both slot masks, as mgfxc writes them");
             }
 
-            SpirvDecorationScanner.EntryPointName(vk.Spirv).Should().Be("main",
-                $"{who}: MonoGame's native Vulkan pipeline creation expects the entry point to be main");
+            SpirvDecorationScanner.EntryPointName(vk.Spirv).ShouldBe("main", customMessage: $"{who}: MonoGame's native Vulkan pipeline creation expects the entry point to be main");
 
-            SpirvDecorationScanner.Extensions(vk.Spirv).Should().NotContain(
-                e => e.StartsWith("SPV_GOOGLE", StringComparison.Ordinal),
-                $"{who}: the shipped module must match mgfxc's reflect-free compile");
+            SpirvDecorationScanner.Extensions(vk.Spirv).ShouldNotContain(
+                e => e.StartsWith("SPV_GOOGLE", StringComparison.Ordinal), $"{who}: the shipped module must match mgfxc's reflect-free compile");
 
             // Only assert majorness when the module actually declares a matrix member.
             if (SpirvDecorationScanner.HasMatrixMember(vk.Spirv))
             {
-                SpirvDecorationScanner.AllMatrixMembersAreSpirvRowMajor(vk.Spirv).Should().BeTrue(
+                SpirvDecorationScanner.AllMatrixMembersAreSpirvRowMajor(vk.Spirv).ShouldBeTrue(
                     $"{who}: DXC decorates an HLSL COLUMN-major matrix as SPIR-V RowMajor, which is " +
                     "the convention MonoGame uploads for; ColMajor means the shader reads every " +
                     "matrix transposed (issue #145 bug 1)");

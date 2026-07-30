@@ -1,7 +1,7 @@
 #nullable enable
 
 using System.Diagnostics;
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.Integration.Tests.Cli;
@@ -30,11 +30,11 @@ public sealed class CliIntegrationTest : IClassFixture<CliBinaryFixture>
             var (exitCode, stdout, stderr) = await RunCliAsync(
                 sourceFile, outputFile, "/Profile:OpenGL");
 
-            stdout.Should().BeEmpty("nothing must be written to stdout");
-            stderr.Should().BeEmpty("successful compile must produce no stderr output");
-            exitCode.Should().Be(0);
-            File.Exists(outputFile).Should().BeTrue("output file must be created");
-            new FileInfo(outputFile).Length.Should().BeGreaterThan(0, "output file must not be empty");
+            stdout.ShouldBeEmpty("nothing must be written to stdout");
+            stderr.ShouldBeEmpty("successful compile must produce no stderr output");
+            exitCode.ShouldBe(0);
+            File.Exists(outputFile).ShouldBeTrue("output file must be created");
+            new FileInfo(outputFile).Length.ShouldBeGreaterThan(0, customMessage: "output file must not be empty");
         }
         finally
         {
@@ -61,15 +61,14 @@ public sealed class CliIntegrationTest : IClassFixture<CliBinaryFixture>
             var (exitCode, stdout, stderr) = await RunCliAsync(
                 invalidSource, outputFile, "/Profile:OpenGL");
 
-            exitCode.Should().Be(1);
-            stdout.Should().BeEmpty("nothing must ever go to stdout");
-            stderr.Should().NotBeEmpty("error diagnostics must appear on stderr");
+            exitCode.ShouldBe(1);
+            stdout.ShouldBeEmpty("nothing must ever go to stdout");
+            stderr.ShouldNotBeEmpty("error diagnostics must appear on stderr");
             // THE MGCB CONTRACT (Core Design Constraint 2/5): diagnostics on stderr in
             // mgfxc-compatible `file(line,col-col): error CODE: message` form, which
             // MGCB parses. Pin the full shape at the CLI boundary — "stderr non-empty"
             // alone would let the format silently regress to something MGCB can't read.
-            stderr.Should().MatchRegex(@"\.fx\(\d+,\d+(-\d+)?\): error [A-Z]+\d+:",
-                because: "stderr must carry the MGCB-parseable " +
+            stderr.ShouldMatch(@"\.fx\(\d+,\d+(-\d+)?\): error [A-Z]+\d+:", customMessage: "stderr must carry the MGCB-parseable " +
                          "'file(line,col-col): error CODE: message' diagnostic form " +
                          $"(MgcbErrorFormatter); actual stderr: {stderr}");
         }
@@ -86,9 +85,9 @@ public sealed class CliIntegrationTest : IClassFixture<CliBinaryFixture>
         // Invoke with only a flag — no positional arguments.
         var (exitCode, stdout, stderr) = await RunCliAsync(null, null, "/Profile:OpenGL");
 
-        exitCode.Should().Be(1);
-        stdout.Should().BeEmpty("nothing must ever go to stdout");
-        stderr.Should().Contain("Usage:", because: "usage text must appear on stderr when arguments are missing");
+        exitCode.ShouldBe(1);
+        stdout.ShouldBeEmpty("nothing must ever go to stdout");
+        stderr.ShouldContain("Usage:", Case.Sensitive, "usage text must appear on stderr when arguments are missing");
     }
 
     [Fact]
@@ -99,9 +98,9 @@ public sealed class CliIntegrationTest : IClassFixture<CliBinaryFixture>
         var (exitCode, stdout, stderr) = await RunCliAsync(
             "Shader.fx", "Out.mgfx", "/Profile:PlayStation4");
 
-        exitCode.Should().Be(1);
-        stdout.Should().BeEmpty("nothing must ever go to stdout");
-        stderr.Should().Contain("X0010", because: "unsupported platform must produce error code X0010");
+        exitCode.ShouldBe(1);
+        stdout.ShouldBeEmpty("nothing must ever go to stdout");
+        stderr.ShouldContain("X0010", Case.Sensitive, "unsupported platform must produce error code X0010");
     }
 
     [Fact]
@@ -115,9 +114,9 @@ public sealed class CliIntegrationTest : IClassFixture<CliBinaryFixture>
             var (exitCode, stdout, stderr) = await RunCliAsync(
                 sourceFile, outputFile, "/Profile:OpenGL", "/Debug");
 
-            stdout.Should().BeEmpty("nothing must be written to stdout");
-            stderr.Should().BeEmpty("debug flag alone must not cause failure");
-            exitCode.Should().Be(0);
+            stdout.ShouldBeEmpty("nothing must be written to stdout");
+            stderr.ShouldBeEmpty("debug flag alone must not cause failure");
+            exitCode.ShouldBe(0);
         }
         finally
         {
@@ -138,9 +137,9 @@ public sealed class CliIntegrationTest : IClassFixture<CliBinaryFixture>
             var (exitCode, stdout, stderr) = await RunCliAsync(
                 sourceFile, outputFile, "/Profile:OpenGL", "/I", includeDir);
 
-            stdout.Should().BeEmpty("nothing must be written to stdout");
-            stderr.Should().BeEmpty($"include-path compile should succeed; stderr: {stderr}");
-            exitCode.Should().Be(0);
+            stdout.ShouldBeEmpty("nothing must be written to stdout");
+            stderr.ShouldBeEmpty($"include-path compile should succeed; stderr: {stderr}");
+            exitCode.ShouldBe(0);
         }
         finally
         {

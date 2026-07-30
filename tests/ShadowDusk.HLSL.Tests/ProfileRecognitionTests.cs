@@ -1,6 +1,6 @@
 #nullable enable
 using ShadowDusk.HLSL;
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.HLSL.Tests;
@@ -23,7 +23,7 @@ public sealed class ProfileRecognitionTests
     [InlineData("ps_4_0")]
     [InlineData("vs_5_0")]
     public void IsKnownProfile_AcceptsLiteralProfiles(string profile) =>
-        FxPreParser.IsKnownProfile(profile).Should().BeTrue();
+        FxPreParser.IsKnownProfile(profile).ShouldBeTrue();
 
     [Theory]
     // W0 (load-bearing): the standard MonoGame DirectX header expands to these.
@@ -34,8 +34,7 @@ public sealed class ProfileRecognitionTests
     [InlineData("vs_4_0_level_9_0")]
     [InlineData("ps_4_0_level_9_0")]
     public void IsKnownProfile_AcceptsFeatureLevel9Profiles(string profile) =>
-        FxPreParser.IsKnownProfile(profile).Should().BeTrue(
-            because: "the standard MonoGame DirectX *_SHADERMODEL header expands to these; " +
+        FxPreParser.IsKnownProfile(profile).ShouldBeTrue("the standard MonoGame DirectX *_SHADERMODEL header expands to these; " +
                      "rejecting them would break every stock MonoGame DirectX shader");
 
     [Theory]
@@ -49,8 +48,7 @@ public sealed class ProfileRecognitionTests
     [InlineData("ps_6_8")]
     [InlineData("ps_6_9")]
     public void IsKnownProfile_AcceptsLessCommonButValidProfiles(string profile) =>
-        FxPreParser.IsKnownProfile(profile).Should().BeTrue(
-            because: "fxc/DXC accept these, so rejecting them would diverge in the over-reject " +
+        FxPreParser.IsKnownProfile(profile).ShouldBeTrue("fxc/DXC accept these, so rejecting them would diverge in the over-reject " +
                      "direction (accepting fewer than the reference compiler)");
 
     [Theory]
@@ -60,7 +58,7 @@ public sealed class ProfileRecognitionTests
     [InlineData("ps_shadermodel")] // macro name (lowercased)
     [InlineData("ps_4_0_level_9_2")] // there is no level_9_2
     public void IsKnownProfile_RejectsUnknownTokens(string token) =>
-        FxPreParser.IsKnownProfile(token).Should().BeFalse();
+        FxPreParser.IsKnownProfile(token).ShouldBeFalse();
 
     [Theory]
     [InlineData("ps_3_0")]
@@ -68,7 +66,7 @@ public sealed class ProfileRecognitionTests
     [InlineData("vs_2_0")]
     [InlineData("ps_4_0_level_9_1")]
     public void LooksLikeProfile_TrueForProfileShapedTokens(string token) =>
-        FxPreParser.LooksLikeProfile(token).Should().BeTrue();
+        FxPreParser.LooksLikeProfile(token).ShouldBeTrue();
 
     [Theory]
     [InlineData("a")]                 // typo
@@ -77,7 +75,6 @@ public sealed class ProfileRecognitionTests
     [InlineData("PS_SHADERMODEL")]
     [InlineData("foo")]
     public void LooksLikeProfile_FalseForMacroNamesAndTypos(string token) =>
-        FxPreParser.LooksLikeProfile(token).Should().BeFalse(
-            because: "a macro name may still expand to a real profile, so it must take the " +
+        FxPreParser.LooksLikeProfile(token).ShouldBeFalse("a macro name may still expand to a real profile, so it must take the " +
                      "expansion path rather than being rejected as a bogus literal");
 }

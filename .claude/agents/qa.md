@@ -21,7 +21,9 @@ Design and implement the test strategy for ShadowDusk. You write tests that catc
 ### Unit Tests (`ShadowDusk.*.Tests`)
 - Pure: no disk I/O, no child processes, no platform APIs
 - Test parsing, IR construction, error formatting, result handling
-- Use `FluentAssertions` for readable assertions
+- Use `Shouldly` for readable assertions - NEVER `FluentAssertions` (banned, issue #171: 8.x needs a paid
+  commercial licence, 7.x is frozen). On string receivers pass `Case.Sensitive` to
+  `ShouldContain`/`ShouldNotContain`; Shouldly's default is case-INsensitive
 - Use `Moq` or manual fakes for `IPlatformCompiler`
 - Run in <1s total
 

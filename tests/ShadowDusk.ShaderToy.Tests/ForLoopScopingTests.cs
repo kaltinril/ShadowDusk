@@ -1,4 +1,4 @@
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.ShaderToy.Tests;
@@ -27,20 +27,20 @@ public sealed class ForLoopScopingTests
 
         ConvertResult r = ShaderToyConverter.Convert(glsl);
 
-        r.Success.Should().BeTrue(
+        r.Success.ShouldBeTrue(string.Format(
             "the shader is valid GLSL; diagnostics: {0}",
-            string.Join("; ", r.Diagnostics.Select(d => $"{d.Severity}:{d.Message}")));
+            string.Join("; ", r.Diagnostics.Select(d => $"{d.Severity}:{d.Message}"))));
 
         // First loop keeps `i`; the second loop is renamed so the two no longer collide under HLSL scoping.
-        r.Fx!.Should().Contain("int i = 0", "the first loop keeps the original name");
-        r.Fx!.Should().Contain("i_sd", "the second loop's variable is renamed to avoid the redefinition");
-        r.Fx!.Should().NotContain("float i = 0.0", "the float loop's `i` must have been renamed");
+        r.Fx!.ShouldContain("int i = 0", Case.Sensitive, "the first loop keeps the original name");
+        r.Fx!.ShouldContain("i_sd", Case.Sensitive, "the second loop's variable is renamed to avoid the redefinition");
+        r.Fx!.ShouldNotContain("float i = 0.0", Case.Sensitive, "the float loop's `i` must have been renamed");
 
         // Exactly one located Warning, attributed to the second loop's line.
-        ConvertDiagnostic warn = r.Diagnostics.Should().ContainSingle(d =>
+        ConvertDiagnostic warn = r.Diagnostics.Where(d =>
             d.Severity == DiagnosticSeverity.Warning &&
-            d.Message.Contains("for-loop variable", StringComparison.Ordinal)).Subject;
-        warn.Line.Should().Be(4, "the rename is reported at the second loop, not the first");
+            d.Message.Contains("for-loop variable", StringComparison.Ordinal)).ShouldHaveSingleItem();
+        warn.Line.ShouldBe(4, customMessage: "the rename is reported at the second loop, not the first");
     }
 
     [Fact]
@@ -59,9 +59,9 @@ public sealed class ForLoopScopingTests
 
         ConvertResult r = ShaderToyConverter.Convert(glsl);
 
-        r.Success.Should().BeTrue();
-        r.Fx!.Should().Contain("i_sd", "same-type reuse is renamed because -Wfor-redefinition still fires");
-        r.Diagnostics.Should().Contain(d =>
+        r.Success.ShouldBeTrue();
+        r.Fx!.ShouldContain("i_sd", Case.Sensitive, "same-type reuse is renamed because -Wfor-redefinition still fires");
+        r.Diagnostics.ShouldContain(d =>
             d.Severity == DiagnosticSeverity.Warning && d.Message.Contains("for-loop variable", StringComparison.Ordinal));
     }
 
@@ -80,10 +80,10 @@ public sealed class ForLoopScopingTests
 
         ConvertResult r = ShaderToyConverter.Convert(glsl);
 
-        r.Success.Should().BeTrue();
-        r.Fx!.Should().Contain("i_sd", "the inner loop reuses the outer loop's name and must be renamed");
+        r.Success.ShouldBeTrue();
+        r.Fx!.ShouldContain("i_sd", Case.Sensitive, "the inner loop reuses the outer loop's name and must be renamed");
         // The inner loop's body must reference the renamed variable, not the outer `i`.
-        r.Fx!.Should().Contain("float(i_sd)");
+        r.Fx!.ShouldContain("float(i_sd)", Case.Sensitive);
     }
 
     [Fact]
@@ -102,9 +102,9 @@ public sealed class ForLoopScopingTests
 
         ConvertResult r = ShaderToyConverter.Convert(glsl);
 
-        r.Success.Should().BeTrue();
-        r.Fx!.Should().NotContain("_sd", "no collision means no rename");
-        r.Diagnostics.Should().NotContain(d => d.Message.Contains("for-loop variable", StringComparison.Ordinal));
+        r.Success.ShouldBeTrue();
+        r.Fx!.ShouldNotContain("_sd", Case.Sensitive, "no collision means no rename");
+        r.Diagnostics.ShouldNotContain(d => d.Message.Contains("for-loop variable", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -123,8 +123,8 @@ public sealed class ForLoopScopingTests
 
         ConvertResult r = ShaderToyConverter.Convert(glsl);
 
-        r.Success.Should().BeTrue();
-        r.Fx!.Should().NotContain("_sd", "each function's first loop keeps `i`; there is no cross-function collision");
-        r.Diagnostics.Should().NotContain(d => d.Message.Contains("for-loop variable", StringComparison.Ordinal));
+        r.Success.ShouldBeTrue();
+        r.Fx!.ShouldNotContain("_sd", Case.Sensitive, "each function's first loop keeps `i`; there is no cross-function collision");
+        r.Diagnostics.ShouldNotContain(d => d.Message.Contains("for-loop variable", StringComparison.Ordinal));
     }
 }

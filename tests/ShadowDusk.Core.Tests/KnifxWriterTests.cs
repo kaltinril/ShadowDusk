@@ -5,7 +5,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Core;
 using Xunit;
 
@@ -30,7 +30,7 @@ public sealed class KnifxWriterTests
     private static byte[] Write(ShaderIR ir, KnifxBackend backend = KnifxBackend.OpenGL)
     {
         var result = new KnifxWriter().Write(ir, new KnifxWriterOptions(backend));
-        result.IsSuccess.Should().BeTrue();
+        result.IsSuccess.ShouldBeTrue();
         return result.Value;
     }
 
@@ -93,26 +93,26 @@ public sealed class KnifxWriterTests
     public void Header_SignatureIsKNIF()
     {
         var b = Write(new ShaderIR());
-        Encoding.ASCII.GetString(b, 0, 4).Should().Be("KNIF");
+        Encoding.ASCII.GetString(b, 0, 4).ShouldBe("KNIF");
     }
 
     [Fact]
     public void Header_VersionIs11_ReservedZero()
     {
         var b = Write(new ShaderIR(), KnifxBackend.DirectX11);
-        BitConverter.ToInt16(b, 4).Should().Be(11);  // version
-        BitConverter.ToInt16(b, 6).Should().Be(0);   // reserved
+        BitConverter.ToInt16(b, 4).ShouldBe((short)(11));  // version
+        BitConverter.ToInt16(b, 6).ShouldBe((short)(0));   // reserved
     }
 
     [Fact]
     public void Header_NonGlTarget_IsSingleBackendDirectory()
     {
         var b = Write(MinimalIR(), KnifxBackend.DirectX11);
-        BitConverter.ToInt16(b, 8).Should().Be(1);              // backendCount
-        BitConverter.ToInt16(b, 10).Should().Be((short)0x0021); // DirectX11
-        BitConverter.ToInt32(b, 16).Should().Be(20);            // fxOffset = headerSize 10 + entrySize 10
+        BitConverter.ToInt16(b, 8).ShouldBe((short)(1));              // backendCount
+        BitConverter.ToInt16(b, 10).ShouldBe((short)0x0021); // DirectX11
+        BitConverter.ToInt32(b, 16).ShouldBe(20);            // fxOffset = headerSize 10 + entrySize 10
         int bodyLen = BitConverter.ToInt32(b, 20);              // body length prefix at fxOffset
-        b.Length.Should().Be(24 + bodyLen);                     // header(10)+entry(10)+len(4)+body
+        b.Length.ShouldBe(24 + bodyLen);                     // header(10)+entry(10)+len(4)+body
     }
 
     [Fact]
@@ -123,9 +123,9 @@ public sealed class KnifxWriterTests
         foreach (var requested in new[] { KnifxBackend.OpenGL, KnifxBackend.GLES, KnifxBackend.WebGL })
         {
             var b = Write(MinimalIR(), requested);
-            BitConverter.ToInt16(b, 8).Should().Be(3);  // backendCount
-            Directory(b).Select(e => e.Backend).Should().Equal(
-                KnifxBackend.OpenGL, KnifxBackend.GLES, KnifxBackend.WebGL);
+            BitConverter.ToInt16(b, 8).ShouldBe((short)(3));  // backendCount
+            Directory(b).Select(e => e.Backend).ShouldBe(new[] {
+                KnifxBackend.OpenGL, KnifxBackend.GLES, KnifxBackend.WebGL});
         }
     }
 
@@ -137,8 +137,8 @@ public sealed class KnifxWriterTests
         int gles   = dir.First(e => e.Backend == KnifxBackend.GLES).BodyStart;
         int webGl  = dir.First(e => e.Backend == KnifxBackend.WebGL).BodyStart;
 
-        gles.Should().Be(webGl, "GLES and WebGL share the one ShaderVersion(0,0) runtime-convert body");
-        openGl.Should().NotBe(webGl, "the desktop OpenGL body is the distinct version-directory body");
+        gles.ShouldBe(webGl, customMessage: "GLES and WebGL share the one ShaderVersion(0,0) runtime-convert body");
+        openGl.ShouldNotBe(webGl, customMessage: "the desktop OpenGL body is the distinct version-directory body");
     }
 
     [Fact]
@@ -147,8 +147,7 @@ public sealed class KnifxWriterTests
         var b = Write(MinimalIR(), KnifxBackend.DirectX11);
         int bodyLen = BitConverter.ToInt32(b, 20);
         byte[] body = b[24..(24 + bodyLen)];
-        BitConverter.ToInt32(b, 12).Should().Be(Fnv1a(body),
-            "the directory effectKey is FNV-1a/32 (+ avalanche) over the body, per KNI HashHelpers");
+        BitConverter.ToInt32(b, 12).ShouldBe(Fnv1a(body), customMessage: "the directory effectKey is FNV-1a/32 (+ avalanche) over the body, per KNI HashHelpers");
     }
 
     [Theory]
@@ -160,7 +159,7 @@ public sealed class KnifxWriterTests
     {
         var b = Write(new ShaderIR(), backend);
         // First body byte (for the requested backend's body) is the integersAsFloats bool.
-        (b[BodyStart(b, backend)] != 0).Should().Be(expected);
+        (b[BodyStart(b, backend)] != 0).ShouldBe(expected);
     }
 
     // -------------------------------------------------------------------------------------
@@ -177,79 +176,79 @@ public sealed class KnifxWriterTests
         using var r = new BinaryReader(ms, Encoding.UTF8);
         r.BaseStream.Position = BodyStart(b, KnifxBackend.OpenGL); // the desktop version-directory body
 
-        r.ReadBoolean().Should().BeTrue(); // integersAsFloats (OpenGL)
+        r.ReadBoolean().ShouldBeTrue(); // integersAsFloats (OpenGL)
 
         // ---- constant buffers ----
-        ReadPacked(r).Should().Be(1);
-        r.ReadString().Should().Be("$Globals");
-        ReadPacked(r).Should().Be(64);          // size (packed in v11, was int16 in v10)
-        ReadPacked(r).Should().Be(1);           // param-index count
-        ReadPacked(r).Should().Be(0);           // param index
-        r.ReadUInt16().Should().Be(0);          // offset (still ushort)
+        ReadPacked(r).ShouldBe(1);
+        r.ReadString().ShouldBe("$Globals");
+        ReadPacked(r).ShouldBe(64);          // size (packed in v11, was int16 in v10)
+        ReadPacked(r).ShouldBe(1);           // param-index count
+        ReadPacked(r).ShouldBe(0);           // param index
+        r.ReadUInt16().ShouldBe((ushort)(0));          // offset (still ushort)
 
         // ---- shaders ----
-        ReadPacked(r).Should().Be(1);
-        r.ReadByte().Should().Be(1);            // Stage: Vertex == 1 in KNI (Pixel == 0)
-        ReadPacked(r).Should().Be(3);           // ShaderVersion.Major  (NEW in v11)
-        ReadPacked(r).Should().Be(0);           // ShaderVersion.Minor  (NEW in v11)
+        ReadPacked(r).ShouldBe(1);
+        r.ReadByte().ShouldBe((byte)(1));            // Stage: Vertex == 1 in KNI (Pixel == 0)
+        ReadPacked(r).ShouldBe(3);           // ShaderVersion.Major  (NEW in v11)
+        ReadPacked(r).ShouldBe(0);           // ShaderVersion.Minor  (NEW in v11)
 
         // GL ShaderCode is a GLSL-version bytecode DIRECTORY (NOT raw GLSL): reserved int16,
         // entry count int16, then {byte Major, byte Minor, bool ES, int32 offset}, then the
         // blob {int32 length, bytes}. Verified against KNI ShaderProfileGL.CreateGLSL.
         int codeLen = r.ReadInt32();            // wrapped ShaderCode length
         long codeStart = r.BaseStream.Position;
-        r.ReadInt16().Should().Be(0);           // reserved
-        r.ReadInt16().Should().Be(1);           // GLSL directory entry count
-        r.ReadByte().Should().Be(1);            // GLSL Major (1.10 -> OpenGL desktop entry)
-        r.ReadByte().Should().Be(1);            // GLSL Minor
-        r.ReadBoolean().Should().BeFalse();     // ES
-        r.ReadInt32().Should().Be(11);          // blob offset = HeaderSize 4 + EntrySize 7
-        r.ReadInt32().Should().Be(4);           // GLSL blob length
-        r.ReadBytes(4).Should().Equal(new byte[] { 1, 2, 3, 4 }); // the GLSL bytes themselves
-        (r.BaseStream.Position - codeStart).Should().Be(codeLen, "the directory consumed exactly ShaderCode.Length");
+        r.ReadInt16().ShouldBe((short)(0));           // reserved
+        r.ReadInt16().ShouldBe((short)(1));           // GLSL directory entry count
+        r.ReadByte().ShouldBe((byte)(1));            // GLSL Major (1.10 -> OpenGL desktop entry)
+        r.ReadByte().ShouldBe((byte)(1));            // GLSL Minor
+        r.ReadBoolean().ShouldBeFalse();     // ES
+        r.ReadInt32().ShouldBe(11);          // blob offset = HeaderSize 4 + EntrySize 7
+        r.ReadInt32().ShouldBe(4);           // GLSL blob length
+        r.ReadBytes(4).ShouldBe(new byte[] { 1, 2, 3, 4 }); // the GLSL bytes themselves
+        (r.BaseStream.Position - codeStart).ShouldBe(codeLen, customMessage: "the directory consumed exactly ShaderCode.Length");
 
-        ReadPacked(r).Should().Be(1);           // sampler count
-        r.ReadByte().Should().Be(4);            // sampler type
-        r.ReadByte().Should().Be(0);            // textureSlot
-        r.ReadByte().Should().Be(0);            // samplerSlot
-        r.ReadBoolean().Should().BeFalse();     // hasState
-        r.ReadString().Should().Be("vs_s0");    // GL sampler name
-        ReadPacked(r).Should().Be(0);           // textureParameter (packed in v11, was byte)
-        ReadPacked(r).Should().Be(1);           // cbuffer-index count
-        ReadPacked(r).Should().Be(0);           // cbuffer index
-        ReadPacked(r).Should().Be(1);           // attribute count
-        r.ReadString().Should().Be("vs_v0");    // attribute name
-        r.ReadByte().Should().Be(0);            // usage
-        ReadPacked(r).Should().Be(0);           // index (packed in v11, was byte)
-        r.ReadInt16().Should().Be(0);           // location (int16, unchanged)
+        ReadPacked(r).ShouldBe(1);           // sampler count
+        r.ReadByte().ShouldBe((byte)(4));            // sampler type
+        r.ReadByte().ShouldBe((byte)(0));            // textureSlot
+        r.ReadByte().ShouldBe((byte)(0));            // samplerSlot
+        r.ReadBoolean().ShouldBeFalse();     // hasState
+        r.ReadString().ShouldBe("vs_s0");    // GL sampler name
+        ReadPacked(r).ShouldBe(0);           // textureParameter (packed in v11, was byte)
+        ReadPacked(r).ShouldBe(1);           // cbuffer-index count
+        ReadPacked(r).ShouldBe(0);           // cbuffer index
+        ReadPacked(r).ShouldBe(1);           // attribute count
+        r.ReadString().ShouldBe("vs_v0");    // attribute name
+        r.ReadByte().ShouldBe((byte)(0));            // usage
+        ReadPacked(r).ShouldBe(0);           // index (packed in v11, was byte)
+        r.ReadInt16().ShouldBe((short)(0));           // location (int16, unchanged)
 
         // ---- parameters ----
-        ReadPacked(r).Should().Be(1);
-        r.ReadByte().Should().Be(2);            // Class = Matrix
-        r.ReadByte().Should().Be(3);            // Type
-        r.ReadString().Should().Be("WVP");
-        r.ReadString().Should().Be("");         // semantic (null -> "")
-        ReadPacked(r).Should().Be(0);           // annotation count
-        r.ReadByte().Should().Be(4);            // rows
-        r.ReadByte().Should().Be(4);            // columns
-        r.ReadByte().Should().Be(4);            // columnsActual (NEW in v11) == columns
-        ReadPacked(r).Should().Be(0);           // element count
-        ReadPacked(r).Should().Be(0);           // member count
-        r.ReadBytes(64).Should().OnlyContain(x => x == 0); // value-type leaf default blob (4*4*4)
+        ReadPacked(r).ShouldBe(1);
+        r.ReadByte().ShouldBe((byte)(2));            // Class = Matrix
+        r.ReadByte().ShouldBe((byte)(3));            // Type
+        r.ReadString().ShouldBe("WVP");
+        r.ReadString().ShouldBe("");         // semantic (null -> "")
+        ReadPacked(r).ShouldBe(0);           // annotation count
+        r.ReadByte().ShouldBe((byte)(4));            // rows
+        r.ReadByte().ShouldBe((byte)(4));            // columns
+        r.ReadByte().ShouldBe((byte)(4));            // columnsActual (NEW in v11) == columns
+        ReadPacked(r).ShouldBe(0);           // element count
+        ReadPacked(r).ShouldBe(0);           // member count
+        r.ReadBytes(64).ShouldAllBe(x => x == 0); // value-type leaf default blob (4*4*4)
 
         // ---- techniques / passes ----
-        ReadPacked(r).Should().Be(1);
-        r.ReadString().Should().Be("T");
-        ReadPacked(r).Should().Be(0);           // technique annotation count
-        ReadPacked(r).Should().Be(1);           // pass count
-        r.ReadString().Should().Be("P");
-        ReadPacked(r).Should().Be(0);           // pass annotation count
-        ReadPacked(r).Should().Be(0);           // vertexShaderIndex
-        ReadPacked(r).Should().Be(-1);          // pixelShaderIndex (none)
-        ReadPacked(r).Should().Be(-1);          // computeShaderIndex (NEW in v11; none)
-        r.ReadBoolean().Should().BeFalse();     // blend state present?
-        r.ReadBoolean().Should().BeFalse();     // depth-stencil present?
-        r.ReadBoolean().Should().BeFalse();     // rasterizer present?
+        ReadPacked(r).ShouldBe(1);
+        r.ReadString().ShouldBe("T");
+        ReadPacked(r).ShouldBe(0);           // technique annotation count
+        ReadPacked(r).ShouldBe(1);           // pass count
+        r.ReadString().ShouldBe("P");
+        ReadPacked(r).ShouldBe(0);           // pass annotation count
+        ReadPacked(r).ShouldBe(0);           // vertexShaderIndex
+        ReadPacked(r).ShouldBe(-1);          // pixelShaderIndex (none)
+        ReadPacked(r).ShouldBe(-1);          // computeShaderIndex (NEW in v11; none)
+        r.ReadBoolean().ShouldBeFalse();     // blend state present?
+        r.ReadBoolean().ShouldBeFalse();     // depth-stencil present?
+        r.ReadBoolean().ShouldBeFalse();     // rasterizer present?
     }
 
     [Fact]
@@ -267,8 +266,8 @@ public sealed class KnifxWriterTests
         r.BaseStream.Position = BodyStart(b, KnifxBackend.OpenGL);
         r.ReadBoolean();             // integersAsFloats
         ReadPacked(r);               // cbuffer count (0)
-        ReadPacked(r).Should().Be(1); // shader count
-        r.ReadByte().Should().Be(0);  // Pixel == 0 in KNI
+        ReadPacked(r).ShouldBe(1); // shader count
+        r.ReadByte().ShouldBe((byte)(0));  // Pixel == 0 in KNI
     }
 
     [Fact]
@@ -285,15 +284,15 @@ public sealed class KnifxWriterTests
         var b = Write(ir, KnifxBackend.OpenGL);
 
         byte[] code = ReadShaderCode(b, KnifxBackend.OpenGL);
-        code.Length.Should().BeGreaterThan(glsl.Length, "the GLSL is wrapped in a version directory");
-        BitConverter.ToInt16(code, 0).Should().Be(0);   // reserved
-        BitConverter.ToInt16(code, 2).Should().Be(1);   // one GLSL version entry
-        code[4].Should().Be(1);                          // Major (GLSL 1.10)
-        code[5].Should().Be(1);                          // Minor
-        code[6].Should().Be(0);                          // ES = false
-        BitConverter.ToInt32(code, 7).Should().Be(11);   // blob offset = 4 + 7
-        BitConverter.ToInt32(code, 11).Should().Be(glsl.Length); // blob length prefix
-        Encoding.ASCII.GetString(code, 15, glsl.Length).Should().Be("void main(){}");
+        code.Length.ShouldBeGreaterThan(glsl.Length, customMessage: "the GLSL is wrapped in a version directory");
+        BitConverter.ToInt16(code, 0).ShouldBe((short)(0));   // reserved
+        BitConverter.ToInt16(code, 2).ShouldBe((short)(1));   // one GLSL version entry
+        code[4].ShouldBe((byte)(1));                          // Major (GLSL 1.10)
+        code[5].ShouldBe((byte)(1));                          // Minor
+        code[6].ShouldBe((byte)(0));                          // ES = false
+        BitConverter.ToInt32(code, 7).ShouldBe(11);   // blob offset = 4 + 7
+        BitConverter.ToInt32(code, 11).ShouldBe(glsl.Length); // blob length prefix
+        Encoding.ASCII.GetString(code, 15, glsl.Length).ShouldBe("void main(){}");
     }
 
     [Fact]
@@ -313,12 +312,12 @@ public sealed class KnifxWriterTests
         r.BaseStream.Position = BodyStart(b, KnifxBackend.WebGL);
         r.ReadBoolean();              // integersAsFloats
         ReadPacked(r);                // cbuffer count (0)
-        ReadPacked(r).Should().Be(1); // shader count
+        ReadPacked(r).ShouldBe(1); // shader count
         r.ReadByte();                 // stage
-        ReadPacked(r).Should().Be(0); // ShaderVersion.Major == 0 (raw-GLSL / runtime-convert path)
-        ReadPacked(r).Should().Be(0); // ShaderVersion.Minor == 0
+        ReadPacked(r).ShouldBe(0); // ShaderVersion.Major == 0 (raw-GLSL / runtime-convert path)
+        ReadPacked(r).ShouldBe(0); // ShaderVersion.Minor == 0
         int codeLen = r.ReadInt32();
-        r.ReadBytes(codeLen).Should().Equal(glsl, "the web body stores RAW GLSL, not a version directory");
+        r.ReadBytes(codeLen).ShouldBe(glsl, customMessage: "the web body stores RAW GLSL, not a version directory");
     }
 
     [Fact]
@@ -332,7 +331,7 @@ public sealed class KnifxWriterTests
         };
         var b = Write(ir, KnifxBackend.DirectX11);
 
-        ReadShaderCode(b, KnifxBackend.DirectX11).Should().Equal(dxbc);
+        ReadShaderCode(b, KnifxBackend.DirectX11).ShouldBe(dxbc);
     }
 
     // Navigate a backend's body to its first shader's ShaderCode bytes (0 cbuffers, >=1 shader).

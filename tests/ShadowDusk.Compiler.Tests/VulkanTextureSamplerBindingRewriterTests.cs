@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler.Internal;
 using Xunit;
 
@@ -42,10 +42,12 @@ public sealed class VulkanTextureSamplerBindingRewriterTests
 
         var act = () => VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
 
-        var error = act.Should().Throw<VulkanSamplerSharingException>().Which.Error;
-        error.Code.Should().Be("SD0028");
-        error.Line.Should().BeGreaterThan(0, "the diagnostic must point at the offending Sample call");
-        error.Message.Should().Contain("DiffuseTex").And.Contain("LightmapTex").And.Contain("SharedSampler");
+        var error = Should.Throw<VulkanSamplerSharingException>(act).Error;
+        error.Code.ShouldBe("SD0028");
+        error.Line.ShouldBeGreaterThan(0, customMessage: "the diagnostic must point at the offending Sample call");
+        error.Message.ShouldContain("DiffuseTex", Case.Sensitive);
+        error.Message.ShouldContain("LightmapTex", Case.Sensitive);
+        error.Message.ShouldContain("SharedSampler", Case.Sensitive);
     }
 
     [Fact]
@@ -70,7 +72,7 @@ public sealed class VulkanTextureSamplerBindingRewriterTests
 
         var act = () => VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
 
-        act.Should().NotThrow();
+        Should.NotThrow(act);
     }
 
     [Fact]
@@ -88,7 +90,7 @@ public sealed class VulkanTextureSamplerBindingRewriterTests
 
         var act = () => VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
 
-        act.Should().NotThrow();
+        Should.NotThrow(act);
     }
 
     [Fact]
@@ -108,8 +110,8 @@ public sealed class VulkanTextureSamplerBindingRewriterTests
 
         string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
 
-        result.Should().Contain("Texture2D SpriteTexture : register(t0);");
-        result.Should().Contain("SamplerState SpriteTextureSampler : register(s0);");
+        result.ShouldContain("Texture2D SpriteTexture : register(t0);", Case.Sensitive);
+        result.ShouldContain("SamplerState SpriteTextureSampler : register(s0);", Case.Sensitive);
     }
 
     [Fact]
@@ -136,10 +138,10 @@ public sealed class VulkanTextureSamplerBindingRewriterTests
         int texA = IndexOf(result, "TexA", 't');
         int texB = IndexOf(result, "TexB", 't');
 
-        texA.Should().NotBe(texB, "two textures on one binding is an invalid descriptor set");
-        IndexOf(result, "SampA", 's').Should().Be(texA, "a pair must stay co-located");
-        IndexOf(result, "SampB", 's').Should().Be(texB, "a pair must stay co-located");
-        texA.Should().Be(1, "an explicit texture register stays authoritative among textures");
+        texA.ShouldNotBe(texB, customMessage: "two textures on one binding is an invalid descriptor set");
+        IndexOf(result, "SampA", 's').ShouldBe(texA, customMessage: "a pair must stay co-located");
+        IndexOf(result, "SampB", 's').ShouldBe(texB, customMessage: "a pair must stay co-located");
+        texA.ShouldBe(1, customMessage: "an explicit texture register stays authoritative among textures");
     }
 
     [Fact]
@@ -170,9 +172,9 @@ public sealed class VulkanTextureSamplerBindingRewriterTests
         int sampA = IndexOf(result, "SampA", 's');
         int sampB = IndexOf(result, "SampB", 's');
 
-        texA.Should().NotBe(texB, "two textures on one binding is an invalid descriptor set");
-        sampA.Should().Be(texA, "a pair must stay co-located");
-        sampB.Should().Be(texB, "a pair must stay co-located, even if that overrides its own explicit register");
+        texA.ShouldNotBe(texB, customMessage: "two textures on one binding is an invalid descriptor set");
+        sampA.ShouldBe(texA, customMessage: "a pair must stay co-located");
+        sampB.ShouldBe(texB, customMessage: "a pair must stay co-located, even if that overrides its own explicit register");
     }
 
     [Fact]
@@ -193,7 +195,7 @@ public sealed class VulkanTextureSamplerBindingRewriterTests
 
         string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
 
-        IndexOf(result, "ShadowMap", 't').Should().Be(IndexOf(result, "ShadowSampler", 's'));
+        IndexOf(result, "ShadowMap", 't').ShouldBe(IndexOf(result, "ShadowSampler", 's'));
     }
 
     [Theory]
@@ -217,8 +219,8 @@ public sealed class VulkanTextureSamplerBindingRewriterTests
 
         string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
 
-        result.Should().Contain($"{textureType} Tex : register(t0);");
-        result.Should().Contain($"{samplerType} Samp : register(s0);");
+        result.ShouldContain($"{textureType} Tex : register(t0);", Case.Sensitive);
+        result.ShouldContain($"{samplerType} Samp : register(s0);", Case.Sensitive);
     }
 
     /// <summary>Reads back the register index a declaration was assigned.</summary>
@@ -226,7 +228,7 @@ public sealed class VulkanTextureSamplerBindingRewriterTests
     {
         var m = System.Text.RegularExpressions.Regex.Match(
             hlsl, $@"\b{name}\s*:\s*register\s*\(\s*{kind}(\d+)\s*\)");
-        m.Success.Should().BeTrue($"{name} must carry a {kind}-register; source was:\n{hlsl}");
+        m.Success.ShouldBeTrue($"{name} must carry a {kind}-register; source was:\n{hlsl}");
         return int.Parse(m.Groups[1].Value);
     }
 
@@ -257,8 +259,8 @@ public sealed class VulkanTextureSamplerBindingRewriterTests
 
         string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
 
-        result.Should().Contain($"{textureType} SpriteTexture : register(t0);");
-        result.Should().Contain("SamplerState SpriteTextureSampler : register(s0);");
+        result.ShouldContain($"{textureType} SpriteTexture : register(t0);", Case.Sensitive);
+        result.ShouldContain("SamplerState SpriteTextureSampler : register(s0);", Case.Sensitive);
     }
 
     [Fact]
@@ -282,10 +284,10 @@ public sealed class VulkanTextureSamplerBindingRewriterTests
 
         string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
 
-        result.Should().Contain("Texture2D s0Texture : register(t0);");
-        result.Should().Contain("SamplerState s0 : register(s0);");
-        result.Should().Contain("Texture2D _dissolveTex : register(t1);");
-        result.Should().Contain("SamplerState _dissolveTexSampler : register(s1);");
+        result.ShouldContain("Texture2D s0Texture : register(t0);", Case.Sensitive);
+        result.ShouldContain("SamplerState s0 : register(s0);", Case.Sensitive);
+        result.ShouldContain("Texture2D _dissolveTex : register(t1);", Case.Sensitive);
+        result.ShouldContain("SamplerState _dissolveTexSampler : register(s1);", Case.Sensitive);
     }
 
     [Fact]
@@ -293,7 +295,7 @@ public sealed class VulkanTextureSamplerBindingRewriterTests
     {
         const string hlsl = "float4 PS() : SV_Target { return float4(1, 0, 0, 1); }";
 
-        VulkanTextureSamplerBindingRewriter.Rewrite(hlsl).Should().Be(hlsl);
+        VulkanTextureSamplerBindingRewriter.Rewrite(hlsl).ShouldBe(hlsl);
     }
 
     [Fact]
@@ -311,7 +313,7 @@ public sealed class VulkanTextureSamplerBindingRewriterTests
             #endif
             """;
 
-        VulkanTextureSamplerBindingRewriter.Rewrite(hlsl).Should().Be(hlsl);
+        VulkanTextureSamplerBindingRewriter.Rewrite(hlsl).ShouldBe(hlsl);
     }
 
     [Fact]
@@ -348,8 +350,8 @@ public sealed class VulkanTextureSamplerBindingRewriterTests
 
         string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
 
-        result.Should().Contain("Texture2D SpriteTexture : register(t0);");
-        result.Should().Contain("SamplerState SpriteTextureSampler : register(s0);");
+        result.ShouldContain("Texture2D SpriteTexture : register(t0);", Case.Sensitive);
+        result.ShouldContain("SamplerState SpriteTextureSampler : register(s0);", Case.Sensitive);
     }
 
     [Fact]
@@ -389,11 +391,11 @@ public sealed class VulkanTextureSamplerBindingRewriterTests
 
         string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
 
-        result.Should().Contain("Texture2D s0Texture : register(t0);");
-        result.Should().Contain("SamplerState s0 : register(s0);");
+        result.ShouldContain("Texture2D s0Texture : register(t0);", Case.Sensitive);
+        result.ShouldContain("SamplerState s0 : register(s0);", Case.Sensitive);
         // The synthesized texture shares its sampler's index, so whichever branch survives
         // yields ONE combined image-sampler descriptor.
-        result.Should().Contain("Texture2D s0_SDTexture : register(t0);");
+        result.ShouldContain("Texture2D s0_SDTexture : register(t0);", Case.Sensitive);
     }
 
     [Fact]
@@ -414,10 +416,10 @@ public sealed class VulkanTextureSamplerBindingRewriterTests
 
         string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
 
-        result.Should().Contain("Texture2D TextureSampler_SDTexture : register(t0);");
-        result.Should().Contain("SamplerState TextureSampler : register(s0);");
-        result.Should().Contain("Texture2D FontSampler_SDTexture : register(t1);");
-        result.Should().Contain("SamplerState FontSampler : register(s1);");
+        result.ShouldContain("Texture2D TextureSampler_SDTexture : register(t0);", Case.Sensitive);
+        result.ShouldContain("SamplerState TextureSampler : register(s0);", Case.Sensitive);
+        result.ShouldContain("Texture2D FontSampler_SDTexture : register(t1);", Case.Sensitive);
+        result.ShouldContain("SamplerState FontSampler : register(s1);", Case.Sensitive);
     }
 
     [Fact]
@@ -444,11 +446,11 @@ public sealed class VulkanTextureSamplerBindingRewriterTests
         string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
 
         // Explicit declarations are byte-identical…
-        result.Should().Contain("Texture2D ATex : register(t0);");
-        result.Should().Contain("Texture2D CTex : register(t2);");
+        result.ShouldContain("Texture2D ATex : register(t0);", Case.Sensitive);
+        result.ShouldContain("Texture2D CTex : register(t2);", Case.Sensitive);
         // …and the auto-assigned pair skips both reserved indices (0 and 2) onto 1.
-        result.Should().Contain("Texture2D BTex : register(t1);");
-        result.Should().Contain("SamplerState BSamp : register(s1);");
+        result.ShouldContain("Texture2D BTex : register(t1);", Case.Sensitive);
+        result.ShouldContain("SamplerState BSamp : register(s1);", Case.Sensitive);
     }
 
     [Fact]
@@ -463,7 +465,7 @@ public sealed class VulkanTextureSamplerBindingRewriterTests
 
         string result = VulkanTextureSamplerBindingRewriter.Rewrite(hlsl);
 
-        result.Should().Contain("Texture2D Tex : register(t3);");
-        result.Should().Contain("SamplerState Samp : register(s3);");
+        result.ShouldContain("Texture2D Tex : register(t3);", Case.Sensitive);
+        result.ShouldContain("SamplerState Samp : register(s3);", Case.Sensitive);
     }
 }

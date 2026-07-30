@@ -1,4 +1,4 @@
-using FluentAssertions;
+using Shouldly;
 using Xunit;
 
 namespace ShadowDusk.ShaderToy.Tests;
@@ -14,20 +14,20 @@ public sealed class CorpusPresenceTests
     public void AuthoredCorpus_IsNonEmpty()
     {
         CorpusLocator.GlslFiles(CorpusLocator.AuthoredDir)
-            .Should().NotBeEmpty("the authored corpus must contain in-subset shaders");
+            .ShouldNotBeEmpty("the authored corpus must contain in-subset shaders");
     }
 
     [Fact]
     public void RejectCorpus_IsNonEmpty()
     {
         CorpusLocator.GlslFiles(CorpusLocator.RejectDir)
-            .Should().NotBeEmpty("the reject corpus must contain out-of-scope shaders");
+            .ShouldNotBeEmpty("the reject corpus must contain out-of-scope shaders");
     }
 
     [Fact]
     public void Cc0Corpus_IsNonEmpty()
     {
         CorpusLocator.GlslFiles(CorpusLocator.Cc0Dir)
-            .Should().NotBeEmpty("the cc0 corpus must contain at least one real CC0 shader");
+            .ShouldNotBeEmpty("the cc0 corpus must contain at least one real CC0 shader");
     }
 }

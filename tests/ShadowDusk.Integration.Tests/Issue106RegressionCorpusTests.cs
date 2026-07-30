@@ -1,6 +1,6 @@
 #nullable enable
 
-using FluentAssertions;
+using Shouldly;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Tests.Fx2;
@@ -59,15 +59,14 @@ public sealed class Issue106RegressionCorpusTests
 
         var result = await TestHelpers.CompileFixtureAsync(fx, "OpenGL", ct: cts.Token);
 
-        result.ExitCode.Should().Be(0,
-            because: $"'{fx}' (issue #106 regression) must compile for OpenGL; stderr: {result.Stderr}");
-        result.Mgfx.Should().NotBeEmpty(because: "a successful compile must emit output bytes");
+        result.ExitCode.ShouldBe(0, customMessage: $"'{fx}' (issue #106 regression) must compile for OpenGL; stderr: {result.Stderr}");
+        result.Mgfx.ShouldNotBeEmpty("a successful compile must emit output bytes");
 
         var reader = MgfxBlobReader.Parse(result.Mgfx);
-        reader.Signature.Should().Be("MGFX");
-        reader.MgfxVersion.Should().Be(10);
-        reader.ProfileId.Should().Be(ProfileOpenGL);
-        reader.TotalShaderBlobCount.Should().BeGreaterThan(0, because: "each fixture declares a pixel shader pass");
+        reader.Signature.ShouldBe("MGFX");
+        reader.MgfxVersion.ShouldBe((byte)(10));
+        reader.ProfileId.ShouldBe(ProfileOpenGL);
+        reader.TotalShaderBlobCount.ShouldBeGreaterThan(0, customMessage: "each fixture declares a pixel shader pass");
     }
 
     // -------------------------------------------------------------------------
@@ -83,15 +82,14 @@ public sealed class Issue106RegressionCorpusTests
 
         var result = await TestHelpers.CompileFixtureAsync(fx, "DirectX_11", ct: cts.Token);
 
-        result.ExitCode.Should().Be(0,
-            because: $"'{fx}' (issue #106 regression) must compile for DirectX_11; stderr: {result.Stderr}");
-        result.Mgfx.Should().NotBeEmpty(because: "a successful compile must emit output bytes");
+        result.ExitCode.ShouldBe(0, customMessage: $"'{fx}' (issue #106 regression) must compile for DirectX_11; stderr: {result.Stderr}");
+        result.Mgfx.ShouldNotBeEmpty("a successful compile must emit output bytes");
 
         var reader = MgfxBlobReader.Parse(result.Mgfx);
-        reader.Signature.Should().Be("MGFX");
-        reader.MgfxVersion.Should().Be(10);
-        reader.ProfileId.Should().Be(ProfileDirectX11);
-        reader.TotalShaderBlobCount.Should().BeGreaterThan(0, because: "each fixture declares a pixel shader pass");
+        reader.Signature.ShouldBe("MGFX");
+        reader.MgfxVersion.ShouldBe((byte)(10));
+        reader.ProfileId.ShouldBe(ProfileDirectX11);
+        reader.TotalShaderBlobCount.ShouldBeGreaterThan(0, customMessage: "each fixture declares a pixel shader pass");
     }
 
     // -------------------------------------------------------------------------
@@ -116,21 +114,18 @@ public sealed class Issue106RegressionCorpusTests
 
         var result = await new EffectCompiler().CompileAsync(source, options, cts.Token);
 
-        result.IsSuccess.Should().BeTrue(
-            because: $"'{fx}' (issue #106 regression) is in the SM <= 3 FNA subset and must compile; " +
+        result.IsSuccess.ShouldBeTrue($"'{fx}' (issue #106 regression) is in the SM <= 3 FNA subset and must compile; " +
                      $"errors: {(result.IsFailure ? string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "<none>")}");
 
         Func<Fx2ParsedEffect> parse = () => Fx2BinaryValidator.Parse(result.Value.Data);
-        Fx2ParsedEffect effect = parse.Should().NotThrow(
-            because: $"'{fx}' must produce an fx_2_0 binary that satisfies every MojoShader parse rule").Subject;
+        Fx2ParsedEffect effect = Should.NotThrow(parse, $"'{fx}' must produce an fx_2_0 binary that satisfies every MojoShader parse rule");
 
-        effect.Techniques.Should().NotBeEmpty(because: $"'{fx}' declares at least one technique");
-        effect.Shaders.Should().NotBeEmpty(because: $"'{fx}' declares at least one compiled shader pass");
+        effect.Techniques.ShouldNotBeEmpty($"'{fx}' declares at least one technique");
+        effect.Shaders.ShouldNotBeEmpty($"'{fx}' declares at least one compiled shader pass");
 
         foreach (Fx2ParsedShader shader in effect.Shaders)
         {
-            (shader.VersionToken & 0xFFFF).Should().BeLessThanOrEqualTo(0x0300u,
-                because: $"shader version token 0x{shader.VersionToken:X8} in '{fx}' must be SM <= 3 (MojoShader's hard ceiling)");
+            (shader.VersionToken & 0xFFFF).ShouldBeLessThanOrEqualTo(0x0300u, customMessage: $"shader version token 0x{shader.VersionToken:X8} in '{fx}' must be SM <= 3 (MojoShader's hard ceiling)");
         }
     }
 }

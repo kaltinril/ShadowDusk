@@ -22,7 +22,8 @@
     problem, it is a LICENCE gate: its build targets hard-fail with "No Six Labors license
     found ... obtain a license from https://sixlabors.com/pricing/" unless a paid licence key
     or `sixlabors.lic` is present. 3.1.12 is the newest release that builds without one, and
-    it is the current tip of 3.1.x. Same reasoning as the FluentAssertions 7.x cap below.
+    it is the current tip of 3.1.x. Same class of problem as the FluentAssertions relicensing
+    that drove the Shouldly migration below - a licence gate, not a technical one.
   -->
   <ItemGroup Label="Rendering">
     <PackageVersion Include="Silk.NET.OpenGL"          Version="2.23.0" />
@@ -56,17 +57,24 @@
     Test-only. None of these reach a consumer: the shipped src/ projects reference exactly
     Silk.NET.SPIRV.Cross.Native and Vortice.*, nothing here.
 
-    FluentAssertions is deliberately capped at the 7.x line: 7.2.2 is the last Apache-2.0
-    release (verified in the package nuspec). 8.x relicensed to the Xceed "Community License
-    Agreement (for Non-Commercial Use)", which requires a paid commercial licence for any use
-    by an organisation that earns revenue - a licence obligation, not a technical one, so it is
-    not taken no matter how far ahead 8.x gets.
+    ASSERTION LIBRARY: Shouldly, and FluentAssertions is BANNED (issue #171).
+
+    FluentAssertions relicensed at 8.x to the Xceed "Community License Agreement (for
+    Non-Commercial Use)", which requires a PAID commercial licence for any use by an
+    organisation that earns revenue. We previously capped it at 7.2.2, the last Apache-2.0
+    release - but a cap only defers the problem: the 7.x line receives no further fixes, so
+    the choice was "migrate now" or "migrate later from a frozen, unmaintained dependency".
+    We migrated. Shouldly is BSD-3-Clause at every version, with no commercial gate.
+
+    Do not re-add FluentAssertions - not at 7.x, not "just for one test". The ban is enforced
+    by NoFluentAssertionsTests in ShadowDusk.Core.Tests, which scans every csproj/props and
+    every .cs file in the repo. See project_decisions.md for the full rationale.
   -->
   <ItemGroup Label="Test">
     <PackageVersion Include="xunit"                        Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio"    Version="3.1.5" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk"       Version="18.8.1" />
-    <PackageVersion Include="FluentAssertions"             Version="7.2.2" />
+    <PackageVersion Include="Shouldly"                     Version="4.3.0" />
     <PackageVersion Include="coverlet.collector"           Version="10.0.1" />
   </ItemGroup>
 </Project>
