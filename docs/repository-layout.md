@@ -54,7 +54,8 @@ ShadowDusk/
 │                                  #   the interactive sample, and the fidelity/gallery render-proof driver.
 ├── validation/                    # Rung-4 render-proof console drivers (NOT in ShadowDusk.slnx, not run by `dotnet test`):
 │                                  #   GL (VsDriven, StateFidelity, CbufferModel, ReservedWordGl, SamplerPairsGl,
-│                                  #     DeferredSpriteMrtGl — the only driver that binds 2 render targets, …), DX (VsDrivenDx,
+│                                  #     DeferredSpriteMrtGl (the only driver that binds 2 render targets),
+│                                  #     ShaderToyRouteGl (the `.glsl` frontend route), …), DX (VsDrivenDx,
 │                                  #   DxModernFeatures, …), DX12 (BaselineDx12, CandidateDx12, VsDrivenDx12
 │                                  #     + compare_dx12.py), FNA (FnaValidation), KNI (KniDesktopGL, KniWinFormsDX, KniVsDriven),
 │                                  #   Vulkan (BaselineVulkan, CandidateVulkan, VsDrivenVulkan

@@ -24,7 +24,7 @@
   - Structurally **clean**: **69**
   - **Divergent** (>=1 level): **17**
   - Compile/parse **failures**: **10**
-- Non-golden census cells: **186** (**140** compile, **46** fail with a code)
+- Non-golden census cells: **188** (**142** compile, **46** fail with a code)
 
 ## Golden-backed fixtures — per-level structural verdict
 
@@ -332,6 +332,8 @@ is a CORRECT result, not a defect.
 | passthrough_vs.fx | OpenGL | FAIL | SD0010 | Effect source contains no techniques |
 | platform-macros.fx | DirectX_11 | PASS |  |  |
 | platform-macros.fx | OpenGL | PASS |  |  |
+| shadertoy/GradientToy.fx | DirectX_11 | PASS |  |  |
+| shadertoy/GradientToy.fx | OpenGL | PASS |  |  |
 | textured.fx | DirectX_11 | PASS |  |  |
 | textured.fx | OpenGL | PASS |  |  |
 | textured_vs_ps.fx | DirectX_11 | FAIL | SD0010 | Effect source contains no techniques |

@@ -31,11 +31,32 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   mode a wrong picture is, because the mutation check (binding one target instead of two) leaves
   the diff arm reporting maxd 0 — both sides broken identically — and only the absolute arm
   catches it.
+- **`ShaderToyRouteGl`, a render gate for the ShaderToy / `.glsl` frontend route**, which had been
+  compile-proven and fidelity-proven but never held to the reference compiler. It converts
+  `GradientToy.glsl` in process with the real converter and pixel-diffs ShadowDusk's OpenGL build
+  against **`mgfxc`'s build of the same converted `.fx`** on real MonoGame DesktopGL: maxd 0, in CI.
+  An `mgfxc` oracle exists here despite the docs saying otherwise, because "no oracle" is true of
+  ShaderToy *input* — the converter's *output* is ordinary HLSL that `mgfxc` compiles like any other,
+  so the downstream half of the route can be held to the real product bar. The gate asserts the
+  converter still emits the committed `.fx` the golden was built from before it renders, so converter
+  drift turns it red instead of leaving the golden describing a different shader.
 - **`SamplerPairsGl`, a new OpenGL rung-4 render gate** for per-(texture, sampler)-pair sampler
   records, wired into `validation-render.yml` so it runs in CI on Mesa llvmpipe. Both of its arms
   render an *asymmetric* function of two samplers so that a mis-binding changes the picture (a
   symmetric `diffuse * light` would render identically under a swap and prove nothing), and arm A
   reports *which* failure mode a wrong colour corresponds to rather than just "wrong".
+
+### Known issue (found, filed, deliberately not fixed here)
+
+- **A converted ShaderToy `.fx` compiles for DirectX in ShadowDusk and is rejected by `mgfxc`.** The
+  converter emits `vs_3_0`/`ps_3_0` in *both* arms of its `#if OPENGL` header, so the DirectX arm asks
+  for a profile below MonoGame's DirectX floor; real `mgfxc /Profile:DirectX_11` refuses it (*"must be
+  SM 4.0 level 9.1 or higher"*) while ShadowDusk compiles the identical file successfully. Surfaced
+  while adding the gate above, and only because the new fixture joined the auto-globbed corpus. Two
+  separable defects (the converter's emitted profile header, and a reject-fidelity gap of the Phase 48
+  class that `SD0013`/`SD0014` do not cover), each with its own blast radius: one moves every converter
+  golden, the other turns a currently-succeeding compile into a rejection. Filed as Phase 51 A10 with
+  the ordering constraint that fixing the reject side alone would break the route's own output.
 
 ### Fixed (compiler)
 
