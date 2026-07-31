@@ -33,6 +33,14 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   `ValidateAsync` like every other warning. It is a **warning, never an error** (`mgfxc` accepts
   and defaults, so a drop-in replacement must too), and **no emitted byte moves**: the fallback
   usage/index values are unchanged and warnings never gate output.
+- **`SD0008`, a warning for an `#include` that only resolves because your file system ignores
+  case.** `#include "shared/macros.fxh"` against a file really named `Shared/Macros.fxh`
+  compiles on Windows and on a default macOS volume, and then fails with `SD0001` on Android,
+  on Linux, and on a case-sensitive APFS volume — a break the author cannot see locally. It is
+  a warning rather than an error because the include genuinely did resolve and `mgfxc` accepts
+  it too; the message names the on-disk spelling so the fix is one edit. Only the path segments
+  the directive itself spells are checked, since the absolute prefix above them is your own
+  machine layout and never ships.
 
 ### Changed
 
@@ -77,6 +85,17 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   measuring those same untransformed rectangles. The target is now sized to the transformed extent.
   The gallery has no stored reference images, so no goldens needed regenerating; re-verified after
   the change at DX11 maxd 0 (both arms), Vulkan maxd 0, OpenGL 30/30 genuinely visible, DX12 maxd 1.
+- **`#include` de-duplication and cycle detection no longer guess whether the file system is
+  case-sensitive from the operating system** (bug-hunt 2026-07-27 N17). The rule was
+  "Linux is case-sensitive, everything else is not", which is wrong on two hosts ShadowDusk
+  ships to: **Android's file system is case-sensitive** (and .NET's `OperatingSystem.IsLinux()`
+  is false there), and **APFS can be formatted case-sensitive**. On those hosts two genuinely
+  distinct headers whose names differed only by case were treated as one file, so a
+  `#pragma once` in the first silently suppressed the second, and a legal include chain through
+  a case twin was rejected as a false circular-include error. Resolved paths are now compared
+  the way the storage they came from spells them: ordinal by default, with two case-only
+  variants merged only when the file system confirms they are one file. Output bytes are
+  unchanged for every input that resolved the same way before.
 
 ## [0.16.0] - 2026-07-30
 

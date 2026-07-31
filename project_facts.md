@@ -47,6 +47,7 @@ Source of truth for statements about the project. One short fact per line. Updat
 - KNI loads the same `.mgfx` as MonoGame; the only divergence is its HiDef profile, whose runtime converter rewrites `mgfxc`'s `#define ps_oC0 gl_FragColor` form and nothing else.
 - FNA is proven against a different oracle: `fxc.exe /T fx_2_0`, not `mgfxc`.
 - Reach and WebGL1 cannot do 3D textures or fragment LOD at all; that is a platform wall, not a gap to close.
+- **Android's file system is CASE-SENSITIVE, and `OperatingSystem.IsLinux()` returns FALSE there** — so any `IsLinux() ? caseSensitive : caseInsensitive` shape is wrong on Android in the most misleading way possible (it compiles, it is quiet, and it is wrong only on the device). **macOS is not a safe "case-insensitive" answer either**: APFS can be formatted case-sensitive. Never derive file-system case behavior from the OS; ask the storage (`IIncludePathCanonicalizer` is the include path's answer). This bit the `#include` comparer for over a year (bug-hunt N17).
 
 ## Pins, natives, and supply chain
 

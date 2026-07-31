@@ -140,6 +140,7 @@ internal sealed class CompilationPipeline
             return Fail(preprocessResult.Error);
 
         PreprocessedSource preprocessed = preprocessResult.Value;
+        IReadOnlyList<ShaderError> preprocessWarnings = preprocessed.Warnings;
 
         // LAZY DXC instance, hoisted above the zero-technique fallback so the fallback's
         // preprocess pass and the GL reflection compile share one instance/disposal
@@ -408,12 +409,17 @@ internal sealed class CompilationPipeline
             }
         }
 
-        // Non-fatal diagnostics for the whole effect: the underlying compilers'
-        // verbatim warnings (deduped — VS and PS compile the same preprocessed source,
-        // so a source-level warning re-surfaces once per entry point) plus the GL
-        // portability lint findings (SD0400–SD0499). Returned on
-        // CompiledShader.Warnings; never gates output.
-        var runWarnings  = new List<ShaderError>();
+        // Non-fatal diagnostics for the whole effect: the preprocessor's own findings
+        // (SD0008 case-only #include mismatches), the underlying compilers' verbatim
+        // warnings (deduped — VS and PS compile the same preprocessed source, so a
+        // source-level warning re-surfaces once per entry point) plus the GL portability
+        // lint findings (SD0400–SD0499). Returned on CompiledShader.Warnings; never gates
+        // output.
+        //
+        // preprocessWarnings, not preprocessed.Warnings: the zero-technique recovery above
+        // may have replaced `preprocessed` with a source rebuilt from the re-parse, which
+        // carries no warnings of its own.
+        var runWarnings  = new List<ShaderError>(preprocessWarnings);
         var seenWarnings = new HashSet<(string File, int Line, int Column, string Code, string Message)>();
 
         foreach (TechniqueInfo technique in fxParsed.Techniques)
@@ -1487,6 +1493,7 @@ internal sealed class CompilationPipeline
         // Sm3StageReservationRewriter / vkd3d SM1-3 compile; vkd3d tolerates them (proven by the
         // Phase 41 FNA macro-technique corpus), the same way the GL/DX recovery feeds -P output on.
         PreprocessedSource? recoveredPreprocessed = null;
+        IReadOnlyList<ShaderError> fnaPreprocessWarnings = [];
         if (fxParsed.Techniques.Count == 0)
         {
             var flattenForExpand = new Preprocessor().Flatten(
@@ -1494,6 +1501,10 @@ internal sealed class CompilationPipeline
                 includeResolver, options.AdditionalIncludePaths);
             if (flattenForExpand.IsFailure)
                 return Fail(flattenForExpand.Error);   // a real #include error — surface it, not SD0010
+
+            // The recovery path rebuilds PreprocessedSource from the re-parse below, so the
+            // flatten's own warnings have to be carried across explicitly or they are lost.
+            fnaPreprocessWarnings = flattenForExpand.Value.Warnings;
 
             var recovered = TryRecoverMacroTechniques(
                 flattenForExpand.Value.Text, fnaPlatformMacros, sourceFileName,
@@ -1538,6 +1549,7 @@ internal sealed class CompilationPipeline
                 return Fail(preprocessResult.Error);
 
             preprocessed = preprocessResult.Value;
+            fnaPreprocessWarnings = preprocessed.Warnings;
         }
 
         // Per-stage source: vkd3d 1.17 rejects D3D9 stage-scoped register reservations
@@ -1600,10 +1612,10 @@ internal sealed class CompilationPipeline
                 (fnaDxcCompiler.Value as IDisposable)?.Dispose();
         }
 
-        // Verbatim vkd3d warnings for the whole effect, deduped across entry points
-        // (same policy as the GL/DX path's runWarnings) — returned on
-        // CompiledShader.Warnings.
-        var fnaWarnings     = new List<ShaderError>();
+        // The preprocessor's own findings (SD0008) plus verbatim vkd3d warnings for the
+        // whole effect, deduped across entry points (same policy as the GL/DX path's
+        // runWarnings) — returned on CompiledShader.Warnings.
+        var fnaWarnings     = new List<ShaderError>(fnaPreprocessWarnings);
         var fnaSeenWarnings = new HashSet<(string File, int Line, int Column, string Code, string Message)>();
 
         foreach (TechniqueInfo technique in fxParsed.Techniques)
