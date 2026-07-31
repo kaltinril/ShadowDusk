@@ -136,6 +136,7 @@ validation/output-vs-dx12/
 validation/output-samplerpairs/
 validation/output-mrt/
 validation/output-shadertoy/
+validation/output-shadertoy-dx/
 # Written by gates that pre-date this list and were never added to it.
 validation/output-cbuffer/
 validation/output-fna/
