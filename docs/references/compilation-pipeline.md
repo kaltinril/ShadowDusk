@@ -311,7 +311,7 @@ contract is in `docs/glsl-uniform-naming.md`.
 
 **Why it exists (the core reason).** MonoGame's OpenGL runtime looks resources up by **fixed
 names**, not the author's HLSL names: free uniforms are one packed array `ps_uniforms_vec4[N]` /
-`vs_uniforms_vec4[N]`, samplers are `ps_s{slot}`, stage varyings are `vFrontColor` / `vTexCoord{n}`,
+`vs_uniforms_vec4[N]`, samplers are `ps_s{k}`, stage varyings are `vFrontColor` / `vTexCoord{n}`,
 and the pixel output is `gl_FragColor`. SPIRV-Cross emits a modern `type_Globals` UBO,
 `in_var_TEXCOORD0` varyings, and an opaque `_39` sampler. Loaded as-is, `glGetUniformLocation`
 returns `-1` for everything, every parameter reads zero, and the shader **loads but renders
@@ -319,7 +319,9 @@ black**. The rewrite is what makes the output a faithful drop-in.
 
 **How it works.** It strips the `#version` line (MojoShader GLSL is versionless 110-era), merges
 the UBO block(s) into the packed register array (member uses become `ps_uniforms_vec4[i].<swizzle>`),
-renames samplers to `ps_s{slot}`, maps stage I/O to the legacy varying names, routes the pixel
+renames samplers to `ps_s{k}` (one uniform per combined **(texture, sampler) pair**, `k` being its
+position in SPIRV-Cross's first-use declaration order, which the `.mgfx` sampler table mirrors
+record for record), maps stage I/O to the legacy varying names, routes the pixel
 output to `gl_FragColor` (via a `#define ps_oC0 gl_FragColor` alias, MRT slots to `gl_FragData[n]`),
 lowers `texture()` to dimension-specific legacy builtins (`texture2D`/`textureCube`/`texture3D`),
 lowers `round`/`roundEven` to `floor((x)+0.5)` (valid in every GLSL profile), and on the vertex
@@ -344,7 +346,7 @@ managed because the WASM runtime lacks MD5); then the body, **constant buffers �
 → techniques/passes (with their render-state blocks)**; then the trailing `MGFX` footer the
 runtime validates. The shader blob is **GLSL text for the GL profile and DXBC for the DX profile**.
 Size guards fail loudly (`SD0020`–`SD0022`) rather than truncate into a corrupt file. The default
-version is **v10**, the most backwards-compatible choice: a v10 `.mgfx` loads on MonoGame 3.8.2,
+version is **v10**, the most backwards-compatible choice: a v10 `.mgfx` loads on MonoGame 3.8.1.263 (the measured floor),
 every newer MonoGame, and KNI. (A `--mgfx-version 11` escape hatch adds the two per-shader
 diagnostic strings MonoGame's v11 reader expects; it is opt-in and never required for correct
 output.)

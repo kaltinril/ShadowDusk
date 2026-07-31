@@ -25,7 +25,7 @@ internal sealed class CompilationPipeline
     /// <summary>
     /// A sampler uniform declaration in the rewritten MonoGame-GL source, as
     /// <c>MonoGameGlslRewriter</c> emits it (<c>uniform sampler2D ps_s0;</c>). Used to
-    /// cross-check the emitted GLSL against the <c>.mgfx</c> sampler table (SD0216).
+    /// cross-check the emitted GLSL against the <c>.mgfx</c> sampler table (SD0217).
     /// </summary>
     private static readonly Regex GlslSamplerDeclaration = new(
         @"^\s*uniform\s+sampler(?:1D|2D|3D|Cube)\s+\w+\s*;",

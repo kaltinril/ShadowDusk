@@ -20,7 +20,7 @@ ShadowDusk replaces that step with one **portable, faithful pipeline** whose out
 | Shape | Package / Tool | Use |
 |---|---|---|
 | **Library (the product)** | `ShadowDusk.Compiler` — `EffectCompiler : IShaderCompiler` | Add the package, call `CompileAsync(fx)`, get `.mgfx` bytes in-memory. |
-| **CLI tool** | `ShadowDusk.Cli` — `dotnet tool` named `ShadowDuskCLI` | The same library for build-time use from MGCB, scripts, or a terminal. For MGCB, expose it on `PATH` under the name `mgfxc`. |
+| **CLI tool** | `ShadowDusk.Cli` — `dotnet tool` named `ShadowDuskCLI` | The same library for build-time use from build scripts, CI steps, or a terminal. Invoke it directly and `/copy:` the `.mgfx` — MGCB compiles in-process and cannot be redirected to it (see [Drop-in `mgfxc`](../guides/dropin-mgfxc.md)). |
 | **WASM library** | `ShadowDusk.Wasm` — `WasmShaderCompiler : IShaderCompiler` | The same pipeline inside .NET WASM for in-browser runtime compilation. |
 
 Every shape implements the same <xref:ShadowDusk.Core.IShaderCompiler> interface and runs the **same faithful pipeline** — no substitute compilers. The in-browser [ShaderFiddle.Web](../samples/shaderfiddle-web.md) is a **sample** of the WASM reach, not a separate product.
@@ -40,8 +40,8 @@ Every shape implements the same <xref:ShadowDusk.Core.IShaderCompiler> interface
 
 Supported targets are tested end-to-end against the reference compiler and render identically (on-device Android via byte-identity: its output is byte-identical to the desktop build, whose renders are proven — the on-device pixel diff is a tracked follow-up). See [Validation](../contributing/validation.md) for how that's proven, and [Choosing a Target](../guides/choosing-a-target.md) to pick one.
 
-> **Output format.** The default is **MGFX v10**, which loads on MonoGame 3.8.2 and every newer
-> MonoGame, plus KNI — you never set a flag for correct output. Targeting a newer runtime?
+> **Output format.** The default is **MGFX v10**, which loads on MonoGame 3.8.1.263 (the measured
+> floor) and every newer MonoGame, plus KNI — you never set a flag for correct output. Targeting a newer runtime?
 > `MgfxVersion = 11` (MonoGame 3.8.5+) and `Container = EffectContainer.Knifx` (KNI v4.02+) are optional
 > and load and render just like v10. See [Parameters & Caveats](../guides/parameters-and-caveats.md).
 

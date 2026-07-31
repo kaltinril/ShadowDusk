@@ -123,4 +123,4 @@ its template's system font stack).
 
 - **Repository:** https://github.com/kaltinril/ShadowDusk
 - **Documentation site:** https://kaltinril.github.io/ShadowDusk/
-- **NuGet:** the six `ShadowDusk.*` packages (search `ShadowDusk` on nuget.org)
+- **NuGet:** the seven `ShadowDusk.*` packages (search `ShadowDusk` on nuget.org)

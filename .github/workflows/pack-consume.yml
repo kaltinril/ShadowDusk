@@ -44,7 +44,7 @@ env:
 
 jobs:
   pack-consume:
-    name: Pack & Consume (${{ matrix.os }})
+    name: Pack & Consume (${{ matrix.os }}, ${{ matrix.tfm }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     if: |
@@ -55,15 +55,21 @@ jobs:
       fail-fast: false
       matrix:
         os: [ ubuntu-latest, macos-latest, windows-latest ]
+        # Both shipped TFMs are consumed end to end: the libraries multi-target
+        # net8.0 and net10.0, so a package whose net8.0 asset resolves can still
+        # ship a broken net10.0 one and no other gate would notice.
+        tfm: [ net8.0, net10.0 ]
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Setup .NET 8
+      - name: Setup .NET 8 + .NET 10
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
       # Same caches as ci.yml: NuGet (carries the transitive DXC + SPIRV-Cross
       # natives), the pinned vkd3d natives, and the pinned macOS DXC dylibs.
@@ -195,7 +201,7 @@ jobs:
         run: |
           scratch="$RUNNER_TEMP/sd-scratch-consumer"
           rm -rf "$scratch"
-          dotnet new console -n ScratchConsumer -o "$scratch" -f net8.0
+          dotnet new console -n ScratchConsumer -o "$scratch" -f ${{ matrix.tfm }}
           cat > "$scratch/nuget.config" <<EOF
           <?xml version="1.0" encoding="utf-8"?>
           <configuration>

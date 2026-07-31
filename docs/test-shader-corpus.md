@@ -1,5 +1,9 @@
 # Test Shader Corpus — Provenance & Fresh Examples
 
+**Last updated:** 2026-07-30 (0.16.0) — added the Phase 51 A7 sampler-pair fixtures and the
+pinned ShaderToy-route fixture below. Corpus on disk: **144 `.fx` + 7 `.fxh`** — 62 in the
+fixture root, 43 in `examples/`, 1 in `shadertoy/`, 38 under `third-party/`.
+
 This document records (1) what is known about where the existing `.fx` test
 fixtures came from, (2) an integrity caveat about those fixtures, and (3) a set
 of **fresh, project-owned example shaders** authored from scratch for ShadowDusk
@@ -154,6 +158,29 @@ project-owned.
 These are exercised by `Phase45PreParserRobustnessCorpusTests` (compile-asserts
 each on its applicable targets); the all-runtime ones are also in the FNA SM3
 corpus census. Same scope as above: a valid-effect compile, not pixel-equivalence.
+
+### Sampler-pair set (Phase 51 A7 — the OpenGL/DX12 shared-`SamplerState` fix)
+
+Project-owned, authored for the release that re-keyed the GL sampler table on
+**(texture, sampler) pairs**. These are the fixtures the headline fix is proven against, and
+they back `validation/SamplerPairsGl`:
+
+- **`SharedSamplerPair.fx`** — two textures read through **one shared `SamplerState`** (the
+  classic diffuse+lightmap shape). Ordinary HLSL that `mgfxc` has always compiled; ShadowDusk
+  used to reject it outright with the now-retired `SD0216`. Two pairs ⇒ two sampler records.
+- **`SamplerPairMirror.fx`** — two textures sampled in **reverse of declaration order**, which
+  is what exposed the second, silent defect: SPIRV-Cross declares combined samplers in
+  **first-use** order, so counts matched while the texture parameter and the sampler-type byte
+  came out swapped. Deliberately samples asymmetrically so a mis-binding changes the picture.
+
+### ShaderToy route fixture
+
+- **`shadertoy/GradientToy.fx`** — the **pinned** output of converting `GradientToy.glsl` with
+  the real `ShaderToyConverter`. `validation/ShaderToyRouteGl` asserts the converter still
+  emits this exact file before rendering, so converter drift turns the gate red instead of
+  leaving the golden describing a different shader. It is also what surfaced the Phase 51 A10
+  finding (the converter emits `vs_3_0`/`ps_3_0` in *both* arms of its `#if OPENGL` header,
+  which real `mgfxc /Profile:DirectX_11` rejects while ShadowDusk accepts).
 
 ### How they are used
 

@@ -81,7 +81,7 @@ For **DirectX 11**, the default compiler is the cross-platform **vkd3d-shader**,
 <details>
 <summary><b>Framework notes</b> (output format, FNA, KNI HiDef / WebGL)</summary>
 
-**Output format.** ShadowDusk emits **MGFX v10** by default, the format that loads on MonoGame 3.8.2 and every newer MonoGame, plus KNI. You never set a flag to get correct output. Targeting a newer runtime? Two optional formats load and render exactly like v10:
+**Output format.** ShadowDusk emits **MGFX v10** by default, the format that loads on MonoGame 3.8.1.263 (the measured floor) and every newer MonoGame, plus KNI. You never set a flag to get correct output. Targeting a newer runtime? Two optional formats load and render exactly like v10:
 
 - MonoGame 3.8.5+ &rarr; `CompilerOptions.MgfxVersion = 11`
 - KNI v4.02+ &rarr; `CompilerOptions.Container = EffectContainer.Knifx`
@@ -95,7 +95,9 @@ If you're not sure, keep the default. See [Parameters &amp; Caveats](https://kal
 
 ## Drop-in mgfxc replacement
 
-ShadowDusk is a transparent substitute for MonoGame's mgfxc: same CLI flags, same `.mgfx` output format, same exit codes, same MGCB-compatible error messages. Games using the MonoGame Content Pipeline need zero code changes to switch.
+ShadowDusk is a transparent substitute for MonoGame's mgfxc: same CLI flags, same `.mgfx` output format, same exit codes, same MGCB-compatible error messages. A build step that shells out to `mgfxc` can call `ShadowDuskCLI` instead with nothing downstream changing.
+
+> **MGCB cannot be redirected to it.** MGCB compiles `.fx` **in-process** and launches no external effect compiler (measured against `dotnet mgcb` 3.8.2.1105, 3.8.4.1, and 3.8.5), so putting ShadowDusk on `PATH` as `mgfxc` changes nothing. Invoke the CLI directly and `/copy:` the resulting `.mgfx`, or compile at runtime and hand the bytes to `Effect`.
 
 ## Delivery shapes
 
@@ -131,7 +133,7 @@ All packages ship together at one shared version. Most projects only need one of
 
 ### Prerequisites
 
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8) (≥ 8.0.100)
+- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8) (≥ 8.0.100) **and** the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10) — the libraries multi-target `net8.0` and `net10.0`, so both are needed to build the solution. Consuming the packages needs only one of them.
 
 DXC binaries come from the `Vortice.Dxc` NuGet package automatically. SPIRV-Cross native binaries are downloaded by `tools/restore.ps1` / `tools/restore.sh`:
 
@@ -191,7 +193,7 @@ ShadowDusk/
 
 ## Tech stack
 
-- C# 12 / .NET 8
+- C# 12 / .NET 8 + .NET 10 (libraries multi-target `net8.0;net10.0`)
 - [Vortice.Dxc](https://github.com/amerkoleci/Vortice.Windows) — managed DXC wrapper (cross-platform, no Windows SDK required)
 - [SPIRV-Cross](https://github.com/KhronosGroup/SPIRV-Cross) — SPIR-V → GLSL transpilation via P/Invoke
 - [vkd3d-shader](https://gitlab.winehq.org/wine/vkd3d) — cross-platform HLSL → DXBC (SM5) for the DirectX backend
@@ -200,7 +202,7 @@ ShadowDusk/
 ## Design principles
 
 - **No Windows / Wine requirement.** Every native binary has Linux + macOS builds.
-- **Drop-in replacement.** Same CLI flags, same `.mgfx` output, same exit codes and error format as MonoGame's `mgfxc`. Zero changes to existing content pipelines.
+- **Drop-in replacement.** Same CLI flags, same `.mgfx` output, same exit codes and error format as MonoGame's `mgfxc`. A build step that invokes `mgfxc` can invoke it instead (MGCB itself compiles in-process and cannot be redirected).
 - **Deterministic output.** Same source + same target = byte-identical `.mgfx`, given the same compiler version.
 - **Fail loudly.** Shader errors surface the source file, line, column, and message exactly as the underlying compiler emitted them.
 - **Result-typed errors.** No exceptions for expected shader failures — the API returns `Result<CompiledShader, ShaderError[]>`.
