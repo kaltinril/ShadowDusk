@@ -4,7 +4,7 @@ This is the human runbook for cutting a ShadowDusk release. The `/release` skill
 (`.claude/skills/release/SKILL.md`) automates every step below; this document is the
 ground truth it follows, and the fallback when you cut a release by hand.
 
-A release publishes **all seven** `ShadowDusk.*` NuGet packages plus the `ShadowDuskCLI` `dotnet tool`
+A release publishes **all eight** `ShadowDusk.*` NuGet packages plus the `ShadowDuskCLI` `dotnet tool`
 to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub Release.
 
 | Package | What it is |
@@ -16,6 +16,7 @@ to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub 
 | `ShadowDusk.Compiler` | The consumer-facing product library (`EffectCompiler : IShaderCompiler`) |
 | `ShadowDusk.Cli` | The `ShadowDuskCLI` `dotnet tool` |
 | `ShadowDusk.Wasm` | The `net8.0-browser` in-browser compiler |
+| `ShadowDusk.MgcbPlugin` | The MGCB content-processor plugin (Phase 29). **Tools-only** — everything lives under `tools/net8.0/any/`, there is no `lib/`, and it is packed in its own step **without** `-p:IncludeSymbols` (a package with no build output cannot produce a `.snupkg`; `NU5017`). |
 
 ---
 
@@ -26,13 +27,15 @@ to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub 
    secret**. It must be an [nuget.org API key](https://www.nuget.org/account/apikeys) scoped
    to **Push** for the `ShadowDusk.*` package IDs (a glob-scoped key is simplest).
 
-2. **nuget.org owner rights on all seven package IDs.** You must be an owner (or have push
+2. **nuget.org owner rights on all eight package IDs.** You must be an owner (or have push
    rights) of every ID — `ShadowDusk.Core`, `ShadowDusk.HLSL`, `ShadowDusk.GLSL`,
-   `ShadowDusk.ShaderToy`, `ShadowDusk.Compiler`, `ShadowDusk.Cli`, `ShadowDusk.Wasm`. The
-   **first** publish of each ID reserves the name to your account; confirm all seven are
+   `ShadowDusk.ShaderToy`, `ShadowDusk.Compiler`, `ShadowDusk.Cli`, `ShadowDusk.Wasm`,
+   `ShadowDusk.MgcbPlugin`. The
+   **first** publish of each ID reserves the name to your account; confirm all eight are
    reserved before relying on the automated push (an unreserved ID makes the `dotnet nuget
-   push` for that package fail). `ShadowDusk.ShaderToy` is **new in 0.9.0**, so its first
-   publish reserves the ID — the glob-scoped key in step 1 already covers it.
+   push` for that package fail). `ShadowDusk.ShaderToy` is **new in 0.9.0** and
+   `ShadowDusk.MgcbPlugin` is **new in the first release after Phase 29**, so their first
+   publish reserves those IDs — the glob-scoped key in step 1 already covers them.
 
 3. **A green `main`.** CI (`ci.yml`) runs the 3-OS build + test matrix on every push/PR.
    Releases cut from `main` only after CI is green; local green is not sufficient.
@@ -51,7 +54,7 @@ to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub 
    time is spent:
 
    ```powershell
-   ./validation/run-windows-render-gates.ps1              # DX corpus + DX-modern (VTF) + DX Apos gallery + DX12 corpus + DX12 VS-driven/Apos gallery + KNI-DX + KNI-GL desktop + KNI-GL VS-driven + GL Apos + GL Apos gallery + ANGLE derivative probe + BOTH Vulkan gates
+   ./validation/run-windows-render-gates.ps1              # DX corpus + DX-modern (VTF) + DX Apos gallery + DX12 corpus + DX12 VS-driven/Apos gallery + KNI-DX + KNI-GL desktop + KNI-GL VS-driven + GL Apos + GL Apos gallery + ANGLE derivative probe + MGCB plugin (real dotnet mgcb build) + BOTH Vulkan gates
    ./validation/run-windows-render-gates.ps1 -IncludeFna  # also FNA fx_2_0, for an FNA-affecting release (include it when in doubt)
    ```
 
@@ -81,9 +84,9 @@ ShadowDusk's package version lives in **exactly one place**:
 ```
 
 That single `<Version>` flows to every `ShadowDusk.*` project, so `dotnet pack` stamps all
-seven packages (and their inter-package dependency ranges) at the same version.
+eight packages (and their inter-package dependency ranges) at the same version.
 
-> **Do NOT edit the seven `.csproj` files.** They no longer carry a per-project version.
+> **Do NOT edit the eight `.csproj` files.** They no longer carry a per-project version.
 > Editing one csproj and not the others is exactly the desync this centralization removes.
 > (The `<PackageVersion Include=… />` *items* in `Directory.Packages.props` are unrelated —
 > those pin third-party dependency versions under Central Package Management. Leave them
@@ -142,10 +145,13 @@ first (the `/release` skill does this for you).
 2. **build + test** on the 3-OS matrix (Linux / macOS / Windows).
 3. **publish** self-contained `ShadowDuskCLI` binaries per RID (`win-x64`, `linux-x64`, `osx-x64`,
    `osx-arm64`) and archive them.
-4. **pack + push** all seven `ShadowDusk.*` packages (`.nupkg` + `.snupkg` symbols) to
+4. **pack + push** all eight `ShadowDusk.*` packages (`.nupkg` + `.snupkg` symbols) to
    nuget.org at the validated version, with `--skip-duplicate` (re-running a release no-ops
    on already-published versions). `ShadowDusk.Wasm` is packed in the WASM job (it needs the
-   `wasm-tools` workload + restored `dxcompiler.wasm`).
+   `wasm-tools` workload + restored `dxcompiler.wasm`); `ShadowDusk.MgcbPlugin` is packed in
+   its own step of the desktop job, without symbols, and is gated on carrying every native
+   under `tools/net8.0/any/` (an MGCB build through the plugin dies at the first P/Invoke
+   otherwise) and on **not** carrying `MonoGame.Framework.Content.Pipeline.dll`.
 5. **GitHub Release** — create the release for the `v<version>` tag with the four CLI
    archives + the `.nupkg`/`.snupkg` set attached.
 
@@ -153,9 +159,9 @@ first (the `/release` skill does this for you).
 
 ## Verify after release
 
-1. **nuget.org shows all seven at the new version.** Check each of
-   `ShadowDusk.{Core,HLSL,GLSL,ShaderToy,Compiler,Cli,Wasm}` is listed at `<version>` (indexing
-   can take a few minutes after push).
+1. **nuget.org shows all eight at the new version.** Check each of
+   `ShadowDusk.{Core,HLSL,GLSL,ShaderToy,Compiler,Cli,Wasm,MgcbPlugin}` is listed at `<version>`
+   (indexing can take a few minutes after push).
 2. **The `ShadowDuskCLI` tool installs and runs:**
 
    ```bash

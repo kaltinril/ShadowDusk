@@ -7,14 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ShadowDusk is a cross-platform, in-memory drop-in `mgfxc` replacement: a self-contained
 library that compiles `.fx` → `.mgfx` at runtime on Linux, macOS, and Windows, with output
-that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime. All seven
+that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime. All eight
 `ShadowDusk.*` packages share a single version (see `Directory.Build.props` `<Version>`).
 
 ## [Unreleased]
 
 ### Added
 
+- **`ShadowDusk.MgcbPlugin` — MonoGame Content Builder integration, for real** (Phase 29). The
+  project went from a `.csproj` with zero `.cs` files to a shipping content-processor plugin:
+  `/reference:` it in a `.mgcb`, select `ShadowDuskEffectImporter` / `ShadowDuskEffectProcessor`,
+  and MGCB compiles `.fx → .xnb` through ShadowDusk **in its own process** — no `mgfxc`, no
+  `fxc.exe`, no Wine, no PATH plumbing. This is the native MGCB route, and the only one: MGCB
+  compiles effects in-process and launches no external effect compiler, so the previously
+  documented "put ShadowDusk on PATH as `mgfxc`" override never fired.
+  - **The target comes from the content project's own `/platform:` line** (`Windows` → DirectX 11,
+    the GL-family platforms → OpenGL, consoles → a loud `SD0501`). No ShadowDusk-specific flag is
+    ever required for correct output. Optional processor parameters: `DebugMode`, `Defines`,
+    `IncludeDirs`, and the escape hatches `ShaderProfile` (reaches DirectX 12 / Vulkan, which
+    MGCB's platform list cannot name), `MgfxVersion`, `DxbcBackend`.
+  - **The `.mgfx` inside the `.xnb` is byte-for-byte the ShadowDusk CLI's** output for the same
+    source and target, because the plugin is an adapter onto the same `EffectCompiler` and adds no
+    compilation logic. Proven, not asserted: `MgcbPluginByteIdentityTests` (14/14, under
+    `dotnet test`, compared against the real CLI binary as a separate process) and the new
+    `validation/MgcbPlugin` driver (7/7 through a real `dotnet mgcb`, which additionally checks the
+    `.xnb` envelope equals MGCB's own stock output and the payload differs from it). Same payload
+    out of `dotnet mgcb` 3.8.2.1105, 3.8.3, 3.8.4, 3.8.4.1 and 3.8.5, and out of the packed
+    `.nupkg` extracted into a bare directory.
+  - Shader errors surface through MGCB in the canonical `file(line,col-col): error CODE: message`
+    form, from the CLI's own formatter (source-linked, so the two cannot drift), with the
+    underlying compiler's words verbatim beneath. `#include`d files are registered as build
+    dependencies.
+  - The package is **tools-only** (no `lib/`; everything under `tools/net8.0/any/`), because MGCB
+    resolves a referenced plugin's dependencies — managed and native — from the plugin's own
+    directory. It is a `DevelopmentDependency` and contributes nothing to a consumer's shipped game
+    assembly. `release.yml` fails the release red if any native is missing from it, or if it ships
+    MonoGame's content-pipeline assembly.
+  - `samples/mgcb` gained `Content/Content.ShadowDusk.mgcb`, the same corpus built through the
+    plugin alongside the stock one.
+
 ### Changed
+
+- **`ShadowDusk.MgcbPlugin` is now a published package**, making it the **eighth** `ShadowDusk.*`
+  NuGet. `release.yml`, `RELEASING.md`, the `/release` skill, and the package-count mentions in
+  `CLAUDE.md` / `Brand/README.md` were updated together.
+- **`NoMonoGameInProductLibrariesTests` gained a narrow, named exemption** for
+  `ShadowDusk.MgcbPlugin` — an MGCB plugin cannot exist without the
+  `ContentImporter`/`ContentProcessor` contract — plus a second test pinning that the reference
+  stays `IncludeAssets="compile" PrivateAssets="all"`, which is what keeps it harmless. No other
+  `src/` project may name MonoGame, and none does.
+- The MGCB documentation across the site (`guides/mgcb-content-pipeline.md`,
+  `samples/mgcb.md`, `index.md`, `getting-started/overview.md`, `contributing/index.md`,
+  `api/index.md`, `README.md`, `docs/the-purpose.md`) now documents the plugin as the MGCB route
+  instead of describing it as an unimplemented scaffold.
 
 ### Fixed
 

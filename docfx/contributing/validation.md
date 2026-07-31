@@ -47,5 +47,6 @@ Validation always compares ShadowDusk vs `mgfxc` on the **same** target (GL↔GL
 - The **DirectX / DX12 / FNA / KNI / Vulkan / browser-ANGLE** gates have no headless CI driver — they run from `validation/run-windows-render-gates.ps1` on a Windows box with a GPU, which is the pre-merge and pre-release bar for anything touching shader output.
 - Cross-platform compile reach is exercised by CI (`.github/workflows/ci.yml`) on Linux, macOS, and Windows.
 - The forward-compatibility version matrix (v10 across MonoGame versions) lives under `validation/ForwardCompat/`.
+- **One driver there is not a render gate:** `validation/MgcbPlugin` runs a real `dotnet mgcb` content build through the [MGCB content-processor plugin](../guides/mgcb-content-pipeline.md) and asserts the `.mgfx` inside the produced `.xnb` is byte-for-byte the CLI's, that the `.xnb` envelope matches MGCB's own stock build, and that the payload differs from stock. It needs no GPU, but it does need `dotnet tool restore` (CI has no `dotnet-mgcb`), so it runs from the same Windows gate script.
 
 See the [test shader corpus](test-shader-corpus.md) for the inputs.

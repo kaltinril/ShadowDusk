@@ -649,6 +649,13 @@ When DXC emits DXIL targeting DirectX 12, the bytecode must be cryptographically
 
 ### MGCB Plugin Interface
 
+> **Corrected 2026-07-31 — "Tier 1" below is FALSE and was never true.** MGCB compiles `.fx`
+> **in-process** and launches no external `mgfxc` (measured against `dotnet mgcb` 3.8.2.1105,
+> 3.8.4.1, and 3.8.5), so a `PATH`-placed binary named `mgfxc` is never called. "Tier 2" is the
+> only MGCB integration, and it shipped as `ShadowDusk.MgcbPlugin` in
+> [Phase 29](../plan/DONE/PHASE-29-mgcb-content-processor-plugin.md). The rest of this section is
+> kept as the original research record.
+
 For `ShadowDusk.MgcbPlugin`, there are **two distinct integration tiers** with very different implementation costs:
 
 **Tier 1 — PATH-based drop-in (minimal, preferred first):** Place a binary named `mgfxc` (or `mgfxc.exe` on Windows) in `PATH`. MGCB calls it transparently. This is zero additional code beyond the CLI itself and is the primary goal described in CLAUDE.md. No NuGet plugin needed.

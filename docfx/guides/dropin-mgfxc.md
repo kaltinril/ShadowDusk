@@ -37,7 +37,9 @@ ShadowDuskCLI MyShader.fx MyShader.mgfx /Profile:DirectX_11
 > **The PATH override does not work for MGCB.** It was documented as the shipping MGCB integration until
 > 2026-07-28, when measurement showed `dotnet mgcb` (3.8.2.1105, 3.8.4.1, and 3.8.5 alike) compiles `.fx`
 > **in-process** and never launches an external `mgfxc` — so there is no process for the alias to intercept.
-> Use explicit invocation, or compile at runtime. See [MGCB Content Pipeline](mgcb-content-pipeline.md).
+> **For MGCB, use the [content-processor plugin](mgcb-content-pipeline.md)** (`ShadowDusk.MgcbPlugin`),
+> which MGCB loads via `/reference:` and runs in its own process. Explicit CLI invocation and runtime
+> compilation still work too.
 
 ## Why it works where `mgfxc` can't
 

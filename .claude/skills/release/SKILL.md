@@ -43,7 +43,7 @@ history, not just SemVer's letter):
    divergence.
 
    ```powershell
-   ./validation/run-windows-render-gates.ps1              # DX corpus + DX-modern (VTF) + DX Apos gallery + DX12 corpus + DX12 VS-driven/Apos gallery + KNI-DX + KNI-GL desktop + KNI-GL VS-driven + GL Apos + GL Apos gallery + ANGLE derivative probe + BOTH Vulkan gates
+   ./validation/run-windows-render-gates.ps1              # DX corpus + DX-modern (VTF) + DX Apos gallery + DX12 corpus + DX12 VS-driven/Apos gallery + KNI-DX + KNI-GL desktop + KNI-GL VS-driven + GL Apos + GL Apos gallery + ANGLE derivative probe + MGCB plugin (real dotnet mgcb build) + BOTH Vulkan gates
    ./validation/run-windows-render-gates.ps1 -IncludeFna  # add FNA fx_2_0; include it when in doubt
    ./validation/run-windows-render-gates.ps1 -SkipVulkan  # ONLY on a box with no Vulkan-capable GPU
    ```
@@ -100,7 +100,7 @@ history, not just SemVer's letter):
      new platform/target** (the class of change 0.9.0's ShaderToy promotion and 0.11.0's
      Android natives both were): also check `.github/workflows/release.yml` (the pack-job
      list and any package-count validation gate), `.github/workflows/pack-consume.yml` (native-
-     presence gates), `Brand/README.md`, and every "seven packages" / package-count mention in
+     presence gates), `Brand/README.md`, and every "eight packages" / package-count mention in
      `CLAUDE.md` and `RELEASING.md` — these encode a specific count and silently go stale
      otherwise.
    Report gaps; ask whether to fix now or defer. Do not block the release on doc drift
@@ -137,14 +137,14 @@ history, not just SemVer's letter):
     marker, never a trigger. (`RELEASING.md` → "Triggering a release" is authoritative.)
 
     The `validate` job checks the dispatch input against `Directory.Build.props` `<Version>`; if
-    they match, all seven packages + the `ShadowDuskCLI` tool publish to nuget.org and a GitHub
+    they match, all eight packages + the `ShadowDuskCLI` tool publish to nuget.org and a GitHub
     Release is cut. Point the user at `RELEASING.md` → "Verify after release" for the post-publish
-    checks (`dotnet tool install -g ShadowDusk.Cli` → `ShadowDuskCLI --help`, and all seven packages on
+    checks (`dotnet tool install -g ShadowDusk.Cli` → `ShadowDuskCLI --help`, and all eight packages on
     nuget.org at `<version>`).
 
 ## ShadowDusk-specific notes
 
-- **One file bumps the version** — `Directory.Build.props` `<Version>` only. Never the six
+- **One file bumps the version** — `Directory.Build.props` `<Version>` only. Never the eight
   csprojs.
 - **Commit directly, no `/commit` skill, no co-author / tool-attribution trailer of any
   kind** (CLAUDE.md Git Commit Conventions).

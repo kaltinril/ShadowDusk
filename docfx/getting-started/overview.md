@@ -20,7 +20,8 @@ ShadowDusk replaces that step with one **portable, faithful pipeline** whose out
 | Shape | Package / Tool | Use |
 |---|---|---|
 | **Library (the product)** | `ShadowDusk.Compiler` — `EffectCompiler : IShaderCompiler` | Add the package, call `CompileAsync(fx)`, get `.mgfx` bytes in-memory. |
-| **CLI tool** | `ShadowDusk.Cli` — `dotnet tool` named `ShadowDuskCLI` | The same library for build-time use from build scripts, CI steps, or a terminal. Invoke it directly and `/copy:` the `.mgfx` — MGCB compiles in-process and cannot be redirected to it (see [Drop-in `mgfxc`](../guides/dropin-mgfxc.md)). |
+| **CLI tool** | `ShadowDusk.Cli` — `dotnet tool` named `ShadowDuskCLI` | The same library for build-time use from build scripts, CI steps, or a terminal (see [Drop-in `mgfxc`](../guides/dropin-mgfxc.md)). |
+| **MGCB plugin** | `ShadowDusk.MgcbPlugin` — `ShadowDuskEffectImporter` / `ShadowDuskEffectProcessor` | The same library as a MonoGame Content Builder content processor. `/reference:` it in your `.mgcb` and MGCB compiles `.fx → .xnb` through ShadowDusk **in its own process** — the native MGCB route, since MGCB compiles in-process and cannot be redirected by a `PATH` override (see [MGCB Content Pipeline](../guides/mgcb-content-pipeline.md)). |
 | **WASM library** | `ShadowDusk.Wasm` — `WasmShaderCompiler : IShaderCompiler` | The same pipeline inside .NET WASM for in-browser runtime compilation. |
 
 Every shape implements the same <xref:ShadowDusk.Core.IShaderCompiler> interface and runs the **same faithful pipeline** — no substitute compilers. The in-browser [ShaderFiddle.Web](../samples/shaderfiddle-web.md) is a **sample** of the WASM reach, not a separate product.

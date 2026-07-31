@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <AssemblyName>MgcbPluginGate</AssemblyName>
+    <RootNamespace>ShadowDusk.Validation.MgcbPluginGate</RootNamespace>
+  </PropertyGroup>
+
+  <!--
+    Deliberately dependency-free (BCL only). This driver's whole job is to prove what a REAL
+    consumer sees: it shells out to the real `dotnet mgcb` and the real ShadowDuskCLI binary and
+    compares the resulting bytes. Referencing ShadowDusk.Compiler would let it compile in-process
+    and quietly stop testing the thing under test.
+
+    Building the plugin is NOT this project's job either - it uses whatever
+    src/ShadowDusk.MgcbPlugin/bin/{Debug,Release}/net8.0 already holds, exactly like
+    CliBinaryFixture does for the CLI, so the gate measures the build you are about to ship.
+  -->
+</Project>

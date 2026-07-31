@@ -10,8 +10,10 @@
 #   validate          → resolve + guard the version
 #   build-and-test    → 3-OS build + full test gate
 #   pack-desktop      → pack the SIX desktop packages (Core/HLSL/GLSL/ShaderToy/Compiler/Cli)
-#                       at the validated version, with symbols (.snupkg)
-#   pack-wasm         → pack ShadowDusk.Wasm (the SEVENTH package) in THIS workflow —
+#                       at the validated version, with symbols (.snupkg), PLUS the
+#                       ShadowDusk.MgcbPlugin tools-only package (Phase 29) in a separate
+#                       step without symbols — it has no lib/, so a .snupkg cannot be built
+#   pack-wasm         → pack ShadowDusk.Wasm (the EIGHTH package) in THIS workflow —
 #                       its own job because it needs the wasm-tools workload and the
 #                       restored dxcompiler.wasm (its `VerifyDxcWasmPresent` MSBuild
 #                       target hard-fails the pack otherwise)
@@ -238,13 +240,24 @@ jobs:
                 /p:IncludeSymbols=true /p:SymbolPackageFormat=snupkg
           done
 
+      # ShadowDusk.MgcbPlugin (Phase 29) packs SEPARATELY, without the symbol flags. It is a
+      # TOOLS-ONLY package (IncludeBuildOutput=false; everything lands under tools/net8.0/any/
+      # because MGCB's /reference: resolves a plugin's dependencies from its own directory), so
+      # `-p:IncludeSymbols=true` fails it with NU5017 "cannot create a package that has no
+      # dependencies nor content" while trying to build the .snupkg. There is no symbol package
+      # to publish for a package with no lib/.
+      - name: Pack the MGCB content-processor plugin
+        run: |
+          dotnet pack src/ShadowDusk.MgcbPlugin/ShadowDusk.MgcbPlugin.csproj -c Release --no-restore -o nupkg \
+            /p:Version=${{ needs.validate.outputs.version }}
+
       - name: Verify packages were produced
         run: |
           ls -la nupkg/
           count=$(find nupkg -maxdepth 1 -name '*.nupkg' | wc -l)
           echo "Found $count .nupkg files"
-          if [ "$count" -lt 6 ]; then
-            echo "::error::Expected 6 desktop .nupkg, found $count"
+          if [ "$count" -lt 7 ]; then
+            echo "::error::Expected 7 desktop .nupkg (6 libraries/CLI + ShadowDusk.MgcbPlugin), found $count"
             exit 1
           fi
 
@@ -294,6 +307,47 @@ jobs:
             exit 1
           fi
 
+      # ShadowDusk.MgcbPlugin is loaded INTO MGCB's process, which resolves the plugin's
+      # dependencies (and, via the plugin's own AssemblyLoadContext fallback, its NATIVES) from
+      # the plugin's own directory - MGCB's deps.json knows nothing about our packages. So every
+      # native has to be inside tools/net8.0/any/ or a consumer's content build dies at the first
+      # P/Invoke (measured: SD0103 "SPIRV-Cross native library not found"). Same restore-state
+      # sensitivity as the HLSL/GLSL gates above: fail the release red rather than ship it.
+      - name: Verify ShadowDusk.MgcbPlugin contains the plugin + its natives under tools/
+        run: |
+          pkg=$(find nupkg -maxdepth 1 -name 'ShadowDusk.MgcbPlugin.*.nupkg' ! -name '*.snupkg' | head -1)
+          echo "Inspecting $pkg"
+          listing=$(unzip -l "$pkg")
+          missing=0
+          for entry in \
+            'tools/net8.0/any/ShadowDusk.MgcbPlugin.dll' \
+            'tools/net8.0/any/ShadowDusk.Compiler.dll' \
+            'tools/net8.0/any/Vortice.Dxc.dll' \
+            'tools/net8.0/any/runtimes/win-x64/native/dxcompiler.dll' \
+            'tools/net8.0/any/runtimes/win-x64/native/spirv-cross.dll' \
+            'tools/net8.0/any/runtimes/linux-x64/native/libdxcompiler.so' \
+            'tools/net8.0/any/runtimes/linux-x64/native/libspirv-cross.so' \
+            'tools/net8.0/any/runtimes/osx-x64/native/libspirv-cross.dylib' \
+            'tools/net8.0/any/osx-x64/libdxcompiler.dylib' \
+            'tools/net8.0/any/osx-arm64/libdxcompiler.dylib' \
+            'tools/net8.0/any/libvkd3d-shader-1.dll' \
+            'tools/net8.0/any/libvkd3d-shader.so.1' \
+            'tools/net8.0/any/osx-x64/libvkd3d-shader.1.dylib' \
+            'tools/net8.0/any/osx-arm64/libvkd3d-shader.1.dylib' ; do
+              if ! grep -qF "$entry" <<<"$listing"; then
+                echo "::error::$pkg is missing $entry — an MGCB content build through this plugin would fail at the first P/Invoke on that RID (SD0103 / DllNotFoundException). Restore natives before packing (tools/restore.sh; RELEASING.md 'Native binaries')."
+                missing=1
+              fi
+          done
+          # The plugin must NOT carry MonoGame's own content-pipeline assembly: MGCB has already
+          # loaded its copy, and a second one resolves to a different CompiledEffectContent type
+          # for which MGCB finds no ContentTypeWriter.
+          if grep -qF 'MonoGame.Framework.Content.Pipeline.dll' <<<"$listing"; then
+            echo "::error::$pkg ships MonoGame.Framework.Content.Pipeline.dll — the reference must stay IncludeAssets=\"compile\" PrivateAssets=\"all\"."
+            missing=1
+          fi
+          exit $missing
+
       - name: Upload packages
         uses: actions/upload-artifact@v7
         with:
@@ -304,7 +358,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  # ── Pack the 7th package: ShadowDusk.Wasm (in-browser KNI/Blazor compiler) ──
+  # ── Pack the 8th package: ShadowDusk.Wasm (in-browser KNI/Blazor compiler) ──
   # Separate job because it needs the wasm-tools workload and the dxcompiler.wasm
   # restored into wwwroot/dxc/ (tools/restore copies the committed
   # .wasm-build/dxc-wasm-out/dxcompiler.wasm there; VerifyDxcWasmPresent gates pack).
@@ -600,8 +654,8 @@ jobs:
           name: nupkg-desktop
           path: nupkg/
 
-      # ShadowDusk.Wasm (the 7th package) is packed by the pack-wasm job in THIS run,
-      # so its artifact is available here. All seven packages publish together.
+      # ShadowDusk.Wasm (the 8th package) is packed by the pack-wasm job in THIS run,
+      # so its artifact is available here. All eight packages publish together.
       - name: Download Wasm package
         uses: actions/download-artifact@v8
         with:
