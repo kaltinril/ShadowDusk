@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8) (≥ 8.0.100)
+- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8) (≥ 8.0.100) **or** the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10) — the libraries ship both a `net8.0` and a `net10.0` assembly, so a project on either framework can reference them.
 
 That's it. Everything else, including the native compiler pieces, comes from NuGet automatically when you `dotnet restore`. There is **no separate native install**.
 

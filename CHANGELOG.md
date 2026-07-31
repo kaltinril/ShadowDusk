@@ -12,6 +12,14 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ## [Unreleased]
 
+### Added
+
+### Changed
+
+### Fixed
+
+## [0.16.0] - 2026-07-30
+
 > The MonoGame pin stays 3.8.2.1105 and the default output stays MGFX v10. The golden corpus and
 > the byte-identity manifest are **untouched**: the OpenGL and DirectX 12 sampler-table fix below
 > changes output only for shapes that previously failed to compile or were silently mis-bound, and
@@ -84,6 +92,31 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   only and broken the guarantee that the CLI and the browser emit identical bytes.
 
 ### Fixed (CI / evidence)
+
+- **Every workflow now installs the .NET 10 SDK alongside .NET 8.** All seven pinned
+  `dotnet-version: '8.0.x'` while six `src/` libraries multi-target `net8.0;net10.0`; the
+  `net10.0` leg was being satisfied only by whatever the runner image happened to preinstall.
+  That is an undeclared dependency in `release.yml` — the workflow that publishes — so a runner
+  image change could have broken a release with no prior signal. `pack-consume.yml` also gained a
+  `tfm` matrix dimension, so the scratch consumer now restores and runs against **both** shipped
+  TFMs rather than `net8.0` alone; a broken `net10.0` asset previously had no end-to-end gate.
+- **The retracted MGCB "expose ShadowDusk as `mgfxc` on `PATH`" claim is now corrected
+  everywhere it appeared**, not only on the four docfx pages fixed earlier. It survived in
+  `src/ShadowDusk.Cli/README.md` — which ships *inside the NuGet package* — and in the site's
+  Overview delivery-shapes table, `README.md`, and `docfx/index.md`. All now point at the routes
+  that work: invoke the CLI directly and `/copy:` the `.mgfx`, or compile at runtime.
+- **The GLSL rewriter-rule docs no longer describe the retired sampler-slot model.**
+  `docs/glsl-uniform-naming.md` and `docs/references/compilation-pipeline.md` (both transcluded
+  into the published site) still said samplers were `ps_s{slot}` "looked up by slot"; they now
+  document the per-(texture, sampler)-pair, first-use-order model this release shipped, including
+  what `SD0217` cross-checks and why the pair list is derived in managed code.
+- Assorted support-surface drift corrected in the same pass: the rung-4 list gained the three new
+  render gates; the CI GL-gate count went from three to **seven** in both `docs/validation-matrix.md`
+  and the gate script's own help text; the MGFX v10 floor reads **3.8.1.263** (the measured floor)
+  rather than 3.8.2 in nine places; fixture counts in `docs/repository-layout.md` (144 `.fx`);
+  `docs/test-shader-corpus.md` gained the sampler-pair and ShaderToy-route fixtures plus a
+  last-updated line; `project_facts.md` no longer records the *reverted* `Apos.Shapes` 0.7.12 bump
+  as shipped; and two stale references to the retired `SD0215`/`SD0216` are gone.
 
 - **Test-results artifacts stopped discarding 13 of every 14 assemblies' results.** Every
   `dotnet test` invocation in `ci.yml` and `release.yml` passed a fixed
@@ -1428,7 +1461,8 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.15.1...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.15.1...v0.16.0
 [0.15.1]: https://github.com/kaltinril/ShadowDusk/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.14.2...v0.15.0
 [0.14.2]: https://github.com/kaltinril/ShadowDusk/compare/v0.14.1...v0.14.2

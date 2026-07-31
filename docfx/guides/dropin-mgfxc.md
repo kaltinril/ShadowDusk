@@ -1,6 +1,6 @@
 # Drop-in `mgfxc` Replacement
 
-ShadowDusk's CLI tool is a **transparent substitute** for MonoGame's `mgfxc`: same positional arguments, the same `.mgfx` output format, the same exit codes, and MGCB-parseable error messages on stderr. Games using the MonoGame Content Pipeline require **zero code changes** to switch.
+ShadowDusk's CLI tool is a **transparent substitute** for MonoGame's `mgfxc`: same positional arguments, the same `.mgfx` output format, the same exit codes, and MGCB-parseable error messages on stderr. A build step that shells out to `mgfxc` can call it instead with **zero downstream changes** — though MGCB itself compiles in-process and cannot be redirected to it (see the warning below).
 
 ## Install
 

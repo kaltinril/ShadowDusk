@@ -53,7 +53,7 @@ The table above is the **graphics-backend** axis — the one that decides the ou
 
 > **"Same `.mgfx` as `mgfxc`"** means behaviorally equivalent and `Effect`-loadable — it renders the same pixels in the real runtime. Byte-identity is only ShadowDusk's *own* reproducibility (same version + source + target → same bytes), **never** byte-equality with `mgfxc`.
 
-> **Output container.** The default is **MGFX v10** — it loads on every MonoGame 3.8.2+ and KNI runtime, so you never set a flag for correct output. Opt-in/experimental **MGFX v11** (`CompilerOptions.MgfxVersion = 11`, MonoGame 3.8.5+) and **KNIFX v11** (`CompilerOptions.Container = EffectContainer.Knifx`, KNI v4.02+) containers are additionally available, both render-proven in their real engines. See [Parameters & Caveats](guides/parameters-and-caveats.md).
+> **Output container.** The default is **MGFX v10** — it loads on every MonoGame 3.8.1.263+ (the measured floor) and KNI runtime, so you never set a flag for correct output. Opt-in/experimental **MGFX v11** (`CompilerOptions.MgfxVersion = 11`, MonoGame 3.8.5+) and **KNIFX v11** (`CompilerOptions.Container = EffectContainer.Knifx`, KNI v4.02+) containers are additionally available, both render-proven in their real engines. See [Parameters & Caveats](guides/parameters-and-caveats.md).
 
 ## Quick links
 
@@ -87,7 +87,7 @@ See the [In-Memory Quickstart](getting-started/in-memory-quickstart.md) for the 
 ## Design principles
 
 - **No Windows / Wine requirement.** Every native binary has Linux + macOS builds; the pieces the pipeline needs ride inside the package.
-- **Drop-in replacement.** Same CLI flags, same `.mgfx` output format, same exit codes and error format as `mgfxc`. Zero changes to existing content pipelines.
+- **Drop-in replacement.** Same CLI flags, same `.mgfx` output format, same exit codes and error format as `mgfxc`. A build step that invokes `mgfxc` can invoke it instead (MGCB itself compiles in-process and cannot be redirected — see [Drop-in `mgfxc`](guides/dropin-mgfxc.md)).
 - **Deterministic output.** Same source + same target = byte-identical `.mgfx`, given the same compiler version (ShadowDusk's own reproducibility).
 - **Fail loudly.** Shader errors surface the source file, line, column, and message exactly as the underlying compiler emitted them.
 - **Result-typed errors.** No exceptions for expected shader failures — the API returns `Result<CompiledShader, ShaderError[]>`.

@@ -83,10 +83,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Setup .NET 8
+      - name: Setup .NET 8 + .NET 10
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
       - name: Cache NuGet
         uses: actions/cache@v5
@@ -176,10 +178,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Setup .NET 8
+      - name: Setup .NET 8 + .NET 10
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
       - name: Cache NuGet
         uses: actions/cache@v5
@@ -340,10 +344,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Setup .NET 8
+      - name: Setup .NET 8 + .NET 10
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: |
+            8.0.x
+            10.0.x
 
       - name: Cache NuGet
         uses: actions/cache@v5

@@ -29,7 +29,10 @@ uniform vec4 ps_uniforms_vec4[N];   // pixel constant buffer
 MonoGame looks up uniforms by these fixed array names, **not** by the original HLSL variable
 names (`WorldViewProj`, `DiffuseColor`, …). It also expects:
 
-- Samplers named `ps_s{slot}` (e.g. `ps_s0`), looked up by slot.
+- Samplers named `ps_s{k}` (e.g. `ps_s0`), looked up **by uniform name**: the GL runtime calls
+  `glUniform1i(GetUniformLocation("ps_s{k}"), TextureSlot)` and then binds the record's texture
+  parameter to that unit. `k` is the record's position in the table, **not** an HLSL `register(sN)`
+  bind slot — a shader whose only sampler is `register(s3)` still emits `ps_s0`.
 - Stage I/O carried over legacy `varying` names that match the built-in `SpriteEffect` VS
   outputs (MonoGame links the VS to the custom PS **by varying name**): `vFrontColor`
   (`COLOR0`), `vBackColor` (`COLOR1`), `vTexCoord{n}` (`TEXCOORD{n}`).
@@ -59,7 +62,7 @@ other targets keep the unmodified SPIRV-Cross dialect. The pixel-stage transform
 | # | SPIRV-Cross input | Rewritten to |
 |---|---|---|
 | 1 | `#version …` line; the `GL_ARB_shading_language_420pack` extension block | dropped; a `precision mediump` `#ifdef GL_ES` header is prepended |
-| 3 | `uniform sampler2D <id>;` | `uniform sampler2D ps_s{slot};` (by declaration order); uses renamed in the body |
+| 3 | `uniform sampler2D <id>;` | `uniform sampler2D ps_s{k};` — one uniform per **combined (texture, sampler) pair**, `k` being its position in SPIRV-Cross's **first-use** declaration order (which is *not* HLSL declaration order); uses renamed in the body |
 | 4 | `in <type> in_var_<SEM>;` | `varying vec4 <legacy>;` — `COLOR0`→`vFrontColor`, `COLOR1`→`vBackColor`, `TEXCOORD{n}`→`vTexCoord{n}`; uses get a width-truncating swizzle. An **omitted semantic index is index 0** (`COLOR` ≡ `COLOR0`, `TEXCOORD` ≡ `TEXCOORD0`, matching fxc/mgfxc), so the bare spellings DXC passes through verbatim map to `vFrontColor` / `vTexCoord0` — without that collapse a pixel-only pass declaring `: COLOR` emitted `var_COLOR`, which MonoGame's built-in SpriteEffect VS can never link against. |
 | 5 | `out vec4 out_var_SV_Target<N?>;` | declaration dropped; uses → `gl_FragColor` (or `gl_FragData[N]`) |
 | 6 | `texture()` | dimension-specific legacy builtin per the sampler's declared type: `texture2D()` / `textureCube()` / `texture3D()` |
@@ -75,14 +78,33 @@ other targets keep the unmodified SPIRV-Cross dialect. The pixel-stage transform
 | 14 | any `dFdx(` / `dFdy(` / `fwidth(` use in the rewritten fragment body | `#extension GL_OES_standard_derivatives : enable` prepended as the **first line**, before the precision header — mgfxc's exact behavior and position (`ShaderData.mojo.cs`; issue #139). In ESSL 1.00 the derivative builtins exist only under this extension, so strict GLES2 compilers reject derivative shaders without it; where derivatives are core (ES 3.00 / desktop 1.30+) the enable is at most a warning, so the one artifact still serves Reach, HiDef, and desktop. The scan includes `fwidth`, which SPIRV-Cross emits directly and mgfxc's two-token dFdx/dFdy scan never had to handle. |
 | 15 | `trunc(x)` (GLSL ES 3.00 / GL 1.30 only) | `(sign((x)) * floor(abs((x))))` — truncate-toward-zero built from `sign`/`floor`/`abs`, all available since GLSL ES 1.00 / GLSL 1.10, component-wise for `float`/`vecN` alike. SPIRV-Cross emits bare `trunc()` when lowering HLSL's truncating `%`/`fmod` (`a - b * trunc(a / b)`; GLSL's own `mod()` is floored with sign-follows-divisor, so it can't stand in for fmod's sign-follows-dividend). Strict GLSL ES 1.00 front ends (ANGLE on macOS DesktopGL) reject `trunc` as an undeclared identifier where lenient desktop drivers accept it (Apos.Shapes issue #34). Argument captured by the same balanced-paren, resume-inside-replacement scan as Rule 8. The **whole product is parenthesized**: `trunc(x)` was a primary expression, so splicing a bare `a * b` over it re-associates wherever the surrounding operator binds at least as tightly — `1.0 / trunc(x)` became `(1.0 / sign(x)) * floor(abs(x))`, valid GLSL with a silently wrong value. |
 
-`Rewrite` returns the rewritten GLSL plus the discovered sampler list (`ps_s{slot}`) and the
+`Rewrite` returns the rewritten GLSL plus the discovered sampler list (`ps_s{k}`) and the
 `ps_uniforms_vec4` register count. The pipeline pairs this with the `.mgfx` side:
 
 - The cbuffer is **named `ps_uniforms_vec4`**, with one 16-byte register per free parameter,
   register-aligned by size (SM 3.0 constant-register layout), so `Effect.Parameters[name]
   .SetValue(…)` lands in the right `vec4` slot.
-- The per-shader sampler table binds slot → `ps_s{slot}` with the texture parameter index, so
+- The per-shader sampler table has **one record per combined (texture, sampler) pair**, in
+  SPIRV-Cross's first-use declaration order — the same list, in the same order, as the sampler
+  uniforms the emitted GLSL declares. That is the only list that can be correct, because the GL
+  runtime resolves each record by its *uniform name*. Record `k` carries `Name = ps_s{k}`,
+  `TextureSlot = SamplerSlot = k` (the record index **is** the GL texture unit), `Parameter` = the
+  index of the pair's **texture**, and the baked `sampler_state` of the pair's **sampler** — so
   `SpriteBatch`'s texture reaches the sampler.
+  - **Per pair, not per sampler.** Two textures read through one shared `SamplerState` (the
+    diffuse+lightmap idiom) produce **two** records; two samplers over one texture (the
+    linear+point idiom) also produce two, each with its own state. Keying on the reflected
+    samplers instead was the Phase 51 A7 bug: it rejected the first shape outright and, because
+    SPIRV-Cross declares combined samplers in first-use rather than declaration order, silently
+    **swapped** the texture parameter and sampler-type byte in the second.
+  - The pair list is derived in pure managed code from the SPIR-V (`SpirvCombinedSamplerPairs`)
+    rather than via SPIRV-Cross's `spvc_compiler_get_combined_image_samplers`, which the browser
+    host's `spirv-cross.wasm` does not export — a native call would fix desktop only and break
+    the guarantee that the CLI and the browser emit identical bytes.
+  - The count is cross-checked against the sampler uniforms actually declared in the emitted
+    GLSL; a mismatch fails loudly with **`SD0217`** rather than shipping a mis-bound table.
+    (`SD0215`/`SD0216`, which encoded the old sampler-keyed model, are retired and their numbers
+    are do-not-reuse.)
 
 ### Rejected alternatives
 
