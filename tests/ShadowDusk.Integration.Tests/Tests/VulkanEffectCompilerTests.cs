@@ -316,4 +316,73 @@ public sealed class VulkanEffectCompilerTests
             "two descriptor-set-layout bindings at the same binding number is invalid");
         vk.SamplerSlots.ShouldBe(vk.TextureSlots, customMessage: "a combined descriptor occupies both the texture and sampler slot masks, as mgfxc writes them");
     }
+
+    [Fact]
+    public async Task Compile_UnrecognizedVertexSemantic_WarnsSd0104_AndStillCompiles()
+    {
+        // Bug-hunt 2026-07-27 N5, warning half — the Vulkan (SPIR-V) half of the same
+        // plumbing the DirectX12 test pins. TEXCORD0 is the classic typo for TEXCOORD0:
+        // mgfxc accepts it and defaults the element to TextureCoordinate WITH a warning,
+        // so a drop-in replacement must keep the default AND print the warning. Without
+        // it, the typo silently mints a phantom TextureCoordinate attribute the consumer's
+        // vertex declaration has to supply.
+        const string typo = """
+            struct VOut { float4 Pos : SV_POSITION; float2 UV : TEXCOORD0; };
+
+            VOut VS(float4 pos : POSITION0, float2 uv : TEXCORD0)
+            {
+                VOut o;
+                o.Pos = pos;
+                o.UV = uv;
+                return o;
+            }
+
+            float4 PS(VOut i) : SV_Target0 { return float4(i.UV, 0, 1); }
+
+            technique T
+            {
+                pass P { VertexShader = compile vs_6_0 VS(); PixelShader = compile ps_6_0 PS(); }
+            }
+            """;
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+        var result = await new EffectCompiler().CompileAsync(typo, new CompilerOptions
+        {
+            Target = PlatformTarget.Vulkan,
+            SourceFileName = "VulkanTypoSemantic.fx",
+        }, cts.Token);
+
+        result.IsSuccess.ShouldBeTrue(
+            result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+
+        var warning = result.Value.Warnings.SingleOrDefault(w => w.Code == "SD0104");
+        warning.ShouldNotBeNull("the unrecognized semantic must surface as SD0104, as mgfxc warns");
+        warning.Severity.ShouldBe(ShaderErrorSeverity.Warning);
+        warning.Message.ShouldContain("TEXCORD0", Case.Sensitive);
+        warning.File.ShouldBe("VulkanTypoSemantic.fx");
+
+        // Unchanged output: the fallback attribute is still written.
+        var reader = MgfxBlobReader.Parse(result.Value.Data);
+        var vertexShader = reader.Shaders.Single(s => s.IsVertex);
+        vertexShader.Attributes.Select(a => (a.Usage, a.Index))
+            .ShouldBe(new[] { ((byte)0, (byte)0), ((byte)2, (byte)0) }, ignoreOrder: true);
+    }
+
+    [Fact]
+    public async Task Compile_AllSemanticsRecognized_EmitsNoSd0104()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+        var result = await new EffectCompiler().CompileAsync(ParameterizedShader, new CompilerOptions
+        {
+            Target = PlatformTarget.Vulkan,
+            SourceFileName = "VulkanCleanSemantics.fx",
+        }, cts.Token);
+
+        result.IsSuccess.ShouldBeTrue(
+            result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+        result.Value.Warnings.ShouldNotContain(w => w.Code == "SD0104",
+            "POSITION0/TEXCOORD0 are both in the table; a false positive here would spam every clean build");
+    }
 }

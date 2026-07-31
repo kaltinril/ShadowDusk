@@ -127,6 +127,80 @@ public sealed class DirectX12EffectCompilerTests
             .ShouldBe(new[] { ((byte)0, (byte)0), ((byte)2, (byte)0) }, ignoreOrder: true);
     }
 
+    // A typo'd vertex semantic: TEXCORD0 for TEXCOORD0. fxc/mgfxc accept it and default the
+    // element to TextureCoordinate, printing a warning; ShadowDusk must do both.
+    private const string TypoSemanticShader = """
+        struct VOut { float4 Pos : SV_POSITION; float2 UV : TEXCOORD0; };
+
+        VOut VS(float4 pos : POSITION0, float2 uv : TEXCORD0)
+        {
+            VOut o;
+            o.Pos = pos;
+            o.UV = uv;
+            return o;
+        }
+
+        float4 PS(VOut i) : SV_Target0 { return float4(i.UV, 0, 1); }
+
+        technique T
+        {
+            pass P { VertexShader = compile vs_6_0 VS(); PixelShader = compile ps_6_0 PS(); }
+        }
+        """;
+
+    [Fact]
+    public async Task Compile_UnrecognizedVertexSemantic_WarnsSd0104_AndStillCompiles()
+    {
+        // Bug-hunt 2026-07-27 N5, warning half. The DEFAULT is correct and must not move
+        // (real mgfxc defaults the same way), so this is a WARNING, never a rejection —
+        // but without it a typo silently mints a phantom TextureCoordinate attribute that
+        // MonoGame then demands from the vertex declaration, and the only symptom is a
+        // failed draw with no reference back to the shader.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+        var result = await new EffectCompiler().CompileAsync(TypoSemanticShader, new CompilerOptions
+        {
+            Target = PlatformTarget.DirectX12,
+            SourceFileName = "DirectX12TypoSemantic.fx",
+        }, cts.Token);
+
+        result.IsSuccess.ShouldBeTrue(
+            result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+
+        var warning = result.Value.Warnings.SingleOrDefault(w => w.Code == "SD0104");
+        warning.ShouldNotBeNull("the unrecognized semantic must surface as SD0104, as mgfxc warns");
+        warning.Severity.ShouldBe(ShaderErrorSeverity.Warning);
+        // DXIL reflection splits the semantic from its numeric index, so the name is
+        // reported as "TEXCORD" with the index stated separately (SPIR-V, which keeps them
+        // concatenated, reports "TEXCORD0").
+        warning.Message.ShouldContain("TEXCORD", Case.Sensitive);
+        warning.Message.ShouldContain("index 0", Case.Sensitive);
+        warning.File.ShouldBe("DirectX12TypoSemantic.fx", "an MGCB build needs to know WHICH effect warned");
+
+        // The output is unchanged: the fallback attribute is still written, exactly as before.
+        var reader = MgfxBlobReader.Parse(result.Value.Data);
+        var vertexShader = reader.Shaders.Single(s => s.IsVertex);
+        vertexShader.Attributes.Select(a => (a.Usage, a.Index))
+            .ShouldBe(new[] { ((byte)0, (byte)0), ((byte)2, (byte)0) }, ignoreOrder: true);
+    }
+
+    [Fact]
+    public async Task Compile_AllSemanticsRecognized_EmitsNoSd0104()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+        var result = await new EffectCompiler().CompileAsync(ParameterizedShader, new CompilerOptions
+        {
+            Target = PlatformTarget.DirectX12,
+            SourceFileName = "DirectX12CleanSemantics.fx",
+        }, cts.Token);
+
+        result.IsSuccess.ShouldBeTrue(
+            result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+        result.Value.Warnings.ShouldNotContain(w => w.Code == "SD0104",
+            "POSITION0/TEXCOORD0 are both in the table; a false positive here would spam every clean build");
+    }
+
     [Fact]
     public async Task Compile_WarnsSd0214_ExactlyWhenTheHostCannotSignDxil()
     {

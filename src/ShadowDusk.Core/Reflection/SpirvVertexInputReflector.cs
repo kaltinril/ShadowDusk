@@ -41,7 +41,21 @@ public static class SpirvVertexInputReflector
     /// </summary>
     public static Result<IReadOnlyList<MgfxVertexAttributeInfo>, ShaderError> Read(
         ReadOnlyMemory<byte> spirvBlob)
+        => Read(spirvBlob, out _);
+
+    /// <summary>
+    /// The same read as <see cref="Read(ReadOnlyMemory{byte})"/>, additionally reporting the
+    /// non-fatal <c>SD0104</c> warnings for input semantics that fell through to the
+    /// TextureCoordinate default (bug-hunt 2026-07-27 N5 — mgfxc warns when it defaults, so
+    /// a drop-in replacement must too). The attribute table is byte-for-byte what the
+    /// warning-free overload produces: warnings never gate output.
+    /// </summary>
+    public static Result<IReadOnlyList<MgfxVertexAttributeInfo>, ShaderError> Read(
+        ReadOnlyMemory<byte> spirvBlob,
+        out IReadOnlyList<ShaderError> warnings)
     {
+        warnings = Array.Empty<ShaderError>();
+
         SpirvModule? module = SpirvModule.TryParse(spirvBlob.Span);
         if (module is null)
         {
@@ -71,10 +85,16 @@ public static class SpirvVertexInputReflector
         }
 
         var attributes = new List<MgfxVertexAttributeInfo>(inputs.Count);
+        List<ShaderError>? unrecognized = null;
 
         foreach ((string semantic, _, int locationCount) in inputs)
         {
-            (byte usage, int baseIndex) = VertexSemanticMapper.Map(semantic);
+            (byte usage, int baseIndex) = VertexSemanticMapper.Map(semantic, out bool recognized);
+            if (!recognized)
+            {
+                unrecognized ??= new List<ShaderError>();
+                unrecognized.Add(VertexSemanticMapper.UnrecognizedSemanticWarning(semantic, baseIndex));
+            }
 
             for (int i = 0; i < locationCount; i++)
             {
@@ -85,6 +105,9 @@ public static class SpirvVertexInputReflector
                     Location: 0));
             }
         }
+
+        if (unrecognized is not null)
+            warnings = unrecognized;
 
         return Result<IReadOnlyList<MgfxVertexAttributeInfo>, ShaderError>.Ok(attributes);
     }

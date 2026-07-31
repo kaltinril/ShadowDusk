@@ -28,12 +28,28 @@ public static class DxilVertexInputReflector
     public static Result<IReadOnlyList<MgfxVertexAttributeInfo>, ShaderError> Read(
         ReadOnlyMemory<byte> dxilBlob,
         DxilReflectionExtractor extractor)
+        => Read(dxilBlob, extractor, out _);
+
+    /// <summary>
+    /// The same read as <see cref="Read(ReadOnlyMemory{byte}, DxilReflectionExtractor)"/>,
+    /// additionally reporting the non-fatal <c>SD0104</c> warnings for input semantics that
+    /// fell through to the TextureCoordinate default (bug-hunt 2026-07-27 N5 — mgfxc warns
+    /// when it defaults, so a drop-in replacement must too). The attribute table is
+    /// byte-for-byte what the warning-free overload produces: warnings never gate output.
+    /// </summary>
+    public static Result<IReadOnlyList<MgfxVertexAttributeInfo>, ShaderError> Read(
+        ReadOnlyMemory<byte> dxilBlob,
+        DxilReflectionExtractor extractor,
+        out IReadOnlyList<ShaderError> warnings)
     {
+        warnings = Array.Empty<ShaderError>();
+
         Result<ReflectedEffect, ShaderError> result = extractor.Extract(dxilBlob);
         if (result.IsFailure)
             return Result<IReadOnlyList<MgfxVertexAttributeInfo>, ShaderError>.Fail(result.Error);
 
         var attributes = new List<MgfxVertexAttributeInfo>(result.Value.InputSignature.Count);
+        List<ShaderError>? unrecognized = null;
         foreach (SignatureParameterReflection param in result.Value.InputSignature)
         {
             // System-GENERATED values (SV_VertexID / SV_InstanceID) are produced by the
@@ -47,13 +63,28 @@ public static class DxilVertexInputReflector
 
             // DXIL reflection already separates the semantic name from its numeric index
             // (unlike SPIR-V's concatenated "TEXCOORD0" string), so only the name needs mapping.
-            (byte usage, _) = VertexSemanticMapper.Map(param.SemanticName);
+            (byte usage, _) = VertexSemanticMapper.Map(param.SemanticName, out bool recognized);
+            // SD0104 (bug-hunt 2026-07-27 N5): mgfxc warns when it defaults an unrecognized
+            // semantic, so we do too. The VALUE is untouched — the phantom TextureCoordinate
+            // attribute is still written, exactly as mgfxc writes it. The reported name is
+            // the reflected one, i.e. index-free ("TEXCORD", index 0), because DXIL splits
+            // the two; the SPIR-V path reports the concatenated spelling ("TEXCORD0").
+            if (!recognized)
+            {
+                unrecognized ??= new List<ShaderError>();
+                unrecognized.Add(VertexSemanticMapper.UnrecognizedSemanticWarning(
+                    param.SemanticName, param.SemanticIndex));
+            }
+
             attributes.Add(new MgfxVertexAttributeInfo(
                 Name:     string.Empty,
                 Usage:    usage,
                 Index:    (byte)param.SemanticIndex,
                 Location: 0));
         }
+
+        if (unrecognized is not null)
+            warnings = unrecognized;
 
         return Result<IReadOnlyList<MgfxVertexAttributeInfo>, ShaderError>.Ok(attributes);
     }

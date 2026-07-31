@@ -2045,6 +2045,13 @@ internal sealed class CompilationPipeline
             // v3.8.5 source directly (Phase 54 follow-up, 2026-07-23): VertexInputLayout.Native.cs
             // and Shader.Native.cs's GetOrCreateLayout.
             IReadOnlyList<MgfxVertexAttributeInfo> vertexAttributes;
+            // SD0104 (bug-hunt 2026-07-27 N5): mgfxc prints a warning when an input semantic
+            // it does not recognise falls through to the TextureCoordinate default, and a
+            // drop-in replacement has to as well — a typo'd semantic otherwise silently mints
+            // a phantom TEXCOORD attribute the consumer's vertex declaration must supply.
+            // The fallback VALUE is unchanged (mgfxc defaults the same way); only the
+            // diagnostic is new, and warnings never gate output.
+            IReadOnlyList<ShaderError> attributeWarnings = noWarnings;
             if (stage != ShaderStage.Vertex)
             {
                 vertexAttributes = noAttributes;
@@ -2057,18 +2064,33 @@ internal sealed class CompilationPipeline
                 // to the shader. A shader that genuinely declares no vertex inputs still
                 // gets an empty table (Ok) — a zero-element layout is valid when nothing
                 // is consumed.
-                Result<IReadOnlyList<MgfxVertexAttributeInfo>, ShaderError> attrResult = platform switch
-                {
-                    PlatformTarget.Vulkan    => SpirvVertexInputReflector.Read(spirvBlob),
-                    PlatformTarget.DirectX12 => DxilVertexInputReflector.Read(dxilBlob, new DxilReflectionExtractor()),
-                    _                        => Result<IReadOnlyList<MgfxVertexAttributeInfo>, ShaderError>.Ok(noAttributes),
-                };
+                Result<IReadOnlyList<MgfxVertexAttributeInfo>, ShaderError> attrResult;
+                if (platform == PlatformTarget.Vulkan)
+                    attrResult = SpirvVertexInputReflector.Read(spirvBlob, out attributeWarnings);
+                else if (platform == PlatformTarget.DirectX12)
+                    attrResult = DxilVertexInputReflector.Read(dxilBlob, new DxilReflectionExtractor(), out attributeWarnings);
+                else
+                    attrResult = Result<IReadOnlyList<MgfxVertexAttributeInfo>, ShaderError>.Ok(noAttributes);
+
                 if (attrResult.IsFailure)
                     return (Result<byte[], ShaderError>.Fail(attrResult.Error), default, default, noAttributes, noUniforms, noWarnings);
                 vertexAttributes = attrResult.Value;
             }
 
-            return (Result<byte[], ShaderError>.Ok(blob.ToArray()), dxilBlob, spirvBlob, vertexAttributes, noUniforms, result.Value.Warnings);
+            IReadOnlyList<ShaderError> stageWarnings = result.Value.Warnings;
+            if (attributeWarnings.Count > 0)
+            {
+                // The reflectors have no source path; stamp the one the compile was given so
+                // an MGCB build with many effects can tell WHICH effect warned (the same
+                // reason the GL portability lint carries a file and no line).
+                var merged = new List<ShaderError>(stageWarnings.Count + attributeWarnings.Count);
+                merged.AddRange(stageWarnings);
+                foreach (ShaderError w in attributeWarnings)
+                    merged.Add(w with { File = preprocessed.OriginalFilePath });
+                stageWarnings = merged;
+            }
+
+            return (Result<byte[], ShaderError>.Ok(blob.ToArray()), dxilBlob, spirvBlob, vertexAttributes, noUniforms, stageWarnings);
         }
     }
 

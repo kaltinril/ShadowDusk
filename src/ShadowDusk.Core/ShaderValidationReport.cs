@@ -18,7 +18,9 @@ namespace ShadowDusk.Core;
 /// <param name="Warnings">
 /// Non-fatal diagnostics: the underlying compiler's own warnings plus ShadowDusk's GL
 /// portability findings (<c>SD0400</c>–<c>SD0499</c>) — constructs that compile but are
-/// known to fail or misbehave at runtime on some GL stacks.
+/// known to fail or misbehave at runtime on some GL stacks — and its reflection findings
+/// (<c>SD0104</c>: an unrecognised vertex-input semantic defaulted to TextureCoordinate,
+/// as mgfxc does, which is a phantom attribute when the semantic was a typo).
 /// </param>
 public sealed record ShaderTargetValidation(
     PlatformTarget Target,

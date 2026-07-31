@@ -18,7 +18,7 @@ small tail, the tail moves here and the parent moves to DONE.
 | Item | Source phase (now archived) | Original status when moved |
 |---|---|---|
 | OpenGL sampler records per (texture, sampler) PAIR (**A7**) | [2026-07-27 full-project review](../plan/BUG-HUNT-2026-07-27.md) sibling sweep | 🟡 Interim `SD0216` shipped (loud, not silent); the parity fix is open |
-| **PENDING MIGRATION — the `BUG-HUNT-2026-07-27.md` DEFERRED residue** | [`BUG-HUNT-2026-07-27.md`](BUG-HUNT-2026-07-27.md) | ⚠️ **Not yet moved in.** That doc's own `DEFERRED, with reasons` block is still the authority on ~13 open items (C2, M2, M4/M13 lowerings, M6, M8, N2, N6, N7, N8, N16, N17's Android half, M12's Linux case-insensitive fallback, M14's SD0011 span plumbing). **The doc cannot move to `plan/DONE/` until they are migrated here** — filing it as done while it is the sole home for 13 open items would bury them. Migrating them is this phase's stated job ("so no phase sits open at 95% for 1-2 items"); it needs one focused pass to give each item a scope and a done bar, not a bulk paste. |
+| **PENDING MIGRATION — the `BUG-HUNT-2026-07-27.md` DEFERRED residue** | [`BUG-HUNT-2026-07-27.md`](BUG-HUNT-2026-07-27.md) | ⚠️ **Not yet moved in.** That doc's own `DEFERRED, with reasons` block is still the authority on ~12 open items (C2, M2, M4/M13 lowerings, M6, M8, N2, N6, N7, N8, N16, N17's Android half, M12's Linux case-insensitive fallback, M14's SD0011 span plumbing). **N5's warning half is no longer among them — closed 2026-07-31 as `SD0104`, see A11 below.** **The doc cannot move to `plan/DONE/` until the rest are migrated here** — filing it as done while it is the sole home for those items would bury them. Migrating them is this phase's stated job ("so no phase sits open at 95% for 1-2 items"); it needs one focused pass to give each item a scope and a done bar, not a bulk paste. |
 | Browser diagnostics squiggle confirmation | [Phase 38](DONE/PHASE-38-wasm-compile-diagnostics.md) | 🟢 Implemented; only the in-browser confirmation rung left |
 | DeferredSprite GL MRT render proof (GAP-2) — ✅ done 2026-07-29 (A2) | [Phase 41](DONE/PHASE-41-fxc-oracle-monogame-fidelity.md) | Closed at compile + structural-match; render rung left |
 | Apos.Shapes render-proof (Option B) | [Phase 49](DONE/PHASE-49-apos-shapes-regression-corpus.md) | Option A shipped; Option B render-proof decision-gated |
@@ -660,6 +660,44 @@ or alongside. Do not fix (2) in isolation.
 for `DirectX_11`), a DirectX golden exists for the A5 fixture and the DX arm of `ShaderToyRouteGl` is
 wired, and ShadowDusk's DirectX target rejects sub-floor vertex profiles the way `mgfxc` does, with
 the corpus sweep showing exactly what changed.
+
+### A11 — ✅ DONE (2026-07-31) — the unknown-vertex-semantic warning (bug-hunt 2026-07-27 N5, warning half)
+
+*From the [2026-07-27 bug hunt](BUG-HUNT-2026-07-27.md) N5.* `VertexSemanticMapper` maps an HLSL
+vertex-input semantic to MonoGame's `VertexElementUsage` byte, and an unrecognized semantic falls
+back to `TextureCoordinate`. **That fallback value is correct and did not change** — real `mgfxc`
+defaults exactly the same way. What was missing is the other half of `mgfxc`'s behaviour: it
+**prints a warning when it defaults**, and ShadowDusk did not. A typo (`TEXCORD0` for `TEXCOORD0`)
+therefore silently minted a phantom TextureCoordinate attribute that MonoGame's
+`VertexInputLayout` then demanded from the consumer's vertex declaration, with a failed draw far
+from the shader as the only symptom. The mapper's own doc-comment admitted the gap and pointed
+back at N5.
+
+**Was deferred because** the mapper is pure and "has no warning channel to thread through". That
+stopped being true when **Phase 53** added `CompiledShader.Warnings`.
+
+**Landed as `SD0104`** (`docs/error-codes.md`; the `SD0100`–`SD0199` reflection/transpilation-backend
+range, deliberately *not* `SD0400`–`SD0499`, which `GlslPortabilityAnalyzer` owns):
+
+- `VertexSemanticMapper.Map(string semantic, out bool recognized)` reports whether the value came
+  from the table or the fallback; the original `Map(string)` delegates to it, so every existing
+  caller and value is untouched. `VertexSemanticMapper.UnrecognizedSemanticWarning` builds the
+  diagnostic in one place for both backends.
+- `SpirvVertexInputReflector.Read` (Vulkan) and `DxilVertexInputReflector.Read` (DirectX12) each
+  gained an `out IReadOnlyList<ShaderError> warnings` overload; the old signatures remain and
+  delegate.
+- `CompilationPipeline.CompileEntryPoint` appends them to the `Warnings` element of its returned
+  tuple (stamping the source path the compile was given), so they reach `CompiledShader.Warnings`,
+  CLI stderr, MGCB, and `ValidateAsync` like every other warning.
+
+**It is a WARNING, never an error** — `mgfxc` accepts and defaults, so drop-in parity forbids
+rejecting. **No emitted byte moves:** the fallback usage/index values are unchanged, only the
+Vulkan and DirectX12 attribute-table paths are touched, and warnings never gate output.
+Pinned by `VertexSemanticMapperTests` (the recognised/unrecognised report, both overloads agreeing
+on every value, the warning's code/severity/text), `SpirvVertexInputReflectorTests` (a hand-built
+minimal SPIR-V module: the fallback attribute is still emitted, and both `Read` overloads produce
+the identical table), and end-to-end `SD0104` tests in `VulkanEffectCompilerTests` /
+`DirectX12EffectCompilerTests` (including the no-false-positive direction on a clean shader).
 
 ---
 
