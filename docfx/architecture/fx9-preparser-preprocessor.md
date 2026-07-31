@@ -18,6 +18,7 @@ The stripped HLSL feeds the compiler; the extracted metadata feeds the [reflecti
 The preprocessor (`ShadowDusk.Core/Preprocessor/Preprocessor.cs`) then:
 
 - **Flattens `#include` directives**, resolving them through an <xref:ShadowDusk.Core.Preprocessor.IIncludeResolver> (file-system or in-memory). Missing includes fail loudly with `SD0001`; circular includes with `SD0002`.
+- **Compares resolved include paths the way your storage spells them, not the way the operating system is assumed to.** Deciding whether `Shared/Common.fxh` and `shared/common.fxh` are one file or two matters for `#pragma once` and for cycle detection, and inferring it from the OS is wrong on real targets: **Android's file system is case-sensitive**, and **APFS can be formatted case-sensitive**. An <xref:ShadowDusk.Core.Preprocessor.IIncludePathCanonicalizer> is asked instead, so two spellings merge only when the storage confirms they name one file. An include that resolved *only* because your host ignores case gets the `SD0008` warning, because that same shader fails with `SD0001` on Android, Linux, or a case-sensitive Mac.
 - **Injects platform macros** so a single source compiles correctly per target:
 
 | Target | Macros injected |

@@ -18,7 +18,7 @@ small tail, the tail moves here and the parent moves to DONE.
 | Item | Source phase (now archived) | Original status when moved |
 |---|---|---|
 | OpenGL sampler records per (texture, sampler) PAIR (**A7**) | [2026-07-27 full-project review](../plan/BUG-HUNT-2026-07-27.md) sibling sweep | 🟡 Interim `SD0216` shipped (loud, not silent); the parity fix is open |
-| **PENDING MIGRATION — the `BUG-HUNT-2026-07-27.md` DEFERRED residue** | [`BUG-HUNT-2026-07-27.md`](BUG-HUNT-2026-07-27.md) | ⚠️ **Not yet moved in.** That doc's own `DEFERRED, with reasons` block is still the authority on ~13 open items (C2, M2, M4/M13 lowerings, M6, M8, N2, N6, N7, N8, N16, N17's Android half, M12's Linux case-insensitive fallback, M14's SD0011 span plumbing). **The doc cannot move to `plan/DONE/` until they are migrated here** — filing it as done while it is the sole home for 13 open items would bury them. Migrating them is this phase's stated job ("so no phase sits open at 95% for 1-2 items"); it needs one focused pass to give each item a scope and a done bar, not a bulk paste. |
+| **PENDING MIGRATION — the `BUG-HUNT-2026-07-27.md` DEFERRED residue** | [`BUG-HUNT-2026-07-27.md`](BUG-HUNT-2026-07-27.md) | ⚠️ **Not yet moved in.** That doc's own `DEFERRED, with reasons` block is still the authority on the open items (C2, M2, M4/M13 lowerings, M6, M8, N2, N6, N7, N8, N16, M14's SD0011 span plumbing). ~~N17's Android half~~ and ~~M12's Linux case-insensitive fallback~~ are **off this list as of 2026-07-31** — N17's comparer half is fixed (A11 below) and M12's case half was closed as *rejected* in the same pass, with the reasoning recorded in the bug-hunt doc. **The doc still cannot move to `plan/DONE/` until the rest are migrated here** — filing it as done while it is their sole home would bury them. Migrating them is this phase's stated job ("so no phase sits open at 95% for 1-2 items"); it needs one focused pass to give each item a scope and a done bar, not a bulk paste. |
 | Browser diagnostics squiggle confirmation | [Phase 38](DONE/PHASE-38-wasm-compile-diagnostics.md) | 🟢 Implemented; only the in-browser confirmation rung left |
 | DeferredSprite GL MRT render proof (GAP-2) — ✅ done 2026-07-29 (A2) | [Phase 41](DONE/PHASE-41-fxc-oracle-monogame-fidelity.md) | Closed at compile + structural-match; render rung left |
 | Apos.Shapes render-proof (Option B) | [Phase 49](DONE/PHASE-49-apos-shapes-regression-corpus.md) | Option A shipped; Option B render-proof decision-gated |
@@ -629,6 +629,71 @@ or alongside. Do not fix (2) in isolation.
 for `DirectX_11`), a DirectX golden exists for the A5 fixture and the DX arm of `ShaderToyRouteGl` is
 wired, and ShadowDusk's DirectX target rejects sub-floor vertex profiles the way `mgfxc` does, with
 the corpus sweep showing exactly what changed.
+
+---
+
+### A11 — ✅ DONE (2026-07-31) — the `#include` comparer stopped guessing case sensitivity from the OS (bug-hunt N17; M12's case half rejected)
+
+*From the [2026-07-27 bug hunt](BUG-HUNT-2026-07-27.md), N17's second half — the last piece of
+that item, and the disposal of M12's residue with it.*
+
+**What the code actually did.** `Preprocessor.PreprocessorContext` keyed its cycle-detection
+stack and its `#pragma once` set on `OperatingSystem.IsLinux() ? StringComparer.Ordinal :
+StringComparer.OrdinalIgnoreCase`. That is wrong on two hosts ShadowDusk really ships to:
+**Android's file system is case-sensitive** and `OperatingSystem.IsLinux()` is **false** there,
+and **APFS can be formatted case-sensitive**. On both, two genuinely distinct headers whose
+names differ only by case were folded into one file: a `#pragma once` in the first silently
+suppressed the second (missing declarations, at best a confusing later error), and a legal
+`a → Helper.fxh → helper.fxh` chain was rejected as a false `SD0002`. Going the other way, the
+rule is also unsound for a case-insensitive volume mounted on Linux and for a per-directory
+case-sensitive NTFS directory on Windows.
+
+**The fix: ask, do not infer.** The comparer now canonicalizes through the injectable
+[`IIncludePathCanonicalizer`](../src/ShadowDusk.Core/Preprocessor/IIncludePathCanonicalizer.cs).
+Two paths that differ only by case are the same file **only** when the storage says both
+spellings canonicalize to one name; anything else stays ordinal. On a case-insensitive volume
+both spellings collapse onto the real name (today's Windows/macOS behaviour, unchanged); on a
+case-sensitive volume each spelling canonicalizes to itself. **No OS check is involved, so the
+answer is right on a host nobody has tested on** — which is the whole point, because nobody
+here can run Android.
+
+**Ordinal is the default and case-insensitivity is the exception**, deliberately. Wrongly
+*merging* two paths is the damaging direction (a suppressed header, a false cycle); wrongly
+*separating* two spellings of one file only costs a duplicated expansion, which the existing
+cycle check still terminates. So an "I cannot tell" answer (a virtual path, an I/O failure)
+falls back to ordinal rather than to the permissive rule.
+
+**Plus a diagnostic, because the comparer alone does not close the user-visible failure.** The
+shape that actually breaks a player is an `#include` whose spelling differs from the file's real
+name by case: it resolves on the author's Windows box and fails with `SD0001` on Android. That
+was a silent pass-through, so it is now the **`SD0008`** warning, naming the on-disk spelling.
+A warning and not an error: the include *did* resolve, `mgfxc` on Windows accepts it, and
+rejecting it would be a reject-set change that breaks working shaders. Only the segments the
+directive itself spells are checked — the absolute prefix above them is the author's own machine
+layout and never ships, so warning about it would be noise.
+
+**M12's "Linux case-insensitive fallback" is closed as REJECTED, not deferred.** It is the same
+subject seen from the opposite direction, and it is the wrong direction: it would have the
+compiler open a file the host's file system says does not exist, ambiguously so wherever two
+real case twins exist, and it would hide the author's mistake at the one moment they could still
+fix it. `SD0008` gives the author the same information without lying about the file system.
+
+**No output bytes moved.** The resolved path string is unchanged, so the `#line` directives and
+therefore every emitted artifact are untouched; the change is confined to how two already-
+resolved paths are compared and to a new non-fatal warning. Full `ShadowDusk.Core.Tests` (591 × 2)
+and `ShadowDusk.Integration.Tests` (720 × 2, including the golden and byte-identity fixtures)
+green on `net8.0` and `net10.0`.
+
+**Testable without Android hardware, by construction.** The canonicalizer is an interface, so
+`IncludePathCaseSensitivityTests` (pure, no disk) drives *both* file-system behaviours plus the
+"cannot tell" fallback on any host. `IncludePathCanonicalizerTests` (integration) then measures
+what the running volume actually does and asserts the real canonicalizer agrees — a test body
+that is correct on Windows, Linux, either APFS flavour, and Android alike.
+
+**What is still unproven, and honestly so:** nobody has executed this on an Android device. The
+*logic* is now OS-independent and both branches are exercised, so the class of bug is closed on
+evidence rather than on an assumption — but the on-device rung stays exactly where
+`docs/validation-matrix.md` already puts Android.
 
 ---
 
