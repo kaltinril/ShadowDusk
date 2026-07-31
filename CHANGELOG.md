@@ -14,7 +14,48 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **`ShaderToyRouteDx`, the DirectX arm of the ShaderToy / `.glsl` route render gate.** It converts
+  `GradientToy.glsl` in process with the real converter and pixel-diffs ShadowDusk's `DirectX_11`
+  build against **`mgfxc`'s `DirectX_11` build of the same converted `.fx`** on real MonoGame
+  `WindowsDX`. This arm was previously impossible, not merely missing: mgfxc refused the converter's
+  own output on DirectX (see below), so no golden could exist. Default-ON in
+  `validation/run-windows-render-gates.ps1`; there is no CI lane, because no GitHub runner has a
+  headless D3D driver (the same bucket as every other DX gate).
+- **A `DirectX_11` golden for the pinned ShaderToy fixture**, so `tests/fixtures/shaders/shadertoy/GradientToy.fx`
+  is golden-backed on both profiles like the rest of the corpus. `tools/compile-fixtures.ps1` now
+  includes the `shadertoy/` subdirectory by default, so a future regeneration cannot silently skip it.
+
 ### Changed
+
+- **The ShaderToy converter emits a DirectX-valid compile-profile header.** It used to write
+  `vs_3_0`/`ps_3_0` in *both* arms of its `#if OPENGL … #else … #endif`, so the DirectX arm asked for
+  a profile MonoGame's `DirectX_11` shader profile refuses — real `mgfxc /Profile:DirectX_11` failed
+  every converted shader with *"Invalid profile 'vs_3_0'. Vertex shader 'VSMain' must be SM 4.0 level
+  9.1 or higher!"*. The header is now gated on **`SM4`** (the macro MonoGame's own DirectX_11 profile
+  defines): DirectX gets `vs_4_0_level_9_1`/`ps_4_0_level_9_1`, while OpenGL **and FNA** keep
+  `vs_3_0`/`ps_3_0`. `SM4` rather than the stock `#if OPENGL … #else` split precisely because that
+  `#else` arm also catches the FNA target, whose `fx_2_0` output is capped at Shader Model 3.
+  **If you regenerate a `.fx` from a `.glsl`, its header text changes** — 81 converter goldens and 2
+  multipass goldens moved with it. **No compiled output moved:** ShadowDusk's OpenGL `.mgfx` for the
+  pinned fixture is byte-identical before and after, and mgfxc's OpenGL golden regenerated
+  byte-for-byte identical.
+- **The DirectX target now rejects compile profiles below MonoGame's floor, matching `mgfxc`
+  (new diagnostic `SD0015`).** A profile can be perfectly recognized — so the Phase 48 `SD0013`
+  check passes — and still be one the reference compiler refuses for this target. `mgfxc`'s
+  `DirectX_11` profile accepts **only** `{vs,ps}_4_0_level_9_1`, `_4_0_level_9_3`, `_4_0`, `_4_1`,
+  and `_5_0`; the accepted set was established by sweeping every recognized profile through the
+  pinned `mgfxc` rather than inferred from the names, which matters because `_4_0_level_9_0` **and
+  every SM6 profile** are refused too. **This turns previously-succeeding DirectX compiles into
+  loud rejections**, for shaders real `mgfxc` was already refusing: 20 corpus fixtures flipped,
+  including 14 vendored Nez post-process shaders (which name `ps_2_0`/`ps_3_0` outright — Nez
+  targets DesktopGL), `FnaMultiPassStates.fx`, and `examples/Ex{Int,Mat3}UniformMember.fx`. The fix
+  a consumer applies is the standard MonoGame `#if OPENGL … #else …` header, which the diagnostic
+  names. OpenGL, Vulkan, DirectX 12, and FNA are **unaffected**: their floors are different
+  (measured and recorded in `docs/validation-matrix.md` §8.1) and enforcing them is separate work.
+  No output bytes changed on any target.
+- `FnaMultiPassStates.fx` was dropped from the **DirectX** arm of the cross-host byte-identity
+  manifest (it stays in the OpenGL and FNA arms). It compiles `vs_2_0`/`ps_2_0`, so its DirectX row
+  was pinning bytes the reference compiler cannot produce.
 
 ### Fixed
 
@@ -65,6 +106,8 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   class that `SD0013`/`SD0014` do not cover), each with its own blast radius: one moves every converter
   golden, the other turns a currently-succeeding compile into a rejection. Filed as Phase 51 A10 with
   the ordering constraint that fixing the reject side alone would break the route's own output.
+  **Both halves are fixed in `[Unreleased]`** — see the entries there; this note stays as the record
+  of when the divergence shipped.
 
 ### Fixed (compiler)
 

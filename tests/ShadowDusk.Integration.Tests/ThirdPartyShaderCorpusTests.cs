@@ -92,31 +92,52 @@ public sealed class ThirdPartyShaderCorpusTests
     };
 
     /// <summary>
-    /// Shaders that compile on the MonoGame-DX target — the all-runtime subset PLUS the
-    /// DX-capable ones GL/FNA can't take: Crosshatch (int uniform), Reflection (2-tech
-    /// VS+PS). (Noise also compiles on GL since the Phase 45 B10 fix, but is listed in
-    /// the GL set; it is included here too as an ordinary DX shader.)
+    /// Shaders that compile on the MonoGame-DX target. <b>Short, and that is the finding</b>
+    /// (Phase 51 A10): almost the whole Nez set names a legacy <c>ps_2_0</c>/<c>ps_3_0</c>
+    /// compile target outright, which MonoGame's <c>DirectX_11</c> shader profile refuses —
+    /// <em>"Invalid profile 'ps_3_0'. Pixel shader 'PixelShaderFunction' must be SM 4.0
+    /// level 9.1 or higher!"</em>. Those shaders are listed in
+    /// <see cref="DirectXProfileFloorRejects"/> below and asserted to REJECT with
+    /// <c>SD0015</c>, verified against the pinned mgfxc itself. Nez targets DesktopGL, so
+    /// this is not a Nez defect and not a ShadowDusk gap: it is the reference compiler's
+    /// rule, which ShadowDusk previously did not apply.
     /// </summary>
     public static TheoryData<string> DirectXShaders() => new()
     {
-        Root + "Bevels.fx",
-        Root + "BloomCombine.fx",
-        Root + "BloomExtract.fx",
-        Root + "GaussianBlur.fx",
-        Root + "HeatDistortion.fx",
-        Root + "Letterbox.fx",
-        Root + "PixelGlitch.fx",
-        Root + "SpriteBlinkEffect.fx",
-        Root + "SpriteLines.fx",
-        Root + "Twist.fx",
-        Root + "Vignette.fx",
-        Root + "Crosshatch.fx",         // int uniform + VPOS + float % + nested if
-        Root + "Noise.fx",              // helper fn rand(); compiles on DX (and GL since B10)
-        Root + "Reflection.fx",         // two techniques, each VS+PS
         // Phase 49 (full inline paths — Root is Nez-specific):
         "third-party/Apos.Shapes/apos-shapes.fx",        // Gum SDF renderer (DX SM5 via vkd3d)
         "third-party/Apos.Shapes/apos-shapes-aa.fx",     // derivative-AA revision (issue #136)
         "third-party/Gum/MonoGameInCode-Grayscale.fx",   // vs/ps_4_0_level_9_1 grayscale
+    };
+
+    /// <summary>
+    /// Shaders the DirectX target must REJECT with <c>SD0015</c> because their
+    /// <c>compile &lt;target&gt;</c> is below MonoGame's <c>DirectX_11</c> floor
+    /// (Phase 51 A10). Every entry was confirmed against the pinned oracle: real
+    /// <c>mgfxc /Profile:DirectX_11</c> fails each of them with <em>"must be SM 4.0
+    /// level 9.1 or higher!"</em>, so accepting them was a reject-fidelity divergence,
+    /// not a feature. They stay in the OpenGL and FNA sets, where SM2/SM3 is correct.
+    ///
+    /// <para>The fix a user applies is the standard MonoGame cross-platform header
+    /// (<c>#if OPENGL … #define PS_SHADERMODEL ps_3_0 … #else … ps_4_0_level_9_1 …</c>),
+    /// which is exactly what the diagnostic tells them.</para>
+    /// </summary>
+    public static TheoryData<string> DirectXProfileFloorRejects() => new()
+    {
+        Root + "Bevels.fx",             // compile ps_2_0
+        Root + "BloomCombine.fx",       // compile ps_2_0
+        Root + "BloomExtract.fx",       // compile ps_2_0
+        Root + "GaussianBlur.fx",       // compile ps_2_0
+        Root + "HeatDistortion.fx",     // compile ps_2_0
+        Root + "Letterbox.fx",          // compile ps_3_0
+        Root + "PixelGlitch.fx",        // compile ps_3_0
+        Root + "SpriteBlinkEffect.fx",  // compile ps_3_0
+        Root + "SpriteLines.fx",        // compile ps_3_0
+        Root + "Twist.fx",              // compile ps_3_0
+        Root + "Vignette.fx",           // compile ps_3_0
+        Root + "Crosshatch.fx",         // compile ps_3_0
+        Root + "Noise.fx",              // compile ps_3_0
+        Root + "Reflection.fx",         // compile vs_2_0 / ps_2_0 (two techniques)
     };
 
     /// <summary>
@@ -189,6 +210,28 @@ public sealed class ThirdPartyShaderCorpusTests
         reader.MgfxVersion.ShouldBe((byte)(10));
         reader.ProfileId.ShouldBe(ProfileDirectX11);
         reader.TotalShaderBlobCount.ShouldBeGreaterThan(0, customMessage: "each shader declares at least one shader pass");
+    }
+
+    /// <summary>
+    /// Phase 51 A10 — the reject half of the DirectX classification. These vendored
+    /// shaders name an SM ≤ 3 compile target, which real <c>mgfxc /Profile:DirectX_11</c>
+    /// refuses; ShadowDusk must refuse them the same way rather than emitting an
+    /// <c>.mgfx</c> the reference compiler cannot produce. A future change that makes one
+    /// of these compile on DirectX would be a divergence, so this asserts the code, not
+    /// merely that something failed.
+    /// </summary>
+    [Theory]
+    [Trait("Platform", "DirectX_11")]
+    [MemberData(nameof(DirectXProfileFloorRejects))]
+    public async Task ThirdPartyShader_DirectX11_SubFloorProfile_RejectsWithSd0015(string fx)
+    {
+        using var cts = new CancellationTokenSource(CompileTimeout);
+
+        var result = await TestHelpers.CompileFixtureAsync(fx, "DirectX_11", ct: cts.Token);
+
+        result.ExitCode.ShouldNotBe(0, customMessage: $"'{fx}' names an SM <= 3 compile target; mgfxc's DirectX_11 profile rejects it");
+        result.Stderr.ShouldContain("SD0015", Case.Sensitive,
+            $"'{fx}' must be declined by the DirectX profile-floor check, not by some unrelated failure; stderr: {result.Stderr}");
     }
 
     // -------------------------------------------------------------------------

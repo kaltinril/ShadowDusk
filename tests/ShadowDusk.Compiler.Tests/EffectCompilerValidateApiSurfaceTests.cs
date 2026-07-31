@@ -24,7 +24,17 @@ namespace ShadowDusk.Compiler.Tests;
 [Trait("Category", "Integration")]
 public sealed class EffectCompilerValidateApiSurfaceTests
 {
+    // Validate's default target set is OpenGL + DirectX, so the source must be valid on
+    // BOTH. The SM4-gated header is what makes that true: since Phase 51 A10 a bare
+    // 'compile ps_3_0' is below MonoGame's DirectX_11 floor and is refused (SD0015,
+    // matching mgfxc), while OpenGL caps at SM3 and needs the legacy profile.
     private const string ValidFx = """
+        #if SM4
+            #define PS_SHADERMODEL ps_4_0_level_9_1
+        #else
+            #define PS_SHADERMODEL ps_3_0
+        #endif
+
         float4 MainPS() : COLOR0
         {
             return float4(1, 0, 0, 1);
@@ -34,7 +44,7 @@ public sealed class EffectCompilerValidateApiSurfaceTests
         {
             pass P0
             {
-                PixelShader = compile ps_3_0 MainPS();
+                PixelShader = compile PS_SHADERMODEL MainPS();
             }
         }
         """;

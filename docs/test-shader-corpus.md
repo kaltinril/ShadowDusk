@@ -1,8 +1,11 @@
 # Test Shader Corpus — Provenance & Fresh Examples
 
-**Last updated:** 2026-07-30 (0.16.0) — added the Phase 51 A7 sampler-pair fixtures and the
-pinned ShaderToy-route fixture below. Corpus on disk: **144 `.fx` + 7 `.fxh`** — 62 in the
-fixture root, 43 in `examples/`, 1 in `shadertoy/`, 38 under `third-party/`.
+**Last updated:** 2026-07-31 — Phase 51 A10 added three DirectX-profile-floor fixtures and
+**reclassified the vendored Nez set**, whose DirectX column collapsed once ShadowDusk started
+enforcing mgfxc's own floor (see the note above that table). Previously 2026-07-30 (0.16.0):
+the Phase 51 A7 sampler-pair fixtures and the pinned ShaderToy-route fixture. Corpus on disk:
+**147 `.fx` + 7 `.fxh`** — 62 in the fixture root, 46 in `examples/`, 1 in `shadertoy/`,
+38 under `third-party/`.
 
 This document records (1) what is known about where the existing `.fx` test
 fixtures came from, (2) an integrity caveat about those fixtures, and (3) a set
@@ -176,11 +179,33 @@ they back `validation/SamplerPairsGl`:
 ### ShaderToy route fixture
 
 - **`shadertoy/GradientToy.fx`** — the **pinned** output of converting `GradientToy.glsl` with
-  the real `ShaderToyConverter`. `validation/ShaderToyRouteGl` asserts the converter still
-  emits this exact file before rendering, so converter drift turns the gate red instead of
-  leaving the golden describing a different shader. It is also what surfaced the Phase 51 A10
-  finding (the converter emits `vs_3_0`/`ps_3_0` in *both* arms of its `#if OPENGL` header,
-  which real `mgfxc /Profile:DirectX_11` rejects while ShadowDusk accepts).
+  the real `ShaderToyConverter`. `validation/ShaderToyRouteGl` and `validation/ShaderToyRouteDx`
+  each assert the converter still emits this exact file before rendering, so converter drift
+  turns the gates red instead of leaving a golden describing a different shader. It is also
+  what surfaced Phase 51 **A10**: the converter used to emit `vs_3_0`/`ps_3_0` in *both* arms of
+  its `#if OPENGL` header, which real `mgfxc /Profile:DirectX_11` rejects while ShadowDusk
+  accepted it. **Both halves are fixed**: the header is now `SM4`-gated (DirectX gets the
+  `*_4_0_level_9_1` pair; OpenGL and FNA keep SM3), the fixture is **golden-backed on both
+  profiles**, and the DirectX target enforces the floor itself (`SD0015`). Regenerate it with
+  `dotnet run --project tools/shadertoy2fx/src/ShadowDusk.ShaderToy.Cli -- tests/fixtures/shaders/shadertoy/GradientToy.glsl -o tests/fixtures/shaders/shadertoy/GradientToy.fx --name GradientToy --technique ShaderToy`
+  (normalize to LF), then `tools/compile-fixtures.ps1 -Profiles DirectX_11,OpenGL`.
+
+### DirectX compile-profile floor fixtures (Phase 51 A10)
+
+`mgfxc`'s `DirectX_11` shader profile accepts only `{vs,ps}_4_0_level_9_1`, `_4_0_level_9_3`,
+`_4_0`, `_4_1`, and `_5_0`. Anything else — including `_4_0_level_9_0` **and every SM6
+profile** — it refuses with *"must be SM 4.0 level 9.1 or higher!"*. These three fixtures pin
+ShadowDusk's matching `SD0015` rejection, one per way the condition arises:
+
+- **`ExProfileSm3OnDirectX.fx`** — a bare literal `compile ps_3_0 MainPS()` (no header at all),
+  the shape most real DesktopGL/FNA shaders ship with. Exercises the cheap literal path.
+  Compiles on OpenGL and FNA, where SM3 is correct.
+- **`ExProfileSm3BothArms.fx`** — an `#if OPENGL … #else …` header naming SM3 in **both** arms:
+  a verbatim capture of what `ShaderToyConverter` emitted before A10. The compile target is a
+  macro name, so this exercises the DXC `-P` expansion path.
+- **`ExProfileSm6OnDirectX.fx`** — `compile ps_6_0`, which is numerically *higher* and still
+  refused. It exists so that reimplementing the floor as a `major >= 4` comparison is caught by
+  a test rather than by a consumer's failed Content Pipeline build.
 
 ### How they are used
 
@@ -225,23 +250,37 @@ Each shader was compile-classified on all three delivery targets and is wired in
 the targets it actually compiles on (the rationale per shader is in the directory's
 `NOTICE.md`):
 
+> **Reclassified 2026-07-31 (Phase 51 A10) — the DirectX column collapsed, and that is the
+> finding, not a regression.** Every Nez shader below names a legacy `ps_2_0`/`ps_3_0` (or
+> `vs_2_0`) compile target outright, with no `#if OPENGL … #else …` header. MonoGame's
+> `DirectX_11` shader profile **refuses** anything below SM 4.0 level 9.1 — *"Invalid profile
+> 'ps_3_0'. Pixel shader 'PixelShaderFunction' must be SM 4.0 level 9.1 or higher!"* — and real
+> `mgfxc /Profile:DirectX_11` was verified to fail every one of them. ShadowDusk used to accept
+> them; since A10 it declines them with **`SD0015`**, so the table below now matches the
+> reference compiler. **Nez targets DesktopGL**, so this is neither a Nez defect nor a
+> ShadowDusk gap: a user who wants one of these on WindowsDX adds the standard cross-platform
+> header, which is exactly what the diagnostic tells them. The DX-reject set is asserted *as a
+> reject* by `ThirdPartyShaderCorpusTests.ThirdPartyShader_DirectX11_SubFloorProfile_RejectsWithSd0015`
+> — it is covered, not merely dropped. Nothing else about these shaders changed, and no output
+> bytes moved on any target.
+
 | File | Upstream | Targets (compile) | Feature / gap covered | Classification |
 |---|---|---|---|---|
-| `GaussianBlur.fx` | Nez (MIT) | GL + DX + FNA | A literal-bounded `for`-loop accumulating weighted taps over `float2[]`/`float[]` array uniforms (the corpus's only all-runtime SM3 loop). | all-runtime |
-| `BloomCombine.fx` | Nez (MIT) | GL + DX + FNA | Helper fn `adjustSaturation()` called from the entry; 2nd sampler; `lerp`/`dot`/`saturate`. | all-runtime |
-| `BloomExtract.fx` | Nez (MIT) | GL + DX + FNA | Bloom bright-pass; `saturate()` threshold remap. | all-runtime |
-| `Twist.fx` | Nez (MIT) | GL + DX + FNA | Relational-driven `if (dist < radius)` in the body + `length`/`sin`/`cos` UV warp. | all-runtime |
-| `Vignette.fx` | Nez (MIT) | GL + DX + FNA | Radial vignette: `dot`-based falloff + swizzle, no VS. | all-runtime |
-| `HeatDistortion.fx` | Nez (MIT) | GL + DX + FNA | 2nd sampler declared with explicit `AddressU/V = Wrap` `sampler_state`; time-scrolled UV; remap-to-signed. | all-runtime |
-| `Bevels.fx` | Nez (MIT) | GL + DX + FNA | Neighbor-tap edge-detect / emboss (offset `tex2D` taps, no loop). | all-runtime |
-| `PixelGlitch.fx` | Nez (MIT) | GL + DX + FNA | Helper fn `hash11()` (`frac`/`floor`) called from the entry; row offset. | all-runtime |
-| `SpriteBlinkEffect.fx` | Nez (MIT) | GL + DX + FNA | Tint via `lerp` by a uniform alpha; VS-output-struct PS. | all-runtime |
-| `Letterbox.fx` | Nez (MIT) | GL + DX + FNA | `VPOS` screen-space + `min()` + relational `if`. Compiles on every target; VPOS->`gl_FragCoord` render-equivalence is **not** asserted. | all-runtime (VPOS) |
-| `SpriteLines.fx` | Nez (MIT) | GL + DX + FNA | Two techniques (H/V); `VPOS` + `floor` + float modulo (`%`). Compiles everywhere; VPOS render-equivalence **not** asserted. | all-runtime (VPOS) |
-| `Crosshatch.fx` | Nez (MIT) | DX + FNA | Nested `if` + `<` relationals + `VPOS` + float `%` + an `int` uniform. **Not GL:** `int` uniforms are not modelled on the MonoGame-GL path (loud `SD0210`, by design). | DX + FNA |
+| `GaussianBlur.fx` | Nez (MIT) | GL + FNA | A literal-bounded `for`-loop accumulating weighted taps over `float2[]`/`float[]` array uniforms (the corpus's only GL+FNA SM3 loop). | GL + FNA (`SD0015` on DX) |
+| `BloomCombine.fx` | Nez (MIT) | GL + FNA | Helper fn `adjustSaturation()` called from the entry; 2nd sampler; `lerp`/`dot`/`saturate`. | GL + FNA (`SD0015` on DX) |
+| `BloomExtract.fx` | Nez (MIT) | GL + FNA | Bloom bright-pass; `saturate()` threshold remap. | GL + FNA (`SD0015` on DX) |
+| `Twist.fx` | Nez (MIT) | GL + FNA | Relational-driven `if (dist < radius)` in the body + `length`/`sin`/`cos` UV warp. | GL + FNA (`SD0015` on DX) |
+| `Vignette.fx` | Nez (MIT) | GL + FNA | Radial vignette: `dot`-based falloff + swizzle, no VS. | GL + FNA (`SD0015` on DX) |
+| `HeatDistortion.fx` | Nez (MIT) | GL + FNA | 2nd sampler declared with explicit `AddressU/V = Wrap` `sampler_state`; time-scrolled UV; remap-to-signed. | GL + FNA (`SD0015` on DX) |
+| `Bevels.fx` | Nez (MIT) | GL + FNA | Neighbor-tap edge-detect / emboss (offset `tex2D` taps, no loop). | GL + FNA (`SD0015` on DX) |
+| `PixelGlitch.fx` | Nez (MIT) | GL + FNA | Helper fn `hash11()` (`frac`/`floor`) called from the entry; row offset. | GL + FNA (`SD0015` on DX) |
+| `SpriteBlinkEffect.fx` | Nez (MIT) | GL + FNA | Tint via `lerp` by a uniform alpha; VS-output-struct PS. | GL + FNA (`SD0015` on DX) |
+| `Letterbox.fx` | Nez (MIT) | GL + FNA | `VPOS` screen-space + `min()` + relational `if`. VPOS->`gl_FragCoord` render-equivalence is **not** asserted. | GL + FNA (`SD0015` on DX), VPOS |
+| `SpriteLines.fx` | Nez (MIT) | GL + FNA | Two techniques (H/V); `VPOS` + `floor` + float modulo (`%`). VPOS render-equivalence **not** asserted. | GL + FNA (`SD0015` on DX), VPOS |
+| `Crosshatch.fx` | Nez (MIT) | FNA only | Nested `if` + `<` relationals + `VPOS` + float `%` + an `int` uniform. **Not GL:** `int` uniforms are not modelled on the MonoGame-GL path (loud `SD0210`, by design). **Not DX:** `compile ps_3_0` is below the DirectX floor (`SD0015`). | FNA only |
 | `PaletteCycler.fx` | Nez (MIT) | FNA only | Palette swap via a 1-D LUT (`tex1D` / `sampler1D`). **Not GL/DX:** `tex1D` has no 1:1 modern `Texture` method, rejected with a targeted `FX0012` that points to FNA (which compiles it natively). | FNA only |
-| `Reflection.fx` | Nez (MIT) | DX only | Two techniques, each **VS+PS** (mirror + water); world-space, `half2`, `frac`, relational `if`. **Not GL:** the multi-`TEXCOORD` interpolant block cannot be expressed in std140/std430 by SPIRV-Cross (`SD0100`). **Not FNA:** an int/relational construct hits the vkd3d 1.17 SM3 gap (`X0000`). | DX only |
-| `Noise.fx` | Nez (MIT) | GL + DX + FNA | Film-grain; helper fn `rand()` (`frac`/`sin`/`dot`) called from the entry. A uniform literally named `noise` collides with a GLSL reserved word and SPIRV-Cross renames it `_noise`; this used to break the GL cbuffer/parameter join (`SD0012`), but the **B10 offset-bridge fallback fixed it** (see below), so it now compiles on GL too. | all-runtime (B10) |
+| `Reflection.fx` | Nez (MIT) | none (reject-only) | Two techniques, each **VS+PS** (mirror + water); world-space, `half2`, `frac`, relational `if`. **Not GL:** the multi-`TEXCOORD` interpolant block cannot be expressed in std140/std430 by SPIRV-Cross (`SD0100`). **Not FNA:** an int/relational construct hits the vkd3d 1.17 SM3 gap (`X0000`). **Not DX (since A10):** `compile vs_2_0` is below the DirectX floor (`SD0015`) — the profile mgfxc itself refuses. Retained as a reject-set fixture. | reject-only |
+| `Noise.fx` | Nez (MIT) | GL + FNA | Film-grain; helper fn `rand()` (`frac`/`sin`/`dot`) called from the entry. A uniform literally named `noise` collides with a GLSL reserved word and SPIRV-Cross renames it `_noise`; this used to break the GL cbuffer/parameter join (`SD0012`), but the **B10 offset-bridge fallback fixed it** (see below), so it now compiles on GL too. | GL + FNA (`SD0015` on DX), B10 |
 
 These are exercised by `ThirdPartyShaderCorpusTests` (compile-asserts each on its
 classified targets) and the GL+DX structural census; the all-runtime ones are

@@ -94,7 +94,19 @@ $mgfxc     = "dotnet"
 $mgfxcArgs = @($mgfxcDll)
 Write-Host "mgfxc: $mgfxcDll  (pinned $MgfxcVersion, expecting MGFX v$ExpectedMgfxVersion output)"
 
-$shaders = Get-ChildItem $ShaderDir -Filter "*.fx" | Where-Object { $_.Extension -eq ".fx" }
+# The golden corpus is the ROOT of tests/fixtures/shaders (deliberately not -Recurse:
+# examples/ and third-party/ are census fixtures with no committed goldens) PLUS the
+# `shadertoy/` subdirectory, which DOES carry goldens. The ShaderToy entry is the
+# converter's pinned output (Phase 51 A5/A10) and is golden-backed on both profiles;
+# without this line a regeneration silently skips it and the committed golden drifts
+# away from the fixture it was built from. An explicit -ShaderDir still overrides both.
+$shaders = @(Get-ChildItem $ShaderDir -Filter "*.fx" | Where-Object { $_.Extension -eq ".fx" })
+if (-not $PSBoundParameters.ContainsKey('ShaderDir')) {
+    $shaderToyDir = Join-Path $ShaderDir "shadertoy"
+    if (Test-Path $shaderToyDir) {
+        $shaders += @(Get-ChildItem $shaderToyDir -Filter "*.fx" | Where-Object { $_.Extension -eq ".fx" })
+    }
+}
 Write-Host "Shaders: $($shaders.Count) files"
 Write-Host ""
 

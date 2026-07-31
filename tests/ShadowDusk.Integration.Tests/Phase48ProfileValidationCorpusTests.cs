@@ -135,6 +135,78 @@ public sealed class Phase48ProfileValidationCorpusTests
                      $"errors: {(result.IsFailure ? string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "<none>")}");
     }
 
+    // -------------------------------------------------------------------------
+    // Phase 51 A10 — the DirectX profile FLOOR (SD0015). A perfectly recognized
+    // profile can still be one the requested target's reference compiler refuses.
+    // Verified against the pinned mgfxc (dotnet-mgcb 3.8.4.1): each fixture below
+    // fails /Profile:DirectX_11 with "must be SM 4.0 level 9.1 or higher!" and
+    // compiles for /Profile:OpenGL.
+    // -------------------------------------------------------------------------
+
+    /// <summary>Fixtures whose compile target IS a real profile but is below the DirectX floor.</summary>
+    public static TheoryData<string> DirectXFloorRejectFixtures() => new()
+    {
+        "examples/ExProfileSm3OnDirectX.fx",  // literal 'compile ps_3_0 …' — the cheap path
+        "examples/ExProfileSm3BothArms.fx",   // '#if OPENGL … #else …' naming SM3 in BOTH arms — the macro path
+        "examples/ExProfileSm6OnDirectX.fx",  // 'compile ps_6_0 …' — higher, and STILL refused
+    };
+
+    [Theory]
+    [Trait("Platform", "DirectX_11")]
+    [MemberData(nameof(DirectXFloorRejectFixtures))]
+    public async Task SubFloorProfile_DirectX11_RejectsWithSd0015(string fx)
+    {
+        using var cts = new CancellationTokenSource(CompileTimeout);
+
+        var result = await CompileAsync(fx, PlatformTarget.DirectX, cts.Token);
+
+        result.IsFailure.ShouldBeTrue($"'{fx}' names a profile MonoGame's DirectX_11 shader profile refuses; mgfxc rejects it");
+        result.Error.ShouldContain(e => e.Code == "SD0015",
+            "the below-the-floor profile must surface as SD0015, not as SD0013 (which means 'not a profile at all') " +
+            $"or some unrelated failure; got: {string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}"))}");
+    }
+
+    /// <summary>
+    /// The other half of the claim, and the reason the check is scoped to DirectX: the very
+    /// same shaders are legal on OpenGL, where mgfxc caps the profile at SM 3.0. A floor
+    /// check that also fired here would be a NEW divergence, not a fix.
+    /// </summary>
+    [Theory]
+    [Trait("Platform", "OpenGL")]
+    [InlineData("examples/ExProfileSm3OnDirectX.fx")]
+    [InlineData("examples/ExProfileSm3BothArms.fx")]
+    public async Task SubFloorProfile_OpenGL_StillCompiles(string fx)
+    {
+        using var cts = new CancellationTokenSource(CompileTimeout);
+
+        var result = await CompileAsync(fx, PlatformTarget.OpenGL, cts.Token);
+
+        result.IsSuccess.ShouldBeTrue("SM3 is exactly the right profile for the OpenGL target; " +
+            $"errors: {(result.IsFailure ? string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "<none>")}");
+    }
+
+    /// <summary>
+    /// The over-rejection guard, and the one that matters most: the standard MonoGame
+    /// DirectX header expands to <c>*_4_0_level_9_1</c>, which must keep compiling. Without
+    /// this, the floor check would reject every stock MonoGame DirectX shader — a far worse
+    /// regression than the gap it closes. (<c>ExProfileLevel9Header.fx</c> is PS-only;
+    /// <c>VsTransformColorTexture.fx</c> covers the vertex slot.)
+    /// </summary>
+    [Theory]
+    [Trait("Platform", "DirectX_11")]
+    [InlineData("examples/ExProfileLevel9Header.fx")]
+    [InlineData("VsTransformColorTexture.fx")]
+    [InlineData("Grayscale.fx")]
+    public async Task StandardDirectXHeaderShaders_StillCompileOnDirectX(string fx)
+    {
+        using var cts = new CancellationTokenSource(CompileTimeout);
+
+        var result = await CompileAsync(fx, PlatformTarget.DirectX, cts.Token);
+
+        result.IsSuccess.ShouldBeTrue("the *_4_0_level_9_1 pair is above the DirectX floor and must stay accepted; " +
+            $"errors: {(result.IsFailure ? string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "<none>")}");
+    }
+
     private static async Task<Result<CompiledShader, ShaderError[]>> CompileAsync(
         string fx, PlatformTarget target, CancellationToken ct)
     {

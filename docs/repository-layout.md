@@ -33,9 +33,9 @@ ShadowDusk/
 │   ├── ShadowDusk.ImageTests/          # Offscreen-render image regression
 │   ├── ShadowDusk.BrowserTests/        # Headless KNI WebGL render validation (Playwright)
 │   └── fixtures/
-│       ├── shaders/                    # Canonical .fx test shaders (144 .fx total + 7 .fxh headers):
-│       │                               #   62 in the root + examples/ (43) + shadertoy/ (1, the pinned
-│       │                               #   ShaderToyRouteGl golden) + third-party/ (38): Nez (15, MIT),
+│       ├── shaders/                    # Canonical .fx test shaders (147 .fx total + 7 .fxh headers):
+│       │                               #   62 in the root + examples/ (46) + shadertoy/ (1, the pinned
+│       │                               #   ShaderToyRoute{Gl,Dx} fixture) + third-party/ (38): Nez (15, MIT),
 │       │                               #   MonoGame (17, Ms-PL — the reference compiler's own acceptance set),
 │       │                               #   Gum (3), Apos.Shapes (3)
 │       └── golden/                     # Reference outputs: mgfxc .mgfx (DirectX_11/, DirectX_12/, OpenGL/, Vulkan/) + fxc fx_2_0 .fxb (FNA/) + byte-identity/
@@ -57,7 +57,8 @@ ShadowDusk/
 │                                  #   GL (VsDriven, StateFidelity, CbufferModel, ReservedWordGl, SamplerPairsGl,
 │                                  #     DeferredSpriteMrtGl (the only driver that binds 2 render targets),
 │                                  #     ShaderToyRouteGl (the `.glsl` frontend route), …), DX (VsDrivenDx,
-│                                  #   DxModernFeatures, …), DX12 (BaselineDx12, CandidateDx12, VsDrivenDx12
+│                                  #   DxModernFeatures, ShaderToyRouteDx (that route's DirectX arm), …),
+│                                  #   DX12 (BaselineDx12, CandidateDx12, VsDrivenDx12
 │                                  #     + compare_dx12.py), FNA (FnaValidation), KNI (KniDesktopGL, KniWinFormsDX, KniVsDriven),
 │                                  #   Vulkan (BaselineVulkan, CandidateVulkan, VsDrivenVulkan
 │                                  #     + compare_vulkan.py/decode_mgfx_vulkan.py),

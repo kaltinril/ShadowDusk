@@ -139,8 +139,23 @@ public sealed class CrossHostByteIdentityTests
         "examples/ExReservedWordUniform.fx",
     ];
 
+    /// <summary>
+    /// Fixtures the DirectX arm must NOT carry, because the DirectX target legitimately
+    /// refuses them (Phase 51 A10, <c>SD0015</c>): a pass that names an SM ≤ 3 compile
+    /// target is rejected by <c>mgfxc /Profile:DirectX_11</c> — <em>"Invalid profile
+    /// 'vs_2_0'. Vertex shader 'MainVS' must be SM 4.0 level 9.1 or higher!"</em> — so
+    /// ShadowDusk rejects it too. Pinning DirectX bytes for a shader the reference
+    /// compiler cannot build was pinning output no consumer can ever obtain from mgfxc.
+    /// It stays in the OpenGL and FNA arms, where SM2 is exactly right.
+    /// </summary>
+    private static readonly string[] DirectXExcluded =
+    [
+        "FnaMultiPassStates.fx",   // 'compile vs_2_0 MainVS()' / 'compile ps_2_0 …'
+    ];
+
     private static IEnumerable<string> OpenGLCorpus  => CoreMgfxFixtures.Concat(Sm3Fixtures);
-    private static IEnumerable<string> DirectXCorpus => CoreMgfxFixtures.Concat(Sm3Fixtures);
+    private static IEnumerable<string> DirectXCorpus =>
+        CoreMgfxFixtures.Concat(Sm3Fixtures).Where(fx => !DirectXExcluded.Contains(fx, StringComparer.Ordinal));
     private static IEnumerable<string> FnaCorpus     => Sm3Fixtures;
 
     // -------------------------------------------------------------------------

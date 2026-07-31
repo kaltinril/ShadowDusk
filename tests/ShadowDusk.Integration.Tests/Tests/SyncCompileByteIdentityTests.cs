@@ -75,8 +75,21 @@ public sealed class SyncCompileByteIdentityTests
         "examples/ExLegacyTextureDiscard.fx",
     ];
 
+    /// <summary>
+    /// Excluded from the DirectX arm only: the DirectX target legitimately refuses a pass
+    /// that names an SM ≤ 3 compile target (Phase 51 A10, <c>SD0015</c>), exactly as
+    /// <c>mgfxc /Profile:DirectX_11</c> does. The sync-vs-async claim is about the two
+    /// entry points agreeing, so a shader neither can compile has nothing to prove here;
+    /// it stays in the OpenGL and FNA arms.
+    /// </summary>
+    private static readonly string[] DirectXExcluded =
+    [
+        "FnaMultiPassStates.fx",   // 'compile vs_2_0 MainVS()' / 'compile ps_2_0 …'
+    ];
+
     private static IEnumerable<string> OpenGLCorpus  => CoreMgfxFixtures.Concat(Sm3Fixtures);
-    private static IEnumerable<string> DirectXCorpus => CoreMgfxFixtures.Concat(Sm3Fixtures);
+    private static IEnumerable<string> DirectXCorpus =>
+        CoreMgfxFixtures.Concat(Sm3Fixtures).Where(fx => !DirectXExcluded.Contains(fx, StringComparer.Ordinal));
     private static IEnumerable<string> FnaCorpus     => Sm3Fixtures;
 
     [DxcFact]
