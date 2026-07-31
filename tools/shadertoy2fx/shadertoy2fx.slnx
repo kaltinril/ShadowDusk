@@ -1,14 +1,14 @@
 <Solution>
   <!-- Phase 47: the converter library + its tests were PROMOTED into the product solution
        (src/ShadowDusk.ShaderToy + tests/ShadowDusk.ShaderToy.Tests, both in ShadowDusk.slnx and
-       run by `dotnet test ShadowDusk.slnx`). This out-of-band solution now builds only the
-       remaining experiment shells: the standalone PoC CLI and the MonoGame runtime helper. The
-       sample/ and render-proof/ drivers stay out-of-band and are built/run directly via
-       `dotnet run`, like validation/*. The promoted library is referenced at its new product
-       path so this solution still builds the PoC CLI. -->
+       run by `dotnet test ShadowDusk.slnx`). Phase 51 A4 then migrated the interactive sample and
+       the MonoGame `ShaderToyEffect` runtime helper OUT of here, to samples/ShaderToyViewer/.
+       What this out-of-band solution still builds is the standalone PoC CLI, which is the only
+       entry point to the converter's multipass batch mode. The render-proof/ driver stays
+       out-of-band and is built/run directly via `dotnet run`, like validation/*. The promoted
+       library is referenced at its new product path so this solution still builds the PoC CLI. -->
   <Folder Name="/src/">
     <Project Path="../../src/ShadowDusk.ShaderToy/ShadowDusk.ShaderToy.csproj" />
     <Project Path="src/ShadowDusk.ShaderToy.Cli/ShadowDusk.ShaderToy.Cli.csproj" />
-    <Project Path="src/ShadowDusk.ShaderToy.Runtime/ShadowDusk.ShaderToy.Runtime.csproj" />
   </Folder>
 </Solution>

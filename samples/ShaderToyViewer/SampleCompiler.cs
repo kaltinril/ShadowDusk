@@ -6,9 +6,10 @@ using System.IO;
 using Microsoft.Xna.Framework.Graphics;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
-using ShadowDusk.ShaderToy.Runtime;
+using ShadowDusk.ShaderToy;
+using ShadowDusk.ShaderToyViewer.Runtime;
 
-namespace ShadowDusk.ShaderToy.Sample;
+namespace ShadowDusk.ShaderToyViewer;
 
 /// <summary>The outcome of taking one ShaderToy <c>.glsl</c> all the way to a live effect.</summary>
 /// <param name="Ok">True when the effect loaded; false carries a human-readable <see cref="Error"/>.</param>

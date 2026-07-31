@@ -16,14 +16,30 @@ for the full design, scope, traps, and the bet being tested.
 
 ## Layout
 
-- `src/ShadowDusk.ShaderToy/` — the converter library. Single-pass entry point:
+**Most of this experiment has been promoted or migrated out.** What lives here now:
+
+- `src/ShadowDusk.ShaderToy.Cli/` — the `shadertoy2fx` CLI wrapper. Retained because it is the only
+  command-line entry point to the converter's **multipass batch mode** (the product
+  `ShadowDuskCLI` takes a single `.glsl` but has no `--multipass`).
+- `render-proof/` — the out-of-band fidelity / gallery / multipass render driver. See its own
+  [README](render-proof/README.md).
+
+Where the rest went:
+
+- **`src/ShadowDusk.ShaderToy/` → [`../../src/ShadowDusk.ShaderToy/`](../../src/ShadowDusk.ShaderToy/)**
+  (Phase 47) — the converter is now a first-class in-solution product library published as a NuGet.
+  Single-pass entry point:
   `ShadowDusk.ShaderToy.ShaderToyConverter.Convert(string glsl, ConvertOptions? options = null) → ConvertResult`.
   Multipass batch entry points (in `Multipass/`): `ShaderToyProject.Parse(json) → ShaderToyProject`,
   `MultipassConverter.Convert(project, options) → MultipassResult`, and `MultipassManifest.ToJson(result)` /
   `MultipassManifest.ToWiringMarkdown(result)`.
-- `src/ShadowDusk.ShaderToy.Cli/` — the `shadertoy2fx` CLI wrapper.
-- `tests/ShadowDusk.ShaderToy.Tests/` — unit tests (lex/parse/emit/traps) + golden regression
-  tests over a corpus of ShaderToy-dialect shaders (`tests/.../corpus/`).
+- **`tests/ShadowDusk.ShaderToy.Tests/` → [`../../tests/ShadowDusk.ShaderToy.Tests/`](../../tests/ShadowDusk.ShaderToy.Tests/)**
+  (Phase 47) — unit tests (lex/parse/emit/traps) + golden regression tests over a corpus of
+  ShaderToy-dialect shaders; now run by every `dotnet test ShadowDusk.slnx`.
+- **`sample/` and `src/ShadowDusk.ShaderToy.Runtime/` → [`../../samples/ShaderToyViewer/`](../../samples/ShaderToyViewer/)**
+  (Phase 51 A4) — the interactive viewer and the MonoGame `ShaderToyEffect` runtime helper (folded
+  into the sample as `Runtime/ShaderToyEffect.cs`). MonoGame belongs to the sample tier, never to a
+  shipped `ShadowDusk.*` package.
 
 ## Build & test (out-of-band — not in `ShadowDusk.slnx`)
 

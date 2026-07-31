@@ -33,6 +33,24 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   gives maxd 0 with zero differing pixels of 402,984. The delta reaches a pixel at all only because
   the shader adds half an 8-bit LSB of dither immediately before quantization. `maxd 1` stays the
   honest DX12 tolerance until the DXC pin moves. No compiler behavior changed.
+- **The interactive ShaderToy viewer and its MonoGame runtime helper moved out of the Phase-46
+  experiment tree into `samples/ShaderToyViewer/`** (Phase 51 A4, closing the Phase 47
+  sample-migration appendix that had stayed *Planned*). The `ShaderToyEffect` helper is folded into
+  the sample as `Runtime/ShaderToyEffect.cs` rather than kept as a separate
+  `ShadowDusk.ShaderToy.Runtime` project: it is one file with one public type, and folding it in
+  makes the MonoGame boundary structural, since the only projects that reference MonoGame are now
+  under `samples/`, `validation/`, and the out-of-band render-proof driver, never under `src/`.
+  Namespaces moved with it (`ShadowDusk.ShaderToy.Sample` and `ShadowDusk.ShaderToy.Runtime` became
+  `ShadowDusk.ShaderToyViewer` and `ShadowDusk.ShaderToyViewer.Runtime`), which disambiguates the
+  sample from the `ShadowDusk.ShaderToy` product library that now owns that name. Like every other
+  sample it stays out of `ShadowDusk.slnx`; run it with
+  `dotnet run --project samples/ShaderToyViewer` (add `-- --smoke` for the headless self-test, which
+  is green 4/4 and regenerates the committed eyeball PNGs byte-identically). **Relocation only: no
+  compiler code, no shipped package, and no output byte changed**, and
+  `NoMonoGameInProductLibrariesTests` stays green on both TFMs. `tools/shadertoy2fx/` keeps the
+  standalone PoC CLI (still the only entry point to the converter's `--multipass` batch mode) and
+  the out-of-band fidelity/gallery render-proof driver, which now source-links the single helper
+  file from the sample.
 
 ### Fixed
 

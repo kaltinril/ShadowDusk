@@ -17,7 +17,8 @@ For each deterministic shader under `shaders/`:
 5. reads back the pixels and **asserts analytic expected values** (the real gate);
 6. saves the rendered PNG under `output/` for human eyeball.
 
-The `ShaderToyEffect` helper (in `../src/ShadowDusk.ShaderToy.Runtime/`) draws the fullscreen
+The `ShaderToyEffect` helper (source-linked from `../../../samples/ShaderToyViewer/Runtime/`, its
+only home since the Phase 51 A4 sample migration) draws the fullscreen
 quad with the **effect's own** vertex+pixel shaders (NOT `SpriteBatch`, which would override the
 converted vertex shader), and best-effort pushes `iResolution`, `iTime`, `iTimeDelta`, `iFrame`,
 `iMouse`, and `iChannel0..3` to whichever effect parameters exist.

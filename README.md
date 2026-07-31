@@ -176,6 +176,7 @@ ShadowDusk/
 │   └── ShadowDusk.Wasm/         # In-browser WASM compiler (WasmShaderCompiler), [JSImport] DXC + SPIRV-Cross
 ├── samples/
 │   ├── ShaderFiddle.Web/        # KNI Blazor-WASM in-browser fiddle (sample of reach)
+│   ├── ShaderToyViewer/         # Interactive ShaderToy viewer: runtime convert → in-memory compile → render
 │   ├── ShaderViewer/            # Desktop shader viewer
 │   └── mgcb/                    # MGCB content-pipeline sample
 ├── tests/
