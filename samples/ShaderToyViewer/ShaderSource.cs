@@ -3,7 +3,7 @@
 using System;
 using System.IO;
 
-namespace ShadowDusk.ShaderToy.Sample;
+namespace ShadowDusk.ShaderToyViewer;
 
 /// <summary>
 /// One loadable shader, identified by its absolute file <see cref="Path"/>. A <see cref="ShaderSource"/>

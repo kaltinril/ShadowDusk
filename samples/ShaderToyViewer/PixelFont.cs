@@ -5,7 +5,7 @@ using System.Collections.Generic;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 
-namespace ShadowDusk.ShaderToy.Sample;
+namespace ShadowDusk.ShaderToyViewer;
 
 /// <summary>
 /// A tiny built-in 5x7 bitmap font so the sample can draw status / error text on screen WITHOUT a

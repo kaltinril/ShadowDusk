@@ -2,7 +2,7 @@
 
 using System.Collections.Generic;
 
-namespace ShadowDusk.ShaderToy.Sample;
+namespace ShadowDusk.ShaderToyViewer;
 
 /// <summary>
 /// The shaders this sample bundles and cycles through. Each is an ANIMATED and/or INTERACTIVE

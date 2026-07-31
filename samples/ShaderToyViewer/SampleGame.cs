@@ -7,7 +7,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 
-namespace ShadowDusk.ShaderToy.Sample;
+namespace ShadowDusk.ShaderToyViewer;
 
 /// <summary>
 /// The interactive capstone window. On startup, and whenever the user cycles shaders, it runs the

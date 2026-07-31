@@ -27,7 +27,7 @@ small tail, the tail moves here and the parent moves to DONE.
 | Un-park Vulkan trigger (Area D) — ✅ done 2026-07-18 via [Phase 32](DONE/PHASE-32-vulkan-backend.md) | [Phase 35](DONE/PHASE-35-forward-version-support.md) | ext-blocked on MonoGame 3.8.5 stable (since shipped; see B2) |
 | DX/FNA/KNI-DX render-in-CI gates | [Phase 44](DONE/PHASE-44-validation-breadth-and-matrix-coverage.md) | Effectively done; ext-blocked on a WARP CI runner |
 | `d3dcompiler_47` vs `fxc.exe` DXBC delta study (OQ#2) | [Phase 41](DONE/PHASE-41-fxc-oracle-monogame-fidelity.md) | Deferred, low-value |
-| ShaderToy sample + runtime-helper migration to `samples/` | [Phase 47](DONE/PHASE-47-shadertoy-frontend-promotion.md) | Core shipped (NuGet since 0.9.0); the sample-migration appendix stayed Planned (moved 2026-07-18) |
+| ShaderToy sample + runtime-helper migration to `samples/` (**A4** — ✅ done 2026-07-31) | [Phase 47](DONE/PHASE-47-shadertoy-frontend-promotion.md) | Core shipped (NuGet since 0.9.0); the sample-migration appendix stayed Planned (moved 2026-07-18) |
 | CLI `.glsl`-route render-gate fixtures | [Phase 47](DONE/PHASE-47-shadertoy-frontend-promotion.md) | Deferred in the CLI appendix; tracked in validation-matrix §8 (moved 2026-07-18) |
 
 ---
@@ -159,7 +159,7 @@ shape/feature surface, using the real `Apos.Shapes` NuGet package's `ShapeBatch`
 constructor as both harness and golden, is tracked as its own phase:
 [Phase 55](DONE/PHASE-55-apos-shapes-shape-gallery-render-proof.md).
 
-### A4 — ShaderToy sample + runtime-helper migration to `samples/` (ex-47)
+### A4 — ✅ DONE (2026-07-31) — ShaderToy sample + runtime-helper migration to `samples/` (ex-47)
 *From Phase 47 (moved 2026-07-18, at the 0.12.0 release docs audit).* The core promotion shipped
 (the `ShadowDusk.ShaderToy` library is in-solution and published as a NuGet since 0.9.0), but the
 MonoGame-dependent runtime helper + interactive viewer sample never moved out of
@@ -167,9 +167,40 @@ MonoGame-dependent runtime helper + interactive viewer sample never moved out of
 stayed **Planned**. Anchor constraint (verbatim from the appendix): *"No code in this appendix may
 end up in a shipped `ShadowDusk.*` package."*
 
-**Done = ** the runtime helper + interactive ShaderToy viewer sample live under `samples/` per the
-appendix, `tools/shadertoy2fx/` keeps only the out-of-band render-proof driver (or is retired), and
-`NoMonoGameInProductLibrariesTests` stays green (no shipped library gains a MonoGame dependency).
+**Was done = ** the runtime helper + interactive ShaderToy viewer sample live under `samples/` per
+the appendix, `tools/shadertoy2fx/` keeps only the out-of-band render-proof driver (or is retired),
+and `NoMonoGameInProductLibrariesTests` stays green (no shipped library gains a MonoGame
+dependency).
+
+**Landed.** [`samples/ShaderToyViewer/`](../samples/ShaderToyViewer/) now holds the interactive
+viewer (appendix D1) with the `ShaderToyEffect` helper folded in as `Runtime/ShaderToyEffect.cs`
+(D2) — no separate `ShadowDusk.ShaderToy.Runtime` project, so the *only* projects referencing
+MonoGame are under `samples/`, `validation/`, and the out-of-band render-proof driver, never under
+`src/`. Namespaces moved with the code (`ShadowDusk.ShaderToy.Sample` → `ShadowDusk.ShaderToyViewer`,
+`ShadowDusk.ShaderToy.Runtime` → `ShadowDusk.ShaderToyViewer.Runtime`), disambiguating the sample
+from the product library that owns the `ShadowDusk.ShaderToy` name. Reference graph is D4's:
+`src/ShadowDusk.ShaderToy` + `src/ShadowDusk.Compiler` (natives transitive) +
+`MonoGame.Framework.DesktopGL` on the central pin. The sample stays out of `ShadowDusk.slnx` (D5),
+its four bundled `.glsl` and the committed eyeball PNGs moved with it, and the `.gitignore` entry
+for regenerable `output/*.fx|*.mgfx` was repointed (D7). Everything was `git mv`'d, so history
+follows. Verified: full solution + sample + render-proof build 0 warnings;
+`dotnet run --project samples/ShaderToyViewer -- --smoke` **4/4 PASS**, regenerating the committed
+PNGs **byte-identically**; `NoMonoGameInProductLibrariesTests` green on `net8.0` and `net10.0`.
+Zero compiler-output bytes moved (relocation only).
+
+**Two deliberate departures from the letter of the "Done" bar, both recorded rather than guessed
+at.** (1) **The render-proof driver stayed at `tools/shadertoy2fx/render-proof/`**, taking the
+appendix's own R1 deferral rather than D3's relocation to `validation/`; it changes no product
+behavior either way, and moving a GPU-only driver that no gate script runs is churn better spent
+when someone is actually re-proving it. Its dependency on the helper is now the D3-prescribed
+one-file `<Compile Include=…ShaderToyEffect.cs />` source link into the sample. (2) **The standalone
+PoC CLI `tools/shadertoy2fx/src/ShadowDusk.ShaderToy.Cli/` stayed too**, so `tools/shadertoy2fx/`
+does *not* end up holding "only the render-proof driver". That phrasing turns out to be
+unachievable without dropping a real capability: the PoC CLI is the **only** command-line entry
+point to the converter's `--multipass` batch mode (the product `ShadowDuskCLI` takes a single
+`.glsl` and has no `--multipass` flag), and the appendix explicitly scopes its fate out
+("main plan's call"). Retiring it is a separate, still-undecided call. Both `tools/shadertoy2fx/`
+READMEs and `docs/repository-layout.md` now say exactly what remains there and why.
 
 ### A5 — CLI `.glsl`-route render-gate fixtures (ex-47 CLI appendix)
 *From Phase 47 (moved 2026-07-18).* The CLI `.glsl` input is implemented + integration-tested

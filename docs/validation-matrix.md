@@ -296,6 +296,15 @@ self-contained `.fx`, which the **existing, unchanged** pipeline then compiles. 
   changes the compiler's reject set.
 - The Windows DX/FNA render-gate fixtures for this route remain a tracked follow-up (and the DX one is
   blocked by A10 above); run the Windows render gates on a GPU box before a release that ships this route.
+- **Where the two out-of-band ShaderToy drivers live, and their exact commands** (neither runs under
+  `dotnet test`; both need a real GPU, so neither is in CI or in `run-windows-render-gates.ps1`):
+  - **Fidelity / gallery / multipass render-proof** (the §8 bar above) —
+    `dotnet build src/ShadowDusk.Cli/ShadowDusk.Cli.csproj` first, then
+    `dotnet run --project tools/shadertoy2fx/render-proof/ShadowDusk.ShaderToy.RenderProof.csproj`
+    (add `-- --fidelity` for the pixel-fidelity gate, `-- --gallery` for the montage).
+  - **Interactive viewer sample's headless self-test** (a *sample* smoke, deliberately NOT a product
+    gate — it is reach, not the bar) — `dotnet run --project samples/ShaderToyViewer -- --smoke`.
+    Moved here from `tools/shadertoy2fx/sample/` by Phase 51 A4.
 
 ---
 

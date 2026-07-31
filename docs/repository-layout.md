@@ -41,6 +41,10 @@ ShadowDusk/
 │       └── golden/                     # Reference outputs: mgfxc .mgfx (DirectX_11/, DirectX_12/, OpenGL/, Vulkan/) + fxc fx_2_0 .fxb (FNA/) + byte-identity/
 ├── samples/
 │   ├── ShaderFiddle.Web/               # KNI Blazor-WASM in-browser fiddle (sample of reach)
+│   ├── ShaderToyViewer/                # Interactive ShaderToy viewer: runtime convert -> in-memory
+│   │                                   #   compile -> new Effect -> render, + hot-reload and a
+│   │                                   #   headless `--smoke` self-test. Runtime/ShaderToyEffect.cs
+│   │                                   #   is the MonoGame helper's ONLY home (never src/).
 │   ├── ShaderViewer/                   # Desktop shader viewer
 │   └── mgcb/                           # MGCB content-pipeline sample
 ├── tools/                         # Vendored / downloaded native binaries (restored, not committed)
@@ -51,8 +55,10 @@ ShadowDusk/
 │   ├── plantuml/                  # PlantUML jar for regenerating docs/*.puml diagrams
 │   └── shadertoy2fx/             # ShaderToy experiment SHELLS (out-of-band, NOT in ShadowDusk.slnx):
 │                                  #   the converter LIBRARY + tests were promoted to src/+tests/ (Phase 47);
-│                                  #   what remains is the standalone PoC CLI, the MonoGame Runtime helper,
-│                                  #   the interactive sample, and the fidelity/gallery render-proof driver.
+│                                  #   the runtime helper + interactive sample moved to
+│                                  #   samples/ShaderToyViewer/ (Phase 51 A4). What remains is the
+│                                  #   standalone PoC CLI (the only `--multipass` batch entry point)
+│                                  #   and the fidelity/gallery render-proof driver.
 ├── validation/                    # Rung-4 render-proof console drivers (NOT in ShadowDusk.slnx, not run by `dotnet test`):
 │                                  #   GL (VsDriven, StateFidelity, CbufferModel, ReservedWordGl, SamplerPairsGl,
 │                                  #     DeferredSpriteMrtGl (the only driver that binds 2 render targets),

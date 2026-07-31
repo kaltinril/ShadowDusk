@@ -58,7 +58,7 @@ Console.WriteLine($"[render-proof] output:  {outDir}\n");
 
 // ---- Build the jobs: convert + compile each shader on the CPU (no GL yet). ----
 var jobs = new List<RenderJob>();
-foreach ((string name, Func<int, int, RgbAssertion[]> asserter, Action<ShadowDusk.ShaderToy.Runtime.ShaderToyEffect>? customSetup) in RenderProofShaders.Catalog)
+foreach ((string name, Func<int, int, RgbAssertion[]> asserter, Action<ShadowDusk.ShaderToyViewer.Runtime.ShaderToyEffect>? customSetup) in RenderProofShaders.Catalog)
 {
     string glslPath = Path.Combine(shadersDir, name + ".glsl");
     if (!File.Exists(glslPath))

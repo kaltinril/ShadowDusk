@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>ShadowDusk.ShaderToyViewer</AssemblyName>
+    <RootNamespace>ShadowDusk.ShaderToyViewer</RootNamespace>
+    <!-- A SAMPLE OF REACH, never the product: intentionally NOT packed and NOT in ShadowDusk.slnx
+         (same as samples/ShaderViewer, samples/ShaderFiddle.Web and samples/mgcb). Run it out of
+         band with `dotnet run` against this project file; see README.md. -->
+    <IsPackable>false</IsPackable>
+    <!-- Warnings-as-errors + code-style-as-errors are inherited from the repo Directory.Build.props
+         and deliberately LEFT ON here: this sample is held to the zero-warning bar. -->
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- No inline Version: the MonoGame pin is central (Directory.Packages.props). MonoGame is a
+         CONSUMER's runtime, which is exactly why this SAMPLE, and never a shipped ShadowDusk.*
+         package, is what depends on it (guarded by NoMonoGameInProductLibrariesTests). -->
+    <PackageReference Include="MonoGame.Framework.DesktopGL" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Phase 47 promoted the converter library to src/ShadowDusk.ShaderToy. The in-memory
+         ShadowDusk compiler (+ its transitive native assets: DXC, SPIRV-Cross, vkd3d) flows in
+         through the second reference. A consumer copying this sample out of the repo swaps both
+         ProjectReferences for the equivalent PackageReferences (see README.md). -->
+    <ProjectReference Include="..\..\src\ShadowDusk.ShaderToy\ShadowDusk.ShaderToy.csproj" />
+    <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="shaders\*.glsl" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
