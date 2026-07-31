@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Diagnostic tool: dumps the exact HLSL text ShadowDusk's pipeline hands to DXC for a given
+       .fx + PlatformTarget, so the same input can be replayed through a DIFFERENT DXC build
+       outside the pipeline. Written for the DX12 Apos.Shapes 1/255 investigation (2026-07-31);
+       reusable for any "is this divergence ours or the compiler's?" question.
+       No graphics dependencies, no GPU. Intentionally NOT in ShadowDusk.slnx. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RootNamespace>ShadowDusk.Validation.DumpPreprocessedHlsl</RootNamespace>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
+    <ProjectReference Include="..\..\src\ShadowDusk.HLSL\ShadowDusk.HLSL.csproj" />
+    <ProjectReference Include="..\..\src\ShadowDusk.Core\ShadowDusk.Core.csproj" />
+  </ItemGroup>
+
+</Project>

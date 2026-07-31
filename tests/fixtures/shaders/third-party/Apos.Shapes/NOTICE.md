@@ -214,7 +214,7 @@ pixel-diff claimed or implied.
 | Vulkan | `Apos.Shapes`' own embedded Vulkan effect | **maxd 0**, all 30 cells |
 | DirectX_11 (`vkd3d-shader`) | `Apos.Shapes`' own embedded DX11 effect | **maxd 0**, all 30 cells |
 | DirectX_11 (`d3dcompiler_47` oracle) | the real, locally-generated `mgfxc` golden (`tests/fixtures/golden/DirectX_11/apos-shapes-sm6.mgfx`) | **maxd 0**, all 30 cells |
-| DirectX_12 | the real, locally-generated `mgfxc` golden (`tests/fixtures/golden/DirectX_12/apos-shapes-sm6.mgfx`) | **maxd 1** on 2/30 cells (`DrawCircle`, `FillArc`) — open, unresolved |
+| DirectX_12 | the real, locally-generated `mgfxc` golden (`tests/fixtures/golden/DirectX_12/apos-shapes-sm6.mgfx`) | **maxd 1** on 11 pixels of 402,984 — root-caused 2026-07-31 to the **pinned DXC build**, not a ShadowDusk defect (see below) |
 | OpenGL | none (candidate-only) | 30/30 shapes visible; no pixel-diff |
 
 **Correction (2026-07-23, same day): the original DX11 "maxd 1 on 14/30 cells" finding was a
@@ -233,12 +233,27 @@ candidate matched this "golden" at maxd 0 for a reason unrelated to fidelity: co
 reference — the `d3dcompiler_47` candidate matches at **maxd 0 across the full 30-cell gallery**.
 No ShadowDusk defect, no fix needed, no follow-up.
 
-**DX12's maxd-1 finding is real and still open**, confirmed against ITS real, locally-generated
-`mgfxc` golden (not the embedded resource, which is presumably also non-`mgfxc` for the same
-reason as DX11 — unconfirmed). Both sides compile through DXC→DXIL, so an independent-DXC-
-build/version drift on this shader's transcendental math remains the leading hypothesis, but this
-one has not been root-caused or fixed. Genuinely a follow-up, distinct from the now-resolved DX11
-false alarm.
+**DX12's maxd-1 finding is real, and as of 2026-07-31 it is ROOT-CAUSED to the pinned DXC build.**
+It is confirmed against ITS real, locally-generated `mgfxc` golden, so unlike the DX11 case above
+it is not a wrong-reference artifact — but it is not a ShadowDusk defect either. The two sides use
+different DXC binaries, each named in its own blob's `!llvm.ident`: ShadowDusk's is
+`dxcoob 1.7.2212.40 (e043f4a12)` (the `Vortice.Dxc` 3.3.4 pin), the golden's is
+`dxcoob 1.8.2505.32 (b106a961d)` (MonoGame 3.8.5's bundled DXC). Feeding **ShadowDusk's own**
+pre-parsed HLSL and **ShadowDusk's own** DXC flags to a DXC 1.8 build reproduces the golden's
+pixel-shader DXIL instruction-for-instruction, and rendering only that swapped payload gives
+**maxd 0, zero differing pixels**. The two builds emit identical DXIL intrinsic counts and differ
+only in `fast`-math-licensed rewrites; it reaches a pixel at all only because this shader adds
+±half an 8-bit LSB of dither immediately before quantization
+(`result.rgb += (DitherNoise(p.Pos.xy) - 0.5) * dither_scale`), so a sub-ULP difference flips
+whichever pixels sit on the rounding boundary. **maxd 1 is the honest tolerance while the pins
+differ**; closing it means bumping DXC, which re-baselines every target.
+
+**Two harness bugs found while root-causing it, both now fixed** (and both had misled the earlier
+readings): the per-cell breakdown used the *untransformed* gallery rectangles under a 1.15x view,
+so it named the wrong shape — this delta was recorded as `DrawCircle`/`FillArc` here and as
+`FillRing` on a re-run, when the pixels are `DrawEllipse`'s; and the render target was sized to the
+untransformed layout, which clipped 10 of the 30 cells off-screen so they were drawn but never
+compared, while the GL visibility check still read 30/30.
 
 **The hand-rolled `AposVertex`/`BuildCircleQuad`/`Pack11`/`Unpair` code was deleted** from the
 DX11, DX12, and Vulkan `AposShapesRenderer.cs` files — `AposGalleryRenderer` replaces it entirely

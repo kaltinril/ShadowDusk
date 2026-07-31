@@ -36,8 +36,28 @@ public sealed class AposGalleryRenderer : Game
     public const int CellSize = 100;
     public const int Cols = 6;
     public const int Rows = 5;
-    public const int Width = CellSize * Cols;
-    public const int Height = CellSize * Rows;
+
+    /// <summary>The gallery's own coordinate space, before <see cref="View"/>.</summary>
+    private const int LayoutWidth  = CellSize * Cols;
+    private const int LayoutHeight = CellSize * Rows;
+
+    /// <summary>
+    /// The non-identity, asymmetric view every arm renders through (the issue-#70 discipline: an
+    /// identity transform cannot detect a coordinate-handling bug). Declared here, ahead of
+    /// <see cref="Width"/>/<see cref="Height"/>/<see cref="Cells"/>, because static initializers run
+    /// in textual order and all three are derived from it.
+    /// </summary>
+    public static readonly Matrix View = Matrix.CreateScale(1.15f) * Matrix.CreateTranslation(6f, 4f, 0f);
+
+    /// <summary>Render-target size: the layout box AFTER <see cref="View"/>, so every cell lands
+    /// fully on the target. Sizing this to the untransformed layout instead (600x500, as it was
+    /// until 2026-07-31) silently pushed the whole last column off the right edge and the last row
+    /// down to a ~10px sliver, so five entries contributed no pixels to any comparison at all and
+    /// the arc/ring row contributed only slivers — while the visibility check still reported 30/30
+    /// because it was measuring the untransformed rectangles, i.e. whatever the neighbouring
+    /// column's shapes spilled into them.</summary>
+    public static readonly int Width  = (int)MathF.Ceiling(Vector2.Transform(new Vector2(LayoutWidth, LayoutHeight), View).X);
+    public static readonly int Height = (int)MathF.Ceiling(Vector2.Transform(new Vector2(LayoutWidth, LayoutHeight), View).Y);
 
     private readonly GraphicsDeviceManager _gdm;
     private readonly string _outDir;
@@ -47,8 +67,16 @@ public sealed class AposGalleryRenderer : Game
     public List<(string Name, bool Loaded, bool Rendered, string? Error)> Outcomes { get; } = new();
     public List<(string Name, Color[] Pixels, int Width, int Height)> Captures { get; } = new();
 
-    /// <summary>Cell rectangle for each named gallery entry, in the SAME order <see cref="DrawGallery"/>
-    /// emits them — built from the same source list so the two can never drift out of sync.</summary>
+    /// <summary>SCREEN rectangle for each named gallery entry, in the SAME order <see cref="DrawGallery"/>
+    /// emits them — built from the same source list so the two can never drift out of sync.
+    ///
+    /// <para><b>These are the layout cells transformed by <see cref="View"/></b>, not the raw layout
+    /// rectangles. Using the raw ones is a real bug that already cost a misdiagnosis: under this view
+    /// a shape drawn in layout cell (3,3) lands in screen cell (4,4), so the per-cell breakdown named
+    /// the wrong shape — Phase 55 recorded its DX12 1/255 delta against `DrawCircle`/`FillArc` when
+    /// the pixels actually belong to `DrawEllipse`, and a later re-run relabelled the same class of
+    /// delta `FillRing`. Both readings sent the investigation looking for something the named shapes
+    /// had in common; there was nothing, because they were not the shapes involved.</para></summary>
     public static IReadOnlyList<(string Name, Rectangle Cell)> Cells { get; } = BuildCellLayout();
 
     /// <summary>Per-cell max channel delta between two same-size captures, keyed by gallery entry
@@ -129,12 +157,11 @@ public sealed class AposGalleryRenderer : Game
             GraphicsDevice.SetRenderTarget(rt);
             GraphicsDevice.Clear(Color.Black);
 
-            // Non-identity, asymmetric view — the issue-#70 discipline: an identity transform
-            // can't detect a coordinate-handling bug. Both arms run the IDENTICAL ShapeBatch
-            // C# vertex-building code with this SAME matrix, so any divergence between arms can
-            // only come from the shader, never from vertex construction.
-            var view = Matrix.CreateScale(1.15f) * Matrix.CreateTranslation(6f, 4f, 0f);
-            batch.Begin(view: view);
+            // Non-identity, asymmetric view (see the View field) — the issue-#70 discipline: an
+            // identity transform can't detect a coordinate-handling bug. Both arms run the
+            // IDENTICAL ShapeBatch C# vertex-building code with this SAME matrix, so any divergence
+            // between arms can only come from the shader, never from vertex construction.
+            batch.Begin(view: View);
             DrawGallery(batch);
             batch.End();
 
@@ -181,9 +208,25 @@ public sealed class AposGalleryRenderer : Game
         foreach (var entry in GalleryEntries())
         {
             int col = entry.Index % Cols, row = entry.Index / Cols;
-            list.Add((entry.Name, new Rectangle(col * CellSize, row * CellSize, CellSize, CellSize)));
+            list.Add((entry.Name, ToScreen(new Rectangle(col * CellSize, row * CellSize, CellSize, CellSize))));
         }
         return list;
+    }
+
+    /// <summary>Maps a gallery-layout rectangle through <see cref="View"/> and clips it to the render
+    /// target. A cell whose transformed rectangle falls entirely outside the target comes back empty,
+    /// so <see cref="CellDeltas"/> reports it as 0 (it contributed no pixels to compare).</summary>
+    private static Rectangle ToScreen(Rectangle layout)
+    {
+        Vector2 topLeft     = Vector2.Transform(new Vector2(layout.Left,  layout.Top),    View);
+        Vector2 bottomRight = Vector2.Transform(new Vector2(layout.Right, layout.Bottom), View);
+
+        int left   = Math.Clamp((int)MathF.Floor(topLeft.X),       0, Width);
+        int top    = Math.Clamp((int)MathF.Floor(topLeft.Y),       0, Height);
+        int right  = Math.Clamp((int)MathF.Ceiling(bottomRight.X), 0, Width);
+        int bottom = Math.Clamp((int)MathF.Ceiling(bottomRight.Y), 0, Height);
+
+        return new Rectangle(left, top, Math.Max(0, right - left), Math.Max(0, bottom - top));
     }
 
     private static Vector2 CellCenter(int index)

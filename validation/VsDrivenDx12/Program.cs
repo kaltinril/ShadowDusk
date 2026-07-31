@@ -184,6 +184,19 @@ var arms = new List<ShadowDusk.Validation.AposGallery.AposGalleryRenderer.Arm>
     new("candidate", UseEmbeddedGolden: false, candidateBytes, candidateErr),
 };
 
+// Optional third arm, OFF unless SHADOWDUSK_DX12_PROBE_MGFX names a readable file. It renders an
+// arbitrary externally-supplied .mgfx through the identical gallery, which is how the DX12 1/255
+// delta below was root-caused (2026-07-31): take ShadowDusk's own candidate .mgfx, swap ONLY the
+// DXIL payload for one produced by a different DXC build, and render it. Same container, same
+// reflection, same records — so whatever the pixels do is attributable to the DXC build alone.
+// Adds nothing to the gate's verdict (its result is reported, never asserted).
+string? probePath = Environment.GetEnvironmentVariable("SHADOWDUSK_DX12_PROBE_MGFX");
+if (!string.IsNullOrEmpty(probePath))
+{
+    byte[]? probeBytes = File.Exists(probePath) ? await File.ReadAllBytesAsync(probePath) : null;
+    arms.Add(new("probe", UseEmbeddedGolden: false, probeBytes, probeBytes is null ? $"probe not found: {probePath}" : null));
+}
+
 using var game = new ShadowDusk.Validation.AposGallery.AposGalleryRenderer(aposOutBase, arms);
 game.Run();
 
@@ -213,15 +226,37 @@ int CompareToBaseline(string label, int tolerance)
     return pass ? 0 : 1;
 }
 
-// Tolerance 1/255, confirmed 2026-07-23 against the REAL locally-generated mgfxc golden
-// (not the embedded resource, which DX11's investigation showed is a vkd3d-shader artifact,
-// not a valid oracle — see the comment above). DX12 diverges by exactly 1 on the SAME 2/30
-// cells (DrawCircle, FillArc) even against this genuine oracle, so this is a real, if tiny,
-// divergence distinct from the (now-resolved) DX11 false alarm — not yet root-caused. Both
-// sides compile through DXC->DXIL, so an independent-DXC-build/version drift on this shader's
-// transcendental math remains the leading hypothesis, but unlike the DX11 case this one has
-// NOT been confirmed against a wrong-baseline theory — treat it as a genuine open follow-up.
+// Tolerance 1/255, against the REAL locally-generated mgfxc golden (not the embedded resource,
+// which DX11's investigation showed is a vkd3d-shader artifact, not a valid oracle — see above).
+//
+// ROOT-CAUSED 2026-07-31: the residual 1/255 is the PINNED DXC BUILD, not a ShadowDusk defect.
+// Both sides compile the same HLSL to DXIL, but with different DXC binaries — ours is
+// `dxcoob 1.7.2212.40 (e043f4a12)` (the Vortice.Dxc 3.3.4 pin), the golden's is
+// `dxcoob 1.8.2505.32 (b106a961d)` (MonoGame 3.8.5's bundled DXC), both readable in the blobs'
+// own `!llvm.ident` metadata. Evidence chain:
+//   * Feeding ShadowDusk's OWN pre-parsed/flattened HLSL and ShadowDusk's OWN DXC flags to a
+//     DXC 1.8 build reproduces the golden's DXIL instruction-for-instruction — the disassembly
+//     diff is 3 lines (shader hash, `!llvm.ident`, `!dx.valver`) and zero instructions. Add
+//     `-Qstrip_reflect` and the container comes out the same 41876 bytes with the same 6 parts at
+//     the same offsets. So the HLSL we hand DXC and the flags we hand it are already right.
+//   * Rendering that same DXC-1.8 payload through this driver's probe arm (in ShadowDusk's own
+//     container) gives maxd 0 and ZERO differing pixels across the whole gallery.
+//   * DXC 1.7 vs 1.8 emit identical DXIL intrinsic counts (every Sample/Sqrt/Log/Exp/Sin/Cos/FAbs
+//     matches); they differ only in `fast`-math-licensed rewrites — 1.7 if-converts more (87 fewer
+//     branches, 34 more selects), reorders commutative fmul operands, and folds 8 `x - y*c` into
+//     `x + y*(-c)`. The shader then adds +-half an 8-bit LSB of dither immediately before
+//     quantization (`result.rgb += (DitherNoise(p.Pos.xy) - 0.5) * dither_scale`), so a sub-ULP
+//     float difference flips exactly the handful of pixels sitting on the rounding boundary:
+//     5 of 300000, all +-1 in one channel.
+// This is the honest floor while the DXC pins differ; closing it means bumping the Vortice.Dxc /
+// DXC pin, which is a deliberate re-baseline of every target, not a bug fix. See
+// `docs/validation-matrix.md` §7 and `plan/DONE/PHASE-55-...md` §8. The cell name in the
+// breakdown below is the SCREEN cell (`AposGalleryRenderer.Cells` transforms by the view matrix
+// since 2026-07-31); before that fix it named the untransformed layout cell, which is why this
+// delta was first recorded against `DrawCircle`/`FillArc` when the pixels are `DrawEllipse`'s.
 int cmp = CompareToBaseline("candidate", tolerance: 1);
+if (caps.ContainsKey("probe"))
+    CompareToBaseline("probe", tolerance: 1);
 
 bool allLoaded = game.Outcomes.All(o => o is { Loaded: true, Rendered: true });
 bool allMatch = cmp == 0;

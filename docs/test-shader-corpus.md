@@ -312,8 +312,11 @@ structs. DX11: **maxd 0** across all 30 cells on both DXBC backends — the `d3d
 oracle arm against the real, locally-generated `mgfxc` golden, the vkd3d arm against the
 package's own embedded effect (which disassembles as itself vkd3d-shader-compiled, so it serves
 only as a same-toolchain baseline, never an oracle). Vulkan: **maxd 0** against the package's
-DXC-family embedded effect. DX12: 28/30 cells at maxd 0 against the real local `mgfxc` golden,
-**2 cells at 1/255 — an open, not-yet-root-caused follow-up** (`docs/validation-matrix.md` §6).
+DXC-family embedded effect. DX12: within 1/255 against the real local `mgfxc` golden, differing on
+11 pixels of 402,984 — **root-caused 2026-07-31 to the pinned DXC build, not a ShadowDusk defect**
+(ours `dxcoob 1.7.2212.40`, the golden's `dxcoob 1.8.2505.32`; ShadowDusk's own HLSL and flags
+through a DXC 1.8 build reproduce the golden's DXIL instruction-for-instruction and render at
+maxd 0 — see `docs/validation-matrix.md` §7).
 GL gets a candidate-only visibility check (30/30 shapes render visible content) — no golden
 exists for this gallery on GL (the same confirmed MojoShader black-render bug applies to nearly
 every shape). See `third-party/Apos.Shapes/NOTICE.md` §"Phase 55" and

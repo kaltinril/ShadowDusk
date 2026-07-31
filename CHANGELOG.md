@@ -14,9 +14,40 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **`validation/DumpPreprocessedHlsl`, a no-GPU diagnostic** that dumps the exact HLSL text the
+  compilation pipeline hands to DXC for a given `.fx` + target, plus the `-D` macro flags. It exists
+  so a divergence on any DXC-fed target can be *attributed*: replay the identical input through a
+  different `dxc.exe` and diff the disassembly. An empty instruction diff means our source and flags
+  are right and only the pinned DXC build differs.
+- An opt-in third arm on the DirectX 12 Apos.Shapes gate (`SHADOWDUSK_DX12_PROBE_MGFX`) that renders
+  an arbitrary supplied `.mgfx` alongside the golden and candidate. Off unless the variable is set,
+  and its result is reported, never asserted.
+
 ### Changed
 
+- **Root-caused the DirectX 12 Apos.Shapes gallery's `maxd 1`: it is the pinned DXC build, not a
+  ShadowDusk defect.** ShadowDusk compiles DXIL with `dxcoob 1.7.2212.40` (the `Vortice.Dxc` 3.3.4
+  pin); the `mgfxc` `DirectX_12` golden was built with MonoGame 3.8.5's bundled `dxcoob 1.8.2505.32`.
+  Feeding ShadowDusk's own pre-parsed HLSL and own DXC flags to a DXC 1.8 build reproduces the
+  golden's DXIL instruction-for-instruction, and rendering that payload in ShadowDusk's own container
+  gives maxd 0 with zero differing pixels of 402,984. The delta reaches a pixel at all only because
+  the shader adds half an 8-bit LSB of dither immediately before quantization. `maxd 1` stays the
+  honest DX12 tolerance until the DXC pin moves. No compiler behavior changed.
+
 ### Fixed
+
+- **The Apos.Shapes gallery harness named the wrong shape in every divergence it reported.** Its
+  per-cell rectangles came from the untransformed layout while the scene renders through a 1.15x
+  scale plus a (6,4) translate, so a shape drawn in layout cell (3,3) lands in screen cell (4,4).
+  That is why the DX12 delta above was recorded first against `DrawCircle`/`FillArc` and later
+  against `FillRing`; the pixels are `DrawEllipse`'s. Cell rectangles now go through the view matrix.
+- **A third of the Apos.Shapes gallery was being drawn but never compared.** The render target was
+  sized to the untransformed 600x500 layout, so the same 1.15x scale pushed the entire last column
+  off the right edge and the last row down to a ten-pixel sliver: 10 of the 30 cells contributed no
+  pixels to any comparison, while the OpenGL visibility check still reported 30/30 because it was
+  measuring those same untransformed rectangles. The target is now sized to the transformed extent.
+  The gallery has no stored reference images, so no goldens needed regenerating; re-verified after
+  the change at DX11 maxd 0 (both arms), Vulkan maxd 0, OpenGL 30/30 genuinely visible, DX12 maxd 1.
 
 ## [0.16.0] - 2026-07-30
 

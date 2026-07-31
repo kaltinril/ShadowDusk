@@ -35,8 +35,11 @@
                                    MonoGame 3.8.5 WindowsDX12, maxd 0).
     * DirectX12 VS-driven + Apos.Shapes gallery - validation/VsDrivenDx12 (+ `-- apos`): the VS rig
                                    vs the real mgfxc DirectX_12 golden (maxd 0); the gallery vs the
-                                   same local golden at tol 1 (2/30 cells at 1/255 - an open,
-                                   not-yet-root-caused follow-up).
+                                   same local golden at tol 1 (11 pixels of 402,984 at 1/255,
+                                   root-caused 2026-07-31 to the pinned DXC build - ours is
+                                   dxcoob 1.7.2212.40, the golden's is MonoGame 3.8.5's bundled
+                                   dxcoob 1.8.2505.32 - NOT a ShadowDusk defect; see
+                                   docs/validation-matrix.md section 7).
     * KNI DirectX                - validation/KniWinFormsDX (ShadowDusk DX vs mgfxc, real KNI
                                    WinForms.DX11).
     * KNI OpenGL desktop         - validation/Baseline + Candidate + KniDesktopGL + compare_kni.py

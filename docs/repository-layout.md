@@ -63,6 +63,9 @@ ShadowDusk/
 │                                  #     + compare_vulkan.py/decode_mgfx_vulkan.py),
 │                                  #   Android (AndroidGl), v11 (MonoGameV11), browser-ANGLE (AngleDerivativeProbe)
 │                                  #   + the compare_*.py oracles. See docs/validation-matrix.md §6.
+│                                  #   DumpPreprocessedHlsl is the odd one out: a no-GPU DIAGNOSTIC, not a gate —
+│                                  #     it dumps the exact HLSL the pipeline hands DXC so a divergence can be
+│                                  #     replayed through a different DXC build and attributed.
 ├── docs/                          # Architecture / reference docs (the-purpose, validation-matrix, references/, HOWTO-WASM-KNI, …)
 └── CLAUDE.md
 ```
