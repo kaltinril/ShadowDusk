@@ -1,6 +1,7 @@
 #nullable enable
 
 using Shouldly;
+using ShadowDusk.Core;
 using ShadowDusk.Core.Reflection;
 using Xunit;
 
@@ -73,5 +74,83 @@ public sealed class VertexSemanticMapperTests
         var act = () => VertexSemanticMapper.Map(semantic);
 
         Should.NotThrow(act);
+    }
+
+    // ---- The recognised/unrecognised report (bug-hunt 2026-07-27 N5, warning half) ----
+
+    [Theory]
+    [InlineData("POSITION")]
+    [InlineData("POSITION1")]
+    [InlineData("SV_POSITION")]
+    [InlineData("TEXCOORD3")]
+    [InlineData("TexCoord2")]
+    [InlineData("PSIZE")]
+    [InlineData("TESSELLATEFACTOR")]
+    public void Map_KnownSemantic_ReportsRecognized(string semantic)
+    {
+        VertexSemanticMapper.Map(semantic, out bool recognized);
+
+        recognized.ShouldBeTrue($"'{semantic}' is in the table, so no SD0104 warning is owed");
+    }
+
+    [Theory]
+    [InlineData("TEXCORD0")]   // the typo the warning exists for
+    [InlineData("POSITIONT")]
+    [InlineData("MYTHING7")]
+    public void Map_UnknownSemantic_ReportsUnrecognized(string semantic)
+    {
+        (byte usage, _) = VertexSemanticMapper.Map(semantic, out bool recognized);
+
+        recognized.ShouldBeFalse($"'{semantic}' took the TextureCoordinate default and mgfxc warns here");
+        usage.ShouldBe((byte)2, "the fallback VALUE must not move — mgfxc defaults the same way");
+    }
+
+    [Fact]
+    public void Map_AbsurdNumericSuffix_ReportsUnrecognized()
+    {
+        // The table name matches but the index cannot be parsed, so the mapper takes the
+        // unknown-semantic path. Reporting it as recognised would hide a genuinely
+        // unusable semantic behind a silently-defaulted attribute.
+        VertexSemanticMapper.Map("TEXCOORD" + new string('9', 40), out bool recognized);
+
+        recognized.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Map_WithAndWithoutTheFlag_AgreeOnEveryValue()
+    {
+        // The two overloads MUST be the same function: the warning half of N5 must not
+        // move a single emitted usage/index byte.
+        string[] semantics =
+        [
+            "POSITION", "POSITION1", "SV_POSITION", "COLOR", "COLOR1", "TEXCOORD", "TEXCOORD3",
+            "NORMAL", "BINORMAL", "TANGENT", "BLENDINDICES", "BLENDWEIGHT", "DEPTH", "FOG",
+            "PSIZE", "POINTSIZE", "TESSELLATEFACTOR", "TexCoord2", "TEXCORD0", "POSITIONT",
+            "MYTHING7", "TEXCOORD" + new string('9', 40),
+        ];
+
+        foreach (string semantic in semantics)
+            VertexSemanticMapper.Map(semantic, out _).ShouldBe(VertexSemanticMapper.Map(semantic));
+    }
+
+    [Fact]
+    public void UnrecognizedSemanticWarning_IsAWarningWithTheRegisteredCode()
+    {
+        // mgfxc accepts and defaults, so drop-in parity forbids making this an error.
+        ShaderError warning = VertexSemanticMapper.UnrecognizedSemanticWarning("TEXCORD0", 0, "Typo.fx");
+
+        warning.Code.ShouldBe("SD0104");
+        warning.Severity.ShouldBe(ShaderErrorSeverity.Warning);
+        warning.File.ShouldBe("Typo.fx");
+        warning.Message.ShouldContain("TEXCORD0", Case.Sensitive);
+        warning.Message.ShouldContain("TextureCoordinate", Case.Sensitive);
+        warning.Message.ShouldContain("mgfxc", Case.Sensitive);
+    }
+
+    [Fact]
+    public void UnrecognizedSemanticWarning_NamesTheFallbackIndex()
+    {
+        VertexSemanticMapper.UnrecognizedSemanticWarning("MYTHING7", 7)
+            .Message.ShouldContain("index 7", Case.Sensitive);
     }
 }

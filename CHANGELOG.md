@@ -14,6 +14,18 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **`SD0104`, the mgfxc-parity warning for an unrecognized vertex-input semantic** (closes the
+  remaining half of bug-hunt 2026-07-27 N5). An HLSL vertex semantic ShadowDusk does not model
+  has always defaulted to `VertexElementUsage.TextureCoordinate`, which is correct — real `mgfxc`
+  defaults the same way — but `mgfxc` also *prints a warning when it defaults* and ShadowDusk did
+  not, so a typo such as `TEXCORD0` for `TEXCOORD0` silently minted a phantom TextureCoordinate
+  attribute that MonoGame's `VertexInputLayout` then demanded from the vertex declaration, with a
+  failed draw as the only symptom. The Vulkan (SPIR-V) and DirectX12 (DXIL) attribute-table paths
+  now surface it through `CompiledShader.Warnings`, so it reaches CLI stderr, MGCB, and
+  `ValidateAsync` like every other warning. It is a **warning, never an error** (`mgfxc` accepts
+  and defaults, so a drop-in replacement must too), and **no emitted byte moves**: the fallback
+  usage/index values are unchanged and warnings never gate output.
+
 ### Changed
 
 ### Fixed
