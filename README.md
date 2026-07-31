@@ -34,7 +34,7 @@ Console.WriteLine(await compiler.ValidateAsync(hlslSource));
 
 Every code it reports is listed in the [Diagnostic Codes](https://kaltinril.github.io/ShadowDusk/diagnostics.html) registry ([`docs/error-codes.md`](docs/error-codes.md)).
 
-Everything it needs ships inside the package. There's no separate install: no fxc.exe, no mgfxc, no Wine, no Windows SDK. The same library also ships as a **command-line tool** for build-time use — including from MGCB's external-tool hook — and runs in the browser via WebAssembly (the in-browser fiddle is a sample of that reach, not a separate product).
+Everything it needs ships inside the package. There's no separate install: no fxc.exe, no mgfxc, no Wine, no Windows SDK. The same library also ships as a **command-line tool** and as an **MGCB content-processor plugin** for build-time use, and runs in the browser via WebAssembly (the in-browser fiddle is a sample of that reach, not a separate product).
 
 ## Why it exists
 
@@ -97,19 +97,32 @@ If you're not sure, keep the default. See [Parameters &amp; Caveats](https://kal
 
 ShadowDusk is a transparent substitute for MonoGame's mgfxc: same CLI flags, same `.mgfx` output format, same exit codes, same MGCB-compatible error messages. A build step that shells out to `mgfxc` can call `ShadowDuskCLI` instead with nothing downstream changing.
 
-> **MGCB cannot be redirected to it.** MGCB compiles `.fx` **in-process** and launches no external effect compiler (measured against `dotnet mgcb` 3.8.2.1105, 3.8.4.1, and 3.8.5), so putting ShadowDusk on `PATH` as `mgfxc` changes nothing. Invoke the CLI directly and `/copy:` the resulting `.mgfx`, or compile at runtime and hand the bytes to `Effect`.
+> **A `PATH` override does not redirect MGCB.** MGCB compiles `.fx` **in-process** and launches no external effect compiler (measured against `dotnet mgcb` 3.8.2.1105, 3.8.4.1, and 3.8.5), so putting ShadowDusk on `PATH` as `mgfxc` changes nothing. For MGCB, use the content-processor plugin below.
 
 ## Delivery shapes
 
-All three shapes share the same `IShaderCompiler` interface and produce the same `.mgfx` bytes; only how you invoke them differs.
+All four shapes share the same `IShaderCompiler` interface and produce the same `.mgfx` bytes; only how you invoke them differs.
 
 **Library** (`ShadowDusk.Compiler`) — the product. Add the package, call `CompileAsync(fx)`, get `.mgfx` bytes in memory (see the example above).
 
-**CLI tool** (`ShadowDuskCLI` dotnet tool) — the same library for build-time use from MGCB, scripts, or the terminal:
+**CLI tool** (`ShadowDuskCLI` dotnet tool) — the same library for build-time use from scripts or the terminal:
 
 ```sh
 ShadowDuskCLI MyShader.fx MyShader.mgfx /Profile:OpenGL
 ```
+
+**MGCB plugin** (`ShadowDusk.MgcbPlugin`) — the same library as a MonoGame Content Builder content processor, so `.mgcb` builds compile `.fx → .xnb` through ShadowDusk in MGCB's own process. Add the package, then one reference line plus the importer/processor names:
+
+```
+/reference:$(NuGetPackageRoot)shadowdusk.mgcbplugin/<version>/tools/net8.0/any/ShadowDusk.MgcbPlugin.dll
+
+#begin MyShader.fx
+/importer:ShadowDuskEffectImporter
+/processor:ShadowDuskEffectProcessor
+/build:MyShader.fx
+```
+
+The target comes from the content project's own `/platform:` line, and the `.mgfx` inside the `.xnb` is byte-for-byte what the CLI emits. See [MGCB Content Pipeline](https://kaltinril.github.io/ShadowDusk/guides/mgcb-content-pipeline.html).
 
 **WASM library** (`ShadowDusk.Wasm`) — the same pipeline running in the browser via WebAssembly, for live in-browser compilation with no server roundtrip. OpenGL output renders live in KNI WebGL; DirectX and FNA output come back as downloads to run in your desktop game. The [in-browser fiddle](samples/ShaderFiddle.Web) is a sample of this. See [`docs/HOWTO-WASM-KNI.md`](docs/HOWTO-WASM-KNI.md) for the KNI/Blazor walkthrough.
 
@@ -172,7 +185,7 @@ ShadowDusk/
 │   ├── ShadowDusk.Metal/        # SPIR-V → MSL (stub — not yet implemented)
 │   ├── ShadowDusk.Compiler/     # EffectCompiler : IShaderCompiler — the consumer-facing product NuGet
 │   ├── ShadowDusk.Cli/          # dotnet tool entry point (mgfxc)
-│   ├── ShadowDusk.MgcbPlugin/   # MGCB content processor plugin (scaffold, not published)
+│   ├── ShadowDusk.MgcbPlugin/   # MGCB content-processor plugin (ShadowDuskEffectImporter/Processor)
 │   └── ShadowDusk.Wasm/         # In-browser WASM compiler (WasmShaderCompiler), [JSImport] DXC + SPIRV-Cross
 ├── samples/
 │   ├── ShaderFiddle.Web/        # KNI Blazor-WASM in-browser fiddle (sample of reach)
@@ -203,7 +216,7 @@ ShadowDusk/
 ## Design principles
 
 - **No Windows / Wine requirement.** Every native binary has Linux + macOS builds.
-- **Drop-in replacement.** Same CLI flags, same `.mgfx` output, same exit codes and error format as MonoGame's `mgfxc`. A build step that invokes `mgfxc` can invoke it instead (MGCB itself compiles in-process and cannot be redirected).
+- **Drop-in replacement.** Same CLI flags, same `.mgfx` output, same exit codes and error format as MonoGame's `mgfxc`. A build step that invokes `mgfxc` can invoke it instead. MGCB itself compiles in-process, so it is integrated with the `ShadowDusk.MgcbPlugin` content processor rather than a `PATH` override.
 - **Deterministic output.** Same source + same target = byte-identical `.mgfx`, given the same compiler version.
 - **Fail loudly.** Shader errors surface the source file, line, column, and message exactly as the underlying compiler emitted them.
 - **Result-typed errors.** No exceptions for expected shader failures — the API returns `Result<CompiledShader, ShaderError[]>`.

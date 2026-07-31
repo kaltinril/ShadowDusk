@@ -104,4 +104,4 @@ An honest, checked-in answer to "how close are we to genuine `fxc`/`mgfxc` acros
 ## Carry-forward / related
 
 - **FNA effect-format work is done**, not a carry-forward: the legacy D3D9 fx_2_0 `.fxb` path shipped in **Phases [39](PHASE-39-fna-fx2-output-target.md)–[40](PHASE-40-fna-fidelity-hardening.md)** (vkd3d-shader SM1–3 + `Fx2EffectWriter`), rung-4 validated against the `fxc /T fx_2_0` oracle in real FNA. See `docfx/guides/choosing-a-target.md` for the user-facing statement.
-- **XNB output** is deliberately **not** in ShadowDusk core — it belongs to the MGCB content-pipeline layer ([Phase 29](../PHASE-29-mgcb-content-processor-plugin.md)). See the `.mgfx`-vs-`.xnb` decision in `plan.md` → *Key Decisions Already Made*.
+- **XNB output** is deliberately **not** in ShadowDusk core — it belongs to the MGCB content-pipeline layer ([Phase 29](PHASE-29-mgcb-content-processor-plugin.md)). See the `.mgfx`-vs-`.xnb` decision in `plan.md` → *Key Decisions Already Made*.

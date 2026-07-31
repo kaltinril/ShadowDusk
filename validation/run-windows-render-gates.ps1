@@ -74,6 +74,13 @@
     * Vulkan VS-driven + gallery - validation/VsDrivenVulkan (+ `-- apos`): a NON-IDENTITY
                                    asymmetric transform pixel-diffed vs the mgfxc 3.8.5 golden
                                    (maxd 0), plus the 30-cell ShapeBatch gallery (maxd 0).
+    * MGCB plugin (Phase 29)     - validation/MgcbPlugin: NOT a render gate. Drives a real
+                                   `dotnet mgcb` content build through the /reference:'d
+                                   ShadowDusk plugin and asserts the .mgfx inside the .xnb is
+                                   byte-for-byte the ShadowDuskCLI binary's, that the .xnb
+                                   envelope matches MGCB's own stock build, and that the payload
+                                   differs from stock (i.e. ShadowDusk really compiled it). It is
+                                   here because `dotnet test` has no dotnet-mgcb; no GPU needed.
 
   Both Vulkan gates are DEFAULT-ON (issue #145: a Vulkan-affecting change must not depend on
   someone remembering a switch). Pass -SkipVulkan only on a box with no Vulkan-capable GPU.
@@ -213,6 +220,24 @@ $gates.Add(@{
 $gates.Add(@{
     Name   = 'ANGLE D3D11 derivative shapes (issue #136 probe, headless Edge/Chrome)'
     Action = { Invoke-Checked 'powershell' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'validation/AngleDerivativeProbe/run-angle-probe.ps1') }
+})
+# MGCB content-processor plugin (Phase 29). The ONE gate here that is not a render proof:
+# it drives a REAL `dotnet mgcb` content build through the /reference:'d plugin and asserts
+# the .mgfx inside the produced .xnb is byte-for-byte the CLI's. It lives here because
+# `dotnet test` has no dotnet-mgcb, so this script is the only place it will actually be run.
+# Cheap (seconds, no GPU) and default ON - the failure modes it catches (MGCB stops
+# discovering the plugin; the plugin stops finding its natives inside MGCB's process; MonoGame
+# changes the content contract) are all silent for everyone until a consumer hits them.
+$gates.Add(@{
+    Name   = 'MGCB content-processor plugin (Phase 29: real dotnet mgcb build, .xnb payload vs CLI bytes)'
+    Action = {
+        # The pinned dotnet-mgcb from .config/dotnet-tools.json (idempotent; cached offline).
+        Invoke-Checked 'dotnet' @('tool', 'restore')
+        # The driver measures the BUILD OUTPUT, so build the two things it compares first.
+        Invoke-Checked 'dotnet' @('build', 'src/ShadowDusk.MgcbPlugin/ShadowDusk.MgcbPlugin.csproj', '-c', 'Release')
+        Invoke-Checked 'dotnet' @('build', 'src/ShadowDusk.Cli/ShadowDusk.Cli.csproj', '-c', 'Release')
+        Invoke-Checked 'dotnet' @('run', '--project', 'validation/MgcbPlugin', '-c', 'Release')
+    }
 })
 if ($IncludeFna) {
     $gates.Add(@{

@@ -1,0 +1,182 @@
+#----------------------------- Global Properties ----------------------------#
+
+# The SAME content project as Content.mgcb, built through ShadowDusk's MGCB
+# content-processor plugin instead of MonoGame's built-in effect compiler.
+# Everything below differs from Content.mgcb in exactly three ways: the output
+# directories, the /reference: line, and the /importer: + /processor: names.
+#
+# Build it (from samples/mgcb/Content):
+#     dotnet build ../../../src/ShadowDusk.MgcbPlugin/ShadowDusk.MgcbPlugin.csproj
+#     dotnet mgcb /@:Content.ShadowDusk.mgcb
+#
+# A consumer using the NuGet package points /reference: at the package instead:
+#     /reference:$(NuGetPackageRoot)shadowdusk.mgcbplugin/<version>/tools/net8.0/any/ShadowDusk.MgcbPlugin.dll
+# (spell the path out - MGCB does not expand MSBuild properties in a .mgcb).
+
+/outputDir:bin/shadowdusk/$(Platform)
+/intermediateDir:obj/shadowdusk/$(Platform)
+/platform:DesktopGL
+/config:
+/profile:Reach
+/compress:False
+
+#-------------------------------- References --------------------------------#
+
+/reference:../../../src/ShadowDusk.MgcbPlugin/bin/Debug/net8.0/ShadowDusk.MgcbPlugin.dll
+
+#---------------------------------- Content ---------------------------------#
+
+# NOTE - 10 of Content.mgcb's 34 effects are deliberately absent here:
+#   BasicEffect, AlphaTestEffect, DualTextureEffect, EnvironmentMapEffect,
+#   SkinnedEffect, SpriteEffect, PenumbraHull, PenumbraLight, PenumbraShadow,
+#   PenumbraTexture.
+# All ten declare their techniques through PREPROCESSOR MACROS, which ShadowDusk's
+# OpenGL path cannot yet compile (SD0010 "Effect source contains no techniques" -
+# the Phase 41 GAP-1 GL half, blocked on DXC legacy-SM2 codegen). This is a LIBRARY
+# gap, identical through the ShadowDusk CLI, not a plugin one: the plugin adds no
+# compilation logic, so it inherits exactly what the library supports. They stay in
+# Content.mgcb (MonoGame's own compiler builds them) so the difference stays visible.
+
+#begin ../../../tests/fixtures/shaders/BasicShader.fx
+/importer:ShadowDuskEffectImporter
+/processor:ShadowDuskEffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/BasicShader.fx;BasicShader
+
+#begin ../../../tests/fixtures/shaders/TintShader.fx
+/importer:ShadowDuskEffectImporter
+/processor:ShadowDuskEffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/TintShader.fx;TintShader
+
+#begin ../../../tests/fixtures/shaders/BlendShader.fx
+/importer:ShadowDuskEffectImporter
+/processor:ShadowDuskEffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/BlendShader.fx;BlendShader
+
+#begin ../../../tests/fixtures/shaders/ClipShader.fx
+/importer:ShadowDuskEffectImporter
+/processor:ShadowDuskEffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/ClipShader.fx;ClipShader
+
+#begin ../../../tests/fixtures/shaders/ClipShaderSpriteTarget.fx
+/importer:ShadowDuskEffectImporter
+/processor:ShadowDuskEffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/ClipShaderSpriteTarget.fx;ClipShaderSpriteTarget
+
+#begin ../../../tests/fixtures/shaders/ClipShaderNew.fx
+/importer:ShadowDuskEffectImporter
+/processor:ShadowDuskEffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/ClipShaderNew.fx;ClipShaderNew
+
+#begin ../../../tests/fixtures/shaders/Fading.fx
+/importer:ShadowDuskEffectImporter
+/processor:ShadowDuskEffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/Fading.fx;Fading
+
+#begin ../../../tests/fixtures/shaders/ForwardLighting.fx
+/importer:ShadowDuskEffectImporter
+/processor:ShadowDuskEffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/ForwardLighting.fx;ForwardLighting
+
+#begin ../../../tests/fixtures/shaders/Grayscale.fx
+/importer:ShadowDuskEffectImporter
+/processor:ShadowDuskEffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/Grayscale.fx;Grayscale
+
+#begin ../../../tests/fixtures/shaders/Invert.fx
+/importer:ShadowDuskEffectImporter
+/processor:ShadowDuskEffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/Invert.fx;Invert
+
+#begin ../../../tests/fixtures/shaders/Pixelated.fx
+/importer:ShadowDuskEffectImporter
+/processor:ShadowDuskEffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/Pixelated.fx;Pixelated
+
+#begin ../../../tests/fixtures/shaders/Teleport.fx
+/importer:ShadowDuskEffectImporter
+/processor:ShadowDuskEffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/Teleport.fx;Teleport
+
+#begin ../../../tests/fixtures/shaders/Scanlines.fx
+/importer:ShadowDuskEffectImporter
+/processor:ShadowDuskEffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/Scanlines.fx;Scanlines
+
+#begin ../../../tests/fixtures/shaders/Saturate.fx
+/importer:ShadowDuskEffectImporter
+/processor:ShadowDuskEffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/Saturate.fx;Saturate
+
+#begin ../../../tests/fixtures/shaders/Sepia.fx
+/importer:ShadowDuskEffectImporter
+/processor:ShadowDuskEffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/Sepia.fx;Sepia
+
+#begin ../../../tests/fixtures/shaders/Dissolve.fx
+/importer:ShadowDuskEffectImporter
+/processor:ShadowDuskEffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/Dissolve.fx;Dissolve
+
+#begin ../../../tests/fixtures/shaders/Dots.fx
+/importer:ShadowDuskEffectImporter
+/processor:ShadowDuskEffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/Dots.fx;Dots
+
+#begin ../../../tests/fixtures/shaders/MultiTexture.fx
+/importer:ShadowDuskEffectImporter
+/processor:ShadowDuskEffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/MultiTexture.fx;MultiTexture
+
+#begin ../../../tests/fixtures/shaders/MultiTextureOverlay.fx
+/importer:ShadowDuskEffectImporter
+/processor:ShadowDuskEffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/MultiTextureOverlay.fx;MultiTextureOverlay
+
+#begin ../../../tests/fixtures/shaders/SpriteAlphaTest.fx
+/importer:ShadowDuskEffectImporter
+/processor:ShadowDuskEffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/SpriteAlphaTest.fx;SpriteAlphaTest
+
+#begin ../../../tests/fixtures/shaders/PolygonLight.fx
+/importer:ShadowDuskEffectImporter
+/processor:ShadowDuskEffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/PolygonLight.fx;PolygonLight
+
+#begin ../../../tests/fixtures/shaders/VertexAndPixel.fx
+/importer:ShadowDuskEffectImporter
+/processor:ShadowDuskEffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/VertexAndPixel.fx;VertexAndPixel
+
+#begin ../../../tests/fixtures/shaders/DeferredSprite.fx
+/importer:ShadowDuskEffectImporter
+/processor:ShadowDuskEffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/DeferredSprite.fx;DeferredSprite
+
+#begin ../../../tests/fixtures/shaders/SimpleLightShader.fx
+/importer:ShadowDuskEffectImporter
+/processor:ShadowDuskEffectProcessor
+/processorParam:DebugMode=Auto
+/build:../../../tests/fixtures/shaders/SimpleLightShader.fx;SimpleLightShader

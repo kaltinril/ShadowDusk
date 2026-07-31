@@ -24,6 +24,25 @@
          only want the CLI built + on disk, not linked into the test assembly. -->
     <ProjectReference Include="..\..\src\ShadowDusk.Cli\ShadowDusk.Cli.csproj"
                       ReferenceOutputAssembly="false" />
+    <!-- Phase 29: the MGCB content-processor plugin, for the byte-identity proof that its
+         .mgfx output is exactly the CLI's. -->
+    <ProjectReference Include="..\..\src\ShadowDusk.MgcbPlugin\ShadowDusk.MgcbPlugin.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Phase 29: the MGCB contract types the plugin tests drive (EffectContent,
+         CompiledEffectContent, ContentProcessorContext). compile;runtime ONLY - the `native`
+         asset group is MonoGame's texture/audio processor baggage (FreeImage, Assimp, nvtt,
+         ffmpeg, ~100 MB across RIDs) that nothing here touches, and dropping it into an
+         already antivirus-scan-sensitive integration output directory would cost real time
+         for zero coverage. -->
+    <PackageReference Include="MonoGame.Framework.Content.Pipeline" IncludeAssets="compile;runtime" />
+    <!-- ContentProcessorContext.TargetProfile is a MonoGame.Framework type (GraphicsProfile),
+         but MonoGame.Framework.Content.Pipeline 3.8.2.1105 declares NO dependency on
+         MonoGame.Framework - so anything that subclasses ContentProcessorContext has to bring
+         it. compile;runtime only, for the same native-baggage reason as above (DesktopGL's
+         SDL/OpenAL natives are irrelevant here; nothing creates a GraphicsDevice). -->
+    <PackageReference Include="MonoGame.Framework.DesktopGL" IncludeAssets="compile;runtime" />
   </ItemGroup>
 
   <ItemGroup>

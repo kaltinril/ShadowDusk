@@ -37,6 +37,24 @@
   </ItemGroup>
 
   <!--
+    Phase 29: the MGCB content-processor plugin's BUILD-TIME contract assembly
+    (ContentImporter/ContentProcessor/EffectContent/CompiledEffectContent). This is a
+    compile-only reference: ShadowDusk.MgcbPlugin sets ExcludeAssets="runtime" so the
+    plugin never carries its own copy - MGCB's own process already has one loaded, and a
+    second copy in the plugin directory is how you get two incompatible CompiledEffectContent
+    types and a "no ContentTypeWriter found" build failure.
+
+    3.8.2.1105 is deliberate, and it is a FLOOR, not a pin to "the" MonoGame version: the
+    ContentImporter/ContentProcessor contract has been stable across 3.8.x, so a plugin
+    compiled against the oldest supported contract loads into every newer MGCB. Compiling
+    against a NEWER one would not load into an older MGCB. Verified in-process against
+    dotnet mgcb 3.8.2.1105, 3.8.4.1, and 3.8.5.
+  -->
+  <ItemGroup Label="MGCB plugin contract (Phase 29)">
+    <PackageVersion Include="MonoGame.Framework.Content.Pipeline" Version="3.8.2.1105" />
+  </ItemGroup>
+
+  <!--
     Apos.Shapes is an EVIDENCE PIN, not a currency pin - do not bump it as part of a routine
     dependency sweep. Phase 55 uses the package's own embedded effect as the gallery baseline
     arm, which is only a valid comparison because the package's shader IS our vendored

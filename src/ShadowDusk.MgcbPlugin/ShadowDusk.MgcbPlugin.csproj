@@ -2,11 +2,93 @@
   <PropertyGroup>
     <AssemblyName>ShadowDusk.MgcbPlugin</AssemblyName>
     <RootNamespace>ShadowDusk.MgcbPlugin</RootNamespace>
-    <!-- Stub project (future MGCB plugin scaffold) — never packed until implemented. -->
-    <IsPackable>false</IsPackable>
+
+    <!-- Single-TFM net8.0 on purpose (like ShadowDusk.Cli). This assembly is loaded by
+         MGCB's OWN process via Assembly.LoadFrom, so its TFM must be one every supported
+         MGCB host can load. `dotnet mgcb` is a net8.0 tool at 3.8.2.1105 through 3.8.5, and a
+         net8.0 assembly loads on a net10.0 host too - a net10.0 build would not load on the
+         net8.0 hosts. -->
+
+    <!-- MGCB loads this assembly with Assembly.LoadFrom and resolves its dependencies from the
+         SAME DIRECTORY. A class library does not copy NuGet assets to its output by default, so
+         without this the plugin directory holds only the ShadowDusk DLLs and MGCB fails at the
+         first Vortice.Dxc / Silk.NET type it touches. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+
+    <PackageId>ShadowDusk.MgcbPlugin</PackageId>
+    <IsPackable>true</IsPackable>
+    <Description>MonoGame Content Builder (MGCB) content-processor plugin for ShadowDusk: compiles .fx to .xnb natively in MGCB's own process, with no mgfxc, no fxc.exe, and no Wine. A delivery shape of the ShadowDusk compiler library - it adds no compilation logic and emits byte-for-byte the same .mgfx the ShadowDusk CLI does.</Description>
+    <PackageTags>monogame kni mgcb content-pipeline shader compiler effect processor cross-platform opengl directx</PackageTags>
+    <PackageIcon>ShadowDuskFavIcon.png</PackageIcon>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+
+    <!-- A TOOLS-ONLY package, not a library one. MGCB's `/reference:` takes a PATH TO AN
+         ASSEMBLY and resolves that assembly's dependencies from its own directory, so the
+         plugin and everything it needs (ShadowDusk.*, Vortice.*, and the pinned DXC /
+         SPIRV-Cross / vkd3d natives) must sit together in one directory the consumer can
+         point at. That directory is tools/net8.0/any/, laid out exactly like `dotnet-mgcb`'s
+         own. Nothing goes in lib/: this package must never flow into the consumer's GAME
+         assembly - it is a build-time content-pipeline plugin, which is also why
+         DevelopmentDependency is true and dependencies are suppressed. -->
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <DevelopmentDependency>true</DevelopmentDependency>
+    <!-- NU5100: assemblies outside lib/ (deliberate, see above).
+         NU5128: no lib/ or ref/ folder for the declared TFM (same reason). -->
+    <NoWarn>$(NoWarn);NU5100;NU5128</NoWarn>
   </PropertyGroup>
 
+  <!--
+    Packs the plugin's ENTIRE build output (managed assemblies + runtimes/<rid>/native + the
+    per-arch macOS/Android native subdirectories) into tools/net8.0/any/. It has to be a
+    target, not a plain glob: MSBuild evaluates item globs at project load, before Build has
+    written a single file into $(OutputPath), so a top-level <None Include="$(OutputPath)**"/>
+    packs an empty set on a clean tree.
+  -->
+  <Target Name="PackPluginToolsDirectory" BeforeTargets="_GetPackageFiles" DependsOnTargets="Build">
+    <ItemGroup>
+      <_PluginToolFile Include="$(OutputPath)**\*" Exclude="$(OutputPath)**\*.pdb" />
+      <None Include="@(_PluginToolFile)"
+            Pack="true"
+            PackagePath="tools/net8.0/any/%(RecursiveDir)%(Filename)%(Extension)" />
+    </ItemGroup>
+  </Target>
+
   <ItemGroup>
-    <ProjectReference Include="..\ShadowDusk.Core\ShadowDusk.Core.csproj" />
+    <None Include="..\..\Brand\ShadowDuskFavIcon.png" Pack="true" PackagePath="\" Visible="false" />
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
+
+  <ItemGroup>
+    <!-- COMPILE-ONLY. IncludeAssets="compile" keeps MonoGame.Framework.Content.Pipeline.dll
+         (and its FreeImage/Assimp/mojoshader native baggage, which "ExcludeAssets=runtime"
+         alone does NOT stop - `native` is a separate asset group) out of the plugin's output
+         and out of the package: MGCB has already loaded its own copy into the process that
+         loads us, and a second copy beside the plugin resolves to a DIFFERENT
+         CompiledEffectContent type, for which MGCB then finds no ContentTypeWriter.
+         PrivateAssets="all" keeps it off the package's dependency list for the same reason -
+         a consumer who installs this package must get MonoGame's content pipeline from their
+         own MGCB, never from us. This is also what keeps the ShadowDusk product libraries
+         MonoGame-free (NoMonoGameInProductLibrariesTests): nothing here flows anywhere. -->
+    <PackageReference Include="MonoGame.Framework.Content.Pipeline"
+                      IncludeAssets="compile"
+                      PrivateAssets="all" />
+    <ProjectReference Include="..\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- ONE diagnostic formatter, two delivery shapes. Source-linking the CLI's
+         MgcbErrorFormatter (BCL + ShadowDusk.Core only) guarantees the plugin prints a shader
+         error in exactly the text the CLI prints, byte for byte, forever - a hand-written
+         second copy is how the Integration.Tests copy drifted before it was source-linked too.
+         The Cli project itself is deliberately NOT referenced: it is an Exe, and the plugin
+         must not drag a tool into MGCB's process. -->
+    <Compile Include="..\ShadowDusk.Cli\MgcbErrorFormatter.cs" Link="Cli\MgcbErrorFormatter.cs" />
+  </ItemGroup>
+
+  <!-- Deliberately NO InternalsVisibleTo. This assembly compiles the CLI's internal
+       MgcbErrorFormatter (above), and ShadowDusk.Integration.Tests source-links the SAME file;
+       exposing internals here would make the imported type collide with the linked copy
+       (CS0436, which TreatWarningsAsErrors turns into a build failure). The plugin is tested
+       through its public MGCB surface instead, which is what MGCB itself uses. -->
 </Project>
