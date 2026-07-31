@@ -170,9 +170,9 @@ artifact, **vkd3d-shader compiled to WASM (Phase 4.1, ✅ done 2026-06-12)**, cl
 entire browser column: the fx_2_0 writer, bytecode patcher, and reflection are managed C#
 that already ran in WASM, so vkd3d.wasm unlocked **both** DX and FNA export in the browser
 from the same pinned 1.17 source (no substitute compiler). The evidence: the node gate
-replays all 98 vkd3d stage compiles of the byte-identity corpus through the product shim,
-98/98 byte-identical to the desktop native; a real headless browser running the real
-`WasmShaderCompiler` reproduces all 65 full artifacts (37 DX `.mgfx` + 28 FNA `.fxb`)
+replays every vkd3d stage compile of the byte-identity corpus through the product shim,
+**94/94** byte-identical to the desktop native; a real headless browser running the real
+`WasmShaderCompiler` reproduces the full artifacts (DX `.mgfx` + FNA `.fxb`)
 SHA-256-identical to the committed cross-host manifest — so render-equivalence transfers
 from the desktop rung-4 proofs by transitivity (`plan/DONE/PHASE-4.1-SPIKE-wasm-directx-dxbc.md`).
 DX/FNA in the browser are **export targets** — a browser cannot render DXBC/D3D9 bytecode,

@@ -110,8 +110,14 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   (measured and recorded in `docs/validation-matrix.md` §8.1) and enforcing them is separate work.
   No output bytes changed on any target.
 - `FnaMultiPassStates.fx` was dropped from the **DirectX** arm of the cross-host byte-identity
-  manifest (it stays in the OpenGL and FNA arms). It compiles `vs_2_0`/`ps_2_0`, so its DirectX row
-  was pinning bytes the reference compiler cannot produce.
+  manifest **and from the DirectX arm of `Vkd3dCorpusProbe`**, which captures the desktop ground
+  truth for the WASM vkd3d byte-identity gate (it stays in the OpenGL and FNA arms of both). It
+  compiles `vs_2_0`/`ps_2_0`, so its DirectX row was pinning bytes the reference compiler cannot
+  produce. The probe keeps its own corpus list in step with `CrossHostByteIdentityTests`, and
+  missing it there turned the WASM gate red on the first CI run that exercised it, which is the
+  reason that gate is not skipped on a PR that changes the reject set. The node gate's corpus is
+  now **94** stage compiles rather than 98, the four removed being this fixture's one vertex and
+  three pixel entries on the DirectX arm.
 - **`ShadowDusk.MgcbPlugin` — MonoGame Content Builder integration, for real** (Phase 29). The
   project went from a `.csproj` with zero `.cs` files to a shipping content-processor plugin:
   `/reference:` it in a `.mgcb`, select `ShadowDuskEffectImporter` / `ShadowDuskEffectProcessor`,
