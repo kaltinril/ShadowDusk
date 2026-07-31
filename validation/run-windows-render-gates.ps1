@@ -30,6 +30,13 @@
                                    ShapeBatch gallery through the real NuGet package; d3dcompiler_47
                                    arm vs the real mgfxc DirectX_11 golden, vkd3d arm vs the
                                    package's embedded (itself vkd3d-compiled) effect - both tol 0.
+    * ShaderToy .glsl route (DX) - validation/ShaderToyRouteDx: converts GradientToy.glsl in
+                                   process, compiles the converted .fx for DirectX_11, and
+                                   pixel-diffs it against mgfxc's own build of the SAME .fx on
+                                   real MonoGame WindowsDX. The DirectX arm of the GL gate CI
+                                   runs; it only became possible in Phase 51 A10, when the
+                                   converter started emitting a DirectX-valid profile header
+                                   (mgfxc refuses vs_3_0 for /Profile:DirectX_11).
     * DirectX12 PS corpus        - validation/BaselineDx12 + CandidateDx12 + compare_dx12.py
                                    (ShadowDusk DX12 vs a real mgfxc DirectX_12 golden, real
                                    MonoGame 3.8.5 WindowsDX12, maxd 0).
@@ -149,6 +156,10 @@ $gates.Add(@{
 $gates.Add(@{
     Name   = 'DX Apos.Shapes (Phase 51 A3: ShadowDusk vs mgfxc DirectX_11 golden, real MonoGame WindowsDX)'
     Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenDx', '-c', 'Release', '--', 'apos') }
+})
+$gates.Add(@{
+    Name   = 'ShaderToy .glsl route on DX (Phase 51 A5/A10: converted .fx vs REAL mgfxc DirectX_11 golden, real MonoGame WindowsDX)'
+    Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/ShaderToyRouteDx', '-c', 'Release') }
 })
 $gates.Add(@{
     Name   = 'DX12 WindowsDX12 corpus, pixel-only (Phase 54: ShadowDusk vs REAL mgfxc DirectX_12 golden, real MonoGame 3.8.5 WindowsDX12)'

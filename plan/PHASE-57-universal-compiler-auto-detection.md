@@ -448,23 +448,30 @@ explicitly**. A loud failure that does not say what to do next is only half the 
 
 ## 9. Interactions and known hazards
 
-### 9.1 The Phase 51 A10 divergence widens — call it out, do not let it surprise anyone
+### 9.1 ✅ RESOLVED (2026-07-31) — the Phase 51 A10 divergence is fixed, so this phase no longer inherits it
 
-Recorded finding (matrix §8, Phase 51 A10): `ShaderToyConverter` emits `vs_3_0`/`ps_3_0` in **both**
-branches of its `#if OPENGL` header. Real `mgfxc /Profile:DirectX_11` **rejects** that
-(*"Invalid profile 'vs_3_0'. Vertex shader 'VSMain' must be SM 4.0 level 9.1 or higher!"*) while
-**ShadowDusk compiles it successfully** — a Phase 48-class drop-in accept/reject divergence, and the
-reason `ShaderToyRouteGl` has no DirectX arm.
+**This section used to be a required work item for this phase**, on the grounds that auto-detection
+would make the divergence reachable by default. It was closed independently in Phase 51 A10, by
+option (a) below, so nothing here blocks this phase any more. The reasoning is kept because it is
+the standing rule for any *future* auto-detection change.
 
-**This phase makes that divergence far easier to hit.** Today it requires deliberately running
-`ShadowDuskCLI shader.glsl /Profile:DirectX_11`. After §5 + §6, a WindowsDX consumer who passes a
-`.glsl` reaches it by doing nothing unusual at all.
+The finding was: `ShaderToyConverter` emitted `vs_3_0`/`ps_3_0` in **both** branches of its
+`#if OPENGL` header. Real `mgfxc /Profile:DirectX_11` **rejects** that (*"Invalid profile 'vs_3_0'.
+Vertex shader 'VSMain' must be SM 4.0 level 9.1 or higher!"*) while **ShadowDusk compiled it
+successfully** — a Phase 48-class drop-in accept/reject divergence, and the reason
+`ShaderToyRouteGl` had no DirectX arm. Today it required deliberately running
+`ShadowDuskCLI shader.glsl /Profile:DirectX_11`; after §5 + §6 a WindowsDX consumer who passes a
+`.glsl` would have reached it by doing nothing unusual at all.
 
-**Required in this phase:** either (a) fix the converter to emit a DirectX-valid profile in the
-non-OPENGL branch — additive to the frozen contract, and it would unblock a DirectX arm of
-`ShaderToyRouteGl` — or (b) detect the combination and emit a located diagnostic naming the
-divergence. **Silently compiling something `mgfxc` rejects, on a path consumers now reach by
-default, is not acceptable.** Prefer (a); (b) is the fallback if (a) proves to move bytes.
+**What landed (option (a), the preferred one):** the converter now emits an **`SM4`-gated** header
+whose DirectX arm names `vs_4_0_level_9_1`/`ps_4_0_level_9_1` (OpenGL and FNA keep SM3), verified
+compilable by the pinned `mgfxc` for `DirectX_11`; a DirectX golden and the
+`validation/ShaderToyRouteDx` arm exist; and the accept side was closed too — the DirectX target
+now rejects sub-floor profiles itself as **`SD0015`**. No output bytes moved.
+
+**The standing rule this leaves behind:** *silently compiling something `mgfxc` rejects, on a path
+consumers reach by default, is not acceptable.* If auto-detection later routes a new input/target
+combination, re-check it against the reference compiler before shipping the default.
 
 ### 9.2 Profile-over-target precedence
 

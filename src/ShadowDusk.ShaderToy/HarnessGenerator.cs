@@ -54,10 +54,22 @@ internal sealed class HarnessGenerator
         sb.AppendLine("// =============================================================================");
         sb.AppendLine();
 
-        sb.AppendLine("#if OPENGL");
-        sb.AppendLine("    #define VS_SHADERMODEL vs_3_0");
-        sb.AppendLine("    #define PS_SHADERMODEL ps_3_0");
+        // The compile-target header is gated on SM4, which is exactly the macro MonoGame's
+        // DirectX_11 shader profile defines (and OpenGL does not). It matters that the
+        // DirectX arm asks for SM 4.0 level 9.1: mgfxc REJECTS anything lower for
+        // /Profile:DirectX_11 ("Invalid profile 'vs_3_0'. Vertex shader 'VSMain' must be
+        // SM 4.0 level 9.1 or higher!"), so a converted shader that asked for vs_3_0 there
+        // was not compilable by the reference compiler at all. SM4 rather than the stock
+        // '#if OPENGL ... #else' split because the #else arm also catches ShadowDusk's FNA
+        // target, whose fx_2_0 output is capped at Shader Model 3 — gating on SM4 keeps
+        // OpenGL AND FNA on the legacy profiles while giving DirectX the one it requires.
+        sb.AppendLine("#if SM4");
+        sb.AppendLine("    // DirectX (MonoGame's DirectX_11 profile defines SM4). mgfxc requires at least");
+        sb.AppendLine("    // SM 4.0 level 9.1 here and rejects vs_3_0/ps_3_0 outright.");
+        sb.AppendLine("    #define VS_SHADERMODEL vs_4_0_level_9_1");
+        sb.AppendLine("    #define PS_SHADERMODEL ps_4_0_level_9_1");
         sb.AppendLine("#else");
+        sb.AppendLine("    // OpenGL (mgfxc caps it at SM 3.0) and FNA fx_2_0 (MojoShader SM 2-3).");
         sb.AppendLine("    #define VS_SHADERMODEL vs_3_0");
         sb.AppendLine("    #define PS_SHADERMODEL ps_3_0");
         sb.AppendLine("#endif");

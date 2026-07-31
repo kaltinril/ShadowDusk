@@ -58,6 +58,36 @@ public sealed class FxPreParser
     /// <summary>Returns true when the given profile string (already lowercased) is a recognized shader profile.</summary>
     public static bool IsKnownProfile(string profile) => KnownProfiles.Contains(profile);
 
+    // -------------------------------------------------------------------------
+    // MonoGame DirectX_11 profile floor (Phase 51 A10)
+    // -------------------------------------------------------------------------
+
+    // mgfxc's DirectX_11 shader profile accepts EXACTLY these five vertex targets and
+    // their pixel siblings; everything else it refuses with
+    //   "Invalid profile 'X'. Vertex shader 'E' must be SM 4.0 level 9.1 or higher!"
+    // This set is EMPIRICAL, not derived from the profile names: measured 2026-07-31 by
+    // sweeping every KnownProfiles entry through the pinned mgfxc (dotnet-mgcb 3.8.4.1,
+    // the golden oracle) for /Profile:DirectX_11. Two results are unobvious and are why
+    // "major >= 4" would be WRONG in both directions:
+    //   * vs_4_0_level_9_0 / ps_4_0_level_9_0 are REJECTED (only _9_1 and _9_3 pass),
+    //   * vs_6_0 / ps_6_0 (and every other SM6 profile) are REJECTED TOO — MonoGame's
+    //     DirectX_11 profile regex tops out at major 5, so SM6 is below-the-floor as far
+    //     as its message is concerned even though it is numerically higher.
+    private static readonly HashSet<string> DirectX11Profiles = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "vs_4_0_level_9_1", "vs_4_0_level_9_3", "vs_4_0", "vs_4_1", "vs_5_0",
+        "ps_4_0_level_9_1", "ps_4_0_level_9_3", "ps_4_0", "ps_4_1", "ps_5_0",
+    };
+
+    /// <summary>
+    /// Returns true when <paramref name="profile"/> (a recognized profile, already
+    /// lowercased) is one MonoGame's <c>DirectX_11</c> shader profile accepts. Anything
+    /// else is below that target's floor and is rejected by <c>mgfxc</c> with
+    /// <c>"must be SM 4.0 level 9.1 or higher!"</c>; ShadowDusk reports the same condition
+    /// as <c>SD0015</c>. See the empirical note on the backing set.
+    /// </summary>
+    public static bool IsDirectX11Profile(string profile) => DirectX11Profiles.Contains(profile);
+
     /// <summary>
     /// Returns true when <paramref name="token"/> is SHAPED like a shader profile
     /// (a <c>vs_</c>/<c>ps_</c>/<c>gs_</c>/<c>hs_</c>/<c>ds_</c>/<c>cs_</c> stage prefix

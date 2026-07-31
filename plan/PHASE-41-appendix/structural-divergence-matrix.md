@@ -20,11 +20,11 @@
 
 ## Headline
 
-- Golden-backed cells (fixture x target): **96**
-  - Structurally **clean**: **69**
-  - **Divergent** (>=1 level): **17**
+- Golden-backed cells (fixture x target): **98**
+  - Structurally **clean**: **70**
+  - **Divergent** (>=1 level): **18**
   - Compile/parse **failures**: **10**
-- Non-golden census cells: **188** (**142** compile, **46** fail with a code)
+- Non-golden census cells: **192** (**126** compile, **66** fail with a code)
 
 ## Golden-backed fixtures — per-level structural verdict
 
@@ -64,6 +64,8 @@ Legend: `OK` = match, `XX` = diverge, `--` = compile/parse failed (see notes). L
 | Fading | OpenGL | OK | OK | OK | OK | OK |  |
 | ForwardLighting | DirectX_11 | OK | OK | OK | OK | OK |  |
 | ForwardLighting | OpenGL | OK | OK | OK | OK | OK |  |
+| GradientToy | DirectX_11 | OK | OK | OK | OK | OK |  |
+| GradientToy | OpenGL | OK | XX | OK | OK | OK | cbuffer `ps_uniforms_vec4` missing (golden size 16) |
 | Grayscale | DirectX_11 | OK | OK | OK | OK | OK |  |
 | Grayscale | OpenGL | OK | OK | OK | OK | OK |  |
 | Invert | DirectX_11 | OK | OK | OK | OK | OK |  |
@@ -180,11 +182,11 @@ For an anonymous `pass { ... }` (no name), mgfxc stores an empty pass name while
 
 Affected cells: AlphaTestEffect [DirectX_11], BasicEffect [DirectX_11], ClipShaderNew [DirectX_11], ClipShaderNew [OpenGL], DualTextureEffect [DirectX_11], EnvironmentMapEffect [DirectX_11], PenumbraHull [DirectX_11], PenumbraLight [DirectX_11], PenumbraShadow [DirectX_11], PenumbraTexture [DirectX_11], SkinnedEffect [DirectX_11], SpriteEffect [DirectX_11]
 
-### GL per-stage cbuffer sizing (full-layout vs used-only) — KNOWN, render-equivalent (3 cell(s))
+### GL per-stage cbuffer sizing (full-layout vs used-only) — KNOWN, render-equivalent (4 cell(s))
 
 On the OpenGL target, mgfxc sizes each per-stage `{vs,ps}_uniforms_vec4` record to ONLY the members that stage actually uses (dead-uniform elimination); ShadowDusk emits each stage's FULL declared cbuffer layout. Both `.mgfx` files are internally self-consistent — the USED parameter's offset and the GLSL `uniform vec4 {vs,ps}_uniforms_vec4[size/16]` array length agree within each file, so `SetValue` binds correctly either way. This is the pinned, render-equivalent divergence already documented and tolerated by `Phase43CbufferModelTests` (F4); the accompanying `offset N vs 0` lines are the SAME shape (the used member sits at a different absolute offset but the same relative slot). Not a defect.
 
-Affected cells: PolygonLight [OpenGL], SharedCbuffer [OpenGL], VertexAndPixel [OpenGL]
+Affected cells: GradientToy [OpenGL], PolygonLight [OpenGL], SharedCbuffer [OpenGL], VertexAndPixel [OpenGL]
 
 ### Constant-buffer layout (size / offset) — TRIAGE (1 cell(s))
 
@@ -224,7 +226,7 @@ is a CORRECT result, not a defect.
 |---|---|:--:|:--:|---|
 | AnnotatedTechnique.fx | DirectX_11 | PASS |  |  |
 | AnnotatedTechnique.fx | OpenGL | PASS |  |  |
-| FnaMultiPassStates.fx | DirectX_11 | PASS |  |  |
+| FnaMultiPassStates.fx | DirectX_11 | FAIL | SD0015 | compile target 'vs_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'vs_2_0'. Vertex shader 'MainVS' must be SM 4.0 level 9.1 o... |
 | FnaMultiPassStates.fx | OpenGL | PASS |  |  |
 | Minimal.fx | DirectX_11 | PASS |  |  |
 | Minimal.fx | OpenGL | PASS |  |  |
@@ -246,7 +248,7 @@ is a CORRECT result, not a defect.
 | examples/ExCubeSamplerHidef.fx | OpenGL | PASS |  |  |
 | examples/ExDualTexture.fx | DirectX_11 | PASS |  |  |
 | examples/ExDualTexture.fx | OpenGL | PASS |  |  |
-| examples/ExIntUniformMember.fx | DirectX_11 | PASS |  |  |
+| examples/ExIntUniformMember.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_3_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_3_0'. Pixel shader 'MainPS' must be SM 4.0 level 9.1 or... |
 | examples/ExIntUniformMember.fx | OpenGL | FAIL | SD0210 | Unsupported uniform type in 'int Mode;': integer/boolean uniforms are not modelled for the MonoGame OpenGL target (MojoShader places them in the separate {vs,ps... |
 | examples/ExKnifxMacro.fx | DirectX_11 | PASS |  |  |
 | examples/ExKnifxMacro.fx | OpenGL | PASS |  |  |
@@ -256,7 +258,7 @@ is a CORRECT result, not a defect.
 | examples/ExLegacyTextureDiscard.fx | OpenGL | PASS |  |  |
 | examples/ExLoopRelational.fx | DirectX_11 | PASS |  |  |
 | examples/ExLoopRelational.fx | OpenGL | PASS |  |  |
-| examples/ExMat3UniformMember.fx | DirectX_11 | PASS |  |  |
+| examples/ExMat3UniformMember.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_3_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_3_0'. Pixel shader 'MainPS' must be SM 4.0 level 9.1 or... |
 | examples/ExMat3UniformMember.fx | OpenGL | FAIL | SD0210 | Unsupported uniform type in 'mat3 ColorTransform;': only float/float2/float3/float4 and square float4x4 matrices (plus arrays of those) are modelled for the Mon... |
 | examples/ExModernSample.fx | DirectX_11 | PASS |  |  |
 | examples/ExModernSample.fx | OpenGL | PASS |  |  |
@@ -268,6 +270,12 @@ is a CORRECT result, not a defect.
 | examples/ExProfileBogusLiteral.fx | OpenGL | FAIL | SD0013 | compile target 'ps_9_9' is not a recognized shader profile (did you forget to #define VS_SHADERMODEL / PS_SHADERMODEL, e.g. via the standard '#if OPENGL ... #el... |
 | examples/ExProfileLevel9Header.fx | DirectX_11 | PASS |  |  |
 | examples/ExProfileLevel9Header.fx | OpenGL | PASS |  |  |
+| examples/ExProfileSm3BothArms.fx | DirectX_11 | FAIL | SD0015 | compile target 'vs_3_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'vs_3_0'. Vertex shader 'VSMain' must be SM 4.0 level 9.1 o... |
+| examples/ExProfileSm3BothArms.fx | OpenGL | PASS |  |  |
+| examples/ExProfileSm3OnDirectX.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_3_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_3_0'. Pixel shader 'MainPS' must be SM 4.0 level 9.1 or... |
+| examples/ExProfileSm3OnDirectX.fx | OpenGL | PASS |  |  |
+| examples/ExProfileSm6OnDirectX.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_6_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_6_0'. Pixel shader 'MainPS' must be SM 4.0 level 9.1 or... |
+| examples/ExProfileSm6OnDirectX.fx | OpenGL | PASS |  |  |
 | examples/ExProfileStageMismatch.fx | DirectX_11 | FAIL | SD0014 | compile target 'ps_4_0_level_9_1' is a pixel profile but is bound to the pass's VertexShader slot — the profile's stage must match the slot it compiles (use a v... |
 | examples/ExProfileStageMismatch.fx | OpenGL | FAIL | SD0014 | compile target 'ps_3_0' is a pixel profile but is bound to the pass's VertexShader slot — the profile's stage must match the slot it compiles (use a vs_* profil... |
 | examples/ExProfileTypo.fx | DirectX_11 | FAIL | SD0013 | compile target 'a' is not a recognized shader profile (did you forget to #define VS_SHADERMODEL / PS_SHADERMODEL, e.g. via the standard '#if OPENGL ... #else ..... |
@@ -332,8 +340,6 @@ is a CORRECT result, not a defect.
 | passthrough_vs.fx | OpenGL | FAIL | SD0010 | Effect source contains no techniques |
 | platform-macros.fx | DirectX_11 | PASS |  |  |
 | platform-macros.fx | OpenGL | PASS |  |  |
-| shadertoy/GradientToy.fx | DirectX_11 | PASS |  |  |
-| shadertoy/GradientToy.fx | OpenGL | PASS |  |  |
 | textured.fx | DirectX_11 | PASS |  |  |
 | textured.fx | OpenGL | PASS |  |  |
 | textured_vs_ps.fx | DirectX_11 | FAIL | SD0010 | Effect source contains no techniques |
@@ -344,9 +350,9 @@ is a CORRECT result, not a defect.
 | third-party/Apos.Shapes/apos-shapes-sm6.fx | OpenGL | PASS |  |  |
 | third-party/Apos.Shapes/apos-shapes.fx | DirectX_11 | PASS |  |  |
 | third-party/Apos.Shapes/apos-shapes.fx | OpenGL | PASS |  |  |
-| third-party/Gum/FnaSample-Shader.fx | DirectX_11 | FAIL | E5005 | Identifier "pointTextureSampler" is not declared. |
+| third-party/Gum/FnaSample-Shader.fx | DirectX_11 | FAIL | SD0015 | compile target 'vs_1_1' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'vs_1_1'. Vertex shader 'vs' must be SM 4.0 level 9.1 or hi... |
 | third-party/Gum/FnaSample-Shader.fx | OpenGL | FAIL | SD0010 | Effect source contains no techniques |
-| third-party/Gum/KniInCode-Shader.fx | DirectX_11 | FAIL | E5005 | Method 'Sample' is not defined on type 'Texture'. |
+| third-party/Gum/KniInCode-Shader.fx | DirectX_11 | FAIL | SD0015 | compile target 'vs_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'vs_2_0'. Vertex shader 'vs' must be SM 4.0 level 9.1 or hi... |
 | third-party/Gum/KniInCode-Shader.fx | OpenGL | FAIL | X0000 | use of undeclared identifier 'CurrentTexture' |
 | third-party/Gum/MonoGameInCode-Grayscale.fx | DirectX_11 | PASS |  |  |
 | third-party/Gum/MonoGameInCode-Grayscale.fx | OpenGL | PASS |  |  |
@@ -380,39 +386,40 @@ is a CORRECT result, not a defect.
 | third-party/MonoGame/TextureArrayEffect.fx | OpenGL | FAIL | SD0210 | Unsupported sampler type for the MonoGame/KNI GL target: 'sampler2DArray'. The MojoShader-dialect rewrite models 'sampler2D', 'samplerCube' and 'sampler3D'; a '... |
 | third-party/MonoGame/VertexTextureEffect.fx | DirectX_11 | FAIL | FX0012 | The legacy D3D9 sampling intrinsic 'tex2Dlod' is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot r... |
 | third-party/MonoGame/VertexTextureEffect.fx | OpenGL | FAIL | FX0012 | The legacy D3D9 sampling intrinsic 'tex2Dlod' is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot r... |
-| third-party/Nez/Bevels.fx | DirectX_11 | PASS |  |  |
+| third-party/Nez/Bevels.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_2_0'. Pixel shader 'PixelShaderFunction' must be SM 4.0... |
 | third-party/Nez/Bevels.fx | OpenGL | PASS |  |  |
-| third-party/Nez/BloomCombine.fx | DirectX_11 | PASS |  |  |
+| third-party/Nez/BloomCombine.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_2_0'. Pixel shader 'PixelShaderFunction' must be SM 4.0... |
 | third-party/Nez/BloomCombine.fx | OpenGL | PASS |  |  |
-| third-party/Nez/BloomExtract.fx | DirectX_11 | PASS |  |  |
+| third-party/Nez/BloomExtract.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_2_0'. Pixel shader 'PixelShaderFunction' must be SM 4.0... |
 | third-party/Nez/BloomExtract.fx | OpenGL | PASS |  |  |
-| third-party/Nez/Crosshatch.fx | DirectX_11 | PASS |  |  |
+| third-party/Nez/Crosshatch.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_3_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_3_0'. Pixel shader 'PixelShaderFunction' must be SM 4.0... |
 | third-party/Nez/Crosshatch.fx | OpenGL | FAIL | SD0210 | Unsupported uniform type in 'int crossHatchSize;': integer/boolean uniforms are not modelled for the MonoGame OpenGL target (MojoShader places them in the separ... |
-| third-party/Nez/GaussianBlur.fx | DirectX_11 | PASS |  |  |
+| third-party/Nez/GaussianBlur.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_2_0'. Pixel shader 'PixelShaderFunction' must be SM 4.0... |
 | third-party/Nez/GaussianBlur.fx | OpenGL | PASS |  |  |
-| third-party/Nez/HeatDistortion.fx | DirectX_11 | PASS |  |  |
+| third-party/Nez/HeatDistortion.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_2_0'. Pixel shader 'mainPS' must be SM 4.0 level 9.1 or... |
 | third-party/Nez/HeatDistortion.fx | OpenGL | PASS |  |  |
-| third-party/Nez/Letterbox.fx | DirectX_11 | PASS |  |  |
+| third-party/Nez/Letterbox.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_3_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_3_0'. Pixel shader 'mainPS' must be SM 4.0 level 9.1 or... |
 | third-party/Nez/Letterbox.fx | OpenGL | PASS |  |  |
-| third-party/Nez/Noise.fx | DirectX_11 | PASS |  |  |
+| third-party/Nez/Noise.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_3_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_3_0'. Pixel shader 'PixelShaderFunction' must be SM 4.0... |
 | third-party/Nez/Noise.fx | OpenGL | PASS |  |  |
 | third-party/Nez/PaletteCycler.fx | DirectX_11 | FAIL | FX0012 | The legacy D3D9 sampling intrinsic 'tex1D' is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot rewr... |
 | third-party/Nez/PaletteCycler.fx | OpenGL | FAIL | FX0012 | The legacy D3D9 sampling intrinsic 'tex1D' is not supported on this target: its arguments do not map 1:1 onto a modern Texture method, so ShadowDusk cannot rewr... |
-| third-party/Nez/PixelGlitch.fx | DirectX_11 | PASS |  |  |
+| third-party/Nez/PixelGlitch.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_3_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_3_0'. Pixel shader 'MainPS' must be SM 4.0 level 9.1 or... |
 | third-party/Nez/PixelGlitch.fx | OpenGL | PASS |  |  |
-| third-party/Nez/Reflection.fx | DirectX_11 | PASS |  |  |
+| third-party/Nez/Reflection.fx | DirectX_11 | FAIL | SD0015 | compile target 'vs_2_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'vs_2_0'. Vertex shader 'mirrorVertex' must be SM 4.0 level... |
 | third-party/Nez/Reflection.fx | OpenGL | FAIL | SD0100 | SPIRV-Cross [compile]: Buffer block cannot be expressed as any of std430, std140, scalar, even with enhanced layouts. You can try flattening this block to suppo... |
-| third-party/Nez/SpriteBlinkEffect.fx | DirectX_11 | PASS |  |  |
+| third-party/Nez/SpriteBlinkEffect.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_3_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_3_0'. Pixel shader 'mainPixel' must be SM 4.0 level 9.1... |
 | third-party/Nez/SpriteBlinkEffect.fx | OpenGL | PASS |  |  |
-| third-party/Nez/SpriteLines.fx | DirectX_11 | PASS |  |  |
+| third-party/Nez/SpriteLines.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_3_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_3_0'. Pixel shader 'verticalLinesPS' must be SM 4.0 lev... |
 | third-party/Nez/SpriteLines.fx | OpenGL | PASS |  |  |
-| third-party/Nez/Twist.fx | DirectX_11 | PASS |  |  |
+| third-party/Nez/Twist.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_3_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_3_0'. Pixel shader 'PixelShaderFunction' must be SM 4.0... |
 | third-party/Nez/Twist.fx | OpenGL | PASS |  |  |
-| third-party/Nez/Vignette.fx | DirectX_11 | PASS |  |  |
+| third-party/Nez/Vignette.fx | DirectX_11 | FAIL | SD0015 | compile target 'ps_3_0' is below the DirectX target's floor — mgfxc rejects it with "Invalid profile 'ps_3_0'. Pixel shader 'mainPS' must be SM 4.0 level 9.1 or... |
 | third-party/Nez/Vignette.fx | OpenGL | PASS |  |  |
 
 ### Census failure codes
 
+- `SD0015`: 22 cell(s) — FnaMultiPassStates.fx [DirectX_11], examples/ExIntUniformMember.fx [DirectX_11], examples/ExMat3UniformMember.fx [DirectX_11], examples/ExProfileSm3BothArms.fx [DirectX_11], examples/ExProfileSm3OnDirectX.fx [DirectX_11], examples/ExProfileSm6OnDirectX.fx [DirectX_11], third-party/Gum/FnaSample-Shader.fx [DirectX_11], third-party/Gum/KniInCode-Shader.fx [DirectX_11], third-party/Nez/Bevels.fx [DirectX_11], third-party/Nez/BloomCombine.fx [DirectX_11], third-party/Nez/BloomExtract.fx [DirectX_11], third-party/Nez/Crosshatch.fx [DirectX_11], third-party/Nez/GaussianBlur.fx [DirectX_11], third-party/Nez/HeatDistortion.fx [DirectX_11], third-party/Nez/Letterbox.fx [DirectX_11], third-party/Nez/Noise.fx [DirectX_11], third-party/Nez/PixelGlitch.fx [DirectX_11], third-party/Nez/Reflection.fx [DirectX_11], third-party/Nez/SpriteBlinkEffect.fx [DirectX_11], third-party/Nez/SpriteLines.fx [DirectX_11], third-party/Nez/Twist.fx [DirectX_11], third-party/Nez/Vignette.fx [DirectX_11]
 - `X0000`: 12 cell(s) — third-party/Gum/KniInCode-Shader.fx [OpenGL], third-party/MonoGame/Bevels.fx [OpenGL], third-party/MonoGame/BlackOut.fx [OpenGL], third-party/MonoGame/ColorFlip.fx [OpenGL], third-party/MonoGame/CustomSpriteBatchEffect.fx [OpenGL], third-party/MonoGame/CustomSpriteBatchEffectComparisonSampler.fx [OpenGL], third-party/MonoGame/DefinesTest.fx [OpenGL], third-party/MonoGame/HighContrast.fx [OpenGL], third-party/MonoGame/NoEffect.fx [OpenGL], third-party/MonoGame/ParserTest.fx [OpenGL], third-party/MonoGame/PreprocessorTest.fx [OpenGL], third-party/MonoGame/RainbowH.fx [OpenGL]
 - `SD0010`: 8 cell(s) — minimal_vs_ps.fx [DirectX_11], minimal_vs_ps.fx [OpenGL], passthrough_vs.fx [DirectX_11], passthrough_vs.fx [OpenGL], textured_vs_ps.fx [DirectX_11], textured_vs_ps.fx [OpenGL], third-party/Gum/FnaSample-Shader.fx [OpenGL], third-party/MonoGame/ParameterTypes.fx [OpenGL]
 - `SD0210`: 6 cell(s) — examples/ExIntUniformMember.fx [OpenGL], examples/ExMat3UniformMember.fx [OpenGL], examples/ExVsTextureFetch.fx [OpenGL], third-party/MonoGame/Instancing.fx [OpenGL], third-party/MonoGame/TextureArrayEffect.fx [OpenGL], third-party/Nez/Crosshatch.fx [OpenGL]
@@ -420,7 +427,6 @@ is a CORRECT result, not a defect.
 - `FX0012`: 4 cell(s) — third-party/MonoGame/VertexTextureEffect.fx [DirectX_11], third-party/MonoGame/VertexTextureEffect.fx [OpenGL], third-party/Nez/PaletteCycler.fx [DirectX_11], third-party/Nez/PaletteCycler.fx [OpenGL]
 - `SD0001`: 2 cell(s) — MinimalWithInclude.fx [DirectX_11], MinimalWithInclude.fx [OpenGL]
 - `SD0014`: 2 cell(s) — examples/ExProfileStageMismatch.fx [DirectX_11], examples/ExProfileStageMismatch.fx [OpenGL]
-- `E5005`: 2 cell(s) — third-party/Gum/FnaSample-Shader.fx [DirectX_11], third-party/Gum/KniInCode-Shader.fx [DirectX_11]
 - `E5030`: 1 cell(s) — third-party/MonoGame/DefinesTest.fx [DirectX_11]
 - `E5017`: 1 cell(s) — third-party/MonoGame/ParameterTypes.fx [DirectX_11]
 - `E4000`: 1 cell(s) — third-party/MonoGame/PreprocessorTest.fx [DirectX_11]

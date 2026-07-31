@@ -383,6 +383,15 @@ internal sealed class CompilationPipeline
         // macro name) pays for a DXC -P expansion, cached per token. Per the byte-identity
         // invariant this ONLY adds rejections — every currently-compiling shader (literal
         // profile or a macro defined to a real profile) still resolves to a known profile.
+        //
+        // Target profile-FLOOR validation (SD0015, Phase 51 A10) rides on the same walk.
+        // A profile can be perfectly recognized (so SD0013 passes) and still be one the
+        // requested target's reference compiler refuses: mgfxc's DirectX_11 profile rejects
+        // every SM1–3 target with "must be SM 4.0 level 9.1 or higher!". ShadowDusk accepted
+        // them, so a legacy SM3 effect compiled here and then failed the consumer's real
+        // Content Pipeline build. DirectX only — see DirectX11FloorCheck's remarks for why
+        // the OpenGL/Vulkan/DX12 equivalents are deliberately not enforced here.
+        bool enforceDx11Floor = directX;
         var profileExpansionCache = new Dictionary<string, string?>(StringComparer.Ordinal);
         foreach (TechniqueInfo technique in fxParsed.Techniques)
         {
@@ -393,7 +402,8 @@ internal sealed class CompilationPipeline
                     var v = ValidateCompileProfile(
                         pass.VertexProfile, pass.VertexProfileToken, pass.VertexProfileSpan, ShaderStage.Vertex,
                         dxcCompiler, macros, preprocessed, sourceFileName,
-                        profileExpansionCache, enforceStagePrefix: true, cancellationToken);
+                        profileExpansionCache, enforceStagePrefix: true, cancellationToken,
+                        enforceDirectX11Floor: enforceDx11Floor, entryPoint: pass.VertexEntryPoint);
                     if (v is { } vErr)
                         return Fail(vErr);
                 }
@@ -402,7 +412,8 @@ internal sealed class CompilationPipeline
                     var p = ValidateCompileProfile(
                         pass.PixelProfile, pass.PixelProfileToken, pass.PixelProfileSpan, ShaderStage.Pixel,
                         dxcCompiler, macros, preprocessed, sourceFileName,
-                        profileExpansionCache, enforceStagePrefix: true, cancellationToken);
+                        profileExpansionCache, enforceStagePrefix: true, cancellationToken,
+                        enforceDirectX11Floor: enforceDx11Floor, entryPoint: pass.PixelEntryPoint);
                     if (p is { } pErr)
                         return Fail(pErr);
                 }
@@ -1182,7 +1193,9 @@ internal sealed class CompilationPipeline
         string sourceFileName,
         Dictionary<string, string?> expansionCache,
         bool enforceStagePrefix,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool enforceDirectX11Floor = false,
+        string? entryPoint = null)
     {
         // A missing profile cannot be validated (and never reaches a compile with a real
         // target) — leave the existing SM3 fallback behavior untouched.
@@ -1192,7 +1205,8 @@ internal sealed class CompilationPipeline
         // Cheap path: an already-known literal profile is accepted with no expansion.
         // (IsKnownProfile is case-insensitive, so the lowercased form is fine here.)
         if (FxPreParser.IsKnownProfile(profile))
-            return StagePrefixCheck(profile, stage, span, sourceFileName, enforceStagePrefix);
+            return ResolvedProfileChecks(
+                profile, stage, span, sourceFileName, enforceStagePrefix, enforceDirectX11Floor, entryPoint);
 
         // Profile-SHAPED but NOT a known profile (e.g. 'ps_9_9', 'ps_2_5'): unconditionally
         // invalid — no macro could rescue a literal that already looks like a profile — so
@@ -1222,9 +1236,36 @@ internal sealed class CompilationPipeline
             return null;
 
         if (expanded is not null && FxPreParser.IsKnownProfile(expanded))
-            return StagePrefixCheck(expanded, stage, span, sourceFileName, enforceStagePrefix);
+            return ResolvedProfileChecks(
+                expanded, stage, span, sourceFileName, enforceStagePrefix, enforceDirectX11Floor, entryPoint);
 
         return ProfileError(profile, span, sourceFileName);
+    }
+
+    /// <summary>
+    /// The checks that only make sense once a compile target has RESOLVED to a recognized
+    /// profile: the stage-prefix cross-check (<c>SD0014</c>) and then the target's own
+    /// profile floor (<c>SD0015</c>). Stage prefix runs first because it is the more
+    /// specific diagnosis of the same token — a <c>ps_*</c> in a <c>VertexShader</c> slot
+    /// is a slot error, not a shader-model one (mgfxc conflates the two and reports its
+    /// floor message for both).
+    /// </summary>
+    private static ShaderError? ResolvedProfileChecks(
+        string knownProfile,
+        ShaderStage stage,
+        SourceSpan? span,
+        string sourceFileName,
+        bool enforceStagePrefix,
+        bool enforceDirectX11Floor,
+        string? entryPoint)
+    {
+        ShaderError? stagePrefix = StagePrefixCheck(knownProfile, stage, span, sourceFileName, enforceStagePrefix);
+        if (stagePrefix is not null)
+            return stagePrefix;
+
+        return enforceDirectX11Floor
+            ? DirectX11FloorCheck(knownProfile, stage, span, sourceFileName, entryPoint)
+            : null;
     }
 
     /// <summary>
@@ -1374,6 +1415,51 @@ internal sealed class CompilationPipeline
             Message: $"compile target '{knownProfile}' is a {(profileIsVertex ? "vertex" : "pixel")} profile but " +
                      $"is bound to the pass's {slot} slot — the profile's stage must match the slot it compiles " +
                      $"(use a {want} profile)");
+    }
+
+    /// <summary>
+    /// Phase 51 A10 (GL/DX/Vulkan path, DirectX only): once a compile target resolves to a
+    /// recognized profile, verify it is one MonoGame's <c>DirectX_11</c> shader profile
+    /// actually accepts. <c>mgfxc</c> hard-errors on anything else — <em>"Invalid profile
+    /// 'vs_3_0'. Vertex shader 'VSMain' must be SM 4.0 level 9.1 or higher!"</em> — while
+    /// ShadowDusk used to compile it happily, so a legacy SM2/SM3 effect (or one whose
+    /// <c>#if OPENGL … #else …</c> header names SM3 in BOTH arms, which is what the
+    /// ShaderToy converter used to emit) built here and then failed in the consumer's real
+    /// Content Pipeline build. The accepted set is empirical; see
+    /// <see cref="FxPreParser.IsDirectX11Profile"/>.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately scoped to <see cref="PlatformTarget.DirectX"/> and no other target.
+    /// The OpenGL ceiling (<c>mgfxc</c>: <em>"must be SM 3.0 or lower!"</em>) and the
+    /// Vulkan floor (<em>"Invalid Vulkan vertex profile … Requires vs_6_0"</em>) are the
+    /// same class and were measured at the same time, but each has its own reject-set
+    /// blast radius and is tracked as its own gap row in <c>docs/validation-matrix.md</c>
+    /// §8. <see cref="PlatformTarget.DirectX12"/> is excluded because its reference
+    /// compiler is mgfxc <b>3.8.5</b>, which is not the pinned golden oracle and is not
+    /// installed here, so its floor has never been measured — guessing it would be the
+    /// opposite of the empirical rule this check is built on.
+    /// </remarks>
+    private static ShaderError? DirectX11FloorCheck(
+        string knownProfile, ShaderStage stage, SourceSpan? span, string sourceFileName, string? entryPoint)
+    {
+        if (FxPreParser.IsDirectX11Profile(knownProfile))
+            return null;
+
+        string stageWord = stage == ShaderStage.Vertex ? "Vertex" : "Pixel";
+        string prefix    = stage == ShaderStage.Vertex ? "vs" : "ps";
+        string named     = entryPoint is null ? string.Empty : $" '{entryPoint}'";
+        return new ShaderError(
+            File: sourceFileName,
+            Line: span?.StartLine ?? 0,
+            Column: span?.StartColumn ?? 0,
+            Code: "SD0015",
+            Message: $"compile target '{knownProfile}' is below the DirectX target's floor — mgfxc rejects it " +
+                     $"with \"Invalid profile '{knownProfile}'. {stageWord} shader{named} must be SM 4.0 level 9.1 " +
+                     $"or higher!\". MonoGame's DirectX_11 profile accepts only {prefix}_4_0_level_9_1, " +
+                     $"{prefix}_4_0_level_9_3, {prefix}_4_0, {prefix}_4_1, and {prefix}_5_0 (note that SM6 " +
+                     $"profiles such as {prefix}_6_0 are refused too). Use the standard " +
+                     "'#if OPENGL … #else …' header so the DirectX arm defines " +
+                     "VS_SHADERMODEL/PS_SHADERMODEL as the *_4_0_level_9_1 pair");
     }
 
     /// <summary>
