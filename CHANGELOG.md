@@ -19,9 +19,6 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   so a divergence on any DXC-fed target can be *attributed*: replay the identical input through a
   different `dxc.exe` and diff the disassembly. An empty instruction diff means our source and flags
   are right and only the pinned DXC build differs.
-- An opt-in third arm on the DirectX 12 Apos.Shapes gate (`SHADOWDUSK_DX12_PROBE_MGFX`) that renders
-  an arbitrary supplied `.mgfx` alongside the golden and candidate. Off unless the variable is set,
-  and its result is reported, never asserted.
 - **`SD0104`, the mgfxc-parity warning for an unrecognized vertex-input semantic** (closes the
   remaining half of bug-hunt 2026-07-27 N5). An HLSL vertex semantic ShadowDusk does not model
   has always defaulted to `VertexElementUsage.TextureCoordinate`, which is correct — real `mgfxc`
@@ -41,9 +38,56 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   it too; the message names the on-disk spelling so the fix is one edit. Only the path segments
   the directive itself spells are checked, since the absolute prefix above them is your own
   machine layout and never ships.
+- **`ShaderToyRouteDx`, the DirectX arm of the ShaderToy / `.glsl` route render gate.** It converts
+  `GradientToy.glsl` in process with the real converter and pixel-diffs ShadowDusk's `DirectX_11`
+  build against **`mgfxc`'s `DirectX_11` build of the same converted `.fx`** on real MonoGame
+  `WindowsDX`. This arm was previously impossible, not merely missing: mgfxc refused the converter's
+  own output on DirectX (see below), so no golden could exist. Default-ON in
+  `validation/run-windows-render-gates.ps1`; there is no CI lane, because no GitHub runner has a
+  headless D3D driver (the same bucket as every other DX gate).
+- **A `DirectX_11` golden for the pinned ShaderToy fixture**, so `tests/fixtures/shaders/shadertoy/GradientToy.fx`
+  is golden-backed on both profiles like the rest of the corpus. `tools/compile-fixtures.ps1` now
+  includes the `shadertoy/` subdirectory by default, so a future regeneration cannot silently skip it.
+- **`ShadowDusk.MgcbPlugin` — MonoGame Content Builder integration, for real** (Phase 29). The
+  project went from a `.csproj` with zero `.cs` files to a shipping content-processor plugin:
+  `/reference:` it in a `.mgcb`, select `ShadowDuskEffectImporter` / `ShadowDuskEffectProcessor`,
+  and MGCB compiles `.fx → .xnb` through ShadowDusk **in its own process** — no `mgfxc`, no
+  `fxc.exe`, no Wine, no PATH plumbing. This is the native MGCB route, and the only one: MGCB
+  compiles effects in-process and launches no external effect compiler, so the previously
+  documented "put ShadowDusk on PATH as `mgfxc`" override never fired.
+  - **The target comes from the content project's own `/platform:` line** (`Windows` → DirectX 11,
+    the GL-family platforms → OpenGL, consoles → a loud `SD0501`). No ShadowDusk-specific flag is
+    ever required for correct output. Optional processor parameters: `DebugMode`, `Defines`,
+    `IncludeDirs`, and the escape hatches `ShaderProfile` (reaches DirectX 12 / Vulkan, which
+    MGCB's platform list cannot name), `MgfxVersion`, `DxbcBackend`.
+  - **The `.mgfx` inside the `.xnb` is byte-for-byte the ShadowDusk CLI's** output for the same
+    source and target, because the plugin is an adapter onto the same `EffectCompiler` and adds no
+    compilation logic. Proven, not asserted: `MgcbPluginByteIdentityTests` (14/14, under
+    `dotnet test`, compared against the real CLI binary as a separate process) and the new
+    `validation/MgcbPlugin` driver (7/7 through a real `dotnet mgcb`, which additionally checks the
+    `.xnb` envelope equals MGCB's own stock output and the payload differs from it). Same payload
+    out of `dotnet mgcb` 3.8.2.1105, 3.8.3, 3.8.4, 3.8.4.1 and 3.8.5, and out of the packed
+    `.nupkg` extracted into a bare directory.
+  - Shader errors surface through MGCB in the canonical `file(line,col-col): error CODE: message`
+    form, from the CLI's own formatter (source-linked, so the two cannot drift), with the
+    underlying compiler's words verbatim beneath. `#include`d files are registered as build
+    dependencies.
+  - The package is **tools-only** (no `lib/`; everything under `tools/net8.0/any/`), because MGCB
+    resolves a referenced plugin's dependencies — managed and native — from the plugin's own
+    directory. It is a `DevelopmentDependency` and contributes nothing to a consumer's shipped game
+    assembly. `release.yml` fails the release red if any native is missing from it, or if it ships
+    MonoGame's content-pipeline assembly.
+  - `samples/mgcb` gained `Content/Content.ShadowDusk.mgcb`, the same corpus built through the
+    plugin alongside the stock one.
+- **`ShadowDusk.MgcbPlugin` is now a published package**, making it the **eighth** `ShadowDusk.*`
+  NuGet. `release.yml`, `RELEASING.md`, the `/release` skill, and the package-count mentions in
+  `CLAUDE.md` / `Brand/README.md` were updated together.
 
 ### Changed
 
+- An opt-in third arm on the DirectX 12 Apos.Shapes gate (`SHADOWDUSK_DX12_PROBE_MGFX`) that renders
+  an arbitrary supplied `.mgfx` alongside the golden and candidate. Off unless the variable is set,
+  and its result is reported, never asserted.
 - **Root-caused the DirectX 12 Apos.Shapes gallery's `maxd 1`: it is the pinned DXC build, not a
   ShadowDusk defect.** ShadowDusk compiles DXIL with `dxcoob 1.7.2212.40` (the `Vortice.Dxc` 3.3.4
   pin); the `mgfxc` `DirectX_12` golden was built with MonoGame 3.8.5's bundled `dxcoob 1.8.2505.32`.
@@ -70,19 +114,6 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   standalone PoC CLI (still the only entry point to the converter's `--multipass` batch mode) and
   the out-of-band fidelity/gallery render-proof driver, which now source-links the single helper
   file from the sample.
-- **`ShaderToyRouteDx`, the DirectX arm of the ShaderToy / `.glsl` route render gate.** It converts
-  `GradientToy.glsl` in process with the real converter and pixel-diffs ShadowDusk's `DirectX_11`
-  build against **`mgfxc`'s `DirectX_11` build of the same converted `.fx`** on real MonoGame
-  `WindowsDX`. This arm was previously impossible, not merely missing: mgfxc refused the converter's
-  own output on DirectX (see below), so no golden could exist. Default-ON in
-  `validation/run-windows-render-gates.ps1`; there is no CI lane, because no GitHub runner has a
-  headless D3D driver (the same bucket as every other DX gate).
-- **A `DirectX_11` golden for the pinned ShaderToy fixture**, so `tests/fixtures/shaders/shadertoy/GradientToy.fx`
-  is golden-backed on both profiles like the rest of the corpus. `tools/compile-fixtures.ps1` now
-  includes the `shadertoy/` subdirectory by default, so a future regeneration cannot silently skip it.
-
-### Changed
-
 - **The ShaderToy converter emits a DirectX-valid compile-profile header.** It used to write
   `vs_3_0`/`ps_3_0` in *both* arms of its `#if OPENGL … #else … #endif`, so the DirectX arm asked for
   a profile MonoGame's `DirectX_11` shader profile refuses — real `mgfxc /Profile:DirectX_11` failed
@@ -118,43 +149,6 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   reason that gate is not skipped on a PR that changes the reject set. The node gate's corpus is
   now **94** stage compiles rather than 98, the four removed being this fixture's one vertex and
   three pixel entries on the DirectX arm.
-- **`ShadowDusk.MgcbPlugin` — MonoGame Content Builder integration, for real** (Phase 29). The
-  project went from a `.csproj` with zero `.cs` files to a shipping content-processor plugin:
-  `/reference:` it in a `.mgcb`, select `ShadowDuskEffectImporter` / `ShadowDuskEffectProcessor`,
-  and MGCB compiles `.fx → .xnb` through ShadowDusk **in its own process** — no `mgfxc`, no
-  `fxc.exe`, no Wine, no PATH plumbing. This is the native MGCB route, and the only one: MGCB
-  compiles effects in-process and launches no external effect compiler, so the previously
-  documented "put ShadowDusk on PATH as `mgfxc`" override never fired.
-  - **The target comes from the content project's own `/platform:` line** (`Windows` → DirectX 11,
-    the GL-family platforms → OpenGL, consoles → a loud `SD0501`). No ShadowDusk-specific flag is
-    ever required for correct output. Optional processor parameters: `DebugMode`, `Defines`,
-    `IncludeDirs`, and the escape hatches `ShaderProfile` (reaches DirectX 12 / Vulkan, which
-    MGCB's platform list cannot name), `MgfxVersion`, `DxbcBackend`.
-  - **The `.mgfx` inside the `.xnb` is byte-for-byte the ShadowDusk CLI's** output for the same
-    source and target, because the plugin is an adapter onto the same `EffectCompiler` and adds no
-    compilation logic. Proven, not asserted: `MgcbPluginByteIdentityTests` (14/14, under
-    `dotnet test`, compared against the real CLI binary as a separate process) and the new
-    `validation/MgcbPlugin` driver (7/7 through a real `dotnet mgcb`, which additionally checks the
-    `.xnb` envelope equals MGCB's own stock output and the payload differs from it). Same payload
-    out of `dotnet mgcb` 3.8.2.1105, 3.8.3, 3.8.4, 3.8.4.1 and 3.8.5, and out of the packed
-    `.nupkg` extracted into a bare directory.
-  - Shader errors surface through MGCB in the canonical `file(line,col-col): error CODE: message`
-    form, from the CLI's own formatter (source-linked, so the two cannot drift), with the
-    underlying compiler's words verbatim beneath. `#include`d files are registered as build
-    dependencies.
-  - The package is **tools-only** (no `lib/`; everything under `tools/net8.0/any/`), because MGCB
-    resolves a referenced plugin's dependencies — managed and native — from the plugin's own
-    directory. It is a `DevelopmentDependency` and contributes nothing to a consumer's shipped game
-    assembly. `release.yml` fails the release red if any native is missing from it, or if it ships
-    MonoGame's content-pipeline assembly.
-  - `samples/mgcb` gained `Content/Content.ShadowDusk.mgcb`, the same corpus built through the
-    plugin alongside the stock one.
-
-### Changed
-
-- **`ShadowDusk.MgcbPlugin` is now a published package**, making it the **eighth** `ShadowDusk.*`
-  NuGet. `release.yml`, `RELEASING.md`, the `/release` skill, and the package-count mentions in
-  `CLAUDE.md` / `Brand/README.md` were updated together.
 - **`NoMonoGameInProductLibrariesTests` gained a narrow, named exemption** for
   `ShadowDusk.MgcbPlugin` — an MGCB plugin cannot exist without the
   `ContentImporter`/`ContentProcessor` contract — plus a second test pinning that the reference
