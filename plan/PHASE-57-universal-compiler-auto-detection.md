@@ -675,6 +675,18 @@ The conversation that produced this phase started at *"could ShadowDusk target R
 **No Raylib work is in this phase**, deliberately: a new backend and a new compiler shape are separate
 changes, and mixing them makes both harder to prove.
 
+> **Update 2026-07-31 — the follow-on now has a home: [Phase 59](PHASE-59-raylib-cs-backend.md).**
+> A real prospective user asked for exactly this, with an unusually cheap shape (two **fullscreen,
+> single-pass, fragment-only** post-process effects), so Phase 59 scopes the fragment-only slice
+> rather than general Raylib support. **It is gated on §3's decision, not on this phase's code** — a
+> Raylib emitter does not need auto-detection to prove itself, since the target would be named
+> explicitly. Phase 59 also measures what this section could only estimate: raylib-cs supports a
+> **null vertex shader** (post-process needs no VS at all), ~**72%** of raylib's own `glsl330`
+> shaders are fragment-only, and raylib-cs ships **four** hand-maintained GLSL version trees, which
+> is a second value story independent of portability. Note the interaction with §3's "if no" branch
+> below: a **no** closes Phase 59 outright, and that request is the concrete input the decision
+> should now be made against.
+
 Recorded so the analysis is not redone:
 
 - **The codegen is the cheap part.** SPIRV-Cross already emits modern GLSL 330 / ES 300, which is what
