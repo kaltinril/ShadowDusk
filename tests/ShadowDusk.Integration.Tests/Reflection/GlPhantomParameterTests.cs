@@ -35,7 +35,7 @@ namespace ShadowDusk.Integration.Tests.Reflection;
 /// SPIR-V would make ShadowDusk's parameter list diverge from mgfxc BY NAME (the project's
 /// primary compatibility bar), trading a phantom-but-name-compatible parameter for a
 /// missing one. The actual root cause is upstream of reflection: ShadowDusk's DXC compile
-/// and mgfxc's fxc compile produce non-equivalent GLSL for this shader. See issue #185 for
+/// and mgfxc's fxc compile produce non-equivalent GLSL for this shader. See issue #187 for
 /// the ongoing investigation; this test is intentionally left failing (Skip) until that
 /// compile-level divergence has a scoped fix, rather than papering over it here.</para>
 /// </summary>
@@ -47,10 +47,10 @@ public sealed class GlPhantomParameterTests
 
     public GlPhantomParameterTests(ITestOutputHelper output) => _output = output;
 
-    [Fact(Skip = "Known open issue (#185): GradientToy.fx's DXC compile and mgfxc's fxc " +
+    [Fact(Skip = "Known open issue (#187): GradientToy.fx's DXC compile and mgfxc's fxc " +
                  "compile diverge on an algebraic identity, so no reflection source is " +
-                 "fully mgfxc-compatible here. Tracked separately from the CI DXIL-validation " +
-                 "crash this branch fixes; un-skip once the compile-level divergence is scoped.")]
+                 "fully mgfxc-compatible here. Split out from #185 (fixed by this branch); " +
+                 "un-skip once the compile-level divergence is scoped.")]
     public async Task GradientToy_OpenGL_ReflectionHasNoPhantomParameters()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));

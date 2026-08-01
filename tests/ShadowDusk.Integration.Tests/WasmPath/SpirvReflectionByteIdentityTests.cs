@@ -72,7 +72,7 @@ public sealed class SpirvReflectionByteIdentityTests
         // documented Phase 41 GL macro-model gap). They fail with SD0010 for GL regardless of
         // reflection source, so they add no reflection-swap evidence either way.
         //
-        // ALSO EXCLUDED: shadertoy/GradientToy. It genuinely diverges (issue #185) — its DXC
+        // ALSO EXCLUDED: shadertoy/GradientToy. It genuinely diverges (issue #187) — its DXC
         // compile cancels an algebraic identity (x * iResolution / iResolution) that the DXIL
         // oracle's separate companion compile does not, so the oracle reports a parameter the
         // SPIR-V never carries. That is real, not a corpus artifact — see GlPhantomParameterTests

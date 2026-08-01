@@ -200,8 +200,8 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 ### Known issue (found, filed, deliberately not fixed here)
 
 - **A pixel shader whose DXC compile cancels an algebraic identity that mgfxc's fxc compile
-  does not can carry a phantom effect parameter** (issue #185, found while investigating the
-  DXIL-validation fix above). `GradientToy.fx` computes `fragCoord = uv * iResolution.xy`
+  does not can carry a phantom effect parameter** (issue #187, split out from #185 while
+  investigating the DXIL-validation fix above). `GradientToy.fx` computes `fragCoord = uv * iResolution.xy`
   then `uv2 = fragCoord / iResolution.xy`; DXC's `-spirv` backend cancels the identity
   entirely, so the shipped GLSL never references `iResolution`, while `fxc`/`mgfxc` do not
   perform the same cancellation and the committed `mgfxc` golden's GLSL still reads it.
