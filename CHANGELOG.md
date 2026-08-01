@@ -14,6 +14,14 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.17.0] - 2026-08-01
+
+### Added
+
 - **`validation/DumpPreprocessedHlsl`, a no-GPU diagnostic** that dumps the exact HLSL text the
   compilation pipeline hands to DXC for a given `.fx` + target, plus the `-D` macro flags. It exists
   so a divergence on any DXC-fed target can be *attributed*: replay the identical input through a
@@ -1659,7 +1667,8 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.15.1...v0.16.0
 [0.15.1]: https://github.com/kaltinril/ShadowDusk/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.14.2...v0.15.0

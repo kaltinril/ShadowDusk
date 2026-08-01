@@ -14,7 +14,7 @@
 // WHY THE MANIFEST (and not a fresh Vkd3dCorpusProbe capture): the manifest is the
 // FULL-ARTIFACT hash (.mgfx / .fxb — it exercises the managed writers on the browser
 // runtime too, strictly stronger than the per-stage vkd3d seam the node G1 gate
-// already proved 98/98), it is the exact device Phase 37 uses to transfer the
+// already proved 94/94), it is the exact device Phase 37 uses to transfer the
 // Windows rung-4 render proofs to Linux/macOS byte-for-byte (CI asserts it on all
 // three desktop OSes via CrossHostByteIdentityTests), and it needs no desktop vkd3d
 // native in this job. Matching it makes the browser simply the FOURTH host proven

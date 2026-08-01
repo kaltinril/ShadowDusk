@@ -145,7 +145,12 @@ paths (first match wins), honors `#pragma once`, and emits `#line` directives so
 diagnostics point at the original files. Cycle detection uses an include **stack**: a diamond
 (two paths reaching one common header) is legal and the header is emitted twice; a true cycle
 fails with `SD0002`. A missing include fails with `SD0001`. Directive scanning is comment- and
-string-aware, so a commented-out `#include` is never honored.
+string-aware, so a commented-out `#include` is never honored. De-duplication and cycle
+detection compare resolved paths the way the file system that holds them actually spells them
+(ordinal by default, case-only variants merged only when confirmed to be the same file on
+disk) rather than guessing case-sensitivity from the OS; an `#include` that only resolves
+because the file system happens to ignore case warns with `SD0008`, since it silently breaks on
+a case-sensitive volume (Android, a case-sensitive APFS format) even though it compiles here.
 
 It then prepends the platform macro set for the target. The macros are simple presence flags
 (each defined as `1`):
@@ -203,7 +208,12 @@ The **Vulkan** path deliberately omits `-Zpr`, keeping HLSL's column-major defau
 there transposed every vertex transform and rendered nothing.
 On the desktop GL path the source is actually compiled **twice**: once
 to DXIL (used only to feed the native reflection oracle) and once to SPIR-V (fed to SPIRV-Cross);
-the DXIL compile is skipped when a managed SPIR-V reflector is injected (the browser path). DXC
+the DXIL compile is skipped when a managed SPIR-V reflector is injected (the browser path). That
+reflection-only DXIL compile passes DXC's `-Vd` (skip validation) flag, since its bytes are
+discarded after reflection and never shipped: hosted CI runners can carry a version-skewed
+`dxil.dll`/`dxcompiler.dll` on PATH that rejects an otherwise-correct module (issue #185), and
+skipping validation on a blob that is never loaded cannot ship an invalid one. Every shipped
+compile (OpenGL SPIR-V, DirectX DXBC, DirectX 12 DXIL) still validates fully. DXC
 is constructed lazily and invoked through a per-platform raw vtable call rather than Vortice's
 string wrapper, which is what makes it run on Linux and macOS at all.
 

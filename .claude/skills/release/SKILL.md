@@ -8,8 +8,8 @@ argument-hint: "<version> (e.g., 0.2.0)"
 
 Automate the full ShadowDusk release from version bump through PR merge to publish trigger.
 
-A release publishes **all seven** `ShadowDusk.*` packages (`Core`, `HLSL`, `GLSL`, `ShaderToy`,
-`Compiler`, `Cli`, `Wasm`) plus the `ShadowDuskCLI` `dotnet tool` to nuget.org, and attaches
+A release publishes **all eight** `ShadowDusk.*` packages (`Core`, `HLSL`, `GLSL`, `ShaderToy`,
+`Compiler`, `Cli`, `Wasm`, `MgcbPlugin`) plus the `ShadowDuskCLI` `dotnet tool` to nuget.org, and attaches
 self-contained CLI binaries to a GitHub Release. The human runbook this automates is `RELEASING.md`.
 
 ## Input
