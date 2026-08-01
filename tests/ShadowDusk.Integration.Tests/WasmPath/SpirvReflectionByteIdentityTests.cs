@@ -61,6 +61,31 @@ public sealed class SpirvReflectionByteIdentityTests
         //   SamplerPairMirror — two textures, two SamplerStates, sampled in REVERSE order
         //                       (2 pairs whose order matches neither declaration nor slots)
         "SharedSamplerPair", "SamplerPairMirror",
+        // Confidence-broadening sweep: every other fixture with a committed OpenGL golden that
+        // ShadowDusk can actually compile for OpenGL, beyond the curated PS-only set above —
+        // VS-driven shaders, multi-cbuffer, array uniforms, sampler/render states, third-party.
+        // EXCLUDED (not a reflection-source question): the real MonoGame stock effects
+        // (AlphaTestEffect, BasicEffect, DualTextureEffect, EnvironmentMapEffect, PenumbraHull/
+        // Light/Shadow/Texture, SkinnedEffect, SpriteEffect) all `#include "Macros.fxh"` and
+        // declare their technique via the TECHNIQUE(...) macro, which the zero-technique
+        // fallback deliberately does NOT expand for OpenGL (its macro set has no SM4/SM6 — the
+        // documented Phase 41 GL macro-model gap). They fail with SD0010 for GL regardless of
+        // reflection source, so they add no reflection-swap evidence either way.
+        //
+        // ALSO EXCLUDED: shadertoy/GradientToy. It genuinely diverges (issue #185) — its DXC
+        // compile cancels an algebraic identity (x * iResolution / iResolution) that the DXIL
+        // oracle's separate companion compile does not, so the oracle reports a parameter the
+        // SPIR-V never carries. That is real, not a corpus artifact — see GlPhantomParameterTests
+        // (currently Skip-pinned on the same issue) rather than failing this broad sweep on a
+        // known, separately-tracked case.
+        "ArrayUniform", "ArrayUniformVs", "BasicShader",
+        "BlendShader", "ClipShader", "ClipShaderNew", "ClipShaderSpriteTarget", "DeferredSprite",
+        "ForwardLighting",
+        "MultiCbuffer", "MultiCbufferVs", "MultiTexture", "MultiTextureOverlay",
+        "PolygonLight", "SamplerStatesFull",
+        "SharedCbuffer", "SimpleLightShader", "SpriteAlphaTest",
+        "StateBlendAdditive", "StateDepthStencil", "StateRasterizer", "Teleport", "VertexAndPixel",
+        "VsTransformColorTexture", "annotations", "third-party/Apos.Shapes/apos-shapes", "render-states",
     };
 
     public static IEnumerable<object[]> Corpus() =>

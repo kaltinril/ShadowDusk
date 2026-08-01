@@ -157,6 +157,9 @@ internal static class DxcFlagBuilder
         if (!options.AllowWarnings)
             args.Add("-WX");
 
+        if (options.SkipValidation)
+            args.Add("-Vd");
+
         if (options.EmbedDebugInfo)
         {
             args.Add("-Zi");
