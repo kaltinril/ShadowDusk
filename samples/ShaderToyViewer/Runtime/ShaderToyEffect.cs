@@ -4,7 +4,7 @@ using System;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 
-namespace ShadowDusk.ShaderToy.Runtime;
+namespace ShadowDusk.ShaderToyViewer.Runtime;
 
 /// <summary>
 /// Minimal runtime helper that drives a ShaderToy-converted <see cref="Effect"/> (the

@@ -56,6 +56,8 @@
       href: samples/shaderfiddle-web.md
     - name: ShaderViewer
       href: samples/shaderviewer.md
+    - name: ShaderToyViewer
+      href: samples/shadertoy-viewer.md
     - name: MGCB Sample
       href: samples/mgcb.md
 - name: CLI Reference

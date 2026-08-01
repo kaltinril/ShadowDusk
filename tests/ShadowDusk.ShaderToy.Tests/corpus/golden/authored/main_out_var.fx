@@ -7,10 +7,13 @@
 // target OpenGL, DirectX, and FNA fx_2_0.
 // =============================================================================
 
-#if OPENGL
-    #define VS_SHADERMODEL vs_3_0
-    #define PS_SHADERMODEL ps_3_0
+#if SM4
+    // DirectX (MonoGame's DirectX_11 profile defines SM4). mgfxc requires at least
+    // SM 4.0 level 9.1 here and rejects vs_3_0/ps_3_0 outright.
+    #define VS_SHADERMODEL vs_4_0_level_9_1
+    #define PS_SHADERMODEL ps_4_0_level_9_1
 #else
+    // OpenGL (mgfxc caps it at SM 3.0) and FNA fx_2_0 (MojoShader SM 2-3).
     #define VS_SHADERMODEL vs_3_0
     #define PS_SHADERMODEL ps_3_0
 #endif

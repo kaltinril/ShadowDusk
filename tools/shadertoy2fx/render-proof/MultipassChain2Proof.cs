@@ -8,7 +8,7 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using ShadowDusk.ShaderToy;
 using ShadowDusk.ShaderToy.Multipass;
-using ShadowDusk.ShaderToy.Runtime;
+using ShadowDusk.ShaderToyViewer.Runtime;
 
 namespace ShadowDusk.ShaderToy.RenderProof;
 

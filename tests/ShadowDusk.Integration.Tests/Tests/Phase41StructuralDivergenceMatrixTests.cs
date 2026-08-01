@@ -99,7 +99,7 @@ public sealed class Phase41StructuralDivergenceMatrixTests
         string repoRoot, string stem, string target, CancellationToken ct)
     {
         PlatformTarget platform = target == "OpenGL" ? PlatformTarget.OpenGL : PlatformTarget.DirectX;
-        string fxPath = TestHelpers.FixturePath(stem + ".fx");
+        string fxPath = TestHelpers.FixturePath(ResolveFixtureRelPath(repoRoot, stem));
 
         // 1. Compile the ShadowDusk candidate in memory (NOT into fixtures/golden).
         var (candidate, compileError) = await CompileAsync(fxPath, platform, ct);
@@ -478,6 +478,31 @@ public sealed class Phase41StructuralDivergenceMatrixTests
             .Where(stem => File.Exists(Path.Combine(repoRoot, "tests", "fixtures", "golden", "OpenGL", stem + ".mgfx")))
             .OrderBy(s => s, StringComparer.Ordinal)
             .ToList();
+    }
+
+    /// <summary>
+    /// Maps a golden STEM back to the fixture's path relative to <c>tests/fixtures/shaders</c>.
+    /// Most goldens correspond to a fixture at the root, but not all: the ShaderToy route's
+    /// pinned fixture lives at <c>shadertoy/GradientToy.fx</c> and became golden-backed on
+    /// both profiles in Phase 51 A10, so a root-only <c>stem + ".fx"</c> would report it as
+    /// "fixture not found" instead of diffing it. Falls back to the root name when nothing
+    /// matches, so a genuinely missing fixture still surfaces as the honest failure.
+    /// </summary>
+    private static string ResolveFixtureRelPath(string repoRoot, string stem)
+    {
+        string shadersDir = Path.Combine(repoRoot, "tests", "fixtures", "shaders");
+        string rootCandidate = Path.Combine(shadersDir, stem + ".fx");
+        if (File.Exists(rootCandidate))
+            return stem + ".fx";
+
+        string? nested = Directory
+            .EnumerateFiles(shadersDir, stem + ".fx", SearchOption.AllDirectories)
+            .OrderBy(p => p, StringComparer.Ordinal)
+            .FirstOrDefault();
+
+        return nested is null
+            ? stem + ".fx"
+            : Path.GetRelativePath(shadersDir, nested).Replace('\\', '/');
     }
 
     private static List<string> DiscoverNonGoldenFixtures(string repoRoot, IReadOnlyList<string> goldenBacked)

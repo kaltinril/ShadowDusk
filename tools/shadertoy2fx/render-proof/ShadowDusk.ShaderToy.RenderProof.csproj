@@ -22,7 +22,14 @@
   <ItemGroup>
     <!-- Phase 47: converter library promoted to src/ShadowDusk.ShaderToy; render-proof stays out-of-band. -->
     <ProjectReference Include="..\..\..\src\ShadowDusk.ShaderToy\ShadowDusk.ShaderToy.csproj" />
-    <ProjectReference Include="..\src\ShadowDusk.ShaderToy.Runtime\ShadowDusk.ShaderToy.Runtime.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Phase 51 A4: the MonoGame `ShaderToyEffect` runtime helper folded into the migrated sample
+         (samples/ShaderToyViewer). This driver is its only other consumer, so it SOURCE-LINKS the
+         single file rather than reviving a shared project whose name would look like a shippable
+         ShadowDusk.* package. Keeping MonoGame out of src/ is the point. -->
+    <Compile Include="..\..\..\samples\ShaderToyViewer\Runtime\ShaderToyEffect.cs"
+             Link="Runtime\ShaderToyEffect.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\*.glsl" CopyToOutputDirectory="PreserveNewest" />

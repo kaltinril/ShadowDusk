@@ -23,7 +23,7 @@ ShadowDusk is a cross-platform HLSL shader compiler for MonoGame, KNI, and FNA. 
 1. **OS-agnostic compilation** — compile `.fx` shaders on Linux, macOS, or Windows with no Wine or Windows SDK required.
 2. **Every backend the consumer's game already targets** — from a single HLSL source, produce DXBC (DirectX 11), DXIL (DirectX 12), GLSL (OpenGL/WebGL/Android), SPIR-V (Vulkan), or D3D9 bytecode (FNA `fx_2_0`). See the backend pipeline table below for the authoritative list.
 3. **Drop-in `mgfxc` replacement** — transparent substitute for MonoGame's Windows-only `mgfxc` tool; same CLI flags, same `.mgfx` output, same exit codes and error format so existing content pipelines require zero changes.
-4. **CLI tool** — `dotnet tool` named `ShadowDuskCLI`; usable standalone, from MGCB, or from any build script.
+4. **Build-time delivery shapes** — a `dotnet tool` named `ShadowDuskCLI` (usable standalone or from any build script), and the **`ShadowDusk.MgcbPlugin`** MGCB content-processor plugin, which a `.mgcb` `/reference:`s so MonoGame's Content Builder compiles `.fx → .xnb` through ShadowDusk **in its own process**. Both are the same library and emit byte-identical `.mgfx`. (A `PATH`-based `mgfxc` override is **not** a route to MGCB: MGCB compiles effects in-process and launches no external effect compiler — measured across `dotnet mgcb` 3.8.2.1105/3.8.4.1/3.8.5.)
 5. **In-memory & WASM-capable** — the same library compiles in-process / in-memory at runtime (returns `.mgfx` bytes; no temp files or child process required by the API), and is built to run inside .NET WASM so a KNI/Blazor browser game could compile shaders at runtime without a server roundtrip. **The in-browser shader-fiddle is a *sample* of this reach — not a separate product.**
 
 ## What success actually means
@@ -170,9 +170,9 @@ artifact, **vkd3d-shader compiled to WASM (Phase 4.1, ✅ done 2026-06-12)**, cl
 entire browser column: the fx_2_0 writer, bytecode patcher, and reflection are managed C#
 that already ran in WASM, so vkd3d.wasm unlocked **both** DX and FNA export in the browser
 from the same pinned 1.17 source (no substitute compiler). The evidence: the node gate
-replays all 98 vkd3d stage compiles of the byte-identity corpus through the product shim,
-98/98 byte-identical to the desktop native; a real headless browser running the real
-`WasmShaderCompiler` reproduces all 65 full artifacts (37 DX `.mgfx` + 28 FNA `.fxb`)
+replays every vkd3d stage compile of the byte-identity corpus through the product shim,
+**94/94** byte-identical to the desktop native; a real headless browser running the real
+`WasmShaderCompiler` reproduces the full artifacts (DX `.mgfx` + FNA `.fxb`)
 SHA-256-identical to the committed cross-host manifest — so render-equivalence transfers
 from the desktop rung-4 proofs by transitivity (`plan/DONE/PHASE-4.1-SPIKE-wasm-directx-dxbc.md`).
 DX/FNA in the browser are **export targets** — a browser cannot render DXBC/D3D9 bytecode,

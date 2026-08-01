@@ -18,7 +18,7 @@ small tail, the tail moves here and the parent moves to DONE.
 | Item | Source phase (now archived) | Original status when moved |
 |---|---|---|
 | OpenGL sampler records per (texture, sampler) PAIR (**A7**) | [2026-07-27 full-project review](../plan/BUG-HUNT-2026-07-27.md) sibling sweep | 🟡 Interim `SD0216` shipped (loud, not silent); the parity fix is open |
-| **PENDING MIGRATION — the `BUG-HUNT-2026-07-27.md` DEFERRED residue** | [`BUG-HUNT-2026-07-27.md`](BUG-HUNT-2026-07-27.md) | ⚠️ **Not yet moved in.** That doc's own `DEFERRED, with reasons` block is still the authority on ~13 open items (C2, M2, M4/M13 lowerings, M6, M8, N2, N6, N7, N8, N16, N17's Android half, M12's Linux case-insensitive fallback, M14's SD0011 span plumbing). **The doc cannot move to `plan/DONE/` until they are migrated here** — filing it as done while it is the sole home for 13 open items would bury them. Migrating them is this phase's stated job ("so no phase sits open at 95% for 1-2 items"); it needs one focused pass to give each item a scope and a done bar, not a bulk paste. |
+| **PENDING MIGRATION — the `BUG-HUNT-2026-07-27.md` DEFERRED residue** | [`BUG-HUNT-2026-07-27.md`](BUG-HUNT-2026-07-27.md) | ⚠️ **Not yet moved in.** That doc's own `DEFERRED, with reasons` block is still the authority on the 11 open items (C2, M2, M4/M13 lowerings, M6, M8, N2, N6, N7, N8, N16, M14's SD0011 span plumbing). Three came **off** that list on 2026-07-31: ~~N5's warning half~~ (closed as `SD0104`, **A11** below), ~~N17's Android include-comparer half~~ (closed, **A12** below), and ~~M12's Linux case-insensitive fallback~~ (closed as *rejected* in the same pass, reasoning recorded in the bug-hunt doc and `project_decisions.md`). **The doc still cannot move to `plan/DONE/` until the rest are migrated here** — filing it as done while it is their sole home would bury them. Migrating them is this phase's stated job ("so no phase sits open at 95% for 1-2 items"); it needs one focused pass to give each item a scope and a done bar, not a bulk paste. |
 | Browser diagnostics squiggle confirmation | [Phase 38](DONE/PHASE-38-wasm-compile-diagnostics.md) | 🟢 Implemented; only the in-browser confirmation rung left |
 | DeferredSprite GL MRT render proof (GAP-2) — ✅ done 2026-07-29 (A2) | [Phase 41](DONE/PHASE-41-fxc-oracle-monogame-fidelity.md) | Closed at compile + structural-match; render rung left |
 | Apos.Shapes render-proof (Option B) | [Phase 49](DONE/PHASE-49-apos-shapes-regression-corpus.md) | Option A shipped; Option B render-proof decision-gated |
@@ -27,7 +27,7 @@ small tail, the tail moves here and the parent moves to DONE.
 | Un-park Vulkan trigger (Area D) — ✅ done 2026-07-18 via [Phase 32](DONE/PHASE-32-vulkan-backend.md) | [Phase 35](DONE/PHASE-35-forward-version-support.md) | ext-blocked on MonoGame 3.8.5 stable (since shipped; see B2) |
 | DX/FNA/KNI-DX render-in-CI gates | [Phase 44](DONE/PHASE-44-validation-breadth-and-matrix-coverage.md) | Effectively done; ext-blocked on a WARP CI runner |
 | `d3dcompiler_47` vs `fxc.exe` DXBC delta study (OQ#2) | [Phase 41](DONE/PHASE-41-fxc-oracle-monogame-fidelity.md) | Deferred, low-value |
-| ShaderToy sample + runtime-helper migration to `samples/` | [Phase 47](DONE/PHASE-47-shadertoy-frontend-promotion.md) | Core shipped (NuGet since 0.9.0); the sample-migration appendix stayed Planned (moved 2026-07-18) |
+| ShaderToy sample + runtime-helper migration to `samples/` (**A4** — ✅ done 2026-07-31) | [Phase 47](DONE/PHASE-47-shadertoy-frontend-promotion.md) | Core shipped (NuGet since 0.9.0); the sample-migration appendix stayed Planned (moved 2026-07-18) |
 | CLI `.glsl`-route render-gate fixtures | [Phase 47](DONE/PHASE-47-shadertoy-frontend-promotion.md) | Deferred in the CLI appendix; tracked in validation-matrix §8 (moved 2026-07-18) |
 
 ---
@@ -159,7 +159,7 @@ shape/feature surface, using the real `Apos.Shapes` NuGet package's `ShapeBatch`
 constructor as both harness and golden, is tracked as its own phase:
 [Phase 55](DONE/PHASE-55-apos-shapes-shape-gallery-render-proof.md).
 
-### A4 — ShaderToy sample + runtime-helper migration to `samples/` (ex-47)
+### A4 — ✅ DONE (2026-07-31) — ShaderToy sample + runtime-helper migration to `samples/` (ex-47)
 *From Phase 47 (moved 2026-07-18, at the 0.12.0 release docs audit).* The core promotion shipped
 (the `ShadowDusk.ShaderToy` library is in-solution and published as a NuGet since 0.9.0), but the
 MonoGame-dependent runtime helper + interactive viewer sample never moved out of
@@ -167,9 +167,40 @@ MonoGame-dependent runtime helper + interactive viewer sample never moved out of
 stayed **Planned**. Anchor constraint (verbatim from the appendix): *"No code in this appendix may
 end up in a shipped `ShadowDusk.*` package."*
 
-**Done = ** the runtime helper + interactive ShaderToy viewer sample live under `samples/` per the
-appendix, `tools/shadertoy2fx/` keeps only the out-of-band render-proof driver (or is retired), and
-`NoMonoGameInProductLibrariesTests` stays green (no shipped library gains a MonoGame dependency).
+**Was done = ** the runtime helper + interactive ShaderToy viewer sample live under `samples/` per
+the appendix, `tools/shadertoy2fx/` keeps only the out-of-band render-proof driver (or is retired),
+and `NoMonoGameInProductLibrariesTests` stays green (no shipped library gains a MonoGame
+dependency).
+
+**Landed.** [`samples/ShaderToyViewer/`](../samples/ShaderToyViewer/) now holds the interactive
+viewer (appendix D1) with the `ShaderToyEffect` helper folded in as `Runtime/ShaderToyEffect.cs`
+(D2) — no separate `ShadowDusk.ShaderToy.Runtime` project, so the *only* projects referencing
+MonoGame are under `samples/`, `validation/`, and the out-of-band render-proof driver, never under
+`src/`. Namespaces moved with the code (`ShadowDusk.ShaderToy.Sample` → `ShadowDusk.ShaderToyViewer`,
+`ShadowDusk.ShaderToy.Runtime` → `ShadowDusk.ShaderToyViewer.Runtime`), disambiguating the sample
+from the product library that owns the `ShadowDusk.ShaderToy` name. Reference graph is D4's:
+`src/ShadowDusk.ShaderToy` + `src/ShadowDusk.Compiler` (natives transitive) +
+`MonoGame.Framework.DesktopGL` on the central pin. The sample stays out of `ShadowDusk.slnx` (D5),
+its four bundled `.glsl` and the committed eyeball PNGs moved with it, and the `.gitignore` entry
+for regenerable `output/*.fx|*.mgfx` was repointed (D7). Everything was `git mv`'d, so history
+follows. Verified: full solution + sample + render-proof build 0 warnings;
+`dotnet run --project samples/ShaderToyViewer -- --smoke` **4/4 PASS**, regenerating the committed
+PNGs **byte-identically**; `NoMonoGameInProductLibrariesTests` green on `net8.0` and `net10.0`.
+Zero compiler-output bytes moved (relocation only).
+
+**Two deliberate departures from the letter of the "Done" bar, both recorded rather than guessed
+at.** (1) **The render-proof driver stayed at `tools/shadertoy2fx/render-proof/`**, taking the
+appendix's own R1 deferral rather than D3's relocation to `validation/`; it changes no product
+behavior either way, and moving a GPU-only driver that no gate script runs is churn better spent
+when someone is actually re-proving it. Its dependency on the helper is now the D3-prescribed
+one-file `<Compile Include=…ShaderToyEffect.cs />` source link into the sample. (2) **The standalone
+PoC CLI `tools/shadertoy2fx/src/ShadowDusk.ShaderToy.Cli/` stayed too**, so `tools/shadertoy2fx/`
+does *not* end up holding "only the render-proof driver". That phrasing turns out to be
+unachievable without dropping a real capability: the PoC CLI is the **only** command-line entry
+point to the converter's `--multipass` batch mode (the product `ShadowDuskCLI` takes a single
+`.glsl` and has no `--multipass` flag), and the appendix explicitly scopes its fate out
+("main plan's call"). Retiring it is a separate, still-undecided call. Both `tools/shadertoy2fx/`
+READMEs and `docs/repository-layout.md` now say exactly what remains there and why.
 
 ### A5 — CLI `.glsl`-route render-gate fixtures (ex-47 CLI appendix)
 *From Phase 47 (moved 2026-07-18).* The CLI `.glsl` input is implemented + integration-tested
@@ -220,8 +251,16 @@ current output to the results directory on mismatch, with the regeneration comma
   single-axis frame, so "it rendered nothing" cannot pass as agreement. The golden gets the same
   check, so a diff failure is attributed to the right side.
 
-**Still open:** the Windows DX/FNA render-gate fixtures for this route. The **DirectX** one is
-blocked by A10 below (there is no mgfxc DirectX golden to diff against, for a real reason).
+**DirectX: unblocked and wired (2026-07-31, A10).** The blocker was real, not a harness limitation:
+the converter's own output was not compilable by mgfxc for `DirectX_11`, so no golden could exist.
+A10 fixed the emission, a `DirectX_11` golden is committed for the pinned fixture, and
+[`validation/ShaderToyRouteDx`](../validation/ShaderToyRouteDx/) is the DirectX arm of this gate,
+default-ON in `validation/run-windows-render-gates.ps1`. **It has not been run yet** — it needs the
+Windows GPU box, so the maxd number is still owed. The **OpenGL** arm is unaffected by that change:
+ShadowDusk's GL bytes for this fixture are byte-identical before and after, and the mgfxc `OpenGL`
+golden regenerated byte-for-byte identical.
+
+**Still open:** the Windows **FNA** render-gate fixture for this route.
 
 **Why this is worth more than it looks (2026-07-28).** Running `tools/shadertoy2fx/render-proof`
 during the Phase 52 full-test sweep found it had been **dead since Phase 47** and nobody knew:
@@ -584,7 +623,7 @@ failure of an assembly whose `net8.0` twin passes in the same run is not obvious
 
 ---
 
-### A10 — A converted ShaderToy `.fx` compiles on DirectX for us and is REJECTED by `mgfxc` (found 2026-07-29)
+### A10 — ✅ DONE (2026-07-31) — A converted ShaderToy `.fx` compiled on DirectX for us and was REJECTED by `mgfxc` (found 2026-07-29)
 
 *Surfaced by A5, and only because the new fixture joined the auto-globbed corpus. Filed rather than
 fixed, because each half moves something with its own blast radius.*
@@ -629,6 +668,189 @@ or alongside. Do not fix (2) in isolation.
 for `DirectX_11`), a DirectX golden exists for the A5 fixture and the DX arm of `ShaderToyRouteGl` is
 wired, and ShadowDusk's DirectX target rejects sub-floor vertex profiles the way `mgfxc` does, with
 the corpus sweep showing exactly what changed.
+
+#### ✅ Landed 2026-07-31 — both halves, in one change, in the required order
+
+**The oracle.** Everything below was measured against the **pinned** golden `mgfxc`:
+`~/.nuget/packages/dotnet-mgcb/3.8.4.1/tools/net8.0/any/mgfxc.dll`, invoked through the `dotnet`
+host exactly as `tools/compile-fixtures.ps1` resolves it (§6.1 of the validation matrix explains
+why "the newest mgfxc on the machine" is the wrong answer in two different ways at once).
+
+**(1) The converter's header — fixed, and NOT with the stock two-arm split.** `HarnessGenerator`
+now emits:
+
+```hlsl
+#if SM4
+    #define VS_SHADERMODEL vs_4_0_level_9_1
+    #define PS_SHADERMODEL ps_4_0_level_9_1
+#else
+    #define VS_SHADERMODEL vs_3_0
+    #define PS_SHADERMODEL ps_3_0
+#endif
+```
+
+This item originally called for the stock `#if OPENGL … #else …` shape. **Gating on `SM4` instead
+is deliberate**: the `#else` arm of the stock header also catches ShadowDusk's **FNA** target
+(`PlatformMacros.For(Fna)` = `{FNA, HLSL, SM3}`, no `OPENGL`), whose `fx_2_0` output is capped at
+Shader Model 3, so the stock split would have put a `*_4_0_level_9_1` profile in front of the FNA
+path and made the converter's own tri-target claim false. `SM4` is the macro **MonoGame's own
+DirectX_11 profile defines** (verified empirically: a probe with this exact header compiles under
+mgfxc for `DirectX_11` *and* `OpenGL`), so DirectX gets the profile it requires while OpenGL, FNA,
+Vulkan, and DX12 keep the legacy pair they had.
+
+**(2) The reject-fidelity gap — fixed as `SD0015`, DirectX only.** The floor is
+**empirical, not inferred**: every `KnownProfiles` entry was swept through the pinned mgfxc for
+each of its three profiles. Two results make a `major >= 4` rule wrong in *both* directions and are
+regression-locked in `ProfileRecognitionTests` and `examples/ExProfileSm6OnDirectX.fx`:
+
+| mgfxc profile | Accepted set | Enforced here? |
+|---|---|---|
+| `DirectX_11` | `{vs,ps}_4_0_level_9_1`, `_4_0_level_9_3`, `_4_0`, `_4_1`, `_5_0` — **`_level_9_0` is refused, and so is every SM6 profile** | ✅ `SD0015` |
+| `OpenGL` | SM ≤ 3 only (*"must be SM 3.0 or lower!"*) | ❌ left open, on purpose |
+| `Vulkan` | `vs_6_0`/`ps_6_0` only (*"Requires vs_6_0"*) | ❌ left open, on purpose |
+| `DirectX_12` | **unmeasured** — its reference compiler is mgfxc **3.8.5**, outside the golden oracle pin and not installed | ❌ deliberately not guessed |
+
+The two open ones are the same class with their own reject-set blast radius (the OpenGL ceiling
+alone would newly reject 7 root fixtures, every one of which real mgfxc already refuses). They are
+recorded with their measurements in `docs/validation-matrix.md` §8.1 and a §7 gap row, so the next
+person does not have to redo the probe.
+
+**The corpus sweep — what actually changed.** Every fixture was compiled through the real CLI for
+all five targets before and after. **20 cells flipped, all `DirectX_11`, all ACCEPT → REJECT
+`SD0015`; nothing else moved, including every output byte:**
+
+- 14 vendored Nez shaders (`Bevels`, `BloomCombine`, `BloomExtract`, `Crosshatch`, `GaussianBlur`,
+  `HeatDistortion`, `Letterbox`, `Noise`, `PixelGlitch`, `Reflection`, `SpriteBlinkEffect`,
+  `SpriteLines`, `Twist`, `Vignette`) — each verified rejected by real mgfxc first,
+- `FnaMultiPassStates.fx`, `examples/ExIntUniformMember.fx`, `examples/ExMat3UniformMember.fx`,
+- the 3 new fixtures (`ExProfileSm3OnDirectX`, `ExProfileSm3BothArms`, `ExProfileSm6OnDirectX`).
+
+Two more cells changed only their *code*, not their verdict: `Gum/FnaSample-Shader.fx` and
+`Gum/KniInCode-Shader.fx` on DirectX went from an unlabelled `X0000`/`E5005` further down the
+pipeline to the precise `SD0015`.
+
+**Goldens that moved, and the one that did not.** 81 ShaderToy converter goldens + 2 multipass
+goldens moved (header text only). **No `.mgfx`/`.fxb` byte moved anywhere**: ShadowDusk's OpenGL
+build of the pinned `GradientToy.fx` is byte-identical before and after (md5-checked against the
+pre-change fixture), and mgfxc's own `OpenGL` golden regenerated byte-for-byte identical, so the
+CI GL gate is untouched. A new `tests/fixtures/golden/DirectX_11/GradientToy.mgfx` was added;
+`tools/compile-fixtures.ps1` now sweeps `shadertoy/` by default so it cannot be silently skipped.
+
+**Fallout handled rather than papered over.** `FnaMultiPassStates.fx` was pinning **DirectX** bytes
+in the cross-host byte-identity manifest for a shader mgfxc cannot build (`compile vs_2_0`); it was
+dropped from that arm only, with the reason recorded at both corpus definitions. Four tests carried
+inline `compile ps_3_0` sources that were being validated on DirectX for an unrelated subject; each
+got the `SM4`-gated header with a note saying why it is load-bearing, so the test still tests what
+it claims to.
+
+**The render arm is WIRED BUT NOT YET RUN.** `validation/ShaderToyRouteDx` exists, builds, and is
+default-ON in `validation/run-windows-render-gates.ps1` with a `docs/validation-matrix.md` §6 row.
+Its first green run is still owed — it needs the Windows GPU box.
+
+---
+
+### A11 — ✅ DONE (2026-07-31) — the unknown-vertex-semantic warning (bug-hunt 2026-07-27 N5, warning half)
+
+*From the [2026-07-27 bug hunt](BUG-HUNT-2026-07-27.md) N5.* `VertexSemanticMapper` maps an HLSL
+vertex-input semantic to MonoGame's `VertexElementUsage` byte, and an unrecognized semantic falls
+back to `TextureCoordinate`. **That fallback value is correct and did not change** — real `mgfxc`
+defaults exactly the same way. What was missing is the other half of `mgfxc`'s behaviour: it
+**prints a warning when it defaults**, and ShadowDusk did not. A typo (`TEXCORD0` for `TEXCOORD0`)
+therefore silently minted a phantom TextureCoordinate attribute that MonoGame's
+`VertexInputLayout` then demanded from the consumer's vertex declaration, with a failed draw far
+from the shader as the only symptom. The mapper's own doc-comment admitted the gap and pointed
+back at N5.
+
+**Was deferred because** the mapper is pure and "has no warning channel to thread through". That
+stopped being true when **Phase 53** added `CompiledShader.Warnings`.
+
+**Landed as `SD0104`** (`docs/error-codes.md`; the `SD0100`–`SD0199` reflection/transpilation-backend
+range, deliberately *not* `SD0400`–`SD0499`, which `GlslPortabilityAnalyzer` owns):
+
+- `VertexSemanticMapper.Map(string semantic, out bool recognized)` reports whether the value came
+  from the table or the fallback; the original `Map(string)` delegates to it, so every existing
+  caller and value is untouched. `VertexSemanticMapper.UnrecognizedSemanticWarning` builds the
+  diagnostic in one place for both backends.
+- `SpirvVertexInputReflector.Read` (Vulkan) and `DxilVertexInputReflector.Read` (DirectX12) each
+  gained an `out IReadOnlyList<ShaderError> warnings` overload; the old signatures remain and
+  delegate.
+- `CompilationPipeline.CompileEntryPoint` appends them to the `Warnings` element of its returned
+  tuple (stamping the source path the compile was given), so they reach `CompiledShader.Warnings`,
+  CLI stderr, MGCB, and `ValidateAsync` like every other warning.
+
+**It is a WARNING, never an error** — `mgfxc` accepts and defaults, so drop-in parity forbids
+rejecting. **No emitted byte moves:** the fallback usage/index values are unchanged, only the
+Vulkan and DirectX12 attribute-table paths are touched, and warnings never gate output.
+Pinned by `VertexSemanticMapperTests` (the recognised/unrecognised report, both overloads agreeing
+on every value, the warning's code/severity/text), `SpirvVertexInputReflectorTests` (a hand-built
+minimal SPIR-V module: the fallback attribute is still emitted, and both `Read` overloads produce
+the identical table), and end-to-end `SD0104` tests in `VulkanEffectCompilerTests` /
+`DirectX12EffectCompilerTests` (including the no-false-positive direction on a clean shader).
+
+---
+
+### A12 — ✅ DONE (2026-07-31) — the `#include` comparer stopped guessing case sensitivity from the OS (bug-hunt N17; M12's case half rejected)
+
+*From the [2026-07-27 bug hunt](BUG-HUNT-2026-07-27.md), N17's second half — the last piece of
+that item, and the disposal of M12's residue with it.*
+
+**What the code actually did.** `Preprocessor.PreprocessorContext` keyed its cycle-detection
+stack and its `#pragma once` set on `OperatingSystem.IsLinux() ? StringComparer.Ordinal :
+StringComparer.OrdinalIgnoreCase`. That is wrong on two hosts ShadowDusk really ships to:
+**Android's file system is case-sensitive** and `OperatingSystem.IsLinux()` is **false** there,
+and **APFS can be formatted case-sensitive**. On both, two genuinely distinct headers whose
+names differ only by case were folded into one file: a `#pragma once` in the first silently
+suppressed the second (missing declarations, at best a confusing later error), and a legal
+`a → Helper.fxh → helper.fxh` chain was rejected as a false `SD0002`. Going the other way, the
+rule is also unsound for a case-insensitive volume mounted on Linux and for a per-directory
+case-sensitive NTFS directory on Windows.
+
+**The fix: ask, do not infer.** The comparer now canonicalizes through the injectable
+[`IIncludePathCanonicalizer`](../src/ShadowDusk.Core/Preprocessor/IIncludePathCanonicalizer.cs).
+Two paths that differ only by case are the same file **only** when the storage says both
+spellings canonicalize to one name; anything else stays ordinal. On a case-insensitive volume
+both spellings collapse onto the real name (today's Windows/macOS behaviour, unchanged); on a
+case-sensitive volume each spelling canonicalizes to itself. **No OS check is involved, so the
+answer is right on a host nobody has tested on** — which is the whole point, because nobody
+here can run Android.
+
+**Ordinal is the default and case-insensitivity is the exception**, deliberately. Wrongly
+*merging* two paths is the damaging direction (a suppressed header, a false cycle); wrongly
+*separating* two spellings of one file only costs a duplicated expansion, which the existing
+cycle check still terminates. So an "I cannot tell" answer (a virtual path, an I/O failure)
+falls back to ordinal rather than to the permissive rule.
+
+**Plus a diagnostic, because the comparer alone does not close the user-visible failure.** The
+shape that actually breaks a player is an `#include` whose spelling differs from the file's real
+name by case: it resolves on the author's Windows box and fails with `SD0001` on Android. That
+was a silent pass-through, so it is now the **`SD0008`** warning, naming the on-disk spelling.
+A warning and not an error: the include *did* resolve, `mgfxc` on Windows accepts it, and
+rejecting it would be a reject-set change that breaks working shaders. Only the segments the
+directive itself spells are checked — the absolute prefix above them is the author's own machine
+layout and never ships, so warning about it would be noise.
+
+**M12's "Linux case-insensitive fallback" is closed as REJECTED, not deferred.** It is the same
+subject seen from the opposite direction, and it is the wrong direction: it would have the
+compiler open a file the host's file system says does not exist, ambiguously so wherever two
+real case twins exist, and it would hide the author's mistake at the one moment they could still
+fix it. `SD0008` gives the author the same information without lying about the file system.
+
+**No output bytes moved.** The resolved path string is unchanged, so the `#line` directives and
+therefore every emitted artifact are untouched; the change is confined to how two already-
+resolved paths are compared and to a new non-fatal warning. Full `ShadowDusk.Core.Tests` (591 × 2)
+and `ShadowDusk.Integration.Tests` (720 × 2, including the golden and byte-identity fixtures)
+green on `net8.0` and `net10.0`.
+
+**Testable without Android hardware, by construction.** The canonicalizer is an interface, so
+`IncludePathCaseSensitivityTests` (pure, no disk) drives *both* file-system behaviours plus the
+"cannot tell" fallback on any host. `IncludePathCanonicalizerTests` (integration) then measures
+what the running volume actually does and asserts the real canonicalizer agrees — a test body
+that is correct on Windows, Linux, either APFS flavour, and Android alike.
+
+**What is still unproven, and honestly so:** nobody has executed this on an Android device. The
+*logic* is now OS-independent and both branches are exercised, so the class of bug is closed on
+evidence rather than on an assumption — but the on-device rung stays exactly where
+`docs/validation-matrix.md` already puts Android.
 
 ---
 

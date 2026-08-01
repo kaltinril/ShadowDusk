@@ -76,6 +76,21 @@ ShadowDusk validates the `compile` target exactly as `mgfxc`/`fxc` do: after mac
 
 This is the same input `mgfxc` rejects with `unrecognized compiler target`; ShadowDusk surfaces it at compile time so the shader cannot silently ship broken.
 
+### `SD0015` — a real profile that is still too low for the DirectX target
+
+A profile can be perfectly recognized and *still* be one the target's reference compiler refuses. MonoGame's `DirectX_11` shader profile accepts **only**:
+
+```
+vs_4_0_level_9_1   vs_4_0_level_9_3   vs_4_0   vs_4_1   vs_5_0
+ps_4_0_level_9_1   ps_4_0_level_9_3   ps_4_0   ps_4_1   ps_5_0
+```
+
+Anything else — every SM 1–3 profile, `*_4_0_level_9_0`, and (counter-intuitively) **every SM6 profile such as `ps_6_0`** — makes `mgfxc /Profile:DirectX_11` fail with *"Invalid profile 'ps_3_0'. Pixel shader 'MainPS' must be SM 4.0 level 9.1 or higher!"*. ShadowDusk reports the same condition as **`SD0015`**.
+
+This is the shape you hit when a shader written for DesktopGL or FNA — `PixelShader = compile ps_3_0 MainPS();` with no cross-platform header — is built for `WindowsDX`. **The fix is the header above:** add the `#if OPENGL … #else …` block so the DirectX arm defines the `*_4_0_level_9_1` pair. Nothing else in the shader needs to change.
+
+The floor is **per target**, and only the DirectX one is enforced today: OpenGL caps at SM 3.0 and Vulkan requires exactly `*_6_0`, so a profile that is wrong for DirectX is often exactly right for another target. Do not "fix" an `SD0015` by raising the profile for every backend.
+
 ## Uniform types on the OpenGL target (cbuffers, arrays, staged limits)
 
 Free uniforms, named `cbuffer`s (including one shared by both shader stages, or several in one stage), and **array uniforms** (`float4 Colors[4]`, `float4x4 Bones[N]`, `float`/`float2`/`float3` arrays) are fully modelled: array parameters expose their elements in `Effect.Parameters` — `Parameters["Colors"].SetValue(Vector4[])` and `Parameters["Colors"].Elements[i]` work exactly as with `mgfxc` output, on every target.

@@ -100,9 +100,10 @@ tools/shadertoy2fx/render-proof/output/gallery-thumbs/
 # as eyeball evidence. The per-shader .fx/.mgfx + dumped ref/ours/diff PNGs are scratch.
 tools/shadertoy2fx/render-proof/output/fidelity-work/
 
-# Phase 46 sample regenerable artifacts (the .png eyeball evidence IS committed).
-tools/shadertoy2fx/sample/output/*.fx
-tools/shadertoy2fx/sample/output/*.mgfx
+# ShaderToy viewer SAMPLE regenerable artifacts (the .png eyeball evidence IS committed).
+# Migrated from tools/shadertoy2fx/sample/ to samples/ShaderToyViewer/ by Phase 51 A4.
+samples/ShaderToyViewer/output/*.fx
+samples/ShaderToyViewer/output/*.mgfx
 
 # Visual Studio / VS Code / Rider
 .vs/
@@ -135,6 +136,7 @@ validation/output-vs-dx12/
 validation/output-samplerpairs/
 validation/output-mrt/
 validation/output-shadertoy/
+validation/output-shadertoy-dx/
 # Written by gates that pre-date this list and were never added to it.
 validation/output-cbuffer/
 validation/output-fna/

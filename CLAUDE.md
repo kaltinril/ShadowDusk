@@ -45,7 +45,7 @@ Work arrives from a previous session you did not see. Two obligations, both non-
 
 `src/` libraries · `tests/` xUnit + `fixtures/` · `samples/` · `validation/` real-runtime render drivers · `tools/` restored natives (not committed) · `docs/` reference docs · `plan/` phase docs. **Full annotated tree: [docs/repository-layout.md](docs/repository-layout.md).** Phase status index: [plan/plan.md](plan/plan.md).
 
-**Stack:** C# 12; the shipped libraries multi-target **`net8.0` + `net10.0`** (`Cli`, `MgcbPlugin`, and `Wasm` stay single-TFM), so building the solution needs **both** SDKs. xUnit + Shouldly (**FluentAssertions is banned — issue #171, licence; see [project_facts.md](project_facts.md)**), warnings-as-errors. Native interop: `Vortice.Dxc` (DXC), `Silk.NET` P/Invoke (SPIRV-Cross), `vkd3d-shader` (DXBC). Ships as seven `ShadowDusk.*` NuGet packages at one shared version plus the `ShadowDuskCLI` dotnet tool.
+**Stack:** C# 12; the shipped libraries multi-target **`net8.0` + `net10.0`** (`Cli`, `MgcbPlugin`, and `Wasm` stay single-TFM), so building the solution needs **both** SDKs. xUnit + Shouldly (**FluentAssertions is banned — issue #171, licence; see [project_facts.md](project_facts.md)**), warnings-as-errors. Native interop: `Vortice.Dxc` (DXC), `Silk.NET` P/Invoke (SPIRV-Cross), `vkd3d-shader` (DXBC). Ships as eight `ShadowDusk.*` NuGet packages at one shared version plus the `ShadowDuskCLI` dotnet tool.
 
 ## What ShadowDusk compiles for today
 
@@ -88,7 +88,7 @@ The **rung-4 render proofs** — the actual product bar (*"loads + renders like 
 >
 > ```powershell
 > dotnet test ShadowDusk.slnx                            # FULL suite, never a filtered subset
-> ./validation/run-windows-render-gates.ps1              # DX corpus + DX-modern (VTF) + DX Apos gallery + DX12 corpus + DX12 VS-driven/Apos gallery + KNI-DX + KNI-GL desktop + KNI-GL VS-driven + GL Apos + GL Apos gallery + ANGLE-D3D11 derivative probe (issue #136) + BOTH Vulkan gates, vs mgfxc/fxc
+> ./validation/run-windows-render-gates.ps1              # DX corpus + DX-modern (VTF) + DX Apos gallery + DX12 corpus + DX12 VS-driven/Apos gallery + KNI-DX + KNI-GL desktop + KNI-GL VS-driven + GL Apos + GL Apos gallery + ANGLE-D3D11 derivative probe (issue #136) + MGCB plugin (real dotnet mgcb) + BOTH Vulkan gates, vs mgfxc/fxc
 > ./validation/run-windows-render-gates.ps1 -IncludeFna  # also the FNA fx_2_0 gate (for an FNA-affecting release)
 > ./validation/run-windows-render-gates.ps1 -SkipVulkan  # ONLY on a box with no Vulkan-capable GPU
 > ```

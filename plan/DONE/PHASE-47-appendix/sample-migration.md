@@ -1,7 +1,17 @@
 # Phase 47 Appendix — ShaderToy Sample + Runtime Helper Migration
 
 **Track:** Delivery shapes / samples (reach, not product).
-**Status:** Planned (written 2026-06-20). Appendix to the main Phase 47 plan
+**Status:** ✅ **DONE (2026-07-31)** as [Phase 51](../../PHASE-51-consolidated-remainder-backlog.md)
+**A4** — written 2026-06-20, stayed *Planned* for six weeks. The sample lives at
+**`samples/ShaderToyViewer/`** with the `ShaderToyEffect` helper folded in at
+`Runtime/ShaderToyEffect.cs`; D1, D2, D4, D5, D6 and D7 landed as written, and the acceptance
+criteria below are met (`--smoke` 4/4, `NoMonoGameInProductLibrariesTests` green on both TFMs,
+zero compiler-output byte change). **Two departures, both deliberate and recorded in the A4 entry:**
+**D3 was deferred under its own R1** (the render-proof driver stays at
+`tools/shadertoy2fx/render-proof/`, now source-linking the helper file from the sample exactly as D3
+prescribes for that case), and the standalone **PoC CLI stays** — it is the only entry point to the
+converter's `--multipass` batch mode, so `tools/shadertoy2fx/` is not empty of source and was not
+removed. Appendix to the main Phase 47 plan
 ([`PHASE-47-shadertoy-frontend-promotion.md`](../PHASE-47-shadertoy-frontend-promotion.md),
 authored by a sibling agent). **This appendix covers ONLY the sample + the MonoGame runtime helper**;
 the converter-library promotion (`tools/shadertoy2fx/src/ShadowDusk.ShaderToy` →
@@ -289,53 +299,60 @@ subtrees (and, if D3 is done now, `render-proof/`).
 
 ## Tasks (sequenced)
 
-1. [ ] **Pre-flight:** confirm with the main Phase 47 plan that `src/ShadowDusk.ShaderToy` exists and
+1. [x] **Pre-flight:** confirm with the main Phase 47 plan that `src/ShadowDusk.ShaderToy` exists and
        keeps the `ShadowDusk.ShaderToy` namespace + `ShaderToyConverter` public API. (Blocks all
        reference rewrites; Dependency D-main.)
-2. [ ] `git mv` the 7 `.cs` + README + `shaders/*.glsl` from `tools/shadertoy2fx/sample/` to
+2. [x] `git mv` the 7 `.cs` + README + `shaders/*.glsl` from `tools/shadertoy2fx/sample/` to
        `samples/ShaderToyViewer/`.
-3. [ ] `git mv` `ShaderToyEffect.cs` into `samples/ShaderToyViewer/Runtime/`; delete the
+3. [x] `git mv` `ShaderToyEffect.cs` into `samples/ShaderToyViewer/Runtime/`; delete the
        `src/ShadowDusk.ShaderToy.Runtime` project (csproj + lock + obj/bin).
-4. [ ] Author `samples/ShaderToyViewer/ShaderToyViewer.csproj` (D4 refs, `IsPackable=false`,
+4. [x] Author `samples/ShaderToyViewer/ShaderToyViewer.csproj` (D4 refs, `IsPackable=false`,
        warnings-as-errors on, `shaders\*.glsl` copy item).
-5. [ ] Update namespaces (`ShadowDusk.ShaderToy.Sample`/`.Runtime` → `ShadowDusk.ShaderToyViewer`)
+5. [x] Update namespaces (`ShadowDusk.ShaderToy.Sample`/`.Runtime` → `ShadowDusk.ShaderToyViewer`)
        and the `using`s; fix the helper reference in `SampleCompiler.cs`/`SmokeGame.cs`.
-6. [ ] Carry over the representative `output/*.png`; add the `*.fx`/`*.mgfx` gitignore for the new
+6. [x] Carry over the representative `output/*.png`; add the `*.fx`/`*.mgfx` gitignore for the new
        `output/` (D7).
-7. [ ] Rewrite `samples/ShaderToyViewer/README.md` (run commands, slnx note, copy-out package
+7. [x] Rewrite `samples/ShaderToyViewer/README.md` (run commands, slnx note, copy-out package
        snippet, CC0 attribution, limitations).
-8. [ ] (Secondary, D3) Move `render-proof/` → `validation/ShaderToyRenderProof/`, switch its helper
+8. [~] (Secondary, D3) Move `render-proof/` → `validation/ShaderToyRenderProof/`, switch its helper
        dependency to a `<Compile Include=…ShaderToyEffect.cs />` link, update
        `docs/validation-matrix.md` §6 and `docs/repository-layout.md`. (May defer to a follow-up.)
-9. [ ] Update `docs/repository-layout.md`: add `samples/ShaderToyViewer/`; remove the
+       — **PARTLY DONE, relocation deferred under R1.** The driver stays at
+       `tools/shadertoy2fx/render-proof/`; its helper dependency **is** now the one-file
+       `<Compile Include=…ShaderToyEffect.cs />` source link, and its exact run commands were added
+       to `docs/validation-matrix.md` §8 (alongside the sample's `--smoke`) so neither goes missing.
+9. [x] Update `docs/repository-layout.md`: add `samples/ShaderToyViewer/`; remove the
        `tools/shadertoy2fx/` experiment subtree entries this phase removes.
-10. [ ] **MonoGame-leak check** (acceptance gate): assert no `src/*.csproj` references any
+10. [x] **MonoGame-leak check** (acceptance gate): assert no `src/*.csproj` references any
         `MonoGame.Framework.*` (a grep / a tiny test). (See Acceptance.)
-11. [ ] Build + run + `--smoke` the migrated sample on this machine; confirm green and a non-trivial
+11. [x] Build + run + `--smoke` the migrated sample on this machine; confirm green and a non-trivial
         frame per bundled shader; eyeball the committed PNGs.
-12. [ ] `dotnet test ShadowDusk.slnx` stays green (the sample is not in the slnx, so this only proves
-        the converter promotion didn't regress — necessary, not sufficient).
+12. [x] `dotnet test ShadowDusk.slnx` stays green (the sample is not in the slnx, so this only proves
+        the converter promotion didn't regress — necessary, not sufficient). Run on the integrated
+        result; the migration commit itself was verified with a full `dotnet build ShadowDusk.slnx`
+        (0 warnings) plus the targeted `NoMonoGameInProductLibrariesTests` on both TFMs, since
+        nothing under `src/` or `tests/` changed.
 
 ---
 
 ## Acceptance criteria
 
-- [ ] `dotnet build samples/ShaderToyViewer` and `dotnet run --project samples/ShaderToyViewer`
+- [x] `dotnet build samples/ShaderToyViewer` and `dotnet run --project samples/ShaderToyViewer`
       succeed against the **promoted** `src/ShadowDusk.ShaderToy` + `src/ShadowDusk.Compiler` +
       `MonoGame.Framework.DesktopGL` (central pin) — the interactive viewer renders and cycles.
-- [ ] `dotnet run --project samples/ShaderToyViewer -- --smoke` is **green** (every bundled shader
+- [x] `dotnet run --project samples/ShaderToyViewer -- --smoke` is **green** (every bundled shader
       converts + compiles in-memory + loads + renders a non-trivial frame; exit 0); and
       `--smoke <file>` works for an arbitrary external file.
-- [ ] Load-any-file + hot-reload + the on-screen error overlay all still work (manual check; documented
+- [x] Load-any-file + hot-reload + the on-screen error overlay all still work (manual check; documented
       in the README).
-- [ ] **No MonoGame dependency in any shipped `ShadowDusk.*` package**: no project under `src/`
+- [x] **No MonoGame dependency in any shipped `ShadowDusk.*` package**: no project under `src/`
       references `MonoGame.Framework.*` (grep/test passes), and `src/ShadowDusk.ShaderToy` in
       particular is pure-managed with no MonoGame. The `ShaderToyEffect` helper lives only under
       `samples/` (and, if moved, `validation/`).
-- [ ] The sample is **discoverable under `samples/`** and **absent from `ShadowDusk.slnx`** (matching
+- [x] The sample is **discoverable under `samples/`** and **absent from `ShadowDusk.slnx`** (matching
       the other three samples).
-- [ ] CC0 attribution for `neon.glsl` is intact and the README provenance link resolves.
-- [ ] `tools/shadertoy2fx/sample/` and `…/src/ShadowDusk.ShaderToy.Runtime/` are removed; no source
+- [x] CC0 attribution for `neon.glsl` is intact and the README provenance link resolves.
+- [x] `tools/shadertoy2fx/sample/` and `…/src/ShadowDusk.ShaderToy.Runtime/` are removed; no source
       is orphaned (the experiment tree's remaining removal is coordinated with the main plan).
 
 ---

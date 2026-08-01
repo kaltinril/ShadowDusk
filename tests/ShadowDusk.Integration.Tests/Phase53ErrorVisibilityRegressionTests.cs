@@ -332,7 +332,18 @@ public sealed class Phase53ErrorVisibilityRegressionTests : IClassFixture<CliBin
         // An int uniform: SM5 DXBC compiles it fine; the MonoGame-GL dialect rewrite
         // rejects it loudly (SD0210, MojoShader ivec4 register sets not modelled) —
         // the canonical "DX works, GL doesn't" reporter shape.
+        //
+        // The SM4-gated profile header is what keeps the DX arm about SD0210 and nothing
+        // else: since Phase 51 A10 a bare `compile ps_3_0` is itself refused on DirectX
+        // (SD0015, matching mgfxc), which would have made BOTH arms fail and quietly
+        // destroyed this test's subject.
         const string fx = """
+            #if SM4
+                #define PS_SHADERMODEL ps_4_0_level_9_1
+            #else
+                #define PS_SHADERMODEL ps_3_0
+            #endif
+
             int Mode;
 
             float4 MainPS() : COLOR0
@@ -344,7 +355,7 @@ public sealed class Phase53ErrorVisibilityRegressionTests : IClassFixture<CliBin
             {
                 pass P0
                 {
-                    PixelShader = compile ps_3_0 MainPS();
+                    PixelShader = compile PS_SHADERMODEL MainPS();
                 }
             }
             """;

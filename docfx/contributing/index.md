@@ -4,7 +4,7 @@ This page distills the contributor-facing essentials. The authoritative project 
 
 ## The purpose (keep this straight)
 
-The **product is the in-memory `IShaderCompiler` library** (`ShadowDusk.Compiler`): add the package, call `CompileAsync(fx)`, get `.mgfx` bytes — on Linux, macOS, or Windows, with nothing else to install. The CLI and the (future) MGCB plugin are *delivery shapes* of the same library. The in-browser fiddle is *only a sample of reach*. There are **no substitute compilers**: every host runs the same faithful pipeline.
+The **product is the in-memory `IShaderCompiler` library** (`ShadowDusk.Compiler`): add the package, call `CompileAsync(fx)`, get `.mgfx` bytes — on Linux, macOS, or Windows, with nothing else to install. The CLI and the MGCB content-processor plugin are *delivery shapes* of the same library. The in-browser fiddle is *only a sample of reach*. There are **no substitute compilers**: every host runs the same faithful pipeline.
 
 ## Repository layout
 
@@ -14,9 +14,10 @@ The **product is the in-memory `IShaderCompiler` library** (`ShadowDusk.Compiler
 | `src/ShadowDusk.HLSL` | FX9 pre-parser, preprocessor, DXC integration, HLSL reflection, `vkd3d-shader` + `d3dcompiler_47` DXBC backends. |
 | `src/ShadowDusk.GLSL` | SPIR-V → GLSL via SPIRV-Cross + the `MonoGameGlslRewriter` (MojoShader dialect). |
 | `src/ShadowDusk.Compiler` | `EffectCompiler : IShaderCompiler` — **the product NuGet**. |
-| `src/ShadowDusk.Cli` | the `ShadowDuskCLI` dotnet tool (exposed as `mgfxc` on `PATH` for MGCB). |
+| `src/ShadowDusk.Cli` | the `ShadowDuskCLI` dotnet tool — a faithful `mgfxc` drop-in for build scripts. (MGCB compiles in-process, so it is reached through the plugin below, not a `PATH` override.) |
 | `src/ShadowDusk.Wasm` | in-browser `WasmShaderCompiler` ([JSImport] DXC + SPIRV-Cross). |
-| `src/ShadowDusk.Metal`, `src/ShadowDusk.MgcbPlugin` | **stubs** (not implemented). |
+| `src/ShadowDusk.MgcbPlugin` | the MGCB content processor (`ShadowDuskEffectImporter` / `ShadowDuskEffectProcessor`) — a tools-only NuGet a `.mgcb` `/reference:`s. The only `src/` project allowed a MonoGame reference, and only a compile-only, `PrivateAssets="all"` one. |
+| `src/ShadowDusk.Metal` | **stub** (not implemented). |
 | `tests/` | `Core`/`HLSL`/`GLSL`/`Compiler` unit tests, `Integration.Tests`, `ImageTests`, `BrowserTests`, and `fixtures/` (the `.fx` corpus + golden `.mgfx`). |
 | `samples/` | `ShaderFiddle.Web`, `ShaderViewer`, `mgcb`. |
 | `tools/` | native-binary restore scripts (`restore.sh` / `restore.ps1`). |

@@ -2,7 +2,7 @@
 
 using System;
 using System.IO;
-using ShadowDusk.ShaderToy.Sample;
+using ShadowDusk.ShaderToyViewer;
 
 // =============================================================================
 // ShadowDusk ShaderToy sample (Phase 46 capstone).

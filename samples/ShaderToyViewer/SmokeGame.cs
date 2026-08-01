@@ -6,9 +6,9 @@ using System.Globalization;
 using System.IO;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
-using ShadowDusk.ShaderToy.Runtime;
+using ShadowDusk.ShaderToyViewer.Runtime;
 
-namespace ShadowDusk.ShaderToy.Sample;
+namespace ShadowDusk.ShaderToyViewer;
 
 /// <summary>The headless verdict for one bundled shader in <c>--smoke</c> mode.</summary>
 /// <param name="Name">The shader display name.</param>

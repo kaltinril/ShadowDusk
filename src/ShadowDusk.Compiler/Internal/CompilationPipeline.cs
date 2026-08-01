@@ -140,6 +140,7 @@ internal sealed class CompilationPipeline
             return Fail(preprocessResult.Error);
 
         PreprocessedSource preprocessed = preprocessResult.Value;
+        IReadOnlyList<ShaderError> preprocessWarnings = preprocessed.Warnings;
 
         // LAZY DXC instance, hoisted above the zero-technique fallback so the fallback's
         // preprocess pass and the GL reflection compile share one instance/disposal
@@ -382,6 +383,15 @@ internal sealed class CompilationPipeline
         // macro name) pays for a DXC -P expansion, cached per token. Per the byte-identity
         // invariant this ONLY adds rejections — every currently-compiling shader (literal
         // profile or a macro defined to a real profile) still resolves to a known profile.
+        //
+        // Target profile-FLOOR validation (SD0015, Phase 51 A10) rides on the same walk.
+        // A profile can be perfectly recognized (so SD0013 passes) and still be one the
+        // requested target's reference compiler refuses: mgfxc's DirectX_11 profile rejects
+        // every SM1–3 target with "must be SM 4.0 level 9.1 or higher!". ShadowDusk accepted
+        // them, so a legacy SM3 effect compiled here and then failed the consumer's real
+        // Content Pipeline build. DirectX only — see DirectX11FloorCheck's remarks for why
+        // the OpenGL/Vulkan/DX12 equivalents are deliberately not enforced here.
+        bool enforceDx11Floor = directX;
         var profileExpansionCache = new Dictionary<string, string?>(StringComparer.Ordinal);
         foreach (TechniqueInfo technique in fxParsed.Techniques)
         {
@@ -392,7 +402,8 @@ internal sealed class CompilationPipeline
                     var v = ValidateCompileProfile(
                         pass.VertexProfile, pass.VertexProfileToken, pass.VertexProfileSpan, ShaderStage.Vertex,
                         dxcCompiler, macros, preprocessed, sourceFileName,
-                        profileExpansionCache, enforceStagePrefix: true, cancellationToken);
+                        profileExpansionCache, enforceStagePrefix: true, cancellationToken,
+                        enforceDirectX11Floor: enforceDx11Floor, entryPoint: pass.VertexEntryPoint);
                     if (v is { } vErr)
                         return Fail(vErr);
                 }
@@ -401,19 +412,25 @@ internal sealed class CompilationPipeline
                     var p = ValidateCompileProfile(
                         pass.PixelProfile, pass.PixelProfileToken, pass.PixelProfileSpan, ShaderStage.Pixel,
                         dxcCompiler, macros, preprocessed, sourceFileName,
-                        profileExpansionCache, enforceStagePrefix: true, cancellationToken);
+                        profileExpansionCache, enforceStagePrefix: true, cancellationToken,
+                        enforceDirectX11Floor: enforceDx11Floor, entryPoint: pass.PixelEntryPoint);
                     if (p is { } pErr)
                         return Fail(pErr);
                 }
             }
         }
 
-        // Non-fatal diagnostics for the whole effect: the underlying compilers'
-        // verbatim warnings (deduped — VS and PS compile the same preprocessed source,
-        // so a source-level warning re-surfaces once per entry point) plus the GL
-        // portability lint findings (SD0400–SD0499). Returned on
-        // CompiledShader.Warnings; never gates output.
-        var runWarnings  = new List<ShaderError>();
+        // Non-fatal diagnostics for the whole effect: the preprocessor's own findings
+        // (SD0008 case-only #include mismatches), the underlying compilers' verbatim
+        // warnings (deduped — VS and PS compile the same preprocessed source, so a
+        // source-level warning re-surfaces once per entry point) plus the GL portability
+        // lint findings (SD0400–SD0499). Returned on CompiledShader.Warnings; never gates
+        // output.
+        //
+        // preprocessWarnings, not preprocessed.Warnings: the zero-technique recovery above
+        // may have replaced `preprocessed` with a source rebuilt from the re-parse, which
+        // carries no warnings of its own.
+        var runWarnings  = new List<ShaderError>(preprocessWarnings);
         var seenWarnings = new HashSet<(string File, int Line, int Column, string Code, string Message)>();
 
         foreach (TechniqueInfo technique in fxParsed.Techniques)
@@ -1176,7 +1193,9 @@ internal sealed class CompilationPipeline
         string sourceFileName,
         Dictionary<string, string?> expansionCache,
         bool enforceStagePrefix,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool enforceDirectX11Floor = false,
+        string? entryPoint = null)
     {
         // A missing profile cannot be validated (and never reaches a compile with a real
         // target) — leave the existing SM3 fallback behavior untouched.
@@ -1186,7 +1205,8 @@ internal sealed class CompilationPipeline
         // Cheap path: an already-known literal profile is accepted with no expansion.
         // (IsKnownProfile is case-insensitive, so the lowercased form is fine here.)
         if (FxPreParser.IsKnownProfile(profile))
-            return StagePrefixCheck(profile, stage, span, sourceFileName, enforceStagePrefix);
+            return ResolvedProfileChecks(
+                profile, stage, span, sourceFileName, enforceStagePrefix, enforceDirectX11Floor, entryPoint);
 
         // Profile-SHAPED but NOT a known profile (e.g. 'ps_9_9', 'ps_2_5'): unconditionally
         // invalid — no macro could rescue a literal that already looks like a profile — so
@@ -1216,9 +1236,36 @@ internal sealed class CompilationPipeline
             return null;
 
         if (expanded is not null && FxPreParser.IsKnownProfile(expanded))
-            return StagePrefixCheck(expanded, stage, span, sourceFileName, enforceStagePrefix);
+            return ResolvedProfileChecks(
+                expanded, stage, span, sourceFileName, enforceStagePrefix, enforceDirectX11Floor, entryPoint);
 
         return ProfileError(profile, span, sourceFileName);
+    }
+
+    /// <summary>
+    /// The checks that only make sense once a compile target has RESOLVED to a recognized
+    /// profile: the stage-prefix cross-check (<c>SD0014</c>) and then the target's own
+    /// profile floor (<c>SD0015</c>). Stage prefix runs first because it is the more
+    /// specific diagnosis of the same token — a <c>ps_*</c> in a <c>VertexShader</c> slot
+    /// is a slot error, not a shader-model one (mgfxc conflates the two and reports its
+    /// floor message for both).
+    /// </summary>
+    private static ShaderError? ResolvedProfileChecks(
+        string knownProfile,
+        ShaderStage stage,
+        SourceSpan? span,
+        string sourceFileName,
+        bool enforceStagePrefix,
+        bool enforceDirectX11Floor,
+        string? entryPoint)
+    {
+        ShaderError? stagePrefix = StagePrefixCheck(knownProfile, stage, span, sourceFileName, enforceStagePrefix);
+        if (stagePrefix is not null)
+            return stagePrefix;
+
+        return enforceDirectX11Floor
+            ? DirectX11FloorCheck(knownProfile, stage, span, sourceFileName, entryPoint)
+            : null;
     }
 
     /// <summary>
@@ -1371,6 +1418,51 @@ internal sealed class CompilationPipeline
     }
 
     /// <summary>
+    /// Phase 51 A10 (GL/DX/Vulkan path, DirectX only): once a compile target resolves to a
+    /// recognized profile, verify it is one MonoGame's <c>DirectX_11</c> shader profile
+    /// actually accepts. <c>mgfxc</c> hard-errors on anything else — <em>"Invalid profile
+    /// 'vs_3_0'. Vertex shader 'VSMain' must be SM 4.0 level 9.1 or higher!"</em> — while
+    /// ShadowDusk used to compile it happily, so a legacy SM2/SM3 effect (or one whose
+    /// <c>#if OPENGL … #else …</c> header names SM3 in BOTH arms, which is what the
+    /// ShaderToy converter used to emit) built here and then failed in the consumer's real
+    /// Content Pipeline build. The accepted set is empirical; see
+    /// <see cref="FxPreParser.IsDirectX11Profile"/>.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately scoped to <see cref="PlatformTarget.DirectX"/> and no other target.
+    /// The OpenGL ceiling (<c>mgfxc</c>: <em>"must be SM 3.0 or lower!"</em>) and the
+    /// Vulkan floor (<em>"Invalid Vulkan vertex profile … Requires vs_6_0"</em>) are the
+    /// same class and were measured at the same time, but each has its own reject-set
+    /// blast radius and is tracked as its own gap row in <c>docs/validation-matrix.md</c>
+    /// §8. <see cref="PlatformTarget.DirectX12"/> is excluded because its reference
+    /// compiler is mgfxc <b>3.8.5</b>, which is not the pinned golden oracle and is not
+    /// installed here, so its floor has never been measured — guessing it would be the
+    /// opposite of the empirical rule this check is built on.
+    /// </remarks>
+    private static ShaderError? DirectX11FloorCheck(
+        string knownProfile, ShaderStage stage, SourceSpan? span, string sourceFileName, string? entryPoint)
+    {
+        if (FxPreParser.IsDirectX11Profile(knownProfile))
+            return null;
+
+        string stageWord = stage == ShaderStage.Vertex ? "Vertex" : "Pixel";
+        string prefix    = stage == ShaderStage.Vertex ? "vs" : "ps";
+        string named     = entryPoint is null ? string.Empty : $" '{entryPoint}'";
+        return new ShaderError(
+            File: sourceFileName,
+            Line: span?.StartLine ?? 0,
+            Column: span?.StartColumn ?? 0,
+            Code: "SD0015",
+            Message: $"compile target '{knownProfile}' is below the DirectX target's floor — mgfxc rejects it " +
+                     $"with \"Invalid profile '{knownProfile}'. {stageWord} shader{named} must be SM 4.0 level 9.1 " +
+                     $"or higher!\". MonoGame's DirectX_11 profile accepts only {prefix}_4_0_level_9_1, " +
+                     $"{prefix}_4_0_level_9_3, {prefix}_4_0, {prefix}_4_1, and {prefix}_5_0 (note that SM6 " +
+                     $"profiles such as {prefix}_6_0 are refused too). Use the standard " +
+                     "'#if OPENGL … #else …' header so the DirectX arm defines " +
+                     "VS_SHADERMODEL/PS_SHADERMODEL as the *_4_0_level_9_1 pair");
+    }
+
+    /// <summary>
     /// Macro-expands a single compile-target token using DXC's <c>-P</c> preprocessor with
     /// the target's macros, returning the lowercased expansion (or <c>null</c> when it does
     /// not expand to a profile-shaped token). A unique sentinel wraps the probe so the
@@ -1487,6 +1579,7 @@ internal sealed class CompilationPipeline
         // Sm3StageReservationRewriter / vkd3d SM1-3 compile; vkd3d tolerates them (proven by the
         // Phase 41 FNA macro-technique corpus), the same way the GL/DX recovery feeds -P output on.
         PreprocessedSource? recoveredPreprocessed = null;
+        IReadOnlyList<ShaderError> fnaPreprocessWarnings = [];
         if (fxParsed.Techniques.Count == 0)
         {
             var flattenForExpand = new Preprocessor().Flatten(
@@ -1494,6 +1587,10 @@ internal sealed class CompilationPipeline
                 includeResolver, options.AdditionalIncludePaths);
             if (flattenForExpand.IsFailure)
                 return Fail(flattenForExpand.Error);   // a real #include error — surface it, not SD0010
+
+            // The recovery path rebuilds PreprocessedSource from the re-parse below, so the
+            // flatten's own warnings have to be carried across explicitly or they are lost.
+            fnaPreprocessWarnings = flattenForExpand.Value.Warnings;
 
             var recovered = TryRecoverMacroTechniques(
                 flattenForExpand.Value.Text, fnaPlatformMacros, sourceFileName,
@@ -1538,6 +1635,7 @@ internal sealed class CompilationPipeline
                 return Fail(preprocessResult.Error);
 
             preprocessed = preprocessResult.Value;
+            fnaPreprocessWarnings = preprocessed.Warnings;
         }
 
         // Per-stage source: vkd3d 1.17 rejects D3D9 stage-scoped register reservations
@@ -1600,10 +1698,10 @@ internal sealed class CompilationPipeline
                 (fnaDxcCompiler.Value as IDisposable)?.Dispose();
         }
 
-        // Verbatim vkd3d warnings for the whole effect, deduped across entry points
-        // (same policy as the GL/DX path's runWarnings) — returned on
-        // CompiledShader.Warnings.
-        var fnaWarnings     = new List<ShaderError>();
+        // The preprocessor's own findings (SD0008) plus verbatim vkd3d warnings for the
+        // whole effect, deduped across entry points (same policy as the GL/DX path's
+        // runWarnings) — returned on CompiledShader.Warnings.
+        var fnaWarnings     = new List<ShaderError>(fnaPreprocessWarnings);
         var fnaSeenWarnings = new HashSet<(string File, int Line, int Column, string Code, string Message)>();
 
         foreach (TechniqueInfo technique in fxParsed.Techniques)
@@ -2045,6 +2143,13 @@ internal sealed class CompilationPipeline
             // v3.8.5 source directly (Phase 54 follow-up, 2026-07-23): VertexInputLayout.Native.cs
             // and Shader.Native.cs's GetOrCreateLayout.
             IReadOnlyList<MgfxVertexAttributeInfo> vertexAttributes;
+            // SD0104 (bug-hunt 2026-07-27 N5): mgfxc prints a warning when an input semantic
+            // it does not recognise falls through to the TextureCoordinate default, and a
+            // drop-in replacement has to as well — a typo'd semantic otherwise silently mints
+            // a phantom TEXCOORD attribute the consumer's vertex declaration must supply.
+            // The fallback VALUE is unchanged (mgfxc defaults the same way); only the
+            // diagnostic is new, and warnings never gate output.
+            IReadOnlyList<ShaderError> attributeWarnings = noWarnings;
             if (stage != ShaderStage.Vertex)
             {
                 vertexAttributes = noAttributes;
@@ -2057,18 +2162,33 @@ internal sealed class CompilationPipeline
                 // to the shader. A shader that genuinely declares no vertex inputs still
                 // gets an empty table (Ok) — a zero-element layout is valid when nothing
                 // is consumed.
-                Result<IReadOnlyList<MgfxVertexAttributeInfo>, ShaderError> attrResult = platform switch
-                {
-                    PlatformTarget.Vulkan    => SpirvVertexInputReflector.Read(spirvBlob),
-                    PlatformTarget.DirectX12 => DxilVertexInputReflector.Read(dxilBlob, new DxilReflectionExtractor()),
-                    _                        => Result<IReadOnlyList<MgfxVertexAttributeInfo>, ShaderError>.Ok(noAttributes),
-                };
+                Result<IReadOnlyList<MgfxVertexAttributeInfo>, ShaderError> attrResult;
+                if (platform == PlatformTarget.Vulkan)
+                    attrResult = SpirvVertexInputReflector.Read(spirvBlob, out attributeWarnings);
+                else if (platform == PlatformTarget.DirectX12)
+                    attrResult = DxilVertexInputReflector.Read(dxilBlob, new DxilReflectionExtractor(), out attributeWarnings);
+                else
+                    attrResult = Result<IReadOnlyList<MgfxVertexAttributeInfo>, ShaderError>.Ok(noAttributes);
+
                 if (attrResult.IsFailure)
                     return (Result<byte[], ShaderError>.Fail(attrResult.Error), default, default, noAttributes, noUniforms, noWarnings);
                 vertexAttributes = attrResult.Value;
             }
 
-            return (Result<byte[], ShaderError>.Ok(blob.ToArray()), dxilBlob, spirvBlob, vertexAttributes, noUniforms, result.Value.Warnings);
+            IReadOnlyList<ShaderError> stageWarnings = result.Value.Warnings;
+            if (attributeWarnings.Count > 0)
+            {
+                // The reflectors have no source path; stamp the one the compile was given so
+                // an MGCB build with many effects can tell WHICH effect warned (the same
+                // reason the GL portability lint carries a file and no line).
+                var merged = new List<ShaderError>(stageWarnings.Count + attributeWarnings.Count);
+                merged.AddRange(stageWarnings);
+                foreach (ShaderError w in attributeWarnings)
+                    merged.Add(w with { File = preprocessed.OriginalFilePath });
+                stageWarnings = merged;
+            }
+
+            return (Result<byte[], ShaderError>.Ok(blob.ToArray()), dxilBlob, spirvBlob, vertexAttributes, noUniforms, stageWarnings);
         }
     }
 

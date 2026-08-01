@@ -87,4 +87,6 @@ Every code is listed in the [Diagnostic Codes](../diagnostics.md) registry.
 
 ## Using it alongside MGCB
 
-**MGCB will not call this CLI for you.** It was documented until 2026-07-28 that exposing ShadowDusk under the name `mgfxc` on `PATH` would make MGCB use it; measurement against `dotnet mgcb` 3.8.2.1105, 3.8.4.1, and 3.8.5 showed MGCB compiles `.fx` **in-process** and launches no external `mgfxc`. Compile your shaders by invoking this CLI directly and have the content project `/copy:` the resulting `.mgfx`. See [MGCB Content Pipeline](../guides/mgcb-content-pipeline.md) for the worked steps and [Drop-in mgfxc](../guides/dropin-mgfxc.md) for the flag compatibility.
+**MGCB will not call this CLI for you.** It was documented until 2026-07-28 that exposing ShadowDusk under the name `mgfxc` on `PATH` would make MGCB use it; measurement against `dotnet mgcb` 3.8.2.1105, 3.8.4.1, and 3.8.5 showed MGCB compiles `.fx` **in-process** and launches no external `mgfxc`.
+
+For MGCB, add the **`ShadowDusk.MgcbPlugin`** content-processor package and `/reference:` it from your `.mgcb` — MGCB then compiles `.fx → .xnb` through ShadowDusk in its own process, and the `.mgfx` inside that `.xnb` is byte-for-byte what this CLI emits. If you would rather not use the plugin, invoke this CLI directly and have the content project `/copy:` the resulting `.mgfx`. Both routes are in [MGCB Content Pipeline](../guides/mgcb-content-pipeline.md); [Drop-in mgfxc](../guides/dropin-mgfxc.md) covers the flag compatibility.

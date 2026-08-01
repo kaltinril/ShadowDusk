@@ -130,7 +130,17 @@ public sealed class ReviewRegressionTests
 
     // ── FNA sampler_state must accept the same numeric spellings as the MGFX path ────
 
+    // The SM4-gated profile header is load-bearing for the DirectX arm (Phase 51 A10):
+    // MonoGame's DirectX_11 profile refuses ps_3_0 outright (SD0015, matching mgfxc), and
+    // the FNA target refuses anything above SM3, so a single literal profile cannot serve
+    // both. The subject here is sampler-state numeric-literal parsing, not the profile.
     private const string SuffixedSamplerStateShader = """
+        #if SM4
+            #define PS_SHADERMODEL ps_4_0_level_9_1
+        #else
+            #define PS_SHADERMODEL ps_3_0
+        #endif
+
         texture BaseTexture;
         sampler2D BaseSampler = sampler_state
         {
@@ -148,7 +158,7 @@ public sealed class ReviewRegressionTests
 
         technique T
         {
-            pass P { PixelShader = compile ps_3_0 PS(); }
+            pass P { PixelShader = compile PS_SHADERMODEL PS(); }
         }
         """;
 

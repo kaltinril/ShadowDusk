@@ -7,16 +7,189 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ShadowDusk is a cross-platform, in-memory drop-in `mgfxc` replacement: a self-contained
 library that compiles `.fx` → `.mgfx` at runtime on Linux, macOS, and Windows, with output
-that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime. All seven
+that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime. All eight
 `ShadowDusk.*` packages share a single version (see `Directory.Build.props` `<Version>`).
 
 ## [Unreleased]
 
 ### Added
 
+- **`validation/DumpPreprocessedHlsl`, a no-GPU diagnostic** that dumps the exact HLSL text the
+  compilation pipeline hands to DXC for a given `.fx` + target, plus the `-D` macro flags. It exists
+  so a divergence on any DXC-fed target can be *attributed*: replay the identical input through a
+  different `dxc.exe` and diff the disassembly. An empty instruction diff means our source and flags
+  are right and only the pinned DXC build differs.
+- An opt-in third arm on the DirectX 12 Apos.Shapes gate (`SHADOWDUSK_DX12_PROBE_MGFX`) that renders
+  an arbitrary supplied `.mgfx` alongside the golden and candidate. Off unless the variable is set,
+  and its result is reported, never asserted.
+- **`SD0104`, the mgfxc-parity warning for an unrecognized vertex-input semantic** (closes the
+  remaining half of bug-hunt 2026-07-27 N5). An HLSL vertex semantic ShadowDusk does not model
+  has always defaulted to `VertexElementUsage.TextureCoordinate`, which is correct — real `mgfxc`
+  defaults the same way — but `mgfxc` also *prints a warning when it defaults* and ShadowDusk did
+  not, so a typo such as `TEXCORD0` for `TEXCOORD0` silently minted a phantom TextureCoordinate
+  attribute that MonoGame's `VertexInputLayout` then demanded from the vertex declaration, with a
+  failed draw as the only symptom. The Vulkan (SPIR-V) and DirectX12 (DXIL) attribute-table paths
+  now surface it through `CompiledShader.Warnings`, so it reaches CLI stderr, MGCB, and
+  `ValidateAsync` like every other warning. It is a **warning, never an error** (`mgfxc` accepts
+  and defaults, so a drop-in replacement must too), and **no emitted byte moves**: the fallback
+  usage/index values are unchanged and warnings never gate output.
+- **`SD0008`, a warning for an `#include` that only resolves because your file system ignores
+  case.** `#include "shared/macros.fxh"` against a file really named `Shared/Macros.fxh`
+  compiles on Windows and on a default macOS volume, and then fails with `SD0001` on Android,
+  on Linux, and on a case-sensitive APFS volume — a break the author cannot see locally. It is
+  a warning rather than an error because the include genuinely did resolve and `mgfxc` accepts
+  it too; the message names the on-disk spelling so the fix is one edit. Only the path segments
+  the directive itself spells are checked, since the absolute prefix above them is your own
+  machine layout and never ships.
+
 ### Changed
 
+- **Root-caused the DirectX 12 Apos.Shapes gallery's `maxd 1`: it is the pinned DXC build, not a
+  ShadowDusk defect.** ShadowDusk compiles DXIL with `dxcoob 1.7.2212.40` (the `Vortice.Dxc` 3.3.4
+  pin); the `mgfxc` `DirectX_12` golden was built with MonoGame 3.8.5's bundled `dxcoob 1.8.2505.32`.
+  Feeding ShadowDusk's own pre-parsed HLSL and own DXC flags to a DXC 1.8 build reproduces the
+  golden's DXIL instruction-for-instruction, and rendering that payload in ShadowDusk's own container
+  gives maxd 0 with zero differing pixels of 402,984. The delta reaches a pixel at all only because
+  the shader adds half an 8-bit LSB of dither immediately before quantization. `maxd 1` stays the
+  honest DX12 tolerance until the DXC pin moves. No compiler behavior changed.
+- **The interactive ShaderToy viewer and its MonoGame runtime helper moved out of the Phase-46
+  experiment tree into `samples/ShaderToyViewer/`** (Phase 51 A4, closing the Phase 47
+  sample-migration appendix that had stayed *Planned*). The `ShaderToyEffect` helper is folded into
+  the sample as `Runtime/ShaderToyEffect.cs` rather than kept as a separate
+  `ShadowDusk.ShaderToy.Runtime` project: it is one file with one public type, and folding it in
+  makes the MonoGame boundary structural, since the only projects that reference MonoGame are now
+  under `samples/`, `validation/`, and the out-of-band render-proof driver, never under `src/`.
+  Namespaces moved with it (`ShadowDusk.ShaderToy.Sample` and `ShadowDusk.ShaderToy.Runtime` became
+  `ShadowDusk.ShaderToyViewer` and `ShadowDusk.ShaderToyViewer.Runtime`), which disambiguates the
+  sample from the `ShadowDusk.ShaderToy` product library that now owns that name. Like every other
+  sample it stays out of `ShadowDusk.slnx`; run it with
+  `dotnet run --project samples/ShaderToyViewer` (add `-- --smoke` for the headless self-test, which
+  is green 4/4 and regenerates the committed eyeball PNGs byte-identically). **Relocation only: no
+  compiler code, no shipped package, and no output byte changed**, and
+  `NoMonoGameInProductLibrariesTests` stays green on both TFMs. `tools/shadertoy2fx/` keeps the
+  standalone PoC CLI (still the only entry point to the converter's `--multipass` batch mode) and
+  the out-of-band fidelity/gallery render-proof driver, which now source-links the single helper
+  file from the sample.
+- **`ShaderToyRouteDx`, the DirectX arm of the ShaderToy / `.glsl` route render gate.** It converts
+  `GradientToy.glsl` in process with the real converter and pixel-diffs ShadowDusk's `DirectX_11`
+  build against **`mgfxc`'s `DirectX_11` build of the same converted `.fx`** on real MonoGame
+  `WindowsDX`. This arm was previously impossible, not merely missing: mgfxc refused the converter's
+  own output on DirectX (see below), so no golden could exist. Default-ON in
+  `validation/run-windows-render-gates.ps1`; there is no CI lane, because no GitHub runner has a
+  headless D3D driver (the same bucket as every other DX gate).
+- **A `DirectX_11` golden for the pinned ShaderToy fixture**, so `tests/fixtures/shaders/shadertoy/GradientToy.fx`
+  is golden-backed on both profiles like the rest of the corpus. `tools/compile-fixtures.ps1` now
+  includes the `shadertoy/` subdirectory by default, so a future regeneration cannot silently skip it.
+
+### Changed
+
+- **The ShaderToy converter emits a DirectX-valid compile-profile header.** It used to write
+  `vs_3_0`/`ps_3_0` in *both* arms of its `#if OPENGL … #else … #endif`, so the DirectX arm asked for
+  a profile MonoGame's `DirectX_11` shader profile refuses — real `mgfxc /Profile:DirectX_11` failed
+  every converted shader with *"Invalid profile 'vs_3_0'. Vertex shader 'VSMain' must be SM 4.0 level
+  9.1 or higher!"*. The header is now gated on **`SM4`** (the macro MonoGame's own DirectX_11 profile
+  defines): DirectX gets `vs_4_0_level_9_1`/`ps_4_0_level_9_1`, while OpenGL **and FNA** keep
+  `vs_3_0`/`ps_3_0`. `SM4` rather than the stock `#if OPENGL … #else` split precisely because that
+  `#else` arm also catches the FNA target, whose `fx_2_0` output is capped at Shader Model 3.
+  **If you regenerate a `.fx` from a `.glsl`, its header text changes** — 81 converter goldens and 2
+  multipass goldens moved with it. **No compiled output moved:** ShadowDusk's OpenGL `.mgfx` for the
+  pinned fixture is byte-identical before and after, and mgfxc's OpenGL golden regenerated
+  byte-for-byte identical.
+- **The DirectX target now rejects compile profiles below MonoGame's floor, matching `mgfxc`
+  (new diagnostic `SD0015`).** A profile can be perfectly recognized — so the Phase 48 `SD0013`
+  check passes — and still be one the reference compiler refuses for this target. `mgfxc`'s
+  `DirectX_11` profile accepts **only** `{vs,ps}_4_0_level_9_1`, `_4_0_level_9_3`, `_4_0`, `_4_1`,
+  and `_5_0`; the accepted set was established by sweeping every recognized profile through the
+  pinned `mgfxc` rather than inferred from the names, which matters because `_4_0_level_9_0` **and
+  every SM6 profile** are refused too. **This turns previously-succeeding DirectX compiles into
+  loud rejections**, for shaders real `mgfxc` was already refusing: 20 corpus fixtures flipped,
+  including 14 vendored Nez post-process shaders (which name `ps_2_0`/`ps_3_0` outright — Nez
+  targets DesktopGL), `FnaMultiPassStates.fx`, and `examples/Ex{Int,Mat3}UniformMember.fx`. The fix
+  a consumer applies is the standard MonoGame `#if OPENGL … #else …` header, which the diagnostic
+  names. OpenGL, Vulkan, DirectX 12, and FNA are **unaffected**: their floors are different
+  (measured and recorded in `docs/validation-matrix.md` §8.1) and enforcing them is separate work.
+  No output bytes changed on any target.
+- `FnaMultiPassStates.fx` was dropped from the **DirectX** arm of the cross-host byte-identity
+  manifest **and from the DirectX arm of `Vkd3dCorpusProbe`**, which captures the desktop ground
+  truth for the WASM vkd3d byte-identity gate (it stays in the OpenGL and FNA arms of both). It
+  compiles `vs_2_0`/`ps_2_0`, so its DirectX row was pinning bytes the reference compiler cannot
+  produce. The probe keeps its own corpus list in step with `CrossHostByteIdentityTests`, and
+  missing it there turned the WASM gate red on the first CI run that exercised it, which is the
+  reason that gate is not skipped on a PR that changes the reject set. The node gate's corpus is
+  now **94** stage compiles rather than 98, the four removed being this fixture's one vertex and
+  three pixel entries on the DirectX arm.
+- **`ShadowDusk.MgcbPlugin` — MonoGame Content Builder integration, for real** (Phase 29). The
+  project went from a `.csproj` with zero `.cs` files to a shipping content-processor plugin:
+  `/reference:` it in a `.mgcb`, select `ShadowDuskEffectImporter` / `ShadowDuskEffectProcessor`,
+  and MGCB compiles `.fx → .xnb` through ShadowDusk **in its own process** — no `mgfxc`, no
+  `fxc.exe`, no Wine, no PATH plumbing. This is the native MGCB route, and the only one: MGCB
+  compiles effects in-process and launches no external effect compiler, so the previously
+  documented "put ShadowDusk on PATH as `mgfxc`" override never fired.
+  - **The target comes from the content project's own `/platform:` line** (`Windows` → DirectX 11,
+    the GL-family platforms → OpenGL, consoles → a loud `SD0501`). No ShadowDusk-specific flag is
+    ever required for correct output. Optional processor parameters: `DebugMode`, `Defines`,
+    `IncludeDirs`, and the escape hatches `ShaderProfile` (reaches DirectX 12 / Vulkan, which
+    MGCB's platform list cannot name), `MgfxVersion`, `DxbcBackend`.
+  - **The `.mgfx` inside the `.xnb` is byte-for-byte the ShadowDusk CLI's** output for the same
+    source and target, because the plugin is an adapter onto the same `EffectCompiler` and adds no
+    compilation logic. Proven, not asserted: `MgcbPluginByteIdentityTests` (14/14, under
+    `dotnet test`, compared against the real CLI binary as a separate process) and the new
+    `validation/MgcbPlugin` driver (7/7 through a real `dotnet mgcb`, which additionally checks the
+    `.xnb` envelope equals MGCB's own stock output and the payload differs from it). Same payload
+    out of `dotnet mgcb` 3.8.2.1105, 3.8.3, 3.8.4, 3.8.4.1 and 3.8.5, and out of the packed
+    `.nupkg` extracted into a bare directory.
+  - Shader errors surface through MGCB in the canonical `file(line,col-col): error CODE: message`
+    form, from the CLI's own formatter (source-linked, so the two cannot drift), with the
+    underlying compiler's words verbatim beneath. `#include`d files are registered as build
+    dependencies.
+  - The package is **tools-only** (no `lib/`; everything under `tools/net8.0/any/`), because MGCB
+    resolves a referenced plugin's dependencies — managed and native — from the plugin's own
+    directory. It is a `DevelopmentDependency` and contributes nothing to a consumer's shipped game
+    assembly. `release.yml` fails the release red if any native is missing from it, or if it ships
+    MonoGame's content-pipeline assembly.
+  - `samples/mgcb` gained `Content/Content.ShadowDusk.mgcb`, the same corpus built through the
+    plugin alongside the stock one.
+
+### Changed
+
+- **`ShadowDusk.MgcbPlugin` is now a published package**, making it the **eighth** `ShadowDusk.*`
+  NuGet. `release.yml`, `RELEASING.md`, the `/release` skill, and the package-count mentions in
+  `CLAUDE.md` / `Brand/README.md` were updated together.
+- **`NoMonoGameInProductLibrariesTests` gained a narrow, named exemption** for
+  `ShadowDusk.MgcbPlugin` — an MGCB plugin cannot exist without the
+  `ContentImporter`/`ContentProcessor` contract — plus a second test pinning that the reference
+  stays `IncludeAssets="compile" PrivateAssets="all"`, which is what keeps it harmless. No other
+  `src/` project may name MonoGame, and none does.
+- The MGCB documentation across the site (`guides/mgcb-content-pipeline.md`,
+  `samples/mgcb.md`, `index.md`, `getting-started/overview.md`, `contributing/index.md`,
+  `api/index.md`, `README.md`, `docs/the-purpose.md`) now documents the plugin as the MGCB route
+  instead of describing it as an unimplemented scaffold.
+
 ### Fixed
+
+- **The Apos.Shapes gallery harness named the wrong shape in every divergence it reported.** Its
+  per-cell rectangles came from the untransformed layout while the scene renders through a 1.15x
+  scale plus a (6,4) translate, so a shape drawn in layout cell (3,3) lands in screen cell (4,4).
+  That is why the DX12 delta above was recorded first against `DrawCircle`/`FillArc` and later
+  against `FillRing`; the pixels are `DrawEllipse`'s. Cell rectangles now go through the view matrix.
+- **A third of the Apos.Shapes gallery was being drawn but never compared.** The render target was
+  sized to the untransformed 600x500 layout, so the same 1.15x scale pushed the entire last column
+  off the right edge and the last row down to a ten-pixel sliver: 10 of the 30 cells contributed no
+  pixels to any comparison, while the OpenGL visibility check still reported 30/30 because it was
+  measuring those same untransformed rectangles. The target is now sized to the transformed extent.
+  The gallery has no stored reference images, so no goldens needed regenerating; re-verified after
+  the change at DX11 maxd 0 (both arms), Vulkan maxd 0, OpenGL 30/30 genuinely visible, DX12 maxd 1.
+- **`#include` de-duplication and cycle detection no longer guess whether the file system is
+  case-sensitive from the operating system** (bug-hunt 2026-07-27 N17). The rule was
+  "Linux is case-sensitive, everything else is not", which is wrong on two hosts ShadowDusk
+  ships to: **Android's file system is case-sensitive** (and .NET's `OperatingSystem.IsLinux()`
+  is false there), and **APFS can be formatted case-sensitive**. On those hosts two genuinely
+  distinct headers whose names differed only by case were treated as one file, so a
+  `#pragma once` in the first silently suppressed the second, and a legal include chain through
+  a case twin was rejected as a false circular-include error. Resolved paths are now compared
+  the way the storage they came from spells them: ordinal by default, with two case-only
+  variants merged only when the file system confirms they are one file. Output bytes are
+  unchanged for every input that resolved the same way before.
 
 ## [0.16.0] - 2026-07-30
 
@@ -65,6 +238,8 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   class that `SD0013`/`SD0014` do not cover), each with its own blast radius: one moves every converter
   golden, the other turns a currently-succeeding compile into a rejection. Filed as Phase 51 A10 with
   the ordering constraint that fixing the reject side alone would break the route's own output.
+  **Both halves are fixed in `[Unreleased]`** — see the entries there; this note stays as the record
+  of when the divergence shipped.
 
 ### Fixed (compiler)
 

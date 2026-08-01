@@ -24,7 +24,9 @@ public sealed record CompiledShader(
     /// (<c>SD0400</c>–<c>SD0499</c>: constructs that compile here but are known to fail
     /// or misbehave at runtime on some GL stacks — e.g. WebGL1/KNI Reach loop limits,
     /// ANGLE derivative zeroing, a SpriteBatch-incompatible pixel-shader input, a
-    /// GLSL-1.30+/ES-3.00-only construct in the versionless GL source). Empty
+    /// GLSL-1.30+/ES-3.00-only construct in the versionless GL source) and its
+    /// reflection findings (<c>SD0104</c>: a vertex-input semantic that fell through to
+    /// the TextureCoordinate default, exactly as mgfxc warns). Empty
     /// when there is nothing to report. The effect bytes in <see cref="Data"/> are
     /// valid regardless — warnings never gate output.
     /// </summary>

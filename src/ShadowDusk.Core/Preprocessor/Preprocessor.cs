@@ -18,6 +18,30 @@ public sealed class Preprocessor
     private static readonly Regex PragmaOncePattern =
         new(@"^\s*#\s*pragma\s+once\s*$", RegexOptions.Compiled);
 
+    private readonly IIncludePathCanonicalizer _pathCanonicalizer;
+
+    /// <summary>
+    /// Creates a preprocessor that asks the real file system how it spells resolved include
+    /// paths.
+    /// </summary>
+    public Preprocessor()
+        : this(FileSystemIncludePathCanonicalizer.Instance)
+    {
+    }
+
+    /// <summary>
+    /// Creates a preprocessor with an explicit <see cref="IIncludePathCanonicalizer"/>.
+    /// </summary>
+    /// <param name="pathCanonicalizer">
+    /// Decides whether two case-only path variants name the same file, and supplies the on-disk
+    /// spelling the <c>SD0008</c> portability warning reports. Injectable so both file-system
+    /// behaviours (case-sensitive, as on Android and Linux and case-sensitive APFS; and
+    /// case-insensitive, as on a default Windows or macOS volume) can be driven from a pure
+    /// unit test on any host.
+    /// </param>
+    public Preprocessor(IIncludePathCanonicalizer pathCanonicalizer)
+        => _pathCanonicalizer = pathCanonicalizer;
+
     /// <summary>
     /// Expands all includes in the source and prepends the platform macros.
     /// </summary>
@@ -28,8 +52,9 @@ public sealed class Preprocessor
     /// <param name="includeResolver">The resolver used to fetch <c>#include</c> targets.</param>
     /// <param name="additionalPaths">Extra include search directories.</param>
     /// <returns>
-    /// The flattened source on success, or a <see cref="ShaderError"/> on a missing or
-    /// circular include.
+    /// The flattened source on success (carrying any non-fatal
+    /// <see cref="PreprocessedSource.Warnings"/>), or a <see cref="ShaderError"/> on a missing
+    /// or circular include.
     /// </returns>
     public Result<PreprocessedSource, ShaderError> Flatten(
         string cleanedHlsl,
@@ -38,7 +63,7 @@ public sealed class Preprocessor
         IIncludeResolver includeResolver,
         IReadOnlyList<string> additionalPaths)
     {
-        var ctx = new PreprocessorContext();
+        var ctx = new PreprocessorContext(_pathCanonicalizer);
         string prepend = macros.ToTextPrepend(originalFilePath);
 
         var bodyBuilder = new StringBuilder();
@@ -48,7 +73,7 @@ public sealed class Preprocessor
 
         string fullText = prepend + bodyBuilder.ToString();
         return Result<PreprocessedSource, ShaderError>.Ok(
-            new PreprocessedSource(fullText, macros.ToDxcFlags(), originalFilePath));
+            new PreprocessedSource(fullText, macros.ToDxcFlags(), originalFilePath, ctx.Warnings));
     }
 
     private Result<Unit, ShaderError> FlattenFile(
@@ -125,6 +150,8 @@ public sealed class Preprocessor
 
                     string resolvedPath = resolveResult.Value.FilePath;
 
+                    WarnOnCaseOnlyIncludeMismatch(includePath, resolvedPath, filePath, lineNumber, ctx);
+
                     if (ctx.PragmaOnceFiles.Contains(resolvedPath))
                     {
                         // Same reason as the `#pragma once` blank above: this suppressed
@@ -170,6 +197,79 @@ public sealed class Preprocessor
         {
             ctx.IncludeStack.Remove(filePath);
         }
+    }
+
+    /// <summary>
+    /// Raises <c>SD0008</c> when an <c>#include</c> resolved <b>only</b> because this host's
+    /// file system ignores case — the spelling in the directive differs from the file's real
+    /// name by case alone.
+    /// </summary>
+    /// <remarks>
+    /// <para>This is the shape that compiles on the author's Windows or macOS box and then
+    /// fails with <c>SD0001</c> on a player's Android device, on Linux, or on a case-sensitive
+    /// APFS volume — a build break the author has no way to see locally. Silently accepting it
+    /// is exactly the pass-through the "fail loudly" rule forbids, so it is reported, but as a
+    /// <b>warning</b>: the include did resolve, mgfxc on Windows accepts it, and rejecting it
+    /// would be a reject-set change that breaks working shaders.</para>
+    /// <para>Only the segments the directive itself spells are checked. The absolute prefix
+    /// above them is the author's own machine layout, never shipped, so a case difference there
+    /// is not a portability signal and warning about it would be pure noise. A rooted spelling
+    /// or one containing <c>.</c>/<c>..</c> is skipped, because its segments cannot be aligned
+    /// against the tail of the resolved path.</para>
+    /// </remarks>
+    private void WarnOnCaseOnlyIncludeMismatch(
+        string includeSpelling,
+        string resolvedPath,
+        string includingFilePath,
+        int lineNumber,
+        PreprocessorContext ctx)
+    {
+        string normalizedSpelling = includeSpelling.Replace('\\', '/');
+        if (normalizedSpelling.Length == 0 || Path.IsPathRooted(normalizedSpelling))
+            return;
+
+        string[] requested = normalizedSpelling.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (requested.Length == 0)
+            return;
+
+        foreach (string segment in requested)
+        {
+            if (segment is "." or "..")
+                return;
+        }
+
+        string? onDisk = _pathCanonicalizer.TryGetOnDiskPath(resolvedPath);
+        if (onDisk is null || string.Equals(onDisk, resolvedPath, StringComparison.Ordinal))
+            return;
+
+        string[] actual = onDisk.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (actual.Length < requested.Length)
+            return;
+
+        string[] actualTail = actual[^requested.Length..];
+        if (actualTail.SequenceEqual(requested, StringComparer.Ordinal))
+            return;
+
+        // Not a pure case difference: the resolver reached the file some other way (a symlink,
+        // a search path with a different shape). Nothing portable to say about it.
+        if (!actualTail.SequenceEqual(requested, StringComparer.OrdinalIgnoreCase))
+            return;
+
+        string onDiskSpelling = string.Join('/', actualTail);
+
+        ctx.AddWarning(new ShaderError(
+            File: includingFilePath,
+            Line: lineNumber,
+            Column: 0,
+            Code: "SD0008",
+            Message: $"#include \"{includeSpelling}\" differs from the file's actual name "
+                   + $"\"{onDiskSpelling}\" by case only. It resolved because this host's file "
+                   + "system ignores case; Android, Linux, and case-sensitive APFS do not, so "
+                   + "this include will fail there. Match the on-disk spelling.",
+            Severity: ShaderErrorSeverity.Warning,
+            IncludingFilePath: includingFilePath,
+            IncludingLineNumber: lineNumber,
+            RequestedPath: includeSpelling));
     }
 
     /// <summary>
@@ -254,13 +354,43 @@ public sealed class Preprocessor
 
     private sealed class PreprocessorContext
     {
-        // Linux has a case-sensitive file system; Windows and macOS do not.
-        private static readonly StringComparer PathComparer =
-            OperatingSystem.IsLinux() ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase;
+        // Paths are compared the way the storage they came from spells them, NOT by an
+        // OS guess. The old rule here was `OperatingSystem.IsLinux() ? Ordinal :
+        // OrdinalIgnoreCase`, which was wrong on two real hosts ShadowDusk ships to:
+        // Android is case-SENSITIVE (it is Linux, but IsLinux() is false there), and APFS
+        // can be formatted case-sensitive. On both, two genuinely distinct headers whose
+        // names differed only by case were treated as one file — a `#pragma once` in one
+        // suppressed the other, and a legal include chain could be rejected as SD0002.
+        // See IncludePathEqualityComparer for why ordinal is the default.
+        private readonly IncludePathEqualityComparer _pathComparer;
+
+        private readonly List<ShaderError> _warnings = [];
+
+        private readonly HashSet<(string File, int Line, string Code)> _seenWarnings = [];
+
+        public PreprocessorContext(IIncludePathCanonicalizer pathCanonicalizer)
+        {
+            _pathComparer = new IncludePathEqualityComparer(pathCanonicalizer);
+            IncludeStack = new HashSet<string>(_pathComparer);
+            PragmaOnceFiles = new HashSet<string>(_pathComparer);
+        }
 
         /// <summary>The chain of files currently being flattened (push/pop), for cycle detection.</summary>
-        public HashSet<string> IncludeStack { get; } = new(PathComparer);
+        public HashSet<string> IncludeStack { get; }
 
-        public HashSet<string> PragmaOnceFiles { get; } = new(PathComparer);
+        public HashSet<string> PragmaOnceFiles { get; }
+
+        /// <summary>Non-fatal diagnostics raised while flattening.</summary>
+        public IReadOnlyList<ShaderError> Warnings => _warnings;
+
+        /// <summary>
+        /// Records a warning once per (file, line, code). A diamond include re-visits the same
+        /// directive from two parents, which must not double-report it.
+        /// </summary>
+        public void AddWarning(ShaderError warning)
+        {
+            if (_seenWarnings.Add((warning.File, warning.Line, warning.Code)))
+                _warnings.Add(warning);
+        }
     }
 }

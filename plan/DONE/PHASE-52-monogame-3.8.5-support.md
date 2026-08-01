@@ -228,7 +228,7 @@ Content Builder** (a C# content project). Investigate and document: does the cla
 presumably yes)? Does the new builder still route `.fx` through an overridable external
 `mgfxc`, and if the override mechanism changed, what does a 3.8.5 consumer do instead? Verify
 with a scratch consumer (the Phase 37 pack→consume pattern). If the new builder has **no**
-external-tool seam, record that honestly and note that [Phase 29](../PHASE-29-mgcb-content-processor-plugin.md)
+external-tool seam, record that honestly and note that [Phase 29](PHASE-29-mgcb-content-processor-plugin.md)
 (the in-process processor plugin) becomes the native integration path for it — that is a finding
 to feed Phase 29, not a defect of this phase.
 
@@ -279,7 +279,7 @@ Area C oracle probe found no 3.8.5 mgfxc where it was looking).
 - `project_decisions.md`'s "MGCB Tier 1, not Tier 2 first" entry marked **superseded by
   measurement** — the reasoning was sound, the premise was false.
 - `project_facts.md` and `docs/validation-matrix.md` §7 carry the measured fact.
-- **[Phase 29](../PHASE-29-mgcb-content-processor-plugin.md) is promoted from convenience to the only
+- **[Phase 29](PHASE-29-mgcb-content-processor-plugin.md) is promoted from convenience to the only
   route to native MGCB integration.** Its doc opens by calling itself a layer "on top of the
   already-working Tier-1 drop-in"; that framing is now wrong and is flagged in its status line.
 

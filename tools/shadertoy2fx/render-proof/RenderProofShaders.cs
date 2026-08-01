@@ -2,7 +2,7 @@
 
 using System;
 using Microsoft.Xna.Framework;
-using ShadowDusk.ShaderToy.Runtime;
+using ShadowDusk.ShaderToyViewer.Runtime;
 
 namespace ShadowDusk.ShaderToy.RenderProof;
 

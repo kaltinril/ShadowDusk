@@ -70,7 +70,22 @@ string[] sm3Fixtures =
     "examples/ExDualTexture.fx", "examples/ExLegacyTextureDiscard.fx",
 ];
 
-var directXCorpus = coreMgfxFixtures.Concat(sm3Fixtures).ToArray();
+// Fixtures the DirectX arm must NOT carry, because the DirectX target legitimately
+// refuses them (Phase 51 A10, SD0015): a pass naming an SM <= 3 compile target is
+// rejected by `mgfxc /Profile:DirectX_11` — "Invalid profile 'vs_2_0'. Vertex shader
+// 'MainVS' must be SM 4.0 level 9.1 or higher!" — so ShadowDusk rejects it too.
+// Capturing DirectX ground truth for a shader the reference compiler cannot build was
+// capturing bytes no consumer can ever obtain from mgfxc. It stays in the FNA arm,
+// where SM2 is exactly right. Mirrors `CrossHostByteIdentityTests.DirectXExcluded`;
+// the two corpora are kept deliberately in step (this file's header says so).
+string[] directXExcluded =
+[
+    "FnaMultiPassStates.fx",   // 'compile vs_2_0 MainVS()' / 'compile ps_2_0 …'
+];
+
+var directXCorpus = coreMgfxFixtures.Concat(sm3Fixtures)
+                                    .Where(fx => !directXExcluded.Contains(fx, StringComparer.Ordinal))
+                                    .ToArray();
 var fnaCorpus     = sm3Fixtures;
 
 // Containment guard: the stale-file sweep below DELETES every file in outDir, so a

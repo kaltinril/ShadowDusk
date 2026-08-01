@@ -8,7 +8,7 @@ title: ShadowDusk
 
 > **The "XNA-likes."** Throughout these docs, **MonoGame, KNI, and FNA** — the XNA-derived runtimes ShadowDusk targets — are collectively the **XNA-likes**. Classic Microsoft XNA 4.0 itself is **out of scope** (a different, abandoned, Windows-only toolchain). The three share a heritage but **not** one effect format: MonoGame and KNI load the `.mgfx` (MGFX) container, while FNA loads the legacy D3D9 fx_2_0 `.fxb` — so where the output format matters, the docs name the runtime explicitly rather than say "XNA-likes."
 
-> The product is the in-memory `IShaderCompiler` library (the `ShadowDusk.Compiler` NuGet package): add the package and call `CompileAsync(fx)` to get the compiled effect bytes (`.mgfx`, or `.fxb` for FNA) — nothing else to install. The **CLI** (the `ShadowDuskCLI` dotnet tool, which MGCB can call under the name `mgfxc`) is a delivery shape of the same library for build-time use (an **MGCB plugin** is a future scaffold, not yet shipped). The **in-browser shader fiddle is only a sample of reach — not a separate product.**
+> The product is the in-memory `IShaderCompiler` library (the `ShadowDusk.Compiler` NuGet package): add the package and call `CompileAsync(fx)` to get the compiled effect bytes (`.mgfx`, or `.fxb` for FNA) — nothing else to install. The **CLI** (the `ShadowDuskCLI` dotnet tool) and the **MGCB content-processor plugin** (`ShadowDusk.MgcbPlugin`, which a `.mgcb` `/reference:`s so MonoGame's Content Builder compiles through ShadowDusk in its own process) are delivery shapes of the same library for build-time use, and emit the same bytes. The **in-browser shader fiddle is only a sample of reach — not a separate product.**
 
 ## What it does
 
@@ -87,7 +87,7 @@ See the [In-Memory Quickstart](getting-started/in-memory-quickstart.md) for the 
 ## Design principles
 
 - **No Windows / Wine requirement.** Every native binary has Linux + macOS builds; the pieces the pipeline needs ride inside the package.
-- **Drop-in replacement.** Same CLI flags, same `.mgfx` output format, same exit codes and error format as `mgfxc`. A build step that invokes `mgfxc` can invoke it instead (MGCB itself compiles in-process and cannot be redirected — see [Drop-in `mgfxc`](guides/dropin-mgfxc.md)).
+- **Drop-in replacement.** Same CLI flags, same `.mgfx` output format, same exit codes and error format as `mgfxc`. A build step that invokes `mgfxc` can invoke it instead. MGCB itself compiles in-process, so it is integrated through the [MGCB content-processor plugin](guides/mgcb-content-pipeline.md) rather than a `PATH` override.
 - **Deterministic output.** Same source + same target = byte-identical `.mgfx`, given the same compiler version (ShadowDusk's own reproducibility).
 - **Fail loudly.** Shader errors surface the source file, line, column, and message exactly as the underlying compiler emitted them.
 - **Result-typed errors.** No exceptions for expected shader failures — the API returns `Result<CompiledShader, ShaderError[]>`.

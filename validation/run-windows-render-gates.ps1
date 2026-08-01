@@ -30,13 +30,23 @@
                                    ShapeBatch gallery through the real NuGet package; d3dcompiler_47
                                    arm vs the real mgfxc DirectX_11 golden, vkd3d arm vs the
                                    package's embedded (itself vkd3d-compiled) effect - both tol 0.
+    * ShaderToy .glsl route (DX) - validation/ShaderToyRouteDx: converts GradientToy.glsl in
+                                   process, compiles the converted .fx for DirectX_11, and
+                                   pixel-diffs it against mgfxc's own build of the SAME .fx on
+                                   real MonoGame WindowsDX. The DirectX arm of the GL gate CI
+                                   runs; it only became possible in Phase 51 A10, when the
+                                   converter started emitting a DirectX-valid profile header
+                                   (mgfxc refuses vs_3_0 for /Profile:DirectX_11).
     * DirectX12 PS corpus        - validation/BaselineDx12 + CandidateDx12 + compare_dx12.py
                                    (ShadowDusk DX12 vs a real mgfxc DirectX_12 golden, real
                                    MonoGame 3.8.5 WindowsDX12, maxd 0).
     * DirectX12 VS-driven + Apos.Shapes gallery - validation/VsDrivenDx12 (+ `-- apos`): the VS rig
                                    vs the real mgfxc DirectX_12 golden (maxd 0); the gallery vs the
-                                   same local golden at tol 1 (2/30 cells at 1/255 - an open,
-                                   not-yet-root-caused follow-up).
+                                   same local golden at tol 1 (11 pixels of 402,984 at 1/255,
+                                   root-caused 2026-07-31 to the pinned DXC build - ours is
+                                   dxcoob 1.7.2212.40, the golden's is MonoGame 3.8.5's bundled
+                                   dxcoob 1.8.2505.32 - NOT a ShadowDusk defect; see
+                                   docs/validation-matrix.md section 7).
     * KNI DirectX                - validation/KniWinFormsDX (ShadowDusk DX vs mgfxc, real KNI
                                    WinForms.DX11).
     * KNI OpenGL desktop         - validation/Baseline + Candidate + KniDesktopGL + compare_kni.py
@@ -64,6 +74,13 @@
     * Vulkan VS-driven + gallery - validation/VsDrivenVulkan (+ `-- apos`): a NON-IDENTITY
                                    asymmetric transform pixel-diffed vs the mgfxc 3.8.5 golden
                                    (maxd 0), plus the 30-cell ShapeBatch gallery (maxd 0).
+    * MGCB plugin (Phase 29)     - validation/MgcbPlugin: NOT a render gate. Drives a real
+                                   `dotnet mgcb` content build through the /reference:'d
+                                   ShadowDusk plugin and asserts the .mgfx inside the .xnb is
+                                   byte-for-byte the ShadowDuskCLI binary's, that the .xnb
+                                   envelope matches MGCB's own stock build, and that the payload
+                                   differs from stock (i.e. ShadowDusk really compiled it). It is
+                                   here because `dotnet test` has no dotnet-mgcb; no GPU needed.
 
   Both Vulkan gates are DEFAULT-ON (issue #145: a Vulkan-affecting change must not depend on
   someone remembering a switch). Pass -SkipVulkan only on a box with no Vulkan-capable GPU.
@@ -148,6 +165,10 @@ $gates.Add(@{
     Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenDx', '-c', 'Release', '--', 'apos') }
 })
 $gates.Add(@{
+    Name   = 'ShaderToy .glsl route on DX (Phase 51 A5/A10: converted .fx vs REAL mgfxc DirectX_11 golden, real MonoGame WindowsDX)'
+    Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/ShaderToyRouteDx', '-c', 'Release') }
+})
+$gates.Add(@{
     Name   = 'DX12 WindowsDX12 corpus, pixel-only (Phase 54: ShadowDusk vs REAL mgfxc DirectX_12 golden, real MonoGame 3.8.5 WindowsDX12)'
     Action = {
         Invoke-Checked 'dotnet' @('run', '--project', 'validation/BaselineDx12', '-c', 'Release')
@@ -199,6 +220,24 @@ $gates.Add(@{
 $gates.Add(@{
     Name   = 'ANGLE D3D11 derivative shapes (issue #136 probe, headless Edge/Chrome)'
     Action = { Invoke-Checked 'powershell' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', 'validation/AngleDerivativeProbe/run-angle-probe.ps1') }
+})
+# MGCB content-processor plugin (Phase 29). The ONE gate here that is not a render proof:
+# it drives a REAL `dotnet mgcb` content build through the /reference:'d plugin and asserts
+# the .mgfx inside the produced .xnb is byte-for-byte the CLI's. It lives here because
+# `dotnet test` has no dotnet-mgcb, so this script is the only place it will actually be run.
+# Cheap (seconds, no GPU) and default ON - the failure modes it catches (MGCB stops
+# discovering the plugin; the plugin stops finding its natives inside MGCB's process; MonoGame
+# changes the content contract) are all silent for everyone until a consumer hits them.
+$gates.Add(@{
+    Name   = 'MGCB content-processor plugin (Phase 29: real dotnet mgcb build, .xnb payload vs CLI bytes)'
+    Action = {
+        # The pinned dotnet-mgcb from .config/dotnet-tools.json (idempotent; cached offline).
+        Invoke-Checked 'dotnet' @('tool', 'restore')
+        # The driver measures the BUILD OUTPUT, so build the two things it compares first.
+        Invoke-Checked 'dotnet' @('build', 'src/ShadowDusk.MgcbPlugin/ShadowDusk.MgcbPlugin.csproj', '-c', 'Release')
+        Invoke-Checked 'dotnet' @('build', 'src/ShadowDusk.Cli/ShadowDusk.Cli.csproj', '-c', 'Release')
+        Invoke-Checked 'dotnet' @('run', '--project', 'validation/MgcbPlugin', '-c', 'Release')
+    }
 })
 if ($IncludeFna) {
     $gates.Add(@{
