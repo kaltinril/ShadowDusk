@@ -184,6 +184,35 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   the way the storage they came from spells them: ordinal by default, with two case-only
   variants merged only when the file system confirms they are one file. Output bytes are
   unchanged for every input that resolved the same way before.
+- **OpenGL-target compiles could crash on hosted CI with a DXIL validation error** (e.g.
+  GitHub Actions `windows-latest`, `dotnet test`): `error: DXIL container mismatch for
+  'PSVRuntimeInfoSize' ... Validation failed`, while the identical source compiled fine for
+  DirectX on the same runner and on a real dev machine (issue #185). The OpenGL path compiles
+  the shader twice: once targeting OpenGL (SPIR-V, shipped) and once targeting DirectX (SM6
+  DXIL) solely to reflect parameters from the native DXIL oracle. Hosted runners can carry
+  their own preinstalled Windows SDK `dxil.dll`/`dxcompiler.dll` on PATH, version-skewed
+  against the ones this library is pinned to; when the mismatched `dxil.dll` wins native
+  resolution, DXC's validator rejects an otherwise-correct module. The reflection-only
+  companion compile now passes DXC's `-Vd` (skip validation) — its bytes are discarded after
+  reflection and never shipped, so skipping validation there cannot ship an invalid module.
+  Every shipped compile (OpenGL SPIR-V, DirectX DXBC, DirectX 12 DXIL) still validates fully.
+
+### Known issue (found, filed, deliberately not fixed here)
+
+- **A pixel shader whose DXC compile cancels an algebraic identity that mgfxc's fxc compile
+  does not can carry a phantom effect parameter** (issue #187, split out from #185 while
+  investigating the DXIL-validation fix above). `GradientToy.fx` computes `fragCoord = uv * iResolution.xy`
+  then `uv2 = fragCoord / iResolution.xy`; DXC's `-spirv` backend cancels the identity
+  entirely, so the shipped GLSL never references `iResolution`, while `fxc`/`mgfxc` do not
+  perform the same cancellation and the committed `mgfxc` golden's GLSL still reads it.
+  ShadowDusk's OpenGL reflection sources from a separate DXIL companion compile that also
+  does not cancel it, so `Parameters["iResolution"]` exists but is inert (`SetValue` writes
+  nowhere). Reflecting from the SPIR-V that actually ships instead was tried and reverted: it
+  removes the phantom but makes the parameter list diverge from the mgfxc golden **by name**,
+  which is the project's primary compatibility bar — trading one divergence for a different
+  one, not a fix. The real root cause is upstream of reflection (ShadowDusk's DXC compile and
+  mgfxc's fxc compile produce non-equivalent GLSL for this shader) and needs its own scoped
+  fix. Pinned by `GlPhantomParameterTests` (`Skip`-marked pending that fix, not deleted).
 
 ## [0.16.0] - 2026-07-30
 

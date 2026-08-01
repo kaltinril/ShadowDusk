@@ -1988,9 +1988,22 @@ internal sealed class CompilationPipeline
                     EntryPoint     = entryPoint,
                     Stage          = stage,
                     Platform       = PlatformTarget.DirectX,
-                    // Use AllowWarnings = true so the DXIL reflection compile never fails due to
-                    // warnings-as-errors — the OpenGL compile below is the authoritative failure signal.
-                    Options        = new DxcCompileOptions { EmbedDebugInfo = compileOptions.EmbedDebugInfo, AllowWarnings = true },
+                    // AllowWarnings = true so this reflection-only compile never fails on
+                    // warnings-as-errors — the OpenGL compile below is the authoritative failure
+                    // signal. SkipValidation = true (-Vd) because this blob is discarded after
+                    // reflection, never shipped: a hosted CI runner's own preinstalled Windows
+                    // SDK can put a dxil.dll on the native search path that is version-skewed
+                    // against the dxcompiler.dll this library is pinned to, and DXC's validator
+                    // rejects the (correctly-compiled) module with a "DXIL container mismatch"
+                    // error purely from that skew. Skipping validation on this reflection-only
+                    // compile sidesteps the skew entirely; the SHIPPED SPIR-V/DXBC/DXIL from
+                    // every other compile in this file is still fully validated.
+                    Options        = new DxcCompileOptions
+                    {
+                        EmbedDebugInfo  = compileOptions.EmbedDebugInfo,
+                        AllowWarnings   = true,
+                        SkipValidation  = true,
+                    },
                 };
 
                 var dxilResult = dxcCompiler.Value.Compile(dxilRequest, ct);

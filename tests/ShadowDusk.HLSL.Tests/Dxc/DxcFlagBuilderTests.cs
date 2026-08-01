@@ -163,6 +163,17 @@ public sealed class DxcFlagBuilderTests
         flags.ShouldContain("-Qembed_debug");
     }
 
+    // Issue #185: the OpenGL path's reflection-only DirectX-target companion compile passes
+    // SkipValidation so a hosted CI runner's version-skewed dxil.dll (ahead of the pinned one
+    // on the native search path) can't reject an otherwise-correct DXIL module with a "DXIL
+    // container mismatch" validation error. Never set for shipped bytecode.
+    [Fact] public void VdAbsentByDefault()
+        => Build(PlatformTarget.DirectX, ShaderStage.Pixel).ShouldNotContain("-Vd");
+
+    [Fact] public void VdPresentWhenSkipValidation()
+        => Build(PlatformTarget.DirectX, ShaderStage.Pixel, options: new DxcCompileOptions { SkipValidation = true })
+            .ShouldContain("-Vd");
+
     // ── Macros ────────────────────────────────────────────────────────────────
 
     [Fact]
