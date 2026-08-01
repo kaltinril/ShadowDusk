@@ -79,7 +79,7 @@ ShadowDusk's package version lives in **exactly one place**:
 ```xml
 <!-- Directory.Build.props -->
 <PropertyGroup>
-  <Version>0.16.0</Version>
+  <Version>0.17.0</Version>
 </PropertyGroup>
 ```
 
@@ -92,8 +92,8 @@ eight packages (and their inter-package dependency ranges) at the same version.
 > those pin third-party dependency versions under Central Package Management. Leave them
 > alone.)
 
-To bump for a release, change that one line (e.g. `0.15.1` → `0.16.0`), update
-`CHANGELOG.md` (move `[Unreleased]` into a dated `[0.16.0]` section, leave a fresh empty
+To bump for a release, change that one line (e.g. `0.16.0` → `0.17.0`), update
+`CHANGELOG.md` (move `[Unreleased]` into a dated `[0.17.0]` section, leave a fresh empty
 `[Unreleased]`), update the version examples in this file, commit, and merge to `main` via PR.
 
 ---
@@ -126,7 +126,7 @@ marker; the workflow creates and pushes it itself on a successful release).
 ### Manual dispatch (the only trigger)
 
 After the version-bump PR is merged to `main`: **Actions → Release → Run workflow**, and
-enter the `version` input (e.g. `0.16.0`, no leading `v`). On dispatch the workflow also
+enter the `version` input (e.g. `0.17.0`, no leading `v`). On dispatch the workflow also
 creates and pushes the matching `v<version>` tag so the GitHub Release anchors to a tag.
 
 ### The `validate` guard (input ↔ version)
@@ -165,7 +165,7 @@ first (the `/release` skill does this for you).
 2. **The `ShadowDuskCLI` tool installs and runs:**
 
    ```bash
-   dotnet tool install -g ShadowDusk.Cli --version 0.16.0
+   dotnet tool install -g ShadowDusk.Cli --version 0.17.0
    ShadowDuskCLI --help
    ```
 
@@ -173,7 +173,7 @@ first (the `/release` skill does this for you).
 3. **The consumer (GL) self-contained path works on a clean machine:**
 
    ```bash
-   dotnet add package ShadowDusk.Compiler --version 0.16.0
+   dotnet add package ShadowDusk.Compiler --version 0.17.0
    ```
 
    then compile a `.fx` → GL `.mgfx` in memory. This restores `Core/HLSL/GLSL` plus
