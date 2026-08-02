@@ -26,32 +26,52 @@
 // SpriteBatch texture" is the single most common custom-effect idiom in MonoGame,
 // so getting slot 0 wrong is not an edge case.
 //
-// THE FIXTURE (tests/fixtures/shaders/SamplerRegisterOrder.fx)
+// TWO ARMS, EACH ISOLATING A DIFFERENT VARIABLE
+//
+// ARM "order" (tests/fixtures/shaders/SamplerRegisterOrder.fx) — the ORDER slots
+// are allocated in:
 //
 //   sampler SpriteSampler : register(s0);   // SpriteBatch owns unit 0
 //   sampler MaskSampler   : register(s1);
 //   ... sampled in REVERSE declaration order ...
 //   return float4(sprite.r, mask.g, 0, 1);
 //
-// Rendered with a RED sprite and a GREEN mask:
-//   correct (declaration order)  -> (255, 255, 0)  yellow
-//   first-use order (the #189 bug) -> (0, 0, 0)    black
-//
+// RED sprite + GREEN mask:
+//   correct (declaration order)    -> (255, 255, 0)  yellow
+//   first-use order (the #189 bug) -> (  0,   0, 0)  black
 // Both channels flip together, so neither outcome can be mistaken for a tolerance
 // artefact.
 //
-// EVIDENCE THIS DRIVER PRODUCES
-//   A. ShadowDusk's own build renders yellow (the absolute claim).
-//   B. ShadowDusk's build is pixel-identical to the real mgfxc golden rendered in
-//      the SAME scene (the drop-in claim). Arm B is the one that actually holds
-//      the promise: arm A alone would still pass if both builds were wrong in the
-//      same direction.
-//   C. A structural read-back of the .mgfx sampler table, so a failure says WHICH
+// ARM "sparse" (tests/fixtures/shaders/SamplerRegisterSparse.fx) — the ABSOLUTE
+// register VALUE. Samplers at s2/s3 with NOTHING at s0/s1, sampled strictly IN
+// declaration order so ordering cannot be what it measures:
+//
+//   BLUE sprite + RED MaskA + GREEN MaskB:
+//     registers honoured (mgfxc)  -> (255, 255, 0)  yellow
+//     compacted to units 0/1      -> (  0, 255, 0)  green
+//       (MaskA landed on unit 0 and SpriteBatch overwrote it with the sprite;
+//        only the RED channel moves, and the untouched green is the control
+//        proving the harness bound anything at all)
+//
+// Measured 2026-08-02, and load-bearing for the sparse arm: mgfxc honours the
+// register annotation ONLY for the legacy `sampler` form. Compiled at ps_3_0 a
+// legacy sampler IS the combined sampler, so `: register(sN)` pins its SM3 register
+// directly. For the modern spelling it does NOT: given
+// `Texture2D T : register(t3); SamplerState S : register(s2);` mgfxc's OpenGL build
+// puts the pair on slot 0 regardless, allocating by texture declaration order. So
+// the sparse fixture must stay in legacy syntax or it stops testing anything.
+//
+// EVIDENCE EACH ARM PRODUCES
+//   1. ShadowDusk's own build renders the expected colour (the absolute claim).
+//   2. The mgfxc golden renders it too (the CONTROL — without it, both builds being
+//      wrong in the same direction would pass).
+//   3. ShadowDusk's build is pixel-identical to that golden in the SAME scene (the
+//      drop-in claim).
+//   4. A structural read-back of both .mgfx sampler tables, so a failure says WHICH
 //      unit each sampler landed on instead of only "wrong colour".
 //
-// The golden is committed (tests/fixtures/golden/OpenGL/SamplerRegisterOrder.mgfx),
-// so unlike SamplerPairsGl arm A there is no "no golden -> in-runtime only" mode:
-// a missing golden is a hard failure here.
+// Both goldens are committed, so unlike SamplerPairsGl arm A there is no
+// "no golden -> in-runtime only" mode: a missing golden is a hard failure here.
 // =============================================================================
 
 using System;
@@ -71,68 +91,82 @@ for (int i = 0; i < args.Length - 1; i++)
         tolerance = t;
 
 string repoRoot  = ShaderInputs.FindRepoRoot();
-string fxPath    = Path.Combine(repoRoot, "tests", "fixtures", "shaders", "SamplerRegisterOrder.fx");
-string goldenPath = Path.Combine(repoRoot, "tests", "fixtures", "golden", "OpenGL", "SamplerRegisterOrder.mgfx");
 string outDir    = Path.Combine(repoRoot, "validation", "output-samplerregisterorder");
 
-Console.WriteLine("=== issue #189 sampler register-order rung-4 render validation (real MonoGame DesktopGL) ===");
+Console.WriteLine("=== issue #189 sampler register rung-4 render validation (real MonoGame DesktopGL) ===");
 Console.WriteLine($"[regorder] out: {outDir}  tolerance: {tolerance}\n");
 
-if (!File.Exists(goldenPath))
-{
-    Console.Error.WriteLine($"[regorder] FAIL — the mgfxc golden is missing: {goldenPath}\n" +
-                            "Regenerate it with tools/compile-fixtures.ps1. This gate compares against the " +
-                            "reference compiler and has no in-runtime-only mode.");
-    return 2;
-}
+// Two arms, each isolating a different variable. A: the ORDER slots are allocated in
+// (samples out of declaration order). B: the ABSOLUTE register VALUE (samples strictly
+// in declaration order, so order cannot be what it measures, and sits at s2/s3 with
+// nothing at s0/s1).
+var fixtures = new[] { "SamplerRegisterOrder", "SamplerRegisterSparse" };
+var compiled = new Dictionary<string, (byte[] Candidate, byte[] Golden)>(StringComparer.Ordinal);
 
-byte[] candidateMgfx;
-try
+foreach (string name in fixtures)
 {
-    string src = await File.ReadAllTextAsync(fxPath);
-    var result = await new EffectCompiler().CompileAsync(src, new CompilerOptions
+    string fxPath = Path.Combine(repoRoot, "tests", "fixtures", "shaders", name + ".fx");
+    string goldenPath = Path.Combine(repoRoot, "tests", "fixtures", "golden", "OpenGL", name + ".mgfx");
+
+    if (!File.Exists(goldenPath))
     {
-        Target          = PlatformTarget.OpenGL,
-        IncludeResolver = new FileSystemIncludeResolver(),
-        SourceFileName  = fxPath,
-    });
-    if (result.IsFailure)
-    {
-        Console.Error.WriteLine("[regorder] compile FAILED: " +
-            string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")));
+        Console.Error.WriteLine($"[regorder] FAIL — the mgfxc golden is missing: {goldenPath}\n" +
+                                "Regenerate it with tools/compile-fixtures.ps1. This gate compares against the " +
+                                "reference compiler and has no in-runtime-only mode.");
         return 2;
     }
-    candidateMgfx = result.Value.Data;
-}
-catch (Exception ex)
-{
-    Console.Error.WriteLine($"[regorder] compile threw: {ex.GetType().Name}: {ex.Message}");
-    return 2;
-}
 
-byte[] goldenMgfx = await File.ReadAllBytesAsync(goldenPath);
-Console.WriteLine($"[regorder] compiled OK: candidate {candidateMgfx.Length} B, mgfxc golden {goldenMgfx.Length} B");
-
-// ---- C. Structural read-back, before any GL work ---------------------------
-// Printed for BOTH builds so a failure names the actual slot assignment rather
-// than leaving the reader to infer it from a colour.
-foreach ((string label, byte[] bytes) in new[] { ("candidate", candidateMgfx), ("mgfxc   ", goldenMgfx) })
-{
+    byte[] candidateMgfx;
     try
     {
-        foreach (string line in MgfxSamplerTable.Describe(bytes))
-            Console.WriteLine($"[regorder] {label} {line}");
+        string src = await File.ReadAllTextAsync(fxPath);
+        var result = await new EffectCompiler().CompileAsync(src, new CompilerOptions
+        {
+            Target          = PlatformTarget.OpenGL,
+            IncludeResolver = new FileSystemIncludeResolver(),
+            SourceFileName  = fxPath,
+        });
+        if (result.IsFailure)
+        {
+            Console.Error.WriteLine($"[regorder] {name} compile FAILED: " +
+                string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")));
+            return 2;
+        }
+        candidateMgfx = result.Value.Data;
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"[regorder] {label} (structural read-back unavailable: {ex.Message})");
+        Console.Error.WriteLine($"[regorder] {name} compile threw: {ex.GetType().Name}: {ex.Message}");
+        return 2;
+    }
+
+    byte[] goldenMgfx = await File.ReadAllBytesAsync(goldenPath);
+    compiled[name] = (candidateMgfx, goldenMgfx);
+    Console.WriteLine($"[regorder] {name}: candidate {candidateMgfx.Length} B, mgfxc golden {goldenMgfx.Length} B");
+
+    // Structural read-back, before any GL work. Printed for BOTH builds so a failure
+    // names the actual slot assignment rather than leaving it to be inferred from a colour.
+    foreach ((string label, byte[] bytes) in new[] { ("candidate", candidateMgfx), ("mgfxc   ", goldenMgfx) })
+    {
+        try
+        {
+            foreach (string line in MgfxSamplerTable.Describe(bytes))
+                Console.WriteLine($"[regorder]   {label} {line}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[regorder]   {label} (structural read-back unavailable: {ex.Message})");
+        }
     }
 }
 Console.WriteLine();
 
 Directory.CreateDirectory(outDir);
 
-using var game = new RegisterOrderGame(candidateMgfx, goldenMgfx, outDir, tolerance);
+using var game = new RegisterOrderGame(
+    compiled["SamplerRegisterOrder"].Candidate, compiled["SamplerRegisterOrder"].Golden,
+    compiled["SamplerRegisterSparse"].Candidate, compiled["SamplerRegisterSparse"].Golden,
+    outDir, tolerance);
 game.Run();
 
 if (game.Skipped)
@@ -286,8 +320,10 @@ sealed class RegisterOrderGame : Game
     private static readonly Color Yellow = new(255, 255, 0, 255);
     private static readonly Color Black  = new(0, 0, 0, 255);
 
+    private static readonly Color Blue = new(0, 0, 255, 255);
+
     private readonly GraphicsDeviceManager _gdm;
-    private readonly byte[] _candidate, _golden;
+    private readonly byte[] _candidate, _golden, _sparseCandidate, _sparseGolden;
     private readonly string _outDir;
     private readonly int _tolerance;
     private bool _done;
@@ -297,10 +333,15 @@ sealed class RegisterOrderGame : Game
     public string? SkipReason { get; private set; }
     public List<string> Report { get; } = new();
 
-    public RegisterOrderGame(byte[] candidate, byte[] golden, string outDir, int tolerance)
+    public RegisterOrderGame(
+        byte[] candidate, byte[] golden,
+        byte[] sparseCandidate, byte[] sparseGolden,
+        string outDir, int tolerance)
     {
         _candidate = candidate;
         _golden = golden;
+        _sparseCandidate = sparseCandidate;
+        _sparseGolden = sparseGolden;
         _outDir = outDir;
         _tolerance = tolerance;
         _gdm = new GraphicsDeviceManager(this)
@@ -327,12 +368,20 @@ sealed class RegisterOrderGame : Game
         if (_done || Skipped) { Exit(); return; }
         _done = true;
 
-        try { Passed = Validate(); }
+        bool ok = true;
+        try { ok &= Validate(); }
         catch (Exception ex)
         {
-            Report.Add($"[regorder] EXCEPTION: {ex.GetType().Name}: {ex.Message}");
-            Passed = false;
+            Report.Add($"[regorder] order  EXCEPTION: {ex.GetType().Name}: {ex.Message}");
+            ok = false;
         }
+        try { ok &= ValidateSparse(); }
+        catch (Exception ex)
+        {
+            Report.Add($"[regorder] sparse EXCEPTION: {ex.GetType().Name}: {ex.Message}");
+            ok = false;
+        }
+        Passed = ok;
         Exit();
     }
 
@@ -394,19 +443,89 @@ sealed class RegisterOrderGame : Game
             : Approx(candCentre, Red)        ? "WRONG: both samplers read unit 0 (the sprite)"
             : Approx(candCentre, Green)      ? "WRONG: both samplers read the mask"
                                              : "WRONG: unrecognised — check the harness bindings";
-        Report.Add($"[regorder] A candidate centre = {Fmt(candCentre)} (want (255,255,0)) -> {diagnosis}");
+        Report.Add($"[regorder] order  candidate centre = {Fmt(candCentre)} (want (255,255,0)) -> {diagnosis}");
 
         // The golden rendering the expected colour is the CONTROL. If mgfxc's own build
         // does not render yellow here, the harness is wrong, not the compiler, and the
         // comparison below would be meaningless.
         bool goldCorrect = Approx(goldCentre, Yellow);
-        Report.Add($"[regorder] A mgfxc     centre = {Fmt(goldCentre)} (want (255,255,0)) -> " +
+        Report.Add($"[regorder] order  mgfxc     centre = {Fmt(goldCentre)} (want (255,255,0)) -> " +
                    (goldCorrect ? "OK (control)" : "HARNESS FAULT — the reference build does not render the expected colour"));
 
         // ---- B. drop-in claim --------------------------------------------------
         (int maxDelta, int diffCount) = Compare(candImg, goldImg);
         bool match = diffCount == 0;
-        Report.Add($"[regorder] B vs mgfxc golden: maxd {maxDelta}, {diffCount} px over tolerance " +
+        Report.Add($"[regorder] order  vs mgfxc golden: maxd {maxDelta}, {diffCount} px over tolerance " +
+                   $"{_tolerance} -> {(match ? "OK" : "WRONG")}");
+
+        candidate.Dispose();
+        golden.Dispose();
+        return candCorrect && goldCorrect && match;
+    }
+
+    /// <summary>
+    /// Arm B — the ABSOLUTE register value. `SamplerRegisterSparse.fx` puts its two samplers
+    /// at s2/s3 with NOTHING at s0/s1, and samples them strictly in declaration order so
+    /// ordering cannot be what this measures. Compacting them to units 0/1 is order-preserving
+    /// and still wrong: SpriteBatch overwrites unit 0 with the sprite after Apply().
+    /// </summary>
+    private bool ValidateSparse()
+    {
+        GraphicsDevice gd = GraphicsDevice;
+
+        Effect candidate, golden;
+        try { candidate = new Effect(gd, _sparseCandidate); }
+        catch (Exception ex)
+        {
+            Report.Add($"[regorder] sparse candidate new Effect() FAILED: {ex.GetType().Name}: {ex.Message}");
+            return false;
+        }
+        try { golden = new Effect(gd, _sparseGolden); }
+        catch (Exception ex)
+        {
+            Report.Add($"[regorder] sparse GOLDEN new Effect() threw (control failure): {ex.Message}");
+            candidate.Dispose();
+            return false;
+        }
+
+        // A BLUE sprite, so the sampler that wrongly lands on unit 0 reads blue and its RED
+        // channel collapses. Green stays lit either way and is the control proving the
+        // harness bound anything at all.
+        using Texture2D sprite = Solid(gd, Blue);
+        using Texture2D maskA  = Solid(gd, Red);
+        using Texture2D maskB  = Solid(gd, Green);
+
+        void Bind(Effect e)
+        {
+            foreach (string n in new[] { "MaskA", "MaskA_SDTexture", "MaskA+MaskA" })
+                e.Parameters[n]?.SetValue(maskA);
+            foreach (string n in new[] { "MaskB", "MaskB_SDTexture", "MaskB+MaskB" })
+                e.Parameters[n]?.SetValue(maskB);
+        }
+
+        Color[] candImg = RenderSprite(gd, candidate, sprite, Bind);
+        Color[] goldImg = RenderSprite(gd, golden,    sprite, Bind);
+        SavePng(gd, candImg, "sparse_candidate.png");
+        SavePng(gd, goldImg, "sparse_golden.png");
+
+        Color candCentre = candImg[Px(Size / 2, Size / 2)];
+        Color goldCentre = goldImg[Px(Size / 2, Size / 2)];
+
+        bool candCorrect = Approx(candCentre, Yellow);
+        string diagnosis =
+            candCorrect                 ? "correct — MaskA is on unit 2 and MaskB on unit 3, so SpriteBatch's unit 0 hits neither"
+            : Approx(candCentre, Green) ? "WRONG (issue #189 sparse half): the registers were compacted to units 0/1, so MaskA sat on unit 0 and SpriteBatch overwrote it with the sprite"
+            : Approx(candCentre, Red)   ? "WRONG: MaskB lost its binding"
+                                        : "WRONG: unrecognised — check the harness bindings";
+        Report.Add($"[regorder] sparse candidate centre = {Fmt(candCentre)} (want (255,255,0)) -> {diagnosis}");
+
+        bool goldCorrect = Approx(goldCentre, Yellow);
+        Report.Add($"[regorder] sparse mgfxc     centre = {Fmt(goldCentre)} (want (255,255,0)) -> " +
+                   (goldCorrect ? "OK (control)" : "HARNESS FAULT — the reference build does not render the expected colour"));
+
+        (int maxDelta, int diffCount) = Compare(candImg, goldImg);
+        bool match = diffCount == 0;
+        Report.Add($"[regorder] sparse vs mgfxc golden: maxd {maxDelta}, {diffCount} px over tolerance " +
                    $"{_tolerance} -> {(match ? "OK" : "WRONG")}");
 
         candidate.Dispose();
