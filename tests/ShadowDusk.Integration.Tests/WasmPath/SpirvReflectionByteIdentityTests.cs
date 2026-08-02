@@ -77,7 +77,7 @@ public sealed class SpirvReflectionByteIdentityTests
         // oracle's separate companion compile does not, so the oracle reports a parameter the
         // SPIR-V never carries. The desktop pipeline now synthesizes register backing for that
         // parameter (see GlPhantomParameterTests and
-        // plan/ISSUE-187-gl-phantom-parameter-compile-fidelity.md), which widens rather than
+        // plan/DONE/ISSUE-187-gl-phantom-parameter-compile-fidelity.md), which widens rather than
         // closes THIS byte-identity divergence: the SpirvReflector host still cannot see the
         // parameter at all, so its output carries neither the parameter nor the synthesized
         // cbuffer. Reconverging the two reflection sources needs the binding preserved in the

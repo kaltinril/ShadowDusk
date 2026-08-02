@@ -425,7 +425,7 @@ carries for the known member (`GradientToy.fx`/`iResolution`) and what real mgfx
 profile ships for any declared-but-unused uniform; at runtime the GL driver either link-strips
 the unread array (a silent, spec-sanctioned skip) or uploads data nothing reads. Guarded by
 `GlPhantomParameterTests` (structural criterion + corpus-wide sweep); full record:
-`plan/ISSUE-187-gl-phantom-parameter-compile-fidelity.md`.
+`plan/DONE/ISSUE-187-gl-phantom-parameter-compile-fidelity.md`.
 
 ### Determinism and cross-host byte-identity
 

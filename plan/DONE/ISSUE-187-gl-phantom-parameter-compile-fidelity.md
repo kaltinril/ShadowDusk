@@ -3,8 +3,8 @@
 **Status: FIXED (2026-08-01) — Option A (synthesized backing, §7.3) implemented, adversarially
 reviewed, and validated (full `dotnet test` + the complete Windows render-gate suite, both green);
 see §12 for the implementation outcome.** The residual compile-fidelity divergence (§9) is
-*documented, not fixed* — it is closable only by the DXC 1.8 pin bump recorded in §7.2. GitHub
-issue #187 can be closed when the branch merges.
+*documented, not fixed* — it is closable only by the DXC 1.8 pin bump recorded in §7.2. Merged
+to `main` in PR #190 and GitHub issue #187 closed, 2026-08-02.
 
 This doc records the full findings and the decision surface. GitHub issue
 [#187](https://github.com/kaltinril/ShadowDusk/issues/187), split out from #185. The issue thread's
@@ -366,9 +366,9 @@ src/ShadowDusk.Cli/bin/Debug/net8.0/ShadowDuskCLI.exe `
   GradientToy exclusion comment block (§9.2).
 - `project_facts.md` → Known gaps (the #187 summary line; the DX12 maxd-1 DXC-pin gap that makes
   the §7.2 pin bump doubly motivated).
-- [`DONE/ISSUE-70`](DONE/ISSUE-70-gl-vertex-fidelity.md), [`DONE/ISSUE-145`](DONE/ISSUE-145-vulkan-vs-driven-and-legacy-sampler.md),
-  [`DONE/ISSUE-149`](DONE/ISSUE-149-gl-isnan-versionless-glsl.md) — the sibling issue-record docs
-  this one joins (move to `DONE/` when #187 is resolved or formally closed won't-fix).
+- [`DONE/ISSUE-70`](ISSUE-70-gl-vertex-fidelity.md), [`DONE/ISSUE-145`](ISSUE-145-vulkan-vs-driven-and-legacy-sampler.md),
+  [`DONE/ISSUE-149`](ISSUE-149-gl-isnan-versionless-glsl.md) — the sibling issue-record docs
+  this one now sits beside (moved to `DONE/` when PR #190 merged and #187 closed, 2026-08-02).
 
 ## 12. Implementation outcome (2026-08-01, same day)
 

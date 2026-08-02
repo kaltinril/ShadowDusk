@@ -164,7 +164,7 @@ corpus census. Same scope as above: a valid-effect compile, not pixel-equivalenc
 
 ### Phantom-parameter set (issue #187 — synthesized GL register backing)
 
-Pins the issue-#187 class (`plan/ISSUE-187-gl-phantom-parameter-compile-fidelity.md`): a
+Pins the issue-#187 class (`plan/DONE/ISSUE-187-gl-phantom-parameter-compile-fidelity.md`): a
 numeric uniform whose only reads form an algebraic identity DXC's `-spirv` backend cancels
 (fxc and the DXIL reflection companion do not), so the OpenGL pipeline must SYNTHESIZE the
 parameter's register backing. Each fixture pins one synthesis sub-shape found by the

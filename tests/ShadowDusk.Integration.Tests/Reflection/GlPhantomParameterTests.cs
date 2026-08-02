@@ -14,7 +14,7 @@ namespace ShadowDusk.Integration.Tests.Reflection;
 /// <summary>
 /// Regression tests for the issue-#187 phantom-parameter class, fixed by the synthesized
 /// GL backing step in <c>CompilationPipeline</c> (full record:
-/// <c>plan/ISSUE-187-gl-phantom-parameter-compile-fidelity.md</c>).
+/// <c>plan/DONE/ISSUE-187-gl-phantom-parameter-compile-fidelity.md</c>).
 ///
 /// <para><b>The class.</b> Desktop OpenGL reflects from a companion DXC compile targeting
 /// DirectX SM6 DXIL, while the shipped GLSL comes from a separate <c>-spirv</c> compile.

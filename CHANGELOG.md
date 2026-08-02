@@ -53,7 +53,7 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   diverges from mgfxc only at degenerate values like an unset `iResolution`, where ShadowDusk's
   build is the more forgiving one, and no lever closes that half) and the DXC 1.8
   `-fspv-preserve-bindings` follow-up for the reflector half are recorded in
-  `plan/ISSUE-187-gl-phantom-parameter-compile-fidelity.md`.
+  `plan/DONE/ISSUE-187-gl-phantom-parameter-compile-fidelity.md`.
 
 ## [0.17.0] - 2026-08-01
 

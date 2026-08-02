@@ -195,7 +195,7 @@ and cannot diverge. mgfxc's model, pinned by its goldens:
   array (a spec-sanctioned silent skip) or uploads data nothing reads — render-
   identical either way. Guarded by `GlPhantomParameterTests` (structural backing
   criterion + corpus-wide sweep); full record:
-  `plan/ISSUE-187-gl-phantom-parameter-compile-fidelity.md`.
+  `plan/DONE/ISSUE-187-gl-phantom-parameter-compile-fidelity.md`.
 - **mgfxc bug not replicated:** an array read at only SOME static indices is broken
   in mgfxc+MonoGame GL itself — fxc references only the used registers, MojoShader
   emits a **compacted** uniform array, but mgfxc's record keeps the full layout, so
