@@ -204,6 +204,19 @@ they back `validation/SamplerPairsGl`:
   the two fixtures above it uses **distinct** textures and leaves unit 0 to `SpriteBatch`, which is
   precisely what makes slot allocation observable. Goldens on `OpenGL` + `DirectX_11`.
 
+- **`SamplerRegisterSparse.fx`** — GitHub issue **#189**, the sparse/offset half, and the
+  deliberate complement to the fixture above. Two samplers at `s2`/`s3` with **nothing at
+  `s0`/`s1`**, sampled strictly **in** declaration order, so ordering cannot be what it measures:
+  the only variable is the **absolute register value**. Compacting to units 0/1 is order-preserving
+  and still wrong, because `SpriteBatch` overwrites unit 0 with the sprite after
+  `EffectPass.Apply()`. BLUE sprite + RED MaskA + GREEN MaskB: **yellow = registers honoured**,
+  **green = compacted (the bug)** — only the red channel moves, and the untouched green is the
+  control proving the harness bound anything at all. **Keep it in LEGACY `sampler` syntax**: that is
+  the only form `mgfxc` honours the annotation for (at `ps_3_0` the legacy sampler *is* the combined
+  sampler). Measured 2026-08-02, the modern spelling is ignored on OpenGL by `mgfxc` itself, so
+  rewriting this fixture in modern syntax would silently stop testing anything. Goldens on `OpenGL`
+  + `DirectX_11`.
+
 ### ShaderToy route fixture
 
 - **`shadertoy/GradientToy.fx`** — the **pinned** output of converting `GradientToy.glsl` with

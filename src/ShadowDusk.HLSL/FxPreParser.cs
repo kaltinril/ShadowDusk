@@ -249,6 +249,14 @@ public sealed class FxPreParser
     // in this map by the time its tex2D call is reached.
     private readonly Dictionary<string, string> _samplerTextureBindings = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// SAMPLER name -> the explicit <c>register(sN)</c> index on its legacy declaration, captured
+    /// before the SM4 rewrite drops the clause (issue #189). Resolved to TEXTURE names against
+    /// <see cref="_samplerTextureBindings"/> when the result is built, because the GL sampler
+    /// table joins on the texture.
+    /// </summary>
+    private readonly Dictionary<string, int> _explicitSamplerRegisters = new(StringComparer.Ordinal);
+
     // Character spans of trailing sampler-level FX annotation blocks
     // ('sampler S = sampler_state { … } < … >;') that ParseSamplerDecl consumed.
     // These are FX metadata that no shader backend understands, so they are erased
@@ -916,12 +924,24 @@ public sealed class FxPreParser
 
         string strippedHlsl = BuildStrippedOutput(erasedRanges, replacedRanges);
 
+        // Re-key the captured `register(sN)` indices from SAMPLER name onto TEXTURE name,
+        // which is what the OpenGL sampler table joins on (issue #189). A sampler whose
+        // texture is unknown is dropped rather than guessed: the consumer of this map falls
+        // back to declaration-index allocation, which is the behaviour that shipped before.
+        var explicitGlSlots = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach ((string samplerName, int slot) in _explicitSamplerRegisters)
+        {
+            if (_samplerTextureBindings.TryGetValue(samplerName, out string? textureName))
+                explicitGlSlots[textureName] = slot;
+        }
+
         return Result<FxParseResult, FxParseError>.Ok(new FxParseResult
         {
             StrippedHlsl = strippedHlsl,
             Techniques = techniques,
             Samplers = samplers,
             ParameterAnnotations = paramAnnotations,
+            ExplicitGlSamplerSlots = explicitGlSlots,
         });
     }
 
@@ -1262,22 +1282,34 @@ public sealed class FxPreParser
         SkipNonCodeTokens();
 
         // Optional ': register(sN)' clause before a brace-form state block (the
-        // lexer drops the ':', leaving 'register' '(' … ')').
+        // lexer drops the ':', leaving 'register' '(' … ')'). The index is RECORDED
+        // (issue #189): the SM4 rewrite drops this clause, so it is the last point at
+        // which the register exists. TryReadSamplerRegister consumes the whole clause
+        // when it matches the exact `register ( sN )` shape; anything else falls
+        // through to the original permissive skip below, unchanged.
         if (PeekIsKeyword("register"))
         {
-            Consume(); // 'register'
-            SkipNonCodeTokens();
+            if (TryReadSamplerRegister() is { } explicitSlot)
+            {
+                _explicitSamplerRegisters[name] = explicitSlot;
+                SkipNonCodeTokens();
+            }
+            else
+            {
+                Consume(); // 'register'
+                SkipNonCodeTokens();
 
-            var regLParen = Expect(TokenKind.LParen);
-            if (regLParen.IsFailure)
-                return Result<SamplerInfo, FxParseError>.Fail(regLParen.Error);
-            while (Peek().Kind is not (TokenKind.RParen or TokenKind.EOF))
-                Consume();
+                var regLParen = Expect(TokenKind.LParen);
+                if (regLParen.IsFailure)
+                    return Result<SamplerInfo, FxParseError>.Fail(regLParen.Error);
+                while (Peek().Kind is not (TokenKind.RParen or TokenKind.EOF))
+                    Consume();
 
-            var regRParen = Expect(TokenKind.RParen);
-            if (regRParen.IsFailure)
-                return Result<SamplerInfo, FxParseError>.Fail(regRParen.Error);
-            SkipNonCodeTokens();
+                var regRParen = Expect(TokenKind.RParen);
+                if (regRParen.IsFailure)
+                    return Result<SamplerInfo, FxParseError>.Fail(regRParen.Error);
+                SkipNonCodeTokens();
+            }
         }
 
         // Form 1 carries '= sampler_state' before the state block; Form 4 (the
@@ -1853,8 +1885,15 @@ public sealed class FxPreParser
 
         // Swallow everything up to and including the terminating ';' (covers an
         // optional ': register(sN)' clause; the lexer already dropped the ':').
+        // The register number is RECORDED on the way past (issue #189) — the SM4
+        // rewrite below drops the clause, so this is the last point at which it exists.
         while (Peek().Kind != TokenKind.Semicolon && Peek().Kind != TokenKind.EOF)
-            Consume();
+        {
+            if (TryReadSamplerRegister() is { } slot)
+                _explicitSamplerRegisters[nameTok.Text] = slot;
+            else
+                Consume();
+        }
 
         int declEnd;
         if (Peek().Kind == TokenKind.Semicolon)
@@ -1868,6 +1907,56 @@ public sealed class FxPreParser
         }
 
         return (nameTok.Text, declEnd);
+    }
+
+    /// <summary>
+    /// At the current position, matches <c>register ( sN )</c> and consumes it, returning N.
+    /// Returns null and consumes NOTHING otherwise, so the caller's swallow loop still makes
+    /// progress. The ':' is already dropped by the lexer, so 'register' is a bare Identifier.
+    ///
+    /// <para>Deliberately narrow: only the <c>s</c> register class, only a plain decimal index,
+    /// and only the exact 4-token shape. Anything else (a <c>space</c> operand, a macro, a
+    /// malformed clause) is left to the ordinary swallow path — a missed register falls back to
+    /// declaration-index allocation, which is the pre-issue-#189 behaviour, whereas a
+    /// mis-parsed one would silently move a texture unit.</para>
+    /// </summary>
+    private int? TryReadSamplerRegister()
+    {
+        Token tok = Peek();
+        if (tok.Kind != TokenKind.Identifier ||
+            !string.Equals(tok.Text, "register", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        // register ( sN )   — offsets from the current position, skipping trivia.
+        int save = _pos;
+        Consume();                       // 'register'
+        SkipNonCodeTokens();
+        if (Peek().Kind != TokenKind.LParen) { _pos = save; return null; }
+        Consume();                       // '('
+        SkipNonCodeTokens();
+
+        Token slotTok = Peek();
+        if (slotTok.Kind != TokenKind.Identifier ||
+            slotTok.Text.Length < 2 ||
+            (slotTok.Text[0] != 's' && slotTok.Text[0] != 'S') ||
+            !int.TryParse(slotTok.Text.AsSpan(1), System.Globalization.NumberStyles.None,
+                          System.Globalization.CultureInfo.InvariantCulture, out int slot))
+        {
+            _pos = save;
+            return null;
+        }
+
+        Consume();                       // 'sN'
+        SkipNonCodeTokens();
+        if (Peek().Kind != TokenKind.RParen) { _pos = save; return null; }
+        Consume();                       // ')'
+
+        // MonoGame's sampler record stores the slot in a single byte, and the GL runtime
+        // has 16 texture units. A number outside that is not something to bind to.
+        if (slot is < 0 or > 255) { _pos = save; return null; }
+        return slot;
     }
 
     /// <summary>

@@ -1,6 +1,7 @@
 # ISSUE-189 — OpenGL sampler slots followed first-use order, not declaration order
 
-**Status:** ✅ Fixed and render-proved (2026-08-02). Two residuals recorded in §6.
+**Status:** ✅ Fixed and render-proved (2026-08-02), **both halves** — the allocation ORDER and
+the explicit register VALUE. One residual (DirectX 11) recorded in §6.
 **Reported by:** Apostolique (Apos.Shapes), GitHub issue
 [#189](https://github.com/kaltinril/ShadowDusk/issues/189), against ShadowDusk CLI 0.14.2.
 **Fixed in:** `fix/code-scanning-and-issue-189`.
@@ -98,26 +99,86 @@ Declaration order in every case.
   numbering for the whole stage — the previously shipping, A7-render-proved behaviour — rather
   than inventing an answer.
 
-## 6. Residuals (open, measured)
+## 6. The sparse/offset half, and the one residual left
 
-1. **Sparse/offset explicit registers.** `register(s2)`/`(s3)` with no `s0`/`s1` declared still
-   compacts to units 0/1 where mgfxc emits 2/3. DXC's SPIR-V `Binding` namespace is flat and
-   auto-allocated, so the explicit register number is **not** recoverable from the SPIR-V; closing
-   this needs the clause threaded out of `FxPreParser` (§2). Contiguous-from-zero sets — every
-   SpriteBatch custom effect, and the entire corpus — are exact.
-2. **DirectX 11 sampler slot.** DX11 also ignores `register(sN)` (we emit 0/1 where mgfxc emits
-   the declared 2/3). Deliberately unchanged: `fxc` itself auto-assigns DX *texture* registers by
-   first use (measured — mgfxc puts the second-declared sampler's texture on `t0`), so honouring
-   the annotation there would move away from the reference compiler. Vulkan binds through a
-   descriptor layout rather than a slot number. Recorded in `project_decisions.md`.
+### 6.1 Closed: an explicit `register(sN)` on a LEGACY sampler now pins the unit
+
+Samplers at `s2`/`s3` with nothing at `s0`/`s1` were compacted to units 0/1. Order-preserving,
+internally self-consistent, and still wrong: unit 0 is not the effect's to allocate, so
+`SpriteBatch` overwrote it with the sprite and that sampler read the sprite.
+
+`FxPreParser` now **records** the register index it already parsed (`FxParseResult.ExplicitGlSamplerSlots`,
+keyed on the TEXTURE because that is what the GL table joins on) before its SM4 rewrite drops the
+clause, and `ResolveSlots` prefers it over the declaration-index ranking.
+
+**Recorded, not re-emitted.** Putting the clause back into the rewritten HLSL would change what DXC
+compiles and move the DirectX / DX12 / Vulkan / FNA bytes, none of which have a reported defect.
+Recording it changes the OpenGL slot allocation only.
+
+**Legacy form ONLY, and that is measured, not a limitation.** `mgfxc` honours the annotation exactly
+there, because compiled at `ps_3_0` a legacy `sampler` IS the combined sampler. For the modern
+spelling it does not:
+
+| Source | `mgfxc` OpenGL | Why |
+|---|---|---|
+| `sampler X : register(s2);` | `ps_s2`, unit 2 | at `ps_3_0` the sampler *is* the combined sampler |
+| `Texture2D T : register(t3); SamplerState S : register(s2);` | `ps_s0`, unit **0** | allocates by texture declaration order, ignores both annotations |
+
+Honouring modern registers would therefore have been a **divergence**. Both behaviours are pinned by
+tests that fail if either is "corrected" later
+(`OpenGl_SparseExplicitSamplerRegisters_PinTheDeclaredTextureUnits` and
+`OpenGl_ModernExplicitRegisters_AreNotHonoured_MatchingMgfxc`).
+
+### 6.2 Found while fixing 6.1: the declaration rank was taken from the wrong thing
+
+`TextureDeclarationIndex` originally ranked by the SPIR-V `Binding` decoration. That equals
+declaration order only while DXC auto-allocates; once the source is annotated it equals *register*
+order. So `Texture2D TexA : register(t3); Texture2D TexB : register(t2);` put **TexB** on unit 0
+where `mgfxc` puts **TexA**. This was **pre-existing** — the original #189 fix inherited it — and was
+caught by the deliberately-adversarial "modern registers must NOT be honoured" test rather than by
+any render. The rank now comes from module order (the order `OpVariable` appears in the SPIR-V),
+which is HLSL declaration order.
+
+### 6.3 Residual, and why "just fix DirectX too" would be a BUG, not an improvement
+
+DX11 emits sampler slots 0/1 where `mgfxc` emits the declared 2/3. `SamplerRegisterSparse.fx`
+makes this visible as a new `XX` cell in the Phase 41 structural-divergence matrix
+(`SamplerRegisterSparse [DirectX_11]`, the existing "sampler slot / baked-state delta" class).
+That cell is **expected and correct**, and the reasoning is worth keeping because the obvious
+"fix" is actively harmful:
+
+- On DX11 the record's `samplerSlot` is what MonoGame assigns baked state to
+  (`samplerStates[sampler.samplerSlot] = sampler.state`). It must therefore match the sampler
+  register **the shipped bytecode actually reads**, not the one the source text asked for.
+- `FxPreParser` drops the register before DXC sees it, so our DXBC reads sampler register 0/1.
+  Writing 2/3 into the record while the bytecode samples register 0 would send the baked state to
+  a register the shader never reads — a real regression, traded for a cosmetic match.
+- Making the bytecode itself use 2/3 means re-emitting the clause into the rewritten HLSL, which
+  changes what DXC compiles and moves the DirectX/DX12/Vulkan/FNA bytes for a defect none of them
+  have.
+
+So DX11's records are internally consistent with DX11's bytecode, which is the property that
+actually matters. The separate DX divergence — `fxc` auto-assigns DX **texture** registers by
+first use where we use declaration order — is not closable either, for the same reason: the
+allocation lives inside each compiler's own bytecode. Vulkan binds through a descriptor layout
+rather than a slot number and is unaffected. Recorded in `project_decisions.md`.
 
 ## 7. Evidence
 
-- `validation/SamplerRegisterOrderGl`: **maxd 255 across all 4096 px before, maxd 0 after**,
-  against a real mgfxc golden rendered in the same scene, with the golden's own render asserted as
-  a control so both builds being wrong the same way cannot pass. Committed RED first (`115ecf9`),
-  then green.
-- Full suite **3123/3123**. Windows render gates **15/15**. All eight in-process GL gates green.
+- `validation/SamplerRegisterOrderGl`, two arms, each committed RED first then green:
+  - **order** (`SamplerRegisterOrder.fx`, `115ecf9`) — maxd **255 across all 4096 px** before, **0**
+    after.
+  - **sparse** (`SamplerRegisterSparse.fx`, `d9d8a54`) — candidate `(0,255,0)` vs mgfxc's
+    `(255,255,0)`, maxd **255 / 4096 px** before, **0** after; records go from `ps_s0`/`ps_s1` at
+    units 0/1 to `ps_s2`/`ps_s3` at units 2/3, structurally identical to the golden.
+  Each arm asserts the golden's OWN render as a control, so both builds being wrong in the same
+  direction cannot pass.
+- Full suite **3139/3139** (+7 new: 5 pre-parser unit tests, 2 end-to-end). Windows render gates
+  **15/15**. All eight in-process GL gates green.
+- The reporter's real vendored shader `apos-shapes-aa.fx` (explicit `s0`, an unannotated sampler,
+  explicit `s2`) is **byte-identical to the mgfxc golden** through both fixes, and was measured
+  identical before them too - it never exhibited the bug, because its first-use order happens to
+  coincide with its declaration order.
 - **No existing output moved:** all 48 OpenGL entries of the cross-host byte-identity manifest are
   unchanged; golden corpus untouched.
 - Three integration tests that had encoded the old first-use rule were rewritten to assert

@@ -14,13 +14,19 @@ namespace ShadowDusk.Core.Reflection;
 /// <param name="TextureName">The HLSL name of the sampled texture (the image half of the pair).</param>
 /// <param name="SamplerName">The HLSL name of the <c>SamplerState</c> (the sampler half).</param>
 /// <param name="TextureDeclarationIndex">
-/// The 0-based rank of this pair's texture among the stage's sampled images, ordered by their
-/// raw SPIR-V <c>Binding</c> decoration — which DXC allocates in HLSL DECLARATION order. This is
-/// the GL texture unit the pair must bind to, because fxc (and therefore mgfxc) allocates
-/// OpenGL sampler slots in declaration order, NOT in the first-use order SPIRV-Cross numbers its
-/// combined samplers by (GitHub issue #189). Recovering it the same way
-/// <see cref="Spirv.SpirvReflectionParser"/> recovers <c>t#</c> keeps it host-independent, so the
-/// desktop and WASM hosts still agree byte-for-byte.
+/// The 0-based rank of this pair's texture among the stage's sampled images, in <b>module
+/// order</b> — the order <c>OpVariable</c> appears in the SPIR-V, which is HLSL declaration
+/// order. This is the GL texture unit the pair binds to, because fxc (and therefore mgfxc)
+/// allocates OpenGL sampler slots in declaration order, NOT in the first-use order SPIRV-Cross
+/// numbers its combined samplers by (GitHub issue #189).
+///
+/// <para>Deliberately NOT ranked by the <c>Binding</c> decoration. The two coincide whenever DXC
+/// auto-allocates, but diverge as soon as the source carries explicit registers — and there
+/// declaration order is the one that matches mgfxc: for
+/// <c>Texture2D TexA : register(t3); Texture2D TexB : register(t2);</c> mgfxc's OpenGL build puts
+/// TexA (declared first) on slot 0, where a binding-ordered rank would put TexB. Deriving it from
+/// the SPIR-V rather than from reflection keeps it host-independent, so the desktop and WASM
+/// hosts still agree byte-for-byte.</para>
 /// </param>
 public sealed record CombinedSamplerPair(
     string TextureName,
@@ -117,7 +123,9 @@ public static class SpirvCombinedSamplerPairs
     /// that shipped before issue #189 and that <c>validation/SamplerPairsGl</c> arm B
     /// render-proved.</para>
     /// </summary>
-    public static IReadOnlyList<int> ResolveSlots(IReadOnlyList<CombinedSamplerPair> pairs)
+    public static IReadOnlyList<int> ResolveSlots(
+        IReadOnlyList<CombinedSamplerPair> pairs,
+        IReadOnlyDictionary<string, int>? explicitSlots = null)
     {
         ArgumentNullException.ThrowIfNull(pairs);
 
@@ -125,13 +133,27 @@ public static class SpirvCombinedSamplerPairs
         var seen = new HashSet<int>();
         for (int k = 0; k < pairs.Count; k++)
         {
-            if (!seen.Add(pairs[k].TextureDeclarationIndex))
+            // An explicit `register(sN)` on a LEGACY sampler declaration wins: that is the one
+            // shape where mgfxc honours the annotation (at ps_3_0 the legacy sampler IS the
+            // combined sampler). The map is texture-keyed and empty unless the source declared
+            // one, so unannotated shaders keep pure declaration-index allocation.
+            int slot = explicitSlots is not null &&
+                       explicitSlots.TryGetValue(pairs[k].TextureName, out int declared)
+                ? declared
+                : pairs[k].TextureDeclarationIndex;
+
+            if (!seen.Add(slot))
             {
+                // Two pairs want the same unit. Either two pairs share one texture (one texture
+                // through two SamplerStates), or the source annotated two samplers onto the same
+                // register. There is no committed mgfxc golden for either, so fall back to
+                // positional numbering for the whole stage rather than invent an answer or drop
+                // a uniform onto an occupied unit.
                 for (int j = 0; j < slots.Length; j++)
                     slots[j] = j;
                 return slots;
             }
-            slots[k] = pairs[k].TextureDeclarationIndex;
+            slots[k] = slot;
         }
         return slots;
     }
@@ -148,9 +170,6 @@ public static class SpirvCombinedSamplerPairs
 
     private sealed class Walker
     {
-        /// <summary>SPIR-V <c>Decoration</c> enumerant for <c>Binding</c>.</summary>
-        private const uint BindingDecoration = 33;
-
         private readonly SpirvModule _module;
 
         // ---- Pass 1 tables -----------------------------------------------------
@@ -173,14 +192,6 @@ public static class SpirvCombinedSamplerPairs
 
         /// <summary>Module-level OpVariables in binary order, id -> declared type id.</summary>
         private readonly List<(uint Id, uint TypeId)> _moduleVariables = new();
-
-        /// <summary>
-        /// Raw <c>Binding</c> decoration per variable id. DXC allocates these sequentially in
-        /// HLSL declaration order, so their RANK (not their value — the namespace is flat
-        /// across resource classes) recovers the declaration order fxc allocates GL sampler
-        /// slots in. Same technique as <see cref="Spirv.SpirvReflectionParser"/>.
-        /// </summary>
-        private readonly Dictionary<uint, int> _binding = new();
 
         private sealed class FunctionBody
         {
@@ -234,17 +245,22 @@ public static class SpirvCombinedSamplerPairs
             Walk(_entryFunctionId, new HashSet<uint>());
 
             // Declaration-order rank of every sampled image in the module, which is the GL
-            // texture unit fxc would have allocated. Ordered by the raw Binding decoration
-            // (DXC allocates it sequentially in declaration order); module-declaration order
-            // breaks a tie, so an undecorated module still yields a deterministic ranking
-            // rather than throwing. Ranking, not the raw value: DXC's SPIR-V binding
-            // namespace is flat across textures/samplers/cbuffers, so the raw number is not
-            // the HLSL t# register.
+            // texture unit fxc would have allocated.
+            //
+            // The rank comes from MODULE ORDER (the order OpVariable appears in the SPIR-V,
+            // which is HLSL declaration order), NOT from the Binding decoration. The two
+            // coincide whenever DXC auto-allocates, since it hands bindings out in declaration
+            // order — but they diverge the moment the source carries explicit registers, and
+            // there declaration order is the one that matches mgfxc. Measured: for
+            // `Texture2D TexA : register(t3); Texture2D TexB : register(t2);` mgfxc's OpenGL
+            // build puts TexA (declared first) on slot 0, while a binding-ordered rank would
+            // put TexB (t2) there.
+            //
+            // Note this is also why the raw Binding value is never used as the slot: DXC's
+            // SPIR-V binding namespace is flat across textures/samplers/cbuffers, so the
+            // number is not the HLSL t# register either.
             Dictionary<uint, int> declarationIndex = _moduleVariables
                 .Where(v => PointeeOf(v.TypeId) is { } p && _separateImageTypes.Contains(p))
-                .Select((v, order) => (v.Id, Binding: _binding.GetValueOrDefault(v.Id, int.MaxValue), Order: order))
-                .OrderBy(v => v.Binding)
-                .ThenBy(v => v.Order)
                 .Select((v, rank) => (v.Id, Rank: rank))
                 .ToDictionary(v => v.Id, v => v.Rank);
 
@@ -292,11 +308,6 @@ public static class SpirvCombinedSamplerPairs
 
                     case SpirvOpcode.OpTypeSampler when ops.Length >= 1:
                         _samplerTypes.Add(ops[0]);
-                        break;
-
-                    // OpDecorate: [targetId, decoration, operands...]. Decoration 33 == Binding.
-                    case SpirvOpcode.OpDecorate when ops.Length >= 3 && ops[1] == BindingDecoration:
-                        _binding[ops[0]] = (int)ops[2];
                         break;
 
                     case SpirvOpcode.OpTypeSampledImage when ops.Length >= 2:

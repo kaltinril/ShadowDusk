@@ -20,9 +20,9 @@
 
 ## Headline
 
-- Golden-backed cells (fixture x target): **100**
-  - Structurally **clean**: **74**
-  - **Divergent** (>=1 level): **16**
+- Golden-backed cells (fixture x target): **102**
+  - Structurally **clean**: **75**
+  - **Divergent** (>=1 level): **17**
   - Compile/parse **failures**: **10**
 - Non-golden census cells: **200** (**134** compile, **66** fail with a code)
 
@@ -94,6 +94,8 @@ Legend: `OK` = match, `XX` = diverge, `--` = compile/parse failed (see notes). L
 | SamplerPairMirror | OpenGL | OK | OK | OK | OK | OK |  |
 | SamplerRegisterOrder | DirectX_11 | OK | OK | OK | OK | OK |  |
 | SamplerRegisterOrder | OpenGL | OK | OK | OK | OK | OK |  |
+| SamplerRegisterSparse | DirectX_11 | OK | OK | XX | OK | OK | sampler slot 2 missing (golden ``); sampler slot 3 missing (golden ``); extra sampler slot 0 (``); extra sampler slot 1 (``) |
+| SamplerRegisterSparse | OpenGL | OK | OK | OK | OK | OK |  |
 | SamplerStatesFull | DirectX_11 | OK | OK | OK | OK | OK |  |
 | SamplerStatesFull | OpenGL | OK | OK | OK | OK | OK |  |
 | Saturate | DirectX_11 | OK | OK | OK | OK | OK |  |
@@ -195,6 +197,12 @@ Affected cells: PolygonLight [OpenGL], SharedCbuffer [OpenGL], VertexAndPixel [O
 A constant buffer size or a per-parameter byte offset differs OUTSIDE the known GL per-stage sizing model. Worth triage: cbuffer offsets are the runtime SetValue layout.
 
 Affected cells: PenumbraHull [DirectX_11]
+
+### Sampler slot / baked-state delta (1 cell(s))
+
+A sampler slot is missing/extra or its baked sampler_state differs.
+
+Affected cells: SamplerRegisterSparse [DirectX_11]
 
 ### Object-class (texture/sampler) parameter shape (1 cell(s))
 

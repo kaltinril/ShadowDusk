@@ -93,12 +93,20 @@ other targets keep the unmodified SPIRV-Cross dialect. The pixel-stage transform
   lay the table out.
   - **`slot` is the pair's HLSL DECLARATION index, not its position in the pair list.**
     SPIRV-Cross declares combined samplers in **first-use** order, but fxc — and therefore
-    `mgfxc` — allocates GL sampler slots in **declaration** order, honouring `register(sN)`.
-    Numbering by list position put a `register(s0)` sampler on unit 1 whenever it was not also
-    sampled first, and since `SpriteBatch` forces the sprite onto unit 0 *after*
-    `EffectPass.Apply()`, that silently swapped textures (GitHub issue #189). Both the uniform
-    names and the records come from `SpirvCombinedSamplerPairs.ResolveSlots`, the single
-    definition of the rule, so the table and the GLSL cannot disagree.
+    `mgfxc` — allocates GL sampler slots in **declaration** order. Numbering by list position put a
+    `register(s0)` sampler on unit 1 whenever it was not also sampled first, and since
+    `SpriteBatch` forces the sprite onto unit 0 *after* `EffectPass.Apply()`, that silently swapped
+    textures (GitHub issue #189). The index comes from SPIR-V **module order**, not from the
+    `Binding` decoration: those agree only while DXC auto-allocates, and once the source is
+    annotated the binding is *register* order instead. Both the uniform names and the records come
+    from `SpirvCombinedSamplerPairs.ResolveSlots`, the single definition of the rule, so the table
+    and the GLSL cannot disagree.
+  - **An explicit `register(sN)` overrides that index — but only on the LEGACY `sampler` form.**
+    `mgfxc` honours the annotation there (at `ps_3_0` the legacy sampler *is* the combined sampler)
+    and **ignores it on the modern spelling**: for `Texture2D T : register(t3); SamplerState S :
+    register(s2);` its OpenGL build still allocates by texture declaration order. `FxPreParser`
+    records the legacy index before its SM4 rewrite drops the clause; the modern one is deliberately
+    not recorded, because honouring it would be a divergence.
   - **Per pair, not per sampler.** Two textures read through one shared `SamplerState` (the
     diffuse+lightmap idiom) produce **two** records; two samplers over one texture (the
     linear+point idiom) also produce two, each with its own state. Keying on the reflected

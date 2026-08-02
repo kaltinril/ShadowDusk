@@ -56,15 +56,34 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   `validation/SamplerRegisterOrderGl` gate, which measured **maxd 255 across all 4096 pixels
   before the fix and maxd 0 after**, against a real `mgfxc` golden rendered in the same scene;
   full suite 3123/3123 and Windows render gates 15/15 green.
-  **Two residuals are recorded rather than papered over.** (1) A *sparse or offset* explicit
-  register set (`register(s2)`/`register(s3)` with no `s0`/`s1` declared) still compacts to units
-  0/1 where `mgfxc` emits 2/3; DXC's SPIR-V `Binding` namespace is flat and auto-allocated, so the
-  explicit register number is not recoverable from the SPIR-V, and closing it needs the clause
-  threaded out of `FxPreParser`, which drops it today. Contiguous-from-zero register sets — every
-  SpriteBatch custom effect, and the whole corpus — are exact. (2) DirectX 11 also ignores
-  `register(sN)` for its sampler slot, but `fxc` itself auto-assigns DX texture registers by first
-  use, so matching the annotation there would move *away* from the reference compiler; left
-  measured and unchanged (`project_decisions.md`).
+- **OpenGL: an explicit `register(sN)` on a legacy `sampler` declaration now pins the texture
+  unit** (issue #189, sparse half). Samplers at `s2`/`s3` with nothing at `s0`/`s1` were compacted
+  to units 0/1. That is order-preserving and internally self-consistent, and still wrong, because
+  unit 0 is not the effect's to allocate: `SpriteBatch` overwrites it with the sprite right after
+  `EffectPass.Apply()`, so the sampler pushed onto unit 0 read the sprite. `FxPreParser` now
+  **records** the register index it already parsed (`FxParseResult.ExplicitGlSamplerSlots`,
+  texture-keyed) before its SM4 rewrite drops the clause, and `ResolveSlots` prefers it.
+  The clause is **recorded, not re-emitted**: putting it back into the rewritten HLSL would change
+  what DXC compiles and move the DirectX, DX12, Vulkan and FNA bytes, none of which have a
+  reported defect — so this changes OpenGL allocation only.
+  **Legacy form only, and that is measured rather than a limitation.** `mgfxc` honours the
+  annotation exactly there, because at `ps_3_0` a legacy `sampler` *is* the combined sampler. For
+  the modern spelling it does not: given `Texture2D T : register(t3); SamplerState S :
+  register(s2);` its OpenGL build puts the pair on slot 0 regardless, allocating by texture
+  declaration order. Honouring modern registers would therefore have been a *divergence*, and both
+  behaviours are now pinned by tests that will fail if either is "corrected" later.
+  Fixing this also surfaced a **pre-existing** divergence in the same area: the declaration rank
+  was taken from the SPIR-V `Binding` decoration, which equals declaration order only while DXC
+  auto-allocates and equals *register* order once the source is annotated. It now comes from
+  module order, so `Texture2D TexA : register(t3); Texture2D TexB : register(t2);` puts TexA on
+  unit 0 like `mgfxc`, where before it put TexB there. Proven by a second arm on
+  `validation/SamplerRegisterOrderGl` (`SamplerRegisterSparse.fx`), measured **(0,255,0) vs
+  `mgfxc`'s (255,255,0), maxd 255 before and maxd 0 after**.
+
+  **One residual is recorded rather than papered over.** DirectX 11 ignores `register(sN)` for its
+  sampler slot (we emit 0/1 where `mgfxc` emits the declared 2/3), but `fxc` itself auto-assigns DX
+  *texture* registers by first use, so matching the annotation there would move *away* from the
+  reference compiler; left measured and unchanged (`project_decisions.md`).
   **The validation-gap lesson is the durable part:** all 30-plus existing GL render gates bind
   their textures through `effect.Parameters[...]`, under which a first-use-numbered table is
   internally consistent and renders *correctly*, so not one of them could see this. The

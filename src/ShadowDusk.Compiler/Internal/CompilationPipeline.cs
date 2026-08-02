@@ -471,6 +471,10 @@ internal sealed class CompilationPipeline
                         // + attribute/varying contract that lets MonoGame's GL runtime link it.
                         applyMonoGameGlsl: monoGameGl,
                         reflectFromSpirv: reflectFromSpirv,
+                        // The explicit register(sN) indices the pre-parser captured before the
+                        // SM4 rewrite dropped them, so the GLSL rewriter numbers ps_s{slot} the
+                        // same way the .mgfx sampler table will (issue #189).
+                        explicitGlSamplerSlots: fxParsed.ExplicitGlSamplerSlots,
                         cancellationToken);
 
                     if (compileOutput.Blob.IsFailure)
@@ -518,6 +522,10 @@ internal sealed class CompilationPipeline
                         compileOptions,
                         applyMonoGameGlsl: monoGameGl,
                         reflectFromSpirv: reflectFromSpirv,
+                        // The explicit register(sN) indices the pre-parser captured before the
+                        // SM4 rewrite dropped them, so the GLSL rewriter numbers ps_s{slot} the
+                        // same way the .mgfx sampler table will (issue #189).
+                        explicitGlSamplerSlots: fxParsed.ExplicitGlSamplerSlots,
                         cancellationToken);
 
                     if (compileOutput.Blob.IsFailure)
@@ -985,7 +993,8 @@ internal sealed class CompilationPipeline
                         return Fail(pairResult.Error with { File = options.SourceFileName ?? "<source>" }, runWarnings);
 
                     IReadOnlyList<CombinedSamplerPair> pairs = pairResult.Value;
-                    IReadOnlyList<int> glSamplerSlots = SpirvCombinedSamplerPairs.ResolveSlots(pairs);
+                    IReadOnlyList<int> glSamplerSlots =
+                        SpirvCombinedSamplerPairs.ResolveSlots(pairs, fxParsed.ExplicitGlSamplerSlots);
 
                     for (int k = 0; k < pairs.Count; k++)
                     {
@@ -2043,6 +2052,7 @@ internal sealed class CompilationPipeline
             DxcCompileOptions compileOptions,
             bool applyMonoGameGlsl,
             bool reflectFromSpirv,
+            IReadOnlyDictionary<string, int> explicitGlSamplerSlots,
             CancellationToken ct)
     {
         IReadOnlyList<MgfxVertexAttributeInfo> noAttributes = Array.Empty<MgfxVertexAttributeInfo>();
@@ -2165,7 +2175,10 @@ internal sealed class CompilationPipeline
                     Result<IReadOnlyList<CombinedSamplerPair>, ShaderError> pairsForSlots =
                         SpirvCombinedSamplerPairs.Extract(spirvResult.Value.Bytes);
                     if (pairsForSlots.IsSuccess)
-                        samplerSlots = SpirvCombinedSamplerPairs.ResolveSlots(pairsForSlots.Value);
+                    {
+                        samplerSlots = SpirvCombinedSamplerPairs.ResolveSlots(
+                            pairsForSlots.Value, explicitGlSamplerSlots);
+                    }
 
                     MonoGameGlslResult rewritten =
                         MonoGameGlslRewriter.Rewrite(transpileResult.Value.Text, stage, samplerSlots);

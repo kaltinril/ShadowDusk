@@ -688,4 +688,112 @@ public sealed class ReviewRegressionTests
         records.Select(s => s.TextureSlot).ShouldBe(new[] {(byte)0, (byte)1});
         records.Select(s => reader.Parameters[s.Parameter].Name).ShouldBe(new[] {"DiffuseMap", "Lightmap"});
     }
+
+    /// <summary>
+    /// GitHub issue #189, sparse half. An explicit <c>register(sN)</c> on a LEGACY sampler
+    /// declaration pins the OpenGL texture unit, so samplers at s2/s3 with nothing at s0/s1
+    /// must land on units 2 and 3 rather than being compacted to 0/1. Compacting is
+    /// order-preserving and internally self-consistent, and still wrong, because SpriteBatch
+    /// overwrites unit 0 with the sprite right after EffectPass.Apply().
+    /// Rung-4 counterpart: validation/SamplerRegisterOrderGl arm "sparse".
+    /// </summary>
+    [Fact]
+    [Trait("Platform", "OpenGL")]
+    public async Task OpenGl_SparseExplicitSamplerRegisters_PinTheDeclaredTextureUnits()
+    {
+        const string source = """
+            sampler MaskA : register(s2);
+            sampler MaskB : register(s3);
+
+            float4 PS(float2 uv : TEXCOORD0) : COLOR0
+            {
+                return float4(tex2D(MaskA, uv).r, tex2D(MaskB, uv).g, 0, 1);
+            }
+
+            technique T
+            {
+                pass P { PixelShader = compile ps_3_0 PS(); }
+            }
+            """;
+
+        using var cts = Cts();
+
+        var result = await new EffectCompiler().CompileAsync(source, new CompilerOptions
+        {
+            Target = PlatformTarget.OpenGL,
+            SourceFileName = "SparseSamplerRegisters.fx",
+        }, cts.Token);
+
+        result.IsSuccess.ShouldBeTrue(
+            result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+
+        var reader = MgfxBlobReader.Parse(result.Value.Data);
+        var ps = reader.Shaders.Single(s => !s.IsVertex);
+        var records = reader.Samplers.Where(s => s.ShaderIndex == ps.Index).ToList();
+        string glsl = System.Text.Encoding.UTF8.GetString(ps.Bytecode);
+
+        records.Select(s => s.TextureSlot).ShouldBe(new byte[] { 2, 3 },
+            customMessage: "register(s2)/register(s3) must pin units 2 and 3, not compact to 0/1");
+        records.Select(s => s.Name).ShouldBe(new[] { "ps_s2", "ps_s3" });
+
+        // The record name has to be a uniform the emitted GLSL actually declares, or the GL
+        // runtime's glGetUniformLocation misses and the sampler silently keeps unit 0.
+        glsl.ShouldMatch(@"uniform\s+sampler2D\s+ps_s2\s*;");
+        glsl.ShouldMatch(@"uniform\s+sampler2D\s+ps_s3\s*;");
+        glsl.ShouldNotContain("ps_s0", Case.Sensitive);
+        glsl.ShouldNotContain("ps_s1", Case.Sensitive);
+
+        reader.Parameters[records[0].Parameter].Name.ShouldBe("MaskA_SDTexture");
+        reader.Parameters[records[1].Parameter].Name.ShouldBe("MaskB_SDTexture");
+    }
+
+    /// <summary>
+    /// The mirror of the test above: the MODERN spelling's registers must NOT be honoured on
+    /// OpenGL. Measured against the pinned mgfxc 2026-08-02 - given
+    /// <c>Texture2D T : register(t3); SamplerState S : register(s2);</c> its OpenGL build puts
+    /// the pair on slot 0, allocating by texture declaration order. Honouring the annotation
+    /// here would be a DIVERGENCE, so this pins the asymmetry deliberately.
+    /// </summary>
+    [Fact]
+    [Trait("Platform", "OpenGL")]
+    public async Task OpenGl_ModernExplicitRegisters_AreNotHonoured_MatchingMgfxc()
+    {
+        const string source = """
+            Texture2D TexA : register(t3);
+            Texture2D TexB : register(t2);
+            SamplerState SampA : register(s2);
+            SamplerState SampB : register(s3);
+
+            float4 PS(float2 uv : TEXCOORD0) : COLOR0
+            {
+                return float4(TexA.Sample(SampA, uv).r, TexB.Sample(SampB, uv).g, 0, 1);
+            }
+
+            technique T
+            {
+                pass P { PixelShader = compile ps_4_0 PS(); }
+            }
+            """;
+
+        using var cts = Cts();
+
+        var result = await new EffectCompiler().CompileAsync(source, new CompilerOptions
+        {
+            Target = PlatformTarget.OpenGL,
+            SourceFileName = "ModernSamplerRegisters.fx",
+        }, cts.Token);
+
+        result.IsSuccess.ShouldBeTrue(
+            result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+
+        var reader = MgfxBlobReader.Parse(result.Value.Data);
+        var ps = reader.Shaders.Single(s => !s.IsVertex);
+        var records = reader.Samplers.Where(s => s.ShaderIndex == ps.Index).ToList();
+
+        records.Select(s => s.TextureSlot).ShouldBe(new byte[] { 0, 1 },
+            customMessage: "mgfxc ignores modern register annotations on OpenGL and allocates by texture declaration order");
+        reader.Parameters[records[0].Parameter].Name.ShouldBe("TexA",
+            customMessage: "TexA is declared first, so it owns unit 0 despite carrying register(t3)");
+        reader.Parameters[records[1].Parameter].Name.ShouldBe("TexB");
+    }
 }
