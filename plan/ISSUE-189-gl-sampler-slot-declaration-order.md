@@ -172,6 +172,39 @@ first use where we use declaration order — is not closable either, for the sam
 allocation lives inside each compiler's own bytecode. Vulkan binds through a descriptor layout
 rather than a slot number and is unaffected. Recorded in `project_decisions.md`.
 
+## 6.4 The corpus-wide sweep, and why hand-picked probes were the wrong instrument
+
+This issue was fixed twice, and both intermediate rules looked right against a handful of
+hand-authored probes before failing on a shape nobody had tried. The corpus and the committed
+`mgfxc` goldens were sitting there the whole time.
+
+`GlSamplerSlotCorpusTests` now **discovers** every `tests/fixtures/golden/OpenGL/*.mgfx` from disk
+and asserts, per record, that the (uniform name, texture unit, bound texture parameter) triple
+matches the golden. **52/52 golden-backed fixtures pass**, 10 of them as recorded known-gap skips
+(macro-defined techniques, `SD0010`, Phase 41 GAP-1's GL half — listed by name, so a NEW compile
+failure fails the test instead of joining the skip set silently).
+
+Discovery matters more than the count: a golden added later is covered automatically, and cannot
+sit outside the sweep the way a hand-maintained list allows. `MgfxParameterMatchTests`, the
+closest existing golden comparison, runs against a hand-written 13-entry array.
+
+Two honest limits:
+
+- One normalization is applied — mgfxc's `<sampler>+<texture>` parameter spelling and
+  ShadowDusk's `_SDTexture` suffix are stripped. Both are recorded, deliberate divergences that
+  MonoGame cannot observe (it binds by parameter INDEX, never by name), and stripping them is what
+  lets the sweep assert slots rather than re-litigate naming.
+- The comparison keys on the shader's STAGE, not its index in the shader table: mgfxc writes the
+  pixel shader first and ShadowDusk the vertex shader first. That is pre-existing and structural
+  (MonoGame reaches a shader through the pass's own vsIndex/psIndex), and keying on the raw index
+  made the sweep report an ordering artefact as a mis-binding on 6 fixtures.
+
+**What it would NOT have caught, stated plainly:** before this work the corpus contained no shader
+whose sampling order differed from its declaration order — which is exactly why the byte-identity
+manifest never moved. The sweep only sees #189 because `SamplerRegisterOrder.fx` and
+`SamplerRegisterSparse.fx` were added and given goldens. Corpus breadth is not the same as
+adversarial breadth; this issue needed both.
+
 ## 7. Evidence
 
 - `validation/SamplerRegisterOrderGl`, two arms, each committed RED first then green:

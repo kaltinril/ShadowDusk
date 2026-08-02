@@ -14,6 +14,16 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **`GlSamplerSlotCorpusTests`, a corpus-wide OpenGL sampler-slot sweep against the `mgfxc`
+  goldens.** It **discovers** every `tests/fixtures/golden/OpenGL/*.mgfx` from disk and asserts,
+  per sampler record, that the (uniform name, texture unit, bound texture parameter) triple matches
+  the reference compiler — the exact triple MonoGame's GL runtime binds with. 52/52 fixtures pass,
+  10 of them as named known-gap skips (`SD0010` macro-defined techniques, Phase 41 GAP-1's GL half;
+  listed individually so a *new* compile failure fails the test rather than joining the skip set).
+  Discovery is the point: a golden added later is covered automatically, unlike the hand-maintained
+  13-entry array the closest existing golden comparison uses. Issue #189 was fixed twice, and both
+  intermediate rules looked correct against hand-picked probes before failing on an untried shape.
+
 - **`validation/SamplerRegisterOrderGl`, the rung-4 gate for OpenGL sampler slot allocation**
   (issue #189). It is the only GL render gate that does **not** bind every texture through
   `effect.Parameters[...]` — it leaves texture unit 0 to `SpriteBatch`, which is exactly what
