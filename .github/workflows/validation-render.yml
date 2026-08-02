@@ -61,6 +61,11 @@ on:
     branches: [ main ]
     types: [ opened, synchronize, reopened, labeled ]
 
+# Least privilege for GITHUB_TOKEN: the GL render gates check out, build, render under
+# llvmpipe, and upload the diff images as run artifacts. Nothing needs a write scope.
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true

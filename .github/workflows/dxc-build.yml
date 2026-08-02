@@ -32,6 +32,12 @@ name: Build DXC macOS natives (1.7.2212.40)
 on:
   workflow_dispatch:
 
+# Least privilege for GITHUB_TOKEN. This workflow only builds the natives and uploads them
+# as run artifacts; a maintainer attaches them to the pinned release by hand, so nothing
+# here needs a write scope. Artifact upload is not gated on GITHUB_TOKEN.
+permissions:
+  contents: read
+
 env:
   DXC_VERSION: '1.7.2212.40'
   # The exact commit Vortice.Dxc 3.3.4's native reports — verified from the package

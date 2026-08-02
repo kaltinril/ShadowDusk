@@ -20,6 +20,12 @@ name: Build SPIRV-Cross Android native (arm64-v8a)
 on:
   workflow_dispatch:
 
+# Least privilege for GITHUB_TOKEN. This workflow only builds the natives and uploads them
+# as run artifacts; a maintainer attaches them to the pinned release by hand, so nothing
+# here needs a write scope. Artifact upload is not gated on GITHUB_TOKEN.
+permissions:
+  contents: read
+
 env:
   SPIRV_CROSS_REPO: 'https://github.com/KhronosGroup/SPIRV-Cross.git'
   # A commit SHA, never a moving branch. Confirm it equals what Silk.NET.SPIRV.Cross.Native

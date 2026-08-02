@@ -33,6 +33,11 @@ on:
     # Weekly standing run (Mondays 05:40 UTC) against HEAD of main.
     - cron: '40 5 * * 1'
 
+# Least privilege for GITHUB_TOKEN: this job packs the NuGets and consumes them from a local
+# feed in a scratch project. It never publishes anywhere, so read is enough.
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
