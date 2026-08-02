@@ -86,9 +86,9 @@
   someone remembering a switch). Pass -SkipVulkan only on a box with no Vulkan-capable GPU.
 
   The in-process MonoGame OpenGL render gates (StateFidelity / CbufferModel /
-  TextureBreadthValidation / ReservedWordGl / SamplerPairsGl / DeferredSpriteMrtGl /
-  ShaderToyRouteGl) are intentionally NOT here - CI already runs them (see
-  validation-render.yml). Run them with `dotnet test` + that workflow, not this script.
+  TextureBreadthValidation / ReservedWordGl / SamplerPairsGl / SamplerRegisterOrderGl /
+  DeferredSpriteMrtGl / ShaderToyRouteGl) are intentionally NOT here - CI already runs them
+  (see validation-render.yml). Run them with `dotnet test` + that workflow, not this script.
 
 .PARAMETER IncludeFna
   Also run the FNA fx_2_0 gate (validation/FnaValidation). Requires the FNA restore

@@ -134,6 +134,7 @@ validation/output-apos-dx/
 validation/output-apos-dx12/
 validation/output-vs-dx12/
 validation/output-samplerpairs/
+validation/output-samplerregisterorder/
 validation/output-mrt/
 validation/output-shadertoy/
 validation/output-shadertoy-dx/

@@ -985,6 +985,7 @@ internal sealed class CompilationPipeline
                         return Fail(pairResult.Error with { File = options.SourceFileName ?? "<source>" }, runWarnings);
 
                     IReadOnlyList<CombinedSamplerPair> pairs = pairResult.Value;
+                    IReadOnlyList<int> glSamplerSlots = SpirvCombinedSamplerPairs.ResolveSlots(pairs);
 
                     for (int k = 0; k < pairs.Count; k++)
                     {
@@ -1013,13 +1014,22 @@ internal sealed class CompilationPipeline
                         // miss reaches the writer's SD0022 guard and fails loudly.
                         samplers.Add(new MgfxSamplerInfo(
                             Type:        SamplerTypeByte(tex.Dimension),
-                            // The record index IS the GL texture unit: MonoGame's GL runtime does
-                            // glUniform1i(location("ps_s{k}"), TextureSlot) and then binds
-                            // Parameters[Parameter]'s texture to that unit. Each pair needs its
-                            // own unit even when several pairs share one texture or one sampler.
-                            TextureSlot: (byte)k,
-                            SamplerSlot: (byte)k,
-                            Name:        $"ps_s{k}",
+                            // The GL texture unit: MonoGame's GL runtime does
+                            // glUniform1i(location("ps_s{slot}"), TextureSlot) and then binds
+                            // Parameters[Parameter]'s texture to that unit. NOT the record
+                            // index — SPIRV-Cross declares combined samplers in FIRST-USE
+                            // order, while fxc (and therefore mgfxc) allocates GL sampler slots
+                            // in DECLARATION order. Numbering by the record index put a
+                            // `register(s0)` sampler on unit 1 whenever it was not also
+                            // sampled first, and under SpriteBatch — which forces the sprite
+                            // onto unit 0 right after EffectPass.Apply — that silently swapped
+                            // textures (GitHub issue #189, render-proved by
+                            // validation/SamplerRegisterOrderGl). ResolveSlots is the single
+                            // definition of the rule, shared with the GLSL rewriter so the
+                            // records and the uniforms they name cannot drift apart.
+                            TextureSlot: (byte)glSamplerSlots[k],
+                            SamplerSlot: (byte)glSamplerSlots[k],
+                            Name:        $"ps_s{glSamplerSlots[k]}",
                             Parameter:   IndexOfParam(allParameters, pair.TextureName),
                             // Keyed on the .fx sampler identifier, which survives the SM4
                             // rewrite verbatim, so the baked sampler_state follows the SAMPLER
@@ -1033,6 +1043,14 @@ internal sealed class CompilationPipeline
                     // must have a record naming it or it silently keeps texture unit 0. This can
                     // only fire if the declaration-order model in SpirvCombinedSamplerPairs has
                     // drifted from the pinned SPIRV-Cross, which is exactly the regression worth
+                    // Emit the records in TEXTURE UNIT order, which is how mgfxc's own OpenGL
+                    // goldens lay the table out (record[0] names ps_s0, record[1] ps_s1, …).
+                    // The pairs arrive in SPIRV-Cross's first-use order, so without this the
+                    // table would carry the right slots in a gratuitously different order.
+                    // MonoGame itself just iterates the records and reads each one's fields, so
+                    // this is a faithfulness/diffability change, not a binding fix.
+                    samplers.Sort((a, b) => a.TextureSlot.CompareTo(b.TextureSlot));
+
                     // catching loudly rather than shipping a mis-bound table.
                     string emittedGlsl = Encoding.UTF8.GetString(compiledShaderBlobs[i].Bytes);
                     int declaredSamplers = GlslSamplerDeclaration.Matches(emittedGlsl).Count;
@@ -2135,7 +2153,22 @@ internal sealed class CompilationPipeline
             {
                 try
                 {
-                    MonoGameGlslResult rewritten = MonoGameGlslRewriter.Rewrite(transpileResult.Value.Text, stage);
+                    // The GL texture unit for each combined sampler, in SPIRV-Cross's own
+                    // declaration order — so the uniforms the rewriter emits (ps_s{slot}) carry
+                    // the same numbering the .mgfx sampler table will record for them. Both
+                    // sides call ResolveSlots on the same SPIR-V, which is what keeps the table
+                    // and the GLSL it describes in agreement (issue #189). A failure to model
+                    // the shape is NOT fatal here: the sampler-table step re-runs the same
+                    // extraction and fails loudly with SD0217 there, so this stays a
+                    // null (positional-fallback) rather than duplicating the diagnostic.
+                    IReadOnlyList<int>? samplerSlots = null;
+                    Result<IReadOnlyList<CombinedSamplerPair>, ShaderError> pairsForSlots =
+                        SpirvCombinedSamplerPairs.Extract(spirvResult.Value.Bytes);
+                    if (pairsForSlots.IsSuccess)
+                        samplerSlots = SpirvCombinedSamplerPairs.ResolveSlots(pairsForSlots.Value);
+
+                    MonoGameGlslResult rewritten =
+                        MonoGameGlslRewriter.Rewrite(transpileResult.Value.Text, stage, samplerSlots);
                     glslText = rewritten.Glsl;
                     // The shader's uniform register layout — the pipeline builds the
                     // per-shader {vs,ps}_uniforms_vec4 cbuffer record from THIS, so

@@ -20,9 +20,9 @@
 
 ## Headline
 
-- Golden-backed cells (fixture x target): **98**
-  - Structurally **clean**: **71**
-  - **Divergent** (>=1 level): **17**
+- Golden-backed cells (fixture x target): **100**
+  - Structurally **clean**: **74**
+  - **Divergent** (>=1 level): **16**
   - Compile/parse **failures**: **10**
 - Non-golden census cells: **200** (**134** compile, **66** fail with a code)
 
@@ -91,7 +91,9 @@ Legend: `OK` = match, `XX` = diverge, `--` = compile/parse failed (see notes). L
 | PolygonLight | DirectX_11 | OK | OK | OK | OK | OK |  |
 | PolygonLight | OpenGL | OK | XX | OK | OK | OK | cbuffer `ps_uniforms_vec4` size 112 vs 48; cbuffer `vs_uniforms_vec4` size 112 vs 64; param `viewProjectionMatrix` cbuffer offset 48 vs 0 |
 | SamplerPairMirror | DirectX_11 | OK | OK | OK | OK | OK |  |
-| SamplerPairMirror | OpenGL | OK | OK | XX | OK | OK | sampler slot 0 baked-state differs; sampler slot 1 baked-state differs |
+| SamplerPairMirror | OpenGL | OK | OK | OK | OK | OK |  |
+| SamplerRegisterOrder | DirectX_11 | OK | OK | OK | OK | OK |  |
+| SamplerRegisterOrder | OpenGL | OK | OK | OK | OK | OK |  |
 | SamplerStatesFull | DirectX_11 | OK | OK | OK | OK | OK |  |
 | SamplerStatesFull | OpenGL | OK | OK | OK | OK | OK |  |
 | Saturate | DirectX_11 | OK | OK | OK | OK | OK |  |
@@ -193,12 +195,6 @@ Affected cells: PolygonLight [OpenGL], SharedCbuffer [OpenGL], VertexAndPixel [O
 A constant buffer size or a per-parameter byte offset differs OUTSIDE the known GL per-stage sizing model. Worth triage: cbuffer offsets are the runtime SetValue layout.
 
 Affected cells: PenumbraHull [DirectX_11]
-
-### Sampler slot / baked-state delta (1 cell(s))
-
-A sampler slot is missing/extra or its baked sampler_state differs.
-
-Affected cells: SamplerPairMirror [OpenGL]
 
 ### Object-class (texture/sampler) parameter shape (1 cell(s))
 

@@ -24,6 +24,12 @@
 #                              each pair binds its own texture, and each carries its own
 #                              baked sampler state, in SPIRV-Cross's declaration order
 #                              (asymmetric scenes with exact expected pixels).
+#   * SamplerRegisterOrderGl — issue #189: GL sampler SLOTS must follow HLSL declaration
+#                              order (fxc's rule), not SPIRV-Cross's first-use order. The
+#                              only GL gate that leaves unit 0 to SpriteBatch instead of
+#                              binding every texture through effect.Parameters[...] — which
+#                              is exactly what makes the slot numbering observable, and why
+#                              every other gate stayed green while this shipped broken.
 #   * DeferredSpriteMrtGl    — Phase 51 A2 true MULTIPLE-RENDER-TARGET proof: the ONLY
 #                              gate here that binds two render targets and reads BOTH
 #                              attachments back. Every other GL gate is single-target, so
@@ -137,6 +143,7 @@ jobs:
           dotnet build validation/TextureBreadthValidation/TextureBreadthValidation.csproj -c Release
           dotnet build validation/ReservedWordGl/ReservedWordGl.csproj -c Release
           dotnet build validation/SamplerPairsGl/SamplerPairsGl.csproj -c Release
+          dotnet build validation/SamplerRegisterOrderGl/SamplerRegisterOrderGl.csproj -c Release
           dotnet build validation/DeferredSpriteMrtGl/DeferredSpriteMrtGl.csproj -c Release
           dotnet build validation/ShaderToyRouteGl/ShaderToyRouteGl.csproj -c Release
 
@@ -149,14 +156,14 @@ jobs:
           LIBGL_ALWAYS_SOFTWARE: "1"
           # No GL context => hard FAIL, never a pass-by-skip. StateFidelity/CbufferModel/
           # ReservedWordGl throw on a missing device (MonoGame NoSuitableGraphicsDevice ->
-          # natural red); TextureBreadthValidation, SamplerPairsGl, DeferredSpriteMrtGl and
-          # ShaderToyRouteGl catch+skip, so this flag turns their skip into a failure too
-          # (all four read SHADOWDUSK_REQUIRE_GL).
+          # natural red); TextureBreadthValidation, SamplerPairsGl, SamplerRegisterOrderGl,
+          # DeferredSpriteMrtGl and ShaderToyRouteGl catch+skip, so this flag turns their skip
+          # into a failure too (all five read SHADOWDUSK_REQUIRE_GL).
           SHADOWDUSK_REQUIRE_GL: "1"
         run: |
           set +e
           rc=0
-          for proj in StateFidelity CbufferModel TextureBreadthValidation ReservedWordGl SamplerPairsGl DeferredSpriteMrtGl ShaderToyRouteGl; do
+          for proj in StateFidelity CbufferModel TextureBreadthValidation ReservedWordGl SamplerPairsGl SamplerRegisterOrderGl DeferredSpriteMrtGl ShaderToyRouteGl; do
             echo "::group::$proj"
             xvfb-run -a dotnet run --project "validation/$proj" -c Release --no-build
             this=$?

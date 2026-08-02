@@ -191,6 +191,18 @@ they back `validation/SamplerPairsGl`:
   is what exposed the second, silent defect: SPIRV-Cross declares combined samplers in
   **first-use** order, so counts matched while the texture parameter and the sampler-type byte
   came out swapped. Deliberately samples asymmetrically so a mis-binding changes the picture.
+  Its two textures hold **identical pixels** on purpose, so the arm isolates per-pair sampler
+  *state* — which is also why it is structurally blind to slot NUMBERING, the gap `#189` fell
+  through. Use `SamplerRegisterOrder.fx` for anything about which unit a pair lands on.
+- **`SamplerRegisterOrder.fx`** — GitHub issue **#189**. `SpriteSampler : register(s0)` and
+  `MaskSampler : register(s1)`, sampled in **reverse** declaration order, output
+  `(sprite.r, mask.g, 0, 1)`. It is the canonical SpriteBatch custom-effect shape — `register(s0)`
+  *is* the sprite texture, because `SpriteBatch` forces it onto unit 0 right after
+  `EffectPass.Apply()`. Rendered with a red sprite and a green mask: **yellow = slots allocated in
+  declaration order (correct, matches fxc/mgfxc)**, **black = first-use order (the #189 bug)**.
+  Both channels flip together, so neither outcome can be mistaken for a tolerance artefact. Unlike
+  the two fixtures above it uses **distinct** textures and leaves unit 0 to `SpriteBatch`, which is
+  precisely what makes slot allocation observable. Goldens on `OpenGL` + `DirectX_11`.
 
 ### ShaderToy route fixture
 

@@ -65,6 +65,9 @@ ShadowDusk/
 │                                  #   and the fidelity/gallery render-proof driver.
 ├── validation/                    # Rung-4 render-proof console drivers (NOT in ShadowDusk.slnx, not run by `dotnet test`):
 │                                  #   GL (VsDriven, StateFidelity, CbufferModel, ReservedWordGl, SamplerPairsGl,
+│                                  #     SamplerRegisterOrderGl (issue #189: the only GL driver that leaves unit 0
+│                                  #       to SpriteBatch instead of binding via effect.Parameters, which is what
+│                                  #       makes sampler SLOT allocation observable),
 │                                  #     DeferredSpriteMrtGl (the only driver that binds 2 render targets),
 │                                  #     ShaderToyRouteGl (the `.glsl` frontend route), …), DX (VsDrivenDx,
 │                                  #   DxModernFeatures, ShaderToyRouteDx (that route's DirectX arm), …),

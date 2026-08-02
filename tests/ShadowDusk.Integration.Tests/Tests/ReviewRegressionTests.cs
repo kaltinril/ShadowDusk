@@ -340,21 +340,30 @@ public sealed class ReviewRegressionTests
             result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
     }
 
-    // ── GL records must follow SPIRV-Cross's combined-sampler DECLARATION order ──────
+    // ── GL records must follow HLSL DECLARATION order, and agree with the emitted GLSL ──
     //
-    // These pin the bug class that SD0216's count check could never see: when the counts
-    // already agree, a table keyed on bind slots silently pairs each ps_s{k} with the WRONG
-    // texture. SPIRV-Cross declares combined samplers in FIRST-USE order, so sampling out of
-    // declaration order is enough to swap them. Compiled clean with zero diagnostics before
-    // Phase 51 A7.
+    // Two separate bug classes are pinned here.
+    //
+    // Phase 51 A7: SD0216's count check could never see a table keyed on bind slots silently
+    // pairing each ps_s{k} with the WRONG texture once the counts already agreed.
+    //
+    // GitHub issue #189: having fixed the PAIRING, the NUMBERING was still SPIRV-Cross's
+    // first-use order, while fxc — and therefore mgfxc — allocates OpenGL sampler slots in
+    // HLSL declaration order. A `register(s0)` sampler that was not also sampled first landed
+    // on unit 1, and under SpriteBatch (which forces the sprite onto unit 0 right after
+    // EffectPass.Apply) that silently swapped textures. Render-proved against the reference
+    // compiler by validation/SamplerRegisterOrderGl.
+    //
+    // So these tests now assert DECLARATION order, and deliberately keep sampling out of
+    // declaration order, which is what makes the two orders distinguishable at all.
 
     /// <summary>
     /// Two textures with DIFFERENT dimensions, sampled in reverse declaration order. The
-    /// dimensions make the mis-pairing unambiguous: the emitted GLSL declares the cube's
-    /// combined sampler first (it is sampled first), so <c>ps_s0</c>'s record must carry the
-    /// CUBE sampler-type byte and point at the cube texture. The old slot-keyed table gave
-    /// <c>ps_s0</c> the 2D type byte and the 2D texture, so MonoGame bound a 2D texture to a
-    /// cube sampler unit.
+    /// dimensions make a mis-pairing unambiguous: <c>DiffuseMap</c> is declared first, so it
+    /// owns unit 0 and <c>ps_s0</c>'s record must carry the 2D sampler-type byte and point at
+    /// it, even though the cube is sampled first. Two historical bugs are covered: the old
+    /// slot-keyed table paired <c>ps_s0</c> with the wrong texture entirely (A7), and the
+    /// first-use numbering that replaced it put the wrong texture on unit 0 (#189).
     /// </summary>
     private const string ReverseUseOrderShader = """
         Texture2D DiffuseMap;
@@ -400,15 +409,24 @@ public sealed class ReviewRegressionTests
 
         records.Select(s => s.Name).ShouldBe(new[] {"ps_s0", "ps_s1"});
 
-        // The emitted GLSL is the authority: whichever kind it declares first is what ps_s0 IS.
-        glsl.ShouldMatch(@"uniform\s+samplerCube\s+ps_s0\s*;", customMessage: "EnvMap is sampled first, so SPIRV-Cross declares its combined sampler first");
-        glsl.ShouldMatch(@"uniform\s+sampler2D\s+ps_s1\s*;");
+        // DECLARATION order, not first-use order (GitHub issue #189). EnvMap is sampled first,
+        // so SPIRV-Cross folds its combined sampler first, but fxc — and therefore mgfxc —
+        // allocates OpenGL sampler slots in declaration order, so DiffuseMap owns unit 0. The
+        // emitted GLSL is still the authority on which uniform is which kind, and it must agree
+        // with the record table: both are numbered from the same ResolveSlots result.
+        glsl.ShouldMatch(@"uniform\s+sampler2D\s+ps_s0\s*;", customMessage: "DiffuseMap is declared first, so it owns texture unit 0 the way fxc allocates");
+        glsl.ShouldMatch(@"uniform\s+samplerCube\s+ps_s1\s*;");
 
-        records[0].Type.ShouldBe(SamplerTypeCube, customMessage: "ps_s0 is the cube pair, so its sampler-type byte must say cube or the texture will not bind");
-        records[1].Type.ShouldBe(SamplerType2D);
+        records[0].Type.ShouldBe(SamplerType2D, customMessage: "ps_s0 is the 2D pair, so its sampler-type byte must say 2D or the texture will not bind");
+        records[1].Type.ShouldBe(SamplerTypeCube);
 
-        reader.Parameters[records[0].Parameter].Name.ShouldBe("EnvMap");
-        reader.Parameters[records[1].Parameter].Name.ShouldBe("DiffuseMap");
+        reader.Parameters[records[0].Parameter].Name.ShouldBe("DiffuseMap");
+        reader.Parameters[records[1].Parameter].Name.ShouldBe("EnvMap");
+
+        // The slots are what the runtime actually binds with, so assert them directly rather
+        // than inferring them from the names.
+        records[0].TextureSlot.ShouldBe((byte)0);
+        records[1].TextureSlot.ShouldBe((byte)1);
     }
 
     /// <summary>
@@ -468,12 +486,13 @@ public sealed class ReviewRegressionTests
     /// <summary>
     /// A legacy <c>sampler2D</c> declaration mixed with a modern
     /// <c>Texture2D</c>+<c>SamplerState</c> pair. The pre-parser rewrites the legacy form to the
-    /// modern one before DXC sees it, so both become combined-sampler pairs and the ORDER is
-    /// still first-use — here the modern pair is sampled first.
+    /// modern one before DXC sees it, so both become combined-sampler pairs and both are slotted
+    /// by DECLARATION order — here the modern pair is sampled first but declared second, so it
+    /// gets unit 1 (issue #189). The rewrite must not perturb that ordering.
     /// </summary>
     [Fact]
     [Trait("Platform", "OpenGL")]
-    public async Task OpenGl_MixedLegacyAndModernSamplerDeclarations_KeepFirstUseOrder()
+    public async Task OpenGl_MixedLegacyAndModernSamplerDeclarations_KeepDeclarationOrder()
     {
         const string source = """
             Texture2D LegacyTex;
@@ -509,8 +528,8 @@ public sealed class ReviewRegressionTests
         var records = reader.Samplers.Where(s => s.ShaderIndex == ps.Index).ToList();
 
         records.Select(s => s.Name).ShouldBe(new[] {"ps_s0", "ps_s1"});
-        reader.Parameters[records[0].Parameter].Name.ShouldBe("ModernTex", customMessage: "ModernTex is sampled first, so its combined sampler is declared first");
-        reader.Parameters[records[1].Parameter].Name.ShouldBe("LegacyTex");
+        reader.Parameters[records[0].Parameter].Name.ShouldBe("LegacyTex", customMessage: "LegacyTex is declared first, so it owns texture unit 0 the way fxc allocates (issue #189) — even though ModernTex is sampled first");
+        reader.Parameters[records[1].Parameter].Name.ShouldBe("ModernTex");
     }
 
     /// <summary>
@@ -557,10 +576,10 @@ public sealed class ReviewRegressionTests
         var records = reader.Samplers.Where(s => s.ShaderIndex == ps.Index).ToList();
 
         records.Select(s => s.Name).ShouldBe(new[] {"ps_s0", "ps_s1"});
-        records[0].Type.ShouldBe(SamplerTypeCube, customMessage: "FetchCube is called first");
-        records[1].Type.ShouldBe(SamplerType2D);
-        reader.Parameters[records[0].Parameter].Name.ShouldBe("TexB");
-        reader.Parameters[records[1].Parameter].Name.ShouldBe("TexA");
+        records[0].Type.ShouldBe(SamplerType2D, customMessage: "TexA is declared first, so it owns unit 0 (issue #189) — even though FetchCube(TexB) is called first");
+        records[1].Type.ShouldBe(SamplerTypeCube);
+        reader.Parameters[records[0].Parameter].Name.ShouldBe("TexA");
+        reader.Parameters[records[1].Parameter].Name.ShouldBe("TexB");
     }
 
     /// <summary>

@@ -13,7 +13,19 @@ namespace ShadowDusk.Core.Reflection;
 /// </summary>
 /// <param name="TextureName">The HLSL name of the sampled texture (the image half of the pair).</param>
 /// <param name="SamplerName">The HLSL name of the <c>SamplerState</c> (the sampler half).</param>
-public sealed record CombinedSamplerPair(string TextureName, string SamplerName);
+/// <param name="TextureDeclarationIndex">
+/// The 0-based rank of this pair's texture among the stage's sampled images, ordered by their
+/// raw SPIR-V <c>Binding</c> decoration — which DXC allocates in HLSL DECLARATION order. This is
+/// the GL texture unit the pair must bind to, because fxc (and therefore mgfxc) allocates
+/// OpenGL sampler slots in declaration order, NOT in the first-use order SPIRV-Cross numbers its
+/// combined samplers by (GitHub issue #189). Recovering it the same way
+/// <see cref="Spirv.SpirvReflectionParser"/> recovers <c>t#</c> keeps it host-independent, so the
+/// desktop and WASM hosts still agree byte-for-byte.
+/// </param>
+public sealed record CombinedSamplerPair(
+    string TextureName,
+    string SamplerName,
+    int TextureDeclarationIndex);
 
 /// <summary>
 /// Derives, in <b>exactly</b> the order SPIRV-Cross declares them, the combined-sampler uniforms
@@ -89,6 +101,41 @@ public static class SpirvCombinedSamplerPairs
         }
     }
 
+    /// <summary>
+    /// The GL texture unit each pair must bind to, indexed by SPIRV-Cross declaration order —
+    /// the SINGLE definition of that rule, shared by the GLSL rewriter (which names the
+    /// uniforms <c>ps_s{slot}</c>) and the <c>.mgfx</c> sampler table (whose records must name
+    /// those same uniforms). Two callers deriving it independently is exactly how a table and
+    /// the GLSL it describes drift apart, so both go through here.
+    ///
+    /// <para>Normally the slot is the pair's texture declaration index, matching fxc's
+    /// allocation. Two pairs CAN share one texture, though (one texture read through two
+    /// <c>SamplerState</c>s — the linear+point idiom), and then the declaration indices
+    /// collide, which would put two uniforms on one unit and silently drop a sampler. There is
+    /// no committed mgfxc golden for that shape to derive the right answer from, so rather than
+    /// invent one this falls back to positional numbering for the whole stage: the behaviour
+    /// that shipped before issue #189 and that <c>validation/SamplerPairsGl</c> arm B
+    /// render-proved.</para>
+    /// </summary>
+    public static IReadOnlyList<int> ResolveSlots(IReadOnlyList<CombinedSamplerPair> pairs)
+    {
+        ArgumentNullException.ThrowIfNull(pairs);
+
+        var slots = new int[pairs.Count];
+        var seen = new HashSet<int>();
+        for (int k = 0; k < pairs.Count; k++)
+        {
+            if (!seen.Add(pairs[k].TextureDeclarationIndex))
+            {
+                for (int j = 0; j < slots.Length; j++)
+                    slots[j] = j;
+                return slots;
+            }
+            slots[k] = pairs[k].TextureDeclarationIndex;
+        }
+        return slots;
+    }
+
     private static ShaderError Error(string message) => new(
         File:    "<spirv>",
         Line:    0,
@@ -101,6 +148,9 @@ public static class SpirvCombinedSamplerPairs
 
     private sealed class Walker
     {
+        /// <summary>SPIR-V <c>Decoration</c> enumerant for <c>Binding</c>.</summary>
+        private const uint BindingDecoration = 33;
+
         private readonly SpirvModule _module;
 
         // ---- Pass 1 tables -----------------------------------------------------
@@ -123,6 +173,14 @@ public static class SpirvCombinedSamplerPairs
 
         /// <summary>Module-level OpVariables in binary order, id -> declared type id.</summary>
         private readonly List<(uint Id, uint TypeId)> _moduleVariables = new();
+
+        /// <summary>
+        /// Raw <c>Binding</c> decoration per variable id. DXC allocates these sequentially in
+        /// HLSL declaration order, so their RANK (not their value — the namespace is flat
+        /// across resource classes) recovers the declaration order fxc allocates GL sampler
+        /// slots in. Same technique as <see cref="Spirv.SpirvReflectionParser"/>.
+        /// </summary>
+        private readonly Dictionary<uint, int> _binding = new();
 
         private sealed class FunctionBody
         {
@@ -175,12 +233,28 @@ public static class SpirvCombinedSamplerPairs
 
             Walk(_entryFunctionId, new HashSet<uint>());
 
+            // Declaration-order rank of every sampled image in the module, which is the GL
+            // texture unit fxc would have allocated. Ordered by the raw Binding decoration
+            // (DXC allocates it sequentially in declaration order); module-declaration order
+            // breaks a tie, so an undecorated module still yields a deterministic ranking
+            // rather than throwing. Ranking, not the raw value: DXC's SPIR-V binding
+            // namespace is flat across textures/samplers/cbuffers, so the raw number is not
+            // the HLSL t# register.
+            Dictionary<uint, int> declarationIndex = _moduleVariables
+                .Where(v => PointeeOf(v.TypeId) is { } p && _separateImageTypes.Contains(p))
+                .Select((v, order) => (v.Id, Binding: _binding.GetValueOrDefault(v.Id, int.MaxValue), Order: order))
+                .OrderBy(v => v.Binding)
+                .ThenBy(v => v.Order)
+                .Select((v, rank) => (v.Id, Rank: rank))
+                .ToDictionary(v => v.Id, v => v.Rank);
+
             var result = new List<CombinedSamplerPair>(_pairs.Count);
             foreach ((uint image, uint sampler) in _pairs)
             {
                 result.Add(new CombinedSamplerPair(
                     ResolveName(image, expectImage: true),
-                    ResolveName(sampler, expectImage: false)));
+                    ResolveName(sampler, expectImage: false),
+                    declarationIndex.TryGetValue(image, out int rank) ? rank : 0));
             }
 
             return Result<IReadOnlyList<CombinedSamplerPair>, ShaderError>.Ok(result);
@@ -218,6 +292,11 @@ public static class SpirvCombinedSamplerPairs
 
                     case SpirvOpcode.OpTypeSampler when ops.Length >= 1:
                         _samplerTypes.Add(ops[0]);
+                        break;
+
+                    // OpDecorate: [targetId, decoration, operands...]. Decoration 33 == Binding.
+                    case SpirvOpcode.OpDecorate when ops.Length >= 3 && ops[1] == BindingDecoration:
+                        _binding[ops[0]] = (int)ops[2];
                         break;
 
                     case SpirvOpcode.OpTypeSampledImage when ops.Length >= 2:

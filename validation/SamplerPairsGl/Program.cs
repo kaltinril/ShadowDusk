@@ -353,15 +353,21 @@ sealed class SamplerPairsGame : Game
 
         bool all = snapped && blended && differ;
 
-        // Same-scene pixel diff vs the real mgfxc build. This arm is where our ps_s{k}
-        // NUMBERING deliberately differs from mgfxc's: mgfxc numbers by sampler REGISTER
-        // (its golden makes ps_s0 the first-declared LinearSampler's pair), while
-        // SPIRV-Cross numbers combined samplers by FIRST USE (ours makes ps_s0 the
-        // first-sampled PointSampler's pair). Each build is internally consistent -- its
-        // records name the uniforms its own GLSL declares -- so the renumbering must be
-        // invisible in the picture. THAT is what this diff proves, and it is only
-        // apples-to-apples because the two textures hold identical pixels, so which unit
-        // each lands on cannot affect the result.
+        // Same-scene pixel diff vs the real mgfxc build.
+        //
+        // HISTORY, because the note that used to be here was WRONG and the error mattered:
+        // this arm used to be described as proving that ShadowDusk's first-use ps_s{k}
+        // numbering was "behaviorally equivalent" to mgfxc's declaration-order numbering. It
+        // proved no such thing. The two textures here hold IDENTICAL pixels, which is what
+        // makes the arm a clean test of per-pair sampler STATE -- and it is also exactly what
+        // makes it blind to which unit each pair landed on. GitHub issue #189 was that blind
+        // spot: with DISTINCT textures, and with SpriteBatch owning unit 0, the numbering is
+        // very much visible in the picture. Slots now follow declaration order like fxc's, and
+        // validation/SamplerRegisterOrderGl is the gate that actually holds that claim.
+        //
+        // So what this diff proves is narrower than the old note said, and still worth having:
+        // the per-pair baked sampler state survives a same-scene comparison against the
+        // reference compiler.
         if (_mirrorGolden is not null)
         {
             Effect golden;
@@ -386,8 +392,9 @@ sealed class SamplerPairsGame : Game
                        $"(candidate {Fmt(centre)}), golden params = [" +
                        string.Join(", ", golden.Parameters.Select(p => p.Name)) + "]");
             Report.Add($"[B mirror] vs mgfxc golden: maxd {maxDelta}, {diffCount} px over tolerance " +
-                       $"{_tolerance} -> {OkWrong(match)} (proves our first-use ps_s{{k}} numbering is " +
-                       "behaviorally equivalent to mgfxc's register-order numbering)");
+                       $"{_tolerance} -> {OkWrong(match)} (per-pair baked sampler state matches the " +
+                       "reference compiler in the same scene; slot NUMBERING is held by " +
+                       "validation/SamplerRegisterOrderGl, not by this arm - see issue #189)");
             all &= match;
             golden.Dispose();
         }
