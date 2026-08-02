@@ -942,6 +942,7 @@ public sealed class FxPreParser
             Samplers = samplers,
             ParameterAnnotations = paramAnnotations,
             ExplicitGlSamplerSlots = explicitGlSlots,
+            ReservedGlSamplerSlots = CollectReservedSamplerRegisters(),
         });
     }
 
@@ -1649,6 +1650,75 @@ public sealed class FxPreParser
     {
         while (Peek().Kind is TokenKind.LineComment or TokenKind.BlockComment or TokenKind.Preprocessor)
             Consume();
+    }
+
+    /// <summary>
+    /// Read-only scan for <c>SamplerState &lt;name&gt; : register(sN)</c> — a MODERN sampler
+    /// declaration carrying an explicit register. Returns the set of N found (issue #189).
+    ///
+    /// <para><b>Why these are RESERVED rather than assigned.</b> Compiling for OpenGL means
+    /// compiling at <c>ps_3_0</c>, where a texture and a sampler are ONE object with one register
+    /// namespace. A modern <c>SamplerState</c> still occupies its declared sampler register, but
+    /// the combined samplers fxc has to synthesize for each (texture, sampler) pair cannot reuse
+    /// it — so they are allocated around it. Measured against the pinned mgfxc, and this is the
+    /// rule the whole allocation follows:</para>
+    /// <list type="bullet">
+    ///   <item><description>no explicit register  → pairs get 0, 1, 2 …</description></item>
+    ///   <item><description><c>S : register(s1)</c>, 2 textures → <c>ps_s0</c>, <c>ps_s2</c> (1 skipped)</description></item>
+    ///   <item><description><c>S : register(s1)</c>, 3 textures → <c>ps_s0</c>, <c>ps_s2</c>, <c>ps_s3</c></description></item>
+    ///   <item><description><c>P : register(s0)</c> + <c>Q : register(s1)</c> → <c>ps_s2</c>, <c>ps_s3</c></description></item>
+    ///   <item><description><c>P : register(s2)</c> + <c>Q : register(s3)</c> → <c>ps_s0</c>, <c>ps_s1</c></description></item>
+    ///   <item><description>one texture, <c>S : register(s0)</c> → <c>ps_s1</c></description></item>
+    /// </list>
+    ///
+    /// <para>This is a separate READ-ONLY pass over the token list precisely so it cannot perturb
+    /// the rewrite: a shape it fails to recognise costs an allocation difference, never a parse.
+    /// It requires the exact <c>SamplerState IDENT register ( sN )</c> token shape, which a
+    /// function parameter (<c>float4 f(SamplerState s, …)</c>) cannot match because no
+    /// <c>register</c> clause follows.</para>
+    /// </summary>
+    private HashSet<int> CollectReservedSamplerRegisters()
+    {
+        var reserved = new HashSet<int>();
+
+        // Code tokens only — trivia can sit anywhere between the five we need to match.
+        var code = new List<Token>(_tokens.Count);
+        foreach (Token t in _tokens)
+        {
+            if (t.Kind is not (TokenKind.LineComment or TokenKind.BlockComment or TokenKind.Preprocessor))
+                code.Add(t);
+        }
+
+        for (int i = 0; i + 4 < code.Count; i++)
+        {
+            if (code[i].Kind != TokenKind.Identifier ||
+                !string.Equals(code[i].Text, "SamplerState", StringComparison.Ordinal))
+            {
+                continue;
+            }
+            if (code[i + 1].Kind != TokenKind.Identifier) continue;
+            if (code[i + 2].Kind != TokenKind.Identifier ||
+                !string.Equals(code[i + 2].Text, "register", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+            if (code[i + 3].Kind != TokenKind.LParen) continue;
+
+            Token slotTok = code[i + 4];
+            if (slotTok.Kind != TokenKind.Identifier ||
+                slotTok.Text.Length < 2 ||
+                (slotTok.Text[0] != 's' && slotTok.Text[0] != 'S') ||
+                !int.TryParse(slotTok.Text.AsSpan(1), System.Globalization.NumberStyles.None,
+                              System.Globalization.CultureInfo.InvariantCulture, out int slot))
+            {
+                continue;
+            }
+            if (i + 5 < code.Count && code[i + 5].Kind != TokenKind.RParen) continue;
+            if (slot is >= 0 and <= 255)
+                reserved.Add(slot);
+        }
+
+        return reserved;
     }
 
     /// <summary>True for the D3D9 effect-framework <c>NULL</c> keyword (case-insensitive,

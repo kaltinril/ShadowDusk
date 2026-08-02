@@ -475,6 +475,7 @@ internal sealed class CompilationPipeline
                         // SM4 rewrite dropped them, so the GLSL rewriter numbers ps_s{slot} the
                         // same way the .mgfx sampler table will (issue #189).
                         explicitGlSamplerSlots: fxParsed.ExplicitGlSamplerSlots,
+                        reservedGlSamplerSlots: fxParsed.ReservedGlSamplerSlots,
                         cancellationToken);
 
                     if (compileOutput.Blob.IsFailure)
@@ -526,6 +527,7 @@ internal sealed class CompilationPipeline
                         // SM4 rewrite dropped them, so the GLSL rewriter numbers ps_s{slot} the
                         // same way the .mgfx sampler table will (issue #189).
                         explicitGlSamplerSlots: fxParsed.ExplicitGlSamplerSlots,
+                        reservedGlSamplerSlots: fxParsed.ReservedGlSamplerSlots,
                         cancellationToken);
 
                     if (compileOutput.Blob.IsFailure)
@@ -994,7 +996,8 @@ internal sealed class CompilationPipeline
 
                     IReadOnlyList<CombinedSamplerPair> pairs = pairResult.Value;
                     IReadOnlyList<int> glSamplerSlots =
-                        SpirvCombinedSamplerPairs.ResolveSlots(pairs, fxParsed.ExplicitGlSamplerSlots);
+                        SpirvCombinedSamplerPairs.ResolveSlots(
+                            pairs, fxParsed.ExplicitGlSamplerSlots, fxParsed.ReservedGlSamplerSlots);
 
                     for (int k = 0; k < pairs.Count; k++)
                     {
@@ -2053,6 +2056,7 @@ internal sealed class CompilationPipeline
             bool applyMonoGameGlsl,
             bool reflectFromSpirv,
             IReadOnlyDictionary<string, int> explicitGlSamplerSlots,
+            IReadOnlySet<int> reservedGlSamplerSlots,
             CancellationToken ct)
     {
         IReadOnlyList<MgfxVertexAttributeInfo> noAttributes = Array.Empty<MgfxVertexAttributeInfo>();
@@ -2177,7 +2181,7 @@ internal sealed class CompilationPipeline
                     if (pairsForSlots.IsSuccess)
                     {
                         samplerSlots = SpirvCombinedSamplerPairs.ResolveSlots(
-                            pairsForSlots.Value, explicitGlSamplerSlots);
+                            pairsForSlots.Value, explicitGlSamplerSlots, reservedGlSamplerSlots);
                     }
 
                     MonoGameGlslResult rewritten =

@@ -114,47 +114,74 @@ public static class SpirvCombinedSamplerPairs
     /// those same uniforms). Two callers deriving it independently is exactly how a table and
     /// the GLSL it describes drift apart, so both go through here.
     ///
-    /// <para>Normally the slot is the pair's texture declaration index, matching fxc's
-    /// allocation. Two pairs CAN share one texture, though (one texture read through two
-    /// <c>SamplerState</c>s — the linear+point idiom), and then the declaration indices
-    /// collide, which would put two uniforms on one unit and silently drop a sampler. There is
-    /// no committed mgfxc golden for that shape to derive the right answer from, so rather than
-    /// invent one this falls back to positional numbering for the whole stage: the behaviour
-    /// that shipped before issue #189 and that <c>validation/SamplerPairsGl</c> arm B
-    /// render-proved.</para>
+    /// <para><b>The rule, in one sentence:</b> in texture-declaration order, a pair whose sampler
+    /// declared an explicit register takes it, and every other pair takes the lowest register not
+    /// already taken and not reserved by a modern <c>SamplerState : register(sN)</c>.</para>
+    ///
+    /// <para>That single rule reproduces every shape measured against the pinned <c>mgfxc</c>,
+    /// and it is why the legacy form is <b>not</b> a special case: compiling for OpenGL means
+    /// compiling at <c>ps_3_0</c>, where a texture and a sampler are ONE object in ONE register
+    /// namespace. A legacy <c>sampler X : register(sN)</c> IS that combined object, so it lands on
+    /// <c>N</c>. A modern <c>SamplerState</c> is a sampler-only object that still occupies its
+    /// register, so the combined samplers fxc synthesizes are allocated around it — which is why
+    /// one texture plus <c>SamplerState S : register(s0)</c> yields <c>ps_s1</c>, not
+    /// <c>ps_s0</c>.</para>
+    ///
+    /// <para>Two pairs sharing one texture (the linear+point idiom) need no special handling
+    /// either: they share a declaration index, neither carries its own explicit register, and
+    /// pass 2 hands them consecutive free registers — the same 0/1 that shipped before issue #189
+    /// and that <c>validation/SamplerPairsGl</c> arm B render-proved.</para>
     /// </summary>
     public static IReadOnlyList<int> ResolveSlots(
         IReadOnlyList<CombinedSamplerPair> pairs,
-        IReadOnlyDictionary<string, int>? explicitSlots = null)
+        IReadOnlyDictionary<string, int>? explicitSlots = null,
+        IReadOnlySet<int>? reservedSlots = null)
     {
         ArgumentNullException.ThrowIfNull(pairs);
 
         var slots = new int[pairs.Count];
-        var seen = new HashSet<int>();
-        for (int k = 0; k < pairs.Count; k++)
-        {
-            // An explicit `register(sN)` on a LEGACY sampler declaration wins: that is the one
-            // shape where mgfxc honours the annotation (at ps_3_0 the legacy sampler IS the
-            // combined sampler). The map is texture-keyed and empty unless the source declared
-            // one, so unannotated shaders keep pure declaration-index allocation.
-            int slot = explicitSlots is not null &&
-                       explicitSlots.TryGetValue(pairs[k].TextureName, out int declared)
-                ? declared
-                : pairs[k].TextureDeclarationIndex;
+        for (int j = 0; j < slots.Length; j++)
+            slots[j] = -1;
 
-            if (!seen.Add(slot))
+        // Allocation runs in TEXTURE DECLARATION order, not in the first-use order the pairs
+        // arrive in, because that is the order fxc fills registers in.
+        int[] order = Enumerable.Range(0, pairs.Count)
+            .OrderBy(k => pairs[k].TextureDeclarationIndex)
+            .ThenBy(k => k)
+            .ToArray();
+
+        var used = new HashSet<int>();
+
+        // Pass 1 — a pair whose sampler carried an explicit register TAKES that register. At
+        // ps_3_0 a legacy `sampler X : register(sN)` IS the combined object, so the pair lands
+        // exactly on N.
+        foreach (int k in order)
+        {
+            if (explicitSlots is not null &&
+                explicitSlots.TryGetValue(pairs[k].TextureName, out int declared) &&
+                used.Add(declared))
             {
-                // Two pairs want the same unit. Either two pairs share one texture (one texture
-                // through two SamplerStates), or the source annotated two samplers onto the same
-                // register. There is no committed mgfxc golden for either, so fall back to
-                // positional numbering for the whole stage rather than invent an answer or drop
-                // a uniform onto an occupied unit.
-                for (int j = 0; j < slots.Length; j++)
-                    slots[j] = j;
-                return slots;
+                slots[k] = declared;
             }
+        }
+
+        // Pass 2 — everything else takes the LOWEST register that is neither already taken nor
+        // reserved by a modern `SamplerState : register(sN)`, which occupies its register without
+        // being a combined sampler. Measured against the pinned mgfxc: `S : register(s1)` with
+        // two textures yields ps_s0 + ps_s2, and `P : register(s0)` + `Q : register(s1)` yields
+        // ps_s2 + ps_s3.
+        foreach (int k in order)
+        {
+            if (slots[k] >= 0)
+                continue;
+
+            int slot = 0;
+            while (used.Contains(slot) || reservedSlots?.Contains(slot) == true)
+                slot++;
+            used.Add(slot);
             slots[k] = slot;
         }
+
         return slots;
     }
 

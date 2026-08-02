@@ -41,4 +41,22 @@ public sealed record FxParseResult
     /// </summary>
     public IReadOnlyDictionary<string, int> ExplicitGlSamplerSlots { get; init; } =
         new Dictionary<string, int>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// OpenGL sampler registers that an explicit <c>register(sN)</c> on a MODERN
+    /// <c>SamplerState</c> declaration takes out of circulation, so a synthesized combined
+    /// sampler must be allocated around them rather than onto them.
+    ///
+    /// <para>Compiling for OpenGL means compiling at <c>ps_3_0</c>, where a texture and a sampler
+    /// are ONE object sharing a single register namespace. A modern <c>SamplerState</c> still sits
+    /// at its declared register, but the combined sampler fxc synthesizes for each
+    /// (texture, sampler) pair cannot reuse it. Measured: with one texture and
+    /// <c>SamplerState S : register(s0)</c>, <c>mgfxc</c> emits <c>ps_s1</c>, not
+    /// <c>ps_s0</c>.</para>
+    ///
+    /// <para>This is what makes the LEGACY case stop looking like a special case. There the
+    /// sampler <i>is</i> the combined object, so it both reserves its register and occupies it,
+    /// landing the pair exactly on <c>N</c>. Same allocator, different starting facts.</para>
+    /// </summary>
+    public IReadOnlySet<int> ReservedGlSamplerSlots { get; init; } = new HashSet<int>();
 }

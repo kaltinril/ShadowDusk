@@ -101,12 +101,15 @@ other targets keep the unmodified SPIRV-Cross dialect. The pixel-stage transform
     annotated the binding is *register* order instead. Both the uniform names and the records come
     from `SpirvCombinedSamplerPairs.ResolveSlots`, the single definition of the rule, so the table
     and the GLSL cannot disagree.
-  - **An explicit `register(sN)` overrides that index — but only on the LEGACY `sampler` form.**
-    `mgfxc` honours the annotation there (at `ps_3_0` the legacy sampler *is* the combined sampler)
-    and **ignores it on the modern spelling**: for `Texture2D T : register(t3); SamplerState S :
-    register(s2);` its OpenGL build still allocates by texture declaration order. `FxPreParser`
-    records the legacy index before its SM4 rewrite drops the clause; the modern one is deliberately
-    not recorded, because honouring it would be a divergence.
+  - **An explicit register is honoured, but a legacy and a modern one mean different things.**
+    The rule, in texture-declaration order: a pair whose sampler declared a register TAKES it;
+    every other pair takes the lowest register neither already taken nor RESERVED by a modern
+    `SamplerState : register(sN)`. At `ps_3_0` a texture and a sampler are one object in one
+    register namespace, so a legacy `sampler X : register(sN)` *is* the combined object and lands
+    on `N`, while a modern `SamplerState` merely occupies its register and pushes the synthesized
+    combined samplers around it — one texture plus `SamplerState S : register(s0)` yields
+    `ps_s1`, not `ps_s0`. `FxPreParser` records both facts before its SM4 rewrite drops the
+    clauses. Verified against the pinned `mgfxc` on ten shapes.
   - **Per pair, not per sampler.** Two textures read through one shared `SamplerState` (the
     diffuse+lightmap idiom) produce **two** records; two samplers over one texture (the
     linear+point idiom) also produce two, each with its own state. Keying on the reflected

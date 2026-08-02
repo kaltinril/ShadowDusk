@@ -66,17 +66,21 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   The clause is **recorded, not re-emitted**: putting it back into the rewritten HLSL would change
   what DXC compiles and move the DirectX, DX12, Vulkan and FNA bytes, none of which have a
   reported defect — so this changes OpenGL allocation only.
-  **Legacy form only, and that is measured rather than a limitation.** `mgfxc` honours the
-  annotation exactly there, because at `ps_3_0` a legacy `sampler` *is* the combined sampler. For
-  the modern spelling it does not: given `Texture2D T : register(t3); SamplerState S :
-  register(s2);` its OpenGL build puts the pair on slot 0 regardless, allocating by texture
-  declaration order. Honouring modern registers would therefore have been a *divergence*, and both
-  behaviours are now pinned by tests that will fail if either is "corrected" later.
-  Fixing this also surfaced a **pre-existing** divergence in the same area: the declaration rank
-  was taken from the SPIR-V `Binding` decoration, which equals declaration order only while DXC
-  auto-allocates and equals *register* order once the source is annotated. It now comes from
-  module order, so `Texture2D TexA : register(t3); Texture2D TexB : register(t2);` puts TexA on
-  unit 0 like `mgfxc`, where before it put TexB there. Proven by a second arm on
+  **What it actually models is fxc's allocator, not a declaration form.** In texture-declaration
+  order, a pair whose sampler declared an explicit register takes it; every other pair takes the
+  lowest register neither already taken nor **reserved** by a modern `SamplerState : register(sN)`.
+  One rule, verified against the pinned `mgfxc` on **ten shapes**, legacy and modern, annotated and
+  not — all match. It also explains what looked like an arbitrary asymmetry: at `ps_3_0` a texture
+  and a sampler are ONE object in ONE register namespace, so a legacy `sampler X : register(sN)`
+  *is* the combined object and lands on `N`, while a modern `SamplerState` is a sampler-only object
+  that occupies its register and pushes the synthesized combined samplers around it — one texture
+  plus `SamplerState S : register(s0)` yields `ps_s1`, not `ps_s0`, and `S : register(s1)` with two
+  textures yields `ps_s0` + `ps_s2` (skipped, not shifted).
+  Fixing this also surfaced a **pre-existing** divergence in the same area: the declaration rank was
+  taken from the SPIR-V `Binding` decoration, which equals declaration order only while DXC
+  auto-allocates and equals *register* order once the source is annotated. It now comes from module
+  order, so `Texture2D TexA : register(t3); Texture2D TexB : register(t2);` puts TexA on unit 0 like
+  `mgfxc`, where before it put TexB there. Proven by a second arm on
   `validation/SamplerRegisterOrderGl` (`SamplerRegisterSparse.fx`), measured **(0,255,0) vs
   `mgfxc`'s (255,255,0), maxd 255 before and maxd 0 after**.
 

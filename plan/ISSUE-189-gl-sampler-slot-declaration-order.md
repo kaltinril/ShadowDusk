@@ -101,33 +101,42 @@ Declaration order in every case.
 
 ## 6. The sparse/offset half, and the one residual left
 
-### 6.1 Closed: an explicit `register(sN)` on a LEGACY sampler now pins the unit
+### 6.1 Closed: the fxc allocator is now modelled, not special-cased
 
-Samplers at `s2`/`s3` with nothing at `s0`/`s1` were compacted to units 0/1. Order-preserving,
-internally self-consistent, and still wrong: unit 0 is not the effect's to allocate, so
-`SpriteBatch` overwrote it with the sprite and that sampler read the sprite.
+The first pass at this honoured `register(sN)` on the **legacy** form only, on the reading that
+`mgfxc` "ignores modern registers on OpenGL". **That reading was drawn from one measurement and was
+wrong.** Widening the sweep to ten shapes showed a modern `SamplerState : register(sN)` is
+**reserved, not ignored** — the pair is allocated *around* it:
 
-`FxPreParser` now **records** the register index it already parsed (`FxParseResult.ExplicitGlSamplerSlots`,
-keyed on the TEXTURE because that is what the GL table joins on) before its SM4 rewrite drops the
-clause, and `ResolveSlots` prefers it over the declaration-index ranking.
+| Source | `mgfxc` |
+|---|---|
+| no explicit register, 2 textures | `ps_s0`, `ps_s1` |
+| 1 texture + `S : register(s0)` | **`ps_s1`** (s0 occupied) |
+| 2 textures + `S : register(s1)` | `ps_s0`, **`ps_s2`** (s1 skipped, not shifted) |
+| 3 textures + `S : register(s1)` | `ps_s0`, `ps_s2`, `ps_s3` |
+| 2 textures + `P : register(s0)`, `Q : register(s1)` | `ps_s2`, `ps_s3` |
+| 2 textures + `P : register(s2)`, `Q : register(s3)` | `ps_s0`, `ps_s1` |
+| legacy `sampler S : register(s5)` | `ps_s5` |
+| legacy `MaskA : s2`, `MaskB : s3` | `ps_s2`, `ps_s3` |
 
-**Recorded, not re-emitted.** Putting the clause back into the rewritten HLSL would change what DXC
-compiles and move the DirectX / DX12 / Vulkan / FNA bytes, none of which have a reported defect.
-Recording it changes the OpenGL slot allocation only.
+**One rule reproduces all of them.** In **texture-declaration order**: a pair whose sampler declared
+an explicit register takes it; every other pair takes the **lowest register neither already taken
+nor reserved**.
 
-**Legacy form ONLY, and that is measured, not a limitation.** `mgfxc` honours the annotation exactly
-there, because compiled at `ps_3_0` a legacy `sampler` IS the combined sampler. For the modern
-spelling it does not:
+And that is *why* the legacy form stops looking like an arbitrary special case. Compiling for
+OpenGL means compiling at `ps_3_0`, where a texture and a sampler are ONE object in ONE register
+namespace:
 
-| Source | `mgfxc` OpenGL | Why |
-|---|---|---|
-| `sampler X : register(s2);` | `ps_s2`, unit 2 | at `ps_3_0` the sampler *is* the combined sampler |
-| `Texture2D T : register(t3); SamplerState S : register(s2);` | `ps_s0`, unit **0** | allocates by texture declaration order, ignores both annotations |
+- a legacy `sampler X : register(sN)` **is** that combined object → it lands on `N`;
+- a modern `SamplerState` is a sampler-*only* object that still occupies its register → the
+  combined samplers fxc synthesizes are allocated around it.
 
-Honouring modern registers would therefore have been a **divergence**. Both behaviours are pinned by
-tests that fail if either is "corrected" later
-(`OpenGl_SparseExplicitSamplerRegisters_PinTheDeclaredTextureUnits` and
-`OpenGl_ModernExplicitRegisters_AreNotHonoured_MatchingMgfxc`).
+Same allocator, different starting facts. `FxPreParser` supplies both inputs
+(`ExplicitGlSamplerSlots` for the legacy assignment, `ReservedGlSamplerSlots` for the modern
+reservation), recording what it already parsed rather than re-emitting it, so DXC still sees
+identical source and the DirectX/DX12/Vulkan/FNA bytes do not move.
+
+All ten shapes now match `mgfxc` exactly.
 
 ### 6.2 Found while fixing 6.1: the declaration rank was taken from the wrong thing
 
@@ -135,7 +144,7 @@ tests that fail if either is "corrected" later
 declaration order only while DXC auto-allocates; once the source is annotated it equals *register*
 order. So `Texture2D TexA : register(t3); Texture2D TexB : register(t2);` put **TexB** on unit 0
 where `mgfxc` puts **TexA**. This was **pre-existing** — the original #189 fix inherited it — and was
-caught by the deliberately-adversarial "modern registers must NOT be honoured" test rather than by
+caught by the deliberately-adversarial "modern registers must not be assigned" test rather than by
 any render. The rank now comes from module order (the order `OpVariable` appears in the SPIR-V),
 which is HLSL declaration order.
 

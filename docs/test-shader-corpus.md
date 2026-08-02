@@ -211,10 +211,11 @@ they back `validation/SamplerPairsGl`:
   and still wrong, because `SpriteBatch` overwrites unit 0 with the sprite after
   `EffectPass.Apply()`. BLUE sprite + RED MaskA + GREEN MaskB: **yellow = registers honoured**,
   **green = compacted (the bug)** — only the red channel moves, and the untouched green is the
-  control proving the harness bound anything at all. **Keep it in LEGACY `sampler` syntax**: that is
-  the only form `mgfxc` honours the annotation for (at `ps_3_0` the legacy sampler *is* the combined
-  sampler). Measured 2026-08-02, the modern spelling is ignored on OpenGL by `mgfxc` itself, so
-  rewriting this fixture in modern syntax would silently stop testing anything. Goldens on `OpenGL`
+  control proving the harness bound anything at all. **Keep it in LEGACY `sampler` syntax**: at
+  `ps_3_0` the legacy sampler *is* the combined object, so the annotation lands the pair on that
+  exact unit. A modern `SamplerState : register(sN)` behaves differently — it RESERVES the register
+  and the pair is allocated around it (one texture plus `S : register(s0)` yields `ps_s1`) — so
+  rewriting this fixture in modern syntax would change what it measures. Goldens on `OpenGL`
   + `DirectX_11`.
 
 ### ShaderToy route fixture
