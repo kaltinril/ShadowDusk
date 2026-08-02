@@ -21,10 +21,10 @@
 ## Headline
 
 - Golden-backed cells (fixture x target): **98**
-  - Structurally **clean**: **70**
-  - **Divergent** (>=1 level): **18**
+  - Structurally **clean**: **71**
+  - **Divergent** (>=1 level): **17**
   - Compile/parse **failures**: **10**
-- Non-golden census cells: **192** (**126** compile, **66** fail with a code)
+- Non-golden census cells: **200** (**134** compile, **66** fail with a code)
 
 ## Golden-backed fixtures — per-level structural verdict
 
@@ -65,7 +65,7 @@ Legend: `OK` = match, `XX` = diverge, `--` = compile/parse failed (see notes). L
 | ForwardLighting | DirectX_11 | OK | OK | OK | OK | OK |  |
 | ForwardLighting | OpenGL | OK | OK | OK | OK | OK |  |
 | GradientToy | DirectX_11 | OK | OK | OK | OK | OK |  |
-| GradientToy | OpenGL | OK | XX | OK | OK | OK | cbuffer `ps_uniforms_vec4` missing (golden size 16) |
+| GradientToy | OpenGL | OK | OK | OK | OK | OK |  |
 | Grayscale | DirectX_11 | OK | OK | OK | OK | OK |  |
 | Grayscale | OpenGL | OK | OK | OK | OK | OK |  |
 | Invert | DirectX_11 | OK | OK | OK | OK | OK |  |
@@ -182,11 +182,11 @@ For an anonymous `pass { ... }` (no name), mgfxc stores an empty pass name while
 
 Affected cells: AlphaTestEffect [DirectX_11], BasicEffect [DirectX_11], ClipShaderNew [DirectX_11], ClipShaderNew [OpenGL], DualTextureEffect [DirectX_11], EnvironmentMapEffect [DirectX_11], PenumbraHull [DirectX_11], PenumbraLight [DirectX_11], PenumbraShadow [DirectX_11], PenumbraTexture [DirectX_11], SkinnedEffect [DirectX_11], SpriteEffect [DirectX_11]
 
-### GL per-stage cbuffer sizing (full-layout vs used-only) — KNOWN, render-equivalent (4 cell(s))
+### GL per-stage cbuffer sizing (full-layout vs used-only) — KNOWN, render-equivalent (3 cell(s))
 
 On the OpenGL target, mgfxc sizes each per-stage `{vs,ps}_uniforms_vec4` record to ONLY the members that stage actually uses (dead-uniform elimination); ShadowDusk emits each stage's FULL declared cbuffer layout. Both `.mgfx` files are internally self-consistent — the USED parameter's offset and the GLSL `uniform vec4 {vs,ps}_uniforms_vec4[size/16]` array length agree within each file, so `SetValue` binds correctly either way. This is the pinned, render-equivalent divergence already documented and tolerated by `Phase43CbufferModelTests` (F4); the accompanying `offset N vs 0` lines are the SAME shape (the used member sits at a different absolute offset but the same relative slot). Not a defect.
 
-Affected cells: GradientToy [OpenGL], PolygonLight [OpenGL], SharedCbuffer [OpenGL], VertexAndPixel [OpenGL]
+Affected cells: PolygonLight [OpenGL], SharedCbuffer [OpenGL], VertexAndPixel [OpenGL]
 
 ### Constant-buffer layout (size / offset) — TRIAGE (1 cell(s))
 
@@ -266,6 +266,14 @@ is a CORRECT result, not a defect.
 | examples/ExModernSamplerState.fx | OpenGL | PASS |  |  |
 | examples/ExMultiSamplerHidef.fx | DirectX_11 | PASS |  |  |
 | examples/ExMultiSamplerHidef.fx | OpenGL | PASS |  |  |
+| examples/ExPhantomDerivativeUniform.fx | DirectX_11 | PASS |  |  |
+| examples/ExPhantomDerivativeUniform.fx | OpenGL | PASS |  |  |
+| examples/ExPhantomNonSquareMatrix.fx | DirectX_11 | PASS |  |  |
+| examples/ExPhantomNonSquareMatrix.fx | OpenGL | PASS |  |  |
+| examples/ExPhantomSecondCbufferFold.fx | DirectX_11 | PASS |  |  |
+| examples/ExPhantomSecondCbufferFold.fx | OpenGL | PASS |  |  |
+| examples/ExPhantomTexLodUniform.fx | DirectX_11 | PASS |  |  |
+| examples/ExPhantomTexLodUniform.fx | OpenGL | PASS |  |  |
 | examples/ExProfileBogusLiteral.fx | DirectX_11 | FAIL | SD0013 | compile target 'ps_9_9' is not a recognized shader profile (did you forget to #define VS_SHADERMODEL / PS_SHADERMODEL, e.g. via the standard '#if OPENGL ... #el... |
 | examples/ExProfileBogusLiteral.fx | OpenGL | FAIL | SD0013 | compile target 'ps_9_9' is not a recognized shader profile (did you forget to #define VS_SHADERMODEL / PS_SHADERMODEL, e.g. via the standard '#if OPENGL ... #el... |
 | examples/ExProfileLevel9Header.fx | DirectX_11 | PASS |  |  |

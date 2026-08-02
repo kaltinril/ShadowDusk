@@ -37,8 +37,8 @@ ShadowDusk/
 │   ├── ShadowDusk.ImageTests/          # Offscreen-render image regression
 │   ├── ShadowDusk.BrowserTests/        # Headless KNI WebGL render validation (Playwright)
 │   └── fixtures/
-│       ├── shaders/                    # Canonical .fx test shaders (147 .fx total + 7 .fxh headers):
-│       │                               #   62 in the root + examples/ (46) + shadertoy/ (1, the pinned
+│       ├── shaders/                    # Canonical .fx test shaders (151 .fx total + 7 .fxh headers):
+│       │                               #   62 in the root + examples/ (50) + shadertoy/ (1, the pinned
 │       │                               #   ShaderToyRoute{Gl,Dx} fixture) + third-party/ (38): Nez (15, MIT),
 │       │                               #   MonoGame (17, Ms-PL — the reference compiler's own acceptance set),
 │       │                               #   Gum (3), Apos.Shapes (3)

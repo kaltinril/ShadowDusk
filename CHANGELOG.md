@@ -18,6 +18,43 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **OpenGL: a numeric parameter that reflection reports but the shipped GLSL never declares now
+  gets synthesized register backing instead of shipping as a phantom** (issue #187, found on
+  `GradientToy.fx`'s `iResolution`). DXC's `-spirv` backend folds the shader's
+  `(uv * iResolution.xy) / iResolution.xy` identity and drops the then-unused `$Globals` cbuffer
+  from the SPIR-V, while the DXIL companion compile that sources desktop-GL reflection — like real
+  fxc/mgfxc — keeps it; the .mgfx therefore carried `Parameters["iResolution"]` with **zero**
+  cbuffer records behind it, so `SetValue` wrote into CPU-side parameter data nothing ever
+  consumed. The pipeline's reflection→backing join was one-directional (GLSL layout → parameter,
+  never the reverse); it now appends a register slot, cbuffer membership, and a covering
+  `uniform vec4 {vs,ps}_uniforms_vec4[N];` declaration for each reflected Scalar/Vector/Matrix
+  parameter the rewriter's layout missed. For `GradientToy` the output now carries exactly the
+  mgfxc golden's structure (one `ps_uniforms_vec4` cbuffer, 16 bytes, parameter 0 at offset 0,
+  referenced by the pixel shader); rendering is unchanged — the GL driver either link-strips the
+  unread array (a silent, spec-sanctioned skip) or uploads data nothing reads, the same shape real
+  mgfxc's DirectX profile ships for any declared-but-unused uniform. A 147-fixture corpus sweep
+  confirmed `GradientToy` is the sole pre-existing affected output. Two rounds of adversarial
+  review hardened four synthesis sub-shapes before shipping, each pinned by a purpose-built
+  fixture: a **non-square matrix** phantom must be sized by the runtime's transposed write model
+  (Columns registers — MonoGame uploads `ColumnCount` 16-byte rows, so sizing by Rows crashes the
+  first `EffectPass.Apply`; `ExPhantomNonSquareMatrix.fx`); the synthesized declaration must be
+  inserted after the `#extension` derivatives header + `#ifdef GL_ES` precision block
+  (`ExPhantomDerivativeUniform.fx`) **and** after the balanced `#if __VERSION__ >= 300 … #endif`
+  TexLod header, whose `#extension` directives live inside branches — Mesa hard-errors on a
+  mid-shader `#extension`, so `GlPrologueEnd` consumes balanced preprocessor blocks
+  (`ExPhantomTexLodUniform.fx`); and a stage with live uniforms plus a phantom must resize its
+  existing declaration rather than insert a second one (`ExPhantomSecondCbufferFold.fx`).
+  `GlPhantomParameterTests` was rewritten to
+  assert **structural backing** and un-skipped — its original `ShouldContain(name)` assertion
+  could never pass, even against the golden's own GLSL (GL packs uniforms into register arrays, so
+  parameter names never appear literally) — and a new corpus-wide backing sweep guards the whole
+  class. Residual divergences (SPIR-V-reflecting paths — the WASM host and desktop Vulkan —
+  still cannot see the folded-away parameter, so their parameter lists lack it; the fold itself
+  diverges from mgfxc only at degenerate values like an unset `iResolution`, where ShadowDusk's
+  build is the more forgiving one, and no lever closes that half) and the DXC 1.8
+  `-fspv-preserve-bindings` follow-up for the reflector half are recorded in
+  `plan/ISSUE-187-gl-phantom-parameter-compile-fidelity.md`.
+
 ## [0.17.0] - 2026-08-01
 
 ### Added

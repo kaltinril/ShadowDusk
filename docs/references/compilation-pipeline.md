@@ -409,6 +409,24 @@ shape — where the rewriter's GLSL-declaration merge order is not guaranteed to
 reflection's cbuffer order — falls through and keeps the loud `SD0012` rather than risk
 mis-mapping: correctness over coverage.
 
+**The join also runs in the reverse direction (issue #187, synthesized backing).** The
+layout→parameter join above can only bind uniforms the GLSL *declares* — but DXC's `-spirv`
+backend can fold a uniform's only reads (e.g. the `(x * r) / r` identity) and drop its
+then-unused cbuffer from the SPIR-V entirely, while the reflection source (the DXIL companion,
+which like fxc does not fold) still reports the parameter. Left alone, that ships a parameter
+with **no** cbuffer record: `SetValue` writes CPU-side data nothing ever uploads. The pipeline
+therefore synthesizes backing for every reflected Scalar/Vector/Matrix parameter missing from a
+stage's layout: a register slot appended after the live ones (a Matrix sized by **Columns** —
+MonoGame/KNI upload matrices transposed, writing `ColumnCount` 16-byte rows), cbuffer
+membership at that offset, and a covering `uniform vec4 {vs,ps}_uniforms_vec4[N];` declaration
+resized or inserted past the emitted GLSL's full leading prologue (`#extension` lines and
+balanced `#if…#endif` header blocks). The synthesized shape is exactly what the mgfxc golden
+carries for the known member (`GradientToy.fx`/`iResolution`) and what real mgfxc's DirectX
+profile ships for any declared-but-unused uniform; at runtime the GL driver either link-strips
+the unread array (a silent, spec-sanctioned skip) or uploads data nothing reads. Guarded by
+`GlPhantomParameterTests` (structural criterion + corpus-wide sweep); full record:
+`plan/ISSUE-187-gl-phantom-parameter-compile-fidelity.md`.
+
 ### Determinism and cross-host byte-identity
 
 Output is **deterministic**: the same source, the same compiler version, and the same target
