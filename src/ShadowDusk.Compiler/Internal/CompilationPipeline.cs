@@ -360,6 +360,14 @@ internal sealed class CompilationPipeline
         // mgfxc's model — Phase 43 F4/F5), never from cross-stage name dedup.
         var shaderUniformLayouts = new Dictionary<int, IReadOnlyList<MonoGameGlslUniform>>();
 
+        // Per-shader (by blob index) reflected NUMERIC parameters (scalar/vector/matrix),
+        // in reflection order. The GL branch uses this to synthesize register backing for
+        // a parameter reflection reports but the shipped GLSL never declares (issue #187:
+        // DXC's -spirv backend can fold a uniform read fxc keeps, dropping the whole
+        // cbuffer from the SPIR-V, while the reflection source still carries the
+        // parameter). Without backing, the parameter exists but SetValue reaches nothing.
+        var shaderNumericParams = new Dictionary<int, IReadOnlyList<ParameterReflection>>();
+
         // AllowWarnings = true (Phase 53): mgfxc's fxc front end never passes /WX, so
         // forcing -WX here made the GL/Vulkan leg STRICTER than the reference
         // compiler — warning-grade HLSL (e.g. an implicit truncation) compiled for
@@ -636,6 +644,11 @@ internal sealed class CompilationPipeline
                     shaderSamplers[blobIndex]     = reflected.Samplers;
                     shaderCbufferNames[blobIndex] = reflected.ConstantBuffers.Select(c => c.Name).ToList();
                     shaderSpirv[blobIndex]        = spirvBlob;
+                    shaderNumericParams[blobIndex] = reflected.Parameters
+                        .Where(p => p.Class is EffectParameterClass.Scalar
+                                             or EffectParameterClass.Vector
+                                             or EffectParameterClass.Matrix)
+                        .ToList();
                 }
 
                 // Last assignment wins on a duplicated state key — fxc's semantics — instead
@@ -682,8 +695,8 @@ internal sealed class CompilationPipeline
             glShaderCbRecord = new Dictionary<int, int>();
             for (int i = 0; i < compiledShaderBlobs.Count; i++)
             {
-                if (!shaderUniformLayouts.TryGetValue(i, out var layout) || layout.Count == 0)
-                    continue;
+                if (!shaderUniformLayouts.TryGetValue(i, out var layout))
+                    layout = Array.Empty<MonoGameGlslUniform>();
 
                 string cbName = compiledShaderBlobs[i].Stage == ShaderStage.Vertex
                     ? "vs_uniforms_vec4"
@@ -691,6 +704,7 @@ internal sealed class CompilationPipeline
 
                 var paramIndices = new List<int>(layout.Count);
                 var paramOffsets = new List<ushort>(layout.Count);
+                var backedParamIndices = new HashSet<int>();
                 int sizeRegisters = 0;
                 foreach (MonoGameGlslUniform u in layout)
                 {
@@ -725,6 +739,78 @@ internal sealed class CompilationPipeline
                                      "the reflected parameter list diverged"), runWarnings);
                     paramIndices.Add(paramIndex);
                     paramOffsets.Add((ushort)(u.BaseRegister * 16));
+                    backedParamIndices.Add(paramIndex);
+                }
+
+                // Issue #187: the join above is GLSL-layout -> parameter only, so a
+                // parameter REFLECTION reports for this stage that the shipped GLSL never
+                // declares (DXC's -spirv backend folded its only reads and dropped the
+                // cbuffer; fxc — and the reflection source — keep it) would end up with
+                // no cbuffer membership at all: present in Parameters[], SetValue writes
+                // nowhere. Complete the join in the other direction: append a register
+                // slot for each such parameter so the .mgfx carries the same
+                // parameter -> cbuffer -> declared-array chain the mgfxc golden has.
+                // The data uploads (or is link-stripped to a silent, spec-sanctioned
+                // skip) and nothing reads it — structurally identical to what real
+                // mgfxc's DirectX profile ships for any declared-but-unused uniform.
+                // Scalar/Vector/Matrix only: an Object parameter is never cbuffer-backed,
+                // and a Struct's footprint is not derivable from rows*elements, so it is
+                // left alone (conservative; no corpus fixture hits either case).
+                int synthesizedRegisters = 0;
+                if (shaderNumericParams.TryGetValue(i, out var reflectedNumeric))
+                {
+                    foreach (ParameterReflection p in reflectedNumeric)
+                    {
+                        int paramIndex = IndexOfParam(allParameters, p.Name);
+                        if (paramIndex < 0)
+                            // Impossible by construction (shaderNumericParams entries come
+                            // from the same reflected.Parameters lists that populate
+                            // allParameters, deduped under the same Ordinal comparer) —
+                            // fail loudly like the mirrored layout->parameter join above
+                            // rather than silently shipping an unbacked parameter.
+                            return Fail(new ShaderError(
+                                File: sourceFileName,
+                                Line: 0,
+                                Column: 0,
+                                Code: "SD0012",
+                                Message: $"internal: reflected parameter '{p.Name}' (shader #{i}) is " +
+                                         "missing from the effect parameter table — the per-shader " +
+                                         "reflection capture and the accumulated parameter list diverged"), runWarnings);
+                        if (backedParamIndices.Contains(paramIndex))
+                            continue;
+                        // Footprint follows the RUNTIME'S write model, not the HLSL shape:
+                        // MonoGame/KNI upload a Matrix parameter TRANSPOSED —
+                        // ConstantBuffer.SetParameter writes ColumnCount 16-byte rows —
+                        // so a Matrix must be sized by Columns (float2x4 ⇒ 4 registers;
+                        // Rows would under-allocate and Buffer.BlockCopy throws on the
+                        // FIRST EffectPass.Apply). float4x4 is unchanged (4 either way).
+                        // Scalars/vectors are one register per row (= 1), arrays once per
+                        // element — matching the rewriter's allocator for the live shapes
+                        // it models (docs/glsl-uniform-naming.md).
+                        int perElement = p.Class == EffectParameterClass.Matrix
+                            ? Math.Max(1, p.Columns)
+                            : Math.Max(1, p.Rows);
+                        int registers = perElement * Math.Max(1, p.Elements);
+                        paramIndices.Add(paramIndex);
+                        paramOffsets.Add((ushort)(sizeRegisters * 16));
+                        backedParamIndices.Add(paramIndex);
+                        sizeRegisters += registers;
+                        synthesizedRegisters += registers;
+                    }
+                }
+
+                if (paramIndices.Count == 0)
+                    continue;
+
+                if (synthesizedRegisters > 0)
+                {
+                    // The GLSL must declare the array the cbuffer record names, sized to
+                    // cover the synthesized slots, or MonoGame's location lookup and the
+                    // declared-vs-recorded sizes fall out of sync structurally. (The GL
+                    // driver may still link-strip the unread tail or the whole array;
+                    // both are defined-ignored at glUniform4fv time.)
+                    compiledShaderBlobs[i] = PatchGlUniformArrayDeclaration(
+                        compiledShaderBlobs[i], cbName, sizeRegisters);
                 }
 
                 var record = new ConstantBufferInfo(
@@ -2335,6 +2421,93 @@ internal sealed class CompilationPipeline
             if (cbuffers[i].Name == name)
                 return i;
         return -1;
+    }
+
+    /// <summary>
+    /// Issue #187 (synthesized GL backing): resize — or insert, when the rewriter emitted
+    /// none — the <c>uniform vec4 {vs,ps}_uniforms_vec4[N];</c> declaration in a GL shader
+    /// blob so the declared array covers register slots synthesized for parameters that
+    /// reflection reports but the transpiled GLSL never mentioned (DXC folded their only
+    /// reads). Insertion must clear the rewriter's ENTIRE leading preprocessor prologue —
+    /// any <c>#extension</c> lines (emitted FIRST, before the precision block, for
+    /// derivative-using shaders) and the <c>#ifdef GL_ES</c> precision block — because
+    /// GLSL ES requires <c>#extension</c> before any non-preprocessor token, and a
+    /// fragment-stage <c>float</c> global before the ES default-precision statement is an
+    /// error on strict GLSL ES compilers (ANGLE/WebGL, Android GLES).
+    /// </summary>
+    private static CompiledShaderBlob PatchGlUniformArrayDeclaration(
+        CompiledShaderBlob blob, string cbName, int totalRegisters)
+    {
+        string glsl = Encoding.UTF8.GetString(blob.Bytes);
+        string declaration = $"uniform vec4 {cbName}[{totalRegisters}];";
+
+        var existing = new Regex($@"^uniform vec4 {Regex.Escape(cbName)}\[\d+\];",
+                                 RegexOptions.Multiline);
+        string patched = existing.IsMatch(glsl)
+            ? existing.Replace(glsl, declaration, count: 1)
+            : glsl.Insert(GlPrologueEnd(glsl), declaration + "\n");
+
+        return blob with { Bytes = Encoding.UTF8.GetBytes(patched) };
+    }
+
+    /// <summary>
+    /// The character index just past the leading GL prologue of a rewritten GLSL blob:
+    /// consecutive <c>#extension …</c> lines and/or balanced preprocessor conditional
+    /// blocks (<c>#if</c>/<c>#ifdef</c>/<c>#ifndef</c> … <c>#endif</c>, depth-tracked),
+    /// plus blank lines between them, in any order. The rewriter emits up to THREE such
+    /// headers before the body — the derivatives <c>#extension</c> line, the
+    /// <c>#ifdef GL_ES</c> precision block, and the TexLod
+    /// <c>#if __VERSION__ &gt;= 300 … #elif … #extension … #endif</c> block (whose
+    /// <c>#extension</c> directives live INSIDE branches, which is why the block must be
+    /// consumed as a balanced whole). Global declarations are legal from this point on
+    /// for both desktop GLSL and GLSL ES; stopping earlier can put an <c>#extension</c>
+    /// after a non-preprocessor token (a hard error on Mesa and strict ESSL front ends).
+    /// </summary>
+    private static int GlPrologueEnd(string glsl)
+    {
+        int pos = 0;
+        while (pos < glsl.Length)
+        {
+            if (glsl[pos] == '\r' || glsl[pos] == '\n')
+            {
+                pos++;
+                continue;
+            }
+
+            int lineEnd = glsl.IndexOf('\n', pos);
+            int nextLine = lineEnd < 0 ? glsl.Length : lineEnd + 1;
+            ReadOnlySpan<char> line = glsl.AsSpan(pos);
+
+            if (line.StartsWith("#extension"))
+            {
+                pos = nextLine;
+                continue;
+            }
+
+            if (line.StartsWith("#if"))   // #if, #ifdef, #ifndef
+            {
+                int depth = 1;
+                int scan = nextLine;
+                while (depth > 0 && scan < glsl.Length)
+                {
+                    int scanLineEnd = glsl.IndexOf('\n', scan);
+                    int scanNext = scanLineEnd < 0 ? glsl.Length : scanLineEnd + 1;
+                    ReadOnlySpan<char> scanLine = glsl.AsSpan(scan);
+                    if (scanLine.StartsWith("#if"))
+                        depth++;
+                    else if (scanLine.StartsWith("#endif"))
+                        depth--;
+                    scan = scanNext;
+                }
+                if (depth > 0)
+                    break;   // unbalanced — do not treat as prologue
+                pos = scan;
+                continue;
+            }
+
+            break;
+        }
+        return pos;
     }
 
     private static IReadOnlyList<EffectParameterInfo> BuildEffectParameterInfoList(

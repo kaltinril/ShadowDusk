@@ -75,9 +75,14 @@ public sealed class SpirvReflectionByteIdentityTests
         // ALSO EXCLUDED: shadertoy/GradientToy. It genuinely diverges (issue #187) — its DXC
         // compile cancels an algebraic identity (x * iResolution / iResolution) that the DXIL
         // oracle's separate companion compile does not, so the oracle reports a parameter the
-        // SPIR-V never carries. That is real, not a corpus artifact — see GlPhantomParameterTests
-        // (currently Skip-pinned on the same issue) rather than failing this broad sweep on a
-        // known, separately-tracked case.
+        // SPIR-V never carries. The desktop pipeline now synthesizes register backing for that
+        // parameter (see GlPhantomParameterTests and
+        // plan/ISSUE-187-gl-phantom-parameter-compile-fidelity.md), which widens rather than
+        // closes THIS byte-identity divergence: the SpirvReflector host still cannot see the
+        // parameter at all, so its output carries neither the parameter nor the synthesized
+        // cbuffer. Reconverging the two reflection sources needs the binding preserved in the
+        // SPIR-V itself (-fspv-preserve-bindings), which requires a DXC 1.8+ pin — recorded in
+        // the phase doc as the strategic follow-up; keep this exclusion until then.
         "ArrayUniform", "ArrayUniformVs", "BasicShader",
         "BlendShader", "ClipShader", "ClipShaderNew", "ClipShaderSpriteTarget", "DeferredSprite",
         "ForwardLighting",

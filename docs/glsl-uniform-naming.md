@@ -173,6 +173,29 @@ and cannot diverge. mgfxc's model, pinned by its goldens:
   kept for that stage; ShadowDusk's carry the cbuffer's full declared layout per
   stage. Both are self-consistent with their own GLSL; parameters are set by name —
   render-proven equivalent (`validation/CbufferModel`).
+- **Synthesized backing (issue #187):** the layout→parameter join runs in BOTH
+  directions. A Scalar/Vector/Matrix parameter that reflection reports for a stage
+  but the rewriter's layout missed — DXC's `-spirv` backend can fold a uniform's
+  only reads and drop its then-unused cbuffer from the SPIR-V entirely, while the
+  DXIL reflection source (like fxc) keeps it — gets a register slot appended after
+  the live ones, cbuffer membership at that offset, and a covering
+  `uniform vec4 {vs,ps}_uniforms_vec4[N];` declaration patched into the GLSL
+  (`CompilationPipeline.PatchGlUniformArrayDeclaration`, inserted past the full
+  leading prologue — `#extension` lines and balanced `#if…#endif` header blocks
+  such as the `#ifdef GL_ES` precision block and the TexLod
+  `#if __VERSION__ >= 300 … #endif` header, in any order). Footprint follows the RUNTIME'S write
+  model: a Matrix is sized by **Columns** (MonoGame/KNI upload matrices transposed,
+  writing `ColumnCount` 16-byte rows — `float2x4` ⇒ 4 registers; sizing by Rows
+  under-allocates and crashes the first `EffectPass.Apply`), scalars/vectors one
+  register, arrays once per element. Without this the
+  parameter existed with **no** cbuffer record — `SetValue` wrote nowhere. The
+  synthesized shape is exactly what the mgfxc golden carries for the one known
+  member (`GradientToy.fx`/`iResolution`) and what real mgfxc's DirectX profile
+  ships for any declared-but-unused uniform; the GL driver link-strips the unread
+  array (a spec-sanctioned silent skip) or uploads data nothing reads — render-
+  identical either way. Guarded by `GlPhantomParameterTests` (structural backing
+  criterion + corpus-wide sweep); full record:
+  `plan/ISSUE-187-gl-phantom-parameter-compile-fidelity.md`.
 - **mgfxc bug not replicated:** an array read at only SOME static indices is broken
   in mgfxc+MonoGame GL itself — fxc references only the used registers, MojoShader
   emits a **compacted** uniform array, but mgfxc's record keeps the full layout, so

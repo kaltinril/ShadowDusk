@@ -1,11 +1,11 @@
 # Test Shader Corpus — Provenance & Fresh Examples
 
-**Last updated:** 2026-07-31 — Phase 51 A10 added three DirectX-profile-floor fixtures and
-**reclassified the vendored Nez set**, whose DirectX column collapsed once ShadowDusk started
-enforcing mgfxc's own floor (see the note above that table). Previously 2026-07-30 (0.16.0):
-the Phase 51 A7 sampler-pair fixtures and the pinned ShaderToy-route fixture. Corpus on disk:
-**147 `.fx` + 7 `.fxh`** — 62 in the fixture root, 46 in `examples/`, 1 in `shadertoy/`,
-38 under `third-party/`.
+**Last updated:** 2026-08-01 — the issue-#187 fix added the four `ExPhantom*` fixtures (the
+phantom-parameter set below). Previously 2026-07-31: Phase 51 A10 added three
+DirectX-profile-floor fixtures and **reclassified the vendored Nez set**, whose DirectX column
+collapsed once ShadowDusk started enforcing mgfxc's own floor (see the note above that table).
+Corpus on disk: **151 `.fx` + 7 `.fxh`** — 62 in the fixture root, 50 in `examples/`, 1 in
+`shadertoy/`, 38 under `third-party/`.
 
 This document records (1) what is known about where the existing `.fx` test
 fixtures came from, (2) an integrity caveat about those fixtures, and (3) a set
@@ -161,6 +161,22 @@ project-owned.
 These are exercised by `Phase45PreParserRobustnessCorpusTests` (compile-asserts
 each on its applicable targets); the all-runtime ones are also in the FNA SM3
 corpus census. Same scope as above: a valid-effect compile, not pixel-equivalence.
+
+### Phantom-parameter set (issue #187 — synthesized GL register backing)
+
+Pins the issue-#187 class (`plan/ISSUE-187-gl-phantom-parameter-compile-fidelity.md`): a
+numeric uniform whose only reads form an algebraic identity DXC's `-spirv` backend cancels
+(fxc and the DXIL reflection companion do not), so the OpenGL pipeline must SYNTHESIZE the
+parameter's register backing. Each fixture pins one synthesis sub-shape found by the
+adversarial reviews. All four are project-owned, authored from scratch 2026-08-01, and
+asserted structurally by `GlPhantomParameterTests` (plus the corpus-wide backing sweep).
+
+| File | Sub-shape it guards | Runtimes |
+|---|---|---|
+| `ExPhantomNonSquareMatrix.fx` | A `float2x4` phantom must be sized by the runtime's TRANSPOSED matrix write model — **Columns** registers (MonoGame/KNI upload `ColumnCount` 16-byte rows); sizing by Rows under-allocates and crashes the first `EffectPass.Apply`. | GL + DX (census) |
+| `ExPhantomDerivativeUniform.fx` | A phantom in a derivative-using shader: the synthesized declaration must be INSERTED after the `#extension GL_OES_standard_derivatives` header + `#ifdef GL_ES` precision block (strict ESSL front ends reject it earlier; desktop GL is lenient, which is how it would slip past desktop gates). | GL + DX (census) |
+| `ExPhantomSecondCbufferFold.fx` | One live cbuffer + one fully-folded cbuffer: synthesis must APPEND after the live registers and RESIZE the existing declaration (`[1]` → `[2]`) — the resize branch no fully-folded fixture can reach. | GL + DX (census) |
+| `ExPhantomTexLodUniform.fx` | A phantom in an explicit-LOD (`SampleLevel`) shader: the insert must clear the BALANCED `#if __VERSION__ >= 300 … #elif … #extension … #endif` TexLod header, whose `#extension` directives live inside branches (Mesa hard-errors on a mid-shader `#extension` and takes the `GL_ARB_shader_texture_lod` branch). | GL + DX (census) |
 
 ### Sampler-pair set (Phase 51 A7 — the OpenGL/DX12 shared-`SamplerState` fix)
 
