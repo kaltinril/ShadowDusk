@@ -559,13 +559,14 @@ bumped-and-re-proven or explicitly deferred with a reason.
 
 ---
 
-### A9 — Stop the `Integration Tests (ubuntu-latest)` test-host crash costing reruns (filed 2026-07-29)
+### A9 — Stop the `Integration Tests` test-host crash costing reruns (filed 2026-07-29)
 
 *Not a phase tail — filed here for the same reason A8 was: this is the de-facto backlog and the
 item otherwise has no home.*
 
-The ubuntu integration lane intermittently aborts with *"Test host process crashed"* and passes on
-rerun every time. Registered here so the *mitigation* is a scheduled decision instead of a note that
+The integration lane intermittently aborts with *"Test host process crashed"* and passes on
+rerun every time. (Filed as ubuntu-only; the 2026-08-02 occurrence below was on **macOS**, so the
+title and the OS claim are corrected here rather than left to mislead.) Registered here so the *mitigation* is a scheduled decision instead of a note that
 gets re-derived every time. The full observation lives in [`project_facts.md`](../project_facts.md).
 
 #### Evidence re-read from the actual job logs (2026-07-29) — the recorded signature was wrong
@@ -615,11 +616,49 @@ This is deliberately *not* claimed as a fix for the crash. It is what makes the 
 diagnosable, and it repairs a real evidence defect that was costing every test-results artifact in
 the repo, not just this lane's.
 
-**Done = ** the ubuntu lane stops needing reruns, from a mitigation justified against the *measured*
-signature above rather than the disproven one. **Next step:** on the next occurrence, read the
-per-assembly `.trx` artifact (now preserved) for `Compiler.Tests (net10.0)` before choosing a
-mitigation — the concentration on one assembly + TFM is the lead worth pulling, and a `net10.0`-only
-failure of an assembly whose `net8.0` twin passes in the same run is not obviously environmental.
+#### Third occurrence (2026-08-02, PR #192, **macOS**) — read from the `.trx`, and it disproves the lead
+
+The `LogFilePrefix` change did exactly what it was added for: this is the first occurrence diagnosed
+from **evidence** rather than inferred from interleaved log text, and the evidence contradicts the
+inference it replaced.
+
+The failed attempt's artifact holds **14 per-assembly `.trx` files, zero overwrites**. Exactly one
+carries `outcome="Failed"`:
+
+| assembly | TFM | outcome | total | passed | failed |
+|---|---|---|---|---|---|
+| `ShadowDusk.Integration.Tests` | **net8.0** | **Failed** | 650 | 649 | **0** |
+| `ShadowDusk.Integration.Tests` | net10.0 | Completed | 827 | 826 | 0 |
+| `ShadowDusk.Compiler.Tests` | net8.0 / net10.0 | Completed | 23 | 23 | 0 |
+
+**177 tests never ran**, spread across ~12 classes rather than concentrated anywhere, and there are
+**zero non-passed, non-skipped results** — nothing failed or errored; the host simply died mid-run.
+The last completions were parameterized `CompileFixtureTests.Compile_ProducesValidMgfxHeader` cases,
+a mix of `DirectPipeline` and `CliProcess` (the latter spawns the CLI as a child process).
+
+**What this retires:**
+
+- The "**`Compiler.Tests`, `net10.0` specifically**" signature. `Compiler.Tests` passed 23/23 on both
+  TFMs here; the crash was a different assembly *and* a different TFM. Two samples agreeing was a
+  window, not a pattern — the same mistake, one level up, as the log-adjacency reading it replaced.
+- "**ubuntu-only**" / "macOS and Windows never fail". This was macOS.
+- The objection that killed candidate mitigation 1. **"Bound VSTest parallelism"** was set aside
+  because two failures on one assembly+TFM "is not that shape". Across three occurrences it now spans
+  two assemblies, both TFMs, and two OSes, with no failing tests — which *is* that shape. Generic
+  resource pressure (14 concurrent hosts, several spawning the CLI as a child process, on a small
+  runner) is now the **best-supported** hypothesis, not a discarded one.
+
+**Done = ** the lane stops needing reruns. **Next step:** bound the concurrency (VSTest
+`MaxCpuCount` / a serialized integration invocation) and watch across several runs — with three
+data points on three different targets, this is now justified against the measured signature rather
+than against a guess. Candidate 2 (scoping the filter to assemblies that carry
+`Category=Integration`) still would not have prevented any of the three, since both crashing
+assemblies carry them; it remains tidiness only.
+
+**Standing instruction for the next occurrence:** download the failed attempt's
+`integration-results-<os>` artifact and read the per-assembly `.trx` — the crashed assembly is the
+one with `outcome="Failed"` and `failed="0"`. Do **not** attribute from the job log; that is what
+produced two wrong signatures in a row.
 
 ---
 
