@@ -129,8 +129,20 @@ public static class SpirvCombinedSamplerPairs
     ///
     /// <para>Two pairs sharing one texture (the linear+point idiom) need no special handling
     /// either: they share a declaration index, neither carries its own explicit register, and
-    /// pass 2 hands them consecutive free registers — the same 0/1 that shipped before issue #189
-    /// and that <c>validation/SamplerPairsGl</c> arm B render-proved.</para>
+    /// pass 2 hands them consecutive free registers — the same 0/1 that shipped before issue #189.
+    /// That fallback is deliberate rather than derived: <b>no <c>mgfxc</c> golden exists for the
+    /// shape</b>, so the previous positional numbering is kept instead of inventing an answer.</para>
+    ///
+    /// <para><b>It is pinned at record level, NOT by a render</b>, and the distinction matters:
+    /// MonoGame 3.8.2's GL backend has no sampler objects and applies filtering with
+    /// <c>glTexParameteri</c> on the bound <i>texture</i>, so one texture object on two units
+    /// collapses to whichever filter was applied last — the shape is un-renderable as a visible
+    /// distinction in that runtime. The guarantees are held by
+    /// <c>OpenGl_OneTextureTwoSamplers_BakesEachPairsOwnSamplerState</c> and
+    /// <c>OpenGl_OneTextureTwoSamplers_NamesEverySamplerUniformTheGlslDeclares</c>.
+    /// <c>validation/SamplerPairsGl</c> arm B does <b>not</b> cover this shape (its fixture
+    /// <c>SamplerPairMirror.fx</c> uses two DISTINCT textures, and its identical pixels make it
+    /// blind to slot assignment anyway — the retracted claim behind issue #189).</para>
     /// </summary>
     public static IReadOnlyList<int> ResolveSlots(
         IReadOnlyList<CombinedSamplerPair> pairs,

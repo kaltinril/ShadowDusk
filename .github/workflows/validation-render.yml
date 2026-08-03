@@ -186,6 +186,7 @@ jobs:
             validation/output-texbreadth/**
             validation/output-reservedword/**
             validation/output-samplerpairs/**
+            validation/output-samplerregisterorder/**
             validation/output-mrt/**
             validation/output-shadertoy/**
           if-no-files-found: ignore

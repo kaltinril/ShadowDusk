@@ -14,6 +14,14 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.18.0] - 2026-08-03
+
+### Added
+
 - **`GlSamplerSlotCorpusTests`, a corpus-wide OpenGL sampler-slot sweep against the `mgfxc`
   goldens.** It **discovers** every `tests/fixtures/golden/OpenGL/*.mgfx` from disk and asserts,
   per sampler record, that the (uniform name, texture unit, bound texture parameter) triple matches
@@ -37,6 +45,31 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   tests, and moves run artifacts is now `contents: read`; `release.yml`'s `github-release` job
   keeps its own `contents: write`, which is the only GitHub write in the repo. No behaviour
   change to any workflow.
+
+- **The retracted "arm B render-proved it" claim was found in a fourth place and corrected: a
+  public XML doc-comment on the new `ResolveSlots`**, which renders into the published API
+  reference. It asserted that `validation/SamplerPairsGl` arm B render-proved the slot numbering
+  for two pairs sharing one texture. It did not, and could not: arm B's fixture uses two
+  *distinct* textures, and that shape is **un-renderable as a visible distinction** in MonoGame
+  3.8.2's GL backend, which has no sampler objects and applies filtering with `glTexParameteri`
+  on the bound texture (one object on two units collapses to whichever filter ran last). The
+  guarantee is held at record level by `OpenGl_OneTextureTwoSamplers_BakesEachPairsOwnSamplerState`
+  and `OpenGl_OneTextureTwoSamplers_NamesEverySamplerUniformTheGlslDeclares` instead. Without
+  this, 0.18.0 would have published the retraction and the retracted claim in the same release.
+  Found by the release docs audit, not by a test.
+
+- **Support-surface docs corrected to match what actually shipped.** The CI OpenGL gate count
+  said **seven** in three places (`docs/validation-matrix.md` ×2 and the public
+  `docfx/contributing/validation.md`) while `validation-render.yml` has built and run **eight**
+  since `SamplerRegisterOrderGl` landed; the site's rung-4 driver list never mentioned that gate
+  at all; `docs/test-shader-corpus.md`'s header counted 151 `.fx` against 153 on disk; the
+  Windows gate-command lists in `CLAUDE.md`, `RELEASING.md`, and the release skill all omitted
+  `ShaderToyRouteDx`; `GlSamplerSlotCorpusTests` had no §6 row; the two transcluded rewriter-rule
+  tables said slots "honour `register(sN)`" without the legacy-pins / modern-reserves split, so a
+  reader would predict the wrong slot for the modern spelling; issue #187 had no validation-matrix
+  footprint; the DirectX 11 `register(sN)` residual had no §7 row; retired `SD0304` had no
+  do-not-reuse row; and `validation-render.yml` never uploaded the new gate's debug output, so a
+  CI failure landed with no diff images.
 
 ### Fixed
 
@@ -1792,7 +1825,8 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.15.1...v0.16.0
 [0.15.1]: https://github.com/kaltinril/ShadowDusk/compare/v0.15.0...v0.15.1

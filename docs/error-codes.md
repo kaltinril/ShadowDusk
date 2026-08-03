@@ -88,6 +88,7 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 | `SD0301` | D3D9 CTAB reflection failed. | `CtabReader` |
 | `SD0302` | fx_2_0 effect validation failed at write time. | `Fx2EffectWriter` |
 | `SD0303` | FNA effect build failed. | `Fx2EffectBuilder` |
+| ~~`SD0304`~~ | **Retired (Phase 39).** Guarded "FNA unavailable on WASM" back when the browser host had no DXBC path. The `vkd3d-shader` WASM build removed the condition, so the guard no longer exists. **Do not reuse this number.** | — |
 | `SD0305` | MojoShader-compatibility bytecode patch failed. | `D3d9BytecodePatcher` |
 | `SD0400` | **Warning.** A gradient op (`dFdx`/`dFdy`/`fwidth`) sits inside a loop with a divergent exit (conditional `break`/`discard`) in the emitted GL fragment source. ANGLE Direct3D11 (WebGL in every Windows browser) silently evaluates such derivatives to 0.0; fxc warns X3553 and force-unrolls the same HLSL (issue #141). | `GlslPortabilityAnalyzer` |
 | `SD0401` | **Warning.** A pass with no vertex shader whose pixel shader reads interpolants SpriteBatch's built-in SpriteEffect VS never writes (anything beyond COLOR0 → `vFrontColor` / TEXCOORD0 → `vTexCoord0`). Drawn with SpriteBatch on GL, the program link fails on strict drivers at the FIRST draw with the engine's generic exception. | `GlslPortabilityAnalyzer` |
