@@ -1,11 +1,33 @@
 # ISSUE-189 — OpenGL sampler slots followed first-use order, not declaration order
 
-**Status:** ✅ Fixed and render-proved (2026-08-02), **both halves** — the allocation ORDER and
-the explicit register VALUE. One residual (DirectX 11) recorded in §6.
+**Status:** ✅ **OpenGL fixed and render-proved (2026-08-02), both halves** — the allocation ORDER
+and the explicit register VALUE.
+**DirectX: NOT being fixed** — deliberate, see §6.3. It is not an oversight or a deferral for
+capacity; the obvious fix is measurably a regression.
 **Reported by:** Apostolique (Apos.Shapes), GitHub issue
 [#189](https://github.com/kaltinril/ShadowDusk/issues/189), against ShadowDusk CLI 0.14.2.
 **Fixed in:** `fix/code-scanning-and-issue-189`.
 **Rung-4 gate:** [`validation/SamplerRegisterOrderGl`](../validation/SamplerRegisterOrderGl).
+
+> ### DirectX is out of scope for this issue, on purpose
+>
+> DX11 emits sampler slots 0/1 where `mgfxc` emits the declared 2/3, which *looks* like the same
+> defect. It is not the same situation, and "fixing" it would ship a real regression:
+>
+> - On DX11 the record's `samplerSlot` is where MonoGame assigns baked sampler state
+>   (`samplerStates[sampler.samplerSlot] = sampler.state`). It has to name the sampler register the
+>   **shipped bytecode actually reads**, not the one the source text asked for.
+> - `FxPreParser` drops the register clause before DXC sees it, so our DXBC reads register 0/1.
+>   Writing 2/3 into the record would send baked state to a register the shader never samples —
+>   trading a working binding for a cosmetic match with the golden.
+> - Making the *bytecode* use 2/3 means re-emitting the clause into the rewritten HLSL, which
+>   changes what DXC compiles and moves the DirectX / DX12 / Vulkan / FNA bytes for a defect none
+>   of them have.
+>
+> The separate DX divergence — `fxc` auto-assigns DX **texture** registers by first use where we
+> use declaration order — is not closable either: that allocation lives inside each compiler's own
+> bytecode. DX11's records are internally consistent with DX11's bytecode, which is the property
+> that actually matters, and no DirectX failure has been reported. Revisit only if one is.
 
 ---
 
