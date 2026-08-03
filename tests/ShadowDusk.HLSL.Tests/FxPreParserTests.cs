@@ -1,4 +1,5 @@
 #nullable enable
+using System.Linq;
 using ShadowDusk.HLSL;
 using ShadowDusk.HLSL.Ast;
 using ShadowDusk.Core;
@@ -2442,5 +2443,202 @@ public sealed class FxPreParserTests
         result.Value.ParameterAnnotations.Where(a => a.ParameterName == "P").ShouldHaveSingleItem();
         result.Value.StrippedHlsl.ShouldNotContain("UIMin", Case.Sensitive);
         result.Value.StrippedHlsl.ShouldContain("float3 Tint = {1, 1, 1};", Case.Sensitive);
+    }
+
+    // -------------------------------------------------------------------------
+    // Explicit register(sN) capture for the OpenGL sampler slot (issue #189)
+    //
+    // The SM4 rewrite turns `sampler X : register(s2);` into
+    // `Texture2D X_SDTexture; SamplerState X;`, dropping the clause before DXC ever
+    // sees it. These pin that the index is RECORDED on the way past, keyed on the
+    // TEXTURE name because that is what the GL sampler table joins on.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_BareSamplerWithRegister_RecordsExplicitGlSlotKeyedOnSynthesizedTexture()
+    {
+        const string src = """
+            sampler MaskA : register(s2);
+            sampler MaskB : register(s3);
+            float4 PS(float2 uv : TEXCOORD0) : COLOR0
+            {
+                return tex2D(MaskA, uv) + tex2D(MaskB, uv);
+            }
+            technique T { pass P { PixelShader = compile ps_3_0 PS(); } }
+            """;
+
+        var result = FxPreParser.Parse(src, sourceFile: "test.fx");
+
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.ExplicitGlSamplerSlots["MaskA_SDTexture"].ShouldBe(2);
+        result.Value.ExplicitGlSamplerSlots["MaskB_SDTexture"].ShouldBe(3);
+    }
+
+    [Fact]
+    public void Parse_SamplerStateFormWithRegister_RecordsExplicitGlSlotKeyedOnReferencedTexture()
+    {
+        // Form 1: `sampler2D S : register(sN) = sampler_state { Texture = <T>; };`
+        // Here the sampler binds an EXISTING texture, so the slot must key on that
+        // texture's name rather than on a synthesized one.
+        const string src = """
+            Texture2D SpriteTexture;
+            sampler2D SpriteTextureSampler : register(s3) = sampler_state
+            {
+                Texture = <SpriteTexture>;
+            };
+            float4 PS(float2 uv : TEXCOORD0) : COLOR0
+            {
+                return tex2D(SpriteTextureSampler, uv);
+            }
+            technique T { pass P { PixelShader = compile ps_3_0 PS(); } }
+            """;
+
+        var result = FxPreParser.Parse(src, sourceFile: "test.fx");
+
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.ExplicitGlSamplerSlots["SpriteTexture"].ShouldBe(3);
+    }
+
+    [Fact]
+    public void Parse_SamplerWithoutRegister_RecordsNoExplicitGlSlot()
+    {
+        // The map must stay EMPTY for an unannotated shader, because a present-but-wrong
+        // entry would silently move a texture unit, whereas an absent one falls back to
+        // declaration-index allocation (the behaviour that shipped before #189).
+        const string src = """
+            sampler MaskA;
+            float4 PS(float2 uv : TEXCOORD0) : COLOR0 { return tex2D(MaskA, uv); }
+            technique T { pass P { PixelShader = compile ps_3_0 PS(); } }
+            """;
+
+        var result = FxPreParser.Parse(src, sourceFile: "test.fx");
+
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.ExplicitGlSamplerSlots.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Parse_ModernTextureAndSamplerRegisters_RecordNoExplicitGlSlot()
+    {
+        // MEASURED, not a limitation: mgfxc's OpenGL build IGNORES the annotations on the
+        // modern spelling and allocates by texture declaration order. Recording them here
+        // would make ShadowDusk diverge, so the map must stay empty for this shape.
+        const string src = """
+            Texture2D TexA : register(t3);
+            SamplerState SampA : register(s2);
+            float4 PS(float2 uv : TEXCOORD0) : COLOR0 { return TexA.Sample(SampA, uv); }
+            technique T { pass P { PixelShader = compile ps_4_0 PS(); } }
+            """;
+
+        var result = FxPreParser.Parse(src, sourceFile: "test.fx");
+
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.ExplicitGlSamplerSlots.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Parse_MixedAnnotatedAndUnannotatedSamplers_RecordsOnlyTheAnnotatedOnes()
+    {
+        // The real Apos.Shapes shape: an explicit s0, an unannotated sampler, and an
+        // explicit s2. Each resolves independently; the unannotated one must not acquire
+        // an entry, so it can fall through to its declaration index.
+        const string src = """
+            sampler TextureSampler : register(s0);
+            sampler FontSampler;
+            sampler BlueNoiseSampler : register(s2);
+            float4 PS(float2 uv : TEXCOORD0) : COLOR0
+            {
+                return tex2D(TextureSampler, uv) + tex2D(FontSampler, uv) + tex2D(BlueNoiseSampler, uv);
+            }
+            technique T { pass P { PixelShader = compile ps_3_0 PS(); } }
+            """;
+
+        var result = FxPreParser.Parse(src, sourceFile: "test.fx");
+
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.ExplicitGlSamplerSlots["TextureSampler_SDTexture"].ShouldBe(0);
+        result.Value.ExplicitGlSamplerSlots["BlueNoiseSampler_SDTexture"].ShouldBe(2);
+        result.Value.ExplicitGlSamplerSlots.ContainsKey("FontSampler_SDTexture").ShouldBeFalse();
+    }
+
+    // -------------------------------------------------------------------------
+    // Modern `SamplerState : register(sN)` is RESERVED, not assigned (issue #189)
+    //
+    // At ps_3_0 a texture and a sampler are ONE object in ONE register namespace.
+    // A modern SamplerState still occupies its declared register, so the combined
+    // samplers fxc synthesizes are allocated AROUND it. Measured: one texture plus
+    // `SamplerState S : register(s0)` makes mgfxc emit ps_s1, not ps_s0.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_ModernSamplerStateWithRegister_ReservesThatSlot()
+    {
+        const string src = """
+            Texture2D A;
+            SamplerState S : register(s1);
+            float4 PS(float2 uv : TEXCOORD0) : COLOR0 { return A.Sample(S, uv); }
+            technique T { pass P { PixelShader = compile ps_3_0 PS(); } }
+            """;
+
+        var result = FxPreParser.Parse(src, sourceFile: "test.fx");
+
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.ReservedGlSamplerSlots.ShouldBe(new[] { 1 });
+        // A reservation is NOT an assignment: nothing is pinned to a texture.
+        result.Value.ExplicitGlSamplerSlots.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Parse_SeveralModernSamplerStates_ReserveAllOfTheirSlots()
+    {
+        const string src = """
+            Texture2D A;
+            Texture2D B;
+            SamplerState P : register(s0);
+            SamplerState Q : register(s3);
+            float4 PS(float2 uv : TEXCOORD0) : COLOR0 { return A.Sample(P, uv) + B.Sample(Q, uv); }
+            technique T { pass P0 { PixelShader = compile ps_3_0 PS(); } }
+            """;
+
+        var result = FxPreParser.Parse(src, sourceFile: "test.fx");
+
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.ReservedGlSamplerSlots.OrderBy(x => x).ShouldBe(new[] { 0, 3 });
+    }
+
+    [Fact]
+    public void Parse_ModernSamplerStateWithoutRegister_ReservesNothing()
+    {
+        const string src = """
+            Texture2D A;
+            SamplerState S;
+            float4 PS(float2 uv : TEXCOORD0) : COLOR0 { return A.Sample(S, uv); }
+            technique T { pass P { PixelShader = compile ps_3_0 PS(); } }
+            """;
+
+        var result = FxPreParser.Parse(src, sourceFile: "test.fx");
+
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.ReservedGlSamplerSlots.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Parse_SamplerStateAsFunctionParameter_ReservesNothing()
+    {
+        // The reservation scan requires the exact `SamplerState IDENT register ( sN )` shape.
+        // A function parameter cannot match it, because no register clause follows - this pins
+        // that the scan does not fire on one.
+        const string src = """
+            Texture2D A;
+            SamplerState S;
+            float4 Fetch(Texture2D t, SamplerState s, float2 uv) { return t.Sample(s, uv); }
+            float4 PS(float2 uv : TEXCOORD0) : COLOR0 { return Fetch(A, S, uv); }
+            technique T { pass P { PixelShader = compile ps_3_0 PS(); } }
+            """;
+
+        var result = FxPreParser.Parse(src, sourceFile: "test.fx");
+
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.ReservedGlSamplerSlots.ShouldBeEmpty();
     }
 }

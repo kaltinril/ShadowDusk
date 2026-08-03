@@ -20,8 +20,8 @@
 
 ## Headline
 
-- Golden-backed cells (fixture x target): **98**
-  - Structurally **clean**: **71**
+- Golden-backed cells (fixture x target): **102**
+  - Structurally **clean**: **75**
   - **Divergent** (>=1 level): **17**
   - Compile/parse **failures**: **10**
 - Non-golden census cells: **200** (**134** compile, **66** fail with a code)
@@ -91,7 +91,11 @@ Legend: `OK` = match, `XX` = diverge, `--` = compile/parse failed (see notes). L
 | PolygonLight | DirectX_11 | OK | OK | OK | OK | OK |  |
 | PolygonLight | OpenGL | OK | XX | OK | OK | OK | cbuffer `ps_uniforms_vec4` size 112 vs 48; cbuffer `vs_uniforms_vec4` size 112 vs 64; param `viewProjectionMatrix` cbuffer offset 48 vs 0 |
 | SamplerPairMirror | DirectX_11 | OK | OK | OK | OK | OK |  |
-| SamplerPairMirror | OpenGL | OK | OK | XX | OK | OK | sampler slot 0 baked-state differs; sampler slot 1 baked-state differs |
+| SamplerPairMirror | OpenGL | OK | OK | OK | OK | OK |  |
+| SamplerRegisterOrder | DirectX_11 | OK | OK | OK | OK | OK |  |
+| SamplerRegisterOrder | OpenGL | OK | OK | OK | OK | OK |  |
+| SamplerRegisterSparse | DirectX_11 | OK | OK | XX | OK | OK | sampler slot 2 missing (golden ``); sampler slot 3 missing (golden ``); extra sampler slot 0 (``); extra sampler slot 1 (``) |
+| SamplerRegisterSparse | OpenGL | OK | OK | OK | OK | OK |  |
 | SamplerStatesFull | DirectX_11 | OK | OK | OK | OK | OK |  |
 | SamplerStatesFull | OpenGL | OK | OK | OK | OK | OK |  |
 | Saturate | DirectX_11 | OK | OK | OK | OK | OK |  |
@@ -198,7 +202,7 @@ Affected cells: PenumbraHull [DirectX_11]
 
 A sampler slot is missing/extra or its baked sampler_state differs.
 
-Affected cells: SamplerPairMirror [OpenGL]
+Affected cells: SamplerRegisterSparse [DirectX_11]
 
 ### Object-class (texture/sampler) parameter shape (1 cell(s))
 

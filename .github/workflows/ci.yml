@@ -22,6 +22,13 @@ on:
     branches: [ main ]
     paths-ignore: [ '**/*.md', 'plan/**', 'docs/**', 'docfx/**', 'LICENSE', '.gitignore' ]
 
+# Least privilege for GITHUB_TOKEN: every job here only checks out, builds, tests, and
+# uploads artifacts to its own run — none of which needs a write scope. Artifact up/download
+# is not gated on GITHUB_TOKEN at all, and the native restore fetches release assets
+# anonymously over https. A job that ever needs more must declare it on the job itself.
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true

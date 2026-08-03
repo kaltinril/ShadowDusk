@@ -29,6 +29,12 @@ on:
   # fixed release tag; re-running never republishes — see the header comment.
   workflow_dispatch:
 
+# Least privilege for GITHUB_TOKEN. This workflow only builds the wasm native and uploads it
+# as a run artifact; a maintainer attaches it to the pinned release by hand, so nothing here
+# needs a write scope. Artifact upload is not gated on GITHUB_TOKEN.
+permissions:
+  contents: read
+
 env:
   VKD3D_VERSION: '1.17'
   VKD3D_TARBALL_URL: 'https://dl.winehq.org/vkd3d/source/vkd3d-1.17.tar.xz'

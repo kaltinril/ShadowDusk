@@ -340,21 +340,30 @@ public sealed class ReviewRegressionTests
             result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
     }
 
-    // ── GL records must follow SPIRV-Cross's combined-sampler DECLARATION order ──────
+    // ── GL records must follow HLSL DECLARATION order, and agree with the emitted GLSL ──
     //
-    // These pin the bug class that SD0216's count check could never see: when the counts
-    // already agree, a table keyed on bind slots silently pairs each ps_s{k} with the WRONG
-    // texture. SPIRV-Cross declares combined samplers in FIRST-USE order, so sampling out of
-    // declaration order is enough to swap them. Compiled clean with zero diagnostics before
-    // Phase 51 A7.
+    // Two separate bug classes are pinned here.
+    //
+    // Phase 51 A7: SD0216's count check could never see a table keyed on bind slots silently
+    // pairing each ps_s{k} with the WRONG texture once the counts already agreed.
+    //
+    // GitHub issue #189: having fixed the PAIRING, the NUMBERING was still SPIRV-Cross's
+    // first-use order, while fxc — and therefore mgfxc — allocates OpenGL sampler slots in
+    // HLSL declaration order. A `register(s0)` sampler that was not also sampled first landed
+    // on unit 1, and under SpriteBatch (which forces the sprite onto unit 0 right after
+    // EffectPass.Apply) that silently swapped textures. Render-proved against the reference
+    // compiler by validation/SamplerRegisterOrderGl.
+    //
+    // So these tests now assert DECLARATION order, and deliberately keep sampling out of
+    // declaration order, which is what makes the two orders distinguishable at all.
 
     /// <summary>
     /// Two textures with DIFFERENT dimensions, sampled in reverse declaration order. The
-    /// dimensions make the mis-pairing unambiguous: the emitted GLSL declares the cube's
-    /// combined sampler first (it is sampled first), so <c>ps_s0</c>'s record must carry the
-    /// CUBE sampler-type byte and point at the cube texture. The old slot-keyed table gave
-    /// <c>ps_s0</c> the 2D type byte and the 2D texture, so MonoGame bound a 2D texture to a
-    /// cube sampler unit.
+    /// dimensions make a mis-pairing unambiguous: <c>DiffuseMap</c> is declared first, so it
+    /// owns unit 0 and <c>ps_s0</c>'s record must carry the 2D sampler-type byte and point at
+    /// it, even though the cube is sampled first. Two historical bugs are covered: the old
+    /// slot-keyed table paired <c>ps_s0</c> with the wrong texture entirely (A7), and the
+    /// first-use numbering that replaced it put the wrong texture on unit 0 (#189).
     /// </summary>
     private const string ReverseUseOrderShader = """
         Texture2D DiffuseMap;
@@ -400,15 +409,24 @@ public sealed class ReviewRegressionTests
 
         records.Select(s => s.Name).ShouldBe(new[] {"ps_s0", "ps_s1"});
 
-        // The emitted GLSL is the authority: whichever kind it declares first is what ps_s0 IS.
-        glsl.ShouldMatch(@"uniform\s+samplerCube\s+ps_s0\s*;", customMessage: "EnvMap is sampled first, so SPIRV-Cross declares its combined sampler first");
-        glsl.ShouldMatch(@"uniform\s+sampler2D\s+ps_s1\s*;");
+        // DECLARATION order, not first-use order (GitHub issue #189). EnvMap is sampled first,
+        // so SPIRV-Cross folds its combined sampler first, but fxc — and therefore mgfxc —
+        // allocates OpenGL sampler slots in declaration order, so DiffuseMap owns unit 0. The
+        // emitted GLSL is still the authority on which uniform is which kind, and it must agree
+        // with the record table: both are numbered from the same ResolveSlots result.
+        glsl.ShouldMatch(@"uniform\s+sampler2D\s+ps_s0\s*;", customMessage: "DiffuseMap is declared first, so it owns texture unit 0 the way fxc allocates");
+        glsl.ShouldMatch(@"uniform\s+samplerCube\s+ps_s1\s*;");
 
-        records[0].Type.ShouldBe(SamplerTypeCube, customMessage: "ps_s0 is the cube pair, so its sampler-type byte must say cube or the texture will not bind");
-        records[1].Type.ShouldBe(SamplerType2D);
+        records[0].Type.ShouldBe(SamplerType2D, customMessage: "ps_s0 is the 2D pair, so its sampler-type byte must say 2D or the texture will not bind");
+        records[1].Type.ShouldBe(SamplerTypeCube);
 
-        reader.Parameters[records[0].Parameter].Name.ShouldBe("EnvMap");
-        reader.Parameters[records[1].Parameter].Name.ShouldBe("DiffuseMap");
+        reader.Parameters[records[0].Parameter].Name.ShouldBe("DiffuseMap");
+        reader.Parameters[records[1].Parameter].Name.ShouldBe("EnvMap");
+
+        // The slots are what the runtime actually binds with, so assert them directly rather
+        // than inferring them from the names.
+        records[0].TextureSlot.ShouldBe((byte)0);
+        records[1].TextureSlot.ShouldBe((byte)1);
     }
 
     /// <summary>
@@ -468,12 +486,13 @@ public sealed class ReviewRegressionTests
     /// <summary>
     /// A legacy <c>sampler2D</c> declaration mixed with a modern
     /// <c>Texture2D</c>+<c>SamplerState</c> pair. The pre-parser rewrites the legacy form to the
-    /// modern one before DXC sees it, so both become combined-sampler pairs and the ORDER is
-    /// still first-use — here the modern pair is sampled first.
+    /// modern one before DXC sees it, so both become combined-sampler pairs and both are slotted
+    /// by DECLARATION order — here the modern pair is sampled first but declared second, so it
+    /// gets unit 1 (issue #189). The rewrite must not perturb that ordering.
     /// </summary>
     [Fact]
     [Trait("Platform", "OpenGL")]
-    public async Task OpenGl_MixedLegacyAndModernSamplerDeclarations_KeepFirstUseOrder()
+    public async Task OpenGl_MixedLegacyAndModernSamplerDeclarations_KeepDeclarationOrder()
     {
         const string source = """
             Texture2D LegacyTex;
@@ -509,8 +528,8 @@ public sealed class ReviewRegressionTests
         var records = reader.Samplers.Where(s => s.ShaderIndex == ps.Index).ToList();
 
         records.Select(s => s.Name).ShouldBe(new[] {"ps_s0", "ps_s1"});
-        reader.Parameters[records[0].Parameter].Name.ShouldBe("ModernTex", customMessage: "ModernTex is sampled first, so its combined sampler is declared first");
-        reader.Parameters[records[1].Parameter].Name.ShouldBe("LegacyTex");
+        reader.Parameters[records[0].Parameter].Name.ShouldBe("LegacyTex", customMessage: "LegacyTex is declared first, so it owns texture unit 0 the way fxc allocates (issue #189) — even though ModernTex is sampled first");
+        reader.Parameters[records[1].Parameter].Name.ShouldBe("ModernTex");
     }
 
     /// <summary>
@@ -557,19 +576,31 @@ public sealed class ReviewRegressionTests
         var records = reader.Samplers.Where(s => s.ShaderIndex == ps.Index).ToList();
 
         records.Select(s => s.Name).ShouldBe(new[] {"ps_s0", "ps_s1"});
-        records[0].Type.ShouldBe(SamplerTypeCube, customMessage: "FetchCube is called first");
-        records[1].Type.ShouldBe(SamplerType2D);
-        reader.Parameters[records[0].Parameter].Name.ShouldBe("TexB");
-        reader.Parameters[records[1].Parameter].Name.ShouldBe("TexA");
+        records[0].Type.ShouldBe(SamplerType2D, customMessage: "TexA is declared first, so it owns unit 0 (issue #189) — even though FetchCube(TexB) is called first");
+        records[1].Type.ShouldBe(SamplerTypeCube);
+        reader.Parameters[records[0].Parameter].Name.ShouldBe("TexA");
+        reader.Parameters[records[1].Parameter].Name.ShouldBe("TexB");
     }
 
     /// <summary>
     /// The load-bearing invariant, on a shape with enough structure that a wrong model cannot
     /// pass by luck: three textures of three DIFFERENT dimensions crossed with two samplers,
     /// sampled so the pairs come out in an order matching neither declaration order nor bind
-    /// slots, with one texture reused under both samplers (exercising the dedup). The emitted
-    /// GLSL's declaration kinds are checked position by position against the record type bytes,
-    /// so the sequence 2D/Cube/3D/2D is a four-way discriminator on the ordering model.
+    /// slots, with one texture reused under BOTH samplers (four pairs over three textures,
+    /// exercising the dedup). Every record is matched to the GLSL uniform it names, so the
+    /// 2D/Cube/3D/2D kind sequence is a four-way discriminator on the ordering model.
+    ///
+    /// <para><b>No mgfxc oracle exists for this shape</b>, and that is measured, not assumed:
+    /// `mgfxc /Profile:OpenGL` rejects it outright with "Pixel shader 'PS' must be SM 3.0 or
+    /// lower" (the OpenGL SM ≤ 3 ceiling), and `TextureCube`/`Texture3D` with `.Sample()` needs
+    /// SM4+. So this test asserts ShadowDusk's INTERNAL consistency — the sampler table describes
+    /// the GLSL it actually shipped — rather than reference-compiler parity. The parity claims
+    /// live on the shapes mgfxc can compile.</para>
+    ///
+    /// <para>The records are emitted sorted by texture unit while SPIRV-Cross declares the
+    /// uniforms in first-use order, so the two sequences legitimately differ. The check keys on
+    /// the uniform NAME rather than on position, which is the invariant that actually matters:
+    /// the GL runtime resolves each record by `glGetUniformLocation(record.Name)`.</para>
     /// </summary>
     [Fact]
     [Trait("Platform", "OpenGL")]
@@ -616,27 +647,35 @@ public sealed class ReviewRegressionTests
         var records = reader.Samplers.Where(s => s.ShaderIndex == ps.Index).ToList();
         string glsl = System.Text.Encoding.UTF8.GetString(ps.Bytecode);
 
-        // Four distinct (texture, sampler) pairs are sampled. (Equal's params overload would
-        // swallow a `because` string as a fifth expected element, so the reason stays a comment.)
+        // Four distinct (texture, sampler) pairs are sampled, on four distinct units. (Equal's
+        // params overload would swallow a `because` string as a fifth expected element, so the
+        // reason stays a comment.)
         records.Select(s => s.Name).ShouldBe(new[] {"ps_s0", "ps_s1", "ps_s2", "ps_s3"});
+        records.Select(s => s.TextureSlot).ShouldBe(new byte[] { 0, 1, 2, 3 });
 
-        // The emitted GLSL is the oracle: read the declared kind for each ps_s{k} out of it and
-        // require the record's sampler-type byte and texture parameter to agree.
+        // Allocation is in TEXTURE DECLARATION order (DiffuseMap, EnvMap, VolumeMap), and the
+        // twice-used DiffuseMap takes two consecutive units because each PAIR needs its own.
+        // That is why the units do not follow the sampling order.
         var expected = new[]
         {
-            ("samplerCube", SamplerTypeCube,   "EnvMap"),
-            ("sampler2D",   SamplerType2D,     "DiffuseMap"),
-            ("sampler3D",   SamplerTypeVolume, "VolumeMap"),
-            ("sampler2D",   SamplerType2D,     "DiffuseMap"),
+            ("ps_s0", "sampler2D",   SamplerType2D,     "DiffuseMap"),
+            ("ps_s1", "sampler2D",   SamplerType2D,     "DiffuseMap"),
+            ("ps_s2", "samplerCube", SamplerTypeCube,   "EnvMap"),
+            ("ps_s3", "sampler3D",   SamplerTypeVolume, "VolumeMap"),
         };
 
         for (int k = 0; k < expected.Length; k++)
         {
-            var (glslKind, typeByte, textureName) = expected[k];
-            glsl.ShouldMatch($@"uniform\s+{glslKind}\s+ps_s{k}\s*;", customMessage: $"ps_s{k} must be the {textureName} pair in SPIRV-Cross's declaration order");
-            records[k].Type.ShouldBe(typeByte, customMessage: $"ps_s{k}'s sampler-type byte must match its declaration");
+            var (uniform, glslKind, typeByte, textureName) = expected[k];
+
+            // Keyed on the uniform NAME, not on declaration position: the GL runtime resolves a
+            // record via glGetUniformLocation(record.Name), so name-to-kind agreement is the
+            // invariant. SPIRV-Cross still declares them in first-use order.
+            glsl.ShouldMatch($@"uniform\s+{glslKind}\s+{uniform}\s*;",
+                customMessage: $"{uniform} must be declared as {glslKind} ({textureName}'s pair)");
+            records[k].Name.ShouldBe(uniform);
+            records[k].Type.ShouldBe(typeByte, customMessage: $"{uniform}'s sampler-type byte must match its declaration");
             reader.Parameters[records[k].Parameter].Name.ShouldBe(textureName);
-            records[k].TextureSlot.ShouldBe((byte)k, customMessage: "the record index is the GL texture unit");
         }
     }
 
@@ -668,5 +707,205 @@ public sealed class ReviewRegressionTests
             "share one SamplerState");
         records.Select(s => s.TextureSlot).ShouldBe(new[] {(byte)0, (byte)1});
         records.Select(s => reader.Parameters[s.Parameter].Name).ShouldBe(new[] {"DiffuseMap", "Lightmap"});
+    }
+
+    /// <summary>
+    /// GitHub issue #189, sparse half. An explicit <c>register(sN)</c> on a LEGACY sampler
+    /// declaration pins the OpenGL texture unit, so samplers at s2/s3 with nothing at s0/s1
+    /// must land on units 2 and 3 rather than being compacted to 0/1. Compacting is
+    /// order-preserving and internally self-consistent, and still wrong, because SpriteBatch
+    /// overwrites unit 0 with the sprite right after EffectPass.Apply().
+    /// Rung-4 counterpart: validation/SamplerRegisterOrderGl arm "sparse".
+    /// </summary>
+    [Fact]
+    [Trait("Platform", "OpenGL")]
+    public async Task OpenGl_SparseExplicitSamplerRegisters_PinTheDeclaredTextureUnits()
+    {
+        const string source = """
+            sampler MaskA : register(s2);
+            sampler MaskB : register(s3);
+
+            float4 PS(float2 uv : TEXCOORD0) : COLOR0
+            {
+                return float4(tex2D(MaskA, uv).r, tex2D(MaskB, uv).g, 0, 1);
+            }
+
+            technique T
+            {
+                pass P { PixelShader = compile ps_3_0 PS(); }
+            }
+            """;
+
+        using var cts = Cts();
+
+        var result = await new EffectCompiler().CompileAsync(source, new CompilerOptions
+        {
+            Target = PlatformTarget.OpenGL,
+            SourceFileName = "SparseSamplerRegisters.fx",
+        }, cts.Token);
+
+        result.IsSuccess.ShouldBeTrue(
+            result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+
+        var reader = MgfxBlobReader.Parse(result.Value.Data);
+        var ps = reader.Shaders.Single(s => !s.IsVertex);
+        var records = reader.Samplers.Where(s => s.ShaderIndex == ps.Index).ToList();
+        string glsl = System.Text.Encoding.UTF8.GetString(ps.Bytecode);
+
+        records.Select(s => s.TextureSlot).ShouldBe(new byte[] { 2, 3 },
+            customMessage: "register(s2)/register(s3) must pin units 2 and 3, not compact to 0/1");
+        records.Select(s => s.Name).ShouldBe(new[] { "ps_s2", "ps_s3" });
+
+        // The record name has to be a uniform the emitted GLSL actually declares, or the GL
+        // runtime's glGetUniformLocation misses and the sampler silently keeps unit 0.
+        glsl.ShouldMatch(@"uniform\s+sampler2D\s+ps_s2\s*;");
+        glsl.ShouldMatch(@"uniform\s+sampler2D\s+ps_s3\s*;");
+        glsl.ShouldNotContain("ps_s0", Case.Sensitive);
+        glsl.ShouldNotContain("ps_s1", Case.Sensitive);
+
+        reader.Parameters[records[0].Parameter].Name.ShouldBe("MaskA_SDTexture");
+        reader.Parameters[records[1].Parameter].Name.ShouldBe("MaskB_SDTexture");
+    }
+
+    /// <summary>
+    /// A modern <c>SamplerState : register(sN)</c> is RESERVED, not assigned: the pair is
+    /// allocated around it rather than onto it. Here <c>s2</c> and <c>s3</c> are reserved, so the
+    /// two pairs take the lowest free registers 0 and 1 in TEXTURE DECLARATION order — note that
+    /// means <c>TexA</c> owns unit 0 despite carrying <c>register(t3)</c>, and despite
+    /// <c>TexB</c> being sampled first. Measured against the pinned mgfxc.
+    /// </summary>
+    [Fact]
+    [Trait("Platform", "OpenGL")]
+    public async Task OpenGl_ModernSamplerRegisters_AreReservedNotAssigned()
+    {
+        const string source = """
+            Texture2D TexA : register(t3);
+            Texture2D TexB : register(t2);
+            SamplerState SampA : register(s2);
+            SamplerState SampB : register(s3);
+
+            float4 PS(float2 uv : TEXCOORD0) : COLOR0
+            {
+                return float4(TexA.Sample(SampA, uv).r, TexB.Sample(SampB, uv).g, 0, 1);
+            }
+
+            technique T
+            {
+                pass P { PixelShader = compile ps_4_0 PS(); }
+            }
+            """;
+
+        using var cts = Cts();
+
+        var result = await new EffectCompiler().CompileAsync(source, new CompilerOptions
+        {
+            Target = PlatformTarget.OpenGL,
+            SourceFileName = "ModernSamplerRegisters.fx",
+        }, cts.Token);
+
+        result.IsSuccess.ShouldBeTrue(
+            result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+
+        var reader = MgfxBlobReader.Parse(result.Value.Data);
+        var ps = reader.Shaders.Single(s => !s.IsVertex);
+        var records = reader.Samplers.Where(s => s.ShaderIndex == ps.Index).ToList();
+
+        records.Select(s => s.TextureSlot).ShouldBe(new byte[] { 0, 1 },
+            customMessage: "s2/s3 are reserved by the modern SamplerState declarations, so the pairs take the lowest free registers 0 and 1");
+        reader.Parameters[records[0].Parameter].Name.ShouldBe("TexA",
+            customMessage: "TexA is declared first, so it owns unit 0 despite carrying register(t3)");
+        reader.Parameters[records[1].Parameter].Name.ShouldBe("TexB");
+    }
+
+    /// <summary>
+    /// The reservation rule's sharpest case: ONE texture and a modern
+    /// <c>SamplerState : register(s0)</c>. The pair cannot take s0 — the SamplerState occupies it
+    /// — so it lands on <b>unit 1</b>, leaving unit 0 empty. Measured against the pinned mgfxc,
+    /// and the shape that disproved the earlier "modern registers are simply ignored" reading.
+    /// </summary>
+    [Fact]
+    [Trait("Platform", "OpenGL")]
+    public async Task OpenGl_ModernSamplerAtRegisterS0_PushesThePairToUnitOne()
+    {
+        const string source = """
+            Texture2D A;
+            SamplerState S : register(s0);
+
+            float4 PS(float2 uv : TEXCOORD0) : COLOR0 { return A.Sample(S, uv); }
+
+            technique T
+            {
+                pass P { PixelShader = compile ps_3_0 PS(); }
+            }
+            """;
+
+        using var cts = Cts();
+
+        var result = await new EffectCompiler().CompileAsync(source, new CompilerOptions
+        {
+            Target = PlatformTarget.OpenGL,
+            SourceFileName = "ModernSamplerS0.fx",
+        }, cts.Token);
+
+        result.IsSuccess.ShouldBeTrue(
+            result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+
+        var reader = MgfxBlobReader.Parse(result.Value.Data);
+        var ps = reader.Shaders.Single(s => !s.IsVertex);
+        var records = reader.Samplers.Where(s => s.ShaderIndex == ps.Index).ToList();
+        string glsl = System.Text.Encoding.UTF8.GetString(ps.Bytecode);
+
+        records.Single().TextureSlot.ShouldBe((byte)1,
+            customMessage: "SamplerState S occupies s0, so the synthesized combined sampler takes s1");
+        records.Single().Name.ShouldBe("ps_s1");
+        glsl.ShouldMatch(@"uniform\s+sampler2D\s+ps_s1\s*;");
+        glsl.ShouldNotContain("ps_s0", Case.Sensitive);
+    }
+
+    /// <summary>
+    /// A reserved register in the MIDDLE is skipped rather than shifting everything: with
+    /// <c>SamplerState S : register(s1)</c> shared by three textures, mgfxc emits s0, s2, s3.
+    /// A naive "start after the highest reserved" or "shift everything up" rule would produce
+    /// 2/3/4 or 0/1/2, so this pins the actual lowest-free-skipping-reserved behaviour.
+    /// </summary>
+    [Fact]
+    [Trait("Platform", "OpenGL")]
+    public async Task OpenGl_ReservedSamplerRegisterInTheMiddle_IsSkippedNotShifted()
+    {
+        const string source = """
+            Texture2D A;
+            Texture2D B;
+            Texture2D C;
+            SamplerState S : register(s1);
+
+            float4 PS(float2 uv : TEXCOORD0) : COLOR0
+            {
+                return A.Sample(S, uv) + B.Sample(S, uv) + C.Sample(S, uv);
+            }
+
+            technique T
+            {
+                pass P { PixelShader = compile ps_3_0 PS(); }
+            }
+            """;
+
+        using var cts = Cts();
+
+        var result = await new EffectCompiler().CompileAsync(source, new CompilerOptions
+        {
+            Target = PlatformTarget.OpenGL,
+            SourceFileName = "ReservedMiddle.fx",
+        }, cts.Token);
+
+        result.IsSuccess.ShouldBeTrue(
+            result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+
+        var reader = MgfxBlobReader.Parse(result.Value.Data);
+        var ps = reader.Shaders.Single(s => !s.IsVertex);
+        var records = reader.Samplers.Where(s => s.ShaderIndex == ps.Index).ToList();
+
+        records.Select(s => s.TextureSlot).ShouldBe(new byte[] { 0, 2, 3 },
+            customMessage: "s1 is reserved, so allocation skips it rather than shifting the whole run");
+        records.Select(s => reader.Parameters[s.Parameter].Name).ShouldBe(new[] { "A", "B", "C" });
     }
 }

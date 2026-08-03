@@ -13,7 +13,25 @@ namespace ShadowDusk.Core.Reflection;
 /// </summary>
 /// <param name="TextureName">The HLSL name of the sampled texture (the image half of the pair).</param>
 /// <param name="SamplerName">The HLSL name of the <c>SamplerState</c> (the sampler half).</param>
-public sealed record CombinedSamplerPair(string TextureName, string SamplerName);
+/// <param name="TextureDeclarationIndex">
+/// The 0-based rank of this pair's texture among the stage's sampled images, in <b>module
+/// order</b> — the order <c>OpVariable</c> appears in the SPIR-V, which is HLSL declaration
+/// order. This is the GL texture unit the pair binds to, because fxc (and therefore mgfxc)
+/// allocates OpenGL sampler slots in declaration order, NOT in the first-use order SPIRV-Cross
+/// numbers its combined samplers by (GitHub issue #189).
+///
+/// <para>Deliberately NOT ranked by the <c>Binding</c> decoration. The two coincide whenever DXC
+/// auto-allocates, but diverge as soon as the source carries explicit registers — and there
+/// declaration order is the one that matches mgfxc: for
+/// <c>Texture2D TexA : register(t3); Texture2D TexB : register(t2);</c> mgfxc's OpenGL build puts
+/// TexA (declared first) on slot 0, where a binding-ordered rank would put TexB. Deriving it from
+/// the SPIR-V rather than from reflection keeps it host-independent, so the desktop and WASM
+/// hosts still agree byte-for-byte.</para>
+/// </param>
+public sealed record CombinedSamplerPair(
+    string TextureName,
+    string SamplerName,
+    int TextureDeclarationIndex);
 
 /// <summary>
 /// Derives, in <b>exactly</b> the order SPIRV-Cross declares them, the combined-sampler uniforms
@@ -87,6 +105,84 @@ public static class SpirvCombinedSamplerPairs
         {
             return Result<IReadOnlyList<CombinedSamplerPair>, ShaderError>.Fail(Error(ex.Message));
         }
+    }
+
+    /// <summary>
+    /// The GL texture unit each pair must bind to, indexed by SPIRV-Cross declaration order —
+    /// the SINGLE definition of that rule, shared by the GLSL rewriter (which names the
+    /// uniforms <c>ps_s{slot}</c>) and the <c>.mgfx</c> sampler table (whose records must name
+    /// those same uniforms). Two callers deriving it independently is exactly how a table and
+    /// the GLSL it describes drift apart, so both go through here.
+    ///
+    /// <para><b>The rule, in one sentence:</b> in texture-declaration order, a pair whose sampler
+    /// declared an explicit register takes it, and every other pair takes the lowest register not
+    /// already taken and not reserved by a modern <c>SamplerState : register(sN)</c>.</para>
+    ///
+    /// <para>That single rule reproduces every shape measured against the pinned <c>mgfxc</c>,
+    /// and it is why the legacy form is <b>not</b> a special case: compiling for OpenGL means
+    /// compiling at <c>ps_3_0</c>, where a texture and a sampler are ONE object in ONE register
+    /// namespace. A legacy <c>sampler X : register(sN)</c> IS that combined object, so it lands on
+    /// <c>N</c>. A modern <c>SamplerState</c> is a sampler-only object that still occupies its
+    /// register, so the combined samplers fxc synthesizes are allocated around it — which is why
+    /// one texture plus <c>SamplerState S : register(s0)</c> yields <c>ps_s1</c>, not
+    /// <c>ps_s0</c>.</para>
+    ///
+    /// <para>Two pairs sharing one texture (the linear+point idiom) need no special handling
+    /// either: they share a declaration index, neither carries its own explicit register, and
+    /// pass 2 hands them consecutive free registers — the same 0/1 that shipped before issue #189
+    /// and that <c>validation/SamplerPairsGl</c> arm B render-proved.</para>
+    /// </summary>
+    public static IReadOnlyList<int> ResolveSlots(
+        IReadOnlyList<CombinedSamplerPair> pairs,
+        IReadOnlyDictionary<string, int>? explicitSlots = null,
+        IReadOnlySet<int>? reservedSlots = null)
+    {
+        ArgumentNullException.ThrowIfNull(pairs);
+
+        var slots = new int[pairs.Count];
+        for (int j = 0; j < slots.Length; j++)
+            slots[j] = -1;
+
+        // Allocation runs in TEXTURE DECLARATION order, not in the first-use order the pairs
+        // arrive in, because that is the order fxc fills registers in.
+        int[] order = Enumerable.Range(0, pairs.Count)
+            .OrderBy(k => pairs[k].TextureDeclarationIndex)
+            .ThenBy(k => k)
+            .ToArray();
+
+        var used = new HashSet<int>();
+
+        // Pass 1 — a pair whose sampler carried an explicit register TAKES that register. At
+        // ps_3_0 a legacy `sampler X : register(sN)` IS the combined object, so the pair lands
+        // exactly on N.
+        foreach (int k in order)
+        {
+            if (explicitSlots is not null &&
+                explicitSlots.TryGetValue(pairs[k].TextureName, out int declared) &&
+                used.Add(declared))
+            {
+                slots[k] = declared;
+            }
+        }
+
+        // Pass 2 — everything else takes the LOWEST register that is neither already taken nor
+        // reserved by a modern `SamplerState : register(sN)`, which occupies its register without
+        // being a combined sampler. Measured against the pinned mgfxc: `S : register(s1)` with
+        // two textures yields ps_s0 + ps_s2, and `P : register(s0)` + `Q : register(s1)` yields
+        // ps_s2 + ps_s3.
+        foreach (int k in order)
+        {
+            if (slots[k] >= 0)
+                continue;
+
+            int slot = 0;
+            while (used.Contains(slot) || reservedSlots?.Contains(slot) == true)
+                slot++;
+            used.Add(slot);
+            slots[k] = slot;
+        }
+
+        return slots;
     }
 
     private static ShaderError Error(string message) => new(
@@ -175,12 +271,33 @@ public static class SpirvCombinedSamplerPairs
 
             Walk(_entryFunctionId, new HashSet<uint>());
 
+            // Declaration-order rank of every sampled image in the module, which is the GL
+            // texture unit fxc would have allocated.
+            //
+            // The rank comes from MODULE ORDER (the order OpVariable appears in the SPIR-V,
+            // which is HLSL declaration order), NOT from the Binding decoration. The two
+            // coincide whenever DXC auto-allocates, since it hands bindings out in declaration
+            // order — but they diverge the moment the source carries explicit registers, and
+            // there declaration order is the one that matches mgfxc. Measured: for
+            // `Texture2D TexA : register(t3); Texture2D TexB : register(t2);` mgfxc's OpenGL
+            // build puts TexA (declared first) on slot 0, while a binding-ordered rank would
+            // put TexB (t2) there.
+            //
+            // Note this is also why the raw Binding value is never used as the slot: DXC's
+            // SPIR-V binding namespace is flat across textures/samplers/cbuffers, so the
+            // number is not the HLSL t# register either.
+            Dictionary<uint, int> declarationIndex = _moduleVariables
+                .Where(v => PointeeOf(v.TypeId) is { } p && _separateImageTypes.Contains(p))
+                .Select((v, rank) => (v.Id, Rank: rank))
+                .ToDictionary(v => v.Id, v => v.Rank);
+
             var result = new List<CombinedSamplerPair>(_pairs.Count);
             foreach ((uint image, uint sampler) in _pairs)
             {
                 result.Add(new CombinedSamplerPair(
                     ResolveName(image, expectImage: true),
-                    ResolveName(sampler, expectImage: false)));
+                    ResolveName(sampler, expectImage: false),
+                    declarationIndex.TryGetValue(image, out int rank) ? rank : 0));
             }
 
             return Result<IReadOnlyList<CombinedSamplerPair>, ShaderError>.Ok(result);

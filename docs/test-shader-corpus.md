@@ -191,6 +191,32 @@ they back `validation/SamplerPairsGl`:
   is what exposed the second, silent defect: SPIRV-Cross declares combined samplers in
   **first-use** order, so counts matched while the texture parameter and the sampler-type byte
   came out swapped. Deliberately samples asymmetrically so a mis-binding changes the picture.
+  Its two textures hold **identical pixels** on purpose, so the arm isolates per-pair sampler
+  *state* — which is also why it is structurally blind to slot NUMBERING, the gap `#189` fell
+  through. Use `SamplerRegisterOrder.fx` for anything about which unit a pair lands on.
+- **`SamplerRegisterOrder.fx`** — GitHub issue **#189**. `SpriteSampler : register(s0)` and
+  `MaskSampler : register(s1)`, sampled in **reverse** declaration order, output
+  `(sprite.r, mask.g, 0, 1)`. It is the canonical SpriteBatch custom-effect shape — `register(s0)`
+  *is* the sprite texture, because `SpriteBatch` forces it onto unit 0 right after
+  `EffectPass.Apply()`. Rendered with a red sprite and a green mask: **yellow = slots allocated in
+  declaration order (correct, matches fxc/mgfxc)**, **black = first-use order (the #189 bug)**.
+  Both channels flip together, so neither outcome can be mistaken for a tolerance artefact. Unlike
+  the two fixtures above it uses **distinct** textures and leaves unit 0 to `SpriteBatch`, which is
+  precisely what makes slot allocation observable. Goldens on `OpenGL` + `DirectX_11`.
+
+- **`SamplerRegisterSparse.fx`** — GitHub issue **#189**, the sparse/offset half, and the
+  deliberate complement to the fixture above. Two samplers at `s2`/`s3` with **nothing at
+  `s0`/`s1`**, sampled strictly **in** declaration order, so ordering cannot be what it measures:
+  the only variable is the **absolute register value**. Compacting to units 0/1 is order-preserving
+  and still wrong, because `SpriteBatch` overwrites unit 0 with the sprite after
+  `EffectPass.Apply()`. BLUE sprite + RED MaskA + GREEN MaskB: **yellow = registers honoured**,
+  **green = compacted (the bug)** — only the red channel moves, and the untouched green is the
+  control proving the harness bound anything at all. **Keep it in LEGACY `sampler` syntax**: at
+  `ps_3_0` the legacy sampler *is* the combined object, so the annotation lands the pair on that
+  exact unit. A modern `SamplerState : register(sN)` behaves differently — it RESERVES the register
+  and the pair is allocated around it (one texture plus `S : register(s0)` yields `ps_s1`) — so
+  rewriting this fixture in modern syntax would change what it measures. Goldens on `OpenGL`
+  + `DirectX_11`.
 
 ### ShaderToy route fixture
 

@@ -16,4 +16,47 @@ public sealed record FxParseResult
 
     /// <summary>Annotation blocks attached to global parameter declarations.</summary>
     public required IReadOnlyList<ParameterAnnotation> ParameterAnnotations { get; init; }
+
+    /// <summary>
+    /// TEXTURE name -> the OpenGL texture unit an explicit <c>register(sN)</c> on its LEGACY
+    /// sampler declaration pins it to. Keyed on the texture (synthesized <c>X_SDTexture</c>, or
+    /// the one a <c>sampler_state</c> block references) because that is what the GL sampler
+    /// table joins on. Empty when nothing declared a register.
+    ///
+    /// <para>This exists because the register clause is otherwise <b>destroyed before DXC sees
+    /// it</b>: the SM4 rewrite turns <c>sampler X : register(s2);</c> into
+    /// <c>Texture2D X_SDTexture; SamplerState X;</c>, so neither reflection nor the SPIR-V can
+    /// recover the 2. The clause is recorded here rather than preserved in the rewritten HLSL
+    /// deliberately: emitting it would change what DXC compiles and move the DirectX, DX12,
+    /// Vulkan and FNA bytes, none of which have a reported defect. Recording it changes the
+    /// OpenGL slot allocation only.</para>
+    ///
+    /// <para><b>Legacy form only, and that is measured, not an oversight</b> (2026-08-02).
+    /// <c>mgfxc</c> honours the annotation exactly here, because compiled at <c>ps_3_0</c> a
+    /// legacy <c>sampler</c> IS the combined sampler and <c>register(sN)</c> pins its SM3
+    /// sampler register. For the modern spelling it does not: given
+    /// <c>Texture2D T : register(t3); SamplerState S : register(s2);</c> the <c>mgfxc</c>
+    /// OpenGL build puts the pair on slot 0 regardless, allocating by texture declaration
+    /// order. Recording modern registers here would therefore make us DIVERGE.</para>
+    /// </summary>
+    public IReadOnlyDictionary<string, int> ExplicitGlSamplerSlots { get; init; } =
+        new Dictionary<string, int>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// OpenGL sampler registers that an explicit <c>register(sN)</c> on a MODERN
+    /// <c>SamplerState</c> declaration takes out of circulation, so a synthesized combined
+    /// sampler must be allocated around them rather than onto them.
+    ///
+    /// <para>Compiling for OpenGL means compiling at <c>ps_3_0</c>, where a texture and a sampler
+    /// are ONE object sharing a single register namespace. A modern <c>SamplerState</c> still sits
+    /// at its declared register, but the combined sampler fxc synthesizes for each
+    /// (texture, sampler) pair cannot reuse it. Measured: with one texture and
+    /// <c>SamplerState S : register(s0)</c>, <c>mgfxc</c> emits <c>ps_s1</c>, not
+    /// <c>ps_s0</c>.</para>
+    ///
+    /// <para>This is what makes the LEGACY case stop looking like a special case. There the
+    /// sampler <i>is</i> the combined object, so it both reserves its register and occupies it,
+    /// landing the pair exactly on <c>N</c>. Same allocator, different starting facts.</para>
+    /// </summary>
+    public IReadOnlySet<int> ReservedGlSamplerSlots { get; init; } = new HashSet<int>();
 }

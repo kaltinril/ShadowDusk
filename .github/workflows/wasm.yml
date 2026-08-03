@@ -56,6 +56,11 @@ on:
     # the SD1902/SD1903 scenarios can't rot unobserved when no one pushes or labels.
     - cron: '17 5 * * *'
 
+# Least privilege for GITHUB_TOKEN: build, run the browser gates under headless Chromium,
+# and upload results as run artifacts. Nothing here needs a write scope.
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true

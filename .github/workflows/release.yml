@@ -38,6 +38,14 @@ on:
         required: true
         type: string
 
+# Least privilege for GITHUB_TOKEN, applied to every job that does not override it.
+# Read is enough for all of them: the packages go to NuGet.org authenticated by
+# NUGET_API_KEY (not GITHUB_TOKEN), and artifact up/download is not token-gated.
+# The ONE job that writes to GitHub is `github-release` (softprops/action-gh-release),
+# and it declares its own `contents: write` block, which replaces this one for that job.
+permissions:
+  contents: read
+
 env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
   DOTNET_NOLOGO: '1'

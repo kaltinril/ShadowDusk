@@ -24,6 +24,12 @@ name: Build vkd3d natives (1.17)
 on:
   workflow_dispatch:
 
+# Least privilege for GITHUB_TOKEN. This workflow only builds the natives and uploads them
+# as run artifacts; a maintainer attaches them to the pinned release by hand, so nothing
+# here needs a write scope. Artifact upload is not gated on GITHUB_TOKEN.
+permissions:
+  contents: read
+
 env:
   VKD3D_VERSION: '1.17'
   VKD3D_TARBALL_URL: 'https://dl.winehq.org/vkd3d/source/vkd3d-1.17.tar.xz'

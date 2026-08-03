@@ -14,9 +14,97 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **`GlSamplerSlotCorpusTests`, a corpus-wide OpenGL sampler-slot sweep against the `mgfxc`
+  goldens.** It **discovers** every `tests/fixtures/golden/OpenGL/*.mgfx` from disk and asserts,
+  per sampler record, that the (uniform name, texture unit, bound texture parameter) triple matches
+  the reference compiler — the exact triple MonoGame's GL runtime binds with. 52/52 fixtures pass,
+  10 of them as named known-gap skips (`SD0010` macro-defined techniques, Phase 41 GAP-1's GL half;
+  listed individually so a *new* compile failure fails the test rather than joining the skip set).
+  Discovery is the point: a golden added later is covered automatically, unlike the hand-maintained
+  13-entry array the closest existing golden comparison uses. Issue #189 was fixed twice, and both
+  intermediate rules looked correct against hand-picked probes before failing on an untried shape.
+
+- **`validation/SamplerRegisterOrderGl`, the rung-4 gate for OpenGL sampler slot allocation**
+  (issue #189). It is the only GL render gate that does **not** bind every texture through
+  `effect.Parameters[...]` — it leaves texture unit 0 to `SpriteBatch`, which is exactly what
+  makes slot numbering observable in the rendered picture. Wired into `validation-render.yml`
+  alongside the other in-process GL gates.
+
 ### Changed
 
+- **CI workflows now declare explicit `GITHUB_TOKEN` permissions** (CodeQL
+  `actions/missing-workflow-permissions`, 18 alerts). Every job that only checks out, builds,
+  tests, and moves run artifacts is now `contents: read`; `release.yml`'s `github-release` job
+  keeps its own `contents: write`, which is the only GitHub write in the repo. No behaviour
+  change to any workflow.
+
 ### Fixed
+
+- **OpenGL: sampler texture units are now allocated in HLSL declaration order, the way fxc and
+  therefore `mgfxc` allocate them, instead of SPIRV-Cross's first-use order** (issue #189,
+  reported by Apostolique against Apos.Shapes). A `sampler : register(s0)` that was not *also*
+  the first one sampled was assigned texture unit 1. Since `SpriteBatch` forces the sprite
+  texture onto unit 0 immediately after `EffectPass.Apply()`, the sampler ShadowDusk had placed
+  on unit 0 read the **sprite**, and the one it placed on unit 1 read whatever nothing had
+  bound: a silent wrong-texture render in the most common MonoGame custom-effect idiom, with a
+  clean compile and no diagnostic. Against the pinned `mgfxc` 3.8.4.1 on the reporter's repro,
+  `mgfxc` mapped `ps_s0` to the first-declared sampler while ShadowDusk mapped it to the
+  first-*sampled* one. The rule was **measured rather than assumed**, on three shapes including
+  one with every `register` annotation stripped: fxc allocates in declaration order in all of
+  them, so this is not only about honouring `register(sN)`. Slots now come from
+  `SpirvCombinedSamplerPairs.ResolveSlots` — the pair's texture declaration index, ranked by the
+  raw SPIR-V `Binding` decoration DXC allocates in declaration order — which is used by **both**
+  `MonoGameGlslRewriter` (naming the uniforms `ps_s{slot}`) and the `.mgfx` sampler table, so the
+  table and the GLSL it describes cannot drift apart; records are additionally emitted sorted by
+  slot, matching how `mgfxc`'s goldens lay the table out. Where two pairs share one texture (one
+  texture through two `SamplerState`s) the declaration indices collide and no `mgfxc` golden
+  exists for the shape, so `ResolveSlots` falls back to the previous positional numbering rather
+  than inventing an answer. **No existing output moved:** all 48 OpenGL entries of the cross-host
+  byte-identity manifest are byte-for-byte unchanged and the golden corpus is untouched, because
+  only shaders whose declaration order differs from their sampling order are affected and none in
+  the corpus were. DirectX, DirectX 12, Vulkan, and FNA are untouched. Proven by the new
+  `validation/SamplerRegisterOrderGl` gate, which measured **maxd 255 across all 4096 pixels
+  before the fix and maxd 0 after**, against a real `mgfxc` golden rendered in the same scene;
+  full suite 3123/3123 and Windows render gates 15/15 green.
+- **OpenGL: an explicit `register(sN)` on a legacy `sampler` declaration now pins the texture
+  unit** (issue #189, sparse half). Samplers at `s2`/`s3` with nothing at `s0`/`s1` were compacted
+  to units 0/1. That is order-preserving and internally self-consistent, and still wrong, because
+  unit 0 is not the effect's to allocate: `SpriteBatch` overwrites it with the sprite right after
+  `EffectPass.Apply()`, so the sampler pushed onto unit 0 read the sprite. `FxPreParser` now
+  **records** the register index it already parsed (`FxParseResult.ExplicitGlSamplerSlots`,
+  texture-keyed) before its SM4 rewrite drops the clause, and `ResolveSlots` prefers it.
+  The clause is **recorded, not re-emitted**: putting it back into the rewritten HLSL would change
+  what DXC compiles and move the DirectX, DX12, Vulkan and FNA bytes, none of which have a
+  reported defect — so this changes OpenGL allocation only.
+  **What it actually models is fxc's allocator, not a declaration form.** In texture-declaration
+  order, a pair whose sampler declared an explicit register takes it; every other pair takes the
+  lowest register neither already taken nor **reserved** by a modern `SamplerState : register(sN)`.
+  One rule, verified against the pinned `mgfxc` on **ten shapes**, legacy and modern, annotated and
+  not — all match. It also explains what looked like an arbitrary asymmetry: at `ps_3_0` a texture
+  and a sampler are ONE object in ONE register namespace, so a legacy `sampler X : register(sN)`
+  *is* the combined object and lands on `N`, while a modern `SamplerState` is a sampler-only object
+  that occupies its register and pushes the synthesized combined samplers around it — one texture
+  plus `SamplerState S : register(s0)` yields `ps_s1`, not `ps_s0`, and `S : register(s1)` with two
+  textures yields `ps_s0` + `ps_s2` (skipped, not shifted).
+  Fixing this also surfaced a **pre-existing** divergence in the same area: the declaration rank was
+  taken from the SPIR-V `Binding` decoration, which equals declaration order only while DXC
+  auto-allocates and equals *register* order once the source is annotated. It now comes from module
+  order, so `Texture2D TexA : register(t3); Texture2D TexB : register(t2);` puts TexA on unit 0 like
+  `mgfxc`, where before it put TexB there. Proven by a second arm on
+  `validation/SamplerRegisterOrderGl` (`SamplerRegisterSparse.fx`), measured **(0,255,0) vs
+  `mgfxc`'s (255,255,0), maxd 255 before and maxd 0 after**.
+
+  **One residual is recorded rather than papered over.** DirectX 11 ignores `register(sN)` for its
+  sampler slot (we emit 0/1 where `mgfxc` emits the declared 2/3), but `fxc` itself auto-assigns DX
+  *texture* registers by first use, so matching the annotation there would move *away* from the
+  reference compiler; left measured and unchanged (`project_decisions.md`).
+  **The validation-gap lesson is the durable part:** all 30-plus existing GL render gates bind
+  their textures through `effect.Parameters[...]`, under which a first-use-numbered table is
+  internally consistent and renders *correctly*, so not one of them could see this. The
+  `validation/SamplerPairsGl` arm B gate was even documented as proving the numbering divergence
+  was "benign" — it could not, because its two textures hold identical pixels by design, which is
+  precisely what makes it blind to which unit each pair lands on. That claim has been retracted in
+  `docs/validation-matrix.md`, `project_facts.md`, and the driver itself.
 
 - **OpenGL: a numeric parameter that reflection reports but the shipped GLSL never declares now
   gets synthesized register backing instead of shipping as a phantom** (issue #187, found on

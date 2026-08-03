@@ -213,6 +213,14 @@ public static class MonoGameGlslRewriter
     /// </summary>
     /// <param name="glsl">The modern GLSL emitted by SPIRV-Cross.</param>
     /// <param name="stage">The shader stage being rewritten (vertex or pixel).</param>
+    /// <param name="samplerSlots">
+    /// The GL texture unit each sampler declaration must be numbered with, indexed by the order
+    /// SPIRV-Cross declares the combined samplers. Supplying it is what makes the emitted
+    /// <c>ps_s{N}</c> follow the shader's <c>register(sN)</c> / declaration order the way fxc
+    /// (and therefore mgfxc) allocates, rather than SPIRV-Cross's first-use numbering
+    /// (GitHub issue #189). When null — or shorter than the number of samplers found — the
+    /// positional fallback applies, which is correct precisely when the two orders coincide.
+    /// </param>
     /// <returns>
     /// The rewritten GLSL together with the discovered samplers, uniform register count, and
     /// (for the vertex stage) vertex attributes.
@@ -220,7 +228,8 @@ public static class MonoGameGlslRewriter
     /// <exception cref="MonoGameGlslRewriteException">
     /// Thrown when the input GLSL cannot be rewritten faithfully into the dialect.
     /// </exception>
-    public static MonoGameGlslResult Rewrite(string glsl, ShaderStage stage)
+    public static MonoGameGlslResult Rewrite(
+        string glsl, ShaderStage stage, IReadOnlyList<int>? samplerSlots = null)
     {
         ArgumentNullException.ThrowIfNull(glsl);
 
@@ -373,7 +382,16 @@ public static class MonoGameGlslRewriter
             {
                 var kind = samplerMatch.Groups[1].Value;     // "2D" | "Cube" | "3D"
                 var origId = samplerMatch.Groups[2].Value;
-                int slot = samplers.Count;
+                // The GL texture unit this sampler binds to. SPIRV-Cross declares combined
+                // samplers in FIRST-USE order, but fxc — and therefore mgfxc — allocates GL
+                // sampler slots in DECLARATION order, honouring `register(sN)`. Numbering
+                // positionally here is what put a `register(s0)` sampler on unit 1 whenever
+                // it was not also sampled first (GitHub issue #189), which under SpriteBatch
+                // (it forces the sprite onto unit 0 after EffectPass.Apply) silently swapped
+                // textures. The caller passes the reflected slots so the two agree.
+                int slot = samplerSlots is not null && samplers.Count < samplerSlots.Count
+                    ? samplerSlots[samplers.Count]
+                    : samplers.Count;
                 var newName = $"ps_s{slot}";
                 var dimension = SamplerDimensionForKind(kind);
                 samplers.Add(new MonoGameGlslSampler(slot, newName, dimension));

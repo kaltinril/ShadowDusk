@@ -62,7 +62,7 @@ other targets keep the unmodified SPIRV-Cross dialect. The pixel-stage transform
 | # | SPIRV-Cross input | Rewritten to |
 |---|---|---|
 | 1 | `#version …` line; the `GL_ARB_shading_language_420pack` extension block | dropped; a `precision mediump` `#ifdef GL_ES` header is prepended |
-| 3 | `uniform sampler2D <id>;` | `uniform sampler2D ps_s{k};` — one uniform per **combined (texture, sampler) pair**, `k` being its position in SPIRV-Cross's **first-use** declaration order (which is *not* HLSL declaration order); uses renamed in the body |
+| 3 | `uniform sampler2D <id>;` | `uniform sampler2D ps_s{slot};` — one uniform per **combined (texture, sampler) pair**, `slot` being the pair's texture's **HLSL declaration index** (fxc's allocation, honouring `register(sN)`), *not* its position in SPIRV-Cross's first-use pair list; uses renamed in the body |
 | 4 | `in <type> in_var_<SEM>;` | `varying vec4 <legacy>;` — `COLOR0`→`vFrontColor`, `COLOR1`→`vBackColor`, `TEXCOORD{n}`→`vTexCoord{n}`; uses get a width-truncating swizzle. An **omitted semantic index is index 0** (`COLOR` ≡ `COLOR0`, `TEXCOORD` ≡ `TEXCOORD0`, matching fxc/mgfxc), so the bare spellings DXC passes through verbatim map to `vFrontColor` / `vTexCoord0` — without that collapse a pixel-only pass declaring `: COLOR` emitted `var_COLOR`, which MonoGame's built-in SpriteEffect VS can never link against. |
 | 5 | `out vec4 out_var_SV_Target<N?>;` | declaration dropped; uses → `gl_FragColor` (or `gl_FragData[N]`) |
 | 6 | `texture()` | dimension-specific legacy builtin per the sampler's declared type: `texture2D()` / `textureCube()` / `texture3D()` |
@@ -84,19 +84,40 @@ other targets keep the unmodified SPIRV-Cross dialect. The pixel-stage transform
 - The cbuffer is **named `ps_uniforms_vec4`**, with one 16-byte register per free parameter,
   register-aligned by size (SM 3.0 constant-register layout), so `Effect.Parameters[name]
   .SetValue(…)` lands in the right `vec4` slot.
-- The per-shader sampler table has **one record per combined (texture, sampler) pair**, in
-  SPIRV-Cross's first-use declaration order — the same list, in the same order, as the sampler
-  uniforms the emitted GLSL declares. That is the only list that can be correct, because the GL
-  runtime resolves each record by its *uniform name*. Record `k` carries `Name = ps_s{k}`,
-  `TextureSlot = SamplerSlot = k` (the record index **is** the GL texture unit), `Parameter` = the
-  index of the pair's **texture**, and the baked `sampler_state` of the pair's **sampler** — so
-  `SpriteBatch`'s texture reaches the sampler.
+- The per-shader sampler table has **one record per combined (texture, sampler) pair** — the same
+  list as the sampler uniforms the emitted GLSL declares. That is the only list that can be
+  correct, because the GL runtime resolves each record by its *uniform name*. Each record carries
+  `Name = ps_s{slot}`, `TextureSlot = SamplerSlot = slot`, `Parameter` = the index of the pair's
+  **texture**, and the baked `sampler_state` of the pair's **sampler** — so `SpriteBatch`'s
+  texture reaches the sampler. Records are emitted **sorted by slot**, the way `mgfxc`'s goldens
+  lay the table out.
+  - **`slot` is the pair's HLSL DECLARATION index, not its position in the pair list.**
+    SPIRV-Cross declares combined samplers in **first-use** order, but fxc — and therefore
+    `mgfxc` — allocates GL sampler slots in **declaration** order. Numbering by list position put a
+    `register(s0)` sampler on unit 1 whenever it was not also sampled first, and since
+    `SpriteBatch` forces the sprite onto unit 0 *after* `EffectPass.Apply()`, that silently swapped
+    textures (GitHub issue #189). The index comes from SPIR-V **module order**, not from the
+    `Binding` decoration: those agree only while DXC auto-allocates, and once the source is
+    annotated the binding is *register* order instead. Both the uniform names and the records come
+    from `SpirvCombinedSamplerPairs.ResolveSlots`, the single definition of the rule, so the table
+    and the GLSL cannot disagree.
+  - **An explicit register is honoured, but a legacy and a modern one mean different things.**
+    The rule, in texture-declaration order: a pair whose sampler declared a register TAKES it;
+    every other pair takes the lowest register neither already taken nor RESERVED by a modern
+    `SamplerState : register(sN)`. At `ps_3_0` a texture and a sampler are one object in one
+    register namespace, so a legacy `sampler X : register(sN)` *is* the combined object and lands
+    on `N`, while a modern `SamplerState` merely occupies its register and pushes the synthesized
+    combined samplers around it — one texture plus `SamplerState S : register(s0)` yields
+    `ps_s1`, not `ps_s0`. `FxPreParser` records both facts before its SM4 rewrite drops the
+    clauses. Verified against the pinned `mgfxc` on ten shapes.
   - **Per pair, not per sampler.** Two textures read through one shared `SamplerState` (the
     diffuse+lightmap idiom) produce **two** records; two samplers over one texture (the
     linear+point idiom) also produce two, each with its own state. Keying on the reflected
     samplers instead was the Phase 51 A7 bug: it rejected the first shape outright and, because
     SPIRV-Cross declares combined samplers in first-use rather than declaration order, silently
-    **swapped** the texture parameter and sampler-type byte in the second.
+    **swapped** the texture parameter and sampler-type byte in the second. The linear+point shape
+    is the one case where two pairs share a texture and so share a declaration index; `ResolveSlots`
+    falls back to positional numbering there rather than colliding two uniforms onto one unit.
   - The pair list is derived in pure managed code from the SPIR-V (`SpirvCombinedSamplerPairs`)
     rather than via SPIRV-Cross's `spvc_compiler_get_combined_image_samplers`, which the browser
     host's `spirv-cross.wasm` does not export — a native call would fix desktop only and break
