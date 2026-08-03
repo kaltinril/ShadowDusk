@@ -330,8 +330,13 @@ black**. The rewrite is what makes the output a faithful drop-in.
 **How it works.** It strips the `#version` line (MojoShader GLSL is versionless 110-era), merges
 the UBO block(s) into the packed register array (member uses become `ps_uniforms_vec4[i].<swizzle>`),
 renames samplers to `ps_s{slot}` (one uniform per combined **(texture, sampler) pair**, `slot`
-being the pair's texture's **HLSL declaration index** — fxc's own allocation, honouring
-`register(sN)`, rather than the pair's position in SPIRV-Cross's first-use list; the `.mgfx`
+coming from fxc's own allocator rather than the pair's position in SPIRV-Cross's first-use list:
+in **texture-declaration order**, a pair whose sampler declared an explicit register takes it, and
+every other pair takes the lowest register neither already taken nor **reserved**. Legacy and modern
+spellings differ here — at `ps_3_0` a texture and a sampler are one object in one register namespace,
+so `sampler X : register(sN)` **is** the combined object and lands on `N`, whereas a modern
+`SamplerState S : register(sN)` merely **reserves** `N`, which is why one texture plus
+`SamplerState S : register(s0)` yields `ps_s1`. The `.mgfx`
 sampler table is numbered from the same rule so the two cannot disagree), maps stage I/O to the
 legacy varying names, routes the pixel
 output to `gl_FragColor` (via a `#define ps_oC0 gl_FragColor` alias, MRT slots to `gl_FragData[n]`),

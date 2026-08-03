@@ -1,10 +1,12 @@
 # Test Shader Corpus — Provenance & Fresh Examples
 
-**Last updated:** 2026-08-01 — the issue-#187 fix added the four `ExPhantom*` fixtures (the
-phantom-parameter set below). Previously 2026-07-31: Phase 51 A10 added three
+**Last updated:** 2026-08-02 — the issue-#189 fix added `SamplerRegisterOrder.fx` and
+`SamplerRegisterSparse.fx` (the sampler-register set below), both with `OpenGL` **and**
+`DirectX_11` goldens. Previously 2026-08-01: the issue-#187 fix added the four `ExPhantom*`
+fixtures (the phantom-parameter set below). Previously 2026-07-31: Phase 51 A10 added three
 DirectX-profile-floor fixtures and **reclassified the vendored Nez set**, whose DirectX column
 collapsed once ShadowDusk started enforcing mgfxc's own floor (see the note above that table).
-Corpus on disk: **151 `.fx` + 7 `.fxh`** — 62 in the fixture root, 50 in `examples/`, 1 in
+Corpus on disk: **153 `.fx` + 7 `.fxh`** — 64 in the fixture root, 50 in `examples/`, 1 in
 `shadertoy/`, 38 under `third-party/`.
 
 This document records (1) what is known about where the existing `.fx` test
