@@ -7,7 +7,7 @@ capacity; the obvious fix is measurably a regression.
 **Reported by:** Apostolique (Apos.Shapes), GitHub issue
 [#189](https://github.com/kaltinril/ShadowDusk/issues/189), against ShadowDusk CLI 0.14.2.
 **Fixed in:** `fix/code-scanning-and-issue-189`.
-**Rung-4 gate:** [`validation/SamplerRegisterOrderGl`](../validation/SamplerRegisterOrderGl).
+**Rung-4 gate:** [`validation/SamplerRegisterOrderGl`](../../validation/SamplerRegisterOrderGl).
 
 > ### DirectX is out of scope for this issue, on purpose
 >
@@ -63,7 +63,7 @@ Two findings the report did not contain:
    affected, annotated or not.
 2. **`register(sN)` was discarded entirely, not merely reordered.** With `register(s2)`/`(s3)`,
    `mgfxc` emits `ps_s2`/`ps_s3` at units 2 and 3; ShadowDusk emitted `ps_s0`/`ps_s1` at units 0
-   and 1. Root cause: [`FxPreParser.cs:652`](../src/ShadowDusk.HLSL/FxPreParser.cs#L652) rewrites
+   and 1. Root cause: [`FxPreParser.cs:652`](../../src/ShadowDusk.HLSL/FxPreParser.cs#L652) rewrites
    `sampler A : register(s2);` to `Texture2D A_SDTexture; SamplerState A;`, dropping the register
    clause before DXC ever sees it.
 
