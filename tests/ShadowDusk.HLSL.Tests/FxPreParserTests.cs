@@ -2622,6 +2622,143 @@ public sealed class FxPreParserTests
         result.Value.ReservedGlSamplerSlots.ShouldBeEmpty();
     }
 
+    // -------------------------------------------------------------------------
+    // Phase 58 Area C - unloadable pass shader stages -> FX0014, never FX0008
+    // -------------------------------------------------------------------------
+
+    // The four stages, in BOTH forms mgfxc was measured to reject (2026-08-05, pinned
+    // mgfxc 3.8.2.1105 /Profile:DirectX_11): 'compile <profile> Entry();' and 'NULL;'.
+    // The NULL arm matters because 'VertexShader = NULL;' IS accepted (fxc parity, bug-hunt
+    // M14), so the NULL path is a real branch that could have let these through silently.
+    public static TheoryData<string, string, string> UnloadableStageAssignments() => new()
+    {
+        { "HullShader",     "compile hs_5_0 Entry()", "hull" },
+        { "DomainShader",   "compile ds_5_0 Entry()", "domain" },
+        { "GeometryShader", "compile gs_4_0 Entry()", "geometry" },
+        { "ComputeShader",  "compile cs_5_0 Entry()", "compute" },
+        { "HullShader",     "NULL",                   "hull" },
+        { "DomainShader",   "NULL",                   "domain" },
+        { "GeometryShader", "NULL",                   "geometry" },
+        { "ComputeShader",  "NULL",                   "compute" },
+    };
+
+    [Theory]
+    [MemberData(nameof(UnloadableStageAssignments))]
+    public void Parse_UnloadableShaderStage_ReturnsFX0014NamingTheStage(
+        string stageKey, string assignment, string stageName)
+    {
+        string source = $$"""
+            float4 MainPS() : COLOR0 { return 1; }
+            technique T
+            {
+                pass P
+                {
+                    PixelShader = compile ps_3_0 MainPS();
+                    {{stageKey}} = {{assignment}};
+                }
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe(FxParseErrorCode.UnsupportedShaderStage);
+
+        // The whole point of the fix: the message must name the stage and the permanent
+        // reason, not blame punctuation on a file whose punctuation is correct.
+        result.Error.Message.ShouldContain(stageKey, Case.Sensitive);
+        result.Error.Message.ShouldContain(stageName, Case.Sensitive);
+        result.Error.Message.ShouldContain("vertex and pixel", Case.Sensitive);
+        result.Error.Message.ShouldNotContain("';'", Case.Sensitive);
+    }
+
+    [Theory]
+    [MemberData(nameof(UnloadableStageAssignments))]
+    public void Parse_UnloadableShaderStage_PointsAtTheStageKeywordNotThePunctuation(
+        string stageKey, string assignment, string stageName)
+    {
+        _ = stageName;
+
+        // The stage keyword is the 6th line, indented by 8 spaces => column 9 (1-based).
+        // Before the fix the caret landed further right, on whatever token the render-state
+        // path choked on, which is what sent users hunting for a syntax error.
+        string source = $$"""
+            float4 MainPS() : COLOR0 { return 1; }
+            technique T
+            {
+                pass P
+                {
+                    PixelShader = compile ps_3_0 MainPS();
+                    {{stageKey}} = {{assignment}};
+                }
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Line.ShouldBe(7);
+        result.Error.Column.ShouldBe(9);
+    }
+
+    [Fact]
+    public void Parse_UnloadableShaderStage_IsCaseInsensitiveLikeEveryOtherPassKey()
+    {
+        // Pass keys are matched OrdinalIgnoreCase throughout the pre-parser; a lowercased
+        // spelling must not slip past into render-state parsing and resurrect FX0008.
+        const string source = """
+            float4 MainPS() : COLOR0 { return 1; }
+            technique T
+            {
+                pass P
+                {
+                    PixelShader = compile ps_3_0 MainPS();
+                    computeshader = compile cs_5_0 Entry();
+                }
+            }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe(FxParseErrorCode.UnsupportedShaderStage);
+    }
+
+    [Fact]
+    public void Parse_ParameterNamedLikeAStage_StillCompiles()
+    {
+        // The guard is scoped to PASS keys only. A global variable or function named
+        // 'GeometryShader' is ordinary HLSL and must be untouched - the pre-parser has a
+        // history of firing heuristics outside their scope (Phase 45's whole defect class).
+        const string source = """
+            float4 GeometryShader;
+            float4 MainPS() : COLOR0 { return GeometryShader; }
+            technique T { pass P { PixelShader = compile ps_3_0 MainPS(); } }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Techniques.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public void Parse_RealRenderStateStillReachesRenderStateParsing()
+    {
+        // Guards the insertion point: the new check sits before the '=' is consumed, so it
+        // must not disturb the ordinary render-state path it now precedes.
+        const string source = """
+            float4 MainPS() : COLOR0 { return 1; }
+            technique T { pass P { CullMode = None; PixelShader = compile ps_3_0 MainPS(); } }
+            """;
+
+        var result = FxPreParser.Parse(source, sourceFile: "test.fx");
+
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Techniques[0].Passes[0].RenderStates
+            .ShouldContain(rs => rs.Key == "CullMode" && rs.Value == "None");
+    }
+
     [Fact]
     public void Parse_SamplerStateAsFunctionParameter_ReservesNothing()
     {

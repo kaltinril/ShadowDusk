@@ -14,7 +14,30 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **`FX0014`, a registered diagnostic for the shader stages the consumer runtime cannot load**
+  (Phase 58 Area C). A pass assigning `HullShader`, `DomainShader`, `GeometryShader`, or
+  `ComputeShader` now fails at the stage keyword with the stage named and the permanent reason
+  stated, instead of falling through to render-state parsing and reporting
+  `FX0008: Expected ';' after render-state 'HullShader = compile'` on a file whose punctuation is
+  correct. MonoGame's and KNI's `Effect` model exactly two shader stages, so no compiler can
+  produce a loadable effect containing one; the message says that, and points at MonoGame's two
+  open-but-undesigned upstream issues and at the fork that does support them.
+
+  **The reject set did not move, and no output byte moved.** These inputs already failed; only the
+  message changed. The set was measured against the pinned `mgfxc` 3.8.2.1105 rather than assumed:
+  it refuses all four stages in **both** the `= compile <profile> Entry();` and the `= NULL;` form.
+  The `NULL` arm was worth measuring, because `VertexShader = NULL;` **is** accepted (fxc parity),
+  so it was a real branch that could have let these through silently. Verified on the three real
+  `cpt-max/MonoGame-Shader-Samples` shaders that prompted the phase.
+
 ### Changed
+
+- **`docs/validation-matrix.md` §7 records that geometry / hull / domain / compute are not
+  supportable on stock MonoGame or KNI**, with the source-level evidence re-measured 2026-08-05, so
+  the question is not investigated a third time. The decisive new measurement is that the
+  `cpt-max/MonoGame` fork's effect format is a **second container, not a superset**: it writes
+  `(int)ShaderStage` where stock writes a 1-byte bool, so every shader record diverges from its
+  first byte and stock MonoGame would misparse fork output rather than ignore it.
 
 ### Fixed
 

@@ -2,7 +2,19 @@
 
 **Track:** Backend breadth (research-gated) / consumer-UX. Additive; no output bytes change.
 
-**Status:** 📋 **Planned / not started** (created 2026-07-31).
+**Status:** 🟡 **Areas A and C DONE (2026-08-05); Area B awaits the §5 owner decision; Area D not
+started.** Created 2026-07-31.
+
+- **Area A ✅** — A1–A5 answered from source, with the fork measurement (A4) the decisive one. See
+  §4.1. Recommendation into §5: **decline the fork target** (the middle option).
+- **Area C ✅** — `FX0014` shipped. The four stage keywords are recognized as pass shader
+  assignments and rejected at the stage keyword with the permanent reason, instead of falling
+  through to render-state parsing and blaming a missing semicolon. Verified on the three real
+  `cpt-max` samples (§7.1), 27 new integration cells + 12 unit cases, **reject set unchanged**.
+- **Area B ⏸** — blocked on §5, which is the owner's call, not the implementer's.
+- **Area D ⏳** — not started. D1 needs the `cpt-max` fork toolchain
+  (`dotnet-mgcb-compute` + `MonoGame.Framework.Compute.*`) installed to produce the comparison
+  output the probe is defined against, which is a deliberate decision to take rather than assume.
 
 **Depends on:** [Phase 48](DONE/PHASE-48-compile-target-profile-validation.md) (`KnownProfiles`, the
 profile-recognition surface this phase extends), [Phase 45](DONE/PHASE-45-fx-preparser-robustness.md)
@@ -179,6 +191,113 @@ into §5. If A1-A3 all confirm "no door in any supported runtime", say so plainl
 "no" is a successful outcome for this area, and it retires a question that will otherwise be asked
 again.
 
+### 4.1 Answers (2026-08-05) — the door is shut, and the fork is a second container
+
+Read directly from the repositories named, not from the summaries in §2.
+
+**A1 — MonoGame, at `v3.8.5` AND on `develop`: confirmed, no door.**
+`MonoGame.Framework/Graphics/Shader/ShaderStage.cs` declares, on **both** refs, exactly:
+
+```csharp
+public enum ShaderStage { Vertex, Pixel }
+```
+
+and `Shader.cs`'s binary constructor on both refs decodes it as a single bool:
+
+```csharp
+var isVertexShader = reader.ReadBoolean();
+Stage = isVertexShader ? ShaderStage.Vertex : ShaderStage.Pixel;
+```
+
+That constructor is `internal Shader(GraphicsDevice device, int version, BinaryReader reader)` —
+**shared managed code**, so §4's one worry (that the new 3.8.5 `DesktopVK` / `WindowsDX12` backends
+might have introduced their own reader and quietly opened a door) is answered: they inherit this
+one. A repository-wide code search for the four stage type names returns `ComputeShader` **0**,
+`HullShader` **0**, `DomainShader` **0**, and `GeometryShader` **1** — and that single hit is
+`native/monogame/directx12/DeviceResources.cpp`, a native D3D12 pipeline-state field with no managed
+API behind it. The stage is not merely unimplemented; the container cannot **name** a third stage.
+
+> **Incidental finding, checked because it was adjacent and would have been a real bug:** the same
+> `v3.8.5` reader has `if (version > 10) { SourceFile = reader.ReadString(); Entrypoint = reader.ReadString(); }`,
+> matched by an *unconditional* pair of writes in `Tools/MonoGame.Effect.Compiler/Effect/ShaderData.writer.cs`.
+> ShadowDusk already models this correctly — the strings are v11-only and documented as such on
+> `CapabilityProfile` — so the default v10 output is unaffected and nothing needs to change. Noted
+> only so the next reader of that writer does not re-raise it.
+
+**A2 — KNI, at `v4.29001-hotfix2`: confirmed, no door, and it is *harder* than MonoGame's.**
+`src/Xna.Framework.Graphics/Graphics/Shader/ShaderStage.cs`:
+
+```csharp
+public enum ShaderStage : byte { Pixel = 0, Vertex = 1 }
+```
+
+§2.3 called the `byte` width "one byte of headroom", and in a narrow sense it is — but the headroom
+is unreachable. `MGFXReader10.ReadShader()` reads `(ShaderStage)ReadByte()` and then switches:
+
+```csharp
+switch (shaderStage)
+{
+    case ShaderStage.Vertex: return new VertexShader(...);
+    case ShaderStage.Pixel:  return new PixelShader(...);
+    default: throw new InvalidOperationException("stage");
+}
+```
+
+so a third value **throws at load**. And the type system agrees with the switch: `Shader` is
+`abstract` with exactly two concrete subclasses (`VertexShader`, `PixelShader`), constructed through
+`CreateVertexShaderStrategy` / `CreatePixelShaderStrategy`. Even a hypothetical third byte value has
+no class to become.
+
+**A3 — no accepted upstream design to be "ready for".**
+Two issues exist and both are open, so the question has been *asked* upstream; neither is a live
+effort with a format to target:
+
+| Issue | Opened | Author | State |
+|---|---|---|---|
+| [#4567 Add Geometry Shader Support](https://github.com/MonoGame/MonoGame/issues/4567) | 2016-02-26 | `tomspilman` (MonoGame lead) | **open**, labelled `status: needs-design` — ten years, still undesigned |
+| [#7533 Compute Shader](https://github.com/MonoGame/MonoGame/issues/7533) | 2021-07-15 | `cpt-max` (the fork's author) | **open**, labelled `feature`, no design |
+
+The §4 hypothetical — "if there is a live upstream effort, be ready for its format rather than
+inventing one" — does not apply. There is no format to be ready for.
+
+**A4 — the decisive measurement: the fork's effect format IS modified, at the first field of every
+shader record.** The fork's docs claim the format is unchanged; §4 predicted that could not be
+literally true, and it is not. Both sides of the fork's pipeline were read:
+
+| | Stock MonoGame `v3.8.5` | `cpt-max/MonoGame` @ `compute_shader` |
+|---|---|---|
+| Writer (`Tools/MonoGame.Effect.Compiler/Effect/ShaderData.writer.cs`) | `writer.Write(IsVertexShader);` then `writer.Write(SourceFile …); writer.Write(Entrypoint …);` | `writer.Write((int)ShaderStage);` — and the two strings are **gone** |
+| Reader (`Shader.cs`) | `var isVertexShader = reader.ReadBoolean();` | `Stage = (ShaderStage)reader.ReadInt32();` |
+| `ShaderStage` members | `{ Vertex, Pixel }` | `{ Vertex, Pixel, Hull, Domain, Geometry, Compute }` |
+
+A **1-byte bool became a 4-byte int**, and two length-prefixed strings were removed. Every shader
+record diverges from its first byte onward, and the fork additionally carries a `ShaderResources[]`
+table stock has no concept of. This is **a second container, not a superset** — which answers
+**OQ3** directly and with the stronger of its two possible answers: a fork target could never be a
+silent auto-upgrade, and stock MonoGame would not ignore fork output, it would misparse it. That is
+also relevant to [Phase 57](PHASE-57-universal-compiler-auto-detection.md): a fork target would have
+to be an explicit `PlatformTarget`, never something auto-detection could safely infer.
+
+**A5 — the fork cannot be pinned against under this project's pin discipline.**
+
+- **Staleness.** The fork's last push to any branch is **2024-05-20**, ~2 years and 3 months before
+  this measurement. Its NuGet packages top out at **3.8.3** (`dotnet-mgcb-compute` 3.8.3 published
+  2024-03-30; `MonoGame.Framework.Compute.DesktopGL` / `.WindowsDX` likewise 3.8.3) against stock
+  MonoGame's **3.8.5** stable. It is two minor releases behind the runtime this project already
+  render-proves against, with no sign of catching up.
+- **Licence.** GitHub resolves the fork's licence to `NOASSERTION` (it inherits MonoGame's mixed
+  licensing without a clean SPDX identifier). Not a blocker on its own, but not the clean pin
+  `project_facts.md` discipline expects either.
+
+**Recommendation into §5: decline the fork target — take the middle option.** A4 is why. Supporting
+it is not "a new `PlatformTarget` and a render gate"; it is **a second output container** with its
+own writer, its own reference compiler, its own runtime, and its own pin — against a fork that has
+not moved in over two years and trails stock by two releases. The project's own repeated finding
+is that an unvalidated cell is worse than an absent one, and this cell would be the hardest in the
+matrix to keep green for the smallest consumer base in it. The middle option costs nothing and is
+already delivered: Area C makes the diagnostic precise and *names* the fork, so a user who wants it
+is pointed at it, and a future reversal stays cheap.
+
 ---
 
 ## 5. Decision gate (Area B is gated on this; Area C is not)
@@ -312,23 +431,83 @@ Fix C1. This is small, well-scoped, and valuable even if Areas A and B both end 
 **No output bytes may move.** This is a reject-set *message* change, not a reject-set change: these
 inputs already fail today. Verify with the corpus sweep that no fixture changes verdict, only text.
 
+### 7.1 As-built (2026-08-05) — `FX0014`
+
+`FxPreParser` gained an `UnloadableShaderStages` map and a guard in `ParsePass`'s key loop, placed
+**before the `=` is consumed** so the caret lands on the stage keyword itself. `FX0014`
+(`FxParseErrorCode.UnsupportedShaderStage`) is the new registered code; `docs/error-codes.md` has
+its row, which `docfx/diagnostics.md` transcludes.
+
+**The reject set was measured against the reference compiler, not assumed.** The pinned `mgfxc`
+3.8.2.1105 (`/Profile:DirectX_11`) was run over all eight combinations — four stages × the
+`= compile <profile> Entry();` and `= NULL;` forms — and refuses **all eight**, pointing at the
+stage keyword with `Unexpected token 'H' found. Expected CloseBracket`. So ShadowDusk refuses the
+same eight inputs at the same token and only changes what it *says*. The `NULL` arm was worth
+measuring rather than reasoning about: `VertexShader = NULL;` **is** accepted (fxc parity, bug-hunt
+2026-07-27 M14), so it is a real branch that could have let these through silently.
+
+**Verbatim, on the three real `cpt-max` samples** (`/Profile:DirectX_11`, exit 1, no output file).
+`tesselation_geometry.fx` is the same file and the same line 167 as §3's original `FX0008`, now
+reported at column 3 (the `HullShader` keyword) instead of column 24 (the punctuation it blamed):
+
+```
+tesselation_geometry.fx(167,3-3): error FX0014: 'HullShader' assigns a hull shader, which the
+consumer runtime cannot load: MonoGame's and KNI's Effect has exactly two shader stages, vertex and
+pixel, so no compiler can produce an effect containing one. This is a runtime limit, not a
+ShadowDusk gap; mgfxc rejects this effect too. Remove the 'HullShader' assignment, or express the
+work in the vertex or pixel stage. (MonoGame issues #4567 and #7533 request these stages upstream
+and remain open and undesigned; the cpt-max/MonoGame fork does run them, but writes a different
+effect container stock MonoGame cannot read.)
+
+compute_gpu_particles_geometry.fx(121,9-9): error FX0014: 'GeometryShader' assigns a geometry shader, …
+
+compute_write_to_texture.fx(56,9-9): error FX0014: 'ComputeShader' assigns a compute shader, …
+```
+
+*(The three branches sampled here are `tesselation_geometry`, `compute_gpu_particles_geometry`, and
+`compute_write_to_texture`. §1's table listed `compute_gpu_particles` and `edgerounding`; the
+substitutions cover the same four stage keywords, and `compute_write_to_texture` additionally
+exercises a pass whose **only** shader assignment is the unloadable one.)*
+
+**OQ1 answered: `KnownProfiles` was deliberately NOT extended** with `hs_*`/`ds_*`/`gs_*`/`cs_*`.
+The guard fires on the pass **key**, which is strictly earlier and strictly more specific than the
+profile token, so `FX0014` always wins and adding the tokens would improve no message while
+implying a support level that does not exist. `SD0013`'s interaction is therefore moot: these
+shaders never reach profile validation.
+
+**Coverage.** 12 unit cases in `FxPreParserTests` (all eight stage × form combinations asserting the
+code, the stage name in the message, and the caret at the keyword; plus a lowercase-spelling case,
+a "global variable named `GeometryShader` still compiles" scope guard, and a "real render state
+still reaches render-state parsing" insertion-point guard) and 27 cells in the new
+`ExtendedShaderStageRejectionTests` (4 stages × 2 forms × OpenGL/DirectX_11/FNA, each asserting
+exit 1, `FX0014`, **no `FX0008`**, the MGCB-parseable diagnostic shape, and that **no output file
+exists on disk**, plus a three-target control arm proving an ordinary two-stage pass still
+compiles). The integration fixtures use the `SM4`-gated shader-model header, because with plain
+`vs_3_0`/`ps_3_0` the DirectX_11 cells would have failed on `SD0015`'s profile floor (Phase 51 A10)
+and the suite would have passed for the wrong reason.
+
 ---
 
 ## 8. Acceptance
 
-- [ ] A1-A5 answered in this doc with sources; §5 recommendation written.
-- [ ] §5 decision recorded in `project_decisions.md` (either way).
+- [x] A1-A5 answered in this doc with sources; §5 recommendation written. *(§4.1, 2026-08-05.)*
+- [ ] §5 decision recorded in `project_decisions.md` (either way). **Owner's call — §4.1 recommends
+      declining (the middle option); not recorded until the owner decides.**
 - [ ] D1 hand-conversion probe run on one compute sample, with its result written up; D2's
       convertible/not-convertible statement recorded; D3 go/no-go recommendation made. A recorded
-      "no" closes the area.
-- [ ] Area C shipped: new registered diagnostic, `docs/error-codes.md` row, four regression
-      fixtures, full `dotnet test` green.
-- [ ] The three `cpt-max` sample shaders produce the new message, captured verbatim in this doc.
-- [ ] Corpus sweep shows zero verdict changes and zero output-byte changes.
-- [ ] `docs/validation-matrix.md` carries a §7 row stating plainly that geometry / hull / domain /
+      "no" closes the area. **Not started — see the Status block for why it needs a decision first.**
+- [x] Area C shipped: new registered diagnostic, `docs/error-codes.md` row, four regression
+      fixtures, full `dotnet test` green. *(§7.1; `FX0014`, 12 unit cases + 27 integration cells.)*
+- [x] The three `cpt-max` sample shaders produce the new message, captured verbatim in this doc.
+      *(§7.1.)*
+- [x] Corpus sweep shows zero verdict changes and zero output-byte changes. *(Full `dotnet test`
+      green, including the byte-identity manifest and structural-divergence sweeps; the guard is
+      keyed on a pass key no compiling fixture uses.)*
+- [x] `docs/validation-matrix.md` carries a §7 row stating plainly that geometry / hull / domain /
       compute are **not supportable on stock MonoGame or KNI**, with the §2.1 evidence, so this is
       not re-investigated a third time — and, if Area D lands anything, a §8-style row recording
       that the converted route's bar is source-fidelity, **not** mgfxc-equivalence.
+      *(§7 row added 2026-08-05; the Area D half is not yet applicable.)*
 - [ ] If §5 says yes: Area B spun out as its own phase, not grown here.
 
 ## 9. Non-goals

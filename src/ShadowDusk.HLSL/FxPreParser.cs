@@ -131,6 +131,42 @@ public sealed class FxPreParser
     };
 
     // -------------------------------------------------------------------------
+    // Pass shader-stage assignments the consumer runtime cannot load (FX0014)
+    // -------------------------------------------------------------------------
+
+    // A pass may assign VertexShader and PixelShader; every OTHER key falls through to
+    // render-state parsing. For these four that produced a nonsense diagnostic — the
+    // 'compile' expression is not a render-state value, so the parser blamed a missing
+    // ';' (FX0008) on a file with no punctuation error, sending the user hunting for a
+    // syntax bug that does not exist.
+    //
+    // They are rejected rather than modelled because the CONSUMER RUNTIME has nowhere to
+    // put them, measured from source 2026-08-05:
+    //   * MonoGame v3.8.5 and develop: 'ShaderStage' declares exactly { Vertex, Pixel },
+    //     and the effect reader decodes the stage as ONE BOOL
+    //     ("var isVertexShader = reader.ReadBoolean();"), so the container cannot even
+    //     name a third stage. The new 3.8.5 DesktopVK / WindowsDX12 backends inherit that
+    //     same shared managed reader.
+    //   * KNI v4.29001: 'ShaderStage : byte { Pixel = 0, Vertex = 1 }' and MGFXReader10
+    //     switches on it with a throwing 'default'.
+    // So this is a runtime limit no compiler can work around, not a ShadowDusk gap.
+    //
+    // The reject set is mgfxc-faithful, MEASURED not assumed (2026-08-05, pinned mgfxc
+    // 3.8.2.1105, /Profile:DirectX_11): mgfxc refuses all four stages in BOTH the
+    // '= compile <profile> Entry();' and the '= NULL;' form, pointing at the stage keyword
+    // ("Unexpected token 'H' found. Expected CloseBracket"). We reject the same eight
+    // inputs at the same token and only say why. Nothing that used to compile stops
+    // compiling; no output byte moves.
+    private static readonly Dictionary<string, string> UnloadableShaderStages =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["HullShader"]     = "hull",
+            ["DomainShader"]   = "domain",
+            ["GeometryShader"] = "geometry",
+            ["ComputeShader"]  = "compute",
+        };
+
+    // -------------------------------------------------------------------------
     // Legacy sampling intrinsics
     // -------------------------------------------------------------------------
 
@@ -1109,6 +1145,24 @@ public sealed class FxPreParser
                     $"Expected render-state key but found '{keyTok.Text}'", keyTok);
 
             string key = keyTok.Text;
+
+            // Reject the stages the consumer runtime has nowhere to put, BEFORE the
+            // render-state path chokes on the 'compile' expression and blames punctuation.
+            // Checked at the stage keyword so the caret lands on the real problem, which is
+            // also where mgfxc's own (much less helpful) message points.
+            if (UnloadableShaderStages.TryGetValue(key, out string? stageName))
+            {
+                return Fail<PassInfo>(FxParseErrorCode.UnsupportedShaderStage,
+                    $"'{key}' assigns a {stageName} shader, which the consumer runtime cannot " +
+                    "load: MonoGame's and KNI's Effect has exactly two shader stages, vertex " +
+                    "and pixel, so no compiler can produce an effect containing one. This is a " +
+                    "runtime limit, not a ShadowDusk gap; mgfxc rejects this effect too. " +
+                    $"Remove the '{key}' assignment, or express the work in the vertex or pixel " +
+                    "stage. (MonoGame issues #4567 and #7533 request these stages upstream and " +
+                    "remain open and undesigned; the cpt-max/MonoGame fork does run them, but " +
+                    "writes a different effect container stock MonoGame cannot read.)", keyTok);
+            }
+
             Consume();
             SkipNonCodeTokens();
 

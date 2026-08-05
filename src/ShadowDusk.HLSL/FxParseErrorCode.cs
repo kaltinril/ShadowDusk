@@ -54,4 +54,16 @@ public enum FxParseErrorCode
     /// crash instead of a diagnostic.
     /// </summary>
     UnsupportedSm4TypeForFx2 = 13,
+
+    /// <summary>
+    /// FX0014: A pass assigns a shader stage the consumer runtime has no place to put:
+    /// <c>HullShader</c>, <c>DomainShader</c>, <c>GeometryShader</c>, or <c>ComputeShader</c>.
+    /// MonoGame's and KNI's <c>Effect</c> model exactly two stages (MonoGame stores the stage
+    /// as a single bool, KNI as a two-value byte with a throwing <c>default</c>), so no
+    /// compiler can produce a loadable effect containing one of these — it is a runtime
+    /// limit, not a gap in ShadowDusk. Raised instead of letting the assignment fall through
+    /// to render-state parsing, which blamed a missing semicolon (FX0008) on a file that had
+    /// none.
+    /// </summary>
+    UnsupportedShaderStage = 14,
 }

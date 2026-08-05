@@ -40,6 +40,7 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 | `FX0011` | Unknown character in effect source (e.g. `@`, `` ` ``). |
 | `FX0012` | Legacy D3D9 sampling intrinsic (e.g. `tex2Dlod`) whose arguments cannot be rewritten 1:1 to a modern `Texture2D` method. |
 | `FX0013` | An SM4+ resource or sampler type (e.g. `SamplerComparisonState`) appeared in a shader targeting FNA's D3D9 `fx_2_0` profile, where no SM1–3 lowering exists. Raised *before* the source reaches vkd3d, which does not reject these cleanly (a `SamplerComparisonState` makes its SM1 lowering take the whole process down with an access violation). |
+| `FX0014` | A pass assigns `HullShader`, `DomainShader`, `GeometryShader`, or `ComputeShader`. MonoGame's and KNI's `Effect` model exactly two shader stages, so **no compiler can produce a loadable effect containing one** — a consumer-runtime limit, not a ShadowDusk gap (`mgfxc` refuses the same inputs). Replaces the nonsense `FX0008` "missing `;`" these used to produce. See [Phase 58](../plan/PHASE-58-extended-shader-stages.md) for the measured evidence and the conversion question. |
 
 ## SD — ShadowDusk pipeline
 
