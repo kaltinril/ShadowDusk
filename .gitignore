@@ -143,6 +143,7 @@ validation/output-cbuffer/
 validation/output-fna/
 validation/output-reservedword/
 validation/output-texbreadth/
+validation/output-computeconversion/
 
 # Python
 __pycache__/

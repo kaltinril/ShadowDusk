@@ -84,6 +84,10 @@ ShadowDusk/
 │                                  #     DumpPreprocessedHlsl is a no-GPU DIAGNOSTIC: it dumps the exact HLSL
 │                                  #       the pipeline hands DXC so a divergence can be replayed through a
 │                                  #       different DXC build and attributed.
+│                                  #     ComputeConversionProbe is a RESEARCH PROBE (Phase 58 Area D), not a
+│                                  #       gate and not in any gate script: it renders a hand-converted compute
+│                                  #       kernel in real MonoGame vs a CPU reference to evidence the recorded
+│                                  #       no-go on building a compute-to-pixel converter. Backs no matrix cell.
 ├── docs/                          # Architecture / reference docs (the-purpose, validation-matrix, references/, HOWTO-WASM-KNI, …)
 └── CLAUDE.md
 ```

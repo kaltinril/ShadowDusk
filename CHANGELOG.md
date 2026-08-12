@@ -14,7 +14,48 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **`FX0014`, a registered diagnostic for the shader stages the consumer runtime cannot load**
+  (Phase 58 Area C). A pass assigning `HullShader`, `DomainShader`, `GeometryShader`, or
+  `ComputeShader` now fails at the stage keyword with the stage named and the permanent reason
+  stated, instead of falling through to render-state parsing and reporting
+  `FX0008: Expected ';' after render-state 'HullShader = compile'` on a file whose punctuation is
+  correct. MonoGame's and KNI's `Effect` model exactly two shader stages, so no compiler can
+  produce a loadable effect containing one; the message says that, and points at MonoGame's two
+  open-but-undesigned upstream issues and at the fork that does support them.
+
+  **The reject set did not move, and no output byte moved.** These inputs already failed; only the
+  message changed. The set was measured against the pinned `mgfxc` 3.8.2.1105 rather than assumed:
+  it refuses all four stages in **both** the `= compile <profile> Entry();` and the `= NULL;` form.
+  The `NULL` arm was worth measuring, because `VertexShader = NULL;` **is** accepted (fxc parity),
+  so it was a real branch that could have let these through silently. Verified on the three real
+  `cpt-max/MonoGame-Shader-Samples` shaders that prompted the phase.
+
 ### Changed
+
+- **`docs/validation-matrix.md` §7 records that geometry / hull / domain / compute are not
+  supportable on stock MonoGame or KNI**, with the source-level evidence re-measured 2026-08-05, so
+  the question is not investigated a third time. The decisive new measurement is that the
+  `cpt-max/MonoGame` fork's effect format is a **second container, not a superset**: it writes
+  `(int)ShaderStage` where stock writes a 1-byte bool, so every shader record diverges from its
+  first byte and stock MonoGame would misparse fork output rather than ignore it.
+
+- **Phase 58 is closed.** Two decisions are now recorded rather than left open:
+
+  - **The `cpt-max/MonoGame` fork is not an in-scope consumer runtime** (owner decision), so
+    ShadowDusk gains no fork target for these stages. It is a second output container, not a
+    superset, so supporting it would mean a second writer, reference compiler, pin, and
+    render-gate family, for a fork last pushed 2024-05-20 whose packages stop at 3.8.3 against
+    stock's 3.8.5. Recorded with its revisit condition in `project_decisions.md`.
+
+  - **No compute-to-pixel-shader converter will be built** (Phase 58 Area D). The hand-conversion
+    probe *passed* — cpt-max's hue-sort compute kernel, ported by hand to a render-target pixel
+    shader, reproduces the original kernel's defined result at **maxd 0** in real MonoGame
+    DesktopGL (`validation/ComputeConversionProbe`, mutation-checked three ways) — and that is
+    precisely what settled the question. The convertible set turns on whether every output is a
+    pure function of its own coordinate, which is a judgement about the *algorithm* rather than
+    anything a converter could detect, and every converted kernel needs host C# no converter can
+    write. The method, the convertible/not-convertible rule, and the per-shape host recipes are
+    written down instead, for anyone porting a kernel by hand.
 
 ### Fixed
 
