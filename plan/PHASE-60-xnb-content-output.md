@@ -3,7 +3,10 @@
 **Track:** Delivery shape / drop-in completeness. Additive; **no existing output byte changes** (the
 `.xnb` is a *wrapper* around payloads ShadowDusk already produces and has render-proven).
 
-**Status:** 📋 **Planned / not started** (created 2026-08-11).
+**Status:** 📋 **Planned / not started** (created 2026-08-11). **Committed by owner direction
+2026-08-11** — *"the XNB byte output so that a user doesn't have to load an effect"* — i.e. the
+consumer keeps `Content.Load<Effect>("Foo")` and never touches `new Effect(gd, bytes)`. That is
+this phase's §1 exactly, so it is a scope confirmation rather than a change.
 
 **Depends on:** [Phase 29](DONE/PHASE-29-mgcb-content-processor-plugin.md) (the MGCB plugin — its
 `validation/MgcbPlugin` gate already parses and asserts the `.xnb` envelope, so the format knowledge
@@ -223,3 +226,7 @@ finding entirely, because it never enters MGCB's process at all.
 - **OQ4.** Should the CLI's `.xnb` mode be selected by output **extension** (`out.xnb` → wrap) or by
   an explicit switch? Extension-driven is more seamless and matches how `mgfxc` behaves; confirm it
   cannot mis-fire.
+- **OQ5.** Does the asset need to sit under a `Content` directory with a `.mgcb`-era folder
+  structure for `Content.Load` to find it by the name the consumer already uses? The owner
+  direction's whole point is that **no consumer code changes**, so the answer must be "drop it where
+  their existing `.xnb` was, and it works" — demonstrate that, do not reason about it.
