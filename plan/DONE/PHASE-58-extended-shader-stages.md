@@ -2,8 +2,8 @@
 
 **Track:** Backend breadth (research-gated) / consumer-UX. Additive; no output bytes change.
 
-**Status:** 🟡 **Areas A and C DONE (2026-08-05); Area B awaits the §5 owner decision; Area D not
-started.** Created 2026-07-31.
+**Status:** ✅ **DONE (2026-08-11).** All four areas are resolved: A and C shipped, B declined by
+owner decision, D probed and closed with a recorded no-go. Created 2026-07-31.
 
 - **Area A ✅** — A1–A5 answered from source, with the fork measurement (A4) the decisive one. See
   §4.1. Recommendation into §5: **decline the fork target** (the middle option).
@@ -11,13 +11,20 @@ started.** Created 2026-07-31.
   assignments and rejected at the stage keyword with the permanent reason, instead of falling
   through to render-state parsing and blaming a missing semicolon. Verified on the three real
   `cpt-max` samples (§7.1), 27 new integration cells + 12 unit cases, **reject set unchanged**.
-- **Area B ⏸** — blocked on §5, which is the owner's call, not the implementer's.
-- **Area D ⏳** — not started. D1 needs the `cpt-max` fork toolchain
-  (`dotnet-mgcb-compute` + `MonoGame.Framework.Compute.*`) installed to produce the comparison
-  output the probe is defined against, which is a deliberate decision to take rather than assume.
+- **Area B ❌ DECLINED (owner decision, 2026-08-11)** — the fork is **not** an in-scope consumer
+  runtime. Closed, not deferred. Recorded with its reasoning in
+  [`project_decisions.md`](../../project_decisions.md); see §5.1.
+- **Area D ✅ CLOSED with a recorded NO-GO** — D1 **passed** (the hand conversion reproduces the
+  original kernel at **maxd 0** in real MonoGame, mutation-checked three ways), and that success is
+  exactly what makes the transpiler unwise: the convertible set is a judgement about the algorithm
+  rather than a detectable syntactic property, and every converted kernel ships as a shader *plus*
+  host C# no converter can write. D2's rule and recipe table, and D3's reasoning, are in §6.6. The
+  probe was run against a **CPU reference** rather than the fork's output (owner decision,
+  2026-08-11: no third-party toolchain on the dev box, which Area B's decline makes moot anyway —
+  there is no fork runtime left to compare against).
 
-**Depends on:** [Phase 48](DONE/PHASE-48-compile-target-profile-validation.md) (`KnownProfiles`, the
-profile-recognition surface this phase extends), [Phase 45](DONE/PHASE-45-fx-preparser-robustness.md)
+**Depends on:** [Phase 48](PHASE-48-compile-target-profile-validation.md) (`KnownProfiles`, the
+profile-recognition surface this phase extends), [Phase 45](PHASE-45-fx-preparser-robustness.md)
 (the `FxPreParser` pass-assignment parsing that currently misdiagnoses these shaders).
 
 **Blocks:** nothing. No open phase waits on this.
@@ -145,7 +152,7 @@ tesselation_geometry.fx(167,24-24): error FX0008: Expected ';' after render-stat
 ```
 
 `FX0008` is "a required semicolon is missing after a statement". The file has no missing semicolon.
-The cause is in [`FxPreParser.cs:1099-1100`](../src/ShadowDusk.HLSL/FxPreParser.cs#L1099-L1100),
+The cause is in [`FxPreParser.cs:1099-1100`](../../src/ShadowDusk.HLSL/FxPreParser.cs#L1099-L1100),
 which recognizes exactly two pass assignments:
 
 ```csharp
@@ -275,7 +282,7 @@ record diverges from its first byte onward, and the fork additionally carries a 
 table stock has no concept of. This is **a second container, not a superset** — which answers
 **OQ3** directly and with the stronger of its two possible answers: a fork target could never be a
 silent auto-upgrade, and stock MonoGame would not ignore fork output, it would misparse it. That is
-also relevant to [Phase 57](PHASE-57-universal-compiler-auto-detection.md): a fork target would have
+also relevant to [Phase 57](../PHASE-57-universal-compiler-auto-detection.md): a fork target would have
 to be an explicit `PlatformTarget`, never something auto-detection could safely infer.
 
 **A5 — the fork cannot be pinned against under this project's pin discipline.**
@@ -319,8 +326,27 @@ Arguments recorded so the decision is made on the real trade, not on enthusiasm:
 - **The middle option.** Decline the target, but keep `KnownProfiles` and the pre-parser *aware* of
   the stages so diagnostics stay precise (which is Area C anyway) and so a future decision is cheap.
 
-**Record the outcome in [`project_decisions.md`](../project_decisions.md) before starting Area B.**
+**Record the outcome in [`project_decisions.md`](../../project_decisions.md) before starting Area B.**
 Do not start Area B on the strength of the spike alone.
+
+### 5.1 Outcome — DECLINED (owner decision, 2026-08-11)
+
+**The fork is not an in-scope consumer runtime. Area B is closed, not deferred.** The middle
+option was taken, and it was already delivered by Area C: the pre-parser knows all four stages and
+`FX0014` names both the permanent reason and the fork, so a user who wants it is pointed at it and
+a future reversal stays cheap.
+
+The decision turned on §4.1's A4 measurement, which came out stronger than this section
+anticipated. The trade written above assumed "a new `PlatformTarget`, no change to any existing
+output byte… the same shape as every backend this project has already added." That is not the
+shape. The fork writes **a second container, not a superset**, so it is a second *writer* as well
+as a second runtime, reference compiler, pin, and render-gate family — the largest maintenance
+surface in the matrix for its smallest consumer base, against a fork last pushed 2024-05-20 that
+trails stock by two releases. The "Against" argument's closing line is the operative one: an
+unvalidated cell is worse than an absent one.
+
+Full reasoning, and the revisit condition (the fork resumes active maintenance **and** a real
+consumer asks), are in [`project_decisions.md`](../../project_decisions.md).
 
 ---
 
@@ -340,9 +366,9 @@ i.e. spin it out rather than growing this one.
 **This is the avenue §2 does not close, and it is the one with real precedent in this repo.** §2
 proves stock MonoGame cannot *run* a compute or geometry shader. It says nothing about whether the
 *work* those shaders do can be re-expressed as something MonoGame can run. ShadowDusk already owns
-exactly this shape of thing: [`ShadowDusk.ShaderToy`](../src/ShadowDusk.ShaderToy/)
-([Phase 46](DONE/PHASE-46-shadertoy-to-fx-conversion-tool.md) /
-[47](DONE/PHASE-47-shadertoy-frontend-promotion.md)) takes a shader in a form the pipeline cannot
+exactly this shape of thing: [`ShadowDusk.ShaderToy`](../../src/ShadowDusk.ShaderToy/)
+([Phase 46](PHASE-46-shadertoy-to-fx-conversion-tool.md) /
+[47](PHASE-47-shadertoy-frontend-promotion.md)) takes a shader in a form the pipeline cannot
 consume and emits ordinary `.fx` — pure-managed, zero native dependency, additive, changing no
 existing output byte. A stage-lowering converter would sit in the same architectural slot.
 
@@ -404,11 +430,121 @@ gate.
 
 ---
 
+## 6.6. Area D results (2026-08-11) — D1 PASSED, D3 says **do not build the transpiler**
+
+### D1 — the hand-conversion probe: PASSED, 5/5
+
+Subject: cpt-max's `compute_write_to_texture` — an odd-even transposition sort that orders each
+scanline's pixels by hue — named in §6.5.1 as the most tractable shape. Hand-converted to a
+render-target pixel shader (`validation/ComputeConversionProbe/HueSortConverted.fx`), compiled
+through the **real, unmodified product pipeline** for OpenGL, and run in **real MonoGame
+DesktopGL** (`validation/ComputeConversionProbe`).
+
+**Oracle:** a CPU transcription of cpt-max's original kernel, kept in its **native scatter form**
+(writing two pixels per iteration, as the GPU kernel does) rather than restructured into the
+gather form the pixel shader uses — deliberately, so the oracle does not share the conversion's
+central assumption and can actually falsify it. Per the owner decision of 2026-08-11 the fork
+toolchain was **not** installed, so the reference is the kernel's *semantics* rather than the
+fork's pixels. That is a weaker oracle than §6.5.3 specifies and is recorded as such; it is still
+decisive here, because a conversion that disagrees with the original kernel's own definition has
+failed regardless of what any runtime shows.
+
+| Arm | Result |
+|---|---|
+| Converted effect loads in real MonoGame | PASS |
+| The sort is a real transformation (anti-vacuity: input ≠ expected) | PASS — maxd 255 |
+| The shader actually rewrote pixels (anti-vacuity: catches pass-through) | PASS — maxd 255 |
+| **GPU pixel shader == CPU compute kernel** | **PASS — maxd 0** over 192 px, 0 px beyond tolerance |
+| Every row is hue-ordered afterwards (independent property, not an implementation comparison) | PASS — 0/8 rows unordered |
+
+**Mutation-checked, because a green comparison proves nothing until it has been seen to go red**
+(the durable lesson from the Phase 51 A2 MRT gate). Three mutations, each turning the probe red on
+the arms it should: inverting the pair-parity test → equivalence **and** the independent ordering
+arm both fail (84 px wrong, 3/8 rows unordered); a "never swap" no-op → the anti-vacuity arm fires
+at maxd 0 exactly as designed, plus both others; a full pass-through → the shader stops compiling
+at all. The full multi-pass ping-pong (24 phases, the real workload) is run, not a single phase
+that a near-no-op could survive.
+
+**What the conversion actually required, and the finding that generalizes.** The math half — the
+`HueFromRGB` function and the comparison — needed **no conversion at all**. The obstacle is
+entirely the I/O model: a compute shader **scatters** (this kernel writes *two* pixels per
+invocation, `Output[idL]` and `Output[idR]`), while a pixel shader **gathers** (it writes exactly
+one location, its own fragment, and cannot choose it). `Output[idL] = …` has no pixel-shader
+spelling, so a statement-by-statement port is impossible. It converts anyway because the kernel's
+write set is a deterministic function of the output coordinate: each pixel works out which pair it
+belongs to, reads *both* members itself, runs the same comparison, and emits only its own half —
+paying for it by recomputing the comparison twice per pair. Two smaller adaptations were needed
+because the target profile is SM3/GLSL-1.10, not SM5: `Input[uint2]` (a typed load with no
+equivalent) became point-sampled `tex2D` at texel centres, and integer `%` became `frac(t * 0.5)`
+to stay off the GLSL 1.30+ operators `SD0403` flags.
+
+> **Incidental observation, recorded but not chased:** the pass-through mutation stopped compiling
+> with `SD0012` ("GL uniform 'Width' has no matching effect parameter") because the mutation left
+> the uniforms live in GLSL but dead in reflection. That is loud, registered behaviour on a
+> deliberately-broken shader, not a defect found in the product path, and it is the *opposite* join
+> direction from issue #187's phantom parameter. Noted only so a future reader who hits it knows it
+> was seen here first.
+
+### D2 — what converts, what does not, and the recipe each needs
+
+Written from D1's actual mechanics, not from the ranking §6.5.1 guessed at.
+
+**The rule.** A compute kernel is convertible **iff each output element is a pure function of its
+own coordinate** — i.e. the kernel can be rewritten as a *gather*. Scatter is the whole barrier.
+
+| Shape | Convertible? | Host-side recipe it forces on the consumer |
+|---|---|---|
+| Read texture → write texture, output depends only on its own coordinate (blurs, tone maps, thresholding) | **Yes**, near-directly | `Dispatch` → `SetRenderTarget` + one full-screen draw. `RWTexture2D` → the bound `RenderTarget2D`. |
+| Scatter with a **deterministic, invertible** write set (D1's pairwise sort — a thread writes two known locations) | **Yes**, by re-deriving the gather (redundant recomputation) | As above, plus a **ping-pong pair of render targets** and a host loop over the phases. Read and write must be different targets. |
+| Multi-pass / iterative kernels | **Yes**, if each pass is itself gatherable | The host owns the loop and the ping-pong — as it already did with `Dispatch`, so this costs nothing new. |
+| Kernels using **groupshared memory / barriers** (tiled reductions, prefix scans) | **No** in general | Would need re-derivation as a multi-pass gather with an intermediate target per level; that is a redesign, not a translation. |
+| **Atomics, append/consume buffers, data-dependent output counts** | **No** | The output location is not a function of the coordinate. Nothing to gather from. |
+| **Structured buffers / UAVs as the data model** | **No** | MonoGame has no structured-buffer or UAV concept at all; the consumer must re-express their data as textures — application surgery, §6.5.2. |
+| **Geometry shaders** | Out of scope for D1; unchanged from §6.5.1's "sometimes" | Billboard/quad expansion maps to instancing; arbitrary amplification does not. |
+| **Tessellation (hull/domain)** | **No**, as predicted | Data-dependent subdivision inside the draw has no vertex/pixel equivalent. |
+
+**§6.5.2's hard limit survived D1 fully intact, and is the decisive practical finding.** The
+converted shader is useless on its own. Making it run required a host-side recipe — allocate two
+render targets, loop 24 times, alternate an `OffsetX` uniform, ping-pong, point-sample — that
+**no converter could ever emit**, because it lives in the consumer's C#. D1 needed roughly as much
+host code as shader code.
+
+### D3 — recommendation: **NO-GO on building a converter.** Keep the finding, not a feature.
+
+D1 proved a human *can* do this convincingly (maxd 0). It also proved why a **transpiler** should
+not be built on that success:
+
+1. **The convertible set is narrow and the user must classify it themselves.** The rule ("is every
+   output a pure function of its own coordinate?") is a judgement about the *algorithm*, not a
+   syntactic property a converter can reliably detect. Getting it wrong silently produces a shader
+   that compiles and renders the wrong thing — the worst failure mode this project recognizes.
+2. **The deliverable is unavoidably half a deliverable.** Every converted kernel ships as a shader
+   *plus* a host recipe the consumer must implement. That is the direct opposite of the standing
+   seamlessness directive ("the consumer adds the package, compiles their `.fx`, and it just
+   works"), and it is categorically weaker than the ShaderToy precedent, whose host code is simply
+   "draw a quad" and is already written.
+3. **There is no oracle, and now there is not even a fork to borrow one from.** §6.5.3 already
+   conceded the bar would be source-fidelity rather than `mgfxc`-equivalence; with Area B declined
+   (§5.1) there is no fork runtime to diff against either. A whole converter family would be the
+   least-provable surface in the project.
+4. **The demand is unmeasured.** Phase 58 came from *one* user asking whether some samples compile.
+   That question is now answered accurately by `FX0014`, which is what they actually needed.
+
+**What to keep instead:** this probe, the D2 rule, and the recipe table — so that a user who *does*
+want to port a compute kernel by hand has the method written down. The probe stays in the tree as
+executable evidence for the finding (`dotnet run -c Release --project validation/ComputeConversionProbe`),
+**deliberately NOT wired into `run-windows-render-gates.ps1`**: it guards a research conclusion, not
+a shipped product guarantee, and adding it to the release gate would be gate-bloat for a feature
+that does not exist. **Reopen only if** several users ask for a specific convertible shape, at which
+point the honest first step is documentation of the hand method — not a transpiler.
+
+---
+
 ## 7. Area C — the guaranteed deliverable: tell the truth (ships regardless of §5)
 
 Fix C1. This is small, well-scoped, and valuable even if Areas A and B both end in "no".
 
-- Teach [`FxPreParser`](../src/ShadowDusk.HLSL/FxPreParser.cs#L1099-L1100) to recognize
+- Teach [`FxPreParser`](../../src/ShadowDusk.HLSL/FxPreParser.cs#L1099-L1100) to recognize
   `HullShader`, `DomainShader`, `GeometryShader`, and `ComputeShader` as **pass shader assignments**
   rather than letting them fall through to render-state parsing.
 - Emit a **new registered diagnostic** naming the unsupported stage and the real reason. `FX0014`
@@ -491,11 +627,12 @@ and the suite would have passed for the wrong reason.
 ## 8. Acceptance
 
 - [x] A1-A5 answered in this doc with sources; §5 recommendation written. *(§4.1, 2026-08-05.)*
-- [ ] §5 decision recorded in `project_decisions.md` (either way). **Owner's call — §4.1 recommends
-      declining (the middle option); not recorded until the owner decides.**
-- [ ] D1 hand-conversion probe run on one compute sample, with its result written up; D2's
+- [x] §5 decision recorded in `project_decisions.md` (either way). *(Owner decision 2026-08-11:
+      **DECLINED**. §5.1 here; full reasoning + revisit condition in `project_decisions.md`.)*
+- [x] D1 hand-conversion probe run on one compute sample, with its result written up; D2's
       convertible/not-convertible statement recorded; D3 go/no-go recommendation made. A recorded
-      "no" closes the area. **Not started — see the Status block for why it needs a decision first.**
+      "no" closes the area. *(§6.6: D1 PASSED 5/5 at maxd 0, mutation-checked three ways; D2's rule
+      + recipe table recorded; **D3 = NO-GO**, area closed.)*
 - [x] Area C shipped: new registered diagnostic, `docs/error-codes.md` row, four regression
       fixtures, full `dotnet test` green. *(§7.1; `FX0014`, 12 unit cases + 27 integration cells.)*
 - [x] The three `cpt-max` sample shaders produce the new message, captured verbatim in this doc.
@@ -507,8 +644,9 @@ and the suite would have passed for the wrong reason.
       compute are **not supportable on stock MonoGame or KNI**, with the §2.1 evidence, so this is
       not re-investigated a third time — and, if Area D lands anything, a §8-style row recording
       that the converted route's bar is source-fidelity, **not** mgfxc-equivalence.
-      *(§7 row added 2026-08-05; the Area D half is not yet applicable.)*
-- [ ] If §5 says yes: Area B spun out as its own phase, not grown here.
+      *(§7 row added 2026-08-05; extended 2026-08-11 with Area D's outcome.)*
+- [x] If §5 says yes: Area B spun out as its own phase, not grown here. *(N/A — §5 said no. Area B
+      is closed, not deferred, and nothing was spun out.)*
 
 ## 9. Non-goals
 
@@ -520,7 +658,7 @@ and the suite would have passed for the wrong reason.
 - Rewriting the consumer's host code. Area D can emit a shader and document a recipe; it cannot
   turn `Dispatch` into a draw or restructure someone's buffers for them (§6.5.2).
 - A general compute-to-pixel transpiler built without the D1 probe passing first.
-- Metal/MSL compute (see [Phase 31](PHASE-31-metal-msl-backend.md); parked for its own reasons).
+- Metal/MSL compute (see [Phase 31](../PHASE-31-metal-msl-backend.md); parked for its own reasons).
 
 ## 10. Open questions
 
@@ -532,4 +670,4 @@ and the suite would have passed for the wrong reason.
 - **OQ3.** A4 may find the fork's container is a superset of stock MGFX that stock MonoGame would
   *reject* rather than ignore. If so, record it: it would mean a fork target can never be a silent
   auto-upgrade and must be an explicit `PlatformTarget`, which is relevant to
-  [Phase 57](PHASE-57-universal-compiler-auto-detection.md)'s auto-detection work.
+  [Phase 57](../PHASE-57-universal-compiler-auto-detection.md)'s auto-detection work.

@@ -261,7 +261,7 @@ DirectX, DirectX12, Vulkan, and FNA carry.
 - Writing the consumer's uniform-binding code. We emit the shader; `GetShaderLocation` /
   `SetShaderValue` stay theirs.
 - Any change to MonoGame, KNI, DirectX, Vulkan, or FNA output. This is strictly additive.
-- `glsl430` / compute. See [Phase 58](PHASE-58-extended-shader-stages.md).
+- `glsl430` / compute. See [Phase 58](DONE/PHASE-58-extended-shader-stages.md).
 
 ## 11. Open questions
 

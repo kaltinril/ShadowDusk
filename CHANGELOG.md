@@ -39,6 +39,24 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   `(int)ShaderStage` where stock writes a 1-byte bool, so every shader record diverges from its
   first byte and stock MonoGame would misparse fork output rather than ignore it.
 
+- **Phase 58 is closed.** Two decisions are now recorded rather than left open:
+
+  - **The `cpt-max/MonoGame` fork is not an in-scope consumer runtime** (owner decision), so
+    ShadowDusk gains no fork target for these stages. It is a second output container, not a
+    superset, so supporting it would mean a second writer, reference compiler, pin, and
+    render-gate family, for a fork last pushed 2024-05-20 whose packages stop at 3.8.3 against
+    stock's 3.8.5. Recorded with its revisit condition in `project_decisions.md`.
+
+  - **No compute-to-pixel-shader converter will be built** (Phase 58 Area D). The hand-conversion
+    probe *passed* — cpt-max's hue-sort compute kernel, ported by hand to a render-target pixel
+    shader, reproduces the original kernel's defined result at **maxd 0** in real MonoGame
+    DesktopGL (`validation/ComputeConversionProbe`, mutation-checked three ways) — and that is
+    precisely what settled the question. The convertible set turns on whether every output is a
+    pure function of its own coordinate, which is a judgement about the *algorithm* rather than
+    anything a converter could detect, and every converted kernel needs host C# no converter can
+    write. The method, the convertible/not-convertible rule, and the per-shape host recipes are
+    written down instead, for anyone porting a kernel by hand.
+
 ### Fixed
 
 ## [0.18.0] - 2026-08-03
