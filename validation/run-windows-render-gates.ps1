@@ -239,6 +239,32 @@ $gates.Add(@{
         Invoke-Checked 'dotnet' @('run', '--project', 'validation/MgcbPlugin', '-c', 'Release')
     }
 })
+# Direct .xnb writer (Phase 60, issue #199). The drop-in claim is "replace your content pipeline
+# and change NO lines of code", which only a real ContentManager can test: `new Effect(gd, bytes)`
+# proves the payload loads but says nothing about the XNB container, the platform-byte whitelist,
+# or the type-reader manifest - and those are precisely what Content.Load validates. This gate
+# builds each fixture through stock mgcb AND through ShadowDusk's XnbWriter, loads BOTH with
+# Content.Load<Effect>(assetName), and requires the renders to be pixel-identical. Default ON:
+# it needs a GPU but is seconds long, and every failure mode it covers is silent for a consumer
+# until their game refuses to start.
+$gates.Add(@{
+    Name   = 'XNB direct writer (Phase 60: real Content.Load<Effect> on a ShadowDusk-written .xnb vs mgcb''s)'
+    Action = {
+        Invoke-Checked 'dotnet' @('tool', 'restore')
+        Invoke-Checked 'dotnet' @('run', '--project', 'validation/XnbContentLoad', '-c', 'Release')
+    }
+})
+# Slang corpus cross-validation (Phase 61). Two gates in one driver: every corpus .slang is
+# accepted by the REAL pinned slangc (proving the corpus is genuine Slang, not HLSL wearing a
+# .slang extension), and the uniform-free procedural subset renders PIXEL-IDENTICAL through
+# ShadowDusk's route vs through slangc's own HLSL emission (same DXC + SPIRV-Cross both sides,
+# so any divergence is attributable to the one thing that differs: how the Slang text was
+# read). slangc here is a TEST-TIME ORACLE like fxc/mgcb - downloaded on demand, SHA-256
+# verified, cached, never shipped. First run needs network (~55 MB); GL context required.
+$gates.Add(@{
+    Name   = 'Slang corpus (Phase 61: 17 shaders slangc-validated + procedural subset pixel-diffed vs slangc''s HLSL)'
+    Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/SlangCorpus', '-c', 'Release') }
+})
 if ($IncludeFna) {
     $gates.Add(@{
         Name   = 'FNA fx_2_0 (ShadowDusk .fxb vs fxc /T fx_2_0, real FNA)'

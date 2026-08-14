@@ -99,7 +99,19 @@ green on `dotnet mgcb` 3.8.2.1105, 3.8.3, 3.8.4, 3.8.4.1, and 3.8.5.
 
 ## The other routes (still supported)
 
-The plugin is the native integration, but neither of these went away:
+The plugin is the native integration for teams who *want* MGCB in their build, but none of these went away:
+
+**0. Skip MGCB entirely and let ShadowDusk write the `.xnb` itself.** If effects are the only reason
+MGCB is in your build, you no longer need it there:
+
+```sh
+ShadowDuskCLI Content/MyEffect.fx Content/MyEffect.xnb /Profile:OpenGL
+```
+
+Drop the file where the pipeline-built one used to go and `Content.Load<Effect>("MyEffect")` keeps
+working unchanged — the container matches what MGCB writes (verified against a real `dotnet-mgcb`
+build, loaded through a real `ContentManager`, rendered pixel-identically). From the library it is
+`result.Value.ToXnb()`. See [Drop-in `mgfxc`](dropin-mgfxc.md).
 
 **1. Compile with the CLI and let MGCB copy the result.** Build `.fx → .mgfx` with the
 [ShadowDusk CLI](dropin-mgfxc.md) as a pre-build step, then `/copy:` it:

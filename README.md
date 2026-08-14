@@ -124,6 +124,30 @@ ShadowDuskCLI MyShader.fx MyShader.mgfx /Profile:OpenGL
 
 The target comes from the content project's own `/platform:` line, and the `.mgfx` inside the `.xnb` is byte-for-byte what the CLI emits. See [MGCB Content Pipeline](https://kaltinril.github.io/ShadowDusk/guides/mgcb-content-pipeline.html).
 
+**Direct `.xnb` output** — replace your content pipeline without changing a line of your game's code. ShadowDusk writes the `.xnb` itself, so `Content.Load<Effect>("MyShader")` keeps working and MGCB is out of the picture entirely. On the CLI, just name an `.xnb` output:
+
+```sh
+ShadowDuskCLI MyShader.fx Content/MyShader.xnb /Profile:OpenGL
+```
+
+Or from the library:
+
+```csharp
+var result = await new EffectCompiler().CompileAsync(fx, new CompilerOptions { Target = PlatformTarget.OpenGL });
+File.WriteAllBytes("Content/MyShader.xnb", result.Value.ToXnb());
+```
+
+The XNB platform byte is **derived** from the target you already picked, never something you select, and the payload inside is byte-for-byte the `.mgfx` the same call would emit. Proven at rung 4: a real `ContentManager.Load<Effect>` renders it pixel-identical to the `mgfxc`-built `.xnb`.
+
+**SkiaSharp / SkSL converter** (`SkslConverter`) — converts an `.fx` pixel shader to an [SkSL runtime effect](https://skia.org/docs/user/sksl/) for `SKRuntimeEffect`, so the same shader source can serve a SkiaSharp render path:
+
+```csharp
+var result = SkslConverter.Convert(fxSource, new SkslConvertOptions());
+using var effect = SKRuntimeEffect.CreateShader(result.Value.SkslText, out var errors);
+```
+
+Know the limits before reaching for it — they are Skia's, not ShadowDusk's, and the converter enforces them **loudly** rather than emitting something that renders wrong. SkSL runtime effects have **no vertex stage and no varyings at all**: a pixel shader gets its coordinate plus uniforms and nothing else. That means a shader that *reads an interpolated input* (a vertex color, a custom interpolant) does not convert **even though it is purely a pixel shader** — the converter refuses it by name, with an explicit opt-in (`TreatVaryingsAsUniforms`) if a per-draw constant is acceptable. The convertible set is fragment-only, coordinate-driven effects with uniform inputs: post-process, tint, gradient, SDF work. Evidence bar: rendered-image fidelity against the original HLSL's math in real Skia (there is no reference compiler for SkSL, so this is **not** an `mgfxc`-equivalence claim).
+
 **WASM library** (`ShadowDusk.Wasm`) — the same pipeline running in the browser via WebAssembly, for live in-browser compilation with no server roundtrip. OpenGL output renders live in KNI WebGL; DirectX and FNA output come back as downloads to run in your desktop game. The [in-browser fiddle](samples/ShaderFiddle.Web) is a sample of this. See [`docs/HOWTO-WASM-KNI.md`](docs/HOWTO-WASM-KNI.md) for the KNI/Blazor walkthrough.
 
 > "Same `.mgfx` output" means it loads and renders like mgfxc's, not that the bytes are identical. ShadowDusk's output is deterministic in its own right: the same version, source, and target always give the same bytes.
@@ -148,7 +172,16 @@ All packages ship together at one shared version. Most projects only need one of
 
 - [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8) (≥ 8.0.100) **and** the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10) — the libraries multi-target `net8.0` and `net10.0`, so both are needed to build the solution. Consuming the packages needs only one of them.
 
-DXC binaries come from the `Vortice.Dxc` NuGet package automatically. SPIRV-Cross native binaries are downloaded by `tools/restore.ps1` / `tools/restore.sh`:
+**One command to get from a fresh clone to a verified build** (needs PowerShell 7+, which runs on Windows, Linux and macOS):
+
+```sh
+pwsh tools/setup-local-testing.ps1                    # prerequisites, restore, build, full test suite, smoke compile
+pwsh tools/setup-local-testing.ps1 -WithRenderGates   # also the GPU render proofs (Windows + a real GPU)
+```
+
+It prints a PASS/WARN/FAIL line per step and never skips anything silently — a step that can't run says why and gives you the command that fixes it. The most common first-run failure is having only one .NET SDK: the libraries multi-target `net8.0` **and** `net10.0`, so you need both.
+
+The individual steps, if you'd rather run them yourself: DXC binaries come from the `Vortice.Dxc` NuGet package automatically, and SPIRV-Cross native binaries are downloaded by `tools/restore.ps1` / `tools/restore.sh`:
 
 ```sh
 ./tools/restore.sh        # Linux / macOS
@@ -233,7 +266,7 @@ ShadowDusk stands on a lot of excellent prior work. The faithful compilation pip
 - **[KNI](https://github.com/kniEngine/kni)** (nkast) — the WebAssembly/WebGL-capable MonoGame fork the in-browser sample runs on.
 - **[MojoShader](https://github.com/icculus/mojoshader)** (Ryan C. Gordon) — the OpenGL GLSL dialect / shader-bytecode heritage that MonoGame's `.mgfx` OpenGL effects use, which our GLSL rewrite matches.
 - **[Emscripten](https://emscripten.org/)** — used to compile DXC and SPIRV-Cross to WebAssembly.
-- **[Slang](https://github.com/shader-slang/slang)** (shader-slang) — used **only** in the in-browser sample as an early spike frontend; it is *not* part of the product pipeline (which uses faithful DXC everywhere).
+- **[Slang](https://github.com/shader-slang/slang)** (shader-slang) — two distinct roles, and the distinction is load-bearing. **As a compiler inside the pipeline: no, permanently** — Slang never replaces DXC for HLSL (measured: two DXC flags don't forward through Slang's API, making byte-identity unprovable; the pipeline uses faithful DXC everywhere; an early in-browser spike that used Slang as a substitute frontend is dead, sample-only reference). **As an input language: yes, the HLSL-compatible subset** — ShadowDusk accepts `.slang` source as a pure text transform: entry points marked with Slang's own `[shader("vertex")]` / `[shader("fragment")]` attributes, the technique block synthesized (Slang has no technique/pass concept), and the shader body compiled by the **same pipeline as every `.fx`**. Nothing extra to install on any platform, browser included — no Slang binary is shipped or invoked. Slang-*only* language features (`import` modules, generics, `extension`s) are rejected with a clear named error rather than approximated. No route through Slang is `mgfxc`-equivalent; `mgfxc` cannot read Slang at all.
 - **[DocFX](https://github.com/dotnet/docfx)** (the .NET Foundation) — generates the published [documentation site](https://kaltinril.github.io/ShadowDusk/).
 - **[xUnit](https://github.com/xunit/xunit)** and **[Shouldly](https://github.com/shouldly/shouldly)** — the test suite.
 

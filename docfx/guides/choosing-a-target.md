@@ -79,12 +79,12 @@ ShadowDusk emits **one** OpenGL `.mgfx` (legacy GLSL dialect), and **KNI's runti
 
 ## `.mgfx` vs `.xnb`
 
-For the MonoGame/KNI targets, ShadowDusk emits a raw **`.mgfx`** blob, **not** an `.xnb` (FNA's equivalent is the raw `.fxb`, likewise unwrapped). These are different layers:
+For the MonoGame/KNI targets, ShadowDusk's compiled effect is a raw **`.mgfx`** blob (FNA's equivalent is the raw `.fxb`). The `.xnb` is a different layer — and ShadowDusk can produce **both**:
 
 | | `.mgfx` | `.xnb` |
 |---|---|---|
 | What it is | the compiled effect itself | the Content Pipeline container that *wraps* a `.mgfx` (and every other content type) |
 | Loaded via | `new Effect(graphicsDevice, mgfxBytes)` | `Content.Load<Effect>("name")` |
-| Produced by | **ShadowDusk** (and `mgfxc`) | the Content Pipeline / MGCB |
+| Produced by | **ShadowDusk** (and `mgfxc`) | **ShadowDusk** (`CompiledShader.ToXnb()` / an `.xnb` CLI output path), MGCB, or the MGCB plugin |
 
-If a consuming project loads effects with `new Effect(gd, bytes)`, hand it the raw `.mgfx` — done. If it uses `Content.Load<Effect>`, it needs an `.xnb`, which means building the `.fx` through MGCB. Add the `ShadowDusk.MgcbPlugin` content processor and MGCB will do exactly that, with ShadowDusk as the compiler (see the [MGCB Content Pipeline](mgcb-content-pipeline.md) guide). The compiler library itself does not produce `.xnb` directly — the wrapping is the content-pipeline layer's job, which is what the plugin plugs into. See also [Parameters & Caveats → `.mgfx` vs `.xnb`](parameters-and-caveats.md#mgfx-vs-xnb).
+If a consuming project loads effects with `new Effect(gd, bytes)`, hand it the raw `.mgfx` — done. If it uses `Content.Load<Effect>`, it needs an `.xnb`, and there are two ShadowDusk routes: **direct output** — name an `.xnb` output on the CLI or call `result.Value.ToXnb()`, drop the file in the content directory, and no MGCB is involved at all (see [Drop-in `mgfxc`](dropin-mgfxc.md)); or, for a build that already uses MGCB for other content, the `ShadowDusk.MgcbPlugin` content processor (see the [MGCB Content Pipeline](mgcb-content-pipeline.md) guide). See also [Parameters & Caveats → `.mgfx` vs `.xnb`](parameters-and-caveats.md#mgfx-vs-xnb).

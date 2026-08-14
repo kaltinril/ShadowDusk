@@ -28,6 +28,16 @@ ShadowDuskCLI MyShader.fx MyShader.mgfx /Profile:DirectX_11
 
 > **Default profile:** with no `/Profile`, the CLI defaults to **`DirectX_11`** (matching `mgfxc`). Note this differs from the **library** default (`CompilerOptions.Target = OpenGL`). See [Parameters & Caveats](parameters-and-caveats.md).
 
+### Replacing the content pipeline entirely: `.xnb` output
+
+Name an `.xnb` output path and ShadowDusk writes the whole content-pipeline file itself — the container `Content.Load<Effect>("MyShader")` reads — so your game's loading code does not change at all and MGCB never runs:
+
+```sh
+ShadowDuskCLI MyShader.fx Content/MyShader.xnb /Profile:OpenGL
+```
+
+No flag selects this: the output extension is the whole switch, and any other extension gets the raw effect bytes exactly as before. The XNB platform identifier is derived from the profile you already chose, and the effect payload inside the container is byte-for-byte the `.mgfx` the same invocation would write. Drop the file where your `mgfxc`-built `.xnb` used to sit; the asset name is the file name, and no companion file is needed. (From the library, the same thing is `result.Value.ToXnb()`.)
+
 ## Replacing `mgfxc` in a build
 
 1. **Explicit invocation (the one that works everywhere).** Call `ShadowDuskCLI` directly from your build script / Makefile / CI step. Because the flags, output, and exit codes match `mgfxc`'s, nothing downstream needs to know it swapped tools.

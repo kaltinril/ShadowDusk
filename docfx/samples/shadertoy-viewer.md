@@ -6,7 +6,7 @@ An interactive MonoGame sample (`samples/ShaderToyViewer`) that runs the whole S
 
 Per shader, per cycle:
 
-1. `ShaderToyConverter.Convert(glsl)` (the [`ShadowDusk.ShaderToy`](../architecture/index.md) frontend) emits self-contained HLSL `.fx` text;
+1. `ShaderToyConverter.Convert(glsl)` (the [`ShadowDusk.ShaderToy`](../architecture/the-faithful-pipeline.md) frontend) emits self-contained HLSL `.fx` text;
 2. `EffectCompiler.Compile(fx, OpenGL)` compiles it to `.mgfx` bytes **in memory**;
 3. `new Effect(GraphicsDevice, bytes)` loads them into real MonoGame DesktopGL;
 4. a `ShaderToyEffect` helper drives `iResolution` / `iTime` / `iTimeDelta` / `iFrame` / `iMouse` and draws a fullscreen quad.

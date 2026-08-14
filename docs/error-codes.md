@@ -20,6 +20,9 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 | `SD0200`–`SD0299` | Platform / backend availability |
 | `SD0300`–`SD0399` | FNA (fx_2_0) target |
 | `SD0400`–`SD0499` | GL portability lint (`GlslPortabilityAnalyzer`) — always warnings, never errors |
+| `SD0500`–`SD0599` | MGCB content-processor plugin |
+| `SD0600`–`SD0609` | Slang input frontend (`SlangFrontend` and its passes) |
+| `SD0610`–`SD0619` | SkSL converter (`SkslConverter` / `SkslGlslMapper`) |
 | `SD1900`–`SD1999` | Browser/WASM host backends |
 | `X0000`–`X0099` | CLI and pipeline general errors (mgfxc-style) |
 
@@ -40,7 +43,7 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 | `FX0011` | Unknown character in effect source (e.g. `@`, `` ` ``). |
 | `FX0012` | Legacy D3D9 sampling intrinsic (e.g. `tex2Dlod`) whose arguments cannot be rewritten 1:1 to a modern `Texture2D` method. |
 | `FX0013` | An SM4+ resource or sampler type (e.g. `SamplerComparisonState`) appeared in a shader targeting FNA's D3D9 `fx_2_0` profile, where no SM1–3 lowering exists. Raised *before* the source reaches vkd3d, which does not reject these cleanly (a `SamplerComparisonState` makes its SM1 lowering take the whole process down with an access violation). |
-| `FX0014` | A pass assigns `HullShader`, `DomainShader`, `GeometryShader`, or `ComputeShader`. MonoGame's and KNI's `Effect` model exactly two shader stages, so **no compiler can produce a loadable effect containing one** — a consumer-runtime limit, not a ShadowDusk gap (`mgfxc` refuses the same inputs). Replaces the nonsense `FX0008` "missing `;`" these used to produce. See [Phase 58](../plan/DONE/PHASE-58-extended-shader-stages.md) for the measured evidence and the conversion question. |
+| `FX0014` | A pass assigns `HullShader`, `DomainShader`, `GeometryShader`, or `ComputeShader`. MonoGame's and KNI's `Effect` model exactly two shader stages, so **no compiler can produce a loadable effect containing one** — a consumer-runtime limit, not a ShadowDusk gap (`mgfxc` refuses the same inputs). Replaces the nonsense `FX0008` "missing `;`" these used to produce. See `plan/DONE/PHASE-58-extended-shader-stages.md` for the measured evidence and the conversion question. |
 
 ## SD — ShadowDusk pipeline
 
@@ -98,6 +101,16 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 | `SD0500` | MGCB plugin: the `ShaderProfile` processor parameter names a profile ShadowDusk does not have (valid: `DirectX_11`, `DirectX_12`, `OpenGL`, `Vulkan`). Leave it empty to derive the target from the content project's `/platform:`. | `ShadowDuskEffectProcessor` |
 | `SD0501` | MGCB plugin: the content project's `/platform:` names a platform ShadowDusk has no backend for (the consoles). Fails the build rather than emitting a GL artifact that runtime cannot load. | `ShadowDuskEffectProcessor` |
 | `SD0502` | MGCB plugin: invalid `DxbcBackend` processor parameter (only `vkd3d`, `d3dcompiler`). The plugin-side twin of the CLI's `X0006`. | `ShadowDuskEffectProcessor` |
+| `SD0600` | Slang frontend: a **Slang-only language feature** (`import`, `module`, `extension`, `associatedtype`, generics — named in the message) appeared in the source. ShadowDusk compiles the **HLSL-compatible subset of Slang**: the shader body goes through the same pipeline as every `.fx`, with nothing extra to install on any platform (the deliberate trade, owner direction 2026-08-13 — no Slang toolchain is shipped or invoked, so features with no HLSL meaning have nothing to lower to). Rewrite the construct in plain HLSL terms. Subtler Slang-isms this courtesy scan misses fall through to DXC, whose own verbatim diagnostics apply. | `SlangFrontend` |
+| `SD0602` | Slang frontend: an entry point is `[shader("...")]` for a stage no supported consumer runtime can load (compute, mesh, the raytracing set, …). Stock MonoGame and KNI `Effect`s hold exactly two stages — vertex and pixel (the Phase 58 measurement behind `FX0014`) — so this is a runtime limit, not a ShadowDusk gap, and it is rejected loudly by name rather than silently skipped. | `SlangEntryScanner` |
+| `SD0603` | Slang frontend: no `[shader("vertex")]` / `[shader("fragment")]` entry points found. Slang has no `technique`/`pass` concept, so the attributes are the only statement of intent ShadowDusk can synthesize the technique from. | `SlangEntryScanner` |
+| `SD0604` | Slang frontend: more than one entry point for the same stage. One `.slang` synthesizes one technique with at most one vertex and one pixel entry; split extra entries into separate files. | `SlangEntryScanner` |
+| `SD0610` | SkSL converter: the pass compiles a vertex shader (named in the message), or has no pixel shader. SkSL runtime effects have **no vertex stage** (a Skia platform limit); only pixel-only passes convert, and a vertex shader is refused rather than silently dropped. | `SkslConverter` |
+| `SD0611` | SkSL converter: the pixel shader reads an interpolant (named in the message) that an SkSL runtime effect cannot supply — runtime effects have **no varyings at all**; a pixel shader gets the coordinate plus uniforms. Refused by default (Gum's own hand-written SkSL port silently dropped its `COLOR0` tint exactly this way); `TreatVaryingsAsUniforms` is the documented, warned-about opt-in that substitutes a per-draw uniform. | `SkslGlslMapper` |
+| `SD0612` | SkSL converter: a texture is sampled at computed coordinates. SkSL's `.eval()` takes child-space **pixel** coordinates and a runtime effect cannot know a child's bounds, so converting computed-UV sampling could silently read the wrong texels — refused rather than guessed. Sampling at the interpolated `TEXCOORD0` (the 1:1 post-process case) converts. | `SkslGlslMapper` |
+| `SD0613` | SkSL converter: a construct with no SkSL runtime-effect equivalent (named in the message): `gl_*` builtins, derivatives (`dFdx`/`dFdy`/`fwidth`), LOD/offset/fetch sampling, or a multi-render-target output. Refused rather than approximated. | `SkslGlslMapper` |
+| `SD0614` | **Warning.** SkSL converter: a uniform was synthesized that the consumer's draw code MUST set — `ShadowDusk_Resolution` (output size in pixels, when the shader uses its UV arithmetically) or a `TreatVaryingsAsUniforms` substitution. Every synthesized uniform is also listed in `SkslConversion.SynthesizedUniforms`. | `SkslGlslMapper` |
+| `SD0615` | SkSL converter: the effect has multiple techniques or passes. An SkSL runtime effect is a single fragment function, so converting one pass and dropping the rest would be a silent guess — split the effect instead. | `SkslConverter` |
 | `SD1900` | Browser/WASM DXC backend failed. | `JsDxcShaderCompiler` |
 | `SD1901` | Browser/WASM SPIRV-Cross backend failed. | `JsSpirvToGlslTranspiler` |
 | `SD1902` | Browser/WASM vkd3d backend failed. | `WasmVkd3dShaderCompiler` |

@@ -14,6 +14,98 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **HLSL → SkSL conversion for SkiaSharp** (issue #197).
+  `ShadowDusk.Compiler.Sksl.SkslConverter.Convert(fx)` turns a pixel-only `.fx` into an SkSL
+  runtime effect for `SKRuntimeEffect.CreateShader`, via the same faithful front half as every
+  ShadowDusk compile (`HLSL → DXC → SPIR-V → SPIRV-Cross → GLSL`) plus a convention mapper —
+  `half4 main(float2 coord)` entry, combined samplers as `uniform shader` children named after
+  the HLSL textures and sampled with `.eval(coord)`, cbuffers flattened to loose uniforms.
+
+  **The limits are enforced loudly, never silently** (`SD0610`–`SD0615`), because SkSL runtime
+  effects have no vertex stage and **no varyings at all** — a pixel shader that reads an
+  interpolated input does not convert *even though it is purely a pixel shader*. The canonical
+  case is real: Gum maintains this same grayscale effect as both `.fx` and hand-written `.sksl`,
+  and the hand port silently drops the `* input.Color` tint the `.fx` applies. ShadowDusk's
+  converter refuses that shader by default, naming `COLOR0`, and offers
+  `TreatVaryingsAsUniforms` as the documented opt-in — under which the emission keeps the tint.
+  Derivatives, `gl_*` builtins, computed-UV sampling, vertex-shader passes, and multi-pass
+  effects are likewise refused by name.
+
+  Evidence (real SkiaSharp, CPU raster, test-only dependency — no shipped library references
+  it): Skia's own compiler accepts the emissions with zero errors, and renders match the
+  original HLSL's analytically computed math at ±2/255 (SkSL evaluates at `half` precision).
+  This is a **rendered-image-fidelity claim, never `mgfxc`-equivalence** — Skia has no reference
+  compiler to be equivalent to, and `.sksl` is not a validation-matrix backend.
+
+- **Slang as an input language — the HLSL-compatible subset, with nothing to install on any
+  platform** (issue #198). ShadowDusk now accepts `.slang` source: on the CLI by extension
+  (`ShadowDuskCLI MyShader.slang out.mgfx /Profile:OpenGL`, or `--input-format slang`), and from
+  the library via `ShadowDusk.Compiler.Slang.SlangFrontend.ConvertToFx`.
+
+  The frontend is a **pure managed text transform** — ShadowDusk is a multi-input compiler
+  (`.fx`, ShaderToy GLSL, now Slang) over one faithful pipeline, and this input follows that
+  shape exactly. Entry points are declared Slang's own way, with `[shader("vertex")]` /
+  `[shader("fragment")]` attributes, and the technique block is synthesized from them (Slang has
+  no technique/pass concept). The attributes are stripped and the body — HLSL-compatible Slang
+  is near-HLSL by Slang's own design — compiles through the **same pipeline as every `.fx`**, so
+  the author's names are the effect parameter names verbatim, and `.slang` input works on every
+  host and every target the pipeline works on, browser/WASM included. No Slang binary is
+  shipped, downloaded, or invoked, anywhere.
+
+  The deliberate trade: **Slang-only language features** (`import` modules, generics,
+  `extension`s, `associatedtype`) are rejected with a clear error naming the construct
+  (`SD0600`), never approximated — matching the issue as filed (*"write slang, but still go
+  through the normal compilation pipe… features not supported in HLSL are likely also not
+  supported in MonoGame"*). An entry point whose stage no `Effect` can load — compute, mesh,
+  raytracing — is likewise rejected loudly by name (`SD0602`). New registered diagnostics
+  `SD0600`, `SD0602`–`SD0604`.
+
+  No route through Slang is `mgfxc`-equivalent — `mgfxc` cannot read Slang at all; the claim is
+  that the generated `.fx` compiles through the same faithful pipeline as any other, to the same
+  proven targets.
+
+  **The subset claim is measured against the real Slang compiler, not assumed.** A 17-shader
+  corpus (`tests/fixtures/shaders/slang/`: procedural gradients/SDF/plasma, textured effects,
+  cbuffer-driven parameters, and VS+PS pairs) is cross-validated by `validation/SlangCorpus`:
+  every shader is accepted by the **real pinned `slangc`** (a SHA-256-verified test-time oracle,
+  like `fxc` — never shipped, never invoked by the product), and the uniform-free procedural
+  subset renders **pixel-identical (maxd 0)** through ShadowDusk's route vs through slangc's own
+  HLSL emission fed to the same DXC + SPIRV-Cross. In-suite, all 17 convert and compile on
+  OpenGL and DirectX.
+
+- **Direct `.xnb` output: replace your content pipeline with ShadowDusk and change no lines of
+  code** (Phase 60, issue #199). ShadowDusk now writes the content-pipeline `.xnb` itself, so a
+  consumer drops the file where their `mgfxc`-built one sat and keeps calling
+  `Content.Load<Effect>("MyShader")` unchanged, with MGCB out of the picture entirely. Two
+  surfaces, one writer: `CompiledShader.ToXnb()` on the library, and an `.xnb` output path on the
+  CLI (extension-driven, because a ShadowDusk-specific flag needed to get correct output is
+  exactly what the seamlessness rule forbids).
+
+  **A container only.** The payload is the same `.mgfx` / `.fxb` bytes ShadowDusk already emitted
+  and already had render-proven, byte-identical to what the same invocation writes without the
+  wrapper, so no shader-compilation behaviour changes and no existing output byte moves. Pure
+  managed, no native dependency, so it works on every host including WASM and Android.
+
+  **The XNB platform byte is derived from the target you already picked** and is never something
+  you select. That was settled by measurement, not assumption: both MonoGame's and FNA's
+  `ContentManager` validate the byte only for membership in a whitelist, never against the
+  platform actually running. FNA's whitelist is the binding constraint (it has no `'V'` for
+  DesktopVK and no `'G'` for DirectX 12), which is why the FNA target maps to `'w'`.
+
+  The type-reader manifest is emitted exactly as `dotnet mgcb` emits it, including the assembly
+  version, which is inert but whose *shape* is load-bearing and on which the three runtimes
+  disagree: MonoGame only strips the version when the name contains `PublicKeyToken`, while FNA
+  requires the full `, <assembly>, Version=…, Culture=…, PublicKeyToken=…` triple and a recognised
+  assembly name — so a bare `…, MonoGame.Framework` would resolve on MonoGame and fail on FNA.
+
+  Evidence: the envelope is byte-for-byte stock MGCB's through the type id; the payload is
+  byte-for-byte the CLI's; and **rung 4** — the new `validation/XnbContentLoad` driver builds each
+  fixture through both stock `dotnet mgcb` and ShadowDusk, loads both with a real
+  `ContentManager.Load<Effect>(assetName)`, and requires pixel-identical renders (4/4 fixtures,
+  1,230,720 px identical each, against `dotnet-mgcb` 3.8.4.1). Default-ON in
+  `validation/run-windows-render-gates.ps1`. The MGCB plugin is unaffected and stays: it serves
+  teams who *want* MGCB in their build.
+
 - **`FX0014`, a registered diagnostic for the shader stages the consumer runtime cannot load**
   (Phase 58 Area C). A pass assigning `HullShader`, `DomainShader`, `GeometryShader`, or
   `ComputeShader` now fails at the stage keyword with the stage named and the permanent reason

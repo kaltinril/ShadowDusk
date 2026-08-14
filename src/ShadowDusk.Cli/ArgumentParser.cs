@@ -25,7 +25,7 @@ internal static class ArgumentParser
           --target-runtime <name>   Output target runtime (picks backend + format together).
                                     Names: monogame-gl, monogame-dx, monogame-gl-v11,
                                     kni-knifx, fna. Overrides /Profile and --mgfx-version.
-          --input-format <fmt>      Input language: auto (default), fx, glsl. ShaderToy / GLSL
+          --input-format <fmt>      Input language: auto (default), fx, glsl, slang. ShaderToy / GLSL
                                     image shaders (.glsl/.frag/.fs) are auto-detected and converted
                                     to .fx before compiling; never required for correct output.
           --print-uniforms          Print the converted shader's drivable effect parameters to
@@ -313,10 +313,11 @@ internal static class ArgumentParser
     {
         InputFormat? format = (value ?? string.Empty).ToLowerInvariant() switch
         {
-            "auto" => InputFormat.Auto,
-            "fx"   => InputFormat.Fx,
-            "glsl" => InputFormat.Glsl,
-            _      => null,
+            "auto"  => InputFormat.Auto,
+            "fx"    => InputFormat.Fx,
+            "glsl"  => InputFormat.Glsl,
+            "slang" => InputFormat.Slang,
+            _       => null,
         };
 
         if (format is null)
@@ -325,7 +326,7 @@ internal static class ArgumentParser
                 Line: 0,
                 Column: 0,
                 Code: "X0011",
-                Message: $"Invalid --input-format value '{value}'. Valid: auto, fx, glsl"));
+                Message: $"Invalid --input-format value '{value}'. Valid: auto, fx, glsl, slang"));
 
         return Result<InputFormat, ShaderError>.Ok(format.Value);
     }

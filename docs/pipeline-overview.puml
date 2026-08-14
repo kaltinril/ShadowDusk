@@ -166,7 +166,7 @@ note as N1
 **DXC** = Vortice.Dxc (desktop) / DXC.wasm / DXC.so (android)   |   **SPIRV-Cross** = Silk.NET P/Invoke / .wasm / .so (android)   |   **vkd3d-shader** (+ d3dcompiler_47) = desktop only (DX/FNA, not on the GL/Android path)
 
 == Delivery shapes (one and the same library)
-**Library** IShaderCompiler.CompileAsync(fx) -> bytes  *(the product)*   |   **CLI** ShadowDuskCLI   |   **MGCB plugin**   |   **WASM** in-browser compile
+**Library** IShaderCompiler.CompileAsync(fx) -> bytes  *(the product)*   |   **CLI** ShadowDuskCLI   |   **MGCB plugin**   |   **direct .xnb** (CompiledShader.ToXnb() / an .xnb CLI output path - Content.Load<Effect> ready, MGCB not involved)   |   **WASM** in-browser compile
 **OS:** self-contained on Linux / macOS / Windows  +  Browser (WASM)  +  **Android** (GL path; on-device DXC + SPIRV-Cross built for android-arm64/x86_64, loaded in-process from the APK lib/[abi]/ dir)
 end note
 

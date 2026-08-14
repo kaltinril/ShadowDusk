@@ -15,13 +15,17 @@ internal enum InputFormat
 
     /// <summary>Force the ShaderToy / GLSL path (route through <see cref="ShadowDusk.ShaderToy.ShaderToyConverter"/>).</summary>
     Glsl,
+
+    /// <summary>Force the Slang path (route through <see cref="ShadowDusk.Compiler.Slang.SlangFrontend"/>).</summary>
+    Slang,
 }
 
-/// <summary>The resolved input kind after detection: a real <c>.fx</c> effect, or ShaderToy/GLSL to convert.</summary>
+/// <summary>The resolved input kind after detection: a real <c>.fx</c> effect, ShaderToy/GLSL, or Slang to convert.</summary>
 internal enum InputKind
 {
     Fx,
     Glsl,
+    Slang,
 }
 
 /// <summary>
@@ -49,6 +53,8 @@ internal static class InputFormatDetector
                 return Result<InputKind, ShaderError>.Ok(InputKind.Fx);
             case InputFormat.Glsl:
                 return Result<InputKind, ShaderError>.Ok(InputKind.Glsl);
+            case InputFormat.Slang:
+                return Result<InputKind, ShaderError>.Ok(InputKind.Slang);
         }
 
         // 2. Extension signal.
@@ -61,6 +67,10 @@ internal static class InputFormatDetector
 
         if (GlslExtensions.Any(g => ext.Equals(g, StringComparison.OrdinalIgnoreCase)))
             return Result<InputKind, ShaderError>.Ok(InputKind.Glsl);
+
+        // .slang is unambiguous — Slang's own conventional extension, and nothing else uses it.
+        if (ext.Equals(".slang", StringComparison.OrdinalIgnoreCase))
+            return Result<InputKind, ShaderError>.Ok(InputKind.Slang);
 
         // 3. Content sniff (the tie-breaker for unknown / no extension, e.g. a ShaderToy shader saved
         //    as .txt or piped in). A cheap structural check on comment/string-stripped text — NOT a

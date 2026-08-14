@@ -18,6 +18,11 @@
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="Shouldly" />
+    <!-- Phase 62: the SkSL converter's evidence is Skia's own compiler + a real CPU render.
+         Test-only; no product library references SkiaSharp (NoMonoGameInProductLibrariesTests
+         guards the analogous rule for MonoGame). -->
+    <PackageReference Include="SkiaSharp" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" />
     <PackageReference Include="coverlet.collector">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>

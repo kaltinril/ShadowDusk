@@ -40,12 +40,36 @@ internal sealed class PipelineRunner
 
         string hlslSource;
         bool isConvertedGlsl = detection.Value == InputKind.Glsl;
+        bool isConvertedSlang = detection.Value == InputKind.Slang;
         if (isConvertedGlsl)
         {
             var converted = ConvertShaderToy(args, sourceText);
             if (converted.IsFailure)
                 return Result<byte[], IReadOnlyList<ShaderError>>.Fail(converted.Error);
             hlslSource = converted.Value;
+        }
+        else if (isConvertedSlang)
+        {
+            // Phase 61 (issue #198): .slang routes through the Slang frontend exactly as .glsl
+            // routes through the ShaderToy converter — a PURE TEXT transform upstream of the
+            // unchanged pipeline (HLSL-compatible Slang; the body compiles through the same DXC
+            // as every .fx, so nothing extra is needed on any platform). Entry-point and
+            // Slang-only-construct diagnostics point at the real .slang file and line.
+            var converted = ShadowDusk.Compiler.Slang.SlangFrontend.ConvertToFx(
+                sourceText,
+                new ShadowDusk.Compiler.Slang.SlangConvertOptions
+                {
+                    SourceName    = args.SourceFile,
+                    TechniqueName = SanitizeIdentifier(Path.GetFileNameWithoutExtension(args.SourceFile)),
+                });
+
+            if (converted.IsFailure)
+                return Result<byte[], IReadOnlyList<ShaderError>>.Fail(converted.Error);
+
+            foreach (var w in converted.Value.Warnings)
+                Console.Error.WriteLine(MgcbErrorFormatter.Format(w));
+
+            hlslSource = converted.Value.FxText;
         }
         else
         {
@@ -60,15 +84,26 @@ internal sealed class PipelineRunner
         // "<name>.generated.fx" name so they are never mistaken for the original source (e.g. a 30-line
         // .glsl reporting "line 51"). Convert-stage diagnostics keep the real .glsl name (they ARE located
         // in the user's GLSL). SourceFileName is diagnostics-only and does not affect output bytes.
-        string compileSourceName = isConvertedGlsl
+        string compileSourceName = isConvertedGlsl || isConvertedSlang
             ? Path.GetFileNameWithoutExtension(args.SourceFile) + ".generated.fx"
             : args.SourceFile;
+
+        // For the converted routes the compile's SourceFileName is a synthetic ".generated.fx"
+        // with no directory, so a #include in the ORIGINAL source (legal in the Slang route,
+        // whose body is HLSL) would lose its relative anchor. Append the original file's
+        // directory to the search paths so those includes keep resolving.
+        IReadOnlyList<string> includePaths = args.IncludePaths;
+        if (isConvertedSlang
+            && Path.GetDirectoryName(Path.GetFullPath(args.SourceFile)) is { Length: > 0 } sourceDir)
+        {
+            includePaths = [.. args.IncludePaths, sourceDir];
+        }
 
         var options = new CompilerOptions
         {
             Target                 = args.Platform,
             IncludeResolver        = includeResolver,
-            AdditionalIncludePaths = args.IncludePaths,
+            AdditionalIncludePaths = includePaths,
             SourceFileName         = compileSourceName,
             Debug                  = args.Debug,
             MgfxVersion            = args.MgfxVersion,
@@ -84,11 +119,11 @@ internal sealed class PipelineRunner
 
         if (compileResult.IsFailure)
         {
-            // F2: when the converted GLSL fails the pipeline compile, lead with a Note so the user knows
-            // the error below is in the GENERATED HLSL (.fx) produced from their shader, not their source
-            // file. Identifier collisions (F1) are auto-fixed at convert time, so reaching here means the
-            // generated HLSL hit a real limit (e.g. an SM3 instruction cap on a heavy shader).
-            if (isConvertedGlsl)
+            // F2: when the converted GLSL/Slang fails the pipeline compile, lead with a Note so the user
+            // knows the error below is in the GENERATED HLSL (.fx) produced from their shader, not their
+            // source file. Identifier collisions (F1) are auto-fixed at convert time, so reaching here
+            // means the generated HLSL hit a real limit (e.g. an SM3 instruction cap on a heavy shader).
+            if (isConvertedGlsl || isConvertedSlang)
             {
                 var note = new ShaderError(
                     File: args.SourceFile, Line: 0, Column: 0, Code: "SD0003",
@@ -104,7 +139,23 @@ internal sealed class PipelineRunner
             return Result<byte[], IReadOnlyList<ShaderError>>.Fail(compileResult.Error);
         }
 
-        byte[] mgfxBytes = compileResult.Value.Data;
+        // Stage 2.5 (Phase 60, issue #199): an `.xnb` output path means "wrap it", so a consumer
+        // can drop the file where their mgfxc-built .xnb sat and keep calling
+        // Content.Load<Effect> unchanged. Extension-driven rather than a switch, because that is
+        // the seamless shape: the consumer already says where the file goes, and a
+        // ShadowDusk-specific flag to get correct output is exactly what the standing directive
+        // forbids. It cannot mis-fire — `.xnb` has no other meaning as a shader-compiler output,
+        // and every other extension is passed through untouched.
+        //
+        // The payload inside the container is compileResult.Value.Data VERBATIM, so `out.mgfx`
+        // and the payload of `out.xnb` are byte-identical BY CONSTRUCTION, not by a second code
+        // path that has to be kept in step (the Phase 42 one-pipeline precedent).
+        bool wrapAsXnb = Path.GetExtension(args.OutputFile)
+            .Equals(".xnb", StringComparison.OrdinalIgnoreCase);
+
+        byte[] mgfxBytes = wrapAsXnb
+            ? compileResult.Value.ToXnb()
+            : compileResult.Value.Data;
 
         // Non-fatal diagnostics — the underlying compiler's verbatim warnings plus
         // the GL portability findings (SD0400-SD0499). Printed to stderr in the
