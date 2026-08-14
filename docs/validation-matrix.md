@@ -366,6 +366,28 @@ the ShaderToy axis apply, plus one honesty note of its own:
   SHA-256-verified pin), not yet a packaged native; absent toolchain → loud `SD0600`, and the
   §7-tracked packaging remainder (Phase 61 A3) is what closes that gap.
 
+### 8.0b SkSL converter (SkiaSharp) — the image-fidelity axis (added 2026-08-13, Phase 62)
+
+`ShadowDusk.Compiler.Sksl.SkslConverter` (issue #197) converts a pixel-only `.fx` to an SkSL
+runtime effect at the pre-rewriter seam (`HLSL → DXC → SPIR-V → SPIRV-Cross → GLSL → mapper`).
+Its evidence model was set by owner decision (2026-08-13, `project_decisions.md`):
+**rendered-image fidelity, never `mgfxc`-equivalence** — Skia has no reference compiler, and
+`.sksl` is never a §1 cell.
+
+- **Proven today:** Skia's own compiler (`SKRuntimeEffect.CreateShader`) accepts the emissions
+  with zero errors, and real CPU-raster renders match the **original HLSL's analytically
+  computed math** at ±2/255 (SkSL `half` precision — the tolerance is stated, not assumed), with
+  a positive control pinning that the known silent-loss failure (Gum's own hand port drops its
+  `COLOR0` tint) is measurably absent. `SkslConverterTests` + `SkslSkiaEvidenceTests` (SkiaSharp
+  is a test-only dependency; runs in the ordinary suite, no GPU).
+- **The reject set is the load-bearing half** (`SD0610`–`SD0615`): no varyings, no vertex stage,
+  no derivatives, no computed-UV sampling, no multi-pass — each refused by name, never silently
+  narrowed. The default answer to a shader reading an interpolant is refusal with a documented
+  opt-in (`TreatVaryingsAsUniforms`).
+- **Not yet standing:** a cross-renderer harness diffing the same shader through the proven GL
+  backend vs through Skia (the analytic-expectation tests cover the shipped conversions; the GL
+  comparison is the stronger general form), and a real Gum/SkiaGum consumer trial.
+
 ### 8.1 Reject-fidelity: mgfxc's per-target compile-profile floor (measured 2026-07-31)
 
 Every `KnownProfiles` entry was swept through the **pinned** `mgfxc` (`dotnet-mgcb` 3.8.4.1 —
@@ -391,6 +413,7 @@ real `mgfxc /Profile:OpenGL` already refuses.
 
 One line per update, newest first; the cells above are always the current truth and the full detail lives in the linked phase docs.
 
+- **2026-08-13** — **Phase 62 v1 ([issue #197](https://github.com/kaltinril/ShadowDusk/issues/197)): the HLSL → SkSL converter for SkiaSharp shipped**, as §8.0b — an image-fidelity axis, never a §1 cell (Skia has no reference compiler; the evidence model was set by owner decision, `project_decisions.md`). Skia's own compiler accepts the emissions; renders match the original HLSL's analytic math at ±2/255; the reject set (`SD0610`–`SD0615`) is the load-bearing half, and its flagship case is measured: the converter REFUSES Gum's own Grayscale by default (it reads `COLOR0`), where Gum's hand-written SkSL port silently drops that tint. Open: the standing GL-vs-Skia cross-renderer harness and a Gum consumer trial.
 - **2026-08-13** — **Phase 61 v1 ([issue #198](https://github.com/kaltinril/ShadowDusk/issues/198)): `.slang` is now an accepted INPUT language**, as a new §8.0 distinct-evidence row (never a §1 cell — `mgfxc` cannot read Slang, so no route through it is `mgfxc`-equivalent). `ShadowDusk.Compiler.Slang.SlangFrontend` + CLI auto-routing; `.slang → pinned slangc v2026.14.1 → HLSL → managed merge/demangle/flatten → .fx → the unchanged pipeline`. Compile-proven on OpenGL + DirectX with the author's exact parameter names in the decoded effect; slangc-gated `SlangRouteTests` + 12 pure tests; diagnostics `SD0600`–`SD0607` registered. Open: the render comparison vs an equivalent hand-written `.fx`, the FNA arm, and the native packaging (slangc is provisioned via `tools/setup-local-testing.ps1 -WithSlang`, not yet package-shipped).
 - **2026-08-13** — **[Phase 60](../plan/DONE/PHASE-60-xnb-content-output.md) closed ([issue #199](https://github.com/kaltinril/ShadowDusk/issues/199)): ShadowDusk now writes the `.xnb` itself, so a consumer replaces their content pipeline and changes NO consumer code.** New §6 row, `validation/XnbContentLoad`, default-ON in the gate script. Every design question was settled by **measurement against a real `dotnet-mgcb` 3.8.4.1 build**, not from documentation (Phase 60 A3's explicit instruction, and Phase 52's lesson that a documented MonoGame behaviour can turn out never to have worked). Two findings drove the design. **(1) The platform byte is safely derivable.** Both MonoGame's and FNA's `ContentManager` validate it only for *membership in a whitelist*, never against the platform actually running — so it follows from the `PlatformTarget` the consumer already picked and no new knob exists. FNA's whitelist is the binding constraint (no `'V'`, no `'G'`), which is why `Fna` maps to `'w'`. **(2) The type-reader manifest's embedded assembly version is inert but its SHAPE is load-bearing**, and the three runtimes disagree on how: MonoGame only strips the version when the name contains `PublicKeyToken`; FNA requires the full `, <assembly>, Version=…, Culture=…, PublicKeyToken=…` triple and a recognised assembly name, so a bare `…, MonoGame.Framework` would fail there. Emitting exactly what `mgcb` emits is the only choice that satisfies all of them. Evidence: envelope byte-identical to stock MGCB through the type id, payload byte-identical to the CLI's, and **rung 4 — 4/4 fixtures load through a real `ContentManager.Load<Effect>` and render 1,230,720 px identical to the `mgfxc`-built `.xnb`**. No existing output byte moved; the `.xnb` is a container around payloads already rung-4 proven. Full `dotnet test` green (2,650 per TFM).
 - **2026-08-02** — **Issue #189: DirectX is deliberately NOT being fixed, and that is a measured decision rather than a deferral.** DX11 emits sampler slots 0/1 where `mgfxc` emits the declared 2/3 (visible as the `SamplerRegisterSparse [DirectX_11]` cell in the Phase 41 divergence matrix). The obvious fix ships a regression: on DX11 the record's `samplerSlot` is where MonoGame assigns baked sampler state, so it must name the sampler register the **shipped bytecode reads** — and since `FxPreParser` drops the clause before DXC, our DXBC reads 0/1. Writing 2/3 would send baked state to a register the shader never samples. Making the bytecode itself use 2/3 means re-emitting the clause into the rewritten HLSL, which moves the DirectX/DX12/Vulkan/FNA bytes for a defect none of them have. The sibling divergence (fxc auto-assigns DX **texture** registers by first use, we use declaration order) is not closable either — that allocation lives inside each compiler's own bytecode. DX11's records are internally consistent with DX11's bytecode, which is the property that matters, and no DirectX failure has been reported. Recorded in `project_decisions.md` and `plan/DONE/ISSUE-189-gl-sampler-slot-declaration-order.md` §6.3; revisit only on a reported symptom.

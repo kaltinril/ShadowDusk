@@ -69,7 +69,13 @@ ask which half they ran.
   [`plan/PHASE-61-slang-support.md`](../../../plan/PHASE-61-slang-support.md) for what is
   still open (native packaging; the toolchain is provisioned, not package-shipped).
 
-- **SkiaSharp / SkSL (issue #197) — NOT built.** See
+- **SkiaSharp / SkSL (issue #197) — shipped (v1).** `ShadowDusk.Compiler.Sksl.SkslConverter`
+  converts a pixel-only `.fx` to SkSL for `SKRuntimeEffect`. Know the shape of it: the
+  converter **refuses loudly** anything SkSL cannot hold (varyings, vertex stages,
+  derivatives, computed-UV sampling — `SD0610`–`SD0615`), and its default answer to a
+  shader reading an interpolant is rejection with the `TreatVaryingsAsUniforms` opt-in
+  named. Tests double as examples: `tests/ShadowDusk.Compiler.Tests/Sksl/`. SkiaSharp is a
+  test-only dependency. See
   [`plan/PHASE-62-skiasharp-sksl-target.md`](../../../plan/PHASE-62-skiasharp-sksl-target.md).
 
 ## When someone reports a failure

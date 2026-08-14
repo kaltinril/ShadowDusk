@@ -139,6 +139,15 @@ File.WriteAllBytes("Content/MyShader.xnb", result.Value.ToXnb());
 
 The XNB platform byte is **derived** from the target you already picked, never something you select, and the payload inside is byte-for-byte the `.mgfx` the same call would emit. Proven at rung 4: a real `ContentManager.Load<Effect>` renders it pixel-identical to the `mgfxc`-built `.xnb`.
 
+**SkiaSharp / SkSL converter** (`SkslConverter`) — converts an `.fx` pixel shader to an [SkSL runtime effect](https://skia.org/docs/user/sksl/) for `SKRuntimeEffect`, so the same shader source can serve a SkiaSharp render path:
+
+```csharp
+var result = SkslConverter.Convert(fxSource, new SkslConvertOptions());
+using var effect = SKRuntimeEffect.CreateShader(result.Value.SkslText, out var errors);
+```
+
+Know the limits before reaching for it — they are Skia's, not ShadowDusk's, and the converter enforces them **loudly** rather than emitting something that renders wrong. SkSL runtime effects have **no vertex stage and no varyings at all**: a pixel shader gets its coordinate plus uniforms and nothing else. That means a shader that *reads an interpolated input* (a vertex color, a custom interpolant) does not convert **even though it is purely a pixel shader** — the converter refuses it by name, with an explicit opt-in (`TreatVaryingsAsUniforms`) if a per-draw constant is acceptable. The convertible set is fragment-only, coordinate-driven effects with uniform inputs: post-process, tint, gradient, SDF work. Evidence bar: rendered-image fidelity against the original HLSL's math in real Skia (there is no reference compiler for SkSL, so this is **not** an `mgfxc`-equivalence claim).
+
 **WASM library** (`ShadowDusk.Wasm`) — the same pipeline running in the browser via WebAssembly, for live in-browser compilation with no server roundtrip. OpenGL output renders live in KNI WebGL; DirectX and FNA output come back as downloads to run in your desktop game. The [in-browser fiddle](samples/ShaderFiddle.Web) is a sample of this. See [`docs/HOWTO-WASM-KNI.md`](docs/HOWTO-WASM-KNI.md) for the KNI/Blazor walkthrough.
 
 > "Same `.mgfx` output" means it loads and renders like mgfxc's, not that the bytes are identical. ShadowDusk's output is deterministic in its own right: the same version, source, and target always give the same bytes.

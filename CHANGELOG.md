@@ -14,6 +14,29 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **HLSL → SkSL conversion for SkiaSharp** (issue #197).
+  `ShadowDusk.Compiler.Sksl.SkslConverter.Convert(fx)` turns a pixel-only `.fx` into an SkSL
+  runtime effect for `SKRuntimeEffect.CreateShader`, via the same faithful front half as every
+  ShadowDusk compile (`HLSL → DXC → SPIR-V → SPIRV-Cross → GLSL`) plus a convention mapper —
+  `half4 main(float2 coord)` entry, combined samplers as `uniform shader` children named after
+  the HLSL textures and sampled with `.eval(coord)`, cbuffers flattened to loose uniforms.
+
+  **The limits are enforced loudly, never silently** (`SD0610`–`SD0615`), because SkSL runtime
+  effects have no vertex stage and **no varyings at all** — a pixel shader that reads an
+  interpolated input does not convert *even though it is purely a pixel shader*. The canonical
+  case is real: Gum maintains this same grayscale effect as both `.fx` and hand-written `.sksl`,
+  and the hand port silently drops the `* input.Color` tint the `.fx` applies. ShadowDusk's
+  converter refuses that shader by default, naming `COLOR0`, and offers
+  `TreatVaryingsAsUniforms` as the documented opt-in — under which the emission keeps the tint.
+  Derivatives, `gl_*` builtins, computed-UV sampling, vertex-shader passes, and multi-pass
+  effects are likewise refused by name.
+
+  Evidence (real SkiaSharp, CPU raster, test-only dependency — no shipped library references
+  it): Skia's own compiler accepts the emissions with zero errors, and renders match the
+  original HLSL's analytically computed math at ±2/255 (SkSL evaluates at `half` precision).
+  This is a **rendered-image-fidelity claim, never `mgfxc`-equivalence** — Skia has no reference
+  compiler to be equivalent to, and `.sksl` is not a validation-matrix backend.
+
 - **Slang as an input language** (issue #198). ShadowDusk now accepts `.slang` source: on the CLI
   by extension (`ShadowDuskCLI MyShader.slang out.mgfx /Profile:OpenGL`, or `--input-format
   slang`), and from the library via `ShadowDusk.Compiler.Slang.SlangFrontend.ConvertToFxAsync`.

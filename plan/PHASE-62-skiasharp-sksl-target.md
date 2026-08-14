@@ -2,11 +2,44 @@
 
 **Track:** Backend breadth (purpose-gated). Additive; **no existing output byte changes**.
 
-**Status:** 📋 **Planned / not started** (created 2026-08-11). **The two premise corrections in §2
-were put to the requester and both were accepted** (vchelaru, 2026-08-12, on
-[PR #201](https://github.com/kaltinril/ShadowDusk/pull/201)) — see §2.5. The phase's *shape* is
-therefore settled: **SkSL text, fragment-only.** Its *gate* is not — Phase 57 §3 is unchanged, and
-OQ1's demand question is only half answered.
+**Status:** 🚧 **CONVERTER SHIPPED v1 (2026-08-13); the GL-vs-Skia image comparison is the open
+evidence remainder.** The two premise corrections in §2 were put to the requester and both were
+accepted (vchelaru, 2026-08-12, [PR #201](https://github.com/kaltinril/ShadowDusk/pull/201)) —
+see §2.5 — and **the §3 gate was resolved by owner decision on 2026-08-13** (recorded in
+`project_decisions.md`): rendered-image fidelity is accepted as this target's evidence model,
+consistent with the ShaderToy axis, with a stated non-zero tolerance and the varying-loss guard.
+
+**What shipped (2026-08-13):** `ShadowDusk.Compiler.Sksl.SkslConverter` — public API
+`Convert(fx) → SkSL text` + the runtime contract (`ChildShaders`, `SynthesizedUniforms`) — at
+exactly the §2.3 seam: `HLSL → [DXC] → SPIR-V → [SPIRV-Cross] → modern GLSL → [convention mapper]
+→ SkSL`, branching before the MonoGame rewriter. §2.4's convention mapper exists and was not
+hand-waved: `half4 main(float2 coord)` entry synthesis, combined samplers → `uniform shader`
+children **named after the HLSL textures** (recovered via `SpirvCombinedSamplerPairs`, the same
+extraction the GL sampler table trusts), uniform blocks (including DXC's `$Globals` instanced
+form) flattened to loose SkSL uniforms, `texture(s, uv)` at the interpolated UV →
+`s.eval(coord)`, and arithmetic UV use → `coord / ShadowDusk_Resolution` with the uniform
+synthesized loudly (`SD0614`).
+
+**The B2 reject-loudly requirement is implemented and is the design's spine** (`SD0610`–`SD0615`):
+a vertex-shader pass, a non-`TEXCOORD0` interpolant, computed-UV sampling, derivatives/`gl_*`
+builtins/MRT, and multi-technique/multi-pass effects are all refused **by name** — never silently
+narrowed. §2.6's prediction held exactly: **the converter's default answer to Gum's own
+`Grayscale.fx` is the `SD0611` rejection** (it reads `COLOR0`), with `TreatVaryingsAsUniforms` as
+the documented, warned-about opt-in — under which the emission carries **the tint Gum's hand port
+silently dropped**.
+
+**Evidence shipped (real SkiaSharp, test-only dependency, CPU raster — no GPU):**
+`SKRuntimeEffect.CreateShader` — Skia's own compiler — accepts the Grayscale and gradient
+emissions with zero errors, and real renders match the **analytically computed result of the
+original HLSL's math** at ±2/255 (`half` precision, the decision's stated tolerance), including a
+positive control asserting the render does NOT match the untinted math (i.e. the hand-port's
+silent loss is measurably absent). 10 tests, `SkslConverterTests` + `SkslSkiaEvidenceTests`.
+
+**Open:** C1's cross-renderer comparison (same shader through the proven GL backend vs through
+Skia, image-diffed) — the analytic-expectation tests cover the shipped conversions but a GL-side
+comparison is the stronger general harness; a real Gum/SkiaGum consumer trial (OQ1's "is
+Grayscale representative" question); and a `docs/validation-matrix.md` §8-style row is in place
+while a dedicated render driver is not.
 
 **Depends on:** **the [Phase 57](PHASE-57-universal-compiler-auto-detection.md) §3 PURPOSE
 decision** (not its code) — the identical hard gate [Phase 59](PHASE-59-raylib-cs-backend.md)
@@ -271,20 +304,30 @@ already measured at 46/46 mean 0.00/255 for the ShaderToy route).
 - [x] **OQ1 answered** (§2.6, 2026-08-13): the consumer is vchelaru/Gum via its shipping
       `Runtimes/SkiaGum` path, and the shader is `Grayscale.fx` ↔ `Grayscale.sksl`, a hand-authored
       pair with the `.fx` already vendored here.
-- [ ] **The §2.6 lossiness finding honoured in the design**: Gum's own hand port silently drops a
-      `COLOR` varying. The emitter must **refuse or demand a substitute**, never quietly reproduce
-      that loss (B2).
-- [ ] Phase 57 §3 resolved. If "no": this phase is closed with that recorded, and no code is written.
-- [ ] If "yes": A1's hand-translation probe run in real SkiaSharp and written up, with A2's
-      convertible/not-convertible statement. A recorded "no" closes the phase.
-- [ ] **The fragment-only limit surfaced in consumer-facing docs**, not only here — the requester's
-      own request (§2.5). If this phase ships, that is part of the same PR under `CLAUDE.md`'s
-      support-surface rule, and it must state the **no-varyings** consequence (§2.5), not merely
-      "no vertex shaders", or it will mislead exactly the way the reply shows is easy to.
-- [ ] Any emitter is additive: full-corpus byte-identity across existing targets is an acceptance
-      criterion, and SkiaSharp stays out of the shipped libraries' dependencies.
-- [ ] The evidence model is stated as **source-fidelity, not `mgfxc`-equivalence**, everywhere it
-      appears.
+- [x] **The §2.6 lossiness finding honoured in the design** (B2): the converter's DEFAULT answer
+      to Gum's own `Grayscale.fx` is the `SD0611` refusal naming `COLOR0` — it refuses or demands
+      a substitute (`TreatVaryingsAsUniforms`, warned + surfaced in `SynthesizedUniforms`), never
+      quietly reproduces the loss. Pinned by `GumGrayscale_IsRejectedByDefault…` and by the render
+      test's positive control that the emission does NOT match the untinted math.
+- [x] Phase 57 §3 resolved for this case — **"yes", by owner decision 2026-08-13** (recorded in
+      `project_decisions.md`): rendered-image fidelity is the accepted evidence model, consistent
+      with the ShaderToy axis, tolerance stated (±2/255, `half` precision), varying-loss guarded.
+- [x] A1's probe run in real SkiaSharp — as automated tests rather than a hand log: the
+      should-convert case (Grayscale via the opt-in; the gradient) compiles in Skia's own
+      compiler and renders the original HLSL's math; the should-not-convert cases (interpolant
+      reads, computed-UV sampling, derivatives, VS passes, multi-pass) are each pinned to their
+      registered refusal. A2's statement is the §2.4 table + the `SD0610`–`SD0615` block.
+- [x] **The fragment-only limit surfaced in consumer-facing docs** with the **no-varyings**
+      consequence stated (README's SkSL section + the CHANGELOG entry): a pixel shader that
+      *reads an interpolant* does not convert even though it is purely a pixel shader — the
+      distinction §2.5 showed is easy to miss.
+- [x] Additive: the converter is new files only — `CompilationPipeline` and every writer
+      untouched, full suite green — and **SkiaSharp is a test-only dependency**; no shipped
+      `ShadowDusk.*` library references it.
+- [x] The evidence model is stated as **rendered-image fidelity, never `mgfxc`-equivalence**,
+      everywhere it appears (API doc-comments, error-codes rows, README, validation-matrix §8).
+- [ ] **Open:** C1's cross-renderer harness (proven-GL render vs Skia render, image-diffed) as a
+      standing driver, and a real Gum/SkiaGum consumer trial (OQ1's representativeness half).
 
 ## 6. Non-goals
 

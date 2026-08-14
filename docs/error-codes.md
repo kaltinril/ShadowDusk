@@ -21,7 +21,8 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 | `SD0300`–`SD0399` | FNA (fx_2_0) target |
 | `SD0400`–`SD0499` | GL portability lint (`GlslPortabilityAnalyzer`) — always warnings, never errors |
 | `SD0500`–`SD0599` | MGCB content-processor plugin |
-| `SD0600`–`SD0699` | Slang input frontend (`SlangFrontend` and its passes) |
+| `SD0600`–`SD0609` | Slang input frontend (`SlangFrontend` and its passes) |
+| `SD0610`–`SD0619` | SkSL converter (`SkslConverter` / `SkslGlslMapper`) |
 | `SD1900`–`SD1999` | Browser/WASM host backends |
 | `X0000`–`X0099` | CLI and pipeline general errors (mgfxc-style) |
 
@@ -108,6 +109,12 @@ through verbatim (constraint 5: fail loudly, no reformatting) and are not listed
 | `SD0605` | Slang frontend: after merging `slangc`'s per-entry emissions, two declarations landed on the same `register(...)`. Happens when explicit registers in the `.slang` combine with slangc's per-stage allocation; make every explicit register distinct, or drop the explicit registers. (When the user source declares no registers, slangc's synthetic ones are stripped and the pipeline's own faithful allocation applies — this code is unreachable then.) | `SlangHlslPostProcessor` |
 | `SD0606` | **Warning.** Slang frontend: a slangc-mangled symbol (`X_0`) could not be safely renamed back to `X` (the bare name is already in use or is an `.fx`-level keyword), so it keeps its mangled name — which is the name `Effect.Parameters["…"]` will see. The message names both forms. Worst case is a mangled parameter name, never a miscompile. | `SlangHlslPostProcessor` |
 | `SD0607` | Slang frontend: `slangc` emitted a `#pragma pack_matrix(...)` layout other than `column_major` (the fxc/DXC default the `.mgfx` matrix handling is built around). Passing it through would silently transpose every matrix parameter, so the input-shape is rejected instead. Not produced by the pinned slangc; this exists so a future Slang release cannot flip matrix layout silently. | `SlangHlslPostProcessor` |
+| `SD0610` | SkSL converter: the pass compiles a vertex shader (named in the message), or has no pixel shader. SkSL runtime effects have **no vertex stage** (a Skia platform limit); only pixel-only passes convert, and a vertex shader is refused rather than silently dropped. | `SkslConverter` |
+| `SD0611` | SkSL converter: the pixel shader reads an interpolant (named in the message) that an SkSL runtime effect cannot supply — runtime effects have **no varyings at all**; a pixel shader gets the coordinate plus uniforms. Refused by default (Gum's own hand-written SkSL port silently dropped its `COLOR0` tint exactly this way); `TreatVaryingsAsUniforms` is the documented, warned-about opt-in that substitutes a per-draw uniform. | `SkslGlslMapper` |
+| `SD0612` | SkSL converter: a texture is sampled at computed coordinates. SkSL's `.eval()` takes child-space **pixel** coordinates and a runtime effect cannot know a child's bounds, so converting computed-UV sampling could silently read the wrong texels — refused rather than guessed. Sampling at the interpolated `TEXCOORD0` (the 1:1 post-process case) converts. | `SkslGlslMapper` |
+| `SD0613` | SkSL converter: a construct with no SkSL runtime-effect equivalent (named in the message): `gl_*` builtins, derivatives (`dFdx`/`dFdy`/`fwidth`), LOD/offset/fetch sampling, or a multi-render-target output. Refused rather than approximated. | `SkslGlslMapper` |
+| `SD0614` | **Warning.** SkSL converter: a uniform was synthesized that the consumer's draw code MUST set — `ShadowDusk_Resolution` (output size in pixels, when the shader uses its UV arithmetically) or a `TreatVaryingsAsUniforms` substitution. Every synthesized uniform is also listed in `SkslConversion.SynthesizedUniforms`. | `SkslGlslMapper` |
+| `SD0615` | SkSL converter: the effect has multiple techniques or passes. An SkSL runtime effect is a single fragment function, so converting one pass and dropping the rest would be a silent guess — split the effect instead. | `SkslConverter` |
 | `SD1900` | Browser/WASM DXC backend failed. | `JsDxcShaderCompiler` |
 | `SD1901` | Browser/WASM SPIRV-Cross backend failed. | `JsSpirvToGlslTranspiler` |
 | `SD1902` | Browser/WASM vkd3d backend failed. | `WasmVkd3dShaderCompiler` |

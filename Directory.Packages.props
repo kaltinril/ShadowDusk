@@ -29,6 +29,12 @@
     <PackageVersion Include="Silk.NET.OpenGL"          Version="2.23.0" />
     <PackageVersion Include="Silk.NET.Windowing.Glfw"  Version="2.23.0" />
     <PackageVersion Include="SixLabors.ImageSharp"     Version="3.1.12" />
+    <!-- Phase 62 (issue #197): TEST-ONLY dependency, never a product one - the SkSL converter's
+         evidence bar is "Skia's own compiler accepts the emission and it renders right", and
+         SKRuntimeEffect is how a test asks Skia. The Linux native package keeps the CI ubuntu
+         lanes loading libSkiaSharp. -->
+    <PackageVersion Include="SkiaSharp"                                    Version="4.151.1" />
+    <PackageVersion Include="SkiaSharp.NativeAssets.Linux.NoDependencies"  Version="4.151.1" />
   </ItemGroup>
 
   <ItemGroup Label="MonoGame runtime validation (Phase 17 / Phase 18)">
