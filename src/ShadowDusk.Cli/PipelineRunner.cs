@@ -40,12 +40,37 @@ internal sealed class PipelineRunner
 
         string hlslSource;
         bool isConvertedGlsl = detection.Value == InputKind.Glsl;
+        bool isConvertedSlang = detection.Value == InputKind.Slang;
         if (isConvertedGlsl)
         {
             var converted = ConvertShaderToy(args, sourceText);
             if (converted.IsFailure)
                 return Result<byte[], IReadOnlyList<ShaderError>>.Fail(converted.Error);
             hlslSource = converted.Value;
+        }
+        else if (isConvertedSlang)
+        {
+            // Phase 61 (issue #198): .slang routes through the Slang frontend exactly as .glsl
+            // routes through the ShaderToy converter — a text transform upstream of the
+            // unchanged pipeline. slangc's diagnostics point at the REAL .slang file (it read
+            // the file itself), so they pass through as-is.
+            var converted = await ShadowDusk.Compiler.Slang.SlangFrontend.ConvertToFxAsync(
+                sourceText,
+                new ShadowDusk.Compiler.Slang.SlangConvertOptions
+                {
+                    SourceFilePath = args.SourceFile,
+                    SourceName     = args.SourceFile,
+                    TechniqueName  = SanitizeIdentifier(Path.GetFileNameWithoutExtension(args.SourceFile)),
+                },
+                ct).ConfigureAwait(false);
+
+            if (converted.IsFailure)
+                return Result<byte[], IReadOnlyList<ShaderError>>.Fail(converted.Error);
+
+            foreach (var w in converted.Value.Warnings)
+                Console.Error.WriteLine(MgcbErrorFormatter.Format(w));
+
+            hlslSource = converted.Value.FxText;
         }
         else
         {
@@ -60,7 +85,7 @@ internal sealed class PipelineRunner
         // "<name>.generated.fx" name so they are never mistaken for the original source (e.g. a 30-line
         // .glsl reporting "line 51"). Convert-stage diagnostics keep the real .glsl name (they ARE located
         // in the user's GLSL). SourceFileName is diagnostics-only and does not affect output bytes.
-        string compileSourceName = isConvertedGlsl
+        string compileSourceName = isConvertedGlsl || isConvertedSlang
             ? Path.GetFileNameWithoutExtension(args.SourceFile) + ".generated.fx"
             : args.SourceFile;
 
@@ -84,11 +109,11 @@ internal sealed class PipelineRunner
 
         if (compileResult.IsFailure)
         {
-            // F2: when the converted GLSL fails the pipeline compile, lead with a Note so the user knows
-            // the error below is in the GENERATED HLSL (.fx) produced from their shader, not their source
-            // file. Identifier collisions (F1) are auto-fixed at convert time, so reaching here means the
-            // generated HLSL hit a real limit (e.g. an SM3 instruction cap on a heavy shader).
-            if (isConvertedGlsl)
+            // F2: when the converted GLSL/Slang fails the pipeline compile, lead with a Note so the user
+            // knows the error below is in the GENERATED HLSL (.fx) produced from their shader, not their
+            // source file. Identifier collisions (F1) are auto-fixed at convert time, so reaching here
+            // means the generated HLSL hit a real limit (e.g. an SM3 instruction cap on a heavy shader).
+            if (isConvertedGlsl || isConvertedSlang)
             {
                 var note = new ShaderError(
                     File: args.SourceFile, Line: 0, Column: 0, Code: "SD0003",

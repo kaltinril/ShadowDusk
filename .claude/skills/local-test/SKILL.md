@@ -54,12 +54,20 @@ ask which half they ran.
   `dotnet run --project validation/XnbContentLoad -c Release`, which loads both a stock
   `mgcb` build and ours through a real `ContentManager` and pixel-compares.
 
-- **Slang (issue #198) — NOT shipped, experimental.** `-WithSlang` fetches the pinned
-  Slang release to `tools/slang/` (SHA-256 verified before extraction) purely so the
-  toolchain can be tried by hand. Nothing in the build depends on it. Measured
-  2026-08-13: **`slangc` rejects a whole `.fx`** — it parses the HLSL body but errors on
-  the FX9 `technique`/`pass` block, which it has no concept of. See
-  [`plan/PHASE-61-slang-support.md`](../../../plan/PHASE-61-slang-support.md).
+- **Slang input (issue #198) — shipped (v1).** Write entry points with Slang's
+  `[shader("vertex")]` / `[shader("fragment")]` attributes (no technique block — it is
+  synthesized), then:
+  ```bash
+  dotnet run --project src/ShadowDusk.Cli -- MyShader.slang out.mgfx /Profile:OpenGL
+  ```
+  Needs the pinned toolchain: `-WithSlang` fetches it to `tools/slang/` (SHA-256 verified
+  before extraction); without it the compile fails loudly with `SD0600` naming that exact
+  command. The fixture `tests/fixtures/shaders/slang/Desaturate.slang` is a working
+  example. `slangc` cannot read a whole `.fx` (no technique/pass concept — measured), which
+  is exactly why the attribute convention exists. Library API:
+  `ShadowDusk.Compiler.Slang.SlangFrontend`. See
+  [`plan/PHASE-61-slang-support.md`](../../../plan/PHASE-61-slang-support.md) for what is
+  still open (native packaging; the toolchain is provisioned, not package-shipped).
 
 - **SkiaSharp / SkSL (issue #197) — NOT built.** See
   [`plan/PHASE-62-skiasharp-sksl-target.md`](../../../plan/PHASE-62-skiasharp-sksl-target.md).

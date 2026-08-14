@@ -49,5 +49,6 @@ Validation always compares ShadowDusk vs `mgfxc` on the **same** target (GL↔GL
 - Cross-platform compile reach is exercised by CI (`.github/workflows/ci.yml`) on Linux, macOS, and Windows.
 - The forward-compatibility version matrix (v10 across MonoGame versions) lives under `validation/ForwardCompat/`.
 - **One driver there is not a render gate:** `validation/MgcbPlugin` runs a real `dotnet mgcb` content build through the [MGCB content-processor plugin](../guides/mgcb-content-pipeline.md) and asserts the `.mgfx` inside the produced `.xnb` is byte-for-byte the CLI's, that the `.xnb` envelope matches MGCB's own stock build, and that the payload differs from stock. It needs no GPU, but it does need `dotnet tool restore` (CI has no `dotnet-mgcb`), so it runs from the same Windows gate script.
+- **The direct-`.xnb` gate:** `validation/XnbContentLoad` proves the "replace your content pipeline, change no code" claim end to end. It builds each fixture twice — once through stock `dotnet mgcb`, once through ShadowDusk's own XNB writer with MGCB never involved — loads **both** through a real `ContentManager.Load<Effect>(assetName)`, and requires the renders to be pixel-identical. Needs `dotnet tool restore` and a GPU; default-ON in the Windows gate script.
 
 See the [test shader corpus](test-shader-corpus.md) for the inputs.

@@ -7,7 +7,7 @@ Plain-language definitions of the shader and compiler terms used across these do
 - **`.fx`** — an HLSL effect source file: the shader code you write (techniques, passes, vertex/pixel shaders).
 - **`.mgfx`** — the compiled effect MonoGame and KNI load via `new Effect(graphicsDevice, bytes)`. This is ShadowDusk's main output (the same thing mgfxc produces).
 - **`.fxb`** — the compiled effect **FNA** loads: a legacy Direct3D 9 "fx_2_0" effect binary. ShadowDusk produces this for the FNA target instead of `.mgfx`.
-- **`.xnb`** — the Content Pipeline container that *wraps* a `.mgfx` (or any other content), loaded via `Content.Load<Effect>`. ShadowDusk emits the raw `.mgfx`, not the `.xnb` wrapper.
+- **`.xnb`** — the Content Pipeline container that *wraps* a `.mgfx` (or any other content), loaded via `Content.Load<Effect>`. ShadowDusk can emit it directly — `CompiledShader.ToXnb()`, or an `.xnb` output path on the CLI — so `Content.Load<Effect>` works with no MGCB and no consumer code change; the payload inside is the same `.mgfx` bytes.
 
 ## Formats and containers
 

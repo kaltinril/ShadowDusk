@@ -121,12 +121,12 @@ To pick a whole target (backend + container) with one value instead of setting t
 
 ## `.mgfx` vs `.xnb`
 
-ShadowDusk produces a raw **`.mgfx`** blob — the compiled effect — **not** an `.xnb`. The `.xnb` is the Content Pipeline's *container* that wraps a `.mgfx` (along with a type-reader header), and it's what `Content.Load<Effect>("name")` reads. The raw `.mgfx` is what the `new Effect(graphicsDevice, mgfxBytes)` constructor reads directly.
+ShadowDusk's compiled effect is a raw **`.mgfx`** blob. The `.xnb` is the Content Pipeline's *container* that wraps a `.mgfx` (along with a type-reader header), and it's what `Content.Load<Effect>("name")` reads. The raw `.mgfx` is what the `new Effect(graphicsDevice, mgfxBytes)` constructor reads directly. ShadowDusk produces **either**:
 
 - Loading effects with **`new Effect(gd, bytes)`** → use ShadowDusk's `.mgfx` as-is.
-- Loading via **`Content.Load<Effect>`** → you need an `.xnb`. Build the `.fx` through MGCB (see [MGCB Content Pipeline](mgcb-content-pipeline.md)) so the pipeline wraps ShadowDusk's `.mgfx`, or wrap the bytes yourself.
+- Loading via **`Content.Load<Effect>`** → you need an `.xnb`, and ShadowDusk writes it directly: call `result.Value.ToXnb()`, or give the CLI an `.xnb` output path (the extension is the whole switch). The platform byte is derived from your target and the payload inside is the same `.mgfx` bytes. No MGCB involved — though for builds that already run MGCB for other content, the [MGCB Content Pipeline](mgcb-content-pipeline.md) plugin route also works.
 
-This matches `mgfxc`, which also emits the raw effect and leaves `.xnb` wrapping to the content pipeline. See [Choosing a Target](choosing-a-target.md#mgfx-vs-xnb).
+(`mgfxc` itself only ever emits the raw effect and leaves `.xnb` wrapping to the content pipeline — the direct route is one thing ShadowDusk does that it doesn't.) See [Choosing a Target](choosing-a-target.md#mgfx-vs-xnb).
 
 ## KNI HiDef / WebGL2
 

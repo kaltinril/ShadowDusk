@@ -14,6 +14,34 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **Slang as an input language** (issue #198). ShadowDusk now accepts `.slang` source: on the CLI
+  by extension (`ShadowDuskCLI MyShader.slang out.mgfx /Profile:OpenGL`, or `--input-format
+  slang`), and from the library via `ShadowDusk.Compiler.Slang.SlangFrontend.ConvertToFxAsync`.
+  The route is `.slang → [pinned slangc] → HLSL → the existing pipeline, untouched` — DXC remains
+  the only HLSL→SPIR-V compiler, Slang sits strictly upstream in the same slot as the
+  ShaderToy/GLSL converter, and no existing output byte changes.
+
+  Entry points are declared Slang's own way, with `[shader("vertex")]` / `[shader("fragment")]`
+  attributes, and the technique block is synthesized from them (Slang has no technique/pass
+  concept; measured, slangc errors on the FX9 block of any `.fx`). The frontend merges slangc's
+  per-entry emissions, strips its boilerplate, **demangles the `_0`-suffixed symbol names, and
+  flattens its parameter-group cbuffer wrapping** — so the compiled effect exposes exactly the
+  parameter names the author wrote (`Parameters["Desaturation"]`, not `Parameters["Params_0"]`),
+  and the cbuffer shape stays representable on the OpenGL lowering.
+
+  The acceptance contract is three bands with nothing silent: slangc's own diagnostics pass
+  through **verbatim** (its code, file, line, column); an entry point whose stage no `Effect` can
+  load — compute, mesh, raytracing — is rejected loudly by name (`SD0602`); everything else
+  compiles, with no ShadowDusk-curated subset of Slang. New registered diagnostics
+  `SD0600`–`SD0607`.
+
+  **Toolchain note:** the frontend invokes the pinned `slangc` (v2026.14.1), provisioned by
+  `pwsh tools/setup-local-testing.ps1 -WithSlang` (SHA-256-verified) or named via
+  `SHADOWDUSK_SLANGC`; it does not yet ship inside the NuGet packages, and a missing toolchain
+  fails loudly with the provisioning command (`SD0600`). No route through Slang is
+  `mgfxc`-equivalent — `mgfxc` cannot read Slang at all; the claim is that the generated `.fx`
+  compiles through the same faithful pipeline as any other.
+
 - **Direct `.xnb` output: replace your content pipeline with ShadowDusk and change no lines of
   code** (Phase 60, issue #199). ShadowDusk now writes the content-pipeline `.xnb` itself, so a
   consumer drops the file where their `mgfxc`-built one sat and keeps calling

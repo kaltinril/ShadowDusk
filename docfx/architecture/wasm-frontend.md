@@ -6,7 +6,7 @@ The `ShadowDusk.Wasm` package (`WasmShaderCompiler : IShaderCompiler`) runs the 
 
 The in-browser HLSL → SPIR-V frontend is the **faithful pinned DirectXShaderCompiler compiled to WebAssembly**, matching the same DXC commit `Vortice.Dxc` uses on the desktop. Its SPIR-V is **byte-identical** to the desktop pipeline's. This is the load-bearing rule from THE PURPOSE: a host must never swap in a *different* HLSL→SPIR-V tool to "make the browser work," because a different compiler produces different output and breaks the "identical to `mgfxc`" promise.
 
-> **Slang is dead, sample-only reference.** An earlier spike used Slang as an in-browser frontend; it is a *substitute* compiler and is **not** part of the product. The faithful DXC→WASM module replaced it. Any Slang artifacts left in the `ShaderFiddle.Web` sample are unregistered and never run.
+> **Slang as a substitute compiler is dead — Slang as an input language is not, and the two must not be confused.** An earlier spike used Slang *in place of DXC* as the in-browser HLSL frontend; that role is permanently closed (a substitute compiler breaks the byte-identity promise above), the faithful DXC→WASM module replaced it, and any Slang artifacts left in the `ShaderFiddle.Web` sample are unregistered and never run. Separately — and without touching this rule — ShadowDusk **accepts `.slang` as an input language** on desktop hosts: `slangc` emits HLSL *upstream* of the pipeline, and DXC remains the only HLSL→SPIR-V compiler. That input route is not available in the browser (the Slang toolchain is not part of the WASM payload).
 
 ## How the browser pipeline runs
 
