@@ -75,7 +75,10 @@ ShadowDusk/
 │                                  #     + compare_dx12.py), FNA (FnaValidation), KNI (KniDesktopGL, KniWinFormsDX, KniVsDriven),
 │                                  #   Vulkan (BaselineVulkan, CandidateVulkan, VsDrivenVulkan
 │                                  #     + compare_vulkan.py/decode_mgfx_vulkan.py),
-│                                  #   Android (AndroidGl), v11 (MonoGameV11), browser-ANGLE (AngleDerivativeProbe)
+│                                  #   Android (AndroidGl), v11 (MonoGameV11), browser-ANGLE (AngleDerivativeProbe),
+│                                  #   direct .xnb (XnbContentLoad: builds each fixture through BOTH stock
+│                                  #     dotnet-mgcb and ShadowDusk's XnbWriter, loads both with a real
+│                                  #     ContentManager.Load<Effect>, requires pixel-identical renders - Phase 60)
 │                                  #   + the compare_*.py oracles. See docs/validation-matrix.md §6.
 │                                  #   Two entries here are NOT render proofs:
 │                                  #     MgcbPlugin runs a real `dotnet mgcb` content build through the MGCB

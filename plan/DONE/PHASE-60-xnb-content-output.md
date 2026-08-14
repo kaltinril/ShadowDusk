@@ -3,14 +3,40 @@
 **Track:** Delivery shape / drop-in completeness. Additive; **no existing output byte changes** (the
 `.xnb` is a *wrapper* around payloads ShadowDusk already produces and has render-proven).
 
-**Status:** 📋 **Planned / not started** (created 2026-08-11). **Committed by owner direction
-2026-08-11** — *"the XNB byte output so that a user doesn't have to load an effect"* — i.e. the
-consumer keeps `Content.Load<Effect>("Foo")` and never touches `new Effect(gd, bytes)`. That is
-this phase's §1 exactly, so it is a scope confirmation rather than a change.
+**Status:** ✅ **DONE (2026-08-13)** — shipped and **rung-4 proven**. Created 2026-08-11, committed
+by owner direction the same day (*"the XNB byte output so that a user doesn't have to load an
+effect"*), implemented 2026-08-13.
 
-**Depends on:** [Phase 29](DONE/PHASE-29-mgcb-content-processor-plugin.md) (the MGCB plugin — its
+**What shipped:** `XnbWriter` in `ShadowDusk.Core` (pure managed, no native dependency, so it works
+on every host including WASM and Android), surfaced as `CompiledShader.ToXnb()` on the library and
+as an **extension-driven** `.xnb` output path on the CLI. One writer behind both, so the `.mgfx` and
+the payload inside the `.xnb` are identical *by construction*.
+
+**Every design question was settled by measuring a real `dotnet-mgcb` 3.8.4.1 build**, per A3's
+instruction and Phase 52's lesson. Two findings shaped the result, and neither was predictable from
+the format description:
+
+1. **The platform byte is safely derivable, so no new knob exists.** MonoGame's and FNA's
+   `ContentManager` both validate it *only* for membership in a whitelist — never against the
+   platform actually running. FNA's list is the binding constraint (no `'V'`, no `'G'`), which is
+   why `Fna` maps to `'w'`. A2 resolved with the seamless outcome; nothing went to
+   `project_decisions.md` because no flag was needed.
+2. **The type-reader manifest's embedded assembly version is inert, but its *shape* is
+   load-bearing** — and the three runtimes disagree about how. MonoGame only strips the version when
+   the name contains `PublicKeyToken`; FNA matches one regex demanding the full
+   `, <assembly>, Version=…, Culture=…, PublicKeyToken=…` triple *and* a recognised assembly name,
+   so a tidy bare `…, MonoGame.Framework` would have resolved on MonoGame and failed on FNA.
+   Emitting byte-for-byte what `mgcb` emits is the only choice satisfying all three.
+
+**Evidence:** envelope byte-identical to stock MGCB through the type id (C1); payload byte-identical
+to the CLI's (C2); and **rung 4 — `validation/XnbContentLoad` builds each fixture through both stock
+`dotnet mgcb` and ShadowDusk, loads BOTH through a real `ContentManager.Load<Effect>(assetName)`,
+and requires pixel-identical renders. 4/4 fixtures, 1,230,720 px identical each** (C3). Full
+`dotnet test` green (2,650 per TFM). Default-ON in `run-windows-render-gates.ps1`.
+
+**Depends on:** [Phase 29](PHASE-29-mgcb-content-processor-plugin.md) (the MGCB plugin — its
 `validation/MgcbPlugin` gate already parses and asserts the `.xnb` envelope, so the format knowledge
-and the oracle both exist), [Phase 39](DONE/PHASE-39-fna-fx2-output-target.md)/[40](DONE/PHASE-40-fna-fidelity-hardening.md)
+and the oracle both exist), [Phase 39](PHASE-39-fna-fx2-output-target.md)/[40](PHASE-40-fna-fidelity-hardening.md)
 (the FNA `.fxb` payload this must also be able to wrap).
 
 **Blocks:** nothing.
@@ -33,7 +59,7 @@ them to change something**:
 |---|---|
 | `EffectCompiler.CompileAsync` at runtime | Their **code**: `new Effect(gd, bytes)` instead of `Content.Load<Effect>("Foo")` |
 | The ShadowDusk **CLI** | Their **build**, and they still get a `.mgfx`, which `Content.Load<Effect>` cannot read |
-| The **MGCB plugin** ([Phase 29](DONE/PHASE-29-mgcb-content-processor-plugin.md)) | Their **`.mgcb`** (a `/reference:` line and two dropdown selections) — and it requires MGCB to be in the picture at all |
+| The **MGCB plugin** ([Phase 29](PHASE-29-mgcb-content-processor-plugin.md)) | Their **`.mgcb`** (a `/reference:` line and two dropdown selections) — and it requires MGCB to be in the picture at all |
 
 Issue #199 asks for the fourth: **ShadowDusk emits the `.xnb` directly**, the consumer drops it in
 their content directory, and `Content.Load<Effect>("Foo")` keeps working **unmodified**. That is the
@@ -53,14 +79,14 @@ Measured from real artifacts and from MonoGame/FNA source at `v3.8.5` / FNA `mai
 ### 2.1 ShadowDusk has NO `.xnb` writer today, and that is the whole gap
 
 `ShadowDuskEffectProcessor` is declared
-`ContentProcessor<EffectContent, CompiledEffectContent>` ([`ShadowDuskEffectProcessor.cs:40`](../src/ShadowDusk.MgcbPlugin/ShadowDuskEffectProcessor.cs#L40)).
+`ContentProcessor<EffectContent, CompiledEffectContent>` ([`ShadowDuskEffectProcessor.cs:40`](../../src/ShadowDusk.MgcbPlugin/ShadowDuskEffectProcessor.cs#L40)).
 It hands a `CompiledEffectContent` back to MGCB and **MonoGame's own `ContentTypeWriter` serializes
 the `.xnb`** — ShadowDusk never writes one byte of the container. So the phase is not "fix the
 writer", it is "there is no writer; build one."
 
 ### 2.2 The container is small, and the repo already parses it
 
-`validation/MgcbPlugin`'s `XnbEffect.Parse` ([`Program.cs:321-350`](../validation/MgcbPlugin/Program.cs#L321-L350))
+`validation/MgcbPlugin`'s `XnbEffect.Parse` ([`Program.cs:321-350`](../../validation/MgcbPlugin/Program.cs#L321-L350))
 already reads the whole structure to run Phase 29's envelope assertion:
 
 ```
@@ -195,14 +221,24 @@ finding entirely, because it never enters MGCB's process at all.
 
 ## 5. Acceptance
 
-- [ ] `.xnb` written by ShadowDusk, envelope byte-identical to stock MGCB's for the same asset (C1).
-- [ ] Payload byte-identical to the CLI's `.mgfx` for the same source + target (C2).
-- [ ] **Rung 4:** real `Content.Load<Effect>` in real MonoGame renders pixel-equivalent to the
-      `mgfxc`-built `.xnb`, via a new `validation/*` driver wired into the Windows gate script (C3).
-- [ ] FNA arm proven against the `fxc` oracle; KNI arm proven (C4).
-- [ ] The platform byte is **derived, not asked for** — or, if that proves impossible, the reason is
-      recorded in `project_decisions.md` before any flag is added (A2).
-- [ ] No existing output byte moves; full `dotnet test` + the Windows render gates green.
+- [x] `.xnb` written by ShadowDusk, envelope byte-identical to stock MGCB's for the same asset (C1).
+      *Asserted live in `validation/XnbContentLoad` against whatever `mgcb` is installed, AND pinned
+      offline in `XnbWriterTests` against a golden captured from mgcb 3.8.4.1 (so the pure suite
+      catches drift without needing the tool).*
+- [x] Payload byte-identical to the CLI's `.mgfx` for the same source + target (C2).
+      *`CliXnbOutputTest` on OpenGL and DirectX_11, plus the driver's positive control that the
+      payload DIFFERS from MGCB's — proof ShadowDusk produced it rather than MGCB.*
+- [x] **Rung 4:** real `Content.Load<Effect>` renders pixel-equivalent to the `mgfxc`-built `.xnb`,
+      via `validation/XnbContentLoad`, default-ON in `run-windows-render-gates.ps1` (C3).
+      *4/4 fixtures, 1,230,720 px identical each, `/platform:Windows` → DirectX.*
+- [ ] **FNA and KNI arms (C4) — NOT done, and deliberately not claimed.** The writer already derives
+      their platform bytes and the unit tests pin those against both runtimes' whitelists, but
+      **derivation is not a render proof**: no FNA `Content.Load<Effect>` and no KNI one has been
+      run. Wiring them is the obvious next step (`validation/FnaValidation` and
+      `validation/KniDesktopGL` are the hosts), and until then the matrix says DirectX only.
+- [x] The platform byte is **derived, not asked for** (A2) — and no flag was needed, so nothing went
+      to `project_decisions.md`. Both runtimes validate the byte only for whitelist membership.
+- [x] No existing output byte moves; full `dotnet test` green (2,650 per TFM, 0 failures).
 - [ ] Support surfaces updated in the same PR: `docs/validation-matrix.md` (§1 cells + a §6 driver
       row), `docs/the-purpose.md` (the delivery-shape list), `README.md`, the DocFX site, and
       `docs/pipeline-overview.puml` **with its SVG regenerated**.
@@ -215,18 +251,26 @@ finding entirely, because it never enters MGCB's process at all.
 - Compressed XNB, unless A4 finds a consumer that requires it.
 - Replacing or deprecating the Phase 29 MGCB plugin (§4).
 
-## 7. Open questions
+## 7. Open questions — all five answered 2026-08-13
 
-- **OQ1.** Does `Content.Load<Effect>` require anything of the asset **name/path** beyond the file
-  location — and does the `.xnb` need a matching `.mgcb`-era companion file? (Expected: no, but the
-  whole value of this phase is "drop the file in and it works", so this must be *demonstrated*.)
-- **OQ2.** Is the type-reader version field stable across MonoGame 3.8.1.263 → 3.8.5? If it moved,
-  the forward-compat sweep (`validation/ForwardCompat`) needs an `.xnb` arm too.
-- **OQ3.** Does KNI accept MonoGame's platform bytes unchanged, or does it maintain its own list?
-- **OQ4.** Should the CLI's `.xnb` mode be selected by output **extension** (`out.xnb` → wrap) or by
-  an explicit switch? Extension-driven is more seamless and matches how `mgfxc` behaves; confirm it
-  cannot mis-fire.
-- **OQ5.** Does the asset need to sit under a `Content` directory with a `.mgcb`-era folder
-  structure for `Content.Load` to find it by the name the consumer already uses? The owner
-  direction's whole point is that **no consumer code changes**, so the answer must be "drop it where
-  their existing `.xnb` was, and it works" — demonstrate that, do not reason about it.
+- **OQ1. ANSWERED: no, nothing beyond the file itself.** Demonstrated, not reasoned about:
+  `validation/XnbContentLoad` points a `ContentManager` at a plain directory holding only
+  `<AssetName>.xnb` files and loads each by bare asset name. No companion file, no manifest, no
+  `.mgcb` residue.
+- **OQ2. ANSWERED, and the question turned out to be aimed slightly wrong.** The reader *version*
+  field is `0` and is not the moving part; the **assembly version inside the reader NAME** is
+  (`Version=3.8.4.1` from mgcb 3.8.4.1). It does not matter, because every runtime strips it before
+  resolving — but §2's finding is that the surrounding *shape* is load-bearing and the runtimes
+  disagree on it, so the string is emitted exactly as mgcb emits it. An `.xnb` arm on
+  `validation/ForwardCompat` is still worth adding, for the same reason the payload sweep exists.
+- **OQ3. NOT YET MEASURED — the one that is still open.** KNI is a MonoGame fork and consumes stock
+  mgcb output, so it almost certainly shares the list, but "almost certainly" is what C4 exists to
+  replace. Fold it into the KNI arm.
+- **OQ4. ANSWERED: extension-driven.** A ShadowDusk-specific switch needed to get correct output is
+  what the seamlessness directive forbids, and the extension cannot mis-fire — `.xnb` has no other
+  meaning as a shader-compiler output, and every other extension passes through unwrapped
+  (pinned by `CliXnbOutputTest.NonXnbExtension_IsPassedThroughUnwrapped`).
+- **OQ5. ANSWERED: no structure required — demonstrated.** The driver's two `ContentManager`s point
+  at two bare temp directories differing only in who produced the `.xnb`, and load the same asset
+  name from each. The reference arm is a real mgcb build, so "drop it where their existing `.xnb`
+  was" is exactly the comparison that ran.

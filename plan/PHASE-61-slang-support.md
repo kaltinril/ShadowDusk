@@ -1,13 +1,26 @@
-# Phase 61 — Slang support: which of the two questions is actually being asked
+# Phase 61 — Slang as an INPUT language
 
-**Track:** Additive frontend / reach (purpose-gated). Additive only; **no existing output byte may
-change**.
+**Track:** Additive frontend / reach. Additive only; **no existing output byte may change**.
 
-**Status:** 📋 **Planned / not started** (created 2026-08-11). **Scope set by owner direction
-2026-08-11: ShadowDusk is to support Slang as BOTH an input and an output format.** That resolves
-§3's disambiguation before it was asked — readings **B (input)** and **C (output)** are both in
-scope; reading **A (Slang as a substitute compiler) remains closed** on Phase 23's measured
-evidence, and nothing in the owner direction asks for it.
+**Status:** 📋 **Planned / not started** (created 2026-08-11). **Scope FINAL, owner direction
+2026-08-13: Slang is an INPUT format only.** ShadowDusk accepts `.slang`, runs it through the
+existing faithful pipeline untouched, and emits the `.mgfx`/`.fxb`/`.xnb` it already emits. That is
+[reading B](#3-the-disambiguation--settled-2026-08-13) and it is the whole phase.
+
+**The other two readings are both closed, for different reasons:**
+
+- **Reading A — Slang as a substitute compiler: closed on measured evidence** (§2.1, Phase 23).
+  Independently confirmed by the requester on 2026-08-12.
+- **Reading C — ShadowDusk emitting Slang: closed by owner direction 2026-08-13**, superseding the
+  2026-08-11 direction that had put it in scope. §4 records why it was opened and why it was closed;
+  the material is kept because reopening it should start from what was already worked out, not from
+  scratch.
+
+**The acceptance rule for what Slang we take** (owner direction 2026-08-13): **accept valid Slang,
+and reject only what MonoGame itself cannot hold.** ShadowDusk's job is not to police Slang's
+language surface — it is to be transparent up to the point where a construct has nowhere to land in
+an `Effect`, and then to **fail loudly with a registered diagnostic** rather than emit something
+that loads wrong. §6 A6 makes this an area of work rather than a slogan.
 
 **Depends on:** [Phase 23](DONE/PHASE-23-in-browser-compilation.md) — **read §2.1 below before
 anything else**; that phase already prototyped Slang end-to-end and rejected it for the product,
@@ -18,24 +31,31 @@ whether a source-fidelity-only frontend is in scope at all).
 
 **Blocks:** nothing.
 
-**Gated on:** **nothing, for the output direction** (§5.1 explains why: it has a self-contained
-round-trip oracle and claims no new runtime target). The **input** direction has a *reduced* gate
-compared with Phases 59/62 — see §5.2, which is a correction to this doc's own first draft.
+**Gated on:** a **reduced** gate, not Phase 59's — see §5. The product of this phase is an ordinary
+`.mgfx`/`.fxb`/`.xnb` for a target that is **already rung-4 proven**, so the only new link in the
+chain is Slang's own HLSL emission.
 
 > [issue #198](https://github.com/kaltinril/ShadowDusk/issues/198), vchelaru: *"Add slang support
-> (see how complicated it is)"*. Filed with an empty body. §3's disambiguation was **answered by
-> owner direction on 2026-08-11: both input and output.**
+> (see how complicated it is)"*. Filed with an empty body. The disambiguation is **settled: input
+> only** — by the requester's own clarification on 2026-08-12 and by owner direction on 2026-08-13,
+> which agree.
 
 ---
 
 ## 1. Where this came from
 
 One of three issues Victor Chelaru filed on 2026-08-09, alongside
-[#199](https://github.com/kaltinril/ShadowDusk/issues/199) (→ [Phase 60](PHASE-60-xnb-content-output.md))
+[#199](https://github.com/kaltinril/ShadowDusk/issues/199) (→ [Phase 60](DONE/PHASE-60-xnb-content-output.md))
 and [#197](https://github.com/kaltinril/ShadowDusk/issues/197) (→ [Phase 62](PHASE-62-skiasharp-sksl-target.md)).
 The body is empty and the title's parenthetical — *"see how complicated it is"* — reads as a
 scoping request rather than a commitment. This doc is written to answer that: **here is how
 complicated it is, and here is which half is already decided.**
+
+The scope moved twice before settling, and the trail is kept deliberately: opened 2026-08-11 with
+the disambiguation open → widened the same day by owner direction to input **and** output → the
+requester clarified on 2026-08-12 that he meant input → **narrowed to input only by owner direction
+2026-08-13**, which is where it stands. The output material survives in §4 and §7 as a closed
+record.
 
 ---
 
@@ -93,7 +113,7 @@ Two consequences worth stating up front:
   and SPIRV-Cross, plus a release gate that fails if it is missing. That is the Phase 37 / Phase 40
   playbook and it is several days of work **before any shader compiles**.
 
-### 2.3 Slang's relationship to HLSL — the fact that shapes BOTH directions
+### 2.3 Slang's relationship to HLSL — the fact everything else rests on
 
 From Slang's own user guide (`docs/user-guide/00-introduction.md`, `02-conventional-features.md`,
 read 2026-08-11):
@@ -107,18 +127,17 @@ It keeps `cbuffer`, `register`, `SV_` semantics, and HLSL function-declaration s
 compatibility. Its named compile targets are **DXBC, DXIL, SPIR-V, HLSL, GLSL, CUDA** (plus MSL and
 WGSL), and `slangc -target hlsl` is a documented, first-class invocation.
 
-**Two consequences, and they are the backbone of this phase:**
+**Two consequences. The first is the backbone of this phase; the second is why §4 stays on file.**
 
 1. **The input route is real and clean.** Because HLSL is a *supported emit target*,
    `.slang → [Slang] → HLSL → [ShadowDusk's existing faithful pipeline, untouched]` works without
-   displacing DXC from anything.
-2. **The output route is far cheaper than it sounds, and its cost sits somewhere unexpected.**
-   Since Slang is a near-superset of HLSL, **the shader *body* is already valid Slang**. Emitting
-   Slang from a `.fx` is therefore not a language translation at all — it is an **effect-framework
-   translation**. All the work is in the FX9 layer (`technique` / `pass` / `sampler_state` /
-   annotations), which Slang has no concept of and which must become entry points plus, at most, a
-   module structure. Note the word "most" in Slang's own compatibility claim: it is *most* HLSL, not
-   all, so the residue must be measured, not assumed away (§6 A5).
+   displacing DXC from anything. Note the word "most" in Slang's own compatibility claim: it is
+   *most* HLSL, not all, so the residue must be measured, not assumed away (§6 A5).
+2. *(Bearing on the now-closed output direction.)* Since Slang is a near-superset of HLSL, **the
+   shader *body* would already be valid Slang**, so emitting Slang would have been an
+   **effect-framework translation** — all the work in the FX9 layer (`technique` / `pass` /
+   `sampler_state`) rather than in the expressions. Recorded because it is the single fact that
+   would make reopening §4 cheap, and it is not obvious.
 
 ### 2.4 There is precedent for the shape that *is* open
 
@@ -129,28 +148,65 @@ architectural slot.
 
 ---
 
-## 3. The disambiguation — RESOLVED by owner direction (2026-08-11)
+## 3. The disambiguation — SETTLED 2026-08-13
 
 **Reading A — "use Slang as the compiler."** Replace or supplement DXC with Slang for
-HLSL→SPIR-V/DXIL. **CLOSED by §2.1**, and the owner direction does not ask for it. Slang never
-displaces DXC on the HLSL path.
+HLSL→SPIR-V/DXIL. **CLOSED by §2.1** on Phase 23's measured evidence, and confirmed independently by
+the requester (§3.1). Slang never displaces DXC on the HLSL path.
 
-**Reading B — "accept `.slang` as an input language." → IN SCOPE.** A consumer writes Slang;
-ShadowDusk compiles it to the same `.mgfx` / `.fxb` / `.xnb` outputs it already produces. Area A.
+**Reading B — "accept `.slang` as an input language." → THE PHASE.** A consumer writes Slang;
+ShadowDusk compiles it to the same `.mgfx` / `.fxb` / `.xnb` outputs it already produces. This is
+what the issue asked for and what the owner has committed. Everything below §5 is about this.
 
-**Reading C — "emit Slang." → IN SCOPE.** This doc's first draft called C *"almost certainly not
-what is meant"* and proposed ruling it out. **That was wrong, and the correction is worth keeping
-visible**, because the reasoning behind the dismissal was itself wrong in an instructive way: it
-assumed the only reason to emit a format is for something to *load* it at runtime. Nothing does load
-Slang — but that does not make emitting it pointless, because **Slang is a source language whose
-consumer is the user's own toolchain, not a runtime.** Area B, and §4 states its value honestly.
+**Reading C — "emit Slang." → CLOSED by owner direction 2026-08-13.** It was briefly in scope
+(2026-08-11 to 2026-08-13) and §4 keeps the analysis. Nothing about it was found to be *wrong* —
+the round-trip oracle in §7 is still a good idea if it ever returns — it simply is not what was
+asked for, and §3.1 is why that mattered.
+
+### 3.1 How the scope settled — and the general lesson in it
+
+The confirmation, verbatim from [PR #201](https://github.com/kaltinril/ShadowDusk/pull/201):
+
+> *"Yes, the intent here is to use Slang as an additive language -> HLSL. In other words to just
+> allow people to write slang, but still go through the normal compilation pipe. This seems the
+> safest and it would be the way forward unless we find some features in slang that are just not
+> supported in HLSL; however if that were the case then it's likely that those features might also
+> not be supported in MonoGame."*
+
+Three things fall out of it:
+
+1. **Reading B is the ask, and it is the ask in exactly the shape §6 describes** — Slang upstream of
+   an untouched pipeline, not Slang inside it. *"Still go through the normal compilation pipe"* is
+   the same boundary §2.1 draws.
+2. **Reading A is independently confirmed closed by the requester**, who reaches it from the
+   *"safest"* direction rather than from Phase 23's evidence. Two routes, one answer.
+3. **The residue argument is addressed in §6 A5**, where it belongs, because it is only *partly*
+   right and the part that does not hold is the part that would bite.
+
+Owner direction followed on 2026-08-13: **input only, as the requester asked.** That closed reading
+C and dissolved the sequencing question the previous draft had opened (there is only one direction
+left to sequence).
+
+**The lesson worth keeping, because this phase is a clean example of it.** For two days the doc
+carried a direction with **no named consumer**, and it was the *cheap* one (source generation, no
+native to package), which made it look like the obvious thing to build first. Cost pointed one way,
+demand pointed the other, and cost is the easier signal to read. Phase 58's finding is the tiebreak
+and it held again here: **an unvalidated capability nobody asked for is worse than an absent one**,
+and cheapness does not buy an exception.
 
 ---
 
-## 4. What emitting Slang is actually *for* — state this before building it
+## 4. CLOSED — what emitting Slang would have been for
 
-Nothing loads Slang at runtime, so the output direction must justify itself on other grounds. Two
-that hold up, and one that does not:
+> **Closed by owner direction 2026-08-13. Nothing in this section is scheduled work.** It is kept
+> because it is the reopening brief: if a consumer ever appears for Slang *output*, start here
+> rather than re-deriving it. §7 keeps the matching build notes and §5.1 the oracle that made it
+> attractive.
+
+Nothing loads Slang at runtime, so the output direction had to justify itself on other grounds, and
+by 2026-08-12 it had to do so **without a named consumer** (§3.1) — which is ultimately what closed
+it. Two arguments held up, and one did not. **The first two are the trigger to watch for:** if
+either ever acquires a real requester, that is the moment to reopen.
 
 - **Migration (the strong one).** A studio with a pile of legacy `.fx` files can run them through
   ShadowDusk and get modern Slang **modules** out — keeping the shader bodies, which are already
@@ -170,13 +226,13 @@ that hold up, and one that does not:
 
 ---
 
-## 5. The evidence story — better than this doc first assumed
+## 5. The evidence story
 
-### 5.1 Output: there IS an oracle, and it is ShadowDusk itself
+### 5.1 CLOSED with §4 — the round-trip oracle the output direction would have had
 
-The first draft of this doc assumed the Slang work inherited Phase 59's "no reference compiler ⇒
-source-fidelity only" problem wholesale. **For the output direction that is wrong, and the
-correction matters because it removes the gate.**
+> **Not scheduled work** (owner direction 2026-08-13). Kept with §4 as part of the reopening brief,
+> because this oracle is the best idea the output direction produced and it should not have to be
+> invented twice.
 
 Emitting Slang admits a **round-trip byte test that needs no external oracle at all**:
 
@@ -194,14 +250,10 @@ against a guess. That is a *stronger* evidence model than the ShaderToy route ha
 mechanically checkable in CI on every fixture.
 
 It does **not** prove the emitted Slang is *idiomatic* (a mechanical transliteration would pass), so
-the migration story in §4 needs a human read of a sample too. But correctness is nailed down, and
-correctness is the part that would otherwise be unfalsifiable.
+§4's migration story would have needed a human read of a sample too. But correctness is nailed down,
+and correctness is the part that would otherwise be unfalsifiable.
 
-**Consequence: the output direction is NOT gated on
-[Phase 57](PHASE-57-universal-compiler-auto-detection.md) §3.** It claims no new runtime target and
-no new evidence model — it makes a falsifiable byte claim against existing proven output.
-
-### 5.2 Input: a reduced gate, not Phase 59's gate
+### 5.2 Input — the live one: a reduced gate, not Phase 59's gate
 
 The input direction's product is **an ordinary `.mgfx`/`.fxb`/`.xnb` for a target that is already
 rung-4 proven**. So the new link in the chain is not "does an unproven runtime render this
@@ -209,19 +261,19 @@ correctly?" (Phase 59's problem) but "did Slang's own HLSL emission preserve the
 and *that* is Slang's correctness, not ShadowDusk's, at a boundary where ShadowDusk hands off a
 source file and everything downstream stays faithful.
 
-That is a genuinely weaker claim to have to defend than a new backend, so **the input direction
-should not simply inherit Phase 59's hard gate.** What it does need is honesty about the boundary:
-there is no `mgfxc` oracle for Slang *input*, so no route through it may ever be called
-"mgfxc-equivalent". State the split plainly wherever it appears — the pipeline below the HLSL seam
-is as faithful as it ever was; the seam above it is Slang's.
+That is a genuinely weaker claim to have to defend than a new backend, so **this phase does not
+inherit Phase 59's hard gate.** What it does need is honesty about the boundary: there is no `mgfxc`
+oracle for Slang *input*, so no route through it may ever be called "mgfxc-equivalent". State the
+split plainly wherever it appears — the pipeline below the HLSL seam is as faithful as it ever was;
+the seam above it is Slang's.
 
-**If Phase 57 §3 resolves in a way that forbids source-fidelity-only claims entirely, Area A needs
-re-scoping — not automatic closure.** Recording this as a correction to the first draft, which
-asserted the harder gate without distinguishing the two directions.
+**If Phase 57 §3 resolves in a way that forbids source-fidelity-only claims entirely, this phase
+needs re-scoping — not automatic closure.** Recording this as a correction to the first draft, which
+asserted the harder gate without distinguishing the readings.
 
 ---
 
-## 6. Area A — reading B, the additive input frontend
+## 6. The work — the additive input frontend
 
 **The architecturally clean route, and it is cleaner than it first appears.** Slang can *emit
 HLSL*. So the route is:
@@ -250,18 +302,58 @@ changes.
 - **A4.** WASM: the `slang-wasm` artifact means the browser arm is possible. Note the irony worth
   recording — Phase 23 removed `slang-wasm` from the shipping package as a *substitute compiler*;
   this would reintroduce it in a role that does not violate the rule.
-
 - **A5.** Measure the residue in *"backward compatible with **most** existing HLSL code"* (§2.3).
   Sweep the fixture corpus through `slangc -target hlsl` and record what Slang refuses or changes.
-  That number bounds both directions and should be known before either is designed.
+  That number bounds the phase and should be known before anything is designed.
+
+  **A5's risk is NOT the one the requester named, and the difference decides whether A5 can be
+  skipped.** vchelaru's 2026-08-12 note (§3.1) reasons that Slang features with no HLSL
+  representation are *"likely… also not supported in MonoGame"* — so the residue would be harmless.
+  **For the risk he is describing, that is right, and this doc reaches the same conclusion
+  independently:** §9's non-goal already rules out Slang's compute/mesh/raytracing surface on
+  Phase 58's measurement that stock MonoGame and KNI hold **only** vertex and pixel stages. Two
+  routes, one answer, and that half of the residue needs no sweep to dismiss.
+
+  **But A5 measures the other direction, and that one does not dissolve.** A5 feeds *our existing
+  HLSL* through `slangc`; the failures it hunts are **valid HLSL that Slang refuses or silently
+  rewrites** — not Slang features with nowhere to go. A shader whose HLSL Slang mangles is one
+  MonoGame supports perfectly today, so "MonoGame wouldn't support it anyway" does not cover it.
+  **OQ2 is the sharp case:** Slang emitting SM6-era HLSL is not an unsupported *feature* at all, it
+  is ordinary HLSL in a dialect the OpenGL and FNA targets cannot reach (`SD0015`, `SD0300`, the
+  Phase 51 A10 measurements) — a target-reach failure that looks like nothing from the language
+  side. **Keep A5, and keep it first.**
+
+- **A6 — the acceptance rule: accept valid Slang; reject only what MonoGame cannot hold.** Owner
+  direction 2026-08-13, and it is a design constraint rather than a sentiment, so it needs to be
+  made concrete before it can be honoured. It says ShadowDusk is **not** in the business of
+  maintaining its own subset of Slang — if `slangc` accepts it and it lands somewhere an `Effect`
+  can hold, it works; the frontend is transparent up to the real ceiling and **loud exactly at it.**
+
+  The rule cuts the input space in three, and **only the middle band is ShadowDusk's problem**:
+
+  | Band | Example | Behaviour |
+  |---|---|---|
+  | Slang that `slangc` itself refuses | a syntax error | **Slang's diagnostic, verbatim** — file, line, column, text, never reformatted (`CLAUDE.md`, "fail loudly") |
+  | Slang that compiles to HLSL with **nowhere to land in an `Effect`** | a compute or mesh entry point ([Phase 58](DONE/PHASE-58-extended-shader-stages.md): stock MonoGame and KNI hold **only** VS and PS); SM6-only constructs on the GL/FNA targets (OQ2) | **A registered ShadowDusk diagnostic naming the construct and the reason.** Never a silent pass-through, and never a generic parse error — Phase 58's `FX0014` exists precisely because a wrong-but-plausible code is worse than a blunt one |
+  | Everything else | ordinary Slang, ordinary HLSL | **Compiles.** No allow-list, no curated subset |
+
+  Two things to settle while building it: **(a)** the middle band's membership is *target-dependent*
+  — a construct DirectX/Vulkan can hold may be out of reach on OpenGL/FNA (OQ2), so the diagnostic
+  has to name the target, not just the construct; **(b)** whether these reuse existing codes
+  (`SD0015`, `SD0300`, `FX0014`) or need new ones, decided when A5's sweep says what actually turns
+  up. **A5 feeds A6 directly** — the sweep's residue *is* the middle band's first draft.
 
 ---
 
-## 7. Area B — reading C, emitting Slang
+## 7. CLOSED — the emitter that reading C would have needed
 
-Because the shader body is already near-valid Slang (§2.3), **this is an effect-framework
-translation, not a language translation.** Plan it that way, and expect the surprises in the FX9
-layer rather than in the expressions.
+> **Closed by owner direction 2026-08-13, with §4 and §5.1. No item here is scheduled.** Kept as the
+> reopening brief: these five notes are what two days of analysis produced, and B4 in particular is
+> a trap someone would otherwise walk into.
+
+Because the shader body is already near-valid Slang (§2.3), **this would have been an
+effect-framework translation, not a language translation** — the surprises in the FX9 layer rather
+than in the expressions.
 
 - **B1 (the probe, mirroring A1).** Hand-write the Slang you would want out of one real corpus
   `.fx`, and run the §5.1 round-trip on it by hand. This simultaneously establishes what "good"
@@ -288,50 +380,76 @@ layer rather than in the expressions.
 
 ## 8. Acceptance
 
-- [x] §3 disambiguated. *(Owner direction 2026-08-11: input **and** output; reading A stays closed.)*
-- [ ] **A5's compatibility sweep run first** — it bounds both areas and is cheap.
-- [ ] **Area B (output):** B1's hand-written target established; the §5.1 **round-trip byte gate
-      green across the corpus**; B2's FX9 convention recorded in `project_decisions.md`; B3 measured
-      against a real multi-pass fixture.
-- [ ] **Area A (input):** A1's hand-translate probe run and written up. A recorded "a human could
-      not do this convincingly" closes the area, and that is a success, not a failure.
+- [x] §3 disambiguated. *(Settled 2026-08-13: **input only.** Reading A closed on evidence, reading
+      C closed by owner direction.)*
+- [ ] **A5's compatibility sweep run first** — it bounds the phase, it feeds A6, and it is cheap.
+- [ ] **A1's hand-translate probe run and written up.** A recorded "a human could not do this
+      convincingly" closes the phase, and that is a success, not a failure.
+- [ ] **A6's three-band behaviour implemented and tested at the boundaries**, not just the happy
+      path: Slang's own diagnostics pass through verbatim; every construct with nowhere to land in
+      an `Effect` produces a **registered** ShadowDusk diagnostic naming the construct *and the
+      target*; nothing outside those two bands is refused. **A silent wrong-output case is a phase
+      failure**, not a known limitation.
 - [ ] Packaging decided on evidence (A3): if `slangc` is only needed at author time, **do not ship
       the native**. If it must ship, it follows the Phase 37/40 pin + SHA-256 + release-gate
       playbook with no exceptions.
 - [ ] **Pure-additive:** full-corpus byte-identity on every existing target is an acceptance
-      criterion for both areas, and the optional dependency stays optional (the
-      `NoMonoGameInProductLibrariesTests` pattern).
-- [ ] Neither direction is ever described as `mgfxc`-equivalent, and `.slang` never appears as a
-      `docs/validation-matrix.md` §1 cell (§4) — a §8-style row instead.
+      criterion, and the optional dependency stays optional (the `NoMonoGameInProductLibrariesTests`
+      pattern).
+- [ ] The route is never described as `mgfxc`-equivalent (§5.2), and `.slang` never appears as a
+      `docs/validation-matrix.md` §1 cell — a §8-style row instead.
+- [ ] **Three already-published pages say Slang is dead, and shipping this makes them misleading**
+      (found 2026-08-13 while auditing; registered here per `CLAUDE.md`'s handoff rule so it is not
+      rediscovered at release time). Each is **correct today** — they are all about reading A — so
+      none needs touching until this phase ships, and then all three do, in the same PR:
+      - `README.md:236` — *"used **only** in the in-browser sample as an early spike frontend; it is
+        *not* part of the product pipeline"*
+      - `docfx/architecture/wasm-frontend.md:9` — *"**Slang is dead, sample-only reference.**"*
+      - `docfx/guides/in-browser-kni-blazor.md:5` — *"the older Slang-WASM frontend in the sample is
+        *dead, sample-only reference* and never runs"*
+
+      The edit is **not** a deletion: the substitute-compiler rejection (§2.1) must stay stated, or
+      the page loses the reason DXC is the only HLSL frontend. Each becomes a **two-part**
+      statement — *Slang is not a compiler in this pipeline (§2.1, still true); Slang is an accepted
+      input language (this phase)*. A4's note about `slang-wasm` returning in a non-violating role is
+      the same distinction, and the browser pages are exactly where it will confuse a reader.
 
 ## 9. Non-goals
 
-- Slang as a replacement or alternative for DXC anywhere in the pipeline (§2.1, closed — and not
-  asked for by the owner direction).
-- Claiming a `.slang` file is a runtime target or a "backend" (§4).
+- Slang as a replacement or alternative for DXC anywhere in the pipeline (§2.1, closed on measured
+  evidence and confirmed by the requester).
+- **Emitting Slang** (§4/§7, closed by owner direction 2026-08-13). ShadowDusk reads `.slang`; it
+  does not write it.
+- Claiming a `.slang` file is a runtime target or a "backend".
 - Slang's compute/mesh/raytracing features — [Phase 58](DONE/PHASE-58-extended-shader-stages.md)
   established that stock MonoGame and KNI can hold **only** vertex and pixel stages, so a Slang
-  frontend inherits that ceiling exactly and gains nothing there. (Slang *output* is unaffected by
-  this: it never has to load anywhere.)
+  frontend inherits that ceiling exactly and gains nothing there. Note this is a **non-goal, not a
+  silent limit**: per A6 these must be *rejected loudly*, since a Slang author has every reason to
+  expect a compute entry point to work.
 - Vendoring Slang's standard-library modules beyond what a compile needs.
-- Emitting *idiomatic* Slang that uses generics, interfaces, or link-time specialization. Round-trip
-  correctness first; elegance is a later, separate question.
+- Defining or maintaining a ShadowDusk-blessed subset of Slang (A6: accept what `slangc` accepts,
+  reject only at the `Effect` ceiling).
 
 ## 10. Open questions
 
-- **OQ1.** ~~Which reading did Victor mean?~~ **Answered by owner direction 2026-08-11: both.**
-- **OQ2.** Does Slang's HLSL output land in the SM3/SM4-level dialect ShadowDusk's targets need, or
-  does it assume SM6-era HLSL? If the latter, the **OpenGL and FNA targets may be unreachable
-  through the input route even when DirectX/Vulkan are** — the SM ceiling is a real constraint on
-  those two (`SD0015`, `SD0300`, the Phase 51 A10 measurements). A5's sweep answers this.
-- **OQ3.** Would an out-of-band author-time converter (the original `tools/shadertoy2fx` shape)
-  satisfy the input direction at a fraction of the packaging cost? If yes, prefer it, and never ship
-  the native. **Note this cuts differently for the two directions:** *emitting* Slang needs no Slang
-  binary at all in the product (it is source generation), while *ingesting* it does — so the output
-  direction may ship with zero new native dependency, which is a strong argument for doing it first.
-- **OQ4.** Does the round-trip gate (§5.1) need `slangc` at **test** time only? If so it is a test
-  dependency, not a product one, and the whole output direction stays native-free in the shipped
-  packages.
-- **OQ5.** Do the two directions share a file format contract? If ShadowDusk both emits and ingests
-  Slang, the emitted form should obviously be one the ingest path accepts — a cheap, high-value
-  self-consistency test (`emit → ingest → compile == direct compile`) that subsumes part of §5.1.
+- **OQ1.** ~~Which reading did Victor mean?~~ **CLOSED. Input.** The requester confirmed it on
+  2026-08-12 and owner direction fixed it as the phase's whole scope on 2026-08-13 (§3.1).
+- **OQ2 — the open question that matters most, and A5 answers it.** Does Slang's HLSL output land in
+  the SM3/SM4-level dialect ShadowDusk's targets need, or does it assume SM6-era HLSL? If the
+  latter, **OpenGL and FNA may be unreachable through this route even when DirectX/Vulkan are** —
+  the SM ceiling is a real constraint on those two (`SD0015`, `SD0300`, the Phase 51 A10
+  measurements). Note what this would mean under A6: not a *rejected shader*, but the **same shader
+  reaching some targets and not others**, which is the hardest kind of limit to report well. If A5
+  finds it, the diagnostic design in A6(a) is the deliverable that follows.
+- **OQ3 — now the packaging question for the phase.** Would an out-of-band author-time converter
+  (the original `tools/shadertoy2fx` shape) satisfy this at a fraction of the packaging cost? If
+  yes, prefer it, and never ship the native. **This is the phase's main cost lever**, since
+  ingesting Slang is the direction that needs a binary at all (§2.2), and A3 says to answer it
+  before doing any packaging work.
+- **OQ4.** ~~Does the round-trip gate need `slangc` at test time only?~~ **Moot** — the round-trip
+  gate belonged to the closed output direction (§5.1).
+- **OQ5.** ~~Do the two directions share a file format contract?~~ **Moot** — there is only one
+  direction.
+- **OQ6.** ~~Which direction goes first?~~ **Moot** — settled by scope, not by sequencing. §3.1 keeps
+  the reasoning, because the trap it describes (cheap-but-unrequested beating
+  requested-but-costly) is not specific to Slang.

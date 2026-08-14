@@ -124,6 +124,21 @@ ShadowDuskCLI MyShader.fx MyShader.mgfx /Profile:OpenGL
 
 The target comes from the content project's own `/platform:` line, and the `.mgfx` inside the `.xnb` is byte-for-byte what the CLI emits. See [MGCB Content Pipeline](https://kaltinril.github.io/ShadowDusk/guides/mgcb-content-pipeline.html).
 
+**Direct `.xnb` output** — replace your content pipeline without changing a line of your game's code. ShadowDusk writes the `.xnb` itself, so `Content.Load<Effect>("MyShader")` keeps working and MGCB is out of the picture entirely. On the CLI, just name an `.xnb` output:
+
+```sh
+ShadowDuskCLI MyShader.fx Content/MyShader.xnb /Profile:OpenGL
+```
+
+Or from the library:
+
+```csharp
+var result = await new EffectCompiler().CompileAsync(fx, new CompilerOptions { Target = PlatformTarget.OpenGL });
+File.WriteAllBytes("Content/MyShader.xnb", result.Value.ToXnb());
+```
+
+The XNB platform byte is **derived** from the target you already picked, never something you select, and the payload inside is byte-for-byte the `.mgfx` the same call would emit. Proven at rung 4: a real `ContentManager.Load<Effect>` renders it pixel-identical to the `mgfxc`-built `.xnb`.
+
 **WASM library** (`ShadowDusk.Wasm`) — the same pipeline running in the browser via WebAssembly, for live in-browser compilation with no server roundtrip. OpenGL output renders live in KNI WebGL; DirectX and FNA output come back as downloads to run in your desktop game. The [in-browser fiddle](samples/ShaderFiddle.Web) is a sample of this. See [`docs/HOWTO-WASM-KNI.md`](docs/HOWTO-WASM-KNI.md) for the KNI/Blazor walkthrough.
 
 > "Same `.mgfx` output" means it loads and renders like mgfxc's, not that the bytes are identical. ShadowDusk's output is deterministic in its own right: the same version, source, and target always give the same bytes.

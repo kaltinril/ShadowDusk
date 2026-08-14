@@ -31,4 +31,20 @@ public sealed record CompiledShader(
     /// valid regardless — warnings never gate output.
     /// </summary>
     public IReadOnlyList<ShaderError> Warnings { get; init; } = [];
+
+    /// <summary>
+    /// Returns <see cref="Data"/> wrapped in an XNB content container, ready to drop into a
+    /// content directory where <c>Content.Load&lt;Effect&gt;("Foo")</c> will find it —
+    /// <b>no consumer code change at all</b> (issue #199).
+    /// </summary>
+    /// <remarks>
+    /// A container only: the payload is <see cref="Data"/> verbatim, so the effect bytes are
+    /// identical to what a plain <c>.mgfx</c> / <c>.fxb</c> write would produce. The XNB
+    /// platform identifier is <b>derived</b> from <see cref="Target"/> (see
+    /// <see cref="XnbWriter.PlatformIdentifierFor"/>) and is never something the consumer
+    /// selects. Write the result to <c>&lt;AssetName&gt;.xnb</c>; the asset name
+    /// <c>Content.Load</c> uses is the file name, so no companion file is needed.
+    /// </remarks>
+    /// <returns>The complete <c>.xnb</c> file bytes.</returns>
+    public byte[] ToXnb() => XnbWriter.Wrap(Data, Target);
 }

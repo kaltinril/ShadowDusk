@@ -14,6 +14,39 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **Direct `.xnb` output: replace your content pipeline with ShadowDusk and change no lines of
+  code** (Phase 60, issue #199). ShadowDusk now writes the content-pipeline `.xnb` itself, so a
+  consumer drops the file where their `mgfxc`-built one sat and keeps calling
+  `Content.Load<Effect>("MyShader")` unchanged, with MGCB out of the picture entirely. Two
+  surfaces, one writer: `CompiledShader.ToXnb()` on the library, and an `.xnb` output path on the
+  CLI (extension-driven, because a ShadowDusk-specific flag needed to get correct output is
+  exactly what the seamlessness rule forbids).
+
+  **A container only.** The payload is the same `.mgfx` / `.fxb` bytes ShadowDusk already emitted
+  and already had render-proven, byte-identical to what the same invocation writes without the
+  wrapper, so no shader-compilation behaviour changes and no existing output byte moves. Pure
+  managed, no native dependency, so it works on every host including WASM and Android.
+
+  **The XNB platform byte is derived from the target you already picked** and is never something
+  you select. That was settled by measurement, not assumption: both MonoGame's and FNA's
+  `ContentManager` validate the byte only for membership in a whitelist, never against the
+  platform actually running. FNA's whitelist is the binding constraint (it has no `'V'` for
+  DesktopVK and no `'G'` for DirectX 12), which is why the FNA target maps to `'w'`.
+
+  The type-reader manifest is emitted exactly as `dotnet mgcb` emits it, including the assembly
+  version, which is inert but whose *shape* is load-bearing and on which the three runtimes
+  disagree: MonoGame only strips the version when the name contains `PublicKeyToken`, while FNA
+  requires the full `, <assembly>, Version=…, Culture=…, PublicKeyToken=…` triple and a recognised
+  assembly name — so a bare `…, MonoGame.Framework` would resolve on MonoGame and fail on FNA.
+
+  Evidence: the envelope is byte-for-byte stock MGCB's through the type id; the payload is
+  byte-for-byte the CLI's; and **rung 4** — the new `validation/XnbContentLoad` driver builds each
+  fixture through both stock `dotnet mgcb` and ShadowDusk, loads both with a real
+  `ContentManager.Load<Effect>(assetName)`, and requires pixel-identical renders (4/4 fixtures,
+  1,230,720 px identical each, against `dotnet-mgcb` 3.8.4.1). Default-ON in
+  `validation/run-windows-render-gates.ps1`. The MGCB plugin is unaffected and stays: it serves
+  teams who *want* MGCB in their build.
+
 - **`FX0014`, a registered diagnostic for the shader stages the consumer runtime cannot load**
   (Phase 58 Area C). A pass assigning `HullShader`, `DomainShader`, `GeometryShader`, or
   `ComputeShader` now fails at the stage keyword with the stage named and the permanent reason

@@ -239,6 +239,21 @@ $gates.Add(@{
         Invoke-Checked 'dotnet' @('run', '--project', 'validation/MgcbPlugin', '-c', 'Release')
     }
 })
+# Direct .xnb writer (Phase 60, issue #199). The drop-in claim is "replace your content pipeline
+# and change NO lines of code", which only a real ContentManager can test: `new Effect(gd, bytes)`
+# proves the payload loads but says nothing about the XNB container, the platform-byte whitelist,
+# or the type-reader manifest - and those are precisely what Content.Load validates. This gate
+# builds each fixture through stock mgcb AND through ShadowDusk's XnbWriter, loads BOTH with
+# Content.Load<Effect>(assetName), and requires the renders to be pixel-identical. Default ON:
+# it needs a GPU but is seconds long, and every failure mode it covers is silent for a consumer
+# until their game refuses to start.
+$gates.Add(@{
+    Name   = 'XNB direct writer (Phase 60: real Content.Load<Effect> on a ShadowDusk-written .xnb vs mgcb''s)'
+    Action = {
+        Invoke-Checked 'dotnet' @('tool', 'restore')
+        Invoke-Checked 'dotnet' @('run', '--project', 'validation/XnbContentLoad', '-c', 'Release')
+    }
+})
 if ($IncludeFna) {
     $gates.Add(@{
         Name   = 'FNA fx_2_0 (ShadowDusk .fxb vs fxc /T fx_2_0, real FNA)'

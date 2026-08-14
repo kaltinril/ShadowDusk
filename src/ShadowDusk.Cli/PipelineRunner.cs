@@ -104,7 +104,23 @@ internal sealed class PipelineRunner
             return Result<byte[], IReadOnlyList<ShaderError>>.Fail(compileResult.Error);
         }
 
-        byte[] mgfxBytes = compileResult.Value.Data;
+        // Stage 2.5 (Phase 60, issue #199): an `.xnb` output path means "wrap it", so a consumer
+        // can drop the file where their mgfxc-built .xnb sat and keep calling
+        // Content.Load<Effect> unchanged. Extension-driven rather than a switch, because that is
+        // the seamless shape: the consumer already says where the file goes, and a
+        // ShadowDusk-specific flag to get correct output is exactly what the standing directive
+        // forbids. It cannot mis-fire — `.xnb` has no other meaning as a shader-compiler output,
+        // and every other extension is passed through untouched.
+        //
+        // The payload inside the container is compileResult.Value.Data VERBATIM, so `out.mgfx`
+        // and the payload of `out.xnb` are byte-identical BY CONSTRUCTION, not by a second code
+        // path that has to be kept in step (the Phase 42 one-pipeline precedent).
+        bool wrapAsXnb = Path.GetExtension(args.OutputFile)
+            .Equals(".xnb", StringComparison.OrdinalIgnoreCase);
+
+        byte[] mgfxBytes = wrapAsXnb
+            ? compileResult.Value.ToXnb()
+            : compileResult.Value.Data;
 
         // Non-fatal diagnostics — the underlying compiler's verbatim warnings plus
         // the GL portability findings (SD0400-SD0499). Printed to stderr in the
