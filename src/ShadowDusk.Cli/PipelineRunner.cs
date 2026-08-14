@@ -51,18 +51,17 @@ internal sealed class PipelineRunner
         else if (isConvertedSlang)
         {
             // Phase 61 (issue #198): .slang routes through the Slang frontend exactly as .glsl
-            // routes through the ShaderToy converter — a text transform upstream of the
-            // unchanged pipeline. slangc's diagnostics point at the REAL .slang file (it read
-            // the file itself), so they pass through as-is.
-            var converted = await ShadowDusk.Compiler.Slang.SlangFrontend.ConvertToFxAsync(
+            // routes through the ShaderToy converter — a PURE TEXT transform upstream of the
+            // unchanged pipeline (HLSL-compatible Slang; the body compiles through the same DXC
+            // as every .fx, so nothing extra is needed on any platform). Entry-point and
+            // Slang-only-construct diagnostics point at the real .slang file and line.
+            var converted = ShadowDusk.Compiler.Slang.SlangFrontend.ConvertToFx(
                 sourceText,
                 new ShadowDusk.Compiler.Slang.SlangConvertOptions
                 {
-                    SourceFilePath = args.SourceFile,
-                    SourceName     = args.SourceFile,
-                    TechniqueName  = SanitizeIdentifier(Path.GetFileNameWithoutExtension(args.SourceFile)),
-                },
-                ct).ConfigureAwait(false);
+                    SourceName    = args.SourceFile,
+                    TechniqueName = SanitizeIdentifier(Path.GetFileNameWithoutExtension(args.SourceFile)),
+                });
 
             if (converted.IsFailure)
                 return Result<byte[], IReadOnlyList<ShaderError>>.Fail(converted.Error);
@@ -89,11 +88,22 @@ internal sealed class PipelineRunner
             ? Path.GetFileNameWithoutExtension(args.SourceFile) + ".generated.fx"
             : args.SourceFile;
 
+        // For the converted routes the compile's SourceFileName is a synthetic ".generated.fx"
+        // with no directory, so a #include in the ORIGINAL source (legal in the Slang route,
+        // whose body is HLSL) would lose its relative anchor. Append the original file's
+        // directory to the search paths so those includes keep resolving.
+        IReadOnlyList<string> includePaths = args.IncludePaths;
+        if (isConvertedSlang
+            && Path.GetDirectoryName(Path.GetFullPath(args.SourceFile)) is { Length: > 0 } sourceDir)
+        {
+            includePaths = [.. args.IncludePaths, sourceDir];
+        }
+
         var options = new CompilerOptions
         {
             Target                 = args.Platform,
             IncludeResolver        = includeResolver,
-            AdditionalIncludePaths = args.IncludePaths,
+            AdditionalIncludePaths = includePaths,
             SourceFileName         = compileSourceName,
             Debug                  = args.Debug,
             MgfxVersion            = args.MgfxVersion,

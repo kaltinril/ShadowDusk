@@ -21,7 +21,7 @@ internal sealed record SlangEntryPoint(string Name, SlangStage Stage, int Line);
 /// <summary>
 /// Finds the entry points in a <c>.slang</c> source by its own idiom: the
 /// <c>[shader("stage")]</c> attribute. Slang has no <c>technique</c>/<c>pass</c> concept
-/// (measured: `slangc` errors on the FX9 block of any real <c>.fx</c>), so the attributes are
+/// (measured: Slang's own compiler errors on the FX9 block of any real <c>.fx</c>), so the attributes are
 /// the only authoritative statement of what the entry points are, and the frontend synthesizes
 /// the technique from them.
 ///

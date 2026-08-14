@@ -20,9 +20,6 @@ packages/
 # Native tool downloads (restored by tools/restore.sh / tools/restore.ps1)
 tools/dxc/
 tools/spirv-cross/
-# Slang toolchain, fetched on demand by tools/setup-local-testing.ps1 -WithSlang.
-# Experimental only (Phase 61); nothing in the build depends on it.
-tools/slang/
 # PlantUML jar (downloaded + SHA-256-verified by tools/render-diagrams.* to render the
 # docs diagrams; the jar is a cached, pinned artifact — not checked in).
 tools/plantuml/

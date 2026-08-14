@@ -342,29 +342,31 @@ self-contained `.fx`, which the **existing, unchanged** pipeline then compiles. 
 - The Windows **FNA** render-gate fixture for this route remains a tracked follow-up; run the Windows
   render gates on a GPU box before a release that ships this route.
 
-### 8.0 Slang input frontend — the same distinct axis (added 2026-08-13, Phase 61)
+### 8.0 Slang input frontend — the same distinct axis (added 2026-08-13, Phase 61; reworked 2026-08-14)
 
-`ShadowDusk.Compiler.Slang.SlangFrontend` (issue #198) accepts `.slang` source and produces `.fx`
-text for the **existing, unchanged** pipeline: `.slang → [pinned slangc v2026.14.1] → HLSL →
-[managed merge/demangle/flatten] → .fx`. Entry points come from Slang's `[shader("vertex")]` /
-`[shader("fragment")]` attributes; the technique is synthesized (Slang has no technique/pass
-concept — measured: slangc errors on the FX9 block of any real `.fx`). The same evidence rules as
-the ShaderToy axis apply, plus one honesty note of its own:
+`ShadowDusk.Compiler.Slang.SlangFrontend` (issue #198) accepts the **HLSL-compatible subset of
+Slang** and produces `.fx` text for the **existing, unchanged** pipeline. It is a **pure managed
+text transform** (owner direction 2026-08-13: no Slang toolchain shipped or invoked, anywhere):
+entry points come from Slang's `[shader("vertex")]` / `[shader("fragment")]` attributes, the
+technique is synthesized (Slang has no technique/pass concept), the attributes are stripped, and
+the body — near-HLSL by Slang's own design — compiles through the same DXC as every `.fx`. The
+same evidence rules as the ShaderToy axis apply:
 
 - **There is NO `mgfxc` oracle for Slang input** — `mgfxc` cannot read Slang at all, so no route
-  through this frontend is ever called `mgfxc`-equivalent. The pipeline below the generated-HLSL
-  seam is as faithful as it ever was; the seam above it is Slang's own HLSL emission.
+  through this frontend is ever called `mgfxc`-equivalent. The claim is simpler: the generated
+  `.fx` compiles through the same faithful pipeline as any other, to the same proven targets.
 - **Proven today (compile-level):** the two-stage `Desaturate.slang` fixture (cbuffer, texture,
   matrix, VS+PS) converts and compiles to `.mgfx` on **OpenGL and DirectX**, with the decoded
-  effect carrying exactly the user's parameter names. `SlangRouteTests` (slangc-gated,
-  `SHADOWDUSK_REQUIRE_SLANGC` flips skip→fail) + 12 pure tests over the managed passes.
+  effect carrying exactly the user's parameter names verbatim (the body rides through untouched,
+  so there is no name mangling to undo). `SlangRouteTests` — **ungated**, since the route needs
+  only the natives every suite lane already has — plus 14 pure tests over the frontend.
+- **The reject set:** Slang-only language features (`import`, `module`, `extension`,
+  `associatedtype`, generics) → `SD0600` naming the construct; a stage no `Effect` can hold
+  (compute/mesh/raytracing) → `SD0602`; no/ambiguous entry points → `SD0603`/`SD0604`. Nothing
+  is silently narrowed; subtler Slang-isms fall through to DXC's own verbatim diagnostics.
 - **Not yet proven:** a render comparison of the Slang route vs an equivalent hand-written `.fx`
-  (the analogue of the ShaderToy fidelity gate), and the FNA arm (Slang emits modern-syntax HLSL;
-  the SM2–3 fx_2_0 target likely refuses it — the OQ2 target-reach limit, to be measured not
-  assumed).
-- **Toolchain status:** slangc is a provisioned tool (`tools/setup-local-testing.ps1 -WithSlang`,
-  SHA-256-verified pin), not yet a packaged native; absent toolchain → loud `SD0600`, and the
-  §7-tracked packaging remainder (Phase 61 A3) is what closes that gap.
+  (the analogue of the ShaderToy fidelity gate), and the FNA arm (modern-syntax bodies vs the
+  SM2–3 fx_2_0 ceiling — the OQ2 target-reach limit, to be measured not assumed).
 
 ### 8.0b SkSL converter (SkiaSharp) — the image-fidelity axis (added 2026-08-13, Phase 62)
 
@@ -413,6 +415,7 @@ real `mgfxc /Profile:OpenGL` already refuses.
 
 One line per update, newest first; the cells above are always the current truth and the full detail lives in the linked phase docs.
 
+- **2026-08-14** — **Phase 61 reworked to its final shape on owner direction: the Slang input frontend is now a PURE MANAGED text transform compiling the HLSL-compatible subset — no Slang toolchain shipped, downloaded, or invoked, anywhere.** The one-day slangc-invoking route never shipped; §8.0 is rewritten to the final truth. `.slang` input now works on every host the pipeline works on (browser/WASM included), the integration tests are ungated, and the reject set is `SD0600` (Slang-only feature, by name) + `SD0602`–`SD0604` (entry-point problems). The slangc-era measured findings stay recorded in the Phase 61 doc for the day a full-Slang route is ever wanted.
 - **2026-08-13** — **Phase 62 v1 ([issue #197](https://github.com/kaltinril/ShadowDusk/issues/197)): the HLSL → SkSL converter for SkiaSharp shipped**, as §8.0b — an image-fidelity axis, never a §1 cell (Skia has no reference compiler; the evidence model was set by owner decision, `project_decisions.md`). Skia's own compiler accepts the emissions; renders match the original HLSL's analytic math at ±2/255; the reject set (`SD0610`–`SD0615`) is the load-bearing half, and its flagship case is measured: the converter REFUSES Gum's own Grayscale by default (it reads `COLOR0`), where Gum's hand-written SkSL port silently drops that tint. Open: the standing GL-vs-Skia cross-renderer harness and a Gum consumer trial.
 - **2026-08-13** — **Phase 61 v1 ([issue #198](https://github.com/kaltinril/ShadowDusk/issues/198)): `.slang` is now an accepted INPUT language**, as a new §8.0 distinct-evidence row (never a §1 cell — `mgfxc` cannot read Slang, so no route through it is `mgfxc`-equivalent). `ShadowDusk.Compiler.Slang.SlangFrontend` + CLI auto-routing; `.slang → pinned slangc v2026.14.1 → HLSL → managed merge/demangle/flatten → .fx → the unchanged pipeline`. Compile-proven on OpenGL + DirectX with the author's exact parameter names in the decoded effect; slangc-gated `SlangRouteTests` + 12 pure tests; diagnostics `SD0600`–`SD0607` registered. Open: the render comparison vs an equivalent hand-written `.fx`, the FNA arm, and the native packaging (slangc is provisioned via `tools/setup-local-testing.ps1 -WithSlang`, not yet package-shipped).
 - **2026-08-13** — **[Phase 60](../plan/DONE/PHASE-60-xnb-content-output.md) closed ([issue #199](https://github.com/kaltinril/ShadowDusk/issues/199)): ShadowDusk now writes the `.xnb` itself, so a consumer replaces their content pipeline and changes NO consumer code.** New §6 row, `validation/XnbContentLoad`, default-ON in the gate script. Every design question was settled by **measurement against a real `dotnet-mgcb` 3.8.4.1 build**, not from documentation (Phase 60 A3's explicit instruction, and Phase 52's lesson that a documented MonoGame behaviour can turn out never to have worked). Two findings drove the design. **(1) The platform byte is safely derivable.** Both MonoGame's and FNA's `ContentManager` validate it only for *membership in a whitelist*, never against the platform actually running — so it follows from the `PlatformTarget` the consumer already picked and no new knob exists. FNA's whitelist is the binding constraint (no `'V'`, no `'G'`), which is why `Fna` maps to `'w'`. **(2) The type-reader manifest's embedded assembly version is inert but its SHAPE is load-bearing**, and the three runtimes disagree on how: MonoGame only strips the version when the name contains `PublicKeyToken`; FNA requires the full `, <assembly>, Version=…, Culture=…, PublicKeyToken=…` triple and a recognised assembly name, so a bare `…, MonoGame.Framework` would fail there. Emitting exactly what `mgcb` emits is the only choice that satisfies all of them. Evidence: envelope byte-identical to stock MGCB through the type id, payload byte-identical to the CLI's, and **rung 4 — 4/4 fixtures load through a real `ContentManager.Load<Effect>` and render 1,230,720 px identical to the `mgfxc`-built `.xnb`**. No existing output byte moved; the `.xnb` is a container around payloads already rung-4 proven. Full `dotnet test` green (2,650 per TFM).

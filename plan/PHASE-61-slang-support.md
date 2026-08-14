@@ -2,56 +2,44 @@
 
 **Track:** Additive frontend / reach. Additive only; **no existing output byte may change**.
 
-**Status:** 🚧 **IN PROGRESS — the input frontend SHIPPED v1 on 2026-08-13; the native packaging
-(A3) is the open remainder.** Scope FINAL, owner direction 2026-08-13: Slang is an INPUT format
-only. ShadowDusk accepts `.slang`, runs it through the existing faithful pipeline untouched, and
-emits the `.mgfx`/`.fxb`/`.xnb` it already emits. That is
-[reading B](#3-the-disambiguation--settled-2026-08-13) and it is the whole phase.
+**Status:** ✅ **SHIPPED in its final shape, 2026-08-14.** Scope: INPUT only (owner direction
+2026-08-13), and — a second owner direction the same day, superseding the first implementation —
+**the HLSL-compatible subset of Slang, as a pure managed text transform, with no Slang toolchain
+shipped or invoked anywhere.** ShadowDusk is a multi-input compiler (`.fx`, ShaderToy GLSL, Slang)
+over one faithful pipeline, and this frontend follows that shape exactly.
 
-**What shipped (2026-08-13):** `ShadowDusk.Compiler.Slang.SlangFrontend` — public API
-`ConvertToFxAsync(slang) → .fx text` — plus CLI auto-routing (`.slang` extension, or
-`--input-format slang`), landing in `ShadowDusk.Compiler` rather than a ninth package. The route is
-`.slang → [slangc, one multi-entry invocation] → HLSL → [managed merge/demangle/flatten] → .fx →
-the unchanged pipeline`. Entry points come from Slang's own `[shader("vertex")]` /
-`[shader("fragment")]` attributes; the technique block is synthesized (A2's answer — the ShaderToy
-`#if SM4` profile convention, reasons and all). Diagnostics: slangc's own pass through **verbatim**
-with file/line/column; ShadowDusk's are the registered `SD0600`–`SD0607` block, implementing A6's
-three bands (compute/mesh entries rejected loudly by name, `SD0602`). Proven end-to-end: the
-`Desaturate.slang` fixture (VS+PS, cbuffer, texture) compiles to `.mgfx` on **OpenGL and DirectX**,
-and the decoded effect carries **exactly the parameter names the user wrote**
-(`WorldViewProjection`, `Desaturation`, `SpriteTexture`). Tests: 12 pure (scanner/post-processor/
-diagnostic parser, `SlangFrontendPureTests`) + 2 slangc-gated integration (`SlangRouteTests`,
-skip-with-reason absent the toolchain, `SHADOWDUSK_REQUIRE_SLANGC` flips skip→fail).
+**What shipped:** `ShadowDusk.Compiler.Slang.SlangFrontend.ConvertToFx(slang) → .fx text` plus CLI
+auto-routing (`.slang` extension, or `--input-format slang`). Entry points come from Slang's own
+`[shader("vertex")]` / `[shader("fragment")]` attributes; the technique block is synthesized (the
+ShaderToy `#if SM4` profile convention, reasons and all); the attributes are stripped; and the
+body — HLSL-compatible Slang is near-HLSL by Slang's own design (§2.3) — compiles through the
+**same DXC as every `.fx`**. Consequences that fall straight out of the shape:
 
-**Two measured findings from building it** (both now load-bearing in the design):
+- **Works everywhere.** Pure managed text + the pipeline's existing natives ⇒ every OS, every
+  target, and the browser/WASM host. Nothing new in the supply chain, nothing to provision.
+- **The author's names are the parameter names, verbatim.** No compiler sits between the
+  `.slang` text and DXC, so there is no mangling to undo.
+- **The trade, accepted consciously** (owner, after reviewing the alternative): **Slang-only
+  language features** — `import` modules, generics, `extension`, `associatedtype` — are rejected
+  **by name** (`SD0600`), never approximated. This matches the request as filed: *"write slang,
+  but still go through the normal compilation pipe… features not supported in HLSL are likely
+  also not supported in MonoGame."* Unloadable stages reject as `SD0602` (Phase 58's two-stage
+  measurement); no/ambiguous entry points as `SD0603`/`SD0604`. Subtler Slang-isms fall through
+  to DXC, whose verbatim diagnostics remain the authority.
 
-1. **slangc mangles every user symbol (`Desaturation` → `Desaturation_0`) and wraps every cbuffer
-   in a synthetic struct** (`cbuffer Params { SLANG_ParameterGroup_Params Params; }`). Left alone,
-   the struct shape is **unrepresentable on the GL MojoShader lowering** (`SD0210` rejects struct
-   uniform-block members — measured, the first end-to-end compile failed exactly there) and on
-   every target it would surface mangled names as the consumer's `Parameters["…"]` keys. The
-   frontend therefore demangles (only where provably safe; unsafe renames keep the mangled name
-   with a `SD0606` warning, never a miscompile) and flattens slang's parameter-group shape (only
-   slang's own fixed `SLANG_ParameterGroup_` pattern; anything else passes through to fail loudly
-   downstream).
-2. **The pinned slangc refuses per-entry `-o` files but emits every kernel to stdout in one
-   invocation** — as separate concatenated modules whose shared declarations are byte-identical,
-   which is what makes textual dedup sound. `-stage` must FOLLOW its `-entry` (E00034).
+**Proven:** `tests/fixtures/shaders/slang/Desaturate.slang` (VS+PS, cbuffer, texture, matrix)
+converts and compiles to `.mgfx` on **OpenGL and DirectX**, decoded parameter names exactly as
+authored, technique synthesized. 14 pure tests + an **ungated** integration test (the route needs
+only the natives every suite lane already has). Open: a render comparison vs an equivalent
+hand-written `.fx`, and the FNA arm (modern-syntax bodies vs the SM2–3 ceiling — OQ2, measure
+don't assume).
 
-**The other two readings are both closed, for different reasons:**
-
-- **Reading A — Slang as a substitute compiler: closed on measured evidence** (§2.1, Phase 23).
-  Independently confirmed by the requester on 2026-08-12.
-- **Reading C — ShadowDusk emitting Slang: closed by owner direction 2026-08-13**, superseding the
-  2026-08-11 direction that had put it in scope. §4 records why it was opened and why it was closed;
-  the material is kept because reopening it should start from what was already worked out, not from
-  scratch.
-
-**The acceptance rule for what Slang we take** (owner direction 2026-08-13): **accept valid Slang,
-and reject only what MonoGame itself cannot hold.** ShadowDusk's job is not to police Slang's
-language surface — it is to be transparent up to the point where a construct has nowhere to land in
-an `Effect`, and then to **fail loudly with a registered diagnostic** rather than emit something
-that loads wrong. §6 A6 makes this an area of work rather than a slogan.
+**A slangc-invoking route was built first (2026-08-13) and never shipped.** It worked end-to-end
+— and the owner rejected shipping or requiring the Slang binary when the implication surfaced, so
+it was replaced the next day by the pure-managed subset route. §A5 below preserves what that day
+measured about `slangc` (emission shapes, name mangling, the `SLANG_ParameterGroup_*` cbuffer
+wrapping the GL lowering refuses), because it is the groundwork any future full-Slang route would
+start from.
 
 **Depends on:** [Phase 23](DONE/PHASE-23-in-browser-compilation.md) — **read §2.1 below before
 anything else**; that phase already prototyped Slang end-to-end and rejected it for the product,
@@ -63,8 +51,9 @@ whether a source-fidelity-only frontend is in scope at all).
 **Blocks:** nothing.
 
 **Gated on:** a **reduced** gate, not Phase 59's — see §5. The product of this phase is an ordinary
-`.mgfx`/`.fxb`/`.xnb` for a target that is **already rung-4 proven**, so the only new link in the
-chain is Slang's own HLSL emission.
+`.mgfx`/`.fxb`/`.xnb` for a target that is **already rung-4 proven** — and in the final
+pure-managed shape the "new link in the chain" shrank further still: the body text reaches DXC
+verbatim, so the only new code is the entry-scan + technique synthesis, both pure and unit-tested.
 
 > [issue #198](https://github.com/kaltinril/ShadowDusk/issues/198), vchelaru: *"Add slang support
 > (see how complicated it is)"*. Filed with an empty body. The disambiguation is **settled: input
@@ -306,6 +295,12 @@ asserted the harder gate without distinguishing the readings.
 
 ## 6. The work — the additive input frontend
 
+> **Read the Status block first.** This section was drafted for the slangc-invoking route, which
+> was built, worked, and was then superseded on owner direction by the pure-managed
+> HLSL-compatible-subset route that actually shipped. Items below that assume a Slang toolchain
+> (A3, A4, parts of A5/A6) are **historical record and future-route groundwork**, not open work —
+> the shipped frontend needs none of them.
+
 **The architecturally clean route, and it is cleaner than it first appears.** Slang can *emit
 HLSL*. So the route is:
 
@@ -440,34 +435,34 @@ than in the expressions.
 
 - [x] §3 disambiguated. *(Settled 2026-08-13: **input only.** Reading A closed on evidence, reading
       C closed by owner direction.)*
-- [ ] **A5's full-corpus compatibility sweep.** *Started 2026-08-13:* the first probe changed the
-      phase's shape (slangc rejects whole `.fx` files; the effect framework, not the language, is
-      the wall) and building the frontend surfaced the second finding (the parameter-group struct
-      shape is unrepresentable on the GL lowering — measured `SD0210`, now handled by the flatten
-      pass). **Still owed:** the systematic corpus sweep with FX9 stripped, so the body-level
-      residue is a measured number.
+- [x] **A5, resolved by the final shape rather than by a sweep.** The question was "how much HLSL
+      does Slang refuse or change?" — which mattered only while a Slang compiler sat between the
+      user's text and DXC. In the shipped route **nothing sits between them**: the body reaches
+      DXC verbatim, so there is no emission residue to measure. The slangc-era findings the
+      2026-08-13 probes captured (slangc rejects whole `.fx` files — the effect framework is the
+      wall, which is *why* the attribute convention exists; slangc mangles every symbol `_0` and
+      wraps cbuffers in `SLANG_ParameterGroup_*` structs the GL lowering refuses with `SD0210`)
+      are kept in §6's annotated items as groundwork for any future full-Slang route.
 - [x] **A1's hand-translate probe run and written up** — inverted but equivalent: a real two-stage
       Slang effect (`Desaturate.slang`, VS+PS, cbuffer, texture, matrix) written in Slang's own
       idiom, converted, and compiled to `.mgfx` on OpenGL **and** DirectX with the user's parameter
       names intact in the decoded effect. Now the pinned fixture
       `tests/fixtures/shaders/slang/Desaturate.slang`.
-- [x] **A6's three-band behaviour implemented and tested at the boundaries**: slangc's diagnostics
-      pass through verbatim (`SlangDiagnosticParserTests` pins code/text/location); a compute entry
-      point is rejected loudly by name (`SD0602`, tested); nothing outside the two reject bands is
-      refused (no allow-list exists anywhere in the frontend). One refinement vs the original
-      wording: the frontend rejects by *stage* at scan time, before a target is even known — the
-      per-target half (SM6-only constructs reaching DX but not GL/FNA) lives downstream in the
-      pipeline's existing SM-ceiling diagnostics, which the route inherits unchanged.
-- [ ] **Packaging (A3) — the open remainder, and the decision is made, not open:** owner direction
-      2026-08-13 chose runtime-everywhere over an author-time-only converter, so the native **must**
-      ship, following the Phase 37/40 pin + SHA-256 + release-gate playbook with no exceptions.
-      Until it lands, `.slang` input needs the provisioned toolchain
-      (`tools/setup-local-testing.ps1 -WithSlang`, pinned v2026.14.1, SHA-256 verified — or
-      `SHADOWDUSK_SLANGC`), and a missing toolchain fails loudly with `SD0600` naming that command.
-      **This is the one gap between the owner's chosen end state and what is built.**
+- [x] **A6, in its superseded-and-final form.** The original rule ("accept whatever `slangc`
+      accepts") assumed the toolchain; the owner's final direction replaces it with **accept
+      HLSL-compatible Slang; reject Slang-only features by name** (`SD0600`), which keeps the
+      part that mattered — *nothing is ever silently narrowed or approximated* — while removing
+      the toolchain dependency entirely. Implemented and tested at the boundaries: Slang-only
+      constructs reject by name with true line numbers (comment-stripped, line-anchored scan, so
+      an identifier merely containing a keyword can never false-reject — tested); a compute
+      entry point rejects as `SD0602`; everything subtler falls through to DXC's own verbatim
+      diagnostics, which remain the authority.
+- [x] **Packaging (A3): resolved by making the question disappear.** The owner rejected shipping
+      or requiring any Slang binary; the shipped route needs none, on any platform, browser
+      included. Nothing to pin, restore, verify, or gate.
 - [x] **Pure-additive:** the frontend is new files plus CLI routing — `CompilationPipeline` and
       every writer are untouched, so no existing output byte *can* move (full suite green
-      confirms). No new package dependency; slangc is an external tool, never a library reference.
+      confirms). No new dependency of any kind, managed or native.
 - [x] The route is never described as `mgfxc`-equivalent (§5.2 wording used everywhere), and
       `.slang` appears in `docs/validation-matrix.md` as a §8-style distinct-evidence row, never a
       §1 cell.
@@ -490,9 +485,13 @@ than in the expressions.
   frontend inherits that ceiling exactly and gains nothing there. Note this is a **non-goal, not a
   silent limit**: per A6 these must be *rejected loudly*, since a Slang author has every reason to
   expect a compute entry point to work.
-- Vendoring Slang's standard-library modules beyond what a compile needs.
-- Defining or maintaining a ShadowDusk-blessed subset of Slang (A6: accept what `slangc` accepts,
-  reject only at the `Effect` ceiling).
+- Vendoring Slang's standard-library modules, or any Slang binary, tool, or native — on any host
+  (owner direction 2026-08-13; the defining constraint of the shipped shape).
+- Slang-only language features (`import` modules, generics, `extension`s, `associatedtype`).
+  Rejected **by name**, never approximated — the consciously accepted trade of the
+  HLSL-compatible-subset route, matching the requester's own framing. If real demand for them
+  appears, a full-Slang route can be added additively later; §6's annotated groundwork is where
+  it would start.
 
 ## 10. Open questions
 

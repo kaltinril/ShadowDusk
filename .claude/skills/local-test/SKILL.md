@@ -12,7 +12,6 @@ The one command that takes a clone to a verified build is
 ```bash
 pwsh tools/setup-local-testing.ps1                              # build + full test suite
 pwsh tools/setup-local-testing.ps1 -WithRenderGates             # + the GPU render proofs (Windows)
-pwsh tools/setup-local-testing.ps1 -WithSlang                   # + the experimental Slang toolchain
 pwsh tools/setup-local-testing.ps1 -SkipTests                   # build only
 ```
 
@@ -54,20 +53,19 @@ ask which half they ran.
   `dotnet run --project validation/XnbContentLoad -c Release`, which loads both a stock
   `mgcb` build and ours through a real `ContentManager` and pixel-compares.
 
-- **Slang input (issue #198) — shipped (v1).** Write entry points with Slang's
+- **Slang input (issue #198) — shipped.** Write entry points with Slang's
   `[shader("vertex")]` / `[shader("fragment")]` attributes (no technique block — it is
   synthesized), then:
   ```bash
   dotnet run --project src/ShadowDusk.Cli -- MyShader.slang out.mgfx /Profile:OpenGL
   ```
-  Needs the pinned toolchain: `-WithSlang` fetches it to `tools/slang/` (SHA-256 verified
-  before extraction); without it the compile fails loudly with `SD0600` naming that exact
-  command. The fixture `tests/fixtures/shaders/slang/Desaturate.slang` is a working
-  example. `slangc` cannot read a whole `.fx` (no technique/pass concept — measured), which
-  is exactly why the attribute convention exists. Library API:
-  `ShadowDusk.Compiler.Slang.SlangFrontend`. See
-  [`plan/PHASE-61-slang-support.md`](../../../plan/PHASE-61-slang-support.md) for what is
-  still open (native packaging; the toolchain is provisioned, not package-shipped).
+  **Nothing to install** — the frontend is a pure managed text transform and the body
+  compiles through the same pipeline as every `.fx`, so this works on every host,
+  browser included. The supported input is the **HLSL-compatible subset of Slang**;
+  Slang-only features (`import`, generics, `extension`) are rejected with a named
+  `SD0600`. The fixture `tests/fixtures/shaders/slang/Desaturate.slang` is a working
+  example. Library API: `ShadowDusk.Compiler.Slang.SlangFrontend.ConvertToFx`. See
+  [`plan/PHASE-61-slang-support.md`](../../../plan/PHASE-61-slang-support.md).
 
 - **SkiaSharp / SkSL (issue #197) — shipped (v1).** `ShadowDusk.Compiler.Sksl.SkslConverter`
   converts a pixel-only `.fx` to SkSL for `SKRuntimeEffect`. Know the shape of it: the

@@ -8,10 +8,11 @@ using Xunit;
 namespace ShadowDusk.Compiler.Tests.Slang;
 
 /// <summary>
-/// Pure tests (no slangc, no disk) for the Slang frontend's managed passes — the entry
-/// scanner, the emission post-processor, and the diagnostic parser. Everything asserted here
-/// is either measured slangc v2026.14.1 behaviour (the emission shapes come from real
-/// captures) or a Phase 61 A6 contract (what gets rejected, and how loudly).
+/// Pure tests (no disk, no natives) for the Slang frontend — a pure managed text transform:
+/// <c>[shader(...)]</c> entry discovery, Slang-only-construct rejection, attribute stripping,
+/// and technique synthesis. The body itself is compiled by the same DXC as every <c>.fx</c>,
+/// which is what makes <c>.slang</c> input work on every host with nothing extra to ship
+/// (owner direction 2026-08-13: the HLSL-compatible subset, no Slang toolchain anywhere).
 /// </summary>
 public sealed class SlangEntryScannerTests
 {
@@ -46,8 +47,9 @@ public sealed class SlangEntryScannerTests
     [Fact]
     public void ComputeEntry_IsRejectedLoudly_ByName_WithSD0602()
     {
-        // A6's middle band: valid Slang whose stage has nowhere to land in an Effect. The
-        // author has every reason to expect it to work, so silence would be the worst outcome.
+        // Valid Slang whose stage has nowhere to land in an Effect (Phase 58: stock MonoGame
+        // and KNI hold exactly vertex + pixel). The author has every reason to expect it to
+        // work, so silence would be the worst outcome.
         var result = SlangEntryScanner.Scan("""
             [shader("compute")]
             void Simulate(uint3 id : SV_DispatchThreadID) { }
@@ -86,211 +88,106 @@ public sealed class SlangEntryScannerTests
     }
 }
 
-public sealed class SlangHlslPostProcessorTests
+public sealed class SlangFrontendConvertTests
 {
-    // A faithful miniature of slangc v2026.14.1's measured emission shape: per-module
-    // prologue, #line directives, mangled names, synthetic registers, and the
-    // parameter-group struct wrapping — twice over, as the multi-entry stdout concatenates.
-    private const string TwoModuleEmission = """
-        #pragma pack_matrix(column_major)
-        #ifdef SLANG_HLSL_ENABLE_NVAPI
-        #include "nvHLSLExtns.h"
-        #endif
+    private const string TwoStageSlang = """
+        cbuffer Params { float4x4 WorldViewProjection; float Desaturation; }
 
-        #ifndef __DXC_VERSION_MAJOR
-        // warning X3557: loop doesn't seem to do anything, forcing loop to unroll
-        #pragma warning(disable : 3557)
-        #endif
+        [shader("vertex")]
+        float4 MainVS(float4 p : POSITION) : SV_Position { return mul(p, WorldViewProjection); }
 
-        #line 2 "probe.slang"
-        struct SLANG_ParameterGroup_Params_0
-        {
-            float4x4 WorldViewProjection_0;
-            float Desaturation_0;
-        };
-
-        #line 2
-        cbuffer Params_0 : register(b0)
-        {
-            SLANG_ParameterGroup_Params_0 Params_0;
-        }
-
-        VSOut_0 MainVS(VSIn_0 input_0)
-        {
-            VSOut_0 o_0;
-            o_0.Position_0 = mul(input_0.Position_1, Params_0.WorldViewProjection_0);
-            return o_0;
-        }
-
-        #pragma pack_matrix(column_major)
-        #ifdef SLANG_HLSL_ENABLE_NVAPI
-        #include "nvHLSLExtns.h"
-        #endif
-
-        #ifndef __DXC_VERSION_MAJOR
-        // warning X3557: loop doesn't seem to do anything, forcing loop to unroll
-        #pragma warning(disable : 3557)
-        #endif
-
-        #line 8 "probe.slang"
-        Texture2D<float4 > SpriteTexture_0 : register(t0);
-
-        #line 2
-        struct SLANG_ParameterGroup_Params_0
-        {
-            float4x4 WorldViewProjection_0;
-            float Desaturation_0;
-        };
-
-        #line 2
-        cbuffer Params_0 : register(b0)
-        {
-            SLANG_ParameterGroup_Params_0 Params_0;
-        }
-
-        float4 MainPS() : SV_TARGET
-        {
-            return (float4)Params_0.Desaturation_0;
-        }
+        [shader("fragment")]
+        float4 MainPS() : SV_Target { return (float4)Desaturation; }
         """;
 
     [Fact]
-    public void MergesModules_StripsBoilerplate_Demangles_AndFlattensTheParameterGroup()
+    public void SynthesizesTheTechnique_AndStripsTheAttributes()
     {
-        var result = SlangHlslPostProcessor.Process(
-            TwoModuleEmission, userSourceHadRegisters: false, "probe.slang");
+        var result = SlangFrontend.ConvertToFx(TwoStageSlang,
+            new SlangConvertOptions { SourceName = "t.slang", TechniqueName = "T" });
 
         result.IsSuccess.ShouldBeTrue();
-        string body = result.Value.Body;
+        string fx = result.Value.FxText;
 
-        // Boilerplate and #line directives are gone.
-        body.ShouldNotContain("pack_matrix", Case.Sensitive);
-        body.ShouldNotContain("#line", Case.Sensitive);
-        body.ShouldNotContain("NVAPI", Case.Sensitive);
+        // The body rides through VERBATIM — the user's names ARE the effect parameter names,
+        // with no compiler in between to mangle them.
+        fx.ShouldContain("float4x4 WorldViewProjection", Case.Sensitive);
+        fx.ShouldContain("float Desaturation", Case.Sensitive);
 
-        // The duplicated shared declarations collapsed to one.
-        CountOf(body, "cbuffer Params").ShouldBe(1);
+        // The attributes are stripped (fxc-lineage compilers reject them outside lib targets)…
+        fx.ShouldNotContain("[shader(", Case.Sensitive);
 
-        // Demangled: the names the user wrote are the names in the HLSL — and therefore the
-        // effect parameter names the consumer's Parameters["..."] lookups see.
-        body.ShouldContain("WorldViewProjection", Case.Sensitive);
-        body.ShouldContain("Desaturation", Case.Sensitive);
-        body.ShouldContain("SpriteTexture", Case.Sensitive);
-        body.ShouldNotContain("_0", Case.Sensitive);
-
-        // The parameter-group wrapping is flattened: no struct, plain members, plain access.
-        body.ShouldNotContain("SLANG_ParameterGroup", Case.Sensitive);
-        body.ShouldNotContain("Params.", Case.Sensitive);
-
-        // Synthetic registers stripped (the user's source declared none), so the pipeline's own
-        // faithful allocation applies exactly as it does to a plain .fx.
-        body.ShouldNotContain("register(", Case.Sensitive);
+        // …and the technique they expressed is synthesized in their place.
+        fx.ShouldContain("technique T", Case.Sensitive);
+        fx.ShouldContain("VertexShader = compile VS_SHADERMODEL MainVS();", Case.Sensitive);
+        fx.ShouldContain("PixelShader = compile PS_SHADERMODEL MainPS();", Case.Sensitive);
+        fx.ShouldContain("#if SM4", Case.Sensitive);
     }
 
     [Fact]
-    public void UserRegisters_AreKept_AndAMergeConflictFailsLoudly()
+    public void PixelOnlySlang_SynthesizesAPixelOnlyPass()
     {
-        const string conflicting = """
-            Texture2D A_0 : register(t0);
-            float4 MainPS() : SV_TARGET { return A_0.Load(int3(0,0,0)); }
-            Texture2D B_0 : register(t0);
-            float4 MainVS() : SV_POSITION { return B_0.Load(int3(0,0,0)); }
-            """;
+        var result = SlangFrontend.ConvertToFx(
+            """[shader("fragment")] float4 P() : SV_Target { return 1; }""",
+            new SlangConvertOptions { SourceName = "p.slang" });
 
-        var kept = SlangHlslPostProcessor.Process(conflicting, userSourceHadRegisters: true, "r.slang");
-        kept.IsFailure.ShouldBeTrue();
-        kept.Error.Single().Code.ShouldBe("SD0605");
-        kept.Error.Single().Message.ShouldContain("t0", Case.Sensitive);
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.FxText.ShouldContain("PixelShader = compile", Case.Sensitive);
+        result.Value.FxText.ShouldNotContain("VertexShader = compile", Case.Sensitive);
     }
 
-    [Fact]
-    public void RowMajorPragma_IsRejected_NeverPassedThrough()
+    [Theory]
+    [InlineData("import mymodule;", "import")]
+    [InlineData("module mylib;", "module")]
+    [InlineData("extension MyType { }", "extension")]
+    [InlineData("associatedtype T;", "associatedtype")]
+    [InlineData("__generic<T> T id(T x) { return x; }", "__generic")]
+    public void SlangOnlyConstructs_AreRejectedByName_WithSD0600(string construct, string name)
     {
-        // Passing it through would silently transpose every matrix against the pipeline's
-        // layout conventions — the exact class of wrong-output this project refuses.
-        var result = SlangHlslPostProcessor.Process(
-            "#pragma pack_matrix(row_major)\nfloat4 f() { return 0; }",
-            userSourceHadRegisters: false, "m.slang");
+        string source = construct + "\n[shader(\"fragment\")] float4 P() : SV_Target { return 1; }";
+
+        var result = SlangFrontend.ConvertToFx(source, new SlangConvertOptions { SourceName = "s.slang" });
 
         result.IsFailure.ShouldBeTrue();
-        result.Error.Single().Code.ShouldBe("SD0607");
-        result.Error.Single().Message.ShouldContain("row_major", Case.Sensitive);
+        var error = result.Error.Single();
+        error.Code.ShouldBe("SD0600");
+        error.Message.ShouldContain($"'{name}'", Case.Sensitive);
+        error.Message.ShouldContain("HLSL-compatible", Case.Sensitive);
+        error.Line.ShouldBe(1);
     }
 
     [Fact]
-    public void UnsafeRename_IsSkippedWithSD0606_NeverForced()
+    public void SlangKeywordInsideAComment_DoesNotReject()
     {
-        // 'Color' already exists as its own symbol, so 'Color_0' must stay mangled — the worst
-        // case is a mangled parameter name, never a capture/miscompile.
-        var result = SlangHlslPostProcessor.Process(
-            "float4 Color;\nfloat4 Color_0;\nfloat4 f() { return Color + Color_0; }",
-            userSourceHadRegisters: false, "c.slang");
+        // 'import' in a comment must never trip the construct scan — false rejection of valid
+        // input is the failure the line-anchored, comment-stripped scan exists to prevent.
+        var result = SlangFrontend.ConvertToFx("""
+            // TODO: consider import of a shared module one day
+            /* module notes:
+               import nothing */
+            [shader("fragment")] float4 P() : SV_Target { return 1; }
+            """, new SlangConvertOptions { SourceName = "c.slang" });
 
-        result.IsSuccess.ShouldBeTrue();
-        result.Value.Body.ShouldContain("Color_0", Case.Sensitive);
-        result.Value.Warnings.Single().Code.ShouldBe("SD0606");
-        result.Value.Warnings.Single().Message.ShouldContain("Color_0", Case.Sensitive);
+        result.IsSuccess.ShouldBeTrue(
+            result.IsFailure ? string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "");
     }
 
     [Fact]
-    public void ParameterGroupSharedByAnotherUse_IsLeftAlone()
+    public void AnIdentifierContainingAKeyword_DoesNotReject()
     {
-        // The struct type appears beyond the cbuffer member (a function parameter), so
-        // flattening would change meaning. It must survive untouched — and then be accepted or
-        // loudly rejected downstream, never silently rewritten.
-        const string shared = """
-            struct SLANG_ParameterGroup_P_0 { float X_0; };
-            cbuffer P_0 : register(b0) { SLANG_ParameterGroup_P_0 P_0; }
-            float f(SLANG_ParameterGroup_P_0 p) { return p.X_0; }
-            """;
+        // A variable named 'extension'-ish or a field access must not false-positive: the
+        // declaration keywords are line-anchored.
+        var result = SlangFrontend.ConvertToFx("""
+            [shader("fragment")]
+            float4 P() : SV_Target
+            {
+                float file_extension = 1.0;
+                float import_cost = 2.0;
+                return float4(file_extension, import_cost, 0, 1);
+            }
+            """, new SlangConvertOptions { SourceName = "id.slang" });
 
-        var result = SlangHlslPostProcessor.Process(shared, userSourceHadRegisters: false, "s.slang");
-
-        result.IsSuccess.ShouldBeTrue();
-        result.Value.Body.ShouldContain("SLANG_ParameterGroup_P", Case.Sensitive);
-    }
-
-    private static int CountOf(string text, string needle)
-    {
-        int count = 0;
-        for (int i = text.IndexOf(needle, StringComparison.Ordinal); i >= 0;
-             i = text.IndexOf(needle, i + 1, StringComparison.Ordinal))
-        {
-            count++;
-        }
-        return count;
-    }
-}
-
-public sealed class SlangDiagnosticParserTests
-{
-    [Fact]
-    public void RustcStyleDiagnostics_ParseToLocatedErrors_WithSlangsOwnCodeVerbatim()
-    {
-        const string stderr = """
-            error[E20001]: unexpected token
-             --> broken.slang:2:1
-              |
-            2 |
-              | ^
-            """;
-
-        var errors = SlangToolchain.ParseDiagnostics(stderr, "broken.slang");
-
-        var error = errors.Single();
-        error.Code.ShouldBe("E20001");                       // slangc's code, never reworded
-        error.Message.ShouldBe("unexpected token");          // slangc's text, verbatim
-        error.File.ShouldBe("broken.slang");
-        error.Line.ShouldBe(2);
-        error.Column.ShouldBe(1);
-    }
-
-    [Fact]
-    public void UnparseableStderr_BecomesOneSD0601_CarryingTheFullTextVerbatim()
-    {
-        var errors = SlangToolchain.ParseDiagnostics("segfault in slang-compiler.dll", "x.slang");
-
-        errors.Single().Code.ShouldBe("SD0601");
-        errors.Single().Message.ShouldContain("segfault in slang-compiler.dll", Case.Sensitive);
+        result.IsSuccess.ShouldBeTrue(
+            result.IsFailure ? string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "");
     }
 }

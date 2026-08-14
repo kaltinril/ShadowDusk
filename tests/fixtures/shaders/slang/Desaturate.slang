@@ -1,4 +1,5 @@
-// A Slang effect in Slang's own idiom: [shader(...)] attributes mark the entry points.
+// A Slang effect in Slang's own idiom: shader-stage attributes mark the entry points
+// (no technique block anywhere - ShadowDusk synthesizes it from the attributes).
 cbuffer Params
 {
     float4x4 WorldViewProjection;

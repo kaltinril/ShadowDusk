@@ -20,13 +20,7 @@
       4. Build          - dotnet build ShadowDusk.slnx.
       5. Tests          - the FULL suite, never a filtered subset.
       6. Smoke compile  - one real .fx to .mgfx AND to .xnb through the CLI.
-      7. Optional       - -WithSlang fetches the pinned Slang toolchain for experiments.
-      8. Optional       - -WithRenderGates runs the Windows GPU render gates.
-
-.PARAMETER WithSlang
-    Also download the pinned Slang release into tools/slang/ and verify slangc runs.
-    Slang is EXPERIMENTAL and not yet part of the product (see plan/PHASE-61). Nothing
-    in the build depends on it; this is for trying .slang input by hand.
+      7. Optional       - -WithRenderGates runs the Windows GPU render gates.
 
 .PARAMETER WithRenderGates
     Also run validation/run-windows-render-gates.ps1. Needs Windows and a real GPU
@@ -40,12 +34,11 @@
     Prerequisites, restore, build, full test suite, smoke compile.
 
 .EXAMPLE
-    pwsh tools/setup-local-testing.ps1 -WithSlang -WithRenderGates
-    Everything, including the GPU render proofs and the Slang toolchain.
+    pwsh tools/setup-local-testing.ps1 -WithRenderGates
+    Everything, including the GPU render proofs.
 #>
 
 param(
-    [switch]$WithSlang,
     [switch]$WithRenderGates,
     [switch]$SkipTests
 )
@@ -55,13 +48,6 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 Push-Location $repoRoot
-
-# The pinned Slang release. Bump BOTH of these together, never just the version:
-# the hash is the whole point of pinning (the Phase 37/40 native playbook).
-$SlangVersion = '2026.14.1'
-$SlangSha256  = @{
-    'windows-x86_64' = '5ED0A59D650A0AF0ACA45D5DB4E083B3D8FB5CEA05748747DD95DFBE9C580658'
-}
 
 $script:Results = [System.Collections.Generic.List[object]]::new()
 
@@ -215,65 +201,10 @@ finally {
     Remove-Item $smokeDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-# ------------------------------------------------------------------ 7. Slang (opt-in)
-if ($WithSlang) {
-    Write-Host ''
-    Write-Host "--- 7. Slang toolchain (EXPERIMENTAL - not part of the product)" -ForegroundColor Cyan
-
-    if (-not $IsWindows) {
-        Add-Result 'Slang toolchain' 'WARN' 'this script only fetches the windows-x86_64 build so far'
-    }
-    else {
-        $slangDir = Join-Path $repoRoot 'tools/slang'
-        $slangc   = Join-Path $slangDir 'bin/slangc.exe'
-
-        if (Test-Path $slangc) {
-            Add-Result 'Slang toolchain' 'PASS' "already present at tools/slang (v$SlangVersion)"
-        }
-        else {
-            try {
-                New-Item -ItemType Directory -Path $slangDir -Force | Out-Null
-                $asset = "slang-$SlangVersion-windows-x86_64.zip"
-                $url   = "https://github.com/shader-slang/slang/releases/download/v$SlangVersion/$asset"
-                $zip   = Join-Path $slangDir $asset
-
-                Write-Host "  downloading $asset ..."
-                Invoke-WebRequest -Uri $url -OutFile $zip
-
-                # Verify BEFORE extracting. An unverified native is exactly what the
-                # pin exists to prevent.
-                $actual = (Get-FileHash $zip -Algorithm SHA256).Hash
-                $expect = $SlangSha256['windows-x86_64']
-                if ($actual -ne $expect) {
-                    Remove-Item $zip -Force
-                    throw "SHA-256 mismatch. expected $expect, got $actual - refusing to extract"
-                }
-
-                Expand-Archive -Path $zip -DestinationPath $slangDir -Force
-                Remove-Item $zip -Force
-
-                $version = (& $slangc -v 2>&1 | Select-Object -First 1)
-                Add-Result 'Slang toolchain' 'PASS' "tools/slang, slangc reports $version"
-            }
-            catch {
-                Add-Result 'Slang toolchain' 'FAIL' $_.Exception.Message
-            }
-        }
-
-        if (Test-Path $slangc) {
-            Write-Host ''
-            Write-Host '  Try it by hand:' -ForegroundColor DarkGray
-            Write-Host '    tools/slang/bin/slangc.exe your.slang -target hlsl -entry MainPS -stage pixel -o out.hlsl' -ForegroundColor DarkGray
-            Write-Host '  NOTE: slangc rejects a whole .fx file - it has no technique/pass concept,' -ForegroundColor DarkGray
-            Write-Host '  so it parses the shader body but errors on the FX9 effect block (measured 2026-08-13).' -ForegroundColor DarkGray
-        }
-    }
-}
-
-# ----------------------------------------------------------- 8. render gates (opt-in)
+# ----------------------------------------------------------- 7. render gates (opt-in)
 if ($WithRenderGates) {
     Write-Host ''
-    Write-Host '--- 8. Windows GPU render gates (the bar CI cannot produce)' -ForegroundColor Cyan
+    Write-Host '--- 7. Windows GPU render gates (the bar CI cannot produce)' -ForegroundColor Cyan
 
     & "$repoRoot/validation/run-windows-render-gates.ps1"
     if ($LASTEXITCODE -eq 0) {
