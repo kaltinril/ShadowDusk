@@ -19,6 +19,11 @@ ShadowDusk/
 │   ├── ShadowDusk.Cli/           # CLI entry-point (dotnet tool `ShadowDuskCLI`); also accepts ShaderToy/GLSL input
 │   ├── ShadowDusk.ShaderToy/     # Pure-managed ShaderToy/GLSL → .fx front-end (ShaderToyConverter.Convert); ZERO
 │   │                             #   native + ZERO MonoGame dep; additive, upstream of the pipeline. PUBLISHED standalone NuGet (0.9.0).
+│                                 # tools/setup-local-testing.ps1 is the one-command contributor setup:
+│                                 #   prerequisites -> tools/restore -> dotnet tool restore -> build ->
+│                                 #   full test suite -> smoke compile (.mgfx AND .xnb), with opt-in
+│                                 #   -WithRenderGates and -WithSlang. Nothing is silently skipped.
+│                                 #   Surfaced to agents as the `local-test` skill.
 │   ├── ShadowDusk.MgcbPlugin/    # MGCB content-processor plugin (Phase 29): ShadowDuskEffectImporter +
 │   │                             #   ShadowDuskEffectProcessor, discovered by MGCB's /reference:. The native MGCB
 │   │                             #   route, since the PATH override was measured not to fire (MGCB compiles

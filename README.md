@@ -163,7 +163,17 @@ All packages ship together at one shared version. Most projects only need one of
 
 - [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8) (≥ 8.0.100) **and** the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10) — the libraries multi-target `net8.0` and `net10.0`, so both are needed to build the solution. Consuming the packages needs only one of them.
 
-DXC binaries come from the `Vortice.Dxc` NuGet package automatically. SPIRV-Cross native binaries are downloaded by `tools/restore.ps1` / `tools/restore.sh`:
+**One command to get from a fresh clone to a verified build** (needs PowerShell 7+, which runs on Windows, Linux and macOS):
+
+```sh
+pwsh tools/setup-local-testing.ps1                    # prerequisites, restore, build, full test suite, smoke compile
+pwsh tools/setup-local-testing.ps1 -WithRenderGates   # also the GPU render proofs (Windows + a real GPU)
+pwsh tools/setup-local-testing.ps1 -WithSlang         # also fetch the experimental Slang toolchain
+```
+
+It prints a PASS/WARN/FAIL line per step and never skips anything silently — a step that can't run says why and gives you the command that fixes it. The most common first-run failure is having only one .NET SDK: the libraries multi-target `net8.0` **and** `net10.0`, so you need both.
+
+The individual steps, if you'd rather run them yourself: DXC binaries come from the `Vortice.Dxc` NuGet package automatically, and SPIRV-Cross native binaries are downloaded by `tools/restore.ps1` / `tools/restore.sh`:
 
 ```sh
 ./tools/restore.sh        # Linux / macOS

@@ -306,6 +306,33 @@ changes.
   Sweep the fixture corpus through `slangc -target hlsl` and record what Slang refuses or changes.
   That number bounds the phase and should be known before anything is designed.
 
+  **A5 STARTED 2026-08-13, and the first probe already changed the shape of the phase.** Pinned
+  Slang `v2026.14.1` (fetchable via `tools/setup-local-testing.ps1 -WithSlang`, SHA-256 verified).
+  Run against `tests/fixtures/shaders/Grayscale.fx`:
+
+  ```
+  slangc Grayscale.fx -target hlsl -entry MainPS -stage pixel -o out.hlsl
+    → error[E20001]: unexpected token
+      error[E20003]: unexpected token          (no output file produced)
+  ```
+
+  **`slangc` rejects a whole `.fx`.** It parses the HLSL body fine — the only *warnings* are the
+  undefined `OPENGL` / `SM6` preprocessor identifiers, which are expected because the platform
+  macros are not defined on that bare invocation — and then it errors on the **FX9 `technique` /
+  `pass` block**, which Slang has no concept of.
+
+  **Why this matters more than a compatibility statistic.** The draft framed A5 as *"how much
+  ordinary HLSL does Slang refuse?"* The answer so far is "the shader bodies are fine; the
+  **effect framework** is the wall" — which means A2 is not a side task, it is the phase's core
+  problem. A `.slang` input cannot be an `.fx` with a different extension: there is nowhere for
+  `technique`/`pass`/`sampler_state`/render-state to live, and something must decide where the
+  entry points and pass structure come from. That is the same synthesis decision `ShadowDusk.ShaderToy`
+  faced, and it needs an answer before any integration code is written.
+
+  **Still to do for A5:** sweep the *whole* corpus (not one file) with the platform macros defined
+  and the FX9 block stripped, so the body-level residue is measured separately from the effect-level
+  wall. Those are two different numbers and conflating them would hide whichever is smaller.
+
   **A5's risk is NOT the one the requester named, and the difference decides whether A5 can be
   skipped.** vchelaru's 2026-08-12 note (§3.1) reasons that Slang features with no HLSL
   representation are *"likely… also not supported in MonoGame"* — so the residue would be harmless.
