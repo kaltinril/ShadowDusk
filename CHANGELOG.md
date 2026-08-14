@@ -64,6 +64,15 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   that the generated `.fx` compiles through the same faithful pipeline as any other, to the same
   proven targets.
 
+  **The subset claim is measured against the real Slang compiler, not assumed.** A 17-shader
+  corpus (`tests/fixtures/shaders/slang/`: procedural gradients/SDF/plasma, textured effects,
+  cbuffer-driven parameters, and VS+PS pairs) is cross-validated by `validation/SlangCorpus`:
+  every shader is accepted by the **real pinned `slangc`** (a SHA-256-verified test-time oracle,
+  like `fxc` — never shipped, never invoked by the product), and the uniform-free procedural
+  subset renders **pixel-identical (maxd 0)** through ShadowDusk's route vs through slangc's own
+  HLSL emission fed to the same DXC + SPIRV-Cross. In-suite, all 17 convert and compile on
+  OpenGL and DirectX.
+
 - **Direct `.xnb` output: replace your content pipeline with ShadowDusk and change no lines of
   code** (Phase 60, issue #199). ShadowDusk now writes the content-pipeline `.xnb` itself, so a
   consumer drops the file where their `mgfxc`-built one sat and keeps calling

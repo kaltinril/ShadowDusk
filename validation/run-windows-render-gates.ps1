@@ -254,6 +254,17 @@ $gates.Add(@{
         Invoke-Checked 'dotnet' @('run', '--project', 'validation/XnbContentLoad', '-c', 'Release')
     }
 })
+# Slang corpus cross-validation (Phase 61). Two gates in one driver: every corpus .slang is
+# accepted by the REAL pinned slangc (proving the corpus is genuine Slang, not HLSL wearing a
+# .slang extension), and the uniform-free procedural subset renders PIXEL-IDENTICAL through
+# ShadowDusk's route vs through slangc's own HLSL emission (same DXC + SPIRV-Cross both sides,
+# so any divergence is attributable to the one thing that differs: how the Slang text was
+# read). slangc here is a TEST-TIME ORACLE like fxc/mgcb - downloaded on demand, SHA-256
+# verified, cached, never shipped. First run needs network (~55 MB); GL context required.
+$gates.Add(@{
+    Name   = 'Slang corpus (Phase 61: 17 shaders slangc-validated + procedural subset pixel-diffed vs slangc''s HLSL)'
+    Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/SlangCorpus', '-c', 'Release') }
+})
 if ($IncludeFna) {
     $gates.Add(@{
         Name   = 'FNA fx_2_0 (ShadowDusk .fxb vs fxc /T fx_2_0, real FNA)'

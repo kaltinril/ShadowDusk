@@ -139,6 +139,9 @@ validation/output-mrt/
 validation/output-shadertoy/
 validation/output-shadertoy-dx/
 validation/output-xnb/
+# The pinned slangc TEST ORACLE the SlangCorpus gate downloads on demand (SHA-256-verified).
+# Never shipped; the product never invokes it.
+validation/SlangCorpus/.slang-oracle/
 # Written by gates that pre-date this list and were never added to it.
 validation/output-cbuffer/
 validation/output-fna/

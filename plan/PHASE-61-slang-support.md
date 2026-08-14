@@ -27,11 +27,29 @@ body — HLSL-compatible Slang is near-HLSL by Slang's own design (§2.3) — co
   measurement); no/ambiguous entry points as `SD0603`/`SD0604`. Subtler Slang-isms fall through
   to DXC, whose verbatim diagnostics remain the authority.
 
-**Proven:** `tests/fixtures/shaders/slang/Desaturate.slang` (VS+PS, cbuffer, texture, matrix)
-converts and compiles to `.mgfx` on **OpenGL and DirectX**, decoded parameter names exactly as
-authored, technique synthesized. 14 pure tests + an **ungated** integration test (the route needs
-only the natives every suite lane already has). Open: a render comparison vs an equivalent
-hand-written `.fx`, and the FNA arm (modern-syntax bodies vs the SM2–3 ceiling — OQ2, measure
+**Proven — and cross-validated against the real Slang compiler (2026-08-14, the owner's
+"10-50 comparable shaders" bar):** a **17-shader corpus** in `tests/fixtures/shaders/slang/`
+(8 uniform-free procedural — gradients, SDF circle, rings, checkerboard, stripes, color wheel,
+plasma; 6 textured/cbuffer-driven; 3 VS+PS pairs including matrix and displaced-vertex cases).
+Three gates:
+
+1. **In-suite** (`SlangCorpusCompileTests`, CI, no oracle): all 17 convert through the frontend
+   and compile to `.mgfx` on **OpenGL and DirectX**; corpus-size floor pinned at 17.
+2. **slangc validity** (`validation/SlangCorpus` gate 1): every shader is accepted per-entry by
+   the **real pinned slangc v2026.14.1** — the proof this corpus is genuine Slang, not HLSL
+   wearing a `.slang` extension. slangc is a **test-time oracle** exactly as `fxc` and stock
+   `mgcb` are elsewhere: downloaded on demand, SHA-256-verified, cached, never shipped, never
+   invoked by the product — so the no-Slang-binaries decision holds untouched.
+3. **Pixel equivalence** (gate 2): the 8-shader procedural subset renders **pixel-identical at
+   measured maxd 0** (tolerance ±2, spatial-variation non-degeneracy check) through ShadowDusk's
+   route vs through **slangc's own HLSL emission** fed to the same DXC + SPIRV-Cross. Identical
+   downstream stages ⇒ any divergence is attributable to the one thing that differs — whether
+   ShadowDusk's reading of the Slang text matches slangc's — which is precisely the
+   silent-divergence risk of the subset decision, now measured instead of assumed.
+
+Still open: render equivalence for the uniform/texture-driven members (extending gate 2 there
+means solving slangc's name mangling in the harness — the demangle groundwork below is where
+that would start), and the FNA arm (modern-syntax bodies vs the SM2–3 ceiling — OQ2, measure
 don't assume).
 
 **A slangc-invoking route was built first (2026-08-13) and never shipped.** It worked end-to-end

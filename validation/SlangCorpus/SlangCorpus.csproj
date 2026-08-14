@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- Intentionally NOT in ShadowDusk.slnx (validation drivers never are). Windows-gate
+         driver in practice: the pinned slangc oracle download is windows-x86_64. -->
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>ShadowDusk.Validation.SlangCorpus</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Silk.NET.OpenGL" />
+    <PackageReference Include="Silk.NET.Windowing.Glfw" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The xunit-free halves of the ImageTests GL harness, reused verbatim. -->
+    <Compile Include="..\..\tests\ShadowDusk.ImageTests\GlContext\OffscreenRenderer.cs" />
+    <Compile Include="..\..\tests\ShadowDusk.ImageTests\GlContext\GlslShaderProgram.cs" />
+  </ItemGroup>
+</Project>

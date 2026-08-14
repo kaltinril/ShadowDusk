@@ -63,8 +63,11 @@ ask which half they ran.
   compiles through the same pipeline as every `.fx`, so this works on every host,
   browser included. The supported input is the **HLSL-compatible subset of Slang**;
   Slang-only features (`import`, generics, `extension`) are rejected with a named
-  `SD0600`. The fixture `tests/fixtures/shaders/slang/Desaturate.slang` is a working
-  example. Library API: `ShadowDusk.Compiler.Slang.SlangFrontend.ConvertToFx`. See
+  `SD0600`. A **17-shader corpus** lives in `tests/fixtures/shaders/slang/` — every one
+  validated against the real Slang compiler by `validation/SlangCorpus` (part of the gate
+  script; slangc is a downloaded-on-demand TEST oracle, never shipped), with the procedural
+  subset proven pixel-identical to slangc's own HLSL emission. Library API:
+  `ShadowDusk.Compiler.Slang.SlangFrontend.ConvertToFx`. See
   [`plan/PHASE-61-slang-support.md`](../../../plan/PHASE-61-slang-support.md).
 
 - **SkiaSharp / SkSL (issue #197) — shipped (v1).** `ShadowDusk.Compiler.Sksl.SkslConverter`

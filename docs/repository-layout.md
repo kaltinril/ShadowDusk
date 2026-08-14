@@ -83,7 +83,10 @@ ShadowDusk/
 │                                  #   Android (AndroidGl), v11 (MonoGameV11), browser-ANGLE (AngleDerivativeProbe),
 │                                  #   direct .xnb (XnbContentLoad: builds each fixture through BOTH stock
 │                                  #     dotnet-mgcb and ShadowDusk's XnbWriter, loads both with a real
-│                                  #     ContentManager.Load<Effect>, requires pixel-identical renders - Phase 60)
+│                                  #     ContentManager.Load<Effect>, requires pixel-identical renders - Phase 60),
+│                                  #   Slang corpus (SlangCorpus: every tests/fixtures/shaders/slang shader
+│                                  #     accepted by the pinned slangc TEST oracle + the procedural subset
+│                                  #     pixel-diffed vs slangc's own HLSL emission - Phase 61)
 │                                  #   + the compare_*.py oracles. See docs/validation-matrix.md §6.
 │                                  #   Two entries here are NOT render proofs:
 │                                  #     MgcbPlugin runs a real `dotnet mgcb` content build through the MGCB
