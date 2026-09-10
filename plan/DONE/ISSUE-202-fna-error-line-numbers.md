@@ -1,7 +1,12 @@
 # ISSUE-202 — FNA error line numbers point past the end of the file
 
-**Status:** 🔵 **Investigated by measurement (2026-09-09); fix designed below, being implemented on
-`issue/202-fna-error-line-numbers`.**
+**Status:** ✅ **FIXED 2026-09-09** on `issue/202-fna-error-line-numbers`: `Vkd3dSourceLocator`
+(§6) relocates every vkd3d diagnostic on both hosts; the reporter's file now reports
+`(3009,29-29)`, the corpus fixtures their real lines. Full suite 2,775 per TFM green, every FNA
+corpus output byte-identical before and after (153 fixtures hashed), FNA render gate re-run
+(§9). Pinned by `Vkd3dSourceLocatorTests` (pure), the `Issue202` tests in
+`Vkd3dShaderCompilerTests` (real vkd3d) and `FnaDiagnosticLocationTests` (the fixtures, incl.
+the reporter's file under `tests/fixtures/issues/202/`).
 **Reported by:** uwx, GitHub issue [#202](https://github.com/kaltinril/ShadowDusk/issues/202)
 (2026-08-18), compiling Apos.Shapes' `apos-shapes.fx` with `--target-runtime fna`.
 **Scope:** every diagnostic vkd3d-shader produces — the FNA `fx_2_0` path **and** the DirectX 11
@@ -81,10 +86,11 @@ a runtime trip count).
 — then `Sm3StageReservationRewriter` (line-preserving). `validation/DumpPreprocessedHlsl` confirms
 3242 lines in, i.e. the user's line *n* sits at physical line *n + 5*. So the prelude explains 5
 of the 581, and it is *supposed* to be cancelled by the `#line 1`. It is not, because
-[`Vkd3dShaderCompiler.cs:84`](../src/ShadowDusk.HLSL/Vkd3d/Vkd3dShaderCompiler.cs#L84) **blanks
-every `#line` directive** before the call (vkd3d's preprocessor ignores `#line` and prints a
-`fixme` per directive to stderr — `preproc.y:644`), and the comment beside it says the quiet part:
-*"ShadowDusk maps no diagnostics through them on this path."* Every vkd3d diagnostic has therefore
+[`Vkd3dShaderCompiler.cs`](../../src/ShadowDusk.HLSL/Vkd3d/Vkd3dShaderCompiler.cs) (the
+`LineDirectivePattern.Replace` in `CompileCore`) **blanks every `#line` directive** before the
+call (vkd3d's preprocessor ignores `#line` and prints a `fixme` per directive to stderr —
+`preproc.y:644`), and the comment beside it said the quiet part, before this fix:
+*"ShadowDusk maps no diagnostics through them on this path."* Every vkd3d diagnostic had therefore
 always been reported in flattened-text coordinates, never the author's. That alone makes a
 template-header shader (`#if OPENGL … #else … #endif`) off by two or three lines:
 `DeferredSprite.fx`'s `clip(…)` on line 40 reports as 43, `ForwardLighting.fx`'s on 57 as 59.

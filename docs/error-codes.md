@@ -5,7 +5,11 @@ to exactly one condition** (one historical exception is flagged below). When add
 error, pick an unused number from the matching range and add it here in the same change.
 
 Codes from the *underlying* compilers (DXC, d3dcompiler_47, vkd3d-shader) are passed
-through verbatim (constraint 5: fail loudly, no reformatting) and are not listed here.
+through verbatim (constraint 5: fail loudly, no reformatting) and are not listed here. Only
+their *location* is ShadowDusk's to fix: vkd3d-shader's own file/line/column are re-mapped onto
+the author's source by `Vkd3dSourceLocator` (issue #202 — vkd3d 1.17's coordinates drift with
+skipped `#if` arms and every template-implemented intrinsic call), while the message text, the
+code (`E5017`, `E5000`, …) and the raw text stay exactly as the compiler emitted them.
 
 ## Ranges
 

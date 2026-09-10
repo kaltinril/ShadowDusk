@@ -53,6 +53,10 @@ ShadowDusk/
 │       │                               #   ShaderToyRoute{Gl,Dx} fixture) + third-party/ (38): Nez (15, MIT),
 │       │                               #   MonoGame (17, Ms-PL — the reference compiler's own acceptance set),
 │       │                               #   Gum (3), Apos.Shapes (3)
+│       ├── issues/                     # Issue-reproduction fixtures by issue number (202/: the reporter's
+│       │                               #   3235-line Apos.Shapes, MIT, for FnaDiagnosticLocationTests). NOT under
+│       │                               #   shaders/ on purpose: the GL/Vulkan/Phase-41 corpus sweeps enumerate
+│       │                               #   shaders/** and these are location fixtures, not corpus members.
 │       └── golden/                     # Reference outputs: mgfxc .mgfx (DirectX_11/, DirectX_12/, OpenGL/, Vulkan/) + fxc fx_2_0 .fxb (FNA/) + byte-identity/
 ├── samples/
 │   ├── ShaderFiddle.Web/               # KNI Blazor-WASM in-browser fiddle (sample of reach)

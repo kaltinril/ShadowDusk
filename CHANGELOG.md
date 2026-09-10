@@ -213,6 +213,33 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **FNA / vkd3d diagnostics named a line past the end of the file** (issue #202, reported by uwx:
+  `apos-shapes.fx:3586:26: E5017 …` in a 3236-line file). Every diagnostic from vkd3d-shader —
+  the FNA `fx_2_0` target and the default DirectX 11 DXBC backend — was reported in vkd3d's
+  own coordinates, which drift three ways: ShadowDusk blanks the `#line` directives vkd3d never
+  honoured (so the 5-line macro prelude counted), vkd3d's preprocessor drops skipped `#if` arms
+  and block-comment interiors from its count, and vkd3d 1.17 lexes the internal HLSL templates
+  behind `atan`/`atan2` (+20 lines each), `asin`/`acos` (+11), `tanh`/`lit` (+7), `refract` (+6),
+  `sincos`/`smoothstep`/`sinh`/`cosh`/`dst`/`faceforward`/`modf` (+4), `fwidth`/`determinant`
+  (+3) against the user file's line counter, per call site. The reporter's construct is line
+  **3009** (`if (isGlyph ? glyphFade <= 0.0 : d >= …)`); even the template-header corpus
+  shaders were off by two or three lines. `Vkd3dSourceLocator` now asks vkd3d itself where each
+  diagnostic sits (a sentinel parse-abort bisection of the same request, about 0.2 s against
+  the failing compile's 3 s), maps the physical line back through the `#line` directives to the
+  author's file and line (flattened includes too), and maps vkd3d's re-spaced column to the
+  author's; message, code and raw text stay verbatim. The desktop P/Invoke and browser
+  `[JSImport]` hosts share it. **No emitted byte moves** (every FNA corpus output hashed
+  identical before and after; the real compile's input is untouched). The reporter's file
+  itself cannot become an FNA effect under *any* compiler — `fxc /T fx_2_0` rejects it too
+  (`X3506` as written, `X4505` maximum temp register index with its `ps_3_0` arm forced) — so
+  the correct outcome, now delivered, is vkd3d's loud diagnostic at the right place; the
+  report's `error X0000: <file>:3586:26: E5017: …` shape was the pre-0.15.0 formatter and is
+  already the MSBuild-parseable `<file>(3009,29-29): error E5017: …`. Pinned by pure locator
+  tests against a fake vkd3d, real-vkd3d tests with a known construct behind known drift, and
+  `FnaDiagnosticLocationTests` on the corpus fixtures plus the reporter's exact file
+  (`tests/fixtures/issues/202/`, kept outside the corpus sweeps). Record:
+  `plan/DONE/ISSUE-202-fna-error-line-numbers.md`.
+
 - **MGCB plugin: `/platform:DesktopVK` on MonoGame 3.8.5 silently built an OpenGL effect, and
   `/platform:Web` was refused** (Phase 63 Area B, issue #203). MonoGame renumbered
   `TargetPlatform` in 3.8.5 (`Stadia=12, Web=13` became `Web=12, DesktopVK=13, WindowsDX12=14,
