@@ -7,6 +7,9 @@ using System;
 using System.IO;
 using System.Linq;
 using ShadowDusk.Validation;
+using ShadowDusk.Validation.Dx;
+
+DxHeadlessRasterizer.PinIfRequested();
 
 string repoRoot = ShaderInputs.FindRepoRoot();
 string goldenDir = Path.Combine(repoRoot, "tests", "fixtures", "golden", "DirectX_12");

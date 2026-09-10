@@ -18,6 +18,9 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using ShadowDusk.Compiler;
 using ShadowDusk.Core;
+using ShadowDusk.Validation.Dx;
+
+DxHeadlessRasterizer.PinIfRequested();
 
 // Vertex texture fetch: the VS samples a height texture (SampleLevel) and displaces each
 // vertex. A non-uniform height map deforms the quad; the PS paints UV so the deformation is
