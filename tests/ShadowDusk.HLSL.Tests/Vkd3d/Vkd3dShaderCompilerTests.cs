@@ -210,6 +210,25 @@ public sealed class Vkd3dShaderCompilerTests
     }
 
     [Vkd3dFact]
+    public void Compile_TheSentinel_IsSpelledOneOfTheTwoBisonWays_OnThisHost_Issue202()
+    {
+        // The locator's probes plant '@' and look for the "unexpected <undefined token>"
+        // diagnostic; bison spells that token "invalid token" (3.6+: the win-x64 MinGW and
+        // macOS Homebrew builds) or '$undefined' (3.5: the linux-x64 Ubuntu 20.04 build).
+        // Pin that THIS host's native says one of the two, and that an author's own '@'
+        // still lands on its line and column through the ambiguity handling.
+        var result = CompileIssue202(Issue202Prelude + Issue202User("    @"));
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("E5000");
+        result.Error.Message.ShouldBeOneOf(
+            Vkd3dSourceLocator.SentinelMessage, Vkd3dSourceLocator.SentinelMessageLegacyBison);
+        result.Error.File.ShouldBe("user.fx");
+        result.Error.Line.ShouldBe(13);
+        result.Error.Column.ShouldBe(5);
+    }
+
+    [Vkd3dFact]
     public void Compile_Sm5DxbcPath_SharesTheRelocation_Issue202()
     {
         // The same backend serves DirectX 11 (DXBC_TPF at SM5); a vkd3d-only rejection there
