@@ -62,7 +62,7 @@ before anything else.
 
 The third of Victor Chelaru's 2026-08-09 issues, with
 [#199](https://github.com/kaltinril/ShadowDusk/issues/199) → [Phase 60](DONE/PHASE-60-xnb-content-output.md)
-and [#198](https://github.com/kaltinril/ShadowDusk/issues/198) → [Phase 61](PHASE-61-slang-support.md).
+and [#198](https://github.com/kaltinril/ShadowDusk/issues/198) → [Phase 61](DONE/PHASE-61-slang-support.md).
 
 Context, **now verified rather than assumed** (§2.6, measured 2026-08-13): Victor maintains **Gum**,
 whose shaders are already vendored here as a regression corpus
