@@ -313,6 +313,51 @@ public sealed class FnaCompileFixtureTests
                      "(the literal ps_2_0 profile in the source is honored as written)");
     }
 
+    /// <summary>
+    /// A sampler parameter's <c>D3DXPARAMETER_TYPE</c> comes from what the source DECLARED, which
+    /// is `fxc`'s rule and what FNA binds against.
+    ///
+    /// <para>vkd3d infers a dimensioned type from how the sampler is USED instead, so a bare
+    /// <c>sampler s0</c> read with <c>tex2D</c> came back as <c>SAMPLER2D</c> (12) where `fxc`
+    /// records <c>SAMPLER</c> (10). The bare-<c>sampler</c> arm is pinned against a real `fxc`
+    /// golden by <see cref="Golden_Fna_OutputStructurallyEquivalentToFxc"/> ("textured"), which is
+    /// what caught the divergence; this theory covers the dimensioned arms, which have no golden.
+    /// </para>
+    /// </summary>
+    [FnaTheory]
+    // The DISCRIMINATING pair: identical tex2D usage, different declaration, so a
+    // usage-inferred type would collapse both to SAMPLER2D. This is the actual bug.
+    [InlineData("sampler", "tex2D(s0, uv)", 10)]                    // D3DXPT_SAMPLER
+    [InlineData("sampler2D", "tex2D(s0, uv)", 12)]                  // D3DXPT_SAMPLER2D
+    // The remaining rows of the mapping table. These must sample through their own
+    // intrinsic (tex2D on a 3D/cube sampler is a type error), so they pin the table, not
+    // the declaration-vs-usage distinction.
+    [InlineData("sampler3D", "tex3D(s0, float3(uv, 0))", 13)]       // D3DXPT_SAMPLER3D
+    [InlineData("samplerCUBE", "texCUBE(s0, float3(uv, 0))", 14)]   // D3DXPT_SAMPLERCUBE
+    public async Task SamplerParameter_IsTypedFromTheDeclaration_NotFromUsage(
+        string declaredType, string sampleExpression, int expectedType)
+    {
+        using var cts = new CancellationTokenSource(CompileTimeout);
+
+        string source = $$"""
+            texture t;
+            {{declaredType}} s0 = sampler_state { Texture = <t>; MipFilter = LINEAR; };
+            float4 PSMain(float2 uv : TEXCOORD0) : COLOR { return {{sampleExpression}}; }
+            technique T { pass P { PixelShader = compile ps_2_0 PSMain(); } }
+            """;
+
+        var result = await CompileFnaSourceAsync(source, sourcePath: null, cts.Token);
+        result.IsSuccess.ShouldBeTrue($"a '{declaredType}' declaration must compile for FNA; errors: {DescribeErrors(result)}");
+
+        Fx2ParsedEffect effect = Fx2BinaryValidator.Parse(result.Value.Data);
+        Fx2ParsedParameter sampler = effect.Parameters.Single(p => p.Name == "s0");
+
+        sampler.Class.ShouldBe(4, "a sampler is an OBJECT-class parameter");
+        sampler.Type.ShouldBe(expectedType,
+            $"'{declaredType} s0' must be recorded as D3DXPARAMETER_TYPE {expectedType} — the DECLARED " +
+            "type, as fxc records it, not the type vkd3d infers from the tex2D usage");
+    }
+
     // -------------------------------------------------------------------------
     // D. Failure paths — SM4-style sources fail loudly, never silently degrade
     // -------------------------------------------------------------------------
