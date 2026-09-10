@@ -1,13 +1,17 @@
 # Test Shader Corpus — Provenance & Fresh Examples
 
-**Last updated:** 2026-08-02 — the issue-#189 fix added `SamplerRegisterOrder.fx` and
-`SamplerRegisterSparse.fx` (the sampler-register set below), both with `OpenGL` **and**
-`DirectX_11` goldens. Previously 2026-08-01: the issue-#187 fix added the four `ExPhantom*`
-fixtures (the phantom-parameter set below). Previously 2026-07-31: Phase 51 A10 added three
-DirectX-profile-floor fixtures and **reclassified the vendored Nez set**, whose DirectX column
-collapsed once ShadowDusk started enforcing mgfxc's own floor (see the note above that table).
+**Last updated:** 2026-09-09 — added the Slang input corpus: 17 `.slang` fixtures under
+`slang/`, cross-validated against the real `slangc` compiler (see `docs/validation-matrix.md`
+§8.0 and `validation/SlangCorpus`). Previously 2026-08-02: the issue-#189 fix added
+`SamplerRegisterOrder.fx` and `SamplerRegisterSparse.fx` (the sampler-register set below), both
+with `OpenGL` **and** `DirectX_11` goldens. Previously 2026-08-01: the issue-#187 fix added the
+four `ExPhantom*` fixtures (the phantom-parameter set below). Previously 2026-07-31: Phase 51
+A10 added three DirectX-profile-floor fixtures and **reclassified the vendored Nez set**, whose
+DirectX column collapsed once ShadowDusk started enforcing mgfxc's own floor (see the note
+above that table).
 Corpus on disk: **153 `.fx` + 7 `.fxh`** — 64 in the fixture root, 50 in `examples/`, 1 in
-`shadertoy/`, 38 under `third-party/`.
+`shadertoy/`, 38 under `third-party/` — plus **17 `.slang`** under `slang/` (a separate input
+corpus, not `.fx`; see §5).
 
 This document records (1) what is known about where the existing `.fx` test
 fixtures came from, (2) an integrity caveat about those fixtures, and (3) a set
@@ -445,3 +449,23 @@ Coverage note: every fixture in the corpus — these included — is exercised b
 structurally valid Vulkan container (combined descriptors at binding ≥ 32, unique bindings,
 column-major matrices, `main` entry point, no `SPV_GOOGLE_*` extensions) or fail with a real
 diagnostic. There is no skip list to quietly grow.
+
+---
+
+## 5. Slang input corpus (`slang/`)
+
+A separate corpus from the `.fx` sets above, since it exercises a different input language,
+not the FX9/HLSL pipeline. Lives in:
+
+```
+tests/fixtures/shaders/slang/
+```
+
+**17 `.slang` fixtures**, project-authored to exercise `ShadowDusk.Compiler.Slang.SlangFrontend`
+(cbuffers, textures, matrices, VS+PS pairs, gradients, SDF, checkerboard, plasma, color-wheel,
+and other procedural effects). Every one is accepted by the real, pinned `slangc` compiler as
+genuine Slang — the proof the corpus isn't HLSL wearing a `.slang` extension — and all 17
+convert + compile on OpenGL and DirectX in-suite (`SlangCorpusCompileTests`). An 8-shader
+uniform-free procedural subset additionally renders pixel-identical (max Δ 0) through
+ShadowDusk's route vs through slangc's own HLSL emission, via `validation/SlangCorpus`.
+Full detail: `docs/validation-matrix.md` §8.0.

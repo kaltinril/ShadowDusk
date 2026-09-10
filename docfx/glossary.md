@@ -18,6 +18,7 @@ Plain-language definitions of the shader and compiler terms used across these do
 - **Vulkan / DesktopVK** — MonoGame 3.8.5's Vulkan platform (`DesktopVK`). ShadowDusk's Vulkan target emits a `.mgfx` with **profile byte 80** (matching MonoGame's own `VulkanShaderProfile`) carrying SPIR-V directly; validated end-to-end in a real DesktopVK `Effect`. MonoGame-only — KNI has no Vulkan platform.
 - **DirectX 12 / WindowsDX12** — MonoGame 3.8.5's DirectX 12 platform (`WindowsDX12`). ShadowDusk's DirectX 12 target emits a `.mgfx` with **profile byte 2** carrying DXIL (SM6) directly; validated end-to-end in a real `WindowsDX12` `Effect`. MonoGame-only — KNI has no DirectX 12 platform.
 - **Shader Model (SM)** — a versioned GPU feature level. SM3 and below are the old Direct3D 9 era (FNA); SM5 is Direct3D 11; SM6 is DXIL (Vulkan and DirectX 12). Higher numbers mean more features.
+- **SkSL** — Skia's own shading language, the text `SKRuntimeEffect` accepts. ShadowDusk's `SkslConverter` converts a pixel-only `.fx` to SkSL text, an additive output alongside (not a replacement for) `.mgfx`/`.fxb`. There is no `.mgfx`-style container or version byte for it, and no `mgfxc`-equivalence claim — SkiaSharp is a different runtime with no reference compiler of its own.
 
 ## Intermediate representations
 
@@ -36,6 +37,9 @@ Plain-language definitions of the shader and compiler terms used across these do
 - **vkd3d-shader** — a cross-platform HLSL-to-DXBC compiler from the Wine project. ShadowDusk's default DirectX backend, so DirectX compiles work off Windows too.
 - **d3dcompiler_47** — a Microsoft HLSL compiler shipped as a system DLL on Windows. An optional, most-`fxc`-faithful DirectX backend.
 - **MojoShader** — the runtime that loads legacy GLSL / D3D9 effects in MonoGame's OpenGL path and in FNA. ShadowDusk's output matches the dialect it expects.
+- **SkiaSharp** — the .NET binding for Google's Skia 2D graphics library. Its `SKRuntimeEffect` API loads and runs SkSL shader text; ShadowDusk's `SkslConverter` targets it as an output, and SkiaSharp is a test-only dependency (CPU raster) used to validate the emitted SkSL renders correctly.
+- **Slang** — a shading language from [shader-slang](https://github.com/shader-slang/slang). ShadowDusk accepts the HLSL-compatible subset of `.slang` source as an input format (alongside `.fx`): a pure managed text transform converts it to `.fx` text before the normal pipeline compiles it. No Slang binary ships or runs anywhere — Slang here is a language ShadowDusk *reads*, never a compiler ShadowDusk *runs*.
+- **slangc** — the real Slang compiler's own command-line tool. ShadowDusk never ships or invokes it; it is used only as a **test-time oracle** (like `fxc`/`mgfxc` elsewhere) to cross-validate that ShadowDusk's Slang corpus is genuine Slang and that ShadowDusk's reading of it agrees with slangc's own HLSL emission.
 
 ## Concepts
 
