@@ -21,7 +21,7 @@ namespace ShadowDusk.Wasm;
 /// Injecting the reflector makes the OpenGL path reflect SPIR-V directly and skip the
 /// native DXIL reflection oracle, so no Windows-only reflection is ever required.
 /// Injecting the vkd3d backend routes <see cref="PlatformTarget.DirectX"/> and
-/// <see cref="PlatformTarget.Fna"/> through the SAME pinned vkd3d 1.17 the desktop
+/// <see cref="PlatformTarget.Fna"/> through the SAME pinned vkd3d 2.1 the desktop
 /// uses, compiled to WASM (never a substitute compiler) — the rest of both pipelines
 /// (RdefReader, Fx2EffectWriter, D3d9BytecodePatcher, CTAB reflection, MGFX writer) is
 /// pure managed C# that already runs in-browser. The host-appropriate backend is

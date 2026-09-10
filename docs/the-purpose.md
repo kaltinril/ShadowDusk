@@ -157,7 +157,7 @@ Where each host×target cell stands (updated 2026-07-27; proven cells carry thei
 > investigated under a shader-lens phase (the carve-out is documentation, not a fix);
 > consumer-visible caveat: docfx/guides/parameters-and-caveats.md.
 >
-> Phase 37 C (2026-06-10) hosted all four pinned vkd3d 2.1 per-RID binaries and made
+> Phase 37 C (2026-06-10) hosted all four pinned vkd3d per-RID binaries (1.17 at the time; 2.1 since Phase 56) and made
 > `tools/restore.*` provision them everywhere — which also surfaced (via CI) that the
 > earlier "DX11 on Linux ✅" claim was overstated: vkd3d produced the DXBC fine, but the
 > `.mgfx` pipeline's reflection step still P/Invoked Windows-only `D3DReflect`

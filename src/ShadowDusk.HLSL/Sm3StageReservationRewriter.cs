@@ -9,7 +9,7 @@ namespace ShadowDusk.HLSL;
 /// Rewrites D3D9 stage-scoped register reservations for a single-stage SM1–3 compile.
 /// D3D9-era HLSL can scope a register bind to one shader stage —
 /// <c>float4 Color : register(vs, c0);</c> / <c>: register(ps, c1);</c> /
-/// <c>sampler s : register(ps, s0);</c> — but vkd3d 1.17's HLSL compiler fails with
+/// <c>sampler s : register(ps, s0);</c> — but vkd3d 2.1's HLSL compiler fails with
 /// E5017 "Reservation shader target" on that stage-scoped form while fully honoring
 /// the plain <c>: register(c0)</c> form. The FNA fx_2_0 pipeline therefore rewrites
 /// the source PER STAGE before each vkd3d compile (once for vs_3_0, once for ps_3_0).

@@ -48,11 +48,13 @@ ShadowDusk/
 │   ├── ShadowDusk.ImageTests/          # Offscreen-render image regression
 │   ├── ShadowDusk.BrowserTests/        # Headless KNI WebGL render validation (Playwright)
 │   └── fixtures/
-│       ├── shaders/                    # Canonical .fx test shaders (151 .fx total + 7 .fxh headers):
-│       │                               #   62 in the root + examples/ (50) + shadertoy/ (1, the pinned
+│       ├── shaders/                    # Canonical .fx test shaders (153 .fx total + 7 .fxh headers, plus 17 .slang):
+│       │                               #   64 in the root + examples/ (50) + shadertoy/ (1, the pinned
 │       │                               #   ShaderToyRoute{Gl,Dx} fixture) + third-party/ (38): Nez (15, MIT),
 │       │                               #   MonoGame (17, Ms-PL — the reference compiler's own acceptance set),
 │       │                               #   Gum (3), Apos.Shapes (3)
+│       │                               #   plus slang/ (17 .slang, the Phase 61 Slang input corpus — a separate
+│       │                               #   input language, not .fx; see docs/test-shader-corpus.md §5)
 │       ├── issues/                     # Issue-reproduction fixtures by issue number (202/: the reporter's
 │       │                               #   3235-line Apos.Shapes, MIT, for FnaDiagnosticLocationTests). NOT under
 │       │                               #   shaders/ on purpose: the GL/Vulkan/Phase-41 corpus sweeps enumerate

@@ -46,7 +46,7 @@
     The faithful vkd3d-shader->WASM module (vkd3d/vkd3d-shader.{js,wasm}, Phase 4.1 —
     the browser DirectX-DXBC + FNA-fx_2_0 backend) is gitignored and restored into
     wwwroot/vkd3d/ by tools/restore.* (Restore-Vkd3dWasm, release tag
-    native-vkd3d-wasm-1.17; see wwwroot/vkd3d/RESTORE.md). When present, the Razor SDK
+    native-vkd3d-wasm-2.1; see wwwroot/vkd3d/RESTORE.md). When present, the Razor SDK
     packs it automatically as a static web asset alongside the dxc/spirv-cross modules
     (zero extra wiring). Fail the build loudly if it is missing — exactly like
     VerifyDxcWasmPresent above — so a packed .nupkg can never silently ship without
@@ -57,6 +57,6 @@
          after the .wasm landed) would otherwise pass and ship a package whose browser
          DirectX/FNA always fails SD1902 — the .js loader is as load-bearing as the .wasm. -->
     <Error Condition="!Exists('$(MSBuildProjectDirectory)/wwwroot/vkd3d/vkd3d-shader.wasm') Or !Exists('$(MSBuildProjectDirectory)/wwwroot/vkd3d/vkd3d-shader.js')"
-           Text="ShadowDusk.Wasm: wwwroot/vkd3d/vkd3d-shader.{js,wasm} is missing (both files are required). They are gitignored and must be restored before build/pack. Run tools/restore.ps1 (downloads from the native-vkd3d-wasm-1.17 release, or copy a local .wasm-build/vkd3d-wasm-out/ build into wwwroot/vkd3d/). See wwwroot/vkd3d/RESTORE.md." />
+           Text="ShadowDusk.Wasm: wwwroot/vkd3d/vkd3d-shader.{js,wasm} is missing (both files are required). They are gitignored and must be restored before build/pack. Run tools/restore.ps1 (downloads from the native-vkd3d-wasm-2.1 release, or copy a local .wasm-build/vkd3d-wasm-out/ build into wwwroot/vkd3d/). See wwwroot/vkd3d/RESTORE.md." />
   </Target>
 </Project>

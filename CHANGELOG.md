@@ -14,6 +14,14 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.20.0] - 2026-09-10
+
+### Added
+
 - **vkd3d-shader natives are now built for every desktop RID in CI, from a version input.**
   `build-vkd3d-natives.yml` and `vkd3d-wasm-build.yml` take `version` + `tarball_sha256` as
   workflow-dispatch inputs, so a future pin bump needs no workflow edit, and **win-x64 is CI-built
@@ -2158,7 +2166,8 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.16.0...v0.17.0

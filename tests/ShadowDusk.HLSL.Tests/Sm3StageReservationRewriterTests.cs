@@ -7,7 +7,7 @@ using Xunit;
 namespace ShadowDusk.HLSL.Tests;
 
 // -----------------------------------------------------------------------------
-// Sm3StageReservationRewriter: vkd3d 1.17 fails with E5017 "Reservation shader
+// Sm3StageReservationRewriter: vkd3d 2.1 fails with E5017 "Reservation shader
 // target" on D3D9 stage-scoped register binds (': register(vs, c0)') but honors
 // the plain ': register(c0)' form, so the FNA fx_2_0 pipeline rewrites the source
 // per stage before each vkd3d compile — the compiling stage's reservation loses

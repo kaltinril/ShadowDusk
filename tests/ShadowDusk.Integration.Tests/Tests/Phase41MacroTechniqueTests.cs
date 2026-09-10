@@ -265,7 +265,7 @@ public sealed class Phase41MacroTechniqueTests
         // ShadowDusk's FNA SM2 floor - with the actionable SD0300, NOT SD0010.
         //
         // NOTE (current limit, not fxc-equivalent): real fxc /T fx_2_0 + MojoShader DO compile
-        // vs_1_1. ShadowDusk's SD0300 SM2 floor is a deliberate conservatism (vkd3d 1.17's SM1
+        // vs_1_1. ShadowDusk's SD0300 SM2 floor is a deliberate conservatism (vkd3d 2.1's SM1
         // backend has known gaps and the SM1 output path is unvalidated against real FNA, Phase
         // 40). Revisit this pin if/when the vkd3d SM1 path is validated; until then SD0300 with
         // actionable guidance (use vs_2_0) is the honest, intended behavior.

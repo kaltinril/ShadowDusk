@@ -1,17 +1,17 @@
 # Faithful vkd3d-shader→WASM module — restore
 
-This directory holds the **faithful pinned vkd3d-shader 1.17 compiled to
+This directory holds the **faithful pinned vkd3d-shader 2.1 compiled to
 WebAssembly** — the PRODUCT in-browser HLSL→DXBC (DirectX) and HLSL→D3D9-bytecode
 (FNA fx_2_0) backend (Phase 4.1, Option A; see
 `plan/DONE/PHASE-4.1-SPIKE-wasm-directx-dxbc.md`). It is the SAME library + version the
-desktop pipeline P/Invokes (`tools/vkd3d/`, tag `native-vkd3d-1.17`), so its output
+desktop pipeline P/Invokes (`tools/vkd3d/`, tag `native-vkd3d-2.1`), so its output
 is asserted **byte-identical to the desktop backend** on the corpus — never a
 substitute compiler.
 
 | File | Committed? | What |
 |---|---|---|
 | `vkd3d-shader.js` | **no — restored** | emscripten MODULARIZE + EXPORT_ES6 loader; `export default createVkd3dModule`; exports the `sdw_vkd3d_compile` / `sdw_vkd3d_free_code` / `sdw_vkd3d_free_messages` C ABI plus `_malloc`/`_free`/`HEAPU8`. Locates `vkd3d-shader.wasm` via `new URL("vkd3d-shader.wasm", import.meta.url)`. |
-| `vkd3d-shader.wasm` | **no — restored** | the pinned vkd3d 1.17 emscripten build. |
+| `vkd3d-shader.wasm` | **no — restored** | the pinned vkd3d 2.1 emscripten build. |
 | `../shadowdusk-vkd3d.js` | yes | the FAITHFUL `[JSImport]` shim — `ensureReady()` (lazy-load + instantiate) + `compile()` (heap marshalling, verbatim diagnostics). |
 
 ## The wrapper C ABI (the Phase 4.1 contract)
@@ -37,7 +37,7 @@ additionally needs `_malloc`, `_free`, and the `HEAPU8` view on the module insta
 
 Both files are restored by `tools/restore.ps1` / `tools/restore.sh`
 (`Restore-Vkd3dWasm` / `restore_vkd3d_wasm`) from the **fixed GitHub Release tag
-`native-vkd3d-wasm-1.17`**, SHA-256-verified against the pins in those scripts.
+`native-vkd3d-wasm-2.1`**, SHA-256-verified against the pins in those scripts.
 
 > **Status:** the hosted build does not exist yet — the pins are
 > `PENDING-FIRST-HOSTED-BUILD` placeholders and the restore **skips with a notice**

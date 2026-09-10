@@ -6,7 +6,7 @@
 //       byte[] sourceUtf8, string entryPoint, string profile, string sourceName, int targetType);
 //
 // THIS IS THE PRODUCT DXBC/FNA BACKEND FOR THE BROWSER (Phase 4.1, Option A). It
-// wraps the SAME pinned vkd3d-shader 1.17 the desktop pipeline P/Invokes
+// wraps the SAME pinned vkd3d-shader 2.1 the desktop pipeline P/Invokes
 // (src/ShadowDusk.HLSL/Vkd3d/Vkd3dShaderCompiler.cs), compiled to WebAssembly —
 // NO substitute compiler — so its output is asserted byte-identical to the desktop
 // backend over the corpus (tests/ShadowDusk.BrowserTests/node-test-vkd3d-wasm.mjs,
@@ -16,7 +16,7 @@
 //
 // The emscripten module (./vkd3d/vkd3d-shader.{js,wasm}, MODULARIZE + EXPORT_ES6,
 // `export default` factory) is a RESTORED artifact (release tag
-// native-vkd3d-wasm-1.17; see ./vkd3d/RESTORE.md + tools/restore.*) and is NOT
+// native-vkd3d-wasm-2.1; see ./vkd3d/RESTORE.md + tools/restore.*) and is NOT
 // committed. It exports this C ABI (the Phase 4.1 wrapper contract):
 //
 //   // 0 (VKD3D_OK) on success, negative vkd3d error code on failure.

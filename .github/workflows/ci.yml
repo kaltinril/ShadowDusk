@@ -87,7 +87,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: tools/vkd3d
-          key: vkd3d-1.17-${{ runner.os }}
+          key: vkd3d-2.1-${{ runner.os }}
 
       # Same pattern for the pinned macOS DXC dylibs (Phase 37 A).
       - name: Cache DXC macOS natives
@@ -283,7 +283,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: tools/vkd3d
-          key: vkd3d-1.17-${{ runner.os }}
+          key: vkd3d-2.1-${{ runner.os }}
 
       - name: Cache DXC macOS natives
         uses: actions/cache@v5
