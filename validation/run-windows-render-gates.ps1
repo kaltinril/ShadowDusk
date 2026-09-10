@@ -74,6 +74,14 @@
     * Vulkan VS-driven + gallery - validation/VsDrivenVulkan (+ `-- apos`): a NON-IDENTITY
                                    asymmetric transform pixel-diffed vs the mgfxc 3.8.5 golden
                                    (maxd 0), plus the 30-cell ShapeBatch gallery (maxd 0).
+    * XNB direct writer          - validation/XnbContentLoad: a ShadowDusk-written .xnb through a
+                                   real MonoGame WindowsDX Content.Load<Effect> vs stock mgcb's
+                                   (pixel-identical), plus the envelope assertions (Phase 60).
+    * XNB on KNI (two lines)     - validation/KniXnbContentLoad, built against nkast 4.2.9001 AND
+                                   4.3.9001: real KNI Content.Load<Effect> on the v10 + KNIFX
+                                   .xnb vs the mgcb payload (maxd 0); pins that stock mgcb output
+                                   is rejected on 4.2 (the reader-name fact behind the XNA-4.0
+                                   manifest) and loads on 4.3 (Phase 64).
     * MGCB plugin (Phase 29)     - validation/MgcbPlugin: NOT a render gate. Drives a real
                                    `dotnet mgcb` content build through the /reference:'d
                                    ShadowDusk plugin and asserts the .mgfx inside the .xnb is
@@ -252,6 +260,21 @@ $gates.Add(@{
     Action = {
         Invoke-Checked 'dotnet' @('tool', 'restore')
         Invoke-Checked 'dotnet' @('run', '--project', 'validation/XnbContentLoad', '-c', 'Release')
+    }
+})
+# The KNI arm of the same claim (Phase 64). KNI 4.2.9001's reader-name resolver throws on the
+# mgcb-shaped manifest (stock mgcb .xnb files fail on it), which is why XnbWriter emits the
+# XNA-4.0 name; this gate proves that fix on BOTH KNI lines, each a separate build against its
+# own nkast package set: real KNI ContentManager.Load<Effect> on the v10 and KNIFX .xnb vs the
+# mgcb payload (maxd 0), plus the pinned positive control that stock mgcb output is REJECTED on
+# 4.2 and loads on 4.3. Default ON: the KNI failure mode is silent for a consumer until their
+# game refuses to start, and CI has no KNI runtime.
+$gates.Add(@{
+    Name   = 'XNB on KNI 4.2.9001 + 4.3.9001 (Phase 64: real KNI Content.Load<Effect> on a ShadowDusk-written .xnb, v10 + KNIFX vs mgcb payload; stock-mgcb rejection on 4.2 pinned)'
+    Action = {
+        Invoke-Checked 'dotnet' @('tool', 'restore')
+        Invoke-Checked 'dotnet' @('run', '--project', 'validation/KniXnbContentLoad', '-c', 'Release')
+        Invoke-Checked 'dotnet' @('run', '--project', 'validation/KniXnbContentLoad', '-c', 'Release', '-p:KniVersion=4.3.9001')
     }
 })
 # Slang corpus cross-validation (Phase 61). Two gates in one driver: every corpus .slang is
