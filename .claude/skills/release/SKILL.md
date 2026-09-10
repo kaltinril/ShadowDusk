@@ -51,7 +51,7 @@ history, not just SemVer's letter):
    Other switches the script accepts: `-IncludeVulkan` (accepted as a no-op; Vulkan is default-ON
    since issue #145) and `-SkipRestore`.
 
-   **`RELEASING.md` → Prerequisites item 4 is the authoritative description** of what these
+   **`RELEASING.md` → Prerequisites item 5 is the authoritative description** of what these
    gates cover, which switches apply, and why CI cannot replace them — read it there rather
    than duplicating it here. This step is the procedure:
    - **Stop on a non-zero exit.** Report which gate diverged and hand back to the user. Do not
