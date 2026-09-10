@@ -40,6 +40,13 @@
 #                              golden was built from, then render ShadowDusk's build and
 #                              mgfxc's build of that same .fx and diff. The only gate that
 #                              covers the converter -> pipeline route end to end.
+#   * Baseline+Candidate+compare.py — the 10-shader GL corpus, ShadowDusk vs the
+#                              committed mgfxc OpenGL goldens, real MonoGame DesktopGL. The
+#                              GL twin of the DX job's BaselineDx pair. Its distinct value is a
+#                              SECOND rasterizer for the precision-shaped shaders: Dots calls
+#                              sin() on ~792-radian arguments, which a weak GPU's large-argument
+#                              reduction gets wrong (see docs/validation-matrix.md §7), and
+#                              llvmpipe is the neutral judge of whether the OUTPUT is right.
 #
 # DX render gates wired here (issue #204, windows-latest, pinned to WARP — Windows'
 # bundled software D3D rasterizer — via SHADOWDUSK_DX_WARP=1, same recipe proven in
@@ -83,9 +90,9 @@
 #     FNA source tree) and fxc /T fx_2_0, not evaluated for WARP here.
 #   * Vulkan — WARP is a D3D-only software rasterizer; Vulkan needs Mesa lavapipe
 #     instead (see SkiaGameRendering's own GL/Vulkan CI setup for that pattern).
-#   * The Python-compare GL corpus (Baseline+Candidate+compare.py, VsDriven) — needs the
-#     two-process baseline/candidate orchestration; the in-process GL gates above already
-#     cover the regression-critical render shapes.
+#   * VsDriven (the Apos.Shapes GL gate) — still manual; the 10-shader GL corpus
+#     (Baseline+Candidate+compare.py) now RUNS here, which is also the second
+#     rasterizer the precision-shaped shaders (Dots, Scanlines) are judged against.
 name: Validation Render Gates
 
 on:
