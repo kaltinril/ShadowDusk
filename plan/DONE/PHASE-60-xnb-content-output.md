@@ -6,12 +6,13 @@
 **Status:** ✅ **DONE (2026-08-13)** — shipped and **rung-4 proven**. Created 2026-08-11, committed
 by owner direction the same day (*"the XNB byte output so that a user doesn't have to load an
 effect"*), implemented 2026-08-13.
-**The FNA and KNI `Content.Load` arms (C4, OQ3) are
-[Phase 64](../PHASE-64-xnb-fna-kni-content-load-proof.md)**, which measured them on real runtimes: the
-FNA arm is correct as shipped and only lacks a gate; the KNI arm fails on KNI ≤ 4.2.9001 because of
-the type-reader manifest string chosen in finding 2 below (KNI's resolver throws on the mgcb-shaped
-name; the XNA-4.0-shaped name loads on every MonoGame, KNI and FNA version measured), and Phase 64
-carries the one-string fix. Read finding 2 with that correction.
+**The FNA and KNI `Content.Load` arms (C4, OQ3) were closed by
+[Phase 64](PHASE-64-xnb-fna-kni-content-load-proof.md) (2026-09-09)**, which measured them on real
+runtimes: the FNA arm was correct as shipped and gained its gate; the KNI arm failed on KNI ≤ 4.2.9001
+because of the type-reader manifest string chosen in finding 2 below (KNI's resolver throws on the
+mgcb-shaped name; the XNA-4.0-shaped name loads on every MonoGame, KNI and FNA version measured), and
+Phase 64 carried the one-string fix plus the KNI, FNA and DesktopGL `Content.Load` gates. Finding 2
+is corrected in place.
 
 **What shipped:** `XnbWriter` in `ShadowDusk.Core` (pure managed, no native dependency, so it works
 on every host including WASM and Android), surfaced as `CompiledShader.ToXnb()` on the library and
@@ -32,9 +33,17 @@ the format description:
    the name contains `PublicKeyToken`; FNA matches one regex demanding the full
    `, <assembly>, Version=…, Culture=…, PublicKeyToken=…` triple *and* a recognised assembly name,
    so a tidy bare `…, MonoGame.Framework` would have resolved on MonoGame and failed on FNA.
-   Emitting byte-for-byte what `mgcb` emits is the only choice satisfying all three.
+   *As originally written this finding concluded "emitting byte-for-byte what `mgcb` emits is the
+   only choice satisfying all three".* **That was wrong for KNI** (Phase 64, measured 2026-09-09):
+   KNI ≤ 4.2.9001's `ResolveReaderType` throws `FileLoadException: The given assembly name was
+   invalid.` on the mgcb-shaped name — stock mgcb `.xnb`s fail there identically — and the one name
+   measured to load on every MonoGame, KNI and FNA version is the **XNA-4.0 string**
+   (`…EffectReader, Microsoft.Xna.Framework.Graphics, Version=4.0.0.0, Culture=neutral,
+   PublicKeyToken=842cf8be1de50553`), which is what KNI's own pipeline and XNA write. `XnbWriter`
+   emits that string since Phase 64; the mgcb-shaped one never shipped in a release.
 
-**Evidence:** envelope byte-identical to stock MGCB through the type id (C1); payload byte-identical
+**Evidence** (as of 2026-08-13; the envelope claim is restated by Phase 64 — identical to mgcb field
+for field except the reader name): envelope byte-identical to stock MGCB through the type id (C1); payload byte-identical
 to the CLI's (C2); and **rung 4 — `validation/XnbContentLoad` builds each fixture through both stock
 `dotnet mgcb` and ShadowDusk, loads BOTH through a real `ContentManager.Load<Effect>(assetName)`,
 and requires pixel-identical renders. 4/4 fixtures, 1,230,720 px identical each** (C3). Full
@@ -228,7 +237,9 @@ finding entirely, because it never enters MGCB's process at all.
 ## 5. Acceptance
 
 - [x] `.xnb` written by ShadowDusk, envelope byte-identical to stock MGCB's for the same asset (C1).
-      *Asserted live in `validation/XnbContentLoad` against whatever `mgcb` is installed, AND pinned
+      *Restated by Phase 64 C1: identical field for field EXCEPT the reader name, which is the XNA-4.0
+      string (asserted equal to `XnbWriter.EffectReaderTypeName`, with mgcb's differing name as the
+      positive control).* *Asserted live in `validation/XnbContentLoad` against whatever `mgcb` is installed, AND pinned
       offline in `XnbWriterTests` against a golden captured from mgcb 3.8.4.1 (so the pure suite
       catches drift without needing the tool).*
 - [x] Payload byte-identical to the CLI's `.mgfx` for the same source + target (C2).
@@ -237,11 +248,14 @@ finding entirely, because it never enters MGCB's process at all.
 - [x] **Rung 4:** real `Content.Load<Effect>` renders pixel-equivalent to the `mgfxc`-built `.xnb`,
       via `validation/XnbContentLoad`, default-ON in `run-windows-render-gates.ps1` (C3).
       *4/4 fixtures, 1,230,720 px identical each, `/platform:Windows` → DirectX.*
-- [ ] **FNA and KNI arms (C4) — NOT done, and deliberately not claimed; now [Phase 64](../PHASE-64-xnb-fna-kni-content-load-proof.md).** The writer already derives
-      their platform bytes and the unit tests pin those against both runtimes' whitelists, but
-      **derivation is not a render proof**: no FNA `Content.Load<Effect>` and no KNI one has been
-      run. Wiring them is the obvious next step (`validation/FnaValidation` and
-      `validation/KniDesktopGL` are the hosts), and until then the matrix says DirectX only.
+- [x] **FNA and KNI arms (C4) — done in [Phase 64](PHASE-64-xnb-fna-kni-content-load-proof.md)
+      (2026-09-09).** Real KNI `ContentManager.Load<Effect>` on ShadowDusk's v10 and KNIFX `.xnb`
+      renders pixel-identical (maxd 0) to the stock-mgcb DesktopGL build on KNI 4.2.9001 AND
+      4.3.9001 (`validation/KniXnbContentLoad`, default-ON in the gate script); real FNA
+      `ContentManager.Load<Effect>` on the `.fxb` `.xnb` renders within the gate's 4/255 of the fxc
+      oracle and at maxd 0 of the raw-bytes arm for every gate shader (`validation/FnaValidation`,
+      `-IncludeFna`); and MonoGame DesktopGL got its own gate (`validation/XnbContentLoadGl`).
+      The KNI arm needed the reader-name fix in finding 2 before it could pass.
 - [x] The platform byte is **derived, not asked for** (A2) — and no flag was needed, so nothing went
       to `project_decisions.md`. Both runtimes validate the byte only for whitelist membership.
 - [x] No existing output byte moves; full `dotnet test` green (2,650 per TFM, 0 failures).
@@ -267,11 +281,12 @@ finding entirely, because it never enters MGCB's process at all.
   field is `0` and is not the moving part; the **assembly version inside the reader NAME** is
   (`Version=3.8.4.1` from mgcb 3.8.4.1). It does not matter, because every runtime strips it before
   resolving — but §2's finding is that the surrounding *shape* is load-bearing and the runtimes
-  disagree on it, so the string is emitted exactly as mgcb emits it. An `.xnb` arm on
-  `validation/ForwardCompat` is still worth adding, for the same reason the payload sweep exists.
-- **OQ3. MEASURED 2026-09-09 in [Phase 64](../PHASE-64-xnb-fna-kni-content-load-proof.md) §2.3: KNI shares the platform list (minus `'V'`) but NOT the reader-name resolver — KNI ≤ 4.2.9001 rejects the mgcb-shaped manifest.** The original question, kept for the record: KNI is a MonoGame fork and consumes stock
+  disagree on it. *The "emit exactly what mgcb emits" conclusion was overturned by Phase 64 (see
+  finding 2): the string is now the XNA-4.0 one.* An `.xnb` arm on `validation/ForwardCompat` is
+  still worth adding, for the same reason the payload sweep exists (Phase 64 OQ4).
+- **OQ3. ANSWERED by measurement, 2026-09-09, [Phase 64](PHASE-64-xnb-fna-kni-content-load-proof.md) §2.3: KNI shares the platform list (minus `'V'`) but NOT the reader-name resolver — KNI ≤ 4.2.9001 rejects the mgcb-shaped manifest, and the XNA-4.0 manifest `XnbWriter` now emits loads on 4.2.9001 and 4.3.9001 (v10 and KNIFX payloads alike, maxd 0 vs mgcb's build; `validation/KniXnbContentLoad`).** The original question, kept for the record: KNI is a MonoGame fork and consumes stock
   mgcb output, so it almost certainly shares the list, but "almost certainly" is what C4 exists to
-  replace. Fold it into the KNI arm.
+  replace. It did not share the resolver, and "almost certainly" was the wrong call.
 - **OQ4. ANSWERED: extension-driven.** A ShadowDusk-specific switch needed to get correct output is
   what the seamlessness directive forbids, and the extension cannot mis-fire — `.xnb` has no other
   meaning as a shader-compiler output, and every other extension passes through unwrapped

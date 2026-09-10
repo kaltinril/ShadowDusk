@@ -11,6 +11,10 @@ internal static class ArgumentParser
         """
         Usage: ShadowDuskCLI <SourceFile> <OutputFile> [options]
 
+          <OutputFile>              The compiled effect. An .xnb extension writes the content
+                                    pipeline container instead (Content.Load<Effect> ready, no
+                                    MGCB); any other extension writes the raw .mgfx / .fxb.
+
         Options:
           /Profile:<Platform>       Target platform. Default: DirectX_11
                                     Platforms: DirectX_11, DirectX_12, OpenGL, Vulkan, FNA
@@ -49,6 +53,7 @@ internal static class ArgumentParser
         InputFormat inputFormat = InputFormat.Auto;
         bool printUniforms = false;
         var defines = new List<UserDefine>();
+        bool targetIsExplicit = false;
 
         int i = 0;
         while (i < args.Length)
@@ -73,6 +78,7 @@ internal static class ArgumentParser
                     if (profileResult.IsFailure)
                         return Result<CliArguments, ShaderError>.Fail(profileResult.Error);
                     platform = profileResult.Value;
+                    targetIsExplicit = true;
                     i++;
                     continue;
                 }
@@ -198,6 +204,7 @@ internal static class ArgumentParser
                     if (trResult.IsFailure)
                         return Result<CliArguments, ShaderError>.Fail(trResult.Error);
                     profile = trResult.Value;
+                    targetIsExplicit = true;
                     continue;
                 }
 
@@ -257,7 +264,8 @@ internal static class ArgumentParser
             Profile: profile,
             InputFormat: inputFormat,
             PrintUniforms: printUniforms,
-            Defines: defines));
+            Defines: defines,
+            TargetIsExplicit: targetIsExplicit));
     }
 
     // Bug-hunt 2026-07-27 (N12): a flag that requires a value but reaches the end of the

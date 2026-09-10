@@ -212,14 +212,20 @@ internal static class Program
     }
 
     /// <summary>
-    /// C1: everything a <c>ContentManager</c> reads before the payload must be byte-identical to
-    /// stock MGCB's. The file-size and payload-length int32s legitimately differ (different
-    /// compilers, different payload sizes) and are asserted structurally instead.
+    /// C1 (restated by Phase 64): everything a <c>ContentManager</c> reads before the payload is
+    /// byte-identical to stock MGCB's <b>except the reader name</b>, which must be the XNA-4.0
+    /// string (<see cref="XnbWriter.EffectReaderTypeName"/>) rather than mgcb's
+    /// <c>…, MonoGame.Framework, Version=…</c>: KNI ≤ 4.2.9001's resolver throws on the mgcb-shaped
+    /// name (stock mgcb <c>.xnb</c>s fail there identically), and the XNA-4.0 name is the only
+    /// one measured to load on every MonoGame, KNI and FNA version. Header, reader count, reader
+    /// version, shared-resource count and type id are compared field for field; the file-size
+    /// and payload-length int32s legitimately differ (different compilers, different payload
+    /// sizes) and are asserted structurally instead.
     /// </summary>
     private static void AssertEnvelopeMatches(byte[] reference, byte[] ours)
     {
-        int refPayload = PayloadOffset(reference);
-        int ourPayload = PayloadOffset(ours);
+        Envelope refEnv = ParseEnvelope(reference);
+        Envelope ourEnv = ParseEnvelope(ours);
 
         if (!reference.AsSpan(0, 6).SequenceEqual(ours.AsSpan(0, 6)))
         {
@@ -227,9 +233,25 @@ internal static class Program
                 $"header differs: reference {Describe(reference)} vs ours {Describe(ours)}");
         }
 
-        // [10, payloadOffset-4) = reader manifest + shared-resource count + type id.
-        if (!reference.AsSpan(10, refPayload - 14).SequenceEqual(ours.AsSpan(10, ourPayload - 14)))
-            throw new InvalidOperationException("type-reader manifest / shared-resource count / type id differs");
+        if (refEnv.ReaderCount != ourEnv.ReaderCount)
+            throw new InvalidOperationException($"reader count differs: mgcb {refEnv.ReaderCount} vs ours {ourEnv.ReaderCount}");
+        if (refEnv.ReaderVersion != ourEnv.ReaderVersion)
+            throw new InvalidOperationException($"reader version differs: mgcb {refEnv.ReaderVersion} vs ours {ourEnv.ReaderVersion}");
+        if (refEnv.SharedResourceCount != ourEnv.SharedResourceCount)
+            throw new InvalidOperationException($"shared-resource count differs: mgcb {refEnv.SharedResourceCount} vs ours {ourEnv.SharedResourceCount}");
+        if (refEnv.TypeId != ourEnv.TypeId)
+            throw new InvalidOperationException($"type id differs: mgcb {refEnv.TypeId} vs ours {ourEnv.TypeId}");
+
+        // The one deliberate departure from mgcb, asserted as an EQUALITY against the constant
+        // rather than tolerated as a difference.
+        if (ourEnv.ReaderName != XnbWriter.EffectReaderTypeName)
+            throw new InvalidOperationException($"reader name is not the XNA-4.0 string: '{ourEnv.ReaderName}'");
+        if (refEnv.ReaderName == ourEnv.ReaderName)
+        {
+            throw new InvalidOperationException(
+                "mgcb's reader name equals ours - the positive control for the Phase 64 manifest "
+                + $"departure is gone (mgcb now writes '{refEnv.ReaderName}'; re-measure KNI 4.2 before accepting)");
+        }
 
         if (BitConverter.ToInt32(ours, 6) != ours.Length)
             throw new InvalidOperationException(
@@ -237,11 +259,35 @@ internal static class Program
 
         // Positive control: the payloads MUST differ, or the "ShadowDusk produced this" claim is
         // unproven - we would be comparing MGCB against itself.
-        if (reference.AsSpan(refPayload).SequenceEqual(ours.AsSpan(ourPayload)))
+        if (reference.AsSpan(refEnv.PayloadOffset).SequenceEqual(ours.AsSpan(ourEnv.PayloadOffset)))
             throw new InvalidOperationException("payload equals MGCB's - ShadowDusk did not produce these bytes");
 
         static string Describe(byte[] b) =>
             $"'{(char)b[0]}{(char)b[1]}{(char)b[2]}' platform='{(char)b[3]}' version={b[4]} flags=0x{b[5]:x2}";
+    }
+
+    private sealed record Envelope(
+        int ReaderCount, string ReaderName, int ReaderVersion, int SharedResourceCount, int TypeId, int PayloadOffset);
+
+    private static Envelope ParseEnvelope(byte[] bytes)
+    {
+        if (bytes.Length < 10 || bytes[0] != 'X' || bytes[1] != 'N' || bytes[2] != 'B')
+            throw new InvalidOperationException("not an XNB file");
+        if ((bytes[5] & 0xC0) != 0)
+            throw new InvalidOperationException("compressed XNB is not supported by this gate");
+
+        int i = 10;
+        int readerCount = Read7BitEncodedInt(bytes, ref i);
+        if (readerCount != 1)
+            throw new InvalidOperationException($"expected exactly one type reader for an effect, found {readerCount}");
+        int nameLength = Read7BitEncodedInt(bytes, ref i);
+        string name = System.Text.Encoding.UTF8.GetString(bytes, i, nameLength);
+        i += nameLength;
+        int readerVersion = BitConverter.ToInt32(bytes, i);
+        i += 4;
+        int shared = Read7BitEncodedInt(bytes, ref i);
+        int typeId = Read7BitEncodedInt(bytes, ref i);
+        return new Envelope(readerCount, name, readerVersion, shared, typeId, i + 4);
     }
 
     private static int PayloadOffset(byte[] bytes)
