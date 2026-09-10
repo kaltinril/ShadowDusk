@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The MonoGame 3.8.5 `MonoGame.ContentBuilder.CSharp` template's project, minus the media tool
+    packages effects do not need, plus the package under test. COPIED to a scratch directory by
+    pack-consume.yml / tools/verify-contentpipeline-packaging.ps1 - never built in place (in-tree
+    it has no feed to resolve ShadowDusk.ContentPipeline from). The TargetFramework is rewritten
+    per matrix cell by the workflow; a net8.0, net9.0 and net10.0 Builder all reference the
+    net8.0 library (measured, Phase 63).
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RootNamespace>ScratchContentBuilder</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MonoGame.Framework.Content.Pipeline" Version="3.8.5" />
+    <!-- The pipeline assembly references MonoGame.Framework 3.8.5 but does not depend on it;
+         the template supplies it this way (PrivateAssets=All). -->
+    <PackageReference Include="MonoGame.Framework.Native" Version="3.8.5">
+      <PrivateAssets>All</PrivateAssets>
+    </PackageReference>
+    <!-- The package under test. The version is rewritten to the smoke version by the caller. -->
+    <PackageReference Include="ShadowDusk.ContentPipeline" Version="SMOKE_VERSION" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Assets\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

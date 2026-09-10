@@ -1,7 +1,8 @@
 # .github/workflows/pack-consume.yml
 # Scratch-consumer smoke (Phase 37 verification tail, item 2).
 #
-# Does EXACTLY what a brand-new consumer does, on all three OSes:
+# Does EXACTLY what a brand-new consumer does, on all three OSes (plus, since Phase 63, a
+# MonoGame 3.8.5 Content Builder consuming ShadowDusk.ContentPipeline the same cold way):
 #
 #   dotnet pack  (the four packages ShadowDusk.Compiler pulls)  → ./localfeed
 #   dotnet new console                                          (OUTSIDE the repo tree)
@@ -324,3 +325,32 @@ jobs:
         shell: bash
         working-directory: ${{ runner.temp }}/sd-scratch-consumer
         run: dotnet run -c Release
+
+      # ── ShadowDusk.ContentPipeline consumed cold by a MonoGame 3.8.5 Content Builder ──────
+      # (Phase 63, issue #203). Exactly what a 3.8.5 user does: the MonoGame.ContentBuilder.CSharp
+      # template's project + `dotnet add package ShadowDusk.ContentPipeline`, then a real
+      # ContentBuilder run with the ShadowDusk pair passed as instances. The program asserts the
+      # .xnb payload is byte-identical to what the SAME packed ShadowDusk.Compiler produces, so
+      # the dependency edges (MonoGame.Framework.Content.Pipeline, ShadowDusk.Compiler) and the
+      # natives are proven to FLOW to a cold consumer's bin, not merely to compile. It is also
+      # the Builder's unguarded Assembly.GetTypes() scan over the packed graph on every OS.
+      # The program and csproj are the checked-in tools/contentbuilder-consumer/ files (one
+      # source, shared with tools/verify-contentpipeline-packaging.ps1). The Windows render half
+      # of this shape is validation/ContentBuilder in the local gate script.
+      - name: Scaffold scratch Content Builder
+        shell: bash
+        run: |
+          scratch="$RUNNER_TEMP/sd-scratch-contentbuilder"
+          rm -rf "$scratch"
+          mkdir -p "$scratch/Assets/Effects"
+          cp tools/contentbuilder-consumer/Program.cs "$scratch/"
+          sed -e 's|SMOKE_VERSION|${{ steps.version.outputs.smoke }}|' \
+              -e 's|<TargetFramework>net8.0</TargetFramework>|<TargetFramework>${{ matrix.tfm }}</TargetFramework>|' \
+              tools/contentbuilder-consumer/ScratchContentBuilder.csproj > "$scratch/ScratchContentBuilder.csproj"
+          cp tests/fixtures/shaders/Grayscale.fx "$scratch/Assets/Effects/"
+          cp "$RUNNER_TEMP/sd-scratch-consumer/nuget.config" "$scratch/nuget.config"
+
+      - name: Run scratch Content Builder (real ContentBuilder + ShadowDusk pair, DesktopGL + Windows)
+        shell: bash
+        working-directory: ${{ runner.temp }}/sd-scratch-contentbuilder
+        run: dotnet run -c Release -- DesktopGL Windows

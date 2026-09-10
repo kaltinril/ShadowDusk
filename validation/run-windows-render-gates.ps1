@@ -84,6 +84,13 @@
                                    Phase 63: two MGCB versions (3.8.4.1 + 3.8.5, which renumbered
                                    TargetPlatform: Web/DesktopVK/WindowsDX12 arms) and a decoy
                                    dxcompiler.dll on the child PATH (pinned-DXC + dxil guard).
+    * Content Builder (3.8.5)    - validation/ContentBuilder: a REAL MonoGame 3.8.5 ContentBuilder
+                                   subclass builds the fixtures through the stock pair AND through
+                                   ShadowDusk.ContentPipeline's pair (the library shape, Phase 63),
+                                   asserts payload == ShadowDuskCLI and envelope == stock, then
+                                   Content.Load<Effect>s both on MonoGame 3.8.5 WindowsDX and
+                                   requires pixel-identical renders. Also the only run of the
+                                   Builder's unguarded GetTypes() scan over our real graph.
 
   Both Vulkan gates are DEFAULT-ON (issue #145: a Vulkan-affecting change must not depend on
   someone remembering a switch). Pass -SkipVulkan only on a box with no Vulkan-capable GPU.
@@ -258,6 +265,18 @@ $gates.Add(@{
     Action = {
         Invoke-Checked 'dotnet' @('tool', 'restore')
         Invoke-Checked 'dotnet' @('run', '--project', 'validation/XnbContentLoad', '-c', 'Release')
+    }
+})
+# MonoGame 3.8.5 Content Builder (Phase 63, issue #203). A REAL ContentBuilder subclass builds
+# the fixtures through MonoGame's stock pair AND through ShadowDusk.ContentPipeline's, then
+# Content.Load<Effect>s both on MonoGame 3.8.5 and requires pixel-identical renders. It is also
+# the only place the Builder's unguarded Assembly.GetTypes() scan is exercised against our real
+# dependency graph - a dependency that fails type-load takes the consumer's whole build down.
+$gates.Add(@{
+    Name   = 'MonoGame 3.8.5 Content Builder (Phase 63: ShadowDusk.ContentPipeline pair vs stock pair, real ContentBuilder + Content.Load<Effect> on 3.8.5)'
+    Action = {
+        Invoke-Checked 'dotnet' @('build', 'src/ShadowDusk.Cli/ShadowDusk.Cli.csproj', '-c', 'Release')
+        Invoke-Checked 'dotnet' @('run', '--project', 'validation/ContentBuilder', '-c', 'Release')
     }
 })
 # Slang corpus cross-validation (Phase 61). Two gates in one driver: every corpus .slang is
