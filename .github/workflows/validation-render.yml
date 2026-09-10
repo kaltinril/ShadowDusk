@@ -55,23 +55,30 @@
 #                              than MonoGame's static GraphicsAdapter.UseDriverType).
 #   * BaselineDx+CandidateDx+compare_dx.py — DX11 corpus, ShadowDusk vs the committed
 #                              mgfxc DirectX_11 goldens, real MonoGame WindowsDX.
+#   * BaselineDx12+CandidateDx12+compare_dx12.py — DX12 corpus (issue #209), MEASURED GREEN
+#                              on a real windows-latest run (maxd 0, 10/10). Root cause of
+#                              the original #204 RED: MonoGame.Framework.Native's SDL2
+#                              window creation is compiled with SDL_WINDOW_VULKAN baked in
+#                              for any DX12/Vulkan build (native/monogame/sdl/MGP_sdl.cpp,
+#                              upstream MonoGame — not a runtime flag, no MonoGame-side or
+#                              SDL hint exists to skip it), so SDL_CreateWindow always
+#                              probes for a working Vulkan loader + WSI surface extensions
+#                              regardless of the WARP pin, and windows-latest ships neither.
+#                              Fixed by installing Google SwiftShader (a CPU Vulkan ICD) via
+#                              jakoch/install-vulkan-sdk-action, which also drops a loader
+#                              (`vulkan-1.dll`) next to the ICD — added to PATH so SDL's
+#                              dlopen finds it. WARP still does the actual D3D12 rendering;
+#                              Vulkan here is load-bearing only for SDL's window-creation
+#                              probe, never for a pixel.
 #
 # NOT here (issue #204 follow-ups, still manual-only via run-windows-render-gates.ps1):
-#   * BaselineDx12+CandidateDx12 (DX12 corpus) — MEASURED RED on windows-latest, not just
-#     left out: MonoGame.Framework.Native (the DX12 package) creates its window through
-#     SDL2, and SDL2's window creation probes for Vulkan surface support independent of
-#     which D3D driver type WARP requests, so it fails with "SDL_CreateWindow failed:
-#     Installed Vulkan doesn't implement the VK_KHR_surface extension" before a device is
-#     even created — windows-latest has no GPU or Vulkan ICD at all. The
-#     DxHeadlessRasterizer pin in these two projects is genuinely inert on this runner,
-#     not merely unwired; it stays in the source for a local WARP-on-real-GPU run, but is
-#     NOT in this workflow. Tracked as a follow-up: issue #209.
 #   * VsDrivenDx (Apos.Shapes gallery, real NuGet package) + ShaderToyRouteDx (converter
 #     route) — heavier DX11 gates, left out of the day-one CI job on purpose; nothing
 #     about WARP is expected to be different for them, they just weren't the smallest
 #     first step.
-#   * VsDrivenDx12 — same reasoning as VsDrivenDx, DX12 side; also blocked on the same
-#     SDL/Vulkan-surface issue as the DX12 corpus above.
+#   * VsDrivenDx12 — same reasoning as VsDrivenDx; the issue #209 SwiftShader fix should
+#     carry over (same SDL_WINDOW_VULKAN precondition), but wiring it in is a follow-up,
+#     not the smallest next step.
 #   * FNA (validation/FnaValidation) — needs its own restore-fna.ps1 (heavy, clones the
 #     FNA source tree) and fxc /T fx_2_0, not evaluated for WARP here.
 #   * Vulkan — WARP is a D3D-only software rasterizer; Vulkan needs Mesa lavapipe
@@ -261,12 +268,32 @@ jobs:
       - name: Install Python compare dependencies (pillow, numpy)
         run: python -m pip install --disable-pip-version-check pillow numpy
 
+      # Issue #209: MonoGame.Framework.Native's window creation is compiled with
+      # SDL_WINDOW_VULKAN baked in for any DX12 build (see the header comment above), so
+      # SDL_CreateWindow always dlopen's vulkan-1.dll and probes VK_KHR_surface/
+      # VK_KHR_win32_surface, even though WARP does the actual D3D12 rendering. windows-latest
+      # has neither a loader nor an ICD, so this installs Google SwiftShader (a CPU Vulkan
+      # ICD) purely to satisfy that probe; the action registers it in the Vulkan ICD registry
+      # for us, but does not add its bundled `vulkan-1.dll` to PATH, so the next step does.
+      # Pinned to a commit SHA (v1.6.0), not the mutable tag, since this is a third-party
+      # action.
+      - name: Install Vulkan software driver (SwiftShader) for DX12 SDL2 window creation
+        uses: jakoch/install-vulkan-sdk-action@37effcfa045411f8bfbbda26df2fd1b3bf3436fa # v1.6.0
+        with:
+          install_swiftshader: true
+          swiftshader_destination: C:\Swiftshader
+
+      - name: Add SwiftShader's vulkan-1.dll loader to PATH
+        run: Add-Content -Path $env:GITHUB_PATH -Value 'C:\Swiftshader'
+
       - name: Build the DX render gates
         run: |
           dotnet build validation/DxModernFeatures/DxModernFeatures.csproj -c Release
           dotnet build validation/KniWinFormsDX/KniWinFormsDX.csproj -c Release
           dotnet build validation/BaselineDx/BaselineDx.csproj -c Release
           dotnet build validation/CandidateDx/CandidateDx.csproj -c Release
+          dotnet build validation/BaselineDx12/BaselineDx12.csproj -c Release
+          dotnet build validation/CandidateDx12/CandidateDx12.csproj -c Release
 
       # Issue #204: pin every gate to WARP (Windows' bundled software D3D rasterizer)
       # instead of a hardware adapter — windows-latest has no GPU. SHADOWDUSK_DX_WARP is
@@ -290,10 +317,13 @@ jobs:
           dotnet run --project validation/CandidateDx -c Release --no-build
           python validation/compare_dx.py
 
-      # DX12 (BaselineDx12+CandidateDx12) is NOT run here — measured red on windows-latest
-      # (SDL2's window creation needs a Vulkan surface independent of the WARP pin; see the
-      # header comment above and issue #209). It still runs from run-windows-render-gates.ps1
-      # on a developer's GPU box.
+      - name: Run MonoGame WindowsDX12 corpus (ShadowDusk vs mgfxc DirectX_12 golden)
+        env:
+          SHADOWDUSK_DX_WARP: "1"
+        run: |
+          dotnet run --project validation/BaselineDx12 -c Release --no-build
+          dotnet run --project validation/CandidateDx12 -c Release --no-build
+          python validation/compare_dx12.py
 
       - name: Upload render outputs (debug)
         if: always()
@@ -302,5 +332,8 @@ jobs:
           name: validation-render-output-dx
           path: |
             validation/output-dx/**
+            validation/output/baseline-dx12/**
+            validation/output/candidate-dx12/**
+            validation/output/diff-dx12/**
           if-no-files-found: ignore
           retention-days: 7
