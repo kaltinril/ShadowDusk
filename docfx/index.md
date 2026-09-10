@@ -46,8 +46,10 @@ FNA  (D3D9 fx_2_0):
 | [Metal (macOS / iOS)](backends/metal.md) | MSL | **Not yet implemented (future)** |
 | [Vulkan](backends/vulkan.md) | SPIR-V | Validated end-to-end (MonoGame `DesktopVK` only — KNI has no Vulkan platform) |
 | [DirectX 12](backends/directx12.md) (MonoGame `WindowsDX12`) | DXIL (SM6) | Validated end-to-end (MonoGame `WindowsDX12` only — KNI has no DirectX 12 platform) |
+| Slang input (`.slang`) | Same `.mgfx`/`.fxb` as the target backend | Compile-proven (17-shader corpus cross-validated against the real `slangc`; no `mgfxc` oracle for Slang input) |
+| SkSL output (SkiaSharp) | SkSL text (`SKRuntimeEffect`) | Image-fidelity proven vs the original HLSL's math (no `mgfxc`-equivalence claim; Skia has no reference compiler) |
 
-*Validated end-to-end* means rendered in the **real engine** and compared against the reference compiler's output — [Validation &amp; the Evidence Ladder](contributing/validation.md) has the per-target proof detail.
+*Validated end-to-end* means rendered in the **real engine** and compared against the reference compiler's output — [Validation &amp; the Evidence Ladder](contributing/validation.md) has the per-target proof detail. Slang input and the SkSL converter are additive, distinct axes rather than `.mgfx` backends, so they use their own evidence bar; see the note above the table in [Overview](getting-started/overview.md) for detail.
 
 The table above is the **graphics-backend** axis — the one that decides the output bytes for MonoGame/KNI. **Framework** is a separate axis: **MonoGame and KNI** read the same MGFX format (both supported); **FNA** is also supported, but via a different effect path — ShadowDusk emits the legacy D3D9 fx_2_0 `.fxb` (MojoShader) FNA loads, not the MGFX container; classic Microsoft **XNA 4.0** is **out of scope**. New to picking a target, or building a shader-download feature? See **[Choosing a Target](guides/choosing-a-target.md)** — it covers the framework / backend / `GraphicsProfile` axes and the `.mgfx`-vs-`.xnb` distinction.
 

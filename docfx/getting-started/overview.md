@@ -25,8 +25,11 @@ ShadowDusk replaces that step with one **portable, faithful pipeline** whose out
 | **Content Builder library** | `ShadowDusk.ContentPipeline` — the same `ShadowDuskEffectImporter` / `ShadowDuskEffectProcessor` as a normal library | For MonoGame 3.8.5's code-centric **Content Builder project** (the template default from 3.8.5): add the package to the Builder and pass `new ShadowDuskEffectImporter(), new ShadowDuskEffectProcessor()` in `GetContentCollection`. Proven at rung 4 in a real 3.8.5 `ContentBuilder` (see [MonoGame 3.8.5 Content Builder](../guides/content-builder.md)). |
 | **Direct `.xnb` output** | `CompiledShader.ToXnb()` on the library, or an `.xnb` output path on the CLI | ShadowDusk writes the content-pipeline `.xnb` itself, so `Content.Load<Effect>("Foo")` keeps working **with no consumer code change and MGCB out of the picture entirely**. The XNB platform byte is derived from the target — nothing to select — and the payload inside is byte-for-byte the `.mgfx` the same call emits. Proven with a real `ContentManager` loading and rendering pixel-identically to the reference build on MonoGame (WindowsDX and DesktopGL), KNI (4.2.9001 and 4.3.9001) and FNA. Name the profile (`/Profile:OpenGL` for a GL game): the CLI default is `DirectX_11`. |
 | **WASM library** | `ShadowDusk.Wasm` — `WasmShaderCompiler : IShaderCompiler` | The same pipeline inside .NET WASM for in-browser runtime compilation. |
+| **SkiaSharp / SkSL converter** | `ShadowDusk.Compiler.Sksl.SkslConverter` | Converts an `.fx` pixel shader to an [SkSL runtime effect](https://skia.org/docs/user/sksl/) for `SKRuntimeEffect`, so the same shader source can also serve a SkiaSharp render path. Fragment-only, coordinate-driven effects with uniform inputs (post-process, tint, gradient, SDF); a shader that reads an interpolated varying is refused by name rather than silently narrowed. |
 
 Every shape implements the same <xref:ShadowDusk.Core.IShaderCompiler> interface and runs the **same faithful pipeline** — no substitute compilers. The in-browser [ShaderFiddle.Web](../samples/shaderfiddle-web.md) is a **sample** of the WASM reach, not a separate product.
+
+**Slang as an input.** Alongside `.fx` and `.glsl`, the `.fx` pipeline also accepts `.slang` source (the HLSL-compatible subset of [Slang](https://github.com/shader-slang/slang)): a pure managed text transform (`ShadowDusk.Compiler.Slang.SlangFrontend`) converts it to `.fx` text — entry points from Slang's `[shader("vertex")]`/`[shader("fragment")]` attributes, a synthesized technique — before the same faithful pipeline compiles it. No Slang toolchain is shipped or invoked anywhere. There is no `mgfxc` oracle for Slang input (`mgfxc` cannot read Slang at all), so no route through it is `mgfxc`-equivalent.
 
 ## Supported backends
 
@@ -40,6 +43,8 @@ Every shape implements the same <xref:ShadowDusk.Core.IShaderCompiler> interface
 | [Metal (macOS / iOS)](../backends/metal.md) | MSL | Not yet |
 | [Vulkan](../backends/vulkan.md) | SPIR-V `.mgfx` | Supported (MonoGame `DesktopVK` only — KNI has no Vulkan platform) |
 | [DirectX 12](../backends/directx12.md) (MonoGame `WindowsDX12`) | DXIL `.mgfx` | Supported (MonoGame `WindowsDX12` only — KNI has no DirectX 12 platform) |
+| Slang input (`.slang`) | Same `.mgfx`/`.fxb` as the target backend | Compile-proven (17-shader corpus cross-validated against the real `slangc`; no `mgfxc` oracle for Slang input) |
+| SkSL output (SkiaSharp) | SkSL text (`SKRuntimeEffect`) | Image-fidelity proven vs the original HLSL's math (no `mgfxc`-equivalence claim; Skia has no reference compiler) |
 
 Supported targets are tested end-to-end against the reference compiler and render identically (on-device Android via byte-identity: its output is byte-identical to the desktop build, whose renders are proven — the on-device pixel diff is a tracked follow-up). See [Validation](../contributing/validation.md) for how that's proven, and [Choosing a Target](../guides/choosing-a-target.md) to pick one.
 

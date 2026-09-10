@@ -40,6 +40,16 @@ Everything it needs ships inside the package. There's no separate install: no fx
 
 MonoGame's stock content pipeline compiles shaders with the same engine as mgfxc, which needs fxc.exe from the DirectX SDK and only runs on Windows. ShadowDusk replaces that one step with a portable pipeline whose output a real MonoGame, KNI, or FNA `Effect` loads and renders the same as mgfxc's — so the same shader build works on any OS, with nothing to install.
 
+## Input formats
+
+ShadowDusk's main input is `.fx` (HLSL Effect source, the format MonoGame/KNI/FNA already use). It also accepts `.slang` — the HLSL-compatible subset of [Slang](https://github.com/shader-slang/slang) — as an input:
+
+```sh
+ShadowDuskCLI MyShader.slang MyShader.mgfx /Profile:OpenGL
+```
+
+The Slang frontend is a pure managed text transform: entry points come from Slang's own `[shader("vertex")]`/`[shader("fragment")]` attributes, a technique is synthesized (Slang has no technique/pass concept), and the body — near-HLSL by Slang's own design — compiles through the same faithful pipeline as any other `.fx`. No Slang binary ships or runs anywhere, on any platform. Slang-only language features (`import` modules, generics, `extension`s) are rejected with a named error rather than approximated, and there's no `mgfxc` oracle for Slang input (`mgfxc` cannot read Slang at all), so a Slang-sourced build is reach, never an `mgfxc`-equivalence claim. The optional `ShadowDusk.ShaderToy` package covers a third input, ShaderToy / plain-GLSL fragment shaders.
+
 ## Supported targets
 
 ShadowDusk works with **MonoGame, KNI, and FNA** across these graphics backends. Pick your framework and backend; ShadowDusk emits the right output.
