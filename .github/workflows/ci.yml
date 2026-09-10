@@ -21,9 +21,8 @@ on:
   pull_request:
     branches: [ main ]
     paths-ignore: [ '**/*.md', 'plan/**', 'docs/**', 'docfx/**', 'LICENSE', '.gitignore' ]
-  # On-demand run for any branch. The path filters above mean a PR can end up with no
-  # build/test evidence at all when the filter matches more than intended; this is the
-  # lever to get the matrix to run anyway, without weakening the filters.
+  # On-demand run for any branch, so the matrix can be run against a branch before it has a
+  # PR, or re-run on a head commit without pushing something to force it.
   workflow_dispatch:
 
 # Least privilege for GITHUB_TOKEN: every job here only checks out, builds, tests, and
