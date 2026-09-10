@@ -19,6 +19,15 @@
 // Exit code 0 iff every GATE shader PASSes — the Phase 17 PS-only set plus the
 // VS-driven set (the 17-VS analog); FnaShaderInputs.Corpus is the authoritative
 // list — and the FnaMultiPassStates non-vacuousness content guard holds.
+//
+// Phase 64 (issue #199) adds a THIRD arm to every row, as a sub-verdict of the same 17:
+//   Arm C (candidate via .xnb): the SAME candidate bytes wrapped by XnbWriter, written
+//                      to a bare directory as <name>.xnb, and loaded through a real FNA
+//                      ContentManager.Load<Effect>(name) — the route a consumer who
+//                      replaced their content pipeline actually takes.
+// A gate row PASSes only if (raw candidate vs oracle within 4/255, as before) AND the
+// .xnb arm loaded, rendered, sits within 4/255 of the oracle (cross-compiler) AND at
+// maxd 0 of the raw candidate arm (same bytes, so any difference is the container).
 
 using System;
 using System.Collections.Generic;
@@ -54,10 +63,13 @@ string catPath = FnaShaderInputs.CatPath(repoRoot);
 string outRoot = Path.Combine(repoRoot, "validation", "output-fna");
 string refOutDir = Path.Combine(outRoot, "reference");
 string candOutDir = Path.Combine(outRoot, "candidate");
+string candXnbOutDir = Path.Combine(outRoot, "candidate-xnb");
+string xnbWorkDir = Path.Combine(Path.GetTempPath(), "shadowdusk_fna_xnb_gate_" + Guid.NewGuid().ToString("N"));
 
 Console.WriteLine($"[fna] cat:       {catPath}");
 Console.WriteLine($"[fna] reference: {refOutDir}   (d3dcompiler_47 fx_2_0 oracle)");
 Console.WriteLine($"[fna] candidate: {candOutDir}   (ShadowDusk PlatformTarget.Fna)");
+Console.WriteLine($"[fna] cand-xnb:  {candXnbOutDir}   (the same bytes via XnbWriter + real FNA ContentManager.Load<Effect>)");
 Console.WriteLine($"[fna] tolerance: {Tolerance}/255 per channel (compare_dx.py parity)\n");
 
 // ---------------------------------------------------------------------------
@@ -253,11 +265,16 @@ Console.WriteLine();
 // ---------------------------------------------------------------------------
 
 List<CaseOutcome> outcomes;
-using (var game = new FnaEffectImageRenderer(
-    catPath, refOutDir, candOutDir, cases, FnaShaderInputs.SetParams, fna3dErrors))
+try
 {
+    using var game = new FnaEffectImageRenderer(
+        catPath, refOutDir, candOutDir, candXnbOutDir, xnbWorkDir, cases, FnaShaderInputs.SetParams, fna3dErrors);
     game.Run();
     outcomes = game.Outcomes;
+}
+finally
+{
+    try { Directory.Delete(xnbWorkDir, recursive: true); } catch { /* non-fatal */ }
 }
 
 // ---------------------------------------------------------------------------
@@ -282,8 +299,8 @@ static (int MaxDelta, double MeanDelta, int DiffPixels) Compare(Color[] a, Color
     return (maxDelta, (double)sum / (a.Length * 4), diffPixels);
 }
 
-Console.WriteLine($"{"shader",-22} {"gate",-4} {"refload",-8} {"candload",-9} {"refrender",-10} {"candrender",-11} {"maxd",5} {"mean",8} {"diff>4",7}  verdict");
-Console.WriteLine(new string('-', 110));
+Console.WriteLine($"{"shader",-22} {"gate",-4} {"refload",-8} {"candload",-9} {"refrender",-10} {"candrender",-11} {"maxd",5} {"mean",8} {"diff>4",7} {"xnbload",-8} {"xnb=raw",8} {"xnb>4",6}  verdict");
+Console.WriteLine(new string('-', 136));
 
 int gatePass = 0, gateTotal = 0;
 var failures = new List<string>();
@@ -293,6 +310,29 @@ foreach (CaseOutcome o in outcomes)
     string verdict;
     int maxd = -1, diffPx = -1;
     double mean = -1;
+
+    // Phase 64 .xnb arm sub-verdict: loaded + rendered through a real ContentManager,
+    // maxd 0 vs the raw candidate (same bytes: the container must be invisible), and
+    // within the gate tolerance of the oracle (the consumer-facing comparison).
+    int xnbVsRawMaxd = -1, xnbVsRefDiff = -1;
+    string? xnbFailure = null;
+    if (o.CandidateXnb.Pixels is null || !o.CandidateXnb.Rendered)
+        xnbFailure = ".xnb arm did not load/render";
+    else
+    {
+        if (o.Candidate.Pixels is not null && o.Candidate.Pixels.Length == o.CandidateXnb.Pixels.Length)
+        {
+            (xnbVsRawMaxd, _, _) = Compare(o.Candidate.Pixels, o.CandidateXnb.Pixels);
+            if (xnbVsRawMaxd != 0)
+                xnbFailure = $".xnb arm differs from the raw candidate (maxd {xnbVsRawMaxd}) - the container changed the render";
+        }
+        if (o.Reference.Pixels is not null && o.Reference.Pixels.Length == o.CandidateXnb.Pixels.Length)
+        {
+            (_, _, xnbVsRefDiff) = Compare(o.Reference.Pixels, o.CandidateXnb.Pixels);
+            if (xnbVsRefDiff != 0)
+                xnbFailure ??= $".xnb arm has {xnbVsRefDiff} px over {Tolerance}/255 vs the oracle";
+        }
+    }
 
     if (o.Reference.Pixels is not null && o.Candidate.Pixels is not null
         && o.Reference.Pixels.Length == o.Candidate.Pixels.Length)
@@ -305,7 +345,9 @@ foreach (CaseOutcome o in outcomes)
         // refrender/candrender FAIL.
         verdict = !o.Reference.Rendered || !o.Candidate.Rendered
             ? "FAIL (render errors)"
-            : diffPx == 0 ? "PASS" : "FAIL (pixels differ)";
+            : diffPx != 0 ? "FAIL (pixels differ)"
+            : xnbFailure is not null ? "FAIL (.xnb arm)"
+            : "PASS";
     }
     else
     {
@@ -324,15 +366,20 @@ foreach (CaseOutcome o in outcomes)
         $"{o.Name,-22} {(o.Gate ? "GATE" : "    "),-4} " +
         $"{(o.Reference.Loaded ? "ok" : "FAIL"),-8} {(o.Candidate.Loaded ? "ok" : "FAIL"),-9} " +
         $"{(o.Reference.Rendered ? "ok" : "FAIL"),-10} {(o.Candidate.Rendered ? "ok" : "FAIL"),-11} " +
-        $"{(maxd >= 0 ? maxd.ToString() : "-"),5} {(mean >= 0 ? mean.ToString("F3") : "-"),8} {(diffPx >= 0 ? diffPx.ToString() : "-"),7}  {verdict}");
+        $"{(maxd >= 0 ? maxd.ToString() : "-"),5} {(mean >= 0 ? mean.ToString("F3") : "-"),8} {(diffPx >= 0 ? diffPx.ToString() : "-"),7} " +
+        $"{(o.CandidateXnb.Loaded && o.CandidateXnb.Rendered ? "ok" : "FAIL"),-8} {(xnbVsRawMaxd >= 0 ? xnbVsRawMaxd.ToString() : "-"),8} {(xnbVsRefDiff >= 0 ? xnbVsRefDiff.ToString() : "-"),6}  {verdict}");
 
     if (o.Reference.Error is not null)
         Console.WriteLine($"{"",-28}ref:  {o.Reference.Error}");
     if (o.Candidate.Error is not null)
         Console.WriteLine($"{"",-28}cand: {o.Candidate.Error}");
+    if (o.CandidateXnb.Error is not null)
+        Console.WriteLine($"{"",-28}xnb:  {o.CandidateXnb.Error}");
+    else if (xnbFailure is not null)
+        Console.WriteLine($"{"",-28}xnb:  {xnbFailure}");
 }
 
-Console.WriteLine(new string('-', 110));
+Console.WriteLine(new string('-', 136));
 
 // Parameter-presence asymmetry notes: a name SetParams hit on one arm but not the
 // other means the two effects expose different parameter tables. The candidate's
@@ -398,7 +445,8 @@ if (!gateSizeOk)
 int gateSprite = cases.Count(c => c.Gate && c.Scene == FnaScene.Sprite);
 int gateVs = cases.Count(c => c.Gate && c.Scene == FnaScene.VsQuad);
 Console.WriteLine($"\n[fna] GATE: {gatePass}/{gateTotal} shaders PASS ({gateSprite} PS-only + {gateVs} VS-driven; " +
-                  $"both arms compile, load in real FNA, render cleanly, zero pixels over {Tolerance}/255).");
+                  $"both arms compile, load in real FNA, render cleanly, zero pixels over {Tolerance}/255; " +
+                  $"and the .xnb arm loads through a real ContentManager, maxd 0 vs the raw candidate, zero pixels over {Tolerance}/255 vs the oracle).");
 if (failures.Count > 0)
     Console.WriteLine($"[fna] non-PASS shaders: {string.Join(", ", failures)}");
 Console.WriteLine($"[fna] PNGs: {outRoot}");

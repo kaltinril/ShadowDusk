@@ -8,11 +8,15 @@ using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
 
-namespace ShadowDusk.MgcbPlugin;
+namespace ShadowDusk.ContentPipeline;
 
 /// <summary>
-/// MGCB content processor that compiles an HLSL effect with ShadowDusk, in MGCB's own process:
-/// no <c>mgfxc</c> child process, no <c>fxc.exe</c>, no Wine, no <c>PATH</c> plumbing.
+/// MonoGame content processor that compiles an HLSL effect with ShadowDusk, in the content
+/// build's own process: no <c>mgfxc</c> child process, no <c>fxc.exe</c>, no Wine, no <c>PATH</c>
+/// plumbing. It ships in two delivery shapes compiled from this one source file: the tools-only
+/// <c>ShadowDusk.MgcbPlugin</c> package for <c>.mgcb</c> files / MGCB, and the library
+/// <c>ShadowDusk.ContentPipeline</c> package for MonoGame 3.8.5's code-centric Content Builder
+/// project (Phase 63, issue #203).
 /// <para>
 /// <b>This is a delivery shape of the ShadowDusk library, not a second compiler.</b> It builds a
 /// <see cref="CompilerOptions"/> from MGCB's build context, calls the one
@@ -34,6 +38,17 @@ namespace ShadowDusk.MgcbPlugin;
 /// Every parameter below is optional: with none set, the target is derived from the
 /// <c>.mgcb</c>'s own <c>/platform:</c> line and the output is the correct, backwards-compatible
 /// MGFX v10 artifact.
+/// </para>
+/// <para>
+/// From a MonoGame 3.8.5 <c>ContentBuilder</c> (the <c>ShadowDusk.ContentPipeline</c> package),
+/// pass the instances - auto-discovery picks MonoGame's own pair when both are loaded:
+/// <code>
+/// content.Include&lt;WildcardRule&gt;("Effects/*.fx", new ShadowDuskEffectImporter(), new ShadowDuskEffectProcessor());
+/// </code>
+/// Parameters are the C# properties on the instance (<c>new ShadowDuskEffectProcessor { Defines = "FOO=1" }</c>),
+/// the target follows <c>-p</c> / <c>$(MonoGamePlatform)</c> (including <c>DesktopVK</c> and
+/// <c>WindowsDX12</c>), and because the Builder has no build configuration,
+/// <see cref="DebugMode"/>'s <c>Auto</c> optimizes there.
 /// </para>
 /// </summary>
 [ContentProcessor(DisplayName = "ShadowDusk Effect - ShadowDusk")]
@@ -60,12 +75,13 @@ public sealed class ShadowDuskEffectProcessor : ContentProcessor<EffectContent, 
 
     /// <summary>
     /// <b>Escape hatch, never required.</b> Overrides the target that would be derived from the
-    /// <c>.mgcb</c>'s <c>/platform:</c>. Accepts the ShadowDusk CLI's profile names
-    /// (<c>DirectX_11</c>, <c>DirectX_12</c>, <c>OpenGL</c>, <c>Vulkan</c>). It exists because
-    /// MGCB's <c>TargetPlatform</c> enum has no member for MonoGame's <c>WindowsDX12</c> or
-    /// <c>DesktopVK</c> runtimes, so a consumer shipping those has no other way to say so.
-    /// Empty (the default) derives the target from the platform, which is correct for every
-    /// platform MGCB can name.
+    /// content build's platform (<c>/platform:</c> in a <c>.mgcb</c>, <c>-p</c> in a Content
+    /// Builder). Accepts the ShadowDusk CLI's profile names (<c>DirectX_11</c>,
+    /// <c>DirectX_12</c>, <c>OpenGL</c>, <c>Vulkan</c>). Empty (the default) derives the target
+    /// from the platform, which is correct for every platform MonoGame can name - on MonoGame
+    /// 3.8.5+ that includes <c>DesktopVK</c> (Vulkan) and <c>WindowsDX12</c> (DirectX 12), so
+    /// this parameter exists for MGCB <b>before</b> 3.8.5, whose <c>TargetPlatform</c> enum
+    /// cannot name those two runtimes.
     /// </summary>
     public string ShaderProfile { get; set; } = string.Empty;
 
@@ -180,7 +196,10 @@ public sealed class ShadowDuskEffectProcessor : ContentProcessor<EffectContent, 
                 Code: "SD0501",
                 Message:
                     $"platform '{context.TargetPlatform}' is not supported by ShadowDusk. " +
-                    "Supported MGCB platforms: Windows, DesktopGL, MacOSX, iOS, Android, RaspberryPi, Web, NativeClient."));
+                    // Built from the map, never a literal: the list can then never name the
+                    // platform it is refusing (which is exactly what the pre-3.8.5-numbering
+                    // bug produced for /platform:Web on MonoGame 3.8.5).
+                    $"Supported MonoGame platforms: {MgcbPlatformMap.SupportedPlatformNamesText}."));
         }
 
         return mapped.Value;

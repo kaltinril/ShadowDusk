@@ -398,13 +398,11 @@ public sealed class FnaCompileFixtureTests
     // gap (plan/DONE/PHASE-39-fna-fx2-output-target.md, "Known limitations"): int-typed
     // ternary in `clip((c < x) ? -1 : 1)` is unimplemented at SM ≤ 3 (vkd3d's E5017).
     //
-    // Empirically pinned (2026-06-09, vkd3d 1.17 in-process): the surfaced ShaderError is
-    // File=<full fixture path>, Code='X0000', Message='Shader compilation failed' — the
-    // E5017 detail appears only in vkd3d's own debug stderr because its messages blob
-    // comes back empty for this failure, so we deliberately do NOT pin 'E5017' or the
-    // exact code/message wording here. The stable, load-bearing contract is: the compile
-    // FAILS (never silently degrades or substitutes a compiler) and the diagnostic names
-    // the offending source file.
+    // The contract pinned here is the loud-failure half: the compile FAILS (never silently
+    // degrades or substitutes a compiler) and the diagnostic names the offending source
+    // file. Since 0.15.0 vkd3d's E5017 text comes through verbatim with a real line, and
+    // since issue #202 that line is the author's clip(...) line rather than vkd3d's drifted
+    // one — FnaDiagnosticLocationTests pins the exact location on these same two fixtures.
     [FnaTheory]
     [InlineData("DeferredSprite.fx")]
     [InlineData("ForwardLighting.fx")]

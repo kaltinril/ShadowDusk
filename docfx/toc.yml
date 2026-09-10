@@ -18,6 +18,8 @@
       href: guides/dropin-mgfxc.md
     - name: MGCB Content Pipeline
       href: guides/mgcb-content-pipeline.md
+    - name: MonoGame 3.8.5 Content Builder
+      href: guides/content-builder.md
     - name: In-Browser (KNI/Blazor WASM)
       href: guides/in-browser-kni-blazor.md
     - name: On-Device (Android Runtime Compile)

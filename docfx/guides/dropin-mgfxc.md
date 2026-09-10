@@ -36,7 +36,34 @@ Name an `.xnb` output path and ShadowDusk writes the whole content-pipeline file
 ShadowDuskCLI MyShader.fx Content/MyShader.xnb /Profile:OpenGL
 ```
 
-No flag selects this: the output extension is the whole switch, and any other extension gets the raw effect bytes exactly as before. The XNB platform identifier is derived from the profile you already chose, and the effect payload inside the container is byte-for-byte the `.mgfx` the same invocation would write. Drop the file where your `mgfxc`-built `.xnb` used to sit; the asset name is the file name, and no companion file is needed. (From the library, the same thing is `result.Value.ToXnb()`.)
+No flag selects this: the output extension is the whole switch, and any other extension gets the raw effect bytes exactly as before. The effect payload inside the container is byte-for-byte the `.mgfx` the same invocation would write. Drop the file where your `mgfxc`-built `.xnb` used to sit; the asset name is the file name, and no companion file is needed. (From the library, the same thing is `result.Value.ToXnb()`.)
+
+> [!WARNING]
+> **Name the profile.** With no `/Profile:` the CLI defaults to **`DirectX_11`** (mgfxc parity), so `ShadowDuskCLI MyShader.fx Content/MyShader.xnb` writes a WindowsDX effect, and a DesktopGL game fails at `Content.Load<Effect>` with *"This MGFX effect was built for a different platform!"* (KNI: *"Effect profile 'DirectX_11' is not compatible with the graphics backend 'OpenGL'."*). The CLI prints `warning SD0029` when an `.xnb` is written with the implicit default; passing any `/Profile:` (or `--target-runtime`) silences it.
+
+The XNB platform identifier is derived from the profile you already chose:
+
+| `/Profile:` (or `--target-runtime`) | XNB platform byte | Runtimes that accept it |
+|---|---|---|
+| `OpenGL` (`monogame-gl`, `monogame-gl-v11`, `kni-knifx`) | `'d'` (DesktopGL) | MonoGame DesktopGL / Android / iOS / macOS / Web, KNI (every GL platform) |
+| `DirectX_11` (`monogame-dx`) — **the CLI default** | `'w'` (Windows) | MonoGame WindowsDX, KNI WinForms.DX11 |
+| `DirectX_12` | `'G'` | MonoGame WindowsDX12 (3.8.5+) |
+| `Vulkan` | `'V'` | MonoGame DesktopVK (3.8.5+) |
+| `FNA` (`fna`) | `'w'` | FNA (the only byte in FNA's list that MonoGame also accepts; the payload is the `.fxb`) |
+
+Every runtime checks the byte only for **membership in its whitelist**, never against the platform actually running (measured on MonoGame, KNI and FNA), so one `/Profile:OpenGL` `.xnb` serves DesktopGL, Android, iOS, macOS and Web alike — an mgcb Android build would say `'a'` where ShadowDusk says `'d'`, and it does not matter.
+
+If the file loads on the wrong runtime, the message names neither the profile nor ShadowDusk. What each one means:
+
+| `Content.Load<Effect>` says | What happened |
+|---|---|
+| `This MGFX effect was built for a different platform!` (MonoGame) | a `DirectX_11` `.xnb` (the CLI default) in a DesktopGL / Android / iOS / macOS game — recompile with `/Profile:OpenGL` |
+| `Effect profile 'DirectX_11' is not compatible with the graphics backend 'OpenGL'.` (KNI 4.3) | the same, on KNI |
+| `MOJOSHADER_compileEffect Error: Not an Effects Framework binary` (FNA) | a MonoGame `.mgfx` `.xnb` in an FNA game — FNA loads the fx_2_0 `.fxb`, so use `/Profile:FNA` |
+| `This effect seems to be for a newer version of KNI.` / `This effect is an unsupported effect format.` (KNI) | an MGFX **v11** `.xnb` (`--target-runtime monogame-gl-v11`) on KNI, which reads v10 and KNIFX only |
+| `FileLoadException: The given assembly name was invalid.` (KNI ≤ 4.2.9001) | a **stock MonoGame-mgcb** `.xnb`, not a ShadowDusk one: KNI 4.2's reader-name resolver rejects mgcb's type-reader manifest; ShadowDusk's `.xnb` carries the XNA-4.0 name and loads |
+
+Proven at rung 4 on **MonoGame** (WindowsDX and DesktopGL), **KNI** (4.2.9001 and 4.3.9001, MGFX v10 and KNIFX payloads) and **FNA** (26.06): a real `ContentManager.Load<Effect>` on the ShadowDusk-written file renders pixel-identical to the reference build on every one of them (`validation/XnbContentLoad`, `XnbContentLoadGl`, `KniXnbContentLoad`, and the `.xnb` arm of `FnaValidation`).
 
 ## Replacing `mgfxc` in a build
 

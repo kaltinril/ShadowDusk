@@ -3,8 +3,7 @@
 using System.Runtime.InteropServices;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Reflection;
-using Vortice.Direct3D;
-using Vortice.Direct3D12.Shader;
+using ShadowDusk.HLSL.Reflection.Interop;
 using Vortice.Dxc;
 using static Vortice.Dxc.Dxc;
 
@@ -16,6 +15,13 @@ namespace ShadowDusk.HLSL.Reflection;
 /// the pure-managed <see cref="ShadowDusk.Core.Reflection.SpirvReflector"/> is validated
 /// against; the desktop OpenGL path uses it (the reflection runs inside the bundled
 /// <c>dxcompiler</c>, so it is cross-platform), while the WASM host uses the managed reflector.
+/// <para>
+/// The reflection object comes from <c>IDxcUtils::CreateReflection</c> (Vortice.Dxc); its
+/// managed projection is ShadowDusk's own (<c>Reflection/Interop</c>, Phase 63), not
+/// <c>Vortice.Direct3D12</c>'s, because that assembly carries one type the CLR cannot load and
+/// MonoGame 3.8.5's Content Builder scans every consumer dependency with an unguarded
+/// <c>Assembly.GetTypes()</c>. Same DXC, same call, same bytes.
+/// </para>
 /// </summary>
 public sealed class DxilReflectionExtractor
 {
@@ -117,7 +123,7 @@ public sealed class DxilReflectionExtractor
     private static Result<ReflectedEffect, ShaderError> BuildReflectedEffect(
         ID3D12ShaderReflection reflection)
     {
-        ShaderDescription shaderDesc = reflection.Description;
+        D3D12ShaderDesc shaderDesc = reflection.GetDesc();
 
         Dictionary<string, int> cbufferSlots = BuildCbufferSlots(reflection, shaderDesc);
 
@@ -147,13 +153,13 @@ public sealed class DxilReflectionExtractor
 
     private static Dictionary<string, int> BuildCbufferSlots(
         ID3D12ShaderReflection reflection,
-        ShaderDescription shaderDesc)
+        D3D12ShaderDesc shaderDesc)
     {
         var slots = new Dictionary<string, int>(StringComparer.Ordinal);
         for (int i = 0; i < shaderDesc.BoundResources; i++)
         {
-            InputBindingDescription bindDesc = reflection.GetResourceBindingDescription(i);
-            if (bindDesc.Type == ShaderInputType.ConstantBuffer)
+            D3D12ShaderInputBindDesc bindDesc = reflection.GetResourceBindingDesc(i);
+            if (bindDesc.Type == D3DShaderInputType.ConstantBuffer)
                 slots[bindDesc.Name] = bindDesc.BindPoint;
         }
         return slots;
@@ -161,7 +167,7 @@ public sealed class DxilReflectionExtractor
 
     private static IReadOnlyList<ConstantBufferReflection> ExtractConstantBuffers(
         ID3D12ShaderReflection reflection,
-        ShaderDescription shaderDesc,
+        D3D12ShaderDesc shaderDesc,
         Dictionary<string, int> cbufferSlots)
     {
         var cbuffers = new List<ConstantBufferReflection>(shaderDesc.ConstantBuffers);
@@ -169,15 +175,15 @@ public sealed class DxilReflectionExtractor
         for (int i = 0; i < shaderDesc.ConstantBuffers; i++)
         {
             ID3D12ShaderReflectionConstantBuffer cb = reflection.GetConstantBufferByIndex(i);
-            ConstantBufferDescription cbDesc = cb.Description;
+            D3D12ShaderBufferDesc cbDesc = cb.GetDesc();
 
             var variables = new List<VariableReflection>(cbDesc.VariableCount);
             for (int j = 0; j < cbDesc.VariableCount; j++)
             {
                 ID3D12ShaderReflectionVariable variable = cb.GetVariableByIndex(j);
-                ShaderVariableDescription varDesc = variable.Description;
-                ID3D12ShaderReflectionType varType = variable.VariableType;
-                ShaderTypeDescription typeDesc = varType.Description;
+                D3D12ShaderVariableDesc varDesc = variable.GetDesc();
+                ID3D12ShaderReflectionType varType = variable.GetVariableType();
+                D3D12ShaderTypeDesc typeDesc = varType.GetDesc();
 
                 variables.Add(new VariableReflection
                 {
@@ -209,16 +215,16 @@ public sealed class DxilReflectionExtractor
 
     private static IReadOnlyList<VariableReflection>? ExtractStructMembers(
         ID3D12ShaderReflectionType type,
-        ShaderTypeDescription typeDesc)
+        D3D12ShaderTypeDesc typeDesc)
     {
-        if (typeDesc.Class != ShaderVariableClass.Struct || typeDesc.MemberCount == 0)
+        if (typeDesc.Class != D3DShaderVariableClass.Struct || typeDesc.MemberCount == 0)
             return null;
 
         var members = new List<VariableReflection>(typeDesc.MemberCount);
         for (int k = 0; k < typeDesc.MemberCount; k++)
         {
             ID3D12ShaderReflectionType memberType = type.GetMemberTypeByIndex(k);
-            ShaderTypeDescription memberTypeDesc  = memberType.Description;
+            D3D12ShaderTypeDesc memberTypeDesc    = memberType.GetDesc();
             string memberName = type.GetMemberTypeName(k);
 
             members.Add(new VariableReflection
@@ -239,18 +245,18 @@ public sealed class DxilReflectionExtractor
     }
 
     private static (IReadOnlyList<TextureReflection>, IReadOnlyList<SamplerReflection>)
-        ExtractBoundResources(ID3D12ShaderReflection reflection, ShaderDescription shaderDesc)
+        ExtractBoundResources(ID3D12ShaderReflection reflection, D3D12ShaderDesc shaderDesc)
     {
         var textures = new List<TextureReflection>();
         var samplers = new List<SamplerReflection>();
 
         for (int i = 0; i < shaderDesc.BoundResources; i++)
         {
-            InputBindingDescription bindDesc = reflection.GetResourceBindingDescription(i);
+            D3D12ShaderInputBindDesc bindDesc = reflection.GetResourceBindingDesc(i);
 
             switch (bindDesc.Type)
             {
-                case ShaderInputType.Texture:
+                case D3DShaderInputType.Texture:
                     textures.Add(new TextureReflection
                     {
                         Name      = bindDesc.Name,
@@ -259,7 +265,7 @@ public sealed class DxilReflectionExtractor
                     });
                     break;
 
-                case ShaderInputType.Sampler:
+                case D3DShaderInputType.Sampler:
                     samplers.Add(new SamplerReflection
                     {
                         Name     = bindDesc.Name,
@@ -281,9 +287,9 @@ public sealed class DxilReflectionExtractor
 
         for (int i = 0; i < count; i++)
         {
-            ShaderParameterDescription paramDesc = isInput
-                ? reflection.GetInputParameterDescription(i)
-                : reflection.GetOutputParameterDescription(i);
+            D3D12SignatureParameterDesc paramDesc = isInput
+                ? reflection.GetInputParameterDesc(i)
+                : reflection.GetOutputParameterDesc(i);
 
             parameters.Add(new SignatureParameterReflection
             {
@@ -292,7 +298,7 @@ public sealed class DxilReflectionExtractor
                 Register      = paramDesc.Register,
                 SystemValue   = paramDesc.SystemValueType.ToString(),
                 ComponentType = paramDesc.ComponentType.ToString(),
-                Mask          = (byte)paramDesc.UsageMask,
+                Mask          = paramDesc.UsageMask,
             });
         }
 
@@ -300,19 +306,19 @@ public sealed class DxilReflectionExtractor
     }
 
     // These delegate to the shared raw D3D value → enum tables in D3DReflectionMaps (the
-    // Vortice reflection enums' underlying values ARE the D3D constants), so the numeric
-    // mappings stay in lock-step with RdefReader. This path keeps its own unmapped policy:
-    // an unmapped class/type throws (RdefReader reports failure instead) — preserved here.
-    private static EffectParameterClass MapClass(ShaderVariableClass cls) =>
-        D3DReflectionMaps.TryMapClass((uint)cls, out EffectParameterClass mapped)
+    // interop structs carry the raw D3D_SHADER_VARIABLE_CLASS / _TYPE / D3D_SRV_DIMENSION
+    // values), so the numeric mappings stay in lock-step with RdefReader. This path keeps its
+    // own unmapped policy: an unmapped class/type throws (RdefReader reports failure instead).
+    private static EffectParameterClass MapClass(uint cls) =>
+        D3DReflectionMaps.TryMapClass(cls, out EffectParameterClass mapped)
             ? mapped
             : throw new InvalidOperationException($"Unmapped ShaderVariableClass: {cls}");
 
-    private static EffectParameterType MapType(ShaderVariableType type) =>
-        D3DReflectionMaps.TryMapType((uint)type, out EffectParameterType mapped)
+    private static EffectParameterType MapType(uint type) =>
+        D3DReflectionMaps.TryMapType(type, out EffectParameterType mapped)
             ? mapped
             : throw new InvalidOperationException($"Unmapped ShaderVariableType: {type}");
 
-    private static TextureDimension MapSrvDimension(ShaderResourceViewDimension dim) =>
-        D3DReflectionMaps.MapSrvDimension((uint)dim);
+    private static TextureDimension MapSrvDimension(uint dim) =>
+        D3DReflectionMaps.MapSrvDimension(dim);
 }

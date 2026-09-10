@@ -1,0 +1,78 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Single-TFM net8.0 on purpose (like ShadowDusk.MgcbPlugin): MonoGame.Framework.Content.Pipeline
+         itself ships lib/net8.0 only, and a net9.0 / net10.0 Content Builder project references a
+         net8.0 library without complaint (measured, Phase 63). -->
+    <AssemblyName>ShadowDusk.ContentPipeline</AssemblyName>
+    <RootNamespace>ShadowDusk.ContentPipeline</RootNamespace>
+
+    <PackageId>ShadowDusk.ContentPipeline</PackageId>
+    <IsPackable>true</IsPackable>
+    <Description>ShadowDusk's MonoGame content-pipeline importer and processor (ShadowDuskEffectImporter / ShadowDuskEffectProcessor) as a normal library, for MonoGame 3.8.5's code-centric Content Builder project: reference the package, pass the two instances in GetContentCollection, and your .fx compiles to .xnb through ShadowDusk in your Builder's own process, with no mgfxc, no fxc.exe, and no Wine. A delivery shape of the ShadowDusk compiler library - byte-for-byte the .mgfx the ShadowDusk CLI emits. For .mgcb / MGCB use ShadowDusk.MgcbPlugin instead.</Description>
+    <PackageTags>monogame content-pipeline content-builder shader compiler effect importer processor cross-platform opengl directx vulkan</PackageTags>
+    <PackageIcon>ShadowDuskFavIcon.png</PackageIcon>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <!-- A build-time signal only: NuGet marks the consumer's PackageReference PrivateAssets=all
+         by default, which stops the package flowing from the Builder project into anything
+         that references the Builder. It removes NOTHING from the Builder's own output - the
+         ShadowDusk assemblies and the pinned DXC / SPIRV-Cross / vkd3d natives still land in
+         its bin through normal NuGet asset flow, which is the whole point of this shape. -->
+    <DevelopmentDependency>true</DevelopmentDependency>
+
+    <!-- Emit the XML doc file: the same importer/processor doc-comments the plugin carries. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <!--
+    A LIBRARY-shaped package (lib/net8.0 + real dependency edges), deliberately NOT the tools-only
+    shape ShadowDusk.MgcbPlugin has. That package's three properties (IncludeBuildOutput=false,
+    SuppressDependenciesWhenPacking, everything under tools/net8.0/any/) are each required by
+    MGCB, whose /reference: resolves a plugin's dependencies from the plugin's own directory -
+    and each is wrong for a MonoGame 3.8.5 Content Builder project, which is ordinary C# the
+    consumer owns and compiles: it needs the types at COMPILE time (`new ShadowDuskEffectImporter()`)
+    and it needs ShadowDusk.Compiler and the natives to flow into ITS bin transitively. One
+    package cannot be both, so this is the ninth ShadowDusk.* package (Phase 63, issue #203).
+  -->
+
+  <ItemGroup>
+    <!-- ONE copy of the logic: the exact .cs file set ShadowDusk.MgcbPlugin compiles, source-linked.
+         NoMonoGameInProductLibrariesTests pins that this set equals the plugin's, so the
+         "same importer/processor, byte-identical to the CLI" claim cannot drift between the
+         two delivery shapes. -->
+    <Compile Include="..\ShadowDusk.MgcbPlugin\ShadowDuskEffectImporter.cs"    Link="ShadowDuskEffectImporter.cs" />
+    <Compile Include="..\ShadowDusk.MgcbPlugin\ShadowDuskEffectProcessor.cs"   Link="ShadowDuskEffectProcessor.cs" />
+    <Compile Include="..\ShadowDusk.MgcbPlugin\MgcbPlatformMap.cs"             Link="MgcbPlatformMap.cs" />
+    <Compile Include="..\ShadowDusk.MgcbPlugin\RecordingIncludeResolver.cs"    Link="RecordingIncludeResolver.cs" />
+    <Compile Include="..\ShadowDusk.MgcbPlugin\PluginNativeLibraryResolver.cs" Link="PluginNativeLibraryResolver.cs" />
+    <!-- The CLI's diagnostic formatter, source-linked for the same reason the plugin links it:
+         one formatter, every delivery shape prints a shader error in the same text. -->
+    <Compile Include="..\ShadowDusk.Cli\MgcbErrorFormatter.cs"                 Link="Cli\MgcbErrorFormatter.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\Brand\ShadowDuskFavIcon.png" Pack="true" PackagePath="\" Visible="false" />
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- A REAL dependency edge, deliberately - the opposite of the plugin's compile-only,
+         private reference. A Content Builder project must see the same ContentImporter /
+         ContentProcessor contract types this assembly was compiled against, and NuGet must be
+         free to unify the version upward: the Builder necessarily references 3.8.5+ itself
+         (the Builder namespace exists only there), and the 3.8.2.1105-compiled types bind in
+         that process (measured). 3.8.2.1105 is the FLOOR, the same single PackageVersion the
+         plugin uses; nothing here needs the Builder namespace to compile. Neither
+         PrivateAssets="all" nor IncludeAssets="compile" belongs on this line -
+         NoMonoGameInProductLibrariesTests pins that. -->
+    <PackageReference Include="MonoGame.Framework.Content.Pipeline" />
+    <!-- Transitive: ShadowDusk.Core / HLSL / GLSL, Vortice.Dxc, Silk.NET.SPIRV.Cross.Native and
+         the runtimes/<rid>/native payloads all flow to the consumer's bin through this edge. -->
+    <ProjectReference Include="..\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
+  </ItemGroup>
+
+  <!-- Deliberately NO InternalsVisibleTo, for the same CS0436 reason the plugin has none: this
+       assembly compiles the CLI's internal MgcbErrorFormatter, which ShadowDusk.Integration.Tests
+       source-links too. The library is tested through its public surface (the plugin's
+       in-suite tests drive the same source files) and end to end by validation/ContentBuilder. -->
+</Project>

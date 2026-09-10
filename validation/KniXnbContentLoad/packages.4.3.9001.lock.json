@@ -1,0 +1,198 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net8.0": {
+      "nkast.Kni.Platform.SDL2.GL": {
+        "type": "Direct",
+        "requested": "[4.3.9001.*, )",
+        "resolved": "4.3.9001",
+        "contentHash": "bgUAyWOPcz2uWHkf9hdCXxjane+8Y+4XkbKoUIs4f9QFw2Dag479sXR/oFSNKSORWO1tP0ZZEcBisa/xuNrxvg==",
+        "dependencies": {
+          "nkast.Xna.Framework": "4.3.9001",
+          "nkast.Xna.Framework.Audio": "4.3.9001",
+          "nkast.Xna.Framework.Content": "4.3.9001",
+          "nkast.Xna.Framework.Devices": "4.3.9001",
+          "nkast.Xna.Framework.Game": "4.3.9001",
+          "nkast.Xna.Framework.Graphics": "4.3.9001",
+          "nkast.Xna.Framework.Input": "4.3.9001",
+          "nkast.Xna.Framework.Media": "4.3.9001",
+          "nkast.Xna.Framework.Storage": "4.3.9001",
+          "nkast.Xna.Framework.XR": "4.3.9001"
+        }
+      },
+      "nkast.Xna.Framework": {
+        "type": "Direct",
+        "requested": "[4.3.9001.*, )",
+        "resolved": "4.3.9001",
+        "contentHash": "oBwvL6NOWSGgdiB3ahPY/cEG5jcjBPE61lpIl8IgGCv5xTmoHbp8JYsjXZfAY8oWE9G89m9aB5O5KcUakTMp1g=="
+      },
+      "nkast.Xna.Framework.Audio": {
+        "type": "Direct",
+        "requested": "[4.3.9001.*, )",
+        "resolved": "4.3.9001",
+        "contentHash": "dAV9+goGboWw2tL9DikIZrKzvW+MzppWNZuZKNUuipGHUPUIlUcAvLNd0DApQVsP16yMeLPzws3vC3jLGBhwYA==",
+        "dependencies": {
+          "nkast.Xna.Framework": "4.3.9001",
+          "nkast.Xna.Framework.Content": "4.3.9001"
+        }
+      },
+      "nkast.Xna.Framework.Content": {
+        "type": "Direct",
+        "requested": "[4.3.9001.*, )",
+        "resolved": "4.3.9001",
+        "contentHash": "RTj4kSO9RXV4PVm8CWWlhvXiuIhBG4s75oMZIDf2992bXFUOgzafw1RX4p8psLRVzXR6b16EEiYu7rBKW4nnvg==",
+        "dependencies": {
+          "nkast.Xna.Framework": "4.3.9001"
+        }
+      },
+      "nkast.Xna.Framework.Game": {
+        "type": "Direct",
+        "requested": "[4.3.9001.*, )",
+        "resolved": "4.3.9001",
+        "contentHash": "Y2OB/kJ8lgWS2e+5o+JSLM3N4SlgUEGpcmc/4YybX99dvSXfPSSUDSV0qphf+0jkUvIsI70dBf6bfx6wrQawow==",
+        "dependencies": {
+          "nkast.Xna.Framework": "4.3.9001",
+          "nkast.Xna.Framework.Content": "4.3.9001",
+          "nkast.Xna.Framework.Graphics": "4.3.9001",
+          "nkast.Xna.Framework.Input": "4.3.9001"
+        }
+      },
+      "nkast.Xna.Framework.Graphics": {
+        "type": "Direct",
+        "requested": "[4.3.9001.*, )",
+        "resolved": "4.3.9001",
+        "contentHash": "4lbscod9gZzNLBKTuRqyobNQHkDE0VnrF/OxEwk9QXriERkGWtaXYIZ0EBbLRn0/4WpLLmkVMPYdMDNuoPSMMQ==",
+        "dependencies": {
+          "nkast.Xna.Framework": "4.3.9001",
+          "nkast.Xna.Framework.Content": "4.3.9001"
+        }
+      },
+      "nkast.Xna.Framework.Input": {
+        "type": "Direct",
+        "requested": "[4.3.9001.*, )",
+        "resolved": "4.3.9001",
+        "contentHash": "wiw3vbwWNEX+1uvKp6Y7mhfBK0CKHxoTGrFVo/nsKBbbAGZhre46wwZdeOX2zBCSOppt/f5lYP7QrfTpYrGsxA==",
+        "dependencies": {
+          "nkast.Xna.Framework": "4.3.9001",
+          "nkast.Xna.Framework.Graphics": "4.3.9001"
+        }
+      },
+      "nkast.Xna.Framework.Media": {
+        "type": "Direct",
+        "requested": "[4.3.9001.*, )",
+        "resolved": "4.3.9001",
+        "contentHash": "FrvDLeA/nMI1UjnLffFdqm0SyxIYd2gxU6FJenbQ9TUtDqfqRdw1RajOr19aL0gqOCCHur9VBdrlqSnLIVfsyg==",
+        "dependencies": {
+          "nkast.Xna.Framework": "4.3.9001",
+          "nkast.Xna.Framework.Content": "4.3.9001",
+          "nkast.Xna.Framework.Graphics": "4.3.9001"
+        }
+      },
+      "nkast.Xna.Framework.Devices": {
+        "type": "Transitive",
+        "resolved": "4.3.9001",
+        "contentHash": "pRsL9KJ+2Bazh3MAOhvB18C0IyEVyYQVoXFAa52DrmRMnV7xCg1XGnoK8SAcavJSi4F4NP7sI5lidfaNYA683g==",
+        "dependencies": {
+          "nkast.Xna.Framework": "4.3.9001"
+        }
+      },
+      "nkast.Xna.Framework.Storage": {
+        "type": "Transitive",
+        "resolved": "4.3.9001",
+        "contentHash": "VD1+6G2dWMt1WP1kfXqnqIFLjz3YDoXDw02iyDtFotB8pJfjbWWOKKqpbDgHuBq6irEagplcKf8+DlJnGpPIhQ==",
+        "dependencies": {
+          "nkast.Xna.Framework": "4.3.9001"
+        }
+      },
+      "nkast.Xna.Framework.XR": {
+        "type": "Transitive",
+        "resolved": "4.3.9001",
+        "contentHash": "TZzVNsu0DfT7OzvQdbwQ7RAD3m2xsX81ijRNyUQXCJGUiQUHE/t5ZhJQkF7woPI8ImVZbBC0ioZyCzJLEHcpwg==",
+        "dependencies": {
+          "nkast.Xna.Framework": "4.3.9001",
+          "nkast.Xna.Framework.Game": "4.3.9001",
+          "nkast.Xna.Framework.Graphics": "4.3.9001"
+        }
+      },
+      "SharpGen.Runtime": {
+        "type": "Transitive",
+        "resolved": "2.1.2-beta",
+        "contentHash": "nqZAjfEG1jX1ivvdZLsi6Pkt0DiOJyuOgRgldNFsmjXFPhxUbXQibofLSwuDZidL2kkmtTF8qLoRIeqeVdXgYw=="
+      },
+      "SharpGen.Runtime.COM": {
+        "type": "Transitive",
+        "resolved": "2.1.2-beta",
+        "contentHash": "HBCrb6HfnUWx9v5/GjJeBr5DuodZLnHlFQQYXPrQs1Hbe1c6Wd0uCXf+SJp4hW8fQNxjXEu0FgiyHGlA/SRzRw==",
+        "dependencies": {
+          "SharpGen.Runtime": "2.1.2-beta"
+        }
+      },
+      "Silk.NET.SPIRV.Cross.Native": {
+        "type": "Transitive",
+        "resolved": "2.23.0",
+        "contentHash": "pY4LmIE8nYXkfCgExxksYlnYZZ4D3/AW13XNcpyp0jJDTkCpDsXL0nLOX7CM7tPS6xvkiERRd+Do2zegbl7Xtw=="
+      },
+      "Vortice.D3DCompiler": {
+        "type": "Transitive",
+        "resolved": "3.3.4",
+        "contentHash": "G0yAN1us091ulIzPfMVJeJf8JX3Tu/Wu0l4zip4HPLfVUWWxsBJF0eaEdwSPrUyz97LEG6zjHruL4sZoNRBHcA==",
+        "dependencies": {
+          "SharpGen.Runtime": "2.1.2-beta",
+          "SharpGen.Runtime.COM": "2.1.2-beta",
+          "Vortice.DirectX": "3.3.4",
+          "Vortice.Mathematics": "1.7.2"
+        }
+      },
+      "Vortice.DirectX": {
+        "type": "Transitive",
+        "resolved": "3.3.4",
+        "contentHash": "HWvIGYz8XtWZpJW8xGYq5gex/HUPf5u3kDY7w/5WLCXzuR+hqLB7p6tInYePnuVLvfuI/rKMMhlzmnceoP3tIw==",
+        "dependencies": {
+          "SharpGen.Runtime": "2.1.2-beta",
+          "SharpGen.Runtime.COM": "2.1.2-beta",
+          "Vortice.Mathematics": "1.7.2"
+        }
+      },
+      "Vortice.Dxc": {
+        "type": "Transitive",
+        "resolved": "3.3.4",
+        "contentHash": "Q+JJzn96ZKaLQFEhLRFtWau0/KxORtREpP8FTRdKN0luIdrTZIARto7OESKpOGXl3idIGP/jH8YQIupNzaR5EQ==",
+        "dependencies": {
+          "SharpGen.Runtime": "2.1.2-beta",
+          "SharpGen.Runtime.COM": "2.1.2-beta"
+        }
+      },
+      "Vortice.Mathematics": {
+        "type": "Transitive",
+        "resolved": "1.7.2",
+        "contentHash": "WUUzB3MowHdOqNfSMAms5Ovra+SKgLC4ttH1w75ra3srDGctebSg+aywm7hLdvDn592ydgdbOJN11JKsyAcX+A=="
+      },
+      "shadowdusk.compiler": {
+        "type": "Project",
+        "dependencies": {
+          "ShadowDusk.Core": "[0.18.0, )",
+          "ShadowDusk.GLSL": "[0.18.0, )",
+          "ShadowDusk.HLSL": "[0.18.0, )"
+        }
+      },
+      "shadowdusk.core": {
+        "type": "Project"
+      },
+      "shadowdusk.glsl": {
+        "type": "Project",
+        "dependencies": {
+          "ShadowDusk.Core": "[0.18.0, )",
+          "Silk.NET.SPIRV.Cross.Native": "[2.23.0, )"
+        }
+      },
+      "shadowdusk.hlsl": {
+        "type": "Project",
+        "dependencies": {
+          "ShadowDusk.Core": "[0.18.0, )",
+          "Vortice.D3DCompiler": "[3.3.4, )",
+          "Vortice.Dxc": "[3.3.4, )"
+        }
+      }
+    }
+  }
+}

@@ -35,7 +35,13 @@ Nothing else is required. The **target is derived from the content project's own
 |---|---|
 | `Windows` | DirectX 11 (DXBC SM5) |
 | `DesktopGL`, `MacOSX`, `iOS`, `Android`, `RaspberryPi`, `Web`, `NativeClient` | OpenGL (GLSL) |
-| `PlayStation4`, `PlayStation5`, `XboxOne`, `Switch`, `Xbox360`, `Stadia` | not supported — fails loudly |
+| `DesktopVK` (MonoGame 3.8.5+) | Vulkan (SPIR-V) |
+| `WindowsDX12` (MonoGame 3.8.5+) | DirectX 12 (DXIL SM6) — build on Windows, where DXIL is signed |
+| `PlayStation4`, `PlayStation5`, `XboxOne`, `XboxSeries`, `Switch`, `Xbox360`, `Stadia` | not supported — fails loudly (`SD0501`) |
+
+The mapping keys on the platform's **name**, never its number: MonoGame renumbered `TargetPlatform` in 3.8.5, and the plugin is compiled against the 3.8.2.1105 contract so that it loads into every MGCB from 3.8.2 up.
+
+> Building a MonoGame 3.8.5 **Content Builder project** instead of a `.mgcb`? Use the library-shaped package, [`ShadowDusk.ContentPipeline`](https://www.nuget.org/packages/ShadowDusk.ContentPipeline) — the same importer and processor as a normal `PackageReference` you `new` up in your `ContentBuilder`. This tools-only package has no `lib/` and cannot be referenced from C#.
 
 ## Processor parameters
 
@@ -46,7 +52,7 @@ Every one is optional; the defaults are the correct path.
 | `DebugMode` | `Auto` | `Auto` follows the content build configuration, exactly like MonoGame's stock `EffectProcessor`. `Debug` / `Optimize` force it. |
 | `Defines` | *(empty)* | Preprocessor macros, in `mgfxc`'s `/Defines:` spelling: `NAME=VALUE` entries separated by `;` or `,`; a bare `NAME` defines it as `1`. |
 | `IncludeDirs` | *(empty)* | Extra `#include` search directories, `;`-separated. The including file's own directory is always searched first. |
-| `ShaderProfile` | *(empty)* | Escape hatch. Overrides the target derived from `/platform:`. `DirectX_11`, `DirectX_12`, `OpenGL`, `Vulkan` — needed only for MonoGame's `WindowsDX12` / `DesktopVK` runtimes, which MGCB's platform list cannot name. |
+| `ShaderProfile` | *(empty)* | Escape hatch. Overrides the target derived from `/platform:`. `DirectX_11`, `DirectX_12`, `OpenGL`, `Vulkan` — needed only on MGCB **before 3.8.5**, whose platform list cannot name `WindowsDX12` / `DesktopVK`; from 3.8.5 those platforms derive their target directly. |
 | `MgfxVersion` | `10` | Escape hatch. `11` opts into the newer MGFX container (MonoGame 3.8.5+). |
 | `DxbcBackend` | `vkd3d` | Escape hatch. `d3dcompiler` opts into the Windows-only correctness oracle for the DirectX target. |
 

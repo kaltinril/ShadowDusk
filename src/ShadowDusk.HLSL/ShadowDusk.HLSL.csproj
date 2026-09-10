@@ -44,8 +44,16 @@
     <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
+  <!-- Vortice.Dxc is the ONLY Vortice package on the DXC path. Vortice.Direct3D12 used to ride
+       along solely for the managed ID3D12ShaderReflection wrapper types; it was dropped in
+       Phase 63 (issue #203) because it carries one type the CLR cannot load
+       (VersionedDeviceRemovedExtendedData+Union) and MonoGame 3.8.5's Content Builder scans a
+       consumer's whole dependency graph with an unguarded Assembly.GetTypes(). The reflection
+       interfaces are now ShadowDusk-owned declarations over SharpGen.Runtime
+       (Reflection/Interop/). Do NOT add Vortice.Direct3D12 or Vortice.DXGI back:
+       DependencyGraphScanTests reproduces the Builder's scan and fails if any shipped
+       dependency stops being GetTypes()-clean. -->
   <ItemGroup>
-    <PackageReference Include="Vortice.Direct3D12" />
     <PackageReference Include="Vortice.Dxc" />
   </ItemGroup>
 

@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Phase 63 (issue #203) - the MonoGame 3.8.5 Content Builder gate: a REAL ContentBuilder
+    subclass builds the fixtures through MonoGame's stock EffectImporter/EffectProcessor AND
+    through ShadowDusk.ContentPipeline's pair in one run, then loads BOTH .xnbs with a real
+    ContentManager.Load<Effect> on MonoGame 3.8.5 WindowsDX and requires pixel-identical renders.
+
+    Windows-only (MonoGame.Framework.WindowsDX is the DX11 Windows runtime) and intentionally
+    NOT in ShadowDusk.slnx: it drags MonoGame 3.8.5 plus its content-pipeline tool natives into
+    the build, which `dotnet test` must never pay for. Opted out of central package management
+    so the 3.8.5 pins stay local to this harness (the product floor stays 3.8.2.1105).
+
+    The render host must be 3.8.5: the stock 3.8.5 EffectProcessor writes MGFX v11, which the
+    3.8.2.1105 runtime validation/XnbContentLoad uses cannot load. MonoGame.Framework.WindowsDX
+    supplies the MonoGame.Framework the pipeline assembly references but does not depend on
+    (the template uses MonoGame.Framework.Native for that; both ship a MonoGame.Framework.dll,
+    so only ONE may be referenced here - the render host wins).
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RootNamespace>ShadowDusk.Validation.ContentBuilderGate</RootNamespace>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup Label="MonoGame 3.8.5 stable: the Content Builder API + the WindowsDX render host">
+    <PackageReference Include="MonoGame.Framework.Content.Pipeline" Version="3.8.5" />
+    <PackageReference Include="MonoGame.Framework.WindowsDX" Version="3.8.5.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The thing under test: the LIBRARY shape, not the plugin. -->
+    <ProjectReference Include="..\..\src\ShadowDusk.ContentPipeline\ShadowDusk.ContentPipeline.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -14,6 +14,28 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **`ShadowDusk.ContentPipeline`: the importer/processor pair as a library, for MonoGame 3.8.5's
+  Content Builder project** (Phase 63, issue #203, requested by aitorciki). 3.8.5's
+  template-default content story is a C# `ContentBuilder` the consumer owns, which needs
+  `new ShadowDuskEffectImporter()` / `new ShadowDuskEffectProcessor()` at compile time - and the
+  tools-only `ShadowDusk.MgcbPlugin` has no `lib/` to reference. The ninth package is a
+  `lib/net8.0` library compiled from the **same five source files** as the plugin (pinned by
+  test), with a real `MonoGame.Framework.Content.Pipeline >= 3.8.2.1105` dependency (the floor,
+  kept: the 3.8.2.1105-compiled pair binds inside a 3.8.5 Builder, measured) and
+  `ShadowDusk.Compiler` transitive so the natives flow into the Builder's bin. Usage is one
+  `PackageReference` plus passing the two instances:
+  `content.Include<WildcardRule>("Effects/*.fx", new ShadowDuskEffectImporter(), new ShadowDuskEffectProcessor());`
+  - **pass the instances**: with both pairs loaded, extension auto-discovery silently picks
+  MonoGame's own. The target follows `-p` / `$(MonoGamePlatform)`, `DesktopVK` and `WindowsDX12`
+  included. The pair's C# namespace is now `ShadowDusk.ContentPipeline` in both packages (the
+  plugin's assembly name and `tools/net8.0/any/` path are unchanged; MGCB resolves importers by
+  simple type name, so no `.mgcb` changes). Rung 4: `validation/ContentBuilder` builds the
+  fixtures through a real 3.8.5 `ContentBuilder` with both the stock and the ShadowDusk pair,
+  asserts the ShadowDusk payload is byte-identical to the CLI's and the envelope to the stock
+  build's, and loads both through a real `ContentManager.Load<Effect>` on MonoGame 3.8.5 with
+  pixel-identical renders; `pack-consume.yml` consumes the packed package cold in a scratch
+  Builder. No existing output byte moves for any route.
+
 - **HLSL → SkSL conversion for SkiaSharp** (issue #197).
   `ShadowDusk.Compiler.Sksl.SkslConverter.Convert(fx)` turns a pixel-only `.fx` into an SkSL
   runtime effect for `SKRuntimeEffect.CreateShader`, via the same faithful front half as every
@@ -92,19 +114,45 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   platform actually running. FNA's whitelist is the binding constraint (it has no `'V'` for
   DesktopVK and no `'G'` for DirectX 12), which is why the FNA target maps to `'w'`.
 
-  The type-reader manifest is emitted exactly as `dotnet mgcb` emits it, including the assembly
-  version, which is inert but whose *shape* is load-bearing and on which the three runtimes
-  disagree: MonoGame only strips the version when the name contains `PublicKeyToken`, while FNA
-  requires the full `, <assembly>, Version=…, Culture=…, PublicKeyToken=…` triple and a recognised
-  assembly name — so a bare `…, MonoGame.Framework` would resolve on MonoGame and fail on FNA.
+  **The type-reader manifest is the XNA-4.0 name**
+  (`Microsoft.Xna.Framework.Content.EffectReader, Microsoft.Xna.Framework.Graphics, Version=4.0.0.0,
+  Culture=neutral, PublicKeyToken=842cf8be1de50553`), what KNI's own content pipeline and XNA
+  itself write, and the only name measured to load on every consumer runtime (Phase 64,
+  2026-09-09: MonoGame 3.8.1.263 / 3.8.2.1105 / 3.8.5, KNI 4.2.9001 / 4.3.9001, FNA 26.06). Phase
+  60 first emitted the mgcb-shaped name (`…, MonoGame.Framework, Version=3.8.4.1, …`), reasoning
+  that what every shipped MonoGame game already carries cannot be wrong; **it was wrong for KNI**:
+  KNI 4.2.9001's reader-name resolver throws `FileLoadException: The given assembly name was
+  invalid.` on it (stock `dotnet mgcb` `.xnb` files fail on KNI 4.2 identically; 4.3.9001 catches
+  the exception). The version and token values are inert on every runtime — MonoGame only strips
+  the version when the name contains `PublicKeyToken`, FNA requires the full
+  `, <assembly>, Version=…, Culture=…, PublicKeyToken=…` triple — but the shape is load-bearing,
+  and the XNA-4.0 shape is the intersection of the three resolvers. The mgcb-shaped string never
+  shipped in a release, so nothing a consumer holds changes.
 
-  Evidence: the envelope is byte-for-byte stock MGCB's through the type id; the payload is
-  byte-for-byte the CLI's; and **rung 4** — the new `validation/XnbContentLoad` driver builds each
-  fixture through both stock `dotnet mgcb` and ShadowDusk, loads both with a real
-  `ContentManager.Load<Effect>(assetName)`, and requires pixel-identical renders (4/4 fixtures,
-  1,230,720 px identical each, against `dotnet-mgcb` 3.8.4.1). Default-ON in
-  `validation/run-windows-render-gates.ps1`. The MGCB plugin is unaffected and stays: it serves
-  teams who *want* MGCB in their build.
+  Evidence: the envelope is byte-for-byte stock MGCB's field for field except the reader name
+  (asserted equal to the XNA-4.0 constant); the payload is byte-for-byte the CLI's; and
+  **rung 4 on every consumer family, all maxd 0** — `validation/XnbContentLoad` (real MonoGame
+  WindowsDX `ContentManager.Load<Effect>` vs stock mgcb's `.xnb`, 4/4 fixtures, 1,230,720 px
+  identical each), `validation/XnbContentLoadGl` (the same on MonoGame DesktopGL, the most common
+  consumer, 4/4), `validation/KniXnbContentLoad` (real KNI SDL2.GL, built against **both**
+  4.2.9001 and 4.3.9001, MGFX v10 **and** KNIFX payloads vs the mgcb payload, 4/4 each — and it
+  pins that a stock mgcb `.xnb` is *rejected* on 4.2, the positive control for the manifest
+  choice), and the `.xnb` arm of `validation/FnaValidation` (every gate shader's `.fxb` through a
+  real FNA 26.06 `ContentManager`, 17/17 within 4/255 of the `fxc` oracle and maxd 0 of the
+  raw-bytes arm). The MonoGame and KNI gates are default-ON in
+  `validation/run-windows-render-gates.ps1`; the FNA arm rides `-IncludeFna`. The MGCB plugin is
+  unaffected and stays: it serves teams who *want* MGCB in their build. (On KNI ≤ 4.2.9001 the
+  direct route is the one that works: MGCB, stock or through the plugin, writes the mgcb-shaped
+  manifest KNI 4.2 rejects.)
+
+  Two CLI touches ride with it: the usage text now documents that an `.xnb` output extension
+  selects the container, and **`SD0029`**, a warning (never an error, never a required flag)
+  when an `.xnb` is written with **no `/Profile:` and no `--target-runtime`** — the implicit
+  `DirectX_11` default is correct for a WindowsDX game but a DesktopGL / Android / iOS / macOS /
+  KNI-GL game rejects it at `Content.Load` with a message that names neither the profile nor
+  this tool. Naming any profile keeps stderr empty, so the MGCB empty-stderr contract for
+  explicit invocations holds. The consumer docs now state the platform-byte table, restate the
+  default beside every `.xnb` example, and tabulate the wrong-runtime failure texts.
 
 - **`FX0014`, a registered diagnostic for the shader stages the consumer runtime cannot load**
   (Phase 58 Area C). A pass assigning `HullShader`, `DomainShader`, `GeometryShader`, or
@@ -123,6 +171,20 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   `cpt-max/MonoGame-Shader-Samples` shaders that prompted the phase.
 
 ### Changed
+
+- **`Vortice.Direct3D12` (and `Vortice.DXGI`) no longer ship in ShadowDusk's dependency graph**
+  (Phase 63 Area A, issue #203). `ShadowDusk.HLSL` referenced it for one reason, the managed
+  wrapper types for the reflection object `IDxcUtils::CreateReflection` returns; those are now
+  ShadowDusk-owned declarations over `SharpGen.Runtime` (already present through `Vortice.Dxc`),
+  transcribed from `d3d12shader.h`. Same pinned DXC, same call, same vtable slots, **zero byte
+  change**: every golden and the cross-host byte-identity manifest are untouched, and the full
+  suite passes on both TFMs. It had to go because that assembly carries one type the CLR refuses
+  to load (`VersionedDeviceRemovedExtendedData+Union`, identical in 3.5.0 and 3.8.3), and
+  MonoGame 3.8.5's Content Builder scans every consumer dependency with an unguarded
+  `Assembly.GetTypes()` - any consumer whose Builder referenced ShadowDusk died before touching
+  a shader. `DependencyGraphScanTests` reproduces that scan so it cannot come back. A consumer
+  pinning `Vortice.Direct3D12` themselves is unaffected; nothing in ShadowDusk's public API
+  exposed a Vortice.Direct3D12 type.
 
 - **`docs/validation-matrix.md` §7 records that geometry / hull / domain / compute are not
   supportable on stock MonoGame or KNI**, with the source-level evidence re-measured 2026-08-05, so
@@ -150,6 +212,60 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
     written down instead, for anyone porting a kernel by hand.
 
 ### Fixed
+
+- **FNA / vkd3d diagnostics named a line past the end of the file** (issue #202, reported by uwx:
+  `apos-shapes.fx:3586:26: E5017 …` in a 3236-line file). Every diagnostic from vkd3d-shader —
+  the FNA `fx_2_0` target and the default DirectX 11 DXBC backend — was reported in vkd3d's
+  own coordinates, which drift three ways: ShadowDusk blanks the `#line` directives vkd3d never
+  honoured (so the 5-line macro prelude counted), vkd3d's preprocessor drops skipped `#if` arms
+  and block-comment interiors from its count, and vkd3d 1.17 lexes the internal HLSL templates
+  behind `atan`/`atan2` (+20 lines each), `asin`/`acos` (+11), `tanh`/`lit` (+7), `refract` (+6),
+  `sincos`/`smoothstep`/`sinh`/`cosh`/`dst`/`faceforward`/`modf` (+4), `fwidth`/`determinant`
+  (+3) against the user file's line counter, per call site. The reporter's construct is line
+  **3009** (`if (isGlyph ? glyphFade <= 0.0 : d >= …)`); even the template-header corpus
+  shaders were off by two or three lines. `Vkd3dSourceLocator` now asks vkd3d itself where each
+  diagnostic sits (a sentinel parse-abort bisection of the same request, about 0.2 s against
+  the failing compile's 3 s), maps the physical line back through the `#line` directives to the
+  author's file and line (flattened includes too), and maps vkd3d's re-spaced column to the
+  author's; message, code and raw text stay verbatim. The desktop P/Invoke and browser
+  `[JSImport]` hosts share it. **No emitted byte moves** (every FNA corpus output hashed
+  identical before and after; the real compile's input is untouched). The reporter's file
+  itself cannot become an FNA effect under *any* compiler — `fxc /T fx_2_0` rejects it too
+  (`X3506` as written, `X4505` maximum temp register index with its `ps_3_0` arm forced) — so
+  the correct outcome, now delivered, is vkd3d's loud diagnostic at the right place; the
+  report's `error X0000: <file>:3586:26: E5017: …` shape was the pre-0.15.0 formatter and is
+  already the MSBuild-parseable `<file>(3009,29-29): error E5017: …`. Pinned by pure locator
+  tests against a fake vkd3d, real-vkd3d tests with a known construct behind known drift, and
+  `FnaDiagnosticLocationTests` on the corpus fixtures plus the reporter's exact file
+  (`tests/fixtures/issues/202/`, kept outside the corpus sweeps). Record:
+  `plan/DONE/ISSUE-202-fna-error-line-numbers.md`.
+
+- **MGCB plugin: `/platform:DesktopVK` on MonoGame 3.8.5 silently built an OpenGL effect, and
+  `/platform:Web` was refused** (Phase 63 Area B, issue #203). MonoGame renumbered
+  `TargetPlatform` in 3.8.5 (`Stadia=12, Web=13` became `Web=12, DesktopVK=13, WindowsDX12=14,
+  XboxSeries=15`) and `MgcbPlatformMap` switched on the enum members it was compiled against
+  (3.8.2.1105), so on a real `dotnet-mgcb` 3.8.5 value 13 read as `Web` and produced a GLSL
+  payload under the Vulkan platform byte, value 12 read as `Stadia` and refused `Web` with an
+  `SD0501` whose text listed Web as supported, and `WindowsDX12` was refused although DirectX 12
+  is a rung-4 target. The map now keys on the platform's **name** (`platform.ToString()`, which
+  the host's own enum spells), so `DesktopVK` → Vulkan and `WindowsDX12` → DirectX 12 derive
+  seamlessly on 3.8.5 with no `ShaderProfile` needed (it stays as the escape hatch for MGCB
+  before 3.8.5), `XboxSeries` joins the refused consoles, and `SD0501`'s supported list is built
+  from the map so it can never name the platform it refuses. `validation/MgcbPlugin` gained a
+  real `dotnet-mgcb` 3.8.5 arm (`DesktopGL`, `Web`, `DesktopVK`, `WindowsDX12`; payload
+  byte-identical to the CLI's for the target the platform actually is, plus the negative that a
+  `V`-byte `.xnb` never carries OpenGL bytes again); `MgcbPlatformMapTests` pins both numberings.
+- **MGCB plugin: inside MGCB, DXC could be picked off the OS `PATH`, and DirectX 12 output was
+  unsigned** (found by the new 3.8.5 gate arm). Vortice.Dxc probes the host's base directory
+  (MGCB's, a miss) and then falls back to a bare-name load, so on a machine with a
+  `dxcompiler.dll` on `PATH` (the Vulkan SDK installs one) every MGCB build through the plugin
+  compiled with **that** DXC rather than the pinned one, a silent substitute compiler; and DXC's
+  own internal `LoadLibrary("dxil.dll")` never reaches a .NET hook, so DX12 through MGCB came
+  out unsigned (retail D3D12 rejects it). `PluginNativeLibraryResolver` now also subscribes
+  `Dxc.ResolveLibrary` (polled before the bare-name fallback), pre-loads the plugin directory's
+  `dxil.dll`, and returns its `dxcompiler.dll`. The gate runs the plugin-arm MGCB with a decoy
+  `dxcompiler.dll` first on the child's `PATH` and requires DX12 payloads to equal the CLI's
+  signed bytes, so neither can come back silently.
 
 ## [0.18.0] - 2026-08-03
 

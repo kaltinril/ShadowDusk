@@ -106,12 +106,34 @@ internal sealed class WasmVkd3dShaderCompiler : IDxbcShaderCompiler
         {
             // The JS shim re-throws vkd3d's VERBATIM messages as the exception message
             // (constraint 5). Map them with the SAME shared reformatter the desktop
-            // backend uses, so the in-browser failure carries real file/line/column.
+            // backend uses, so the in-browser failure carries real file/line/column —
+            // then put that location back onto the author's line with the SAME
+            // Vkd3dSourceLocator (issue #202: vkd3d's own line numbers drift), probing
+            // through this host's JS call exactly as the desktop probes through P/Invoke.
+            ShaderError primary = Vkd3dCompileContract.MapCompileFailure(
+                ex.Message,
+                request.SourceFileName,
+                "vkd3d-shader WASM compilation failed with no diagnostics");
+
+            ShaderError? Probe(string source)
+            {
+                try
+                {
+                    Vkd3dInterop.Compile(
+                        Encoding.UTF8.GetBytes(source), request.EntryPoint, profile, request.SourceFileName, targetType);
+                    return null;
+                }
+                catch (JSException probeEx)
+                {
+                    return Vkd3dCompileContract.MapCompileFailure(probeEx.Message, request.SourceFileName, string.Empty);
+                }
+            }
+
+            // This host hands vkd3d request.HlslSource unblanked (its preprocessor ignores
+            // the #line lines, which stay in place as blank lines), so the compiled text and
+            // the directive-carrying text are one and the same.
             return Result<PlatformBlob, ShaderError>.Fail(
-                Vkd3dCompileContract.MapCompileFailure(
-                    ex.Message,
-                    request.SourceFileName,
-                    "vkd3d-shader WASM compilation failed with no diagnostics"));
+                Vkd3dSourceLocator.Relocate(primary, request.HlslSource, request.HlslSource, request.SourceFileName, Probe));
         }
     }
 

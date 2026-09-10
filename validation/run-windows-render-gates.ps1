@@ -64,16 +64,30 @@
     * ANGLE D3D11 derivatives    - validation/AngleDerivativeProbe (issue #136: the emitted
                                    fragment control-flow shapes keep dFdx/dFdy alive on the
                                    real browser WebGL backend; headless Edge/Chrome).
-    * FNA fx_2_0 (-IncludeFna)   - validation/FnaValidation (vs fxc /T fx_2_0). OPT-IN because
-                                   its restore-fna.ps1 clones the FNA source tree (heavy) and the
-                                   oracle needs the Windows SDK fxc. Run it for any release that
-                                   could affect the FNA target.
+    * FNA fx_2_0 (-IncludeFna)   - validation/FnaValidation (vs fxc /T fx_2_0), which since Phase 64
+                                   also loads every row's candidate .fxb through a real FNA
+                                   ContentManager.Load<Effect> from an XnbWriter-written .xnb (maxd 0
+                                   vs the raw-bytes arm, within tolerance of the oracle). OPT-IN
+                                   because its restore-fna.ps1 clones the FNA source tree (heavy) and
+                                   needs an authenticated gh for the fnalibs natives. Run it for any
+                                   release that could affect the FNA target or the .xnb writer.
     * Vulkan PS corpus           - validation/CandidateVulkan (ShadowDusk's OWN output rendered on
                                    real MonoGame DesktopVK; not an mgfxc diff - mgfxc's output is
                                    unloadable for this corpus, a confirmed MonoGame SlotOffset bug).
     * Vulkan VS-driven + gallery - validation/VsDrivenVulkan (+ `-- apos`): a NON-IDENTITY
                                    asymmetric transform pixel-diffed vs the mgfxc 3.8.5 golden
                                    (maxd 0), plus the 30-cell ShapeBatch gallery (maxd 0).
+    * XNB direct writer          - validation/XnbContentLoad: a ShadowDusk-written .xnb through a
+                                   real MonoGame WindowsDX Content.Load<Effect> vs stock mgcb's
+                                   (pixel-identical), plus the envelope assertions (Phase 60).
+    * XNB on MonoGame DesktopGL  - validation/XnbContentLoadGl: the same driver source on the
+                                   DesktopGL runtime (/platform:DesktopGL reference, OpenGL
+                                   candidate), the most common consumer (Phase 64).
+    * XNB on KNI (two lines)     - validation/KniXnbContentLoad, built against nkast 4.2.9001 AND
+                                   4.3.9001: real KNI Content.Load<Effect> on the v10 + KNIFX
+                                   .xnb vs the mgcb payload (maxd 0); pins that stock mgcb output
+                                   is rejected on 4.2 (the reader-name fact behind the XNA-4.0
+                                   manifest) and loads on 4.3 (Phase 64).
     * MGCB plugin (Phase 29)     - validation/MgcbPlugin: NOT a render gate. Drives a real
                                    `dotnet mgcb` content build through the /reference:'d
                                    ShadowDusk plugin and asserts the .mgfx inside the .xnb is
@@ -81,6 +95,16 @@
                                    envelope matches MGCB's own stock build, and that the payload
                                    differs from stock (i.e. ShadowDusk really compiled it). It is
                                    here because `dotnet test` has no dotnet-mgcb; no GPU needed.
+                                   Phase 63: two MGCB versions (3.8.4.1 + 3.8.5, which renumbered
+                                   TargetPlatform: Web/DesktopVK/WindowsDX12 arms) and a decoy
+                                   dxcompiler.dll on the child PATH (pinned-DXC + dxil guard).
+    * Content Builder (3.8.5)    - validation/ContentBuilder: a REAL MonoGame 3.8.5 ContentBuilder
+                                   subclass builds the fixtures through the stock pair AND through
+                                   ShadowDusk.ContentPipeline's pair (the library shape, Phase 63),
+                                   asserts payload == ShadowDuskCLI and envelope == stock, then
+                                   Content.Load<Effect>s both on MonoGame 3.8.5 WindowsDX and
+                                   requires pixel-identical renders. Also the only run of the
+                                   Builder's unguarded GetTypes() scan over our real graph.
 
   Both Vulkan gates are DEFAULT-ON (issue #145: a Vulkan-affecting change must not depend on
   someone remembering a switch). Pass -SkipVulkan only on a box with no Vulkan-capable GPU.
@@ -228,8 +252,11 @@ $gates.Add(@{
 # Cheap (seconds, no GPU) and default ON - the failure modes it catches (MGCB stops
 # discovering the plugin; the plugin stops finding its natives inside MGCB's process; MonoGame
 # changes the content contract) are all silent for everyone until a consumer hits them.
+# Since Phase 63 (issue #203) it runs TWO MGCB versions (the manifest 3.8.4.1 and a real 3.8.5,
+# which renumbered TargetPlatform) and puts a decoy dxcompiler.dll first on the plugin-arm
+# child's PATH, so a fallback to an OS-search-path DXC or an unsigned DX12 module fails loudly.
 $gates.Add(@{
-    Name   = 'MGCB content-processor plugin (Phase 29: real dotnet mgcb build, .xnb payload vs CLI bytes)'
+    Name   = 'MGCB content-processor plugin (Phase 29: real dotnet mgcb build, .xnb payload vs CLI bytes; Phase 63: + dotnet-mgcb 3.8.5 arm for Web/DesktopVK/WindowsDX12 + decoy-PATH DXC guard)'
     Action = {
         # The pinned dotnet-mgcb from .config/dotnet-tools.json (idempotent; cached offline).
         Invoke-Checked 'dotnet' @('tool', 'restore')
@@ -254,6 +281,46 @@ $gates.Add(@{
         Invoke-Checked 'dotnet' @('run', '--project', 'validation/XnbContentLoad', '-c', 'Release')
     }
 })
+# The MonoGame DesktopGL arm of the same claim (Phase 64): the most common consumer runtime,
+# which the WindowsDX gate above cannot see (a DesktopGL game rejects a DX payload outright,
+# and the container is validated by a different ContentManager build). Same shared driver
+# source, /platform:DesktopGL reference, OpenGL candidate. Not in CI's llvmpipe lane yet:
+# mgcb 3.8.4.1's EffectProcessor compiles through d3dcompiler in-process and is unverified
+# on Linux without Wine, so this script is where it runs.
+$gates.Add(@{
+    Name   = 'XNB on MonoGame DesktopGL (Phase 64: real DesktopGL Content.Load<Effect> on a ShadowDusk-written .xnb vs mgcb''s)'
+    Action = {
+        Invoke-Checked 'dotnet' @('tool', 'restore')
+        Invoke-Checked 'dotnet' @('run', '--project', 'validation/XnbContentLoadGl', '-c', 'Release')
+    }
+})
+# The KNI arm of the same claim (Phase 64). KNI 4.2.9001's reader-name resolver throws on the
+# mgcb-shaped manifest (stock mgcb .xnb files fail on it), which is why XnbWriter emits the
+# XNA-4.0 name; this gate proves that fix on BOTH KNI lines, each a separate build against its
+# own nkast package set: real KNI ContentManager.Load<Effect> on the v10 and KNIFX .xnb vs the
+# mgcb payload (maxd 0), plus the pinned positive control that stock mgcb output is REJECTED on
+# 4.2 and loads on 4.3. Default ON: the KNI failure mode is silent for a consumer until their
+# game refuses to start, and CI has no KNI runtime.
+$gates.Add(@{
+    Name   = 'XNB on KNI 4.2.9001 + 4.3.9001 (Phase 64: real KNI Content.Load<Effect> on a ShadowDusk-written .xnb, v10 + KNIFX vs mgcb payload; stock-mgcb rejection on 4.2 pinned)'
+    Action = {
+        Invoke-Checked 'dotnet' @('tool', 'restore')
+        Invoke-Checked 'dotnet' @('run', '--project', 'validation/KniXnbContentLoad', '-c', 'Release')
+        Invoke-Checked 'dotnet' @('run', '--project', 'validation/KniXnbContentLoad', '-c', 'Release', '-p:KniVersion=4.3.9001')
+    }
+})
+# MonoGame 3.8.5 Content Builder (Phase 63, issue #203). A REAL ContentBuilder subclass builds
+# the fixtures through MonoGame's stock pair AND through ShadowDusk.ContentPipeline's, then
+# Content.Load<Effect>s both on MonoGame 3.8.5 and requires pixel-identical renders. It is also
+# the only place the Builder's unguarded Assembly.GetTypes() scan is exercised against our real
+# dependency graph - a dependency that fails type-load takes the consumer's whole build down.
+$gates.Add(@{
+    Name   = 'MonoGame 3.8.5 Content Builder (Phase 63: ShadowDusk.ContentPipeline pair vs stock pair, real ContentBuilder + Content.Load<Effect> on 3.8.5)'
+    Action = {
+        Invoke-Checked 'dotnet' @('build', 'src/ShadowDusk.Cli/ShadowDusk.Cli.csproj', '-c', 'Release')
+        Invoke-Checked 'dotnet' @('run', '--project', 'validation/ContentBuilder', '-c', 'Release')
+    }
+})
 # Slang corpus cross-validation (Phase 61). Two gates in one driver: every corpus .slang is
 # accepted by the REAL pinned slangc (proving the corpus is genuine Slang, not HLSL wearing a
 # .slang extension), and the uniform-free procedural subset renders PIXEL-IDENTICAL through
@@ -267,7 +334,7 @@ $gates.Add(@{
 })
 if ($IncludeFna) {
     $gates.Add(@{
-        Name   = 'FNA fx_2_0 (ShadowDusk .fxb vs fxc /T fx_2_0, real FNA)'
+        Name   = 'FNA fx_2_0 (ShadowDusk .fxb vs fxc /T fx_2_0, real FNA; + the .xnb Content.Load arm, Phase 64)'
         Action = {
             $fnaRestore = Join-Path $repoRoot 'validation/FnaValidation/restore-fna.ps1'
             if (Test-Path $fnaRestore) { & $fnaRestore }

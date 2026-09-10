@@ -9,8 +9,8 @@
 # Pipeline:
 #   validate          → resolve + guard the version
 #   build-and-test    → 3-OS build + full test gate
-#   pack-desktop      → pack the SIX desktop packages (Core/HLSL/GLSL/ShaderToy/Compiler/Cli)
-#                       at the validated version, with symbols (.snupkg), PLUS the
+#   pack-desktop      → pack the SEVEN desktop packages (Core/HLSL/GLSL/ShaderToy/Compiler/Cli/
+#                       ContentPipeline) at the validated version, with symbols (.snupkg), PLUS the
 #                       ShadowDusk.MgcbPlugin tools-only package (Phase 29) in a separate
 #                       step without symbols — it has no lib/, so a .snupkg cannot be built
 #   pack-wasm         → pack ShadowDusk.Wasm (the EIGHTH package) in THIS workflow —
@@ -157,7 +157,7 @@ jobs:
           path: TestResults/*.trx
           retention-days: 30
 
-  # ── Pack the six desktop packages (Wasm is packed in wasm.yml) ─────────────
+  # ── Pack the seven desktop packages (Wasm is packed in wasm.yml) ───────────
   pack-desktop:
     name: Pack desktop NuGet packages
     runs-on: ubuntu-latest
@@ -227,7 +227,7 @@ jobs:
       - name: dotnet restore
         run: dotnet restore ShadowDusk.slnx --locked-mode
 
-      # Pack the six desktop packages at the validated version, with symbol
+      # Pack the seven desktop packages at the validated version, with symbol
       # packages (.snupkg). The Version override is belt-and-braces — it already
       # equals Directory.Build.props per the validate guard — but keeps the pack
       # explicit and matches a workflow_dispatch where the tag may not exist yet.
@@ -242,7 +242,8 @@ jobs:
             src/ShadowDusk.GLSL/ShadowDusk.GLSL.csproj \
             src/ShadowDusk.ShaderToy/ShadowDusk.ShaderToy.csproj \
             src/ShadowDusk.Compiler/ShadowDusk.Compiler.csproj \
-            src/ShadowDusk.Cli/ShadowDusk.Cli.csproj ; do
+            src/ShadowDusk.Cli/ShadowDusk.Cli.csproj \
+            src/ShadowDusk.ContentPipeline/ShadowDusk.ContentPipeline.csproj ; do
               dotnet pack "$proj" -c Release --no-restore -o nupkg \
                 /p:Version=${{ needs.validate.outputs.version }} \
                 /p:IncludeSymbols=true /p:SymbolPackageFormat=snupkg
@@ -264,8 +265,8 @@ jobs:
           ls -la nupkg/
           count=$(find nupkg -maxdepth 1 -name '*.nupkg' | wc -l)
           echo "Found $count .nupkg files"
-          if [ "$count" -lt 7 ]; then
-            echo "::error::Expected 7 desktop .nupkg (6 libraries/CLI + ShadowDusk.MgcbPlugin), found $count"
+          if [ "$count" -lt 8 ]; then
+            echo "::error::Expected 8 desktop .nupkg (7 libraries/CLI/ContentPipeline + ShadowDusk.MgcbPlugin), found $count"
             exit 1
           fi
 
@@ -354,6 +355,28 @@ jobs:
             echo "::error::$pkg ships MonoGame.Framework.Content.Pipeline.dll — the reference must stay IncludeAssets=\"compile\" PrivateAssets=\"all\"."
             missing=1
           fi
+          exit $missing
+
+      # ShadowDusk.ContentPipeline (Phase 63, issue #203) is the LIBRARY shape of the same
+      # importer/processor, for MonoGame 3.8.5's Content Builder project: it must ship
+      # lib/net8.0 (a Content Builder references it from C#) and it must DECLARE its
+      # MonoGame.Framework.Content.Pipeline dependency (the opposite of the plugin - a Builder
+      # needs the edge so NuGet unifies the version with its own 3.8.5+ reference) plus the
+      # ShadowDusk.Compiler edge that brings the natives.
+      - name: Verify ShadowDusk.ContentPipeline ships lib/net8.0 + declares its dependencies
+        run: |
+          pkg=$(find nupkg -maxdepth 1 -name 'ShadowDusk.ContentPipeline.*.nupkg' ! -name '*.snupkg' | head -1)
+          test -n "$pkg" || (echo "::error::ShadowDusk.ContentPipeline .nupkg not produced" && exit 1)
+          echo "Inspecting $pkg"
+          listing=$(unzip -l "$pkg")
+          missing=0
+          grep -qF 'lib/net8.0/ShadowDusk.ContentPipeline.dll' <<<"$listing" \
+            || { echo "::error::$pkg has no lib/net8.0/ShadowDusk.ContentPipeline.dll - a Content Builder project cannot reference it"; missing=1; }
+          nuspec=$(unzip -p "$pkg" 'ShadowDusk.ContentPipeline.nuspec')
+          grep -qF 'id="MonoGame.Framework.Content.Pipeline"' <<<"$nuspec" \
+            || { echo "::error::$pkg does not declare the MonoGame.Framework.Content.Pipeline dependency"; missing=1; }
+          grep -qF 'id="ShadowDusk.Compiler"' <<<"$nuspec" \
+            || { echo "::error::$pkg does not declare the ShadowDusk.Compiler dependency (the natives would not flow)"; missing=1; }
           exit $missing
 
       - name: Upload packages
@@ -663,7 +686,7 @@ jobs:
           path: nupkg/
 
       # ShadowDusk.Wasm (the 8th package) is packed by the pack-wasm job in THIS run,
-      # so its artifact is available here. All eight packages publish together.
+      # so its artifact is available here. All nine packages publish together.
       - name: Download Wasm package
         uses: actions/download-artifact@v8
         with:

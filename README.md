@@ -101,7 +101,7 @@ ShadowDusk is a transparent substitute for MonoGame's mgfxc: same CLI flags, sam
 
 ## Delivery shapes
 
-All four shapes share the same `IShaderCompiler` interface and produce the same `.mgfx` bytes; only how you invoke them differs.
+Every shape runs the same pipeline and produces the same `.mgfx` bytes; only how you invoke it differs.
 
 **Library** (`ShadowDusk.Compiler`) — the product. Add the package, call `CompileAsync(fx)`, get `.mgfx` bytes in memory (see the example above).
 
@@ -122,7 +122,17 @@ ShadowDuskCLI MyShader.fx MyShader.mgfx /Profile:OpenGL
 /build:MyShader.fx
 ```
 
-The target comes from the content project's own `/platform:` line, and the `.mgfx` inside the `.xnb` is byte-for-byte what the CLI emits. See [MGCB Content Pipeline](https://kaltinril.github.io/ShadowDusk/guides/mgcb-content-pipeline.html).
+The target comes from the content project's own `/platform:` line (`DesktopVK` and `WindowsDX12` included on MonoGame 3.8.5), and the `.mgfx` inside the `.xnb` is byte-for-byte what the CLI emits. See [MGCB Content Pipeline](https://kaltinril.github.io/ShadowDusk/guides/mgcb-content-pipeline.html).
+
+**Content Builder library** (`ShadowDusk.ContentPipeline`) — the same importer and processor as a normal library, for MonoGame 3.8.5's code-centric **Content Builder project** (the template default since 3.8.5, where a C# `ContentBuilder` you own replaces the `.mgcb`). Add the package to the Builder project and pass the two instances:
+
+```csharp
+using ShadowDusk.ContentPipeline;
+
+content.Include<WildcardRule>("Effects/*.fx", new ShadowDuskEffectImporter(), new ShadowDuskEffectProcessor());
+```
+
+Pass the instances (auto-discovery by extension picks MonoGame's own pair); the target follows the Builder's `-p` platform. Proven at rung 4 in a real 3.8.5 `ContentBuilder`: payload byte-identical to the CLI, envelope byte-identical to the stock build, and pixel-identical through `Content.Load<Effect>` on MonoGame 3.8.5. See [MonoGame 3.8.5 Content Builder](https://kaltinril.github.io/ShadowDusk/guides/content-builder.html).
 
 **Direct `.xnb` output** — replace your content pipeline without changing a line of your game's code. ShadowDusk writes the `.xnb` itself, so `Content.Load<Effect>("MyShader")` keeps working and MGCB is out of the picture entirely. On the CLI, just name an `.xnb` output:
 
@@ -137,7 +147,21 @@ var result = await new EffectCompiler().CompileAsync(fx, new CompilerOptions { T
 File.WriteAllBytes("Content/MyShader.xnb", result.Value.ToXnb());
 ```
 
-The XNB platform byte is **derived** from the target you already picked, never something you select, and the payload inside is byte-for-byte the `.mgfx` the same call would emit. Proven at rung 4: a real `ContentManager.Load<Effect>` renders it pixel-identical to the `mgfxc`-built `.xnb`.
+The XNB platform byte is **derived** from the target you already picked, never something you select, and the payload inside is byte-for-byte the `.mgfx` the same call would emit:
+
+| `/Profile:` (or `--target-runtime`) | XNB platform byte | Runtimes that accept it |
+|---|---|---|
+| `OpenGL` (`monogame-gl`, `monogame-gl-v11`, `kni-knifx`) | `'d'` (DesktopGL) | MonoGame DesktopGL / Android / iOS / macOS / Web, KNI (every GL platform) |
+| `DirectX_11` (`monogame-dx`) — **the CLI default** | `'w'` (Windows) | MonoGame WindowsDX, KNI WinForms.DX11 |
+| `DirectX_12` | `'G'` | MonoGame WindowsDX12 (3.8.5+) |
+| `Vulkan` | `'V'` | MonoGame DesktopVK (3.8.5+) |
+| `FNA` (`fna`) | `'w'` | FNA (the only byte in FNA's list that MonoGame also accepts; the payload is the `.fxb`) |
+
+Every runtime checks the byte only for **membership in its whitelist**, never against the platform actually running (measured on MonoGame, KNI and FNA), so one `/Profile:OpenGL` `.xnb` serves DesktopGL, Android, iOS, macOS and Web alike — an mgcb Android build would say `'a'` where ShadowDusk says `'d'`, and it does not matter.
+
+> **Name the profile.** With no `/Profile:` the CLI defaults to `DirectX_11` (mgfxc parity), so an `.xnb` written that way loads in a WindowsDX game and fails in a DesktopGL one with *"This MGFX effect was built for a different platform!"*. The CLI warns (`SD0029`) when an `.xnb` is written with the implicit default; passing any profile silences it.
+
+Proven at rung 4 on **MonoGame** (WindowsDX and DesktopGL), **KNI** (4.2.9001 and 4.3.9001, MGFX v10 and KNIFX payloads) and **FNA** (26.06): a real `ContentManager.Load<Effect>` on the ShadowDusk-written file renders pixel-identical to the reference build on every one of them (`validation/XnbContentLoad`, `XnbContentLoadGl`, `KniXnbContentLoad`, and the `.xnb` arm of `FnaValidation`). ShadowDusk's `.xnb` also loads on **KNI 4.2.9001, where a stock MonoGame-mgcb `.xnb` does not** (KNI 4.2's reader-name resolver rejects mgcb's type-reader manifest; ShadowDusk writes the XNA-4.0 name every runtime accepts).
 
 **SkiaSharp / SkSL converter** (`SkslConverter`) — converts an `.fx` pixel shader to an [SkSL runtime effect](https://skia.org/docs/user/sksl/) for `SKRuntimeEffect`, so the same shader source can serve a SkiaSharp render path:
 
@@ -165,6 +189,8 @@ All packages ship together at one shared version. Most projects only need one of
 | `ShadowDusk.Core` | [![ShadowDusk.Core](https://img.shields.io/nuget/v/ShadowDusk.Core)](https://www.nuget.org/packages/ShadowDusk.Core) | Shared types (`IShaderCompiler`, `CompilerOptions`, `Result<T,E>`). Pulled in automatically as a dependency. |
 | `ShadowDusk.HLSL` | [![ShadowDusk.HLSL](https://img.shields.io/nuget/v/ShadowDusk.HLSL)](https://www.nuget.org/packages/ShadowDusk.HLSL) | HLSL front-end (FX pre-parser, DXC, DXBC backends). Pulled in automatically as a dependency. |
 | `ShadowDusk.GLSL` | [![ShadowDusk.GLSL](https://img.shields.io/nuget/v/ShadowDusk.GLSL)](https://www.nuget.org/packages/ShadowDusk.GLSL) | SPIR-V → GLSL transpilation and the MonoGame GLSL rewrite. Pulled in automatically as a dependency. |
+| `ShadowDusk.MgcbPlugin` | [![ShadowDusk.MgcbPlugin](https://img.shields.io/nuget/v/ShadowDusk.MgcbPlugin)](https://www.nuget.org/packages/ShadowDusk.MgcbPlugin) | The MGCB content-processor plugin for `.mgcb` files (tools-only: one `/reference:` line). |
+| `ShadowDusk.ContentPipeline` | [![ShadowDusk.ContentPipeline](https://img.shields.io/nuget/v/ShadowDusk.ContentPipeline)](https://www.nuget.org/packages/ShadowDusk.ContentPipeline) | The same importer/processor as a library, for MonoGame 3.8.5's Content Builder project. |
 
 ## Getting started
 
@@ -218,7 +244,8 @@ ShadowDusk/
 │   ├── ShadowDusk.Metal/        # SPIR-V → MSL (stub — not yet implemented)
 │   ├── ShadowDusk.Compiler/     # EffectCompiler : IShaderCompiler — the consumer-facing product NuGet
 │   ├── ShadowDusk.Cli/          # dotnet tool entry point (mgfxc)
-│   ├── ShadowDusk.MgcbPlugin/   # MGCB content-processor plugin (ShadowDuskEffectImporter/Processor)
+│   ├── ShadowDusk.MgcbPlugin/   # MGCB content-processor plugin (ShadowDuskEffectImporter/Processor), tools-only
+│   ├── ShadowDusk.ContentPipeline/ # The same importer/processor as a library, for the MonoGame 3.8.5 Content Builder
 │   └── ShadowDusk.Wasm/         # In-browser WASM compiler (WasmShaderCompiler), [JSImport] DXC + SPIRV-Cross
 ├── samples/
 │   ├── ShaderFiddle.Web/        # KNI Blazor-WASM in-browser fiddle (sample of reach)

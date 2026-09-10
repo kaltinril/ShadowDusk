@@ -8,8 +8,8 @@ argument-hint: "<version> (e.g., 0.2.0)"
 
 Automate the full ShadowDusk release from version bump through PR merge to publish trigger.
 
-A release publishes **all eight** `ShadowDusk.*` packages (`Core`, `HLSL`, `GLSL`, `ShaderToy`,
-`Compiler`, `Cli`, `Wasm`, `MgcbPlugin`) plus the `ShadowDuskCLI` `dotnet tool` to nuget.org, and attaches
+A release publishes **all nine** `ShadowDusk.*` packages (`Core`, `HLSL`, `GLSL`, `ShaderToy`,
+`Compiler`, `Cli`, `Wasm`, `MgcbPlugin`, `ContentPipeline`) plus the `ShadowDuskCLI` `dotnet tool` to nuget.org, and attaches
 self-contained CLI binaries to a GitHub Release. The human runbook this automates is `RELEASING.md`.
 
 ## Input
@@ -100,7 +100,7 @@ history, not just SemVer's letter):
      new platform/target** (the class of change 0.9.0's ShaderToy promotion and 0.11.0's
      Android natives both were): also check `.github/workflows/release.yml` (the pack-job
      list and any package-count validation gate), `.github/workflows/pack-consume.yml` (native-
-     presence gates), `Brand/README.md`, and every "eight packages" / package-count mention in
+     presence gates), `Brand/README.md`, and every "nine packages" / package-count mention in
      `CLAUDE.md` and `RELEASING.md` — these encode a specific count and silently go stale
      otherwise.
    Report gaps; ask whether to fix now or defer. Do not block the release on doc drift
@@ -137,14 +137,14 @@ history, not just SemVer's letter):
     marker, never a trigger. (`RELEASING.md` → "Triggering a release" is authoritative.)
 
     The `validate` job checks the dispatch input against `Directory.Build.props` `<Version>`; if
-    they match, all eight packages + the `ShadowDuskCLI` tool publish to nuget.org and a GitHub
+    they match, all nine packages + the `ShadowDuskCLI` tool publish to nuget.org and a GitHub
     Release is cut. Point the user at `RELEASING.md` → "Verify after release" for the post-publish
-    checks (`dotnet tool install -g ShadowDusk.Cli` → `ShadowDuskCLI --help`, and all eight packages on
+    checks (`dotnet tool install -g ShadowDusk.Cli` → `ShadowDuskCLI --help`, and all nine packages on
     nuget.org at `<version>`).
 
 ## ShadowDusk-specific notes
 
-- **One file bumps the version** — `Directory.Build.props` `<Version>` only. Never the eight
+- **One file bumps the version** — `Directory.Build.props` `<Version>` only. Never the nine
   csprojs.
 - **Commit directly, no `/commit` skill, no co-author / tool-attribution trailer of any
   kind** (CLAUDE.md Git Commit Conventions).

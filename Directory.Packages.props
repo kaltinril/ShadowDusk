@@ -3,9 +3,11 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
 
+  <!-- Vortice.Direct3D12 is deliberately ABSENT (dropped in Phase 63, issue #203): it carries one
+       type the CLR refuses to load, and MonoGame 3.8.5's Content Builder GetTypes()-scans every
+       consumer dependency unguarded. The ID3D12ShaderReflection interop is ShadowDusk-owned now. -->
   <ItemGroup Label="DXC">
     <PackageVersion Include="Vortice.Dxc" Version="3.3.4" />
-    <PackageVersion Include="Vortice.Direct3D12" Version="3.5.0" />
   </ItemGroup>
 
   <ItemGroup Label="D3DCompiler (DXBC oracle backend — managed wrapper restores cross-platform; runtime is Windows-only, guarded by OperatingSystem.IsWindows())">
@@ -51,10 +53,14 @@
     types and a "no ContentTypeWriter found" build failure.
 
     3.8.2.1105 is deliberate, and it is a FLOOR, not a pin to "the" MonoGame version: the
-    ContentImporter/ContentProcessor contract has been stable across 3.8.x, so a plugin
-    compiled against the oldest supported contract loads into every newer MGCB. Compiling
-    against a NEWER one would not load into an older MGCB. Verified in-process against
-    dotnet mgcb 3.8.2.1105, 3.8.4.1, and 3.8.5.
+    ContentImporter/ContentProcessor TYPE contract has been stable across 3.8.x, so a plugin
+    compiled against the oldest supported contract loads into every newer MGCB (and binds
+    inside a 3.8.5 Content Builder). Compiling against a NEWER one would not load into an
+    older MGCB. Verified in-process against dotnet mgcb 3.8.2.1105, 3.8.4.1, and 3.8.5.
+    The enum NUMBERING is NOT stable: 3.8.5 renumbered TargetPlatform (Web=12, DesktopVK=13,
+    WindowsDX12=14, XboxSeries=15), so MgcbPlatformMap keys on names, never members
+    (Phase 63 Area B). ShadowDusk.ContentPipeline (the library shape for the 3.8.5 Content
+    Builder) shares this same floor as a REAL dependency.
   -->
   <ItemGroup Label="MGCB plugin contract (Phase 29)">
     <PackageVersion Include="MonoGame.Framework.Content.Pipeline" Version="3.8.2.1105" />

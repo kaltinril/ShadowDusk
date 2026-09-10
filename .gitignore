@@ -133,12 +133,15 @@ validation/output-apos-gl-gallery/
 validation/output-apos-dx/
 validation/output-apos-dx12/
 validation/output-vs-dx12/
+validation/output-contentbuilder/
 validation/output-samplerpairs/
 validation/output-samplerregisterorder/
 validation/output-mrt/
 validation/output-shadertoy/
 validation/output-shadertoy-dx/
 validation/output-xnb/
+validation/output-xnb-kni/
+validation/output-xnb-gl/
 # The pinned slangc TEST ORACLE the SlangCorpus gate downloads on demand (SHA-256-verified).
 # Never shipped; the product never invokes it.
 validation/SlangCorpus/.slang-oracle/

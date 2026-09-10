@@ -3,7 +3,7 @@
 using Microsoft.Xna.Framework.Content.Pipeline;
 using Microsoft.Xna.Framework.Content.Pipeline.Graphics;
 using Microsoft.Xna.Framework.Content.Pipeline.Processors;
-using ShadowDusk.MgcbPlugin;
+using ShadowDusk.ContentPipeline;
 using Shouldly;
 using Xunit;
 
@@ -48,6 +48,12 @@ public sealed class MgcbPluginByteIdentityTests : IClassFixture<CliBinaryFixture
         { "MultiTexture.fx",   TargetPlatform.Windows,   "DirectX_11" },
         { "ForwardLighting.fx", TargetPlatform.DesktopGL, "OpenGL" },
         { "SpriteEffect.fx",   TargetPlatform.Windows,   "DirectX_11" },
+        // Web: the GL-family platform whose NUMBER moved in MonoGame 3.8.5 (13 -> 12). Under the
+        // 3.8.2.1105 contract this project compiles against it is value 13; the name-based map
+        // (Phase 63 Area B) resolves it to OpenGL either way. DesktopVK / WindowsDX12 cannot be
+        // expressed through this enum at all; they are pinned by name in MgcbPlatformMapTests
+        // and end to end on a real dotnet-mgcb 3.8.5 by validation/MgcbPlugin.
+        { "Grayscale.fx",      TargetPlatform.Web,       "OpenGL" },
     };
 
     [Theory]

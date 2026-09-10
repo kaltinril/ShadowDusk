@@ -94,6 +94,38 @@ public sealed class CliXnbOutputTest : IClassFixture<CliBinaryFixture>
         }
     }
 
+    [Fact]
+    public async Task XnbOutputWithImplicitDefaultProfile_WarnsSD0029_ButStillSucceeds()
+    {
+        // Phase 64 C2: the CLI default (DirectX_11, mgfxc parity) is unchanged and the file is
+        // correct for WindowsDX, so exit 0 and a valid 'w' container. The ADVISORY is the new
+        // part: without it a DesktopGL game's Content.Load fails with a message that names
+        // neither the profile nor this tool. Naming the profile - even DirectX_11 itself -
+        // keeps stderr empty, so the MGCB empty-stderr contract for explicit invocations holds.
+        string source   = Path.Combine(FixturesDir, "shaders", "Grayscale.fx");
+        string implicitOut = Path.Combine(Path.GetTempPath(), $"Grayscale_{Guid.NewGuid():N}.xnb");
+        string explicitOut = Path.Combine(Path.GetTempPath(), $"Grayscale_{Guid.NewGuid():N}.xnb");
+
+        try
+        {
+            (int implicitExit, _, string implicitErr) = await RunCliAsync(source, implicitOut);
+            (int explicitExit, _, string explicitErr) = await RunCliAsync(source, explicitOut, "/Profile:DirectX_11");
+
+            implicitExit.ShouldBe(0, "the advisory is a warning, never a failure");
+            implicitErr.ShouldContain("warning SD0029", Case.Sensitive);
+            implicitErr.ShouldContain("/Profile:OpenGL", Case.Sensitive);
+            ((char)(await File.ReadAllBytesAsync(implicitOut))[3]).ShouldBe('w');
+
+            explicitExit.ShouldBe(0);
+            explicitErr.ShouldBeEmpty("an explicitly named target must not warn, whichever target it is");
+        }
+        finally
+        {
+            foreach (string f in new[] { implicitOut, explicitOut })
+                if (File.Exists(f)) File.Delete(f);
+        }
+    }
+
     /// <summary>Reads the length-prefixed effect payload out of an uncompressed XNB.</summary>
     private static byte[] ExtractPayload(byte[] xnb)
     {

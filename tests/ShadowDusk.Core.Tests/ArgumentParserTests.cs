@@ -30,6 +30,33 @@ public sealed class ArgumentParserTests
     }
 
     // -------------------------------------------------------------------------
+    // TargetIsExplicit (Phase 64 C2): the SD0029 .xnb advisory keys on whether the caller
+    // NAMED the target, not on which target it is - DirectX_11 spelled out is not the trap.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Parse_NoProfile_TargetIsImplicit()
+    {
+        var result = ArgumentParser.Parse(["Shader.fx", "Out.xnb"]);
+
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.Platform.ShouldBe(PlatformTarget.DirectX);
+        result.Value.TargetIsExplicit.ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData("/Profile:DirectX_11")]
+    [InlineData("/Profile:OpenGL")]
+    [InlineData("--target-runtime=monogame-gl")]
+    public void Parse_NamedTarget_TargetIsExplicit(string flag)
+    {
+        var result = ArgumentParser.Parse(["Shader.fx", "Out.xnb", flag]);
+
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.TargetIsExplicit.ShouldBeTrue();
+    }
+
+    // -------------------------------------------------------------------------
     // /Defines: (mgfxc parity) and missing-value flags — bug-hunt 2026-07-27 M9/N12
     // -------------------------------------------------------------------------
 

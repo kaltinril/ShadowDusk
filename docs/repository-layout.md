@@ -25,12 +25,18 @@ ShadowDusk/
 │                                 #   -WithRenderGates and -WithSlang. Nothing is silently skipped.
 │                                 #   Surfaced to agents as the `local-test` skill.
 │   ├── ShadowDusk.MgcbPlugin/    # MGCB content-processor plugin (Phase 29): ShadowDuskEffectImporter +
-│   │                             #   ShadowDuskEffectProcessor, discovered by MGCB's /reference:. The native MGCB
-│   │                             #   route, since the PATH override was measured not to fire (MGCB compiles
-│   │                             #   in-process; Phase 52 Area E). PUBLISHED as a TOOLS-ONLY NuGet (everything
-│   │                             #   under tools/net8.0/any/, no lib/ — MGCB resolves a plugin's deps from its own
-│   │                             #   directory). The ONLY src/ project allowed a MonoGame reference, and only a
-│   │                             #   compile-only, PrivateAssets=all one.
+│   │                             #   ShadowDuskEffectProcessor (namespace ShadowDusk.ContentPipeline), discovered by
+│   │                             #   MGCB's /reference:. The native MGCB route, since the PATH override was measured
+│   │                             #   not to fire (MGCB compiles in-process; Phase 52 Area E). PUBLISHED as a
+│   │                             #   TOOLS-ONLY NuGet (everything under tools/net8.0/any/, no lib/ — MGCB resolves a
+│   │                             #   plugin's deps from its own directory). One of the two src/ projects allowed a
+│   │                             #   MonoGame reference, and here only a compile-only, PrivateAssets=all one.
+│   ├── ShadowDusk.ContentPipeline/ # The SAME importer/processor as a normal lib/net8.0 LIBRARY (Phase 63, issue
+│   │                             #   #203), for MonoGame 3.8.5's code-centric Content Builder project: no sources of
+│   │                             #   its own, it source-links the plugin's five .cs files (+ the CLI's
+│   │                             #   MgcbErrorFormatter) and declares a REAL MonoGame.Framework.Content.Pipeline
+│   │                             #   dependency (3.8.2.1105 floor) + ShadowDusk.Compiler, so the natives flow into
+│   │                             #   the consumer's Builder bin. The other MonoGame-referencing src/ project.
 │   └── ShadowDusk.Wasm/          # In-browser WASM IShaderCompiler (WasmShaderCompiler); [JSImport] to WASM-compiled DXC + SPIRV-Cross
 ├── tests/
 │   ├── ShadowDusk.Core.Tests/
@@ -47,6 +53,10 @@ ShadowDusk/
 │       │                               #   ShaderToyRoute{Gl,Dx} fixture) + third-party/ (38): Nez (15, MIT),
 │       │                               #   MonoGame (17, Ms-PL — the reference compiler's own acceptance set),
 │       │                               #   Gum (3), Apos.Shapes (3)
+│       ├── issues/                     # Issue-reproduction fixtures by issue number (202/: the reporter's
+│       │                               #   3235-line Apos.Shapes, MIT, for FnaDiagnosticLocationTests). NOT under
+│       │                               #   shaders/ on purpose: the GL/Vulkan/Phase-41 corpus sweeps enumerate
+│       │                               #   shaders/** and these are location fixtures, not corpus members.
 │       └── golden/                     # Reference outputs: mgfxc .mgfx (DirectX_11/, DirectX_12/, OpenGL/, Vulkan/) + fxc fx_2_0 .fxb (FNA/) + byte-identity/
 ├── samples/
 │   ├── ShaderFiddle.Web/               # KNI Blazor-WASM in-browser fiddle (sample of reach)
@@ -62,6 +72,10 @@ ShadowDusk/
 │   ├── vkd3d/                     # vkd3d-shader native (cross-platform DXBC backend)
 │   ├── vkd3d-wasm/                # vkd3d-shader compiled to WASM (browser DXBC + FNA export)
 │   ├── plantuml/                  # PlantUML jar for regenerating docs/*.puml diagrams
+│   ├── contentbuilder-consumer/   # The scratch MonoGame 3.8.5 Content Builder (Program.cs + csproj) that
+│   │                              #   pack-consume.yml and tools/verify-contentpipeline-packaging.ps1 COPY out of
+│   │                              #   tree to consume the packed ShadowDusk.ContentPipeline cold (Phase 63).
+│   │                              #   Never built in place.
 │   └── shadertoy2fx/             # ShaderToy experiment SHELLS (out-of-band, NOT in ShadowDusk.slnx):
 │                                  #   the converter LIBRARY + tests were promoted to src/+tests/ (Phase 47);
 │                                  #   the runtime helper + interactive sample moved to
@@ -83,7 +97,16 @@ ShadowDusk/
 │                                  #   Android (AndroidGl), v11 (MonoGameV11), browser-ANGLE (AngleDerivativeProbe),
 │                                  #   direct .xnb (XnbContentLoad: builds each fixture through BOTH stock
 │                                  #     dotnet-mgcb and ShadowDusk's XnbWriter, loads both with a real
-│                                  #     ContentManager.Load<Effect>, requires pixel-identical renders - Phase 60),
+│                                  #     ContentManager.Load<Effect>, requires pixel-identical renders - Phase 60;
+│                                  #     KniXnbContentLoad: the same claim on real KNI, built against nkast
+│                                  #       4.2.9001 AND 4.3.9001, v10 + KNIFX .xnb vs the mgcb payload, and pins
+│                                  #       that stock mgcb output is rejected on 4.2 (Phase 64);
+│                                  #     the FNA arm lives inside FnaValidation, the DesktopGL arm is
+│                                  #       XnbContentLoadGl - Phase 64),
+│                                  #   Content Builder (ContentBuilder: a REAL MonoGame 3.8.5 ContentBuilder builds
+│                                  #     the fixtures through the stock pair AND ShadowDusk.ContentPipeline's pair,
+│                                  #     asserts payload == CLI + envelope == stock, Content.Load<Effect>s both on
+│                                  #     3.8.5 WindowsDX, pixel-identical - Phase 63),
 │                                  #   Slang corpus (SlangCorpus: every tests/fixtures/shaders/slang shader
 │                                  #     accepted by the pinned slangc TEST oracle + the procedural subset
 │                                  #     pixel-diffed vs slangc's own HLSL emission - Phase 61)
@@ -91,7 +114,9 @@ ShadowDusk/
 │                                  #   Two entries here are NOT render proofs:
 │                                  #     MgcbPlugin runs a real `dotnet mgcb` content build through the MGCB
 │                                  #       content-processor plugin and diffs the .xnb payload against the
-│                                  #       CLI's bytes (Phase 29).
+│                                  #       CLI's bytes (Phase 29); since Phase 63 on TWO mgcb versions (the
+│                                  #       manifest 3.8.4.1 + 3.8.5, which renumbered TargetPlatform) with a
+│                                  #       decoy dxcompiler.dll on the child PATH.
 │                                  #     DumpPreprocessedHlsl is a no-GPU DIAGNOSTIC: it dumps the exact HLSL
 │                                  #       the pipeline hands DXC so a divergence can be replayed through a
 │                                  #       different DXC build and attributed.

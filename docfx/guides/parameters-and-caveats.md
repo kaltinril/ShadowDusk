@@ -128,6 +128,10 @@ ShadowDusk's compiled effect is a raw **`.mgfx`** blob. The `.xnb` is the Conten
 
 (`mgfxc` itself only ever emits the raw effect and leaves `.xnb` wrapping to the content pipeline — the direct route is one thing ShadowDusk does that it doesn't.) See [Choosing a Target](choosing-a-target.md#mgfx-vs-xnb).
 
+Proven at rung 4 on **MonoGame** (WindowsDX and DesktopGL), **KNI** (4.2.9001 and 4.3.9001, MGFX v10 and KNIFX payloads) and **FNA** (26.06): a real `ContentManager.Load<Effect>` on the ShadowDusk-written file renders pixel-identical to the reference build on every one of them (`validation/XnbContentLoad`, `XnbContentLoadGl`, `KniXnbContentLoad`, and the `.xnb` arm of `FnaValidation`).
+
+**KNI ≤ 4.2.9001 cannot load a stock MonoGame-mgcb effect `.xnb`** — its `ContentTypeReaderManager` throws `FileLoadException: The given assembly name was invalid.` on the type-reader name mgcb writes (KNI 4.3.9001 catches it). ShadowDusk's `.xnb` loads on both, because it carries the XNA-4.0 reader name (`Microsoft.Xna.Framework.Content.EffectReader, Microsoft.Xna.Framework.Graphics, Version=4.0.0.0, …`), which is what KNI's own content pipeline and XNA write and the only name every MonoGame, KNI and FNA version resolves. One string everywhere; nothing to select. The CLI default profile is `DirectX_11`, so **pass `/Profile:OpenGL` for a KNI or DesktopGL game** — the wrong-profile messages, and what each means, are tabulated in [Drop-in `mgfxc`](dropin-mgfxc.md#replacing-the-content-pipeline-entirely-xnb-output).
+
 ## KNI HiDef / WebGL2
 
 A single ShadowDusk `.mgfx` loads in both KNI **Reach** (WebGL1) and **HiDef** (WebGL2 / GLSL ES 3.00) — no profile flag, no separate build. KNI's runtime converts the legacy GLSL to ES 3.00 at load, and ShadowDusk emits the `#define`-aliased fragment output that converter expects. HiDef shader loading needs a recent KNI (the release that added the runtime converter); Reach and desktop GL have no version requirement. After upgrading ShadowDusk, **recompile your `.fx`** — an old `.mgfx` keeps the old output.

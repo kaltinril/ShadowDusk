@@ -4,7 +4,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.Loader;
 
-namespace ShadowDusk.MgcbPlugin;
+namespace ShadowDusk.ContentPipeline;
 
 /// <summary>
 /// Makes ShadowDusk's bundled native compilers resolvable when this assembly is loaded as an
@@ -19,16 +19,36 @@ namespace ShadowDusk.MgcbPlugin;
 /// DLL and are never found. (Measured: without this shim a real <c>dotnet mgcb</c> build
 /// fails with <c>SD0103 SPIRV-Cross native library not found</c>.)</para>
 ///
-/// <para>The shim hooks <see cref="AssemblyLoadContext.ResolvingUnmanagedDll"/>, which the
-/// runtime raises only <i>after</i> every other mechanism has failed, and probes the plugin's
-/// own install directory. It therefore cannot displace a native the existing loaders resolved,
-/// and it changes nothing outside an MGCB host. It loads <b>the same pinned natives</b> the CLI
-/// and the runtime library use, so the compiler is identical: this is a lookup path, never a
-/// substitute compiler.</para>
+/// <para>Two hooks, because DXC needs an earlier one than the other two natives
+/// (Phase 63, issue #203 - measured on a real <c>dotnet-mgcb</c> 3.8.5 build):</para>
+/// <list type="number">
+/// <item><see cref="AssemblyLoadContext.ResolvingUnmanagedDll"/>, which the runtime raises only
+///   <i>after</i> every other mechanism has failed, probes the plugin's own install directory
+///   for <c>spirv-cross</c> and <c>vkd3d-shader</c>. It cannot displace a native the existing
+///   loaders resolved, and it changes nothing outside an MGCB host.</item>
+/// <item><c>Vortice.Dxc.Dxc.ResolveLibrary</c> for <c>dxcompiler.dll</c>. Vortice's own
+///   resolver probes <c>AppContext.BaseDirectory/runtimes/&lt;rid&gt;/native</c> (MGCB's
+///   directory - a miss), consults this event, and only then falls back to a <b>bare-name</b>
+///   load, which walks the OS <c>PATH</c>. That fallback is a substitute-compiler hole: a
+///   developer box with the Vulkan SDK on <c>PATH</c> carries its own <c>dxcompiler.dll</c>,
+///   and every MGCB build through the plugin silently compiled with <i>that</i> DXC (the
+///   DirectX 12 bytes differed from the CLI's; the GL/Vulkan SPIR-V happened to match for the
+///   corpus). And even when the pinned DXC did load through hook 1, DXC's own internal
+///   <c>LoadLibrary("dxil.dll")</c> is not a .NET load and never reached it, so DirectX 12
+///   output came out <b>unsigned</b> (DXC warns "DXIL signing library not found"; retail
+///   D3D12 rejects the artifact). This hook pre-loads the plugin directory's <c>dxil.dll</c>
+///   and returns its <c>dxcompiler.dll</c>, exactly what Vortice does from an ordinary app's
+///   base directory - the pinned pair, never a substitute.</item>
+/// </list>
 ///
-/// <para>The probe is deliberately narrow: only the three library names ShadowDusk P/Invokes,
-/// and only inside this assembly's own directory. It never widens the process's search path
-/// and never resolves a request on another component's behalf.</para>
+/// <para>Both load <b>the same pinned natives</b> the CLI and the runtime library use, so the
+/// compiler is identical: lookup paths, never a substitute compiler. The probe is deliberately
+/// narrow: only the library names ShadowDusk P/Invokes, and only inside this assembly's own
+/// directory. It never widens the process's search path and never resolves a request on
+/// another component's behalf. <c>validation/MgcbPlugin</c> proves both hooks: it puts a decoy
+/// <c>dxcompiler.dll</c> first on the child MGCB's <c>PATH</c> (a bare-name load would take
+/// it and die at <c>DxcCreateInstance</c>) and requires the DirectX 12 payload to equal the
+/// CLI's signed bytes.</para>
 /// </summary>
 internal static class PluginNativeLibraryResolver
 {
@@ -45,6 +65,9 @@ internal static class PluginNativeLibraryResolver
         "dxcompiler",
         "dxil",
     ];
+
+    /// <summary>The module name Vortice.Dxc's P/Invokes declare on every OS (<c>DxcLoader.DxcLibraryName</c>).</summary>
+    private const string DxcModuleName = "dxcompiler.dll";
 
     private static readonly object Gate = new();
     private static bool _registered;
@@ -64,8 +87,49 @@ internal static class PluginNativeLibraryResolver
         {
             if (_registered) return;
             AssemblyLoadContext.Default.ResolvingUnmanagedDll += Resolve;
+            // Touching the event runs Vortice's Dxc static ctor first (its own resolver), so
+            // this subscriber is consulted after Vortice's base-directory probe and BEFORE its
+            // bare-name fallback. Subscribers are polled in order, first non-zero wins, and
+            // ours returns zero whenever the plugin directory holds no DXC - so it can never
+            // shadow ShadowDusk's own macOS/Android DxcLoader handler.
+            Vortice.Dxc.Dxc.ResolveLibrary += ResolveDxc;
             _registered = true;
         }
+    }
+
+    /// <summary>
+    /// The <c>Vortice.Dxc.Dxc.ResolveLibrary</c> handler: the plugin directory's pinned
+    /// <c>dxcompiler.dll</c>, with its sibling <c>dxil.dll</c> loaded FIRST so DXC's internal
+    /// <c>LoadLibrary("dxil.dll")</c> (which never consults .NET) finds the already-loaded
+    /// module by name and validates + signs DirectX 12 output. Zero for anything else, and
+    /// zero when the plugin directory holds no DXC, which hands resolution back to Vortice.
+    /// </summary>
+    private static IntPtr ResolveDxc(string libraryName, Assembly assembly, DllImportSearchPath? searchPath)
+    {
+        if (!string.Equals(libraryName, DxcModuleName, StringComparison.OrdinalIgnoreCase))
+            return IntPtr.Zero;
+
+        string? pluginDirectory = GetPluginDirectory();
+        if (pluginDirectory is null)
+            return IntPtr.Zero;
+
+        string rid = CurrentRid();
+
+        // dxil.dll first. It ships only for the win-* RIDs; where it is absent (macOS, Linux
+        // DXC builds carry no signer) nothing is loaded and DXC itself reports unsigned output.
+        foreach (string candidate in GetProbeCandidates(pluginDirectory, rid, FileNamesFor("dxil")))
+        {
+            if (File.Exists(candidate) && NativeLibrary.TryLoad(candidate, out _))
+                break;
+        }
+
+        foreach (string candidate in GetProbeCandidates(pluginDirectory, rid, FileNamesFor("dxcompiler")))
+        {
+            if (File.Exists(candidate) && NativeLibrary.TryLoad(candidate, out IntPtr handle))
+                return handle;
+        }
+
+        return IntPtr.Zero;
     }
 
     private static IntPtr Resolve(Assembly requesting, string libraryName)
