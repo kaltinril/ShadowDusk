@@ -142,8 +142,9 @@ public sealed class ThirdPartyShaderCorpusTests
 
     /// <summary>
     /// Shaders that compile on the FNA (D3D9 fx_2_0, vkd3d SM &lt;= 3) target — the
-    /// all-runtime subset PLUS Crosshatch (SM3 native) and PaletteCycler (tex1D native).
-    /// Reflection is excluded (its int/relational construct hits the vkd3d 1.17 SM3 gap).
+    /// all-runtime subset PLUS Crosshatch (SM3 native), PaletteCycler (tex1D native),
+    /// Reflection (branch flattening, vkd3d 2.0) and the Apos.Shapes revisions (SM3 loops,
+    /// vkd3d 2.0). The last three were vkd3d 1.17 gaps, never shader-model limits.
     /// </summary>
     public static TheoryData<string> FnaShaders() => new()
     {
@@ -161,6 +162,11 @@ public sealed class ThirdPartyShaderCorpusTests
         Root + "Crosshatch.fx",         // int uniform + VPOS + % compile natively at SM3
         Root + "Noise.fx",              // helper fn rand(); 'noise' is an ordinary SM3 const here
         Root + "PaletteCycler.fx",      // tex1D / sampler1D — FNA compiles it natively
+        Root + "Reflection.fx",         // flattened if/else branches (vkd3d 2.0)
+        // Phase 56 — the Apos.Shapes Newton for-loop has a runtime trip count; SM3 loops
+        // landed in vkd3d 2.0, so these are FNA-compiling now (full inline paths):
+        "third-party/Apos.Shapes/apos-shapes.fx",
+        "third-party/Apos.Shapes/apos-shapes-aa.fx",
         // Phase 49 (full inline paths — Root is Nez-specific):
         "third-party/Gum/KniInCode-Shader.fx",           // legacy D3D9 effect syntax (uniform extern texture, sampler_state, lowercase compile vs_2_0) — FNA only
         "third-party/Gum/MonoGameInCode-Grayscale.fx",   // level_9_1 grayscale compiles at SM3 too

@@ -45,11 +45,11 @@ OS="$(uname -s)"
 # SHA-256-verified against the pins (Phase 37 C). Every host restores every RID:
 # the binaries are small (~1-2 MB each) and that makes any machine pack-ready (the
 # ShadowDusk.HLSL nupkg must contain all four — release.yml gates on it).
-# Built from the pinned vkd3d 1.17 tarball by .github/workflows/build-vkd3d-natives.yml
+# Built from the pinned vkd3d 2.1 tarball by .github/workflows/build-vkd3d-natives.yml
 # (linux on ubuntu:20.04 = glibc 2.31 baseline; macOS at MACOSX_DEPLOYMENT_TARGET=11.0;
 # win-x64 is the MSYS2 build the Phase 18/39/40 goldens were proven against).
 # Runs unconditionally (before the spirv-cross early exits below).
-VKD3D_RELEASE_URL="https://github.com/kaltinril/ShadowDusk/releases/download/native-vkd3d-1.17"
+VKD3D_RELEASE_URL="https://github.com/kaltinril/ShadowDusk/releases/download/native-vkd3d-2.1"
 
 # sha256 of a file, portable: coreutils sha256sum (linux, GH runners) or
 # shasum (stock macOS). NOT a pipeline-with-|| — a pipeline's exit status is
@@ -101,13 +101,13 @@ restore_vkd3d_file() {
 
 restore_vkd3d_shader() {
     restore_vkd3d_file "libvkd3d-shader-1.dll" "libvkd3d-shader-1.dll" \
-        "500cd915002aa95b17995954e69474031b32837fb16355ae9aa31d7bdd6f6718"
+        "9b97222601ee00ffc60f9f7bc426e13cc7df325c46725fe80a036e3eff9e2edb"
     restore_vkd3d_file "libvkd3d-shader.so.1" "libvkd3d-shader.so.1" \
-        "4799589c3e7abd4cdb4f1a0bae5a74937fbff310fb1e8daafa86b510c6272afc"
+        "bda15bc2a8b1a017a4adfed3c00c85f696cebb41f629b715ad8f58a37bc26678"
     restore_vkd3d_file "libvkd3d-shader.1.osx-x64.dylib" "osx-x64/libvkd3d-shader.1.dylib" \
-        "4acb13b8d8c4faac2b2180c4747a6da8a431889f2d6a776013c61a394fff8b9d"
+        "0fcd4e99d7c4c9b0375535ccfd0c27cf2f72fe60fb28ca7ffc770616d58c09f6"
     restore_vkd3d_file "libvkd3d-shader.1.osx-arm64.dylib" "osx-arm64/libvkd3d-shader.1.dylib" \
-        "887aa64611014d03b23a1827973822fd98ede6684d773632391736f8749a9bf4"
+        "b624db5641469c34bc44849cbc42201ffd7cdd26bfc8bb6a4c8f5f6757f8d34b"
 }
 
 restore_vkd3d_shader
@@ -358,7 +358,7 @@ restore_dxc_wasm
 # vkd3d-shader -> WASM (faithful in-browser DXBC + FNA backend, Phase 4.1)
 # ---------------------------------------------------------------------------
 # The faithful in-browser DirectX (SM4/5 DXBC) and FNA (SM1-3 fx_2_0) backend is the
-# SAME pinned vkd3d-shader 1.17 the desktop pipeline P/Invokes (tag native-vkd3d-1.17
+# SAME pinned vkd3d-shader 2.1 the desktop pipeline P/Invokes (tag native-vkd3d-2.1
 # above), compiled to WebAssembly (emscripten, MODULARIZE + EXPORT_ES6) — NO
 # substitute compiler; output is gated byte-identical to the desktop backend
 # (tests/ShadowDusk.BrowserTests/node-test-vkd3d-wasm.mjs). vkd3d-shader.{js,wasm}
@@ -367,12 +367,12 @@ restore_dxc_wasm
 # Mirrors restore_dxc_wasm (local-build copy) + restore_dxc_file (pinned download with
 # the PENDING-FIRST-HOSTED-BUILD placeholder pattern). Runs unconditionally.
 #
-# Pins: SHA-256 of the assets hosted on the native-vkd3d-wasm-1.17 prerelease (built
-# by .github/workflows/vkd3d-wasm-build.yml from the pinned vkd3d-1.17 tarball,
+# Pins: SHA-256 of the assets hosted on the native-vkd3d-wasm-2.1 prerelease (built
+# by .github/workflows/vkd3d-wasm-build.yml from the pinned vkd3d-2.1 tarball,
 # emscripten 3.1.34). Re-running the build workflow re-pins here + in SHA256SUMS.
-VKD3D_WASM_RELEASE_URL="https://github.com/kaltinril/ShadowDusk/releases/download/native-vkd3d-wasm-1.17"
-VKD3D_WASM_JS_SHA256="aff3ae6dece4d9aea38d32e3e7ed4c2d809dc0e0bf1c12bbaa4ad97e3b5dd7aa"
-VKD3D_WASM_WASM_SHA256="c80b8bb8a887a629aeb00951e5273a64598e6153b8580db428ee824f70f161e0"
+VKD3D_WASM_RELEASE_URL="https://github.com/kaltinril/ShadowDusk/releases/download/native-vkd3d-wasm-2.1"
+VKD3D_WASM_JS_SHA256="cc2c9499c5e91f8e04f93f868aae442e089df6ba1f0ce18d0bbdb0d7f8eb7e2c"
+VKD3D_WASM_WASM_SHA256="3e8c85104ab9a793220615e2ff22c3dc882d6dd1348cc20e16e7c9cfb7251a00"
 
 # restore_vkd3d_wasm_file <asset-name> <sha256>
 restore_vkd3d_wasm_file() {

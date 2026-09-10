@@ -231,23 +231,25 @@ public sealed class Phase41MacroTechniqueTests
 
     [Fact]
     [Trait("Platform", "FNA")]
-    public async Task Fna_BasicEffect_MacroRecovered_ThenLoudSm2RegisterLimit_NotSd0010()
+    public async Task Fna_BasicEffect_MacroRecovered_AndCompiles_NotSd0010()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
         CancellationToken ct = cts.Token;
 
-        // The FNA recovery DETECTS BasicEffect's macro techniques (GAP-1 fixed), so it no
-        // longer returns SD0010. BasicEffect's SM2 (vs_2_0/ps_2_0) expansion then runs out of
-        // SM2 temp registers during the MojoShader texkill/texld canonicalization patch (the
-        // patcher needs one more temp than the SM2 12-temp limit allows), which surfaces as the
-        // honest, loud SD0305 (a real shader-model limit, documented Phase 40) - NOT the
-        // technique-blindness.
+        // The FNA recovery DETECTS BasicEffect's macro techniques (GAP-1 fixed), so it never
+        // returns SD0010. Its SM2 expansion used to then run out of temp registers and fail
+        // loudly with SD0305; vkd3d 2.1's register allocator fits it, so BasicEffect now
+        // compiles all the way to a MojoShader-parseable fx_2_0. SkinnedEffect is still over
+        // the SM2 file (FnaCompileFixtureTests pins that loud failure).
         var (data, error) = await CompileAsync("BasicEffect.fx", PlatformTarget.Fna, ct);
 
-        data.ShouldBeNull();
-        error.ShouldNotBeNull();
-        error!.Code.ShouldBe("SD0305", customMessage: "GAP-1 is fixed on FNA (techniques recovered); BasicEffect then fails on the honest " +
-            "SM2 register-pressure limit (SD0305), not SD0010");
+        error.ShouldBeNull(customMessage: "GAP-1 is fixed on FNA (techniques recovered) and vkd3d 2.1 fits BasicEffect in the SM2 register file");
+        data.ShouldNotBeNull();
+
+        Fx2ParsedEffect effect = Fx2BinaryValidator.Parse(data!);
+        effect.Techniques.ShouldNotBeEmpty("BasicEffect declares macro techniques");
+        foreach (Fx2ParsedShader shader in effect.Shaders)
+            (shader.VersionToken & 0xFFFF).ShouldBeLessThanOrEqualTo(0x0300u, customMessage: $"shader version 0x{shader.VersionToken:X8} must be SM <= 3");
     }
 
     [Fact]
