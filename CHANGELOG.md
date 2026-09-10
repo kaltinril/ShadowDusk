@@ -14,6 +14,13 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **vkd3d-shader natives are now built for every desktop RID in CI, from a version input.**
+  `build-vkd3d-natives.yml` and `vkd3d-wasm-build.yml` take `version` + `tarball_sha256` as
+  workflow-dispatch inputs, so a future pin bump needs no workflow edit, and **win-x64 is CI-built
+  for the first time** (MSYS2 MINGW64, libgcc/winpthread linked statically, gated on an `objdump`
+  check that the DLL depends on system DLLs only) rather than being a local build a maintainer
+  uploaded by hand. Every RID's build smoke now compiles a `[loop]` with a data-dependent break at
+  `ps_3_0`, so a native that cannot do SM3 loops can never be published by accident.
 - **DX12 render gate joins the headless CI lane** (issue #209, follow-up to #204). The
   `BaselineDx12`+`CandidateDx12`+`compare_dx12.py` DX12 corpus was measured RED in #204's new
   `windows-latest` WARP job: `MonoGame.Framework.Native` compiles `SDL_WINDOW_VULKAN` into any
@@ -25,7 +32,35 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Changed
 
+- **The pinned vkd3d-shader native moves 1.17 to 2.1** (issue #212), for all four desktop RIDs and
+  the WASM build. This is the compiler that produces every DirectX and FNA byte, so **all DirectX
+  and FNA output changes** - a newer compiler selects different instructions. OpenGL, Vulkan and
+  DirectX 12 bytes are provably unchanged (those go through DXC, not vkd3d). The output format, the
+  default MGFX version, the public API and the MonoGame pin are all untouched.
+- **Ten fixtures that could not compile for FNA now do, with no regressions.** `BasicEffect` and
+  `EnvironmentMapEffect` (SM2 register pressure, the `SD0305` class), `DeferredSprite`,
+  `ForwardLighting` and Nez `Reflection` (int-typed ternary in `clip()`, if/else flattening), and
+  all three Apos.Shapes revisions plus `Sd0402UniformBoundedLoop` (loops with a runtime trip
+  count). `SkinnedEffect` still exceeds the `vs_2_0` register file and still says so loudly.
+
 ### Fixed
+
+- **`PlatformTarget.Fna`: a shader with a loop the compiler cannot unroll now compiles**
+  (issue #212). vkd3d 1.17 had no SM2-3 lowering for the `HLSL_IR_LOOP` node, so a `for` with a
+  runtime trip count, or any loop marked `[loop]`, failed with
+  `E5017: Aborting due to not yet implemented feature: Instruction type HLSL_IR_LOOP` - even though
+  `ps_3_0` supports dynamic looping and the same source compiled fine for OpenGL. vkd3d 2.0
+  implemented SM3 loops. One shape is still rejected upstream: a loop whose trip count is a
+  user-declared `int` **uniform**.
+- **DirectX 11: a pixel shader returning a struct with `COLOR0`/`COLOR1` fields compiles again.**
+  vkd3d 2.1 rejects a user-defined semantic on an SM4/5 pixel-shader output (`E5013`), which `fxc`
+  accepts and which is how MonoGame `.fx` files written against SM3 still build at `ps_4_0`.
+  ShadowDusk now passes vkd3d's `BACKWARD_COMPATIBILITY`/`MAP_SEMANTIC_NAMES` option on the SM4+
+  target, which covers the struct-field case the source rewrite deliberately cannot touch (the same
+  struct may be a vertex-shader output, where `COLOR` is legal).
+- **FNA: sampler parameters are typed from their declaration, matching `fxc`.** A bare
+  `sampler s0` read with `tex2D` was recorded as `D3DXPT_SAMPLER2D` where `fxc` records
+  `D3DXPT_SAMPLER`, and FNA binds off that table.
 
 ## [0.19.0] - 2026-09-10
 

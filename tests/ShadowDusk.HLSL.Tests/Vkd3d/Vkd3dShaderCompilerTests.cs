@@ -110,7 +110,7 @@ public sealed class Vkd3dShaderCompilerTests
 
     // Exactly the shape the FNA path hands this backend: the preprocessor's macro prelude
     // closed by a '#line 1 "user.fx"', then the user's file. The user's file carries every
-    // measured drift of vkd3d 1.17: a skipped conditional arm (vkd3d drops those lines from
+    // measured drift of vkd3d: a skipped conditional arm (vkd3d drops those lines from
     // its count), template-implemented intrinsics (atan2 +20 each, sincos +4, asin +11 - vkd3d
     // lexes their templates against the user's line counter), and a body whose diagnostic is
     // therefore reported 50-odd lines past a 15-line file. See
@@ -172,17 +172,19 @@ public sealed class Vkd3dShaderCompilerTests
     [Vkd3dFact]
     public void Compile_CodegenError_IsReportedOnTheAuthorsLine_Issue202()
     {
-        // The reporter's class: an int-typed ternary vkd3d 1.17 cannot lower at SM <= 3
-        // (E5017 'SM1 cmp expression of type int'), raised from codegen after the whole
-        // file parsed, so every template above it has already inflated the counter.
-        var result = CompileIssue202(Issue202Prelude + Issue202User("    clip((uv.x < b) ? -1 : 1);"));
+        // The reporter's class: a construct vkd3d cannot lower at SM <= 3, raised from
+        // codegen after the whole file parsed, so every intrinsic template above it has
+        // already inflated the counter. (The original case here was an int-typed ternary;
+        // vkd3d 2.0 implemented that, so the case is now a vector store through a runtime
+        // index. What is under test is the relocation, never the particular gap.)
+        var result = CompileIssue202(Issue202Prelude + Issue202User("    float3 v = uv.xyy; v[i] = a; b = v.x + v.y + v.z;"));
 
         result.IsFailure.ShouldBeTrue();
         result.Error.Code.ShouldBe("E5017");
-        result.Error.Message.ShouldContain("SM1 cmp expression of type int", Case.Sensitive);
+        result.Error.Message.ShouldContain("Non-constant vector addressing on store", Case.Sensitive);
         result.Error.File.ShouldBe("user.fx");
         result.Error.Line.ShouldBe(13);
-        result.Error.Column.ShouldBeInRange(5, 30, "a token of the clip/ternary itself");
+        result.Error.Column.ShouldBeInRange(24, 32, "a token of the 'v[i] = a' store itself");
     }
 
     [Vkd3dFact]

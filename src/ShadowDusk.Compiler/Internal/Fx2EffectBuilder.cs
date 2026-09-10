@@ -225,7 +225,7 @@ internal static class Fx2EffectBuilder
             {
                 Name = c.Name,
                 Class = 4,                     // OBJECT
-                Type = c.Type,                 // SAMPLER / SAMPLER2D / SAMPLERCUBE / … from CTAB
+                Type = Fx2SamplerTypeOf(info?.SamplerType) ?? c.Type,
                 SamplerStates = states,
             });
         }
@@ -272,6 +272,24 @@ internal static class Fx2EffectBuilder
     }
 
     // -------------------------------------------------------------------------
+    /// <summary>
+    /// The D3DXPARAMETER_TYPE a sampler declaration carries in fxc's parameter table.
+    /// <c>fxc</c> types the parameter by what the source DECLARED; vkd3d infers a
+    /// dimensioned type from how the sampler is used, so a bare <c>sampler s0</c> read
+    /// with <c>tex2D</c> comes back as SAMPLER2D where fxc says SAMPLER. FNA binds off
+    /// this table, so the declaration wins and the CTAB is the fallback for declarations
+    /// we do not model (SM4-style <c>SamplerState</c>, samplers with no FX declaration).
+    /// </summary>
+    private static int? Fx2SamplerTypeOf(string? declaredSamplerType) => declaredSamplerType switch
+    {
+        "sampler"     => 10,   // D3DXPT_SAMPLER
+        "sampler1D"   => 11,   // D3DXPT_SAMPLER1D
+        "sampler2D"   => 12,   // D3DXPT_SAMPLER2D
+        "sampler3D"   => 13,   // D3DXPT_SAMPLER3D
+        "samplerCUBE" => 14,   // D3DXPT_SAMPLERCUBE
+        _             => null,
+    };
+
     // Sampler-state mapping: raw sampler_state key/value strings → fx_2_0 records.
     // -------------------------------------------------------------------------
 

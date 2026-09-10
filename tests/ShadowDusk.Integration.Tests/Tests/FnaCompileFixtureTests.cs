@@ -118,6 +118,14 @@ public sealed class FnaCompileFixtureTests
         "examples/ExLegacyTextureAnnotation.fx",
         "examples/ExVsColorReturn.fx",
         "examples/ExArrayTernaryAssign.fx",
+        // Phase 56 — vkd3d 2.0/2.1 closed the SM <= 3 gaps these sat behind: SM3 loops
+        // (Sd0402UniformBoundedLoop's runtime-bounded for), the int-typed ternary in
+        // clip((c < x) ? -1 : 1) (DeferredSprite, ForwardLighting) and enough register
+        // pressure relief for the SM2 stock effects (BasicEffect, EnvironmentMapEffect).
+        "examples/Sd0402UniformBoundedLoop.fx",
+        "DeferredSprite.fx",
+        "ForwardLighting.fx",
+        "EnvironmentMapEffect.fx",
         // B10: a free uniform named 'noise' (a GLSL reserved word). The bug was
         // OpenGL-only (SPIRV-Cross rename); on FNA 'noise' is an ordinary SM3 const,
         // so the fx_2_0 path compiles it and binds it under its original name.
@@ -394,27 +402,30 @@ public sealed class FnaCompileFixtureTests
         cullStates[0].DwordValue.ShouldBe(1u, customMessage: "the LAST assignment (NONE = D3DCULL_NONE = 1) wins, not CW (2)");
     }
 
-    // DeferredSprite.fx and ForwardLighting.fx hit the documented vkd3d 1.17 construct
-    // gap (plan/DONE/PHASE-39-fna-fx2-output-target.md, "Known limitations"): int-typed
-    // ternary in `clip((c < x) ? -1 : 1)` is unimplemented at SM ≤ 3 (vkd3d's E5017).
+    // Fixtures that sit past what vkd3d implements for SM ≤ 3: a vector store through a
+    // runtime index (ParameterTypes.fx) and SM2 register pressure (SkinnedEffect.fx).
     //
     // The contract pinned here is the loud-failure half: the compile FAILS (never silently
     // degrades or substitutes a compiler) and the diagnostic names the offending source
-    // file. Since 0.15.0 vkd3d's E5017 text comes through verbatim with a real line, and
-    // since issue #202 that line is the author's clip(...) line rather than vkd3d's drifted
-    // one — FnaDiagnosticLocationTests pins the exact location on these same two fixtures.
+    // file. vkd3d's own message comes through verbatim with a real line, and since issue
+    // #202 that line is the author's rather than vkd3d's drifted one —
+    // FnaDiagnosticLocationTests pins the exact location on these same two fixtures.
+    //
+    // The cases move when the pin does. vkd3d 2.1 implemented SM3 loops and the int-typed
+    // ternary in `clip((c < x) ? -1 : 1)`, so DeferredSprite.fx, ForwardLighting.fx and the
+    // Apos.Shapes revisions moved out of here and into the compiling corpus.
     [FnaTheory]
-    [InlineData("DeferredSprite.fx")]
-    [InlineData("ForwardLighting.fx")]
-    public async Task IntTernaryClip_Fna_FailsLoudlyOnVkd3dGap(string fx)
+    [InlineData("third-party/MonoGame/ParameterTypes.fx")]
+    [InlineData("SkinnedEffect.fx")]
+    public async Task UnsupportedSm3Construct_Fna_FailsLoudlyOnVkd3dGap(string fx)
     {
         using var cts = new CancellationTokenSource(CompileTimeout);
 
         var result = await CompileFnaFileAsync(TestHelpers.FixturePath(fx), cts.Token);
 
-        result.IsFailure.ShouldBeTrue($"'{fx}' uses an int-typed ternary, a known vkd3d 1.17 SM ≤ 3 gap");
+        result.IsFailure.ShouldBeTrue($"'{fx}' sits past what vkd3d implements at SM ≤ 3");
         result.Error.ShouldNotBeEmpty("the failure must surface diagnostics");
-        result.Error.ShouldContain(e => Path.GetFileName(e.File) == fx, "the diagnostic must name the offending source file");
+        result.Error.ShouldContain(e => Path.GetFileName(e.File) == Path.GetFileName(fx), "the diagnostic must name the offending source file");
         result.Error.ShouldAllBe(e => !string.IsNullOrWhiteSpace(e.Message), customMessage: "every surfaced error must carry a message, not be swallowed");
     }
 
