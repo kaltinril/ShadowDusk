@@ -3,9 +3,11 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
 
+  <!-- Vortice.Direct3D12 is deliberately ABSENT (dropped in Phase 63, issue #203): it carries one
+       type the CLR refuses to load, and MonoGame 3.8.5's Content Builder GetTypes()-scans every
+       consumer dependency unguarded. The ID3D12ShaderReflection interop is ShadowDusk-owned now. -->
   <ItemGroup Label="DXC">
     <PackageVersion Include="Vortice.Dxc" Version="3.3.4" />
-    <PackageVersion Include="Vortice.Direct3D12" Version="3.5.0" />
   </ItemGroup>
 
   <ItemGroup Label="D3DCompiler (DXBC oracle backend — managed wrapper restores cross-platform; runtime is Windows-only, guarded by OperatingSystem.IsWindows())">
