@@ -289,7 +289,7 @@ jobs:
       - name: Smoke-test (vkd3d-compiler, SM3 incl. dynamic loop)
         working-directory: ${{ env.VKD3D_SRC }}
         run: |
-          make -j"$(nproc)" vkd3d-compiler
+          make -j"$(nproc)" vkd3d-compiler.exe   # MinGW builds programs with the .exe suffix
           bash "$GITHUB_WORKSPACE/.github/scripts/vkd3d-smoke.sh" ./vkd3d-compiler.exe
 
       # The dll must depend on SYSTEM dlls only. A leaked libgcc_s_seh-1.dll,
