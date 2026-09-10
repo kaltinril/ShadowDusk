@@ -110,6 +110,7 @@ Source of truth for statements about the project. One short fact per line. Updat
 
 - `validation/*` drivers are deliberately outside `ShadowDusk.slnx`, so `dotnet test` never runs them.
 - The in-process OpenGL render gates run in CI on Linux via Mesa llvmpipe (`validation-render.yml`); the KNI WebGL smoke runs in `wasm.yml`.
+- Four DX render gates (`DxModernFeatures`, `KniWinFormsDX`, `BaselineDx`+`CandidateDx`, `BaselineDx12`+`CandidateDx12`) run in CI on `windows-latest` pinned to WARP (Windows' bundled software D3D rasterizer, `SHADOWDUSK_DX_WARP=1`, same `validation-render.yml` workflow, issue #204). The Apos.Shapes DX/DX12 gallery, the ShaderToy DX route, FNA, real-KNI-desktop-GL, Vulkan, and browser-ANGLE stay manual-only via `run-windows-render-gates.ps1` — no headless driver exists for those yet.
 - CI's browser smoke renders on SwiftShader, which is structurally blind to ANGLE-D3D11 behavior such as the issue-#136 gradient poisoning. (This is *why* the ANGLE probe in the local gate cannot move to CI.)
 - The integration lane runs automatically on pushes to `main` but on PRs only when the `run-integration` label is applied.
 - Slow `ShadowDusk.Integration.Tests` runs are environmental (antivirus scanning cold native binaries), not algorithmic; `--settings ShadowDusk.runsettings` gives a 5-minute session backstop.

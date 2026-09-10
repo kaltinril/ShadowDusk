@@ -14,6 +14,19 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **Headless DirectX render gate in CI** (issue #204). A new `windows-latest` job in
+  `validation-render.yml` runs four DX render gates pinned to **WARP** (Windows' bundled
+  software D3D rasterizer, no GPU needed on the runner) instead of a hardware adapter -
+  `DxModernFeatures`, `KniWinFormsDX`, the `BaselineDx`+`CandidateDx` DX11 corpus, and the
+  `BaselineDx12`+`CandidateDx12` DX12 corpus - closing the "DX render gates are Windows-box-only"
+  gap `docs/validation-matrix.md` and `CLAUDE.md` called out. The pin is opt-in via
+  `SHADOWDUSK_DX_WARP=1` (`validation/SharedDx/DxHeadlessRasterizer.cs` for MonoGame's static
+  `GraphicsAdapter.UseDriverType`; a local `PreparingDeviceSettings` hook in
+  `KniWinFormsDX/Program.cs` for KNI's per-device `PresentationParameters.UseDriverType`), so a
+  developer's local `dotnet run` is unaffected and keeps rendering on the real GPU. The Apos.Shapes
+  DX/DX12 gallery, the ShaderToy DX route, and FNA stay manual-only for now (not a WARP limitation,
+  just not the smallest first step); Vulkan needs Mesa lavapipe, not WARP, and is out of scope here.
+
 - **`ShadowDusk.ContentPipeline`: the importer/processor pair as a library, for MonoGame 3.8.5's
   Content Builder project** (Phase 63, issue #203, requested by aitorciki). 3.8.5's
   template-default content story is a C# `ContentBuilder` the consumer owns, which needs

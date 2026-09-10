@@ -11,6 +11,9 @@ using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
 using ShadowDusk.Validation;
+using ShadowDusk.Validation.Dx;
+
+DxHeadlessRasterizer.PinIfRequested();
 
 string repoRoot = ShaderInputs.FindRepoRoot();
 string shaderDir = Path.Combine(repoRoot, "tests", "fixtures", "shaders");

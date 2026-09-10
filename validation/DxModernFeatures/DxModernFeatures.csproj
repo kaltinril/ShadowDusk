@@ -16,4 +16,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\SharedDx\DxHeadlessRasterizer.cs" />
+  </ItemGroup>
 </Project>
