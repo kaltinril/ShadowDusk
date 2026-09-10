@@ -108,7 +108,7 @@ where it does, so future work doesn't drift across it.)*
   diagnostic; patch *minimally and surgically* on our side of the boundary (the
   `D3d9BytecodePatcher` pattern — byte-level-tested, documented, reversible); record an
   upstream-fix follow-up. Never "just handle it in our compiler" — we don't have one.
-- **Pin versions; bumps are deliberate events** (vkd3d stays at 1.17 because output
+- **Pin versions; bumps are deliberate events** (vkd3d is pinned at 2.1 because output
   byte-stability is a product promise — a bump re-baselines goldens and re-runs rung-4).
 - **One faithful pipeline, no substitute compilers** (the standing rule): leverage only
   works if every host runs the *same* upstream components — which is also exactly what
@@ -157,7 +157,7 @@ Where each host×target cell stands (updated 2026-07-27; proven cells carry thei
 > investigated under a shader-lens phase (the carve-out is documentation, not a fix);
 > consumer-visible caveat: docfx/guides/parameters-and-caveats.md.
 >
-> Phase 37 C (2026-06-10) hosted all four pinned vkd3d 1.17 per-RID binaries and made
+> Phase 37 C (2026-06-10) hosted all four pinned vkd3d 2.1 per-RID binaries and made
 > `tools/restore.*` provision them everywhere — which also surfaced (via CI) that the
 > earlier "DX11 on Linux ✅" claim was overstated: vkd3d produced the DXBC fine, but the
 > `.mgfx` pipeline's reflection step still P/Invoked Windows-only `D3DReflect`
@@ -173,7 +173,7 @@ Every gap above was a **packaging/porting gap, never a compiler-writing gap** �
 artifact, **vkd3d-shader compiled to WASM (Phase 4.1, ✅ done 2026-06-12)**, closed the
 entire browser column: the fx_2_0 writer, bytecode patcher, and reflection are managed C#
 that already ran in WASM, so vkd3d.wasm unlocked **both** DX and FNA export in the browser
-from the same pinned 1.17 source (no substitute compiler). The evidence: the node gate
+from the same pinned 2.1 source (no substitute compiler). The evidence: the node gate
 replays every vkd3d stage compile of the byte-identity corpus through the product shim,
 **94/94** byte-identical to the desktop native; a real headless browser running the real
 `WasmShaderCompiler` reproduces the full artifacts (DX `.mgfx` + FNA `.fxb`)
@@ -185,4 +185,4 @@ completion order, Vulkan (Phase 32) is now rung-4 proven on MonoGame `DesktopVK`
 stays validation-gated; the desktop GL column's remaining tail is the Linux/macOS rung-4
 render items noted in the matrix.
 
-> **DirectX DXBC now works (Phase 18, done 2026-05-30).** DXC compiles to **DXIL (SM6)**, not the **DXBC (SM ≤ 5)** MonoGame 3.8's DX11 runtime loads — so the DX11 path no longer uses DXC. It routes through a DXBC backend behind `IDxbcShaderCompiler`: the cross-platform **vkd3d-shader** library (HLSL → DXBC_TPF) is the shipping backend, with Windows-only `d3dcompiler_47.dll` as a correctness oracle. DXC `ps_6_0`/`vs_6_0` (DXIL) is retained only for the DX12/KNI path. **Both OpenGL (Phase 17) and DirectX (Phase 18) are now validated end-to-end** in the real MonoGame runtime for the SM3/SM5 PS-only corpus (10/10 each); the DX backend's selector defaults to `DxbcBackend.Vkd3d` on every OS (host-independent default output, since 0.5.0), with the `d3dcompiler_47` oracle opt-in. WASM + DirectX DXBC, long the open problem, closed 2026-06-12: the same pinned vkd3d 1.17 compiled to WASM ships in `ShadowDusk.Wasm`, byte-identical to desktop (Phase 4.1).
+> **DirectX DXBC now works (Phase 18, done 2026-05-30).** DXC compiles to **DXIL (SM6)**, not the **DXBC (SM ≤ 5)** MonoGame 3.8's DX11 runtime loads — so the DX11 path no longer uses DXC. It routes through a DXBC backend behind `IDxbcShaderCompiler`: the cross-platform **vkd3d-shader** library (HLSL → DXBC_TPF) is the shipping backend, with Windows-only `d3dcompiler_47.dll` as a correctness oracle. DXC `ps_6_0`/`vs_6_0` (DXIL) is retained only for the DX12/KNI path. **Both OpenGL (Phase 17) and DirectX (Phase 18) are now validated end-to-end** in the real MonoGame runtime for the SM3/SM5 PS-only corpus (10/10 each); the DX backend's selector defaults to `DxbcBackend.Vkd3d` on every OS (host-independent default output, since 0.5.0), with the `d3dcompiler_47` oracle opt-in. WASM + DirectX DXBC, long the open problem, closed 2026-06-12: the same pinned vkd3d 2.1 compiled to WASM ships in `ShadowDusk.Wasm`, byte-identical to desktop (Phase 4.1).

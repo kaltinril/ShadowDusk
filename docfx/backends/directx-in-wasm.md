@@ -4,7 +4,7 @@
 
 ## What works
 
-`ShadowDusk.Wasm`'s `WasmShaderCompiler` accepts `PlatformTarget.DirectX` and `PlatformTarget.Fna` in the browser. Both routes run the **same pinned `vkd3d-shader` 1.17 the desktop uses, compiled to WebAssembly** — never a substitute compiler:
+`ShadowDusk.Wasm`'s `WasmShaderCompiler` accepts `PlatformTarget.DirectX` and `PlatformTarget.Fna` in the browser. Both routes run the **same pinned `vkd3d-shader` 2.1 the desktop uses, compiled to WebAssembly** — never a substitute compiler:
 
 | Target | Output |
 |---|---|
