@@ -114,19 +114,45 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   platform actually running. FNA's whitelist is the binding constraint (it has no `'V'` for
   DesktopVK and no `'G'` for DirectX 12), which is why the FNA target maps to `'w'`.
 
-  The type-reader manifest is emitted exactly as `dotnet mgcb` emits it, including the assembly
-  version, which is inert but whose *shape* is load-bearing and on which the three runtimes
-  disagree: MonoGame only strips the version when the name contains `PublicKeyToken`, while FNA
-  requires the full `, <assembly>, Version=…, Culture=…, PublicKeyToken=…` triple and a recognised
-  assembly name — so a bare `…, MonoGame.Framework` would resolve on MonoGame and fail on FNA.
+  **The type-reader manifest is the XNA-4.0 name**
+  (`Microsoft.Xna.Framework.Content.EffectReader, Microsoft.Xna.Framework.Graphics, Version=4.0.0.0,
+  Culture=neutral, PublicKeyToken=842cf8be1de50553`), what KNI's own content pipeline and XNA
+  itself write, and the only name measured to load on every consumer runtime (Phase 64,
+  2026-09-09: MonoGame 3.8.1.263 / 3.8.2.1105 / 3.8.5, KNI 4.2.9001 / 4.3.9001, FNA 26.06). Phase
+  60 first emitted the mgcb-shaped name (`…, MonoGame.Framework, Version=3.8.4.1, …`), reasoning
+  that what every shipped MonoGame game already carries cannot be wrong; **it was wrong for KNI**:
+  KNI 4.2.9001's reader-name resolver throws `FileLoadException: The given assembly name was
+  invalid.` on it (stock `dotnet mgcb` `.xnb` files fail on KNI 4.2 identically; 4.3.9001 catches
+  the exception). The version and token values are inert on every runtime — MonoGame only strips
+  the version when the name contains `PublicKeyToken`, FNA requires the full
+  `, <assembly>, Version=…, Culture=…, PublicKeyToken=…` triple — but the shape is load-bearing,
+  and the XNA-4.0 shape is the intersection of the three resolvers. The mgcb-shaped string never
+  shipped in a release, so nothing a consumer holds changes.
 
-  Evidence: the envelope is byte-for-byte stock MGCB's through the type id; the payload is
-  byte-for-byte the CLI's; and **rung 4** — the new `validation/XnbContentLoad` driver builds each
-  fixture through both stock `dotnet mgcb` and ShadowDusk, loads both with a real
-  `ContentManager.Load<Effect>(assetName)`, and requires pixel-identical renders (4/4 fixtures,
-  1,230,720 px identical each, against `dotnet-mgcb` 3.8.4.1). Default-ON in
-  `validation/run-windows-render-gates.ps1`. The MGCB plugin is unaffected and stays: it serves
-  teams who *want* MGCB in their build.
+  Evidence: the envelope is byte-for-byte stock MGCB's field for field except the reader name
+  (asserted equal to the XNA-4.0 constant); the payload is byte-for-byte the CLI's; and
+  **rung 4 on every consumer family, all maxd 0** — `validation/XnbContentLoad` (real MonoGame
+  WindowsDX `ContentManager.Load<Effect>` vs stock mgcb's `.xnb`, 4/4 fixtures, 1,230,720 px
+  identical each), `validation/XnbContentLoadGl` (the same on MonoGame DesktopGL, the most common
+  consumer, 4/4), `validation/KniXnbContentLoad` (real KNI SDL2.GL, built against **both**
+  4.2.9001 and 4.3.9001, MGFX v10 **and** KNIFX payloads vs the mgcb payload, 4/4 each — and it
+  pins that a stock mgcb `.xnb` is *rejected* on 4.2, the positive control for the manifest
+  choice), and the `.xnb` arm of `validation/FnaValidation` (every gate shader's `.fxb` through a
+  real FNA 26.06 `ContentManager`, 17/17 within 4/255 of the `fxc` oracle and maxd 0 of the
+  raw-bytes arm). The MonoGame and KNI gates are default-ON in
+  `validation/run-windows-render-gates.ps1`; the FNA arm rides `-IncludeFna`. The MGCB plugin is
+  unaffected and stays: it serves teams who *want* MGCB in their build. (On KNI ≤ 4.2.9001 the
+  direct route is the one that works: MGCB, stock or through the plugin, writes the mgcb-shaped
+  manifest KNI 4.2 rejects.)
+
+  Two CLI touches ride with it: the usage text now documents that an `.xnb` output extension
+  selects the container, and **`SD0029`**, a warning (never an error, never a required flag)
+  when an `.xnb` is written with **no `/Profile:` and no `--target-runtime`** — the implicit
+  `DirectX_11` default is correct for a WindowsDX game but a DesktopGL / Android / iOS / macOS /
+  KNI-GL game rejects it at `Content.Load` with a message that names neither the profile nor
+  this tool. Naming any profile keeps stderr empty, so the MGCB empty-stderr contract for
+  explicit invocations holds. The consumer docs now state the platform-byte table, restate the
+  default beside every `.xnb` example, and tabulate the wrong-runtime failure texts.
 
 - **`FX0014`, a registered diagnostic for the shader stages the consumer runtime cannot load**
   (Phase 58 Area C). A pass assigning `HullShader`, `DomainShader`, `GeometryShader`, or

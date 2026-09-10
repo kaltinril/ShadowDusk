@@ -157,6 +157,27 @@ internal sealed class PipelineRunner
             ? compileResult.Value.ToXnb()
             : compileResult.Value.Data;
 
+        // SD0029 (Phase 64 C2): an .xnb written for the IMPLICIT default profile. The default
+        // is DirectX_11 (mgfxc parity) and stays so; but an .xnb is by definition headed for a
+        // game's Content directory, and a DesktopGL / Android / iOS / macOS / KNI-GL game
+        // rejects a DirectX payload at Content.Load with a message that names neither the
+        // profile nor this tool. A warning, never an error and never a required flag: the file
+        // is correct for a WindowsDX game, and passing /Profile: (or --target-runtime) silences
+        // it. Emitted in the MGCB-parseable warning form like every other non-fatal diagnostic.
+        if (wrapAsXnb && !args.TargetIsExplicit)
+        {
+            var advisory = new ShaderError(
+                File: args.SourceFile, Line: 0, Column: 0, Code: "SD0029",
+                Message: "no /Profile: given, so this .xnb holds a DirectX_11 (WindowsDX) effect, the " +
+                         "CLI default. A MonoGame DesktopGL / Android / iOS / macOS game fails at " +
+                         "Content.Load<Effect> with 'This MGFX effect was built for a different " +
+                         "platform!' and KNI with 'Effect profile 'DirectX_11' is not compatible with " +
+                         "the graphics backend 'OpenGL''. Pass /Profile:OpenGL (or the profile your " +
+                         "game targets) to silence this; the output is correct for WindowsDX as is.",
+                Severity: ShaderErrorSeverity.Warning);
+            Console.Error.WriteLine(MgcbErrorFormatter.Format(advisory));
+        }
+
         // Non-fatal diagnostics — the underlying compiler's verbatim warnings plus
         // the GL portability findings (SD0400-SD0499). Printed to stderr in the
         // MGCB-parseable warning form without failing the build, the same contract

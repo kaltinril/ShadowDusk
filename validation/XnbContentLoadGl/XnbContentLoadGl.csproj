@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- The MonoGame DesktopGL arm of the XNB Content.Load gate (Phase 64). Cross-platform
+         (SDL2 + OpenGL), unlike its WindowsDX sibling validation/XnbContentLoad, and it
+         shares that sibling's driver source verbatim (XnbContentLoadDriver.cs) so the two
+         proofs cannot drift. Needs the pinned dotnet-mgcb (dotnet tool restore) for the
+         reference arm and a real GL device. Intentionally NOT in ShadowDusk.slnx, like every
+         validation/* harness. -->
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RootNamespace>ShadowDusk.Validation.XnbContentLoad</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MonoGame.Framework.DesktopGL" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\XnbContentLoad\XnbContentLoadDriver.cs" />
+  </ItemGroup>
+</Project>

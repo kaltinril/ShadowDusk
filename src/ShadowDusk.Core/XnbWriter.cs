@@ -19,7 +19,8 @@ namespace ShadowDusk.Core;
 ///
 /// <para><b>Byte layout</b> (uncompressed single-effect asset), measured from real
 /// <c>dotnet-mgcb</c> 3.8.4.1 output for <c>/platform:</c> Windows, DesktopGL, Android, iOS and
-/// MacOSX — not transcribed from documentation:</para>
+/// MacOSX — not transcribed from documentation. Identical to mgcb's field for field; the one
+/// value that deliberately differs is the reader name (see <see cref="EffectReaderTypeName"/>):</para>
 /// <code>
 /// 'X' 'N' 'B'                 magic
 /// &lt;platform&gt;            one of the runtime's accepted identifiers (see PlatformIdentifierFor)
@@ -45,31 +46,39 @@ public static class XnbWriter
     public const byte FormatVersion = 5;
 
     /// <summary>
-    /// The type-reader manifest entry for an effect, <b>byte-identical to what <c>mgcb</c>
-    /// writes</b>.
+    /// The type-reader manifest entry for an effect: the <b>XNA 4.0</b> name, which is what
+    /// XNA itself wrote and what KNI's own content pipeline
+    /// (<c>CompiledEffectWriter</c>) still writes.
     ///
-    /// <para><b>The embedded assembly version is deliberate and is deliberately ignored by every
-    /// consumer runtime.</b> All three strip it before resolving the reader, but they do not
-    /// strip it the same way, and the intersection of their rules is exactly this string:</para>
+    /// <para><b>This is the only reader name measured to load on every consumer runtime</b>
+    /// (Phase 64, 2026-09-09: MonoGame 3.8.1.263 / 3.8.2.1105 / 3.8.5, KNI 4.2.9001 / 4.3.9001,
+    /// FNA 26.06 — each a real <c>ContentManager.Load&lt;Effect&gt;</c> rendering pixel-identical
+    /// to that runtime's reference). It is the intersection of three resolvers that all strip
+    /// the version but do not agree on anything else:</para>
     /// <list type="bullet">
-    ///   <item><b>MonoGame</b> (<c>ContentTypeReaderManager.PrepareType</c>) only runs its
-    ///   version-stripping regex when the name <i>contains <c>PublicKeyToken</c></i> — so the
-    ///   token must be present even though its value is irrelevant.</item>
+    ///   <item><b>MonoGame</b> (<c>ContentTypeReaderManager.PrepareType</c>) strips the version
+    ///   only when the name <i>contains <c>PublicKeyToken</c></i>, then replaces
+    ///   <c>, Microsoft.Xna.Framework.Graphics</c> with its own assembly name.</item>
     ///   <item><b>FNA</b> matches one compiled regex requiring the <i>full</i>
-    ///   <c>, &lt;assembly&gt;, Version=…, Culture=…, PublicKeyToken=…</c> triple, and requires
-    ///   the assembly to be one of <c>Microsoft.Xna.Framework[.Graphics|.Video]</c> or
-    ///   <c>MonoGame.Framework</c>. A bare <c>…, MonoGame.Framework</c> with no version does
-    ///   <b>not</b> match, and FNA would then fail to resolve the reader.</item>
-    ///   <item><b>KNI</b> is a MonoGame fork and consumes stock <c>mgcb</c> output, which is
-    ///   this string.</item>
+    ///   <c>, &lt;assembly&gt;, Version=…, Culture=…, PublicKeyToken=…</c> triple with the
+    ///   assembly being one of <c>Microsoft.Xna.Framework[.Graphics|.Video]</c> or
+    ///   <c>MonoGame.Framework</c>; a bare <c>…, MonoGame.Framework</c> does <b>not</b> match.</item>
+    ///   <item><b>KNI</b> (<c>ContentTypeReaderManager.ResolveReaderType</c>) maps
+    ///   <c>, Microsoft.Xna.Framework.Graphics</c> to <c>Xna.Framework.Graphics</c> first. The
+    ///   mgcb-shaped name (<c>…, MonoGame.Framework, Version=3.8.4.1, …</c>) takes a later
+    ///   branch that appends KNI's assembly name to the stripped string and calls
+    ///   <c>Type.GetType</c> on a two-assembly name, which throws
+    ///   <c>FileLoadException: The given assembly name was invalid.</c> on KNI ≤ 4.2.9001
+    ///   (4.3.9001 catches it). <b>Stock mgcb's own <c>.xnb</c> fails on KNI 4.2 for exactly this
+    ///   reason</b>, so "emit what mgcb emits" — Phase 60's first choice — was wrong for KNI.</item>
     /// </list>
-    /// So the version number here is inert, but the <i>shape</i> around it is load-bearing.
-    /// Emitting exactly what <c>mgcb</c> emits is the choice that cannot be wrong: every
-    /// <c>.xnb</c> in every shipped MonoGame game already carries it.
+    /// The version and token values are inert on every runtime; the <i>shape</i> is what is
+    /// load-bearing. One string everywhere: deriving a per-runtime manifest would make a
+    /// consumer opt in to get correct output, which the seamlessness directive forbids.
     /// </summary>
     public const string EffectReaderTypeName =
-        "Microsoft.Xna.Framework.Content.EffectReader, MonoGame.Framework, "
-        + "Version=3.8.4.1, Culture=neutral, PublicKeyToken=null";
+        "Microsoft.Xna.Framework.Content.EffectReader, Microsoft.Xna.Framework.Graphics, "
+        + "Version=4.0.0.0, Culture=neutral, PublicKeyToken=842cf8be1de50553";
 
     /// <summary>
     /// Returns the XNB platform identifier byte for <paramref name="target"/>.

@@ -93,7 +93,12 @@ ShadowDusk/
 │                                  #   Android (AndroidGl), v11 (MonoGameV11), browser-ANGLE (AngleDerivativeProbe),
 │                                  #   direct .xnb (XnbContentLoad: builds each fixture through BOTH stock
 │                                  #     dotnet-mgcb and ShadowDusk's XnbWriter, loads both with a real
-│                                  #     ContentManager.Load<Effect>, requires pixel-identical renders - Phase 60),
+│                                  #     ContentManager.Load<Effect>, requires pixel-identical renders - Phase 60;
+│                                  #     KniXnbContentLoad: the same claim on real KNI, built against nkast
+│                                  #       4.2.9001 AND 4.3.9001, v10 + KNIFX .xnb vs the mgcb payload, and pins
+│                                  #       that stock mgcb output is rejected on 4.2 (Phase 64);
+│                                  #     the FNA arm lives inside FnaValidation, the DesktopGL arm is
+│                                  #       XnbContentLoadGl - Phase 64),
 │                                  #   Content Builder (ContentBuilder: a REAL MonoGame 3.8.5 ContentBuilder builds
 │                                  #     the fixtures through the stock pair AND ShadowDusk.ContentPipeline's pair,
 │                                  #     asserts payload == CLI + envelope == stock, Content.Load<Effect>s both on

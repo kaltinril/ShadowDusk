@@ -1,0 +1,67 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Phase 64 (issue #199) - KNI `Content.Load<Effect>` rung-4 gate for the direct .xnb writer.
+
+    The drop-in claim is "replace your content pipeline with ShadowDusk and change no lines of
+    code". On KNI that claim was BROKEN until Phase 64: KNI 4.2.9001's ContentTypeReaderManager
+    throws on the mgcb-shaped type-reader name (stock mgcb .xnb files fail on it identically),
+    which is why XnbWriter now emits the XNA-4.0 name. This driver proves the fix on a REAL KNI
+    runtime: it builds each fixture through stock dotnet-mgcb (/platform:DesktopGL) AND through
+    ShadowDusk + XnbWriter (MGFX v10 and KNIFX), loads them all through a real KNI
+    ContentManager.Load<Effect>(assetName), renders through one SpriteBatch scene, and requires
+    pixel-identity (maxd 0) against the mgcb payload. It ALSO asserts the KNI fact that made the
+    fix necessary: on 4.2 the stock mgcb .xnb must FAIL to load (a positive control that the
+    reader name is what matters), on 4.3 it must load.
+
+    Built TWICE, because the resolver differs between KNI versions (see README.md for the
+    exact commands): once with the default KniVersion (4.2.9001), once with
+    /p:KniVersion=4.3.9001.
+    The requested version is baked in as assembly metadata and checked against the runtime
+    that actually loaded, so a stale build cannot pass as the other version. Each version keeps
+    its own lock file (packages.<version>.lock.json), so switching does not churn a shared one.
+
+    Same KNI wiring as validation/KniDesktopGL (SDL2.GL desktop, KniPlatform=DesktopGL,
+    DESKTOPGL define). Intentionally NOT in ShadowDusk.slnx; opted out of central package
+    management so the nkast pins stay local to this harness.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <RollForward>Major</RollForward>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RootNamespace>ShadowDusk.Validation.KniXnbContentLoad</RootNamespace>
+    <DefineConstants>$(DefineConstants);DESKTOPGL</DefineConstants>
+    <KniPlatform>DesktopGL</KniPlatform>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <!-- The KNI line under test. 4.2.9001 = the version every other KNI harness in this repo
+         pins (and the one whose resolver rejects the mgcb-shaped manifest); 4.3.9001 = the
+         first version that catches that exception. Override with /p:KniVersion=... -->
+    <KniVersion Condition="'$(KniVersion)' == ''">4.2.9001</KniVersion>
+    <NuGetLockFilePath>packages.$(KniVersion).lock.json</NuGetLockFilePath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Baked in so Program.cs can assert the runtime that loaded IS the requested line. -->
+    <AssemblyMetadata Include="KniVersion" Value="$(KniVersion)" />
+  </ItemGroup>
+
+  <ItemGroup Label="KNI (nkast) - SDL2 desktop OpenGL runtime, version-parameterised">
+    <PackageReference Include="nkast.Xna.Framework" Version="$(KniVersion).*" />
+    <PackageReference Include="nkast.Xna.Framework.Content" Version="$(KniVersion).*" />
+    <PackageReference Include="nkast.Xna.Framework.Graphics" Version="$(KniVersion).*" />
+    <PackageReference Include="nkast.Xna.Framework.Audio" Version="$(KniVersion).*" />
+    <PackageReference Include="nkast.Xna.Framework.Media" Version="$(KniVersion).*" />
+    <PackageReference Include="nkast.Xna.Framework.Input" Version="$(KniVersion).*" />
+    <PackageReference Include="nkast.Xna.Framework.Game" Version="$(KniVersion).*" />
+    <PackageReference Include="nkast.Kni.Platform.SDL2.GL" Version="$(KniVersion).*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
+  </ItemGroup>
+
+</Project>

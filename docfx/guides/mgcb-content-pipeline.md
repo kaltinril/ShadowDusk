@@ -128,9 +128,17 @@ ShadowDuskCLI Content/MyEffect.fx Content/MyEffect.xnb /Profile:OpenGL
 ```
 
 Drop the file where the pipeline-built one used to go and `Content.Load<Effect>("MyEffect")` keeps
-working unchanged — the container matches what MGCB writes (verified against a real `dotnet-mgcb`
-build, loaded through a real `ContentManager`, rendered pixel-identically). From the library it is
+working unchanged — verified against a real `dotnet-mgcb` build, loaded through a real
+`ContentManager`, rendered pixel-identically, on MonoGame (WindowsDX and DesktopGL), KNI (4.2.9001
+and 4.3.9001) and FNA. Name the profile: with no `/Profile:` the CLI defaults to `DirectX_11`, which
+a DesktopGL game rejects (the CLI warns with `SD0029`). From the library it is
 `result.Value.ToXnb()`. See [Drop-in `mgfxc`](dropin-mgfxc.md).
+
+> [!NOTE]
+> On **KNI 4.2.9001** this direct route is the only one that works: KNI 4.2's reader-name resolver
+> rejects the type-reader manifest MonoGame's MGCB writes (stock or through the plugin) with
+> `FileLoadException: The given assembly name was invalid.`; ShadowDusk's own `.xnb` carries the
+> XNA-4.0 name KNI accepts. KNI 4.3.9001 loads both.
 
 **1. Compile with the CLI and let MGCB copy the result.** Build `.fx → .mgfx` with the
 [ShadowDusk CLI](dropin-mgfxc.md) as a pre-build step, then `/copy:` it:
