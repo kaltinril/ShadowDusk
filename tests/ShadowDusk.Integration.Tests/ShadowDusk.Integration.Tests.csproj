@@ -67,6 +67,10 @@
 
   <ItemGroup>
     <None Include="..\..\tests\fixtures\shaders\**\*" CopyToOutputDirectory="PreserveNewest" Link="fixtures\shaders\%(RecursiveDir)%(Filename)%(Extension)" />
+    <!-- Issue-reproduction fixtures (tests/fixtures/issues/<n>/): diagnostic-LOCATION fixtures
+         that must NOT join the corpus sweeps under fixtures/shaders (issue #202's 3235-line
+         Apos.Shapes copy would otherwise enter the GL/DX/Vulkan structural matrices). -->
+    <None Include="..\..\tests\fixtures\issues\**\*" CopyToOutputDirectory="PreserveNewest" Link="fixtures\issues\%(RecursiveDir)%(Filename)%(Extension)" />
     <!-- Phase 39: the fxc fx_2_0 goldens (sources + binaries) for the FNA structural
          cross-check (FnaCompileFixtureTests). -->
     <None Include="..\..\tests\fixtures\golden\FNA\**\*" CopyToOutputDirectory="PreserveNewest" Link="fixtures\golden\FNA\%(RecursiveDir)%(Filename)%(Extension)" />

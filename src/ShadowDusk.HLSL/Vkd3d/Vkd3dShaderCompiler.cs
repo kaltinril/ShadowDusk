@@ -77,15 +77,93 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
         // default in Vkd3dLoader does not reliably reach the native getenv at runtime,
         // which masked this until an include-heavy effect first reached the vkd3d backend.)
         // Blank every #line directive line before handing the source to vkd3d: it never
-        // used them, ShadowDusk maps no diagnostics through them on this path, and BLANKING
-        // (not deleting) preserves line numbering so vkd3d's own error line numbers are
-        // unchanged. The DXC/GL and d3dcompiler_47 paths keep their #line directives (those
-        // compilers honor them for diagnostics) — this strip is vkd3d-only.
+        // used them, and BLANKING (not deleting) keeps the blanked text and
+        // request.HlslSource line-for-line aligned, which is what lets Vkd3dSourceLocator
+        // map vkd3d's coordinates back through the directives below (issue #202). The
+        // DXC/GL and d3dcompiler_47 paths keep their #line directives (those compilers
+        // honor them for diagnostics) — this strip is vkd3d-only.
         string vkd3dSource = LineDirectivePattern.Replace(request.HlslSource, string.Empty);
 
+        NativeOutcome outcome;
+        try
+        {
+            outcome = InvokeNative(vkd3dSource, request, profile, targetType);
+        }
+        catch (DllNotFoundException ex)
+        {
+            return Result<PlatformBlob, ShaderError>.Fail(new ShaderError(
+                File:    request.SourceFileName,
+                Line:    0,
+                Column:  0,
+                Code:    "SD0211",
+                Message: "Cross-platform DXBC backend (vkd3d-shader) native library not found. " +
+                         "Restore it via tools/restore.ps1 (places tools/vkd3d/libvkd3d-shader-1.dll). " +
+                         "Underlying error: " + ex.Message));
+        }
+        catch (Exception ex) when (ex is EntryPointNotFoundException or BadImageFormatException)
+        {
+            return Result<PlatformBlob, ShaderError>.Fail(new ShaderError(
+                File:    request.SourceFileName,
+                Line:    0,
+                Column:  0,
+                Code:    "SD0211",
+                Message: "Cross-platform DXBC backend (vkd3d-shader) could not be loaded: " + ex.Message));
+        }
+
+        // vkd3d's line numbers are its own (issue #202: skipped #if arms vanish from its
+        // count and every template-implemented intrinsic call inflates it) and its columns
+        // count in its re-spaced token stream. Vkd3dSourceLocator asks vkd3d itself where
+        // each diagnostic sits, with parse-abort probes of the SAME request; the real
+        // compile above is untouched, so the emitted bytes cannot move.
+        ShaderError? Probe(string source)
+        {
+            NativeOutcome o = InvokeNative(source, request, profile, targetType);
+            return o.Failed
+                ? Vkd3dCompileContract.MapCompileFailure(o.Messages, request.SourceFileName, string.Empty)
+                : null;
+        }
+
+        if (outcome.Failed)
+        {
+            // Shared error mapping (Vkd3dCompileContract): verbatim diagnostics
+            // first, SD0212 fallback — identical on desktop and WASM.
+            ShaderError primary = Vkd3dCompileContract.MapCompileFailure(
+                outcome.Messages,
+                request.SourceFileName,
+                $"vkd3d-shader DXBC compilation failed (rc={outcome.Rc}) with no diagnostics");
+            return Result<PlatformBlob, ShaderError>.Fail(
+                Vkd3dSourceLocator.Relocate(primary, vkd3dSource, request.HlslSource, request.SourceFileName, Probe));
+        }
+
+        // vkd3d's message buffer is populated on SUCCESS too (LogLevel is
+        // Warning) — non-fatal diagnostics were previously discarded here.
+        // Capture verbatim; the pipeline surfaces them via
+        // CompiledShader.Warnings (constraint 5).
+        IReadOnlyList<ShaderError> warnings = string.IsNullOrWhiteSpace(outcome.Messages)
+            ? Array.Empty<ShaderError>()
+            : Vkd3dSourceLocator.Relocate(
+                D3DCompilerDiagnosticReformatter.ReformatAsWarnings(outcome.Messages, request.SourceFileName),
+                vkd3dSource, request.HlslSource, request.SourceFileName, Probe);
+
+        return Result<PlatformBlob, ShaderError>.Ok(
+            new PlatformBlob(blobKind, outcome.Code!) { Warnings = warnings });
+    }
+
+    /// <summary>
+    /// One <c>vkd3d_shader_compile</c> call, fully marshalled: the code bytes
+    /// (<see langword="null"/> on failure) and vkd3d's verbatim message text.
+    /// </summary>
+    private readonly record struct NativeOutcome(int Rc, byte[]? Code, string Messages)
+    {
+        public bool Failed => Rc != 0 || Code is null || Code.Length == 0;
+    }
+
+    private static NativeOutcome InvokeNative(
+        string source, D3DCompileRequest request, string profile, Vkd3dTargetType targetType)
+    {
         // Marshal source / strings as UTF-8. vkd3d_shader_code carries raw bytes +
         // size (NOT null-terminated for source); the char* strings are C strings.
-        byte[] sourceBytes = Encoding.UTF8.GetBytes(vkd3dSource);
+        byte[] sourceBytes = Encoding.UTF8.GetBytes(source);
 
         IntPtr sourcePtr     = Marshal.AllocHGlobal(sourceBytes.Length == 0 ? 1 : sourceBytes.Length);
         IntPtr entryPointPtr = MarshalCString(request.EntryPoint);
@@ -123,63 +201,17 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
                 SourceName  = sourceNamePtr,
             };
 
-            int rc;
-            Vkd3dShaderCode output;
-            IntPtr messagesPtr;
-            try
-            {
-                rc = Vkd3dNative.Compile(in compileInfo, out output, out messagesPtr);
-            }
-            catch (DllNotFoundException ex)
-            {
-                return Result<PlatformBlob, ShaderError>.Fail(new ShaderError(
-                    File:    request.SourceFileName,
-                    Line:    0,
-                    Column:  0,
-                    Code:    "SD0211",
-                    Message: "Cross-platform DXBC backend (vkd3d-shader) native library not found. " +
-                             "Restore it via tools/restore.ps1 (places tools/vkd3d/libvkd3d-shader-1.dll). " +
-                             "Underlying error: " + ex.Message));
-            }
-            catch (Exception ex) when (ex is EntryPointNotFoundException or BadImageFormatException)
-            {
-                return Result<PlatformBlob, ShaderError>.Fail(new ShaderError(
-                    File:    request.SourceFileName,
-                    Line:    0,
-                    Column:  0,
-                    Code:    "SD0211",
-                    Message: "Cross-platform DXBC backend (vkd3d-shader) could not be loaded: " + ex.Message));
-            }
-
+            int rc = Vkd3dNative.Compile(in compileInfo, out Vkd3dShaderCode output, out IntPtr messagesPtr);
             string messages = ReadAndFreeMessages(messagesPtr);
 
             try
             {
                 if (rc != 0 || output.Code == IntPtr.Zero || output.Size == 0)
-                {
-                    // Shared error mapping (Vkd3dCompileContract): verbatim diagnostics
-                    // first, SD0212 fallback — identical on desktop and WASM.
-                    return Result<PlatformBlob, ShaderError>.Fail(
-                        Vkd3dCompileContract.MapCompileFailure(
-                            messages,
-                            request.SourceFileName,
-                            $"vkd3d-shader DXBC compilation failed (rc={rc}) with no diagnostics"));
-                }
+                    return new NativeOutcome(rc, null, messages);
 
-                var dxbc = new byte[checked((int)output.Size)];
-                Marshal.Copy(output.Code, dxbc, 0, dxbc.Length);
-
-                // vkd3d's message buffer is populated on SUCCESS too (LogLevel is
-                // Warning) — non-fatal diagnostics were previously discarded here.
-                // Capture verbatim; the pipeline surfaces them via
-                // CompiledShader.Warnings (constraint 5).
-                IReadOnlyList<ShaderError> warnings = string.IsNullOrWhiteSpace(messages)
-                    ? Array.Empty<ShaderError>()
-                    : D3DCompilerDiagnosticReformatter.ReformatAsWarnings(
-                        messages, request.SourceFileName);
-
-                return Result<PlatformBlob, ShaderError>.Ok(
-                    new PlatformBlob(blobKind, dxbc) { Warnings = warnings });
+                var bytes = new byte[checked((int)output.Size)];
+                Marshal.Copy(output.Code, bytes, 0, bytes.Length);
+                return new NativeOutcome(rc, bytes, messages);
             }
             finally
             {
