@@ -43,7 +43,8 @@
 #
 # DX render gates wired here (issue #204, windows-latest, pinned to WARP — Windows'
 # bundled software D3D rasterizer — via SHADOWDUSK_DX_WARP=1, same recipe proven in
-# vchelaru/SkiaGameRendering's WindowsDX CI job; no driver install needed, unlike GL):
+# vchelaru/SkiaGameRendering's WindowsDX CI job; no driver install needed, unlike GL).
+# All three measured GREEN on a real windows-latest run (not just a local GPU box):
 #   * DxModernFeatures       — DX11 vertex-texture-fetch: vkd3d (shipping) vs
 #                              d3dcompiler/fxc oracle, real MonoGame WindowsDX. The
 #                              flagship gate here: single process, self-asserting exit
@@ -54,19 +55,23 @@
 #                              than MonoGame's static GraphicsAdapter.UseDriverType).
 #   * BaselineDx+CandidateDx+compare_dx.py — DX11 corpus, ShadowDusk vs the committed
 #                              mgfxc DirectX_11 goldens, real MonoGame WindowsDX.
-#   * BaselineDx12+CandidateDx12+compare_dx12.py — DX12 corpus, ShadowDusk vs the
-#                              committed mgfxc DirectX_12 goldens, real MonoGame 3.8.5
-#                              WindowsDX12 (proves WARP extends to DX12 — same
-#                              GraphicsAdapter.UseDriverType knob, MonoGame.Framework.Native).
-# All four were verified BOTH under WARP and on a real GPU before wiring (no regression
-# to the developer's local `dotnet run`, which never sets SHADOWDUSK_DX_WARP).
 #
 # NOT here (issue #204 follow-ups, still manual-only via run-windows-render-gates.ps1):
+#   * BaselineDx12+CandidateDx12 (DX12 corpus) — MEASURED RED on windows-latest, not just
+#     left out: MonoGame.Framework.Native (the DX12 package) creates its window through
+#     SDL2, and SDL2's window creation probes for Vulkan surface support independent of
+#     which D3D driver type WARP requests, so it fails with "SDL_CreateWindow failed:
+#     Installed Vulkan doesn't implement the VK_KHR_surface extension" before a device is
+#     even created — windows-latest has no GPU or Vulkan ICD at all. The
+#     DxHeadlessRasterizer pin in these two projects is genuinely inert on this runner,
+#     not merely unwired; it stays in the source for a local WARP-on-real-GPU run, but is
+#     NOT in this workflow. Tracked as a follow-up: issue #209.
 #   * VsDrivenDx (Apos.Shapes gallery, real NuGet package) + ShaderToyRouteDx (converter
 #     route) — heavier DX11 gates, left out of the day-one CI job on purpose; nothing
 #     about WARP is expected to be different for them, they just weren't the smallest
 #     first step.
-#   * VsDrivenDx12 — same reasoning as VsDrivenDx, DX12 side.
+#   * VsDrivenDx12 — same reasoning as VsDrivenDx, DX12 side; also blocked on the same
+#     SDL/Vulkan-surface issue as the DX12 corpus above.
 #   * FNA (validation/FnaValidation) — needs its own restore-fna.ps1 (heavy, clones the
 #     FNA source tree) and fxc /T fx_2_0, not evaluated for WARP here.
 #   * Vulkan — WARP is a D3D-only software rasterizer; Vulkan needs Mesa lavapipe
@@ -262,8 +267,6 @@ jobs:
           dotnet build validation/KniWinFormsDX/KniWinFormsDX.csproj -c Release
           dotnet build validation/BaselineDx/BaselineDx.csproj -c Release
           dotnet build validation/CandidateDx/CandidateDx.csproj -c Release
-          dotnet build validation/BaselineDx12/BaselineDx12.csproj -c Release
-          dotnet build validation/CandidateDx12/CandidateDx12.csproj -c Release
 
       # Issue #204: pin every gate to WARP (Windows' bundled software D3D rasterizer)
       # instead of a hardware adapter — windows-latest has no GPU. SHADOWDUSK_DX_WARP is
@@ -287,13 +290,10 @@ jobs:
           dotnet run --project validation/CandidateDx -c Release --no-build
           python validation/compare_dx.py
 
-      - name: Run DX12 corpus (ShadowDusk vs mgfxc DirectX_12 golden, real MonoGame 3.8.5 WindowsDX12)
-        env:
-          SHADOWDUSK_DX_WARP: "1"
-        run: |
-          dotnet run --project validation/BaselineDx12 -c Release --no-build
-          dotnet run --project validation/CandidateDx12 -c Release --no-build
-          python validation/compare_dx12.py
+      # DX12 (BaselineDx12+CandidateDx12) is NOT run here — measured red on windows-latest
+      # (SDL2's window creation needs a Vulkan surface independent of the WARP pin; see the
+      # header comment above and issue #209). It still runs from run-windows-render-gates.ps1
+      # on a developer's GPU box.
 
       - name: Upload render outputs (debug)
         if: always()
@@ -302,8 +302,5 @@ jobs:
           name: validation-render-output-dx
           path: |
             validation/output-dx/**
-            validation/output/baseline-dx12/**
-            validation/output/candidate-dx12/**
-            validation/output/diff-dx12/**
           if-no-files-found: ignore
           retention-days: 7
