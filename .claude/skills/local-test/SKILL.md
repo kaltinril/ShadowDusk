@@ -68,7 +68,7 @@ ask which half they ran.
   script; slangc is a downloaded-on-demand TEST oracle, never shipped), with the procedural
   subset proven pixel-identical to slangc's own HLSL emission. Library API:
   `ShadowDusk.Compiler.Slang.SlangFrontend.ConvertToFx`. See
-  [`plan/PHASE-61-slang-support.md`](../../../plan/PHASE-61-slang-support.md).
+  [`plan/DONE/PHASE-61-slang-support.md`](../../../plan/DONE/PHASE-61-slang-support.md).
 
 - **SkiaSharp / SkSL (issue #197) — shipped (v1).** `ShadowDusk.Compiler.Sksl.SkslConverter`
   converts a pixel-only `.fx` to SkSL for `SKRuntimeEffect`. Know the shape of it: the

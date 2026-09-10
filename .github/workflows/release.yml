@@ -13,7 +13,7 @@
 #                       ContentPipeline) at the validated version, with symbols (.snupkg), PLUS the
 #                       ShadowDusk.MgcbPlugin tools-only package (Phase 29) in a separate
 #                       step without symbols — it has no lib/, so a .snupkg cannot be built
-#   pack-wasm         → pack ShadowDusk.Wasm (the EIGHTH package) in THIS workflow —
+#   pack-wasm         → pack ShadowDusk.Wasm (the NINTH package) in THIS workflow —
 #                       its own job because it needs the wasm-tools workload and the
 #                       restored dxcompiler.wasm (its `VerifyDxcWasmPresent` MSBuild
 #                       target hard-fails the pack otherwise)
@@ -685,7 +685,7 @@ jobs:
           name: nupkg-desktop
           path: nupkg/
 
-      # ShadowDusk.Wasm (the 8th package) is packed by the pack-wasm job in THIS run,
+      # ShadowDusk.Wasm (the 9th package) is packed by the pack-wasm job in THIS run,
       # so its artifact is available here. All nine packages publish together.
       - name: Download Wasm package
         uses: actions/download-artifact@v8

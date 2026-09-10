@@ -14,6 +14,14 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.19.0] - 2026-09-10
+
+### Added
+
 - **Headless DirectX render gate in CI** (issue #204). A new `windows-latest` job in
   `validation-render.yml` runs three DX render gates pinned to **WARP** (Windows' bundled
   software D3D rasterizer, no GPU needed on the runner) instead of a hardware adapter -
@@ -2106,7 +2114,8 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.15.1...v0.16.0
