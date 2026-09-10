@@ -21,6 +21,14 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   check that the DLL depends on system DLLs only) rather than being a local build a maintainer
   uploaded by hand. Every RID's build smoke now compiles a `[loop]` with a data-dependent break at
   `ps_3_0`, so a native that cannot do SM3 loops can never be published by accident.
+- **DX12 render gate joins the headless CI lane** (issue #209, follow-up to #204). The
+  `BaselineDx12`+`CandidateDx12`+`compare_dx12.py` DX12 corpus was measured RED in #204's new
+  `windows-latest` WARP job: `MonoGame.Framework.Native` compiles `SDL_WINDOW_VULKAN` into any
+  DX12 build's window creation, independent of the WARP pin, and the runner ships no Vulkan
+  loader or ICD. Fixed by installing Google SwiftShader (a CPU Vulkan ICD + loader) via
+  `jakoch/install-vulkan-sdk-action` in the same job - WARP still does the actual D3D12
+  rendering, SwiftShader only satisfies SDL's window-creation probe. Measured green on a real
+  `windows-latest` run: maxd 0, 10/10.
 
 ### Changed
 
