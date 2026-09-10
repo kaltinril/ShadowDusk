@@ -42,7 +42,23 @@ to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub 
 3. **A green `main`.** CI (`ci.yml`) runs the 3-OS build + test matrix on every push/PR.
    Releases cut from `main` only after CI is green; local green is not sufficient.
 
-4. **A green Windows render gate — RUN IT FIRST (CI structurally cannot run this).** The
+4. **Local tooling the render gate needs — install this BEFORE reading a red gate as a
+   divergence.** The gate script needs **PowerShell 7** (`pwsh`; `tools/restore.ps1` carries
+   `#requires -Version 7.0`, and Windows PowerShell 5.1 aborts the run with a
+   `ScriptRequiresUnmatchedPSVersion` error that looks nothing like a render failure) and
+   **Python 3 with `pillow` + `numpy`** (four gates shell out to `validation/compare*.py`).
+
+   ```powershell
+   winget install Microsoft.PowerShell
+   winget install Python.Python.3.12
+   python -m pip install pillow numpy
+   ```
+
+   Without them the summary reports those gates as **`[FAIL] … exited with code 9009`**, which
+   is "command not found", not a render divergence — a red that means nothing about the product.
+   Check for `9009` before investigating any gate failure.
+
+5. **A green Windows render gate — RUN IT FIRST (CI structurally cannot run this).** The
    DirectX / DirectX 12 / FNA / KNI-DirectX / real-KNI-desktop-GL / **Vulkan** / browser-ANGLE
    rung-4 render proofs ("renders like `mgfxc`/`fxc` in the real engine") have no headless CI driver — Mesa
    covers the in-process OpenGL gates on the Linux lane, but there is no verified headless
