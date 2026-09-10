@@ -80,6 +80,9 @@
     * XNB direct writer          - validation/XnbContentLoad: a ShadowDusk-written .xnb through a
                                    real MonoGame WindowsDX Content.Load<Effect> vs stock mgcb's
                                    (pixel-identical), plus the envelope assertions (Phase 60).
+    * XNB on MonoGame DesktopGL  - validation/XnbContentLoadGl: the same driver source on the
+                                   DesktopGL runtime (/platform:DesktopGL reference, OpenGL
+                                   candidate), the most common consumer (Phase 64).
     * XNB on KNI (two lines)     - validation/KniXnbContentLoad, built against nkast 4.2.9001 AND
                                    4.3.9001: real KNI Content.Load<Effect> on the v10 + KNIFX
                                    .xnb vs the mgcb payload (maxd 0); pins that stock mgcb output
@@ -263,6 +266,19 @@ $gates.Add(@{
     Action = {
         Invoke-Checked 'dotnet' @('tool', 'restore')
         Invoke-Checked 'dotnet' @('run', '--project', 'validation/XnbContentLoad', '-c', 'Release')
+    }
+})
+# The MonoGame DesktopGL arm of the same claim (Phase 64): the most common consumer runtime,
+# which the WindowsDX gate above cannot see (a DesktopGL game rejects a DX payload outright,
+# and the container is validated by a different ContentManager build). Same shared driver
+# source, /platform:DesktopGL reference, OpenGL candidate. Not in CI's llvmpipe lane yet:
+# mgcb 3.8.4.1's EffectProcessor compiles through d3dcompiler in-process and is unverified
+# on Linux without Wine, so this script is where it runs.
+$gates.Add(@{
+    Name   = 'XNB on MonoGame DesktopGL (Phase 64: real DesktopGL Content.Load<Effect> on a ShadowDusk-written .xnb vs mgcb''s)'
+    Action = {
+        Invoke-Checked 'dotnet' @('tool', 'restore')
+        Invoke-Checked 'dotnet' @('run', '--project', 'validation/XnbContentLoadGl', '-c', 'Release')
     }
 })
 # The KNI arm of the same claim (Phase 64). KNI 4.2.9001's reader-name resolver throws on the
