@@ -81,6 +81,9 @@
                                    envelope matches MGCB's own stock build, and that the payload
                                    differs from stock (i.e. ShadowDusk really compiled it). It is
                                    here because `dotnet test` has no dotnet-mgcb; no GPU needed.
+                                   Phase 63: two MGCB versions (3.8.4.1 + 3.8.5, which renumbered
+                                   TargetPlatform: Web/DesktopVK/WindowsDX12 arms) and a decoy
+                                   dxcompiler.dll on the child PATH (pinned-DXC + dxil guard).
 
   Both Vulkan gates are DEFAULT-ON (issue #145: a Vulkan-affecting change must not depend on
   someone remembering a switch). Pass -SkipVulkan only on a box with no Vulkan-capable GPU.
@@ -228,8 +231,11 @@ $gates.Add(@{
 # Cheap (seconds, no GPU) and default ON - the failure modes it catches (MGCB stops
 # discovering the plugin; the plugin stops finding its natives inside MGCB's process; MonoGame
 # changes the content contract) are all silent for everyone until a consumer hits them.
+# Since Phase 63 (issue #203) it runs TWO MGCB versions (the manifest 3.8.4.1 and a real 3.8.5,
+# which renumbered TargetPlatform) and puts a decoy dxcompiler.dll first on the plugin-arm
+# child's PATH, so a fallback to an OS-search-path DXC or an unsigned DX12 module fails loudly.
 $gates.Add(@{
-    Name   = 'MGCB content-processor plugin (Phase 29: real dotnet mgcb build, .xnb payload vs CLI bytes)'
+    Name   = 'MGCB content-processor plugin (Phase 29: real dotnet mgcb build, .xnb payload vs CLI bytes; Phase 63: + dotnet-mgcb 3.8.5 arm for Web/DesktopVK/WindowsDX12 + decoy-PATH DXC guard)'
     Action = {
         # The pinned dotnet-mgcb from .config/dotnet-tools.json (idempotent; cached offline).
         Invoke-Checked 'dotnet' @('tool', 'restore')

@@ -60,12 +60,13 @@ public sealed class ShadowDuskEffectProcessor : ContentProcessor<EffectContent, 
 
     /// <summary>
     /// <b>Escape hatch, never required.</b> Overrides the target that would be derived from the
-    /// <c>.mgcb</c>'s <c>/platform:</c>. Accepts the ShadowDusk CLI's profile names
-    /// (<c>DirectX_11</c>, <c>DirectX_12</c>, <c>OpenGL</c>, <c>Vulkan</c>). It exists because
-    /// MGCB's <c>TargetPlatform</c> enum has no member for MonoGame's <c>WindowsDX12</c> or
-    /// <c>DesktopVK</c> runtimes, so a consumer shipping those has no other way to say so.
-    /// Empty (the default) derives the target from the platform, which is correct for every
-    /// platform MGCB can name.
+    /// content build's platform (<c>/platform:</c> in a <c>.mgcb</c>, <c>-p</c> in a Content
+    /// Builder). Accepts the ShadowDusk CLI's profile names (<c>DirectX_11</c>,
+    /// <c>DirectX_12</c>, <c>OpenGL</c>, <c>Vulkan</c>). Empty (the default) derives the target
+    /// from the platform, which is correct for every platform MonoGame can name - on MonoGame
+    /// 3.8.5+ that includes <c>DesktopVK</c> (Vulkan) and <c>WindowsDX12</c> (DirectX 12), so
+    /// this parameter exists for MGCB <b>before</b> 3.8.5, whose <c>TargetPlatform</c> enum
+    /// cannot name those two runtimes.
     /// </summary>
     public string ShaderProfile { get; set; } = string.Empty;
 
@@ -180,7 +181,10 @@ public sealed class ShadowDuskEffectProcessor : ContentProcessor<EffectContent, 
                 Code: "SD0501",
                 Message:
                     $"platform '{context.TargetPlatform}' is not supported by ShadowDusk. " +
-                    "Supported MGCB platforms: Windows, DesktopGL, MacOSX, iOS, Android, RaspberryPi, Web, NativeClient."));
+                    // Built from the map, never a literal: the list can then never name the
+                    // platform it is refusing (which is exactly what the pre-3.8.5-numbering
+                    // bug produced for /platform:Web on MonoGame 3.8.5).
+                    $"Supported MonoGame platforms: {MgcbPlatformMap.SupportedPlatformNamesText}."));
         }
 
         return mapped.Value;

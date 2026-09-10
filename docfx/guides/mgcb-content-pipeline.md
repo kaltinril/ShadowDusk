@@ -51,10 +51,26 @@ loads. You never pick a version, a format, or a flag to get correct output.
 |---|---|
 | `Windows` | DirectX 11 (DXBC SM5) |
 | `DesktopGL`, `MacOSX`, `iOS`, `Android`, `RaspberryPi`, `Web`, `NativeClient` | OpenGL (GLSL) |
-| `PlayStation4`, `PlayStation5`, `XboxOne`, `Switch`, `Xbox360`, `Stadia` | not supported — the build fails loudly with `SD0501` rather than emitting an artifact those runtimes cannot load |
+| `DesktopVK` (MonoGame 3.8.5+) | [Vulkan](../backends/vulkan.md) (SPIR-V) |
+| `WindowsDX12` (MonoGame 3.8.5+) | [DirectX 12](../backends/directx12.md) (DXIL SM6) — build on Windows: DXIL signing needs the Windows-only `dxil.dll`, or the output is unsigned and retail D3D12 rejects it (`SD0214`) |
+| `PlayStation4`, `PlayStation5`, `XboxOne`, `XboxSeries`, `Switch`, `Xbox360`, `Stadia` | not supported — the build fails loudly with `SD0501` rather than emitting an artifact those runtimes cannot load |
 
-MonoGame's `WindowsDX12` and `DesktopVK` runtimes have no member in MGCB's platform list at all, so
-they are reached through the `ShaderProfile` processor parameter below.
+The map keys on the platform's **name**, never on the enum's number. MonoGame **renumbered
+`TargetPlatform` in 3.8.5** (`Stadia=12, Web=13` became `Web=12, DesktopVK=13, WindowsDX12=14,
+XboxSeries=15`), and the plugin is compiled against the 3.8.2.1105 contract so it loads into every
+MGCB from 3.8.2 up. Until Phase 63 (issue #203) the map switched on the compiled-in members, so on `dotnet-mgcb`
+3.8.5 `/platform:DesktopVK` silently produced an OpenGL effect under the Vulkan platform byte and
+`/platform:Web` was refused; both are fixed, and `validation/MgcbPlugin` now runs a real 3.8.5 arm.
+
+On MGCB **before 3.8.5**, `WindowsDX12` and `DesktopVK` have no member in the platform list at all,
+so they are reached through the `ShaderProfile` processor parameter below.
+
+> [!TIP]
+> On MonoGame 3.8.5 the template-default content story is a **Content Builder project** (C# you
+> own) rather than a `.mgcb`. The same importer and processor ship for that shape as the
+> library-shaped `ShadowDusk.ContentPipeline` package — see
+> [MonoGame 3.8.5 Content Builder](content-builder.md). This tools-only package cannot be
+> referenced from C#.
 
 ## Processor parameters
 
@@ -66,7 +82,7 @@ a step you must take to get working output.
 | `DebugMode` | `Auto` | `Auto` follows the content build configuration, exactly like MonoGame's stock `EffectProcessor`. `Debug` / `Optimize` force it. |
 | `Defines` | *(empty)* | Preprocessor macros in `mgfxc`'s `/Defines:` spelling: `NAME=VALUE` entries separated by `;` or `,`; a bare `NAME` defines it as `1`. Same property name and format as the stock processor, so an existing `/processorParam:Defines=…` carries over unchanged. |
 | `IncludeDirs` | *(empty)* | Extra `#include` search directories, `;`-separated. The including file's own directory is always searched first and needs no entry. Equivalent to the CLI's `/I`. |
-| `ShaderProfile` | *(empty)* | Overrides the target derived from `/platform:`. `DirectX_11`, `DirectX_12`, `OpenGL`, `Vulkan` — the only way to reach [DirectX 12](../backends/directx12.md) and [Vulkan](../backends/vulkan.md), which MGCB's platform list cannot name. Build DX12 content **on Windows**: DXIL signing needs the Windows-only `dxil.dll`, or the output is unsigned and retail D3D12 rejects it (`SD0214`). |
+| `ShaderProfile` | *(empty)* | Overrides the target derived from `/platform:`. `DirectX_11`, `DirectX_12`, `OpenGL`, `Vulkan` — needed only on MGCB **before 3.8.5**, whose platform list cannot name [DirectX 12](../backends/directx12.md) or [Vulkan](../backends/vulkan.md); from 3.8.5 `WindowsDX12` and `DesktopVK` derive their target directly. Build DX12 content **on Windows**: DXIL signing needs the Windows-only `dxil.dll`, or the output is unsigned and retail D3D12 rejects it (`SD0214`). |
 | `MgfxVersion` | `10` | `11` opts into the newer MGFX container (MonoGame 3.8.5+). |
 | `DxbcBackend` | `vkd3d` | `d3dcompiler` opts into the Windows-only correctness oracle for the DirectX target. |
 
@@ -95,7 +111,10 @@ the same `EffectCompiler`, adding no compilation logic of its own. Two gates hol
 `MgcbPluginByteIdentityTests` drives the processor and compares against the real CLI binary on every
 `dotnet test`, and `validation/MgcbPlugin` runs an actual `dotnet mgcb` build and additionally checks
 that the `.xnb` envelope matches MGCB's own stock output while the payload *differs* from it. Verified
-green on `dotnet mgcb` 3.8.2.1105, 3.8.3, 3.8.4, 3.8.4.1, and 3.8.5.
+green on `dotnet mgcb` 3.8.2.1105, 3.8.3, 3.8.4, 3.8.4.1, and 3.8.5 — the gate runs both the
+pinned 3.8.4.1 and a real 3.8.5 (`Web`, `DesktopVK`, `WindowsDX12` included), and it runs the
+plugin-arm MGCB with a decoy `dxcompiler.dll` first on `PATH`, so a build that ever fell back to an
+OS-search-path DXC (a Vulkan SDK install puts one there) instead of the pinned one fails loudly.
 
 ## The other routes (still supported)
 

@@ -19,4 +19,17 @@
     src/ShadowDusk.MgcbPlugin/bin/{Debug,Release}/net8.0 already holds, exactly like
     CliBinaryFixture does for the CLI, so the gate measures the build you are about to ship.
   -->
+
+  <!--
+    The SECOND MGCB arm (Phase 63 Area B, issue #203): the real dotnet-mgcb 3.8.5, which
+    renumbered TargetPlatform (Web=12, DesktopVK=13, WindowsDX12=14, XboxSeries=15) and is
+    where the plugin's member-keyed map silently built an OpenGL payload for /platform:DesktopVK.
+    PackageDownload is NOT a dependency: nothing is referenced, it only puts the package in the
+    NuGet cache (the same mechanism validation/ForwardCompat uses for its runtimes), where
+    Program.LocateMgcb finds tools/net8.0/any/mgcb.dll. The tool-manifest arm (3.8.4.1, the
+    original numbering) stays; both must pass.
+  -->
+  <ItemGroup>
+    <PackageDownload Include="dotnet-mgcb" Version="[3.8.5]" />
+  </ItemGroup>
 </Project>

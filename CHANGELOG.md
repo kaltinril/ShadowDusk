@@ -151,6 +151,33 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **MGCB plugin: `/platform:DesktopVK` on MonoGame 3.8.5 silently built an OpenGL effect, and
+  `/platform:Web` was refused** (Phase 63 Area B, issue #203). MonoGame renumbered
+  `TargetPlatform` in 3.8.5 (`Stadia=12, Web=13` became `Web=12, DesktopVK=13, WindowsDX12=14,
+  XboxSeries=15`) and `MgcbPlatformMap` switched on the enum members it was compiled against
+  (3.8.2.1105), so on a real `dotnet-mgcb` 3.8.5 value 13 read as `Web` and produced a GLSL
+  payload under the Vulkan platform byte, value 12 read as `Stadia` and refused `Web` with an
+  `SD0501` whose text listed Web as supported, and `WindowsDX12` was refused although DirectX 12
+  is a rung-4 target. The map now keys on the platform's **name** (`platform.ToString()`, which
+  the host's own enum spells), so `DesktopVK` → Vulkan and `WindowsDX12` → DirectX 12 derive
+  seamlessly on 3.8.5 with no `ShaderProfile` needed (it stays as the escape hatch for MGCB
+  before 3.8.5), `XboxSeries` joins the refused consoles, and `SD0501`'s supported list is built
+  from the map so it can never name the platform it refuses. `validation/MgcbPlugin` gained a
+  real `dotnet-mgcb` 3.8.5 arm (`DesktopGL`, `Web`, `DesktopVK`, `WindowsDX12`; payload
+  byte-identical to the CLI's for the target the platform actually is, plus the negative that a
+  `V`-byte `.xnb` never carries OpenGL bytes again); `MgcbPlatformMapTests` pins both numberings.
+- **MGCB plugin: inside MGCB, DXC could be picked off the OS `PATH`, and DirectX 12 output was
+  unsigned** (found by the new 3.8.5 gate arm). Vortice.Dxc probes the host's base directory
+  (MGCB's, a miss) and then falls back to a bare-name load, so on a machine with a
+  `dxcompiler.dll` on `PATH` (the Vulkan SDK installs one) every MGCB build through the plugin
+  compiled with **that** DXC rather than the pinned one, a silent substitute compiler; and DXC's
+  own internal `LoadLibrary("dxil.dll")` never reaches a .NET hook, so DX12 through MGCB came
+  out unsigned (retail D3D12 rejects it). `PluginNativeLibraryResolver` now also subscribes
+  `Dxc.ResolveLibrary` (polled before the bare-name fallback), pre-loads the plugin directory's
+  `dxil.dll`, and returns its `dxcompiler.dll`. The gate runs the plugin-arm MGCB with a decoy
+  `dxcompiler.dll` first on the child's `PATH` and requires DX12 payloads to equal the CLI's
+  signed bytes, so neither can come back silently.
+
 ## [0.18.0] - 2026-08-03
 
 ### Added
