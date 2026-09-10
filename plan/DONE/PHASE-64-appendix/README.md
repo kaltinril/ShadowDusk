@@ -1,6 +1,6 @@
 # Phase 64 appendix: the probes and their raw output
 
-Evidence record for [PHASE-64-xnb-fna-kni-content-load-proof.md](../PHASE-64-xnb-fna-kni-content-load-proof.md), in the [Phase 39 appendix](../DONE/PHASE-39-appendix/README.md) style. Everything here was measured on 2026-09-09 on the developer's Windows box (RTX 3080) against the worktree build of `ShadowDuskCLI` at commit 445fddb. The probes are throwaway scratch code, recorded so the implementation wave can start from them rather than rediscover the recipe; they are not built by anything in the repository.
+Evidence record for [PHASE-64-xnb-fna-kni-content-load-proof.md](../PHASE-64-xnb-fna-kni-content-load-proof.md), in the [Phase 39 appendix](../PHASE-39-appendix/README.md) style. Everything here was measured on 2026-09-09 on the developer's Windows box (RTX 3080) against the worktree build of `ShadowDuskCLI` at commit 445fddb. The probes are throwaway scratch code, recorded so the implementation wave can start from them rather than rediscover the recipe; they are not built by anything in the repository.
 
 | File | What it holds |
 |---|---|

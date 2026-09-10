@@ -5,22 +5,23 @@ product bytes this phase may move are the **XNB container's type-reader manifest
 has never shipped in a release (Phase 60 landed 2026-08-13; the last release is 0.18.0 of
 2026-08-03), so no consumer holds a ShadowDusk-written `.xnb` yet.
 
-**Status:** 🔵 **Planned (2026-09-09)** — investigation complete, implementation not started. Every
-claim in §2 was **measured on this date** with real runtimes (three MonoGame versions, two KNI
-versions, real FNA) and real reference tooling (`dotnet-mgcb` 3.8.4.1 and 3.8.5); nothing below is
-inferred from documentation. The measurements changed the picture in one important way: **the
-KNI arm is not merely unproven, it is broken on the KNI version this repo pins**, and the fix is a
-one-string change to `XnbWriter` (§2.3, §3 C1).
+**Status:** ✅ **DONE (2026-09-09)** — investigated and implemented the same day; §7 records what
+implementation found. Every claim in §2 was **measured on this date** with real runtimes (three
+MonoGame versions, two KNI versions, real FNA) and real reference tooling (`dotnet-mgcb` 3.8.4.1
+and 3.8.5); nothing below is inferred from documentation. The measurements changed the picture in
+one important way: **the KNI arm was not merely unproven, it was broken on the KNI version this
+repo pins**, and the fix was a one-string change to `XnbWriter` (§2.3, §3 C1), now shipped and
+render-proven on both KNI lines.
 
-**Depends on:** [Phase 60](DONE/PHASE-60-xnb-content-output.md) (the writer, the DirectX rung-4
-gate, and the two unit-pinned whitelists), [Phase 39](DONE/PHASE-39-fna-fx2-output-target.md)/[40](DONE/PHASE-40-fna-fidelity-hardening.md)
+**Depends on:** [Phase 60](PHASE-60-xnb-content-output.md) (the writer, the DirectX rung-4
+gate, and the two unit-pinned whitelists), [Phase 39](PHASE-39-fna-fx2-output-target.md)/[40](PHASE-40-fna-fidelity-hardening.md)
 (the FNA `.fxb` payload and the real-FNA harness `validation/FnaValidation`),
-[Phase 44](DONE/PHASE-44-validation-breadth-and-matrix-coverage.md) (the real-KNI desktop harnesses
+[Phase 44](PHASE-44-validation-breadth-and-matrix-coverage.md) (the real-KNI desktop harnesses
 `validation/KniDesktopGL` / `KniWinFormsDX`, whose SDL2.GL recipe the KNI arm reuses),
-[Phase 24](DONE/PHASE-24-browser-render-validation.md) (KNI WebGL, the other KNI consumer of the same
+[Phase 24](PHASE-24-browser-render-validation.md) (KNI WebGL, the other KNI consumer of the same
 `Content` assembly).
 
-**Blocks:** closing Phase 60's C4 checkbox and OQ3; the `project_facts.md` line that still says
+**Blocked (now closed):** Phase 60's C4 checkbox and OQ3; the `project_facts.md` line that said
 *"FNA and KNI `Content.Load` arms not yet proven"*.
 
 **Gated on:** nothing external. The requester is actively testing (§0), so the ordering pressure is
@@ -407,31 +408,32 @@ things vchelaru would hit before reading `docs/validation-matrix.md`:
 
 ## 4. Acceptance
 
-- [ ] **C1 landed**: `XnbWriter.EffectReaderTypeName` is the XNA-4.0 string; `XnbWriterTests`
+- [x] **C1 landed** (commit `fix(xnb): XNA-4.0 type-reader name…`): `XnbWriter.EffectReaderTypeName` is the XNA-4.0 string; `XnbWriterTests`
       golden re-captured with a comment naming the six runtime versions it was proven on;
       `validation/XnbContentLoad` still 4/4 on MonoGame WindowsDX with its C1 assertion restated;
       decision recorded in `project_decisions.md`; the `XnbWriter` doc comment no longer claims KNI
       consumes stock mgcb output.
-- [ ] **KNI arm (A)**: `validation/KniXnbContentLoad` exists; a real KNI `ContentManager.Load<Effect>`
+- [x] **KNI arm (A)** — measured 4/4 on both lines, v10 and KNIFX maxd 0, stock mgcb rejected 4/4 on 4.2.9001 and loaded 4/4 on 4.3.9001; A3 (a KNI DirectX arm) was NOT done, see §7: `validation/KniXnbContentLoad` exists; a real KNI `ContentManager.Load<Effect>`
       on a ShadowDusk-written `.xnb` renders **pixel-identical (maxd 0)** to the stock-mgcb build on
       **KNI 4.2.9001 and 4.3.9001**, for the v10 and KNIFX payloads, 4/4 fixtures each; the
       "stock mgcb `.xnb` fails on 4.2" fact is asserted, not tolerated; §6 row with the exact
       command; default-ON slot in `run-windows-render-gates.ps1`; `repository-layout.md` entry.
-- [ ] **FNA arm (B)**: `validation/FnaValidation` loads every gate shader's candidate through a real
+- [x] **FNA arm (B)** — 17/17, every one of the 35 rows' `.xnb` arm at maxd 0 vs raw and 0 px over 4/255 vs the oracle; `ExpectedGateTotal` unchanged (sub-verdict): `validation/FnaValidation` loads every gate shader's candidate through a real
       FNA `ContentManager.Load<Effect>` from a bare directory and renders within 4/255 of the fxc
       oracle **and** at maxd 0 of the raw-bytes candidate arm; 17/17 unchanged or the constant
       moved deliberately; the §6 FNA row and the `-IncludeFna` reason updated.
-- [ ] **MonoGame DesktopGL** gets an in-repo `Content.Load` gate too (a `/platform:DesktopGL` →
-      `PlatformTarget.OpenGL` case set in `validation/XnbContentLoad` or a GL sibling that can run
-      in CI's llvmpipe lane with `dotnet tool restore`) — §2.5 proved it by probe; the promise needs
-      a gate for the most common consumer, not a session's scratchpad.
-- [ ] **Docs (D)**: D1-D4 done on every page listed in §2.8; the "not render-proven" caveat is
+- [x] **MonoGame DesktopGL** gets an in-repo `Content.Load` gate too — `validation/XnbContentLoadGl`,
+      a GL sibling sharing the WindowsDX driver's source, 4/4 maxd 0 on the pinned 3.8.2.1105,
+      default-ON in the gate script. **Not in CI's llvmpipe lane** (see §7): the reference arm runs
+      `dotnet-mgcb`, whose effect compile is unverified on Linux.
+- [x] **Docs (D)**: D1-D4 done on every page listed in §2.8; the "not render-proven" caveat is
       gone because it is no longer true, and the KNI-version fact is stated.
-- [ ] **Phase 60 closed out**: its C4 checkbox ticked with a pointer here, OQ3 answered with the
+- [x] **Phase 60 closed out**: its C4 checkbox ticked with a pointer here, OQ3 answered with the
       §2.3 result, and its finding-2 paragraph corrected in place. `project_facts.md`'s `.xnb` line
       says what is now true (the §2 measurements, the manifest choice, the three proofs).
-- [ ] Full `dotnet test` green on both TFMs; `./validation/run-windows-render-gates.ps1 -IncludeFna`
-      green, including the new KNI slot.
+- [x] Full `dotnet test` green on both TFMs; `./validation/run-windows-render-gates.ps1 -IncludeFna`
+      green, including the new KNI, DesktopGL and FNA-`.xnb` slots (the run is recorded in the
+      PR that merged this phase).
 
 ## 5. Non-goals
 
@@ -446,24 +448,53 @@ things vchelaru would hit before reading `docs/validation-matrix.md`:
 
 ## 6. Open questions
 
-- **OQ1. Should the KNI 4.2-vs-4.3 resolver difference be reported upstream?** KNI 4.3 already
+- **OQ1 — left open, low priority.** Should the KNI 4.2-vs-4.3 resolver difference be reported upstream? KNI 4.3 already
   carries the `catch (FileLoadException)` fix, so the answer is probably "already fixed, note it in
   our docs"; but a KNI user on 4.2 with a stock MonoGame content build has a confusing failure
   and nothing in KNI's message points at the reader name. Low priority; a one-line issue at most.
-- **OQ2. The MGCB plugin route on KNI.** `ShadowDusk.MgcbPlugin` runs inside MonoGame's MGCB, whose
+- **OQ2 — recorded as a `docs/validation-matrix.md` §7 row and a note in the MGCB guide, not measured.** The MGCB plugin route on KNI. `ShadowDusk.MgcbPlugin` runs inside MonoGame's MGCB, whose
   own `ContentTypeWriter` writes the mgcb-shaped manifest — so a plugin-built `.xnb` has the same
   KNI ≤ 4.2 failure as any stock mgcb `.xnb`. KNI ships its own pipeline (`nkast.Xna.Framework.Content.Pipeline`,
   `CompiledEffectWriter` above) which the plugin has never been loaded into. Is "KNI + MGCB plugin"
   a route anyone uses? If yes it needs its own measurement (does KNI's MGCB load a plugin compiled
   against `MonoGame.Framework.Content.Pipeline` 3.8.2.1105 at all?); if no, say so in the plugin
   guide so nobody expects it.
-- **OQ3. A stderr warning for the implicit-default-profile `.xnb` case (C2)?** It is a pure
-  convenience, never required for correct output, so it does not trip the directive; the question
-  is whether mgfxc-parity of stderr (a warning-free compile keeps stderr empty, which
-  `MgcbErrorFormatter`'s contract relies on) makes it unwelcome. Decide in wave 2; the docs fix (D2)
-  is required either way.
-- **OQ4. Does `validation/ForwardCompat` want an `.xnb` arm?** Phase 60 OQ2 suggested one. §2.5
+- **OQ3 — DECIDED: yes, `SD0029`.** A stderr warning for the implicit-default-profile `.xnb` case
+  (C2) is a pure convenience, never required for correct output, so it does not trip the directive.
+  The mgfxc-parity concern does not apply: MGCB never invokes the CLI (measured, Phase 52 E), so an
+  `.xnb`-output invocation is always a human or build script, and naming any profile — even
+  `DirectX_11` itself — keeps stderr empty (`CliArguments.TargetIsExplicit`), so the empty-stderr
+  contract for explicit invocations is untouched. Pinned by `CliXnbOutputTest` and
+  `ArgumentParserTests`; registered in `docs/error-codes.md`. The docs fix (D2) landed too.
+- **OQ4 — left open.** Does `validation/ForwardCompat` want an `.xnb` arm? Phase 60 OQ2 suggested one. §2.5
   now covers 3.8.1.263, 3.8.2.1105 and 3.8.5 by probe (the floor, the harness default, and the
   ceiling); the four releases in between share the same `PrepareType` by inspection of the two
   ends. A sweep is cheap once the DesktopGL gate exists (acceptance bullet 4) and would make the
   "one v10 build loads everywhere" claim cover the container too.
+
+## 7. What implementation found (2026-09-09, same day)
+
+- **`SpriteEffect.fx` cannot be in the GL-based gates.** §3 A1 listed "the same four fixtures as
+  `XnbContentLoad`", but `SpriteEffect.fx` declares its technique through the `TECHNIQUE()` macro,
+  which is the open Phase 41 GAP-1 on OpenGL (`SD0010: Effect source contains no techniques`); it
+  compiles on DirectX only. `validation/KniXnbContentLoad` and `validation/XnbContentLoadGl` use
+  `Invert.fx` in its place. The DX gate keeps `SpriteEffect`.
+- **The DesktopGL gate is a sibling, not a CI lane member.** Acceptance bullet 4 offered "a GL
+  sibling that can run in CI's llvmpipe lane with `dotnet tool restore`". The sibling exists and
+  runs on the Windows box, but it was NOT wired into `validation-render.yml`: its reference arm is
+  `dotnet-mgcb` 3.8.4.1, whose `EffectProcessor` compiles effects in-process through
+  `SharpDX.D3DCompiler` (`d3dcompiler_47`) — the pipeline assembly carries no `mgfxc`/Wine
+  reference, and whether that native loads on Linux without Wine was not measurable from this
+  box. Wiring it blind would have been a red main. Recorded as a §7 note in the validation matrix's
+  "Promote `validation/*` render gates into CI" row.
+- **A3 (a KNI DirectX arm in `validation/KniWinFormsDX`) was skipped.** The KNI DirectX runtime
+  shares the `Xna.Framework.Content` assembly whose resolver the SDL2.GL gate exercises, so it would
+  have been belt-and-braces rather than new evidence, and the hour went to the DesktopGL gate.
+- **B2 resolved as the sub-verdict option.** The `.xnb` arm is a third arm of every existing row
+  (`xnbload` / `xnb=raw` / `xnb>4` columns), a gate row passes only if it holds, and
+  `ExpectedGateTotal` stays 17. `FnaEffectImageRenderer.RunArm` gained a loader delegate rather
+  than a `LoadVia` enum on `ShaderCase`; `Effect.Name` is asserted equal to the asset name so the
+  arm demonstrably came through `EffectReader`.
+- **Nothing else in §2 turned out wrong.** Every measured cell reproduced in the gates: the
+  stock-mgcb `FileLoadException` on 4.2.9001 and its absence on 4.3.9001, v10 and KNIFX both at
+  maxd 0, the FNA `.xnb` at maxd 0 of the raw bytes, and DesktopGL at maxd 0 vs mgcb's own build.

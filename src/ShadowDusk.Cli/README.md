@@ -24,6 +24,12 @@ Flags mirror `mgfxc` (`/Profile`, `/Debug`, `/I`, `/Defines`, `/DxbcBackend`, `-
 
 ### ShaderToy / GLSL input
 
+**Direct `.xnb` output.** Name an `.xnb` output path and the CLI writes the content-pipeline container itself, so `Content.Load<Effect>("MyShader")` keeps working with MGCB out of the picture and no consumer code change; the platform byte is derived from the profile and the payload inside is byte-for-byte the `.mgfx` (or FNA `.fxb`) the same invocation would write. Render-proven with a real `ContentManager` on MonoGame (WindowsDX + DesktopGL), KNI (4.2.9001 + 4.3.9001) and FNA. Name the profile: with no `/Profile:` the default is `DirectX_11`, which a DesktopGL game rejects (the CLI warns with `SD0029`).
+
+```sh
+ShadowDuskCLI <input.fx> Content/<output>.xnb /Profile:OpenGL
+```
+
 In addition to `.fx`, the CLI accepts a single-pass **ShaderToy / GLSL image shader** (`.glsl`, `.frag`, `.fs`) and converts it to a self-contained `.fx` before compiling — so a ShaderToy `mainImage` (or a plain `void main()` fragment shader) compiles straight to a loadable `.mgfx`/`.fxb` for any target:
 
 ```

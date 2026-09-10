@@ -44,6 +44,9 @@ public sealed record CompiledShader(
     /// <see cref="XnbWriter.PlatformIdentifierFor"/>) and is never something the consumer
     /// selects. Write the result to <c>&lt;AssetName&gt;.xnb</c>; the asset name
     /// <c>Content.Load</c> uses is the file name, so no companion file is needed.
+    /// Render-proven through a real <c>ContentManager</c> on MonoGame (WindowsDX and DesktopGL),
+    /// KNI (4.2.9001 and 4.3.9001, MGFX v10 and KNIFX payloads) and FNA 26.06 (Phase 64); the
+    /// container carries the XNA-4.0 type-reader name, the only one every runtime resolves.
     /// </remarks>
     /// <returns>The complete <c>.xnb</c> file bytes.</returns>
     public byte[] ToXnb() => XnbWriter.Wrap(Data, Target);

@@ -18,6 +18,11 @@ Arguments are **positional** — `<SourceFile>` then `<OutputFile>`. There is **
 ShadowDuskCLI MyShader.fx MyShader.mgfx /Profile:OpenGL
 ```
 
+| Argument | Meaning |
+|---|---|
+| `<SourceFile>` | The `.fx` (or `.glsl` / `.slang`, see `--input-format`) to compile. |
+| `<OutputFile>` | Where the compiled effect goes. **The extension selects the container:** an `.xnb` extension writes the content-pipeline container `Content.Load<Effect>` reads (no MGCB, no consumer code change; the platform byte is derived from the profile); any other extension writes the raw `.mgfx` / `.fxb`. Missing output directories are created. See [Drop-in `mgfxc` → `.xnb` output](../guides/dropin-mgfxc.md#replacing-the-content-pipeline-entirely-xnb-output). |
+
 ## Options
 
 | Option | Description | Default |
@@ -49,6 +54,8 @@ The CLI default profile is **`DirectX_11`** (matching MonoGame's `mgfxc`), but t
 
 So `ShadowDuskCLI MyShader.fx out.mgfx` (no `/Profile`) compiles for **DirectX_11**, while the equivalent library call with no `Target` compiles for **OpenGL**. Always pass the target explicitly. (See the [In-Memory Quickstart](../getting-started/in-memory-quickstart.md).)
 
+For an **`.xnb`** output the trap is sharper, because the file is headed for a game's content directory: a DesktopGL game rejects the default's DirectX payload at `Content.Load<Effect>` with *"This MGFX effect was built for a different platform!"*. The CLI therefore prints **`warning SD0029`** when an `.xnb` is written with the implicit default — never an error, never a required flag; naming any profile silences it.
+
 ## Examples
 
 ```sh
@@ -57,6 +64,9 @@ ShadowDuskCLI effects/Blur.fx Content/Blur.mgfx /Profile:OpenGL
 
 # DirectX 11 (the CLI default — /Profile optional)
 ShadowDuskCLI effects/Blur.fx Content/Blur.mgfx /Profile:DirectX_11
+
+# The content-pipeline container itself (Content.Load<Effect>("Blur") reads it; no MGCB)
+ShadowDuskCLI effects/Blur.fx Content/Blur.xnb /Profile:OpenGL
 
 # With include paths and debug info
 ShadowDuskCLI effects/Lit.fx Content/Lit.mgfx /Profile:OpenGL /I shaders/common /I shaders/lighting /Debug
