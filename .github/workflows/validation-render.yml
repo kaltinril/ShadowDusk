@@ -213,6 +213,30 @@ jobs:
           done
           exit $rc
 
+      # The GL corpus is the two-process orchestration the in-process gates above avoid:
+      # Baseline renders the committed mgfxc goldens, Candidate renders ShadowDusk's own
+      # output for the same 10 shaders, and compare.py pixel-diffs the two sets. It is the
+      # GL twin of the DX job's BaselineDx+CandidateDx+compare_dx.py, which proved the
+      # pattern runs headless in CI. Its value here is hardware breadth: llvmpipe is a
+      # second, non-vendor rasterizer for the shaders whose divergence is precision-shaped
+      # (Dots, Scanlines) and which therefore read differently on different GPUs.
+      - name: Install Python compare dependencies (pillow, numpy)
+        run: python -m pip install --quiet pillow numpy
+
+      - name: Build the GL corpus drivers
+        run: |
+          dotnet build validation/Baseline/Baseline.csproj -c Release
+          dotnet build validation/Candidate/Candidate.csproj -c Release
+
+      - name: Run the GL corpus (real DesktopGL under xvfb/llvmpipe) + pixel-diff
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          SHADOWDUSK_REQUIRE_GL: "1"
+        run: |
+          xvfb-run -a dotnet run --project validation/Baseline -c Release --no-build
+          xvfb-run -a dotnet run --project validation/Candidate -c Release --no-build
+          python validation/compare.py
+
       - name: Upload render outputs (debug)
         if: always()
         uses: actions/upload-artifact@v7
@@ -227,6 +251,9 @@ jobs:
             validation/output-samplerregisterorder/**
             validation/output-mrt/**
             validation/output-shadertoy/**
+            validation/output/baseline/**
+            validation/output/candidate/**
+            validation/output/diff/**
           if-no-files-found: ignore
           retention-days: 7
 
