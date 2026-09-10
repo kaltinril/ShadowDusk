@@ -18,14 +18,15 @@ of the Phase 39 evidence ladder (`docs/the-purpose.md`, *FNA's bar*):
   effect's own VS runs (mirrors `validation/SharedDx/VsDxEffectImageRenderer.cs`, the
   Phase-28 analog).
 
-## The two arms
+## The three arms
 
-| Arm | Compiler | Role |
+| Arm | Compiler / route | Role |
 |---|---|---|
-| **Candidate** | ShadowDusk in-memory: `EffectCompiler.CompileAsync` with `PlatformTarget.Fna` (vkd3d-shader SM ≤ 3 + `Fx2EffectWriter`) | the SHIPPING pipeline |
+| **Candidate** | ShadowDusk in-memory: `EffectCompiler.CompileAsync` with `PlatformTarget.Fna` (vkd3d-shader SM ≤ 3 + `Fx2EffectWriter`), loaded with `new Effect(gd, bytes)` | the SHIPPING pipeline |
 | **Reference** | system `d3dcompiler_47.dll` `D3DCompile(pTarget: "fx_2_0", pEntrypoint: NULL)` | **test oracle only** — byte-identical to `fxc.exe /T fx_2_0` (see `tests/fixtures/golden/FNA/README.md`); never ships, never drives the product |
+| **Candidate via `.xnb`** (Phase 64, issue #199) | the SAME candidate bytes wrapped by the product writer `XnbWriter.Wrap(bytes, PlatformTarget.Fna)` (platform byte `'w'` derived, XNA-4.0 type-reader name), written to a bare temp directory as `<name>.xnb`, loaded by asset name through a real FNA `ContentManager.Load<Effect>` (`Effect.Name` asserted equal to the asset name, so it demonstrably came through `EffectReader`) | the route a consumer who **replaced their content pipeline** takes; any difference from the raw candidate arm is the container and nothing else |
 
-Both arms run in **one process on one GraphicsDevice**, so the comparison is same-backend
+All arms run in **one process on one GraphicsDevice**, so the comparison is same-backend
 by construction. The harness sets `FNA3D_FORCE_DRIVER=D3D11` (FNA3D's Windows default,
 pinned explicitly for determinism).
 
@@ -62,7 +63,11 @@ SHADERMODEL/`SV_POSITION` define block; anything else marks the shader
 arm fails the row, even when comparable pixels exist), and **zero** pixels have a
 per-channel delta above **4/255** — the same tolerance `validation/compare_dx.py` applies
 to the Phase 18 cross-compiler comparison (different compilers ⇒ tiny float divergence is
-legitimate; byte-equality is a non-goal). Each row's scene flag is verified against the
+legitimate; byte-equality is a non-goal) — **and**, since Phase 64, the `.xnb` arm loaded
+and rendered, sits at **maxd 0** of the raw candidate arm (same bytes: the container must be
+invisible) and has **zero** pixels over 4/255 vs the oracle. The `.xnb` arm is a sub-verdict
+of the same 17 rows, so `ExpectedGateTotal` is unchanged; the table's `xnbload` / `xnb=raw` /
+`xnb>4` columns show it per row. Each row's scene flag is verified against the
 candidate `.fxb` (a VS-bearing effect misfiled under the Sprite scene would pass
 vacuously), and the VsQuad scene clears texture slots between arms so a missing
 sampler→texture binding renders black instead of inheriting the other arm's binding.
@@ -94,8 +99,12 @@ dotnet run -c Release        # from validation/FnaValidation
 
 A small FNA window appears briefly (FNA3D needs a swap-chain host); everything renders
 offscreen in the first Draw and the Game exits. Outputs land in
-`validation/output-fna/{reference,candidate}/<name>.png` (plus both arms' raw `.fxb`
-under `output-fna/fxb/`) regardless of outcome.
+`validation/output-fna/{reference,candidate,candidate-xnb}/<name>.png` (plus both compiler
+arms' raw `.fxb` under `output-fna/fxb/`) regardless of outcome.
+
+**Result (2026-09-09, real FNA 26.06, FNA3D D3D11, RTX 3080):** 17/17 gate rows PASS, and
+every one of the 35 rows' `.xnb` arm loaded through the real `ContentManager`, at maxd 0
+vs the raw candidate and 0 px over 4/255 vs the oracle.
 
 This project is intentionally **not** in `ShadowDusk.slnx` (it is Windows-only — the
 *oracle* is Windows-only, not ShadowDusk's FNA target) and mirrors

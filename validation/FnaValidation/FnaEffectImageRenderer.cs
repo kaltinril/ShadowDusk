@@ -5,7 +5,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Content;
 using Microsoft.Xna.Framework.Graphics;
+using ShadowDusk.Core;
 
 namespace ShadowDusk.Validation.Fna;
 
@@ -40,8 +42,15 @@ public sealed record ArmOutcome(
     bool Loaded, bool Rendered, string? Error, Color[]? Pixels, string? PngPath,
     IReadOnlyList<string>? ParamsSet = null);
 
-/// <summary>Both arms' outcomes for one shader.</summary>
-public sealed record CaseOutcome(string Name, bool Gate, ArmOutcome Reference, ArmOutcome Candidate);
+/// <summary>
+/// All three arms' outcomes for one shader. <see cref="CandidateXnb"/> is the Phase 64 arm:
+/// the SAME candidate bytes wrapped by <c>XnbWriter</c> and loaded through a real FNA
+/// <c>ContentManager.Load&lt;Effect&gt;</c> from a bare directory — the route a consumer who
+/// replaced their content pipeline actually takes. Any difference between it and
+/// <see cref="Candidate"/> is the container, nothing else.
+/// </summary>
+public sealed record CaseOutcome(
+    string Name, bool Gate, ArmOutcome Reference, ArmOutcome Candidate, ArmOutcome CandidateXnb);
 
 /// <summary>
 /// The FNA analogue of <c>validation/SharedDx/DxEffectImageRenderer.cs</c> — ONE process,
@@ -75,6 +84,8 @@ public sealed class FnaEffectImageRenderer : Game
     private readonly string _catPath;
     private readonly string _refOutDir;
     private readonly string _candOutDir;
+    private readonly string _candXnbOutDir;
+    private readonly string _xnbWorkDir;
     private readonly IReadOnlyList<ShaderCase> _cases;
     private readonly Func<Effect, Texture2D, Texture2D, IReadOnlyList<string>> _setParams;
     private readonly List<string> _fna3dErrors;
@@ -110,7 +121,7 @@ public sealed class FnaEffectImageRenderer : Game
     public List<CaseOutcome> Outcomes { get; } = new();
 
     public FnaEffectImageRenderer(
-        string catPath, string refOutDir, string candOutDir,
+        string catPath, string refOutDir, string candOutDir, string candXnbOutDir, string xnbWorkDir,
         IReadOnlyList<ShaderCase> cases,
         Func<Effect, Texture2D, Texture2D, IReadOnlyList<string>> setParams,
         List<string> fna3dErrorSink)
@@ -118,6 +129,8 @@ public sealed class FnaEffectImageRenderer : Game
         _catPath = catPath;
         _refOutDir = refOutDir;
         _candOutDir = candOutDir;
+        _candXnbOutDir = candXnbOutDir;
+        _xnbWorkDir = xnbWorkDir;
         _cases = cases;
         _setParams = setParams;
         _fna3dErrors = fna3dErrorSink;
@@ -139,6 +152,8 @@ public sealed class FnaEffectImageRenderer : Game
         _mask = FnaShaderInputs.CreateMaskTexture(GraphicsDevice);
         Directory.CreateDirectory(_refOutDir);
         Directory.CreateDirectory(_candOutDir);
+        Directory.CreateDirectory(_candXnbOutDir);
+        Directory.CreateDirectory(_xnbWorkDir);
     }
 
     protected override void Draw(GameTime gameTime)
@@ -154,11 +169,43 @@ public sealed class FnaEffectImageRenderer : Game
         {
             ArmOutcome reference = RunArm(c.Name, c.Scene, c.Technique, c.ReferenceBytes, c.ReferenceCompileError, _refOutDir);
             ArmOutcome candidate = RunArm(c.Name, c.Scene, c.Technique, c.CandidateBytes, c.CandidateCompileError, _candOutDir);
-            Outcomes.Add(new CaseOutcome(c.Name, c.Gate, reference, candidate));
+            ArmOutcome candidateXnb = RunXnbArm(c);
+            Outcomes.Add(new CaseOutcome(c.Name, c.Gate, reference, candidate, candidateXnb));
         }
 
         _done = true;
         Exit();
+    }
+
+    /// <summary>
+    /// The Phase 64 (issue #199) arm: the candidate <c>.fxb</c> wrapped by the PRODUCT writer
+    /// (<c>XnbWriter.Wrap(bytes, PlatformTarget.Fna)</c>, which derives the <c>'w'</c> platform
+    /// byte), written to a bare directory as <c>&lt;name&gt;.xnb</c>, and loaded by asset name
+    /// through a real FNA <see cref="ContentManager"/>. FNA's <c>EffectReader</c> sets
+    /// <c>Effect.Name</c> to the asset name, which is asserted so the arm cannot silently have
+    /// come from anywhere but the content reader.
+    /// </summary>
+    private ArmOutcome RunXnbArm(ShaderCase c)
+    {
+        if (c.CandidateBytes is null)
+            return new ArmOutcome(false, false, $"compile failed: {c.CandidateCompileError}", null, null);
+
+        string dir = Path.Combine(_xnbWorkDir, c.Name);
+        Directory.CreateDirectory(dir);
+        File.WriteAllBytes(Path.Combine(dir, c.Name + ".xnb"), XnbWriter.Wrap(c.CandidateBytes, PlatformTarget.Fna));
+
+        ContentManager? content = null;
+        return RunArm(c.Name, c.Scene, c.Technique, c.CandidateCompileError, _candXnbOutDir,
+            load: () =>
+            {
+                content = new ContentManager(Services, dir);
+                Effect e = content.Load<Effect>(c.Name);
+                if (e.Name != c.Name)
+                    throw new InvalidOperationException($"Effect.Name is '{e.Name}', not '{c.Name}' - did this come through EffectReader?");
+                return e;
+            },
+            loadLabel: "ContentManager.Load<Effect>()",
+            dispose: () => content?.Unload());
     }
 
     private ArmOutcome RunArm(string name, FnaScene scene, string? technique, byte[]? bytes, string? compileError, string outDir)
@@ -166,19 +213,32 @@ public sealed class FnaEffectImageRenderer : Game
         if (bytes is null)
             return new ArmOutcome(false, false, $"compile failed: {compileError}", null, null);
 
+        Effect? effect = null;
+        return RunArm(name, scene, technique, compileError, outDir,
+            // THE rung-3 load test: FNA3D hands the bytes to MojoShader. A MojoShader
+            // parse/translate failure logs via FNA3D_LogError and then throws here.
+            load: () => effect = new Effect(GraphicsDevice, bytes),
+            loadLabel: "new Effect()",
+            dispose: () => effect?.Dispose());
+    }
+
+    private ArmOutcome RunArm(
+        string name, FnaScene scene, string? technique, string? compileError, string outDir,
+        Func<Effect> load, string loadLabel, Action dispose)
+    {
         _fna3dErrors.Clear();
         Effect effect;
         try
         {
-            // THE rung-3 load test: FNA3D hands the bytes to MojoShader. A MojoShader
-            // parse/translate failure logs via FNA3D_LogError and then throws here.
-            effect = new Effect(GraphicsDevice, bytes);
+            effect = load();
         }
         catch (Exception ex)
         {
             string mojo = _fna3dErrors.Count > 0 ? $" | FNA3D: {string.Join(" | ", _fna3dErrors)}" : "";
+            string inner = ex.InnerException is null ? "" : $" | inner {ex.InnerException.GetType().Name}: {ex.InnerException.Message}";
+            dispose();
             return new ArmOutcome(false, false,
-                $"new Effect() threw: {ex.GetType().Name}: {ex.Message}{mojo}", null, null);
+                $"{loadLabel} threw: {ex.GetType().Name}: {ex.Message}{inner}{mojo}", null, null);
         }
 
         if (_fna3dErrors.Count > 0)
@@ -186,7 +246,7 @@ public sealed class FnaEffectImageRenderer : Game
             // MojoShader reported errors but the managed ctor survived — the effect is
             // not trustworthy; treat as a load failure with the exact MojoShader text.
             string mojo = string.Join(" | ", _fna3dErrors);
-            effect.Dispose();
+            dispose();
             return new ArmOutcome(false, false, $"MojoShader errors on load: {mojo}", null, null);
         }
 
@@ -197,7 +257,7 @@ public sealed class FnaEffectImageRenderer : Game
             EffectTechnique? selected = effect.Techniques[technique];
             if (selected is null)
             {
-                effect.Dispose();
+                dispose();
                 return new ArmOutcome(false, false,
                     $"technique '{technique}' not found by name in the loaded effect", null, null);
             }
@@ -326,7 +386,7 @@ public sealed class FnaEffectImageRenderer : Game
         }
         finally
         {
-            effect.Dispose();
+            dispose();
         }
     }
 }

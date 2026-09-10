@@ -64,10 +64,13 @@
     * ANGLE D3D11 derivatives    - validation/AngleDerivativeProbe (issue #136: the emitted
                                    fragment control-flow shapes keep dFdx/dFdy alive on the
                                    real browser WebGL backend; headless Edge/Chrome).
-    * FNA fx_2_0 (-IncludeFna)   - validation/FnaValidation (vs fxc /T fx_2_0). OPT-IN because
-                                   its restore-fna.ps1 clones the FNA source tree (heavy) and the
-                                   oracle needs the Windows SDK fxc. Run it for any release that
-                                   could affect the FNA target.
+    * FNA fx_2_0 (-IncludeFna)   - validation/FnaValidation (vs fxc /T fx_2_0), which since Phase 64
+                                   also loads every row's candidate .fxb through a real FNA
+                                   ContentManager.Load<Effect> from an XnbWriter-written .xnb (maxd 0
+                                   vs the raw-bytes arm, within tolerance of the oracle). OPT-IN
+                                   because its restore-fna.ps1 clones the FNA source tree (heavy) and
+                                   needs an authenticated gh for the fnalibs natives. Run it for any
+                                   release that could affect the FNA target or the .xnb writer.
     * Vulkan PS corpus           - validation/CandidateVulkan (ShadowDusk's OWN output rendered on
                                    real MonoGame DesktopVK; not an mgfxc diff - mgfxc's output is
                                    unloadable for this corpus, a confirmed MonoGame SlotOffset bug).
@@ -290,7 +293,7 @@ $gates.Add(@{
 })
 if ($IncludeFna) {
     $gates.Add(@{
-        Name   = 'FNA fx_2_0 (ShadowDusk .fxb vs fxc /T fx_2_0, real FNA)'
+        Name   = 'FNA fx_2_0 (ShadowDusk .fxb vs fxc /T fx_2_0, real FNA; + the .xnb Content.Load arm, Phase 64)'
         Action = {
             $fnaRestore = Join-Path $repoRoot 'validation/FnaValidation/restore-fna.ps1'
             if (Test-Path $fnaRestore) { & $fnaRestore }
