@@ -4,17 +4,19 @@
 `ShadowDuskEffectImporter`/`ShadowDuskEffectProcessor` making the same `EffectCompiler.Compile` call,
 delivered in a shape a consumer's own C# can reference.
 
-**Status:** 🔵 **Planned (2026-09-09).** Investigated **by measurement** against the real
-`MonoGame.Framework.Content.Pipeline` 3.8.5 package, the `v3.8.5` source, the 3.8.5 project
-templates, and a real Content Builder probe project driving the worktree's own plugin; nothing
-implemented yet. The investigation found **two product defects that outrank the feature** and shape
-its plan: a hard blocker in ShadowDusk's dependency graph (§2.3, Area A) and a silent wrong-artifact
-bug in the *shipped* MGCB plugin on MonoGame 3.8.5 (§2.4, Area B).
+**Status:** ✅ **Done (2026-09-09).** Planned and implemented the same day. Investigated **by
+measurement** against the real `MonoGame.Framework.Content.Pipeline` 3.8.5 package, the `v3.8.5`
+source, the 3.8.5 project templates, and a real Content Builder probe project driving the worktree's
+own plugin. The investigation found **two product defects that outrank the feature** and shaped its
+plan: a hard blocker in ShadowDusk's dependency graph (§2.3, Area A) and a silent wrong-artifact bug
+in the *shipped* MGCB plugin on MonoGame 3.8.5 (§2.4, Area B). The implementation found a **third**
+(§8.2). Every acceptance box in §5 is ticked; §8 is the implementation record, including what this
+document got wrong.
 
-**Depends on:** [Phase 29](DONE/PHASE-29-mgcb-content-processor-plugin.md) (the pair exists and is
-byte-identical to the CLI), [Phase 60](DONE/PHASE-60-xnb-content-output.md) (the `.xnb` envelope
+**Depends on:** [Phase 29](PHASE-29-mgcb-content-processor-plugin.md) (the pair exists and is
+byte-identical to the CLI), [Phase 60](PHASE-60-xnb-content-output.md) (the `.xnb` envelope
 knowledge and the `validation/XnbContentLoad` driver pattern this phase's gate mirrors),
-[Phase 52](DONE/PHASE-52-monogame-3.8.5-support.md) Area E (the finding that the 3.8.5 Builder has
+[Phase 52](PHASE-52-monogame-3.8.5-support.md) Area E (the finding that the 3.8.5 Builder has
 no external-tool seam, so an in-process importer/processor is the only route).
 
 **Blocks:** nothing.
@@ -551,7 +553,7 @@ already carries `MonoGame.Framework.Content.Pipeline` and hundreds of MB of Mono
      mgfxc-side `ps_6_0` floor).
 
   **`docs/validation-matrix.md` §6 row (text):**
-  > **MonoGame 3.8.5 Content Builder — the importer/processor pair as a LIBRARY, in a REAL `ContentBuilder`** ([Phase 63](../plan/PHASE-63-monogame-content-builder-library.md), [issue #203](https://github.com/kaltinril/ShadowDusk/issues/203)). **A render gate AND a delivery-shape gate.** A real `ContentBuilder` subclass over `MonoGame.Framework.Content.Pipeline` 3.8.5 builds each fixture twice in one run — once through MonoGame's stock `EffectImporter`/`EffectProcessor` (the in-process 3.8.5 oracle, MGFX v11) and once through `ShadowDusk.ContentPipeline`'s `ShadowDuskEffectImporter`/`ShadowDuskEffectProcessor` passed as instances — then asserts the ShadowDusk payload is byte-for-byte the `ShadowDuskCLI` binary's, the `.xnb` envelope is byte-for-byte the stock build's, the payloads differ, and **both `.xnb`s load through a real `ContentManager.Load<Effect>` on MonoGame 3.8.5 and render pixel-identical**. Also the proof that ShadowDusk's dependency graph survives the Builder's unguarded `Assembly.GetTypes()` scan (§2.3 of the phase doc), which no `dotnet test` can see. Not in CI: needs a GPU and a 3.8.5 runtime. | `validation/ContentBuilder` (self-asserting; the pure halves are `MgcbPlatformMapTests` and the scan-clean guard) | ❌ driver (GPU + 3.8.5) / ✅ the pure halves — **default-ON in `run-windows-render-gates.ps1`** | `dotnet run -c Release --project validation/ContentBuilder`, or the gate script |
+  > **MonoGame 3.8.5 Content Builder — the importer/processor pair as a LIBRARY, in a REAL `ContentBuilder`** ([Phase 63](../plan/DONE/PHASE-63-monogame-content-builder-library.md), [issue #203](https://github.com/kaltinril/ShadowDusk/issues/203)). **A render gate AND a delivery-shape gate.** A real `ContentBuilder` subclass over `MonoGame.Framework.Content.Pipeline` 3.8.5 builds each fixture twice in one run — once through MonoGame's stock `EffectImporter`/`EffectProcessor` (the in-process 3.8.5 oracle, MGFX v11) and once through `ShadowDusk.ContentPipeline`'s `ShadowDuskEffectImporter`/`ShadowDuskEffectProcessor` passed as instances — then asserts the ShadowDusk payload is byte-for-byte the `ShadowDuskCLI` binary's, the `.xnb` envelope is byte-for-byte the stock build's, the payloads differ, and **both `.xnb`s load through a real `ContentManager.Load<Effect>` on MonoGame 3.8.5 and render pixel-identical**. Also the proof that ShadowDusk's dependency graph survives the Builder's unguarded `Assembly.GetTypes()` scan (§2.3 of the phase doc), which no `dotnet test` can see. Not in CI: needs a GPU and a 3.8.5 runtime. | `validation/ContentBuilder` (self-asserting; the pure halves are `MgcbPlatformMapTests` and the scan-clean guard) | ❌ driver (GPU + 3.8.5) / ✅ the pure halves — **default-ON in `run-windows-render-gates.ps1`** | `dotnet run -c Release --project validation/ContentBuilder`, or the gate script |
 
   **`run-windows-render-gates.ps1` slot** (after the XNB direct-writer gate, default ON):
   ```powershell
@@ -615,9 +617,9 @@ already carries `MonoGame.Framework.Content.Pipeline` and hundreds of MB of Mono
 
 | Route | Who it is for | What the consumer touches |
 |---|---|---|
-| **MGCB plugin** ([Phase 29](DONE/PHASE-29-mgcb-content-processor-plugin.md), `ShadowDusk.MgcbPlugin`, tools-only) | a team on a `.mgcb` (any MonoGame 3.8.1+ MGCB, KNI users on MonoGame's MGCB) | one `/reference:` line + importer/processor names |
+| **MGCB plugin** ([Phase 29](PHASE-29-mgcb-content-processor-plugin.md), `ShadowDusk.MgcbPlugin`, tools-only) | a team on a `.mgcb` (any MonoGame 3.8.1+ MGCB, KNI users on MonoGame's MGCB) | one `/reference:` line + importer/processor names |
 | **CLI** | scripts, `/copy:` pipelines, anything that really invokes `mgfxc` | a build step |
-| **Direct `.xnb`** ([Phase 60](DONE/PHASE-60-xnb-content-output.md), `CompiledShader.ToXnb()`) | a consumer who wants MonoGame's tooling out of the picture | nothing in the source tree |
+| **Direct `.xnb`** ([Phase 60](PHASE-60-xnb-content-output.md), `CompiledShader.ToXnb()`) | a consumer who wants MonoGame's tooling out of the picture | nothing in the source tree |
 | **Content Builder library** (this phase, `ShadowDusk.ContentPipeline`) | a 3.8.5+ team on the Content Builder project, which is the template default now | one `PackageReference` + passing two instances in `GetContentCollection` |
 
 Nothing supersedes anything: the plugin remains the only route into `.mgcb`/MGCB, direct `.xnb`
@@ -630,24 +632,24 @@ both packages at once.
 
 ## 5. Acceptance
 
-- [ ] **A (blocker):** `Vortice.Direct3D12` no longer in `ShadowDusk.HLSL`'s graph; full `dotnet test`
+- [x] **A (blocker):** `Vortice.Direct3D12` no longer in `ShadowDusk.HLSL`'s graph; full `dotnet test`
       green on both TFMs with **zero** golden or cross-host-manifest byte changes; the Windows render
       gates green unchanged; the scan-clean guard (A5) in the suite; upstream MonoGame + Vortice
       issues filed and linked here.
-- [ ] **B:** name-based `MgcbPlatformMap`; `DesktopVK → Vulkan`, `WindowsDX12 → DirectX12`; `SD0501`
+- [x] **B:** name-based `MgcbPlatformMap`; `DesktopVK → Vulkan`, `WindowsDX12 → DirectX12`; `SD0501`
       text fixed; `validation/MgcbPlugin` 3.8.5 arm proves `Web`/`DesktopVK`/`WindowsDX12` produce
       the right payload; `project_facts.md` corrected.
-- [ ] **C:** `ShadowDusk.ContentPipeline` packs as `lib/net8.0` with a real
+- [x] **C:** `ShadowDusk.ContentPipeline` packs as `lib/net8.0` with a real
       `MonoGame.Framework.Content.Pipeline >= 3.8.2.1105` dependency and `ShadowDusk.Compiler`
       transitive; `NoMonoGameInProductLibrariesTests` updated per C4; nine packages at one version
       through `release.yml`.
-- [ ] **D1 (rung 4):** `validation/ContentBuilder` green — payload == CLI, envelope == stock 3.8.5,
+- [x] **D1 (rung 4):** `validation/ContentBuilder` green — payload == CLI, envelope == stock 3.8.5,
       `Content.Load<Effect>` on MonoGame 3.8.5 pixel-identical to the stock build; default-ON in the
       gate script; §6 row written.
-- [ ] **D2:** the packed package consumed cold from a local feed in a scratch Builder builds the
+- [x] **D2:** the packed package consumed cold from a local feed in a scratch Builder builds the
       fixture with CLI-identical bytes (`pack-consume.yml` job + local script).
-- [ ] **E:** every surface in the Area E table updated in the same PR; SVG regenerated.
-- [ ] No existing output byte moves for any consumer of any existing route.
+- [x] **E:** every surface in the Area E table updated in the same PR; SVG regenerated.
+- [x] No existing output byte moves for any consumer of any existing route.
 
 ## 6. Non-goals
 
@@ -690,6 +692,94 @@ both packages at once.
 - **OQ10. Floor 3.8.2.1105 or 3.8.5 for the library? ANSWERED by C3: 3.8.2.1105** — nothing we
   compile needs 3.8.5, binding upward is measured, and the enum problem is solved by names, not by
   the floor.
+
+---
+
+## 8. Implementation record (2026-09-09) — what shipped, and what this document got wrong
+
+Implemented in five commits on `issue/203-content-builder-library`, in the order §3 lays out.
+
+### 8.1 What shipped
+
+- **A1, as recommended.** `src/ShadowDusk.HLSL/Reflection/Interop/D3D12ShaderReflectionInterop.cs`
+  (~330 lines including remarks): the four reflection classes over `SharpGen.Runtime`
+  (`ComObject` for the `IUnknown` root, `CppObject` for the three plain-vtable classes, exactly
+  as Vortice modelled them), the five `D3D12_*_DESC` structs transcribed from `d3d12shader.h`,
+  and two enums whose member names reproduce Vortice's `ToString()` spellings (they are what
+  `SignatureParameterReflection.SystemValue` / `ComponentType` carry, and `RdefReader` matches
+  them for DXBC). `IDxcUtils.CreateReflection<T>` in Vortice.Dxc instantiates any
+  `[Guid]`-attributed `ComObject` subclass with an `(nint)` constructor — measured with a probe
+  before committing, so no reflection-registry surprise. **Zero byte change**: full suite 2,694 ×
+  2 green with every golden and the cross-host manifest untouched; `Vortice.Direct3D12` and
+  `Vortice.DXGI` gone, `Vortice.DirectX` unified down to 3.3.4 through `Vortice.D3DCompiler`.
+  `DependencyGraphScanTests` (A5) reproduces the Builder's walk rooted at `ShadowDusk.Compiler`
+  and was verified red against a graph containing the package. A2 was never needed.
+- **B, as specified** — name-based `MgcbPlatformMap` (now `public`, so
+  `MgcbPlatformMapTests` can feed both numberings), `DesktopVK → Vulkan`, `WindowsDX12 →
+  DirectX12`, `XboxSeries` refused, `SD0501` list built from the map; `validation/MgcbPlugin`'s
+  3.8.5 arm (fetched by `PackageDownload`) for `DesktopGL`, `Web`, `DesktopVK`, `WindowsDX12`,
+  13/13; the byte-identity suite gained `Web` (the only moved platform expressible through the
+  3.8.2.1105 enum).
+- **C, as specified**, with the namespace moved (§8.3).
+- **D1**: `validation/ContentBuilder`, 7/7 — Windows 4/4 + DesktopGL 3/3 payload == CLI and
+  envelope == stock 3.8.5; 4/4 Windows renders 1,230,720 px identical on MonoGame 3.8.5.1
+  WindowsDX. **D2**: `tools/contentbuilder-consumer/` (the template Builder + a program that runs a
+  real `ContentBuilder` through the ShadowDusk pair and asserts payload == the packed compiler's
+  bytes), copied out of tree by `pack-consume.yml` (three OSes × two TFMs) and by
+  `tools/verify-contentpipeline-packaging.ps1` (which also compares to the built CLI): locally
+  green at `0.18.0-smoke.local` for `DesktopGL` (541 B) and `Windows` (1131 B).
+- **E**: every surface in the Area E table, the SVG regenerated, this doc moved to `DONE/`.
+
+### 8.2 A THIRD shipped-plugin defect, found by the new 3.8.5 gate arm — DXC resolution inside MGCB
+
+The first run of the 3.8.5 arm passed `Web` and `DesktopVK` but failed both `WindowsDX12` cases:
+the plugin's DX12 payload was 4309 bytes against the CLI's 4297. Diagnosis by experiment:
+
+- With the Vulkan SDK on this box's `PATH` (it ships a `dxcompiler.dll`), MGCB builds through the
+  plugin compiled with **that** DXC — a different DXIL module (different `STAT`/`DXIL` part sizes).
+  Vortice.Dxc's resolver probes `AppContext.BaseDirectory/runtimes/<rid>/native` (MGCB's directory:
+  a miss), polls its `Dxc.ResolveLibrary` subscribers, and then falls back to a **bare-name load that
+  walks the OS `PATH`** — the plugin's last-resort `ResolvingUnmanagedDll` hook never runs because
+  the bare load succeeds. The corpus's GL/Vulkan SPIR-V happened to be identical from that DXC,
+  which is why the 3.8.4.1 gate had been green on this machine for weeks.
+- With the Vulkan SDK off `PATH`, the pinned DXC loaded through the last-resort hook, but the module
+  was still not the CLI's: DXC's own internal `LoadLibrary("dxil.dll")` is a Win32 load that never
+  reaches any .NET hook, so **DirectX 12 through MGCB was unsigned** (DXC's own warning, "DXIL
+  signing library (dxil.dll,libdxil.so) not found", confirms it). Retail D3D12 rejects unsigned DXIL.
+
+Fix: `PluginNativeLibraryResolver` also subscribes `Vortice.Dxc.Dxc.ResolveLibrary` (measured with a
+probe: subscribers are polled in order, first non-zero wins, before the bare-name fallback, and only
+when Vortice's own base-directory probe missed), pre-loads the plugin directory's `dxil.dll`, and
+returns its `dxcompiler.dll` — the pinned pair, never a substitute. The gate now runs the plugin-arm
+MGCB with a **decoy `dxcompiler.dll`** (the plugin's `spirv-cross.dll`, renamed) first on the child's
+`PATH`; a bare-name load takes it and dies at `DxcCreateInstance` (verified with the CLI stripped of
+its natives), so the hijack can never come back silently, and the DX12 cases prove the module is signed.
+This does not affect the Content Builder shape (the consumer's base directory holds the natives, so
+Vortice's own probe hits first) nor the CLI or the runtime library.
+
+### 8.3 Corrections to the document above
+
+- **§3 C2, DocFX cost:** the API reference (`docfx.json`) never included the plugin project, so
+  moving the namespace cost nothing there. The namespace is `ShadowDusk.ContentPipeline` in both
+  packages; MGCB simple-name resolution re-verified on 3.8.4.1 and 3.8.5 after the move.
+- **§3 D1, the stock-oracle arm for `DesktopVK`/`WindowsDX12`:** not added — the stock 3.8.5
+  `EffectProcessor` refuses the corpus fixtures for those targets (their `ps_4_0_level_9_1` arm),
+  exactly as Appendix A's probe recorded for DesktopVK, so the Builder gate has no in-process stock
+  oracle for them and its render host is DX11. The ShadowDusk arm for both platforms is proven on the
+  `.mgcb` route by `validation/MgcbPlugin`'s 3.8.5 arm instead; recorded as a §7 gap.
+- **§3 D2, "payload compared to the CLI's":** in `pack-consume.yml` the scratch Builder compares the
+  `.xnb` payload to what the **same packed `ShadowDusk.Compiler`** produces (the CLI is neither
+  packed nor consumed there); the local `tools/verify-contentpipeline-packaging.ps1` adds the built-CLI
+  comparison. Same bytes by construction (`EffectCompiler.Compile` is the CLI's one call).
+- **§3 D3, the Linux lane:** the packed-package cold-consume arm runs on ubuntu/macOS/Windows in
+  `pack-consume.yml` (authored, not yet observed green off-Windows at the time of writing); the
+  render half stays Windows-only. Recorded as a §7 gap.
+- **§3 A1 sizing** was right: the interop is smaller than the file it replaced the dependency for.
+- **`MgcbPluginByteIdentityTests` "gets the same three platforms"** (B4): only `Web` can be expressed
+  through the 3.8.2.1105 enum this project compiles against; `DesktopVK`/`WindowsDX12` are pinned by
+  name in `MgcbPlatformMapTests` and end to end on real `dotnet-mgcb` 3.8.5.
+- **The `samples/mgcb` Builder project (Area E, "optionally")** was not added; the consumer surface is
+  the package README, the site guide, and `tools/contentbuilder-consumer/`.
 
 ---
 

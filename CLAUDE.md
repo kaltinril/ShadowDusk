@@ -88,7 +88,7 @@ The **rung-4 render proofs** — the actual product bar (*"loads + renders like 
 >
 > ```powershell
 > dotnet test ShadowDusk.slnx                            # FULL suite, never a filtered subset
-> ./validation/run-windows-render-gates.ps1              # DX corpus + DX-modern (VTF) + DX Apos gallery + DX ShaderToy route + DX12 corpus + DX12 VS-driven/Apos gallery + KNI-DX + KNI-GL desktop + KNI-GL VS-driven + GL Apos + GL Apos gallery + ANGLE-D3D11 derivative probe (issue #136) + MGCB plugin (real dotnet mgcb) + BOTH Vulkan gates, vs mgfxc/fxc
+> ./validation/run-windows-render-gates.ps1              # DX corpus + DX-modern (VTF) + DX Apos gallery + DX ShaderToy route + DX12 corpus + DX12 VS-driven/Apos gallery + KNI-DX + KNI-GL desktop + KNI-GL VS-driven + GL Apos + GL Apos gallery + ANGLE-D3D11 derivative probe (issue #136) + MGCB plugin (real dotnet mgcb 3.8.4.1 AND 3.8.5, decoy-PATH DXC guard) + XNB direct writer + MonoGame 3.8.5 Content Builder (ShadowDusk.ContentPipeline, real ContentBuilder + Content.Load<Effect>) + Slang corpus + BOTH Vulkan gates, vs mgfxc/fxc
 > ./validation/run-windows-render-gates.ps1 -IncludeFna  # also the FNA fx_2_0 gate (for an FNA-affecting release)
 > ./validation/run-windows-render-gates.ps1 -SkipVulkan  # ONLY on a box with no Vulkan-capable GPU
 > ```

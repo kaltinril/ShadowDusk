@@ -101,7 +101,7 @@ ShadowDusk is a transparent substitute for MonoGame's mgfxc: same CLI flags, sam
 
 ## Delivery shapes
 
-All four shapes share the same `IShaderCompiler` interface and produce the same `.mgfx` bytes; only how you invoke them differs.
+Every shape runs the same pipeline and produces the same `.mgfx` bytes; only how you invoke it differs.
 
 **Library** (`ShadowDusk.Compiler`) — the product. Add the package, call `CompileAsync(fx)`, get `.mgfx` bytes in memory (see the example above).
 
@@ -122,7 +122,17 @@ ShadowDuskCLI MyShader.fx MyShader.mgfx /Profile:OpenGL
 /build:MyShader.fx
 ```
 
-The target comes from the content project's own `/platform:` line, and the `.mgfx` inside the `.xnb` is byte-for-byte what the CLI emits. See [MGCB Content Pipeline](https://kaltinril.github.io/ShadowDusk/guides/mgcb-content-pipeline.html).
+The target comes from the content project's own `/platform:` line (`DesktopVK` and `WindowsDX12` included on MonoGame 3.8.5), and the `.mgfx` inside the `.xnb` is byte-for-byte what the CLI emits. See [MGCB Content Pipeline](https://kaltinril.github.io/ShadowDusk/guides/mgcb-content-pipeline.html).
+
+**Content Builder library** (`ShadowDusk.ContentPipeline`) — the same importer and processor as a normal library, for MonoGame 3.8.5's code-centric **Content Builder project** (the template default since 3.8.5, where a C# `ContentBuilder` you own replaces the `.mgcb`). Add the package to the Builder project and pass the two instances:
+
+```csharp
+using ShadowDusk.ContentPipeline;
+
+content.Include<WildcardRule>("Effects/*.fx", new ShadowDuskEffectImporter(), new ShadowDuskEffectProcessor());
+```
+
+Pass the instances (auto-discovery by extension picks MonoGame's own pair); the target follows the Builder's `-p` platform. Proven at rung 4 in a real 3.8.5 `ContentBuilder`: payload byte-identical to the CLI, envelope byte-identical to the stock build, and pixel-identical through `Content.Load<Effect>` on MonoGame 3.8.5. See [MonoGame 3.8.5 Content Builder](https://kaltinril.github.io/ShadowDusk/guides/content-builder.html).
 
 **Direct `.xnb` output** — replace your content pipeline without changing a line of your game's code. ShadowDusk writes the `.xnb` itself, so `Content.Load<Effect>("MyShader")` keeps working and MGCB is out of the picture entirely. On the CLI, just name an `.xnb` output:
 
@@ -165,6 +175,8 @@ All packages ship together at one shared version. Most projects only need one of
 | `ShadowDusk.Core` | [![ShadowDusk.Core](https://img.shields.io/nuget/v/ShadowDusk.Core)](https://www.nuget.org/packages/ShadowDusk.Core) | Shared types (`IShaderCompiler`, `CompilerOptions`, `Result<T,E>`). Pulled in automatically as a dependency. |
 | `ShadowDusk.HLSL` | [![ShadowDusk.HLSL](https://img.shields.io/nuget/v/ShadowDusk.HLSL)](https://www.nuget.org/packages/ShadowDusk.HLSL) | HLSL front-end (FX pre-parser, DXC, DXBC backends). Pulled in automatically as a dependency. |
 | `ShadowDusk.GLSL` | [![ShadowDusk.GLSL](https://img.shields.io/nuget/v/ShadowDusk.GLSL)](https://www.nuget.org/packages/ShadowDusk.GLSL) | SPIR-V → GLSL transpilation and the MonoGame GLSL rewrite. Pulled in automatically as a dependency. |
+| `ShadowDusk.MgcbPlugin` | [![ShadowDusk.MgcbPlugin](https://img.shields.io/nuget/v/ShadowDusk.MgcbPlugin)](https://www.nuget.org/packages/ShadowDusk.MgcbPlugin) | The MGCB content-processor plugin for `.mgcb` files (tools-only: one `/reference:` line). |
+| `ShadowDusk.ContentPipeline` | [![ShadowDusk.ContentPipeline](https://img.shields.io/nuget/v/ShadowDusk.ContentPipeline)](https://www.nuget.org/packages/ShadowDusk.ContentPipeline) | The same importer/processor as a library, for MonoGame 3.8.5's Content Builder project. |
 
 ## Getting started
 
@@ -218,7 +230,8 @@ ShadowDusk/
 │   ├── ShadowDusk.Metal/        # SPIR-V → MSL (stub — not yet implemented)
 │   ├── ShadowDusk.Compiler/     # EffectCompiler : IShaderCompiler — the consumer-facing product NuGet
 │   ├── ShadowDusk.Cli/          # dotnet tool entry point (mgfxc)
-│   ├── ShadowDusk.MgcbPlugin/   # MGCB content-processor plugin (ShadowDuskEffectImporter/Processor)
+│   ├── ShadowDusk.MgcbPlugin/   # MGCB content-processor plugin (ShadowDuskEffectImporter/Processor), tools-only
+│   ├── ShadowDusk.ContentPipeline/ # The same importer/processor as a library, for the MonoGame 3.8.5 Content Builder
 │   └── ShadowDusk.Wasm/         # In-browser WASM compiler (WasmShaderCompiler), [JSImport] DXC + SPIRV-Cross
 ├── samples/
 │   ├── ShaderFiddle.Web/        # KNI Blazor-WASM in-browser fiddle (sample of reach)

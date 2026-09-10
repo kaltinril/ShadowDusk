@@ -34,6 +34,10 @@ This provides a `ShadowDuskCLI` command with the same flags and `.mgfx` output a
 
 > **Default-target caveat:** the CLI's default `/Profile` is **`DirectX_11`**, while the library's <xref:ShadowDusk.Core.CompilerOptions.Target> default is **`OpenGL`**. Always pass the target you want explicitly. This is called out again on the [Quickstart](in-memory-quickstart.md) and [CLI Reference](../cli/index.md) pages.
 
+## The content pipeline packages
+
+For a `.mgcb` file (MGCB), add `ShadowDusk.MgcbPlugin` and `/reference:` it — see [MGCB Content Pipeline](../guides/mgcb-content-pipeline.md). For MonoGame 3.8.5's code-centric **Content Builder project**, add `ShadowDusk.ContentPipeline` to the Builder project and pass `new ShadowDuskEffectImporter(), new ShadowDuskEffectProcessor()` — see [MonoGame 3.8.5 Content Builder](../guides/content-builder.md). Both compile the same importer/processor; only the packaging differs (the plugin is tools-only and cannot be referenced from C#).
+
 ## The in-browser (WASM) library
 
 For in-browser runtime compilation (KNI / Blazor WebAssembly), add the `ShadowDusk.Wasm` package. It self-registers as Blazor static web assets — see [In-Browser (KNI/Blazor WASM)](../guides/in-browser-kni-blazor.md).
