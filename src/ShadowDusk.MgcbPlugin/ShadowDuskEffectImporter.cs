@@ -3,16 +3,20 @@
 using Microsoft.Xna.Framework.Content.Pipeline;
 using Microsoft.Xna.Framework.Content.Pipeline.Graphics;
 
-namespace ShadowDusk.MgcbPlugin;
+namespace ShadowDusk.ContentPipeline;
 
 /// <summary>
-/// MGCB content importer for HLSL effect source. Reads a <c>.fx</c> (or <c>.fxh</c>) file and
-/// hands its text to <see cref="ShadowDuskEffectProcessor"/>.
+/// MonoGame content importer for HLSL effect source. Reads a <c>.fx</c> (or <c>.fxh</c>) file and
+/// hands its text to <see cref="ShadowDuskEffectProcessor"/>. Ships in both the tools-only
+/// <c>ShadowDusk.MgcbPlugin</c> package (<c>.mgcb</c> / MGCB) and the library
+/// <c>ShadowDusk.ContentPipeline</c> package (MonoGame 3.8.5 Content Builder), from this one file.
 /// <para>
 /// Deliberately identical in behavior to MonoGame's stock <c>EffectImporter</c> - importing is
 /// "read the file", and the two are interchangeable. It exists so that a <c>.mgcb</c> which
 /// <c>/reference:</c>s only the ShadowDusk plugin has a complete importer + processor pair, and
 /// so the editor offers the ShadowDusk processor as the default for a <c>.fx</c> imported with it.
+/// In a 3.8.5 Content Builder the instance must be passed explicitly (auto-discovery by
+/// extension picks MonoGame's stock <c>EffectImporter</c> when both are loaded).
 /// </para>
 /// </summary>
 [ContentImporter(

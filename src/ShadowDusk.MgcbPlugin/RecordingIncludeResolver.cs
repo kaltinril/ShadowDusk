@@ -3,7 +3,7 @@
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
 
-namespace ShadowDusk.MgcbPlugin;
+namespace ShadowDusk.ContentPipeline;
 
 /// <summary>
 /// Wraps another <see cref="IIncludeResolver"/> and records every <c>#include</c> file it

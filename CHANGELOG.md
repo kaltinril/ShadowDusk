@@ -14,6 +14,28 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **`ShadowDusk.ContentPipeline`: the importer/processor pair as a library, for MonoGame 3.8.5's
+  Content Builder project** (Phase 63, issue #203, requested by aitorciki). 3.8.5's
+  template-default content story is a C# `ContentBuilder` the consumer owns, which needs
+  `new ShadowDuskEffectImporter()` / `new ShadowDuskEffectProcessor()` at compile time - and the
+  tools-only `ShadowDusk.MgcbPlugin` has no `lib/` to reference. The ninth package is a
+  `lib/net8.0` library compiled from the **same five source files** as the plugin (pinned by
+  test), with a real `MonoGame.Framework.Content.Pipeline >= 3.8.2.1105` dependency (the floor,
+  kept: the 3.8.2.1105-compiled pair binds inside a 3.8.5 Builder, measured) and
+  `ShadowDusk.Compiler` transitive so the natives flow into the Builder's bin. Usage is one
+  `PackageReference` plus passing the two instances:
+  `content.Include<WildcardRule>("Effects/*.fx", new ShadowDuskEffectImporter(), new ShadowDuskEffectProcessor());`
+  - **pass the instances**: with both pairs loaded, extension auto-discovery silently picks
+  MonoGame's own. The target follows `-p` / `$(MonoGamePlatform)`, `DesktopVK` and `WindowsDX12`
+  included. The pair's C# namespace is now `ShadowDusk.ContentPipeline` in both packages (the
+  plugin's assembly name and `tools/net8.0/any/` path are unchanged; MGCB resolves importers by
+  simple type name, so no `.mgcb` changes). Rung 4: `validation/ContentBuilder` builds the
+  fixtures through a real 3.8.5 `ContentBuilder` with both the stock and the ShadowDusk pair,
+  asserts the ShadowDusk payload is byte-identical to the CLI's and the envelope to the stock
+  build's, and loads both through a real `ContentManager.Load<Effect>` on MonoGame 3.8.5 with
+  pixel-identical renders; `pack-consume.yml` consumes the packed package cold in a scratch
+  Builder. No existing output byte moves for any route.
+
 - **HLSL → SkSL conversion for SkiaSharp** (issue #197).
   `ShadowDusk.Compiler.Sksl.SkslConverter.Convert(fx)` turns a pixel-only `.fx` into an SkSL
   runtime effect for `SKRuntimeEffect.CreateShader`, via the same faithful front half as every
@@ -123,6 +145,20 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   `cpt-max/MonoGame-Shader-Samples` shaders that prompted the phase.
 
 ### Changed
+
+- **`Vortice.Direct3D12` (and `Vortice.DXGI`) no longer ship in ShadowDusk's dependency graph**
+  (Phase 63 Area A, issue #203). `ShadowDusk.HLSL` referenced it for one reason, the managed
+  wrapper types for the reflection object `IDxcUtils::CreateReflection` returns; those are now
+  ShadowDusk-owned declarations over `SharpGen.Runtime` (already present through `Vortice.Dxc`),
+  transcribed from `d3d12shader.h`. Same pinned DXC, same call, same vtable slots, **zero byte
+  change**: every golden and the cross-host byte-identity manifest are untouched, and the full
+  suite passes on both TFMs. It had to go because that assembly carries one type the CLR refuses
+  to load (`VersionedDeviceRemovedExtendedData+Union`, identical in 3.5.0 and 3.8.3), and
+  MonoGame 3.8.5's Content Builder scans every consumer dependency with an unguarded
+  `Assembly.GetTypes()` - any consumer whose Builder referenced ShadowDusk died before touching
+  a shader. `DependencyGraphScanTests` reproduces that scan so it cannot come back. A consumer
+  pinning `Vortice.Direct3D12` themselves is unaffected; nothing in ShadowDusk's public API
+  exposed a Vortice.Direct3D12 type.
 
 - **`docs/validation-matrix.md` §7 records that geometry / hull / domain / compute are not
   supportable on stock MonoGame or KNI**, with the source-level evidence re-measured 2026-08-05, so

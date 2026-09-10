@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/ShadowDusk.Cli/ShadowDusk.Cli.csproj" />
     <Project Path="src/ShadowDusk.Compiler/ShadowDusk.Compiler.csproj" />
+    <Project Path="src/ShadowDusk.ContentPipeline/ShadowDusk.ContentPipeline.csproj" />
     <Project Path="src/ShadowDusk.Core/ShadowDusk.Core.csproj" />
     <Project Path="src/ShadowDusk.GLSL/ShadowDusk.GLSL.csproj" />
     <Project Path="src/ShadowDusk.HLSL/ShadowDusk.HLSL.csproj" />

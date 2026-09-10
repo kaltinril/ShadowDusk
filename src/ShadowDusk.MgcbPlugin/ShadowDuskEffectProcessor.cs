@@ -8,11 +8,15 @@ using ShadowDusk.Compiler;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
 
-namespace ShadowDusk.MgcbPlugin;
+namespace ShadowDusk.ContentPipeline;
 
 /// <summary>
-/// MGCB content processor that compiles an HLSL effect with ShadowDusk, in MGCB's own process:
-/// no <c>mgfxc</c> child process, no <c>fxc.exe</c>, no Wine, no <c>PATH</c> plumbing.
+/// MonoGame content processor that compiles an HLSL effect with ShadowDusk, in the content
+/// build's own process: no <c>mgfxc</c> child process, no <c>fxc.exe</c>, no Wine, no <c>PATH</c>
+/// plumbing. It ships in two delivery shapes compiled from this one source file: the tools-only
+/// <c>ShadowDusk.MgcbPlugin</c> package for <c>.mgcb</c> files / MGCB, and the library
+/// <c>ShadowDusk.ContentPipeline</c> package for MonoGame 3.8.5's code-centric Content Builder
+/// project (Phase 63, issue #203).
 /// <para>
 /// <b>This is a delivery shape of the ShadowDusk library, not a second compiler.</b> It builds a
 /// <see cref="CompilerOptions"/> from MGCB's build context, calls the one
@@ -34,6 +38,17 @@ namespace ShadowDusk.MgcbPlugin;
 /// Every parameter below is optional: with none set, the target is derived from the
 /// <c>.mgcb</c>'s own <c>/platform:</c> line and the output is the correct, backwards-compatible
 /// MGFX v10 artifact.
+/// </para>
+/// <para>
+/// From a MonoGame 3.8.5 <c>ContentBuilder</c> (the <c>ShadowDusk.ContentPipeline</c> package),
+/// pass the instances - auto-discovery picks MonoGame's own pair when both are loaded:
+/// <code>
+/// content.Include&lt;WildcardRule&gt;("Effects/*.fx", new ShadowDuskEffectImporter(), new ShadowDuskEffectProcessor());
+/// </code>
+/// Parameters are the C# properties on the instance (<c>new ShadowDuskEffectProcessor { Defines = "FOO=1" }</c>),
+/// the target follows <c>-p</c> / <c>$(MonoGamePlatform)</c> (including <c>DesktopVK</c> and
+/// <c>WindowsDX12</c>), and because the Builder has no build configuration,
+/// <see cref="DebugMode"/>'s <c>Auto</c> optimizes there.
 /// </para>
 /// </summary>
 [ContentProcessor(DisplayName = "ShadowDusk Effect - ShadowDusk")]

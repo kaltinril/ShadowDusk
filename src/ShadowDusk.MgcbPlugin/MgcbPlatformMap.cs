@@ -3,7 +3,7 @@
 using Microsoft.Xna.Framework.Content.Pipeline;
 using ShadowDusk.Core;
 
-namespace ShadowDusk.MgcbPlugin;
+namespace ShadowDusk.ContentPipeline;
 
 /// <summary>
 /// Maps MonoGame's <see cref="TargetPlatform"/> (the <c>/platform:</c> line in a <c>.mgcb</c>, or

@@ -3,7 +3,7 @@
 using Microsoft.Xna.Framework.Content.Pipeline;
 using Microsoft.Xna.Framework.Content.Pipeline.Graphics;
 using ShadowDusk.Core;
-using ShadowDusk.MgcbPlugin;
+using ShadowDusk.ContentPipeline;
 using Shouldly;
 using Xunit;
 
