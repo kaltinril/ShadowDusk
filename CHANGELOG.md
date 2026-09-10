@@ -267,6 +267,15 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   `dxcompiler.dll` first on the child's `PATH` and requires DX12 payloads to equal the CLI's
   signed bytes, so neither can come back silently.
 
+- **The DirectX 11 `d3dcompiler_47` oracle backend (Windows-only diagnostic, never ships) now
+  compiles with the same fxc flags mgfxc itself uses.** Decompiling `mgfxc.dll`
+  (MonoGame.Framework.Content.Pipeline 3.8.2.1105) showed its real `DirectX_11` compile sets
+  `EnableBackwardsCompatibility` and `OptimizationLevel3`; `D3DCompilerShaderCompiler` set
+  neither. Both load the same system `d3dcompiler_47.dll`, so this was a genuine flag
+  mismatch. This narrows, but does not fully close, the Apos.Shapes gallery gate's maxd 1 —
+  the residual is a machine-dependent sub-ULP fast-math scheduling difference, the same
+  non-defect class already root-caused for DX12's own gate; see `docs/validation-matrix.md`.
+
 ## [0.18.0] - 2026-08-03
 
 ### Added

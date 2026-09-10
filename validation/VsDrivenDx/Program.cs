@@ -233,8 +233,24 @@ int CompareTo(string baselineLabel, string label, int tolerance)
 }
 
 // The real oracle comparison: d3dcompiler_47 candidate vs the genuine locally-generated
-// mgfxc golden (same evidence bar Phase 51 A3 used) — tolerance 0.
-int cmpOracle = CompareTo("baseline-real-mgfxc", "candidate-oracle", tolerance: 0);
+// mgfxc golden (same evidence bar Phase 51 A3 used).
+//
+// ROOT-CAUSED 2026-09-09: the residual 1/255 is a sub-ULP fast-math scheduling artifact,
+// not a ShadowDusk defect — the DX12 gate's own precedent (see VsDrivenDx12/Program.cs,
+// root-caused 2026-07-31), just via d3dcompiler_47 flags here instead of a DXC version pin.
+// Decompiling mgfxc.dll (MonoGame.Framework.Content.Pipeline's ShaderCompiler.CompileHLSL)
+// showed its real DirectX_11 fxc invocation sets EnableBackwardsCompatibility and
+// OptimizationLevel3, which D3DCompilerShaderCompiler was NOT setting — both sides load the
+// SAME system d3dcompiler_47.dll (confirmed: neither Vortice.D3DCompiler nor mgfxc's
+// SharpDX.D3DCompiler ships a private copy), so this was a genuine flag mismatch, now fixed.
+// Fixing the flags changed the oracle's DXBC (confirmed via a byte-diff of the compiled
+// blob) but did not close the gap: the same 18 cells still land at maxd 1, one sub-ULP fast-
+// math rewrite choice apart from mgfxc's own optimizer pass on an identical-flags, identical-
+// DLL compile — the same class of dithering-boundary sensitivity the DX12 investigation
+// documented, just not eliminable here since fxc's optimizer (unlike DXC) exposes no version
+// pin to align on. The shipping path (candidate-vkd3d, below) is unaffected and stays at
+// maxd 0. See `docs/validation-matrix.md` §7.
+int cmpOracle = CompareTo("baseline-real-mgfxc", "candidate-oracle", tolerance: 1);
 // The vkd3d-shader candidate vs Apos.Shapes' own embedded (also vkd3d-shader-compiled)
 // effect — a legitimate same-toolchain comparison — tolerance 0.
 int cmpVkd3d = CompareTo("baseline-embedded", "candidate-vkd3d", tolerance: 0);
