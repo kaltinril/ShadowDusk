@@ -55,7 +55,8 @@
 #                              than MonoGame's static GraphicsAdapter.UseDriverType).
 #   * BaselineDx+CandidateDx+compare_dx.py — DX11 corpus, ShadowDusk vs the committed
 #                              mgfxc DirectX_11 goldens, real MonoGame WindowsDX.
-#   * BaselineDx12+CandidateDx12+compare_dx12.py — DX12 corpus (issue #209). Root cause of
+#   * BaselineDx12+CandidateDx12+compare_dx12.py — DX12 corpus (issue #209), MEASURED GREEN
+#                              on a real windows-latest run (maxd 0, 10/10). Root cause of
 #                              the original #204 RED: MonoGame.Framework.Native's SDL2
 #                              window creation is compiled with SDL_WINDOW_VULKAN baked in
 #                              for any DX12/Vulkan build (native/monogame/sdl/MGP_sdl.cpp,
@@ -63,12 +64,12 @@
 #                              SDL hint exists to skip it), so SDL_CreateWindow always
 #                              probes for a working Vulkan loader + WSI surface extensions
 #                              regardless of the WARP pin, and windows-latest ships neither.
-#                              Worked around by installing Google SwiftShader (a CPU Vulkan
-#                              ICD) via jakoch/install-vulkan-sdk-action, which also drops a
-#                              loader (`vulkan-1.dll`) next to the ICD — added to PATH so
-#                              SDL's dlopen finds it. WARP still does the actual D3D12
-#                              rendering; Vulkan here is load-bearing only for SDL's
-#                              window-creation probe, never for a pixel.
+#                              Fixed by installing Google SwiftShader (a CPU Vulkan ICD) via
+#                              jakoch/install-vulkan-sdk-action, which also drops a loader
+#                              (`vulkan-1.dll`) next to the ICD — added to PATH so SDL's
+#                              dlopen finds it. WARP still does the actual D3D12 rendering;
+#                              Vulkan here is load-bearing only for SDL's window-creation
+#                              probe, never for a pixel.
 #
 # NOT here (issue #204 follow-ups, still manual-only via run-windows-render-gates.ps1):
 #   * VsDrivenDx (Apos.Shapes gallery, real NuGet package) + ShaderToyRouteDx (converter
