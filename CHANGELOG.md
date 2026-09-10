@@ -228,7 +228,13 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   the failing compile's 3 s), maps the physical line back through the `#line` directives to the
   author's file and line (flattened includes too), and maps vkd3d's re-spaced column to the
   author's; message, code and raw text stay verbatim. The desktop P/Invoke and browser
-  `[JSImport]` hosts share it. **No emitted byte moves** (every FNA corpus output hashed
+  `[JSImport]` hosts share it, and it holds on every host: the sentinel's diagnostic is spelled
+  by the bison that generated vkd3d's parser, not by vkd3d (`unexpected invalid token` from
+  bison 3.6+, the Windows and macOS natives; `unexpected $undefined` from bison 3.5, the
+  linux-x64 native built in an Ubuntu 20.04 container for its glibc baseline), and the locator
+  recognises both, so a Linux consumer gets the same relocated coordinates as a Windows one
+  (the first cut recognised only the first spelling, and Linux fell back to vkd3d's raw
+  coordinates after burning the probe budget). **No emitted byte moves** (every FNA corpus output hashed
   identical before and after; the real compile's input is untouched). The reporter's file
   itself cannot become an FNA effect under *any* compiler — `fxc /T fx_2_0` rejects it too
   (`X3506` as written, `X4505` maximum temp register index with its `ps_3_0` arm forced) — so
