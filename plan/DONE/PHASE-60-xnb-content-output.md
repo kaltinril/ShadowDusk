@@ -6,6 +6,12 @@
 **Status:** ✅ **DONE (2026-08-13)** — shipped and **rung-4 proven**. Created 2026-08-11, committed
 by owner direction the same day (*"the XNB byte output so that a user doesn't have to load an
 effect"*), implemented 2026-08-13.
+**The FNA and KNI `Content.Load` arms (C4, OQ3) are
+[Phase 64](../PHASE-64-xnb-fna-kni-content-load-proof.md)**, which measured them on real runtimes: the
+FNA arm is correct as shipped and only lacks a gate; the KNI arm fails on KNI ≤ 4.2.9001 because of
+the type-reader manifest string chosen in finding 2 below (KNI's resolver throws on the mgcb-shaped
+name; the XNA-4.0-shaped name loads on every MonoGame, KNI and FNA version measured), and Phase 64
+carries the one-string fix. Read finding 2 with that correction.
 
 **What shipped:** `XnbWriter` in `ShadowDusk.Core` (pure managed, no native dependency, so it works
 on every host including WASM and Android), surfaced as `CompiledShader.ToXnb()` on the library and
@@ -231,7 +237,7 @@ finding entirely, because it never enters MGCB's process at all.
 - [x] **Rung 4:** real `Content.Load<Effect>` renders pixel-equivalent to the `mgfxc`-built `.xnb`,
       via `validation/XnbContentLoad`, default-ON in `run-windows-render-gates.ps1` (C3).
       *4/4 fixtures, 1,230,720 px identical each, `/platform:Windows` → DirectX.*
-- [ ] **FNA and KNI arms (C4) — NOT done, and deliberately not claimed.** The writer already derives
+- [ ] **FNA and KNI arms (C4) — NOT done, and deliberately not claimed; now [Phase 64](../PHASE-64-xnb-fna-kni-content-load-proof.md).** The writer already derives
       their platform bytes and the unit tests pin those against both runtimes' whitelists, but
       **derivation is not a render proof**: no FNA `Content.Load<Effect>` and no KNI one has been
       run. Wiring them is the obvious next step (`validation/FnaValidation` and
@@ -263,7 +269,7 @@ finding entirely, because it never enters MGCB's process at all.
   resolving — but §2's finding is that the surrounding *shape* is load-bearing and the runtimes
   disagree on it, so the string is emitted exactly as mgcb emits it. An `.xnb` arm on
   `validation/ForwardCompat` is still worth adding, for the same reason the payload sweep exists.
-- **OQ3. NOT YET MEASURED — the one that is still open.** KNI is a MonoGame fork and consumes stock
+- **OQ3. MEASURED 2026-09-09 in [Phase 64](../PHASE-64-xnb-fna-kni-content-load-proof.md) §2.3: KNI shares the platform list (minus `'V'`) but NOT the reader-name resolver — KNI ≤ 4.2.9001 rejects the mgcb-shaped manifest.** The original question, kept for the record: KNI is a MonoGame fork and consumes stock
   mgcb output, so it almost certainly shares the list, but "almost certainly" is what C4 exists to
   replace. Fold it into the KNI arm.
 - **OQ4. ANSWERED: extension-driven.** A ShadowDusk-specific switch needed to get correct output is
