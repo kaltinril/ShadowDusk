@@ -266,6 +266,17 @@ StrippedHlsl to DXBC on every OS; the same DXBC bytes are **also** the reflectio
 **column-major** (matching `fxc`, the runtime, and vkd3d), while the DXC/GL path uses
 row-major, this is intentional and the two paths are validated independently.
 
+**One compile option is set here, and only here:** vkd3d's
+`BACKWARD_COMPATIBILITY`/`MAP_SEMANTIC_NAMES`, which maps the SM1-3 semantics to their System
+Value equivalents (`COLOR`*n* to `SV_Target`*n* on pixel-shader outputs, `POSITION` to
+`SV_Position`, `DEPTH`, `VFACE`, `VPOS`) when compiling for an SM4+ target. `fxc` accepts those
+semantics at `ps_4_0`, which is how MonoGame `.fx` files written against SM3 still build;
+vkd3d rejects them outright without the option. Stage 1's `RewriteToSm4` already rewrites the
+`) : COLOR<n>` **return** semantic, but by design it cannot touch the same semantic on a struct
+**field** (the struct may be a vertex-shader output, where `COLOR` is legal), so the option is
+what covers a pixel shader returning `struct { float4 c : COLOR0; }`. It is deliberately NOT
+set on the Stage 3c target, where those are the native semantics.
+
 ### Stage 3c — the FNA fx_2_0 path
 
 **What it is.** A wholly separate path for `PlatformTarget.Fna`
@@ -275,7 +286,10 @@ row-major, this is intentional and the two paths are validated independently.
 `: COLOR` outputs) pass through unchanged. vkd3d compiles each SM2–3 stage to a **D3D9 token
 stream** (`VKD3D_SHADER_TARGET_D3D_BYTECODE`); a small patch canonicalizes a few instruction
 forms MojoShader is strict about. The per-shader constant table (CTAB) is reflected, and
-`Fx2EffectWriter` assembles the `.fxb`. SM4+ is rejected (`SD0300`, MojoShader's ceiling is
+`Fx2EffectWriter` assembles the `.fxb`. Sampler parameters are typed from what the source
+**declared** (`sampler` to `D3DXPT_SAMPLER`, `sampler2D` to `D3DXPT_SAMPLER2D`, and so on),
+which is `fxc`'s rule; vkd3d infers a dimensioned type from usage instead, and FNA binds off
+this table, so the CTAB type is only the fallback for declarations ShadowDusk does not model. SM4+ is rejected (`SD0300`, MojoShader's ceiling is
 `vs_3_0`/`ps_3_0`). This path shares nothing with the MGFX path, which guarantees that adding
 FNA cannot change the GL/DX output.
 

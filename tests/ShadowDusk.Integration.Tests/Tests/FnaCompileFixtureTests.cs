@@ -332,7 +332,7 @@ public sealed class FnaCompileFixtureTests
         result.IsFailure.ShouldBeTrue("a literal SM4+ profile under the FNA target must fail loudly, not silently degrade");
         result.Error.ShouldContain(e => e.Code == "SD0300", $"the documented FNA profile-policy error is SD0300; got: {DescribeErrors(result)}");
         result.Error.First(e => e.Code == "SD0300").Message.ShouldContain("Shader Model 2–3", Case.Sensitive, "the diagnostic must tell the user what the FNA target supports (SM1 is " +
-                     "rejected too — vkd3d 1.17 SM1 gaps; never validated)");
+                     "rejected too — vkd3d 2.1 SM1 gaps; never validated)");
     }
 
     // Plain [Fact] — same rationale as above: fails before vkd3d.

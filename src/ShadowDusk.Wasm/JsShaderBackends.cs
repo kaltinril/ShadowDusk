@@ -207,7 +207,7 @@ internal static partial class DxcInterop
 
 /// <summary>
 /// <c>[JSImport]</c> bindings into the faithful vkd3d-shader JavaScript module
-/// (Phase 4.1). The module (<c>shadowdusk-vkd3d</c>, the pinned vkd3d 1.17 compiled to
+/// (Phase 4.1). The module (<c>shadowdusk-vkd3d</c>, the pinned vkd3d 2.1 compiled to
 /// WASM) is self-registered by <see cref="WasmModuleRegistration"/> from the package's
 /// own <c>_content/ShadowDusk.Wasm/</c> static web assets — the consumer wires nothing.
 /// Like the DXC module it loads LAZILY: registration evaluates only the tiny committed

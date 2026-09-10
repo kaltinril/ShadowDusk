@@ -1,6 +1,6 @@
 # Test Shader Corpus — Provenance & Fresh Examples
 
-**Last updated:** 2026-09-09 — added the Slang input corpus: 17 `.slang` fixtures under
+**Last updated:** 2026-09-10 — vkd3d 2.1 (Phase 56) reclassified `Reflection.fx` and the Apos.Shapes revisions as FNA-compiling; the `E5017` loop/ternary gaps they sat behind were compiler gaps, not shader-model limits. Previously 2026-09-09: added the Slang input corpus: 17 `.slang` fixtures under
 `slang/`, cross-validated against the real `slangc` compiler (see `docs/validation-matrix.md`
 §8.0 and `validation/SlangCorpus`). Previously 2026-08-02: the issue-#189 fix added
 `SamplerRegisterOrder.fx` and `SamplerRegisterSparse.fx` (the sampler-register set below), both

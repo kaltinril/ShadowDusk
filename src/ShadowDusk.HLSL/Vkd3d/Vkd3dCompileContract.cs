@@ -22,7 +22,7 @@ internal static class Vkd3dCompileContract
 {
     /// <summary>
     /// VKD3D_SHADER_TARGET_D3D_BYTECODE — the bare legacy D3D9 token stream
-    /// (SM1–3, the FNA fx_2_0 path). Value pinned by the vkd3d 1.17 ABI and the
+    /// (SM1–3, the FNA fx_2_0 path). Value pinned by the vkd3d 2.1 ABI and the
     /// Phase 4.1 WASM wrapper contract (<c>sdw_vkd3d_compile</c> target_type = 4);
     /// must equal <see cref="Vkd3dTargetType.D3dBytecode"/>.
     /// </summary>
@@ -30,7 +30,7 @@ internal static class Vkd3dCompileContract
 
     /// <summary>
     /// VKD3D_SHADER_TARGET_DXBC_TPF — the DXBC container MonoGame's DX11 runtime
-    /// loads (SM4/5). Value pinned by the vkd3d 1.17 ABI and the Phase 4.1 WASM
+    /// loads (SM4/5). Value pinned by the vkd3d 2.1 ABI and the Phase 4.1 WASM
     /// wrapper contract (<c>sdw_vkd3d_compile</c> target_type = 5); must equal
     /// <see cref="Vkd3dTargetType.DxbcTpf"/>.
     /// </summary>

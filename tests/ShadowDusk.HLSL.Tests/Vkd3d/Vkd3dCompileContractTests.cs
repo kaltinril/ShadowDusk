@@ -103,7 +103,7 @@ public sealed class Vkd3dCompileContractTests
     [Fact]
     public void TargetTypeConstants_MatchTheVkd3dAbiAndTheWasmWrapperContract()
     {
-        // 4/5 are pinned by BOTH the vkd3d 1.17 enum (Vkd3dNative.cs, verified against
+        // 4/5 are pinned by BOTH the vkd3d 2.1 enum (Vkd3dNative.cs, verified against
         // vkd3d_shader.h) and the Phase 4.1 sdw_vkd3d_compile wrapper contract. If this
         // ever fails, one side of the [JSImport]/P-Invoke split has drifted.
         Vkd3dCompileContract.TargetTypeD3dBytecode.ShouldBe((int)Vkd3dTargetType.D3dBytecode);

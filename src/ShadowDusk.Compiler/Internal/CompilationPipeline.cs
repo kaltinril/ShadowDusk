@@ -1754,7 +1754,7 @@ internal sealed class CompilationPipeline
             fnaPreprocessWarnings = preprocessed.Warnings;
         }
 
-        // Per-stage source: vkd3d 1.17 rejects D3D9 stage-scoped register reservations
+        // Per-stage source: vkd3d 2.1 rejects D3D9 stage-scoped register reservations
         // (register(vs, c0)) — rewrite them per compiling stage. Lazy: most effects
         // have none and many are PS-only.
         string? vsSource = null;
@@ -1951,7 +1951,7 @@ internal sealed class CompilationPipeline
     /// FNA profile policy: a literal SM 2–3 profile in the pass's compile statement is
     /// honored as written (fxc fidelity), provided its vs_/ps_ prefix matches the stage
     /// it compiles; a literal SM4+ profile fails loudly (MojoShader's hard ceiling is
-    /// vs_3_0/ps_3_0); a literal SM1 profile fails loudly too (vkd3d 1.17's ps_1_x
+    /// vs_3_0/ps_3_0); a literal SM1 profile fails loudly too (vkd3d 2.1's ps_1_x
     /// backend has known instruction gaps and MojoShader's ps_1_x rules differ wholesale
     /// from SM2+ — never validated here, so refuse rather than risk silently-wrong
     /// output); anything else — no profile, or an unexpanded macro name like
@@ -2014,7 +2014,7 @@ internal sealed class CompilationPipeline
                 Column: 0,
                 Code: "SD0300",
                 Message: $"Pass compiles with profile '{declaredProfile}', but the FNA target " +
-                         "supports Shader Model 2–3 here: vkd3d 1.17's SM1 backend has known " +
+                         "supports Shader Model 2–3 here: vkd3d 2.1's SM1 backend has known " +
                          "instruction gaps and the SM1 output path has never been validated " +
                          "against real FNA — use vs_2_0/ps_2_0 (FNA's own guidance: ps_2_0 is " +
                          "the safest profile) or vs_3_0/ps_3_0"));

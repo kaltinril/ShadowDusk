@@ -67,7 +67,7 @@ public sealed class FnaProfilePolicyTests
     [InlineData("vs_1_1", ShaderStage.Vertex)]
     public void LiteralSm1Profile_FailsSd0300(string profile, ShaderStage stage)
     {
-        // vkd3d 1.17's SM1 backend has known instruction gaps and the SM1 output path
+        // vkd3d 2.1's SM1 backend has known instruction gaps and the SM1 output path
         // has never been validated against real FNA — refuse loudly rather than risk
         // silently-wrong output (Constraint 5).
         var result = CompilationPipeline.ResolveFnaProfile(profile, stage, File);
