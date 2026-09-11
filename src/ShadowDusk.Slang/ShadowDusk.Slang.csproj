@@ -8,15 +8,22 @@
     <RootNamespace>ShadowDusk.Slang</RootNamespace>
     <!-- Phase 66: a NEW, separate, OPTIONAL package — the ShadowDusk.ShaderToy precedent.
          A consumer who does not add ShadowDusk.Slang pays zero size/dependency cost; it is
-         not referenced by ShadowDusk.Compiler/HLSL/GLSL and they are not referenced by it
-         beyond ShadowDusk.Core (kept minimal on purpose — see plan/PHASE-66). Unlike
-         ShaderToy, this package DOES carry a native (real slangc, win-x64 only today),
-         packed the same way ShadowDusk.HLSL packs vkd3d/DXC below. -->
+         not referenced by ShadowDusk.Compiler/HLSL/GLSL and they are not referenced by it.
+         Unlike ShaderToy, this package DOES carry a native (real slangc, win-x64 only
+         today), packed the same way ShadowDusk.HLSL packs vkd3d/DXC below.
+         A3: now references ShadowDusk.Compiler (not just Core) — SlangCompiler hands
+         slangc's HLSL emission to the existing EffectCompiler pipeline, and reuses
+         ShadowDusk.Compiler.Slang's internal SlangEntryScanner for [shader(...)] entry
+         discovery (InternalsVisibleTo on that project). A consumer who adds
+         ShadowDusk.Slang now transitively pulls the whole faithful pipeline (DXC,
+         SPIRV-Cross, vkd3d-shader) it needs to actually compile slangc's output — the
+         same dependency a consumer of ShadowDusk.Compiler's own .slang subset already
+         carries, just reached through a different package. -->
     <IsPackable>true</IsPackable>
     <PackageId>ShadowDusk.Slang</PackageId>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <Description>ShadowDusk full Slang front-end: bundles the real slangc compiler (win-x64 today; Apache-2.0, see THIRD-PARTY-NOTICES.txt) so a consumer gets genuine Slang input (import, generics, interfaces) compiled via slangc -target hlsl and handed to ShadowDusk's existing, unchanged, faithful DXC pipeline. Optional and additive: ShadowDusk.Compiler's own .slang support (an HLSL-compatible subset, no extra package) is untouched. Phase 66 A2 scaffolding — the compile-route wrapper lands in a later stage; see plan/PHASE-66-full-slang-input-implementation.md.</Description>
+    <Description>ShadowDusk full Slang front-end: bundles the real slangc compiler (win-x64 today; Apache-2.0, see THIRD-PARTY-NOTICES.txt) so a consumer gets genuine Slang input (import, generics, interfaces) compiled via slangc -target hlsl and handed to ShadowDusk's existing, unchanged, faithful DXC pipeline. Optional and additive: ShadowDusk.Compiler's own .slang support (an HLSL-compatible subset, no extra package) is untouched. Phase 66 A3: SlangCompiler drives the real compile route end to end.</Description>
     <PackageTags>monogame kni fna slang shader compiler hlsl</PackageTags>
     <!-- Phase 26: emit the XML doc file for DocFX. CS1591 suppressed during the
          doc-comment transition so the TreatWarningsAsErrors build stays green. -->
@@ -29,7 +36,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\ShadowDusk.Core\ShadowDusk.Core.csproj" />
+    <!-- Pulls ShadowDusk.Core transitively; EffectCompiler (the unchanged faithful
+         pipeline) lives here, and this project also reuses ShadowDusk.Compiler.Slang's
+         internal SlangEntryScanner (InternalsVisibleTo on that project, A3). -->
+    <ProjectReference Include="..\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
   </ItemGroup>
 
   <ItemGroup>

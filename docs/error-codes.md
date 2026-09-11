@@ -27,6 +27,7 @@ code (`E5017`, `E5000`, …) and the raw text stay exactly as the compiler emitt
 | `SD0500`–`SD0599` | MGCB content-processor plugin |
 | `SD0600`–`SD0609` | Slang input frontend (`SlangFrontend` and its passes) |
 | `SD0610`–`SD0619` | SkSL converter (`SkslConverter` / `SkslGlslMapper`) |
+| `SD0620`–`SD0629` | Real-slangc Slang compile route (`ShadowDusk.Slang.SlangCompiler`) |
 | `SD1900`–`SD1999` | Browser/WASM host backends |
 | `X0000`–`X0099` | CLI and pipeline general errors (mgfxc-style) |
 
@@ -116,6 +117,10 @@ code (`E5017`, `E5000`, …) and the raw text stay exactly as the compiler emitt
 | `SD0613` | SkSL converter: a construct with no SkSL runtime-effect equivalent (named in the message): `gl_*` builtins, derivatives (`dFdx`/`dFdy`/`fwidth`), LOD/offset/fetch sampling, or a multi-render-target output. Refused rather than approximated. | `SkslGlslMapper` |
 | `SD0614` | **Warning.** SkSL converter: a uniform was synthesized that the consumer's draw code MUST set — `ShadowDusk_Resolution` (output size in pixels, when the shader uses its UV arithmetically) or a `TreatVaryingsAsUniforms` substitution. Every synthesized uniform is also listed in `SkslConversion.SynthesizedUniforms`. | `SkslGlslMapper` |
 | `SD0615` | SkSL converter: the effect has multiple techniques or passes. An SkSL runtime effect is a single fragment function, so converting one pass and dropping the rest would be a silent guess — split the effect instead. | `SkslConverter` |
+| `SD0620` | Real-slangc Slang route (`ShadowDusk.Slang`): this platform/architecture is not supported — the package bundles slangc for win-x64 only (Phase 66 A2/A3). `ShadowDusk.Compiler`'s built-in `.slang` subset frontend works everywhere if the source does not need genuine Slang-only features. | `SlangCompiler` |
+| `SD0621` | Real-slangc Slang route: `slangc.exe` was not found (a framework-dependent build that never copied `runtimes/win-x64/native` locally, or a repo/dev build that never ran `tools/restore.ps1`/`restore.sh`). | `SlangCompiler` |
+| `SD0622` | Real-slangc Slang route: slangc failed compiling one entry point and its stderr either did not match slangc's own `error[E#####]:`/`warning[W#####]:` diagnostic shape (an unanticipated failure — a native crash, an internal-compiler-error) or was empty. The complete stderr text (when any) is the message verbatim; never a generic sentence. | `SlangCompiler`, `SlangDiagnosticReformatter` |
+| `SD0623` | Real-slangc Slang route: could not prepare a writable directory to invoke slangc from. slangc writes a runtime cache file (`slang-glsl-module.bin`) into its own directory on first compile, so that directory — or a per-user cache copy `SlangNativeCache` falls back to — must be writable. | `SlangCompiler`, `SlangNativeCache` |
 | `SD1900` | Browser/WASM DXC backend failed. | `JsDxcShaderCompiler` |
 | `SD1901` | Browser/WASM SPIRV-Cross backend failed. | `JsSpirvToGlslTranspiler` |
 | `SD1902` | Browser/WASM vkd3d backend failed. | `WasmVkd3dShaderCompiler` |

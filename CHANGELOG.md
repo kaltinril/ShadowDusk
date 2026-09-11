@@ -14,6 +14,17 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **`ShadowDusk.Slang`'s real-slangc compile route (Phase 66 A3, experimental/in-progress).**
+  `SlangCompiler` drives the packaged real `slangc` (win-x64, Phase 66 A2) as `-target hlsl`,
+  one process invocation per discovered `[shader(...)]` entry point (source piped over
+  stdin), merges the per-entry HLSL translation units (deduplicating slangc's redeclared
+  shared types/cbuffers), and hands the result to the existing, unchanged `EffectCompiler`
+  pipeline — proving genuine Slang (`import`, generics, `interface`s) can compile end to end
+  through OpenGL and DirectX_11 without ever substituting for DXC. Not yet wired into any
+  CLI/MGCB delivery surface and not yet default-on anywhere; the shipped `.slang` support
+  remains `ShadowDusk.Compiler`'s HLSL-compatible-subset frontend. See
+  `plan/PHASE-66-full-slang-input-implementation.md`'s A3 write-up for the corpus pass rate,
+  the known OpenGL limitation (`SD0210`, three shaders), and what A4 (demangling) still owes.
 - **Docs: link to the [FlatRedBall Discord](https://discord.gg/Rr9SMBrPck)** for questions and
   feedback, from the README (new *Community* section), the documentation site's home page and
   footer, and the Contributing guide.

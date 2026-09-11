@@ -37,6 +37,10 @@
     <!-- Unit tests exercise internal pipeline pieces (Fx2EffectBuilder, ShaderIRBuilder)
          directly — also a Phase 27 item. -->
     <InternalsVisibleTo Include="ShadowDusk.Compiler.Tests" />
+    <!-- Phase 66 A3: ShadowDusk.Slang's real-slangc compile route reuses
+         Slang.SlangEntryScanner's [shader(...)] entry discovery unchanged, rather than
+         reimplementing the same convention a second time. -->
+    <InternalsVisibleTo Include="ShadowDusk.Slang" />
   </ItemGroup>
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" />
