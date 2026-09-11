@@ -34,13 +34,17 @@ namespace ShadowDusk.Slang;
 /// so this class cannot simply call into <c>SlangFrontend</c> — and per this phase's scope,
 /// <c>SlangFrontend.cs</c> stays byte-for-byte untouched.</para>
 ///
-/// <para><b>Known, accepted interim limitation (Phase 66 A4's job, not this stage's):</b>
-/// slangc mangles every symbol with an <c>_N</c> suffix and wraps cbuffers in generated
-/// <c>SLANG_ParameterGroup_*</c> structs. A consumer's <c>float BlurAmount</c> therefore
-/// surfaces as <c>BlurAmount_0</c> in the compiled effect's reflected parameter table today
-/// — this stage proves the route compiles correctly end to end through the real pipeline;
-/// it does not restore the author's original names. See the Phase 66 doc's A3 write-up for
-/// exactly where the mangled names surface.</para>
+/// <para><b>Name mangling and the OpenGL row_major gap, both closed (Phase 66 A4):</b> the
+/// <c>-no-mangle</c> flag passed to every slangc invocation keeps every symbol that matters
+/// for a consumer's reflected parameter table (cbuffer names/members, texture/sampler
+/// declarations) at the author's original spelling — <c>float BlurAmount</c> stays
+/// <c>BlurAmount</c>, not <c>BlurAmount_0</c> (measured against the full corpus; only
+/// local variables and struct field names still carry slangc's <c>_N</c> suffix, and
+/// those are never part of a reflected parameter table). <see cref="StripMatrixPackingPragma"/>
+/// removes slangc's unconditional <c>#pragma pack_matrix(column_major)</c>, which otherwise
+/// silently overrides <c>DxcFlagBuilder</c>'s OpenGL row-major convention and was the root
+/// cause of a <c>layout(row_major)</c> qualifier <c>MonoGameGlslRewriter</c> doesn't model
+/// (see that method's own comment for the full mechanism).</para>
 /// </summary>
 /// <remarks>
 /// Deliberately does NOT implement <c>IShaderCompiler</c>: that interface's contract is
@@ -196,7 +200,8 @@ public sealed class SlangCompiler
         sb.AppendLine("    #define PS_SHADERMODEL ps_3_0");
         sb.AppendLine("#endif");
         sb.AppendLine();
-        sb.AppendLine(StripUnresolvableConditionalIncludes(mergedHlsl).Trim());
+        string cleanedHlsl = StripMatrixPackingPragma(StripUnresolvableConditionalIncludes(mergedHlsl));
+        sb.AppendLine(cleanedHlsl.Trim());
         sb.AppendLine();
         sb.AppendLine($"technique {TechniqueName}");
         sb.AppendLine("{");
@@ -227,6 +232,34 @@ public sealed class SlangCompiler
 
     private static string StripUnresolvableConditionalIncludes(string hlsl) =>
         ConditionalIncludeGuard.Replace(hlsl, "");
+
+    // Every slangc -target hlsl emission opens with an unconditional '#pragma
+    // pack_matrix(column_major)' (confirmed, Phase 66 A4: present regardless of whether the
+    // source declares a float4x4 at all). An HLSL '#pragma' always overrides a compiler
+    // command-line packing flag, so left in place this silently defeats
+    // DxcFlagBuilder's per-platform matrix-packing convention that every OTHER .fx shader
+    // in the pipeline (hand-written ones never emit this pragma) already relies on:
+    // OpenGL's '-Zpr' (row-major) flag exists specifically so DXC's SPIR-V decorates a
+    // cbuffer matrix ColMajor (SPIR-V's inverted term for HLSL row-major — see
+    // DxcFlagBuilder's own comment), matching GLSL's own column-major default so
+    // SPIRV-Cross never needs an explicit layout qualifier. slangc's pragma forces
+    // column-major regardless, which decorates the SPIR-V the opposite way (RowMajor),
+    // and SPIRV-Cross then emits an explicit 'layout(row_major)' prefix on the GLSL mat4
+    // member that MonoGameGlslRewriter.UniformMember's regex does not model (SD0210) —
+    // this was the root cause of the 3 OpenGL corpus failures (Desaturate/ScrollUv/
+    // WaveVertex, all with a float4x4 cbuffer member). Stripping the pragma is a measured
+    // no-op for DirectX_11 (d3dcompiler_47's ShaderFlags.PackMatrixColumnMajor already
+    // matches HLSL's own column-major default with or without a redundant pragma saying
+    // so) and for Vulkan/DirectX12 (DXC's own default is column-major, and DxcFlagBuilder
+    // deliberately omits -Zpr for both) — it restores OpenGL to the SAME convention every
+    // other .fx shader already gets, rather than teaching MonoGameGlslRewriter a parallel
+    // layout-qualifier special case for Slang's own output shape.
+    private static readonly Regex MatrixPackingPragma = new(
+        """^[ \t]*#pragma\s+pack_matrix\(column_major\)[ \t]*\r?\n""",
+        RegexOptions.Compiled | RegexOptions.Multiline);
+
+    private static string StripMatrixPackingPragma(string hlsl) =>
+        MatrixPackingPragma.Replace(hlsl, "");
 
     /// <summary>
     /// Runs slangc once for a single entry point: <c>-target hlsl -entry &lt;name&gt;
@@ -278,6 +311,23 @@ public sealed class SlangCompiler
         // mangling (A4's job): 'float Desaturation_0' still carries slangc's suffix, only
         // the cbuffer's SHAPE changes.
         psi.ArgumentList.Add("-no-hlsl-pack-constant-buffer-elements");
+        // Phase 66 A4: without this, slangc renames every symbol with an '_N' suffix
+        // ('float BlurAmount' -> 'float BlurAmount_0'), which would surface in a
+        // consumer's compiled effect's reflected parameter table and break
+        // effect.Parameters["BlurAmount"] lookups. '-no-mangle' is documented by slangc
+        // itself as experimental ("do as little mangling of names as possible"), but
+        // measured (Phase 66 A4) against the full 21-shader corpus on both DirectX_11 and
+        // OpenGL: every top-level declaration that matters for the reflected parameter
+        // table — cbuffer names, cbuffer members, Texture2D/SamplerState declarations —
+        // comes back with the author's exact original name, with no collisions anywhere
+        // in the corpus (including GenericsProbe.slang's real generic-over-interface
+        // function). Local variables and struct field names (VSOutput/PsInput members,
+        // the loop-body temporaries) still carry an '_N' suffix, but those are never part
+        // of an Effect's reflected parameter table, so they don't matter for the
+        // consumer-visible surface this flag exists to fix. No corpus shader failed to
+        // compile with the flag added, so the simpler fix (this flag) was taken over
+        // building a separate demangling/renaming shim.
+        psi.ArgumentList.Add("-no-mangle");
         psi.ArgumentList.Add("-entry");
         psi.ArgumentList.Add(entryName);
         psi.ArgumentList.Add("-stage");

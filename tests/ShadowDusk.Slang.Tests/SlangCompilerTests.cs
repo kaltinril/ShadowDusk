@@ -2,6 +2,7 @@
 
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
+using ShadowDusk.Integration.Tests;
 using Shouldly;
 using Xunit;
 
@@ -42,20 +43,15 @@ public sealed class SlangCompilerTests
     // Corpus sweep — the shipped 17-shader .slang fixture corpus, plus the Phase 65
     // Gum-shaped and generics-probe shaders, on OpenGL and DirectX.
     //
-    // Three OpenGL failures are EXPECTED and pinned by name rather than skipped: slangc's
-    // '-no-hlsl-pack-constant-buffer-elements' flag (added this stage) fixed the
-    // SLANG_ParameterGroup_* wrapping for 7 of 10 originally-failing shaders, but the three
-    // remaining ones (all containing a float4x4 cbuffer member) still fail because
-    // SPIRV-Cross reflects a 'layout(row_major)' qualifier on the mat4 member that
-    // MonoGameGlslRewriter.UniformMember's regex does not accept (by explicit design — see
-    // that file's own comment on the "layout-qualified members ... FAIL LOUDLY" bucket).
-    // This is real, structurally-LOUD failure (SD0210), never silent corruption — exactly
-    // what Phase 66 A3's bar requires — and is documented as a precise, traced finding for
-    // A4/A6 in plan/PHASE-66-full-slang-input-implementation.md.
+    // Phase 66 A3 left 3 OpenGL failures (Desaturate/ScrollUv/WaveVertex, every corpus
+    // shader with a float4x4 cbuffer member): SPIRV-Cross reflected a 'layout(row_major)'
+    // qualifier on the mat4 member that MonoGameGlslRewriter.UniformMember's regex does not
+    // accept. A4 root-caused this to slangc's own unconditional '#pragma
+    // pack_matrix(column_major)' silently overriding DxcFlagBuilder's OpenGL '-Zpr'
+    // (row-major) convention, and fixed it in SlangCompiler.StripMatrixPackingPragma — see
+    // that method's comment for the full mechanism. All 21 corpus shaders now pass on both
+    // targets; there is no longer a known-failure carve-out here.
     // ---------------------------------------------------------------------------
-
-    private static readonly HashSet<string> KnownOpenGlRowMajorFailures =
-        new(StringComparer.OrdinalIgnoreCase) { "Desaturate.slang", "ScrollUv.slang", "WaveVertex.slang" };
 
     public static IEnumerable<object[]> CorpusFiles()
     {
@@ -90,15 +86,6 @@ public sealed class SlangCompilerTests
 
         var result = await new SlangCompiler().CompileAsync(source, options);
 
-        if (KnownOpenGlRowMajorFailures.Contains(name))
-        {
-            result.IsFailure.ShouldBeTrue($"{name} was expected to hit the known row_major/mat4 " +
-                "OpenGL limitation (Phase 66 A3) — if this now succeeds, remove it from " +
-                "KnownOpenGlRowMajorFailures and update the phase doc's A3 write-up.");
-            result.Error.ShouldContain(e => e.Code == "SD0210");
-            return;
-        }
-
         result.IsSuccess.ShouldBeTrue(
             result.IsFailure ? $"{name}: {FormatErrors(result.Error)}" : "");
         result.Value.Data.ShouldNotBeEmpty();
@@ -107,9 +94,7 @@ public sealed class SlangCompilerTests
 
     /// <summary>
     /// Rung 2 (structural well-formedness): the compiled bytes parse as a real MGFX
-    /// container even though slangc's residue (Phase 66 A4's job) leaves mangled names
-    /// inside it — the mangling must never corrupt the CONTAINER shape itself.
-    /// Minimal header parse mirrors ShadowDusk.Compiler.Tests.EffectCompilerTests'
+    /// container. Minimal header parse mirrors ShadowDusk.Compiler.Tests.EffectCompilerTests'
     /// ReadConstantBufferCount helper: "MGFX"(4) + version(1) + profile(1) + effectKey(4).
     /// </summary>
     private static void AssertLooksLikeMgfx(byte[] mgfxBytes)
@@ -328,5 +313,73 @@ public sealed class SlangCompilerTests
         // the values, not the author's original literal spelling.
         fx.ShouldContain("float4(1.0f, 0.0f, 0.0f, 1.0f)", Case.Sensitive);
         fx.ShouldNotContain("float4(0.0f, 1.0f, 0.0f, 1.0f)", Case.Sensitive);
+    }
+
+    // ---------------------------------------------------------------------------
+    // Phase 66 A4, Problem 1 — the mangling fix ('-no-mangle'). A parameter name written
+    // in .slang source must round-trip, UNMANGLED, all the way through the real pipeline
+    // into the compiled effect's own reflected parameter table (Effect.Parameters['Name']
+    // is the exact consumer-visible surface this matters for) — not just into slangc's
+    // intermediate HLSL text.
+    // ---------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData(PlatformTarget.DirectX)]
+    [InlineData(PlatformTarget.OpenGL)]
+    public async Task ParameterNames_RoundTripUnmangled_ThroughTheCompiledEffectsParameterTable(
+        PlatformTarget target)
+    {
+        string source = await File.ReadAllTextAsync(
+            Path.Combine(GumProbeDir, "GumTint.slang"));
+        var options = new CompilerOptions { Target = target, SourceFileName = "GumTint.slang" };
+
+        var result = await new SlangCompiler().CompileAsync(source, options);
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? FormatErrors(result.Error) : "");
+        var mgfx = MgfxBlobReader.Parse(result.Value.Data);
+
+        // GumTint.slang declares 'float3 TintColor' and 'float TintAmount' in its cbuffer,
+        // plus 'Texture2D SpriteTexture'/'SamplerState SpriteTextureSampler' — the author's
+        // exact spellings, none of slangc's own '_0'/'_1' mangling suffix.
+        mgfx.ParameterNames.ShouldContain("TintColor");
+        mgfx.ParameterNames.ShouldContain("TintAmount");
+        foreach (string name in mgfx.ParameterNames)
+            name.ShouldNotMatch(@"_[0-9]+$", $"parameter '{name}' still carries a slangc mangling suffix");
+    }
+
+    // ---------------------------------------------------------------------------
+    // Phase 66 A4, Problem 2 — the OpenGL row_major/float4x4 fix. Direct coverage (beyond
+    // the corpus sweep above) for the exact repro shape: a cbuffer member declared
+    // 'float4x4', compiled for OpenGL. Asserts BOTH that the real pipeline compiles it
+    // successfully now, and that the HLSL text handed to the downstream compiler no longer
+    // carries slangc's own '#pragma pack_matrix(column_major)' (the root cause).
+    // ---------------------------------------------------------------------------
+
+    [Fact]
+    public async Task Float4x4CbufferMember_CompilesOnOpenGL_WithMatrixPackingPragmaStripped()
+    {
+        string source = await File.ReadAllTextAsync(Path.Combine(SlangCorpusDir, "WaveVertex.slang"));
+        var options = new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "WaveVertex.slang" };
+        var capture = new CapturingCompiler();
+
+        var result = await new SlangCompiler(capture).CompileAsync(source, options);
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? FormatErrors(result.Error) : "");
+        string fx = capture.CapturedHlslSource.ShouldNotBeNull();
+        fx.ShouldNotContain("pack_matrix", Case.Sensitive);
+        fx.ShouldContain("float4x4 WorldViewProjection", Case.Sensitive);
+    }
+
+    [Fact]
+    public async Task Float4x4CbufferMember_CompilesOnOpenGL_ThroughTheRealPipeline()
+    {
+        string source = await File.ReadAllTextAsync(Path.Combine(SlangCorpusDir, "WaveVertex.slang"));
+        var options = new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "WaveVertex.slang" };
+
+        var result = await new SlangCompiler().CompileAsync(source, options);
+
+        result.IsSuccess.ShouldBeTrue(
+            result.IsFailure ? $"WaveVertex.slang: {FormatErrors(result.Error)}" : "");
+        AssertLooksLikeMgfx(result.Value.Data);
     }
 }

@@ -4,8 +4,9 @@
 subset frontend (`SlangFrontend.cs`) and every existing output byte are untouched; this phase adds
 a new, separate, opt-in package.
 
-**Status:** 🟡 In progress. Scoped 2026-09-11; A1-A3 done same day (native vendoring +
-`ShadowDusk.Slang.SlangCompiler`, the real compile route). A4-A8 open.
+**Status:** 🟡 In progress. Scoped 2026-09-11; A1-A4 done same day (native vendoring +
+`ShadowDusk.Slang.SlangCompiler`, the real compile route, the mangling fix and the OpenGL
+row_major gap fix — corpus now 21/21 on both DirectX_11 and OpenGL). A5-A8 open.
 
 **Depends on:** [Phase 61](DONE/PHASE-61-slang-support.md) (the shipped HLSL-compatible-subset
 frontend and its groundwork §6/§7/OQ2/OQ3) and [Phase 65](PHASE-65-full-slang-input-spike.md) (the
@@ -248,15 +249,78 @@ turn into an open-ended slog.
   (2) The `layout(row_major)` OpenGL gap above (3 shaders) — needs the row/column-major
   transpose reasoning, not just a regex widen. (3) A6's full non-Gum-shaped corpus sweep this
   stage did not attempt (only the already-Gum-shaped/generics-probe set).
-- **A4 — The demangling shim.** Real slangc renames every symbol with an `_N` suffix and wraps
-  cbuffers in generated `SLANG_ParameterGroup_*` structs (confirmed still true 2026-09-11 against
-  v2026.14.1, Phase 65 §2 — **though A3 added `-no-hlsl-pack-constant-buffer-elements`, which
-  stops the cbuffer WRAPPING specifically; the struct is still emitted, unused, and the `_N`
-  suffix on every member name is completely untouched — A4 is still needed in full**). Left
-  unfixed, a consumer's `float BlurAmount` would surface as
-  an estimate in Phase 65 (§7: "shim-fixable in principle, not validated by building it"); this
-  is where it gets built and proven, with a positive-control test asserting a mangled name never
-  reaches a consumer-visible parameter table.
+- **A4 — Mangling and the OpenGL row_major gap. DONE, 2026-09-11.** Both of A3's two open
+  problems closed; corpus at a clean baseline, **21/21 on both DirectX_11 and OpenGL**.
+
+  **Problem 1 (mangling) — fixed by adding slangc's experimental `-no-mangle` flag, not a
+  demangling shim.** Measured directly (not assumed) against the full 21-shader corpus on
+  both targets, with and without the flag: `-no-mangle` leaves every top-level declaration
+  that feeds a consumer's reflected parameter table — cbuffer names, cbuffer members,
+  `Texture2D`/`SamplerState` declarations — at the author's exact original spelling
+  (`float TintAmount` stays `TintAmount`, never `TintAmount_0`), with zero collisions
+  anywhere in the corpus, including `GenericsProbe.slang`'s real generic-over-`interface`
+  function (a single instantiation, so no ambiguity to disambiguate). Local variables and
+  struct field names (`VSOutput`/`PsInput` members, loop-body temporaries) still carry
+  slangc's `_N` suffix, but those are never part of an `Effect`'s reflected parameter
+  table, so they don't matter for the surface this flag exists to fix. Every corpus shader
+  that compiled before still compiles with the flag added — no new failures on either
+  target. Per the stage's own instruction, the simpler fix was taken: `-no-mangle` is now
+  passed on every slangc invocation (`SlangCompiler.RunSlangc`); no separate
+  demangling/renaming shim was built. Proven by
+  `SlangCompilerTests.ParameterNames_RoundTripUnmangled_ThroughTheCompiledEffectsParameterTable`
+  (DirectX_11 + OpenGL): compiles `GumTint.slang` through the real pipeline, parses the
+  resulting `.mgfx` bytes with the same `MgfxBlobReader` the Integration test suite uses,
+  and asserts `TintColor`/`TintAmount` land in `ParameterNames` verbatim with no
+  `_[0-9]+$`-suffixed name anywhere in the table.
+
+  **Problem 2 (OpenGL `layout(row_major)` gap) — root-caused to slangc's own HLSL emission
+  silently overriding ShadowDusk's existing, already-correct OpenGL matrix-packing
+  convention; fixed by stripping slangc's redundant pragma, NOT by touching
+  `MonoGameGlslRewriter`.** Checked the ordinary (non-Slang) HLSL→GL route FIRST, per the
+  stage's instruction: `DxcFlagBuilder` already carries a settled, load-bearing convention
+  for exactly this — `-Zpr` (row-major HLSL packing) is added to every DXC invocation for
+  OpenGL specifically (never for Vulkan/DirectX12, and DirectX_11 doesn't go through DXC at
+  all — it compiles via `d3dcompiler_47` with `ShaderFlags.PackMatrixColumnMajor`). That
+  flag exists so DXC's SPIR-V decorates a cbuffer matrix `ColMajor` (SPIR-V's inverted term
+  for HLSL row-major — see that file's own comment), which matches GLSL's own
+  column-major default, so SPIRV-Cross never needs to emit an explicit layout qualifier at
+  all — this is *why* every ordinary `.fx` shader with a `float4x4` cbuffer member already
+  works on OpenGL with no special-casing anywhere in `MonoGameGlslRewriter`.
+  Slang's route hit the qualifier because slangc's `-target hlsl` emission opens
+  EVERY translation unit with an unconditional `#pragma pack_matrix(column_major)`
+  (confirmed present in every corpus shader's output, not just the ones with a `float4x4`
+  member). An HLSL `#pragma` always overrides a compiler command-line flag, so this
+  silently defeated `-Zpr` specifically on the Slang route: DXC decorated the SPIR-V the
+  OPPOSITE way every other OpenGL shader gets (`RowMajor` instead of `ColMajor`), which no
+  longer matches GLSL's column-major default, so SPIRV-Cross emitted the explicit
+  `layout(row_major)` qualifier that `MonoGameGlslRewriter.UniformMember`'s regex rejects
+  by design (Phase 66 A3's finding). Fix: `SlangCompiler.StripMatrixPackingPragma` strips
+  the `#pragma pack_matrix(column_major)` line from slangc's merged HLSL before assembly —
+  the same "strip slangc's own inapplicable boilerplate" pattern A3 already used for the
+  NVAPI include guard, not a new shape. Measured to be a no-op for every other target: DXC's
+  own default (no `-Zpr`) is column-major on Vulkan/DirectX12, and `d3dcompiler_47`'s
+  explicit `ShaderFlags.PackMatrixColumnMajor` already matches HLSL's column-major default
+  for DirectX_11 with or without the redundant pragma. **`MonoGameGlslRewriter.cs` was NOT
+  touched** — the fix restores OpenGL to the exact convention every hand-written `.fx`
+  shader already gets, rather than teaching the shared rewriter a parallel layout-qualifier
+  special case for Slang's own output shape, per the stage's instruction to match the
+  existing route rather than loosen the rejecting regex. Proven by
+  `Float4x4CbufferMember_CompilesOnOpenGL_WithMatrixPackingPragmaStripped` (asserts the HLSL
+  handed to the downstream compiler no longer contains `pack_matrix`) and
+  `Float4x4CbufferMember_CompilesOnOpenGL_ThroughTheRealPipeline` (end-to-end compile of
+  `WaveVertex.slang`, the VS+PS shape with the `float4x4` cbuffer member, through the real
+  pipeline on OpenGL) plus the corpus sweep itself, which no longer carves out
+  `Desaturate`/`ScrollUv`/`WaveVertex` as known OpenGL failures.
+
+  **Tests:** `tests/ShadowDusk.Slang.Tests/SlangCompilerTests.cs` — the corpus sweep's
+  `KnownOpenGlRowMajorFailures` carve-out removed (all 21 shaders now assert success on
+  both targets), plus the two new tests named above and a `[Theory]`-parameterized
+  mangling round-trip test across both targets. The MGFX-parsing test source-links
+  `ShadowDusk.Integration.Tests/MgfxBlobReader.cs` into `ShadowDusk.Slang.Tests` (the same
+  `<Compile Include=... Link=...>` pattern that project already uses for
+  `MgcbErrorFormatter.cs`/`Fx2BinaryValidator.cs`) rather than a second hand-rolled MGFX
+  parser. Full solution `dotnet test` (unfiltered) green on both net8.0/net10.0 before
+  push.
 - **A5 — Broaden the acceptance boundary.** Replace `SD0600`'s "reject Slang-only constructs by
   name" with Phase 61 §6 A6's three-band rule (table below), now that real slangc backs it:
 
@@ -314,6 +378,10 @@ turn into an open-ended slog.
 - **Linux/macOS RID parity** for A1's finding — both Phase 65's original measurement and this
   probe only checked the cached windows-x64 oracle; unverified whether the Linux/macOS releases
   also load and run `-target hlsl` cleanly with their platform's `slang-llvm.*` removed.
-- **Whether A4's demangling shim is complete** for every construct real slangc's corpus surfaces,
-  not just the `_N`/`SLANG_ParameterGroup_*` cases already seen — A6's broader sweep is what
-  would surface anything missed.
+- **Whether `-no-mangle` stays collision-free outside the 21-shader corpus** — A4 measured zero
+  name collisions on every shader tried (including a real generic-over-`interface` function),
+  but only ever one instantiation of any given generic; a source that instantiates the same
+  generic twice with different type arguments (two call sites needing genuinely different
+  compiled bodies under the same surface name) is untested — A6's broader sweep is what would
+  surface it, and the fallback (a demangling shim mapping slangc's mangled names back
+  deterministically) documented in A3/A4's original scoping remains available if it does.
