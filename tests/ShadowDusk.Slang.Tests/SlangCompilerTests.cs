@@ -350,6 +350,82 @@ public sealed class SlangCompilerTests
     }
 
     // ---------------------------------------------------------------------------
+    // Phase 66 A6 — platform macros (OPENGL/SM4/VULKAN/SM6/HLSL/GLSL/MGFX/FNA/SM3,
+    // __KNIFX__) are now forwarded to slangc, the same way the ordinary .fx route
+    // already forwards them to DXC (PlatformMacros.For). Found via the A6 residue
+    // sweep: a real MonoGame fixture (Instancing.fx) branches on '#if VULKAN' to pick
+    // Vulkan's already-transposed vertex data vs. every other target's need to
+    // transpose() it — a construct that measurably resolved to the SAME (wrong, for
+    // Vulkan) branch on every target before this fix, since slangc's own preprocessor
+    // pass never saw ANY of these macros (only CompilerOptions.Defines was forwarded).
+    // ---------------------------------------------------------------------------
+
+    [Fact]
+    public async Task PlatformMacros_ForwardedToSlangc_IfOpenglBranchResolvesPerTarget()
+    {
+        const string source = """
+            [shader("fragment")]
+            float4 MainPS() : SV_Target
+            {
+            #if OPENGL
+                return float4(1, 0, 0, 1);
+            #else
+                return float4(0, 1, 0, 1);
+            #endif
+            }
+            """;
+        var glCapture = new CapturingCompiler();
+        var glResult = await new SlangCompiler(glCapture).CompileAsync(
+            source, new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "platform.slang" });
+
+        var dxCapture = new CapturingCompiler();
+        var dxResult = await new SlangCompiler(dxCapture).CompileAsync(
+            source, new CompilerOptions { Target = PlatformTarget.DirectX, SourceFileName = "platform.slang" });
+
+        glResult.IsSuccess.ShouldBeTrue(glResult.IsFailure ? FormatErrors(glResult.Error) : "");
+        dxResult.IsSuccess.ShouldBeTrue(dxResult.IsFailure ? FormatErrors(dxResult.Error) : "");
+
+        string glFx = glCapture.CapturedHlslSource.ShouldNotBeNull();
+        string dxFx = dxCapture.CapturedHlslSource.ShouldNotBeNull();
+
+        // Before the fix, BOTH bodies took the '#else' branch (slangc never saw OPENGL
+        // defined for either target) — asserting each target lands on a DIFFERENT
+        // literal is exactly what distinguishes "forwarded correctly" from "silently
+        // ignored, both targets happen to still compile".
+        glFx.ShouldContain("float4(1.0f, 0.0f, 0.0f, 1.0f)", Case.Sensitive);
+        dxFx.ShouldContain("float4(0.0f, 1.0f, 0.0f, 1.0f)", Case.Sensitive);
+    }
+
+    [Fact]
+    public async Task PlatformMacros_KnifxContainer_DefinesKniFxMacro()
+    {
+        const string source = """
+            [shader("fragment")]
+            float4 MainPS() : SV_Target
+            {
+            #ifdef __KNIFX__
+                return float4(1, 0, 0, 1);
+            #else
+                return float4(0, 1, 0, 1);
+            #endif
+            }
+            """;
+        var mgfxCapture = new CapturingCompiler();
+        var mgfxResult = await new SlangCompiler(mgfxCapture).CompileAsync(
+            source, new CompilerOptions { Target = PlatformTarget.DirectX, Container = EffectContainer.Mgfx, SourceFileName = "container.slang" });
+
+        var knifxCapture = new CapturingCompiler();
+        var knifxResult = await new SlangCompiler(knifxCapture).CompileAsync(
+            source, new CompilerOptions { Target = PlatformTarget.DirectX, Container = EffectContainer.Knifx, SourceFileName = "container.slang" });
+
+        mgfxResult.IsSuccess.ShouldBeTrue(mgfxResult.IsFailure ? FormatErrors(mgfxResult.Error) : "");
+        knifxResult.IsSuccess.ShouldBeTrue(knifxResult.IsFailure ? FormatErrors(knifxResult.Error) : "");
+
+        mgfxCapture.CapturedHlslSource.ShouldNotBeNull().ShouldContain("float4(0.0f, 1.0f, 0.0f, 1.0f)", Case.Sensitive);
+        knifxCapture.CapturedHlslSource.ShouldNotBeNull().ShouldContain("float4(1.0f, 0.0f, 0.0f, 1.0f)", Case.Sensitive);
+    }
+
+    // ---------------------------------------------------------------------------
     // Phase 66 A4, Problem 1 — the mangling fix ('-no-mangle'). A parameter name written
     // in .slang source must round-trip, UNMANGLED, all the way through the real pipeline
     // into the compiled effect's own reflected parameter table (Effect.Parameters['Name']

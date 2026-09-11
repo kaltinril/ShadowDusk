@@ -13,7 +13,8 @@ separate, opt-in package.
 `ShadowDusk.Slang.SlangCompiler`, the real compile route, the mangling fix and the OpenGL
 row_major gap fix — corpus now 21/21 on both DirectX_11 and OpenGL; A5 replaced the placeholder
 acceptance with the real three-band rule and closed the `SD0600` `interface`/generics gap).
-A6-A8 open.
+A6 done same day (the broad residue sweep found and fixed a real platform-macro-forwarding
+gap — see below). A7-A8 open.
 
 **Depends on:** [Phase 61](DONE/PHASE-61-slang-support.md) (the shipped HLSL-compatible-subset
 frontend and its groundwork §6/§7/OQ2/OQ3) and [Phase 65](PHASE-65-full-slang-input-spike.md) (the
@@ -449,11 +450,156 @@ turn into an open-ended slog.
   message never contains `X0000`/`__interface` (the old raw-DXC symptom).
 
   Full solution `dotnet test` (unfiltered, both net8.0/net10.0) green before push.
-- **A6 — The real A5 residue sweep.** Phase 65's 33-shader corpus was a solid start, not the full
-  sweep Phase 61 envisioned. Run the **whole** `tests/fixtures/shaders/` corpus (not just
-  Gum-shaped shaders) through real slangc `-target hlsl` at every ShadowDusk target (OpenGL,
-  DirectX11/12, Vulkan, FNA), record what changes shape or fails per target — this is what makes
-  A5's diagnostic table (above) complete rather than a guess.
+- **A6 — The real A5 residue sweep. DONE, 2026-09-11.** Found and fixed a real, general
+  bug (platform macros never reached slangc); everything else the sweep surfaced was
+  either the already-known "legacy DX9 sampler syntax is a slangc syntax error" boundary
+  (Band 1, expected) or an already-registered ShadowDusk diagnostic correctly firing
+  through the new route too (Band 2/3, no new gap).
+
+  **Sampling method.** `tests/fixtures/shaders/` is 153 `.fx` files; slangc rejects FX9
+  `technique`/`pass`/`sampler_state` syntax outright (Phase 61, already known), so a
+  file-for-file conversion would mostly re-measure that one fact 153 times. Instead: 15
+  fixtures were hand-picked for **construct diversity**, favoring real vendored
+  third-party shaders (`third-party/Nez`, `third-party/MonoGame`) and diagnostic-focused
+  `examples/`/root fixtures over more Gum-shaped procedural shaders (A3-A5 already covered
+  that shape via the Phase 65 probes). Each fixture's entry-point body was carried over
+  with the `[shader("vertex")]`/`[shader("fragment")]` convention added, changing as
+  little else as possible; every sample's own header comment names its source fixture and
+  the construct it was picked for. Coverage aimed for: legacy DX9 `sampler`/`tex2D()` and
+  `sampler_state{...}` declaration shapes (the dominant style across the non-Gum corpus,
+  never exercised by the shipped 21-shader real-slangc corpus, which only ever used modern
+  `Texture2D`/`SamplerState.Sample()`) in three sub-shapes (bare `sampler`, an
+  address-mode `sampler_state` block, a texture-only `sampler_state` block); loops
+  (literal-bounded, array-uniform-indexed); branches (simple, nested, ternary-chained);
+  the `VPOS` semantic; helper-function calls; `Texture2DArray`/`TextureCube`/`Texture3D`
+  sampling; `SampleGrad`; `ddx()` inside a loop with a conditional break; multiple render
+  targets (a struct-typed PS return with `SV_Target0`/`SV_Target1`) plus `clip()`;
+  literal-indexed array uniforms; and a VS taking a second, semantic-tagged parameter
+  (`float4x4 : BLENDWEIGHT`) with an `#if VULKAN` branch. Samples live in
+  `plan/PHASE-66-appendix/a6-residue-sweep/shaders/` (`README.md` there has the exact
+  provenance/repro). Each of the 15 was compiled through the real `SlangCompiler.CompileAsync`
+  route for all 5 targets (`OpenGL`/`DirectX`/`DirectX12`/`Vulkan`/`Fna`) — 75 compiles —
+  via a temporary xunit exploration harness (not committed; its raw output is reproduced
+  in the table below). This is a judgment sample, not exhaustive: it does not touch the
+  MonoGame `BEGIN_CONSTANTS`/`DECLARE_TEXTURE`/`TECHNIQUE` macro-header shape
+  (`DualTextureEffect.fx`, `SkinnedEffect.fx`, …, which route through `.fxh` includes this
+  sweep did not resolve by hand) or the 1000+-line `apos-shapes-sm6.fx` SM6 corpus shader
+  (excluded for size; its SM6-specific declaration shape is already covered by the shipped
+  corpus's `WaveVertex.slang`/`GenericsProbe.slang` and A5's `SD0624` work).
+
+  **Pass/fail table** (✓ = compiled through the real pipeline; a failure code is shown
+  otherwise; targets are OpenGL / DirectX / DirectX12 / Vulkan / Fna):
+
+  | Sample | GL | DX11 | DX12 | Vulkan | FNA |
+  |---|---|---|---|---|---|
+  | `GaussianBlurLoop.slang` (bare `sampler`) | E30015 | E30015 | E30015 | E30015 | E30015 |
+  | `TwistBranch.slang` (bare `sampler`) | E30015 | E30015 | E30015 | E30015 | E30015 |
+  | `PixelGlitchHelper.slang` (bare `sampler`) | E30015 | E30015 | E30015 | E30015 | E30015 |
+  | `CrosshatchVposModulo.slang` (bare `sampler`) | E30015 | E30015 | E30015 | E30015 | E30015 |
+  | `HeatDistortionDualSampler.slang` (`sampler_state` w/ address modes) | E20001 | E20001 | E20001 | E20001 | E20001 |
+  | `BloomCombineHelperLerp.slang` (`sampler_state`, texture-only) | E20001 | E20001 | E20001 | E20001 | E20001 |
+  | `ClipMaskCompare.slang` (`Texture2D` + legacy `sampler_state`) | E20001 | E20001 | E20001 | E20001 | E20001 |
+  | `DeferredSpriteMrt.slang` (MRT + `sampler_state`) | E20001 | E20001 | E20001 | E20001 | E20001 |
+  | `ArrayUniformTernary.slang` (`sampler_state`) | E20001 | E20001 | E20001 | E20001 | E20001 |
+  | `DdxInDivergentLoop.slang` (`sampler_state`) | E20001 | E20001 | E20001 | E20001 | E20001 |
+  | `CubeSamplerGeneric.slang` | ✓ | ✓ | ✓ | ✓ | ✓ |
+  | `VolumeSamplerGeneric.slang` | ✓ | ✓ | ✓ | ✓ | ✓ |
+  | `SampleGradExplicit.slang` | ✓ | ✓ | ✓ | ✓ | ✓ |
+  | `TextureArraySampleVsPs.slang` | SD0210+SD0403 | ✓ | ✓ | ✓ | FX0013 |
+  | `InstancingMatrixSemantic.slang` | SD0210 | ✓ | ✓ | ✓ | ✓ |
+
+  **Classification of every failure:**
+
+  - **`E30015`/`E20001` (10/15 samples, EVERY legacy-sampler sample, all 5 targets) —
+    Band 1, slangc's own syntax error, expected and fine.** `E30015: undefined identifier
+    'sampler'` for a bare `sampler s0;` declaration, and `E20001: unexpected token '{'` for
+    any `sampler_state { ... }` initializer block (address-mode or texture-only) —
+    slangc's HLSL-superset grammar has no support for DX9-era `sampler`/`sampler_state`
+    at all, regardless of shape. This was never measured before A6 (the shipped 21-shader
+    corpus and the Phase 65 probes only ever used modern `Texture2D`/`SamplerState`), and
+    it is a real, concrete finding worth recording even though it needs no fix: **every**
+    real-world shader in this sweep that used the legacy declaration style hit it, and
+    that style is the dominant one across the non-Gum, non-Slang parts of
+    `tests/fixtures/shaders/` (third-party Nez/vendored effects especially). A Slang
+    author porting an existing legacy-style `.fx` shader must rewrite its texture/sampler
+    declarations to `Texture2D`/`SamplerState`/`.Sample()` first; `SD0602`/`SD0622`/the
+    existing Band-1 verbatim-diagnostic path already surfaces slangc's own message
+    correctly (confirmed here, not just assumed) — no new diagnostic code needed.
+  - **`SD0210` (GL, `TextureArraySampleVsPs.slang`: `sampler2DArray` unmodelled) and
+    `SD0403` (GL, same file: unsigned-int/shift/bitwise ops in the `SV_VertexID`-driven
+    triangle trick) — Band 2/3, already-known ShadowDusk GL limitations, correctly
+    surfaced through the new route.** Both diagnostics are pre-existing and already
+    covered by `MonoGameGlslRewriterTests`/`HidefGeneralityFixtureTests`'s own comments
+    ("sampler2DArray... DO still fail loudly"); nothing new here beyond confirming the
+    Slang route reaches the same rewriter code path and gets the same loud rejection a
+    hand-written `.fx` with the identical construct would.
+  - **`FX0013` (FNA, `TextureArraySampleVsPs.slang`: `Texture2DArray` has no D3D9 SM1-3
+    equivalent) — Band 2/3, already-known, already-registered diagnostic**, matching
+    `tests/fixtures/shaders/third-party/MonoGame/NOTICE.md`'s own row for the same
+    construct on the ordinary `.fx` route (`TextureArrayEffect.fx`: FNA → `FX0013`).
+  - **`SD0210` (GL, `InstancingMatrixSemantic.slang`: "stage interface identifier
+    'in_var_BLENDWEIGHT' survived the I/O rewrite") — Band 2/3, already-known, already
+    tested.** `MonoGameGlslRewriterTests.VertexStage_UnknownSemantic_ThrowsLoudly` already
+    pins this exact rejection (an unmapped vertex semantic fails loudly on GL) for the
+    identical `in_var_BLENDWEIGHT0` shape. Not a new gap; the Slang route correctly hits
+    the same deliberate "fail loudly on an unmapped semantic" policy.
+  - **A genuinely stale, unrelated finding (not fixed, out of this stage's scope):**
+    `CubeSamplerGeneric.slang`/`VolumeSamplerGeneric.slang` passed on every target
+    including GL, which at first looked like a Slang-route divergence from
+    `examples/ExCubeSamplerHidef.fx`/`ExVolumeTextureHidef.fx`'s own header comments
+    ("Expect: OpenGL compile FAILS with SD0210"). It isn't one: `HidefGeneralityFixtureTests.cs`
+    confirms cube/volume sampling has been genuinely supported on GL since Phase 34 — those
+    two fixtures' header comments were simply never updated after Phase 34 shipped and are
+    stale documentation, unrelated to Slang. Left as-is; fixing unrelated fixture-comment
+    staleness is outside A6's mandate.
+
+  **The bug found and fixed: platform macros never reached slangc.** Discovered via
+  `InstancingMatrixSemantic.slang`'s `#if VULKAN` branch (copied verbatim from
+  `Instancing.fx`, which the ordinary `.fx` route already compiles correctly on every
+  target it's tested on — DX11/DX12/Vulkan/FNA, per
+  `third-party/MonoGame/NOTICE.md`). `SlangCompiler.RunSlangc` only ever forwarded
+  `CompilerOptions.Defines` (the user's own `-D`s) to slangc's preprocessor pass — never
+  `PlatformMacros.For(options.Target, options.Container)`, the `OPENGL`/`SM4`/`VULKAN`/
+  `SM6`/`HLSL`/`GLSL`/`MGFX`/`FNA`/`SM3`/`__KNIFX__` set the ordinary `.fx` route already
+  defines for DXC (`CompilationPipeline`). **Measured directly, not inferred:** before the
+  fix, the HLSL slangc emitted for `PlatformTarget.Vulkan` and `PlatformTarget.DirectX`
+  were IDENTICAL on the point that matters — both contained
+  `mul(input.Position, transpose(worldTransposed))`, the branch meant only for non-Vulkan
+  targets, because `VULKAN` was never defined during slangc's compile. After the fix,
+  Vulkan's HLSL contains `mul(input.Position, worldTransposed)` (untransposed, correct)
+  while DirectX's still contains the `transpose()` call — verified by inspecting the
+  actual captured HLSL text for both targets (not just "both still compile", which stayed
+  true throughout and would have hidden the bug forever). This is the exact "fix the
+  class, not the repro" shape: any Slang author writing the SAME `#if OPENGL`/`#if VULKAN`/
+  `#if SM4`/`#ifdef __KNIFX__` idiom the rest of this project's shaders already use for
+  per-target correctness hit the identical silent-wrong-branch failure, independent of
+  which specific construct sat inside the branch — fixing the macro-forwarding gap once
+  fixes every instance of that condition, not just the `Instancing.fx`-shaped one that
+  happened to surface it. No corpus regression: none of the shipped 21-shader corpus or
+  the Phase 65 Gum probes reference any of these macro names (confirmed by grep before
+  changing anything), so the fix is additive.
+
+  Fixed in `src/ShadowDusk.Slang/SlangCompiler.cs` (`Compile`/`RunSlangc`, plus the class
+  doc comment). **Tests:**
+  `SlangCompilerTests.PlatformMacros_ForwardedToSlangc_IfOpenglBranchResolvesPerTarget`
+  (asserts OpenGL and DirectX resolve a `#if OPENGL` branch to DIFFERENT literals, which
+  distinguishes "forwarded correctly" from "silently ignored, both targets happen to still
+  compile") and `...PlatformMacros_KnifxContainer_DefinesKniFxMacro` (asserts
+  `EffectContainer.Knifx` defines `__KNIFX__`, `Mgfx` does not). Full solution `dotnet test`
+  (unfiltered, both net8.0/net10.0) green before push.
+
+  **Left open, precisely, for a future stage (not this one — needs real design work, not a
+  quick unblock):** the MonoGame `BEGIN_CONSTANTS`/`DECLARE_TEXTURE`/`TECHNIQUE` macro
+  header shape (`Macros.fxh`, used by `DualTextureEffect.fx`/`SkinnedEffect.fx`/most of
+  the official MonoGame sample effects) was not exercised at all — converting one by hand
+  means resolving several chained `#include`s and macro expansions manually, which this
+  stage's per-sample budget did not cover. Read (not compiled) `Macros.fxh` directly:
+  ALL THREE of its `DECLARE_TEXTURE` branches (`SM6`/`VULKAN`, `SM4`, and the DX9 `#else`)
+  expand to a bare `sampler Name##Sampler : register(...)` or `sampler2D Name : register(...)`
+  declaration — the exact shape every `E30015` failure in the table above already hit, in
+  every branch, not only the legacy one. So these fixtures would almost certainly fail
+  identically at Band 1 — but that is a reading of the macro source, not a measured
+  compile through slangc, so it is flagged here rather than asserted as a table row.
 - **A7 — Validation.** A `SlangCorpus`-style gate through the **real-slangc route** specifically
   (distinct from the existing subset-route gate, which stays as-is and keeps validating the
   subset frontend): compile sweep across all targets, pixel-equivalence against slangc's own

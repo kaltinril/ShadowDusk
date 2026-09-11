@@ -54,6 +54,17 @@ namespace ShadowDusk.Slang;
 /// target whose backend cannot represent SM6 HLSL (<c>SD0624</c>,
 /// <see cref="SlangSm6ConstructGuard"/>) (band 2); everything else compiles, with no curated
 /// allow-list (band 3).</para>
+///
+/// <para><b>Per-target platform macros, forwarded to slangc (Phase 66 A6):</b> every
+/// slangc invocation now also receives <c>-D</c> flags for
+/// <c>PlatformMacros.For(options.Target, options.Container)</c> — the same
+/// <c>OPENGL</c>/<c>SM4</c>/<c>VULKAN</c>/<c>SM6</c>/<c>HLSL</c>/<c>GLSL</c>/<c>MGFX</c>/
+/// <c>FNA</c>/<c>SM3</c>/<c>__KNIFX__</c> macros the ordinary <c>.fx</c> route already
+/// defines for every hand-written shader. Found via the A6 residue sweep: without this,
+/// a Slang author's own <c>#if OPENGL</c> / <c>#if VULKAN</c> branch (the exact idiom a
+/// huge share of the real, non-Slang-authored fixture corpus relies on for per-target
+/// correctness) resolved to the SAME branch on every target, since slangc's own
+/// preprocessor pass never saw them — a silent, target-blind divergence.</para>
 /// </summary>
 /// <remarks>
 /// Deliberately does NOT implement <c>IShaderCompiler</c>: that interface's contract is
@@ -158,6 +169,30 @@ public sealed class SlangCompiler
         }
         string runnableSlangc = Path.Combine(toolDirectory, "slangc.exe");
 
+        // Phase 66 A6: forward the SAME per-target platform macros (OPENGL/SM4/VULKAN/SM6/
+        // HLSL/GLSL/MGFX/FNA/SM3, plus __KNIFX__ when options.Container is Knifx) the
+        // ordinary .fx pipeline defines for every hand-written shader (PlatformMacros.For,
+        // CompilationPipeline). Found via the residue sweep: a huge share of the real
+        // (non-Slang-authored) fixture corpus branches on '#if OPENGL' / '#if VULKAN' /
+        // '#if SM4' / '#ifdef __KNIFX__' for per-target correctness (different SV_POSITION
+        // spellings, the Vulkan/FXC matrix-transpose difference in Instancing.fx, profile
+        // selection, ...). Before this fix, RunSlangc only ever forwarded the user's OWN
+        // CompilerOptions.Defines to slangc's preprocessor — never the target macros — so a
+        // Slang author writing the exact same '#if OPENGL'/'#if VULKAN' idiom the rest of
+        // this project's shaders already rely on got the SAME resolved branch on every
+        // target (whichever one is true with none of these macros defined, whether that is
+        // a real branch or the least-surprising "just fails to compile" case for an
+        // '#ifdef'-only guard), independent of options.Target — a silent, target-blind
+        // divergence for any Slang author who reasonably expects the convention every other
+        // ShadowDusk shader already gets. Not a Slang-only concern to skip: Metal is the
+        // one PlatformMacros.For target ShadowDusk doesn't implement yet, so it is left
+        // out entirely (no macros) rather than throwing — nothing routes a real compile at
+        // Metal through this class today, and no diagnostic is owed for a target that
+        // cannot reach here.
+        IReadOnlyList<MacroDefinition> platformMacros = PlatformMacros.IsSupported(options.Target)
+            ? PlatformMacros.For(options.Target, options.Container).Macros
+            : [];
+
         // Sequential, not parallel: every invocation shares the SAME writable directory (and
         // therefore the same first-compile cache write into it), so running entries one at a
         // time sidesteps any question of concurrent-write safety in slangc itself, which
@@ -169,7 +204,7 @@ public sealed class SlangCompiler
 
             string stage = entry.Stage == SlangStage.Vertex ? "vertex" : "fragment";
             (int exitCode, string stdout, string stderr) = RunSlangc(
-                runnableSlangc, toolDirectory, slangSource, entry.Name, stage, options.Defines);
+                runnableSlangc, toolDirectory, slangSource, entry.Name, stage, platformMacros, options.Defines);
 
             if (exitCode != 0)
             {
@@ -309,6 +344,7 @@ public sealed class SlangCompiler
         string slangSource,
         string entryName,
         string stage,
+        IReadOnlyList<MacroDefinition> platformMacros,
         IReadOnlyList<UserDefine> defines)
     {
         var psi = new ProcessStartInfo(slangcPath)
@@ -324,6 +360,11 @@ public sealed class SlangCompiler
 
         psi.ArgumentList.Add("-lang");
         psi.ArgumentList.Add("slang");
+        // Platform macros first, user defines after — same ordering ToDxcFlags() uses for
+        // the ordinary .fx route, so a user -D of the same name (unusual, but not
+        // forbidden) still wins.
+        foreach (MacroDefinition macro in platformMacros)
+            psi.ArgumentList.Add($"-D{macro.Name}={macro.Value}");
         foreach (UserDefine define in defines)
             psi.ArgumentList.Add($"-D{define.Name}={define.Value}");
         psi.ArgumentList.Add("-target");

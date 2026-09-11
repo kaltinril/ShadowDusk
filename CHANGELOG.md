@@ -48,6 +48,19 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **`ShadowDusk.Slang`'s real-slangc route now forwards the same per-target platform macros
+  (`OPENGL`/`SM4`/`VULKAN`/`SM6`/`HLSL`/`GLSL`/`MGFX`/`FNA`/`SM3`, `__KNIFX__` for the KNIFX
+  container) the ordinary `.fx` route already defines for DXC, closing a silent divergence
+  found by Phase 66 A6's residue sweep.** `SlangCompiler` previously forwarded only the user's
+  own `CompilerOptions.Defines` to slangc's preprocessor, never `PlatformMacros.For` — so a
+  Slang author's `#if OPENGL` / `#if VULKAN` / `#if SM4` / `#ifdef __KNIFX__` branch (the exact
+  idiom common across the rest of this project's shaders, e.g. a real MonoGame `Instancing.fx`
+  vertex shader choosing whether to `transpose()` an instancing matrix) resolved to the SAME
+  branch on every target, since slangc never saw any of these macros defined. Measured directly:
+  before the fix, Vulkan and DirectX produced IDENTICAL HLSL on the point that mattered (both
+  took the non-Vulkan `transpose()` branch); after the fix they diverge correctly. See
+  `plan/PHASE-66-full-slang-input-implementation.md`'s A6 write-up.
+
 - **`SD0600`'s Slang-only-construct scan now catches bare `interface` and generic
   type-parameter-constraint syntax** (`ShadowDusk.Compiler.Slang.SlangFrontend`, Phase 65 §5's
   finding, closed by Phase 66 A5). Previously a real Slang file using either (e.g. an `interface`
