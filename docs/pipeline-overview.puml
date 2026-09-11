@@ -38,12 +38,15 @@ package "1 - INPUTS  (what you give us)" {
   rectangle "HLSL **.fx**\n(MonoGame / KNI / FNA source)" as FX #DCE6DC
   rectangle "ShaderToy / raw GLSL\nimage shader (.glsl / pasted)" as GLSLIN #DCE6DC
   rectangle "**Slang** (.slang)\nHLSL-compatible subset" as SLANGIN #DCE6DC
+  rectangle "**Slang** (.slang)\ngenuine Slang: generics, interfaces\n(ShadowDusk.Slang, OPT-IN package)" as SLANGFULLIN #DCE6DC
 }
 
 ' ===== 2. FRONTEND (shared) =====
 package "2 - FRONTEND  (shared, runs for every target)" {
   rectangle "**ShaderToy frontend**  (ShadowDusk.ShaderToy)\nGLSL image shader -> .fx" as STOY #E7DFC9
   rectangle "**Slang frontend**  (ShadowDusk.Compiler.Slang)\n[shader(\"vertex\"/\"fragment\")] -> entry points;\ntechnique synthesized; body compiles as HLSL" as SLANGFE #E7DFC9
+  rectangle "**slangc**  (bundled native, win-x64 only)\nreal Slang compiler: .slang -> HLSL" as SLANGCNATIVE #BFD2E8
+  rectangle "**SlangCompiler**  (ShadowDusk.Slang)\nentry scan reused from Slang frontend;\n.fx wrapper assembled (technique/pass)" as SLANGFULLFE #E7DFC9
   rectangle "**FxPreParser** (FX9 pre-parse)\nfind technique/pass/sampler blocks;\nrecover macro-defined TECHNIQUE();\nFxSourceMode = RewriteToSm4 | PreserveSm3" as PRE #E7DFC9
   rectangle "**PlatformMacros**  (inject per-target #defines)\nGL:{MGFX,GLSL,OPENGL}  DX11:{MGFX,HLSL,SM4}\nDX12:{MGFX,HLSL,SM6}  VK:{MGFX,HLSL,VULKAN,SM6}\nFNA:{FNA,HLSL,SM3}   +__KNIFX__ when KNIFX" as MAC #E7DFC9
   rectangle "**Preprocess** (DXC -P)\nflatten #include, expand macros" as PP #E7DFC9
@@ -129,6 +132,9 @@ GLSLIN --> STOY
 STOY --> PRE : ".fx"
 SLANGIN --> SLANGFE
 SLANGFE --> PRE : ".fx"
+SLANGFULLIN --> SLANGCNATIVE
+SLANGCNATIVE --> SLANGFULLFE
+SLANGFULLFE --> PRE : ".fx"
 FX --> PRE
 PRE --> MAC
 MAC --> PP
@@ -180,7 +186,7 @@ note as N1
 **OS:** self-contained on Linux / macOS / Windows  +  Browser (WASM)  +  **Android** (GL path; on-device DXC + SPIRV-Cross built for android-arm64/x86_64, loaded in-process from the APK lib/[abi]/ dir)
 
 == Two additive, distinct axes (not §1 targets)
-**Slang input** (ShadowDusk.Compiler.Slang) - .slang joins .fx/.glsl as an accepted INPUT; no Slang binary shipped or invoked, pure managed text transform; no mgfxc oracle exists for Slang, so no Slang route is ever mgfxc-equivalent.
+**Slang input, two tiers.** Free default (ShadowDusk.Compiler.Slang): .slang joins .fx/.glsl as an accepted INPUT; no Slang binary shipped or invoked, pure managed text transform. Opt-in (ShadowDusk.Slang, Phase 66): bundles real slangc (win-x64) for genuine Slang - generics, interfaces - handed to the SAME unchanged faithful pipeline once slangc emits HLSL. No mgfxc oracle exists for Slang, so NEITHER tier's route is ever mgfxc-equivalent.
 **SkSL OUTPUT** (ShadowDusk.Compiler.Sksl) - converts a pixel-only .fx to SkSL text for SkiaSharp's SKRuntimeEffect; evidence is rendered-image fidelity against the original HLSL, never mgfxc-equivalence (Skia has no reference compiler).
 end note
 

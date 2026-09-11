@@ -1,0 +1,6 @@
+=== -target hlsl (should still PASS - this is the route we care about) ===
+exit=0
+
+=== -target shader-sharedlib -emit-cpu-via-llvm (CPU/LLVM codegen - should now FAIL without slang-llvm.dll) ===
+error[E52002]: pass-through compiler not found
+exit=127

@@ -43,7 +43,8 @@ Every shape implements the same <xref:ShadowDusk.Core.IShaderCompiler> interface
 | [Metal (macOS / iOS)](../backends/metal.md) | MSL | Not yet |
 | [Vulkan](../backends/vulkan.md) | SPIR-V `.mgfx` | Supported (MonoGame `DesktopVK` only — KNI has no Vulkan platform) |
 | [DirectX 12](../backends/directx12.md) (MonoGame `WindowsDX12`) | DXIL `.mgfx` | Supported (MonoGame `WindowsDX12` only — KNI has no DirectX 12 platform) |
-| Slang input (`.slang`) | Same `.mgfx`/`.fxb` as the target backend | Compile-proven (17-shader corpus cross-validated against the real `slangc`; no `mgfxc` oracle for Slang input) |
+| Slang input, HLSL-compatible subset (`.slang`, `ShadowDusk.Compiler`, free) | Same `.mgfx`/`.fxb` as the target backend | Compile-proven (17-shader corpus cross-validated against the real `slangc`; no `mgfxc` oracle for Slang input) |
+| Slang input, full language (`.slang`, `ShadowDusk.Slang`, opt-in) | Same `.mgfx`/`.fxb` as the target backend | Render-proven on OpenGL + DirectX_11 (21-shader corpus, 4-target compile sweep, procedural pixel-diff vs slangc's own HLSL, real DirectX_11 `Effect` load; no `mgfxc` oracle for Slang input) |
 | SkSL output (SkiaSharp) | SkSL text (`SKRuntimeEffect`) | Image-fidelity proven vs the original HLSL's math (no `mgfxc`-equivalence claim; Skia has no reference compiler) |
 
 Supported targets are tested end-to-end against the reference compiler and render identically (on-device Android via byte-identity: its output is byte-identical to the desktop build, whose renders are proven — the on-device pixel diff is a tracked follow-up). See [Validation](../contributing/validation.md) for how that's proven, and [Choosing a Target](../guides/choosing-a-target.md) to pick one.

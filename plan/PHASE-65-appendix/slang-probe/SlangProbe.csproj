@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- THROWAWAY measurement harness for the Phase 65 full-Slang-input spike. Not part of
+         ShadowDusk.slnx, not shipped, not a validation gate. Deliberately outside
+         tests/fixtures/ per the phase's own instructions (plan/PHASE-65-full-slang-input-spike.md).
+         Windows-only in practice: the pinned slangc oracle download is windows-x86_64. -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RootNamespace>ShadowDusk.Validation.SlangProbe</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
+  </ItemGroup>
+</Project>

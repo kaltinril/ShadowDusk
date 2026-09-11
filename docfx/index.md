@@ -46,7 +46,8 @@ FNA  (D3D9 fx_2_0):
 | [Metal (macOS / iOS)](backends/metal.md) | MSL | **Not yet implemented (future)** |
 | [Vulkan](backends/vulkan.md) | SPIR-V | Validated end-to-end (MonoGame `DesktopVK` only — KNI has no Vulkan platform) |
 | [DirectX 12](backends/directx12.md) (MonoGame `WindowsDX12`) | DXIL (SM6) | Validated end-to-end (MonoGame `WindowsDX12` only — KNI has no DirectX 12 platform) |
-| Slang input (`.slang`) | Same `.mgfx`/`.fxb` as the target backend | Compile-proven (17-shader corpus cross-validated against the real `slangc`; no `mgfxc` oracle for Slang input) |
+| Slang input, HLSL-compatible subset (`.slang`, `ShadowDusk.Compiler`, free) | Same `.mgfx`/`.fxb` as the target backend | Compile-proven (17-shader corpus cross-validated against the real `slangc`; no `mgfxc` oracle for Slang input) |
+| Slang input, full language (`.slang`, `ShadowDusk.Slang`, opt-in) | Same `.mgfx`/`.fxb` as the target backend | Render-proven on OpenGL + DirectX_11 (21-shader corpus, 4-target compile sweep, procedural pixel-diff vs slangc's own HLSL, real DirectX_11 `Effect` load; no `mgfxc` oracle for Slang input) |
 | SkSL output (SkiaSharp) | SkSL text (`SKRuntimeEffect`) | Image-fidelity proven vs the original HLSL's math (no `mgfxc`-equivalence claim; Skia has no reference compiler) |
 
 *Validated end-to-end* means rendered in the **real engine** and compared against the reference compiler's output — [Validation &amp; the Evidence Ladder](contributing/validation.md) has the per-target proof detail. Slang input and the SkSL converter are additive, distinct axes rather than `.mgfx` backends, so they use their own evidence bar; see the note above the table in [Overview](getting-started/overview.md) for detail.
@@ -63,6 +64,7 @@ The table above is the **graphics-backend** axis — the one that decides the ou
 - **Using the content pipeline?** [Drop-in `mgfxc`](guides/dropin-mgfxc.md) and [MGCB Content Pipeline](guides/mgcb-content-pipeline.md).
 - **Compiling in the browser?** [In-Browser (KNI/Blazor WASM)](guides/in-browser-kni-blazor.md).
 - **Coming from ShaderToy?** The optional `ShadowDusk.ShaderToy` package converts ShaderToy / plain-GLSL fragment shaders to `.fx`, and the CLI auto-detects `.glsl` input — see [Installation](getting-started/installation.md#optional-shadertoy-and-glsl-front-end).
+- **Writing genuine Slang** (generics, `interface`s, not just the HLSL-compatible subset)? The optional `ShadowDusk.Slang` package bundles the real `slangc` compiler — see [Installation](getting-started/installation.md#slang-input--the-free-subset-and-the-optional-full-language).
 - **Compiling on-device on Android?** [Runtime Compilation on Android](guides/on-device-android.md).
 - **How it works:** the [Architecture](architecture/the-faithful-pipeline.md) section.
 - **API:** the [API Reference](../api/index.md) (generated from the code's own XML doc-comments).

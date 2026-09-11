@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Clears the single-TFM default from Directory.Build.props: when TargetFramework is
+         non-empty MSBuild single-targets and ignores TargetFrameworks entirely. -->
+    <TargetFramework></TargetFramework>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <AssemblyName>ShadowDusk.Slang.Tests</AssemblyName>
+    <RootNamespace>ShadowDusk.Slang.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ShadowDusk.Slang\ShadowDusk.Slang.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Phase 66 A4: source-link the MGFX parameter-block reader from
+         ShadowDusk.Integration.Tests (BCL-only, no other deps) so the mangling-fix
+         round-trip test reads the SAME parameter names a real Effect's reflection would
+         see, instead of a second hand-rolled parser drifting from the real one. Mirrors
+         Integration.Tests' own source-link of MgcbErrorFormatter.cs/Fx2BinaryValidator.cs
+         from other projects (the established pattern for this repo, not a new one). -->
+    <Compile Include="..\ShadowDusk.Integration.Tests\MgfxBlobReader.cs" Link="MgfxBlobReader.cs" />
+  </ItemGroup>
+
+  <ItemGroup Label="Test framework">
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Shouldly" />
+    <PackageReference Include="coverlet.collector">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+</Project>

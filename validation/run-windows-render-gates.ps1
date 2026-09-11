@@ -332,6 +332,21 @@ $gates.Add(@{
     Name   = 'Slang corpus (Phase 61: 17 shaders slangc-validated + procedural subset pixel-diffed vs slangc''s HLSL)'
     Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/SlangCorpus', '-c', 'Release') }
 })
+# Real-slangc Slang corpus (Phase 66 A7). Distinct from the SUBSET-frontend gate above: this
+# exercises the ShadowDusk.Slang package's real-slangc compile route (genuine Slang - import,
+# generics, interface conformances). Three gates in one driver: (1) the 21-shader corpus
+# compiles through the REAL SlangCompiler on OpenGL/DirectX_11/DirectX_12/Vulkan (slangc here
+# is the PRODUCT route, not a downloaded test-time oracle - no network needed once
+# tools/restore.ps1 has run); (2) the uniform-free procedural subset (8 shaders) renders
+# pixel-identical through ShadowDusk's .fx-wrapped route vs slangc's own raw HLSL emission fed
+# to the same DXC + SPIRV-Cross (OpenGL); (3) every shader loads into a REAL
+# MonoGame.Framework.WindowsDX Effect and renders (DirectX_11). DirectX_12/Vulkan stay at the
+# compile+structural rung from gate 1 - a real-Effect-load proof for those two is open, see
+# docs/validation-matrix.md and plan/PHASE-66-full-slang-input-implementation.md's A7 section.
+$gates.Add(@{
+    Name   = 'Slang full corpus (Phase 66 A7: real-slangc route, 21 shaders x 4 targets + procedural pixel-diff vs slangc''s raw HLSL + real DirectX_11 Effect load/render)'
+    Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/SlangFullCorpus', '-c', 'Release') }
+})
 if ($IncludeFna) {
     $gates.Add(@{
         Name   = 'FNA fx_2_0 (ShadowDusk .fxb vs fxc /T fx_2_0, real FNA; + the .xnb Content.Load arm, Phase 64)'

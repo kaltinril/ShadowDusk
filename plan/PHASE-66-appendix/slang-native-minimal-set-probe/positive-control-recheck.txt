@@ -1,0 +1,10 @@
+=== slangc -v ===
+2026.14.1
+exit=0
+
+=== -target hlsl (should still PASS) ===
+exit=0
+
+=== -target shader-sharedlib -emit-cpu-via-llvm (should FAIL, E52002 - slang-llvm.dll was dropped in A1) ===
+error[E52002]: pass-through compiler not found
+exit=-1

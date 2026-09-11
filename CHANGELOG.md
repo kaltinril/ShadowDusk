@@ -7,12 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ShadowDusk is a cross-platform, in-memory drop-in `mgfxc` replacement: a self-contained
 library that compiles `.fx` → `.mgfx` at runtime on Linux, macOS, and Windows, with output
-that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime. All eight
+that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime. All ten
 `ShadowDusk.*` packages share a single version (see `Directory.Build.props` `<Version>`).
 
 ## [Unreleased]
 
 ### Added
+
+- **New package: `ShadowDusk.Slang`, a real-slangc compile route for genuine Slang (Phase 66,
+  opt-in, win-x64 today).** A consumer who needs real Slang — `import`, generics, `interface`
+  conformances, everything real slangc accepts, none of which `ShadowDusk.Compiler`'s built-in
+  HLSL-compatible-subset `.slang` frontend can compile — adds this separate package; a consumer
+  who does not is completely unaffected (zero size, zero dependency, zero behavior change).
+  `SlangCompiler` drives the packaged real `slangc` (win-x64, Phase 66 A2) as `-target hlsl`,
+  one process invocation per discovered `[shader(...)]` entry point (source piped over
+  stdin), merges the per-entry HLSL translation units (deduplicating slangc's redeclared
+  shared types/cbuffers), and hands the result to the existing, unchanged `EffectCompiler`
+  pipeline — proving genuine Slang (`import`, generics, `interface`s) can compile end to end
+  through OpenGL and DirectX_11 without ever substituting for DXC. `-no-mangle` keeps a
+  consumer's parameter names (cbuffer members, texture/sampler declarations) intact in the
+  compiled effect's reflected parameter table, and stripping slangc's redundant
+  `#pragma pack_matrix(column_major)` fixed the OpenGL `layout(row_major)` gap on
+  `float4x4` cbuffer members — corpus now **21/21 on both DirectX_11 and OpenGL**. Not yet
+  wired into any CLI/MGCB delivery surface; the free default `.slang` support remains
+  `ShadowDusk.Compiler`'s HLSL-compatible-subset frontend, untouched. See
+  `plan/PHASE-66-full-slang-input-implementation.md`'s A4 write-up for the full mechanism.
+- **`ShadowDusk.Slang`'s real three-band accept/reject rule (Phase 66 A5).** `SlangCompiler`
+  now rejects an SM6-only wave/quad intrinsic (`WaveActiveSum`, `QuadReadAcrossX`, …) with a new
+  registered diagnostic, `SD0624`, naming the intrinsic and the target, on OpenGL, DirectX
+  (DX11), and FNA — the three targets architecturally capped below Shader Model 6 that can never
+  represent it, detected via a static scan of the finite HLSL SM6 Wave/Quad intrinsics
+  vocabulary (a `SlangSm6ConstructGuard` regex scan against the raw Slang source, run before
+  slangc is even spawned), chosen over relying on each backend's own inconsistent downstream
+  error. Compute/mesh entry points were already rejected loudly by name (`SD0602`, reused
+  unchanged from `SlangEntryScanner`) and slangc's own syntax errors already surfaced verbatim
+  (`SlangDiagnosticReformatter`) — both verified, not rebuilt. See
+  `plan/PHASE-66-full-slang-input-implementation.md`'s A5 write-up.
+- **`validation/SlangFullCorpus` (Phase 66 A7), a render gate for `ShadowDusk.Slang`'s
+  real-slangc route, distinct from the existing `validation/SlangCorpus` (which keeps
+  validating only the subset frontend).** Three gates, default-ON in
+  `run-windows-render-gates.ps1`, all measured green: the 21-shader corpus compiles through
+  the real `SlangCompiler` on all four reachable targets (**84/84**,
+  OpenGL/DirectX_11/DirectX_12/Vulkan); the 8-shader uniform-free procedural subset renders
+  pixel-identical (**maxd 0**) on OpenGL between ShadowDusk's `.fx`-wrapped route and the exact
+  same slangc invocation `SlangCompiler` uses internally, fed straight to DXC with no wrapping;
+  and all 21 shaders load into a real `MonoGame.Framework.WindowsDX` `Effect` and render
+  (**21/21**). See `plan/PHASE-66-full-slang-input-implementation.md`'s A7 write-up for what
+  is left open (a real-`Effect`-load gate for DirectX_12/Vulkan; the FNA arm).
 
 - **Docs: link to the [FlatRedBall Discord](https://discord.gg/Rr9SMBrPck)** for questions and
   feedback, from the README (new *Community* section), the documentation site's home page and
@@ -21,6 +62,29 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 ### Changed
 
 ### Fixed
+
+- **`ShadowDusk.Slang`'s real-slangc route now forwards the same per-target platform macros
+  (`OPENGL`/`SM4`/`VULKAN`/`SM6`/`HLSL`/`GLSL`/`MGFX`/`FNA`/`SM3`, `__KNIFX__` for the KNIFX
+  container) the ordinary `.fx` route already defines for DXC, closing a silent divergence
+  found by Phase 66 A6's residue sweep.** `SlangCompiler` previously forwarded only the user's
+  own `CompilerOptions.Defines` to slangc's preprocessor, never `PlatformMacros.For` — so a
+  Slang author's `#if OPENGL` / `#if VULKAN` / `#if SM4` / `#ifdef __KNIFX__` branch (the exact
+  idiom common across the rest of this project's shaders, e.g. a real MonoGame `Instancing.fx`
+  vertex shader choosing whether to `transpose()` an instancing matrix) resolved to the SAME
+  branch on every target, since slangc never saw any of these macros defined. Measured directly:
+  before the fix, Vulkan and DirectX produced IDENTICAL HLSL on the point that mattered (both
+  took the non-Vulkan `transpose()` branch); after the fix they diverge correctly. See
+  `plan/PHASE-66-full-slang-input-implementation.md`'s A6 write-up.
+
+- **`SD0600`'s Slang-only-construct scan now catches bare `interface` and generic
+  type-parameter-constraint syntax** (`ShadowDusk.Compiler.Slang.SlangFrontend`, Phase 65 §5's
+  finding, closed by Phase 66 A5). Previously a real Slang file using either (e.g. an `interface`
+  a struct conforms to, plus a generic free function constrained to it) fell through this
+  courtesy scan and reached DXC's own confusing raw diagnostic (`X0000: expected ';' after
+  __interface`) instead of a clean, named rejection. Two patterns added:
+  a line-anchored `interface` keyword and a colon-constrained generic angle-bracket shape
+  (`Name<T : IConstraint>(`) that does not false-positive on ordinary HLSL templated resource
+  types (`StructuredBuffer<float4>`, `Texture2D<float4>`, …).
 
 ## [0.20.0] - 2026-09-10
 

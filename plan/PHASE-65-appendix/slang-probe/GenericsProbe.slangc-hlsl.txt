@@ -1,0 +1,62 @@
+#pragma pack_matrix(column_major)
+#ifdef SLANG_HLSL_ENABLE_NVAPI
+#include "nvHLSLExtns.h"
+#endif
+
+#ifndef __DXC_VERSION_MAJOR
+// warning X3557: loop doesn't seem to do anything, forcing loop to unroll
+#pragma warning(disable : 3557)
+#endif
+
+
+#line 27 "C:/Users/Vic Personal/Documents/GitHub/ShadowDusk/.claude/worktrees/agent-a8818add6225ce4f2/plan/PHASE-65-appendix/slang-probe/shaders/GenericsProbe.slang"
+Texture2D<float4 > SpriteTexture_0 : register(t0);
+
+
+#line 28
+SamplerState SpriteTextureSampler_0 : register(s0);
+
+struct SLANG_ParameterGroup_Params_0
+{
+    float3 BlendColor_0;
+};
+
+
+#line 30
+cbuffer Params_0 : register(b0)
+{
+    SLANG_ParameterGroup_Params_0 Params_0;
+}
+
+#line 14
+float3 MultiplyBlend_blend_0(float3 baseColor_0, float3 blendColor_0)
+{
+    return baseColor_0 * blendColor_0;
+}
+
+
+
+
+float3 applyBlend_0(float3 baseColor_1, float3 blendColor_1)
+{
+    return MultiplyBlend_blend_0(baseColor_1, blendColor_1);
+}
+
+
+#line 35
+struct PsInput_0
+{
+    float4 Position_0 : SV_Position;
+    float4 Color_0 : COLOR0;
+    float2 TexCoord_0 : TEXCOORD0;
+};
+
+
+float4 MainPS(PsInput_0 input_0) : SV_TARGET
+{
+    float4 tex_0 = SpriteTexture_0.Sample(SpriteTextureSampler_0, input_0.TexCoord_0) * input_0.Color_0;
+
+
+    return float4(applyBlend_0(tex_0.xyz, Params_0.BlendColor_0), tex_0.w);
+}
+

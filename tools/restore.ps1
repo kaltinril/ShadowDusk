@@ -466,6 +466,96 @@ function Restore-Vkd3dWasm {
 
 Restore-Vkd3dWasm
 
+# ---------------------------------------------------------------------------
+# Slang compiler (real slangc, win-x64 only for now — Phase 66 A2)
+# ---------------------------------------------------------------------------
+# ShadowDusk.Slang (a NEW, separate, opt-in package — plan/PHASE-66) ships REAL slangc so a
+# consumer who adds it gets genuine Slang input (import/generics/interfaces), compiled via
+# slangc -target hlsl and handed to the existing, unchanged, faithful DXC pipeline. A
+# consumer who does NOT add ShadowDusk.Slang pays zero size/dependency cost — the
+# ShadowDusk.ShaderToy precedent. This is NOT part of ShadowDusk.Compiler/HLSL/GLSL.
+#
+# Pin: the SAME slangc v2026.14.1 win-x64 release validation/SlangCorpus/Program.cs already
+# downloads as a TEST-TIME oracle — keep both pins in sync on a version bump (one release,
+# two consumers: the test oracle and the shipped native).
+#
+# Phase 66 A1 (2026-09-11) measured slang-llvm.dll (84.4 MB, LLVM/CPU-codegen only) as
+# excludable with zero effect on -target hlsl. A2 (2026-09-11) went further: re-running the
+# SAME -target hlsl corpus (tests/fixtures/shaders/slang/ + Phase 65's Gum-shaped +
+# generics-probe shaders, 24 entry points) after removing every other candidate one at a
+# time — slang.exe/slangd.exe/slangi.exe (CLI/language-server/interpreter), gfx.dll/
+# gfx.slang (graphics-API abstraction), slang-glsl-module.dll, slang-glslang.dll, slang.dll,
+# slang-rt.dll, slang.slang, and the slang-standard-module-2026.14.1/ stdlib source
+# directory — found ALL of them droppable too (slang-compiler.dll embeds what slangc.exe
+# actually needs; a negative control, deleting slang-compiler.dll itself, failed all 24
+# entries, confirming the corpus test discriminates rather than passing regardless). Final
+# vendored set: slangc.exe + slang-compiler.dll ONLY, 25,611,264 bytes (~24.4 MiB) — a ~80%
+# cut from the 126.2 MB unmodified release, ~39% further than A1's 41.8 MB no-LLVM figure.
+# Full evidence: plan/PHASE-66-appendix/slang-native-minimal-set-probe/.
+#
+# NOTE (flagged for A3, not solved here): slangc.exe writes a runtime cache file
+# (slang-glsl-module.bin, ~1.3 MB) into its OWN directory on first compile — even for
+# -target hlsl. The vendored runtimes/win-x64/native/ directory must therefore be WRITABLE
+# at runtime; a read-only deployment (e.g. some container filesystems) would need this
+# solved before shipping.
+$SlangVersion = '2026.14.1'
+$SlangZipSha256 = '5ED0A59D650A0AF0ACA45D5DB4E083B3D8FB5CEA05748747DD95DFBE9C580658'
+$SlangZipUrl = "https://github.com/shader-slang/slang/releases/download/v$SlangVersion/slang-$SlangVersion-windows-x86_64.zip"
+
+function Restore-SlangWinX64 {
+    $SlangDir = Join-Path $RepoRoot 'tools' 'slang' 'win-x64'
+    $SlangcExe = Join-Path $SlangDir 'slangc.exe'
+    $SlangCompilerDll = Join-Path $SlangDir 'slang-compiler.dll'
+
+    if ((Test-Path $SlangcExe) -and (Test-Path $SlangCompilerDll)) {
+        Write-Host "restore.ps1: slangc (win-x64) present — OK"
+        return
+    }
+
+    $tmpZip = Join-Path ([System.IO.Path]::GetTempPath()) "slangc-restore-$([Guid]::NewGuid().ToString('N')).zip"
+    try {
+        Invoke-WebRequest -Uri $SlangZipUrl -OutFile $tmpZip -UseBasicParsing
+    } catch {
+        Write-Warning "restore.ps1: could not download slangc from $SlangZipUrl (offline?); ShadowDusk.Slang packaging (win-x64) will be unavailable. $_"
+        if (Test-Path $tmpZip) { Remove-Item -Force $tmpZip }
+        return   # non-fatal by design
+    }
+
+    # Verify BEFORE extracting — an unverified binary is what the pin exists to prevent.
+    $got = (Get-FileHash -Algorithm SHA256 -Path $tmpZip).Hash
+    if ($got -ne $SlangZipSha256) {
+        Write-Warning "restore.ps1: slangc release SHA-256 mismatch (expected $SlangZipSha256, got $got); discarding."
+        Remove-Item -Force $tmpZip
+        return   # non-fatal, but the file is NOT placed
+    }
+
+    EnsureDir $SlangDir
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $archive = [System.IO.Compression.ZipFile]::OpenRead($tmpZip)
+    try {
+        foreach ($entryName in @('bin/slangc.exe', 'bin/slang-compiler.dll')) {
+            $entry = $archive.Entries | Where-Object { $_.FullName -eq $entryName }
+            if (-not $entry) {
+                Write-Warning "restore.ps1: slangc release is missing expected entry $entryName; upstream layout may have changed."
+                continue
+            }
+            $dest = Join-Path $SlangDir (Split-Path -Leaf $entryName)
+            [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $dest, $true)
+        }
+    } finally {
+        $archive.Dispose()
+    }
+    Remove-Item -Force $tmpZip
+
+    if ((Test-Path $SlangcExe) -and (Test-Path $SlangCompilerDll)) {
+        Write-Host "restore.ps1: slangc (win-x64) downloaded, zip hash OK — slangc.exe + slang-compiler.dll only (25,611,264 bytes)"
+    } else {
+        Write-Warning "restore.ps1: slangc (win-x64) extraction did not produce both expected files."
+    }
+}
+
+Restore-SlangWinX64
+
 if (-not $Force -and (Test-Path $WinDll)) {
     Write-Host "spirv-cross-c-shared.dll already present — skipping restore."
     exit 0

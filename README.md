@@ -48,7 +48,20 @@ ShadowDusk's main input is `.fx` (HLSL Effect source, the format MonoGame/KNI/FN
 ShadowDuskCLI MyShader.slang MyShader.mgfx /Profile:OpenGL
 ```
 
-The Slang frontend is a pure managed text transform: entry points come from Slang's own `[shader("vertex")]`/`[shader("fragment")]` attributes, a technique is synthesized (Slang has no technique/pass concept), and the body — near-HLSL by Slang's own design — compiles through the same faithful pipeline as any other `.fx`. No Slang binary ships or runs anywhere, on any platform. Slang-only language features (`import` modules, generics, `extension`s) are rejected with a named error rather than approximated, and there's no `mgfxc` oracle for Slang input (`mgfxc` cannot read Slang at all), so a Slang-sourced build is reach, never an `mgfxc`-equivalence claim. The optional `ShadowDusk.ShaderToy` package covers a third input, ShaderToy / plain-GLSL fragment shaders.
+The Slang frontend is a pure managed text transform: entry points come from Slang's own `[shader("vertex")]`/`[shader("fragment")]` attributes, a technique is synthesized (Slang has no technique/pass concept), and the body — near-HLSL by Slang's own design — compiles through the same faithful pipeline as any other `.fx`. No Slang binary ships or runs anywhere, on any platform. Slang-only language features (`import` modules, generics, `extension`s) are rejected with a named error rather than approximated, and there's no `mgfxc` oracle for Slang input (`mgfxc` cannot read Slang at all), so a Slang-sourced build is reach, never an `mgfxc`-equivalence claim.
+
+Need genuine Slang — `import`, generics, `interface` conformances, everything real Slang accepts? The optional `ShadowDusk.Slang` package bundles the real [slangc](https://github.com/shader-slang/slang) compiler (win-x64 today) and routes `.slang → slangc -target hlsl → the same unchanged faithful DXC pipeline`. It's a separate, opt-in package — a consumer who only needs the free subset above pays nothing extra for it:
+
+```sh
+dotnet add package ShadowDusk.Slang
+```
+
+```csharp
+var compiler = new ShadowDusk.Slang.SlangCompiler();
+var result = compiler.Compile(slangSource, new CompilerOptions { Target = PlatformTarget.OpenGL });
+```
+
+Same rejection discipline as the built-in subset: a construct real slangc accepts but that has nowhere to land in an `Effect` (a compute/mesh entry point, an SM6-only wave/quad intrinsic on a target that can't represent it) is rejected loudly by name, never silently dropped, and no route through it is `mgfxc`-equivalent either. The optional `ShadowDusk.ShaderToy` package covers a third input, ShaderToy / plain-GLSL fragment shaders.
 
 ## Supported targets
 
@@ -196,6 +209,7 @@ All packages ship together at one shared version. Most projects only need one of
 | `ShadowDusk.Cli` | [![ShadowDusk.Cli](https://img.shields.io/nuget/v/ShadowDusk.Cli)](https://www.nuget.org/packages/ShadowDusk.Cli) | The `ShadowDuskCLI` dotnet tool — the same compiler as a command-line mgfxc replacement: `dotnet tool install -g ShadowDusk.Cli` |
 | `ShadowDusk.Wasm` | [![ShadowDusk.Wasm](https://img.shields.io/nuget/v/ShadowDusk.Wasm)](https://www.nuget.org/packages/ShadowDusk.Wasm) | The same pipeline compiled to WebAssembly, for in-browser compilation from Blazor / KNI web apps. |
 | `ShadowDusk.ShaderToy` | [![ShadowDusk.ShaderToy](https://img.shields.io/nuget/v/ShadowDusk.ShaderToy)](https://www.nuget.org/packages/ShadowDusk.ShaderToy) | Optional, standalone ShaderToy / GLSL → `.fx` front-end (pure managed, no native deps). |
+| `ShadowDusk.Slang` | [![ShadowDusk.Slang](https://img.shields.io/nuget/v/ShadowDusk.Slang)](https://www.nuget.org/packages/ShadowDusk.Slang) | Optional, standalone REAL Slang front-end: bundles the real `slangc` compiler (win-x64 today) for genuine Slang — `import`, generics, `interface`s. Everyone else uses `ShadowDusk.Compiler`'s free HLSL-compatible-subset `.slang` support instead — zero extra package. |
 | `ShadowDusk.Core` | [![ShadowDusk.Core](https://img.shields.io/nuget/v/ShadowDusk.Core)](https://www.nuget.org/packages/ShadowDusk.Core) | Shared types (`IShaderCompiler`, `CompilerOptions`, `Result<T,E>`). Pulled in automatically as a dependency. |
 | `ShadowDusk.HLSL` | [![ShadowDusk.HLSL](https://img.shields.io/nuget/v/ShadowDusk.HLSL)](https://www.nuget.org/packages/ShadowDusk.HLSL) | HLSL front-end (FX pre-parser, DXC, DXBC backends). Pulled in automatically as a dependency. |
 | `ShadowDusk.GLSL` | [![ShadowDusk.GLSL](https://img.shields.io/nuget/v/ShadowDusk.GLSL)](https://www.nuget.org/packages/ShadowDusk.GLSL) | SPIR-V → GLSL transpilation and the MonoGame GLSL rewrite. Pulled in automatically as a dependency. |
@@ -251,6 +265,7 @@ ShadowDusk/
 │   │                            #   vkd3d-shader + d3dcompiler DXBC backends
 │   ├── ShadowDusk.GLSL/         # SPIR-V → GLSL via SPIRV-Cross + MonoGameGlslRewriter
 │   ├── ShadowDusk.ShaderToy/    # ShaderToy / GLSL → .fx front-end (optional, pure managed)
+│   ├── ShadowDusk.Slang/        # REAL Slang front-end via bundled slangc (optional, native win-x64)
 │   ├── ShadowDusk.Metal/        # SPIR-V → MSL (stub — not yet implemented)
 │   ├── ShadowDusk.Compiler/     # EffectCompiler : IShaderCompiler — the consumer-facing product NuGet
 │   ├── ShadowDusk.Cli/          # dotnet tool entry point (mgfxc)
@@ -263,7 +278,7 @@ ShadowDusk/
 │   ├── ShaderViewer/            # Desktop shader viewer
 │   └── mgcb/                    # MGCB content-pipeline sample
 ├── tests/
-│   ├── ShadowDusk.*.Tests/      # Unit tests per library (Core, HLSL, GLSL, Compiler, ShaderToy)
+│   ├── ShadowDusk.*.Tests/      # Unit tests per library (Core, HLSL, GLSL, Compiler, ShaderToy, Slang)
 │   ├── ShadowDusk.Integration.Tests/  # End-to-end compiles (CLI, native DXC + SPIRV-Cross)
 │   ├── ShadowDusk.ImageTests/   # Offscreen-GL render comparisons
 │   ├── ShadowDusk.BrowserTests/ # Playwright KNI WebGL harness
@@ -303,7 +318,7 @@ ShadowDusk stands on a lot of excellent prior work. The faithful compilation pip
 - **[KNI](https://github.com/kniEngine/kni)** (nkast) — the WebAssembly/WebGL-capable MonoGame fork the in-browser sample runs on.
 - **[MojoShader](https://github.com/icculus/mojoshader)** (Ryan C. Gordon) — the OpenGL GLSL dialect / shader-bytecode heritage that MonoGame's `.mgfx` OpenGL effects use, which our GLSL rewrite matches.
 - **[Emscripten](https://emscripten.org/)** — used to compile DXC and SPIRV-Cross to WebAssembly.
-- **[Slang](https://github.com/shader-slang/slang)** (shader-slang) — two distinct roles, and the distinction is load-bearing. **As a compiler inside the pipeline: no, permanently** — Slang never replaces DXC for HLSL (measured: two DXC flags don't forward through Slang's API, making byte-identity unprovable; the pipeline uses faithful DXC everywhere; an early in-browser spike that used Slang as a substitute frontend is dead, sample-only reference). **As an input language: yes, the HLSL-compatible subset** — ShadowDusk accepts `.slang` source as a pure text transform: entry points marked with Slang's own `[shader("vertex")]` / `[shader("fragment")]` attributes, the technique block synthesized (Slang has no technique/pass concept), and the shader body compiled by the **same pipeline as every `.fx`**. Nothing extra to install on any platform, browser included — no Slang binary is shipped or invoked. Slang-*only* language features (`import` modules, generics, `extension`s) are rejected with a clear named error rather than approximated. No route through Slang is `mgfxc`-equivalent; `mgfxc` cannot read Slang at all.
+- **[Slang](https://github.com/shader-slang/slang)** (shader-slang) — two distinct roles, and the distinction is load-bearing. **As a compiler inside the pipeline: no, permanently** — Slang never replaces DXC for HLSL (measured: two DXC flags don't forward through Slang's API, making byte-identity unprovable; the pipeline uses faithful DXC everywhere; an early in-browser spike that used Slang as a substitute frontend is dead, sample-only reference). **As an input language: two tiers.** The free, default tier — `ShadowDusk.Compiler`'s built-in `.slang` support — accepts the HLSL-compatible subset as a pure text transform: entry points marked with Slang's own `[shader("vertex")]` / `[shader("fragment")]` attributes, the technique block synthesized (Slang has no technique/pass concept), and the shader body compiled by the **same pipeline as every `.fx`**. Nothing extra to install on any platform, browser included — no Slang binary is shipped or invoked. Slang-*only* language features (`import` modules, generics, `extension`s) are rejected with a clear named error rather than approximated. The opt-in tier — the separate `ShadowDusk.Slang` package — bundles the real `slangc` compiler (win-x64 today) so a consumer who needs genuine Slang (generics, `interface` conformances, everything real slangc accepts) gets it, still handed to the same unchanged, faithful DXC pipeline once slangc emits HLSL. No route through either tier is `mgfxc`-equivalent; `mgfxc` cannot read Slang at all.
 - **[DocFX](https://github.com/dotnet/docfx)** (the .NET Foundation) — generates the published [documentation site](https://kaltinril.github.io/ShadowDusk/).
 - **[xUnit](https://github.com/xunit/xunit)** and **[Shouldly](https://github.com/shouldly/shouldly)** — the test suite.
 
