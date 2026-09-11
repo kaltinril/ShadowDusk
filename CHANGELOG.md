@@ -14,6 +14,10 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **Docs: link to the [FlatRedBall Discord](https://discord.gg/Rr9SMBrPck)** for questions and
+  feedback, from the README (new *Community* section), the documentation site's home page and
+  footer, and the Contributing guide.
+
 - **`ShadowDusk.ContentPipeline`: the importer/processor pair as a library, for MonoGame 3.8.5's
   Content Builder project** (Phase 63, issue #203, requested by aitorciki). 3.8.5's
   template-default content story is a C# `ContentBuilder` the consumer owns, which needs
