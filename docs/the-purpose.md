@@ -18,7 +18,7 @@ The load-bearing distinctions — internalize these, they have drifted before:
 
 ## Project Overview
 
-ShadowDusk is a cross-platform HLSL shader compiler for MonoGame, KNI, and FNA. Its six core purposes are:
+ShadowDusk is a cross-platform HLSL shader compiler for MonoGame, KNI, and FNA. Its eight core purposes are:
 
 1. **OS-agnostic compilation** — compile `.fx` shaders on Linux, macOS, or Windows with no Wine or Windows SDK required.
 2. **Every backend the consumer's game already targets** — from a single HLSL source, produce DXBC (DirectX 11), DXIL (DirectX 12), GLSL (OpenGL/WebGL/Android), SPIR-V (Vulkan), or D3D9 bytecode (FNA `fx_2_0`). See the backend pipeline table below for the authoritative list.
@@ -26,6 +26,8 @@ ShadowDusk is a cross-platform HLSL shader compiler for MonoGame, KNI, and FNA. 
 4. **Build-time delivery shapes** — a `dotnet tool` named `ShadowDuskCLI` (usable standalone or from any build script), the **`ShadowDusk.MgcbPlugin`** MGCB content-processor plugin, which a `.mgcb` `/reference:`s so MonoGame's Content Builder compiles `.fx → .xnb` through ShadowDusk **in its own process**, and — since [Phase 63](../plan/DONE/PHASE-63-monogame-content-builder-library.md) ([issue #203](https://github.com/kaltinril/ShadowDusk/issues/203)) — **`ShadowDusk.ContentPipeline`**, the same importer/processor as a normal library for MonoGame 3.8.5's code-centric **Content Builder project** (the template default from 3.8.5), where the consumer passes `new ShadowDuskEffectImporter(), new ShadowDuskEffectProcessor()` in their own `ContentBuilder`. All three are the same library and emit byte-identical `.mgfx`. (A `PATH`-based `mgfxc` override is **not** a route to MGCB: MGCB compiles effects in-process and launches no external effect compiler — measured across `dotnet mgcb` 3.8.2.1105/3.8.4.1/3.8.5.)
 5. **Direct `.xnb` output** ([Phase 60](../plan/DONE/PHASE-60-xnb-content-output.md), [issue #199](https://github.com/kaltinril/ShadowDusk/issues/199)) — ShadowDusk writes the **content-pipeline `.xnb` itself**, so the consumer drops the file where their `mgfxc`-built one sat and keeps calling `Content.Load<Effect>("Foo")` **with no code change and MGCB out of the picture entirely**. `CompiledShader.ToXnb()` on the library, or simply an `.xnb` output path on the CLI. This is the *purest* form of the drop-in promise — the only route that leaves the consumer's source tree completely untouched — and it is a container only: the payload is the same rung-4-proven `.mgfx`/`.fxb` bytes, so no shader-compilation behaviour changes. Rung-4 proven on every consumer family ([Phase 64](../plan/DONE/PHASE-64-xnb-fna-kni-content-load-proof.md), 2026-09-09): a real `ContentManager.Load<Effect>` renders the ShadowDusk-written file pixel-identical to the reference build on MonoGame WindowsDX and DesktopGL (`validation/XnbContentLoad`, `XnbContentLoadGl`), KNI 4.2.9001 and 4.3.9001 with both the v10 and KNIFX payloads (`validation/KniXnbContentLoad`), and FNA 26.06 (the `.xnb` arm of `validation/FnaValidation`). The container carries the XNA-4.0 type-reader name, the only one every runtime resolves — KNI ≤ 4.2.9001 rejects the mgcb-shaped one, stock mgcb output included. Additive — the MGCB plugin stays, for teams who *want* MGCB in their build.
 6. **In-memory & WASM-capable** — the same library compiles in-process / in-memory at runtime (returns `.mgfx` bytes; no temp files or child process required by the API), and is built to run inside .NET WASM so a KNI/Blazor browser game could compile shaders at runtime without a server roundtrip. **The in-browser shader-fiddle is a *sample* of this reach — not a separate product.**
+7. **Multi-input frontend, one faithful pipeline underneath** — ShadowDusk accepts more than `.fx`: ShaderToy GLSL (converted to `.fx`) and, since [Phase 61](../plan/DONE/PHASE-61-slang-support.md) ([issue #198](https://github.com/kaltinril/ShadowDusk/issues/198)), the HLSL-compatible subset of **Slang** (`.slang`, via `ShadowDusk.Compiler.Slang.SlangFrontend.ConvertToFx`). Slang input is a **pure managed text transform** — entry points declared with `[shader("vertex")]`/`[shader("fragment")]` are rewritten into an `.fx` technique and the HLSL-compatible body compiles through the exact same pipeline as any other `.fx`, so `.slang` input works on every host and every target the pipeline works on, browser/WASM included, with no Slang binary shipped, downloaded, or invoked anywhere. Slang-only constructs (`import`, generics, `extension`) are rejected loudly by name (`SD0600`), never approximated.
+8. **HLSL → SkSL conversion, for SkiaSharp** ([issue #197](https://github.com/kaltinril/ShadowDusk/issues/197)) — `ShadowDusk.Compiler.Sksl.SkslConverter.Convert(fx)` turns a pixel-only `.fx` into an SkSL runtime effect for `SKRuntimeEffect.CreateShader`, via the same faithful front half (HLSL → DXC → SPIR-V → SPIRV-Cross → GLSL) plus a convention mapper. **This is a distinct axis from the backend pipeline table below, not a seventh row in it**: Skia is not a MonoGame/KNI consumer runtime and has no `mgfxc`/`fxc` reference compiler, so the claim is rendered-image fidelity against the original HLSL's math, never `mgfxc`-equivalence. Unsupported shapes (varyings with no vertex stage, derivatives, computed-UV sampling) are refused by name (`SD0610`–`SD0615`) rather than silently mis-rendered.
 
 ## What success actually means
 
@@ -106,7 +108,7 @@ where it does, so future work doesn't drift across it.)*
   diagnostic; patch *minimally and surgically* on our side of the boundary (the
   `D3d9BytecodePatcher` pattern — byte-level-tested, documented, reversible); record an
   upstream-fix follow-up. Never "just handle it in our compiler" — we don't have one.
-- **Pin versions; bumps are deliberate events** (vkd3d stays at 1.17 because output
+- **Pin versions; bumps are deliberate events** (vkd3d is pinned at 2.1 because output
   byte-stability is a product promise — a bump re-baselines goldens and re-runs rung-4).
 - **One faithful pipeline, no substitute compilers** (the standing rule): leverage only
   works if every host runs the *same* upstream components — which is also exactly what
@@ -155,7 +157,7 @@ Where each host×target cell stands (updated 2026-07-27; proven cells carry thei
 > investigated under a shader-lens phase (the carve-out is documentation, not a fix);
 > consumer-visible caveat: docfx/guides/parameters-and-caveats.md.
 >
-> Phase 37 C (2026-06-10) hosted all four pinned vkd3d 1.17 per-RID binaries and made
+> Phase 37 C (2026-06-10) hosted all four pinned vkd3d per-RID binaries (1.17 at the time; 2.1 since Phase 56) and made
 > `tools/restore.*` provision them everywhere — which also surfaced (via CI) that the
 > earlier "DX11 on Linux ✅" claim was overstated: vkd3d produced the DXBC fine, but the
 > `.mgfx` pipeline's reflection step still P/Invoked Windows-only `D3DReflect`
@@ -171,7 +173,7 @@ Every gap above was a **packaging/porting gap, never a compiler-writing gap** �
 artifact, **vkd3d-shader compiled to WASM (Phase 4.1, ✅ done 2026-06-12)**, closed the
 entire browser column: the fx_2_0 writer, bytecode patcher, and reflection are managed C#
 that already ran in WASM, so vkd3d.wasm unlocked **both** DX and FNA export in the browser
-from the same pinned 1.17 source (no substitute compiler). The evidence: the node gate
+from the same pinned 2.1 source (no substitute compiler). The evidence: the node gate
 replays every vkd3d stage compile of the byte-identity corpus through the product shim,
 **94/94** byte-identical to the desktop native; a real headless browser running the real
 `WasmShaderCompiler` reproduces the full artifacts (DX `.mgfx` + FNA `.fxb`)
@@ -183,4 +185,4 @@ completion order, Vulkan (Phase 32) is now rung-4 proven on MonoGame `DesktopVK`
 stays validation-gated; the desktop GL column's remaining tail is the Linux/macOS rung-4
 render items noted in the matrix.
 
-> **DirectX DXBC now works (Phase 18, done 2026-05-30).** DXC compiles to **DXIL (SM6)**, not the **DXBC (SM ≤ 5)** MonoGame 3.8's DX11 runtime loads — so the DX11 path no longer uses DXC. It routes through a DXBC backend behind `IDxbcShaderCompiler`: the cross-platform **vkd3d-shader** library (HLSL → DXBC_TPF) is the shipping backend, with Windows-only `d3dcompiler_47.dll` as a correctness oracle. DXC `ps_6_0`/`vs_6_0` (DXIL) is retained only for the DX12/KNI path. **Both OpenGL (Phase 17) and DirectX (Phase 18) are now validated end-to-end** in the real MonoGame runtime for the SM3/SM5 PS-only corpus (10/10 each); the DX backend's selector defaults to `DxbcBackend.Vkd3d` on every OS (host-independent default output, since 0.5.0), with the `d3dcompiler_47` oracle opt-in. WASM + DirectX DXBC, long the open problem, closed 2026-06-12: the same pinned vkd3d 1.17 compiled to WASM ships in `ShadowDusk.Wasm`, byte-identical to desktop (Phase 4.1).
+> **DirectX DXBC now works (Phase 18, done 2026-05-30).** DXC compiles to **DXIL (SM6)**, not the **DXBC (SM ≤ 5)** MonoGame 3.8's DX11 runtime loads — so the DX11 path no longer uses DXC. It routes through a DXBC backend behind `IDxbcShaderCompiler`: the cross-platform **vkd3d-shader** library (HLSL → DXBC_TPF) is the shipping backend, with Windows-only `d3dcompiler_47.dll` as a correctness oracle. DXC `ps_6_0`/`vs_6_0` (DXIL) is retained only for the DX12/KNI path. **Both OpenGL (Phase 17) and DirectX (Phase 18) are now validated end-to-end** in the real MonoGame runtime for the SM3/SM5 PS-only corpus (10/10 each); the DX backend's selector defaults to `DxbcBackend.Vkd3d` on every OS (host-independent default output, since 0.5.0), with the `d3dcompiler_47` oracle opt-in. WASM + DirectX DXBC, long the open problem, closed 2026-06-12: the same pinned vkd3d 2.1 compiled to WASM ships in `ShadowDusk.Wasm`, byte-identical to desktop (Phase 4.1).

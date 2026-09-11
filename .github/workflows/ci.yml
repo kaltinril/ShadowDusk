@@ -21,6 +21,9 @@ on:
   pull_request:
     branches: [ main ]
     paths-ignore: [ '**/*.md', 'plan/**', 'docs/**', 'docfx/**', 'LICENSE', '.gitignore' ]
+  # On-demand run for any branch, so the matrix can be run against a branch before it has a
+  # PR, or re-run on a head commit without pushing something to force it.
+  workflow_dispatch:
 
 # Least privilege for GITHUB_TOKEN: every job here only checks out, builds, tests, and
 # uploads artifacts to its own run — none of which needs a write scope. Artifact up/download
@@ -84,7 +87,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: tools/vkd3d
-          key: vkd3d-1.17-${{ runner.os }}
+          key: vkd3d-2.1-${{ runner.os }}
 
       # Same pattern for the pinned macOS DXC dylibs (Phase 37 A).
       - name: Cache DXC macOS natives
@@ -280,7 +283,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: tools/vkd3d
-          key: vkd3d-1.17-${{ runner.os }}
+          key: vkd3d-2.1-${{ runner.os }}
 
       - name: Cache DXC macOS natives
         uses: actions/cache@v5

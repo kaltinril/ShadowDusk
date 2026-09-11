@@ -18,6 +18,83 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   feedback, from the README (new *Community* section), the documentation site's home page and
   footer, and the Contributing guide.
 
+### Changed
+
+### Fixed
+
+## [0.20.0] - 2026-09-10
+
+### Added
+
+- **vkd3d-shader natives are now built for every desktop RID in CI, from a version input.**
+  `build-vkd3d-natives.yml` and `vkd3d-wasm-build.yml` take `version` + `tarball_sha256` as
+  workflow-dispatch inputs, so a future pin bump needs no workflow edit, and **win-x64 is CI-built
+  for the first time** (MSYS2 MINGW64, libgcc/winpthread linked statically, gated on an `objdump`
+  check that the DLL depends on system DLLs only) rather than being a local build a maintainer
+  uploaded by hand. Every RID's build smoke now compiles a `[loop]` with a data-dependent break at
+  `ps_3_0`, so a native that cannot do SM3 loops can never be published by accident.
+- **DX12 render gate joins the headless CI lane** (issue #209, follow-up to #204). The
+  `BaselineDx12`+`CandidateDx12`+`compare_dx12.py` DX12 corpus was measured RED in #204's new
+  `windows-latest` WARP job: `MonoGame.Framework.Native` compiles `SDL_WINDOW_VULKAN` into any
+  DX12 build's window creation, independent of the WARP pin, and the runner ships no Vulkan
+  loader or ICD. Fixed by installing Google SwiftShader (a CPU Vulkan ICD + loader) via
+  `jakoch/install-vulkan-sdk-action` in the same job - WARP still does the actual D3D12
+  rendering, SwiftShader only satisfies SDL's window-creation probe. Measured green on a real
+  `windows-latest` run: maxd 0, 10/10.
+
+### Changed
+
+- **The pinned vkd3d-shader native moves 1.17 to 2.1** (issue #212), for all four desktop RIDs and
+  the WASM build. This is the compiler that produces every DirectX and FNA byte, so **all DirectX
+  and FNA output changes** - a newer compiler selects different instructions. OpenGL, Vulkan and
+  DirectX 12 bytes are provably unchanged (those go through DXC, not vkd3d). The output format, the
+  default MGFX version, the public API and the MonoGame pin are all untouched.
+- **Ten fixtures that could not compile for FNA now do, with no regressions.** `BasicEffect` and
+  `EnvironmentMapEffect` (SM2 register pressure, the `SD0305` class), `DeferredSprite`,
+  `ForwardLighting` and Nez `Reflection` (int-typed ternary in `clip()`, if/else flattening), and
+  all three Apos.Shapes revisions plus `Sd0402UniformBoundedLoop` (loops with a runtime trip
+  count). `SkinnedEffect` still exceeds the `vs_2_0` register file and still says so loudly.
+
+### Fixed
+
+- **`PlatformTarget.Fna`: a shader with a loop the compiler cannot unroll now compiles**
+  (issue #212). vkd3d 1.17 had no SM2-3 lowering for the `HLSL_IR_LOOP` node, so a `for` with a
+  runtime trip count, or any loop marked `[loop]`, failed with
+  `E5017: Aborting due to not yet implemented feature: Instruction type HLSL_IR_LOOP` - even though
+  `ps_3_0` supports dynamic looping and the same source compiled fine for OpenGL. vkd3d 2.0
+  implemented SM3 loops. One shape is still rejected upstream: a loop whose trip count is a
+  user-declared `int` **uniform**.
+- **DirectX 11: a pixel shader returning a struct with `COLOR0`/`COLOR1` fields compiles again.**
+  vkd3d 2.1 rejects a user-defined semantic on an SM4/5 pixel-shader output (`E5013`), which `fxc`
+  accepts and which is how MonoGame `.fx` files written against SM3 still build at `ps_4_0`.
+  ShadowDusk now passes vkd3d's `BACKWARD_COMPATIBILITY`/`MAP_SEMANTIC_NAMES` option on the SM4+
+  target, which covers the struct-field case the source rewrite deliberately cannot touch (the same
+  struct may be a vertex-shader output, where `COLOR` is legal).
+- **FNA: sampler parameters are typed from their declaration, matching `fxc`.** A bare
+  `sampler s0` read with `tex2D` was recorded as `D3DXPT_SAMPLER2D` where `fxc` records
+  `D3DXPT_SAMPLER`, and FNA binds off that table.
+
+## [0.19.0] - 2026-09-10
+
+### Added
+
+- **Headless DirectX render gate in CI** (issue #204). A new `windows-latest` job in
+  `validation-render.yml` runs three DX render gates pinned to **WARP** (Windows' bundled
+  software D3D rasterizer, no GPU needed on the runner) instead of a hardware adapter -
+  `DxModernFeatures`, `KniWinFormsDX`, and the `BaselineDx`+`CandidateDx` DX11 corpus - all
+  three measured green in real CI, closing most of the "DX render gates are
+  Windows-box-only" gap `docs/validation-matrix.md` and `CLAUDE.md` called out. The pin is
+  opt-in via `SHADOWDUSK_DX_WARP=1` (`validation/SharedDx/DxHeadlessRasterizer.cs` for
+  MonoGame's static `GraphicsAdapter.UseDriverType`; a local `PreparingDeviceSettings` hook
+  in `KniWinFormsDX/Program.cs` for KNI's per-device `PresentationParameters.UseDriverType`),
+  so a developer's local `dotnet run` is unaffected and keeps rendering on the real GPU. The
+  DX12 corpus (`BaselineDx12`+`CandidateDx12`) was also tried and measured **RED**:
+  `MonoGame.Framework.Native`'s SDL2 window creation needs a Vulkan surface regardless of the
+  WARP pin, and `windows-latest` has no GPU or Vulkan ICD at all - tracked as issue #209. The
+  Apos.Shapes DX/DX12 gallery, the ShaderToy DX route, and FNA stay manual-only for now (not a
+  WARP limitation for those, just not the smallest first step); Vulkan needs Mesa lavapipe,
+  not WARP, and is out of scope here.
+
 - **`ShadowDusk.ContentPipeline`: the importer/processor pair as a library, for MonoGame 3.8.5's
   Content Builder project** (Phase 63, issue #203, requested by aitorciki). 3.8.5's
   template-default content story is a C# `ContentBuilder` the consumer owns, which needs
@@ -276,6 +353,15 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   `dxil.dll`, and returns its `dxcompiler.dll`. The gate runs the plugin-arm MGCB with a decoy
   `dxcompiler.dll` first on the child's `PATH` and requires DX12 payloads to equal the CLI's
   signed bytes, so neither can come back silently.
+
+- **The DirectX 11 `d3dcompiler_47` oracle backend (Windows-only diagnostic, never ships) now
+  compiles with the same fxc flags mgfxc itself uses.** Decompiling `mgfxc.dll`
+  (MonoGame.Framework.Content.Pipeline 3.8.2.1105) showed its real `DirectX_11` compile sets
+  `EnableBackwardsCompatibility` and `OptimizationLevel3`; `D3DCompilerShaderCompiler` set
+  neither. Both load the same system `d3dcompiler_47.dll`, so this was a genuine flag
+  mismatch. This narrows, but does not fully close, the Apos.Shapes gallery gate's maxd 1 —
+  the residual is a machine-dependent sub-ULP fast-math scheduling difference, the same
+  non-defect class already root-caused for DX12's own gate; see `docs/validation-matrix.md`.
 
 ## [0.18.0] - 2026-08-03
 
@@ -2084,7 +2170,9 @@ WASM-capable build — the same pipeline on every host, with no substitute compi
 - **The MGCB content-processor plugin** is a scaffold; the PATH-based `mgfxc` override is the
   shipping MGCB integration path.
 
-[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/kaltinril/ShadowDusk/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.19.0...v0.20.0
+[0.19.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/kaltinril/ShadowDusk/compare/v0.15.1...v0.16.0

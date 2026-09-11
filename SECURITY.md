@@ -52,7 +52,7 @@ distributes** (you trust our package). Those are version-pinned and integrity-ch
 - **Downloaded, version-pinned, SHA-256-verified natives** — vkd3d-shader (the DXBC / fx_2_0
   backend, all four desktop RIDs), the macOS DXC dylib, and the vkd3d-shader **WebAssembly**
   module. `tools/restore.ps1` / `tools/restore.sh` download these from **fixed GitHub Release
-  tags** (`native-vkd3d-1.17`, `native-dxc-1.7.2212.40`, `native-vkd3d-wasm-1.17`), check each
+  tags** (`native-vkd3d-2.1`, `native-dxc-1.7.2212.40`, `native-vkd3d-wasm-2.1`), check each
   file's SHA-256 against a hash embedded in the script, and **discard a mismatched file**
   (re-downloading rather than using it). The **release** workflow then **re-hashes** the vkd3d
   WASM module against the pins read out of `tools/restore.sh` before it packs `ShadowDusk.Wasm`

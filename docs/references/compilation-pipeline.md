@@ -8,6 +8,12 @@ the FX file, resolve includes, inject platform macros) is shared. The back half 
 target: **OpenGL/WebGL**, **DirectX 11**, **DirectX 12**, **Vulkan**, and **FNA**. The
 headline pipeline is the OpenGL branch:
 
+Two additive, distinct axes sit outside this fork: a **Slang frontend** runs *before*
+Stage 1, converting `.slang` source to `.fx` text so it joins the ordinary pipeline below;
+and an **SkSL emitter** forks *off* the OpenGL branch, after SPIRV-Cross but before the
+GL rewriter, producing SkSL text for SkiaSharp instead of a `.mgfx`. Both are covered after
+the main stages, since neither is one of the five `.mgfx`/`.fxb`-producing tails.
+
 ```
 HLSL  →[DXC]→  SPIR-V  →[SPIRV-Cross]→  GLSL  →[MonoGameGlslRewriter]→  .mgfx
 ```
@@ -88,6 +94,30 @@ DXBC backend and unlike OpenGL/Vulkan there is no SPIR-V/SPIRV-Cross step:
                      ▼
               MgfxWriter (v11-shaped record, profile byte 2)
 ```
+
+---
+
+## Stage 0 — the Slang frontend (pre-Stage-1 input transform)
+
+**What it is.** `ShadowDusk.Compiler.Slang.SlangFrontend` (`src/ShadowDusk.Compiler/Slang/`)
+accepts `.slang` source as an alternative to `.fx`, alongside the existing ShaderToy/`.glsl`
+frontend. It runs *before* Stage 1 and is not one of the five backend tails: its only job
+is producing `.fx` text that the unchanged pipeline below then compiles exactly like any
+other `.fx`.
+
+**How it works.** It is a **pure managed text transform** — no Slang toolchain is shipped
+or invoked, anywhere. Entry points come from Slang's own `[shader("vertex")]` /
+`[shader("fragment")]` attributes (found by `SlangEntryScanner`); a technique/pass block is
+synthesized, since Slang has no technique/pass concept; the attributes are stripped; and the
+body — near-HLSL by Slang's own design — passes through untouched into the same DXC every
+`.fx` uses. Slang-only language features (`import`, `module`, `extension`, `associatedtype`,
+generics) are rejected by name (`SD0600`) rather than approximated; an unloadable stage
+(compute/mesh/raytracing) is `SD0602`; ambiguous or missing entry points are `SD0603`/`SD0604`.
+
+**Why.** There is no `mgfxc` oracle for Slang (`mgfxc` cannot read Slang at all), so this is
+never an `mgfxc`-equivalence claim — it is reach: `.slang` becomes another accepted input to
+the same faithful pipeline, on every host the pipeline already runs on (browser included),
+with the supply chain unchanged.
 
 ---
 
@@ -236,6 +266,17 @@ StrippedHlsl to DXBC on every OS; the same DXBC bytes are **also** the reflectio
 **column-major** (matching `fxc`, the runtime, and vkd3d), while the DXC/GL path uses
 row-major, this is intentional and the two paths are validated independently.
 
+**One compile option is set here, and only here:** vkd3d's
+`BACKWARD_COMPATIBILITY`/`MAP_SEMANTIC_NAMES`, which maps the SM1-3 semantics to their System
+Value equivalents (`COLOR`*n* to `SV_Target`*n* on pixel-shader outputs, `POSITION` to
+`SV_Position`, `DEPTH`, `VFACE`, `VPOS`) when compiling for an SM4+ target. `fxc` accepts those
+semantics at `ps_4_0`, which is how MonoGame `.fx` files written against SM3 still build;
+vkd3d rejects them outright without the option. Stage 1's `RewriteToSm4` already rewrites the
+`) : COLOR<n>` **return** semantic, but by design it cannot touch the same semantic on a struct
+**field** (the struct may be a vertex-shader output, where `COLOR` is legal), so the option is
+what covers a pixel shader returning `struct { float4 c : COLOR0; }`. It is deliberately NOT
+set on the Stage 3c target, where those are the native semantics.
+
 ### Stage 3c — the FNA fx_2_0 path
 
 **What it is.** A wholly separate path for `PlatformTarget.Fna`
@@ -245,7 +286,10 @@ row-major, this is intentional and the two paths are validated independently.
 `: COLOR` outputs) pass through unchanged. vkd3d compiles each SM2–3 stage to a **D3D9 token
 stream** (`VKD3D_SHADER_TARGET_D3D_BYTECODE`); a small patch canonicalizes a few instruction
 forms MojoShader is strict about. The per-shader constant table (CTAB) is reflected, and
-`Fx2EffectWriter` assembles the `.fxb`. SM4+ is rejected (`SD0300`, MojoShader's ceiling is
+`Fx2EffectWriter` assembles the `.fxb`. Sampler parameters are typed from what the source
+**declared** (`sampler` to `D3DXPT_SAMPLER`, `sampler2D` to `D3DXPT_SAMPLER2D`, and so on),
+which is `fxc`'s rule; vkd3d infers a dimensioned type from usage instead, and FNA binds off
+this table, so the CTAB type is only the fallback for declarations ShadowDusk does not model. SM4+ is rejected (`SD0300`, MojoShader's ceiling is
 `vs_3_0`/`ps_3_0`). This path shares nothing with the MGFX path, which guarantees that adding
 FNA cannot change the GL/DX output.
 
@@ -309,6 +353,34 @@ collides with a GLSL reserved word (for example a uniform named `noise`, which c
 deprecated GLSL `noiseN` built-ins), it renames it (typically by prefixing `_`, e.g. `_noise`)
 so the emitted GLSL is legal. ShadowDusk does not configure or extend that list. This rename is
 correct and required, but it has a downstream consequence, see *Design notes* below.
+
+---
+
+## The SkSL emitter fork (OpenGL branch, before Stage 6)
+
+**What it is.** `ShadowDusk.Compiler.Sksl.SkslConverter` (`src/ShadowDusk.Compiler/Sksl/`)
+branches off the OpenGL branch at `CompilationPipeline.cs:2035` — after Stage 5 (SPIRV-Cross)
+has produced modern GLSL, but *before* Stage 6's `MonoGameGlslRewriter` drags that GLSL back
+to the legacy MojoShader dialect. Converting a pixel-only `.fx` to an
+[SkSL runtime effect](https://skia.org/docs/user/sksl/) needs modern GLSL's shape (a `main`
+returning a value, named samplers), not MojoShader's, so the emitter skips the rewriter and
+the MGFX writer entirely — it produces SkSL **text**, not a `.mgfx`.
+
+**How it works.** `SkslGlslMapper` rewrites the modern GLSL to SkSL's contract: an entry point
+`half4 main(float2 coord)` returning the color (no `gl_FragColor`), `half`-leaning types,
+combined-sampler children rewritten to `uniform shader` values sampled with `.eval(coord)`
+rather than `texture()`, and cbuffer/`$Globals` members flattened to plain SkSL uniforms.
+SkSL runtime effects have **no vertex stage and no varyings at all**, so a shader that reads
+an interpolated input (a vertex color, a custom interpolant) is refused by name
+(`SD0610`–`SD0615`) rather than silently narrowed, with an explicit opt-in
+(`TreatVaryingsAsUniforms`) if treating it as a per-draw constant is acceptable.
+
+**Why.** SkiaSharp's `SKRuntimeEffect` is a thin, string-based P/Invoke binding
+(`CreateShader(string sksl, out string errors)`) with no bytecode entry point and no reference
+compiler of its own, so there is no `mgfxc`-equivalence claim to make here. The evidence model
+is instead **rendered-image fidelity**: the SkSL emission's real-Skia render is compared
+against the original HLSL's own math. The convertible set is fragment-only, coordinate-driven
+effects with uniform inputs — post-process, tint, gradient, SDF work.
 
 ---
 
@@ -461,3 +533,7 @@ bytes.
 - **The GLSL dialect contract** the rewriter enforces (uniform/sampler/varying naming, the
   `posFixup` and matrix conventions) is documented in full in `docs/glsl-uniform-naming.md`.
 - **The FNA container format** is documented in `docs/fx2-binary-format.md`.
+- **Slang input and the SkSL converter are additive, distinct axes, not `.mgfx` backends.**
+  Neither has an `mgfxc`/Skia reference-compiler-equivalence claim, so neither sits on the
+  five-tail fork above; see `docs/validation-matrix.md` §8.0 and §8.0b for their own evidence
+  bars.

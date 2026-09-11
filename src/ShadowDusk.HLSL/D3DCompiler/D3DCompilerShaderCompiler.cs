@@ -105,11 +105,22 @@ public sealed class D3DCompilerShaderCompiler : IDxbcShaderCompiler
         // so all three backends now render pixel-identical to the golden. (The matrix's
         // reflection OFFSET is majorness-independent — 4 registers either way — so the
         // cross-backend reflection tables still agree; verified by the reflection suite.)
-        ShaderFlags flags = ShaderFlags.PackMatrixColumnMajor;
+        // EnableBackwardsCompatibility + OptimizationLevel3 mirror mgfxc's own
+        // DirectX_11 fxc invocation exactly (decompiled from mgfxc.dll,
+        // MonoGame.Framework.Content.Pipeline's ShaderCompiler.CompileHLSL):
+        // mgfxc always sets EnableBackwardsCompatibility for DirectX_11, and sets
+        // OptimizationLevel3 unless embedding debug info (Debug builds there use
+        // SkipOptimization|Debug with no explicit level, same as below). Without
+        // these this oracle asked d3dcompiler_47 for a different optimization
+        // level than mgfxc did — same DLL, different fast-math scheduling choices,
+        // surfacing as a sub-ULP (maxd 1) divergence against the real mgfxc golden.
+        ShaderFlags flags = ShaderFlags.PackMatrixColumnMajor | ShaderFlags.EnableBackwardsCompatibility;
         if (!request.AllowWarnings)
             flags |= ShaderFlags.WarningsAreErrors;
         if (request.EmbedDebugInfo)
             flags |= ShaderFlags.Debug | ShaderFlags.SkipOptimization;
+        else
+            flags |= ShaderFlags.OptimizationLevel3;
 
         // No defines / include handler: the preprocessor has already flattened
         // #includes and applied platform macros before reaching this backend.

@@ -8,6 +8,8 @@ using System.IO;
 using System.Linq;
 using ShadowDusk.Validation.Dx;
 
+DxHeadlessRasterizer.PinIfRequested();
+
 string repoRoot = DxShaderInputs.FindRepoRoot();
 string goldenDir = Path.Combine(repoRoot, "tests", "fixtures", "golden", "DirectX_11");
 string catPath = DxShaderInputs.CatPath(repoRoot);

@@ -37,11 +37,13 @@ skinparam note {
 package "1 - INPUTS  (what you give us)" {
   rectangle "HLSL **.fx**\n(MonoGame / KNI / FNA source)" as FX #DCE6DC
   rectangle "ShaderToy / raw GLSL\nimage shader (.glsl / pasted)" as GLSLIN #DCE6DC
+  rectangle "**Slang** (.slang)\nHLSL-compatible subset" as SLANGIN #DCE6DC
 }
 
 ' ===== 2. FRONTEND (shared) =====
 package "2 - FRONTEND  (shared, runs for every target)" {
   rectangle "**ShaderToy frontend**  (ShadowDusk.ShaderToy)\nGLSL image shader -> .fx" as STOY #E7DFC9
+  rectangle "**Slang frontend**  (ShadowDusk.Compiler.Slang)\n[shader(\"vertex\"/\"fragment\")] -> entry points;\ntechnique synthesized; body compiles as HLSL" as SLANGFE #E7DFC9
   rectangle "**FxPreParser** (FX9 pre-parse)\nfind technique/pass/sampler blocks;\nrecover macro-defined TECHNIQUE();\nFxSourceMode = RewriteToSm4 | PreserveSm3" as PRE #E7DFC9
   rectangle "**PlatformMacros**  (inject per-target #defines)\nGL:{MGFX,GLSL,OPENGL}  DX11:{MGFX,HLSL,SM4}\nDX12:{MGFX,HLSL,SM6}  VK:{MGFX,HLSL,VULKAN,SM6}\nFNA:{FNA,HLSL,SM3}   +__KNIFX__ when KNIFX" as MAC #E7DFC9
   rectangle "**Preprocess** (DXC -P)\nflatten #include, expand macros" as PP #E7DFC9
@@ -57,10 +59,12 @@ package "3 - TRANSLATION LAYERS  (target selects the branch)" {
     rectangle "**SPIRV-Cross**\nSPIR-V -> GLSL" as GL_SPVC #BFD2E8
     rectangle "GLSL 1.10\n(MojoShader dialect)" as GL_GLSL #DCE6DC
     rectangle "**MonoGameGlslRewriter**\nps_oC0 -> gl_FragColor / gl_FragData[n];\nunwrap one-shot do-while (#136), else -> for (#107);\nroundEven -> floor+0.5; derivatives #extension (#139);\nstruct :COLOR -> :SV_Target (MRT, GAP-2)" as GL_RW #E7DFC9
+    rectangle "**SkslConverter**  (ShadowDusk.Compiler.Sksl)\nmodern GLSL -> SkSL text (fragment-only,\ncoordinate-driven; no varyings, no vertex stage)" as SKSLCONV #E7DFC9
     GL_DXC -down-> GL_SPV
     GL_SPV -down-> GL_SPVC
     GL_SPVC -down-> GL_GLSL
     GL_GLSL -down-> GL_RW
+    GL_GLSL -down-> SKSLCONV : "forks BEFORE the rewriter\n(CompilationPipeline.cs:2035)"
   }
 
   package "DirectX branch" {
@@ -103,6 +107,7 @@ package "5 - OUTPUT CONTAINERS" {
   rectangle "**.fxb**  (D3D9 fx_2_0)\nFNA effect" as O_FXB #DCE6DC
   rectangle ".mgfx **Vulkan**\n(v11-shaped record,\nprofile byte 80, SPIR-V)" as O_MGFXVK #DCE6DC
   rectangle ".mgfx **DirectX12**\n(profile byte 2, DXIL)" as O_MGFXDX12 #DCE6DC
+  rectangle "**SkSL text**\n(SKRuntimeEffect source,\nno .mgfx container)" as O_SKSL #DCE6DC
 }
 
 ' ===== 6. REAL RUNTIMES =====
@@ -116,11 +121,14 @@ package "6 - REAL RUNTIMES  (the bar: loads + renders like mgfxc / fxc)" {
   rectangle "MonoGame\n**DesktopVK**\n(Vulkan)" as R_MGVK #D9D9D9
   rectangle "**FNA**\n(FNA3D)" as R_FNA #D9D9D9
   rectangle "MonoGame / KNI\n**Android**\n(GL ES,\non-device compile)" as R_ANDROID #D9D9D9
+  rectangle "**SkiaSharp**\n(SKRuntimeEffect,\nCPU/GPU raster)" as R_SKIA #D9D9D9
 }
 
 ' ===== FLOWS =====
 GLSLIN --> STOY
 STOY --> PRE : ".fx"
+SLANGIN --> SLANGFE
+SLANGFE --> PRE : ".fx"
 FX --> PRE
 PRE --> MAC
 MAC --> PP
@@ -160,6 +168,8 @@ O_FXB --> R_FNA
 O_MGFXVK --> R_MGVK : "render-proven 10/10;\nmgfxc pixel-diff maxd 0 with\nexplicit registers (#145), blocked\nfor auto-numbered (MonoGame\nSlotOffset bug)"
 O_MGFXDX12 --> R_MGDX12 : "render-proven: PS/SpriteBatch\ncorpus 10/10 + VS-driven +\nApos.Shapes; mgfxc pixel-diff\nmaxd 0 (Phase 54)"
 O_MGFX10 --> R_ANDROID : "GL ES; one v10 .mgfx.\non-device compile (android DXC\n+ SPIRV-Cross), or build-time\nprecompile on a host"
+SKSLCONV --> O_SKSL
+O_SKSL --> R_SKIA : "image-fidelity vs the original\nHLSL's math; NO mgfxc oracle\n(Skia has no reference compiler)"
 
 note as N1
 == Bundled native binaries (the blue boxes - ride inside the NuGet, no fxc / mgfxc / Wine / SDK)
@@ -168,6 +178,10 @@ note as N1
 == Delivery shapes (one and the same library)
 **Library** IShaderCompiler.CompileAsync(fx) -> bytes  *(the product)*   |   **CLI** ShadowDuskCLI   |   **MGCB plugin** (.mgcb)   |   **Content Builder library** (ShadowDusk.ContentPipeline: the same importer/processor as a lib for MonoGame 3.8.5's C# ContentBuilder)   |   **direct .xnb** (CompiledShader.ToXnb() / an .xnb CLI output path - Content.Load<Effect> ready, MGCB not involved)   |   **WASM** in-browser compile
 **OS:** self-contained on Linux / macOS / Windows  +  Browser (WASM)  +  **Android** (GL path; on-device DXC + SPIRV-Cross built for android-arm64/x86_64, loaded in-process from the APK lib/[abi]/ dir)
+
+== Two additive, distinct axes (not §1 targets)
+**Slang input** (ShadowDusk.Compiler.Slang) - .slang joins .fx/.glsl as an accepted INPUT; no Slang binary shipped or invoked, pure managed text transform; no mgfxc oracle exists for Slang, so no Slang route is ever mgfxc-equivalent.
+**SkSL OUTPUT** (ShadowDusk.Compiler.Sksl) - converts a pixel-only .fx to SkSL text for SkiaSharp's SKRuntimeEffect; evidence is rendered-image fidelity against the original HLSL, never mgfxc-equivalence (Skia has no reference compiler).
 end note
 
 legend right

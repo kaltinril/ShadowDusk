@@ -1,6 +1,6 @@
 #nullable enable
 
-// vkd3d-shader C API bindings (vkd3d-shader 1.17).
+// vkd3d-shader C API bindings (vkd3d-shader 2.1).
 // Source of truth: tools/vkd3d/vkd3d_shader.h (read & verified against this file).
 //
 // ABI confirmed from the header:
@@ -69,6 +69,41 @@ internal struct Vkd3dShaderCode
     public nuint Size;    // size_t
 }
 
+/// <summary>vkd3d_shader_compile_option_name (only what we pass).</summary>
+internal enum Vkd3dCompileOptionName
+{
+    /// <summary>
+    /// VKD3D_SHADER_COMPILE_OPTION_BACKWARD_COMPATIBILITY (since 1.10). Its value is a
+    /// bitmask of <see cref="Vkd3dBackwardCompatibility"/>.
+    /// </summary>
+    BackwardCompatibility = 0x00000008,
+}
+
+/// <summary>
+/// vkd3d_shader_compile_option_backward_compatibility — the bitmask carried as the value
+/// of <see cref="Vkd3dCompileOptionName.BackwardCompatibility"/>.
+/// </summary>
+[Flags]
+internal enum Vkd3dBackwardCompatibility : uint
+{
+    /// <summary>
+    /// Maps the SM1-3 semantics to their System Value equivalents when compiling HLSL for
+    /// an SM4+ target: POSITION → SV_Position, COLOR<c>n</c> → SV_Target<c>n</c> on pixel
+    /// shader outputs, DEPTH → SV_Depth, VFACE → SV_IsFrontFace, VPOS → SV_Position.
+    /// </summary>
+    MapSemanticNames = 0x00000001,
+}
+
+/// <summary>
+/// struct vkd3d_shader_compile_option { enum name; unsigned int value; }.
+/// </summary>
+[StructLayout(LayoutKind.Sequential)]
+internal struct Vkd3dCompileOption
+{
+    public Vkd3dCompileOptionName Name;   // enum (4 bytes)
+    public uint Value;                    // unsigned int
+}
+
 /// <summary>
 /// struct vkd3d_shader_compile_info — chained base structure.
 /// Field order is load-bearing (it defines the C layout).
@@ -81,7 +116,7 @@ internal struct Vkd3dCompileInfo
     public Vkd3dShaderCode Source;      // HLSL bytes + size
     public Vkd3dSourceType SourceType;  // enum -> Hlsl
     public Vkd3dTargetType TargetType;  // enum -> DxbcTpf
-    public IntPtr Options;              // const vkd3d_shader_compile_option* (NULL)
+    public IntPtr Options;              // const vkd3d_shader_compile_option*
     public uint OptionCount;            // unsigned int
     public Vkd3dLogLevel LogLevel;      // enum
     public IntPtr SourceName;           // const char* (UTF-8, may be NULL)

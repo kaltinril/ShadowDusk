@@ -8,7 +8,7 @@ namespace ShadowDusk.Core;
 
 /// <summary>
 /// Post-pass over vkd3d's D3D9 SM2/SM3 token streams that canonicalizes the two
-/// instruction forms MojoShader rejects but vkd3d 1.17 emits (found by the Phase 39
+/// instruction forms MojoShader rejects but vkd3d 2.1 emits (found by the Phase 39
 /// rung-3/4 FNA harness — real FNA load failures where the fxc oracle loads fine):
 ///
 ///   1. <c>texkill</c> with a partial destination writemask (vkd3d writes e.g. <c>.x</c>;

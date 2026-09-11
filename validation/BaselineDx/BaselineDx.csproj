@@ -17,5 +17,6 @@
   <ItemGroup>
     <Compile Include="..\SharedDx\DxShaderInputs.cs" />
     <Compile Include="..\SharedDx\DxEffectImageRenderer.cs" />
+    <Compile Include="..\SharedDx\DxHeadlessRasterizer.cs" />
   </ItemGroup>
 </Project>

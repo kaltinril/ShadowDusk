@@ -165,6 +165,17 @@ internal sealed class KniDxCompareGame : Game
             PreferredBackBufferHeight = 64,
             GraphicsProfile = GraphicsProfile.HiDef,
         };
+        // Issue #204: KNI carries the WARP knob on PresentationParameters (not a static
+        // like MonoGame's GraphicsAdapter.UseDriverType, see SharedDx/DxHeadlessRasterizer.cs),
+        // so it needs the standard XNA PreparingDeviceSettings hook instead. Same env var
+        // name as that helper, so `run-windows-render-gates.ps1` can pin every DX gate with
+        // one setting; opt-in so a local `dotnet run` still renders on the real GPU.
+        if (Environment.GetEnvironmentVariable("SHADOWDUSK_DX_WARP") == "1")
+        {
+            _gdm.PreparingDeviceSettings += (_, e) =>
+                e.GraphicsDeviceInformation.PresentationParameters.UseDriverType =
+                    PresentationParameters.DriverType.FastSoftware;
+        }
         Window.Title = "ShadowDusk Phase 44 KNI DX11 validation (headless)";
     }
 

@@ -42,7 +42,23 @@ to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub 
 3. **A green `main`.** CI (`ci.yml`) runs the 3-OS build + test matrix on every push/PR.
    Releases cut from `main` only after CI is green; local green is not sufficient.
 
-4. **A green Windows render gate — RUN IT FIRST (CI structurally cannot run this).** The
+4. **Local tooling the render gate needs — install this BEFORE reading a red gate as a
+   divergence.** The gate script needs **PowerShell 7** (`pwsh`; `tools/restore.ps1` carries
+   `#requires -Version 7.0`, and Windows PowerShell 5.1 aborts the run with a
+   `ScriptRequiresUnmatchedPSVersion` error that looks nothing like a render failure) and
+   **Python 3 with `pillow` + `numpy`** (four gates shell out to `validation/compare*.py`).
+
+   ```powershell
+   winget install Microsoft.PowerShell
+   winget install Python.Python.3.12
+   python -m pip install pillow numpy
+   ```
+
+   Without them the summary reports those gates as **`[FAIL] … exited with code 9009`**, which
+   is "command not found", not a render divergence — a red that means nothing about the product.
+   Check for `9009` before investigating any gate failure.
+
+5. **A green Windows render gate — RUN IT FIRST (CI structurally cannot run this).** The
    DirectX / DirectX 12 / FNA / KNI-DirectX / real-KNI-desktop-GL / **Vulkan** / browser-ANGLE
    rung-4 render proofs ("renders like `mgfxc`/`fxc` in the real engine") have no headless CI driver — Mesa
    covers the in-process OpenGL gates on the Linux lane, but there is no verified headless
@@ -81,7 +97,7 @@ ShadowDusk's package version lives in **exactly one place**:
 ```xml
 <!-- Directory.Build.props -->
 <PropertyGroup>
-  <Version>0.18.0</Version>
+  <Version>0.20.0</Version>
 </PropertyGroup>
 ```
 
@@ -94,8 +110,8 @@ nine packages (and their inter-package dependency ranges) at the same version.
 > those pin third-party dependency versions under Central Package Management. Leave them
 > alone.)
 
-To bump for a release, change that one line (e.g. `0.17.0` → `0.18.0`), update
-`CHANGELOG.md` (move `[Unreleased]` into a dated `[0.18.0]` section, leave a fresh empty
+To bump for a release, change that one line (e.g. `0.19.0` → `0.20.0`), update
+`CHANGELOG.md` (move `[Unreleased]` into a dated `[0.20.0]` section, leave a fresh empty
 `[Unreleased]`), update the version examples in this file, commit, and merge to `main` via PR.
 
 ---
@@ -128,7 +144,7 @@ marker; the workflow creates and pushes it itself on a successful release).
 ### Manual dispatch (the only trigger)
 
 After the version-bump PR is merged to `main`: **Actions → Release → Run workflow**, and
-enter the `version` input (e.g. `0.18.0`, no leading `v`). On dispatch the workflow also
+enter the `version` input (e.g. `0.20.0`, no leading `v`). On dispatch the workflow also
 creates and pushes the matching `v<version>` tag so the GitHub Release anchors to a tag.
 
 ### The `validate` guard (input ↔ version)
@@ -169,7 +185,7 @@ first (the `/release` skill does this for you).
 2. **The `ShadowDuskCLI` tool installs and runs:**
 
    ```bash
-   dotnet tool install -g ShadowDusk.Cli --version 0.18.0
+   dotnet tool install -g ShadowDusk.Cli --version 0.20.0
    ShadowDuskCLI --help
    ```
 
@@ -177,7 +193,7 @@ first (the `/release` skill does this for you).
 3. **The consumer (GL) self-contained path works on a clean machine:**
 
    ```bash
-   dotnet add package ShadowDusk.Compiler --version 0.18.0
+   dotnet add package ShadowDusk.Compiler --version 0.20.0
    ```
 
    then compile a `.fx` → GL `.mgfx` in memory. This restores `Core/HLSL/GLSL` plus
@@ -190,10 +206,10 @@ first (the `/release` skill does this for you).
 > `runtimes/<rid>/native` (win-x64, linux-x64, osx-x64, osx-arm64). Packing is
 > restore-state-dependent by design (csproj entries are `Exists(...)`-conditioned), but
 > since Phase 37 C **`tools/restore.{ps1,sh}` provision all four RIDs automatically**: the
-> pinned binaries are downloaded from the fixed GitHub Release tag `native-vkd3d-1.17` and
+> pinned binaries are downloaded from the fixed GitHub Release tag `native-vkd3d-2.1` and
 > SHA-256-verified against pins embedded in the scripts — a clean CI runner is pack-ready
 > after restore. Provenance: linux/macOS binaries are built by the dispatchable
-> `.github/workflows/build-vkd3d-natives.yml` from the pinned WineHQ 1.17 tarball (linux on
+> `.github/workflows/build-vkd3d-natives.yml` from the pinned WineHQ 2.1 tarball (linux on
 > ubuntu:20.04 = glibc 2.31 baseline; macOS at `MACOSX_DEPLOYMENT_TARGET=11.0`, per-arch);
 > the win-x64 dll is the MSYS2 build the Phase 18/39/40 goldens were proven against
 > (recipe in `tools/restore.ps1`). The LGPL-2.1 notice for the bundled binaries
@@ -205,7 +221,7 @@ first (the `/release` skill does this for you).
 > fails red if the packed `ShadowDusk.HLSL` nupkg is missing any of the four vkd3d
 > natives or the THIRD-PARTY-NOTICES file — mirroring the `pack-wasm` dxcompiler.wasm
 > gate. A red release beats silently shipping the FNA target and `DxbcBackend.Vkd3d`
-> broken for any consumer RID. If the gate trips, check that the `native-vkd3d-1.17`
+> broken for any consumer RID. If the gate trips, check that the `native-vkd3d-2.1`
 > release assets are intact and the restore-step log shows four "hash OK" lines.
 
 ---

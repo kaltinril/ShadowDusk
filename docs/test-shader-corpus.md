@@ -1,13 +1,17 @@
 # Test Shader Corpus — Provenance & Fresh Examples
 
-**Last updated:** 2026-08-02 — the issue-#189 fix added `SamplerRegisterOrder.fx` and
-`SamplerRegisterSparse.fx` (the sampler-register set below), both with `OpenGL` **and**
-`DirectX_11` goldens. Previously 2026-08-01: the issue-#187 fix added the four `ExPhantom*`
-fixtures (the phantom-parameter set below). Previously 2026-07-31: Phase 51 A10 added three
-DirectX-profile-floor fixtures and **reclassified the vendored Nez set**, whose DirectX column
-collapsed once ShadowDusk started enforcing mgfxc's own floor (see the note above that table).
+**Last updated:** 2026-09-10 — vkd3d 2.1 (Phase 56) reclassified `Reflection.fx` and the Apos.Shapes revisions as FNA-compiling; the `E5017` loop/ternary gaps they sat behind were compiler gaps, not shader-model limits. Previously 2026-09-09: added the Slang input corpus: 17 `.slang` fixtures under
+`slang/`, cross-validated against the real `slangc` compiler (see `docs/validation-matrix.md`
+§8.0 and `validation/SlangCorpus`). Previously 2026-08-02: the issue-#189 fix added
+`SamplerRegisterOrder.fx` and `SamplerRegisterSparse.fx` (the sampler-register set below), both
+with `OpenGL` **and** `DirectX_11` goldens. Previously 2026-08-01: the issue-#187 fix added the
+four `ExPhantom*` fixtures (the phantom-parameter set below). Previously 2026-07-31: Phase 51
+A10 added three DirectX-profile-floor fixtures and **reclassified the vendored Nez set**, whose
+DirectX column collapsed once ShadowDusk started enforcing mgfxc's own floor (see the note
+above that table).
 Corpus on disk: **153 `.fx` + 7 `.fxh`** — 64 in the fixture root, 50 in `examples/`, 1 in
-`shadertoy/`, 38 under `third-party/`.
+`shadertoy/`, 38 under `third-party/` — plus **17 `.slang`** under `slang/` (a separate input
+corpus, not `.fx`; see §5).
 
 This document records (1) what is known about where the existing `.fx` test
 fixtures came from, (2) an integrity caveat about those fixtures, and (3) a set
@@ -323,7 +327,7 @@ the targets it actually compiles on (the rationale per shader is in the director
 | `SpriteLines.fx` | Nez (MIT) | GL + FNA | Two techniques (H/V); `VPOS` + `floor` + float modulo (`%`). VPOS render-equivalence **not** asserted. | GL + FNA (`SD0015` on DX), VPOS |
 | `Crosshatch.fx` | Nez (MIT) | FNA only | Nested `if` + `<` relationals + `VPOS` + float `%` + an `int` uniform. **Not GL:** `int` uniforms are not modelled on the MonoGame-GL path (loud `SD0210`, by design). **Not DX:** `compile ps_3_0` is below the DirectX floor (`SD0015`). | FNA only |
 | `PaletteCycler.fx` | Nez (MIT) | FNA only | Palette swap via a 1-D LUT (`tex1D` / `sampler1D`). **Not GL/DX:** `tex1D` has no 1:1 modern `Texture` method, rejected with a targeted `FX0012` that points to FNA (which compiles it natively). | FNA only |
-| `Reflection.fx` | Nez (MIT) | none (reject-only) | Two techniques, each **VS+PS** (mirror + water); world-space, `half2`, `frac`, relational `if`. **Not GL:** the multi-`TEXCOORD` interpolant block cannot be expressed in std140/std430 by SPIRV-Cross (`SD0100`). **Not FNA:** an int/relational construct hits the vkd3d 1.17 SM3 gap (`E5017`, verbatim since 0.15.0). **Not DX (since A10):** `compile vs_2_0` is below the DirectX floor (`SD0015`) — the profile mgfxc itself refuses. Retained as a reject-set fixture. | reject-only |
+| `Reflection.fx` | Nez (MIT) | FNA | Two techniques, each **VS+PS** (mirror + water); world-space, `half2`, `frac`, relational `if`. **Not GL:** the multi-`TEXCOORD` interpolant block cannot be expressed in std140/std430 by SPIRV-Cross (`SD0100`). **FNA:** compiles as of vkd3d 2.1 (its if/else branches flatten; the 1.17 `E5017` was a compiler gap, not a shader-model limit). **Not DX (since A10):** `compile vs_2_0` is below the DirectX floor (`SD0015`) — the profile mgfxc itself refuses. Retained as a GL/DX reject-set fixture. | FNA |
 | `Noise.fx` | Nez (MIT) | GL + FNA | Film-grain; helper fn `rand()` (`frac`/`sin`/`dot`) called from the entry. A uniform literally named `noise` collides with a GLSL reserved word and SPIRV-Cross renames it `_noise`; this used to break the GL cbuffer/parameter join (`SD0012`), but the **B10 offset-bridge fallback fixed it** (see below), so it now compiles on GL too. | GL + FNA (`SD0015` on DX), B10 |
 
 These are exercised by `ThirdPartyShaderCorpusTests` (compile-asserts each on its
@@ -358,7 +362,7 @@ by an actual compile probe:
 
 | File | Upstream | Targets (compile) | Feature / gap covered | Classification |
 |---|---|---|---|---|
-| `Apos.Shapes/apos-shapes.fx` | Apos.Shapes (MIT) | GL + DX | One large **VS+PS** SDF effect: 10 `TEXCOORD` interpolants, `__KNIFX__`/`OPENGL` macro profile branch, a Newton-iteration `for`-loop (`EllipseSDF`), `int` locals, 11-way `if/else` shape dispatch, `%` modulo, ternaries, `discard`, `tex2D`, two samplers (one `register(s0)`), Oklab + gradient math. **Not FNA:** no SM3/FNA profile branch (its `#else` selects `ps_4_0`, which ShadowDusk's macro-profile policy defaults to the SM3 ceiling) and vkd3d 1.17 then rejects the `EllipseSDF` Newton loop, whose trip count is a runtime `int` (`E5017 Instruction type HLSL_IR_LOOP`, on the `for` at line 204 — the location is pinned by `FnaDiagnosticLocationTests` since issue #202). A legit SM limit (Apos.Shapes ships for MonoGame GL/DX, not FNA). The **current** upstream (3235 lines) is vendored separately as `tests/fixtures/issues/202/apos-shapes.fx`, OUTSIDE this corpus so the sweeps never enumerate it: it is the issue #202 reproduction (vkd3d reported line 3590 for its line 3009), and `fxc /T fx_2_0` rejects it too. | GL + DX |
+| `Apos.Shapes/apos-shapes.fx` | Apos.Shapes (MIT) | GL + DX + FNA | One large **VS+PS** SDF effect: 10 `TEXCOORD` interpolants, `__KNIFX__`/`OPENGL` macro profile branch, a Newton-iteration `for`-loop (`EllipseSDF`), `int` locals, 11-way `if/else` shape dispatch, `%` modulo, ternaries, `discard`, `tex2D`, two samplers (one `register(s0)`), Oklab + gradient math. **FNA (since vkd3d 2.1):** it has no SM3/FNA profile branch (its `#else` selects `ps_4_0`, which ShadowDusk's macro-profile policy defaults to the SM3 ceiling), and vkd3d 1.17 then rejected the `EllipseSDF` Newton loop, whose trip count is a runtime `int` (`E5017 Instruction type HLSL_IR_LOOP`). vkd3d 2.0 implemented SM3 loops, so it compiles — that was a compiler gap, never a shader-model limit. The **current** upstream (3235 lines) is vendored separately as `tests/fixtures/issues/202/apos-shapes.fx`, OUTSIDE this corpus so the sweeps never enumerate it: it is the issue #202 reproduction, it still does not fit SM3 (`E9015 Register r32 exceeds limits`, located on author line 1000 and pinned by `FnaDiagnosticLocationTests`), and `fxc /T fx_2_0` rejects it too. | GL + DX + FNA |
 | `Apos.Shapes/apos-shapes-aa.fx` | Apos.Shapes (MIT) | GL + DX | The later **derivative-based-antialiasing** revision (commit `d507a734…`, issue #136): `ddx`/`ddy` of the SDF and of an interpolated position drive the AA footprint, alongside conditional `discard`, inlined-helper early returns (SPIRV-Cross's one-shot do-while), genuine Newton loops, and a third sampler (`register(s2)` blue-noise dither). Carries the `AposShapesAa_OpenGl_NoGradientOpInsideDivergentLoop_Issue136` pin: the emitted GL GLSL must never place a gradient op inside a loop with a divergent exit (ANGLE D3D11 zeroes derivatives there). **Not FNA:** same SM ceiling as above plus the gradient intrinsics. | GL + DX |
 | `Apos.Shapes/apos-shapes-sm6.fx` | Apos.Shapes (MIT) | GL + DX + Vulkan | The CURRENT upstream revision (commit `ea38c6d8…`, the issue #145 reproducer): an `#elif SM6` branch for Vulkan (`vs_6_0`/`ps_6_0`, three `Texture2D`/`SamplerState` pairs), a base-2048 packed-color quantization (`Pack11`/`DecodeDigit`) replacing the earlier `apos-shapes.fx`'s Cantor-pair packing, a 13-element vertex input, and blue-noise dithering. **Render-proven on DX and Vulkan** (maxd 0, `docs/validation-matrix.md` §1/§6) but deliberately **NOT** the fixture GL's render-proof uses (see the callout above) — its real mgfxc GL compile renders solid black, a confirmed MojoShader/fxc codegen bug. **Not FNA:** exceeds the vkd3d `fx_2_0`/SM3 instruction ceiling (`SD0305`). | GL + DX + Vulkan (compile); DX + Vulkan (render-proof) |
 | `Gum/MonoGameInCode-Grayscale.fx` | Gum (MIT) | GL + DX + FNA | `vs/ps_4_0_level_9_1` profiles, `Texture2D` + `sampler2D` + `sampler_state`, `: COLOR0` output, PS-only technique, dot-luminance. | all-runtime |
@@ -445,3 +449,23 @@ Coverage note: every fixture in the corpus — these included — is exercised b
 structurally valid Vulkan container (combined descriptors at binding ≥ 32, unique bindings,
 column-major matrices, `main` entry point, no `SPV_GOOGLE_*` extensions) or fail with a real
 diagnostic. There is no skip list to quietly grow.
+
+---
+
+## 5. Slang input corpus (`slang/`)
+
+A separate corpus from the `.fx` sets above, since it exercises a different input language,
+not the FX9/HLSL pipeline. Lives in:
+
+```
+tests/fixtures/shaders/slang/
+```
+
+**17 `.slang` fixtures**, project-authored to exercise `ShadowDusk.Compiler.Slang.SlangFrontend`
+(cbuffers, textures, matrices, VS+PS pairs, gradients, SDF, checkerboard, plasma, color-wheel,
+and other procedural effects). Every one is accepted by the real, pinned `slangc` compiler as
+genuine Slang — the proof the corpus isn't HLSL wearing a `.slang` extension — and all 17
+convert + compile on OpenGL and DirectX in-suite (`SlangCorpusCompileTests`). An 8-shader
+uniform-free procedural subset additionally renders pixel-identical (max Δ 0) through
+ShadowDusk's route vs through slangc's own HLSL emission, via `validation/SlangCorpus`.
+Full detail: `docs/validation-matrix.md` §8.0.

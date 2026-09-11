@@ -14,7 +14,7 @@ namespace ShadowDusk.Wasm;
 /// Browser/WASM vkd3d-shader backend (Phase 4.1): the THIRD
 /// <see cref="IDxbcShaderCompiler"/>, mirroring the desktop
 /// <see cref="Vkd3dShaderCompiler"/> one-for-one behind a <c>[JSImport]</c> boundary
-/// instead of P/Invoke. It is the SAME pinned vkd3d-shader 1.17 compiled to
+/// instead of P/Invoke. It is the SAME pinned vkd3d-shader 2.1 compiled to
 /// WebAssembly (NO substitute compiler), so the bytes it produces are asserted
 /// byte-identical to the desktop backend's (the Phase 23 G1-gate pattern:
 /// <c>tests/ShadowDusk.BrowserTests/node-test-vkd3d-wasm.mjs</c>).
@@ -153,6 +153,6 @@ internal sealed class WasmVkd3dShaderCompiler : IDxbcShaderCompiler
                      "loaded, so the DirectX (DXBC) and FNA (fx_2_0) targets are unavailable " +
                      "in this browser session. The module ships as a ShadowDusk.Wasm static " +
                      "web asset once restored (tools/restore.* / release tag " +
-                     "native-vkd3d-wasm-1.17 — see src/ShadowDusk.Wasm/wwwroot/vkd3d/RESTORE.md). " +
+                     "native-vkd3d-wasm-2.1 — see src/ShadowDusk.Wasm/wwwroot/vkd3d/RESTORE.md). " +
                      "Underlying error: " + ex.Message);
 }

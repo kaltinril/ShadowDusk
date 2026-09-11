@@ -4,7 +4,7 @@ THIRD-PARTY NOTICES for the ShadowDusk.HLSL package
 This package redistributes the following third-party native libraries as
 dynamically-loaded binaries (under runtimes/<rid>/native):
 
-vkd3d-shader (libvkd3d-shader), version 1.17
+vkd3d-shader (libvkd3d-shader), version 2.1
 --------------------------------------------
 Copyright 2016-2025 the Vkd3d project authors
 (see the AUTHORS file in the vkd3d source distribution for a complete list)
@@ -20,8 +20,8 @@ FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License below for
 more details.
 
 Source availability: the binaries are built UNMODIFIED from the official
-vkd3d 1.17 release tarball published by the Wine project:
-    https://dl.winehq.org/vkd3d/source/vkd3d-1.17.tar.xz
+vkd3d 2.1 release tarball published by the Wine project:
+    https://dl.winehq.org/vkd3d/source/vkd3d-2.1.tar.xz
 Build recipes (per RID) are public in the ShadowDusk repository:
     https://github.com/kaltinril/ShadowDusk
     (.github/workflows/build-vkd3d-natives.yml and tools/restore.ps1)

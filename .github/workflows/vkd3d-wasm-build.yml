@@ -1,5 +1,5 @@
 # .github/workflows/vkd3d-wasm-build.yml
-# Phase 4.1 — build the pinned vkd3d-shader 1.17 to WebAssembly, so the browser
+# Phase 4.1 / 56 — build the pinned vkd3d-shader to WebAssembly, so the browser
 # host can compile HLSL -> SM5 DXBC (MonoGame DX11) and HLSL -> SM1-3 D3D bytecode
 # (FNA fx_2_0) with THE SAME pinned compiler as desktop. One pipeline everywhere —
 # NO substitute compilers (THE PURPOSE, CLAUDE.md); a server relay (Option C) is
@@ -7,11 +7,11 @@
 #
 # Same hosting model as the Phase 37 native builds (build-vkd3d-natives.yml /
 # dxc-build.yml): the artifact produced here is uploaded to the FIXED GitHub
-# Release tag `native-vkd3d-wasm-1.17` as a deliberate MANUAL step — re-running
+# Release tag `native-vkd3d-wasm-<version>` as a deliberate MANUAL step — re-running
 # this workflow never republishes anything. NEVER modify existing native-* tags.
 #
 # Pin discipline:
-#   * vkd3d stays at 1.17 EXACTLY (same WineHQ tarball + SHA-256 as the desktop
+#   * vkd3d matches the desktop natives EXACTLY (same WineHQ tarball + SHA-256 as
 #     natives — output byte-stability is a product promise; a bump re-baselines
 #     goldens and re-runs rung-4, and gets a NEW hosting tag).
 #   * emscripten stays at 3.1.34 — the .NET 8 WASM runtime's pin (the same pin
@@ -22,12 +22,21 @@
 # The wrapper ABI (sdw_vkd3d_compile / sdw_vkd3d_free_code / sdw_vkd3d_free_messages)
 # is a CONTRACT with the C# [JSImport] interop side — see tools/vkd3d-wasm/
 # sdw_vkd3d_wrapper.c and the phase doc before changing anything.
-name: Build vkd3d-shader WASM (1.17)
+name: Build vkd3d-shader WASM
 
 on:
   # ON-DEMAND ONLY (dispatch from the default branch). The artifact is hosted on the
   # fixed release tag; re-running never republishes — see the header comment.
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'vkd3d release to build (e.g. 2.1)'
+        required: true
+        default: '2.1'
+      tarball_sha256:
+        description: 'SHA-256 of vkd3d-<version>.tar.xz as published by WineHQ'
+        required: true
+        default: '7510146aff2adfb4ae07ab890701a607e5ff7c66e57100cfc9f630ec92eeda6a'
 
 # Least privilege for GITHUB_TOKEN. This workflow only builds the wasm native and uploads it
 # as a run artifact; a maintainer attaches it to the pinned release by hand, so nothing here
@@ -36,12 +45,13 @@ permissions:
   contents: read
 
 env:
-  VKD3D_VERSION: '1.17'
-  VKD3D_TARBALL_URL: 'https://dl.winehq.org/vkd3d/source/vkd3d-1.17.tar.xz'
-  # SHA-256 of vkd3d-1.17.tar.xz as published by WineHQ — verified before building
-  # so a tampered/moved tarball can never silently change the shipped compiler.
+  VKD3D_VERSION: ${{ inputs.version }}
+  VKD3D_TARBALL_URL: 'https://dl.winehq.org/vkd3d/source/vkd3d-${{ inputs.version }}.tar.xz'
+  # SHA-256 as published by WineHQ — verified before building so a tampered or
+  # moved tarball can never silently change the shipped compiler.
   # (Identical pin to build-vkd3d-natives.yml — same compiler, different target.)
-  VKD3D_TARBALL_SHA256: 'bc61cb9e84d5045cbcaffbdd707940d399d8bf62874663dfe5809a0bfb87e9b6'
+  VKD3D_TARBALL_SHA256: ${{ inputs.tarball_sha256 }}
+  VKD3D_SRC: 'vkd3d-${{ inputs.version }}'
   # emscripten 3.1.34 = the .NET 8 WASM runtime pin (Microsoft.NET.Runtime.
   # Emscripten.3.1.34.Sdk.*). emsdk repo pinned at its own '3.1.34' release tag.
   EMSDK_VERSION: '3.1.34'
@@ -123,7 +133,7 @@ jobs:
       #     working pthread mutex/cond stubs (all vkd3d-shader needs); '-lpthread'
       #     satisfies the link probe without flipping the ABI.
       - name: Configure (emconfigure, static lib only)
-        working-directory: vkd3d-1.17
+        working-directory: ${{ env.VKD3D_SRC }}
         run: |
           source "$GITHUB_WORKSPACE/emsdk/emsdk_env.sh"
           emconfigure ./configure \
@@ -137,7 +147,7 @@ jobs:
             CPPFLAGS="-I$VULKAN_HEADERS_INC -I$SPIRV_HEADERS_INC"
 
       - name: Build libvkd3d-shader.a (emmake)
-        working-directory: vkd3d-1.17
+        working-directory: ${{ env.VKD3D_SRC }}
         run: |
           source "$GITHUB_WORKSPACE/emsdk/emsdk_env.sh"
           emmake make include/private/vkd3d_version.h   # lib-only target misses this dep
@@ -163,8 +173,8 @@ jobs:
           mkdir -p out
           emcc -O2 \
             tools/vkd3d-wasm/sdw_vkd3d_wrapper.c \
-            -Ivkd3d-1.17/include \
-            vkd3d-1.17/.libs/libvkd3d-shader.a \
+            -I${{ env.VKD3D_SRC }}/include \
+            ${{ env.VKD3D_SRC }}/.libs/libvkd3d-shader.a \
             -lm \
             -o out/vkd3d-shader.js \
             -sMODULARIZE=1 \
@@ -204,7 +214,7 @@ jobs:
       # silently decided here.)
       - name: Stage artifact (+ license + SHA-256s)
         run: |
-          cp vkd3d-1.17/LICENSE out/LICENSE-vkd3d.txt
+          cp ${{ env.VKD3D_SRC }}/LICENSE out/LICENSE-vkd3d.txt
           (cd out && sha256sum vkd3d-shader.js vkd3d-shader.wasm LICENSE-vkd3d.txt | tee SHA256SUMS)
 
       - name: Upload artifact

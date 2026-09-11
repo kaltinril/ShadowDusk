@@ -24,6 +24,10 @@ const TARGET_DXBC_TPF = 5;     // VKD3D_SHADER_TARGET_DXBC_TPF (SM4/5)
 
 // Same smoke shader as build-vkd3d-natives.yml.
 const SMOKE_HLSL = 'float4 main() : COLOR { return float4(1,0,0,1); }\n';
+// SM4+ rejects a user semantic on a pixel-shader output (vkd3d 2.1). The C# host
+// passes BACKWARD_COMPATIBILITY/MAP_SEMANTIC_NAMES for that target; this raw-ABI
+// smoke sets no options, so it declares SV_Target directly.
+const SMOKE_HLSL_SM5 = 'float4 main() : SV_Target { return float4(1,0,0,1); }\n';
 const BROKEN_HLSL = 'float4 main() : COLOR { return float4(1,0,0,1; }\n'; // missing ')'
 
 const modulePath = process.argv[2];
@@ -123,7 +127,7 @@ function check(label, ok, detail) {
 
 // 2. ps_5_0 -> dxbc-tpf: "DXBC" container magic.
 {
-    const { rc, code, messages } = compile(SMOKE_HLSL, 'ps_5_0', TARGET_DXBC_TPF);
+    const { rc, code, messages } = compile(SMOKE_HLSL_SM5, 'ps_5_0', TARGET_DXBC_TPF);
     check('ps_5_0 -> dxbc-tpf rc == 0', rc === 0, `rc=${rc}${messages ? `, messages: ${messages.trim()}` : ''}`);
     check('ps_5_0 -> dxbc-tpf non-empty', code.length > 0, `${code.length} bytes`);
     const magic = code.length >= 4 ? String.fromCharCode(code[0], code[1], code[2], code[3]) : '';

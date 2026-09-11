@@ -53,7 +53,7 @@ public sealed class EffectCompiler : IShaderCompiler
     /// from <see cref="CompilerOptions.DxbcBackend"/> for DirectX and is always the
     /// native vkd3d-shader backend for FNA — byte-for-byte the pre-existing behavior.
     /// The WASM host injects its browser vkd3d backend (<c>WasmVkd3dShaderCompiler</c>)
-    /// here — the SAME pinned vkd3d 1.17, never a substitute compiler.
+    /// here — the SAME pinned vkd3d 2.1, never a substitute compiler.
     /// </param>
     public EffectCompiler(
         Func<IDxcShaderCompiler>? dxcCompilerFactory = null,

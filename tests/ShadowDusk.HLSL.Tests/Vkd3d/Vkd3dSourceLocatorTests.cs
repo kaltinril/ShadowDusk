@@ -134,7 +134,7 @@ public sealed class Vkd3dSourceLocatorTests
             "float e;");
 
         ShaderError raw = fake.Compile(source)!;
-        raw.Line.ShouldBe(64, customMessage: "the fake drifts 20 per atan2 call, like vkd3d 1.17");
+        raw.Line.ShouldBe(64, customMessage: "the fake drifts 20 per atan2 call, like vkd3d 2.1");
 
         Relocate(fake, source).Line.ShouldBe(4);
     }

@@ -173,8 +173,33 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
         // Pin the chained struct so its address stays valid for CompileInfo.Next.
         IntPtr hlslInfoPtr = Marshal.AllocHGlobal(Marshal.SizeOf<Vkd3dHlslSourceInfo>());
 
+        // SM1-3 semantics on an SM4+ target: `fxc` accepts them (that is how every
+        // MonoGame `.fx` written against SM3 still builds at ps_4_0), and vkd3d only
+        // does with BACKWARD_COMPATIBILITY/MAP_SEMANTIC_NAMES — without it, vkd3d 2.1
+        // rejects a user semantic on a pixel-shader output outright ("E5013: Invalid
+        // semantic 'COLOR'"). FxPreParser rewrites the `) : COLOR<n>` RETURN semantic
+        // in RewriteToSm4 mode, but it deliberately cannot touch the same semantic on
+        // a struct FIELD (the struct may be a VS output, where COLOR is legal), so the
+        // option is what covers a `struct { float4 c : COLOR0; }` pixel-shader return.
+        // Scoped to the SM4+ target: on d3dbc these ARE the native semantics.
+        bool mapSemanticNames = targetType == Vkd3dTargetType.DxbcTpf;
+        IntPtr optionsPtr = mapSemanticNames
+            ? Marshal.AllocHGlobal(Marshal.SizeOf<Vkd3dCompileOption>())
+            : IntPtr.Zero;
+
         try
         {
+            if (mapSemanticNames)
+            {
+                Marshal.StructureToPtr(
+                    new Vkd3dCompileOption
+                    {
+                        Name  = Vkd3dCompileOptionName.BackwardCompatibility,
+                        Value = (uint)Vkd3dBackwardCompatibility.MapSemanticNames,
+                    },
+                    optionsPtr, fDeleteOld: false);
+            }
+
             Marshal.Copy(sourceBytes, 0, sourcePtr, sourceBytes.Length);
 
             var hlslInfo = new Vkd3dHlslSourceInfo
@@ -194,8 +219,8 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
                 Source      = new Vkd3dShaderCode { Code = sourcePtr, Size = (nuint)sourceBytes.Length },
                 SourceType  = Vkd3dSourceType.Hlsl,
                 TargetType  = targetType,
-                Options     = IntPtr.Zero,
-                OptionCount = 0,
+                Options     = optionsPtr,
+                OptionCount = mapSemanticNames ? 1u : 0u,
                 // WARNING surfaces non-fatal diagnostics too; constraint 5 (fail loudly).
                 LogLevel    = Vkd3dLogLevel.Warning,
                 SourceName  = sourceNamePtr,
@@ -221,6 +246,8 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
         }
         finally
         {
+            if (optionsPtr != IntPtr.Zero)
+                Marshal.FreeHGlobal(optionsPtr);
             Marshal.FreeHGlobal(hlslInfoPtr);
             Marshal.FreeHGlobal(sourcePtr);
             FreeCString(entryPointPtr);

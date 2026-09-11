@@ -118,6 +118,14 @@ public sealed class FnaCompileFixtureTests
         "examples/ExLegacyTextureAnnotation.fx",
         "examples/ExVsColorReturn.fx",
         "examples/ExArrayTernaryAssign.fx",
+        // Phase 56 — vkd3d 2.0/2.1 closed the SM <= 3 gaps these sat behind: SM3 loops
+        // (Sd0402UniformBoundedLoop's runtime-bounded for), the int-typed ternary in
+        // clip((c < x) ? -1 : 1) (DeferredSprite, ForwardLighting) and enough register
+        // pressure relief for the SM2 stock effects (BasicEffect, EnvironmentMapEffect).
+        "examples/Sd0402UniformBoundedLoop.fx",
+        "DeferredSprite.fx",
+        "ForwardLighting.fx",
+        "EnvironmentMapEffect.fx",
         // B10: a free uniform named 'noise' (a GLSL reserved word). The bug was
         // OpenGL-only (SPIRV-Cross rename); on FNA 'noise' is an ordinary SM3 const,
         // so the fx_2_0 path compiles it and binds it under its original name.
@@ -305,6 +313,51 @@ public sealed class FnaCompileFixtureTests
                      "(the literal ps_2_0 profile in the source is honored as written)");
     }
 
+    /// <summary>
+    /// A sampler parameter's <c>D3DXPARAMETER_TYPE</c> comes from what the source DECLARED, which
+    /// is `fxc`'s rule and what FNA binds against.
+    ///
+    /// <para>vkd3d infers a dimensioned type from how the sampler is USED instead, so a bare
+    /// <c>sampler s0</c> read with <c>tex2D</c> came back as <c>SAMPLER2D</c> (12) where `fxc`
+    /// records <c>SAMPLER</c> (10). The bare-<c>sampler</c> arm is pinned against a real `fxc`
+    /// golden by <see cref="Golden_Fna_OutputStructurallyEquivalentToFxc"/> ("textured"), which is
+    /// what caught the divergence; this theory covers the dimensioned arms, which have no golden.
+    /// </para>
+    /// </summary>
+    [FnaTheory]
+    // The DISCRIMINATING pair: identical tex2D usage, different declaration, so a
+    // usage-inferred type would collapse both to SAMPLER2D. This is the actual bug.
+    [InlineData("sampler", "tex2D(s0, uv)", 10)]                    // D3DXPT_SAMPLER
+    [InlineData("sampler2D", "tex2D(s0, uv)", 12)]                  // D3DXPT_SAMPLER2D
+    // The remaining rows of the mapping table. These must sample through their own
+    // intrinsic (tex2D on a 3D/cube sampler is a type error), so they pin the table, not
+    // the declaration-vs-usage distinction.
+    [InlineData("sampler3D", "tex3D(s0, float3(uv, 0))", 13)]       // D3DXPT_SAMPLER3D
+    [InlineData("samplerCUBE", "texCUBE(s0, float3(uv, 0))", 14)]   // D3DXPT_SAMPLERCUBE
+    public async Task SamplerParameter_IsTypedFromTheDeclaration_NotFromUsage(
+        string declaredType, string sampleExpression, int expectedType)
+    {
+        using var cts = new CancellationTokenSource(CompileTimeout);
+
+        string source = $$"""
+            texture t;
+            {{declaredType}} s0 = sampler_state { Texture = <t>; MipFilter = LINEAR; };
+            float4 PSMain(float2 uv : TEXCOORD0) : COLOR { return {{sampleExpression}}; }
+            technique T { pass P { PixelShader = compile ps_2_0 PSMain(); } }
+            """;
+
+        var result = await CompileFnaSourceAsync(source, sourcePath: null, cts.Token);
+        result.IsSuccess.ShouldBeTrue($"a '{declaredType}' declaration must compile for FNA; errors: {DescribeErrors(result)}");
+
+        Fx2ParsedEffect effect = Fx2BinaryValidator.Parse(result.Value.Data);
+        Fx2ParsedParameter sampler = effect.Parameters.Single(p => p.Name == "s0");
+
+        sampler.Class.ShouldBe(4, "a sampler is an OBJECT-class parameter");
+        sampler.Type.ShouldBe(expectedType,
+            $"'{declaredType} s0' must be recorded as D3DXPARAMETER_TYPE {expectedType} — the DECLARED " +
+            "type, as fxc records it, not the type vkd3d infers from the tex2D usage");
+    }
+
     // -------------------------------------------------------------------------
     // D. Failure paths — SM4-style sources fail loudly, never silently degrade
     // -------------------------------------------------------------------------
@@ -324,7 +377,7 @@ public sealed class FnaCompileFixtureTests
         result.IsFailure.ShouldBeTrue("a literal SM4+ profile under the FNA target must fail loudly, not silently degrade");
         result.Error.ShouldContain(e => e.Code == "SD0300", $"the documented FNA profile-policy error is SD0300; got: {DescribeErrors(result)}");
         result.Error.First(e => e.Code == "SD0300").Message.ShouldContain("Shader Model 2–3", Case.Sensitive, "the diagnostic must tell the user what the FNA target supports (SM1 is " +
-                     "rejected too — vkd3d 1.17 SM1 gaps; never validated)");
+                     "rejected too — vkd3d 2.1 SM1 gaps; never validated)");
     }
 
     // Plain [Fact] — same rationale as above: fails before vkd3d.
@@ -394,27 +447,30 @@ public sealed class FnaCompileFixtureTests
         cullStates[0].DwordValue.ShouldBe(1u, customMessage: "the LAST assignment (NONE = D3DCULL_NONE = 1) wins, not CW (2)");
     }
 
-    // DeferredSprite.fx and ForwardLighting.fx hit the documented vkd3d 1.17 construct
-    // gap (plan/DONE/PHASE-39-fna-fx2-output-target.md, "Known limitations"): int-typed
-    // ternary in `clip((c < x) ? -1 : 1)` is unimplemented at SM ≤ 3 (vkd3d's E5017).
+    // Fixtures that sit past what vkd3d implements for SM ≤ 3: a vector store through a
+    // runtime index (ParameterTypes.fx) and SM2 register pressure (SkinnedEffect.fx).
     //
     // The contract pinned here is the loud-failure half: the compile FAILS (never silently
     // degrades or substitutes a compiler) and the diagnostic names the offending source
-    // file. Since 0.15.0 vkd3d's E5017 text comes through verbatim with a real line, and
-    // since issue #202 that line is the author's clip(...) line rather than vkd3d's drifted
-    // one — FnaDiagnosticLocationTests pins the exact location on these same two fixtures.
+    // file. vkd3d's own message comes through verbatim with a real line, and since issue
+    // #202 that line is the author's rather than vkd3d's drifted one —
+    // FnaDiagnosticLocationTests pins the exact location on these same two fixtures.
+    //
+    // The cases move when the pin does. vkd3d 2.1 implemented SM3 loops and the int-typed
+    // ternary in `clip((c < x) ? -1 : 1)`, so DeferredSprite.fx, ForwardLighting.fx and the
+    // Apos.Shapes revisions moved out of here and into the compiling corpus.
     [FnaTheory]
-    [InlineData("DeferredSprite.fx")]
-    [InlineData("ForwardLighting.fx")]
-    public async Task IntTernaryClip_Fna_FailsLoudlyOnVkd3dGap(string fx)
+    [InlineData("third-party/MonoGame/ParameterTypes.fx")]
+    [InlineData("SkinnedEffect.fx")]
+    public async Task UnsupportedSm3Construct_Fna_FailsLoudlyOnVkd3dGap(string fx)
     {
         using var cts = new CancellationTokenSource(CompileTimeout);
 
         var result = await CompileFnaFileAsync(TestHelpers.FixturePath(fx), cts.Token);
 
-        result.IsFailure.ShouldBeTrue($"'{fx}' uses an int-typed ternary, a known vkd3d 1.17 SM ≤ 3 gap");
+        result.IsFailure.ShouldBeTrue($"'{fx}' sits past what vkd3d implements at SM ≤ 3");
         result.Error.ShouldNotBeEmpty("the failure must surface diagnostics");
-        result.Error.ShouldContain(e => Path.GetFileName(e.File) == fx, "the diagnostic must name the offending source file");
+        result.Error.ShouldContain(e => Path.GetFileName(e.File) == Path.GetFileName(fx), "the diagnostic must name the offending source file");
         result.Error.ShouldAllBe(e => !string.IsNullOrWhiteSpace(e.Message), customMessage: "every surfaced error must carry a message, not be swallowed");
     }
 
