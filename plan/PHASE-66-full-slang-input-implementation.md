@@ -42,8 +42,9 @@ Slang — `import`, generics, `interface`s, everything real slangc accepts — c
 **real slangc → HLSL**, then handed to the **existing, unchanged, faithful pipeline** (the same
 DXC every `.fx` uses). A consumer who does not add the package is completely unaffected: no size,
 no dependency, no behavior change. This is the "(c)" option from Phase 65 §6, chosen over "(a)
-messaging fix only" and "(b) author-time-only CLI" — not instead of them; §6 below folds both in
-as cheap, immediate wins alongside the real build.
+messaging fix only" and "(b) author-time-only CLI". §6 below folds (a) in as a cheap, immediate
+win alongside the real build; (b) was decided against once (c) shipped, since it would be a
+redundant path to a result the real package already covers more completely — see §6.
 
 **Non-negotiables, carried forward unchanged from Phase 61 (do not re-litigate):**
 
@@ -691,15 +692,23 @@ turn into an open-ended slog.
   `guides/parameters-and-caveats.md` never mentioned Slang before this change either, so neither
   needed the two-tier story — genuinely out of scope, not skipped staleness.
 
-**Folded in alongside, cheaply, per the owner's "(a)+(b) too, not instead" framing (§1):**
+**Folded in alongside, per the owner's original "(a)+(b) too, not instead" framing (§1) — since
+revised (owner direction, 2026-09-11, after A1-A8 shipped):**
 
-- **(a) Messaging fix.** Correct the public "we support Slang" framing (Discord, README) to state
-  the two-tier reality once this ships: the free-standing `ShadowDusk.Compiler` subset (HLSL-
-  compatible Slang, no extra package) and the full `ShadowDusk.Slang` package (real slangc,
-  everything). Do this as soon as the two-tier shape is settled (after A3), not gated on A8.
-- **(b) `slang2fx` author-time CLI.** Still worth shipping independently — it satisfies Gum's
-  narrow fixed-template case today, cheaply, without waiting on A1–A7. Can ship before or in
-  parallel with the full package; not blocking and not blocked by it.
+- **(a) Messaging fix.** Still applies. Correct the public "we support Slang" framing (Discord,
+  README) to state the two-tier reality: the free-standing `ShadowDusk.Compiler` subset
+  (HLSL-compatible Slang, no extra package) and the full `ShadowDusk.Slang` package (real
+  slangc, everything). README's two-tier story shipped in A8; the Discord post itself is a
+  manual action for the owner, not something this phase does.
+- **(b) `slang2fx` author-time CLI — DECIDED AGAINST, not built.** This was proposed as the
+  cheap fallback *if* full runtime ingestion did NOT get built (Phase 65 §6). Once (c) shipped
+  as real, working `ShadowDusk.Slang`, the narrow case (b) existed to cover — Gum's fixed
+  template set — is already covered by the real package, more completely (generics/interfaces
+  included, not just the HLSL-compatible subset a CLI-based approach would still be limited
+  to). Building it now would be a second, redundant path to the same result. Revisit only if a
+  consumer specifically wants Slang input with **zero native dependency** (no 24.4 MiB
+  `ShadowDusk.Slang` package at all) — a real, different constraint from "cheap to build,"
+  which nothing has asked for yet.
 
 ---
 
