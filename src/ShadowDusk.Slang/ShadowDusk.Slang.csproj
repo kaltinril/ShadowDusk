@@ -1,0 +1,67 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Clears the single-TFM default from Directory.Build.props: when TargetFramework is
+         non-empty MSBuild single-targets and ignores TargetFrameworks entirely. -->
+    <TargetFramework></TargetFramework>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <AssemblyName>ShadowDusk.Slang</AssemblyName>
+    <RootNamespace>ShadowDusk.Slang</RootNamespace>
+    <!-- Phase 66: a NEW, separate, OPTIONAL package — the ShadowDusk.ShaderToy precedent.
+         A consumer who does not add ShadowDusk.Slang pays zero size/dependency cost; it is
+         not referenced by ShadowDusk.Compiler/HLSL/GLSL and they are not referenced by it
+         beyond ShadowDusk.Core (kept minimal on purpose — see plan/PHASE-66). Unlike
+         ShaderToy, this package DOES carry a native (real slangc, win-x64 only today),
+         packed the same way ShadowDusk.HLSL packs vkd3d/DXC below. -->
+    <IsPackable>true</IsPackable>
+    <PackageId>ShadowDusk.Slang</PackageId>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Description>ShadowDusk full Slang front-end: bundles the real slangc compiler (win-x64 today; Apache-2.0, see THIRD-PARTY-NOTICES.txt) so a consumer gets genuine Slang input (import, generics, interfaces) compiled via slangc -target hlsl and handed to ShadowDusk's existing, unchanged, faithful DXC pipeline. Optional and additive: ShadowDusk.Compiler's own .slang support (an HLSL-compatible subset, no extra package) is untouched. Phase 66 A2 scaffolding — the compile-route wrapper lands in a later stage; see plan/PHASE-66-full-slang-input-implementation.md.</Description>
+    <PackageTags>monogame kni fna slang shader compiler hlsl</PackageTags>
+    <!-- Phase 26: emit the XML doc file for DocFX. CS1591 suppressed during the
+         doc-comment transition so the TreatWarningsAsErrors build stays green. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ShadowDusk.Slang.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ShadowDusk.Core\ShadowDusk.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <!-- Real slangc (Phase 66 A1+A2, win-x64 ONLY for now — other RIDs follow once this
+       shape proves out). A RESTORED artifact (tools/restore.ps1 / restore.sh), NOT checked
+       into the repo, so this entry is Exists()-conditioned like ShadowDusk.HLSL's
+       vkd3d/DXC entries: a clean build with no restored native stays green, and
+       SlangToolPath.Resolve() returns null / ResolveOrThrow() throws loudly at runtime if
+       it's absent — never a silent fallback to a different compiler (there is no
+       substitute for real slangc; see plan/PHASE-66 §1's non-negotiables).
+
+       A1 measured slang-llvm.dll (84.4 MB, LLVM/CPU-codegen only) as excludable with zero
+       effect on the -target hlsl route this product uses. A2 measured the TRUE minimal
+       set empirically: slangc.exe + slang-compiler.dll ONLY (25,611,264 bytes total) pass
+       the full corpus with everything else in the release removed — see
+       plan/PHASE-66-appendix/slang-native-minimal-set-probe/. Both files copied to build
+       output (repo/dev runs; SlangToolPath's base-directory probe) AND packed into the
+       NuGet under runtimes/win-x64/native (self-contained/RID-specific consumers). -->
+  <ItemGroup>
+    <!-- Apache-2.0 notice for the bundled slangc binaries (Phase 66 A2), the same pattern
+         ShadowDusk.HLSL's THIRD-PARTY-NOTICES.txt uses for vkd3d/DXC. -->
+    <None Include="THIRD-PARTY-NOTICES.txt" Pack="true" PackagePath="THIRD-PARTY-NOTICES.txt" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\tools\slang\win-x64\slangc.exe"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\..\tools\slang\win-x64\slangc.exe')"
+          CopyToOutputDirectory="PreserveNewest" Link="slangc.exe"
+          Pack="true" PackagePath="runtimes/win-x64/native/slangc.exe" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\tools\slang\win-x64\slang-compiler.dll"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\..\tools\slang\win-x64\slang-compiler.dll')"
+          CopyToOutputDirectory="PreserveNewest" Link="slang-compiler.dll"
+          Pack="true" PackagePath="runtimes/win-x64/native/slang-compiler.dll" />
+  </ItemGroup>
+</Project>

@@ -89,14 +89,51 @@ turn into an open-ended slog.
   drops from ~126.2 MB to ~41.8 MB (~67% cut), not the ~37 MB estimate exactly but the same order
   — see §2 above and `plan/PHASE-66-appendix/slang-llvm-exclusion-probe/` for the full evidence.
   A2 vendors the no-LLVM set.
-- **A2 — Native vendoring, win-x64 first.** Pin a slangc release, host the win-x64 binaries,
-  restore + SHA-256-verify (`tools/restore.ps1` entry, the exact pattern DXC/vkd3d/SPIRV-Cross
-  already use), release-gate line (fail red if missing — the rule already in
-  `project_decisions.md`). Reference point for scope, not a promise: the last comparable native
-  vendoring effort ([Phase 37](DONE/PHASE-37-cross-platform-native-availability.md)) ran
-  2026-06-07 to 2026-06-11. Other RIDs (linux-x64/aarch64, macos-x64/arm64) follow once win-x64
-  proves the shape; Slang publishes all of them today (Phase 61 §2.2), so this is packaging work,
-  not a coverage gap.
+- **A2 — Native vendoring, win-x64 first. DONE (scaffolding), 2026-09-11.** Pinned slangc
+  v2026.14.1 win-x64 (same pin `validation/SlangCorpus/Program.cs` already uses), added
+  `tools/restore.ps1`/`restore.sh` entries mirroring the vkd3d/DXC-macOS pattern exactly
+  (download the official release zip, SHA-256-verify the WHOLE zip before extracting — same
+  discipline `SlangCorpus`'s oracle restore already uses — then extract only the needed files;
+  restored unconditionally on every host, like `restore_vkd3d_shader`/`restore_dxc_macos`, so
+  a Linux/macOS CI runner ends up pack-ready for the win-x64 RID too). Also went past A1's
+  "probably droppable" guess on `slang.exe`/`slangd.exe`/`slangi.exe` and empirically tested
+  **every other file** in the release, one removal at a time, re-running the same 24-entry-point
+  corpus after each step (see `plan/PHASE-66-appendix/slang-native-minimal-set-probe/`):
+  `slang.exe`/`slangd.exe`/`slangi.exe`, `gfx.dll`/`gfx.slang`, `slang-glsl-module.dll`,
+  `slang-glslang.dll`, `slang.dll`, `slang-rt.dll`, `slang.slang`, and the whole
+  `slang-standard-module-2026.14.1/` stdlib source directory all turned out droppable too. **The
+  true minimal vendored set is `slangc.exe` + `slang-compiler.dll` only — 25,611,264 bytes
+  (~24.4 MiB)** — a ~80% cut from the 126.2 MB unmodified release, ~39% further than A1's 41.8 MB
+  no-LLVM figure. A negative control (deleting `slang-compiler.dll`) fails all 24 entries,
+  confirming the corpus test discriminates rather than passing regardless.
+  Side finding for **A3**: `slangc.exe` writes a runtime cache file (`slang-glsl-module.bin`,
+  ~1.3 MB) into its own directory on first compile even for `-target hlsl` — the packaged
+  `runtimes/win-x64/native/` directory must be writable at runtime, not just readable; not
+  solved here.
+  Scaffolded the new `src/ShadowDusk.Slang/ShadowDusk.Slang.csproj` package (mirrors
+  `ShadowDusk.ShaderToy`'s metadata/multi-targeting shape, `ShadowDusk.HLSL`'s
+  `Exists()`-conditioned native-packing shape for the two files above under
+  `runtimes/win-x64/native/`, plus a `THIRD-PARTY-NOTICES.txt` for slangc's Apache-2.0
+  licence): only depends on `ShadowDusk.Core`, zero native/managed footprint on anyone who
+  doesn't add it. C# side is deliberately a stub —
+  `SlangToolPath.Resolve()`/`ResolveOrThrow()` locate the packaged native and assert it
+  exists; no compile logic (that's A3). Proved with `dotnet pack`: the resulting
+  `ShadowDusk.Slang.<version>.nupkg` contains `runtimes/win-x64/native/slangc.exe` (276,480
+  bytes) and `runtimes/win-x64/native/slang-compiler.dll` (25,334,784 bytes) at the expected
+  paths (verified by inspecting the nupkg's zip entries directly), and `ShadowDusk.HLSL`'s
+  own re-packed nupkg was diffed to confirm zero change (same natives, same size, same
+  deps). Full solution build + full `dotnet test` both green.
+  **Left open:** the release-gate hard-check (`.github/workflows/release.yml`'s
+  `pack-desktop` job, `Verify ShadowDusk.HLSL contains all natives...` step and the
+  desktop-nupkg-count assertion) is NOT wired for `ShadowDusk.Slang` yet — found but not
+  extended, since it also touches the expected-package-count assertions shared with every
+  other package; a later stage should add a `Verify ShadowDusk.Slang contains slangc
+  (win-x64)` step mirroring the existing ones and bump the count. Other RIDs
+  (linux-x64/aarch64, macos-x64/arm64) also follow once this shape is reviewed; Slang
+  publishes all of them today (Phase 61 §2.2), so this is packaging work, not a coverage
+  gap. Reference point for scope, not a promise: the last comparable native vendoring effort
+  ([Phase 37](DONE/PHASE-37-cross-platform-native-availability.md)) ran 2026-06-07 to
+  2026-06-11.
 - **A3 — The compile route.** A `SlangCompiler` wrapper (same shape as `DxcShaderCompiler` —
   process-based, structured `Result<T, ShaderError[]>`, `mgfxc`-style verbatim diagnostics on
   failure) that runs real slangc as `-target hlsl`, feeding the result into the **unchanged**

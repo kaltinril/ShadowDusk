@@ -1,0 +1,27 @@
+  [FAIL] Checkerboard.slang (MainPS/fragment): 
+  [FAIL] CircleSdf.slang (MainPS/fragment): 
+  [FAIL] ColorWheel.slang (MainPS/fragment): 
+  [FAIL] Desaturate.slang (MainVS/vertex): 
+  [FAIL] Desaturate.slang (MainPS/fragment): 
+  [FAIL] DiagonalStripes.slang (MainPS/fragment): 
+  [FAIL] HorizontalGradient.slang (MainPS/fragment): 
+  [FAIL] Invert.slang (MainPS/fragment): 
+  [FAIL] Plasma.slang (MainPS/fragment): 
+  [FAIL] Posterize.slang (MainPS/fragment): 
+  [FAIL] RadialGradient.slang (MainPS/fragment): 
+  [FAIL] Rings.slang (MainPS/fragment): 
+  [FAIL] ScrollUv.slang (MainVS/vertex): 
+  [FAIL] ScrollUv.slang (MainPS/fragment): 
+  [FAIL] Sepia.slang (MainPS/fragment): 
+  [FAIL] Threshold.slang (MainPS/fragment): 
+  [FAIL] TintUniform.slang (MainPS/fragment): 
+  [FAIL] Vignette.slang (MainPS/fragment): 
+  [FAIL] WaveVertex.slang (MainVS/vertex): 
+  [FAIL] WaveVertex.slang (MainPS/fragment): 
+  [FAIL] GenericsProbe.slang (MainPS/fragment): 
+  [FAIL] GumBlur.slang (MainPS/fragment): 
+  [FAIL] GumGrayscale.slang (MainPS/fragment): 
+  [FAIL] GumTint.slang (MainPS/fragment): 
+
+TOTAL: pass=0 fail=24
+

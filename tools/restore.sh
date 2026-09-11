@@ -445,6 +445,78 @@ restore_vkd3d_wasm() {
 
 restore_vkd3d_wasm
 
+# ---------------------------------------------------------------------------
+# Slang compiler (real slangc, win-x64 only for now — Phase 66 A2)
+# ---------------------------------------------------------------------------
+# ShadowDusk.Slang (a NEW, separate, opt-in package — plan/PHASE-66) ships REAL slangc so a
+# consumer who adds it gets genuine Slang input, compiled via slangc -target hlsl and
+# handed to the existing, unchanged, faithful DXC pipeline. A consumer who does NOT add
+# ShadowDusk.Slang pays zero size/dependency cost. Restored UNCONDITIONALLY (like
+# restore_vkd3d_shader / restore_dxc_macos above) so ANY host — including a Linux/macOS CI
+# runner — ends up pack-ready for the win-x64 RID.
+#
+# Pin: the SAME slangc v2026.14.1 win-x64 release validation/SlangCorpus/Program.cs already
+# downloads as a TEST-TIME oracle — keep both pins in sync on a version bump.
+#
+# Phase 66 A1+A2 (2026-09-11): the true minimal vendored set is slangc.exe +
+# slang-compiler.dll ONLY (25,611,264 bytes, ~24.4 MiB) — every other file in the release
+# (slang-llvm.dll, slang.exe/slangd.exe/slangi.exe, gfx.dll/gfx.slang,
+# slang-glsl-module.dll, slang-glslang.dll, slang.dll, slang-rt.dll, slang.slang, the
+# slang-standard-module-2026.14.1/ stdlib source directory) was confirmed droppable by
+# re-running the -target hlsl corpus after each removal, with a negative control (deleting
+# slang-compiler.dll) confirming the test discriminates. See restore.ps1's
+# Restore-SlangWinX64 comment and plan/PHASE-66-appendix/slang-native-minimal-set-probe/
+# for the full evidence.
+SLANG_VERSION="2026.14.1"
+SLANG_ZIP_SHA256="5ed0a59d650a0af0aca45d5db4e083b3d8fb5cea05748747dd95dfbe9c580658"
+SLANG_ZIP_URL="https://github.com/shader-slang/slang/releases/download/v${SLANG_VERSION}/slang-${SLANG_VERSION}-windows-x86_64.zip"
+
+restore_slang_win_x64() {
+    local slang_dir="$REPO_ROOT/tools/slang/win-x64"
+    local slangc_exe="$slang_dir/slangc.exe"
+    local slang_compiler_dll="$slang_dir/slang-compiler.dll"
+
+    if [ -f "$slangc_exe" ] && [ -f "$slang_compiler_dll" ]; then
+        echo "restore.sh: slangc (win-x64) present — OK"
+        return 0
+    fi
+
+    local tmp_zip
+    tmp_zip="$(mktemp)"
+    if ! curl -fsSLo "$tmp_zip" "$SLANG_ZIP_URL"; then
+        echo "restore.sh: WARNING — could not download slangc from $SLANG_ZIP_URL (offline?); ShadowDusk.Slang packaging (win-x64) will be unavailable." >&2
+        rm -f "$tmp_zip"
+        return 0   # non-fatal by design
+    fi
+
+    # Verify BEFORE extracting — an unverified binary is what the pin exists to prevent.
+    local got
+    got="$(vkd3d_sha256 "$tmp_zip")"
+    if [ "$got" != "$SLANG_ZIP_SHA256" ]; then
+        echo "restore.sh: ERROR — slangc release SHA-256 mismatch (expected $SLANG_ZIP_SHA256, got $got); discarding." >&2
+        rm -f "$tmp_zip"
+        return 0   # non-fatal, but the file is NOT placed
+    fi
+
+    mkdir -p "$slang_dir"
+    if command -v unzip >/dev/null 2>&1; then
+        unzip -oq -j "$tmp_zip" "bin/slangc.exe" "bin/slang-compiler.dll" -d "$slang_dir"
+    else
+        echo "restore.sh: WARNING — unzip not found; cannot extract slangc from the downloaded release." >&2
+        rm -f "$tmp_zip"
+        return 0
+    fi
+    rm -f "$tmp_zip"
+
+    if [ -f "$slangc_exe" ] && [ -f "$slang_compiler_dll" ]; then
+        echo "restore.sh: slangc (win-x64) downloaded, zip hash OK — slangc.exe + slang-compiler.dll only (25,611,264 bytes)"
+    else
+        echo "restore.sh: WARNING — slangc (win-x64) extraction did not produce both expected files." >&2
+    fi
+}
+
+restore_slang_win_x64
+
 # Determine which output file we are targeting on this platform.
 if [ "$OS" = "Linux" ]; then
     TARGET_FILE="$LINUX_SO"
