@@ -1,12 +1,19 @@
 # Phase 66 — Full, slangc-backed Slang input (general product capability)
 
 **Track:** Additive package / reach. Additive only — `ShadowDusk.Compiler`'s existing `.slang`
-subset frontend (`SlangFrontend.cs`) and every existing output byte are untouched; this phase adds
-a new, separate, opt-in package.
+subset frontend (`SlangFrontend.cs`) and every existing output byte are untouched, with ONE
+narrow, deliberate exception: A5 also closed a pre-existing `SD0600` scan gap in that same file
+(Phase 65 §5's finding — see A5 below). That is a strict improvement to an already-shipped
+diagnostic (a construct that used to fall through to a raw DXC error now gets a clean, named
+rejection), not new frontend behavior, and does not change any `.fx` output byte the subset
+frontend already produces for input it accepts. Everything else about this phase is a new,
+separate, opt-in package.
 
-**Status:** 🟡 In progress. Scoped 2026-09-11; A1-A4 done same day (native vendoring +
+**Status:** 🟡 In progress. Scoped 2026-09-11; A1-A5 done same day (native vendoring +
 `ShadowDusk.Slang.SlangCompiler`, the real compile route, the mangling fix and the OpenGL
-row_major gap fix — corpus now 21/21 on both DirectX_11 and OpenGL). A5-A8 open.
+row_major gap fix — corpus now 21/21 on both DirectX_11 and OpenGL; A5 replaced the placeholder
+acceptance with the real three-band rule and closed the `SD0600` `interface`/generics gap).
+A6-A8 open.
 
 **Depends on:** [Phase 61](DONE/PHASE-61-slang-support.md) (the shipped HLSL-compatible-subset
 frontend and its groundwork §6/§7/OQ2/OQ3) and [Phase 65](PHASE-65-full-slang-input-spike.md) (the
@@ -321,19 +328,127 @@ turn into an open-ended slog.
   `MgcbErrorFormatter.cs`/`Fx2BinaryValidator.cs`) rather than a second hand-rolled MGFX
   parser. Full solution `dotnet test` (unfiltered) green on both net8.0/net10.0 before
   push.
-- **A5 — Broaden the acceptance boundary.** Replace `SD0600`'s "reject Slang-only constructs by
-  name" with Phase 61 §6 A6's three-band rule (table below), now that real slangc backs it:
+- **A5 — Broaden the acceptance boundary. DONE, 2026-09-11.** `ShadowDusk.Slang.SlangCompiler`
+  now implements Phase 61 §6 A6's three-band rule directly (no placeholder left):
 
-  | Band | Behaviour |
-  |---|---|
-  | Slang `slangc` itself refuses (syntax error) | slangc's diagnostic, verbatim — file, line, column, text, never reformatted |
-  | Slang that compiles but has nowhere to land in an `Effect` (compute/mesh entry points; SM6-only constructs on GL/FNA — OQ2) | a registered ShadowDusk diagnostic naming the construct **and the target**, never a generic parse error |
-  | Everything else | compiles, no curated allow-list |
+  | Band | Behaviour | Codes |
+  |---|---|---|
+  | Slang `slangc` itself refuses (syntax error) | slangc's diagnostic, verbatim — file, line, column, text, never reformatted | `SD0622` (unparsed fallback), the slangc-native code otherwise |
+  | Slang that compiles but has nowhere to land in an `Effect` | a registered ShadowDusk diagnostic naming the construct **and the target** | `SD0602` (non-VS/PS entry stage), `SD0624` (SM6-only Wave/Quad intrinsic on a target capped below SM6) |
+  | Everything else | compiles, no curated allow-list | — |
 
-  Note en route: Phase 65 §5 found the shipped `SD0600` scan itself has a gap (bare
-  `interface`/generics fall through to DXC's raw syntax error instead of a clean rejection) —
-  moot once this band replaces `SD0600` for the real-slangc route, but worth fixing in the
-  **subset** frontend too while this code is fresh (small, separately reviewable fix).
+  **Band 1 — verified already correct, not rebuilt.** `SlangDiagnosticReformatter.SelectPrimary`
+  (added in A3) already does exactly this: splits slangc's `error[E####]:`/`warning[W####]:`
+  blocks, keeps each block's text verbatim as `ShaderError.Message`, and falls back to `SD0622`
+  with the complete raw stderr when slangc's failure mode doesn't match that shape at all (a
+  native crash, an ICE). No change needed.
+
+  **Band 2 part A — compute/mesh entry points. Verified already correct, not rebuilt.**
+  `SlangEntryScanner.Scan` (used unchanged by `SlangCompiler.Compile`, before slangc is ever
+  invoked) already rejects any `[shader("...")]` stage other than `vertex`/`fragment`/`pixel`
+  with `SD0602`, naming the entry point and the stage — this is the same Phase 58/`SD0602`
+  policy `SlangFrontend`'s subset route already uses, reused as-is. Extended
+  `ComputeEntryPoint_RejectedLoudly_BeforeInvokingSlangc` (now
+  `..._OnEveryTarget`, `SlangCompilerTests.cs`) from one OpenGL-only `[Fact]` into a `[Theory]`
+  over all five targets with a REAL compute shader (`[numthreads(64,1,1)]`,
+  `RWStructuredBuffer<float>`, `SV_DispatchThreadID` — not just a bare attribute stub), proving
+  the rejection is entry-stage policy decided before any per-target step runs, plus a new test
+  proving it never reaches (and would-be-fail-the-test-if-it-did) the downstream compiler.
+
+  **Band 2 part B — SM6-only constructs on GL/FNA (OQ2). New: `SD0624`,
+  `ShadowDusk.Slang.SlangSm6ConstructGuard`, a static source-text scan (chosen over
+  catch-and-wrap).** Measured directly before choosing an approach (Phase 66 A5, real pipeline,
+  not Phase 65's simplified DXC-only probe):
+
+  A Wave/Quad intrinsic call (`WaveActiveSum(x)`) is syntactically an ordinary function call —
+  slangc's `-target hlsl` emission preserves the identifier verbatim on every target (no
+  target-specific spelling difference), so there is no way to detect it from the emitted HLSL's
+  *shape* either; the only difference shows up downstream, and the downstream diagnostics
+  disagree with each other and are phrased around each backend's own internals, not the Slang
+  author's target:
+  - **OpenGL** (DXC at the fixed `vs_5_0`/`ps_5_0` profile): DXC accepts the call (its grammar is
+    always SM6) and only refuses at SPIR-V generation — `error: Vulkan 1.1 is required for Wave
+    Operation but not permitted to use`. Confusing for an OpenGL target: ShadowDusk's use of
+    Vulkan/SPIR-V as an OpenGL intermediate is an implementation detail no Slang author should
+    need to know.
+  - **DirectX (DX11, the default `DxbcBackend.Vkd3d`) and FNA** (both go through vkd3d-shader's
+    SM≤3/5.1 HLSL frontend): `E5005: Function "WaveActiveSum" is not defined` — reads like a
+    typo, not "this needs Shader Model 6."
+  - **DirectX12** (raw SM6 DXIL, no capability gate): compiles successfully — the one target that
+    reaches a real Wave-intrinsic Slang shader through ShadowDusk's pipeline today.
+  - **Vulkan** (DXC at `vs_6_0`/`ps_6_0`, architecturally CAN hold SM6 HLSL): **also currently
+    fails**, with the same "Vulkan 1.1 is required" message as OpenGL — `DxcFlagBuilder` never
+    passes `-fspv-target-env=vulkan1.1` for ANY target, Slang-sourced or not. This is a
+    **pre-existing, separate flag gap in the shared HLSL/DXC pipeline** every `.fx` author using
+    wave intrinsics on Vulkan would hit — found here, but deliberately **not fixed**: fixing it
+    would change what a hand-written Vulkan `.fx` gets too, well outside this Slang
+    acceptance-boundary stage's scope. Left as an open finding (see §5 below) rather than folded
+    in as an in-scope bug fix, since it is not a Slang-specific "nowhere to land" case.
+
+  Given no clean signal survives to the downstream error text (three different, technically
+  correct but differently-shaped failures for the identical construct, one target that succeeds,
+  and one that fails for an unrelated reason), a **static source scan** was chosen over
+  catching-and-wrapping the downstream failure: `SlangSm6ConstructGuard.FindConstruct` matches
+  the closed, documented HLSL SM6 "Wave Intrinsics" vocabulary (plus the SM6 Quad intrinsics,
+  same capability class) as whole identifiers against the raw Slang source — the same
+  "closed language keyword set" shape `SlangFrontend`'s own `SD0600` scan already uses for
+  `import`/`module`/`extension`/`associatedtype`/`__generic`. `SlangCompiler.Compile` runs it
+  BEFORE spawning slangc at all, gated on
+  `SlangSm6ConstructGuard.IsArchitecturallyBelowSm6(options.Target)` — true only for OpenGL,
+  DirectX, and Fna (the three targets that can never represent SM6 HLSL by format/profile,
+  regardless of any future flag fix; Vulkan and DirectX12 are excluded from the gate, so a
+  Wave-intrinsic Slang shader targeting either surfaces whatever the downstream compiler reports,
+  unmodified — today that is a real compile, on DirectX12, or the pre-existing Vulkan flag gap
+  above, on Vulkan, never a silently mislabeled "SM6 unreachable"). This gives ONE consistent,
+  correctly-targeted diagnostic (`SD0624`, naming the intrinsic, the reason, and the target) for
+  the case that CAN be classified with certainty, is cheaper (no process spawn for an entry point
+  that will be rejected regardless), and never depends on how any particular downstream backend
+  phrases its own error.
+
+  **Scope, stated plainly:** this covers the one construct class Phase 65 §1's OQ2 caveat named
+  and this stage then measured concretely (wave/quad subgroup intrinsics). Raytracing and
+  mesh/amplification SM6 entry-point shapes never reach this guard — `SD0602` already rejects any
+  non-vertex/fragment stage before compilation starts. Rarer standalone SM6-only resource forms
+  callable from an ordinary vertex/pixel body (a templated `ResourceDescriptorHeap` index, a
+  64-bit interlocked op, …) are **not enumerated**: no construct in either the shipped
+  17-shader corpus or Phase 65's broadened 33-shader sweep exercised one, so building a list for
+  them now would be guessing at their exact diagnostic shape rather than measuring it — they fall
+  through to whatever the downstream compiler reports, unmodified (band 3: a real compile
+  failure, never silently dropped, just not specially re-labeled). A6's broader sweep is where
+  evidence for extending this list, if any surfaces, would come from.
+
+  **Tests:** `SlangSm6ConstructGuardTests.cs` (pure — the regex/line-detection logic and the
+  per-target gate, no process) plus three new `SlangCompilerTests.cs` integration tests: SD0624
+  on all three capped targets (message contains the intrinsic name and the target name), a proof
+  the guard runs BEFORE slangc is spawned (an injected stub downstream compiler that would fail
+  the test if `SlangCompiler` got as far as assembling/handing off an `.fx` body), and a
+  DirectX12 success case (the one target that reaches a real Wave-intrinsic shader today).
+
+  **The separate `SD0600` fix, folded in while this code was fresh (Phase 65 §5's finding):** the
+  shipped subset frontend's `SD0600` scan (`src/ShadowDusk.Compiler/Slang/SlangFrontend.cs`) did
+  not pattern-match bare `interface` or generic-type-parameter constraint syntax (only
+  `import`/`module`/`extension`/`associatedtype`/`__generic`), so `GenericsProbe.slang`'s exact
+  shape (an `interface IBlendMode` plus a generic free function `applyBlend<T : IBlendMode>(...)`)
+  fell all the way through this courtesy scan to DXC, which rejected it with its own confusing
+  native diagnostic (`X0000: expected ';' after __interface`) instead of a clean, named `SD0600`.
+  Fixed by adding two patterns to `SlangOnlyConstructs`: a line-anchored `interface` keyword
+  (matching the same shape `module`/`extension` already use — NOTE: stock HLSL also has a rare
+  `interface` keyword of its own for dynamic shader linkage, which this scan cannot distinguish
+  from Slang's usage by syntax alone and so also rejects; the same trade this whole courtesy scan
+  already makes for every other entry, and nothing in the corpus or test suite uses HLSL's own
+  dynamic-linkage interfaces), and a colon-constrained generic angle-bracket shape
+  (`\w+<\w+ : \w+>\(` — deliberately requires the `:` constraint so it does NOT false-positive on
+  ordinary HLSL templated resource types like `StructuredBuffer<float4>`/`Texture2D<float4>`,
+  which never put a colon inside the angle brackets and remain perfectly legal subset-frontend
+  input). Confirmed no currently-passing test asserted the old fallthrough as correct (grepped
+  the whole test tree and every `.slang` fixture for `interface`: zero hits before this change).
+  New tests: two `[InlineData]` rows on the existing `SlangOnlyConstructs_AreRejectedByName_WithSD0600`
+  theory (`SlangFrontendPureTests.cs`), plus a dedicated
+  `RealInterfacePlusGenericFile_RejectedWithSD0600_NamingInterface_NotARawDxcError` reproducing
+  `GenericsProbe.slang`'s exact shape end to end through the subset frontend and asserting the
+  message never contains `X0000`/`__interface` (the old raw-DXC symptom).
+
+  Full solution `dotnet test` (unfiltered, both net8.0/net10.0) green before push.
 - **A6 — The real A5 residue sweep.** Phase 65's 33-shader corpus was a solid start, not the full
   sweep Phase 61 envisioned. Run the **whole** `tests/fixtures/shaders/` corpus (not just
   Gum-shaped shaders) through real slangc `-target hlsl` at every ShadowDusk target (OpenGL,
@@ -385,3 +500,15 @@ turn into an open-ended slog.
   compiled bodies under the same surface name) is untested — A6's broader sweep is what would
   surface it, and the fallback (a demangling shim mapping slangc's mangled names back
   deterministically) documented in A3/A4's original scoping remains available if it does.
+- **`DxcFlagBuilder` never requests a Vulkan 1.1 SPIR-V target environment, so wave/quad
+  intrinsics currently fail on Vulkan too** (found during A5, measured directly: `error: Vulkan
+  1.1 is required for Wave Operation but not permitted to use`, identical to the OpenGL failure).
+  Architecturally Vulkan CAN hold SM6 HLSL (it already compiles at `vs_6_0`/`ps_6_0`), so this is
+  a fixable flag gap, not a format ceiling — but it is a **general HLSL/DXC pipeline gap**, not
+  Slang-specific (a hand-written `.fx` calling `WaveActiveSum` on Vulkan hits the identical
+  wall), so `SlangSm6ConstructGuard` deliberately does not gate Vulkan and this stage left the
+  flag itself unfixed (out of A5's scope: broadening Slang's own acceptance boundary, not the
+  shared Vulkan pipeline's capability floor). A future stage adding `-fspv-target-env=vulkan1.1`
+  to the Vulkan case in `DxcFlagBuilder.Build` (with the render-gate re-verification that change
+  implies) would make DirectX12 no longer the only target able to compile a real wave-intrinsic
+  shader through ShadowDusk's pipeline.

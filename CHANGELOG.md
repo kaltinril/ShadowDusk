@@ -28,6 +28,18 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   wired into any CLI/MGCB delivery surface and not yet default-on anywhere; the shipped
   `.slang` support remains `ShadowDusk.Compiler`'s HLSL-compatible-subset frontend. See
   `plan/PHASE-66-full-slang-input-implementation.md`'s A4 write-up for the full mechanism.
+- **`ShadowDusk.Slang`'s real three-band accept/reject rule (Phase 66 A5).** `SlangCompiler`
+  now rejects an SM6-only wave/quad intrinsic (`WaveActiveSum`, `QuadReadAcrossX`, …) with a new
+  registered diagnostic, `SD0624`, naming the intrinsic and the target, on OpenGL, DirectX
+  (DX11), and FNA — the three targets architecturally capped below Shader Model 6 that can never
+  represent it, detected via a static scan of the finite HLSL SM6 Wave/Quad intrinsics
+  vocabulary (a `SlangSm6ConstructGuard` regex scan against the raw Slang source, run before
+  slangc is even spawned), chosen over relying on each backend's own inconsistent downstream
+  error. Compute/mesh entry points were already rejected loudly by name (`SD0602`, reused
+  unchanged from `SlangEntryScanner`) and slangc's own syntax errors already surfaced verbatim
+  (`SlangDiagnosticReformatter`) — both verified, not rebuilt. See
+  `plan/PHASE-66-full-slang-input-implementation.md`'s A5 write-up.
+
 - **Docs: link to the [FlatRedBall Discord](https://discord.gg/Rr9SMBrPck)** for questions and
   feedback, from the README (new *Community* section), the documentation site's home page and
   footer, and the Contributing guide.
@@ -35,6 +47,16 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 ### Changed
 
 ### Fixed
+
+- **`SD0600`'s Slang-only-construct scan now catches bare `interface` and generic
+  type-parameter-constraint syntax** (`ShadowDusk.Compiler.Slang.SlangFrontend`, Phase 65 §5's
+  finding, closed by Phase 66 A5). Previously a real Slang file using either (e.g. an `interface`
+  a struct conforms to, plus a generic free function constrained to it) fell through this
+  courtesy scan and reached DXC's own confusing raw diagnostic (`X0000: expected ';' after
+  __interface`) instead of a clean, named rejection. Two patterns added:
+  a line-anchored `interface` keyword and a colon-constrained generic angle-bracket shape
+  (`Name<T : IConstraint>(`) that does not false-positive on ordinary HLSL templated resource
+  types (`StructuredBuffer<float4>`, `Texture2D<float4>`, …).
 
 ## [0.20.0] - 2026-09-10
 

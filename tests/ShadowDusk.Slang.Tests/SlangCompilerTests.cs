@@ -231,19 +231,53 @@ public sealed class SlangCompilerTests
     // simplicity alongside the rest of SlangCompiler's surface.
     // ---------------------------------------------------------------------------
 
-    [Fact]
-    public async Task ComputeEntryPoint_RejectedLoudly_BeforeInvokingSlangc()
+    // Phase 66 A5, Band 2 part A: a real compute entry point (genuine [numthreads]/
+    // groupshared/SV_DispatchThreadID compute syntax, not just an attribute-only stub) must
+    // reject with SD0602 on EVERY target — the rejection is entry-stage policy
+    // (SlangEntryScanner.Scan), decided before any per-target compile step runs, so it can
+    // never depend on which target was asked for.
+    private const string ComputeEntrySource = """
+        RWStructuredBuffer<float> Particles;
+
+        [shader("compute")]
+        [numthreads(64, 1, 1)]
+        void Simulate(uint3 id : SV_DispatchThreadID)
+        {
+            Particles[id.x] += 1.0;
+        }
+        """;
+
+    [Theory]
+    [InlineData(PlatformTarget.OpenGL)]
+    [InlineData(PlatformTarget.DirectX)]
+    [InlineData(PlatformTarget.DirectX12)]
+    [InlineData(PlatformTarget.Vulkan)]
+    [InlineData(PlatformTarget.Fna)]
+    public async Task ComputeEntryPoint_RejectedLoudly_BeforeInvokingSlangc_OnEveryTarget(
+        PlatformTarget target)
     {
-        const string computeOnly = """
-            [shader("compute")]
-            void Simulate(uint3 id : SV_DispatchThreadID) { }
-            """;
+        var options = new CompilerOptions { Target = target, SourceFileName = "compute.slang" };
+
+        var result = await new SlangCompiler().CompileAsync(ComputeEntrySource, options);
+
+        result.IsFailure.ShouldBeTrue();
+        var error = result.Error.Single();
+        error.Code.ShouldBe("SD0602");
+        error.Message.ShouldContain("Simulate", Case.Sensitive);
+        error.Message.ShouldContain("compute", Case.Sensitive);
+    }
+
+    [Fact]
+    public async Task ComputeEntryPoint_RejectedBeforeSpawningSlangc_NeverReachesADownstreamError()
+    {
+        var capture = new CapturingCompiler();
         var options = new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "compute.slang" };
 
-        var result = await new SlangCompiler().CompileAsync(computeOnly, options);
+        var result = await new SlangCompiler(capture).CompileAsync(ComputeEntrySource, options);
 
         result.IsFailure.ShouldBeTrue();
         result.Error.Single().Code.ShouldBe("SD0602");
+        capture.CapturedHlslSource.ShouldBeNull();
     }
 
     [Fact]
@@ -380,6 +414,78 @@ public sealed class SlangCompilerTests
 
         result.IsSuccess.ShouldBeTrue(
             result.IsFailure ? $"WaveVertex.slang: {FormatErrors(result.Error)}" : "");
+        AssertLooksLikeMgfx(result.Value.Data);
+    }
+
+    // ---------------------------------------------------------------------------
+    // Phase 66 A5, Band 2 part B (OQ2) — an SM6-only wave intrinsic rejects with SD0624 on the
+    // three targets architecturally capped below SM6, and (measured, Phase 66 A5: the ONE target
+    // that reaches it end to end through ShadowDusk's real pipeline today) still compiles on
+    // DirectX12. Vulkan is deliberately NOT asserted to succeed here — see
+    // SlangSm6ConstructGuard.IsArchitecturallyBelowSm6's own doc comment for the separate,
+    // pre-existing DxcFlagBuilder '-fspv-target-env' gap this stage found but left unfixed
+    // (out of scope: it is a general Vulkan/DXC pipeline flag, not Slang-specific).
+    // ---------------------------------------------------------------------------
+
+    private const string WaveIntrinsicSource = """
+        struct VSOutput
+        {
+            float4 Position : SV_Position;
+            float2 UV : TEXCOORD0;
+        };
+
+        [shader("fragment")]
+        float4 MainPS(VSOutput input) : SV_Target
+        {
+            float v = WaveActiveSum(input.UV.x);
+            return float4(v, v, v, 1.0);
+        }
+        """;
+
+    [Theory]
+    [InlineData(PlatformTarget.OpenGL)]
+    [InlineData(PlatformTarget.DirectX)]
+    [InlineData(PlatformTarget.Fna)]
+    public async Task WaveIntrinsic_RejectedWithSD0624_OnTargetsArchitecturallyBelowSm6(
+        PlatformTarget target)
+    {
+        var options = new CompilerOptions { Target = target, SourceFileName = "wave.slang" };
+
+        var result = await new SlangCompiler().CompileAsync(WaveIntrinsicSource, options);
+
+        result.IsFailure.ShouldBeTrue();
+        var error = result.Error.Single();
+        error.Code.ShouldBe("SD0624");
+        error.Message.ShouldContain("WaveActiveSum", Case.Sensitive);
+        error.Message.ShouldContain(target.ToString(), Case.Sensitive);
+        error.Line.ShouldBeGreaterThan(0);
+    }
+
+    [Fact]
+    public async Task WaveIntrinsic_RejectedBeforeSpawningSlangc_NeverReachesADownstreamError()
+    {
+        // The guard runs on the raw Slang source before slangc is ever invoked (SD0624's own
+        // point: one consistent diagnostic instead of each backend's own confusing wording) —
+        // proven here via a stub downstream compiler that would fail the test outright if
+        // SlangCompiler somehow got as far as assembling/handing off an .fx body.
+        var capture = new CapturingCompiler();
+        var options = new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "wave.slang" };
+
+        var result = await new SlangCompiler(capture).CompileAsync(WaveIntrinsicSource, options);
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Single().Code.ShouldBe("SD0624");
+        capture.CapturedHlslSource.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task WaveIntrinsic_CompilesOnDirectX12_TheOneTargetThatReachesItToday()
+    {
+        var options = new CompilerOptions { Target = PlatformTarget.DirectX12, SourceFileName = "wave.slang" };
+
+        var result = await new SlangCompiler().CompileAsync(WaveIntrinsicSource, options);
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? FormatErrors(result.Error) : "");
         AssertLooksLikeMgfx(result.Value.Data);
     }
 }

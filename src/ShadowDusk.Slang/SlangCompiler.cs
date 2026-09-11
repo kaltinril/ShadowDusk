@@ -45,6 +45,15 @@ namespace ShadowDusk.Slang;
 /// silently overrides <c>DxcFlagBuilder</c>'s OpenGL row-major convention and was the root
 /// cause of a <c>layout(row_major)</c> qualifier <c>MonoGameGlslRewriter</c> doesn't model
 /// (see that method's own comment for the full mechanism).</para>
+///
+/// <para><b>The three-band accept/reject rule (Phase 66 A5, Phase 61 §6 A6):</b> slangc's own
+/// syntax errors surface verbatim via <see cref="SlangDiagnosticReformatter"/> (band 1);
+/// constructs that compile but have nowhere to land in an <c>Effect</c> are rejected loudly by a
+/// registered diagnostic naming the construct and the target — a non-vertex/fragment entry stage
+/// (<c>SD0602</c>, <see cref="SlangEntryScanner"/>) or an SM6-only Wave/Quad intrinsic on a
+/// target whose backend cannot represent SM6 HLSL (<c>SD0624</c>,
+/// <see cref="SlangSm6ConstructGuard"/>) (band 2); everything else compiles, with no curated
+/// allow-list (band 3).</para>
 /// </summary>
 /// <remarks>
 /// Deliberately does NOT implement <c>IShaderCompiler</c>: that interface's contract is
@@ -112,6 +121,27 @@ public sealed class SlangCompiler
         if (entriesResult.IsFailure)
             return Result<CompiledShader, ShaderError[]>.Fail(entriesResult.Error);
         IReadOnlyList<SlangEntryPoint> entries = entriesResult.Value;
+
+        // Phase 66 A5, Band 2 part B (OQ2): reject an SM6-only Wave/Quad intrinsic up front,
+        // before spawning slangc at all, when the target can never represent SM6 HLSL through
+        // ShadowDusk's real backend for it — see SlangSm6ConstructGuard's own doc comment for
+        // why this is a static source scan rather than a downstream catch-and-wrap.
+        if (SlangSm6ConstructGuard.IsArchitecturallyBelowSm6(options.Target))
+        {
+            (string Construct, int Line)? sm6Hit = SlangSm6ConstructGuard.FindConstruct(slangSource);
+            if (sm6Hit is not null)
+            {
+                return Fail(new ShaderError(
+                    File: sourceName, Line: sm6Hit.Value.Line, Column: 1, Code: "SD0624",
+                    Message: $"'{sm6Hit.Value.Construct}' is a Shader Model 6 wave/quad intrinsic " +
+                             $"— the {options.Target} target compiles through ShadowDusk's pipeline " +
+                             "at Shader Model 5 or lower and can never represent it (OpenGL: a fixed " +
+                             "vs_5_0/ps_5_0 DXC profile; DirectX: SM5 DXBC; FNA: SM<=3 fx_2_0). This " +
+                             "Slang construct compiles (real slangc accepts it), but has nowhere to " +
+                             "land on this target. Build for Vulkan or DirectX12 instead, or avoid " +
+                             "the intrinsic."));
+            }
+        }
 
         string toolDirectory;
         try

@@ -68,6 +68,25 @@ public static class SlangFrontend
     // Slang-only constructs with no HLSL meaning. Declaration keywords are line-anchored so an
     // identifier that merely CONTAINS the word (a variable named 'extension') cannot false-
     // positive; '__generic' is a reserved-prefix spelling no legal HLSL identifier uses.
+    //
+    // Phase 65 §5's finding, closed here (Phase 66 A5): this five-pattern list did not name the
+    // bare 'interface' keyword or generic-constraint syntax at all, so a real Slang file using
+    // either (GenericsProbe.slang: an 'interface IBlendMode' plus a generic free function
+    // 'applyBlend<T : IBlendMode>(...)') fell all the way through this courtesy scan to DXC,
+    // which rejected it with its own confusing native diagnostic ("X0000: expected ';' after
+    // __interface") instead of a clean, named SD0600. Two additions:
+    //   - 'interface' — line-anchored like 'module'/'extension' above. NOTE: stock HLSL also has
+    //     a (rare) 'interface' keyword of its own, for dynamic shader linkage
+    //     ("interface IFoo { ...}; class Bar : IFoo { ... };") — this scan cannot tell that usage
+    //     apart from Slang's interface-as-generic-constraint idiom from syntax alone, so it
+    //     rejects both. That is the SAME trade this whole scan already makes for every other
+    //     entry (a courtesy heuristic, not an exhaustive parser) and no corpus/test fixture uses
+    //     HLSL's own dynamic-linkage interfaces, so there is nothing here that regresses.
+    //   - the generic-constraint angle-bracket shape '<T : IConstraint>' on a declaration —
+    //     deliberately requires the colon-constraint form (not bare '<T>'), so it does not
+    //     false-positive on ordinary HLSL templated resource types that are otherwise perfectly
+    //     legal input to this frontend (StructuredBuffer<float4>, Texture2D<float4>, …, none of
+    //     which ever put a ':' inside the angle brackets).
     private static readonly (Regex Pattern, string Construct)[] SlangOnlyConstructs =
     [
         (new Regex(@"^\s*import\s+[\w.]+\s*;", RegexOptions.Compiled | RegexOptions.Multiline), "import"),
@@ -75,6 +94,9 @@ public static class SlangFrontend
         (new Regex(@"^\s*extension\b", RegexOptions.Compiled | RegexOptions.Multiline), "extension"),
         (new Regex(@"^\s*associatedtype\b", RegexOptions.Compiled | RegexOptions.Multiline), "associatedtype"),
         (new Regex(@"\b__generic\b", RegexOptions.Compiled), "__generic"),
+        (new Regex(@"^\s*interface\s+\w+", RegexOptions.Compiled | RegexOptions.Multiline), "interface"),
+        (new Regex(@"\w+\s*<\s*\w+\s*:\s*\w+(?:\s*,\s*\w+\s*:\s*\w+)*\s*>\s*\(",
+            RegexOptions.Compiled), "generic type parameter"),
     ];
 
     /// <summary>

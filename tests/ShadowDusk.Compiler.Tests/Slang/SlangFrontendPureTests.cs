@@ -142,6 +142,10 @@ public sealed class SlangFrontendConvertTests
     [InlineData("extension MyType { }", "extension")]
     [InlineData("associatedtype T;", "associatedtype")]
     [InlineData("__generic<T> T id(T x) { return x; }", "__generic")]
+    [InlineData("interface IBlendMode { float3 blend(float3 a, float3 b); }", "interface")]
+    [InlineData(
+        "float3 applyBlend<T : IBlendMode>(T mode, float3 a, float3 b) { return a; }",
+        "generic type parameter")]
     public void SlangOnlyConstructs_AreRejectedByName_WithSD0600(string construct, string name)
     {
         string source = construct + "\n[shader(\"fragment\")] float4 P() : SV_Target { return 1; }";
@@ -189,5 +193,51 @@ public sealed class SlangFrontendConvertTests
 
         result.IsSuccess.ShouldBeTrue(
             result.IsFailure ? string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "");
+    }
+
+    // Phase 65 §5's finding, closed by Phase 66 A5: this exact shape (an 'interface' plus a
+    // generic free function constrained to it — GenericsProbe.slang, also exercised through the
+    // real-slangc route in ShadowDusk.Slang.Tests) used to fall all the way through this
+    // courtesy scan to DXC, which rejected it with its own confusing native diagnostic
+    // ("X0000: expected ';' after __interface") instead of a clean, named SD0600. It must now
+    // be rejected here, by the shipped subset frontend, before DXC ever sees it.
+    [Fact]
+    public void RealInterfacePlusGenericFile_RejectedWithSD0600_NamingInterface_NotARawDxcError()
+    {
+        const string source = """
+            interface IBlendMode
+            {
+                float3 blend(float3 baseColor, float3 blendColor);
+            }
+
+            struct MultiplyBlend : IBlendMode
+            {
+                float3 blend(float3 baseColor, float3 blendColor)
+                {
+                    return baseColor * blendColor;
+                }
+            }
+
+            float3 applyBlend<T : IBlendMode>(T mode, float3 baseColor, float3 blendColor)
+            {
+                return mode.blend(baseColor, blendColor);
+            }
+
+            [shader("fragment")]
+            float4 MainPS() : SV_Target
+            {
+                MultiplyBlend mode;
+                return float4(applyBlend(mode, float3(1, 1, 1), float3(0.5, 0.5, 0.5)), 1);
+            }
+            """;
+
+        var result = SlangFrontend.ConvertToFx(source, new SlangConvertOptions { SourceName = "generics.slang" });
+
+        result.IsFailure.ShouldBeTrue();
+        var error = result.Error.Single();
+        error.Code.ShouldBe("SD0600");
+        error.Message.ShouldContain("'interface'", Case.Sensitive);
+        error.Message.ShouldNotContain("X0000", Case.Sensitive);
+        error.Message.ShouldNotContain("__interface", Case.Sensitive);
     }
 }
