@@ -58,10 +58,22 @@ as cheap, immediate wins alongside the real build.
 is the answer to Phase 65 §4's "does the whole product need to carry 121 MB/RID" concern: no —
 only a consumer who explicitly opts in does, and even then only for the one RID they build for.
 
-The ~121 MB/RID native cost (Phase 65 §4c) is a **ceiling, not a confirmed floor** — §4c's own
-caveat: 84 MB of the 121 MB is `slang-llvm.dll`, and whether a `-target hlsl`-only embed even
-needs it is unmeasured. **A1 below measures this before any restore-script work starts,** because
-it could cut the packaging cost by 2/3 and changes nothing else about the plan if it doesn't.
+**A1 measured this (2026-09-11, evidence in `plan/PHASE-66-appendix/slang-llvm-exclusion-probe/`):
+`slang-llvm.dll` is excludable.** It is Slang's LLVM/Clang-backed pass-through compiler for
+CPU/host codegen targets (`-emit-cpu-via-llvm`, `host-callable`, `shader-object-code`) — orthogonal
+to the `-target hlsl` source-to-source route this product uses. Deleting it from a copy of the
+pinned v2026.14.1 win-x64 release and running `slangc -target hlsl` against all 24 entry points of
+the existing corpus (the 17-shader `tests/fixtures/shaders/slang/` set plus Phase 65's Gum-shaped
+and generics-probe shaders, generics/interfaces included) compiles cleanly with no change in
+behavior; `slangc -v` also still launches. A positive control confirms the deletion is
+load-bearing, not incidental: `-target hlsl` still exits 0, but
+`-target shader-sharedlib -emit-cpu-via-llvm` on the same no-LLVM binary now fails loudly with
+`error[E52002]: pass-through compiler not found`. This drops the per-RID native weight from
+**~126.2 MB to ~41.8 MB** (measured `bin/` directory totals, same basis as Phase 65 §4c's ~121 MB
+figure), a **~67% cut**, before A2 even trims the set down to what's actually vendored
+(`slang.exe`/`slangd.exe`/`slangi.exe` are separate CLI/language-server/interpreter binaries not
+needed to invoke `slangc.exe`, and are dropped in A2's real package, not measured here). A2 should
+design its win-x64 native vendoring around the no-LLVM set from the start.
 
 ---
 
@@ -70,12 +82,13 @@ it could cut the packaging cost by 2/3 and changes nothing else about the plan i
 Ordered; later items depend on earlier ones. Each item's "done" bar is stated so this doesn't
 turn into an open-ended slog.
 
-- **A1 — Minimal-build probe (do this FIRST, before any restore-script work).** Build (or find
-  documented instructions for) a `-target hlsl`-only slangc build against Slang's own build
-  system, and check whether `slang-llvm.dll` (84 MB, LLVM-backed CPU/native codegen this product
-  never asks for) can be excluded. If it can, the per-RID cost drops from ~121 MB to ~37 MB —
-  worth knowing before A2's packaging plan is written, not after. *(Phase 65 §7 flagged this as
-  the single most valuable unmeasured number.)*
+- **A1 — Minimal-build probe (do this FIRST, before any restore-script work). DONE, 2026-09-11.**
+  No from-source build needed: deleting `bin/slang-llvm.dll` from the pinned win-x64 release is
+  sufficient — `-target hlsl` is unaffected (full corpus re-verified, positive control confirms
+  the deletion is load-bearing for LLVM/CPU targets specifically, not incidental). Per-RID cost
+  drops from ~126.2 MB to ~41.8 MB (~67% cut), not the ~37 MB estimate exactly but the same order
+  — see §2 above and `plan/PHASE-66-appendix/slang-llvm-exclusion-probe/` for the full evidence.
+  A2 vendors the no-LLVM set.
 - **A2 — Native vendoring, win-x64 first.** Pin a slangc release, host the win-x64 binaries,
   restore + SHA-256-verify (`tools/restore.ps1` entry, the exact pattern DXC/vkd3d/SPIRV-Cross
   already use), release-gate line (fail red if missing — the rule already in
@@ -151,10 +164,9 @@ turn into an open-ended slog.
 
 ## 5. Open questions
 
-- **A1's answer** decides whether the per-RID cost is ~37 MB or ~121 MB — do this before
-  committing to a restore-script design.
-- **Linux/macOS RID parity** for A1's finding — Phase 65 only measured the cached windows-x64
-  oracle.
+- **Linux/macOS RID parity** for A1's finding — both Phase 65's original measurement and this
+  probe only checked the cached windows-x64 oracle; unverified whether the Linux/macOS releases
+  also load and run `-target hlsl` cleanly with their platform's `slang-llvm.*` removed.
 - **Whether A4's demangling shim is complete** for every construct real slangc's corpus surfaces,
   not just the `_N`/`SLANG_ParameterGroup_*` cases already seen — A6's broader sweep is what
   would surface anything missed.
