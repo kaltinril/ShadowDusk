@@ -315,6 +315,10 @@ The test-shader corpus is derived from community MonoGame/HLSL examples, with th
 
 See [`docs/test-shader-corpus.md`](docs/test-shader-corpus.md) for per-shader provenance.
 
+## Community
+
+Questions, feedback, or want to show what you built? Join the **[FlatRedBall Discord](https://discord.gg/Rr9SMBrPck)**. Bugs and feature requests go to [GitHub Issues](https://github.com/kaltinril/ShadowDusk/issues).
+
 ## License & contributing
 
 See [`CLAUDE.md`](CLAUDE.md) for coding conventions and agent guidance.

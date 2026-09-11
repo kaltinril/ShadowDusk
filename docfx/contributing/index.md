@@ -2,6 +2,8 @@
 
 This page distills the contributor-facing essentials. The authoritative project guidance lives in [`CLAUDE.md`](https://github.com/kaltinril/ShadowDusk/blob/main/CLAUDE.md) and the phase plans under `plan/` in the repository.
 
+Want to talk something through before opening a PR? Join the [FlatRedBall Discord](https://discord.gg/Rr9SMBrPck). Bugs and feature requests go to [GitHub Issues](https://github.com/kaltinril/ShadowDusk/issues).
+
 ## The purpose (keep this straight)
 
 The **product is the in-memory `IShaderCompiler` library** (`ShadowDusk.Compiler`): add the package, call `CompileAsync(fx)`, get `.mgfx` bytes — on Linux, macOS, or Windows, with nothing else to install. The CLI and the MGCB content-processor plugin are *delivery shapes* of the same library. The in-browser fiddle is *only a sample of reach*. There are **no substitute compilers**: every host runs the same faithful pipeline.

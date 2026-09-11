@@ -67,6 +67,7 @@ The table above is the **graphics-backend** axis — the one that decides the ou
 - **How it works:** the [Architecture](architecture/the-faithful-pipeline.md) section.
 - **API:** the [API Reference](../api/index.md) (generated from the code's own XML doc-comments).
 - **CLI:** the [`ShadowDuskCLI` CLI Reference](cli/index.md).
+- **Questions or feedback?** Join the [FlatRedBall Discord](https://discord.gg/Rr9SMBrPck); file bugs and feature requests on [GitHub Issues](https://github.com/kaltinril/ShadowDusk/issues).
 
 ## In-memory in five lines
 
