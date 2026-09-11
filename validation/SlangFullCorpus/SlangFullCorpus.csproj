@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- Intentionally NOT in ShadowDusk.slnx (validation drivers never are). Windows-only:
+         gate 3 loads a real MonoGame.Framework.WindowsDX Effect, and the real-slangc route
+         itself packages slangc for win-x64 only today (Phase 66 A2/A3). -->
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>ShadowDusk.Validation.SlangFullCorpus</RootNamespace>
+    <AssemblyName>ShadowDusk.Validation.SlangFullCorpus</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Pulls ShadowDusk.Compiler -> Core/HLSL/GLSL transitively; ShadowDusk.Slang itself is
+         what packages the real slangc native this gate compiles through. -->
+    <ProjectReference Include="..\..\src\ShadowDusk.Slang\ShadowDusk.Slang.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="MonoGame.Framework.WindowsDX" />
+    <PackageReference Include="Silk.NET.OpenGL" />
+    <PackageReference Include="Silk.NET.Windowing.Glfw" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The xunit-free halves of the ImageTests GL harness, reused verbatim (same as
+         validation/SlangCorpus). -->
+    <Compile Include="..\..\tests\ShadowDusk.ImageTests\GlContext\OffscreenRenderer.cs" />
+    <Compile Include="..\..\tests\ShadowDusk.ImageTests\GlContext\GlslShaderProgram.cs" />
+    <!-- Real MonoGame WindowsDX Effect-load renderer, gate 3 (verbatim reuse - same file
+         validation/CandidateDx links). -->
+    <Compile Include="..\SharedDx\DxShaderInputs.cs" />
+    <Compile Include="..\SharedDx\DxEffectImageRenderer.cs" />
+    <!-- Rung-2 structural MGFX parse for gate 1, the same parser a compiled-effect-consuming
+         test uses (Phase 66 A4's own precedent: ShadowDusk.Slang.Tests source-links this same
+         file rather than a second hand-rolled MGFX reader). -->
+    <Compile Include="..\..\tests\ShadowDusk.Integration.Tests\MgfxBlobReader.cs" Link="MgfxBlobReader.cs" />
+  </ItemGroup>
+</Project>

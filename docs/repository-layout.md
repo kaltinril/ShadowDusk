@@ -19,6 +19,10 @@ ShadowDusk/
 │   ├── ShadowDusk.Cli/           # CLI entry-point (dotnet tool `ShadowDuskCLI`); also accepts ShaderToy/GLSL input
 │   ├── ShadowDusk.ShaderToy/     # Pure-managed ShaderToy/GLSL → .fx front-end (ShaderToyConverter.Convert); ZERO
 │   │                             #   native + ZERO MonoGame dep; additive, upstream of the pipeline. PUBLISHED standalone NuGet (0.9.0).
+│   ├── ShadowDusk.Slang/         # SlangCompiler: REAL slangc-backed Slang front-end (import/generics/interfaces,
+│   │                             #   Phase 66) — bundles real slangc (win-x64 native), hands its HLSL emission to
+│   │                             #   the unchanged EffectCompiler pipeline. Opt-in, additive; the HLSL-compatible
+│   │                             #   .slang SUBSET (ShadowDusk.Compiler.Slang.SlangFrontend) stays the free default.
 │                                 # tools/setup-local-testing.ps1 is the one-command contributor setup:
 │                                 #   prerequisites -> tools/restore -> dotnet tool restore -> build ->
 │                                 #   full test suite -> smoke compile (.mgfx AND .xnb), with opt-in
@@ -44,6 +48,8 @@ ShadowDusk/
 │   ├── ShadowDusk.GLSL.Tests/
 │   ├── ShadowDusk.Compiler.Tests/
 │   ├── ShadowDusk.ShaderToy.Tests/     # ShaderToy→.fx converter unit/trap/golden/reject suite (pure managed)
+│   ├── ShadowDusk.Slang.Tests/         # SlangCompiler (real-slangc route) unit + [Category=Integration] suite —
+│   │                                   #   spawns the restored tools/slang/win-x64/slangc.exe (Phase 66)
 │   ├── ShadowDusk.Integration.Tests/   # Compile real .fx files end-to-end (+ CLI .glsl-input integration)
 │   ├── ShadowDusk.ImageTests/          # Offscreen-render image regression
 │   ├── ShadowDusk.BrowserTests/        # Headless KNI WebGL render validation (Playwright)
@@ -111,7 +117,11 @@ ShadowDusk/
 │                                  #     3.8.5 WindowsDX, pixel-identical - Phase 63),
 │                                  #   Slang corpus (SlangCorpus: every tests/fixtures/shaders/slang shader
 │                                  #     accepted by the pinned slangc TEST oracle + the procedural subset
-│                                  #     pixel-diffed vs slangc's own HLSL emission - Phase 61)
+│                                  #     pixel-diffed vs slangc's own HLSL emission - Phase 61),
+│                                  #   Slang FULL corpus (SlangFullCorpus: the ShadowDusk.Slang real-slangc
+│                                  #     route - 21 shaders compile on 4 targets, the procedural subset
+│                                  #     pixel-diffed vs slangc's own raw HLSL through the SAME slangc
+│                                  #     invocation SlangCompiler uses, real DirectX_11 Effect load - Phase 66)
 │                                  #   + the compare_*.py oracles. See docs/validation-matrix.md §6.
 │                                  #   Two entries here are NOT render proofs:
 │                                  #     MgcbPlugin runs a real `dotnet mgcb` content build through the MGCB

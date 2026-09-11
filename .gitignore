@@ -144,6 +144,7 @@ validation/output-shadertoy-dx/
 validation/output-xnb/
 validation/output-xnb-kni/
 validation/output-xnb-gl/
+validation/output-slang-full-corpus/
 # The pinned slangc TEST ORACLE the SlangCorpus gate downloads on demand (SHA-256-verified).
 # Never shipped; the product never invokes it.
 validation/SlangCorpus/.slang-oracle/

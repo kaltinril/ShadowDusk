@@ -9,12 +9,16 @@ rejection), not new frontend behavior, and does not change any `.fx` output byte
 frontend already produces for input it accepts. Everything else about this phase is a new,
 separate, opt-in package.
 
-**Status:** 🟡 In progress. Scoped 2026-09-11; A1-A5 done same day (native vendoring +
+**Status:** 🟡 A1-A8 done, all same day (2026-09-11) — native vendoring +
 `ShadowDusk.Slang.SlangCompiler`, the real compile route, the mangling fix and the OpenGL
-row_major gap fix — corpus now 21/21 on both DirectX_11 and OpenGL; A5 replaced the placeholder
-acceptance with the real three-band rule and closed the `SD0600` `interface`/generics gap).
-A6 done same day (the broad residue sweep found and fixed a real platform-macro-forwarding
-gap — see below). A7-A8 open.
+row_major gap fix (corpus 21/21 on both DirectX_11 and OpenGL), the real three-band
+acceptance rule (closing the `SD0600` `interface`/generics gap), the full-corpus residue sweep
+(found and fixed a real platform-macro-forwarding gap), the `validation/SlangFullCorpus`
+render gate (21 shaders x 4 targets: 84/84 compiles, maxd 0 pixel equivalence on the
+procedural subset, 21/21 real DirectX_11 `Effect` loads/renders), and the docs/support-surface
+updates. **Ready for human review.** Left open, not blocking review: §5's three open
+questions, and a real-`Effect`-load gate for DirectX_12/Vulkan (A7 stayed at the compile+
+structural rung for those two — see A7 below).
 
 **Depends on:** [Phase 61](DONE/PHASE-61-slang-support.md) (the shipped HLSL-compatible-subset
 frontend and its groundwork §6/§7/OQ2/OQ3) and [Phase 65](PHASE-65-full-slang-input-spike.md) (the
@@ -600,16 +604,92 @@ turn into an open-ended slog.
   every branch, not only the legacy one. So these fixtures would almost certainly fail
   identically at Band 1 — but that is a reading of the macro source, not a measured
   compile through slangc, so it is flagged here rather than asserted as a table row.
-- **A7 — Validation.** A `SlangCorpus`-style gate through the **real-slangc route** specifically
-  (distinct from the existing subset-route gate, which stays as-is and keeps validating the
-  subset frontend): compile sweep across all targets, pixel-equivalence against slangc's own
-  HLSL emission fed through the same DXC + SPIRV-Cross (the same evidence model Phase 61 §5.2
-  already established for the subset route). Default-ON in `run-windows-render-gates.ps1`.
-- **A8 — Docs and support-surface updates**, in the same PR per `CLAUDE.md`'s standing rule (new
-  delivery shape, new package): README's supported-inputs section and package table,
-  `docs/validation-matrix.md` (a distinct-evidence row, never a §1 cell, same as the subset
-  frontend), `docs/pipeline-overview.puml` + regenerated SVG, `docfx/` guides mentioning Slang,
-  `project_facts.md` (native/pins list gains a `ShadowDusk.Slang` row), `CHANGELOG.md`.
+- **A7 — Validation. DONE, 2026-09-11.** A `SlangCorpus`-style gate through the **real-slangc
+  route** specifically, `validation/SlangFullCorpus` — distinct from `validation/SlangCorpus`
+  (unchanged, keeps validating only the subset frontend). Three gates, all measured on a real
+  Windows box with a DX11-capable GPU (the natives restored fresh via `tools/restore.ps1` in
+  this same session — nothing pre-staged):
+
+  **Gate 1 — compile sweep, all four reachable targets.** The 21-shader corpus (17 shipped +
+  4 Phase 65 Gum/generics-probe) compiled through the REAL `SlangCompiler` (which itself
+  invokes the real restored `slangc.exe`, not a downloaded oracle — for this package slangc
+  IS the product route) on OpenGL, DirectX_11, DirectX_12, and Vulkan. FNA excluded, matching
+  `validation/SlangCorpus`'s own precedent (that gate never covers FNA either — see §8.0's
+  "not yet proven" note). **Measured: 84/84 (21×4), every success also parsed by the real
+  `MgfxBlobReader` (source-linked from `ShadowDusk.Integration.Tests`) as a rung-2 structural
+  check, zero structural failures.**
+
+  **Gate 2 — pixel equivalence, OpenGL, the 8-shader uniform-free procedural subset.** A
+  narrower comparison than `SlangCorpus`'s own gate 2 by design: there, the two routes differ
+  in HOW the Slang text is READ (a hand-rolled managed parser vs real slangc); here, BOTH
+  routes already run through the SAME real slangc emission, so the only variable is whether
+  `SlangCompiler`'s own `.fx`-wrapping / platform-macro-forwarding / preprocessing pipeline
+  changes the rendered pixels. Route A captures `SlangCompiler`'s actual assembled `.fx` text
+  via an injected stub `IShaderCompiler` (the same capture technique A3's own tests already
+  use for the VS+PS merge assertion) and runs it through `FxPreParser` → `Preprocessor` → DXC
+  → SPIRV-Cross, mirroring `SlangCorpus`'s own route A shape. Route B calls
+  `SlangCompiler.RunSlangc` **directly** (made `internal` + `InternalsVisibleTo
+  ShadowDusk.Validation.SlangFullCorpus`, rather than hand-duplicating its flag list in the
+  driver, which could silently drift from what `SlangCompiler` actually passes and invalidate
+  the comparison) to get slangc's raw HLSL for the same entry, fed straight to the same DXC →
+  SPIRV-Cross with no wrapping at all. **Measured: 8/8, maxd 0 on every shader** — the
+  wrapping/macro-forwarding pipeline is pixel-preserving.
+
+  **Gate 3 — real engine load, DirectX_11.** Every corpus shader's `SlangCompiler`
+  `DirectX_11` output loaded into a REAL `MonoGame.Framework.WindowsDX` `Effect`
+  (`validation/SharedDx/DxEffectImageRenderer`, the same renderer `validation/CandidateDx`
+  uses, reused verbatim including its `DxShaderInputs.SetParams`) and drawn through
+  `SpriteBatch`. **Measured: 21/21 loaded, 21/21 rendered** — including the 3 VS+PS shaders
+  with a `float4x4` cbuffer member (`Desaturate`/`ScrollUv`/`WaveVertex`), which was the one
+  open risk (a custom VS's input layout is not guaranteed compatible with `SpriteBatch`'s own
+  vertex format); it was not a problem in practice.
+
+  **What this proves vs. what it does not, stated plainly (per the stage's own "honest
+  intermediate step" allowance):** this is stronger than the minimum "compile-and-load"
+  fallback — it includes a genuine pixel-equivalence gate and a real `Effect` render, not just
+  a load check — but it is NOT the full 4-target `BaselineXxx`+`CandidateXxx` multi-process
+  reference-compiler render gate every §1 backend target has (there is no `mgfxc` oracle for
+  Slang input at all, on either tier — see §1's non-negotiables — so "reference-compiler" here
+  can only ever mean "slangc's own HLSL emission", which gate 2 already uses). **Left open,
+  precisely:** a real-`Effect`-load gate for DirectX_12 and Vulkan (today: gate 1's
+  compile+structural rung only — DX12/Vulkan each need their own separate-process harness,
+  matching how `VsDrivenDx12`/`VsDrivenVulkan` already have to run isolated from other GPU
+  contexts); OpenGL's gate 2 uses the same hand-rolled GL 3.3 context `SlangCorpus`'s own gate
+  2 uses, not a real MonoGame `Effect` (same limitation as the existing gate, not new here).
+
+  Wired default-ON in `run-windows-render-gates.ps1`, immediately after the existing
+  `validation/SlangCorpus` gate. New `docs/validation-matrix.md` §6 row and §8.0a subsection
+  record the full mechanism and the measured numbers above.
+- **A8 — Docs and support-surface updates. DONE, 2026-09-11.** In the same push per
+  `CLAUDE.md`'s standing rule (new delivery shape, new validation driver): README's
+  supported-inputs section (the two-tier story: `ShadowDusk.Compiler`'s free HLSL-compatible
+  subset vs. the new opt-in `ShadowDusk.Slang` package) and package table (alongside
+  `ShadowDusk.ShaderToy`'s existing entry), plus the repo-tree diagram and the design-principles
+  Slang bullet; `docs/validation-matrix.md` (new §6 row for `validation/SlangFullCorpus` + new
+  §8.0a subsection, same "distinct-evidence, never a §1 cell" framing §8.0 already uses, plus
+  an "Last updated" line and an Update-history entry with the real measured numbers);
+  `docs/pipeline-overview.puml` — a new `.slang` (full) input box, a new bundled-native `slangc`
+  box, a new `SlangCompiler` managed-frontend box feeding the same `FxPreParser` join point the
+  subset frontend already feeds, and the "Two additive, distinct axes" note extended to the
+  two-tier story — **regenerated to `docfx/images/pipeline-overview.svg`** via
+  `tools/render-diagrams.ps1` (needed a fresh JRE install on this box — see the tool's own
+  prerequisite); `docfx/` — `index.md` and `getting-started/overview.md`'s headline tables split
+  into two rows (subset vs. full), `glossary.md`'s Slang/slangc entries extended to the two-tier
+  story, `contributing/validation.md`'s "Two additive, distinct axes" section gained a full
+  paragraph + driver-list line for `validation/SlangFullCorpus`, and
+  `getting-started/installation.md` gained a new "Slang input" section (there was no Slang
+  section there at all before — a real gap, not just staleness) mirroring the existing
+  ShaderToy one; `project_facts.md` (the pins-and-natives paragraph already covered
+  `ShadowDusk.Slang` from A2-A6 — appended the A7 gate's measured numbers to it, and the
+  package-count line + `CLAUDE.md`'s own package-count line were both still saying "nine",
+  a real pre-existing drift from before this package existed — fixed to "ten" in both places,
+  plus `CLAUDE.md`'s render-gate command list gained the new gate's name);
+  `CHANGELOG.md` (the A3-A6 `[Unreleased]` entries already read as one coherent story when
+  read together — no reflow needed — a new entry added for A7's render gate). No `backends/*.md`
+  page exists for Slang (it is an input frontend, not a backend, matching the ShaderToy
+  precedent of having no such page either) and `guides/choosing-a-target.md` /
+  `guides/parameters-and-caveats.md` never mentioned Slang before this change either, so neither
+  needed the two-tier story — genuinely out of scope, not skipped staleness.
 
 **Folded in alongside, cheaply, per the owner's "(a)+(b) too, not instead" framing (§1):**
 

@@ -338,7 +338,15 @@ public sealed class SlangCompiler
     /// declarations (slangc's mangling is deterministic per source identifier, not per
     /// process), which is exactly what makes <see cref="SlangHlslMerger"/>'s dedup valid.
     /// </summary>
-    private static (int ExitCode, string Stdout, string Stderr) RunSlangc(
+    /// <remarks>
+    /// <c>internal</c> (not <c>private</c>) so <c>validation/SlangFullCorpus</c> (Phase 66 A7)
+    /// can invoke the SAME slangc flags this class uses internally to build its pixel-equivalence
+    /// route B (slangc's raw HLSL emission, fed directly to DXC) — duplicating the flag list in
+    /// the validation driver would silently drift from whatever this method actually passes and
+    /// invalidate the comparison; internal + <c>InternalsVisibleTo</c> (see the .csproj) keeps
+    /// them provably identical instead.
+    /// </remarks>
+    internal static (int ExitCode, string Stdout, string Stderr) RunSlangc(
         string slangcPath,
         string workingDirectory,
         string slangSource,

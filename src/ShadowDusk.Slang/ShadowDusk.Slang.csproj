@@ -33,6 +33,12 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="ShadowDusk.Slang.Tests" />
+    <!-- Phase 66 A7: validation/SlangFullCorpus's pixel-equivalence gate needs the EXACT
+         slangc invocation (SlangCompiler.RunSlangc) this class uses internally to build its
+         "route B" (slangc's raw HLSL emission fed straight to DXC) — a hand-duplicated flag
+         list in the driver would silently drift from whatever flags this class actually
+         passes and invalidate the comparison it exists to make. -->
+    <InternalsVisibleTo Include="ShadowDusk.Validation.SlangFullCorpus" />
   </ItemGroup>
 
   <ItemGroup>
