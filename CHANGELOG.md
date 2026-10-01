@@ -12,6 +12,10 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ## [Unreleased]
 
+### Fixed
+
+- **Host-independent generated text.** The Slang frontend `.fx`, the SkSL uniform rewrite, the ShaderToy `.fx` and harness, and the multipass manifest/WIRING.md used `AppendLine` (CRLF on Windows, LF elsewhere); they now emit `\n` everywhere. `HostNewlineBanTests` fails if `AppendLine`/`Environment.NewLine`/`WriteLine` reappears in a generator project. Compiled output bytes are unchanged.
+
 ### Added
 
 - **Doc-consistency test (issue #218).** `DocConsistencyTests` checks that `plan/plan.md`'s phase index
