@@ -14,6 +14,13 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **Doc-consistency test (issue #218).** `DocConsistencyTests` checks that `plan/plan.md`'s phase index
+  agrees with each phase doc's `**Status:**` glyph, that nothing in `plan/DONE/` claims to be open,
+  that every linked doc exists, and that `docfx/images/pipeline-overview.svg` carries every note
+  from `docs/pipeline-overview.puml`. Unrecognized status glyphs fail, and every `validation/*` driver
+  must appear in `docs/validation-matrix.md` section 6 (added the missing `CandidateDx12` and
+  `CandidateVkd3d` paths). Also corrects Phase 50's status glyph to match its index row.
+
 - **New package: `ShadowDusk.Slang`, a real-slangc compile route for genuine Slang (Phase 66,
   opt-in; win-x64, linux-x64, osx-x64, osx-arm64).** A consumer who needs real Slang — `import`, generics, `interface`
   conformances, everything real slangc accepts, none of which `ShadowDusk.Compiler`'s built-in

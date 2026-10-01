@@ -116,7 +116,7 @@
 > runtime helper and end-user docs are still not started (NuGet intentionally deferred). The
 > matrix/`mod`/Y-flip traps are render-confirmed for the cases tested.
 
-**Status:** Experiment IN PROGRESS (started + compile-proven 2026-06-19). A **standalone, separate tool** that converts a
+**Status:** ✅ Experiment succeeded and was promoted to [Phase 47](PHASE-47-shadertoy-frontend-promotion.md); archived. (Started + compile-proven 2026-06-19.) A **standalone, separate tool** that converts a
 **ShaderToy GLSL** shader into an **HLSL `.fx`** source file. It is **deliberately NOT part of the
 compiler pipeline**: its only output is `.fx` *text*. Once that `.fx` exists, the **existing,
 already-proven ShadowDusk pipeline** compiles it to whatever the consumer's game targets
