@@ -33,7 +33,12 @@
 //   Identical slangc invocation AND identical downstream DXC/SPIRV-Cross on both sides means
 //   any divergence is attributable to the one thing that differs: the wrapping pipeline itself.
 //
-//   GATE 3 - real engine load (DirectX_11 only). Loads every corpus shader's SlangCompiler
+//   Gates 1 and 2 run on every host with a bundled slangc (win-x64, linux-x64, osx-x64,
+//   osx-arm64; issue #227). The ubuntu GL lane of validation-render.yml runs them under
+//   xvfb/llvmpipe; on macOS gate 2 uses a forward-compatible GL 3.3 Core context.
+//
+//   GATE 3 - real engine load (DirectX_11 only, Windows only: reported as NOT RUN
+//   elsewhere, never as a pass). Loads every corpus shader's SlangCompiler
 //   DirectX_11 output into a REAL MonoGame.Framework.WindowsDX Effect (validation/SharedDx's
 //   DxEffectImageRenderer, the same renderer validation/CandidateDx uses) and draws one frame.
 //   This is the "compile-and-load" half of Phase 66 A7's own stated fallback: a full 4-target
@@ -56,7 +61,9 @@ using ShadowDusk.HLSL.Dxc;
 using ShadowDusk.ImageTests.GlContext;
 using ShadowDusk.Integration.Tests;
 using ShadowDusk.Slang;
+#if WINDOWS
 using ShadowDusk.Validation.Dx;
+#endif
 using Silk.NET.Maths;
 using Silk.NET.OpenGL;
 using Silk.NET.Windowing;
@@ -106,22 +113,33 @@ internal static class Program
         if (!SlangToolPath.IsSupportedOnThisPlatform || SlangToolPath.Resolve() is null)
         {
             Console.Error.WriteLine(
-                "FAIL: the restored slangc.exe (tools/slang/win-x64/) was not found. " +
-                "Run tools/restore.ps1 first - this gate exercises the REAL product route " +
+                $"FAIL: no runnable restored slangc for this host ({SlangToolPath.CurrentRid ?? "unsupported RID"}" +
+                (SlangToolPath.GetUnsupportedReason() is { } why ? $": {why}" : "") + "). " +
+                "Run tools/restore.sh / restore.ps1 first - this gate exercises the REAL product route " +
                 "(ShadowDusk.Slang.SlangCompiler), not a separately downloaded test-time oracle.");
             return 1;
         }
+
+        Console.WriteLine($"[slang-full-corpus] slangc : {SlangToolPath.Resolve()} ({SlangToolPath.CurrentRid})\n");
 
         int failures = 0;
 
         failures += RunCompileSweep(corpus);
         failures += RunPixelEquivalenceGate(corpus);
+#if WINDOWS
         failures += RunDirectX11LoadGate(corpus);
+        const string gate3 = "gate 3 ran";
+#else
+        // Gate 3 loads a real MonoGame.Framework.WindowsDX Effect, which exists only on
+        // Windows. Said loudly so a non-Windows PASS is never read as covering it.
+        Console.WriteLine("=== GATE 3: NOT RUN on this host (real MonoGame.Framework.WindowsDX Effect load is Windows-only) ===\n");
+        const string gate3 = "gate 3 NOT RUN: Windows-only";
+#endif
 
         Console.WriteLine();
         Console.WriteLine(failures == 0
-            ? $"Slang full-corpus gate: PASSED ({corpus.Length} shaders across {CompileSweepTargets.Length} targets)"
-            : $"Slang full-corpus gate: {failures} failure(s)");
+            ? $"Slang full-corpus gate: PASSED ({corpus.Length} shaders across {CompileSweepTargets.Length} targets; {gate3})"
+            : $"Slang full-corpus gate: {failures} failure(s) ({gate3})");
         return failures == 0 ? 0 : 1;
     }
 
@@ -201,8 +219,8 @@ internal static class Program
         }
 
         string slangcPath = SlangToolPath.ResolveOrThrow();
-        string toolDirectory = SlangNativeCache.EnsureWritableToolDirectory(slangcPath);
-        string runnableSlangc = Path.Combine(toolDirectory, "slangc.exe");
+        string runnableSlangc = SlangNativeCache.EnsureRunnableSlangc(slangcPath);
+        string toolDirectory = Path.GetDirectoryName(runnableSlangc)!;
         var platformMacros = PlatformMacros.For(PlatformTarget.OpenGL).Macros;
 
         using var gl = new GlHost();
@@ -342,6 +360,7 @@ internal static class Program
     }
 
     // ------------------------------------------------------------------------------- gate 3
+#if WINDOWS
     private static int RunDirectX11LoadGate(string[] corpus)
     {
         Console.WriteLine("=== GATE 3: every corpus shader loads into a REAL MonoGame.Framework.WindowsDX Effect (DirectX_11) ===");
@@ -388,6 +407,7 @@ internal static class Program
         Console.WriteLine();
         return failures;
     }
+#endif
 
     // ------------------------------------------------------------------------------- shared
     private static string[] Corpus(string repoRoot)
@@ -455,6 +475,21 @@ internal sealed class GlHost : IDisposable
 
     public GlHost()
     {
+        // Linux: preload GLFW by ABSOLUTE path first. On ubuntu-latest CI, Silk.NET's
+        // name-based load does not search the RID asset directory and reports the GLFW
+        // platform "not applicable" (measured on this driver's first CI run); the same
+        // preload ImageTests' GlContextFixture.PreloadGlfwNative uses makes glibc hand the
+        // already-loaded SONAME to Silk's later dlopen-by-name.
+        if (OperatingSystem.IsLinux())
+        {
+            string glfw = Path.Combine(AppContext.BaseDirectory, "runtimes",
+                System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture
+                    == System.Runtime.InteropServices.Architecture.Arm64 ? "linux-arm64" : "linux-x64",
+                "native", "libglfw.so.3");
+            if (File.Exists(glfw))
+                System.Runtime.InteropServices.NativeLibrary.TryLoad(glfw, out _);
+        }
+
         Window.PrioritizeGlfw();
         _window = Window.Create(WindowOptions.Default with
         {
@@ -463,8 +498,12 @@ internal sealed class GlHost : IDisposable
             IsVisible               = false,
             ShouldSwapAutomatically = false,
             IsEventDriven           = true,
-            API                     = new GraphicsAPI(
-                ContextAPI.OpenGL, ContextProfile.Compatability, ContextFlags.Default, new APIVersion(3, 3)),
+            // macOS caps a Compatibility context at GL 2.1; it offers 3.3 only as a
+            // forward-compatible Core profile (this host's quad already uses a VAO + VBO,
+            // which Core requires).
+            API                     = OperatingSystem.IsMacOS()
+                ? new GraphicsAPI(ContextAPI.OpenGL, ContextProfile.Core, ContextFlags.ForwardCompatible, new APIVersion(3, 3))
+                : new GraphicsAPI(ContextAPI.OpenGL, ContextProfile.Compatability, ContextFlags.Default, new APIVersion(3, 3)),
             VSync                   = false,
         });
         _window.Initialize();

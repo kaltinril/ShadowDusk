@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    A brand-new consumer of ShadowDusk.Slang (issue #225): `dotnet new console` plus
+    `dotnet add package ShadowDusk.Slang`, nothing else. COPIED to a scratch directory OUTSIDE
+    the repo by pack-consume.yml / tools/verify-slang-packaging.sh - never built in place (in-tree
+    it has no feed to resolve the package from, and a repo walk-up could find tools/slang/ and
+    hide a packaging bug). The workflow rewrites SMOKE_VERSION and the TargetFramework.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RootNamespace>ScratchSlangConsumer</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="ShadowDusk.Slang" Version="SMOKE_VERSION" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="*.slang" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
