@@ -111,7 +111,9 @@ ShadowDusk/
 │                                  #   DX12 (BaselineDx12, CandidateDx12, VsDrivenDx12
 │                                  #     + compare_dx12.py), FNA (FnaValidation), KNI (KniDesktopGL, KniWinFormsDX, KniVsDriven),
 │                                  #   Vulkan (BaselineVulkan, CandidateVulkan, VsDrivenVulkan
-│                                  #     + compare_vulkan.py/decode_mgfx_vulkan.py),
+│                                  #     + compare_vulkan.py/decode_mgfx_vulkan.py; CI wraps each run in
+│                                  #     run-with-vk-validation.sh, which forces the Khronos validation layer on
+│                                  #     and fails on any layer error),
 │                                  #   Android (AndroidGl), v11 (MonoGameV11), browser-ANGLE (AngleDerivativeProbe),
 │                                  #   direct .xnb (XnbContentLoad: builds each fixture through BOTH stock
 │                                  #     dotnet-mgcb and ShadowDusk's XnbWriter, loads both with a real

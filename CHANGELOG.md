@@ -18,6 +18,14 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **The Vulkan render gates run in CI.** `validation-render.yml` gains a `vulkan-render-gates` job
+  (ubuntu, label-gated like the GL and DX jobs) that renders `VsDrivenVulkan` (VS-driven fixture vs the
+  `mgfxc` golden, then the Apos.Shapes gallery) and the `CandidateVulkan` corpus on real MonoGame
+  DesktopVK through Mesa lavapipe. `validation/run-with-vk-validation.sh` forces the Khronos validation
+  layer on and fails the gate on any layer error. Two positive controls in the same job (a wrong shader;
+  SPIR-V stamped 1.3 on MonoGame's Vulkan 1.0 instance) must turn it red, and do. The Vulkan validation
+  drivers now also reference `MonoGame.Runtime.Linux.Vulkan`.
+
 - **Doc-consistency test (issue #218).** `DocConsistencyTests` checks that `plan/plan.md`'s phase index
   agrees with each phase doc's `**Status:**` glyph, that nothing in `plan/DONE/` claims to be open,
   that every linked doc exists, and that `docfx/images/pipeline-overview.svg` carries every note
