@@ -18,9 +18,11 @@ namespace ShadowDusk.Core.Tests;
 /// </summary>
 public sealed class DiagnosticCodeRegistryTests
 {
-    // Codes emitted as a literal `Code: "SD0123"` argument anywhere in src/.
+    // Codes emitted as a literal argument anywhere in src/: named (`Code: "SD0123"`) or passed
+    // positionally to a converter's Fail(...) helper (`Fail(file, "SD0123", ...)`), which the
+    // named-only form could not see.
     private static readonly Regex EmittedCode =
-        new(@"Code:\s*""(?<code>(?:SD|FX|X)\d{4})""", RegexOptions.Compiled);
+        new(@"(?:Code:\s*|[(,]\s*)""(?<code>(?:SD|FX|X)\d{4})""", RegexOptions.Compiled);
 
     // Codes the FX9 pre-parser builds from its enum (`FX` + the enum's numeric value).
     private static readonly Regex FxEnumMember =

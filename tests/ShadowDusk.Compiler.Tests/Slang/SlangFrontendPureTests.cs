@@ -86,6 +86,107 @@ public sealed class SlangEntryScannerTests
         result.Error.Single().Message.ShouldContain("'A'", Case.Sensitive);
         result.Error.Single().Message.ShouldContain("'B'", Case.Sensitive);
     }
+
+    private const string RealPixelEntry =
+        "[shader(\"fragment\")]\nfloat4 MainPS() : SV_Target { return 1; }\n";
+
+    private static void ShouldFindOnlyMainPS(string source)
+    {
+        var result = SlangEntryScanner.Scan(source, "c.slang");
+
+        result.IsSuccess.ShouldBeTrue(
+            result.IsFailure ? string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "");
+        result.Value.Count.ShouldBe(1);
+        result.Value[0].Name.ShouldBe("MainPS");
+    }
+
+    [Fact]
+    public void IssueRepro_LineCommentQuotingTheAttribute_IsNotASecondEntry()
+    {
+        ShouldFindOnlyMainPS("""
+            // Authored in Slang's own idiom: a
+            // [shader("fragment")] attribute marks the entry point, and there's no technique
+            // block to synthesize one from (issue #4677). Compare against Grayscale.fx.
+            Texture2D SpriteTexture;
+
+            [shader("fragment")]
+            float4 MainPS() : SV_Target { return 1; }
+            """);
+    }
+
+    [Fact]
+    public void LineCommentQuotingTheAttribute_IsIgnored()
+    {
+        ShouldFindOnlyMainPS("// [shader(\"vertex\")] float4 Fake() {}\n" + RealPixelEntry);
+    }
+
+    [Fact]
+    public void BlockCommentQuotingTheAttribute_IsIgnored()
+    {
+        ShouldFindOnlyMainPS("/* [shader(\"fragment\")]\n   float4 Fake() { } */\n" + RealPixelEntry);
+    }
+
+    [Fact]
+    public void NestedLookingBlockComment_ClosesAtTheFirstCloser_AndTheRealEntryAfterItIsFound()
+    {
+        ShouldFindOnlyMainPS("/* outer /* [shader(\"fragment\")] Fake() */ float4 x;\n" + RealPixelEntry);
+    }
+
+    [Fact]
+    public void AttributeAfterABlockCommentCloser_IsStillFound()
+    {
+        ShouldFindOnlyMainPS("/* note */ " + RealPixelEntry);
+    }
+
+    [Fact]
+    public void StringLiteralContainingTheAttribute_IsIgnored()
+    {
+        ShouldFindOnlyMainPS(
+            "static const string Doc = \"[shader(\\\"fragment\\\")] float4 Fake() {}\";\n" + RealPixelEntry);
+    }
+
+    [Fact]
+    public void StringLiteralWithEscapedQuote_DoesNotLeakIntoCode()
+    {
+        ShouldFindOnlyMainPS("static const string S = \"a\\\" // not a comment\";\n" + RealPixelEntry);
+    }
+
+    [Fact]
+    public void CommentMarkersInsideAString_DoNotHideTheRealEntry()
+    {
+        ShouldFindOnlyMainPS("static const string Url = \"http://x /* \";\n" + RealPixelEntry);
+    }
+
+    [Fact]
+    public void AttributeOnlyInAComment_IsSD0603_NotAPhantomEntry()
+    {
+        var result = SlangEntryScanner.Scan(
+            "// [shader(\"fragment\")] float4 A() {}\nfloat4 helper() { return 0; }", "n.slang");
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Single().Code.ShouldBe("SD0603");
+    }
+
+    [Fact]
+    public void ComputeAttributeInAComment_DoesNotRaiseSD0602()
+    {
+        ShouldFindOnlyMainPS("// [shader(\"compute\")] void Sim() {}\n" + RealPixelEntry);
+    }
+
+    [Fact]
+    public void EntryLineNumber_IsTrueAfterCommentsAndStrings()
+    {
+        var result = SlangEntryScanner.Scan(
+            "/* a\nb */\nstatic const string S = \"x\";\n" + RealPixelEntry, "l.slang");
+
+        result.Value.Single().Line.ShouldBe(4);
+    }
+
+    [Fact]
+    public void RealEntryWithACommentBetweenAttributeAndFunction_IsFound()
+    {
+        ShouldFindOnlyMainPS("[shader(\"fragment\")] // the pixel stage\nfloat4 MainPS() : SV_Target { return 1; }");
+    }
 }
 
 public sealed class SlangFrontendConvertTests
@@ -177,6 +278,32 @@ public sealed class SlangFrontendConvertTests
     }
 
     [Fact]
+    public void IssueRepro_CommentQuotingTheAttribute_ConvertsWithOneEntry()
+    {
+        var result = SlangFrontend.ConvertToFx("""
+            // a [shader("fragment")] attribute marks the entry point (issue #4677) from here
+            [shader("fragment")]
+            float4 MainPS() : SV_Target { return 1; }
+            """, new SlangConvertOptions { SourceName = "r.slang" });
+
+        result.IsSuccess.ShouldBeTrue(
+            result.IsFailure ? string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "");
+        result.Value.FxText.ShouldContain("PixelShader = compile PS_SHADERMODEL MainPS();", Case.Sensitive);
+    }
+
+    [Fact]
+    public void CommentedAttributeText_SurvivesInTheBody_WhileTheRealAttributeIsStripped()
+    {
+        var result = SlangFrontend.ConvertToFx(
+            "// see [shader(\"fragment\")] docs\n[shader(\"fragment\")] float4 P() : SV_Target { return 1; }",
+            new SlangConvertOptions { SourceName = "k.slang" });
+
+        result.IsSuccess.ShouldBeTrue();
+        result.Value.FxText.ShouldContain("// see [shader(\"fragment\")] docs", Case.Sensitive);
+        result.Value.FxText.ShouldContain("float4 P() : SV_Target", Case.Sensitive);
+    }
+
+    [Fact]
     public void AnIdentifierContainingAKeyword_DoesNotReject()
     {
         // A variable named 'extension'-ish or a field access must not false-positive: the
@@ -239,5 +366,38 @@ public sealed class SlangFrontendConvertTests
         error.Message.ShouldContain("'interface'", Case.Sensitive);
         error.Message.ShouldNotContain("X0000", Case.Sensitive);
         error.Message.ShouldNotContain("__interface", Case.Sensitive);
+    }
+}
+
+public sealed class SlangSourceMaskTests
+{
+    [Theory]
+    [InlineData("a // b\nc")]
+    [InlineData("a /* b\nc */ d")]
+    [InlineData("x = \"str // not\";\r\ny")]
+    [InlineData("/* unterminated\nblock")]
+    [InlineData("\"unterminated\nnext")]
+    [InlineData("\"esc \\\" q\" tail")]
+    public void Mask_PreservesLengthAndLineBreaks(string text)
+    {
+        string masked = SlangSourceMask.Mask(text);
+
+        masked.Length.ShouldBe(text.Length);
+        for (int i = 0; i < text.Length; i++)
+            if (text[i] is '\n' or '\r')
+                masked[i].ShouldBe(text[i]);
+    }
+
+    [Fact]
+    public void Mask_BlanksCommentsAndStringContents_KeepsCode()
+    {
+        SlangSourceMask.Mask("a /*x*/ b // y\nc \"zz\" d")
+            .ShouldBe("a       b     \nc \"  \" d");
+    }
+
+    [Fact]
+    public void Mask_UnterminatedString_EndsAtTheLineBreak()
+    {
+        SlangSourceMask.Mask("\"abc\nimport x;").ShouldBe("\"   \nimport x;");
     }
 }

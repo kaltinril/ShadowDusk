@@ -561,6 +561,16 @@ bumped-and-re-proven or explicitly deferred with a reason.
 
 ### A9 — Stop the `Integration Tests` test-host crash costing reruns (filed 2026-07-29)
 
+**Status: root-caused and fixed 2026-10-01 (macOS measured; Linux inferred).** The crash was
+DXC's Unix support code, not resource pressure: LLVM's signal handlers installed over the .NET
+runtime's on every DXIL compile/preprocess, a racy overflow of LLVM's signal table into
+`TargetRegistry`, and `setlocale` deadlocking against `fork()`. Fixed by
+`DxcSignalIsolation` + `DxcForkGate` in `ShadowDusk.HLSL`, guarded by
+`DxcConcurrencyStressTests`. Mitigation 1 below had been applied to the macOS lane only
+(`xUnit.MaxParallelThreads=1`); it only hid the crash and is removed. Full record in
+[`project_facts.md`](../project_facts.md). The evidence notes are kept as the record of how the
+earlier signatures were misread.
+
 *Not a phase tail — filed here for the same reason A8 was: this is the de-facto backlog and the
 item otherwise has no home.*
 

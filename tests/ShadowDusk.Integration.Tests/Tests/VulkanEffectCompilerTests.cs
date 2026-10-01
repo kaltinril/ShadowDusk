@@ -84,6 +84,115 @@ public sealed class VulkanEffectCompilerTests
         pixelShader.ConstantBufferIndices.ShouldNotBeEmpty("the pixel shader stage must bind its constant buffer");
     }
 
+    // Issue #229: a hand-written .fx calling a wave/quad intrinsic is rejected on Vulkan with
+    // SD0218 at the call's own .fx location (MonoGame's DesktopVK creates a Vulkan 1.0 instance
+    // with no subgroup support, so the SPIR-V 1.3 module these need is out of spec there); a
+    // shader without wave ops keeps SPIR-V 1.0.
+    private const string WaveShader = """
+        float4 Tint;
+
+        struct VOut { float4 Pos : SV_POSITION; float2 UV : TEXCOORD0; };
+
+        VOut VS(float4 pos : POSITION0, float2 uv : TEXCOORD0)
+        {
+            VOut o;
+            o.Pos = pos;
+            o.UV = uv;
+            return o;
+        }
+
+        float4 PS(VOut i) : SV_Target0
+        {
+            float v = WaveActiveSum(i.UV.x) + QuadReadAcrossX(i.UV.y);
+            return float4(v, v, v, 1) * Tint;
+        }
+
+        technique T
+        {
+            pass P { VertexShader = compile vs_6_0 VS(); PixelShader = compile ps_6_0 PS(); }
+        }
+        """;
+
+    [Fact]
+    public async Task Compile_WaveIntrinsicShader_Vulkan_RejectedWithSD0218_AtTheCall()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+        var result = await new EffectCompiler().CompileAsync(WaveShader, new CompilerOptions
+        {
+            Target = PlatformTarget.Vulkan,
+            SourceFileName = "VulkanWave.fx",
+        }, cts.Token);
+
+        result.IsFailure.ShouldBeTrue("a wave/quad intrinsic must never produce a Vulkan .mgfx");
+        var error = result.Error.ShouldHaveSingleItem();
+        error.Code.ShouldBe("SD0218");
+        error.Message.ShouldContain("'WaveActiveSum'", Case.Sensitive);
+        error.Message.ShouldContain("Vulkan 1.0", Case.Sensitive);
+        error.File.ShouldEndWith("VulkanWave.fx", caseSensitivity: Case.Sensitive);
+        error.Line.ShouldBe(15);
+        error.Column.ShouldBe(15);
+    }
+
+    // The CI Vulkan gate's wave fixture (validation/VsDrivenVulkan -- wave): the same verdict
+    // through the real file, so the fixture cannot drift into compiling again unnoticed.
+    [Fact]
+    public async Task Compile_VsWaveQuadIntrinsicsFixture_Vulkan_RejectedWithSD0218()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        string path = Path.Combine(AppContext.BaseDirectory, "fixtures", "shaders", "VsWaveQuadIntrinsics.fx");
+
+        var result = await new EffectCompiler().CompileAsync(await File.ReadAllTextAsync(path, cts.Token), new CompilerOptions
+        {
+            Target = PlatformTarget.Vulkan,
+            SourceFileName = "VsWaveQuadIntrinsics.fx",
+        }, cts.Token);
+
+        result.IsFailure.ShouldBeTrue();
+        var error = result.Error.ShouldHaveSingleItem();
+        error.Code.ShouldBe("SD0218");
+        error.Line.ShouldBe(76); // QuadReadAcrossX(input.Position.x), the first wave/quad call
+        error.Column.ShouldBe(29);
+    }
+
+    // DirectX12 supports wave/quad ops, so the same fixture still compiles there.
+    [Fact]
+    public async Task Compile_VsWaveQuadIntrinsicsFixture_DirectX12_StillCompiles()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        string path = Path.Combine(AppContext.BaseDirectory, "fixtures", "shaders", "VsWaveQuadIntrinsics.fx");
+
+        var result = await new EffectCompiler().CompileAsync(await File.ReadAllTextAsync(path, cts.Token), new CompilerOptions
+        {
+            Target = PlatformTarget.DirectX12,
+            SourceFileName = "VsWaveQuadIntrinsics.fx",
+        }, cts.Token);
+
+        result.IsSuccess.ShouldBeTrue(
+            result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+    }
+
+    [Fact]
+    public async Task Compile_NonWaveShader_Vulkan_BothStagesStaySpirv10()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+        var result = await new EffectCompiler().CompileAsync(ParameterizedShader, new CompilerOptions
+        {
+            Target = PlatformTarget.Vulkan,
+            SourceFileName = "VulkanParameterized.fx",
+        }, cts.Token);
+
+        result.IsSuccess.ShouldBeTrue(
+            result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+
+        foreach (var shader in MgfxBlobReader.Parse(result.Value.Data).Shaders)
+        {
+            var spirv = VulkanShaderCodeReader.Parse(shader.Bytecode).Spirv;
+            BitConverter.ToUInt32(spirv, 4).ShouldBe(0x00010000u);
+        }
+    }
+
     [Fact]
     public async Task Compile_Sepia_ImplicitGlobalsCbufferBindsToZero()
     {

@@ -37,7 +37,7 @@ internal static class SlangEntryScanner
     // [shader("stage")] optionally spread over whitespace, then (skipping any further
     // attributes) the function header: its return type tokens and the name before '('.
     private static readonly Regex ShaderAttribute = new(
-        """\[\s*shader\s*\(\s*"(?<stage>[a-z]+)"\s*\)\s*\]\s*(?:\[[^\]]*\]\s*)*(?<header>[^;{(]*?)(?<name>[A-Za-z_]\w*)\s*\(""",
+        """\[\s*shader\s*\(\s*"(?<stage>[^"]*)"\s*\)\s*\]\s*(?:\[[^\]]*\]\s*)*(?<header>[^;{(]*?)(?<name>[A-Za-z_]\w*)\s*\(""",
         RegexOptions.Compiled);
 
     /// <summary>
@@ -50,10 +50,14 @@ internal static class SlangEntryScanner
         var entries = new List<SlangEntryPoint>();
         var errors = new List<ShaderError>();
 
-        foreach (Match m in ShaderAttribute.Matches(slangSource))
+        // Scanned on the masked text so a [shader(...)] quoted in a comment or string is never an
+        // entry; the stage text is blanked there, so it is read back from the original by index.
+        string masked = SlangSourceMask.Mask(slangSource);
+        foreach (Match m in ShaderAttribute.Matches(masked))
         {
             int line = 1 + slangSource.AsSpan(0, m.Index).Count('\n');
-            string stage = m.Groups["stage"].Value;
+            Group stageGroup = m.Groups["stage"];
+            string stage = slangSource.Substring(stageGroup.Index, stageGroup.Length);
             string name = m.Groups["name"].Value;
 
             switch (stage)

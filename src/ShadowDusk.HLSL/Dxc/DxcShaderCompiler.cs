@@ -38,7 +38,7 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.Run(() => CompileCore(request), cancellationToken);
+        return Task.Run(() => CompileRejectingWaveOps(request), cancellationToken);
     }
 
     /// <inheritdoc/>
@@ -47,7 +47,7 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return CompileCore(request);
+        return CompileRejectingWaveOps(request);
     }
 
     /// <inheritdoc/>
@@ -94,6 +94,24 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         {
             result.Dispose();
         }
+    }
+
+    // Issue #229: on the Vulkan target DXC refuses wave/quad intrinsics at its default Vulkan
+    // 1.0 target env. ShadowDusk deliberately does NOT retry with -fspv-target-env=vulkan1.1:
+    // MonoGame's DesktopVK creates a Vulkan 1.0 instance with no subgroup support, and the
+    // SPIR-V 1.3 / GroupNonUniform module that flag produces was measured out of spec there by
+    // the Khronos validation layer. OpenGL's fixed SM5 profile hits the same DXC rejection. Both
+    // are relabelled (SD0218 / SD0624, shared with the real-slangc route, see
+    // WaveQuadIntrinsics), keeping DXC's location, its message verbatim, and its raw text.
+    private Result<PlatformBlob, ShaderError> CompileRejectingWaveOps(DxcCompileRequest request)
+    {
+        Result<PlatformBlob, ShaderError> result = CompileCore(request);
+
+        if (result.IsSuccess)
+            return result;
+
+        ShaderError? relabelled = WaveQuadIntrinsics.Relabel(result.Error, request.Platform, "DXC");
+        return relabelled is null ? result : Result<PlatformBlob, ShaderError>.Fail(relabelled);
     }
 
     private Result<PlatformBlob, ShaderError> CompileCore(DxcCompileRequest request)

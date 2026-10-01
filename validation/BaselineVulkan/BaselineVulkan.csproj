@@ -29,6 +29,8 @@
   <ItemGroup Label="MonoGame 3.8.5 stable DesktopVK">
     <PackageReference Include="MonoGame.Framework.Native" Version="3.8.5" />
     <PackageReference Include="MonoGame.Runtime.Windows.Vulkan" Version="3.8.5" />
+    <!-- Linux natives (libmgruntime.so): the same driver runs in CI on Mesa lavapipe. -->
+    <PackageReference Include="MonoGame.Runtime.Linux.Vulkan" Version="3.8.5" />
   </ItemGroup>
 
   <ItemGroup>
