@@ -43,7 +43,8 @@ namespace ShadowDusk.HLSL.Dxc;
 /// Active on macOS and, since Phase 50, Android (Vortice ships no android RID either, so
 /// we load our own <c>libdxcompiler.so</c> by bare SONAME from the APK's per-ABI
 /// <c>lib/&lt;abi&gt;/</c> dir — never the desktop path-probing, which would violate
-/// Android W^X). <see cref="Register"/> is a no-op on Windows/Linux, where the
+/// Android W^X). On Windows <see cref="Register"/> only preloads the pinned <c>dxil.dll</c>
+/// (see <see cref="PreloadPinnedDxil"/>); it is a no-op on Linux, where the
 /// Vortice-shipped natives already resolve; zero behavior change there.
 /// </summary>
 internal static class DxcLoader
@@ -76,6 +77,14 @@ internal static class DxcLoader
     /// </summary>
     public static void Register()
     {
+        // Windows: Vortice's own resolver already finds the pinned dxcompiler.dll, but the
+        // DXIL validator/signer must be pinned too, and before anything asks for it by name.
+        if (OperatingSystem.IsWindows())
+        {
+            PreloadPinnedDxil();
+            return;
+        }
+
         // Active on macOS (Vortice ships no Mac native) and Android (Phase 50: Vortice has
         // no android RID, so we ship our own libdxcompiler.so). A no-op on Windows/Linux,
         // where the Vortice-bundled natives already resolve — zero behavior change there.
@@ -91,6 +100,59 @@ internal static class DxcLoader
             Vortice.Dxc.Dxc.ResolveLibrary += Resolve;
             _registered = true;
         }
+    }
+
+    /// <summary>The DXIL validator/signer DXC loads by bare name (Windows only).</summary>
+    internal const string DxilFileName = "dxil.dll";
+
+    private static readonly object DxilGate = new();
+    private static volatile bool _dxilPreloaded;
+
+    /// <summary>
+    /// Windows: loads the pinned <c>dxil.dll</c> (the one shipped beside the pinned
+    /// <c>dxcompiler.dll</c>) by FULL PATH, once, before anything can load it by bare name.
+    /// <para>Why: DXC validates and signs DXIL through whatever module named <c>dxil.dll</c>
+    /// is already in the process, and Vortice's <c>Dxc.LoadDxil()</c> is a bare-name Win32
+    /// <c>LoadLibrary</c> that, for a framework-dependent app, misses <c>runtimes/&lt;rid&gt;/native</c>
+    /// and walks the OS search path. A host with its own <c>dxil.dll</c> in <c>System32</c>
+    /// (mesa-dist-win's system-wide deploy installs 1.9.2602 there, measured on
+    /// <c>windows-latest</c>) then pins a version-skewed validator for the whole process, and
+    /// every DirectX 12 compile fails with "DXIL container mismatch for 'PSVRuntimeInfoSize'"
+    /// (our pinned 1.7.2212 DXC writes the 48-byte PSV0; the 1.9 validator expects 52). Once a
+    /// module named <c>dxil.dll</c> is loaded, every later bare-name load resolves to it, so
+    /// loading ours first makes the pinned pair the only pair. A no-op when no candidate exists.</para>
+    /// </summary>
+    private static void PreloadPinnedDxil()
+    {
+        if (_dxilPreloaded) return;
+        lock (DxilGate)
+        {
+            if (_dxilPreloaded) return;
+            foreach (string candidate in GetDxilProbeCandidates(
+                         AppContext.BaseDirectory, RuntimeInformation.ProcessArchitecture, GetNativeSearchDirectories()))
+            {
+                if (File.Exists(candidate) && NativeLibrary.TryLoad(candidate, out _))
+                    break;
+            }
+            _dxilPreloaded = true;
+        }
+    }
+
+    /// <summary>
+    /// The ordered <c>dxil.dll</c> candidates on Windows, mirroring where Vortice's resolver
+    /// takes <c>dxcompiler.dll</c> from so the pair stays matched: the NuGet
+    /// <c>runtimes/&lt;rid&gt;/native</c> layout under the app base, then flat beside the app
+    /// (a RID-specific build or self-contained publish), then the host's native search
+    /// directories. Pure (no I/O) so the order is unit-testable.
+    /// </summary>
+    internal static IEnumerable<string> GetDxilProbeCandidates(
+        string baseDirectory, Architecture processArchitecture, IReadOnlyList<string> nativeSearchDirectories)
+    {
+        string rid = processArchitecture == Architecture.Arm64 ? "win-arm64" : "win-x64";
+        yield return Path.Combine(baseDirectory, "runtimes", rid, "native", DxilFileName);
+        yield return Path.Combine(baseDirectory, DxilFileName);
+        foreach (string directory in nativeSearchDirectories)
+            yield return Path.Combine(directory, DxilFileName);
     }
 
     private static IntPtr Resolve(

@@ -67,7 +67,7 @@ public sealed class DxilReflectionExtractor
         ct.ThrowIfCancellationRequested();
 
         // macOS: hook Vortice's ResolveLibrary so our pinned libdxcompiler.dylib
-        // resolves (Phase 37 A). Idempotent; no-op on Windows/Linux.
+        // resolves (Phase 37 A); on Windows, preload the pinned dxil.dll. Idempotent; no-op on Linux.
         HLSL.Dxc.DxcLoader.Register();
 
         IDxcUtils utils = CreateDxcUtils();

@@ -124,4 +124,23 @@ public sealed class DxcLoaderTests
         // runtimes/android-arm64/native.
         DxcLoader.AndroidLibFileName.ShouldBe("libdxcompiler.so");
     }
+
+    [Theory]
+    [InlineData(Architecture.X64, "win-x64")]
+    [InlineData(Architecture.Arm64, "win-arm64")]
+    public void DxilCandidates_FollowVorticesDxcompilerLayout_ThenFlat_ThenSearchDirectories(
+        Architecture arch, string expectedRid)
+    {
+        // The pinned dxil.dll must come from where Vortice takes dxcompiler.dll, so the
+        // validator matches the compiler; a System32 copy is never a candidate.
+        string searchDir = Path.Combine(Path.GetTempPath(), "nuget", "vortice.dxc", "native");
+        var candidates = DxcLoader.GetDxilProbeCandidates(Base, arch, [searchDir]).ToList();
+
+        candidates.ShouldBe(
+        [
+            Path.Combine(Base, "runtimes", expectedRid, "native", DxcLoader.DxilFileName),
+            Path.Combine(Base, DxcLoader.DxilFileName),
+            Path.Combine(searchDir, DxcLoader.DxilFileName),
+        ]);
+    }
 }
