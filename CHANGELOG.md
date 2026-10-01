@@ -24,6 +24,25 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   from `docs/pipeline-overview.puml`. Unrecognized status glyphs fail, and every `validation/*` driver
   must appear in `docs/validation-matrix.md` section 6 (added the missing `CandidateDx12` and
   `CandidateVkd3d` paths). Also corrects Phase 50's status glyph to match its index row.
+- **HLSL → raylib fragment shaders for Raylib-cs (Phase 59, the fragment-only slice).**
+  `ShadowDusk.Compiler.Raylib.RaylibConverter.Convert(fx)` turns a single-pass, pixel-only `.fx`
+  into a `#version 330` fragment shader for `Raylib.LoadShaderFromMemory(null, fs)`, so one
+  post-process source runs on MonoGame and on raylib. Same faithful front half as the OpenGL
+  target (DXC, SPIRV-Cross), branching before the MonoGame rewriter; a convention mapper renames
+  the interface to raylib's fixed names (`TEXCOORD0` → `fragTexCoord`, `COLOR0` → `fragColor`,
+  the output → `finalColor`, the unit-0 sampler → `texture0`) and flattens cbuffers to loose
+  uniforms raylib binds by name. The result is a `RaylibShader` with the binding contract
+  (uniform names and types, samplers, baked sampler state), deliberately not a `CompiledShader`.
+  Anything raylib's model cannot hold is refused by name (`SD0630`–`SD0636`): multi-pass,
+  render states, vertex shaders, interpolants other than `TEXCOORD0`/`COLOR0`, Y-orientation
+  dependent builtins (`SV_Position`, `ddy`), MRT, non-2D textures, matrix/struct uniforms, and
+  names that would collide or bind nothing. `.slang` input works through the existing Slang
+  frontend with no raylib-specific code. **Evidence model: rendered-image fidelity, not
+  `mgfxc`-equivalence** (raylib has no reference compiler): the new `validation/RaylibRoute`
+  gate renders each conversion in real Raylib-cs 8.1.0 (raylib 6.0) and pixel-diffs it against
+  the same `.fx` built for OpenGL in real MonoGame DesktopGL; 13/13 shaders (the 10-shader GL
+  corpus, a CRT and a handheld-LCD effect, Gum's Grayscale) at maxd 0, with three positive
+  controls that must diverge. Runs in the Linux GL CI lane. `glsl100` (web) is not emitted yet.
 
 - **New package: `ShadowDusk.Slang`, a real-slangc compile route for genuine Slang (Phase 66,
   opt-in; win-x64, linux-x64, osx-x64, osx-arm64).** A consumer who needs real Slang — `import`, generics, `interface`

@@ -2,7 +2,60 @@
 
 **Track:** Backend breadth (purpose-gated). Additive; no existing output byte changes.
 
-**Status:** 📋 **Planned / not started** (created 2026-07-31).
+**Status:** 🚧 **Area A `glsl330` slice SHIPPED (2026-10-01); B1 probe run.** The §2 gate was
+resolved by owner decision on 2026-10-01 (recorded in `project_decisions.md`): raylib uses the
+SkSL target's rendered-image fidelity model. Open: `glsl100` (A3's second half), the A6 sample,
+and a trial with the requester.
+
+**What shipped (2026-10-01):**
+
+- **`ShadowDusk.Compiler.Raylib.RaylibConverter.Convert(fx)` → `RaylibShader`** (`#version 330`
+  fragment text + binding contract: `Uniforms`, `Samplers` with any baked `sampler_state`,
+  `Warnings`). A4/OQ1 is decided: a **distinct result type**, not a `PlatformTarget` member and
+  not a `CompiledShader`, because every `CompiledShader.Data` consumer hands it to
+  `new Effect(...)` (decision recorded in `project_decisions.md`). A1's "new `PlatformTarget`
+  member" was therefore deliberately not done; additivity holds trivially (new files, no change
+  to `CompilationPipeline` or any writer).
+- **The seam is shared with the SkSL converter** (Phase 62 OQ3): `Internal/ModernGlslSeam` re-runs
+  the OpenGL front half (same macros, DXC request, SPIRV-Cross options) and stops before the
+  rewriter. §3.3's `CompilationPipeline.cs:2035` pointer describes where that GLSL exists inside
+  the pipeline; neither converter actually branches inside `CompilationPipeline`.
+- **Convention mapper (A2):** `TEXCOORD0` (vec2) → `fragTexCoord`, `COLOR0` (vec4) → `fragColor`
+  (SpriteBatch's tint and raylib's draw tint are the same varying), the output → `finalColor`, the
+  sampler the GL allocator puts on unit 0 → `texture0`, other samplers keep their HLSL texture
+  name, cbuffers/`$Globals` flatten to loose uniforms. `colDiffuse` is not declared: the HLSL
+  never multiplies by it, so neither does the emission.
+- **Loud refusals (A5)**, registered as `SD0630`–`SD0636` plus the `SD0637` warning: multi-technique
+  or multi-pass (located at the second), a vertex shader (located at its `compile` profile), pass
+  render states (located at the first), interpolants other than `TEXCOORD0`/`COLOR0` or with the
+  wrong type, Y-orientation-dependent builtins (`SV_Position`/`gl_FragCoord`, `ddy`/`dFdy`: MonoGame
+  and raylib flip render targets in opposite directions), MRT, non-2D textures, an extra texture
+  read through two samplers, raylib-reserved or GLSL-keyword names, uniforms SPIRV-Cross renamed
+  (`input` → `_input`), and matrix/struct uniforms. 24 `RaylibConverterTests`.
+- **Input languages:** the converter takes `.fx` text, so `.slang` already reaches it through
+  `SlangFrontend.ConvertToFx` (or `ShadowDusk.Slang`) with no raylib-specific code (pinned by a test).
+- **Versions (A3):** `glsl330` only. `glsl100` is deferred, not dropped: the ES 1.00 lowerings live
+  inside `MonoGameGlslRewriter`'s 110 dialect rather than at this seam, and no harness here can render
+  `#version 100` in raylib (Raylib-cs 8.1.0's desktop native is GL 3.3 with a `#version 330` built-in
+  vertex shader; macOS GL compiles no GLSL ES). It needs a Raylib-cs `browser-wasm` or GLES harness first.
+- **Evidence (§8):** `validation/RaylibRoute` renders 13 shaders (the 10-shader GL corpus,
+  `raylib/CrtFilter.fx` and `raylib/RetroHandheld.fx` (the two §1 effects), Gum's Grayscale) in
+  **real Raylib-cs 8.1.0 (raylib 6.0)** and pixel-diffs each against the same `.fx` built for OpenGL
+  and rendered in **real MonoGame DesktopGL**: **13/13 maxd 0** on macOS, tolerance ±2/255. Positive
+  controls, all caught: tint dropped (maxd 44, 16073 px over), V flipped (maxd 255), CRT curvature
+  +0.01 (maxd 43, 8349 px). The oracle is the proven OpenGL backend rather than the original-GLSL
+  render §8 sketched: for `.fx` input there is no original GLSL, and the proven backend is the
+  faithful reference. Wired into the Linux GL CI lane (`validation-render.yml`).
+- **B1 probe (measured 2026-10-01 against 12 real raylib `examples/shaders/resources/shaders/glsl330`
+  post-process shaders):** the shipped `ShaderToyConverter` rejects 11 of 12 for one reason, the
+  undeclared `in vec2 fragTexCoord` varying (its `void main()` + `out vec4` "PlainGlsl" mode already
+  parses the rest, including `uniform sampler2D texture0` and `colDiffuse`); the 12th uses a sampler
+  function parameter. With the two raylib varyings aliased, 8 of 12 convert; the remaining failures
+  are a `texture(s, uv, bias)` form, the sampler parameter, and two probe artifacts.
+  **B2 verdict:** a raylib-GLSL frontend is a **small extension of the existing converter** (an
+  interpolant table mapping `fragTexCoord`/`fragColor` to `TEXCOORD0`/`COLOR0` and a pixel-only
+  SpriteBatch-shaped harness instead of the VS-driven ShaderToy one), not a separate frontend.
+  Unbuilt and unrendered; OQ3's naming question stands.
 
 **Depends on:** **the [Phase 57](PHASE-57-universal-compiler-auto-detection.md) §3 DECISION** (not its
 code, see §2), [Phase 46](DONE/PHASE-46-shadertoy-to-fx-conversion-tool.md) (the
@@ -238,20 +291,23 @@ DirectX, DirectX12, Vulkan, and FNA carry.
 
 ## 9. Acceptance
 
-- [ ] Phase 57 §3 decision recorded in `project_decisions.md`. If **no**, this phase is closed with
-      the reason recorded and nothing below applies.
-- [ ] B1 probe run and B2 verdict written, before Area A is considered finished.
-- [ ] Area A: the two shaders from §1 (a CRT effect and a tint/saturation/dot-matrix effect) compile
-      from ONE source and render in real Raylib-cs **and** real MonoGame, with the Raylib arm
-      pixel-diffed under the §8 source-fidelity bar.
-- [ ] `glsl330` and `glsl100` both emitted and both rendering.
-- [ ] Out-of-slice shapes (multi-pass, render states, custom VS) rejected loudly with a registered
-      diagnostic; fixtures pin each rejection.
-- [ ] **Full-corpus byte-identity for every existing target**, proven, not asserted.
-- [ ] `docs/validation-matrix.md` gains Raylib cells that name the **source-fidelity** model
-      explicitly, plus a §6 driver row for the new render gate.
-- [ ] The support-surface list in `CLAUDE.md` updated: pipeline diagram (+ regenerated SVG),
-      `docs/the-purpose.md` backend table, `README.md`, the DocFX pages, `project_facts.md`.
+- [x] Phase 57 §3 decision recorded in `project_decisions.md` (owner, 2026-10-01: yes, image fidelity).
+- [x] B1 probe run and B2 verdict written (see Status).
+- [x] Area A: the two shaders from §1 compile from ONE source and render in real Raylib-cs **and**
+      real MonoGame, pixel-diffed (`validation/RaylibRoute`, maxd 0).
+- [ ] `glsl330` and `glsl100` both emitted and both rendering. **`glsl330` done; `glsl100` deferred**
+      until an ES render harness exists (see Status).
+- [x] Out-of-slice shapes rejected loudly with registered diagnostics (`SD0630`–`SD0636`), each pinned
+      by a `RaylibConverterTests` case, with line and column where the source has one.
+- [x] **Full-corpus byte-identity for every existing target.** Nothing on the `.mgfx`/`.fxb` path
+      changed (no edit to `CompilationPipeline`, the rewriter, or any writer; the SkSL converter's
+      front half moved into `ModernGlslSeam` unchanged), and the full suite's golden/byte-identity
+      tests are green.
+- [x] `docs/validation-matrix.md` §8.0c names the image-fidelity model, plus the §6 driver row.
+- [x] Support surfaces updated (diagram + regenerated SVG, `the-purpose.md`, `README.md`, DocFX,
+      `project_facts.md`, `project_decisions.md`).
+- [ ] A6 sample (one CRT source on both Raylib-cs and MonoGame in `samples/`), and a trial with the
+      §1 requester.
 
 ## 10. Non-goals
 
@@ -265,10 +321,10 @@ DirectX, DirectX12, Vulkan, and FNA carry.
 
 ## 11. Open questions
 
-- **OQ1.** A4's output shape is the one genuine design decision. `LoadShaderFromMemory` takes two
+- **OQ1 (ANSWERED 2026-10-01: a distinct `RaylibShader` result type; see Status).** A4's output shape is the one genuine design decision. `LoadShaderFromMemory` takes two
   strings; our result type carries one `byte[]`. Whatever is chosen must not make a Raylib result
   look like an MGFX container to an existing consumer.
-- **OQ2.** Does raylib 6.0 differ from earlier raylib in shader conventions in any way that would
+- **OQ2 (pinned 2026-10-01: Raylib-cs 8.1.0 / raylib 6.0; its native's built-in `glsl330` shaders use exactly the §3.2 names).** Does raylib 6.0 differ from earlier raylib in shader conventions in any way that would
   date the mapping? Pin the raylib-cs version this is proven against, per house pin discipline.
 - **OQ3.** If Area B succeeds, does the raylib-GLSL frontend belong in `ShadowDusk.ShaderToy` (whose
   name would then be wrong) or in a new package? Naming decision, not just packaging.
