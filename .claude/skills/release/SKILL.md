@@ -66,6 +66,10 @@ history, not just SemVer's letter):
    version (the `<Version>` flows to all of them). Do **NOT** touch the
    `<PackageVersion Include=… />` items in `Directory.Packages.props` — those are unrelated
    Central Package Management dependency pins.
+   **Then rewrite the `ShadowDusk.*` ranges in every `packages.lock.json`** to the new
+   version in the same commit (the exact `sed` and check commands are in `RELEASING.md`,
+   "Artifacts that must be refreshed before you cut"). No restore, local or CI
+   `--locked-mode`, catches a stale one (issue #258).
 5. **Update CHANGELOG.md.** Move `[Unreleased]` → `## [<version>] - <today YYYY-MM-DD>`;
    leave a fresh empty `[Unreleased]` (with empty `### Added` / `### Changed` / `### Fixed`).
    If Unreleased is empty, add "- Version bump and documentation updates". Update the
