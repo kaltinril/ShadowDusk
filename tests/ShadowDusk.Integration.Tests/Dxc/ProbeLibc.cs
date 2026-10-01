@@ -49,9 +49,21 @@ internal static unsafe class ProbeLibc
     /// </summary>
     public static void RegisterAtforkCounter()
     {
-        var pthreadAtfork = (delegate* unmanaged<delegate* unmanaged<void>, delegate* unmanaged<void>, delegate* unmanaged<void>, int>)
-            Export("pthread_atfork");
-        int rc = pthreadAtfork(&CountPrepare, null, null);
+        // glibc does not export pthread_atfork from libc.so (since 2.28 it lives in the static
+        // libc_nonshared.a and forwards to __register_atfork with the caller's __dso_handle;
+        // measured on ubuntu CI, issue #256), so a managed caller registers through
+        // __register_atfork directly. A NULL dso handle means "never unregister".
+        int rc;
+        if (NativeLibrary.TryGetExport(NativeLibrary.GetMainProgramHandle(), "pthread_atfork", out nint pthreadAtfork))
+        {
+            rc = ((delegate* unmanaged<delegate* unmanaged<void>, delegate* unmanaged<void>, delegate* unmanaged<void>, int>)pthreadAtfork)(
+                &CountPrepare, null, null);
+        }
+        else
+        {
+            rc = ((delegate* unmanaged<delegate* unmanaged<void>, delegate* unmanaged<void>, delegate* unmanaged<void>, void*, int>)Export("__register_atfork"))(
+                &CountPrepare, null, null, null);
+        }
         if (rc != 0) throw new InvalidOperationException($"pthread_atfork failed: {rc}");
     }
 

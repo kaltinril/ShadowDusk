@@ -33,8 +33,22 @@ namespace ShadowDusk.HLSL.Dxc;
 /// deadlock (observed when the gate briefly wrapped <c>DxcCreateInstance</c>).
 /// </para>
 /// <para>
-/// macOS only: only macOS is measured to deadlock. Linux (glibc) is not measured; whether its
-/// <c>fork()</c> and <c>setlocale</c> can invert the same way is unknown.
+/// Every DXC call ShadowDusk makes that reaches <c>setlocale</c> is inside this gate, and only
+/// those: measured per entry point (create, compile, result accessors, preprocess, the whole
+/// <c>DxilReflectionExtractor</c> path, release) by <c>DxcSetlocaleAudit</c> on macOS and
+/// Linux CI, which fails if an ungated call ever starts calling <c>setlocale</c>.
+/// </para>
+/// <para>
+/// macOS only, deliberately (issue #256). On glibc Linux, measured on ubuntu CI: thousands of
+/// DXC compiles racing both <c>Process.Start</c> and real libc <c>fork()</c> calls never hung.
+/// That matches glibc's design: <c>Process.Start</c> uses <c>vfork()</c> there (measured: it
+/// runs no atfork handler), which takes none of glibc's fork-time locks, and glibc's real
+/// <c>fork()</c> takes the malloc arena and stdio-list locks but never the
+/// <c>setlocale</c> lock, so a thread inside <c>setlocale</c> waits for <c>fork()</c> to
+/// finish rather than the reverse. If it is ever enabled there, note that glibc does not export
+/// <c>pthread_atfork</c> from <c>libc.so</c> (it is in <c>libc_nonshared.a</c>), so
+/// <see cref="Install"/> would silently stay inactive; register through
+/// <c>__register_atfork</c> instead.
 /// </para>
 /// </remarks>
 internal static unsafe class DxcForkGate

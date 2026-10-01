@@ -36,22 +36,26 @@ internal static class DxcSetlocaleAudit
     {
         "signal-isolation-prime",
         "compile-native-call",
+        "failing-compile-native-call",
         "preprocess-native-call",
     };
 
     /// <summary>The step that must flip the locale for the measurement to mean anything.</summary>
     public const string PositiveControl = "compile-native-call";
 
-    // A float4 into a float3 is an implicit-truncation WARNING, so the result carries a
-    // non-empty error/warning blob for the GetErrors step to read.
     private const string Hlsl = """
         cbuffer Params { float4x4 World; float4 Tint; };
         Texture2D Tex; SamplerState Samp;
         float4 PSMain(float4 p : SV_Position, float2 uv : TEXCOORD0) : SV_Target
         {
-            float3 c = Tint;
-            return float4(c, 1) * Tex.Sample(Samp, uv) * mul(p, World).x;
+            return Tint * Tex.Sample(Samp, uv) * mul(p, World).x;
         }
+        """;
+
+    // An undeclared identifier: a failed compile with a non-empty diagnostic blob, so the
+    // GetErrors step reads real text (the success path's blob is empty).
+    private const string BrokenHlsl = """
+        float4 PSMain() : SV_Target { return missingIdentifier; }
         """;
 
     public static int Run()
@@ -78,16 +82,26 @@ internal static class DxcSetlocaleAudit
         {
             if (result.GetStatus().Failure) throw new InvalidOperationException("audit shader failed: " + result.GetErrors());
         });
-        Step("result-errors", () =>
-        {
-            if (string.IsNullOrEmpty(result.GetErrors())) throw new InvalidOperationException("expected a warning blob");
-        });
+        Step("result-errors", () => result.GetErrors());
         Step("result-object", () =>
         {
             using IDxcBlob blob = result.GetOutput(DxcOutKind.Object);
             dxil = blob.AsBytes();
         });
         Step("result-dispose", () => result.Dispose());
+
+        Step("failing-compile-native-call", () => result = DxcNativeInterop.CompileRaw(
+            compiler,
+            BrokenHlsl,
+            DxcFlagBuilder.Build(PlatformTarget.DirectX, ShaderStage.Pixel, "PSMain", []),
+            includeHandler: null));
+        Step("failing-result-errors", () =>
+        {
+            if (!result.GetStatus().Failure) throw new InvalidOperationException("the broken shader compiled");
+            if (!result.GetErrors().Contains("missingIdentifier", StringComparison.Ordinal))
+                throw new InvalidOperationException("expected DXC's diagnostic text");
+            result.Dispose();
+        });
 
         Step("preprocess-native-call", () => result = DxcNativeInterop.CompileRaw(
             compiler, Hlsl, DxcFlagBuilder.BuildPreprocess([]), includeHandler: null));
