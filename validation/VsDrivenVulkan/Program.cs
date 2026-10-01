@@ -49,9 +49,10 @@ if (mode is not ("vs" or "apos"))
 }
 
 const string Fixture = "VsTransformColorTexture";
+string candidateFixture = Fixture;
 
 string repoRoot   = ShaderInputs.FindRepoRoot();
-string fxPath     = Path.Combine(repoRoot, "tests", "fixtures", "shaders", Fixture + ".fx");
+string fxPath     = Path.Combine(repoRoot, "tests", "fixtures", "shaders", candidateFixture + ".fx");
 string goldenPath = Path.Combine(repoRoot, "tests", "fixtures", "golden", "Vulkan", Fixture + ".mgfx");
 string catPath    = ShaderInputs.CatPath(repoRoot);
 string outDir     = Path.Combine(repoRoot, "validation", "output", "vsdriven-vulkan");
@@ -124,8 +125,9 @@ string? candidateErr   = null;
             if (patched == 0)
                 throw new InvalidOperationException("spirv-1.3-header control: no SPIR-V module found in the container.");
         }
+        Console.WriteLine($"[vs-vulkan] candidate SPIR-V module versions: {string.Join(", ", SpirvVersions(candidateBytes))}");
         Directory.CreateDirectory(outDir);
-        await File.WriteAllBytesAsync(Path.Combine(outDir, Fixture + ".candidate.mgfx"), candidateBytes);
+        await File.WriteAllBytesAsync(Path.Combine(outDir, candidateFixture + ".candidate.mgfx"), candidateBytes);
     }
 }
 
@@ -168,12 +170,25 @@ Console.WriteLine($"[vs-vulkan] baseline-vs-candidate maxd: {(maxd == int.MaxVal
 Console.WriteLine($"[vs-vulkan] candidate drew visible content: {candidateDrew}");
 
 bool phase1 = haveBoth && maxd <= 1 && candidateDrew;
-Console.WriteLine($"[vs-vulkan] phase 1 (VsTransformColorTexture): {(phase1 ? "PASS" : "FAIL")}");
+Console.WriteLine($"[vs-vulkan] phase 1 ({candidateFixture} vs {Fixture} golden): {(phase1 ? "PASS" : "FAIL")}");
 // The wrong-shader control must be caught by the PIXEL DIFF specifically (both arms loaded
 // and drew), not by some unrelated crash; the CI step matches this marker.
 if (control == "wrong-shader" && haveBoth && maxd > 1)
     Console.WriteLine($"[vs-vulkan] CONTROL-DETECTED: pixel divergence maxd={maxd}");
 return phase1 ? 0 : 1;
+}
+
+// The SPIR-V version ("1.0", "1.3", ...) of every module embedded in an .mgfx container.
+static IEnumerable<string> SpirvVersions(byte[] container)
+{
+    for (int i = 0; i + 8 <= container.Length; i++)
+    {
+        if (BitConverter.ToUInt32(container, i) != 0x07230203u)
+            continue;
+        uint v = BitConverter.ToUInt32(container, i + 4);
+        yield return $"{(v >> 16) & 0xFF}.{(v >> 8) & 0xFF}";
+        i += 7;
+    }
 }
 
 // Rewrites the version word of every SPIR-V module embedded in an .mgfx container
