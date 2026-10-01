@@ -78,6 +78,22 @@
 #                              Vulkan here is load-bearing only for SDL's window-creation
 #                              probe, never for a pixel.
 #
+# Vulkan render gates wired here (vulkan-render-gates job, ubuntu-latest, 2026-10-01): real
+# MonoGame DesktopVK (MonoGame.Runtime.Linux.Vulkan) on Mesa lavapipe (CPU Vulkan) under xvfb.
+# Every run goes through validation/run-with-vk-validation.sh, which forces the Khronos
+# validation layer on and fails on any layer ERROR even when the pixels match: a CPU driver
+# can accept what a GPU driver rejects, and the layer judges against the spec instead.
+# Picked over SwiftShader on windows-latest because lavapipe hosted DesktopVK on the first
+# measured run and needs only apt (an elevated Windows runner ignores VK_ICD_FILENAMES, so a
+# non-SDK ICD there needs registry writes).
+#   * VsDrivenVulkan         — VS-driven fixture vs the mgfxc 3.8.5 Vulkan golden (maxd 0),
+#                              then `-- apos`, the Apos.Shapes gallery (maxd 0).
+#   * CandidateVulkan        — the 10-shader PS corpus, own-output only (mgfxc's Vulkan output
+#                              is unloadable for it, upstream SlotOffset bug).
+#   * Two POSITIVE CONTROLS  — a wrong shader must fail the pixel diff, and SPIR-V stamped 1.3
+#                              on MonoGame's Vulkan 1.0 instance must trip the layer (lavapipe
+#                              renders it at maxd 0, which is exactly why the layer is here).
+#
 # NOT here (issue #204 follow-ups, still manual-only via run-windows-render-gates.ps1):
 #   * VsDrivenDx (Apos.Shapes gallery, real NuGet package) + ShaderToyRouteDx (converter
 #     route) — heavier DX11 gates, left out of the day-one CI job on purpose; nothing
@@ -88,8 +104,6 @@
 #     not the smallest next step.
 #   * FNA (validation/FnaValidation) — needs its own restore-fna.ps1 (heavy, clones the
 #     FNA source tree) and fxc /T fx_2_0, not evaluated for WARP here.
-#   * Vulkan — WARP is a D3D-only software rasterizer; Vulkan needs Mesa lavapipe
-#     instead (see SkiaGameRendering's own GL/Vulkan CI setup for that pattern).
 #   * VsDriven (the Apos.Shapes GL gate) — still manual; the 10-shader GL corpus
 #     (Baseline+Candidate+compare.py) now RUNS here, which is also the second
 #     rasterizer the precision-shaped shaders (Dots, Scanlines) are judged against.
