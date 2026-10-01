@@ -159,13 +159,16 @@ public sealed class DxcShaderCompilerIntegrationTests
 
     [Fact]
     [Trait("Platform", "OpenGL")]
-    public async Task CompileWavePixel_OpenGL_StillRejectedByDxc_SD0218IsVulkanOnly()
+    public async Task CompileWavePixel_OpenGL_RejectedWithSD0624_NotTheVulkanCode()
     {
         using var compiler = new DxcShaderCompiler();
         var result = await compiler.CompileAsync(PixelRequest(WaveSumPs, PlatformTarget.OpenGL));
 
         result.IsFailure.ShouldBeTrue();
-        result.Error.Message.ShouldContain("Vulkan 1.1 is required", Case.Sensitive);
+        result.Error.Code.ShouldBe("SD0624");
+        result.Error.Message.ShouldContain("'WaveActiveSum'", Case.Sensitive);
+        result.Error.Message.ShouldContain("on the OpenGL target", Case.Sensitive);
+        result.Error.Message.ShouldContain("DXC: ", Case.Sensitive);
     }
 
     [Fact]

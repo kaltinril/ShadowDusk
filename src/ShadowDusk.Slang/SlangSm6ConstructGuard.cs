@@ -82,5 +82,5 @@ internal static class SlangSm6ConstructGuard
     /// <see cref="WaveQuadIntrinsics"/>, not this guard's <c>SD0624</c>.</para>
     /// </summary>
     public static bool IsArchitecturallyBelowSm6(PlatformTarget target) =>
-        target is PlatformTarget.OpenGL or PlatformTarget.DirectX or PlatformTarget.Fna;
+        WaveQuadIntrinsics.IsBelowSm6Target(target);
 }
