@@ -80,6 +80,22 @@ public sealed class SlangCompiler
     private const string TechniqueName = "SlangEffect";
 
     private readonly IShaderCompiler _downstreamCompiler;
+    private readonly Func<SlangcLocation> _locateSlangc;
+
+    /// <summary>
+    /// Where (and whether) this host's slangc is: <see cref="UnsupportedReason"/> is
+    /// non-null on a host the bundled natives cannot run on (<c>SD0620</c>);
+    /// <see cref="SlangcPath"/> is null when the native was not found (<c>SD0621</c>).
+    /// </summary>
+    internal readonly record struct SlangcLocation(string? UnsupportedReason, string? SlangcPath);
+
+    private static SlangcLocation LocateBundledSlangc()
+    {
+        string? reason = SlangToolPath.GetUnsupportedReason();
+        return reason is not null
+            ? new SlangcLocation(reason, null)
+            : new SlangcLocation(null, SlangToolPath.Resolve());
+    }
 
     /// <summary>
     /// Creates a <see cref="SlangCompiler"/>. The optional <paramref name="downstreamCompiler"/>
@@ -88,8 +104,19 @@ public sealed class SlangCompiler
     /// and get the real <see cref="EffectCompiler"/>.
     /// </summary>
     public SlangCompiler(IShaderCompiler? downstreamCompiler = null)
+        : this(downstreamCompiler, LocateBundledSlangc)
+    {
+    }
+
+    /// <summary>
+    /// Test seam: <paramref name="locateSlangc"/> replaces the host/native lookup, so the
+    /// checks that must run BEFORE it (entry-stage policy, the SM6 intrinsic guard) are
+    /// provably independent of whether this host has a slangc at all.
+    /// </summary>
+    internal SlangCompiler(IShaderCompiler? downstreamCompiler, Func<SlangcLocation> locateSlangc)
     {
         _downstreamCompiler = downstreamCompiler ?? new EffectCompiler();
+        _locateSlangc = locateSlangc;
     }
 
     /// <summary>
@@ -105,28 +132,9 @@ public sealed class SlangCompiler
         cancellationToken.ThrowIfCancellationRequested();
         string sourceName = options.SourceFileName ?? "<memory>.slang";
 
-        if (!SlangToolPath.IsSupportedOnThisPlatform)
-        {
-            return Fail(new ShaderError(
-                File: sourceName, Line: 0, Column: 0, Code: "SD0620",
-                Message: "ShadowDusk.Slang's real-slangc compile route packages slangc for " +
-                         "win-x64 only today (Phase 66 A2/A3); this platform/architecture is " +
-                         "not yet supported. ShadowDusk.Compiler's built-in .slang frontend " +
-                         "(the HLSL-compatible subset) works everywhere if the source does " +
-                         "not need genuine Slang-only features (import/generics/interfaces)."));
-        }
-
-        string? slangcPath = SlangToolPath.Resolve();
-        if (slangcPath is null)
-        {
-            return Fail(new ShaderError(
-                File: sourceName, Line: 0, Column: 0, Code: "SD0621",
-                Message: "slangc.exe was not found. A framework-dependent build that never " +
-                         "copies runtimes/win-x64/native locally (or a repo/dev build that " +
-                         "never ran tools/restore.ps1 / restore.sh) hits this — see " +
-                         "SlangToolPath.ResolveOrThrow's remarks."));
-        }
-
+        // Host-independent rejections run FIRST (entry-stage policy, then the SM6 intrinsic
+        // guard): they depend only on the source and the target, so a host without a usable
+        // slangc must report them exactly like one with it, and their tests run on every OS.
         Result<IReadOnlyList<SlangEntryPoint>, ShaderError[]> entriesResult =
             SlangEntryScanner.Scan(slangSource, sourceName);
         if (entriesResult.IsFailure)
@@ -154,20 +162,42 @@ public sealed class SlangCompiler
             }
         }
 
-        string toolDirectory;
+        SlangcLocation location = _locateSlangc();
+        if (location.UnsupportedReason is not null)
+        {
+            return Fail(new ShaderError(
+                File: sourceName, Line: 0, Column: 0, Code: "SD0620",
+                Message: location.UnsupportedReason + " ShadowDusk.Compiler's built-in .slang " +
+                         "frontend (the HLSL-compatible subset) works everywhere if the source " +
+                         "does not need genuine Slang-only features (import/generics/interfaces)."));
+        }
+
+        if (location.SlangcPath is null)
+        {
+            return Fail(new ShaderError(
+                File: sourceName, Line: 0, Column: 0, Code: "SD0621",
+                Message: $"slangc was not found for {SlangToolPath.CurrentRid}. Probed the app " +
+                         $"base directory, runtimes/{SlangToolPath.CurrentRid}/native/ under it, " +
+                         "the host's native search directories, and a repository " +
+                         $"tools/slang/{SlangToolPath.CurrentRid}/ restore (tools/restore.sh / " +
+                         "restore.ps1). A package consumer should never hit this: the native " +
+                         "rides inside the ShadowDusk.Slang package."));
+        }
+
+        string runnableSlangc;
         try
         {
-            toolDirectory = SlangNativeCache.EnsureWritableToolDirectory(slangcPath);
+            runnableSlangc = SlangNativeCache.EnsureRunnableSlangc(location.SlangcPath);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or FileNotFoundException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return Fail(new ShaderError(
                 File: sourceName, Line: 0, Column: 0, Code: "SD0623",
-                Message: "Could not prepare a writable directory to run slangc from (it writes " +
-                         $"a runtime cache file, slang-glsl-module.bin, into its own directory " +
-                         $"on first compile): {ex.Message}"));
+                Message: "Could not prepare slangc to run (it needs its compiler library beside " +
+                         "it, an execute permission, and a writable directory for the runtime " +
+                         $"cache file it writes on first compile): {ex.Message}"));
         }
-        string runnableSlangc = Path.Combine(toolDirectory, "slangc.exe");
+        string toolDirectory = Path.GetDirectoryName(runnableSlangc)!;
 
         // Phase 66 A6: forward the SAME per-target platform macros (OPENGL/SM4/VULKAN/SM6/
         // HLSL/GLSL/MGFX/FNA/SM3, plus __KNIFX__ when options.Container is Knifx) the
@@ -203,8 +233,21 @@ public sealed class SlangCompiler
             cancellationToken.ThrowIfCancellationRequested();
 
             string stage = entry.Stage == SlangStage.Vertex ? "vertex" : "fragment";
-            (int exitCode, string stdout, string stderr) = RunSlangc(
-                runnableSlangc, toolDirectory, slangSource, entry.Name, stage, platformMacros, options.Defines);
+            int exitCode;
+            string stdout, stderr;
+            try
+            {
+                (exitCode, stdout, stderr) = RunSlangc(
+                    runnableSlangc, toolDirectory, slangSource, entry.Name, stage, platformMacros, options.Defines);
+            }
+            catch (System.ComponentModel.Win32Exception ex)
+            {
+                // The OS refused to start the process at all (no execute permission, wrong
+                // architecture, a loader rejection): surface the OS's own words, never a crash.
+                return Fail(new ShaderError(
+                    File: sourceName, Line: 0, Column: 0, Code: "SD0622",
+                    Message: $"slangc could not be started ('{runnableSlangc}'): {ex.Message}"));
+            }
 
             if (exitCode != 0)
             {
@@ -362,6 +405,10 @@ public sealed class SlangCompiler
             RedirectStandardInput  = true,
             RedirectStandardOutput = true,
             RedirectStandardError  = true,
+            // slangc reads its stdin source as UTF-8. Without an explicit encoding, .NET
+            // writes stdin in the console's input code page, which on Windows is the OEM code
+            // page, so a non-ASCII byte in the source would reach slangc differently per host.
+            StandardInputEncoding  = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding  = Encoding.UTF8,
         };

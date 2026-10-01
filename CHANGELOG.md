@@ -15,11 +15,11 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 ### Added
 
 - **New package: `ShadowDusk.Slang`, a real-slangc compile route for genuine Slang (Phase 66,
-  opt-in, win-x64 today).** A consumer who needs real Slang — `import`, generics, `interface`
+  opt-in; win-x64, linux-x64, osx-x64, osx-arm64).** A consumer who needs real Slang — `import`, generics, `interface`
   conformances, everything real slangc accepts, none of which `ShadowDusk.Compiler`'s built-in
   HLSL-compatible-subset `.slang` frontend can compile — adds this separate package; a consumer
   who does not is completely unaffected (zero size, zero dependency, zero behavior change).
-  `SlangCompiler` drives the packaged real `slangc` (win-x64, Phase 66 A2) as `-target hlsl`,
+  `SlangCompiler` drives the packaged real `slangc` as `-target hlsl`,
   one process invocation per discovered `[shader(...)]` entry point (source piped over
   stdin), merges the per-entry HLSL translation units (deduplicating slangc's redeclared
   shared types/cbuffers), and hands the result to the existing, unchanged `EffectCompiler`
@@ -59,9 +59,36 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   feedback, from the README (new *Community* section), the documentation site's home page and
   footer, and the Contributing guide.
 
+- **`ShadowDusk.Slang` runs on Linux and macOS (issue #227).** The package bundles slangc for
+  win-x64, linux-x64, osx-x64 and osx-arm64 (only the slangc executable + its compiler library
+  per RID, hash-pinned in `tools/restore.*`), so adding the package is the whole setup on every
+  desktop OS. Host floors come from the upstream binaries: Linux needs a GCC 11+ `libstdc++`
+  (Ubuntu 22.04+), macOS needs macOS 26+ (follow-up #237 to lift it); any other host gets
+  `SD0620` naming the reason. A cross-host byte-identity manifest pins the route's output.
+- **`ShadowDusk.Slang` is proven to work from a cold NuGet install (issue #225).**
+  `tools/verify-slang-packaging.sh`, run by `pack-consume.yml` on all three OSes, packs the
+  package, consumes it from a scratch project outside the repo, and compiles real Slang in both
+  the framework-dependent and the self-contained publish shape. Direct `SlangToolPath` tests
+  cover every probe, the repository-root walk-up, and `ResolveOrThrow`'s failures.
+- **The release now publishes `ShadowDusk.Slang` and fails red if any slangc native is missing
+  from it (issue #226).**
+
 ### Changed
 
+- **Every release and pack-consume nupkg gate now matches exact entry names** instead of a
+  substring of the listing. A substring match could not tell `runtimes/<rid>/native/slangc`
+  from the mis-packed `runtimes/<rid>/native/slangc/slangc`.
+
 ### Fixed
+
+- **`ShadowDusk.Slang` packed its Unix slangc at `runtimes/<rid>/native/slangc/slangc`,** away
+  from its library, because NuGet treats an extension-less `PackagePath` as a folder. Found by
+  the new cold-consumer run before any release shipped it.
+- **`SlangCompiler`'s source-only rejections (`SD0602`, `SD0603`, `SD0624`) no longer depend on
+  the host.** They ran after the platform check, so a host without slangc reported `SD0620`
+  instead; they now run first and are tested on every OS. A slangc the OS refuses to start
+  surfaces as `SD0622` with the OS's reason instead of an exception, a missing compiler library
+  is reported up front (`SD0623`), and slangc's stdin is written as UTF-8 on every host.
 
 - **`ShadowDusk.Slang`'s real-slangc route now forwards the same per-target platform macros
   (`OPENGL`/`SM4`/`VULKAN`/`SM6`/`HLSL`/`GLSL`/`MGFX`/`FNA`/`SM3`, `__KNIFX__` for the KNIFX
