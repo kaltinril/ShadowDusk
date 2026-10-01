@@ -1,11 +1,9 @@
 #nullable enable
 
+using ShadowDusk.Compiler.Internal;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
-using ShadowDusk.Core.Reflection;
-using ShadowDusk.GLSL;
 using ShadowDusk.HLSL;
-using ShadowDusk.HLSL.Dxc;
 
 namespace ShadowDusk.Compiler.Sksl;
 
@@ -123,45 +121,27 @@ public static class SkslConverter
                 "function, so there is nothing to convert.");
         }
 
-        // 2. Preprocess with the OpenGL macro set — the arm the GL fixtures' `#if OPENGL`
-        //    headers select, and the one whose SM3-level profiles the corpus writes there.
-        var preprocess = new Preprocessor().Flatten(
+        // 2-4. HLSL -> SPIR-V -> modern GLSL, the shared seam BEFORE the MonoGame rewriter.
+        var seam = ModernGlslSeam.CompilePixel(
             parse.Value.StrippedHlsl,
+            pass.PixelEntryPoint,
             options.SourceName,
-            PlatformMacros.For(PlatformTarget.OpenGL),
-            options.IncludeResolver ?? new FileSystemIncludeResolver(),
-            options.AdditionalIncludePaths);
-        if (preprocess.IsFailure)
-            return Result<SkslConversion, ShaderError[]>.Fail([preprocess.Error]);
-
-        // 3. HLSL -> SPIR-V, with the same faithful DXC every ShadowDusk compile uses.
-        using var dxc = new DxcShaderCompiler();
-        var spirv = dxc.Compile(new DxcCompileRequest
-        {
-            HlslSource     = preprocess.Value.Text,
-            SourceFileName = options.SourceName,
-            EntryPoint     = pass.PixelEntryPoint,
-            Stage          = ShaderStage.Pixel,
-            Platform       = PlatformTarget.OpenGL,
-        }, cancellationToken);
-        if (spirv.IsFailure)
-            return Result<SkslConversion, ShaderError[]>.Fail([spirv.Error]);
+            options.IncludeResolver,
+            options.AdditionalIncludePaths,
+            cancellationToken);
+        if (seam.IsFailure)
+            return Result<SkslConversion, ShaderError[]>.Fail(seam.Error);
 
         // The HLSL texture name behind each combined sampler, in declaration order — the same
         // extraction the GL sampler table trusts (issue #189's allocator).
-        var pairs = SpirvCombinedSamplerPairs.Extract(spirv.Value.Bytes);
+        var pairs = seam.Value.SamplerPairs;
         IReadOnlyList<string> textureNames = pairs.IsSuccess
             ? pairs.Value.Select(p => p.TextureName).ToList()
             : [];
 
-        // 4. SPIR-V -> modern GLSL (SPIRV-Cross; the seam BEFORE the MonoGame rewriter).
-        var glsl = new SpirvCrossGlslTranspiler().Transpile(spirv.Value.Bytes, cancellationToken);
-        if (glsl.IsFailure)
-            return Result<SkslConversion, ShaderError[]>.Fail([glsl.Error]);
-
         // 5. GLSL -> SkSL.
         var mapped = SkslGlslMapper.Map(
-            glsl.Value.Text,
+            seam.Value.Glsl,
             textureNames,
             options.TreatVaryingsAsUniforms.ToHashSet(StringComparer.Ordinal),
             options.SourceName);

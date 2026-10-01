@@ -108,10 +108,12 @@
 
   Both Vulkan gates are DEFAULT-ON (issue #145: a Vulkan-affecting change must not depend on
   someone remembering a switch). Pass -SkipVulkan only on a box with no Vulkan-capable GPU.
+  CI also runs both (validation-render.yml, Mesa lavapipe + the Khronos validation layer), but
+  that is a CPU driver; this local run is still the only GPU-driver Vulkan render.
 
   The in-process MonoGame OpenGL render gates (StateFidelity / CbufferModel /
   TextureBreadthValidation / ReservedWordGl / SamplerPairsGl / SamplerRegisterOrderGl /
-  DeferredSpriteMrtGl / ShaderToyRouteGl) are intentionally NOT here - CI already runs them
+  DeferredSpriteMrtGl / ShaderToyRouteGl / RaylibRoute) are intentionally NOT here - CI already runs them
   (see validation-render.yml). Run them with `dotnet test` + that workflow, not this script.
 
 .PARAMETER IncludeFna

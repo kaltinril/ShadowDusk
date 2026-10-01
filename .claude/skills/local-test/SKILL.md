@@ -79,6 +79,15 @@ ask which half they ran.
   test-only dependency. See
   [`plan/PHASE-62-skiasharp-sksl-target.md`](../../../plan/PHASE-62-skiasharp-sksl-target.md).
 
+- **raylib (Phase 59) — glsl330 slice shipped.** `ShadowDusk.Compiler.Raylib.RaylibConverter`
+  converts a single-pass, pixel-only `.fx` to a fragment shader for
+  `Raylib.LoadShaderFromMemory(null, fs)` and refuses what raylib cannot hold
+  (`SD0630`–`SD0636`). To see it render, run `dotnet run -c Release --project
+  validation/RaylibRoute` (needs a GL context; it renders each shader in real Raylib-cs and in
+  real MonoGame and diffs them, PNGs land in `validation/output-raylib/`). Examples:
+  `tests/ShadowDusk.Compiler.Tests/Raylib/`. See
+  [`plan/PHASE-59-raylib-cs-backend.md`](../../../plan/PHASE-59-raylib-cs-backend.md).
+
 ## When someone reports a failure
 
 Read the script's summary block first — it names the failing step and the fix. Then:

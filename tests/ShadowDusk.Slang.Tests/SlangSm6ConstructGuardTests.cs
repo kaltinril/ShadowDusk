@@ -27,6 +27,28 @@ public sealed class SlangSm6ConstructGuardTests
         hit!.Value.Construct.ShouldBe(expected);
     }
 
+    [Theory]
+    [InlineData("// float v = WaveActiveSum(x);\nfloat4 f() { return 0; }")]
+    [InlineData("/* QuadReadAcrossX(x)\n   WaveIsFirstLane() */ float4 f() { return 0; }")]
+    [InlineData("/* outer /* WaveActiveSum */ float4 f() { return 0; }")]
+    [InlineData("static const string S = \"WaveActiveSum(x)\"; float4 f() { return 0; }")]
+    public void FindConstruct_IgnoresAnIntrinsicNameInACommentOrString(string source)
+    {
+        SlangSm6ConstructGuard.FindConstruct(source).ShouldBeNull();
+    }
+
+    [Fact]
+    public void FindConstruct_FindsARealCallAfterACommentMentioningOne_WithATrueLine()
+    {
+        const string source = "// WaveActiveSum is mentioned here\n/* and\nhere */\nfloat v = WaveActiveMax(x);";
+
+        var hit = SlangSm6ConstructGuard.FindConstruct(source);
+
+        hit.ShouldNotBeNull();
+        hit!.Value.Construct.ShouldBe("WaveActiveMax");
+        hit.Value.Line.ShouldBe(4);
+    }
+
     [Fact]
     public void FindConstruct_ReportsThe1BasedLineOfTheFirstMatch()
     {
