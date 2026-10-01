@@ -61,7 +61,7 @@ ShadowDusk/
 │       │                               #   ShaderToyRoute{Gl,Dx} fixture) + third-party/ (38): Nez (15, MIT),
 │       │                               #   MonoGame (17, Ms-PL — the reference compiler's own acceptance set),
 │       │                               #   Gum (3), Apos.Shapes (3) + raylib/ (2, Phase 59's CRT and handheld-LCD effects)
-│       │                               #   plus slang/ (17 .slang, the Phase 61 Slang input corpus — a separate
+│       │                               #   plus slang-sksl/ (7 PS-only .slang twins of .fx fixtures, the SkSL render evidence for both Slang routes) and slang/ (17 .slang, the Phase 61 Slang input corpus — a separate
 │       │                               #   input language, not .fx; see docs/test-shader-corpus.md §5)
 │       ├── issues/                     # Issue-reproduction fixtures by issue number (202/: the reporter's
 │       │                               #   3235-line Apos.Shapes, MIT, for FnaDiagnosticLocationTests). NOT under

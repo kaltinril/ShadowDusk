@@ -21,6 +21,9 @@
          Integration.Tests' own source-link of MgcbErrorFormatter.cs/Fx2BinaryValidator.cs
          from other projects (the established pattern for this repo, not a new one). -->
     <Compile Include="..\ShadowDusk.Integration.Tests\MgfxBlobReader.cs" Link="MgfxBlobReader.cs" />
+    <!-- The Slang-to-SkSL render evidence is the same harness the subset route's tests use, so
+         both routes are judged by one comparison, not two copies that could drift apart. -->
+    <Compile Include="..\ShadowDusk.Compiler.Tests\Sksl\SkslTwinHarness.cs" Link="SkslTwinHarness.cs" />
   </ItemGroup>
 
   <ItemGroup Label="Test framework">
@@ -28,6 +31,9 @@
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="Shouldly" />
+    <!-- Test-only, as in ShadowDusk.Compiler.Tests: real Skia is the SkSL evidence. -->
+    <PackageReference Include="SkiaSharp" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" />
     <PackageReference Include="coverlet.collector">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>

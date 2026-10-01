@@ -19,6 +19,18 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **`.slang` input for the SkSL and raylib converters, through both Slang routes.**
+  `SkslConverter.ConvertSlang` and `RaylibConverter.ConvertSlang` take HLSL-compatible Slang through
+  the built-in frontend; `SlangCompiler.ConvertToSksl` / `ConvertToRaylib` (and `Async` variants) in
+  `ShadowDusk.Slang` take genuine Slang (`interface`, generics) through real slangc. Both reuse the
+  `.fx` converters unchanged, so every `SD0610`-`SD0615` / `SD0630`-`SD0636` refusal applies. Proven
+  in real SkiaSharp: 7 Slang twins of existing `.fx` fixtures (Gum's Grayscale, Sepia, Bloom,
+  Scanlines, Dots, Overlay, Gradient) render within the `.fx` tolerance (measured maxd 0 on both
+  routes), and a mutated twin of each is caught (maxd 72 to 255). Real-slangc tests run in the
+  integration job on all three OSes and fail, never skip, without a slangc. On the raylib path
+  slangc's auto-numbered `SamplerState : register(s0)` no longer pushes the draw texture off
+  `texture0`; an author-written register is still honored. The compile route's output is unchanged.
+
 - **The Vulkan render gates run in CI.** `validation-render.yml` gains a `vulkan-render-gates` job
   (ubuntu, label-gated like the GL and DX jobs) that renders `VsDrivenVulkan` (VS-driven fixture vs the
   `mgfxc` golden, then the Apos.Shapes gallery) and the `CandidateVulkan` corpus on real MonoGame

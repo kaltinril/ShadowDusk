@@ -61,6 +61,8 @@ var compiler = new ShadowDusk.Slang.SlangCompiler();
 var result = compiler.Compile(slangSource, new CompilerOptions { Target = PlatformTarget.OpenGL });
 ```
 
+`SlangCompiler` also converts straight to SkSL and raylib shaders (`ConvertToSksl`, `ConvertToRaylib`, plus `Async` variants); see the converter sections below.
+
 Same rejection discipline as the built-in subset: a construct real slangc accepts but that has nowhere to land in an `Effect` (a compute/mesh entry point, an SM6-only wave/quad intrinsic on a target that can't represent it) is rejected loudly by name, never silently dropped, and no route through it is `mgfxc`-equivalent either. The optional `ShadowDusk.ShaderToy` package covers a third input, ShaderToy / plain-GLSL fragment shaders.
 
 ## Supported targets
@@ -199,6 +201,8 @@ using var effect = SKRuntimeEffect.CreateShader(result.Value.SkslText, out var e
 
 Know the limits before reaching for it — they are Skia's, not ShadowDusk's, and the converter enforces them **loudly** rather than emitting something that renders wrong. SkSL runtime effects have **no vertex stage and no varyings at all**: a pixel shader gets its coordinate plus uniforms and nothing else. That means a shader that *reads an interpolated input* (a vertex color, a custom interpolant) does not convert **even though it is purely a pixel shader** — the converter refuses it by name, with an explicit opt-in (`TreatVaryingsAsUniforms`) if a per-draw constant is acceptable. The convertible set is fragment-only, coordinate-driven effects with uniform inputs: post-process, tint, gradient, SDF work. Evidence bar: rendered-image fidelity against the original HLSL's math in real Skia (there is no reference compiler for SkSL, so this is **not** an `mgfxc`-equivalence claim).
 
+`.slang` input goes straight in, with the same limits: `SkslConverter.ConvertSlang(slangSource, options)` takes the HLSL-compatible subset (no extra package), and the optional `ShadowDusk.Slang` package's `new SlangCompiler().ConvertToSksl(slangSource, options)` takes genuine Slang through real slangc. Both are rendered in real Skia against the `.fx`-sourced SkSL of the same effect (7 twins, including Gum's Grayscale, maxd 0).
+
 **raylib converter** (`RaylibConverter`) — converts a single-pass, pixel-only `.fx` to a `glsl330` fragment shader for [Raylib-cs](https://github.com/raylib-cs/raylib-cs), so one post-process source (a CRT pass, a palette/LCD look) runs on both MonoGame and raylib:
 
 ```csharp
@@ -206,7 +210,7 @@ var result = RaylibConverter.Convert(fxSource, new RaylibConvertOptions());
 Shader shader = Raylib.LoadShaderFromMemory(null, result.Value.FragmentShader); // raylib's own vertex shader
 ```
 
-The emission uses raylib's fixed names: the texture coordinate is `fragTexCoord`, the vertex color (SpriteBatch's tint, raylib's draw tint) is `fragColor`, the texture the draw call binds is `texture0`, and your other uniforms keep their HLSL names for `GetShaderLocation`; `result.Value.Uniforms` and `Samplers` list them. It refuses by name what raylib's model cannot hold: multiple passes, render states, a vertex shader, interpolants other than `TEXCOORD0`/`COLOR0`, `SV_Position`/`ddy` (MonoGame and raylib flip render targets in opposite directions), and matrix uniforms. Only `glsl330` (desktop GL 3.3) is emitted today. Evidence bar: each conversion renders in real Raylib-cs and is pixel-diffed against the same `.fx` on real MonoGame OpenGL (13/13 at maxd 0); raylib has no reference compiler, so this is **not** an `mgfxc`-equivalence claim.
+The emission uses raylib's fixed names: the texture coordinate is `fragTexCoord`, the vertex color (SpriteBatch's tint, raylib's draw tint) is `fragColor`, the texture the draw call binds is `texture0`, and your other uniforms keep their HLSL names for `GetShaderLocation`; `result.Value.Uniforms` and `Samplers` list them. It refuses by name what raylib's model cannot hold: multiple passes, render states, a vertex shader, interpolants other than `TEXCOORD0`/`COLOR0`, `SV_Position`/`ddy` (MonoGame and raylib flip render targets in opposite directions), and matrix uniforms. `.slang` input works the same way: `RaylibConverter.ConvertSlang(slangSource, options)` for the HLSL-compatible subset, `new SlangCompiler().ConvertToRaylib(slangSource, options)` (`ShadowDusk.Slang`) for genuine Slang. Only `glsl330` (desktop GL 3.3) is emitted today. Evidence bar: each conversion renders in real Raylib-cs and is pixel-diffed against the same `.fx` on real MonoGame OpenGL (13/13 at maxd 0); raylib has no reference compiler, so this is **not** an `mgfxc`-equivalence claim.
 
 **WASM library** (`ShadowDusk.Wasm`) — the same pipeline running in the browser via WebAssembly, for live in-browser compilation with no server roundtrip. OpenGL output renders live in KNI WebGL; DirectX and FNA output come back as downloads to run in your desktop game. The [in-browser fiddle](samples/ShaderFiddle.Web) is a sample of this. See [`docs/HOWTO-WASM-KNI.md`](docs/HOWTO-WASM-KNI.md) for the KNI/Blazor walkthrough.
 

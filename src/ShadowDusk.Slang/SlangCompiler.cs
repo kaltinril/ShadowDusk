@@ -4,6 +4,8 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
 using ShadowDusk.Compiler;
+using ShadowDusk.Compiler.Raylib;
+using ShadowDusk.Compiler.Sksl;
 using ShadowDusk.Compiler.Slang;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
@@ -131,6 +133,73 @@ public sealed class SlangCompiler
         CompilerOptions options,
         CancellationToken cancellationToken = default)
     {
+        Result<string, ShaderError[]> fx = ProduceFx(slangSource, options, cancellationToken);
+        return fx.IsFailure
+            ? Result<CompiledShader, ShaderError[]>.Fail(fx.Error)
+            : _downstreamCompiler.Compile(fx.Value, options, cancellationToken);
+    }
+
+    /// <summary>
+    /// Converts Slang source to an <b>SkSL runtime effect</b> for SkiaSharp's
+    /// <c>SKRuntimeEffect</c>: real slangc to HLSL, then the same
+    /// <see cref="SkslConverter"/> a <c>.fx</c> goes through, so every SkSL limit
+    /// (fragment-only, no varyings, <c>SD0610</c>-<c>SD0615</c>) applies unchanged. The
+    /// OpenGL macro set drives both slangc and the converter. Set
+    /// <see cref="SkslConvertOptions.SourceName"/> to the <c>.slang</c> name for diagnostics.
+    /// The subset route without this package is <see cref="SkslConverter.ConvertSlang"/>.
+    /// </summary>
+    public Result<SkslConversion, ShaderError[]> ConvertToSksl(
+        string slangSource,
+        SkslConvertOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        Result<string, ShaderError[]> fx = ProduceFx(slangSource, ConverterOptions(options.SourceName), cancellationToken, forConverter: true);
+        return fx.IsFailure
+            ? Result<SkslConversion, ShaderError[]>.Fail(fx.Error)
+            : SkslConverter.Convert(fx.Value, options, cancellationToken);
+    }
+
+    /// <summary>Asynchronous counterpart of <see cref="ConvertToSksl"/>.</summary>
+    public Task<Result<SkslConversion, ShaderError[]>> ConvertToSkslAsync(
+        string slangSource,
+        SkslConvertOptions options,
+        CancellationToken cancellationToken = default) =>
+        Task.Run(() => ConvertToSksl(slangSource, options, cancellationToken), cancellationToken);
+
+    /// <summary>
+    /// Converts Slang source to a <b>raylib <c>glsl330</c> fragment shader</b>: real slangc to
+    /// HLSL, then the same <see cref="RaylibConverter"/> a <c>.fx</c> goes through (its
+    /// <c>SD0630</c>-<c>SD0636</c> refusals apply unchanged). The subset route without this
+    /// package is <see cref="RaylibConverter.ConvertSlang"/>.
+    /// </summary>
+    public Result<RaylibShader, ShaderError[]> ConvertToRaylib(
+        string slangSource,
+        RaylibConvertOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        Result<string, ShaderError[]> fx = ProduceFx(slangSource, ConverterOptions(options.SourceName), cancellationToken, forConverter: true);
+        return fx.IsFailure
+            ? Result<RaylibShader, ShaderError[]>.Fail(fx.Error)
+            : RaylibConverter.Convert(fx.Value, options, cancellationToken);
+    }
+
+    /// <summary>Asynchronous counterpart of <see cref="ConvertToRaylib"/>.</summary>
+    public Task<Result<RaylibShader, ShaderError[]>> ConvertToRaylibAsync(
+        string slangSource,
+        RaylibConvertOptions options,
+        CancellationToken cancellationToken = default) =>
+        Task.Run(() => ConvertToRaylib(slangSource, options, cancellationToken), cancellationToken);
+
+    // The converters' seam compiles with the OpenGL macro set, so slangc must see the same one.
+    private static CompilerOptions ConverterOptions(string sourceName) =>
+        new() { Target = PlatformTarget.OpenGL, SourceFileName = sourceName };
+
+    private Result<string, ShaderError[]> ProduceFx(
+        string slangSource,
+        CompilerOptions options,
+        CancellationToken cancellationToken,
+        bool forConverter = false)
+    {
         cancellationToken.ThrowIfCancellationRequested();
         string sourceName = options.SourceFileName ?? "<memory>.slang";
 
@@ -140,7 +209,7 @@ public sealed class SlangCompiler
         Result<IReadOnlyList<SlangEntryPoint>, ShaderError[]> entriesResult =
             SlangEntryScanner.Scan(slangSource, sourceName);
         if (entriesResult.IsFailure)
-            return Result<CompiledShader, ShaderError[]>.Fail(entriesResult.Error);
+            return Result<string, ShaderError[]>.Fail(entriesResult.Error);
         IReadOnlyList<SlangEntryPoint> entries = entriesResult.Value;
 
         // Phase 66 A5, Band 2 part B (OQ2): reject an SM6-only Wave/Quad intrinsic up front,
@@ -269,9 +338,9 @@ public sealed class SlangCompiler
         }
 
         string mergedHlsl = SlangHlslMerger.Merge(perEntryHlsl);
-        string fxText = AssembleFx(mergedHlsl, entries, sourceName);
-
-        return _downstreamCompiler.Compile(fxText, options, cancellationToken);
+        return Result<string, ShaderError[]>.Ok(AssembleFx(
+            mergedHlsl, entries, sourceName,
+            stripSamplerRegisters: forConverter && !DeclaresExplicitBindings(slangSource)));
     }
 
     /// <summary>
@@ -287,8 +356,8 @@ public sealed class SlangCompiler
         return Task.Run(() => Compile(slangSource, options, cancellationToken), cancellationToken);
     }
 
-    private static Result<CompiledShader, ShaderError[]> Fail(ShaderError error) =>
-        Result<CompiledShader, ShaderError[]>.Fail([error]);
+    private static Result<string, ShaderError[]> Fail(ShaderError error) =>
+        Result<string, ShaderError[]>.Fail([error]);
 
     /// <summary>
     /// Assembles the same kind of <c>.fx</c> wrapper <c>SlangFrontend.ConvertToFx</c>
@@ -297,7 +366,7 @@ public sealed class SlangCompiler
     /// (possibly merged) HLSL emission.
     /// </summary>
     private static string AssembleFx(
-        string mergedHlsl, IReadOnlyList<SlangEntryPoint> entries, string sourceName)
+        string mergedHlsl, IReadOnlyList<SlangEntryPoint> entries, string sourceName, bool stripSamplerRegisters)
     {
         SlangEntryPoint? vs = entries.FirstOrDefault(e => e.Stage == SlangStage.Vertex);
         SlangEntryPoint? ps = entries.FirstOrDefault(e => e.Stage == SlangStage.Fragment);
@@ -325,6 +394,8 @@ public sealed class SlangCompiler
         Line("#endif");
         Line();
         string cleanedHlsl = StripMatrixPackingPragma(StripUnresolvableConditionalIncludes(mergedHlsl));
+        if (stripSamplerRegisters)
+            cleanedHlsl = SlangcSamplerRegister.Replace(cleanedHlsl, "");
         Line(cleanedHlsl.Trim());
         Line();
         Line($"technique {TechniqueName}");
@@ -381,6 +452,21 @@ public sealed class SlangCompiler
     private static readonly Regex MatrixPackingPragma = new(
         """^[ \t]*#pragma\s+pack_matrix\(column_major\)[ \t]*\r?\n""",
         RegexOptions.Compiled | RegexOptions.Multiline);
+
+    // slangc numbers every SamplerState itself ('SamplerState S : register(s0)'). ShadowDusk's GL
+    // sampler allocator reads a SamplerState register as an author reservation and moves the
+    // texture off unit 0, so the raylib converter would name the draw call's texture 'SpriteTexture'
+    // instead of 'texture0'. Converter input only: the compile route's output is left as it was.
+    private static readonly Regex SlangcSamplerRegister = new(
+        """(?<=\bSamplerState(?:Comparison)?\s+\w+)\s*:\s*register\(\s*s\d+\s*\)""",
+        RegexOptions.Compiled);
+
+    private static readonly Regex ExplicitBinding = new(
+        """\bregister\s*\(|\[\[\s*vk::|\bvk::binding""",
+        RegexOptions.Compiled);
+
+    private static bool DeclaresExplicitBindings(string slangSource) =>
+        ExplicitBinding.IsMatch(SlangSourceMask.Mask(slangSource));
 
     private static string StripMatrixPackingPragma(string hlsl) =>
         MatrixPackingPragma.Replace(hlsl, "");

@@ -490,6 +490,15 @@ Its evidence model was set by owner decision (2026-08-13, `project_decisions.md`
   a positive control pinning that the known silent-loss failure (Gum's own hand port drops its
   `COLOR0` tint) is measurably absent. `SkslConverterTests` + `SkslSkiaEvidenceTests` (SkiaSharp
   is a test-only dependency; runs in the ordinary suite, no GPU).
+- **Slang input (2026-10-01):** both Slang routes feed this converter. 7 `.slang` twins
+  (`tests/fixtures/shaders/slang-sksl/`: Gum's Grayscale, Sepia, Bloom, Scanlines, Dots, Overlay,
+  Gradient) are converted from the built-in subset frontend (`SkslConverter.ConvertSlang`,
+  `SkslSlangSubsetRouteTests`, ordinary suite) and from real slangc (`SlangCompiler.ConvertToSksl`,
+  `SlangSkslRouteTests`, `Category=Integration`, runs on all three OSes), rendered in real SkiaSharp
+  and compared with the `.fx`-sourced SkSL at ±2/255: **maxd 0 on both routes, 7/7**. Positive
+  control per twin (a mutated twin must leave the tolerance): maxd 72 to 255. A genuine-Slang
+  shader (interface + generic) converts and renders its math through real slangc and is refused
+  `SD0600` by the subset frontend.
 - **The reject set is the load-bearing half** (`SD0610`–`SD0615`): no varyings, no vertex stage,
   no derivatives, no computed-UV sampling, no multi-pass — each refused by name, never silently
   narrowed. The default answer to a shader reading an interpolant is refusal with a documented
@@ -516,6 +525,10 @@ never a §1 cell.
 - **The interface mapping is the claim:** `TEXCOORD0` ↔ `fragTexCoord`, `COLOR0` ↔ `fragColor`
   (SpriteBatch's tint and raylib's draw tint are the same varying, unlike SkSL which has none), the
   unit-0 sampler ↔ `texture0` (the same declaration-order allocator the GL target uses, issue #189).
+- **Slang input (2026-10-01):** `RaylibConverter.ConvertSlang` (built-in subset) and
+  `SlangCompiler.ConvertToRaylib` (real slangc) are pinned by `RaylibConverterTests` and
+  `SlangSkslRouteTests` (text and binding contract only; no Raylib-cs render of `.slang` input yet,
+  the shared converter is what `validation/RaylibRoute` already renders).
 - **The reject set** (`SD0630`–`SD0636`) is pinned by `RaylibConverterTests` with locations where
   the source has one. Y-orientation-dependent constructs (`SV_Position`, `ddy`) are refused because
   MonoGame and raylib flip render targets in opposite directions.

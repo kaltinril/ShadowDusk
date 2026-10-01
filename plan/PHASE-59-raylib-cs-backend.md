@@ -16,6 +16,11 @@ and a trial with the requester.
   `new Effect(...)` (decision recorded in `project_decisions.md`). A1's "new `PlatformTarget`
   member" was therefore deliberately not done; additivity holds trivially (new files, no change
   to `CompilationPipeline` or any writer).
+- **`.slang` input (2026-10-01):** `RaylibConverter.ConvertSlang` (built-in subset frontend) and
+  `SlangCompiler.ConvertToRaylib` (real slangc, `ShadowDusk.Slang`) feed the same `Convert`. The
+  real-slangc path strips slangc's auto-numbered `SamplerState` registers first (otherwise the draw
+  texture lands on unit 1 and loses the `texture0` name); an author-written register is honored.
+  Pinned by `RaylibConverterTests` and `SlangSkslRouteTests`; no Raylib-cs render of `.slang` input.
 - **The seam is shared with the SkSL converter** (Phase 62 OQ3): `Internal/ModernGlslSeam` re-runs
   the OpenGL front half (same macros, DXC request, SPIRV-Cross options) and stops before the
   rewriter. §3.3's `CompilationPipeline.cs:2035` pointer describes where that GLSL exists inside

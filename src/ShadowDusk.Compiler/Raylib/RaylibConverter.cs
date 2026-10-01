@@ -1,6 +1,7 @@
 #nullable enable
 
 using ShadowDusk.Compiler.Internal;
+using ShadowDusk.Compiler.Slang;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
 using ShadowDusk.Core.Reflection;
@@ -85,9 +86,9 @@ public sealed record RaylibSampler(
 /// MonoGame DesktopGL.</para>
 ///
 /// <para><b>Input languages:</b> anything that becomes <c>.fx</c> text. A <c>.slang</c> file goes
-/// through <c>SlangFrontend.ConvertToFx</c> (or the <c>ShadowDusk.Slang</c> package) first; the
-/// HLSL it yields is compiled by the same DXC as every <c>.fx</c>, so this converter needs nothing
-/// Slang-specific.</para>
+/// through <see cref="ConvertSlang"/> (built-in frontend) or <c>ShadowDusk.Slang</c>'s
+/// <c>SlangCompiler.ConvertToRaylib</c> (real slangc); the HLSL either yields is compiled by the
+/// same DXC as every <c>.fx</c>, so the converter itself needs nothing Slang-specific.</para>
 ///
 /// <para>Everything raylib's fixed-function model cannot hold is rejected loudly
 /// (<c>SD0630</c>–<c>SD0636</c>), never emitted as a shader that loads and renders wrong.</para>
@@ -221,6 +222,28 @@ public static class RaylibConverter
             .ToList();
 
         return RaylibGlslMapper.Map(seam.Value.Glsl, samplerInputs, parse.Value.StrippedHlsl, file);
+    }
+
+    /// <summary>
+    /// Converts HLSL-compatible <c>.slang</c> source to a raylib fragment shader through the
+    /// built-in Slang frontend (<see cref="SlangFrontend.ConvertToFx"/>, no extra package, every
+    /// host), then <see cref="Convert"/> applies every raylib rule unchanged. Slang-only
+    /// constructs (<c>SD0600</c>) are refused by the frontend; for genuine Slang use
+    /// <c>ShadowDusk.Slang</c>'s <c>SlangCompiler.ConvertToRaylib</c>. Set
+    /// <see cref="RaylibConvertOptions.SourceName"/> to the <c>.slang</c> name for diagnostics.
+    /// </summary>
+    /// <param name="slangSource">The Slang source; pixel entry marked <c>[shader("fragment")]</c>.</param>
+    /// <param name="options">Conversion options; see <see cref="RaylibConvertOptions"/>.</param>
+    /// <param name="cancellationToken">Observed between pipeline stages.</param>
+    public static Result<RaylibShader, ShaderError[]> ConvertSlang(
+        string slangSource,
+        RaylibConvertOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        var fx = SlangFrontend.ConvertToFx(slangSource, new SlangConvertOptions { SourceName = options.SourceName });
+        return fx.IsFailure
+            ? Result<RaylibShader, ShaderError[]>.Fail(fx.Error)
+            : Convert(fx.Value.FxText, options, cancellationToken);
     }
 
     private static Result<RaylibShader, ShaderError[]> Fail(
