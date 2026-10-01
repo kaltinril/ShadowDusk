@@ -30,6 +30,10 @@ using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
 using ShadowDusk.Validation.Dx;
 
+// Issue #204 follow-up: pin to WARP when SHADOWDUSK_DX_WARP=1 (the GPU-less CI lane);
+// a no-op otherwise, so a local run still renders on the real GPU.
+DxHeadlessRasterizer.PinIfRequested();
+
 string mode = args.Length > 0 ? args[0].Trim().ToLowerInvariant() : "vs";
 if (mode is not ("vs" or "apos"))
 {

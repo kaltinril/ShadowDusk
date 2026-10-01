@@ -364,6 +364,8 @@ internal static class Program
     private static int RunDirectX11LoadGate(string[] corpus)
     {
         Console.WriteLine("=== GATE 3: every corpus shader loads into a REAL MonoGame.Framework.WindowsDX Effect (DirectX_11) ===");
+        // WARP in the GPU-less CI lane (SHADOWDUSK_DX_WARP=1, issue #204); real GPU otherwise.
+        DxHeadlessRasterizer.PinIfRequested();
 
         string repoRoot = FindRepoRoot();
         string catPath = DxShaderInputs.CatPath(repoRoot);

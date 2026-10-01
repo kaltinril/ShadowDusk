@@ -53,6 +53,12 @@ const int ExpectedGateTotal = 17;
 // default on Windows anyway, but never rely on a default for a validation gate).
 Environment.SetEnvironmentVariable("FNA3D_FORCE_DRIVER", "D3D11");
 
+// GPU-less CI lane (issue #204 recipe): SHADOWDUSK_DX_WARP=1 pins FNA3D's D3D11 device to
+// WARP via FNA3D's own FNA3D_D3D11_USE_WARP hint (SDL reads hints from the environment).
+// Unset locally, so a developer's run still renders on the real GPU.
+if (Environment.GetEnvironmentVariable("SHADOWDUSK_DX_WARP") == "1")
+    Environment.SetEnvironmentVariable("FNA3D_D3D11_USE_WARP", "1");
+
 // Capture MojoShader/FNA3D error text (FNA3D logs, it does not throw). Assigning the
 // hook before the Game is constructed stops FNA's default Console hook from claiming it.
 var fna3dErrors = new List<string>();

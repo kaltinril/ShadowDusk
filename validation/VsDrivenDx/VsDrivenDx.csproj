@@ -21,5 +21,6 @@
     <Compile Include="..\SharedDx\DxEffectImageRenderer.cs" />
     <Compile Include="..\SharedDx\VsDxEffectImageRenderer.cs" />
     <Compile Include="..\SharedDx\AposGalleryRenderer.cs" />
+    <Compile Include="..\SharedDx\DxHeadlessRasterizer.cs" />
   </ItemGroup>
 </Project>

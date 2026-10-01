@@ -78,21 +78,25 @@
 #                              Vulkan here is load-bearing only for SDL's window-creation
 #                              probe, never for a pixel.
 #
-# NOT here (issue #204 follow-ups, still manual-only via run-windows-render-gates.ps1):
-#   * VsDrivenDx (Apos.Shapes gallery, real NuGet package) + ShaderToyRouteDx (converter
-#     route) — heavier DX11 gates, left out of the day-one CI job on purpose; nothing
-#     about WARP is expected to be different for them, they just weren't the smallest
-#     first step.
-#   * VsDrivenDx12 — same reasoning as VsDrivenDx; the issue #209 SwiftShader fix should
-#     carry over (same SDL_WINDOW_VULKAN precondition), but wiring it in is a follow-up,
-#     not the smallest next step.
-#   * FNA (validation/FnaValidation) — needs its own restore-fna.ps1 (heavy, clones the
-#     FNA source tree) and fxc /T fx_2_0, not evaluated for WARP here.
-#   * Vulkan — WARP is a D3D-only software rasterizer; Vulkan needs Mesa lavapipe
-#     instead (see SkiaGameRendering's own GL/Vulkan CI setup for that pattern).
-#   * VsDriven (the Apos.Shapes GL gate) — still manual; the 10-shader GL corpus
-#     (Baseline+Candidate+compare.py) now RUNS here, which is also the second
-#     rasterizer the precision-shaped shaders (Dots, Scanlines) are judged against.
+# The rest of run-windows-render-gates.ps1 (owner directive: no render gate may depend on
+# someone running it by hand on a GPU box). Same software-rasterizer recipe, one job per
+# group so they run in parallel:
+#   * gl-kni-apos-gates (ubuntu/llvmpipe) - KniVsDriven (real KNI SDL2.GL, issue #70 rig) and
+#     VsDriven -- apos / -- apos-gallery (Apos.Shapes on real MonoGame DesktopGL). The real-KNI
+#     desktop GL corpus (KniDesktopGL + compare_kni.py) runs in gl-render-gates, because
+#     compare_kni.py diffs against that job's Baseline + Candidate renders.
+#   * dx-apos-shadertoy-gates (windows/WARP + SwiftShader) - VsDrivenDx -- apos (DX11 Apos.Shapes
+#     gallery), ShaderToyRouteDx, VsDrivenDx12 (VS rig + -- apos gallery).
+#   * content-pipeline-gates (windows/WARP + Mesa llvmpipe) - MgcbPlugin (real dotnet mgcb 3.8.4.1 +
+#     3.8.5), XnbContentLoad (WindowsDX), XnbContentLoadGl (DesktopGL), KniXnbContentLoad (KNI 4.2 +
+#     4.3), ContentBuilder (MonoGame 3.8.5). Windows because stock mgcb's EffectProcessor (the
+#     reference arm) needs d3dcompiler; the GL runtimes render on Mesa's Windows llvmpipe ICD.
+#   * slang-windows-gates (windows/WARP + Mesa llvmpipe) - SlangCorpus (pinned slangc oracle is
+#     win-x64) and SlangFullCorpus -f net8.0-windows (gate 3: real WindowsDX Effect load; gates 1-2
+#     also run in gl-render-gates on linux-x64).
+#   * fna-gate (windows/WARP via FNA3D_D3D11_USE_WARP) - FnaValidation vs d3dcompiler_47 fx_2_0.
+# NOT here, on purpose: the two Vulkan gates (separate lane, separate change) and the ANGLE-D3D11
+# derivative probe (issue #136), which needs real D3D11 hardware under a browser's ANGLE.
 name: Validation Render Gates
 
 on:
@@ -108,6 +112,8 @@ on:
       - 'validation/**'
       - 'tests/fixtures/**'
       - 'tools/restore.sh'
+      - 'tools/restore.ps1'
+      - '.config/dotnet-tools.json'
       - '.github/workflows/validation-render.yml'
   pull_request:
     branches: [ main ]
@@ -136,7 +142,7 @@ jobs:
     if: |
       github.event_name != 'pull_request' ||
       contains(github.event.pull_request.labels.*.name, 'run-validation-render')
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -259,6 +265,18 @@ jobs:
           xvfb-run -a dotnet run --project validation/Candidate -c Release --no-build
           python validation/compare.py
 
+      # Real-KNI desktop GL (Phase 44 D): ShadowDusk's v10 output for the same 10-shader corpus
+      # loaded into a REAL KNI 4.2.9001 Effect on SDL2.GL, then compare_kni.py diffs output/kni
+      # against BOTH renders above (mgfxc golden + ShadowDusk-on-MonoGame), tol 4/255. Here and
+      # not in a separate job because it needs those two output directories.
+      - name: Run real-KNI desktop GL corpus (KNI SDL2.GL under xvfb/llvmpipe) + pixel-diff
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+        run: |
+          dotnet build validation/KniDesktopGL/KniDesktopGL.csproj -c Release
+          xvfb-run -a dotnet run --project validation/KniDesktopGL -c Release --no-build
+          python validation/compare_kni.py
+
       - name: Upload render outputs (debug)
         if: always()
         uses: actions/upload-artifact@v7
@@ -276,6 +294,8 @@ jobs:
             validation/output/baseline/**
             validation/output/candidate/**
             validation/output/diff/**
+            validation/output/kni/**
+            validation/output/kni-diff/**
           if-no-files-found: ignore
           retention-days: 7
 
@@ -384,5 +404,371 @@ jobs:
             validation/output/baseline-dx12/**
             validation/output/candidate-dx12/**
             validation/output/diff-dx12/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # The rest of the GL gates from run-windows-render-gates.ps1, in parallel with the job above:
+  # the real-KNI VS-driven rig and the two Apos.Shapes GL gates. Same xvfb + llvmpipe recipe.
+  gl-kni-apos-gates:
+    name: GL KNI VS-driven + Apos.Shapes gates (ubuntu / Mesa llvmpipe)
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(github.event.pull_request.labels.*.name, 'run-validation-render')
+    timeout-minutes: 30
+    env:
+      LIBGL_ALWAYS_SOFTWARE: "1"
+      SHADOWDUSK_REQUIRE_GL: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET 8 + .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Cache NuGet
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', '**/Directory.Packages.props') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Restore native tools
+        run: |
+          chmod +x tools/restore.sh
+          ./tools/restore.sh
+
+      - name: Install xvfb + Mesa software GL
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgl1-mesa-dri libglu1-mesa mesa-utils \
+            libx11-6 libxi6 libxrandr2 libxinerama1 libxcursor1 libxkbcommon0 \
+            libsdl2-2.0-0
+
+      # Issue #70 matrix/POSITION rig on a REAL KNI 4.2.9001 SDL2.GL runtime, in-process compare
+      # vs the mgfxc golden.
+      - name: KNI OpenGL VS-driven (real KNI SDL2.GL)
+        if: ${{ !cancelled() }}
+        run: xvfb-run -a dotnet run --project validation/KniVsDriven -c Release
+
+      # Phase 51 A3: a single shape + a needle-thin ellipse vs the mgfxc OpenGL golden, tol 2/255.
+      - name: Apos.Shapes GL render-proof (VsDriven -- apos, real MonoGame DesktopGL)
+        if: ${{ !cancelled() }}
+        run: xvfb-run -a dotnet run --project validation/VsDriven -c Release -- apos
+
+      # Phase 55: the 30-cell real-ShapeBatch gallery through ShadowDusk's GL compile; asserts every
+      # shape renders visible content (no trustworthy GL oracle exists for this revision).
+      - name: Apos.Shapes GL gallery (VsDriven -- apos-gallery, real MonoGame DesktopGL)
+        if: ${{ !cancelled() }}
+        run: xvfb-run -a dotnet run --project validation/VsDriven -c Release -- apos-gallery
+
+      - name: Upload render outputs (debug)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: validation-render-output-gl-kni-apos
+          path: |
+            validation/output*/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # DX11 + DX12 Apos.Shapes galleries and the ShaderToy DX route, WARP-pinned like the job above.
+  # SwiftShader is for VsDrivenDx12's SDL2 window probe only (issue #209), never for a pixel.
+  dx-apos-shadertoy-gates:
+    name: DX Apos.Shapes + ShaderToy gates (windows-latest / WARP)
+    runs-on: windows-latest
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(github.event.pull_request.labels.*.name, 'run-validation-render')
+    timeout-minutes: 30
+    env:
+      SHADOWDUSK_DX_WARP: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET 8 + .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Cache NuGet
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', '**/Directory.Packages.props') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Restore native tools (vkd3d-shader, DXC)
+        run: ./tools/restore.ps1
+
+      - name: Install Vulkan software driver (SwiftShader) for DX12 SDL2 window creation
+        uses: jakoch/install-vulkan-sdk-action@37effcfa045411f8bfbbda26df2fd1b3bf3436fa # v1.6.0
+        with:
+          install_swiftshader: true
+          swiftshader_destination: C:\Swiftshader
+
+      - name: Add SwiftShader's vulkan-1.dll loader to PATH
+        run: Add-Content -Path $env:GITHUB_PATH -Value 'C:\Swiftshader'
+
+      # Phase 51 A3 / Phase 55: the 30-cell Apos.Shapes ShapeBatch gallery through the real NuGet
+      # package; d3dcompiler_47 arm vs the mgfxc DirectX_11 golden, vkd3d arm vs the package's
+      # embedded effect, both tol 0.
+      - name: DX11 Apos.Shapes gallery (VsDrivenDx -- apos, real MonoGame WindowsDX)
+        if: ${{ !cancelled() }}
+        run: dotnet run --project validation/VsDrivenDx -c Release -- apos
+
+      # Phase 51 A5/A10: GradientToy.glsl converted in process, compiled for DirectX_11, pixel-diffed
+      # against mgfxc's own build of the same .fx.
+      - name: ShaderToy .glsl route on DX (ShaderToyRouteDx, real MonoGame WindowsDX)
+        if: ${{ !cancelled() }}
+        run: dotnet run --project validation/ShaderToyRouteDx -c Release
+
+      # Phase 54: the VS rig vs the mgfxc DirectX_12 golden (maxd 0), then the gallery (tol 1, see
+      # docs/validation-matrix.md section 7 for the pinned-DXC root cause of the 11 pixels).
+      # Two processes on purpose, same as the gate script.
+      - name: DX12 VS-driven rig (VsDrivenDx12, real MonoGame 3.8.5 WindowsDX12)
+        if: ${{ !cancelled() }}
+        run: dotnet run --project validation/VsDrivenDx12 -c Release
+
+      - name: DX12 Apos.Shapes gallery (VsDrivenDx12 -- apos, real MonoGame 3.8.5 WindowsDX12)
+        if: ${{ !cancelled() }}
+        run: dotnet run --project validation/VsDrivenDx12 -c Release -- apos
+
+      - name: Upload render outputs (debug)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: validation-render-output-dx-apos-shadertoy
+          path: |
+            validation/output*/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # The content-pipeline delivery shapes: MGCB plugin, the direct .xnb writer on three runtimes,
+  # and the MonoGame 3.8.5 Content Builder. Windows because each has a stock-mgcb reference arm
+  # (MonoGame's EffectProcessor compiles through d3dcompiler). The two GL runtimes (MonoGame
+  # DesktopGL, KNI SDL2.GL) render on Mesa's llvmpipe, installed as the system OpenGL ICD; the
+  # DX runtimes render on WARP.
+  content-pipeline-gates:
+    name: Content pipeline gates (windows-latest / WARP + Mesa llvmpipe)
+    runs-on: windows-latest
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(github.event.pull_request.labels.*.name, 'run-validation-render')
+    timeout-minutes: 30
+    env:
+      SHADOWDUSK_DX_WARP: "1"
+      GALLIUM_DRIVER: llvmpipe
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET 8 + .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Cache NuGet
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', '**/Directory.Packages.props') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Restore native tools (vkd3d-shader, DXC)
+        run: ./tools/restore.ps1
+
+      # pal1000/mesa-dist-win's system-wide deploy: registers Mesa as the desktop OpenGL driver, so
+      # an SDL2/WGL context lands on llvmpipe (windows-latest has no GL driver beyond GDI's 1.1).
+      # Pinned to a commit SHA (v3.0.0), since this is a third-party action.
+      - name: Install Mesa llvmpipe (OpenGL)
+        uses: ssciwr/setup-mesa-dist-win@2dfeaebfa514f74c2b8cd8d27108c31486d33e72 # v3.0.0
+
+      - name: Restore the pinned dotnet-mgcb tool
+        run: dotnet tool restore
+
+      # Phase 29 + Phase 63: a real `dotnet mgcb` build (3.8.4.1 and 3.8.5) through the plugin,
+      # payload byte-equal to the CLI's, envelope equal to stock, decoy dxcompiler.dll on PATH.
+      - name: MGCB content-processor plugin (MgcbPlugin)
+        if: ${{ !cancelled() }}
+        run: |
+          dotnet build src/ShadowDusk.MgcbPlugin/ShadowDusk.MgcbPlugin.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet build src/ShadowDusk.Cli/ShadowDusk.Cli.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet run --project validation/MgcbPlugin -c Release
+
+      # Phase 60: ShadowDusk-written .xnb vs stock mgcb's through a real Content.Load<Effect>.
+      - name: XNB direct writer on MonoGame WindowsDX (XnbContentLoad)
+        if: ${{ !cancelled() }}
+        run: dotnet run --project validation/XnbContentLoad -c Release
+
+      # Phase 64: the same claim on MonoGame DesktopGL (llvmpipe).
+      - name: XNB direct writer on MonoGame DesktopGL (XnbContentLoadGl)
+        if: ${{ !cancelled() }}
+        run: dotnet run --project validation/XnbContentLoadGl -c Release
+
+      # Phase 64: real KNI Content.Load<Effect> on both KNI lines (llvmpipe), incl. the pinned
+      # positive control that stock mgcb output is rejected on 4.2.
+      - name: XNB on KNI 4.2.9001 (KniXnbContentLoad)
+        if: ${{ !cancelled() }}
+        run: dotnet run --project validation/KniXnbContentLoad -c Release
+
+      - name: XNB on KNI 4.3.9001 (KniXnbContentLoad -p:KniVersion=4.3.9001)
+        if: ${{ !cancelled() }}
+        run: dotnet run --project validation/KniXnbContentLoad -c Release -p:KniVersion=4.3.9001
+
+      # Phase 63: a real MonoGame 3.8.5 ContentBuilder through ShadowDusk.ContentPipeline vs the
+      # stock pair, then Content.Load<Effect> both on WindowsDX (WARP), pixel-identical.
+      - name: MonoGame 3.8.5 Content Builder (ContentBuilder)
+        if: ${{ !cancelled() }}
+        run: |
+          dotnet build src/ShadowDusk.Cli/ShadowDusk.Cli.csproj -c Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          dotnet run --project validation/ContentBuilder -c Release
+
+      - name: Upload render outputs (debug)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: validation-render-output-content-pipeline
+          path: |
+            validation/output*/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # Slang on Windows: SlangCorpus's pinned slangc oracle download is win-x64, and SlangFullCorpus
+  # gate 3 (a real MonoGame WindowsDX Effect load) exists only in the net8.0-windows build. Both
+  # also need a GL context for their pixel-equivalence gates, hence Mesa llvmpipe.
+  slang-windows-gates:
+    name: Slang gates (windows-latest / WARP + Mesa llvmpipe)
+    runs-on: windows-latest
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(github.event.pull_request.labels.*.name, 'run-validation-render')
+    timeout-minutes: 30
+    env:
+      SHADOWDUSK_DX_WARP: "1"
+      GALLIUM_DRIVER: llvmpipe
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET 8 + .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Cache NuGet
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', '**/Directory.Packages.props') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      # The SlangCorpus oracle (~55 MB, SHA-256-pinned in its Program.cs) downloads on first run
+      # into validation/SlangCorpus/.slang-oracle; the pin lives in Program.cs, so key on it.
+      - name: Cache the slangc oracle
+        uses: actions/cache@v5
+        with:
+          path: validation/SlangCorpus/.slang-oracle
+          key: slang-oracle-${{ hashFiles('validation/SlangCorpus/Program.cs') }}
+
+      - name: Restore native tools (vkd3d-shader, DXC, slangc)
+        run: ./tools/restore.ps1
+
+      - name: Install Mesa llvmpipe (OpenGL)
+        uses: ssciwr/setup-mesa-dist-win@2dfeaebfa514f74c2b8cd8d27108c31486d33e72 # v3.0.0
+
+      - name: Slang corpus (SlangCorpus, subset frontend vs the real slangc oracle)
+        if: ${{ !cancelled() }}
+        run: dotnet run --project validation/SlangCorpus -c Release
+
+      - name: Slang full corpus incl. gate 3 (SlangFullCorpus -f net8.0-windows, real WindowsDX Effect load)
+        if: ${{ !cancelled() }}
+        run: dotnet run --project validation/SlangFullCorpus -c Release -f net8.0-windows
+
+      - name: Upload render outputs (debug)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: validation-render-output-slang-windows
+          path: |
+            validation/output*/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # FNA fx_2_0: ShadowDusk's .fxb vs d3dcompiler_47's fx_2_0 (Windows' own, so no fxc install),
+  # real FNA + FNA3D D3D11 pinned to WARP. restore-fna.ps1 clones FNA at the pinned tag and pulls
+  # fnalibs from FNA-XNA/fnalibs-dailies' CI artifacts, which needs an authenticated gh.
+  fna-gate:
+    name: FNA fx_2_0 gate (windows-latest / WARP)
+    runs-on: windows-latest
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(github.event.pull_request.labels.*.name, 'run-validation-render')
+    timeout-minutes: 30
+    env:
+      SHADOWDUSK_DX_WARP: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET 8 + .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Cache NuGet
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', '**/Directory.Packages.props') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      # FNA source + fnalibs, keyed on restore-fna.ps1 (it carries the FNA tag pin). Upstream
+      # fnalibs artifacts expire after ~90 days, so the cache also absorbs a quiet upstream week.
+      - name: Cache FNA external (source + fnalibs)
+        uses: actions/cache@v5
+        with:
+          path: validation/FnaValidation/external
+          key: fna-external-${{ hashFiles('validation/FnaValidation/restore-fna.ps1') }}
+
+      - name: Restore native tools (vkd3d-shader, DXC)
+        run: ./tools/restore.ps1
+
+      - name: Restore FNA (source + fnalibs)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./validation/FnaValidation/restore-fna.ps1
+
+      - name: FNA fx_2_0 gate (FnaValidation, real FNA on WARP)
+        run: dotnet run --project validation/FnaValidation -c Release
+
+      - name: Upload render outputs (debug)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: validation-render-output-fna
+          path: |
+            validation/output*/**
           if-no-files-found: ignore
           retention-days: 7

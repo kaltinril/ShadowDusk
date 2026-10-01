@@ -32,6 +32,10 @@
     <PackageReference Include="MonoGame.Framework.Content.Pipeline" Version="3.8.5" />
     <PackageReference Include="MonoGame.Framework.WindowsDX" Version="3.8.5.1" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- WARP pin for the GPU-less CI lane (issue #204). -->
+    <Compile Include="..\SharedDx\DxHeadlessRasterizer.cs" />
+  </ItemGroup>
 
   <ItemGroup>
     <!-- The thing under test: the LIBRARY shape, not the plugin. -->

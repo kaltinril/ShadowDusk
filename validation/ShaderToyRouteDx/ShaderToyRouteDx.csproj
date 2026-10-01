@@ -20,5 +20,6 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="..\Shared\ShaderInputs.cs" />
+    <Compile Include="..\SharedDx\DxHeadlessRasterizer.cs" />
   </ItemGroup>
 </Project>

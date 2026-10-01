@@ -81,6 +81,8 @@ internal static class Program
 
     private static int Main()
     {
+        // Issue #204 follow-up: WARP in the GPU-less CI lane (SHADOWDUSK_DX_WARP=1), real GPU otherwise.
+        ShadowDusk.Validation.Dx.DxHeadlessRasterizer.PinIfRequested();
         try
         {
             return Run();
