@@ -456,6 +456,17 @@ is the opt-in complete answer, not a replacement.
   slangc's own redundant `#pragma pack_matrix(column_major)` restores OpenGL's existing
   row-major convention. The shipped 21-shader corpus (the 17-shader `tests/fixtures/shaders/slang/`
   set + 4 Phase 65 Gum/generics-probe shaders) is 21/21 on both DirectX_11 and OpenGL.
+- **Generic instantiation and MonoGame's own effects (issues #228, #231, measured 2026-10-01 on
+  osx-arm64 slangc 2026.14.1):** `-no-mangle` is collision-free inside one entry point, but
+  slangc numbers symbols per entry in first-use order, so entries that instantiate one generic
+  differently collided on a name. `SlangHlslMerger` renames the later unit's colliding
+  structs/functions/statics and rejects an unrenamable cbuffer/resource collision (`SD0625`);
+  `SlangGenericsCollisionTests` compiles four adversarial fixtures
+  (`tests/fixtures/shaders/slang-adversarial/`) on all five targets and proves each entry's call
+  graph matches its own slangc output. MonoGame v3.8.5's `Macros.fxh` effects (6 files, 66
+  entries) compile 0/66: `technique`, then the legacy `sampler` type. They are `.fx` input and
+  the Slang route rejects them (`SD0626`); `SlangMonoGameEffectsTests` pins the measurement,
+  including the control that all 66 compile once those two constructs are removed.
 - **Platform macros are forwarded to slangc's own preprocessor (Phase 66 A6):** the same
   `OPENGL`/`SM4`/`VULKAN`/`SM6`/`HLSL`/`GLSL`/`MGFX`/`FNA`/`SM3`/`__KNIFX__` set the ordinary
   `.fx` route already defines, found via a 15-fixture residue sweep across 5 targets that

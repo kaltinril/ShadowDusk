@@ -18,7 +18,7 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   (mesa-dist-win installs one). DXC used to pick up that validator instead of the pinned one and
   reject every module with "DXIL container mismatch for 'PSVRuntimeInfoSize'". The library, the CLI
   and the MGCB plugin now load the pinned `dxil.dll` by full path before anything asks for it by name.
-
+- **Intermittent 60 s timeout in `Issue202_AposShapesCurrentUpstream_LandsOnTheRegisterLimit` on CI.** The test compiled the 3235-line shader twice, and each vkd3d compile costs about 3.3 s of CPU that a loaded runner stretched past the test's 60 s token. It now compiles once with no wall-clock token, since a token cannot interrupt a native compile; the CI integration step's `--blame-hang-timeout 3m` guards hangs and uploads a thread dump.
 - **`.fx` wave/quad intrinsics now fail loudly and consistently on every target that cannot hold them.** On OpenGL, DirectX 11 and FNA they are rejected with `SD0624` (the code the `.slang` route already used), instead of DXC's `Vulkan 1.1 is required` (OpenGL) or vkd3d's `Function "WaveActiveSum" is not defined` (DX11, FNA). The message names the intrinsic and target, keeps the compiler's own line and column, and appends its text; `.fx` and `.slang` share one message. A user function that shares an intrinsic's name on those targets still compiles. DirectX12 still compiles them; Vulkan stays `SD0218`.
 - **Host-independent generated text.** The Slang frontend `.fx`, the SkSL uniform rewrite, the ShaderToy `.fx` and harness, and the multipass manifest/WIRING.md used `AppendLine` (CRLF on Windows, LF elsewhere); they now emit `\n` everywhere. `HostNewlineBanTests` fails if `AppendLine`/`Environment.NewLine`/`WriteLine` reappears in a generator project. Compiled output bytes are unchanged.
 
@@ -130,6 +130,22 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **`SlangCompiler` mis-merged entry points that instantiate the same generic differently
+  (issue #228).** `-no-mangle` is collision-free inside one entry (measured: `Box_0`/`Box_1`/
+  `Box_2` for three `Box<T>`), but slangc numbers symbols per run in first-use order, so a
+  vertex and a pixel entry using `helper<float>` and `helper<float2>` in opposite order both
+  called theirs `helper_0`. The merged effect failed with a location-less redefinition error,
+  or silently bound the wrong overload when only the signatures differed. The merge now splits
+  by top-level declaration (it used to split at every `#line`, including mid-function, and could
+  drop a function's closing fragment as a "duplicate") and renames a later unit's colliding
+  structs, functions and statics (`helper_0_e1`), iterated to a fixed point. A colliding
+  cbuffer or resource, which is a reflected parameter name and cannot be renamed, is rejected as
+  `SD0625`.
+- **HLSL Effect (`.fx`) input to `SlangCompiler` is rejected as `SD0626` (issue #231).**
+  Measured against MonoGame v3.8.5's own effects (`Macros.fxh`, BasicEffect, SkinnedEffect, ...):
+  0 of 66 entries compile through real slangc, because of the `technique` block and then the
+  legacy `sampler` type; with both removed all 66 compile. Those effects belong on the `.fx`
+  route; previously the author got `SD0603`, "add `[shader]` attributes", a dead end.
 - **Slang: `[shader(...)]` or an SM6 intrinsic name inside a comment or string literal is no longer read as code (#222).** A doc comment quoting `[shader("fragment")]` could produce a phantom entry point and a false `SD0604`; the same blindness let a commented `WaveActiveSum` trigger `SD0624`. The entry scanner, the SM6 guard, and the `SD0600` construct scan now share one comment/string mask, and attribute stripping only removes real attributes.
 - **Vulkan: HLSL wave/quad intrinsics (`WaveActiveSum`, `QuadReadAcrossX`, ...) are rejected
   loudly with a new diagnostic, `SD0218`, instead of DXC's confusing `Vulkan 1.1 is required for
