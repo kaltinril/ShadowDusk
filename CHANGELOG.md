@@ -129,6 +129,12 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 - **Every release and pack-consume nupkg gate now matches exact entry names** instead of a
   substring of the listing. A substring match could not tell `runtimes/<rid>/native/slangc`
   from the mis-packed `runtimes/<rid>/native/slangc/slangc`.
+- **The `ShadowDusk.Slang` nupkg gate is one script, runnable locally (issue #226).**
+  `tools/verify-slang-nupkg.sh <nupkg>` holds the only list of the eight slangc natives (slangc
+  plus its slang-compiler library for win-x64, linux-x64, osx-x64 and osx-arm64) and the
+  Apache-2.0 notice. `release.yml` and `tools/verify-slang-packaging.sh` (pack-consume.yml) both
+  call it, so the two gates can no longer drift apart, and it fails red when the package is
+  missing any entry or was not produced at all.
 
 ### Fixed
 

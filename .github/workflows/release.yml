@@ -326,30 +326,14 @@ jobs:
       # Apache-2.0 notice. Its csproj entries are Exists()-conditioned like HLSL's, so a pack
       # without the restored natives SILENTLY ships a package whose every compile fails SD0621
       # on that RID. Fail the release red instead (project_decisions.md: a missing native fails
-      # the release, it does not warn). Same list as tools/verify-slang-packaging.sh.
+      # the release, it does not warn). The exact-name list lives in ONE place,
+      # tools/verify-slang-nupkg.sh, which tools/verify-slang-packaging.sh (pack-consume.yml)
+      # also runs, and which a release driver can run locally against a packed nupkg.
       - name: Verify ShadowDusk.Slang contains slangc for all four RIDs + Apache-2.0 notice
         run: |
           pkg=$(find nupkg -maxdepth 1 -name 'ShadowDusk.Slang.*.nupkg' ! -name '*.snupkg' | head -1)
-          test -n "$pkg" || { echo "::error::ShadowDusk.Slang .nupkg not produced"; exit 1; }
-          echo "Inspecting $pkg"
-          listing=$(unzip -Z1 "$pkg")   # exact names, whole-line match (see the HLSL gate)
-          missing=0
-          for native in \
-            'runtimes/win-x64/native/slangc.exe' \
-            'runtimes/win-x64/native/slang-compiler.dll' \
-            'runtimes/linux-x64/native/slangc' \
-            'runtimes/linux-x64/native/libslang-compiler.so.0.2026.14.1' \
-            'runtimes/osx-x64/native/slangc' \
-            'runtimes/osx-x64/native/libslang-compiler.0.2026.14.1.dylib' \
-            'runtimes/osx-arm64/native/slangc' \
-            'runtimes/osx-arm64/native/libslang-compiler.0.2026.14.1.dylib' \
-            'THIRD-PARTY-NOTICES.txt' ; do
-              if ! grep -qxF "$native" <<<"$listing"; then
-                echo "::error::$pkg is missing $native; every ShadowDusk.Slang compile on that RID would fail SD0621. Restore natives before packing (tools/restore.sh; RELEASING.md 'Native binaries')."
-                missing=1
-              fi
-          done
-          exit $missing
+          chmod +x tools/verify-slang-nupkg.sh
+          ./tools/verify-slang-nupkg.sh "$pkg"
 
       # ShadowDusk.GLSL's only bundled native is the Phase 50 android-arm64 SPIRV-Cross .so
       # (desktop SPIRV-Cross ships transitively via Silk.NET.SPIRV.Cross.Native; it is NOT
