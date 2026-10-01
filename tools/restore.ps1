@@ -486,13 +486,16 @@ Restore-Vkd3dWasm
 # RIDs; plan/PHASE-66-appendix/slang-native-minimal-set-probe/): the slangc executable plus
 # the slang-compiler library only. The Unix slangc resolves its library through
 # RUNPATH/LC_RPATH "$ORIGIN"/"@loader_path", so the two files work side by side in one flat
-# directory. Linux uses upstream's "glibc-2.27" build (GLIBC_2.17 floor, GLIBCXX_3.4.29);
-# the macOS builds declare minos 26.0. See restore.sh for the full notes.
+# directory. Linux uses upstream's "glibc-2.27" build (GLIBC_2.17 floor, GLIBCXX_3.4.29).
+# macOS is OUR build of the same tag with a macOS 11.0 deployment target (issue #237;
+# upstream's macOS builds declare minos 26.0), from .github/workflows/slang-macos-build.yml,
+# hosted file by file on the native-slang-<version> release. See restore.sh for the full notes.
 #
 # slangc writes a runtime cache file (slang-glsl-module.bin) into its OWN directory on first
 # compile; SlangNativeCache handles a read-only packaged directory at run time (Phase 66 A3).
 $SlangVersion = '2026.14.1'
 $SlangReleaseUrl = "https://github.com/shader-slang/slang/releases/download/v$SlangVersion"
+$SlangMacosReleaseUrl = "https://github.com/kaltinril/ShadowDusk/releases/download/native-slang-$SlangVersion"
 
 function Restore-SlangRid([string]$Rid, [string]$ZipSuffix, [string]$ZipSha,
                           [string]$ExeEntry, [string]$ExeSha, [string]$LibEntry, [string]$LibSha) {
@@ -559,6 +562,46 @@ function Restore-SlangRid([string]$Rid, [string]$ZipSuffix, [string]$ZipSha,
     Write-Host "restore.ps1: slangc ($Rid) downloaded, zip + file hashes OK"
 }
 
+# One file from the native-slang release (the issue #237 macOS build), pinned by its own hash.
+function Restore-SlangMacosFile([string]$Rid, [string]$Asset, [string]$Name, [string]$Sha256) {
+    $SlangDir = Join-Path $RepoRoot 'tools' 'slang' $Rid
+    $Dest = Join-Path $SlangDir $Name
+    EnsureDir $SlangDir
+    if ((Test-Path $Dest) -and ((Get-FileHash -Algorithm SHA256 -Path $Dest).Hash.ToLowerInvariant() -eq $Sha256)) {
+        Write-Host "restore.ps1: slangc ($Rid) $Name present, hash OK"
+        return
+    }
+    # Delete-on-mismatch: a stale copy (e.g. the upstream minos-26 build an older checkout
+    # restored) must never survive a failed re-download.
+    if (Test-Path $Dest) { Remove-Item -Force $Dest }
+
+    $tmp = "$Dest.tmp"
+    try {
+        Invoke-WebRequest -Uri "$SlangMacosReleaseUrl/$Asset" -OutFile $tmp -UseBasicParsing
+    } catch {
+        Write-Warning ("restore.ps1: could not download $Asset from $SlangMacosReleaseUrl (offline?); " +
+            "ShadowDusk.Slang ($Rid) will be unavailable. $_")
+        if (Test-Path $tmp) { Remove-Item -Force $tmp }
+        return   # non-fatal by design
+    }
+    $got = (Get-FileHash -Algorithm SHA256 -Path $tmp).Hash.ToLowerInvariant()
+    if ($got -ne $Sha256) {
+        Write-Warning "restore.ps1: $Asset SHA-256 mismatch (expected $Sha256, got $got); discarding."
+        Remove-Item -Force $tmp
+        return   # non-fatal, but the file is NOT placed
+    }
+    Move-Item -Force $tmp $Dest
+    Write-Host "restore.ps1: slangc ($Rid) $Name downloaded, hash OK"
+}
+
+function Restore-SlangMacosRid([string]$Rid, [string]$ExeSha, [string]$LibSha) {
+    $lib = "libslang-compiler.0.$SlangVersion.dylib"
+    Restore-SlangMacosFile $Rid "slangc.$Rid" 'slangc' $ExeSha
+    Restore-SlangMacosFile $Rid "libslang-compiler.0.$SlangVersion.$Rid.dylib" $lib $LibSha
+    $exe = Join-Path $RepoRoot 'tools' 'slang' $Rid 'slangc'
+    if ((Test-Path $exe) -and -not $IsWindows -and $null -ne $IsWindows) { chmod +x $exe }
+}
+
 function Restore-Slang {
     Restore-SlangRid 'win-x64' 'windows-x86_64' `
         '5ed0a59d650a0af0aca45d5db4e083b3d8fb5cea05748747dd95dfbe9c580658' `
@@ -568,14 +611,12 @@ function Restore-Slang {
         '9e36aab4be2686885dc0cd4b740fcbab27e50047c2d8187d9403ec2ce82fd1ba' `
         'bin/slangc' '5cc0134d42cf414f0dcde8c31a813337801a6afdc5443033ef39e28b1262d336' `
         "lib/libslang-compiler.so.0.$SlangVersion" 'aba57be5bccd5490c539e3ff19b307bc464243f60714e5894e62bad8c2cac9ba'
-    Restore-SlangRid 'osx-x64' 'macos-x86_64' `
-        'a3da109bfb732ab3f09beb6999f9831d9be440fa9a1843006b7ea56498f545d6' `
-        'bin/slangc' '4de52e387cc44996ea2d2dfaea1b941e522b7896054799ec7b63a3272c00c3a6' `
-        "lib/libslang-compiler.0.$SlangVersion.dylib" 'c87e37121416f54b1d9b988fb74241b0bc662cd03f9e4ce823b314271a9d7016'
-    Restore-SlangRid 'osx-arm64' 'macos-aarch64' `
-        '2976c3a9a6f4d77b5734d00b5d841d1ff087d9965d9006b9b4d73edd0062cb7d' `
-        'bin/slangc' 'a1c5ecae0d2425b13fe7f616686f2df7cc7028d3f6a85fb717497cf98bee3d0a' `
-        "lib/libslang-compiler.0.$SlangVersion.dylib" '4fadae0d56d4538dc2a0099086de3d2a5350e12da4591679ee8cbb571c5db7de'
+    Restore-SlangMacosRid 'osx-x64' `
+        'SLANGC_OSX_X64_SHA256' `
+        'LIB_OSX_X64_SHA256'
+    Restore-SlangMacosRid 'osx-arm64' `
+        'SLANGC_OSX_ARM64_SHA256' `
+        'LIB_OSX_ARM64_SHA256'
 }
 
 Restore-Slang

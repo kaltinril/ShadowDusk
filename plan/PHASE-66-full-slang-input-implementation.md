@@ -19,7 +19,7 @@ procedural subset, 21/21 real DirectX_11 `Effect` loads/renders), and the docs/s
 updates. **A9 (issues #225/#226/#227, 2026-10-01): slangc for linux-x64/osx-x64/osx-arm64,
 a cold NuGet consumer proven, and the release gate.** Left open: §5's remaining open questions,
 a real-`Effect`-load gate for DirectX_12/Vulkan (A7 stayed at the compile+structural rung for
-those two), and lifting upstream's macOS 26 floor (issue #237).
+those two). Upstream's macOS 26 floor was lifted by issue #237 (macOS slangc self-built from the same tag for 10.15 x64 / 11.0 arm64, byte-identical output).
 
 **Depends on:** [Phase 61](DONE/PHASE-61-slang-support.md) (the shipped HLSL-compatible-subset
 frontend and its groundwork §6/§7/OQ2/OQ3) and [Phase 65](PHASE-65-full-slang-input-spike.md) (the
@@ -703,7 +703,7 @@ turn into an open-ended slog.
   `slang-llvm` at all. The CPU/LLVM positive control does not discriminate on macOS (with an
   empty `PATH`, even the full release fails `E52002`, so `-emit-cpu-via-llvm` there resolves the
   system clang, not `libslang-llvm`). Upstream floors found: every macOS build declares
-  `minos 26.0` (now `SD0620` on older macOS; self-build follow-up #237); Linux needs
+  `minos 26.0` (lifted by issue #237: the macOS natives are now self-built from the same tag); Linux needs
   `GLIBCXX_3.4.29`. `SlangToolPath` gained the `runtimes/<rid>/native/` probe and per-RID file
   names; `SlangNativeCache` checks the library up front and sets the execute bit. The pack +
   cold-consume script (`tools/verify-slang-packaging.sh`, run by `pack-consume.yml`) found a

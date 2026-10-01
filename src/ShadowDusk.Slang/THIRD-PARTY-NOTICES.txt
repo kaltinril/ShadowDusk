@@ -44,14 +44,19 @@ prospectively choose to deem waived or otherwise exclude such Section(s) of
 the License, but only in their entirety and only with respect to the Combined
 Software.
 
-The bundled binaries are an UNMODIFIED subset of files extracted from the
-official upstream release archives
+The win-x64 and linux-x64 binaries are an UNMODIFIED subset of files extracted
+from the official upstream release archives
 (https://github.com/shader-slang/slang/releases/tag/v2026.14.1), each archive
 SHA-256-verified before extraction:
     slang-2026.14.1-windows-x86_64.zip           5ed0a59d650a0af0aca45d5db4e083b3d8fb5cea05748747dd95dfbe9c580658
     slang-2026.14.1-linux-x86_64-glibc-2.27.zip  9e36aab4be2686885dc0cd4b740fcbab27e50047c2d8187d9403ec2ce82fd1ba
-    slang-2026.14.1-macos-x86_64.zip             a3da109bfb732ab3f09beb6999f9831d9be440fa9a1843006b7ea56498f545d6
-    slang-2026.14.1-macos-aarch64.zip            2976c3a9a6f4d77b5734d00b5d841d1ff087d9965d9006b9b4d73edd0062cb7d
+The osx-x64 and osx-arm64 binaries are built from the UNMODIFIED upstream
+source at the same tag (v2026.14.1, commit
+7c58a326b1f3812411a204b19cb01e323d8f6010), with upstream's own release build
+flags and a lower macOS deployment target (10.15 x64, 11.0 arm64), by
+.github/workflows/slang-macos-build.yml in the ShadowDusk repository, because
+upstream's macOS binaries require macOS 26. That workflow checks their output is
+byte-identical to upstream's macOS build.
 Only the slangc executable and the slang-compiler library are redistributed;
 every other file in each release (the LLVM/CPU-codegen backend, the
 CLI/language-server/interpreter binaries, the graphics-API abstraction layer,

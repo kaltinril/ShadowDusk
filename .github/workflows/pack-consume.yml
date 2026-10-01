@@ -105,7 +105,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: tools/slang
-          key: slang-2026.14.1-${{ runner.os }}
+          key: slang-2026.14.1-osx11-${{ runner.os }}
 
       # Download failures only warn inside the script (offline tolerance) — the PACK
       # GATE below is the loud assertion: a package without natives must fail this job
@@ -373,7 +373,7 @@ jobs:
       # self-contained publish (natives flattened next to the app). The consumer asserts slangc
       # resolved from inside its own output and that genuine Slang (generics over an interface)
       # and a VS+PS shader compile to MGFX on OpenGL and DirectX. A private NUGET_PACKAGES makes
-      # NuGet extract the package fresh. macos-latest is macOS 26, the upstream slangc's floor.
+      # NuGet extract the package fresh.
       - name: Pack + consume ShadowDusk.Slang (framework-dependent and self-contained)
         shell: bash
         run: |

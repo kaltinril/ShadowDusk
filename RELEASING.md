@@ -229,14 +229,18 @@ first (the `/release` skill does this for you).
 > **slangc packing (`ShadowDusk.Slang` — Phase 66, issues #226/#227):** `ShadowDusk.Slang.csproj`
 > packs each **restored** `tools/slang/<rid>/` pair (the slangc executable + its slang-compiler
 > library) for win-x64, linux-x64, osx-x64 and osx-arm64. `tools/restore.{ps1,sh}` download the
-> official shader-slang v2026.14.1 release zips, verify each zip's SHA-256 before extracting, and
-> verify each extracted file against its own pin. `release.yml`'s `pack-desktop` job hard-gates
+> official shader-slang v2026.14.1 release zips for win-x64/linux-x64 (zip SHA-256 verified before
+> extracting, each extracted file pinned too) and our own macOS build from the
+> `native-slang-2026.14.1` release (each file pinned). `release.yml`'s `pack-desktop` job hard-gates
 > the restored files and then fails red if the packed nupkg is missing any of the eight natives
 > or `THIRD-PARTY-NOTICES.txt` (exact entry names). **Before dispatching**, confirm the
 > `Pack & Consume Smoke` workflow is green on the release commit (dispatch it if the last run is
 > older): its `tools/verify-slang-packaging.sh` step is the only proof that a cold consumer can
-> install the package and run slangc on Linux, macOS and Windows. Host floors are upstream's:
-> Linux Ubuntu 22.04+, macOS 26+ (issue #237).
+> install the package and run slangc on Linux, macOS and Windows. Host floors: Linux Ubuntu
+> 22.04+ (upstream's), macOS 10.15+ x64 / 11+ arm64 (our build, issue #237). **A slang pin bump**
+> is not just new hashes: re-run `.github/workflows/slang-macos-build.yml` at the new tag (its
+> byte-identity steps against upstream's macOS build must be green), attach its artifacts to a
+> new `native-slang-<version>` release, then re-pin the macOS files in both restore scripts.
 
 ---
 

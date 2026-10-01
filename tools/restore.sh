@@ -471,11 +471,17 @@ restore_vkd3d_wasm
 #
 # Linux uses upstream's "glibc-2.27" build, not the default linux-x86_64 one: the default
 # needs GLIBC_2.34; this one needs GLIBC_2.17 (both need libstdc++ GLIBCXX_3.4.29, i.e. a
-# GCC 11+ runtime such as Ubuntu 22.04's). The macOS builds declare minos 26.0 (both arches,
-# and the -dist variants too), so they run on macOS 26+ only; SlangToolPath reports older
-# macOS as unsupported (SD0620) instead of letting dyld kill the process.
+# GCC 11+ runtime such as Ubuntu 22.04's).
+#
+# macOS is OUR build of the same tag (issue #237), not upstream's: every upstream macOS build
+# declares minos 26.0, so it would not load on macOS 12-25. .github/workflows/
+# slang-macos-build.yml builds slangc + libslang-compiler from the pinned tag with upstream's
+# own release flags plus CMAKE_OSX_DEPLOYMENT_TARGET=11.0, proves byte-identical output to
+# upstream's build (ShadowDusk's Slang corpus and slang's ~4400 test shaders), and the files
+# are hosted, file by file, on the fixed native-slang-<version> release below.
 SLANG_VERSION="2026.14.1"
 SLANG_RELEASE_URL="https://github.com/shader-slang/slang/releases/download/v${SLANG_VERSION}"
+SLANG_MACOS_RELEASE_URL="https://github.com/kaltinril/ShadowDusk/releases/download/native-slang-${SLANG_VERSION}"
 
 # restore_slang_rid <rid> <zip-suffix> <zip-sha256> <exe-entry> <exe-sha256> <lib-entry> <lib-sha256>
 restore_slang_rid() {
@@ -532,6 +538,48 @@ restore_slang_rid() {
     echo "restore.sh: slangc ($rid) downloaded, zip + file hashes OK"
 }
 
+# restore_slang_macos_file <rid> <asset-name> <dest-file-name> <sha256>
+# One file from the native-slang release (the issue #237 macOS build), pinned by its own hash.
+restore_slang_macos_file() {
+    local rid="$1" asset="$2" name="$3" sha="$4"
+    local dest="$REPO_ROOT/tools/slang/$rid/$name"
+
+    mkdir -p "$(dirname "$dest")"
+    if [ -f "$dest" ] && [ "$(vkd3d_sha256 "$dest")" = "$sha" ]; then
+        echo "restore.sh: slangc ($rid) $name present, hash OK"
+        return 0
+    fi
+    # Delete-on-mismatch (see restore_vkd3d_file): a stale copy (e.g. the upstream minos-26
+    # build an older checkout restored) must never survive a failed re-download.
+    rm -f "$dest"
+
+    if ! curl -fsSLo "$dest.tmp" "$SLANG_MACOS_RELEASE_URL/$asset"; then
+        echo "restore.sh: WARNING — could not download $asset from $SLANG_MACOS_RELEASE_URL (offline?); ShadowDusk.Slang ($rid) will be unavailable." >&2
+        rm -f "$dest.tmp"
+        return 0   # non-fatal by design
+    fi
+    local got
+    got="$(vkd3d_sha256 "$dest.tmp")"
+    if [ "$got" != "$sha" ]; then
+        echo "restore.sh: ERROR — $asset SHA-256 mismatch (expected $sha, got $got); discarding." >&2
+        rm -f "$dest.tmp"
+        return 0   # non-fatal, but the file is NOT placed
+    fi
+    mv -f "$dest.tmp" "$dest"
+    echo "restore.sh: slangc ($rid) $name downloaded, hash OK"
+}
+
+# restore_slang_macos_rid <rid> <slangc-sha256> <lib-sha256>
+restore_slang_macos_rid() {
+    local rid="$1" lib="libslang-compiler.0.${SLANG_VERSION}.dylib"
+    restore_slang_macos_file "$rid" "slangc.$rid" slangc "$2"
+    restore_slang_macos_file "$rid" "libslang-compiler.0.${SLANG_VERSION}.$rid.dylib" "$lib" "$3"
+    # SlangNativeCache also sets the bit at run time (a consumer's copy may lack it); this
+    # covers repo/dev runs straight out of tools/slang/<rid>/.
+    [ -f "$REPO_ROOT/tools/slang/$rid/slangc" ] && chmod +x "$REPO_ROOT/tools/slang/$rid/slangc"
+    return 0
+}
+
 restore_slang() {
     restore_slang_rid win-x64 windows-x86_64 \
         5ed0a59d650a0af0aca45d5db4e083b3d8fb5cea05748747dd95dfbe9c580658 \
@@ -541,14 +589,12 @@ restore_slang() {
         9e36aab4be2686885dc0cd4b740fcbab27e50047c2d8187d9403ec2ce82fd1ba \
         bin/slangc 5cc0134d42cf414f0dcde8c31a813337801a6afdc5443033ef39e28b1262d336 \
         "lib/libslang-compiler.so.0.${SLANG_VERSION}" aba57be5bccd5490c539e3ff19b307bc464243f60714e5894e62bad8c2cac9ba
-    restore_slang_rid osx-x64 macos-x86_64 \
-        a3da109bfb732ab3f09beb6999f9831d9be440fa9a1843006b7ea56498f545d6 \
-        bin/slangc 4de52e387cc44996ea2d2dfaea1b941e522b7896054799ec7b63a3272c00c3a6 \
-        "lib/libslang-compiler.0.${SLANG_VERSION}.dylib" c87e37121416f54b1d9b988fb74241b0bc662cd03f9e4ce823b314271a9d7016
-    restore_slang_rid osx-arm64 macos-aarch64 \
-        2976c3a9a6f4d77b5734d00b5d841d1ff087d9965d9006b9b4d73edd0062cb7d \
-        bin/slangc a1c5ecae0d2425b13fe7f616686f2df7cc7028d3f6a85fb717497cf98bee3d0a \
-        "lib/libslang-compiler.0.${SLANG_VERSION}.dylib" 4fadae0d56d4538dc2a0099086de3d2a5350e12da4591679ee8cbb571c5db7de
+    restore_slang_macos_rid osx-x64 \
+        SLANGC_OSX_X64_SHA256 \
+        LIB_OSX_X64_SHA256
+    restore_slang_macos_rid osx-arm64 \
+        SLANGC_OSX_ARM64_SHA256 \
+        LIB_OSX_ARM64_SHA256
 }
 
 restore_slang

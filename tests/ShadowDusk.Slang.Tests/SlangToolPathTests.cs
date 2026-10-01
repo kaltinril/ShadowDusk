@@ -63,7 +63,7 @@ public sealed class SlangToolPathTests : IDisposable
     [Fact]
     public void UnsupportedReason_UnbundledRid_NamesTheHostAndTheBundledRids()
     {
-        string? reason = SlangToolPath.GetUnsupportedReason(null, isMacOS: false, new Version(6, 1), "linux-arm64");
+        string? reason = SlangToolPath.GetUnsupportedReason(null, "linux-arm64");
 
         reason.ShouldNotBeNull();
         reason.ShouldContain("linux-arm64", Case.Sensitive);
@@ -71,34 +71,21 @@ public sealed class SlangToolPathTests : IDisposable
             reason.ShouldContain(rid, Case.Sensitive);
     }
 
+    // Every bundled RID is supported with no OS-version condition: the macOS slangc is built
+    // for macOS 11 (issue #237), so there is no floor above .NET's own to report.
     [Theory]
-    [InlineData(12, 0)]
-    [InlineData(15, 7)]
-    [InlineData(25, 9)]
-    public void UnsupportedReason_MacOSOlderThan26_IsUnsupported(int major, int minor)
-    {
-        string? reason = SlangToolPath.GetUnsupportedReason(
-            "osx-arm64", isMacOS: true, new Version(major, minor), "osx-arm64");
-
-        reason.ShouldNotBeNull();
-        reason.ShouldContain("macOS 26", Case.Sensitive);
-        reason.ShouldContain($"{major}.{minor}", Case.Sensitive);
-    }
-
-    [Theory]
-    [InlineData("osx-arm64", true, 26, 0)]
-    [InlineData("osx-x64", true, 27, 1)]
-    [InlineData("win-x64", false, 10, 0)]   // Windows/Linux kernel versions are never compared to the macOS floor
-    [InlineData("linux-x64", false, 5, 15)]
-    public void UnsupportedReason_SupportedHost_IsNull(string rid, bool isMacOS, int major, int minor) =>
-        SlangToolPath.GetUnsupportedReason(rid, isMacOS, new Version(major, minor), rid).ShouldBeNull();
+    [InlineData("osx-arm64")]
+    [InlineData("osx-x64")]
+    [InlineData("win-x64")]
+    [InlineData("linux-x64")]
+    public void UnsupportedReason_SupportedHost_IsNull(string rid) =>
+        SlangToolPath.GetUnsupportedReason(rid, rid).ShouldBeNull();
 
     [Fact]
     public void ThisHost_IsSupported_AndResolvesTheRestoredNative_WhenItIsABundledRid()
     {
-        // The hosts CI and the developer boxes run on are all bundled RIDs (and the macOS
-        // runner image is macOS 26). If this ever runs somewhere unbundled the assertion
-        // below names it instead of passing vacuously.
+        // The hosts CI and the developer boxes run on are all bundled RIDs. If this ever runs
+        // somewhere unbundled the assertion below names it instead of passing vacuously.
         string? rid = SlangToolPath.CurrentRid;
         rid.ShouldNotBeNull($"this test host ({RuntimeInformation.RuntimeIdentifier}) is not a bundled slangc RID");
         SlangToolPath.GetUnsupportedReason().ShouldBeNull();

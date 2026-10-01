@@ -199,7 +199,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: tools/slang
-          key: slang-2026.14.1-${{ runner.os }}
+          key: slang-2026.14.1-osx11-${{ runner.os }}
 
       # No `|| true`: a genuine restore failure must fail the release, not surface
       # later as a broken package.

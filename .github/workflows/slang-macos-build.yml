@@ -1,6 +1,6 @@
 # .github/workflows/slang-macos-build.yml
-# Issue #237: build slangc + libslang-compiler for osx-arm64 and osx-x64 with a macOS 11.0
-# deployment target, because every upstream macOS build of the pinned release declares
+# Issue #237: build slangc + libslang-compiler for osx-x64 (macOS 10.15) and osx-arm64 (macOS
+# 11.0) deployment targets, because every upstream macOS build of the pinned release declares
 # LC_BUILD_VERSION minos 26.0 (measured with otool for v2026.14.1 and still true of v2026.19,
 # the latest at the time). Upstream sets no deployment target at all, so its binaries inherit
 # the runner SDK's; there is no release asset or CMake option of theirs that lowers it.
@@ -39,29 +39,32 @@ env:
   # The commit the v2026.14.1 tag points at; checked after the fetch so a moved tag can
   # never silently change the shipped compiler.
   SLANG_COMMIT: '7c58a326b1f3812411a204b19cb01e323d8f6010'
-  # .NET 8, the oldest runtime ShadowDusk targets, needs macOS 12+; 11.0 (the first macOS
-  # with arm64) keeps the native from ever being the binding floor on either arch.
-  DEPLOYMENT_TARGET: '11.0'
 
 jobs:
   build-macos:
     name: Build ${{ matrix.rid }} slangc
     runs-on: ${{ matrix.os }}
     timeout-minutes: 180
+    env:
+      DEPLOYMENT_TARGET: ${{ matrix.deployment_target }}
     strategy:
       fail-fast: false
       matrix:
         include:
           # Native builds on macOS 26, so upstream's minos-26 binary can run next to ours
-          # for the equivalence check.
+          # for the equivalence check. The deployment targets match .NET 8's own macOS floor
+          # (its x64 runtime declares 10.15) and, for arm64, the first macOS that ran on it;
+          # the same pair dxc-build.yml uses, so neither native is ever the binding floor.
           - rid: osx-arm64
             os: macos-26
             arch: arm64
+            deployment_target: '11.0'
             upstream_zip: macos-aarch64
             upstream_zip_sha256: 2976c3a9a6f4d77b5734d00b5d841d1ff087d9965d9006b9b4d73edd0062cb7d
           - rid: osx-x64
             os: macos-26-intel
             arch: x86_64
+            deployment_target: '10.15'
             upstream_zip: macos-x86_64
             upstream_zip_sha256: a3da109bfb732ab3f09beb6999f9831d9be440fa9a1843006b7ea56498f545d6
     steps:

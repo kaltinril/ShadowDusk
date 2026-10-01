@@ -39,19 +39,13 @@ public static class SlangToolPath
     /// </summary>
     internal const string SlangVersion = "2026.14.1";
 
-    /// <summary>
-    /// Every upstream macOS build of the pinned release (x86_64 and aarch64, the standard
-    /// and the <c>-dist</c> zips alike) declares <c>LC_BUILD_VERSION minos 26.0</c>, so dyld
-    /// refuses to load it on anything older. Measured with <c>otool -l</c>, issue #227.
-    /// </summary>
-    internal static readonly Version MinimumMacOSVersion = new(26, 0);
-
     /// <summary>The RIDs this package bundles slangc for.</summary>
     internal static readonly IReadOnlyList<string> SupportedRids = ["win-x64", "linux-x64", "osx-x64", "osx-arm64"];
 
     /// <summary>
-    /// <see langword="true"/> when this host can run the bundled slangc: a supported RID
-    /// (see <see cref="SupportedRids"/>) and, on macOS, macOS 26 or later.
+    /// <see langword="true"/> when this host can run the bundled slangc: one of the
+    /// <see cref="SupportedRids"/>. There is no separate macOS version floor: the bundled macOS
+    /// slangc is built for macOS 11 (issue #237), below the oldest macOS .NET itself runs on.
     /// </summary>
     public static bool IsSupportedOnThisPlatform => GetUnsupportedReason() is null;
 
@@ -81,25 +75,13 @@ public static class SlangToolPath
     /// sentence naming why, used verbatim in <c>SD0620</c>.
     /// </summary>
     internal static string? GetUnsupportedReason() =>
-        GetUnsupportedReason(CurrentRid, OperatingSystem.IsMacOS(), Environment.OSVersion.Version,
-                             RuntimeInformation.RuntimeIdentifier);
+        GetUnsupportedReason(CurrentRid, RuntimeInformation.RuntimeIdentifier);
 
-    internal static string? GetUnsupportedReason(string? rid, bool isMacOS, Version osVersion, string hostRid)
-    {
-        if (rid is null)
-        {
-            return $"ShadowDusk.Slang bundles slangc for {string.Join(", ", SupportedRids)}; " +
-                   $"this host ({hostRid}) is not one of them.";
-        }
-
-        if (isMacOS && osVersion < MinimumMacOSVersion)
-        {
-            return $"ShadowDusk.Slang's bundled slangc (upstream v{SlangVersion}) is built for macOS " +
-                   $"{MinimumMacOSVersion.Major} or later, and this host runs macOS {osVersion}.";
-        }
-
-        return null;
-    }
+    internal static string? GetUnsupportedReason(string? rid, string hostRid) =>
+        rid is null
+            ? $"ShadowDusk.Slang bundles slangc for {string.Join(", ", SupportedRids)}; " +
+              $"this host ({hostRid}) is not one of them."
+            : null;
 
     /// <summary>The slangc executable's file name for <paramref name="rid"/>.</summary>
     internal static string ExecutableFileName(string rid) =>

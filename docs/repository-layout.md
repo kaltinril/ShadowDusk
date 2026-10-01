@@ -82,6 +82,9 @@ ShadowDusk/
 │   ├── plantuml/                  # PlantUML jar for regenerating docs/*.puml diagrams
 │   ├── slang/<rid>/               # real slangc + its slang-compiler library for win-x64, linux-x64, osx-x64,
 │   │                              #   osx-arm64 (ShadowDusk.Slang packs all four; restored + hash-pinned)
+│   ├── slang-macos/               # (committed) byte-identity checks slang-macos-build.yml runs: our
+│   │                              #   macOS-10.15/11 slangc build vs upstream's, over the Slang corpus
+│   │                              #   and slang's own test shaders (issue #237)
 │   ├── slang-consumer/            # The scratch ShadowDusk.Slang consumer (Program.cs + csproj) that
 │   │                              #   tools/verify-slang-packaging.sh (run by pack-consume.yml) COPIES out of
 │   │                              #   tree and consumes cold, framework-dependent + self-contained (issue #225).

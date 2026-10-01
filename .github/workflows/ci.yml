@@ -242,6 +242,125 @@ jobs:
           path: TestResults/*.trx
           retention-days: 7
 
+  # ShadowDusk.Slang on macOS OLDER than 26 (issue #237). Upstream's macOS slangc declares
+  # minos 26.0; ours is built for 11.0. macos-latest is macOS 26, so it cannot tell the two
+  # apart: these lanes can. macos-14 is the oldest arm64 image GitHub hosts, macos-15-intel the
+  # only pre-26 x86_64 one (and the repo's only osx-x64 .NET coverage). Every Slang test runs,
+  # unit and integration, on both TFMs, with real slangc, and a single skipped test fails the
+  # lane: a skip here would read as macOS 12-25 coverage that never ran.
+  slang-macos-floor:
+    name: Slang on pre-26 macOS (${{ matrix.os }}, ${{ matrix.rid }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            rid: osx-arm64
+            arch: arm64
+          - os: macos-15-intel
+            rid: osx-x64
+            arch: x86_64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # The lane is only evidence if the host really is pre-26 and the RID under test.
+      - name: Assert host is pre-26 macOS on ${{ matrix.arch }}
+        run: |
+          ver=$(sw_vers -productVersion); arch=$(uname -m)
+          echo "macOS $ver on $arch"
+          if [ "${ver%%.*}" -ge 26 ]; then
+            echo "::error::runner is macOS $ver; this lane exists to prove slangc on macOS < 26"; exit 1
+          fi
+          if [ "$arch" != "${{ matrix.arch }}" ]; then
+            echo "::error::runner is $arch, expected ${{ matrix.arch }}"; exit 1
+          fi
+
+      - name: Setup .NET 8 + .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Cache NuGet
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('**/packages.lock.json', '**/Directory.Packages.props') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-${{ matrix.arch }}-
+
+      - name: Cache slangc natives
+        uses: actions/cache@v5
+        with:
+          path: tools/slang
+          key: slang-2026.14.1-osx11-${{ runner.os }}
+
+      - name: Restore native tools
+        run: |
+          chmod +x tools/restore.sh
+          ./tools/restore.sh
+
+      # The bundled slangc must load and run on THIS OS before any test is trusted.
+      - name: slangc runs here (otool minos + smoke)
+        run: |
+          d=tools/slang/${{ matrix.rid }}
+          for f in "$d/slangc" "$d/libslang-compiler.0.2026.14.1.dylib"; do
+            test -f "$f" || { echo "::error::$f not restored"; exit 1; }
+            echo "$f: $(lipo -archs "$f"), $(otool -l "$f" | awk '/LC_BUILD_VERSION/{b=1} b && $1=="minos"{print "minos "$2; exit}')"
+          done
+          printf '[shader("fragment")]\nfloat4 main() : SV_Target { return float4(1,0,0,1); }\n' \
+            | "$d/slangc" -lang slang -target hlsl -entry main -stage fragment -- -
+
+      - name: dotnet build (ShadowDusk.Slang.Tests)
+        run: dotnet build tests/ShadowDusk.Slang.Tests/ShadowDusk.Slang.Tests.csproj -c Release
+
+      # No filter: unit AND integration. MaxParallelThreads=1 matches the macOS integration lane.
+      - name: dotnet test (ShadowDusk.Slang.Tests, every category)
+        env:
+          SHADOWDUSK_REQUIRE_VKD3D: "1"
+          SHADOWDUSK_REQUIRE_DXC: "1"
+        run: >
+          dotnet test tests/ShadowDusk.Slang.Tests/ShadowDusk.Slang.Tests.csproj --no-build -c Release
+          --settings ShadowDusk.runsettings
+          --logger "trx;LogFilePrefix=slang-${{ matrix.os }}"
+          --results-directory TestResults/
+          -- xUnit.MaxParallelThreads=1
+
+      # Zero skips, both TFMs present, and a non-trivial count. Reads the trx counters, so a
+      # test that never executed cannot hide behind a green exit code.
+      - name: Assert zero skipped tests, both TFMs ran
+        if: always()
+        run: |
+          shopt -s nullglob
+          files=(TestResults/*.trx)
+          if [ "${#files[@]}" -ne 2 ]; then
+            echo "::error::expected 2 trx files (net8.0 + net10.0), found ${#files[@]}"; exit 1
+          fi
+          fail=0
+          for f in "${files[@]}"; do
+            counters=$(grep -o '<Counters [^>]*>' "$f")
+            total=$(echo "$counters" | sed -E 's/.* total="([0-9]+)".*/\1/')
+            passed=$(echo "$counters" | sed -E 's/.* passed="([0-9]+)".*/\1/')
+            echo "$(basename "$f"): total=$total passed=$passed"
+            if [ "$total" -lt 100 ] || [ "$passed" != "$total" ]; then
+              echo "::error::$(basename "$f"): $passed of $total tests passed (skipped or failed tests are not allowed here)"; fail=1
+            fi
+          done
+          exit $fail
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: slang-results-${{ matrix.os }}
+          path: TestResults/*.trx
+          retention-days: 14
+
   # Slow path: integration tests (CLI child-process spawn + native DXC/SPIRV-Cross).
   # Runs automatically on pushes to main; on PRs only when the 'run-integration'
   # label is applied (heavyweight + AV-scan-sensitive, see CLAUDE.md Phase 21).
@@ -298,7 +417,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: tools/slang
-          key: slang-2026.14.1-${{ runner.os }}
+          key: slang-2026.14.1-osx11-${{ runner.os }}
 
       - name: Restore native tools (Linux / macOS)
         if: runner.os != 'Windows'

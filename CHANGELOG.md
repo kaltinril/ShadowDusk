@@ -69,9 +69,16 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 - **`ShadowDusk.Slang` runs on Linux and macOS (issue #227).** The package bundles slangc for
   win-x64, linux-x64, osx-x64 and osx-arm64 (only the slangc executable + its compiler library
   per RID, hash-pinned in `tools/restore.*`), so adding the package is the whole setup on every
-  desktop OS. Host floors come from the upstream binaries: Linux needs a GCC 11+ `libstdc++`
-  (Ubuntu 22.04+), macOS needs macOS 26+ (follow-up #237 to lift it); any other host gets
-  `SD0620` naming the reason. A cross-host byte-identity manifest pins the route's output.
+  desktop OS. Linux needs a GCC 11+ `libstdc++` (Ubuntu 22.04+, upstream's floor); any other
+  host gets `SD0620` naming the reason. A cross-host byte-identity manifest pins the route's
+  output.
+- **`ShadowDusk.Slang` runs on macOS 10.15+ (Intel) and 11+ (Apple Silicon), not just macOS 26
+  (issue #237).** Every upstream macOS slangc declares a macOS 26 minimum, so the macOS natives
+  are now built by `.github/workflows/slang-macos-build.yml` from the same pinned upstream tag
+  with upstream's own release flags plus a lower deployment target. That workflow proves the
+  build emits byte-identical output to upstream's for ShadowDusk's Slang corpus and for slang's
+  own ~4400 test shaders, and new CI lanes run every Slang test on macOS 14 (arm64) and
+  macOS 15 (x64) with zero skips.
 - **`ShadowDusk.Slang` is proven to work from a cold NuGet install (issue #225).**
   `tools/verify-slang-packaging.sh`, run by `pack-consume.yml` on all three OSes, packs the
   package, consumes it from a scratch project outside the repo, and compiles real Slang in both
