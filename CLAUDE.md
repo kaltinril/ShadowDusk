@@ -56,6 +56,8 @@ Work arrives from a previous session you did not see. Two obligations, both non-
 | **DirectX 12** (WindowsDX12) | rung 4 — MonoGame only, KNI ships no DX12 |
 | **Vulkan** (DesktopVK) | rung 4 — MonoGame only, KNI ships no Vulkan |
 | **FNA** (`fx_2_0` `.fxb`) | rung 4 — reference compiler is `fxc /T fx_2_0`, not `mgfxc` |
+| **raylib** (Raylib-cs, `glsl330` fragment) | image-fidelity proven (real Raylib-cs vs MonoGame DesktopGL, 13/13 maxd 0); no reference compiler exists, so never rung 4 |
+| **SkiaSharp** (SkSL fragment) | image-fidelity proven in real SkiaSharp; no reference compiler exists, so never rung 4 |
 | **Metal** | not implemented, parked (no consumer runtime to validate against) |
 | **Android** (compile on-device) | proven on an emulator; still needs production hardening |
 

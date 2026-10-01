@@ -8,11 +8,12 @@ the FX file, resolve includes, inject platform macros) is shared. The back half 
 target: **OpenGL/WebGL**, **DirectX 11**, **DirectX 12**, **Vulkan**, and **FNA**. The
 headline pipeline is the OpenGL branch:
 
-Two additive, distinct axes sit outside this fork: a **Slang frontend** runs *before*
+Additive, distinct axes sit outside this fork: a **Slang frontend** runs *before*
 Stage 1, converting `.slang` source to `.fx` text so it joins the ordinary pipeline below;
-and an **SkSL emitter** forks *off* the OpenGL branch, after SPIRV-Cross but before the
-GL rewriter, producing SkSL text for SkiaSharp instead of a `.mgfx`. Both are covered after
-the main stages, since neither is one of the five `.mgfx`/`.fxb`-producing tails.
+and two **source-text emitters**, SkSL (SkiaSharp) and raylib `glsl330` (Raylib-cs), fork
+*off* the OpenGL branch, after SPIRV-Cross but before the GL rewriter, producing shader text
+instead of a `.mgfx`. They are covered after the main stages, since none is one of the five
+`.mgfx`/`.fxb`-producing tails.
 
 ```
 HLSL  →[DXC]→  SPIR-V  →[SPIRV-Cross]→  GLSL  →[MonoGameGlslRewriter]→  .mgfx
@@ -359,9 +360,11 @@ correct and required, but it has a downstream consequence, see *Design notes* be
 ## The SkSL emitter fork (OpenGL branch, before Stage 6)
 
 **What it is.** `ShadowDusk.Compiler.Sksl.SkslConverter` (`src/ShadowDusk.Compiler/Sksl/`)
-branches off the OpenGL branch at `CompilationPipeline.cs:2035` — after Stage 5 (SPIRV-Cross)
-has produced modern GLSL, but *before* Stage 6's `MonoGameGlslRewriter` drags that GLSL back
-to the legacy MojoShader dialect. Converting a pixel-only `.fx` to an
+branches off the OpenGL branch after Stage 5 (SPIRV-Cross) has produced modern GLSL, but
+*before* Stage 6's `MonoGameGlslRewriter` drags that GLSL back to the legacy MojoShader
+dialect. It does not run inside `CompilationPipeline`: `Internal/ModernGlslSeam` re-runs the
+OpenGL target's front half (same macro set, same DXC request, same SPIRV-Cross options) and
+stops at that point, and the raylib emitter below shares it. Converting a pixel-only `.fx` to an
 [SkSL runtime effect](https://skia.org/docs/user/sksl/) needs modern GLSL's shape (a `main`
 returning a value, named samplers), not MojoShader's, so the emitter skips the rewriter and
 the MGFX writer entirely — it produces SkSL **text**, not a `.mgfx`.
@@ -381,6 +384,34 @@ compiler of its own, so there is no `mgfxc`-equivalence claim to make here. The 
 is instead **rendered-image fidelity**: the SkSL emission's real-Skia render is compared
 against the original HLSL's own math. The convertible set is fragment-only, coordinate-driven
 effects with uniform inputs — post-process, tint, gradient, SDF work.
+
+---
+
+## The raylib emitter fork (OpenGL branch, before Stage 6)
+
+**What it is.** `ShadowDusk.Compiler.Raylib.RaylibConverter` (`src/ShadowDusk.Compiler/Raylib/`)
+takes the same `ModernGlslSeam` output as the SkSL emitter and produces a raylib
+`glsl330` fragment shader for `Raylib.LoadShaderFromMemory(null, fs)`. It skips the rewriter and
+the MGFX writer; the result is a `RaylibShader` (text plus binding contract), not a
+`CompiledShader`.
+
+**How it works.** `RaylibGlslMapper` renames SPIRV-Cross's interface onto raylib's fixed names:
+`in_var_TEXCOORD0` (vec2) → `fragTexCoord`, `in_var_COLOR0` (vec4) → `fragColor`, the single
+`vec4` output → `finalColor`, and the sampler the GL allocator puts on unit 0 → `texture0` (the
+texture raylib's draw call binds, as SpriteBatch binds unit 0). Other samplers keep their HLSL
+texture names. Uniform blocks, including DXC's `$Globals`, flatten to loose uniforms because
+raylib binds through `glGetUniformLocation` by name. `#version 140` becomes `#version 330` (a
+strict superset for fragment shaders), with the interface inserted after SPIRV-Cross's
+`#extension` preamble. Refused by name (`SD0630`–`SD0636`): multi-pass, pass render states, a
+vertex shader, interpolants raylib's built-in vertex shader does not write, Y-orientation-
+dependent builtins (`gl_FragCoord`, `dFdy`; MonoGame and raylib flip render targets in opposite
+directions), MRT, non-2D textures, matrix and struct uniforms, and names that would collide with
+raylib's or that SPIRV-Cross renamed (`input` → `_input`).
+
+**Why.** raylib has no reference compiler, so the evidence is rendered-image fidelity:
+`validation/RaylibRoute` renders each conversion in real Raylib-cs and pixel-diffs it against the
+same `.fx` built for OpenGL in real MonoGame DesktopGL. Only `glsl330` is emitted; `glsl100`
+(web) waits for an ES render harness.
 
 ---
 
@@ -533,7 +564,7 @@ bytes.
 - **The GLSL dialect contract** the rewriter enforces (uniform/sampler/varying naming, the
   `posFixup` and matrix conventions) is documented in full in `docs/glsl-uniform-naming.md`.
 - **The FNA container format** is documented in `docs/fx2-binary-format.md`.
-- **Slang input and the SkSL converter are additive, distinct axes, not `.mgfx` backends.**
-  Neither has an `mgfxc`/Skia reference-compiler-equivalence claim, so neither sits on the
-  five-tail fork above; see `docs/validation-matrix.md` §8.0 and §8.0b for their own evidence
-  bars.
+- **Slang input, the SkSL converter, and the raylib converter are additive, distinct axes,
+  not `.mgfx` backends.** None has a reference-compiler-equivalence claim, so none sits on the
+  five-tail fork above; see `docs/validation-matrix.md` §8.0, §8.0b, and §8.0c for their own
+  evidence bars.
