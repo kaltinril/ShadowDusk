@@ -1,0 +1,190 @@
+# .github/workflows/slang-macos-build.yml
+# Issue #237: build slangc + libslang-compiler for osx-arm64 and osx-x64 with a macOS 11.0
+# deployment target, because every upstream macOS build of the pinned release declares
+# LC_BUILD_VERSION minos 26.0 (measured with otool for v2026.14.1 and still true of v2026.19,
+# the latest at the time). Upstream sets no deployment target at all, so its binaries inherit
+# the runner SDK's; there is no release asset or CMake option of theirs that lowers it.
+#
+# THE SAME COMPILER, NEVER A SUBSTITUTE: the source is shader-slang/slang at the pinned tag
+# (the same tag tools/restore.* pins for win-x64/linux-x64 and SlangToolPath.SlangVersion
+# names), configured exactly the way upstream's own .github/workflows/release.yml configures
+# its macOS release build. The only additions are CMAKE_OSX_DEPLOYMENT_TARGET and building
+# only the slangc target (which builds libslang-compiler as its dependency).
+#
+# Equivalence is proven HERE, on every run: the job builds on a macOS 26 runner, where
+# upstream's own binary also runs, and tools/slang-macos/compare-slangc-emission.sh demands
+# byte-identical stdout/stderr/exit code from both builds for the whole Slang corpus under
+# every platform-macro set ShadowDusk passes. A divergence fails the job.
+#
+# Publishing: artifacts upload to this run only. Attaching them to the fixed GitHub Release
+# tag `native-slang-2026.14.1` (SHA-256 pins in tools/restore.{sh,ps1}) is a deliberate
+# manual step, the dxc-build.yml pattern. Re-running this workflow never republishes.
+name: Build slangc macOS natives (2026.14.1)
+
+on:
+  workflow_dispatch:
+  # Re-prove the recipe whenever it changes (a workflow_dispatch-only workflow cannot run
+  # from a PR branch before it reaches main).
+  pull_request:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/slang-macos-build.yml'
+      - 'tools/slang-macos/**'
+
+permissions:
+  contents: read
+
+env:
+  SLANG_VERSION: '2026.14.1'
+  # The commit the v2026.14.1 tag points at; checked after the fetch so a moved tag can
+  # never silently change the shipped compiler.
+  SLANG_COMMIT: '7c58a326b1f3812411a204b19cb01e323d8f6010'
+  # .NET 8, the oldest runtime ShadowDusk targets, needs macOS 12+; 11.0 (the first macOS
+  # with arm64) keeps the native from ever being the binding floor on either arch.
+  DEPLOYMENT_TARGET: '11.0'
+
+jobs:
+  build-macos:
+    name: Build ${{ matrix.rid }} slangc
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Native builds on macOS 26, so upstream's minos-26 binary can run next to ours
+          # for the equivalence check.
+          - rid: osx-arm64
+            os: macos-26
+            arch: arm64
+            upstream_zip: macos-aarch64
+            upstream_zip_sha256: 2976c3a9a6f4d77b5734d00b5d841d1ff087d9965d9006b9b4d73edd0062cb7d
+          - rid: osx-x64
+            os: macos-26-intel
+            arch: x86_64
+            upstream_zip: macos-x86_64
+            upstream_zip_sha256: a3da109bfb732ab3f09beb6999f9831d9be440fa9a1843006b7ea56498f545d6
+    steps:
+      - name: Checkout (corpus + compare script)
+        uses: actions/checkout@v6
+        with:
+          path: shadowdusk
+
+      # Upstream's release workflow checks out with submodules: recursive; slang's version
+      # comes from the tag itself (cmake/GitVersion.cmake), so the tag must be fetched.
+      - name: Fetch pinned slang source + submodules
+        run: |
+          git clone --depth 1 --branch "v$SLANG_VERSION" https://github.com/shader-slang/slang.git slang-src
+          have=$(git -C slang-src rev-parse HEAD)
+          if [ "$have" != "$SLANG_COMMIT" ]; then
+            echo "::error::tag v$SLANG_VERSION is at $have, expected pinned $SLANG_COMMIT"
+            exit 1
+          fi
+          git -C slang-src submodule update --init --recursive --depth 1 --jobs 8
+
+      - name: Install ninja
+        run: brew install ninja
+
+      # Upstream's macOS release configure line, verbatim, plus the deployment target and
+      # the explicit architecture. slang-llvm is DISABLE: upstream builds it only for
+      # aarch64, as a separate library ShadowDusk does not ship (the measured minimal set
+      # is slangc + libslang-compiler).
+      - name: Configure (upstream release flags + deployment target)
+        working-directory: slang-src
+        env:
+          MACOSX_DEPLOYMENT_TARGET: ${{ env.DEPLOYMENT_TARGET }}
+        run: |
+          cmake --version
+          cmake --preset default --fresh \
+            -DSLANG_ENABLE_EXAMPLES=OFF \
+            -DSLANG_ENABLE_RELEASE_LTO=ON \
+            -DSLANG_STANDARD_MODULE_DEVELOP_BUILD=OFF \
+            -DSLANG_SLANG_LLVM_FLAVOR=DISABLE \
+            -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }} \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET="$DEPLOYMENT_TARGET"
+
+      - name: Build slangc (+ libslang-compiler)
+        working-directory: slang-src
+        env:
+          MACOSX_DEPLOYMENT_TARGET: ${{ env.DEPLOYMENT_TARGET }}
+        run: cmake --build build --config Release --target slangc
+
+      - name: Stage artifact
+        run: |
+          lib="libslang-compiler.0.${SLANG_VERSION}.dylib"
+          mkdir -p out
+          cp slang-src/build/Release/bin/slangc out/slangc
+          cp -L "slang-src/build/Release/lib/$lib" "out/$lib"
+          cp slang-src/LICENSE out/LICENSE-slang.txt
+          ls -la out
+
+      # The point of the build: minos must be the deployment target, on both files. Also
+      # the arch, and system-only linkage (line 1 of otool -L is the file header; for the
+      # dylib line 2 is its own install name, not a dependency), and slangc must find the
+      # library through @loader_path, which is what lets the flat runtimes/<rid>/native/
+      # layout work.
+      - name: Verify minos + arch + linkage (otool/lipo)
+        working-directory: out
+        run: |
+          lib="libslang-compiler.0.${SLANG_VERSION}.dylib"
+          fail=0
+          for f in slangc "$lib"; do
+            echo "== $f =="
+            lipo -info "$f"
+            if [ "$(lipo -archs "$f")" != "${{ matrix.arch }}" ]; then
+              echo "::error::$f is $(lipo -archs "$f"), expected ${{ matrix.arch }}"; fail=1
+            fi
+            minos=$(otool -l "$f" | awk '/LC_BUILD_VERSION/{b=1} b && $1=="minos"{print $2; exit}')
+            echo "minos $minos"
+            if [ "$minos" != "$DEPLOYMENT_TARGET" ]; then
+              echo "::error::$f declares minos $minos, expected $DEPLOYMENT_TARGET"; fail=1
+            fi
+            otool -L "$f"
+          done
+          bad=$( { otool -L slangc | tail -n +2; otool -L "$lib" | tail -n +3; } \
+                 | awk '{print $1}' | grep -vE "^(/usr/lib/|/System/|@rpath/$lib)" || true)
+          if [ -n "$bad" ]; then
+            echo "::error::non-system linkage: $bad"; fail=1
+          fi
+          if ! otool -l slangc | grep -A2 LC_RPATH | grep -q '@loader_path'; then
+            echo "::error::slangc has no @loader_path rpath"; fail=1
+          fi
+          exit $fail
+
+      - name: Smoke test (-target hlsl)
+        working-directory: out
+        run: |
+          printf '[shader("fragment")]\nfloat4 main() : SV_Target { return float4(1,0,0,1); }\n' \
+            | ./slangc -lang slang -target hlsl -entry main -stage fragment -- - | tee smoke.hlsl
+          grep -qi 'sv_target' smoke.hlsl
+          rm -f smoke.hlsl
+
+      # Upstream's own build of the same tag, verified against the same zip SHA-256 that
+      # tools/restore.sh pinned before issue #237.
+      - name: Fetch upstream reference build
+        run: |
+          curl -fsSLo upstream.zip \
+            "https://github.com/shader-slang/slang/releases/download/v${SLANG_VERSION}/slang-${SLANG_VERSION}-${{ matrix.upstream_zip }}.zip"
+          echo "${{ matrix.upstream_zip_sha256 }}  upstream.zip" | shasum -a 256 -c -
+          mkdir -p upstream
+          unzip -oq -j upstream.zip bin/slangc "lib/libslang-compiler.0.${SLANG_VERSION}.dylib" -d upstream
+
+      - name: Byte-identical emission vs upstream (whole Slang corpus)
+        run: bash shadowdusk/tools/slang-macos/compare-slangc-emission.sh upstream out shadowdusk
+
+      # Breadth: slang's own ~4400 test shaders, -target hlsl, same bytes (including the
+      # diagnostics and the crashes) from both builds.
+      - name: Byte-identical emission vs upstream (slang's own test shaders)
+        run: bash shadowdusk/tools/slang-macos/compare-slangc-upstream-tests.sh upstream out slang-src
+
+      - name: SHA-256
+        working-directory: out
+        run: shasum -a 256 slangc "libslang-compiler.0.${SLANG_VERSION}.dylib" | tee SHA256SUMS
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: slang-${{ env.SLANG_VERSION }}-${{ matrix.rid }}
+          path: out/*
+          if-no-files-found: error
+          retention-days: 90
