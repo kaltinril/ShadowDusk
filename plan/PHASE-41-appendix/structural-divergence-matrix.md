@@ -24,7 +24,7 @@
   - Structurally **clean**: **75**
   - **Divergent** (>=1 level): **17**
   - Compile/parse **failures**: **10**
-- Non-golden census cells: **200** (**134** compile, **66** fail with a code)
+- Non-golden census cells: **204** (**138** compile, **66** fail with a code)
 
 ## Golden-backed fixtures — per-level structural verdict
 
@@ -352,6 +352,10 @@ is a CORRECT result, not a defect.
 | passthrough_vs.fx | OpenGL | FAIL | SD0010 | Effect source contains no techniques |
 | platform-macros.fx | DirectX_11 | PASS |  |  |
 | platform-macros.fx | OpenGL | PASS |  |  |
+| raylib/CrtFilter.fx | DirectX_11 | PASS |  |  |
+| raylib/CrtFilter.fx | OpenGL | PASS |  |  |
+| raylib/RetroHandheld.fx | DirectX_11 | PASS |  |  |
+| raylib/RetroHandheld.fx | OpenGL | PASS |  |  |
 | textured.fx | DirectX_11 | PASS |  |  |
 | textured.fx | OpenGL | PASS |  |  |
 | textured_vs_ps.fx | DirectX_11 | FAIL | SD0010 | Effect source contains no techniques |

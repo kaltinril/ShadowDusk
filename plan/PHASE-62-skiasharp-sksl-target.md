@@ -361,7 +361,7 @@ already measured at 46/46 mean 0.00/255 for the ShaderToy route).
   phase successfully** rather than failing it. Survey the vendored Gum + Apos.Shapes set for
   interpolant dependence before committing to B1 — the fixtures are already in the repo, so this is
   cheap.
-- **OQ3.** Does this overlap [Phase 59](PHASE-59-raylib-cs-backend.md) enough to share machinery?
+- **OQ3 (ANSWERED 2026-10-01 by Phase 59: two emitters on one shared seam, `Internal/ModernGlslSeam`, kept as two phases).** Does this overlap [Phase 59](PHASE-59-raylib-cs-backend.md) enough to share machinery?
   Both branch at the same §2.3 seam and both are "modern GLSL plus a convention mapper". If both
   clear Phase 57 §3, they may be one phase with two emitters rather than two phases — worth deciding
   before duplicating the seam.
