@@ -38,7 +38,7 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.Run(() => CompileCore(request), cancellationToken);
+        return Task.Run(() => CompileWithVulkanFallback(request), cancellationToken);
     }
 
     /// <inheritdoc/>
@@ -47,7 +47,7 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return CompileCore(request);
+        return CompileWithVulkanFallback(request);
     }
 
     /// <inheritdoc/>
@@ -94,6 +94,45 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         {
             result.Dispose();
         }
+    }
+
+    // DXC's own wording when SPIR-V codegen needs a target env above the Vulkan 1.0 default.
+    private const string Vulkan11RequiredDiagnostic = "Vulkan 1.1 is required";
+
+    // Vulkan 1.1 (SPIR-V 1.3) is requested only after DXC rejects the shader without it: the
+    // flag changes the module's SPIR-V version word for every shader, and MonoGame's Vulkan
+    // runtime creates a Vulkan 1.0 instance, so shaders that never needed it keep the exact
+    // 1.0 module they always produced.
+    private Result<PlatformBlob, ShaderError> CompileWithVulkanFallback(DxcCompileRequest request)
+    {
+        Result<PlatformBlob, ShaderError> first = CompileCore(request);
+
+        if (first.IsSuccess
+            || request.Platform != PlatformTarget.Vulkan
+            || request.Options.RequestVulkan11
+            || !(first.Error.RawDiagnostics ?? first.Error.Message)
+                .Contains(Vulkan11RequiredDiagnostic, StringComparison.Ordinal))
+        {
+            return first;
+        }
+
+        return CompileCore(new DxcCompileRequest
+        {
+            HlslSource = request.HlslSource,
+            SourceFileName = request.SourceFileName,
+            EntryPoint = request.EntryPoint,
+            Stage = request.Stage,
+            Platform = request.Platform,
+            Macros = request.Macros,
+            IncludeHandler = request.IncludeHandler,
+            Options = new DxcCompileOptions
+            {
+                AllowWarnings = request.Options.AllowWarnings,
+                EmbedDebugInfo = request.Options.EmbedDebugInfo,
+                SkipValidation = request.Options.SkipValidation,
+                RequestVulkan11 = true,
+            },
+        });
     }
 
     private Result<PlatformBlob, ShaderError> CompileCore(DxcCompileRequest request)

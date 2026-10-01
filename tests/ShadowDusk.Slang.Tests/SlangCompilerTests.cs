@@ -495,12 +495,8 @@ public sealed class SlangCompilerTests
 
     // ---------------------------------------------------------------------------
     // Phase 66 A5, Band 2 part B (OQ2) — an SM6-only wave intrinsic rejects with SD0624 on the
-    // three targets architecturally capped below SM6, and (measured, Phase 66 A5: the ONE target
-    // that reaches it end to end through ShadowDusk's real pipeline today) still compiles on
-    // DirectX12. Vulkan is deliberately NOT asserted to succeed here — see
-    // SlangSm6ConstructGuard.IsArchitecturallyBelowSm6's own doc comment for the separate,
-    // pre-existing DxcFlagBuilder '-fspv-target-env' gap this stage found but left unfixed
-    // (out of scope: it is a general Vulkan/DXC pipeline flag, not Slang-specific).
+    // three targets architecturally capped below SM6, and still compiles on
+    // DirectX12 and, since issue #229, on Vulkan.
     // ---------------------------------------------------------------------------
 
     private const string WaveIntrinsicSource = """

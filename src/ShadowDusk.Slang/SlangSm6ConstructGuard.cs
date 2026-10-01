@@ -110,15 +110,10 @@ internal static partial class SlangSm6ConstructGuard
     /// format, regardless of any future flag fix.
     ///
     /// <para>Vulkan and DirectX12 both compile through DXC at <c>vs_6_0</c>/<c>ps_6_0</c> and
-    /// CAN represent SM6 HLSL — deliberately excluded here even though Vulkan's wave-intrinsic
-    /// reachability also currently fails in practice (measured, Phase 66 A5: DXC's SPIR-V
-    /// codegen needs the Vulkan 1.1 GroupNonUniform capability, and <c>DxcFlagBuilder</c> never
-    /// passes <c>-fspv-target-env=vulkan1.1</c> for ANY target, Slang-sourced or not). That gap
-    /// is a pre-existing flag omission in the SHARED HLSL/DXC pipeline every <c>.fx</c> author
-    /// hits, not a Slang-specific "nowhere to land" case — fixing it would change what a
-    /// hand-written Vulkan <c>.fx</c> using wave intrinsics gets too, well outside this Slang
-    /// acceptance-boundary stage's scope. Left to surface DXC's own diagnostic unmodified (see
-    /// the Phase 66 doc's A5 section for the open finding).</para>
+    /// CAN represent SM6 HLSL, so they are deliberately excluded here. Vulkan's wave-intrinsic
+    /// reachability used to fail (DXC wants a Vulkan 1.1 SPIR-V target env); issue #229 fixed it
+    /// in the shared DXC pipeline by recompiling a rejected stage with
+    /// <c>-fspv-target-env=vulkan1.1</c>.</para>
     /// </summary>
     public static bool IsArchitecturallyBelowSm6(PlatformTarget target) =>
         target is PlatformTarget.OpenGL or PlatformTarget.DirectX or PlatformTarget.Fna;
