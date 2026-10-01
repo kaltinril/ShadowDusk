@@ -498,18 +498,19 @@ never a §1 cell.
 
 - **Proven today (2026-10-01, Raylib-cs 8.1.0 / raylib 6.0):** `validation/RaylibRoute` (§6) renders
   13 shaders in real Raylib-cs and pixel-diffs each against the same `.fx` built for OpenGL and
-  rendered in real MonoGame DesktopGL: **13/13 at maxd 0** on macOS (Apple GL 4.1 core), tolerance
+  rendered in real MonoGame DesktopGL: **13/13 at maxd 0** on macOS (Apple GL 4.1 core) and on
+  Linux CI (Mesa llvmpipe, `validation-render.yml`, PR #239), tolerance
   ±2/255 (stated, non-zero: two runtimes, two GLSL dialects of the same SPIR-V). Positive controls,
   all caught: dropped tint maxd 44 (16073 px over), flipped V maxd 255 (16384 px), curvature +0.01
-  maxd 43 (8349 px). Linux llvmpipe: wired into `validation-render.yml`.
+  maxd 43 (8349 px; 44 and 8400 on llvmpipe).
 - **The interface mapping is the claim:** `TEXCOORD0` ↔ `fragTexCoord`, `COLOR0` ↔ `fragColor`
   (SpriteBatch's tint and raylib's draw tint are the same varying, unlike SkSL which has none), the
   unit-0 sampler ↔ `texture0` (the same declaration-order allocator the GL target uses, issue #189).
 - **The reject set** (`SD0630`–`SD0636`) is pinned by `RaylibConverterTests` with locations where
   the source has one. Y-orientation-dependent constructs (`SV_Position`, `ddy`) are refused because
   MonoGame and raylib flip render targets in opposite directions.
-- **Not proven:** `glsl100` (not emitted, §7), Windows/NVIDIA/AMD drivers (the gate has run on Apple
-  GL locally and is wired for llvmpipe), and a real consumer trial (the Phase 59 requester).
+- **Not proven:** `glsl100` (not emitted, §7), Windows/NVIDIA/AMD drivers (measured only on Apple GL
+  and llvmpipe), and a real consumer trial (the Phase 59 requester).
 
 ### 8.1 Reject-fidelity: mgfxc's per-target compile-profile floor (measured 2026-07-31)
 
