@@ -1,10 +1,3 @@
-#ifdef SHADOWDUSK_PC
-#define PC_SAB(c) (float4(1, 1, 1, 2) - (c))
-#define PC_ZERO(c) ((c) * 0)
-#else
-#define PC_SAB(c) (c)
-#define PC_ZERO(c) (c)
-#endif
 // =============================================================================
 // apos-shapes-sm6.fx
 // -----------------------------------------------------------------------------
@@ -1373,7 +1366,7 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     // covering banding from color and alpha gradients alike. Left unclamped on purpose:
     // the negative half must survive to dither near-black, and the target clamps on write.
     result.rgb += (DitherNoise(p.Pos.xy) - 0.5) * dither_scale;
-    return PC_ZERO(result);
+    return result;
 
     // float4 c1 = p.Color1 * step(d + lineSize * 2.0, 0.0);
     // d = abs(d + lineSize) - lineSize;

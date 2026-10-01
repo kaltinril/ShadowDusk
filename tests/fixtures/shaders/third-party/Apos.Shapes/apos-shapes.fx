@@ -1,10 +1,3 @@
-#ifdef SHADOWDUSK_PC
-#define PC_SAB(c) (float4(1, 1, 1, 2) - (c))
-#define PC_ZERO(c) ((c) * 0)
-#else
-#define PC_SAB(c) (c)
-#define PC_ZERO(c) (c)
-#endif
 // =============================================================================
 // apos-shapes.fx
 // -----------------------------------------------------------------------------
@@ -525,7 +518,7 @@ float4 SpritePixelShader(PixelInput p) : SV_TARGET {
     float4 result = OkLabToRgb(lerp(fc, bc, smoothstep(0.0, 1.0, Gradient(10.0, float4(-aaSize, 0.0, 0.0, 0.0), p.Pos.xy, d + lineSize, aaSize, float2(0.0, 0.0)))));
     result.rgb *= result.a;
 
-    return PC_ZERO(result);
+    return result;
 
     // float4 c1 = p.Color1 * step(d + lineSize * 2.0, 0.0);
     // d = abs(d + lineSize) - lineSize;

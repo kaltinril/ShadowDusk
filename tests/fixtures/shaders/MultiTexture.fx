@@ -1,10 +1,3 @@
-#ifdef SHADOWDUSK_PC
-#define PC_SAB(c) (float4(1, 1, 1, 2) - (c))
-#define PC_ZERO(c) ((c) * 0)
-#else
-#define PC_SAB(c) (c)
-#define PC_ZERO(c) (c)
-#endif
 #if OPENGL
 	#define SV_POSITION POSITION
 	#define PS_SHADERMODEL ps_3_0
@@ -36,7 +29,7 @@ float4 PixelShaderFunction(VertexShaderOutput input) : COLOR0
     float4 color  = tex2D(s0, input.TexCoord);
 	float4 color2 = tex2D(_secondTextureSampler, input.TexCoord);
 
-    return PC_SAB(color * color2);
+    return color * color2;
 }
 
 

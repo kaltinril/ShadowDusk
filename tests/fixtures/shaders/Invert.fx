@@ -1,11 +1,4 @@
-﻿#ifdef SHADOWDUSK_PC
-#define PC_SAB(c) (float4(1, 1, 1, 2) - (c))
-#define PC_ZERO(c) ((c) * 0)
-#else
-#define PC_SAB(c) (c)
-#define PC_ZERO(c) (c)
-#endif
-#if OPENGL
+﻿#if OPENGL
 	#define SV_POSITION POSITION
 	#define VS_SHADERMODEL vs_3_0
 	#define PS_SHADERMODEL ps_3_0
@@ -47,7 +40,7 @@ float4 MainPS(VertexShaderOutput input) : SV_Target
     float4 col = SpriteTexture.Sample(SpriteTextureSampler, input.TextureCoordinates) * input.Color;
     col.rgb = 1 - col.rgb; // Invert color
     col.a = col.a;
-    return PC_SAB(col);
+    return col;
 
 }
 #else
@@ -56,7 +49,7 @@ float4 MainPS(VertexShaderOutput input) : COLOR
     float4 col = tex2D(SpriteTextureSampler, input.TextureCoordinates) * input.Color;
     col.rgb = 1 - col.rgb; // Invert color
     col.a = col.a;
-    return PC_SAB(col);
+    return col;
 
 }
 #endif
