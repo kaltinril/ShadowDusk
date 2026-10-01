@@ -52,7 +52,9 @@ namespace ShadowDusk.Slang;
 /// registered diagnostic naming the construct and the target — a non-vertex/fragment entry stage
 /// (<c>SD0602</c>, <see cref="SlangEntryScanner"/>) or an SM6-only Wave/Quad intrinsic on a
 /// target whose backend cannot represent SM6 HLSL (<c>SD0624</c>,
-/// <see cref="SlangSm6ConstructGuard"/>) (band 2); everything else compiles, with no curated
+/// <see cref="SlangSm6ConstructGuard"/>), or a Wave/Quad intrinsic on Vulkan, whose MonoGame
+/// runtime has no subgroup support (<c>SD0218</c>, shared with the <c>.fx</c> route) (band 2);
+/// everything else compiles, with no curated
 /// allow-list (band 3).</para>
 ///
 /// <para><b>Per-target platform macros, forwarded to slangc (Phase 66 A6):</b> every
@@ -157,8 +159,22 @@ public sealed class SlangCompiler
                              "at Shader Model 5 or lower and can never represent it (OpenGL: a fixed " +
                              "vs_5_0/ps_5_0 DXC profile; DirectX: SM5 DXBC; FNA: SM<=3 fx_2_0). This " +
                              "Slang construct compiles (real slangc accepts it), but has nowhere to " +
-                             "land on this target. Build for Vulkan or DirectX12 instead, or avoid " +
+                             "land on this target. Build for DirectX12 instead, or avoid " +
                              "the intrinsic."));
+            }
+        }
+        else if (options.Target == PlatformTarget.Vulkan)
+        {
+            // Issue #229: Vulkan CAN represent SM6, but MonoGame's DesktopVK runtime cannot run
+            // wave/quad ops (Vulkan 1.0 instance, no subgroup support). Same code and message as
+            // the .fx route, which reaches the same verdict from DXC's own rejection.
+            (string Construct, int Line)? waveHit = SlangSm6ConstructGuard.FindConstruct(slangSource);
+            if (waveHit is not null)
+            {
+                return Fail(new ShaderError(
+                    File: sourceName, Line: waveHit.Value.Line, Column: 1,
+                    Code: WaveQuadIntrinsics.VulkanUnsupportedCode,
+                    Message: WaveQuadIntrinsics.VulkanUnsupportedMessage(waveHit.Value.Construct)));
             }
         }
 

@@ -41,25 +41,60 @@ using ShadowDusk.Validation;
 // Vulkan teardown/re-init), so each phase is its own run:
 //   dotnet run --project validation/VsDrivenVulkan            -> phase 1 (the simple VS rig)
 //   dotnet run --project validation/VsDrivenVulkan -- apos     -> phase 2 (the #145 reproducer)
+//   dotnet run --project validation/VsDrivenVulkan -- wave     -> issue #229: EXPECT-DIAGNOSTIC.
+//                                                                 VsWaveQuadIntrinsics.fx must be
+//                                                                 rejected with SD0218; no device.
 string mode = args.Length > 0 ? args[0].Trim().ToLowerInvariant() : "vs";
-if (mode is not ("vs" or "apos"))
+if (mode is not ("vs" or "apos" or "wave"))
 {
-    Console.Error.WriteLine($"unknown mode '{mode}' — expected 'vs' or 'apos'");
+    Console.Error.WriteLine($"unknown mode '{mode}' — expected 'vs', 'apos' or 'wave'");
     return 2;
 }
 
 const string Fixture = "VsTransformColorTexture";
-string candidateFixture = Fixture;
+
+// The wave fixture (phase 1's VS and registers, plus a self-checking wave/quad PS). Measured
+// 2026-10-01 under the Khronos validation layer: it rendered correctly on lavapipe but its
+// SPIR-V 1.3 / subgroup module is out of spec on MonoGame's Vulkan 1.0 instance, so ShadowDusk
+// now rejects wave/quad intrinsics on Vulkan with SD0218. This mode pins that rejection.
+string candidateFixture = mode == "wave" ? "VsWaveQuadIntrinsics" : Fixture;
 
 string repoRoot   = ShaderInputs.FindRepoRoot();
 string fxPath     = Path.Combine(repoRoot, "tests", "fixtures", "shaders", candidateFixture + ".fx");
 string goldenPath = Path.Combine(repoRoot, "tests", "fixtures", "golden", "Vulkan", Fixture + ".mgfx");
 string catPath    = ShaderInputs.CatPath(repoRoot);
-string outDir     = Path.Combine(repoRoot, "validation", "output", "vsdriven-vulkan");
+string outDir     = Path.Combine(repoRoot, "validation", "output", mode == "wave" ? "vsdriven-vulkan-wave" : "vsdriven-vulkan");
 
 Console.WriteLine($"[vs-vulkan] fixture: {fxPath}");
 Console.WriteLine($"[vs-vulkan] golden:  {goldenPath}");
 Console.WriteLine($"[vs-vulkan] out:     {outDir}\n");
+
+if (mode == "wave")
+{
+    var waveResult = await new EffectCompiler().CompileAsync(
+        await File.ReadAllTextAsync(fxPath),
+        new CompilerOptions
+        {
+            Target          = PlatformTarget.Vulkan,
+            IncludeResolver = new FileSystemIncludeResolver(),
+            SourceFileName  = fxPath,
+        });
+
+    if (waveResult.IsSuccess)
+    {
+        Console.WriteLine("[vs-vulkan] wave: FAIL, the wave/quad fixture COMPILED for Vulkan; it must be rejected with SD0218.");
+        return 1;
+    }
+
+    var sd0218 = waveResult.Error.FirstOrDefault(e => e.Code == "SD0218");
+    foreach (var e in waveResult.Error)
+        Console.WriteLine($"[vs-vulkan] wave: {e.Code} {Path.GetFileName(e.File)}({e.Line},{e.Column}): {e.Message}");
+    bool ok = sd0218 is not null && sd0218.Message.Contains("'QuadReadAcrossX'", StringComparison.Ordinal);
+    Console.WriteLine(ok
+        ? "[vs-vulkan] wave: PASS, rejected loudly with SD0218 naming the intrinsic (expected)."
+        : "[vs-vulkan] wave: FAIL, rejected but not with an SD0218 naming QuadReadAcrossX.");
+    return ok ? 0 : 1;
+}
 
 if (mode == "vs")
 {

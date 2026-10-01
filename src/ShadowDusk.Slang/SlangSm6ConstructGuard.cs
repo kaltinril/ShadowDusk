@@ -1,6 +1,5 @@
 #nullable enable
 
-using System.Text.RegularExpressions;
 using ShadowDusk.Compiler.Slang;
 using ShadowDusk.Core;
 
@@ -46,42 +45,12 @@ namespace ShadowDusk.Slang;
 /// they fall through to whatever the downstream compiler reports, unmodified (Band 3 of the A5
 /// table — a real compile failure, never silently dropped, just not specially re-labeled).</para>
 /// </summary>
-internal static partial class SlangSm6ConstructGuard
+internal static class SlangSm6ConstructGuard
 {
-    // The complete, closed HLSL Shader Model 6.0 "Wave Intrinsics" vocabulary (Microsoft's own
-    // spec name for the group) plus the SM6.0 Quad intrinsics that share the same
-    // GroupNonUniform/subgroup capability requirement. A fixed, documented, language-level name
-    // set — not a per-shader allow-list (CLAUDE.md's "fix the class, not the repro": the general
-    // condition is "any call to one of these identifiers," not "this one broken shader"). Kept
-    // as the single source of truth for the pattern below (SlangSm6ConstructGuardTests asserts
-    // the two stay in sync) since a source-generated regex's pattern argument must be a literal.
-    internal static readonly string[] WaveAndQuadIntrinsics =
-    [
-        "WaveActiveAllEqual", "WaveActiveAllTrue", "WaveActiveAnyTrue", "WaveActiveBallot",
-        "WaveActiveBitAnd", "WaveActiveBitOr", "WaveActiveBitXor", "WaveActiveCountBits",
-        "WaveActiveMax", "WaveActiveMin", "WaveActiveProduct", "WaveActiveSum",
-        "WaveGetLaneCount", "WaveGetLaneIndex", "WaveIsFirstLane", "WaveMatch",
-        "WaveMultiPrefixBitAnd", "WaveMultiPrefixBitOr", "WaveMultiPrefixBitXor",
-        "WaveMultiPrefixCountBits", "WaveMultiPrefixProduct", "WaveMultiPrefixSum",
-        "WavePrefixCountBits", "WavePrefixProduct", "WavePrefixSum",
-        "WaveReadLaneAt", "WaveReadLaneFirst",
-        "QuadReadAcrossX", "QuadReadAcrossY", "QuadReadAcrossDiagonal", "QuadReadLaneAt",
-        "QuadAny", "QuadAll",
-    ];
-
-    [GeneratedRegex(
-        @"\b(?:WaveActiveAllEqual|WaveActiveAllTrue|WaveActiveAnyTrue|WaveActiveBallot|" +
-        @"WaveActiveBitAnd|WaveActiveBitOr|WaveActiveBitXor|WaveActiveCountBits|" +
-        @"WaveActiveMax|WaveActiveMin|WaveActiveProduct|WaveActiveSum|" +
-        @"WaveGetLaneCount|WaveGetLaneIndex|WaveIsFirstLane|WaveMatch|" +
-        @"WaveMultiPrefixBitAnd|WaveMultiPrefixBitOr|WaveMultiPrefixBitXor|" +
-        @"WaveMultiPrefixCountBits|WaveMultiPrefixProduct|WaveMultiPrefixSum|" +
-        @"WavePrefixCountBits|WavePrefixProduct|WavePrefixSum|" +
-        @"WaveReadLaneAt|WaveReadLaneFirst|" +
-        @"QuadReadAcrossX|QuadReadAcrossY|QuadReadAcrossDiagonal|QuadReadLaneAt|" +
-        @"QuadAny|QuadAll)\b",
-        RegexOptions.Compiled)]
-    private static partial Regex Pattern();
+    // The closed HLSL SM6 wave/quad vocabulary now lives in ShadowDusk.Core's
+    // WaveQuadIntrinsics, shared with the .fx route's Vulkan rejection (SD0218), so both routes
+    // recognise exactly the same identifiers.
+    internal static IReadOnlyList<string> WaveAndQuadIntrinsics => WaveQuadIntrinsics.Names;
 
     /// <summary>
     /// Returns the first Wave/Quad SM6 intrinsic name found as a whole identifier in
@@ -92,12 +61,8 @@ internal static partial class SlangSm6ConstructGuard
     /// </summary>
     public static (string Construct, int Line)? FindConstruct(string slangSource)
     {
-        Match m = Pattern().Match(slangSource);
-        if (!m.Success)
-            return null;
-
-        int line = 1 + slangSource.AsSpan(0, m.Index).Count('\n');
-        return (m.Value, line);
+        (string Name, int Line)? hit = WaveQuadIntrinsics.FindFirst(slangSource);
+        return hit is null ? null : (hit.Value.Name, hit.Value.Line);
     }
 
     /// <summary>
@@ -110,15 +75,11 @@ internal static partial class SlangSm6ConstructGuard
     /// format, regardless of any future flag fix.
     ///
     /// <para>Vulkan and DirectX12 both compile through DXC at <c>vs_6_0</c>/<c>ps_6_0</c> and
-    /// CAN represent SM6 HLSL — deliberately excluded here even though Vulkan's wave-intrinsic
-    /// reachability also currently fails in practice (measured, Phase 66 A5: DXC's SPIR-V
-    /// codegen needs the Vulkan 1.1 GroupNonUniform capability, and <c>DxcFlagBuilder</c> never
-    /// passes <c>-fspv-target-env=vulkan1.1</c> for ANY target, Slang-sourced or not). That gap
-    /// is a pre-existing flag omission in the SHARED HLSL/DXC pipeline every <c>.fx</c> author
-    /// hits, not a Slang-specific "nowhere to land" case — fixing it would change what a
-    /// hand-written Vulkan <c>.fx</c> using wave intrinsics gets too, well outside this Slang
-    /// acceptance-boundary stage's scope. Left to surface DXC's own diagnostic unmodified (see
-    /// the Phase 66 doc's A5 section for the open finding).</para>
+    /// CAN represent SM6 HLSL, so they are excluded here. Vulkan still rejects wave/quad
+    /// intrinsics, but for a runtime reason, not a format one: MonoGame's DesktopVK creates a
+    /// Vulkan 1.0 instance with no subgroup support (issue #229, measured under the Khronos
+    /// validation layer). That is <c>SD0218</c>, shared with the <c>.fx</c> route through
+    /// <see cref="WaveQuadIntrinsics"/>, not this guard's <c>SD0624</c>.</para>
     /// </summary>
     public static bool IsArchitecturallyBelowSm6(PlatformTarget target) =>
         target is PlatformTarget.OpenGL or PlatformTarget.DirectX or PlatformTarget.Fna;

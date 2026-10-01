@@ -486,6 +486,15 @@ jobs:
         if: ${{ !cancelled() }}
         run: validation/run-with-vk-validation.sh apos -- xvfb-run -a dotnet run --project validation/VsDrivenVulkan -c Release --no-build -- apos
 
+      # Issue #229, EXPECT-DIAGNOSTIC: wave/quad intrinsics are not supported on Vulkan
+      # (MonoGame's DesktopVK creates a Vulkan 1.0 instance with no subgroup support; the
+      # SPIR-V 1.3 module they need rendered on lavapipe but failed this lane's validation
+      # layer). The wave fixture must be rejected at compile time with SD0218 naming the
+      # intrinsic. No device is created, so no xvfb or layer wrapper.
+      - name: Vulkan wave/quad intrinsics rejected with SD0218 (issue #229)
+        if: ${{ !cancelled() }}
+        run: dotnet run --project validation/VsDrivenVulkan -c Release --no-build -- wave
+
       # Own-output proof: mgfxc's Vulkan output for this corpus is unloadable (upstream
       # SlotOffset bug, see compare_vulkan.py), so BaselineVulkan is best-effort and
       # compare_vulkan.py fails only on a CANDIDATE problem. The validation layer is what
@@ -520,6 +529,7 @@ jobs:
           path: |
             validation/output/vsdriven-vulkan/**
             validation/output/vsdriven-vulkan-apos/**
+            validation/output/vsdriven-vulkan-wave/**
             validation/output/candidate-vulkan/**
             validation/output/baseline-vulkan/**
             validation/output/diff-vulkan/**

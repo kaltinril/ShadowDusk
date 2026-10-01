@@ -27,6 +27,10 @@
     <!-- MgfxcNumericParse: the FNA fx_2_0 builder must parse state values with the
          same mgfxc semantics as the MGFX path, from one shared implementation. -->
     <InternalsVisibleTo Include="ShadowDusk.Compiler" />
+    <!-- WaveQuadIntrinsics: the .fx route (DxcShaderCompiler) and the real-slangc route
+         (SlangCompiler) must reject wave/quad intrinsics on Vulkan identically (SD0218). -->
+    <InternalsVisibleTo Include="ShadowDusk.HLSL" />
+    <InternalsVisibleTo Include="ShadowDusk.Slang" />
   </ItemGroup>
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" />

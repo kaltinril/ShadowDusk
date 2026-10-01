@@ -758,15 +758,4 @@ revised (owner direction, 2026-09-11, after A1-A8 shipped):**
   compiled bodies under the same surface name) is untested — A6's broader sweep is what would
   surface it, and the fallback (a demangling shim mapping slangc's mangled names back
   deterministically) documented in A3/A4's original scoping remains available if it does.
-- **`DxcFlagBuilder` never requests a Vulkan 1.1 SPIR-V target environment, so wave/quad
-  intrinsics currently fail on Vulkan too** (found during A5, measured directly: `error: Vulkan
-  1.1 is required for Wave Operation but not permitted to use`, identical to the OpenGL failure).
-  Architecturally Vulkan CAN hold SM6 HLSL (it already compiles at `vs_6_0`/`ps_6_0`), so this is
-  a fixable flag gap, not a format ceiling — but it is a **general HLSL/DXC pipeline gap**, not
-  Slang-specific (a hand-written `.fx` calling `WaveActiveSum` on Vulkan hits the identical
-  wall), so `SlangSm6ConstructGuard` deliberately does not gate Vulkan and this stage left the
-  flag itself unfixed (out of A5's scope: broadening Slang's own acceptance boundary, not the
-  shared Vulkan pipeline's capability floor). A future stage adding `-fspv-target-env=vulkan1.1`
-  to the Vulkan case in `DxcFlagBuilder.Build` (with the render-gate re-verification that change
-  implies) would make DirectX12 no longer the only target able to compile a real wave-intrinsic
-  shader through ShadowDusk's pipeline.
+- **RESOLVED by [issue #229](https://github.com/kaltinril/ShadowDusk/issues/229): Vulkan wave/quad intrinsics are rejected loudly (`SD0218`), not supported.** A5 measured that DXC rejects them on Vulkan (`Vulkan 1.1 is required for Wave Operation`). A `vulkan1.1` target env makes them compile, but the CI Vulkan lane measured the resulting SPIR-V 1.3 / subgroup module out of spec on MonoGame's Vulkan 1.0 instance (Khronos validation layer, 10 errors), so both the `.fx` route and `SlangCompiler` now reject them on Vulkan with `SD0218` naming the intrinsic (see `docs/validation-matrix.md` section 7).
