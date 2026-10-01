@@ -596,6 +596,15 @@ jobs:
       - name: Install Mesa llvmpipe (OpenGL)
         uses: ssciwr/setup-mesa-dist-win@2dfeaebfa514f74c2b8cd8d27108c31486d33e72 # v3.0.0
 
+      # Diagnostic: mesa-dist-win's deploy can put its own dxil.dll on the OS search path; log
+      # what is there so a DXIL-validator version skew is attributable from the log alone.
+      - name: Log system dxil.dll (diagnostic)
+        run: |
+          Get-ChildItem C:\Windows\System32\dxil.dll, C:\Windows\SysWOW64\dxil.dll -ErrorAction SilentlyContinue |
+            ForEach-Object { "{0}  {1}" -f $_.FullName, $_.VersionInfo.FileVersion }
+          where.exe dxil.dll
+          exit 0
+
       - name: Restore the pinned dotnet-mgcb tool
         run: dotnet tool restore
 
@@ -694,6 +703,15 @@ jobs:
 
       - name: Install Mesa llvmpipe (OpenGL)
         uses: ssciwr/setup-mesa-dist-win@2dfeaebfa514f74c2b8cd8d27108c31486d33e72 # v3.0.0
+
+      # Diagnostic: mesa-dist-win's deploy can put its own dxil.dll on the OS search path; log
+      # what is there so a DXIL-validator version skew is attributable from the log alone.
+      - name: Log system dxil.dll (diagnostic)
+        run: |
+          Get-ChildItem C:\Windows\System32\dxil.dll, C:\Windows\SysWOW64\dxil.dll -ErrorAction SilentlyContinue |
+            ForEach-Object { "{0}  {1}" -f $_.FullName, $_.VersionInfo.FileVersion }
+          where.exe dxil.dll
+          exit 0
 
       - name: Slang corpus (SlangCorpus, subset frontend vs the real slangc oracle)
         if: ${{ !cancelled() }}

@@ -93,7 +93,35 @@ internal static class PluginNativeLibraryResolver
             // ours returns zero whenever the plugin directory holds no DXC - so it can never
             // shadow ShadowDusk's own macOS/Android DxcLoader handler.
             Vortice.Dxc.Dxc.ResolveLibrary += ResolveDxc;
+            // Load the pinned dxil.dll NOW, before anything can ask for it by bare name.
+            // DxcShaderCompiler calls Vortice's LoadDxil() BEFORE it touches dxcompiler.dll, so
+            // waiting for ResolveDxc is too late: inside MGCB's process that bare-name load
+            // misses our directory and falls through to the OS search path, and a host that
+            // ships its own dxil.dll there (windows-latest does) pins a version-skewed validator
+            // for the whole process. DirectX 12 compiles then fail validation with "DXIL
+            // container mismatch for 'PSVRuntimeInfoSize'" (measured on windows-latest: our
+            // pinned DXC writes the 48-byte PSV0, the foreign 1.8 validator expects 52). Once a
+            // module named dxil.dll is loaded, every later bare-name load resolves to it.
+            PreloadPinnedDxil();
             _registered = true;
+        }
+    }
+
+    /// <summary>
+    /// Loads the plugin directory's <c>dxil.dll</c>, when there is one (win-* RIDs only), so
+    /// it is the process's <c>dxil.dll</c> before any bare-name load can take a foreign copy.
+    /// A no-op when the plugin directory has none; idempotent (the OS refcounts the module).
+    /// </summary>
+    private static void PreloadPinnedDxil()
+    {
+        string? pluginDirectory = GetPluginDirectory();
+        if (pluginDirectory is null)
+            return;
+
+        foreach (string candidate in GetProbeCandidates(pluginDirectory, CurrentRid(), FileNamesFor("dxil")))
+        {
+            if (File.Exists(candidate) && NativeLibrary.TryLoad(candidate, out _))
+                return;
         }
     }
 
@@ -115,13 +143,10 @@ internal static class PluginNativeLibraryResolver
 
         string rid = CurrentRid();
 
-        // dxil.dll first. It ships only for the win-* RIDs; where it is absent (macOS, Linux
-        // DXC builds carry no signer) nothing is loaded and DXC itself reports unsigned output.
-        foreach (string candidate in GetProbeCandidates(pluginDirectory, rid, FileNamesFor("dxil")))
-        {
-            if (File.Exists(candidate) && NativeLibrary.TryLoad(candidate, out _))
-                break;
-        }
+        // dxil.dll first (normally already loaded by Register's PreloadPinnedDxil; repeated
+        // here so this handler stands alone). It ships only for the win-* RIDs; where it is
+        // absent (macOS, Linux DXC builds carry no signer) DXC itself reports unsigned output.
+        PreloadPinnedDxil();
 
         foreach (string candidate in GetProbeCandidates(pluginDirectory, rid, FileNamesFor("dxcompiler")))
         {

@@ -157,6 +157,7 @@ internal static class Program
             string name = Path.GetFileName(file);
             string source = File.ReadAllText(file);
             var cells = new List<string>();
+            var details = new List<string>();
 
             foreach (PlatformTarget target in CompileSweepTargets)
             {
@@ -167,6 +168,9 @@ internal static class Program
                 {
                     failures++;
                     cells.Add($"{target}=FAIL[{string.Join(",", result.Error.Select(e => e.Code))}]");
+                    // The compiler's own text, verbatim: a code alone (X0000 is DXC's catch-all)
+                    // cannot tell a shader defect from a host/native problem.
+                    details.AddRange(result.Error.Select(e => $"      {target}: {e.Code} {e.Message}"));
                     continue;
                 }
 
@@ -186,6 +190,8 @@ internal static class Program
             }
 
             Console.WriteLine($"  {name,-32} {string.Join("  ", cells)}");
+            foreach (string detail in details)
+                Console.WriteLine(detail);
         }
 
         Console.WriteLine();
