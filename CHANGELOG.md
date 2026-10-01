@@ -14,11 +14,21 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **DirectX 12 compiles no longer fail on Windows hosts that have their own `dxil.dll` in `System32`**
+  (mesa-dist-win installs one). DXC used to pick up that validator instead of the pinned one and
+  reject every module with "DXIL container mismatch for 'PSVRuntimeInfoSize'". The library, the CLI
+  and the MGCB plugin now load the pinned `dxil.dll` by full path before anything asks for it by name.
+
 - **`.fx` wave/quad intrinsics now fail loudly and consistently on every target that cannot hold them.** On OpenGL, DirectX 11 and FNA they are rejected with `SD0624` (the code the `.slang` route already used), instead of DXC's `Vulkan 1.1 is required` (OpenGL) or vkd3d's `Function "WaveActiveSum" is not defined` (DX11, FNA). The message names the intrinsic and target, keeps the compiler's own line and column, and appends its text; `.fx` and `.slang` share one message. A user function that shares an intrinsic's name on those targets still compiles. DirectX12 still compiles them; Vulkan stays `SD0218`.
 - **Host-independent generated text.** The Slang frontend `.fx`, the SkSL uniform rewrite, the ShaderToy `.fx` and harness, and the multipass manifest/WIRING.md used `AppendLine` (CRLF on Windows, LF elsewhere); they now emit `\n` everywhere. `HostNewlineBanTests` fails if `AppendLine`/`Environment.NewLine`/`WriteLine` reappears in a generator project. Compiled output bytes are unchanged.
 
 ### Added
 
+- **Every remaining render gate runs in CI.** `validation-render.yml` gains `gl-kni-apos-gates`,
+  `dx-apos-shadertoy-gates`, `content-pipeline-gates`, `slang-windows-gates` and `fna-gate`, plus the
+  real-KNI desktop GL corpus in the GL job: everything in `run-windows-render-gates.ps1` except the
+  ANGLE-D3D11 probe now renders on WARP (DX11/DX12/FNA) or Mesa llvmpipe (GL, on ubuntu and on
+  `windows-latest`). Each lane was measured red under a deliberate sabotage before it was trusted.
 - **The Vulkan render gates run in CI.** `validation-render.yml` gains a `vulkan-render-gates` job
   (ubuntu, label-gated like the GL and DX jobs) that renders `VsDrivenVulkan` (VS-driven fixture vs the
   `mgfxc` golden, then the Apos.Shapes gallery) and the `CandidateVulkan` corpus on real MonoGame

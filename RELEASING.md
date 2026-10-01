@@ -60,14 +60,11 @@ to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub 
    is "command not found", not a render divergence — a red that means nothing about the product.
    Check for `9009` before investigating any gate failure.
 
-5. **A green Windows render gate — RUN IT FIRST (CI structurally cannot run this).** The
-   DirectX / DirectX 12 / FNA / KNI-DirectX / real-KNI-desktop-GL / **Vulkan** / browser-ANGLE
-   rung-4 render proofs ("renders like `mgfxc`/`fxc` in the real engine") have no headless CI driver — Mesa
-   covers the in-process OpenGL gates on the Linux lane, but there is no verified headless
-   D3D/WARP path on the runners, the real-KNI SDL2.GL rigs are not wired there, DesktopVK needs
-   a real Vulkan GPU, and CI's browser smoke renders on SwiftShader (blind to ANGLE-D3D11
-   behavior like the issue-#136 gradient poisoning). **`release.yml` does not check any of this
-   either**, so this gate is the only thing between a render regression and nuget.org. Run it on
+5. **A green Windows render gate — RUN IT FIRST.** Since 2026-10-01 `validation-render.yml` runs every
+   gate in the script except the ANGLE probe, but only on software rasterizers (WARP, Mesa llvmpipe,
+   lavapipe), so confirm that workflow is green on the commit being released AND run the script on
+   real GPU drivers: CI never sees a hardware driver, and CI's browser smoke renders on SwiftShader
+   (blind to ANGLE-D3D11 behavior like the issue-#136 gradient poisoning). **`release.yml` checks none of this.** Run it on
    a Windows box with a **DX12-capable GPU** (the DirectX 12 gates are default-ON; Vulkan-capable
    too, unless `-SkipVulkan`) **before** bumping the version — it is the longest and most likely step
    to fail, so a divergence should stop the release before any version churn, commit, PR, or CI

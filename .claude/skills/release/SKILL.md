@@ -32,7 +32,7 @@ history, not just SemVer's letter):
 1. **Validate clean tree.** `git status`; if dirty, warn and stop. Show current `<Version>`
    from `Directory.Build.props`. Then `git checkout main && git pull` so the gates in step 2
    run against exactly the code that is about to ship.
-2. **RENDER GATES FIRST — DX / FNA / KNI / Vulkan (required; CI cannot do this).** Run BEFORE
+2. **RENDER GATES FIRST — DX / FNA / KNI / Vulkan (required; CI runs them only on software rasterizers).** Run BEFORE
    the version bump: it is the longest and likeliest step to fail, it is the only proof of the
    actual product promise, and `release.yml` does not check it, so a divergence must stop the
    release before any version churn, commit, PR, or CI time is spent.
@@ -160,10 +160,9 @@ history, not just SemVer's letter):
 - **A new package/native/target in this release means checking `release.yml`,
   `pack-consume.yml`, `Brand/README.md`, and every hardcoded package-count mention too**
   (step 7's audit) — not just the usual docs list.
-- **The Windows render gate (step 2) is not optional and CI cannot replace it.** The DX / FNA /
-  KNI-DX rung-4 render proofs run only on a Windows+GPU box (`validation/run-windows-render-gates.ps1`);
-  a green `dotnet test` + green CI does NOT cover them. Skipping it can ship a silently broken
-  render against the "renders like `mgfxc`/`fxc`" promise.
+- **The Windows render gate (step 2) is not optional.** `validation-render.yml` runs the same
+  drivers on WARP/llvmpipe/lavapipe, never on a GPU driver, and not the ANGLE probe; check that
+  workflow is green on the release commit too, but it does not replace the GPU run.
 - **The publish trigger is the DISPATCH-ONLY `release.yml` workflow** whose `validate` job
   guards the dispatch input against the centralized `<Version>`. Pushing a `v<version>` tag
   triggers nothing; the workflow pushes that tag itself on success.

@@ -1,25 +1,23 @@
 #requires -Version 5.1
 <#
 .SYNOPSIS
-  Run the Windows-GPU render-validation gates that CI CANNOT run, and fail loudly if any
-  render diverges from the reference compiler.
+  Run every render-validation gate on a real Windows GPU box, and fail loudly if any render
+  diverges from the reference compiler.
 
 .DESCRIPTION
   ShadowDusk's real product bar is "loads + renders like the reference compiler in the REAL
-  engine" (CLAUDE.md -> "The pre-merge bar has TWO halves"). The OpenGL render gates
-  now run in CI on Linux via Mesa llvmpipe (`.github/workflows/validation-render.yml`), but the
-  DirectX / DirectX12 / FNA / KNI-DirectX render proofs have NO headless software driver we can
-  run on a GitHub runner (Mesa is GL-only; a verified headless D3D/WARP story does not exist
-  yet). So those gates can only run on a real Windows box with a DX12-capable GPU (Vulkan-capable
-  too, unless -SkipVulkan) - which means the DEVELOPER'S
-  machine is the gate, and it must be run BEFORE a release (and before merging any change that
-  touches shader output / transpilation / the MGFX-FNA writers / render state / matrix handling).
+  engine" (CLAUDE.md -> "The pre-merge bar has TWO halves"). Since 2026-10-01 every gate below
+  except the ANGLE-D3D11 probe ALSO runs in CI (.github/workflows/validation-render.yml), on
+  software rasterizers: WARP on windows-latest for DX11/DX12/FNA (SHADOWDUSK_DX_WARP=1), Mesa
+  llvmpipe for GL on ubuntu and on windows-latest, lavapipe for Vulkan. So CI is the standing
+  gate; this script is what CI structurally cannot be: the same drivers on REAL GPU drivers,
+  plus the browser ANGLE-D3D11 probe (issue #136). Run it before a release (and before merging
+  a change that touches shader output / transpilation / the MGFX-FNA writers / render state /
+  matrix handling) as the hardware second opinion.
 
-  This script is that gate, in one command. It runs each Windows-GPU render driver, checks its
-  self-asserting exit code (every driver compares ShadowDusk's output against the reference
-  compiler - mgfxc / fxc - and exits non-zero on any over-tolerance pixel), aggregates the
-  results, and exits non-zero if ANY gate failed. A green run is the evidence a release needs
-  that CI cannot provide.
+  It runs each driver, checks its self-asserting exit code (every driver compares ShadowDusk's
+  output against the reference compiler - mgfxc / fxc - and exits non-zero on any
+  over-tolerance pixel), aggregates the results, and exits non-zero if ANY gate failed.
 
   Gates (all default ON except FNA). Each entry below is only the what-and-versus; per-gate
   history and evidence detail lives in docs/validation-matrix.md section 6.
@@ -152,10 +150,10 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $repoRoot
 
-Write-Host "=== ShadowDusk Windows-GPU render gates (the CI-can't-run bar) ===" -ForegroundColor Cyan
+Write-Host "=== ShadowDusk render gates on a real GPU (CI runs the same drivers on software rasterizers) ===" -ForegroundColor Cyan
 Write-Host "repo: $repoRoot"
-Write-Host "These gates render in a real DX11 / FNA / KNI-DX engine and compare to the reference"
-Write-Host "compiler. CI has no headless driver for them, so this local run is the release gate.`n"
+Write-Host "These gates render in the real engines and compare to the reference compiler. CI runs all of"
+Write-Host "them except the ANGLE probe on WARP / llvmpipe / lavapipe; this run adds real GPU drivers.`n"
 
 # Restore the vkd3d-shader native the DX/KNI-DX/FNA gates need (idempotent; SHA-256-verified).
 if (-not $SkipRestore) {
@@ -213,10 +211,8 @@ $gates.Add(@{
     Name   = 'KNI DirectX (ShadowDusk DX vs mgfxc, real KNI WinForms.DX11)'
     Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/KniWinFormsDX', '-c', 'Release') }
 })
-# KNI OpenGL gates: CI's llvmpipe lane covers the in-process MonoGame GL gates, but the
-# real-KNI-runtime GL proofs (SDL2.GL desktop + the VS-driven issue-#70 rig) have no CI
-# driver and previously relied on someone REMEMBERING to run them for GL-affecting
-# changes. Default ON here so a GL render regression cannot slip through this script.
+# KNI OpenGL gates: real-KNI-runtime GL proofs (SDL2.GL desktop + the VS-driven issue-#70 rig).
+# Also in CI on ubuntu/llvmpipe since 2026-10-01; here for the real-GPU-driver run.
 $gates.Add(@{
     Name   = 'KNI OpenGL desktop (ShadowDusk v10 vs mgfxc + MonoGame, real KNI SDL2.GL)'
     Action = {
@@ -249,8 +245,8 @@ $gates.Add(@{
 })
 # MGCB content-processor plugin (Phase 29). The ONE gate here that is not a render proof:
 # it drives a REAL `dotnet mgcb` content build through the /reference:'d plugin and asserts
-# the .mgfx inside the produced .xnb is byte-for-byte the CLI's. It lives here because
-# `dotnet test` has no dotnet-mgcb, so this script is the only place it will actually be run.
+# the .mgfx inside the produced .xnb is byte-for-byte the CLI's. `dotnet test` has no
+# dotnet-mgcb; CI runs it in validation-render.yml's content-pipeline-gates job.
 # Cheap (seconds, no GPU) and default ON - the failure modes it catches (MGCB stops
 # discovering the plugin; the plugin stops finding its natives inside MGCB's process; MonoGame
 # changes the content contract) are all silent for everyone until a consumer hits them.
@@ -286,9 +282,8 @@ $gates.Add(@{
 # The MonoGame DesktopGL arm of the same claim (Phase 64): the most common consumer runtime,
 # which the WindowsDX gate above cannot see (a DesktopGL game rejects a DX payload outright,
 # and the container is validated by a different ContentManager build). Same shared driver
-# source, /platform:DesktopGL reference, OpenGL candidate. Not in CI's llvmpipe lane yet:
-# mgcb 3.8.4.1's EffectProcessor compiles through d3dcompiler in-process and is unverified
-# on Linux without Wine, so this script is where it runs.
+# source, /platform:DesktopGL reference, OpenGL candidate. In CI on windows-latest with Mesa
+# llvmpipe as the GL driver (mgcb 3.8.4.1's EffectProcessor needs d3dcompiler, so not ubuntu).
 $gates.Add(@{
     Name   = 'XNB on MonoGame DesktopGL (Phase 64: real DesktopGL Content.Load<Effect> on a ShadowDusk-written .xnb vs mgcb''s)'
     Action = {
@@ -302,7 +297,7 @@ $gates.Add(@{
 # own nkast package set: real KNI ContentManager.Load<Effect> on the v10 and KNIFX .xnb vs the
 # mgcb payload (maxd 0), plus the pinned positive control that stock mgcb output is REJECTED on
 # 4.2 and loads on 4.3. Default ON: the KNI failure mode is silent for a consumer until their
-# game refuses to start, and CI has no KNI runtime.
+# game refuses to start. Also in CI (windows-latest + Mesa llvmpipe) since 2026-10-01.
 $gates.Add(@{
     Name   = 'XNB on KNI 4.2.9001 + 4.3.9001 (Phase 64: real KNI Content.Load<Effect> on a ShadowDusk-written .xnb, v10 + KNIFX vs mgcb payload; stock-mgcb rejection on 4.2 pinned)'
     Action = {
@@ -430,8 +425,8 @@ if ($SkipVulkan) {
 }
 
 if ($failed -gt 0) {
-    Write-Host "`nRENDER GATE RED - do NOT release. A Windows-GPU render diverged from the reference compiler." -ForegroundColor Red
+    Write-Host "`nRENDER GATE RED - do NOT release. A real-GPU render diverged from the reference compiler." -ForegroundColor Red
     exit 1
 }
-Write-Host "`nRENDER GATE GREEN - the Windows-GPU render proofs match the reference compiler." -ForegroundColor Green
+Write-Host "`nRENDER GATE GREEN - the real-GPU render proofs match the reference compiler." -ForegroundColor Green
 exit 0
