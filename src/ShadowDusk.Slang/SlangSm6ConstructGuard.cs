@@ -61,7 +61,7 @@ internal static class SlangSm6ConstructGuard
     /// </summary>
     public static (string Construct, int Line)? FindConstruct(string slangSource)
     {
-        (string Name, int Line)? hit = WaveQuadIntrinsics.FindFirst(slangSource);
+        (string Name, int Line)? hit = WaveQuadIntrinsics.FindFirst(SlangSourceMask.Mask(slangSource));
         return hit is null ? null : (hit.Value.Name, hit.Value.Line);
     }
 

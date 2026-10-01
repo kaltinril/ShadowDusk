@@ -477,4 +477,45 @@ public sealed class SlangCompilerTests
         result.IsSuccess.ShouldBeTrue(result.IsFailure ? FormatErrors(result.Error) : "");
         AssertLooksLikeMgfx(result.Value.Data);
     }
+
+    // Issue #222: example text in a comment or string must never act as code.
+    private const string CommentedWaveSource = """
+        // Do not call WaveActiveSum(x) here; /* QuadReadAcrossX */ is not available.
+        static const string Note = "WaveIsFirstLane()";
+
+        [shader("fragment")]
+        float4 MainPS(float4 p : SV_Position) : SV_Target
+        {
+            return float4(1, 0, 0, 1);
+        }
+        """;
+
+    [Theory]
+    [InlineData(PlatformTarget.OpenGL)]
+    [InlineData(PlatformTarget.DirectX)]
+    [InlineData(PlatformTarget.Vulkan)]
+    [InlineData(PlatformTarget.DirectX12)]
+    public async Task CommentedWaveIntrinsic_RaisesNeitherSD0624NorSD0218(PlatformTarget target)
+    {
+        var options = new CompilerOptions { Target = target, SourceFileName = "commented.slang" };
+
+        var result = await new SlangCompiler().CompileAsync(CommentedWaveSource, options);
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? FormatErrors(result.Error) : "");
+    }
+
+    [Fact]
+    public async Task CommentQuotingTheShaderAttribute_IsNotASecondEntry_SD0604()
+    {
+        const string source = """
+            // The [shader("fragment")] attribute marks the entry point (issue #4677) from here.
+            [shader("fragment")]
+            float4 MainPS(float4 p : SV_Position) : SV_Target { return float4(1, 0, 0, 1); }
+            """;
+        var options = new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "attr.slang" };
+
+        var result = await new SlangCompiler().CompileAsync(source, options);
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? FormatErrors(result.Error) : "");
+    }
 }
