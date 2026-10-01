@@ -153,14 +153,9 @@ public sealed class SlangCompiler
             if (sm6Hit is not null)
             {
                 return Fail(new ShaderError(
-                    File: sourceName, Line: sm6Hit.Value.Line, Column: 1, Code: "SD0624",
-                    Message: $"'{sm6Hit.Value.Construct}' is a Shader Model 6 wave/quad intrinsic " +
-                             $"— the {options.Target} target compiles through ShadowDusk's pipeline " +
-                             "at Shader Model 5 or lower and can never represent it (OpenGL: a fixed " +
-                             "vs_5_0/ps_5_0 DXC profile; DirectX: SM5 DXBC; FNA: SM<=3 fx_2_0). This " +
-                             "Slang construct compiles (real slangc accepts it), but has nowhere to " +
-                             "land on this target. Build for DirectX12 instead, or avoid " +
-                             "the intrinsic."));
+                    File: sourceName, Line: sm6Hit.Value.Line, Column: 1,
+                    Code: WaveQuadIntrinsics.BelowSm6Code,
+                    Message: WaveQuadIntrinsics.BelowSm6Message(sm6Hit.Value.Construct, options.Target)));
             }
         }
         else if (options.Target == PlatformTarget.Vulkan)

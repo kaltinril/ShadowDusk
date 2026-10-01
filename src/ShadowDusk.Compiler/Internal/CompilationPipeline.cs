@@ -1925,7 +1925,8 @@ internal sealed class CompilationPipeline
 
         var compileResult = compiler.Compile(request, ct);
         if (compileResult.IsFailure)
-            return Result<(Fx2Shader, CtabTable, IReadOnlyList<ShaderError>), ShaderError>.Fail(compileResult.Error);
+            return Result<(Fx2Shader, CtabTable, IReadOnlyList<ShaderError>), ShaderError>.Fail(
+                WaveQuadIntrinsics.Relabel(compileResult.Error, PlatformTarget.Fna, "FNA compiler") ?? compileResult.Error);
 
         // Canonicalize the instruction forms MojoShader rejects but vkd3d emits
         // (texkill partial writemask; texld src0 swizzle below SM3) — found by the
@@ -2083,7 +2084,8 @@ internal sealed class CompilationPipeline
 
             var dxbcResult = dxbcCompiler.Compile(dxbcRequest, ct);
             if (dxbcResult.IsFailure)
-                return (Result<byte[], ShaderError>.Fail(dxbcResult.Error), default, default, noAttributes, noUniforms, noWarnings);
+                return (Result<byte[], ShaderError>.Fail(
+                    WaveQuadIntrinsics.Relabel(dxbcResult.Error, platform, "DXBC compiler") ?? dxbcResult.Error), default, default, noAttributes, noUniforms, noWarnings);
 
             ReadOnlyMemory<byte> dxbc = dxbcResult.Value.Bytes;
             return (Result<byte[], ShaderError>.Ok(dxbc.ToArray()), dxbc, default, noAttributes, noUniforms, dxbcResult.Value.Warnings);
