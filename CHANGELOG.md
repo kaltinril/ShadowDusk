@@ -84,8 +84,9 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   above the default. A Vulkan stage DXC rejects with that message is now recompiled once with
   `-fspv-target-env=vulkan1.1` (SPIR-V 1.3). Shaders that never needed it are unchanged: they take
   the same single compile with the same arguments as before, so their bytes do not move. Render
-  proof of a wave shader on real MonoGame DesktopVK is NOT done (MonoGame creates a Vulkan 1.0
-  instance); see `docs/validation-matrix.md` section 7.
+  proof on real MonoGame DesktopVK (CI Vulkan lane, Mesa lavapipe): renders at maxd 0, but the
+  Khronos validation layer reports the module out of spec on MonoGame's Vulkan 1.0 instance (SPIR-V
+  1.3, subgroup ops); see `docs/validation-matrix.md` section 7.
 
 - **`ShadowDusk.Slang`'s real-slangc route now forwards the same per-target platform macros
   (`OPENGL`/`SM4`/`VULKAN`/`SM6`/`HLSL`/`GLSL`/`MGFX`/`FNA`/`SM3`, `__KNIFX__` for the KNIFX
