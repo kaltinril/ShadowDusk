@@ -232,7 +232,10 @@ first (the `/release` skill does this for you).
 > official shader-slang v2026.14.1 release zips, verify each zip's SHA-256 before extracting, and
 > verify each extracted file against its own pin. `release.yml`'s `pack-desktop` job hard-gates
 > the restored files and then fails red if the packed nupkg is missing any of the eight natives
-> or `THIRD-PARTY-NOTICES.txt` (exact entry names). **Before dispatching**, confirm the
+> or `THIRD-PARTY-NOTICES.txt` (exact entry names). The list lives in ONE script,
+> `tools/verify-slang-nupkg.sh`, which `tools/verify-slang-packaging.sh` (pack-consume.yml) runs
+> too; to check a locally packed nupkg, `bash tools/verify-slang-nupkg.sh <path/to/nupkg>` (exits
+> 1 naming each missing entry). **Before dispatching**, confirm the
 > `Pack & Consume Smoke` workflow is green on the release commit (dispatch it if the last run is
 > older): its `tools/verify-slang-packaging.sh` step is the only proof that a cold consumer can
 > install the package and run slangc on Linux, macOS and Windows. Host floors are upstream's:

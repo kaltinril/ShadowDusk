@@ -87,7 +87,9 @@ ShadowDusk/
 │   ├── slang-consumer/            # The scratch ShadowDusk.Slang consumer (Program.cs + csproj) that
 │   │                              #   tools/verify-slang-packaging.sh (run by pack-consume.yml) COPIES out of
 │   │                              #   tree and consumes cold, framework-dependent + self-contained (issue #225).
-│   │                              #   Never built in place.
+│   │                              #   Never built in place. Its pack gate is tools/verify-slang-nupkg.sh <nupkg>,
+│   │                              #   the ONE exact-name list of the eight slangc natives + notice, also run by
+│   │                              #   release.yml (issue #226) and runnable locally against any packed nupkg.
 │   ├── contentbuilder-consumer/   # The scratch MonoGame 3.8.5 Content Builder (Program.cs + csproj) that
 │   │                              #   pack-consume.yml and tools/verify-contentpipeline-packaging.ps1 COPY out of
 │   │                              #   tree to consume the packed ShadowDusk.ContentPipeline cold (Phase 63).
