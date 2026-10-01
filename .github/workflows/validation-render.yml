@@ -380,11 +380,6 @@ jobs:
       github.event_name != 'pull_request' ||
       contains(github.event.pull_request.labels.*.name, 'run-validation-render')
     timeout-minutes: 25
-    env:
-      # Pin Mesa's lavapipe (CPU Vulkan) as the only ICD, so a runner image that ever grows
-      # another driver cannot change what judged the pixels.
-      VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
-      VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -424,10 +419,19 @@ jobs:
             libxcursor1 libxss1 libxkbcommon0
           python -m pip install --quiet pillow numpy
 
-      - name: Verify lavapipe + validation layer (diagnostic)
+      # Pin Mesa's lavapipe (CPU Vulkan) as the only ICD, so a runner image that ever grows
+      # another driver cannot change what judged the pixels. The manifest's file name varies
+      # across Mesa packagings, so it is located rather than hard-coded; none found = red.
+      - name: Pin lavapipe as the only Vulkan ICD
         run: |
-          xvfb-run -a vulkaninfo --summary
-          ls /usr/share/vulkan/explicit_layer.d/
+          ls -l /usr/share/vulkan/icd.d/ /usr/share/vulkan/explicit_layer.d/
+          icd=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -n1)
+          [ -n "$icd" ] || { echo "::error::Mesa lavapipe ICD manifest not found"; exit 1; }
+          echo "VK_ICD_FILENAMES=$icd" >> "$GITHUB_ENV"
+          echo "VK_DRIVER_FILES=$icd" >> "$GITHUB_ENV"
+
+      - name: Verify lavapipe (diagnostic)
+        run: xvfb-run -a vulkaninfo --summary
 
       - name: Build the Vulkan render gates
         run: |
