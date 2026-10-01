@@ -4,8 +4,8 @@
 `src/ShadowDusk.Compiler/Slang/SlangFrontend.cs` is untouched; no Slang toolchain becomes a
 runtime dependency of any `ShadowDusk.*` package.
 
-**Status:** 🔬 Open (investigation). Delivered: measurements + a recommendation. Not delivered:
-any implementation — that is exactly the question this spike answers.
+**Status:** ✅ Closed 2026-09-11. Delivered: measurements + a recommendation; the owner overruled the
+recommendation and the work moved to [Phase 66](PHASE-66-full-slang-input-implementation.md).
 
 **Opened 2026-09-11.** The repo owner has been publicly describing ShadowDusk as supporting
 Slang without the scope limit in view: the shipped [Phase 61](DONE/PHASE-61-slang-support.md)

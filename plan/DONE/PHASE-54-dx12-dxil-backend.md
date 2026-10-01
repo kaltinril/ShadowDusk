@@ -2,7 +2,7 @@
 
 **Track:** Backend breadth (post-1.0), same shape as [Phase 32](PHASE-32-vulkan-backend.md)
 (Vulkan).
-**Status:** In progress (created 2026-07-23). Split out of
+**Status:** ✅ Done (2026-07-23; see the Status section below). Split out of
 [Phase 52](PHASE-52-monogame-3.8.5-support.md) Area D per that area's own decision gate ("if
 source inspection reveals a full new container format on the scale of Phase 32's Vulkan work,
 split Area D into its own scoped phase") — source inspection (see
