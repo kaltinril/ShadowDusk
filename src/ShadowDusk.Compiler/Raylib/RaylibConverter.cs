@@ -1,6 +1,7 @@
 #nullable enable
 
 using ShadowDusk.Compiler.Internal;
+using ShadowDusk.Compiler.Slang;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
 using ShadowDusk.Core.Reflection;
@@ -20,6 +21,22 @@ public sealed class RaylibConvertOptions
 
     /// <summary>Additional directories searched when resolving <c>#include</c> directives.</summary>
     public IReadOnlyList<string> AdditionalIncludePaths { get; init; } = [];
+
+    /// <summary>
+    /// Internal seam for <c>ShadowDusk.Slang</c>'s real-slangc route (issue #253): the texture unit
+    /// each combined sampler with a sampler register pins, exactly as
+    /// <c>CompilerOptions.CombinedSamplerGlSlots</c> gives it to the OpenGL target. Empty for a
+    /// <c>.fx</c>. Not a consumer setting.
+    /// </summary>
+    internal IReadOnlyDictionary<string, int> CombinedSamplerGlSlots { get; init; } = new Dictionary<string, int>();
+
+    /// <summary>
+    /// Internal seam for <c>ShadowDusk.Slang</c>'s real-slangc route (issue #253): the author's
+    /// texture declaration order, exactly as <c>CompilerOptions.GlTextureDeclarationOrder</c> gives
+    /// it to the OpenGL target (slangc emits globals in first-use order). Empty for a <c>.fx</c>,
+    /// whose HLSL is in the author's order. Not a consumer setting.
+    /// </summary>
+    internal IReadOnlyDictionary<string, int> GlTextureDeclarationOrder { get; init; } = new Dictionary<string, int>();
 }
 
 /// <summary>
@@ -85,9 +102,9 @@ public sealed record RaylibSampler(
 /// MonoGame DesktopGL.</para>
 ///
 /// <para><b>Input languages:</b> anything that becomes <c>.fx</c> text. A <c>.slang</c> file goes
-/// through <c>SlangFrontend.ConvertToFx</c> (or the <c>ShadowDusk.Slang</c> package) first; the
-/// HLSL it yields is compiled by the same DXC as every <c>.fx</c>, so this converter needs nothing
-/// Slang-specific.</para>
+/// through <see cref="ConvertSlang"/> (built-in frontend) or <c>ShadowDusk.Slang</c>'s
+/// <c>SlangCompiler.ConvertToRaylib</c> (real slangc); the HLSL either yields is compiled by the
+/// same DXC as every <c>.fx</c>, so the converter itself needs nothing Slang-specific.</para>
 ///
 /// <para>Everything raylib's fixed-function model cannot hold is rejected loudly
 /// (<c>SD0630</c>–<c>SD0636</c>), never emitted as a shader that loads and renders wrong.</para>
@@ -268,9 +285,19 @@ public static class RaylibConverter
 
         // The same allocator the OpenGL target uses, so "the sampler SpriteBatch binds" (unit 0)
         // and "the sampler raylib's draw binds" (texture0) are the same HLSL sampler by construction.
+        // The real-slangc route's combined samplers pin their texture like a legacy sampler does,
+        // and its declaration order replaces slangc's first-use order, as on the OpenGL target.
+        IReadOnlyDictionary<string, int> explicitSlots = samplerSlots.Value.Explicit;
+        if (options.CombinedSamplerGlSlots.Count > 0)
+        {
+            var merged = new Dictionary<string, int>(explicitSlots, StringComparer.Ordinal);
+            foreach ((string texture, int slot) in options.CombinedSamplerGlSlots)
+                merged.TryAdd(texture, slot);
+            explicitSlots = merged;
+        }
         IReadOnlyList<int> slots = SpirvCombinedSamplerPairs.ResolveSlots(
-            pairs, samplerSlots.Value.Explicit, samplerSlots.Value.Reserved,
-            legacyTextures: samplerSlots.Value.LegacyTextures);
+            pairs, explicitSlots, samplerSlots.Value.Reserved,
+            options.GlTextureDeclarationOrder, samplerSlots.Value.LegacyTextures);
 
         var bakedStates = parsed.Samplers
             .GroupBy(s => s.Name, StringComparer.Ordinal)
@@ -292,6 +319,28 @@ public static class RaylibConverter
             .ToList();
 
         return RaylibGlslMapper.Map(seam.Value.Glsl, samplerInputs, parsed.StrippedHlsl, file);
+    }
+
+    /// <summary>
+    /// Converts HLSL-compatible <c>.slang</c> source to a raylib fragment shader through the
+    /// built-in Slang frontend (<see cref="SlangFrontend.ConvertToFx"/>, no extra package, every
+    /// host), then <see cref="Convert"/> applies every raylib rule unchanged. Slang-only
+    /// constructs (<c>SD0600</c>) are refused by the frontend; for genuine Slang use
+    /// <c>ShadowDusk.Slang</c>'s <c>SlangCompiler.ConvertToRaylib</c>. Set
+    /// <see cref="RaylibConvertOptions.SourceName"/> to the <c>.slang</c> name for diagnostics.
+    /// </summary>
+    /// <param name="slangSource">The Slang source; pixel entry marked <c>[shader("fragment")]</c>.</param>
+    /// <param name="options">Conversion options; see <see cref="RaylibConvertOptions"/>.</param>
+    /// <param name="cancellationToken">Observed between pipeline stages.</param>
+    public static Result<RaylibShader, ShaderError[]> ConvertSlang(
+        string slangSource,
+        RaylibConvertOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        var fx = SlangFrontend.ConvertToFx(slangSource, new SlangConvertOptions { SourceName = options.SourceName });
+        return fx.IsFailure
+            ? Result<RaylibShader, ShaderError[]>.Fail(fx.Error)
+            : Convert(fx.Value.FxText, options, cancellationToken);
     }
 
     private static Result<RaylibShader, ShaderError[]> Fail(

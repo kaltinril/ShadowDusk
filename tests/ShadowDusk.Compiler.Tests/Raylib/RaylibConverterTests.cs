@@ -245,31 +245,64 @@ public sealed class RaylibConverterTests
         warning.Message.ShouldContain("SetTextureFilter", Case.Sensitive);
     }
 
+    private const string TintSlang = """
+        Texture2D SpriteTexture;
+        SamplerState SpriteTextureSampler;
+        float Amount;
+
+        [shader("fragment")]
+        float4 MainPS(float4 pos : SV_Position, float4 color : COLOR0, float2 uv : TEXCOORD0) : SV_Target
+        {
+            return SpriteTexture.Sample(SpriteTextureSampler, uv) * color * Amount;
+        }
+        """;
+
     [Fact]
-    public void SlangInput_ReachesTheConverterThroughTheSlangFrontend_WithNoRaylibSpecificWork()
+    public void ConvertSlang_ConvertsSlangInput_AndIsExactlyTheFrontendThenConvert()
     {
-        // The input seam: anything that becomes .fx text converts. Slang's frontend already
-        // produces .fx, so .slang -> raylib needs no change here.
-        const string slang = """
-            Texture2D SpriteTexture;
-            SamplerState SpriteTextureSampler;
-            float Amount;
-
-            [shader("fragment")]
-            float4 MainPS(float4 pos : SV_Position, float4 color : COLOR0, float2 uv : TEXCOORD0) : SV_Target
-            {
-                return SpriteTexture.Sample(SpriteTextureSampler, uv) * color * Amount;
-            }
-            """;
-
-        var fx = SlangFrontend.ConvertToFx(slang, new SlangConvertOptions { SourceName = "tint.slang" });
-        fx.IsSuccess.ShouldBeTrue(fx.IsFailure ? string.Join(" | ", fx.Error.Select(e => e.Message)) : "");
-
-        RaylibShader shader = ConvertOk(fx.Value.FxText, "tint.slang");
+        var result = RaylibConverter.ConvertSlang(TintSlang, new RaylibConvertOptions { SourceName = "tint.slang" });
+        result.IsSuccess.ShouldBeTrue(
+            result.IsFailure ? string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "");
+        RaylibShader shader = result.Value;
 
         shader.FragmentShader.ShouldContain("uniform float Amount;", Case.Sensitive);
         shader.FragmentShader.ShouldContain("texture(texture0, fragTexCoord)", Case.Sensitive);
         shader.Samplers.Single().HlslTextureName.ShouldBe("SpriteTexture");
+
+        var fx = SlangFrontend.ConvertToFx(TintSlang, new SlangConvertOptions { SourceName = "tint.slang" });
+        ConvertOk(fx.Value.FxText, "tint.slang").FragmentShader.ShouldBe(shader.FragmentShader);
+    }
+
+    [Fact]
+    public void ConvertSlang_RefusesSlangOnlyConstructs_ByName()
+    {
+        const string slang = """
+            import lighting;
+            [shader("fragment")]
+            float4 MainPS(float2 uv : TEXCOORD0) : SV_Target { return 1; }
+            """;
+
+        var result = RaylibConverter.ConvertSlang(slang, new RaylibConvertOptions { SourceName = "bad.slang" });
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Single().Code.ShouldBe("SD0600");
+    }
+
+    [Fact]
+    public void ConvertSlang_StillRefusesAVertexEntry_WithTheRaylibCode()
+    {
+        const string slang = """
+            struct V { float4 Position : SV_Position; };
+            [shader("vertex")]
+            V MainVS(float4 p : POSITION) { V v; v.Position = p; return v; }
+            [shader("fragment")]
+            float4 MainPS(V v) : SV_Target { return 1; }
+            """;
+
+        var result = RaylibConverter.ConvertSlang(slang, new RaylibConvertOptions { SourceName = "vs.slang" });
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Single().Code.ShouldBe("SD0631");
     }
 
     // ---- loud refusals ------------------------------------------------------------------

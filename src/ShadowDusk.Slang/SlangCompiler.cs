@@ -4,6 +4,8 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
 using ShadowDusk.Compiler;
+using ShadowDusk.Compiler.Raylib;
+using ShadowDusk.Compiler.Sksl;
 using ShadowDusk.Compiler.Slang;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
@@ -208,6 +210,137 @@ public sealed class SlangCompiler
         CompilerOptions options,
         CancellationToken cancellationToken = default)
     {
+        Result<SlangFx, ShaderError[]> produced = ProduceFx(slangSource, options, cancellationToken);
+        if (produced.IsFailure)
+            return Result<CompiledShader, ShaderError[]>.Fail(produced.Error);
+        string sourceName = options.SourceFileName ?? "<memory>.slang";
+        IReadOnlyCollection<string> combinedHalves = produced.Value.CombinedSamplerArrayHalves;
+
+        Result<CompiledShader, ShaderError[]> downstream =
+            _downstreamCompiler.Compile(produced.Value.FxText, produced.Value.DownstreamOptions, cancellationToken);
+        if (downstream.IsFailure)
+        {
+            ShaderError[] errors = RelocateResourceArrayErrors(downstream.Error, slangSource, sourceName);
+            if (options.Target == PlatformTarget.OpenGL && combinedHalves.Count > 0)
+                errors = ExplainCombinedSamplerArraysOnOpenGl(errors, combinedHalves, slangSource, sourceName);
+            return Result<CompiledShader, ShaderError[]>.Fail(errors);
+        }
+        if (downstream.Value.Warnings.Any(w => w.Code == ResourceArrayWarningCode))
+        {
+            return Result<CompiledShader, ShaderError[]>.Ok(downstream.Value with
+            {
+                Warnings = RelocateResourceArrayErrors(downstream.Value.Warnings.ToArray(), slangSource, sourceName),
+            });
+        }
+        return downstream;
+    }
+
+    /// <summary>
+    /// Converts Slang source to an <b>SkSL runtime effect</b> for SkiaSharp's
+    /// <c>SKRuntimeEffect</c> (issue #253): the same real-slangc front half <see cref="Compile"/>
+    /// runs for OpenGL (every rejection, the register pass, the per-entry merge and its
+    /// <c>SD0625</c>, the <c>.fx</c>-input guard <c>SD0626</c>), then the same
+    /// <see cref="SkslConverter"/> a <c>.fx</c> goes through, so every SkSL limit (fragment-only,
+    /// no varyings other than <c>COLOR0</c>, <c>SD0610</c>-<c>SD0615</c>) applies unchanged. Set
+    /// <see cref="SkslConvertOptions.SourceName"/> to the <c>.slang</c> name for diagnostics. The
+    /// route without this package (the HLSL-compatible subset) is
+    /// <see cref="SkslConverter.ConvertSlang"/>.
+    /// </summary>
+    /// <param name="slangSource">The Slang source; pixel entry marked <c>[shader("fragment")]</c>.</param>
+    /// <param name="options">Conversion options; see <see cref="SkslConvertOptions"/>.</param>
+    /// <param name="cancellationToken">Observed between pipeline stages.</param>
+    public Result<SkslConversion, ShaderError[]> ConvertToSksl(
+        string slangSource,
+        SkslConvertOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        Result<SlangFx, ShaderError[]> produced = ProduceFx(slangSource, ConverterOptions(options.SourceName), cancellationToken);
+        return produced.IsFailure
+            ? Result<SkslConversion, ShaderError[]>.Fail(produced.Error)
+            : SkslConverter.Convert(produced.Value.FxText, options, cancellationToken);
+    }
+
+    /// <summary>Asynchronous counterpart of <see cref="ConvertToSksl"/>, offloaded to the thread pool.</summary>
+    /// <param name="slangSource">The Slang source; pixel entry marked <c>[shader("fragment")]</c>.</param>
+    /// <param name="options">Conversion options; see <see cref="SkslConvertOptions"/>.</param>
+    /// <param name="cancellationToken">Observed between pipeline stages.</param>
+    public Task<Result<SkslConversion, ShaderError[]>> ConvertToSkslAsync(
+        string slangSource,
+        SkslConvertOptions options,
+        CancellationToken cancellationToken = default) =>
+        Task.Run(() => ConvertToSksl(slangSource, options, cancellationToken), cancellationToken);
+
+    /// <summary>
+    /// Converts Slang source to a <b>raylib <c>glsl330</c> fragment shader</b> (issue #253): the
+    /// same real-slangc front half <see cref="Compile"/> runs for OpenGL, then the same
+    /// <see cref="RaylibConverter"/> a <c>.fx</c> goes through (its <c>SD0630</c>-<c>SD0636</c>
+    /// refusals apply unchanged). The texture the draw call binds (<c>texture0</c>) is the one
+    /// <see cref="Compile"/> puts on OpenGL unit 0 for the same source: the author's declaration
+    /// order and a combined sampler's own register reach the converter's texture-unit allocator
+    /// exactly as they reach the OpenGL target's. The route without this package (the
+    /// HLSL-compatible subset) is <see cref="RaylibConverter.ConvertSlang"/>.
+    /// </summary>
+    /// <param name="slangSource">The Slang source; pixel entry marked <c>[shader("fragment")]</c>.</param>
+    /// <param name="options">Conversion options; see <see cref="RaylibConvertOptions"/>.</param>
+    /// <param name="cancellationToken">Observed between pipeline stages.</param>
+    public Result<RaylibShader, ShaderError[]> ConvertToRaylib(
+        string slangSource,
+        RaylibConvertOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        Result<SlangFx, ShaderError[]> produced = ProduceFx(slangSource, ConverterOptions(options.SourceName), cancellationToken);
+        if (produced.IsFailure)
+            return Result<RaylibShader, ShaderError[]>.Fail(produced.Error);
+
+        CompilerOptions gl = produced.Value.DownstreamOptions;
+        var converterOptions = new RaylibConvertOptions
+        {
+            SourceName = options.SourceName,
+            IncludeResolver = options.IncludeResolver,
+            AdditionalIncludePaths = options.AdditionalIncludePaths,
+            CombinedSamplerGlSlots = gl.CombinedSamplerGlSlots,
+            GlTextureDeclarationOrder = gl.GlTextureDeclarationOrder,
+        };
+        return RaylibConverter.Convert(produced.Value.FxText, converterOptions, cancellationToken);
+    }
+
+    /// <summary>Asynchronous counterpart of <see cref="ConvertToRaylib"/>, offloaded to the thread pool.</summary>
+    /// <param name="slangSource">The Slang source; pixel entry marked <c>[shader("fragment")]</c>.</param>
+    /// <param name="options">Conversion options; see <see cref="RaylibConvertOptions"/>.</param>
+    /// <param name="cancellationToken">Observed between pipeline stages.</param>
+    public Task<Result<RaylibShader, ShaderError[]>> ConvertToRaylibAsync(
+        string slangSource,
+        RaylibConvertOptions options,
+        CancellationToken cancellationToken = default) =>
+        Task.Run(() => ConvertToRaylib(slangSource, options, cancellationToken), cancellationToken);
+
+    // Both converters compile their seam with the OpenGL macro set and fill OpenGL texture
+    // units, so slangc and every post-slangc pass see exactly what an OpenGL Compile sees.
+    private static CompilerOptions ConverterOptions(string sourceName) =>
+        new() { Target = PlatformTarget.OpenGL, SourceFileName = sourceName };
+
+    /// <summary>
+    /// What the real-slangc front half produced: the assembled <c>.fx</c>, the options the
+    /// downstream compile takes (the internal OpenGL slot and declaration-order seams, the
+    /// combined-sampler array halves), and those halves by name for <see cref="Compile"/>'s
+    /// error explanations.
+    /// </summary>
+    private sealed record SlangFx(
+        string FxText,
+        CompilerOptions DownstreamOptions,
+        IReadOnlyCollection<string> CombinedSamplerArrayHalves);
+
+    /// <summary>
+    /// The real-slangc front half every entry point shares (<see cref="Compile"/>,
+    /// <see cref="ConvertToSksl"/>, <see cref="ConvertToRaylib"/>): Slang source to the
+    /// <c>.fx</c> text the downstream pipeline or a converter takes, raising every rejection on
+    /// the way. One implementation, so a converter can never skip a check the compile route has.
+    /// </summary>
+    private Result<SlangFx, ShaderError[]> ProduceFx(
+        string slangSource,
+        CompilerOptions options,
+        CancellationToken cancellationToken)
+    {
         cancellationToken.ThrowIfCancellationRequested();
         string sourceName = options.SourceFileName ?? "<memory>.slang";
 
@@ -216,7 +349,7 @@ public sealed class SlangCompiler
         (string Construct, int Line)? effectHit = SlangEffectFrameworkGuard.FindConstruct(slangSource);
         if (effectHit is not null)
         {
-            return Fail(new ShaderError(
+            return FailFx(new ShaderError(
                 File: sourceName, Line: effectHit.Value.Line, Column: 1, Code: "SD0626",
                 Message: "'" + effectHit.Value.Construct + "' is an HLSL Effect (.fx) construct, not Slang: real slangc has no " +
                          "technique/pass concept and cannot parse it (nor the legacy sampler declarations those effects use). " +
@@ -232,7 +365,7 @@ public sealed class SlangCompiler
         Result<IReadOnlyList<SlangEntryPoint>, ShaderError[]> entriesResult =
             SlangEntryScanner.Scan(slangSource, sourceName);
         if (entriesResult.IsFailure)
-            return Result<CompiledShader, ShaderError[]>.Fail(entriesResult.Error);
+            return Result<SlangFx, ShaderError[]>.Fail(entriesResult.Error);
         IReadOnlyList<SlangEntryPoint> entries = entriesResult.Value;
 
         // Phase 66 A5, Band 2 part B (OQ2): reject an SM6-only Wave/Quad intrinsic up front,
@@ -244,7 +377,7 @@ public sealed class SlangCompiler
             (string Construct, int Line)? sm6Hit = SlangSm6ConstructGuard.FindConstruct(slangSource);
             if (sm6Hit is not null)
             {
-                return Fail(new ShaderError(
+                return FailFx(new ShaderError(
                     File: sourceName, Line: sm6Hit.Value.Line, Column: 1,
                     Code: WaveQuadIntrinsics.BelowSm6Code,
                     Message: WaveQuadIntrinsics.BelowSm6Message(sm6Hit.Value.Construct, options.Target)));
@@ -258,7 +391,7 @@ public sealed class SlangCompiler
             (string Construct, int Line)? waveHit = SlangSm6ConstructGuard.FindConstruct(slangSource);
             if (waveHit is not null)
             {
-                return Fail(new ShaderError(
+                return FailFx(new ShaderError(
                     File: sourceName, Line: waveHit.Value.Line, Column: 1,
                     Code: WaveQuadIntrinsics.VulkanUnsupportedCode,
                     Message: WaveQuadIntrinsics.VulkanUnsupportedMessage(waveHit.Value.Construct)));
@@ -279,7 +412,7 @@ public sealed class SlangCompiler
                 SlangcGlobalNameCollisions.FindCollisions(rawDeclarations, sourceName);
             bool rawIsFinal = SlangcGlobalNameCollisions.RawTextIsWhatSlangcCompiles(slangSource, options.Defines);
             if (rawCollisions.Count > 0 && rawIsFinal)
-                return Fail(SlangcGlobalNameCollisions.Error(rawCollisions[0], sourceName));
+                return FailFx(SlangcGlobalNameCollisions.Error(rawCollisions[0], sourceName));
             confirmCollisionsByPreprocess = !rawIsFinal
                 && (rawCollisions.Count > 0 || !slangSource.Contains("namespace", StringComparison.Ordinal));
         }
@@ -292,7 +425,7 @@ public sealed class SlangCompiler
         {
             ShaderError? hostError = PrepareProcessSlangc(sourceName, out runnableSlangc, out toolDirectory);
             if (hostError is not null)
-                return Fail(hostError);
+                return FailFx(hostError);
         }
 
         // Phase 66 A6: forward the SAME per-target platform macros (OPENGL/SM4/VULKAN/SM6/
@@ -333,7 +466,7 @@ public sealed class SlangCompiler
                 slangSource, sourceName, runnableSlangc, toolDirectory,
                 out int exitCode, out string stdout, out string stderr);
             if (startError is not null)
-                return Fail(startError);
+                return FailFx(startError);
             if (exitCode == 0 && !stderr.Contains("error[", StringComparison.Ordinal)
                 && CheckEntryPreprocessOutput((0, stdout, stderr), entries, sourceName, "", "") is null)
             {
@@ -341,7 +474,7 @@ public sealed class SlangCompiler
                 IReadOnlyList<SlangcGlobalNameCollisions.Collision> collisions = SlangcGlobalNameCollisions.FindCollisions(
                     SlangcGlobalNameCollisions.Scan(stdout, sourceName, rawSource: false), sourceName);
                 if (collisions.Count > 0)
-                    return Fail(SlangcGlobalNameCollisions.Error(SlangcGlobalNameCollisions.Locate(collisions[0], rawDeclarations), sourceName));
+                    return FailFx(SlangcGlobalNameCollisions.Error(SlangcGlobalNameCollisions.Locate(collisions[0], rawDeclarations), sourceName));
             }
         }
 
@@ -360,11 +493,11 @@ public sealed class SlangCompiler
                 slangSource, sourceName, runnableSlangc, toolDirectory,
                 out int exitCode, out string stdout, out string stderr);
             if (startError is not null)
-                return Fail(startError);
+                return FailFx(startError);
 
             if (exitCode != 0)
             {
-                return Fail(SlangDiagnosticReformatter.SelectPrimary(stderr, sourceName, entry.Name, stage, exitCode));
+                return FailFx(SlangDiagnosticReformatter.SelectPrimary(stderr, sourceName, entry.Name, stage, exitCode));
             }
 
             perEntryHlsl.Add(stdout);
@@ -380,7 +513,7 @@ public sealed class SlangCompiler
             perEntryHlsl, entries, slangSource, sourceName, options.Defines, platformMacros,
             runnableSlangc, toolDirectory, cancellationToken, preprocessedEntry);
         if (kept.IsFailure)
-            return Fail(kept.Error);
+            return FailFx(kept.Error);
 
         // Issue #323, on the texts the register pass read (the entry source as slangc's
         // preprocessor leaves it, and the modules reached by quoted-path import): a pair formed
@@ -393,7 +526,7 @@ public sealed class SlangCompiler
             IReadOnlyList<SlangcGlobalNameCollisions.Collision> collisions =
                 SlangcGlobalNameCollisions.FindCollisions(declarations, sourceName);
             if (collisions.Count > 0)
-                return Fail(SlangcGlobalNameCollisions.Error(SlangcGlobalNameCollisions.Locate(collisions[0], rawDeclarations), sourceName));
+                return FailFx(SlangcGlobalNameCollisions.Error(SlangcGlobalNameCollisions.Locate(collisions[0], rawDeclarations), sourceName));
         }
 
         // Stripped per entry, before the merge, so both entries' copies of a shared
@@ -410,7 +543,7 @@ public sealed class SlangCompiler
             // cbuffer/resource name cannot be renamed (it IS a reflected parameter name).
             // Reject by name instead of letting DXC report a redefinition with no location.
             var c = mergeConflicts[0];
-            return Fail(new ShaderError(
+            return FailFx(new ShaderError(
                 File: sourceName, Line: 0, Column: 0, Code: "SD0625",
                 Message: "Entry points compile to different declarations of the same global " +
                          "name '" + c.Name + "' and slangc output for each entry is merged into one effect, " +
@@ -425,7 +558,7 @@ public sealed class SlangCompiler
             mergedHlsl, kept.Value.Texts, entries, slangSource, sourceName, options.Defines, platformMacros,
             runnableSlangc, toolDirectory, cancellationToken);
         if (named.IsFailure)
-            return Fail(named.Error);
+            return FailFx(named.Error);
         mergedHlsl = named.Value.Hlsl;
 
         // OpenGL: a combined sampler with a sampler register is the legacy combined object, so
@@ -437,7 +570,7 @@ public sealed class SlangCompiler
             Result<(string Hlsl, IReadOnlyDictionary<string, int> Slots), ShaderError> pinned =
                 SlangcCombinedSamplerGlSlots.Pin(mergedHlsl, named.Value.CombinedSamplers, slangSource, sourceName);
             if (pinned.IsFailure)
-                return Fail(pinned.Error);
+                return FailFx(pinned.Error);
             (mergedHlsl, combinedGlSlots) = pinned.Value;
         }
 
@@ -448,7 +581,7 @@ public sealed class SlangCompiler
             SlangFx2TextureRespeller.Result respelled = SlangFx2TextureRespeller.Respell(mergedHlsl);
             if (respelled.Text is null)
             {
-                return Fail(new ShaderError(
+                return FailFx(new ShaderError(
                     File: sourceName, Line: respelled.SourceLine, Column: respelled.SourceLine > 0 ? 1 : 0,
                     Code: SlangFx2TextureRespeller.UnsupportedCode,
                     Message: "The FNA target (fx_2_0, Shader Model 2-3) binds textures through DX9 " +
@@ -500,22 +633,7 @@ public sealed class SlangCompiler
             }
         }
 
-        Result<CompiledShader, ShaderError[]> downstream = _downstreamCompiler.Compile(fxText, downstreamOptions, cancellationToken);
-        if (downstream.IsFailure)
-        {
-            ShaderError[] errors = RelocateResourceArrayErrors(downstream.Error, slangSource, sourceName);
-            if (options.Target == PlatformTarget.OpenGL && combinedHalves.Count > 0)
-                errors = ExplainCombinedSamplerArraysOnOpenGl(errors, combinedHalves, slangSource, sourceName);
-            return Result<CompiledShader, ShaderError[]>.Fail(errors);
-        }
-        if (downstream.Value.Warnings.Any(w => w.Code == ResourceArrayWarningCode))
-        {
-            return Result<CompiledShader, ShaderError[]>.Ok(downstream.Value with
-            {
-                Warnings = RelocateResourceArrayErrors(downstream.Value.Warnings.ToArray(), slangSource, sourceName),
-            });
-        }
-        return downstream;
+        return Result<SlangFx, ShaderError[]>.Ok(new SlangFx(fxText, downstreamOptions, combinedHalves));
     }
 
     /// <summary>The pipeline's codes for an array of textures or samplers: the Vulkan error and
@@ -1280,8 +1398,8 @@ public sealed class SlangCompiler
         return Task.Run(() => Compile(slangSource, options, cancellationToken), cancellationToken);
     }
 
-    private static Result<CompiledShader, ShaderError[]> Fail(ShaderError error) =>
-        Result<CompiledShader, ShaderError[]>.Fail([error]);
+    private static Result<SlangFx, ShaderError[]> FailFx(ShaderError error) =>
+        Result<SlangFx, ShaderError[]>.Fail([error]);
 
     /// <summary>
     /// Assembles the same kind of <c>.fx</c> wrapper <c>SlangFrontend.ConvertToFx</c>
