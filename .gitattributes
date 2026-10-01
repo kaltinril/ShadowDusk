@@ -2,9 +2,12 @@
 # working tree so the same fixture feeds identical bytes on every OS (the
 # byte-identity tests normalize EOLs defensively, but the checkout should not
 # vary in the first place). Verified before adding (git ls-files --eol): every
-# tracked *.fx / *.fxh is already index-LF, so this renormalizes nothing.
-*.fx  text eol=lf
-*.fxh text eol=lf
+# tracked *.fx / *.fxh / *.slang is already index-LF, so this renormalizes nothing
+# (*.slang added for issue #258; the Slang cross-host byte-identity manifests hash
+# the compiled output of these files).
+*.fx    text eol=lf
+*.fxh   text eol=lf
+*.slang text eol=lf
 
 # Compiled shader containers and WASM modules are binary — never EOL-converted,
 # never diffed as text. (Already auto-detected as binary today; pinned so a
