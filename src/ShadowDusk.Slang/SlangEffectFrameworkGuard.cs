@@ -1,6 +1,5 @@
 #nullable enable
 
-using System.Text;
 using System.Text.RegularExpressions;
 
 namespace ShadowDusk.Slang;
@@ -42,7 +41,7 @@ internal static class SlangEffectFrameworkGuard
     /// </summary>
     public static (string Construct, int Line)? FindConstruct(string source)
     {
-        string code = StripComments(source);
+        string code = ShadowDusk.Compiler.Slang.SlangSourceMask.Mask(source);
         (string Construct, int Index)? best = null;
         foreach ((string construct, Regex pattern) in Constructs)
         {
@@ -54,37 +53,5 @@ internal static class SlangEffectFrameworkGuard
         if (best is null)
             return null;
         return (best.Value.Construct, 1 + code.AsSpan(0, best.Value.Index).Count('\n'));
-    }
-
-    // Blanks comments but keeps every newline, so a match index maps to the original line.
-    internal static string StripComments(string source)
-    {
-        var sb = new StringBuilder(source.Length);
-        int i = 0;
-        while (i < source.Length)
-        {
-            if (source[i] == '/' && i + 1 < source.Length && source[i + 1] == '/')
-            {
-                while (i < source.Length && source[i] != '\n')
-                    i++;
-            }
-            else if (source[i] == '/' && i + 1 < source.Length && source[i + 1] == '*')
-            {
-                i += 2;
-                while (i < source.Length && !(source[i] == '*' && i + 1 < source.Length && source[i + 1] == '/'))
-                {
-                    if (source[i] == '\n')
-                        sb.Append('\n');
-                    i++;
-                }
-                i = Math.Min(i + 2, source.Length);
-            }
-            else
-            {
-                sb.Append(source[i]);
-                i++;
-            }
-        }
-        return sb.ToString();
     }
 }

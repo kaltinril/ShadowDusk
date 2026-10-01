@@ -30,7 +30,7 @@ public sealed class SlangEffectFrameworkGuardTests
     // Construct name, then the construct as planted source text.
     public static IEnumerable<object[]> PlantedConstructs()
     {
-        yield return ["technique", "technique Basic" + Environment.NewLine + "{ pass P0 { } }"];
+        yield return ["technique", "technique Basic" + "\n" + "{ pass P0 { } }"];
         yield return ["VertexShader = compile", "        VertexShader = compile vs_3_0 VS();"];
         yield return ["TECHNIQUE(...) macro", "TECHNIQUE( Basic, VS, PS );"];
         yield return ["DECLARE_TEXTURE(...) macro", "DECLARE_TEXTURE(Texture, 0);"];
