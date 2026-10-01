@@ -371,6 +371,11 @@ jobs:
       # re-derived from scratch three times from log adjacency alone (and mis-attributed:
       # see project_facts.md). One file per assembly means the next occurrence leaves
       # evidence instead of a guess.
+      # --blame-hang-timeout is the per-test hang guard. A test's CancellationToken cannot
+      # interrupt a native compile (one uninterruptible P/Invoke), so only this can turn a
+      # hung native call into a failure, and it dumps every thread's stack while doing it.
+      # 3m sits above the slowest healthy test (about 100 s at worst on a contended runner)
+      # and fires before the 5-minute session cap would abort the run with no dump.
       - name: dotnet test (integration)
         env:
           SHADOWDUSK_REQUIRE_VKD3D: "1"
@@ -379,6 +384,7 @@ jobs:
           dotnet test ShadowDusk.slnx --no-build -c Release
           --filter "Category=Integration"
           --settings ShadowDusk.runsettings
+          --blame-hang-timeout 3m --blame-hang-dump-type mini
           --logger "trx;LogFilePrefix=integration-${{ matrix.os }}"
           --results-directory TestResults/
 
@@ -407,3 +413,14 @@ jobs:
           name: integration-results-${{ matrix.os }}
           path: TestResults/*.trx
           retention-days: 14
+
+      - name: Upload hang dumps
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-hang-dumps-${{ matrix.os }}
+          path: |
+            TestResults/**/*.dmp
+            TestResults/**/Sequence_*.xml
+          retention-days: 14
+          if-no-files-found: ignore
