@@ -254,6 +254,10 @@ public sealed class SlangCompiler
         // time sidesteps any question of concurrent-write safety in slangc itself, which
         // this project makes no claim about.
         var perEntryHlsl = new List<string>(entries.Count);
+        // Issue #252: slangc registers every texture/sampler itself; only the author's own
+        // register(...) annotations survive (SlangcRegisterStripper). Stripped per entry,
+        // before the merge, so both entries' copies of a shared declaration stay identical.
+        IReadOnlySet<string> authorBound = SlangcRegisterStripper.AuthorBoundNames(slangSource);
         foreach (SlangEntryPoint entry in entries)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -280,7 +284,7 @@ public sealed class SlangCompiler
                 return Fail(SlangDiagnosticReformatter.SelectPrimary(stderr, sourceName, entry.Name, stage));
             }
 
-            perEntryHlsl.Add(stdout);
+            perEntryHlsl.Add(SlangcRegisterStripper.Strip(stdout, authorBound));
         }
 
         string mergedHlsl = SlangHlslMerger.TryMerge(

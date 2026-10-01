@@ -350,6 +350,16 @@ $gates.Add(@{
     # -f net8.0-windows: the driver multi-targets (issue #227); only the Windows build has gate 3.
     Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/SlangFullCorpus', '-c', 'Release', '-f', 'net8.0-windows') }
 })
+# Real-slangc textured shaders on OpenGL in REAL MonoGame DesktopGL (issue #252). The Slang
+# full-corpus gate above never shows WHICH texture unit a sampler landed on; this one leaves the
+# texture to SpriteBatch (unit 0, never set by parameter), checks the .mgfx sampler table, and
+# compares each textured PS-only corpus shader against its own math on the CPU, plus Invert
+# against the committed mgfxc golden. Also runs in CI on llvmpipe (validation-render.yml); this
+# is the real-GPU-driver run.
+$gates.Add(@{
+    Name   = 'Slang textured GL (issue #252: real-slangc textured shaders sample SpriteBatch''s unit 0, real DesktopGL, Invert vs mgfxc)'
+    Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/SlangTexturedGl', '-c', 'Release') }
+})
 if ($IncludeFna) {
     $gates.Add(@{
         Name   = 'FNA fx_2_0 (ShadowDusk .fxb vs fxc /T fx_2_0, real FNA; + the .xnb Content.Load arm, Phase 64)'

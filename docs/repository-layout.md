@@ -133,7 +133,10 @@ ShadowDusk/
 │                                  #   Slang FULL corpus (SlangFullCorpus: the ShadowDusk.Slang real-slangc
 │                                  #     route - 21 shaders compile on 4 targets, the procedural subset
 │                                  #     pixel-diffed vs slangc's own raw HLSL through the SAME slangc
-│                                  #     invocation SlangCompiler uses, real DirectX_11 Effect load - Phase 66)
+│                                  #     invocation SlangCompiler uses, real DirectX_11 Effect load - Phase 66),
+│                                  #   Slang textured GL (SlangTexturedGl: the real-slangc route's textured
+│                                  #     shaders in real DesktopGL with SpriteBatch's unit-0 texture, sampler
+│                                  #     table + CPU-math render + Invert vs the mgfxc golden - issue #252)
 │                                  #   + the compare_*.py oracles. See docs/validation-matrix.md §6.
 │                                  #   Two entries here are NOT render proofs:
 │                                  #     MgcbPlugin runs a real `dotnet mgcb` content build through the MGCB
