@@ -27,14 +27,4 @@ public sealed class DxcCompileOptions
     /// mismatch" error even though the module itself compiled correctly.
     /// </summary>
     public bool SkipValidation { get; init; } = false;
-
-    /// <summary>
-    /// When <see langword="true"/>, the Vulkan target adds <c>-fspv-target-env=vulkan1.1</c>
-    /// (SPIR-V 1.3), the minimum DXC needs to emit the GroupNonUniform capability behind HLSL
-    /// wave/quad intrinsics. Off by default: the flag moves the module's SPIR-V version word
-    /// and MonoGame's Vulkan runtime creates a 1.0 instance, so only shaders that DXC
-    /// rejected without it are recompiled with it (see <c>DxcShaderCompiler</c>). Ignored on
-    /// every other target.
-    /// </summary>
-    public bool RequestVulkan11 { get; init; } = false;
 }

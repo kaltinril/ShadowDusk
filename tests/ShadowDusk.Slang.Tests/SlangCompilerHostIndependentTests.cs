@@ -142,6 +142,27 @@ public sealed class SlangCompilerHostIndependentTests : IDisposable
         capture.CapturedHlslSource.ShouldBeNull();
     }
 
+    // Issue #229: Vulkan can represent SM6, but MonoGame's DesktopVK cannot run wave/quad ops
+    // (Vulkan 1.0 instance, no subgroup support). Same code and message as the .fx route.
+    [Fact]
+    public void WaveIntrinsic_RejectedWithSD0218_OnVulkan_BeforeTheHostLookup()
+    {
+        var capture = new CapturingCompiler();
+        var options = new CompilerOptions { Target = PlatformTarget.Vulkan, SourceFileName = "wave.slang" };
+
+        var result = PreSpawnOnly(capture).Compile(WaveIntrinsicSource, options);
+
+        result.IsFailure.ShouldBeTrue();
+        var error = result.Error.Single();
+        error.Code.ShouldBe("SD0218");
+        error.Message.ShouldContain("'WaveActiveSum'", Case.Sensitive);
+        error.Message.ShouldContain("Vulkan 1.0", Case.Sensitive);
+        error.Message.ShouldContain("no subgroup support", Case.Sensitive);
+        error.File.ShouldBe("wave.slang");
+        error.Line.ShouldBe(10);
+        capture.CapturedHlslSource.ShouldBeNull();
+    }
+
     // ------------------------------------------------ host/native failure reporting
 
     private const string ValidPixelShader = """

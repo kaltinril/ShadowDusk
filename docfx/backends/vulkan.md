@@ -14,7 +14,7 @@ One caveat, now narrower than it used to be: a pixel comparison against MonoGame
 
 KNI does not ship a Vulkan platform, so this target is MonoGame-only.
 
-HLSL wave and quad intrinsics (`WaveActiveSum`, `QuadReadAcrossX`, ...) compile on this target. A stage that uses them is emitted as SPIR-V 1.3 (DXC's `vulkan1.1` target environment); every other stage stays SPIR-V 1.0. Compiling is proven, but such a shader is **out of spec** in a real DesktopVK build: MonoGame creates a Vulkan 1.0 instance, and the Khronos validation layer rejects SPIR-V 1.3 and subgroup operations there (measured in CI, issue #229). A CPU driver rendered it correctly; a GPU driver is not required to. Do not rely on wave or quad intrinsics on this target.
+HLSL wave and quad intrinsics (`WaveActiveSum`, `QuadReadAcrossX`, ...) are **not supported** on this target and are rejected at compile time with `SD0218`, naming the intrinsic. MonoGame's DesktopVK creates a Vulkan 1.0 instance with no subgroup support, and the SPIR-V 1.3 module these intrinsics need was measured out of spec there by the Khronos validation layer (issue #229): a CPU driver rendered it, but a GPU driver is not required to. Keep them out of the Vulkan build (for example behind `#if !VULKAN`), or target DirectX 12, which supports them.
 
 A Vulkan `.mgfx` requires **at most one constant buffer per shader stage** — the same limit `mgfxc`'s own Vulkan writer enforces. ShadowDusk fails loudly (rather than mis-emitting) if a shader declares more than one (`SD0026`).
 

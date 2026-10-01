@@ -448,8 +448,8 @@ public sealed class SlangCompilerTests
 
     // ---------------------------------------------------------------------------
     // Phase 66 A5, Band 2 part B (OQ2) — an SM6-only wave intrinsic rejects with SD0624 on the
-    // three targets architecturally capped below SM6, and still compiles on
-    // DirectX12 and, since issue #229, on Vulkan.
+    // three targets architecturally capped below SM6, with SD0218 on Vulkan (issue #229:
+    // MonoGame's DesktopVK has no subgroup support), and still compiles on DirectX12.
     // ---------------------------------------------------------------------------
 
     private const string WaveIntrinsicSource = """

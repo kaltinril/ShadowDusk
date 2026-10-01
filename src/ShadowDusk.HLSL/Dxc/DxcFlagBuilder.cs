@@ -154,9 +154,6 @@ internal static class DxcFlagBuilder
         if (platform != PlatformTarget.Vulkan && platform != PlatformTarget.DirectX12)
             args.Add("-Zpr");
 
-        if (platform == PlatformTarget.Vulkan && options.RequestVulkan11)
-            args.Add("-fspv-target-env=vulkan1.1");
-
         if (!options.AllowWarnings)
             args.Add("-WX");
 

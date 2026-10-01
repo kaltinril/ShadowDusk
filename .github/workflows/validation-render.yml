@@ -478,11 +478,14 @@ jobs:
         if: ${{ !cancelled() }}
         run: validation/run-with-vk-validation.sh apos -- xvfb-run -a dotnet run --project validation/VsDrivenVulkan -c Release --no-build -- apos
 
-      # Issue #229: a PS using wave + quad intrinsics (SPIR-V 1.3 via the vulkan1.1 target env)
-      # on MonoGame's Vulkan 1.0 instance, vs the same mgfxc golden as the VS-driven gate.
-      - name: Vulkan wave/quad intrinsics (issue #229, real DesktopVK)
+      # Issue #229, EXPECT-DIAGNOSTIC: wave/quad intrinsics are not supported on Vulkan
+      # (MonoGame's DesktopVK creates a Vulkan 1.0 instance with no subgroup support; the
+      # SPIR-V 1.3 module they need rendered on lavapipe but failed this lane's validation
+      # layer). The wave fixture must be rejected at compile time with SD0218 naming the
+      # intrinsic. No device is created, so no xvfb or layer wrapper.
+      - name: Vulkan wave/quad intrinsics rejected with SD0218 (issue #229)
         if: ${{ !cancelled() }}
-        run: validation/run-with-vk-validation.sh wave -- xvfb-run -a dotnet run --project validation/VsDrivenVulkan -c Release --no-build -- wave
+        run: dotnet run --project validation/VsDrivenVulkan -c Release --no-build -- wave
 
       # Own-output proof: mgfxc's Vulkan output for this corpus is unloadable (upstream
       # SlotOffset bug, see compare_vulkan.py), so BaselineVulkan is best-effort and

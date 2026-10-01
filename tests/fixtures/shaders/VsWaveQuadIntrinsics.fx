@@ -1,5 +1,8 @@
-// Issue #229 - wave/quad-intrinsic render fixture for the Vulkan gate (validation/VsDrivenVulkan
-// `wave` mode).
+// Issue #229 - wave/quad-intrinsic fixture for the Vulkan gate (validation/VsDrivenVulkan `wave`
+// mode). On Vulkan it must be REJECTED with SD0218 (MonoGame's DesktopVK has no subgroup
+// support); it still compiles on DirectX12. The self-checking design below is what produced the
+// measurement behind that decision: built with a vulkan1.1 target env it rendered at maxd 0 on
+// lavapipe, and the Khronos validation layer still reported the module out of spec.
 //
 // VsTransformColorTexture's exact VS, parameters and registers, with a pixel shader that runs
 // wave and quad intrinsics and still returns the SAME colour when they behave per spec:

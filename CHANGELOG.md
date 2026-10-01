@@ -100,15 +100,16 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
-- **Vulkan: HLSL wave/quad intrinsics (`WaveActiveSum`, `QuadReadAcrossX`, ...) now compile**
-  ([#229](https://github.com/kaltinril/ShadowDusk/issues/229)). DXC rejected them with `Vulkan 1.1
-  is required for Wave Operation` because the Vulkan target never requested a SPIR-V target env
-  above the default. A Vulkan stage DXC rejects with that message is now recompiled once with
-  `-fspv-target-env=vulkan1.1` (SPIR-V 1.3). Shaders that never needed it are unchanged: they take
-  the same single compile with the same arguments as before, so their bytes do not move. Render
-  proof on real MonoGame DesktopVK (CI Vulkan lane, Mesa lavapipe): renders at maxd 0, but the
-  Khronos validation layer reports the module out of spec on MonoGame's Vulkan 1.0 instance (SPIR-V
-  1.3, subgroup ops); see `docs/validation-matrix.md` section 7.
+- **Vulkan: HLSL wave/quad intrinsics (`WaveActiveSum`, `QuadReadAcrossX`, ...) are rejected
+  loudly with a new diagnostic, `SD0218`, instead of DXC's confusing `Vulkan 1.1 is required for
+  Wave Operation`** ([#229](https://github.com/kaltinril/ShadowDusk/issues/229)). They are not
+  supported on Vulkan: MonoGame's DesktopVK creates a Vulkan 1.0 instance with no subgroup
+  support. Measured in the CI Vulkan lane: a SPIR-V 1.3 wave shader rendered correctly on Mesa
+  lavapipe, but the Khronos validation layer reported 10 spec errors, so a GPU driver is free to
+  refuse or miscompile it. The message names the intrinsic and the reason, keeps DXC's location,
+  and appends DXC's own text. The real-slangc `.slang` route rejects the same intrinsics on
+  Vulkan with the same code and message. Non-wave Vulkan output is unchanged (no target-env flag
+  is ever passed).
 
 - **`ShadowDusk.Slang` packed its Unix slangc at `runtimes/<rid>/native/slangc/slangc`,** away
   from its library, because NuGet treats an extension-less `PackagePath` as a folder. Found by

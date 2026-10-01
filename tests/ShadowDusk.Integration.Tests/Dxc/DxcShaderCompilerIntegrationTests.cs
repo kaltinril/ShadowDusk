@@ -33,9 +33,8 @@ public sealed class DxcShaderCompilerIntegrationTests
     private const string MinimalVs = "float4 VSMain(float4 pos : POSITION) : SV_Position { return pos; }";
     private const string MinimalPs = "float4 PSMain() : SV_Target { return float4(1,0,0,1); }";
 
-    // Issue #229. SPIR-V header word 1 is the version: 0x00010000 = 1.0, 0x00010300 = 1.3.
+    // Issue #229. SPIR-V header word 1 is the version: 0x00010000 = 1.0.
     private const uint Spirv10 = 0x00010000;
-    private const uint Spirv13 = 0x00010300;
 
     private const string WaveSumPs =
         "float4 PSMain(float2 uv : TEXCOORD0) : SV_Target { float v = WaveActiveSum(uv.x); return float4(v, v, v, 1); }";
@@ -49,47 +48,76 @@ public sealed class DxcShaderCompilerIntegrationTests
     private static uint SpirvVersionWord(PlatformBlob blob)
         => BitConverter.ToUInt32(blob.Bytes.Span[4..8]);
 
+    // MonoGame's DesktopVK has no subgroup support (Vulkan 1.0 instance), so a wave/quad
+    // intrinsic on Vulkan is rejected loudly as SD0218, naming the intrinsic, with DXC's own
+    // message kept verbatim at the end.
     [Theory]
-    [InlineData(WaveSumPs)]
-    [InlineData(QuadReadPs)]
+    [InlineData(WaveSumPs, "WaveActiveSum")]
+    [InlineData(QuadReadPs, "QuadReadAcrossX")]
     [Trait("Platform", "Vulkan")]
-    public async Task CompileWaveOrQuadPixel_Vulkan_SucceedsWithSpirv13(string hlsl)
+    public async Task CompileWaveOrQuadPixel_Vulkan_RejectedWithSD0218(string hlsl, string intrinsic)
     {
         using var compiler = new DxcShaderCompiler();
         var result = await compiler.CompileAsync(PixelRequest(hlsl, PlatformTarget.Vulkan));
 
-        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.FxcFormattedMessage : "");
-        result.Value.Kind.ShouldBe(BlobKind.Spirv);
-        SpirvVersionWord(result.Value).ShouldBe(Spirv13);
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("SD0218");
+        result.Error.Message.ShouldContain($"'{intrinsic}'", Case.Sensitive);
+        result.Error.Message.ShouldContain("Vulkan 1.0", Case.Sensitive);
+        result.Error.Message.ShouldContain("DXC: ", Case.Sensitive);
+        result.Error.Message.ShouldContain("Vulkan 1.1 is required", Case.Sensitive);
     }
 
     [Fact]
     [Trait("Platform", "Vulkan")]
-    public async Task CompileWaveVertex_Vulkan_SucceedsWithSpirv13()
+    public async Task CompileWaveVertex_Vulkan_RejectedWithSD0218()
     {
         using var compiler = new DxcShaderCompiler();
         var result = await compiler.CompileAsync(VertexRequest(WaveSumVs, PlatformTarget.Vulkan));
 
-        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.FxcFormattedMessage : "");
-        SpirvVersionWord(result.Value).ShouldBe(Spirv13);
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("SD0218");
+        result.Error.Message.ShouldContain("'WaveActiveSum'", Case.Sensitive);
     }
 
     [Fact]
     [Trait("Platform", "Vulkan")]
-    public void CompileWaveSync_Vulkan_SucceedsWithSpirv13()
+    public void CompileWaveSync_Vulkan_RejectedWithSD0218()
     {
         using var compiler = new DxcShaderCompiler();
         var result = compiler.Compile(PixelRequest(WaveSumPs, PlatformTarget.Vulkan));
 
-        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.FxcFormattedMessage : "");
-        SpirvVersionWord(result.Value).ShouldBe(Spirv13);
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("SD0218");
+    }
+
+    // The location contract: the relabelled error keeps DXC's own line and column for the call.
+    [Fact]
+    [Trait("Platform", "Vulkan")]
+    public async Task CompileWavePixel_Vulkan_SD0218_KeepsDxcsLocation()
+    {
+        const string source =
+            "float4 PSMain(float2 uv : TEXCOORD0) : SV_Target\n" +
+            "{\n" +
+            "    float a = uv.x;\n" +
+            "    float v = WaveActiveSum(a);\n" +
+            "    return float4(v, v, v, 1);\n" +
+            "}\n";
+
+        using var compiler = new DxcShaderCompiler();
+        var result = await compiler.CompileAsync(PixelRequest(source, PlatformTarget.Vulkan));
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("SD0218");
+        result.Error.Line.ShouldBe(4);
+        result.Error.Column.ShouldBe(15); // the 'W' of WaveActiveSum
     }
 
     [Theory]
     [InlineData(ShaderStage.Vertex)]
     [InlineData(ShaderStage.Pixel)]
     [Trait("Platform", "Vulkan")]
-    public async Task CompileNonWaveShader_Vulkan_StaysSpirv10_NoFallbackRecompile(ShaderStage stage)
+    public async Task CompileNonWaveShader_Vulkan_StaysSpirv10(ShaderStage stage)
     {
         using var compiler = new DxcShaderCompiler();
         var request = stage == ShaderStage.Vertex
@@ -104,30 +132,20 @@ public sealed class DxcShaderCompilerIntegrationTests
 
     [Fact]
     [Trait("Platform", "Vulkan")]
-    public async Task CompileNonWaveShader_Vulkan_IsDeterministicAcrossCompiles()
-    {
-        using var compiler = new DxcShaderCompiler();
-        var a = await compiler.CompileAsync(PixelRequest(PlainPs, PlatformTarget.Vulkan));
-        var b = await compiler.CompileAsync(PixelRequest(PlainPs, PlatformTarget.Vulkan));
-
-        a.Value.Bytes.ToArray().ShouldBe(b.Value.Bytes.ToArray());
-    }
-
-    [Fact]
-    [Trait("Platform", "Vulkan")]
-    public async Task CompileInvalidShader_Vulkan_ReturnsOriginalDiagnostic_NotAFallbackArtifact()
+    public async Task CompileInvalidShader_Vulkan_KeepsItsOwnDiagnostic_NotSD0218()
     {
         using var compiler = new DxcShaderCompiler();
         var result = await compiler.CompileAsync(
             PixelRequest("float4 PSMain() : SV_Target { return undefinedSymbol; }", PlatformTarget.Vulkan));
 
         result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldNotBe("SD0218");
         result.Error.Message.ShouldContain("undefinedSymbol", Case.Sensitive);
     }
 
     [Fact]
     [Trait("Platform", "Vulkan")]
-    public async Task CompileWavePixel_Vulkan_StillFailsWhenWaveShaderIsOtherwiseInvalid()
+    public async Task CompileWavePixel_Vulkan_OtherwiseInvalid_ReportsTheRealError()
     {
         using var compiler = new DxcShaderCompiler();
         var result = await compiler.CompileAsync(PixelRequest(
@@ -135,12 +153,13 @@ public sealed class DxcShaderCompilerIntegrationTests
             PlatformTarget.Vulkan));
 
         result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldNotBe("SD0218");
         result.Error.Message.ShouldContain("undefinedSymbol", Case.Sensitive);
     }
 
     [Fact]
     [Trait("Platform", "OpenGL")]
-    public async Task CompileWavePixel_OpenGL_StillRejected_FallbackIsVulkanOnly()
+    public async Task CompileWavePixel_OpenGL_StillRejectedByDxc_SD0218IsVulkanOnly()
     {
         using var compiler = new DxcShaderCompiler();
         var result = await compiler.CompileAsync(PixelRequest(WaveSumPs, PlatformTarget.OpenGL));

@@ -38,7 +38,7 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.Run(() => CompileWithVulkanFallback(request), cancellationToken);
+        return Task.Run(() => CompileRejectingVulkanWaveOps(request), cancellationToken);
     }
 
     /// <inheritdoc/>
@@ -47,7 +47,7 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return CompileWithVulkanFallback(request);
+        return CompileRejectingVulkanWaveOps(request);
     }
 
     /// <inheritdoc/>
@@ -99,39 +99,33 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
     // DXC's own wording when SPIR-V codegen needs a target env above the Vulkan 1.0 default.
     private const string Vulkan11RequiredDiagnostic = "Vulkan 1.1 is required";
 
-    // Vulkan 1.1 (SPIR-V 1.3) is requested only after DXC rejects the shader without it: the
-    // flag changes the module's SPIR-V version word for every shader, and MonoGame's Vulkan
-    // runtime creates a Vulkan 1.0 instance, so shaders that never needed it keep the exact
-    // 1.0 module they always produced.
-    private Result<PlatformBlob, ShaderError> CompileWithVulkanFallback(DxcCompileRequest request)
+    // Issue #229: on the Vulkan target DXC refuses wave/quad intrinsics at its default Vulkan
+    // 1.0 target env. ShadowDusk deliberately does NOT retry with -fspv-target-env=vulkan1.1:
+    // MonoGame's DesktopVK creates a Vulkan 1.0 instance with no subgroup support, and the
+    // SPIR-V 1.3 / GroupNonUniform module that flag produces was measured out of spec there by
+    // the Khronos validation layer. The rejection is relabelled SD0218 (shared with the
+    // real-slangc route, see WaveQuadIntrinsics), keeping DXC's location, its message verbatim,
+    // and its raw diagnostic text.
+    private Result<PlatformBlob, ShaderError> CompileRejectingVulkanWaveOps(DxcCompileRequest request)
     {
-        Result<PlatformBlob, ShaderError> first = CompileCore(request);
+        Result<PlatformBlob, ShaderError> result = CompileCore(request);
 
-        if (first.IsSuccess
-            || request.Platform != PlatformTarget.Vulkan
-            || request.Options.RequestVulkan11
-            || !(first.Error.RawDiagnostics ?? first.Error.Message)
-                .Contains(Vulkan11RequiredDiagnostic, StringComparison.Ordinal))
-        {
-            return first;
-        }
+        if (result.IsSuccess || request.Platform != PlatformTarget.Vulkan)
+            return result;
 
-        return CompileCore(new DxcCompileRequest
+        ShaderError dxcError = result.Error;
+        string dxcText = dxcError.RawDiagnostics ?? dxcError.Message;
+        if (!dxcText.Contains(Vulkan11RequiredDiagnostic, StringComparison.Ordinal))
+            return result;
+
+        // DXC's text echoes the offending source line; the intrinsic is the first wave/quad
+        // identifier in it. When DXC's text does not show one, the message says so generically.
+        string? intrinsic = WaveQuadIntrinsics.FindFirst(dxcText)?.Name;
+
+        return Result<PlatformBlob, ShaderError>.Fail(dxcError with
         {
-            HlslSource = request.HlslSource,
-            SourceFileName = request.SourceFileName,
-            EntryPoint = request.EntryPoint,
-            Stage = request.Stage,
-            Platform = request.Platform,
-            Macros = request.Macros,
-            IncludeHandler = request.IncludeHandler,
-            Options = new DxcCompileOptions
-            {
-                AllowWarnings = request.Options.AllowWarnings,
-                EmbedDebugInfo = request.Options.EmbedDebugInfo,
-                SkipValidation = request.Options.SkipValidation,
-                RequestVulkan11 = true,
-            },
+            Code = WaveQuadIntrinsics.VulkanUnsupportedCode,
+            Message = WaveQuadIntrinsics.VulkanUnsupportedMessage(intrinsic) + " DXC: " + dxcError.Message,
         });
     }
 

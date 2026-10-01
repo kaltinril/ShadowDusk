@@ -73,50 +73,14 @@ public sealed class DxcFlagBuilderTests
         joined.ShouldContain("-fvk-s-shift 32 all", Case.Sensitive);
     }
 
-    // Issue #229: wave/quad intrinsics need the Vulkan 1.1 SPIR-V target env, but the flag
-    // moves the SPIR-V version word of every module, so it is opt-in per compile (the
-    // DxcShaderCompiler fallback) and never part of the default Vulkan command line.
+    // Issue #229: ShadowDusk never asks DXC for a Vulkan 1.1 SPIR-V target env. MonoGame's
+    // DesktopVK creates a Vulkan 1.0 instance, so a 1.1 module (what wave/quad intrinsics need)
+    // is out of spec there; those shaders are rejected with SD0218 instead.
     [Theory]
     [InlineData(ShaderStage.Vertex)]
     [InlineData(ShaderStage.Pixel)]
-    public void Vulkan_DefaultsToNoTargetEnv(ShaderStage stage)
+    public void Vulkan_NeverRequestsATargetEnv(ShaderStage stage)
         => Joined(Build(PlatformTarget.Vulkan, stage)).ShouldNotContain("target-env", Case.Sensitive);
-
-    [Theory]
-    [InlineData(ShaderStage.Vertex)]
-    [InlineData(ShaderStage.Pixel)]
-    public void Vulkan_RequestVulkan11_AddsExactlyOneTargetEnvVulkan11(ShaderStage stage)
-    {
-        var flags = Build(PlatformTarget.Vulkan, stage, options: new DxcCompileOptions { RequestVulkan11 = true });
-
-        flags.Count(f => f == "-fspv-target-env=vulkan1.1").ShouldBe(1);
-        flags.Count(f => f.Contains("target-env", StringComparison.Ordinal)).ShouldBe(1);
-    }
-
-    [Theory]
-    [InlineData(ShaderStage.Vertex)]
-    [InlineData(ShaderStage.Pixel)]
-    public void Vulkan_RequestVulkan11_OnlyAddsTheTargetEnvFlag(ShaderStage stage)
-    {
-        var baseline = Build(PlatformTarget.Vulkan, stage);
-        var withEnv = Build(PlatformTarget.Vulkan, stage, options: new DxcCompileOptions { RequestVulkan11 = true });
-
-        withEnv.Where(f => f != "-fspv-target-env=vulkan1.1").ShouldBe(baseline);
-    }
-
-    [Theory]
-    [InlineData(PlatformTarget.OpenGL)]
-    [InlineData(PlatformTarget.DirectX)]
-    [InlineData(PlatformTarget.DirectX12)]
-    [InlineData(PlatformTarget.Metal)]
-    public void RequestVulkan11_IsIgnoredOnEveryOtherTarget(PlatformTarget platform)
-    {
-        foreach (ShaderStage stage in new[] { ShaderStage.Vertex, ShaderStage.Pixel })
-        {
-            Build(platform, stage, options: new DxcCompileOptions { RequestVulkan11 = true })
-                .ShouldBe(Build(platform, stage));
-        }
-    }
 
     // ── Vulkan Pixel ─────────────────────────────────────────────────────────
 

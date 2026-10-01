@@ -84,9 +84,10 @@ public sealed class VulkanEffectCompilerTests
         pixelShader.ConstantBufferIndices.ShouldNotBeEmpty("the pixel shader stage must bind its constant buffer");
     }
 
-    // Issue #229: a hand-written .fx calling a wave intrinsic must compile end to end on
-    // Vulkan (reflection, binding rewrite, container) and carry SPIR-V 1.3; a shader in the
-    // same file family without wave ops must keep SPIR-V 1.0.
+    // Issue #229: a hand-written .fx calling a wave/quad intrinsic is rejected on Vulkan with
+    // SD0218 at the call's own .fx location (MonoGame's DesktopVK creates a Vulkan 1.0 instance
+    // with no subgroup support, so the SPIR-V 1.3 module these need is out of spec there); a
+    // shader without wave ops keeps SPIR-V 1.0.
     private const string WaveShader = """
         float4 Tint;
 
@@ -113,7 +114,7 @@ public sealed class VulkanEffectCompilerTests
         """;
 
     [Fact]
-    public async Task Compile_WaveIntrinsicShader_Vulkan_Succeeds_PixelIsSpirv13_VertexStaysSpirv10()
+    public async Task Compile_WaveIntrinsicShader_Vulkan_RejectedWithSD0218_AtTheCall()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
@@ -123,19 +124,52 @@ public sealed class VulkanEffectCompilerTests
             SourceFileName = "VulkanWave.fx",
         }, cts.Token);
 
+        result.IsFailure.ShouldBeTrue("a wave/quad intrinsic must never produce a Vulkan .mgfx");
+        var error = result.Error.ShouldHaveSingleItem();
+        error.Code.ShouldBe("SD0218");
+        error.Message.ShouldContain("'WaveActiveSum'", Case.Sensitive);
+        error.Message.ShouldContain("Vulkan 1.0", Case.Sensitive);
+        error.File.ShouldEndWith("VulkanWave.fx", caseSensitivity: Case.Sensitive);
+        error.Line.ShouldBe(15);
+        error.Column.ShouldBe(15);
+    }
+
+    // The CI Vulkan gate's wave fixture (validation/VsDrivenVulkan -- wave): the same verdict
+    // through the real file, so the fixture cannot drift into compiling again unnoticed.
+    [Fact]
+    public async Task Compile_VsWaveQuadIntrinsicsFixture_Vulkan_RejectedWithSD0218()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        string path = Path.Combine(AppContext.BaseDirectory, "fixtures", "shaders", "VsWaveQuadIntrinsics.fx");
+
+        var result = await new EffectCompiler().CompileAsync(await File.ReadAllTextAsync(path, cts.Token), new CompilerOptions
+        {
+            Target = PlatformTarget.Vulkan,
+            SourceFileName = "VsWaveQuadIntrinsics.fx",
+        }, cts.Token);
+
+        result.IsFailure.ShouldBeTrue();
+        var error = result.Error.ShouldHaveSingleItem();
+        error.Code.ShouldBe("SD0218");
+        error.Line.ShouldBe(76); // QuadReadAcrossX(input.Position.x), the first wave/quad call
+        error.Column.ShouldBe(29);
+    }
+
+    // DirectX12 supports wave/quad ops, so the same fixture still compiles there.
+    [Fact]
+    public async Task Compile_VsWaveQuadIntrinsicsFixture_DirectX12_StillCompiles()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        string path = Path.Combine(AppContext.BaseDirectory, "fixtures", "shaders", "VsWaveQuadIntrinsics.fx");
+
+        var result = await new EffectCompiler().CompileAsync(await File.ReadAllTextAsync(path, cts.Token), new CompilerOptions
+        {
+            Target = PlatformTarget.DirectX12,
+            SourceFileName = "VsWaveQuadIntrinsics.fx",
+        }, cts.Token);
+
         result.IsSuccess.ShouldBeTrue(
             result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
-
-        var reader = MgfxBlobReader.Parse(result.Value.Data);
-        reader.ParameterNames.ShouldContain("Tint");
-        foreach (var shader in reader.Shaders)
-        {
-            var spirv = VulkanShaderCodeReader.Parse(shader.Bytecode).Spirv;
-            spirv.Length.ShouldBeGreaterThan(8);
-            BitConverter.ToUInt32(spirv, 4).ShouldBe(
-                shader.IsVertex ? 0x00010000u : 0x00010300u,
-                $"isVertex={shader.IsVertex}: only the stage that needed wave ops asks for Vulkan 1.1");
-        }
     }
 
     [Fact]
