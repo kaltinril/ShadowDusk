@@ -54,6 +54,7 @@ The heavyweight CI jobs are label-gated, so the default PR run comes back all-gr
 
 - While chasing a stated backend or target-completion goal, fix bugs found along the way instead of stopping to ask; only a genuine scope or backwards-compatibility question warrants a check-in. (operator)
 - Work on a branch off `main`; commit or push only when asked.
+- Before any loop where one iteration is slow (building a native from source, a long CI job), first search for an existing prebuilt artifact, then debug locally where an iteration takes minutes, and cache any one-time build keyed on its inputs. CI is where a fix is confirmed, not where it is debugged.
 - Use `/release` to cut a release; `RELEASING.md` is the human runbook and the ground truth it follows.
 - Bump the single `<Version>` line in `Directory.Build.props`, merge that PR to `main`, and only then dispatch `release.yml`; the workflow is dispatch-only and a pushed tag publishes nothing.
 - Run the Windows render gate before bumping the version, not after: it is the longest and most likely step to fail, so a divergence should stop the release before any version churn.
