@@ -449,6 +449,12 @@ jobs:
         if: ${{ !cancelled() }}
         run: validation/run-with-vk-validation.sh apos -- xvfb-run -a dotnet run --project validation/VsDrivenVulkan -c Release --no-build -- apos
 
+      # Issue #229: a PS using wave + quad intrinsics (SPIR-V 1.3 via the vulkan1.1 target env)
+      # on MonoGame's Vulkan 1.0 instance, vs the same mgfxc golden as the VS-driven gate.
+      - name: Vulkan wave/quad intrinsics (issue #229, real DesktopVK)
+        if: ${{ !cancelled() }}
+        run: validation/run-with-vk-validation.sh wave -- xvfb-run -a dotnet run --project validation/VsDrivenVulkan -c Release --no-build -- wave
+
       # Own-output proof: mgfxc's Vulkan output for this corpus is unloadable (upstream
       # SlotOffset bug, see compare_vulkan.py), so BaselineVulkan is best-effort and
       # compare_vulkan.py fails only on a CANDIDATE problem. The validation layer is what
@@ -483,6 +489,7 @@ jobs:
           path: |
             validation/output/vsdriven-vulkan/**
             validation/output/vsdriven-vulkan-apos/**
+            validation/output/vsdriven-vulkan-wave/**
             validation/output/candidate-vulkan/**
             validation/output/baseline-vulkan/**
             validation/output/diff-vulkan/**

@@ -41,27 +41,34 @@ using ShadowDusk.Validation;
 // Vulkan teardown/re-init), so each phase is its own run:
 //   dotnet run --project validation/VsDrivenVulkan            -> phase 1 (the simple VS rig)
 //   dotnet run --project validation/VsDrivenVulkan -- apos     -> phase 2 (the #145 reproducer)
+//   dotnet run --project validation/VsDrivenVulkan -- wave     -> issue #229: wave/quad PS
+//                                                                 (VsWaveQuadIntrinsics.fx) vs
+//                                                                 the SAME mgfxc golden as phase 1
 string mode = args.Length > 0 ? args[0].Trim().ToLowerInvariant() : "vs";
-if (mode is not ("vs" or "apos"))
+if (mode is not ("vs" or "apos" or "wave"))
 {
-    Console.Error.WriteLine($"unknown mode '{mode}' — expected 'vs' or 'apos'");
+    Console.Error.WriteLine($"unknown mode '{mode}' — expected 'vs', 'apos' or 'wave'");
     return 2;
 }
 
 const string Fixture = "VsTransformColorTexture";
-string candidateFixture = Fixture;
+
+// The wave fixture keeps phase 1's VS, parameters and registers and must render the same
+// image, so it is judged against phase 1's mgfxc golden (mgfxc cannot build wave ops for
+// Vulkan, so no golden of its own can exist).
+string candidateFixture = mode == "wave" ? "VsWaveQuadIntrinsics" : Fixture;
 
 string repoRoot   = ShaderInputs.FindRepoRoot();
 string fxPath     = Path.Combine(repoRoot, "tests", "fixtures", "shaders", candidateFixture + ".fx");
 string goldenPath = Path.Combine(repoRoot, "tests", "fixtures", "golden", "Vulkan", Fixture + ".mgfx");
 string catPath    = ShaderInputs.CatPath(repoRoot);
-string outDir     = Path.Combine(repoRoot, "validation", "output", "vsdriven-vulkan");
+string outDir     = Path.Combine(repoRoot, "validation", "output", mode == "wave" ? "vsdriven-vulkan-wave" : "vsdriven-vulkan");
 
 Console.WriteLine($"[vs-vulkan] fixture: {fxPath}");
 Console.WriteLine($"[vs-vulkan] golden:  {goldenPath}");
 Console.WriteLine($"[vs-vulkan] out:     {outDir}\n");
 
-if (mode == "vs")
+if (mode is "vs" or "wave")
 {
     return await RunVsPhase();
 }
