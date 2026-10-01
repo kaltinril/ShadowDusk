@@ -7,6 +7,10 @@
     <AssemblyName>ShadowDusk.Integration.Tests</AssemblyName>
     <RootNamespace>ShadowDusk.Integration.Tests</RootNamespace>
     <IsPackable>false</IsPackable>
+    <!-- Dxc/DxcConcurrencyProbe.cs supplies Main instead of the test SDK's empty generated one,
+         so a test can re-run this assembly as a fresh child process (`dotnet exec`) for a
+         race that can only happen once per process. -->
+    <GenerateProgramFile>false</GenerateProgramFile>
   </PropertyGroup>
 
   <ItemGroup>
