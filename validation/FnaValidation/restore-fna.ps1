@@ -50,9 +50,18 @@ if (Test-Path (Join-Path $fnalibsDir 'x64\FNA3D.dll')) {
     }
     if ([string]::IsNullOrEmpty($FnalibsRunId)) {
         Write-Host "[restore-fna] resolving latest successful fnalibs-dailies CI run ..."
-        $FnalibsRunId = gh run list --repo FNA-XNA/fnalibs-dailies --workflow CI --branch main `
-            --status success --limit 1 --json databaseId --jq '.[0].databaseId'
-        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrEmpty($FnalibsRunId)) {
+        # Resolve from the ARTIFACTS, newest first, not from `gh run list --status success`: that
+        # listing is not reliably newest-first for this repo (measured 2026-10-01: it returned runs
+        # from months earlier whose artifacts had already expired, so the download 404'd). Take the
+        # newest unexpired 'fnalibs' artifact whose producing run on main concluded success.
+        $artifacts = gh api 'repos/FNA-XNA/fnalibs-dailies/actions/artifacts?name=fnalibs&per_page=50' `
+            --jq '[.artifacts[] | select(.expired == false and .workflow_run.head_branch == "main")] | sort_by(.created_at) | reverse | .[].workflow_run.id'
+        if ($LASTEXITCODE -ne 0) { throw 'could not list fnalibs-dailies artifacts via gh api' }
+        foreach ($runId in @($artifacts)) {
+            $conclusion = gh api "repos/FNA-XNA/fnalibs-dailies/actions/runs/$runId" --jq '.conclusion'
+            if ($LASTEXITCODE -eq 0 -and $conclusion -eq 'success') { $FnalibsRunId = "$runId"; break }
+        }
+        if ([string]::IsNullOrEmpty($FnalibsRunId)) {
             throw 'could not resolve a successful fnalibs-dailies CI run via gh'
         }
     }
