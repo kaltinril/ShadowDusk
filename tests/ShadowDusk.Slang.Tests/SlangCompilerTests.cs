@@ -174,6 +174,21 @@ public sealed class SlangCompilerTests
     }
 
     [Fact]
+    public async Task AssembledFx_UsesLfOnly_OnEveryHost()
+    {
+        // One intermediate text on every OS: the synthesized wrapper must not take the host
+        // newline ("\r\n" on Windows) while slangc's body is '\n'-joined.
+        string source = await File.ReadAllTextAsync(Path.Combine(SlangCorpusDir, "WaveVertex.slang"));
+        var capture = new CapturingCompiler();
+
+        var result = await new SlangCompiler(capture).CompileAsync(
+            source, new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "WaveVertex.slang" });
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? FormatErrors(result.Error) : "");
+        capture.CapturedHlslSource.ShouldNotBeNull().ShouldNotContain("\r", Case.Sensitive);
+    }
+
+    [Fact]
     public async Task PixelOnlyShader_SynthesizesAPixelOnlyPass_NoVertexShaderLine()
     {
         string source = await File.ReadAllTextAsync(Path.Combine(SlangCorpusDir, "Checkerboard.slang"));

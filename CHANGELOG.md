@@ -96,6 +96,9 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   instead; they now run first and are tested on every OS. A slangc the OS refuses to start
   surfaces as `SD0622` with the OS's reason instead of an exception, a missing compiler library
   is reported up front (`SD0623`), and slangc's stdin is written as UTF-8 on every host.
+- **`SlangCompiler`'s assembled `.fx` text is LF-only on every host.** The synthesized wrapper
+  used the host newline, so Windows got mixed line endings around slangc's LF body. The
+  compiled bytes were already identical across hosts; the intermediate text now is too.
 
 - **`ShadowDusk.Slang`'s real-slangc route now forwards the same per-target platform macros
   (`OPENGL`/`SM4`/`VULKAN`/`SM6`/`HLSL`/`GLSL`/`MGFX`/`FNA`/`SM3`, `__KNIFX__` for the KNIFX

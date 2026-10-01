@@ -291,36 +291,41 @@ public sealed class SlangCompiler
         SlangEntryPoint? vs = entries.FirstOrDefault(e => e.Stage == SlangStage.Vertex);
         SlangEntryPoint? ps = entries.FirstOrDefault(e => e.Stage == SlangStage.Fragment);
 
+        // '\n' explicitly, never AppendLine: AppendLine writes the HOST newline ("\r\n" on
+        // Windows), and slangc's own body is already '\n'-joined, so Windows got mixed line
+        // endings and a different intermediate text than Linux/macOS (caught by
+        // SlangCrossHostByteIdentityTests' AssembledFx keys; the compiled bytes matched).
         var sb = new StringBuilder();
-        sb.AppendLine($"// Generated from '{sourceName}' by ShadowDusk's real-slangc Slang route (Phase 66 A3).");
-        sb.AppendLine("// The body below is slangc's own -target hlsl emission for the discovered entry");
-        sb.AppendLine("// point(s); the technique block is synthesized the same way the HLSL-compatible-");
-        sb.AppendLine("// subset frontend (SlangFrontend.ConvertToFx) does for its own .slang input.");
-        sb.AppendLine();
+        void Line(string text = "") => sb.Append(text).Append('\n');
+        Line($"// Generated from '{sourceName}' by ShadowDusk's real-slangc Slang route (Phase 66 A3).");
+        Line("// The body below is slangc's own -target hlsl emission for the discovered entry");
+        Line("// point(s); the technique block is synthesized the same way the HLSL-compatible-");
+        Line("// subset frontend (SlangFrontend.ConvertToFx) does for its own .slang input.");
+        Line();
 
         // Same measured convention SlangFrontend/the ShaderToy frontend use: gate on SM4
         // (exactly what the DirectX profiles define), not on OPENGL.
-        sb.AppendLine("#if SM4");
-        sb.AppendLine("    #define VS_SHADERMODEL vs_4_0_level_9_1");
-        sb.AppendLine("    #define PS_SHADERMODEL ps_4_0_level_9_1");
-        sb.AppendLine("#else");
-        sb.AppendLine("    #define VS_SHADERMODEL vs_3_0");
-        sb.AppendLine("    #define PS_SHADERMODEL ps_3_0");
-        sb.AppendLine("#endif");
-        sb.AppendLine();
+        Line("#if SM4");
+        Line("    #define VS_SHADERMODEL vs_4_0_level_9_1");
+        Line("    #define PS_SHADERMODEL ps_4_0_level_9_1");
+        Line("#else");
+        Line("    #define VS_SHADERMODEL vs_3_0");
+        Line("    #define PS_SHADERMODEL ps_3_0");
+        Line("#endif");
+        Line();
         string cleanedHlsl = StripMatrixPackingPragma(StripUnresolvableConditionalIncludes(mergedHlsl));
-        sb.AppendLine(cleanedHlsl.Trim());
-        sb.AppendLine();
-        sb.AppendLine($"technique {TechniqueName}");
-        sb.AppendLine("{");
-        sb.AppendLine("    pass P0");
-        sb.AppendLine("    {");
+        Line(cleanedHlsl.Trim());
+        Line();
+        Line($"technique {TechniqueName}");
+        Line("{");
+        Line("    pass P0");
+        Line("    {");
         if (vs is not null)
-            sb.AppendLine($"        VertexShader = compile VS_SHADERMODEL {vs.Name}();");
+            Line($"        VertexShader = compile VS_SHADERMODEL {vs.Name}();");
         if (ps is not null)
-            sb.AppendLine($"        PixelShader = compile PS_SHADERMODEL {ps.Name}();");
-        sb.AppendLine("    }");
-        sb.AppendLine("}");
+            Line($"        PixelShader = compile PS_SHADERMODEL {ps.Name}();");
+        Line("    }");
+        Line("}");
         return sb.ToString();
     }
 

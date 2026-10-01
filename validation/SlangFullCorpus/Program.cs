@@ -475,6 +475,21 @@ internal sealed class GlHost : IDisposable
 
     public GlHost()
     {
+        // Linux: preload GLFW by ABSOLUTE path first. On ubuntu-latest CI, Silk.NET's
+        // name-based load does not search the RID asset directory and reports the GLFW
+        // platform "not applicable" (measured on this driver's first CI run); the same
+        // preload ImageTests' GlContextFixture.PreloadGlfwNative uses makes glibc hand the
+        // already-loaded SONAME to Silk's later dlopen-by-name.
+        if (OperatingSystem.IsLinux())
+        {
+            string glfw = Path.Combine(AppContext.BaseDirectory, "runtimes",
+                System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture
+                    == System.Runtime.InteropServices.Architecture.Arm64 ? "linux-arm64" : "linux-x64",
+                "native", "libglfw.so.3");
+            if (File.Exists(glfw))
+                System.Runtime.InteropServices.NativeLibrary.TryLoad(glfw, out _);
+        }
+
         Window.PrioritizeGlfw();
         _window = Window.Create(WindowOptions.Default with
         {
