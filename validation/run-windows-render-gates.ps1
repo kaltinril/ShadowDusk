@@ -113,7 +113,7 @@
 
   The in-process MonoGame OpenGL render gates (StateFidelity / CbufferModel /
   TextureBreadthValidation / ReservedWordGl / SamplerPairsGl / SamplerRegisterOrderGl /
-  DeferredSpriteMrtGl / ShaderToyRouteGl) are intentionally NOT here - CI already runs them
+  DeferredSpriteMrtGl / ShaderToyRouteGl / RaylibRoute) are intentionally NOT here - CI already runs them
   (see validation-render.yml). Run them with `dotnet test` + that workflow, not this script.
 
 .PARAMETER IncludeFna

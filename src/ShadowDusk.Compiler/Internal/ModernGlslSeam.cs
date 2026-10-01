@@ -1,0 +1,73 @@
+#nullable enable
+
+using ShadowDusk.Core;
+using ShadowDusk.Core.Preprocessor;
+using ShadowDusk.Core.Reflection;
+using ShadowDusk.GLSL;
+using ShadowDusk.HLSL;
+using ShadowDusk.HLSL.Dxc;
+
+namespace ShadowDusk.Compiler.Internal;
+
+/// <summary>One pixel shader taken to SPIRV-Cross's modern GLSL, plus its sampler pairs.</summary>
+/// <param name="Glsl">SPIRV-Cross's raw GLSL (<c>#version 140</c>), never the MonoGame-rewritten dialect.</param>
+/// <param name="SamplerPairs">
+/// The (texture, sampler) pairs behind the GLSL's combined samplers, in the order SPIRV-Cross
+/// declares them, or the <c>SD0217</c> failure for a shape the extraction does not model. Left
+/// as a result so each consumer decides whether an unmodeled shape is fatal for it.
+/// </param>
+internal sealed record ModernGlslPixelShader(
+    string Glsl,
+    Result<IReadOnlyList<CombinedSamplerPair>, ShaderError> SamplerPairs);
+
+/// <summary>
+/// The front half every source-emitting converter (SkSL, raylib) shares:
+/// <c>HLSL → [DXC] → SPIR-V → [SPIRV-Cross] → modern GLSL</c>, stopping at the seam BEFORE the
+/// MonoGame GLSL rewriter and the MGFX writer. Same preprocessor macro set, same DXC request, and
+/// same SPIRV-Cross options as the OpenGL target, so the converters inherit the GL backend's
+/// faithful front half rather than re-deriving it.
+/// </summary>
+internal static class ModernGlslSeam
+{
+    /// <summary>Preprocesses, compiles, and transpiles one pixel entry point.</summary>
+    public static Result<ModernGlslPixelShader, ShaderError[]> CompilePixel(
+        string strippedHlsl,
+        string pixelEntryPoint,
+        string sourceName,
+        IIncludeResolver? includeResolver,
+        IReadOnlyList<string> additionalIncludePaths,
+        CancellationToken cancellationToken)
+    {
+        // The OpenGL macro set: the arm the corpus' `#if OPENGL` headers select, and the one whose
+        // SM3-level profiles that arm declares.
+        var preprocess = new Preprocessor().Flatten(
+            strippedHlsl,
+            sourceName,
+            PlatformMacros.For(PlatformTarget.OpenGL),
+            includeResolver ?? new FileSystemIncludeResolver(),
+            additionalIncludePaths);
+        if (preprocess.IsFailure)
+            return Result<ModernGlslPixelShader, ShaderError[]>.Fail([preprocess.Error]);
+
+        using var dxc = new DxcShaderCompiler();
+        var spirv = dxc.Compile(new DxcCompileRequest
+        {
+            HlslSource     = preprocess.Value.Text,
+            SourceFileName = sourceName,
+            EntryPoint     = pixelEntryPoint,
+            Stage          = ShaderStage.Pixel,
+            Platform       = PlatformTarget.OpenGL,
+        }, cancellationToken);
+        if (spirv.IsFailure)
+            return Result<ModernGlslPixelShader, ShaderError[]>.Fail([spirv.Error]);
+
+        var pairs = SpirvCombinedSamplerPairs.Extract(spirv.Value.Bytes);
+
+        var glsl = new SpirvCrossGlslTranspiler().Transpile(spirv.Value.Bytes, cancellationToken);
+        if (glsl.IsFailure)
+            return Result<ModernGlslPixelShader, ShaderError[]>.Fail([glsl.Error]);
+
+        return Result<ModernGlslPixelShader, ShaderError[]>.Ok(
+            new ModernGlslPixelShader(glsl.Value.Text, pairs));
+    }
+}
