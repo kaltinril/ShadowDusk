@@ -1,6 +1,6 @@
 # Phase 50 — Android Runtime Target Support (compile `.fx` on-device)
 
-**Status:** 🟢 **On-device runtime compile PROVEN (2026-06-28)** — a real `pixel_7` API-34
+**Status:** 🟡 **On-device runtime compile PROVEN (2026-06-28)** — a real `pixel_7` API-34
 emulator compiled an HLSL string to a `.mgfx` and loaded it into a live MonoGame `Effect`
 entirely on the device, via seamless plain `new EffectCompiler()` (see §6.2). The `android-arm64`
 natives are now **hosted + pinned + packed (shipping in 0.11.0)**, so a NuGet consumer is
