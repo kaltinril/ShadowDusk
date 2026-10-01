@@ -8,8 +8,8 @@ argument-hint: "<version> (e.g., 0.2.0)"
 
 Automate the full ShadowDusk release from version bump through PR merge to publish trigger.
 
-A release publishes **all nine** `ShadowDusk.*` packages (`Core`, `HLSL`, `GLSL`, `ShaderToy`,
-`Compiler`, `Cli`, `Wasm`, `MgcbPlugin`, `ContentPipeline`) plus the `ShadowDuskCLI` `dotnet tool` to nuget.org, and attaches
+A release publishes **all ten** `ShadowDusk.*` packages (`Core`, `HLSL`, `GLSL`, `ShaderToy`,
+`Slang`, `Compiler`, `Cli`, `Wasm`, `MgcbPlugin`, `ContentPipeline`) plus the `ShadowDuskCLI` `dotnet tool` to nuget.org, and attaches
 self-contained CLI binaries to a GitHub Release. The human runbook this automates is `RELEASING.md`.
 
 ## Input
@@ -137,15 +137,20 @@ history, not just SemVer's letter):
     marker, never a trigger. (`RELEASING.md` → "Triggering a release" is authoritative.)
 
     The `validate` job checks the dispatch input against `Directory.Build.props` `<Version>`; if
-    they match, all nine packages + the `ShadowDuskCLI` tool publish to nuget.org and a GitHub
+    they match, all ten packages + the `ShadowDuskCLI` tool publish to nuget.org and a GitHub
     Release is cut. Point the user at `RELEASING.md` → "Verify after release" for the post-publish
-    checks (`dotnet tool install -g ShadowDusk.Cli` → `ShadowDuskCLI --help`, and all nine packages on
+    checks (`dotnet tool install -g ShadowDusk.Cli` → `ShadowDuskCLI --help`, and all ten packages on
     nuget.org at `<version>`).
 
 ## ShadowDusk-specific notes
 
-- **One file bumps the version** — `Directory.Build.props` `<Version>` only. Never the nine
+- **One file bumps the version** — `Directory.Build.props` `<Version>` only. Never the
   csprojs.
+- **`Pack & Consume Smoke` must be green on the release commit before dispatch.** It is the
+  only cold-consumer proof for every package, and its `tools/verify-slang-packaging.sh` step is
+  the only place `ShadowDusk.Slang`'s slangc runs from an installed package on all three OSes.
+  It has no push trigger, so dispatch it (`gh workflow run pack-consume.yml --ref main`) if the
+  last run predates the release commit.
 - **Commit directly, no `/commit` skill, no co-author / tool-attribution trailer of any
   kind** (CLAUDE.md Git Commit Conventions).
 - **Tests pass `--settings ShadowDusk.runsettings`** (the Phase 21 suite-timeout guardrail),

@@ -347,7 +347,8 @@ $gates.Add(@{
 # docs/validation-matrix.md and plan/PHASE-66-full-slang-input-implementation.md's A7 section.
 $gates.Add(@{
     Name   = 'Slang full corpus (Phase 66 A7: real-slangc route, 21 shaders x 4 targets + procedural pixel-diff vs slangc''s raw HLSL + real DirectX_11 Effect load/render)'
-    Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/SlangFullCorpus', '-c', 'Release') }
+    # -f net8.0-windows: the driver multi-targets (issue #227); only the Windows build has gate 3.
+    Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/SlangFullCorpus', '-c', 'Release', '-f', 'net8.0-windows') }
 })
 if ($IncludeFna) {
     $gates.Add(@{

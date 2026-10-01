@@ -446,45 +446,59 @@ restore_vkd3d_wasm() {
 restore_vkd3d_wasm
 
 # ---------------------------------------------------------------------------
-# Slang compiler (real slangc, win-x64 only for now — Phase 66 A2)
+# Slang compiler (real slangc, all four desktop RIDs — Phase 66 A2, issue #227)
 # ---------------------------------------------------------------------------
-# ShadowDusk.Slang (a NEW, separate, opt-in package — plan/PHASE-66) ships REAL slangc so a
+# ShadowDusk.Slang (a separate, opt-in package — plan/PHASE-66) ships REAL slangc so a
 # consumer who adds it gets genuine Slang input, compiled via slangc -target hlsl and
 # handed to the existing, unchanged, faithful DXC pipeline. A consumer who does NOT add
-# ShadowDusk.Slang pays zero size/dependency cost. Restored UNCONDITIONALLY (like
-# restore_vkd3d_shader / restore_dxc_macos above) so ANY host — including a Linux/macOS CI
-# runner — ends up pack-ready for the win-x64 RID.
+# ShadowDusk.Slang pays zero size/dependency cost. Every host restores every RID (like
+# restore_vkd3d_shader / restore_dxc_macos above), so any machine is pack-ready: the
+# ShadowDusk.Slang nupkg must carry all four, and release.yml / pack-consume.yml gate on it.
 #
-# Pin: the SAME slangc v2026.14.1 win-x64 release validation/SlangCorpus/Program.cs already
-# downloads as a TEST-TIME oracle — keep both pins in sync on a version bump.
+# Pin: the official shader-slang v2026.14.1 release for every RID (the SAME version
+# validation/SlangCorpus/Program.cs downloads as a test-time oracle, and the version
+# SlangToolPath.SlangVersion names in the versioned Unix library file name — keep all three
+# in sync on a bump). The WHOLE release zip is SHA-256-verified before extraction, and the
+# extracted files are pinned too, so a present-but-stale copy is replaced, never trusted.
 #
-# Phase 66 A1+A2 (2026-09-11): the true minimal vendored set is slangc.exe +
-# slang-compiler.dll ONLY (25,611,264 bytes, ~24.4 MiB) — every other file in the release
-# (slang-llvm.dll, slang.exe/slangd.exe/slangi.exe, gfx.dll/gfx.slang,
-# slang-glsl-module.dll, slang-glslang.dll, slang.dll, slang-rt.dll, slang.slang, the
-# slang-standard-module-2026.14.1/ stdlib source directory) was confirmed droppable by
-# re-running the -target hlsl corpus after each removal, with a negative control (deleting
-# slang-compiler.dll) confirming the test discriminates. See restore.ps1's
-# Restore-SlangWinX64 comment and plan/PHASE-66-appendix/slang-native-minimal-set-probe/
-# for the full evidence.
+# Minimal vendored set per RID, measured (Phase 66 A1/A2 on win-x64, issue #227 on the Unix
+# RIDs — plan/PHASE-66-appendix/slang-native-minimal-set-probe/): the slangc executable plus
+# the slang-compiler library, nothing else. slang-llvm, gfx, glslang, slang-rt, slangd/slangi
+# and the stdlib source directory are all droppable for -target hlsl. The Unix slangc has
+# RUNPATH/LC_RPATH "$ORIGIN"/"@loader_path", so the two files work side by side in one flat
+# directory; the library keeps its VERSIONED file name because that is what slangc's
+# NEEDED/LC_LOAD_DYLIB entry names.
+#
+# Linux uses upstream's "glibc-2.27" build, not the default linux-x86_64 one: the default
+# needs GLIBC_2.34; this one needs GLIBC_2.17 (both need libstdc++ GLIBCXX_3.4.29, i.e. a
+# GCC 11+ runtime such as Ubuntu 22.04's). The macOS builds declare minos 26.0 (both arches,
+# and the -dist variants too), so they run on macOS 26+ only; SlangToolPath reports older
+# macOS as unsupported (SD0620) instead of letting dyld kill the process.
 SLANG_VERSION="2026.14.1"
-SLANG_ZIP_SHA256="5ed0a59d650a0af0aca45d5db4e083b3d8fb5cea05748747dd95dfbe9c580658"
-SLANG_ZIP_URL="https://github.com/shader-slang/slang/releases/download/v${SLANG_VERSION}/slang-${SLANG_VERSION}-windows-x86_64.zip"
+SLANG_RELEASE_URL="https://github.com/shader-slang/slang/releases/download/v${SLANG_VERSION}"
 
-restore_slang_win_x64() {
-    local slang_dir="$REPO_ROOT/tools/slang/win-x64"
-    local slangc_exe="$slang_dir/slangc.exe"
-    local slang_compiler_dll="$slang_dir/slang-compiler.dll"
+# restore_slang_rid <rid> <zip-suffix> <zip-sha256> <exe-entry> <exe-sha256> <lib-entry> <lib-sha256>
+restore_slang_rid() {
+    local rid="$1" zip_suffix="$2" zip_sha="$3" exe_entry="$4" exe_sha="$5" lib_entry="$6" lib_sha="$7"
+    local slang_dir="$REPO_ROOT/tools/slang/$rid"
+    local exe="$slang_dir/$(basename "$exe_entry")"
+    local lib="$slang_dir/$(basename "$lib_entry")"
 
-    if [ -f "$slangc_exe" ] && [ -f "$slang_compiler_dll" ]; then
-        echo "restore.sh: slangc (win-x64) present — OK"
+    if [ -f "$exe" ] && [ -f "$lib" ] \
+        && [ "$(vkd3d_sha256 "$exe")" = "$exe_sha" ] && [ "$(vkd3d_sha256 "$lib")" = "$lib_sha" ]; then
+        chmod +x "$exe"
+        echo "restore.sh: slangc ($rid) present, hash OK"
         return 0
     fi
+    # Delete-on-mismatch (see restore_vkd3d_file): never leave an unverified file in place
+    # for existence-only downstream checks if the re-download fails.
+    rm -f "$exe" "$lib"
 
+    local zip_url="$SLANG_RELEASE_URL/slang-${SLANG_VERSION}-${zip_suffix}.zip"
     local tmp_zip
     tmp_zip="$(mktemp)"
-    if ! curl -fsSLo "$tmp_zip" "$SLANG_ZIP_URL"; then
-        echo "restore.sh: WARNING — could not download slangc from $SLANG_ZIP_URL (offline?); ShadowDusk.Slang packaging (win-x64) will be unavailable." >&2
+    if ! curl -fsSLo "$tmp_zip" "$zip_url"; then
+        echo "restore.sh: WARNING — could not download slangc from $zip_url (offline?); ShadowDusk.Slang ($rid) will be unavailable." >&2
         rm -f "$tmp_zip"
         return 0   # non-fatal by design
     fi
@@ -492,30 +506,52 @@ restore_slang_win_x64() {
     # Verify BEFORE extracting — an unverified binary is what the pin exists to prevent.
     local got
     got="$(vkd3d_sha256 "$tmp_zip")"
-    if [ "$got" != "$SLANG_ZIP_SHA256" ]; then
-        echo "restore.sh: ERROR — slangc release SHA-256 mismatch (expected $SLANG_ZIP_SHA256, got $got); discarding." >&2
+    if [ "$got" != "$zip_sha" ]; then
+        echo "restore.sh: ERROR — slangc ($rid) release SHA-256 mismatch (expected $zip_sha, got $got); discarding." >&2
         rm -f "$tmp_zip"
-        return 0   # non-fatal, but the file is NOT placed
+        return 0   # non-fatal, but nothing is placed
     fi
 
-    mkdir -p "$slang_dir"
-    if command -v unzip >/dev/null 2>&1; then
-        unzip -oq -j "$tmp_zip" "bin/slangc.exe" "bin/slang-compiler.dll" -d "$slang_dir"
-    else
-        echo "restore.sh: WARNING — unzip not found; cannot extract slangc from the downloaded release." >&2
+    if ! command -v unzip >/dev/null 2>&1; then
+        echo "restore.sh: WARNING — unzip not found; cannot extract slangc ($rid)." >&2
         rm -f "$tmp_zip"
         return 0
     fi
+    mkdir -p "$slang_dir"
+    unzip -oq -j "$tmp_zip" "$exe_entry" "$lib_entry" -d "$slang_dir"
     rm -f "$tmp_zip"
 
-    if [ -f "$slangc_exe" ] && [ -f "$slang_compiler_dll" ]; then
-        echo "restore.sh: slangc (win-x64) downloaded, zip hash OK — slangc.exe + slang-compiler.dll only (25,611,264 bytes)"
-    else
-        echo "restore.sh: WARNING — slangc (win-x64) extraction did not produce both expected files." >&2
+    if [ "$(vkd3d_sha256 "$exe" 2>/dev/null)" != "$exe_sha" ] || [ "$(vkd3d_sha256 "$lib" 2>/dev/null)" != "$lib_sha" ]; then
+        echo "restore.sh: ERROR — slangc ($rid) extracted files do not match their pins; discarding." >&2
+        rm -f "$exe" "$lib"
+        return 0
     fi
+    # SlangNativeCache also sets the bit at run time (a consumer's copy may lack it); this
+    # covers repo/dev runs straight out of tools/slang/<rid>/.
+    chmod +x "$exe"
+    echo "restore.sh: slangc ($rid) downloaded, zip + file hashes OK"
 }
 
-restore_slang_win_x64
+restore_slang() {
+    restore_slang_rid win-x64 windows-x86_64 \
+        5ed0a59d650a0af0aca45d5db4e083b3d8fb5cea05748747dd95dfbe9c580658 \
+        bin/slangc.exe b9f786a651569aa4f968e4014d04b6e2f4f1a6c9584f47ea9f4ccc841fdeeeeb \
+        bin/slang-compiler.dll 2271ca931ffa18fb59a649bb91b22f36afd6ec34584e17f8bb28e00143614ca4
+    restore_slang_rid linux-x64 linux-x86_64-glibc-2.27 \
+        9e36aab4be2686885dc0cd4b740fcbab27e50047c2d8187d9403ec2ce82fd1ba \
+        bin/slangc 5cc0134d42cf414f0dcde8c31a813337801a6afdc5443033ef39e28b1262d336 \
+        "lib/libslang-compiler.so.0.${SLANG_VERSION}" aba57be5bccd5490c539e3ff19b307bc464243f60714e5894e62bad8c2cac9ba
+    restore_slang_rid osx-x64 macos-x86_64 \
+        a3da109bfb732ab3f09beb6999f9831d9be440fa9a1843006b7ea56498f545d6 \
+        bin/slangc 4de52e387cc44996ea2d2dfaea1b941e522b7896054799ec7b63a3272c00c3a6 \
+        "lib/libslang-compiler.0.${SLANG_VERSION}.dylib" c87e37121416f54b1d9b988fb74241b0bc662cd03f9e4ce823b314271a9d7016
+    restore_slang_rid osx-arm64 macos-aarch64 \
+        2976c3a9a6f4d77b5734d00b5d841d1ff087d9965d9006b9b4d73edd0062cb7d \
+        bin/slangc a1c5ecae0d2425b13fe7f616686f2df7cc7028d3f6a85fb717497cf98bee3d0a \
+        "lib/libslang-compiler.0.${SLANG_VERSION}.dylib" 4fadae0d56d4538dc2a0099086de3d2a5350e12da4591679ee8cbb571c5db7de
+}
+
+restore_slang
 
 # Determine which output file we are targeting on this platform.
 if [ "$OS" = "Linux" ]; then

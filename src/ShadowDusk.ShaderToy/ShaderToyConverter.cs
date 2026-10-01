@@ -212,7 +212,7 @@ public static class ShaderToyConverter
         foreach (StructDecl s in merged.Structs)
         {
             structsSb.Append(emitter.EmitStruct(s));
-            structsSb.AppendLine();
+            structsSb.Append('\n');
         }
 
         var globalsSb = new StringBuilder();
@@ -255,7 +255,7 @@ public static class ShaderToyConverter
             emitter.SetLocalRenames(
                 renames.LocalsByFunction.TryGetValue(fi, out Dictionary<string, string>? lm) ? lm : noRenames);
             fnSb.Append(emitter.EmitFunction(f));
-            fnSb.AppendLine();
+            fnSb.Append('\n');
         }
 
         // In Godot mode iChannel0 backs `inputColor`, so it is always referenced even if the body never

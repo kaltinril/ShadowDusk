@@ -121,6 +121,7 @@ on:
       - 'src/**'
       - 'validation/**'
       - 'tests/fixtures/**'
+      - 'tools/restore.sh'
       - '.github/workflows/validation-render.yml'
   pull_request:
     branches: [ main ]
@@ -233,6 +234,20 @@ jobs:
             fi
           done
           exit $rc
+
+      # ShadowDusk.Slang's real-slangc route on Linux (issue #227): validation/SlangFullCorpus
+      # gate 1 (21 shaders compile through the real SlangCompiler on OpenGL/DirectX/DirectX12/
+      # Vulkan, each parsed as MGFX) and gate 2 (the 8 uniform-free shaders render
+      # pixel-identical through ShadowDusk's .fx-wrapped route vs slangc's raw HLSL, on
+      # llvmpipe). Gate 3 (a real WindowsDX Effect load) is Windows-only and the driver prints
+      # it as NOT RUN, never as a pass. slangc comes from tools/restore.sh above; a missing or
+      # unrunnable slangc is a hard FAIL (exit 1), as is a missing GL context (GlHost throws).
+      - name: Slang full corpus (real slangc on linux-x64, gates 1-2)
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+        run: |
+          dotnet build validation/SlangFullCorpus/SlangFullCorpus.csproj -c Release -f net8.0
+          xvfb-run -a dotnet run --project validation/SlangFullCorpus -c Release -f net8.0 --no-build
 
       # The GL corpus is the two-process orchestration the in-process gates above avoid:
       # Baseline renders the committed mgfxc goldens, Candidate renders ShadowDusk's own
