@@ -24,11 +24,13 @@ cp -R "$cand_dir" "$work/cand"
 chmod +x "$work/ref/slangc" "$work/cand/slangc"
 
 export work src
+# Runs WITHOUT errexit and reports every outcome as one line, so a helper failure can never
+# make a file silently vanish from the tally: each listed file must produce exactly one
+# OK0/OKN/TMO verdict line, and the totals are checked against the file list below.
 one() {
     rel="$1"
     key="$(printf '%s' "$rel" | tr '/' '_')"
     for side in ref cand; do
-        set +e
         # perl alarm = a portable per-file timeout (macOS has no coreutils timeout). A few
         # upstream tests never finish under a bare -target hlsl; both sides must then time
         # out alike (exit 142), which still compares equal.
@@ -36,14 +38,20 @@ one() {
             "$work/$side/slangc" -target hlsl "$rel" \
             > "$work/$side.$key.out" 2> "$work/$side.$key.err")
         echo $? > "$work/$side.$key.code"
-        set -e
-        # The slangc path itself can appear in a crash/usage message; normalize it.
-        sed -i '' "s#$work/$side/#SLANGC/#g" "$work/$side.$key.err" 2>/dev/null \
-            || sed -i "s#$work/$side/#SLANGC/#g" "$work/$side.$key.err"
+        # The slangc path itself can appear in a crash/usage message; normalize it. perl, not
+        # sed: BSD sed aborts on the non-UTF-8 bytes some diagnostics contain.
+        if ! LC_ALL=C perl -pi -e "s#\\Q$work/$side/\\E#SLANGC/#g" "$work/$side.$key.err"; then
+            echo "ERR normalize $side $rel"
+        fi
     done
     for part in out err code; do
         if ! cmp -s "$work/ref.$key.$part" "$work/cand.$key.$part"; then
             echo "DIFF [$part] $rel"
+            if [ "$part" != code ]; then
+                diff "$work/ref.$key.$part" "$work/cand.$key.$part" | head -10 | sed 's/^/    /'
+            else
+                echo "    ref=$(cat "$work/ref.$key.code") cand=$(cat "$work/cand.$key.code")"
+            fi
         fi
     done
     case "$(cat "$work/ref.$key.code")" in
@@ -55,12 +63,21 @@ export -f one
 
 (cd "$src" && find tests -name '*.slang' | LC_ALL=C sort) > "$work/list"
 total=$(wc -l < "$work/list" | tr -d ' ')
-xargs -P "$jobs" -I{} bash -c 'one "$@"' _ {} < "$work/list" > "$work/results"
+# Job-control "Segmentation fault" notices from bash go to stderr; they are expected (some
+# upstream tests crash both builds alike) and the exit codes are compared instead.
+xargs -P "$jobs" -I{} bash -c 'one "$@"' _ {} < "$work/list" > "$work/results" 2> "$work/xargs.err" \
+    || echo "xargs exited non-zero (a one() invocation failed)" >> "$work/results.fail"
 
-diffs=$(grep -c '^DIFF' "$work/results" || true)
-ok0=$(grep -c '^OK0' "$work/results" || true)
-tmo=$(grep -c '^TMO' "$work/results" || true)
-grep '^DIFF' "$work/results" | head -50 || true
-grep '^TMO' "$work/results" || true
-echo "slangc upstream-test comparison: $total files ($ok0 compiled cleanly on the reference, $tmo timed out on it), $diffs differences"
-[ "$diffs" -eq 0 ] && [ "$total" -gt 0 ]
+count() { grep -c "$1" "$work/results" || true; }
+diffs=$(count '^DIFF')
+errs=$(count '^ERR')
+ok0=$(count '^OK0')
+okn=$(count '^OKN')
+tmo=$(count '^TMO')
+verdicts=$((ok0 + okn + tmo))
+grep -A10 '^DIFF' "$work/results" | grep -v -E '^(OK0|OKN|TMO) ' | head -200 || true
+grep -E '^(TMO|ERR) ' "$work/results" || true
+cat "$work/results.fail" 2>/dev/null || true
+echo "slangc upstream-test comparison: $total files, $verdicts verdicts ($ok0 compiled cleanly on the reference, $okn rejected or crashed on the reference, $tmo timed out), $diffs differences, $errs harness errors"
+[ "$diffs" -eq 0 ] && [ "$errs" -eq 0 ] && [ "$total" -gt 0 ] && [ "$verdicts" -eq "$total" ] \
+    && [ ! -f "$work/results.fail" ]
