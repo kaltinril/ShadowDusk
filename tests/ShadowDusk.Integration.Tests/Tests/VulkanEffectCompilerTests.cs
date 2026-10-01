@@ -84,6 +84,81 @@ public sealed class VulkanEffectCompilerTests
         pixelShader.ConstantBufferIndices.ShouldNotBeEmpty("the pixel shader stage must bind its constant buffer");
     }
 
+    // Issue #229: a hand-written .fx calling a wave intrinsic must compile end to end on
+    // Vulkan (reflection, binding rewrite, container) and carry SPIR-V 1.3; a shader in the
+    // same file family without wave ops must keep SPIR-V 1.0.
+    private const string WaveShader = """
+        float4 Tint;
+
+        struct VOut { float4 Pos : SV_POSITION; float2 UV : TEXCOORD0; };
+
+        VOut VS(float4 pos : POSITION0, float2 uv : TEXCOORD0)
+        {
+            VOut o;
+            o.Pos = pos;
+            o.UV = uv;
+            return o;
+        }
+
+        float4 PS(VOut i) : SV_Target0
+        {
+            float v = WaveActiveSum(i.UV.x) + QuadReadAcrossX(i.UV.y);
+            return float4(v, v, v, 1) * Tint;
+        }
+
+        technique T
+        {
+            pass P { VertexShader = compile vs_6_0 VS(); PixelShader = compile ps_6_0 PS(); }
+        }
+        """;
+
+    [Fact]
+    public async Task Compile_WaveIntrinsicShader_Vulkan_Succeeds_PixelIsSpirv13_VertexStaysSpirv10()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+        var result = await new EffectCompiler().CompileAsync(WaveShader, new CompilerOptions
+        {
+            Target = PlatformTarget.Vulkan,
+            SourceFileName = "VulkanWave.fx",
+        }, cts.Token);
+
+        result.IsSuccess.ShouldBeTrue(
+            result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+
+        var reader = MgfxBlobReader.Parse(result.Value.Data);
+        reader.ParameterNames.ShouldContain("Tint");
+        foreach (var shader in reader.Shaders)
+        {
+            var spirv = VulkanShaderCodeReader.Parse(shader.Bytecode).Spirv;
+            spirv.Length.ShouldBeGreaterThan(8);
+            BitConverter.ToUInt32(spirv, 4).ShouldBe(
+                shader.IsVertex ? 0x00010000u : 0x00010300u,
+                $"isVertex={shader.IsVertex}: only the stage that needed wave ops asks for Vulkan 1.1");
+        }
+    }
+
+    [Fact]
+    public async Task Compile_NonWaveShader_Vulkan_BothStagesStaySpirv10()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+        var result = await new EffectCompiler().CompileAsync(ParameterizedShader, new CompilerOptions
+        {
+            Target = PlatformTarget.Vulkan,
+            SourceFileName = "VulkanParameterized.fx",
+        }, cts.Token);
+
+        result.IsSuccess.ShouldBeTrue(
+            result.IsFailure ? string.Join("; ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "ok");
+
+        foreach (var shader in MgfxBlobReader.Parse(result.Value.Data).Shaders)
+        {
+            var spirv = VulkanShaderCodeReader.Parse(shader.Bytecode).Spirv;
+            BitConverter.ToUInt32(spirv, 4).ShouldBe(0x00010000u);
+        }
+    }
+
     [Fact]
     public async Task Compile_Sepia_ImplicitGlobalsCbufferBindsToZero()
     {

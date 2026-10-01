@@ -33,6 +33,122 @@ public sealed class DxcShaderCompilerIntegrationTests
     private const string MinimalVs = "float4 VSMain(float4 pos : POSITION) : SV_Position { return pos; }";
     private const string MinimalPs = "float4 PSMain() : SV_Target { return float4(1,0,0,1); }";
 
+    // Issue #229. SPIR-V header word 1 is the version: 0x00010000 = 1.0, 0x00010300 = 1.3.
+    private const uint Spirv10 = 0x00010000;
+    private const uint Spirv13 = 0x00010300;
+
+    private const string WaveSumPs =
+        "float4 PSMain(float2 uv : TEXCOORD0) : SV_Target { float v = WaveActiveSum(uv.x); return float4(v, v, v, 1); }";
+    private const string QuadReadPs =
+        "float4 PSMain(float2 uv : TEXCOORD0) : SV_Target { float v = QuadReadAcrossX(uv.x); return float4(v, v, v, 1); }";
+    private const string WaveSumVs =
+        "float4 VSMain(float4 pos : POSITION) : SV_Position { pos.x += WaveActiveSum(pos.y); return pos; }";
+    private const string PlainPs =
+        "float4 PSMain(float2 uv : TEXCOORD0) : SV_Target { return float4(uv, 0, 1); }";
+
+    private static uint SpirvVersionWord(PlatformBlob blob)
+        => BitConverter.ToUInt32(blob.Bytes.Span[4..8]);
+
+    [Theory]
+    [InlineData(WaveSumPs)]
+    [InlineData(QuadReadPs)]
+    [Trait("Platform", "Vulkan")]
+    public async Task CompileWaveOrQuadPixel_Vulkan_SucceedsWithSpirv13(string hlsl)
+    {
+        using var compiler = new DxcShaderCompiler();
+        var result = await compiler.CompileAsync(PixelRequest(hlsl, PlatformTarget.Vulkan));
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.FxcFormattedMessage : "");
+        result.Value.Kind.ShouldBe(BlobKind.Spirv);
+        SpirvVersionWord(result.Value).ShouldBe(Spirv13);
+    }
+
+    [Fact]
+    [Trait("Platform", "Vulkan")]
+    public async Task CompileWaveVertex_Vulkan_SucceedsWithSpirv13()
+    {
+        using var compiler = new DxcShaderCompiler();
+        var result = await compiler.CompileAsync(VertexRequest(WaveSumVs, PlatformTarget.Vulkan));
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.FxcFormattedMessage : "");
+        SpirvVersionWord(result.Value).ShouldBe(Spirv13);
+    }
+
+    [Fact]
+    [Trait("Platform", "Vulkan")]
+    public void CompileWaveSync_Vulkan_SucceedsWithSpirv13()
+    {
+        using var compiler = new DxcShaderCompiler();
+        var result = compiler.Compile(PixelRequest(WaveSumPs, PlatformTarget.Vulkan));
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.FxcFormattedMessage : "");
+        SpirvVersionWord(result.Value).ShouldBe(Spirv13);
+    }
+
+    [Theory]
+    [InlineData(ShaderStage.Vertex)]
+    [InlineData(ShaderStage.Pixel)]
+    [Trait("Platform", "Vulkan")]
+    public async Task CompileNonWaveShader_Vulkan_StaysSpirv10_NoFallbackRecompile(ShaderStage stage)
+    {
+        using var compiler = new DxcShaderCompiler();
+        var request = stage == ShaderStage.Vertex
+            ? VertexRequest(MinimalVs, PlatformTarget.Vulkan)
+            : PixelRequest(PlainPs, PlatformTarget.Vulkan);
+
+        var result = await compiler.CompileAsync(request);
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error.FxcFormattedMessage : "");
+        SpirvVersionWord(result.Value).ShouldBe(Spirv10);
+    }
+
+    [Fact]
+    [Trait("Platform", "Vulkan")]
+    public async Task CompileNonWaveShader_Vulkan_IsDeterministicAcrossCompiles()
+    {
+        using var compiler = new DxcShaderCompiler();
+        var a = await compiler.CompileAsync(PixelRequest(PlainPs, PlatformTarget.Vulkan));
+        var b = await compiler.CompileAsync(PixelRequest(PlainPs, PlatformTarget.Vulkan));
+
+        a.Value.Bytes.ToArray().ShouldBe(b.Value.Bytes.ToArray());
+    }
+
+    [Fact]
+    [Trait("Platform", "Vulkan")]
+    public async Task CompileInvalidShader_Vulkan_ReturnsOriginalDiagnostic_NotAFallbackArtifact()
+    {
+        using var compiler = new DxcShaderCompiler();
+        var result = await compiler.CompileAsync(
+            PixelRequest("float4 PSMain() : SV_Target { return undefinedSymbol; }", PlatformTarget.Vulkan));
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Message.ShouldContain("undefinedSymbol", Case.Sensitive);
+    }
+
+    [Fact]
+    [Trait("Platform", "Vulkan")]
+    public async Task CompileWavePixel_Vulkan_StillFailsWhenWaveShaderIsOtherwiseInvalid()
+    {
+        using var compiler = new DxcShaderCompiler();
+        var result = await compiler.CompileAsync(PixelRequest(
+            "float4 PSMain() : SV_Target { float v = WaveActiveSum(1.0); return float4(v, undefinedSymbol, 0, 1); }",
+            PlatformTarget.Vulkan));
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Message.ShouldContain("undefinedSymbol", Case.Sensitive);
+    }
+
+    [Fact]
+    [Trait("Platform", "OpenGL")]
+    public async Task CompileWavePixel_OpenGL_StillRejected_FallbackIsVulkanOnly()
+    {
+        using var compiler = new DxcShaderCompiler();
+        var result = await compiler.CompileAsync(PixelRequest(WaveSumPs, PlatformTarget.OpenGL));
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Message.ShouldContain("Vulkan 1.1 is required", Case.Sensitive);
+    }
+
     [Fact]
     [Trait("Platform", "OpenGL")]
     public async Task CompileMinimalVertex_OpenGL_ReturnsSpirvBlob()
