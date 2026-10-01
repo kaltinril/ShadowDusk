@@ -48,7 +48,7 @@ public sealed class FnaDiagnosticLocationTests
         return error;
     }
 
-    private static async Task AssertLandsOnAsync(
+    private static async Task<ShaderError> AssertLandsOnAsync(
         string path, string expectedCode, string constructOnThatLine, string vkd3dMessage, int? column, CancellationToken ct)
     {
         ShaderError error = await CompileForFnaExpectingOneLocatedErrorAsync(path, ct);
@@ -61,24 +61,30 @@ public sealed class FnaDiagnosticLocationTests
             $"line {error.Line} must be the construct vkd3d rejected, not a line {error.Line - lines.Length} past the end");
         if (column is { } c)
             error.Column.ShouldBe(c);
+        return error;
     }
 
     // The reporter's exact file (3235 upstream lines + a 17-line provenance header).
     // vkd3d 2.1 compiles further than 1.17 did and then runs out of SM3 temporaries;
     // it reports line 1132, the construct is fixture line 1000.
+    //
+    // One compile, and no wall-clock timeout. This pixel shader costs vkd3d about 3.3 s of
+    // CPU on a fast core (its HLSL optimizer, before the register allocator gives up), and
+    // a CI runner running both TFMs' hosts at once stretches that past 60 s. A token cannot
+    // bound it anyway: vkd3d_shader_compile is one uninterruptible native call, so a timeout
+    // here only ever failed a healthy compile at the next checkpoint and never caught a hang.
+    // A hang is caught by the CI integration step's --blame-hang-timeout, which also dumps
+    // every thread's stack.
     [FnaFact]
     public async Task Issue202_AposShapesCurrentUpstream_LandsOnTheRegisterLimit()
     {
-        using var cts = new CancellationTokenSource(CompileTimeout);
         string path = IssueFixturePath(202, "apos-shapes.fx");
-        string[] lines = (await File.ReadAllTextAsync(path, cts.Token)).Split('\n');
+        string[] lines = (await File.ReadAllTextAsync(path)).Split('\n');
         lines.Length.ShouldBeGreaterThan(3200, "this must be the current upstream, not the 523-line vendored one");
 
-        await AssertLandsOnAsync(path, "E9015",
+        ShaderError error = await AssertLandsOnAsync(path, "E9015",
             "pt = float2(b.x - r.y, b.y - r.y);",
-            "Register r32 exceeds limits", column: 25, cts.Token);
-
-        ShaderError error = await CompileForFnaExpectingOneLocatedErrorAsync(path, cts.Token);
+            "Register r32 exceeds limits", column: 25, CancellationToken.None);
         error.Line.ShouldBe(1000);
     }
 
