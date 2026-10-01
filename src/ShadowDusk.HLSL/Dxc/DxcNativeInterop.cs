@@ -75,6 +75,22 @@ internal static unsafe class DxcNativeInterop
         IReadOnlyList<string> arguments,
         IDxcIncludeHandler? includeHandler)
     {
+        // Off Windows, take DXC's one-time LLVM signal-handler registration out of the
+        // process before any real compile can race it (see DxcSignalIsolation).
+        DxcSignalIsolation.EnsureIsolated(compiler);
+        return CompileRaw(compiler, source, arguments, includeHandler);
+    }
+
+    /// <summary>
+    /// The raw vtable call behind <see cref="Compile"/>, without the signal isolation step
+    /// (which itself compiles through here).
+    /// </summary>
+    internal static IDxcResult CompileRaw(
+        IDxcCompiler3 compiler,
+        string source,
+        IReadOnlyList<string> arguments,
+        IDxcIncludeHandler? includeHandler)
+    {
         byte[] sourceBytes = Encoding.UTF8.GetBytes(source);
 
         int argCount = arguments.Count;
@@ -111,14 +127,22 @@ internal static unsafe class DxcNativeInterop
                 var compile = (delegate* unmanaged[Stdcall]<nint, void*, void*, int, void*, void*, void*, int>)
                     ((nint*)*(nint*)compiler.NativePointer)[CompileVtblSlot];
 
-                Result hr = compile(
-                    compiler.NativePointer,
-                    &buffer,
-                    (void*)argArray,
-                    argCount,
-                    (void*)includeHandlerPtr,
-                    &iid,
-                    &resultPtr);
+                // macOS: no fork() may run while DXC is inside setlocale (see DxcForkGate).
+                // The gate covers ONLY this direct native call: every setlocale DXC makes is
+                // inside IDxcCompiler3::Compile (measured), and nothing in here can dlopen/dlsym
+                // (a first-call P/Invoke bind would), which fork() blocks while it waits.
+                Result hr;
+                using (DxcForkGate.Enter())
+                {
+                    hr = compile(
+                        compiler.NativePointer,
+                        &buffer,
+                        (void*)argArray,
+                        argCount,
+                        (void*)includeHandlerPtr,
+                        &iid,
+                        &resultPtr);
+                }
 
                 GC.KeepAlive(includeHandler);
                 hr.CheckError();

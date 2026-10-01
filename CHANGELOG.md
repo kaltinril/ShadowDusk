@@ -122,6 +122,26 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 - **`SlangCompiler`'s assembled `.fx` text is LF-only on every host.** The synthesized wrapper
   used the host newline, so Windows got mixed line endings around slangc's LF body. The
   compiled bytes were already identical across hosts; the intermediate text now is too.
+- **Compiling on macOS (and DXC's other non-Windows builds) can no longer crash or hang the
+  host process when compiles run concurrently or alongside `Process.Start`.** Three native
+  failures, all measured on macOS arm64 and all inside DXC's Unix support code, not in
+  ShadowDusk's output (no emitted byte changes):
+  (1) every DXIL compile and preprocess runs LLVM's `RegisterHandlers()`, which installs LLVM's
+  own signal handlers over the .NET runtime's (`SIGSEGV`, `SIGBUS`, and on macOS `SIGUSR1`,
+  CoreCLR's thread-suspension signal); test hosts died by `SIGUSR1` (exit code 158);
+  (2) concurrent first calls race that registration and overflow its fixed 17-slot table into
+  `TargetRegistry` state, so the next DXIL compile segfaults in
+  `llvm::TargetRegistry::lookupTarget`;
+  (3) DXC's `WideCharToMultiByte` shim calls `setlocale` about 180 times per compile, which
+  deadlocks permanently against a concurrent `fork()`.
+  ShadowDusk now performs DXC's signal registration once, serialized, and restores the
+  runtime's handlers (`DxcSignalIsolation`; LLVM never registers again), and on macOS a
+  `pthread_atfork` gate keeps `fork()` out of in-flight native compiles (`DxcForkGate`).
+  Compiles still run in parallel. This was the integration suite's intermittent "Test host
+  process crashed" (3 of 4 local macOS runs before; 11 of 11 clean on both TFMs after) and is
+  guarded by fresh-process probes plus a deterministic signal-ownership check in
+  `DxcConcurrencyStressTests`. CI's macOS-only `xUnit.MaxParallelThreads=1` workaround, which
+  hid the crash rather than fixing it, is removed.
 
 - **`ShadowDusk.Slang`'s real-slangc route now forwards the same per-target platform macros
   (`OPENGL`/`SM4`/`VULKAN`/`SM6`/`HLSL`/`GLSL`/`MGFX`/`FNA`/`SM3`, `__KNIFX__` for the KNIFX
