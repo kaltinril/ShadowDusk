@@ -72,12 +72,39 @@ return await RunAposPhase();
 // ---------------------------------------------------------------------------------------
 async Task<int> RunVsPhase()
 {
+// Positive controls (CI only; see validation-render.yml's vulkan job). Each one plants a
+// known defect in the CANDIDATE and the lane must turn red on it, which is the evidence the
+// lane can fail at all:
+//   wrong-shader      the candidate PS swaps its colour channels: a pixel divergence the
+//                     mgfxc diff must catch.
+//   spirv-1.3-header  every SPIR-V module's version word is set to 1.3 (the shape a
+//                     vulkan1.1 target env emits) while MonoGame creates a Vulkan 1.0
+//                     instance: an out-of-spec module the Khronos validation layer must flag.
+string control = Environment.GetEnvironmentVariable("SHADOWDUSK_VK_CONTROL")?.Trim() ?? "";
+if (control is not ("" or "wrong-shader" or "spirv-1.3-header"))
+{
+    Console.Error.WriteLine($"unknown SHADOWDUSK_VK_CONTROL '{control}'");
+    return 2;
+}
+if (control != "")
+    Console.WriteLine($"[vs-vulkan] POSITIVE CONTROL ACTIVE: {control} (this run is expected to FAIL)");
+
+string candidateSource = await File.ReadAllTextAsync(fxPath);
+if (control == "wrong-shader")
+{
+    const string Original = "return SpriteTexture.Sample(SpriteTextureSampler, input.TexCoord) * input.Color;";
+    if (!candidateSource.Contains(Original, StringComparison.Ordinal))
+        throw new InvalidOperationException("wrong-shader control: fixture PS line not found; update the control.");
+    candidateSource = candidateSource.Replace(Original,
+        "return (SpriteTexture.Sample(SpriteTextureSampler, input.TexCoord) * input.Color).bgra;", StringComparison.Ordinal);
+}
+
 // ---- Candidate: ShadowDusk's in-memory Vulkan compile. ----
 byte[]? candidateBytes = null;
 string? candidateErr   = null;
 {
     var result = await new EffectCompiler().CompileAsync(
-        await File.ReadAllTextAsync(fxPath),
+        candidateSource,
         new CompilerOptions
         {
             Target          = PlatformTarget.Vulkan,
@@ -90,6 +117,13 @@ string? candidateErr   = null;
     else
     {
         candidateBytes = result.Value.Data;
+        if (control == "spirv-1.3-header")
+        {
+            int patched = SetSpirvVersion(candidateBytes, 0x00010300);
+            Console.WriteLine($"[vs-vulkan] spirv-1.3-header control: patched {patched} SPIR-V module header(s) to 1.3");
+            if (patched == 0)
+                throw new InvalidOperationException("spirv-1.3-header control: no SPIR-V module found in the container.");
+        }
         Directory.CreateDirectory(outDir);
         await File.WriteAllBytesAsync(Path.Combine(outDir, Fixture + ".candidate.mgfx"), candidateBytes);
     }
@@ -135,7 +169,30 @@ Console.WriteLine($"[vs-vulkan] candidate drew visible content: {candidateDrew}"
 
 bool phase1 = haveBoth && maxd <= 1 && candidateDrew;
 Console.WriteLine($"[vs-vulkan] phase 1 (VsTransformColorTexture): {(phase1 ? "PASS" : "FAIL")}");
+// The wrong-shader control must be caught by the PIXEL DIFF specifically (both arms loaded
+// and drew), not by some unrelated crash; the CI step matches this marker.
+if (control == "wrong-shader" && haveBoth && maxd > 1)
+    Console.WriteLine($"[vs-vulkan] CONTROL-DETECTED: pixel divergence maxd={maxd}");
 return phase1 ? 0 : 1;
+}
+
+// Rewrites the version word of every SPIR-V module embedded in an .mgfx container
+// (the word after each 0x07230203 magic). Returns how many modules were patched.
+static int SetSpirvVersion(byte[] container, uint version)
+{
+    int count = 0;
+    for (int i = 0; i + 8 <= container.Length; i++)
+    {
+        if (BitConverter.ToUInt32(container, i) != 0x07230203u)
+            continue;
+        uint current = BitConverter.ToUInt32(container, i + 4);
+        if ((current & 0xFFFF00FFu) != 0x00010000u) // not a SPIR-V 1.x version word
+            continue;
+        BitConverter.GetBytes(version).CopyTo(container, i + 4);
+        count++;
+        i += 7;
+    }
+    return count;
 }
 
 // ---------------------------------------------------------------------------------------

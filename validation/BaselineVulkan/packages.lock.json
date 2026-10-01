@@ -8,6 +8,12 @@
         "resolved": "3.8.5",
         "contentHash": "fobFZ8nfhCmt98HD0FNX+nP1IOoJ2N/Zk/JHY6148i4CEpIThv+OJeiR8W+zba+Xz5NkPC2pmWHRum0jN37boQ=="
       },
+      "MonoGame.Runtime.Linux.Vulkan": {
+        "type": "Direct",
+        "requested": "[3.8.5, )",
+        "resolved": "3.8.5",
+        "contentHash": "hfoeAoeBpdKAh9IjqZMllh/JHvIs7RtVpONMqh+3S32qyraE6xgDXsSFecGxgptOhTnDyy496XHSSRShfG8HJQ=="
+      },
       "MonoGame.Runtime.Windows.Vulkan": {
         "type": "Direct",
         "requested": "[3.8.5, )",
