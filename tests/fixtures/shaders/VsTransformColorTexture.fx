@@ -1,3 +1,10 @@
+#ifdef SHADOWDUSK_PC
+#define PC_SAB(c) (float4(1, 1, 1, 2) - (c))
+#define PC_ZERO(c) ((c) * 0)
+#else
+#define PC_SAB(c) (c)
+#define PC_ZERO(c) (c)
+#endif
 // Phase 28 — VS-driven MonoGame effect fixture.
 //
 // A custom vertex shader that takes a float4x4 transform and the SpriteBatch-
@@ -76,12 +83,12 @@ VertexShaderOutput MainVS(VertexShaderInput input)
 #if SM6
 float4 MainPS(VertexShaderOutput input) : SV_Target0
 {
-    return SpriteTexture.Sample(SpriteTextureSampler, input.TexCoord) * input.Color;
+    return PC_SAB(SpriteTexture.Sample(SpriteTextureSampler, input.TexCoord) * input.Color);
 }
 #else
 float4 MainPS(VertexShaderOutput input) : SV_Target0
 {
-    return tex2D(SpriteTextureSampler, input.TexCoord) * input.Color;
+    return PC_SAB(tex2D(SpriteTextureSampler, input.TexCoord) * input.Color);
 }
 #endif
 

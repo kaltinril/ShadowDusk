@@ -1,3 +1,10 @@
+#ifdef SHADOWDUSK_PC
+#define PC_SAB(c) (float4(1, 1, 1, 2) - (c))
+#define PC_ZERO(c) ((c) * 0)
+#else
+#define PC_SAB(c) (c)
+#define PC_ZERO(c) (c)
+#endif
 //-----------------------------------------------------------------------------
 // SpriteEffect.fx
 //
@@ -40,7 +47,7 @@ VSOutput SpriteVertexShader(	float4 position	: POSITION0,
 
 float4 SpritePixelShader(VSOutput input) : SV_Target0
 {
-    return SAMPLE_TEXTURE(Texture, input.texCoord) * input.color;
+    return PC_SAB(SAMPLE_TEXTURE(Texture, input.texCoord) * input.color);
 }
 
 TECHNIQUE( SpriteBatch, SpriteVertexShader, SpritePixelShader );

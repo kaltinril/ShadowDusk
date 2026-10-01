@@ -388,7 +388,7 @@ internal static class Program
 
             jobs.Add(result.IsFailure
                 ? new ShaderJob(name, null, string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")))
-                : new ShaderJob(name, result.Value.Data, null));
+                : new ShaderJob(name, result.Value.Data[..(result.Value.Data.Length / 2)], null));
         }
 
         using var game = new DxEffectImageRenderer(catPath, outDir, jobs, DxShaderInputs.SetParams);

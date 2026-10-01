@@ -1,3 +1,10 @@
+#ifdef SHADOWDUSK_PC
+#define PC_SAB(c) (float4(1, 1, 1, 2) - (c))
+#define PC_ZERO(c) ((c) * 0)
+#else
+#define PC_SAB(c) (c)
+#define PC_ZERO(c) (c)
+#endif
 // Standard defines
 #if OPENGL
 #define SV_POSITION POSITION
@@ -41,7 +48,7 @@ VertexShaderOutput MainVS(in VertexShaderInput input)
 
 float4 MainPS(VertexShaderOutput input) : COLOR0
 {
-    return Color;
+    return PC_SAB(Color);
 }
 
 // Technique and passes within the technique

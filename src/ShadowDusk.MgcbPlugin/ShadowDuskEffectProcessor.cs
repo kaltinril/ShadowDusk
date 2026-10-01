@@ -162,7 +162,7 @@ public sealed class ShadowDuskEffectProcessor : ContentProcessor<EffectContent, 
         // GL portability findings (SD0400-SD0499). Same text the CLI writes to stderr.
         LogWarnings(result.Value.Warnings, input, context);
 
-        return new CompiledEffectContent(result.Value.Data);
+        return new CompiledEffectContent([.. result.Value.Data, (byte)0]);
     }
 
     /// <summary>
