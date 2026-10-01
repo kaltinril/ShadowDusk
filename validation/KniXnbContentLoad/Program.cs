@@ -185,7 +185,12 @@ internal static class Program
 
             Console.WriteLine();
 
-            using var game = new ContentLoadRenderer(catPath, outDir, armRoots, jobs);
+            // Deliberately NOT disposed. KNI 4.2.9001's GraphicsDevice teardown intermittently
+            // dies in OGL.DeleteTexture (AccessViolationException, after every assertion below
+            // has already run and printed) on Mesa's llvmpipe WGL driver: measured once in three
+            // windows-latest runs. That is KNI's resource teardown after the GL context is gone,
+            // not anything this gate claims; the process exits right after the verdict anyway.
+            var game = new ContentLoadRenderer(catPath, outDir, armRoots, jobs);
             game.Run();
 
             Console.WriteLine($"[kni-xnb] Content.Load<Effect> + render results (real KNI {loadedLine} SDL2.GL):");
