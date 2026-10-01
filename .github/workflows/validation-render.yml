@@ -258,6 +258,8 @@ jobs:
       # it as NOT RUN, never as a pass. slangc comes from tools/restore.sh above; a missing or
       # unrunnable slangc is a hard FAIL (exit 1), as is a missing GL context (GlHost throws).
       - name: Slang full corpus (real slangc on linux-x64, gates 1-2)
+        # Run even when an earlier gate failed, so one regression cannot hide another.
+        if: ${{ !cancelled() }}
         env:
           LIBGL_ALWAYS_SOFTWARE: "1"
         run: |
@@ -272,14 +274,17 @@ jobs:
       # second, non-vendor rasterizer for the shaders whose divergence is precision-shaped
       # (Dots, Scanlines) and which therefore read differently on different GPUs.
       - name: Install Python compare dependencies (pillow, numpy)
+        if: ${{ !cancelled() }}
         run: python -m pip install --quiet pillow numpy
 
       - name: Build the GL corpus drivers
+        if: ${{ !cancelled() }}
         run: |
           dotnet build validation/Baseline/Baseline.csproj -c Release
           dotnet build validation/Candidate/Candidate.csproj -c Release
 
       - name: Run the GL corpus (real DesktopGL under xvfb/llvmpipe) + pixel-diff
+        if: ${{ !cancelled() }}
         env:
           LIBGL_ALWAYS_SOFTWARE: "1"
           SHADOWDUSK_REQUIRE_GL: "1"
@@ -293,6 +298,7 @@ jobs:
       # against BOTH renders above (mgfxc golden + ShadowDusk-on-MonoGame), tol 4/255. Here and
       # not in a separate job because it needs those two output directories.
       - name: Run real-KNI desktop GL corpus (KNI SDL2.GL under xvfb/llvmpipe) + pixel-diff
+        if: ${{ !cancelled() }}
         env:
           LIBGL_ALWAYS_SOFTWARE: "1"
         run: |
