@@ -73,6 +73,15 @@ public sealed class DxcFlagBuilderTests
         joined.ShouldContain("-fvk-s-shift 32 all", Case.Sensitive);
     }
 
+    // Issue #229: ShadowDusk never asks DXC for a Vulkan 1.1 SPIR-V target env. MonoGame's
+    // DesktopVK creates a Vulkan 1.0 instance, so a 1.1 module (what wave/quad intrinsics need)
+    // is out of spec there; those shaders are rejected with SD0218 instead.
+    [Theory]
+    [InlineData(ShaderStage.Vertex)]
+    [InlineData(ShaderStage.Pixel)]
+    public void Vulkan_NeverRequestsATargetEnv(ShaderStage stage)
+        => Joined(Build(PlatformTarget.Vulkan, stage)).ShouldNotContain("target-env", Case.Sensitive);
+
     // ── Vulkan Pixel ─────────────────────────────────────────────────────────
 
     [Fact] public void Vulkan_Pixel_HasProfile_ps6_0()

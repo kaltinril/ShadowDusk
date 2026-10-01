@@ -357,15 +357,12 @@ jobs:
       # of SHADOWDUSK_REQUIRE_GL): the natives were just hard-gated above, so inside
       # the test run a missing native is a FAILURE, never a skip — defense in depth
       # against a probe/loader regression re-opening the skip-as-green hole.
-      # macOS ONLY: cap xUnit's cross-collection parallelism. The integration suite drives a
-      # lot of native DXC compilation, and on the macOS runners (x64 images under Rosetta 2)
-      # running several collections' worth of that concurrently takes the TEST HOST down:
-      # `Test host process crashed`, reproducibly, ~11 s into the assembly run and after a
-      # wildly different number of tests each time (605, then 158) while every test that DID
-      # run passed. That is resource exhaustion under parallelism, not a failing test, and it
-      # is not a ShadowDusk output defect: the same compiles pass on ubuntu, on windows, and
-      # locally, and the emitted bytes are proven identical across hosts by
-      # CrossHostByteIdentityTests. Linux and Windows keep full parallelism.
+      # Full xUnit parallelism on EVERY OS, macOS included. macOS used to run with
+      # MaxParallelThreads=1 on a "resource exhaustion" diagnosis; the real cause was DXC's Unix
+      # support code (LLVM signal handlers over the runtime's, a racy signal-table overflow,
+      # and setlocale deadlocking against fork()), fixed in ShadowDusk.HLSL's
+      # DxcSignalIsolation/DxcForkGate. Capping parallelism only hid it, so do not reintroduce
+      # the cap: a host crash here is a real defect.
       # LogFilePrefix is load-bearing HERE, not cosmetic. The ubuntu lane intermittently
       # aborts with "Test host process crashed" (Phase 51 A9), and the crashed assembly's
       # .trx is exactly the artifact needed to diagnose it — but under the old fixed
@@ -384,7 +381,6 @@ jobs:
           --settings ShadowDusk.runsettings
           --logger "trx;LogFilePrefix=integration-${{ matrix.os }}"
           --results-directory TestResults/
-          ${{ matrix.os == 'macos-latest' && '-- xUnit.MaxParallelThreads=1' || '' }}
 
       # Guard the line above: if someone reverts to a fixed LogFileName, the run still goes
       # green while 13 of 14 assemblies' results vanish. The solution always has more than

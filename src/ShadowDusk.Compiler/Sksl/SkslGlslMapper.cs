@@ -231,7 +231,7 @@ internal static class SkslGlslMapper
             {
                 string member = line.Trim().TrimEnd(';');
                 if (member.Length > 0)
-                    sb.AppendLine($"uniform {member};");
+                    sb.Append($"uniform {member};").Append('\n');
             }
             return sb.ToString();
         });

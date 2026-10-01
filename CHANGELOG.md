@@ -12,7 +12,20 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ## [Unreleased]
 
+### Fixed
+
+- **`.fx` wave/quad intrinsics now fail loudly and consistently on every target that cannot hold them.** On OpenGL, DirectX 11 and FNA they are rejected with `SD0624` (the code the `.slang` route already used), instead of DXC's `Vulkan 1.1 is required` (OpenGL) or vkd3d's `Function "WaveActiveSum" is not defined` (DX11, FNA). The message names the intrinsic and target, keeps the compiler's own line and column, and appends its text; `.fx` and `.slang` share one message. A user function that shares an intrinsic's name on those targets still compiles. DirectX12 still compiles them; Vulkan stays `SD0218`.
+- **Host-independent generated text.** The Slang frontend `.fx`, the SkSL uniform rewrite, the ShaderToy `.fx` and harness, and the multipass manifest/WIRING.md used `AppendLine` (CRLF on Windows, LF elsewhere); they now emit `\n` everywhere. `HostNewlineBanTests` fails if `AppendLine`/`Environment.NewLine`/`WriteLine` reappears in a generator project. Compiled output bytes are unchanged.
+
 ### Added
+
+- **The Vulkan render gates run in CI.** `validation-render.yml` gains a `vulkan-render-gates` job
+  (ubuntu, label-gated like the GL and DX jobs) that renders `VsDrivenVulkan` (VS-driven fixture vs the
+  `mgfxc` golden, then the Apos.Shapes gallery) and the `CandidateVulkan` corpus on real MonoGame
+  DesktopVK through Mesa lavapipe. `validation/run-with-vk-validation.sh` forces the Khronos validation
+  layer on and fails the gate on any layer error. Two positive controls in the same job (a wrong shader;
+  SPIR-V stamped 1.3 on MonoGame's Vulkan 1.0 instance) must turn it red, and do. The Vulkan validation
+  drivers now also reference `MonoGame.Runtime.Linux.Vulkan`.
 
 - **Doc-consistency test (issue #218).** `DocConsistencyTests` checks that `plan/plan.md`'s phase index
   agrees with each phase doc's `**Status:**` glyph, that nothing in `plan/DONE/` claims to be open,
@@ -20,6 +33,25 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   from `docs/pipeline-overview.puml`. Unrecognized status glyphs fail, and every `validation/*` driver
   must appear in `docs/validation-matrix.md` section 6 (added the missing `CandidateDx12` and
   `CandidateVkd3d` paths). Also corrects Phase 50's status glyph to match its index row.
+- **HLSL → raylib fragment shaders for Raylib-cs (Phase 59, the fragment-only slice).**
+  `ShadowDusk.Compiler.Raylib.RaylibConverter.Convert(fx)` turns a single-pass, pixel-only `.fx`
+  into a `#version 330` fragment shader for `Raylib.LoadShaderFromMemory(null, fs)`, so one
+  post-process source runs on MonoGame and on raylib. Same faithful front half as the OpenGL
+  target (DXC, SPIRV-Cross), branching before the MonoGame rewriter; a convention mapper renames
+  the interface to raylib's fixed names (`TEXCOORD0` → `fragTexCoord`, `COLOR0` → `fragColor`,
+  the output → `finalColor`, the unit-0 sampler → `texture0`) and flattens cbuffers to loose
+  uniforms raylib binds by name. The result is a `RaylibShader` with the binding contract
+  (uniform names and types, samplers, baked sampler state), deliberately not a `CompiledShader`.
+  Anything raylib's model cannot hold is refused by name (`SD0630`–`SD0636`): multi-pass,
+  render states, vertex shaders, interpolants other than `TEXCOORD0`/`COLOR0`, Y-orientation
+  dependent builtins (`SV_Position`, `ddy`), MRT, non-2D textures, matrix/struct uniforms, and
+  names that would collide or bind nothing. `.slang` input works through the existing Slang
+  frontend with no raylib-specific code. **Evidence model: rendered-image fidelity, not
+  `mgfxc`-equivalence** (raylib has no reference compiler): the new `validation/RaylibRoute`
+  gate renders each conversion in real Raylib-cs 8.1.0 (raylib 6.0) and pixel-diffs it against
+  the same `.fx` built for OpenGL in real MonoGame DesktopGL; 13/13 shaders (the 10-shader GL
+  corpus, a CRT and a handheld-LCD effect, Gum's Grayscale) at maxd 0, with three positive
+  controls that must diverge. Runs in the Linux GL CI lane. `glsl100` (web) is not emitted yet.
 
 - **New package: `ShadowDusk.Slang`, a real-slangc compile route for genuine Slang (Phase 66,
   opt-in; win-x64, linux-x64, osx-x64, osx-arm64).** A consumer who needs real Slang — `import`, generics, `interface`
@@ -88,6 +120,18 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **Slang: `[shader(...)]` or an SM6 intrinsic name inside a comment or string literal is no longer read as code (#222).** A doc comment quoting `[shader("fragment")]` could produce a phantom entry point and a false `SD0604`; the same blindness let a commented `WaveActiveSum` trigger `SD0624`. The entry scanner, the SM6 guard, and the `SD0600` construct scan now share one comment/string mask, and attribute stripping only removes real attributes.
+- **Vulkan: HLSL wave/quad intrinsics (`WaveActiveSum`, `QuadReadAcrossX`, ...) are rejected
+  loudly with a new diagnostic, `SD0218`, instead of DXC's confusing `Vulkan 1.1 is required for
+  Wave Operation`** ([#229](https://github.com/kaltinril/ShadowDusk/issues/229)). They are not
+  supported on Vulkan: MonoGame's DesktopVK creates a Vulkan 1.0 instance with no subgroup
+  support. Measured in the CI Vulkan lane: a SPIR-V 1.3 wave shader rendered correctly on Mesa
+  lavapipe, but the Khronos validation layer reported 10 spec errors, so a GPU driver is free to
+  refuse or miscompile it. The message names the intrinsic and the reason, keeps DXC's location,
+  and appends DXC's own text. The real-slangc `.slang` route rejects the same intrinsics on
+  Vulkan with the same code and message. Non-wave Vulkan output is unchanged (no target-env flag
+  is ever passed).
+
 - **`ShadowDusk.Slang` packed its Unix slangc at `runtimes/<rid>/native/slangc/slangc`,** away
   from its library, because NuGet treats an extension-less `PackagePath` as a folder. Found by
   the new cold-consumer run before any release shipped it.
@@ -99,6 +143,26 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 - **`SlangCompiler`'s assembled `.fx` text is LF-only on every host.** The synthesized wrapper
   used the host newline, so Windows got mixed line endings around slangc's LF body. The
   compiled bytes were already identical across hosts; the intermediate text now is too.
+- **Compiling on macOS (and DXC's other non-Windows builds) can no longer crash or hang the
+  host process when compiles run concurrently or alongside `Process.Start`.** Three native
+  failures, all measured on macOS arm64 and all inside DXC's Unix support code, not in
+  ShadowDusk's output (no emitted byte changes):
+  (1) every DXIL compile and preprocess runs LLVM's `RegisterHandlers()`, which installs LLVM's
+  own signal handlers over the .NET runtime's (`SIGSEGV`, `SIGBUS`, and on macOS `SIGUSR1`,
+  CoreCLR's thread-suspension signal); test hosts died by `SIGUSR1` (exit code 158);
+  (2) concurrent first calls race that registration and overflow its fixed 17-slot table into
+  `TargetRegistry` state, so the next DXIL compile segfaults in
+  `llvm::TargetRegistry::lookupTarget`;
+  (3) DXC's `WideCharToMultiByte` shim calls `setlocale` about 180 times per compile, which
+  deadlocks permanently against a concurrent `fork()`.
+  ShadowDusk now performs DXC's signal registration once, serialized, and restores the
+  runtime's handlers (`DxcSignalIsolation`; LLVM never registers again), and on macOS a
+  `pthread_atfork` gate keeps `fork()` out of in-flight native compiles (`DxcForkGate`).
+  Compiles still run in parallel. This was the integration suite's intermittent "Test host
+  process crashed" (3 of 4 local macOS runs before; 11 of 11 clean on both TFMs after) and is
+  guarded by fresh-process probes plus a deterministic signal-ownership check in
+  `DxcConcurrencyStressTests`. CI's macOS-only `xUnit.MaxParallelThreads=1` workaround, which
+  hid the crash rather than fixing it, is removed.
 
 - **`ShadowDusk.Slang`'s real-slangc route now forwards the same per-target platform macros
   (`OPENGL`/`SM4`/`VULKAN`/`SM6`/`HLSL`/`GLSL`/`MGFX`/`FNA`/`SM3`, `__KNIFX__` for the KNIFX

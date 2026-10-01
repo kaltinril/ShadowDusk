@@ -44,6 +44,13 @@
     <PackageVersion Include="MonoGame.Framework.WindowsDX" Version="3.8.2.1105" />
   </ItemGroup>
 
+  <!-- Phase 59: validation-only, never a product dependency. validation/RaylibRoute renders the
+       raylib converter's output in real Raylib-cs (raylib 6.0, glsl330). Pinned because the
+       render gate's evidence is only as good as the runtime it ran against. -->
+  <ItemGroup Label="Raylib runtime validation (Phase 59)">
+    <PackageVersion Include="Raylib-cs" Version="8.1.0" />
+  </ItemGroup>
+
   <!--
     Phase 29: the MGCB content-processor plugin's BUILD-TIME contract assembly
     (ContentImporter/ContentProcessor/EffectContent/CompiledEffectContent). This is a

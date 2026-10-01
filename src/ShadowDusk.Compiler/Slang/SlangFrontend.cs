@@ -63,7 +63,7 @@ public static class SlangFrontend
 
     // The [shader("...")] attribute, to be stripped from the body after entry discovery.
     private static readonly Regex ShaderAttribute = new(
-        """\[\s*shader\s*\(\s*"[a-z]+"\s*\)\s*\]\s*""", RegexOptions.Compiled);
+        """\[\s*shader\s*\(\s*"[^"]*"\s*\)\s*\]\s*""", RegexOptions.Compiled);
 
     // Slang-only constructs with no HLSL meaning. Declaration keywords are line-anchored so an
     // identifier that merely CONTAINS the word (a variable named 'extension') cannot false-
@@ -120,7 +120,7 @@ public static class SlangFrontend
         //    gets "this is the Slang feature that doesn't convert" instead of a cascade of
         //    downstream HLSL syntax errors. (Anything subtler falls through to DXC, whose own
         //    verbatim diagnostics remain the authority — this scan is a courtesy, not a gate.)
-        string commentStripped = StripComments(slangSource);
+        string commentStripped = SlangSourceMask.Mask(slangSource);
         foreach ((Regex pattern, string construct) in SlangOnlyConstructs)
         {
             Match match = pattern.Match(commentStripped);
@@ -142,77 +142,47 @@ public static class SlangFrontend
 
         // 3. Strip the [shader(...)] attributes: fxc-lineage compilers reject them outside
         //    library targets, and the technique block below carries the same information.
-        string body = ShaderAttribute.Replace(slangSource, "");
+        //    Matched on the masked text so only real attributes go, never comment/string text.
+        string body = slangSource;
+        foreach (Match attr in ShaderAttribute.Matches(commentStripped).Reverse())
+            body = body.Remove(attr.Index, attr.Length);
 
         // 4. Assemble the .fx.
         SlangEntryPoint? vs = entries.Value.FirstOrDefault(e => e.Stage == SlangStage.Vertex);
         SlangEntryPoint? ps = entries.Value.FirstOrDefault(e => e.Stage == SlangStage.Fragment);
 
         var sb = new StringBuilder();
-        sb.AppendLine($"// Generated from '{options.SourceName}' by ShadowDusk's Slang frontend.");
-        sb.AppendLine("// The body below is the .slang source verbatim, minus the shader-stage attributes;");
-        sb.AppendLine("// the technique block is synthesized from what they declared.");
-        sb.AppendLine();
+        sb.Append($"// Generated from '{options.SourceName}' by ShadowDusk's Slang frontend.").Append('\n');
+        sb.Append("// The body below is the .slang source verbatim, minus the shader-stage attributes;").Append('\n');
+        sb.Append("// the technique block is synthesized from what they declared.").Append('\n');
+        sb.Append('\n');
 
         // The ShaderToy frontend's measured convention, reasons and all: mgfxc's DirectX_11
         // profile REJECTS anything below SM 4.0 level 9.1, while its OpenGL profile caps at SM3
         // and ShadowDusk's FNA target is MojoShader SM2-3 — so gate on SM4 (which exactly the
         // DirectX profiles define), not on OPENGL.
-        sb.AppendLine("#if SM4");
-        sb.AppendLine("    #define VS_SHADERMODEL vs_4_0_level_9_1");
-        sb.AppendLine("    #define PS_SHADERMODEL ps_4_0_level_9_1");
-        sb.AppendLine("#else");
-        sb.AppendLine("    #define VS_SHADERMODEL vs_3_0");
-        sb.AppendLine("    #define PS_SHADERMODEL ps_3_0");
-        sb.AppendLine("#endif");
-        sb.AppendLine();
-        sb.AppendLine(body.Trim());
-        sb.AppendLine();
-        sb.AppendLine($"technique {options.TechniqueName}");
-        sb.AppendLine("{");
-        sb.AppendLine("    pass P0");
-        sb.AppendLine("    {");
+        sb.Append("#if SM4").Append('\n');
+        sb.Append("    #define VS_SHADERMODEL vs_4_0_level_9_1").Append('\n');
+        sb.Append("    #define PS_SHADERMODEL ps_4_0_level_9_1").Append('\n');
+        sb.Append("#else").Append('\n');
+        sb.Append("    #define VS_SHADERMODEL vs_3_0").Append('\n');
+        sb.Append("    #define PS_SHADERMODEL ps_3_0").Append('\n');
+        sb.Append("#endif").Append('\n');
+        sb.Append('\n');
+        sb.Append(body.Trim()).Append('\n');
+        sb.Append('\n');
+        sb.Append($"technique {options.TechniqueName}").Append('\n');
+        sb.Append("{").Append('\n');
+        sb.Append("    pass P0").Append('\n');
+        sb.Append("    {").Append('\n');
         if (vs is not null)
-            sb.AppendLine($"        VertexShader = compile VS_SHADERMODEL {vs.Name}();");
+            sb.Append($"        VertexShader = compile VS_SHADERMODEL {vs.Name}();").Append('\n');
         if (ps is not null)
-            sb.AppendLine($"        PixelShader = compile PS_SHADERMODEL {ps.Name}();");
-        sb.AppendLine("    }");
-        sb.AppendLine("}");
+            sb.Append($"        PixelShader = compile PS_SHADERMODEL {ps.Name}();").Append('\n');
+        sb.Append("    }").Append('\n');
+        sb.Append("}").Append('\n');
 
         return Result<SlangFxConversion, ShaderError[]>.Ok(
             new SlangFxConversion(sb.ToString(), []));
-    }
-
-    /// <summary>
-    /// Replaces <c>//</c> and <c>/* */</c> comment contents with spaces (newlines preserved so
-    /// reported line numbers stay true), so a Slang keyword inside a comment never rejects.
-    /// </summary>
-    private static string StripComments(string text)
-    {
-        var sb = new StringBuilder(text.Length);
-        int i = 0;
-        while (i < text.Length)
-        {
-            char c = text[i];
-            if (c == '/' && i + 1 < text.Length && text[i + 1] == '/')
-            {
-                while (i < text.Length && text[i] != '\n') { sb.Append(' '); i++; }
-                continue;
-            }
-            if (c == '/' && i + 1 < text.Length && text[i + 1] == '*')
-            {
-                while (i < text.Length && !(text[i] == '*' && i + 1 < text.Length && text[i + 1] == '/'))
-                {
-                    sb.Append(text[i] == '\n' ? '\n' : ' ');
-                    i++;
-                }
-                if (i < text.Length) { sb.Append(' '); i++; }
-                if (i < text.Length) { sb.Append(' '); i++; }
-                continue;
-            }
-            sb.Append(c);
-            i++;
-        }
-        return sb.ToString();
     }
 }
