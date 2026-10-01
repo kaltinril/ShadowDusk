@@ -1,32 +1,34 @@
 # ShadowDusk.Slang
 
-**Status: scaffolding only (Phase 66 A2). No compile route yet — see below.**
+Genuine Slang input for MonoGame/KNI: `import`, generics, `interface` conformances,
+everything the real [Slang](https://github.com/shader-slang/slang) compiler accepts. This
+package bundles `slangc` and compiles `.slang` source with `slangc -target hlsl`, then hands
+that HLSL to ShadowDusk's existing, unchanged, faithful DXC pipeline (the same DXC every `.fx`
+uses).
 
-Bundles the real [Slang](https://github.com/shader-slang/slang) compiler (`slangc`, win-x64
-today) so a consumer who adds this package gets genuine Slang input — `import`, generics,
-`interface`s, everything real `slangc` accepts — compiled via `slangc -target hlsl` and
-handed to ShadowDusk's existing, unchanged, faithful DXC pipeline (the same DXC every `.fx`
-uses). This is a separate, **optional** package: a consumer who does not add
-`ShadowDusk.Slang` pays zero size or dependency cost (the `ShadowDusk.ShaderToy` precedent).
+```csharp
+using ShadowDusk.Core;
+using ShadowDusk.Slang;
 
-`ShadowDusk.Compiler`'s own `.slang` support — an HLSL-compatible subset frontend, no extra
-package required — is untouched and stays the default for consumers who don't need full
-Slang (`import`, generics, `interface`s).
+var result = await new SlangCompiler().CompileAsync(
+    slangSource, new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "Blur.slang" });
+byte[] mgfx = result.Value.Data;
+```
 
-## Current state
+Nothing to install: `slangc` rides inside this package for **win-x64, linux-x64, osx-x64 and
+osx-arm64** and resolves from your app's own output, whether you `dotnet run` or publish
+self-contained. Two host floors come from the upstream binaries themselves:
 
-This package currently ships **only the native vendoring plumbing**: `slangc.exe` +
-`slang-compiler.dll` (the true minimal file set — see
-`plan/PHASE-66-appendix/slang-native-minimal-set-probe/` in the ShadowDusk repository)
-packed under `runtimes/win-x64/native/`, plus `SlangToolPath`, a stub that resolves the
-path to the packaged native and asserts it exists.
+- **Linux** needs a GCC 11+ `libstdc++` (Ubuntu 22.04 or later).
+- **macOS** needs **macOS 26 or later**: the upstream macOS build declares that minimum.
 
-**There is no compile route yet.** The process-based `SlangCompiler` wrapper (mirroring
-`ShadowDusk.HLSL.Dxc.DxcShaderCompiler`'s shape) that actually invokes `slangc` and feeds
-its HLSL output to DXC is a later stage (Phase 66 A3) — see
-`plan/PHASE-66-full-slang-input-implementation.md`.
+On any other host, `SlangCompiler` returns `SD0620` naming the reason instead of crashing.
+
+This is a separate, **optional** package. A consumer who does not add it pays zero size or
+dependency cost. `ShadowDusk.Compiler`'s own `.slang` support (an HLSL-compatible subset, no
+extra package, every host including the browser) is untouched.
 
 ## License note
 
-The bundled `slangc` binaries are Apache-2.0 licensed (see `THIRD-PARTY-NOTICES.txt` in the
-package); ShadowDusk itself is MIT.
+The bundled `slangc` binaries are `Apache-2.0 WITH LLVM-exception` (see
+`THIRD-PARTY-NOTICES.txt` in the package); ShadowDusk itself is MIT.
