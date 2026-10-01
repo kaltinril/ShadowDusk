@@ -82,6 +82,32 @@ public sealed class WaveIntrinsicTargetRejectionTests
         error.Column.ShouldBe(CallColumn);
     }
 
+    // The opt-in Windows-only d3dcompiler_47 backend words the failure differently from vkd3d, so
+    // it needs its own measured proof. Skipped off Windows with a reason; on Windows a missing
+    // d3dcompiler fails the code assertion rather than passing.
+    [WindowsFact]
+    public async Task Compile_WaveIntrinsic_DirectX_D3DCompilerBackend_RejectedWithSD0624_AtTheCall()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
+
+        var result = await new EffectCompiler().CompileAsync(
+            Source("vs_4_0", "ps_4_0", "WaveActiveSum(i.UV.x)"), new CompilerOptions
+            {
+                Target = PlatformTarget.DirectX,
+                DxbcBackend = DxbcBackend.D3DCompiler,
+                SourceFileName = "Wave.fx",
+            }, cts.Token);
+
+        result.IsFailure.ShouldBeTrue();
+        var error = result.Error.ShouldHaveSingleItem();
+        error.Code.ShouldBe("SD0624", error.Message);
+        error.Message.ShouldContain("'WaveActiveSum'", Case.Sensitive);
+        error.Message.ShouldContain("undeclared identifier 'WaveActiveSum'", Case.Sensitive);
+        error.File.ShouldEndWith("Wave.fx", Case.Sensitive);
+        error.Line.ShouldBe(CallLine);
+        error.Column.ShouldBe(CallColumn);
+    }
+
     [Fact]
     public async Task Compile_WaveIntrinsic_Vulkan_RejectedWithSD0218_AtTheCall()
     {
