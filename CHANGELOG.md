@@ -105,6 +105,9 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   desktop OS. Host floors come from the upstream binaries: Linux needs a GCC 11+ `libstdc++`
   (Ubuntu 22.04+), macOS needs macOS 26+ (follow-up #237 to lift it); any other host gets
   `SD0620` naming the reason. A cross-host byte-identity manifest pins the route's output.
+  linux-arm64 and win-arm64 are deliberately not bundled even though upstream publishes them:
+  ShadowDusk's own pipeline has no DXC or vkd3d native for either RID, so slangc there could
+  only hand its HLSL to a compiler that cannot load. They follow when the core pipeline does.
 - **`ShadowDusk.Slang` is proven to work from a cold NuGet install (issue #225).**
   `tools/verify-slang-packaging.sh`, run by `pack-consume.yml` on all three OSes, packs the
   package, consumes it from a scratch project outside the repo, and compiles real Slang in both

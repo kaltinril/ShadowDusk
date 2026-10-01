@@ -46,7 +46,11 @@ public static class SlangToolPath
     /// </summary>
     internal static readonly Version MinimumMacOSVersion = new(26, 0);
 
-    /// <summary>The RIDs this package bundles slangc for.</summary>
+    /// <summary>
+    /// The RIDs this package bundles slangc for: the core pipeline's desktop RIDs. Upstream
+    /// also publishes linux-arm64 and win-arm64 builds, deliberately not bundled because the
+    /// core pipeline has no DXC/vkd3d native there (issue #227).
+    /// </summary>
     internal static readonly IReadOnlyList<string> SupportedRids = ["win-x64", "linux-x64", "osx-x64", "osx-arm64"];
 
     /// <summary>
