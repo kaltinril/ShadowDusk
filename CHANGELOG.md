@@ -121,6 +121,22 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **`SlangCompiler` mis-merged entry points that instantiate the same generic differently
+  (issue #228).** `-no-mangle` is collision-free inside one entry (measured: `Box_0`/`Box_1`/
+  `Box_2` for three `Box<T>`), but slangc numbers symbols per run in first-use order, so a
+  vertex and a pixel entry using `helper<float>` and `helper<float2>` in opposite order both
+  called theirs `helper_0`. The merged effect failed with a location-less redefinition error,
+  or silently bound the wrong overload when only the signatures differed. The merge now splits
+  by top-level declaration (it used to split at every `#line`, including mid-function, and could
+  drop a function's closing fragment as a "duplicate") and renames a later unit's colliding
+  structs, functions and statics (`helper_0_e1`), iterated to a fixed point. A colliding
+  cbuffer or resource, which is a reflected parameter name and cannot be renamed, is rejected as
+  `SD0625`.
+- **HLSL Effect (`.fx`) input to `SlangCompiler` is rejected as `SD0626` (issue #231).**
+  Measured against MonoGame v3.8.5's own effects (`Macros.fxh`, BasicEffect, SkinnedEffect, ...):
+  0 of 66 entries compile through real slangc, because of the `technique` block and then the
+  legacy `sampler` type; with both removed all 66 compile. Those effects belong on the `.fx`
+  route; previously the author got `SD0603`, "add `[shader]` attributes", a dead end.
 - **Slang: `[shader(...)]` or an SM6 intrinsic name inside a comment or string literal is no longer read as code (#222).** A doc comment quoting `[shader("fragment")]` could produce a phantom entry point and a false `SD0604`; the same blindness let a commented `WaveActiveSum` trigger `SD0624`. The entry scanner, the SM6 guard, and the `SD0600` construct scan now share one comment/string mask, and attribute stripping only removes real attributes.
 - **Vulkan: HLSL wave/quad intrinsics (`WaveActiveSum`, `QuadReadAcrossX`, ...) are rejected
   loudly with a new diagnostic, `SD0218`, instead of DXC's confusing `Vulkan 1.1 is required for

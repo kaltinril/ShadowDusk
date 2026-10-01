@@ -751,11 +751,16 @@ revised (owner direction, 2026-09-11, after A1-A8 shipped):**
 
 - ~~Linux/macOS RID parity for A1's finding~~ — resolved by A9 (measured on osx-arm64 and
   osx-x64; the Linux zip has no `slang-llvm` to remove, and CI runs the minimal set there).
-- **Whether `-no-mangle` stays collision-free outside the 21-shader corpus** — A4 measured zero
-  name collisions on every shader tried (including a real generic-over-`interface` function),
-  but only ever one instantiation of any given generic; a source that instantiates the same
-  generic twice with different type arguments (two call sites needing genuinely different
-  compiled bodies under the same surface name) is untested — A6's broader sweep is what would
-  surface it, and the fallback (a demangling shim mapping slangc's mangled names back
-  deterministically) documented in A3/A4's original scoping remains available if it does.
+- ~~Whether `-no-mangle` stays collision-free outside the 21-shader corpus~~ - resolved by
+  issue #228 (measured, osx-arm64 slangc 2026.14.1). Within one entry point it does: repeated
+  instantiations of one generic struct or function get distinct `_N` names, and author names
+  shaped like generated ones (`Box_0`, `helper_0`, `Gain_0`) do not clash. Across entry points
+  it did not: slangc numbers per run in first-use order, so one name could mean two bodies in
+  the vertex and pixel units. The fix is not a demangling shim; `SlangHlslMerger` renames the
+  later unit's colliding structs/functions/statics and rejects an unrenamable cbuffer/resource
+  collision as `SD0625`. Tests: `SlangGenericsCollisionTests`, `SlangHlslMergerCollisionTests`.
+- ~~MonoGame's official `Macros.fxh` effects through the real-slangc route~~ - resolved by
+  issue #231 (MonoGame v3.8.5, commit 4f9e3727). 0 of 66 entries compile: the `technique` block,
+  then the legacy `sampler` type. They are `.fx` files for the `.fx` route; the Slang route
+  rejects them as `SD0626`. Test: `SlangMonoGameEffectsTests`.
 - **RESOLVED by [issue #229](https://github.com/kaltinril/ShadowDusk/issues/229): Vulkan wave/quad intrinsics are rejected loudly (`SD0218`), not supported.** A5 measured that DXC rejects them on Vulkan (`Vulkan 1.1 is required for Wave Operation`). A `vulkan1.1` target env makes them compile, but the CI Vulkan lane measured the resulting SPIR-V 1.3 / subgroup module out of spec on MonoGame's Vulkan 1.0 instance (Khronos validation layer, 10 errors), so both the `.fx` route and `SlangCompiler` now reject them on Vulkan with `SD0218` naming the intrinsic (see `docs/validation-matrix.md` section 7).
