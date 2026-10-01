@@ -203,6 +203,21 @@ public sealed class SlangCompiler
         cancellationToken.ThrowIfCancellationRequested();
         string sourceName = options.SourceFileName ?? "<memory>.slang";
 
+        // Issue #231: an HLSL Effect (.fx) file is not Slang. Checked before the entry scan,
+        // whose SD0603 ("add [shader] attributes") would send the author down a dead end.
+        (string Construct, int Line)? effectHit = SlangEffectFrameworkGuard.FindConstruct(slangSource);
+        if (effectHit is not null)
+        {
+            return Fail(new ShaderError(
+                File: sourceName, Line: effectHit.Value.Line, Column: 1, Code: "SD0626",
+                Message: "'" + effectHit.Value.Construct + "' is an HLSL Effect (.fx) construct, not Slang: real slangc has no " +
+                         "technique/pass concept and cannot parse it (nor the legacy sampler declarations those effects use). " +
+                         "ShadowDusk.Slang compiles Slang source whose entry points are marked [shader(''vertex'')] / " +
+                         "[shader(''fragment'')]; it synthesizes the technique itself. Compile .fx files, including MonoGame's own " +
+                         "Macros.fxh-based effects (BasicEffect, SpriteEffect, SkinnedEffect, ...), through the .fx route: " +
+                         "EffectCompiler, the CLI, or the MGCB plugin."));
+        }
+
         // Host-independent rejections run FIRST (entry-stage policy, then the SM6 intrinsic
         // guard): they depend only on the source and the target, so a host without a usable
         // slangc must report them exactly like one with it, and their tests run on every OS.
@@ -337,7 +352,22 @@ public sealed class SlangCompiler
             perEntryHlsl.Add(stdout);
         }
 
-        string mergedHlsl = SlangHlslMerger.Merge(perEntryHlsl);
+        string mergedHlsl = SlangHlslMerger.TryMerge(
+            perEntryHlsl, entries.Select(e => e.Name).ToArray(), out var mergeConflicts);
+        if (mergeConflicts.Count > 0)
+        {
+            // Entries compiled by separate slangc processes number their generated symbols
+            // independently; the merger renames colliding structs/functions, but a colliding
+            // cbuffer/resource name cannot be renamed (it IS a reflected parameter name).
+            // Reject by name instead of letting DXC report a redefinition with no location.
+            var c = mergeConflicts[0];
+            return Fail(new ShaderError(
+                File: sourceName, Line: 0, Column: 0, Code: "SD0625",
+                Message: "Entry points compile to different declarations of the same global " +
+                         "name '" + c.Name + "' and slangc output for each entry is merged into one effect, " +
+                         "so the name cannot be kept unique. Rename the shader parameter or resource, " +
+                         "or give each entry point its own source file."));
+        }
         return Result<string, ShaderError[]>.Ok(AssembleFx(
             mergedHlsl, entries, sourceName,
             stripSamplerRegisters: forConverter && !DeclaresExplicitBindings(slangSource)));
@@ -555,6 +585,9 @@ public sealed class SlangCompiler
         // consumer-visible surface this flag exists to fix. No corpus shader failed to
         // compile with the flag added, so the simpler fix (this flag) was taken over
         // building a separate demangling/renaming shim.
+        // Issue #228: the '_N' numbering of structs/functions is per slangc run, so two entry
+        // points can reuse one name for different generic instantiations; SlangHlslMerger
+        // renames those apart when it merges the per-entry units.
         psi.ArgumentList.Add("-no-mangle");
         psi.ArgumentList.Add("-entry");
         psi.ArgumentList.Add(entryName);
