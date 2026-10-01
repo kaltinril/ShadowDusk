@@ -76,6 +76,21 @@ public sealed class DocConsistencyTests
         return null;
     }
 
+    /// <summary>Index rows allowed to carry no status glyph at all. A new glyph-less row fails.</summary>
+    private static readonly HashSet<string> GlyphlessRows = ["31"];
+
+    /// <summary>
+    /// The symbol/emoji that opens a status, or null when the status opens with a word.
+    /// Anything returned that is not in <see cref="Glyphs"/> is an unrecognized glyph.
+    /// </summary>
+    internal static string? LeadingSymbol(string status)
+    {
+        string t = status.TrimStart(' ', '*', '_', '>', ':');
+        if (t.Length == 0) return null;
+        Rune r = Rune.GetRuneAt(t, 0);
+        return Rune.GetUnicodeCategory(r) == System.Globalization.UnicodeCategory.OtherSymbol ? r.ToString() : null;
+    }
+
     internal static string? FirstGlyph(string text)
     {
         string? best = null;
@@ -156,11 +171,19 @@ public sealed class DocConsistencyTests
 
             bool inDone = r.Href.StartsWith("DONE/", StringComparison.Ordinal);
             string? rowGlyph = FirstGlyph(r.Status);
+            string? rowSymbol = LeadingSymbol(r.Status);
+            if (rowSymbol is not null && !Glyphs.Contains(rowSymbol))
+                problems.Add($"{who}: unrecognized status glyph {rowSymbol} in plan.md (add it to Glyphs and GlyphClass if intended)");
+            else if (rowSymbol is null && !GlyphlessRows.Contains(r.Phase))
+                problems.Add($"{who}: status '{r.Status}' has no glyph and the row is not in GlyphlessRows");
             if (inDone && (SaysOpen(r.Status) || (rowGlyph is not null && !DoneGlyphs.Contains(rowGlyph))))
                 problems.Add($"{who}: links into DONE/ but status is '{r.Status}'");
 
             string? docStatus = ParseDocStatus(readDoc(r.Href) ?? "");
             if (docStatus is null) { problems.Add($"{who}: '{r.Href}' has no **Status:** header"); continue; }
+            string? docSymbol = LeadingSymbol(docStatus);
+            if (docSymbol is not null && !Glyphs.Contains(docSymbol))
+                problems.Add($"{who}: unrecognized status glyph {docSymbol} in '{r.Href}'");
             string? docGlyph = FirstGlyph(docStatus);
             if (rowGlyph is not null && docGlyph is not null && GlyphClass(rowGlyph) != GlyphClass(docGlyph))
                 problems.Add($"{who}: row glyph {rowGlyph} but '{r.Href}' Status glyph is {docGlyph}");
@@ -176,6 +199,9 @@ public sealed class DocConsistencyTests
             string? status = ParseDocStatus(content);
             if (status is not null && SaysOpen(status))
                 problems.Add($"DONE/{name}: Status header says '{status}'");
+            string? symbol = status is null ? null : LeadingSymbol(status);
+            if (symbol is not null && !Glyphs.Contains(symbol))
+                problems.Add($"DONE/{name}: unrecognized status glyph {symbol}");
         }
         return problems;
     }
@@ -223,6 +249,38 @@ public sealed class DocConsistencyTests
                               Environment.NewLine + string.Join(Environment.NewLine, missing));
     }
 
+    [Fact]
+    public void ValidationMatrix_EverySection6Driver_HasARow()
+    {
+        string root = FindRepoRoot();
+        string md = File.ReadAllText(Path.Combine(root, "docs", "validation-matrix.md"));
+        var dirs = Directory.GetDirectories(Path.Combine(root, "validation"))
+            .Where(d => Directory.EnumerateFiles(d, "*.csproj").Any())
+            .Select(Path.GetFileName).Select(n => n!).ToList();
+        dirs.Count.ShouldBeGreaterThan(30, "validation/ enumeration looks wrong");
+
+        List<string> missing = DriversMissingFromSection6(md, dirs);
+        missing.ShouldBeEmpty("validation/ drivers with no mention in docs/validation-matrix.md section 6 " +
+                              "(add a row with the exact run command): " + string.Join(", ", missing));
+    }
+
+    /// <summary>Shared render libraries, not runnable drivers; they have no row of their own.</summary>
+    private static readonly HashSet<string> NonDriverProjects = ["Shared", "SharedDx"];
+
+    internal static List<string> DriversMissingFromSection6(string matrixMd, IEnumerable<string> driverDirs)
+    {
+        int start = matrixMd.IndexOf("\n## 6.", StringComparison.Ordinal);
+        start.ShouldBeGreaterThanOrEqualTo(0, "section 6 heading not found");
+        int end = matrixMd.IndexOf("\n## 7.", start, StringComparison.Ordinal);
+        end.ShouldBeGreaterThan(start, "section 7 heading not found");
+        string section = matrixMd[start..end];
+
+        return driverDirs
+            .Where(d => !NonDriverProjects.Contains(d))
+            .Where(d => !Regex.IsMatch(section, @"validation[/\\]" + Regex.Escape(d) + @"(?![A-Za-z0-9])"))
+            .ToList();
+    }
+
     // ---- negative tests: prove each assertion can fail ---------------------------------
 
     private const string Header = "| Phase | Status | File | Summary |\n|---|---|---|---|\n";
@@ -233,6 +291,26 @@ public sealed class DocConsistencyTests
     [Fact]
     public void IndexProblems_GlyphMismatch_IsReported() =>
         Index("| 1 | ✅ Done | [a](a.md) | s |", "**Status:** 🔵 Open").Any(p => p.Contains("glyph", StringComparison.Ordinal)).ShouldBeTrue();
+
+    [Fact]
+    public void IndexProblems_UnrecognizedGlyphInRow_NamesGlyph() =>
+        Index("| 1 | ⏸️ Paused | [a](a.md) | s |", "**Status:** 🔵 Open").Any(p => p.Contains("unrecognized status glyph ⏸", StringComparison.Ordinal) && p.Contains("plan.md", StringComparison.Ordinal)).ShouldBeTrue();
+
+    [Fact]
+    public void IndexProblems_UnrecognizedGlyphInDoc_NamesGlyphAndFile() =>
+        Index("| 1 | 🔵 Open | [a](a.md) | s |", "**Status:** ⏸️ Paused").Any(p => p.Contains("unrecognized status glyph ⏸", StringComparison.Ordinal) && p.Contains("'a.md'", StringComparison.Ordinal)).ShouldBeTrue();
+
+    [Fact]
+    public void IndexProblems_NewGlyphlessRow_IsReported() =>
+        Index("| 77 | Future | [a](a.md) | s |", "**Status:** 🔵 Open").Any(p => p.Contains("no glyph", StringComparison.Ordinal)).ShouldBeTrue();
+
+    [Fact]
+    public void IndexProblems_ListedGlyphlessRow_IsClean() =>
+        Index("| 31 | Future | [a](a.md) | s |", "**Status:** 📋 Planned").ShouldBeEmpty();
+
+    [Fact]
+    public void DoneDocProblems_UnrecognizedGlyph_IsReported() =>
+        DoneDocProblems([("x.md", "**Status:** ⏸️ Paused\n")]).Any(p => p.Contains("unrecognized status glyph", StringComparison.Ordinal)).ShouldBeTrue();
 
     [Fact]
     public void IndexProblems_SameClassDifferentGlyph_IsClean() =>
@@ -276,6 +354,14 @@ public sealed class DocConsistencyTests
     [InlineData("> **Status: COMPLETE** body")]
     public void DoneDocProblems_FinishedStatus_IsClean(string header) =>
         DoneDocProblems([("x.md", header + "\n")]).ShouldBeEmpty();
+
+    [Fact]
+    public void DriversMissingFromSection6_UnlistedDriver_IsReported()
+    {
+        const string md = "x\n## 6. T\n| `validation/Alpha` + `validation/BetaTwo` | run |\n## 7. G\n| `validation/Gamma` |";
+        // Gamma is outside section 6; Beta is only a prefix of BetaTwo; Shared is exempt.
+        DriversMissingFromSection6(md, ["Alpha", "Beta", "BetaTwo", "Gamma", "Shared"]).ShouldBe(["Beta", "Gamma"]);
+    }
 
     [Fact]
     public void MissingNoteLines_StaleSvg_ReportsTheLine()
