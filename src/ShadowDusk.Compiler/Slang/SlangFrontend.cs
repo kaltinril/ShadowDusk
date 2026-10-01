@@ -63,7 +63,7 @@ public static class SlangFrontend
 
     // The [shader("...")] attribute, to be stripped from the body after entry discovery.
     private static readonly Regex ShaderAttribute = new(
-        """\[\s*shader\s*\(\s*"[a-z]+"\s*\)\s*\]\s*""", RegexOptions.Compiled);
+        """\[\s*shader\s*\(\s*"[^"]*"\s*\)\s*\]\s*""", RegexOptions.Compiled);
 
     // Slang-only constructs with no HLSL meaning. Declaration keywords are line-anchored so an
     // identifier that merely CONTAINS the word (a variable named 'extension') cannot false-
@@ -120,7 +120,7 @@ public static class SlangFrontend
         //    gets "this is the Slang feature that doesn't convert" instead of a cascade of
         //    downstream HLSL syntax errors. (Anything subtler falls through to DXC, whose own
         //    verbatim diagnostics remain the authority — this scan is a courtesy, not a gate.)
-        string commentStripped = StripComments(slangSource);
+        string commentStripped = SlangSourceMask.Mask(slangSource);
         foreach ((Regex pattern, string construct) in SlangOnlyConstructs)
         {
             Match match = pattern.Match(commentStripped);
@@ -142,7 +142,10 @@ public static class SlangFrontend
 
         // 3. Strip the [shader(...)] attributes: fxc-lineage compilers reject them outside
         //    library targets, and the technique block below carries the same information.
-        string body = ShaderAttribute.Replace(slangSource, "");
+        //    Matched on the masked text so only real attributes go, never comment/string text.
+        string body = slangSource;
+        foreach (Match attr in ShaderAttribute.Matches(commentStripped).Reverse())
+            body = body.Remove(attr.Index, attr.Length);
 
         // 4. Assemble the .fx.
         SlangEntryPoint? vs = entries.Value.FirstOrDefault(e => e.Stage == SlangStage.Vertex);
@@ -181,38 +184,5 @@ public static class SlangFrontend
 
         return Result<SlangFxConversion, ShaderError[]>.Ok(
             new SlangFxConversion(sb.ToString(), []));
-    }
-
-    /// <summary>
-    /// Replaces <c>//</c> and <c>/* */</c> comment contents with spaces (newlines preserved so
-    /// reported line numbers stay true), so a Slang keyword inside a comment never rejects.
-    /// </summary>
-    private static string StripComments(string text)
-    {
-        var sb = new StringBuilder(text.Length);
-        int i = 0;
-        while (i < text.Length)
-        {
-            char c = text[i];
-            if (c == '/' && i + 1 < text.Length && text[i + 1] == '/')
-            {
-                while (i < text.Length && text[i] != '\n') { sb.Append(' '); i++; }
-                continue;
-            }
-            if (c == '/' && i + 1 < text.Length && text[i + 1] == '*')
-            {
-                while (i < text.Length && !(text[i] == '*' && i + 1 < text.Length && text[i + 1] == '/'))
-                {
-                    sb.Append(text[i] == '\n' ? '\n' : ' ');
-                    i++;
-                }
-                if (i < text.Length) { sb.Append(' '); i++; }
-                if (i < text.Length) { sb.Append(' '); i++; }
-                continue;
-            }
-            sb.Append(c);
-            i++;
-        }
-        return sb.ToString();
     }
 }

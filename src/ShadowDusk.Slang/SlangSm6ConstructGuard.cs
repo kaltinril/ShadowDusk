@@ -92,7 +92,7 @@ internal static partial class SlangSm6ConstructGuard
     /// </summary>
     public static (string Construct, int Line)? FindConstruct(string slangSource)
     {
-        Match m = Pattern().Match(slangSource);
+        Match m = Pattern().Match(SlangSourceMask.Mask(slangSource));
         if (!m.Success)
             return null;
 
