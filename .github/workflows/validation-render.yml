@@ -40,6 +40,12 @@
 #                              golden was built from, then render ShadowDusk's build and
 #                              mgfxc's build of that same .fx and diff. The only gate that
 #                              covers the converter -> pipeline route end to end.
+#   * RaylibRoute            — Phase 59 the raylib converter: each shader's glsl330 emission
+#                              rendered in REAL Raylib-cs (raylib 6.0, GLFW) and pixel-diffed
+#                              against the same .fx built for OpenGL in real MonoGame DesktopGL.
+#                              The evidence model is rendered-image fidelity (raylib has no
+#                              reference compiler), with three positive controls that must
+#                              diverge. The only gate that drives a non-MonoGame GL runtime.
 #   * Baseline+Candidate+compare.py — the 10-shader GL corpus, ShadowDusk vs the
 #                              committed mgfxc OpenGL goldens, real MonoGame DesktopGL. The
 #                              GL twin of the DX job's BaselineDx pair. Its distinct value is a
@@ -78,6 +84,22 @@
 #                              Vulkan here is load-bearing only for SDL's window-creation
 #                              probe, never for a pixel.
 #
+# Vulkan render gates wired here (vulkan-render-gates job, ubuntu-latest, 2026-10-01): real
+# MonoGame DesktopVK (MonoGame.Runtime.Linux.Vulkan) on Mesa lavapipe (CPU Vulkan) under xvfb.
+# Every run goes through validation/run-with-vk-validation.sh, which forces the Khronos
+# validation layer on and fails on any layer ERROR even when the pixels match: a CPU driver
+# can accept what a GPU driver rejects, and the layer judges against the spec instead.
+# Picked over SwiftShader on windows-latest because lavapipe hosted DesktopVK on the first
+# measured run and needs only apt (an elevated Windows runner ignores VK_ICD_FILENAMES, so a
+# non-SDK ICD there needs registry writes).
+#   * VsDrivenVulkan         — VS-driven fixture vs the mgfxc 3.8.5 Vulkan golden (maxd 0),
+#                              then `-- apos`, the Apos.Shapes gallery (maxd 0).
+#   * CandidateVulkan        — the 10-shader PS corpus, own-output only (mgfxc's Vulkan output
+#                              is unloadable for it, upstream SlotOffset bug).
+#   * Two POSITIVE CONTROLS  — a wrong shader must fail the pixel diff, and SPIR-V stamped 1.3
+#                              on MonoGame's Vulkan 1.0 instance must trip the layer (lavapipe
+#                              renders it at maxd 0, which is exactly why the layer is here).
+#
 # NOT here (issue #204 follow-ups, still manual-only via run-windows-render-gates.ps1):
 #   * VsDrivenDx (Apos.Shapes gallery, real NuGet package) + ShaderToyRouteDx (converter
 #     route) — heavier DX11 gates, left out of the day-one CI job on purpose; nothing
@@ -88,8 +110,6 @@
 #     not the smallest next step.
 #   * FNA (validation/FnaValidation) — needs its own restore-fna.ps1 (heavy, clones the
 #     FNA source tree) and fxc /T fx_2_0, not evaluated for WARP here.
-#   * Vulkan — WARP is a D3D-only software rasterizer; Vulkan needs Mesa lavapipe
-#     instead (see SkiaGameRendering's own GL/Vulkan CI setup for that pattern).
 #   * VsDriven (the Apos.Shapes GL gate) — still manual; the 10-shader GL corpus
 #     (Baseline+Candidate+compare.py) now RUNS here, which is also the second
 #     rasterizer the precision-shaped shaders (Dots, Scanlines) are judged against.
@@ -107,6 +127,7 @@ on:
       - 'src/**'
       - 'validation/**'
       - 'tests/fixtures/**'
+      - 'tools/restore.sh'
       - '.github/workflows/validation-render.yml'
   pull_request:
     branches: [ main ]
@@ -191,6 +212,7 @@ jobs:
           dotnet build validation/SamplerRegisterOrderGl/SamplerRegisterOrderGl.csproj -c Release
           dotnet build validation/DeferredSpriteMrtGl/DeferredSpriteMrtGl.csproj -c Release
           dotnet build validation/ShaderToyRouteGl/ShaderToyRouteGl.csproj -c Release
+          dotnet build validation/RaylibRoute/RaylibRoute.csproj -c Release
 
       # Each driver self-asserts (exit 0 iff every row loaded + matched its reference
       # within tolerance). Run all of them even if an earlier one fails, then fail the job
@@ -202,13 +224,13 @@ jobs:
           # No GL context => hard FAIL, never a pass-by-skip. StateFidelity/CbufferModel/
           # ReservedWordGl throw on a missing device (MonoGame NoSuitableGraphicsDevice ->
           # natural red); TextureBreadthValidation, SamplerPairsGl, SamplerRegisterOrderGl,
-          # DeferredSpriteMrtGl and ShaderToyRouteGl catch+skip, so this flag turns their skip
-          # into a failure too (all five read SHADOWDUSK_REQUIRE_GL).
+          # DeferredSpriteMrtGl, ShaderToyRouteGl and RaylibRoute catch+skip, so this flag turns
+          # their skip into a failure too (all six read SHADOWDUSK_REQUIRE_GL).
           SHADOWDUSK_REQUIRE_GL: "1"
         run: |
           set +e
           rc=0
-          for proj in StateFidelity CbufferModel TextureBreadthValidation ReservedWordGl SamplerPairsGl SamplerRegisterOrderGl DeferredSpriteMrtGl ShaderToyRouteGl; do
+          for proj in StateFidelity CbufferModel TextureBreadthValidation ReservedWordGl SamplerPairsGl SamplerRegisterOrderGl DeferredSpriteMrtGl ShaderToyRouteGl RaylibRoute; do
             echo "::group::$proj"
             xvfb-run -a dotnet run --project "validation/$proj" -c Release --no-build
             this=$?
@@ -219,6 +241,20 @@ jobs:
             fi
           done
           exit $rc
+
+      # ShadowDusk.Slang's real-slangc route on Linux (issue #227): validation/SlangFullCorpus
+      # gate 1 (21 shaders compile through the real SlangCompiler on OpenGL/DirectX/DirectX12/
+      # Vulkan, each parsed as MGFX) and gate 2 (the 8 uniform-free shaders render
+      # pixel-identical through ShadowDusk's .fx-wrapped route vs slangc's raw HLSL, on
+      # llvmpipe). Gate 3 (a real WindowsDX Effect load) is Windows-only and the driver prints
+      # it as NOT RUN, never as a pass. slangc comes from tools/restore.sh above; a missing or
+      # unrunnable slangc is a hard FAIL (exit 1), as is a missing GL context (GlHost throws).
+      - name: Slang full corpus (real slangc on linux-x64, gates 1-2)
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+        run: |
+          dotnet build validation/SlangFullCorpus/SlangFullCorpus.csproj -c Release -f net8.0
+          xvfb-run -a dotnet run --project validation/SlangFullCorpus -c Release -f net8.0 --no-build
 
       # The GL corpus is the two-process orchestration the in-process gates above avoid:
       # Baseline renders the committed mgfxc goldens, Candidate renders ShadowDusk's own
@@ -258,6 +294,7 @@ jobs:
             validation/output-samplerregisterorder/**
             validation/output-mrt/**
             validation/output-shadertoy/**
+            validation/output-raylib/**
             validation/output/baseline/**
             validation/output/candidate/**
             validation/output/diff/**
@@ -369,5 +406,133 @@ jobs:
             validation/output/baseline-dx12/**
             validation/output/candidate-dx12/**
             validation/output/diff-dx12/**
+          if-no-files-found: ignore
+          retention-days: 7
+
+  vulkan-render-gates:
+    name: Vulkan render gates (ubuntu / Mesa lavapipe + Khronos validation layer)
+    runs-on: ubuntu-latest
+    # Same PR gating as the GL and DX jobs.
+    if: |
+      github.event_name != 'pull_request' ||
+      contains(github.event.pull_request.labels.*.name, 'run-validation-render')
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET 8 + .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Cache NuGet
+        uses: actions/cache@v5
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/packages.lock.json', '**/Directory.Packages.props') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      # The Vulkan path needs DXC + SPIRV-Cross, both NuGet-restored; run restore.sh for
+      # parity with the GL job.
+      - name: Restore native tools
+        run: |
+          chmod +x tools/restore.sh
+          ./tools/restore.sh
+
+      # MonoGame DesktopVK on Linux is MonoGame.Runtime.Linux.Vulkan's libmgruntime.so, which
+      # embeds SDL2 and dlopen's libvulkan.so.1 and the X11 client libs. xvfb provides the X
+      # display, mesa-vulkan-drivers the lavapipe ICD (with xlib/xcb WSI), and
+      # vulkan-validationlayers the Khronos validation layer every gate runs under.
+      - name: Install xvfb + Mesa lavapipe + Vulkan loader + validation layer
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb mesa-vulkan-drivers libvulkan1 vulkan-tools \
+            vulkan-validationlayers \
+            libx11-6 libx11-xcb1 libxext6 libxfixes3 libxi6 libxrandr2 libxinerama1 \
+            libxcursor1 libxss1 libxkbcommon0
+          python -m pip install --quiet pillow numpy
+
+      # Pin Mesa's lavapipe (CPU Vulkan) as the only ICD, so a runner image that ever grows
+      # another driver cannot change what judged the pixels. The manifest's file name varies
+      # across Mesa packagings, so it is located rather than hard-coded; none found = red.
+      - name: Pin lavapipe as the only Vulkan ICD
+        run: |
+          ls -l /usr/share/vulkan/icd.d/ /usr/share/vulkan/explicit_layer.d/
+          icd=$(ls /usr/share/vulkan/icd.d/lvp_icd*.json | head -n1)
+          [ -n "$icd" ] || { echo "::error::Mesa lavapipe ICD manifest not found"; exit 1; }
+          echo "VK_ICD_FILENAMES=$icd" >> "$GITHUB_ENV"
+          echo "VK_DRIVER_FILES=$icd" >> "$GITHUB_ENV"
+
+      - name: Verify lavapipe (diagnostic)
+        run: xvfb-run -a vulkaninfo --summary
+
+      - name: Build the Vulkan render gates
+        run: |
+          dotnet build validation/VsDrivenVulkan/VsDrivenVulkan.csproj -c Release
+          dotnet build validation/CandidateVulkan/CandidateVulkan.csproj -c Release
+          dotnet build validation/BaselineVulkan/BaselineVulkan.csproj -c Release
+
+      # Every gate runs under validation/run-with-vk-validation.sh: the Khronos validation
+      # layer is forced on, and any layer ERROR fails the step even when the pixels match.
+      # A CPU driver can accept what a GPU driver rejects; the layer judges against the spec.
+      - name: Vulkan VS-driven gate (ShadowDusk vs mgfxc 3.8.5 golden, real DesktopVK)
+        run: validation/run-with-vk-validation.sh vsdriven -- xvfb-run -a dotnet run --project validation/VsDrivenVulkan -c Release --no-build
+
+      - name: Vulkan Apos.Shapes gallery (issue #145 reproducer, real DesktopVK)
+        if: ${{ !cancelled() }}
+        run: validation/run-with-vk-validation.sh apos -- xvfb-run -a dotnet run --project validation/VsDrivenVulkan -c Release --no-build -- apos
+
+      # Issue #229, EXPECT-DIAGNOSTIC: wave/quad intrinsics are not supported on Vulkan
+      # (MonoGame's DesktopVK creates a Vulkan 1.0 instance with no subgroup support; the
+      # SPIR-V 1.3 module they need rendered on lavapipe but failed this lane's validation
+      # layer). The wave fixture must be rejected at compile time with SD0218 naming the
+      # intrinsic. No device is created, so no xvfb or layer wrapper.
+      - name: Vulkan wave/quad intrinsics rejected with SD0218 (issue #229)
+        if: ${{ !cancelled() }}
+        run: dotnet run --project validation/VsDrivenVulkan -c Release --no-build -- wave
+
+      # Own-output proof: mgfxc's Vulkan output for this corpus is unloadable (upstream
+      # SlotOffset bug, see compare_vulkan.py), so BaselineVulkan is best-effort and
+      # compare_vulkan.py fails only on a CANDIDATE problem. The validation layer is what
+      # gives this gate teeth beyond "it did not crash".
+      - name: Vulkan PS corpus (ShadowDusk own output, real DesktopVK)
+        if: ${{ !cancelled() }}
+        run: |
+          validation/run-with-vk-validation.sh candidate -- xvfb-run -a dotnet run --project validation/CandidateVulkan -c Release --no-build
+          xvfb-run -a dotnet run --project validation/BaselineVulkan -c Release --no-build || echo "BaselineVulkan best-effort (upstream mgfxc bug), not scored"
+          python validation/compare_vulkan.py
+
+      # POSITIVE CONTROLS: each plants a known defect in the candidate and the step passes
+      # only if the gate turned RED for that reason. Without these, a lane that silently
+      # stopped seeing pixels or stopped loading the layer would read as green.
+      - name: Positive control, wrong shader must fail the pixel diff
+        if: ${{ !cancelled() }}
+        env:
+          SHADOWDUSK_VK_CONTROL: wrong-shader
+        run: validation/run-with-vk-validation.sh control-wrong-shader --expect-red 'CONTROL-DETECTED' -- xvfb-run -a dotnet run --project validation/VsDrivenVulkan -c Release --no-build
+
+      - name: Positive control, out-of-spec SPIR-V must trip the validation layer
+        if: ${{ !cancelled() }}
+        env:
+          SHADOWDUSK_VK_CONTROL: spirv-1.3-header
+        run: validation/run-with-vk-validation.sh control-spirv-version --expect-red '(VkShaderModuleCreateInfo|vkCreateShaderModule|spirv-val)' -- xvfb-run -a dotnet run --project validation/VsDrivenVulkan -c Release --no-build
+
+      - name: Upload render outputs + validation-layer logs (debug)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: validation-render-output-vulkan
+          path: |
+            validation/output/vsdriven-vulkan/**
+            validation/output/vsdriven-vulkan-apos/**
+            validation/output/vsdriven-vulkan-wave/**
+            validation/output/candidate-vulkan/**
+            validation/output/baseline-vulkan/**
+            validation/output/diff-vulkan/**
+            validation/output/vk-validation/**
           if-no-files-found: ignore
           retention-days: 7

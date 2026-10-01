@@ -16,9 +16,10 @@ acceptance rule (closing the `SD0600` `interface`/generics gap), the full-corpus
 (found and fixed a real platform-macro-forwarding gap), the `validation/SlangFullCorpus`
 render gate (21 shaders x 4 targets: 84/84 compiles, maxd 0 pixel equivalence on the
 procedural subset, 21/21 real DirectX_11 `Effect` loads/renders), and the docs/support-surface
-updates. **Ready for human review.** Left open, not blocking review: §5's three open
-questions, and a real-`Effect`-load gate for DirectX_12/Vulkan (A7 stayed at the compile+
-structural rung for those two — see A7 below).
+updates. **A9 (issues #225/#226/#227, 2026-10-01): slangc for linux-x64/osx-x64/osx-arm64,
+a cold NuGet consumer proven, and the release gate.** Left open: §5's remaining open questions,
+a real-`Effect`-load gate for DirectX_12/Vulkan (A7 stayed at the compile+structural rung for
+those two), and lifting upstream's macOS 26 floor (issue #237).
 
 **Depends on:** [Phase 61](DONE/PHASE-61-slang-support.md) (the shipped HLSL-compatible-subset
 frontend and its groundwork §6/§7/OQ2/OQ3) and [Phase 65](PHASE-65-full-slang-input-spike.md) (the
@@ -148,7 +149,7 @@ turn into an open-ended slog.
   publishes all of them today (Phase 61 §2.2), so this is packaging work, not a coverage
   gap. Reference point for scope, not a promise: the last comparable native vendoring effort
   ([Phase 37](DONE/PHASE-37-cross-platform-native-availability.md)) ran 2026-06-07 to
-  2026-06-11.
+  2026-06-11. **Both left-open items are closed by A9.**
 - **A3 — The compile route. DONE, 2026-09-11.** `ShadowDusk.Slang.SlangCompiler` (process-based,
   `Result<CompiledShader, ShaderError[]>`, verbatim slangc diagnostics on failure — same
   shape/spirit as `DxcShaderCompiler`, though it deliberately does NOT implement
@@ -692,6 +693,29 @@ turn into an open-ended slog.
   `guides/parameters-and-caveats.md` never mentioned Slang before this change either, so neither
   needed the two-tier story — genuinely out of scope, not skipped staleness.
 
+- **A9 — Linux/macOS natives, cold-consumer proof, release gate (issues #227/#225/#226). DONE,
+  2026-10-01.** `tools/restore.*` pin and restore the official v2026.14.1 zips for linux-x64
+  (the `glibc-2.27` variant: the default one needs `GLIBC_2.34`), osx-x64 and osx-arm64, zip and
+  extracted-file hashes both pinned; the csproj packs all four RIDs. **A1/A2's minimal set holds
+  on the Unix RIDs, measured on osx-arm64 and osx-x64 (Rosetta):** slangc + the versioned
+  slang-compiler library alone compile all 24 corpus entry points with output byte-identical to
+  the unmodified release, and all 24 fail without the library; the Linux zip ships no
+  `slang-llvm` at all. The CPU/LLVM positive control does not discriminate on macOS (with an
+  empty `PATH`, even the full release fails `E52002`, so `-emit-cpu-via-llvm` there resolves the
+  system clang, not `libslang-llvm`). Upstream floors found: every macOS build declares
+  `minos 26.0` (now `SD0620` on older macOS; self-build follow-up #237); Linux needs
+  `GLIBCXX_3.4.29`. `SlangToolPath` gained the `runtimes/<rid>/native/` probe and per-RID file
+  names; `SlangNativeCache` checks the library up front and sets the execute bit. The pack +
+  cold-consume script (`tools/verify-slang-packaging.sh`, run by `pack-consume.yml`) found a
+  real packaging bug on its first run: an extension-less `PackagePath` packed
+  `native/slangc/slangc`, which the substring nupkg gates passed; native `PackagePath`s now
+  name the folder and every nupkg gate matches exact names. `release.yml` now packs and gates
+  `ShadowDusk.Slang`. `SlangCompiler`'s source-only rejections now run before the host check.
+  New tests: `SlangToolPathTests`, `SlangCompilerHostIndependentTests`,
+  `SlangNativeDeploymentTests`, `SlangCrossHostByteIdentityTests` (manifest generated on
+  osx-arm64). `validation/SlangFullCorpus` multi-targets; gates 1-2 measured on osx-arm64
+  (84/84, 8/8 maxd 0) and run in the ubuntu GL CI lane.
+
 **Folded in alongside, per the owner's original "(a)+(b) too, not instead" framing (§1) — since
 revised (owner direction, 2026-09-11, after A1-A8 shipped):**
 
@@ -725,9 +749,8 @@ revised (owner direction, 2026-09-11, after A1-A8 shipped):**
 
 ## 5. Open questions
 
-- **Linux/macOS RID parity** for A1's finding — both Phase 65's original measurement and this
-  probe only checked the cached windows-x64 oracle; unverified whether the Linux/macOS releases
-  also load and run `-target hlsl` cleanly with their platform's `slang-llvm.*` removed.
+- ~~Linux/macOS RID parity for A1's finding~~ — resolved by A9 (measured on osx-arm64 and
+  osx-x64; the Linux zip has no `slang-llvm` to remove, and CI runs the minimal set there).
 - **Whether `-no-mangle` stays collision-free outside the 21-shader corpus** — A4 measured zero
   name collisions on every shader tried (including a real generic-over-`interface` function),
   but only ever one instantiation of any given generic; a source that instantiates the same
@@ -735,15 +758,4 @@ revised (owner direction, 2026-09-11, after A1-A8 shipped):**
   compiled bodies under the same surface name) is untested — A6's broader sweep is what would
   surface it, and the fallback (a demangling shim mapping slangc's mangled names back
   deterministically) documented in A3/A4's original scoping remains available if it does.
-- **`DxcFlagBuilder` never requests a Vulkan 1.1 SPIR-V target environment, so wave/quad
-  intrinsics currently fail on Vulkan too** (found during A5, measured directly: `error: Vulkan
-  1.1 is required for Wave Operation but not permitted to use`, identical to the OpenGL failure).
-  Architecturally Vulkan CAN hold SM6 HLSL (it already compiles at `vs_6_0`/`ps_6_0`), so this is
-  a fixable flag gap, not a format ceiling — but it is a **general HLSL/DXC pipeline gap**, not
-  Slang-specific (a hand-written `.fx` calling `WaveActiveSum` on Vulkan hits the identical
-  wall), so `SlangSm6ConstructGuard` deliberately does not gate Vulkan and this stage left the
-  flag itself unfixed (out of A5's scope: broadening Slang's own acceptance boundary, not the
-  shared Vulkan pipeline's capability floor). A future stage adding `-fspv-target-env=vulkan1.1`
-  to the Vulkan case in `DxcFlagBuilder.Build` (with the render-gate re-verification that change
-  implies) would make DirectX12 no longer the only target able to compile a real wave-intrinsic
-  shader through ShadowDusk's pipeline.
+- **RESOLVED by [issue #229](https://github.com/kaltinril/ShadowDusk/issues/229): Vulkan wave/quad intrinsics are rejected loudly (`SD0218`), not supported.** A5 measured that DXC rejects them on Vulkan (`Vulkan 1.1 is required for Wave Operation`). A `vulkan1.1` target env makes them compile, but the CI Vulkan lane measured the resulting SPIR-V 1.3 / subgroup module out of spec on MonoGame's Vulkan 1.0 instance (Khronos validation layer, 10 errors), so both the `.fx` route and `SlangCompiler` now reject them on Vulkan with `SD0218` naming the intrinsic (see `docs/validation-matrix.md` section 7).

@@ -149,6 +149,13 @@ route is invoked from. §12 is about proving the relocation is behavior-preservi
 
 ## 3. The gating decision — settle this before writing code
 
+> **Resolved per target, not in the abstract (recorded in `project_decisions.md`):** the owner
+> accepted rendered-image fidelity for the SkSL target (2026-08-13, Phase 62) and for raylib
+> (2026-10-01, which unblocked [Phase 59](PHASE-59-raylib-cs-backend.md); its glsl330 slice has
+> shipped). Neither decision rewrote THE PURPOSE text; both are distinct-axis outputs proven in
+> `docs/validation-matrix.md` §8, never §1 cells. The general question below remains open for
+> this phase's own §5/§6.
+
 `CLAUDE.md` and [`plan.md`](plan.md) both open with: *"The product is a drop-in `mgfxc` replacement."*
 Every target to date is an XNA-family runtime with a reference compiler (`mgfxc` / `fxc /T fx_2_0`)
 to be proven against. This phase does not itself break that, but it is the enabling step for a

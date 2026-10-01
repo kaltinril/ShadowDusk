@@ -25,7 +25,7 @@ small tail, the tail moves here and the parent moves to DONE.
 | GL macro-defined techniques (GAP-1 / GL) | [Phase 41](DONE/PHASE-41-fxc-oracle-monogame-fidelity.md) | DX + FNA closed; GL faithfulness-blocked |
 | DX12 / DXIL render-validation (Area C) — ➡️ promoted 2026-07-18 to [Phase 52](DONE/PHASE-52-monogame-3.8.5-support.md) Area D, split 2026-07-23 to [Phase 54](DONE/PHASE-54-dx12-dxil-backend.md) | [Phase 35](DONE/PHASE-35-forward-version-support.md) | New-backend build (not a render-validation rung); see B1 |
 | Un-park Vulkan trigger (Area D) — ✅ done 2026-07-18 via [Phase 32](DONE/PHASE-32-vulkan-backend.md) | [Phase 35](DONE/PHASE-35-forward-version-support.md) | ext-blocked on MonoGame 3.8.5 stable (since shipped; see B2) |
-| DX/FNA/KNI-DX render-in-CI gates | [Phase 44](DONE/PHASE-44-validation-breadth-and-matrix-coverage.md) | Effectively done; ext-blocked on a WARP CI runner |
+| DX/FNA/KNI-DX render-in-CI gates | [Phase 44](DONE/PHASE-44-validation-breadth-and-matrix-coverage.md) | Done: the DX-on-WARP CI lane landed (issue #204, #209); the remaining DX gates stay local |
 | `d3dcompiler_47` vs `fxc.exe` DXBC delta study (OQ#2) | [Phase 41](DONE/PHASE-41-fxc-oracle-monogame-fidelity.md) | Deferred, low-value |
 | ShaderToy sample + runtime-helper migration to `samples/` (**A4** — ✅ done 2026-07-31) | [Phase 47](DONE/PHASE-47-shadertoy-frontend-promotion.md) | Core shipped (NuGet since 0.9.0); the sample-migration appendix stayed Planned (moved 2026-07-18) |
 | CLI `.glsl`-route render-gate fixtures | [Phase 47](DONE/PHASE-47-shadertoy-frontend-promotion.md) | Deferred in the CLI appendix; tracked in validation-matrix §8 (moved 2026-07-18) |
@@ -561,6 +561,16 @@ bumped-and-re-proven or explicitly deferred with a reason.
 
 ### A9 — Stop the `Integration Tests` test-host crash costing reruns (filed 2026-07-29)
 
+**Status: root-caused and fixed 2026-10-01 (macOS measured; Linux inferred).** The crash was
+DXC's Unix support code, not resource pressure: LLVM's signal handlers installed over the .NET
+runtime's on every DXIL compile/preprocess, a racy overflow of LLVM's signal table into
+`TargetRegistry`, and `setlocale` deadlocking against `fork()`. Fixed by
+`DxcSignalIsolation` + `DxcForkGate` in `ShadowDusk.HLSL`, guarded by
+`DxcConcurrencyStressTests`. Mitigation 1 below had been applied to the macOS lane only
+(`xUnit.MaxParallelThreads=1`); it only hid the crash and is removed. Full record in
+[`project_facts.md`](../project_facts.md). The evidence notes are kept as the record of how the
+earlier signatures were misread.
+
 *Not a phase tail — filed here for the same reason A8 was: this is the de-facto backlog and the
 item otherwise has no home.*
 
@@ -958,9 +968,11 @@ D3D path on the runners (Mesa is GL-only).
 `KniWinFormsDX`) need a **Windows runner with a software D3D driver (WARP)** — unverified, so
 deliberately not wired yet."*
 
-**Mitigation already in place:** these are a baked-in **local pre-release gate**
-(`validation/run-windows-render-gates.ps1`, required by the `/release` skill), so the product
-bar is enforced outside CI. **Blocked on:** a verified WARP-on-GitHub-Actions story.
+**Update (issue #204, #209):** the WARP story is now verified. `validation-render.yml` runs
+`DxModernFeatures`, `KniWinFormsDX`, and the DX11 and DX12 corpora on `windows-latest`. The
+other DX-family gates (Apos gallery, ShaderToy DX route, FNA) stay in the **local pre-release
+gate** (`validation/run-windows-render-gates.ps1`, required by the `/release` skill); see
+`docs/validation-matrix.md` section 6 for the authoritative list.
 
 ---
 

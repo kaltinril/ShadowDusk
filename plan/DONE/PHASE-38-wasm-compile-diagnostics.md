@@ -4,7 +4,7 @@
 > remaining item, the in-browser squiggle confirmation rung, was **moved to
 > [Phase 51 (A1)](../PHASE-51-consolidated-remainder-backlog.md)**.
 
-**Status:** 🟢 **Implemented (2026-06-07)** — branch `phase38-wasm-compile-diagnostics`. Approach **B**. All code edits + the Stage-2 relink are done and verified headless: **G1 byte-identity 10/10** (no fidelity regression) and the new **G2 diagnostics gate** passes (bad HLSL now yields `file:line:col: error: message`, not the opaque blob). The final rung — seeing the squiggle in a real KNI/Blazor browser — is the only thing left.
+**Status:** 🟢 **Implemented (2026-06-07)** — branch `phase38-wasm-compile-diagnostics`. Approach **B**. All code edits + the Stage-2 relink are done and verified headless: **G1 byte-identity 10/10** (no fidelity regression) and the new **G2 diagnostics gate** passes (bad HLSL now yields `file:line:col: error: message`, not the opaque blob). The final rung (seeing the squiggle in a real KNI/Blazor browser) is the only thing left, and it is tracked as [Phase 51](../PHASE-51-consolidated-remainder-backlog.md) A1; the phase itself is archived.
 
 **Track:** Reach (Part 1 of THE PURPOSE — in-browser/in-memory) + diagnostics quality (Core Design Constraint 5: *fail loudly with file/line/column*). Consumer-facing: this is what lets a downstream KNI/Blazor tool (e.g. Vic's **XNAFiddle**) show *where* a shader is wrong, not just *that* it failed.
 

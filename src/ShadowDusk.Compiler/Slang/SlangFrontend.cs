@@ -152,35 +152,35 @@ public static class SlangFrontend
         SlangEntryPoint? ps = entries.Value.FirstOrDefault(e => e.Stage == SlangStage.Fragment);
 
         var sb = new StringBuilder();
-        sb.AppendLine($"// Generated from '{options.SourceName}' by ShadowDusk's Slang frontend.");
-        sb.AppendLine("// The body below is the .slang source verbatim, minus the shader-stage attributes;");
-        sb.AppendLine("// the technique block is synthesized from what they declared.");
-        sb.AppendLine();
+        sb.Append($"// Generated from '{options.SourceName}' by ShadowDusk's Slang frontend.").Append('\n');
+        sb.Append("// The body below is the .slang source verbatim, minus the shader-stage attributes;").Append('\n');
+        sb.Append("// the technique block is synthesized from what they declared.").Append('\n');
+        sb.Append('\n');
 
         // The ShaderToy frontend's measured convention, reasons and all: mgfxc's DirectX_11
         // profile REJECTS anything below SM 4.0 level 9.1, while its OpenGL profile caps at SM3
         // and ShadowDusk's FNA target is MojoShader SM2-3 — so gate on SM4 (which exactly the
         // DirectX profiles define), not on OPENGL.
-        sb.AppendLine("#if SM4");
-        sb.AppendLine("    #define VS_SHADERMODEL vs_4_0_level_9_1");
-        sb.AppendLine("    #define PS_SHADERMODEL ps_4_0_level_9_1");
-        sb.AppendLine("#else");
-        sb.AppendLine("    #define VS_SHADERMODEL vs_3_0");
-        sb.AppendLine("    #define PS_SHADERMODEL ps_3_0");
-        sb.AppendLine("#endif");
-        sb.AppendLine();
-        sb.AppendLine(body.Trim());
-        sb.AppendLine();
-        sb.AppendLine($"technique {options.TechniqueName}");
-        sb.AppendLine("{");
-        sb.AppendLine("    pass P0");
-        sb.AppendLine("    {");
+        sb.Append("#if SM4").Append('\n');
+        sb.Append("    #define VS_SHADERMODEL vs_4_0_level_9_1").Append('\n');
+        sb.Append("    #define PS_SHADERMODEL ps_4_0_level_9_1").Append('\n');
+        sb.Append("#else").Append('\n');
+        sb.Append("    #define VS_SHADERMODEL vs_3_0").Append('\n');
+        sb.Append("    #define PS_SHADERMODEL ps_3_0").Append('\n');
+        sb.Append("#endif").Append('\n');
+        sb.Append('\n');
+        sb.Append(body.Trim()).Append('\n');
+        sb.Append('\n');
+        sb.Append($"technique {options.TechniqueName}").Append('\n');
+        sb.Append("{").Append('\n');
+        sb.Append("    pass P0").Append('\n');
+        sb.Append("    {").Append('\n');
         if (vs is not null)
-            sb.AppendLine($"        VertexShader = compile VS_SHADERMODEL {vs.Name}();");
+            sb.Append($"        VertexShader = compile VS_SHADERMODEL {vs.Name}();").Append('\n');
         if (ps is not null)
-            sb.AppendLine($"        PixelShader = compile PS_SHADERMODEL {ps.Name}();");
-        sb.AppendLine("    }");
-        sb.AppendLine("}");
+            sb.Append($"        PixelShader = compile PS_SHADERMODEL {ps.Name}();").Append('\n');
+        sb.Append("    }").Append('\n');
+        sb.Append("}").Append('\n');
 
         return Result<SlangFxConversion, ShaderError[]>.Ok(
             new SlangFxConversion(sb.ToString(), []));

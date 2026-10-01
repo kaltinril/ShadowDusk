@@ -1,10 +1,16 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <!-- Intentionally NOT in ShadowDusk.slnx (validation drivers never are). Windows-only:
-         gate 3 loads a real MonoGame.Framework.WindowsDX Effect, and the real-slangc route
-         itself packages slangc for win-x64 only today (Phase 66 A2/A3). -->
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <!-- Intentionally NOT in ShadowDusk.slnx (validation drivers never are). Cross-platform
+         since issue #227: gates 1-2 (compile sweep + GL pixel equivalence) run from the
+         net8.0 build on every host with a bundled slangc; gate 3 loads a real
+         MonoGame.Framework.WindowsDX Effect, so it (and that package) exist only in the
+         net8.0-windows build, which defines WINDOWS. Multi-targeted (not an OS-conditional
+         single TFM) so ONE packages.lock.json covers both and CI's locked-mode restore
+         works on every OS. Run with `-f net8.0-windows` on Windows, `-f net8.0` elsewhere. -->
+    <TargetFramework></TargetFramework>
+    <TargetFrameworks>net8.0;net8.0-windows</TargetFrameworks>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
@@ -19,7 +25,6 @@
     <ProjectReference Include="..\..\src\ShadowDusk.Slang\ShadowDusk.Slang.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="MonoGame.Framework.WindowsDX" />
     <PackageReference Include="Silk.NET.OpenGL" />
     <PackageReference Include="Silk.NET.Windowing.Glfw" />
   </ItemGroup>
@@ -28,13 +33,16 @@
          validation/SlangCorpus). -->
     <Compile Include="..\..\tests\ShadowDusk.ImageTests\GlContext\OffscreenRenderer.cs" />
     <Compile Include="..\..\tests\ShadowDusk.ImageTests\GlContext\GlslShaderProgram.cs" />
-    <!-- Real MonoGame WindowsDX Effect-load renderer, gate 3 (verbatim reuse - same file
-         validation/CandidateDx links). -->
-    <Compile Include="..\SharedDx\DxShaderInputs.cs" />
-    <Compile Include="..\SharedDx\DxEffectImageRenderer.cs" />
     <!-- Rung-2 structural MGFX parse for gate 1, the same parser a compiled-effect-consuming
          test uses (Phase 66 A4's own precedent: ShadowDusk.Slang.Tests source-links this same
          file rather than a second hand-rolled MGFX reader). -->
     <Compile Include="..\..\tests\ShadowDusk.Integration.Tests\MgfxBlobReader.cs" Link="MgfxBlobReader.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
+    <PackageReference Include="MonoGame.Framework.WindowsDX" />
+    <!-- Real MonoGame WindowsDX Effect-load renderer, gate 3 (verbatim reuse - same file
+         validation/CandidateDx links). -->
+    <Compile Include="..\SharedDx\DxShaderInputs.cs" />
+    <Compile Include="..\SharedDx\DxEffectImageRenderer.cs" />
   </ItemGroup>
 </Project>

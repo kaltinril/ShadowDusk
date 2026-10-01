@@ -9,9 +9,9 @@ four `ExPhantom*` fixtures (the phantom-parameter set below). Previously 2026-07
 A10 added three DirectX-profile-floor fixtures and **reclassified the vendored Nez set**, whose
 DirectX column collapsed once ShadowDusk started enforcing mgfxc's own floor (see the note
 above that table).
-Corpus on disk: **153 `.fx` + 7 `.fxh`** — 64 in the fixture root, 50 in `examples/`, 1 in
-`shadertoy/`, 38 under `third-party/` — plus **17 `.slang`** under `slang/` (a separate input
-corpus, not `.fx`; see §5).
+Corpus on disk: **155 `.fx` + 7 `.fxh`** — 64 in the fixture root, 50 in `examples/`, 1 in
+`shadertoy/`, 38 under `third-party/`, 2 under `raylib/` — plus **17 `.slang`** under `slang/`
+(a separate input corpus, not `.fx`; see §5).
 
 This document records (1) what is known about where the existing `.fx` test
 fixtures came from, (2) an integrity caveat about those fixtures, and (3) a set
@@ -469,3 +469,13 @@ convert + compile on OpenGL and DirectX in-suite (`SlangCorpusCompileTests`). An
 uniform-free procedural subset additionally renders pixel-identical (max Δ 0) through
 ShadowDusk's route vs through slangc's own HLSL emission, via `validation/SlangCorpus`.
 Full detail: `docs/validation-matrix.md` §8.0.
+
+## 6. raylib route corpus (`raylib/`)
+
+Two project-owned, pixel-only effects written for the raylib converter: the two shaders its
+originating request named. `CrtFilter.fx` (barrel curvature, RGB fringe,
+scanlines, vignette) and `RetroHandheld.fx` (luminance quantized onto a palette ramp, saturation
+mix, dot-matrix cell gaps). Both read only `TEXCOORD0` and `COLOR0`, so one source runs under
+MonoGame's `SpriteBatch` and behind raylib's built-in vertex shader. `validation/RaylibRoute`
+renders them (with the 10-shader GL corpus and Gum's Grayscale) in real Raylib-cs and real
+MonoGame; the in-suite census also compiles them on OpenGL and DirectX 11.

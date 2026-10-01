@@ -38,7 +38,7 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.Run(() => CompileCore(request), cancellationToken);
+        return Task.Run(() => CompileRejectingVulkanWaveOps(request), cancellationToken);
     }
 
     /// <inheritdoc/>
@@ -47,7 +47,7 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return CompileCore(request);
+        return CompileRejectingVulkanWaveOps(request);
     }
 
     /// <inheritdoc/>
@@ -94,6 +94,39 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         {
             result.Dispose();
         }
+    }
+
+    // DXC's own wording when SPIR-V codegen needs a target env above the Vulkan 1.0 default.
+    private const string Vulkan11RequiredDiagnostic = "Vulkan 1.1 is required";
+
+    // Issue #229: on the Vulkan target DXC refuses wave/quad intrinsics at its default Vulkan
+    // 1.0 target env. ShadowDusk deliberately does NOT retry with -fspv-target-env=vulkan1.1:
+    // MonoGame's DesktopVK creates a Vulkan 1.0 instance with no subgroup support, and the
+    // SPIR-V 1.3 / GroupNonUniform module that flag produces was measured out of spec there by
+    // the Khronos validation layer. The rejection is relabelled SD0218 (shared with the
+    // real-slangc route, see WaveQuadIntrinsics), keeping DXC's location, its message verbatim,
+    // and its raw diagnostic text.
+    private Result<PlatformBlob, ShaderError> CompileRejectingVulkanWaveOps(DxcCompileRequest request)
+    {
+        Result<PlatformBlob, ShaderError> result = CompileCore(request);
+
+        if (result.IsSuccess || request.Platform != PlatformTarget.Vulkan)
+            return result;
+
+        ShaderError dxcError = result.Error;
+        string dxcText = dxcError.RawDiagnostics ?? dxcError.Message;
+        if (!dxcText.Contains(Vulkan11RequiredDiagnostic, StringComparison.Ordinal))
+            return result;
+
+        // DXC's text echoes the offending source line; the intrinsic is the first wave/quad
+        // identifier in it. When DXC's text does not show one, the message says so generically.
+        string? intrinsic = WaveQuadIntrinsics.FindFirst(dxcText)?.Name;
+
+        return Result<PlatformBlob, ShaderError>.Fail(dxcError with
+        {
+            Code = WaveQuadIntrinsics.VulkanUnsupportedCode,
+            Message = WaveQuadIntrinsics.VulkanUnsupportedMessage(intrinsic) + " DXC: " + dxcError.Message,
+        });
     }
 
     private Result<PlatformBlob, ShaderError> CompileCore(DxcCompileRequest request)

@@ -108,10 +108,12 @@
 
   Both Vulkan gates are DEFAULT-ON (issue #145: a Vulkan-affecting change must not depend on
   someone remembering a switch). Pass -SkipVulkan only on a box with no Vulkan-capable GPU.
+  CI also runs both (validation-render.yml, Mesa lavapipe + the Khronos validation layer), but
+  that is a CPU driver; this local run is still the only GPU-driver Vulkan render.
 
   The in-process MonoGame OpenGL render gates (StateFidelity / CbufferModel /
   TextureBreadthValidation / ReservedWordGl / SamplerPairsGl / SamplerRegisterOrderGl /
-  DeferredSpriteMrtGl / ShaderToyRouteGl) are intentionally NOT here - CI already runs them
+  DeferredSpriteMrtGl / ShaderToyRouteGl / RaylibRoute) are intentionally NOT here - CI already runs them
   (see validation-render.yml). Run them with `dotnet test` + that workflow, not this script.
 
 .PARAMETER IncludeFna
@@ -345,7 +347,8 @@ $gates.Add(@{
 # docs/validation-matrix.md and plan/PHASE-66-full-slang-input-implementation.md's A7 section.
 $gates.Add(@{
     Name   = 'Slang full corpus (Phase 66 A7: real-slangc route, 21 shaders x 4 targets + procedural pixel-diff vs slangc''s raw HLSL + real DirectX_11 Effect load/render)'
-    Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/SlangFullCorpus', '-c', 'Release') }
+    # -f net8.0-windows: the driver multi-targets (issue #227); only the Windows build has gate 3.
+    Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/SlangFullCorpus', '-c', 'Release', '-f', 'net8.0-windows') }
 })
 if ($IncludeFna) {
     $gates.Add(@{

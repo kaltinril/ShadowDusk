@@ -4,7 +4,7 @@ This is the human runbook for cutting a ShadowDusk release. The `/release` skill
 (`.claude/skills/release/SKILL.md`) automates every step below; this document is the
 ground truth it follows, and the fallback when you cut a release by hand.
 
-A release publishes **all nine** `ShadowDusk.*` NuGet packages plus the `ShadowDuskCLI` `dotnet tool`
+A release publishes **all ten** `ShadowDusk.*` NuGet packages plus the `ShadowDuskCLI` `dotnet tool`
 to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub Release.
 
 | Package | What it is |
@@ -13,6 +13,7 @@ to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub 
 | `ShadowDusk.HLSL` | FX9 pre-parser, DXC integration, vkd3d-shader / `d3dcompiler_47` DXBC backends |
 | `ShadowDusk.GLSL` | SPIR-V → GLSL via SPIRV-Cross + MojoShader-dialect rewriter |
 | `ShadowDusk.ShaderToy` | Standalone pure-managed ShaderToy/GLSL → `.fx` converter (optional; not in the `Compiler` graph) |
+| `ShadowDusk.Slang` | Optional real-slangc Slang front-end (Phase 66). Depends on `ShadowDusk.Compiler`; carries slangc for win-x64, linux-x64, osx-x64, osx-arm64 under `runtimes/<rid>/native/` (~53 MB nupkg), gated by `release.yml`. |
 | `ShadowDusk.Compiler` | The consumer-facing product library (`EffectCompiler : IShaderCompiler`) |
 | `ShadowDusk.Cli` | The `ShadowDuskCLI` `dotnet tool` |
 | `ShadowDusk.Wasm` | The `net8.0-browser` in-browser compiler |
@@ -28,15 +29,16 @@ to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub 
    secret**. It must be an [nuget.org API key](https://www.nuget.org/account/apikeys) scoped
    to **Push** for the `ShadowDusk.*` package IDs (a glob-scoped key is simplest).
 
-2. **nuget.org owner rights on all nine package IDs.** You must be an owner (or have push
+2. **nuget.org owner rights on all ten package IDs.** You must be an owner (or have push
    rights) of every ID — `ShadowDusk.Core`, `ShadowDusk.HLSL`, `ShadowDusk.GLSL`,
-   `ShadowDusk.ShaderToy`, `ShadowDusk.Compiler`, `ShadowDusk.Cli`, `ShadowDusk.Wasm`,
-   `ShadowDusk.MgcbPlugin`, `ShadowDusk.ContentPipeline`. The
-   **first** publish of each ID reserves the name to your account; confirm all nine are
+   `ShadowDusk.ShaderToy`, `ShadowDusk.Slang`, `ShadowDusk.Compiler`, `ShadowDusk.Cli`,
+   `ShadowDusk.Wasm`, `ShadowDusk.MgcbPlugin`, `ShadowDusk.ContentPipeline`. The
+   **first** publish of each ID reserves the name to your account; confirm all ten are
    reserved before relying on the automated push (an unreserved ID makes the `dotnet nuget
    push` for that package fail). `ShadowDusk.ShaderToy` is **new in 0.9.0**,
    `ShadowDusk.MgcbPlugin` is **new in the first release after Phase 29**, and
-   `ShadowDusk.ContentPipeline` is **new in the first release after Phase 63** (issue #203), so
+   `ShadowDusk.ContentPipeline` is **new in the first release after Phase 63** (issue #203), and
+   `ShadowDusk.Slang` is **new in the first release after Phase 66**, so
    their first publish reserves those IDs — the glob-scoped key in step 1 already covers them.
 
 3. **A green `main`.** CI (`ci.yml`) runs the 3-OS build + test matrix on every push/PR.
@@ -163,7 +165,7 @@ first (the `/release` skill does this for you).
 2. **build + test** on the 3-OS matrix (Linux / macOS / Windows).
 3. **publish** self-contained `ShadowDuskCLI` binaries per RID (`win-x64`, `linux-x64`, `osx-x64`,
    `osx-arm64`) and archive them.
-4. **pack + push** all nine `ShadowDusk.*` packages (`.nupkg` + `.snupkg` symbols) to
+4. **pack + push** all ten `ShadowDusk.*` packages (`.nupkg` + `.snupkg` symbols) to
    nuget.org at the validated version, with `--skip-duplicate` (re-running a release no-ops
    on already-published versions). `ShadowDusk.Wasm` is packed in the WASM job (it needs the
    `wasm-tools` workload + restored `dxcompiler.wasm`); `ShadowDusk.MgcbPlugin` is packed in
@@ -179,8 +181,8 @@ first (the `/release` skill does this for you).
 
 ## Verify after release
 
-1. **nuget.org shows all nine at the new version.** Check each of
-   `ShadowDusk.{Core,HLSL,GLSL,ShaderToy,Compiler,Cli,Wasm,MgcbPlugin,ContentPipeline}` is listed at `<version>`
+1. **nuget.org shows all ten at the new version.** Check each of
+   `ShadowDusk.{Core,HLSL,GLSL,ShaderToy,Slang,Compiler,Cli,Wasm,MgcbPlugin,ContentPipeline}` is listed at `<version>`
    (indexing can take a few minutes after push).
 2. **The `ShadowDuskCLI` tool installs and runs:**
 
@@ -223,6 +225,18 @@ first (the `/release` skill does this for you).
 > gate. A red release beats silently shipping the FNA target and `DxbcBackend.Vkd3d`
 > broken for any consumer RID. If the gate trips, check that the `native-vkd3d-2.1`
 > release assets are intact and the restore-step log shows four "hash OK" lines.
+
+> **slangc packing (`ShadowDusk.Slang` — Phase 66, issues #226/#227):** `ShadowDusk.Slang.csproj`
+> packs each **restored** `tools/slang/<rid>/` pair (the slangc executable + its slang-compiler
+> library) for win-x64, linux-x64, osx-x64 and osx-arm64. `tools/restore.{ps1,sh}` download the
+> official shader-slang v2026.14.1 release zips, verify each zip's SHA-256 before extracting, and
+> verify each extracted file against its own pin. `release.yml`'s `pack-desktop` job hard-gates
+> the restored files and then fails red if the packed nupkg is missing any of the eight natives
+> or `THIRD-PARTY-NOTICES.txt` (exact entry names). **Before dispatching**, confirm the
+> `Pack & Consume Smoke` workflow is green on the release commit (dispatch it if the last run is
+> older): its `tools/verify-slang-packaging.sh` step is the only proof that a cold consumer can
+> install the package and run slangc on Linux, macOS and Windows. Host floors are upstream's:
+> Linux Ubuntu 22.04+, macOS 26+ (issue #237).
 
 ---
 
