@@ -437,7 +437,12 @@ is the opt-in complete answer, not a replacement.
   24/24 failing without the library), packed into `runtimes/<rid>/native/`. Host floors come from
   the upstream binaries: Linux needs `GLIBCXX_3.4.29` (Ubuntu 22.04+); macOS needs 26+ (the
   upstream `minos`), reported as `SD0620`. A consumer who does not add `ShadowDusk.Slang` pays
-  zero size/dependency cost — the subset frontend above is unaffected.
+  zero size/dependency cost — the subset frontend above is unaffected. The `slang-llvm`
+  exclusion is also measured structurally on every Unix binary (2026-10-01, ELF `DT_NEEDED` and
+  Mach-O `LC_LOAD_DYLIB` read from the pinned release zips): nothing links it, and the pinned
+  Linux zip does not ship it. **linux-arm64 and win-arm64 are not bundled** although upstream
+  publishes them: the core pipeline has no DXC/vkd3d native there, so those hosts get `SD0620`
+  (`project_decisions.md`).
 - **Cross-host byte identity (issue #227):** `SlangCrossHostByteIdentityTests` pins, per corpus
   shader, the assembled `.fx` text (slangc's own emission) and the OpenGL + DirectX_Vkd3d `.mgfx`
   bytes in `tests/fixtures/golden/byte-identity/slang-manifest.json` (generated on osx-arm64) and
