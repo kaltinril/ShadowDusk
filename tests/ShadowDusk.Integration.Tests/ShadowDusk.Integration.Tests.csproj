@@ -11,6 +11,9 @@
          so a test can re-run this assembly as a fresh child process (`dotnet exec`) for a
          race that can only happen once per process. -->
     <GenerateProgramFile>false</GenerateProgramFile>
+    <!-- Dxc/ProbeLibc.cs calls libc (fork, _exit, setlocale, pthread_atfork) through unmanaged
+         function pointers: the forked child must not reach a marshalling stub or the JIT. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
