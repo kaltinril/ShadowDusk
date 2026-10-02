@@ -136,8 +136,8 @@ so a stale one ships silently. Check all three:
   CI's `--locked-mode` restore rewrites or rejects a stale one (0.19.0 and 0.20.0 both shipped
   with lock files still saying `[0.18.0, )`). In the version-bump commit, rewrite them in place
   (bash, repo root; `OLD`/`NEW` are the versions):
-  `git ls-files '*packages.lock.json' | xargs sed -i -E 's/("ShadowDusk\.[A-Za-z]+": "\[)OLD(, \)")/\1NEW\2/'`,
-  then confirm `git grep -h -o -E '"ShadowDusk\.[A-Za-z]+": "\[[0-9.]+, \)"' -- '*packages.lock.json' | sort | uniq -c`
+  `git ls-files '*packages.lock.json' | xargs sed -i -E 's/("ShadowDusk\.[A-Za-z.]+": "\[)OLD(, \)")/\1NEW\2/'`,
+  then confirm `git grep -h -o -E '"ShadowDusk\.[A-Za-z.]+": "\[[0-9.]+, \)"' -- '*packages.lock.json' | sort | uniq -c`
   lists only `NEW`. Prefer this to `dotnet restore --force-evaluate`, which also drops project
   references whose source is not restored on your box (`validation/FnaValidation`'s
   `external/FNA`).

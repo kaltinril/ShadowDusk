@@ -16,10 +16,17 @@
 //   1. runs a real ContentBuilder subclass over the fixture set with TWO content roots -
 //      `stock` (MonoGame's own EffectImporter/EffectProcessor, the in-process 3.8.5
 //      mgfxc-equivalent oracle, which writes MGFX v11) and `sd` (ShadowDusk.ContentPipeline's
-//      pair, passed as instances) - per platform (Windows, DesktopGL);
+//      pair, passed as instances) - per platform (Windows, DesktopGL, DesktopVK, WindowsDX12);
 //   2. asserts per asset: the `sd` payload is byte-for-byte the ShadowDuskCLI binary's for the
 //      platform's target; the .xnb envelope through the type id is byte-for-byte the stock
 //      build's; the payloads differ (positive control);
+//  2b. on the two always-MGFX-v11 platforms (DesktopVK, WindowsDX12), asserts the per-shader
+//      SOURCE-FILE string (issue #274): the Builder hands the importer an absolute path, and the
+//      processor must write `<unknown>` there, as the stock processor does, not that path. So:
+//      every shader record's string equals the stock build's; the .xnb names neither the source
+//      directory nor the file; the payload is the CLI's with ONLY that string replaced (the CLI
+//      keeps writing the path it was given, like mgfxc, and that is asserted too); and a second
+//      real Builder run from a different, deeper source directory yields a byte-identical .xnb;
 //   3. loads BOTH Windows .xnbs through a real ContentManager.Load<Effect>(assetName) on
 //      MonoGame 3.8.5 WindowsDX and renders both through the identical SpriteBatch path,
 //      requiring the images to be PIXEL-IDENTICAL. (DesktopGL is compile + byte assertions
@@ -35,11 +42,18 @@ using Microsoft.Xna.Framework.Content.Pipeline.Processors;
 using Microsoft.Xna.Framework.Graphics;
 using MonoGame.Framework.Content.Pipeline.Builder;
 using ShadowDusk.ContentPipeline;
+using ShadowDusk.Validation.SharedMgfx;
 
 namespace ShadowDusk.Validation.ContentBuilderGate;
 
-/// <summary>One platform pass of the Builder: the platform, the CLI profile whose bytes the ShadowDusk arm must equal, the fixtures, and whether the DX11 host renders it.</summary>
-internal sealed record PlatformCase(TargetPlatform Platform, string CliProfile, string[] Fixtures, bool Render);
+/// <summary>
+/// One platform pass of the Builder: the platform, the CLI profile whose bytes the ShadowDusk arm
+/// must equal, the fixtures, whether the DX11 host renders it, and whether ShadowDusk's payload
+/// must be MGFX v11 - the container with the per-shader source-file string (issue #274). That
+/// last one is stated, not just read off the payload: if DirectX 12 or Vulkan ever stopped being
+/// v11, the source-file assertions would otherwise switch themselves off.
+/// </summary>
+internal sealed record PlatformCase(TargetPlatform Platform, string CliProfile, string[] Fixtures, bool Render, bool ExpectV11 = false);
 
 /// <summary>One asset built on the Windows pass, ready for the render half.</summary>
 internal sealed record RenderJob(string AssetName, string StockRoot, string ShadowDuskRoot);
@@ -77,6 +91,13 @@ internal static class Program
         // SpriteEffect.fx is the known Phase 41 GAP-1 GL half (macro-defined techniques, SD0010),
         // identical through every route, so the GL pass carries the three GL-compilable fixtures.
         new(TargetPlatform.DesktopGL, "OpenGL",     ["Grayscale.fx", "VertexAndPixel.fx", "MultiTexture.fx"],                    Render: false),
+        // The two always-MGFX-v11 platforms (issue #274): the Builder hands the importer an
+        // ABSOLUTE path, and v11 stores a source-file string per shader. Both fixtures carry an
+        // `#if SM6` branch, so the stock 3.8.5 processor builds them too and is the oracle for
+        // that string (a pixel-only effect, and a vertex + pixel pair). Compile + byte assertions
+        // only; the render proofs for these targets are the DX12 and Vulkan corpus gates.
+        new(TargetPlatform.DesktopVK,   "Vulkan",     ["Grayscale.fx", "VsTransformColorTexture.fx"], Render: false, ExpectV11: true),
+        new(TargetPlatform.WindowsDX12, "DirectX_12", ["Grayscale.fx", "VsTransformColorTexture.fx"], Render: false, ExpectV11: true),
     ];
 
     private static int Main()
@@ -126,39 +147,35 @@ internal static class Program
                 // The consumer's source tree: Assets/Effects/*.fx plus every .fxh beside them, so
                 // #include resolves exactly as it does from a game's Content directory.
                 string sourceDirName = $"Assets-{c.Platform}";
-                string effectsDir = Path.Combine(work, sourceDirName, "Effects");
-                Directory.CreateDirectory(effectsDir);
-                foreach (string fixture in c.Fixtures)
-                    File.Copy(Path.Combine(fixtures, fixture), Path.Combine(effectsDir, fixture), overwrite: true);
-                foreach (string header in Directory.GetFiles(fixtures, "*.fxh"))
-                    File.Copy(header, Path.Combine(effectsDir, Path.GetFileName(header)), overwrite: true);
+                string effectsDir = StageSources(work, sourceDirName, c, fixtures);
 
                 string outputDirName = $"out-{c.Platform}";
-                var builder = new GateBuilder();
-                bool ran = builder.Run(new ContentBuilderParams
-                {
-                    Mode                  = ContentBuilderMode.Builder,
-                    WorkingDirectory      = work,
-                    SourceDirectory       = sourceDirName,
-                    OutputDirectory       = outputDirName,
-                    IntermediateDirectory = $"obj-{c.Platform}",
-                    Platform              = c.Platform,
-                    GraphicsProfile       = GraphicsProfile.HiDef,
-                    CompressContent       = false,
-                    Rebuild               = true,
-                });
-
-                Console.WriteLine($"[cb] Run returned {ran}; succeeded={builder.SucceededToBuild} failed={builder.FailedToBuild}");
-                int expected = c.Fixtures.Length * 2;
-                if (!ran || builder.FailedToBuild != 0 || builder.SucceededToBuild != expected)
+                if (!RunBuilder(work, sourceDirName, outputDirName, $"obj-{c.Platform}", c))
                 {
                     failures++;
-                    Console.WriteLine($"  FAIL  -p {c.Platform}: expected {expected} successful builds (stock + sd per fixture), " +
-                                      $"got succeeded={builder.SucceededToBuild} failed={builder.FailedToBuild} ran={ran}");
                     continue;
                 }
 
                 string outRoot = Path.Combine(work, outputDirName);
+
+                // Issue #274: on a v11 platform, the SAME effects built from a different, deeper
+                // source directory must produce byte-identical .xnbs. A second real Builder run.
+                string? relocatedOutRoot = null;
+                if (c.ExpectV11)
+                {
+                    string relocatedSourceDirName = Path.Combine($"Relocated-{c.Platform}", "another", "checkout", "Assets");
+                    StageSources(work, relocatedSourceDirName, c, fixtures);
+
+                    string relocatedOutputDirName = $"out-{c.Platform}-relocated";
+                    if (!RunBuilder(work, relocatedSourceDirName, relocatedOutputDirName, $"obj-{c.Platform}-relocated", c))
+                    {
+                        failures++;
+                        continue;
+                    }
+
+                    relocatedOutRoot = Path.Combine(work, relocatedOutputDirName);
+                }
+
                 foreach (string fixture in c.Fixtures)
                 {
                     string assetName = Path.GetFileNameWithoutExtension(fixture);
@@ -175,19 +192,51 @@ internal static class Program
 
                         AssertEnvelopeMatches(stockXnb, stock, sdXnb, sd);
 
+                        bool v11 = MgfxSourceFile.Version(sd.Payload) > 10;
+                        if (v11 != c.ExpectV11)
+                        {
+                            throw new InvalidOperationException(
+                                $"ShadowDusk arm payload is MGFX v{MgfxSourceFile.Version(sd.Payload)}, but -p {c.Platform} expects " +
+                                (c.ExpectV11 ? "v11 (the source-file assertions would silently not run)" : "v10"));
+                        }
+
                         // THE BAR: byte-for-byte the CLI binary's output for the same source file.
+                        string cliSource = Path.Combine(effectsDir, fixture);
                         string cliOut = Path.Combine(work, $"cli_{assetName}_{c.Platform}.mgfx");
-                        RunProcess(cli, [Path.Combine(effectsDir, fixture), cliOut, $"/Profile:{c.CliProfile}"], work);
+                        RunProcess(cli, [cliSource, cliOut, $"/Profile:{c.CliProfile}"], work);
                         byte[] cliBytes = File.ReadAllBytes(cliOut);
-                        if (!sd.Payload.AsSpan().SequenceEqual(cliBytes))
+                        byte[] expectedPayload = cliBytes;
+                        string sourceFileNote = string.Empty;
+
+                        if (v11)
+                        {
+                            AssertSourceFileField(stock, sd, sdXnb, effectsDir, fixture, cliBytes, cliSource);
+
+                            // The CLI writes the path it was given (mgfxc parity, asserted just
+                            // above); the processor writes <unknown>. Nothing else may differ.
+                            expectedPayload = MgfxSourceFile.Replace(cliBytes, MgfxSourceFile.Stock);
+
+                            byte[] relocatedXnb = File.ReadAllBytes(FindXnb(Path.Combine(relocatedOutRoot!, "sd"), assetName));
+                            if (!relocatedXnb.AsSpan().SequenceEqual(sdXnb))
+                            {
+                                throw new InvalidOperationException(
+                                    $"the .xnb built from a second source directory ({relocatedXnb.Length} bytes) differs from the first " +
+                                    $"({sdXnb.Length} bytes) - the output depends on the source directory (issue #274)");
+                            }
+
+                            sourceFileNote = $", source-file field '{MgfxSourceFile.Stock}' == stock, .xnb identical from a second directory";
+                        }
+
+                        if (!sd.Payload.AsSpan().SequenceEqual(expectedPayload))
                         {
                             throw new InvalidOperationException(
                                 $"ShadowDusk arm payload ({sd.Payload.Length} bytes) is NOT byte-identical to the CLI's " +
-                                $"({cliBytes.Length} bytes) for /Profile:{c.CliProfile}");
+                                $"({cliBytes.Length} bytes) for /Profile:{c.CliProfile}" +
+                                (v11 ? $" with the source-file string replaced by '{MgfxSourceFile.Stock}'" : string.Empty));
                         }
 
                         Console.WriteLine($"  PASS  {label}: payload == CLI ({cliBytes.Length} B), envelope == stock 3.8.5 " +
-                                          $"(stock MGFX v{stock.Payload[4]} {stock.Payload.Length} B, ours v{sd.Payload[4]})");
+                                          $"(stock MGFX v{stock.Payload[4]} {stock.Payload.Length} B, ours v{sd.Payload[4]}){sourceFileNote}");
 
                         if (c.Render)
                             renderJobs.Add(new RenderJob(assetName, Path.GetDirectoryName(stockXnbPath)!, Path.GetDirectoryName(sdXnbPath)!));
@@ -240,6 +289,102 @@ internal static class Program
             ? $"Content Builder gate: all {assets} assets PASSED (real 3.8.5 ContentBuilder, envelope + CLI byte-identity + rung-4 render)"
             : $"Content Builder gate: {failures} failure(s)");
         return failures == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// Lays out a consumer's source tree under <paramref name="sourceDirName"/> (relative to
+    /// <paramref name="work"/>): <c>Effects/*.fx</c> plus every <c>.fxh</c> beside them. Returns
+    /// the absolute <c>Effects</c> directory.
+    /// </summary>
+    private static string StageSources(string work, string sourceDirName, PlatformCase c, string fixtures)
+    {
+        string effectsDir = Path.Combine(work, sourceDirName, "Effects");
+        Directory.CreateDirectory(effectsDir);
+        foreach (string fixture in c.Fixtures)
+            File.Copy(Path.Combine(fixtures, fixture), Path.Combine(effectsDir, fixture), overwrite: true);
+        foreach (string header in Directory.GetFiles(fixtures, "*.fxh"))
+            File.Copy(header, Path.Combine(effectsDir, Path.GetFileName(header)), overwrite: true);
+        return effectsDir;
+    }
+
+    /// <summary>
+    /// One real <see cref="ContentBuilder"/> run over a staged source tree: every fixture through
+    /// the stock pair and through ShadowDusk's. Prints and returns <see langword="false"/> unless
+    /// every asset built.
+    /// </summary>
+    private static bool RunBuilder(
+        string work, string sourceDirName, string outputDirName, string intermediateDirName, PlatformCase c)
+    {
+        var builder = new GateBuilder();
+        bool ran = builder.Run(new ContentBuilderParams
+        {
+            Mode                  = ContentBuilderMode.Builder,
+            WorkingDirectory      = work,
+            SourceDirectory       = sourceDirName,
+            OutputDirectory       = outputDirName,
+            IntermediateDirectory = intermediateDirName,
+            Platform              = c.Platform,
+            GraphicsProfile       = GraphicsProfile.HiDef,
+            CompressContent       = false,
+            Rebuild               = true,
+        });
+
+        Console.WriteLine($"[cb] Run ({sourceDirName}) returned {ran}; succeeded={builder.SucceededToBuild} failed={builder.FailedToBuild}");
+        int expected = c.Fixtures.Length * 2;
+        if (ran && builder.FailedToBuild == 0 && builder.SucceededToBuild == expected)
+            return true;
+
+        Console.WriteLine($"  FAIL  -p {c.Platform}: expected {expected} successful builds (stock + sd per fixture), " +
+                          $"got succeeded={builder.SucceededToBuild} failed={builder.FailedToBuild} ran={ran}");
+        return false;
+    }
+
+    /// <summary>
+    /// Issue #274, for an MGFX v11 asset: every shader record of ShadowDusk's payload carries the
+    /// source-file string the stock 3.8.5 build carries (<c>&lt;unknown&gt;</c>); the <c>.xnb</c>
+    /// names neither the source directory nor the file; and the CLI, which must NOT change, still
+    /// writes the path it was passed.
+    /// </summary>
+    private static void AssertSourceFileField(
+        XnbEffect stock, XnbEffect sd, byte[] sdXnb, string effectsDir, string fixture, byte[] cliBytes, string cliSource)
+    {
+        IReadOnlyList<string> sdSourceFiles    = MgfxSourceFile.ReadAll(sd.Payload);
+        IReadOnlyList<string> stockSourceFiles = MgfxSourceFile.ReadAll(stock.Payload);
+
+        if (sdSourceFiles.Count == 0 || sdSourceFiles.Any(f => f != MgfxSourceFile.Stock))
+        {
+            throw new InvalidOperationException(
+                $"MGFX v11 source-file field is [{string.Join(", ", sdSourceFiles)}], expected " +
+                $"'{MgfxSourceFile.Stock}' in every shader record (issue #274)");
+        }
+
+        if (stockSourceFiles.Count == 0)
+            throw new InvalidOperationException("the stock build is not MGFX v11 - nothing to compare the source-file field against");
+
+        // Compared as the set of distinct values: the two compilers need not emit the same
+        // NUMBER of shader records.
+        string[] stockDistinct = stockSourceFiles.Distinct().Order(StringComparer.Ordinal).ToArray();
+        string[] sdDistinct    = sdSourceFiles.Distinct().Order(StringComparer.Ordinal).ToArray();
+        if (!stockDistinct.SequenceEqual(sdDistinct))
+        {
+            throw new InvalidOperationException(
+                "MGFX v11 source-file field differs from the stock 3.8.5 build: " +
+                $"stock [{string.Join(", ", stockDistinct)}] vs ShadowDusk [{string.Join(", ", sdDistinct)}]");
+        }
+
+        foreach (string leak in new[] { effectsDir, effectsDir.Replace('\\', '/'), fixture })
+        {
+            if (MgfxSourceFile.ContainsUtf8(sdXnb, leak))
+                throw new InvalidOperationException($"the .xnb carries '{leak}' - the source path leaked into the content");
+        }
+
+        IReadOnlyList<string> cliSourceFiles = MgfxSourceFile.ReadAll(cliBytes);
+        if (cliSourceFiles.Count == 0 || cliSourceFiles.Any(f => f != cliSource))
+        {
+            throw new InvalidOperationException(
+                $"the CLI's MGFX v11 source-file field is [{string.Join(", ", cliSourceFiles)}], expected the path it was " +
+                $"passed ('{cliSource}') - CLI behaviour must not change");
+        }
     }
 
     /// <summary>The one <c>.xnb</c> for an asset under a content root, wherever the Builder placed it.</summary>

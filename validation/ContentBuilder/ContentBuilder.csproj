@@ -34,6 +34,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The MGFX v11 source-file reader/rewriter (issue #274), shared with validation/MgcbPlugin. -->
+    <Compile Include="..\SharedMgfx\MgfxSourceFile.cs" Link="SharedMgfx\MgfxSourceFile.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- The thing under test: the LIBRARY shape, not the plugin. -->
     <ProjectReference Include="..\..\src\ShadowDusk.ContentPipeline\ShadowDusk.ContentPipeline.csproj" />
   </ItemGroup>

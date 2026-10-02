@@ -756,8 +756,8 @@ revised (owner direction, 2026-09-11, after A1-A8 shipped):**
   Closed out for issue #227 the same day: no Unix `slangc`/`libslang-compiler` links
   `slang-llvm` (read from the ELF `DT_NEEDED` and Mach-O `LC_LOAD_DYLIB` of every pinned zip;
   the library only names it as a runtime-optional `dlopen` target), and linux-arm64/win-arm64
-  are deliberately not bundled because the core pipeline has no DXC/vkd3d native there
-  (`project_decisions.md`).
+  are deliberately not bundled because the core pipeline is incomplete there (linux-arm64: no
+  DXC or vkd3d native; win-arm64: no vkd3d native, unproven) (`project_decisions.md`).
 - ~~Whether `-no-mangle` stays collision-free outside the 21-shader corpus~~ - resolved by
   issue #228 (measured, osx-arm64 slangc 2026.14.1). Within one entry point it does: repeated
   instantiations of one generic struct or function get distinct `_N` names, and author names

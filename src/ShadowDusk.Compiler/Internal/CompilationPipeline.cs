@@ -508,7 +508,7 @@ internal sealed class CompilationPipeline
                         Attributes = compileOutput.Attributes,
                         ShaderModel = ParseShaderModel(pass.VertexProfile),
                         // Diagnostic strings written only by MGFX v11+ (ignored by v10/KNIFX).
-                        SourceFile = options.SourceFileName ?? "<unknown>",
+                        SourceFile = EmbeddedSourceFile(options),
                         Entrypoint = pass.VertexEntryPoint ?? "<unknown>",
                     });
                 }
@@ -560,7 +560,7 @@ internal sealed class CompilationPipeline
                     {
                         ShaderModel = ParseShaderModel(pass.PixelProfile),
                         // Diagnostic strings written only by MGFX v11+ (ignored by v10/KNIFX).
-                        SourceFile = options.SourceFileName ?? "<unknown>",
+                        SourceFile = EmbeddedSourceFile(options),
                         Entrypoint = pass.PixelEntryPoint ?? "<unknown>",
                     });
                 }
@@ -1264,6 +1264,15 @@ internal sealed class CompilationPipeline
                 (dxcCompiler.Value as IDisposable)?.Dispose();
         }
     }
+
+    // The source-file string an MGFX v11 container stores per shader (issue #274). It is the
+    // ONLY place a caller's SourceFileName reaches the bytes of a non-debug compile, so it has
+    // its own option: a content build compiles from an absolute path (the diagnostics and
+    // #include resolution need one) but must not record it. Unset, it is SourceFileName as
+    // passed, which is what the mgfxc CLI writes for its own source argument; "<unknown>" is
+    // mgfxc's null-fallback. Diagnostics never read this: they use SourceFileName.
+    private static string EmbeddedSourceFile(CompilerOptions options) =>
+        options.EmbeddedSourceFileName ?? options.SourceFileName ?? "<unknown>";
 
     // Parse a pass profile string ("vs_3_0", "ps_2_0") into (Major, Minor) for the KNIFX
     // per-shader ShaderVersion. MGFX v10 ignores this; KNIFX v11 records it (and a non-(0,0)

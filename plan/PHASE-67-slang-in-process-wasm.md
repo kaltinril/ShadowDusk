@@ -181,6 +181,10 @@ The in-process route generalizes: build slang's compiler library for Android wit
 `InProcessSlangc` delegate. A loaded `.so` needs no extraction, so it works with default
 packaging, which is how DXC and SPIRV-Cross already run on Android. Unmeasured: the slang
 compiler library's size and its Android build effort (upstream does not build it for Android).
+One thing the browser never had to solve: the glue's `freopen(stdin)` and its single global
+session are process-global, and `SlangCompiler.CompileAsync` runs on `Task.Run`, so a
+multi-threaded Android app needs the in-process call serialized (one lock around the native
+entry point), which the single-threaded browser gets for free.
 
 ## 4. What landed (this PR) and what is left
 
@@ -207,12 +211,20 @@ compiler library's size and its Android build effort (upstream does not build it
   pin both hashes in `tools/restore.{ps1,sh}`; a `VerifySlangcWasmPresent` pack guard;
   `release.yml` + `pack-consume.yml` entries and a cold browser-consumer check; then the
   package count everywhere it is stated (`CLAUDE.md`, `project_facts.md`, README, docfx). After
-  that the CI job restores the hosted module instead of building it.
+  that the CI job restores the hosted module instead of building it. Also needed before it
+  ships: a third-party notice for the code the module redistributes (slang, miniz, lz4,
+  cmark-gfm); the emsdk clone pinned to a tag or commit (`build-slangc-wasm.ps1` clones HEAD
+  and installs by version number only); an assertion that a cold browser consumer's publish
+  carries no desktop natives (issue #273); committed tests for `SD1904`, the concurrent-trap
+  retry and the cold synchronous `SD1903`; an FNA arm in `browser-slang-gate.mjs` (FNA Slang
+  bytes were measured identical to the desktop route by hand, 28/28, but nothing pins it); and
+  the module's memory footprint recorded (measured: 37 MB before the first compile, 216.5 MB
+  after, flat over 3000 compiles).
 - [x] **Project-reference leak in the sample publish (fixed in the review round):** `ShadowDusk.Slang`'s
   win-x64 `slangc.exe` + `slang-compiler.dll` (25 MB) used to be `CopyToOutputDirectory` items, which
   flow into every referencing project, so they landed in the browser sample's publish root. Every RID
   is now pack-only (repo runs find `tools/slang/<rid>/` by walking up, as the Unix RIDs already did).
-- [ ] **Stack size of the DXC / SPIRV-Cross / vkd3d wasm modules** (§2.4; validation-matrix §7).
+- [ ] **Stack size of the DXC / SPIRV-Cross / vkd3d wasm modules** (§2.4; validation-matrix §7; issue #271).
 - [ ] **Android in-process slangc** (§3.3): NDK build of slang's compiler library, the C entry
   point, the P/Invoke transport, and an on-emulator proof (`validation/AndroidGl` precedent).
 - [ ] Optional: retire the sample's dead Phase 22 Slang-as-HLSL-compiler shim
