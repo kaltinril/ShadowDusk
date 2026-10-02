@@ -184,4 +184,24 @@ public sealed class DxcLoaderTests
         // so any loaded image with one of these names is a foreign validator (SD0219).
         DxcLoader.IsDxilLeafName(leaf).ShouldBe(expected);
     }
+
+    [Theory]
+    [InlineData(ShadowDusk.Core.PlatformTarget.DirectX12, false, true)]
+    [InlineData(ShadowDusk.Core.PlatformTarget.DirectX, true, false)]
+    [InlineData(ShadowDusk.Core.PlatformTarget.OpenGL, false, false)]
+    [InlineData(ShadowDusk.Core.PlatformTarget.Vulkan, false, false)]
+    public void OnlyValidatedDxilCompiles_DependOnTheValidator(
+        ShadowDusk.Core.PlatformTarget target, bool skipValidation, bool expected)
+    {
+        // A foreign dxil.dll loaded by the host refuses only these compiles (SD0219): SPIR-V
+        // codegen and -Vd DXIL never call the validator, so they keep compiling.
+        var args = DxcFlagBuilder.Build(
+            target,
+            ShadowDusk.Core.ShaderStage.Pixel,
+            "PS",
+            [],
+            new DxcCompileOptions { SkipValidation = skipValidation });
+
+        DxcShaderCompiler.UsesValidator(args).ShouldBe(expected);
+    }
 }

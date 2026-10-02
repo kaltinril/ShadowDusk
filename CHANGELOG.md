@@ -23,13 +23,19 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   walked down to `PATH`, and `dxcompiler.dll` then bound the module already loaded under that
   name. ShadowDusk now loads its pinned `dxil.dll` and then `dxcompiler.dll` by absolute path
   before any DXC call (on Linux, `libdxcompiler.so`), and checks that the `dxil.dll` DXC binds is
-  its own. When the pinned natives are missing, or a foreign validator was loaded into the
-  process first (on macOS, any `libdxil` image, since that build ships none), compiles fail with
-  the new `SD0219` instead of running on whatever the OS search found. Output bytes are unchanged
-  on a clean `PATH`. `CliDxcPathHijackTest` runs the CLI with decoy `dxil.dll`/`dxcompiler.dll`
-  (and, where installed, the Windows SDK's `bin`) first on `PATH` for DirectX 12, DirectX 11,
-  OpenGL and Vulkan, and requires output byte-identical to a clean-`PATH` compile, with DirectX 12
-  signed; it failed before the fix. The MGCB gate's decoy directory now carries a `dxil.dll` too.
+  its own (by file content, so a byte-identical copy is accepted). Its resolver now runs ahead of
+  Vortice.Dxc's own, so a bare-name fallback can no longer pick a different DXC (on Linux, from
+  `LD_LIBRARY_PATH`). When the pinned natives are missing, every DXC-backed compile fails with the
+  new `SD0219` instead of running on whatever the OS search found. When a foreign validator was
+  loaded into the process first (by a host tool, or on macOS any `libdxil` image, since that build
+  ships none), only DirectX 12 compiles, whose validated and signed DXIL it would decide, fail with
+  `SD0219`; OpenGL, Vulkan and DirectX 11 never call the validator and keep compiling. Output bytes
+  are unchanged on a clean `PATH`. `CliDxcPathHijackTest` runs the CLI with decoy
+  `dxil.dll`/`dxcompiler.dll` (and, where installed, the Windows SDK's `bin`) first on `PATH` for
+  DirectX 12, DirectX 11, OpenGL and Vulkan, and requires output byte-identical to a clean-`PATH`
+  compile, with DirectX 12 signed; it failed before the fix. `DxcForeignValidatorTests` preloads a
+  decoy, the Windows SDK's, a byte-identical copy, and a `\\?\`-path `dxil.dll` in fresh processes
+  and pins which targets compile. The MGCB gate's decoy directory now carries a `dxil.dll` too.
 - **DirectX and FNA compiles no longer run vkd3d again for an entry point another pass already compiled (issue #255).** An effect whose techniques share entry points made one vkd3d call per pass. MonoGame's stock `BasicEffect.fx` made 64 calls for 30 distinct shaders. Each distinct request now compiles once per `Compile` call, which roughly halves the vkd3d time of the stock effects: `BasicEffect` about 490 to 250 ms, `SkinnedEffect` (DirectX) about 770 to 350 ms, `EnvironmentMapEffect` about 300 to 90 ms. Output bytes are unchanged. vkd3d is deterministic, the cache key is every field of the request, and the stock effects were byte-compared before and after. A cancelled token now also stops vkd3d diagnostic relocation before each of its parse-only probe compiles. A native call that has already started still cannot be interrupted.
   This does not speed up one very large pixel shader, such as the current upstream Apos.Shapes file (about 5 s on a Ryzen 7 5800X). That time is spent inside a single vkd3d call. vkd3d's HLSL optimizer is roughly quadratic in the size of the fully inlined shader, and vkd3d 2.1 is about 1.6x slower than 1.17 on that file and about 2x slower on branchy code. vkd3d has no option that reduces optimizer work, so this is tracked upstream rather than worked around. The measurements are in `project_facts.md`.
 - **`ShadowDusk.Slang`: textured shaders sample SpriteBatch's texture on OpenGL (issue #252).** slangc

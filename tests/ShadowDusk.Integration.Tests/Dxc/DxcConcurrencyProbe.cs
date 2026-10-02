@@ -46,6 +46,8 @@ public static class DxcConcurrencyProbe
             return DxcSetlocaleAudit.Run();
         if (args.Length > 0 && args[0] == ForkKindProbeArgument)
             return RunForkKindProbe();
+        if (args.Length > 1 && args[0] == DxcForeignValidatorTests.PreloadProbeArgument)
+            return DxcForeignValidatorTests.RunPreloadProbe(args[1]);
         if (args.Length == 0 || args[0] != ProbeArgument)
             return 0;
 

@@ -1,6 +1,7 @@
 #nullable enable
 
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using ShadowDusk.Core;
 
@@ -61,12 +62,28 @@ namespace ShadowDusk.HLSL.Dxc;
 /// loadable non-validator decoy silently produced UNSIGNED DXIL. <see cref="Register"/> now
 /// locates the pinned pair (<see cref="GetPinnedPairDirectories"/>), loads <c>dxil.dll</c>
 /// then <c>dxcompiler.dll</c> by full path, answers Vortice's resolver with that handle, and
-/// verifies the <c>dxil.dll</c> a bare-name lookup returns is ours. If the pair is missing,
-/// or a foreign <c>dxil.dll</c> was loaded into the process first, it reports
-/// <see cref="LoadErrorCode"/> instead of compiling with whatever the OS search offers.
-/// (Linux's <c>libdxcompiler.so</c> at this pin never loads <c>libdxil.so</c>, so there the
-/// risk was only a foreign <c>libdxcompiler.so</c> via <c>LD_LIBRARY_PATH</c>, closed the
-/// same way.)</para>
+/// verifies the <c>dxil.dll</c> a bare-name lookup returns is ours. If the pair is missing it
+/// reports <see cref="LoadErrorCode"/> for every DXC request, instead of compiling with
+/// whatever the OS search offers. If a foreign <c>dxil.dll</c> was loaded into the process
+/// first (a host tool that uses DXC itself), only requests whose output the validator decides
+/// (validated DXIL: DirectX 12) are refused; SPIR-V, <c>-Vd</c> and preprocess requests never
+/// call the validator and proceed (<see cref="CheckBoundValidator"/>). "Ours" is decided by
+/// file content, not by path string, so a byte-identical copy or a <c>\\?\</c>-prefixed
+/// path of the pinned file is accepted. (Linux's <c>libdxcompiler.so</c> at this pin never
+/// loads <c>libdxil.so</c>, so there the risk was only a foreign <c>libdxcompiler.so</c> via
+/// <c>LD_LIBRARY_PATH</c>, closed the same way.)</para>
+///
+/// <para><b>Our resolver runs first.</b> Vortice's own <c>Dxc.ResolveLibrary</c> handler is
+/// added by its static constructor, so a plain <c>+=</c> would poll it before ours. Its probe
+/// is <c>base\runtimes\&lt;rid&gt;\native</c> spelled with literal backslashes (a real
+/// directory only on Windows) and then BARE-NAME loads, which on Linux can <c>dlopen</c> a
+/// <c>libdxcompiler.so</c> from <c>LD_LIBRARY_PATH</c> (its SONAME <c>libdxcompiler.so.3.7</c>
+/// differs from our file name, so no dedupe) in a plugin host whose search directories miss
+/// ours. <see cref="Register"/> therefore puts its handler at the FRONT of the invocation list
+/// (the event's backing delegate, by reflection; plain <c>+=</c> if that field ever moves).
+/// Known residual: if the host process drove Vortice.Dxc before ShadowDusk's first use, the
+/// runtime has already cached Vortice's P/Invoke binding to whatever <c>dxcompiler</c> the host
+/// loaded, and no resolver runs again.</para>
 ///
 /// <para><b>macOS</b> ships no <c>libdxil.dylib</c>, but our <c>libdxcompiler.dylib</c> still
 /// <c>dlopen</c>s one by leaf name, which dyld resolves through <c>DYLD_LIBRARY_PATH</c>, the
@@ -99,6 +116,7 @@ internal static class DxcLoader
     private static readonly object RegisterGate = new();
     private static volatile bool _registered;
     private static ShaderError? _loadError;
+    private static ShaderError? _foreignValidatorError;
     private static IntPtr _pinnedDxcHandle;
 
     /// <summary>
@@ -139,14 +157,7 @@ internal static class DxcLoader
             {
                 _loadError = LoadPinnedPair();
                 if (_loadError is null)
-                {
-                    // Vortice's own handler stays first in the invocation list. It loads the
-                    // same files (its probe is base/runtimes/<rid>/native, then the host's
-                    // search directories, the same order GetPinnedPairDirectories starts
-                    // with), and any bare-name load it falls back to returns the module we
-                    // already loaded under that name.
-                    Vortice.Dxc.Dxc.ResolveLibrary += ResolvePinned;
-                }
+                    SubscribeFirst(ResolvePinned);
             }
 
             _registered = true;
@@ -155,15 +166,18 @@ internal static class DxcLoader
     }
 
     /// <summary>
-    /// Checks, after a native DXC call, that DXC is not validating with a foreign DXIL library.
-    /// Windows binds <c>dxil.dll</c> when <c>dxcompiler.dll</c> loads, so <see cref="Register"/>
-    /// already verified it once; macOS may bind <c>libdxil.dylib</c> lazily on the first DXIL
-    /// compile and ships none of its own, so any loaded <c>libdxil</c> image is foreign.
+    /// Checks that DXC is not validating with a foreign DXIL library. Callers ask only for
+    /// requests whose output depends on the validator (validated DXIL); SPIR-V, <c>-Vd</c> and
+    /// preprocess requests never reach it. Windows binds <c>dxil.dll</c> when
+    /// <c>dxcompiler.dll</c> loads, so <see cref="Register"/> already decided it; macOS may bind
+    /// <c>libdxil.dylib</c> lazily on the first DXIL compile and ships none of its own, so any
+    /// loaded <c>libdxil</c> image is foreign (callers check again after the native call).
     /// Returns <c>null</c> when clean, or when the check itself cannot run (never a false
     /// positive).
     /// </summary>
     internal static ShaderError? CheckBoundValidator()
     {
+        if (_foreignValidatorError is not null) return _foreignValidatorError;
         if (!OperatingSystem.IsMacOS()) return null;
 
         string? foreign = MacDyld.FindLoadedImage(IsDxilLeafName);
@@ -180,6 +194,30 @@ internal static class DxcLoader
     internal static bool IsDxilLeafName(string fileName) =>
         fileName.Equals("libdxil.dylib", StringComparison.OrdinalIgnoreCase)
         || fileName.Equals("libdxil.so", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Puts <paramref name="handler"/> at the front of <c>Dxc.ResolveLibrary</c>, ahead of the
+    /// handler Vortice's static constructor added (see the class remarks). Falls back to a plain
+    /// subscription if the event's backing field is not where the pinned Vortice.Dxc keeps it.
+    /// Caller holds <see cref="RegisterGate"/>.
+    /// </summary>
+    private static void SubscribeFirst(DllImportResolver handler)
+    {
+        // Runs Vortice's static constructor, which adds its own handler and the assembly's
+        // DllImportResolver, before we read the list.
+        RuntimeHelpers.RunClassConstructor(typeof(Vortice.Dxc.Dxc).TypeHandle);
+
+        FieldInfo? field = typeof(Vortice.Dxc.Dxc).GetField(
+            "ResolveLibrary", BindingFlags.NonPublic | BindingFlags.Static);
+        if (field is not null && field.FieldType == typeof(DllImportResolver))
+        {
+            var existing = (DllImportResolver?)field.GetValue(null);
+            field.SetValue(null, Delegate.Combine(handler, existing));
+            return;
+        }
+
+        Vortice.Dxc.Dxc.ResolveLibrary += handler;
+    }
 
     private static IntPtr ResolvePinned(
         string libraryName, Assembly assembly, DllImportSearchPath? searchPath) =>
@@ -237,7 +275,9 @@ internal static class DxcLoader
                     $"ShadowDusk's pinned DXC native library at '{dxcPath}' could not be loaded: {ex.Message}");
             }
 
-            return windows ? VerifyBoundWindowsDxil(dxilPath) : null;
+            if (windows)
+                _foreignValidatorError = VerifyBoundWindowsDxil(dxilPath);
+            return null;
         }
 
         string pair = windows ? $"{dxilFile} + {dxcFile}" : dxcFile;
@@ -251,19 +291,45 @@ internal static class DxcLoader
     private static ShaderError? VerifyBoundWindowsDxil(string pinnedDxilPath)
     {
         string? bound = WindowsModules.GetLoadedModulePath("dxil.dll");
-        if (bound is null || SamePath(bound, pinnedDxilPath))
+        if (bound is null || SameFile(bound, pinnedDxilPath))
             return null;
 
         return LoadError(
             $"A different dxil.dll ('{bound}') was loaded into this process before ShadowDusk's " +
             $"pinned one ('{pinnedDxilPath}'). DXC binds its DXIL validator and signer to the " +
             "dxil.dll already loaded under that name, so it would validate and sign with a " +
-            "foreign build (a newer one rejects this DXC's output outright). Whatever loaded it " +
-            "first must not share the process with ShadowDusk's compiler.");
+            "foreign build (a newer one rejects this DXC's output outright). Compiles that need the " +
+            "validator (DirectX 12) are refused; SPIR-V targets are unaffected. Whatever loaded it " +
+            "first must not share the process with ShadowDusk's DirectX 12 compiles.");
     }
 
-    private static bool SamePath(string a, string b) =>
-        string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
+    /// <summary>
+    /// True when both paths hold the same file content. Identity by content, never by path
+    /// string: <c>GetModuleFileNameW</c> reports a <c>\\?\</c>-prefixed path when the module
+    /// was loaded through one, and a byte-identical copy of the pinned file from another
+    /// directory is the same validator. Unreadable means "not provably ours".
+    /// </summary>
+    internal static bool SameFile(string a, string b)
+    {
+        if (string.Equals(StripLongPathPrefix(a), StripLongPathPrefix(b), StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        try
+        {
+            using FileStream fa = File.OpenRead(a);
+            using FileStream fb = File.OpenRead(b);
+            if (fa.Length != fb.Length) return false;
+            return System.Security.Cryptography.SHA256.HashData(fa)
+                .AsSpan().SequenceEqual(System.Security.Cryptography.SHA256.HashData(fb));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            return false;
+        }
+    }
+
+    private static string StripLongPathPrefix(string path) =>
+        path.StartsWith(@"\\?\", StringComparison.Ordinal) ? path[4..] : path;
 
     /// <summary>
     /// The directories probed, in order, for the pinned Windows/Linux pair. Pure (no I/O), so

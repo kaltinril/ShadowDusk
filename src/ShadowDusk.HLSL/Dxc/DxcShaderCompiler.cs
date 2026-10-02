@@ -34,14 +34,24 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
     }
 
     /// <summary>
-    /// The <c>SD0219</c> error to return instead of compiling: the pinned natives could not be
-    /// loaded, or (after a native call) a foreign DXIL validator is bound. Null when DXC is ours.
+    /// The <c>SD0219</c> error to return instead of compiling, or null. Missing/unloadable
+    /// pinned natives fail every request. A foreign DXIL validator fails only requests whose
+    /// output it decides (<paramref name="usesValidator"/>: validated DXIL, i.e. DirectX 12):
+    /// SPIR-V codegen, <c>-Vd</c> compiles and <c>-P</c> preprocessing never call it, so a host
+    /// that loaded its own <c>dxil.dll</c> must not cost the consumer those targets.
     /// </summary>
-    private ShaderError? NativeError(string? sourceFileName, bool afterNativeCall)
+    private ShaderError? NativeError(string? sourceFileName, bool usesValidator)
     {
-        ShaderError? error = _loadError ?? (afterNativeCall ? DxcLoader.CheckBoundValidator() : null);
+        ShaderError? error = _loadError ?? (usesValidator ? DxcLoader.CheckBoundValidator() : null);
         return error is null ? null : error with { File = sourceFileName ?? "" };
     }
+
+    /// <summary>
+    /// True when DXC will run its DXIL validator (and, on Windows, signer) on this compile:
+    /// DXIL output (no <c>-spirv</c>) without <c>-Vd</c>.
+    /// </summary>
+    internal static bool UsesValidator(IReadOnlyList<string> arguments) =>
+        !arguments.Contains("-spirv") && !arguments.Contains("-Vd");
 
     /// <inheritdoc/>
     public Task<Result<PlatformBlob, ShaderError>> CompileAsync(
@@ -68,7 +78,7 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (NativeError(request.SourceFileName, afterNativeCall: false) is { } loadError)
+        if (NativeError(request.SourceFileName, usesValidator: false) is { } loadError)
             return Result<string, ShaderError>.Fail(loadError);
 
         IReadOnlyList<string> arguments = DxcFlagBuilder.BuildPreprocess(request.Macros);
@@ -83,9 +93,6 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
 
         try
         {
-            if (NativeError(request.SourceFileName, afterNativeCall: true) is { } validatorError)
-                return Result<string, ShaderError>.Fail(validatorError);
-
             SharpGen.Runtime.Result status = result.GetStatus();
             string errorText = result.GetErrors();
 
@@ -133,15 +140,16 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
 
     private Result<PlatformBlob, ShaderError> CompileCore(DxcCompileRequest request)
     {
-        if (NativeError(request.SourceFileName, afterNativeCall: false) is { } loadError)
-            return Result<PlatformBlob, ShaderError>.Fail(loadError);
-
         IReadOnlyList<string> arguments = DxcFlagBuilder.Build(
             request.Platform,
             request.Stage,
             request.EntryPoint,
             request.Macros,
             request.Options);
+        bool usesValidator = UsesValidator(arguments);
+
+        if (NativeError(request.SourceFileName, usesValidator) is { } loadError)
+            return Result<PlatformBlob, ShaderError>.Fail(loadError);
 
         // Raw vtable call instead of Vortice's IDxcCompiler3.Compile(string, string[], ...):
         // Vortice marshals the LPCWSTR* argument array as UTF-16 on every OS, but DXC's
@@ -159,7 +167,8 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         // The same pattern as D3DCompilerShaderCompiler's blob disposal.
         try
         {
-            if (NativeError(request.SourceFileName, afterNativeCall: true) is { } validatorError)
+            // macOS can bind a foreign libdxil lazily, during this very call: check again.
+            if (NativeError(request.SourceFileName, usesValidator) is { } validatorError)
                 return Result<PlatformBlob, ShaderError>.Fail(validatorError);
 
             SharpGen.Runtime.Result status = result.GetStatus();

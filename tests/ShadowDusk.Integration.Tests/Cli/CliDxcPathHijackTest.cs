@@ -2,6 +2,7 @@
 
 using System.Diagnostics;
 using Shouldly;
+using ShadowDusk.Integration.Tests.Dxc;
 using Xunit;
 
 namespace ShadowDusk.Integration.Tests.Cli;
@@ -39,16 +40,13 @@ public sealed class CliDxcPathHijackTest : IClassFixture<CliBinaryFixture>
     /// <c>dxcompiler.dll</c>. Before the fix DirectX 12 output came out unsigned with it on
     /// <c>PATH</c>.
     /// </summary>
-    [Theory]
+    [WindowsTheory]
     [InlineData("DirectX_12")]
     [InlineData("DirectX_11")]
     [InlineData("OpenGL")]
     [InlineData("Vulkan")]
     public async Task DecoyDxcOnPath_DoesNotChangeTheOutput(string profile)
     {
-        if (!OperatingSystem.IsWindows())
-            return;
-
         string decoyDir = CreateDecoyDirectory(
             Path.Combine(CliDirectory(), "runtimes", "win-x64", "native", "spirv-cross.dll"));
         try
@@ -63,19 +61,12 @@ public sealed class CliDxcPathHijackTest : IClassFixture<CliBinaryFixture>
 
     /// <summary>
     /// The exact reported failure: the Windows SDK's own (newer) <c>dxil.dll</c> first on
-    /// <c>PATH</c>, as in any VS Developer Command Prompt. Runs only where an SDK is installed.
+    /// <c>PATH</c>, as in any VS Developer Command Prompt. Skipped where no SDK is installed.
     /// </summary>
-    [Fact]
+    [WindowsSdkDxilFact]
     public async Task WindowsSdkBinOnPath_DirectX12StillCompilesAndSigns()
     {
-        if (!OperatingSystem.IsWindows())
-            return;
-
-        string? sdkBin = FindWindowsSdkBinWithDxil();
-        if (sdkBin is null)
-            return; // no Windows SDK dxil.dll on this box; the decoy theory above still runs
-
-        await AssertPathDoesNotChangeOutputAsync("DirectX_12", sdkBin);
+        await AssertPathDoesNotChangeOutputAsync("DirectX_12", WindowsDllSearch.FindWindowsSdkBinWithDxil()!);
     }
 
     private async Task AssertPathDoesNotChangeOutputAsync(string profile, string pathPrefix)
@@ -141,20 +132,6 @@ public sealed class CliDxcPathHijackTest : IClassFixture<CliBinaryFixture>
         File.Copy(decoySource, Path.Combine(decoyDir, "dxil.dll"));
         File.Copy(decoySource, Path.Combine(decoyDir, "dxcompiler.dll"));
         return decoyDir;
-    }
-
-    private static string? FindWindowsSdkBinWithDxil()
-    {
-        string kits = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Windows Kits", "10", "bin");
-        if (!Directory.Exists(kits))
-            return null;
-
-        return Directory.GetDirectories(kits)
-            .Select(d => Path.Combine(d, "x64"))
-            .Where(d => File.Exists(Path.Combine(d, "dxil.dll")))
-            .OrderByDescending(d => d, StringComparer.OrdinalIgnoreCase)
-            .FirstOrDefault();
     }
 
     private string CliDirectory() => Path.GetDirectoryName(_fixture.ExecutablePath)!;
