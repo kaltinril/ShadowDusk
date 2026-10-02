@@ -64,6 +64,37 @@ public sealed class SlangInProcessRouteTests
         ]);
     }
 
+    /// <summary>
+    /// The node identity gate (<c>.wasm-build/slang-wasm/node-test-slangc-wasm.mjs</c>) and any
+    /// other JS harness read slangc's per-target command lines from
+    /// <c>tests/fixtures/golden/slangc-args.json</c> instead of re-typing them. This pins that file
+    /// to <see cref="SlangcArguments.Build"/> and <see cref="PlatformMacros.For(PlatformTarget)"/>,
+    /// so a flag or macro change here cannot leave the gate testing a stale command line.
+    /// Regenerate with <c>SHADOWDUSK_REGENERATE_SLANGC_ARGS=1</c> (never in CI).
+    /// </summary>
+    [Fact]
+    [Trait("Category", "Integration")]
+    public void CommittedSlangcArgs_MatchTheSharedArgumentBuilder()
+    {
+        var targets = new SortedDictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+        foreach (PlatformTarget target in Enum.GetValues<PlatformTarget>().Where(PlatformMacros.IsSupported))
+            targets[target.ToString()] = SlangcArguments.Build(PlatformMacros.For(target).Macros, [], "{entry}", "{stage}");
+        string expected = JsonSerializer.Serialize(new { targets }, new JsonSerializerOptions { WriteIndented = true })
+            .Replace("\r\n", "\n", StringComparison.Ordinal) + "\n";
+
+        string path = Path.Combine(FindRepoRoot(), "tests", "fixtures", "golden", "slangc-args.json");
+        if (Environment.GetEnvironmentVariable("SHADOWDUSK_REGENERATE_SLANGC_ARGS") == "1")
+        {
+            if (Environment.GetEnvironmentVariable("GITHUB_ACTIONS") == "true")
+                throw new InvalidOperationException("Regenerating slangc-args.json in CI would turn this check into a fabricated pass.");
+            File.WriteAllText(path, expected);
+            return;
+        }
+
+        File.ReadAllText(path).Replace("\r\n", "\n", StringComparison.Ordinal).ShouldBe(expected,
+            "tests/fixtures/golden/slangc-args.json is stale: regenerate it with SHADOWDUSK_REGENERATE_SLANGC_ARGS=1");
+    }
+
     [Theory]
     [InlineData("", "")]
     [InlineData("a\nb\n", "a\nb\n")]

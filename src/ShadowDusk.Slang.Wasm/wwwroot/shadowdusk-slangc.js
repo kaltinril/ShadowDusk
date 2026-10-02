@@ -15,7 +15,8 @@
 //
 // Loading mirrors shadowdusk-dxc.js: evaluating this module is instant; ensureReady()
 // fetches and instantiates the ~23 MB wasm once (retrying after a failed attempt), and
-// runSlangc() is synchronous against the instantiated module.
+// runSlangc() is synchronous against the instantiated module. A trap inside the module
+// discards the instance (it is unusable afterwards); the next ensureReady() reloads it.
 
 let instance = null;
 let loadPromise = null;
@@ -60,6 +61,17 @@ export function runSlangc(source, args) {
     if (!instance) {
         throw new Error('The in-browser slangc module is not loaded; await ensureReady() first.');
     }
-    const r = instance.runSlangc(source, args);
+    let r;
+    try {
+        r = instance.runSlangc(source, args);
+    } catch (e) {
+        // A trap (stack overflow, out-of-bounds access, abort) leaves the instance's memory
+        // and C++ state undefined, and every later call into it fails. Drop it so the next
+        // ensureReady() instantiates a fresh module from the cached download.
+        instance = null;
+        loadPromise = null;
+        const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+        throw new Error('slangc trapped: ' + msg);
+    }
     return [String(r.exitCode), r.stdout, r.stderr];
 }

@@ -151,6 +151,24 @@ try {
     console.log(`  [${ok ? 'PASS' : 'FAIL'}] ${e.key} (${ms} ms)`);
   }
 
+  // 1b. Trap recovery (PR #266 review): a source deep enough to blow the engine's stack traps
+  // inside the module. It must report SD1905 (not a fake slangc diagnostic), and the very next
+  // compile on the same page must load a fresh module and still produce the manifest's bytes.
+  {
+    const deep = `[shader("fragment")]\nfloat4 MainPS(float2 uv : TEXCOORD0) : SV_Target { float x = ${'('.repeat(200000)}uv.x${')'.repeat(200000)}; return float4(x,0,0,1); }\n`;
+    const trap = await page.evaluate(
+      async ({ s }) => await window.theInstance.invokeMethodAsync('TestCompileSlang', s, 'OpenGL', 'Deep.slang'), { s: deep });
+    const probe = byteEntries.find((e) => e.target === 'OpenGL');
+    const after = await page.evaluate(
+      async ({ s, n }) => await window.theInstance.invokeMethodAsync('TestCompileSlang', s, 'OpenGL', n),
+      { s: readSource(probe.file), n: path.basename(probe.file) });
+    const afterSha = after.startsWith('OK:') ? createHash('sha256').update(Buffer.from(after.slice(3), 'base64')).digest('hex') : null;
+    const ok = trap.startsWith('ERR:SD1905') && afterSha === probe.expected;
+    if (!ok) failures.push(`trap recovery: trap='${trap.slice(0, 160)}', next compile ${afterSha === probe.expected ? 'matched' : `gave '${after.slice(0, 120)}'`}`);
+    rows.bytes.push({ key: `trap then ${probe.key}`, verdict: ok ? 'PASS' : 'FAIL', note: trap.slice(0, 80).replace(/\|/g, '/'), ms: 0 });
+    console.log(`  [${ok ? 'PASS' : 'FAIL'}] trap recovery: ${trap.slice(0, 100)} -> next compile ${afterSha === probe.expected ? 'matches manifest' : 'FAILED'}`);
+  }
+
   // 2. Render: slangc route vs subset route, real KNI WebGL Effect, read back.
   await page.waitForFunction(() => typeof window.__sd_readback === 'function', { timeout: 60000 });
   const readback = async () => {
@@ -246,4 +264,4 @@ if (failures.length > 0) {
   for (const f of failures) console.error(`  - ${f}`);
   process.exit(1);
 }
-console.log(`\n[slang browser gate] GREEN: ${rows.bytes.length}/${rows.bytes.length} artifacts byte-identical to the manifest, ${rows.render.length}/${rows.render.length} renders. (${resultsFile})`);
+console.log(`\n[slang browser gate] GREEN: ${byteEntries.length}/${byteEntries.length} artifacts byte-identical to the manifest, trap recovery OK, ${rows.render.length}/${rows.render.length} renders. (${resultsFile})`);

@@ -24,12 +24,15 @@ namespace ShadowDusk.Slang.Wasm;
 ///
 /// <para>Like <see cref="WasmShaderCompiler"/>, the one asynchronous step is the one-time
 /// module load. <see cref="CompileAsync"/> does it on first use; a synchronous caller awaits
-/// <see cref="InitializeAsync"/> once and may then call <see cref="Compile"/>.</para>
+/// <see cref="InitializeAsync"/> once and may then call <see cref="Compile"/>. The compile
+/// itself (slangc, then DXC/SPIRV-Cross or vkd3d) is synchronous and runs on the calling
+/// thread, which in a browser is the page's main thread.</para>
 /// </summary>
 [SupportedOSPlatform("browser")]
 public sealed class WasmSlangCompiler
 {
     private readonly WasmShaderCompiler _downstream;
+    private readonly RecordingDownstream _recording;
     private readonly SlangCompiler _compiler;
 
     /// <summary>Creates a compiler over a new <see cref="WasmShaderCompiler"/>.</summary>
@@ -45,77 +48,147 @@ public sealed class WasmSlangCompiler
     public WasmSlangCompiler(WasmShaderCompiler downstream)
     {
         _downstream = downstream ?? throw new ArgumentNullException(nameof(downstream));
-        _compiler = new SlangCompiler(downstream, RunSlangc);
+        _recording = new RecordingDownstream(downstream);
+        _compiler = new SlangCompiler(_recording, RunSlangc);
     }
 
     /// <summary>
     /// Loads the slangc module and warms the downstream pipeline (DXC, SPIRV-Cross, vkd3d).
-    /// Idempotent; required once before <see cref="Compile"/>.
+    /// Idempotent; required once before <see cref="Compile"/>. Throws
+    /// <see cref="InvalidOperationException"/> naming the module that failed to load.
     /// </summary>
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
-        await SlangcModule.EnsureReadyAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await SlangcModule.EnsureReadyAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (JSException ex)
+        {
+            throw new InvalidOperationException(
+                "ShadowDusk WASM initialization failed while loading the slangc (Slang -> HLSL) WASM module " +
+                "(shadowdusk-slangc, served under _content/ShadowDusk.Slang.Wasm/). Underlying error: " + ex.Message, ex);
+        }
+        // The downstream reports its own module failures (DXC / vkd3d) in its own words.
         await _downstream.InitializeAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
-    /// Compiles Slang source for <paramref name="options"/>' target, loading the modules first
-    /// if needed. Diagnostics carry slangc's or DXC's own file, line and column.
+    /// Compiles Slang source for <paramref name="options"/>' target, loading what it needs first:
+    /// the slangc module, then (only if the compile reaches it) the downstream module for this
+    /// target. Diagnostics carry slangc's or DXC's own file, line and column; a module that fails
+    /// to load is reported under its own code (<c>SD1904</c> for slangc, the downstream's
+    /// <c>SD1900</c>/<c>SD1902</c> for DXC/vkd3d).
     /// </summary>
     public async Task<Result<CompiledShader, ShaderError[]>> CompileAsync(
         string slangSource,
         CompilerOptions options,
         CancellationToken cancellationToken = default)
     {
+        string sourceName = options.SourceFileName ?? "<memory>.slang";
         try
         {
-            await InitializeAsync(cancellationToken).ConfigureAwait(false);
+            await SlangcModule.EnsureReadyAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is JSException or InvalidOperationException)
+        catch (JSException ex)
         {
-            return Result<CompiledShader, ShaderError[]>.Fail(
-            [
-                SlangcModule.LoadFailed(options.SourceFileName ?? "<memory>.slang", ex.Message),
-            ]);
+            return Fail(SlangcModule.LoadFailed(sourceName, ex.Message));
         }
-        return Compile(slangSource, options, cancellationToken);
+
+        Result<CompiledShader, ShaderError[]> result = Compile(slangSource, options, cancellationToken);
+        if (result.IsSuccess || !result.Error.Any(static e => e.Code == "SD1903") || _recording.LastFx is null)
+            return result;
+
+        // The downstream module for this target is not loaded yet (SD1903 from
+        // WasmShaderCompiler's synchronous core). Hand the SAME assembled .fx to its async
+        // entry, which loads that one module and maps a load failure to its own code.
+        return await _downstream.CompileAsync(_recording.LastFx, options, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
     /// Synchronous compile; <see cref="InitializeAsync"/> must have completed. Before that,
-    /// returns <c>SD0629</c> rather than aborting the .NET WebAssembly runtime.
+    /// returns <c>SD1903</c> rather than aborting the .NET WebAssembly runtime. A trap inside the
+    /// slangc module (for example a stack overflow on pathologically deep source) returns
+    /// <c>SD1905</c>, and the module is discarded so the next load starts clean.
     /// </summary>
     public Result<CompiledShader, ShaderError[]> Compile(
         string slangSource,
         CompilerOptions options,
         CancellationToken cancellationToken = default)
     {
+        string sourceName = options.SourceFileName ?? "<memory>.slang";
         if (!SlangcModule.IsReady)
         {
-            return Result<CompiledShader, ShaderError[]>.Fail(
-            [
-                new ShaderError(
-                    File: options.SourceFileName ?? "<memory>.slang", Line: 0, Column: 0, Code: "SD0629",
-                    Message: "The in-browser slangc module is not loaded. Await WasmSlangCompiler.InitializeAsync() " +
-                             "once before calling Compile, or call CompileAsync, which loads it on first use."),
-            ]);
+            return Fail(new ShaderError(
+                File: sourceName, Line: 0, Column: 0, Code: "SD1903",
+                Message: "Synchronous Compile() was called before the browser/WASM compiler was initialized: the " +
+                         "slangc (Slang -> HLSL) WASM module loads asynchronously and has not been loaded in this " +
+                         "session. Await WasmSlangCompiler.InitializeAsync() once before compiling synchronously, " +
+                         "or use CompileAsync(), which performs the load itself."));
         }
-        return _compiler.Compile(slangSource, options, cancellationToken);
+
+        _recording.LastFx = null;
+        try
+        {
+            return _compiler.Compile(slangSource, options, cancellationToken);
+        }
+        catch (SlangcTrapException ex)
+        {
+            return Fail(new ShaderError(
+                File: sourceName, Line: 0, Column: 0, Code: "SD1905",
+                Message: "The in-browser slangc module trapped while compiling this source (" + ex.Message + "). " +
+                         "This is a WebAssembly runtime failure, not a slangc diagnostic: native slangc may accept the " +
+                         "same source. The module instance was discarded; the next CompileAsync (or InitializeAsync) " +
+                         "loads a fresh one."));
+        }
     }
+
+    private static Result<CompiledShader, ShaderError[]> Fail(ShaderError error) =>
+        Result<CompiledShader, ShaderError[]>.Fail([error]);
 
     private static (int ExitCode, string Stdout, string Stderr) RunSlangc(
         string slangSource, IReadOnlyList<string> arguments)
     {
+        string[] r;
         try
         {
-            string[] r = SlangcModule.RunSlangc(slangSource, arguments.ToArray());
-            return (int.Parse(r[0], System.Globalization.CultureInfo.InvariantCulture), r[1], r[2]);
+            r = SlangcModule.RunSlangc(slangSource, arguments.ToArray());
         }
         catch (JSException ex)
         {
-            // A trap inside the module (out of memory, an internal abort) is reported like a
-            // slangc that died without diagnostics: non-zero exit, the module's own words.
-            return (1, "", "shadowdusk-slangc module failed: " + ex.Message);
+            // The shim has already dropped the trapped instance; mark the module not ready so
+            // nothing calls into it again before a fresh load.
+            SlangcModule.Invalidate();
+            throw new SlangcTrapException(ex.Message, ex);
+        }
+        return (int.Parse(r[0], System.Globalization.CultureInfo.InvariantCulture), r[1], r[2]);
+    }
+
+    private sealed class SlangcTrapException(string message, Exception inner) : Exception(message, inner);
+
+    /// <summary>
+    /// Passes every call to the real downstream, remembering the last assembled <c>.fx</c> so
+    /// <see cref="CompileAsync"/> can retry it through the downstream's own async (loading) path.
+    /// </summary>
+    private sealed class RecordingDownstream(WasmShaderCompiler inner) : IShaderCompiler
+    {
+        public string? LastFx { get; set; }
+
+        public Task<Result<CompiledShader, ShaderError[]>> CompileAsync(
+            string hlslSource, CompilerOptions options, CancellationToken cancellationToken = default)
+        {
+            LastFx = hlslSource;
+            return inner.CompileAsync(hlslSource, options, cancellationToken);
+        }
+
+        public Task InitializeAsync(CancellationToken cancellationToken = default) =>
+            inner.InitializeAsync(cancellationToken);
+
+        public Result<CompiledShader, ShaderError[]> Compile(
+            string hlslSource, CompilerOptions options, CancellationToken cancellationToken = default)
+        {
+            LastFx = hlslSource;
+            return inner.Compile(hlslSource, options, cancellationToken);
         }
     }
 }

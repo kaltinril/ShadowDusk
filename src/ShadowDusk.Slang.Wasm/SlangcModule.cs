@@ -24,6 +24,13 @@ internal static partial class SlangcModule
 
     public static bool IsReady => _ready;
 
+    /// <summary>
+    /// Called after a trap inside the module: the JS shim has already dropped the instance, so
+    /// the next <see cref="EnsureReadyAsync"/> instantiates a fresh one (the registration of the
+    /// shim itself stays valid).
+    /// </summary>
+    public static void Invalidate() => _ready = false;
+
     public static async Task EnsureReadyAsync(CancellationToken cancellationToken)
     {
         if (_ready)
@@ -58,7 +65,7 @@ internal static partial class SlangcModule
     }
 
     public static ShaderError LoadFailed(string sourceName, string message) =>
-        new(File: sourceName, Line: 0, Column: 0, Code: "SD0628",
+        new(File: sourceName, Line: 0, Column: 0, Code: "SD1904",
             Message: "The in-browser slangc module (shadowdusk-slangc) could not be loaded: " + message);
 
     [JSImport("ensureReady", ModuleName)]

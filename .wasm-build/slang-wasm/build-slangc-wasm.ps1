@@ -17,6 +17,7 @@
 # If -EmsdkRoot is omitted, the script clones emsdk into -WorkDir and installs 6.0.0.
 param(
     [string]$EmsdkRoot,
+    [string]$StackSize = '8MB',
     [string]$WorkDir = (Join-Path ([IO.Path]::GetTempPath()) 'shadowdusk-slangc-wasm'),
     [string]$OutDir = (Join-Path $PSScriptRoot '../../src/ShadowDusk.Slang.Wasm/wwwroot/slangc')
 )
@@ -59,6 +60,12 @@ if ($IsWindows -and -not (Test-Path $emxx)) { $emxx = Join-Path $EmsdkRoot 'upst
 # 3. Link. Flags mirror upstream's emscripten preset (-fwasm-exceptions -Os,
 # ALLOW_MEMORY_GROWTH); MODULARIZE/EXPORT_ES6 give the same lazy-loaded ES-module shape
 # the other ShadowDusk.Wasm modules use. FORCE_FILESYSTEM: the glue stages stdin in MEMFS.
+# STACK_SIZE: emscripten's default stack is 64 KB, against 1 MB for native slangc on Windows
+# and 8 MB on Linux/macOS. slang's parser and IR passes recurse per nesting level, so at 64 KB
+# valid shaders trapped ('memory access out of bounds') at ~70 nested ternaries or ~200 added
+# terms where native slangc compiles twice that (PR #266 review). 8 MB matches the Linux/macOS
+# main-thread default; wasm frames are larger than native ones, so the depth this buys is
+# measured by node-test-slangc-wasm.mjs's depth probe, not assumed.
 $lib = Join-Path $libs 'lib'
 $emArgs = @(
     '-std=c++17', '-Os', '-fwasm-exceptions',
@@ -73,6 +80,7 @@ $emArgs = @(
     '--bind',
     '-sMODULARIZE=1', '-sEXPORT_ES6=1', '-sEXPORT_NAME=createShadowDuskSlangc',
     '-sALLOW_MEMORY_GROWTH=1', '-sENVIRONMENT=web,worker,node', '-sFORCE_FILESYSTEM=1',
+    "-sSTACK_SIZE=$StackSize",
     '-o', (Join-Path $OutDir 'shadowdusk-slangc.js')
 )
 & $emxx @emArgs
