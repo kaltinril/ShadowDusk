@@ -29,7 +29,8 @@ namespace ShadowDusk.Integration.Tests.Tests;
 /// vkd3d SM1-3 backend compiles the legacy (vs_2_0/ps_2_0) macro branch directly and never
 /// uses DXC for codegen, so the GL legacy-branch SPIR-V crash cannot occur. The re-parse runs
 /// in PreserveSm3 mode. Result: the stock effects that fit SM2 (SpriteEffect, AlphaTestEffect,
-/// DualTextureEffect, Penumbra*) now compile on FNA; the ones that overflow the SM2 register
+/// DualTextureEffect, PenumbraHull, PenumbraShadow) now compile on FNA (PenumbraLight and
+/// PenumbraTexture use DX10-style texture objects and are rejected as SD0303, issue #230); the ones that overflow the SM2 register
 /// file (BasicEffect/SkinnedEffect, SD0305) or use a sub-SM2 profile (Gum's FnaSample uses
 /// vs_1_1, SD0300) now fail for their HONEST downstream reason rather than the SD0010
 /// technique-blindness. See <see cref="Fna_StockMacroEffects_ThatFitSm2_NowCompile"/> and the
@@ -200,10 +201,32 @@ public sealed class Phase41MacroTechniqueTests
         "AlphaTestEffect.fx",
         "DualTextureEffect.fx",
         "PenumbraHull.fx",
-        "PenumbraLight.fx",
         "PenumbraShadow.fx",
-        "PenumbraTexture.fx",
     };
+
+    /// <summary>
+    /// Issue #230: PenumbraLight/PenumbraTexture declare DX10-style texture objects
+    /// (<c>Texture2D</c> + <c>SamplerState</c> + <c>.Sample</c>) outside any macro branch. They
+    /// used to "compile" on FNA, but vkd3d folds each pair into one texture-typed <c>S+T</c>
+    /// sampler, and real FNA throws <c>Unhandled sampler state!</c> on such an effect at the
+    /// first draw (measured on the Slang corpus, same mechanism). <c>fxc /T fx_2_0</c> refuses
+    /// this source, so ShadowDusk now does too, by name, instead of shipping the crash.
+    /// </summary>
+    [Theory]
+    [Trait("Platform", "FNA")]
+    [InlineData("PenumbraLight.fx", "Texture")]
+    [InlineData("PenumbraTexture.fx", "DiffuseMap")]
+    public async Task Fna_StockEffectsWithTextureObjects_FailLoudlyAsSD0303(string fixtureFileName, string texture)
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+
+        var (data, error) = await CompileAsync(fixtureFileName, PlatformTarget.Fna, cts.Token);
+
+        data.ShouldBeNull();
+        error.ShouldNotBeNull();
+        error!.Code.ShouldBe("SD0303");
+        error.Message.ShouldContain($"texture '{texture}'", Case.Sensitive);
+    }
 
     [Theory]
     [Trait("Platform", "FNA")]

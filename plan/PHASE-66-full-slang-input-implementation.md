@@ -17,9 +17,12 @@ acceptance rule (closing the `SD0600` `interface`/generics gap), the full-corpus
 render gate (21 shaders x 4 targets: 84/84 compiles, maxd 0 pixel equivalence on the
 procedural subset, 21/21 real DirectX_11 `Effect` loads/renders), and the docs/support-surface
 updates. **A9 (issues #225/#226/#227, 2026-10-01): slangc for linux-x64/osx-x64/osx-arm64,
-a cold NuGet consumer proven, and the release gate.** Left open: §5's remaining open questions,
-a real-`Effect`-load gate for DirectX_12/Vulkan (A7 stayed at the compile+structural rung for
-those two), and lifting upstream's macOS 26 floor (issue #237).
+a cold NuGet consumer proven, and the release gate.** **Issue #230 (2026-10-01): the
+DirectX_12, Vulkan and FNA real-engine arms** (`validation/SlangFullCorpusDx12`,
+`SlangFullCorpusVulkan`, `FnaValidation -- slang`; vs `mgfxc` 3.8.5 / `fxc /T fx_2_0` on the same
+assembled `.fx`, 21/21 each, max delta 0/1/1) and the FNA texture-object fix they found
+(`SlangFx2TextureRespeller`, `SD0627`). Left open: §5's remaining open questions and lifting
+upstream's macOS 26 floor (issue #237).
 
 **Depends on:** [Phase 61](DONE/PHASE-61-slang-support.md) (the shipped HLSL-compatible-subset
 frontend and its groundwork §6/§7/OQ2/OQ3) and [Phase 65](PHASE-65-full-slang-input-spike.md) (the
@@ -653,10 +656,9 @@ turn into an open-ended slog.
   reference-compiler render gate every §1 backend target has (there is no `mgfxc` oracle for
   Slang input at all, on either tier — see §1's non-negotiables — so "reference-compiler" here
   can only ever mean "slangc's own HLSL emission", which gate 2 already uses). **Left open,
-  precisely:** a real-`Effect`-load gate for DirectX_12 and Vulkan (today: gate 1's
-  compile+structural rung only — DX12/Vulkan each need their own separate-process harness,
-  matching how `VsDrivenDx12`/`VsDrivenVulkan` already have to run isolated from other GPU
-  contexts); OpenGL's gate 2 uses the same hand-rolled GL 3.3 context `SlangCorpus`'s own gate
+  precisely:** a real-`Effect`-load gate for DirectX_12 and Vulkan (closed by issue #230,
+  which added separate-process DX12/Vulkan drivers and the FNA arm, each vs the reference
+  compiler's build of the assembled `.fx`); OpenGL's gate 2 uses the same hand-rolled GL 3.3 context `SlangCorpus`'s own gate
   2 uses, not a real MonoGame `Effect` (same limitation as the existing gate, not new here).
 
   Wired default-ON in `run-windows-render-gates.ps1`, immediately after the existing

@@ -14,6 +14,16 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **`ShadowDusk.Slang`: textured shaders no longer crash real FNA (issue #230).** slangc emits
+  texture objects (`Texture2D T; SamplerState S; T.Sample(S, uv)`). On the FNA target that compiled,
+  but vkd3d folds the pair into one texture-typed sampler named `S+T`, so the `.fxb` held a texture
+  where MojoShader expects a sampler and FNA threw `NotImplementedException: Unhandled sampler
+  state!` on the first draw (all 12 textured shaders of the 21-shader corpus; `fxc /T fx_2_0` refuses
+  the same text). `SlangCompiler` now respells them for FNA in DX9 effect syntax (`texture2D T;
+  sampler2D S = sampler_state { Texture = <T>; }; tex2D(S, uv)`), the same SM3 `texld`, and rejects
+  texture shapes it does not model (`SampleLevel`, `Load`, a non-2D texture, one sampler for two
+  textures) as the new `SD0627`. The `.fx` route, which had the same silent crash for a texture
+  object at `ps_2_0`/`ps_3_0`, now fails with `SD0303` and says how to write it.
 - **`ShadowDusk.Slang`: textured shaders sample SpriteBatch's texture on OpenGL (issue #252).** slangc
   numbers every texture and sampler itself (`SamplerState S : register(s0)`), and the OpenGL sampler
   allocator reads a `SamplerState` register as an author reservation (mgfxc's own rule), so a
@@ -36,6 +46,15 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **Real-engine render gates for `ShadowDusk.Slang` on DirectX 12, Vulkan and FNA (issue #230).**
+  The 21-shader real-slangc corpus goes through `SlangCompiler` and is rendered next to the
+  reference compiler's build of the same assembled `.fx`, in the real engine on the same device:
+  `validation/SlangFullCorpusDx12` (mgfxc 3.8.5 `/Profile:DirectX_12`, MonoGame 3.8.5 WindowsDX12,
+  21/21, max delta 0/255), `validation/SlangFullCorpusVulkan` (mgfxc 3.8.5 `/Profile:Vulkan`, DesktopVK,
+  21/21, max delta 1/255) and `validation/FnaValidation -- slang` (`fxc /T fx_2_0`, FNA 26.06, 21/21,
+  max delta 1/255, plus the `.xnb` Content.Load arm at delta 0). Each runs two positive controls (a
+  swapped-channel pixel shader and a transposed vertex transform) that must diverge, and each now has
+  a slot in `validation/run-windows-render-gates.ps1` (FNA under `-IncludeFna`).
 - **Linux and Slang evidence for the DXC concurrency fix (issue #256).** No emitted byte changes.
   The fork probe in `DxcConcurrencyStressTests` now also makes real libc `fork()` calls on Linux
   (`Process.Start` there is `vfork()`, which never exercises the macOS mechanism) and reports what
