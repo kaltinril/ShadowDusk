@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- Intentionally NOT in ShadowDusk.slnx (validation drivers never are). net8.0 + real
+         MonoGame DesktopGL, so it runs on the Windows render-gate box and on the Linux
+         xvfb/llvmpipe lane of validation-render.yml alike. -->
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <!-- MonoGame/SDL analyzers and our harness trip the repo-wide warnings-as-errors -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RootNamespace>ShadowDusk.Validation.SlangTexturedGl</RootNamespace>
+    <AssemblyName>ShadowDusk.Validation.SlangTexturedGl</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MonoGame.Framework.DesktopGL" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The product route under test: real slangc, packaged by ShadowDusk.Slang. -->
+    <ProjectReference Include="..\..\src\ShadowDusk.Slang\ShadowDusk.Slang.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Structural read-back of the sampler table, so a failure names the unit each
+         sampler landed on (same parser validation/SlangFullCorpus links). -->
+    <Compile Include="..\..\tests\ShadowDusk.Integration.Tests\MgfxBlobReader.cs" Link="MgfxBlobReader.cs" />
+  </ItemGroup>
+</Project>

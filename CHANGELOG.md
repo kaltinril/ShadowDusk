@@ -14,11 +14,39 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **`ShadowDusk.Slang`: textured shaders sample SpriteBatch's texture on OpenGL (issue #252).** slangc
+  numbers every texture and sampler itself (`SamplerState S : register(s0)`), and the OpenGL sampler
+  allocator reads a `SamplerState` register as an author reservation (mgfxc's own rule), so a
+  single-texture Slang shader landed on sampler slot 1 while SpriteBatch binds the draw texture to
+  unit 0, and the shader never saw it. `SlangCompiler` now strips slangc's own texture/sampler
+  registers and keeps every `register(...)` the author wrote, so the route matches what the `.fx`
+  route gives the equivalent hand-written HLSL. New render gate `validation/SlangTexturedGl` (real
+  MonoGame DesktopGL, texture on unit 0 via SpriteBatch, Invert compared against the `mgfxc` golden)
+  measured red before the fix and green after; `slang-manifest.json` regenerated.
+- **Slang follow-ups (issue #258).** `*.slang` files are now pinned to LF in the checkout
+  (`.gitattributes`), like `.fx`/`.fxh`; every tracked `.slang` was already LF in the repo, so no
+  bytes change. `SlangCompiler`'s `SD0625` rejection (two entry points emitting different
+  declarations of one cbuffer/resource name) is now tested end to end through `SlangCompiler`
+  with a fake slangc, via an internal seam; the public API is unchanged. Every committed
+  `packages.lock.json` now records the `ShadowDusk.*` project references at 0.20.0 (they still
+  said 0.18.0, which no restore flags), and the release runbook rewrites them on each bump.
 - **Intermittent 60 s timeout in `Issue202_AposShapesCurrentUpstream_LandsOnTheRegisterLimit` on CI.** The test compiled the 3235-line shader twice, and each vkd3d compile costs about 3.3 s of CPU that a loaded runner stretched past the test's 60 s token. It now compiles once with no wall-clock token, since a token cannot interrupt a native compile; the CI integration step's `--blame-hang-timeout 3m` guards hangs and uploads a thread dump.
 - **`.fx` wave/quad intrinsics now fail loudly and consistently on every target that cannot hold them.** On OpenGL, DirectX 11 and FNA they are rejected with `SD0624` (the code the `.slang` route already used), instead of DXC's `Vulkan 1.1 is required` (OpenGL) or vkd3d's `Function "WaveActiveSum" is not defined` (DX11, FNA). The message names the intrinsic and target, keeps the compiler's own line and column, and appends its text; `.fx` and `.slang` share one message. A user function that shares an intrinsic's name on those targets still compiles. DirectX12 still compiles them; Vulkan stays `SD0218`.
 - **Host-independent generated text.** The Slang frontend `.fx`, the SkSL uniform rewrite, the ShaderToy `.fx` and harness, and the multipass manifest/WIRING.md used `AppendLine` (CRLF on Windows, LF elsewhere); they now emit `\n` everywhere. `HostNewlineBanTests` fails if `AppendLine`/`Environment.NewLine`/`WriteLine` reappears in a generator project. Compiled output bytes are unchanged.
 
 ### Added
+
+- **Linux and Slang evidence for the DXC concurrency fix (issue #256).** No emitted byte changes.
+  The fork probe in `DxcConcurrencyStressTests` now also makes real libc `fork()` calls on Linux
+  (`Process.Start` there is `vfork()`, which never exercises the macOS mechanism) and reports what
+  it raced; on ubuntu CI 16 runs raced about 8,200 DXC compiles against 8,100 process starts and 10,000
+  forks with no hang, so `DxcForkGate` stays macOS-only. A new fresh-process `setlocale` audit
+  checks every DXC entry point ShadowDusk uses and fails if any call outside the fork gate starts
+  calling `setlocale` (reflection was measured not to). A probe pinning which hosts' `Process.Start`
+  really forks, and `SlangDxcConcurrencyTests` (slangc spawns racing `.fx` compiles), join it.
+  A hung probe child now leaves native stacks (gdb on Linux, `sample` on macOS) and a
+  `createdump` core in the CI hang-dump artifact; the Linux integration lane lowers
+  `ptrace_scope` so they can attach.
 
 - **The Vulkan render gates run in CI.** `validation-render.yml` gains a `vulkan-render-gates` job
   (ubuntu, label-gated like the GL and DX jobs) that renders `VsDrivenVulkan` (VS-driven fixture vs the
@@ -121,6 +149,12 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 - **Every release and pack-consume nupkg gate now matches exact entry names** instead of a
   substring of the listing. A substring match could not tell `runtimes/<rid>/native/slangc`
   from the mis-packed `runtimes/<rid>/native/slangc/slangc`.
+- **The `ShadowDusk.Slang` nupkg gate is one script, runnable locally (issue #226).**
+  `tools/verify-slang-nupkg.sh <nupkg>` holds the only list of the eight slangc natives (slangc
+  plus its slang-compiler library for win-x64, linux-x64, osx-x64 and osx-arm64) and the
+  Apache-2.0 notice. `release.yml` and `tools/verify-slang-packaging.sh` (pack-consume.yml) both
+  call it, so the two gates can no longer drift apart, and it fails red when the package is
+  missing any entry or was not produced at all.
 
 ### Fixed
 
