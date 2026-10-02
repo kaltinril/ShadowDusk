@@ -204,4 +204,19 @@ public sealed class DxcLoaderTests
 
         DxcShaderCompiler.UsesValidator(args).ShouldBe(expected);
     }
+
+    [Fact]
+    public void PinnedVorticeDxc_ExposesTheResolverFieldSubscribeFirstRewrites()
+    {
+        // DxcLoader.SubscribeFirst puts our resolver ahead of Vortice's own by rewriting this
+        // private event field, and silently falls back to a plain (last-in-line) subscription
+        // when it is missing, which reopens the Linux LD_LIBRARY_PATH hole. A Vortice.Dxc bump
+        // that renames or retypes the field must fail here, not in a consumer's process.
+        var field = typeof(Vortice.Dxc.Dxc).GetField(
+            "ResolveLibrary",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+
+        field.ShouldNotBeNull();
+        field.FieldType.ShouldBe(typeof(DllImportResolver));
+    }
 }
