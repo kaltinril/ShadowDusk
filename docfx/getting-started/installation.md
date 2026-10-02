@@ -82,6 +82,8 @@ var result = compiler.Compile(slangSource, new CompilerOptions { Target = Platfo
 
 **In the browser:** a browser cannot start slangc as a process, so the same pinned slangc is compiled to WebAssembly and run inside the page (`ShadowDusk.Slang.Wasm`'s `WasmSlangCompiler`). It gets the identical command line, its output is measured byte-identical to native slangc's, and its HLSL goes through the same in-browser DXC pipeline. It is not published as a NuGet package yet; the ShaderFiddle sample uses it from source.
 
+**Parameter names are the ones you wrote.** slangc's `-no-mangle` keeps cbuffer members and `Texture2D`/`SamplerState` globals at their source names, and a combined `Sampler2D Comb;` reflects its texture as `Comb` (`effect.Parameters["Comb"].SetValue(texture)`; slangc itself splits it into `Comb_texture_0` and `Comb_sampler_0`, and ShadowDusk gives the texture back the name you wrote, the same table a hand-written `Texture2D Comb; SamplerState ...` gets through the `.fx` route). A texture held in a struct global, inside a `cbuffer`/`ParameterBlock`, or taken as an entry-point `uniform` parameter has no name you wrote that could identify it, so it is rejected with `SD0640` naming the aggregate; declare such textures as globals of their own.
+
 A consumer who only needs the free subset above pays zero extra size or dependency for this package. Same rejection discipline either way: a construct real slangc accepts but that has nowhere to land in an `Effect` (a compute entry point, an SM6-only wave/quad intrinsic on a target that can't represent it) is rejected loudly by name, never silently dropped. Neither tier is ever `mgfxc`-equivalent — `mgfxc` cannot read Slang at all.
 
 ## Targeting FNA
