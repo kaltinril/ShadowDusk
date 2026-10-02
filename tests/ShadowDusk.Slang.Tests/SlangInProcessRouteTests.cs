@@ -76,10 +76,17 @@ public sealed class SlangInProcessRouteTests
     [Trait("Category", "Integration")]
     public void CommittedSlangcArgs_MatchTheSharedArgumentBuilder()
     {
+        // 'targets' is the per-entry compile; 'preprocess' is the preprocess-only pass that finds
+        // author-written registers (issue #252 follow-up). Both are slangc invocation shapes
+        // the in-process module must answer exactly like native slangc.
         var targets = new SortedDictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+        var preprocess = new SortedDictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
         foreach (PlatformTarget target in Enum.GetValues<PlatformTarget>().Where(PlatformMacros.IsSupported))
+        {
             targets[target.ToString()] = SlangcArguments.Build(PlatformMacros.For(target).Macros, [], "{entry}", "{stage}");
-        string expected = JsonSerializer.Serialize(new { targets }, new JsonSerializerOptions { WriteIndented = true })
+            preprocess[target.ToString()] = SlangcArguments.BuildPreprocess(PlatformMacros.For(target).Macros, []);
+        }
+        string expected = JsonSerializer.Serialize(new { targets, preprocess }, new JsonSerializerOptions { WriteIndented = true })
             .Replace("\r\n", "\n", StringComparison.Ordinal) + "\n";
 
         string path = Path.Combine(FindRepoRoot(), "tests", "fixtures", "golden", "slangc-args.json");

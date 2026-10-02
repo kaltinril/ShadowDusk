@@ -139,7 +139,10 @@ seamless directive rules that out. Android should take the in-process route too 
 that varies by host:
 
 - `SlangcArguments.Build` is the one argument list; `SlangCompiler.RunSlangc` (desktop, child
-  process) and the in-process route both use it.
+  process) and the in-process route both use it. A second shape, `SlangcArguments.BuildPreprocess`
+  (`slangc -E`, added by the issue #252 follow-up so the register strip reads slangc's own
+  preprocessed source), goes through both transports the same way; the existing glue answers it
+  with no rebuild, and the node gate compares it against native too (200/200).
 - `SlangcArguments.JoinOutputLines` reproduces `Process.OutputDataReceived`'s per-line split and
   the `'\n'` re-join, so an in-process slangc's raw writer text lands on the same string.
 - An internal constructor `SlangCompiler(IShaderCompiler, InProcessSlangc)` skips only the

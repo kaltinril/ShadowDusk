@@ -6,6 +6,9 @@
 //   (b) shadowdusk-slangc.wasm's runSlangc(source, args),
 // then compares exit code, stdout and stderr after the per-line '\n' join that
 // Process.OutputDataReceived applies on the managed side (SlangcArguments.JoinOutputLines in C#).
+// The preprocess-only list (SlangcArguments.BuildPreprocess, '-E': how SlangCompiler learns
+// which registers the author wrote, issue #252 follow-up) goes through both the same way,
+// once per shader and target, and is counted separately from the compile runs.
 //
 // Usage: node node-test-slangc-wasm.mjs <dir containing shadowdusk-slangc.js> [repo root]
 import { spawnSync } from 'node:child_process';
@@ -30,9 +33,14 @@ console.log(`module loaded in ${loadMs.toFixed(0)} ms, slang ${mod.getSlangVersi
 // The per-target command lines come from tests/fixtures/golden/slangc-args.json, which
 // SlangInProcessRouteTests.CommittedSlangcArgs_MatchTheSharedArgumentBuilder pins to
 // SlangcArguments.Build + PlatformMacros.For (the C# source of truth); nothing is re-typed here.
-const argTemplates = JSON.parse(fs.readFileSync(path.join(repoRoot, 'tests', 'fixtures', 'golden', 'slangc-args.json'), 'utf8')).targets;
+const pinnedArgs = JSON.parse(fs.readFileSync(path.join(repoRoot, 'tests', 'fixtures', 'golden', 'slangc-args.json'), 'utf8'));
+const argTemplates = pinnedArgs.targets;
+const preprocessArgs = pinnedArgs.preprocess;
 const targets = Object.keys(argTemplates);
 if (targets.length < 5) { console.error(`slangc-args.json lists only ${targets.length} targets`); process.exit(2); }
+if (!preprocessArgs || targets.some(t => !Array.isArray(preprocessArgs[t]) || !preprocessArgs[t].includes('-E'))) {
+  console.error('slangc-args.json has no preprocess (-E) list for every target'); process.exit(2);
+}
 function slangcArgs(target, entry, stage) {
   return argTemplates[target].map(a => a === '{entry}' ? entry : a === '{stage}' ? stage : a);
 }
@@ -54,6 +62,7 @@ const corpora = [
 ];
 
 let runs = 0, identical = 0, nativeFailures = 0, wasmMs = 0, nativeMs = 0;
+let preprocessRuns = 0, preprocessIdentical = 0, preprocessWithRegister = 0;
 const mismatches = [];
 for (const dir of corpora) {
   const abs = path.join(repoRoot, dir);
@@ -63,6 +72,19 @@ for (const dir of corpora) {
     const entries = [...source.matchAll(entryRe)].map(m => ({ stage: m[1], name: m[2] }));
     if (entries.length === 0) entries.push({ stage: 'fragment', name: 'main' }); // still compare the failure
     for (const target of targets) {
+      {
+        // The preprocess-only pass: entry-independent, so once per shader and target.
+        const args = preprocessArgs[target];
+        const n = spawnSync(slangc, args, { input: Buffer.from(source, 'utf8'), cwd: path.dirname(slangc) });
+        const native = { exitCode: n.status === 0 ? 0 : 1, stdout: managedLines(n.stdout.toString('utf8')), stderr: managedLines(n.stderr.toString('utf8')) };
+        const w = mod.runSlangc(source, args);
+        const wasm = { exitCode: w.exitCode, stdout: managedLines(w.stdout), stderr: managedLines(w.stderr) };
+        preprocessRuns++;
+        if (/:\s*register\s*\(/.test(native.stdout)) preprocessWithRegister++;
+        const same = native.exitCode === wasm.exitCode && native.stdout === wasm.stdout && native.stderr === wasm.stderr;
+        if (same) preprocessIdentical++;
+        else mismatches.push({ key: `${dir}/${file} ${target} preprocess (-E)`, native, wasm });
+      }
       for (const e of entries) {
         const args = slangcArgs(target, e.name, e.stage);
         let t = performance.now();
@@ -84,7 +106,53 @@ for (const dir of corpora) {
 }
 
 console.log(`runs ${runs}, identical ${identical}, native non-zero exits ${nativeFailures} (all compared incl. stderr)`);
+console.log(`preprocess (-E) runs ${preprocessRuns}, identical ${preprocessIdentical}, with an author register in the output ${preprocessWithRegister}`);
+if (preprocessWithRegister === 0) { console.error('no corpus shader writes a register: the -E comparison would prove nothing about them'); process.exit(2); }
+// Floor on the preprocess run count (200 measured 2026-10-01: 40 shaders x 5 targets): the
+// corpus may grow, never quietly shrink.
+const MIN_PREPROCESS_RUNS = 200;
+if (preprocessRuns < MIN_PREPROCESS_RUNS) {
+  console.error(`FAIL only ${preprocessRuns} preprocess (-E) runs compared, expected at least ${MIN_PREPROCESS_RUNS}`);
+  process.exit(1);
+}
 console.log(`time: native slangc spawn total ${nativeMs.toFixed(0)} ms, in-process wasm total ${wasmMs.toFixed(0)} ms`);
+
+// ---------------------------------------------------------------------------------------
+// Register shapes (issue #252 follow-up). The corpora above write their registers directly;
+// these two write them where only a preprocessor can tell: in an #if branch one target takes
+// and another does not, and through a macro. The preprocess-only output and the compile must
+// match native on every target, and the preprocessed text must show the register exactly
+// where the active branch / the macro puts it (that text is what SlangCompiler reads).
+const texturedPs = '[shader("fragment")]\nfloat4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target\n{ return SpriteTexture.Sample(SpriteSampler, uv); }\n';
+const registerShapes = {
+  'register only outside OPENGL': {
+    source: 'Texture2D SpriteTexture;\n#if OPENGL\nSamplerState SpriteSampler;\n#else\nSamplerState SpriteSampler : register(s0);\n#endif\n' + texturedPs,
+    bound: target => target !== 'OpenGL',
+  },
+  'register through a macro': {
+    source: '#define SLOT(n) : register(n)\nTexture2D SpriteTexture SLOT(t1);\nSamplerState SpriteSampler SLOT(s1);\n' + texturedPs,
+    bound: () => true,
+  },
+};
+for (const [label, shape] of Object.entries(registerShapes)) {
+  let ok = true;
+  for (const target of targets) {
+    for (const args of [preprocessArgs[target], slangcArgs(target, 'MainPS', 'fragment')]) {
+      const n = spawnSync(slangc, args, { input: Buffer.from(shape.source, 'utf8'), cwd: path.dirname(slangc) });
+      const native = { exitCode: n.status === 0 ? 0 : 1, stdout: managedLines(n.stdout.toString('utf8')), stderr: managedLines(n.stderr.toString('utf8')) };
+      const w = mod.runSlangc(shape.source, args);
+      const wasm = { exitCode: w.exitCode, stdout: managedLines(w.stdout), stderr: managedLines(w.stderr) };
+      const isPreprocess = args.includes('-E');
+      const same = native.exitCode === 0 && native.exitCode === wasm.exitCode && native.stdout === wasm.stdout && native.stderr === wasm.stderr;
+      const boundAsExpected = !isPreprocess || /SpriteSampler\s*:\s*register\s*\(/.test(wasm.stdout) === shape.bound(target);
+      if (!same || !boundAsExpected) {
+        ok = false;
+        mismatches.push({ key: `register shape '${label}' ${target} ${isPreprocess ? 'preprocess (-E)' : 'compile'}${boundAsExpected ? '' : ' (register presence in the preprocessed text is wrong)'}`, native, wasm });
+      }
+    }
+  }
+  console.log(`register shape ${ok ? 'OK  ' : 'FAIL'} ${label}: preprocess + compile on ${targets.length} targets`);
+}
 
 // ---------------------------------------------------------------------------------------
 // Depth probe (PR #266 review). slang's parser and IR passes recurse once per nesting level,

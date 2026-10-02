@@ -110,7 +110,10 @@ other targets keep the unmodified SPIRV-Cross dialect. The pixel-stage transform
     on `N`, while a modern `SamplerState` merely occupies its register and pushes the synthesized
     combined samplers around it — one texture plus `SamplerState S : register(s0)` yields
     `ps_s1`, not `ps_s0`. `FxPreParser` records both facts before its SM4 rewrite drops the
-    clauses. Verified against the pinned `mgfxc` on ten shapes.
+    clauses. Verified against the pinned `mgfxc` on ten shapes. Known gap: the scan reads the
+    file's tokens before any preprocessing, so a register inside an inactive `#if` branch is
+    still counted and one written through a macro is not, where `mgfxc` (which preprocesses
+    first) does the opposite on both (measured; `docs/validation-matrix.md` §7).
   - **Per pair, not per sampler.** Two textures read through one shared `SamplerState` (the
     diffuse+lightmap idiom) produce **two** records; two samplers over one texture (the
     linear+point idiom) also produce two, each with its own state. Keying on the reflected

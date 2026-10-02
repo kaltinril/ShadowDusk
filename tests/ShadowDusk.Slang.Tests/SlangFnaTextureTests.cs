@@ -122,6 +122,92 @@ public sealed class SlangFnaTextureTests
         Fx2BinaryValidator.Parse(result.Value.Data).SamplerTextureMap.Values.ShouldContain("SpriteTexture");
     }
 
+    // ---- Issue #230 follow-up: a USER type whose name starts with "Texture" is not a texture.
+    // Both shaders below are texture-free and compiled on OpenGL and DirectX all along; on FNA
+    // they failed as SD0627 ("a texture or sampler passed as a function parameter
+    // ('TextureRegion_0 r_0')" and "the texture array 'slots_0[...]'").
+
+    private const string StructNamedTextureRegion = """
+        struct TextureRegion { float4 Rect; };
+        cbuffer P { float4 Rect; };
+        float2 Remap(TextureRegion r, float2 uv) { return r.Rect.xy + uv * r.Rect.zw; }
+
+        [shader("fragment")]
+        float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
+        {
+            TextureRegion r;
+            r.Rect = Rect;
+            return float4(Remap(r, uv), 0, 1);
+        }
+        """;
+
+    private const string LocalArrayOfTextureSlot = """
+        struct TextureSlot { float2 Scale; };
+        cbuffer P { float4 Scales; };
+
+        [shader("fragment")]
+        float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
+        {
+            TextureSlot slots[2];
+            slots[0].Scale = Scales.xy;
+            slots[1].Scale = Scales.zw;
+            int i = uv.x > 0.5 ? 1 : 0;
+            return float4(uv * slots[i].Scale, 0, 1);
+        }
+        """;
+
+    [Theory]
+    [InlineData(StructNamedTextureRegion, PlatformTarget.Fna)]
+    [InlineData(StructNamedTextureRegion, PlatformTarget.OpenGL)]
+    [InlineData(StructNamedTextureRegion, PlatformTarget.DirectX)]
+    [InlineData(LocalArrayOfTextureSlot, PlatformTarget.Fna)]
+    [InlineData(LocalArrayOfTextureSlot, PlatformTarget.OpenGL)]
+    [InlineData(LocalArrayOfTextureSlot, PlatformTarget.DirectX)]
+    public void TextureFreeShader_WithATextureNamedUserType_Compiles(string source, PlatformTarget target)
+    {
+        var result = new SlangCompiler().Compile(
+            source, new CompilerOptions { Target = target, SourceFileName = "UserType.slang" });
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? string.Join("; ", result.Error.Select(e => e.FxcFormattedMessage)) : "");
+        if (target == PlatformTarget.Fna)
+        {
+            Fx2ParsedEffect effect = Fx2BinaryValidator.Parse(result.Value.Data);
+            effect.SamplerTextureMap.ShouldBeEmpty("the shader has no texture");
+        }
+    }
+
+    [Fact]
+    public void TexturedShader_WithResourceNamedUserTypes_StillBindsItsRealTexture()
+    {
+        // The real Texture2D/SamplerState are respelled; 'TextureRegion' and 'SamplerStateInfo'
+        // (user structs, one passed to a helper) are left exactly as slangc emitted them.
+        const string source = """
+            struct TextureRegion { float4 Rect; };
+            struct SamplerStateInfo { float2 Scale; };
+            cbuffer P { float4 Rect; float2 Scale; };
+            Texture2D SpriteTexture;
+            SamplerState SpriteSampler;
+            float2 Remap(TextureRegion r, SamplerStateInfo info, float2 uv) { return r.Rect.xy + uv * r.Rect.zw * info.Scale; }
+
+            [shader("fragment")]
+            float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
+            {
+                TextureRegion r;
+                r.Rect = Rect;
+                SamplerStateInfo info;
+                info.Scale = Scale;
+                return SpriteTexture.Sample(SpriteSampler, Remap(r, info, uv));
+            }
+            """;
+
+        var result = new SlangCompiler().Compile(source, Fna);
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? string.Join("; ", result.Error.Select(e => e.FxcFormattedMessage)) : "");
+        Fx2ParsedEffect effect = Fx2BinaryValidator.Parse(result.Value.Data);
+        effect.SamplerTextureMap["SpriteSampler"].ShouldBe("SpriteTexture");
+        effect.SamplerTextureMap.Count.ShouldBe(1);
+    }
+
     [Theory]
     [InlineData(PlatformTarget.OpenGL)]
     [InlineData(PlatformTarget.DirectX)]

@@ -131,16 +131,15 @@ public sealed class SlangCompiler
     }
 
     /// <summary>
-    /// One slangc invocation for one entry point, shaped exactly like <see cref="RunSlangc"/>.
+    /// One slangc process run: <paramref name="arguments"/> is a <see cref="SlangcArguments"/>
+    /// list (a per-entry compile or the preprocess-only pass) and the source goes to stdin.
+    /// Shaped exactly like <see cref="RunSlangc(string, string, string, IReadOnlyList{string})"/>.
     /// </summary>
     internal delegate (int ExitCode, string Stdout, string Stderr) SlangcInvoker(
         string slangcPath,
         string workingDirectory,
         string slangSource,
-        string entryName,
-        string stage,
-        IReadOnlyList<MacroDefinition> platformMacros,
-        IReadOnlyList<UserDefine> defines);
+        IReadOnlyList<string> arguments);
 
     /// <summary>
     /// Test seam (issue #258): <paramref name="prepareSlangc"/> replaces the native-cache
@@ -163,9 +162,11 @@ public sealed class SlangCompiler
 
     /// <summary>
     /// One slangc run hosted INSIDE this process (issue #257): <paramref name="arguments"/>
-    /// is <see cref="SlangcArguments.Build"/>'s list, to be handed to slang's own command-line
-    /// parser verbatim, and <paramref name="slangSource"/> is what the desktop route pipes to
-    /// slangc's stdin. Returns slangc's exit status and its raw stdout/stderr text;
+    /// is a <see cref="SlangcArguments"/> list (<see cref="SlangcArguments.Build"/> for an entry
+    /// point, <see cref="SlangcArguments.BuildPreprocess"/> for the preprocess-only pass), to be
+    /// handed to slang's own command-line parser verbatim, and <paramref name="slangSource"/>
+    /// is what the desktop route pipes to slangc's stdin. Returns slangc's exit status and its
+    /// raw stdout/stderr text;
     /// <see cref="Compile"/> normalizes the text exactly as the process route does
     /// (<see cref="SlangcArguments.JoinOutputLines"/>).
     /// </summary>
@@ -295,48 +296,62 @@ public sealed class SlangCompiler
         // time sidesteps any question of concurrent-write safety in slangc itself, which
         // this project makes no claim about.
         var perEntryHlsl = new List<string>(entries.Count);
-        // Issue #252: slangc registers every texture/sampler itself; only the author's own
-        // register(...) annotations survive (SlangcRegisterStripper). Stripped per entry,
-        // before the merge, so both entries' copies of a shared declaration stay identical.
-        IReadOnlySet<string> authorBound = SlangcRegisterStripper.AuthorBoundNames(slangSource);
         foreach (SlangEntryPoint entry in entries)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             string stage = entry.Stage == SlangStage.Vertex ? "vertex" : "fragment";
-            int exitCode;
-            string stdout, stderr;
-            if (_inProcessSlangc is { } inProcess)
-            {
-                (exitCode, stdout, stderr) = inProcess(
-                    slangSource, SlangcArguments.Build(platformMacros, options.Defines, entry.Name, stage));
-                stdout = SlangcArguments.JoinOutputLines(stdout);
-                stderr = SlangcArguments.JoinOutputLines(stderr);
-            }
-            else
-            {
-                try
-                {
-                    (exitCode, stdout, stderr) = _runSlangc(
-                        runnableSlangc!, toolDirectory!, slangSource, entry.Name, stage, platformMacros, options.Defines);
-                }
-                catch (System.ComponentModel.Win32Exception ex)
-                {
-                    // The OS refused to start the process at all (no execute permission, wrong
-                    // architecture, a loader rejection): surface the OS's own words, never a crash.
-                    return Fail(new ShaderError(
-                        File: sourceName, Line: 0, Column: 0, Code: "SD0622",
-                        Message: $"slangc could not be started ('{runnableSlangc}'): {ex.Message}"));
-                }
-            }
+            ShaderError? startError = InvokeSlangc(
+                SlangcArguments.Build(platformMacros, options.Defines, entry.Name, stage),
+                slangSource, sourceName, runnableSlangc, toolDirectory,
+                out int exitCode, out string stdout, out string stderr);
+            if (startError is not null)
+                return Fail(startError);
 
             if (exitCode != 0)
             {
                 return Fail(SlangDiagnosticReformatter.SelectPrimary(stderr, sourceName, entry.Name, stage));
             }
 
-            perEntryHlsl.Add(SlangcRegisterStripper.Strip(stdout, authorBound));
+            perEntryHlsl.Add(stdout);
         }
+
+        // Issue #252: slangc registers every texture/sampler itself; only the author's own
+        // register(...) annotations survive (SlangcRegisterStripper). Which names the author
+        // bound is read from slangc's OWN preprocess-only output, produced with the macros the
+        // compiles above saw: a register in an inactive #if branch is not this target's intent,
+        // and one written through a macro is. Run after the compiles (so every compile
+        // diagnostic is unchanged, and a source whose preprocessing reports an error never
+        // gets here: '-E' exits 0 even then), and only when a 'register' token can exist at all.
+        IReadOnlySet<string> authorBound = SlangcRegisterStripper.NoAuthorBoundNames;
+        if (SlangcRegisterStripper.MayWriteRegister(slangSource, options.Defines))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            ShaderError? startError = InvokeSlangc(
+                SlangcArguments.BuildPreprocess(platformMacros, options.Defines),
+                slangSource, sourceName, runnableSlangc, toolDirectory,
+                out int exitCode, out string preprocessed, out string stderr);
+            if (startError is not null)
+                return Fail(startError);
+
+            if (exitCode != 0)
+            {
+                // Never guess which registers are the author's: without the preprocessed
+                // source the strip could silently move a texture to another slot.
+                return Fail(SlangDiagnosticReformatter.SelectPrimary(
+                    stderr, sourceName,
+                    "slangc failed its preprocess-only pass (-E, which finds the registers the " +
+                    "author wrote) with no diagnostic output, after every entry point compiled."));
+            }
+
+            authorBound = SlangcRegisterStripper.AuthorBoundNames(preprocessed);
+        }
+
+        // Stripped per entry, before the merge, so both entries' copies of a shared
+        // declaration stay identical.
+        for (int i = 0; i < perEntryHlsl.Count; i++)
+            perEntryHlsl[i] = SlangcRegisterStripper.Strip(perEntryHlsl[i], authorBound);
 
         string mergedHlsl = SlangHlslMerger.TryMerge(
             perEntryHlsl, entries.Select(e => e.Name).ToArray(), out var mergeConflicts);
@@ -376,6 +391,46 @@ public sealed class SlangCompiler
         string fxText = AssembleFx(mergedHlsl, entries, sourceName);
 
         return _downstreamCompiler.Compile(fxText, options, cancellationToken);
+    }
+
+    /// <summary>
+    /// One slangc run over whichever transport this instance uses, with the output text in
+    /// the same form on both (issue #257). Returns an error only when the process could not
+    /// be started at all; a slangc failure is a non-zero <paramref name="exitCode"/>.
+    /// </summary>
+    private ShaderError? InvokeSlangc(
+        IReadOnlyList<string> arguments,
+        string slangSource,
+        string sourceName,
+        string? runnableSlangc,
+        string? toolDirectory,
+        out int exitCode,
+        out string stdout,
+        out string stderr)
+    {
+        if (_inProcessSlangc is { } inProcess)
+        {
+            (exitCode, stdout, stderr) = inProcess(slangSource, arguments);
+            stdout = SlangcArguments.JoinOutputLines(stdout);
+            stderr = SlangcArguments.JoinOutputLines(stderr);
+            return null;
+        }
+
+        try
+        {
+            (exitCode, stdout, stderr) = _runSlangc(runnableSlangc!, toolDirectory!, slangSource, arguments);
+            return null;
+        }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            // The OS refused to start the process at all (no execute permission, wrong
+            // architecture, a loader rejection): surface the OS's own words, never a crash.
+            exitCode = -1;
+            stdout = stderr = "";
+            return new ShaderError(
+                File: sourceName, Line: 0, Column: 0, Code: "SD0622",
+                Message: $"slangc could not be started ('{runnableSlangc}'): {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -565,7 +620,22 @@ public sealed class SlangCompiler
         string entryName,
         string stage,
         IReadOnlyList<MacroDefinition> platformMacros,
-        IReadOnlyList<UserDefine> defines)
+        IReadOnlyList<UserDefine> defines) =>
+        // Issue #257: the argument list lives in SlangcArguments, shared with the in-process
+        // (browser) route so both hosts hand slangc the identical command line.
+        RunSlangc(slangcPath, workingDirectory, slangSource,
+            SlangcArguments.Build(platformMacros, defines, entryName, stage));
+
+    /// <summary>
+    /// Runs slangc once with <paramref name="arguments"/> (a <see cref="SlangcArguments"/>
+    /// list): <paramref name="slangSource"/> piped over stdin, stdout and stderr captured line
+    /// by line and re-joined with <c>'\n'</c>.
+    /// </summary>
+    internal static (int ExitCode, string Stdout, string Stderr) RunSlangc(
+        string slangcPath,
+        string workingDirectory,
+        string slangSource,
+        IReadOnlyList<string> arguments)
     {
         var psi = new ProcessStartInfo(slangcPath)
         {
@@ -582,9 +652,7 @@ public sealed class SlangCompiler
             StandardErrorEncoding  = Encoding.UTF8,
         };
 
-        // Issue #257: the argument list lives in SlangcArguments, shared with the in-process
-        // (browser) route so both hosts hand slangc the identical command line.
-        foreach (string argument in SlangcArguments.Build(platformMacros, defines, entryName, stage))
+        foreach (string argument in arguments)
             psi.ArgumentList.Add(argument);
 
         using var process = new Process { StartInfo = psi };

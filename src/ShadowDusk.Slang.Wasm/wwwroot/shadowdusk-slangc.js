@@ -6,9 +6,10 @@
 // Issue #257. The module under ./slangc/ is the pinned slangc (v2026.14.1) linked from
 // upstream's OWN prebuilt wasm static libraries plus a thin glue that replays slangc's
 // innerMain (.wasm-build/slang-wasm/slangc-wasm-glue.cpp). `args` is the exact list
-// ShadowDusk.Slang's SlangcArguments.Build produces and is handed to slang's own
-// command-line parser VERBATIM: no flag translation here (the property upstream's own
-// session-API slang-wasm lacks, which is why that build is not used; see Phase 67).
+// ShadowDusk.Slang's SlangcArguments produces (the per-entry compile, or the preprocess-only
+// '-E' pass) and is handed to slang's own command-line parser VERBATIM: no flag translation
+// here (the property upstream's own session-API slang-wasm lacks, which is why that build is
+// not used; see Phase 67).
 //
 // Slang is an INPUT language only: this module turns .slang into HLSL text. The HLSL then
 // goes through the faithful DXC/vkd3d modules of ShadowDusk.Wasm like any other .fx body.

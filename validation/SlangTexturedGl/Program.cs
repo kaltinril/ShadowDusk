@@ -25,6 +25,13 @@
 // the CPU expectation too (the CONTROL that proves the harness), and ShadowDusk's build
 // must match the golden (the drop-in claim).
 //
+// One more row, not from the corpus (issue #252 follow-up): Invert with its sampler register
+// written ONLY in the '#else' of an '#if OPENGL'. That register never reaches an OpenGL
+// compile, so the texture must still be on unit 0 and the picture must still match the CPU
+// expectation and the mgfxc golden. When "the author wrote a register" was read from the raw
+// source text, the dead register kept slangc's invented register(s0) alive and put the
+// texture back on ps_s1.
+//
 // Exit 0 iff every row passes. SHADOWDUSK_REQUIRE_GL=1 turns a no-GL-device skip into a
 // failure (same guard the other GL gates use).
 // =============================================================================
@@ -73,25 +80,17 @@ string[] textured = Directory.GetFiles(corpusDir, "*.slang")
 
 int failures = 0;
 var rows = new List<ShaderRow>();
-foreach (string file in textured)
-{
-    string name = Path.GetFileNameWithoutExtension(file);
-    if (!Expectations.All.TryGetValue(name, out Expectation? expectation))
-    {
-        Console.WriteLine($"[slang-tex] FAIL {name}: textured PS-only corpus shader with no CPU expectation in this gate; add one.");
-        failures++;
-        continue;
-    }
 
+void AddRow(string name, string source, string sourceFileName, Expectation expectation, bool compareWithInvertGolden)
+{
     var result = new SlangCompiler().Compile(
-        File.ReadAllText(file),
-        new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = Path.GetFileName(file) });
+        source, new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = sourceFileName });
     if (result.IsFailure)
     {
         Console.WriteLine($"[slang-tex] FAIL {name}: compile: " +
                           string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")));
         failures++;
-        continue;
+        return;
     }
 
     byte[] mgfx = result.Value.Data;
@@ -103,15 +102,46 @@ foreach (string file in textured)
     if (!onUnitZero)
         failures++;
 
-    rows.Add(new ShaderRow(name, mgfx, expectation));
+    rows.Add(new ShaderRow(name, mgfx, expectation, compareWithInvertGolden));
 }
-Console.WriteLine();
+
+foreach (string file in textured)
+{
+    string name = Path.GetFileNameWithoutExtension(file);
+    if (!Expectations.All.TryGetValue(name, out Expectation? expectation))
+    {
+        Console.WriteLine($"[slang-tex] FAIL {name}: textured PS-only corpus shader with no CPU expectation in this gate; add one.");
+        failures++;
+        continue;
+    }
+
+    AddRow(name, File.ReadAllText(file), Path.GetFileName(file), expectation, compareWithInvertGolden: name == "Invert");
+}
 
 if (rows.Count < 6)
 {
     Console.WriteLine($"[slang-tex] FAIL: only {rows.Count} textured shaders compiled; expected the 6-shader set (Invert, Posterize, Sepia, Threshold, TintUniform, Vignette).");
     failures++;
 }
+
+// Issue #252 follow-up: Invert, with the sampler's register only in the branch OpenGL skips.
+{
+    const string plainSampler = "SamplerState SpriteSampler;";
+    const string branchedSampler =
+        "#if OPENGL\nSamplerState SpriteSampler;\n#else\nSamplerState SpriteSampler : register(s0);\n#endif";
+    string invert = File.ReadAllText(Path.Combine(corpusDir, "Invert.slang"));
+    if (!invert.Contains(plainSampler, StringComparison.Ordinal))
+    {
+        Console.WriteLine("[slang-tex] FAIL Invert#if: Invert.slang no longer declares 'SamplerState SpriteSampler;', so the inactive-branch row cannot be built.");
+        failures++;
+    }
+    else
+    {
+        AddRow("Invert#if", invert.Replace(plainSampler, branchedSampler, StringComparison.Ordinal),
+            "InvertInactiveBranchRegister.slang", Expectations.All["Invert"], compareWithInvertGolden: true);
+    }
+}
+Console.WriteLine();
 
 Directory.CreateDirectory(outDir);
 using var game = new SlangTexturedGame(rows, File.ReadAllBytes(goldenInvert), outDir, tolerance);
@@ -146,7 +176,9 @@ static string FindRepoRoot()
 
 // -----------------------------------------------------------------------------
 
-internal sealed record ShaderRow(string Name, byte[] Mgfx, Expectation Expectation);
+/// <summary><paramref name="CompareWithInvertGolden"/>: the row is the Invert program, so it is
+/// also rendered against the committed mgfxc golden of the equivalent <c>.fx</c>.</summary>
+internal sealed record ShaderRow(string Name, byte[] Mgfx, Expectation Expectation, bool CompareWithInvertGolden);
 
 /// <summary>A shader's own math on the CPU, plus the uniforms the render sets.</summary>
 internal sealed record Expectation(
@@ -268,7 +300,8 @@ internal sealed class SlangTexturedGame : Game
         using var effect = new Effect(gd, row.Mgfx);
         row.Expectation.SetUniforms(effect);
         Color[] image = RenderSprite(gd, effect, sprite);
-        SavePng(gd, image, $"{row.Name}_slang.png");
+        string fileStem = row.Name.Replace('#', '_');
+        SavePng(gd, image, $"{fileStem}_slang.png");
 
         (int maxd, int over) = Compare(image, expected);
         bool ok = over == 0;
@@ -277,13 +310,13 @@ internal sealed class SlangTexturedGame : Game
         if (!ok)
             Failures++;
 
-        if (row.Name != "Invert")
+        if (!row.CompareWithInvertGolden)
             return;
 
         // The mgfxc control: the equivalent .fx built by the reference compiler, same scene.
         using var golden = new Effect(gd, _invertGolden);
         Color[] goldImage = RenderSprite(gd, golden, sprite);
-        SavePng(gd, goldImage, "Invert_mgfxc.png");
+        SavePng(gd, goldImage, $"{fileStem}_mgfxc.png");
 
         (int gmaxd, int gover) = Compare(goldImage, expected);
         bool controlOk = gover == 0;
