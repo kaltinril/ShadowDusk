@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Issue #282 end-to-end consumer, driven by tools/verify-vortice-dxc-conflict.sh. Copied
+    OUTSIDE the repo (so none of the repo's MSBuild/NuGet context leaks in) and built with
+    -p:SdVersion=<packed ShadowDusk version> and -p:VorticeVersion=<the Vortice.Dxc to force>,
+    the way a consumer whose other package (Evergine.DirectX12 pulls 3.8.3) or whose own
+    reference raises Vortice.Dxc above ShadowDusk's exact [3.3.4] range ends up.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="ShadowDusk.Compiler" Version="$(SdVersion)" />
+    <PackageReference Include="Vortice.Dxc" Version="$(VorticeVersion)" Condition="'$(VorticeVersion)' != ''" />
+    <None Include="Grayscale.fx" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>
