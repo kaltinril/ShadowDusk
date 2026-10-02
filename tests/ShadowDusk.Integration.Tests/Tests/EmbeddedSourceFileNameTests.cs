@@ -117,6 +117,26 @@ public sealed class EmbeddedSourceFileNameTests
     }
 
     /// <summary>
+    /// Only <see langword="null"/> falls back to <see cref="CompilerOptions.SourceFileName"/>:
+    /// an empty string is a value like any other and is stored as an empty string (the XML doc
+    /// says so, issue #280).
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(V11Targets))]
+    public void EmbeddedSourceFileName_Empty_IsStoredAsEmpty_NotTheFallback(PlatformTarget target)
+    {
+        byte[] bytes = Compile(new CompilerOptions
+        {
+            Target                 = target,
+            SourceFileName         = HostPath,
+            EmbeddedSourceFileName = string.Empty,
+        });
+
+        SourceFiles(bytes).ShouldNotBeEmpty();
+        SourceFiles(bytes).ShouldAllBe(name => name == string.Empty);
+    }
+
+    /// <summary>
     /// The half the fix must not break: a diagnostic still names
     /// <see cref="CompilerOptions.SourceFileName"/>, at the exact line and column, however the
     /// embedded name is set.

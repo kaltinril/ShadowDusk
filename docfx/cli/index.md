@@ -21,7 +21,7 @@ ShadowDuskCLI MyShader.fx MyShader.mgfx /Profile:OpenGL
 | Argument | Meaning |
 |---|---|
 | `<SourceFile>` | The `.fx` (or `.glsl` / `.slang`, see `--input-format`) to compile. |
-| `<OutputFile>` | Where the compiled effect goes. **The extension selects the container:** an `.xnb` extension writes the content-pipeline container `Content.Load<Effect>` reads (no MGCB, no consumer code change; the platform byte is derived from the profile); any other extension writes the raw `.mgfx` / `.fxb`. Missing output directories are created. See [Drop-in `mgfxc` → `.xnb` output](../guides/dropin-mgfxc.md#replacing-the-content-pipeline-entirely-xnb-output). |
+| `<OutputFile>` | Where the compiled effect goes. **The extension selects the container:** an `.xnb` extension writes the content-pipeline container `Content.Load<Effect>` reads (no MGCB, no consumer code change; the platform byte is derived from the profile); any other extension writes the raw `.mgfx` / `.fxb`. On DirectX 12 and Vulkan (MGFX v11) an `.xnb` records `<unknown>` as each shader's source-file string, as a stock MGCB build does, where `.mgfx` output records the path as passed (`mgfxc` parity). Missing output directories are created. See [Drop-in `mgfxc` → `.xnb` output](../guides/dropin-mgfxc.md#replacing-the-content-pipeline-entirely-xnb-output). |
 
 ## Options
 
@@ -99,4 +99,4 @@ Every code is listed in the [Diagnostic Codes](../diagnostics.md) registry.
 
 **MGCB will not call this CLI for you.** It was documented until 2026-07-28 that exposing ShadowDusk under the name `mgfxc` on `PATH` would make MGCB use it; measurement against `dotnet mgcb` 3.8.2.1105, 3.8.4.1, and 3.8.5 showed MGCB compiles `.fx` **in-process** and launches no external `mgfxc`.
 
-For MGCB, add the **`ShadowDusk.MgcbPlugin`** content-processor package and `/reference:` it from your `.mgcb` — MGCB then compiles `.fx → .xnb` through ShadowDusk in its own process, and the `.mgfx` inside that `.xnb` is byte-for-byte what this CLI emits. If you would rather not use the plugin, invoke this CLI directly and have the content project `/copy:` the resulting `.mgfx`. Both routes are in [MGCB Content Pipeline](../guides/mgcb-content-pipeline.md); [Drop-in mgfxc](../guides/dropin-mgfxc.md) covers the flag compatibility.
+For MGCB, add the **`ShadowDusk.MgcbPlugin`** content-processor package and `/reference:` it from your `.mgcb` — MGCB then compiles `.fx → .xnb` through ShadowDusk in its own process, and the `.mgfx` inside that `.xnb` is byte-for-byte what this CLI emits (on DirectX 12 and Vulkan, apart from the source-file string, which a content build records as `<unknown>`; this CLI's own `.xnb` output does the same). If you would rather not use the plugin, invoke this CLI directly and have the content project `/copy:` the resulting `.mgfx`. Both routes are in [MGCB Content Pipeline](../guides/mgcb-content-pipeline.md); [Drop-in mgfxc](../guides/dropin-mgfxc.md) covers the flag compatibility.
