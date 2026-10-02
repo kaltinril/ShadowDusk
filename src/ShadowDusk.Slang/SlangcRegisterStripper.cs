@@ -2,6 +2,7 @@
 
 using System.Text.RegularExpressions;
 using ShadowDusk.Compiler.Slang;
+using ShadowDusk.Core.Preprocessor;
 
 namespace ShadowDusk.Slang;
 
@@ -20,8 +21,14 @@ namespace ShadowDusk.Slang;
 /// pipeline the same text an author would write by hand for the equivalent <c>.fx</c>, which
 /// <c>mgfxc</c> puts on unit 0.</para>
 /// <para>An author-written register is never touched: a declaration whose name carries
-/// <c>: register(...)</c> in the Slang source keeps it (that IS the author's intent, and the
-/// allocator honours it exactly as it does for a hand-written <c>.fx</c>, ps_s1 included).
+/// <c>: register(...)</c> in the Slang source AS SLANGC'S PREPROCESSOR LEAVES IT keeps it (that
+/// IS the author's intent, and the allocator honours it exactly as it does for a hand-written
+/// <c>.fx</c>, ps_s1 included). "As the preprocessor leaves it" matters both ways (the #252
+/// follow-up): a register written only in an inactive <c>#if</c> branch is not the author's
+/// intent for this target, and one written through a macro
+/// (<c>#define SLOT(n) : register(n)</c>) is. So the names are read from slangc's own
+/// preprocess-only output (<see cref="SlangcArguments.BuildPreprocess"/>, same macros as the
+/// compile), never from the raw source text.
 /// <c>-no-mangle</c> keeps global resource names at the author's spelling, which is what makes
 /// the per-name match sound. A <c>[[vk::binding(N)]]</c> attribute is NOT a register: slangc's
 /// HLSL drops it and emits its own auto number instead (measured, v2026.14.1:
@@ -32,26 +39,77 @@ namespace ShadowDusk.Slang;
 /// </remarks>
 internal static class SlangcRegisterStripper
 {
+    private static readonly IReadOnlySet<string> NoNames = new HashSet<string>(StringComparer.Ordinal);
+
     // A global texture/sampler declaration in slangc's emission, e.g.
     // 'Texture2D<float4 > SpriteTexture : register(t0);' or 'SamplerState S : register(s0);'.
     private static readonly Regex EmittedRegister = new(
-        """(?<decl>\b(?:RW)?(?:Texture\w*|SamplerState|SamplerComparisonState)(?:\s*<[^>;{}]*>)?\s+(?<name>[A-Za-z_]\w*)(?:\s*\[[^\];{}]*\])?)\s*:\s*register\s*\(\s*[ts]\d+\s*(?:,\s*space\d+\s*)?\)""",
+        $$"""(?<decl>(?:{{SlangcResourceTypes.Texture}}|{{SlangcResourceTypes.Sampler}})(?:\s*<[^>;{}]*>)?\s+(?<name>[A-Za-z_]\w*)(?:\s*\[[^\];{}]*\])?)\s*:\s*register\s*\(\s*[ts]\d+\s*(?:,\s*space\d+\s*)?\)""",
         RegexOptions.Compiled);
 
-    // 'Name : register(...)' or 'Name[4] : register(...)' in the author's (masked) Slang source.
+    // 'Name : register(...)' or 'Name[4] : register(...)' in the preprocessed Slang source,
+    // which slangc prints as a token stream ('Mask : register ( t1 ) ;').
     private static readonly Regex AuthorRegister = new(
         """\b(?<name>[A-Za-z_]\w*)\s*(?:\[[^\];{}]*\])?\s*:\s*register\s*\(""",
         RegexOptions.Compiled);
 
-    /// <summary>The global names the author bound explicitly in <paramref name="slangSource"/>.</summary>
-    public static IReadOnlySet<string> AuthorBoundNames(string slangSource)
+    /// <summary>
+    /// False when the main source (and its <c>-D</c> values) cannot spell a <c>register</c>
+    /// token however it is preprocessed, so the preprocess-only slangc pass can be skipped and
+    /// nothing is author-bound. True means "ask slangc's preprocessor", never "there is a
+    /// register".
+    /// </summary>
+    /// <remarks>
+    /// <para>Known gap (PR #278 review, not fixed): this does NOT cover a register written inside
+    /// an <c>import</c>ed module or an <c>__include</c>d file. Neither is expanded by
+    /// <c>slangc -E</c> either, so such a register is stripped whether or not this returns
+    /// true. A combined <c>Sampler2D C : register(t2)</c> is also stripped (slangc emits it as
+    /// <c>C_texture_0</c>/<c>C_sampler_0</c>, and the match is per name).</para>
+    /// A <c>register</c> token can only come from the literal word in the source or in a
+    /// <c>-D</c> value, from an <c>#include</c>d file, from token pasting (<c>##</c>), or from
+    /// a backslash line splice, which slangc honours inside an identifier and inside a
+    /// directive name (measured: <c>regis\&lt;newline&gt;ter(t3)</c> binds t3). Any of those
+    /// spellings anywhere (comments included: this errs toward running the pass) returns true.
+    /// The check is case-sensitive because slangc's <c>register</c> is (<c>REGISTER(t3)</c> is
+    /// a syntax error, measured).
+    /// </remarks>
+    public static bool MayWriteRegister(string slangSource, IReadOnlyList<UserDefine> defines)
     {
-        string masked = SlangSourceMask.Mask(slangSource);
+        if (CanSpellRegister(slangSource))
+            return true;
+        foreach (UserDefine define in defines)
+        {
+            if (CanSpellRegister(define.Name) || CanSpellRegister(define.Value))
+                return true;
+        }
+        return false;
+    }
+
+    private static bool CanSpellRegister(string? text) =>
+        text is not null
+        && (text.Contains("register", StringComparison.Ordinal)
+            || text.Contains("include", StringComparison.Ordinal)
+            || text.Contains("##", StringComparison.Ordinal)
+            || text.Contains('\\'));
+
+    /// <summary>
+    /// The global names the author bound explicitly, read from
+    /// <paramref name="preprocessedSlangSource"/>: slangc's preprocess-only (<c>-E</c>) output
+    /// for the source, produced with the same macros as the compile.
+    /// </summary>
+    public static IReadOnlySet<string> AuthorBoundNames(string preprocessedSlangSource)
+    {
+        // The preprocessor already dropped comments; the mask still blanks string-literal
+        // contents (an attribute argument that happens to read 'X : register(').
+        string masked = SlangSourceMask.Mask(preprocessedSlangSource);
         var names = new HashSet<string>(StringComparer.Ordinal);
         foreach (Match m in AuthorRegister.Matches(masked))
             names.Add(m.Groups["name"].Value);
         return names;
     }
+
+    /// <summary>No author-bound name: every slangc-numbered texture/sampler register goes.</summary>
+    public static IReadOnlySet<string> NoAuthorBoundNames => NoNames;
 
     /// <summary>Strips every slangc-numbered texture/sampler register in
     /// <paramref name="hlsl"/> whose declaration name is not in <paramref name="authorBound"/>.</summary>

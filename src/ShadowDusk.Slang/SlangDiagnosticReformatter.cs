@@ -98,7 +98,18 @@ internal static partial class SlangDiagnosticReformatter
     /// <c>SD0622</c> naming the entry point and stage that failed.
     /// </summary>
     public static ShaderError SelectPrimary(
-        string slangcStderr, string sourceFileName, string entryName, string stageLabel)
+        string slangcStderr, string sourceFileName, string entryName, string stageLabel) =>
+        SelectPrimary(
+            slangcStderr, sourceFileName,
+            $"slangc failed compiling entry point '{entryName}' ({stageLabel}) with no diagnostic output.");
+
+    /// <summary>
+    /// <see cref="SelectPrimary(string, string, string, string)"/> for a slangc run that is not
+    /// an entry-point compile: <paramref name="noOutputMessage"/> is the synthesized
+    /// <c>SD0622</c> text when slangc exited non-zero and wrote nothing.
+    /// </summary>
+    public static ShaderError SelectPrimary(
+        string slangcStderr, string sourceFileName, string noOutputMessage)
     {
         IReadOnlyList<ShaderError> errors = Reformat(slangcStderr, sourceFileName);
 
@@ -116,9 +127,7 @@ internal static partial class SlangDiagnosticReformatter
             Line: 0,
             Column: 0,
             Code: "SD0622",
-            Message: raw.Length > 0
-                ? raw
-                : $"slangc failed compiling entry point '{entryName}' ({stageLabel}) with no diagnostic output.",
+            Message: raw.Length > 0 ? raw : noOutputMessage,
             Severity: ShaderErrorSeverity.Error,
             RawDiagnostics: raw.Length > 0 ? raw : null);
     }

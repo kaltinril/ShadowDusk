@@ -235,6 +235,88 @@ public sealed class SlangFx2TextureRespellerTests
         result.SourceLine.ShouldBe(8, "#line 3 names the line after it; SampleLevel sits five lines below that");
     }
 
+    // ---- Issue #230 follow-up: only REAL resource types are textures/samplers. A user type
+    // whose name merely starts with "Texture" or "SamplerState" used to match 'Texture\w*'.
+    // slangc keeps the user's type name and appends '_N' (measured: 'TextureRegion_0').
+
+    [Theory]
+    [InlineData("TextureRegion_0 r_0")]
+    [InlineData("Texture2DInfo_0 r_0")]
+    [InlineData("in TextureRegion_0 r_0")]
+    [InlineData("SamplerStateInfo_0 r_0")]
+    [InlineData("SamplerComparisonStates_0 r_0")]
+    public void UserTypeNamedLikeAResource_AsAFunctionParameter_IsNotAResource(string parameter)
+    {
+        string helper = "float2 Remap_0(" + parameter + ", float2 uv_0) { return uv_0; }";
+
+        string fx = Respell(SlangcEmission + "\n" + helper);
+
+        fx.ShouldContain(helper, Case.Sensitive);
+        fx.ShouldContain("float4 c_0 = tex2D(SpriteSampler, uv_0);", Case.Sensitive);
+    }
+
+    [Theory]
+    [InlineData("TextureSlot_0 slots_0[int(2)];")]
+    [InlineData("Texture2DSlot_0 slots_0[int(2)];")]
+    [InlineData("TextureSlot_0 slots_0[int(2)]; float2 s_0 = slots_0[i_0].Scale_0;")]
+    public void LocalArrayOfAUserTypeNamedLikeATexture_IsNotATextureArrayOrASubscriptLoad(string local)
+    {
+        string body = "float4 F(float2 uv, int i_0) { " + local + " return float4(uv, 0, 1); }";
+
+        Respell(SlangcEmission + "\n" + body).ShouldContain(body, Case.Sensitive);
+    }
+
+    [Fact]
+    public void TextureFreeText_WithTextureNamedUserTypes_ComesBackUnchanged()
+    {
+        // slangc's emission for a shader with no texture at all (v2026.14.1, trimmed).
+        const string hlsl = """
+            struct TextureRegion_0
+            {
+                float4 Rect_0;
+            };
+
+            float2 Remap_0(TextureRegion_0 r_0, float2 uv_0)
+            {
+                return r_0.Rect_0.xy + uv_0 * r_0.Rect_0.zw;
+            }
+
+            struct TextureSlot_0
+            {
+                float2 Scale_0;
+            };
+
+            float4 MainPS(float4 pos_0 : SV_Position, float2 uv_1 : TEXCOORD0) : SV_TARGET
+            {
+                TextureRegion_0 r_1;
+                TextureSlot_0  slots_0[int(2)];
+                return float4(Remap_0(r_1, uv_1) * slots_0[int(1)].Scale_0, 0.0f, 1.0f);
+            }
+            """;
+
+        Respell(hlsl).ShouldBe(hlsl);
+    }
+
+    [Theory]
+    // Every real texture object type still counts, whole-token and with the RW prefix.
+    [InlineData("Texture1D<float4 > t_0", "'Texture1D t_0'")]
+    [InlineData("Texture2DArray<float4 > t_0", "'Texture2DArray t_0'")]
+    [InlineData("Texture2DMS<float4 > t_0", "'Texture2DMS t_0'")]
+    [InlineData("Texture2DMSArray<float4 > t_0", "'Texture2DMSArray t_0'")]
+    [InlineData("Texture3D<float4 > t_0", "'Texture3D t_0'")]
+    [InlineData("TextureCube<float4 > t_0", "'TextureCube t_0'")]
+    [InlineData("TextureCubeArray<float4 > t_0", "'TextureCubeArray t_0'")]
+    [InlineData("RWTexture2D<float4 > t_0", "'RWTexture2D t_0'")]
+    [InlineData("SamplerComparisonState s_0", "'SamplerComparisonState s_0'")]
+    public void EveryRealResourceType_AsAFunctionParameter_IsStillRejected(string parameter, string named)
+    {
+        string unsupported = Rejected(
+            SlangcEmission + "\nfloat4 Fetch_0(" + parameter + ", float2 uv_0) { return 0; }");
+
+        unsupported.ShouldContain("passed as a function parameter", Case.Sensitive);
+        unsupported.ShouldContain(named, Case.Sensitive);
+    }
+
     [Fact]
     public void NonTwoDimensionalTexture_IsRejectedByName()
     {

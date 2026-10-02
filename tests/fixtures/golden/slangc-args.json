@@ -86,5 +86,78 @@
       "--",
       "-"
     ]
+  },
+  "preprocess": {
+    "DirectX": [
+      "-lang",
+      "slang",
+      "-DMGFX=1",
+      "-DHLSL=1",
+      "-DSM4=1",
+      "-target",
+      "hlsl",
+      "-no-hlsl-pack-constant-buffer-elements",
+      "-no-mangle",
+      "-E",
+      "--",
+      "-"
+    ],
+    "DirectX12": [
+      "-lang",
+      "slang",
+      "-DMGFX=1",
+      "-DHLSL=1",
+      "-DSM6=1",
+      "-target",
+      "hlsl",
+      "-no-hlsl-pack-constant-buffer-elements",
+      "-no-mangle",
+      "-E",
+      "--",
+      "-"
+    ],
+    "Fna": [
+      "-lang",
+      "slang",
+      "-DFNA=1",
+      "-DHLSL=1",
+      "-DSM3=1",
+      "-target",
+      "hlsl",
+      "-no-hlsl-pack-constant-buffer-elements",
+      "-no-mangle",
+      "-E",
+      "--",
+      "-"
+    ],
+    "OpenGL": [
+      "-lang",
+      "slang",
+      "-DMGFX=1",
+      "-DGLSL=1",
+      "-DOPENGL=1",
+      "-target",
+      "hlsl",
+      "-no-hlsl-pack-constant-buffer-elements",
+      "-no-mangle",
+      "-E",
+      "--",
+      "-"
+    ],
+    "Vulkan": [
+      "-lang",
+      "slang",
+      "-DMGFX=1",
+      "-DHLSL=1",
+      "-DVULKAN=1",
+      "-DSM6=1",
+      "-target",
+      "hlsl",
+      "-no-hlsl-pack-constant-buffer-elements",
+      "-no-mangle",
+      "-E",
+      "--",
+      "-"
+    ]
   }
 }

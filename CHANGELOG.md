@@ -180,6 +180,43 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **`ShadowDusk.Slang`: which registers "the author wrote" is now decided after preprocessing
+  (issue #252 follow-up).** The register strip kept a texture/sampler register only when the Slang
+  source text spelled `register(...)` on that name, and it read the text before the preprocessor
+  ran. Two shapes went wrong. A register that exists only in an inactive branch
+  (`#if OPENGL` / `SamplerState S;` / `#else` / `SamplerState S : register(s0);` / `#endif`,
+  compiled for OpenGL) counted as the author's, so slangc's own invented `register(s0)` survived
+  and the texture landed on `ps_s1` again, off SpriteBatch's unit 0. A register written through a
+  macro (`#define SLOT(n) : register(n)`, or a `-D` value) was not recognised and was stripped: on
+  DirectX the texture moved from slot 1 to slot 0, and on OpenGL two such textures landed on units
+  0/1 instead of 2/3 (a regression from the original #252 fix, which had passed slangc's emission
+  through for those). `SlangCompiler` now asks slangc itself: one extra preprocess-only run
+  (`slangc -E`, the compile's own macros) whose token stream is what gets scanned, so an inactive
+  branch is gone and a macro is expanded. It runs on both transports with the same argument list
+  (`SlangcArguments.BuildPreprocess`; the WebAssembly slangc answers it byte for byte like native,
+  200/200 corpus runs plus both shapes on all five targets), only after every entry point compiled,
+  and only when the source, an include, a `##` paste, a line splice or a `-D` value could spell
+  `register` at all, so a shader that writes none pays nothing. A pass that exits 0 with empty output, or
+  output missing an entry point the compile found, now fails as `SD0629` instead of silently stripping every
+  author register. **Not fixed yet (known gaps):** a register written inside an `import`ed module or an
+  `__include`d file is still stripped (`slangc -E` does not expand either), and so is the register on a
+  combined `Sampler2D C : register(t2)` (slangc emits it as `C_texture_0`/`C_sampler_0`). `mgfxc` 3.8.4.1 was measured on the
+  same two shapes in a `.fx` file and agrees with the preprocessed reading (`ps_s0`; `ps_s2`+`ps_s3`).
+  No corpus byte moves: `slang-manifest.json` is unchanged and the native-vs-WebAssembly identity
+  stays 235/235. `validation/SlangTexturedGl` gains an `Invert#if` row that renders the
+  inactive-branch shape in real MonoGame DesktopGL: `ps_s1` and a white picture (maxd 254) with the
+  old reading, unit 0 and maxd 0 against the CPU expectation and the `mgfxc` golden with the new one.
+  Found on the way and recorded as a known gap, not fixed here: the `.fx` route's own OpenGL
+  sampler-register reservation also scans unpreprocessed tokens and diverges from `mgfxc` on the
+  same two shapes (`docs/validation-matrix.md` §7).
+- **`ShadowDusk.Slang` on FNA: a user type whose name starts with "Texture" is no longer mistaken
+  for a texture (issue #230 follow-up).** The DX9 respelling matched texture types as `Texture\w*`,
+  so a texture-free shader with `struct TextureRegion` passed to a helper failed as `SD0627` ("a
+  texture or sampler passed as a function parameter"), and a local `TextureSlot slots[2]` as "the
+  texture array 'slots_0[...]'". Both compiled on OpenGL and DirectX all along. Every pattern in the
+  respeller and in the register strip now matches only the real resource types (`Texture1D`,
+  `Texture2D`, `Texture3D`, `TextureCube`, their `Array`/`MS`/`MSArray` forms, the `RW` variants,
+  `SamplerState`, `SamplerComparisonState`) as whole tokens.
 - **A content build no longer writes your build machine's path into DirectX 12 and Vulkan effects
   (issue #274).** The MGFX v11 container, which DirectX 12 and Vulkan always use, stores a
   source-file string per shader. MGCB and the MonoGame 3.8.5 Content Builder hand a processor the

@@ -1,7 +1,6 @@
 #nullable enable
 
 using ShadowDusk.Core;
-using ShadowDusk.Core.Preprocessor;
 using Shouldly;
 using Xunit;
 
@@ -110,10 +109,14 @@ public sealed class SlangCompilerMergeConflictTests
         public FakeSlangc(IReadOnlyDictionary<string, string> hlslByEntry) => _hlslByEntry = hlslByEntry;
 
         public (int ExitCode, string Stdout, string Stderr) Run(
-            string slangcPath, string workingDirectory, string slangSource, string entryName, string stage,
-            IReadOnlyList<MacroDefinition> platformMacros, IReadOnlyList<UserDefine> defines)
+            string slangcPath, string workingDirectory, string slangSource, IReadOnlyList<string> arguments)
         {
             slangcPath.ShouldBe(FakeSlangcPath);
+            // The per-entry compile shape of SlangcArguments.Build: '... -entry <name> -stage <stage> -- -'.
+            int entry = arguments.ToList().IndexOf("-entry");
+            entry.ShouldBeGreaterThanOrEqualTo(0, "the source writes no register, so only entry compiles may run");
+            string entryName = arguments[entry + 1];
+            string stage = arguments[entry + 3];
             Calls.Add((entryName, stage));
             return (0, _hlslByEntry[entryName], "");
         }

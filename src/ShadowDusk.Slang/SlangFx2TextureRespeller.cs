@@ -49,11 +49,11 @@ internal static class SlangFx2TextureRespeller
     public sealed record Result(string? Text, string? Unsupported, int SourceLine);
 
     private static readonly Regex TextureDecl = new(
-        """^[ \t]*Texture2D(?:\s*<[^>;{}]*>)?\s+(?<name>[A-Za-z_]\w*)\s*(?::\s*register\s*\([^)]*\))?\s*;[ \t]*(?=\r?$)""",
+        """^[ \t]*Texture2D\b(?:\s*<[^>;{}]*>)?\s+(?<name>[A-Za-z_]\w*)\s*(?::\s*register\s*\([^)]*\))?\s*;[ \t]*(?=\r?$)""",
         RegexOptions.Multiline | RegexOptions.Compiled);
 
     private static readonly Regex SamplerDecl = new(
-        """^[ \t]*SamplerState\s+(?<name>[A-Za-z_]\w*)\s*(?::\s*register\s*\(\s*(?<reg>s\d+)\s*(?:,\s*space(?<space>\d+)\s*)?\))?\s*;[ \t]*(?=\r?$)""",
+        """^[ \t]*SamplerState\b\s+(?<name>[A-Za-z_]\w*)\s*(?::\s*register\s*\(\s*(?<reg>s\d+)\s*(?:,\s*space(?<space>\d+)\s*)?\))?\s*;[ \t]*(?=\r?$)""",
         RegexOptions.Multiline | RegexOptions.Compiled);
 
     private static readonly Regex RespelledSampler = new(
@@ -65,14 +65,23 @@ internal static class SlangFx2TextureRespeller
 
     private static readonly Regex Identifier = new("""^[A-Za-z_]\w*$""", RegexOptions.Compiled);
 
+    // Every type pattern below is a whole-token match of a REAL resource type
+    // (SlangcResourceTypes): a user type that merely starts with "Texture" or "SamplerState"
+    // ('struct TextureRegion', 'SamplerStateInfo') is not a resource and must not match.
+
     // A texture/sampler-typed parameter in a function signature: '(' or ',' then the type.
     private static readonly Regex ResourceParameter = new(
-        """[(,]\s*(?:(?:in|uniform|const)\s+)*(?<type>(?:RW)?Texture\w*|Sampler(?:Comparison)?State)(?:\s*<[^>;{}()]*>)?\s+(?<name>[A-Za-z_]\w*)\s*(?=[,)])""",
+        $$"""[(,]\s*(?:(?:in|uniform|const)\s+)*(?<type>{{SlangcResourceTypes.Texture}}|{{SlangcResourceTypes.Sampler}})(?:\s*<[^>;{}()]*>)?\s+(?<name>[A-Za-z_]\w*)\s*(?=[,)])""",
         RegexOptions.Compiled);
 
-    // Any global texture declaration's name, for the subscript-load check.
+    // Any texture declaration's name, for the texture-array and subscript-load checks.
     private static readonly Regex AnyTextureDecl = new(
-        """\b(?:RW)?Texture\w*(?:\s*<[^>;{}]*>)?\s+(?<name>[A-Za-z_]\w*)(?<array>\s*\[)?""",
+        $$"""{{SlangcResourceTypes.Texture}}(?:\s*<[^>;{}]*>)?\s+(?<name>[A-Za-z_]\w*)(?<array>\s*\[)?""",
+        RegexOptions.Compiled);
+
+    // The text before a name ends in a texture type: the name is being declared, not used.
+    private static readonly Regex TextureTypeAtEnd = new(
+        $$"""{{SlangcResourceTypes.Texture}}(?:\s*<[^>;{}]*>)?\s*$""",
         RegexOptions.Compiled);
 
     // Texture-object spellings left behind after the respelling = a shape it does not model.
@@ -82,7 +91,7 @@ internal static class SlangFx2TextureRespeller
         RegexOptions.Compiled);
 
     private static readonly Regex LeftoverType = new(
-        """\b(?<what>(?:RW)?Texture(?:1D|2D|3D|Cube)(?:Array|MS|MSArray)?|SamplerState|SamplerComparisonState)\b""",
+        $$"""(?<what>{{SlangcResourceTypes.Texture}}|{{SlangcResourceTypes.Sampler}})""",
         RegexOptions.Compiled);
 
     private static readonly Regex LineDirective = new(
@@ -227,7 +236,7 @@ internal static class SlangFx2TextureRespeller
     {
         int lineStart = text.LastIndexOf('\n', Math.Max(0, index - 1)) + 1;
         string before = text[lineStart..index];
-        return Regex.IsMatch(before, """(?:Texture\w*(?:\s*<[^>;{}]*>)?)\s*$""");
+        return TextureTypeAtEnd.IsMatch(before);
     }
 
     private static bool IsPlainTextureDecl(string text, int index)

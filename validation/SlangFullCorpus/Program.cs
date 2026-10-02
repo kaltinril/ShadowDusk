@@ -299,7 +299,7 @@ internal static class Program
     }
 
     /// <summary>Route B: slangc's raw HLSL emission for the SAME entry, via the exact same
-    /// invocation <see cref="SlangCompiler.RunSlangc"/> uses internally (internal +
+    /// invocation <see cref="SlangCompiler.RunSlangc(string, string, string, string, string, IReadOnlyList{MacroDefinition}, IReadOnlyList{UserDefine})"/> uses internally (internal +
     /// InternalsVisibleTo - see ShadowDusk.Slang.csproj - so this can never silently drift
     /// from what SlangCompiler actually passes), fed directly to DXC with NO ShadowDusk .fx
     /// wrapping, merge, or preprocessing at all.</summary>
