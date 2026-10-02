@@ -87,7 +87,9 @@ ShadowDusk/
 │   ├── slang-consumer/            # The scratch ShadowDusk.Slang consumer (Program.cs + csproj) that
 │   │                              #   tools/verify-slang-packaging.sh (run by pack-consume.yml) COPIES out of
 │   │                              #   tree and consumes cold, framework-dependent + self-contained (issue #225).
-│   │                              #   Never built in place.
+│   │                              #   Never built in place. Its pack gate is tools/verify-slang-nupkg.sh <nupkg>,
+│   │                              #   the ONE exact-name list of the eight slangc natives + notice, also run by
+│   │                              #   release.yml (issue #226) and runnable locally against any packed nupkg.
 │   ├── contentbuilder-consumer/   # The scratch MonoGame 3.8.5 Content Builder (Program.cs + csproj) that
 │   │                              #   pack-consume.yml and tools/verify-contentpipeline-packaging.ps1 COPY out of
 │   │                              #   tree to consume the packed ShadowDusk.ContentPipeline cold (Phase 63).
@@ -133,7 +135,10 @@ ShadowDusk/
 │                                  #   Slang FULL corpus (SlangFullCorpus: the ShadowDusk.Slang real-slangc
 │                                  #     route - 21 shaders compile on 4 targets, the procedural subset
 │                                  #     pixel-diffed vs slangc's own raw HLSL through the SAME slangc
-│                                  #     invocation SlangCompiler uses, real DirectX_11 Effect load - Phase 66)
+│                                  #     invocation SlangCompiler uses, real DirectX_11 Effect load - Phase 66),
+│                                  #   Slang textured GL (SlangTexturedGl: the real-slangc route's textured
+│                                  #     shaders in real DesktopGL with SpriteBatch's unit-0 texture, sampler
+│                                  #     table + CPU-math render + Invert vs the mgfxc golden - issue #252)
 │                                  #   + the compare_*.py oracles. See docs/validation-matrix.md §6.
 │                                  #   Two entries here are NOT render proofs:
 │                                  #     MgcbPlugin runs a real `dotnet mgcb` content build through the MGCB

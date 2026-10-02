@@ -256,6 +256,19 @@ jobs:
           dotnet build validation/SlangFullCorpus/SlangFullCorpus.csproj -c Release -f net8.0
           xvfb-run -a dotnet run --project validation/SlangFullCorpus -c Release -f net8.0 --no-build
 
+      # Issue #252: the real-slangc route's textured shaders in REAL MonoGame DesktopGL with the
+      # texture left to SpriteBatch (unit 0, never set by parameter). SlangFullCorpus above cannot
+      # see which unit a sampler landed on; this checks the .mgfx sampler table and renders each
+      # textured PS-only corpus shader against its own math on the CPU, plus Invert against the
+      # committed mgfxc golden. SHADOWDUSK_REQUIRE_GL turns a no-device skip into a failure.
+      - name: Slang textured GL (real slangc, SpriteBatch unit 0)
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          SHADOWDUSK_REQUIRE_GL: "1"
+        run: |
+          dotnet build validation/SlangTexturedGl/SlangTexturedGl.csproj -c Release
+          xvfb-run -a dotnet run --project validation/SlangTexturedGl -c Release --no-build
+
       # The GL corpus is the two-process orchestration the in-process gates above avoid:
       # Baseline renders the committed mgfxc goldens, Candidate renders ShadowDusk's own
       # output for the same 10 shaders, and compare.py pixel-diffs the two sets. It is the
