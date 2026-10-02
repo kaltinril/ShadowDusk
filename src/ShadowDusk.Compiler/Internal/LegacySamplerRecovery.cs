@@ -81,7 +81,8 @@ internal static class LegacySamplerRecovery
         if (compiled.IsFailure)
             return new Outcome.NotApplicable();
 
-        Result<bool, ShaderError> residue = FxPreParser.HasLegacySamplerResidue(compiled.Value.Text, sourceFileName);
+        Result<LegacySamplerResidueCheck, ShaderError> residue =
+            FxPreParser.HasLegacySamplerResidue(compiled.Value.Text, sourceFileName);
         if (residue.IsFailure)
         {
             // The view cannot be built, so whether the rewrite missed something is unknowable.
@@ -94,8 +95,17 @@ internal static class LegacySamplerRecovery
                     $"declaration from the SM4 rewrite: {residue.Error.Message}"))
                 : new Outcome.NotApplicable();
         }
-        if (!residue.Value)
-            return new Outcome.NotApplicable();
+        if (!residue.Value.Found)
+        {
+            // Nothing legacy is left in what the compiler saw, as far as the managed view can tell.
+            // It cannot tell when a conditional hangs on a macro only the compiler defines: the
+            // branch it skipped may be the one DXC compiled. Say so if that branch could hold the
+            // syntax at all.
+            return residue.Value.CompilerPredefinedMacro is { } predefined &&
+                   FxPreParser.MentionsLegacySamplerSyntax(compiled.Value.Text)
+                ? new Outcome.Unmodelled(PredefinedMacroError(predefined))
+                : new Outcome.NotApplicable();
+        }
 
         Result<PreprocessedSource, ShaderError> flattenedRaw = preprocessor.Flatten(
             rawSource, sourceFileName, macros, includeResolver, additionalIncludePaths);
@@ -117,20 +127,20 @@ internal static class LegacySamplerRecovery
                     $"ShadowDusk could not preprocess the effect to rewrite it: {parsed.Error.Message}"));
         }
 
-        if (parsed.Value.CompilerPredefinedMacro is { } predefined)
-        {
-            return new Outcome.Unmodelled(Unmodelled(
-                predefined.File, predefined.Line,
-                "legacy D3D9 sampler syntax reaches the compiler through an #include or a macro, so the " +
-                "SM4 rewrite has to run on the preprocessed source, but a conditional here tests the " +
-                $"compiler-predefined macro '{predefined.Name}', whose value ShadowDusk's managed " +
-                "preprocessor cannot know. It will not compile a preprocessed text that may differ from " +
-                "the one the compiler would produce. Declare the sampler and its tex2D call directly in " +
-                "the .fx file, or drop the test on the predefined macro."));
-        }
+        if (parsed.Value.CompilerPredefinedMacro is { } predefinedInRaw)
+            return new Outcome.Unmodelled(PredefinedMacroError(predefinedInRaw));
 
         return new Outcome.Retry(parsed.Value, flattenedRaw.Value.Text, flattenedRaw.Value.Warnings);
     }
+
+    private static ShaderError PredefinedMacroError(CompilerPredefinedMacroTest predefined) => Unmodelled(
+        predefined.File, predefined.Line,
+        "the effect uses legacy D3D9 sampler syntax (sampler2D / sampler_state / tex2D) that may reach " +
+        "the compiler through an #include or a macro, where the SM4 rewrite has to run on the " +
+        $"preprocessed source, but a conditional here tests the compiler-predefined macro '{predefined.Name}', " +
+        "whose value ShadowDusk's managed preprocessor cannot know. It will not compile a preprocessed text " +
+        "that may differ from the one the compiler would produce. Declare the sampler and its tex2D call " +
+        "directly in the .fx file, or drop the test on the predefined macro.");
 
     /// <summary>
     /// The <c>SD0016</c> for a recovery that ran and still failed with legacy sampler syntax left

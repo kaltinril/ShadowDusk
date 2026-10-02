@@ -41,6 +41,17 @@ public sealed record FxPreprocessedParse
 /// <param name="Column">Its 1-based column.</param>
 public sealed record LegacySamplerResidue(string Token, string File, int Line, int Column);
 
+/// <summary>
+/// The answer of <see cref="FxPreParser.HasLegacySamplerResidue(string, string)"/>.
+/// </summary>
+/// <param name="Found">True when legacy D3D9 sampler syntax is left in the preprocessed text.</param>
+/// <param name="CompilerPredefinedMacro">
+/// The first conditional that tested a compiler-predefined macro, or null. When set, the
+/// preprocessed text (and so <paramref name="Found"/>) was built on the assumption that the
+/// macro is undefined, which the compiler does not share.
+/// </param>
+public sealed record LegacySamplerResidueCheck(bool Found, CompilerPredefinedMacroTest? CompilerPredefinedMacro);
+
 /// <summary>A preprocessor conditional that tested a compiler-predefined macro.</summary>
 /// <param name="Name">The macro name.</param>
 /// <param name="File">The author's file the conditional is in.</param>

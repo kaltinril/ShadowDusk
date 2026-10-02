@@ -1915,16 +1915,21 @@ public sealed class FxPreParser
     /// </param>
     /// <param name="sourceFile">Display name used in diagnostics.</param>
     /// <returns>
-    /// True when such syntax remains, or an <c>SD0009</c> error when the preprocessed view
-    /// cannot be built.
+    /// Whether such syntax remains, and the compiler-predefined macro a conditional tested if one
+    /// did (the view evaluated it as undefined, so the answer may not be what the compiler saw);
+    /// or an <c>SD0009</c> error when the preprocessed view cannot be built.
     /// </returns>
-    public static Result<bool, ShaderError> HasLegacySamplerResidue(string flattenedSource, string sourceFile)
+    public static Result<LegacySamplerResidueCheck, ShaderError> HasLegacySamplerResidue(string flattenedSource, string sourceFile)
     {
-        var tokens = PreprocessedViewTokens(flattenedSource, sourceFile);
-        if (tokens.IsFailure)
-            return Result<bool, ShaderError>.Fail(tokens.Error);
+        var view = Preprocessing.FxMacroPreprocessor.ProcessForCompiler(flattenedSource, sourceFile);
+        if (view.IsFailure)
+            return Result<LegacySamplerResidueCheck, ShaderError>.Fail(view.Error);
 
-        return Result<bool, ShaderError>.Ok(FindLegacySamplerResidue(tokens.Value) is not null);
+        bool found = FindLegacySamplerResidue(new FxLexer(view.Value.Text, sourceFile).Tokenize()) is not null;
+        Preprocessing.FxMacroPreprocessor.CompilerPredefinedMacroUse? predefined = view.Value.PredefinedMacroUse;
+        return Result<LegacySamplerResidueCheck, ShaderError>.Ok(new LegacySamplerResidueCheck(
+            found,
+            predefined is null ? null : new CompilerPredefinedMacroTest(predefined.Name, predefined.File, predefined.Line)));
     }
 
     /// <summary>

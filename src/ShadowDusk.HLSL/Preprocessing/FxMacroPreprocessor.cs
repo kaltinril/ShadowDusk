@@ -387,6 +387,11 @@ internal sealed class FxMacroPreprocessor
             foreach (Tok t in expanded.Value)
             {
                 AdvanceCursorTo(output, t.Line);
+                // A line's own break is re-created by the next line's tokens. Only one that was
+                // carried INTO a later line (a macro argument spanning lines, used after a later
+                // one) still has to separate the tokens around it.
+                if (t.Kind == TokKind.Newline && t.Line >= _cursorLine)
+                    continue;
                 output.Append(t.Text);
             }
             return null;
