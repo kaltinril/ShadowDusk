@@ -104,12 +104,18 @@ internal static partial class Vkd3dSourceLocator
     /// <param name="probe">Compiles the given text with the SAME request and returns the primary
     /// diagnostic (<see langword="null"/> when it compiled). The locator only ever passes
     /// <paramref name="vkd3dSource"/> with one sentinel line inserted.</param>
+    /// <param name="cancellationToken">Checked before EVERY probe, here rather than in each
+    /// host's probe delegate so the desktop and browser hosts cannot drift (issue #255). A
+    /// probe is one uninterruptible native compile and a diagnostic may need up to
+    /// <see cref="MaxProbes"/> of them, so a cancelled compile stops paying for them at the
+    /// next probe boundary with an <see cref="OperationCanceledException"/>.</param>
     public static IReadOnlyList<ShaderError> Relocate(
         IReadOnlyList<ShaderError> diagnostics,
         string vkd3dSource,
         string originalSource,
         string sourceFileName,
-        Func<string, ShaderError?> probe)
+        Func<string, ShaderError?> probe,
+        CancellationToken cancellationToken = default)
     {
         if (diagnostics.Count == 0)
             return diagnostics;
@@ -125,23 +131,25 @@ internal static partial class Vkd3dSourceLocator
                 continue;
             }
 
-            session ??= new ProbeSession(vkd3dSource, probe);
+            session ??= new ProbeSession(vkd3dSource, probe, cancellationToken);
             result[i] = RelocateCore(session, d, originalSource, sourceFileName);
         }
         return result;
     }
 
-    /// <summary>Single-diagnostic form of <see cref="Relocate(IReadOnlyList{ShaderError}, string, string, string, Func{string, ShaderError?})"/>.</summary>
+    /// <summary>Single-diagnostic form of <see cref="Relocate(IReadOnlyList{ShaderError}, string, string, string, Func{string, ShaderError?}, CancellationToken)"/>.</summary>
     public static ShaderError Relocate(
         ShaderError diagnostic,
         string vkd3dSource,
         string originalSource,
         string sourceFileName,
-        Func<string, ShaderError?> probe)
+        Func<string, ShaderError?> probe,
+        CancellationToken cancellationToken = default)
     {
         if (!IsLocated(diagnostic, sourceFileName))
             return diagnostic;
-        return RelocateCore(new ProbeSession(vkd3dSource, probe), diagnostic, originalSource, sourceFileName);
+        return RelocateCore(
+            new ProbeSession(vkd3dSource, probe, cancellationToken), diagnostic, originalSource, sourceFileName);
     }
 
     private static bool IsLocated(ShaderError d, string sourceFileName) =>
@@ -333,13 +341,15 @@ internal static partial class Vkd3dSourceLocator
     {
         private readonly string[] _lines;
         private readonly Func<string, ShaderError?> _probe;
+        private readonly CancellationToken _cancellationToken;
         private readonly Dictionary<int, ShaderError?> _memo = new();
         private int _probes;
 
-        public ProbeSession(string vkd3dSource, Func<string, ShaderError?> probe)
+        public ProbeSession(string vkd3dSource, Func<string, ShaderError?> probe, CancellationToken cancellationToken)
         {
             _lines = vkd3dSource.Split('\n');
             _probe = probe;
+            _cancellationToken = cancellationToken;
         }
 
         public string LineText(int physicalLine) =>
@@ -445,6 +455,9 @@ internal static partial class Vkd3dSourceLocator
             {
                 if (_probes >= MaxProbes)
                     return null;
+                // The one cancellation point of the relocation: a probe is a whole native
+                // compile that nothing can interrupt once it has started.
+                _cancellationToken.ThrowIfCancellationRequested();
                 _probes++;
                 result = _probe(WithSentinelBefore(line));
                 _memo[line] = result;

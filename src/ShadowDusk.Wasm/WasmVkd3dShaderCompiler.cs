@@ -132,8 +132,16 @@ internal sealed class WasmVkd3dShaderCompiler : IDxbcShaderCompiler
             // This host hands vkd3d request.HlslSource unblanked (its preprocessor ignores
             // the #line lines, which stay in place as blank lines), so the compiled text and
             // the directive-carrying text are one and the same.
+            //
+            // The token goes to the locator, which checks it before every probe (issue #255),
+            // the same single check the desktop host gets. On today's single-threaded browser
+            // runtime nothing can cancel the token while this synchronous call is on the stack
+            // (a token cancelled beforehand is caught by the entry check above), so here the
+            // check cannot fire yet; the token is passed so the two hosts stay identical and
+            // a multi-threaded WASM runtime is covered without another change.
             return Result<PlatformBlob, ShaderError>.Fail(
-                Vkd3dSourceLocator.Relocate(primary, request.HlslSource, request.HlslSource, request.SourceFileName, Probe));
+                Vkd3dSourceLocator.Relocate(
+                    primary, request.HlslSource, request.HlslSource, request.SourceFileName, Probe, cancellationToken));
         }
     }
 
