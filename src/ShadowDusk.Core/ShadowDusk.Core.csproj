@@ -35,6 +35,11 @@
          with the same SD1906 check, before any WebAssembly module loads or runs. -->
     <InternalsVisibleTo Include="ShadowDusk.Wasm" />
     <InternalsVisibleTo Include="ShadowDusk.Slang.Wasm" />
+    <!-- NativeCompileStack (issue #306): the SPIRV-Cross call runs on the same large-stack
+         worker as the DXC and vkd3d calls in ShadowDusk.HLSL; the integration tests switch it
+         off in a child process to prove the overflow it prevents is real. -->
+    <InternalsVisibleTo Include="ShadowDusk.GLSL" />
+    <InternalsVisibleTo Include="ShadowDusk.Integration.Tests" />
   </ItemGroup>
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" />

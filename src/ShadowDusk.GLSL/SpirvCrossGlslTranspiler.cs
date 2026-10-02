@@ -53,6 +53,15 @@ public sealed class SpirvCrossGlslTranspiler : ISpirvToGlslTranspiler
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        // On a large-stack worker (issue #306). SPIRV-Cross recurses once per level of nested
+        // control flow, and the stack it would otherwise run on is whatever the caller's thread
+        // has. The copy is what crosses to the worker (a span cannot).
+        uint[] words = spirvWords.ToArray();
+        return NativeCompileStack.Run(() => TranspileOnThisThread(words));
+    }
+
+    private static Result<GlslSource, ShaderError> TranspileOnThisThread(uint[] words)
+    {
         var ctx = IntPtr.Zero;
         try
         {
@@ -64,8 +73,6 @@ public sealed class SpirvCrossGlslTranspiler : ISpirvToGlslTranspiler
                         Column: 0,
                         Code: "SD0100",
                         Message: "SPIRV-Cross [context_create]: failed to create context"));
-
-            var words = spirvWords.ToArray();
 
             if (SpvcNative.spvc_context_parse_spirv(ctx, words, (nuint)words.Length, out var ir)
                 != SpvcResult.Success)

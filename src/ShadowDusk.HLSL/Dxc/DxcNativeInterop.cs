@@ -2,6 +2,7 @@
 
 using System.Runtime.InteropServices;
 using System.Text;
+using ShadowDusk.Core;
 using SharpGen.Runtime;
 using Vortice.Dxc;
 
@@ -85,7 +86,24 @@ internal static unsafe class DxcNativeInterop
     /// The raw vtable call behind <see cref="Compile"/>, without the signal isolation step
     /// (which itself compiles through here).
     /// </summary>
+    /// <remarks>
+    /// Runs on a <see cref="NativeCompileStack"/> worker (issue #306): DXC recurses once per
+    /// nesting level of the source, and on the caller's own stack a valid but very deep shader
+    /// overflowed it inside <c>dxcompiler</c> and killed the host process with no diagnostic.
+    /// Every in-process DXC compile ShadowDusk makes comes through here: SPIR-V, DXIL, the
+    /// reflection companion compile, <c>-P</c> preprocessing and the signal-isolation prime.
+    /// The calling thread blocks until the worker returns, so what the caller serializes
+    /// (<see cref="DxcSignalIsolation"/>'s lock) stays serialized, and <see cref="DxcForkGate"/>
+    /// is entered on the worker, the thread that is actually inside DXC's <c>setlocale</c>.
+    /// </remarks>
     internal static IDxcResult CompileRaw(
+        IDxcCompiler3 compiler,
+        string source,
+        IReadOnlyList<string> arguments,
+        IDxcIncludeHandler? includeHandler) =>
+        NativeCompileStack.Run(() => CompileRawOnThisThread(compiler, source, arguments, includeHandler));
+
+    private static IDxcResult CompileRawOnThisThread(
         IDxcCompiler3 compiler,
         string source,
         IReadOnlyList<string> arguments,

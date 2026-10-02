@@ -108,9 +108,14 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
         // honor them for diagnostics) — this strip is vkd3d-only.
         string vkd3dSource = LineDirectivePattern.Replace(request.HlslSource, string.Empty);
 
+        // On a large-stack worker (issue #306): vkd3d recurses per nesting level too. Measured
+        // on the caller's 1.5 MB Windows stack, a chain of 6,400 functions each calling the
+        // next killed the process inside vkd3d_shader_compile. The diagnostic-relocation
+        // probes compile the same source, so they go the same way.
         NativeOutcome Invoke(string source)
         {
-            NativeOutcome o = InvokeNative(source, request, profile, targetType);
+            NativeOutcome o = NativeCompileStack.Run(
+                () => InvokeNative(source, request, profile, targetType));
             onNativeCallReturned?.Invoke();
             return o;
         }
