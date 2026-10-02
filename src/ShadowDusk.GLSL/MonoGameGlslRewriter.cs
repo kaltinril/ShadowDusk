@@ -632,7 +632,7 @@ public static class MonoGameGlslRewriter
             body = LowerEmptyIncrementForLoop(body);    // Rule 12 (issue #138, shape 2)
             body = LowerBoundedHeaderlessForLoop(body); // Rule 13 (issue #138, shape 1)
             body = LowerTruncToSignFloorAbs(body);      // Rule 15 (Apos.Shapes #34)
-            body = ReduceTrigArguments(body);           // Rule 16 (issue #215)
+            body = ReduceTrigArguments(body);           // Rule 16 (issue #215): sin/cos/tan
 
             // Phase 43 F3: inject mgfxc/MojoShader's runtime posFixup contract.
             // SPIRV-Cross's FlipVertexY is OFF (see SpirvCrossGlslTranspiler), so the
@@ -884,8 +884,8 @@ public static class MonoGameGlslRewriter
         // roundEven/round in Rule 8) there is no builtin name to fall back to.
         body = LowerTruncToSignFloorAbs(body);
 
-        // Rule 16 (issue #215): explicit range reduction before every sin()/cos(). See
-        // ReduceTrigArguments for the scheme and the measured error budget.
+        // Rule 16 (issue #215): explicit range reduction before every sin()/cos()/tan().
+        // See ReduceTrigArguments for the scheme and the measured error budget.
         body = ReduceTrigArguments(body);
 
         // ---- Assemble final output: precision header + #define block + body. ----
@@ -1751,10 +1751,11 @@ public static class MonoGameGlslRewriter
     }
 
     /// <summary>
-    /// The range-reduction helper Rule 16 routes every <c>sin</c>/<c>cos</c> argument
-    /// through. Each overload maps <c>x</c> to <c>r = x - k·2π</c> with
+    /// The range-reduction helper Rule 16 routes every <c>sin</c>/<c>cos</c>/<c>tan</c>
+    /// argument through. Each overload maps <c>x</c> to <c>r = x - k·2π</c> with
     /// <c>k = floor(x/2π + 0.5)</c>, so <c>r ∈ [-π, π]</c> (to within a few ulps) and
-    /// <c>sin(r) == sin(x)</c>, <c>cos(r) == cos(x)</c>.
+    /// <c>sin(r) == sin(x)</c>, <c>cos(r) == cos(x)</c>, <c>tan(r) == tan(x)</c> (2π is a
+    /// whole number of <c>tan</c>'s π periods, so the same helper is exact for it).
     /// <para>
     /// The subtraction is a <b>Cody-Waite two-constant split</b>: 2π = C1 + C2 with
     /// C1 = 6.28125 (8 significant bits, so <c>k·C1</c> is exact in fp32 for |k| &lt;
@@ -1786,9 +1787,19 @@ public static class MonoGameGlslRewriter
         return sb.ToString();
     }
 
-    private static readonly string[] TrigFns = { "sin", "cos" };
+    // Every GLSL builtin that takes an ANGLE, which is exactly the set fxc range-reduces
+    // on the D3D9 path. Measured with `fxc /T ps_3_0` on `f(input.TexCoord.x * 800.0 *
+    // scale)`: sin, cos, sincos AND tan all emit `mad / frc / mad / sincos` (tan then
+    // adds `rcp / mul`: D3D9 has no tan instruction, so fxc computes it as sin/cos of the
+    // reduced angle), so mgfxc's GLSL range-reduces all of them. HLSL `sincos` reaches
+    // GLSL as a separate sin and cos. Nothing else qualifies: asin/acos/atan take a
+    // ratio, not an angle, and sinh/cosh/tanh are not periodic (fxc lowers them to
+    // `exp`, with no reduction). FindCallStart matches whole identifiers, so `atan`,
+    // `tanh`, `asin`, `sinh` and a user identifier that merely contains one of these
+    // names are never touched.
+    private static readonly string[] TrigFns = { "sin", "cos", "tan" };
 
-    // A bare numeric literal (optionally signed). DXC constant-folds sin/cos of a
+    // A bare numeric literal (optionally signed). DXC constant-folds sin/cos/tan of a
     // literal, so this rarely reaches the GLSL, but when it does there is no runtime
     // reduction to do and the call is left byte-unchanged.
     private static readonly Regex NumericLiteralArg = new(
@@ -1900,20 +1911,25 @@ public static class MonoGameGlslRewriter
 
     /// <summary>
     /// Rule 16 (issue #215): rewrites every <c>sin(<i>expr</i>)</c> /
-    /// <c>cos(<i>expr</i>)</c> to <c>sin(sd_reduce_angle(<i>expr</i>))</c> and declares
+    /// <c>cos(<i>expr</i>)</c> / <c>tan(<i>expr</i>)</c> to
+    /// <c>sin(sd_reduce_angle(<i>expr</i>))</c> (likewise <c>cos</c>, <c>tan</c>) and declares
     /// the helper overloads (<see cref="TrigReduceHelpers"/>) once, before the first
     /// top-level function definition (<see cref="FindFirstTopLevelFunctionDefinition"/>;
-    /// a <c>[noinline]</c> function precedes <c>main</c> and may call them). SPIRV-Cross hands HLSL <c>sin</c>/<c>cos</c> straight to the GLSL
+    /// a <c>[noinline]</c> function precedes <c>main</c> and may call them). SPIRV-Cross
+    /// hands HLSL <c>sin</c>/<c>cos</c>/<c>tan</c> straight to the GLSL
     /// builtin on the raw argument, so a large argument (Dots.fx reaches ~792 rad) is
     /// exposed to the driver's own range reduction, whose accuracy varies by vendor:
     /// llvmpipe and NVIDIA are exact enough, Intel UHD measured 19/255 off the mgfxc
     /// golden. fxc reduces explicitly before its <c>sincos</c> instruction (D3D9 defines
     /// <c>sincos</c> only on [-π, π]), so mgfxc's GLSL always calls <c>sin</c> on a
     /// reduced value; this restores that property with constants that are more accurate
-    /// than mgfxc's own. Applied unconditionally except to a bare numeric literal: the
-    /// rewrite layer has no value-range analysis, and a uniform, varying, or texture
-    /// read can be arbitrarily large. Resumes inside the argument so a nested call is
-    /// reduced too.
+    /// than mgfxc's own. <c>tan</c> is covered for the same reason: D3D9 has no
+    /// <c>tan</c> instruction, so fxc computes it as <c>sincos</c> of the SAME reduced
+    /// angle followed by <c>rcp</c>/<c>mul</c>, and mgfxc's GLSL therefore never takes the
+    /// tangent of a large value either. Applied unconditionally except to a bare numeric
+    /// literal: the rewrite layer has no value-range analysis, and a uniform, varying, or
+    /// texture read can be arbitrarily large. Resumes inside the argument so a nested call
+    /// is reduced too.
     /// </summary>
     private static string ReduceTrigArguments(string body)
     {
@@ -1952,7 +1968,7 @@ public static class MonoGameGlslRewriter
 
                 string prefix = $"{fn}({helperName}(";
                 body = body.Substring(0, callStart) + prefix + arg + "))" + body.Substring(closeParen + 1);
-                // Resume inside the argument: a nested sin/cos in it is still visited, and
+                // Resume inside the argument: a nested sin/cos/tan in it is still visited, and
                 // the outer call (now past searchFrom) is never wrapped twice.
                 searchFrom = callStart + prefix.Length;
                 reduced = true;
@@ -1968,7 +1984,7 @@ public static class MonoGameGlslRewriter
         if (anchor < 0)
         {
             throw new MonoGameGlslRewriteException(
-                "GLSL rewrite: sin/cos range reduction (Rule 16) could not locate a top-level " +
+                "GLSL rewrite: sin/cos/tan range reduction (Rule 16) could not locate a top-level " +
                 "function definition to declare its helper before. This is a ShadowDusk gap; " +
                 "please report the shader shape.");
         }

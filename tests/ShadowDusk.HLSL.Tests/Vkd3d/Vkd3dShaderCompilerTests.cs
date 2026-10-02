@@ -244,4 +244,82 @@ public sealed class Vkd3dShaderCompilerTests
         result.Error.Line.ShouldBe(13);
         result.Error.Column.ShouldBe(13);
     }
+
+    // -------------------------------------------------------------------------
+    // Issue #255: a cancelled compile does not go on to pay for the relocation probes
+    // -------------------------------------------------------------------------
+
+    private static D3DCompileRequest Issue255FailingRequest() => new()
+    {
+        HlslSource      = Issue202Prelude + Issue202User("    float z=;"),
+        SourceFileName  = "user.fx",
+        EntryPoint      = "PS",
+        Stage           = ShaderStage.Pixel,
+        ProfileOverride = "ps_3_0",
+    };
+
+    [Vkd3dFact]
+    public void Compile_TokenCancelledAfterTheFailingCompile_RunsNoRelocationProbe_Issue255()
+    {
+        // The window the check exists for: the real compile has failed (one native call
+        // nothing can interrupt) and up to MaxProbes more native calls are about to run to
+        // relocate its diagnostic. An already-cancelled token never gets here (the entry
+        // check throws first), so the token is cancelled from the seam that runs as the
+        // FIRST native call returns: deterministic, no timing, real vkd3d.
+        D3DCompileRequest request = Issue255FailingRequest();
+
+        // Control: uncancelled, this very request probes. Without it the assertion below
+        // could pass on a shader whose diagnostic needed no relocation at all.
+        int uncancelledCalls = 0;
+        var located = Vkd3dShaderCompiler.CompileCore(request, CancellationToken.None, () => uncancelledCalls++);
+        located.IsFailure.ShouldBeTrue();
+        located.Error.Line.ShouldBe(13);
+        uncancelledCalls.ShouldBeGreaterThan(1, "the failing compile plus at least one relocation probe");
+
+        using var cts = new CancellationTokenSource();
+        int nativeCalls = 0;
+        void CancelAfterTheFirstCall()
+        {
+            if (++nativeCalls == 1)
+                cts.Cancel();
+        }
+
+        Should.Throw<OperationCanceledException>(() =>
+            Vkd3dShaderCompiler.CompileCore(request, cts.Token, CancelAfterTheFirstCall));
+
+        nativeCalls.ShouldBe(1, "only the compile itself may have reached vkd3d; every probe must be skipped");
+    }
+
+    [Vkd3dFact]
+    public void Compile_TokenCancelledMidRelocation_StopsAtTheNextProbe_Issue255()
+    {
+        // "Before EACH probe", not just the first: cancel as the second probe returns.
+        D3DCompileRequest request = Issue255FailingRequest();
+        using var cts = new CancellationTokenSource();
+        int nativeCalls = 0;
+        void CancelAfterTheThirdCall()
+        {
+            if (++nativeCalls == 3)
+                cts.Cancel();
+        }
+
+        Should.Throw<OperationCanceledException>(() =>
+            Vkd3dShaderCompiler.CompileCore(request, cts.Token, CancelAfterTheThirdCall));
+
+        nativeCalls.ShouldBe(3, "the compile and two probes ran; the third probe must not start");
+    }
+
+    [Vkd3dFact]
+    public async Task Compile_TokenAlreadyCancelled_ThrowsWithoutCompiling_Issue255()
+    {
+        // The public contract on both entry points. This is the ENTRY check (it would pass
+        // with the probe check deleted); the two tests above pin the probe check.
+        var compiler = new Vkd3dShaderCompiler();
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        Should.Throw<OperationCanceledException>(() => compiler.Compile(Issue255FailingRequest(), cts.Token));
+        await Should.ThrowAsync<OperationCanceledException>(
+            async () => await compiler.CompileAsync(Issue255FailingRequest(), cts.Token));
+    }
 }
