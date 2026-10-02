@@ -180,6 +180,22 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **FNA / DirectX (vkd3d) errors: the compiler output printed under the summary line still used
+  vkd3d's own line numbers** (issue #202 follow-up). 0.19.0 moved the summary line
+  (`file(line,col)`) onto the author's source, but whenever vkd3d said more than one line, the
+  CLI and the validation report also print vkd3d's complete output under it,
+  and that block kept vkd3d's drifted coordinates. On the reporter's Apos.Shapes file the summary
+  said line 983 while the block under it said 1115 for the same diagnostic, and later lines in
+  the block went up to 3804 in a 3235-line file: the symptom the issue reported. Each
+  `file:line:col:` prefix in that block is now relocated the same way as the summary; vkd3d's
+  code and message text after the prefix are unchanged, and a line that names another file or
+  cannot be placed stays as vkd3d wrote it. Cost is bounded: lines inside a stretch whose drift
+  is already measured as constant are inferred without new probes, and the block gets at most
+  128 extra probes (all 934 distinct locations in the reporter's 4 165-line block were placed
+  within that). No emitted byte moves: the relocation only runs on vkd3d's diagnostics, never
+  on the source a real compile receives. `ShaderError.RawDiagnostics` for vkd3d therefore
+  carries relocated prefixes.
+
 - **`ShadowDusk.Slang`: which registers "the author wrote" is now decided after preprocessing
   (issue #252 follow-up).** The register strip kept a texture/sampler register only when the Slang
   source text spelled `register(...)` on that name, and it read the text before the preprocessor

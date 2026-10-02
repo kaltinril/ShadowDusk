@@ -165,8 +165,10 @@ public sealed class Vkd3dShaderCompilerTests
         result.Error.Line.ShouldBe(13);
         result.Error.Column.ShouldBe(13);
         result.Error.RawDiagnostics.ShouldNotBeNull();
-        result.Error.RawDiagnostics.ShouldContain(":71:11:", Case.Sensitive,
-            "the raw text keeps vkd3d's own coordinates (13 + 5 prelude - 2 skipped + 40 + 4 + 11 = 71, column 11 of its re-spaced text), untouched");
+        // vkd3d wrote "user.fx:71:11: ..." (13 + 5 prelude - 2 skipped + 40 + 4 + 11 = 71,
+        // column 11 of its re-spaced text). The raw blob is printed under the summary, so its
+        // location moves with the summary's; the code and text after it stay verbatim.
+        result.Error.RawDiagnostics.ShouldBe("user.fx:13:13: E5000: syntax error, unexpected ';'");
     }
 
     [Vkd3dFact]

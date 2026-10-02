@@ -348,14 +348,93 @@ public sealed class Vkd3dSourceLocatorTests
         var fake = new FakeVkd3d { CodegenMarker = "BAD" };
         string source = Join("float a = atan2(1, 2);", "float b = BAD;");
         ShaderError raw = fake.Compile(source)!;
+        raw.RawDiagnostics.ShouldBe("user.fx:22:11: E5017: Aborting due to not yet implemented feature: BAD");
 
         ShaderError located = Vkd3dSourceLocator.Relocate(raw, source, source, File, fake.Compile);
 
         located.Message.ShouldBe(raw.Message);
         located.Code.ShouldBe(raw.Code);
         located.Severity.ShouldBe(raw.Severity);
-        located.RawDiagnostics.ShouldBe(raw.RawDiagnostics, customMessage: "the compiler's own text is never rewritten, even where it shows its own line number");
+        located.RawDiagnostics.ShouldBe(
+            "user.fx:2:11: E5017: Aborting due to not yet implemented feature: BAD",
+            customMessage: "only the location prefix moves; the compiler's code and text stay verbatim");
         located.File.ShouldBe(File);
+    }
+
+    // Issue #202, second half: the delivery surfaces print the raw blob under the relocated
+    // summary whenever vkd3d said more than one line, so a raw blob left in vkd3d's own
+    // coordinates still showed line numbers that disagreed with the summary (and on the
+    // reporter's file ran past its end).
+    [Fact]
+    public void RawBlob_EveryLocatedLineMovesWithTheSummary_TheRestStaysVerbatim()
+    {
+        var fake = new FakeVkd3d { CodegenMarker = "BAD" };
+        string source = Join(
+            "float a = atan2(1, 2);",     // 1  +20
+            "float b;",                   // 2
+            "float c = BAD;",             // 3  vkd3d says 23
+            "float d;",                   // 4
+            "float e = BAD;");            // 5  vkd3d says 25
+        ShaderError first = fake.Compile(source)!;
+        first.Line.ShouldBe(23);
+        ShaderError primary = first with
+        {
+            RawDiagnostics = string.Join('\n',
+                "user.fx:23:11: E5017: Aborting due to not yet implemented feature: BAD",
+                "user.fx:25:11: E5017: Aborting due to not yet implemented feature: BAD",
+                "other.fxh:40:3: E5017: a line in another file",
+                "vkd3d: some unlocated note"),
+        };
+
+        ShaderError located = Vkd3dSourceLocator.Relocate(primary, source, source, File, fake.Compile);
+
+        located.Line.ShouldBe(3);
+        located.RawDiagnostics.ShouldBe(string.Join('\n',
+            "user.fx:3:11: E5017: Aborting due to not yet implemented feature: BAD",
+            "user.fx:5:11: E5017: Aborting due to not yet implemented feature: BAD",
+            "other.fxh:40:3: E5017: a line in another file",
+            "vkd3d: some unlocated note"));
+    }
+
+    [Fact]
+    public void RawBlob_ManyLinesInAConstantDriftStretch_CostFewProbes()
+    {
+        // 2000 codegen errors after one atan2: the summary's own bisection brackets the
+        // stretch, and every later line is inferred from the constant drift, not re-bisected.
+        var fake = new FakeVkd3d { CodegenMarker = "BAD" };
+        var lines = new List<string> { "float a = atan2(1, 2);" };
+        for (int i = 0; i < 2000; i++)
+            lines.Add("float f = BAD;");
+        string source = Join(lines.ToArray());
+        ShaderError first = fake.Compile(source)!;
+        first.Line.ShouldBe(22);
+        ShaderError primary = first with
+        {
+            RawDiagnostics = string.Join('\n',
+                Enumerable.Range(0, 2000).Select(i => $"user.fx:{22 + i}:11: E5017: Aborting due to not yet implemented feature: BAD")),
+        };
+        int before = fake.Calls;
+
+        ShaderError located = Vkd3dSourceLocator.Relocate(primary, source, source, File, fake.Compile);
+
+        located.Line.ShouldBe(2);
+        string[] rawLines = located.RawDiagnostics!.Split('\n');
+        for (int i = 0; i < rawLines.Length; i++)
+            rawLines[i].ShouldStartWith($"user.fx:{2 + i}:11: ", Case.Sensitive);
+        (fake.Calls - before).ShouldBeLessThanOrEqualTo(
+            Vkd3dSourceLocator.MaxProbes, customMessage: "2000 lines must not each pay for a bisection");
+    }
+
+    [Fact]
+    public void RawBlob_UnconvergedSummary_LeavesTheBlobAsVkd3dWroteIt()
+    {
+        string source = Join(Enumerable.Range(0, 200).Select(i => $"float f{i};").ToArray());
+        var raw = new ShaderError(File, 150, 5, "E5017", "x",
+            RawDiagnostics: "user.fx:150:5: E5017: x\nuser.fx:160:5: E5017: y");
+
+        ShaderError located = Vkd3dSourceLocator.Relocate(raw, source, source, File, _ => null);
+
+        located.ShouldBe(raw);
     }
 
     [Fact]

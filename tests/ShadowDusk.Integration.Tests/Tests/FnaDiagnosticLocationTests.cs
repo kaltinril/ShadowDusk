@@ -86,7 +86,37 @@ public sealed class FnaDiagnosticLocationTests
             "pt = float2(b.x - r.y, b.y - r.y);",
             "Register r32 exceeds limits", column: 25, CancellationToken.None);
         error.Line.ShouldBe(1000);
+
+        // vkd3d says this in about 4 000 lines, which every delivery surface prints under the
+        // summary. Left in vkd3d's own coordinates they disagreed with the summary and ran
+        // past the end of this file: the reporter's symptom, one block lower.
+        AssertRawBlobIsInTheAuthorsCoordinates(error, path, lines.Length);
     }
+
+    /// <summary>
+    /// Every located line of the raw blob names a line that exists, and the blob's line for
+    /// the summary's own diagnostic carries the summary's location.
+    /// </summary>
+    private static void AssertRawBlobIsInTheAuthorsCoordinates(ShaderError error, string path, int lineCount)
+    {
+        error.RawDiagnostics.ShouldNotBeNull();
+        string[] raw = error.RawDiagnostics.Replace("\r\n", "\n").Split('\n');
+        raw[0].ShouldStartWith($"{path}:{error.Line}:{error.Column}: ", Case.Sensitive,
+            "the summary's own line in the blob must say where the summary says");
+        int located = 0;
+        foreach (string rawLine in raw)
+        {
+            if (!rawLine.StartsWith(path + ":", StringComparison.Ordinal))
+                continue;
+            int line = RawLineNumber(rawLine, path);
+            line.ShouldBeInRange(1, lineCount, $"raw line '{rawLine}' must name a line that exists");
+            located++;
+        }
+        located.ShouldBeGreaterThan(1);
+    }
+
+    private static int RawLineNumber(string rawLine, string path) =>
+        int.Parse(rawLine[(path.Length + 1)..].Split(':')[0], System.Globalization.CultureInfo.InvariantCulture);
 
     // A vector store through a runtime index: still unimplemented for SM <= 3 on 2.1.
     // vkd3d reports 137; the construct is 146.
@@ -94,9 +124,17 @@ public sealed class FnaDiagnosticLocationTests
     public async Task NonConstantVectorStore_LandsOnTheIndexedAssignment()
     {
         using var cts = new CancellationTokenSource(CompileTimeout);
-        await AssertLandsOnAsync(TestHelpers.FixturePath("third-party/MonoGame/ParameterTypes.fx"), "E5017",
+        string path = TestHelpers.FixturePath("third-party/MonoGame/ParameterTypes.fx");
+        ShaderError error = await AssertLandsOnAsync(path, "E5017",
             "sampleDir[axis] = 1.0f;",
             "Non-constant vector addressing on store", column: 23, cts.Token);
+
+        // vkd3d reports both runtime-indexed stores (137 and 141 in its own count); the raw
+        // blob printed under the summary must name the author's line for each.
+        string[] lines = (await File.ReadAllTextAsync(path, cts.Token)).Split('\n');
+        AssertRawBlobIsInTheAuthorsCoordinates(error, path, lines.Length);
+        foreach (string rawLine in error.RawDiagnostics!.Replace("\r\n", "\n").Split('\n'))
+            lines[RawLineNumber(rawLine, path) - 1].ShouldContain("sampleDir[axis] =", Case.Sensitive, $"raw line '{rawLine}'");
     }
 
     // SM2 register pressure, the SD0305 class: vkd3d 2.1's register allocator gets

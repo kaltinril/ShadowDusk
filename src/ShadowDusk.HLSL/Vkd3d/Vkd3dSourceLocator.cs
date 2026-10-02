@@ -51,8 +51,11 @@ namespace ShadowDusk.HLSL.Vkd3d;
 /// vkd3d reported it.</para>
 ///
 /// <para>Constraint 5 is untouched: <see cref="ShaderError.Message"/>, <see cref="ShaderError.Code"/>,
-/// <see cref="ShaderError.Severity"/>, and <see cref="ShaderError.RawDiagnostics"/> stay
-/// verbatim; only <c>File</c>/<c>Line</c>/<c>Column</c> move.</para>
+/// and <see cref="ShaderError.Severity"/> stay verbatim; only <c>File</c>/<c>Line</c>/<c>Column</c>
+/// move. In <see cref="ShaderError.RawDiagnostics"/> the same holds per line: each
+/// <c>file:line:col:</c> prefix naming the compiled source moves the same way (the blob is
+/// printed under the summary, so vkd3d's coordinates there contradicted it), and every
+/// character after the prefix stays as vkd3d wrote it.</para>
 /// </summary>
 internal static partial class Vkd3dSourceLocator
 {
@@ -87,6 +90,19 @@ internal static partial class Vkd3dSourceLocator
     /// vkd3d reported it rather than guessing.
     /// </summary>
     internal const int MaxProbes = 128;
+
+    /// <summary>
+    /// Extra probe allowance for relocating the located lines of the raw diagnostic blob
+    /// (<see cref="RelocateRawDiagnostics"/>), on top of <see cref="MaxProbes"/>. Lines the
+    /// allowance cannot reach keep vkd3d's coordinates.
+    /// </summary>
+    internal const int MaxRawProbes = 128;
+
+    // vkd3d's own diagnostic line: "<file>:<line>:<col>: <code>: <message>". The file part
+    // can carry a drive letter, so it anchors on the first ":<digits>:<digits>:".
+    [GeneratedRegex(@"^(?<file>.+?):(?<line>\d+):(?<col>\d+):(?<rest>.*)$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant)]
+    private static partial Regex RawLocatedLine();
 
     [GeneratedRegex(@"^[ \t]*#[ \t]*line[ \t]+(?<n>\d+)(?:[ \t]+""(?<f>[^""]*)"")?",
         RegexOptions.Compiled | RegexOptions.CultureInvariant)]
@@ -158,13 +174,92 @@ internal static partial class Vkd3dSourceLocator
     private static ShaderError RelocateCore(
         ProbeSession session, ShaderError d, string originalSource, string sourceFileName)
     {
-        int? physical = session.LocatePhysicalLine(d);
-        if (physical is not { } physicalLine)
+        ShaderError? relocated = RelocateLocation(session, d, originalSource, sourceFileName, narrowFromMemo: false);
+        if (relocated is null)
             return d;   // budget exhausted or nothing fired: honest raw coordinates beat a guess
+
+        return relocated with
+        {
+            RawDiagnostics = RelocateRawDiagnostics(session, d, relocated, originalSource, sourceFileName),
+        };
+    }
+
+    /// <summary>
+    /// The diagnostic with its file, line, and column moved onto the author's source, or
+    /// <see langword="null"/> when the search did not converge.
+    /// </summary>
+    private static ShaderError? RelocateLocation(
+        ProbeSession session, ShaderError d, string originalSource, string sourceFileName, bool narrowFromMemo)
+    {
+        int? physical = session.LocatePhysicalLine(d, narrowFromMemo);
+        if (physical is not { } physicalLine)
+            return null;
 
         (string file, int line) = ResolveLineDirectives(originalSource, physicalLine, sourceFileName);
         int column = RemapColumn(session.LineText(physicalLine), d.Column);
         return d with { File = file, Line = line, Column = column };
+    }
+
+    /// <summary>
+    /// Moves the <c>file:line:col:</c> prefix of every vkd3d diagnostic line in
+    /// <see cref="ShaderError.RawDiagnostics"/> onto the author's source, exactly as the
+    /// summary's own location moved; everything after the prefix (code and text) stays
+    /// verbatim. The delivery surfaces print that blob under the relocated summary whenever
+    /// vkd3d said more than one line, so without this they still showed vkd3d's coordinates:
+    /// on the reporter's Apos.Shapes file the summary said line 983 and the block under it
+    /// said 1115 for the same diagnostic, with later lines up to 3804 in a 3235-line file,
+    /// which is the symptom issue #202 reported. Lines naming another file, lines that do not
+    /// parse, and lines the search cannot place stay exactly as vkd3d wrote them.
+    /// </summary>
+    private static string? RelocateRawDiagnostics(
+        ProbeSession session, ShaderError original, ShaderError relocated, string originalSource, string sourceFileName)
+    {
+        string? raw = original.RawDiagnostics;
+        if (string.IsNullOrEmpty(raw))
+            return raw;
+
+        // The raw blob gets its own allowance on top of the summary's: it can carry hundreds
+        // of located lines, most of which are answered from the probes already memoised.
+        session.ExtendBudget(MaxRawProbes);
+
+        var placed = new Dictionary<(int Line, int Column), (string File, int Line, int Column)?>
+        {
+            [(original.Line, original.Column)] = (relocated.File, relocated.Line, relocated.Column),
+        };
+        bool changed = false;
+        string[] lines = raw.Split('\n');
+        for (int i = 0; i < lines.Length; i++)
+        {
+            string text = lines[i];
+            bool cr = text.EndsWith('\r');
+            Match m = RawLocatedLine().Match(cr ? text[..^1] : text);
+            if (!m.Success || !string.Equals(m.Groups["file"].Value, sourceFileName, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            int reportedLine = int.Parse(m.Groups["line"].Value, System.Globalization.CultureInfo.InvariantCulture);
+            int reportedColumn = int.Parse(m.Groups["col"].Value, System.Globalization.CultureInfo.InvariantCulture);
+            if (reportedLine <= 0)
+                continue;
+            string rest = m.Groups["rest"].Value;
+
+            if (!placed.TryGetValue((reportedLine, reportedColumn), out var target))
+            {
+                var located = new ShaderError(sourceFileName, reportedLine, reportedColumn, string.Empty, rest);
+                ShaderError? moved = RelocateLocation(session, located, originalSource, sourceFileName, narrowFromMemo: true);
+                target = moved is null ? null : (moved.File, moved.Line, moved.Column);
+                placed[(reportedLine, reportedColumn)] = target;
+            }
+
+            if (target is not { } t)
+                continue;
+
+            string rewritten = string.Create(
+                System.Globalization.CultureInfo.InvariantCulture, $"{t.File}:{t.Line}:{t.Column}:{rest}");
+            lines[i] = cr ? rewritten + "\r" : rewritten;
+            changed = true;
+        }
+
+        return changed ? string.Join('\n', lines) : raw;
     }
 
     // -------------------------------------------------------------------------
@@ -344,6 +439,7 @@ internal static partial class Vkd3dSourceLocator
         private readonly CancellationToken _cancellationToken;
         private readonly Dictionary<int, ShaderError?> _memo = new();
         private int _probes;
+        private int _budget = MaxProbes;
 
         public ProbeSession(string vkd3dSource, Func<string, ShaderError?> probe, CancellationToken cancellationToken)
         {
@@ -359,15 +455,78 @@ internal static partial class Vkd3dSourceLocator
         /// The physical (flattened-text) line the diagnostic sits on, or <see langword="null"/>
         /// when the probe budget ran out before the search converged.
         /// </summary>
-        public int? LocatePhysicalLine(ShaderError d)
+        /// <summary>
+        /// Answers without probing when the bracket's two ends already fired with the SAME
+        /// drift (<c>R(lo) - lo == R(hi+1) - (hi+1)</c>) over a stretch with no directive, no
+        /// block comment, and no continuation. Inside such a stretch nothing can lower vkd3d's
+        /// count (only skipped arms and collapsed comments do) and only template intrinsics
+        /// raise it, so equal drift at both ends means constant drift between them, and the
+        /// diagnostic reported at <paramref name="reportedLine"/> sits on
+        /// <c>reportedLine - drift</c>: the line the bisection would converge on, without the
+        /// probes. The raw-blob pass leans on this: hundreds of lines, most in long stretches
+        /// the summary's own search already bracketed.
+        /// </summary>
+        private int? TryInferFromConstantDrift(int lo, int hi, int reportedLine)
+        {
+            if (!_memo.TryGetValue(lo, out ShaderError? low) || low is null || !IsSentinelShaped(low)
+                || !_memo.TryGetValue(hi + 1, out ShaderError? high) || high is null || !IsSentinelShaped(high))
+                return null;
+
+            int drift = low.Line - lo;
+            if (high.Line - (hi + 1) != drift)
+                return null;
+
+            int answer = reportedLine - drift;
+            if (answer < lo || answer > hi)
+                return null;
+
+            for (int line = lo; line <= hi; line++)
+            {
+                string text = _lines[line - 1].TrimEnd('\r');
+                if (text.TrimStart().StartsWith('#') || text.EndsWith('\\')
+                    || text.Contains("/*", StringComparison.Ordinal) || text.Contains("*/", StringComparison.Ordinal))
+                    return null;
+            }
+            return answer;
+        }
+
+        /// <summary>Allows <paramref name="probes"/> more probes beyond those already spent.</summary>
+        public void ExtendBudget(int probes) => _budget = Math.Max(_budget, _probes + probes);
+
+        public int? LocatePhysicalLine(ShaderError d, bool narrowFromMemo = false)
         {
             int lo = 1;
             int hi = _lines.Length;
             bool anchored = false;      // lo was established by a sentinel that actually fired
             bool originalIsSentinelShaped = IsSentinelShaped(d);
 
+            // Start from the tightest bracket the probes already run give: a sentinel that
+            // fired at or before the diagnostic raises lo, one that fired after it lowers hi.
+            // These are the verdicts the bisection would reach itself, without paying again.
+            if (narrowFromMemo && !originalIsSentinelShaped)
+            {
+                foreach ((int s, ShaderError? r) in _memo)
+                {
+                    if (r is null || !IsSentinelShaped(r))
+                        continue;
+                    if (r.Line <= d.Line)
+                    {
+                        if (s >= lo) { lo = s; anchored = true; }
+                    }
+                    else if (s - 1 < hi)
+                    {
+                        hi = s - 1;
+                    }
+                }
+                if (lo > hi)
+                    return null;    // the probes disagree with each other: leave it as reported
+            }
+
             while (lo < hi)
             {
+                if (narrowFromMemo && !originalIsSentinelShaped && TryInferFromConstantDrift(lo, hi, d.Line) is { } inferred)
+                    return inferred;
+
                 int mid = lo + (hi - lo + 1) / 2;
                 Verdict? v = Classify(mid, d, originalIsSentinelShaped);
                 if (v is null)
@@ -453,7 +612,7 @@ internal static partial class Vkd3dSourceLocator
 
             if (!_memo.TryGetValue(line, out ShaderError? result))
             {
-                if (_probes >= MaxProbes)
+                if (_probes >= _budget)
                     return null;
                 // The one cancellation point of the relocation: a probe is a whole native
                 // compile that nothing can interrupt once it has started.
