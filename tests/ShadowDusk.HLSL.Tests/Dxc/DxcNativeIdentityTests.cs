@@ -28,6 +28,8 @@ public sealed class DxcNativeIdentityTests
     [InlineData("linux-x64", false, "65681bf462e07b533a7c7bfa54bda4e23a6c5d9f")]
     [InlineData("osx-x64", false, "1b5513a41646349c89cb814d05326d9a")]
     [InlineData("osx-arm64", false, "9e2d66e9c3a934429f46afaae3fdc480")]
+    [InlineData("android-arm64", false, "076af3e5babc2ac0c79bed08b4d8d1b1ac338bc7")]
+    [InlineData("android-x64", false, "38487f7242f477f1eefcb58e587a128c2a54906e")]
     public void Expected_IsThePinnedBuildOfEachBundledRid(string rid, bool validator, string expected)
     {
         DxcNativeIdentity.Expected(rid, Kind(validator)).ShouldBe(expected);
@@ -38,6 +40,9 @@ public sealed class DxcNativeIdentityTests
     [InlineData("win-x86", false)]
     [InlineData("linux-x64", true)]
     [InlineData("osx-arm64", true)]
+    [InlineData("android-arm64", true)]
+    [InlineData("android-arm", false)]
+    [InlineData("android-x86", false)]
     public void Expected_IsNullWhereShadowDuskBundlesNoSuchNative(string rid, bool validator)
     {
         // No pin means nothing can match: a DXC found for a RID we do not ship is never ours.
@@ -80,6 +85,19 @@ public sealed class DxcNativeIdentityTests
         using var elf = new MemoryStream(Elf(notes));
 
         DxcNativeIdentity.ReadElfBuildId(elf).ShouldBe("65681bf462e07b533a7c7bfa54bda4e23a6c5d9f");
+    }
+
+    [Fact]
+    public void GnuBuildId_IsFoundInANoteSegmentAsMapped()
+    {
+        const int align = 4;
+        // The mapped-image reader (Linux and Android, issue #289) hands over the PT_NOTE segment
+        // straight from memory, without the file around it.
+        byte[] notes = [.. Note(1, "GNU\0"u8, new byte[16]), .. Note(3, "GNU\0"u8, BuildId)];
+
+        DxcNativeIdentity.FindGnuBuildId(notes, align).ShouldBe("65681bf462e07b533a7c7bfa54bda4e23a6c5d9f");
+        DxcNativeIdentity.FindGnuBuildId(notes.AsSpan(0, 28), align).ShouldBeNull();
+        DxcNativeIdentity.FindGnuBuildId([], align).ShouldBeNull();
     }
 
     [Fact]

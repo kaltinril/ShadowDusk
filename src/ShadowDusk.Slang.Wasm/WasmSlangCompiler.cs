@@ -78,7 +78,8 @@ public sealed class WasmSlangCompiler
     /// the slangc module, then (only if the compile reaches it) the downstream module for this
     /// target. Diagnostics carry slangc's or DXC's own file, line and column; a module that fails
     /// to load is reported under its own code (<c>SD1904</c> for slangc, the downstream's
-    /// <c>SD1900</c>/<c>SD1902</c> for DXC/vkd3d).
+    /// <c>SD1900</c>/<c>SD1902</c> for DXC/vkd3d). A target the browser cannot export
+    /// (<see cref="PlatformTarget.DirectX12"/>) returns <c>SD1906</c> before any module loads.
     /// </summary>
     public async Task<Result<CompiledShader, ShaderError[]>> CompileAsync(
         string slangSource,
@@ -86,6 +87,12 @@ public sealed class WasmSlangCompiler
         CancellationToken cancellationToken = default)
     {
         string sourceName = options.SourceFileName ?? "<memory>.slang";
+
+        // Issue #272: refuse a target the browser cannot export before the 23 MB slangc module
+        // is fetched, not after slangc and DXC have both run.
+        if (BrowserHostTargets.Reject(options, sourceName) is { } unsupported)
+            return Fail(unsupported);
+
         try
         {
             await SlangcModule.EnsureReadyAsync(cancellationToken).ConfigureAwait(false);
@@ -134,6 +141,9 @@ public sealed class WasmSlangCompiler
         CancellationToken cancellationToken = default)
     {
         string sourceName = options.SourceFileName ?? "<memory>.slang";
+        if (BrowserHostTargets.Reject(options, sourceName) is { } unsupported)
+            return Fail(unsupported);
+
         if (!SlangcModule.IsReady)
         {
             return Fail(new ShaderError(

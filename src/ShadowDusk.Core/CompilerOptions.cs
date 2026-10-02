@@ -71,13 +71,14 @@ public sealed class CompilerOptions
     /// <para>
     /// Defaults to <see langword="null"/>, which stores <see cref="SourceFileName"/> exactly
     /// as passed (what <c>mgfxc</c> does), or <c>&lt;unknown&gt;</c> when that is
-    /// <see langword="null"/> too. Set it when the name the compiler needs is not a name
+    /// <see langword="null"/> too. Only <see langword="null"/> falls back: any other value is
+    /// stored verbatim, so an empty string stores an empty string. Set it when the name the compiler needs is not a name
     /// the output should carry: a build tool that compiles from absolute paths can keep
     /// <see cref="SourceFileName"/> absolute, so <c>#include</c> resolution and
     /// <see cref="ShaderError"/> locations stay exact, while the effect records a stable
     /// string and stops changing with the checkout directory. ShadowDusk's own MonoGame
-    /// content processor sets it to <c>&lt;unknown&gt;</c>, which is what MonoGame's stock
-    /// <c>EffectProcessor</c> writes.
+    /// content processor, and the CLI when it writes an <c>.xnb</c>, set it to
+    /// <c>&lt;unknown&gt;</c>, which is what MonoGame's stock <c>EffectProcessor</c> writes.
     /// </para>
     /// <para>
     /// This never changes diagnostics, include resolution, or the debug information emitted

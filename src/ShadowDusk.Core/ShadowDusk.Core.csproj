@@ -31,6 +31,10 @@
          (SlangCompiler) must reject wave/quad intrinsics on Vulkan identically (SD0218). -->
     <InternalsVisibleTo Include="ShadowDusk.HLSL" />
     <InternalsVisibleTo Include="ShadowDusk.Slang" />
+    <!-- BrowserHostTargets (issue #272): both browser hosts refuse a target they cannot export
+         with the same SD1906 check, before any WebAssembly module loads or runs. -->
+    <InternalsVisibleTo Include="ShadowDusk.Wasm" />
+    <InternalsVisibleTo Include="ShadowDusk.Slang.Wasm" />
   </ItemGroup>
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" />

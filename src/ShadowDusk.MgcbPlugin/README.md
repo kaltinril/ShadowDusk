@@ -49,7 +49,7 @@ Every one is optional; the defaults are the correct path.
 
 | `/processorParam:` | Default | What it does |
 |---|---|---|
-| `DebugMode` | `Auto` | `Auto` follows the content build configuration, exactly like MonoGame's stock `EffectProcessor`. `Debug` / `Optimize` force it. |
+| `DebugMode` | `Auto` | Only `Debug` turns debug information on. `Auto` and `Optimize` optimize whatever the build configuration (`/config:Debug` included), exactly like MonoGame's stock `EffectProcessor`. |
 | `Defines` | *(empty)* | Preprocessor macros, in `mgfxc`'s `/Defines:` spelling: `NAME=VALUE` entries separated by `;` or `,`; a bare `NAME` defines it as `1`. |
 | `IncludeDirs` | *(empty)* | Extra `#include` search directories, `;`-separated. The including file's own directory is always searched first. |
 | `ShaderProfile` | *(empty)* | Escape hatch. Overrides the target derived from `/platform:`. `DirectX_11`, `DirectX_12`, `OpenGL`, `Vulkan` — needed only on MGCB **before 3.8.5**, whose platform list cannot name `WindowsDX12` / `DesktopVK`; from 3.8.5 those platforms derive their target directly. |

@@ -29,7 +29,10 @@ macros through native slangc and through this module with the identical argument
 requires the exit code, stdout and stderr to match exactly (measured 235/235 on 2026-10-01). It
 does the same for the preprocess-only command line (`slangc -E`, which `SlangCompiler` uses to
 find author-written registers; measured 200/200, 25 with a texture/sampler register) and for two register shapes only a
-preprocessor can resolve.
+preprocessor can resolve. Issue #292 added a combined `Sampler2D C : register(t2)` shape (slangc splits it into
+`C_texture_0`/`C_sampler_0`) and the preprocess-only pass over another file's path
+(`SlangcArguments.BuildPreprocessFile`), which on a path neither host can open must report `E00001` with exit 0 on
+both, the shape `SlangCompiler` turns into `SD0628`.
 
 Why not upstream's own `slang-wasm.js`: its embind API takes a compile target and nothing
 else (no `-no-mangle`, no `-no-hlsl-pack-constant-buffer-elements`, no `-D` macros) and its

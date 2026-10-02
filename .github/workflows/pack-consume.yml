@@ -184,6 +184,7 @@ jobs:
             'runtimes/osx-x64/native/libdxcompiler.dylib' \
             'runtimes/osx-arm64/native/libdxcompiler.dylib' \
             'runtimes/android-arm64/native/libdxcompiler.so' \
+            'buildTransitive/ShadowDusk.HLSL.targets' \
             'THIRD-PARTY-NOTICES.txt' ; do
               if ! grep -qxF "$native" <<<"$listing"; then
                 echo "::error::$pkg is missing $native — a consumer on that RID gets the 0.2.0 disaster (natives absent from the package). Restore natives before packing (tools/restore.*)."
@@ -335,6 +336,20 @@ jobs:
         shell: bash
         working-directory: ${{ runner.temp }}/sd-scratch-consumer
         run: dotnet run -c Release
+
+      # ── A consumer whose graph lifts Vortice.Dxc above ShadowDusk's [3.3.4] (issue #282) ──
+      # What an Evergine.DirectX12 + ShadowDusk app gets (measured: Vortice.Dxc 3.8.3, a
+      # different DXC and a binary-incompatible API). The same packed feed, consumed cold three
+      # times: with Vortice.Dxc 3.8.3 the build must WARN SD0220 (never fail: DX11/FNA consumers
+      # keep building) and OpenGL must fail at runtime with SD0219 naming the fix while DirectX 11
+      # and FNA compile; pinning 3.3.4 (the fix the messages name) must clear both; and a
+      # consumer with no Vortice.Dxc reference must see nothing new.
+      - name: Vortice.Dxc version conflict (build warning SD0220 + runtime SD0219, issue #282)
+        shell: bash
+        run: |
+          chmod +x tools/verify-vortice-dxc-conflict.sh
+          ./tools/verify-vortice-dxc-conflict.sh \
+            "$GITHUB_WORKSPACE/localfeed" "${{ steps.version.outputs.smoke }}" "${{ matrix.tfm }}" "$RUNNER_TEMP/sd-vortice-conflict"
 
       # ── ShadowDusk.ContentPipeline consumed cold by a MonoGame 3.8.5 Content Builder ──────
       # (Phase 63, issue #203). Exactly what a 3.8.5 user does: the MonoGame.ContentBuilder.CSharp

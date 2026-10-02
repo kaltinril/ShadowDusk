@@ -53,8 +53,7 @@ namespace ShadowDusk.ContentPipeline;
 /// </code>
 /// Parameters are the C# properties on the instance (<c>new ShadowDuskEffectProcessor { Defines = "FOO=1" }</c>),
 /// the target follows <c>-p</c> / <c>$(MonoGamePlatform)</c> (including <c>DesktopVK</c> and
-/// <c>WindowsDX12</c>), and because the Builder has no build configuration,
-/// <see cref="DebugMode"/>'s <c>Auto</c> optimizes there.
+/// <c>WindowsDX12</c>), and <see cref="DebugMode"/>'s <c>Auto</c> optimizes, as it does on MGCB.
 /// </para>
 /// </summary>
 [ContentProcessor(DisplayName = "ShadowDusk Effect - ShadowDusk")]
@@ -75,9 +74,12 @@ public sealed class ShadowDuskEffectProcessor : ContentProcessor<EffectContent, 
     private const string EmbeddedSourceFileName = "<unknown>";
 
     /// <summary>
-    /// Whether to compile with debug information. <see cref="EffectProcessorDebugMode.Auto"/>
-    /// (the default, and what MGCB writes into a <c>.mgcb</c> by default) means "debug when the
-    /// content build configuration is Debug", matching MonoGame's stock <c>EffectProcessor</c>.
+    /// Whether to compile with debug information. Only <see cref="EffectProcessorDebugMode.Debug"/>
+    /// turns it on. <see cref="EffectProcessorDebugMode.Auto"/> (the default, and what MGCB
+    /// writes into a <c>.mgcb</c> by default) optimizes whatever the content build
+    /// configuration is, <c>/config:Debug</c> included, exactly like MonoGame's stock
+    /// <c>EffectProcessor</c>, so a <c>.mgcb</c> builds the same <c>.xnb</c> through either
+    /// processor.
     /// </summary>
     public EffectProcessorDebugMode DebugMode { get; set; } = EffectProcessorDebugMode.Auto;
 
@@ -155,7 +157,7 @@ public sealed class ShadowDuskEffectProcessor : ContentProcessor<EffectContent, 
             SourceFileName         = sourceFile,
             // ...but it must not be what the effect records (see the constant).
             EmbeddedSourceFileName = EmbeddedSourceFileName,
-            Debug                  = ResolveDebug(context),
+            Debug                  = ResolveDebug(),
             MgfxVersion            = MgfxVersion,
             DxbcBackend            = ResolveDxbcBackend(input),
             Defines                = ParseDefines(Defines),
@@ -225,17 +227,23 @@ public sealed class ShadowDuskEffectProcessor : ContentProcessor<EffectContent, 
     }
 
     /// <summary>
-    /// Resolves <see cref="DebugMode"/> the way MonoGame's stock <c>EffectProcessor</c> does:
-    /// <c>Auto</c> follows the content build configuration, and anything else is explicit.
+    /// Resolves <see cref="DebugMode"/> exactly the way MonoGame's stock <c>EffectProcessor</c>
+    /// does: debug information only for an explicit <c>Debug</c>. <c>Auto</c> and
+    /// <c>Optimize</c> both optimize, and the content build configuration is never consulted.
+    /// <para>
+    /// Verified from MonoGame's source, not assumed (issue #280):
+    /// <c>MonoGame.Framework.Content.Pipeline/Processors/EffectProcessor.cs</c> at tag
+    /// <c>v3.8.5</c> sets <c>Debug = DebugMode == EffectProcessorDebugMode.Debug</c> in its
+    /// compiler options, and at <c>v3.8.2</c> (which shells out to <c>mgfxc</c>) appends
+    /// <c>/Debug</c> only <c>if (debugMode == EffectProcessorDebugMode.Debug)</c>. Neither reads
+    /// <c>context.BuildConfiguration</c>, and real <c>dotnet-mgcb</c> 3.8.5's <c>/config:Debug</c>
+    /// output with <c>Auto</c> is byte-identical to its release build (measured for issue
+    /// #274). This processor used to treat <c>Auto</c> under a Debug configuration as debug,
+    /// which diverged from stock and put the build machine's path into DXC's debug information
+    /// on DirectX 12 / Vulkan.
+    /// </para>
     /// </summary>
-    private bool ResolveDebug(ContentProcessorContext context) => DebugMode switch
-    {
-        EffectProcessorDebugMode.Debug    => true,
-        EffectProcessorDebugMode.Optimize => false,
-        // Auto: a Debug content build gets debug info; anything else (including the common
-        // empty /config:) optimizes, which is what the CLI does with no /Debug flag.
-        _ => context.BuildConfiguration?.StartsWith("debug", StringComparison.OrdinalIgnoreCase) == true,
-    };
+    private bool ResolveDebug() => DebugMode == EffectProcessorDebugMode.Debug;
 
     /// <summary>Resolves the DXBC backend escape hatch; empty means the cross-platform vkd3d default.</summary>
     private DxbcBackend ResolveDxbcBackend(EffectContent input)

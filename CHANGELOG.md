@@ -14,6 +14,27 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **Build-time warning `SD0220` when a consumer's graph lifts Vortice.Dxc (issue #282).**
+  ShadowDusk.HLSL now ships `buildTransitive/ShadowDusk.HLSL.targets`, so a project that references
+  it directly or through ShadowDusk.Compiler / ShadowDusk.ContentPipeline is told AT BUILD TIME when
+  it resolves a Vortice.Dxc other than 3.3.4 (another package raising it, measured with
+  Evergine.DirectX12, which pulls 3.8.3; or the consumer's own reference). The warning names the
+  resolved version, says DirectX 12 / OpenGL / Vulkan will fail at runtime with `SD0219`, and gives
+  the fix (pin `Vortice.Dxc` 3.3.4). A warning, never an error: DirectX 11 and FNA do not use DXC
+  and keep building; `NoWarn` silences it. Before this the only build-time signal was NuGet's
+  generic `NU1608`. Proven end to end by `tools/verify-vortice-dxc-conflict.sh` (a cold consumer of
+  the packed feed with Vortice.Dxc 3.8.3, then pinned to 3.3.4, then with no reference), which
+  `Pack & Consume` now runs on all three OSes and both TFMs.
+- **Android checks the identity of the DXC it loaded (issue #289).** The APK holds no separate file
+  to read a build id from, so `DxcLoader` reads the GNU build id from the image the dynamic linker
+  mapped (`dl_iterate_phdr`, the PT_NOTE segment in memory) and refuses anything but the pinned
+  android-arm64 build with `SD0219`: another package bundling its own `libdxcompiler.so` for the
+  same ABI was previously used without a check. Linux runs the same mapped-image check after its
+  absolute-path load. Measured on a pixel_7 API-34 x86_64 emulator by the new
+  `validation/AndroidGl/run-dxc-identity-checks.ps1`: the pinned build compiles, a copy with one
+  build-id byte changed is refused, and an APK without the library gets `SD0219`, never a raw
+  `DllNotFoundException`.
+
 - **`CompilerOptions.EmbeddedSourceFileName` (issue #274).** The source-file string an MGFX v11
   container stores per shader can now be set independently of `SourceFileName`, which keeps
   feeding diagnostics and `#include` resolution. Unset (the default) nothing changes: the string
@@ -160,6 +181,12 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Changed
 
+- **`validation/MgcbPlugin` covers issue #280.** Every case now also has the CLI write an `.xnb`
+  and requires its payload to equal the plugin's MGCB payload, and every `DesktopVK` /
+  `WindowsDX12` case rebuilds with `/config:Debug` (default `DebugMode=Auto`) and requires the
+  same `.xnb` as the default build; where MGCB's stock processor runs, its own `/config:Debug`
+  build is checked against its default build too, so the stock premise is re-measured on every
+  run. Measured red before the fix (6 of 15 cases) and green after (15 of 15).
 - **`validation/MgcbPlugin` and `validation/ContentBuilder` now pin the MGFX v11 source-file string
   (issue #274).** The MGCB gate grew from 13 to 15 cases: the `DesktopVK` / `WindowsDX12` cases
   compare the string with MGCB's own stock build's (now possible for the two fixtures with an
@@ -180,6 +207,100 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **Browser: asking for DirectX 12 now fails with a registered code up front (issue #272).** The browser
+  host has no DX12 path, but a `PlatformTarget.DirectX12` request ran DXC and then failed in the JS shim
+  with an unregistered `X0000: DXC output is not a SPIR-V module (bad magic word)`, on both the `.fx` and
+  the full-Slang route. `WasmShaderCompiler` and `WasmSlangCompiler` now refuse it before any module
+  loads with the new `SD1906`, which names the target, the host and the targets the browser does export
+  (OpenGL, Vulkan, DirectX, FNA). `Metal` keeps the `SD0200` it gets on every host.
+- **Browser builds no longer carry desktop and Android natives (issue #273).** A browser project that
+  reached `ShadowDusk.HLSL`/`ShadowDusk.GLSL` by project reference (the ShaderFiddle sample,
+  `ShadowDusk.Wasm`, `ShadowDusk.Slang.Wasm`) copied vkd3d, DXC and SPIRV-Cross natives for Windows,
+  Linux, macOS and Android (about 130 MB) into its build and publish output, where no browser can load
+  them. A root `Directory.Build.targets` drops them for browser projects only; desktop builds still get
+  every native. NuGet consumers were measured unaffected. `wasm.yml` now fails if one reappears.
+- **OpenGL: which `SamplerState X : register(sN)` declarations reserve a sampler register is now
+  decided on the preprocessed source, like `mgfxc` (issue #283).** On OpenGL a modern
+  `SamplerState` register is a reservation: the combined sampler fxc synthesizes for each texture is
+  allocated around it. The `.fx` route read those registers off the raw source, so a register written
+  only in an inactive `#if` branch still counted (one texture landed on `ps_s1`, off SpriteBatch's
+  unit 0, where `mgfxc` emits `ps_s0`), and registers spelled through a macro
+  (`#define SLOT(n) : register(n)`) or written in an `#include`d file were not seen (`ps_s0`/`ps_s1`
+  where `mgfxc` emits `ps_s2`/`ps_s3`; `ps_s0` where it emits `ps_s1`). The reservation is now read
+  from a preprocessed view built by a small managed C preprocessor (`#if`/`#elif` expressions,
+  object- and function-like macros, `#`, `##`, `__VA_ARGS__`) with the compile's own platform and
+  user macros. It is plain C#, so the answer is the same on every host including the browser, whose
+  DXC build has no preprocess-only export. The raylib converter uses the same view. A directive or
+  expression the view cannot evaluate fails as the new **`SD0009`**, raised only after DXC has
+  accepted the source, so malformed shaders still report DXC's own error. New committed `mgfxc`
+  goldens `SamplerReservationIfBranch` and `SamplerReservationMacro`, and two new arms
+  ("ifbranch", "macro") in `validation/SamplerRegisterOrderGl`, measured RED with the old reading
+  (maxd 255, 4096 px each) and maxd 0 after. A corpus sweep builds the view for all 153 parseable
+  fixtures; no other shader's output moved. Not fixed here: the sibling map for an explicit register
+  on a LEGACY `sampler` declaration is still read from raw tokens (issue #299).
+- **`ShadowDusk.Slang`: author registers in an `import`ed module and on a combined `Sampler2D` are
+  kept (issue #292).** Both were stripped silently on DirectX and OpenGL. (1) slangc splits
+  `Sampler2D Comb : register(t2)` into `Comb_texture_0 : register(t2)` and a `Comb_sampler_0` it
+  numbers itself, and the strip matched by name, so the author's `t2` went. The split halves now map
+  back to `Comb` together with the register class (`register(t2)` binds the texture half,
+  `register(s3)` the sampler half, `: register(t2) : register(s3)` both), measured for
+  Sampler1D/2D/3D/Cube, the `Array` forms and arrays. (2) `slangc -E` does not expand `import` or
+  `__include`, so a register declared in an imported module was invisible to the pass (and an
+  import-only source skipped it). slangc auto-numbers an imported resource that has no author
+  register (measured), so "keep every register from another file" is no fix either. Each
+  declaration from another file is now judged from that file's own `-E` pass with the compile's
+  macros (slangc applies `-D` to imported modules too, measured): the file slangc's `#line` names,
+  plus every file imported or `__include`d by quoted path, transitively (a combined sampler's halves
+  carry slangc's core-module `#line`, so those are found through the import). A declaration no pass
+  can decide (a module reached only by module name, `import foo;`; a register spelled through a
+  macro no read file defines; two files that disagree; or a file the pass cannot open) now fails as
+  the new `SD0628`, naming the declaration and its file and line, instead of being guessed. Same code
+  on both transports through the shared seam (the browser's slangc has no file system, so there an
+  import already fails the compile with slangc's own `E00001`); the node gate gains the
+  combined-`Sampler2D` shape and the missing-file `-E` shape. Found on the way and fixed the same
+  way: slangc hoists a struct global's resource fields too (`M gM : register(t5)` emits
+  `gM_t_0 : register(t5)`), and that register was also stripped. A shader with no texture/sampler
+  register in slangc's output now skips the `-E` pass entirely. No corpus byte moves.
+- **A Vortice.Dxc other than 3.3.4 in the process is now `SD0219` on every OS, before any native
+  is touched (issue #282).** Measured: Vortice.Dxc 3.8.3 is not only a different DXC (1.9.2602.17)
+  but a binary-incompatible managed API; with the pinned natives put back in place every DXC call
+  failed with `MissingMethodException` (`IDxcUtils.CreateBlobFromPinned`), reported as a
+  misleading `SD0102` "Reflection failed". On macOS and Android, where ShadowDusk ships its own
+  DXC, that was the ONLY symptom. `DxcLoader` now compares the bound Vortice.Dxc assembly with the
+  pin first and returns `SD0219` naming the resolved version and the fix. The unsupported-OS branch
+  of the loader is now classified by a pure, unit-tested function (issue #289).
+- **The macOS `DYLD_LIBRARY_PATH` decoy test is decisive (issue #289).** With a restamped
+  (different `LC_UUID`) decoy it could not tell "dyld mapped the foreign build and ShadowDusk
+  refused it" from "dyld never mapped it" (the edit invalidates the ad-hoc signature, so Apple
+  silicon refuses to map it). The decoy is now re-signed, the probe reports the image `dladdr`
+  names for ShadowDusk's own handle, and the test requires it to be the decoy and every DXC-backed
+  target to fail with the "dyld mapped" `SD0219`.
+- **FNA / DirectX (vkd3d) errors: the compiler output printed under the summary line still used
+  vkd3d's own line numbers** (issue #202 follow-up). 0.19.0 moved the summary line
+  (`file(line,col)`) onto the author's source, but whenever vkd3d said more than one line, the
+  CLI and the validation report also print vkd3d's complete output under it,
+  and that block kept vkd3d's drifted coordinates. On the reporter's Apos.Shapes file the summary
+  said line 983 while the block under it said 1115 for the same diagnostic, and later lines in
+  the block went up to 3804 in a 3235-line file: the symptom the issue reported. Each
+  `file:line:col:` prefix in that block is now relocated the same way as the summary; vkd3d's
+  code and message text after the prefix are unchanged, and a line that names another file
+  stays as vkd3d wrote it. It is all or nothing: if any line cannot be placed the block is left
+  exactly as vkd3d wrote it, never a mix of the two numberings. The block is not bisected line
+  by line. One extra parse-only compile carries a marker on every statement start (an empty
+  `if` with an attribute vkd3d does not know, which it answers with a located warning that
+  names it), so one compile measures the whole file, and only the few lines the markers cannot
+  pin are bisected. Every probe now also ends with a terminator line, so a probe whose sentinel
+  landed in a skipped `#if` arm stops at the parse instead of running the whole failing compile
+  again. **Measured on the reporter's file** (`tests/fixtures/issues/202/apos-shapes.fx`,
+  `--target-runtime fna`, Release CLI, one Windows desktop, four runs each): 4.9 to 5.3 s
+  before this change (38 of the 4 165 raw lines past the end of the file), 5.1 to 6.1 s after
+  (none), which is 9 more vkd3d calls of a few milliseconds each (22 against 13). A first cut
+  that bisected each of the 934 distinct locations took about twice as long, almost all of it
+  one probe swallowed by the file's `#if VULKAN` arm; `FnaDiagnosticLocationTests` now pins the
+  call count so that cannot come back unnoticed. No emitted byte moves: the relocation only
+  runs on vkd3d's diagnostics, never on the source a real compile receives.
+  `ShaderError.RawDiagnostics` for vkd3d therefore carries relocated prefixes.
+
 - **Stale lock files outside the solution (issues #291, #290).** PR #279's `Vortice.Dxc` `[3.3.4]`
   pin missed the lock files of `Vkd3dCorpusProbe` (which turned Browser render smoke red on main),
   `slang-probe`, `dxc-corpus-probe` and `KniXnbContentLoad`'s 4.3.9001 lock (still at 0.18.0), and
@@ -187,6 +308,7 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   `tools/check-lock-files.sh`, run by a new `Lock files` CI job on every PR, restores every tracked
   lock file in locked mode, so this class of miss fails on its own PR. The release lock-file rewrite
   now matches versioned names (`*packages*.lock.json`).
+
 - **`ShadowDusk.Slang`: which registers "the author wrote" is now decided after preprocessing
   (issue #252 follow-up).** The register strip kept a texture/sampler register only when the Slang
   source text spelled `register(...)` on that name, and it read the text before the preprocessor
@@ -205,9 +327,8 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   and only when the source, an include, a `##` paste, a line splice or a `-D` value could spell
   `register` at all, so a shader that writes none pays nothing. A pass that exits 0 with empty output, or
   output missing an entry point the compile found, now fails as `SD0629` instead of silently stripping every
-  author register. **Not fixed yet (known gaps):** a register written inside an `import`ed module or an
-  `__include`d file is still stripped (`slangc -E` does not expand either), and so is the register on a
-  combined `Sampler2D C : register(t2)` (slangc emits it as `C_texture_0`/`C_sampler_0`). `mgfxc` 3.8.4.1 was measured on the
+  author register. (A register in an `import`ed module or on a combined `Sampler2D` was still stripped;
+  fixed by issue #292, the entry below.) `mgfxc` 3.8.4.1 was measured on the
   same two shapes in a `.fx` file and agrees with the preprocessed reading (`ps_s0`; `ps_s2`+`ps_s3`).
   No corpus byte moves: `slang-manifest.json` is unchanged and the native-vs-WebAssembly identity
   stays 235/235. `validation/SlangTexturedGl` gains an `Invert#if` row that renders the
@@ -237,13 +358,34 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   (MGFX v10 has no such string). **What moves:** DirectX 12 and Vulkan `.xnb` files built through
   the plugin or the Content Builder processor change once (the string, and the 4-byte effect key
   derived from the body); rendering is unaffected.
-  - **The CLI is unchanged**: it keeps writing the source path exactly as passed, which is what the
-    `mgfxc` CLI does, so the plugin's DirectX 12 / Vulkan payload now differs from the CLI's in that
-    one string (and the key). Both content-pipeline gates assert "the CLI's bytes with only that
-    string replaced".
-  - A build with debug information on (`DebugMode=Debug`, or `Auto` under a `Debug` content
-    configuration) still records the source path inside the compiler's own SPIR-V / DXIL debug
-    information, as the CLI's and `mgfxc`'s `/Debug` do.
+  - **The CLI's `.mgfx` output is unchanged**: it keeps writing the source path exactly as passed,
+    which is what the `mgfxc` CLI does, so the plugin's DirectX 12 / Vulkan payload differs from the
+    CLI's `.mgfx` in that one string (and the key). Both content-pipeline gates assert "the CLI's
+    bytes with only that string replaced". (The CLI's `.xnb` output follows MGCB instead; see
+    issue #280 below.)
+  - A build with debug information on (`DebugMode=Debug`) still records the source path inside
+    the compiler's own SPIR-V / DXIL debug information, as the CLI's and `mgfxc`'s `/Debug` do.
+- **The CLI's `.xnb` output no longer carries your build machine's path on DirectX 12 and Vulkan
+  (issue #280).** `ShadowDuskCLI <abs>\Effect.fx Effect.xnb /Profile:Vulkan` (or `DirectX_12`, or
+  any target with `--mgfx-version 11`) wrote the absolute source path into every shader record of
+  the MGFX v11 payload. `mgfxc` has no `.xnb` mode, so the reference for an `.xnb` is MGCB, whose
+  stock `EffectProcessor` writes `<unknown>`: the CLI now writes `<unknown>` when the output is an
+  `.xnb`, and its `.xnb` payload equals the MGCB plugin's byte for byte. The same effect built from
+  two directories gives the same `.xnb`. **`.mgfx` output is unchanged** (still the path as passed,
+  `mgfxc` CLI parity), as are OpenGL / DirectX 11 / FNA `.xnb` files (no such string). Diagnostics
+  still name the real file.
+- **The MGCB plugin and Content Builder processor no longer turn debug information on for
+  `DebugMode=Auto` under `/config:Debug` (issue #280).** Stock MGCB never does: MonoGame 3.8.5's
+  `EffectProcessor` sets `Debug = DebugMode == EffectProcessorDebugMode.Debug` (3.8.2 adds `/Debug`
+  under the same condition) and never reads the build configuration, and a real `dotnet-mgcb` 3.8.5
+  `/config:Debug` build is byte-identical to its release build. ShadowDusk's processor did, which
+  made its output diverge from stock and put the source path into DXC's debug information on
+  DirectX 12 / Vulkan. `Auto` now optimizes everywhere, as in stock; set `DebugMode=Debug` for debug
+  information. **What moves:** only a `.mgcb` that sets `/config:Debug` and leaves `DebugMode` at
+  `Auto`; its effects are now the release bytes (MonoGame.Content.Builder.Task's own targets pass no
+  `/config`, and the Content Builder has no configuration, so the default routes do not move).
+- **`CompilerOptions.EmbeddedSourceFileName`'s XML doc now states that only `null` falls back to
+  `SourceFileName`**: an empty string is stored as an empty string (issue #280; pinned by a test).
 - **A `dxil.dll` on `PATH` no longer hijacks DXC's DXIL validator on Windows.** With the Windows
   SDK's `bin` directory on `PATH` (every VS Developer Command Prompt), every DirectX 12 compile
   failed with `DXIL container mismatch for 'PSVRuntimeInfoSize'`; with any other `dxil.dll` there,
