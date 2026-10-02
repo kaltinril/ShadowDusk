@@ -29,6 +29,7 @@ namespace ShadowDusk.Integration.Tests.Cli;
 /// files every host has, and the real Windows SDK pair is used as well where installed.</para>
 /// </summary>
 [Trait("Category", "Integration")]
+[Collection(CliDxcNativeLayoutCollection.Name)]
 public sealed class CliDxcNativeLayoutTests : IClassFixture<CliBinaryFixture>
 {
     /// <summary>The targets whose pipeline starts at DXC.</summary>
@@ -335,4 +336,18 @@ public sealed class CliDxcNativeLayoutTests : IClassFixture<CliBinaryFixture>
             }
         }
     }
+}
+
+/// <summary>
+/// Runs <see cref="CliDxcNativeLayoutTests"/> on its own, after the parallel collections.
+/// Each case copies the CLI's output (DXC natives included) to a fresh directory and starts
+/// the copy several times; on a Windows CI runner every new copy is scanned on first load,
+/// and running that alongside the other CLI tests pushed one of their 30-second compiles
+/// past its timeout (measured on the first CI run of issue #270).
+/// </summary>
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class CliDxcNativeLayoutCollection
+{
+    /// <summary>The collection name.</summary>
+    public const string Name = "CliDxcNativeLayout";
 }
