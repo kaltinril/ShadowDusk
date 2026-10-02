@@ -233,6 +233,57 @@ public sealed class GlLegacySamplerRegisterPreprocessedTests
         slots.Reserved.ShouldBeEmpty();
     }
 
+    // The raw parse knows a sampler by the token the author wrote; the view only shows what that
+    // token expands to. A join on the raw name would silently lose the pin of every sampler whose
+    // NAME is a macro (measured: mgfxc ps_s1 for the first, ps_s0 for the second, ps_s1 for the
+    // third), so the name is resolved through the preprocessor first.
+    [Theory]
+    [InlineData("sampler SAMP : register(s1);", 1)]
+    [InlineData("#if OPENGL\nsampler SAMP;\n#else\nsampler SAMP : register(s1);\n#endif", -1)]
+    [InlineData("#define REG s1\nsampler SAMP : register(REG);", 1)]
+    public void SamplerWhoseNameIsAMacro_IsJoinedOnItsExpandedName(string declaration, int expectedSlot)
+    {
+        string raw = "#define SAMP MySampler\n" + declaration + """
+
+            float4 PS(float2 uv : TEXCOORD0) : COLOR0 { return tex2D(SAMP, uv); }
+            technique T { pass P { PixelShader = compile ps_3_0 PS(); } }
+            """;
+
+        // The synthesized texture is named after the RAW token, and DXC never expands inside it.
+        Slots(raw).Explicit.ShouldBe(expectedSlot < 0 ? Map() : Map(("SAMP_SDTexture", expectedSlot)));
+    }
+
+    [Fact]
+    public void TextureWhoseNameIsAMacro_IsKeyedOnTheNameTheCompiledShaderCarries()
+    {
+        // `Texture = <TEX>` binds the raw token TEX, but the texture DXC compiles is RealTex, and
+        // that is the name the OpenGL sampler table joins on. Measured: mgfxc ps_s1; the raw
+        // reading keyed the pin on "TEX", matched nothing, and emitted ps_s0.
+        string raw = """
+            #define TEX RealTex
+            Texture2D TEX;
+            sampler2D S : register(s1) = sampler_state { Texture = <TEX>; };
+            """ + Ps;
+
+        RawParse(raw).ExplicitGlSamplerSlots.ShouldBe(Map(("TEX", 1)));
+        Slots(raw).Explicit.ShouldBe(Map(("RealTex", 1)));
+    }
+
+    [Fact]
+    public void SamplerNameThatExpandsToMoreThanAnIdentifier_KeepsItsRawSpelling()
+    {
+        // Not a declaration any compiler accepts; the point is only that the join does not throw
+        // or invent a key when a "name" expands to an expression.
+        string raw = """
+            #define S a + b
+            sampler2D Other : register(s1);
+            float4 PS(float2 uv : TEXCOORD0) : COLOR0 { return tex2D(Other, uv); }
+            technique T { pass P { PixelShader = compile ps_3_0 PS(); } }
+            """;
+
+        Slots(raw).Explicit.ShouldBe(Map(("Other_SDTexture", 1)));
+    }
+
     [Fact]
     public void ModernSamplerReadThroughSample_IsReservedNotPinned()
     {

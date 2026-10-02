@@ -209,7 +209,10 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   `mgfxc` emits the OpenGL branch's `ps_s2`), and a register number spelled through a macro or a
   `/Defines` value (`#define REG s1` / `sampler S : register(REG);`) was missed (`ps_s0` where
   `mgfxc` emits `ps_s1`). Measured against the pinned `mgfxc` 3.8.4.1 for `sampler` and `sampler2D`,
-  with a `sampler_state` block, the brace form and the bare form; all now match. Both maps are read
+  with a `sampler_state` block, the brace form and the bare form; all now match. A sampler or
+  texture whose NAME is a macro keeps its pin (the names are resolved through the same
+  preprocessor), which also fixes `#define TEX RealTex` / `Texture = <TEX>` (`ps_s0` where `mgfxc`
+  emits `ps_s1`). Both maps are read
   off the same preprocessed view (`FxPreParser.CollectGlSamplerSlots`), on the OpenGL target and in
   the raylib converter; an unbuildable view is still `SD0009`. New committed `mgfxc` goldens
   `SamplerLegacyRegisterIfBranch` and `SamplerLegacyRegisterMacro`, and two new arms

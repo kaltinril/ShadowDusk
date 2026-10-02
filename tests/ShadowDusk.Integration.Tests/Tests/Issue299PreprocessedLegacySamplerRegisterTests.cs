@@ -192,6 +192,36 @@ public sealed class Issue299PreprocessedLegacySamplerRegisterTests
     }
 
     /// <summary>
+    /// The sampler's or the texture's NAME is itself a macro. The pre-parser knows them by the raw
+    /// token, the preprocessed view and the compiled SPIR-V by the expansion, so the join between
+    /// the two has to resolve the name. The first two rows were already right before this fix and
+    /// guard the join (matching on the raw name would have turned them into <c>ps_s0</c>); the
+    /// other three are shapes the raw reading got wrong. All five measured against
+    /// <c>mgfxc</c> 3.8.4.1.
+    /// </summary>
+    [Theory]
+    [Trait("Platform", "OpenGL")]
+    [InlineData("#define SAMP MySampler\nsampler SAMP : register(s1);", "SAMP", "ps_s1")]
+    [InlineData("#define SAMP MySampler\nTexture2D Tex;\nsampler2D SAMP : register(s1) = sampler_state { Texture = <Tex>; };", "SAMP", "ps_s1")]
+    [InlineData("#define SAMP MySampler\n#if OPENGL\nsampler SAMP;\n#else\nsampler SAMP : register(s1);\n#endif", "SAMP", "ps_s0")]
+    [InlineData("#define SAMP MySampler\n#define REG s1\nsampler SAMP : register(REG);", "SAMP", "ps_s1")]
+    [InlineData("#define TEX RealTex\nTexture2D TEX;\nsampler2D S : register(s1) = sampler_state { Texture = <TEX>; };", "S", "ps_s1")]
+    public async Task OpenGl_SamplerOrTextureNamedThroughAMacro_StillFindsItsRegister(
+        string declarations, string samplerToken, string expected)
+    {
+        string source = Header + declarations + $$"""
+
+            float4 PS(float4 pos : SV_POSITION, float4 color : COLOR0, float2 uv : TEXCOORD0) : COLOR0 { return tex2D({{samplerToken}}, uv); }
+            technique T { pass P { PixelShader = compile PS_SHADERMODEL PS(); } }
+            """;
+
+        MgfxBlobReader mgfx = await CompileGl(source);
+
+        PixelSamplers(mgfx).Single().Name.ShouldBe(expected);
+        GlslShouldSample(mgfx, expected);
+    }
+
+    /// <summary>
     /// The three corpus fixtures whose explicit-slot map CHANGES with this fix. Their
     /// <c>#if SM6</c> arm declares the sampler as a modern <c>SamplerState X : register(sN)</c>
     /// and their OpenGL arm declares the same name through the legacy syntax, so the raw reading

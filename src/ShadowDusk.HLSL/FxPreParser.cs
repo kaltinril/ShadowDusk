@@ -1794,7 +1794,10 @@ public sealed class FxPreParser
     /// and only a sampler the SM4 rewrite bound to a texture (one a legacy intrinsic such as
     /// <c>tex2D</c> reads) gets an entry. The sampler-to-texture join comes from
     /// <paramref name="parsed"/>, the parse of the source that is actually compiled, because that
-    /// is the texture name the SPIR-V carries.</para>
+    /// is the texture the rewritten HLSL samples through. Both names of that join are resolved
+    /// through the preprocessor first, so a sampler or texture whose NAME is a macro
+    /// (<c>#define SAMP MySampler</c> / <c>sampler SAMP : register(s1);</c>) still finds its
+    /// declaration in the view and its texture in the SPIR-V.</para>
     /// </summary>
     /// <param name="flattenedSource">
     /// The RAW effect source with <c>#include</c>s inlined and the compile's macros prepended as
@@ -1810,22 +1813,54 @@ public sealed class FxPreParser
     {
         ArgumentNullException.ThrowIfNull(parsed);
 
-        var tokens = PreprocessedViewTokens(flattenedSource, sourceFile);
-        if (tokens.IsFailure)
-            return Result<GlSamplerSlots, ShaderError>.Fail(tokens.Error);
-
-        // Re-key SAMPLER name -> register onto TEXTURE name, exactly as the raw parse does for
-        // FxParseResult.ExplicitGlSamplerSlots: a sampler with no texture binding is dropped
-        // rather than guessed, and the allocator falls back to declaration order for it.
-        var explicitSlots = new Dictionary<string, int>(StringComparer.Ordinal);
-        foreach ((string samplerName, int slot) in CollectLegacySamplerRegisters(tokens.Value))
+        // The raw parse knows each sampler and texture by the token the author wrote. Either can
+        // itself be a macro (`#define SAMP MySampler`), in which case the view, and the compiled
+        // SPIR-V, only ever show what it expands to. So the names are resolved through the same
+        // preprocessor before they are used as join keys.
+        var rawNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach ((string samplerName, string textureName) in parsed.LegacySamplerTextures)
         {
-            if (parsed.LegacySamplerTextures.TryGetValue(samplerName, out string? textureName))
-                explicitSlots[textureName] = slot;
+            rawNames.Add(samplerName);
+            rawNames.Add(textureName);
+        }
+
+        var view = Preprocessing.FxMacroPreprocessor.Process(flattenedSource, sourceFile, rawNames);
+        if (view.IsFailure)
+            return Result<GlSamplerSlots, ShaderError>.Fail(view.Error);
+
+        IReadOnlyList<Token> tokens = new FxLexer(view.Value.View, sourceFile).Tokenize();
+        IReadOnlyDictionary<string, string> resolved = view.Value.Resolved;
+
+        // A name that expands to anything but one identifier is not a name the view can be
+        // searched for; it keeps its raw spelling (and then simply finds no register).
+        string ViewName(string rawName) =>
+            resolved.TryGetValue(rawName, out string? expansion) && IsIdentifier(expansion) ? expansion : rawName;
+
+        // Re-key SAMPLER name -> register onto TEXTURE name, as the raw parse does for
+        // FxParseResult.ExplicitGlSamplerSlots: a sampler with no register in the view is not
+        // pinned, and the allocator falls back to declaration order for it.
+        Dictionary<string, int> registers = CollectLegacySamplerRegisters(tokens);
+        var explicitSlots = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach ((string samplerName, string textureName) in parsed.LegacySamplerTextures)
+        {
+            if (registers.TryGetValue(ViewName(samplerName), out int slot))
+                explicitSlots[ViewName(textureName)] = slot;
         }
 
         return Result<GlSamplerSlots, ShaderError>.Ok(
-            new GlSamplerSlots(explicitSlots, CollectReservedSamplerRegisters(tokens.Value)));
+            new GlSamplerSlots(explicitSlots, CollectReservedSamplerRegisters(tokens)));
+    }
+
+    private static bool IsIdentifier(string text)
+    {
+        if (text.Length == 0 || !(char.IsAsciiLetter(text[0]) || text[0] == '_'))
+            return false;
+        foreach (char c in text)
+        {
+            if (!(char.IsAsciiLetterOrDigit(c) || c == '_'))
+                return false;
+        }
+        return true;
     }
 
     /// <summary>
