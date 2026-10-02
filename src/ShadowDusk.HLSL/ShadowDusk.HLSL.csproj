@@ -34,6 +34,10 @@
          (tests/ShadowDusk.BrowserTests/Vkd3dCorpusProbe) records the resolved
          profile/target type via the same shared Vkd3dCompileContract. -->
     <InternalsVisibleTo Include="Vkd3dCorpusProbe" />
+    <!-- Issue #256: the DXC setlocale probe (DxcConcurrencyProbe) drives the raw native compile
+         call and the result accessors one step at a time, to prove which ones reach DXC's
+         setlocale and so must sit inside DxcForkGate. -->
+    <InternalsVisibleTo Include="ShadowDusk.Integration.Tests" />
   </ItemGroup>
 
   <ItemGroup>
