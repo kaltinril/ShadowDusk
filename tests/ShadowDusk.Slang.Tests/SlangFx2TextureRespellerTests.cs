@@ -188,8 +188,9 @@ public sealed class SlangFx2TextureRespellerTests
     [Fact]
     public void TextureArrayDeclaration_IsNotMistakenForASubscriptLoad()
     {
-        Rejected("Texture2D<float4 > Arr[2];\nSamplerState S;\nfloat4 F(float2 uv) { return Arr[0].Sample(S, uv); }")
-            .ShouldNotContain("subscript load 'Arr", Case.Sensitive);
+        string message = Rejected("Texture2D<float4 > Arr[2];\nSamplerState S;\nfloat4 F(float2 uv) { return Arr[0].Sample(S, uv); }");
+        message.ShouldNotContain("subscript load 'Arr", Case.Sensitive);
+        message.ShouldContain("the texture array 'Arr[...]'", Case.Sensitive);
     }
 
     [Fact]

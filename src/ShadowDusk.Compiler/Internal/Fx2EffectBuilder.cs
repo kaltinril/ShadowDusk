@@ -575,6 +575,41 @@ internal static class Fx2EffectBuilder
     };
 
     /// <summary>
+    /// <paramref name="text"/> with every <c>//</c> and <c>/* */</c> comment replaced by spaces,
+    /// newlines kept, so offsets, lines and columns into the result match the original.
+    /// </summary>
+    internal static string MaskComments(string text)
+    {
+        var chars = text.ToCharArray();
+        int i = 0;
+        while (i < chars.Length - 1)
+        {
+            if (chars[i] == '/' && chars[i + 1] == '/')
+            {
+                while (i < chars.Length && chars[i] != '\n' && chars[i] != '\r')
+                    chars[i++] = ' ';
+            }
+            else if (chars[i] == '/' && chars[i + 1] == '*')
+            {
+                chars[i++] = ' ';
+                chars[i++] = ' ';
+                while (i < chars.Length && !(chars[i] == '*' && i + 1 < chars.Length && chars[i + 1] == '/'))
+                {
+                    if (chars[i] != '\n' && chars[i] != '\r')
+                        chars[i] = ' ';
+                    i++;
+                }
+                if (i < chars.Length) { chars[i++] = ' '; chars[i++] = ' '; }
+            }
+            else
+            {
+                i++;
+            }
+        }
+        return new string(chars);
+    }
+
+    /// <summary>
     /// The SD0303 for a DX10-style texture object (issue #230), located at the sampling call
     /// (or, failing that, the texture's declaration) in <paramref name="sourceText"/> when the
     /// top-level source holds it, with DX9 advice that matches the texture's dimension (from the
@@ -587,6 +622,8 @@ internal static class Fx2EffectBuilder
         string method = "Sample";
         if (sourceText is not null)
         {
+            // Locate against the code only: a comment that mentions 'T.Sample(S' must not win.
+            sourceText = MaskComments(sourceText);
             string t = System.Text.RegularExpressions.Regex.Escape(texture);
             string s = System.Text.RegularExpressions.Regex.Escape(sampler);
             var call = System.Text.RegularExpressions.Regex.Match(

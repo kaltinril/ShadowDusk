@@ -114,9 +114,18 @@ internal static class SlangFx2TextureRespeller
                 "DX9 effects reach a texture only through a global sampler", param.Index);
         }
 
-        // Texture arrays ('Texture2D Arr[2];') index with [] legitimately; they fail later by type.
+        // An array of textures ('Texture2D Arr[2];') is named as such, before its legitimate
+        // '[i]' indexing could be mistaken for a subscript load or its call for the culprit.
+        Match textureArray = AnyTextureDecl.Matches(hlsl).FirstOrDefault(m => m.Groups["array"].Success)
+            ?? Match.Empty;
+        if (textureArray.Success)
+        {
+            return Reject(
+                $"the texture array '{textureArray.Groups["name"].Value}[...]'; a DX9 sampler_state binds exactly one texture",
+                textureArray.Index);
+        }
+
         var textureNames = AnyTextureDecl.Matches(hlsl)
-            .Where(m => !m.Groups["array"].Success)
             .Select(m => m.Groups["name"].Value).ToHashSet(StringComparer.Ordinal);
         foreach (string name in textureNames)
         {
