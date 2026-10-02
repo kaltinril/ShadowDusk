@@ -16,6 +16,15 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 - **OpenGL `sin`/`cos` on large arguments no longer depends on the driver's range reduction (issue #215).** SPIRV-Cross passed the raw argument to the GLSL builtin, so a shader feeding hundreds of radians into `sin` (`Dots.fx` reaches ~792) rendered 19/255 off the `mgfxc` golden on Intel UHD while llvmpipe and NVIDIA matched. The GLSL rewriter now reduces every non-literal `sin`/`cos` argument into [-pi, pi] first (new rewriter Rule 16, a Cody-Waite split of 2pi through an `sd_reduce_angle` helper), as fxc does before every D3D9 `sincos`, with constants more accurate than `mgfxc`'s (max phase error 1.3e-7 rad at |x| <= 1000, measured in fp32, against 3.8e-4 for `mgfxc`'s six-decimal ones). **Every OpenGL/WebGL shader that calls `sin` or `cos` changes bytes**; shaders without them, and every DirectX, DirectX 12, Vulkan and FNA output, are byte-unchanged.
 
+- **`ShadowDusk.Slang`: textured shaders sample SpriteBatch's texture on OpenGL (issue #252).** slangc
+  numbers every texture and sampler itself (`SamplerState S : register(s0)`), and the OpenGL sampler
+  allocator reads a `SamplerState` register as an author reservation (mgfxc's own rule), so a
+  single-texture Slang shader landed on sampler slot 1 while SpriteBatch binds the draw texture to
+  unit 0, and the shader never saw it. `SlangCompiler` now strips slangc's own texture/sampler
+  registers and keeps every `register(...)` the author wrote, so the route matches what the `.fx`
+  route gives the equivalent hand-written HLSL. New render gate `validation/SlangTexturedGl` (real
+  MonoGame DesktopGL, texture on unit 0 via SpriteBatch, Invert compared against the `mgfxc` golden)
+  measured red before the fix and green after; `slang-manifest.json` regenerated.
 - **Slang follow-ups (issue #258).** `*.slang` files are now pinned to LF in the checkout
   (`.gitattributes`), like `.fx`/`.fxh`; every tracked `.slang` was already LF in the repo, so no
   bytes change. `SlangCompiler`'s `SD0625` rejection (two entry points emitting different
@@ -23,12 +32,23 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   with a fake slangc, via an internal seam; the public API is unchanged. Every committed
   `packages.lock.json` now records the `ShadowDusk.*` project references at 0.20.0 (they still
   said 0.18.0, which no restore flags), and the release runbook rewrites them on each bump.
-
 - **Intermittent 60 s timeout in `Issue202_AposShapesCurrentUpstream_LandsOnTheRegisterLimit` on CI.** The test compiled the 3235-line shader twice, and each vkd3d compile costs about 3.3 s of CPU that a loaded runner stretched past the test's 60 s token. It now compiles once with no wall-clock token, since a token cannot interrupt a native compile; the CI integration step's `--blame-hang-timeout 3m` guards hangs and uploads a thread dump.
 - **`.fx` wave/quad intrinsics now fail loudly and consistently on every target that cannot hold them.** On OpenGL, DirectX 11 and FNA they are rejected with `SD0624` (the code the `.slang` route already used), instead of DXC's `Vulkan 1.1 is required` (OpenGL) or vkd3d's `Function "WaveActiveSum" is not defined` (DX11, FNA). The message names the intrinsic and target, keeps the compiler's own line and column, and appends its text; `.fx` and `.slang` share one message. A user function that shares an intrinsic's name on those targets still compiles. DirectX12 still compiles them; Vulkan stays `SD0218`.
 - **Host-independent generated text.** The Slang frontend `.fx`, the SkSL uniform rewrite, the ShaderToy `.fx` and harness, and the multipass manifest/WIRING.md used `AppendLine` (CRLF on Windows, LF elsewhere); they now emit `\n` everywhere. `HostNewlineBanTests` fails if `AppendLine`/`Environment.NewLine`/`WriteLine` reappears in a generator project. Compiled output bytes are unchanged.
 
 ### Added
+
+- **Linux and Slang evidence for the DXC concurrency fix (issue #256).** No emitted byte changes.
+  The fork probe in `DxcConcurrencyStressTests` now also makes real libc `fork()` calls on Linux
+  (`Process.Start` there is `vfork()`, which never exercises the macOS mechanism) and reports what
+  it raced; on ubuntu CI 16 runs raced about 8,200 DXC compiles against 8,100 process starts and 10,000
+  forks with no hang, so `DxcForkGate` stays macOS-only. A new fresh-process `setlocale` audit
+  checks every DXC entry point ShadowDusk uses and fails if any call outside the fork gate starts
+  calling `setlocale` (reflection was measured not to). A probe pinning which hosts' `Process.Start`
+  really forks, and `SlangDxcConcurrencyTests` (slangc spawns racing `.fx` compiles), join it.
+  A hung probe child now leaves native stacks (gdb on Linux, `sample` on macOS) and a
+  `createdump` core in the CI hang-dump artifact; the Linux integration lane lowers
+  `ptrace_scope` so they can attach.
 
 - **The Vulkan render gates run in CI.** `validation-render.yml` gains a `vulkan-render-gates` job
   (ubuntu, label-gated like the GL and DX jobs) that renders `VsDrivenVulkan` (VS-driven fixture vs the

@@ -26,6 +26,12 @@ public static class DxcConcurrencyProbe
     /// <summary>The argument that selects the DXC-versus-fork probe.</summary>
     public const string ForkProbeArgument = "--dxc-fork-probe";
 
+    /// <summary>The argument that selects the per-step DXC <c>setlocale</c> audit.</summary>
+    public const string SetlocaleProbeArgument = "--dxc-setlocale-probe";
+
+    /// <summary>The argument that selects the <c>Process.Start</c> fork-mechanism probe.</summary>
+    public const string ForkKindProbeArgument = "--process-start-fork-kind-probe";
+
     private const string Hlsl = """
         cbuffer Params { float4x4 World; float4 Tint; };
         float4 PSMain(float4 p : SV_Position) : SV_Target { return mul(p, World) * Tint; }
@@ -36,6 +42,10 @@ public static class DxcConcurrencyProbe
     {
         if (args.Length > 0 && args[0] == ForkProbeArgument)
             return RunForkProbe(TimeSpan.FromSeconds(double.Parse(args[1], System.Globalization.CultureInfo.InvariantCulture)));
+        if (args.Length > 0 && args[0] == SetlocaleProbeArgument)
+            return DxcSetlocaleAudit.Run();
+        if (args.Length > 0 && args[0] == ForkKindProbeArgument)
+            return RunForkKindProbe();
         if (args.Length == 0 || args[0] != ProbeArgument)
             return 0;
 
@@ -88,15 +98,24 @@ public static class DxcConcurrencyProbe
     }
 
     /// <summary>
-    /// DXC compiles on several threads while others start processes (every
-    /// <c>Process.Start</c> on Unix is a <c>fork()</c>). Unfixed on macOS this deadlocks inside
-    /// libc (DXC's <c>setlocale</c> against <c>fork()</c>'s atfork locking; see
-    /// <c>DxcForkGate</c>), so the parent's watchdog, not this method, reports the failure.
+    /// DXC compiles on several threads while others start processes. Unfixed on macOS this
+    /// deadlocks inside libc (DXC's <c>setlocale</c> against <c>fork()</c>'s atfork locking;
+    /// see <c>DxcForkGate</c>), so the parent's watchdog, not this method, reports the failure.
     /// </summary>
+    /// <remarks>
+    /// On Linux, .NET's <c>Process.Start</c> uses <c>vfork()</c> (glibc), which skips atfork
+    /// handlers and glibc's fork-time malloc/stdio locking entirely, so it cannot exercise the
+    /// macOS mechanism at all. Linux therefore also runs threads making REAL libc
+    /// <c>fork()</c> calls (child <c>_exit</c>s at once), the call a native library inside a
+    /// consumer's game could make. Raw forks stay Linux-only: on macOS <c>Process.Start</c> is
+    /// already a real <c>fork()</c>. The last stdout line reports how much of each operation
+    /// ran, so the test can reject a probe that raced nothing.
+    /// </remarks>
     private static int RunForkProbe(TimeSpan duration)
     {
         DateTime stop = DateTime.UtcNow + duration;
         int failures = 0;
+        int compiles = 0, processStarts = 0, rawForks = 0, stuckChildren = 0;
 
         IEnumerable<Thread> compilers = Enumerable.Range(0, 4).Select(w => new Thread(() =>
         {
@@ -110,23 +129,67 @@ public static class DxcConcurrencyProbe
                     Interlocked.Increment(ref failures);
                     return;
                 }
+                Interlocked.Increment(ref compiles);
             }
         }));
 
-        IEnumerable<Thread> forkers = Enumerable.Range(0, 4).Select(_ => new Thread(() =>
+        IEnumerable<Thread> spawners = Enumerable.Range(0, 4).Select(_ => new Thread(() =>
         {
             while (DateTime.UtcNow < stop)
             {
                 using Process process = Process.Start(new ProcessStartInfo("/usr/bin/true") { UseShellExecute = false })
                     ?? throw new InvalidOperationException("Process.Start returned null");
                 process.WaitForExit();
+                Interlocked.Increment(ref processStarts);
             }
         }));
 
-        Thread[] threads = [.. compilers, .. forkers];
+        IEnumerable<Thread> forkers = Enumerable.Range(0, OperatingSystem.IsLinux() ? 3 : 0).Select(_ => new Thread(() =>
+        {
+            (nint fork, nint exit) = ProbeLibc.ForkExports();
+            while (DateTime.UtcNow < stop)
+            {
+                int pid = ProbeLibc.ForkChildThatExits(fork, exit);
+                if (pid < 0)
+                {
+                    Console.Error.WriteLine("fork() failed");
+                    Interlocked.Increment(ref failures);
+                    return;
+                }
+                if (!ProbeLibc.Reap(pid, TimeSpan.FromSeconds(5)))
+                    Interlocked.Increment(ref stuckChildren);
+                Interlocked.Increment(ref rawForks);
+            }
+        }));
+
+        Thread[] threads = [.. compilers, .. spawners, .. forkers];
         foreach (Thread t in threads) t.Start();
         foreach (Thread t in threads) t.Join();
+
+        Console.WriteLine(
+            $"FORKPROBE compiles={compiles} processStarts={processStarts} rawForks={rawForks} stuckChildren={stuckChildren}");
         return failures == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// Counts how many <c>pthread_atfork</c> prepare handlers five <c>Process.Start</c> calls
+    /// run. <see cref="DxcForkGate"/> is an atfork gate, so it can only ever see a
+    /// <c>Process.Start</c> that really calls <c>fork()</c>; this measures which hosts do.
+    /// Prints <c>ATFORK &lt;calls&gt; &lt;starts&gt;</c>.
+    /// </summary>
+    private static int RunForkKindProbe()
+    {
+        const int starts = 5;
+        ProbeLibc.RegisterAtforkCounter();
+        for (int i = 0; i < starts; i++)
+        {
+            using Process process = Process.Start(new ProcessStartInfo("/usr/bin/true") { UseShellExecute = false })
+                ?? throw new InvalidOperationException("Process.Start returned null");
+            process.WaitForExit();
+        }
+
+        Console.WriteLine($"ATFORK {ProbeLibc.AtforkPrepareCalls} {starts}");
+        return 0;
     }
 
     private static Result<PlatformBlob, ShaderError> Compile(DxcShaderCompiler compiler, PlatformTarget platform)
