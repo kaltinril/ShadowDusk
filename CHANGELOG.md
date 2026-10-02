@@ -180,6 +180,25 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **OpenGL: which `SamplerState X : register(sN)` declarations reserve a sampler register is now
+  decided on the preprocessed source, like `mgfxc` (issue #283).** On OpenGL a modern
+  `SamplerState` register is a reservation: the combined sampler fxc synthesizes for each texture is
+  allocated around it. The `.fx` route read those registers off the raw source, so a register written
+  only in an inactive `#if` branch still counted (one texture landed on `ps_s1`, off SpriteBatch's
+  unit 0, where `mgfxc` emits `ps_s0`), and registers spelled through a macro
+  (`#define SLOT(n) : register(n)`) or written in an `#include`d file were not seen (`ps_s0`/`ps_s1`
+  where `mgfxc` emits `ps_s2`/`ps_s3`; `ps_s0` where it emits `ps_s1`). The reservation is now read
+  from a preprocessed view built by a small managed C preprocessor (`#if`/`#elif` expressions,
+  object- and function-like macros, `#`, `##`, `__VA_ARGS__`) with the compile's own platform and
+  user macros. It is plain C#, so the answer is the same on every host including the browser, whose
+  DXC build has no preprocess-only export. The raylib converter uses the same view. A directive or
+  expression the view cannot evaluate fails as the new **`SD0009`**, raised only after DXC has
+  accepted the source, so malformed shaders still report DXC's own error. New committed `mgfxc`
+  goldens `SamplerReservationIfBranch` and `SamplerReservationMacro`, and two new arms
+  ("ifbranch", "macro") in `validation/SamplerRegisterOrderGl`, measured RED with the old reading
+  (maxd 255, 4096 px each) and maxd 0 after. A corpus sweep builds the view for all 153 parseable
+  fixtures; no other shader's output moved. Not fixed here: the sibling map for an explicit register
+  on a LEGACY `sampler` declaration is still read from raw tokens (issue #299).
 - **`ShadowDusk.Slang`: which registers "the author wrote" is now decided after preprocessing
   (issue #252 follow-up).** The register strip kept a texture/sampler register only when the Slang
   source text spelled `register(...)` on that name, and it read the text before the preprocessor
