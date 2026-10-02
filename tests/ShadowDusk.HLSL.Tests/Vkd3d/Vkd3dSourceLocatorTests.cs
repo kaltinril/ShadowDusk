@@ -438,4 +438,95 @@ public sealed class Vkd3dSourceLocatorTests
         located[0].Line.ShouldBe(3);
         located[1].Line.ShouldBe(5);
     }
+
+    // -------------------------------------------------------------------------
+    // Cancellation (issue #255): each probe is one uninterruptible native compile and a
+    // diagnostic may need up to MaxProbes of them, so the token is checked before every one.
+    // -------------------------------------------------------------------------
+
+    /// <summary>A 3000-line effect whose relocation needs a dozen probes (measured below).</summary>
+    private static string LargeFailingSource()
+    {
+        var lines = new List<string>();
+        for (int i = 0; i < 3000; i++)
+            lines.Add(i % 7 == 0 ? $"float f{i} = atan2({i}, 1);" : $"float f{i};");
+        lines[2500] = "float bad = BAD;";
+        return Join(lines.ToArray());
+    }
+
+    [Fact]
+    public void TokenAlreadyCancelled_ThrowsBeforeTheFirstProbe()
+    {
+        var fake = new FakeVkd3d { CodegenMarker = "BAD" };
+        string source = LargeFailingSource();
+        ShaderError primary = fake.Compile(source)!;
+        int callsBefore = fake.Calls;
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        Should.Throw<OperationCanceledException>(() =>
+            Vkd3dSourceLocator.Relocate(primary, source, source, File, fake.Compile, cts.Token));
+
+        (fake.Calls - callsBefore).ShouldBe(0, "a cancelled relocation must not run a single probe");
+    }
+
+    [Fact]
+    public void TokenCancelledDuringAProbe_StopsBeforeTheNextOne()
+    {
+        var fake = new FakeVkd3d { CodegenMarker = "BAD" };
+        string source = LargeFailingSource();
+        ShaderError primary = fake.Compile(source)!;
+
+        // Control: uncancelled, this relocation takes many probes, so stopping after
+        // three below is the token's doing and not the bisection converging.
+        int uncancelled = 0;
+        Vkd3dSourceLocator.Relocate(primary, source, source, File, s => { uncancelled++; return fake.Compile(s); })
+            .Line.ShouldBe(2501);
+        uncancelled.ShouldBeGreaterThan(6);
+
+        using var cts = new CancellationTokenSource();
+        int probes = 0;
+        ShaderError? CancelOnTheThird(string text)
+        {
+            if (++probes == 3)
+                cts.Cancel();
+            return fake.Compile(text);
+        }
+
+        Should.Throw<OperationCanceledException>(() =>
+            Vkd3dSourceLocator.Relocate(primary, source, source, File, CancelOnTheThird, cts.Token));
+
+        probes.ShouldBe(3, "the probe in flight finishes; the next one must not start");
+    }
+
+    [Fact]
+    public void TokenCancelled_MultiDiagnosticForm_StopsToo()
+    {
+        // The warnings path of a SUCCESSFUL compile goes through the list overload.
+        var fake = new FakeVkd3d { CodegenMarker = "BAD" };
+        string source = Join("float a = atan2(1, 2);", "float b;", "float c = BAD;", "float d;", "float e = BAD;");
+        ShaderError raw = fake.Compile(source)!;
+        ShaderError second = raw with { Line = 25, Column = 11 };
+        int callsBefore = fake.Calls;
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        Should.Throw<OperationCanceledException>(() =>
+            Vkd3dSourceLocator.Relocate([raw, second], source, source, File, fake.Compile, cts.Token));
+
+        (fake.Calls - callsBefore).ShouldBe(0);
+    }
+
+    [Fact]
+    public void TokenCancelled_ButNothingToRelocate_DoesNotThrow()
+    {
+        // The check guards the probes, not the call: an unlocated diagnostic needs none,
+        // so it comes back untouched even under a cancelled token.
+        var unlocated = new ShaderError(File, 0, 0, "SD0212", "no location");
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        Vkd3dSourceLocator.Relocate(unlocated, "float a;", "float a;", File, _ => null, cts.Token)
+            .ShouldBe(unlocated);
+    }
 }
