@@ -188,7 +188,7 @@ public static class SlangFnaGate
             if (o.CandidateXnb.Error is not null) Console.WriteLine($"{"",-24}xnb:  {o.CandidateXnb.Error}");
             if (!SameParams(o.Reference.ParamsSet, o.Candidate.ParamsSet))
             {
-                Console.WriteLine($"{"",-24}params: ref [{string.Join(", ", o.Reference.ParamsSet)}] cand [{string.Join(", ", o.Candidate.ParamsSet)}]");
+                Console.WriteLine($"{"",-24}params: ref [{string.Join(", ", o.Reference.ParamsSet ?? [])}] cand [{string.Join(", ", o.Candidate.ParamsSet ?? [])}]");
             }
         }
         Console.WriteLine(new string('-', 96));
