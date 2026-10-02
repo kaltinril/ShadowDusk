@@ -20,6 +20,18 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **Linux and Slang evidence for the DXC concurrency fix (issue #256).** No emitted byte changes.
+  The fork probe in `DxcConcurrencyStressTests` now also makes real libc `fork()` calls on Linux
+  (`Process.Start` there is `vfork()`, which never exercises the macOS mechanism) and reports what
+  it raced; on ubuntu CI 16 runs raced about 8,200 DXC compiles against 8,100 process starts and 10,000
+  forks with no hang, so `DxcForkGate` stays macOS-only. A new fresh-process `setlocale` audit
+  checks every DXC entry point ShadowDusk uses and fails if any call outside the fork gate starts
+  calling `setlocale` (reflection was measured not to). A probe pinning which hosts' `Process.Start`
+  really forks, and `SlangDxcConcurrencyTests` (slangc spawns racing `.fx` compiles), join it.
+  A hung probe child now leaves native stacks (gdb on Linux, `sample` on macOS) and a
+  `createdump` core in the CI hang-dump artifact; the Linux integration lane lowers
+  `ptrace_scope` so they can attach.
+
 - **The Vulkan render gates run in CI.** `validation-render.yml` gains a `vulkan-render-gates` job
   (ubuntu, label-gated like the GL and DX jobs) that renders `VsDrivenVulkan` (VS-driven fixture vs the
   `mgfxc` golden, then the Apos.Shapes gallery) and the `CandidateVulkan` corpus on real MonoGame
