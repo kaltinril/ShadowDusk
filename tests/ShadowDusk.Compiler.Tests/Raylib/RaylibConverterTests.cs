@@ -148,6 +148,62 @@ public sealed class RaylibConverterTests
     }
 
     [Fact]
+    public void DrawTexture_IgnoresALegacyRegisterInTheBranchOpenGlDoesNotCompile()
+    {
+        // Issue #299: the converter compiles with the OpenGL macro set, so the #else branch's
+        // registers are not this shader's. Read off the raw source they pinned Noise to unit 0
+        // and made it the draw texture; mgfxc (and now the converter) allocates in declaration
+        // order, so the draw texture is Scene.
+        const string fx = """
+            Texture2D Scene;
+            Texture2D Noise;
+            #if OPENGL
+            sampler2D SceneSampler = sampler_state { Texture = <Scene>; };
+            sampler2D NoiseSampler = sampler_state { Texture = <Noise>; };
+            #else
+            sampler2D SceneSampler : register(s1) = sampler_state { Texture = <Scene>; };
+            sampler2D NoiseSampler : register(s0) = sampler_state { Texture = <Noise>; };
+            #endif
+            float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : COLOR0
+            {
+                return tex2D(SceneSampler, uv) * tex2D(NoiseSampler, uv).r;
+            }
+            technique T { pass P { PixelShader = compile ps_3_0 MainPS(); } }
+            """;
+
+        RaylibShader shader = ConvertOk(fx);
+
+        shader.Samplers.Select(s => (s.UniformName, s.HlslTextureName, s.BoundByDrawCall)).ShouldBe(
+            [("texture0", "Scene", true), ("Noise", "Noise", false)]);
+    }
+
+    [Fact]
+    public void DrawTexture_FollowsALegacyRegisterSpelledThroughAMacro()
+    {
+        // Issue #299: `register(NOISE_REGISTER)` is register(s0) once preprocessed, so Noise is
+        // the unit-0 sampler even though Scene is declared first. The raw source spells no
+        // register number at all, which used to leave Scene as the draw texture.
+        const string fx = """
+            #define SCENE_REGISTER s1
+            #define NOISE_REGISTER s0
+            Texture2D Scene;
+            sampler2D SceneSampler : register(SCENE_REGISTER) = sampler_state { Texture = <Scene>; };
+            Texture2D Noise;
+            sampler2D NoiseSampler : register(NOISE_REGISTER) = sampler_state { Texture = <Noise>; };
+            float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : COLOR0
+            {
+                return tex2D(SceneSampler, uv) * tex2D(NoiseSampler, uv).r;
+            }
+            technique T { pass P { PixelShader = compile ps_3_0 MainPS(); } }
+            """;
+
+        RaylibShader shader = ConvertOk(fx);
+
+        shader.Samplers.Single(s => s.BoundByDrawCall).HlslTextureName.ShouldBe("Noise");
+        shader.Samplers.Single(s => !s.BoundByDrawCall).HlslTextureName.ShouldBe("Scene");
+    }
+
+    [Fact]
     public void UniformArray_FlattensToALooseArrayUniform()
     {
         const string fx = """
