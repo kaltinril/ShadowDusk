@@ -196,7 +196,11 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   (`SlangcArguments.BuildPreprocess`; the WebAssembly slangc answers it byte for byte like native,
   200/200 corpus runs plus both shapes on all five targets), only after every entry point compiled,
   and only when the source, an include, a `##` paste, a line splice or a `-D` value could spell
-  `register` at all, so a shader that writes none pays nothing. `mgfxc` 3.8.4.1 was measured on the
+  `register` at all, so a shader that writes none pays nothing. A pass that exits 0 with empty output, or
+  output missing an entry point the compile found, now fails as `SD0629` instead of silently stripping every
+  author register. **Not fixed yet (known gaps):** a register written inside an `import`ed module or an
+  `__include`d file is still stripped (`slangc -E` does not expand either), and so is the register on a
+  combined `Sampler2D C : register(t2)` (slangc emits it as `C_texture_0`/`C_sampler_0`). `mgfxc` 3.8.4.1 was measured on the
   same two shapes in a `.fx` file and agrees with the preprocessed reading (`ps_s0`; `ps_s2`+`ps_s3`).
   No corpus byte moves: `slang-manifest.json` is unchanged and the native-vs-WebAssembly identity
   stays 235/235. `validation/SlangTexturedGl` gains an `Invert#if` row that renders the

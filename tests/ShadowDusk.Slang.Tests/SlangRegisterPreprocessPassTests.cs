@@ -269,4 +269,24 @@ public sealed class SlangRegisterPreprocessPassTests
         error.Message.ShouldContain("preprocess-only pass (-E", Case.Sensitive);
         downstream.Captured.ShouldBeNull();
     }
+
+    [Theory]
+    [InlineData(Transport.InProcess, "")]
+    [InlineData(Transport.InProcess, "  \n")]
+    [InlineData(Transport.Process, "")]
+    // Truncated: the entry point the compile just found is not in the output.
+    [InlineData(Transport.Process, "Texture2D SpriteTexture ; SamplerState SpriteSampler : register ( s0 ) ; \n")]
+    public void SuccessfulPass_WithUnusableOutput_IsSD0629_NeverASilentStrip(Transport transport, string output)
+    {
+        var downstream = new CapturingCompiler();
+        var slangc = new FakeSlangc((0, output, ""));
+
+        var result = Create(transport, downstream, slangc).Compile(BranchSource, Options(PlatformTarget.DirectX));
+
+        result.IsFailure.ShouldBeTrue();
+        ShaderError error = result.Error.ShouldHaveSingleItem();
+        error.Code.ShouldBe("SD0629");
+        error.Message.ShouldContain("will not guess", Case.Sensitive);
+        downstream.Captured.ShouldBeNull();
+    }
 }

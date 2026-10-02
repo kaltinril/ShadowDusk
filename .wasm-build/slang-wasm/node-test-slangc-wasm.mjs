@@ -85,7 +85,9 @@ for (const dir of corpora) {
         const w = mod.runSlangc(source, args);
         const wasm = { exitCode: w.exitCode, stdout: managedLines(w.stdout), stderr: managedLines(w.stderr) };
         preprocessRuns++;
-        if (/:\s*register\s*\(/.test(native.stdout)) preprocessWithRegister++;
+        // A texture/sampler register only: a shader whose only register is a cbuffer's
+        // register(bN) proves nothing about the texture/sampler strip.
+        if (/:\s*register\s*\(\s*[ts]\d/.test(native.stdout)) preprocessWithRegister++;
         const same = native.exitCode === wasm.exitCode && native.stdout === wasm.stdout && native.stderr === wasm.stderr;
         if (same) preprocessIdentical++;
         else mismatches.push({ key: `${dir}/${file} ${target} preprocess (-E)`, native, wasm });
@@ -111,8 +113,8 @@ for (const dir of corpora) {
 }
 
 console.log(`runs ${runs}, identical ${identical}, native non-zero exits ${nativeFailures} (all compared incl. stderr)`);
-console.log(`preprocess (-E) runs ${preprocessRuns}, identical ${preprocessIdentical}, with an author register in the output ${preprocessWithRegister}`);
-if (preprocessWithRegister === 0) { console.error('no corpus shader writes a register: the -E comparison would prove nothing about them'); process.exit(2); }
+console.log(`preprocess (-E) runs ${preprocessRuns}, identical ${preprocessIdentical}, with an author texture/sampler register in the output ${preprocessWithRegister}`);
+if (preprocessWithRegister === 0) { console.error('no corpus shader writes a texture/sampler register: the -E comparison would prove nothing about them'); process.exit(2); }
 // Floor on the preprocess run count (200 measured 2026-10-01: 40 shaders x 5 targets): the
 // corpus may grow, never quietly shrink.
 const MIN_PREPROCESS_RUNS = 200;

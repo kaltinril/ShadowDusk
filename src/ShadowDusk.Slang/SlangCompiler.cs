@@ -88,6 +88,10 @@ public sealed class SlangCompiler
 {
     private const string TechniqueName = "SlangEffect";
 
+    /// <summary><c>SD0629</c>: slangc's preprocess-only pass exited 0 with output that cannot
+    /// be the source (empty, or missing an entry point the compile found).</summary>
+    internal const string PreprocessOutputUnusableCode = "SD0629";
+
     private readonly IShaderCompiler _downstreamCompiler;
     private readonly Func<SlangcLocation> _locateSlangc;
     private readonly Func<string, string> _prepareSlangc;
@@ -343,6 +347,27 @@ public sealed class SlangCompiler
                     stderr, sourceName,
                     "slangc failed its preprocess-only pass (-E, which finds the registers the " +
                     "author wrote) with no diagnostic output, after every entry point compiled."));
+            }
+
+            // A successful pass that printed nothing (or dropped an entry point the compile
+            // just found) is not "the author wrote no register": reading it that way would strip
+            // every author register silently. Fail by name instead.
+            string? missingEntry = string.IsNullOrWhiteSpace(preprocessed)
+                ? null
+                : entries.Select(e => e.Name).FirstOrDefault(
+                    name => !System.Text.RegularExpressions.Regex.IsMatch(
+                        preprocessed, $@"\b{System.Text.RegularExpressions.Regex.Escape(name)}\b"));
+            if (string.IsNullOrWhiteSpace(preprocessed) || missingEntry is not null)
+            {
+                return Fail(new ShaderError(
+                    File: sourceName, Line: 0, Column: 0, Code: PreprocessOutputUnusableCode,
+                    Message: "slangc's preprocess-only pass (-E, which finds the registers the author " +
+                             "wrote) exited 0 but its output " +
+                             (missingEntry is null
+                                 ? "was empty"
+                                 : $"does not contain the entry point '{missingEntry}' that slangc just compiled") +
+                             ", so ShadowDusk cannot tell which texture/sampler registers are the author's " +
+                             "and will not guess (guessing would silently move textures to other slots)."));
             }
 
             authorBound = SlangcRegisterStripper.AuthorBoundNames(preprocessed);

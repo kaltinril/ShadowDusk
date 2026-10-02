@@ -54,11 +54,17 @@ internal static class SlangcRegisterStripper
         RegexOptions.Compiled);
 
     /// <summary>
-    /// False only when no <c>register</c> token can reach the compile, however the source is
-    /// preprocessed, so the preprocess-only slangc pass can be skipped and nothing is
-    /// author-bound. True means "ask slangc's preprocessor", never "there is a register".
+    /// False when the main source (and its <c>-D</c> values) cannot spell a <c>register</c>
+    /// token however it is preprocessed, so the preprocess-only slangc pass can be skipped and
+    /// nothing is author-bound. True means "ask slangc's preprocessor", never "there is a
+    /// register".
     /// </summary>
     /// <remarks>
+    /// <para>Known gap (PR #278 review, not fixed): this does NOT cover a register written inside
+    /// an <c>import</c>ed module or an <c>__include</c>d file. Neither is expanded by
+    /// <c>slangc -E</c> either, so such a register is stripped whether or not this returns
+    /// true. A combined <c>Sampler2D C : register(t2)</c> is also stripped (slangc emits it as
+    /// <c>C_texture_0</c>/<c>C_sampler_0</c>, and the match is per name).</para>
     /// A <c>register</c> token can only come from the literal word in the source or in a
     /// <c>-D</c> value, from an <c>#include</c>d file, from token pasting (<c>##</c>), or from
     /// a backslash line splice, which slangc honours inside an identifier and inside a

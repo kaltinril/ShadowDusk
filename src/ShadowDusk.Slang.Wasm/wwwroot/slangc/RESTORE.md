@@ -28,7 +28,7 @@ The gate runs every corpus `.slang` file, every entry point, and every target's 
 macros through native slangc and through this module with the identical argument list, and
 requires the exit code, stdout and stderr to match exactly (measured 235/235 on 2026-10-01). It
 does the same for the preprocess-only command line (`slangc -E`, which `SlangCompiler` uses to
-find author-written registers; measured 200/200) and for two register shapes only a
+find author-written registers; measured 200/200, 25 with a texture/sampler register) and for two register shapes only a
 preprocessor can resolve.
 
 Why not upstream's own `slang-wasm.js`: its embind API takes a compile target and nothing
