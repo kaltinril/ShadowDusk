@@ -356,12 +356,10 @@ public sealed class SlangHoistedTextureNameTests : IDisposable
             "gM.t.Sample(gM.s, uv) * gM.tint",
             "a texture held in 'gM' under a name it generated, 'globalParams_gM_t_0'"
         },
-        // A combined sampler inside a struct: the texture is still a field of the struct.
-        {
-            "struct M { Sampler2D c; };\nM gM;\n",
-            "gM.c.Sample(uv)",
-            "a texture held in 'gM' under a name it generated, 'gM_c_texture_0'"
-        },
+        // A combined sampler inside a struct (the texture is still a field of the struct) is
+        // pinned on canned slangc output only (SlangcHoistedResourceNamesTests): the macOS slangc
+        // fails on that shape before ShadowDusk sees an emission (SD0622, measured in CI on
+        // macos-latest; Windows and Linux emit gM_c_texture_0 and reach SD0640).
         // A texture declared inside a cbuffer block.
         {
             "cbuffer C { Texture2D T; SamplerState S; float4 x; }\n",
