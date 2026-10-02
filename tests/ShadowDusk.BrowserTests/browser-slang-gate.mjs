@@ -129,6 +129,20 @@ try {
   await page.goto(`${srv.url}/?test=${SIZE}`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => typeof window.theInstance !== 'undefined' && window.theInstance !== null, { timeout: 180000 });
 
+  // 0. Issue #272: DirectX12 is not a browser export target. It must be refused with the
+  // registered SD1906 before anything loads; this runs first so "nothing loaded" is checkable:
+  // the slangc module must not have been fetched for it.
+  {
+    const probe = byteEntries[0];
+    const out = await page.evaluate(
+      async ({ s, n }) => await window.theInstance.invokeMethodAsync('TestCompileSlang', s, 'DirectX12', n),
+      { s: readSource(probe.file), n: path.basename(probe.file) });
+    const ok = out.startsWith('ERR:SD1906') && out.includes('PlatformTarget.DirectX12') && fetched.length === 0;
+    if (!ok) failures.push(`DirectX12 up-front refusal: expected ERR:SD1906 with no slangc fetch, got '${out.slice(0, 200)}' (fetched: ${fetched.length})`);
+    rows.bytes.push({ key: 'DirectX12 refused (SD1906)', verdict: ok ? 'PASS' : 'FAIL', note: out.slice(0, 80).replace(/\|/g, '/'), ms: 0 });
+    console.log(`  [${ok ? 'PASS' : 'FAIL'}] DirectX12 refused up front: ${out.slice(0, 120)}`);
+  }
+
   // 1. Byte identity against the committed manifest.
   console.log(`[slang browser gate] byte identity: ${byteEntries.length} artifacts (21 shaders x OpenGL + DirectX_Vkd3d)`);
   for (const e of byteEntries) {

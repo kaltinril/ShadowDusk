@@ -66,6 +66,27 @@ internal static class SlangcArguments
         return args;
     }
 
+    /// <summary>
+    /// The preprocess-only pass over ANOTHER file the compile read (issue #292): an
+    /// <c>import</c>ed module or an <c>__include</c>d file, which the entry source's
+    /// <c>-E</c> does not expand. <paramref name="file"/> is the path exactly as slangc's own
+    /// <c>#line</c> directive spelled it, and slangc is run from the same working directory as
+    /// the compile, so it opens the file the compile opened. Same macros as the compile (slangc
+    /// applies <c>-D</c> to imported modules too, measured). Measured (v2026.14.1): a file that
+    /// cannot be opened still exits 0, with <c>error[E00001]: cannot open file</c> on stderr.
+    /// </summary>
+    public static IReadOnlyList<string> BuildPreprocessFile(
+        IReadOnlyList<MacroDefinition> platformMacros,
+        IReadOnlyList<UserDefine> defines,
+        string file)
+    {
+        List<string> args = CommonPrefix(platformMacros, defines);
+        args.Add("-E");
+        args.Add("--");
+        args.Add(file);
+        return args;
+    }
+
     // Everything the compile and the preprocess-only pass share: language, macros, target and
     // the two emission flags. One copy, so the preprocess pass can never see a different
     // macro set than the compile it describes.

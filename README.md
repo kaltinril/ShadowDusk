@@ -176,7 +176,7 @@ var result = await new EffectCompiler().CompileAsync(fx, new CompilerOptions { T
 File.WriteAllBytes("Content/MyShader.xnb", result.Value.ToXnb());
 ```
 
-The XNB platform byte is **derived** from the target you already picked, never something you select, and the payload inside is byte-for-byte the `.mgfx` the same call would emit:
+The XNB platform byte is **derived** from the target you already picked, never something you select, and the payload inside is byte-for-byte the `.mgfx` the same call would emit (on DirectX 12 and Vulkan, whose MGFX v11 container stores a per-shader source-file string, the CLI's `.xnb` writes `<unknown>` there, as a stock MGCB build does, instead of the path you passed):
 
 | `/Profile:` (or `--target-runtime`) | XNB platform byte | Runtimes that accept it |
 |---|---|---|

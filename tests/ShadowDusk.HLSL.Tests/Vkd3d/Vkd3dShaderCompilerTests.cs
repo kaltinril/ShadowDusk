@@ -165,8 +165,10 @@ public sealed class Vkd3dShaderCompilerTests
         result.Error.Line.ShouldBe(13);
         result.Error.Column.ShouldBe(13);
         result.Error.RawDiagnostics.ShouldNotBeNull();
-        result.Error.RawDiagnostics.ShouldContain(":71:11:", Case.Sensitive,
-            "the raw text keeps vkd3d's own coordinates (13 + 5 prelude - 2 skipped + 40 + 4 + 11 = 71, column 11 of its re-spaced text), untouched");
+        // vkd3d wrote "user.fx:71:11: ..." (13 + 5 prelude - 2 skipped + 40 + 4 + 11 = 71,
+        // column 11 of its re-spaced text). The raw blob is printed under the summary, so its
+        // location moves with the summary's; the code and text after it stay verbatim.
+        result.Error.RawDiagnostics.ShouldBe("user.fx:13:13: E5000: syntax error, unexpected ';'");
     }
 
     [Vkd3dFact]
@@ -228,6 +230,61 @@ public sealed class Vkd3dShaderCompilerTests
         result.Error.File.ShouldBe("user.fx");
         result.Error.Line.ShouldBe(13);
         result.Error.Column.ShouldBe(5);
+    }
+
+    [Vkd3dFact]
+    public void Compile_TheTerminator_EndsTheParseAndIsNotTheSentinel_OnThisHost_Issue202()
+    {
+        // Every probe ends with the terminator, so a probe whose sentinel was swallowed (a
+        // skipped #if arm, a block comment) still stops at the parse instead of running the
+        // whole failing compile again. It must be a syntax error on a source that is
+        // otherwise complete, and must not read as the sentinel.
+        var result = CompileIssue202(
+            Issue202Prelude + Issue202User("    b += a;") + Vkd3dSourceLocator.Terminator);
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("E5000");
+        result.Error.Message.ShouldStartWith("syntax error", Case.Sensitive);
+        result.Error.Message.ShouldNotContain(Vkd3dSourceLocator.SentinelMessage, Case.Sensitive);
+        result.Error.Message.ShouldNotContain(Vkd3dSourceLocator.SentinelMessageLegacyBison, Case.Sensitive);
+        result.Error.Line.ShouldBe(16, customMessage: "the terminator's own line, one past the 15-line file");
+    }
+
+    [Vkd3dFact]
+    public void Compile_SeveralDiagnostics_TheRawTextMovesToo_ForOneMoreCompile_Issue202()
+    {
+        // Two runtime-indexed stores, both reported by vkd3d, with a template call between
+        // them. The raw text printed under the summary must name the author's lines for
+        // both, and the second must come from the ONE statement-marker compile (real vkd3d
+        // answering every marker with a located warning that names it), not from a
+        // bisection of its own.
+        static D3DCompileRequest Request(string line13) => new()
+        {
+            HlslSource      = Issue202Prelude + Issue202User(line13),
+            SourceFileName  = "user.fx",
+            EntryPoint      = "PS",
+            Stage           = ShaderStage.Pixel,
+            ProfileOverride = "ps_3_0",
+        };
+
+        int oneDiagnosticCalls = 0;
+        Vkd3dShaderCompiler.CompileCore(
+            Request("    float3 v = uv.xyy; v[i] = a;\n    b = asin(saturate(v.x));\n    b += v.y;"),
+            CancellationToken.None, () => oneDiagnosticCalls++).IsFailure.ShouldBeTrue();
+
+        int twoDiagnosticCalls = 0;
+        var result = Vkd3dShaderCompiler.CompileCore(
+            Request("    float3 v = uv.xyy; v[i] = a;\n    b = asin(saturate(v.x));\n    v[i] = b; b += v.y;"),
+            CancellationToken.None, () => twoDiagnosticCalls++);
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Line.ShouldBe(13);
+        string[] raw = result.Error.RawDiagnostics!.Split('\n');
+        raw.Length.ShouldBe(2);
+        raw[0].ShouldStartWith($"user.fx:13:{result.Error.Column}: E5017: ", Case.Sensitive);
+        raw[1].ShouldStartWith("user.fx:15:", Case.Sensitive);
+        raw[1].ShouldContain(": E5017: Aborting due to not yet implemented feature: Non-constant vector addressing on store", Case.Sensitive);
+        twoDiagnosticCalls.ShouldBe(oneDiagnosticCalls + 1, "the same summary search, plus one marker compile for the rest");
     }
 
     [Vkd3dFact]

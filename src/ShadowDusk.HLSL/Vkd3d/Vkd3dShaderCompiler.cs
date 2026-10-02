@@ -53,9 +53,20 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
         return CompileCore(request, cancellationToken);
     }
 
+    /// <summary>
+    /// Test seam for a compile that goes through the whole pipeline, where the
+    /// <c>onNativeCallReturned</c> parameter below cannot be reached: a callback set here
+    /// runs after every <c>vkd3d_shader_compile</c> call made in the setting async flow
+    /// (it flows into <see cref="CompileAsync"/>'s <c>Task.Run</c>), and in no other, so
+    /// tests running in parallel do not see each other's calls. It is how the cost of a
+    /// failed compile (the real compile plus its diagnostic-relocation probes) is pinned on
+    /// the issue #202 fixture. Production never sets it.
+    /// </summary>
+    internal static readonly AsyncLocal<Action?> NativeCallObserver = new();
+
     private static Result<PlatformBlob, ShaderError> CompileCore(
         D3DCompileRequest request, CancellationToken cancellationToken) =>
-        CompileCore(request, cancellationToken, onNativeCallReturned: null);
+        CompileCore(request, cancellationToken, onNativeCallReturned: NativeCallObserver.Value);
 
     /// <summary>
     /// The compile, with a test seam: <paramref name="onNativeCallReturned"/> runs after

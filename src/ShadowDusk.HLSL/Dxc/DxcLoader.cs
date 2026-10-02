@@ -92,8 +92,10 @@ namespace ShadowDusk.HLSL.Dxc;
 /// exactly like vkd3d's. Android (Phase 50): our <c>libdxcompiler.so</c> rides in the APK's
 /// per-ABI <c>lib/&lt;abi&gt;/</c> dir and is loaded by bare SONAME, never by path (Android
 /// W^X, and the APK is not a directory). The Android linker resolves an app's libraries only
-/// inside the app's own namespace, so no search path exists for a foreign build to sit on, and
-/// there is no file to read an identity from.</para>
+/// inside the app's own namespace, so no search path exists for a foreign build to sit on.
+/// There is no file to read an identity from either, so the build id is read from the image the
+/// linker mapped (issue #289): a different <c>libdxcompiler.so</c> bundled into the APK by another
+/// package is refused like a foreign build on any other OS.</para>
 ///
 /// <para>Known residual: if the host process drove Vortice.Dxc before ShadowDusk's first use,
 /// the runtime has already cached Vortice's P/Invoke binding to whatever <c>dxcompiler</c> the
@@ -136,7 +138,10 @@ internal static class DxcLoader
     /// <item>Windows/Linux/macOS: loads the pinned natives by absolute path, after checking they
     ///   are the pinned build (Windows: <c>dxil</c> first, so <c>dxcompiler</c>'s own bare-name
     ///   validator load finds it), and answers <c>Dxc.ResolveLibrary</c> with that handle.</item>
-    /// <item>Android: loads our <c>libdxcompiler.so</c> from the APK by bare SONAME, here, once.</item>
+    /// <item>Android: loads our <c>libdxcompiler.so</c> from the APK by bare SONAME, here, once,
+    ///   and checks the mapped image's build id.</item>
+    /// <item>A Vortice.Dxc other than 3.3.4 in the process: <see cref="LoadErrorCode"/> before
+    ///   any of the above (<see cref="CheckVorticeDxcVersion"/>).</item>
     /// <item>Any other OS: no DXC ships for it, so the result is <see cref="LoadErrorCode"/>.</item>
     /// </list>
     /// Either way the handler goes ahead of Vortice's own. The native load happens HERE, so it
@@ -160,20 +165,106 @@ internal static class DxcLoader
             // Every outcome is either a handle ShadowDusk loaded itself or an SD0219 Result:
             // never "fall through and let Vortice's bare-name fallback try", which on a missing
             // or unsupported native ends in a raw DllNotFoundException at the first P/Invoke.
+            // The managed wrapper is checked first: a different Vortice.Dxc release is a
+            // different DXC native AND a different API, so nothing past this point could work.
+            DxcHost host = CurrentHost;
             _loadError =
-                OperatingSystem.IsAndroid() ? LoadAndroid()
-                : OperatingSystem.IsWindows() || OperatingSystem.IsLinux() || OperatingSystem.IsMacOS() ? LoadPinned()
-                : LoadError(
-                    $"ShadowDusk bundles no DXC for this operating system ({RuntimeInformation.OSDescription}, " +
-                    $"{RuntimeInformation.RuntimeIdentifier}), so no DXC-backed compile (DirectX 12, OpenGL, " +
-                    "Vulkan) can run here. It ships its pinned DXC for Windows, Linux, macOS and Android " +
-                    "only, and will not use a DXC found elsewhere. DirectX 11 and FNA do not use DXC.");
+                CheckVorticeDxcVersion(typeof(Vortice.Dxc.Dxc).Assembly.GetName().Version)
+                ?? RefusalFor(host, RuntimeInformation.OSDescription, RuntimeInformation.RuntimeIdentifier)
+                ?? (host == DxcHost.Android ? LoadAndroid() : LoadPinned());
             if (_loadError is null)
                 SubscribeFirst(ResolvePinned);
 
             _registered = true;
             return _loadError;
         }
+    }
+
+    /// <summary>The operating system families <see cref="Register"/> distinguishes.</summary>
+    internal enum DxcHost
+    {
+        /// <summary>Windows: the pinned <c>dxil.dll</c> + <c>dxcompiler.dll</c> from Vortice.Dxc 3.3.4.</summary>
+        Windows,
+
+        /// <summary>Linux (glibc): the pinned <c>libdxcompiler.so</c> from Vortice.Dxc 3.3.4.</summary>
+        Linux,
+
+        /// <summary>macOS: our own <c>libdxcompiler.dylib</c>.</summary>
+        MacOS,
+
+        /// <summary>Android: our own <c>libdxcompiler.so</c>, mapped from the APK.</summary>
+        Android,
+
+        /// <summary>Any other OS (iOS, Mac Catalyst, FreeBSD, ...): no DXC ships for it.</summary>
+        Unsupported,
+    }
+
+    /// <summary>The host this process runs on.</summary>
+    internal static DxcHost CurrentHost => HostOf(
+        android: OperatingSystem.IsAndroid(),
+        windows: OperatingSystem.IsWindows(),
+        linux: OperatingSystem.IsLinux(),
+        macOS: OperatingSystem.IsMacOS());
+
+    /// <summary>
+    /// Classifies a host from the <see cref="OperatingSystem"/> answers. Pure, so the platform
+    /// decision is unit-testable on any host (issue #289). Android is checked first: it is a
+    /// Linux kernel, and a check that ever reported both must still pick the APK load.
+    /// </summary>
+    internal static DxcHost HostOf(bool android, bool windows, bool linux, bool macOS) =>
+        android ? DxcHost.Android
+        : windows ? DxcHost.Windows
+        : linux ? DxcHost.Linux
+        : macOS ? DxcHost.MacOS
+        : DxcHost.Unsupported;
+
+    /// <summary>
+    /// The <see cref="LoadErrorCode"/> error for a host ShadowDusk bundles no DXC for, or
+    /// <c>null</c> for the four hosts it does. Pure; <see cref="Register"/> returns this result
+    /// instead of letting the first P/Invoke throw <see cref="DllNotFoundException"/>.
+    /// </summary>
+    internal static ShaderError? RefusalFor(DxcHost host, string osDescription, string runtimeIdentifier) =>
+        host != DxcHost.Unsupported
+            ? null
+            : LoadError(
+                $"ShadowDusk bundles no DXC for this operating system ({osDescription}, " +
+                $"{runtimeIdentifier}), so no DXC-backed compile (DirectX 12, OpenGL, " +
+                "Vulkan) can run here. It ships its pinned DXC for Windows, Linux, macOS and Android " +
+                "only, and will not use a DXC found elsewhere. DirectX 11 and FNA do not use DXC.");
+
+    /// <summary>
+    /// The <see cref="LoadErrorCode"/> error when the process bound a Vortice.Dxc other than
+    /// <see cref="DxcNativeIdentity.PinnedVorticeDxcVersion"/>, or <c>null</c>. Pure.
+    /// <para>Checked before any native is touched (issue #282). Another release is never just a
+    /// different native: Vortice.Dxc 3.8.3 (what Evergine.DirectX12 pulls in) ships DXC
+    /// 1.9.2602.17 on Windows and Linux, and its managed API is binary-incompatible with the one
+    /// ShadowDusk.HLSL is compiled against (measured: with the pinned natives put back in place,
+    /// every DXC call failed with <see cref="MissingMethodException"/> for
+    /// <c>IDxcUtils.CreateBlobFromPinned</c>, surfacing as a misleading reflection error). On
+    /// macOS and Android, where ShadowDusk ships its own native, that API failure was the ONLY
+    /// symptom. The build-time counterpart is warning <c>SD0220</c>.</para>
+    /// </summary>
+    internal static ShaderError? CheckVorticeDxcVersion(Version? resolved)
+    {
+        Version pinned = DxcNativeIdentity.PinnedVorticeDxcVersion;
+        if (resolved is not null
+            && resolved.Major == pinned.Major && resolved.Minor == pinned.Minor && resolved.Build == pinned.Build)
+        {
+            return null;
+        }
+
+        string version = resolved is null ? "(unknown version)" : $"{resolved.Major}.{resolved.Minor}.{resolved.Build}";
+        return LoadError(
+            $"This process resolved Vortice.Dxc {version}, but ShadowDusk.HLSL runs only with Vortice.Dxc " +
+            $"{pinned.ToString(3)}: that release ships ShadowDusk's pinned DXC (1.7.2212.40, e043f4a1), " +
+            "and ShadowDusk.HLSL is compiled against its API. Another release is a different DXC and a " +
+            "different API (3.8.3 fails every DXC call with MissingMethodException), so no DXC-backed " +
+            "compile (DirectX 12, OpenGL, Vulkan) can run. The usual cause is another package raising " +
+            "Vortice.Dxc (NuGet warns NU1608 at restore and ShadowDusk warns SD0220 at build): pin " +
+            $"Vortice.Dxc to {pinned.ToString(3)} in the application " +
+            $"(<PackageReference Include=\"Vortice.Dxc\" Version=\"{pinned.ToString(3)}\" />). If a package " +
+            "in the application requires the newer Vortice.Dxc, ShadowDusk's DXC-backed targets cannot run " +
+            "in the same process; compile those shaders at build time instead. DirectX 11 and FNA do not use DXC.");
     }
 
     /// <summary>
@@ -224,15 +315,21 @@ internal static class DxcLoader
     /// (Android W^X forbids loading executable code from a writable dir, and
     /// <c>AppContext.BaseDirectory</c> is the sandboxed app-data dir, not the APK). Loaded here,
     /// once, so a missing library is an <see cref="LoadErrorCode"/> Result rather than a
-    /// <see cref="DllNotFoundException"/> at the first P/Invoke. No identity check: inside the
-    /// APK there is no file to read one from; the app's own linker namespace is the only guard.
+    /// <see cref="DllNotFoundException"/> at the first P/Invoke.
+    /// <para><b>Identity (issue #289).</b> Inside the APK there is no file to read a build id
+    /// from, but the dynamic linker has mapped the library's note segment, so the GNU build id
+    /// is read from the MAPPED image (<see cref="LoadedImages.ElfImageOf"/>) and must be the pin
+    /// for this ABI. The app's linker namespace keeps libraries outside the APK out; what it
+    /// cannot keep out is another package bundling its own <c>libdxcompiler.so</c> for the same
+    /// ABI, where the Android build keeps one of the two files.</para>
     /// </summary>
     private static ShaderError? LoadAndroid()
     {
+        string rid = PinnedRid("android", RuntimeInformation.ProcessArchitecture);
         if (NativeLibrary.TryLoad(AndroidLibFileName, out IntPtr handle))
         {
             _pinnedDxcHandle = handle;
-            return null;
+            return VerifyMappedElfDxc(rid, $"the APK's lib/<abi>/{AndroidLibFileName}");
         }
 
         return LoadError(
@@ -333,6 +430,12 @@ internal static class DxcLoader
             if (mac && VerifyMappedMacDxc(dxcPath, pinnedCompiler) is { } substituted)
                 return substituted;
 
+            // Linux: an absolute-path dlopen maps that file, so this cannot differ today; it is
+            // checked anyway because it is the same mapped-image reader Android depends on, and
+            // this is where CI exercises it on every run.
+            if (!windows && !mac && VerifyMappedElfDxc(rid, $"'{dxcPath}'") is { } substitutedElf)
+                return substitutedElf;
+
             _foreignValidatorError =
                 dxilPath is not null ? VerifyBoundWindowsDxil(dxilPath, pinnedValidator)
                 : mac ? VerifyNoMacDxil()
@@ -424,6 +527,44 @@ internal static class DxcLoader
             "DXC-backed compile can run in this process. Remove that library from " +
             "DYLD_LIBRARY_PATH.");
     }
+
+    /// <summary>
+    /// Linux and Android: the ELF image the dynamic linker mapped for <see cref="_pinnedDxcHandle"/>
+    /// must carry the pinned GNU build id for <paramref name="rid"/>, read from memory. A RID with
+    /// no pin (an Android ABI ShadowDusk ships no DXC for) is refused: whatever is there, someone
+    /// else put it there. Cannot ask the linker means no finding, never a guess.
+    /// </summary>
+    private static ShaderError? VerifyMappedElfDxc(string rid, string requested)
+    {
+        string? pinned = DxcNativeIdentity.Expected(rid, DxcNativeKind.Compiler);
+        LoadedImages.ElfImage? image = LoadedImages.ElfImageOf(_pinnedDxcHandle, "DxcCreateInstance");
+        if (pinned is not null && (image is null || image.Value.BuildId == pinned))
+            return null;
+
+        string mapped = image is null
+            ? "an image whose identity could not be read"
+            : $"'{image.Value.Path}' (build id {image.Value.BuildId ?? "none"})";
+        return LoadError(pinned is null
+            ? $"The DXC loaded from {requested} for '{rid}' is {mapped}, and ShadowDusk bundles no DXC " +
+              "for that ABI (it ships its pinned DXC 1.7.2212.40 for android-arm64), so it is not " +
+              "ShadowDusk's build and no DXC-backed compile (DirectX 12, OpenGL, Vulkan) can run. " +
+              "DirectX 11 and FNA do not use DXC."
+            : $"The DXC loaded from {requested} is {mapped}, not ShadowDusk's pinned build for '{rid}' " +
+              $"(build id {pinned}). On Android this means another package in the application ships " +
+              $"its own {AndroidLibFileName} for this ABI and the build kept that one in the APK. " +
+              "ShadowDusk will not compile with a different DXC, so no DXC-backed compile (DirectX 12, " +
+              "OpenGL, Vulkan) can run. DirectX 11 and FNA do not use DXC.");
+    }
+
+    /// <summary>
+    /// The path of the DXC image this process really mapped for ShadowDusk (what the dynamic
+    /// linker reports for <c>DxcCreateInstance</c>), or <c>null</c> before <see cref="Register"/>
+    /// loaded one or when the OS cannot be asked. For tests and diagnostics.
+    /// </summary>
+    internal static string? MappedDxcImagePath() =>
+        OperatingSystem.IsMacOS() ? LoadedImages.MacImagePathOf(_pinnedDxcHandle, "DxcCreateInstance")
+        : OperatingSystem.IsWindows() ? WindowsModules.GetModulePath(_pinnedDxcHandle)
+        : LoadedImages.ElfImageOf(_pinnedDxcHandle, "DxcCreateInstance")?.Path;
 
     /// <summary>
     /// macOS: our <c>libdxcompiler.dylib</c> has just run its one <c>dlopen("libdxil.dylib")</c>
@@ -610,6 +751,14 @@ internal static class DxcLoader
             IntPtr module = GetModuleHandleW(moduleName);
             if (module == IntPtr.Zero) return null;
 
+            return GetModulePath(module);
+        }
+
+        /// <summary>The full path of a loaded module, or <c>null</c>.</summary>
+        internal static string? GetModulePath(IntPtr module)
+        {
+            if (module == IntPtr.Zero) return null;
+
             char[] buffer = new char[32768];
             uint length = GetModuleFileNameW(module, buffer, (uint)buffer.Length);
             return length == 0 ? null : new string(buffer, 0, (int)length);
@@ -682,6 +831,144 @@ internal static class DxcLoader
             {
                 return null;
             }
+        }
+
+        /// <summary>An ELF image as the dynamic linker mapped it.</summary>
+        /// <param name="Path">The path the linker recorded (on Android, inside the APK).</param>
+        /// <param name="BuildId">Its GNU build id as lowercase hex, or <c>null</c> if it has none.</param>
+        internal readonly record struct ElfImage(string Path, string? BuildId);
+
+        /// <summary>
+        /// Linux and Android: the mapped ELF image that defines <paramref name="exportName"/> in
+        /// the library <paramref name="handle"/> names, with the build id read from its mapped
+        /// note segment (no file access: on Android the library has no file of its own), or
+        /// <c>null</c> elsewhere or when the dynamic linker cannot be asked.
+        /// </summary>
+        internal static ElfImage? ElfImageOf(IntPtr handle, string exportName)
+        {
+            if (!(OperatingSystem.IsLinux() || OperatingSystem.IsAndroid()) || handle == IntPtr.Zero)
+                return null;
+
+            return NativeLibrary.TryGetExport(handle, exportName, out IntPtr address)
+                ? ElfImageContaining(address)
+                : null;
+        }
+
+        /// <summary>
+        /// Linux and Android: the mapped ELF image whose loadable segments contain
+        /// <paramref name="address"/>, found with <c>dl_iterate_phdr</c>, or <c>null</c>.
+        /// </summary>
+        internal static unsafe ElfImage? ElfImageContaining(IntPtr address)
+        {
+            if (IntPtr.Size != 8 || ResolveDlIteratePhdr() is not { } iterate)
+                return null;
+
+            var search = new ElfSearch { Address = (ulong)address };
+            GCHandle state = GCHandle.Alloc(search);
+            try
+            {
+                var dlIteratePhdr =
+                    (delegate* unmanaged[Cdecl]<delegate* unmanaged[Cdecl]<DlPhdrInfo*, nuint, IntPtr, int>, IntPtr, int>)iterate;
+                dlIteratePhdr(&VisitImage, GCHandle.ToIntPtr(state));
+            }
+            finally
+            {
+                state.Free();
+            }
+
+            return search.Path is null ? null : new ElfImage(search.Path, search.BuildId);
+        }
+
+        private static IntPtr? ResolveDlIteratePhdr()
+        {
+            // The process's global scope first (it holds libc on glibc and bionic alike), then the
+            // libraries that define it by name: glibc's libc.so.6, bionic's libdl.so / libc.so.
+            if (NativeLibrary.TryGetExport(NativeLibrary.GetMainProgramHandle(), "dl_iterate_phdr", out IntPtr address))
+                return address;
+
+            foreach (string library in new[] { "libc.so.6", "libdl.so", "libc.so" })
+            {
+                if (NativeLibrary.TryLoad(library, out IntPtr lib)
+                    && NativeLibrary.TryGetExport(lib, "dl_iterate_phdr", out address))
+                {
+                    return address;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary><c>dl_iterate_phdr</c>'s callback: stops (returns 1) at the image holding the address.</summary>
+        [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+        private static unsafe int VisitImage(DlPhdrInfo* info, nuint size, IntPtr data)
+        {
+            try
+            {
+                const uint loadSegment = 1;   // PT_LOAD
+                const uint noteSegment = 4;   // PT_NOTE
+
+                var search = (ElfSearch)GCHandle.FromIntPtr(data).Target!;
+                bool contains = false;
+                for (int i = 0; i < info->Phnum && !contains; i++)
+                {
+                    Elf64Phdr* segment = &info->Phdr[i];
+                    ulong start = info->Addr + segment->Vaddr;
+                    contains = segment->Type == loadSegment
+                        && search.Address >= start && search.Address - start < segment->Memsz;
+                }
+
+                if (!contains)
+                    return 0;
+
+                search.Path = Marshal.PtrToStringUTF8(info->Name) ?? "";
+                for (int i = 0; i < info->Phnum && search.BuildId is null; i++)
+                {
+                    Elf64Phdr* segment = &info->Phdr[i];
+                    if (segment->Type != noteSegment || segment->Memsz is 0 or > (1 << 20))
+                        continue;
+
+                    var notes = new ReadOnlySpan<byte>((void*)(info->Addr + segment->Vaddr), (int)segment->Memsz);
+                    search.BuildId = DxcNativeIdentity.FindGnuBuildId(notes, segment->Align == 8 ? 8 : 4);
+                }
+
+                return 1;
+            }
+            catch
+            {
+                // Never let an exception cross the native frame; the caller sees "not found".
+                return 1;
+            }
+        }
+
+        private sealed class ElfSearch
+        {
+            public ulong Address;
+            public string? Path;
+            public string? BuildId;
+        }
+
+        /// <summary>The leading fields of <c>struct dl_phdr_info</c> (64-bit; glibc and bionic agree).</summary>
+        [StructLayout(LayoutKind.Sequential)]
+        private unsafe struct DlPhdrInfo
+        {
+            public ulong Addr;
+            public IntPtr Name;
+            public Elf64Phdr* Phdr;
+            public ushort Phnum;
+        }
+
+        /// <summary><c>Elf64_Phdr</c>.</summary>
+        [StructLayout(LayoutKind.Sequential)]
+        private struct Elf64Phdr
+        {
+            public uint Type;
+            public uint Flags;
+            public ulong Offset;
+            public ulong Vaddr;
+            public ulong Paddr;
+            public ulong Filesz;
+            public ulong Memsz;
+            public ulong Align;
         }
 
         /// <summary><c>Dl_info</c> from <c>&lt;dlfcn.h&gt;</c>.</summary>
