@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
+using ShadowDusk.Integration.Tests;
 using Shouldly;
 using Xunit;
 
@@ -229,13 +230,11 @@ public sealed class SlangInProcessRouteTests
         };
         foreach (string a in arguments)
             psi.ArgumentList.Add(a);
-        using Process p = Process.Start(psi)!;
-        Task<string> stderr = p.StandardError.ReadToEndAsync();
-        Task<string> stdout = p.StandardOutput.ReadToEndAsync();
-        p.StandardInput.Write(source);
-        p.StandardInput.Close();
-        p.WaitForExit();
-        return (p.ExitCode, stdout.GetAwaiter().GetResult(), stderr.GetAwaiter().GetResult());
+
+        // The delegate shape is synchronous by contract, so this is the blocking form of the
+        // shared child-process helper: same concurrent drain, tree kill and evidence on timeout.
+        ChildProcessResult run = ChildProcess.Run(psi, TimeSpan.FromSeconds(120), "slangc", standardInput: source);
+        return (run.ExitCode, run.Stdout, run.Stderr);
     }
 
     private static string FindRepoRoot()

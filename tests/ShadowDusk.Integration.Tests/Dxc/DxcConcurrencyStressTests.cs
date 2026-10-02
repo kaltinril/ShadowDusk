@@ -177,42 +177,29 @@ public sealed class DxcConcurrencyStressTests
             ? host
             : "dotnet";
 
-        var psi = new ProcessStartInfo(dotnet)
-        {
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
+        var psi = new ProcessStartInfo(dotnet);
         psi.ArgumentList.Add("exec");
         psi.ArgumentList.Add(typeof(DxcConcurrencyProbe).Assembly.Location);
         foreach (string argument in probeArguments)
             psi.ArgumentList.Add(argument);
 
-        using var process = Process.Start(psi)
-            ?? throw new InvalidOperationException($"{label}: failed to start.");
-        Task<string> stdout = process.StandardOutput.ReadToEndAsync();
-        Task<string> stderr = process.StandardError.ReadToEndAsync();
-
-        using var timeout = new CancellationTokenSource(watchdog);
+        ChildProcessResult run;
         try
         {
-            await process.WaitForExitAsync(timeout.Token);
+            // Native stacks and a core are captured BEFORE the kill: the hang is the evidence.
+            run = await ChildProcess.RunAsync(psi, watchdog, label, captureHangEvidence: true);
         }
-        catch (OperationCanceledException)
+        catch (ChildProcessTimeoutException ex)
         {
-            // Capture native stacks and a core BEFORE killing: the hang is the evidence.
-            string evidence = await HangDiagnostics.CaptureAsync(process.Id, label);
-            process.Kill(entireProcessTree: true);
-            await process.WaitForExitAsync();
             throw new ShouldAssertException(
                 $"{label} hung past its {watchdog.TotalSeconds:0} s watchdog (a native deadlock, or " +
-                $"threads re-faulting forever in LLVM's SignalHandler).\n{evidence}");
+                $"threads re-faulting forever in LLVM's SignalHandler).\n{ex.Message}");
         }
 
-        string output = await stdout + await stderr;
+        string output = run.Output;
         _output.WriteLine($"{label}:\n{output}");
-        process.ExitCode.ShouldBe(0,
-            $"{label} exited {process.ExitCode} (a signal exit such as 134/138/139/158 is a native " +
+        run.ExitCode.ShouldBe(0,
+            $"{label} exited {run.ExitCode} (a signal exit such as 134/138/139/158 is a native " +
             $"crash; 2 is a DXC signal handler left installed). Output:\n{output}");
         return output;
     }

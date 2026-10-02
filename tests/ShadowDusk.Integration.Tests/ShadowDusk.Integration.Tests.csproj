@@ -100,6 +100,13 @@
           Link="foreign-dxc/1.9/%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Issues #312/#316: xUnit reports every test that has been running longer than
+         longRunningTestSeconds ("[Long Running Test] 'Name', Elapsed: ..."), so a stalled run
+         names the tests that were in flight even when no hang dump could be taken. -->
+    <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup Label="Test framework">
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />

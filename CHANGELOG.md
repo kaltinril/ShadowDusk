@@ -181,6 +181,18 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Changed
 
+- **Test child processes leave evidence when they stall (issues #316, #312).** Every test that
+  spawns a process (the CLI, the `dotnet exec` DXC probes, `codesign`, `slangc`, the fallback
+  `dotnet publish`) now goes through one helper, `tests/ShadowDusk.Integration.Tests/ChildProcess.cs`:
+  stdout and stderr are drained concurrently (six of the old per-class copies read stdout to the
+  end before stderr, which deadlocks on a child that fills the stderr pipe first), a timeout kills
+  the whole process tree, and the failure carries the elapsed time, the command line, the child's
+  CPU time and thread states, the output so far and, for .NET children, a dump taken before the
+  kill (`MiniDumpWriteDump` on Windows, `createdump` elsewhere). CI's integration step caps a test
+  session at 10 minutes instead of 5, so `--blame-hang-timeout 3m` (an inactivity timer that every
+  finishing test resets) can still dump a stall that begins late in the run; `CiHangGuardTests`
+  fails if the two numbers drift apart again, and xUnit now names every test running over a
+  minute. Test budgets were sized from measurement: every CLI compile of a minimal fixture measured on Windows at 0.21 s idle, under 1 s with 20 compiles racing on 16 cores and 7.7 s at worst under 4x CPU oversubscription (6,280 runs, no hang), so the two 30 s CLI budgets become 60 s like the rest (a single-spawn test reached 19 s under that load) and the 60 s and 120 s ones stay.
 - **`validation/MgcbPlugin` covers issue #280.** Every case now also has the CLI write an `.xnb`
   and requires its payload to equal the plugin's MGCB payload, and every `DesktopVK` /
   `WindowsDX12` case rebuilds with `/config:Debug` (default `DebugMode=Auto`) and requires the
