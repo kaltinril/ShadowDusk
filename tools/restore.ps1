@@ -560,8 +560,9 @@ function Restore-SlangRid([string]$Rid, [string]$ZipSuffix, [string]$ZipSha,
 }
 
 # linux-arm64 and win-arm64 are NOT restored although upstream publishes them: the core
-# pipeline has no DXC/vkd3d native for either RID, so slangc there could not reach a working
-# compiler (project_decisions.md, issue #227). Add them when the core pipeline does.
+# pipeline is incomplete on both (linux-arm64 has no DXC or vkd3d native; win-arm64 has DXC
+# but no vkd3d, and is unproven) (project_decisions.md, issue #227). Add them when the core
+# pipeline does.
 function Restore-Slang {
     Restore-SlangRid 'win-x64' 'windows-x86_64' `
         '5ed0a59d650a0af0aca45d5db4e083b3d8fb5cea05748747dd95dfbe9c580658' `

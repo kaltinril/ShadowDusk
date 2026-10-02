@@ -72,13 +72,18 @@ public sealed record MgfxConstantBufferRecord(
 /// <summary>
 /// One shader record's identity + bindings (Phase 43C): its stage, raw bytecode/GLSL,
 /// and the indices into the effect's constant-buffer list it binds.
+/// <see cref="SourceFile"/> and <see cref="Entrypoint"/> are the two diagnostic strings
+/// MGFX v11+ stores per shader (issue #274); both are <see langword="null"/> for a v10
+/// container, which has no such fields.
 /// </summary>
 public sealed record MgfxShaderRecord(
     int Index,
     bool IsVertex,
     byte[] Bytecode,
     IReadOnlyList<int> ConstantBufferIndices,
-    IReadOnlyList<MgfxAttributeRecord> Attributes);
+    IReadOnlyList<MgfxAttributeRecord> Attributes,
+    string? SourceFile = null,
+    string? Entrypoint = null);
 
 /// <summary>
 /// One vertex-attribute table entry: the <c>VertexElementUsage</c> byte + semantic index a
@@ -268,10 +273,12 @@ public sealed class MgfxBlobReader
         for (int i = 0; i < shaderCount; i++)
         {
             bool isVertex = br.ReadBoolean();
+            string? sourceFile = null;
+            string? entrypoint = null;
             if (version > 10)
             {
-                br.ReadString(); // SourceFile (MGFX v11+ diagnostic-only)
-                br.ReadString(); // Entrypoint (MGFX v11+ diagnostic-only)
+                sourceFile = br.ReadString(); // SourceFile (MGFX v11+ diagnostic-only)
+                entrypoint = br.ReadString(); // Entrypoint (MGFX v11+ diagnostic-only)
             }
             int byteLen = br.ReadInt32();
             shaderBlobs.Add(br.ReadBytes(byteLen));
@@ -322,7 +329,8 @@ public sealed class MgfxBlobReader
                     Location: br.ReadInt16()));
             }
 
-            shaderRecords.Add(new MgfxShaderRecord(i, isVertex, shaderBlobs[i], cbIndices, attributes));
+            shaderRecords.Add(new MgfxShaderRecord(
+                i, isVertex, shaderBlobs[i], cbIndices, attributes, sourceFile, entrypoint));
         }
 
         // Parameters — MonoGame 3.8.2's recursive layout: elements then struct

@@ -66,7 +66,12 @@ let preprocessRuns = 0, preprocessIdentical = 0, preprocessWithRegister = 0;
 const mismatches = [];
 for (const dir of corpora) {
   const abs = path.join(repoRoot, dir);
-  if (!fs.existsSync(abs)) continue;
+  // A missing corpus must turn the gate red, never shrink it: a phase appendix that moves to
+  // plan/DONE/ has to be re-pointed here, not silently dropped from the identity check.
+  if (!fs.existsSync(abs)) {
+    console.error(`FAIL corpus directory not found: ${dir} (moved? update the corpora list)`);
+    process.exit(1);
+  }
   for (const file of fs.readdirSync(abs).filter(f => f.endsWith('.slang')).sort()) {
     const source = fs.readFileSync(path.join(abs, file), 'utf8').replace(/\r\n/g, '\n');
     const entries = [...source.matchAll(entryRe)].map(m => ({ stage: m[1], name: m[2] }));
@@ -216,5 +221,11 @@ for (const m of mismatches.slice(0, 5)) {
       console.log(`  ${k} differs at ${i}:\n  native: ${JSON.stringify(a.slice(Math.max(0, i - 80), i + 120))}\n  wasm:   ${JSON.stringify(b.slice(Math.max(0, i - 80), i + 120))}`);
     }
   }
+}
+// Floor on the run count (235 measured 2026-10-01): the corpus may grow, never quietly shrink.
+const MIN_RUNS = 235;
+if (runs < MIN_RUNS) {
+  console.error(`FAIL only ${runs} slangc runs compared, expected at least ${MIN_RUNS}`);
+  process.exit(1);
 }
 process.exit(mismatches.length === 0 ? 0 : 1);

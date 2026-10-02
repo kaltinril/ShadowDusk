@@ -14,8 +14,7 @@ namespace ShadowDusk.Slang;
 /// <see cref="NativeLibrary"/>. Probe order, first hit wins:</para>
 /// <list type="number">
 ///   <item>the app base directory: where a self-contained or RID-specific publish flattens
-///   the package's <c>runtimes/&lt;rid&gt;/native</c> assets, and where the csproj's own
-///   <c>CopyToOutputDirectory</c> places the win-x64 copy for repo/dev builds;</item>
+///   the package's <c>runtimes/&lt;rid&gt;/native</c> assets;</item>
 ///   <item><c>&lt;base&gt;/runtimes/&lt;rid&gt;/native/</c>: where a plain framework-dependent,
 ///   non-RID-specific build of a NuGet consumer keeps every RID's native assets (measured by
 ///   <c>.github/workflows/pack-consume.yml</c>'s Slang consumer, issue #225);</item>
@@ -49,7 +48,8 @@ public static class SlangToolPath
     /// <summary>
     /// The RIDs this package bundles slangc for: the core pipeline's desktop RIDs. Upstream
     /// also publishes linux-arm64 and win-arm64 builds, deliberately not bundled because the
-    /// core pipeline has no DXC/vkd3d native there (issue #227).
+    /// core pipeline is incomplete there (linux-arm64: no DXC or vkd3d native; win-arm64: no
+    /// vkd3d native, and unproven) (issue #227).
     /// </summary>
     internal static readonly IReadOnlyList<string> SupportedRids = ["win-x64", "linux-x64", "osx-x64", "osx-arm64"];
 

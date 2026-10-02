@@ -47,6 +47,7 @@ public sealed class ReviewRegressionTests
             Profile                = CapabilityProfile.MonoGameDX_SM5,
             AdditionalIncludePaths = ["/inc/a", "/inc/b"],
             SourceFileName         = "Thing.fx",
+            EmbeddedSourceFileName = "<unknown>",
             Debug                  = true,
             MgfxVersion            = 11,
             Container              = EffectContainer.Knifx,

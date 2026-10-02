@@ -15,6 +15,14 @@ namespace ShadowDusk.Integration.Tests.MgcbPlugin;
 /// <see cref="CompiledEffectContent"/> must be <b>byte-for-byte</b> what the ShadowDusk CLI
 /// writes for the same source and target.
 ///
+/// <para><b>One deliberate difference, on MGFX v11 only (issue #274).</b> A v11 container
+/// (always DirectX 12 and Vulkan) stores a source-file string per shader. The CLI writes the
+/// path it was given, as <c>mgfxc</c> does; the processor writes <c>&lt;unknown&gt;</c>, as
+/// MonoGame's stock <c>EffectProcessor</c> does, because a content build is handed an absolute
+/// path that must not end up in the game's content. For those targets the bar is "the CLI's
+/// bytes with only that string replaced", asserted here and in depth by
+/// <see cref="MgcbPluginSourcePathTests"/>.</para>
+///
 /// <para>The comparison arm is the <b>real CLI executable</b> (via <see cref="CliBinaryFixture"/>),
 /// run as a separate process, not another in-process call to <c>EffectCompiler</c> - otherwise
 /// the test would only be comparing the library to itself and would stay green if the plugin's
@@ -77,8 +85,8 @@ public sealed class MgcbPluginByteIdentityTests : IClassFixture<CliBinaryFixture
     /// <summary>
     /// The <c>ShaderProfile</c> escape hatch must select the target instead of
     /// <c>/platform:</c>, and still produce the CLI's bytes for that profile. This is the only
-    /// way an MGCB consumer can reach DirectX 12 or Vulkan, whose runtimes MGCB's
-    /// <see cref="TargetPlatform"/> enum cannot name.
+    /// way a consumer on an MGCB older than 3.8.5 can reach DirectX 12 or Vulkan, whose runtimes
+    /// that MGCB's <see cref="TargetPlatform"/> enum cannot name.
     /// </summary>
     [Theory]
     [InlineData("OpenGL")]
@@ -95,7 +103,14 @@ public sealed class MgcbPluginByteIdentityTests : IClassFixture<CliBinaryFixture
             "Grayscale.fx", profile, InvocationMode.CliProcess, _cli.ExecutablePath);
 
         cliResult.ExitCode.ShouldBe(0);
-        pluginBytes.ShouldBe(cliResult.Mgfx);
+
+        // Vulkan is always MGFX v11, whose per-shader source-file string is the one thing the
+        // processor writes differently from the CLI (issue #274): <unknown>, not the path.
+        byte[] expected = profile == "Vulkan"
+            ? MgfxEmbeddedSourceName.Replace(cliResult.Mgfx, TestHelpers.FixturePath("Grayscale.fx"), "<unknown>")
+            : cliResult.Mgfx;
+
+        pluginBytes.ShouldBe(expected);
     }
 
     /// <summary>

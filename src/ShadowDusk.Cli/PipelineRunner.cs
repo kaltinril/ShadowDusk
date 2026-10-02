@@ -83,7 +83,15 @@ internal sealed class PipelineRunner
         // numbers do NOT correspond to the user's .glsl. Attribute those errors to a synthetic
         // "<name>.generated.fx" name so they are never mistaken for the original source (e.g. a 30-line
         // .glsl reporting "line 51"). Convert-stage diagnostics keep the real .glsl name (they ARE located
-        // in the user's GLSL). SourceFileName is diagnostics-only and does not affect output bytes.
+        // in the user's GLSL).
+        //
+        // SourceFileName is NOT diagnostics-only. An MGFX v11 container (always DirectX 12 and
+        // Vulkan; any target under --mgfx-version 11) stores a source-file string per shader, and
+        // the CLI deliberately leaves CompilerOptions.EmbeddedSourceFileName unset, so that string
+        // is this name exactly as written here: the path the user passed (mgfxc parity, measured
+        // against the mgfxc 3.8.5 CLI, issue #274) or the synthetic ".generated.fx" name on a
+        // converted route. With /Debug, DXC also records it in the SPIR-V / DXIL debug info.
+        // v10, KNIFX and FNA output carry no source name and do not depend on it.
         string compileSourceName = isConvertedGlsl || isConvertedSlang
             ? Path.GetFileNameWithoutExtension(args.SourceFile) + ".generated.fx"
             : args.SourceFile;
