@@ -229,6 +229,8 @@ internal sealed class FxMacroPreprocessor
                         case "pragma":
                         case "error":
                         case "warning":
+                        case "ident":
+                        case "sccs":
                             break;
                         case "include":
                             return Fail(lineNo,
