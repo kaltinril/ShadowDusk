@@ -178,28 +178,18 @@ public sealed class DxcForeignValidatorTests
             ? host
             : "dotnet";
 
-        var psi = new ProcessStartInfo(dotnet)
-        {
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
+        var psi = new ProcessStartInfo(dotnet);
         psi.ArgumentList.Add("exec");
         psi.ArgumentList.Add(typeof(DxcConcurrencyProbe).Assembly.Location);
         psi.ArgumentList.Add(PreloadProbeArgument);
         psi.ArgumentList.Add(dllPath);
 
-        using var process = Process.Start(psi)
-            ?? throw new InvalidOperationException("preload probe: failed to start.");
-        Task<string> stdout = process.StandardOutput.ReadToEndAsync();
-        Task<string> stderr = process.StandardError.ReadToEndAsync();
+        ChildProcessResult run = await ChildProcess.RunAsync(
+            psi, TimeSpan.FromSeconds(120), "preload probe", captureHangEvidence: true);
 
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(120));
-        await process.WaitForExitAsync(timeout.Token);
-
-        string output = await stdout;
-        _output.WriteLine($"preload {dllPath}:\n{output}\n{await stderr}");
-        process.ExitCode.ShouldBe(0, $"preload probe crashed:\n{output}");
+        string output = run.Stdout;
+        _output.WriteLine($"preload {dllPath}:\n{output}\n{run.Stderr}");
+        run.ExitCode.ShouldBe(0, $"preload probe crashed:\n{output}\n{run.Stderr}");
 
         return output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(l => l.Split('=', 2))

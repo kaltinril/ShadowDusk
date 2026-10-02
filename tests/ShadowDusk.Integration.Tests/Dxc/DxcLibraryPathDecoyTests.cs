@@ -388,9 +388,6 @@ public sealed class DxcLibraryPathDecoyTests
 
         var psi = new ProcessStartInfo(dotnet)
         {
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
             // macOS also resolves a leaf-name dlopen against the working directory.
             WorkingDirectory = decoyDir,
         };
@@ -413,17 +410,12 @@ public sealed class DxcLibraryPathDecoyTests
             ? decoyDir
             : decoyDir + Path.PathSeparator + inherited;
 
-        using var process = Process.Start(psi)
-            ?? throw new InvalidOperationException("library-path probe: failed to start.");
-        Task<string> stdout = process.StandardOutput.ReadToEndAsync();
-        Task<string> stderr = process.StandardError.ReadToEndAsync();
+        ChildProcessResult run = await ChildProcess.RunAsync(
+            psi, TimeSpan.FromSeconds(120), "library-path probe", captureHangEvidence: true);
 
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(120));
-        await process.WaitForExitAsync(timeout.Token);
-
-        string output = await stdout;
-        _output.WriteLine($"{variable}={decoyDir}\n{output}\n{await stderr}");
-        process.ExitCode.ShouldBe(0, $"library-path probe crashed:\n{output}");
+        string output = run.Stdout;
+        _output.WriteLine($"{variable}={decoyDir}\n{output}\n{run.Stderr}");
+        run.ExitCode.ShouldBe(0, $"library-path probe crashed:\n{output}\n{run.Stderr}");
 
         return output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(l => l.Split('=', 2))
@@ -435,24 +427,14 @@ public sealed class DxcLibraryPathDecoyTests
     /// <summary>macOS: <c>codesign --force --sign - path</c> (an ad-hoc signature).</summary>
     private async Task AdHocSignAsync(string path)
     {
-        var psi = new ProcessStartInfo("codesign")
-        {
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
+        var psi = new ProcessStartInfo("codesign");
         foreach (string argument in new[] { "--force", "--sign", "-", path })
             psi.ArgumentList.Add(argument);
 
-        using var process = Process.Start(psi) ?? throw new InvalidOperationException("codesign: failed to start.");
-        Task<string> stdout = process.StandardOutput.ReadToEndAsync();
-        Task<string> stderr = process.StandardError.ReadToEndAsync();
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-        await process.WaitForExitAsync(timeout.Token);
+        ChildProcessResult run = await ChildProcess.RunAsync(psi, TimeSpan.FromSeconds(60));
 
-        string output = await stdout + await stderr;
-        _output.WriteLine($"codesign {path}: {output}");
-        process.ExitCode.ShouldBe(0, $"codesign failed: {output}");
+        _output.WriteLine($"codesign {path}: {run.Output}");
+        run.ExitCode.ShouldBe(0, $"codesign failed: {run.Output}");
     }
 
     private static void TryDelete(string directory)
