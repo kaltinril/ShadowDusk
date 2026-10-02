@@ -139,33 +139,19 @@ public sealed class CliDxcPathHijackTest : IClassFixture<CliBinaryFixture>
     private async Task<(int ExitCode, string Stdout, string Stderr)> RunCliAsync(
         string sourceFile, string outputFile, string profile, string? pathPrefix)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(120));
-
-        var psi = new ProcessStartInfo(_fixture.ExecutablePath)
-        {
-            UseShellExecute        = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError  = true,
-            WorkingDirectory       = Path.GetTempPath(),
-        };
-        psi.ArgumentList.Add(sourceFile);
-        psi.ArgumentList.Add(outputFile);
-        psi.ArgumentList.Add($"/Profile:{profile}");
-
-        if (pathPrefix is not null)
-        {
-            psi.Environment["PATH"] = pathPrefix + Path.PathSeparator
-                + (Environment.GetEnvironmentVariable("PATH") ?? string.Empty);
-        }
-
-        using var process = Process.Start(psi)
-            ?? throw new InvalidOperationException("Failed to start CLI process.");
-
-        Task<string> stdout = process.StandardOutput.ReadToEndAsync(cts.Token);
-        Task<string> stderr = process.StandardError.ReadToEndAsync(cts.Token);
-        await process.WaitForExitAsync(cts.Token);
-
-        return (process.ExitCode, await stdout, await stderr);
+        ChildProcessResult run = await CliProcess.RunAsync(
+            _fixture.ExecutablePath,
+            [sourceFile, outputFile, $"/Profile:{profile}"],
+            TimeSpan.FromSeconds(120),
+            psi =>
+            {
+                if (pathPrefix is not null)
+                {
+                    psi.Environment["PATH"] = pathPrefix + Path.PathSeparator
+                        + (Environment.GetEnvironmentVariable("PATH") ?? string.Empty);
+                }
+            });
+        return (run.ExitCode, run.Stdout, run.Stderr);
     }
 
     private static void TryDelete(string directory)

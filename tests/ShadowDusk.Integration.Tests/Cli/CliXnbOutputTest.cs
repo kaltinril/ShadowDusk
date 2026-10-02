@@ -247,28 +247,9 @@ public sealed class CliXnbOutputTest : IClassFixture<CliBinaryFixture>
     private async Task<(int ExitCode, string Stdout, string Stderr)> RunCliAsync(
         string sourceFile, string outputFile, params string[] extraArgs)
     {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-
-        var argList = new List<string> { sourceFile, outputFile };
-        argList.AddRange(extraArgs);
-
-        var psi = new ProcessStartInfo(_fixture.ExecutablePath)
-        {
-            Arguments = string.Join(" ", argList.Select(a => a.Contains(' ') ? $"\"{a}\"" : a)),
-            UseShellExecute        = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError  = true,
-            WorkingDirectory       = Path.GetTempPath(),
-        };
-
-        using var process = Process.Start(psi)
-            ?? throw new InvalidOperationException("Failed to start CLI process.");
-
-        string stdout = await process.StandardOutput.ReadToEndAsync(cts.Token);
-        string stderr = await process.StandardError.ReadToEndAsync(cts.Token);
-        await process.WaitForExitAsync(cts.Token);
-
-        return (process.ExitCode, stdout, stderr);
+        ChildProcessResult run = await CliProcess.RunAsync(
+            _fixture.ExecutablePath, [sourceFile, outputFile, .. extraArgs], TimeSpan.FromSeconds(60));
+        return (run.ExitCode, run.Stdout, run.Stderr);
     }
 
     private static string FindFixturesDir()

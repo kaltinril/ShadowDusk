@@ -24,6 +24,18 @@
     <!-- Issue #230: the independent MojoShader-rule fx_2_0 parser, so the FNA tests read the
          parameter table and sampler map real FNA binds from, not just the version token. -->
     <Compile Include="..\ShadowDusk.Core.Tests\Fx2\Fx2BinaryValidator.cs" Link="Fx2BinaryValidator.cs" />
+    <!-- Issue #316: the ONE child-process helper every test uses (concurrent stdout/stderr
+         drain, process-tree kill and captured output on timeout). BCL-only, like the links
+         above. HangDiagnostics comes with it: ChildProcess calls it for a pre-kill dump. -->
+    <Compile Include="..\ShadowDusk.Integration.Tests\ChildProcess.cs" Link="ChildProcess.cs" />
+    <Compile Include="..\ShadowDusk.Integration.Tests\HangDiagnostics.cs" Link="HangDiagnostics.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Issues #312/#316: xUnit reports every test that has been running longer than
+         longRunningTestSeconds ("[Long Running Test] 'Name', Elapsed: ..."), so a stalled run
+         names the tests that were in flight even when no hang dump could be taken. -->
+    <Content Include="..\ShadowDusk.Integration.Tests\xunit.runner.json" Link="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup Label="Test framework">

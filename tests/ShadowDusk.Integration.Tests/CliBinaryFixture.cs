@@ -2,6 +2,7 @@
 
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using Xunit;
 
 namespace ShadowDusk.Integration.Tests;
 
@@ -18,9 +19,17 @@ namespace ShadowDusk.Integration.Tests;
 /// has a <c>ReferenceOutputAssembly=false</c> ProjectReference to ShadowDusk.Cli, so the CLI
 /// is always built alongside the tests). The publish path remains only as a fallback for an
 /// environment where the build output is somehow absent.</para>
+///
+/// <para>The fallback publish runs in <see cref="InitializeAsync"/>, not the constructor, so
+/// it is awaited through <see cref="ChildProcess"/> like every other child process (issue
+/// #316): it used to read stdout to the end before touching stderr, with no timeout.</para>
 /// </summary>
-public sealed class CliBinaryFixture : IDisposable
+public sealed class CliBinaryFixture : IAsyncLifetime
 {
+    private static readonly TimeSpan PublishTimeout = TimeSpan.FromMinutes(10);
+
+    private readonly string _repoRoot;
+
     /// <summary>Non-null only when we fell back to publishing; that temp dir is cleaned on dispose.</summary>
     private readonly string? _publishedTempDir;
 
@@ -28,14 +37,14 @@ public sealed class CliBinaryFixture : IDisposable
 
     public CliBinaryFixture()
     {
-        string repoRoot = FindRepoRoot();
+        _repoRoot = FindRepoRoot();
 
         string exeName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
             ? "ShadowDuskCLI.exe"
             : "ShadowDuskCLI";
 
         // Fast path: reuse the binary the normal build already produced.
-        string? built = LocateBuiltCli(repoRoot, exeName);
+        string? built = LocateBuiltCli(_repoRoot, exeName);
         if (built is not null)
         {
             ExecutablePath = built;
@@ -44,17 +53,25 @@ public sealed class CliBinaryFixture : IDisposable
         }
 
         // Fallback: publish (fresh checkout where the CLI wasn't built for some reason).
-        _publishedTempDir = PublishCli(repoRoot);
+        _publishedTempDir = Path.Combine(Path.GetTempPath(), "ShadowDuskCliTests_" + Guid.NewGuid().ToString("N"));
         ExecutablePath = Path.Combine(_publishedTempDir, exeName);
+    }
+
+    public async Task InitializeAsync()
+    {
+        if (_publishedTempDir is null)
+            return; // We reused build output: nothing to publish.
+
+        await PublishCliAsync(_repoRoot, _publishedTempDir);
 
         if (!File.Exists(ExecutablePath))
             throw new FileNotFoundException($"Published CLI binary not found at '{ExecutablePath}'.");
     }
 
-    public void Dispose()
+    public Task DisposeAsync()
     {
         if (_publishedTempDir is null)
-            return; // We reused build output — nothing to clean.
+            return Task.CompletedTask; // We reused build output — nothing to clean.
 
         try
         {
@@ -65,6 +82,8 @@ public sealed class CliBinaryFixture : IDisposable
         {
             // Best-effort cleanup — do not rethrow from Dispose.
         }
+
+        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -97,39 +116,28 @@ public sealed class CliBinaryFixture : IDisposable
         return newest;
     }
 
-    private static string PublishCli(string repoRoot)
+    private static async Task PublishCliAsync(string repoRoot, string tempDir)
     {
-        string tempDir = Path.Combine(Path.GetTempPath(), "ShadowDuskCliTests_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDir);
 
         string cliProjectPath = Path.Combine(repoRoot, "src", "ShadowDusk.Cli", "ShadowDusk.Cli.csproj");
 
         var psi = new ProcessStartInfo("dotnet")
         {
-            Arguments              = $"publish \"{cliProjectPath}\" -o \"{tempDir}\" --no-self-contained -c Release",
-            UseShellExecute        = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError  = true,
-            WorkingDirectory       = Path.GetDirectoryName(cliProjectPath)!,
+            WorkingDirectory = Path.GetDirectoryName(cliProjectPath)!,
         };
+        foreach (string argument in new[] { "publish", cliProjectPath, "-o", tempDir, "--no-self-contained", "-c", "Release" })
+            psi.ArgumentList.Add(argument);
 
-        using var process = Process.Start(psi)
-            ?? throw new InvalidOperationException("Failed to start dotnet publish process.");
+        ChildProcessResult run = await ChildProcess.RunAsync(psi, PublishTimeout, "dotnet publish (CLI fallback)");
 
-        string stdout = process.StandardOutput.ReadToEnd();
-        string stderr = process.StandardError.ReadToEnd();
-
-        process.WaitForExit();
-
-        if (process.ExitCode != 0)
+        if (run.ExitCode != 0)
         {
             throw new InvalidOperationException(
-                $"dotnet publish failed with exit code {process.ExitCode}.\n" +
-                $"stdout: {stdout}\n" +
-                $"stderr: {stderr}");
+                $"dotnet publish failed with exit code {run.ExitCode}.\n" +
+                $"stdout: {run.Stdout}\n" +
+                $"stderr: {run.Stderr}");
         }
-
-        return tempDir;
     }
 
     private static string FindRepoRoot()
