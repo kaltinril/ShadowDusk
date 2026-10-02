@@ -42,9 +42,18 @@ param(
     [switch]$SkipHostTblgen,   # reuse an existing host-tablegen build
     [switch]$SkipLib,          # reuse an existing WASM libdxcompiler build
     [switch]$ConfigureOnly,    # stop after CMake configure (don't run the long ninja build)
-    [switch]$BuildOnly         # skip the emcmake configure; just run ninja + Stage 2 link
+    [switch]$BuildOnly,        # skip the emcmake configure; just run ninja + Stage 2 link
                                # (use after a validated configure; re-running emcmake on a
                                #  live build tree collides with ninja's log)
+    # Where Stage 2 writes dxcompiler.{js,wasm}. Default: .wasm-build/dxc-wasm-out (the
+    # committed artifact; restore.ps1 copies the .wasm into src/ShadowDusk.Wasm/wwwroot/dxc/).
+    [string]$OutDir = '',
+    # Linked wasm stack size (issue #271). Emscripten's default is 64 KB, against 1 MB for
+    # the desktop dxcompiler on Windows and 8 MB on Linux/macOS. STACK_SIZE is a LINK-time
+    # setting, so changing it needs only Stage 2 (-SkipHostTblgen -SkipLib), not the LLVM
+    # build. 8 MB matches the slangc and SPIRV-Cross modules; the measurements are in
+    # .wasm-build/WASM-STACK-DEPTH.md.
+    [string]$StackSize = '8MB'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -57,7 +66,7 @@ $glue    = Join-Path $root 'dxc-wasm-glue.cpp'
 
 # Output co-located with the SPIRV-Cross module pattern; M1/M2 copies it into the
 # ShadowDusk.Wasm packaged wwwroot. Here we only PRODUCE + VERIFY the artifact.
-$outDir  = Join-Path $root 'dxc-wasm-out'
+$outDir  = if ($OutDir) { $OutDir } else { Join-Path $root 'dxc-wasm-out' }
 $outJs   = Join-Path $outDir 'dxcompiler.js'
 
 $hostBuild = Join-Path $src 'build-host-tblgen'   # native tablegen tools
@@ -208,6 +217,18 @@ $incDir  = Join-Path $src 'include'
 $dxcLib = Join-Path $libDir 'libdxcompiler.a'
 $otherLibs = Get-ChildItem (Join-Path $libDir '*.a') | Where-Object { $_.Name -ne 'libdxcompiler.a' } | ForEach-Object { $_.FullName }
 
+# Stack (issue #271): STACK_SIZE replaces emscripten's 64 KB default; --stack-first puts
+# the stack BELOW static data, so overflowing even the larger stack runs off address 0 and
+# traps at once ('memory access out of bounds') instead of silently corrupting static data.
+# Measured with the 64 KB default and data-first layout: a 100-term add chain made the module
+# spin forever and nested if/else-if chains corrupted it. wasm-ld requires GLOBAL_BASE >=
+# the stack size with --stack-first; GLOBAL_BASE wants plain bytes.
+function ConvertTo-Bytes([string]$size) {
+    if ($size -match '^(\d+)\s*MB$') { return [int64]$Matches[1] * 1MB }
+    if ($size -match '^(\d+)\s*KB$') { return [int64]$Matches[1] * 1KB }
+    return [int64]$size
+}
+
 # -fms-extensions + -Wno-language-extension-token: WinAdapter.h uses __uuidof (an MS
 # extension) for its CROSS_PLATFORM_UUIDOF COM shim; without these the glue fails to
 # parse (DXC builds all its own sources with these flags too).
@@ -225,7 +246,8 @@ $linkArgs = @(
     '-sEXPORT_NAME=createDxcModule',
     '-sALLOW_MEMORY_GROWTH=1',
     '-sENVIRONMENT=web,node',
-    '-sFILESYSTEM=0',
+    '-sFILESYSTEM=0'
+) + $(if ($StackSize) { @("-sSTACK_SIZE=$StackSize", "-sGLOBAL_BASE=$(ConvertTo-Bytes $StackSize)", '-Wl,--stack-first') } else { @() }) + @(
     # Stub dlopen/dlsym so DXC's OPTIONAL DXIL-validator probe (dxil.dll) fails
     # GRACEFULLY at init instead of trapping; the -spirv path never needs the signer.
     '--js-library', "`"$(Join-Path $root 'dxc-dlopen-stub.js')`"",

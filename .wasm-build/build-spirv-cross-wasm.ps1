@@ -85,7 +85,13 @@ $args = @(
     '-sFILESYSTEM=0',                     # no FS needed; smaller module
     "-sEXPORTED_FUNCTIONS=$exportedFuncs",
     "-sEXPORTED_RUNTIME_METHODS=$runtimeMethods"
-) + $(if ($StackSize) { @("-sSTACK_SIZE=$StackSize") } else { @() }) + $sources + @('-o', "`"$outJs`"")
+) + $(if ($StackSize) {
+    # --stack-first: put the stack below static data, so overflowing even the 8 MB stack
+    # runs off address 0 and traps at once instead of silently corrupting static data
+    # (wasm-ld needs GLOBAL_BASE >= the stack size for it; GLOBAL_BASE wants plain bytes).
+    $stackBytes = if ($StackSize -match '^(\d+)\s*MB$') { [int64]$Matches[1] * 1MB } elseif ($StackSize -match '^(\d+)\s*KB$') { [int64]$Matches[1] * 1KB } else { [int64]$StackSize }
+    @("-sSTACK_SIZE=$StackSize", "-sGLOBAL_BASE=$stackBytes", '-Wl,--stack-first')
+} else { @() }) + $sources + @('-o', "`"$outJs`"")
 
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 Write-Host "emcc: $emcc"
