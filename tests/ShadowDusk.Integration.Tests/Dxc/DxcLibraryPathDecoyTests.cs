@@ -27,8 +27,8 @@ namespace ShadowDusk.Integration.Tests.Dxc;
 /// OS and answers with the library it loaded by absolute path.</para>
 ///
 /// <para>The probe runs in a <b>fresh child process</b> with a decoy directory first on the
-/// library path and as the working directory. The decoys are byte-for-byte copies of the
-/// pinned natives, so a loader that takes them compiles successfully and nothing but the
+/// library path and as the working directory. The decoy <c>libdxcompiler</c> is a byte-for-byte
+/// copy of the pinned native, so a loader that takes it compiles successfully and nothing but the
 /// MAPPED PATH can tell: the probe reports every DXC image mapped into the process
 /// (<c>/proc/self/maps</c> on Linux, dyld's image list on macOS) and the test requires the
 /// pinned one, and never a decoy. A canary library that only the decoy directory holds, loaded
@@ -91,14 +91,17 @@ public sealed class DxcLibraryPathDecoyTests
         string? depsFile = null;
         try
         {
-            // What Vortice's bare-name loads ask for: libdxil + libdxcompiler. Both decoys are
-            // working DXC-family libraries, so a loader that takes them does not crash.
-            // Linux: Vortice's own libdxil.so. macOS ships no libdxil, so the decoy is a second
-            // copy of DXC under that name (it exports DxcCreateInstance, which is all DXC asks
-            // of a validator library before binding it).
+            // What Vortice's bare-name loads ask for: libdxil + libdxcompiler. The libdxcompiler
+            // decoy is a working copy of the pinned DXC, so a loader that takes it compiles and
+            // only the mapped path can tell. The libdxil decoy only has to be loadable, which is
+            // all Vortice's TryLoad("dxil") asks: Linux uses Vortice's own libdxil.so; macOS ships
+            // none, so it is a library that is not DXC. NOT a second copy of DXC: our macOS
+            // DXC dlopens "libdxil.dylib" from its own constructor, and two DXC images in one
+            // process overflow the stack inside malloc on the first compile (measured on the
+            // macOS CI lane).
             File.Copy(pinnedDxc, Path.Combine(decoyDir, "libdxcompiler" + extension));
             File.Copy(
-                mac ? pinnedDxc : Path.Combine(ForeignDxc.NativeDirectory(rid), "libdxil.so"),
+                mac ? spirvCross : Path.Combine(ForeignDxc.NativeDirectory(rid), "libdxil.so"),
                 Path.Combine(decoyDir, "libdxil" + extension));
 
             string canary = "libsdcanary" + extension;
@@ -143,12 +146,14 @@ public sealed class DxcLibraryPathDecoyTests
                 .ToList();
             if (mac)
             {
-                // Our macOS DXC opens "libdxil.dylib" by leaf name while it loads, and we ship
-                // none: the decoy is a foreign validator DXC has bound, so validated DXIL
-                // (DirectX 12) is refused, loudly, and only that.
-                dxilImages.ShouldNotBeEmpty(
-                    "DXC's own load-time dlopen(\"libdxil.dylib\") did not find the decoy the canary proves reachable");
-                report["DirectX12"].ShouldBe(["SD0219"]);
+                // Our macOS DXC dlopens "libdxil.dylib" by leaf name while it loads, so it
+                // reaches the decoy; finding no DxcCreateInstance there, DXC dlcloses it and runs
+                // without a validator. Whether dyld really unmaps it is dyld's business, so the
+                // invariant is the one ShadowDusk owns: a libdxil image in the process refuses
+                // validated DXIL (DirectX 12) loudly, and no such image means DX12 compiles
+                // (unsigned, as every macOS DX12 compile is).
+                report["DirectX12"].ShouldBe(dxilImages.Count > 0 ? ["SD0219"] : ["OK"],
+                    $"libdxil images mapped: [{string.Join(", ", dxilImages)}]");
             }
             else
             {
