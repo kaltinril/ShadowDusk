@@ -83,13 +83,17 @@ foreach (string platformName in args)
 
         byte[] payload = XnbPayload(File.ReadAllBytes(xnbs[0]));
 
-        // The same packed library, called the way the processor calls it (same SourceFileName:
-        // the Builder hands the importer the absolute path).
+        // The same packed library, called the way the processor calls it: the Builder hands the
+        // importer the absolute path (SourceFileName), and the processor keeps that path out of
+        // the effect by embedding MonoGame's stock "<unknown>" instead (issue #274). The embedded
+        // name only exists in an MGFX v11 container (DesktopVK / WindowsDX12); it is set here
+        // regardless, so this comparison stays exact for whichever platform is passed.
         var result = new EffectCompiler().Compile(File.ReadAllText(fixture), new CompilerOptions
         {
-            Target          = target.Value,
-            IncludeResolver = new FileSystemIncludeResolver(),
-            SourceFileName  = Path.GetFullPath(fixture),
+            Target                 = target.Value,
+            IncludeResolver        = new FileSystemIncludeResolver(),
+            SourceFileName         = Path.GetFullPath(fixture),
+            EmbeddedSourceFileName = "<unknown>",
         });
 
         if (result.IsFailure)

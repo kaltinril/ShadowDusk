@@ -151,7 +151,7 @@ ShadowDuskCLI MyShader.fx MyShader.mgfx /Profile:OpenGL
 /build:MyShader.fx
 ```
 
-The target comes from the content project's own `/platform:` line (`DesktopVK` and `WindowsDX12` included on MonoGame 3.8.5), and the `.mgfx` inside the `.xnb` is byte-for-byte what the CLI emits. See [MGCB Content Pipeline](https://kaltinril.github.io/ShadowDusk/guides/mgcb-content-pipeline.html).
+The target comes from the content project's own `/platform:` line (`DesktopVK` and `WindowsDX12` included on MonoGame 3.8.5), and the `.mgfx` inside the `.xnb` is byte-for-byte what the CLI emits (on DirectX 12 and Vulkan, whose MGFX v11 container stores a source-file string per shader, that one string is `<unknown>` as in a stock MonoGame build, never your build machine's path). See [MGCB Content Pipeline](https://kaltinril.github.io/ShadowDusk/guides/mgcb-content-pipeline.html).
 
 **Content Builder library** (`ShadowDusk.ContentPipeline`) — the same importer and processor as a normal library, for MonoGame 3.8.5's code-centric **Content Builder project** (the template default since 3.8.5, where a C# `ContentBuilder` you own replaces the `.mgcb`). Add the package to the Builder project and pass the two instances:
 
@@ -161,7 +161,7 @@ using ShadowDusk.ContentPipeline;
 content.Include<WildcardRule>("Effects/*.fx", new ShadowDuskEffectImporter(), new ShadowDuskEffectProcessor());
 ```
 
-Pass the instances (auto-discovery by extension picks MonoGame's own pair); the target follows the Builder's `-p` platform. Proven at rung 4 in a real 3.8.5 `ContentBuilder`: payload byte-identical to the CLI, envelope byte-identical to the stock build, and pixel-identical through `Content.Load<Effect>` on MonoGame 3.8.5. See [MonoGame 3.8.5 Content Builder](https://kaltinril.github.io/ShadowDusk/guides/content-builder.html).
+Pass the instances (auto-discovery by extension picks MonoGame's own pair); the target follows the Builder's `-p` platform. Proven at rung 4 in a real 3.8.5 `ContentBuilder`: payload byte-identical to the CLI (apart from the MGFX v11 source-file string on DirectX 12 and Vulkan, which matches the stock build's `<unknown>`), envelope byte-identical to the stock build, and pixel-identical through `Content.Load<Effect>` on MonoGame 3.8.5. See [MonoGame 3.8.5 Content Builder](https://kaltinril.github.io/ShadowDusk/guides/content-builder.html).
 
 **Direct `.xnb` output** — replace your content pipeline without changing a line of your game's code. ShadowDusk writes the `.xnb` itself, so `Content.Load<Effect>("MyShader")` keeps working and MGCB is out of the picture entirely. On the CLI, just name an `.xnb` output:
 

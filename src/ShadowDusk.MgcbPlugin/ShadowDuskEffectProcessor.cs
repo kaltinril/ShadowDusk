@@ -23,7 +23,13 @@ namespace ShadowDusk.ContentPipeline;
 /// <see cref="EffectCompiler"/> the CLI and the runtime API call, and wraps the resulting
 /// <c>.mgfx</c> bytes in <see cref="CompiledEffectContent"/> for MonoGame's own effect
 /// <c>ContentTypeWriter</c> to serialize into the <c>.xnb</c>. The bytes are byte-for-byte what
-/// the ShadowDusk CLI emits for the same source and target, because they come from the same call.
+/// the ShadowDusk CLI emits for the same source and target, because they come from the same call,
+/// with one deliberate exception: the MGFX v11 container (always used for DirectX 12 and Vulkan)
+/// stores a source-file string per shader, where the CLI writes the path it was given (as
+/// <c>mgfxc</c> does) and this processor writes <c>&lt;unknown&gt;</c> (as MonoGame's stock
+/// <c>EffectProcessor</c> does). A content build is handed the effect's absolute path, and the
+/// compiled effect must not carry it or change with the checkout directory. Build errors and
+/// warnings still name the real file, line and column.
 /// </para>
 /// <para>
 /// Use it from a <c>.mgcb</c> like this:
@@ -57,6 +63,16 @@ public sealed class ShadowDuskEffectProcessor : ContentProcessor<EffectContent, 
     // Installs the plugin-directory native fallback before anything can P/Invoke. See
     // PluginNativeLibraryResolver for why an MGCB host cannot find our natives otherwise.
     static ShadowDuskEffectProcessor() => PluginNativeLibraryResolver.Register();
+
+    /// <summary>
+    /// The source-file string written into an MGFX v11 container (DirectX 12, Vulkan), which
+    /// stores one per shader: exactly what MonoGame's stock <c>EffectProcessor</c> writes
+    /// (measured on <c>dotnet-mgcb</c> 3.8.5, both platforms). The content pipeline hands a
+    /// processor the effect's ABSOLUTE path, so recording that path instead put the build
+    /// machine's directory, user name included, into every such <c>.xnb</c> and made its bytes
+    /// change with the checkout location (issue #274).
+    /// </summary>
+    private const string EmbeddedSourceFileName = "<unknown>";
 
     /// <summary>
     /// Whether to compile with debug information. <see cref="EffectProcessorDebugMode.Auto"/>
@@ -135,7 +151,10 @@ public sealed class ShadowDuskEffectProcessor : ContentProcessor<EffectContent, 
             Target                 = ResolveTarget(input, context),
             IncludeResolver        = includeRecorder,
             AdditionalIncludePaths = ParseIncludeDirs(sourceFile),
+            // The real, absolute path: #include resolution and every diagnostic need it.
             SourceFileName         = sourceFile,
+            // ...but it must not be what the effect records (see the constant).
+            EmbeddedSourceFileName = EmbeddedSourceFileName,
             Debug                  = ResolveDebug(context),
             MgfxVersion            = MgfxVersion,
             DxbcBackend            = ResolveDxbcBackend(input),

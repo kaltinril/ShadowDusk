@@ -46,8 +46,46 @@ public sealed class CompilerOptions
     /// The logical source file name used for include resolution and for the file path
     /// reported in <see cref="ShaderError"/> diagnostics. Optional when compiling a string
     /// literal in memory.
+    /// <para>
+    /// <b>It can also reach the output bytes.</b> An MGFX v11 container stores a source-file
+    /// string per shader, and <see cref="PlatformTarget.DirectX12"/> and
+    /// <see cref="PlatformTarget.Vulkan"/> are always v11 (as is any target compiled with
+    /// <see cref="MgfxVersion"/> <c>11</c>). Unless <see cref="EmbeddedSourceFileName"/> says
+    /// otherwise, that string is this value exactly as passed, which is what <c>mgfxc</c>
+    /// does with its own source argument: pass an absolute path and the compiled effect
+    /// carries it, and changes with it. With <see cref="Debug"/> set, the same name also goes
+    /// into the SPIR-V / DXIL debug information. MGFX v10, KNIFX and the FNA <c>fx_2_0</c>
+    /// container store no source name, so <see cref="PlatformTarget.OpenGL"/>,
+    /// <see cref="PlatformTarget.DirectX"/> and <see cref="PlatformTarget.Fna"/> output does
+    /// not depend on it.
+    /// </para>
     /// </summary>
     public string? SourceFileName { get; init; }
+
+    /// <summary>
+    /// The source-file string stored <b>inside</b> the compiled effect, for the containers
+    /// that have one (MGFX v11: always for <see cref="PlatformTarget.DirectX12"/> and
+    /// <see cref="PlatformTarget.Vulkan"/>, and for any target compiled with
+    /// <see cref="MgfxVersion"/> <c>11</c>). The runtime only ever shows it in shader error
+    /// messages; it has no effect on rendering.
+    /// <para>
+    /// Defaults to <see langword="null"/>, which stores <see cref="SourceFileName"/> exactly
+    /// as passed (what <c>mgfxc</c> does), or <c>&lt;unknown&gt;</c> when that is
+    /// <see langword="null"/> too. Set it when the name the compiler needs is not a name
+    /// the output should carry: a build tool that compiles from absolute paths can keep
+    /// <see cref="SourceFileName"/> absolute, so <c>#include</c> resolution and
+    /// <see cref="ShaderError"/> locations stay exact, while the effect records a stable
+    /// string and stops changing with the checkout directory. ShadowDusk's own MonoGame
+    /// content processor sets it to <c>&lt;unknown&gt;</c>, which is what MonoGame's stock
+    /// <c>EffectProcessor</c> writes.
+    /// </para>
+    /// <para>
+    /// This never changes diagnostics, include resolution, or the debug information emitted
+    /// under <see cref="Debug"/>, all of which use <see cref="SourceFileName"/>. Ignored by
+    /// the containers with no such field (MGFX v10, KNIFX, FNA <c>fx_2_0</c>).
+    /// </para>
+    /// </summary>
+    public string? EmbeddedSourceFileName { get; init; }
 
     /// <summary>
     /// When <see langword="true"/>, compiles with debug information enabled. Deliberately a
@@ -109,6 +147,7 @@ public sealed class CompilerOptions
         IncludeResolver        = IncludeResolver,
         AdditionalIncludePaths = AdditionalIncludePaths,
         SourceFileName         = SourceFileName,
+        EmbeddedSourceFileName = EmbeddedSourceFileName,
         Debug                  = Debug,
         MgfxVersion            = MgfxVersion,
         Container              = Container,
