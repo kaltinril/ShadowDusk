@@ -30,6 +30,9 @@
         "resolved": "1.7.2",
         "contentHash": "WUUzB3MowHdOqNfSMAms5Ovra+SKgLC4ttH1w75ra3srDGctebSg+aywm7hLdvDn592ydgdbOJN11JKsyAcX+A=="
       },
+      "FNA": {
+        "type": "Project"
+      },
       "shadowdusk.compiler": {
         "type": "Project",
         "dependencies": {
