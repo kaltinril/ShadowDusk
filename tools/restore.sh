@@ -474,6 +474,10 @@ restore_vkd3d_wasm
 # GCC 11+ runtime such as Ubuntu 22.04's). The macOS builds declare minos 26.0 (both arches,
 # and the -dist variants too), so they run on macOS 26+ only; SlangToolPath reports older
 # macOS as unsupported (SD0620) instead of letting dyld kill the process.
+#
+# linux-arm64 and win-arm64 are NOT restored although upstream publishes them: the core
+# pipeline has no DXC/vkd3d native for either RID, so slangc there could not reach a working
+# compiler (project_decisions.md, issue #227). Add them when the core pipeline does.
 SLANG_VERSION="2026.14.1"
 SLANG_RELEASE_URL="https://github.com/shader-slang/slang/releases/download/v${SLANG_VERSION}"
 

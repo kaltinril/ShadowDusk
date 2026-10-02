@@ -153,12 +153,6 @@
       },
       "shadowdusk.shadertoy": {
         "type": "Project"
-      },
-      "shadowdusk.shadertoy.runtime": {
-        "type": "Project",
-        "dependencies": {
-          "MonoGame.Framework.DesktopGL": "[3.8.2.1105, )"
-        }
       }
     }
   }
