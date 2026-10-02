@@ -31,7 +31,10 @@ internal enum DxcNativeKind
 /// The identity is the one the build tool stamped into the file, read without loading it:
 /// </para>
 /// <list type="bullet">
-/// <item>Windows (PE): the four-part FILEVERSION of the version resource.</item>
+/// <item>Windows (PE): the four-part FILEVERSION of the version resource plus the build tag
+///   that follows it in the ProductVersion string (for <c>dxcompiler.dll</c> the source
+///   commit, <c>1.7.2212.40 (e043f4a12)</c>), so a rebuild that reuses the version number
+///   from other sources does not pass.</item>
 /// <item>Linux (ELF): the GNU build id note.</item>
 /// <item>macOS (Mach-O): the <c>LC_UUID</c> load command; a universal (fat) file is accepted
 ///   when any slice carries the pinned id.</item>
@@ -51,11 +54,13 @@ internal enum DxcNativeKind
 /// </remarks>
 internal static class DxcNativeIdentity
 {
-    /// <summary>The pinned DXC, as its Windows file version (commit <c>e043f4a1</c>).</summary>
-    internal const string WindowsCompilerVersion = "1.7.2212.40";
+    /// <summary>The pinned DXC, as its Windows file version and source commit.</summary>
+    internal const string WindowsCompilerVersion = "1.7.2212.40 (e043f4a12)";
 
-    /// <summary>The <c>dxil.dll</c> Vortice.Dxc 3.3.4 ships beside that DXC.</summary>
-    internal const string WindowsValidatorVersion = "101.7.2212.36";
+    /// <summary>The <c>dxil.dll</c> Vortice.Dxc 3.3.4 ships beside that DXC, as its file version and build tag.</summary>
+    internal const string WindowsValidatorVersion =
+        "101.7.2212.36 (release/github-release-1.7.2212, ShaderCompiler.dxcbin.0.230301.1+" +
+        "a9f555fbc9e2418fd87996a553e75aab2aa1c0cc-101.7.2212.32.github-release-1.7.2212-4-g0e372b8)";
 
     /// <summary>GNU build id of Vortice.Dxc 3.3.4's <c>runtimes/linux-x64/native/libdxcompiler.so</c>.</summary>
     internal const string LinuxX64CompilerBuildId = "65681bf462e07b533a7c7bfa54bda4e23a6c5d9f";
@@ -122,9 +127,10 @@ internal static class DxcNativeIdentity
     private static ReadOnlySpan<byte> ElfMagic => [0x7F, (byte)'E', (byte)'L', (byte)'F'];
 
     /// <summary>
-    /// The four-part FILEVERSION of a PE file's version resource (<c>1.7.2212.40</c>), or
-    /// <c>null</c> off Windows (only Windows can read a native PE's resources, and only Windows
-    /// loads one) or when the file has no version resource.
+    /// A PE file's four-part FILEVERSION followed by the parenthesized build tag of its
+    /// ProductVersion string (<c>1.7.2212.40 (e043f4a12)</c>), the FILEVERSION alone when the
+    /// ProductVersion carries no tag, or <c>null</c> off Windows (only Windows can read a native
+    /// PE's resources, and only Windows loads one) or when the file has no version resource.
     /// </summary>
     private static string? ReadWindowsFileVersion(string path)
     {
@@ -134,7 +140,22 @@ internal static class DxcNativeIdentity
         FileVersionInfo info = FileVersionInfo.GetVersionInfo(path);
         return info.FileVersion is null
             ? null
-            : $"{info.FileMajorPart}.{info.FileMinorPart}.{info.FileBuildPart}.{info.FilePrivatePart}";
+            : WindowsIdentity(
+                $"{info.FileMajorPart}.{info.FileMinorPart}.{info.FileBuildPart}.{info.FilePrivatePart}",
+                info.ProductVersion);
+    }
+
+    /// <summary>
+    /// <paramref name="fileVersion"/> plus the first parenthesized part of
+    /// <paramref name="productVersion"/>, as DXC's build stamps it. Pure, for the unit tests.
+    /// </summary>
+    internal static string WindowsIdentity(string fileVersion, string? productVersion)
+    {
+        int open = productVersion?.IndexOf('(') ?? -1;
+        int close = open < 0 ? -1 : productVersion!.IndexOf(')', open + 1);
+        return close > open + 1
+            ? $"{fileVersion} ({productVersion![(open + 1)..close].Trim()})"
+            : fileVersion;
     }
 
     /// <summary>

@@ -2,6 +2,7 @@
 
 using System.Diagnostics;
 using Shouldly;
+using ShadowDusk.HLSL.Dxc;
 using ShadowDusk.Integration.Tests.Dxc;
 using ShadowDusk.Integration.Tests.Tests;
 using Xunit;
@@ -154,6 +155,66 @@ public sealed class CliDxcNativeLayoutTests : IClassFixture<CliBinaryFixture>
         ForeignDxc.CopyWindowsSdkPair(firstProbed);
 
         await AssertSameOutputAsync(intact, shadowed);
+    }
+
+    /// <summary>
+    /// The case a consumer actually hits (measured): another package raises Vortice.Dxc above
+    /// 3.3.4, so the natives beside ShadowDusk are a newer, WORKING DXC (1.9.2602.17). Before
+    /// issue #270 that compiled without a word. Now it is SD0219, and the message must let the
+    /// consumer act on it: it names the build found, the build pinned, the Vortice.Dxc the
+    /// process resolved, and the fix, and it does not claim the natives were missing.
+    /// </summary>
+    [ForeignDxcBuildFact]
+    public async Task OnlyANewerWorkingDxcPresent_SD0219NamesBothBuildsAndTheFix()
+    {
+        using CliClone clone = CliClone.Create(_fixture.ExecutablePath);
+        string pinnedDirectory = clone.PinnedDxcDirectory;
+        ForeignDxc.PlaceDxc19(clone.DxcFileNames, pinnedDirectory);
+
+        string foundPath = Path.Combine(pinnedDirectory, clone.DxcFileName);
+        string found = DxcNativeIdentity.Describe(foundPath);
+        string pinned = DxcNativeIdentity.Expected(ForeignDxc.Rid, DxcNativeKind.Compiler)!;
+        found.ShouldNotBe(pinned, "the DXC 1.9 fixture reads as the pinned build");
+
+        await AssertRefusedAsForeignAsync(clone, foundPath);
+        foreach (string profile in DxcBackedProfiles)
+        {
+            CliRun run = await clone.CompileAsync(FixtureSource, profile);
+            run.Output.ShouldContain(found, Case.Sensitive);
+            run.Output.ShouldContain(pinned, Case.Sensitive);
+            run.Output.ShouldContain("Vortice.Dxc 3.3.4", Case.Sensitive);
+            run.Output.ShouldContain("NU1608", Case.Sensitive);
+            run.Output.ShouldContain("pin Vortice.Dxc to 3.3.4", Case.Sensitive);
+            run.Output.ShouldNotContain("was not found", Case.Sensitive);
+        }
+    }
+
+    /// <summary>
+    /// win-x64 and win-arm64 carry the same version stamp, and the flat directories are probed
+    /// whatever the RID, so the OTHER architecture's pinned pair can be the first candidate.
+    /// It cannot load into this process; the search must skip it and use the right copy that
+    /// comes later, with the same output as an untouched layout. Before the fix the first
+    /// unloadable candidate ended the search with SD0219.
+    /// </summary>
+    [WindowsDxcFact]
+    public async Task OtherArchitecturesPinnedPairProbedFirst_TheRightOneStillCompiles()
+    {
+        using CliClone intact = CliClone.Create(_fixture.ExecutablePath);
+        using CliClone mixed = CliClone.Create(_fixture.ExecutablePath);
+        string firstProbed = mixed.PinnedDxcDirectory;
+        mixed.MovePinnedDxcTo(mixed.Directory);
+
+        string otherRid = ForeignDxc.Rid == "win-arm64" ? "win-x64" : "win-arm64";
+        string otherPair = Path.Combine(
+            Path.GetDirectoryName(_fixture.ExecutablePath)!, "runtimes", otherRid, "native");
+        foreach (string name in mixed.DxcFileNames)
+        {
+            string from = Path.Combine(otherPair, name);
+            File.Exists(from).ShouldBeTrue($"the CLI build output has no {from}");
+            File.Copy(from, Path.Combine(firstProbed, name), overwrite: true);
+        }
+
+        await AssertSameOutputAsync(intact, mixed);
     }
 
     private async Task AssertRefusedAsForeignAsync(CliClone clone, string foreignDxcPath)
@@ -350,4 +411,49 @@ public sealed class CliDxcNativeLayoutCollection
 {
     /// <summary>The collection name.</summary>
     public const string Name = "CliDxcNativeLayout";
+}
+
+/// <summary>
+/// A fact that needs the DXC 1.9 fixture for the running RID (Windows x64/arm64, Linux x64;
+/// none ships for macOS, which is covered by the restamped-build cases instead). Skipped
+/// elsewhere; where the fixture is expected but missing it runs and fails.
+/// </summary>
+public sealed class ForeignDxcBuildFactAttribute : FactAttribute
+{
+    public ForeignDxcBuildFactAttribute()
+    {
+        if (OperatingSystem.IsMacOS() || (!OperatingSystem.IsWindows() && !OperatingSystem.IsLinux()))
+        {
+            Skip = "No DXC 1.9 native ships for this OS (Vortice.Dxc.Native 1.0.5 covers win-x64, win-arm64, linux-x64).";
+        }
+        else if (OperatingSystem.IsLinux() && System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture
+                     != System.Runtime.InteropServices.Architecture.X64)
+        {
+            Skip = "Vortice.Dxc.Native 1.0.5 ships no linux-arm64 native.";
+        }
+        else if (ShadowDusk.Tests.Shared.NativeRequirement.ShouldSkip(
+                     DxcTestGate.DxcAvailable,
+                     Environment.GetEnvironmentVariable(ShadowDusk.Tests.Shared.NativeRequirement.DxcEnvVar)))
+        {
+            Skip = DxcTestGate.SkipReason;
+        }
+    }
+}
+
+/// <summary>A <see cref="DxcFactAttribute"/> that runs on Windows only.</summary>
+public sealed class WindowsDxcFactAttribute : FactAttribute
+{
+    public WindowsDxcFactAttribute()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            Skip = "Only Windows ships the pinned DXC for two architectures (win-x64, win-arm64).";
+        }
+        else if (ShadowDusk.Tests.Shared.NativeRequirement.ShouldSkip(
+                     DxcTestGate.DxcAvailable,
+                     Environment.GetEnvironmentVariable(ShadowDusk.Tests.Shared.NativeRequirement.DxcEnvVar)))
+        {
+            Skip = DxcTestGate.SkipReason;
+        }
+    }
 }

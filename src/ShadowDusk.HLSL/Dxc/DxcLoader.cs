@@ -136,7 +136,8 @@ internal static class DxcLoader
     /// <item>Windows/Linux/macOS: loads the pinned natives by absolute path, after checking they
     ///   are the pinned build (Windows: <c>dxil</c> first, so <c>dxcompiler</c>'s own bare-name
     ///   validator load finds it), and answers <c>Dxc.ResolveLibrary</c> with that handle.</item>
-    /// <item>Android: answers <c>Dxc.ResolveLibrary</c> with a bare-SONAME load from the APK.</item>
+    /// <item>Android: loads our <c>libdxcompiler.so</c> from the APK by bare SONAME, here, once.</item>
+    /// <item>Any other OS: no DXC ships for it, so the result is <see cref="LoadErrorCode"/>.</item>
     /// </list>
     /// Either way the handler goes ahead of Vortice's own. The native load happens HERE, so it
     /// is always outside <see cref="DxcForkGate"/>, which wraps only the later compile call.
@@ -156,16 +157,19 @@ internal static class DxcLoader
         {
             if (_registered) return _loadError;
 
-            if (OperatingSystem.IsAndroid())
-            {
-                SubscribeFirst(ResolveAndroid);
-            }
-            else if (OperatingSystem.IsWindows() || OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
-            {
-                _loadError = LoadPinned();
-                if (_loadError is null)
-                    SubscribeFirst(ResolvePinned);
-            }
+            // Every outcome is either a handle ShadowDusk loaded itself or an SD0219 Result:
+            // never "fall through and let Vortice's bare-name fallback try", which on a missing
+            // or unsupported native ends in a raw DllNotFoundException at the first P/Invoke.
+            _loadError =
+                OperatingSystem.IsAndroid() ? LoadAndroid()
+                : OperatingSystem.IsWindows() || OperatingSystem.IsLinux() || OperatingSystem.IsMacOS() ? LoadPinned()
+                : LoadError(
+                    $"ShadowDusk bundles no DXC for this operating system ({RuntimeInformation.OSDescription}, " +
+                    $"{RuntimeInformation.RuntimeIdentifier}), so no DXC-backed compile (DirectX 12, OpenGL, " +
+                    "Vulkan) can run here. It ships its pinned DXC for Windows, Linux, macOS and Android " +
+                    "only, and will not use a DXC found elsewhere. DirectX 11 and FNA do not use DXC.");
+            if (_loadError is null)
+                SubscribeFirst(ResolvePinned);
 
             _registered = true;
             return _loadError;
@@ -218,13 +222,25 @@ internal static class DxcLoader
     /// Android (Phase 50): the native rides in the APK's per-ABI <c>lib/&lt;abi&gt;/</c> dir and
     /// the Android dynamic linker resolves it by SONAME — a bare-name load, NOT path probing
     /// (Android W^X forbids loading executable code from a writable dir, and
-    /// <c>AppContext.BaseDirectory</c> is the sandboxed app-data dir, not the APK).
+    /// <c>AppContext.BaseDirectory</c> is the sandboxed app-data dir, not the APK). Loaded here,
+    /// once, so a missing library is an <see cref="LoadErrorCode"/> Result rather than a
+    /// <see cref="DllNotFoundException"/> at the first P/Invoke. No identity check: inside the
+    /// APK there is no file to read one from; the app's own linker namespace is the only guard.
     /// </summary>
-    private static IntPtr ResolveAndroid(
-        string libraryName, Assembly assembly, DllImportSearchPath? searchPath) =>
-        libraryName == DxcLibraryName && NativeLibrary.TryLoad(AndroidLibFileName, out IntPtr handle)
-            ? handle
-            : IntPtr.Zero;
+    private static ShaderError? LoadAndroid()
+    {
+        if (NativeLibrary.TryLoad(AndroidLibFileName, out IntPtr handle))
+        {
+            _pinnedDxcHandle = handle;
+            return null;
+        }
+
+        return LoadError(
+            $"ShadowDusk's DXC for Android ({AndroidLibFileName}, DXC 1.7.2212.40) is not in this " +
+            $"app ({RuntimeInformation.RuntimeIdentifier}), so no DXC-backed compile (DirectX 12, " +
+            "OpenGL, Vulkan) can run. It ships in the ShadowDusk.HLSL package for android-arm64 only " +
+            "and must be packaged into the APK's lib/<abi>/ directory. DirectX 11 and FNA do not use DXC.");
+    }
 
     private static ShaderError LoadError(string message) => new(
         File: "",
@@ -266,6 +282,7 @@ internal static class DxcLoader
                 .ToList();
 
         var rejected = new List<string>();
+        var unloadable = new List<string>();
         foreach (string dxcPath in candidates)
         {
             if (!File.Exists(dxcPath)) continue;
@@ -294,6 +311,10 @@ internal static class DxcLoader
                 }
             }
 
+            // A pinned-version file can still be unloadable here: win-x64 and win-arm64 carry
+            // the same version stamp, and the flat directories are probed whatever the RID, so
+            // the other architecture's copy can come first. Skip it and keep looking; it is
+            // reported only if no candidate loads.
             try
             {
                 if (dxilPath is not null)
@@ -302,8 +323,8 @@ internal static class DxcLoader
             }
             catch (Exception ex) when (ex is DllNotFoundException or BadImageFormatException)
             {
-                return LoadError(
-                    $"ShadowDusk's pinned DXC native library at '{dxcPath}' could not be loaded: {ex.Message}");
+                unloadable.Add($"'{dxcPath}' could not be loaded: {ex.Message}");
+                continue;
             }
 
             // macOS: dyld searches DYLD_LIBRARY_PATH for the LEAF name of every load, absolute
@@ -319,18 +340,43 @@ internal static class DxcLoader
             return null;
         }
 
-        string package = mac ? "the ShadowDusk.HLSL package" : "the Vortice.Dxc package";
-        string foreign = rejected.Count == 0
+        string package = mac ? "the ShadowDusk.HLSL package" : "the Vortice.Dxc 3.3.4 package";
+        string pinned = $"{natives}, DXC {pinnedCompiler}, from {package}'s runtimes/{rid}/native";
+        string searched = " Searched: " + string.Join("; ", candidates.Select(Path.GetDirectoryName).Distinct()) + ".";
+        string unloaded = unloadable.Count == 0
             ? ""
-            : " Found, but not the pinned build: " + string.Join("; ", rejected) + ".";
+            : " Pinned-version files that could not be loaded into this process: " + string.Join("; ", unloadable) + ".";
+
+        if (rejected.Count > 0)
+        {
+            return LoadError(
+                $"ShadowDusk found DXC natives, but not its pinned build ({pinned}), so no DXC-backed " +
+                "compile (DirectX 12, OpenGL, Vulkan) can run: it will not compile with a different " +
+                "DXC. Found instead: " + string.Join("; ", rejected) + "." + unloaded +
+                $" This process resolved Vortice.Dxc {VorticeDxcVersion()}. The usual cause is another " +
+                "package raising Vortice.Dxc above 3.3.4 (NuGet reports NU1608 at restore when that " +
+                "happens): pin Vortice.Dxc to 3.3.4 in the application " +
+                "(<PackageReference Include=\"Vortice.Dxc\" Version=\"3.3.4\" />) for DirectX 12 / " +
+                "OpenGL / Vulkan targets. DirectX 11 and FNA do not use DXC." + searched);
+        }
+
+        if (unloadable.Count > 0)
+        {
+            return LoadError(
+                $"ShadowDusk's pinned DXC ({pinned}) was found but could not be loaded into this " +
+                $"{architecture} process, so no DXC-backed compile can run." + unloaded + searched);
+        }
+
         return LoadError(
-            $"ShadowDusk's pinned DXC native library ({natives}, DXC 1.7.2212.40, from {package}'s " +
-            $"runtimes/{rid}/native) was not found, so no DXC-backed compile can run. ShadowDusk " +
-            "will not fall back to a different DXC, whether it sits in the application's own " +
-            "directories or on the system search path: that would be a different compiler." +
-            foreign +
-            " Searched: " + string.Join("; ", candidates.Select(Path.GetDirectoryName).Distinct()));
+            $"ShadowDusk's pinned DXC native library ({pinned}) was not found, so no DXC-backed " +
+            "compile can run. ShadowDusk will not fall back to a different DXC, whether it sits in " +
+            "the application's own directories or on the system search path: that would be a " +
+            "different compiler." + searched);
     }
+
+    /// <summary>The Vortice.Dxc assembly version this process bound, for a diagnostic.</summary>
+    private static string VorticeDxcVersion() =>
+        typeof(Vortice.Dxc.Dxc).Assembly.GetName().Version is { } v ? $"{v.Major}.{v.Minor}.{v.Build}" : "(unknown version)";
 
     /// <summary>
     /// Windows: the <c>dxil.dll</c> a bare-name lookup returns, the one DXC's <c>DllMain</c>

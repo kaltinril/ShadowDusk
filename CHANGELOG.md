@@ -247,6 +247,16 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   must be the pinned one, read from `/proc/self/maps` or dyld's image list; it fails with the old
   subscription order; a macOS case puts a copy and a restamped build on `DYLD_LIBRARY_PATH`),
   `DxcPinnedNativeIdentityTests` and `DxcNativeIdentityTests`.
+  The case a consumer really hits is measured: ShadowDusk.HLSL plus Evergine.DirectX12 resolves
+  Vortice.Dxc 3.8.3, whose natives are DXC 1.9.2602.17, with no NuGet warning. It now fails with an
+  `SD0219` that names the build found, the pinned build (on Windows the file version and the
+  source commit, `1.7.2212.40 (e043f4a12)`), the Vortice.Dxc version the process resolved, and the
+  fix: pin Vortice.Dxc to 3.3.4. The packed dependency is now the exact range `Vortice.Dxc
+  [3.3.4]`, so such a graph also gets NuGet `NU1608` at restore. A pinned-version file of the other
+  architecture probed first is skipped instead of ending the search. Android loads its DXC up
+  front, so a missing one is `SD0219` rather than a raw `DllNotFoundException`, and any OS without
+  a bundled DXC (iOS, Mac Catalyst, FreeBSD) gets `SD0219` too. The MGCB plugin's own DXC hook,
+  which `DxcLoader` had made unreachable and which checked no identity, is removed.
 - **`ShadowDusk.Slang`: textured shaders no longer crash real FNA (issue #230).** slangc emits
   texture objects (`Texture2D T; SamplerState S; T.Sample(S, uv)`). On the FNA target that compiled,
   but vkd3d folds the pair into one texture-typed sampler named `S+T`, so the `.fxb` held a texture

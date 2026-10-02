@@ -71,6 +71,32 @@ internal static class ForeignDxc
     }
 
     /// <summary>
+    /// The directory holding DXC 1.9.2602.17 for <paramref name="rid"/>: the natives of
+    /// Vortice.Dxc.Native 1.0.5, which is what Vortice.Dxc 3.8.3 pulls in. A real, working DXC
+    /// of another build, i.e. exactly what a consumer gets when another package raises
+    /// Vortice.Dxc above 3.3.4 (measured with Evergine.DirectX12). The test project downloads
+    /// it and copies it under <c>foreign-dxc/</c>; none ships for macOS.
+    /// </summary>
+    public static string Dxc19Directory(string rid) =>
+        Path.Combine(AppContext.BaseDirectory, "foreign-dxc", "1.9", rid, "native");
+
+    /// <summary>
+    /// Copies DXC 1.9 (see <see cref="Dxc19Directory"/>) for the running RID into
+    /// <paramref name="directory"/> under ShadowDusk's DXC file names, replacing what is there.
+    /// </summary>
+    public static void PlaceDxc19(IEnumerable<string> fileNames, string directory)
+    {
+        string source = Dxc19Directory(Rid);
+        Directory.CreateDirectory(directory);
+        foreach (string name in fileNames)
+        {
+            string from = Path.Combine(source, name);
+            File.Exists(from).ShouldBeTrue($"the DXC 1.9 fixture has no {from}");
+            File.Copy(from, Path.Combine(directory, name), overwrite: true);
+        }
+    }
+
+    /// <summary>
     /// Copies the Windows SDK's own <c>dxil.dll</c> + <c>dxcompiler.dll</c> (the 1.8 pair every
     /// VS Developer Command Prompt has on <c>PATH</c>) into <paramref name="directory"/>.
     /// </summary>
