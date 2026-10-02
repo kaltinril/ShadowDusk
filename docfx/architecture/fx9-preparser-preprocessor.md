@@ -28,6 +28,12 @@ The preprocessor (`ShadowDusk.Core/Preprocessor/Preprocessor.cs`) then:
 
 These mirror the macros `mgfxc` defines, so existing `#ifdef`-guarded shader source behaves identically.
 
+## The preprocessed view (OpenGL sampler-register reservations)
+
+The flattener above deliberately leaves `#if` and `#define` for the compiler to evaluate. One decision ShadowDusk makes *itself* has to see their result, though: on OpenGL, a modern `SamplerState X : register(sN)` reserves sampler register `N`, so the combined sampler fxc synthesizes for each texture is allocated around it. `mgfxc` decides that on the **preprocessed** source, so a register that exists only in an inactive `#if` branch reserves nothing, and one spelled through a macro (`#define SLOT(n) : register(n)`) or written in an `#include`d file does.
+
+So for an OpenGL compile (and the raylib converter) ShadowDusk builds a **preprocessed view** of the effect with a small managed C preprocessor in `ShadowDusk.HLSL` (`FxMacroPreprocessor`): conditionals evaluated, object-like and function-like macros expanded (`#`, `##`, `__VA_ARGS__`), with the same platform and user macros the compile uses. The view is never handed to a compiler (DXC still preprocesses the real source); it only answers the reservation question. It is pure managed code, so the answer is identical on every host, the browser included, whose DXC build has no preprocess-only entry point. A directive or expression it cannot evaluate is the `SD0009` error, raised only after DXC has accepted the source.
+
 ## Where this sits in the pipeline
 
 These two passes are the first stages of [The Faithful Pipeline](the-faithful-pipeline.md): `.fx` → **FX9 pre-parser** → **preprocessor** → compiler (DXC for SPIR-V, or `vkd3d-shader` for DXBC).

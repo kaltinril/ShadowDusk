@@ -20,9 +20,9 @@
 
 ## Headline
 
-- Golden-backed cells (fixture x target): **102**
-  - Structurally **clean**: **75**
-  - **Divergent** (>=1 level): **17**
+- Golden-backed cells (fixture x target): **106**
+  - Structurally **clean**: **77**
+  - **Divergent** (>=1 level): **19**
   - Compile/parse **failures**: **10**
 - Non-golden census cells: **206** (**140** compile, **66** fail with a code)
 
@@ -96,6 +96,10 @@ Legend: `OK` = match, `XX` = diverge, `--` = compile/parse failed (see notes). L
 | SamplerRegisterOrder | OpenGL | OK | OK | OK | OK | OK |  |
 | SamplerRegisterSparse | DirectX_11 | OK | OK | XX | OK | OK | sampler slot 2 missing (golden ``); sampler slot 3 missing (golden ``); extra sampler slot 0 (``); extra sampler slot 1 (``) |
 | SamplerRegisterSparse | OpenGL | OK | OK | OK | OK | OK |  |
+| SamplerReservationIfBranch | DirectX_11 | OK | OK | OK | OK | OK |  |
+| SamplerReservationIfBranch | OpenGL | XX | OK | OK | OK | OK | param `SpriteSampler+SpriteTexture` missing (golden class=3 type=7); extra value-class param `SpriteTexture` (class=3 type=7) |
+| SamplerReservationMacro | DirectX_11 | OK | OK | OK | OK | OK |  |
+| SamplerReservationMacro | OpenGL | XX | OK | OK | OK | OK | param `MaskASampler+MaskA` missing (golden class=3 type=7); param `MaskBSampler+MaskB` missing (golden class=3 type=7); extra value-class param `MaskA` (class=3 type=7); extra value-class param `MaskB` (class=3 type=7) |
 | SamplerStatesFull | DirectX_11 | OK | OK | OK | OK | OK |  |
 | SamplerStatesFull | OpenGL | OK | OK | OK | OK | OK |  |
 | Saturate | DirectX_11 | OK | OK | OK | OK | OK |  |
@@ -192,6 +196,18 @@ On the OpenGL target, mgfxc sizes each per-stage `{vs,ps}_uniforms_vec4` record 
 
 Affected cells: PolygonLight [OpenGL], SharedCbuffer [OpenGL], VertexAndPixel [OpenGL]
 
+### Object-class (texture/sampler) parameter shape (3 cell(s))
+
+A texture/sampler (object-class) parameter diverges beyond the two pinned, render-proven shapes (extra sampler params; legacy `sampler s0;` -> synthesized `_SDTexture`).
+
+Affected cells: SamplerReservationIfBranch [OpenGL], SamplerReservationMacro [OpenGL], SharedSamplerPair [OpenGL]
+
+### Value-class parameter metadata delta (3 cell(s))
+
+A Scalar/Vector/Matrix parameter's reflection metadata (class/type/rows/cols/elements/members) or an unexpected extra value-class parameter diverges. This is the SetValue fidelity surface and should be triaged.
+
+Affected cells: SamplerReservationIfBranch [OpenGL], SamplerReservationMacro [OpenGL], SharedSamplerPair [OpenGL]
+
 ### Constant-buffer layout (size / offset) — TRIAGE (1 cell(s))
 
 A constant buffer size or a per-parameter byte offset differs OUTSIDE the known GL per-stage sizing model. Worth triage: cbuffer offsets are the runtime SetValue layout.
@@ -203,18 +219,6 @@ Affected cells: PenumbraHull [DirectX_11]
 A sampler slot is missing/extra or its baked sampler_state differs.
 
 Affected cells: SamplerRegisterSparse [DirectX_11]
-
-### Object-class (texture/sampler) parameter shape (1 cell(s))
-
-A texture/sampler (object-class) parameter diverges beyond the two pinned, render-proven shapes (extra sampler params; legacy `sampler s0;` -> synthesized `_SDTexture`).
-
-Affected cells: SharedSamplerPair [OpenGL]
-
-### Value-class parameter metadata delta (1 cell(s))
-
-A Scalar/Vector/Matrix parameter's reflection metadata (class/type/rows/cols/elements/members) or an unexpected extra value-class parameter diverges. This is the SetValue fidelity surface and should be triaged.
-
-Affected cells: SharedSamplerPair [OpenGL]
 
 > Note on bytecode: every cell's shader bytecode differs from the golden (vkd3d vs fxc on DX,
 > SPIRV-Cross GLSL vs MojoShader on GL). This is EXPECTED and is not counted as a divergence anywhere above.
