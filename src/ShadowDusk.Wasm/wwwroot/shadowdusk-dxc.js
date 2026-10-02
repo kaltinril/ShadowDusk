@@ -138,7 +138,7 @@ export function compileToSpirv(hlslSource, args) {
         // C++ exception). It leaves the instance's memory and C++ state undefined, and every
         // later call into it would fail or misbehave. Drop it so the next ensureReady()
         // instantiates a fresh module (issue #271, the slangc pattern from PR #266). The
-        // 'DXC trapped:' prefix is what JsDxcShaderCompiler keys SD1906 on.
+        // 'DXC trapped:' prefix is what JsDxcShaderCompiler keys SD1907 on.
         dxcInstance = null;
         loadPromise = null;
         throw new Error('DXC trapped: ' + describeTrap(e));

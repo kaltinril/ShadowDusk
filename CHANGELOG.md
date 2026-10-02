@@ -190,13 +190,25 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   byte-for-byte at every measured depth the desktop compiles, except an 800-branch `else if` chain
   in SPIRV-Cross, which still exhausts the JS engine's own stack. A module that traps is now
   discarded and reloaded instead of being reused corrupted, and the compile reports the new code
-  `SD1906` (a synchronous `Compile()` before the reload reports `SD1903`; `CompileAsync` reloads by
+  `SD1907` (a synchronous `Compile()` before the reload reports `SD1903`; `CompileAsync` reloads by
   itself). The rebuilt DXC and SPIRV-Cross modules ship in this release; the rebuilt vkd3d module
   (DirectX/FNA in the browser) is verified but not hosted yet, so the browser DirectX/FNA path keeps
   the 64 KB module until it is re-pinned. No emitted byte changes on any corpus. New gate
   `node-test-wasm-depth.mjs` and a trap scenario in `browser-vkd3d-gate.mjs` (`wasm.yml`); details in
   `.wasm-build/WASM-STACK-DEPTH.md`. Also: `tools/restore.*` now refresh the packaged
   `dxcompiler.wasm` by hash instead of size (the relinked module has the same size).
+- **Browser: asking for DirectX 12 now fails with a registered code up front (issue #272).** The browser
+  host has no DX12 path, but a `PlatformTarget.DirectX12` request ran DXC and then failed in the JS shim
+  with an unregistered `X0000: DXC output is not a SPIR-V module (bad magic word)`, on both the `.fx` and
+  the full-Slang route. `WasmShaderCompiler` and `WasmSlangCompiler` now refuse it before any module
+  loads with the new `SD1906`, which names the target, the host and the targets the browser does export
+  (OpenGL, Vulkan, DirectX, FNA). `Metal` keeps the `SD0200` it gets on every host.
+- **Browser builds no longer carry desktop and Android natives (issue #273).** A browser project that
+  reached `ShadowDusk.HLSL`/`ShadowDusk.GLSL` by project reference (the ShaderFiddle sample,
+  `ShadowDusk.Wasm`, `ShadowDusk.Slang.Wasm`) copied vkd3d, DXC and SPIRV-Cross natives for Windows,
+  Linux, macOS and Android (about 130 MB) into its build and publish output, where no browser can load
+  them. A root `Directory.Build.targets` drops them for browser projects only; desktop builds still get
+  every native. NuGet consumers were measured unaffected. `wasm.yml` now fails if one reappears.
 - **Stale lock files outside the solution (issues #291, #290).** PR #279's `Vortice.Dxc` `[3.3.4]`
   pin missed the lock files of `Vkd3dCorpusProbe` (which turned Browser render smoke red on main),
   `slang-probe`, `dxc-corpus-probe` and `KniXnbContentLoad`'s 4.3.9001 lock (still at 0.18.0), and

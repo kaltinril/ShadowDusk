@@ -87,7 +87,7 @@ internal static class WasmCompilerInitialization
     internal static void InvalidateVkd3d() => _vkd3dReady = false;
 
     /// <summary>
-    /// <c>SD1906</c>: a WASM compiler module trapped while compiling (a stack overflow on
+    /// <c>SD1907</c>: a WASM compiler module trapped while compiling (a stack overflow on
     /// extremely deep source, an out-of-bounds access, an abort). A runtime failure of the
     /// module, not a compiler diagnostic: the desktop native may accept the same source. The
     /// trap text rides verbatim in the message.
@@ -97,7 +97,7 @@ internal static class WasmCompilerInitialization
             File:    sourceFileName ?? "<source>",
             Line:    0,
             Column:  0,
-            Code:    "SD1906",
+            Code:    "SD1907",
             Message: $"The in-browser {moduleDescription} WebAssembly module trapped while compiling this " +
                      $"source ({ex.Message}). This is a WebAssembly runtime failure, not a compiler " +
                      "diagnostic: the desktop compiler may accept the same source. The module instance " +

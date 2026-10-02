@@ -286,12 +286,12 @@ try {
   // ─────────────────────────────────────────────────────────────────────────
   // Issue #271 — a module TRAP through the real WasmShaderCompiler. Source deep
   // enough to exhaust the engine's stack traps inside the module. The compile
-  // must fail with SD1906 (a module trap, not a fake compiler diagnostic); the
+  // must fail with SD1907 (a module trap, not a fake compiler diagnostic); the
   // trapped instance is discarded, so the next SYNC compile reports SD1903; and
   // a reload (CompileAsync / InitializeAsync) must give manifest-identical bytes.
   // A trigger that does not trap on this engine is reported NOT RUN, never passed.
   // ─────────────────────────────────────────────────────────────────────────
-  console.log('[vkd3d browser gate] issue #271 — module trap -> SD1906 -> discard -> reload…');
+  console.log('[vkd3d browser gate] issue #271 — module trap -> SD1907 -> discard -> reload…');
   {
     const page = await bootScenarioPage([]);
     const sha = (res) => createHash('sha256').update(Buffer.from(res.slice(3), 'base64')).digest('hex');
@@ -323,8 +323,8 @@ try {
             console.log(`  [NOT RUN] issue #271 ${label}: the trigger compiled, it did not trap on this engine`);
             continue;
           }
-          if (!trap.includes('SD1906')) {
-            recordPhase27(`issue #271 ${label}`, false, `expected SD1906, got: ${trap.slice(0, 300)}`);
+          if (!trap.includes('SD1907')) {
+            recordPhase27(`issue #271 ${label}`, false, `expected SD1907, got: ${trap.slice(0, 300)}`);
             continue;
           }
           const refused = String(await call('TestSyncCompileExport', grayscaleSource, target, 'Grayscale.fx'));
@@ -337,7 +337,7 @@ try {
           }
           const ok = refused.includes('SD1903') && after.startsWith('OK:') && sha(after) === manifest[manifestKey];
           recordPhase27(`issue #271 ${label}`, ok, ok
-            ? 'SD1906, then SD1903 until reload, then manifest-identical bytes'
+            ? 'SD1907, then SD1903 until reload, then manifest-identical bytes'
             : `trap='${trap.slice(0, 120)}', next sync='${refused.slice(0, 120)}', after reload='${after.slice(0, 120)}'`);
         }
       }
@@ -385,20 +385,25 @@ try {
     .replace(/\r\n/g, '\n');
 
   console.log('[vkd3d browser gate] Phase 42 (a) — COLD sync Compile() must fail SD1903…');
-  for (const target of ['DirectX', 'OpenGL', 'Fna']) {
+  // Issue #272: DirectX12 is not a browser export target, so even COLD it must be refused
+  // with the registered SD1906 (naming the target) instead of SD1903: the refusal comes before
+  // any module readiness check, so nothing is loaded or run for it.
+  const coldExpect = { DirectX: 'SD1903', OpenGL: 'SD1903', Fna: 'SD1903', DirectX12: 'SD1906' };
+  for (const [target, code] of Object.entries(coldExpect)) {
     const res = await page.evaluate(
       async ({ src, target, name }) =>
         await window.theInstance.invokeMethodAsync('TestSyncCompileExport', src, target, name),
       { src: coldSource, target, name: 'Grayscale.fx' });
 
-    const ok = typeof res === 'string' && res.startsWith('ERR:') && res.includes('SD1903');
+    const ok = typeof res === 'string' && res.startsWith(`ERR:${code}`) &&
+      (code !== 'SD1906' || res.includes('PlatformTarget.DirectX12'));
     syncApi.cold.push({ target, ok, res: String(res).slice(0, 200) });
     if (!ok) {
-      failures.push(`Phase42 cold sync Compile (${target}): expected the clear SD1903 ` +
-        `not-initialized error, got: ${String(res).slice(0, 400)}`);
-      console.error(`  [FAIL] cold sync Compile (${target}) — expected SD1903, got: ${String(res).slice(0, 200)}`);
+      failures.push(`Phase42 cold sync Compile (${target}): expected ${code}, ` +
+        `got: ${String(res).slice(0, 400)}`);
+      console.error(`  [FAIL] cold sync Compile (${target}) — expected ${code}, got: ${String(res).slice(0, 200)}`);
     } else {
-      console.log(`  [OK]   cold sync Compile (${target}) → SD1903 (clear, diagnosable, no abort)`);
+      console.log(`  [OK]   cold sync Compile (${target}) → ${code} (clear, diagnosable, no abort)`);
     }
   }
 
@@ -524,8 +529,8 @@ if (failures.length > 0) {
 console.log(`ALL ${rows.length} DX+FNA ARTIFACTS COMPILED IN A REAL BROWSER ARE BYTE-IDENTICAL ` +
   '(SHA-256) TO THE COMMITTED CROSS-HOST MANIFEST — browser bytes == desktop ' +
   'render-proven bytes. Phase 4.1 G2 gate PASSED.');
-console.log(`PHASE 42 (issue #28) PASSED: cold sync Compile() → SD1903 on all ` +
-  `${syncApi.cold.length} targets; InitializeAsync OK (idempotent); warm SYNCHRONOUS ` +
+console.log(`PHASE 42 (issue #28) PASSED: cold sync Compile() → SD1903 on every export ` +
+  `target and SD1906 for DirectX12 (issue #272), ${syncApi.cold.length} checks; InitializeAsync OK (idempotent); warm SYNCHRONOUS ` +
   `Compile() byte-identical to the manifest ${syncApi.pass}/${syncApi.total}.`);
 console.log(`PHASE 27 PASSED: module-absent e2e → SD1903 (cold sync) + SD1902 with the ` +
   `restore pointer (async), and the vkd3d path compiled UNAFFECTED with DXC/SPIRV-Cross ` +
@@ -567,7 +572,9 @@ async function writeResults(rows, pass, failures, wasmFetch) {
   lines.push('');
   for (const c of syncApi.cold) {
     lines.push(`- COLD sync \`Compile()\` (${c.target}, before InitializeAsync): ` +
-      (c.ok ? '**SD1903** — the clear "await InitializeAsync() first" error, no runtime abort. PASS'
+      (c.ok ? (c.target === 'DirectX12'
+              ? '**SD1906**: DirectX12 is not a browser export target, refused before any module loads (issue #272). PASS'
+              : '**SD1903** — the clear "await InitializeAsync() first" error, no runtime abort. PASS')
             : `**FAIL** — got \`${c.res.replace(/\\/g, '\\\\').replace(/\|/g, '\\|')}\``));
   }
   lines.push(`- \`InitializeAsync()\` (awaited twice — idempotency): ${syncApi.initialize === 'OK' ? '**OK**' : `**FAIL** — \`${syncApi.initialize}\``}`);

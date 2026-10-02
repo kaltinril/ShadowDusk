@@ -117,7 +117,7 @@ function lastError(a, ctx, stage) {
  * @returns {string} GLSL source text.
  * @throws on any SPIRV-Cross failure (message carries the last-error string), and with a
  *         'SPIRV-Cross trapped:' message when the module itself trapped (the instance is
- *         then discarded; JsSpirvToGlslTranspiler maps that prefix to SD1906).
+ *         then discarded; JsSpirvToGlslTranspiler maps that prefix to SD1907).
  */
 export function transpileToGlsl(spirv, flipVertexY, fixupDepthConvention, glslVersion, glslEs, vulkanSemantics, relaxNanChecks) {
     const a = api;

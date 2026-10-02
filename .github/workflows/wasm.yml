@@ -153,6 +153,18 @@ jobs:
           test -d "$fw" || (echo "::error::_framework/ missing in publish output" && exit 1)
           ls "$fw"/*.wasm >/dev/null 2>&1 || (echo "::error::no _framework/*.wasm in publish output" && exit 1)
           echo "WASM publish OK — _framework/*.wasm present."
+          # Issue 273: no desktop or Android native may ride into a browser publish (they reach
+          # the sample through the ShadowDusk.HLSL/GLSL/Slang project references; the root
+          # Directory.Build.targets drops them for browser projects). A browser cannot load
+          # any of these, so their presence is pure bloat and a packaging regression.
+          natives=$(find publish/shaderfiddle -type f \( -name '*.dll' -o -name '*.so' -o -name '*.so.*' -o -name '*.dylib' -o -name '*.exe' \) \
+            \( -iname 'libvkd3d*' -o -iname '*dxcompiler*' -o -iname 'dxil*' -o -iname '*spirv-cross*' -o -iname 'slangc*' -o -iname '*slang-compiler*' -o -iname 'slang*.dll' \) | sort)
+          if [ -n "$natives" ]; then
+            echo "::error::desktop/Android natives found in the browser publish output (issue 273):"
+            echo "$natives"
+            exit 1
+          fi
+          echo "No desktop/Android natives in the browser publish output."
 
       - name: Pack ShadowDusk.Wasm (6th NuGet package)
         if: steps.dxcwasm.outputs.present == 'true'

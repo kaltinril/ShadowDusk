@@ -194,7 +194,7 @@ export function compile(sourceUtf8, entryPoint, profile, sourceName, targetType)
             // module is a trap (stack overflow, out-of-bounds access, abort). The instance's
             // memory and C state are now undefined: drop it (the frees in the finally below are
             // skipped too) so the next ensureReady() instantiates a fresh module (issue #271,
-            // the slangc pattern from PR #266). WasmVkd3dShaderCompiler keys SD1906 on the
+            // the slangc pattern from PR #266). WasmVkd3dShaderCompiler keys SD1907 on the
             // 'vkd3d trapped:' prefix.
             trapped = true;
             vkd3dInstance = null;

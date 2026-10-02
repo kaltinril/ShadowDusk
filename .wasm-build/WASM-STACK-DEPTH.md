@@ -36,7 +36,7 @@ stack (about 1 MB in V8), so far deeper source ends in `RangeError: Maximum call
 exceeded`. With the 8 MB stack that is now the first limit hit: SPIRV-Cross on an 800-branch
 else-if chain (the desktop transpiles it), DXC at a 5000-term add chain (the desktop process
 itself crashes at 3200, issue #306), vkd3d at a 6400-deep call chain. The shims discard the
-trapped instance and `WasmShaderCompiler` reports `SD1906`.
+trapped instance and `WasmShaderCompiler` reports `SD1907`.
 
 ## How it was measured (2026-10-02, Windows x64, node 22)
 
@@ -84,5 +84,5 @@ ordinary shader, and the shipped module failed on it with a corrupted instance.
   reloaded. The vkd3d depth arm reports NOT RUN while the restored vkd3d module is still the
   hosted pre-#271 build.
 * `tests/ShadowDusk.BrowserTests/browser-vkd3d-gate.mjs` (CI): the same trap through the real
-  `WasmShaderCompiler` in Chromium must give `SD1906`, then `SD1903` until a reload, then
+  `WasmShaderCompiler` in Chromium must give `SD1907`, then `SD1903` until a reload, then
   manifest-identical bytes.

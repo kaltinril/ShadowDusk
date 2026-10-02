@@ -49,6 +49,46 @@ public sealed class DiagnosticCodeRegistryTests
             + "as the consumer-facing Diagnostic Codes page. Missing: " + string.Join(", ", missing));
     }
 
+    // A row that DEFINES one code: the first cell is exactly that code. A range row
+    // (`SD1900`–`SD1999`) has more in its first cell and is not a definition.
+    private static readonly Regex DefinitionRow =
+        new(@"^\|\s*`(?<code>(?:SD|FX|X)\d{4})`\s*\|", RegexOptions.Compiled | RegexOptions.Multiline);
+
+    /// <summary>
+    /// One code, one meaning. Two branches that each take "the next free code" both register
+    /// it, and git merges the two new table rows without a conflict: that is how <c>SD1906</c>
+    /// came to mean both "target not supported by the browser host" (issue #272) and "a WASM
+    /// module trapped" (issue #271) on one tree. A consumer looking the code up then finds two
+    /// answers. The per-section tables must define each code exactly once.
+    /// </summary>
+    [Fact]
+    public void EveryCode_IsDefinedOnce_InTheRegistry()
+    {
+        string registry = File.ReadAllText(Path.Combine(FindRepoRoot(), "docs", "error-codes.md"));
+
+        // The "Ranges" overview table names a range by its first code (and lists the one-code
+        // range `SD0000`), so it is not where codes are defined: start at the first section after it.
+        int ranges = registry.IndexOf("\n## Ranges", StringComparison.Ordinal);
+        ranges.ShouldBeGreaterThanOrEqualTo(0, "the registry's 'Ranges' section moved or was renamed");
+        int definitions = registry.IndexOf("\n## ", ranges + 1, StringComparison.Ordinal);
+        definitions.ShouldBeGreaterThan(ranges, "no section follows 'Ranges' in the registry");
+
+        var rows = DefinitionRow.Matches(registry[definitions..])
+            .Select(m => m.Groups["code"].Value)
+            .ToList();
+        rows.Count.ShouldBeGreaterThan(50, "the scan must actually find definition rows, or this test is vacuous");
+
+        var duplicated = rows.GroupBy(c => c, StringComparer.Ordinal)
+            .Where(g => g.Count() > 1)
+            .Select(g => $"{g.Key} (x{g.Count()})")
+            .OrderBy(c => c, StringComparer.Ordinal)
+            .ToList();
+
+        duplicated.ShouldBeEmpty(
+            "each diagnostic code must have exactly one row in docs/error-codes.md; a second row means "
+            + "two changes took the same number. Renumber one of them. Duplicated: " + string.Join(", ", duplicated));
+    }
+
     private static HashSet<string> CollectRegistered(string repoRoot)
     {
         string registry = File.ReadAllText(Path.Combine(repoRoot, "docs", "error-codes.md"));

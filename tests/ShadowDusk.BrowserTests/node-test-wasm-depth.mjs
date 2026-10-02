@@ -14,7 +14,7 @@
 //      be byte-identical.
 //   2. Trap recovery. Far deeper source still exhausts the JS engine's own stack (wasm
 //      frames live there too), which no STACK_SIZE can raise. The shim must then throw its
-//      '<module> trapped:' error (WasmShaderCompiler maps it to SD1906), refuse the next call
+//      '<module> trapped:' error (WasmShaderCompiler maps it to SD1907), refuse the next call
 //      until ensureReady(), and after ensureReady() compile correctly again.
 //
 // The vkd3d module is hosted on a release tag and re-pinned in tools/restore.*; while the
