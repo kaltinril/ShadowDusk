@@ -73,8 +73,15 @@
                           Condition="Exists('..\..\tools\spirv-cross\android-x64\libspirv-cross.so')">
       <Abi>x86_64</Abi>
     </AndroidNativeLibrary>
+    <!-- AndroidGlDxcX64 (issue #289, run-dxc-identity-checks.ps1): another libdxcompiler.so to
+         bundle for x86_64 instead (a restamped, foreign build), or 'none' for an APK without one.
+         Unset, the restored pinned build is bundled as always. -->
     <AndroidNativeLibrary Include="..\..\tools\dxc\android-x64\libdxcompiler.so"
-                          Condition="Exists('..\..\tools\dxc\android-x64\libdxcompiler.so')">
+                          Condition="'$(AndroidGlDxcX64)' == '' and Exists('..\..\tools\dxc\android-x64\libdxcompiler.so')">
+      <Abi>x86_64</Abi>
+    </AndroidNativeLibrary>
+    <AndroidNativeLibrary Include="$(AndroidGlDxcX64)"
+                          Condition="'$(AndroidGlDxcX64)' != '' and '$(AndroidGlDxcX64)' != 'none'">
       <Abi>x86_64</Abi>
     </AndroidNativeLibrary>
   </ItemGroup>
