@@ -163,12 +163,7 @@ public sealed class DeepShaderStackTests
         string label = $"deep-shader probe {shape} x{depth} {target} {mode}";
         string dotnet = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") is { Length: > 0 } host ? host : "dotnet";
 
-        var psi = new ProcessStartInfo(dotnet)
-        {
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
+        var psi = new ProcessStartInfo(dotnet);
         psi.ArgumentList.Add("exec");
         psi.ArgumentList.Add(typeof(DxcConcurrencyProbe).Assembly.Location);
         psi.ArgumentList.Add(DeepShaderProbe.ProbeArgument);
@@ -177,28 +172,20 @@ public sealed class DeepShaderStackTests
         psi.ArgumentList.Add(target.ToString());
         psi.ArgumentList.Add(mode);
 
-        var stopwatch = Stopwatch.StartNew();
-        using var process = Process.Start(psi) ?? throw new InvalidOperationException($"{label}: failed to start.");
-        Task<string> stdout = process.StandardOutput.ReadToEndAsync();
-        Task<string> stderr = process.StandardError.ReadToEndAsync();
-
-        using var timeout = new CancellationTokenSource(watchdog);
+        ChildProcessResult run;
         try
         {
-            await process.WaitForExitAsync(timeout.Token);
+            run = await ChildProcess.RunAsync(psi, watchdog, label, captureHangEvidence: true);
         }
-        catch (OperationCanceledException)
+        catch (ChildProcessTimeoutException ex)
         {
-            string evidence = await HangDiagnostics.CaptureAsync(process.Id, label);
-            process.Kill(entireProcessTree: true);
-            await process.WaitForExitAsync();
-            throw new ShouldAssertException($"{label} did not finish within {watchdog.TotalSeconds:0} s.\n{evidence}");
+            throw new ShouldAssertException($"{label} did not finish within {watchdog.TotalSeconds:0} s.\n{ex.Message}");
         }
 
         // A crash's stderr can be long (the runtime prints the whole managed stack); keep the head.
-        string err = await stderr;
-        string output = await stdout + (err.Length > 4000 ? err[..4000] + "\n[...]" : err);
-        _output.WriteLine($"{label}: exit {process.ExitCode} (0x{process.ExitCode:X8}) after {stopwatch.Elapsed.TotalSeconds:F1} s\n{output}");
-        return (process.ExitCode, output);
+        string err = run.Stderr;
+        string output = run.Stdout + (err.Length > 4000 ? err[..4000] + "\n[...]" : err);
+        _output.WriteLine($"{label}: exit {run.ExitCode} (0x{run.ExitCode:X8}) after {run.Elapsed.TotalSeconds:F1} s\n{output}");
+        return (run.ExitCode, output);
     }
 }

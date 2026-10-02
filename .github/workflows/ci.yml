@@ -271,9 +271,10 @@ jobs:
     name: Integration Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs: build-and-test
-    # Heavier than the unit gate (CLI child-process spawn + native DXC/SPIRV-Cross), but
-    # the runsettings TestSessionTimeout caps the suite at 5 min; 12 is a safe job backstop.
-    timeout-minutes: 12
+    # Heavier than the unit gate (CLI child-process spawn + native DXC/SPIRV-Cross). The test
+    # step caps each assembly's session at 10 min and itself at 14 (see the step); 20 leaves
+    # room for setup, restore, build (about 3 min) and the artifact uploads after a failure.
+    timeout-minutes: 20
     if: |
       github.event_name == 'push' ||
       contains(github.event.pull_request.labels.*.name, 'run-integration')
@@ -371,9 +372,10 @@ jobs:
       - name: dotnet build
         run: dotnet build ShadowDusk.slnx --no-restore -c Release
 
-      # The suite-level 5-minute TestSessionTimeout guardrail (CLAUDE.md Phase 21 /
-      # ShadowDusk.runsettings) backstops the per-test CancellationToken timeouts so a
-      # cold-AV-scan hang fails fast instead of eating 20+ minutes.
+      # The suite-level TestSessionTimeout guardrail (Phase 21) backstops the per-test
+      # CancellationToken timeouts so a cold-AV-scan hang fails in bounded time instead of
+      # eating 20+ minutes. ShadowDusk.runsettings sets it to 5 minutes, which is right for the
+      # unit lanes; THIS step overrides it to 10 (see the hang-guard note below for why).
       #
       # SHADOWDUSK_REQUIRE_VKD3D / SHADOWDUSK_REQUIRE_DXC (the attribute-level analog
       # of SHADOWDUSK_REQUIRE_GL): the natives were just hard-gated above, so inside
@@ -393,11 +395,30 @@ jobs:
       # re-derived from scratch three times from log adjacency alone (and mis-attributed:
       # see project_facts.md). One file per assembly means the next occurrence leaves
       # evidence instead of a guess.
-      # --blame-hang-timeout is the per-test hang guard. A test's CancellationToken cannot
-      # interrupt a native compile (one uninterruptible P/Invoke), so only this can turn a
-      # hung native call into a failure, and it dumps every thread's stack while doing it.
-      # 3m sits above the slowest healthy test (about 100 s at worst on a contended runner)
-      # and fires before the 5-minute session cap would abort the run with no dump.
+      # --blame-hang-timeout is the hang guard. A test's CancellationToken cannot interrupt a
+      # native compile (one uninterruptible P/Invoke), so only this can turn a hung native call
+      # into a failure, and it dumps every thread's stack (the host's and its children's) while
+      # doing it. 3m sits above the slowest healthy test (about 100 s at worst on a contended
+      # runner).
+      #
+      # THE TWO TIMEOUTS MUST AGREE (issue #312). The blame timer is an INACTIVITY timer: every
+      # test that starts or finishes anywhere in the assembly resets it, so it fires 3 minutes
+      # after the LAST test event, not 3 minutes after the stuck test began. The session
+      # timeout is absolute, and it aborts the run with NO dump. With the old 5-minute session
+      # cap a dump was only possible for a stall whose last test event came before minute 2,
+      # while a healthy run of this suite takes up to 3.5 minutes on a loaded runner: a late
+      # stall always lost the race (macOS, run 37063450434: stalled 3 min 48 s, no dump). The
+      # rule is
+      #     TestSessionTimeout >= slowest healthy assembly run + blame-hang-timeout + dump time
+      #     10 min             >= 4 min budget                 + 3 min              + 1 min
+      # so any stall in a run that was otherwise on schedule is dumped before the session cap
+      # can pre-empt it. CiHangGuardTests enforces that inequality against this file; change
+      # both numbers together. xunit.runner.json (longRunningTestSeconds) also names every test
+      # that has been running over a minute, so even an undumped stall says which tests it held.
+      #
+      # timeout-minutes on the step, not just the job: a step timeout FAILS the step, so the
+      # `failure()` uploads below still run; a job timeout cancels them. Assemblies run in
+      # parallel, so the step's wall time is about one session (10 min) at worst.
       # The DXC fork/setlocale probes (DxcConcurrencyStressTests, issue #256) run in a child of
       # the test host. If one hangs, HangDiagnostics attaches gdb and createdump to it before the
       # watchdog kills it; --blame-hang only ever dumps the host. Attaching to a sibling needs
@@ -410,6 +431,7 @@ jobs:
             || echo "::warning::gdb unavailable; a probe hang will leave only a createdump core"
 
       - name: dotnet test (integration)
+        timeout-minutes: 14
         env:
           SHADOWDUSK_REQUIRE_VKD3D: "1"
           SHADOWDUSK_REQUIRE_DXC: "1"
@@ -421,6 +443,7 @@ jobs:
           --blame-hang-timeout 3m --blame-hang-dump-type mini
           --logger "trx;LogFilePrefix=integration-${{ matrix.os }}"
           --results-directory TestResults/
+          -- RunConfiguration.TestSessionTimeout=600000
 
       # Guard the line above: if someone reverts to a fixed LogFileName, the run still goes
       # green while 13 of 14 assemblies' results vanish. The solution always has more than
@@ -448,8 +471,9 @@ jobs:
           path: TestResults/*.trx
           retention-days: 14
 
+      # cancelled() too: if the job timeout ever does fire, the dumps taken so far still upload.
       - name: Upload hang dumps
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v7
         with:
           name: integration-hang-dumps-${{ matrix.os }}
