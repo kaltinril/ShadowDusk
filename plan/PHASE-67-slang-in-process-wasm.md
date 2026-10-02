@@ -102,7 +102,7 @@ Linux/macOS). slang recurses per nesting level, so valid shaders trapped with `m
 of bounds` at ~205 added terms, ~205 else-ifs, ~156 nested ifs, ~98 nested parens and ~70 nested
 ternaries, where native slangc compiles twice that. The module now links `-sSTACK_SIZE=8MB`, and
 the node gate's depth cases (400 added terms, 300 parens, 200 ternaries, 300 nested ifs, 400
-else-ifs, all below where native Windows slangc itself gives out) match native exactly. Wasm
+else-ifs, all below where native Windows slangc itself gives out) match native exactly. The reviewer's bisection probe on the 8 MB build puts the first failing depth at 1490 parens, 1715 nested ifs, 850 ternaries, 1817 else-ifs and 1436 added terms, and native win-x64 slangc fails at every one of those same depths too, so the module now gives out no earlier than native Windows does. Wasm
 recursion also uses the JS engine's own native stack, so far deeper input ends in a JS
 `RangeError: Maximum call stack size exceeded`.
 
