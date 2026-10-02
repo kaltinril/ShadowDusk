@@ -28,6 +28,11 @@ namespace ShadowDusk.Wasm;
 /// injected automatically — the consumer never sets a flag to get correct output.
 /// (This replaced the Phase 39 SD0304 "FNA unavailable on WASM" guard; if the vkd3d
 /// WASM module itself cannot load, the compile fails loudly with SD1902 instead.)
+/// <para>Browser export targets: <see cref="PlatformTarget.OpenGL"/>,
+/// <see cref="PlatformTarget.Vulkan"/>, <see cref="PlatformTarget.DirectX"/> and
+/// <see cref="PlatformTarget.Fna"/>. <see cref="PlatformTarget.DirectX12"/> has no browser
+/// path and is refused up front with <c>SD1906</c>, before any module loads (issue #272);
+/// <see cref="PlatformTarget.Metal"/> gets the same <c>SD0200</c> it gets on every host.</para>
 /// </summary>
 [SupportedOSPlatform("browser")]
 public sealed class WasmShaderCompiler : IShaderCompiler
@@ -105,6 +110,12 @@ public sealed class WasmShaderCompiler : IShaderCompiler
         CompilerOptions options,
         CancellationToken cancellationToken = default)
     {
+        // Issue #272: a target the browser host cannot export (DirectX12) is refused here, before
+        // any module is loaded or run, with a registered code naming the target and the host.
+        // CompileAsync runs this method first, so its cold path never downloads a module for it.
+        if (BrowserHostTargets.Reject(options, options.SourceFileName ?? "<source>") is { } unsupported)
+            return Result<CompiledShader, ShaderError[]>.Fail([unsupported]);
+
         // The same pipeline composition CompileAsync has always used — the synchronous
         // entry differs ONLY in skipping the module warm-up (the backends' readiness
         // gates turn a cold call into the clear SD1903 error).

@@ -80,6 +80,8 @@ ShadowDusk/
 │   │                                   #   is the MonoGame helper's ONLY home (never src/).
 │   ├── ShaderViewer/                   # Desktop shader viewer
 │   └── mgcb/                           # MGCB content-pipeline sample
+├── Directory.Build.targets        # Browser projects only: drops every copy item sourced under tools/ so no
+│                                  #   desktop/Android native reaches a net8.0-browser build or publish (issue #273)
 ├── tools/                         # Vendored / downloaded native binaries (restored, not committed)
 │   ├── dxc/                       # unused — desktop DXC comes from Vortice.Dxc NuGet
 │   ├── spirv-cross/               # libspirv-cross-c-shared (.dll/.so/.dylib)

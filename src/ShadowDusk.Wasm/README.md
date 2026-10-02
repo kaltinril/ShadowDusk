@@ -46,6 +46,8 @@ That's it: search → install → call `WasmShaderCompiler.CompileAsync` → fee
 
 The same `CompileAsync` also accepts `PlatformTarget.DirectX` (DX11 SM5 DXBC `.mgfx`) and `PlatformTarget.Fna` (D3D9 fx_2_0 `.fxb`) in the browser, via the pinned `vkd3d-shader` compiled to WebAssembly — the bytes are identical to a desktop compile. These are **export** targets: a browser cannot *render* DXBC or D3D9 bytecode, so use them to offer downloads (e.g. a shader-fiddle "export" button) that render in the user's MonoGame WindowsDX / FNA game. If the vkd3d module is genuinely absent the compile fails loudly with diagnostic `SD1902`.
 
+`PlatformTarget.Vulkan` compiles in the browser too (the same DXC module). `PlatformTarget.DirectX12` is **not** a browser target: the browser pipeline has no DXIL path, so it is refused before any module loads with diagnostic `SD1906`. Compile DX12 with the desktop library, CLI or MGCB plugin on Windows.
+
 ## Notes
 
 - **Target framework:** `net8.0-browser` (Blazor WebAssembly / KNI web).

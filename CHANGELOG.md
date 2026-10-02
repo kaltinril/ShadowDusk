@@ -180,6 +180,18 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **Browser: asking for DirectX 12 now fails with a registered code up front (issue #272).** The browser
+  host has no DX12 path, but a `PlatformTarget.DirectX12` request ran DXC and then failed in the JS shim
+  with an unregistered `X0000: DXC output is not a SPIR-V module (bad magic word)`, on both the `.fx` and
+  the full-Slang route. `WasmShaderCompiler` and `WasmSlangCompiler` now refuse it before any module
+  loads with the new `SD1906`, which names the target, the host and the targets the browser does export
+  (OpenGL, Vulkan, DirectX, FNA). `Metal` keeps the `SD0200` it gets on every host.
+- **Browser builds no longer carry desktop and Android natives (issue #273).** A browser project that
+  reached `ShadowDusk.HLSL`/`ShadowDusk.GLSL` by project reference (the ShaderFiddle sample,
+  `ShadowDusk.Wasm`, `ShadowDusk.Slang.Wasm`) copied vkd3d, DXC and SPIRV-Cross natives for Windows,
+  Linux, macOS and Android (about 130 MB) into its build and publish output, where no browser can load
+  them. A root `Directory.Build.targets` drops them for browser projects only; desktop builds still get
+  every native. NuGet consumers were measured unaffected. `wasm.yml` now fails if one reappears.
 - **`ShadowDusk.Slang`: which registers "the author wrote" is now decided after preprocessing
   (issue #252 follow-up).** The register strip kept a texture/sampler register only when the Slang
   source text spelled `register(...)` on that name, and it read the text before the preprocessor
