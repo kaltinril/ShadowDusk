@@ -196,22 +196,24 @@ public static class RaylibConverter
 
         IReadOnlyList<CombinedSamplerPair> pairs = seam.Value.SamplerPairs.Value;
 
-        // Reservations come from the preprocessed source with the OpenGL macro set the seam
-        // compiled with (issue #283), exactly as on the OpenGL target. DXC has already accepted
-        // the source, so a view that cannot be built is our preprocessor's fault: SD0009.
-        var reserved = GlSamplerReservation.Collect(
+        // Reservations (issue #283) and a legacy sampler's explicit register (issue #299) both
+        // come from the preprocessed source with the OpenGL macro set the seam compiled with,
+        // exactly as on the OpenGL target. DXC has already accepted the source, so a view that
+        // cannot be built is our preprocessor's fault: SD0009.
+        var samplerSlots = GlSamplerReservation.Collect(
             fxSource,
             file,
             PlatformMacros.For(PlatformTarget.OpenGL),
             options.IncludeResolver ?? new FileSystemIncludeResolver(),
-            options.AdditionalIncludePaths);
-        if (reserved.IsFailure)
-            return Result<RaylibShader, ShaderError[]>.Fail([reserved.Error]);
+            options.AdditionalIncludePaths,
+            parse.Value);
+        if (samplerSlots.IsFailure)
+            return Result<RaylibShader, ShaderError[]>.Fail([samplerSlots.Error]);
 
         // The same allocator the OpenGL target uses, so "the sampler SpriteBatch binds" (unit 0)
         // and "the sampler raylib's draw binds" (texture0) are the same HLSL sampler by construction.
         IReadOnlyList<int> slots = SpirvCombinedSamplerPairs.ResolveSlots(
-            pairs, parse.Value.ExplicitGlSamplerSlots, reserved.Value);
+            pairs, samplerSlots.Value.Explicit, samplerSlots.Value.Reserved);
 
         var bakedStates = parse.Value.Samplers
             .GroupBy(s => s.Name, StringComparer.Ordinal)

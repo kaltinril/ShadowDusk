@@ -454,16 +454,28 @@ internal sealed class CompilationPipeline
         // compiles below have accepted the source, so a genuinely malformed shader still
         // reports DXC's own diagnostic; SD0009 only fires when our preprocessor is the one at
         // fault.
+        //
+        // The sibling map rides on the same view (issue #299): the register an explicit
+        // `register(sN)` on a LEGACY `sampler` declaration pins its texture to. Read from the
+        // raw tokens it had the same two faults (`#if OPENGL sampler S = …; #else
+        // sampler S : register(s1) = …; #endif` pinned unit 1 where mgfxc emits ps_s0, and
+        // `register(REG)` through a macro was missed).
+        IReadOnlyDictionary<string, int> explicitGlSamplerSlots = fxParsed.ExplicitGlSamplerSlots;
         IReadOnlySet<int> reservedGlSamplerSlots = fxParsed.ReservedGlSamplerSlots;
         ShaderError? reservationError = null;
         if (options.Target == PlatformTarget.OpenGL)
         {
-            Result<IReadOnlySet<int>, ShaderError> reservation =
-                GlSamplerReservation.Collect(hlslSource, sourceFileName, macros, includeResolver, options.AdditionalIncludePaths);
+            Result<GlSamplerSlots, ShaderError> reservation = GlSamplerReservation.Collect(
+                hlslSource, sourceFileName, macros, includeResolver, options.AdditionalIncludePaths, fxParsed);
             if (reservation.IsSuccess)
-                reservedGlSamplerSlots = reservation.Value;
+            {
+                explicitGlSamplerSlots = reservation.Value.Explicit;
+                reservedGlSamplerSlots = reservation.Value.Reserved;
+            }
             else
+            {
                 reservationError = reservation.Error;
+            }
         }
 
         foreach (TechniqueInfo technique in fxParsed.Techniques)
@@ -496,10 +508,10 @@ internal sealed class CompilationPipeline
                         // + attribute/varying contract that lets MonoGame's GL runtime link it.
                         applyMonoGameGlsl: monoGameGl,
                         reflectFromSpirv: reflectFromSpirv,
-                        // The explicit register(sN) indices the pre-parser captured before the
-                        // SM4 rewrite dropped them, so the GLSL rewriter numbers ps_s{slot} the
-                        // same way the .mgfx sampler table will (issue #189).
-                        explicitGlSamplerSlots: fxParsed.ExplicitGlSamplerSlots,
+                        // The explicit register(sN) indices of legacy samplers (which the SM4 rewrite
+                        // drops), read off the preprocessed view, so the GLSL rewriter numbers ps_s{slot} the
+                        // same way the .mgfx sampler table will (issues #189, #299).
+                        explicitGlSamplerSlots: explicitGlSamplerSlots,
                         reservedGlSamplerSlots: reservedGlSamplerSlots,
                         cancellationToken);
 
@@ -548,10 +560,10 @@ internal sealed class CompilationPipeline
                         compileOptions,
                         applyMonoGameGlsl: monoGameGl,
                         reflectFromSpirv: reflectFromSpirv,
-                        // The explicit register(sN) indices the pre-parser captured before the
-                        // SM4 rewrite dropped them, so the GLSL rewriter numbers ps_s{slot} the
-                        // same way the .mgfx sampler table will (issue #189).
-                        explicitGlSamplerSlots: fxParsed.ExplicitGlSamplerSlots,
+                        // The explicit register(sN) indices of legacy samplers (which the SM4 rewrite
+                        // drops), read off the preprocessed view, so the GLSL rewriter numbers ps_s{slot} the
+                        // same way the .mgfx sampler table will (issues #189, #299).
+                        explicitGlSamplerSlots: explicitGlSamplerSlots,
                         reservedGlSamplerSlots: reservedGlSamplerSlots,
                         cancellationToken);
 
@@ -1028,7 +1040,7 @@ internal sealed class CompilationPipeline
                     IReadOnlyList<CombinedSamplerPair> pairs = pairResult.Value;
                     IReadOnlyList<int> glSamplerSlots =
                         SpirvCombinedSamplerPairs.ResolveSlots(
-                            pairs, fxParsed.ExplicitGlSamplerSlots, reservedGlSamplerSlots);
+                            pairs, explicitGlSamplerSlots, reservedGlSamplerSlots);
 
                     for (int k = 0; k < pairs.Count; k++)
                     {

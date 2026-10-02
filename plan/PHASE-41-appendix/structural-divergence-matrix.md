@@ -20,9 +20,9 @@
 
 ## Headline
 
-- Golden-backed cells (fixture x target): **106**
-  - Structurally **clean**: **77**
-  - **Divergent** (>=1 level): **19**
+- Golden-backed cells (fixture x target): **110**
+  - Structurally **clean**: **80**
+  - **Divergent** (>=1 level): **20**
   - Compile/parse **failures**: **10**
 - Non-golden census cells: **206** (**140** compile, **66** fail with a code)
 
@@ -90,6 +90,10 @@ Legend: `OK` = match, `XX` = diverge, `--` = compile/parse failed (see notes). L
 | Pixelated | OpenGL | OK | OK | OK | OK | OK |  |
 | PolygonLight | DirectX_11 | OK | OK | OK | OK | OK |  |
 | PolygonLight | OpenGL | OK | XX | OK | OK | OK | cbuffer `ps_uniforms_vec4` size 112 vs 48; cbuffer `vs_uniforms_vec4` size 112 vs 64; param `viewProjectionMatrix` cbuffer offset 48 vs 0 |
+| SamplerLegacyRegisterIfBranch | DirectX_11 | OK | OK | OK | OK | OK |  |
+| SamplerLegacyRegisterIfBranch | OpenGL | OK | OK | OK | OK | OK |  |
+| SamplerLegacyRegisterMacro | DirectX_11 | OK | OK | XX | OK | OK | sampler slot 2 missing (golden ``); sampler slot 3 missing (golden ``); extra sampler slot 0 (``); extra sampler slot 1 (``) |
+| SamplerLegacyRegisterMacro | OpenGL | OK | OK | OK | OK | OK |  |
 | SamplerPairMirror | DirectX_11 | OK | OK | OK | OK | OK |  |
 | SamplerPairMirror | OpenGL | OK | OK | OK | OK | OK |  |
 | SamplerRegisterOrder | DirectX_11 | OK | OK | OK | OK | OK |  |
@@ -208,17 +212,17 @@ A Scalar/Vector/Matrix parameter's reflection metadata (class/type/rows/cols/ele
 
 Affected cells: SamplerReservationIfBranch [OpenGL], SamplerReservationMacro [OpenGL], SharedSamplerPair [OpenGL]
 
+### Sampler slot / baked-state delta (2 cell(s))
+
+A sampler slot is missing/extra or its baked sampler_state differs.
+
+Affected cells: SamplerLegacyRegisterMacro [DirectX_11], SamplerRegisterSparse [DirectX_11]
+
 ### Constant-buffer layout (size / offset) — TRIAGE (1 cell(s))
 
 A constant buffer size or a per-parameter byte offset differs OUTSIDE the known GL per-stage sizing model. Worth triage: cbuffer offsets are the runtime SetValue layout.
 
 Affected cells: PenumbraHull [DirectX_11]
-
-### Sampler slot / baked-state delta (1 cell(s))
-
-A sampler slot is missing/extra or its baked sampler_state differs.
-
-Affected cells: SamplerRegisterSparse [DirectX_11]
 
 > Note on bytecode: every cell's shader bytecode differs from the golden (vkd3d vs fxc on DX,
 > SPIRV-Cross GLSL vs MojoShader on GL). This is EXPECTED and is not counted as a divergence anywhere above.

@@ -253,8 +253,34 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   goldens `SamplerReservationIfBranch` and `SamplerReservationMacro`, and two new arms
   ("ifbranch", "macro") in `validation/SamplerRegisterOrderGl`, measured RED with the old reading
   (maxd 255, 4096 px each) and maxd 0 after. A corpus sweep builds the view for all 153 parseable
-  fixtures; no other shader's output moved. Not fixed here: the sibling map for an explicit register
-  on a LEGACY `sampler` declaration is still read from raw tokens (issue #299).
+  fixtures; no other shader's output moved. The sibling map, an explicit register on a LEGACY
+  `sampler` declaration, is the next entry (issue #299).
+- **OpenGL: an explicit `register(sN)` on a legacy `sampler` declaration is now read from the
+  preprocessed source too, like `mgfxc` (issue #299).** A legacy `sampler X : register(sN)` pins its
+  texture unit (issue #189), and that clause was still read off the raw source after #283. So a
+  register written only in the branch OpenGL does not compile pinned the unit anyway
+  (`#if OPENGL` / `sampler S = sampler_state {…};` / `#else` /
+  `sampler S : register(s1) = sampler_state {…};` gave `ps_s1`, off SpriteBatch's unit 0, where
+  `mgfxc` emits `ps_s0`), the wrong branch's number won when both branches had one (`ps_s1` where
+  `mgfxc` emits the OpenGL branch's `ps_s2`), and a register number spelled through a macro or a
+  `/Defines` value (`#define REG s1` / `sampler S : register(REG);`) was missed (`ps_s0` where
+  `mgfxc` emits `ps_s1`). Measured against the pinned `mgfxc` 3.8.4.1 for `sampler` and `sampler2D`,
+  with a `sampler_state` block, the brace form and the bare form; all now match. A sampler or
+  texture whose NAME is a macro keeps its pin (the names are resolved through the same
+  preprocessor), which also fixes `#define TEX RealTex` / `Texture = <TEX>` (`ps_s0` where `mgfxc`
+  emits `ps_s1`). Both maps are read
+  off the same preprocessed view (`FxPreParser.CollectGlSamplerSlots`), on the OpenGL target and in
+  the raylib converter; an unbuildable view is still `SD0009`. New committed `mgfxc` goldens
+  `SamplerLegacyRegisterIfBranch` and `SamplerLegacyRegisterMacro`, and two new arms
+  ("legacy-ifbranch", "legacy-macro") in `validation/SamplerRegisterOrderGl`, measured RED with the
+  old reading (maxd 255, 4096 px each) and maxd 0 after. Every other fixture is unchanged: the whole
+  160-file OpenGL corpus was compiled with the fix off and on and only the two new fixtures differ
+  (115 byte-identical, 43 fail identically either way), including `VsTransformColorTexture`,
+  `VsWaveQuadIntrinsics` and `apos-shapes-sm6`, whose explicit-slot map does change (their register
+  lived in the dead `#if SM6` arm) but whose units and bytes do not. Not fixed here, both filed:
+  a legacy sampler declared in an `#include`d file or through a function-like macro does not compile
+  for OpenGL at all (issue #308), and a lowercase `sampler S : register(sN)` read through
+  `Texture.Sample` does not reserve its register (issue #309).
 - **`ShadowDusk.Slang`: author registers in an `import`ed module and on a combined `Sampler2D` are
   kept (issue #292).** Both were stripped silently on DirectX and OpenGL. (1) slangc splits
   `Sampler2D Comb : register(t2)` into `Comb_texture_0 : register(t2)` and a `Comb_sampler_0` it
