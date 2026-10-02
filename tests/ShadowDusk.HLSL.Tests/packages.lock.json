@@ -189,7 +189,7 @@
         "dependencies": {
           "ShadowDusk.Core": "[0.20.0, )",
           "Vortice.D3DCompiler": "[3.3.4, )",
-          "Vortice.Dxc": "[3.3.4, )"
+          "Vortice.Dxc": "[3.3.4, 3.3.4]"
         }
       },
       "Vortice.D3DCompiler": {
@@ -206,7 +206,7 @@
       },
       "Vortice.Dxc": {
         "type": "CentralTransitive",
-        "requested": "[3.3.4, )",
+        "requested": "[3.3.4, 3.3.4]",
         "resolved": "3.3.4",
         "contentHash": "Q+JJzn96ZKaLQFEhLRFtWau0/KxORtREpP8FTRdKN0luIdrTZIARto7OESKpOGXl3idIGP/jH8YQIupNzaR5EQ==",
         "dependencies": {
@@ -403,7 +403,7 @@
         "dependencies": {
           "ShadowDusk.Core": "[0.20.0, )",
           "Vortice.D3DCompiler": "[3.3.4, )",
-          "Vortice.Dxc": "[3.3.4, )"
+          "Vortice.Dxc": "[3.3.4, 3.3.4]"
         }
       },
       "Vortice.D3DCompiler": {
@@ -420,7 +420,7 @@
       },
       "Vortice.Dxc": {
         "type": "CentralTransitive",
-        "requested": "[3.3.4, )",
+        "requested": "[3.3.4, 3.3.4]",
         "resolved": "3.3.4",
         "contentHash": "Q+JJzn96ZKaLQFEhLRFtWau0/KxORtREpP8FTRdKN0luIdrTZIARto7OESKpOGXl3idIGP/jH8YQIupNzaR5EQ==",
         "dependencies": {

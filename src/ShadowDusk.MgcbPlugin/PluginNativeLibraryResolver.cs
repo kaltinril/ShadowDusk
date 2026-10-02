@@ -15,40 +15,28 @@ namespace ShadowDusk.ContentPipeline;
 /// ShadowDusk's loaders use is anchored to the <i>host process</i>, not to us:
 /// <c>AppContext.BaseDirectory</c> is MGCB's directory, and
 /// <c>NATIVE_DLL_SEARCH_DIRECTORIES</c> comes from MGCB's <c>deps.json</c>, which knows
-/// nothing about our packages. So DXC, SPIRV-Cross and vkd3d-shader sit right beside this
+/// nothing about our packages. So SPIRV-Cross and vkd3d-shader sit right beside this
 /// DLL and are never found. (Measured: without this shim a real <c>dotnet mgcb</c> build
 /// fails with <c>SD0103 SPIRV-Cross native library not found</c>.)</para>
 ///
-/// <para>Two hooks, because DXC needs an earlier one than the other two natives
-/// (Phase 63, issue #203 - measured on a real <c>dotnet-mgcb</c> 3.8.5 build):</para>
-/// <list type="number">
-/// <item><see cref="AssemblyLoadContext.ResolvingUnmanagedDll"/>, which the runtime raises only
-///   <i>after</i> every other mechanism has failed, probes the plugin's own install directory
-///   for <c>spirv-cross</c> and <c>vkd3d-shader</c>. It cannot displace a native the existing
-///   loaders resolved, and it changes nothing outside an MGCB host.</item>
-/// <item><c>Vortice.Dxc.Dxc.ResolveLibrary</c> for <c>dxcompiler.dll</c>. Vortice's own
-///   resolver probes <c>AppContext.BaseDirectory/runtimes/&lt;rid&gt;/native</c> (MGCB's
-///   directory - a miss), consults this event, and only then falls back to a <b>bare-name</b>
-///   load, which walks the OS <c>PATH</c>. That fallback is a substitute-compiler hole: a
-///   developer box with the Vulkan SDK on <c>PATH</c> carries its own <c>dxcompiler.dll</c>,
-///   and every MGCB build through the plugin silently compiled with <i>that</i> DXC (the
-///   DirectX 12 bytes differed from the CLI's; the GL/Vulkan SPIR-V happened to match for the
-///   corpus). And even when the pinned DXC did load through hook 1, DXC's own internal
-///   <c>LoadLibrary("dxil.dll")</c> is not a .NET load and never reached it, so DirectX 12
-///   output came out <b>unsigned</b> (DXC warns "DXIL signing library not found"; retail
-///   D3D12 rejects the artifact). This hook pre-loads the plugin directory's <c>dxil.dll</c>
-///   and returns its <c>dxcompiler.dll</c>, exactly what Vortice does from an ordinary app's
-///   base directory - the pinned pair, never a substitute.</item>
-/// </list>
+/// <para><see cref="AssemblyLoadContext.ResolvingUnmanagedDll"/>, which the runtime raises only
+/// <i>after</i> every other mechanism has failed, probes the plugin's own install directory for
+/// <c>spirv-cross</c> and <c>vkd3d-shader</c>. It cannot displace a native the existing loaders
+/// resolved, and it changes nothing outside an MGCB host. The probe is deliberately narrow:
+/// only the library names ShadowDusk P/Invokes, and only inside this assembly's own directory.
+/// It never widens the process's search path and never resolves a request on another
+/// component's behalf.</para>
 ///
-/// <para>Both load <b>the same pinned natives</b> the CLI and the runtime library use, so the
-/// compiler is identical: lookup paths, never a substitute compiler. The probe is deliberately
-/// narrow: only the library names ShadowDusk P/Invokes, and only inside this assembly's own
-/// directory. It never widens the process's search path and never resolves a request on
-/// another component's behalf. <c>validation/MgcbPlugin</c> proves both hooks: it puts a decoy
-/// <c>dxcompiler.dll</c> first on the child MGCB's <c>PATH</c> (a bare-name load would take
-/// it and die at <c>DxcCreateInstance</c>) and requires the DirectX 12 payload to equal the
-/// CLI's signed bytes.</para>
+/// <para><b>DXC is not resolved here.</b> <c>DxcLoader</c> (ShadowDusk.HLSL) probes beside the
+/// ShadowDusk and Vortice.Dxc assemblies, which in MGCB is this plugin's directory, checks that
+/// the files are the pinned build, loads <c>dxil.dll</c> then <c>dxcompiler.dll</c> by absolute
+/// path (so DXC's internal bare-name <c>LoadLibrary("dxil.dll")</c> binds the pinned validator
+/// and DirectX 12 comes out signed), and answers <c>Vortice.Dxc.Dxc.ResolveLibrary</c> ahead of
+/// every other subscriber. Until issue #270 this class carried its own DXC hook (Phase 63);
+/// with <c>DxcLoader</c> first in line it was never consulted, and it had no identity check, so
+/// it was removed. <c>validation/MgcbPlugin</c> still puts a decoy <c>dxcompiler.dll</c> and
+/// <c>dxil.dll</c> first on the child MGCB's <c>PATH</c> and requires the DirectX 12 payload to
+/// equal the CLI's signed bytes.</para>
 /// </summary>
 internal static class PluginNativeLibraryResolver
 {
@@ -61,13 +49,7 @@ internal static class PluginNativeLibraryResolver
     [
         "spirv-cross",       // ShadowDusk.GLSL.Interop.SpvcNative.LibName
         "vkd3d-shader-1",    // ShadowDusk.HLSL.Vkd3d.Vkd3dNative.LibName
-        "dxcompiler.dll",    // Vortice.Dxc's module name on every OS
-        "dxcompiler",
-        "dxil",
     ];
-
-    /// <summary>The module name Vortice.Dxc's P/Invokes declare on every OS (<c>DxcLoader.DxcLibraryName</c>).</summary>
-    private const string DxcModuleName = "dxcompiler.dll";
 
     private static readonly object Gate = new();
     private static bool _registered;
@@ -87,49 +69,8 @@ internal static class PluginNativeLibraryResolver
         {
             if (_registered) return;
             AssemblyLoadContext.Default.ResolvingUnmanagedDll += Resolve;
-            // Touching the event runs Vortice's Dxc static ctor first (its own resolver), so
-            // this subscriber is consulted after Vortice's base-directory probe and BEFORE its
-            // bare-name fallback. Subscribers are polled in order, first non-zero wins, and
-            // ours returns zero whenever the plugin directory holds no DXC - so it can never
-            // shadow ShadowDusk's own macOS/Android DxcLoader handler.
-            Vortice.Dxc.Dxc.ResolveLibrary += ResolveDxc;
             _registered = true;
         }
-    }
-
-    /// <summary>
-    /// The <c>Vortice.Dxc.Dxc.ResolveLibrary</c> handler: the plugin directory's pinned
-    /// <c>dxcompiler.dll</c>, with its sibling <c>dxil.dll</c> loaded FIRST so DXC's internal
-    /// <c>LoadLibrary("dxil.dll")</c> (which never consults .NET) finds the already-loaded
-    /// module by name and validates + signs DirectX 12 output. Zero for anything else, and
-    /// zero when the plugin directory holds no DXC, which hands resolution back to Vortice.
-    /// </summary>
-    private static IntPtr ResolveDxc(string libraryName, Assembly assembly, DllImportSearchPath? searchPath)
-    {
-        if (!string.Equals(libraryName, DxcModuleName, StringComparison.OrdinalIgnoreCase))
-            return IntPtr.Zero;
-
-        string? pluginDirectory = GetPluginDirectory();
-        if (pluginDirectory is null)
-            return IntPtr.Zero;
-
-        string rid = CurrentRid();
-
-        // dxil.dll first. It ships only for the win-* RIDs; where it is absent (macOS, Linux
-        // DXC builds carry no signer) nothing is loaded and DXC itself reports unsigned output.
-        foreach (string candidate in GetProbeCandidates(pluginDirectory, rid, FileNamesFor("dxil")))
-        {
-            if (File.Exists(candidate) && NativeLibrary.TryLoad(candidate, out _))
-                break;
-        }
-
-        foreach (string candidate in GetProbeCandidates(pluginDirectory, rid, FileNamesFor("dxcompiler")))
-        {
-            if (File.Exists(candidate) && NativeLibrary.TryLoad(candidate, out IntPtr handle))
-                return handle;
-        }
-
-        return IntPtr.Zero;
     }
 
     private static IntPtr Resolve(Assembly requesting, string libraryName)
@@ -170,8 +111,8 @@ internal static class PluginNativeLibraryResolver
     /// The ordered candidate paths, relative to the plugin directory. Pure (no I/O), matching
     /// the convention of ShadowDusk's other native loaders.
     /// <list type="number">
-    /// <item>the NuGet <c>runtimes/&lt;rid&gt;/native</c> layout (how DXC and SPIRV-Cross arrive),</item>
-    /// <item>a per-arch subdirectory (the macOS DXC/vkd3d layout, where both arches share a file name),</item>
+    /// <item>the NuGet <c>runtimes/&lt;rid&gt;/native</c> layout (how SPIRV-Cross arrives),</item>
+    /// <item>a per-arch subdirectory (the macOS vkd3d layout, where both arches share a file name),</item>
     /// <item>flat beside the plugin (how vkd3d-shader arrives on Windows and Linux).</item>
     /// </list>
     /// </summary>
@@ -190,7 +131,7 @@ internal static class PluginNativeLibraryResolver
 
     /// <summary>
     /// The concrete file names a module name can appear under, in probe order: the name
-    /// verbatim (Vortice already asks for <c>dxcompiler.dll</c>), then the platform's
+    /// verbatim, then the platform's
     /// decorated spellings, then vkd3d's versioned SONAMEs. Pure (no I/O).
     /// </summary>
     private static IReadOnlyList<string> FileNamesFor(string libraryName) =>

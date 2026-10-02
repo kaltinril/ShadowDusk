@@ -30,9 +30,6 @@
         "resolved": "1.7.2",
         "contentHash": "WUUzB3MowHdOqNfSMAms5Ovra+SKgLC4ttH1w75ra3srDGctebSg+aywm7hLdvDn592ydgdbOJN11JKsyAcX+A=="
       },
-      "FNA": {
-        "type": "Project"
-      },
       "shadowdusk.compiler": {
         "type": "Project",
         "dependencies": {
@@ -56,7 +53,7 @@
         "dependencies": {
           "ShadowDusk.Core": "[0.20.0, )",
           "Vortice.D3DCompiler": "[3.3.4, )",
-          "Vortice.Dxc": "[3.3.4, )"
+          "Vortice.Dxc": "[3.3.4, 3.3.4]"
         }
       },
       "shadowdusk.slang": {
@@ -85,7 +82,7 @@
       },
       "Vortice.Dxc": {
         "type": "CentralTransitive",
-        "requested": "[3.3.4, )",
+        "requested": "[3.3.4, 3.3.4]",
         "resolved": "3.3.4",
         "contentHash": "Q+JJzn96ZKaLQFEhLRFtWau0/KxORtREpP8FTRdKN0luIdrTZIARto7OESKpOGXl3idIGP/jH8YQIupNzaR5EQ==",
         "dependencies": {

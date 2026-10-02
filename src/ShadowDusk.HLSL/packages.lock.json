@@ -16,7 +16,7 @@
       },
       "Vortice.Dxc": {
         "type": "Direct",
-        "requested": "[3.3.4, )",
+        "requested": "[3.3.4, 3.3.4]",
         "resolved": "3.3.4",
         "contentHash": "Q+JJzn96ZKaLQFEhLRFtWau0/KxORtREpP8FTRdKN0luIdrTZIARto7OESKpOGXl3idIGP/jH8YQIupNzaR5EQ==",
         "dependencies": {
@@ -71,7 +71,7 @@
       },
       "Vortice.Dxc": {
         "type": "Direct",
-        "requested": "[3.3.4, )",
+        "requested": "[3.3.4, 3.3.4]",
         "resolved": "3.3.4",
         "contentHash": "Q+JJzn96ZKaLQFEhLRFtWau0/KxORtREpP8FTRdKN0luIdrTZIARto7OESKpOGXl3idIGP/jH8YQIupNzaR5EQ==",
         "dependencies": {

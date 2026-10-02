@@ -130,7 +130,11 @@ internal static unsafe class DxcNativeInterop
                 // macOS: no fork() may run while DXC is inside setlocale (see DxcForkGate).
                 // The gate covers ONLY this direct native call: every setlocale DXC makes is
                 // inside IDxcCompiler3::Compile (measured), and nothing in here can dlopen/dlsym
-                // (a first-call P/Invoke bind would), which fork() blocks while it waits.
+                // (a first-call P/Invoke bind would), which fork() blocks while it waits. That
+                // includes DXC's own validator lookup: at the pinned commit dlopen("libdxil")
+                // runs once, in the library constructor (DllMain -> DxilLibInitialize), while
+                // DxcLoader.Register loads libdxcompiler, and DxilLibIsEnabled() never retries
+                // after a miss, so a validated-DXIL compile opens nothing here.
                 Result hr;
                 using (DxcForkGate.Enter())
                 {
