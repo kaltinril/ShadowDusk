@@ -24,21 +24,26 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
     /// </summary>
     public DxcShaderCompiler()
     {
-        // Loads the pinned pair by absolute path (Windows/Linux) or hooks Vortice's resolver
-        // for our own libdxcompiler (macOS/Android). Idempotent. Must precede the first DXC
-        // P/Invoke below. Never call Vortice's Dxc.LoadDxil(): it is a bare
-        // LoadLibrary("dxil.dll") that walks PATH and let a foreign validator win.
+        // Loads the pinned natives by absolute path, after checking they are the pinned build
+        // (Windows/Linux/macOS; Android: bare SONAME from the APK), and answers Vortice's
+        // resolver ahead of Vortice's own handler. Idempotent. Must precede the first DXC
+        // P/Invoke below. The dlopen happens in there, never under DxcForkGate. Never call
+        // Vortice's Dxc.LoadDxil(): it is a bare LoadLibrary("dxil.dll") that walks PATH and
+        // let a foreign validator win.
         _loadError = DxcLoader.Register();
         if (_loadError is null)
             _compiler = CreateDxcCompiler<IDxcCompiler3>();
     }
 
     /// <summary>
-    /// The <c>SD0219</c> error to return instead of compiling, or null. Missing/unloadable
-    /// pinned natives fail every request. A foreign DXIL validator fails only requests whose
+    /// The <c>SD0219</c> error to return instead of compiling, or null. Missing, unloadable or
+    /// foreign-build natives fail every request. A foreign DXIL validator fails only requests whose
     /// output it decides (<paramref name="usesValidator"/>: validated DXIL, i.e. DirectX 12):
     /// SPIR-V codegen, <c>-Vd</c> compiles and <c>-P</c> preprocessing never call it, so a host
-    /// that loaded its own <c>dxil.dll</c> must not cost the consumer those targets.
+    /// that loaded its own <c>dxil.dll</c> must not cost the consumer those targets. Checked once,
+    /// before the native call: DXC binds its validator while its library loads (Windows
+    /// <c>DllMain</c>; the Unix library constructor), never during a compile, so there is
+    /// nothing to re-check afterwards.
     /// </summary>
     private ShaderError? NativeError(string? sourceFileName, bool usesValidator)
     {
@@ -167,10 +172,6 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         // The same pattern as D3DCompilerShaderCompiler's blob disposal.
         try
         {
-            // macOS can bind a foreign libdxil lazily, during this very call: check again.
-            if (NativeError(request.SourceFileName, usesValidator) is { } validatorError)
-                return Result<PlatformBlob, ShaderError>.Fail(validatorError);
-
             SharpGen.Runtime.Result status = result.GetStatus();
             string errorText = result.GetErrors();
 

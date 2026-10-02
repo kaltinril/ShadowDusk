@@ -8,48 +8,37 @@ using ShadowDusk.Core;
 namespace ShadowDusk.HLSL.Dxc;
 
 /// <summary>
-/// Resolves the native DXC library (<c>libdxcompiler.dylib</c>) on macOS, where
-/// Vortice.Dxc 3.3.4 ships no native at all (win-x64/win-arm64/linux-x64 only —
-/// the Phase 37 Finding A product gap). The dylib we load is OUR OWN build of the
-/// EXACT pinned DXC commit the Vortice native reports
-/// (<c>e043f4a1286f4e1026222ab1bc94e25de8d0e959</c>, FileVersion 1.7.2212.40 — the
-/// same pin as the DXC-&gt;WASM build), never a substitute compiler, so macOS
-/// SPIR-V stays byte-identical to the other RIDs.
+/// Makes DXC run as ShadowDusk's own pinned build, and only as that build: commit
+/// <c>e043f4a1286f4e1026222ab1bc94e25de8d0e959</c>, FileVersion 1.7.2212.40 (the same pin as
+/// the DXC-&gt;WASM build), so SPIR-V stays byte-identical across RIDs. The natives come from
+/// the Vortice.Dxc package on Windows and Linux; Vortice.Dxc 3.3.4 ships no macOS or Android
+/// native (the Phase 37 Finding A product gap), so there we load OUR OWN build of the same
+/// commit, never a substitute compiler.
 ///
-/// CRITICAL difference from <see cref="Vkd3d.Vkd3dLoader"/> /
-/// <c>ShadowDusk.GLSL.Interop.SpvcLoader</c>: the <c>dxcompiler.dll</c> P/Invokes
-/// live in the <b>Vortice.Dxc</b> assembly, and Vortice's <c>Dxc</c> static
-/// constructor already calls <c>NativeLibrary.SetDllImportResolver</c> on that
-/// assembly — a second <c>SetDllImportResolver</c> there throws
-/// <see cref="InvalidOperationException"/>. Vortice instead exposes the public
-/// <c>Dxc.ResolveLibrary</c> event, which its resolver consults BEFORE falling back
-/// to default loading; Vortice's own built-in handler returns
-/// <see cref="IntPtr.Zero"/> on macOS (it only knows win-* layouts and a dxil+
-/// dxcompiler pair that macOS lacks), so a handler appended here is the correct,
-/// conflict-free hook.
+/// <para><b>Why Vortice's event and not <c>SetDllImportResolver</c>.</b> The
+/// <c>dxcompiler.dll</c> P/Invokes live in the <b>Vortice.Dxc</b> assembly, whose <c>Dxc</c>
+/// static constructor already calls <c>NativeLibrary.SetDllImportResolver</c> on it; a second
+/// call there throws <see cref="InvalidOperationException"/>. Vortice instead exposes the public
+/// <c>Dxc.ResolveLibrary</c> event, which its resolver polls (first non-zero answer wins) BEFORE
+/// falling back to default loading.</para>
 ///
-/// The dylib ships two ways: packed into the ShadowDusk.HLSL NuGet under
-/// <c>runtimes/osx-{x64,arm64}/native</c> (when restored at pack time), and as a
-/// restored artifact under <c>tools/dxc/osx-{x64,arm64}/</c> for repo builds (see
-/// tools/restore.ps1). Both arches share one file name, so the restored/copied
-/// layout is per-arch, exactly like vkd3d's. Probe order (mirrors Vkd3dLoader):
-///   1. the app base directory (per-arch subdir, then flat — the .csproj copy links),
-///      plus the self-contained-publish <c>runtimes/&lt;rid&gt;/native</c> layout,
-///   2. a <c>tools/dxc/</c> folder found by walking up from the base directory
-///      toward the repo root (dev/test runs straight out of bin/),
-///   3. the host's native search directories (<c>NATIVE_DLL_SEARCH_DIRECTORIES</c>)
-///      — how the NuGet <c>runtimes/&lt;rid&gt;/native</c> asset resolves for
-///      framework-dependent consumers,
-///   4. a bare load by file name (single-file publish extraction dir / OS paths).
+/// <para><b>Our resolver runs first, on every OS (issue #270).</b> Vortice's static constructor
+/// adds its own handler to that event, so a plain <c>+=</c> would poll it before ours. Off
+/// Windows that handler finds no <c>base\runtimes\win-*\native</c> directory (the path is
+/// spelled with literal backslashes) and falls to
+/// <c>NativeLibrary.TryLoad("dxil") &amp;&amp; NativeLibrary.TryLoad("dxcompiler")</c>, two
+/// BARE-NAME loads, and returns that handle. Bare names resolve through the dynamic linker's
+/// search path: <c>LD_LIBRARY_PATH</c> on Linux; <c>DYLD_LIBRARY_PATH</c>, the working directory
+/// and <c>/usr/local/lib</c> on macOS. So a <c>libdxil</c> + <c>libdxcompiler</c> pair reachable
+/// by name was loaded INSTEAD of ours, and OpenGL and Vulkan compiled with a substitute DXC
+/// without a word (macOS did this through PR #268, which moved only Windows and Linux to the
+/// front). <see cref="Register"/> therefore puts its handler at the FRONT of the invocation
+/// list (the event's backing delegate, by reflection; plain <c>+=</c> if that field ever moves,
+/// which <c>DxcLoaderTests</c> pins) and answers with a handle it loaded itself by absolute
+/// path, so Vortice's handler never runs.</para>
 ///
-/// Active on macOS and, since Phase 50, Android (Vortice ships no android RID either, so
-/// we load our own <c>libdxcompiler.so</c> by bare SONAME from the APK's per-ABI
-/// <c>lib/&lt;abi&gt;/</c> dir — never the desktop path-probing, which would violate
-/// Android W^X).
-///
-/// <para><b>Windows and Linux: the pinned pair, by absolute path, before anything else
-/// (issue: DXC/dxil PATH hijack, 2026-10-01).</b> Vortice ships the natives there, but loading
-/// them is not left to name-based search any more. <c>dxcompiler.dll</c> binds its DXIL
+/// <para><b>Windows, Linux and macOS: the pinned natives, by absolute path, before anything
+/// else.</b> Loading is not left to name-based search. <c>dxcompiler.dll</c> binds its DXIL
 /// validator/signer from its own <c>DllMain</c> with a bare <c>LoadLibrary("dxil.dll")</c>,
 /// and a bare name resolves to an already-loaded module of that name first, then the
 /// application directory, the system directories and finally <c>PATH</c>. ShadowDusk used to
@@ -60,35 +49,55 @@ namespace ShadowDusk.HLSL.Dxc;
 /// Prompt puts the Windows SDK's 1.8 one there) and DXC then validated with it: every
 /// DirectX 12 compile failed with "DXIL container mismatch for 'PSVRuntimeInfoSize'", and a
 /// loadable non-validator decoy silently produced UNSIGNED DXIL. <see cref="Register"/> now
-/// locates the pinned pair (<see cref="GetPinnedPairDirectories"/>), loads <c>dxil.dll</c>
-/// then <c>dxcompiler.dll</c> by full path, answers Vortice's resolver with that handle, and
-/// verifies the <c>dxil.dll</c> a bare-name lookup returns is ours. If the pair is missing it
-/// reports <see cref="LoadErrorCode"/> for every DXC request, instead of compiling with
-/// whatever the OS search offers. If a foreign <c>dxil.dll</c> was loaded into the process
-/// first (a host tool that uses DXC itself), only requests whose output the validator decides
-/// (validated DXIL: DirectX 12) are refused; SPIR-V, <c>-Vd</c> and preprocess requests never
-/// call the validator and proceed (<see cref="CheckBoundValidator"/>). "Ours" is decided by
-/// file content, not by path string, so a byte-identical copy or a <c>\\?\</c>-prefixed
-/// path of the pinned file is accepted. (Linux's <c>libdxcompiler.so</c> at this pin never
-/// loads <c>libdxil.so</c>, so there the risk was only a foreign <c>libdxcompiler.so</c> via
-/// <c>LD_LIBRARY_PATH</c>, closed the same way.)</para>
+/// locates the pinned natives, loads <c>dxil.dll</c> then <c>dxcompiler.dll</c> by full path
+/// (Linux: <c>libdxcompiler.so</c>; macOS: <c>libdxcompiler.dylib</c>) and verifies that the
+/// <c>dxil.dll</c> a bare-name lookup returns is the pinned build.</para>
 ///
-/// <para><b>Our resolver runs first.</b> Vortice's own <c>Dxc.ResolveLibrary</c> handler is
-/// added by its static constructor, so a plain <c>+=</c> would poll it before ours. Its probe
-/// is <c>base\runtimes\&lt;rid&gt;\native</c> spelled with literal backslashes (a real
-/// directory only on Windows) and then BARE-NAME loads, which on Linux can <c>dlopen</c> a
-/// <c>libdxcompiler.so</c> from <c>LD_LIBRARY_PATH</c> (its SONAME <c>libdxcompiler.so.3.7</c>
-/// differs from our file name, so no dedupe) in a plugin host whose search directories miss
-/// ours. <see cref="Register"/> therefore puts its handler at the FRONT of the invocation list
-/// (the event's backing delegate, by reflection; plain <c>+=</c> if that field ever moves).
-/// Known residual: if the host process drove Vortice.Dxc before ShadowDusk's first use, the
-/// runtime has already cached Vortice's P/Invoke binding to whatever <c>dxcompiler</c> the host
-/// loaded, and no resolver runs again.</para>
+/// <para><b>Only the pinned build is ever loaded (issue #270).</b> A directory that holds a
+/// file with the right NAME is not enough: the host application's own directories can carry a
+/// different DXC (MonoGame's tools ship 1.8; the Windows SDK's 1.8 pair has no SPIR-V
+/// backend). Measured through PR #268: a foreign pair in
+/// <c>&lt;host&gt;\runtimes\win-x64\native</c> won over ShadowDusk's own beside its assemblies,
+/// DirectX 12 compiled with it silently and OpenGL failed with the foreign DXC's "SPIR-V
+/// CodeGen not available". So every candidate is checked against the pinned build identity
+/// (<see cref="DxcNativeIdentity"/>) BEFORE it is loaded, a candidate that is not the pinned
+/// build is skipped and named in the diagnostic, and the directories beside the ShadowDusk and
+/// Vortice assemblies are probed ahead of the host's. If no candidate is the pinned build,
+/// every DXC request fails with <see cref="LoadErrorCode"/>: ShadowDusk never compiles with a
+/// different DXC.</para>
 ///
-/// <para><b>macOS</b> ships no <c>libdxil.dylib</c>, but our <c>libdxcompiler.dylib</c> still
-/// <c>dlopen</c>s one by leaf name, which dyld resolves through <c>DYLD_LIBRARY_PATH</c>, the
-/// working directory and <c>/usr/local/lib</c>. We cannot pre-empt a library we do not ship,
-/// so <see cref="CheckBoundValidator"/> fails loudly if any <c>libdxil</c> image is loaded.</para>
+/// <para><b>A foreign DXIL validator refuses DirectX 12 only.</b> If a <c>dxil.dll</c> of
+/// another build was loaded into the process first (a host tool that uses DXC itself), DXC
+/// binds that one. Only requests whose output the validator decides (validated DXIL:
+/// DirectX 12) are refused; SPIR-V, <c>-Vd</c> and preprocess requests never call the validator
+/// and proceed (<see cref="CheckBoundValidator"/>). A copy of the pinned <c>dxil.dll</c> from
+/// another directory, or the pinned file reached through a <c>\\?\</c> path, is the same build
+/// and is accepted. Vortice's Linux <c>libdxcompiler.so</c> never opens a <c>libdxil</c>, so
+/// Linux has no validator to bind and ShadowDusk loads none. Our macOS and Android builds do:
+/// DXC's library constructor (<c>DllMain</c> -&gt; <c>InitMaybeFail</c> -&gt;
+/// <c>DxilLibInitialize</c>, <c>tools/clang/tools/dxcompiler</c> at the pinned commit) calls
+/// <c>dlopen("libdxil.dylib")</c> by leaf name ONCE, while <c>libdxcompiler</c> itself is being
+/// loaded, and <c>DxilLibIsEnabled</c> never retries after a miss. We ship no <c>libdxil</c>
+/// and cannot pre-empt a library we do not ship, so on macOS <see cref="Register"/> checks,
+/// right after its own load, whether any <c>libdxil</c> image is in the process and fails
+/// DirectX 12 loudly if so. Because that one <c>dlopen</c> happens inside
+/// <see cref="Register"/>, nothing DXC does later loads a library; in particular nothing inside
+/// the fork-gated <c>IDxcCompiler3::Compile</c> does (see <see cref="DxcForkGate"/>).</para>
+///
+/// <para><b>Where the natives are found.</b> Windows and Linux:
+/// <see cref="GetPinnedPairDirectories"/>. macOS: <see cref="GetMacCandidates"/>; the dylib
+/// ships packed into the ShadowDusk.HLSL NuGet under <c>runtimes/osx-{x64,arm64}/native</c> and
+/// as a restored artifact under <c>tools/dxc/osx-{x64,arm64}/</c> for repo builds (see
+/// tools/restore.ps1); both arches share one file name, so the copied layout is per-arch,
+/// exactly like vkd3d's. Android (Phase 50): our <c>libdxcompiler.so</c> rides in the APK's
+/// per-ABI <c>lib/&lt;abi&gt;/</c> dir and is loaded by bare SONAME, never by path (Android
+/// W^X, and the APK is not a directory). The Android linker resolves an app's libraries only
+/// inside the app's own namespace, so no search path exists for a foreign build to sit on, and
+/// there is no file to read an identity from.</para>
+///
+/// <para>Known residual: if the host process drove Vortice.Dxc before ShadowDusk's first use,
+/// the runtime has already cached Vortice's P/Invoke binding to whatever <c>dxcompiler</c> the
+/// host loaded, and no resolver runs again.</para>
 /// </summary>
 internal static class DxcLoader
 {
@@ -108,8 +117,8 @@ internal static class DxcLoader
 
     /// <summary>
     /// The diagnostic raised when ShadowDusk cannot guarantee DXC runs with its own pinned
-    /// natives: the pair is missing or unloadable, or a foreign DXIL validator
-    /// (<c>dxil.dll</c> / <c>libdxil</c>) is the one DXC binds.
+    /// natives: they are missing, unloadable or only present as a different build, or a foreign
+    /// DXIL validator (<c>dxil.dll</c> / <c>libdxil</c>) is the one DXC binds.
     /// </summary>
     internal const string LoadErrorCode = "SD0219";
 
@@ -124,12 +133,13 @@ internal static class DxcLoader
     /// first DXC P/Invoke (<see cref="DxcShaderCompiler"/>'s constructor and
     /// <c>DxilReflectionExtractor</c> call it first thing).
     /// <list type="bullet">
-    /// <item>Windows/Linux: loads the pinned pair by absolute path (<c>dxil</c> first, so
-    ///   <c>dxcompiler</c>'s own bare-name validator load finds it) and answers
-    ///   <c>Dxc.ResolveLibrary</c> with that handle.</item>
-    /// <item>macOS/Android: hooks <c>Dxc.ResolveLibrary</c> for our own <c>libdxcompiler</c>
-    ///   (Vortice ships none there).</item>
+    /// <item>Windows/Linux/macOS: loads the pinned natives by absolute path, after checking they
+    ///   are the pinned build (Windows: <c>dxil</c> first, so <c>dxcompiler</c>'s own bare-name
+    ///   validator load finds it), and answers <c>Dxc.ResolveLibrary</c> with that handle.</item>
+    /// <item>Android: answers <c>Dxc.ResolveLibrary</c> with a bare-SONAME load from the APK.</item>
     /// </list>
+    /// Either way the handler goes ahead of Vortice's own. The native load happens HERE, so it
+    /// is always outside <see cref="DxcForkGate"/>, which wraps only the later compile call.
     /// A lock (not a lone CAS) so a concurrent second caller BLOCKS until the
     /// winner has finished — with CAS-then-subscribe the loser could
     /// return and P/Invoke before the resolver existed (observed once as an
@@ -146,16 +156,13 @@ internal static class DxcLoader
         {
             if (_registered) return _loadError;
 
-            if (OperatingSystem.IsMacOS() || OperatingSystem.IsAndroid())
+            if (OperatingSystem.IsAndroid())
             {
-                // Touching the event runs Dxc's static ctor first, so Vortice's built-in
-                // handler is always ahead of ours in the invocation list — it yields Zero
-                // on macOS and we take over.
-                Vortice.Dxc.Dxc.ResolveLibrary += Resolve;
+                SubscribeFirst(ResolveAndroid);
             }
-            else if (OperatingSystem.IsWindows() || OperatingSystem.IsLinux())
+            else if (OperatingSystem.IsWindows() || OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
             {
-                _loadError = LoadPinnedPair();
+                _loadError = LoadPinned();
                 if (_loadError is null)
                     SubscribeFirst(ResolvePinned);
             }
@@ -166,29 +173,13 @@ internal static class DxcLoader
     }
 
     /// <summary>
-    /// Checks that DXC is not validating with a foreign DXIL library. Callers ask only for
-    /// requests whose output depends on the validator (validated DXIL); SPIR-V, <c>-Vd</c> and
-    /// preprocess requests never reach it. Windows binds <c>dxil.dll</c> when
-    /// <c>dxcompiler.dll</c> loads, so <see cref="Register"/> already decided it; macOS may bind
-    /// <c>libdxil.dylib</c> lazily on the first DXIL compile and ships none of its own, so any
-    /// loaded <c>libdxil</c> image is foreign (callers check again after the native call).
-    /// Returns <c>null</c> when clean, or when the check itself cannot run (never a false
-    /// positive).
+    /// The error to return instead of running a compile whose output the DXIL validator decides
+    /// (validated DXIL), or <c>null</c>. SPIR-V, <c>-Vd</c> and preprocess requests never reach
+    /// the validator, so callers ask only for validated DXIL. DXC binds its validator exactly
+    /// once, while its own library loads (Windows <c>DllMain</c>, Unix library constructor), so
+    /// <see cref="Register"/> has already decided this: nothing a compile does can change it.
     /// </summary>
-    internal static ShaderError? CheckBoundValidator()
-    {
-        if (_foreignValidatorError is not null) return _foreignValidatorError;
-        if (!OperatingSystem.IsMacOS()) return null;
-
-        string? foreign = MacDyld.FindLoadedImage(IsDxilLeafName);
-        return foreign is null
-            ? null
-            : LoadError(
-                $"A DXIL validator library ('{foreign}') is loaded into this process, and " +
-                "ShadowDusk's macOS DXC ships none: DXC picked it up from the dynamic-linker search " +
-                "path (DYLD_LIBRARY_PATH, the working directory, or /usr/local/lib) and would " +
-                "validate DXIL with a foreign build. Remove that library from those paths.");
-    }
+    internal static ShaderError? CheckBoundValidator() => _foreignValidatorError;
 
     /// <summary>True for the leaf names DXC's non-Windows builds <c>dlopen</c> as their validator.</summary>
     internal static bool IsDxilLeafName(string fileName) =>
@@ -223,6 +214,18 @@ internal static class DxcLoader
         string libraryName, Assembly assembly, DllImportSearchPath? searchPath) =>
         libraryName == DxcLibraryName ? _pinnedDxcHandle : IntPtr.Zero;
 
+    /// <summary>
+    /// Android (Phase 50): the native rides in the APK's per-ABI <c>lib/&lt;abi&gt;/</c> dir and
+    /// the Android dynamic linker resolves it by SONAME — a bare-name load, NOT path probing
+    /// (Android W^X forbids loading executable code from a writable dir, and
+    /// <c>AppContext.BaseDirectory</c> is the sandboxed app-data dir, not the APK).
+    /// </summary>
+    private static IntPtr ResolveAndroid(
+        string libraryName, Assembly assembly, DllImportSearchPath? searchPath) =>
+        libraryName == DxcLibraryName && NativeLibrary.TryLoad(AndroidLibFileName, out IntPtr handle)
+            ? handle
+            : IntPtr.Zero;
+
     private static ShaderError LoadError(string message) => new(
         File: "",
         Line: 0,
@@ -231,42 +234,70 @@ internal static class DxcLoader
         Message: message);
 
     /// <summary>
-    /// Windows/Linux: finds the pinned pair, loads it by absolute path, and (Windows) verifies
-    /// that a bare-name <c>dxil.dll</c> lookup, the one DXC's <c>DllMain</c> made, returns ours.
+    /// Finds the pinned natives, loads them by absolute path, and decides
+    /// <see cref="_foreignValidatorError"/>. Windows, Linux and macOS.
     /// </summary>
-    private static ShaderError? LoadPinnedPair()
+    private static ShaderError? LoadPinned()
     {
         bool windows = OperatingSystem.IsWindows();
-        string dxcFile = windows ? "dxcompiler.dll" : "libdxcompiler.so";
-        string dxilFile = windows ? "dxil.dll" : "libdxil.so";
-        string rid = PinnedRid(windows, RuntimeInformation.ProcessArchitecture);
+        bool mac = OperatingSystem.IsMacOS();
+        Architecture architecture = RuntimeInformation.ProcessArchitecture;
+        string rid = PinnedRid(windows ? "win" : mac ? "osx" : "linux", architecture);
+        string dxcFile = windows ? "dxcompiler.dll" : mac ? MacLibFileName : "libdxcompiler.so";
+        string natives = windows ? $"dxil.dll + {dxcFile}" : dxcFile;
 
-        List<string> directories = GetPinnedPairDirectories(
-            AppContext.BaseDirectory,
-            GetNativeSearchDirectories(),
-            GetAssemblyDirectories(),
-            rid,
-            windows).ToList();
-
-        foreach (string directory in directories)
+        string? pinnedCompiler = DxcNativeIdentity.Expected(rid, DxcNativeKind.Compiler);
+        string? pinnedValidator = DxcNativeIdentity.Expected(rid, DxcNativeKind.Validator);
+        if (pinnedCompiler is null)
         {
-            string dxcPath = Path.Combine(directory, dxcFile);
-            string dxilPath = Path.Combine(directory, dxilFile);
+            return LoadError(
+                $"ShadowDusk bundles no DXC for '{rid}' (it ships the pinned DXC 1.7.2212.40 for " +
+                "win-x64, win-arm64, linux-x64, osx-x64, osx-arm64 and android-arm64), so no " +
+                "DXC-backed compile can run in this process. ShadowDusk will not use a DXC found " +
+                "elsewhere on the machine, which would be a different compiler.");
+        }
+
+        string[] searchDirectories = GetNativeSearchDirectories();
+        string[] assemblyDirectories = GetAssemblyDirectories().ToArray();
+        List<string> candidates = mac
+            ? GetMacCandidates(AppContext.BaseDirectory, searchDirectories, assemblyDirectories, architecture).ToList()
+            : GetPinnedPairDirectories(AppContext.BaseDirectory, searchDirectories, assemblyDirectories, rid, windows)
+                .Select(directory => Path.Combine(directory, dxcFile))
+                .ToList();
+
+        var rejected = new List<string>();
+        foreach (string dxcPath in candidates)
+        {
             if (!File.Exists(dxcPath)) continue;
 
-            bool hasDxil = File.Exists(dxilPath);
+            if (!DxcNativeIdentity.Matches(dxcPath, pinnedCompiler))
+            {
+                rejected.Add($"'{dxcPath}' is {DxcNativeIdentity.Describe(dxcPath)}, not the pinned {pinnedCompiler}");
+                continue;
+            }
 
-            // Windows: a dxcompiler.dll without its dxil.dll beside it would bind whatever
-            // dxil.dll the OS search finds, so a half pair is not ours to use.
-            if (windows && !hasDxil) continue;
+            // Windows: DXC binds dxil.dll by bare name while it loads, so a dxcompiler.dll
+            // without the pinned dxil.dll beside it would take whatever the OS search finds.
+            string? dxilPath = windows ? Path.Combine(Path.GetDirectoryName(dxcPath)!, "dxil.dll") : null;
+            if (dxilPath is not null)
+            {
+                if (!File.Exists(dxilPath))
+                {
+                    rejected.Add($"'{dxcPath}' has no dxil.dll beside it");
+                    continue;
+                }
+
+                if (!DxcNativeIdentity.Matches(dxilPath, pinnedValidator))
+                {
+                    rejected.Add($"'{dxilPath}' is {DxcNativeIdentity.Describe(dxilPath)}, not the pinned {pinnedValidator}");
+                    continue;
+                }
+            }
 
             try
             {
-                if (windows)
+                if (dxilPath is not null)
                     NativeLibrary.Load(dxilPath);
-                else if (hasDxil)
-                    NativeLibrary.TryLoad(dxilPath, out _); // unused by this pin's Linux DXC; loaded like Vortice does
-
                 _pinnedDxcHandle = NativeLibrary.Load(dxcPath);
             }
             catch (Exception ex) when (ex is DllNotFoundException or BadImageFormatException)
@@ -275,76 +306,99 @@ internal static class DxcLoader
                     $"ShadowDusk's pinned DXC native library at '{dxcPath}' could not be loaded: {ex.Message}");
             }
 
-            if (windows)
-                _foreignValidatorError = VerifyBoundWindowsDxil(dxilPath);
+            _foreignValidatorError =
+                dxilPath is not null ? VerifyBoundWindowsDxil(dxilPath, pinnedValidator)
+                : mac ? VerifyNoMacDxil()
+                : null;
             return null;
         }
 
-        string pair = windows ? $"{dxilFile} + {dxcFile}" : dxcFile;
+        string package = mac ? "the ShadowDusk.HLSL package" : "the Vortice.Dxc package";
+        string foreign = rejected.Count == 0
+            ? ""
+            : " Found, but not the pinned build: " + string.Join("; ", rejected) + ".";
         return LoadError(
-            $"ShadowDusk's pinned DXC native library ({pair}, from the Vortice.Dxc package's " +
+            $"ShadowDusk's pinned DXC native library ({natives}, DXC 1.7.2212.40, from {package}'s " +
             $"runtimes/{rid}/native) was not found, so no DXC-backed compile can run. ShadowDusk " +
-            "will not fall back to a DXC found on the system search path (PATH), which would be a " +
-            "different compiler. Searched: " + string.Join("; ", directories));
-    }
-
-    private static ShaderError? VerifyBoundWindowsDxil(string pinnedDxilPath)
-    {
-        string? bound = WindowsModules.GetLoadedModulePath("dxil.dll");
-        if (bound is null || SameFile(bound, pinnedDxilPath))
-            return null;
-
-        return LoadError(
-            $"A different dxil.dll ('{bound}') was loaded into this process before ShadowDusk's " +
-            $"pinned one ('{pinnedDxilPath}'). DXC binds its DXIL validator and signer to the " +
-            "dxil.dll already loaded under that name, so it would validate and sign with a " +
-            "foreign build (a newer one rejects this DXC's output outright). Compiles that need the " +
-            "validator (DirectX 12) are refused; SPIR-V targets are unaffected. Whatever loaded it " +
-            "first must not share the process with ShadowDusk's DirectX 12 compiles.");
+            "will not fall back to a different DXC, whether it sits in the application's own " +
+            "directories or on the system search path: that would be a different compiler." +
+            foreign +
+            " Searched: " + string.Join("; ", candidates.Select(Path.GetDirectoryName).Distinct()));
     }
 
     /// <summary>
-    /// True when both paths hold the same file content. Identity by content, never by path
-    /// string: <c>GetModuleFileNameW</c> reports a <c>\\?\</c>-prefixed path when the module
-    /// was loaded through one, and a byte-identical copy of the pinned file from another
-    /// directory is the same validator. Unreadable means "not provably ours".
+    /// Windows: the <c>dxil.dll</c> a bare-name lookup returns, the one DXC's <c>DllMain</c>
+    /// just bound, must be the pinned build. It is ours unless another one was loaded first.
     /// </summary>
-    internal static bool SameFile(string a, string b)
+    private static ShaderError? VerifyBoundWindowsDxil(string pinnedDxilPath, string? pinnedValidator)
     {
-        if (string.Equals(StripLongPathPrefix(a), StripLongPathPrefix(b), StringComparison.OrdinalIgnoreCase))
-            return true;
+        string? bound = WindowsModules.GetLoadedModulePath("dxil.dll");
+        if (bound is null
+            || SamePath(bound, pinnedDxilPath)
+            || DxcNativeIdentity.Matches(bound, pinnedValidator))
+        {
+            return null;
+        }
 
-        try
-        {
-            using FileStream fa = File.OpenRead(a);
-            using FileStream fb = File.OpenRead(b);
-            if (fa.Length != fb.Length) return false;
-            return System.Security.Cryptography.SHA256.HashData(fa)
-                .AsSpan().SequenceEqual(System.Security.Cryptography.SHA256.HashData(fb));
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
-        {
-            return false;
-        }
+        return LoadError(
+            $"A different dxil.dll ('{bound}', {DxcNativeIdentity.Describe(bound)}) was loaded into " +
+            $"this process before ShadowDusk's pinned one ('{pinnedDxilPath}', {pinnedValidator}). " +
+            "DXC binds its DXIL validator and signer to the dxil.dll already loaded under that " +
+            "name, so it would validate and sign with a foreign build (a newer one rejects this " +
+            "DXC's output outright). Compiles that need the validator (DirectX 12) are refused; " +
+            "SPIR-V targets are unaffected. Whatever loaded it first must not share the process " +
+            "with ShadowDusk's DirectX 12 compiles.");
     }
+
+    /// <summary>
+    /// macOS: our <c>libdxcompiler.dylib</c> has just run its one <c>dlopen("libdxil.dylib")</c>
+    /// (see the class remarks). We ship no <c>libdxil</c>, so any such image in the process is a
+    /// foreign validator DXC may have bound. Cannot enumerate images means no finding, never a
+    /// false positive.
+    /// </summary>
+    private static ShaderError? VerifyNoMacDxil()
+    {
+        string? foreign = LoadedImages.MacImagePaths()
+            .FirstOrDefault(path => IsDxilLeafName(Path.GetFileName(path)));
+        return foreign is null
+            ? null
+            : LoadError(
+                $"A DXIL validator library ('{foreign}') is loaded into this process, and " +
+                "ShadowDusk's macOS DXC ships none: DXC picked it up from the dynamic-linker search " +
+                "path (DYLD_LIBRARY_PATH, the working directory, or /usr/local/lib) and would " +
+                "validate DXIL with a foreign build. Compiles that need the validator " +
+                "(DirectX 12) are refused; SPIR-V targets are unaffected. Remove that library " +
+                "from those paths.");
+    }
+
+    /// <summary>
+    /// True when both strings name the same file path. <c>GetModuleFileNameW</c> reports a
+    /// <c>\\?\</c>-prefixed path when the module was loaded through one.
+    /// </summary>
+    internal static bool SamePath(string a, string b) =>
+        string.Equals(StripLongPathPrefix(a), StripLongPathPrefix(b), StringComparison.OrdinalIgnoreCase);
 
     private static string StripLongPathPrefix(string path) =>
         path.StartsWith(@"\\?\", StringComparison.Ordinal) ? path[4..] : path;
 
     /// <summary>
-    /// The directories probed, in order, for the pinned Windows/Linux pair. Pure (no I/O), so
-    /// the order is unit-testable. The first two mirror Vortice.Dxc's own resolver, so the
-    /// files we load are the files it would load:
+    /// The directories probed, in order, for the pinned Windows/Linux natives. Pure (no I/O),
+    /// so the order is unit-testable. The natives that ship WITH ShadowDusk come first; the
+    /// host's directories follow, for the layouts where the two are the same place:
     /// <list type="number">
-    /// <item><c>&lt;base&gt;/runtimes/&lt;rid&gt;/native</c>: an ordinary framework-dependent
-    ///   app, test host or dotnet tool.</item>
-    /// <item>the host's native search directories (<c>NATIVE_DLL_SEARCH_DIRECTORIES</c>): a
-    ///   RID-specific or self-contained publish (flattened natives), single-file extraction.</item>
-    /// <item>beside the ShadowDusk/Vortice assemblies (their <c>runtimes/&lt;rid&gt;/native</c>,
-    ///   then flat): a plugin loaded into another host, such as MGCB, whose base directory and
-    ///   search directories are the host's.</item>
-    /// <item>the base directory, flat.</item>
+    /// <item>beside the ShadowDusk.HLSL and Vortice.Dxc assemblies: their
+    ///   <c>runtimes/&lt;rid&gt;/native</c> (a framework-dependent app, test host, dotnet tool,
+    ///   or a plugin loaded into another host such as MGCB), the directory itself (a
+    ///   RID-specific or self-contained publish flattens the natives there), and, when the
+    ///   assembly was loaded straight from a NuGet package folder (<c>lib/&lt;tfm&gt;/</c>),
+    ///   that package's own <c>runtimes/&lt;rid&gt;/native</c>;</item>
+    /// <item><c>&lt;base&gt;/runtimes/&lt;rid&gt;/native</c> and the base directory;</item>
+    /// <item>the host's native search directories (<c>NATIVE_DLL_SEARCH_DIRECTORIES</c>): the
+    ///   NuGet cache for an app run without copying its natives, and the extraction directory
+    ///   of a single-file bundle (whose assemblies have no location).</item>
     /// </list>
+    /// A match by name is only a candidate: <see cref="LoadPinned"/> loads the first one that
+    /// is the pinned build.
     /// </summary>
     internal static IEnumerable<string> GetPinnedPairDirectories(
         string baseDirectory,
@@ -353,32 +407,101 @@ internal static class DxcLoader
         string rid,
         bool ignoreCase)
     {
-        var seen = new HashSet<string>(ignoreCase ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
-
         IEnumerable<string> All()
         {
-            yield return Path.Combine(baseDirectory, "runtimes", rid, "native");
-            foreach (string dir in nativeSearchDirectories)
-                yield return dir;
             foreach (string dir in assemblyDirectories)
             {
                 yield return Path.Combine(dir, "runtimes", rid, "native");
                 yield return dir;
+                if (PackageRootOf(dir) is { } package)
+                    yield return Path.Combine(package, "runtimes", rid, "native");
             }
+
+            yield return Path.Combine(baseDirectory, "runtimes", rid, "native");
             yield return baseDirectory;
+            foreach (string dir in nativeSearchDirectories)
+                yield return dir;
         }
 
-        foreach (string dir in All())
+        return Distinct(All(), ignoreCase);
+    }
+
+    /// <summary>
+    /// The ordered <c>libdxcompiler.dylib</c> paths probed on macOS. Pure (no I/O). Same shape
+    /// as <see cref="GetPinnedPairDirectories"/>, with the per-arch subdirectories the macOS
+    /// layout needs (both arches share one file name):
+    /// <list type="number">
+    /// <item>beside the ShadowDusk.HLSL and Vortice.Dxc assemblies (per-arch subdirectory, flat,
+    ///   <c>runtimes/&lt;rid&gt;/native</c>, and the NuGet package folder's own
+    ///   <c>runtimes/&lt;rid&gt;/native</c>): where a plugin host finds them;</item>
+    /// <item>the base directory and <c>tools/dxc/</c> above it (<see cref="GetProbeCandidates"/>);</item>
+    /// <item>the host's native search directories (<see cref="GetSearchDirectoryCandidates"/>).</item>
+    /// </list>
+    /// Never a bare name: that is the dynamic linker's search path, where a foreign build sits.
+    /// </summary>
+    internal static IEnumerable<string> GetMacCandidates(
+        string baseDirectory,
+        IEnumerable<string> nativeSearchDirectories,
+        IEnumerable<string> assemblyDirectories,
+        Architecture processArchitecture)
+    {
+        string rid = PinnedRid("osx", processArchitecture);
+
+        IEnumerable<string> All()
         {
-            string normalized = Path.TrimEndingDirectorySeparator(dir);
+            foreach (string dir in assemblyDirectories)
+            {
+                yield return Path.Combine(dir, rid, MacLibFileName);
+                yield return Path.Combine(dir, MacLibFileName);
+                yield return Path.Combine(dir, "runtimes", rid, "native", MacLibFileName);
+                if (PackageRootOf(dir) is { } package)
+                    yield return Path.Combine(package, "runtimes", rid, "native", MacLibFileName);
+            }
+
+            foreach (string candidate in GetProbeCandidates(baseDirectory, processArchitecture))
+                yield return candidate;
+
+            foreach (string dir in nativeSearchDirectories)
+            {
+                foreach (string candidate in GetSearchDirectoryCandidates(dir, processArchitecture))
+                    yield return candidate;
+            }
+        }
+
+        return Distinct(All(), ignoreCase: false);
+    }
+
+    /// <summary>
+    /// The package root when <paramref name="assemblyDirectory"/> is a NuGet package's
+    /// <c>lib/&lt;tfm&gt;</c> folder (the assembly was loaded from the package cache, so its
+    /// natives are in the same package's <c>runtimes/</c>), else <c>null</c>.
+    /// </summary>
+    private static string? PackageRootOf(string assemblyDirectory)
+    {
+        string? lib = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(assemblyDirectory));
+        return lib is not null && Path.GetFileName(lib).Equals("lib", StringComparison.OrdinalIgnoreCase)
+            ? Path.GetDirectoryName(lib)
+            : null;
+    }
+
+    private static IEnumerable<string> Distinct(IEnumerable<string> paths, bool ignoreCase)
+    {
+        var seen = new HashSet<string>(ignoreCase ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+        foreach (string path in paths)
+        {
+            string normalized = Path.TrimEndingDirectorySeparator(path);
             if (normalized.Length > 0 && seen.Add(normalized))
                 yield return normalized;
         }
     }
 
-    /// <summary>The Vortice.Dxc RID for the running process (<c>ProcessArchitecture</c>, never the OS's).</summary>
-    internal static string PinnedRid(bool windows, Architecture processArchitecture) =>
-        (windows ? "win-" : "linux-") + processArchitecture switch
+    /// <summary>
+    /// The RID naming the natives for the running process: <c>ProcessArchitecture</c>, never the
+    /// OS's. Under Rosetta 2 (an osx-x64 process on an arm64 Mac, which GitHub's macOS runners
+    /// do) the OS reports Arm64 while only the x64 dylib can load into the process.
+    /// </summary>
+    internal static string PinnedRid(string os, Architecture processArchitecture) =>
+        os + "-" + processArchitecture switch
         {
             Architecture.Arm64 => "arm64",
             Architecture.X86 => "x86",
@@ -426,22 +549,32 @@ internal static class DxcLoader
         private static extern uint GetModuleFileNameW(IntPtr module, [Out] char[] fileName, uint size);
     }
 
-    /// <summary>dyld image enumeration for <see cref="CheckBoundValidator"/>.</summary>
-    private static class MacDyld
+    /// <summary>
+    /// The native images mapped into this process, by path. Used by
+    /// <see cref="VerifyNoMacDxil"/>, and by the integration tests that prove which
+    /// <c>libdxcompiler</c> a compile really ran in.
+    /// </summary>
+    internal static class LoadedImages
     {
         private const string LibSystem = "/usr/lib/libSystem.dylib";
 
-        /// <summary>The path of the first loaded image whose leaf name matches, or <c>null</c>.</summary>
-        internal static string? FindLoadedImage(Func<string, bool> leafNameMatches)
+        /// <summary>
+        /// macOS: the path of every image dyld has loaded, in load order. Empty off macOS or
+        /// when dyld cannot be asked (never a guess).
+        /// </summary>
+        internal static IReadOnlyList<string> MacImagePaths()
         {
+            var paths = new List<string>();
+            if (!OperatingSystem.IsMacOS())
+                return paths;
+
             try
             {
                 uint count = _dyld_image_count();
                 for (uint i = 0; i < count; i++)
                 {
-                    string? path = Marshal.PtrToStringUTF8(_dyld_get_image_name(i));
-                    if (path is not null && leafNameMatches(Path.GetFileName(path)))
-                        return path;
+                    if (Marshal.PtrToStringUTF8(_dyld_get_image_name(i)) is { Length: > 0 } path)
+                        paths.Add(path);
                 }
             }
             catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
@@ -449,7 +582,7 @@ internal static class DxcLoader
                 // Cannot enumerate: report nothing rather than fail a compile on a guess.
             }
 
-            return null;
+            return paths;
         }
 
         [DllImport(LibSystem)]
@@ -459,56 +592,9 @@ internal static class DxcLoader
         private static extern IntPtr _dyld_get_image_name(uint imageIndex);
     }
 
-    private static IntPtr Resolve(
-        string libraryName, Assembly assembly, DllImportSearchPath? searchPath)
-    {
-        if (libraryName != DxcLibraryName) return IntPtr.Zero;
-
-        IntPtr handle;
-
-        // Android (Phase 50): the native rides in the APK's per-ABI lib/<abi>/ dir and the
-        // Android dynamic linker resolves it by SONAME — a bare-name load, NOT the desktop
-        // path-probing below (Android W^X forbids loading executable code from a writable
-        // dir, and AppContext.BaseDirectory is the sandboxed app-data dir, not the APK).
-        if (OperatingSystem.IsAndroid())
-            return NativeLibrary.TryLoad(AndroidLibFileName, out handle) ? handle : IntPtr.Zero;
-
-        // ProcessArchitecture, NOT OSArchitecture: the dylib must match the PROCESS.
-        // Under Rosetta 2 (an osx-x64 binary on an arm64 Mac — GitHub's macOS runners
-        // do exactly this) OSArchitecture reports Arm64, which made the resolver probe
-        // the arm64 dylib an x64 process can never load and miss the x64 one beside it.
-        foreach (string candidate in GetProbeCandidates(
-                     AppContext.BaseDirectory, RuntimeInformation.ProcessArchitecture))
-        {
-            if (NativeLibrary.TryLoad(candidate, out handle))
-                return handle;
-        }
-
-        // NuGet runtimes/<rid>/native asset for framework-dependent consumers (the
-        // natives live in the package cache, never the app base directory) — and the
-        // single-file extraction dir, where the csproj's per-arch Link paths survive
-        // as subdirectories (bug-hunt 2026-07-27 C3: the dylib extracts to
-        // <extractionDir>/osx-<arch>/libdxcompiler.dylib, which a flat probe never sees).
-        foreach (string dir in GetNativeSearchDirectories())
-        {
-            foreach (string candidate in GetSearchDirectoryCandidates(
-                         dir, RuntimeInformation.ProcessArchitecture))
-            {
-                if (File.Exists(candidate) && NativeLibrary.TryLoad(candidate, out handle))
-                    return handle;
-            }
-        }
-
-        // Bare name (single-file publish temp dir / OS search path).
-        if (NativeLibrary.TryLoad(MacLibFileName, out handle))
-            return handle;
-
-        return IntPtr.Zero;
-    }
-
     /// <summary>
-    /// The ordered, fully-qualified file-path candidates probed before the host's
-    /// native search directories. Pure (no I/O) so the order is unit-testable:
+    /// The ordered, fully-qualified file-path candidates probed under the base directory on
+    /// macOS. Pure (no I/O) so the order is unit-testable:
     /// base-dir per-arch subdir, base-dir flat, the publish
     /// <c>runtimes/&lt;rid&gt;/native</c> layout, then <c>tools/dxc/</c> per-arch
     /// (and flat, for a manually-placed dylib) walking up to the filesystem root.
@@ -516,7 +602,7 @@ internal static class DxcLoader
     internal static IEnumerable<string> GetProbeCandidates(
         string baseDirectory, Architecture processArchitecture)
     {
-        string rid = processArchitecture == Architecture.Arm64 ? "osx-arm64" : "osx-x64";
+        string rid = PinnedRid("osx", processArchitecture);
 
         // 1. Next to the app binaries (csproj copy links; per-arch first, then flat).
         yield return Path.Combine(baseDirectory, rid, MacLibFileName);
@@ -534,15 +620,18 @@ internal static class DxcLoader
     }
 
     /// <summary>
-    /// The candidates probed inside ONE host native-search directory: the per-arch
+    /// The candidates probed inside ONE host native-search directory on macOS: the per-arch
     /// subdirectory the csproj Link paths produce (which single-file extraction
-    /// preserves — bug-hunt 2026-07-27 C3), then flat. Pure (no I/O) so the order
-    /// is unit-testable, like <see cref="GetProbeCandidates"/>.
+    /// preserves — bug-hunt 2026-07-27 C3: the dylib extracts to
+    /// <c>&lt;extractionDir&gt;/osx-&lt;arch&gt;/libdxcompiler.dylib</c>, which a flat probe
+    /// never sees), then flat (the NuGet <c>runtimes/&lt;rid&gt;/native</c> asset of a
+    /// framework-dependent consumer). Pure (no I/O) so the order is unit-testable, like
+    /// <see cref="GetProbeCandidates"/>.
     /// </summary>
     internal static IEnumerable<string> GetSearchDirectoryCandidates(
         string directory, Architecture processArchitecture)
     {
-        string rid = processArchitecture == Architecture.Arm64 ? "osx-arm64" : "osx-x64";
+        string rid = PinnedRid("osx", processArchitecture);
         yield return Path.Combine(directory, rid, MacLibFileName);
         yield return Path.Combine(directory, MacLibFileName);
     }
