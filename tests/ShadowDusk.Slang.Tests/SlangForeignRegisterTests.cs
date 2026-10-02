@@ -530,6 +530,9 @@ public sealed class SlangForeignRegisterTests : IDisposable
     [InlineData("import", PlatformTarget.OpenGL, 2)]
     [InlineData("chain", PlatformTarget.DirectX, 2)]
     [InlineData("chain", PlatformTarget.OpenGL, 2)]
+    // A register in a fragment the ENTRY source #includes: 2 before this change, 2 now.
+    [InlineData("include", PlatformTarget.DirectX, 2)]
+    [InlineData("include", PlatformTarget.OpenGL, 2)]
     public void RegisterPass_CostsTheSameThroughRealSlangc(string shape, PlatformTarget target, int expectedRuns)
     {
         // The counts SlangRegisterPassCostTests pins with a fake slangc, here with the real one:
@@ -541,6 +544,7 @@ public sealed class SlangForeignRegisterTests : IDisposable
             "textured" => "Texture2D ModTex : register(t1);\nSamplerState S : register(s1);\n[shader(\"fragment\")]\nfloat4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target { return ModTex.Sample(S, uv); }\n",
             "combined" => "Sampler2D Comb : register(t2);\n[shader(\"fragment\")]\nfloat4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target { return Comb.Sample(uv); }\n",
             "import" => $"import \"{WriteModule("texmod.slang", "module texmod;\npublic Texture2D ModTex : register(t3);\n")}\";\n" + ModTexPixelShader,
+            "include" => $"#include \"{WriteModule("slots.hlsli", "Texture2D ModTex : register(t3);\n")}\"\n" + ModTexPixelShader,
             _ => $"import \"{WriteChain()}\";\n" + ModTexPixelShader,
         };
 

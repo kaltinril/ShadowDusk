@@ -490,6 +490,25 @@ public sealed class SlangCompiler
 
         var entryBindings = SlangcRegisterStripper.AuthorBindings.Parse(entry.Text);
 
+        // Only when the combined run above did not come back clean and the entry source was read
+        // alone: read the named files now, and only those of declarations the entry text does
+        // not decide (a fragment the entry source #includes may not preprocess on its own).
+        List<string> unreadNamed = emitted
+            .Where(r => r.File != SlangcRegisterStripper.EntrySourceFile && !r.IsCoreHoist
+                        && !reads.ContainsKey(SlangcRegisterStripper.PathKey(r.File))
+                        && !entryBindings.Binds(r) && !entryBindings.Declares(r))
+            .Select(r => r.File)
+            .DistinctBy(SlangcRegisterStripper.PathKey, StringComparer.Ordinal)
+            .ToList();
+        if (unreadNamed.Count > 0)
+        {
+            startError = PreprocessFiles(
+                includeEntry: false, unreadNamed, platformMacros, defines, slangSource, sourceName, runnableSlangc,
+                toolDirectory, cancellationToken, reads, out _);
+            if (startError is not null)
+                return Failed(startError);
+        }
+
         // Issue #292: declarations the entry source's text cannot speak for. A file's text is
         // trusted once it is proven to be a MODULE (reached through a quoted-path import or
         // __include from a trusted text, or opening with a module/implementing declaration):
@@ -614,8 +633,10 @@ public sealed class SlangCompiler
     /// <paramref name="files"/> in ONE slangc invocation, which prints one line per input in
     /// argument order (measured, v2026.14.1; an input it cannot open prints an error and no
     /// line, and <c>-E</c> still exits 0). If that run does not come back as exactly one clean
-    /// line per input, every input is run again on its own so each failure is attributed to
-    /// its file. Returns an error only when slangc could not be started.
+    /// line per input, the inputs are run again on their own so a failure is attributed to its
+    /// file: with <paramref name="includeEntry"/> only the entry source (the files stay unread,
+    /// for the caller to read the ones it still needs), otherwise each file. Returns an error
+    /// only when slangc could not be started.
     /// </summary>
     private ShaderError? PreprocessFiles(
         bool includeEntry,
@@ -665,8 +686,9 @@ public sealed class SlangCompiler
             if (startError is not null)
                 return startError;
             entry = (exitCode, stdout, stderr);
-            if (exitCode != 0)
-                return null;
+            // The files are left unread: the caller reads only those the entry text does not
+            // already speak for (an #include'd fragment need not preprocess on its own).
+            return null;
         }
 
         foreach (string file in files)

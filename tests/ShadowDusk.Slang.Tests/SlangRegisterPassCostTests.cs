@@ -147,6 +147,17 @@ public sealed class SlangRegisterPassCostTests
             (B, "module b ; __exported import \"c.slang\" ;"),
             (C, "module c ; public Sampler2D ModComb : register ( t6 ) ;")),
 
+        // The error path is bounded too. The entry source #includes a fragment that declares the
+        // texture; slangc's #line names the fragment, which cannot be preprocessed on its own
+        // (here: not openable). The combined run is then not one clean line per input, so the
+        // entry source is read alone, and its text (which -E expanded the #include into) decides
+        // everything: the fragment is not run a second time.
+        ["entry #include whose fragment does not preprocess alone"] = Make(
+            "#include \"C:/shaders/frag.hlsli\"\nSamplerState Samp;\n",
+            "#line 1 \"C:/shaders/frag.hlsli\"\nTexture2D<float4 > IncTex : register(t7);\n#line 2 \"<stdin>\"\nSamplerState Samp : register(s0);\n",
+            "Texture2D IncTex : register ( t7 ) ; SamplerState Samp ;",
+            [["-", "C:/shaders/frag.hlsli"], ["-"]]),
+
         // Two modules on one level are read in one run, and a module imported twice only once.
         ["two quoted imports on one level, one shared"] = Make(
             $"import \"{A}\";\nimport \"{B}\";\n",
@@ -199,7 +210,7 @@ public sealed class SlangRegisterPassCostTests
                 .Compile(shape.Source, new CompilerOptions { Target = PlatformTarget.DirectX, SourceFileName = "Cost.slang" })
                 .IsSuccess.ShouldBeTrue(name);
 
-            string[] inputs = slangc.PreprocessInputs.SelectMany(run => run).ToArray();
+            string[] inputs = slangc.PreprocessInputs.SelectMany(run => run).Where(input => input != "-").ToArray();
             inputs.ShouldBe(inputs.Distinct(), name);
         }
     }
