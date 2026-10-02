@@ -48,6 +48,8 @@ internal static class WasmCompilerInitialization
     {
         await WasmModuleRegistration.EnsureDxcChainRegisteredAsync(cancellationToken).ConfigureAwait(false);
         await DxcInterop.EnsureReadyAsync().ConfigureAwait(false);
+        // A no-op unless an earlier transpile trapped and the shim discarded its instance.
+        await SpirvCrossInterop.EnsureReadyAsync().ConfigureAwait(false);
         _dxcReady = true;
     }
 
@@ -65,6 +67,41 @@ internal static class WasmCompilerInitialization
         await Vkd3dInterop.EnsureReadyAsync().ConfigureAwait(false);
         _vkd3dReady = true;
     }
+
+    /// <summary>
+    /// The JS shims prefix the error they throw when a module TRAPPED (as opposed to
+    /// reporting a compiler diagnostic) with <c>"&lt;module&gt; trapped:"</c>, having already
+    /// discarded the instance (issue #271). True when <paramref name="ex"/> is such a trap.
+    /// </summary>
+    internal static bool IsTrap(JSException ex, string modulePrefix) =>
+        ex.Message.Contains(modulePrefix + " trapped:", StringComparison.Ordinal);
+
+    /// <summary>
+    /// Records that a module of the OpenGL/Vulkan chain (DXC or SPIRV-Cross) trapped and its
+    /// shim discarded the instance, so nothing calls into it before a fresh load: the next
+    /// synchronous compile reports <c>SD1903</c>, and <c>CompileAsync</c> reloads first.
+    /// </summary>
+    internal static void InvalidateDxcChain() => _dxcReady = false;
+
+    /// <summary>The vkd3d counterpart of <see cref="InvalidateDxcChain"/>.</summary>
+    internal static void InvalidateVkd3d() => _vkd3dReady = false;
+
+    /// <summary>
+    /// <c>SD1906</c>: a WASM compiler module trapped while compiling (a stack overflow on
+    /// extremely deep source, an out-of-bounds access, an abort). A runtime failure of the
+    /// module, not a compiler diagnostic: the desktop native may accept the same source. The
+    /// trap text rides verbatim in the message.
+    /// </summary>
+    internal static ShaderError TrapError(string moduleDescription, string? sourceFileName, JSException ex) =>
+        new(
+            File:    sourceFileName ?? "<source>",
+            Line:    0,
+            Column:  0,
+            Code:    "SD1906",
+            Message: $"The in-browser {moduleDescription} WebAssembly module trapped while compiling this " +
+                     $"source ({ex.Message}). This is a WebAssembly runtime failure, not a compiler " +
+                     "diagnostic: the desktop compiler may accept the same source. The module instance " +
+                     "was discarded; the next CompileAsync (or InitializeAsync) loads a fresh one.");
 
     /// <summary>
     /// The clear, diagnosable error a synchronous compile returns when its WASM module
