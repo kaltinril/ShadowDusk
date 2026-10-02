@@ -38,9 +38,28 @@ public sealed record FxParseResult
     /// <c>Texture2D T : register(t3); SamplerState S : register(s2);</c> the <c>mgfxc</c>
     /// OpenGL build puts the pair on slot 0 regardless, allocating by texture declaration
     /// order. Recording modern registers here would therefore make us DIVERGE.</para>
+    ///
+    /// <para><b>This is the reading of whatever text the parser was given</b>, which for a compile
+    /// is the raw source: a register that only exists in an inactive <c>#if</c> branch is counted
+    /// and one spelled through a macro is missed (issue #299). The OpenGL target and the raylib
+    /// converter therefore take this map from
+    /// <see cref="FxPreParser.CollectGlSamplerSlots(string, string, FxParseResult)"/>, which
+    /// reads it off the preprocessed view the way <c>mgfxc</c> does.</para>
     /// </summary>
     public IReadOnlyDictionary<string, int> ExplicitGlSamplerSlots { get; init; } =
         new Dictionary<string, int>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// SAMPLER name -> the texture the SM4 rewrite made it sample through (the one its
+    /// <c>sampler_state</c> block references, or the synthesized <c>X_SDTexture</c>). Only
+    /// samplers a legacy intrinsic (<c>tex2D</c> …) reads have an entry. This is the join
+    /// <see cref="FxPreParser.CollectGlSamplerSlots(string, string, FxParseResult)"/> needs to turn
+    /// a sampler's preprocessed <c>register(sN)</c> into the texture-keyed map the OpenGL sampler
+    /// table joins on: it has to be the REAL rewrite's binding, because that is the texture name
+    /// the compiled SPIR-V carries.
+    /// </summary>
+    internal IReadOnlyDictionary<string, string> LegacySamplerTextures { get; init; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
 
     /// <summary>
     /// OpenGL sampler registers that an explicit <c>register(sN)</c> on a MODERN

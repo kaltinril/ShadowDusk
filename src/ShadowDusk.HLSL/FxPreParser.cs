@@ -978,6 +978,7 @@ public sealed class FxPreParser
             Samplers = samplers,
             ParameterAnnotations = paramAnnotations,
             ExplicitGlSamplerSlots = explicitGlSlots,
+            LegacySamplerTextures = new Dictionary<string, string>(_samplerTextureBindings, StringComparer.Ordinal),
             ReservedGlSamplerSlots = CollectReservedSamplerRegisters(),
         });
     }
@@ -1760,12 +1761,142 @@ public sealed class FxPreParser
     public static Result<IReadOnlySet<int>, ShaderError> CollectReservedGlSamplerSlots(
         string flattenedSource, string sourceFile)
     {
+        var tokens = PreprocessedViewTokens(flattenedSource, sourceFile);
+        if (tokens.IsFailure)
+            return Result<IReadOnlySet<int>, ShaderError>.Fail(tokens.Error);
+
+        return Result<IReadOnlySet<int>, ShaderError>.Ok(CollectReservedSamplerRegisters(tokens.Value));
+    }
+
+    /// <summary>
+    /// Both halves of the OpenGL sampler-register decision, read off ONE preprocessed view of the
+    /// source, the way <c>mgfxc</c> reads them (issues #283 and #299):
+    /// <list type="bullet">
+    ///   <item><description><see cref="GlSamplerSlots.Reserved"/>: the registers modern
+    ///   <c>SamplerState X : register(sN)</c> declarations take out of circulation, exactly what
+    ///   <see cref="CollectReservedGlSamplerSlots"/> returns.</description></item>
+    ///   <item><description><see cref="GlSamplerSlots.Explicit"/>: texture name -> the register an
+    ///   explicit <c>register(sN)</c> on its LEGACY sampler declaration pins it to, the
+    ///   preprocessed counterpart of <see cref="FxParseResult.ExplicitGlSamplerSlots"/>.</description></item>
+    /// </list>
+    ///
+    /// <para><b>Why the explicit map needs the preprocessed view too (issue #299).</b> The
+    /// pre-parser records a legacy sampler's register from the raw tokens, so it sees both arms
+    /// of an <c>#if</c> and no macro expansion. Measured against the pinned <c>mgfxc</c> 3.8.4.1
+    /// <c>/Profile:OpenGL</c>: <c>#if OPENGL</c> / <c>sampler S = sampler_state { … };</c> /
+    /// <c>#else</c> / <c>sampler S : register(s1) = sampler_state { … };</c> is <c>ps_s0</c>
+    /// (the raw reading said <c>ps_s1</c>, off <c>SpriteBatch</c>'s unit 0), and
+    /// <c>#define REG s1</c> / <c>sampler S : register(REG);</c> is <c>ps_s1</c> (the raw reading
+    /// missed it: <c>ps_s0</c>).</para>
+    ///
+    /// <para><b>Which declarations count</b> is unchanged from the raw reading, only the text is
+    /// different: a sampler-type keyword, the name, then the exact <c>register ( sN )</c> clause;
+    /// and only a sampler the SM4 rewrite bound to a texture (one a legacy intrinsic such as
+    /// <c>tex2D</c> reads) gets an entry. The sampler-to-texture join comes from
+    /// <paramref name="parsed"/>, the parse of the source that is actually compiled, because that
+    /// is the texture name the SPIR-V carries.</para>
+    /// </summary>
+    /// <param name="flattenedSource">
+    /// The RAW effect source with <c>#include</c>s inlined and the compile's macros prepended as
+    /// <c>#define</c> lines (the output of <c>ShadowDusk.Core.Preprocessor.Preprocessor.Flatten</c>).
+    /// </param>
+    /// <param name="sourceFile">Display name used in diagnostics.</param>
+    /// <param name="parsed">The pre-parse of the same effect that feeds the compile.</param>
+    /// <returns>
+    /// Both maps, or an <c>SD0009</c> error when the preprocessed view cannot be built.
+    /// </returns>
+    public static Result<GlSamplerSlots, ShaderError> CollectGlSamplerSlots(
+        string flattenedSource, string sourceFile, FxParseResult parsed)
+    {
+        ArgumentNullException.ThrowIfNull(parsed);
+
+        var tokens = PreprocessedViewTokens(flattenedSource, sourceFile);
+        if (tokens.IsFailure)
+            return Result<GlSamplerSlots, ShaderError>.Fail(tokens.Error);
+
+        // Re-key SAMPLER name -> register onto TEXTURE name, exactly as the raw parse does for
+        // FxParseResult.ExplicitGlSamplerSlots: a sampler with no texture binding is dropped
+        // rather than guessed, and the allocator falls back to declaration order for it.
+        var explicitSlots = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach ((string samplerName, int slot) in CollectLegacySamplerRegisters(tokens.Value))
+        {
+            if (parsed.LegacySamplerTextures.TryGetValue(samplerName, out string? textureName))
+                explicitSlots[textureName] = slot;
+        }
+
+        return Result<GlSamplerSlots, ShaderError>.Ok(
+            new GlSamplerSlots(explicitSlots, CollectReservedSamplerRegisters(tokens.Value)));
+    }
+
+    /// <summary>
+    /// The preprocessed view of <paramref name="flattenedSource"/> (conditionals evaluated,
+    /// macros expanded), tokenized. Shared by every OpenGL sampler-register reading so they are
+    /// all decided on the same text.
+    /// </summary>
+    private static Result<IReadOnlyList<Token>, ShaderError> PreprocessedViewTokens(
+        string flattenedSource, string sourceFile)
+    {
         var view = Preprocessing.FxMacroPreprocessor.Process(flattenedSource, sourceFile);
         if (view.IsFailure)
-            return Result<IReadOnlySet<int>, ShaderError>.Fail(view.Error);
+            return Result<IReadOnlyList<Token>, ShaderError>.Fail(view.Error);
 
-        IReadOnlyList<Token> tokens = new FxLexer(view.Value, sourceFile).Tokenize();
-        return Result<IReadOnlySet<int>, ShaderError>.Ok(CollectReservedSamplerRegisters(tokens));
+        return Result<IReadOnlyList<Token>, ShaderError>.Ok(new FxLexer(view.Value, sourceFile).Tokenize());
+    }
+
+    /// <summary>
+    /// Read-only scan for <c>&lt;sampler type&gt; &lt;name&gt; : register(sN)</c>, returning
+    /// name -> N (a later declaration of the same name wins, as it does in
+    /// the main parse). It matches the same shape the main loop records into
+    /// <see cref="_explicitSamplerRegisters"/>: any <see cref="SamplerTypeKeywords"/> keyword,
+    /// the name, then the exact <c>register ( sN )</c> clause that
+    /// <see cref="TryReadSamplerRegister"/> accepts (the lexer has already dropped the ':').
+    /// Whether the declaration then carries <c>= sampler_state { … }</c>, a brace block or just
+    /// <c>;</c> does not matter to the register.
+    ///
+    /// <para>Like <see cref="CollectReservedSamplerRegisters(IReadOnlyList{Token})"/> it is a
+    /// separate pass so it cannot perturb the rewrite: a shape it does not recognise costs an
+    /// allocation difference, never a parse.</para>
+    /// </summary>
+    private static Dictionary<string, int> CollectLegacySamplerRegisters(IReadOnlyList<Token> tokens)
+    {
+        var registers = new Dictionary<string, int>(StringComparer.Ordinal);
+
+        var code = new List<Token>(tokens.Count);
+        foreach (Token t in tokens)
+        {
+            if (t.Kind is not (TokenKind.LineComment or TokenKind.BlockComment or TokenKind.Preprocessor))
+                code.Add(t);
+        }
+
+        for (int i = 0; i + 5 < code.Count; i++)
+        {
+            if (code[i].Kind != TokenKind.Identifier || !SamplerTypeKeywords.Contains(code[i].Text))
+                continue;
+            if (code[i + 1].Kind != TokenKind.Identifier) continue;
+            if (code[i + 2].Kind != TokenKind.Identifier ||
+                !string.Equals(code[i + 2].Text, "register", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+            if (code[i + 3].Kind != TokenKind.LParen) continue;
+
+            Token slotTok = code[i + 4];
+            if (slotTok.Kind != TokenKind.Identifier ||
+                slotTok.Text.Length < 2 ||
+                (slotTok.Text[0] != 's' && slotTok.Text[0] != 'S') ||
+                !int.TryParse(slotTok.Text.AsSpan(1), System.Globalization.NumberStyles.None,
+                              System.Globalization.CultureInfo.InvariantCulture, out int slot))
+            {
+                continue;
+            }
+            if (code[i + 5].Kind != TokenKind.RParen) continue;
+
+            // The same single-byte bound TryReadSamplerRegister applies.
+            if (slot is >= 0 and <= 255)
+                registers[code[i + 1].Text] = slot;
+        }
+
+        return registers;
     }
 
     private static HashSet<int> CollectReservedSamplerRegisters(IReadOnlyList<Token> tokens)
