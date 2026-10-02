@@ -35,7 +35,7 @@ Residual, not fixable by `STACK_SIZE`: wasm frames also live on the JS engine's 
 stack (about 1 MB in V8), so far deeper source ends in `RangeError: Maximum call stack size
 exceeded`. With the 8 MB stack that is now the first limit hit: SPIRV-Cross on an 800-branch
 else-if chain (the desktop transpiles it), DXC at a 5000-term add chain (the desktop process
-itself crashes at 3200, issue #306), vkd3d at a 6400-deep call chain. The shims discard the
+itself crashed at 3200 before issue #306 moved the native calls onto a 64 MB-stack worker), vkd3d at a 6400-deep call chain. The shims discard the
 trapped instance and `WasmShaderCompiler` reports `SD1907`.
 
 ## How it was measured (2026-10-02, Windows x64, node 22)
@@ -65,11 +65,11 @@ byte-for-byte). "n/a" = the desktop itself refuses that depth, so there is nothi
 
 | Shape | Desktop (Windows) | DXC 64 KB | DXC 8 MB | SPIRV-Cross 64 KB | SPIRV-Cross 8 MB | vkd3d 64 KB | vkd3d 8 MB |
 |---|---|---|---|---|---|---|---|
-| `add` | ok to 1600; **process crash** at 3200 (#306); vkd3d ok to 3200 | **hang** at 100, trap from 200 | ok | ok | ok | ok | ok |
+| `add` | ok to 1600; **process crash** at 3200 (#306, since fixed: 94,400 ok on the worker); vkd3d ok to 3200 | **hang** at 100, trap from 200 | ok | ok | ok | ok | ok |
 | `parens` | ok to 200; DXC refuses > 256 (`-fbracket-depth`); vkd3d ok to 3200 | trap from 25 | ok | ok | ok | ok | ok |
 | `ternary` | as `parens` | trap from 25 | ok | ok | ok | ok | ok |
 | `ifnest` | ok to 200; DXC refuses > 256; vkd3d ok to 800, `E5000 memory exhausted` from 1600 | trap from 75 | ok | **corrupts from ~11-15** (10 ok) | ok | trap from 200 | ok |
-| `elseif` | ok to 800; DXC SPIR-V nesting error at 1600; process crash at 3200 (#306); vkd3d ok to 800 | **wrong diagnostic** (`IDxcCompiler3::Compile failed`) from 200 | ok | **corrupts from ~11-15** | ok to 400; JS `RangeError` at 800 | trap from 75 (100 passed by luck) | ok |
+| `elseif` | ok to 800; DXC SPIR-V nesting error at 1600; process crash at 3200 (#306, since fixed); vkd3d ok to 800 | **wrong diagnostic** (`IDxcCompiler3::Compile failed`) from 200 | ok | **corrupts from ~11-15** | ok to 400; JS `RangeError` at 800 | trap from 75 (100 passed by luck) | ok |
 | `calls` | ok to 3200 | ok | ok | ok | ok | trap from 1600 | ok to 3200; JS `RangeError` from 6400 |
 
 The SPIRV-Cross row is the one that mattered most: a dozen nested `if`s or `else if`s is an
