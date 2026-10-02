@@ -100,6 +100,8 @@ ShadowDusk/
 │   │                              #   tools/verify-vortice-dxc-conflict.sh (run by pack-consume.yml) COPIES out of
 │   │                              #   tree and builds against Vortice.Dxc 3.8.3, then 3.3.4, then none (issue #282:
 │   │                              #   build warning SD0220 + runtime SD0219). Never built in place.
+│   ├── check-lock-files.sh        # Locked-mode restore of EVERY tracked *packages*.lock.json, out-of-solution
+│   │                              #   projects included (CI job `Lock files`, issue #291).
 │   ├── contentbuilder-consumer/   # The scratch MonoGame 3.8.5 Content Builder (Program.cs + csproj) that
 │   │                              #   pack-consume.yml and tools/verify-contentpipeline-packaging.ps1 COPY out of
 │   │                              #   tree to consume the packed ShadowDusk.ContentPipeline cold (Phase 63).
