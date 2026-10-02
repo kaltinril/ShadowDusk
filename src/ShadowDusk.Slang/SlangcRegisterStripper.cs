@@ -53,7 +53,12 @@ namespace ShadowDusk.Slang;
 /// alone cannot tell. slangc names the file each declaration came from in its <c>#line</c>
 /// directives; <see cref="SlangCompiler"/> runs the same <c>-E</c> pass over that file (same
 /// macros, which slangc applies to imported modules too, measured) and judges the declaration
-/// from its text. A declaration neither pass decides fails as <c>SD0628</c>, never a guess.</item>
+/// from its text, but only once the file is known to be a MODULE: reached through a
+/// quoted-path import, or opening with a <c>module</c>/<c>implementing</c> declaration.
+/// Macros do not cross an <c>import</c> or an <c>__include</c> (measured), so a module's own
+/// <c>-E</c> output is what slangc compiled; an <c>#include</c>d fragment's is not (its
+/// includer's macros decide), so a fragment is read through the module that includes it.
+/// A declaration no trusted text decides fails as <c>SD0628</c>, never a guess.</item>
 /// </list>
 /// </remarks>
 internal static class SlangcRegisterStripper
