@@ -55,6 +55,16 @@ These phases are fully implemented. Their documents have been moved to `DONE/` w
 
 ---
 
+## Open follow-ups outside the phase docs (start here)
+
+Work found by the 2026-10-01 issue batch and its validation lives in GitHub issues, not phase docs. Query them with `gh issue list --label ready-to-validate`, `--label blocked-on-merge`, and the plain open list.
+
+- **First, if still open: merge PR #278** (Slang register-strip and FNA respeller fixes, plus the two lock files PR #279 missed). Until it merges, Browser render smoke and the FNA gate are red on main (issue #291). Merge only on a fully green check list, with `run-browser` applied.
+- **Owner verification:** issues labelled `ready-to-validate` are fixed and merged and wait for the owner's partner to verify before closing (#215 needs Intel hardware). `blocked-on-merge` ones depend on #278.
+- **Open defects:** #292 (Slang author registers in imported modules and combined Sampler2D, introduced by #263), #283 (.fx GL sampler-register reservation ignores the preprocessor), #280 (path in CLI .xnb output and /config:Debug), #271 (64 KB wasm stack in DXC/SPIRV-Cross/vkd3d modules), #272 (browser DX12 unregistered error), #273 (browser publish carries desktop natives), #282 (Vortice.Dxc version conflicts: build-time warning, own the DXC binaries), #289 (untested Android/other-OS loader paths), #290 (release lock-file glob misses suffixed names).
+- **Owner decisions pending:** #284 and #285 (verified upstream DXC and vkd3d reports, full text in the issues), #286 (win-arm64 slangc), #287 (DXC pin age), #288 (code-scanning AI check misconfigured).
+- **Remaining phase work:** #257's 11th package and Android route (Phase 67 doc); #237, #253, #254 are owned by Vic on his branches.
+
 ## Active & Planned Phases
 
 *(Status per each phase doc's own header. "In progress" = currently being worked; "Planned" = written but not started.)*
