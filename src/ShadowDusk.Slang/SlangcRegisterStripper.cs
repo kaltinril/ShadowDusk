@@ -183,15 +183,11 @@ internal static class SlangcRegisterStripper
             return RegisterVerdict.Strip;
         if (otherFiles is null)
             return RegisterVerdict.Unproven;
-        bool binds = otherFiles.Binds(resource);
-        bool declares = otherFiles.Declares(resource);
         // Bound in one file and plainly declared in another: the two readings disagree, and
         // which one slangc compiled cannot be told from here.
-        if (binds && declares)
-            return RegisterVerdict.Unproven;
-        if (binds)
-            return RegisterVerdict.Keep;
-        return declares ? RegisterVerdict.Strip : RegisterVerdict.Unproven;
+        if (otherFiles.Binds(resource))
+            return otherFiles.DeclaresPlainly(resource) ? RegisterVerdict.Unproven : RegisterVerdict.Keep;
+        return otherFiles.Declares(resource) ? RegisterVerdict.Strip : RegisterVerdict.Unproven;
     }
 
     /// <summary>
@@ -226,7 +222,48 @@ internal static class SlangcRegisterStripper
     {
         /// <summary>The name the author wrote: the base of a split combined sampler, else <see cref="Name"/>.</summary>
         public string AuthorName => SplitAuthorName(this)?.Name ?? Name;
+
+        /// <summary>
+        /// One half of slangc's split of a combined <c>SamplerXD</c>. Its <see cref="File"/> is
+        /// slangc's own core module (<c>"core"</c>, <c>"hlsl.meta.slang"</c>, measured), never
+        /// the author's file.
+        /// </summary>
+        public bool IsSplitHalf => SplitAuthorName(this) is not null;
     }
+
+    // 'import "path" ;', '__exported import "path" ;' or '__include "path" ;' in a preprocessed
+    // token stream. Read from the unmasked text: the mask blanks string contents.
+    private static readonly Regex QuotedImport = new(
+        """\b(?:import|__include)\s+"(?<path>[^"\r\n]+)"\s*;""",
+        RegexOptions.Compiled);
+
+    /// <summary>
+    /// The files <paramref name="preprocessed"/> imports or <c>__include</c>s by quoted path,
+    /// resolved the way slangc resolves a relative one: against the importing file's directory
+    /// (<paramref name="importingFile"/>), or as written for the entry source (slangc then
+    /// resolves it from its working directory, which the <c>-E</c> pass shares). Rootedness is
+    /// decided by spelling, not by the host, so every host resolves the same text the same way.
+    /// An import by module name (<c>import foo.bar;</c>) is not followed: slangc's search for
+    /// it is not modelled, and a declaration only it could explain fails as <c>SD0628</c>.
+    /// </summary>
+    public static IEnumerable<string> QuotedImports(string preprocessed, string? importingFile)
+    {
+        foreach (Match m in QuotedImport.Matches(preprocessed))
+        {
+            string path = m.Groups["path"].Value;
+            if (importingFile is null || IsRooted(path))
+            {
+                yield return path;
+                continue;
+            }
+            int slash = Math.Max(importingFile.LastIndexOf('/'), importingFile.LastIndexOf('\\'));
+            yield return slash < 0 ? path : importingFile[..(slash + 1)] + path;
+        }
+    }
+
+    private static bool IsRooted(string path) =>
+        path.StartsWith('/') || path.StartsWith('\\')
+        || (path.Length >= 3 && char.IsAsciiLetter(path[0]) && path[1] == ':' && (path[2] == '/' || path[2] == '\\'));
 
     /// <summary>The verdict on one emitted register.</summary>
     public enum RegisterVerdict
@@ -318,7 +355,12 @@ internal static class SlangcRegisterStripper
         /// it: plainly, or (for one half of a combined sampler) with a register of the other class.
         /// </summary>
         public bool Declares(EmittedResource resource) =>
+            DeclaresPlainly(resource)
+            || (SplitAuthorName(resource) is { } s && _bound.ContainsKey(s.Name));
+
+        /// <summary>The author declared this emitted declaration's resource here with no register at all.</summary>
+        public bool DeclaresPlainly(EmittedResource resource) =>
             _plain.Contains(resource.Name)
-            || (SplitAuthorName(resource) is { } s && (_plain.Contains(s.Name) || _bound.ContainsKey(s.Name)));
+            || (SplitAuthorName(resource) is { } s && _plain.Contains(s.Name));
     }
 }
