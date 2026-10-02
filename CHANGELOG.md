@@ -291,19 +291,29 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   `__include`, so a register declared in an imported module was invisible to the pass (and an
   import-only source skipped it). slangc auto-numbers an imported resource that has no author
   register (measured), so "keep every register from another file" is no fix either. Each
-  declaration from another file is now judged from that file's own `-E` pass with the compile's
-  macros (slangc applies `-D` to imported modules too, measured): the file slangc's `#line` names,
-  plus every file imported or `__include`d by quoted path, transitively (a combined sampler's halves
-  carry slangc's core-module `#line`, so those are found through the import). A declaration no pass
-  can decide (a module reached only by module name, `import foo;`; a register spelled through a
-  macro no read file defines; two files that disagree; or a file the pass cannot open) now fails as
+  declaration from another file is now judged from slangc's own `-E` output for the MODULE it is
+  in, with the compile's macros (slangc applies `-D` to imported modules too, and a module's
+  macros do not cross an `import`, both measured): a file counts as a module when it is reached
+  through quoted-path imports or opens with a `module`/`implementing` declaration. An `#include`d
+  fragment is read through the module that includes it, never on its own (its includer's macros
+  decide what slangc compiled), and a combined sampler's halves, whose `#line` is slangc's core
+  module, are found through the imports. A declaration no trusted text decides (a file reached
+  only by module name, `import foo;`, that has no `module` declaration; a register spelled through
+  a macro no module defines; modules that disagree; a file the pass cannot open) now fails as
   the new `SD0628`, naming the declaration and its file and line, instead of being guessed. Same code
   on both transports through the shared seam (the browser's slangc has no file system, so there an
   import already fails the compile with slangc's own `E00001`); the node gate gains the
-  combined-`Sampler2D` shape and the missing-file `-E` shape. Found on the way and fixed the same
+  combined-`Sampler2D` shape and the missing-file `-E` shapes. Found on the way and fixed the same
   way: slangc hoists a struct global's resource fields too (`M gM : register(t5)` emits
-  `gM_t_0 : register(t5)`), and that register was also stripped. A shader with no texture/sampler
-  register in slangc's output now skips the `-E` pass entirely. No corpus byte moves.
+  `gM_t_0 : register(t5)`), and that register was also stripped. No corpus byte moves.
+  **Cost, measured and pinned** (win-x64, Release, median of 9; one slangc spawn is about 150 ms):
+  no shape that compiled correctly before pays an extra slangc run (untextured 1 run, registers in
+  the entry file 2, combined `Sampler2D` 2, all as before), and a shader with no texture/sampler
+  register in slangc's output now skips the `-E` pass even when it writes `register(b0)`. An entry
+  that imports modules with registered resources goes from 1 run to 2 (about 165 ms to 310 ms for
+  one import or a chain of three): the entry source and every file slangc names are preprocessed
+  in ONE `slangc -E` invocation. `SlangRegisterPassCostTests` pins the run count per shape on both
+  transports, and a real-slangc test pins the same counts.
 - **A Vortice.Dxc other than 3.3.4 in the process is now `SD0219` on every OS, before any native
   is touched (issue #282).** Measured: Vortice.Dxc 3.8.3 is not only a different DXC (1.9.2602.17)
   but a binary-incompatible managed API; with the pinned natives put back in place every DXC call
@@ -371,7 +381,7 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   `register` at all, so a shader that writes none pays nothing. A pass that exits 0 with empty output, or
   output missing an entry point the compile found, now fails as `SD0629` instead of silently stripping every
   author register. (A register in an `import`ed module or on a combined `Sampler2D` was still stripped;
-  fixed by issue #292, the entry below.) `mgfxc` 3.8.4.1 was measured on the
+  fixed by issue #292, the entry above.) `mgfxc` 3.8.4.1 was measured on the
   same two shapes in a `.fx` file and agrees with the preprocessed reading (`ps_s0`; `ps_s2`+`ps_s3`).
   No corpus byte moves: `slang-manifest.json` is unchanged and the native-vs-WebAssembly identity
   stays 235/235. `validation/SlangTexturedGl` gains an `Invert#if` row that renders the

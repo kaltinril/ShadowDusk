@@ -178,12 +178,16 @@ public sealed class SlangcRegisterStripperTests
     private static SlangcRegisterStripper.EmittedResource Emitted(string name, char cls, string file = "<stdin>") =>
         new(name, cls, file, 1);
 
+    private static Dictionary<string, SlangcRegisterStripper.AuthorBindings> Modules(params (string File, string Text)[] modules) =>
+        modules.ToDictionary(
+            m => SlangcRegisterStripper.PathKey(m.File),
+            m => SlangcRegisterStripper.AuthorBindings.Parse(m.Text));
+
+    // Every reachable module read: the final verdict.
     private static SlangcRegisterStripper.RegisterVerdict Judge(
-        SlangcRegisterStripper.EmittedResource resource, string entry, string? otherFiles = null) =>
+        SlangcRegisterStripper.EmittedResource resource, string entry, params (string File, string Text)[] modules) =>
         SlangcRegisterStripper.Judge(
-            resource,
-            SlangcRegisterStripper.AuthorBindings.Parse(entry),
-            otherFiles is null ? null : SlangcRegisterStripper.AuthorBindings.Parse(otherFiles));
+            resource, SlangcRegisterStripper.AuthorBindings.Parse(entry), Modules(modules), closureComplete: true);
 
     [Theory]
     // 'Sampler2D Comb : register(t2)': slangc keeps t2 on the texture half and numbers the sampler.
@@ -226,22 +230,97 @@ public sealed class SlangcRegisterStripperTests
             .ShouldBe(SlangcRegisterStripper.RegisterVerdict.Keep);
 
     [Fact]
-    public void Judge_DeclarationFromAnotherFile_IsUnprovenUntilThatFileIsRead()
+    public void Judge_DeclarationLocatedInAModule_IsDecidedByThatModulesOwnText()
     {
-        const string entry = "import \"m.slang\" ; SamplerState S ;";
-        var modTex = Emitted("ModTex", 't', "m.slang");
+        const string entry = "import \"C:/a/m.slang\" ; SamplerState S ;";
+        const string file = "C:/a/m.slang";
+        var modTex = Emitted("ModTex", 't', file);
 
         Judge(modTex, entry).ShouldBe(SlangcRegisterStripper.RegisterVerdict.Unproven);
-        Judge(modTex, entry, "module m ; public Texture2D ModTex : register ( t3 ) ;").ShouldBe(SlangcRegisterStripper.RegisterVerdict.Keep);
-        Judge(modTex, entry, "module m ; public Texture2D ModTex ;").ShouldBe(SlangcRegisterStripper.RegisterVerdict.Strip);
+        Judge(modTex, entry, (file, "module m ; public Texture2D ModTex : register ( t3 ) ;")).ShouldBe(SlangcRegisterStripper.RegisterVerdict.Keep);
+        Judge(modTex, entry, (file, "module m ; public Texture2D ModTex ;")).ShouldBe(SlangcRegisterStripper.RegisterVerdict.Strip);
         // A register through a macro this file does not define: neither reading.
-        Judge(modTex, entry, "module m ; public Texture2D ModTex : MSLOT ;").ShouldBe(SlangcRegisterStripper.RegisterVerdict.Unproven);
+        Judge(modTex, entry, (file, "module m ; public Texture2D ModTex : MSLOT ;")).ShouldBe(SlangcRegisterStripper.RegisterVerdict.Unproven);
         // Only a local of that name: not a global declaration.
-        Judge(modTex, entry, "module m ; void f ( ) { Texture2D ModTex ; }").ShouldBe(SlangcRegisterStripper.RegisterVerdict.Unproven);
-        // Two files disagree.
-        Judge(modTex, entry, "public Texture2D ModTex : register ( t3 ) ; public Texture2D ModTex ;")
+        Judge(modTex, entry, (file, "module m ; void f ( ) { Texture2D ModTex ; }")).ShouldBe(SlangcRegisterStripper.RegisterVerdict.Unproven);
+        // The same text says both.
+        Judge(modTex, entry, (file, "public Texture2D ModTex : register ( t3 ) ; public Texture2D ModTex ;"))
             .ShouldBe(SlangcRegisterStripper.RegisterVerdict.Unproven);
+        // slangc located it in THIS module, so what another module says about the name is not asked.
+        Judge(modTex, entry, (file, "module m ; public Texture2D ModTex : register ( t3 ) ;"), ("C:/a/other.slang", "Texture2D ModTex ;"))
+            .ShouldBe(SlangcRegisterStripper.RegisterVerdict.Keep);
+        // The #line spelling and the import spelling of one file are one file.
+        Judge(Emitted("ModTex", 't', "C://a//m.slang"), entry, ("C:\\a\\m.slang", "module m ; public Texture2D ModTex : register ( t3 ) ;"))
+            .ShouldBe(SlangcRegisterStripper.RegisterVerdict.Keep);
     }
+
+    [Fact]
+    public void Judge_DeclarationNotLocatedInAModule_NeedsEveryModule_AndTheirAgreement()
+    {
+        // Located in a file that is not a known module (a fragment some module #includes), or
+        // hoisted (located in slangc's core module): the modules together decide.
+        var entry = SlangcRegisterStripper.AuthorBindings.Parse("import \"C:/a/m.slang\" ; SamplerState S ;");
+        var inFragment = Emitted("ModTex", 't', "C:/a/frag.hlsli");
+        var hoisted = Emitted("Comb_texture_0", 't', "core");
+        var bound = Modules(("C:/a/m.slang", "module m ; public Texture2D ModTex : register ( t3 ) ; public Sampler2D Comb : register ( t2 ) ;"));
+        var plain = Modules(("C:/a/m.slang", "module m ; public Texture2D ModTex ; public Sampler2D Comb ;"));
+        var both = Modules(
+            ("C:/a/m.slang", "module m ; public Texture2D ModTex : register ( t3 ) ; public Sampler2D Comb : register ( t2 ) ;"),
+            ("C:/a/n.slang", "module n ; Texture2D ModTex ; Sampler2D Comb ;"));
+
+        foreach (var resource in new[] { inFragment, hoisted })
+        {
+            // Not before every reachable module is read: an unread one could disagree.
+            SlangcRegisterStripper.Judge(resource, entry, bound, closureComplete: false)
+                .ShouldBe(SlangcRegisterStripper.RegisterVerdict.Pending);
+            SlangcRegisterStripper.Judge(resource, entry, bound, closureComplete: true)
+                .ShouldBe(SlangcRegisterStripper.RegisterVerdict.Keep);
+            SlangcRegisterStripper.Judge(resource, entry, plain, closureComplete: true)
+                .ShouldBe(SlangcRegisterStripper.RegisterVerdict.Strip);
+            SlangcRegisterStripper.Judge(resource, entry, both, closureComplete: true)
+                .ShouldBe(SlangcRegisterStripper.RegisterVerdict.Unproven);
+            // An import that could not be read: "the modules read agree" proves nothing.
+            SlangcRegisterStripper.Judge(resource, entry, bound, closureComplete: true, closureBroken: true)
+                .ShouldBe(SlangcRegisterStripper.RegisterVerdict.Unproven);
+        }
+    }
+
+    [Fact]
+    public void Judge_DeclarationLocatedInAModule_IsDecidedBeforeTheClosureIsComplete() =>
+        SlangcRegisterStripper.Judge(
+                Emitted("ModTex", 't', "C:/a/m.slang"),
+                SlangcRegisterStripper.AuthorBindings.Parse("import \"C:/a/m.slang\" ;"),
+                Modules(("C:/a/m.slang", "module m ; public Texture2D ModTex : register ( t3 ) ;")),
+                closureComplete: false)
+            .ShouldBe(SlangcRegisterStripper.RegisterVerdict.Keep);
+
+    [Theory]
+    [InlineData("module m ; public Texture2D T ;", true)]
+    [InlineData("  implementing host ; Texture2D T ;", true)]
+    [InlineData("public Texture2D T ;", false)]
+    [InlineData("Texture2D module ;", false)]
+    [InlineData("modules m ;", false)]
+    [InlineData("", false)]
+    public void OpensAsModule_OnlyForAModuleOrImplementingDeclarationAtTheTop(string preprocessed, bool expected) =>
+        SlangcRegisterStripper.OpensAsModule(preprocessed).ShouldBe(expected);
+
+    [Theory]
+    [InlineData("Texture2D T;\nSamplerState S;\n", null, null, false)]
+    [InlineData("import \"m.slang\";\nSamplerState S;\n", null, null, true)]
+    [InlineData("__exported import m;\n", null, null, true)]
+    [InlineData("MODS\nSamplerState S;\n", "MODS", "import \"m.slang\";", true)]
+    [InlineData("MODS\nSamplerState S;\n", "MODS", "1", false)]
+    public void MayImport_ReadsTheSourceAndTheDefines(string source, string? name, string? value, bool expected) =>
+        SlangcRegisterStripper.MayImport(source, name is null ? [] : [new UserDefine(name, value!)]).ShouldBe(expected);
+
+    [Theory]
+    [InlineData("C:/a/m.slang", "C:/a/m.slang")]
+    [InlineData("C:\\a\\m.slang", "C:/a/m.slang")]
+    // slangc's #line for an import written with backslashes (measured).
+    [InlineData("C://a//m.slang", "C:/a/m.slang")]
+    [InlineData("rel/m.slang", "rel/m.slang")]
+    public void PathKey_GivesOneSpellingPerFile(string path, string expected) =>
+        SlangcRegisterStripper.PathKey(path).ShouldBe(expected);
 
     [Fact]
     public void Judge_DeclarationFromAFileTheEntryIncludes_IsDecidedByTheEntryText()
@@ -300,7 +379,8 @@ public sealed class SlangcRegisterStripperTests
     [InlineData("__exported import \"inner.slang\" ;", "C:/a/outer.slang", "C:/a/inner.slang")]
     [InlineData("__include \"part.slang\" ;", "/home/u/outer.slang", "/home/u/part.slang")]
     [InlineData("import \"/abs/m.slang\" ;", "C:/a/outer.slang", "/abs/m.slang")]
-    [InlineData("import \"D:\\x\\m.slang\" ;", "C:/a/outer.slang", "D:\\x\\m.slang")]
+    // A string literal's escaped backslash is one backslash of the path.
+    [InlineData("import \"D:\\\\x\\\\m.slang\" ;", "C:/a/outer.slang", "D:\\x\\m.slang")]
     public void QuotedImports_ResolveLikeSlangc(string preprocessed, string? importingFile, string expected) =>
         SlangcRegisterStripper.QuotedImports(preprocessed, importingFile).ShouldBe(new[] { expected });
 

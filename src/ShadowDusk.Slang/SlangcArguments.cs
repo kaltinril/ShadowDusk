@@ -67,23 +67,34 @@ internal static class SlangcArguments
     }
 
     /// <summary>
-    /// The preprocess-only pass over ANOTHER file the compile read (issue #292): an
-    /// <c>import</c>ed module or an <c>__include</c>d file, which the entry source's
-    /// <c>-E</c> does not expand. <paramref name="file"/> is the path exactly as slangc's own
-    /// <c>#line</c> directive spelled it, and slangc is run from the same working directory as
-    /// the compile, so it opens the file the compile opened. Same macros as the compile (slangc
-    /// applies <c>-D</c> to imported modules too, measured). Measured (v2026.14.1): a file that
-    /// cannot be opened still exits 0, with <c>error[E00001]: cannot open file</c> on stderr.
+    /// The preprocess-only pass over OTHER files the compile read (issue #292): <c>import</c>ed
+    /// modules and <c>__include</c>d files, which the entry source's <c>-E</c> does not expand.
+    /// Each of <paramref name="files"/> is a path as slangc's own <c>#line</c> directive or an
+    /// import string spelled it, and slangc is run from the same working directory as the
+    /// compile, so it opens the files the compile opened. With
+    /// <paramref name="includeEntry"/> the entry source (stdin, <c>-</c>) is the first input,
+    /// which makes this <see cref="BuildPreprocess"/> plus the files. Same macros as the
+    /// compile (slangc applies <c>-D</c> to imported modules too, measured).
     /// </summary>
-    public static IReadOnlyList<string> BuildPreprocessFile(
+    /// <remarks>
+    /// Measured (v2026.14.1): slangc prints ONE line per input, in argument order (an empty
+    /// line for a file with no tokens), each input preprocessed on its own (a macro defined in
+    /// one does not reach the next). A file that cannot be opened prints
+    /// <c>error[E00001]: cannot open file</c> on stderr and no line at all, and the run still
+    /// exits 0.
+    /// </remarks>
+    public static IReadOnlyList<string> BuildPreprocessFiles(
         IReadOnlyList<MacroDefinition> platformMacros,
         IReadOnlyList<UserDefine> defines,
-        string file)
+        bool includeEntry,
+        IReadOnlyList<string> files)
     {
         List<string> args = CommonPrefix(platformMacros, defines);
         args.Add("-E");
         args.Add("--");
-        args.Add(file);
+        if (includeEntry)
+            args.Add("-");
+        args.AddRange(files);
         return args;
     }
 
