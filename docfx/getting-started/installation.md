@@ -22,6 +22,13 @@ var result = await compiler.CompileAsync(hlslSource,
     new ShadowDusk.Core.CompilerOptions { Target = ShadowDusk.Core.PlatformTarget.OpenGL });
 ```
 
+> [!NOTE]
+> ShadowDusk runs only with **Vortice.Dxc 3.3.4**, the release that carries its pinned DXC. If
+> another package in your application raises Vortice.Dxc (Evergine.DirectX12 pulls 3.8.3, for
+> example), your build shows warning `SD0220` next to NuGet's `NU1608`, and DirectX 12, OpenGL and
+> Vulkan compiles fail at runtime with `SD0219`; DirectX 11 and FNA are unaffected. Pin it with
+> `<PackageReference Include="Vortice.Dxc" Version="3.3.4" />`. See [Diagnostics](../diagnostics.md).
+
 ## The CLI tool (`ShadowDuskCLI`)
 
 Install the drop-in `mgfxc` replacement as a global tool:

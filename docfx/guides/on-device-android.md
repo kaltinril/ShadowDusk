@@ -46,7 +46,8 @@ Effect effect = new Effect(GraphicsDevice, mgfx);   // a live Effect, compiled o
 ## What it needs
 
 - A standard `net*-android` MonoGame or KNI project.
-- The `ShadowDusk.Compiler` package. Its Android native compilers (DXC + SPIRV-Cross, both `arm64-v8a` and `x86_64`) ride inside the package as per-ABI native assets and land in your APK automatically — the same "add the package, call the API" setup as desktop, no separate install. Real devices (`arm64-v8a`) and x86/x86\_64 emulators are both covered.
+- The `ShadowDusk.Compiler` package. Its Android native compilers (DXC + SPIRV-Cross for `arm64-v8a`) ride inside the package as native assets and land in your APK automatically — the same "add the package, call the API" setup as desktop, no separate install. Real devices (`arm64-v8a`) are covered; the package ships no `x86_64` natives, so on an x86\_64 emulator image a DXC-backed compile returns `SD0219` unless the app bundles ShadowDusk's own x86\_64 build.
+- ShadowDusk checks that the DXC it loaded is its own pinned build, by the build id of the library as mapped from the APK. If another package in your app ships its own `libdxcompiler.so` for the same ABI and the build keeps that one, compiles return `SD0219` instead of running a different compiler.
 
 ## Notes & caveats
 

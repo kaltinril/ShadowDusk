@@ -14,6 +14,27 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **Build-time warning `SD0220` when a consumer's graph lifts Vortice.Dxc (issue #282).**
+  ShadowDusk.HLSL now ships `buildTransitive/ShadowDusk.HLSL.targets`, so a project that references
+  it directly or through ShadowDusk.Compiler / ShadowDusk.ContentPipeline is told AT BUILD TIME when
+  it resolves a Vortice.Dxc other than 3.3.4 (another package raising it, measured with
+  Evergine.DirectX12, which pulls 3.8.3; or the consumer's own reference). The warning names the
+  resolved version, says DirectX 12 / OpenGL / Vulkan will fail at runtime with `SD0219`, and gives
+  the fix (pin `Vortice.Dxc` 3.3.4). A warning, never an error: DirectX 11 and FNA do not use DXC
+  and keep building; `NoWarn` silences it. Before this the only build-time signal was NuGet's
+  generic `NU1608`. Proven end to end by `tools/verify-vortice-dxc-conflict.sh` (a cold consumer of
+  the packed feed with Vortice.Dxc 3.8.3, then pinned to 3.3.4, then with no reference), which
+  `Pack & Consume` now runs on all three OSes and both TFMs.
+- **Android checks the identity of the DXC it loaded (issue #289).** The APK holds no separate file
+  to read a build id from, so `DxcLoader` reads the GNU build id from the image the dynamic linker
+  mapped (`dl_iterate_phdr`, the PT_NOTE segment in memory) and refuses anything but the pinned
+  android-arm64 build with `SD0219`: another package bundling its own `libdxcompiler.so` for the
+  same ABI was previously used without a check. Linux runs the same mapped-image check after its
+  absolute-path load. Measured on a pixel_7 API-34 x86_64 emulator by the new
+  `validation/AndroidGl/run-dxc-identity-checks.ps1`: the pinned build compiles, a copy with one
+  build-id byte changed is refused, and an APK without the library gets `SD0219`, never a raw
+  `DllNotFoundException`.
+
 - **`CompilerOptions.EmbeddedSourceFileName` (issue #274).** The source-file string an MGFX v11
   container stores per shader can now be set independently of `SourceFileName`, which keeps
   feeding diagnostics and `#include` resolution. Unset (the default) nothing changes: the string
@@ -180,6 +201,20 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **A Vortice.Dxc other than 3.3.4 in the process is now `SD0219` on every OS, before any native
+  is touched (issue #282).** Measured: Vortice.Dxc 3.8.3 is not only a different DXC (1.9.2602.17)
+  but a binary-incompatible managed API; with the pinned natives put back in place every DXC call
+  failed with `MissingMethodException` (`IDxcUtils.CreateBlobFromPinned`), reported as a
+  misleading `SD0102` "Reflection failed". On macOS and Android, where ShadowDusk ships its own
+  DXC, that was the ONLY symptom. `DxcLoader` now compares the bound Vortice.Dxc assembly with the
+  pin first and returns `SD0219` naming the resolved version and the fix. The unsupported-OS branch
+  of the loader is now classified by a pure, unit-tested function (issue #289).
+- **The macOS `DYLD_LIBRARY_PATH` decoy test is decisive (issue #289).** With a restamped
+  (different `LC_UUID`) decoy it could not tell "dyld mapped the foreign build and ShadowDusk
+  refused it" from "dyld never mapped it" (the edit invalidates the ad-hoc signature, so Apple
+  silicon refuses to map it). The decoy is now re-signed, the probe reports the image `dladdr`
+  names for ShadowDusk's own handle, and the test requires it to be the decoy and every DXC-backed
+  target to fail with the "dyld mapped" `SD0219`.
 - **`ShadowDusk.Slang`: which registers "the author wrote" is now decided after preprocessing
   (issue #252 follow-up).** The register strip kept a texture/sampler register only when the Slang
   source text spelled `register(...)` on that name, and it read the text before the preprocessor
