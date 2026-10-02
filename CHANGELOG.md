@@ -36,6 +36,30 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   compile, with DirectX 12 signed; it failed before the fix. `DxcForeignValidatorTests` preloads a
   decoy, the Windows SDK's, a byte-identical copy, and a `\\?\`-path `dxil.dll` in fresh processes
   and pins which targets compile. The MGCB gate's decoy directory now carries a `dxil.dll` too.
+- **`ShadowDusk.Slang`: textured shaders no longer crash real FNA (issue #230).** slangc emits
+  texture objects (`Texture2D T; SamplerState S; T.Sample(S, uv)`). On the FNA target that compiled,
+  but vkd3d folds the pair into one texture-typed sampler named `S+T`, so the `.fxb` held a texture
+  where MojoShader expects a sampler and FNA threw `NotImplementedException: Unhandled sampler
+  state!` on the first draw (all 12 textured shaders of the 21-shader corpus; `fxc /T fx_2_0` refuses
+  the same text). `SlangCompiler` now respells them for FNA in DX9 effect syntax (`texture2D T;
+  sampler2D S = sampler_state { Texture = <T>; }; tex2D(S, uv)`), the same SM3 `texld`, with every
+  texture declared before any sampler. Texture shapes it does not model (a texture or sampler passed
+  as a function parameter, a subscript load `T[...]`, `SampleLevel`/`SampleGrad`/`Load`, a non-2D
+  texture, one sampler for two textures, a non-zero register space) fail as the new `SD0627`, at the
+  Slang source line.
+- **FNA `.fx` (and the built-in `.slang` subset frontend): a DX10-style texture object now fails at
+  compile time instead of crashing FNA at the first draw (issue #230). Behavior change.** Any
+  `Texture2D`/`Texture3D`/`TextureCube` sampled through a `SamplerState` (`Sample`, `SampleLevel`,
+  `SampleGrad`, ...) at a `ps_2_0`/`ps_3_0`/`vs_*` profile used to compile for FNA into the same
+  texture-typed `S+T` entry, and every such effect throws `Unhandled sampler state!` in FNA. `fxc
+  /T fx_2_0` refuses this source too. It now fails with `SD0303`, located at the sampling call, with
+  DX9 advice for the actual shape (`texture2D`/`texture3D`/`textureCUBE`, and
+  `tex2D`/`tex2Dlod`/`tex2Dgrad`/`tex3D`/`texCUBE`). Twelve test fixtures that used to "compile"
+  for FNA move to this rejection: `PenumbraLight`, `PenumbraTexture`, `SharedSamplerPair`,
+  `ExCubeSamplerHidef`, `ExModernSample`, `ExMultiSamplerHidef`, `ExPhantomTexLodUniform`,
+  `ExSampleGradHidef`, `ExSampleLevelHidef`, `ExTextureNamedTexture`, `ExVolumeTextureHidef`,
+  `ExVsTextureFetch`. None of them could have rendered in FNA. DX9-style `texture` +
+  `sampler_state` + `tex2D` source is unaffected.
 - **OpenGL `sin`/`cos` on large arguments no longer depends on the driver's range reduction (issue #215).** SPIRV-Cross passed the raw argument to the GLSL builtin, so a shader feeding hundreds of radians into `sin` (`Dots.fx` reaches ~792) rendered 19/255 off the `mgfxc` golden on Intel UHD while llvmpipe and NVIDIA matched. The GLSL rewriter now reduces every non-literal `sin`/`cos` argument into [-pi, pi] first (new rewriter Rule 16, a Cody-Waite split of 2pi through an `sd_reduce_angle` helper), as fxc does before every D3D9 `sincos`, with constants more accurate than `mgfxc`'s (max phase error 1.3e-7 rad at |x| <= 1000, measured in fp32, against 3.8e-4 for `mgfxc`'s six-decimal ones). **Every OpenGL/WebGL shader that calls `sin` or `cos` changes bytes**; shaders without them, and every DirectX, DirectX 12, Vulkan and FNA output, are byte-unchanged.
 
 - **DirectX and FNA compiles no longer run vkd3d again for an entry point another pass already compiled (issue #255).** An effect whose techniques share entry points made one vkd3d call per pass. MonoGame's stock `BasicEffect.fx` made 64 calls for 30 distinct shaders. Each distinct request now compiles once per `Compile` call, which roughly halves the vkd3d time of the stock effects: `BasicEffect` about 490 to 250 ms, `SkinnedEffect` (DirectX) about 770 to 350 ms, `EnvironmentMapEffect` about 300 to 90 ms. Output bytes are unchanged. vkd3d is deterministic, the cache key is every field of the request, and the stock effects were byte-compared before and after. A cancelled token now also stops vkd3d diagnostic relocation before each of its parse-only probe compiles. A native call that has already started still cannot be interrupted.
@@ -62,6 +86,15 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **Real-engine render gates for `ShadowDusk.Slang` on DirectX 12, Vulkan and FNA (issue #230).**
+  The 21-shader real-slangc corpus goes through `SlangCompiler` and is rendered next to the
+  reference compiler's build of the same assembled `.fx`, in the real engine on the same device:
+  `validation/SlangFullCorpusDx12` (mgfxc 3.8.5 `/Profile:DirectX_12`, MonoGame 3.8.5 WindowsDX12,
+  21/21, max delta 0/255), `validation/SlangFullCorpusVulkan` (mgfxc 3.8.5 `/Profile:Vulkan`, DesktopVK,
+  21/21, max delta 1/255) and `validation/FnaValidation -- slang` (`fxc /T fx_2_0`, FNA 26.06, 21/21,
+  max delta 1/255, plus the `.xnb` Content.Load arm at delta 0). Each runs two positive controls (a
+  swapped-channel pixel shader and a transposed vertex transform) that must diverge, and each now has
+  a slot in `validation/run-windows-render-gates.ps1` (FNA under `-IncludeFna`).
 - **Linux and Slang evidence for the DXC concurrency fix (issue #256).** No emitted byte changes.
   The fork probe in `DxcConcurrencyStressTests` now also makes real libc `fork()` calls on Linux
   (`Process.Start` there is `vfork()`, which never exercises the macOS mechanism) and reports what

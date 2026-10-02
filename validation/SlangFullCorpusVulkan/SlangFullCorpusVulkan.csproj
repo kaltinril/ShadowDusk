@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Issue #230: the real-Effect render gate for ShadowDusk.Slang's real-slangc route on
+       Vulkan. Candidate = SlangCompiler's Vulkan output; reference = the real dotnet-mgfxc 3.8.5
+       /Profile:Vulkan build of the same assembled .fx (slangc emits explicit registers, so
+       mgfxc's SlotOffset arithmetic stays in range and its output loads); both loaded into ONE
+       real MonoGame 3.8.5 DesktopVK GraphicsDevice and pixel-diffed. Its own process: DesktopVK
+       does not survive a second GraphicsDevice. Intentionally NOT in ShadowDusk.slnx. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RootNamespace>ShadowDusk.Validation.SlangFullCorpusVulkan</RootNamespace>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <MonoGamePlatform>DesktopVK</MonoGamePlatform>
+  </PropertyGroup>
+
+  <ItemGroup Label="MonoGame 3.8.5 stable DesktopVK">
+    <PackageReference Include="MonoGame.Framework.Native" Version="3.8.5" />
+    <PackageReference Include="MonoGame.Runtime.Windows.Vulkan" Version="3.8.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The reference compiler, fetched into the NuGet cache only (see SlangGateCorpus.LocateMgfxc). -->
+    <PackageDownload Include="dotnet-mgfxc" Version="[3.8.5]" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ShadowDusk.Slang\ShadowDusk.Slang.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\SharedSlang\*.cs" />
+  </ItemGroup>
+
+</Project>
