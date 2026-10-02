@@ -1887,7 +1887,7 @@ internal sealed class CompilationPipeline
 
         // Stage 4: assemble the effect description and write the fx_2_0 container.
         var buildResult = Fx2EffectBuilder.Build(
-            techniqueSources, shaders, ctabs, fxParsed.Samplers, sourceFileName);
+            techniqueSources, shaders, ctabs, fxParsed.Samplers, sourceFileName, hlslSource);
         if (buildResult.IsFailure)
             return Fail(buildResult.Error, fnaWarnings);
 

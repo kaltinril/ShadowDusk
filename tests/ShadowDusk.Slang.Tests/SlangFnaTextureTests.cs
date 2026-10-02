@@ -64,6 +64,64 @@ public sealed class SlangFnaTextureTests
         error.Message.ShouldContain("SampleLevel", Case.Sensitive);
     }
 
+    [Fact]
+    public void TextureFunctionParameter_IsRejectedAsSuch_AtItsSourceLine()
+    {
+        const string source = """
+            Texture2D SpriteTexture;
+            SamplerState SpriteSampler;
+
+            float4 Fetch(Texture2D t, SamplerState s, float2 uv)
+            {
+                return t.Sample(s, uv);
+            }
+
+            [shader("fragment")]
+            float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
+            {
+                return Fetch(SpriteTexture, SpriteSampler, uv);
+            }
+            """;
+
+        var result = new SlangCompiler().Compile(source, Fna);
+
+        result.IsFailure.ShouldBeTrue();
+        ShaderError error = result.Error.ShouldHaveSingleItem();
+        error.Code.ShouldBe("SD0627");
+        error.Message.ShouldContain("passed as a function parameter", Case.Sensitive);
+        error.Message.ShouldNotContain("has no DX9 equivalent", Case.Sensitive);
+        error.Line.ShouldBe(4, "slangc's #line directives map the helper back to its Slang line");
+    }
+
+    [Fact]
+    public void SamplerHoistedFromAStruct_CompilesWithTheTextureDeclaredFirst()
+    {
+        // slangc emits the struct's sampler (gS_s_0) BEFORE the global texture; fxc rejects a
+        // sampler_state naming a texture declared after it, so the respelling reorders.
+        const string source = """
+            Texture2D SpriteTexture;
+            struct Samplers { SamplerState s; };
+            Samplers gS;
+
+            [shader("fragment")]
+            float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
+            {
+                return SpriteTexture.Sample(gS.s, uv);
+            }
+            """;
+
+        var capture = new CapturingCompiler();
+        new SlangCompiler(capture).Compile(source, Fna).IsSuccess.ShouldBeTrue();
+        string fx = capture.Captured.ShouldNotBeNull();
+        int texture = fx.IndexOf("texture2D SpriteTexture;", StringComparison.Ordinal);
+        texture.ShouldBeGreaterThanOrEqualTo(0);
+        fx.IndexOf("sampler_state { Texture = <SpriteTexture>; }", StringComparison.Ordinal).ShouldBeGreaterThan(texture);
+
+        var result = new SlangCompiler().Compile(source, Fna);
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? string.Join("; ", result.Error.Select(e => e.FxcFormattedMessage)) : "");
+        Fx2BinaryValidator.Parse(result.Value.Data).SamplerTextureMap.Values.ShouldContain("SpriteTexture");
+    }
+
     [Theory]
     [InlineData(PlatformTarget.OpenGL)]
     [InlineData(PlatformTarget.DirectX)]

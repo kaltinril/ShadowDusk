@@ -20,10 +20,24 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   where MojoShader expects a sampler and FNA threw `NotImplementedException: Unhandled sampler
   state!` on the first draw (all 12 textured shaders of the 21-shader corpus; `fxc /T fx_2_0` refuses
   the same text). `SlangCompiler` now respells them for FNA in DX9 effect syntax (`texture2D T;
-  sampler2D S = sampler_state { Texture = <T>; }; tex2D(S, uv)`), the same SM3 `texld`, and rejects
-  texture shapes it does not model (`SampleLevel`, `Load`, a non-2D texture, one sampler for two
-  textures) as the new `SD0627`. The `.fx` route, which had the same silent crash for a texture
-  object at `ps_2_0`/`ps_3_0`, now fails with `SD0303` and says how to write it.
+  sampler2D S = sampler_state { Texture = <T>; }; tex2D(S, uv)`), the same SM3 `texld`, with every
+  texture declared before any sampler. Texture shapes it does not model (a texture or sampler passed
+  as a function parameter, a subscript load `T[...]`, `SampleLevel`/`SampleGrad`/`Load`, a non-2D
+  texture, one sampler for two textures, a non-zero register space) fail as the new `SD0627`, at the
+  Slang source line.
+- **FNA `.fx` (and the built-in `.slang` subset frontend): a DX10-style texture object now fails at
+  compile time instead of crashing FNA at the first draw (issue #230). Behavior change.** Any
+  `Texture2D`/`Texture3D`/`TextureCube` sampled through a `SamplerState` (`Sample`, `SampleLevel`,
+  `SampleGrad`, ...) at a `ps_2_0`/`ps_3_0`/`vs_*` profile used to compile for FNA into the same
+  texture-typed `S+T` entry, and every such effect throws `Unhandled sampler state!` in FNA. `fxc
+  /T fx_2_0` refuses this source too. It now fails with `SD0303`, located at the sampling call, with
+  DX9 advice for the actual shape (`texture2D`/`texture3D`/`textureCUBE`, and
+  `tex2D`/`tex2Dlod`/`tex2Dgrad`/`tex3D`/`texCUBE`). Twelve test fixtures that used to "compile"
+  for FNA move to this rejection: `PenumbraLight`, `PenumbraTexture`, `SharedSamplerPair`,
+  `ExCubeSamplerHidef`, `ExModernSample`, `ExMultiSamplerHidef`, `ExPhantomTexLodUniform`,
+  `ExSampleGradHidef`, `ExSampleLevelHidef`, `ExTextureNamedTexture`, `ExVolumeTextureHidef`,
+  `ExVsTextureFetch`. None of them could have rendered in FNA. DX9-style `texture` +
+  `sampler_state` + `tex2D` source is unaffected.
 - **DirectX and FNA compiles no longer run vkd3d again for an entry point another pass already compiled (issue #255).** An effect whose techniques share entry points made one vkd3d call per pass. MonoGame's stock `BasicEffect.fx` made 64 calls for 30 distinct shaders. Each distinct request now compiles once per `Compile` call, which roughly halves the vkd3d time of the stock effects: `BasicEffect` about 490 to 250 ms, `SkinnedEffect` (DirectX) about 770 to 350 ms, `EnvironmentMapEffect` about 300 to 90 ms. Output bytes are unchanged. vkd3d is deterministic, the cache key is every field of the request, and the stock effects were byte-compared before and after. A cancelled token now also stops vkd3d diagnostic relocation before each of its parse-only probe compiles. A native call that has already started still cannot be interrupted.
   This does not speed up one very large pixel shader, such as the current upstream Apos.Shapes file (about 5 s on a Ryzen 7 5800X). That time is spent inside a single vkd3d call. vkd3d's HLSL optimizer is roughly quadratic in the size of the fully inlined shader, and vkd3d 2.1 is about 1.6x slower than 1.17 on that file and about 2x slower on branchy code. vkd3d has no option that reduces optimizer work, so this is tracked upstream rather than worked around. The measurements are in `project_facts.md`.
 - **`ShadowDusk.Slang`: textured shaders sample SpriteBatch's texture on OpenGL (issue #252).** slangc

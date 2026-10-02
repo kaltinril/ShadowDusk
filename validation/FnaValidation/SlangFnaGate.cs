@@ -162,6 +162,8 @@ public static class SlangFnaGate
                     verdict = "FAIL (pixels differ)";
                 else if (xnbMaxd != 0)
                     verdict = "FAIL (.xnb arm)";
+                else if (!SameParams(o.Reference.ParamsSet, o.Candidate.ParamsSet))
+                    verdict = "FAIL (parameter tables differ)";
                 else
                     verdict = "PASS";
             }
@@ -184,8 +186,7 @@ public static class SlangFnaGate
             if (o.Reference.Error is not null) Console.WriteLine($"{"",-24}ref:  {o.Reference.Error}");
             if (o.Candidate.Error is not null) Console.WriteLine($"{"",-24}cand: {o.Candidate.Error}");
             if (o.CandidateXnb.Error is not null) Console.WriteLine($"{"",-24}xnb:  {o.CandidateXnb.Error}");
-            if (o.Reference.ParamsSet is not null && o.Candidate.ParamsSet is not null
-                && !o.Reference.ParamsSet.OrderBy(n => n).SequenceEqual(o.Candidate.ParamsSet.OrderBy(n => n)))
+            if (!SameParams(o.Reference.ParamsSet, o.Candidate.ParamsSet))
             {
                 Console.WriteLine($"{"",-24}params: ref [{string.Join(", ", o.Reference.ParamsSet)}] cand [{string.Join(", ", o.Candidate.ParamsSet)}]");
             }
@@ -201,6 +202,13 @@ public static class SlangFnaGate
         Console.WriteLine($"[fna-slang] PNGs: {outRoot}");
         return ok ? 0 : 1;
     }
+
+    // The parameters each arm's effect exposed and the gate set: they must match, as on the
+    // MonoGame arms, or the two effects are not the same program to a game.
+    private static bool SameParams(IReadOnlyList<string>? reference, IReadOnlyList<string>? candidate) =>
+        reference is null || candidate is null
+            ? reference is null && candidate is null
+            : reference.OrderBy(n => n, StringComparer.Ordinal).SequenceEqual(candidate.OrderBy(n => n, StringComparer.Ordinal));
 
     private static IReadOnlyList<string> SetParams(Effect effect, Texture2D cat, Texture2D mask)
     {

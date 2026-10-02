@@ -538,7 +538,39 @@ public sealed class FnaCompileFixtureTests
         ShaderError error = result.Error.ShouldHaveSingleItem();
         error.Code.ShouldBe("SD0303");
         error.Message.ShouldContain("t.Sample(s, ...)", Case.Sensitive);
-        error.Message.ShouldContain("sampler_state", Case.Sensitive);
+        error.Message.ShouldContain("sampler2D s = sampler_state { Texture = <t>; }", Case.Sensitive);
+        error.Message.ShouldContain("tex2D(s, uv)", Case.Sensitive);
+        error.Line.ShouldBe(6, "located at the sampling call");
+    }
+
+    [FnaTheory]
+    [InlineData("Texture2D", "t.SampleLevel(s, uv, 0)", "tex2Dlod(s,")]
+    [InlineData("Texture2D", "t.SampleGrad(s, uv, ddx(uv), ddy(uv))", "tex2Dgrad(s,")]
+    [InlineData("TextureCube", "t.Sample(s, float3(uv, 1))", "texCUBE(s, uv)")]
+    [InlineData("Texture3D", "t.Sample(s, float3(uv, 0.5))", "tex3D(s, uv)")]
+    public async Task InlineTextureObjectShapes_Fna_SD0303AdviceMatchesTheShape(string type, string call, string advice)
+    {
+        using var cts = new CancellationTokenSource(CompileTimeout);
+
+        string source = $$"""
+            {{type}} t;
+            SamplerState s;
+
+            float4 PSMain(float2 uv : TEXCOORD0) : COLOR0
+            {
+                return {{call}};
+            }
+
+            technique T { pass P { PixelShader = compile ps_3_0 PSMain(); } }
+            """;
+
+        var result = await CompileFnaSourceAsync(source, sourcePath: null, cts.Token);
+
+        result.IsFailure.ShouldBeTrue();
+        ShaderError error = result.Error.ShouldHaveSingleItem();
+        error.Code.ShouldBe("SD0303");
+        error.Message.ShouldContain(advice, Case.Sensitive);
+        error.Line.ShouldBe(6);
     }
 
     // -------------------------------------------------------------------------

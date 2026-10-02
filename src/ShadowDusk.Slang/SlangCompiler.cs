@@ -339,17 +339,19 @@ public sealed class SlangCompiler
         // objects, which compiled but crashed real FNA on the first draw. See the respeller.
         if (options.Target == PlatformTarget.Fna)
         {
-            string? respelled = SlangFx2TextureRespeller.TryRespell(mergedHlsl, out string? unsupported);
-            if (respelled is null)
+            SlangFx2TextureRespeller.Result respelled = SlangFx2TextureRespeller.Respell(mergedHlsl);
+            if (respelled.Text is null)
             {
                 return Fail(new ShaderError(
-                    File: sourceName, Line: 0, Column: 0, Code: SlangFx2TextureRespeller.UnsupportedCode,
+                    File: sourceName, Line: respelled.SourceLine, Column: respelled.SourceLine > 0 ? 1 : 0,
+                    Code: SlangFx2TextureRespeller.UnsupportedCode,
                     Message: "The FNA target (fx_2_0, Shader Model 2-3) binds textures through DX9 " +
-                             "texture/sampler_state/tex2D, and slangc's emission uses " + unsupported +
-                             ", which has no DX9 equivalent ShadowDusk models. FNA textures support " +
-                             "Texture2D sampled as T.Sample(S, uv) with one texture per SamplerState."));
+                             "texture/sampler_state/tex2D, and ShadowDusk cannot respell slangc's emission " +
+                             "into that form because it contains " + respelled.Unsupported + ". Supported on " +
+                             "FNA: a global Texture2D sampled as T.Sample(S, uv) through a global " +
+                             "SamplerState, one texture per sampler."));
             }
-            mergedHlsl = respelled;
+            mergedHlsl = respelled.Text;
         }
 
         string fxText = AssembleFx(mergedHlsl, entries, sourceName);

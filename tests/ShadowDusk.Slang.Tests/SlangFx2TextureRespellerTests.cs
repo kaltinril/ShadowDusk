@@ -128,6 +128,113 @@ public sealed class SlangFx2TextureRespellerTests
     }
 
     [Fact]
+    public void SamplerEmittedBeforeItsTexture_TextureDeclarationComesFirst()
+    {
+        // slangc hoists a sampler out of a struct/ParameterBlock ahead of a global texture;
+        // fxc rejects a sampler_state that names a texture declared after it.
+        const string hlsl = """
+            SamplerState gS_s_0;
+            Texture2D<float4 > SpriteTexture;
+            float4 F(float2 uv) { return SpriteTexture.Sample(gS_s_0, uv); }
+            """;
+
+        string fx = Respell(hlsl);
+
+        int texture = fx.IndexOf("texture2D SpriteTexture;", StringComparison.Ordinal);
+        int sampler = fx.IndexOf("sampler2D gS_s_0 = sampler_state { Texture = <SpriteTexture>; };", StringComparison.Ordinal);
+        texture.ShouldBeGreaterThanOrEqualTo(0);
+        sampler.ShouldBeGreaterThan(texture);
+        fx.Split('\n').Length.ShouldBe(hlsl.Split('\n').Length, "line structure is preserved for #line mapping");
+    }
+
+    [Fact]
+    public void SeveralTextures_AllDeclaredBeforeAnySampler()
+    {
+        const string hlsl = """
+            Texture2D<float4 > A;
+            SamplerState SA;
+            Texture2D<float4 > B;
+            SamplerState SB;
+            float4 F(float2 uv) { return A.Sample(SA, uv) + B.Sample(SB, uv); }
+            """;
+
+        string fx = Respell(hlsl);
+
+        fx.IndexOf("texture2D B;", StringComparison.Ordinal)
+            .ShouldBeLessThan(fx.IndexOf("sampler2D SA", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("float4 Fetch_0(Texture2D<float4 > t_0, SamplerState s_0, float2 uv_0) { return t_0.Sample(s_0, uv_0); }", "'Texture2D t_0'")]
+    [InlineData("float4 Fetch_0(Texture2D<float4 > t_0, float2 uv_0) { return t_0.Sample(SpriteSampler, uv_0); }", "'Texture2D t_0'")]
+    [InlineData("float4 Fetch_0(float2 uv_0, SamplerState s_0) { return SpriteTexture.Sample(s_0, uv_0); }", "'SamplerState s_0'")]
+    public void ResourceFunctionParameter_IsRejectedAsSuch(string helper, string named)
+    {
+        string unsupported = Rejected(SlangcEmission + "\n" + helper);
+
+        unsupported.ShouldContain("passed as a function parameter", Case.Sensitive);
+        unsupported.ShouldContain(named, Case.Sensitive);
+    }
+
+    [Fact]
+    public void SubscriptLoad_IsRejectedByName()
+    {
+        string unsupported = Rejected(SlangcEmission.Replace(
+            "SpriteTexture.Sample(SpriteSampler, uv_0)", "SpriteTexture[uint2(int2(pos_0.xy))]"));
+
+        unsupported.ShouldContain("subscript load 'SpriteTexture[...]'", Case.Sensitive);
+    }
+
+    [Fact]
+    public void TextureArrayDeclaration_IsNotMistakenForASubscriptLoad()
+    {
+        Rejected("Texture2D<float4 > Arr[2];\nSamplerState S;\nfloat4 F(float2 uv) { return Arr[0].Sample(S, uv); }")
+            .ShouldNotContain("subscript load 'Arr", Case.Sensitive);
+    }
+
+    [Fact]
+    public void RegisterSpaceZero_IsDropped_OtherSpacesRejected()
+    {
+        Respell(SlangcEmission.Replace("SamplerState SpriteSampler;", "SamplerState SpriteSampler : register(s1, space0);"))
+            .ShouldContain("sampler2D SpriteSampler : register(s1) = sampler_state", Case.Sensitive);
+
+        Rejected(SlangcEmission.Replace("SamplerState SpriteSampler;", "SamplerState SpriteSampler : register(s1, space2);"))
+            .ShouldContain("register space on sampler 'SpriteSampler' (register(s1, space2))", Case.Sensitive);
+    }
+
+    [Fact]
+    public void UnusedSampler_MessageSaysSoOnce()
+    {
+        string unsupported = Rejected(SlangcEmission + "\nSamplerState Spare;\n");
+
+        unsupported.ShouldContain("the sampler 'Spare'", Case.Sensitive);
+        unsupported.Split("which").Length.ShouldBe(2, "one 'which' clause, not two");
+    }
+
+    [Fact]
+    public void Rejection_CarriesTheSlangSourceLine()
+    {
+        const string hlsl = """
+            #line 1 "core"
+            SamplerState Hoisted;
+            #line 3 "<stdin>"
+            Texture2D<float4 > SpriteTexture;
+            SamplerState SpriteSampler;
+
+            float4 MainPS(float2 uv_0 : TEXCOORD0) : SV_TARGET
+            {
+                return SpriteTexture.SampleLevel(SpriteSampler, uv_0, 0.0f);
+            }
+            """;
+
+        SlangFx2TextureRespeller.Result result = SlangFx2TextureRespeller.Respell(hlsl);
+
+        result.Text.ShouldBeNull();
+        result.Unsupported.ShouldNotBeNull().ShouldContain("SampleLevel", Case.Sensitive);
+        result.SourceLine.ShouldBe(8, "#line 3 names the line after it; SampleLevel sits five lines below that");
+    }
+
+    [Fact]
     public void NonTwoDimensionalTexture_IsRejectedByName()
     {
         const string hlsl = """
