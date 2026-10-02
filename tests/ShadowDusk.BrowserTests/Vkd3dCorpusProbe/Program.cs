@@ -29,6 +29,11 @@ using ShadowDusk.HLSL.D3DCompiler;
 using ShadowDusk.HLSL.Dxc;
 using ShadowDusk.HLSL.Vkd3d;
 
+// Issue #271: `--depth <repoRoot> <outDir>` captures the stack-depth cases instead
+// (DepthProbe.cs, consumed by node-test-wasm-depth.mjs).
+if (args.Length == 3 && args[0] == "--depth")
+    return await DepthProbe.RunAsync(Path.GetFullPath(args[1]), Path.GetFullPath(args[2]));
+
 if (args.Length != 2)
 {
     Console.Error.WriteLine("usage: Vkd3dCorpusProbe <repoRoot> <outDir>");

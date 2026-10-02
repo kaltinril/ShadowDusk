@@ -283,6 +283,69 @@ try {
     }
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Issue #271 — a module TRAP through the real WasmShaderCompiler. Source deep
+  // enough to exhaust the engine's stack traps inside the module. The compile
+  // must fail with SD1906 (a module trap, not a fake compiler diagnostic); the
+  // trapped instance is discarded, so the next SYNC compile reports SD1903; and
+  // a reload (CompileAsync / InitializeAsync) must give manifest-identical bytes.
+  // A trigger that does not trap on this engine is reported NOT RUN, never passed.
+  // ─────────────────────────────────────────────────────────────────────────
+  console.log('[vkd3d browser gate] issue #271 — module trap -> SD1906 -> discard -> reload…');
+  {
+    const page = await bootScenarioPage([]);
+    const sha = (res) => createHash('sha256').update(Buffer.from(res.slice(3), 'base64')).digest('hex');
+    const call = (method, src, target, name) => page.evaluate(
+      async ({ method, src, target, name }) => await window.theInstance.invokeMethodAsync(method, src, target, name),
+      { method, src, target, name });
+    // The DepthProbe.cs shape (Vkd3dCorpusProbe), so the trigger is a valid shader.
+    const wrap = (body) => '#if OPENGL\n#define SV_POSITION POSITION\n#define PS_SHADERMODEL ps_3_0\n#else\n#define PS_SHADERMODEL ps_4_0\n#endif\n' +
+      'struct VSOut { float4 Position : SV_POSITION; float4 Color : COLOR0; float2 TextureCoordinates : TEXCOORD0; };\n' +
+      body + '\ntechnique T { pass P { PixelShader = compile PS_SHADERMODEL MainPS(); } }\n';
+    let calls = 'float f0(float x) { return x * 1.5; }\n';
+    for (let i = 1; i <= 12800; i++) calls += `float f${i}(float x) { return f${i - 1}(x) + 1.0; }\n`;
+    const deepCalls = wrap(calls + 'float4 MainPS(VSOut input) : COLOR0 { return float4(f12800(input.TextureCoordinates.x),0,0,1); }');
+    const deepAdd = wrap(`float4 MainPS(VSOut input) : COLOR0 { float2 uv = input.TextureCoordinates; float x = ${Array(5000).fill('uv.x').join(' + ')}; return float4(x,0,0,1); }`);
+    const deepElseIf = wrap('float4 MainPS(VSOut input) : COLOR0 { float2 uv = input.TextureCoordinates; float x = 0.0; ' +
+      Array.from({ length: 800 }, (_, i) => `if (uv.x > ${i}.0) x = ${i}.0;`).join(' else ') + ' return float4(x,0,0,1); }');
+    try {
+      const init = await page.evaluate(async () => await window.theInstance.invokeMethodAsync('TestInitializeCompiler'));
+      if (init !== 'OK') {
+        recordPhase27('issue #271 trap scenario: InitializeAsync', false, String(init).slice(0, 300));
+      } else {
+        for (const [label, src, target, manifestKey, reload] of [
+          ['vkd3d (DirectX, call chain x12800)', deepCalls, 'DirectX', 'DirectX_Vkd3d/Grayscale.fx', 'async'],
+          ['DXC (OpenGL, add x5000)', deepAdd, 'OpenGL', 'OpenGL/Grayscale.fx', 'init'],
+          ['SPIRV-Cross (OpenGL, else-if x800)', deepElseIf, 'OpenGL', 'OpenGL/Grayscale.fx', 'init'],
+        ]) {
+          const trap = String(await call('TestSyncCompileExport', src, target, 'Deep.fx'));
+          if (trap.startsWith('OK:')) {
+            console.log(`  [NOT RUN] issue #271 ${label}: the trigger compiled, it did not trap on this engine`);
+            continue;
+          }
+          if (!trap.includes('SD1906')) {
+            recordPhase27(`issue #271 ${label}`, false, `expected SD1906, got: ${trap.slice(0, 300)}`);
+            continue;
+          }
+          const refused = String(await call('TestSyncCompileExport', grayscaleSource, target, 'Grayscale.fx'));
+          let after;
+          if (reload === 'async') {
+            after = String(await call('TestCompileExport', grayscaleSource, target, 'Grayscale.fx'));
+          } else {
+            await page.evaluate(async () => await window.theInstance.invokeMethodAsync('TestInitializeCompiler'));
+            after = String(await call('TestSyncCompileExport', grayscaleSource, target, 'Grayscale.fx'));
+          }
+          const ok = refused.includes('SD1903') && after.startsWith('OK:') && sha(after) === manifest[manifestKey];
+          recordPhase27(`issue #271 ${label}`, ok, ok
+            ? 'SD1906, then SD1903 until reload, then manifest-identical bytes'
+            : `trap='${trap.slice(0, 120)}', next sync='${refused.slice(0, 120)}', after reload='${after.slice(0, 120)}'`);
+        }
+      }
+    } finally {
+      await page.close();
+    }
+  }
+
   const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
   page.setDefaultTimeout(180000);
   page.on('pageerror', (e) => console.log(`  [pageerror] ${e.message}`));

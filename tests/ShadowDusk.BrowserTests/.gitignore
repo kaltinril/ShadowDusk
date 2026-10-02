@@ -31,6 +31,10 @@ diffs-sd-hidef/
 # Regenerate with: node node-test-vkd3d-wasm.mjs (npm run vkd3d-gate)
 .vkd3d-gate/
 
+# Issue #271 WASM stack-depth gate scratch (desktop ground-truth captures).
+# Regenerate with: node node-test-wasm-depth.mjs (npm run wasm-depth-gate)
+.depth-gate/
+
 # Phase 4.1 G2 real-browser DX/FNA byte-identity gate publish dir.
 # Regenerate with: node browser-vkd3d-gate.mjs (npm run vkd3d-browser-gate)
 # RESULTS-VKD3D-BROWSER.md IS committed — the G2 deliverable.

@@ -26,7 +26,8 @@ let failed = 0;
 
 for (const name of cases) {
     const spirv = new Uint8Array(readFileSync(join(fixturesDir, `${name}.spv`)));
-    const expected = readFileSync(join(fixturesDir, `${name}.desktop-glsl.txt`), 'utf8');
+    // EOL-normalized: a Windows checkout may hand the fixture back with CRLF.
+    const expected = readFileSync(join(fixturesDir, `${name}.desktop-glsl.txt`), 'utf8').replace(/\r\n/g, '\n');
 
     let actual;
     try {
