@@ -272,8 +272,11 @@ $gates.Add(@{
 # child's PATH, so a fallback to an OS-search-path DXC or an unsigned DX12 module fails loudly.
 # Since issue #274 its DesktopVK / WindowsDX12 cases also pin the MGFX v11 source-file string to
 # what MGCB's own stock processor writes, and rebuild from a second directory for identical bytes.
+# Since issue #280 every case also requires the CLI's own .xnb payload to equal the plugin's, and
+# every v11 case rebuilds under /config:Debug (DebugMode=Auto) for bytes identical to the default
+# build, with stock MGCB's own /config:Debug build checked the same way as the premise.
 $gates.Add(@{
-    Name   = 'MGCB content-processor plugin (Phase 29: real dotnet mgcb build, .xnb payload vs CLI bytes; Phase 63: + dotnet-mgcb 3.8.5 arm for Web/DesktopVK/WindowsDX12 + decoy-PATH DXC guard; issue #274: MGFX v11 source-file string == stock, path-independent .xnb)'
+    Name   = 'MGCB content-processor plugin (Phase 29: real dotnet mgcb build, .xnb payload vs CLI bytes; Phase 63: + dotnet-mgcb 3.8.5 arm for Web/DesktopVK/WindowsDX12 + decoy-PATH DXC guard; issue #274: MGFX v11 source-file string == stock, path-independent .xnb; issue #280: CLI .xnb == plugin payload, /config:Debug Auto == default build like stock)'
     Action = {
         # The pinned dotnet-mgcb from .config/dotnet-tools.json (idempotent; cached offline).
         Invoke-Checked 'dotnet' @('tool', 'restore')

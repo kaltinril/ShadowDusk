@@ -42,6 +42,13 @@ namespace ShadowDusk.Validation.MgcbPluginGate;
 /// <c>mgfxc</c> does, and that is asserted too); and the same effect built from a SECOND
 /// directory produces a byte-identical <c>.xnb</c>.</para>
 ///
+/// <para><b>Issue #280.</b> Every case also has the ShadowDusk CLI write an <c>.xnb</c> and
+/// requires its payload to equal the plugin's (so on v11 the CLI's <c>.xnb</c> carries
+/// <c>&lt;unknown&gt;</c> too, while its <c>.mgfx</c> keeps the path). Every v11 case also
+/// rebuilds with <c>/config:Debug</c> and the default <c>DebugMode=Auto</c>: the plugin's
+/// <c>.xnb</c> must equal its default-config build, and, where the stock arm runs, stock MGCB's
+/// <c>/config:Debug</c> build must equal its own default build (the premise, re-measured).</para>
+///
 /// <para><b>Two MGCB versions, on purpose (Phase 63 Area B, issue #203).</b> The tool-manifest
 /// <c>dotnet-mgcb</c> (3.8.4.1) carries MonoGame's ORIGINAL <c>TargetPlatform</c> numbering; the
 /// second arm runs the real <c>dotnet-mgcb</c> <b>3.8.5</b>, which RENUMBERED the enum
@@ -281,6 +288,18 @@ internal static class Program
             // The defect as a consumer meets it: the same effect, built from a different
             // directory, must be the same .xnb.
             AssertRelocatedBuildIsIdentical(mgcb, plugin, fixtures, caseDir, c, decoyDir, sdXnb);
+
+            // Issue #280: /config:Debug with the default DebugMode=Auto must build what the
+            // default configuration builds, as MGCB's stock processor does (it turns debug info
+            // on only for an explicit DebugMode=Debug). Debug info would also carry the path.
+            byte[] sdDebugXnb = BuildWithConfig(mgcb, caseDir, c, source, "sddebug", plugin,
+                "ShadowDuskEffectImporter", "ShadowDuskEffectProcessor", decoyDir);
+            if (!sdDebugXnb.AsSpan().SequenceEqual(sdXnb))
+            {
+                throw new InvalidOperationException(
+                    $"the plugin's /config:Debug .xnb ({sdDebugXnb.Length} bytes) differs from its default-config " +
+                    $".xnb ({sdXnb.Length} bytes) with DebugMode=Auto - stock MGCB builds the same bytes (issue #280)");
+            }
         }
 
         if (c.StockArm)
@@ -315,6 +334,19 @@ internal static class Program
             // compilers need not emit the same NUMBER of shader records).
             if (v11)
             {
+                // Issue #280's premise, re-measured on every run: stock MGCB's /config:Debug
+                // build with DebugMode=Auto is byte-identical to its default-config build. If a
+                // future MGCB starts honouring the configuration, this fails and the plugin's
+                // Auto handling has to follow it again.
+                byte[] stockDebugXnb = BuildWithConfig(mgcb, caseDir, c, source, "stockdebug", reference: null,
+                    "EffectImporter", "EffectProcessor", decoyDir: null);
+                if (!stockDebugXnb.AsSpan().SequenceEqual(stockXnb))
+                {
+                    throw new InvalidOperationException(
+                        $"stock MGCB's /config:Debug .xnb ({stockDebugXnb.Length} bytes) differs from its default-config " +
+                        $".xnb ({stockXnb.Length} bytes) - stock Auto no longer ignores the configuration (issue #280)");
+                }
+
                 IReadOnlyList<string> stockSourceFiles = MgfxSourceFile.ReadAll(stock.Payload);
                 if (stockSourceFiles.Count == 0)
                     throw new InvalidOperationException("the stock build is not MGFX v11 - nothing to compare the source-file field against");
@@ -355,6 +387,19 @@ internal static class Program
                 $"plugin payload ({sd.Payload.Length} bytes) is NOT byte-identical to the CLI's " +
                 $"({cliBytes.Length} bytes) for /Profile:{c.Profile}" +
                 (v11 ? $" with the source-file string replaced by '{MgfxSourceFile.Stock}'" : string.Empty));
+        }
+
+        // Issue #280: the CLI's own .xnb mode is a content-pipeline replacement, so its payload
+        // must be exactly what this MGCB content build produced - on a v11 target that means
+        // "<unknown>" in the source-file field, not the path the CLI was handed.
+        string cliXnbPath = Path.Combine(caseDir, $"cli_{c.Profile}.xnb");
+        RunProcess(cli, [source, cliXnbPath, $"/Profile:{c.Profile}"], caseDir);
+        XnbEffect cliXnb = XnbEffect.Parse(File.ReadAllBytes(cliXnbPath));
+        if (!cliXnb.Payload.AsSpan().SequenceEqual(sd.Payload))
+        {
+            throw new InvalidOperationException(
+                $"the CLI's .xnb payload ({cliXnb.Payload.Length} bytes) is NOT byte-identical to the plugin's MGCB " +
+                $"payload ({sd.Payload.Length} bytes) for /Profile:{c.Profile} (issue #280)");
         }
 
         // The negative half of Phase 63 Area B: the payload must not be the WRONG target's bytes
@@ -403,6 +448,21 @@ internal static class Program
         }
     }
 
+    /// <summary>
+    /// Builds the case's effect in place with <c>/config:Debug</c> (processor parameters left at
+    /// their defaults, so <c>DebugMode=Auto</c>) and returns the <c>.xnb</c>.
+    /// </summary>
+    private static byte[] BuildWithConfig(
+        string mgcb, string caseDir, Case c, string source, string name, string? reference,
+        string importer, string processor, string? decoyDir)
+    {
+        WriteMgcb(Path.Combine(caseDir, $"{name}.mgcb"), c.Platform, $"bin{name}", $"obj{name}", source,
+                  reference, importer, processor, config: "Debug");
+        RunMgcb(mgcb, caseDir, $"{name}.mgcb", decoyDir);
+        return File.ReadAllBytes(
+            Path.Combine(caseDir, $"bin{name}", Path.GetFileNameWithoutExtension(c.Fixture) + ".xnb"));
+    }
+
     private static byte[] CompileWithCli(string cli, string source, string caseDir, string profile)
     {
         string cliOut = Path.Combine(caseDir, $"cli_{profile}.mgfx");
@@ -412,14 +472,14 @@ internal static class Program
 
     private static void WriteMgcb(
         string path, string platform, string outputDir, string intermediateDir, string sourcePath,
-        string? reference, string importer, string processor)
+        string? reference, string importer, string processor, string config = "")
     {
         var lines = new List<string>
         {
             $"/outputDir:{outputDir}",
             $"/intermediateDir:{intermediateDir}",
             $"/platform:{platform}",
-            "/config:",
+            $"/config:{config}",
             "/profile:Reach",
             "/compress:False",
             string.Empty,

@@ -160,6 +160,12 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Changed
 
+- **`validation/MgcbPlugin` covers issue #280.** Every case now also has the CLI write an `.xnb`
+  and requires its payload to equal the plugin's MGCB payload, and every `DesktopVK` /
+  `WindowsDX12` case rebuilds with `/config:Debug` (default `DebugMode=Auto`) and requires the
+  same `.xnb` as the default build; where MGCB's stock processor runs, its own `/config:Debug`
+  build is checked against its default build too, so the stock premise is re-measured on every
+  run. Measured red before the fix (6 of 15 cases) and green after (15 of 15).
 - **`validation/MgcbPlugin` and `validation/ContentBuilder` now pin the MGFX v11 source-file string
   (issue #274).** The MGCB gate grew from 13 to 15 cases: the `DesktopVK` / `WindowsDX12` cases
   compare the string with MGCB's own stock build's (now possible for the two fixtures with an
@@ -249,13 +255,34 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   (MGFX v10 has no such string). **What moves:** DirectX 12 and Vulkan `.xnb` files built through
   the plugin or the Content Builder processor change once (the string, and the 4-byte effect key
   derived from the body); rendering is unaffected.
-  - **The CLI is unchanged**: it keeps writing the source path exactly as passed, which is what the
-    `mgfxc` CLI does, so the plugin's DirectX 12 / Vulkan payload now differs from the CLI's in that
-    one string (and the key). Both content-pipeline gates assert "the CLI's bytes with only that
-    string replaced".
-  - A build with debug information on (`DebugMode=Debug`, or `Auto` under a `Debug` content
-    configuration) still records the source path inside the compiler's own SPIR-V / DXIL debug
-    information, as the CLI's and `mgfxc`'s `/Debug` do.
+  - **The CLI's `.mgfx` output is unchanged**: it keeps writing the source path exactly as passed,
+    which is what the `mgfxc` CLI does, so the plugin's DirectX 12 / Vulkan payload differs from the
+    CLI's `.mgfx` in that one string (and the key). Both content-pipeline gates assert "the CLI's
+    bytes with only that string replaced". (The CLI's `.xnb` output follows MGCB instead; see
+    issue #280 below.)
+  - A build with debug information on (`DebugMode=Debug`) still records the source path inside
+    the compiler's own SPIR-V / DXIL debug information, as the CLI's and `mgfxc`'s `/Debug` do.
+- **The CLI's `.xnb` output no longer carries your build machine's path on DirectX 12 and Vulkan
+  (issue #280).** `ShadowDuskCLI <abs>\Effect.fx Effect.xnb /Profile:Vulkan` (or `DirectX_12`, or
+  any target with `--mgfx-version 11`) wrote the absolute source path into every shader record of
+  the MGFX v11 payload. `mgfxc` has no `.xnb` mode, so the reference for an `.xnb` is MGCB, whose
+  stock `EffectProcessor` writes `<unknown>`: the CLI now writes `<unknown>` when the output is an
+  `.xnb`, and its `.xnb` payload equals the MGCB plugin's byte for byte. The same effect built from
+  two directories gives the same `.xnb`. **`.mgfx` output is unchanged** (still the path as passed,
+  `mgfxc` CLI parity), as are OpenGL / DirectX 11 / FNA `.xnb` files (no such string). Diagnostics
+  still name the real file.
+- **The MGCB plugin and Content Builder processor no longer turn debug information on for
+  `DebugMode=Auto` under `/config:Debug` (issue #280).** Stock MGCB never does: MonoGame 3.8.5's
+  `EffectProcessor` sets `Debug = DebugMode == EffectProcessorDebugMode.Debug` (3.8.2 adds `/Debug`
+  under the same condition) and never reads the build configuration, and a real `dotnet-mgcb` 3.8.5
+  `/config:Debug` build is byte-identical to its release build. ShadowDusk's processor did, which
+  made its output diverge from stock and put the source path into DXC's debug information on
+  DirectX 12 / Vulkan. `Auto` now optimizes everywhere, as in stock; set `DebugMode=Debug` for debug
+  information. **What moves:** only a `.mgcb` that sets `/config:Debug` and leaves `DebugMode` at
+  `Auto`; its effects are now the release bytes (MonoGame.Content.Builder.Task's own targets pass no
+  `/config`, and the Content Builder has no configuration, so the default routes do not move).
+- **`CompilerOptions.EmbeddedSourceFileName`'s XML doc now states that only `null` falls back to
+  `SourceFileName`**: an empty string is stored as an empty string (issue #280; pinned by a test).
 - **A `dxil.dll` on `PATH` no longer hijacks DXC's DXIL validator on Windows.** With the Windows
   SDK's `bin` directory on `PATH` (every VS Developer Command Prompt), every DirectX 12 compile
   failed with `DXIL container mismatch for 'PSVRuntimeInfoSize'`; with any other `dxil.dll` there,

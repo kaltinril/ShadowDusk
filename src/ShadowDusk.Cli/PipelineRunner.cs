@@ -86,15 +86,23 @@ internal sealed class PipelineRunner
         // in the user's GLSL).
         //
         // SourceFileName is NOT diagnostics-only. An MGFX v11 container (always DirectX 12 and
-        // Vulkan; any target under --mgfx-version 11) stores a source-file string per shader, and
-        // the CLI deliberately leaves CompilerOptions.EmbeddedSourceFileName unset, so that string
-        // is this name exactly as written here: the path the user passed (mgfxc parity, measured
-        // against the mgfxc 3.8.5 CLI, issue #274) or the synthetic ".generated.fx" name on a
-        // converted route. With /Debug, DXC also records it in the SPIR-V / DXIL debug info.
+        // Vulkan; any target under --mgfx-version 11) stores a source-file string per shader.
+        // For .mgfx output the CLI leaves CompilerOptions.EmbeddedSourceFileName unset, so that
+        // string is this name exactly as written here: the path the user passed (mgfxc parity,
+        // measured against the mgfxc 3.8.5 CLI, issue #274) or the synthetic ".generated.fx" name
+        // on a converted route. With /Debug, DXC also records it in the SPIR-V / DXIL debug info.
         // v10, KNIFX and FNA output carry no source name and do not depend on it.
         string compileSourceName = isConvertedGlsl || isConvertedSlang
             ? Path.GetFileNameWithoutExtension(args.SourceFile) + ".generated.fx"
             : args.SourceFile;
+
+        // An .xnb output path means "wrap it" (Stage 2.5 below). mgfxc has no .xnb mode: the
+        // reference for an .xnb is MGCB, whose stock EffectProcessor stores "<unknown>" in that
+        // per-shader field, as ShadowDusk's own content processor does. So an .xnb records
+        // "<unknown>" too, and a build script that passes absolute paths does not bake the build
+        // machine's directory into the content file (issue #280). .mgfx output is unchanged.
+        bool wrapAsXnb = Path.GetExtension(args.OutputFile)
+            .Equals(".xnb", StringComparison.OrdinalIgnoreCase);
 
         // For the converted routes the compile's SourceFileName is a synthetic ".generated.fx"
         // with no directory, so a #include in the ORIGINAL source (legal in the Slang route,
@@ -113,7 +121,8 @@ internal sealed class PipelineRunner
             IncludeResolver        = includeResolver,
             AdditionalIncludePaths = includePaths,
             SourceFileName         = compileSourceName,
-            Debug                  = args.Debug,
+            EmbeddedSourceFileName = wrapAsXnb ? "<unknown>" : null,
+            Debug                 = args.Debug,
             MgfxVersion            = args.MgfxVersion,
             DxbcBackend            = args.DxbcBackend,
             Defines                = args.Defines ?? [],
@@ -155,12 +164,11 @@ internal sealed class PipelineRunner
         // forbids. It cannot mis-fire — `.xnb` has no other meaning as a shader-compiler output,
         // and every other extension is passed through untouched.
         //
-        // The payload inside the container is compileResult.Value.Data VERBATIM, so `out.mgfx`
-        // and the payload of `out.xnb` are byte-identical BY CONSTRUCTION, not by a second code
-        // path that has to be kept in step (the Phase 42 one-pipeline precedent).
-        bool wrapAsXnb = Path.GetExtension(args.OutputFile)
-            .Equals(".xnb", StringComparison.OrdinalIgnoreCase);
-
+        // The payload inside the container is compileResult.Value.Data VERBATIM: one pipeline,
+        // not a second code path that has to be kept in step (the Phase 42 one-pipeline
+        // precedent). So `out.mgfx` and the payload of `out.xnb` are byte-identical, except that
+        // on an MGFX v11 container the embedded source name is "<unknown>" in the .xnb (set
+        // above, issue #280), which also moves the 4-byte effect key derived from the body.
         byte[] mgfxBytes = wrapAsXnb
             ? compileResult.Value.ToXnb()
             : compileResult.Value.Data;
