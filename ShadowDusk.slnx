@@ -10,6 +10,7 @@
     <Project Path="src/ShadowDusk.MgcbPlugin/ShadowDusk.MgcbPlugin.csproj" />
     <Project Path="src/ShadowDusk.ShaderToy/ShadowDusk.ShaderToy.csproj" />
     <Project Path="src/ShadowDusk.Slang/ShadowDusk.Slang.csproj" />
+    <Project Path="src/ShadowDusk.Slang.Wasm/ShadowDusk.Slang.Wasm.csproj" />
     <Project Path="src/ShadowDusk.Wasm/ShadowDusk.Wasm.csproj" />
   </Folder>
   <Folder Name="/tests/">

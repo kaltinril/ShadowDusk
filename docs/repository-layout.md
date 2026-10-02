@@ -18,6 +18,9 @@ ShadowDusk/
 │   │                             #   the consumer-facing product NuGet (the in-memory library);
 │   │                             #   also the source-text converters Sksl/ (SkSL) and Raylib/ (raylib
 │   │                             #   glsl330), both on Internal/ModernGlslSeam (the pre-rewriter seam)
+│   ├── ShadowDusk.Slang.Wasm/    # WasmSlangCompiler (issue #257, Phase 67): full Slang in the BROWSER. Runs the pinned slangc
+│   │                             #   in-process as WebAssembly (wwwroot/slangc/, BUILT by .wasm-build/slang-wasm/,
+│   │                             #   gitignored) through SlangCompiler's internal seam, then ShadowDusk.Wasm. Not packed yet.
 │   ├── ShadowDusk.Cli/           # CLI entry-point (dotnet tool `ShadowDuskCLI`); also accepts ShaderToy/GLSL input
 │   ├── ShadowDusk.ShaderToy/     # Pure-managed ShaderToy/GLSL → .fx front-end (ShaderToyConverter.Convert); ZERO
 │   │                             #   native + ZERO MonoGame dep; additive, upstream of the pipeline. PUBLISHED standalone NuGet (0.9.0).
@@ -55,6 +58,7 @@ ShadowDusk/
 │   ├── ShadowDusk.Integration.Tests/   # Compile real .fx files end-to-end (+ CLI .glsl-input integration)
 │   ├── ShadowDusk.ImageTests/          # Offscreen-render image regression
 │   ├── ShadowDusk.BrowserTests/        # Headless KNI WebGL render validation (Playwright)
+│   │                                   #   (+ browser-slang-gate.mjs: full Slang in the browser, manifest bytes + render, issue #257)
 │   └── fixtures/
 │       ├── shaders/                    # Canonical .fx test shaders (155 .fx total + 7 .fxh headers, plus 17 .slang):
 │       │                               #   64 in the root + examples/ (50) + shadertoy/ (1, the pinned

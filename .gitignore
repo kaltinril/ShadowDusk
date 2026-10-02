@@ -77,6 +77,15 @@ src/ShadowDusk.Wasm/wwwroot/dxc/dxcompiler.wasm
 src/ShadowDusk.Wasm/wwwroot/vkd3d/vkd3d-shader.js
 src/ShadowDusk.Wasm/wwwroot/vkd3d/vkd3d-shader.wasm
 
+# The in-process slangc WebAssembly module (issue #257, Phase 67) for full Slang input in the
+# browser: BOTH files are BUILT (not committed) by .wasm-build/slang-wasm/build-slangc-wasm.ps1
+# from upstream's own prebuilt wasm static libraries. Its recipe (glue, build script, node
+# byte-identity gate) IS force-committed under .wasm-build/slang-wasm/, and the [JSImport]
+# shim (src/ShadowDusk.Slang.Wasm/wwwroot/shadowdusk-slangc.js) and slangc/RESTORE.md are
+# committed. Hosting the built artifact on a release tag is Phase 67 remaining work.
+src/ShadowDusk.Slang.Wasm/wwwroot/slangc/shadowdusk-slangc.js
+src/ShadowDusk.Slang.Wasm/wwwroot/slangc/shadowdusk-slangc.wasm
+
 # MGCB compiled content output (XNB wrappers — not the raw .mgfx golden files)
 *.xnb
 *.mgcb.log

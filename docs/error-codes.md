@@ -139,7 +139,9 @@ code (`E5017`, `E5000`, …) and the raw text stay exactly as the compiler emitt
 | `SD1900` | Browser/WASM DXC backend failed. | `JsDxcShaderCompiler` |
 | `SD1901` | Browser/WASM SPIRV-Cross backend failed. | `JsSpirvToGlslTranspiler` |
 | `SD1902` | Browser/WASM vkd3d backend failed. | `WasmVkd3dShaderCompiler` |
-| `SD1903` | Synchronous `Compile()` called before the WASM compiler was initialized. | `WasmCompilerInitialization` |
+| `SD1903` | Synchronous `Compile()` called before the WASM compiler was initialized. | `WasmCompilerInitialization`, `WasmSlangCompiler` (the slangc module, issue #257) |
+| `SD1904` | Browser/WASM full-Slang route (issue #257): the `shadowdusk-slangc` WebAssembly module (the pinned slangc, run in-process) could not be loaded from `_content/ShadowDusk.Slang.Wasm/`. The message names the module and carries the load error verbatim. A DXC or vkd3d module that fails to load keeps its own code (`SD1900`/`SD1902`). | `WasmSlangCompiler`, `SlangcModule` |
+| `SD1905` | Browser/WASM full-Slang route: the slangc WebAssembly module trapped while compiling (a stack overflow on extremely deep source, an out-of-bounds access, an abort). A runtime failure of the module, not a slangc diagnostic: native slangc may accept the same source. The module instance is discarded and the next load starts a fresh one. | `WasmSlangCompiler` |
 
 ## X — CLI / general (mgfxc-style)
 

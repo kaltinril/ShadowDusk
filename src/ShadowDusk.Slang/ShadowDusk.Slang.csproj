@@ -39,6 +39,12 @@
          list in the driver would silently drift from whatever flags this class actually
          passes and invalidate the comparison it exists to make. -->
     <InternalsVisibleTo Include="ShadowDusk.Validation.SlangFullCorpus" />
+    <!-- Issue #257: the browser host of this same route. It reaches SlangCompiler's internal
+         in-process constructor (slangc compiled to WebAssembly, run in-process) so it shares
+         the argument list, register strip, merge, .fx assembly and downstream pipeline with
+         the desktop process route instead of copying them. Internal, not public, so no
+         public API lets a consumer plug a different compiler into that seam (a convention, not a security boundary: the assemblies are not strong-named). -->
+    <InternalsVisibleTo Include="ShadowDusk.Slang.Wasm" />
   </ItemGroup>
 
   <ItemGroup>
@@ -71,20 +77,21 @@
        as ".../native/slangc/slangc", which strands slangc away from its library (measured,
        issue #225: every consumer compile failed SD0623 until this was fixed).
 
-       win-x64 is also copied to build output (SlangToolPath's base-directory probe) as it
-       was before; the Unix RIDs are pack-only, because two of them share the file name
-       "slangc" and repo/dev runs resolve tools/slang/<rid>/ by walking up to the repo root. -->
+       Every RID is pack-only: repo/dev runs resolve tools/slang/<rid>/ by walking up to the
+       repo root (SlangToolPath). win-x64 used to be copied to build output too, but a None item
+       with CopyToOutputDirectory flows into EVERY referencing project's output, so a browser
+       project referencing this one (ShadowDusk.Slang.Wasm, the ShaderFiddle sample) carried
+       25 MB of desktop slangc.exe + slang-compiler.dll into its publish folder (issue #257
+       review). -->
   <ItemGroup>
     <!-- Apache-2.0 notice for the bundled slangc binaries (Phase 66 A2), the same pattern
          ShadowDusk.HLSL's THIRD-PARTY-NOTICES.txt uses for vkd3d/DXC. -->
     <None Include="THIRD-PARTY-NOTICES.txt" Pack="true" PackagePath="THIRD-PARTY-NOTICES.txt" />
     <None Include="$(MSBuildThisFileDirectory)..\..\tools\slang\win-x64\slangc.exe"
           Condition="Exists('$(MSBuildThisFileDirectory)..\..\tools\slang\win-x64\slangc.exe')"
-          CopyToOutputDirectory="PreserveNewest" Link="slangc.exe"
           Pack="true" PackagePath="runtimes/win-x64/native/" />
     <None Include="$(MSBuildThisFileDirectory)..\..\tools\slang\win-x64\slang-compiler.dll"
           Condition="Exists('$(MSBuildThisFileDirectory)..\..\tools\slang\win-x64\slang-compiler.dll')"
-          CopyToOutputDirectory="PreserveNewest" Link="slang-compiler.dll"
           Pack="true" PackagePath="runtimes/win-x64/native/" />
   </ItemGroup>
 

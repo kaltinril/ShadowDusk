@@ -20,6 +20,16 @@ public static class WebShaderInputs
         "Pixelated", "Scanlines", "Fading", "Dots", "Dissolve",
     };
 
+    /// <summary>
+    /// True for Slang source: a <c>[shader("...")]</c> entry-point attribute and no
+    /// <c>technique</c> block. Such source takes the full-Slang route (issue #257,
+    /// <c>WasmSlangCompiler</c>); a real <c>.fx</c> keeps its technique and is compiled unchanged.
+    /// </summary>
+    public static bool LooksLikeSlang(string source) =>
+        System.Text.RegularExpressions.Regex.IsMatch(source, "\\[\\s*shader\\s*\\(\\s*\"") &&
+        !System.Text.RegularExpressions.Regex.IsMatch(source, "^\\s*technique\\b",
+            System.Text.RegularExpressions.RegexOptions.Multiline);
+
     /// <summary>The shader shown (and rendered) on first load.</summary>
     public const string DefaultShader = "Grayscale";
 

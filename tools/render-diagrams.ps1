@@ -55,7 +55,9 @@ if (-not (Get-Command java -ErrorAction SilentlyContinue)) { throw "java not fou
 
 Get-ChildItem (Join-Path $PumlDir '*.puml') | ForEach-Object {
     Write-Host "render-diagrams: $($_.Name) -> docfx/images/$($_.BaseName).svg"
-    & java -jar $Jar -tsvg -o $OutDir $_.FullName
+    # -charset UTF-8: the .puml files are UTF-8; without it a Windows JRE reads them in the ANSI
+    # code page and a "§" renders as "Â§" (measured 2026-10-01, caught by DocConsistencyTests).
+    & java -jar $Jar -charset UTF-8 -tsvg -o $OutDir $_.FullName
     if ($LASTEXITCODE -ne 0) { throw "PlantUML render failed for $($_.Name)" }
 }
 Write-Host "render-diagrams: done"

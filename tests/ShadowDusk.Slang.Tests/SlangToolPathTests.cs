@@ -181,8 +181,9 @@ public sealed class SlangToolPathTests : IDisposable
     [Fact]
     public void Resolve_WrongExecutableNameForTheRid_IsNotAHit()
     {
-        // win-x64's slangc.exe sits in every build's base directory on every OS (the csproj
-        // copies it); a Unix RID must look for "slangc", never fall for "slangc.exe".
+        // A self-contained win-x64 publish flattens slangc.exe beside the app, and a base
+        // directory can hold it on any OS; a Unix RID must look for "slangc", never fall for
+        // "slangc.exe".
         string baseDir = Dir("app");
         Touch(baseDir, "slangc.exe");
 
