@@ -13,24 +13,45 @@ namespace ShadowDusk.HLSL.Dxc;
 /// </summary>
 public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
 {
-    private readonly IDxcCompiler3 _compiler;
+    private readonly IDxcCompiler3? _compiler;
+    private readonly ShaderError? _loadError;
     private bool _disposed;
 
     /// <summary>
-    /// Creates the DXC compiler instance, loading <c>dxil.dll</c> for DXIL validation on
-    /// Windows (a no-op on other platforms).
+    /// Creates the DXC compiler instance from ShadowDusk's pinned DXC natives (on Windows,
+    /// with the pinned <c>dxil.dll</c> validating and signing DXIL). If those natives cannot
+    /// be guaranteed, every compile returns an <c>SD0219</c> error instead.
     /// </summary>
     public DxcShaderCompiler()
     {
-        // macOS: hook Vortice's ResolveLibrary so our pinned libdxcompiler.dylib
-        // resolves (Vortice.Dxc ships no macOS native — Phase 37 A). Idempotent;
-        // no-op on Windows/Linux. Must precede the first DXC P/Invoke below.
-        DxcLoader.Register();
-
-        // Load dxil.dll for DXIL validation on Windows; no-op on other platforms.
-        LoadDxil();
-        _compiler = CreateDxcCompiler<IDxcCompiler3>();
+        // Loads the pinned pair by absolute path (Windows/Linux) or hooks Vortice's resolver
+        // for our own libdxcompiler (macOS/Android). Idempotent. Must precede the first DXC
+        // P/Invoke below. Never call Vortice's Dxc.LoadDxil(): it is a bare
+        // LoadLibrary("dxil.dll") that walks PATH and let a foreign validator win.
+        _loadError = DxcLoader.Register();
+        if (_loadError is null)
+            _compiler = CreateDxcCompiler<IDxcCompiler3>();
     }
+
+    /// <summary>
+    /// The <c>SD0219</c> error to return instead of compiling, or null. Missing/unloadable
+    /// pinned natives fail every request. A foreign DXIL validator fails only requests whose
+    /// output it decides (<paramref name="usesValidator"/>: validated DXIL, i.e. DirectX 12):
+    /// SPIR-V codegen, <c>-Vd</c> compiles and <c>-P</c> preprocessing never call it, so a host
+    /// that loaded its own <c>dxil.dll</c> must not cost the consumer those targets.
+    /// </summary>
+    private ShaderError? NativeError(string? sourceFileName, bool usesValidator)
+    {
+        ShaderError? error = _loadError ?? (usesValidator ? DxcLoader.CheckBoundValidator() : null);
+        return error is null ? null : error with { File = sourceFileName ?? "" };
+    }
+
+    /// <summary>
+    /// True when DXC will run its DXIL validator (and, on Windows, signer) on this compile:
+    /// DXIL output (no <c>-spirv</c>) without <c>-Vd</c>.
+    /// </summary>
+    internal static bool UsesValidator(IReadOnlyList<string> arguments) =>
+        !arguments.Contains("-spirv") && !arguments.Contains("-Vd");
 
     /// <inheritdoc/>
     public Task<Result<PlatformBlob, ShaderError>> CompileAsync(
@@ -57,12 +78,15 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        if (NativeError(request.SourceFileName, usesValidator: false) is { } loadError)
+            return Result<string, ShaderError>.Fail(loadError);
+
         IReadOnlyList<string> arguments = DxcFlagBuilder.BuildPreprocess(request.Macros);
 
         // Same raw vtable call the compile path uses (per-platform wchar_t arg encoding,
         // UTF-8 source). #includes are already flattened upstream, so no include handler.
         IDxcResult result = DxcNativeInterop.Compile(
-            _compiler,
+            _compiler!,
             request.HlslSource,
             arguments,
             includeHandler: null);
@@ -122,6 +146,10 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
             request.EntryPoint,
             request.Macros,
             request.Options);
+        bool usesValidator = UsesValidator(arguments);
+
+        if (NativeError(request.SourceFileName, usesValidator) is { } loadError)
+            return Result<PlatformBlob, ShaderError>.Fail(loadError);
 
         // Raw vtable call instead of Vortice's IDxcCompiler3.Compile(string, string[], ...):
         // Vortice marshals the LPCWSTR* argument array as UTF-16 on every OS, but DXC's
@@ -129,7 +157,7 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         // reads garbage arguments and every compile fails with "Internal Compiler error:"
         // (Phase 37 Finding B). DxcNativeInterop encodes the arguments per-platform.
         IDxcResult result = DxcNativeInterop.Compile(
-            _compiler,
+            _compiler!,
             request.HlslSource,
             arguments,
             request.IncludeHandler);
@@ -139,6 +167,10 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         // The same pattern as D3DCompilerShaderCompiler's blob disposal.
         try
         {
+            // macOS can bind a foreign libdxil lazily, during this very call: check again.
+            if (NativeError(request.SourceFileName, usesValidator) is { } validatorError)
+                return Result<PlatformBlob, ShaderError>.Fail(validatorError);
+
             SharpGen.Runtime.Result status = result.GetStatus();
             string errorText = result.GetErrors();
 
@@ -181,7 +213,7 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
                 errorText, request.SourceFileName);
 
             // DXIL signing (bug-hunt 2026-07-27 M7): dxil.dll validation/signing runs on
-            // Windows only (LoadDxil is a no-op elsewhere, and macOS ships no dxil at
+            // Windows only (this pin's Linux DXC never loads libdxil, and macOS ships no dxil at
             // all), so a DirectX12 compile on Linux/macOS produces UNSIGNED DXIL. That
             // loads only on machines with Developer Mode enabled — retail D3D12 rejects
             // unsigned DXIL at pipeline-state creation. Same source, different build
@@ -221,6 +253,6 @@ public sealed class DxcShaderCompiler : IDxcShaderCompiler, IDisposable
         if (_disposed)
             return;
         _disposed = true;
-        _compiler.Dispose();
+        _compiler?.Dispose();
     }
 }

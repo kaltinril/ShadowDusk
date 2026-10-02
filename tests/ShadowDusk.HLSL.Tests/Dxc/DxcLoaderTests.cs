@@ -124,4 +124,99 @@ public sealed class DxcLoaderTests
         // runtimes/android-arm64/native.
         DxcLoader.AndroidLibFileName.ShouldBe("libdxcompiler.so");
     }
+
+    [Fact]
+    public void PinnedPairDirectories_StartWithVorticesOwnProbeAndEndWithTheFlatBase()
+    {
+        // The first two entries mirror Vortice.Dxc's resolver (base/runtimes/<rid>/native,
+        // then the host's search directories), so the files DxcLoader loads by absolute path
+        // are the files Vortice would load: one module, never two copies of DXC.
+        string search = Path.Combine(Path.GetTempPath(), "search");
+        string plugin = Path.Combine(Path.GetTempPath(), "plugin");
+
+        var dirs = DxcLoader.GetPinnedPairDirectories(
+            Base, [search], [plugin], "win-x64", ignoreCase: true).ToList();
+
+        dirs.ShouldBe(new[] {
+            Path.Combine(Base, "runtimes", "win-x64", "native"),
+            search,
+            Path.Combine(plugin, "runtimes", "win-x64", "native"),
+            plugin,
+            Base});
+    }
+
+    [Fact]
+    public void PinnedPairDirectories_DropDuplicatesAndTrailingSeparators()
+    {
+        // The host lists the app directory among its search directories, and the ShadowDusk
+        // and Vortice assemblies usually share it: each directory is probed once.
+        var dirs = DxcLoader.GetPinnedPairDirectories(
+            Base,
+            [Base + Path.DirectorySeparatorChar],
+            [Base, Base],
+            "linux-x64",
+            ignoreCase: false).ToList();
+
+        dirs.ShouldBe(new[] {
+            Path.Combine(Base, "runtimes", "linux-x64", "native"),
+            Base});
+    }
+
+    [Theory]
+    [InlineData(true, Architecture.X64, "win-x64")]
+    [InlineData(true, Architecture.Arm64, "win-arm64")]
+    [InlineData(false, Architecture.X64, "linux-x64")]
+    [InlineData(false, Architecture.Arm64, "linux-arm64")]
+    public void PinnedRid_FollowsTheProcessArchitecture(bool windows, Architecture arch, string expected)
+    {
+        DxcLoader.PinnedRid(windows, arch).ShouldBe(expected);
+    }
+
+    [Theory]
+    [InlineData("libdxil.dylib", true)]
+    [InlineData("libdxil.so", true)]
+    [InlineData("LIBDXIL.DYLIB", true)]
+    [InlineData("libdxcompiler.dylib", false)]
+    [InlineData("libdxil.dylib.bak", false)]
+    public void DxilLeafNames_AreExactlyTheValidatorNamesDxcOpens(string leaf, bool expected)
+    {
+        // Our macOS libdxcompiler.dylib dlopens both of these by leaf name; it ships neither,
+        // so any loaded image with one of these names is a foreign validator (SD0219).
+        DxcLoader.IsDxilLeafName(leaf).ShouldBe(expected);
+    }
+
+    [Theory]
+    [InlineData(ShadowDusk.Core.PlatformTarget.DirectX12, false, true)]
+    [InlineData(ShadowDusk.Core.PlatformTarget.DirectX, true, false)]
+    [InlineData(ShadowDusk.Core.PlatformTarget.OpenGL, false, false)]
+    [InlineData(ShadowDusk.Core.PlatformTarget.Vulkan, false, false)]
+    public void OnlyValidatedDxilCompiles_DependOnTheValidator(
+        ShadowDusk.Core.PlatformTarget target, bool skipValidation, bool expected)
+    {
+        // A foreign dxil.dll loaded by the host refuses only these compiles (SD0219): SPIR-V
+        // codegen and -Vd DXIL never call the validator, so they keep compiling.
+        var args = DxcFlagBuilder.Build(
+            target,
+            ShadowDusk.Core.ShaderStage.Pixel,
+            "PS",
+            [],
+            new DxcCompileOptions { SkipValidation = skipValidation });
+
+        DxcShaderCompiler.UsesValidator(args).ShouldBe(expected);
+    }
+
+    [Fact]
+    public void PinnedVorticeDxc_ExposesTheResolverFieldSubscribeFirstRewrites()
+    {
+        // DxcLoader.SubscribeFirst puts our resolver ahead of Vortice's own by rewriting this
+        // private event field, and silently falls back to a plain (last-in-line) subscription
+        // when it is missing, which reopens the Linux LD_LIBRARY_PATH hole. A Vortice.Dxc bump
+        // that renames or retypes the field must fail here, not in a consumer's process.
+        var field = typeof(Vortice.Dxc.Dxc).GetField(
+            "ResolveLibrary",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+
+        field.ShouldNotBeNull();
+        field.FieldType.ShouldBe(typeof(DllImportResolver));
+    }
 }

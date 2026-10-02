@@ -14,6 +14,28 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **A `dxil.dll` on `PATH` no longer hijacks DXC's DXIL validator on Windows.** With the Windows
+  SDK's `bin` directory on `PATH` (every VS Developer Command Prompt), every DirectX 12 compile
+  failed with `DXIL container mismatch for 'PSVRuntimeInfoSize'`; with any other `dxil.dll` there,
+  DirectX 12 output could come out unsigned without a word. The cause was ShadowDusk's own call
+  to Vortice's `Dxc.LoadDxil()`, a bare `LoadLibrary("dxil.dll")` made before DXC loaded: our
+  `dxil.dll` sits in `runtimes/<rid>/native`, not the application directory, so the bare load
+  walked down to `PATH`, and `dxcompiler.dll` then bound the module already loaded under that
+  name. ShadowDusk now loads its pinned `dxil.dll` and then `dxcompiler.dll` by absolute path
+  before any DXC call (on Linux, `libdxcompiler.so`), and checks that the `dxil.dll` DXC binds is
+  its own (by file content, so a byte-identical copy is accepted). Its resolver now runs ahead of
+  Vortice.Dxc's own, so a bare-name fallback can no longer pick a different DXC (on Linux, from
+  `LD_LIBRARY_PATH`). When the pinned natives are missing, every DXC-backed compile fails with the
+  new `SD0219` instead of running on whatever the OS search found. When a foreign validator was
+  loaded into the process first (by a host tool, or on macOS any `libdxil` image, since that build
+  ships none), only DirectX 12 compiles, whose validated and signed DXIL it would decide, fail with
+  `SD0219`; OpenGL, Vulkan and DirectX 11 never call the validator and keep compiling. Output bytes
+  are unchanged on a clean `PATH`. `CliDxcPathHijackTest` runs the CLI with decoy
+  `dxil.dll`/`dxcompiler.dll` (and, where installed, the Windows SDK's `bin`) first on `PATH` for
+  DirectX 12, DirectX 11, OpenGL and Vulkan, and requires output byte-identical to a clean-`PATH`
+  compile, with DirectX 12 signed; it failed before the fix. `DxcForeignValidatorTests` preloads a
+  decoy, the Windows SDK's, a byte-identical copy, and a `\\?\`-path `dxil.dll` in fresh processes
+  and pins which targets compile. The MGCB gate's decoy directory now carries a `dxil.dll` too.
 - **`ShadowDusk.Slang`: textured shaders no longer crash real FNA (issue #230).** slangc emits
   texture objects (`Texture2D T; SamplerState S; T.Sample(S, uv)`). On the FNA target that compiled,
   but vkd3d folds the pair into one texture-typed sampler named `S+T`, so the `.fxb` held a texture
