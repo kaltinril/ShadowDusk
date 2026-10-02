@@ -180,6 +180,7 @@ public sealed class SlangCompiler
     /// the per-entry merge, the <c>.fx</c> assembly, and the downstream pipeline) is the same
     /// code the desktop route runs; only the transport differs. Internal, and reached only by
     /// <c>ShadowDusk.Slang.Wasm</c>, so no public API plugs a different compiler in here (a
+    /// convention rather than a security boundary: the assemblies are not strong-named).
     /// </summary>
     internal SlangCompiler(IShaderCompiler downstreamCompiler, InProcessSlangc inProcessSlangc)
         : this(downstreamCompiler, LocateBundledSlangc)

@@ -96,6 +96,23 @@ public sealed class WasmSlangCompiler
         }
 
         Result<CompiledShader, ShaderError[]> result = Compile(slangSource, options, cancellationToken);
+
+        // Another compile trapped and discarded the slangc instance between our EnsureReadyAsync
+        // and this Compile (its continuation was queued behind the trap). SD1903's "await
+        // InitializeAsync" advice is wrong for a CompileAsync caller, so reload once and retry.
+        if (!result.IsSuccess && !SlangcModule.IsReady && result.Error.Any(static e => e.Code == "SD1903"))
+        {
+            try
+            {
+                await SlangcModule.EnsureReadyAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (JSException ex)
+            {
+                return Fail(SlangcModule.LoadFailed(sourceName, ex.Message));
+            }
+            result = Compile(slangSource, options, cancellationToken);
+        }
+
         if (result.IsSuccess || !result.Error.Any(static e => e.Code == "SD1903") || _recording.LastFx is null)
             return result;
 
