@@ -1731,13 +1731,50 @@ public sealed class FxPreParser
     /// function parameter (<c>float4 f(SamplerState s, …)</c>) cannot match because no
     /// <c>register</c> clause follows.</para>
     /// </summary>
-    private HashSet<int> CollectReservedSamplerRegisters()
+    private HashSet<int> CollectReservedSamplerRegisters() => CollectReservedSamplerRegisters(_tokens);
+
+    /// <summary>
+    /// The OpenGL sampler registers reserved by modern <c>SamplerState X : register(sN)</c>
+    /// declarations, decided on the PREPROCESSED source, the way <c>mgfxc</c> decides it
+    /// (issue #283).
+    ///
+    /// <para><see cref="FxParseResult.ReservedGlSamplerSlots"/> is read from the tokens the
+    /// pre-parser was given, which for a compile is the raw source: a register that only exists in
+    /// an inactive <c>#if</c> branch is counted there, one written through a macro
+    /// (<c>#define SLOT(n) : register(n)</c>) is missed, and one in an <c>#include</c>d file is
+    /// never seen. This entry point first builds the preprocessed view of
+    /// <paramref name="flattenedSource"/> (conditionals evaluated, macros expanded, with the
+    /// <c>#define</c>s the flattener prepended for the target and the user's defines), then runs
+    /// the same declaration matcher over it. It is pure managed code, so the answer is identical
+    /// on every host, the browser included.</para>
+    /// </summary>
+    /// <param name="flattenedSource">
+    /// The effect source with <c>#include</c>s inlined and the compile's macros prepended as
+    /// <c>#define</c> lines (the output of <c>ShadowDusk.Core.Preprocessor.Preprocessor.Flatten</c>).
+    /// </param>
+    /// <param name="sourceFile">Display name used in diagnostics.</param>
+    /// <returns>
+    /// The reserved register indices, or an <c>SD0009</c> error when the preprocessed view
+    /// cannot be built (a directive or <c>#if</c> expression this preprocessor does not model).
+    /// </returns>
+    public static Result<IReadOnlySet<int>, ShaderError> CollectReservedGlSamplerSlots(
+        string flattenedSource, string sourceFile)
+    {
+        var view = Preprocessing.FxMacroPreprocessor.Process(flattenedSource, sourceFile);
+        if (view.IsFailure)
+            return Result<IReadOnlySet<int>, ShaderError>.Fail(view.Error);
+
+        IReadOnlyList<Token> tokens = new FxLexer(view.Value, sourceFile).Tokenize();
+        return Result<IReadOnlySet<int>, ShaderError>.Ok(CollectReservedSamplerRegisters(tokens));
+    }
+
+    private static HashSet<int> CollectReservedSamplerRegisters(IReadOnlyList<Token> tokens)
     {
         var reserved = new HashSet<int>();
 
         // Code tokens only — trivia can sit anywhere between the five we need to match.
-        var code = new List<Token>(_tokens.Count);
-        foreach (Token t in _tokens)
+        var code = new List<Token>(tokens.Count);
+        foreach (Token t in tokens)
         {
             if (t.Kind is not (TokenKind.LineComment or TokenKind.BlockComment or TokenKind.Preprocessor))
                 code.Add(t);
