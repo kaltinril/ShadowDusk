@@ -83,6 +83,8 @@ public sealed class SlangCompiler
 
     private readonly IShaderCompiler _downstreamCompiler;
     private readonly Func<SlangcLocation> _locateSlangc;
+    private readonly Func<string, string> _prepareSlangc;
+    private readonly SlangcInvoker _runSlangc;
 
     /// <summary>
     /// Where (and whether) this host's slangc is: <see cref="UnsupportedReason"/> is
@@ -116,9 +118,39 @@ public sealed class SlangCompiler
     /// provably independent of whether this host has a slangc at all.
     /// </summary>
     internal SlangCompiler(IShaderCompiler? downstreamCompiler, Func<SlangcLocation> locateSlangc)
+        : this(downstreamCompiler, locateSlangc, SlangNativeCache.EnsureRunnableSlangc, RunSlangc)
+    {
+    }
+
+    /// <summary>
+    /// One slangc invocation for one entry point, shaped exactly like <see cref="RunSlangc"/>.
+    /// </summary>
+    internal delegate (int ExitCode, string Stdout, string Stderr) SlangcInvoker(
+        string slangcPath,
+        string workingDirectory,
+        string slangSource,
+        string entryName,
+        string stage,
+        IReadOnlyList<MacroDefinition> platformMacros,
+        IReadOnlyList<UserDefine> defines);
+
+    /// <summary>
+    /// Test seam (issue #258): <paramref name="prepareSlangc"/> replaces the native-cache
+    /// preparation and <paramref name="runSlangc"/> replaces the process spawn, so the
+    /// post-slangc logic (the per-entry merge and its <c>SD0625</c> rejection, the
+    /// <c>.fx</c> assembly) can be driven end to end with canned slangc output. No valid
+    /// Slang source reproduces <c>SD0625</c> through real slangc, which is why this exists.
+    /// </summary>
+    internal SlangCompiler(
+        IShaderCompiler? downstreamCompiler,
+        Func<SlangcLocation> locateSlangc,
+        Func<string, string> prepareSlangc,
+        SlangcInvoker runSlangc)
     {
         _downstreamCompiler = downstreamCompiler ?? new EffectCompiler();
         _locateSlangc = locateSlangc;
+        _prepareSlangc = prepareSlangc;
+        _runSlangc = runSlangc;
     }
 
     /// <summary>
@@ -213,7 +245,7 @@ public sealed class SlangCompiler
         string runnableSlangc;
         try
         {
-            runnableSlangc = SlangNativeCache.EnsureRunnableSlangc(location.SlangcPath);
+            runnableSlangc = _prepareSlangc(location.SlangcPath);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -267,7 +299,7 @@ public sealed class SlangCompiler
             string stdout, stderr;
             try
             {
-                (exitCode, stdout, stderr) = RunSlangc(
+                (exitCode, stdout, stderr) = _runSlangc(
                     runnableSlangc, toolDirectory, slangSource, entry.Name, stage, platformMacros, options.Defines);
             }
             catch (System.ComponentModel.Win32Exception ex)

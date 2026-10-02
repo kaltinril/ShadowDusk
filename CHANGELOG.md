@@ -23,6 +23,13 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   route gives the equivalent hand-written HLSL. New render gate `validation/SlangTexturedGl` (real
   MonoGame DesktopGL, texture on unit 0 via SpriteBatch, Invert compared against the `mgfxc` golden)
   measured red before the fix and green after; `slang-manifest.json` regenerated.
+- **Slang follow-ups (issue #258).** `*.slang` files are now pinned to LF in the checkout
+  (`.gitattributes`), like `.fx`/`.fxh`; every tracked `.slang` was already LF in the repo, so no
+  bytes change. `SlangCompiler`'s `SD0625` rejection (two entry points emitting different
+  declarations of one cbuffer/resource name) is now tested end to end through `SlangCompiler`
+  with a fake slangc, via an internal seam; the public API is unchanged. Every committed
+  `packages.lock.json` now records the `ShadowDusk.*` project references at 0.20.0 (they still
+  said 0.18.0, which no restore flags), and the release runbook rewrites them on each bump.
 - **Intermittent 60 s timeout in `Issue202_AposShapesCurrentUpstream_LandsOnTheRegisterLimit` on CI.** The test compiled the 3235-line shader twice, and each vkd3d compile costs about 3.3 s of CPU that a loaded runner stretched past the test's 60 s token. It now compiles once with no wall-clock token, since a token cannot interrupt a native compile; the CI integration step's `--blame-hang-timeout 3m` guards hangs and uploads a thread dump.
 - **`.fx` wave/quad intrinsics now fail loudly and consistently on every target that cannot hold them.** On OpenGL, DirectX 11 and FNA they are rejected with `SD0624` (the code the `.slang` route already used), instead of DXC's `Vulkan 1.1 is required` (OpenGL) or vkd3d's `Function "WaveActiveSum" is not defined` (DX11, FNA). The message names the intrinsic and target, keeps the compiler's own line and column, and appends its text; `.fx` and `.slang` share one message. A user function that shares an intrinsic's name on those targets still compiles. DirectX12 still compiles them; Vulkan stays `SD0218`.
 - **Host-independent generated text.** The Slang frontend `.fx`, the SkSL uniform rewrite, the ShaderToy `.fx` and harness, and the multipass manifest/WIRING.md used `AppendLine` (CRLF on Windows, LF elsewhere); they now emit `\n` everywhere. `HostNewlineBanTests` fails if `AppendLine`/`Environment.NewLine`/`WriteLine` reappears in a generator project. Compiled output bytes are unchanged.
@@ -114,6 +121,9 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   desktop OS. Host floors come from the upstream binaries: Linux needs a GCC 11+ `libstdc++`
   (Ubuntu 22.04+), macOS needs macOS 26+ (follow-up #237 to lift it); any other host gets
   `SD0620` naming the reason. A cross-host byte-identity manifest pins the route's output.
+  linux-arm64 and win-arm64 are deliberately not bundled even though upstream publishes them:
+  ShadowDusk's own pipeline has no DXC or vkd3d native for either RID, so slangc there could
+  only hand its HLSL to a compiler that cannot load. They follow when the core pipeline does.
 - **`ShadowDusk.Slang` is proven to work from a cold NuGet install (issue #225).**
   `tools/verify-slang-packaging.sh`, run by `pack-consume.yml` on all three OSes, packs the
   package, consumes it from a scratch project outside the repo, and compiles real Slang in both
@@ -127,6 +137,12 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 - **Every release and pack-consume nupkg gate now matches exact entry names** instead of a
   substring of the listing. A substring match could not tell `runtimes/<rid>/native/slangc`
   from the mis-packed `runtimes/<rid>/native/slangc/slangc`.
+- **The `ShadowDusk.Slang` nupkg gate is one script, runnable locally (issue #226).**
+  `tools/verify-slang-nupkg.sh <nupkg>` holds the only list of the eight slangc natives (slangc
+  plus its slang-compiler library for win-x64, linux-x64, osx-x64 and osx-arm64) and the
+  Apache-2.0 notice. `release.yml` and `tools/verify-slang-packaging.sh` (pack-consume.yml) both
+  call it, so the two gates can no longer drift apart, and it fails red when the package is
+  missing any entry or was not produced at all.
 
 ### Fixed
 

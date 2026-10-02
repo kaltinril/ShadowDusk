@@ -751,6 +751,11 @@ revised (owner direction, 2026-09-11, after A1-A8 shipped):**
 
 - ~~Linux/macOS RID parity for A1's finding~~ — resolved by A9 (measured on osx-arm64 and
   osx-x64; the Linux zip has no `slang-llvm` to remove, and CI runs the minimal set there).
+  Closed out for issue #227 the same day: no Unix `slangc`/`libslang-compiler` links
+  `slang-llvm` (read from the ELF `DT_NEEDED` and Mach-O `LC_LOAD_DYLIB` of every pinned zip;
+  the library only names it as a runtime-optional `dlopen` target), and linux-arm64/win-arm64
+  are deliberately not bundled because the core pipeline has no DXC/vkd3d native there
+  (`project_decisions.md`).
 - ~~Whether `-no-mangle` stays collision-free outside the 21-shader corpus~~ - resolved by
   issue #228 (measured, osx-arm64 slangc 2026.14.1). Within one entry point it does: repeated
   instantiations of one generic struct or function get distinct `_N` names, and author names

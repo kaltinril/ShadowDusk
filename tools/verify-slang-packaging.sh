@@ -50,30 +50,8 @@ for proj in Core HLSL GLSL Compiler Slang; do
         -p:Version="$VERSION" --nologo -v quiet
 done
 
-# ---- pack gate: every RID's natives + the notice (same list release.yml gates on) ----------
-pkg="$FEED/ShadowDusk.Slang.$VERSION.nupkg"
-py=$(command -v python3 || command -v python)
-# EXACT entry names, one per line, matched whole-line (grep -x): a substring match passed a
-# package that held "native/slangc/slangc" instead of "native/slangc" (issue #225).
-listing=$("$py" -c 'import sys, zipfile; print("\n".join(zipfile.ZipFile(sys.argv[1]).namelist()))' "$pkg" | tr -d '\r')
-missing=0
-for entry in \
-    'runtimes/win-x64/native/slangc.exe' \
-    'runtimes/win-x64/native/slang-compiler.dll' \
-    'runtimes/linux-x64/native/slangc' \
-    'runtimes/linux-x64/native/libslang-compiler.so.0.2026.14.1' \
-    'runtimes/osx-x64/native/slangc' \
-    'runtimes/osx-x64/native/libslang-compiler.0.2026.14.1.dylib' \
-    'runtimes/osx-arm64/native/slangc' \
-    'runtimes/osx-arm64/native/libslang-compiler.0.2026.14.1.dylib' \
-    'THIRD-PARTY-NOTICES.txt' ; do
-    if ! grep -qxF "$entry" <<<"$listing"; then
-        echo "::error::$pkg is missing $entry; a consumer on that RID gets SD0621. Restore natives before packing (tools/restore.*)." >&2
-        missing=1
-    fi
-done
-[ "$missing" -eq 0 ] || exit 1
-echo "pack gate: all 8 slangc natives + THIRD-PARTY-NOTICES.txt present ($(wc -c < "$pkg") bytes)"
+# ---- pack gate: every RID's natives + the notice (the same script release.yml gates on) -----
+bash "$SCRIPT_DIR/verify-slang-nupkg.sh" "$FEED/ShadowDusk.Slang.$VERSION.nupkg"
 
 # ---- scaffold the cold consumer ----------------------------------------------------------
 rm -rf "$APP"
