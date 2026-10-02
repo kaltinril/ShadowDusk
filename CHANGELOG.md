@@ -141,8 +141,9 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   (Ubuntu 22.04+), macOS needs macOS 26+ (follow-up #237 to lift it); any other host gets
   `SD0620` naming the reason. A cross-host byte-identity manifest pins the route's output.
   linux-arm64 and win-arm64 are deliberately not bundled even though upstream publishes them:
-  ShadowDusk's own pipeline has no DXC or vkd3d native for either RID, so slangc there could
-  only hand its HLSL to a compiler that cannot load. They follow when the core pipeline does.
+  the core pipeline is not complete on either RID (linux-arm64 has no DXC and no vkd3d native;
+  win-arm64 has DXC and SPIRV-Cross natives but no vkd3d, so no DirectX or FNA, and no CI lane
+  proves it). They follow when the core pipeline does.
 - **`ShadowDusk.Slang` is proven to work from a cold NuGet install (issue #225).**
   `tools/verify-slang-packaging.sh`, run by `pack-consume.yml` on all three OSes, packs the
   package, consumes it from a scratch project outside the repo, and compiles real Slang in both
@@ -202,19 +203,24 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   compile time instead of crashing FNA at the first draw (issue #230). Behavior change.** Any
   `Texture2D`/`Texture3D`/`TextureCube` sampled through a `SamplerState` (`Sample`, `SampleLevel`,
   `SampleGrad`, ...) at a `ps_2_0`/`ps_3_0`/`vs_*` profile used to compile for FNA into the same
-  texture-typed `S+T` entry, and every such effect throws `Unhandled sampler state!` in FNA. `fxc
+  texture-typed `S+T` entry, and FNA throws `Unhandled sampler state!` as soon as a pass that
+  samples it is applied (measured in real FNA 26.06 on the D3D11 and OpenGL drivers). `fxc
   /T fx_2_0` refuses this source too. It now fails with `SD0303`, located at the sampling call, with
   DX9 advice for the actual shape (`texture2D`/`texture3D`/`textureCUBE`, and
   `tex2D`/`tex2Dlod`/`tex2Dgrad`/`tex3D`/`texCUBE`). Twelve test fixtures that used to "compile"
   for FNA move to this rejection: `PenumbraLight`, `PenumbraTexture`, `SharedSamplerPair`,
   `ExCubeSamplerHidef`, `ExModernSample`, `ExMultiSamplerHidef`, `ExPhantomTexLodUniform`,
   `ExSampleGradHidef`, `ExSampleLevelHidef`, `ExTextureNamedTexture`, `ExVolumeTextureHidef`,
-  `ExVsTextureFetch`. None of them could have rendered in FNA. DX9-style `texture` +
-  `sampler_state` + `tex2D` source is unaffected.
+  `ExVsTextureFetch`. No pass that samples a texture object could render in FNA. One shape did
+  work before and is now a compile error, as it is for `fxc`: a multi-technique effect where
+  only some techniques sample a texture object (`PenumbraLight.fx`'s three untextured techniques
+  rendered; only `TexturedLight` crashed). Respelling the texture in DX9 syntax, as `SD0303`
+  advises, restores the whole file. DX9-style `texture` + `sampler_state` + `tex2D` source is
+  unaffected and byte-identical.
 - **OpenGL `sin`/`cos`/`tan` on large arguments no longer depends on the driver's range reduction (issue #215).** SPIRV-Cross passed the raw argument to the GLSL builtin, so a shader feeding hundreds of radians into `sin` (`Dots.fx` reaches ~792) rendered 19/255 off the `mgfxc` golden on Intel UHD while llvmpipe and NVIDIA matched. The GLSL rewriter now reduces every non-literal `sin`/`cos`/`tan` argument into [-pi, pi] first (new rewriter Rule 16, a Cody-Waite split of 2pi through an `sd_reduce_angle` helper), as fxc does before every D3D9 `sincos`, with constants more accurate than `mgfxc`'s (max phase error 1.3e-7 rad at |x| <= 1000, measured in fp32, against 3.8e-4 for `mgfxc`'s six-decimal ones). `tan` is included because fxc reduces it too: D3D9 has no `tan` instruction, so `fxc /T ps_3_0` emits `mad / frc / mad / sincos / rcp / mul` for it (the same reduction, then sin/cos), and 2pi is two of `tan`'s periods so the same helper is exact. `atan`, `atan2`, `tanh` and the other non-angle builtins are untouched. **Every OpenGL/WebGL shader that calls `sin`, `cos` or `tan` changes bytes**; shaders without them, and every DirectX, DirectX 12, Vulkan and FNA output, are byte-unchanged.
 
 - **DirectX and FNA compiles no longer run vkd3d again for an entry point another pass already compiled (issue #255).** An effect whose techniques share entry points made one vkd3d call per pass. MonoGame's stock `BasicEffect.fx` made 64 calls for 30 distinct shaders. Each distinct request now compiles once per `Compile` call, which roughly halves the vkd3d time of the stock effects: `BasicEffect` about 490 to 250 ms, `SkinnedEffect` (DirectX) about 770 to 350 ms, `EnvironmentMapEffect` about 300 to 90 ms. Output bytes are unchanged. vkd3d is deterministic, the cache key is every field of the request, and the stock effects were byte-compared before and after. A cancelled token now also stops vkd3d diagnostic relocation before each of its parse-only probe compiles, through one check in the shared locator that the desktop and the browser backend both pass their token to. A native call that has already started still cannot be interrupted.
-  This does not speed up one very large pixel shader, such as the current upstream Apos.Shapes file (about 5 s on a Ryzen 7 5800X). That time is spent inside a single vkd3d call. vkd3d's HLSL optimizer is roughly quadratic in the size of the fully inlined shader, and vkd3d 2.1 is about 1.6x slower than 1.17 on that file and about 2x slower on branchy code. vkd3d has no option that reduces optimizer work, so this is tracked upstream rather than worked around. The measurements are in `project_facts.md`.
+  This does not speed up one very large pixel shader, such as the current upstream Apos.Shapes file (about 5 s on a Ryzen 7 5800X). That time is spent inside a single vkd3d call. vkd3d's HLSL optimizer is roughly quadratic in the size of the fully inlined shader, and vkd3d 2.1 is about 1.6x slower than 1.17 on that file and about 2x slower on branchy code. vkd3d has no option that reduces optimizer work and the faithful pipeline rules out another compiler, so the fix has to come from upstream vkd3d (a report is being verified before it is filed). The measurements are in `project_facts.md`.
 - **`ShadowDusk.Slang`: textured shaders sample SpriteBatch's texture on OpenGL (issue #252).** slangc
   numbers every texture and sampler itself (`SamplerState S : register(s0)`), and the OpenGL sampler
   allocator reads a `SamplerState` register as an author reservation (mgfxc's own rule), so a

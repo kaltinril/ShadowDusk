@@ -331,7 +331,7 @@ jobs:
       # also runs, and which a release driver can run locally against a packed nupkg.
       - name: Verify ShadowDusk.Slang contains slangc for all four RIDs + Apache-2.0 notice
         run: |
-          pkg=$(find nupkg -maxdepth 1 -name 'ShadowDusk.Slang.*.nupkg' ! -name '*.snupkg' | head -1)
+          pkg=$(find nupkg -maxdepth 1 -name 'ShadowDusk.Slang.[0-9]*.nupkg' ! -name '*.snupkg' | head -1)
           chmod +x tools/verify-slang-nupkg.sh
           ./tools/verify-slang-nupkg.sh "$pkg"
 
