@@ -12,7 +12,9 @@
     binary-incompatible API). This warning moves that discovery to build time and names the fix.
 
     A WARNING, never an error: DirectX 11 and FNA consumers do not use DXC and must keep
-    building. Silence it with <NoWarn>$(NoWarn);SD0220</NoWarn> once the conflict is understood.
+    building. Silence it with <NoWarn>$(NoWarn);SD0220</NoWarn> once the conflict is understood
+    (measured: MSBuild honours NoWarn for it). Under TreatWarningsAsErrors the NU1608 that comes
+    with the same graph already fails the restore.
 
     Shipped under buildTransitive/, so it runs for a project that references ShadowDusk.HLSL
     directly or through ShadowDusk.Compiler / ShadowDusk.ContentPipeline. The pin below must equal
@@ -23,8 +25,7 @@
   </PropertyGroup>
 
   <Target Name="_ShadowDuskCheckVorticeDxcVersion"
-          AfterTargets="ResolvePackageAssets"
-          Condition="'$(ShadowDuskSkipVorticeDxcVersionCheck)' != 'true'">
+          AfterTargets="ResolvePackageAssets">
     <ItemGroup>
       <_ShadowDuskVorticeDxcAsset Include="@(ResolvedCompileFileDefinitions);@(RuntimeCopyLocalItems)"
                                   Condition="'%(NuGetPackageId)' == 'Vortice.Dxc'" />
