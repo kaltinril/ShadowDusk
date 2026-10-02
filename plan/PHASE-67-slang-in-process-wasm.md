@@ -95,7 +95,27 @@ published `ShaderFiddle.Web`, real `[JSImport]`, real HTTP fetch of every module
 
 First compile (module fetch + instantiate) 3.3 s; later compiles 40-170 ms per shader in the page.
 
-### 2.4 Android: spawning is not a seamless route
+### 2.4 Stack size and traps (PR #266 review)
+
+The first build linked emscripten's default 64 KB stack (native slangc: 1 MB on Windows, 8 MB on
+Linux/macOS). slang recurses per nesting level, so valid shaders trapped with `memory access out
+of bounds` at ~205 added terms, ~205 else-ifs, ~156 nested ifs, ~98 nested parens and ~70 nested
+ternaries, where native slangc compiles twice that. The module now links `-sSTACK_SIZE=8MB`, and
+the node gate's depth cases (400 added terms, 300 parens, 200 ternaries, 300 nested ifs, 400
+else-ifs, all below where native Windows slangc itself gives out) match native exactly. Wasm
+recursion also uses the JS engine's own native stack, so far deeper input ends in a JS
+`RangeError: Maximum call stack size exceeded`.
+
+A trap also used to poison the instance: every later call failed, even for trivial shaders, and
+the failure surfaced as a fake slangc diagnostic (`SD0622`). The shim now drops a trapped
+instance, `WasmSlangCompiler` marks the module not ready and reports `SD1905`, and the next load is
+fresh. Covered by the node gate (trap, then a compile through the shim that matches native) and the
+browser gate (trap, then the next compile on the same page matches the manifest).
+
+The DXC, SPIRV-Cross and vkd3d wasm recipes set no stack size either; that is a separate,
+unmeasured gap (`docs/validation-matrix.md` §7).
+
+### 2.5 Android: spawning is not a seamless route
 
 Measured on the local `pixel_7_-_api_34` emulator (x86_64, API 34) with a throwaway .NET 9
 Android probe app (not committed):
@@ -126,7 +146,7 @@ that varies by host:
   executable lookup/preparation (`SD0620`/`SD0621`/`SD0623`); entry discovery, the
   host-independent rejections, `SlangcRegisterStripper` (issue #252), `SlangHlslMerger`, the
   `.fx` assembly and the downstream compile are the same code. It is internal and reachable only
-  by `ShadowDusk.Slang.Wasm` (`InternalsVisibleTo`), so a consumer cannot plug a different
+  by `ShadowDusk.Slang.Wasm` (`InternalsVisibleTo`). That is a convention, not a security boundary (the assemblies are not strong-named, so a determined caller could still reach it), but no public API offers a way to plug a different
   compiler into it.
 
 `SlangInProcessRouteTests` pins the argument list, the output normalization, and runs the whole
@@ -141,7 +161,7 @@ A `net8.0-browser` Razor-SDK project (the `ShadowDusk.Wasm` pattern) referencing
 - `WasmSlangCompiler` wraps `SlangCompiler`'s in-process constructor with a `WasmShaderCompiler`
   downstream (shareable, so a page that already compiles `.fx` reuses its loaded modules).
   `CompileAsync` loads on first use; `InitializeAsync` + sync `Compile` mirror
-  `WasmShaderCompiler`. `SD0628` = module failed to load; `SD0629` = sync compile before init.
+  `WasmShaderCompiler`. `SD1904` = slangc module failed to load; `SD1905` = slangc module trapped (the instance is discarded, the next load is fresh); a sync compile before init is the existing `SD1903`. A DXC/vkd3d module that fails to load keeps its own `SD1900`/`SD1902`: `CompileAsync` loads only the slangc module up front and hands the assembled `.fx` to `WasmShaderCompiler.CompileAsync` when its sync core reports `SD1903`.
 - `SlangcModule` registers `wwwroot/shadowdusk-slangc.js` (the `[JSImport]` shim) from
   `_content/ShadowDusk.Slang.Wasm/` and lazily fetches `wwwroot/slangc/shadowdusk-slangc.wasm`.
   The consumer wires nothing.
@@ -177,7 +197,7 @@ compiler library's size and its Android build effort (upstream does not build it
 - [x] Browser gate `browser-slang-gate.mjs` (42/42 bytes, 18/18 renders, measured locally) and
   both gates wired into `wasm.yml` `browser-smoke` (the job builds the module from the recipe,
   cached on the recipe's inputs, and re-proves it against native slangc every run).
-- [x] Android spawn measured (§2.4).
+- [x] Android spawn measured (§2.5).
 
 **Remaining (registered in `docs/validation-matrix.md` §7 and `plan/plan.md`):**
 
@@ -188,11 +208,11 @@ compiler library's size and its Android build effort (upstream does not build it
   `release.yml` + `pack-consume.yml` entries and a cold browser-consumer check; then the
   package count everywhere it is stated (`CLAUDE.md`, `project_facts.md`, README, docfx). After
   that the CI job restores the hosted module instead of building it.
-- [ ] **Project-reference leak in the sample publish:** referencing `ShadowDusk.Slang` from a
-  browser project copies its win-x64 `slangc.exe` + `slang-compiler.dll` (25 MB) into the
-  publish root (outside `wwwroot`, never served). A package consumer gets them only under
-  `runtimes/win-x64/native/`, which a `browser-wasm` publish does not copy, so this is a
-  repo-build artifact; confirm with the cold consumer check above.
+- [x] **Project-reference leak in the sample publish (fixed in the review round):** `ShadowDusk.Slang`'s
+  win-x64 `slangc.exe` + `slang-compiler.dll` (25 MB) used to be `CopyToOutputDirectory` items, which
+  flow into every referencing project, so they landed in the browser sample's publish root. Every RID
+  is now pack-only (repo runs find `tools/slang/<rid>/` by walking up, as the Unix RIDs already did).
+- [ ] **Stack size of the DXC / SPIRV-Cross / vkd3d wasm modules** (§2.4; validation-matrix §7).
 - [ ] **Android in-process slangc** (§3.3): NDK build of slang's compiler library, the C entry
   point, the P/Invoke transport, and an on-emulator proof (`validation/AndroidGl` precedent).
 - [ ] Optional: retire the sample's dead Phase 22 Slang-as-HLSL-compiler shim

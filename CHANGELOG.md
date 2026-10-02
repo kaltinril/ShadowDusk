@@ -53,8 +53,8 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   real headless Chromium 42/42 corpus artifacts byte-identical to `slang-manifest.json` plus 17/17
   KNI WebGL renders at maxd 0 against the subset frontend. Two new gates in `wasm.yml`
   (`node-test-slangc-wasm.mjs`, `browser-slang-gate.mjs`). The ShaderFiddle sample compiles Slang
-  source through it (new "Slang generic blend" example). New codes `SD0628` (module failed to load)
-  and `SD0629` (sync compile before init). No emitted byte changes on any existing route.
+  source through it (new "Slang generic blend" example). New codes `SD1904` (slangc module failed to load)
+  and `SD1905` (slangc module trapped; the instance is discarded and reloads), and `SD1903` now also covers a sync compile before the slangc module is loaded. The module links with an 8 MB stack (emscripten's 64 KB default trapped on valid nested shaders native slangc compiles). No emitted byte changes on any existing route.
 - **Android full-Slang measurement (issue #257).** On an API-34 emulator an app can spawn a packaged
   executable only when native libraries are extracted, which a default Release build does not do,
   and upstream ships no Android slangc, so full Slang on Android will take the in-process route
