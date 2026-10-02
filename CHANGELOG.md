@@ -14,6 +14,22 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **A `dxil.dll` on `PATH` no longer hijacks DXC's DXIL validator on Windows.** With the Windows
+  SDK's `bin` directory on `PATH` (every VS Developer Command Prompt), every DirectX 12 compile
+  failed with `DXIL container mismatch for 'PSVRuntimeInfoSize'`; with any other `dxil.dll` there,
+  DirectX 12 output could come out unsigned without a word. The cause was ShadowDusk's own call
+  to Vortice's `Dxc.LoadDxil()`, a bare `LoadLibrary("dxil.dll")` made before DXC loaded: our
+  `dxil.dll` sits in `runtimes/<rid>/native`, not the application directory, so the bare load
+  walked down to `PATH`, and `dxcompiler.dll` then bound the module already loaded under that
+  name. ShadowDusk now loads its pinned `dxil.dll` and then `dxcompiler.dll` by absolute path
+  before any DXC call (on Linux, `libdxcompiler.so`), and checks that the `dxil.dll` DXC binds is
+  its own. When the pinned natives are missing, or a foreign validator was loaded into the
+  process first (on macOS, any `libdxil` image, since that build ships none), compiles fail with
+  the new `SD0219` instead of running on whatever the OS search found. Output bytes are unchanged
+  on a clean `PATH`. `CliDxcPathHijackTest` runs the CLI with decoy `dxil.dll`/`dxcompiler.dll`
+  (and, where installed, the Windows SDK's `bin`) first on `PATH` for DirectX 12, DirectX 11,
+  OpenGL and Vulkan, and requires output byte-identical to a clean-`PATH` compile, with DirectX 12
+  signed; it failed before the fix. The MGCB gate's decoy directory now carries a `dxil.dll` too.
 - **`ShadowDusk.Slang`: textured shaders sample SpriteBatch's texture on OpenGL (issue #252).** slangc
   numbers every texture and sampler itself (`SamplerState S : register(s0)`), and the OpenGL sampler
   allocator reads a `SamplerState` register as an author reservation (mgfxc's own rule), so a

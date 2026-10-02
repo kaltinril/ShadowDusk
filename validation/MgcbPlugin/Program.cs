@@ -42,7 +42,7 @@ namespace ShadowDusk.Validation.MgcbPluginGate;
 /// (its Vulkan/DX12 compile rejects the <c>ps_4_0_level_9_1</c> profile these fixtures select
 /// off the platform's defines); the <c>Web</c> and <c>DesktopGL</c> cases keep it.</para>
 ///
-/// <para><b>The plugin-arm MGCB runs with a DECOY <c>dxcompiler.dll</c> first on <c>PATH</c></b>
+/// <para><b>The plugin-arm MGCB runs with a DECOY <c>dxcompiler.dll</c> and <c>dxil.dll</c> first on <c>PATH</c></b>
 /// (Windows). Inside MGCB, Vortice.Dxc's base-directory probe misses (the base directory is
 /// MGCB's), and before Phase 63 its bare-name fallback then took whatever <c>dxcompiler.dll</c>
 /// the OS search path offered - on a box with the Vulkan SDK installed, a DIFFERENT DXC compiled
@@ -131,8 +131,8 @@ internal static class Program
 
         string? decoyDir = CreateDecoyDxcDirectory(plugin, work);
         Console.WriteLine(decoyDir is null
-            ? "decoy dxcompiler on PATH: (not on Windows - skipped)"
-            : $"decoy dxcompiler on PATH: {decoyDir}");
+            ? "decoy dxcompiler/dxil on PATH: (not on Windows - skipped)"
+            : $"decoy dxcompiler/dxil on PATH: {decoyDir}");
         Console.WriteLine();
 
         int failures = 0;
@@ -167,8 +167,12 @@ internal static class Program
     }
 
     /// <summary>
-    /// A directory holding a <c>dxcompiler.dll</c> that is NOT DXC (the plugin's own
-    /// <c>spirv-cross.dll</c>, renamed), to sit first on the plugin-arm MGCB's <c>PATH</c>.
+    /// A directory holding a <c>dxcompiler.dll</c> and a <c>dxil.dll</c> that are neither DXC nor
+    /// a validator (the plugin's own <c>spirv-cross.dll</c>, renamed), to sit first on the
+    /// plugin-arm MGCB's <c>PATH</c>. The <c>dxil.dll</c> decoy pins the 2026-10-01 fix: DXC binds
+    /// its validator with a bare <c>LoadLibrary("dxil.dll")</c>, and ShadowDusk used to pre-load
+    /// it by bare name too, so a <c>dxil.dll</c> on <c>PATH</c> won and DirectX 12 came out
+    /// unsigned (or, with the Windows SDK's newer one, failed validation outright).
     /// Windows only: the bare-name fallback this guards against is the Win32 search order.
     /// </summary>
     private static string? CreateDecoyDxcDirectory(string plugin, string work)
@@ -183,6 +187,7 @@ internal static class Program
         string decoyDir = Path.Combine(work, "decoy-path");
         Directory.CreateDirectory(decoyDir);
         File.Copy(source, Path.Combine(decoyDir, "dxcompiler.dll"), overwrite: true);
+        File.Copy(source, Path.Combine(decoyDir, "dxil.dll"), overwrite: true);
         return decoyDir;
     }
 

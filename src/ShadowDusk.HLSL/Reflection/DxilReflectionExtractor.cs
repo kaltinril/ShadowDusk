@@ -66,9 +66,10 @@ public sealed class DxilReflectionExtractor
     {
         ct.ThrowIfCancellationRequested();
 
-        // macOS: hook Vortice's ResolveLibrary so our pinned libdxcompiler.dylib
-        // resolves (Phase 37 A). Idempotent; no-op on Windows/Linux.
-        HLSL.Dxc.DxcLoader.Register();
+        // Resolve DXC as ShadowDusk's pinned build (absolute-path load on Windows/Linux, our
+        // own libdxcompiler on macOS/Android). Idempotent; SD0219 when that is not possible.
+        if (HLSL.Dxc.DxcLoader.Register() is { } loadError)
+            return Result<ReflectedEffect, ShaderError>.Fail(loadError);
 
         IDxcUtils utils = CreateDxcUtils();
 

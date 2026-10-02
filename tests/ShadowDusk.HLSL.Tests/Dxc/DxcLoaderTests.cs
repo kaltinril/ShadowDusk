@@ -124,4 +124,64 @@ public sealed class DxcLoaderTests
         // runtimes/android-arm64/native.
         DxcLoader.AndroidLibFileName.ShouldBe("libdxcompiler.so");
     }
+
+    [Fact]
+    public void PinnedPairDirectories_StartWithVorticesOwnProbeAndEndWithTheFlatBase()
+    {
+        // The first two entries mirror Vortice.Dxc's resolver (base/runtimes/<rid>/native,
+        // then the host's search directories), so the files DxcLoader loads by absolute path
+        // are the files Vortice would load: one module, never two copies of DXC.
+        string search = Path.Combine(Path.GetTempPath(), "search");
+        string plugin = Path.Combine(Path.GetTempPath(), "plugin");
+
+        var dirs = DxcLoader.GetPinnedPairDirectories(
+            Base, [search], [plugin], "win-x64", ignoreCase: true).ToList();
+
+        dirs.ShouldBe(new[] {
+            Path.Combine(Base, "runtimes", "win-x64", "native"),
+            search,
+            Path.Combine(plugin, "runtimes", "win-x64", "native"),
+            plugin,
+            Base});
+    }
+
+    [Fact]
+    public void PinnedPairDirectories_DropDuplicatesAndTrailingSeparators()
+    {
+        // The host lists the app directory among its search directories, and the ShadowDusk
+        // and Vortice assemblies usually share it: each directory is probed once.
+        var dirs = DxcLoader.GetPinnedPairDirectories(
+            Base,
+            [Base + Path.DirectorySeparatorChar],
+            [Base, Base],
+            "linux-x64",
+            ignoreCase: false).ToList();
+
+        dirs.ShouldBe(new[] {
+            Path.Combine(Base, "runtimes", "linux-x64", "native"),
+            Base});
+    }
+
+    [Theory]
+    [InlineData(true, Architecture.X64, "win-x64")]
+    [InlineData(true, Architecture.Arm64, "win-arm64")]
+    [InlineData(false, Architecture.X64, "linux-x64")]
+    [InlineData(false, Architecture.Arm64, "linux-arm64")]
+    public void PinnedRid_FollowsTheProcessArchitecture(bool windows, Architecture arch, string expected)
+    {
+        DxcLoader.PinnedRid(windows, arch).ShouldBe(expected);
+    }
+
+    [Theory]
+    [InlineData("libdxil.dylib", true)]
+    [InlineData("libdxil.so", true)]
+    [InlineData("LIBDXIL.DYLIB", true)]
+    [InlineData("libdxcompiler.dylib", false)]
+    [InlineData("libdxil.dylib.bak", false)]
+    public void DxilLeafNames_AreExactlyTheValidatorNamesDxcOpens(string leaf, bool expected)
+    {
+        // Our macOS libdxcompiler.dylib dlopens both of these by leaf name; it ships neither,
+        // so any loaded image with one of these names is a foreign validator (SD0219).
+        DxcLoader.IsDxilLeafName(leaf).ShouldBe(expected);
+    }
 }
