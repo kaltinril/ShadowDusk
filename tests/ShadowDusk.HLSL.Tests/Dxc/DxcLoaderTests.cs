@@ -126,11 +126,12 @@ public sealed class DxcLoaderTests
     }
 
     [Fact]
-    public void PinnedPairDirectories_StartWithVorticesOwnProbeAndEndWithTheFlatBase()
+    public void PinnedPairDirectories_ProbeBesideTheAssembliesBeforeTheHostsDirectories()
     {
-        // The first two entries mirror Vortice.Dxc's resolver (base/runtimes/<rid>/native,
-        // then the host's search directories), so the files DxcLoader loads by absolute path
-        // are the files Vortice would load: one module, never two copies of DXC.
+        // Issue #270: a plugin host's own directories can hold a different DXC (measured: the
+        // Windows SDK's pair in <mgcb>/runtimes/win-x64/native won over ShadowDusk's own and
+        // compiled DirectX 12 silently). The natives that ship beside the ShadowDusk/Vortice
+        // assemblies come first; the host's base and search directories follow.
         string search = Path.Combine(Path.GetTempPath(), "search");
         string plugin = Path.Combine(Path.GetTempPath(), "plugin");
 
@@ -138,11 +139,74 @@ public sealed class DxcLoaderTests
             Base, [search], [plugin], "win-x64", ignoreCase: true).ToList();
 
         dirs.ShouldBe(new[] {
-            Path.Combine(Base, "runtimes", "win-x64", "native"),
-            search,
             Path.Combine(plugin, "runtimes", "win-x64", "native"),
             plugin,
+            Path.Combine(Base, "runtimes", "win-x64", "native"),
+            Base,
+            search});
+    }
+
+    [Fact]
+    public void PinnedPairDirectories_AssemblyLoadedFromAPackageFolder_ProbeThatPackagesRuntimes()
+    {
+        // An assembly loaded straight from the NuGet cache sits in <package>/lib/<tfm>/ and its
+        // natives in <package>/runtimes/<rid>/native: the pair that ships with it, wherever
+        // the host's own directories point.
+        string package = Path.Combine(Path.GetTempPath(), "packages", "vortice.dxc", "3.3.4");
+        string lib = Path.Combine(package, "lib", "net8.0");
+
+        var dirs = DxcLoader.GetPinnedPairDirectories(
+            Base, [], [lib], "win-x64", ignoreCase: true).ToList();
+
+        dirs.ShouldBe(new[] {
+            Path.Combine(lib, "runtimes", "win-x64", "native"),
+            lib,
+            Path.Combine(package, "runtimes", "win-x64", "native"),
+            Path.Combine(Base, "runtimes", "win-x64", "native"),
             Base});
+    }
+
+    [Fact]
+    public void MacCandidates_ProbeBesideTheAssembliesThenTheBaseThenTheSearchDirectories()
+    {
+        // Same preference as Windows/Linux, with the per-arch subdirectories the macOS layout
+        // needs. Every candidate is an absolute path to the dylib: a bare name would be the
+        // dynamic linker's search path (DYLD_LIBRARY_PATH, the working directory,
+        // /usr/local/lib), exactly where a foreign DXC sits (issue #270).
+        string search = Path.Combine(Path.GetTempPath(), "search");
+        string plugin = Path.Combine(Path.GetTempPath(), "plugin");
+        string lib = DxcLoader.MacLibFileName;
+
+        var candidates = DxcLoader.GetMacCandidates(Base, [search], [plugin], Architecture.Arm64).ToList();
+
+        candidates.Take(6).ShouldBe(new[] {
+            Path.Combine(plugin, "osx-arm64", lib),
+            Path.Combine(plugin, lib),
+            Path.Combine(plugin, "runtimes", "osx-arm64", "native", lib),
+            Path.Combine(Base, "osx-arm64", lib),
+            Path.Combine(Base, lib),
+            Path.Combine(Base, "runtimes", "osx-arm64", "native", lib)});
+        candidates.TakeLast(2).ShouldBe(new[] {
+            Path.Combine(search, "osx-arm64", lib),
+            Path.Combine(search, lib)});
+        candidates.ShouldAllBe(c => Path.IsPathFullyQualified(c) && Path.GetFileName(c) == lib);
+        candidates.ShouldBeUnique();
+    }
+
+    [Fact]
+    public void MacCandidates_AppWhoseAssembliesSitInTheBaseDirectory_KeepTheLongStandingOrder()
+    {
+        // The ordinary app: assemblies and base directory are the same place, so the list is
+        // the pre-#270 one (per-arch, flat, runtimes/<rid>/native, tools/dxc walk-up, search
+        // directories) with nothing probed twice.
+        string search = Path.Combine(Path.GetTempPath(), "search");
+
+        var candidates = DxcLoader.GetMacCandidates(Base, [search], [Base], Architecture.X64).ToList();
+
+        candidates.ShouldBe(
+            DxcLoader.GetProbeCandidates(Base, Architecture.X64)
+                .Concat(DxcLoader.GetSearchDirectoryCandidates(search, Architecture.X64))
+                .ToList());
     }
 
     [Fact]
@@ -163,13 +227,26 @@ public sealed class DxcLoaderTests
     }
 
     [Theory]
-    [InlineData(true, Architecture.X64, "win-x64")]
-    [InlineData(true, Architecture.Arm64, "win-arm64")]
-    [InlineData(false, Architecture.X64, "linux-x64")]
-    [InlineData(false, Architecture.Arm64, "linux-arm64")]
-    public void PinnedRid_FollowsTheProcessArchitecture(bool windows, Architecture arch, string expected)
+    [InlineData("win", Architecture.X64, "win-x64")]
+    [InlineData("win", Architecture.Arm64, "win-arm64")]
+    [InlineData("linux", Architecture.X64, "linux-x64")]
+    [InlineData("linux", Architecture.Arm64, "linux-arm64")]
+    [InlineData("osx", Architecture.X64, "osx-x64")]
+    [InlineData("osx", Architecture.Arm64, "osx-arm64")]
+    public void PinnedRid_FollowsTheProcessArchitecture(string os, Architecture arch, string expected)
     {
-        DxcLoader.PinnedRid(windows, arch).ShouldBe(expected);
+        DxcLoader.PinnedRid(os, arch).ShouldBe(expected);
+    }
+
+    [Theory]
+    [InlineData(@"C:\app\dxil.dll", @"c:\APP\DXIL.DLL", true)]
+    [InlineData(@"\\?\C:\app\dxil.dll", @"C:\app\dxil.dll", true)]
+    [InlineData(@"C:\app\dxil.dll", @"C:\other\dxil.dll", false)]
+    public void SamePath_IgnoresCaseAndTheLongPathPrefix(string a, string b, bool expected)
+    {
+        // GetModuleFileNameW reports a \\?\ path when the module was loaded through one, so
+        // the pinned dxil.dll reached that way must still be recognized as the pinned file.
+        DxcLoader.SamePath(a, b).ShouldBe(expected);
     }
 
     [Theory]
