@@ -34,6 +34,21 @@ public sealed class SlangFx2TextureRespellerTests
         return unsupported;
     }
 
+    // In multiline mode .NET's '$' matches only before '\n', so a CRLF line once made every
+    // declaration unmatchable (red on windows-latest CI, whose checkout has CRLF sources).
+    [Theory]
+    [InlineData("\n")]
+    [InlineData("\r\n")]
+    public void Declarations_AreRespelled_UnderEitherLineEnding(string newline)
+    {
+        string fx = Respell(SlangcEmission.ReplaceLineEndings(newline));
+
+        fx.ShouldContain("texture2D SpriteTexture;" + newline, Case.Sensitive);
+        fx.ShouldContain("sampler2D SpriteSampler = sampler_state { Texture = <SpriteTexture>; };" + newline, Case.Sensitive);
+        fx.ShouldNotContain("Texture2D", Case.Sensitive);
+        fx.ShouldNotContain("SamplerState", Case.Sensitive);
+    }
+
     [Fact]
     public void TextureObjects_BecomeDx9EffectSyntax()
     {

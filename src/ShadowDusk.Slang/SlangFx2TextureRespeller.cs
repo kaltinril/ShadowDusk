@@ -37,11 +37,11 @@ internal static class SlangFx2TextureRespeller
     public const string UnsupportedCode = "SD0627";
 
     private static readonly Regex TextureDecl = new(
-        """^[ \t]*Texture2D(?:\s*<[^>;{}]*>)?\s+(?<name>[A-Za-z_]\w*)\s*(?::\s*register\s*\([^)]*\))?\s*;[ \t]*$""",
+        """^[ \t]*Texture2D(?:\s*<[^>;{}]*>)?\s+(?<name>[A-Za-z_]\w*)\s*(?::\s*register\s*\([^)]*\))?\s*;[ \t]*(?=\r?$)""",
         RegexOptions.Multiline | RegexOptions.Compiled);
 
     private static readonly Regex SamplerDecl = new(
-        """^[ \t]*SamplerState\s+(?<name>[A-Za-z_]\w*)\s*(?<reg>:\s*register\s*\(\s*s\d+\s*\))?\s*;[ \t]*$""",
+        """^[ \t]*SamplerState\s+(?<name>[A-Za-z_]\w*)\s*(?<reg>:\s*register\s*\(\s*s\d+\s*\))?\s*;[ \t]*(?=\r?$)""",
         RegexOptions.Multiline | RegexOptions.Compiled);
 
     private static readonly Regex SampleCall = new(
