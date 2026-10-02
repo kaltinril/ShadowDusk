@@ -508,9 +508,9 @@ internal sealed class CompilationPipeline
                         // + attribute/varying contract that lets MonoGame's GL runtime link it.
                         applyMonoGameGlsl: monoGameGl,
                         reflectFromSpirv: reflectFromSpirv,
-                        // The explicit register(sN) indices the pre-parser captured before the
-                        // SM4 rewrite dropped them, so the GLSL rewriter numbers ps_s{slot} the
-                        // same way the .mgfx sampler table will (issue #189).
+                        // The explicit register(sN) indices of legacy samplers (which the SM4 rewrite
+                        // drops), read off the preprocessed view, so the GLSL rewriter numbers ps_s{slot} the
+                        // same way the .mgfx sampler table will (issues #189, #299).
                         explicitGlSamplerSlots: explicitGlSamplerSlots,
                         reservedGlSamplerSlots: reservedGlSamplerSlots,
                         cancellationToken);
@@ -560,9 +560,9 @@ internal sealed class CompilationPipeline
                         compileOptions,
                         applyMonoGameGlsl: monoGameGl,
                         reflectFromSpirv: reflectFromSpirv,
-                        // The explicit register(sN) indices the pre-parser captured before the
-                        // SM4 rewrite dropped them, so the GLSL rewriter numbers ps_s{slot} the
-                        // same way the .mgfx sampler table will (issue #189).
+                        // The explicit register(sN) indices of legacy samplers (which the SM4 rewrite
+                        // drops), read off the preprocessed view, so the GLSL rewriter numbers ps_s{slot} the
+                        // same way the .mgfx sampler table will (issues #189, #299).
                         explicitGlSamplerSlots: explicitGlSamplerSlots,
                         reservedGlSamplerSlots: reservedGlSamplerSlots,
                         cancellationToken);

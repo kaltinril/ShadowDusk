@@ -61,6 +61,7 @@ Work found by the 2026-10-01 issue batch and its validation lives in GitHub issu
 
 - **Owner verification:** issues labelled `ready-to-validate` are fixed and merged and wait for the owner's partner to verify before closing (#215 needs Intel hardware). 
 - **Open defects:** #292 (Slang author registers in imported modules and combined Sampler2D, introduced by #263), #283 (.fx GL sampler-register reservation ignores the preprocessor), #280 (path in CLI .xnb output and /config:Debug), #271 (64 KB wasm stack in DXC/SPIRV-Cross/vkd3d modules), #272 (browser DX12 unregistered error), #273 (browser publish carries desktop natives), #282 (Vortice.Dxc version conflicts: build-time warning, own the DXC binaries), #289 (untested Android/other-OS loader paths), #290 (release lock-file glob misses suffixed names).
+- **Open defects found by the issue #299 measurement (OpenGL legacy samplers):** #308 (a legacy sampler declared in an `#include`d file or through a function-like macro does not compile for OpenGL: the SM4 rewrite only sees the raw main file), #309 (a lowercase `sampler S : register(sN)` read through `Texture.Sample` does not reserve its register).
 - **Owner decisions pending:** #284 and #285 (verified upstream DXC and vkd3d reports, full text in the issues), #286 (win-arm64 slangc), #287 (DXC pin age), #288 (code-scanning AI check misconfigured).
 - **Remaining phase work:** #257's 11th package and Android route (Phase 67 doc); #237, #253, #254 are owned by Vic on his branches.
 

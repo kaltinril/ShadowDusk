@@ -1,6 +1,6 @@
 # Test Shader Corpus — Provenance & Fresh Examples
 
-**Last updated:** 2026-10-02 — issue #283 added `SamplerReservationIfBranch.fx` and `SamplerReservationMacro.fx` (the sampler-register set below), both with `OpenGL` **and** `DirectX_11` goldens. Previously 2026-09-10 — vkd3d 2.1 (Phase 56) reclassified `Reflection.fx` and the Apos.Shapes revisions as FNA-compiling; the `E5017` loop/ternary gaps they sat behind were compiler gaps, not shader-model limits. Previously 2026-09-09: added the Slang input corpus: 17 `.slang` fixtures under
+**Last updated:** 2026-10-02 — issue #299 added `SamplerLegacyRegisterIfBranch.fx` and `SamplerLegacyRegisterMacro.fx`, and issue #283 added `SamplerReservationIfBranch.fx` and `SamplerReservationMacro.fx` (the sampler-register set below), all four with `OpenGL` **and** `DirectX_11` goldens. Previously 2026-09-10 — vkd3d 2.1 (Phase 56) reclassified `Reflection.fx` and the Apos.Shapes revisions as FNA-compiling; the `E5017` loop/ternary gaps they sat behind were compiler gaps, not shader-model limits. Previously 2026-09-09: added the Slang input corpus: 17 `.slang` fixtures under
 `slang/`, cross-validated against the real `slangc` compiler (see `docs/validation-matrix.md`
 §8.0 and `validation/SlangCorpus`). Previously 2026-08-02: the issue-#189 fix added
 `SamplerRegisterOrder.fx` and `SamplerRegisterSparse.fx` (the sampler-register set below), both
@@ -236,6 +236,24 @@ they back `validation/SamplerPairsGl`:
   like the directly written form, so the pairs are `ps_s2`/`ps_s3`; the old reading did not see the
   macro and emitted `ps_s0`/`ps_s1`. BLUE sprite + RED MaskA + GREEN MaskB: **yellow = correct**,
   **green = the bug**. Goldens on `OpenGL` + `DirectX_11`.
+
+- **`SamplerLegacyRegisterIfBranch.fx`** — GitHub issue **#299**, shape 1: the same dead-branch
+  shape for the register a LEGACY sampler PINS. `SpriteSampler` (a `sampler_state` declaration) and
+  `MaskSampler` (the bare form) carry `register(s1)` / `register(s0)` **only in the `#else` branch**
+  OpenGL does not compile, deliberately the reverse of declaration order. `mgfxc` reads the clause
+  off the preprocessed source, so nothing is pinned and the samplers are `ps_s0`/`ps_s1` in
+  declaration order; the old raw-token reading counted the dead branch and swapped them. RED sprite
+  + BLUE `SpriteTexture` parameter + GREEN mask, `(sprite.r, mask.g, 0, 1)`: **yellow = correct**,
+  **black = the bug**. Goldens on `OpenGL` + `DirectX_11`.
+
+- **`SamplerLegacyRegisterMacro.fx`** — GitHub issue **#299**, shape 2. Two legacy samplers (one
+  bare, one with a `sampler_state` block) whose register NUMBER is a macro
+  (`#define MASK_A_REGISTER s2`, `register(MASK_A_REGISTER)`). `mgfxc` pins them to `ps_s2`/`ps_s3`
+  exactly like `SamplerRegisterSparse.fx`'s directly written registers; the old reading saw no
+  register number and compacted them to `ps_s0`/`ps_s1`. BLUE sprite + RED MaskA + GREEN MaskB:
+  **yellow = correct**, **green = the bug**. Goldens on `OpenGL` + `DirectX_11`; the `DirectX_11`
+  cell carries the same recorded divergence as `SamplerRegisterSparse` (DX11 deliberately ignores a
+  legacy sampler's `register(sN)`, validation matrix §7).
 
 ### ShaderToy route fixture
 
