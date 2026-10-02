@@ -3,19 +3,34 @@
 // Mirrors the Phase 23 G1 mechanism (.wasm-build/node-test-dxc-shim.mjs): drive the
 // PRODUCT shim (src/ShadowDusk.Wasm/wwwroot/shadowdusk-vkd3d.js) through its real
 // contract surface under node — await ensureReady() (twice, to exercise idempotency),
-// then compile(sourceUtf8, entryPoint, profile, sourceName, targetType) — and assert
-// every output byte-identical to the DESKTOP vkd3d backend's output over the DX (SM5
-// DXBC_TPF) and FNA (SM1-3 D3D_BYTECODE) byte-identity corpus.
+// then compile(sourceUtf8, entryPoint, profile, sourceName, targetType, options) — and
+// assert every output byte-identical to the DESKTOP vkd3d backend's output over the DX
+// (SM5 DXBC_TPF) and FNA (SM1-3 D3D_BYTECODE) byte-identity corpus.
 //
 // The desktop ground truth is captured fresh each run by Vkd3dCorpusProbe (dotnet),
 // which records every vkd3d compile the REAL pipeline issues (preprocessed source
-// bytes, entry point, profile, target type, output blob) through the same
-// dxbcCompilerFactory seam the WASM host uses — so the comparison sits at the exact
-// seam that differs between hosts.
+// bytes, entry point, profile, target type, the vkd3d compile options the desktop
+// really passed, output blob) through the same dxbcCompilerFactory seam the WASM host
+// uses — so the comparison sits at the exact seam that differs between hosts.
+//
+// COMPILE OPTIONS (issue #295). The browser module used to compile with NO vkd3d
+// options while the desktop passed BACKWARD_COMPATIBILITY = MAP_SEMANTIC_NAMES for
+// DXBC_TPF, and this gate stayed green: no corpus shader changed a byte with the
+// option. Sm3SemanticStructs.fx is the corpus case that does, and three things now
+// hold it in place:
+//   - each compile is replayed with the options the DESKTOP passed (manifest
+//     'options'), which the shim and the wrapper must forward untouched;
+//   - an option-sensitivity control replays Sm3SemanticStructs with NO options and
+//     requires the result to DIFFER from the desktop (a fixture that stopped
+//     depending on the options would have silently disarmed the gate);
+//   - a module other than the hosted pre-#295 build must take options at all.
+// While the restored module is still that hosted pre-#295 build (keyed on its
+// SHA-256), the Sm3SemanticStructs DirectX compiles are reported loudly as an EXPECTED
+// DIFFERENCE instead of failing, and enforce by themselves once the rebuilt module is
+// pinned in tools/restore.*.
 //
 // SKIP-WITH-NOTICE (never a fabricated pass):
-//   - vkd3d-shader.{js,wasm} not restored (hosted build pending,
-//     tag native-vkd3d-wasm-1.17)            -> loud SKIP, exit 0.
+//   - vkd3d-shader.{js,wasm} not restored     -> loud SKIP, exit 0.
 //   - desktop vkd3d native not restored (probe exit 3 / SD0211) -> loud SKIP, exit 0.
 // Any compile failure or byte mismatch -> FAIL, exit 1.
 //
@@ -23,6 +38,7 @@
 //         (or: npm run vkd3d-gate)
 
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, mkdirSync, mkdtempSync, copyFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -36,6 +52,17 @@ const moduleJs = path.join(repoRoot, 'src', 'ShadowDusk.Wasm', 'wwwroot', 'vkd3d
 const moduleWasm = path.join(repoRoot, 'src', 'ShadowDusk.Wasm', 'wwwroot', 'vkd3d', 'vkd3d-shader.wasm');
 const probeDir = path.join(__dirname, 'Vkd3dCorpusProbe');
 const outDir = path.join(__dirname, '.vkd3d-gate');
+
+// SHA-256 of the vkd3d-shader.wasm hosted on native-vkd3d-wasm-2.1. It was built from a
+// wrapper that passed vkd3d no compile options (issue #295), so it cannot reproduce the
+// desktop on a shader whose output depends on them.
+const VKD3D_WASM_PRE_295 = '3e8c85104ab9a793220615e2ff22c3dc882d6dd1348cc20e16e7c9cfb7251a00';
+// The corpus fixtures whose DXBC_TPF output depends on the vkd3d compile options (SM1-3
+// semantics on struct fields: MAP_SEMANTIC_NAMES). Their FNA (D3D_BYTECODE) compiles take
+// no options and are ordinary corpus entries.
+const OPTION_DEPENDENT = new Set(['Sm3SemanticStructs.fx']);
+const optionDependent = (entry) => OPTION_DEPENDENT.has(entry.fixture) && entry.options.length > 0;
+const sameBytes = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
 
 function skip(reason) {
   console.log('');
@@ -76,7 +103,7 @@ function skip(reason) {
     }
     try {
       absentShim.compile(new TextEncoder().encode('float4 main() : COLOR { return 0; }'),
-        'main', 'ps_2_0', 'absent.fx', 4);
+        'main', 'ps_2_0', 'absent.fx', 4, []);
       console.error('  [FAIL] module-absent: compile() after a failed load returned instead of throwing.');
       process.exit(1);
     } catch (e) {
@@ -98,8 +125,7 @@ function skip(reason) {
 if (!existsSync(moduleJs) || !existsSync(moduleWasm)) {
   skip(
     'src/ShadowDusk.Wasm/wwwroot/vkd3d/vkd3d-shader.{js,wasm} is not restored. ' +
-    'The hosted build (release tag native-vkd3d-wasm-1.17) is pending; once it exists, ' +
-    'run tools/restore.ps1 / tools/restore.sh (or place a local build in ' +
+    'Run tools/restore.ps1 / tools/restore.sh (or place a local build in ' +
     '.wasm-build/vkd3d-wasm-out/) and re-run this gate. See ' +
     'src/ShadowDusk.Wasm/wwwroot/vkd3d/RESTORE.md.');
 }
@@ -138,28 +164,111 @@ await shim.ensureReady();
 
 let pass = 0;
 const failures = [];
+const expectedDiffs = [];
+
+// Which module is this? The hosted pre-#295 build has no way to take compile options;
+// every other module must (a rebuild that lost the option-carrying entry point would
+// silently fall back to the option-less one).
+const wasmSha = createHash('sha256').update(readFileSync(moduleWasm)).digest('hex');
+const pre295 = wasmSha === VKD3D_WASM_PRE_295;
+if (!pre295 && shim.honoursCompileOptions() !== true) {
+  failures.push(`the restored vkd3d-shader.wasm (sha256 ${wasmSha}) is not the hosted pre-#295 build, yet it ` +
+    'does not export sdw_vkd3d_compile_options: it cannot take the vkd3d compile options the desktop passes');
+  console.error('  [FAIL] the restored module does not take vkd3d compile options (issue #295)');
+}
 
 for (const entry of manifest) {
-  const label = `${entry.target}/${entry.fixture} ${entry.stage} ${entry.entryPoint} (${entry.profile} -> tt${entry.targetType})`;
+  if (!Array.isArray(entry.options) || entry.options.length % 2 !== 0) {
+    console.error('[vkd3d-wasm gate] FAIL — a manifest entry has no (name, value) compile-option list; the probe is out of date.');
+    process.exit(1);
+  }
+}
+const sensitive = manifest.filter(optionDependent);
+if (sensitive.length === 0) {
+  failures.push('no option-dependent compile in the corpus (Sm3SemanticStructs.fx for DirectX): ' +
+    'nothing here would notice a host passing different vkd3d compile options (issue #295)');
+  console.error('  [FAIL] the corpus has no option-dependent compile (Sm3SemanticStructs.fx, DirectX)');
+}
+
+for (const entry of manifest) {
+  const label = `${entry.target}/${entry.fixture} ${entry.stage} ${entry.entryPoint} (${entry.profile} -> tt${entry.targetType}` +
+    `${entry.options.length > 0 ? `, options [${entry.options.join(',')}]` : ''})`;
+  // The hosted pre-#295 module cannot take the options this compile depends on: its
+  // output is the issue #295 defect itself, reported as such and never counted as a pass.
+  const knownDefect = pre295 && optionDependent(entry);
+  const source = new Uint8Array(readFileSync(path.join(outDir, entry.sourceFile)));
+  const expected = new Uint8Array(readFileSync(path.join(outDir, entry.blobFile)));
+  let verdict;
   try {
-    const source = new Uint8Array(readFileSync(path.join(outDir, entry.sourceFile)));
-    const expected = new Uint8Array(readFileSync(path.join(outDir, entry.blobFile)));
-
-    const actual = shim.compile(source, entry.entryPoint, entry.profile, entry.sourceName, entry.targetType);
-
-    if (actual.length !== expected.length || !actual.every((b, i) => b === expected[i])) {
+    const actual = shim.compile(source, entry.entryPoint, entry.profile, entry.sourceName, entry.targetType, entry.options);
+    if (sameBytes(actual, expected)) {
+      verdict = null;
+      pass++;
+      console.log(`  [OK]   ${label} — ${actual.length} bytes, byte-identical to desktop vkd3d (via SHIM)`);
+    } else {
       const firstDiff = actual.findIndex((b, i) => b !== expected[i]);
-      failures.push(`${label}: MISMATCH — desktop ${expected.length} B, wasm ${actual.length} B, ` +
-        `first differing byte index ${firstDiff < 0 ? expected.length : firstDiff}`);
-      console.error(`  [DIFF] ${label}`);
-      continue;
+      verdict = `MISMATCH — desktop ${expected.length} B, wasm ${actual.length} B, ` +
+        `first differing byte index ${firstDiff < 0 ? expected.length : firstDiff}`;
     }
-
-    pass++;
-    console.log(`  [OK]   ${label} — ${actual.length} bytes, byte-identical to desktop vkd3d (via SHIM)`);
   } catch (e) {
-    failures.push(`${label}: THREW — ${e?.message ?? e}`);
-    console.error(`  [FAIL] ${label} — ${e?.message ?? e}`);
+    verdict = `THREW — ${String(e?.message ?? e).trim()}`;
+  }
+  if (verdict === null) continue;
+  if (knownDefect) {
+    expectedDiffs.push(`${label}: ${verdict}`);
+    console.log(`  [EXPECTED DIFF] ${label}: ${verdict} (the restored module is the hosted pre-#295 build, which takes no compile options)`);
+  } else {
+    failures.push(`${label}: ${verdict}`);
+    console.error(`  [FAIL] ${label}: ${verdict}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 3b. Option-sensitivity control (issue #295). The option-dependent compiles are
+//     what make a host passing different vkd3d compile options visible above, so
+//     prove they still depend on them: replayed with NO options they must NOT
+//     reproduce the desktop. And the shim must refuse a call that hands it no
+//     option list at all, rather than compile with none.
+// ---------------------------------------------------------------------------
+for (const entry of sensitive) {
+  const label = `option control: ${entry.target}/${entry.fixture} ${entry.stage} ${entry.entryPoint} with NO options`;
+  const source = new Uint8Array(readFileSync(path.join(outDir, entry.sourceFile)));
+  const expected = new Uint8Array(readFileSync(path.join(outDir, entry.blobFile)));
+  let outcome;
+  try {
+    const actual = shim.compile(source, entry.entryPoint, entry.profile, entry.sourceName, entry.targetType, []);
+    outcome = sameBytes(actual, expected) ? null : `${actual.length} B, differs from the desktop's ${expected.length} B`;
+  } catch (e) {
+    outcome = `refused: ${String(e?.message ?? e).trim().split('\n')[0]}`;
+  }
+  if (outcome === null) {
+    failures.push(`${label}: byte-identical to the desktop anyway, so this compile no longer depends on the ` +
+      'vkd3d compile options and the corpus would not notice a host passing different ones');
+    console.error(`  [FAIL] ${label} — still byte-identical to the desktop`);
+  } else {
+    pass++;
+    console.log(`  [OK]   ${label} — ${outcome} (the compile depends on the options)`);
+  }
+}
+{
+  const entry = manifest[0];
+  const source = new Uint8Array(readFileSync(path.join(outDir, entry.sourceFile)));
+  for (const [what, options] of [['no option list', undefined], ['an odd-length option list', [8]]]) {
+    const label = `option control: compile() handed ${what}`;
+    try {
+      shim.compile(source, entry.entryPoint, entry.profile, entry.sourceName, entry.targetType, options);
+      failures.push(`${label}: compiled instead of being refused`);
+      console.error(`  [FAIL] ${label} — compiled instead of being refused`);
+    } catch (e) {
+      const msg = String(e?.message ?? e);
+      if (msg.includes('needs the vkd3d compile options')) {
+        pass++;
+        console.log(`  [OK]   ${label} — refused by the shim, not compiled with none`);
+      } else {
+        failures.push(`${label}: threw, but not the shim's refusal — got: ${msg.slice(0, 200)}`);
+        console.error(`  [FAIL] ${label} — unexpected error: ${msg.slice(0, 200)}`);
+      }
+    }
   }
 }
 
@@ -177,7 +286,7 @@ for (const entry of manifest) {
     'float4 main() : COLOR { return float4(1,0,0,1; }\n');
   const label = `error-path/${brokenName} (ps_2_0 -> tt4, via SHIM)`;
   try {
-    shim.compile(brokenSource, 'main', 'ps_2_0', brokenName, 4);
+    shim.compile(brokenSource, 'main', 'ps_2_0', brokenName, 4, []);
     failures.push(`${label}: a broken shader COMPILED instead of throwing`);
     console.error(`  [FAIL] ${label} — compiled instead of throwing`);
   } catch (e) {
@@ -202,7 +311,7 @@ for (const entry of manifest) {
 {
   const label = 'empty-source/empty.fx (ps_2_0 -> tt4, via SHIM)';
   try {
-    shim.compile(new Uint8Array(0), 'main', 'ps_2_0', 'empty.fx', 4);
+    shim.compile(new Uint8Array(0), 'main', 'ps_2_0', 'empty.fx', 4, []);
     failures.push(`${label}: an empty source COMPILED instead of failing`);
     console.error(`  [FAIL] ${label} — compiled instead of failing`);
   } catch (e) {
@@ -221,17 +330,30 @@ for (const entry of manifest) {
   }
 }
 
-const totalCases = manifest.length + 2; // corpus + the error-path case + the empty-source case
-
 console.log('');
+if (expectedDiffs.length > 0) {
+  console.log('='.repeat(78));
+  console.log(`[vkd3d-wasm gate] NOTICE — ${expectedDiffs.length} corpus compile(s) did NOT match the desktop and were NOT counted:`);
+  for (const d of expectedDiffs) console.log('  - ' + d);
+  console.log(`[vkd3d-wasm gate] The restored module (sha256 ${wasmSha.slice(0, 12)}...) is the hosted pre-#295 build: its ` +
+    'wrapper passes vkd3d no compile options, so SM1-3 semantics on struct fields compile differently ' +
+    'from the desktop (issue #295). These compiles are enforced once the rebuilt module ' +
+    '(vkd3d-wasm-build.yml) is hosted and re-pinned in tools/restore.*.');
+  console.log('='.repeat(78));
+}
 if (failures.length > 0) {
-  console.error(`[vkd3d-wasm gate] FAIL — ${pass}/${totalCases} byte-identical; ${failures.length} failures:`);
+  console.error(`[vkd3d-wasm gate] FAIL — ${pass} checks passed; ${failures.length} failures:`);
   for (const f of failures) console.error('  - ' + f);
   process.exit(1);
 }
 
-console.log(`ALL ${manifest.length} CORPUS COMPILES BYTE-IDENTICAL VIA THE FAITHFUL SHIM ` +
-  '(+ the shim error path surfaces verbatim diagnostics, + empty source reaches vkd3d ' +
+const matched = manifest.length - expectedDiffs.length;
+console.log(`${matched === manifest.length ? 'ALL ' : ''}${matched}/${manifest.length} CORPUS COMPILES BYTE-IDENTICAL VIA THE FAITHFUL SHIM ` +
+  '(+ the option-dependent compiles differ without their options, + the shim refuses a missing ' +
+  'option list, + the shim error path surfaces verbatim diagnostics, + empty source reaches vkd3d ' +
   'unjudged, + the module-absent load path rejects loudly) — ' +
-  'WASM vkd3d == desktop vkd3d. Phase 4.1 byte-identity gate PASSED.');
+  (expectedDiffs.length > 0
+    ? `WASM vkd3d == desktop vkd3d EXCEPT the ${expectedDiffs.length} compile(s) above that the hosted pre-#295 module cannot do. `
+    : 'WASM vkd3d == desktop vkd3d. ') +
+  'Phase 4.1 byte-identity gate PASSED.');
 process.exit(0);

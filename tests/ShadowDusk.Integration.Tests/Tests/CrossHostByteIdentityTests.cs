@@ -139,6 +139,13 @@ public sealed class CrossHostByteIdentityTests
         // Pins the new GL offset-bridge path's cross-host determinism (and it compiles
         // on all three targets, so DX/FNA are pinned too).
         "examples/ExReservedWordUniform.fx",
+        // Issue #295: SM1-3 semantics on struct FIELDS (POSITION0 vertex output / pixel
+        // input, COLOR0 pixel output). The one corpus fixture whose DirectX bytes depend
+        // on the vkd3d compile options (BACKWARD_COMPATIBILITY = MAP_SEMANTIC_NAMES), so
+        // a host that passes vkd3d a different option list than the desktop cannot match
+        // this entry: browser-vkd3d-gate.mjs compiles it through the real browser host
+        // against this manifest. Do not drop it from the DirectX arm.
+        "Sm3SemanticStructs.fx",
     ];
 
     /// <summary>

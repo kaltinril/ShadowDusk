@@ -83,7 +83,8 @@ if (process.argv[2] === '--case') {
       verdict = glsl === readFileSync(path.join(outDir, `${id}.glsl`), 'utf8') ? 'OK' : `DIFF (${glsl.length} chars vs desktop)`;
     } else {
       const m = await shim('shadowdusk-vkd3d.js'); await m.ensureReady();
-      const out = m.compile(new Uint8Array(readFileSync(path.join(outDir, `${id}.vkd3d.hlsl`))), c.entryPoint, c.profile, c.sourceName, c.targetType);
+      // c.options: the vkd3d compile options the desktop passed for this compile (issue #295).
+      const out = m.compile(new Uint8Array(readFileSync(path.join(outDir, `${id}.vkd3d.hlsl`))), c.entryPoint, c.profile, c.sourceName, c.targetType, c.options);
       verdict = eq(out, new Uint8Array(readFileSync(path.join(outDir, `${id}.dxbc`)))) ? 'OK' : `DIFF (${out.length} B vs desktop)`;
     }
   } catch (e) {
@@ -204,8 +205,8 @@ async function trapRecovery(label, trap, again, isRight, reload) {
   const refVkSrc = new Uint8Array(readFileSync(path.join(outDir, `${refVk.id}.vkd3d.hlsl`)));
   const refDxbc = new Uint8Array(readFileSync(path.join(outDir, `${refVk.id}.dxbc`)));
   await trapRecovery('vkd3d (call chain x12800)',
-    () => vk.compile(new TextEncoder().encode(deepCalls), 'MainPS', calls.profile, 'deep.fx', calls.targetType),
-    () => vk.compile(refVkSrc, refVk.entryPoint, refVk.profile, refVk.sourceName, refVk.targetType), (out) => eq(out, refDxbc), () => vk.ensureReady());
+    () => vk.compile(new TextEncoder().encode(deepCalls), 'MainPS', calls.profile, 'deep.fx', calls.targetType, calls.options),
+    () => vk.compile(refVkSrc, refVk.entryPoint, refVk.profile, refVk.sourceName, refVk.targetType, refVk.options), (out) => eq(out, refDxbc), () => vk.ensureReady());
 }
 
 console.log('');

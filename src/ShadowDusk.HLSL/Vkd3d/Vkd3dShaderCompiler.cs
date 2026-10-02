@@ -64,6 +64,18 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
     /// </summary>
     internal static readonly AsyncLocal<Action?> NativeCallObserver = new();
 
+    /// <summary>
+    /// Test seam for the options the DESKTOP really hands <c>vkd3d_shader_compile</c>: a
+    /// callback set here receives, before every native call made in the setting async flow,
+    /// the option list read back from the marshalled <c>vkd3d_shader_compile_info</c> as
+    /// flat (name, value) pairs (<see cref="Vkd3dCompileContract.FlattenCompileOptions"/>).
+    /// The tests pin it equal to <see cref="Vkd3dCompileContract.ResolveCompileOptions"/>,
+    /// which is what the browser host sends, and <c>Vkd3dCorpusProbe</c> records it per
+    /// compile so the browser gates replay the desktop's own options (issue #295).
+    /// Production never sets it.
+    /// </summary>
+    internal static readonly AsyncLocal<Action<int[]>?> NativeOptionsObserver = new();
+
     private static Result<PlatformBlob, ShaderError> CompileCore(
         D3DCompileRequest request, CancellationToken cancellationToken) =>
         CompileCore(request, cancellationToken, onNativeCallReturned: NativeCallObserver.Value);
@@ -211,32 +223,19 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
         // Pin the chained struct so its address stays valid for CompileInfo.Next.
         IntPtr hlslInfoPtr = Marshal.AllocHGlobal(Marshal.SizeOf<Vkd3dHlslSourceInfo>());
 
-        // SM1-3 semantics on an SM4+ target: `fxc` accepts them (that is how every
-        // MonoGame `.fx` written against SM3 still builds at ps_4_0), and vkd3d only
-        // does with BACKWARD_COMPATIBILITY/MAP_SEMANTIC_NAMES — without it, vkd3d 2.1
-        // rejects a user semantic on a pixel-shader output outright ("E5013: Invalid
-        // semantic 'COLOR'"). FxPreParser rewrites the `) : COLOR<n>` RETURN semantic
-        // in RewriteToSm4 mode, but it deliberately cannot touch the same semantic on
-        // a struct FIELD (the struct may be a VS output, where COLOR is legal), so the
-        // option is what covers a `struct { float4 c : COLOR0; }` pixel-shader return.
-        // Scoped to the SM4+ target: on d3dbc these ARE the native semantics.
-        bool mapSemanticNames = targetType == Vkd3dTargetType.DxbcTpf;
-        IntPtr optionsPtr = mapSemanticNames
-            ? Marshal.AllocHGlobal(Marshal.SizeOf<Vkd3dCompileOption>())
+        // The option list is the SHARED Vkd3dCompileContract's (issue #295): the browser
+        // backend sends the very same list through its shim into the WASM wrapper, so the
+        // two hosts cannot hand vkd3d different options. Never add an option here.
+        IReadOnlyList<Vkd3dCompileOption> options = Vkd3dCompileContract.ResolveCompileOptions((int)targetType);
+        int optionSize = Marshal.SizeOf<Vkd3dCompileOption>();
+        IntPtr optionsPtr = options.Count > 0
+            ? Marshal.AllocHGlobal(optionSize * options.Count)
             : IntPtr.Zero;
 
         try
         {
-            if (mapSemanticNames)
-            {
-                Marshal.StructureToPtr(
-                    new Vkd3dCompileOption
-                    {
-                        Name  = Vkd3dCompileOptionName.BackwardCompatibility,
-                        Value = (uint)Vkd3dBackwardCompatibility.MapSemanticNames,
-                    },
-                    optionsPtr, fDeleteOld: false);
-            }
+            for (int i = 0; i < options.Count; i++)
+                Marshal.StructureToPtr(options[i], optionsPtr + i * optionSize, fDeleteOld: false);
 
             Marshal.Copy(sourceBytes, 0, sourcePtr, sourceBytes.Length);
 
@@ -258,11 +257,13 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
                 SourceType  = Vkd3dSourceType.Hlsl,
                 TargetType  = targetType,
                 Options     = optionsPtr,
-                OptionCount = mapSemanticNames ? 1u : 0u,
+                OptionCount = (uint)options.Count,
                 // WARNING surfaces non-fatal diagnostics too; constraint 5 (fail loudly).
                 LogLevel    = Vkd3dLogLevel.Warning,
                 SourceName  = sourceNamePtr,
             };
+
+            NativeOptionsObserver.Value?.Invoke(ReadBackOptions(in compileInfo));
 
             int rc = Vkd3dNative.Compile(in compileInfo, out Vkd3dShaderCode output, out IntPtr messagesPtr);
             string messages = ReadAndFreeMessages(messagesPtr);
@@ -292,6 +293,21 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
             FreeCString(profilePtr);
             FreeCString(sourceNamePtr);
         }
+    }
+
+    /// <summary>
+    /// The option list as vkd3d is about to see it: read back out of the unmanaged
+    /// <c>vkd3d_shader_compile_info</c> (the count and the array it points at), not taken
+    /// from the managed list that was marshalled in. Only <see cref="NativeOptionsObserver"/>
+    /// uses it.
+    /// </summary>
+    private static int[] ReadBackOptions(in Vkd3dCompileInfo compileInfo)
+    {
+        var read = new Vkd3dCompileOption[compileInfo.OptionCount];
+        int size = Marshal.SizeOf<Vkd3dCompileOption>();
+        for (int i = 0; i < read.Length; i++)
+            read[i] = Marshal.PtrToStructure<Vkd3dCompileOption>(compileInfo.Options + i * size);
+        return Vkd3dCompileContract.FlattenCompileOptions(read);
     }
 
     private static string ReadAndFreeMessages(IntPtr messagesPtr)

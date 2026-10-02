@@ -246,13 +246,17 @@ internal static partial class Vkd3dInterop
 
     /// <summary>
     /// Compiles HLSL (UTF-8 bytes, NOT null-terminated) to D3D bytecode via the
-    /// <c>sdw_vkd3d_compile</c> C ABI. <paramref name="targetType"/> is the raw vkd3d
+    /// <c>sdw_vkd3d_compile_options</c> C ABI. <paramref name="targetType"/> is the raw vkd3d
     /// target type (4 = D3D_BYTECODE for SM1–3/FNA, 5 = DXBC_TPF for SM4/5/DX11 —
-    /// <c>Vkd3dCompileContract</c>). JS contract:
+    /// <c>Vkd3dCompileContract</c>). <paramref name="options"/> is the
+    /// <c>vkd3d_shader_compile_option</c> list as flat (name, value) pairs — ALWAYS
+    /// <c>Vkd3dCompileContract.ResolveCompileOptions</c>, the list the desktop backend
+    /// marshals, so both hosts hand vkd3d the same options (issue #295); the shim and the
+    /// wrapper forward it untouched and add none of their own. JS contract:
     /// <c>compile(source: Uint8Array, entryPoint: string, profile: string,
-    /// sourceName: string, targetType: number): Uint8Array</c>; on failure the JS side
-    /// throws an <c>Error</c> whose message carries vkd3d's VERBATIM diagnostics
-    /// (surfaced here as a <see cref="JSException"/>).
+    /// sourceName: string, targetType: number, options: number[]): Uint8Array</c>; on
+    /// failure the JS side throws an <c>Error</c> whose message carries vkd3d's VERBATIM
+    /// diagnostics (surfaced here as a <see cref="JSException"/>).
     /// </summary>
     [JSImport("compile", "shadowdusk-vkd3d")]
     public static partial byte[] Compile(
@@ -260,7 +264,8 @@ internal static partial class Vkd3dInterop
         string entryPoint,
         string profile,
         string sourceName,
-        [JSMarshalAs<JSType.Number>] int targetType);
+        [JSMarshalAs<JSType.Number>] int targetType,
+        [JSMarshalAs<JSType.Array<JSType.Number>>] int[] options);
 }
 
 /// <summary>
