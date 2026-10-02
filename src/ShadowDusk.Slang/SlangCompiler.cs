@@ -388,14 +388,30 @@ public sealed class SlangCompiler
     /// preprocess pass that cannot be read, or a declaration no pass can decide, is an error.
     /// </summary>
     /// <remarks>
-    /// Runs after every compile (so each compile diagnostic is unchanged, and a source whose
-    /// preprocessing reports an error never gets here: <c>-E</c> exits 0 even then). The
-    /// entry source's <c>-E</c> pass runs only when a <c>register</c> token can exist in it,
-    /// or when the emission holds a registered declaration from another file. A declaration
-    /// from another file that the entry source's text does not mention (an <c>import</c>ed
-    /// module or an <c>__include</c>d file, issue #292) is judged from that file's own
-    /// <c>-E</c> pass, one per file, over the same transport: on the in-process (browser)
-    /// route slangc opens the path in its own virtual filesystem exactly as its compile did.
+    /// <para>Runs after every compile (so each compile diagnostic is unchanged, and a source
+    /// whose preprocessing reports an error never gets here: <c>-E</c> exits 0 even then).</para>
+    /// <para><b>Cost, in slangc invocations beyond the per-entry compiles</b> (pinned by
+    /// <c>SlangRegisterPassCostTests</c>):</para>
+    /// <list type="bullet">
+    /// <item>0 when slangc's output holds no texture/sampler register, or when the entry source
+    /// can spell neither <c>register</c> nor (with a declaration from another file present)
+    /// <c>import</c>: nothing can be the author's.</item>
+    /// <item>1 when the entry source's own text decides every declaration, and also when every
+    /// declaration from another file comes from a file that is provably a module: the first
+    /// pass preprocesses the entry source AND every file slangc's <c>#line</c> names for a
+    /// registered declaration in ONE invocation (slangc prints one line per input, measured).
+    /// A module's text is its own (macros do not cross an <c>import</c> or an
+    /// <c>__include</c>, measured), so a declaration located in one is decided from that file
+    /// alone and nothing else needs reading.</item>
+    /// <item>One more per level of quoted-path imports that still has to be read, each level in
+    /// one invocation, and only while something is undecided: a file not yet proven to be a
+    /// module (it may be an <c>#include</c>d fragment, whose text depends on its includer's
+    /// macros), or a resource slangc hoisted out of an aggregate, whose <c>#line</c> names
+    /// slangc's core module instead of the author's file. Those two need the whole closure.</item>
+    /// </list>
+    /// <para>Each distinct file is preprocessed at most once per compile. Both transports run
+    /// the same lists; on the in-process (browser) route slangc opens each path in its own
+    /// virtual file system exactly as its compile did.</para>
     /// </remarks>
     private Result<IReadOnlySet<string>, ShaderError> DecideAuthorRegisters(
         List<string> perEntryHlsl,
@@ -408,171 +424,292 @@ public sealed class SlangCompiler
         string? toolDirectory,
         CancellationToken cancellationToken)
     {
-        List<SlangcRegisterStripper.EmittedResource> emitted =
-            perEntryHlsl.SelectMany(SlangcRegisterStripper.FindRegistered).ToList();
-        bool fromOtherFiles = emitted.Any(r => r.File != SlangcRegisterStripper.EntrySourceFile);
-        if (emitted.Count == 0)
-            return Result<IReadOnlySet<string>, ShaderError>.Ok(new HashSet<string>(StringComparer.Ordinal));
-
-        var entryBindings = SlangcRegisterStripper.AuthorBindings.None;
-        string entryPreprocessed = "";
-        if (fromOtherFiles || SlangcRegisterStripper.MayWriteRegister(slangSource, defines))
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            ShaderError? startError = InvokeSlangc(
-                SlangcArguments.BuildPreprocess(platformMacros, defines),
-                slangSource, sourceName, runnableSlangc, toolDirectory,
-                out int exitCode, out string preprocessed, out string stderr);
-            if (startError is not null)
-                return Result<IReadOnlySet<string>, ShaderError>.Fail(startError);
-
-            if (exitCode != 0)
-            {
-                // Never guess which registers are the author's: without the preprocessed
-                // source the strip could silently move a texture to another slot.
-                return Result<IReadOnlySet<string>, ShaderError>.Fail(SlangDiagnosticReformatter.SelectPrimary(
-                    stderr, sourceName,
-                    "slangc failed its preprocess-only pass (-E, which finds the registers the " +
-                    "author wrote) with no diagnostic output, after every entry point compiled."));
-            }
-
-            // A successful pass that printed nothing (or dropped an entry point the compile
-            // just found) is not "the author wrote no register": reading it that way would strip
-            // every author register silently. Fail by name instead.
-            string? missingEntry = string.IsNullOrWhiteSpace(preprocessed)
-                ? null
-                : entries.Select(e => e.Name).FirstOrDefault(
-                    name => !Regex.IsMatch(preprocessed, $@"\b{Regex.Escape(name)}\b"));
-            if (string.IsNullOrWhiteSpace(preprocessed) || missingEntry is not null)
-            {
-                return Result<IReadOnlySet<string>, ShaderError>.Fail(new ShaderError(
-                    File: sourceName, Line: 0, Column: 0, Code: PreprocessOutputUnusableCode,
-                    Message: "slangc's preprocess-only pass (-E, which finds the registers the author " +
-                             "wrote) exited 0 but its output " +
-                             (missingEntry is null
-                                 ? "was empty"
-                                 : $"does not contain the entry point '{missingEntry}' that slangc just compiled") +
-                             ", so ShadowDusk cannot tell which texture/sampler registers are the author's " +
-                             "and will not guess (guessing would silently move textures to other slots)."));
-            }
-
-            entryBindings = SlangcRegisterStripper.AuthorBindings.Parse(preprocessed);
-            entryPreprocessed = preprocessed;
-        }
-
-        // Issue #292: declarations the entry source's text cannot speak for (an imported module's
-        // or an __include'd file's). The files read, each through the same -E pass, are: the file
-        // slangc's #line names for each such declaration, then every file the texts read so far
-        // import or __include by quoted path, transitively. A resource slangc hoisted out of an
-        // aggregate (a combined sampler's half, a struct's field) carries slangc's own core-module
-        // location instead of the author's file (measured), so for those the imports are the way in.
-        List<SlangcRegisterStripper.EmittedResource> unproven = emitted
-            .Where(r => SlangcRegisterStripper.Judge(r, entryBindings, null) == SlangcRegisterStripper.RegisterVerdict.Unproven)
-            .ToList();
-        SlangcRegisterStripper.AuthorBindings? otherFiles = null;
-        var readFiles = new HashSet<string>(StringComparer.Ordinal) { SlangcRegisterStripper.EntrySourceFile };
-        if (unproven.Count > 0)
-        {
-            var queue = new Queue<(string File, SlangcRegisterStripper.EmittedResource? Owner)>();
-            var queued = new HashSet<string>(StringComparer.Ordinal);
-            foreach (SlangcRegisterStripper.EmittedResource r in unproven)
-            {
-                if (queued.Add(r.File))
-                    queue.Enqueue((r.File, r));
-            }
-            foreach (string file in SlangcRegisterStripper.QuotedImports(entryPreprocessed, importingFile: null))
-            {
-                if (queued.Add(file))
-                    queue.Enqueue((file, null));
-            }
-
-            var texts = new List<string>();
-            while (queue.Count > 0)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                (string file, SlangcRegisterStripper.EmittedResource? owner) = queue.Dequeue();
-
-                ShaderError? startError = InvokeSlangc(
-                    SlangcArguments.BuildPreprocessFile(platformMacros, defines, file),
-                    slangSource, sourceName, runnableSlangc, toolDirectory,
-                    out int exitCode, out string preprocessed, out string stderr);
-                if (startError is not null)
-                    return Result<IReadOnlySet<string>, ShaderError>.Fail(startError);
-
-                // '-E' exits 0 even when it cannot open the file (measured), so an error line on
-                // stderr or an empty output counts as a failed read, with slangc's words verbatim.
-                if (exitCode != 0 || string.IsNullOrWhiteSpace(preprocessed) || stderr.Contains("error[", StringComparison.Ordinal))
-                {
-                    // A file slangc itself named for an author's declaration must be readable. An
-                    // import path read from the text is resolved here, not by slangc, and a hoisted
-                    // resource's #line names slangc's core module, so either one that does not open
-                    // only leaves its declarations unproven (reported by name below).
-                    if (owner is not { } o || o.IsHoisted)
-                        continue;
-                    string why = string.IsNullOrWhiteSpace(stderr)
-                        ? (exitCode != 0 ? $"slangc exited {exitCode} with no diagnostic output" : "its output was empty")
-                        : "slangc reported: " + stderr.Trim();
-                    return Result<IReadOnlySet<string>, ShaderError>.Fail(Unprovable(
-                        o, sourceName, locatable: true,
-                        $"the preprocess-only pass over '{file}' (slangc -E, which finds the registers the author " +
-                        $"wrote there) could not be read: {why}"));
-                }
-                texts.Add(preprocessed);
-                readFiles.Add(file);
-                foreach (string imported in SlangcRegisterStripper.QuotedImports(preprocessed, file))
-                {
-                    if (queued.Add(imported))
-                        queue.Enqueue((imported, null));
-                }
-            }
-            otherFiles = SlangcRegisterStripper.AuthorBindings.Union(texts);
-        }
+        static Result<IReadOnlySet<string>, ShaderError> Failed(ShaderError error) =>
+            Result<IReadOnlySet<string>, ShaderError>.Fail(error);
 
         var keep = new HashSet<string>(StringComparer.Ordinal);
-        foreach (SlangcRegisterStripper.EmittedResource resource in emitted)
+        List<SlangcRegisterStripper.EmittedResource> emitted =
+            perEntryHlsl.SelectMany(SlangcRegisterStripper.FindRegistered).Distinct().ToList();
+        if (emitted.Count == 0)
+            return Result<IReadOnlySet<string>, ShaderError>.Ok(keep);
+
+        // Nothing can be the author's when the entry source cannot spell 'register' (through
+        // its own text, an #include, a paste, a splice or a -D value) and no declaration can
+        // come from a module: every emitted register is slangc's own number.
+        bool fromOtherFiles = emitted.Any(r => r.File != SlangcRegisterStripper.EntrySourceFile);
+        if (!SlangcRegisterStripper.MayWriteRegister(slangSource, defines)
+            && !(fromOtherFiles && SlangcRegisterStripper.MayImport(slangSource, defines)))
         {
-            switch (SlangcRegisterStripper.Judge(resource, entryBindings, otherFiles))
+            return Result<IReadOnlySet<string>, ShaderError>.Ok(keep);
+        }
+
+        // Pass 1: the entry source plus, in the same invocation, every file slangc's #line names
+        // for a registered declaration. Reading those files here is speculative: their text is
+        // used only once the file is proven to be a module (below).
+        List<string> named = emitted
+            .Where(r => r.File != SlangcRegisterStripper.EntrySourceFile && !r.IsCoreHoist)
+            .Select(r => r.File)
+            .DistinctBy(SlangcRegisterStripper.PathKey, StringComparer.Ordinal)
+            .ToList();
+        var reads = new Dictionary<string, FileRead>(StringComparer.Ordinal);
+        ShaderError? startError = PreprocessFiles(
+            includeEntry: true, named, platformMacros, defines, slangSource, sourceName, runnableSlangc,
+            toolDirectory, cancellationToken, reads, out (int ExitCode, string Text, string Stderr) entry);
+        if (startError is not null)
+            return Failed(startError);
+
+        if (entry.ExitCode != 0)
+        {
+            // Never guess which registers are the author's: without the preprocessed
+            // source the strip could silently move a texture to another slot.
+            return Failed(SlangDiagnosticReformatter.SelectPrimary(
+                entry.Stderr, sourceName,
+                "slangc failed its preprocess-only pass (-E, which finds the registers the " +
+                "author wrote) with no diagnostic output, after every entry point compiled."));
+        }
+
+        // A successful pass that printed nothing (or dropped an entry point the compile
+        // just found) is not "the author wrote no register": reading it that way would strip
+        // every author register silently. Fail by name instead.
+        string? missingEntry = string.IsNullOrWhiteSpace(entry.Text)
+            ? null
+            : entries.Select(e => e.Name).FirstOrDefault(
+                name => !Regex.IsMatch(entry.Text, $@"\b{Regex.Escape(name)}\b"));
+        if (string.IsNullOrWhiteSpace(entry.Text) || missingEntry is not null)
+        {
+            return Failed(new ShaderError(
+                File: sourceName, Line: 0, Column: 0, Code: PreprocessOutputUnusableCode,
+                Message: "slangc's preprocess-only pass (-E, which finds the registers the author " +
+                         "wrote) exited 0 but its output " +
+                         (missingEntry is null
+                             ? "was empty"
+                             : $"does not contain the entry point '{missingEntry}' that slangc just compiled") +
+                         ", so ShadowDusk cannot tell which texture/sampler registers are the author's " +
+                         "and will not guess (guessing would silently move textures to other slots)."));
+        }
+
+        var entryBindings = SlangcRegisterStripper.AuthorBindings.Parse(entry.Text);
+
+        // Issue #292: declarations the entry source's text cannot speak for. A file's text is
+        // trusted once it is proven to be a MODULE (reached through a quoted-path import or
+        // __include from a trusted text, or opening with a module/implementing declaration):
+        // macros do not cross those, so its own -E output is what slangc compiled. A file that
+        // is neither may be an #include'd fragment, whose text depends on its includer.
+        var modules = new Dictionary<string, SlangcRegisterStripper.AuthorBindings>(StringComparer.Ordinal);
+        var frontier = new Queue<string>();
+        var reached = new HashSet<string>(StringComparer.Ordinal);
+        string? unreadableImport = null;
+
+        void Trust(FileRead read)
+        {
+            string key = SlangcRegisterStripper.PathKey(read.Path);
+            if (modules.ContainsKey(key))
+                return;
+            modules[key] = SlangcRegisterStripper.AuthorBindings.Parse(read.Text!);
+            foreach (string imported in SlangcRegisterStripper.QuotedImports(read.Text!, read.Path))
+                frontier.Enqueue(imported);
+        }
+
+        foreach (string imported in SlangcRegisterStripper.QuotedImports(entry.Text, importingFile: null))
+            frontier.Enqueue(imported);
+        foreach (FileRead read in reads.Values.ToList())
+        {
+            if (read.Text is not null && SlangcRegisterStripper.OpensAsModule(read.Text))
+                Trust(read);
+        }
+
+        List<SlangcRegisterStripper.RegisterVerdict> verdicts;
+        while (true)
+        {
+            // Everything reachable that is already read becomes trusted; the rest is the next level.
+            var level = new List<string>();
+            while (frontier.Count > 0)
             {
-                case SlangcRegisterStripper.RegisterVerdict.Keep:
-                    keep.Add(resource.Name);
-                    break;
-                case SlangcRegisterStripper.RegisterVerdict.Unproven:
-                    bool locatable = readFiles.Contains(resource.File);
-                    return Result<IReadOnlySet<string>, ShaderError>.Fail(Unprovable(
-                        resource, sourceName, locatable,
-                        locatable
-                            ? $"'{resource.File}' preprocessed with this target's macros neither writes register(...) on " +
-                              $"'{resource.AuthorName}' nor declares it plainly (a register spelled through a macro defined " +
-                              "in another file, a declaration inside a namespace or block, or two files that disagree)"
-                            : $"no file ShadowDusk could read declares '{resource.AuthorName}': it is not in the entry " +
-                              $"source, slangc's #line names '{resource.File}' for it (its own core module, for a resource " +
-                              "it hoisted out of a combined sampler or a struct), and an import by module name rather " +
-                              "than by quoted path cannot be followed"));
+                string path = frontier.Dequeue();
+                if (!reached.Add(SlangcRegisterStripper.PathKey(path)))
+                    continue;
+                if (!reads.TryGetValue(SlangcRegisterStripper.PathKey(path), out FileRead? read))
+                    level.Add(path);
+                else if (read.Text is null)
+                    unreadableImport ??= path;
+                else
+                    Trust(read);
             }
+
+            bool closureComplete = level.Count == 0;
+            verdicts = emitted
+                .Select(r => SlangcRegisterStripper.Judge(
+                    r, entryBindings, modules, closureComplete, closureBroken: unreadableImport is not null))
+                .ToList();
+            if (closureComplete || !verdicts.Contains(SlangcRegisterStripper.RegisterVerdict.Pending))
+                break;
+
+            startError = PreprocessFiles(
+                includeEntry: false, level, platformMacros, defines, slangSource, sourceName, runnableSlangc,
+                toolDirectory, cancellationToken, reads, out _);
+            if (startError is not null)
+                return Failed(startError);
+            foreach (string path in level)
+            {
+                FileRead read = reads[SlangcRegisterStripper.PathKey(path)];
+                if (read.Text is null)
+                    unreadableImport ??= path;
+                else
+                    Trust(read);
+            }
+        }
+
+        for (int i = 0; i < emitted.Count; i++)
+        {
+            SlangcRegisterStripper.EmittedResource resource = emitted[i];
+            if (verdicts[i] == SlangcRegisterStripper.RegisterVerdict.Keep)
+            {
+                keep.Add(resource.Name);
+                continue;
+            }
+            if (verdicts[i] == SlangcRegisterStripper.RegisterVerdict.Strip)
+                continue;
+
+            string key = SlangcRegisterStripper.PathKey(resource.File);
+            reads.TryGetValue(key, out FileRead? own);
+            string reason;
+            bool located = own is not null;
+            if (own is { Text: null })
+            {
+                reason = $"the preprocess-only pass over '{resource.File}' (slangc -E, which finds the registers the " +
+                         $"author wrote there) could not be read: {own.Failure}";
+            }
+            else if (modules.ContainsKey(key))
+            {
+                reason = $"'{resource.File}' preprocessed with this target's macros neither writes register(...) on " +
+                         $"'{resource.AuthorName}' nor declares it plainly (a register spelled through a macro defined " +
+                         "in another file, a declaration inside a namespace or block, or two declarations that disagree)";
+            }
+            else if (own is not null)
+            {
+                reason = $"'{resource.File}' is not reached from the entry source through quoted-path imports and does " +
+                         "not open with a 'module' or 'implementing' declaration, so its text cannot be told from an " +
+                         "#include'd fragment, which depends on macros of an includer ShadowDusk cannot see (an import " +
+                         "by module name is not followed)";
+            }
+            else
+            {
+                reason = $"no file ShadowDusk could read declares '{resource.AuthorName}': it is not in the entry " +
+                         $"source, slangc's #line names '{resource.File}' for it (its own core module, for a resource " +
+                         "it hoisted out of a combined sampler or a struct), and an import by module name rather " +
+                         "than by quoted path is not followed";
+            }
+            if (unreadableImport is not null)
+                reason += $"; and '{unreadableImport}', imported by quoted path, could not be preprocessed on its own";
+            return Failed(Unprovable(resource, sourceName, located, reason));
         }
         return Result<IReadOnlySet<string>, ShaderError>.Ok(keep);
     }
 
+    /// <summary>One file's preprocess-only result: its text, or why it could not be read.</summary>
+    private sealed record FileRead(string Path, string? Text, string? Failure);
+
+    /// <summary>
+    /// Preprocesses the entry source (when <paramref name="includeEntry"/>) and
+    /// <paramref name="files"/> in ONE slangc invocation, which prints one line per input in
+    /// argument order (measured, v2026.14.1; an input it cannot open prints an error and no
+    /// line, and <c>-E</c> still exits 0). If that run does not come back as exactly one clean
+    /// line per input, every input is run again on its own so each failure is attributed to
+    /// its file. Returns an error only when slangc could not be started.
+    /// </summary>
+    private ShaderError? PreprocessFiles(
+        bool includeEntry,
+        IReadOnlyList<string> files,
+        IReadOnlyList<MacroDefinition> platformMacros,
+        IReadOnlyList<UserDefine> defines,
+        string slangSource,
+        string sourceName,
+        string? runnableSlangc,
+        string? toolDirectory,
+        CancellationToken cancellationToken,
+        Dictionary<string, FileRead> reads,
+        out (int ExitCode, string Text, string Stderr) entry)
+    {
+        entry = default;
+        int inputs = files.Count + (includeEntry ? 1 : 0);
+        if (inputs > 1)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ShaderError? startError = InvokeSlangc(
+                SlangcArguments.BuildPreprocessFiles(platformMacros, defines, includeEntry, files),
+                slangSource, sourceName, runnableSlangc, toolDirectory,
+                out int exitCode, out string stdout, out string stderr);
+            if (startError is not null)
+                return startError;
+
+            string[] lines = stdout.Split('\n');
+            if (exitCode == 0 && lines.Length == inputs + 1 && lines[^1].Length == 0
+                && !stderr.Contains("error[", StringComparison.Ordinal))
+            {
+                int next = 0;
+                if (includeEntry)
+                    entry = (0, lines[next++] + "\n", stderr);
+                foreach (string file in files)
+                    reads[SlangcRegisterStripper.PathKey(file)] = new FileRead(file, lines[next++], null);
+                return null;
+            }
+        }
+
+        if (includeEntry)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ShaderError? startError = InvokeSlangc(
+                SlangcArguments.BuildPreprocess(platformMacros, defines),
+                slangSource, sourceName, runnableSlangc, toolDirectory,
+                out int exitCode, out string stdout, out string stderr);
+            if (startError is not null)
+                return startError;
+            entry = (exitCode, stdout, stderr);
+            if (exitCode != 0)
+                return null;
+        }
+
+        foreach (string file in files)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ShaderError? startError = InvokeSlangc(
+                SlangcArguments.BuildPreprocessFiles(platformMacros, defines, includeEntry: false, [file]),
+                slangSource, sourceName, runnableSlangc, toolDirectory,
+                out int exitCode, out string stdout, out string stderr);
+            if (startError is not null)
+                return startError;
+
+            // '-E' exits 0 even when it cannot open the file (measured), so an error line on
+            // stderr counts as a failed read, with slangc's words verbatim.
+            bool failed = exitCode != 0 || stderr.Contains("error[", StringComparison.Ordinal);
+            reads[SlangcRegisterStripper.PathKey(file)] = failed
+                ? new FileRead(file, null, string.IsNullOrWhiteSpace(stderr)
+                    ? $"slangc exited {exitCode} with no diagnostic output"
+                    : "slangc reported: " + stderr.Trim())
+                : new FileRead(file, stdout, null);
+        }
+        return null;
+    }
+
     /// <summary><c>SD0628</c>: a texture/sampler register whose authorship cannot be proven,
-    /// located at the declaration slangc's <c>#line</c> names when that is a file ShadowDusk could
+    /// located at the declaration slangc's <c>#line</c> names when that is a file ShadowDusk
     /// read, else at the entry source (a hoisted resource's <c>#line</c> is slangc's core module).</summary>
     private static ShaderError Unprovable(
-        SlangcRegisterStripper.EmittedResource resource, string sourceName, bool locatable, string reason)
+        SlangcRegisterStripper.EmittedResource resource, string sourceName, bool located, string reason)
     {
         string what = resource.AuthorName == resource.Name
             ? $"'{resource.Name}'"
             : $"'{resource.Name}' (which slangc may have hoisted out of '{resource.AuthorName}')";
         return new ShaderError(
-            File: locatable ? resource.File : sourceName,
-            Line: locatable ? resource.Line : 0,
-            Column: locatable ? 1 : 0,
+            File: located ? resource.File : sourceName,
+            Line: located ? resource.Line : 0,
+            Column: located ? 1 : 0,
             Code: RegisterAuthorshipUnprovenCode,
             Message: $"slangc emitted register({resource.RegisterClass}...) on {what}, declared in '{resource.File}', and " +
                      $"ShadowDusk cannot prove whether the author wrote that register or slangc numbered it itself: {reason}. " +
                      "ShadowDusk will not guess (keeping an invented register or dropping an author's one would silently " +
                      "move a texture to another slot). Declare the resource in the entry source, or write its register(...) " +
-                     "directly on its declaration in a file the entry source imports by quoted path.");
+                     "directly on its declaration in a module the entry source imports by quoted path.");
     }
 
     /// <summary>
