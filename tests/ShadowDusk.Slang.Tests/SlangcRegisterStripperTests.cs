@@ -172,4 +172,125 @@ public sealed class SlangcRegisterStripperTests
     [InlineData("SamplerStates_0 gStates : register(s0);")]
     public void Strip_LeavesUserTypesNamedLikeAResourceAlone(string declaration) =>
         SlangcRegisterStripper.Strip(declaration, new HashSet<string>()).ShouldBe(declaration);
+
+    // ---- Issue #292: combined samplers and declarations from other files --------------------
+
+    private static SlangcRegisterStripper.EmittedResource Emitted(string name, char cls, string file = "<stdin>") =>
+        new(name, cls, file, 1);
+
+    private static SlangcRegisterStripper.RegisterVerdict Judge(
+        SlangcRegisterStripper.EmittedResource resource, string entry, string? otherFiles = null) =>
+        SlangcRegisterStripper.Judge(
+            resource,
+            SlangcRegisterStripper.AuthorBindings.Parse(entry),
+            otherFiles is null ? null : SlangcRegisterStripper.AuthorBindings.Parse(otherFiles));
+
+    [Theory]
+    // 'Sampler2D Comb : register(t2)': slangc keeps t2 on the texture half and numbers the sampler.
+    [InlineData("Sampler2D Comb : register ( t2 ) ;", "Comb_texture_0", 't', "Keep")]
+    [InlineData("Sampler2D Comb : register ( t2 ) ;", "Comb_sampler_0", 's', "Strip")]
+    // 'register(s3)' alone: the reverse.
+    [InlineData("Sampler2D Comb : register ( s3 ) ;", "Comb_texture_0", 't', "Strip")]
+    [InlineData("Sampler2D Comb : register ( s3 ) ;", "Comb_sampler_0", 's', "Keep")]
+    // Both written.
+    [InlineData("Sampler2D Comb : register ( t2 ) : register ( s3 ) ;", "Comb_texture_0", 't', "Keep")]
+    [InlineData("Sampler2D Comb : register ( t2 ) : register ( s3 ) ;", "Comb_sampler_0", 's', "Keep")]
+    // Neither, and arrays / other shapes / a generic element type.
+    [InlineData("Sampler2D Comb ;", "Comb_texture_0", 't', "Strip")]
+    [InlineData("Sampler2D CArr [ 2 ] : register ( t8 ) ;", "CArr_texture_0", 't', "Keep")]
+    [InlineData("SamplerCube CC : register ( t6 ) ;", "CC_texture_0", 't', "Keep")]
+    [InlineData("Sampler2D < float4 > G : register ( t5 , space1 ) ;", "G_texture_0", 't', "Keep")]
+    public void Judge_MapsACombinedSamplersSplitHalvesBackToTheAuthorsDeclaration(
+        string entry, string emittedName, char cls, string expected) =>
+        // slangc's #line for a split half is its own core module, never "<stdin>" (measured).
+        Judge(Emitted(emittedName, cls, "core"), entry).ToString().ShouldBe(expected);
+
+    [Fact]
+    public void Judge_APlainNameEndingLikeASplitHalf_IsStillMatchedVerbatim() =>
+        // An author's own 'Texture2D Foo_texture_0 : register(t1)' is not a split.
+        Judge(Emitted("Foo_texture_0", 't'), "Texture2D Foo_texture_0 : register ( t1 ) ;")
+            .ShouldBe(SlangcRegisterStripper.RegisterVerdict.Keep);
+
+    [Fact]
+    public void Judge_DeclarationFromAnotherFile_IsUnprovenUntilThatFileIsRead()
+    {
+        const string entry = "import \"m.slang\" ; SamplerState S ;";
+        var modTex = Emitted("ModTex", 't', "m.slang");
+
+        Judge(modTex, entry).ShouldBe(SlangcRegisterStripper.RegisterVerdict.Unproven);
+        Judge(modTex, entry, "module m ; public Texture2D ModTex : register ( t3 ) ;").ShouldBe(SlangcRegisterStripper.RegisterVerdict.Keep);
+        Judge(modTex, entry, "module m ; public Texture2D ModTex ;").ShouldBe(SlangcRegisterStripper.RegisterVerdict.Strip);
+        // A register through a macro this file does not define: neither reading.
+        Judge(modTex, entry, "module m ; public Texture2D ModTex : MSLOT ;").ShouldBe(SlangcRegisterStripper.RegisterVerdict.Unproven);
+        // Only a local of that name: not a global declaration.
+        Judge(modTex, entry, "module m ; void f ( ) { Texture2D ModTex ; }").ShouldBe(SlangcRegisterStripper.RegisterVerdict.Unproven);
+        // Two files disagree.
+        Judge(modTex, entry, "public Texture2D ModTex : register ( t3 ) ; public Texture2D ModTex ;")
+            .ShouldBe(SlangcRegisterStripper.RegisterVerdict.Unproven);
+    }
+
+    [Fact]
+    public void Judge_DeclarationFromAFileTheEntryIncludes_IsDecidedByTheEntryText()
+    {
+        // '#include' IS expanded by -E: the entry text speaks for the included file's declarations.
+        const string entry = "Texture2D IncTex : register ( t7 ) ; Texture2D IncNoReg ; SamplerState S ;";
+
+        Judge(Emitted("IncTex", 't', "C:/inc.hlsli"), entry).ShouldBe(SlangcRegisterStripper.RegisterVerdict.Keep);
+        Judge(Emitted("IncNoReg", 't', "C:/inc.hlsli"), entry).ShouldBe(SlangcRegisterStripper.RegisterVerdict.Strip);
+        // A local of the same name in the entry is not a global declaration.
+        Judge(Emitted("ModTex", 't', "C:/m.slang"), "float4 f ( ) { Texture2D ModTex ; return 0 ; }")
+            .ShouldBe(SlangcRegisterStripper.RegisterVerdict.Unproven);
+    }
+
+    [Fact]
+    public void FindRegistered_TracksSlangcsLineDirectives()
+    {
+        const string emission = """
+            #line 2 "C:/m.slang"
+            Texture2D<float4 > ModTex : register(t3);
+            #line 3 "<stdin>"
+            SamplerState S : register(s0);
+            #line 3 "C:/m.slang"
+            Texture2D<float4 > ModNoReg : register(t1);
+            SamplerState ModS : register(s4);
+            #line 93 "core"
+            Texture2D<float4 > Comb_texture_0 : register(t2);
+            cbuffer Params : register(b0)
+            """;
+
+        SlangcRegisterStripper.FindRegistered(emission).ShouldBe(
+        [
+            new SlangcRegisterStripper.EmittedResource("ModTex", 't', "C:/m.slang", 2),
+            new SlangcRegisterStripper.EmittedResource("S", 's', "<stdin>", 3),
+            new SlangcRegisterStripper.EmittedResource("ModNoReg", 't', "C:/m.slang", 3),
+            new SlangcRegisterStripper.EmittedResource("ModS", 's', "C:/m.slang", 4),
+            new SlangcRegisterStripper.EmittedResource("Comb_texture_0", 't', "core", 93),
+        ]);
+    }
+
+    [Fact]
+    public void FindRegistered_WithoutAnyLineDirective_IsTheEntrySource() =>
+        SlangcRegisterStripper.FindRegistered("SamplerState S : register(s0);\n")
+            .ShouldHaveSingleItem().File.ShouldBe(SlangcRegisterStripper.EntrySourceFile);
+
+    [Fact]
+    public void AuthorBoundNames_SeesEveryRegisterOfAChain() =>
+        SlangcRegisterStripper.AuthorBoundNames("Sampler2D Comb : register ( t2 ) : register ( s3 ) ;")
+            .ShouldBe(new[] { "Comb" });
+
+    [Theory]
+    // From the entry source: as written (slangc resolves it from its working directory, which the pass shares).
+    [InlineData("import \"C:/a/m.slang\" ;", null, "C:/a/m.slang")]
+    [InlineData("import \"rel/m.slang\" ;", null, "rel/m.slang")]
+    // From another file: against that file's directory, rooted paths as written, on every host alike.
+    [InlineData("__exported import \"inner.slang\" ;", "C:/a/outer.slang", "C:/a/inner.slang")]
+    [InlineData("__include \"part.slang\" ;", "/home/u/outer.slang", "/home/u/part.slang")]
+    [InlineData("import \"/abs/m.slang\" ;", "C:/a/outer.slang", "/abs/m.slang")]
+    [InlineData("import \"D:\\x\\m.slang\" ;", "C:/a/outer.slang", "D:\\x\\m.slang")]
+    public void QuotedImports_ResolveLikeSlangc(string preprocessed, string? importingFile, string expected) =>
+        SlangcRegisterStripper.QuotedImports(preprocessed, importingFile).ShouldBe(new[] { expected });
+
+    [Fact]
+    public void QuotedImports_DoNotFollowAnImportByModuleName() =>
+        SlangcRegisterStripper.QuotedImports("module outer ; __exported import inner ;", "C:/a/outer.slang").ShouldBeEmpty();
 }
