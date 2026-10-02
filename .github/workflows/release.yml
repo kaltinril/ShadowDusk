@@ -718,8 +718,8 @@ jobs:
           name: nupkg-desktop
           path: nupkg/
 
-      # ShadowDusk.Wasm (the 9th package) is packed by the pack-wasm job in THIS run,
-      # so its artifact is available here. All nine packages publish together.
+      # ShadowDusk.Wasm (one of the ten packages) is packed by the pack-wasm job in THIS run,
+      # so its artifact is available here. All ten packages publish together.
       - name: Download Wasm package
         uses: actions/download-artifact@v8
         with:

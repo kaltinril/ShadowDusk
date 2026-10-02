@@ -74,8 +74,8 @@ to nuget.org, and attaches self-contained CLI binaries for each RID to a GitHub 
    time is spent:
 
    ```powershell
-   ./validation/run-windows-render-gates.ps1              # DX corpus + DX-modern (VTF) + DX Apos gallery + DX ShaderToy route + DX12 corpus + DX12 VS-driven/Apos gallery + KNI-DX + KNI-GL desktop + KNI-GL VS-driven + GL Apos + GL Apos gallery + ANGLE derivative probe + MGCB plugin (real dotnet mgcb build) + BOTH Vulkan gates
-   ./validation/run-windows-render-gates.ps1 -IncludeFna  # also FNA fx_2_0, for an FNA-affecting release (include it when in doubt)
+   ./validation/run-windows-render-gates.ps1              # DX corpus + DX-modern (VTF) + DX Apos gallery + DX ShaderToy route + DX12 corpus + DX12 VS-driven/Apos gallery + KNI-DX + KNI-GL desktop + KNI-GL VS-driven + GL Apos + GL Apos gallery + ANGLE-D3D11 derivative probe (issue #136) + MGCB plugin (real dotnet mgcb 3.8.4.1 AND 3.8.5, decoy-PATH DXC guard) + XNB direct writer Content.Load on MonoGame WindowsDX, MonoGame DesktopGL and KNI 4.2.9001+4.3.9001 + MonoGame 3.8.5 Content Builder + Slang corpus + Slang full corpus (DX11, DX12 and Vulkan real-Effect arms, issue #230) + Slang textured GL (issue #252) + BOTH Vulkan gates
+   ./validation/run-windows-render-gates.ps1 -IncludeFna  # also FNA fx_2_0 + its Slang arm, for an FNA-affecting release (include it when in doubt)
    ```
 
    The **Vulkan gates are default-ON** since issue #145 — the PS corpus plus the VS-driven
@@ -104,7 +104,7 @@ ShadowDusk's package version lives in **exactly one place**:
 ```
 
 That single `<Version>` flows to every `ShadowDusk.*` project, so `dotnet pack` stamps all
-nine packages (and their inter-package dependency ranges) at the same version.
+ten packages (and their inter-package dependency ranges) at the same version.
 
 > **Do NOT edit the nine `.csproj` files.** They no longer carry a per-project version.
 > Editing one csproj and not the others is exactly the desync this centralization removes.
