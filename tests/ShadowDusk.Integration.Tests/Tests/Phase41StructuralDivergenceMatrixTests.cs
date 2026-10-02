@@ -78,7 +78,7 @@ public sealed class Phase41StructuralDivergenceMatrixTests
         string appendixDir = Path.Combine(repoRoot, "plan", "PHASE-41-appendix");
         Directory.CreateDirectory(appendixDir);
         string reportPath = Path.Combine(appendixDir, "structural-divergence-matrix.md");
-        await File.WriteAllTextAsync(reportPath, report, new UTF8Encoding(false), ct);
+        await WriteReportAsync(reportPath, report, ct);
 
         _output.WriteLine($"Wrote {reportPath}");
         _output.WriteLine($"Golden-backed cells: {matrixRows.Count}; non-golden census cells: {censusRows.Count}");
@@ -520,6 +520,40 @@ public sealed class Phase41StructuralDivergenceMatrixTests
     // -----------------------------------------------------------------------
     // Report
     // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Writes the report without racing the other target framework's run of this same test
+    /// (issue #314): a solution test run executes the net8.0 and net10.0 builds in parallel and
+    /// both write this one file in the source tree. Each writes its own temporary file and moves
+    /// it into place, retrying while the other process holds the target. Both produce the same
+    /// content, so the last writer winning is correct.
+    /// </summary>
+    private static async Task WriteReportAsync(string reportPath, string report, CancellationToken ct)
+    {
+        string tempPath = $"{reportPath}.{Environment.ProcessId}.tmp";
+        try
+        {
+            await File.WriteAllTextAsync(tempPath, report, new UTF8Encoding(false), ct);
+
+            const int attempts = 40;
+            for (int attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    File.Move(tempPath, reportPath, overwrite: true);
+                    return;
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException && attempt < attempts)
+                {
+                    await Task.Delay(250, ct);
+                }
+            }
+        }
+        finally
+        {
+            File.Delete(tempPath);
+        }
+    }
 
     private static string BuildReport(
         IReadOnlyList<GoldenCellResult> matrix, IReadOnlyList<CensusCellResult> census)
