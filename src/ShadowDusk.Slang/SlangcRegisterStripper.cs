@@ -36,22 +36,64 @@ namespace ShadowDusk.Slang;
 /// <c>.fx</c> route does not read <c>vk::binding</c> as a GL sampler reservation either, so
 /// stripping slangc's invented number keeps the two routes identical. Constant-buffer
 /// <c>register(bN)</c> annotations are left alone: no allocator reads them as a reservation.</para>
+/// <para>Issue #292, two shapes the per-name match used to strip silently:</para>
+/// <list type="bullet">
+/// <item>A combined <c>Sampler2D C : register(t2)</c> is emitted as two declarations,
+/// <c>Texture2D&lt;float4 &gt; C_texture_0 : register(t2)</c> and
+/// <c>SamplerState C_sampler_0 : register(s0)</c> (measured, v2026.14.1, for
+/// <c>Sampler1D</c>/<c>2D</c>/<c>3D</c>/<c>Cube</c>, the <c>Array</c> forms and arrays of them).
+/// The author's register applies to the half of its own class only: <c>register(t2)</c> binds
+/// the texture and slangc numbers the sampler, <c>register(s3)</c> the reverse, and
+/// <c>: register(t2) : register(s3)</c> binds both. So a split name maps back to the author's
+/// declaration together with the register class.</item>
+/// <item>A resource declared in an <c>import</c>ed module (or an <c>__include</c>d file) is
+/// not in the entry source's <c>slangc -E</c> output at all: <c>-E</c> expands neither.
+/// slangc auto-numbers an imported resource that has no author register (measured: an
+/// imported <c>Texture2D ModNoReg;</c> comes back as <c>register(t1)</c>), so the emission
+/// alone cannot tell. slangc names the file each declaration came from in its <c>#line</c>
+/// directives; <see cref="SlangCompiler"/> runs the same <c>-E</c> pass over that file (same
+/// macros, which slangc applies to imported modules too, measured) and judges the declaration
+/// from its text. A declaration neither pass decides fails as <c>SD0628</c>, never a guess.</item>
+/// </list>
 /// </remarks>
 internal static class SlangcRegisterStripper
 {
-    private static readonly IReadOnlySet<string> NoNames = new HashSet<string>(StringComparer.Ordinal);
+    /// <summary>The file name slangc gives the source it read from stdin.</summary>
+    public const string EntrySourceFile = "<stdin>";
 
     // A global texture/sampler declaration in slangc's emission, e.g.
     // 'Texture2D<float4 > SpriteTexture : register(t0);' or 'SamplerState S : register(s0);'.
     private static readonly Regex EmittedRegister = new(
-        $$"""(?<decl>(?:{{SlangcResourceTypes.Texture}}|{{SlangcResourceTypes.Sampler}})(?:\s*<[^>;{}]*>)?\s+(?<name>[A-Za-z_]\w*)(?:\s*\[[^\];{}]*\])?)\s*:\s*register\s*\(\s*[ts]\d+\s*(?:,\s*space\d+\s*)?\)""",
+        $$"""(?<decl>(?:{{SlangcResourceTypes.Texture}}|{{SlangcResourceTypes.Sampler}})(?:\s*<[^>;{}]*>)?\s+(?<name>[A-Za-z_]\w*)(?:\s*\[[^\];{}]*\])?)\s*:\s*register\s*\(\s*(?<cls>[ts])\d+\s*(?:,\s*space\d+\s*)?\)""",
         RegexOptions.Compiled);
 
-    // 'Name : register(...)' or 'Name[4] : register(...)' in the preprocessed Slang source,
-    // which slangc prints as a token stream ('Mask : register ( t1 ) ;').
-    private static readonly Regex AuthorRegister = new(
-        """\b(?<name>[A-Za-z_]\w*)\s*(?:\[[^\];{}]*\])?\s*:\s*register\s*\(""",
+    // slangc's split of a combined SamplerXD: '<name>_texture_<n>' / '<name>_sampler_<n>'.
+    private static readonly Regex SplitName = new(
+        """^(?<base>[A-Za-z_]\w*?)_(?<kind>texture|sampler)_\d+$""",
         RegexOptions.Compiled);
+
+    // '#line 12 "file"' or '#line 12' in slangc's emission.
+    private static readonly Regex LineDirective = new(
+        """^\s*#line\s+(?<line>\d+)(?:\s+"(?<file>[^"]*)")?""",
+        RegexOptions.Compiled);
+
+    // 'Name : register(t1)', 'Name[4] : register(t4)' or 'Name : register(t2) : register(s3)' in
+    // the preprocessed Slang source, which slangc prints as a token stream
+    // ('Mask : register ( t1 ) ;'). One 'cls' capture per register written.
+    private static readonly Regex AuthorRegister = new(
+        """\b(?<name>[A-Za-z_]\w*)\s*(?:\[[^\];{}]*\])?(?:\s*:\s*register\s*\(\s*(?<cls>[A-Za-z]?)[^()]*\))+""",
+        RegexOptions.Compiled);
+
+    // A declaration with NO annotation at all: 'Texture2D Name ;', 'Texture2D < float4 > Name ;',
+    // 'Name [ 4 ] ;'. Read at brace depth 0 only, so a local or a struct member is not one.
+    private static readonly Regex PlainDeclaration = new(
+        """(?:\b(?<type>[A-Za-z_]\w*)|>)\s+(?<name>[A-Za-z_]\w*)\s*(?:\[[^\];{}]*\]\s*)?;""",
+        RegexOptions.Compiled);
+
+    private static readonly HashSet<string> NotATypeKeyword = new(StringComparer.Ordinal)
+    {
+        "return", "import", "module", "implementing", "__include", "using", "goto", "break", "continue",
+    };
 
     /// <summary>
     /// False when the main source (and its <c>-D</c> values) cannot spell a <c>register</c>
@@ -60,18 +102,17 @@ internal static class SlangcRegisterStripper
     /// register".
     /// </summary>
     /// <remarks>
-    /// <para>Known gap (PR #278 review, not fixed): this does NOT cover a register written inside
-    /// an <c>import</c>ed module or an <c>__include</c>d file. Neither is expanded by
-    /// <c>slangc -E</c> either, so such a register is stripped whether or not this returns
-    /// true. A combined <c>Sampler2D C : register(t2)</c> is also stripped (slangc emits it as
-    /// <c>C_texture_0</c>/<c>C_sampler_0</c>, and the match is per name).</para>
-    /// A <c>register</c> token can only come from the literal word in the source or in a
+    /// <para>This reads the entry source only. A register written in an <c>import</c>ed module
+    /// or an <c>__include</c>d file is found from slangc's emission instead (its <c>#line</c>
+    /// names a file other than <see cref="EntrySourceFile"/>), and <see cref="SlangCompiler"/>
+    /// runs the pass whenever such a declaration exists (issue #292).</para>
+    /// <para>A <c>register</c> token can only come from the literal word in the source or in a
     /// <c>-D</c> value, from an <c>#include</c>d file, from token pasting (<c>##</c>), or from
     /// a backslash line splice, which slangc honours inside an identifier and inside a
     /// directive name (measured: <c>regis\&lt;newline&gt;ter(t3)</c> binds t3). Any of those
     /// spellings anywhere (comments included: this errs toward running the pass) returns true.
     /// The check is case-sensitive because slangc's <c>register</c> is (<c>REGISTER(t3)</c> is
-    /// a syntax error, measured).
+    /// a syntax error, measured).</para>
     /// </remarks>
     public static bool MayWriteRegister(string slangSource, IReadOnlyList<UserDefine> defines)
     {
@@ -97,23 +138,187 @@ internal static class SlangcRegisterStripper
     /// <paramref name="preprocessedSlangSource"/>: slangc's preprocess-only (<c>-E</c>) output
     /// for the source, produced with the same macros as the compile.
     /// </summary>
-    public static IReadOnlySet<string> AuthorBoundNames(string preprocessedSlangSource)
+    public static IReadOnlySet<string> AuthorBoundNames(string preprocessedSlangSource) =>
+        new HashSet<string>(AuthorBindings.Parse(preprocessedSlangSource).BoundNames, StringComparer.Ordinal);
+
+    /// <summary>
+    /// Every texture/sampler declaration in <paramref name="hlsl"/> (one slangc emission) that
+    /// carries a <c>t</c>/<c>s</c> register, with the file and line slangc's <c>#line</c>
+    /// directives place it at. Before any directive the file is <see cref="EntrySourceFile"/>.
+    /// </summary>
+    public static IReadOnlyList<EmittedResource> FindRegistered(string hlsl)
     {
-        // The preprocessor already dropped comments; the mask still blanks string-literal
-        // contents (an attribute argument that happens to read 'X : register(').
-        string masked = SlangSourceMask.Mask(preprocessedSlangSource);
-        var names = new HashSet<string>(StringComparer.Ordinal);
-        foreach (Match m in AuthorRegister.Matches(masked))
-            names.Add(m.Groups["name"].Value);
-        return names;
+        var found = new List<EmittedResource>();
+        string file = EntrySourceFile;
+        int line = 1;
+        foreach (string text in hlsl.Split('\n'))
+        {
+            Match directive = LineDirective.Match(text);
+            if (directive.Success)
+            {
+                line = int.Parse(directive.Groups["line"].Value, System.Globalization.CultureInfo.InvariantCulture);
+                if (directive.Groups["file"].Success)
+                    file = directive.Groups["file"].Value;
+                continue;
+            }
+            foreach (Match m in EmittedRegister.Matches(text))
+                found.Add(new EmittedResource(m.Groups["name"].Value, m.Groups["cls"].Value[0], file, line));
+            line++;
+        }
+        return found;
     }
 
-    /// <summary>No author-bound name: every slangc-numbered texture/sampler register goes.</summary>
-    public static IReadOnlySet<string> NoAuthorBoundNames => NoNames;
+    /// <summary>
+    /// Whether the author wrote <paramref name="resource"/>'s register, judged from the entry
+    /// source's preprocessed text (<paramref name="entry"/>) and, for a declaration that came
+    /// from another file, the preprocessed text of the files it came from
+    /// (<paramref name="otherFiles"/>, null while those have not been read).
+    /// </summary>
+    public static RegisterVerdict Judge(EmittedResource resource, AuthorBindings entry, AuthorBindings? otherFiles)
+    {
+        if (entry.Binds(resource))
+            return RegisterVerdict.Keep;
+        // Written in the entry source (or a file it #includes, which -E expands) without one.
+        if (resource.File == EntrySourceFile || entry.Declares(resource))
+            return RegisterVerdict.Strip;
+        if (otherFiles is null)
+            return RegisterVerdict.Unproven;
+        bool binds = otherFiles.Binds(resource);
+        bool declares = otherFiles.Declares(resource);
+        // Bound in one file and plainly declared in another: the two readings disagree, and
+        // which one slangc compiled cannot be told from here.
+        if (binds && declares)
+            return RegisterVerdict.Unproven;
+        if (binds)
+            return RegisterVerdict.Keep;
+        return declares ? RegisterVerdict.Strip : RegisterVerdict.Unproven;
+    }
 
-    /// <summary>Strips every slangc-numbered texture/sampler register in
-    /// <paramref name="hlsl"/> whose declaration name is not in <paramref name="authorBound"/>.</summary>
-    public static string Strip(string hlsl, IReadOnlySet<string> authorBound) =>
+    /// <summary>
+    /// Strips every slangc-numbered texture/sampler register in <paramref name="hlsl"/> whose
+    /// emitted declaration name is not in <paramref name="keep"/>.
+    /// </summary>
+    public static string Strip(string hlsl, IReadOnlySet<string> keep) =>
         EmittedRegister.Replace(hlsl, m =>
-            authorBound.Contains(m.Groups["name"].Value) ? m.Value : m.Groups["decl"].Value);
+            keep.Contains(m.Groups["name"].Value) ? m.Value : m.Groups["decl"].Value);
+
+    /// <summary>
+    /// For slangc's split of a combined <c>SamplerXD C</c>: the author's name <c>C</c> and the
+    /// register class the author must have written for this half to count. Null for any other
+    /// emitted name.
+    /// </summary>
+    private static (string Name, char Class)? SplitAuthorName(EmittedResource resource)
+    {
+        Match m = SplitName.Match(resource.Name);
+        if (!m.Success)
+            return null;
+        char kindClass = m.Groups["kind"].Value == "texture" ? 't' : 's';
+        // A split texture half always carries t, a sampler half s; anything else is not the split.
+        return kindClass == resource.RegisterClass ? (m.Groups["base"].Value, kindClass) : null;
+    }
+
+    /// <summary>A texture/sampler declaration in slangc's emission that carries a register.</summary>
+    /// <param name="Name">The emitted name (<c>C_texture_0</c> for a split combined sampler).</param>
+    /// <param name="RegisterClass"><c>t</c> or <c>s</c>.</param>
+    /// <param name="File">The file slangc's <c>#line</c> names (<see cref="EntrySourceFile"/> for the entry source).</param>
+    /// <param name="Line">The line in <paramref name="File"/>.</param>
+    public readonly record struct EmittedResource(string Name, char RegisterClass, string File, int Line)
+    {
+        /// <summary>The name the author wrote: the base of a split combined sampler, else <see cref="Name"/>.</summary>
+        public string AuthorName => SplitAuthorName(this)?.Name ?? Name;
+    }
+
+    /// <summary>The verdict on one emitted register.</summary>
+    public enum RegisterVerdict
+    {
+        /// <summary>The author wrote it: keep.</summary>
+        Keep,
+        /// <summary>slangc numbered it: strip.</summary>
+        Strip,
+        /// <summary>The preprocessed text available cannot decide.</summary>
+        Unproven,
+    }
+
+    /// <summary>
+    /// What preprocessed (<c>slangc -E</c>) text says about resource registers: which names
+    /// carry an author register (and of which classes), and which are declared at global scope
+    /// with no annotation at all.
+    /// </summary>
+    internal sealed class AuthorBindings
+    {
+        private readonly Dictionary<string, HashSet<char>> _bound = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _plain = new(StringComparer.Ordinal);
+
+        /// <summary>Nothing bound, nothing declared.</summary>
+        public static AuthorBindings None { get; } = new();
+
+        public IEnumerable<string> BoundNames => _bound.Keys;
+
+        public static AuthorBindings Parse(string preprocessedSlangSource) =>
+            Union([preprocessedSlangSource]);
+
+        /// <summary>The union of several files' preprocessed texts.</summary>
+        public static AuthorBindings Union(IEnumerable<string> preprocessedTexts)
+        {
+            var bindings = new AuthorBindings();
+            foreach (string text in preprocessedTexts)
+                bindings.Add(text);
+            return bindings;
+        }
+
+        private void Add(string preprocessed)
+        {
+            // The preprocessor already dropped comments; the mask still blanks string-literal
+            // contents (an attribute argument that happens to read 'X : register(').
+            string masked = SlangSourceMask.Mask(preprocessed);
+            foreach (Match m in AuthorRegister.Matches(masked))
+            {
+                string name = m.Groups["name"].Value;
+                if (!_bound.TryGetValue(name, out HashSet<char>? classes))
+                    _bound[name] = classes = [];
+                foreach (Capture c in m.Groups["cls"].Captures)
+                {
+                    if (c.Value.Length > 0)
+                        classes.Add(char.ToLowerInvariant(c.Value[0]));
+                }
+            }
+
+            int depth = 0;
+            int scanned = 0;
+            foreach (Match m in PlainDeclaration.Matches(masked))
+            {
+                for (; scanned < m.Index; scanned++)
+                {
+                    if (masked[scanned] == '{')
+                        depth++;
+                    else if (masked[scanned] == '}')
+                        depth--;
+                }
+                if (depth != 0)
+                    continue;
+                if (m.Groups["type"].Success && NotATypeKeyword.Contains(m.Groups["type"].Value))
+                    continue;
+                _plain.Add(m.Groups["name"].Value);
+            }
+        }
+
+        /// <summary>The author wrote this emitted declaration's register.</summary>
+        public bool Binds(EmittedResource resource)
+        {
+            // An emitted name the author wrote verbatim (any class, as since issue #252).
+            if (_bound.ContainsKey(resource.Name))
+                return true;
+            return SplitAuthorName(resource) is { } s
+                && _bound.TryGetValue(s.Name, out HashSet<char>? classes)
+                && classes.Contains(s.Class);
+        }
+
+        /// <summary>
+        /// The author declared this emitted declaration's resource here without a register for
+        /// it: plainly, or (for one half of a combined sampler) with a register of the other class.
+        /// </summary>
+        public bool Declares(EmittedResource resource) =>
+            _plain.Contains(resource.Name)
+            || (SplitAuthorName(resource) is { } s && (_plain.Contains(s.Name) || _bound.ContainsKey(s.Name)));
+    }
 }
