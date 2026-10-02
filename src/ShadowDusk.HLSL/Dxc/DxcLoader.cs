@@ -306,6 +306,12 @@ internal static class DxcLoader
                     $"ShadowDusk's pinned DXC native library at '{dxcPath}' could not be loaded: {ex.Message}");
             }
 
+            // macOS: dyld searches DYLD_LIBRARY_PATH for the LEAF name of every load, absolute
+            // paths included, before the path it was given; so what is mapped may not be the
+            // file just checked. Ask dyld which image it really is.
+            if (mac && VerifyMappedMacDxc(dxcPath, pinnedCompiler) is { } substituted)
+                return substituted;
+
             _foreignValidatorError =
                 dxilPath is not null ? VerifyBoundWindowsDxil(dxilPath, pinnedValidator)
                 : mac ? VerifyNoMacDxil()
@@ -348,6 +354,29 @@ internal static class DxcLoader
             "DXC's output outright). Compiles that need the validator (DirectX 12) are refused; " +
             "SPIR-V targets are unaffected. Whatever loaded it first must not share the process " +
             "with ShadowDusk's DirectX 12 compiles.");
+    }
+
+    /// <summary>
+    /// macOS: the image dyld actually mapped for <see cref="_pinnedDxcHandle"/> must be the
+    /// pinned build. dyld resolves even an absolute-path load against <c>DYLD_LIBRARY_PATH</c>
+    /// first (by leaf name; measured on the macOS CI lane, issue #270), so a different
+    /// <c>libdxcompiler.dylib</c> there would be loaded in place of the file
+    /// <see cref="LoadPinned"/> checked. A byte copy of the pinned build is the same compiler
+    /// and is accepted. Cannot ask dyld means no finding, never a guess.
+    /// </summary>
+    private static ShaderError? VerifyMappedMacDxc(string requestedPath, string pinnedCompiler)
+    {
+        string? mapped = LoadedImages.MacImagePathOf(_pinnedDxcHandle, "DxcCreateInstance");
+        if (mapped is null || DxcNativeIdentity.Matches(mapped, pinnedCompiler))
+            return null;
+
+        return LoadError(
+            $"ShadowDusk loaded its pinned DXC '{requestedPath}' ({pinnedCompiler}), but dyld " +
+            $"mapped '{mapped}' ({DxcNativeIdentity.Describe(mapped)}) instead: DYLD_LIBRARY_PATH " +
+            "names a directory holding a different libdxcompiler.dylib, and dyld searches it ahead " +
+            "of any path it is given. ShadowDusk will not compile with a different DXC, so no " +
+            "DXC-backed compile can run in this process. Remove that library from " +
+            "DYLD_LIBRARY_PATH.");
     }
 
     /// <summary>
@@ -584,6 +613,43 @@ internal static class DxcLoader
 
             return paths;
         }
+
+        /// <summary>
+        /// macOS: the path of the image that defines <paramref name="exportName"/> in the library
+        /// <paramref name="handle"/> names, as dyld recorded it (<c>dladdr</c>), or <c>null</c>
+        /// off macOS or when dyld cannot be asked.
+        /// </summary>
+        internal static string? MacImagePathOf(IntPtr handle, string exportName)
+        {
+            if (!OperatingSystem.IsMacOS() || handle == IntPtr.Zero)
+                return null;
+
+            try
+            {
+                return NativeLibrary.TryGetExport(handle, exportName, out IntPtr address)
+                    && dladdr(address, out DlInfo info) != 0
+                    && Marshal.PtrToStringUTF8(info.FileName) is { Length: > 0 } path
+                        ? path
+                        : null;
+            }
+            catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
+            {
+                return null;
+            }
+        }
+
+        /// <summary><c>Dl_info</c> from <c>&lt;dlfcn.h&gt;</c>.</summary>
+        [StructLayout(LayoutKind.Sequential)]
+        private struct DlInfo
+        {
+            public IntPtr FileName;
+            public IntPtr FileBase;
+            public IntPtr SymbolName;
+            public IntPtr SymbolAddress;
+        }
+
+        [DllImport(LibSystem)]
+        private static extern int dladdr(IntPtr address, out DlInfo info);
 
         [DllImport(LibSystem)]
         private static extern uint _dyld_image_count();

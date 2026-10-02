@@ -108,7 +108,12 @@ public sealed class DxcLibraryPathDecoyTests
             File.Copy(spirvCross, Path.Combine(decoyDir, canary));
 
             depsFile = hostKnowsTheNatives ? null : WriteDepsFileWithoutNativeAssets(decoyName);
-            Dictionary<string, List<string>> report = await RunProbeAsync(decoyDir, canary, depsFile);
+            // Linux: LD_LIBRARY_PATH. macOS: DYLD_FALLBACK_LIBRARY_PATH, the variable behind the
+            // default /usr/local/lib lookup, which (unlike DYLD_LIBRARY_PATH, see
+            // MacDyldLibraryPathDecoy_OnlyThePinnedBuildCompiles) a leaf-name load consults but
+            // an absolute-path load of an existing file does not.
+            Dictionary<string, List<string>> report = await RunProbeAsync(
+                decoyDir, canary, depsFile, mac ? "DYLD_FALLBACK_LIBRARY_PATH" : "LD_LIBRARY_PATH");
 
             // Positive controls first: without them a green result proves nothing.
             report["canary"].ShouldBe(["True"],
@@ -167,6 +172,73 @@ public sealed class DxcLibraryPathDecoyTests
             TryDelete(decoyDir);
             if (depsFile is not null)
                 File.Delete(depsFile);
+        }
+    }
+
+    /// <summary>
+    /// macOS only: dyld resolves EVERY load against <c>DYLD_LIBRARY_PATH</c> by leaf name first,
+    /// absolute paths included, so loading the pinned dylib by path cannot keep a
+    /// <c>libdxcompiler.dylib</c> there out (measured on the macOS CI lane). What ShadowDusk
+    /// owns is the outcome: the image dyld really mapped is checked, a byte copy of the pinned
+    /// build is the same compiler and compiles, and a different build is refused with
+    /// <c>SD0219</c> for every DXC-backed target (DirectX 11 does not use DXC and compiles).
+    /// </summary>
+    [MacDxcTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MacDyldLibraryPathDecoy_OnlyThePinnedBuildCompiles(bool foreignBuild)
+    {
+        string rid = DxcLoader.PinnedRid("osx", RuntimeInformation.ProcessArchitecture);
+        string pinnedDxc = Path.Combine(AppContext.BaseDirectory, rid, "libdxcompiler.dylib");
+        string spirvCross = Path.Combine(ForeignDxc.NativeDirectory(rid), "libspirv-cross.dylib");
+        string pinnedId = DxcNativeIdentity.Expected(rid, DxcNativeKind.Compiler)!;
+        File.Exists(pinnedDxc).ShouldBeTrue($"{pinnedDxc} is not beside the test assembly");
+
+        string decoyName = "sd-dxc-dyld-" + Guid.NewGuid().ToString("N");
+        string decoyDir = Path.Combine(Path.GetTempPath(), decoyName);
+        Directory.CreateDirectory(decoyDir);
+        try
+        {
+            string decoyDxc = Path.Combine(decoyDir, "libdxcompiler.dylib");
+            File.Copy(pinnedDxc, decoyDxc);
+            if (foreignBuild)
+                ForeignDxc.PlaceWorkingForeignBuild(decoyDxc);
+
+            const string canary = "libsdcanary.dylib";
+            File.Copy(spirvCross, Path.Combine(decoyDir, canary));
+
+            Dictionary<string, List<string>> report =
+                await RunProbeAsync(decoyDir, canary, depsFile: null, "DYLD_LIBRARY_PATH");
+            report["canary"].ShouldBe(["True"], "DYLD_LIBRARY_PATH did not reach the decoy directory");
+
+            List<string> dxcImages = (report.GetValueOrDefault("image") ?? [])
+                .Where(i => Path.GetFileName(i).StartsWith("libdxcompiler", StringComparison.Ordinal))
+                .ToList();
+            List<string> foreignImages = dxcImages.Where(i => !DxcNativeIdentity.Matches(i, pinnedId)).ToList();
+            string mapped = $"libdxcompiler images mapped: [{string.Join(", ", dxcImages)}]";
+
+            report["DirectX"].ShouldBe(["OK"], "DirectX 11 does not use DXC and must compile");
+            if (!foreignBuild)
+            {
+                // The same build from another directory is the same compiler.
+                foreignImages.ShouldBeEmpty(mapped);
+                report["OpenGL"].ShouldBe(["OK"], mapped);
+                report["Vulkan"].ShouldBe(["OK"], mapped);
+                return;
+            }
+
+            // A different build: never compiled with. dyld either mapped it (refused) or could
+            // not load it at all (refused as unloadable); in neither case may a DXC-backed
+            // target succeed while a foreign image is mapped.
+            foreach (string target in new[] { "OpenGL", "Vulkan", "DirectX12" })
+            {
+                if (foreignImages.Count > 0 || report[target][0] != "OK")
+                    report[target].ShouldBe(["SD0219"], $"{target}: {mapped}");
+            }
+        }
+        finally
+        {
+            TryDelete(decoyDir);
         }
     }
 
@@ -272,7 +344,8 @@ public sealed class DxcLibraryPathDecoyTests
         return path;
     }
 
-    private async Task<Dictionary<string, List<string>>> RunProbeAsync(string decoyDir, string canary, string? depsFile)
+    private async Task<Dictionary<string, List<string>>> RunProbeAsync(
+        string decoyDir, string canary, string? depsFile, string variable)
     {
         string dotnet = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") is { Length: > 0 } host
             ? host
@@ -296,8 +369,11 @@ public sealed class DxcLibraryPathDecoyTests
         psi.ArgumentList.Add(ProbeArgument);
         psi.ArgumentList.Add(canary);
 
-        string variable = OperatingSystem.IsMacOS() ? "DYLD_LIBRARY_PATH" : "LD_LIBRARY_PATH";
+        // Setting DYLD_FALLBACK_LIBRARY_PATH replaces dyld's default, so keep that default after
+        // the decoy directory.
         string? inherited = Environment.GetEnvironmentVariable(variable);
+        if (string.IsNullOrEmpty(inherited) && variable == "DYLD_FALLBACK_LIBRARY_PATH")
+            inherited = "/usr/local/lib:/usr/lib";
         psi.Environment[variable] = string.IsNullOrEmpty(inherited)
             ? decoyDir
             : decoyDir + Path.PathSeparator + inherited;
@@ -351,6 +427,28 @@ public sealed class UnixDxcTheoryAttribute : TheoryAttribute
         if (!OperatingSystem.IsLinux() && !OperatingSystem.IsMacOS())
         {
             Skip = "The dynamic-linker search path (LD_LIBRARY_PATH / DYLD_LIBRARY_PATH) only exists on Linux and macOS.";
+        }
+        else if (ShadowDusk.Tests.Shared.NativeRequirement.ShouldSkip(
+                     Tests.DxcTestGate.DxcAvailable,
+                     Environment.GetEnvironmentVariable(ShadowDusk.Tests.Shared.NativeRequirement.DxcEnvVar)))
+        {
+            Skip = Tests.DxcTestGate.SkipReason;
+        }
+    }
+}
+
+/// <summary>
+/// A theory for macOS with the restored DXC dylib. Reported as SKIPPED, never passed,
+/// elsewhere, and where the dylib has not been restored unless <c>SHADOWDUSK_REQUIRE_DXC</c>
+/// is set (CI): then it runs and fails.
+/// </summary>
+public sealed class MacDxcTheoryAttribute : TheoryAttribute
+{
+    public MacDxcTheoryAttribute()
+    {
+        if (!OperatingSystem.IsMacOS())
+        {
+            Skip = "DYLD_LIBRARY_PATH's substitution of absolute-path loads exists only on macOS.";
         }
         else if (ShadowDusk.Tests.Shared.NativeRequirement.ShouldSkip(
                      Tests.DxcTestGate.DxcAvailable,

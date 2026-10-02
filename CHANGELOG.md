@@ -234,7 +234,10 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   word. The natives that ship beside ShadowDusk now come first, and every candidate is checked
   against the pinned build before it is loaded (the PE file version on Windows, the ELF GNU build
   id on Linux, the Mach-O `LC_UUID` on macOS: identities that code signing and `strip` leave
-  alone). A candidate that is not the pinned build is skipped and named; if no pinned build is
+  alone). On macOS, dyld resolves even an absolute-path load against `DYLD_LIBRARY_PATH` first, so
+  the image dyld actually mapped is checked after loading as well: a byte copy of the pinned build
+  is accepted, a different build is refused. A candidate that is not the pinned build is skipped
+  and named; if no pinned build is
   found, every DXC-backed compile fails with `SD0219`, never with a different DXC. DirectX 11 and
   FNA do not use DXC and keep compiling. Output bytes are unchanged. New tests:
   `CliDxcNativeLayoutTests` (the real CLI from a private copy of its output with the natives
@@ -242,7 +245,8 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   `DxcLibraryPathDecoyTests` (Linux and macOS: a decoy pair first on the library path and as the
   working directory, with and without the host knowing the natives; the mapped `libdxcompiler`
   must be the pinned one, read from `/proc/self/maps` or dyld's image list; it fails with the old
-  subscription order), `DxcPinnedNativeIdentityTests` and `DxcNativeIdentityTests`.
+  subscription order; a macOS case puts a copy and a restamped build on `DYLD_LIBRARY_PATH`),
+  `DxcPinnedNativeIdentityTests` and `DxcNativeIdentityTests`.
 - **`ShadowDusk.Slang`: textured shaders no longer crash real FNA (issue #230).** slangc emits
   texture objects (`Texture2D T; SamplerState S; T.Sample(S, uv)`). On the FNA target that compiled,
   but vkd3d folds the pair into one texture-typed sampler named `S+T`, so the `.fxb` held a texture
