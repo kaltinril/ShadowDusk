@@ -1774,11 +1774,17 @@ public static class MonoGameGlslRewriter
     /// </summary>
     internal const string TrigReduceFunctionName = "sd_reduce_angle";
 
-    private const string TrigReduceHelpers =
-        "float sd_reduce_angle(float x) { float k = floor(x * 0.15915494309189535 + 0.5); return (x - k * 6.28125) - k * 0.0019353071795864769; }\n" +
-        "vec2 sd_reduce_angle(vec2 x) { vec2 k = floor(x * 0.15915494309189535 + 0.5); return (x - k * 6.28125) - k * 0.0019353071795864769; }\n" +
-        "vec3 sd_reduce_angle(vec3 x) { vec3 k = floor(x * 0.15915494309189535 + 0.5); return (x - k * 6.28125) - k * 0.0019353071795864769; }\n" +
-        "vec4 sd_reduce_angle(vec4 x) { vec4 k = floor(x * 0.15915494309189535 + 0.5); return (x - k * 6.28125) - k * 0.0019353071795864769; }\n";
+    private static string TrigReduceHelpers(string name)
+    {
+        var sb = new StringBuilder();
+        foreach (string type in new[] { "float", "vec2", "vec3", "vec4" })
+        {
+            sb.Append(type).Append(' ').Append(name).Append('(').Append(type).Append(" x) { ")
+              .Append(type).Append(" k = floor(x * 0.15915494309189535 + 0.5); ")
+              .Append("return (x - k * 6.28125) - k * 0.0019353071795864769; }\n");
+        }
+        return sb.ToString();
+    }
 
     private static readonly string[] TrigFns = { "sin", "cos" };
 
@@ -1789,15 +1795,115 @@ public static class MonoGameGlslRewriter
         @"^\s*[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?\s*$",
         RegexOptions.Compiled);
 
-    private static readonly Regex MainDeclarationLine = new(
-        @"^[ \t]*void\s+main\s*\(",
-        RegexOptions.Compiled | RegexOptions.Multiline);
+    // A function header at the scan position: `<type> <name>(` (optionally
+    // precision-qualified). Whether it is a definition (followed by `{`) rather than a
+    // prototype is checked by the caller.
+    private static readonly Regex FunctionHeaderStart = new(
+        @"\G[ \t]*(?:(?:highp|mediump|lowp|const)\s+)*([A-Za-z_]\w*)\s+([A-Za-z_]\w*)\s*\(",
+        RegexOptions.Compiled);
+
+    private static readonly HashSet<string> NonTypeLeadingKeywords = new(StringComparer.Ordinal)
+    {
+        "uniform", "varying", "attribute", "in", "out", "layout", "struct", "precision",
+        "return", "if", "for", "while", "else", "do", "switch",
+    };
+
+    /// <summary>
+    /// Index of the start of the line holding the FIRST top-level function definition
+    /// (brace depth 0, <c>type name(...) {</c>), or -1. The Rule 16 helpers go there:
+    /// after every global declaration, before any function that could call them.
+    /// GLSL 1.10 / ES 1.00 require a function to be declared before use, and a
+    /// <c>[noinline]</c> HLSL function survives DXC and SPIRV-Cross as its own GLSL
+    /// function emitted BEFORE <c>main</c>, so anchoring on <c>main</c> is not enough.
+    /// For a shader whose only function is <c>main</c>, this is <c>main</c>'s line.
+    /// </summary>
+    private static int FindFirstTopLevelFunctionDefinition(string body)
+    {
+        int depth = 0;
+        bool atLineStart = true;
+        for (int i = 0; i < body.Length; i++)
+        {
+            if (atLineStart && depth == 0)
+            {
+                Match m = FunctionHeaderStart.Match(body, i);
+                if (m.Success && !NonTypeLeadingKeywords.Contains(m.Groups[1].Value))
+                {
+                    int close = FindMatchingParen(body, m.Index + m.Length - 1);
+                    if (close > 0)
+                    {
+                        int k = SkipWsAndComments(body, close + 1);
+                        if (k >= 0 && k < body.Length && body[k] == '{')
+                        {
+                            return i;
+                        }
+                    }
+                }
+            }
+            atLineStart = false;
+
+            char c = body[i];
+            if (c == '/' && i + 1 < body.Length && body[i + 1] == '/')
+            {
+                int eol = body.IndexOf('\n', i);
+                if (eol < 0)
+                {
+                    break;
+                }
+                i = eol;
+                atLineStart = true;
+                continue;
+            }
+            if (c == '/' && i + 1 < body.Length && body[i + 1] == '*')
+            {
+                int end = body.IndexOf("*/", i + 2, StringComparison.Ordinal);
+                if (end < 0)
+                {
+                    break;
+                }
+                i = end + 1;
+                continue;
+            }
+
+            if (c == '{')
+            {
+                depth++;
+            }
+            else if (c == '}')
+            {
+                depth--;
+            }
+            else if (c == '\n')
+            {
+                atLineStart = true;
+            }
+        }
+
+        return -1;
+    }
+
+    /// <summary>
+    /// The helper name: <see cref="TrigReduceFunctionName"/>, or that name with the
+    /// lowest numeric suffix not already used as an identifier in the shader. A user
+    /// function surviving as <c>sd_reduce_angle</c> (a <c>[noinline]</c> HLSL function
+    /// of that name) is valid input, so a clash is resolved rather than rejected — the
+    /// consumer never has to rename anything to get correct output.
+    /// </summary>
+    private static string UniqueTrigReduceName(string body)
+    {
+        string name = TrigReduceFunctionName;
+        for (int n = 1; Regex.IsMatch(body, $@"\b{name}\b"); n++)
+        {
+            name = $"{TrigReduceFunctionName}_{n}";
+        }
+        return name;
+    }
 
     /// <summary>
     /// Rule 16 (issue #215): rewrites every <c>sin(<i>expr</i>)</c> /
     /// <c>cos(<i>expr</i>)</c> to <c>sin(sd_reduce_angle(<i>expr</i>))</c> and declares
-    /// the helper overloads (<see cref="TrigReduceHelpers"/>) once, just before
-    /// <c>main</c>. SPIRV-Cross hands HLSL <c>sin</c>/<c>cos</c> straight to the GLSL
+    /// the helper overloads (<see cref="TrigReduceHelpers"/>) once, before the first
+    /// top-level function definition (<see cref="FindFirstTopLevelFunctionDefinition"/>;
+    /// a <c>[noinline]</c> function precedes <c>main</c> and may call them). SPIRV-Cross hands HLSL <c>sin</c>/<c>cos</c> straight to the GLSL
     /// builtin on the raw argument, so a large argument (Dots.fx reaches ~792 rad) is
     /// exposed to the driver's own range reduction, whose accuracy varies by vendor:
     /// llvmpipe and NVIDIA are exact enough, Intel UHD measured 19/255 off the mgfxc
@@ -1811,6 +1917,8 @@ public static class MonoGameGlslRewriter
     /// </summary>
     private static string ReduceTrigArguments(string body)
     {
+        // Resolved against the ORIGINAL body, before any wrapping introduces the name.
+        string helperName = UniqueTrigReduceName(body);
         bool reduced = false;
         foreach (var fn in TrigFns)
         {
@@ -1842,7 +1950,7 @@ public static class MonoGameGlslRewriter
                     continue;
                 }
 
-                string prefix = $"{fn}({TrigReduceFunctionName}(";
+                string prefix = $"{fn}({helperName}(";
                 body = body.Substring(0, callStart) + prefix + arg + "))" + body.Substring(closeParen + 1);
                 // Resume inside the argument: a nested sin/cos in it is still visited, and
                 // the outer call (now past searchFrom) is never wrapped twice.
@@ -1856,15 +1964,16 @@ public static class MonoGameGlslRewriter
             return body;
         }
 
-        Match main = MainDeclarationLine.Match(body);
-        if (!main.Success)
+        int anchor = FindFirstTopLevelFunctionDefinition(body);
+        if (anchor < 0)
         {
             throw new MonoGameGlslRewriteException(
-                "GLSL rewrite: sin/cos range reduction (Rule 16) could not locate 'void main(' " +
-                "to declare its helper before. This is a ShadowDusk gap; please report the shader shape.");
+                "GLSL rewrite: sin/cos range reduction (Rule 16) could not locate a top-level " +
+                "function definition to declare its helper before. This is a ShadowDusk gap; " +
+                "please report the shader shape.");
         }
 
-        return body.Substring(0, main.Index) + TrigReduceHelpers + "\n" + body.Substring(main.Index);
+        return body.Substring(0, anchor) + TrigReduceHelpers(helperName) + "\n" + body.Substring(anchor);
     }
 
     /// <summary>

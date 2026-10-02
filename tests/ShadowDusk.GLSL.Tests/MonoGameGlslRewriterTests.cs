@@ -399,6 +399,83 @@ void main()
     }
 
     [Fact]
+    public void Trig_MainOnlyShader_HelperBlockSitsDirectlyBeforeMain_Issue215()
+    {
+        var result = MonoGameGlslRewriter.Rewrite(TrigSource, ShaderStage.Pixel);
+
+        // The position the re-baselined manifests were generated with: the four
+        // overloads, one blank line, then main.
+        result.Glsl.ShouldContain("- k * 0.0019353071795864769; }\n\nvoid main()", Case.Sensitive);
+    }
+
+    [Fact]
+    public void Trig_NonMainFunctionCallingSin_SeesTheHelperDeclaredBeforeIt_Issue215()
+    {
+        // A [noinline] HLSL function survives DXC + SPIRV-Cross as its own GLSL function
+        // emitted BEFORE main. GLSL 1.10 / ES 1.00 require declaration before use, so a
+        // helper anchored at main left `helper` calling an undeclared function
+        // (glslangValidator: "'sd_reduce_angle' : no matching overloaded function found").
+        const string src = """
+#version 140
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+float helper(float x)
+{
+    return sin(x) + cos(x * 2.0);
+}
+
+void main()
+{
+    float _33 = helper(in_var_TEXCOORD0.x * 800.0);
+    out_var_SV_Target = vec4(_33);
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        int decl = result.Glsl.IndexOf("float sd_reduce_angle(float x)", StringComparison.Ordinal);
+        int helper = result.Glsl.IndexOf("float helper(float x)", StringComparison.Ordinal);
+        int firstUse = result.Glsl.IndexOf("sin(sd_reduce_angle(x))", StringComparison.Ordinal);
+        decl.ShouldBeGreaterThan(0);
+        helper.ShouldBeGreaterThan(decl, "the reduction helper must be declared before the first function that calls it");
+        firstUse.ShouldBeGreaterThan(decl);
+        // Still after every global declaration.
+        decl.ShouldBeGreaterThan(result.Glsl.IndexOf("varying vec4 vTexCoord0;", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Trig_ExistingSdReduceAngleIdentifier_GetsAUniqueHelperName_Issue215()
+    {
+        // A user identifier already spelled sd_reduce_angle (a [noinline] function or a
+        // local of that name) is valid input: the helper takes a fresh name instead of
+        // shadowing it or failing the compile.
+        const string src = """
+#version 140
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+float sd_reduce_angle(float v)
+{
+    return v * 2.0;
+}
+
+void main()
+{
+    out_var_SV_Target = vec4(sin(sd_reduce_angle(in_var_TEXCOORD0.x)));
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        result.Glsl.ShouldContain("float sd_reduce_angle_1(float x)", Case.Sensitive);
+        result.Glsl.ShouldContain("sin(sd_reduce_angle_1(sd_reduce_angle(vTexCoord0.x)))", Case.Sensitive);
+        // The user's own function is untouched and still declared exactly once.
+        System.Text.RegularExpressions.Regex.Matches(result.Glsl, @"float sd_reduce_angle\(").Count.ShouldBe(1);
+        result.Glsl.ShouldContain("return v * 2.0;", Case.Sensitive);
+    }
+
+    [Fact]
     public void Trig_ShaderWithoutSinOrCos_IsByteUnchanged_NoHelperEmitted_Issue215()
     {
         const string src = """
