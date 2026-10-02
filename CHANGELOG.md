@@ -199,8 +199,17 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   the new `SD0628`, naming the declaration and its file and line, instead of being guessed. Same code
   on both transports through the shared seam (the browser's slangc has no file system, so there an
   import already fails the compile with slangc's own `E00001`); the node gate gains the
-  combined-`Sampler2D` shape and the missing-file `-E` shape. A shader with no texture/sampler register in slangc's output now skips
-  the `-E` pass entirely. No corpus byte moves.
+  combined-`Sampler2D` shape and the missing-file `-E` shape. Found on the way and fixed the same
+  way: slangc hoists a struct global's resource fields too (`M gM : register(t5)` emits
+  `gM_t_0 : register(t5)`), and that register was also stripped. A shader with no texture/sampler
+  register in slangc's output now skips the `-E` pass entirely. No corpus byte moves.
+- **Stale lock files outside the solution (issues #291, #290).** PR #279's `Vortice.Dxc` `[3.3.4]`
+  pin missed the lock files of `Vkd3dCorpusProbe` (which turned Browser render smoke red on main),
+  `slang-probe`, `dxc-corpus-probe` and `KniXnbContentLoad`'s 4.3.9001 lock (still at 0.18.0), and
+  `FnaValidation`'s lock had lost its `FNA` project entry. All regenerated. New
+  `tools/check-lock-files.sh`, run by a new `Lock files` CI job on every PR, restores every tracked
+  lock file in locked mode, so this class of miss fails on its own PR. The release lock-file rewrite
+  now matches versioned names (`*packages*.lock.json`).
 - **`ShadowDusk.Slang`: which registers "the author wrote" is now decided after preprocessing
   (issue #252 follow-up).** The register strip kept a texture/sampler register only when the Slang
   source text spelled `register(...)` on that name, and it read the text before the preprocessor
