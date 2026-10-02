@@ -61,7 +61,7 @@ package "3 - TRANSLATION LAYERS  (target selects the branch)" {
     rectangle "SPIR-V" as GL_SPV #DCE6DC
     rectangle "**SPIRV-Cross**\nSPIR-V -> GLSL" as GL_SPVC #BFD2E8
     rectangle "GLSL 1.10\n(MojoShader dialect)" as GL_GLSL #DCE6DC
-    rectangle "**MonoGameGlslRewriter**\nps_oC0 -> gl_FragColor / gl_FragData[n];\nunwrap one-shot do-while (#136), else -> for (#107);\nroundEven -> floor+0.5; derivatives #extension (#139);\nstruct :COLOR -> :SV_Target (MRT, GAP-2)" as GL_RW #E7DFC9
+    rectangle "**MonoGameGlslRewriter**\nps_oC0 -> gl_FragColor / gl_FragData[n];\nunwrap one-shot do-while (#136), else -> for (#107);\nroundEven -> floor+0.5; derivatives #extension (#139);\nsin/cos args range-reduced to -pi..pi (#215);\nstruct :COLOR -> :SV_Target (MRT, GAP-2)" as GL_RW #E7DFC9
     rectangle "**SkslConverter**  (ShadowDusk.Compiler.Sksl)\nmodern GLSL -> SkSL text (fragment-only,\ncoordinate-driven; no varyings, no vertex stage)" as SKSLCONV #E7DFC9
     rectangle "**RaylibConverter**  (ShadowDusk.Compiler.Raylib)\nmodern GLSL -> raylib glsl330 fragment shader\n(fragTexCoord / fragColor / texture0 / finalColor;\nsingle pass, no vertex stage, no render state)" as RAYLIBCONV #E7DFC9
     GL_DXC -down-> GL_SPV
