@@ -180,6 +180,13 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **Stale lock files outside the solution (issues #291, #290).** PR #279's `Vortice.Dxc` `[3.3.4]`
+  pin missed the lock files of `Vkd3dCorpusProbe` (which turned Browser render smoke red on main),
+  `slang-probe`, `dxc-corpus-probe` and `KniXnbContentLoad`'s 4.3.9001 lock (still at 0.18.0), and
+  `FnaValidation`'s lock had lost its `FNA` project entry. All regenerated. New
+  `tools/check-lock-files.sh`, run by a new `Lock files` CI job on every PR, restores every tracked
+  lock file in locked mode, so this class of miss fails on its own PR. The release lock-file rewrite
+  now matches versioned names (`*packages*.lock.json`).
 - **`ShadowDusk.Slang`: which registers "the author wrote" is now decided after preprocessing
   (issue #252 follow-up).** The register strip kept a texture/sampler register only when the Slang
   source text spelled `register(...)` on that name, and it read the text before the preprocessor

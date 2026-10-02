@@ -94,6 +94,8 @@ ShadowDusk/
 │   │                              #   Never built in place. Its pack gate is tools/verify-slang-nupkg.sh <nupkg>,
 │   │                              #   the ONE exact-name list of the eight slangc natives + notice, also run by
 │   │                              #   release.yml (issue #226) and runnable locally against any packed nupkg.
+│   ├── check-lock-files.sh        # Locked-mode restore of EVERY tracked *packages*.lock.json, out-of-solution
+│   │                              #   projects included (CI job `Lock files`, issue #291).
 │   ├── contentbuilder-consumer/   # The scratch MonoGame 3.8.5 Content Builder (Program.cs + csproj) that
 │   │                              #   pack-consume.yml and tools/verify-contentpipeline-packaging.ps1 COPY out of
 │   │                              #   tree to consume the packed ShadowDusk.ContentPipeline cold (Phase 63).

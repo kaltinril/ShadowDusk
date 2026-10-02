@@ -42,6 +42,28 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: '1'
 
 jobs:
+  lock-files:
+    # Issue #291: `dotnet restore ShadowDusk.slnx --locked-mode` below covers only solution
+    # projects. This restores EVERY tracked lock file (validation drivers, browser probes,
+    # phase appendices) in locked mode, so a Directory.Packages.props change that misses an
+    # out-of-solution lock file fails on its own PR instead of later in a label-gated job.
+    name: Lock files (all projects, locked mode)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 + .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Locked-mode restore of every lock file
+        run: tools/check-lock-files.sh
+
   build-and-test:
     name: Build & Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
