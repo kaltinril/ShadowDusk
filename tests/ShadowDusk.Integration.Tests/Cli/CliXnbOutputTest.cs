@@ -15,7 +15,9 @@ namespace ShadowDusk.Integration.Tests.Cli;
 /// set to get correct output is what the standing seamlessness directive forbids. And
 /// <b>the payload inside the <c>.xnb</c> is byte-identical to the plain <c>.mgfx</c> the same
 /// invocation would have written</b> (C2), which is the property that keeps the new delivery
-/// shape from quietly becoming a second compile path.</para>
+/// shape from quietly becoming a second compile path. The one deliberate difference is on the
+/// MGFX v11 targets, where the <c>.xnb</c> stores MGCB's <c>&lt;unknown&gt;</c> source name
+/// instead of the path (issue #280); that test asserts nothing else differs.</para>
 ///
 /// <para>The container's fidelity to real MGCB and the rung-4 <c>Content.Load&lt;Effect&gt;</c>
 /// proof live in <c>validation/XnbContentLoad</c>; neither can run under <c>dotnet test</c>
@@ -71,6 +73,90 @@ public sealed class CliXnbOutputTest : IClassFixture<CliBinaryFixture>
                 if (File.Exists(f)) File.Delete(f);
         }
     }
+
+    /// <summary>
+    /// Issue #280: on the MGFX v11 targets (DirectX 12, Vulkan) the effect stores a source-file
+    /// string per shader. An <c>.xnb</c> is content-pipeline output, and the reference for
+    /// content-pipeline output is MGCB (mgfxc has no <c>.xnb</c> mode), whose stock
+    /// <c>EffectProcessor</c> writes <c>&lt;unknown&gt;</c> there. So the CLI's <c>.xnb</c> must
+    /// too: built from two directories it is the same file, it names neither, and its payload is
+    /// the <c>.mgfx</c> the same invocation writes with only that string (and the effect key
+    /// derived from it) replaced. The <c>.mgfx</c> itself keeps the path as passed (mgfxc CLI
+    /// parity, issue #274).
+    /// </summary>
+    [Theory]
+    [InlineData("Vulkan", 'V')]
+    [InlineData("DirectX_12", 'G')]
+    public async Task XnbOutputOnAV11Target_RecordsTheStockUnknownSourceFile_NotTheBuildPath(
+        string profile, char expectedPlatform)
+    {
+        const string Stock = "<unknown>";
+        string root = Path.Combine(Path.GetTempPath(), "shadowdusk_issue280_" + Guid.NewGuid().ToString("N"));
+        string dirOne = Path.Combine(root, "checkout-one");
+        string dirTwo = Path.Combine(root, "a", "deeper", "checkout-two");
+
+        try
+        {
+            string sourceOne = CopyFixture(dirOne);
+            string sourceTwo = CopyFixture(dirTwo);
+
+            string xnbOne = Path.Combine(dirOne, "Grayscale.xnb");
+            string xnbTwo = Path.Combine(dirTwo, "Grayscale.xnb");
+            string mgfx   = Path.Combine(dirOne, "Grayscale.mgfx");
+
+            (int exitOne, _, string errOne) = await RunCliAsync(sourceOne, xnbOne, $"/Profile:{profile}");
+            (int exitTwo, _, string errTwo) = await RunCliAsync(sourceTwo, xnbTwo, $"/Profile:{profile}");
+            (int exitMgfx, _, string errMgfx) = await RunCliAsync(sourceOne, mgfx, $"/Profile:{profile}");
+            exitOne.ShouldBe(0, errOne);
+            exitTwo.ShouldBe(0, errTwo);
+            exitMgfx.ShouldBe(0, errMgfx);
+
+            byte[] bytesOne  = await File.ReadAllBytesAsync(xnbOne);
+            byte[] bytesTwo  = await File.ReadAllBytesAsync(xnbTwo);
+            byte[] mgfxBytes = await File.ReadAllBytesAsync(mgfx);
+
+            ((char)bytesOne[3]).ShouldBe(expectedPlatform);
+
+            bytesTwo.ShouldBe(bytesOne,
+                $"the {profile} .xnb must not change with the directory the source was built from");
+
+            foreach (string dir in new[] { dirOne, dirTwo })
+            {
+                ContainsUtf8(bytesOne, dir).ShouldBeFalse(
+                    $"the {profile} .xnb must not carry the build machine's directory ({dir})");
+            }
+
+            byte[] payload = ExtractPayload(bytesOne);
+            var reader = MgfxBlobReader.Parse(payload);
+            reader.MgfxVersion.ShouldBe((byte)11);
+            reader.Shaders.ShouldNotBeEmpty();
+            reader.Shaders.ShouldAllBe(s => s.SourceFile == Stock,
+                $"every {profile} shader record in the .xnb must carry what stock MGCB writes");
+
+            // The .mgfx is unchanged: the path exactly as passed (mgfxc CLI parity).
+            MgfxBlobReader.Parse(mgfxBytes).Shaders.ShouldAllBe(s => s.SourceFile == sourceOne,
+                "the .mgfx output keeps the source path as passed, like mgfxc");
+
+            // One pipeline: the .xnb payload is the .mgfx with only the embedded name replaced.
+            payload.ShouldBe(MgfxEmbeddedSourceName.Replace(mgfxBytes, sourceOne, Stock),
+                "the .xnb payload must be the .mgfx bytes with only the embedded source name replaced");
+        }
+        finally
+        {
+            try { Directory.Delete(root, recursive: true); } catch { /* non-fatal */ }
+        }
+    }
+
+    private static string CopyFixture(string directory)
+    {
+        Directory.CreateDirectory(directory);
+        string target = Path.Combine(directory, "Grayscale.fx");
+        File.Copy(Path.Combine(FixturesDir, "shaders", "Grayscale.fx"), target);
+        return target;
+    }
+
+    private static bool ContainsUtf8(byte[] haystack, string text)
+        => haystack.AsSpan().IndexOf(System.Text.Encoding.UTF8.GetBytes(text)) >= 0;
 
     [Fact]
     public async Task NonXnbExtension_IsPassedThroughUnwrapped()

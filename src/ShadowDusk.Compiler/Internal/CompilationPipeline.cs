@@ -444,6 +444,28 @@ internal sealed class CompilationPipeline
         var runWarnings  = new List<ShaderError>(preprocessWarnings);
         var seenWarnings = new HashSet<(string File, int Line, int Column, string Code, string Message)>();
 
+        // OpenGL sampler-register reservations (issue #283): which modern
+        // `SamplerState X : register(sN)` declarations take a GL sampler register out of
+        // circulation is decided on the PREPROCESSED source, like mgfxc — not on the raw tokens
+        // the pre-parser saw (which counted dead #if branches, missed macro-spelled registers,
+        // and never saw #include'd files). Built from the RAW source (the pre-parser's rewrite
+        // turns legacy samplers into SamplerState, which must not start reserving), flattened
+        // with this compile's macros. A failure to build the view is DEFERRED until the DXC
+        // compiles below have accepted the source, so a genuinely malformed shader still
+        // reports DXC's own diagnostic; SD0009 only fires when our preprocessor is the one at
+        // fault.
+        IReadOnlySet<int> reservedGlSamplerSlots = fxParsed.ReservedGlSamplerSlots;
+        ShaderError? reservationError = null;
+        if (options.Target == PlatformTarget.OpenGL)
+        {
+            Result<IReadOnlySet<int>, ShaderError> reservation =
+                GlSamplerReservation.Collect(hlslSource, sourceFileName, macros, includeResolver, options.AdditionalIncludePaths);
+            if (reservation.IsSuccess)
+                reservedGlSamplerSlots = reservation.Value;
+            else
+                reservationError = reservation.Error;
+        }
+
         foreach (TechniqueInfo technique in fxParsed.Techniques)
         {
             var mgfxPasses = new List<MgfxPassInfo>();
@@ -478,7 +500,7 @@ internal sealed class CompilationPipeline
                         // SM4 rewrite dropped them, so the GLSL rewriter numbers ps_s{slot} the
                         // same way the .mgfx sampler table will (issue #189).
                         explicitGlSamplerSlots: fxParsed.ExplicitGlSamplerSlots,
-                        reservedGlSamplerSlots: fxParsed.ReservedGlSamplerSlots,
+                        reservedGlSamplerSlots: reservedGlSamplerSlots,
                         cancellationToken);
 
                     if (compileOutput.Blob.IsFailure)
@@ -530,7 +552,7 @@ internal sealed class CompilationPipeline
                         // SM4 rewrite dropped them, so the GLSL rewriter numbers ps_s{slot} the
                         // same way the .mgfx sampler table will (issue #189).
                         explicitGlSamplerSlots: fxParsed.ExplicitGlSamplerSlots,
-                        reservedGlSamplerSlots: fxParsed.ReservedGlSamplerSlots,
+                        reservedGlSamplerSlots: reservedGlSamplerSlots,
                         cancellationToken);
 
                     if (compileOutput.Blob.IsFailure)
@@ -690,6 +712,12 @@ internal sealed class CompilationPipeline
                 Annotations: techAnnotations,
                 Passes: mgfxPasses));
         }
+
+        // Every DXC compile accepted the source, so a reservation view that could not be built
+        // is ShadowDusk's own preprocessor at fault: fail loudly rather than ship output whose
+        // GL sampler registers were allocated on a guess (issue #283).
+        if (reservationError is not null)
+            return Fail(reservationError, runWarnings);
 
         // GL (Phase 43 F4/F5): one cbuffer record PER SHADER, built from the uniform
         // register layout the GLSL rewriter returned for that shader, deduplicated
@@ -1000,7 +1028,7 @@ internal sealed class CompilationPipeline
                     IReadOnlyList<CombinedSamplerPair> pairs = pairResult.Value;
                     IReadOnlyList<int> glSamplerSlots =
                         SpirvCombinedSamplerPairs.ResolveSlots(
-                            pairs, fxParsed.ExplicitGlSamplerSlots, fxParsed.ReservedGlSamplerSlots);
+                            pairs, fxParsed.ExplicitGlSamplerSlots, reservedGlSamplerSlots);
 
                     for (int k = 0; k < pairs.Count; k++)
                     {

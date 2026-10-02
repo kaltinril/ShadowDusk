@@ -127,8 +127,21 @@ public sealed class DiagnosticCodeRegistryTests
             }
         }
 
+        // MSBuild warnings a shipped package raises in the CONSUMER's build (issue #282:
+        // buildTransitive/ShadowDusk.HLSL.targets emits SD0220): `<Warning Code="SD0220" .../>`.
+        foreach (string file in Directory.EnumerateFiles(
+                     Path.Combine(repoRoot, "src"), "*.targets", SearchOption.AllDirectories))
+        {
+            foreach (Match m in MsBuildDiagnostic.Matches(File.ReadAllText(file)))
+                codes.Add(m.Groups["code"].Value);
+        }
+
         return codes;
     }
+
+    // `<Warning Code="SD0220"` / `<Error Code="SD0221"` in a shipped .targets file.
+    private static readonly Regex MsBuildDiagnostic =
+        new(@"<(?:Warning|Error)\s+Code=""(?<code>SD\d{4})""", RegexOptions.Compiled);
 
     private static string FindRepoRoot()
     {

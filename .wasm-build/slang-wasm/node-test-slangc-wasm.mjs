@@ -161,6 +161,57 @@ for (const [label, shape] of Object.entries(registerShapes)) {
   console.log(`register shape ${ok ? 'OK  ' : 'FAIL'} ${label}: preprocess + compile on ${targets.length} targets`);
 }
 
+// Issue #292: a combined Sampler2D's author register. slangc splits it into Comb_texture_0 /
+// Comb_sampler_0 and keeps t2 on the texture half only; SlangCompiler maps the halves back to
+// 'Comb' through the preprocessed text. Both texts must match native, and show exactly that.
+{
+  const source = 'Sampler2D Comb : register(t2);\n[shader("fragment")]\nfloat4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target\n{ return Comb.Sample(uv); }\n';
+  let ok = true;
+  for (const target of targets) {
+    for (const args of [preprocessArgs[target], slangcArgs(target, 'MainPS', 'fragment')]) {
+      const n = spawnSync(slangc, args, { input: Buffer.from(source, 'utf8'), cwd: path.dirname(slangc) });
+      const native = { exitCode: n.status === 0 ? 0 : 1, stdout: managedLines(n.stdout.toString('utf8')), stderr: managedLines(n.stderr.toString('utf8')) };
+      const w = mod.runSlangc(source, args);
+      const wasm = { exitCode: w.exitCode, stdout: managedLines(w.stdout), stderr: managedLines(w.stderr) };
+      const isPreprocess = args.includes('-E');
+      const same = native.exitCode === 0 && native.exitCode === wasm.exitCode && native.stdout === wasm.stdout && native.stderr === wasm.stderr;
+      const shaped = isPreprocess
+        ? /Comb\s*:\s*register\s*\(\s*t2\s*\)/.test(wasm.stdout)
+        : /Comb_texture_0 : register\(t2\);/.test(wasm.stdout) && /SamplerState Comb_sampler_0 : register\(s\d+\);/.test(wasm.stdout);
+      if (!same || !shaped) {
+        ok = false;
+        mismatches.push({ key: `register shape 'combined Sampler2D' ${target} ${isPreprocess ? 'preprocess (-E)' : 'compile'}${shaped ? '' : ' (unexpected shape)'}`, native, wasm });
+      }
+    }
+  }
+  console.log(`register shape ${ok ? 'OK  ' : 'FAIL'} combined Sampler2D: preprocess + compile on ${targets.length} targets`);
+}
+
+// Issue #292: the preprocess-only pass over ANOTHER file (SlangcArguments.BuildPreprocessFile:
+// the -E list with the file's path in place of '-'), which SlangCompiler runs for a declaration
+// that came from an imported module. The browser module has no file system for such a path, so
+// it must report what native slangc reports for a missing file: exit 0 with
+// 'error[E00001]: cannot open file' on stderr and nothing on stdout, which SlangCompiler turns
+// into SD0628 on both hosts alike. (The path text in the message is host-spelled, so only the
+// shape is compared.)
+{
+  const missing = '/shadowdusk-no-such-dir/texmod.slang';
+  let ok = true;
+  for (const target of targets) {
+    const args = [...preprocessArgs[target].slice(0, -1), missing];
+    const n = spawnSync(slangc, args, { input: Buffer.from('', 'utf8'), cwd: path.dirname(slangc) });
+    const native = { exitCode: n.status === 0 ? 0 : 1, stdout: managedLines(n.stdout.toString('utf8')), stderr: managedLines(n.stderr.toString('utf8')) };
+    const w = mod.runSlangc('', args);
+    const wasm = { exitCode: w.exitCode, stdout: managedLines(w.stdout), stderr: managedLines(w.stderr) };
+    const shape = r => r.exitCode === 0 && r.stdout.trim() === '' && /error\[E00001\]: cannot open file/.test(r.stderr);
+    if (!shape(native) || !shape(wasm)) {
+      ok = false;
+      mismatches.push({ key: `preprocess (-E) of a missing imported file ${target}`, native, wasm });
+    }
+  }
+  console.log(`missing imported file ${ok ? 'OK  ' : 'FAIL'}: -E over a path neither host can open reports E00001 with exit 0 on ${targets.length} targets`);
+}
+
 // ---------------------------------------------------------------------------------------
 // Depth probe (PR #266 review). slang's parser and IR passes recurse once per nesting level,
 // so the module's stack size decides how deep a valid shader can go. With emscripten's 64 KB

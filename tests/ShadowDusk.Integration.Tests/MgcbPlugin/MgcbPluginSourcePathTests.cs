@@ -141,6 +141,43 @@ public sealed class MgcbPluginSourcePathTests : IClassFixture<CliBinaryFixture>
     }
 
     /// <summary>
+    /// Issue #280: <c>DebugMode=Auto</c> (the default) under <c>/config:Debug</c> must build what
+    /// MonoGame's stock <c>EffectProcessor</c> builds, which is the release build: stock sets
+    /// <c>Debug = DebugMode == EffectProcessorDebugMode.Debug</c> and never reads the build
+    /// configuration (measured on <c>dotnet-mgcb</c> 3.8.5: its <c>/config:Debug</c> output equals
+    /// its release output). Turning debug info on there also put the build path into DXC's debug
+    /// information. Only an explicit <c>DebugMode=Debug</c> may turn it on, and that must still
+    /// work (otherwise the equality below would be vacuous).
+    /// </summary>
+    [Theory]
+    [InlineData("Vulkan", "Debug")]
+    [InlineData("DirectX_12", "Debug")]
+    [InlineData("Vulkan", "debug")]
+    [InlineData("DirectX_12", "DebugWithSymbols")]
+    public void AutoUnderADebugConfigurationOptimizesLikeStock(string profile, string configuration)
+    {
+        using var relocated = new RelocatedFixture("Grayscale.fx", "checkout");
+
+        byte[] release = RunProcessor(relocated.EffectPath, p => p.ShaderProfile = profile);
+        byte[] autoUnderDebug = RunProcessor(
+            relocated.EffectPath, p => p.ShaderProfile = profile, buildConfiguration: configuration);
+        byte[] explicitDebug = RunProcessor(relocated.EffectPath, p =>
+        {
+            p.ShaderProfile = profile;
+            p.DebugMode     = EffectProcessorDebugMode.Debug;
+        }, buildConfiguration: configuration);
+
+        autoUnderDebug.ShouldBe(
+            release,
+            $"DebugMode=Auto under /config:{configuration} must build the release bytes for {profile}, as stock MGCB does");
+        explicitDebug.ShouldNotBe(
+            release,
+            $"an explicit DebugMode=Debug must still turn debug information on for {profile}");
+        ContainsUtf8(autoUnderDebug, relocated.Root).ShouldBeFalse(
+            $"an Auto {profile} build under /config:{configuration} must not carry the build directory");
+    }
+
+    /// <summary>
     /// The other half of the contract: hiding the path from the OUTPUT must not hide it from
     /// the DIAGNOSTICS. A build error still names the real file, at the real line and column,
     /// in the <c>file(line,col)</c> form MGCB, MSBuild and IDEs turn into a clickable location.
@@ -205,7 +242,8 @@ public sealed class MgcbPluginSourcePathTests : IClassFixture<CliBinaryFixture>
     }
 
     /// <summary>Runs the real processor over a file on disk and returns the <c>.mgfx</c> bytes.</summary>
-    private static byte[] RunProcessor(string effectPath, Action<ShadowDuskEffectProcessor> configure)
+    private static byte[] RunProcessor(
+        string effectPath, Action<ShadowDuskEffectProcessor> configure, string buildConfiguration = "")
     {
         var processor = new ShadowDuskEffectProcessor();
         configure(processor);
@@ -221,7 +259,7 @@ public sealed class MgcbPluginSourcePathTests : IClassFixture<CliBinaryFixture>
         // cannot name DesktopVK / WindowsDX12, so the target comes from ShaderProfile (or, for
         // the opt-in v11 case, stays OpenGL).
         CompiledEffectContent output = processor.Process(
-            input, new FakeContentProcessorContext(TargetPlatform.DesktopGL));
+            input, new FakeContentProcessorContext(TargetPlatform.DesktopGL, buildConfiguration));
 
         return output.GetEffectCode();
     }

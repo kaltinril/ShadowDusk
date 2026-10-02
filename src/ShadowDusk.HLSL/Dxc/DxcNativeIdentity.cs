@@ -72,6 +72,33 @@ internal static class DxcNativeIdentity
     internal const string OsxArm64CompilerUuid = "9e2d66e9c3a934429f46afaae3fdc480";
 
     /// <summary>
+    /// GNU build id of our <c>android-arm64</c> <c>libdxcompiler.so</c>, the one ShadowDusk.HLSL
+    /// packs (release tag <c>native-dxc-1.7.2212.40</c>, SHA-256 pinned in <c>tools/restore.*</c>).
+    /// Android has no file to read it from (the library is mapped straight out of the APK), so
+    /// <see cref="DxcLoader"/> reads it from the MAPPED image instead.
+    /// </summary>
+    internal const string AndroidArm64CompilerBuildId = "076af3e5babc2ac0c79bed08b4d8d1b1ac338bc7";
+
+    /// <summary>
+    /// GNU build id of the <c>android-x64</c> <c>libdxcompiler.so</c> that the x86_64 emulator
+    /// lane of <c>validation/AndroidGl</c> bundles (<c>.wasm-build/build-dxc-android.ps1</c> for
+    /// x86_64, the same pinned commit). No package ships it: it is pinned only so the emulator
+    /// harness keeps running with the identity check on. A rebuild of that file gets a new build
+    /// id and an <c>SD0219</c> naming both, which is the cue to update this line.
+    /// </summary>
+    internal const string AndroidX64CompilerBuildId = "38487f7242f477f1eefcb58e587a128c2a54906e";
+
+    /// <summary>
+    /// The one Vortice.Dxc release ShadowDusk.HLSL runs with: it ships the pinned DXC natives
+    /// (Windows, Linux), and ShadowDusk.HLSL is compiled against its managed API. Any other
+    /// release ships a different DXC and, measured for 3.8.3, a binary-incompatible API (the first
+    /// DXC call fails with <see cref="MissingMethodException"/>). Must equal the exact range in
+    /// <c>Directory.Packages.props</c> and the pin in <c>buildTransitive/ShadowDusk.HLSL.targets</c>
+    /// (<c>VorticeDxcPinTests</c> fails when they drift).
+    /// </summary>
+    internal static readonly Version PinnedVorticeDxcVersion = new(3, 3, 4);
+
+    /// <summary>
     /// The pinned identity for <paramref name="rid"/>, or <c>null</c> when ShadowDusk bundles no
     /// such native for it (no DXC at all for that RID, or no validator off Windows).
     /// </summary>
@@ -82,6 +109,8 @@ internal static class DxcNativeIdentity
         ("linux-x64", DxcNativeKind.Compiler) => LinuxX64CompilerBuildId,
         ("osx-x64", DxcNativeKind.Compiler) => OsxX64CompilerUuid,
         ("osx-arm64", DxcNativeKind.Compiler) => OsxArm64CompilerUuid,
+        ("android-arm64", DxcNativeKind.Compiler) => AndroidArm64CompilerBuildId,
+        ("android-x64", DxcNativeKind.Compiler) => AndroidX64CompilerBuildId,
         _ => null,
     };
 
@@ -166,7 +195,6 @@ internal static class DxcNativeIdentity
     {
         const int headerSize = 64;
         const uint programHeaderNote = 4;   // PT_NOTE
-        const uint noteGnuBuildId = 3;      // NT_GNU_BUILD_ID
         const int maxNoteSegment = 1 << 20;
 
         Span<byte> header = stackalloc byte[headerSize];
@@ -200,31 +228,46 @@ internal static class DxcNativeIdentity
                 continue;
 
             // Notes are 4-byte aligned unless the segment says 8 (the .note.gnu.property form).
-            int align = alignment == 8 ? 8 : 4;
-            for (int at = 0; at + 12 <= notes.Length;)
+            if (FindGnuBuildId(notes, alignment == 8 ? 8 : 4) is { } buildId)
+                return buildId;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The GNU build id in one ELF note segment (<c>PT_NOTE</c>) as lowercase hex, or
+    /// <c>null</c>. Shared by the file reader above and the mapped-image reader
+    /// (<c>DxcLoader.LoadedImages.ElfBuildIdOfImageContaining</c>), which hands it the segment
+    /// as the dynamic linker mapped it.
+    /// </summary>
+    internal static string? FindGnuBuildId(ReadOnlySpan<byte> notes, int align)
+    {
+        const uint noteGnuBuildId = 3;      // NT_GNU_BUILD_ID
+
+        for (int at = 0; at + 12 <= notes.Length;)
+        {
+            int nameSize = (int)BinaryPrimitives.ReadUInt32LittleEndian(notes[at..]);
+            int descSize = (int)BinaryPrimitives.ReadUInt32LittleEndian(notes[(at + 4)..]);
+            uint type = BinaryPrimitives.ReadUInt32LittleEndian(notes[(at + 8)..]);
+            if (nameSize < 0 || descSize < 0)
+                break;
+
+            int nameAt = at + 12;
+            long descAt = nameAt + AlignUp(nameSize, align);
+            long next = descAt + AlignUp(descSize, align);
+            if (descAt + descSize > notes.Length)
+                break;
+
+            if (type == noteGnuBuildId && nameSize == 4 && descSize > 0
+                && notes.Slice(nameAt, 4).SequenceEqual("GNU\0"u8))
             {
-                int nameSize = (int)BinaryPrimitives.ReadUInt32LittleEndian(notes.AsSpan(at));
-                int descSize = (int)BinaryPrimitives.ReadUInt32LittleEndian(notes.AsSpan(at + 4));
-                uint type = BinaryPrimitives.ReadUInt32LittleEndian(notes.AsSpan(at + 8));
-                if (nameSize < 0 || descSize < 0)
-                    break;
-
-                int nameAt = at + 12;
-                long descAt = nameAt + AlignUp(nameSize, align);
-                long next = descAt + AlignUp(descSize, align);
-                if (descAt + descSize > notes.Length)
-                    break;
-
-                if (type == noteGnuBuildId && nameSize == 4 && descSize > 0
-                    && notes.AsSpan(nameAt, 4).SequenceEqual("GNU\0"u8))
-                {
-                    return Convert.ToHexString(notes, (int)descAt, descSize).ToLowerInvariant();
-                }
-
-                if (next <= at || next > notes.Length)
-                    break;
-                at = (int)next;
+                return Convert.ToHexString(notes.Slice((int)descAt, descSize)).ToLowerInvariant();
             }
+
+            if (next <= at || next > notes.Length)
+                break;
+            at = (int)next;
         }
 
         return null;

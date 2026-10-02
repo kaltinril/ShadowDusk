@@ -1,6 +1,6 @@
 # Test Shader Corpus — Provenance & Fresh Examples
 
-**Last updated:** 2026-09-10 — vkd3d 2.1 (Phase 56) reclassified `Reflection.fx` and the Apos.Shapes revisions as FNA-compiling; the `E5017` loop/ternary gaps they sat behind were compiler gaps, not shader-model limits. Previously 2026-09-09: added the Slang input corpus: 17 `.slang` fixtures under
+**Last updated:** 2026-10-02 — issue #283 added `SamplerReservationIfBranch.fx` and `SamplerReservationMacro.fx` (the sampler-register set below), both with `OpenGL` **and** `DirectX_11` goldens. Previously 2026-09-10 — vkd3d 2.1 (Phase 56) reclassified `Reflection.fx` and the Apos.Shapes revisions as FNA-compiling; the `E5017` loop/ternary gaps they sat behind were compiler gaps, not shader-model limits. Previously 2026-09-09: added the Slang input corpus: 17 `.slang` fixtures under
 `slang/`, cross-validated against the real `slangc` compiler (see `docs/validation-matrix.md`
 §8.0 and `validation/SlangCorpus`). Previously 2026-08-02: the issue-#189 fix added
 `SamplerRegisterOrder.fx` and `SamplerRegisterSparse.fx` (the sampler-register set below), both
@@ -9,7 +9,7 @@ four `ExPhantom*` fixtures (the phantom-parameter set below). Previously 2026-07
 A10 added three DirectX-profile-floor fixtures and **reclassified the vendored Nez set**, whose
 DirectX column collapsed once ShadowDusk started enforcing mgfxc's own floor (see the note
 above that table).
-Corpus on disk: **155 `.fx` + 7 `.fxh`** — 64 in the fixture root, 50 in `examples/`, 1 in
+Corpus on disk: **157 `.fx` + 7 `.fxh`** — 66 in the fixture root, 50 in `examples/`, 1 in
 `shadertoy/`, 38 under `third-party/`, 2 under `raylib/` — plus **17 `.slang`** under `slang/`
 (a separate input corpus, not `.fx`; see §5).
 
@@ -223,6 +223,19 @@ they back `validation/SamplerPairsGl`:
   and the pair is allocated around it (one texture plus `S : register(s0)` yields `ps_s1`) — so
   rewriting this fixture in modern syntax would change what it measures. Goldens on `OpenGL`
   + `DirectX_11`.
+
+- **`SamplerReservationIfBranch.fx`** — GitHub issue **#283**, shape 1. One texture; the modern
+  `SamplerState SpriteSampler : register(s0)` exists **only in the `#else` branch** OpenGL does not
+  compile. `mgfxc` decides reservations on the preprocessed source, so nothing is reserved and the
+  pair is `ps_s0` on SpriteBatch's unit 0; the old raw-token reading counted the dead branch and
+  emitted `ps_s1`. RED sprite + GREEN texture through the parameter: **red = correct**, **green =
+  the bug**. Goldens on `OpenGL` + `DirectX_11`.
+
+- **`SamplerReservationMacro.fx`** — GitHub issue **#283**, shape 2. Two modern `SamplerState`s
+  registered through `#define SLOT(n) : register(n)` at `s0`/`s1`, which `mgfxc` reserves exactly
+  like the directly written form, so the pairs are `ps_s2`/`ps_s3`; the old reading did not see the
+  macro and emitted `ps_s0`/`ps_s1`. BLUE sprite + RED MaskA + GREEN MaskB: **yellow = correct**,
+  **green = the bug**. Goldens on `OpenGL` + `DirectX_11`.
 
 ### ShaderToy route fixture
 
