@@ -7,7 +7,7 @@ browser — the second half of ShaderFiddle's Mode 2 (HLSL → SPIR-V → GLSL) 
 
 | File | Size | Role |
 |---|---|---|
-| `spirv-cross.wasm` | ~2.9 MB | SPIRV-Cross core + C API + all backends (GLSL/HLSL/MSL/CPP/REFLECT), `-O3`, `-fexceptions`, an 8 MB stack placed first (`-sSTACK_SIZE=8MB -sGLOBAL_BASE=8388608 -Wl,--stack-first`, issue #271). |
+| `spirv-cross.wasm` | ~3.0 MB | SPIRV-Cross core + C API + all backends (GLSL/HLSL/MSL/CPP/REFLECT), `-O3`, `-fexceptions`, an 8 MB stack placed first (`-sSTACK_SIZE=8MB -sGLOBAL_BASE=8388608 -Wl,--stack-first`, issue #271). |
 | `spirv-cross.js`   | ~30 KB | emscripten ES6 loader (`MODULARIZE`, `EXPORT_ES6`, `EXPORT_NAME=createSpirvCrossModule`). |
 
 The two committed copies (`src/ShadowDusk.Wasm/wwwroot/spirv-cross/`, the shipped package

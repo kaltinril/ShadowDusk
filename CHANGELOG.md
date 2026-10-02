@@ -196,7 +196,7 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   the 64 KB module until it is re-pinned. No emitted byte changes on any corpus. New gate
   `node-test-wasm-depth.mjs` and a trap scenario in `browser-vkd3d-gate.mjs` (`wasm.yml`); details in
   `.wasm-build/WASM-STACK-DEPTH.md`. Also: `tools/restore.*` now refresh the packaged
-  `dxcompiler.wasm` by hash instead of size (the relinked module has the same size).
+  `dxcompiler.wasm` by hash instead of size (a relink can change the module and keep its size).
 - **Browser: asking for DirectX 12 now fails with a registered code up front (issue #272).** The browser
   host has no DX12 path, but a `PlatformTarget.DirectX12` request ran DXC and then failed in the JS shim
   with an unregistered `X0000: DXC output is not a SPIR-V module (bad magic word)`, on both the `.fx` and
