@@ -314,6 +314,7 @@ jobs:
             'runtimes/osx-x64/native/libdxcompiler.dylib' \
             'runtimes/osx-arm64/native/libdxcompiler.dylib' \
             'runtimes/android-arm64/native/libdxcompiler.so' \
+            'buildTransitive/ShadowDusk.HLSL.targets' \
             'THIRD-PARTY-NOTICES.txt' ; do
               if ! grep -qxF "$native" <<<"$listing"; then
                 echo "::error::$pkg is missing $native — a consumer on that RID gets a broken package (SD0211 for vkd3d paths; DllNotFoundException for the macOS/Android OpenGL pipeline). Restore natives before packing (tools/restore.sh; RELEASING.md 'Native binaries')."

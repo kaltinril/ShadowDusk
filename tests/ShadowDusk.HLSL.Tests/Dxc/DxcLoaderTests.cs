@@ -296,4 +296,89 @@ public sealed class DxcLoaderTests
         field.ShouldNotBeNull();
         field.FieldType.ShouldBe(typeof(DllImportResolver));
     }
+
+    [Theory]
+    [InlineData(false, true, false, false, "Windows")]
+    [InlineData(false, false, true, false, "Linux")]
+    [InlineData(false, false, false, true, "MacOS")]
+    [InlineData(true, false, false, false, "Android")]
+    [InlineData(true, false, true, false, "Android")]
+    [InlineData(false, false, false, false, "Unsupported")]
+    public void HostOf_ClassifiesEveryOperatingSystem(
+        bool android, bool windows, bool linux, bool macOS, string expected)
+    {
+        // iOS, Mac Catalyst, tvOS, FreeBSD, ... answer false to all four (issue #289).
+        DxcLoader.HostOf(android, windows, linux, macOS).ToString().ShouldBe(expected);
+    }
+
+    [Fact]
+    public void CurrentHost_IsOneDxcShipsFor()
+    {
+        // Every host this suite runs on (the Windows, Linux and macOS CI lanes) bundles a DXC.
+        DxcLoader.CurrentHost.ShouldNotBe(DxcLoader.DxcHost.Unsupported);
+    }
+
+    [Theory]
+    [InlineData("FreeBSD 14.1-RELEASE", "freebsd-x64")]
+    [InlineData("iOS 18.0", "ios-arm64")]
+    [InlineData("Mac Catalyst 18.0", "maccatalyst-arm64")]
+    public void UnsupportedHost_IsRefusedWithSD0219_NeverAMissingLibrary(string os, string rid)
+    {
+        // The unsupported-OS branch of DxcLoader.Register (issue #289): no DXC ships there, so
+        // the result is SD0219 instead of a DllNotFoundException at the first P/Invoke.
+        var error = DxcLoader.RefusalFor(DxcLoader.DxcHost.Unsupported, os, rid);
+
+        error.ShouldNotBeNull();
+        error.Code.ShouldBe("SD0219");
+        error.Message.ShouldContain(os, Case.Sensitive);
+        error.Message.ShouldContain(rid, Case.Sensitive);
+        error.Message.ShouldContain("DirectX 11 and FNA do not use DXC", Case.Sensitive);
+    }
+
+    [Theory]
+    [InlineData("Windows")]
+    [InlineData("Linux")]
+    [InlineData("MacOS")]
+    [InlineData("Android")]
+    public void SupportedHost_IsNotRefusedUpFront(string host)
+    {
+        DxcLoader.RefusalFor(Enum.Parse<DxcLoader.DxcHost>(host), "any", "any-x64").ShouldBeNull();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(7)]
+    public void PinnedVorticeDxc_IsAccepted(int revision)
+    {
+        DxcLoader.CheckVorticeDxcVersion(new Version(3, 3, 4, revision)).ShouldBeNull();
+    }
+
+    [Theory]
+    [InlineData("3.8.3.0", "3.8.3")]
+    [InlineData("3.3.5.0", "3.3.5")]
+    [InlineData("3.3.3.0", "3.3.3")]
+    [InlineData(null, "(unknown version)")]
+    public void AnyOtherVorticeDxc_IsRefusedWithSD0219NamingTheFix(string? resolved, string named)
+    {
+        // Issue #282, measured: Vortice.Dxc 3.8.3 (pulled in by Evergine.DirectX12) is DXC 1.9 on
+        // Windows and Linux AND a binary-incompatible API, so where ShadowDusk ships its own native
+        // (macOS, Android) the only symptom used to be a MissingMethodException reported as a
+        // reflection failure. The managed version is now checked before any native is touched.
+        var error = DxcLoader.CheckVorticeDxcVersion(resolved is null ? null : Version.Parse(resolved));
+
+        error.ShouldNotBeNull();
+        error.Code.ShouldBe("SD0219");
+        error.Message.ShouldContain($"resolved Vortice.Dxc {named}", Case.Sensitive);
+        error.Message.ShouldContain("<PackageReference Include=\"Vortice.Dxc\" Version=\"3.3.4\" />", Case.Sensitive);
+        error.Message.ShouldContain("SD0220", Case.Sensitive);
+        error.Message.ShouldContain("DirectX 11 and FNA do not use DXC", Case.Sensitive);
+    }
+
+    [Fact]
+    public void TheVorticeDxcThisSuiteBinds_IsThePinnedOne()
+    {
+        // The loader compares the bound assembly against DxcNativeIdentity's pin; the repo's own
+        // exact range must resolve exactly it, or every DXC test would fail with SD0219.
+        DxcLoader.CheckVorticeDxcVersion(typeof(Vortice.Dxc.Dxc).Assembly.GetName().Version).ShouldBeNull();
+    }
 }

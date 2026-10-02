@@ -83,7 +83,9 @@ ShadowDusk/
 ├── Directory.Build.targets        # Browser projects only: drops every copy item sourced under tools/ so no
 │                                  #   desktop/Android native reaches a net8.0-browser build or publish (issue #273)
 ├── tools/                         # Vendored / downloaded native binaries (restored, not committed)
-│   ├── dxc/                       # unused — desktop DXC comes from Vortice.Dxc NuGet
+│   ├── dxc/<rid>/                 # OUR pinned DXC builds for osx-x64/osx-arm64 (dylib) and android-arm64
+│   │                              #   (restored + hash-pinned; android-x64 is a local emulator build only).
+│   │                              #   Windows/Linux DXC comes from the Vortice.Dxc 3.3.4 NuGet.
 │   ├── spirv-cross/               # libspirv-cross-c-shared (.dll/.so/.dylib)
 │   ├── vkd3d/                     # vkd3d-shader native (cross-platform DXBC backend)
 │   ├── vkd3d-wasm/                # vkd3d-shader compiled to WASM (browser DXBC + FNA export)
@@ -96,6 +98,10 @@ ShadowDusk/
 │   │                              #   Never built in place. Its pack gate is tools/verify-slang-nupkg.sh <nupkg>,
 │   │                              #   the ONE exact-name list of the eight slangc natives + notice, also run by
 │   │                              #   release.yml (issue #226) and runnable locally against any packed nupkg.
+│   ├── vortice-conflict-consumer/ # The scratch consumer (Program.cs + csproj) that
+│   │                              #   tools/verify-vortice-dxc-conflict.sh (run by pack-consume.yml) COPIES out of
+│   │                              #   tree and builds against Vortice.Dxc 3.8.3, then 3.3.4, then none (issue #282:
+│   │                              #   build warning SD0220 + runtime SD0219). Never built in place.
 │   ├── check-lock-files.sh        # Locked-mode restore of EVERY tracked *packages*.lock.json, out-of-solution
 │   │                              #   projects included (CI job `Lock files`, issue #291).
 │   ├── contentbuilder-consumer/   # The scratch MonoGame 3.8.5 Content Builder (Program.cs + csproj) that
@@ -124,7 +130,7 @@ ShadowDusk/
 │                                  #     + compare_vulkan.py/decode_mgfx_vulkan.py; CI wraps each run in
 │                                  #     run-with-vk-validation.sh, which forces the Khronos validation layer on
 │                                  #     and fails on any layer error),
-│                                  #   Android (AndroidGl), v11 (MonoGameV11), browser-ANGLE (AngleDerivativeProbe),
+│                                  #   Android (AndroidGl; run-dxc-identity-checks.ps1 = the on-device DXC load paths, issue #289), v11 (MonoGameV11), browser-ANGLE (AngleDerivativeProbe),
 │                                  #   direct .xnb (XnbContentLoad: builds each fixture through BOTH stock
 │                                  #     dotnet-mgcb and ShadowDusk's XnbWriter, loads both with a real
 │                                  #     ContentManager.Load<Effect>, requires pixel-identical renders - Phase 60;

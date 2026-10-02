@@ -140,6 +140,15 @@ public sealed class DxcLibraryPathDecoyTests
             dxcImages.ShouldAllBe(i => Path.GetFileName(Path.GetDirectoryName(i)) == (mac ? rid : "native"),
                 "the mapped libdxcompiler is not the one the build placed beside the assemblies");
 
+            // The image the OS names for ShadowDusk's own DXC handle (dladdr on macOS,
+            // dl_iterate_phdr on Linux): the one DxcLoader verified, and never a decoy.
+            // (Compared by its last two path parts: /proc/self/maps resolves symlinks, the linker's
+            // own record keeps the path it was given.)
+            string dxcMapped = report["dxcMapped"].ShouldHaveSingleItem();
+            dxcMapped.ShouldNotContain(decoyName, Case.Sensitive);
+            Path.GetFileName(Path.GetDirectoryName(dxcMapped)).ShouldBe(mac ? rid : "native", dxcMapped);
+            Path.GetFileName(dxcMapped).ShouldBe("libdxcompiler" + extension, dxcMapped);
+
             // SPIR-V codegen and DirectX 11 never call the DXIL validator: they compile on
             // every host, whatever libdxil is lying around.
             report["OpenGL"].ShouldBe(["OK"]);
@@ -202,7 +211,17 @@ public sealed class DxcLibraryPathDecoyTests
             string decoyDxc = Path.Combine(decoyDir, "libdxcompiler.dylib");
             File.Copy(pinnedDxc, decoyDxc);
             if (foreignBuild)
+            {
                 ForeignDxc.PlaceWorkingForeignBuild(decoyDxc);
+
+                // Issue #289: restamping the LC_UUID invalidates the ad-hoc code signature, and
+                // on Apple silicon dyld then refuses to map the decoy and falls back to the path
+                // it was given: the test could not tell "dyld mapped the foreign build and
+                // ShadowDusk refused it" from "dyld never mapped it". Re-signing makes the
+                // foreign build loadable on every arch, so dyld's substitution really happens and
+                // the assertions below can require it.
+                await AdHocSignAsync(decoyDxc);
+            }
 
             const string canary = "libsdcanary.dylib";
             File.Copy(spirvCross, Path.Combine(decoyDir, canary));
@@ -215,7 +234,17 @@ public sealed class DxcLibraryPathDecoyTests
                 .Where(i => Path.GetFileName(i).StartsWith("libdxcompiler", StringComparison.Ordinal))
                 .ToList();
             List<string> foreignImages = dxcImages.Where(i => !DxcNativeIdentity.Matches(i, pinnedId)).ToList();
-            string mapped = $"libdxcompiler images mapped: [{string.Join(", ", dxcImages)}]";
+
+            // The image dladdr names for DxcCreateInstance in the handle ShadowDusk loaded: what
+            // DxcLoader itself checked. It must be the DECOY in both cases, because dyld searches
+            // DYLD_LIBRARY_PATH by leaf name ahead of the absolute path (the measured behavior
+            // this test exists for); anything else means the case was not exercised.
+            string mappedByDladdr = report["dxcMapped"].ShouldHaveSingleItem();
+            string mapped = $"dladdr: {mappedByDladdr}; libdxcompiler images mapped: [{string.Join(", ", dxcImages)}]";
+            _output.WriteLine(mapped);
+            // (By directory NAME: dyld may report the temp directory through /private.)
+            mappedByDladdr.ShouldContain(decoyName, Case.Sensitive,
+                $"dyld did not substitute the DYLD_LIBRARY_PATH copy for the absolute-path load ({mapped})");
 
             report["DirectX"].ShouldBe(["OK"], "DirectX 11 does not use DXC and must compile");
             if (!foreignBuild)
@@ -227,13 +256,13 @@ public sealed class DxcLibraryPathDecoyTests
                 return;
             }
 
-            // A different build: never compiled with. dyld either mapped it (refused) or could
-            // not load it at all (refused as unloadable); in neither case may a DXC-backed
-            // target succeed while a foreign image is mapped.
+            // A different build, really mapped: ShadowDusk must refuse it for every DXC-backed
+            // target, and say that dyld substituted it (not that nothing was found).
+            foreignImages.ShouldContain(mappedByDladdr, mapped);
             foreach (string target in new[] { "OpenGL", "Vulkan", "DirectX12" })
             {
-                if (foreignImages.Count > 0 || report[target][0] != "OK")
-                    report[target].ShouldBe(["SD0219"], $"{target}: {mapped}");
+                report[target].ShouldBe(["SD0219"], $"{target}: {mapped}");
+                report[$"message.{target}"].ShouldHaveSingleItem().ShouldContain("but dyld mapped", Case.Sensitive);
             }
         }
         finally
@@ -270,10 +299,16 @@ public sealed class DxcLibraryPathDecoyTests
             Console.WriteLine(result.IsSuccess ? $"{target}=OK" : $"{target}={result.Error[0].Code}");
             if (result.IsFailure)
             {
+                Console.WriteLine($"message.{target}={result.Error[0].Message.ReplaceLineEndings(" ")}");
                 foreach (ShaderError e in result.Error)
                     Console.Error.WriteLine($"{target}: {e.Code} {e.Message}");
             }
         }
+
+        // Which DXC image the OS says ShadowDusk's handle really is (dladdr on macOS,
+        // dl_iterate_phdr on Linux), when DXC was loaded at all.
+        if (DxcLoader.MappedDxcImagePath() is { } dxcMapped)
+            Console.WriteLine($"dxcMapped={dxcMapped}");
 
         foreach (string image in MappedImages())
         {
@@ -395,6 +430,29 @@ public sealed class DxcLibraryPathDecoyTests
             .Where(kv => kv.Length == 2)
             .GroupBy(kv => kv[0], kv => kv[1], StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+    }
+
+    /// <summary>macOS: <c>codesign --force --sign - path</c> (an ad-hoc signature).</summary>
+    private async Task AdHocSignAsync(string path)
+    {
+        var psi = new ProcessStartInfo("codesign")
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        foreach (string argument in new[] { "--force", "--sign", "-", path })
+            psi.ArgumentList.Add(argument);
+
+        using var process = Process.Start(psi) ?? throw new InvalidOperationException("codesign: failed to start.");
+        Task<string> stdout = process.StandardOutput.ReadToEndAsync();
+        Task<string> stderr = process.StandardError.ReadToEndAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        await process.WaitForExitAsync(timeout.Token);
+
+        string output = await stdout + await stderr;
+        _output.WriteLine($"codesign {path}: {output}");
+        process.ExitCode.ShouldBe(0, $"codesign failed: {output}");
     }
 
     private static void TryDelete(string directory)
