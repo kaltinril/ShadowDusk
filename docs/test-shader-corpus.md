@@ -1,6 +1,6 @@
 # Test Shader Corpus — Provenance & Fresh Examples
 
-**Last updated:** 2026-10-02 — issue #299 added `SamplerLegacyRegisterIfBranch.fx` and `SamplerLegacyRegisterMacro.fx`, and issue #283 added `SamplerReservationIfBranch.fx` and `SamplerReservationMacro.fx` (the sampler-register set below), all four with `OpenGL` **and** `DirectX_11` goldens. Previously 2026-09-10 — vkd3d 2.1 (Phase 56) reclassified `Reflection.fx` and the Apos.Shapes revisions as FNA-compiling; the `E5017` loop/ternary gaps they sat behind were compiler gaps, not shader-model limits. Previously 2026-09-09: added the Slang input corpus: 17 `.slang` fixtures under
+**Last updated:** 2026-10-02 — issues #308 and #309 added `SamplerLegacyInclude.fx` (+ `SamplerLegacyInclude.fxh`), `SamplerLegacyMacroDecl.fx` and `SamplerReservationKeywords.fx` (the sampler-register set below, `OpenGL` **and** `DirectX_11` goldens), and the nine vendored MonoGame `Include.fxh` effects now compile for OpenGL. Earlier the same day issue #299 added `SamplerLegacyRegisterIfBranch.fx` and `SamplerLegacyRegisterMacro.fx`, and issue #283 added `SamplerReservationIfBranch.fx` and `SamplerReservationMacro.fx` (the sampler-register set below), all four with `OpenGL` **and** `DirectX_11` goldens. Previously 2026-09-10 — vkd3d 2.1 (Phase 56) reclassified `Reflection.fx` and the Apos.Shapes revisions as FNA-compiling; the `E5017` loop/ternary gaps they sat behind were compiler gaps, not shader-model limits. Previously 2026-09-09: added the Slang input corpus: 17 `.slang` fixtures under
 `slang/`, cross-validated against the real `slangc` compiler (see `docs/validation-matrix.md`
 §8.0 and `validation/SlangCorpus`). Previously 2026-08-02: the issue-#189 fix added
 `SamplerRegisterOrder.fx` and `SamplerRegisterSparse.fx` (the sampler-register set below), both
@@ -255,6 +255,34 @@ they back `validation/SamplerPairsGl`:
   cell carries the same recorded divergence as `SamplerRegisterSparse` (DX11 deliberately ignores a
   legacy sampler's `register(sN)`, validation matrix §7).
 
+- **`SamplerLegacyInclude.fx` + `SamplerLegacyInclude.fxh`** — GitHub issue **#308**, shape 1. The
+  main file declares `Texture2D MaskBTexture`, then `#include`s the header that holds EVERYTHING
+  legacy: a bare `sampler MaskA : register(s2)`, a `sampler2D MaskB : register(s3) = sampler_state
+  { Texture = <MaskBTexture>; }`, and a helper reading MaskA through `tex2D`; the main file reads
+  MaskB through its own `tex2D`. The pre-parser's SM4 rewrite reads the raw main file, so none of
+  it was rewritten and DXC rejected the include ("unknown type name 'sampler2D'"); `mgfxc` pins
+  `ps_s2`/`ps_s3` like `SamplerRegisterSparse.fx`. The only corpus fixture whose include carries
+  legacy sampler syntax, so the recovery path (pre-parse repeated on the preprocessed source)
+  is what compiles it. BLUE sprite + RED MaskA + GREEN MaskB: **yellow = correct**, **green =
+  compacted to units 0/1**; before the fix the candidate did not compile. Goldens on `OpenGL` +
+  `DirectX_11` (DirectX 11 compiles the legacy syntax natively and ignores the registers, the
+  recorded `SamplerRegisterSparse` divergence).
+
+- **`SamplerLegacyMacroDecl.fx`** — GitHub issue **#308**, shape 2. MonoGame's `Macros.fxh` idiom
+  spelled out in the file: `DECLARE_TEXTURE(MaskA, 2)` (a `sampler2D` with a token-pasted
+  `register(s##index)`), `SAMPLE_TEXTURE(MaskA, uv)` (a `tex2D` inside a macro body), and a
+  register clause that is a function-like macro, `sampler MaskB SLOT(s3) = sampler_state {…}`.
+  None of these is a sampler declaration or a `tex2D` call in the RAW token stream. Same colours
+  and the same `ps_s2`/`ps_s3` as the include shape. Goldens on `OpenGL` + `DirectX_11`.
+
+- **`SamplerReservationKeywords.fx`** — GitHub issue **#309**. Two textures read through ONE
+  lowercase `sampler MaskSampler : register(s0)` by `Texture.Sample`, plus an unused
+  `SamplerComparisonState Unused : register(s1)`. fxc reserves an explicit register for every
+  sampler type keyword, used or not, so `mgfxc` allocates the two pairs around s0/s1 to
+  `ps_s2`/`ps_s3`; ShadowDusk's matcher knew only `SamplerState` and gave `ps_s0`/`ps_s1`, MaskA on
+  SpriteBatch's unit. BLUE sprite + RED MaskATexture + GREEN MaskBTexture: **yellow = correct**,
+  **green = the bug**. Goldens on `OpenGL` + `DirectX_11`.
+
 ### ShaderToy route fixture
 
 - **`shadertoy/GradientToy.fx`** — the **pinned** output of converting `GradientToy.glsl` with
@@ -474,6 +502,17 @@ to corpus coverage:
 `technique { … }` blocks were rejected outright (`FX0001`) even though mgfxc compiles them and
 writes an empty technique name; and `SamplerComparisonState` on the FNA target crashed the
 whole process inside vkd3d's SM1 lowering (now a loud `FX0013`).
+
+Since issue #308 (2026-10-02) the nine effects that use `Include.fxh`'s DX9 branch (`Bevels`,
+`BlackOut`, `ColorFlip`, `CustomSpriteBatchEffect`, `Grayscale`, `HighContrast`, `Invert`,
+`NoEffect`, `RainbowH`) **compile for OpenGL too**, through the legacy-sampler recovery (the
+pre-parse repeated on the preprocessed source once the raw compile has failed), on `mgfxc`
+3.8.4.1's units (`ps_s0`; `ps_s0`/`ps_s1` for `CustomSpriteBatchEffect`), pinned by
+`Issue308LegacySamplerRecoveryTests`. They have no committed goldens (census fixtures), so the
+comparison is the sampler units measured against `mgfxc` the day they started compiling. The
+`TECHNIQUE()`-macro effects (`SpriteEffect.fx`, `BasicEffect.fx`, …) still return `SD0010` on
+OpenGL: a raw pre-parse with zero techniques never reaches a compile, so the recovery never
+sees them.
 
 Coverage note: every fixture in the corpus — these included — is exercised by the corpus-wide
 **`VulkanCorpusStructuralTests`** gate, which requires each one to either produce a

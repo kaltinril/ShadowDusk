@@ -207,6 +207,63 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **OpenGL, Vulkan and DirectX 12: a legacy sampler declared in an `#include`d file or through a
+  macro now compiles (issue #308).** The pre-parser's SM4 rewrite of D3D9 sampler syntax
+  (`sampler2D` / `sampler_state` / `tex2D` into `Texture2D` + `SamplerState` + `.Sample`) reads the
+  raw tokens of the main file, so a declaration in an include, one whose register clause or whole
+  declaration comes out of a macro (`sampler S SLOT(s1)`, `sampler2D S : SREG(1)`,
+  `DECLARE_TEXTURE(S, 1)`, MonoGame's `Macros.fxh` / `Include.fxh` idiom), a `tex2D` inside a
+  macro body (`SAMPLE_TEXTURE`) or inside an include, and an unused bare `sampler2D U;` all reached
+  DXC unrewritten and were rejected ("unknown type name 'sampler2D'", "Unsupported intrinsic").
+  `mgfxc` 3.8.4.1 compiles every one of them (`ps_s1` on all nine measured shapes). Now, when a DXC
+  shader compile fails and the text DXC was given still holds legacy sampler syntax once
+  preprocessed, the pre-parse is repeated on the PREPROCESSED source (the managed
+  `FxMacroPreprocessor` that already decides the OpenGL sampler registers, in a compiler-input form
+  that keeps one line per source line and passes `#line` / `#pragma` / `#error` through) and the
+  compile runs once more on that text, which is how `mgfxc` itself works (preprocess first, parse
+  second). It runs only after a failure, so an effect that compiled before is compiled from exactly
+  the same text: the whole 160-file corpus for OpenGL and DirectX_11 is byte-identical with the fix
+  off and on (117 + 125 compiled, 34 + 35 fail with the same diagnostics), and the nine vendored
+  MonoGame test effects that use `Include.fxh` (`Bevels`, `BlackOut`, `ColorFlip`,
+  `CustomSpriteBatchEffect`, `Grayscale`, `HighContrast`, `Invert`, `NoEffect`, `RainbowH`) now
+  compile for OpenGL on `mgfxc`'s units. The recovered compile is byte-identical to the directly
+  written declaration on OpenGL, Vulkan and DirectX 12 (pinned by a test); DirectX 11 compiles the
+  syntax natively through vkd3d and never takes the recovery. The managed view was measured
+  token-for-token identical to DXC `-P` on every corpus fixture
+  (`Issue308PreprocessorFidelityCorpusTests`). What the rewrite still cannot model is loud: legacy
+  syntax left after the recovery (a `sampler2D` function parameter), a conditional on a
+  compiler-predefined macro (`__HLSL_VERSION`, `__hlsl_dx_compiler`, …) whose value the managed
+  preprocessor cannot know, or a view that cannot be built is the new `SD0016`, appended after the
+  compiler's own verbatim diagnostics, and a legacy intrinsic with no rewrite hidden in a macro
+  (`texCUBE`) is its own `FX0012` at the author's file and line. Diagnostics on the recovered path
+  keep the author's file and line through the flattener's `#line` directives. New `mgfxc` 3.8.4.1
+  goldens `SamplerLegacyInclude` (+ `SamplerLegacyInclude.fxh`) and `SamplerLegacyMacroDecl`, and
+  two new `validation/SamplerRegisterOrderGl` arms ("legacy-include", "legacy-macro-decl"): red
+  before (the candidate did not compile), maxd 0 against the golden after, in real MonoGame
+  DesktopGL. Cost (Release CLI, `/Profile:OpenGL`, median of 5 after a warm-up, before vs after):
+  unchanged for an effect that compiles at once (`apos-shapes.fx` 437 to 443 ms, `Grayscale.fx`
+  224 to 223 ms, `SamplerLegacyRegisterMacro.fx` 220 to 216 ms); a recovered effect pays the failed
+  first compile plus the view on top of its own compile (`SamplerLegacyInclude.fx` 232 ms against
+  216 ms for its directly written twin).
+- **OpenGL: every sampler type keyword with an explicit `register(sN)` now reserves that unit, not
+  only the exact keyword `SamplerState` (issue #309).** On OpenGL a sampler's explicit register is
+  kept out of circulation and the combined samplers fxc synthesizes for each (texture, sampler)
+  pair read through `Texture.Sample` are allocated around it (issue #189). The reservation matcher
+  only recognised `SamplerState`, so `Texture2D Tex; sampler S : register(s0);` + `Tex.Sample(S, uv)`
+  gave `ps_s0`, the texture on SpriteBatch's unit, where `mgfxc` 3.8.4.1 emits `ps_s1`. Measured
+  against the pinned `mgfxc` (`/Profile:OpenGL`): fxc reserves for every sampler type keyword
+  (`sampler`, `sampler2D`, `samplerCUBE`, `SamplerComparisonState`), bare or with a
+  `sampler_state` block, whether or not anything reads the sampler (an unused
+  `sampler2D U : register(s0)` still moves the one real pair to `ps_s1`), and in every entry point
+  of the effect (a legacy `sampler X : register(s0)` one pixel shader reads through `tex2D` keeps
+  `s0` reserved in a second pixel shader that never reads it: `ps_s1` for that shader's own
+  sampler, where ShadowDusk gave `ps_s0`). The matcher now accepts every sampler type keyword, on
+  the preprocessed view as before, and a legacy sampler a `tex2D` reads is both pinned (its own
+  pair) and reserved (every other pair). A `sampler2D` read through `Texture.Sample`, which `mgfxc`
+  rejects (X3013), still fails here. No existing fixture's bytes moved (the same 160-file sweep).
+  New `mgfxc` golden `SamplerReservationKeywords` and a new `validation/SamplerRegisterOrderGl` arm
+  ("keyword-reservation"): `ps_s0`/`ps_s1` before, `ps_s2`/`ps_s3` and maxd 0 against the golden
+  after.
 - **Browser compiles of nested shaders hung, crashed or miscompiled (issue #271).** The in-browser
   DXC, SPIRV-Cross and vkd3d WebAssembly modules were linked with emscripten's 64 KB default stack
   (the desktop natives get 1 MB on Windows, 8 MB on Linux/macOS), and with emscripten's layout an
@@ -277,10 +334,8 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   160-file OpenGL corpus was compiled with the fix off and on and only the two new fixtures differ
   (115 byte-identical, 43 fail identically either way), including `VsTransformColorTexture`,
   `VsWaveQuadIntrinsics` and `apos-shapes-sm6`, whose explicit-slot map does change (their register
-  lived in the dead `#if SM6` arm) but whose units and bytes do not. Not fixed here, both filed:
-  a legacy sampler declared in an `#include`d file or through a function-like macro does not compile
-  for OpenGL at all (issue #308), and a lowercase `sampler S : register(sN)` read through
-  `Texture.Sample` does not reserve its register (issue #309).
+  lived in the dead `#if SM6` arm) but whose units and bytes do not. Two adjacent defects found by
+  the measurement, #308 and #309, are fixed by the two entries at the top of this section.
 - **`ShadowDusk.Slang`: author registers in an `import`ed module and on a combined `Sampler2D` are
   kept (issue #292).** Both were stripped silently on DirectX and OpenGL. (1) slangc splits
   `Sampler2D Comb : register(t2)` into `Comb_texture_0 : register(t2)` and a `Comb_sampler_0` it
