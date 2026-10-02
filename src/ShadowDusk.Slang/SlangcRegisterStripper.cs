@@ -289,7 +289,7 @@ internal static class SlangcRegisterStripper
     /// an author register on <c>B</c> lands on the hoisted resource of its own class only
     /// (<c>M gM : register(t5)</c> puts t5 on the texture field, and slangc numbers the sampler).
     /// </summary>
-    private static IEnumerable<string> HoistBases(string emittedName)
+    internal static IEnumerable<string> HoistBases(string emittedName)
     {
         Match tail = HoistTail.Match(emittedName);
         if (!tail.Success)
@@ -458,6 +458,12 @@ internal static class SlangcRegisterStripper
         /// </summary>
         public bool Declares(EmittedResource resource) =>
             DeclaresPlainly(resource) || HoistBases(resource.Name).Any(_bound.ContainsKey);
+
+        /// <summary>
+        /// The text declares a global called <paramref name="name"/>, with or without a register
+        /// (issue #302: the global a hoisted resource's generated name maps back to).
+        /// </summary>
+        public bool DeclaresGlobal(string name) => _plain.Contains(name) || _bound.ContainsKey(name);
 
         /// <summary>The author declared this emitted declaration's resource here with no register at all.</summary>
         public bool DeclaresPlainly(EmittedResource resource) =>

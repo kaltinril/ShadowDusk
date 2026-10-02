@@ -11,7 +11,8 @@ namespace ShadowDusk.Slang.Tests;
 /// <summary>
 /// Issue #292, through real slangc on DirectX and OpenGL: two register shapes the issue #252
 /// stripper used to drop silently. (1) A combined <c>Sampler2D C : register(t2)</c>, which
-/// slangc splits into <c>C_texture_0</c>/<c>C_sampler_0</c>; the author's name is <c>C</c>.
+/// slangc splits into <c>C_texture_0</c>/<c>C_sampler_0</c>; the author's name is <c>C</c>,
+/// which the texture half carries by the time the <c>.fx</c> is assembled (issue #302).
 /// (2) A register written in an <c>import</c>ed module, which the entry source's
 /// <c>slangc -E</c> output does not contain (it does not expand <c>import</c>). Each must land
 /// where the declarations slangc actually compiled land when an author writes them out by hand
@@ -133,16 +134,16 @@ public sealed class SlangForeignRegisterTests : IDisposable
         """;
 
     // What slangc compiles CombinedSlang to, written out by hand: the author's t2 on the texture
-    // half, nothing on the sampler half slangc numbered itself.
+    // half (under the author's name, issue #302), nothing on the sampler half slangc numbered itself.
     private const string CombinedResolvedFx = """
-        Texture2D<float4> Comb_texture_0 : register(t2);
+        Texture2D<float4> Comb : register(t2);
         SamplerState Comb_sampler_0;
         Texture2D Plain;
         SamplerState PlainSampler;
 
         float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
         {
-            return Comb_texture_0.Sample(Comb_sampler_0, uv) * Plain.Sample(PlainSampler, uv);
+            return Comb.Sample(Comb_sampler_0, uv) * Plain.Sample(PlainSampler, uv);
         }
         """;
 
@@ -153,13 +154,13 @@ public sealed class SlangForeignRegisterTests : IDisposable
     {
         var (effect, fx) = Slang(CombinedSlang, target);
 
-        fx.ShouldContain("Comb_texture_0 : register(t2);", Case.Sensitive);
+        fx.ShouldContain("Texture2D<float4 > Comb : register(t2);", Case.Sensitive);
         fx.ShouldContain("SamplerState Comb_sampler_0;", Case.Sensitive);
         fx.ShouldContain("Texture2D<float4 > Plain;", Case.Sensitive);
         fx.ShouldContain("SamplerState PlainSampler;", Case.Sensitive);
         Named(effect).ShouldBe(Named(Fx(CombinedResolvedFx, target)));
         if (target == PlatformTarget.DirectX)
-            Named(effect).ShouldContain(s => s.Texture == "Comb_texture_0" && s.TextureSlot == 2);
+            Named(effect).ShouldContain(s => s.Texture == "Comb" && s.TextureSlot == 2);
     }
 
     [Theory]
@@ -179,8 +180,8 @@ public sealed class SlangForeignRegisterTests : IDisposable
 
         var (_, fx) = Slang(source, target);
 
-        fx.ShouldContain("Comb_texture_0 : register(t2);", Case.Sensitive);
-        fx.ShouldContain("Comb_sampler_0 : register(s3);", Case.Sensitive);
+        fx.ShouldContain("Texture2D<float4 > Comb : register(t2);", Case.Sensitive);
+        fx.ShouldContain("SamplerState Comb_sampler_0 : register(s3);", Case.Sensitive);
     }
 
     [Theory]
@@ -203,9 +204,9 @@ public sealed class SlangForeignRegisterTests : IDisposable
 
         var (_, fx) = Slang(source, target);
 
-        fx.ShouldContain("C3_texture_0 : register(t5);", Case.Sensitive);
-        fx.ShouldContain("CC_texture_0 : register(t6);", Case.Sensitive);
-        fx.ShouldContain("Unbound_texture_0;", Case.Sensitive);
+        fx.ShouldContain("Texture3D<float4 > C3 : register(t5);", Case.Sensitive);
+        fx.ShouldContain("TextureCube<float4 > CC : register(t6);", Case.Sensitive);
+        fx.ShouldContain("Texture2D<float4 > Unbound;", Case.Sensitive);
         fx.ShouldNotContain("register(s", Case.Sensitive);
     }
 
@@ -227,8 +228,8 @@ public sealed class SlangForeignRegisterTests : IDisposable
 
         var (_, fx) = Slang(source, PlatformTarget.DirectX);
 
-        fx.ShouldContain("CArr_texture_0[int(2)] : register(t8);", Case.Sensitive);
-        fx.ShouldContain("C1_texture_0 : register(t4);", Case.Sensitive);
+        fx.ShouldContain("CArr[int(2)] : register(t8);", Case.Sensitive);
+        fx.ShouldContain("Texture1D<float4 > C1 : register(t4);", Case.Sensitive);
         fx.ShouldContain("SamplerState C1_sampler_0;", Case.Sensitive);
         fx.ShouldContain("CArr_sampler_0[int(2)];", Case.Sensitive);
     }
@@ -239,22 +240,27 @@ public sealed class SlangForeignRegisterTests : IDisposable
     public void StructWithAResourceRegister_KeepsItOnTheHoistedFieldOfItsClass(PlatformTarget target)
     {
         // The same hoisting as a combined sampler: slangc emits the struct's fields as
-        // gM_t_0 / gM_s_0 and puts the author's t5 on the texture field only (measured).
+        // gM_a_0 / gM_b_0 and lays the struct out from the author's s5 (measured: s5, s6), so
+        // both hoisted samplers keep a register of the author's class. Samplers, because a
+        // TEXTURE held in a struct has no author-written parameter name and is rejected
+        // (issue #302, SD0640).
         const string source = """
-            struct M { Texture2D t; SamplerState s; };
-            M gM : register(t5);
+            struct M { SamplerState a; SamplerState b; };
+            M gM : register(s5);
+            Texture2D Tex;
 
             [shader("fragment")]
             float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
             {
-                return gM.t.Sample(gM.s, uv);
+                return Tex.Sample(gM.a, uv) + Tex.Sample(gM.b, uv);
             }
             """;
 
         var (_, fx) = Slang(source, target);
 
-        fx.ShouldContain("Texture2D<float4 > gM_t_0 : register(t5);", Case.Sensitive);
-        fx.ShouldContain("SamplerState gM_s_0;", Case.Sensitive);
+        fx.ShouldContain("SamplerState gM_a_0 : register(s5);", Case.Sensitive);
+        fx.ShouldContain("SamplerState gM_b_0 : register(s6);", Case.Sensitive);
+        fx.ShouldContain("Texture2D<float4 > Tex;", Case.Sensitive);
     }
 
     // ---- (1) A register in an imported module ----------------------------------------------
@@ -350,7 +356,7 @@ public sealed class SlangForeignRegisterTests : IDisposable
 
         var (_, fx) = Slang(source, target);
 
-        fx.ShouldContain("ModComb_texture_0 : register(t6);", Case.Sensitive);
+        fx.ShouldContain("Texture2D<float4 > ModComb : register(t6);", Case.Sensitive);
         fx.ShouldContain("SamplerState ModComb_sampler_0;", Case.Sensitive);
     }
 
