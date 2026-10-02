@@ -174,7 +174,7 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   walked down to `PATH`, and `dxcompiler.dll` then bound the module already loaded under that
   name. ShadowDusk now loads its pinned `dxil.dll` and then `dxcompiler.dll` by absolute path
   before any DXC call (on Linux, `libdxcompiler.so`), and checks that the `dxil.dll` DXC binds is
-  its own (by file content, so a byte-identical copy is accepted). Its resolver now runs ahead of
+  its own (by the build version stamped into it, so a copy of the pinned file is accepted). Its resolver now runs ahead of
   Vortice.Dxc's own, so a bare-name fallback can no longer pick a different DXC (on Linux, from
   `LD_LIBRARY_PATH`). When the pinned natives are missing, every DXC-backed compile fails with the
   new `SD0219` instead of running on whatever the OS search found. When a foreign validator was
@@ -187,6 +187,27 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   compile, with DirectX 12 signed; it failed before the fix. `DxcForeignValidatorTests` preloads a
   decoy, the Windows SDK's, a byte-identical copy, and a `\\?\`-path `dxil.dll` in fresh processes
   and pins which targets compile. The MGCB gate's decoy directory now carries a `dxil.dll` too.
+- **ShadowDusk now compiles only with its own pinned DXC build, on every OS and in every host
+  layout (issue #270).** Three gaps were left after the fix above. On macOS, ShadowDusk's resolver
+  still ran after Vortice.Dxc's own, which loads `libdxil` and `libdxcompiler` by bare name, so a
+  pair reachable through `DYLD_LIBRARY_PATH`, the working directory or `/usr/local/lib` silently
+  replaced our DXC for OpenGL and Vulkan; ShadowDusk now loads its macOS `libdxcompiler.dylib` by
+  absolute path and answers ahead of Vortice there too (and on Android). The loader probed the
+  host application's `runtimes/<rid>/native` before the directories beside the ShadowDusk
+  assemblies and took the first file with the right name: the Windows SDK's 1.8 pair placed in an
+  MGCB install's `runtimes\win-x64\native` compiled DirectX 12 with that foreign DXC without a
+  word. The natives that ship beside ShadowDusk now come first, and every candidate is checked
+  against the pinned build before it is loaded (the PE file version on Windows, the ELF GNU build
+  id on Linux, the Mach-O `LC_UUID` on macOS: identities that code signing and `strip` leave
+  alone). A candidate that is not the pinned build is skipped and named; if no pinned build is
+  found, every DXC-backed compile fails with `SD0219`, never with a different DXC. DirectX 11 and
+  FNA do not use DXC and keep compiling. Output bytes are unchanged. New tests:
+  `CliDxcNativeLayoutTests` (the real CLI from a private copy of its output with the natives
+  removed, replaced by a foreign build, or shadowed by one; 4 of 6 failed before the fix),
+  `DxcLibraryPathDecoyTests` (Linux and macOS: a decoy pair first on the library path and as the
+  working directory, with and without the host knowing the natives; the mapped `libdxcompiler`
+  must be the pinned one, read from `/proc/self/maps` or dyld's image list; it fails with the old
+  subscription order), `DxcPinnedNativeIdentityTests` and `DxcNativeIdentityTests`.
 - **`ShadowDusk.Slang`: textured shaders no longer crash real FNA (issue #230).** slangc emits
   texture objects (`Texture2D T; SamplerState S; T.Sample(S, uv)`). On the FNA target that compiled,
   but vkd3d folds the pair into one texture-typed sampler named `S+T`, so the `.fxb` held a texture
