@@ -323,11 +323,14 @@ internal sealed class CompilationPipeline
         // An injected host backend (the WASM vkd3d backend) takes precedence over both —
         // a host-appropriate default, not a consumer choice (CompilerOptions.DxbcBackend
         // selects between desktop natives that do not exist in the browser).
-        IDxbcShaderCompiler dxbcCompiler = _dxbcCompilerFactory?.Invoke() ?? options.DxbcBackend switch
-        {
-            DxbcBackend.D3DCompiler => new D3DCompilerShaderCompiler(),
-            _                       => new Vkd3dShaderCompiler(),
-        };
+        // Memoized per run (issue #255): an entry point named by several passes is compiled
+        // once, not once per pass. Same request, deterministic backend, so the same bytes.
+        IDxbcShaderCompiler dxbcCompiler = new MemoizingDxbcCompiler(
+            _dxbcCompilerFactory?.Invoke() ?? options.DxbcBackend switch
+            {
+                DxbcBackend.D3DCompiler => new D3DCompilerShaderCompiler(),
+                _                       => new Vkd3dShaderCompiler(),
+            });
         var dxbcReflectionPipe  = new DxbcReflectionPipeline(new DxbcReflectionExtractor());
 
         var extractor          = new DxilReflectionExtractor();
@@ -1764,7 +1767,9 @@ internal sealed class CompilationPipeline
         // each blob's CTAB (the constant table MojoShader itself binds against).
         // Always vkd3d (never the d3dcompiler oracle); an injected host backend (the
         // WASM vkd3d backend) is the same vkd3d behind a different call mechanism.
-        IDxbcShaderCompiler fnaCompiler = _dxbcCompilerFactory?.Invoke() ?? new Vkd3dShaderCompiler();
+        // Memoized per run, like the DirectX path (issue #255).
+        IDxbcShaderCompiler fnaCompiler = new MemoizingDxbcCompiler(
+            _dxbcCompilerFactory?.Invoke() ?? new Vkd3dShaderCompiler());
         var renderStateParser = new RenderStateParser();
         var shaders = new List<Fx2Shader>();
         var ctabs = new List<CtabTable>();

@@ -41,7 +41,7 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.Run(() => CompileCore(request), cancellationToken);
+        return Task.Run(() => CompileCore(request, cancellationToken), cancellationToken);
     }
 
     /// <inheritdoc/>
@@ -50,10 +50,11 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return CompileCore(request);
+        return CompileCore(request, cancellationToken);
     }
 
-    private static Result<PlatformBlob, ShaderError> CompileCore(D3DCompileRequest request)
+    private static Result<PlatformBlob, ShaderError> CompileCore(
+        D3DCompileRequest request, CancellationToken cancellationToken)
     {
         Vkd3dLoader.Register();
 
@@ -115,8 +116,13 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
         // count in its re-spaced token stream. Vkd3dSourceLocator asks vkd3d itself where
         // each diagnostic sits, with parse-abort probes of the SAME request; the real
         // compile above is untouched, so the emitted bytes cannot move.
+        //
+        // The token cannot interrupt vkd3d_shader_compile itself (one native call), but it
+        // is honoured before each relocation probe (up to Vkd3dSourceLocator.MaxProbes more
+        // native calls), so a cancelled compile does not go on to pay for them.
         ShaderError? Probe(string source)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             NativeOutcome o = InvokeNative(source, request, profile, targetType);
             return o.Failed
                 ? Vkd3dCompileContract.MapCompileFailure(o.Messages, request.SourceFileName, string.Empty)
