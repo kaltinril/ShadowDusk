@@ -632,6 +632,7 @@ public static class MonoGameGlslRewriter
             body = LowerEmptyIncrementForLoop(body);    // Rule 12 (issue #138, shape 2)
             body = LowerBoundedHeaderlessForLoop(body); // Rule 13 (issue #138, shape 1)
             body = LowerTruncToSignFloorAbs(body);      // Rule 15 (Apos.Shapes #34)
+            body = ReduceTrigArguments(body);           // Rule 16 (issue #215)
 
             // Phase 43 F3: inject mgfxc/MojoShader's runtime posFixup contract.
             // SPIRV-Cross's FlipVertexY is OFF (see SpirvCrossGlslTranspiler), so the
@@ -882,6 +883,10 @@ public static class MonoGameGlslRewriter
         // (ANGLE on macOS DesktopGL). Lowered here, not via a header, since (unlike
         // roundEven/round in Rule 8) there is no builtin name to fall back to.
         body = LowerTruncToSignFloorAbs(body);
+
+        // Rule 16 (issue #215): explicit range reduction before every sin()/cos(). See
+        // ReduceTrigArguments for the scheme and the measured error budget.
+        body = ReduceTrigArguments(body);
 
         // ---- Assemble final output: precision header + #define block + body. ----
         // The fragment-output `#define` aliases are emitted here, AFTER all Pass-2
@@ -1743,6 +1748,123 @@ public static class MonoGameGlslRewriter
         }
 
         return body;
+    }
+
+    /// <summary>
+    /// The range-reduction helper Rule 16 routes every <c>sin</c>/<c>cos</c> argument
+    /// through. Each overload maps <c>x</c> to <c>r = x - k·2π</c> with
+    /// <c>k = floor(x/2π + 0.5)</c>, so <c>r ∈ [-π, π]</c> (to within a few ulps) and
+    /// <c>sin(r) == sin(x)</c>, <c>cos(r) == cos(x)</c>.
+    /// <para>
+    /// The subtraction is a <b>Cody-Waite two-constant split</b>: 2π = C1 + C2 with
+    /// C1 = 6.28125 (8 significant bits, so <c>k·C1</c> is exact in fp32 for |k| &lt;
+    /// 2^16, i.e. |x| up to ~400 000) and C2 = 2π − C1 = 0.0019353071795864769, which
+    /// carries the rest of 2π's precision into the small second product. Measured over
+    /// 4M random fp32 arguments per range (issue #215; the simulation is recorded in
+    /// <c>project_decisions.md</c>): max phase error 1.3e-7 rad for |x| ≤ 1000 and
+    /// 1.9e-7 rad for |x| ≤ 10 000, against 1.0e-4 / 8.3e-4 rad for the single-constant
+    /// <c>fract(x/2π + 0.5)·2π − π</c> form and 3.8e-4 / 3.7e-3 rad for mgfxc's own
+    /// (MojoShader prints its constants to six decimals: 0.159155, 6.283185, -3.141593).
+    /// A driver that reassociates <c>(x − k·C1) − k·C2</c> into <c>x − k·(C1+C2)</c>
+    /// degrades to the single-constant form's accuracy, never worse.
+    /// </para>
+    /// Plain overloads (not a <c>#define</c>) so the argument is evaluated once and the
+    /// argument's own type picks the overload: SPIRV-Cross's output does not spell the
+    /// type at the call site. GLSL ES 1.00 / desktop GLSL 1.10 both allow overloading.
+    /// </summary>
+    internal const string TrigReduceFunctionName = "sd_reduce_angle";
+
+    private const string TrigReduceHelpers =
+        "float sd_reduce_angle(float x) { float k = floor(x * 0.15915494309189535 + 0.5); return (x - k * 6.28125) - k * 0.0019353071795864769; }\n" +
+        "vec2 sd_reduce_angle(vec2 x) { vec2 k = floor(x * 0.15915494309189535 + 0.5); return (x - k * 6.28125) - k * 0.0019353071795864769; }\n" +
+        "vec3 sd_reduce_angle(vec3 x) { vec3 k = floor(x * 0.15915494309189535 + 0.5); return (x - k * 6.28125) - k * 0.0019353071795864769; }\n" +
+        "vec4 sd_reduce_angle(vec4 x) { vec4 k = floor(x * 0.15915494309189535 + 0.5); return (x - k * 6.28125) - k * 0.0019353071795864769; }\n";
+
+    private static readonly string[] TrigFns = { "sin", "cos" };
+
+    // A bare numeric literal (optionally signed). DXC constant-folds sin/cos of a
+    // literal, so this rarely reaches the GLSL, but when it does there is no runtime
+    // reduction to do and the call is left byte-unchanged.
+    private static readonly Regex NumericLiteralArg = new(
+        @"^\s*[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?\s*$",
+        RegexOptions.Compiled);
+
+    private static readonly Regex MainDeclarationLine = new(
+        @"^[ \t]*void\s+main\s*\(",
+        RegexOptions.Compiled | RegexOptions.Multiline);
+
+    /// <summary>
+    /// Rule 16 (issue #215): rewrites every <c>sin(<i>expr</i>)</c> /
+    /// <c>cos(<i>expr</i>)</c> to <c>sin(sd_reduce_angle(<i>expr</i>))</c> and declares
+    /// the helper overloads (<see cref="TrigReduceHelpers"/>) once, just before
+    /// <c>main</c>. SPIRV-Cross hands HLSL <c>sin</c>/<c>cos</c> straight to the GLSL
+    /// builtin on the raw argument, so a large argument (Dots.fx reaches ~792 rad) is
+    /// exposed to the driver's own range reduction, whose accuracy varies by vendor:
+    /// llvmpipe and NVIDIA are exact enough, Intel UHD measured 19/255 off the mgfxc
+    /// golden. fxc reduces explicitly before its <c>sincos</c> instruction (D3D9 defines
+    /// <c>sincos</c> only on [-π, π]), so mgfxc's GLSL always calls <c>sin</c> on a
+    /// reduced value; this restores that property with constants that are more accurate
+    /// than mgfxc's own. Applied unconditionally except to a bare numeric literal: the
+    /// rewrite layer has no value-range analysis, and a uniform, varying, or texture
+    /// read can be arbitrarily large. Resumes inside the argument so a nested call is
+    /// reduced too.
+    /// </summary>
+    private static string ReduceTrigArguments(string body)
+    {
+        bool reduced = false;
+        foreach (var fn in TrigFns)
+        {
+            int searchFrom = 0;
+            while (true)
+            {
+                int callStart = FindCallStart(body, fn, searchFrom);
+                if (callStart < 0)
+                {
+                    break;
+                }
+
+                int openParen = callStart + fn.Length;
+                while (openParen < body.Length && (body[openParen] == ' ' || body[openParen] == '\t'))
+                {
+                    openParen++;
+                }
+
+                int closeParen = FindMatchingParen(body, openParen);
+                if (closeParen < 0)
+                {
+                    break;
+                }
+
+                string arg = body.Substring(openParen + 1, closeParen - openParen - 1);
+                if (NumericLiteralArg.IsMatch(arg))
+                {
+                    searchFrom = closeParen + 1;
+                    continue;
+                }
+
+                string prefix = $"{fn}({TrigReduceFunctionName}(";
+                body = body.Substring(0, callStart) + prefix + arg + "))" + body.Substring(closeParen + 1);
+                // Resume inside the argument: a nested sin/cos in it is still visited, and
+                // the outer call (now past searchFrom) is never wrapped twice.
+                searchFrom = callStart + prefix.Length;
+                reduced = true;
+            }
+        }
+
+        if (!reduced)
+        {
+            return body;
+        }
+
+        Match main = MainDeclarationLine.Match(body);
+        if (!main.Success)
+        {
+            throw new MonoGameGlslRewriteException(
+                "GLSL rewrite: sin/cos range reduction (Rule 16) could not locate 'void main(' " +
+                "to declare its helper before. This is a ShadowDusk gap; please report the shader shape.");
+        }
+
+        return body.Substring(0, main.Index) + TrigReduceHelpers + "\n" + body.Substring(main.Index);
     }
 
     /// <summary>

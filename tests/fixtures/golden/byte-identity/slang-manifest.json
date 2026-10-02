@@ -52,14 +52,14 @@
   "OpenGL/slang/DiagonalStripes.slang": "22d379108cf9b33d5f1aadef7094a45cf4383f90dda5695c676873b381de92e1",
   "OpenGL/slang/HorizontalGradient.slang": "1f59dc89fe61e62faecc6b3cdaf21485da23b11e405b7b1ffa646f3e233b92cf",
   "OpenGL/slang/Invert.slang": "c9f8b777d64d206d9706d3392eae24397cbf7e26598a55743224a513df7e4672",
-  "OpenGL/slang/Plasma.slang": "5c6086c0c93f2e3fd841f625adb76efb99a02d096f3bc382ee5ec585423b91db",
+  "OpenGL/slang/Plasma.slang": "a19d0856d2d0ade984ba15f925dd8cf9122880e49f41fa75c61bbd75c0d0c535",
   "OpenGL/slang/Posterize.slang": "c9ab3d242bed2eff8ef65c4ad771fa79d3aaa7b346f8e48164cf0ccdc00bd476",
   "OpenGL/slang/RadialGradient.slang": "90ada14142a1a6ca574b1f7e70fd6a3ed862768941adb2aa3efc880db010f530",
-  "OpenGL/slang/Rings.slang": "8dd98fcd77bf1b32e205016eff73118adbeb637c25a136ea70649ec4e9315f8e",
+  "OpenGL/slang/Rings.slang": "e15ac7e9d3d4cde541848bc82a7818c98719b255672c27317aa170793ad6d171",
   "OpenGL/slang/ScrollUv.slang": "37c1dbbc321390d0813f606737c6d08cd952e810870d4fae5337e12836011b24",
   "OpenGL/slang/Sepia.slang": "12e1f3a024ff41dd78601afa05b8321b46609db95ea1b0e38360043cdf7ea7fa",
   "OpenGL/slang/Threshold.slang": "5c3c62b391e734537ebc3dff441cf02fba3a783b944c6db22d5434796cf34e56",
   "OpenGL/slang/TintUniform.slang": "bf52fe619d203e70b39d7ba21f3262a4aff333e7e656aae34cbd4698013fb033",
   "OpenGL/slang/Vignette.slang": "772cae99c69c7748740506ccb3fe3d21b9ad3c5c02f52a6b25ab0b65defc2c80",
-  "OpenGL/slang/WaveVertex.slang": "3e84832b15d8e977dbfe658780c9871e2335f736c018250052958c0d8dc2844c"
+  "OpenGL/slang/WaveVertex.slang": "379861321d3811891a22460b09b364fdca5792f66440fd430d0332ade7e2f54e"
 }
