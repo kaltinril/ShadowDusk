@@ -23,10 +23,20 @@
   <ItemGroup>
     <!-- Arm A (candidate): ShadowDusk in-memory, PlatformTarget.Fna. -->
     <ProjectReference Include="..\..\src\ShadowDusk.Compiler\ShadowDusk.Compiler.csproj" />
+    <!-- Issue #230: the `slang` mode (SlangFnaGate.cs) compiles the real-slangc corpus
+         through ShadowDusk.Slang, which also carries the slangc native into the output. -->
+    <ProjectReference Include="..\..\src\ShadowDusk.Slang\ShadowDusk.Slang.csproj" />
     <!-- Rung 3+4 consumer: REAL FNA (Effect → FNA3D → MojoShader), restored by
          restore-fna.ps1 into external/FNA (gitignored). FNA.Core.csproj is the
          modern .NET project shape (net8.0). -->
     <ProjectReference Include="external\FNA\FNA.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The framework-agnostic halves of the issue-#230 Slang gate, shared with
+         validation/SlangFullCorpusDx12 + SlangFullCorpusVulkan (SlangMonoGameGate.cs is
+         MonoGame-only and deliberately NOT linked here). -->
+    <Compile Include="..\SharedSlang\SlangGateCorpus.cs" Link="SharedSlang\SlangGateCorpus.cs" />
+    <Compile Include="..\SharedSlang\SlangShaderParams.cs" Link="SharedSlang\SlangShaderParams.cs" />
   </ItemGroup>
   <ItemGroup>
     <!-- fnalibs win-x64 natives (SDL3 / FNA3D / FAudio / theorafile) restored by

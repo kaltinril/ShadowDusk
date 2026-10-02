@@ -21,6 +21,9 @@
          Integration.Tests' own source-link of MgcbErrorFormatter.cs/Fx2BinaryValidator.cs
          from other projects (the established pattern for this repo, not a new one). -->
     <Compile Include="..\ShadowDusk.Integration.Tests\MgfxBlobReader.cs" Link="MgfxBlobReader.cs" />
+    <!-- Issue #230: the independent MojoShader-rule fx_2_0 parser, so the FNA tests read the
+         parameter table and sampler map real FNA binds from, not just the version token. -->
+    <Compile Include="..\ShadowDusk.Core.Tests\Fx2\Fx2BinaryValidator.cs" Link="Fx2BinaryValidator.cs" />
   </ItemGroup>
 
   <ItemGroup Label="Test framework">

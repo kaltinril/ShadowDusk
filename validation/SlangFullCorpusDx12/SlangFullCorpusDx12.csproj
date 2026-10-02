@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Issue #230: the real-Effect render gate for ShadowDusk.Slang's real-slangc route on
+       DirectX_12. Candidate = SlangCompiler's DirectX12 output; reference = the real
+       dotnet-mgfxc 3.8.5 /Profile:DirectX_12 build of the same assembled .fx; both loaded into
+       ONE real MonoGame 3.8.5 WindowsDX12 GraphicsDevice and pixel-diffed. All logic lives in
+       validation/SharedSlang (shared with SlangFullCorpusVulkan). Windows-only (DX12 runtime).
+       Intentionally NOT in ShadowDusk.slnx. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <RootNamespace>ShadowDusk.Validation.SlangFullCorpusDx12</RootNamespace>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <MonoGamePlatform>WindowsDX12</MonoGamePlatform>
+  </PropertyGroup>
+
+  <ItemGroup Label="MonoGame 3.8.5 stable WindowsDX12">
+    <PackageReference Include="MonoGame.Framework.Native" Version="3.8.5" />
+    <PackageReference Include="MonoGame.Runtime.Windows.DX12" Version="3.8.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The reference compiler. PackageDownload only puts it in the NuGet cache (nothing is
+         referenced); SlangGateCorpus.LocateMgfxc runs tools/net8.0/any/mgfxc.dll from there. -->
+    <PackageDownload Include="dotnet-mgfxc" Version="[3.8.5]" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ShadowDusk.Slang\ShadowDusk.Slang.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\SharedSlang\*.cs" />
+    <Compile Include="..\SharedDx\DxHeadlessRasterizer.cs" />
+  </ItemGroup>
+
+</Project>

@@ -23,6 +23,23 @@ public sealed class Fx2EffectBuilderTests
 {
     private const string SourceFile = "effect.fx";
 
+    // Issue #230 review: SD0303's locator once reported a comment that mentioned
+    // 'Texture.Sample(Sampler' (ExTextureNamedTexture.fx line 21) instead of the real call.
+    [Theory]
+    [InlineData("\n")]
+    [InlineData("\r\n")]
+    public void MaskComments_BlanksCommentsAndKeepsEveryOffset(string nl)
+    {
+        string src = $"// T.Sample(S, uv) in a line comment{nl}/* T.Sample(S,{nl}   uv) */ float4 x = T.Sample(S, uv);{nl}";
+
+        string masked = Fx2EffectBuilder.MaskComments(src);
+
+        masked.Length.ShouldBe(src.Length);
+        masked.Count(c => c == '\n').ShouldBe(src.Count(c => c == '\n'));
+        masked.IndexOf("T.Sample(", StringComparison.Ordinal).ShouldBe(src.LastIndexOf("T.Sample(", StringComparison.Ordinal));
+        masked.ShouldContain("float4 x = T.Sample(S, uv);", Case.Sensitive);
+    }
+
     // ---------------------------------------------------------------------------
     // Helpers — small builders with sensible defaults keep the cases readable.
     // ---------------------------------------------------------------------------
