@@ -83,7 +83,7 @@ public sealed class WasmSlangCompiler
 
     /// <summary>
     /// Synchronous compile; <see cref="InitializeAsync"/> must have completed. Before that,
-    /// returns <c>SD0628</c> rather than aborting the .NET WebAssembly runtime.
+    /// returns <c>SD0629</c> rather than aborting the .NET WebAssembly runtime.
     /// </summary>
     public Result<CompiledShader, ShaderError[]> Compile(
         string slangSource,
@@ -95,7 +95,7 @@ public sealed class WasmSlangCompiler
             return Result<CompiledShader, ShaderError[]>.Fail(
             [
                 new ShaderError(
-                    File: options.SourceFileName ?? "<memory>.slang", Line: 0, Column: 0, Code: "SD0628",
+                    File: options.SourceFileName ?? "<memory>.slang", Line: 0, Column: 0, Code: "SD0629",
                     Message: "The in-browser slangc module is not loaded. Await WasmSlangCompiler.InitializeAsync() " +
                              "once before calling Compile, or call CompileAsync, which loads it on first use."),
             ]);

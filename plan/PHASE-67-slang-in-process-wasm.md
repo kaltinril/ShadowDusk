@@ -141,7 +141,7 @@ A `net8.0-browser` Razor-SDK project (the `ShadowDusk.Wasm` pattern) referencing
 - `WasmSlangCompiler` wraps `SlangCompiler`'s in-process constructor with a `WasmShaderCompiler`
   downstream (shareable, so a page that already compiles `.fx` reuses its loaded modules).
   `CompileAsync` loads on first use; `InitializeAsync` + sync `Compile` mirror
-  `WasmShaderCompiler`. `SD0627` = module failed to load; `SD0628` = sync compile before init.
+  `WasmShaderCompiler`. `SD0628` = module failed to load; `SD0629` = sync compile before init.
 - `SlangcModule` registers `wwwroot/shadowdusk-slangc.js` (the `[JSImport]` shim) from
   `_content/ShadowDusk.Slang.Wasm/` and lazily fetches `wwwroot/slangc/shadowdusk-slangc.wasm`.
   The consumer wires nothing.

@@ -58,7 +58,7 @@ internal static partial class SlangcModule
     }
 
     public static ShaderError LoadFailed(string sourceName, string message) =>
-        new(File: sourceName, Line: 0, Column: 0, Code: "SD0627",
+        new(File: sourceName, Line: 0, Column: 0, Code: "SD0628",
             Message: "The in-browser slangc module (shadowdusk-slangc) could not be loaded: " + message);
 
     [JSImport("ensureReady", ModuleName)]
