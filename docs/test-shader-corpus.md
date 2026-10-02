@@ -273,7 +273,8 @@ they back `validation/SamplerPairsGl`:
   `register(s##index)`), `SAMPLE_TEXTURE(MaskA, uv)` (a `tex2D` inside a macro body), and a
   register clause that is a function-like macro, `sampler MaskB SLOT(s3) = sampler_state {…}`.
   None of these is a sampler declaration or a `tex2D` call in the RAW token stream. Same colours
-  and the same `ps_s2`/`ps_s3` as the include shape. Goldens on `OpenGL` + `DirectX_11`.
+  and the same `ps_s2`/`ps_s3` as the include shape. Goldens on `OpenGL` + `DirectX_11` (the
+  `DirectX_11` cell carries the recorded `SamplerRegisterSparse` divergence, like the include shape).
 
 - **`SamplerReservationKeywords.fx`** — GitHub issue **#309**. Two textures read through ONE
   lowercase `sampler MaskSampler : register(s0)` by `Texture.Sample`, plus an unused
@@ -281,7 +282,10 @@ they back `validation/SamplerPairsGl`:
   sampler type keyword, used or not, so `mgfxc` allocates the two pairs around s0/s1 to
   `ps_s2`/`ps_s3`; ShadowDusk's matcher knew only `SamplerState` and gave `ps_s0`/`ps_s1`, MaskA on
   SpriteBatch's unit. BLUE sprite + RED MaskATexture + GREEN MaskBTexture: **yellow = correct**,
-  **green = the bug**. Goldens on `OpenGL` + `DirectX_11`.
+  **green = the bug**. Goldens on `OpenGL` + `DirectX_11`; the `OpenGL` cell of the Phase 41
+  matrix shows only the recorded parameter-naming divergence every modern-syntax shader has
+  (`mgfxc`'s MojoShader `MaskSampler+MaskATexture` vs ShadowDusk's `MaskATexture`,
+  `project_decisions.md`); the sampler table itself matches.
 
 ### ShaderToy route fixture
 
