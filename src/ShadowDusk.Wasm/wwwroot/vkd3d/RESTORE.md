@@ -39,12 +39,13 @@ Both files are restored by `tools/restore.ps1` / `tools/restore.sh`
 (`Restore-Vkd3dWasm` / `restore_vkd3d_wasm`) from the **fixed GitHub Release tag
 `native-vkd3d-wasm-2.1`**, SHA-256-verified against the pins in those scripts.
 
-> **Status:** the hosted build does not exist yet — the pins are
-> `PENDING-FIRST-HOSTED-BUILD` placeholders and the restore **skips with a notice**
-> (the Phase 37 A pattern). Until the artifacts land, browser DirectX/FNA compiles
-> fail loudly with `SD1902`; everything else (the shim, the C# backend, the gate,
-> the restore plumbing) is wired and flips to working the moment the files exist.
-> A locally built module can be used meanwhile: the restore also copies from
+> **Status (issue #271):** the hosted `native-vkd3d-wasm-2.1` module was linked with
+> emscripten's 64 KB default stack and traps on nested shaders the desktop compiles
+> (75 `else if`s, 200 nested `if`s, a 1600-deep call chain). `vkd3d-wasm-build.yml`
+> now links an 8 MB stack placed first; its rebuild is verified (87/87 corpus, 6/6
+> depth cases byte-identical) but must still be uploaded to a NEW tag and re-pinned
+> in both restore scripts (`docs/validation-matrix.md` §7 lists every place). A
+> locally built module can be used meanwhile: outside CI the restore copies
 > `.wasm-build/vkd3d-wasm-out/vkd3d-shader.{js,wasm}` when present.
 
 ## Gates

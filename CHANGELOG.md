@@ -180,6 +180,23 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **Browser compiles of nested shaders hung, crashed or miscompiled (issue #271).** The in-browser
+  DXC, SPIRV-Cross and vkd3d WebAssembly modules were linked with emscripten's 64 KB default stack
+  (the desktop natives get 1 MB on Windows, 8 MB on Linux/macOS), and with emscripten's layout an
+  overflow silently corrupts the module instead of trapping. Measured against the desktop pipeline:
+  SPIRV-Cross failed on about a dozen nested `if`s or `else if`s (an ordinary OpenGL shader), DXC
+  hung on a 100-term expression and gave a wrong diagnostic on 200 `else if`s, vkd3d trapped at 75
+  `else if`s. All three now link an 8 MB stack placed below static data, and match the desktop
+  byte-for-byte at every measured depth the desktop compiles, except an 800-branch `else if` chain
+  in SPIRV-Cross, which still exhausts the JS engine's own stack. A module that traps is now
+  discarded and reloaded instead of being reused corrupted, and the compile reports the new code
+  `SD1906` (a synchronous `Compile()` before the reload reports `SD1903`; `CompileAsync` reloads by
+  itself). The rebuilt DXC and SPIRV-Cross modules ship in this release; the rebuilt vkd3d module
+  (DirectX/FNA in the browser) is verified but not hosted yet, so the browser DirectX/FNA path keeps
+  the 64 KB module until it is re-pinned. No emitted byte changes on any corpus. New gate
+  `node-test-wasm-depth.mjs` and a trap scenario in `browser-vkd3d-gate.mjs` (`wasm.yml`); details in
+  `.wasm-build/WASM-STACK-DEPTH.md`. Also: `tools/restore.*` now refresh the packaged
+  `dxcompiler.wasm` by hash instead of size (the relinked module has the same size).
 - **Stale lock files outside the solution (issues #291, #290).** PR #279's `Vortice.Dxc` `[3.3.4]`
   pin missed the lock files of `Vkd3dCorpusProbe` (which turned Browser render smoke red on main),
   `slang-probe`, `dxc-corpus-probe` and `KniXnbContentLoad`'s 4.3.9001 lock (still at 0.18.0), and

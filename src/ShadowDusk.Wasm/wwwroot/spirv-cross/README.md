@@ -7,8 +7,16 @@ browser — the second half of ShaderFiddle's Mode 2 (HLSL → SPIR-V → GLSL) 
 
 | File | Size | Role |
 |---|---|---|
-| `spirv-cross.wasm` | ~2.1 MB | SPIRV-Cross core + C API + all backends (GLSL/HLSL/MSL/CPP/REFLECT), `-O3`, `-fexceptions`. |
-| `spirv-cross.js`   | ~25 KB | emscripten ES6 loader (`MODULARIZE`, `EXPORT_ES6`, `EXPORT_NAME=createSpirvCrossModule`). |
+| `spirv-cross.wasm` | ~2.9 MB | SPIRV-Cross core + C API + all backends (GLSL/HLSL/MSL/CPP/REFLECT), `-O3`, `-fexceptions`, an 8 MB stack placed first (`-sSTACK_SIZE=8MB -sGLOBAL_BASE=8388608 -Wl,--stack-first`, issue #271). |
+| `spirv-cross.js`   | ~30 KB | emscripten ES6 loader (`MODULARIZE`, `EXPORT_ES6`, `EXPORT_NAME=createSpirvCrossModule`). |
+
+The two committed copies (`src/ShadowDusk.Wasm/wwwroot/spirv-cross/`, the shipped package
+asset, and `samples/ShaderFiddle.Web/wwwroot/spirv-cross/`) must stay identical.
+
+**Stack (issue #271).** Emscripten's default stack is 64 KB; SPIRV-Cross emits structured
+control flow recursively, and at 64 KB the module corrupted itself on about a dozen nested
+`if`s or `else if`s that the desktop transpiles. Measurements:
+`.wasm-build/WASM-STACK-DEPTH.md`; gate: `tests/ShadowDusk.BrowserTests/node-test-wasm-depth.mjs`.
 
 These artifacts **are committed** (the build needs emscripten, which is not in CI
 yet). They are produced by `../../../../.wasm-build/build-spirv-cross-wasm.ps1`
@@ -39,17 +47,19 @@ baked negation.
 ## Rebuilding
 
 ```powershell
-# 1. (once) install emscripten — any recent version; this is the [JSImport] JS-module
-#    path, so the emscripten version need NOT match the .NET WASM runtime.
+# 1. (once) install emscripten. This is the [JSImport] JS-module path, so the version need
+#    NOT match the .NET WASM runtime, but the shipped module is built with 3.1.34, the same
+#    pin as the DXC and vkd3d modules (an older build used an unrecorded "latest").
 git clone https://github.com/emscripten-core/emsdk .wasm-build/emsdk
-.wasm-build/emsdk/emsdk install latest
-.wasm-build/emsdk/emsdk activate latest
+.wasm-build/emsdk/emsdk install 3.1.34
+.wasm-build/emsdk/emsdk activate 3.1.34
 
 # 2. clone SPIRV-Cross at the matching tag
 git clone https://github.com/KhronosGroup/SPIRV-Cross .wasm-build/spirv-cross-src
 git -C .wasm-build/spirv-cross-src checkout vulkan-sdk-1.4.335.0
 
-# 3. build the wasm (writes spirv-cross.{js,wasm} here)
+# 3. build the wasm (writes spirv-cross.{js,wasm} to samples/ShaderFiddle.Web/wwwroot/spirv-cross
+#    by default; -OutDir elsewhere), then copy the pair into src/ShadowDusk.Wasm/wwwroot/spirv-cross
 pwsh .wasm-build/build-spirv-cross-wasm.ps1
 
 # 4. regenerate fixtures + verify byte-for-byte against desktop
