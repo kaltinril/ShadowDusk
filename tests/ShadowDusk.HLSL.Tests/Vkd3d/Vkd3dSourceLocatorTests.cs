@@ -38,7 +38,19 @@ public sealed class Vkd3dSourceLocatorTests
         /// </summary>
         public string SentinelSpelling { get; init; } = Vkd3dSourceLocator.SentinelMessage;
 
+        /// <summary>
+        /// Physical lines where a statement marker is not legal: the fake answers the marker
+        /// there with the syntax error vkd3d gives (the parse stops, nothing after it answers).
+        /// </summary>
+        public HashSet<int> RejectMarkerOnLines { get; init; } = [];
+
         public int Calls { get; private set; }
+
+        /// <summary>Compiles that carried statement markers (one parse, many measurements).</summary>
+        public int MarkerCompiles { get; private set; }
+
+        /// <summary>Compiles whose text did not end with the locator's terminator line.</summary>
+        public int CompilesWithoutTerminator { get; private set; }
 
         /// <summary>Set when a probe planted the sentinel directly under a backslash-continued line.</summary>
         public bool SawSentinelAfterContinuation { get; private set; }
@@ -46,12 +58,19 @@ public sealed class Vkd3dSourceLocatorTests
         public ShaderError? Compile(string text)
         {
             Calls++;
+            if (text.Contains(MarkerPrefix, StringComparison.Ordinal))
+                MarkerCompiles++;
+            if (!text.EndsWith("\n" + Vkd3dSourceLocator.Terminator, StringComparison.Ordinal))
+                CompilesWithoutTerminator++;
+
             string[] lines = text.Split('\n');
             int reported = 0;
             int drift = 0;
+            int parenDepth = 0;
             bool skipping = false;
             bool inComment = false;
             ShaderError? pending = null;
+            var warnings = new List<string>();
 
             for (int i = 0; i < lines.Length; i++)
             {
@@ -81,11 +100,23 @@ public sealed class Vkd3dSourceLocatorTests
                 {
                     string token = line.Substring(start, length);
                     if (token == Vkd3dSourceLocator.Sentinel)
-                        return Error(reported + drift, column, "E5000", SentinelSpelling);
+                        return Error(reported + drift, column, "E5000", SentinelSpelling, warnings);
                     if (token == SyntaxMarker)
-                        return Error(reported + drift, column, "E5000", "syntax error, unexpected " + token);
+                        return Error(reported + drift, column, "E5000", "syntax error, unexpected " + token, warnings);
                     if (token == CodegenMarker)
                         pending ??= Error(reported + drift, column, "E5017", "Aborting due to not yet implemented feature: " + token);
+                    if (token.StartsWith(MarkerPrefix, StringComparison.Ordinal))
+                    {
+                        // The statement marker: a non-fatal warning that quotes its name, or,
+                        // where it is not legal, a syntax error at its '['.
+                        if (RejectMarkerOnLines.Contains(i + 1))
+                            return Error(reported + drift, 1, "E5000", "syntax error, unexpected '['", warnings);
+                        warnings.Add($"{File}:{reported + drift}:1: W5302: Unrecognized attribute '{token}'.");
+                    }
+                    if (token == "(")
+                        parenDepth++;
+                    if (token == ")" && --parenDepth < 0)       // the terminator: the parse ends here, whatever came before
+                        return Error(reported + drift, column, "E5000", "syntax error, unexpected ')'", warnings);
                     if (token == "atan2")
                         drift += 20;                            // the template is lexed after the call is reduced
                     column += length + 1;
@@ -94,9 +125,13 @@ public sealed class Vkd3dSourceLocatorTests
             return pending;
         }
 
-        private static ShaderError Error(int line, int column, string code, string message) =>
-            new(File, line, column, code, message, RawDiagnostics: $"{File}:{line}:{column}: {code}: {message}");
+        // Like vkd3d's message buffer: everything said before the error, then the error.
+        private static ShaderError Error(int line, int column, string code, string message, List<string>? before = null) =>
+            new(File, line, column, code, message,
+                RawDiagnostics: string.Join('\n', (before ?? []).Append($"{File}:{line}:{column}: {code}: {message}")));
     }
+
+    private const string MarkerPrefix = "__shadowdusk_line_";
 
     private static string Join(params string[] lines) => string.Join('\n', lines);
 
@@ -423,6 +458,237 @@ public sealed class Vkd3dSourceLocatorTests
             rawLines[i].ShouldStartWith($"user.fx:{2 + i}:11: ", Case.Sensitive);
         (fake.Calls - before).ShouldBeLessThanOrEqualTo(
             Vkd3dSourceLocator.MaxProbes, customMessage: "2000 lines must not each pay for a bisection");
+    }
+
+    // -------------------------------------------------------------------------
+    // The raw blob's cost: one marker compile measures every statement start
+    // -------------------------------------------------------------------------
+
+    /// <summary>A function body whose drift changes on almost every line, with five codegen errors.</summary>
+    private static readonly string[] MarkedFunction =
+    [
+        "float2 dir;",                              // 1
+        "float4 PS()",                              // 2
+        "{",                                        // 3
+        "    float a = atan2(1, 2);",               // 4   +20
+        "    float b = BAD;",                       // 5   vkd3d says 25
+        "    float c = atan2(3, 4) + BAD;",         // 6   the BAD is after the call: 46
+        "",                                         // 7
+        "    // a comment line",                    // 8
+        "    if (a > b)",                           // 9
+        "    {",                                    // 10
+        "        c = atan2(5, 6);",                 // 11  +20
+        "        b = BAD;",                         // 12  72
+        "    }",                                    // 13
+        "    else",                                 // 14
+        "        b = BAD;",                         // 15  75
+        "    float d = a +",                        // 16
+        "        BAD;",                             // 17  77
+        "    return a;",                            // 18
+        "}",                                        // 19
+    ];
+
+    private static ShaderError MarkedFunctionPrimary(FakeVkd3d fake, string source)
+    {
+        ShaderError first = fake.Compile(source)!;
+        first.Line.ShouldBe(25);
+        return first with
+        {
+            RawDiagnostics = string.Join('\n',
+                "user.fx:25:11: E5017: one",
+                "user.fx:46:29: E5017: two",
+                "user.fx:72:5: E5017: three",
+                "user.fx:75:5: E5017: four",
+                "user.fx:77:1: E5017: five"),
+        };
+    }
+
+    private static readonly string MarkedFunctionExpected = string.Join('\n',
+        "user.fx:5:15: E5017: one",
+        "user.fx:6:29: E5017: two",
+        "user.fx:12:13: E5017: three",
+        "user.fx:15:13: E5017: four",
+        "user.fx:17:9: E5017: five");
+
+    [Fact]
+    public void RawBlob_StatementMarkers_MeasureTheWholeFunctionInOneCompile()
+    {
+        var fake = new FakeVkd3d { CodegenMarker = "BAD" };
+        string source = Join(MarkedFunction);
+        ShaderError primary = MarkedFunctionPrimary(fake, source);
+
+        // What the summary alone costs: the same diagnostic with a one-line raw text.
+        var summaryOnly = new FakeVkd3d { CodegenMarker = "BAD" };
+        Vkd3dSourceLocator.Relocate(summaryOnly.Compile(source)!, source, source, File, summaryOnly.Compile);
+        int summaryProbes = summaryOnly.Calls - 1;
+
+        ShaderError located = Vkd3dSourceLocator.Relocate(primary, source, source, File, fake.Compile);
+
+        located.Line.ShouldBe(5);
+        located.RawDiagnostics.ShouldBe(MarkedFunctionExpected);
+        fake.MarkerCompiles.ShouldBe(1);
+        (fake.Calls - 1 - summaryProbes - fake.MarkerCompiles).ShouldBeLessThanOrEqualTo(1,
+            "the four other lines come from the one marker compile; only 'five', on the second line "
+            + "of a statement, may need a sentinel of its own");
+    }
+
+    [Fact]
+    public void RawBlob_AMisplacedMarker_CostsOneMoreCompile_NeverAWrongLine()
+    {
+        // The statement-start reading is a heuristic. Where it is wrong the marker is a syntax
+        // error, the parse stops there, and nothing after it answers: the marker is dropped
+        // and the rest is measured by the next compile.
+        var fake = new FakeVkd3d { CodegenMarker = "BAD", RejectMarkerOnLines = [11] };
+        string source = Join(MarkedFunction);
+        ShaderError primary = MarkedFunctionPrimary(fake, source);
+
+        ShaderError located = Vkd3dSourceLocator.Relocate(primary, source, source, File, fake.Compile);
+
+        located.RawDiagnostics.ShouldBe(MarkedFunctionExpected);
+        fake.MarkerCompiles.ShouldBe(2);
+    }
+
+    [Fact]
+    public void RawBlob_MarkersThatNeverAnswer_FallBackToTheBisection()
+    {
+        // Every marker rejected: the attempts are capped and the lines are still placed.
+        var fake = new FakeVkd3d { CodegenMarker = "BAD", RejectMarkerOnLines = [.. Enumerable.Range(1, MarkedFunction.Length)] };
+        string source = Join(MarkedFunction);
+        ShaderError primary = MarkedFunctionPrimary(fake, source);
+
+        ShaderError located = Vkd3dSourceLocator.Relocate(primary, source, source, File, fake.Compile);
+
+        located.RawDiagnostics.ShouldBe(MarkedFunctionExpected);
+        fake.MarkerCompiles.ShouldBe(Vkd3dSourceLocator.MaxMarkerCompiles);
+    }
+
+    [Fact]
+    public void RawBlob_ALineThatCannotBePlaced_LeavesTheWholeBlobAsVkd3dWroteIt()
+    {
+        // Top-level code carries no statement marker, and a template call on every line
+        // leaves nothing to infer, so each of these 200 lines needs probes of its own: more
+        // than the allowance. A block that mixed relocated and raw line numbers would be
+        // worse than either, so the blob comes back untouched (the summary still moves).
+        var fake = new FakeVkd3d { CodegenMarker = "BAD" };
+        var lines = new List<string>();
+        for (int i = 0; i < 400; i++)
+            lines.Add("float f = atan2(1, 2) + BAD;");
+        string source = Join(lines.ToArray());
+        ShaderError first = fake.Compile(source)!;
+        ShaderError primary = first with
+        {
+            RawDiagnostics = string.Join('\n',
+                Enumerable.Range(0, 200).Select(i => $"user.fx:{(2 * i + 1) + 20 * (2 * i + 1)}:17: E5017: x")),
+        };
+
+        ShaderError located = Vkd3dSourceLocator.Relocate(primary, source, source, File, fake.Compile);
+
+        located.Line.ShouldBe(1);
+        located.RawDiagnostics.ShouldBe(primary.RawDiagnostics);
+        (fake.Calls - 1).ShouldBeLessThanOrEqualTo(Vkd3dSourceLocator.MaxProbes + Vkd3dSourceLocator.MaxRawProbes);
+    }
+
+    [Fact]
+    public void EveryProbe_EndsWithTheTerminator_SoASwallowedSentinelNeverRunsTheWholeCompile()
+    {
+        // A sentinel planted in a skipped #if arm (or a block comment) is never seen by
+        // vkd3d. Without the terminator that probe is the complete failing compile again:
+        // on the reporter's Apos.Shapes file one such probe doubled the time to the error.
+        var fake = new FakeVkd3d { CodegenMarker = "BAD" };
+        var lines = new List<string> { "float a;", "#if 0" };
+        for (int i = 0; i < 60; i++) lines.Add($"float skipped{i};");
+        lines.AddRange(["#endif", "float4 PS()", "{", "    float b = atan2(1, 2);", "    float c = BAD;", "    float d = BAD;", "}"]);
+        string source = Join(lines.ToArray());
+        ShaderError first = fake.Compile(source)!;
+        ShaderError primary = first with
+        {
+            RawDiagnostics = $"user.fx:{first.Line}:11: E5017: one\nuser.fx:{first.Line + 1}:11: E5017: two",
+        };
+
+        ShaderError located = Vkd3dSourceLocator.Relocate(primary, source, source, File, fake.Compile);
+
+        located.Line.ShouldBe(67);
+        located.RawDiagnostics.ShouldBe("user.fx:67:15: E5017: one\nuser.fx:68:15: E5017: two");
+        fake.Calls.ShouldBeGreaterThan(2);
+        fake.CompilesWithoutTerminator.ShouldBe(1, "only the test's own first compile; every probe carries the terminator");
+    }
+
+    [Fact]
+    public void StatementStartLines_AreOnlyWhereAStatementCanBePrefixed()
+    {
+        string[] source =
+        [
+            "float2 dir;",                                  // 1   top level
+            "struct V",                                     // 2
+            "{",                                            // 3
+            "    float4 p : POSITION;",                     // 4   a struct member
+            "};",                                           // 5
+            "static const float k[2] = {",                  // 6
+            "    1.0,",                                     // 7   an initializer
+            "    2.0 };",                                   // 8
+            "#if SM4",                                      // 9
+            "float4 Skipped() { return 0; }",               // 10
+            "#endif",                                       // 11
+            "float4 PS(V v) : COLOR",                       // 12
+            "{",                                            // 13
+            "    float a = 1;",                             // 14  yes
+            "    /* a comment",                             // 15
+            "       float hidden; */ float b = 2;",         // 16  starts inside the comment
+            "    float m[2] = {",                           // 17  yes
+            "        1.0,",                                 // 18
+            "        2.0 };",                               // 19
+            "    for (int i = 0;",                          // 20  yes
+            "         i < 2;",                              // 21  inside the parentheses
+            "         i++)",                                // 22
+            "    {",                                        // 23
+            "        a += m[i];",                           // 24  yes
+            "    }",                                        // 25  yes
+            "    if (a > b)",                               // 26  yes
+            "        a = b;",                               // 27  the if's own statement
+            "    else",                                     // 28
+            "        b = a;",                               // 29
+            "    do",                                       // 30  yes
+            "    {",                                        // 31
+            "        a -= 1;",                              // 32  yes
+            "    }",                                        // 33  yes
+            "    while (a > 0);",                           // 34  the do's own while
+            "    switch (int(a))",                          // 35  yes
+            "    {",                                        // 36
+            "        case 0:",                              // 37
+            "            b = 1;",                           // 38
+            "            break;",                           // 39  yes
+            "        default:",                             // 40
+            "            break;",                           // 41
+            "    }",                                        // 42  yes
+            "#define TWICE(x) \\",                          // 43
+            "    ((x) * 2)",                                // 44  a macro body
+            "    return a +",                               // 45  yes
+            "        b;",                                   // 46  the second line of a statement
+            "}",                                            // 47  yes
+            "technique T { pass P {",                       // 48
+            "    PixelShader = compile ps_3_0 PS(); } }",   // 49
+        ];
+
+        Vkd3dSourceLocator.StatementStartLines(source)
+            .ShouldBe([14, 17, 20, 24, 25, 26, 30, 32, 33, 35, 39, 42, 45, 47]);
+    }
+
+    [Fact]
+    public void BuildLineTable_AgreesWithResolveLineDirectives_OnEveryLine()
+    {
+        string text = Join(
+            "// prelude", "#define FNA 1", "#line 1 \"C:/dir/user.fx\"", "a", "#line 1 \"inc.fxh\"", "b", "c",
+            "#line 3 \"C:/dir/user.fx\"", "d", "  #  line 40", "e");
+        const string given = @"C:\dir\user.fx";
+
+        (string File, int Line)[] table = Vkd3dSourceLocator.BuildLineTable(text, given);
+
+        table.Length.ShouldBe(12);
+        for (int p = 1; p < table.Length; p++)
+            table[p].ShouldBe(Vkd3dSourceLocator.ResolveLineDirectives(text, p, given), $"physical line {p}");
+        table[4].ShouldBe((given, 1), "a slash-only difference keeps the spelling the compiler was given");
+        table[6].ShouldBe(("inc.fxh", 1));
+        table[11].ShouldBe((given, 40));
     }
 
     [Fact]

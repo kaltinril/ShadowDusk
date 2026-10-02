@@ -41,7 +41,15 @@ namespace ShadowDusk.HLSL.Vkd3d;
 /// <c>R(s) &lt;= L &lt; R(s+1)</c> recovers the physical line; the un-blanked text's
 /// <c>#line</c> directives then give the author's file and line. A parse-abort probe costs
 /// about a hundredth of the failing compile, and probes run only when a located diagnostic
-/// exists.</para>
+/// exists. Every probe also ends with <see cref="Terminator"/>, so it stops at the parse even
+/// when its sentinel sits where vkd3d never sees it (a skipped <c>#if</c> arm, a block
+/// comment); without that such a probe is the whole failing compile over again.</para>
+///
+/// <para><b>The raw text.</b> A failing compile can say thousands of located lines, all
+/// printed under the summary, and each needs the same relocation. Those are not bisected one
+/// by one: a single compile carrying a statement marker on every statement start
+/// (<see cref="MarkerFor"/>) measures the whole file at once, and the bisection only runs
+/// inside the few brackets the markers leave open.</para>
 ///
 /// <para><b>Columns.</b> vkd3d reports the column in its OWN re-spaced token stream (every
 /// token separated by one space, indentation dropped: <c>int x=;</c> and
@@ -93,10 +101,43 @@ internal static partial class Vkd3dSourceLocator
 
     /// <summary>
     /// Extra probe allowance for relocating the located lines of the raw diagnostic blob
-    /// (<see cref="RelocateRawDiagnostics"/>), on top of <see cref="MaxProbes"/>. Lines the
-    /// allowance cannot reach keep vkd3d's coordinates.
+    /// (<see cref="RelocateRawDiagnostics"/>), on top of what the summary spent. The marker
+    /// compiles count against it. When it runs out before every line is placed, the whole
+    /// blob keeps vkd3d's coordinates: a block mixing the two would be worse than either.
     /// </summary>
-    internal const int MaxRawProbes = 128;
+    internal const int MaxRawProbes = 64;
+
+    /// <summary>
+    /// Appended as the last line of EVERY probe. A probe must end at the parse, about a
+    /// hundredth of a real compile; without this, a sentinel that is swallowed (planted in a
+    /// skipped <c>#if</c> arm or a block comment, where vkd3d never sees it) lets the probe
+    /// run the WHOLE failing compile again. Measured on the reporter's Apos.Shapes file: one
+    /// such probe, in the <c>#if VULKAN</c> arm, cost as much as the compile itself and
+    /// doubled the time to the error. An unbalanced <c>)</c> is a syntax error wherever the
+    /// source ends, and deliberately NOT the sentinel's token: a probe that ends here must
+    /// still read as "the sentinel did not fire".
+    /// </summary>
+    internal const string Terminator = ")";
+
+    /// <summary>How many marker compiles one relocation may spend (each drops one misplaced marker).</summary>
+    internal const int MaxMarkerCompiles = 4;
+
+    private const string MarkerPrefix = "__shadowdusk_line_";
+
+    /// <summary>
+    /// The statement marker for physical line <paramref name="line"/>: an empty <c>if</c>
+    /// carrying an attribute vkd3d does not know. vkd3d answers with a non-fatal located
+    /// warning that quotes the attribute's name (<c>W5302: Unrecognized attribute '…'</c>)
+    /// and parses on, so one compile can carry one marker per statement. It is prefixed to
+    /// the line, never inserted as a line of its own, so it moves no line number; and the
+    /// warning's line is the line vkd3d would report for a diagnostic at the start of that
+    /// physical line, exactly what a sentinel planted before it reports.
+    /// </summary>
+    internal static string MarkerFor(int line) =>
+        string.Create(System.Globalization.CultureInfo.InvariantCulture, $"[{MarkerPrefix}{line}__] if(0){{}} ");
+
+    [GeneratedRegex(MarkerPrefix + @"(?<s>\d+)__", RegexOptions.Compiled | RegexOptions.CultureInvariant)]
+    private static partial Regex MarkerName();
 
     // vkd3d's own diagnostic line: "<file>:<line>:<col>: <code>: <message>". The file part
     // can carry a drive letter, so it anchors on the first ":<digits>:<digits>:".
@@ -174,30 +215,18 @@ internal static partial class Vkd3dSourceLocator
     private static ShaderError RelocateCore(
         ProbeSession session, ShaderError d, string originalSource, string sourceFileName)
     {
-        ShaderError? relocated = RelocateLocation(session, d, originalSource, sourceFileName, narrowFromMemo: false);
-        if (relocated is null)
+        int? physical = session.LocatePhysicalLine(d);
+        if (physical is not { } physicalLine)
             return d;   // budget exhausted or nothing fired: honest raw coordinates beat a guess
+
+        (string file, int line) = ResolveLineDirectives(originalSource, physicalLine, sourceFileName);
+        int column = RemapColumn(session.LineText(physicalLine), d.Column);
+        var relocated = d with { File = file, Line = line, Column = column };
 
         return relocated with
         {
             RawDiagnostics = RelocateRawDiagnostics(session, d, relocated, originalSource, sourceFileName),
         };
-    }
-
-    /// <summary>
-    /// The diagnostic with its file, line, and column moved onto the author's source, or
-    /// <see langword="null"/> when the search did not converge.
-    /// </summary>
-    private static ShaderError? RelocateLocation(
-        ProbeSession session, ShaderError d, string originalSource, string sourceFileName, bool narrowFromMemo)
-    {
-        int? physical = session.LocatePhysicalLine(d, narrowFromMemo);
-        if (physical is not { } physicalLine)
-            return null;
-
-        (string file, int line) = ResolveLineDirectives(originalSource, physicalLine, sourceFileName);
-        int column = RemapColumn(session.LineText(physicalLine), d.Column);
-        return d with { File = file, Line = line, Column = column };
     }
 
     /// <summary>
@@ -208,8 +237,20 @@ internal static partial class Vkd3dSourceLocator
     /// vkd3d said more than one line, so without this they still showed vkd3d's coordinates:
     /// on the reporter's Apos.Shapes file the summary said line 983 and the block under it
     /// said 1115 for the same diagnostic, with later lines up to 3804 in a 3235-line file,
-    /// which is the symptom issue #202 reported. Lines naming another file, lines that do not
-    /// parse, and lines the search cannot place stay exactly as vkd3d wrote them.
+    /// which is the symptom issue #202 reported.
+    /// <para>
+    /// All or nothing: when even one line naming the compiled source cannot be placed, the
+    /// blob is returned exactly as vkd3d wrote it. Lines naming another file and lines that
+    /// carry no location are never touched.
+    /// </para>
+    /// <para>
+    /// Cost. The blob can hold thousands of lines (4 165 on the reporter's file, 934
+    /// distinct locations), so it cannot afford a bisection each. One marker compile
+    /// (<see cref="ProbeSession.MeasureStatementStarts"/>) measures every statement start at
+    /// once; a line between two measurements is then inferred from them, and only a line
+    /// they cannot pin (a later line of a multi-line statement that calls a template
+    /// intrinsic, code outside a function body) is bisected, inside that small bracket.
+    /// </para>
     /// </summary>
     private static string? RelocateRawDiagnostics(
         ProbeSession session, ShaderError original, ShaderError relocated, string originalSource, string sourceFileName)
@@ -218,16 +259,14 @@ internal static partial class Vkd3dSourceLocator
         if (string.IsNullOrEmpty(raw))
             return raw;
 
-        // The raw blob gets its own allowance on top of the summary's: it can carry hundreds
-        // of located lines, most of which are answered from the probes already memoised.
-        session.ExtendBudget(MaxRawProbes);
-
-        var placed = new Dictionary<(int Line, int Column), (string File, int Line, int Column)?>
+        var placed = new Dictionary<(int Line, int Column), (string File, int Line, int Column)>
         {
             [(original.Line, original.Column)] = (relocated.File, relocated.Line, relocated.Column),
         };
-        bool changed = false;
+        (string File, int Line)[]? lineTable = null;
+
         string[] lines = raw.Split('\n');
+        var rewritten = new string?[lines.Length];
         for (int i = 0; i < lines.Length; i++)
         {
             string text = lines[i];
@@ -244,22 +283,72 @@ internal static partial class Vkd3dSourceLocator
 
             if (!placed.TryGetValue((reportedLine, reportedColumn), out var target))
             {
+                if (lineTable is null)
+                {
+                    // The first line that is not the summary's own: only now is there work
+                    // to pay for. An author's own '@' makes a fired sentinel ambiguous, so
+                    // that one case keeps to plain bisection.
+                    session.ExtendBudget(MaxRawProbes);
+                    if (!ProbeSession.IsSentinelShaped(original))
+                        session.MeasureStatementStarts();
+                    lineTable = BuildLineTable(originalSource, sourceFileName);
+                }
+
                 var located = new ShaderError(sourceFileName, reportedLine, reportedColumn, string.Empty, rest);
-                ShaderError? moved = RelocateLocation(session, located, originalSource, sourceFileName, narrowFromMemo: true);
-                target = moved is null ? null : (moved.File, moved.Line, moved.Column);
+                int? physical = session.LocatePhysicalLine(
+                    located, useMeasurements: !ProbeSession.IsSentinelShaped(original));
+                if (physical is not { } p || p >= lineTable.Length)
+                    return raw;
+
+                target = (lineTable[p].File, lineTable[p].Line, RemapColumn(session.LineText(p), reportedColumn));
                 placed[(reportedLine, reportedColumn)] = target;
             }
 
-            if (target is not { } t)
-                continue;
-
-            string rewritten = string.Create(
-                System.Globalization.CultureInfo.InvariantCulture, $"{t.File}:{t.Line}:{t.Column}:{rest}");
-            lines[i] = cr ? rewritten + "\r" : rewritten;
-            changed = true;
+            string moved = string.Create(
+                System.Globalization.CultureInfo.InvariantCulture, $"{target.File}:{target.Line}:{target.Column}:{rest}");
+            rewritten[i] = cr ? moved + "\r" : moved;
         }
 
-        return changed ? string.Join('\n', lines) : raw;
+        for (int i = 0; i < lines.Length; i++)
+            lines[i] = rewritten[i] ?? lines[i];
+        return string.Join('\n', lines);
+    }
+
+    /// <summary>
+    /// <see cref="ResolveLineDirectives"/> for every physical line at once: entry <i>p</i> is
+    /// the author's (file, line) of physical line <i>p</i> (entry 0 is unused). The raw blob
+    /// resolves hundreds of lines, and replaying the directives from the top for each one is
+    /// quadratic.
+    /// </summary>
+    internal static (string File, int Line)[] BuildLineTable(string text, string defaultFile)
+    {
+        string[] lines = text.Split('\n');
+        var table = new (string File, int Line)[lines.Length + 1];
+        string file = defaultFile;
+        int line = 1;
+        for (int p = 1; p <= lines.Length; p++)
+        {
+            table[p] = (file, line);
+            Match m = LineDirective().Match(lines[p - 1]);
+            if (m.Success)
+            {
+                line = int.Parse(m.Groups["n"].Value, System.Globalization.CultureInfo.InvariantCulture);
+                if (m.Groups["f"].Success && m.Groups["f"].Value.Length > 0)
+                {
+                    // Same rule as ResolveLineDirectives: a slash-only difference from the
+                    // name the compiler was given collapses back onto that spelling.
+                    string named = m.Groups["f"].Value;
+                    file = string.Equals(named.Replace('\\', '/'), defaultFile.Replace('\\', '/'), StringComparison.OrdinalIgnoreCase)
+                        ? defaultFile
+                        : named;
+                }
+            }
+            else
+            {
+                line++;
+            }
+        }
+        return table;
     }
 
     // -------------------------------------------------------------------------
@@ -438,6 +527,11 @@ internal static partial class Vkd3dSourceLocator
         private readonly Func<string, ShaderError?> _probe;
         private readonly CancellationToken _cancellationToken;
         private readonly Dictionary<int, ShaderError?> _memo = new();
+        private readonly Dictionary<int, int> _marked = new();     // physical line -> the line vkd3d reports for its start
+        private int[] _markedLines = [];                           // the same, sorted by physical line
+        private int[] _markedReported = [];
+        private int[]? _irregularBefore;
+        private bool _markersTried;
         private int _probes;
         private int _budget = MaxProbes;
 
@@ -451,41 +545,77 @@ internal static partial class Vkd3dSourceLocator
         public string LineText(int physicalLine) =>
             physicalLine >= 1 && physicalLine <= _lines.Length ? _lines[physicalLine - 1].TrimEnd('\r') : string.Empty;
 
+        // ---------------------------------------------------------------------
+        // What is already measured, and what follows from it without a probe
+        // ---------------------------------------------------------------------
+
         /// <summary>
-        /// The physical (flattened-text) line the diagnostic sits on, or <see langword="null"/>
-        /// when the probe budget ran out before the search converged.
+        /// The line vkd3d reports for the START of physical line <paramref name="line"/>, when a
+        /// statement marker or a sentinel that fired there has already measured it.
         /// </summary>
-        /// <summary>
-        /// Answers without probing when the bracket's two ends already fired with the SAME
-        /// drift (<c>R(lo) - lo == R(hi+1) - (hi+1)</c>) over a stretch with no directive, no
-        /// block comment, and no continuation. Inside such a stretch nothing can lower vkd3d's
-        /// count (only skipped arms and collapsed comments do) and only template intrinsics
-        /// raise it, so equal drift at both ends means constant drift between them, and the
-        /// diagnostic reported at <paramref name="reportedLine"/> sits on
-        /// <c>reportedLine - drift</c>: the line the bisection would converge on, without the
-        /// probes. The raw-blob pass leans on this: hundreds of lines, most in long stretches
-        /// the summary's own search already bracketed.
-        /// </summary>
-        private int? TryInferFromConstantDrift(int lo, int hi, int reportedLine)
+        private bool TryKnownReported(int line, out int reported)
         {
-            if (!_memo.TryGetValue(lo, out ShaderError? low) || low is null || !IsSentinelShaped(low)
-                || !_memo.TryGetValue(hi + 1, out ShaderError? high) || high is null || !IsSentinelShaped(high))
-                return null;
-
-            int drift = low.Line - lo;
-            if (high.Line - (hi + 1) != drift)
-                return null;
-
-            int answer = reportedLine - drift;
-            if (answer < lo || answer > hi)
-                return null;
-
-            for (int line = lo; line <= hi; line++)
+            if (_marked.TryGetValue(line, out reported))
+                return true;
+            if (_memo.TryGetValue(line, out ShaderError? fired) && fired is not null && IsSentinelShaped(fired))
             {
-                string text = _lines[line - 1].TrimEnd('\r');
-                if (text.TrimStart().StartsWith('#') || text.EndsWith('\\')
-                    || text.Contains("/*", StringComparison.Ordinal) || text.Contains("*/", StringComparison.Ordinal))
-                    return null;
+                reported = fired.Line;
+                return true;
+            }
+            reported = 0;
+            return false;
+        }
+
+        /// <summary>
+        /// True when no line in <c>[lo, hi]</c> can LOWER vkd3d's count: no directive (a
+        /// skipped arm), no block-comment delimiter (a collapsed interior), no continuation.
+        /// Inside such a stretch the drift only ever grows, at template-intrinsic call sites.
+        /// </summary>
+        private bool IsCountPreserving(int lo, int hi)
+        {
+            if (_irregularBefore is null)
+            {
+                var prefix = new int[_lines.Length + 1];
+                for (int i = 0; i < _lines.Length; i++)
+                {
+                    string text = _lines[i].TrimEnd('\r');
+                    bool irregular = text.TrimStart().StartsWith('#') || text.EndsWith('\\')
+                        || text.Contains("/*", StringComparison.Ordinal) || text.Contains("*/", StringComparison.Ordinal);
+                    prefix[i + 1] = prefix[i] + (irregular ? 1 : 0);
+                }
+                _irregularBefore = prefix;
+            }
+            return _irregularBefore[hi] - _irregularBefore[lo - 1] == 0;
+        }
+
+        /// <summary>
+        /// Answers without probing when the bracket's two ends are measured and the stretch
+        /// between them preserves vkd3d's count. A diagnostic on line <i>s</i> of the bracket
+        /// was lexed with a drift between the drift at the bracket's start and the drift at
+        /// its end, so <c>reported - driftAtEnd &lt;= s &lt;= reported - driftAtStart</c>; and a
+        /// diagnostic always sits on a token, so a blank or comment-only line cannot be it. When
+        /// exactly one line of the bracket qualifies, that is the line the bisection would
+        /// converge on. Equal drift at both ends (no template call in between) is the common
+        /// case and leaves one line by construction.
+        /// </summary>
+        private int? TryInferFromBracket(int lo, int hi, int reportedLine)
+        {
+            if (!TryKnownReported(lo, out int reportedLo) || !TryKnownReported(hi + 1, out int reportedEnd))
+                return null;
+
+            int driftLo = reportedLo - lo;
+            int driftEnd = reportedEnd - (hi + 1);
+            if (driftEnd < driftLo || !IsCountPreserving(lo, hi))
+                return null;
+
+            int? answer = null;
+            for (int s = Math.Max(lo, reportedLine - driftEnd); s <= Math.Min(hi, reportedLine - driftLo); s++)
+            {
+                if (!Tokenize(LineText(s)).Any())
+                    continue;
+                if (answer is not null)
+                    return null;    // two lines qualify: only a probe can tell them apart
+                answer = s;
             }
             return answer;
         }
@@ -493,18 +623,29 @@ internal static partial class Vkd3dSourceLocator
         /// <summary>Allows <paramref name="probes"/> more probes beyond those already spent.</summary>
         public void ExtendBudget(int probes) => _budget = Math.Max(_budget, _probes + probes);
 
-        public int? LocatePhysicalLine(ShaderError d, bool narrowFromMemo = false)
+        /// <summary>
+        /// The physical (flattened-text) line the diagnostic sits on, or <see langword="null"/>
+        /// when the probe budget ran out before the search converged.
+        /// </summary>
+        /// <param name="d">The diagnostic, in vkd3d's coordinates.</param>
+        /// <param name="useMeasurements">Start from the tightest bracket the measurements
+        /// already taken give, and infer the line from it where that is exact.</param>
+        public int? LocatePhysicalLine(ShaderError d, bool useMeasurements = false)
         {
             int lo = 1;
             int hi = _lines.Length;
             bool anchored = false;      // lo was established by a sentinel that actually fired
             bool originalIsSentinelShaped = IsSentinelShaped(d);
+            bool narrowFromMemo = useMeasurements && !originalIsSentinelShaped;
 
-            // Start from the tightest bracket the probes already run give: a sentinel that
-            // fired at or before the diagnostic raises lo, one that fired after it lowers hi.
+            // A measurement at or before the diagnostic raises lo, one after it lowers hi.
             // These are the verdicts the bisection would reach itself, without paying again.
-            if (narrowFromMemo && !originalIsSentinelShaped)
+            if (narrowFromMemo)
             {
+                int after = UpperBound(_markedReported, d.Line);    // first marker reporting past the diagnostic
+                if (after > 0) { lo = _markedLines[after - 1]; anchored = true; }
+                if (after < _markedLines.Length) hi = _markedLines[after] - 1;
+
                 foreach ((int s, ShaderError? r) in _memo)
                 {
                     if (r is null || !IsSentinelShaped(r))
@@ -519,12 +660,12 @@ internal static partial class Vkd3dSourceLocator
                     }
                 }
                 if (lo > hi)
-                    return null;    // the probes disagree with each other: leave it as reported
+                    return null;    // the measurements disagree with each other: leave it as reported
             }
 
             while (lo < hi)
             {
-                if (narrowFromMemo && !originalIsSentinelShaped && TryInferFromConstantDrift(lo, hi, d.Line) is { } inferred)
+                if (narrowFromMemo && TryInferFromBracket(lo, hi, d.Line) is { } inferred)
                     return inferred;
 
                 int mid = lo + (hi - lo + 1) / 2;
@@ -599,7 +740,7 @@ internal static partial class Vkd3dSourceLocator
             return from < hi ? hi : -1;
         }
 
-        private static bool IsSentinelShaped(ShaderError e) =>
+        public static bool IsSentinelShaped(ShaderError e) =>
             e.Message.Contains(SentinelMessage, StringComparison.Ordinal)
             || e.Message.Contains(SentinelMessageLegacyBison, StringComparison.Ordinal);
 
@@ -633,7 +774,7 @@ internal static partial class Vkd3dSourceLocator
 
         private string WithSentinelBefore(int line)
         {
-            var sb = new StringBuilder(_lines.Sum(l => l.Length + 1) + Sentinel.Length + 1);
+            var sb = new StringBuilder(_lines.Sum(l => l.Length + 1) + Sentinel.Length + Terminator.Length + 2);
             for (int i = 0; i < _lines.Length; i++)
             {
                 if (i == line - 1)
@@ -642,7 +783,312 @@ internal static partial class Vkd3dSourceLocator
                 if (i < _lines.Length - 1)
                     sb.Append('\n');
             }
-            return sb.ToString();
+            return sb.Append('\n').Append(Terminator).ToString();
         }
+
+        // ---------------------------------------------------------------------
+        // Statement markers: many measurements from one parse
+        // ---------------------------------------------------------------------
+
+        /// <summary>
+        /// Measures the reported line of every statement start in ONE parse-abort compile, by
+        /// prefixing each such line with <see cref="MarkerFor"/>: vkd3d answers each marker
+        /// with a non-fatal located warning that names it, and the <see cref="Terminator"/>
+        /// ends the compile once the parse is through. A bisection pays one compile per
+        /// halving per diagnostic; this pays one compile for the whole file, which is what
+        /// makes a raw block of thousands of lines affordable.
+        /// <para>
+        /// Where a statement starts is decided by <see cref="StatementStartLines"/>, a
+        /// heuristic. It cannot produce a wrong measurement, only a missing one: a marker that
+        /// is not legal where it was put is a syntax error, the parse stops there, and the
+        /// first marker that did not answer is dropped before the next attempt (at most
+        /// <see cref="MaxMarkerCompiles"/>). Lines left unmeasured fall back to the bisection.
+        /// </para>
+        /// </summary>
+        public void MeasureStatementStarts()
+        {
+            if (_markersTried)
+                return;
+            _markersTried = true;
+
+            List<int> candidates = StatementStartLines(_lines);
+            for (int attempt = 0; attempt < MaxMarkerCompiles && candidates.Count > 0 && _probes < _budget; attempt++)
+            {
+                _cancellationToken.ThrowIfCancellationRequested();
+                _probes++;
+                string? answer = _probe(WithMarkers(candidates))?.RawDiagnostics;
+                if (string.IsNullOrEmpty(answer))
+                    break;
+
+                foreach (string answerLine in answer.Split('\n'))
+                {
+                    Match located = RawLocatedLine().Match(answerLine);
+                    if (!located.Success)
+                        continue;
+                    Match marker = MarkerName().Match(located.Groups["rest"].Value);
+                    if (marker.Success)
+                    {
+                        _marked[int.Parse(marker.Groups["s"].Value, System.Globalization.CultureInfo.InvariantCulture)] =
+                            int.Parse(located.Groups["line"].Value, System.Globalization.CultureInfo.InvariantCulture);
+                    }
+                }
+
+                // Every candidate sits in unconditional code, so each one answers unless the
+                // parse stopped first: the first silent one is where it stopped.
+                int silent = candidates.FindIndex(c => !_marked.ContainsKey(c));
+                if (silent < 0)
+                    break;
+                candidates.RemoveRange(0, silent + 1);
+            }
+
+            // vkd3d's count never runs backwards. Measurements that say it did are not
+            // measurements of what this code believes they are: use none of them.
+            int[] lines = _marked.Keys.Order().ToArray();
+            int[] reported = Array.ConvertAll(lines, l => _marked[l]);
+            for (int i = 1; i < reported.Length; i++)
+            {
+                if (reported[i] < reported[i - 1])
+                {
+                    _marked.Clear();
+                    return;
+                }
+            }
+            _markedLines = lines;
+            _markedReported = reported;
+        }
+
+        private string WithMarkers(List<int> markedLines)
+        {
+            var sb = new StringBuilder(_lines.Sum(l => l.Length + 1) + markedLines.Count * 48 + Terminator.Length + 1);
+            int next = 0;
+            for (int i = 0; i < _lines.Length; i++)
+            {
+                if (next < markedLines.Count && markedLines[next] == i + 1)
+                {
+                    sb.Append(MarkerFor(i + 1));
+                    next++;
+                }
+                sb.Append(_lines[i]);
+                if (i < _lines.Length - 1)
+                    sb.Append('\n');
+            }
+            return sb.Append('\n').Append(Terminator).ToString();
+        }
+
+        /// <summary>The index of the first element greater than <paramref name="value"/> in an ascending array.</summary>
+        private static int UpperBound(int[] ascending, int value)
+        {
+            int lo = 0;
+            int hi = ascending.Length;
+            while (lo < hi)
+            {
+                int mid = lo + (hi - lo) / 2;
+                if (ascending[mid] <= value) lo = mid + 1;
+                else hi = mid;
+            }
+            return lo;
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Where a statement marker may go
+    // -------------------------------------------------------------------------
+
+    private enum Scope
+    {
+        /// <summary>A function body.</summary>
+        Function,
+        /// <summary>A compound statement inside a function body.</summary>
+        Block,
+        /// <summary>The body of a <c>do</c>: the <c>while</c> that follows it is not a statement start.</summary>
+        DoBody,
+        /// <summary>Anything a statement cannot appear in: a struct, a buffer, a technique, an initializer list.</summary>
+        Other,
+    }
+
+    private static readonly HashSet<string> NonFunctionHeaders = new(StringComparer.Ordinal)
+    {
+        "struct", "class", "interface", "namespace", "typedef",
+        "cbuffer", "tbuffer", "technique", "technique10", "technique11", "pass",
+    };
+
+    /// <summary>
+    /// The 1-based lines whose first token starts a statement inside a function body: the
+    /// places <see cref="MarkerFor"/> can be prefixed. A deliberately conservative reading of
+    /// the source, not a parser: a line qualifies only when the code before it ended a
+    /// statement or opened or closed a block (<c>;</c>, <c>{</c>, <c>}</c>) inside a function,
+    /// outside every parenthesis, outside every <c>#if</c> arm (a marker in a skipped arm
+    /// would never answer), and not where the next token continues the previous statement
+    /// (<c>else</c>, <c>case</c>, <c>default</c>, the <c>while</c> of a <c>do</c>). A shape
+    /// this misreads costs one extra compile, never a wrong line; see
+    /// <see cref="ProbeSession.MeasureStatementStarts"/>.
+    /// </summary>
+    internal static List<int> StatementStartLines(IReadOnlyList<string> lines)
+    {
+        var result = new List<int>();
+        var scopes = new Stack<Scope>();
+        Scope lastClosed = Scope.Other;
+        bool inBlockComment = false;
+        bool directiveContinues = false;
+        bool previousLineSpliced = false;
+        int conditionalDepth = 0;
+        int parenDepth = 0;
+        string previous = string.Empty;         // the last code token before the current one
+        string headerFirst = string.Empty;      // the first token of the top-level declaration in progress
+        bool headerHasParen = false;
+        bool headerHasAssign = false;
+
+        for (int i = 0; i < lines.Count; i++)
+        {
+            string line = lines[i].TrimEnd('\r');
+            bool spliced = previousLineSpliced;
+            previousLineSpliced = line.EndsWith('\\');
+
+            if (directiveContinues)
+            {
+                directiveContinues = previousLineSpliced;
+                continue;
+            }
+
+            if (!inBlockComment && line.AsSpan().TrimStart().StartsWith("#"))
+            {
+                ReadOnlySpan<char> name = line.AsSpan().TrimStart()[1..].TrimStart();
+                if (name.StartsWith("if"))
+                    conditionalDepth++;
+                else if (name.StartsWith("endif") && conditionalDepth > 0)
+                    conditionalDepth--;
+                directiveContinues = previousLineSpliced;
+                continue;
+            }
+
+            bool startedInComment = inBlockComment;
+            bool first = true;
+            foreach ((int start, int length) in TokenizeCode(line, ref inBlockComment))
+            {
+                string token = line.Substring(start, length);
+                if (first)
+                {
+                    first = false;
+                    bool continuesPrevious = token is "else" or "case" or "default"
+                        || (previous == "}" && (lastClosed == Scope.Other || (lastClosed == Scope.DoBody && token == "while")));
+                    if (!startedInComment && !spliced && conditionalDepth == 0 && parenDepth == 0
+                        && scopes.Count > 0 && scopes.Peek() != Scope.Other
+                        && previous is ";" or "{" or "}" && !continuesPrevious)
+                    {
+                        result.Add(i + 1);
+                    }
+                }
+
+                if (scopes.Count == 0 && headerFirst.Length == 0)
+                    headerFirst = token;
+
+                switch (token)
+                {
+                    case "(":
+                        parenDepth++;
+                        headerHasParen |= scopes.Count == 0;
+                        break;
+                    case ")":
+                        if (parenDepth > 0) parenDepth--;
+                        break;
+                    case "=":
+                        headerHasAssign |= scopes.Count == 0;
+                        break;
+                    case "{":
+                        Scope scope;
+                        if (scopes.Count == 0)
+                        {
+                            scope = headerHasParen && !headerHasAssign && parenDepth == 0 && !NonFunctionHeaders.Contains(headerFirst)
+                                ? Scope.Function
+                                : Scope.Other;
+                        }
+                        else if (scopes.Peek() == Scope.Other || parenDepth != 0)
+                        {
+                            scope = Scope.Other;
+                        }
+                        else
+                        {
+                            scope = previous switch
+                            {
+                                "do" => Scope.DoBody,
+                                ")" or "else" or ";" or "{" or "}" or ":" => Scope.Block,
+                                _ => Scope.Other,       // '= {', ', {': an initializer list
+                            };
+                        }
+                        scopes.Push(scope);
+                        break;
+                    case "}":
+                        if (scopes.Count > 0)
+                            lastClosed = scopes.Pop();
+                        if (scopes.Count == 0)
+                        {
+                            headerFirst = string.Empty;
+                            headerHasParen = headerHasAssign = false;
+                            parenDepth = 0;
+                        }
+                        break;
+                    case ";":
+                        if (scopes.Count == 0)
+                        {
+                            headerFirst = string.Empty;
+                            headerHasParen = headerHasAssign = false;
+                            parenDepth = 0;
+                        }
+                        break;
+                }
+                previous = token;
+            }
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// <see cref="Tokenize"/> for one line of a multi-line text: skips what is still inside a
+    /// block comment opened on an earlier line, and reports whether this line leaves one open.
+    /// </summary>
+    internal static List<(int Start, int Length)> TokenizeCode(string line, ref bool inBlockComment)
+    {
+        var tokens = new List<(int Start, int Length)>();
+        int from = 0;
+        if (inBlockComment)
+        {
+            int close = line.IndexOf("*/", StringComparison.Ordinal);
+            if (close < 0)
+                return tokens;
+            from = close + 2;
+            inBlockComment = false;
+        }
+
+        string rest = from == 0 ? line : line[from..];
+        foreach ((int start, int length) in Tokenize(rest))
+            tokens.Add((start + from, length));
+
+        // Tokenize drops everything after a '/*' that does not close on the line; find out
+        // whether that happened (outside a string, outside a '//' comment).
+        for (int i = 0; i < rest.Length; i++)
+        {
+            char c = rest[i];
+            if (c == '"')
+            {
+                i++;
+                while (i < rest.Length && rest[i] != '"')
+                    i += rest[i] == '\\' ? 2 : 1;
+            }
+            else if (c == '/' && i + 1 < rest.Length && rest[i + 1] == '/')
+            {
+                break;
+            }
+            else if (c == '/' && i + 1 < rest.Length && rest[i + 1] == '*')
+            {
+                int close = rest.IndexOf("*/", i + 2, StringComparison.Ordinal);
+                if (close < 0)
+                {
+                    inBlockComment = true;
+                    break;
+                }
+                i = close + 1;
+            }
+        }
+        return tokens;
     }
 }

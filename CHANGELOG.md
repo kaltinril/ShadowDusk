@@ -188,13 +188,23 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   said line 983 while the block under it said 1115 for the same diagnostic, and later lines in
   the block went up to 3804 in a 3235-line file: the symptom the issue reported. Each
   `file:line:col:` prefix in that block is now relocated the same way as the summary; vkd3d's
-  code and message text after the prefix are unchanged, and a line that names another file or
-  cannot be placed stays as vkd3d wrote it. Cost is bounded: lines inside a stretch whose drift
-  is already measured as constant are inferred without new probes, and the block gets at most
-  128 extra probes (all 934 distinct locations in the reporter's 4 165-line block were placed
-  within that). No emitted byte moves: the relocation only runs on vkd3d's diagnostics, never
-  on the source a real compile receives. `ShaderError.RawDiagnostics` for vkd3d therefore
-  carries relocated prefixes.
+  code and message text after the prefix are unchanged, and a line that names another file
+  stays as vkd3d wrote it. It is all or nothing: if any line cannot be placed the block is left
+  exactly as vkd3d wrote it, never a mix of the two numberings. The block is not bisected line
+  by line. One extra parse-only compile carries a marker on every statement start (an empty
+  `if` with an attribute vkd3d does not know, which it answers with a located warning that
+  names it), so one compile measures the whole file, and only the few lines the markers cannot
+  pin are bisected. Every probe now also ends with a terminator line, so a probe whose sentinel
+  landed in a skipped `#if` arm stops at the parse instead of running the whole failing compile
+  again. **Measured on the reporter's file** (`tests/fixtures/issues/202/apos-shapes.fx`,
+  `--target-runtime fna`, Release CLI, one Windows desktop, four runs each): 4.9 to 5.3 s
+  before this change (38 of the 4 165 raw lines past the end of the file), 5.1 to 6.1 s after
+  (none), which is 9 more vkd3d calls of a few milliseconds each (22 against 13). A first cut
+  that bisected each of the 934 distinct locations took about twice as long, almost all of it
+  one probe swallowed by the file's `#if VULKAN` arm; `FnaDiagnosticLocationTests` now pins the
+  call count so that cannot come back unnoticed. No emitted byte moves: the relocation only
+  runs on vkd3d's diagnostics, never on the source a real compile receives.
+  `ShaderError.RawDiagnostics` for vkd3d therefore carries relocated prefixes.
 
 - **Stale lock files outside the solution (issues #291, #290).** PR #279's `Vortice.Dxc` `[3.3.4]`
   pin missed the lock files of `Vkd3dCorpusProbe` (which turned Browser render smoke red on main),

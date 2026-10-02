@@ -233,6 +233,61 @@ public sealed class Vkd3dShaderCompilerTests
     }
 
     [Vkd3dFact]
+    public void Compile_TheTerminator_EndsTheParseAndIsNotTheSentinel_OnThisHost_Issue202()
+    {
+        // Every probe ends with the terminator, so a probe whose sentinel was swallowed (a
+        // skipped #if arm, a block comment) still stops at the parse instead of running the
+        // whole failing compile again. It must be a syntax error on a source that is
+        // otherwise complete, and must not read as the sentinel.
+        var result = CompileIssue202(
+            Issue202Prelude + Issue202User("    b += a;") + Vkd3dSourceLocator.Terminator);
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Code.ShouldBe("E5000");
+        result.Error.Message.ShouldStartWith("syntax error", Case.Sensitive);
+        result.Error.Message.ShouldNotContain(Vkd3dSourceLocator.SentinelMessage, Case.Sensitive);
+        result.Error.Message.ShouldNotContain(Vkd3dSourceLocator.SentinelMessageLegacyBison, Case.Sensitive);
+        result.Error.Line.ShouldBe(16, customMessage: "the terminator's own line, one past the 15-line file");
+    }
+
+    [Vkd3dFact]
+    public void Compile_SeveralDiagnostics_TheRawTextMovesToo_ForOneMoreCompile_Issue202()
+    {
+        // Two runtime-indexed stores, both reported by vkd3d, with a template call between
+        // them. The raw text printed under the summary must name the author's lines for
+        // both, and the second must come from the ONE statement-marker compile (real vkd3d
+        // answering every marker with a located warning that names it), not from a
+        // bisection of its own.
+        static D3DCompileRequest Request(string line13) => new()
+        {
+            HlslSource      = Issue202Prelude + Issue202User(line13),
+            SourceFileName  = "user.fx",
+            EntryPoint      = "PS",
+            Stage           = ShaderStage.Pixel,
+            ProfileOverride = "ps_3_0",
+        };
+
+        int oneDiagnosticCalls = 0;
+        Vkd3dShaderCompiler.CompileCore(
+            Request("    float3 v = uv.xyy; v[i] = a;\n    b = asin(saturate(v.x));\n    b += v.y;"),
+            CancellationToken.None, () => oneDiagnosticCalls++).IsFailure.ShouldBeTrue();
+
+        int twoDiagnosticCalls = 0;
+        var result = Vkd3dShaderCompiler.CompileCore(
+            Request("    float3 v = uv.xyy; v[i] = a;\n    b = asin(saturate(v.x));\n    v[i] = b; b += v.y;"),
+            CancellationToken.None, () => twoDiagnosticCalls++);
+
+        result.IsFailure.ShouldBeTrue();
+        result.Error.Line.ShouldBe(13);
+        string[] raw = result.Error.RawDiagnostics!.Split('\n');
+        raw.Length.ShouldBe(2);
+        raw[0].ShouldStartWith($"user.fx:13:{result.Error.Column}: E5017: ", Case.Sensitive);
+        raw[1].ShouldStartWith("user.fx:15:", Case.Sensitive);
+        raw[1].ShouldContain(": E5017: Aborting due to not yet implemented feature: Non-constant vector addressing on store", Case.Sensitive);
+        twoDiagnosticCalls.ShouldBe(oneDiagnosticCalls + 1, "the same summary search, plus one marker compile for the rest");
+    }
+
+    [Vkd3dFact]
     public void Compile_Sm5DxbcPath_SharesTheRelocation_Issue202()
     {
         // The same backend serves DirectX 11 (DXBC_TPF at SM5); a vkd3d-only rejection there
