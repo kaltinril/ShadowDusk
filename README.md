@@ -61,6 +61,8 @@ var compiler = new ShadowDusk.Slang.SlangCompiler();
 var result = compiler.Compile(slangSource, new CompilerOptions { Target = PlatformTarget.OpenGL });
 ```
 
+In the browser, where no process can be spawned, the same pinned slangc runs in the page as WebAssembly (`ShadowDusk.Slang.Wasm`, issue #257): it receives the identical command line and its output is measured byte-identical to native slangc's, so a `.slang` file compiles to the same bytes in the browser as on the desktop. That project is proven in CI but is not published as a package yet ([Phase 67](plan/PHASE-67-slang-in-process-wasm.md)).
+
 Same rejection discipline as the built-in subset: a construct real slangc accepts but that has nowhere to land in an `Effect` (a compute/mesh entry point, an SM6-only wave/quad intrinsic on a target that can't represent it) is rejected loudly by name, never silently dropped, and no route through it is `mgfxc`-equivalent either. The optional `ShadowDusk.ShaderToy` package covers a third input, ShaderToy / plain-GLSL fragment shaders.
 
 ## Supported targets

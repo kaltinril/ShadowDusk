@@ -67,6 +67,13 @@ namespace ShadowDusk.Slang;
 /// huge share of the real, non-Slang-authored fixture corpus relies on for per-target
 /// correctness) resolved to the SAME branch on every target, since slangc's own
 /// preprocessor pass never saw them — a silent, target-blind divergence.</para>
+///
+/// <para><b>Two transports, one route (issue #257):</b> on desktop slangc runs as a child
+/// process; where no process can be spawned (the browser), <c>ShadowDusk.Slang.Wasm</c> runs
+/// the same pinned slangc compiled to WebAssembly inside the page. Both receive the identical
+/// argument list (<see cref="SlangcArguments"/>), and everything before and after the slangc
+/// call is this one class, so the two hosts hand DXC byte-identical HLSL (measured over the
+/// whole corpus, every target's macros, success and failure output alike).</para>
 /// </summary>
 /// <remarks>
 /// Deliberately does NOT implement <c>IShaderCompiler</c>: that interface's contract is
@@ -85,6 +92,7 @@ public sealed class SlangCompiler
     private readonly Func<SlangcLocation> _locateSlangc;
     private readonly Func<string, string> _prepareSlangc;
     private readonly SlangcInvoker _runSlangc;
+    private readonly InProcessSlangc? _inProcessSlangc;
 
     /// <summary>
     /// Where (and whether) this host's slangc is: <see cref="UnsupportedReason"/> is
@@ -154,6 +162,32 @@ public sealed class SlangCompiler
     }
 
     /// <summary>
+    /// One slangc run hosted INSIDE this process (issue #257): <paramref name="arguments"/>
+    /// is <see cref="SlangcArguments.Build"/>'s list, to be handed to slang's own command-line
+    /// parser verbatim, and <paramref name="slangSource"/> is what the desktop route pipes to
+    /// slangc's stdin. Returns slangc's exit status and its raw stdout/stderr text;
+    /// <see cref="Compile"/> normalizes the text exactly as the process route does
+    /// (<see cref="SlangcArguments.JoinOutputLines"/>).
+    /// </summary>
+    internal delegate (int ExitCode, string Stdout, string Stderr) InProcessSlangc(
+        string slangSource,
+        IReadOnlyList<string> arguments);
+
+    /// <summary>
+    /// The in-process route (issue #257): slangc runs inside this process instead of as a
+    /// child process, for hosts that cannot spawn one (the browser). Everything around the
+    /// slangc call (the host-independent rejections, the argument list, the register strip,
+    /// the per-entry merge, the <c>.fx</c> assembly, and the downstream pipeline) is the same
+    /// code the desktop route runs; only the transport differs. Internal, and reached only by
+    /// <c>ShadowDusk.Slang.Wasm</c>, so a consumer cannot plug a different compiler in here.
+    /// </summary>
+    internal SlangCompiler(IShaderCompiler downstreamCompiler, InProcessSlangc inProcessSlangc)
+        : this(downstreamCompiler, LocateBundledSlangc)
+    {
+        _inProcessSlangc = inProcessSlangc;
+    }
+
+    /// <summary>
     /// Compiles Slang source into a compiled effect for the target in <paramref name="options"/>.
     /// See the class doc comment for the route. Runs on the calling thread; intended for
     /// synchronous call sites (matching <c>IShaderCompiler.Compile</c>'s contract).
@@ -220,42 +254,16 @@ public sealed class SlangCompiler
             }
         }
 
-        SlangcLocation location = _locateSlangc();
-        if (location.UnsupportedReason is not null)
+        // Issue #257: the in-process route has no executable to find or prepare; everything
+        // from the argument list onward is shared with the process route below.
+        string? runnableSlangc = null;
+        string? toolDirectory = null;
+        if (_inProcessSlangc is null)
         {
-            return Fail(new ShaderError(
-                File: sourceName, Line: 0, Column: 0, Code: "SD0620",
-                Message: location.UnsupportedReason + " ShadowDusk.Compiler's built-in .slang " +
-                         "frontend (the HLSL-compatible subset) works everywhere if the source " +
-                         "does not need genuine Slang-only features (import/generics/interfaces)."));
+            ShaderError? hostError = PrepareProcessSlangc(sourceName, out runnableSlangc, out toolDirectory);
+            if (hostError is not null)
+                return Fail(hostError);
         }
-
-        if (location.SlangcPath is null)
-        {
-            return Fail(new ShaderError(
-                File: sourceName, Line: 0, Column: 0, Code: "SD0621",
-                Message: $"slangc was not found for {SlangToolPath.CurrentRid}. Probed the app " +
-                         $"base directory, runtimes/{SlangToolPath.CurrentRid}/native/ under it, " +
-                         "the host's native search directories, and a repository " +
-                         $"tools/slang/{SlangToolPath.CurrentRid}/ restore (tools/restore.sh / " +
-                         "restore.ps1). A package consumer should never hit this: the native " +
-                         "rides inside the ShadowDusk.Slang package."));
-        }
-
-        string runnableSlangc;
-        try
-        {
-            runnableSlangc = _prepareSlangc(location.SlangcPath);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return Fail(new ShaderError(
-                File: sourceName, Line: 0, Column: 0, Code: "SD0623",
-                Message: "Could not prepare slangc to run (it needs its compiler library beside " +
-                         "it, an execute permission, and a writable directory for the runtime " +
-                         $"cache file it writes on first compile): {ex.Message}"));
-        }
-        string toolDirectory = Path.GetDirectoryName(runnableSlangc)!;
 
         // Phase 66 A6: forward the SAME per-target platform macros (OPENGL/SM4/VULKAN/SM6/
         // HLSL/GLSL/MGFX/FNA/SM3, plus __KNIFX__ when options.Container is Knifx) the
@@ -297,18 +305,28 @@ public sealed class SlangCompiler
             string stage = entry.Stage == SlangStage.Vertex ? "vertex" : "fragment";
             int exitCode;
             string stdout, stderr;
-            try
+            if (_inProcessSlangc is { } inProcess)
             {
-                (exitCode, stdout, stderr) = _runSlangc(
-                    runnableSlangc, toolDirectory, slangSource, entry.Name, stage, platformMacros, options.Defines);
+                (exitCode, stdout, stderr) = inProcess(
+                    slangSource, SlangcArguments.Build(platformMacros, options.Defines, entry.Name, stage));
+                stdout = SlangcArguments.JoinOutputLines(stdout);
+                stderr = SlangcArguments.JoinOutputLines(stderr);
             }
-            catch (System.ComponentModel.Win32Exception ex)
+            else
             {
-                // The OS refused to start the process at all (no execute permission, wrong
-                // architecture, a loader rejection): surface the OS's own words, never a crash.
-                return Fail(new ShaderError(
-                    File: sourceName, Line: 0, Column: 0, Code: "SD0622",
-                    Message: $"slangc could not be started ('{runnableSlangc}'): {ex.Message}"));
+                try
+                {
+                    (exitCode, stdout, stderr) = _runSlangc(
+                        runnableSlangc!, toolDirectory!, slangSource, entry.Name, stage, platformMacros, options.Defines);
+                }
+                catch (System.ComponentModel.Win32Exception ex)
+                {
+                    // The OS refused to start the process at all (no execute permission, wrong
+                    // architecture, a loader rejection): surface the OS's own words, never a crash.
+                    return Fail(new ShaderError(
+                        File: sourceName, Line: 0, Column: 0, Code: "SD0622",
+                        Message: $"slangc could not be started ('{runnableSlangc}'): {ex.Message}"));
+                }
             }
 
             if (exitCode != 0)
@@ -338,6 +356,55 @@ public sealed class SlangCompiler
         string fxText = AssembleFx(mergedHlsl, entries, sourceName);
 
         return _downstreamCompiler.Compile(fxText, options, cancellationToken);
+    }
+
+    /// <summary>
+    /// The process route's host checks: finds the bundled slangc (<c>SD0620</c> on a host the
+    /// natives cannot run on, <c>SD0621</c> when it is missing) and prepares it to run
+    /// (<c>SD0623</c>). Returns null when <paramref name="runnableSlangc"/> is ready.
+    /// </summary>
+    private ShaderError? PrepareProcessSlangc(string sourceName, out string? runnableSlangc, out string? toolDirectory)
+    {
+        runnableSlangc = null;
+        toolDirectory = null;
+        SlangcLocation location = _locateSlangc();
+        if (location.UnsupportedReason is not null)
+        {
+            return new ShaderError(
+                File: sourceName, Line: 0, Column: 0, Code: "SD0620",
+                Message: location.UnsupportedReason + " ShadowDusk.Compiler's built-in .slang " +
+                         "frontend (the HLSL-compatible subset) works everywhere if the source " +
+                         "does not need genuine Slang-only features (import/generics/interfaces).");
+        }
+
+        if (location.SlangcPath is null)
+        {
+            return new ShaderError(
+                File: sourceName, Line: 0, Column: 0, Code: "SD0621",
+                Message: $"slangc was not found for {SlangToolPath.CurrentRid}. Probed the app " +
+                         $"base directory, runtimes/{SlangToolPath.CurrentRid}/native/ under it, " +
+                         "the host's native search directories, and a repository " +
+                         $"tools/slang/{SlangToolPath.CurrentRid}/ restore (tools/restore.sh / " +
+                         "restore.ps1). A package consumer should never hit this: the native " +
+                         "rides inside the ShadowDusk.Slang package.");
+        }
+
+        string prepared;
+        try
+        {
+            prepared = _prepareSlangc(location.SlangcPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return new ShaderError(
+                File: sourceName, Line: 0, Column: 0, Code: "SD0623",
+                Message: "Could not prepare slangc to run (it needs its compiler library beside " +
+                         "it, an execute permission, and a writable directory for the runtime " +
+                         $"cache file it writes on first compile): {ex.Message}");
+        }
+        runnableSlangc = prepared;
+        toolDirectory = Path.GetDirectoryName(prepared)!;
+        return null;
     }
 
     /// <summary>
@@ -495,58 +562,10 @@ public sealed class SlangCompiler
             StandardErrorEncoding  = Encoding.UTF8,
         };
 
-        psi.ArgumentList.Add("-lang");
-        psi.ArgumentList.Add("slang");
-        // Platform macros first, user defines after — same ordering ToDxcFlags() uses for
-        // the ordinary .fx route, so a user -D of the same name (unusual, but not
-        // forbidden) still wins.
-        foreach (MacroDefinition macro in platformMacros)
-            psi.ArgumentList.Add($"-D{macro.Name}={macro.Value}");
-        foreach (UserDefine define in defines)
-            psi.ArgumentList.Add($"-D{define.Name}={define.Value}");
-        psi.ArgumentList.Add("-target");
-        psi.ArgumentList.Add("hlsl");
-        // Without this, slangc wraps every cbuffer's members in a generated
-        // 'SLANG_ParameterGroup_*' struct and gives the cbuffer itself a single member of
-        // that struct type (Phase 65 §2's residue finding). That is legal HLSL — DXC
-        // compiles it fine — but ShadowDusk's own OpenGL uniform-block lowering
-        // (the MojoShader-dialect GLSL rewrite) only models FLAT float/vec2/vec3/vec4/mat4
-        // members and arrays of those directly inside a cbuffer, so a nested-struct member
-        // fails loudly with SD0210 (measured, Phase 66 A3: every corpus shader with a
-        // cbuffer failed OpenGL specifically until this flag was added). This flag makes
-        // slangc emit flat members directly in the cbuffer instead — DirectX_11 was
-        // unaffected either way. It does NOT touch the separate, still-unfixed '_N' name
-        // mangling (A4's job): 'float Desaturation_0' still carries slangc's suffix, only
-        // the cbuffer's SHAPE changes.
-        psi.ArgumentList.Add("-no-hlsl-pack-constant-buffer-elements");
-        // Phase 66 A4: without this, slangc renames every symbol with an '_N' suffix
-        // ('float BlurAmount' -> 'float BlurAmount_0'), which would surface in a
-        // consumer's compiled effect's reflected parameter table and break
-        // effect.Parameters["BlurAmount"] lookups. '-no-mangle' is documented by slangc
-        // itself as experimental ("do as little mangling of names as possible"), but
-        // measured (Phase 66 A4) against the full 21-shader corpus on both DirectX_11 and
-        // OpenGL: every top-level declaration that matters for the reflected parameter
-        // table — cbuffer names, cbuffer members, Texture2D/SamplerState declarations —
-        // comes back with the author's exact original name, with no collisions anywhere
-        // in the corpus (including GenericsProbe.slang's real generic-over-interface
-        // function). Local variables and struct field names (VSOutput/PsInput members,
-        // the loop-body temporaries) still carry an '_N' suffix, but those are never part
-        // of an Effect's reflected parameter table, so they don't matter for the
-        // consumer-visible surface this flag exists to fix. No corpus shader failed to
-        // compile with the flag added, so the simpler fix (this flag) was taken over
-        // building a separate demangling/renaming shim.
-        // Issue #228: the '_N' numbering of structs/functions is per slangc run, so two entry
-        // points can reuse one name for different generic instantiations; SlangHlslMerger
-        // renames those apart when it merges the per-entry units.
-        psi.ArgumentList.Add("-no-mangle");
-        psi.ArgumentList.Add("-entry");
-        psi.ArgumentList.Add(entryName);
-        psi.ArgumentList.Add("-stage");
-        psi.ArgumentList.Add(stage);
-        // '--' then '-': read the single input file from stdin (slangc -h: "Use '-' once to
-        // read from standard input; -lang is required, stdin is limited to 256 MiB").
-        psi.ArgumentList.Add("--");
-        psi.ArgumentList.Add("-");
+        // Issue #257: the argument list lives in SlangcArguments, shared with the in-process
+        // (browser) route so both hosts hand slangc the identical command line.
+        foreach (string argument in SlangcArguments.Build(platformMacros, defines, entryName, stage))
+            psi.ArgumentList.Add(argument);
 
         using var process = new Process { StartInfo = psi };
 

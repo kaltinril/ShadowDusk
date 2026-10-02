@@ -73,6 +73,8 @@ var result = compiler.Compile(slangSource, new CompilerOptions { Target = Platfo
 // result.Value.Data is .mgfx bytes, same as EffectCompiler.CompileAsync's output
 ```
 
+**In the browser:** a browser cannot start slangc as a process, so the same pinned slangc is compiled to WebAssembly and run inside the page (`ShadowDusk.Slang.Wasm`'s `WasmSlangCompiler`). It gets the identical command line, its output is measured byte-identical to native slangc's, and its HLSL goes through the same in-browser DXC pipeline. It is not published as a NuGet package yet; the ShaderFiddle sample uses it from source.
+
 A consumer who only needs the free subset above pays zero extra size or dependency for this package. Same rejection discipline either way: a construct real slangc accepts but that has nowhere to land in an `Effect` (a compute entry point, an SM6-only wave/quad intrinsic on a target that can't represent it) is rejected loudly by name, never silently dropped. Neither tier is ever `mgfxc`-equivalent — `mgfxc` cannot read Slang at all.
 
 ## Targeting FNA

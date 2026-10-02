@@ -1,0 +1,34 @@
+<!--
+  Issue #257 / Phase 67: full Slang input in the browser. The browser cannot spawn slangc,
+  so this project runs the SAME pinned slangc (v2026.14.1) compiled to WebAssembly inside
+  the page and plugs it into ShadowDusk.Slang's SlangCompiler through its internal
+  in-process seam (InternalsVisibleTo). Slang stays an INPUT language only: the module turns
+  .slang into HLSL, which then goes through the unchanged ShadowDusk.Wasm pipeline (DXC ->
+  SPIR-V -> SPIRV-Cross -> GLSL, or vkd3d -> DXBC). It never compiles HLSL and never
+  replaces DXC.
+
+  Razor SDK so wwwroot/ is a Blazor static web asset set (served at
+  _content/ShadowDusk.Slang.Wasm/), the ShadowDusk.Wasm pattern.
+
+  NOT PACKABLE YET (first PR): the slangc module (wwwroot/slangc/shadowdusk-slangc.{js,wasm},
+  ~23 MB) is built from upstream's own prebuilt wasm static libraries by
+  .wasm-build/slang-wasm/build-slangc-wasm.ps1 and is not committed or release-hosted yet.
+  Shipping this as an eleventh NuGet package (hosted artifact + restore pins + release.yml +
+  pack-consume) is registered as remaining work in plan/PHASE-67-slang-in-process-wasm.md.
+-->
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+  <PropertyGroup>
+    <TargetFramework>net8.0-browser</TargetFramework>
+    <AssemblyName>ShadowDusk.Slang.Wasm</AssemblyName>
+    <RootNamespace>ShadowDusk.Slang.Wasm</RootNamespace>
+    <Nullable>enable</Nullable>
+    <!-- The [JSImport] source generator emits code requiring /unsafe. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ShadowDusk.Wasm\ShadowDusk.Wasm.csproj" />
+    <ProjectReference Include="..\ShadowDusk.Slang\ShadowDusk.Slang.csproj" />
+  </ItemGroup>
+</Project>

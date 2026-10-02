@@ -36,6 +36,26 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **Full Slang input in the browser (issue #257, Phase 67).** A browser cannot spawn `slangc`, so the
+  pinned slangc v2026.14.1 now also runs inside the page as WebAssembly: the new
+  `src/ShadowDusk.Slang.Wasm` project (`WasmSlangCompiler`, not published as a package yet) loads it
+  and drives `SlangCompiler` through an internal in-process seam, so the argument list, register
+  strip, per-entry merge, `.fx` assembly and the downstream DXC/vkd3d pipeline are the desktop route's
+  own code. Slang stays an input language only: the module emits HLSL and never replaces DXC. The
+  module is linked from upstream's own prebuilt wasm libraries behind a glue that replays slangc's
+  command line (`.wasm-build/slang-wasm/`); upstream's own `slang-wasm.js` was measured unusable for
+  this (its API takes no flags or macros; 0/20 corpus entries matched). Measured: 235/235 slangc runs
+  byte-identical to native slangc (every corpus, entry point and target, failures included), and in
+  real headless Chromium 42/42 corpus artifacts byte-identical to `slang-manifest.json` plus 17/17
+  KNI WebGL renders at maxd 0 against the subset frontend. Two new gates in `wasm.yml`
+  (`node-test-slangc-wasm.mjs`, `browser-slang-gate.mjs`). The ShaderFiddle sample compiles Slang
+  source through it (new "Slang generic blend" example). New codes `SD0627` (module failed to load)
+  and `SD0628` (sync compile before init). No emitted byte changes on any existing route.
+- **Android full-Slang measurement (issue #257).** On an API-34 emulator an app can spawn a packaged
+  executable only when native libraries are extracted, which a default Release build does not do,
+  and upstream ships no Android slangc, so full Slang on Android will take the in-process route
+  (designed in Phase 67, not built). `docs/validation-matrix.md` §7 tracks it.
+
 - **Linux and Slang evidence for the DXC concurrency fix (issue #256).** No emitted byte changes.
   The fork probe in `DxcConcurrencyStressTests` now also makes real libc `fork()` calls on Linux
   (`Process.Start` there is `vfork()`, which never exercises the macOS mechanism) and reports what

@@ -39,6 +39,12 @@
          list in the driver would silently drift from whatever flags this class actually
          passes and invalidate the comparison it exists to make. -->
     <InternalsVisibleTo Include="ShadowDusk.Validation.SlangFullCorpus" />
+    <!-- Issue #257: the browser host of this same route. It reaches SlangCompiler's internal
+         in-process constructor (slangc compiled to WebAssembly, run in-process) so it shares
+         the argument list, register strip, merge, .fx assembly and downstream pipeline with
+         the desktop process route instead of copying them. Internal, not public, so no
+         consumer can plug a different compiler into that seam. -->
+    <InternalsVisibleTo Include="ShadowDusk.Slang.Wasm" />
   </ItemGroup>
 
   <ItemGroup>
