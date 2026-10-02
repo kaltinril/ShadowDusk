@@ -357,27 +357,12 @@ public sealed class CliDxcNativeLayoutTests : IClassFixture<CliBinaryFixture>
             string output = Path.Combine(Directory, $"out_{profile}.bin");
             if (File.Exists(output)) File.Delete(output);
 
-            var psi = new ProcessStartInfo(_executable)
-            {
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                WorkingDirectory = Path.GetTempPath(),
-            };
-            psi.ArgumentList.Add(source);
-            psi.ArgumentList.Add(output);
-            psi.ArgumentList.Add($"/Profile:{profile}");
-
-            using var process = Process.Start(psi)
-                ?? throw new InvalidOperationException("Failed to start the CLI clone.");
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(120));
-            Task<string> stdout = process.StandardOutput.ReadToEndAsync(timeout.Token);
-            Task<string> stderr = process.StandardError.ReadToEndAsync(timeout.Token);
-            await process.WaitForExitAsync(timeout.Token);
+            ChildProcessResult run = await CliProcess.RunAsync(
+                _executable, [source, output, $"/Profile:{profile}"], TimeSpan.FromSeconds(120));
 
             return new CliRun(
-                process.ExitCode,
-                await stdout + await stderr,
+                run.ExitCode,
+                run.Output,
                 File.Exists(output) ? await File.ReadAllBytesAsync(output) : null);
         }
 
