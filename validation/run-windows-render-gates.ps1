@@ -71,6 +71,12 @@
                                    because its restore-fna.ps1 clones the FNA source tree (heavy) and
                                    needs an authenticated gh for the fnalibs natives. Run it for any
                                    release that could affect the FNA target or the .xnb writer.
+    * Slang DX12 / Vulkan / FNA  - validation/SlangFullCorpusDx12, validation/SlangFullCorpusVulkan
+                                   (Vulkan block) and FnaValidation -- slang (-IncludeFna), issue
+                                   #230: the 21-shader real-slangc corpus through SlangCompiler vs
+                                   the reference compiler (mgfxc DirectX_12 / Vulkan, fxc fx_2_0) on
+                                   the assembled .fx, real Effect load + render, tol 4/255, two
+                                   positive controls that must diverge.
     * Vulkan PS corpus           - validation/CandidateVulkan (ShadowDusk's OWN output rendered on
                                    real MonoGame DesktopVK; not an mgfxc diff - mgfxc's output is
                                    unloadable for this corpus, a confirmed MonoGame SlotOffset bug).
@@ -342,9 +348,8 @@ $gates.Add(@{
 # tools/restore.ps1 has run); (2) the uniform-free procedural subset (8 shaders) renders
 # pixel-identical through ShadowDusk's .fx-wrapped route vs slangc's own raw HLSL emission fed
 # to the same DXC + SPIRV-Cross (OpenGL); (3) every shader loads into a REAL
-# MonoGame.Framework.WindowsDX Effect and renders (DirectX_11). DirectX_12/Vulkan stay at the
-# compile+structural rung from gate 1 - a real-Effect-load proof for those two is open, see
-# docs/validation-matrix.md and plan/PHASE-66-full-slang-input-implementation.md's A7 section.
+# MonoGame.Framework.WindowsDX Effect and renders (DirectX_11). The DirectX_12, Vulkan and FNA
+# real-Effect arms are the issue-#230 gates below (and in the FNA / Vulkan blocks).
 $gates.Add(@{
     Name   = 'Slang full corpus (Phase 66 A7: real-slangc route, 21 shaders x 4 targets + procedural pixel-diff vs slangc''s raw HLSL + real DirectX_11 Effect load/render)'
     # -f net8.0-windows: the driver multi-targets (issue #227); only the Windows build has gate 3.
@@ -360,6 +365,13 @@ $gates.Add(@{
     Name   = 'Slang textured GL (issue #252: real-slangc textured shaders sample SpriteBatch''s unit 0, real DesktopGL, Invert vs mgfxc)'
     Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/SlangTexturedGl', '-c', 'Release') }
 })
+# Real-slangc Slang corpus on DirectX_12 in REAL MonoGame 3.8.5 WindowsDX12 (issue #230): every
+# shader through SlangCompiler vs real mgfxc 3.8.5 /Profile:DirectX_12 on the assembled .fx the
+# pipeline was handed, same device, tol 4/255, plus two positive controls that must diverge.
+$gates.Add(@{
+    Name   = 'Slang DX12 (issue #230: real-slangc route vs mgfxc DirectX_12, 21 shaders, real MonoGame 3.8.5 WindowsDX12 Effect load + render)'
+    Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/SlangFullCorpusDx12', '-c', 'Release') }
+})
 if ($IncludeFna) {
     $gates.Add(@{
         Name   = 'FNA fx_2_0 (ShadowDusk .fxb vs fxc /T fx_2_0, real FNA; + the .xnb Content.Load arm, Phase 64)'
@@ -368,6 +380,12 @@ if ($IncludeFna) {
             if (Test-Path $fnaRestore) { & $fnaRestore }
             Invoke-Checked 'dotnet' @('run', '--project', 'validation/FnaValidation', '-c', 'Release')
         }
+    })
+    # Issue #230: the real-slangc Slang corpus in real FNA, vs fxc /T fx_2_0 on the assembled
+    # .fx. Its own process (FNA allows one Game per process). Restore already ran above.
+    $gates.Add(@{
+        Name   = 'Slang FNA (issue #230: real-slangc route vs fxc /T fx_2_0, 21 shaders, real FNA Effect + .xnb arm)'
+        Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/FnaValidation', '-c', 'Release', '--', 'slang') }
     })
 } else {
     Write-Host "NOTE: FNA gate not run (pass -IncludeFna). Required before an FNA-affecting release.`n" -ForegroundColor Yellow
@@ -399,6 +417,13 @@ if (-not $SkipVulkan) {
             # upstream Apos.Shapes at its current revision - against the mgfxc golden.
             Invoke-Checked 'dotnet' @('run', '--project', 'validation/VsDrivenVulkan', '-c', 'Release', '--', 'apos')
         }
+    })
+    $gates.Add(@{
+        # Issue #230: the real-slangc Slang corpus vs real mgfxc 3.8.5 /Profile:Vulkan on the
+        # assembled .fx (measured: mgfxc's Vulkan build of these 21 loads and renders, unlike the
+        # CandidateVulkan corpus above), real DesktopVK, tol 4/255, two positive controls.
+        Name   = 'Slang Vulkan (issue #230: real-slangc route vs mgfxc Vulkan, 21 shaders, real MonoGame DesktopVK Effect load + render)'
+        Action = { Invoke-Checked 'dotnet' @('run', '--project', 'validation/SlangFullCorpusVulkan', '-c', 'Release') }
     })
 } else {
     Write-Host "NOTE: Vulkan gates SKIPPED by -SkipVulkan. They are default-ON; only skip them on a box with no Vulkan GPU.`n" -ForegroundColor Yellow

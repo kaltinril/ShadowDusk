@@ -189,6 +189,21 @@ internal static class Fx2EffectBuilder
         {
             CtabConstant c = samplersByName[name];
 
+            // Issue #230: a DX10-style texture object (Texture2D T; SamplerState S;
+            // T.Sample(S, uv)) reaches the SM3 backend as ONE combined sampler that vkd3d names
+            // "S+T" and types as the TEXTURE. Emitted as-is it becomes a texture parameter
+            // where MojoShader expects a sampler, and real FNA throws "Unhandled sampler
+            // state!" on the first draw (measured). fxc /T fx_2_0 refuses the same source
+            // ("DX10-style texture intrinsic"), so refuse it here too, before it can ship.
+            int plus = name.IndexOf('+', StringComparison.Ordinal);
+            if (plus > 0)
+                return Fail(sourceFile,
+                    $"texture '{name[(plus + 1)..]}' is sampled through the DX10-style texture object " +
+                    $"'{name[(plus + 1)..]}.Sample({name[..plus]}, ...)', which the FNA target (fx_2_0, " +
+                    "Shader Model 2-3) cannot bind; fxc /T fx_2_0 rejects it too. Declare it the DX9 " +
+                    "way: 'texture2D T; sampler2D S = sampler_state { Texture = <T>; };' and sample " +
+                    "with tex2D(S, uv)");
+
             // fx_2_0 sampler arrays need per-element value objects (§7.2) — unmodeled here.
             // Failing loudly beats silently emitting a non-array typedef whose parameter
             // shape diverges from fxc's.

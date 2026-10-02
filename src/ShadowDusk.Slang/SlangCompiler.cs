@@ -335,6 +335,23 @@ public sealed class SlangCompiler
                          "so the name cannot be kept unique. Rename the shader parameter or resource, " +
                          "or give each entry point its own source file."));
         }
+        // Issue #230: FNA's fx_2_0 needs DX9 effect texture syntax; slangc only emits texture
+        // objects, which compiled but crashed real FNA on the first draw. See the respeller.
+        if (options.Target == PlatformTarget.Fna)
+        {
+            string? respelled = SlangFx2TextureRespeller.TryRespell(mergedHlsl, out string? unsupported);
+            if (respelled is null)
+            {
+                return Fail(new ShaderError(
+                    File: sourceName, Line: 0, Column: 0, Code: SlangFx2TextureRespeller.UnsupportedCode,
+                    Message: "The FNA target (fx_2_0, Shader Model 2-3) binds textures through DX9 " +
+                             "texture/sampler_state/tex2D, and slangc's emission uses " + unsupported +
+                             ", which has no DX9 equivalent ShadowDusk models. FNA textures support " +
+                             "Texture2D sampled as T.Sample(S, uv) with one texture per SamplerState."));
+            }
+            mergedHlsl = respelled;
+        }
+
         string fxText = AssembleFx(mergedHlsl, entries, sourceName);
 
         return _downstreamCompiler.Compile(fxText, options, cancellationToken);

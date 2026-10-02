@@ -4,7 +4,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -29,16 +28,13 @@ namespace ShadowDusk.Validation.Fna;
 /// through a real FNA <c>ContentManager.Load&lt;Effect&gt;</c>.</item>
 /// </list>
 ///
-/// <para><b>Reference input parity.</b> slangc emits DX10-style texture objects
-/// (<c>Texture2D</c> + <c>SamplerState</c> + <c>T.Sample(S, uv)</c>), and the fx_2_0 compiler
-/// refuses them ("This sampler is used with a DX10-style texture intrinsic. This is not
-/// implemented in this version of the compiler", measured on 13 of the 21 shaders). For those
-/// shaders the reference compiles the same text with ONLY the texture declarations and sample
-/// calls respelled in DX9 effect syntax (<see cref="RespellTexturesForFx2"/>): the texture
-/// becomes an effect <c>texture2D</c> of the same name, the sampler a <c>sampler2D</c> on the same
-/// register bound to it through <c>sampler_state</c>, and each <c>T.Sample(S, uv)</c> a
-/// <c>tex2D(S, uv)</c>, which is the same SM3 texld. Anything else texture-shaped fails the row
-/// loudly. The 8 texture-free shaders compile byte-for-byte as assembled.</para>
+/// <para><b>Reference input parity.</b> The reference compiles exactly the <c>.fx</c> text the
+/// candidate pipeline was handed. For the 12 textured shaders that text is already in DX9
+/// effect syntax: slangc emits DX10-style texture objects, which <c>fxc /T fx_2_0</c> refuses
+/// and which, before this gate existed, compiled through ShadowDusk and then crashed real FNA
+/// on the first draw; <c>SlangCompiler</c> now respells them for FNA
+/// (<c>SlangFx2TextureRespeller</c>, issue #230), and this gate is what proves that respelling
+/// renders like <c>fxc</c>'s build of the same text.</para>
 ///
 /// <para><b>Positive controls</b>, as on the MonoGame arms: <c>Invert</c> with two channels swapped
 /// and <c>Desaturate</c> with its transform transposed run every time as rows that MUST diverge;
@@ -69,7 +65,7 @@ public static class SlangFnaGate
 
         var compiler = new SlangCompiler();
         var cases = new List<ShaderCase>();
-        var respelled = new HashSet<string>();
+        var textured = new HashSet<string>();
 
         foreach (string file in corpus)
         {
@@ -85,12 +81,13 @@ public static class SlangFnaGate
             try
             {
                 string fx = SlangGateCorpus.CaptureAssembledFx(source, Path.GetFileName(file), PlatformTarget.Fna);
-                string refFx = RespellTexturesForFx2(fx, out bool changed);
-                if (changed)
-                    respelled.Add(name);
+                if (fx.Contains("sampler_state", StringComparison.Ordinal))
+                    textured.Add(name);
                 string fxPath = Path.Combine(fxDir, name + ".fx");
-                await File.WriteAllTextAsync(fxPath, refFx);
-                var reference = ReferenceFx2Compiler.Compile(fxPath, refFx, prependOpenGl: false);
+                await File.WriteAllTextAsync(fxPath, fx);
+                if (candBytes is not null)
+                    await File.WriteAllBytesAsync(Path.Combine(fxDir, name + ".candidate.fxb"), candBytes);
+                var reference = ReferenceFx2Compiler.Compile(fxPath, fx, prependOpenGl: false);
                 (refBytes, refErr) = (reference.Bytes, reference.Error);
             }
             catch (Exception ex)
@@ -114,7 +111,7 @@ public static class SlangFnaGate
         Console.WriteLine("[fna-slang] compile results (ref = fx_2_0 oracle, cand = ShadowDusk.Slang):");
         foreach (ShaderCase c in cases)
         {
-            Console.WriteLine($"  ref  [{(c.ReferenceBytes is null ? "FAIL" : "OK  ")}] {c.Name,-22} {(c.ReferenceCompileError ?? $"{c.ReferenceBytes!.Length} bytes")}{(respelled.Contains(c.Name) ? " (DX9 texture spelling)" : "")}");
+            Console.WriteLine($"  ref  [{(c.ReferenceBytes is null ? "FAIL" : "OK  ")}] {c.Name,-22} {(c.ReferenceCompileError ?? $"{c.ReferenceBytes!.Length} bytes")}{(textured.Contains(c.Name) ? " (textured: DX9 respelling)" : "")}");
             Console.WriteLine($"  cand [{(c.CandidateBytes is null ? "FAIL" : "OK  ")}] {c.Name,-22} {(c.CandidateCompileError ?? $"{c.CandidateBytes!.Length} bytes")}");
         }
         Console.WriteLine();
@@ -197,7 +194,7 @@ public static class SlangFnaGate
 
         bool ok = gatePass == gateTotal && gateTotal == corpus.Length && caught == controls && controls == 2;
         Console.WriteLine($"\n[fna-slang] GATE: {gatePass}/{gateTotal} PASS vs fxc /T fx_2_0 (real FNA Effect load + render, same device, " +
-                          $"max gate delta {maxGateDelta}/255, tolerance {Tolerance}; {respelled.Count} reference inputs in DX9 texture spelling; " +
+                          $"max gate delta {maxGateDelta}/255, tolerance {Tolerance}; {textured.Count} textured shaders through the DX9 respelling; " +
                           ".xnb arm maxd 0 vs the raw candidate).");
         Console.WriteLine($"[fna-slang] positive controls: {caught}/{controls} diverged from the reference as required.");
         Console.WriteLine(ok ? "[fna-slang] PASSED" : "[fna-slang] FAILED");
@@ -239,60 +236,5 @@ public static class SlangFnaGate
             rgba[i * 4 + 3] = pixels[i].A;
         }
         return rgba;
-    }
-
-    // ------------------------------------------------------------------ DX9 texture respelling
-
-    private static readonly Regex TextureDecl = new(
-        @"^[ \t]*Texture2D(?:\s*<[^>]*>)?\s+(?<name>[A-Za-z_]\w*)\s*(?::\s*register\(\s*t\d+\s*\))?\s*;[ \t]*$",
-        RegexOptions.Multiline | RegexOptions.Compiled);
-
-    private static readonly Regex SamplerDecl = new(
-        @"^[ \t]*SamplerState\s+(?<name>[A-Za-z_]\w*)\s*(?<reg>:\s*register\(\s*s\d+\s*\))?\s*;[ \t]*$",
-        RegexOptions.Multiline | RegexOptions.Compiled);
-
-    private static readonly Regex SampleCall = new(
-        @"\b(?<tex>[A-Za-z_]\w*)\s*\.\s*Sample\s*\(\s*(?<samp>[A-Za-z_]\w*)\s*,",
-        RegexOptions.Compiled);
-
-    /// <summary>
-    /// Respells slangc's DX10-style texture objects in the DX9 effect syntax fx_2_0 accepts,
-    /// changing nothing else. Each sampler must be used with exactly one texture; any other
-    /// texture-object construct (SampleLevel, Load, a second texture type, ...) left behind
-    /// throws, so a corpus change the respelling does not model turns the row red instead of
-    /// compiling something different.
-    /// </summary>
-    internal static string RespellTexturesForFx2(string fx, out bool changed)
-    {
-        var pairs = new Dictionary<string, string>(StringComparer.Ordinal); // sampler -> texture
-        foreach (Match m in SampleCall.Matches(fx))
-        {
-            string tex = m.Groups["tex"].Value, samp = m.Groups["samp"].Value;
-            if (pairs.TryGetValue(samp, out string? existing) && existing != tex)
-                throw new InvalidOperationException($"sampler '{samp}' is used with two textures ('{existing}', '{tex}'); fx_2_0 cannot express that");
-            pairs[samp] = tex;
-        }
-
-        changed = pairs.Count > 0 || TextureDecl.IsMatch(fx) || SamplerDecl.IsMatch(fx);
-        if (!changed)
-            return fx;
-
-        string result = TextureDecl.Replace(fx, m => $"texture2D {m.Groups["name"].Value};");
-        result = SamplerDecl.Replace(result, m =>
-        {
-            string samp = m.Groups["name"].Value;
-            if (!pairs.TryGetValue(samp, out string? tex))
-                throw new InvalidOperationException($"sampler '{samp}' is declared but never used in a T.Sample(S, ...) call");
-            string reg = m.Groups["reg"].Success ? " " + m.Groups["reg"].Value.Trim() : "";
-            return $"sampler2D {samp}{reg} = sampler_state {{ Texture = <{tex}>; }};";
-        });
-        result = SampleCall.Replace(result, m => $"tex2D({m.Groups["samp"].Value},");
-
-        foreach (string leftover in new[] { "Texture2D", "SamplerState", ".Sample", "SampleLevel", ".Load(" })
-        {
-            if (result.Contains(leftover, StringComparison.Ordinal))
-                throw new InvalidOperationException($"DX9 respelling left '{leftover}' behind; the respelling does not model this shader");
-        }
-        return result;
     }
 }
