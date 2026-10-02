@@ -187,29 +187,36 @@ for (const [label, shape] of Object.entries(registerShapes)) {
   console.log(`register shape ${ok ? 'OK  ' : 'FAIL'} combined Sampler2D: preprocess + compile on ${targets.length} targets`);
 }
 
-// Issue #292: the preprocess-only pass over ANOTHER file (SlangcArguments.BuildPreprocessFile:
-// the -E list with the file's path in place of '-'), which SlangCompiler runs for a declaration
-// that came from an imported module. The browser module has no file system for such a path, so
-// it must report what native slangc reports for a missing file: exit 0 with
-// 'error[E00001]: cannot open file' on stderr and nothing on stdout, which SlangCompiler turns
-// into SD0628 on both hosts alike. (The path text in the message is host-spelled, so only the
-// shape is compared.)
+// Issue #292: the preprocess-only pass over OTHER files (SlangcArguments.BuildPreprocessFiles:
+// the -E list with file paths after, or in place of, '-'), which SlangCompiler runs for a
+// declaration that came from an imported module. The browser module has no file system for such
+// a path, so it must report what native slangc reports for a missing file: exit 0 with
+// 'error[E00001]: cannot open file' on stderr and NO stdout line for that input, which
+// SlangCompiler turns into SD0628 on both hosts alike. Two forms: the file alone, and the entry
+// source plus the file in one run (the form SlangCompiler tries first), where the entry source
+// must still come back as its own single line, identical on both hosts. (The path text in the
+// message is host-spelled, so stderr is compared by shape.)
 {
   const missing = '/shadowdusk-no-such-dir/texmod.slang';
+  const entrySource = 'import "' + missing + '";\nSamplerState S;\n[shader("fragment")]\nfloat4 MainPS(float2 uv : TEXCOORD0) : SV_Target { return ModTex.Sample(S, uv); }\n';
   let ok = true;
   for (const target of targets) {
-    const args = [...preprocessArgs[target].slice(0, -1), missing];
-    const n = spawnSync(slangc, args, { input: Buffer.from('', 'utf8'), cwd: path.dirname(slangc) });
-    const native = { exitCode: n.status === 0 ? 0 : 1, stdout: managedLines(n.stdout.toString('utf8')), stderr: managedLines(n.stderr.toString('utf8')) };
-    const w = mod.runSlangc('', args);
-    const wasm = { exitCode: w.exitCode, stdout: managedLines(w.stdout), stderr: managedLines(w.stderr) };
-    const shape = r => r.exitCode === 0 && r.stdout.trim() === '' && /error\[E00001\]: cannot open file/.test(r.stderr);
-    if (!shape(native) || !shape(wasm)) {
-      ok = false;
-      mismatches.push({ key: `preprocess (-E) of a missing imported file ${target}`, native, wasm });
+    for (const withEntry of [false, true]) {
+      const args = withEntry ? [...preprocessArgs[target], missing] : [...preprocessArgs[target].slice(0, -1), missing];
+      const source = withEntry ? entrySource : '';
+      const n = spawnSync(slangc, args, { input: Buffer.from(source, 'utf8'), cwd: path.dirname(slangc) });
+      const native = { exitCode: n.status === 0 ? 0 : 1, stdout: managedLines(n.stdout.toString('utf8')), stderr: managedLines(n.stderr.toString('utf8')) };
+      const w = mod.runSlangc(source, args);
+      const wasm = { exitCode: w.exitCode, stdout: managedLines(w.stdout), stderr: managedLines(w.stderr) };
+      const lines = r => r.stdout.split('\n').filter(l => l.trim() !== '').length;
+      const shape = r => r.exitCode === 0 && lines(r) === (withEntry ? 1 : 0) && /error\[E00001\]: cannot open file/.test(r.stderr);
+      if (!shape(native) || !shape(wasm) || native.stdout !== wasm.stdout) {
+        ok = false;
+        mismatches.push({ key: `preprocess (-E) of a missing imported file ${target}${withEntry ? ' (with the entry source)' : ''}`, native, wasm });
+      }
     }
   }
-  console.log(`missing imported file ${ok ? 'OK  ' : 'FAIL'}: -E over a path neither host can open reports E00001 with exit 0 on ${targets.length} targets`);
+  console.log(`missing imported file ${ok ? 'OK  ' : 'FAIL'}: -E over a path neither host can open reports E00001 with exit 0, alone and beside the entry source, on ${targets.length} targets`);
 }
 
 // ---------------------------------------------------------------------------------------

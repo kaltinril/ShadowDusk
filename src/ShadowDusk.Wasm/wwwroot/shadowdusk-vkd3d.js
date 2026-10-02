@@ -161,6 +161,7 @@ export function compile(sourceUtf8, entryPoint, profile, sourceName, targetType)
     const source = sourceUtf8 instanceof Uint8Array ? sourceUtf8 : new Uint8Array(sourceUtf8 || 0);
 
     let srcPtr = 0, entryPtr = 0, profilePtr = 0, namePtr = 0, outPtrs = 0;
+    let trapped = false;
     try {
         // Source bytes: raw UTF-8 + explicit length (NOT null-terminated at the ABI).
         // Empty source is NOT pre-judged here — it goes to vkd3d (pointer + length 0)
@@ -182,10 +183,24 @@ export function compile(sourceUtf8, entryPoint, profile, sourceName, targetType)
         mod.HEAPU8.fill(0, outPtrs, outPtrs + 12);
         const outCodePtr = outPtrs, outSizePtr = outPtrs + 4, outMsgsPtr = outPtrs + 8;
 
-        const rc = mod._sdw_vkd3d_compile(
-            srcPtr, source.length,
-            entryPtr, profilePtr, namePtr, targetType | 0,
-            outCodePtr, outSizePtr, outMsgsPtr);
+        let rc;
+        try {
+            rc = mod._sdw_vkd3d_compile(
+                srcPtr, source.length,
+                entryPtr, profilePtr, namePtr, targetType | 0,
+                outCodePtr, outSizePtr, outMsgsPtr);
+        } catch (e) {
+            // vkd3d reports diagnostics through out_messages, so anything THROWN out of the
+            // module is a trap (stack overflow, out-of-bounds access, abort). The instance's
+            // memory and C state are now undefined: drop it (the frees in the finally below are
+            // skipped too) so the next ensureReady() instantiates a fresh module (issue #271,
+            // the slangc pattern from PR #266). WasmVkd3dShaderCompiler keys SD1907 on the
+            // 'vkd3d trapped:' prefix.
+            trapped = true;
+            vkd3dInstance = null;
+            loadPromise = null;
+            throw new Error('vkd3d trapped: ' + (e instanceof Error ? `${e.name}: ${e.message}` : String(e)));
+        }
 
         // Messages first (present on failure AND on warning-bearing success); always
         // freed via the ABI's own free function.
@@ -215,10 +230,13 @@ export function compile(sourceUtf8, entryPoint, profile, sourceName, targetType)
             if (codePtr) mod._sdw_vkd3d_free_code(codePtr);
         }
     } finally {
-        if (outPtrs) mod._free(outPtrs);
-        if (namePtr) mod._free(namePtr);
-        if (profilePtr) mod._free(profilePtr);
-        if (entryPtr) mod._free(entryPtr);
-        if (srcPtr) mod._free(srcPtr);
+        // Never call back into a trapped instance; it is discarded with its whole heap.
+        if (!trapped) {
+            if (outPtrs) mod._free(outPtrs);
+            if (namePtr) mod._free(namePtr);
+            if (profilePtr) mod._free(profilePtr);
+            if (entryPtr) mod._free(entryPtr);
+            if (srcPtr) mod._free(srcPtr);
+        }
     }
 }

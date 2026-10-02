@@ -277,9 +277,10 @@ restore_dxc_wasm() {
     if [ -f "$out_dir/dxcompiler.wasm" ] && [ -f "$out_dir/dxcompiler.js" ]; then
         echo "restore.sh: DXC->WASM (dxcompiler.{js,wasm}) present in .wasm-build — OK"
         # Copy the built .wasm into the package wwwroot for pack if missing or stale.
+        # Staleness is decided by HASH, not size: a relink can change the module and keep its
+        # size (measured in issue #271 with only -sSTACK_SIZE set), and a size check keeps the old copy.
         if [ ! -f "$pkg_wasm" ] || \
-           [ "$(stat -c%s "$out_dir/dxcompiler.wasm" 2>/dev/null || stat -f%z "$out_dir/dxcompiler.wasm")" != \
-             "$(stat -c%s "$pkg_wasm" 2>/dev/null || stat -f%z "$pkg_wasm" 2>/dev/null)" ]; then
+           [ "$(vkd3d_sha256 "$out_dir/dxcompiler.wasm")" != "$(vkd3d_sha256 "$pkg_wasm")" ]; then
             mkdir -p "$pkg_dir"
             cp -f "$out_dir/dxcompiler.wasm" "$pkg_wasm"
             echo "restore.sh: copied dxcompiler.wasm -> src/ShadowDusk.Wasm/wwwroot/dxc/ (for pack)"

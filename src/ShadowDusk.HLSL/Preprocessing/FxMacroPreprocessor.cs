@@ -51,6 +51,44 @@ internal sealed class FxMacroPreprocessor
     public static Result<string, ShaderError> Process(string flattenedSource, string sourceFile)
         => new FxMacroPreprocessor(sourceFile).Run(flattenedSource);
 
+    /// <summary>
+    /// The preprocessed view, plus what each of <paramref name="identifiers"/> expands to once the
+    /// whole source has been read (the macro table as it stands at the end of the file).
+    ///
+    /// <para>This is the join between a name read off the RAW source and the same name in the
+    /// view (issue #299): the pre-parser knows a sampler by the token the author wrote, which may
+    /// itself be a macro (<c>#define SAMP MySampler</c> / <c>sampler SAMP : register(s1);</c>),
+    /// while the view only ever shows <c>MySampler</c>. An identifier that is not a macro maps to
+    /// itself. End-of-source rather than point-of-declaration is deliberate and sufficient: a
+    /// name the shader still uses below its declaration cannot have been <c>#undef</c>'d in
+    /// between without the shader failing to compile.</para>
+    /// </summary>
+    public static Result<(string View, IReadOnlyDictionary<string, string> Resolved), ShaderError> Process(
+        string flattenedSource, string sourceFile, IEnumerable<string> identifiers)
+    {
+        var preprocessor = new FxMacroPreprocessor(sourceFile);
+        Result<string, ShaderError> view = preprocessor.Run(flattenedSource);
+        if (view.IsFailure)
+            return Result<(string, IReadOnlyDictionary<string, string>), ShaderError>.Fail(view.Error);
+
+        var resolved = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (string identifier in identifiers)
+        {
+            var tokens = new List<Tok>();
+            Tokenize(identifier, tokens);
+            Result<List<Tok>, ShaderError> expanded = preprocessor.Expand(tokens, sourceFile, preprocessor._line);
+            if (expanded.IsFailure)
+                return Result<(string, IReadOnlyDictionary<string, string>), ShaderError>.Fail(expanded.Error);
+
+            var text = new StringBuilder();
+            foreach (Tok t in expanded.Value)
+                text.Append(t.Text);
+            resolved[identifier] = text.ToString().Trim();
+        }
+
+        return Result<(string, IReadOnlyDictionary<string, string>), ShaderError>.Ok((view.Value, resolved));
+    }
+
     // -------------------------------------------------------------------------
     // Line / directive driver
     // -------------------------------------------------------------------------

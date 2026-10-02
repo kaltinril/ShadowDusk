@@ -167,6 +167,13 @@ jobs:
       # with cwrap,ccall,getValue,setValue,UTF8ToString,stringToUTF8,lengthBytesUTF8
       # and relied on the 3.1.34 HEAPU8 default) — it is verified working and is NOT
       # rebuilt/re-hosted; this line affects only FUTURE rebuilds (which get a new tag).
+      # STACK (issue #271): emscripten's default stack is 64 KB, against 1 MB (Windows) or
+      # 8 MB (Linux/macOS) for the desktop native. vkd3d's HLSL front end recurses per nesting
+      # level, and at 64 KB the module trapped on valid shaders the desktop compiles (75
+      # else-ifs, 200 nested ifs, a 1600-deep call chain; .wasm-build/WASM-STACK-DEPTH.md).
+      # 8 MB matches the DXC, SPIRV-Cross and slangc modules. --stack-first puts the stack
+      # below static data, so overflowing even 8 MB traps at once instead of silently
+      # corrupting static data; wasm-ld needs GLOBAL_BASE >= the stack size for it.
       - name: Link vkd3d-shader.{js,wasm} (emcc)
         run: |
           source emsdk/emsdk_env.sh
@@ -182,6 +189,9 @@ jobs:
             -sEXPORT_NAME=createVkd3dModule \
             -sFILESYSTEM=0 \
             -sALLOW_MEMORY_GROWTH=1 \
+            -sSTACK_SIZE=8MB \
+            -sGLOBAL_BASE=8388608 \
+            -Wl,--stack-first \
             -sEXPORTED_FUNCTIONS=_sdw_vkd3d_compile,_sdw_vkd3d_free_code,_sdw_vkd3d_free_messages,_malloc,_free \
             -sEXPORTED_RUNTIME_METHODS=HEAPU8,getValue,setValue,UTF8ToString
           ls -la out/

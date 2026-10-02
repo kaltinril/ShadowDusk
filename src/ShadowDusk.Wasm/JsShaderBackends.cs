@@ -78,6 +78,14 @@ internal sealed class JsDxcShaderCompiler : IDxcShaderCompiler
             var blob = new PlatformBlob(BlobKind.Spirv, spirv);
             return Result<PlatformBlob, ShaderError>.Ok(blob);
         }
+        catch (JSException ex) when (WasmCompilerInitialization.IsTrap(ex, "DXC"))
+        {
+            // The shim already dropped the trapped instance (issue #271); mark the chain not
+            // ready so nothing calls into it again before a fresh load.
+            WasmCompilerInitialization.InvalidateDxcChain();
+            return Result<PlatformBlob, ShaderError>.Fail(
+                WasmCompilerInitialization.TrapError("DXC (HLSL → SPIR-V)", request.SourceFileName, ex));
+        }
         catch (JSException ex)
         {
             return Result<PlatformBlob, ShaderError>.Fail(MapJsException(ex, request.SourceFileName));
@@ -161,6 +169,14 @@ internal sealed class JsSpirvToGlslTranspiler : ISpirvToGlslTranspiler
                 relaxNanChecks: true);
 
             return Result<GlslSource, ShaderError>.Ok(new GlslSource(glsl));
+        }
+        catch (JSException ex) when (WasmCompilerInitialization.IsTrap(ex, "SPIRV-Cross"))
+        {
+            // The shim already dropped the trapped instance (issue #271). SPIRV-Cross loads
+            // with the DXC chain, so the chain is marked not ready and reloads as one.
+            WasmCompilerInitialization.InvalidateDxcChain();
+            return Result<GlslSource, ShaderError>.Fail(
+                WasmCompilerInitialization.TrapError("SPIRV-Cross (SPIR-V → GLSL)", "<spirv-cross>", ex));
         }
         catch (JSException ex)
         {
@@ -257,6 +273,10 @@ internal static partial class Vkd3dInterop
 [SupportedOSPlatform("browser")]
 internal static partial class SpirvCrossInterop
 {
+    [JSImport("ensureReady", "shadowdusk-spirv-cross")]
+    [return: JSMarshalAs<JSType.Promise<JSType.Void>>]
+    public static partial Task EnsureReadyAsync();
+
     /// <summary>
     /// Transpiles a SPIR-V module to GLSL text.
     /// JS contract:

@@ -207,6 +207,23 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **Browser compiles of nested shaders hung, crashed or miscompiled (issue #271).** The in-browser
+  DXC, SPIRV-Cross and vkd3d WebAssembly modules were linked with emscripten's 64 KB default stack
+  (the desktop natives get 1 MB on Windows, 8 MB on Linux/macOS), and with emscripten's layout an
+  overflow silently corrupts the module instead of trapping. Measured against the desktop pipeline:
+  SPIRV-Cross failed on about a dozen nested `if`s or `else if`s (an ordinary OpenGL shader), DXC
+  hung on a 100-term expression and gave a wrong diagnostic on 200 `else if`s, vkd3d trapped at 75
+  `else if`s. All three now link an 8 MB stack placed below static data, and match the desktop
+  byte-for-byte at every measured depth the desktop compiles, except an 800-branch `else if` chain
+  in SPIRV-Cross, which still exhausts the JS engine's own stack. A module that traps is now
+  discarded and reloaded instead of being reused corrupted, and the compile reports the new code
+  `SD1907` (a synchronous `Compile()` before the reload reports `SD1903`; `CompileAsync` reloads by
+  itself). The rebuilt DXC and SPIRV-Cross modules ship in this release; the rebuilt vkd3d module
+  (DirectX/FNA in the browser) is verified but not hosted yet, so the browser DirectX/FNA path keeps
+  the 64 KB module until it is re-pinned. No emitted byte changes on any corpus. New gate
+  `node-test-wasm-depth.mjs` and a trap scenario in `browser-vkd3d-gate.mjs` (`wasm.yml`); details in
+  `.wasm-build/WASM-STACK-DEPTH.md`. Also: `tools/restore.*` now refresh the packaged
+  `dxcompiler.wasm` by hash instead of size (a relink can change the module and keep its size).
 - **Browser: asking for DirectX 12 now fails with a registered code up front (issue #272).** The browser
   host has no DX12 path, but a `PlatformTarget.DirectX12` request ran DXC and then failed in the JS shim
   with an unregistered `X0000: DXC output is not a SPIR-V module (bad magic word)`, on both the `.fx` and
@@ -236,8 +253,34 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   goldens `SamplerReservationIfBranch` and `SamplerReservationMacro`, and two new arms
   ("ifbranch", "macro") in `validation/SamplerRegisterOrderGl`, measured RED with the old reading
   (maxd 255, 4096 px each) and maxd 0 after. A corpus sweep builds the view for all 153 parseable
-  fixtures; no other shader's output moved. Not fixed here: the sibling map for an explicit register
-  on a LEGACY `sampler` declaration is still read from raw tokens (issue #299).
+  fixtures; no other shader's output moved. The sibling map, an explicit register on a LEGACY
+  `sampler` declaration, is the next entry (issue #299).
+- **OpenGL: an explicit `register(sN)` on a legacy `sampler` declaration is now read from the
+  preprocessed source too, like `mgfxc` (issue #299).** A legacy `sampler X : register(sN)` pins its
+  texture unit (issue #189), and that clause was still read off the raw source after #283. So a
+  register written only in the branch OpenGL does not compile pinned the unit anyway
+  (`#if OPENGL` / `sampler S = sampler_state {…};` / `#else` /
+  `sampler S : register(s1) = sampler_state {…};` gave `ps_s1`, off SpriteBatch's unit 0, where
+  `mgfxc` emits `ps_s0`), the wrong branch's number won when both branches had one (`ps_s1` where
+  `mgfxc` emits the OpenGL branch's `ps_s2`), and a register number spelled through a macro or a
+  `/Defines` value (`#define REG s1` / `sampler S : register(REG);`) was missed (`ps_s0` where
+  `mgfxc` emits `ps_s1`). Measured against the pinned `mgfxc` 3.8.4.1 for `sampler` and `sampler2D`,
+  with a `sampler_state` block, the brace form and the bare form; all now match. A sampler or
+  texture whose NAME is a macro keeps its pin (the names are resolved through the same
+  preprocessor), which also fixes `#define TEX RealTex` / `Texture = <TEX>` (`ps_s0` where `mgfxc`
+  emits `ps_s1`). Both maps are read
+  off the same preprocessed view (`FxPreParser.CollectGlSamplerSlots`), on the OpenGL target and in
+  the raylib converter; an unbuildable view is still `SD0009`. New committed `mgfxc` goldens
+  `SamplerLegacyRegisterIfBranch` and `SamplerLegacyRegisterMacro`, and two new arms
+  ("legacy-ifbranch", "legacy-macro") in `validation/SamplerRegisterOrderGl`, measured RED with the
+  old reading (maxd 255, 4096 px each) and maxd 0 after. Every other fixture is unchanged: the whole
+  160-file OpenGL corpus was compiled with the fix off and on and only the two new fixtures differ
+  (115 byte-identical, 43 fail identically either way), including `VsTransformColorTexture`,
+  `VsWaveQuadIntrinsics` and `apos-shapes-sm6`, whose explicit-slot map does change (their register
+  lived in the dead `#if SM6` arm) but whose units and bytes do not. Not fixed here, both filed:
+  a legacy sampler declared in an `#include`d file or through a function-like macro does not compile
+  for OpenGL at all (issue #308), and a lowercase `sampler S : register(sN)` read through
+  `Texture.Sample` does not reserve its register (issue #309).
 - **`ShadowDusk.Slang`: author registers in an `import`ed module and on a combined `Sampler2D` are
   kept (issue #292).** Both were stripped silently on DirectX and OpenGL. (1) slangc splits
   `Sampler2D Comb : register(t2)` into `Comb_texture_0 : register(t2)` and a `Comb_sampler_0` it
@@ -248,19 +291,29 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   `__include`, so a register declared in an imported module was invisible to the pass (and an
   import-only source skipped it). slangc auto-numbers an imported resource that has no author
   register (measured), so "keep every register from another file" is no fix either. Each
-  declaration from another file is now judged from that file's own `-E` pass with the compile's
-  macros (slangc applies `-D` to imported modules too, measured): the file slangc's `#line` names,
-  plus every file imported or `__include`d by quoted path, transitively (a combined sampler's halves
-  carry slangc's core-module `#line`, so those are found through the import). A declaration no pass
-  can decide (a module reached only by module name, `import foo;`; a register spelled through a
-  macro no read file defines; two files that disagree; or a file the pass cannot open) now fails as
+  declaration from another file is now judged from slangc's own `-E` output for the MODULE it is
+  in, with the compile's macros (slangc applies `-D` to imported modules too, and a module's
+  macros do not cross an `import`, both measured): a file counts as a module when it is reached
+  through quoted-path imports or opens with a `module`/`implementing` declaration. An `#include`d
+  fragment is read through the module that includes it, never on its own (its includer's macros
+  decide what slangc compiled), and a combined sampler's halves, whose `#line` is slangc's core
+  module, are found through the imports. A declaration no trusted text decides (a file reached
+  only by module name, `import foo;`, that has no `module` declaration; a register spelled through
+  a macro no module defines; modules that disagree; a file the pass cannot open) now fails as
   the new `SD0628`, naming the declaration and its file and line, instead of being guessed. Same code
   on both transports through the shared seam (the browser's slangc has no file system, so there an
   import already fails the compile with slangc's own `E00001`); the node gate gains the
-  combined-`Sampler2D` shape and the missing-file `-E` shape. Found on the way and fixed the same
+  combined-`Sampler2D` shape and the missing-file `-E` shapes. Found on the way and fixed the same
   way: slangc hoists a struct global's resource fields too (`M gM : register(t5)` emits
-  `gM_t_0 : register(t5)`), and that register was also stripped. A shader with no texture/sampler
-  register in slangc's output now skips the `-E` pass entirely. No corpus byte moves.
+  `gM_t_0 : register(t5)`), and that register was also stripped. No corpus byte moves.
+  **Cost, measured and pinned** (win-x64, Release, median of 9; one slangc spawn is about 150 ms):
+  no shape that compiled correctly before pays an extra slangc run (untextured 1 run, registers in
+  the entry file 2, combined `Sampler2D` 2, all as before), and a shader with no texture/sampler
+  register in slangc's output now skips the `-E` pass even when it writes `register(b0)`. An entry
+  that imports modules with registered resources goes from 1 run to 2 (about 165 ms to 310 ms for
+  one import or a chain of three): the entry source and every file slangc names are preprocessed
+  in ONE `slangc -E` invocation. `SlangRegisterPassCostTests` pins the run count per shape on both
+  transports, and a real-slangc test pins the same counts.
 - **A Vortice.Dxc other than 3.3.4 in the process is now `SD0219` on every OS, before any native
   is touched (issue #282).** Measured: Vortice.Dxc 3.8.3 is not only a different DXC (1.9.2602.17)
   but a binary-incompatible managed API; with the pinned natives put back in place every DXC call
@@ -328,7 +381,7 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   `register` at all, so a shader that writes none pays nothing. A pass that exits 0 with empty output, or
   output missing an entry point the compile found, now fails as `SD0629` instead of silently stripping every
   author register. (A register in an `import`ed module or on a combined `Sampler2D` was still stripped;
-  fixed by issue #292, the entry below.) `mgfxc` 3.8.4.1 was measured on the
+  fixed by issue #292, the entry above.) `mgfxc` 3.8.4.1 was measured on the
   same two shapes in a `.fx` file and agrees with the preprocessed reading (`ps_s0`; `ps_s2`+`ps_s3`).
   No corpus byte moves: `slang-manifest.json` is unchanged and the native-vs-WebAssembly identity
   stays 235/235. `validation/SlangTexturedGl` gains an `Invert#if` row that renders the

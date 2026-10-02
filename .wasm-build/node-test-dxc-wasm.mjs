@@ -60,8 +60,14 @@ for (const stem of stems) {
     let actual;
     try {
         actual = compileToSpirv(hlsl, args);
+        // Since Phase 38 the glue returns { spirv, error } (DXC's diagnostics as a value);
+        // an older glue returned the bytes directly.
+        if (actual && !(actual instanceof Uint8Array) && 'error' in actual) {
+            if (actual.error) throw new Error(actual.error);
+            actual = actual.spirv;
+        }
         // embind may return a Uint8Array view; normalize to a plain Uint8Array.
-        actual = actual instanceof Uint8Array ? actual : new Uint8Array(actual);
+        actual = actual instanceof Uint8Array ? new Uint8Array(actual) : new Uint8Array(actual);
     } catch (e) {
         console.error(`[${stem}] THREW: ${e && e.message ? e.message : e}`);
         failed++;

@@ -53,7 +53,12 @@ namespace ShadowDusk.Slang;
 /// alone cannot tell. slangc names the file each declaration came from in its <c>#line</c>
 /// directives; <see cref="SlangCompiler"/> runs the same <c>-E</c> pass over that file (same
 /// macros, which slangc applies to imported modules too, measured) and judges the declaration
-/// from its text. A declaration neither pass decides fails as <c>SD0628</c>, never a guess.</item>
+/// from its text, but only once the file is known to be a MODULE: reached through a
+/// quoted-path import, or opening with a <c>module</c>/<c>implementing</c> declaration.
+/// Macros do not cross an <c>import</c> or an <c>__include</c> (measured), so a module's own
+/// <c>-E</c> output is what slangc compiled; an <c>#include</c>d fragment's is not (its
+/// includer's macros decide), so a fragment is read through the module that includes it.
+/// A declaration no trusted text decides fails as <c>SD0628</c>, never a guess.</item>
 /// </list>
 /// </remarks>
 internal static class SlangcRegisterStripper
@@ -164,25 +169,107 @@ internal static class SlangcRegisterStripper
     }
 
     /// <summary>
-    /// Whether the author wrote <paramref name="resource"/>'s register, judged from the entry
-    /// source's preprocessed text (<paramref name="entry"/>) and, for a declaration that came
-    /// from another file, the preprocessed text of the files it came from
-    /// (<paramref name="otherFiles"/>, null while those have not been read).
+    /// True when the entry source (or a <c>-D</c> value) can spell an <c>import</c>, the only way
+    /// a declaration reaches the compile from a file the entry source's own preprocessed text
+    /// does not contain (<c>__include</c> spells <c>include</c>, and a pasted or spliced token
+    /// is covered by <see cref="MayWriteRegister"/>).
     /// </summary>
-    public static RegisterVerdict Judge(EmittedResource resource, AuthorBindings entry, AuthorBindings? otherFiles)
+    public static bool MayImport(string slangSource, IReadOnlyList<UserDefine> defines)
+    {
+        if (slangSource.Contains("import", StringComparison.Ordinal))
+            return true;
+        foreach (UserDefine define in defines)
+        {
+            if (define.Name.Contains("import", StringComparison.Ordinal)
+                || (define.Value?.Contains("import", StringComparison.Ordinal) ?? false))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// One spelling per file for the paths slangc and a Slang source write: backslashes as
+    /// forward slashes, repeated separators collapsed (slangc's <c>#line</c> prints an import
+    /// written with backslashes as <c>C://dir//m.slang</c>, measured). Used only to tell that
+    /// two spellings are the same file, never as a path to open.
+    /// </summary>
+    public static string PathKey(string path)
+    {
+        string key = path.Replace('\\', '/');
+        while (key.Contains("//", StringComparison.Ordinal))
+            key = key.Replace("//", "/", StringComparison.Ordinal);
+        return key;
+    }
+
+    // A preprocessed file that opens with 'module x ;' or 'implementing x ;'.
+    private static readonly Regex ModuleOpening = new(
+        """^\s*(?:module|implementing)\b""", RegexOptions.Compiled);
+
+    /// <summary>
+    /// The preprocessed text opens with a <c>module</c> or <c>implementing</c> declaration, so
+    /// the file is a module (or a module's <c>__include</c>d part), never an <c>#include</c>d
+    /// fragment. A module is preprocessed on its own: macros do not cross an <c>import</c> or
+    /// an <c>__include</c> (measured), so its own <c>-E</c> output is what slangc compiled.
+    /// </summary>
+    public static bool OpensAsModule(string preprocessed) => ModuleOpening.IsMatch(preprocessed);
+
+    /// <summary>
+    /// Whether the author wrote <paramref name="resource"/>'s register.
+    /// </summary>
+    /// <param name="resource">The emitted declaration.</param>
+    /// <param name="entry">The entry source's preprocessed text.</param>
+    /// <param name="modules">The preprocessed text of every file proven to be a module so far,
+    /// by <see cref="PathKey"/>.</param>
+    /// <param name="closureComplete">Every file reachable through quoted-path imports has been
+    /// read. Until then a declaration that needs them all is <see cref="RegisterVerdict.Pending"/>.</param>
+    /// <param name="closureBroken">A quoted-path import could not be read, so "no module declares
+    /// it" proves nothing.</param>
+    /// <remarks>
+    /// In order: the entry text decides whatever it binds or declares (its own declarations and
+    /// those of the files it <c>#include</c>s, which <c>-E</c> expands). A declaration slangc
+    /// locates in a module is decided by that module's own text alone. Anything else (a
+    /// resource hoisted out of an aggregate, whose location is slangc's core module, or one
+    /// located in a file not proven to be a module, which may be a fragment <c>#include</c>d
+    /// by one) is decided by all the modules together, and only when they agree.
+    /// </remarks>
+    public static RegisterVerdict Judge(
+        EmittedResource resource,
+        AuthorBindings entry,
+        IReadOnlyDictionary<string, AuthorBindings> modules,
+        bool closureComplete,
+        bool closureBroken = false)
     {
         if (entry.Binds(resource))
             return RegisterVerdict.Keep;
         // Written in the entry source (or a file it #includes, which -E expands) without one.
         if (resource.File == EntrySourceFile || entry.Declares(resource))
             return RegisterVerdict.Strip;
-        if (otherFiles is null)
+
+        if (modules.TryGetValue(PathKey(resource.File), out AuthorBindings? own))
+        {
+            if (own.Binds(resource))
+            {
+                if (!own.DeclaresPlainly(resource))
+                    return RegisterVerdict.Keep;
+            }
+            else if (own.Declares(resource))
+            {
+                return RegisterVerdict.Strip;
+            }
+        }
+
+        if (!closureComplete)
+            return RegisterVerdict.Pending;
+        if (closureBroken)
             return RegisterVerdict.Unproven;
-        // Bound in one file and plainly declared in another: the two readings disagree, and
+
+        // Bound in one module and plainly declared in another: the two readings disagree, and
         // which one slangc compiled cannot be told from here.
-        if (otherFiles.Binds(resource))
-            return otherFiles.DeclaresPlainly(resource) ? RegisterVerdict.Unproven : RegisterVerdict.Keep;
-        return otherFiles.Declares(resource) ? RegisterVerdict.Strip : RegisterVerdict.Unproven;
+        if (modules.Values.Any(m => m.Binds(resource)))
+            return modules.Values.Any(m => m.DeclaresPlainly(resource)) ? RegisterVerdict.Unproven : RegisterVerdict.Keep;
+        return modules.Values.Any(m => m.Declares(resource)) ? RegisterVerdict.Strip : RegisterVerdict.Unproven;
     }
 
     /// <summary>
@@ -234,6 +321,12 @@ internal static class SlangcRegisterStripper
         /// (<c>"core"</c>, <c>"hlsl.meta.slang"</c>, measured), not the author's file.
         /// </summary>
         public bool IsHoisted => HoistBases(Name).Any();
+
+        /// <summary>
+        /// <see cref="IsHoisted"/> and located in a file with a bare name: slangc's embedded
+        /// core module, which is not a file anyone can preprocess.
+        /// </summary>
+        public bool IsCoreHoist => IsHoisted && File.IndexOfAny(['/', '\\']) < 0;
     }
 
     // 'import "path" ;', '__exported import "path" ;' or '__include "path" ;' in a preprocessed
@@ -255,7 +348,8 @@ internal static class SlangcRegisterStripper
     {
         foreach (Match m in QuotedImport.Matches(preprocessed))
         {
-            string path = m.Groups["path"].Value;
+            // The token is a string literal: an escaped backslash is one backslash of the path.
+            string path = m.Groups["path"].Value.Replace(@"\\", @"\", StringComparison.Ordinal);
             if (importingFile is null || IsRooted(path))
             {
                 yield return path;
@@ -277,8 +371,10 @@ internal static class SlangcRegisterStripper
         Keep,
         /// <summary>slangc numbered it: strip.</summary>
         Strip,
-        /// <summary>The preprocessed text available cannot decide.</summary>
+        /// <summary>No text ShadowDusk can read decides.</summary>
         Unproven,
+        /// <summary>Not decided yet: more imported files have to be read first.</summary>
+        Pending,
     }
 
     /// <summary>

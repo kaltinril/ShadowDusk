@@ -109,11 +109,15 @@ other targets keep the unmodified SPIRV-Cross dialect. The pixel-stage transform
     register namespace, so a legacy `sampler X : register(sN)` *is* the combined object and lands
     on `N`, while a modern `SamplerState` merely occupies its register and pushes the synthesized
     combined samplers around it — one texture plus `SamplerState S : register(s0)` yields
-    `ps_s1`, not `ps_s0`. `FxPreParser` records both facts before its SM4 rewrite drops the
-    clauses. Verified against the pinned `mgfxc` on ten shapes. Known gap: the scan reads the
-    file's tokens before any preprocessing, so a register inside an inactive `#if` branch is
-    still counted and one written through a macro is not, where `mgfxc` (which preprocesses
-    first) does the opposite on both (measured; `docs/validation-matrix.md` §7).
+    `ps_s1`, not `ps_s0`. Verified against the pinned `mgfxc` on ten shapes. Both facts are read
+    off a managed **preprocessed view** of the source (`FxPreParser.CollectGlSamplerSlots`,
+    conditionals evaluated and macros expanded with the compile's own macros), the way `mgfxc`
+    reads them: a register inside an inactive `#if` branch does not count and one spelled
+    through a macro does, for the reservation (issue #283) and for the legacy pin (issue #299)
+    alike. The SM4 rewrite that drops the clauses still works on the raw text, which is why a
+    legacy sampler it cannot recognize there (declared in an `#include`d file or through a
+    function-like macro) does not compile for OpenGL (issue #308;
+    `docs/validation-matrix.md` §7).
   - **Per pair, not per sampler.** Two textures read through one shared `SamplerState` (the
     diffuse+lightmap idiom) produce **two** records; two samplers over one texture (the
     linear+point idiom) also produce two, each with its own state. Keying on the reflected

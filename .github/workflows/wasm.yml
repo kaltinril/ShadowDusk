@@ -331,6 +331,16 @@ jobs:
         timeout-minutes: 25
         run: node node-test-vkd3d-wasm.mjs
 
+      # Issue #271: the DXC, SPIRV-Cross and vkd3d modules link an 8 MB stack (emscripten's
+      # 64 KB default hung, trapped or miscompiled on nested shaders the desktop compiles).
+      # The depth probe captures desktop ground truth for those shapes; node replays them
+      # through the product shims and requires byte-identity, then checks that a module that
+      # does trap is discarded and reloads. --require-module: a missing module is red.
+      - name: Issue 271 - WASM stack-depth gate (node)
+        working-directory: tests/ShadowDusk.BrowserTests
+        timeout-minutes: 25
+        run: node node-test-wasm-depth.mjs --require-module
+
       - name: Phase 4.1 G2 — in-browser DX/FNA byte-identity gate
         working-directory: tests/ShadowDusk.BrowserTests
         timeout-minutes: 25

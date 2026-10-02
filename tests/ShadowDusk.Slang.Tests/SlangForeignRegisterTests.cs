@@ -403,4 +403,173 @@ public sealed class SlangForeignRegisterTests : IDisposable
         error.Message.ShouldContain("'InnerComb_texture_0' (which slangc may have hoisted out of 'InnerComb')", Case.Sensitive);
         error.File.ShouldBe("Foreign.slang");
     }
+
+    // ---- Which files count as modules ------------------------------------------------------
+
+    private const string ModTexPixelShader = """
+        SamplerState S;
+
+        [shader("fragment")]
+        float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
+        {
+            return ModTex.Sample(S, uv);
+        }
+        """;
+
+    [Theory]
+    [InlineData(PlatformTarget.DirectX)]
+    [InlineData(PlatformTarget.OpenGL)]
+    public void ModuleImportedByName_ThatOpensWithAModuleDeclaration_IsRead(PlatformTarget target)
+    {
+        // 'import inner;' is not followed, but slangc's #line names inner.slang and the file
+        // opens with 'module inner;', so it is a module and its own text is what slangc compiled.
+        WriteModule("inner.slang", "module inner;\npublic Texture2D ModTex : register(t3);\n");
+        string outer = WriteModule("outer.slang", "module outer;\n__exported import inner;\n");
+
+        var (_, fx) = Slang($"import \"{outer}\";\n" + ModTexPixelShader, target);
+
+        fx.ShouldContain("Texture2D<float4 > ModTex : register(t3);", Case.Sensitive);
+    }
+
+    [Theory]
+    [InlineData(PlatformTarget.DirectX)]
+    [InlineData(PlatformTarget.OpenGL)]
+    public void FileReachedOnlyByName_WithoutAModuleDeclaration_FailsLoudly(PlatformTarget target)
+    {
+        // The same shape without 'module inner;': nothing ShadowDusk can read tells this file
+        // from a fragment some unseen module #includes after defining macros, so its text is not
+        // taken as what slangc compiled.
+        WriteModule("inner.slang", "public Texture2D ModTex : register(t3);\n");
+        string outer = WriteModule("outer.slang", "module outer;\n__exported import inner;\n");
+
+        var result = CompileSlang($"import \"{outer}\";\n" + ModTexPixelShader, target, out _);
+
+        result.IsSuccess.ShouldBeFalse();
+        ShaderError error = result.Error.ShouldHaveSingleItem();
+        error.Code.ShouldBe("SD0628");
+        error.File.ShouldEndWith("inner.slang", Case.Sensitive);
+        error.Line.ShouldBe(1);
+        error.Message.ShouldContain("does not open with a 'module' or 'implementing' declaration", Case.Sensitive);
+    }
+
+    [Theory]
+    [InlineData(PlatformTarget.DirectX)]
+    [InlineData(PlatformTarget.OpenGL)]
+    public void FragmentWhoseRegisterDependsOnItsIncludersMacro_IsReadThroughTheIncluder(PlatformTarget target)
+    {
+        // On its own the fragment preprocesses to a PLAIN declaration (SLOTTED is not defined),
+        // but the module that #includes it defines SLOTTED, so slangc compiled the register.
+        // Reading the fragment alone would strip the author's t3 silently.
+        WriteModule("slots.hlsli", """
+            public Texture2D ModTex
+            #ifdef SLOTTED
+                : register(t3)
+            #endif
+            ;
+            """);
+        string module = WriteModule("slotmod.slang", "module slotmod;\n#define SLOTTED 1\n#include \"slots.hlsli\"\n");
+
+        var (_, fx) = Slang($"import \"{module}\";\n" + ModTexPixelShader, target);
+
+        fx.ShouldContain("Texture2D<float4 > ModTex : register(t3);", Case.Sensitive);
+    }
+
+    [Theory]
+    [InlineData(PlatformTarget.DirectX)]
+    [InlineData(PlatformTarget.OpenGL)]
+    public void ModuleMacros_DoNotReachAnImportedModule(PlatformTarget target)
+    {
+        // What makes a module's own -E output trustworthy: a macro defined by the importer does
+        // not cross the import (measured), so 'inner' compiles WITHOUT the register and slangc's
+        // number on ModTex is its own.
+        WriteModule("inner.slang", """
+            module inner;
+            public Texture2D ModTex
+            #ifdef SLOTTED
+                : register(t3)
+            #endif
+            ;
+            """);
+        string outer = WriteModule("outer.slang", "module outer;\n#define SLOTTED 1\n__exported import \"inner.slang\";\n");
+
+        var (_, fx) = Slang($"import \"{outer}\";\n" + ModTexPixelShader, target);
+
+        fx.ShouldContain("Texture2D<float4 > ModTex;", Case.Sensitive);
+    }
+
+    // ---- What the pass costs, through real slangc -------------------------------------------
+
+    private static (Result<CompiledShader, ShaderError[]> Result, List<IReadOnlyList<string>> Runs) CompileCounting(
+        string source, PlatformTarget target)
+    {
+        var runs = new List<IReadOnlyList<string>>();
+        var compiler = new SlangCompiler(
+            new CapturingPipeline(),
+            () => SlangToolPath.GetUnsupportedReason() is { } reason
+                ? new SlangCompiler.SlangcLocation(reason, null)
+                : new SlangCompiler.SlangcLocation(null, SlangToolPath.Resolve()),
+            SlangNativeCache.EnsureRunnableSlangc,
+            (path, directory, text, arguments) =>
+            {
+                runs.Add(arguments);
+                return SlangCompiler.RunSlangc(path, directory, text, arguments);
+            });
+        var result = compiler.Compile(source, new CompilerOptions { Target = target, SourceFileName = "Cost.slang" });
+        return (result, runs);
+    }
+
+    [Theory]
+    // shape, target, slangc runs for the whole compile (1 entry point + the -E runs).
+    [InlineData("untextured", PlatformTarget.DirectX, 1)]
+    [InlineData("untextured", PlatformTarget.OpenGL, 1)]
+    [InlineData("textured", PlatformTarget.DirectX, 2)]
+    [InlineData("textured", PlatformTarget.OpenGL, 2)]
+    [InlineData("combined", PlatformTarget.DirectX, 2)]
+    [InlineData("combined", PlatformTarget.OpenGL, 2)]
+    [InlineData("import", PlatformTarget.DirectX, 2)]
+    [InlineData("import", PlatformTarget.OpenGL, 2)]
+    [InlineData("chain", PlatformTarget.DirectX, 2)]
+    [InlineData("chain", PlatformTarget.OpenGL, 2)]
+    // A register in a fragment the ENTRY source #includes: 2 before this change, 2 now.
+    [InlineData("include", PlatformTarget.DirectX, 2)]
+    [InlineData("include", PlatformTarget.OpenGL, 2)]
+    public void RegisterPass_CostsTheSameThroughRealSlangc(string shape, PlatformTarget target, int expectedRuns)
+    {
+        // The counts SlangRegisterPassCostTests pins with a fake slangc, here with the real one:
+        // this is what proves the one-run-for-several-inputs form really comes back as one line
+        // per input (a fallback to one run per file would show up as a higher count).
+        string source = shape switch
+        {
+            "untextured" => "cbuffer P { float4 Tint; };\n[shader(\"fragment\")]\nfloat4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target { return Tint * uv.x; }\n",
+            "textured" => "Texture2D ModTex : register(t1);\nSamplerState S : register(s1);\n[shader(\"fragment\")]\nfloat4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target { return ModTex.Sample(S, uv); }\n",
+            "combined" => "Sampler2D Comb : register(t2);\n[shader(\"fragment\")]\nfloat4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target { return Comb.Sample(uv); }\n",
+            "import" => $"import \"{WriteModule("texmod.slang", "module texmod;\npublic Texture2D ModTex : register(t3);\n")}\";\n" + ModTexPixelShader,
+            "include" => $"#include \"{WriteModule("slots.hlsli", "Texture2D ModTex : register(t3);\n")}\"\n" + ModTexPixelShader,
+            _ => $"import \"{WriteChain()}\";\n" + ModTexPixelShader,
+        };
+
+        var (result, runs) = CompileCounting(source, target);
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? string.Join("; ", result.Error.Select(e => e.FxcFormattedMessage)) : "");
+        runs.Count.ShouldBe(expectedRuns, string.Join(" | ", runs.Select(r => string.Join(" ", r.SkipWhile(a => a != "-E")))));
+    }
+
+    // a.slang imports b.slang imports c.slang, by quoted path; the texture is in the last.
+    private string WriteChain()
+    {
+        WriteModule("c.slang", "module c;\npublic Texture2D ModTex : register(t3);\n");
+        WriteModule("b.slang", "module b;\n__exported import \"c.slang\";\n");
+        return WriteModule("a.slang", "module a;\n__exported import \"b.slang\";\n");
+    }
+
+    [Theory]
+    [InlineData(PlatformTarget.DirectX)]
+    [InlineData(PlatformTarget.OpenGL)]
+    public void ChainOfThreeQuotedImports_KeepsTheRegisterInTheLast(PlatformTarget target)
+    {
+        var (_, fx) = Slang($"import \"{WriteChain()}\";\n" + ModTexPixelShader, target);
+
+        fx.ShouldContain("Texture2D<float4 > ModTex : register(t3);", Case.Sensitive);
+        fx.ShouldContain("SamplerState S;", Case.Sensitive);
+    }
 }

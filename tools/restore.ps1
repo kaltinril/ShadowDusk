@@ -290,8 +290,10 @@ function Restore-DxcWasm {
     if ((Test-Path $DxcWasmWasm) -and (Test-Path $DxcWasmJs)) {
         Write-Host "restore.ps1: DXC->WASM (dxcompiler.{js,wasm}) present in .wasm-build — OK"
         # Copy the built .wasm into the package wwwroot for pack if it's missing or stale.
+        # Staleness is decided by HASH, not size: a relink can change the module and keep its
+        # size (measured in issue #271 with only -sSTACK_SIZE set), and a size check keeps the old copy.
         if (-not (Test-Path $PkgDxcWasm) -or
-            ((Get-Item $DxcWasmWasm).Length -ne (Get-Item $PkgDxcWasm).Length)) {
+            ((Get-FileHash -Algorithm SHA256 $DxcWasmWasm).Hash -ne (Get-FileHash -Algorithm SHA256 $PkgDxcWasm).Hash)) {
             New-Item -ItemType Directory -Force -Path $PkgDxcDir | Out-Null
             Copy-Item -Force $DxcWasmWasm $PkgDxcWasm
             Write-Host "restore.ps1: copied dxcompiler.wasm -> src/ShadowDusk.Wasm/wwwroot/dxc/ (for pack)"

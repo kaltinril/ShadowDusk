@@ -360,9 +360,13 @@ jobs:
       # ICD) purely to satisfy that probe; the action registers it in the Vulkan ICD registry
       # for us, but does not add its bundled `vulkan-1.dll` to PATH, so the next step does.
       # Pinned to a commit SHA (v1.6.0), not the mutable tag, since this is a third-party
-      # action.
+      # action. It queries the GitHub API for the SwiftShader release; without a token that
+      # call shares the runner IP's unauthenticated quota and fails at random with "API rate
+      # limit exceeded" (issue #317), so it gets the workflow's read-only token.
       - name: Install Vulkan software driver (SwiftShader) for DX12 SDL2 window creation
         uses: jakoch/install-vulkan-sdk-action@37effcfa045411f8bfbbda26df2fd1b3bf3436fa # v1.6.0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         with:
           install_swiftshader: true
           swiftshader_destination: C:\Swiftshader

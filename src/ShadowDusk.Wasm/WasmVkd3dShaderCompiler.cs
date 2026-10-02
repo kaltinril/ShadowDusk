@@ -102,6 +102,15 @@ internal sealed class WasmVkd3dShaderCompiler : IDxbcShaderCompiler
 
             return Result<PlatformBlob, ShaderError>.Ok(new PlatformBlob(blobKind, code));
         }
+        catch (JSException ex) when (WasmCompilerInitialization.IsTrap(ex, "vkd3d"))
+        {
+            // The shim already dropped the trapped instance (issue #271): mark it not ready,
+            // and do NOT run the source-locator probes below, which would call into it.
+            WasmCompilerInitialization.InvalidateVkd3d();
+            return Result<PlatformBlob, ShaderError>.Fail(
+                WasmCompilerInitialization.TrapError(
+                    "vkd3d-shader (DirectX DXBC / FNA fx_2_0)", request.SourceFileName, ex));
+        }
         catch (JSException ex)
         {
             // The JS shim re-throws vkd3d's VERBATIM messages as the exception message
@@ -115,13 +124,25 @@ internal sealed class WasmVkd3dShaderCompiler : IDxbcShaderCompiler
                 request.SourceFileName,
                 "vkd3d-shader WASM compilation failed with no diagnostics");
 
+            bool probeTrapped = false;
             ShaderError? Probe(string source)
             {
+                // After a probe trapped, the instance is gone: never call into it again.
+                if (probeTrapped)
+                    return primary;
                 try
                 {
                     Vkd3dInterop.Compile(
                         Encoding.UTF8.GetBytes(source), request.EntryPoint, profile, request.SourceFileName, targetType);
                     return null;
+                }
+                catch (JSException probeEx) when (WasmCompilerInitialization.IsTrap(probeEx, "vkd3d"))
+                {
+                    // A probe trapped and the shim discarded the instance: stop probing (every
+                    // later probe would hit the discarded module) and report the original error.
+                    WasmCompilerInitialization.InvalidateVkd3d();
+                    probeTrapped = true;
+                    return primary;
                 }
                 catch (JSException probeEx)
                 {
@@ -139,9 +160,9 @@ internal sealed class WasmVkd3dShaderCompiler : IDxbcShaderCompiler
             // (a token cancelled beforehand is caught by the entry check above), so here the
             // check cannot fire yet; the token is passed so the two hosts stay identical and
             // a multi-threaded WASM runtime is covered without another change.
-            return Result<PlatformBlob, ShaderError>.Fail(
-                Vkd3dSourceLocator.Relocate(
-                    primary, request.HlslSource, request.HlslSource, request.SourceFileName, Probe, cancellationToken));
+            ShaderError relocated = Vkd3dSourceLocator.Relocate(
+                primary, request.HlslSource, request.HlslSource, request.SourceFileName, Probe, cancellationToken);
+            return Result<PlatformBlob, ShaderError>.Fail(probeTrapped ? primary : relocated);
         }
     }
 
