@@ -201,7 +201,6 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
-<<<<<<< HEAD
 - **A Vortice.Dxc other than 3.3.4 in the process is now `SD0219` on every OS, before any native
   is touched (issue #282).** Measured: Vortice.Dxc 3.8.3 is not only a different DXC (1.9.2602.17)
   but a binary-incompatible managed API; with the pinned natives put back in place every DXC call
@@ -216,7 +215,6 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   silicon refuses to map it). The decoy is now re-signed, the probe reports the image `dladdr`
   names for ShadowDusk's own handle, and the test requires it to be the decoy and every DXC-backed
   target to fail with the "dyld mapped" `SD0219`.
-=======
 - **Stale lock files outside the solution (issues #291, #290).** PR #279's `Vortice.Dxc` `[3.3.4]`
   pin missed the lock files of `Vkd3dCorpusProbe` (which turned Browser render smoke red on main),
   `slang-probe`, `dxc-corpus-probe` and `KniXnbContentLoad`'s 4.3.9001 lock (still at 0.18.0), and
@@ -224,7 +222,6 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   `tools/check-lock-files.sh`, run by a new `Lock files` CI job on every PR, restores every tracked
   lock file in locked mode, so this class of miss fails on its own PR. The release lock-file rewrite
   now matches versioned names (`*packages*.lock.json`).
->>>>>>> origin/fix/291-stale-lock-files
 - **`ShadowDusk.Slang`: which registers "the author wrote" is now decided after preprocessing
   (issue #252 follow-up).** The register strip kept a texture/sampler register only when the Slang
   source text spelled `register(...)` on that name, and it read the text before the preprocessor
