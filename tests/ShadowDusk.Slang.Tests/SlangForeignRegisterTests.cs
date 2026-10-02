@@ -233,6 +233,30 @@ public sealed class SlangForeignRegisterTests : IDisposable
         fx.ShouldContain("CArr_sampler_0[int(2)];", Case.Sensitive);
     }
 
+    [Theory]
+    [InlineData(PlatformTarget.DirectX)]
+    [InlineData(PlatformTarget.OpenGL)]
+    public void StructWithAResourceRegister_KeepsItOnTheHoistedFieldOfItsClass(PlatformTarget target)
+    {
+        // The same hoisting as a combined sampler: slangc emits the struct's fields as
+        // gM_t_0 / gM_s_0 and puts the author's t5 on the texture field only (measured).
+        const string source = """
+            struct M { Texture2D t; SamplerState s; };
+            M gM : register(t5);
+
+            [shader("fragment")]
+            float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
+            {
+                return gM.t.Sample(gM.s, uv);
+            }
+            """;
+
+        var (_, fx) = Slang(source, target);
+
+        fx.ShouldContain("Texture2D<float4 > gM_t_0 : register(t5);", Case.Sensitive);
+        fx.ShouldContain("SamplerState gM_s_0;", Case.Sensitive);
+    }
+
     // ---- (1) A register in an imported module ----------------------------------------------
 
     private const string ModulePixelShader = """
@@ -376,7 +400,7 @@ public sealed class SlangForeignRegisterTests : IDisposable
         result.IsSuccess.ShouldBeFalse();
         ShaderError error = result.Error.ShouldHaveSingleItem();
         error.Code.ShouldBe("SD0628");
-        error.Message.ShouldContain("'InnerComb_texture_0' (one half of the combined sampler 'InnerComb')", Case.Sensitive);
+        error.Message.ShouldContain("'InnerComb_texture_0' (which slangc may have hoisted out of 'InnerComb')", Case.Sensitive);
         error.File.ShouldBe("Foreign.slang");
     }
 }

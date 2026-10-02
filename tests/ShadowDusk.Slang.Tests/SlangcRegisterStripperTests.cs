@@ -205,6 +205,20 @@ public sealed class SlangcRegisterStripperTests
         // slangc's #line for a split half is its own core module, never "<stdin>" (measured).
         Judge(Emitted(emittedName, cls, "core"), entry).ToString().ShouldBe(expected);
 
+    [Theory]
+    // A struct's resource fields are hoisted as '<var>_<field>_<n>' (measured): 'Samplers gS;'
+    // gives 'gS_s_0', and 'M gM : register(t5)' puts t5 on the texture field only.
+    [InlineData("Samplers gS ;", "gS_s_0", 's', "Strip")]
+    [InlineData("M gM : register ( t5 ) ;", "gM_t_0", 't', "Keep")]
+    [InlineData("M gM : register ( t5 ) ;", "gM_s_0", 's', "Strip")]
+    // An underscore in the author's own name: every prefix is a candidate.
+    [InlineData("Sampler2D my_tex : register ( t1 ) ;", "my_tex_texture_0", 't', "Keep")]
+    // Declared nowhere the entry text shows (a module's, or a non-global): not decidable here.
+    [InlineData("void f ( ) { Samplers gS ; }", "gS_s_0", 's', "Unproven")]
+    public void Judge_MapsAStructsHoistedResourcesBackToTheAuthorsGlobal(
+        string entry, string emittedName, char cls, string expected) =>
+        Judge(Emitted(emittedName, cls, "core"), entry).ToString().ShouldBe(expected);
+
     [Fact]
     public void Judge_APlainNameEndingLikeASplitHalf_IsStillMatchedVerbatim() =>
         // An author's own 'Texture2D Foo_texture_0 : register(t1)' is not a split.

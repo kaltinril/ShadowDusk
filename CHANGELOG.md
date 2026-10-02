@@ -180,6 +180,27 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **`ShadowDusk.Slang`: author registers in an `import`ed module and on a combined `Sampler2D` are
+  kept (issue #292).** Both were stripped silently on DirectX and OpenGL. (1) slangc splits
+  `Sampler2D Comb : register(t2)` into `Comb_texture_0 : register(t2)` and a `Comb_sampler_0` it
+  numbers itself, and the strip matched by name, so the author's `t2` went. The split halves now map
+  back to `Comb` together with the register class (`register(t2)` binds the texture half,
+  `register(s3)` the sampler half, `: register(t2) : register(s3)` both), measured for
+  Sampler1D/2D/3D/Cube, the `Array` forms and arrays. (2) `slangc -E` does not expand `import` or
+  `__include`, so a register declared in an imported module was invisible to the pass (and an
+  import-only source skipped it). slangc auto-numbers an imported resource that has no author
+  register (measured), so "keep every register from another file" is no fix either. Each
+  declaration from another file is now judged from that file's own `-E` pass with the compile's
+  macros (slangc applies `-D` to imported modules too, measured): the file slangc's `#line` names,
+  plus every file imported or `__include`d by quoted path, transitively (a combined sampler's halves
+  carry slangc's core-module `#line`, so those are found through the import). A declaration no pass
+  can decide (a module reached only by module name, `import foo;`; a register spelled through a
+  macro no read file defines; two files that disagree; or a file the pass cannot open) now fails as
+  the new `SD0628`, naming the declaration and its file and line, instead of being guessed. Same code
+  on both transports through the shared seam (the browser's slangc has no file system, so there an
+  import already fails the compile with slangc's own `E00001`); the node gate gains the
+  combined-`Sampler2D` shape and the missing-file `-E` shape. A shader with no texture/sampler register in slangc's output now skips
+  the `-E` pass entirely. No corpus byte moves.
 - **`ShadowDusk.Slang`: which registers "the author wrote" is now decided after preprocessing
   (issue #252 follow-up).** The register strip kept a texture/sampler register only when the Slang
   source text spelled `register(...)` on that name, and it read the text before the preprocessor
@@ -198,9 +219,8 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   and only when the source, an include, a `##` paste, a line splice or a `-D` value could spell
   `register` at all, so a shader that writes none pays nothing. A pass that exits 0 with empty output, or
   output missing an entry point the compile found, now fails as `SD0629` instead of silently stripping every
-  author register. **Not fixed yet (known gaps):** a register written inside an `import`ed module or an
-  `__include`d file is still stripped (`slangc -E` does not expand either), and so is the register on a
-  combined `Sampler2D C : register(t2)` (slangc emits it as `C_texture_0`/`C_sampler_0`). `mgfxc` 3.8.4.1 was measured on the
+  author register. (A register in an `import`ed module or on a combined `Sampler2D` was still stripped;
+  fixed by issue #292, the entry below.) `mgfxc` 3.8.4.1 was measured on the
   same two shapes in a `.fx` file and agrees with the preprocessed reading (`ps_s0`; `ps_s2`+`ps_s3`).
   No corpus byte moves: `slang-manifest.json` is unchanged and the native-vs-WebAssembly identity
   stays 235/235. `validation/SlangTexturedGl` gains an `Invert#if` row that renders the

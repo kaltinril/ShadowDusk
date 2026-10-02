@@ -67,11 +67,6 @@ internal static class SlangcRegisterStripper
         $$"""(?<decl>(?:{{SlangcResourceTypes.Texture}}|{{SlangcResourceTypes.Sampler}})(?:\s*<[^>;{}]*>)?\s+(?<name>[A-Za-z_]\w*)(?:\s*\[[^\];{}]*\])?)\s*:\s*register\s*\(\s*(?<cls>[ts])\d+\s*(?:,\s*space\d+\s*)?\)""",
         RegexOptions.Compiled);
 
-    // slangc's split of a combined SamplerXD: '<name>_texture_<n>' / '<name>_sampler_<n>'.
-    private static readonly Regex SplitName = new(
-        """^(?<base>[A-Za-z_]\w*?)_(?<kind>texture|sampler)_\d+$""",
-        RegexOptions.Compiled);
-
     // '#line 12 "file"' or '#line 12' in slangc's emission.
     private static readonly Regex LineDirective = new(
         """^\s*#line\s+(?<line>\d+)(?:\s+"(?<file>[^"]*)")?""",
@@ -199,19 +194,29 @@ internal static class SlangcRegisterStripper
             keep.Contains(m.Groups["name"].Value) ? m.Value : m.Groups["decl"].Value);
 
     /// <summary>
-    /// For slangc's split of a combined <c>SamplerXD C</c>: the author's name <c>C</c> and the
-    /// register class the author must have written for this half to count. Null for any other
-    /// emitted name.
+    /// The author globals <paramref name="emittedName"/> may have been hoisted out of, longest
+    /// first: every prefix <c>B</c> with <paramref name="emittedName"/> = <c>B_&lt;field&gt;_&lt;n&gt;</c>.
+    /// slangc names a resource it hoists out of an aggregate that way (measured, v2026.14.1):
+    /// a combined <c>Sampler2D C</c> becomes <c>C_texture_0</c>/<c>C_sampler_0</c>, and a
+    /// <c>SamplerState s</c> field of a global struct <c>gS</c> becomes <c>gS_s_0</c>. Either way
+    /// an author register on <c>B</c> lands on the hoisted resource of its own class only
+    /// (<c>M gM : register(t5)</c> puts t5 on the texture field, and slangc numbers the sampler).
     /// </summary>
-    private static (string Name, char Class)? SplitAuthorName(EmittedResource resource)
+    private static IEnumerable<string> HoistBases(string emittedName)
     {
-        Match m = SplitName.Match(resource.Name);
-        if (!m.Success)
-            return null;
-        char kindClass = m.Groups["kind"].Value == "texture" ? 't' : 's';
-        // A split texture half always carries t, a sampler half s; anything else is not the split.
-        return kindClass == resource.RegisterClass ? (m.Groups["base"].Value, kindClass) : null;
+        Match tail = HoistTail.Match(emittedName);
+        if (!tail.Success)
+            yield break;
+        // 'B_<field>_<n>': the '_' before <n> is at tail.Index; every '_' before it may end B.
+        for (int i = tail.Index - 1; i > 0; i--)
+        {
+            if (emittedName[i] == '_' && i + 1 < tail.Index)
+                yield return emittedName[..i];
+        }
     }
+
+    // The '_<n>' suffix slangc appends to a hoisted resource's name.
+    private static readonly Regex HoistTail = new("""_\d+$""", RegexOptions.Compiled);
 
     /// <summary>A texture/sampler declaration in slangc's emission that carries a register.</summary>
     /// <param name="Name">The emitted name (<c>C_texture_0</c> for a split combined sampler).</param>
@@ -220,15 +225,15 @@ internal static class SlangcRegisterStripper
     /// <param name="Line">The line in <paramref name="File"/>.</param>
     public readonly record struct EmittedResource(string Name, char RegisterClass, string File, int Line)
     {
-        /// <summary>The name the author wrote: the base of a split combined sampler, else <see cref="Name"/>.</summary>
-        public string AuthorName => SplitAuthorName(this)?.Name ?? Name;
+        /// <summary>The longest author global this may have been hoisted out of, else <see cref="Name"/>.</summary>
+        public string AuthorName => HoistBases(Name).FirstOrDefault() ?? Name;
 
         /// <summary>
-        /// One half of slangc's split of a combined <c>SamplerXD</c>. Its <see cref="File"/> is
-        /// slangc's own core module (<c>"core"</c>, <c>"hlsl.meta.slang"</c>, measured), never
-        /// the author's file.
+        /// Shaped like a resource slangc hoisted out of an aggregate (a combined sampler's half, a
+        /// struct's resource field). slangc's <c>#line</c> for those names its own core module
+        /// (<c>"core"</c>, <c>"hlsl.meta.slang"</c>, measured), not the author's file.
         /// </summary>
-        public bool IsSplitHalf => SplitAuthorName(this) is not null;
+        public bool IsHoisted => HoistBases(Name).Any();
     }
 
     // 'import "path" ;', '__exported import "path" ;' or '__include "path" ;' in a preprocessed
@@ -345,22 +350,21 @@ internal static class SlangcRegisterStripper
             // An emitted name the author wrote verbatim (any class, as since issue #252).
             if (_bound.ContainsKey(resource.Name))
                 return true;
-            return SplitAuthorName(resource) is { } s
-                && _bound.TryGetValue(s.Name, out HashSet<char>? classes)
-                && classes.Contains(s.Class);
+            // Hoisted out of an author global: only a register of this resource's own class counts.
+            char cls = resource.RegisterClass;
+            return HoistBases(resource.Name).Any(
+                b => _bound.TryGetValue(b, out HashSet<char>? classes) && classes.Contains(cls));
         }
 
         /// <summary>
         /// The author declared this emitted declaration's resource here without a register for
-        /// it: plainly, or (for one half of a combined sampler) with a register of the other class.
+        /// it: plainly, or (hoisted out of an aggregate) with a register of the other class only.
         /// </summary>
         public bool Declares(EmittedResource resource) =>
-            DeclaresPlainly(resource)
-            || (SplitAuthorName(resource) is { } s && _bound.ContainsKey(s.Name));
+            DeclaresPlainly(resource) || HoistBases(resource.Name).Any(_bound.ContainsKey);
 
         /// <summary>The author declared this emitted declaration's resource here with no register at all.</summary>
         public bool DeclaresPlainly(EmittedResource resource) =>
-            _plain.Contains(resource.Name)
-            || (SplitAuthorName(resource) is { } s && _plain.Contains(s.Name));
+            _plain.Contains(resource.Name) || HoistBases(resource.Name).Any(_plain.Contains);
     }
 }
