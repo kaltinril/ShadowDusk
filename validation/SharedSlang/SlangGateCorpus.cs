@@ -198,6 +198,31 @@ public static class SlangGateCorpus
     public static string WithSm6ProfileHeader(string assembledFx) =>
         ReplaceExactlyOnce(assembledFx, AssembledHeader, Sm6Header, "assembled .fx shader-model header");
 
+    private static readonly Regex UnregisteredTexture = new(
+        """^(?<decl>[ \t]*Texture2D(?:\s*<[^>;{}]*>)?\s+[A-Za-z_]\w*)\s*;""",
+        RegexOptions.Multiline | RegexOptions.Compiled);
+
+    private static readonly Regex UnregisteredSampler = new(
+        """^(?<decl>[ \t]*SamplerState\s+[A-Za-z_]\w*)\s*;""",
+        RegexOptions.Multiline | RegexOptions.Compiled);
+
+    /// <summary>
+    /// PROFILE PARITY for Vulkan: gives every texture/sampler declaration that has no register
+    /// an explicit one, numbered in declaration order (<c>t0, t1, ...</c> / <c>s0, s1, ...</c>).
+    /// Since issue #252 SlangCompiler strips slangc's own registers, and real mgfxc 3.8.5's
+    /// Vulkan effect for an auto-numbered texture crashes MonoGame DesktopVK on the first draw
+    /// (<c>IndexOutOfRangeException</c>, measured on all 8 textured corpus shaders; the known
+    /// MonoGame SlotOffset bug behind <c>validation/CandidateVulkan</c>'s note). The driver
+    /// proves the change is a no-op for ShadowDusk (byte-identical output from either text),
+    /// exactly as for the SM6 header.
+    /// </summary>
+    public static string WithExplicitTextureRegisters(string fx)
+    {
+        int t = 0, s = 0;
+        fx = UnregisteredTexture.Replace(fx, m => $"{m.Groups["decl"].Value} : register(t{t++});");
+        return UnregisteredSampler.Replace(fx, m => $"{m.Groups["decl"].Value} : register(s{s++});");
+    }
+
     // ---------------------------------------------------------------------------- mgfxc 3.8.5
 
     /// <summary>The reference compiler for DirectX_12 and Vulkan: the real <c>dotnet-mgfxc</c> 3.8.5,

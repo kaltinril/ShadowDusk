@@ -23,8 +23,9 @@ namespace ShadowDusk.Validation.Slang;
 /// <item><b>Candidate</b>: <see cref="SlangCompiler"/>'s output for the target - the product route.</item>
 /// <item><b>Reference</b>: the real <c>mgfxc</c> 3.8.5 build of the SAME assembled <c>.fx</c>
 /// <see cref="SlangCompiler"/> handed the faithful pipeline, with only its shader-model header
-/// switched to SM6 (<see cref="SlangGateCorpus.WithSm6ProfileHeader"/>). The driver proves that
-/// switch is a no-op for ShadowDusk: <see cref="EffectCompiler"/> on the switched text must give
+/// switched to SM6 (<see cref="SlangGateCorpus.WithSm6ProfileHeader"/>) and, on Vulkan only, its
+/// textures/samplers given explicit registers (<see cref="SlangGateCorpus.WithExplicitTextureRegisters"/>).
+/// The driver proves both changes are a no-op for ShadowDusk: <see cref="EffectCompiler"/> on the switched text must give
 /// bytes IDENTICAL to the candidate, or the row fails as a parity break.</item>
 /// </list>
 ///
@@ -103,6 +104,8 @@ public static class SlangMonoGameGate
             {
                 string fx6 = SlangGateCorpus.WithSm6ProfileHeader(
                     SlangGateCorpus.CaptureAssembledFx(source, Path.GetFileName(file), target));
+                if (target == PlatformTarget.Vulkan)
+                    fx6 = SlangGateCorpus.WithExplicitTextureRegisters(fx6);
                 string fxPath = Path.Combine(fxDir, name + ".fx");
                 await File.WriteAllTextAsync(fxPath, fx6);
 
@@ -114,7 +117,7 @@ public static class SlangMonoGameGate
                 if (parity.IsFailure)
                     parityErr = "ShadowDusk rejects the SM6-header text: " + string.Join(" | ", parity.Error.Select(e => $"{e.Code}: {e.Message}"));
                 else if (candBytes is not null && !parity.Value.Data.AsSpan().SequenceEqual(candBytes))
-                    parityErr = "the SM6 header changed ShadowDusk's output bytes, so mgfxc would not be compiling the candidate's program";
+                    parityErr = "the reference-text adjustment (SM6 header, Vulkan explicit registers) changed ShadowDusk's output bytes, so mgfxc would not be compiling the candidate's program";
 
                 (refBytes, refErr) = await SlangGateCorpus.RunMgfxcAsync(
                     mgfxc, fxPath, Path.Combine(mgfxDir, name + ".reference.mgfx"), mgfxcProfile);
