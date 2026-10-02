@@ -154,7 +154,12 @@ ShadowDusk/
 │                                  #       content-processor plugin and diffs the .xnb payload against the
 │                                  #       CLI's bytes (Phase 29); since Phase 63 on TWO mgcb versions (the
 │                                  #       manifest 3.8.4.1 + 3.8.5, which renumbered TargetPlatform) with a
-│                                  #       decoy dxcompiler.dll on the child PATH.
+│                                  #       decoy dxcompiler.dll on the child PATH. On the MGFX v11 platforms
+│                                  #       (DesktopVK, WindowsDX12) it also pins the per-shader source-file
+│                                  #       string to the stock build's `<unknown>` and requires a byte-identical
+│                                  #       .xnb from a second directory (issue #274); SharedMgfx/ holds the
+│                                  #       BCL-only reader/rewriter for that string, linked by MgcbPlugin and
+│                                  #       ContentBuilder.
 │                                  #     DumpPreprocessedHlsl is a no-GPU DIAGNOSTIC: it dumps the exact HLSL
 │                                  #       the pipeline hands DXC so a divergence can be replayed through a
 │                                  #       different DXC build and attributed.

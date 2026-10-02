@@ -14,6 +14,12 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **`CompilerOptions.EmbeddedSourceFileName` (issue #274).** The source-file string an MGFX v11
+  container stores per shader can now be set independently of `SourceFileName`, which keeps
+  feeding diagnostics and `#include` resolution. Unset (the default) nothing changes: the string
+  is `SourceFileName` as passed, like `mgfxc`. A build tool that compiles from absolute paths can
+  set it to keep those paths out of DirectX 12 / Vulkan output; ShadowDusk's own content processor
+  sets it to `<unknown>`. Ignored by MGFX v10, KNIFX and FNA, which store no source name.
 - **Full Slang input in the browser (issue #257, Phase 67).** A browser cannot spawn `slangc`, so the
   pinned slangc v2026.14.1 now also runs inside the page as WebAssembly: the new
   `src/ShadowDusk.Slang.Wasm` project (`WasmSlangCompiler`, not published as a package yet) loads it
@@ -154,6 +160,14 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Changed
 
+- **`validation/MgcbPlugin` and `validation/ContentBuilder` now pin the MGFX v11 source-file string
+  (issue #274).** The MGCB gate grew from 13 to 15 cases: the `DesktopVK` / `WindowsDX12` cases
+  compare the string with MGCB's own stock build's (now possible for the two fixtures with an
+  `#if SM6` branch), require the payload to be the CLI's with only that string replaced, and
+  rebuild the effect from a second directory for a byte-identical `.xnb`. The Content Builder gate
+  gained real `DesktopVK` and `WindowsDX12` Builder passes (7 to 11 assets) with the same
+  assertions and a second Builder run from a different source directory. Both measured red before
+  the fix and green after.
 - **Every release and pack-consume nupkg gate now matches exact entry names** instead of a
   substring of the listing. A substring match could not tell `runtimes/<rid>/native/slangc`
   from the mis-packed `runtimes/<rid>/native/slangc/slangc`.
@@ -166,6 +180,26 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **A content build no longer writes your build machine's path into DirectX 12 and Vulkan effects
+  (issue #274).** The MGFX v11 container, which DirectX 12 and Vulkan always use, stores a
+  source-file string per shader. MGCB and the MonoGame 3.8.5 Content Builder hand a processor the
+  effect's absolute path, and `ShadowDuskEffectProcessor` recorded it, so every such `.xnb` carried
+  the builder's directory (user name included) and its bytes changed with the checkout location.
+  The processor (both `ShadowDusk.MgcbPlugin` and `ShadowDusk.ContentPipeline`) now writes
+  `<unknown>` there, exactly what MonoGame's stock `EffectProcessor` writes. Measured on a real
+  `dotnet-mgcb` 3.8.5 for `DesktopVK` and `WindowsDX12`: the same effect built from two different
+  directories is now a byte-identical `.xnb`, and the string equals the stock build's. Build errors
+  and warnings still name the real file, line and column. OpenGL and DirectX 11 output is untouched
+  (MGFX v10 has no such string). **What moves:** DirectX 12 and Vulkan `.xnb` files built through
+  the plugin or the Content Builder processor change once (the string, and the 4-byte effect key
+  derived from the body); rendering is unaffected.
+  - **The CLI is unchanged**: it keeps writing the source path exactly as passed, which is what the
+    `mgfxc` CLI does, so the plugin's DirectX 12 / Vulkan payload now differs from the CLI's in that
+    one string (and the key). Both content-pipeline gates assert "the CLI's bytes with only that
+    string replaced".
+  - A build with debug information on (`DebugMode=Debug`, or `Auto` under a `Debug` content
+    configuration) still records the source path inside the compiler's own SPIR-V / DXIL debug
+    information, as the CLI's and `mgfxc`'s `/Debug` do.
 - **A `dxil.dll` on `PATH` no longer hijacks DXC's DXIL validator on Windows.** With the Windows
   SDK's `bin` directory on `PATH` (every VS Developer Command Prompt), every DirectX 12 compile
   failed with `DXIL container mismatch for 'PSVRuntimeInfoSize'`; with any other `dxil.dll` there,

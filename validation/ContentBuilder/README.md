@@ -16,6 +16,14 @@ One driver, one process, two halves:
    Per asset it asserts the `sd` payload is **byte-for-byte the `ShadowDuskCLI` binary's** for the
    platform's target, the `.xnb` envelope through the type id is **byte-for-byte the stock build's**,
    and the payloads **differ** (positive control).
+   **`DesktopVK` and `WindowsDX12` passes** (Grayscale, VsTransformColorTexture: the fixtures with an
+   `#if SM6` branch, which the stock 3.8.5 processor builds too) add the issue-#274 assertions. Those
+   platforms are always MGFX v11, which stores a source-file string per shader, and the Builder hands
+   the importer an absolute path. So per asset: every shader record's string is `<unknown>` and equals
+   the stock build's; the `.xnb` names neither the source directory nor the file; the payload is the
+   CLI's with **only** that string replaced (the CLI keeps writing the path it was passed, like
+   `mgfxc`, which is asserted too); and a **second real Builder run from a different, deeper source
+   directory** produces a byte-identical `.xnb`. Compile + byte assertions only (the render host is DX11).
 2. **`Content.Load<Effect>` on MonoGame 3.8.5 WindowsDX** (3.8.5.1): both Windows `.xnb`s are
    loaded by asset name through a real `ContentManager`, rendered through the identical `SpriteBatch`
    path, and required to be **pixel-identical**. The render host must be 3.8.5 because the stock
@@ -45,12 +53,17 @@ Renders land in `validation/output-contentbuilder/` (gitignored).
 identical** to the stock 3.8.5 build on MonoGame 3.8.5.1 WindowsDX. The 3.8.2.1105-compiled pair
 binds in the 3.8.5 process (the driver prints both versions).
 
+**Issue #274 (2026-10-01):** 11/11 assets with the two v11 passes added (DesktopVK 2/2, WindowsDX12
+2/2). Measured red before the fix (4 failures: the source-file string held the absolute path under
+the temp work directory) and green after.
+
 ## Not covered here
 
-- `DesktopVK` / `WindowsDX12` Builder passes: the ShadowDusk arm compiles them (the name-based map,
-  proven on real `dotnet-mgcb` 3.8.5 by `validation/MgcbPlugin`), but the stock 3.8.5 oracle refuses
-  the corpus fixtures' `ps_4_0_level_9_1` profile for those targets and the render host here is DX11.
-  Recorded as a §7 gap in `docs/validation-matrix.md`.
+- Rendering the `DesktopVK` / `WindowsDX12` Builder output: those passes are compile + byte
+  assertions (the render host here is DX11), and only fixtures with an `#if SM6` branch have a stock
+  oracle there (the stock 3.8.5 processor requires `vs_6_0`/`ps_6_0` for those targets). The payload
+  bytes themselves are render-proven by the DX12 and Vulkan corpus gates. Recorded as a §7 gap in
+  `docs/validation-matrix.md`.
 - Linux/macOS: the Builder itself is cross-platform and the ShadowDusk arm would run there, but the
   render half needs a GL host on 3.8.5; the packed-package consumption on all three OSes is
   `pack-consume.yml`'s content-builder steps instead.

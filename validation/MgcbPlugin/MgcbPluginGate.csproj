@@ -32,4 +32,12 @@
   <ItemGroup>
     <PackageDownload Include="dotnet-mgcb" Version="[3.8.5]" />
   </ItemGroup>
+
+  <!--
+    The MGFX v11 source-file reader/rewriter (issue #274), shared with validation/ContentBuilder.
+    A linked BCL-only source file, so the "no ShadowDusk reference" rule above still holds.
+  -->
+  <ItemGroup>
+    <Compile Include="..\SharedMgfx\MgfxSourceFile.cs" Link="SharedMgfx\MgfxSourceFile.cs" />
+  </ItemGroup>
 </Project>

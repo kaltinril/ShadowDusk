@@ -34,7 +34,9 @@ namespace ShadowDusk.Integration.Tests.Tests;
 /// is not the compiler's doing) and <see cref="CompilerOptions.SourceFileName"/> is the
 /// fixed fixture-relative name, never an absolute host path —
 /// <see cref="SourceFileName_DoesNotAffect_OutputBytes"/> proves that name never leaks
-/// into the bytes anyway.</para>
+/// into the bytes anyway, for the targets this manifest covers. (It is NOT true of an MGFX
+/// v11 container - DirectX 12, Vulkan - which stores the name per shader by design; that
+/// contract is <c>EmbeddedSourceFileNameTests</c>, issue #274.)</para>
 ///
 /// <para><b>Regenerating</b> (after a legitimate, reviewed compiler-output change —
 /// manifest churn is expected and reviewable, exactly like goldens): set
@@ -191,7 +193,8 @@ public sealed class CrossHostByteIdentityTests
     // Normalization guard — SourceFileName must never leak into output bytes
     // (it exists for include resolution + diagnostics only). If this ever fails,
     // the manifest scheme (fixed relative names) is unsound — fix the leak, do
-    // not adjust the manifest.
+    // not adjust the manifest. Scope: the manifest's targets (MGFX v10 and fx_2_0,
+    // which have no source-name field). MGFX v11 stores the name on purpose.
     // -------------------------------------------------------------------------
 
     [DxcFact]

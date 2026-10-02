@@ -104,10 +104,17 @@
                                    Phase 63: two MGCB versions (3.8.4.1 + 3.8.5, which renumbered
                                    TargetPlatform: Web/DesktopVK/WindowsDX12 arms) and a decoy
                                    dxcompiler.dll on the child PATH (pinned-DXC + dxil guard).
+                                   Issue #274: on DesktopVK/WindowsDX12 (MGFX v11) the per-shader
+                                   source-file string must be the stock build's `<unknown>`, never
+                                   the build machine's path; the payload is the CLI's with only
+                                   that string replaced; a second-directory build is byte-identical.
     * Content Builder (3.8.5)    - validation/ContentBuilder: a REAL MonoGame 3.8.5 ContentBuilder
                                    subclass builds the fixtures through the stock pair AND through
                                    ShadowDusk.ContentPipeline's pair (the library shape, Phase 63),
-                                   asserts payload == ShadowDuskCLI and envelope == stock, then
+                                   asserts payload == ShadowDuskCLI and envelope == stock (plus,
+                                   on its DesktopVK/WindowsDX12 passes, the issue-#274 MGFX v11
+                                   source-file string checks and a second Builder run from another
+                                   source directory), then
                                    Content.Load<Effect>s both on MonoGame 3.8.5 WindowsDX and
                                    requires pixel-identical renders. Also the only run of the
                                    Builder's unguarded GetTypes() scan over our real graph.
@@ -263,8 +270,10 @@ $gates.Add(@{
 # Since Phase 63 (issue #203) it runs TWO MGCB versions (the manifest 3.8.4.1 and a real 3.8.5,
 # which renumbered TargetPlatform) and puts a decoy dxcompiler.dll first on the plugin-arm
 # child's PATH, so a fallback to an OS-search-path DXC or an unsigned DX12 module fails loudly.
+# Since issue #274 its DesktopVK / WindowsDX12 cases also pin the MGFX v11 source-file string to
+# what MGCB's own stock processor writes, and rebuild from a second directory for identical bytes.
 $gates.Add(@{
-    Name   = 'MGCB content-processor plugin (Phase 29: real dotnet mgcb build, .xnb payload vs CLI bytes; Phase 63: + dotnet-mgcb 3.8.5 arm for Web/DesktopVK/WindowsDX12 + decoy-PATH DXC guard)'
+    Name   = 'MGCB content-processor plugin (Phase 29: real dotnet mgcb build, .xnb payload vs CLI bytes; Phase 63: + dotnet-mgcb 3.8.5 arm for Web/DesktopVK/WindowsDX12 + decoy-PATH DXC guard; issue #274: MGFX v11 source-file string == stock, path-independent .xnb)'
     Action = {
         # The pinned dotnet-mgcb from .config/dotnet-tools.json (idempotent; cached offline).
         Invoke-Checked 'dotnet' @('tool', 'restore')
@@ -323,7 +332,7 @@ $gates.Add(@{
 # the only place the Builder's unguarded Assembly.GetTypes() scan is exercised against our real
 # dependency graph - a dependency that fails type-load takes the consumer's whole build down.
 $gates.Add(@{
-    Name   = 'MonoGame 3.8.5 Content Builder (Phase 63: ShadowDusk.ContentPipeline pair vs stock pair, real ContentBuilder + Content.Load<Effect> on 3.8.5)'
+    Name   = 'MonoGame 3.8.5 Content Builder (Phase 63: ShadowDusk.ContentPipeline pair vs stock pair, real ContentBuilder + Content.Load<Effect> on 3.8.5; issue #274: DesktopVK/WindowsDX12 passes, MGFX v11 source-file string == stock, path-independent .xnb)'
     Action = {
         Invoke-Checked 'dotnet' @('build', 'src/ShadowDusk.Cli/ShadowDusk.Cli.csproj', '-c', 'Release')
         Invoke-Checked 'dotnet' @('run', '--project', 'validation/ContentBuilder', '-c', 'Release')
