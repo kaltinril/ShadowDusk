@@ -445,8 +445,9 @@ legacy varying names, routes the pixel
 output to `gl_FragColor` (via a `#define ps_oC0 gl_FragColor` alias, MRT slots to `gl_FragData[n]`),
 lowers `texture()` to dimension-specific legacy builtins (`texture2D`/`textureCube`/`texture3D`),
 lowers `round`/`roundEven` to `floor((x)+0.5)` (valid in every GLSL profile), range-reduces every
-non-literal `sin`/`cos` argument into [-π, π] with a Cody-Waite split of 2π before the builtin sees it
-(as `fxc` does before its `sincos`, so a weak driver's large-argument reduction never runs; issue #215),
+non-literal `sin`/`cos`/`tan` argument into [-π, π] with a Cody-Waite split of 2π before the builtin sees it
+(as `fxc` does before its `sincos`, which is also how it computes `tan`, so a weak driver's
+large-argument reduction never runs; issue #215),
 and on the vertex
 stage injects the `posFixup` uniform plus its two fixup lines (the Y-flip and half-pixel offset),
 remaps a legacy `: POSITION` output to `gl_Position`, and reconstructs `mat4` uniforms transposed
