@@ -207,6 +207,28 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **Browser DirectX compiles handed vkd3d no compile options, so a shader with SM1-3 semantics on
+  struct fields compiled differently from the desktop, or not at all (issue #295).** Since 0.20.0 the
+  desktop vkd3d backend passes `BACKWARD_COMPATIBILITY`/`MAP_SEMANTIC_NAMES` on the SM4+ target, but
+  the browser module's C wrapper still passed none: a second copy of the option list, and it had
+  drifted. Measured on the new fixture `Sm3SemanticStructs.fx` (a `POSITION0` vertex output and pixel
+  input and a `COLOR0` pixel output, all on struct fields): the desktop names the position
+  `SV_Position` (system value 1) and compiles the pixel shader, as `mgfxc` does; the browser named
+  it `POSITION` (system value 0, so the rasterizer is given no position; 1932 bytes against 1936) and
+  refused the pixel shader with `E5013: Invalid semantic 'COLOR'`. The list now has one owner,
+  `Vkd3dCompileContract.ResolveCompileOptions`: the desktop marshals it, the browser sends the same
+  list through its shim, and the WASM wrapper (`sdw_vkd3d_compile_options`, replacing
+  `sdw_vkd3d_compile`) only forwards what it is handed. The corpus gate could not see the drift
+  because no corpus shader changed a byte with the option; `Sm3SemanticStructs.fx` does, and is now
+  in the node gate (91 compiles, replayed with the options the desktop really passed to the native
+  call, plus a control that the fixture differs without them), in the cross-host byte-identity
+  manifest (so `browser-vkd3d-gate.mjs` compiles it through the real `WasmShaderCompiler`) and
+  checked against `mgfxc` goldens on both profiles. A new test pins the options the desktop hands the
+  native call to the contract's list. **The rebuilt module is verified (91/91, 78/78 in Chromium,
+  18/18 depth cases) but not hosted yet**: until it is uploaded to a new release tag and re-pinned in
+  `tools/restore.*` (one upload now covers this and the #271 stack fix below), the browser keeps the
+  old module and this defect, warns once on the console, and the gates report the fixture as an
+  expected difference keyed on the old module's hash. No emitted byte changes on the desktop.
 - **Browser compiles of nested shaders hung, crashed or miscompiled (issue #271).** The in-browser
   DXC, SPIRV-Cross and vkd3d WebAssembly modules were linked with emscripten's 64 KB default stack
   (the desktop natives get 1 MB on Windows, 8 MB on Linux/macOS), and with emscripten's layout an
