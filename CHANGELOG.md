@@ -275,6 +275,32 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   silicon refuses to map it). The decoy is now re-signed, the probe reports the image `dladdr`
   names for ShadowDusk's own handle, and the test requires it to be the decoy and every DXC-backed
   target to fail with the "dyld mapped" `SD0219`.
+- **FNA / DirectX (vkd3d) errors: the compiler output printed under the summary line still used
+  vkd3d's own line numbers** (issue #202 follow-up). 0.19.0 moved the summary line
+  (`file(line,col)`) onto the author's source, but whenever vkd3d said more than one line, the
+  CLI and the validation report also print vkd3d's complete output under it,
+  and that block kept vkd3d's drifted coordinates. On the reporter's Apos.Shapes file the summary
+  said line 983 while the block under it said 1115 for the same diagnostic, and later lines in
+  the block went up to 3804 in a 3235-line file: the symptom the issue reported. Each
+  `file:line:col:` prefix in that block is now relocated the same way as the summary; vkd3d's
+  code and message text after the prefix are unchanged, and a line that names another file
+  stays as vkd3d wrote it. It is all or nothing: if any line cannot be placed the block is left
+  exactly as vkd3d wrote it, never a mix of the two numberings. The block is not bisected line
+  by line. One extra parse-only compile carries a marker on every statement start (an empty
+  `if` with an attribute vkd3d does not know, which it answers with a located warning that
+  names it), so one compile measures the whole file, and only the few lines the markers cannot
+  pin are bisected. Every probe now also ends with a terminator line, so a probe whose sentinel
+  landed in a skipped `#if` arm stops at the parse instead of running the whole failing compile
+  again. **Measured on the reporter's file** (`tests/fixtures/issues/202/apos-shapes.fx`,
+  `--target-runtime fna`, Release CLI, one Windows desktop, four runs each): 4.9 to 5.3 s
+  before this change (38 of the 4 165 raw lines past the end of the file), 5.1 to 6.1 s after
+  (none), which is 9 more vkd3d calls of a few milliseconds each (22 against 13). A first cut
+  that bisected each of the 934 distinct locations took about twice as long, almost all of it
+  one probe swallowed by the file's `#if VULKAN` arm; `FnaDiagnosticLocationTests` now pins the
+  call count so that cannot come back unnoticed. No emitted byte moves: the relocation only
+  runs on vkd3d's diagnostics, never on the source a real compile receives.
+  `ShaderError.RawDiagnostics` for vkd3d therefore carries relocated prefixes.
+
 - **Stale lock files outside the solution (issues #291, #290).** PR #279's `Vortice.Dxc` `[3.3.4]`
   pin missed the lock files of `Vkd3dCorpusProbe` (which turned Browser render smoke red on main),
   `slang-probe`, `dxc-corpus-probe` and `KniXnbContentLoad`'s 4.3.9001 lock (still at 0.18.0), and
@@ -282,6 +308,7 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   `tools/check-lock-files.sh`, run by a new `Lock files` CI job on every PR, restores every tracked
   lock file in locked mode, so this class of miss fails on its own PR. The release lock-file rewrite
   now matches versioned names (`*packages*.lock.json`).
+
 - **`ShadowDusk.Slang`: which registers "the author wrote" is now decided after preprocessing
   (issue #252 follow-up).** The register strip kept a texture/sampler register only when the Slang
   source text spelled `register(...)` on that name, and it read the text before the preprocessor

@@ -8,8 +8,10 @@ Codes from the *underlying* compilers (DXC, d3dcompiler_47, vkd3d-shader) are pa
 through verbatim (constraint 5: fail loudly, no reformatting) and are not listed here. Only
 their *location* is ShadowDusk's to fix: vkd3d-shader's own file/line/column are re-mapped onto
 the author's source by `Vkd3dSourceLocator` (issue #202 — vkd3d 2.1's coordinates drift with
-skipped `#if` arms and every template-implemented intrinsic call), while the message text, the
-code (`E5017`, `E5000`, …) and the raw text stay exactly as the compiler emitted them.
+skipped `#if` arms and every template-implemented intrinsic call), while the message text and the
+code (`E5017`, `E5000`, …) stay exactly as the compiler emitted them. The raw text printed under
+the summary is treated the same way, line by line: its `file:line:col:` prefixes move onto the
+author's source and everything after them stays verbatim.
 
 ## Ranges
 
