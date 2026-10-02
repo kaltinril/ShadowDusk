@@ -12,78 +12,6 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ## [Unreleased]
 
-### Fixed
-
-- **A `dxil.dll` on `PATH` no longer hijacks DXC's DXIL validator on Windows.** With the Windows
-  SDK's `bin` directory on `PATH` (every VS Developer Command Prompt), every DirectX 12 compile
-  failed with `DXIL container mismatch for 'PSVRuntimeInfoSize'`; with any other `dxil.dll` there,
-  DirectX 12 output could come out unsigned without a word. The cause was ShadowDusk's own call
-  to Vortice's `Dxc.LoadDxil()`, a bare `LoadLibrary("dxil.dll")` made before DXC loaded: our
-  `dxil.dll` sits in `runtimes/<rid>/native`, not the application directory, so the bare load
-  walked down to `PATH`, and `dxcompiler.dll` then bound the module already loaded under that
-  name. ShadowDusk now loads its pinned `dxil.dll` and then `dxcompiler.dll` by absolute path
-  before any DXC call (on Linux, `libdxcompiler.so`), and checks that the `dxil.dll` DXC binds is
-  its own (by file content, so a byte-identical copy is accepted). Its resolver now runs ahead of
-  Vortice.Dxc's own, so a bare-name fallback can no longer pick a different DXC (on Linux, from
-  `LD_LIBRARY_PATH`). When the pinned natives are missing, every DXC-backed compile fails with the
-  new `SD0219` instead of running on whatever the OS search found. When a foreign validator was
-  loaded into the process first (by a host tool, or on macOS any `libdxil` image, since that build
-  ships none), only DirectX 12 compiles, whose validated and signed DXIL it would decide, fail with
-  `SD0219`; OpenGL, Vulkan and DirectX 11 never call the validator and keep compiling. Output bytes
-  are unchanged on a clean `PATH`. `CliDxcPathHijackTest` runs the CLI with decoy
-  `dxil.dll`/`dxcompiler.dll` (and, where installed, the Windows SDK's `bin`) first on `PATH` for
-  DirectX 12, DirectX 11, OpenGL and Vulkan, and requires output byte-identical to a clean-`PATH`
-  compile, with DirectX 12 signed; it failed before the fix. `DxcForeignValidatorTests` preloads a
-  decoy, the Windows SDK's, a byte-identical copy, and a `\\?\`-path `dxil.dll` in fresh processes
-  and pins which targets compile. The MGCB gate's decoy directory now carries a `dxil.dll` too.
-- **`ShadowDusk.Slang`: textured shaders no longer crash real FNA (issue #230).** slangc emits
-  texture objects (`Texture2D T; SamplerState S; T.Sample(S, uv)`). On the FNA target that compiled,
-  but vkd3d folds the pair into one texture-typed sampler named `S+T`, so the `.fxb` held a texture
-  where MojoShader expects a sampler and FNA threw `NotImplementedException: Unhandled sampler
-  state!` on the first draw (all 12 textured shaders of the 21-shader corpus; `fxc /T fx_2_0` refuses
-  the same text). `SlangCompiler` now respells them for FNA in DX9 effect syntax (`texture2D T;
-  sampler2D S = sampler_state { Texture = <T>; }; tex2D(S, uv)`), the same SM3 `texld`, with every
-  texture declared before any sampler. Texture shapes it does not model (a texture or sampler passed
-  as a function parameter, a subscript load `T[...]`, `SampleLevel`/`SampleGrad`/`Load`, a non-2D
-  texture, one sampler for two textures, a non-zero register space) fail as the new `SD0627`, at the
-  Slang source line.
-- **FNA `.fx` (and the built-in `.slang` subset frontend): a DX10-style texture object now fails at
-  compile time instead of crashing FNA at the first draw (issue #230). Behavior change.** Any
-  `Texture2D`/`Texture3D`/`TextureCube` sampled through a `SamplerState` (`Sample`, `SampleLevel`,
-  `SampleGrad`, ...) at a `ps_2_0`/`ps_3_0`/`vs_*` profile used to compile for FNA into the same
-  texture-typed `S+T` entry, and every such effect throws `Unhandled sampler state!` in FNA. `fxc
-  /T fx_2_0` refuses this source too. It now fails with `SD0303`, located at the sampling call, with
-  DX9 advice for the actual shape (`texture2D`/`texture3D`/`textureCUBE`, and
-  `tex2D`/`tex2Dlod`/`tex2Dgrad`/`tex3D`/`texCUBE`). Twelve test fixtures that used to "compile"
-  for FNA move to this rejection: `PenumbraLight`, `PenumbraTexture`, `SharedSamplerPair`,
-  `ExCubeSamplerHidef`, `ExModernSample`, `ExMultiSamplerHidef`, `ExPhantomTexLodUniform`,
-  `ExSampleGradHidef`, `ExSampleLevelHidef`, `ExTextureNamedTexture`, `ExVolumeTextureHidef`,
-  `ExVsTextureFetch`. None of them could have rendered in FNA. DX9-style `texture` +
-  `sampler_state` + `tex2D` source is unaffected.
-- **OpenGL `sin`/`cos` on large arguments no longer depends on the driver's range reduction (issue #215).** SPIRV-Cross passed the raw argument to the GLSL builtin, so a shader feeding hundreds of radians into `sin` (`Dots.fx` reaches ~792) rendered 19/255 off the `mgfxc` golden on Intel UHD while llvmpipe and NVIDIA matched. The GLSL rewriter now reduces every non-literal `sin`/`cos` argument into [-pi, pi] first (new rewriter Rule 16, a Cody-Waite split of 2pi through an `sd_reduce_angle` helper), as fxc does before every D3D9 `sincos`, with constants more accurate than `mgfxc`'s (max phase error 1.3e-7 rad at |x| <= 1000, measured in fp32, against 3.8e-4 for `mgfxc`'s six-decimal ones). **Every OpenGL/WebGL shader that calls `sin` or `cos` changes bytes**; shaders without them, and every DirectX, DirectX 12, Vulkan and FNA output, are byte-unchanged.
-
-- **DirectX and FNA compiles no longer run vkd3d again for an entry point another pass already compiled (issue #255).** An effect whose techniques share entry points made one vkd3d call per pass. MonoGame's stock `BasicEffect.fx` made 64 calls for 30 distinct shaders. Each distinct request now compiles once per `Compile` call, which roughly halves the vkd3d time of the stock effects: `BasicEffect` about 490 to 250 ms, `SkinnedEffect` (DirectX) about 770 to 350 ms, `EnvironmentMapEffect` about 300 to 90 ms. Output bytes are unchanged. vkd3d is deterministic, the cache key is every field of the request, and the stock effects were byte-compared before and after. A cancelled token now also stops vkd3d diagnostic relocation before each of its parse-only probe compiles. A native call that has already started still cannot be interrupted.
-  This does not speed up one very large pixel shader, such as the current upstream Apos.Shapes file (about 5 s on a Ryzen 7 5800X). That time is spent inside a single vkd3d call. vkd3d's HLSL optimizer is roughly quadratic in the size of the fully inlined shader, and vkd3d 2.1 is about 1.6x slower than 1.17 on that file and about 2x slower on branchy code. vkd3d has no option that reduces optimizer work, so this is tracked upstream rather than worked around. The measurements are in `project_facts.md`.
-- **`ShadowDusk.Slang`: textured shaders sample SpriteBatch's texture on OpenGL (issue #252).** slangc
-  numbers every texture and sampler itself (`SamplerState S : register(s0)`), and the OpenGL sampler
-  allocator reads a `SamplerState` register as an author reservation (mgfxc's own rule), so a
-  single-texture Slang shader landed on sampler slot 1 while SpriteBatch binds the draw texture to
-  unit 0, and the shader never saw it. `SlangCompiler` now strips slangc's own texture/sampler
-  registers and keeps every `register(...)` the author wrote, so the route matches what the `.fx`
-  route gives the equivalent hand-written HLSL. New render gate `validation/SlangTexturedGl` (real
-  MonoGame DesktopGL, texture on unit 0 via SpriteBatch, Invert compared against the `mgfxc` golden)
-  measured red before the fix and green after; `slang-manifest.json` regenerated.
-- **Slang follow-ups (issue #258).** `*.slang` files are now pinned to LF in the checkout
-  (`.gitattributes`), like `.fx`/`.fxh`; every tracked `.slang` was already LF in the repo, so no
-  bytes change. `SlangCompiler`'s `SD0625` rejection (two entry points emitting different
-  declarations of one cbuffer/resource name) is now tested end to end through `SlangCompiler`
-  with a fake slangc, via an internal seam; the public API is unchanged. Every committed
-  `packages.lock.json` now records the `ShadowDusk.*` project references at 0.20.0 (they still
-  said 0.18.0, which no restore flags), and the release runbook rewrites them on each bump.
-- **Intermittent 60 s timeout in `Issue202_AposShapesCurrentUpstream_LandsOnTheRegisterLimit` on CI.** The test compiled the 3235-line shader twice, and each vkd3d compile costs about 3.3 s of CPU that a loaded runner stretched past the test's 60 s token. It now compiles once with no wall-clock token, since a token cannot interrupt a native compile; the CI integration step's `--blame-hang-timeout 3m` guards hangs and uploads a thread dump.
-- **`.fx` wave/quad intrinsics now fail loudly and consistently on every target that cannot hold them.** On OpenGL, DirectX 11 and FNA they are rejected with `SD0624` (the code the `.slang` route already used), instead of DXC's `Vulkan 1.1 is required` (OpenGL) or vkd3d's `Function "WaveActiveSum" is not defined` (DX11, FNA). The message names the intrinsic and target, keeps the compiler's own line and column, and appends its text; `.fx` and `.slang` share one message. A user function that shares an intrinsic's name on those targets still compiles. DirectX12 still compiles them; Vulkan stays `SD0218`.
-- **Host-independent generated text.** The Slang frontend `.fx`, the SkSL uniform rewrite, the ShaderToy `.fx` and harness, and the multipass manifest/WIRING.md used `AppendLine` (CRLF on Windows, LF elsewhere); they now emit `\n` everywhere. `HostNewlineBanTests` fails if `AppendLine`/`Environment.NewLine`/`WriteLine` reappears in a generator project. Compiled output bytes are unchanged.
-
 ### Added
 
 - **Full Slang input in the browser (issue #257, Phase 67).** A browser cannot spawn `slangc`, so the
@@ -236,6 +164,76 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   missing any entry or was not produced at all.
 
 ### Fixed
+
+- **A `dxil.dll` on `PATH` no longer hijacks DXC's DXIL validator on Windows.** With the Windows
+  SDK's `bin` directory on `PATH` (every VS Developer Command Prompt), every DirectX 12 compile
+  failed with `DXIL container mismatch for 'PSVRuntimeInfoSize'`; with any other `dxil.dll` there,
+  DirectX 12 output could come out unsigned without a word. The cause was ShadowDusk's own call
+  to Vortice's `Dxc.LoadDxil()`, a bare `LoadLibrary("dxil.dll")` made before DXC loaded: our
+  `dxil.dll` sits in `runtimes/<rid>/native`, not the application directory, so the bare load
+  walked down to `PATH`, and `dxcompiler.dll` then bound the module already loaded under that
+  name. ShadowDusk now loads its pinned `dxil.dll` and then `dxcompiler.dll` by absolute path
+  before any DXC call (on Linux, `libdxcompiler.so`), and checks that the `dxil.dll` DXC binds is
+  its own (by file content, so a byte-identical copy is accepted). Its resolver now runs ahead of
+  Vortice.Dxc's own, so a bare-name fallback can no longer pick a different DXC (on Linux, from
+  `LD_LIBRARY_PATH`). When the pinned natives are missing, every DXC-backed compile fails with the
+  new `SD0219` instead of running on whatever the OS search found. When a foreign validator was
+  loaded into the process first (by a host tool, or on macOS any `libdxil` image, since that build
+  ships none), only DirectX 12 compiles, whose validated and signed DXIL it would decide, fail with
+  `SD0219`; OpenGL, Vulkan and DirectX 11 never call the validator and keep compiling. Output bytes
+  are unchanged on a clean `PATH`. `CliDxcPathHijackTest` runs the CLI with decoy
+  `dxil.dll`/`dxcompiler.dll` (and, where installed, the Windows SDK's `bin`) first on `PATH` for
+  DirectX 12, DirectX 11, OpenGL and Vulkan, and requires output byte-identical to a clean-`PATH`
+  compile, with DirectX 12 signed; it failed before the fix. `DxcForeignValidatorTests` preloads a
+  decoy, the Windows SDK's, a byte-identical copy, and a `\\?\`-path `dxil.dll` in fresh processes
+  and pins which targets compile. The MGCB gate's decoy directory now carries a `dxil.dll` too.
+- **`ShadowDusk.Slang`: textured shaders no longer crash real FNA (issue #230).** slangc emits
+  texture objects (`Texture2D T; SamplerState S; T.Sample(S, uv)`). On the FNA target that compiled,
+  but vkd3d folds the pair into one texture-typed sampler named `S+T`, so the `.fxb` held a texture
+  where MojoShader expects a sampler and FNA threw `NotImplementedException: Unhandled sampler
+  state!` on the first draw (all 12 textured shaders of the 21-shader corpus; `fxc /T fx_2_0` refuses
+  the same text). `SlangCompiler` now respells them for FNA in DX9 effect syntax (`texture2D T;
+  sampler2D S = sampler_state { Texture = <T>; }; tex2D(S, uv)`), the same SM3 `texld`, with every
+  texture declared before any sampler. Texture shapes it does not model (a texture or sampler passed
+  as a function parameter, a subscript load `T[...]`, `SampleLevel`/`SampleGrad`/`Load`, a non-2D
+  texture, one sampler for two textures, a non-zero register space) fail as the new `SD0627`, at the
+  Slang source line.
+- **FNA `.fx` (and the built-in `.slang` subset frontend): a DX10-style texture object now fails at
+  compile time instead of crashing FNA at the first draw (issue #230). Behavior change.** Any
+  `Texture2D`/`Texture3D`/`TextureCube` sampled through a `SamplerState` (`Sample`, `SampleLevel`,
+  `SampleGrad`, ...) at a `ps_2_0`/`ps_3_0`/`vs_*` profile used to compile for FNA into the same
+  texture-typed `S+T` entry, and every such effect throws `Unhandled sampler state!` in FNA. `fxc
+  /T fx_2_0` refuses this source too. It now fails with `SD0303`, located at the sampling call, with
+  DX9 advice for the actual shape (`texture2D`/`texture3D`/`textureCUBE`, and
+  `tex2D`/`tex2Dlod`/`tex2Dgrad`/`tex3D`/`texCUBE`). Twelve test fixtures that used to "compile"
+  for FNA move to this rejection: `PenumbraLight`, `PenumbraTexture`, `SharedSamplerPair`,
+  `ExCubeSamplerHidef`, `ExModernSample`, `ExMultiSamplerHidef`, `ExPhantomTexLodUniform`,
+  `ExSampleGradHidef`, `ExSampleLevelHidef`, `ExTextureNamedTexture`, `ExVolumeTextureHidef`,
+  `ExVsTextureFetch`. None of them could have rendered in FNA. DX9-style `texture` +
+  `sampler_state` + `tex2D` source is unaffected.
+- **OpenGL `sin`/`cos` on large arguments no longer depends on the driver's range reduction (issue #215).** SPIRV-Cross passed the raw argument to the GLSL builtin, so a shader feeding hundreds of radians into `sin` (`Dots.fx` reaches ~792) rendered 19/255 off the `mgfxc` golden on Intel UHD while llvmpipe and NVIDIA matched. The GLSL rewriter now reduces every non-literal `sin`/`cos` argument into [-pi, pi] first (new rewriter Rule 16, a Cody-Waite split of 2pi through an `sd_reduce_angle` helper), as fxc does before every D3D9 `sincos`, with constants more accurate than `mgfxc`'s (max phase error 1.3e-7 rad at |x| <= 1000, measured in fp32, against 3.8e-4 for `mgfxc`'s six-decimal ones). **Every OpenGL/WebGL shader that calls `sin` or `cos` changes bytes**; shaders without them, and every DirectX, DirectX 12, Vulkan and FNA output, are byte-unchanged.
+
+- **DirectX and FNA compiles no longer run vkd3d again for an entry point another pass already compiled (issue #255).** An effect whose techniques share entry points made one vkd3d call per pass. MonoGame's stock `BasicEffect.fx` made 64 calls for 30 distinct shaders. Each distinct request now compiles once per `Compile` call, which roughly halves the vkd3d time of the stock effects: `BasicEffect` about 490 to 250 ms, `SkinnedEffect` (DirectX) about 770 to 350 ms, `EnvironmentMapEffect` about 300 to 90 ms. Output bytes are unchanged. vkd3d is deterministic, the cache key is every field of the request, and the stock effects were byte-compared before and after. A cancelled token now also stops vkd3d diagnostic relocation before each of its parse-only probe compiles. A native call that has already started still cannot be interrupted.
+  This does not speed up one very large pixel shader, such as the current upstream Apos.Shapes file (about 5 s on a Ryzen 7 5800X). That time is spent inside a single vkd3d call. vkd3d's HLSL optimizer is roughly quadratic in the size of the fully inlined shader, and vkd3d 2.1 is about 1.6x slower than 1.17 on that file and about 2x slower on branchy code. vkd3d has no option that reduces optimizer work, so this is tracked upstream rather than worked around. The measurements are in `project_facts.md`.
+- **`ShadowDusk.Slang`: textured shaders sample SpriteBatch's texture on OpenGL (issue #252).** slangc
+  numbers every texture and sampler itself (`SamplerState S : register(s0)`), and the OpenGL sampler
+  allocator reads a `SamplerState` register as an author reservation (mgfxc's own rule), so a
+  single-texture Slang shader landed on sampler slot 1 while SpriteBatch binds the draw texture to
+  unit 0, and the shader never saw it. `SlangCompiler` now strips slangc's own texture/sampler
+  registers and keeps every `register(...)` the author wrote, so the route matches what the `.fx`
+  route gives the equivalent hand-written HLSL. New render gate `validation/SlangTexturedGl` (real
+  MonoGame DesktopGL, texture on unit 0 via SpriteBatch, Invert compared against the `mgfxc` golden)
+  measured red before the fix and green after; `slang-manifest.json` regenerated.
+- **Slang follow-ups (issue #258).** `*.slang` files are now pinned to LF in the checkout
+  (`.gitattributes`), like `.fx`/`.fxh`; every tracked `.slang` was already LF in the repo, so no
+  bytes change. `SlangCompiler`'s `SD0625` rejection (two entry points emitting different
+  declarations of one cbuffer/resource name) is now tested end to end through `SlangCompiler`
+  with a fake slangc, via an internal seam; the public API is unchanged. Every committed
+  `packages.lock.json` now records the `ShadowDusk.*` project references at 0.20.0 (they still
+  said 0.18.0, which no restore flags), and the release runbook rewrites them on each bump.
+- **Intermittent 60 s timeout in `Issue202_AposShapesCurrentUpstream_LandsOnTheRegisterLimit` on CI.** The test compiled the 3235-line shader twice, and each vkd3d compile costs about 3.3 s of CPU that a loaded runner stretched past the test's 60 s token. It now compiles once with no wall-clock token, since a token cannot interrupt a native compile; the CI integration step's `--blame-hang-timeout 3m` guards hangs and uploads a thread dump.
+- **`.fx` wave/quad intrinsics now fail loudly and consistently on every target that cannot hold them.** On OpenGL, DirectX 11 and FNA they are rejected with `SD0624` (the code the `.slang` route already used), instead of DXC's `Vulkan 1.1 is required` (OpenGL) or vkd3d's `Function "WaveActiveSum" is not defined` (DX11, FNA). The message names the intrinsic and target, keeps the compiler's own line and column, and appends its text; `.fx` and `.slang` share one message. A user function that shares an intrinsic's name on those targets still compiles. DirectX12 still compiles them; Vulkan stays `SD0218`.
+- **Host-independent generated text.** The Slang frontend `.fx`, the SkSL uniform rewrite, the ShaderToy `.fx` and harness, and the multipass manifest/WIRING.md used `AppendLine` (CRLF on Windows, LF elsewhere); they now emit `\n` everywhere. `HostNewlineBanTests` fails if `AppendLine`/`Environment.NewLine`/`WriteLine` reappears in a generator project. Compiled output bytes are unchanged.
 
 - **`SlangCompiler` mis-merged entry points that instantiate the same generic differently
   (issue #228).** `-no-mangle` is collision-free inside one entry (measured: `Box_0`/`Box_1`/
