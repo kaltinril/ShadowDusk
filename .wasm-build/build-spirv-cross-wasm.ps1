@@ -11,13 +11,28 @@
 # All five backends (GLSL/HLSL/MSL/CPP/REFLECT) are compiled with the SAME defines
 # the spirv-cross-c-shared CMake target uses, so the C API behaves identically to
 # the desktop shared library; only transpileToGlsl is reached at runtime.
+param(
+    # Where spirv-cross.{js,wasm} are written. Two committed copies must stay identical:
+    # src/ShadowDusk.Wasm/wwwroot/spirv-cross/ (the shipped package asset) and
+    # samples/ShaderFiddle.Web/wwwroot/spirv-cross/ (the sample's copy).
+    [string]$OutDir = 'C:\git\ShadowDusk\samples\ShaderFiddle.Web\wwwroot\spirv-cross',
+    # Linked wasm stack size (issue #271). Emscripten's default is 64 KB, against 1 MB for
+    # the desktop native on Windows and 8 MB on Linux/macOS. SPIRV-Cross emits structured
+    # control flow recursively (an emit_block_chain frame per nesting level, several KB
+    # each), so at 64 KB the module overflowed on valid SPIR-V from about a dozen nested
+    # ifs or else-ifs, where the desktop transpiles hundreds. A wasm stack overflow is
+    # silent: the stack runs into static data, and the corruption surfaced later as
+    # 'null function or function signature mismatch' or 'Aborted()'. 8 MB matches the
+    # slangc module (PR #266); the depth it buys is measured by node-test-spirv-cross.mjs.
+    [string]$StackSize = '8MB'
+)
 $ErrorActionPreference = 'Stop'
 
 $root      = 'C:\git\ShadowDusk\.wasm-build'
 $src       = Join-Path $root 'spirv-cross-src'
 $emsdk     = Join-Path $root 'emsdk'
 $emcc      = Join-Path $emsdk 'upstream\emscripten\emcc.bat'
-$outDir    = 'C:\git\ShadowDusk\samples\ShaderFiddle.Web\wwwroot\spirv-cross'
+$outDir    = $OutDir
 $outJs     = Join-Path $outDir 'spirv-cross.js'
 
 $env:EMSDK     = $emsdk
@@ -70,8 +85,9 @@ $args = @(
     '-sFILESYSTEM=0',                     # no FS needed; smaller module
     "-sEXPORTED_FUNCTIONS=$exportedFuncs",
     "-sEXPORTED_RUNTIME_METHODS=$runtimeMethods"
-) + $sources + @('-o', "`"$outJs`"")
+) + $(if ($StackSize) { @("-sSTACK_SIZE=$StackSize") } else { @() }) + $sources + @('-o', "`"$outJs`"")
 
+New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 Write-Host "emcc: $emcc"
 Write-Host "Compiling $($sources.Count) sources -> $outJs"
 & $emcc @args
