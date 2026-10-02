@@ -54,7 +54,19 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
     }
 
     private static Result<PlatformBlob, ShaderError> CompileCore(
-        D3DCompileRequest request, CancellationToken cancellationToken)
+        D3DCompileRequest request, CancellationToken cancellationToken) =>
+        CompileCore(request, cancellationToken, onNativeCallReturned: null);
+
+    /// <summary>
+    /// The compile, with a test seam: <paramref name="onNativeCallReturned"/> runs after
+    /// every <c>vkd3d_shader_compile</c> call returns (the real compile first, then each
+    /// diagnostic-relocation probe). A native call cannot be interrupted, so the only
+    /// deterministic way to cancel BETWEEN the failing compile and its probes, which is
+    /// the window the issue-#255 cancellation check covers, is from inside this callback;
+    /// it also lets a test count the native calls. Production passes <see langword="null"/>.
+    /// </summary>
+    internal static Result<PlatformBlob, ShaderError> CompileCore(
+        D3DCompileRequest request, CancellationToken cancellationToken, Action? onNativeCallReturned)
     {
         Vkd3dLoader.Register();
 
@@ -85,10 +97,17 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
         // honor them for diagnostics) — this strip is vkd3d-only.
         string vkd3dSource = LineDirectivePattern.Replace(request.HlslSource, string.Empty);
 
+        NativeOutcome Invoke(string source)
+        {
+            NativeOutcome o = InvokeNative(source, request, profile, targetType);
+            onNativeCallReturned?.Invoke();
+            return o;
+        }
+
         NativeOutcome outcome;
         try
         {
-            outcome = InvokeNative(vkd3dSource, request, profile, targetType);
+            outcome = Invoke(vkd3dSource);
         }
         catch (DllNotFoundException ex)
         {
@@ -119,11 +138,12 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
         //
         // The token cannot interrupt vkd3d_shader_compile itself (one native call), but it
         // is honoured before each relocation probe (up to Vkd3dSourceLocator.MaxProbes more
-        // native calls), so a cancelled compile does not go on to pay for them.
+        // native calls), so a cancelled compile does not go on to pay for them. The check
+        // itself lives in Vkd3dSourceLocator (shared with the browser host), which is why
+        // the token is handed to Relocate rather than tested here.
         ShaderError? Probe(string source)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            NativeOutcome o = InvokeNative(source, request, profile, targetType);
+            NativeOutcome o = Invoke(source);
             return o.Failed
                 ? Vkd3dCompileContract.MapCompileFailure(o.Messages, request.SourceFileName, string.Empty)
                 : null;
@@ -138,7 +158,8 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
                 request.SourceFileName,
                 $"vkd3d-shader DXBC compilation failed (rc={outcome.Rc}) with no diagnostics");
             return Result<PlatformBlob, ShaderError>.Fail(
-                Vkd3dSourceLocator.Relocate(primary, vkd3dSource, request.HlslSource, request.SourceFileName, Probe));
+                Vkd3dSourceLocator.Relocate(
+                    primary, vkd3dSource, request.HlslSource, request.SourceFileName, Probe, cancellationToken));
         }
 
         // vkd3d's message buffer is populated on SUCCESS too (LogLevel is
@@ -149,7 +170,7 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
             ? Array.Empty<ShaderError>()
             : Vkd3dSourceLocator.Relocate(
                 D3DCompilerDiagnosticReformatter.ReformatAsWarnings(outcome.Messages, request.SourceFileName),
-                vkd3dSource, request.HlslSource, request.SourceFileName, Probe);
+                vkd3dSource, request.HlslSource, request.SourceFileName, Probe, cancellationToken);
 
         return Result<PlatformBlob, ShaderError>.Ok(
             new PlatformBlob(blobKind, outcome.Code!) { Warnings = warnings });

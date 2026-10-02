@@ -330,10 +330,11 @@ void main()
         result.Glsl.ShouldContain("sign((abs(vTexCoord0.x) * 8.0)) * floor(abs((abs(vTexCoord0.x) * 8.0)))", Case.Sensitive);
     }
 
-    // ---- Rule 16: sin/cos range reduction (issue #215). SPIRV-Cross calls the GLSL
+    // ---- Rule 16: sin/cos/tan range reduction (issue #215). SPIRV-Cross calls the GLSL
     // builtin on the raw argument; weak drivers (Intel UHD) reduce large arguments
     // badly (Dots.fx reaches ~792 rad and missed the mgfxc golden by 19/255). Every
-    // non-literal sin/cos argument is routed through a Cody-Waite reduction helper. ----
+    // non-literal sin/cos/tan argument is routed through a Cody-Waite reduction helper
+    // (fxc reduces before all three: D3D9 tan is sincos of the reduced angle + rcp/mul). ----
 
     private const string TrigSource = """
 #version 140
@@ -521,6 +522,170 @@ void main()
         result.Glsl.ShouldContain("posFixup", Case.Sensitive);
     }
 
+    // ---- Rule 16, tan (issue #215 follow-up). The first cut left tan unreduced on the
+    // recorded claim that fxc has no D3D9 tan to mirror. Measured: `fxc /T ps_3_0` on
+    // tan(input.TexCoord.x * 800.0 * scale) emits mad / frc / mad / sincos / rcp / mul,
+    // i.e. the SAME reduction then sin/cos, so mgfxc's GLSL never takes the tangent of
+    // a large value and neither may ours. ----
+
+    private const string TanSource = """
+#version 140
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    vec2 _60 = in_var_TEXCOORD0 * 800.0;
+    float tangent = atan(_60.y, _60.x) + atan(_60.x) + tanh(_60.y);
+    float my_tan = tangent * 2.0;
+    float _66 = tan(_60.x) * tan (tan(_60.y) * 3.0) + tan(0.5) + tan(-1.25e1);
+    float _70 = tan(
+        _60.x
+            + my_tan);
+    out_var_SV_Target = vec4(_66, tan(_60), _70 + tangent);
+}
+""";
+
+    [Fact]
+    public void Trig_EveryNonLiteralTan_IsRoutedThroughTheReductionHelper_Issue215()
+    {
+        var result = MonoGameGlslRewriter.Rewrite(TanSource, ShaderStage.Pixel);
+
+        result.Glsl.ShouldContain("tan(sd_reduce_angle(_60.x))", Case.Sensitive);
+        // Nested (and `tan (` with a space before the paren): outer and inner, once each.
+        result.Glsl.ShouldContain("tan(sd_reduce_angle(tan(sd_reduce_angle(_60.y)) * 3.0))", Case.Sensitive);
+        // Vector argument: the vec2 overload is picked by the argument's own type.
+        result.Glsl.ShouldContain("tan(sd_reduce_angle(_60))", Case.Sensitive);
+        // A call spanning several lines keeps its argument text verbatim. (EOLs
+        // normalized: this source file checks out CRLF on Windows and LF elsewhere.)
+        result.Glsl.ReplaceLineEndings("\n").ShouldContain(
+            "tan(sd_reduce_angle(\n        _60.x\n            + my_tan))", Case.Sensitive);
+        result.Glsl.ShouldNotContain("sd_reduce_angle(sd_reduce_angle(", Case.Sensitive);
+
+        // Every remaining tan call is either reduced or a bare literal.
+        foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(
+                     result.Glsl, @"\btan\s*\(([^()]*)"))
+        {
+            string arg = m.Groups[1].Value;
+            (arg == "sd_reduce_angle" || System.Text.RegularExpressions.Regex.IsMatch(arg, @"^\s*[-+]?[\d.]+([eE][-+]?\d+)?\s*$"))
+                .ShouldBeTrue($"unreduced tan call: {m.Value}");
+        }
+
+        result.Glsl.Count(c => c == '(').ShouldBe(result.Glsl.Count(c => c == ')'),
+            customMessage: "the lowered GLSL must keep parentheses balanced");
+    }
+
+    [Fact]
+    public void Trig_TanLookalikes_AreNeverTouched_Issue215()
+    {
+        var result = MonoGameGlslRewriter.Rewrite(TanSource, ShaderStage.Pixel);
+
+        // atan (both the one- and two-argument form GLSL uses for HLSL atan2) and tanh
+        // take no angle to reduce; identifiers that merely contain `tan` are not calls
+        // to it; literal arguments stay byte-unchanged.
+        result.Glsl.ShouldContain("float tangent = atan(_60.y, _60.x) + atan(_60.x) + tanh(_60.y);", Case.Sensitive);
+        result.Glsl.ShouldContain("float my_tan = tangent * 2.0;", Case.Sensitive);
+        result.Glsl.ShouldContain("+ tan(0.5) + tan(-1.25e1);", Case.Sensitive);
+        result.Glsl.ShouldNotContain("atan(sd_reduce_angle", Case.Sensitive);
+        result.Glsl.ShouldNotContain("tanh(sd_reduce_angle", Case.Sensitive);
+    }
+
+    [Fact]
+    public void Trig_ShaderWithOnlyAtanAndTanh_IsByteUnchanged_NoHelperEmitted_Issue215()
+    {
+        const string src = """
+#version 140
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    float tangent = atan(in_var_TEXCOORD0.y, in_var_TEXCOORD0.x);
+    out_var_SV_Target = vec4(tangent, atan(in_var_TEXCOORD0.x), tanh(in_var_TEXCOORD0.y), tan(2.0));
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        result.Glsl.ShouldNotContain("sd_reduce_angle", Case.Sensitive);
+        result.Glsl.ShouldContain(
+            "vec4(tangent, atan(vTexCoord0.x), tanh(vTexCoord0.y), tan(2.0))", Case.Sensitive);
+    }
+
+    [Fact]
+    public void Trig_TanOnlyShader_StillGetsTheHelperDeclaredBeforeMain_Issue215()
+    {
+        // No sin and no cos anywhere: the helper block must not depend on one of them
+        // having been rewritten first.
+        const string src = """
+#version 140
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    out_var_SV_Target = vec4(tan(in_var_TEXCOORD0.x * 800.0));
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Pixel);
+
+        result.Glsl.ShouldContain("tan(sd_reduce_angle(vTexCoord0.x * 800.0))", Case.Sensitive);
+        int main = result.Glsl.IndexOf("void main()", StringComparison.Ordinal);
+        foreach (string type in new[] { "float", "vec2", "vec3", "vec4" })
+        {
+            string decl = $"{type} sd_reduce_angle({type} x)";
+            int at = result.Glsl.IndexOf(decl, StringComparison.Ordinal);
+            at.ShouldBeInRange(0, main, $"'{decl}' must be declared once, before main");
+            result.Glsl.IndexOf(decl, at + 1, StringComparison.Ordinal).ShouldBe(-1);
+        }
+        result.Glsl.ShouldContain("- k * 0.0019353071795864769; }\n\nvoid main()", Case.Sensitive);
+    }
+
+    [Fact]
+    public void Trig_VertexStageTan_IsReducedToo_Issue215()
+    {
+        const string src = """
+#version 140
+
+layout(binding = 0, std140) uniform type_Globals
+{
+    float Time;
+} _Globals;
+
+in vec4 in_var_POSITION0;
+
+void main()
+{
+    gl_Position = in_var_POSITION0 + vec4(tan(_Globals.Time), 0.0, 0.0, 0.0);
+    gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;
+}
+""";
+        var result = MonoGameGlslRewriter.Rewrite(src, ShaderStage.Vertex);
+
+        result.Glsl.ShouldContain("tan(sd_reduce_angle(vs_uniforms_vec4[0].x))", Case.Sensitive);
+        result.Glsl.ShouldContain("float sd_reduce_angle(float x)", Case.Sensitive);
+        result.Glsl.ShouldContain("posFixup", Case.Sensitive);
+    }
+
+    /// <summary>
+    /// Reads the float overload's three constants back OUT of the emitted GLSL, so a
+    /// later edit to the literals is measured, not assumed.
+    /// </summary>
+    private static (float Inv, float C1, float C2) EmittedReductionConstants(string source)
+    {
+        var result = MonoGameGlslRewriter.Rewrite(source, ShaderStage.Pixel);
+        var m = System.Text.RegularExpressions.Regex.Match(
+            result.Glsl,
+            @"float sd_reduce_angle\(float x\) \{ float k = floor\(x \* ([\d.]+) \+ 0\.5\); return \(x - k \* ([\d.]+)\) - k \* ([\d.]+); \}");
+        m.Success.ShouldBeTrue("the float overload's shape changed; update this replay");
+        return (
+            float.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture),
+            float.Parse(m.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture),
+            float.Parse(m.Groups[3].Value, System.Globalization.CultureInfo.InvariantCulture));
+    }
+
     /// <summary>
     /// The emitted helper's arithmetic, replayed in IEEE fp32 (what a GLSL highp float
     /// is): its constants are read back OUT of the emitted GLSL so a later edit to the
@@ -532,14 +697,7 @@ void main()
     [Fact]
     public void Trig_HelperArithmetic_InFp32_StaysWithin2e7RadOfTheExactReduction_Issue215()
     {
-        var result = MonoGameGlslRewriter.Rewrite(TrigSource, ShaderStage.Pixel);
-        var m = System.Text.RegularExpressions.Regex.Match(
-            result.Glsl,
-            @"float sd_reduce_angle\(float x\) \{ float k = floor\(x \* ([\d.]+) \+ 0\.5\); return \(x - k \* ([\d.]+)\) - k \* ([\d.]+); \}");
-        m.Success.ShouldBeTrue("the float overload's shape changed; update this replay");
-        var inv = float.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
-        var c1 = float.Parse(m.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture);
-        var c2 = float.Parse(m.Groups[3].Value, System.Globalization.CultureInfo.InvariantCulture);
+        (float inv, float c1, float c2) = EmittedReductionConstants(TrigSource);
 
         var rng = new Random(215);
         double worst = 0;
@@ -553,6 +711,54 @@ void main()
         }
 
         worst.ShouldBeLessThan(2e-7, "Cody-Waite reduction lost precision over |x| <= 1000 rad");
+    }
+
+    /// <summary>
+    /// The same fp32 replay, for <c>tan</c>, read from a shader that calls ONLY
+    /// <c>tan</c>. The helper subtracts a multiple of 2π, which is two of tan's π
+    /// periods, so the tangent of the reduced angle must be the tangent of the argument.
+    /// tan's condition number is unbounded at its poles (d tan/dx = 1 + tan²), so the
+    /// bound is the phase bound scaled by that derivative: a 2e-7 rad phase error may
+    /// move tan by 2e-7·(1 + tan²) and no more. The single-constant form's 1e-4 rad
+    /// would fail this by three orders of magnitude.
+    /// </summary>
+    [Fact]
+    public void Trig_HelperArithmetic_InFp32_PreservesTanToThePhaseBound_Issue215()
+    {
+        const string tanOnly = """
+#version 140
+
+in vec2 in_var_TEXCOORD0;
+out vec4 out_var_SV_Target;
+
+void main()
+{
+    out_var_SV_Target = vec4(tan(in_var_TEXCOORD0.x * 800.0));
+}
+""";
+        (float inv, float c1, float c2) = EmittedReductionConstants(tanOnly);
+
+        var rng = new Random(2150);
+        int measured = 0;
+        for (int i = 0; i < 200_000; i++)
+        {
+            float x = (float)((rng.NextDouble() * 2 - 1) * 1000.0);
+            double exact = Math.Tan(x);
+            // Within ~1e-4 rad of a pole the first-order bound below stops describing
+            // the function (the pole is closer than the linearisation is valid for).
+            if (Math.Abs(Math.Cos(x)) < 1e-4)
+            {
+                continue;
+            }
+
+            float k = MathF.Floor(x * inv + 0.5f);
+            float r = (x - k * c1) - k * c2;
+            double bound = 2.5e-7 * (1.0 + exact * exact);
+            Math.Abs(Math.Tan(r) - exact).ShouldBeLessThan(bound, $"x={x}: tan(reduced) drifted from tan(x)");
+            measured++;
+        }
+
+        measured.ShouldBeGreaterThan(199_000, "the pole guard must exclude only a sliver of the samples");
     }
 
     // ---- 2026-07-27 review regressions -------------------------------------------
