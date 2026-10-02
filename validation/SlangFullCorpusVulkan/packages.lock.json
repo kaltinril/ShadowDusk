@@ -1,7 +1,19 @@
 {
-  "version": 2,
+  "version": 1,
   "dependencies": {
     "net8.0": {
+      "MonoGame.Framework.Native": {
+        "type": "Direct",
+        "requested": "[3.8.5, )",
+        "resolved": "3.8.5",
+        "contentHash": "fobFZ8nfhCmt98HD0FNX+nP1IOoJ2N/Zk/JHY6148i4CEpIThv+OJeiR8W+zba+Xz5NkPC2pmWHRum0jN37boQ=="
+      },
+      "MonoGame.Runtime.Windows.Vulkan": {
+        "type": "Direct",
+        "requested": "[3.8.5, )",
+        "resolved": "3.8.5",
+        "contentHash": "YZnBW6w0bVTZfMPJ1WljajLWS6OVS6T8ohw0VWpcyNr90bR+sHkVFIoRGkglVP8HlaDb+5B07U1E/sywo4GcWg=="
+      },
       "SharpGen.Runtime": {
         "type": "Transitive",
         "resolved": "2.1.2-beta",
@@ -15,6 +27,22 @@
           "SharpGen.Runtime": "2.1.2-beta"
         }
       },
+      "Silk.NET.SPIRV.Cross.Native": {
+        "type": "Transitive",
+        "resolved": "2.23.0",
+        "contentHash": "pY4LmIE8nYXkfCgExxksYlnYZZ4D3/AW13XNcpyp0jJDTkCpDsXL0nLOX7CM7tPS6xvkiERRd+Do2zegbl7Xtw=="
+      },
+      "Vortice.D3DCompiler": {
+        "type": "Transitive",
+        "resolved": "3.3.4",
+        "contentHash": "G0yAN1us091ulIzPfMVJeJf8JX3Tu/Wu0l4zip4HPLfVUWWxsBJF0eaEdwSPrUyz97LEG6zjHruL4sZoNRBHcA==",
+        "dependencies": {
+          "SharpGen.Runtime": "2.1.2-beta",
+          "SharpGen.Runtime.COM": "2.1.2-beta",
+          "Vortice.DirectX": "3.3.4",
+          "Vortice.Mathematics": "1.7.2"
+        }
+      },
       "Vortice.DirectX": {
         "type": "Transitive",
         "resolved": "3.3.4",
@@ -25,13 +53,19 @@
           "Vortice.Mathematics": "1.7.2"
         }
       },
+      "Vortice.Dxc": {
+        "type": "Transitive",
+        "resolved": "3.3.4",
+        "contentHash": "Q+JJzn96ZKaLQFEhLRFtWau0/KxORtREpP8FTRdKN0luIdrTZIARto7OESKpOGXl3idIGP/jH8YQIupNzaR5EQ==",
+        "dependencies": {
+          "SharpGen.Runtime": "2.1.2-beta",
+          "SharpGen.Runtime.COM": "2.1.2-beta"
+        }
+      },
       "Vortice.Mathematics": {
         "type": "Transitive",
         "resolved": "1.7.2",
         "contentHash": "WUUzB3MowHdOqNfSMAms5Ovra+SKgLC4ttH1w75ra3srDGctebSg+aywm7hLdvDn592ydgdbOJN11JKsyAcX+A=="
-      },
-      "FNA": {
-        "type": "Project"
       },
       "shadowdusk.compiler": {
         "type": "Project",
@@ -63,34 +97,6 @@
         "type": "Project",
         "dependencies": {
           "ShadowDusk.Compiler": "[0.20.0, )"
-        }
-      },
-      "Silk.NET.SPIRV.Cross.Native": {
-        "type": "CentralTransitive",
-        "requested": "[2.23.0, )",
-        "resolved": "2.23.0",
-        "contentHash": "pY4LmIE8nYXkfCgExxksYlnYZZ4D3/AW13XNcpyp0jJDTkCpDsXL0nLOX7CM7tPS6xvkiERRd+Do2zegbl7Xtw=="
-      },
-      "Vortice.D3DCompiler": {
-        "type": "CentralTransitive",
-        "requested": "[3.3.4, )",
-        "resolved": "3.3.4",
-        "contentHash": "G0yAN1us091ulIzPfMVJeJf8JX3Tu/Wu0l4zip4HPLfVUWWxsBJF0eaEdwSPrUyz97LEG6zjHruL4sZoNRBHcA==",
-        "dependencies": {
-          "SharpGen.Runtime": "2.1.2-beta",
-          "SharpGen.Runtime.COM": "2.1.2-beta",
-          "Vortice.DirectX": "3.3.4",
-          "Vortice.Mathematics": "1.7.2"
-        }
-      },
-      "Vortice.Dxc": {
-        "type": "CentralTransitive",
-        "requested": "[3.3.4, )",
-        "resolved": "3.3.4",
-        "contentHash": "Q+JJzn96ZKaLQFEhLRFtWau0/KxORtREpP8FTRdKN0luIdrTZIARto7OESKpOGXl3idIGP/jH8YQIupNzaR5EQ==",
-        "dependencies": {
-          "SharpGen.Runtime": "2.1.2-beta",
-          "SharpGen.Runtime.COM": "2.1.2-beta"
         }
       }
     }

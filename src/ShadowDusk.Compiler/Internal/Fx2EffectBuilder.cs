@@ -89,7 +89,8 @@ internal static class Fx2EffectBuilder
         IReadOnlyList<Fx2Shader> shaders,
         IReadOnlyList<CtabTable> ctabs,
         IReadOnlyList<SamplerInfo> samplerInfos,
-        string sourceFile)
+        string sourceFile,
+        string? sourceText = null)
     {
         // ---- 1. Union the CTAB constants of every shader by name.
         var numericsByName = new Dictionary<string, CtabConstant>(StringComparer.Ordinal);
@@ -188,6 +189,16 @@ internal static class Fx2EffectBuilder
         foreach (string name in samplerOrder)
         {
             CtabConstant c = samplersByName[name];
+
+            // Issue #230: a DX10-style texture object (Texture2D T; SamplerState S;
+            // T.Sample(S, uv)) reaches the SM3 backend as ONE combined sampler that vkd3d names
+            // "S+T" and types as the TEXTURE. Emitted as-is it becomes a texture parameter
+            // where MojoShader expects a sampler, and real FNA throws "Unhandled sampler
+            // state!" on the first draw (measured). fxc /T fx_2_0 refuses the same source
+            // ("DX10-style texture intrinsic"), so refuse it here too, before it can ship.
+            int plus = name.IndexOf('+', StringComparison.Ordinal);
+            if (plus > 0)
+                return TextureObjectFailure(sourceFile, sourceText, name[..plus], name[(plus + 1)..], c.Type);
 
             // fx_2_0 sampler arrays need per-element value objects (§7.2) — unmodeled here.
             // Failing loudly beats silently emitting a non-array typedef whose parameter
@@ -562,6 +573,103 @@ internal static class Fx2EffectBuilder
         StencilOperationValue.Decrement => 8,
         _ => 1,
     };
+
+    /// <summary>
+    /// <paramref name="text"/> with every <c>//</c> and <c>/* */</c> comment replaced by spaces,
+    /// newlines kept, so offsets, lines and columns into the result match the original.
+    /// </summary>
+    internal static string MaskComments(string text)
+    {
+        var chars = text.ToCharArray();
+        int i = 0;
+        while (i < chars.Length - 1)
+        {
+            if (chars[i] == '/' && chars[i + 1] == '/')
+            {
+                while (i < chars.Length && chars[i] != '\n' && chars[i] != '\r')
+                    chars[i++] = ' ';
+            }
+            else if (chars[i] == '/' && chars[i + 1] == '*')
+            {
+                chars[i++] = ' ';
+                chars[i++] = ' ';
+                while (i < chars.Length && !(chars[i] == '*' && i + 1 < chars.Length && chars[i + 1] == '/'))
+                {
+                    if (chars[i] != '\n' && chars[i] != '\r')
+                        chars[i] = ' ';
+                    i++;
+                }
+                if (i < chars.Length) { chars[i++] = ' '; chars[i++] = ' '; }
+            }
+            else
+            {
+                i++;
+            }
+        }
+        return new string(chars);
+    }
+
+    /// <summary>
+    /// The SD0303 for a DX10-style texture object (issue #230), located at the sampling call
+    /// (or, failing that, the texture's declaration) in <paramref name="sourceText"/> when the
+    /// top-level source holds it, with DX9 advice that matches the texture's dimension (from the
+    /// CTAB type) and the sampling method actually used.
+    /// </summary>
+    private static Result<Fx2EffectDesc, ShaderError> TextureObjectFailure(
+        string sourceFile, string? sourceText, string sampler, string texture, int ctabType)
+    {
+        int line = 0, column = 0;
+        string method = "Sample";
+        if (sourceText is not null)
+        {
+            // Locate against the code only: a comment that mentions 'T.Sample(S' must not win.
+            sourceText = MaskComments(sourceText);
+            string t = System.Text.RegularExpressions.Regex.Escape(texture);
+            string s = System.Text.RegularExpressions.Regex.Escape(sampler);
+            var call = System.Text.RegularExpressions.Regex.Match(
+                sourceText, $@"\b{t}\s*\.\s*(?<m>Sample\w*)\s*\(\s*{s}\b");
+            var at = call.Success
+                ? call
+                : System.Text.RegularExpressions.Regex.Match(sourceText, $@"\bTexture\w*(?:\s*<[^>;{{}}]*>)?\s+{t}\b");
+            if (call.Success)
+                method = call.Groups["m"].Value;
+            if (at.Success)
+            {
+                line = 1 + sourceText.AsSpan(0, at.Index).Count('\n');
+                int lineStart = at.Index == 0 ? 0 : sourceText.LastIndexOf('\n', at.Index - 1) + 1;
+                column = at.Index - lineStart + 1;
+            }
+        }
+
+        (string decl, string fn) = ctabType switch
+        {
+            8 => ("texture3D", "tex3D"),
+            9 => ("textureCUBE", "texCUBE"),
+            6 => ("texture1D", "tex1D"),
+            _ => ("texture2D", "tex2D"),
+        };
+        string samplerType = decl.Replace("texture", "sampler", StringComparison.Ordinal);
+        string intrinsic = method switch
+        {
+            "Sample" => $"{fn}({sampler}, uv)",
+            "SampleLevel" => $"{fn}lod({sampler}, float4(uv, 0, lod)) (SampleLevel)",
+            "SampleGrad" => $"{fn}grad({sampler}, uv, ddx, ddy) (SampleGrad)",
+            "SampleBias" => $"{fn}bias({sampler}, float4(uv, 0, bias)) (SampleBias)",
+            _ => $"the matching {fn}* intrinsic ({method} has no direct DX9 form)",
+        };
+
+        return Result<Fx2EffectDesc, ShaderError>.Fail(new ShaderError(
+            File: sourceFile,
+            Line: line,
+            Column: column,
+            Code: "SD0303",
+            Message: "FNA effect build failed: " +
+                $"texture '{texture}' is sampled through the DX10-style texture object " +
+                $"'{texture}.{method}({sampler}, ...)', which the FNA target (fx_2_0, Shader Model 2-3) " +
+                "cannot bind; fxc /T fx_2_0 rejects it too. Declare it the DX9 way: " +
+                $"'{decl} {texture}; {samplerType} {sampler} = sampler_state {{ Texture = <{texture}>; }};' " +
+                $"and sample with {intrinsic}"));
+    }
 
     private static Result<Fx2EffectDesc, ShaderError> Fail(string sourceFile, string message) =>
         Result<Fx2EffectDesc, ShaderError>.Fail(new ShaderError(

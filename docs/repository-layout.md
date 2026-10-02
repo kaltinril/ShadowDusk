@@ -142,7 +142,12 @@ ShadowDusk/
 │                                  #     invocation SlangCompiler uses, real DirectX_11 Effect load - Phase 66),
 │                                  #   Slang textured GL (SlangTexturedGl: the real-slangc route's textured
 │                                  #     shaders in real DesktopGL with SpriteBatch's unit-0 texture, sampler
-│                                  #     table + CPU-math render + Invert vs the mgfxc golden - issue #252)
+│                                  #     table + CPU-math render + Invert vs the mgfxc golden - issue #252),
+│                                  #   Slang DX12/Vulkan/FNA (SlangFullCorpusDx12, SlangFullCorpusVulkan and
+│                                  #     FnaValidation's `-- slang` mode: the 21-shader real-slangc corpus vs
+│                                  #     mgfxc 3.8.5 DirectX_12/Vulkan or fxc fx_2_0 on the same assembled .fx,
+│                                  #     real Effect load + render, positive controls; SharedSlang/ holds the
+│                                  #     corpus/capture/parameter/control code they share - issue #230)
 │                                  #   + the compare_*.py oracles. See docs/validation-matrix.md §6.
 │                                  #   Two entries here are NOT render proofs:
 │                                  #     MgcbPlugin runs a real `dotnet mgcb` content build through the MGCB

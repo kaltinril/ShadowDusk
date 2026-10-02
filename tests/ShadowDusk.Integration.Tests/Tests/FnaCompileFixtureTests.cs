@@ -505,6 +505,74 @@ public sealed class FnaCompileFixtureTests
         result.Error.ShouldNotBeEmpty("the failure must carry diagnostics");
     }
 
+    [FnaFact]
+    public async Task InlineTextureObjectAtPs30_Fna_FailsLoudlyAsSD0303()
+    {
+        using var cts = new CancellationTokenSource(CompileTimeout);
+
+        // Issue #230: the same DX10-style texture object, but at a legal SM3 profile. vkd3d
+        // accepts it and folds the pair into one texture-typed "s+t" sampler; written as-is
+        // that effect crashed real FNA on the first draw ("Unhandled sampler state!"), and
+        // fxc /T fx_2_0 refuses the source outright. It must fail at compile time instead.
+        const string source = """
+            Texture2D t;
+            SamplerState s;
+
+            float4 PSMain(float2 uv : TEXCOORD0) : COLOR0
+            {
+                return t.Sample(s, uv);
+            }
+
+            technique T
+            {
+                pass P
+                {
+                    PixelShader = compile ps_3_0 PSMain();
+                }
+            }
+            """;
+
+        var result = await CompileFnaSourceAsync(source, sourcePath: null, cts.Token);
+
+        result.IsFailure.ShouldBeTrue("a texture object at ps_3_0 must not ship an effect FNA crashes on");
+        ShaderError error = result.Error.ShouldHaveSingleItem();
+        error.Code.ShouldBe("SD0303");
+        error.Message.ShouldContain("t.Sample(s, ...)", Case.Sensitive);
+        error.Message.ShouldContain("sampler2D s = sampler_state { Texture = <t>; }", Case.Sensitive);
+        error.Message.ShouldContain("tex2D(s, uv)", Case.Sensitive);
+        error.Line.ShouldBe(6, "located at the sampling call");
+    }
+
+    [FnaTheory]
+    [InlineData("Texture2D", "t.SampleLevel(s, uv, 0)", "tex2Dlod(s,")]
+    [InlineData("Texture2D", "t.SampleGrad(s, uv, ddx(uv), ddy(uv))", "tex2Dgrad(s,")]
+    [InlineData("TextureCube", "t.Sample(s, float3(uv, 1))", "texCUBE(s, uv)")]
+    [InlineData("Texture3D", "t.Sample(s, float3(uv, 0.5))", "tex3D(s, uv)")]
+    public async Task InlineTextureObjectShapes_Fna_SD0303AdviceMatchesTheShape(string type, string call, string advice)
+    {
+        using var cts = new CancellationTokenSource(CompileTimeout);
+
+        string source = $$"""
+            {{type}} t;
+            SamplerState s;
+
+            float4 PSMain(float2 uv : TEXCOORD0) : COLOR0
+            {
+                return {{call}};
+            }
+
+            technique T { pass P { PixelShader = compile ps_3_0 PSMain(); } }
+            """;
+
+        var result = await CompileFnaSourceAsync(source, sourcePath: null, cts.Token);
+
+        result.IsFailure.ShouldBeTrue();
+        ShaderError error = result.Error.ShouldHaveSingleItem();
+        error.Code.ShouldBe("SD0303");
+        error.Message.ShouldContain(advice, Case.Sensitive);
+        error.Line.ShouldBe(6);
+    }
+
     // -------------------------------------------------------------------------
     // E. CTAB-binding sanity — the MojoShader strcmp-bind invariant, asserted
     //    explicitly for documentation value (the validator also enforces it)
