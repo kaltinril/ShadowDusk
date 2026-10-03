@@ -279,6 +279,136 @@ public sealed class SlangGlSamplerSlotTests
             Named(macroEffect).ShouldBe([("Base", (byte)0, (byte)0), ("Overlay", (byte)1, (byte)1)]);
     }
 
+    // ---------------------------------------------------------------------------------------
+    // Coverage added after the #252 review: 3+ unannotated textures, texture arrays on GL, and
+    // an author register on a combined Sampler2D.
+
+    private const string ThreeTextureShader = """
+        [shader("fragment")]
+        float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
+        {
+            return A.Sample(SA, uv) + B.Sample(SB, uv) + C.Sample(SC, uv);
+        }
+        """;
+
+    [Theory]
+    [InlineData(PlatformTarget.OpenGL)]
+    [InlineData(PlatformTarget.DirectX)]
+    public void ThreeUnannotatedTextures_LandOnUnitsZeroOneTwo_InDeclarationOrder(PlatformTarget target)
+    {
+        const string decls =
+            "Texture2D A;\nSamplerState SA;\nTexture2D B;\nSamplerState SB;\nTexture2D C;\nSamplerState SC;\n";
+        MgfxBlobReader effect = SlangEffect(decls + ThreeTextureShader, target);
+
+        Named(effect).ShouldBe([("A", (byte)0, (byte)0), ("B", (byte)1, (byte)1), ("C", (byte)2, (byte)2)]);
+    }
+
+    [Fact]
+    public void ThreeCombinedSamplers_OnOpenGL_LandOnUnitsZeroOneTwo()
+    {
+        const string source = """
+            Sampler2D A;
+            Sampler2D B;
+            Sampler2D C;
+            [shader("fragment")]
+            float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
+            {
+                return A.Sample(uv) + B.Sample(uv) + C.Sample(uv);
+            }
+            """;
+
+        Named(SlangEffect(source, PlatformTarget.OpenGL))
+            .ShouldBe([("A", (byte)0, (byte)0), ("B", (byte)1, (byte)1), ("C", (byte)2, (byte)2)]);
+    }
+
+    [Fact]
+    public void TextureArray_OnOpenGL_IsRefusedWithSd0217_LikeTheFxRoute()
+    {
+        // MonoGame's GL effect format has one texture per named sampler uniform, so an array
+        // of textures has no slots to land on. The Slang route must say so exactly as the .fx
+        // route does (and never invent consecutive units).
+        const string decls = "Texture2D Tex[3];\nSamplerState S;\n";
+        const string slangBody = """
+            [shader("fragment")]
+            float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
+            {
+                return Tex[0].Sample(S, uv) + Tex[1].Sample(S, uv) + Tex[2].Sample(S, uv);
+            }
+            """;
+
+        var slang = new SlangCompiler().Compile(
+            decls + slangBody,
+            new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "Arr.slang" });
+        var fx = new EffectCompiler().Compile(
+            FxHeader + decls + """
+                float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
+                {
+                    return Tex[0].Sample(S, uv) + Tex[1].Sample(S, uv) + Tex[2].Sample(S, uv);
+                }
+                technique T { pass P0 { PixelShader = compile PS_SHADERMODEL MainPS(); } }
+                """,
+            new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "Arr.fx" });
+
+        fx.IsFailure.ShouldBeTrue("the .fx route's own verdict is the reference");
+        slang.IsFailure.ShouldBeTrue("a texture array has no GL sampler slots");
+        slang.Error.ShouldHaveSingleItem().Code.ShouldBe("SD0217");
+        slang.Error[0].Code.ShouldBe(fx.Error[0].Code);
+        slang.Error[0].Message.ShouldContain("'Tex' is declared as an array of textures", Case.Sensitive);
+    }
+
+    [Fact]
+    public void CombinedSamplerArray_OnOpenGL_IsRefusedLoudly()
+    {
+        // slangc lowers 'Sampler2D Comb[3]' to texture and sampler ARRAYS; SPIRV-Cross cannot
+        // remap arrays of separate samplers to plain GLSL and says so (SD0100). Pinned as the
+        // current behaviour: loud and registered, never consecutive units, never a silent pass.
+        const string source = """
+            Sampler2D Comb[3];
+            [shader("fragment")]
+            float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
+            {
+                return Comb[0].Sample(uv) + Comb[1].Sample(uv) + Comb[2].Sample(uv);
+            }
+            """;
+
+        var result = new SlangCompiler().Compile(
+            source, new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "Comb.slang" });
+
+        result.IsFailure.ShouldBeTrue();
+        ShaderError error = result.Error.ShouldHaveSingleItem();
+        error.Code.ShouldBe("SD0100");
+        error.Message.ShouldContain("arrays or structs of separate samplers", Case.Sensitive);
+    }
+
+    private const string CombinedPixelShader = """
+        [shader("fragment")]
+        float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
+        {
+            return SpriteTexture.Sample(uv);
+        }
+        """;
+
+    [Theory]
+    // slangc splits 'Sampler2D X : register(rN)' into a texture half and a sampler half: tN goes
+    // to the texture, sN to the sampler, and the OTHER half gets slangc's own number (stripped).
+    // The oracle is the hand-written pair carrying only the author's register.
+    // OpenGL: a texture register is not a reservation (mgfxc's rule), 's0' on the sampler is.
+    [InlineData("Sampler2D SpriteTexture : register(t2);\n", PlatformTarget.OpenGL,
+        "Texture2D SpriteTexture : register(t2);\nSamplerState SpriteSampler;\n", 0)]
+    [InlineData("Sampler2D SpriteTexture : register(t2);\n", PlatformTarget.DirectX,
+        "Texture2D SpriteTexture : register(t2);\nSamplerState SpriteSampler;\n", 2)]
+    [InlineData("Sampler2D SpriteTexture : register(s0);\n", PlatformTarget.OpenGL,
+        "Texture2D SpriteTexture;\nSamplerState SpriteSampler : register(s0);\n", 1)]
+    public void AuthorRegisterOnACombinedSampler_IsHonoured_LikeTheHandWrittenPair(
+        string combined, PlatformTarget target, string handWritten, int expectedSlot)
+    {
+        var slang = SlangSamplers(combined + CombinedPixelShader, target);
+        var fx = FxSamplers(FxHeader + handWritten + FxPixelShader, target);
+
+        Slots(slang).ShouldBe([((byte)expectedSlot, (byte)expectedSlot)]);
+        Slots(slang).ShouldBe(Slots(fx));
+    }
+
     // Each sampler record keyed by the name of the texture parameter it binds.
     private static (string Texture, byte TextureSlot, byte SamplerSlot)[] Named(MgfxBlobReader effect) =>
         effect.Samplers

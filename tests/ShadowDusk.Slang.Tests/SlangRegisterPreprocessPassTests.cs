@@ -289,4 +289,43 @@ public sealed class SlangRegisterPreprocessPassTests
         error.Message.ShouldContain("will not guess", Case.Sensitive);
         downstream.Captured.ShouldBeNull();
     }
+
+    // Issue #252 coverage: the strip is target-independent (it runs on every target, not just
+    // OpenGL), so an author-written register survives on Vulkan, DirectX 12 and FNA too, and
+    // slangc's own numbering is removed on all of them.
+
+    [Theory]
+    [InlineData(PlatformTarget.OpenGL)]
+    [InlineData(PlatformTarget.DirectX)]
+    [InlineData(PlatformTarget.DirectX12)]
+    [InlineData(PlatformTarget.Vulkan)]
+    [InlineData(PlatformTarget.Fna)]
+    public void AuthorRegister_IsKept_AndSlangcsOwnIsStripped_OnEveryTarget(PlatformTarget target)
+    {
+        var downstream = new CapturingCompiler();
+        var slangc = new FakeSlangc((0, PreprocessedWithRegister, ""));
+
+        var result = Create(Transport.InProcess, downstream, slangc).Compile(BranchSource, Options(target));
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error[0].Message : null);
+        string fx = downstream.Captured.ShouldNotBeNull();
+        fx.ShouldContain("SpriteSampler : register(s0)", Case.Sensitive);
+        fx.ShouldNotContain("register(t0)", Case.Sensitive);
+    }
+
+    [Theory]
+    [InlineData(PlatformTarget.OpenGL)]
+    [InlineData(PlatformTarget.DirectX12)]
+    [InlineData(PlatformTarget.Vulkan)]
+    [InlineData(PlatformTarget.Fna)]
+    public void SlangcsOwnRegisters_AreStripped_OnEveryTarget(PlatformTarget target)
+    {
+        var downstream = new CapturingCompiler();
+        var slangc = new FakeSlangc((0, PreprocessedWithoutRegister, ""));
+
+        var result = Create(Transport.InProcess, downstream, slangc).Compile(BranchSource, Options(target));
+
+        result.IsSuccess.ShouldBeTrue(result.IsFailure ? result.Error[0].Message : null);
+        downstream.Captured.ShouldNotBeNull().ShouldNotContain("register(", Case.Sensitive);
+    }
 }
