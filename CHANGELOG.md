@@ -260,6 +260,26 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Fixed
 
+- **vkd3d-shader and SPIRV-Cross are loaded only as ShadowDusk's pinned builds, by absolute path
+  (issue #350, the counterpart of #270's DXC fix).** `Vkd3dLoader` (DirectX 11, FNA) and
+  `SpvcLoader` (OpenGL) used to fall back to a bare-name load and then to the runtime's default
+  probing, both of which are the OS search (`PATH`, `LD_LIBRARY_PATH`, `DYLD_LIBRARY_PATH` and the
+  macOS working directory). Whenever the app-local probe missed (a RID-specific publish for
+  SPIRV-Cross; every MGCB plugin build for both) a `libvkd3d-shader` or `spirv-cross` found there
+  was loaded instead: measured before the fix, a CLI with its pinned native removed and a copy on
+  `PATH` compiled DirectX 11, FNA and OpenGL with the `PATH` copy (Windows, measured). Both loaders now probe beside the
+  ShadowDusk assemblies, the application directory and the host's native search directories by
+  absolute path, check each file's SHA-256 against the pin for the process RID BEFORE loading it
+  (vkd3d: the `tools/restore.*` pins; SPIRV-Cross: Silk.NET.SPIRV.Cross.Native 2.23.0's files), check
+  on macOS that dyld really mapped that file, and otherwise refuse with `SD0211` / `SD0103` naming
+  what was found and where they looked. A foreign library is never loaded. The MGCB plugin's
+  last-resort `PluginNativeLibraryResolver` is gone: the loaders find the plugin directory
+  themselves. **Behavior change:** an application whose graph raises `Silk.NET.SPIRV.Cross.Native`
+  above 2.23.0 now gets `SD0103` for OpenGL (a different SPIRV-Cross) instead of silently different
+  GLSL; pin it to 2.23.0. Proven by `CliNativeSearchPathHijackTest` (all three desktop OSes; on Windows it
+  fails 5/8 against the previous loaders), `SpvcLoaderPinTests`, `Vkd3dLoaderTests` and
+  `PinnedNativeLibraryTests`. Android SPIRV-Cross still loads by SONAME from the APK, unchecked.
+
 - **The raylib and SkSL converters compile a legacy sampler declared in an `#include` or through a
   macro (issue #327).** `RaylibConverter.Convert` and `SkslConverter.Convert` pre-parse the raw main
   file and hand its text to the shared DXC seam, so every shape issue #308 fixed on the OpenGL route

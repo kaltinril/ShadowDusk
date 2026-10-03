@@ -75,6 +75,17 @@ distributes** (you trust our package). Those are version-pinned and integrity-ch
 - **Desktop DXC on Windows/Linux** comes from the `Vortice.Dxc` NuGet package, pinned in
   `Directory.Packages.props` and locked via `packages.lock.json`.
 
+**At runtime the same natives are loaded only as those pinned builds.** DXC, vkd3d-shader and
+SPIRV-Cross are loaded **by absolute path** from the places ShadowDusk's packages deliver them
+(beside the ShadowDusk assemblies, the application directory, the host's native search
+directories), each file's identity is checked before it is loaded (DXC: its stamped version /
+build id / `LC_UUID`; vkd3d-shader and SPIRV-Cross: the file's SHA-256 against the pins above),
+and on macOS the image dyld actually mapped is checked too. They are **never** loaded by bare name,
+so a library of the same name on `PATH`, `LD_LIBRARY_PATH` or `DYLD_LIBRARY_PATH` (or planted
+there) is neither used nor executed; a missing or foreign native is a refusal (`SD0219`, `SD0211`,
+`SD0103`), not a fallback (issues #270 and #350). On Android the natives load by SONAME from the
+app's own APK, where no search path reaches; the Android SPIRV-Cross is not yet identity-checked.
+
 Any **downloaded** native added to ShadowDusk's distribution in the future must join the same
 pin + SHA-256 + release-gate discipline. To verify a downloaded, pinned native yourself, compute
 its SHA-256 and compare it against the pinned value in `tools/restore.ps1` / `tools/restore.sh`;
