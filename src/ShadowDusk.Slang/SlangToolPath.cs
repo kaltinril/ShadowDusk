@@ -99,7 +99,10 @@ public static class SlangToolPath
         if (isMacOS && osVersion < MinimumMacOSVersion)
         {
             return $"ShadowDusk.Slang's bundled slangc (upstream v{SlangVersion}) is built for macOS " +
-                   $"{MinimumMacOSVersion.Major} or later, and this host runs macOS {osVersion}.";
+                   $"{MinimumMacOSVersion.Major} or later, and this host runs macOS {osVersion}. " +
+                   "ShadowDusk does not build its own slangc for older macOS; if you need that, please open an issue " +
+                   "at https://github.com/kaltinril/ShadowDusk/issues. The built-in .slang subset frontend in " +
+                   "ShadowDusk.Compiler runs on any macOS if the source avoids Slang-only features.";
         }
 
         return null;
