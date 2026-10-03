@@ -89,7 +89,7 @@ public sealed class DeepShaderStackTests
         var options = new CompilerOptions { Target = PlatformTarget.OpenGL, SourceFileName = "deep.fx" };
         var compiler = new EffectCompiler();
 
-        int workersBefore = NativeCompileStack.WorkersStarted;
+        NativeCompileStack.ResetPeakBusyWorkers();
         using var start = new Barrier(parallel);
         var results = new Result<CompiledShader, ShaderError[]>[parallel];
         var failures = new Exception?[parallel];
@@ -119,7 +119,9 @@ public sealed class DeepShaderStackTests
 
         if (Environment.ProcessorCount > 1)
         {
-            (NativeCompileStack.WorkersStarted - workersBefore).ShouldBeGreaterThanOrEqualTo(2,
+            // Peak busy workers, not workers started: idle workers from earlier tests are reused
+            // (seen on ubuntu-latest: eight parallel compiles, zero new threads, all reused).
+            NativeCompileStack.PeakBusyWorkers.ShouldBeGreaterThanOrEqualTo(2,
                 "eight simultaneous compiles ran on one worker: the native calls are being serialized");
         }
     }

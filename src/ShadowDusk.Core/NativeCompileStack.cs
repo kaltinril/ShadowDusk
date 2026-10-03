@@ -67,6 +67,8 @@ internal static class NativeCompileStack
 
     private static volatile bool _enabled = true;
     private static int _workersStarted;
+    private static int _busyWorkers;
+    private static int _peakBusyWorkers;
 
     [ThreadStatic]
     private static bool t_isWorker;
@@ -87,6 +89,20 @@ internal static class NativeCompileStack
     /// <summary>How many worker threads this process has started so far (reuse shows as a low number).</summary>
     internal static int WorkersStarted => Volatile.Read(ref _workersStarted);
 
+    /// <summary>How many workers are inside a native call right now.</summary>
+    internal static int BusyWorkers => Volatile.Read(ref _busyWorkers);
+
+    /// <summary>
+    /// The most workers that were inside native calls at the same moment since the last
+    /// <see cref="ResetPeakBusyWorkers"/> (or process start). This, not <see cref="WorkersStarted"/>,
+    /// is the measure of concurrency: idle workers linger for <see cref="IdleTimeout"/> and are
+    /// reused, so a burst of parallel compiles may start no new thread at all.
+    /// </summary>
+    internal static int PeakBusyWorkers => Volatile.Read(ref _peakBusyWorkers);
+
+    /// <summary>Restarts the <see cref="PeakBusyWorkers"/> measurement from the current busy count (for tests).</summary>
+    internal static void ResetPeakBusyWorkers() => Volatile.Write(ref _peakBusyWorkers, Volatile.Read(ref _busyWorkers));
+
     /// <summary>
     /// Runs <paramref name="nativeCall"/> on a large-stack worker and returns its result. Blocks
     /// the calling thread until it completes; an exception it throws is rethrown here with its
@@ -104,12 +120,20 @@ internal static class NativeCompileStack
             return nativeCall();
 
         T result = default!;
+        int busy = Interlocked.Increment(ref _busyWorkers);
+        int peak;
+        while ((peak = Volatile.Read(ref _peakBusyWorkers)) < busy &&
+               Interlocked.CompareExchange(ref _peakBusyWorkers, busy, peak) != peak)
+        {
+        }
+
         try
         {
             worker.Execute(() => result = nativeCall());
         }
         finally
         {
+            Interlocked.Decrement(ref _busyWorkers);
             Return(worker);
         }
 
