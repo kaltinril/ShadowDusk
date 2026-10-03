@@ -92,7 +92,13 @@ public sealed class DxilReflectionExtractor
                     Message: "Reflection failed: unable to create DXC blob from DXIL bytes"));
             }
 
-            utils.CreateReflection(encodingBlob, out ID3D12ShaderReflection? reflection);
+            // DXC parses the whole DXIL module here. On a large-stack worker like every other
+            // call into DXC (issue #306); the getters below only read what this built.
+            ID3D12ShaderReflection? reflection = NativeCompileStack.Run(() =>
+            {
+                utils.CreateReflection(encodingBlob, out ID3D12ShaderReflection? created);
+                return created;
+            });
             encodingBlob.Dispose();
             if (reflection is null)
             {

@@ -144,6 +144,10 @@ Pass extra include search paths with the CLI `/I <path>` (repeatable) or the lib
 
 Compilation returns `Result<CompiledShader, ShaderError[]>`. Each <xref:ShadowDusk.Core.ShaderError> carries the file, line, column, code, and message exactly as the underlying compiler emitted them; `FxcFormattedMessage` renders the MGCB-parseable form. No exceptions are thrown for expected shader failures.
 
+## Extremely deep expressions
+
+The native compilers (DXC, vkd3d-shader, SPIRV-Cross) recurse once per nesting level of the source, and a native stack overflow cannot be reported as a `ShaderError`: it ends the process. ShadowDusk therefore runs every native compiler call on its own worker thread with a 64 MB stack, whatever thread (and stack size) your code calls `Compile`/`CompileAsync` from. Measured on Windows x64, that moves the ceiling from about 2,000 terms in one additive chain (`x + x + ...`) to about 94,400, and `else if` chains and call chains of tens of thousands compile with time as the only limit. Only the native call moves: your `IIncludeResolver` and the rest of the pipeline run on the calling thread. Source deeper than even that still exits the process, since the overflow cannot be detected beforehand (see `project_facts.md` for the measured ceilings); bracketed nesting is capped earlier by DXC's own clean `-fbracket-depth` (256) diagnostic.
+
 ## Validating a `.fx` (no render needed)
 
 Because failures come back as data, `CompileAsync` doubles as a **validator/linter**: compile the source, ignore the `.mgfx` bytes on success, and read `ShaderError[]` on failure for the line, column, and message. No graphics device, no `Effect` load, no render required — handy for IDEs, build checks, and shader linters.

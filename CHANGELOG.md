@@ -265,6 +265,29 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   Slang corpus. Proven in real MonoGame DesktopGL by a new `validation/SlangTexturedGl` row that
   sets a second texture through `effect.Parameters["Comb"]` and renders (maxd 1), and pinned on
   DirectX, OpenGL, Vulkan, DirectX12 and FNA by `SlangHoistedTextureNameTests`.
+- **Desktop: an extremely deep but valid shader no longer kills the host process (issue #306).** The
+  native compilers recurse once per nesting level of the source, and they ran on whatever stack the
+  calling thread had: 1.5 MB for a .NET thread on Windows, where an additive chain of 2,168 terms or
+  1,620 `else if` branches (DirectX 12) died inside `dxcompiler.dll` with `0xC00000FD`, and a chain of
+  6,400 functions each calling the next died inside `vkd3d-shader`; the CLI, the MGCB plugin or the game
+  calling `CompileAsync` simply exited, with no diagnostic. Every native compiler call (DXC compile,
+  preprocess and reflection, vkd3d, SPIRV-Cross, the fxc oracle) now runs on a pool of ShadowDusk-owned
+  worker threads with an explicit 64 MB stack (address space, not memory: pages are committed only as a
+  compile actually recurses). Measured ceilings on Windows x64 moved from 2,167 to 94,400 additive
+  terms (OpenGL and DirectX 12; 122,336 on Vulkan), and the else-if and call chains compile at every
+  depth tried (51,200 branches on DirectX 12 in 329 s, 25,600 calls on DirectX in 74 s) with compile
+  time, not the stack, as the practical limit. Source deeper still can still exhaust the 64 MB and the process; a source-level
+  pre-check was measured unreliable (stack per level varies about 5x between shapes, and macro expansion
+  hides the depth), so the ceiling is documented in `project_facts.md` instead. No emitted byte changes:
+  the whole fixture corpus is byte-identical on OpenGL, DirectX, DirectX 12, Vulkan and FNA with the
+  worker on and off, and concurrent compiles stay concurrent. Cost, measured on a 10 ms pixel-shader effect: none measurable through `CompileAsync` (the pool thread
+  hands the whole pipeline to one worker; the Release CLI, one compile per process, gains 2 to 3 ms of
+  one-time thread start and JIT, about 1%), about
+  0.4 ms per effect through the synchronous `Compile` (the pipeline stays on the calling thread and each
+  of its four to six native calls is handed to a worker, about 0.1 ms each). Workers are reused and exit
+  after 5 s idle.
+  New child-process regression tests (`DeepShaderStackTests`) compile the crashing shapes and keep a
+  positive control that still overflows on the caller's stack.
 - **Browser compiles of nested shaders hung, crashed or miscompiled (issue #271).** The in-browser
   DXC, SPIRV-Cross and vkd3d WebAssembly modules were linked with emscripten's 64 KB default stack
   (the desktop natives get 1 MB on Windows, 8 MB on Linux/macOS), and with emscripten's layout an
