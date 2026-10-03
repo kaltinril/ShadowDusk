@@ -227,6 +227,6 @@ internal sealed class WasmVkd3dShaderCompiler : IDxbcShaderCompiler
                      "loaded, so the DirectX (DXBC) and FNA (fx_2_0) targets are unavailable " +
                      "in this browser session. The module ships as a ShadowDusk.Wasm static " +
                      "web asset once restored (tools/restore.* / release tag " +
-                     "native-vkd3d-wasm-2.1 — see src/ShadowDusk.Wasm/wwwroot/vkd3d/RESTORE.md). " +
+                     "native-vkd3d-wasm-2.1-r2 — see src/ShadowDusk.Wasm/wwwroot/vkd3d/RESTORE.md). " +
                      "Underlying error: " + ex.Message);
 }
