@@ -297,6 +297,25 @@ already measured at 46/46 mean 0.00/255 for the ShaderToy route).
 - **C2.** A `docs/validation-matrix.md` **§8-style** row — the section for distinct evidence axes —
   never a §1 cell, so no reader mistakes it for an `mgfxc`-equivalence claim.
 
+### Area D — Gum shader parity (phase 1: texture-only shaders; added 2026-10-03)
+
+The consumer's goal, stated by the owner: Gum's authoring tool runs on KNI, and a saved project
+loads in Skia, so **one `.fx` file must give the same image in both**. A Gum render-target
+container draws its content to a texture and then draws that texture with the shader; it is
+per-container, pixel-stage only, no vertex stage. Phase 1 is shaders whose only inputs are textures
+(no uniforms).
+
+- **D1.** `COLOR0` converts by default to a synthesized uniform that Gum's Skia renderer sets to the
+  container's tint (white when untinted). Every XnaFiddle example reads `input.Color`, so without
+  this none of them convert. Owner decision 2026-10-03, recorded in `project_decisions.md`.
+  [issue #368](https://github.com/kaltinril/ShadowDusk/issues/368).
+- **D2.** The cross-renderer harness (C1) over the phase 1 corpus from the XnaFiddle examples:
+  `Fading`, `Grayscale`, `Invert`, `Pixelated`, `TintShader`; stretch `Mask` (two textures).
+  Same `.fx` through real SkiaSharp vs real KNI over the same image, stated tolerance, a positive
+  control that must diverge. [issue #369](https://github.com/kaltinril/ShadowDusk/issues/369).
+- **D3 (later).** Uniform-carrying shaders (`Saturate`, `Scanlines`, `Sepia`, `Dots`), then
+  `Blur`/`Bloom` and multi-texture. Not scheduled.
+
 ## 5. Acceptance
 
 - [x] **The premise corrections accepted by the requester** (§2.5, 2026-08-12): SkSL text not
@@ -326,7 +345,7 @@ already measured at 46/46 mean 0.00/255 for the ShaderToy route).
       `ShadowDusk.*` library references it.
 - [x] The evidence model is stated as **rendered-image fidelity, never `mgfxc`-equivalence**,
       everywhere it appears (API doc-comments, error-codes rows, README, validation-matrix §8).
-- [ ] **Open:** C1's cross-renderer harness (proven-GL render vs Skia render, image-diffed) as a
+- [ ] **Open (Area D, issues #368 and #369):** C1's cross-renderer harness (proven-GL render vs Skia render, image-diffed) as a
       standing driver, and a real Gum/SkiaGum consumer trial (OQ1's representativeness half).
 
 ## 6. Non-goals
