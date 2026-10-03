@@ -349,9 +349,17 @@ per-container, pixel-stage only, no vertex stage. Phase 1 is shaders whose only 
       turns SpriteBatch's vertex color into the synthesized `float4` uniform `ShadowDusk_Color`
       (reported in `SynthesizedUniforms`, `SD0614` warning) instead of refusing `SD0611`; Gum's
       Skia renderer sets it to the container tint (white when untinted). Proven on XnaFiddle's
-      Fading, Grayscale, Invert, Tint and Mask examples (`SkslVertexColorUniformTests`; Pixelated
-      is refused `SD0612` for computed-UV sampling, a separate limit). Supersedes the
-      "default answer is the `SD0611` refusal" wording in §2.6 and above, which is kept as history.
+      Fading, Grayscale, Invert, Tint and Mask examples (`SkslVertexColorUniformTests`).
+      Supersedes the "default answer is the `SD0611` refusal" wording in §2.6 and above, which is
+      kept as history.
+- [x] **D3 (issue #371, 2026-10-03): computed-UV sampling converts.** Owner decision: `texture(c,
+      expr)` becomes `c.eval((expr) * ShadowDusk_Resolution)`, reusing the existing uniform (now
+      "the pixel size of the element being drawn, which is also the child texture size"), so Gum
+      sets one value. XnaFiddle's Pixelated is proven (`SkslComputedUvSamplingTests`, real Skia
+      render vs the HLSL's quantized bilinear read, ±2/255, positive control). `roundEven`
+      (HLSL `round`) gets an exact `_sd_roundEven` helper since SkSL has none. `SD0612` now
+      covers only a sampling bias or extra argument, an unknown sampler, or an unbalanced call.
+      Supersedes the "computed-UV sampling is refused" wording above, kept as history.
 - [ ] **D2 (issue #369):** the Gum shader-parity render harness (same `.fx` on KNI vs through
       Skia with `ShadowDusk_Color` set to the tint). Not started.
 - [ ] **Open (Area D, issues #368 and #369):** C1's cross-renderer harness (proven-GL render vs Skia render, image-diffed) as a

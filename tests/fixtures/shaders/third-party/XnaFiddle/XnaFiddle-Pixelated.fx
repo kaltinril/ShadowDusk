@@ -8,7 +8,7 @@
 //   Commit     : 0a6edd690db3a8bd42b92676c8e5b31cf13969da
 //   Upstream   : XnaFiddle.BlazorGL/wwwroot/examples/Pixelated/Pixelated.fx
 //   License    : MIT - Copyright (c) 2026 Victor Chelaru (see ./LICENSE, ./NOTICE.md)
-//   Exercises  : pixelation: samples at COMPUTED UV coordinates (SkSL converter refuses it, SD0612)
+//   Exercises  : pixelation: samples at COMPUTED UV coordinates (SkSL converter scales them by ShadowDusk_Resolution, issue #371)
 // =============================================================================
 #if OPENGL
 	#define SV_POSITION POSITION

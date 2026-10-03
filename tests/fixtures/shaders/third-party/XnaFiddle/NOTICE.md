@@ -28,7 +28,7 @@ each file is a provenance comment block prepended at the top. Local filenames ar
 | `XnaFiddle-Fading.fx` | `Fading/Fading.fx` | converts |
 | `XnaFiddle-Grayscale.fx` | `Grayscale/Grayscale.fx` | converts |
 | `XnaFiddle-Invert.fx` | `Invert/Invert.fx` | converts |
-| `XnaFiddle-Pixelated.fx` | `Pixelated/Pixelated.fx` | refused SD0612 (computed-UV sampling), pinned |
+| `XnaFiddle-Pixelated.fx` | `Pixelated/Pixelated.fx` | converts via ShadowDusk_Resolution (computed-UV sampling), pinned |
 | `XnaFiddle-Tint.fx` | `Tint/TintShader.fx` | converts |
 | `XnaFiddle-Mask.fx` | `Masking/Mask.fx` | converts |
 

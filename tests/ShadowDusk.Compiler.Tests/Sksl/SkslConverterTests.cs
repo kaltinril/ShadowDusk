@@ -222,7 +222,7 @@ public sealed class SkslConverterTests
     }
 
     [Fact]
-    public void ComputedUvSampling_IsRejected_BecauseChildBoundsAreUnknowable()
+    public void ComputedUvSampling_Converts_ScaledByTheChildSizeUniform()
     {
         const string fx = """
             Texture2D Tex;
@@ -236,8 +236,11 @@ public sealed class SkslConverterTests
 
         var result = SkslConverter.Convert(fx, new SkslConvertOptions { SourceName = "cs.fx" });
 
-        result.IsFailure.ShouldBeTrue();
-        result.Error.Single().Code.ShouldBe("SD0612");
+        result.IsSuccess.ShouldBeTrue(
+            result.IsFailure ? string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "");
+        result.Value.SkslText.ShouldContain(".eval(", Case.Sensitive);
+        result.Value.SkslText.ShouldContain("* ShadowDusk_Resolution)", Case.Sensitive);
+        result.Value.SynthesizedUniforms.ShouldContain("ShadowDusk_Resolution");
     }
 
     [Fact]
