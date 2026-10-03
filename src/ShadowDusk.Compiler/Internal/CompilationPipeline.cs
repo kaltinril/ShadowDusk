@@ -64,6 +64,85 @@ internal sealed class CompilationPipeline
         CompilerOptions options,
         CancellationToken cancellationToken = default)
     {
+        Result<CompiledShader, ShaderError[]> first = RunCore(
+            hlslSource, options, recovered: null, out ShaderCompileFailure? compileFailure, cancellationToken);
+        if (first.IsSuccess || compileFailure is null)
+            return first;
+
+        // Legacy-sampler recovery (issue #308). A DXC shader compile failed. If the text DXC was
+        // given still holds legacy D3D9 sampler syntax once preprocessed (a declaration in an
+        // #include'd file, or one that comes out of a macro, which the raw pre-parse cannot
+        // see), repeat the pre-parse on the PREPROCESSED source and compile that. This runs only
+        // on a failure, so an effect that compiles from its raw source is compiled from exactly
+        // that source, byte for byte as before.
+        LegacySamplerRecovery.Outcome outcome = LegacySamplerRecovery.Evaluate(
+            hlslSource,
+            compileFailure.SourceFileName,
+            compileFailure.Macros,
+            compileFailure.IncludeResolver,
+            options.AdditionalIncludePaths);
+
+        switch (outcome)
+        {
+            case LegacySamplerRecovery.Outcome.Retry retry:
+            {
+                Result<CompiledShader, ShaderError[]> second = RunCore(
+                    hlslSource, options, retry, out _, cancellationToken);
+                if (second.IsSuccess || retry.Parsed.Residue is null)
+                    return second;
+
+                // Still failing with legacy syntax left in the compiler's input: a shape the
+                // rewrite does not model. The compiler's own diagnostics stay first and verbatim.
+                return Result<CompiledShader, ShaderError[]>.Fail(
+                    [.. second.Error, LegacySamplerRecovery.ResidueError(retry.Parsed.Residue)]);
+            }
+            case LegacySamplerRecovery.Outcome.Rejected rejected:
+                return Fail(rejected.Error);
+            case LegacySamplerRecovery.Outcome.Unmodelled unmodelled:
+                return Result<CompiledShader, ShaderError[]>.Fail([.. first.Error, unmodelled.Error]);
+            default:
+                return first;
+        }
+    }
+
+    /// <summary>
+    /// What <see cref="Run"/> needs to consider the legacy-sampler recovery after a DXC shader
+    /// compile failed: the inputs that compile was built from.
+    /// </summary>
+    private sealed record ShaderCompileFailure(
+        string SourceFileName,
+        MacroSet Macros,
+        IIncludeResolver IncludeResolver);
+
+    /// <summary>
+    /// A failed shader compile is a candidate for the legacy-sampler recovery only on a target
+    /// that compiles through DXC (OpenGL, Vulkan, DirectX 12), which has no D3D9 sampler syntax.
+    /// DirectX 11 compiles through vkd3d / d3dcompiler, which parse that syntax themselves, and a
+    /// recovery pass is never recovered a second time.
+    /// </summary>
+    private static ShaderCompileFailure? LegacySamplerRecoveryCandidate(
+        PlatformTarget target,
+        LegacySamplerRecovery.Outcome.Retry? recovered,
+        string sourceFileName,
+        MacroSet macros,
+        IIncludeResolver includeResolver) =>
+        recovered is null && target != PlatformTarget.DirectX
+            ? new ShaderCompileFailure(sourceFileName, macros, includeResolver)
+            : null;
+
+    /// <summary>
+    /// One pass of the pipeline. With <paramref name="recovered"/> null it pre-parses the raw
+    /// source (every compile's first and normally only pass); with a recovery it compiles from
+    /// the pre-parse of the preprocessed source instead (issue #308).
+    /// </summary>
+    private Result<CompiledShader, ShaderError[]> RunCore(
+        string hlslSource,
+        CompilerOptions options,
+        LegacySamplerRecovery.Outcome.Retry? recovered,
+        out ShaderCompileFailure? compileFailure,
+        CancellationToken cancellationToken)
+    {
+        compileFailure = null;
         cancellationToken.ThrowIfCancellationRequested();
 
         // A CapabilityProfile fully specifies the output target, including the graphics backend, so
@@ -93,12 +172,21 @@ internal sealed class CompilationPipeline
 
         string sourceFileName = options.SourceFileName ?? "<source>";
 
-        // Stage 1: FX9 pre-parser.
-        var parseResult = FxPreParser.Parse(hlslSource, sourceFileName);
-        if (parseResult.IsFailure)
-            return Fail(FromFxParseError(parseResult.Error));
+        // Stage 1: FX9 pre-parser. A recovery pass (issue #308) arrives with the pre-parse of the
+        // preprocessed source already done.
+        FxParseResult fxParsed;
+        if (recovered is not null)
+        {
+            fxParsed = recovered.Parsed.Parsed;
+        }
+        else
+        {
+            var parseResult = FxPreParser.Parse(hlslSource, sourceFileName);
+            if (parseResult.IsFailure)
+                return Fail(FromFxParseError(parseResult.Error));
 
-        FxParseResult fxParsed = parseResult.Value;
+            fxParsed = parseResult.Value;
+        }
 
         // Stage 2: Preprocessor — inject platform macros and flatten #includes.
         // Pre-check (no exception-as-control-flow): an unsupported target is reported
@@ -129,17 +217,30 @@ internal sealed class CompilationPipeline
         IIncludeResolver includeResolver = options.IncludeResolver ?? new FileSystemIncludeResolver();
         var preprocessor = new Preprocessor();
 
-        var preprocessResult = preprocessor.Flatten(
-            fxParsed.StrippedHlsl,
-            sourceFileName,
-            macros,
-            includeResolver,
-            options.AdditionalIncludePaths);
+        PreprocessedSource preprocessed;
+        if (recovered is not null)
+        {
+            // The recovery's text already has its #includes inlined and its macros expanded, and
+            // carries the flattener's own #line directives, so it is the compiler input as is
+            // (flattening it again would prepend the macro block a second time).
+            preprocessed = new PreprocessedSource(
+                fxParsed.StrippedHlsl, macros.ToDxcFlags(), sourceFileName, recovered.Warnings);
+        }
+        else
+        {
+            var preprocessResult = preprocessor.Flatten(
+                fxParsed.StrippedHlsl,
+                sourceFileName,
+                macros,
+                includeResolver,
+                options.AdditionalIncludePaths);
 
-        if (preprocessResult.IsFailure)
-            return Fail(preprocessResult.Error);
+            if (preprocessResult.IsFailure)
+                return Fail(preprocessResult.Error);
 
-        PreprocessedSource preprocessed = preprocessResult.Value;
+            preprocessed = preprocessResult.Value;
+        }
+
         IReadOnlyList<ShaderError> preprocessWarnings = preprocessed.Warnings;
 
         // LAZY DXC instance, hoisted above the zero-technique fallback so the fallback's
@@ -465,8 +566,12 @@ internal sealed class CompilationPipeline
         ShaderError? reservationError = null;
         if (options.Target == PlatformTarget.OpenGL)
         {
-            Result<GlSamplerSlots, ShaderError> reservation = GlSamplerReservation.Collect(
-                hlslSource, sourceFileName, macros, includeResolver, options.AdditionalIncludePaths, fxParsed);
+            // A recovery pass (issue #308) has the flattened raw source in hand already, and its
+            // pre-parse names samplers as the preprocessed view does.
+            Result<GlSamplerSlots, ShaderError> reservation = recovered is not null
+                ? FxPreParser.CollectGlSamplerSlots(recovered.FlattenedRawSource, sourceFileName, fxParsed)
+                : GlSamplerReservation.Collect(
+                    hlslSource, sourceFileName, macros, includeResolver, options.AdditionalIncludePaths, fxParsed);
             if (reservation.IsSuccess)
             {
                 explicitGlSamplerSlots = reservation.Value.Explicit;
@@ -516,7 +621,11 @@ internal sealed class CompilationPipeline
                         cancellationToken);
 
                     if (compileOutput.Blob.IsFailure)
+                    {
+                        compileFailure = LegacySamplerRecoveryCandidate(
+                            options.Target, recovered, sourceFileName, macros, includeResolver);
                         return Fail(compileOutput.Blob.Error, runWarnings);
+                    }
 
                     AccumulateWarnings(runWarnings, seenWarnings, compileOutput.Warnings);
                     if (monoGameGl)
@@ -568,7 +677,11 @@ internal sealed class CompilationPipeline
                         cancellationToken);
 
                     if (compileOutput.Blob.IsFailure)
+                    {
+                        compileFailure = LegacySamplerRecoveryCandidate(
+                            options.Target, recovered, sourceFileName, macros, includeResolver);
                         return Fail(compileOutput.Blob.Error, runWarnings);
+                    }
 
                     AccumulateWarnings(runWarnings, seenWarnings, compileOutput.Warnings);
                     if (monoGameGl)
