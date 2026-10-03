@@ -262,7 +262,8 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   hashed identical before and after). DirectX 11 is untouched:
   there vkd3d/fxc reflect the elements as separate `Tex[0]`, `Tex[1]` bindings and ShadowDusk emits
   one parameter per element where `mgfxc` 3.8.4.1 emits a single `Tex`, a separate divergence
-  tracked in its own issue.
+  tracked as issue #339; a sampler array, which `mgfxc` refuses on every profile, still compiles on
+  DirectX 11 and 12 (issue #340).
 - **Browser DirectX compiles handed vkd3d no compile options, so a shader with SM1-3 semantics on
   struct fields compiled differently from the desktop, or not at all (issue #295).** Since 0.20.0 the
   desktop vkd3d backend passes `BACKWARD_COMPATIBILITY`/`MAP_SEMANTIC_NAMES` on the SM4+ target, but
