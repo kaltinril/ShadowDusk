@@ -82,27 +82,11 @@ internal sealed class CompilationPipeline
             compileFailure.IncludeResolver,
             options.AdditionalIncludePaths);
 
-        switch (outcome)
-        {
-            case LegacySamplerRecovery.Outcome.Retry retry:
-            {
-                Result<CompiledShader, ShaderError[]> second = RunCore(
-                    hlslSource, options, retry, out _, cancellationToken);
-                if (second.IsSuccess || retry.Parsed.Residue is null)
-                    return second;
-
-                // Still failing with legacy syntax left in the compiler's input: a shape the
-                // rewrite does not model. The compiler's own diagnostics stay first and verbatim.
-                return Result<CompiledShader, ShaderError[]>.Fail(
-                    [.. second.Error, LegacySamplerRecovery.ResidueError(retry.Parsed.Residue)]);
-            }
-            case LegacySamplerRecovery.Outcome.Rejected rejected:
-                return Fail(rejected.Error);
-            case LegacySamplerRecovery.Outcome.Unmodelled unmodelled:
-                return Result<CompiledShader, ShaderError[]>.Fail([.. first.Error, unmodelled.Error]);
-            default:
-                return first;
-        }
+        // The outcome handling is LegacySamplerRecovery.Apply, shared with the raylib and SkSL
+        // converters (issue #327). A retry that still fails with legacy syntax left in the
+        // compiler's input gets SD0016 appended after the compiler's own verbatim diagnostics.
+        return LegacySamplerRecovery.Apply(
+            first, outcome, retry => RunCore(hlslSource, options, retry, out _, cancellationToken));
     }
 
     /// <summary>
