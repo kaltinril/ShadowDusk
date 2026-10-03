@@ -28,5 +28,16 @@ public sealed class HostStallHintTests
         snapshot.ShouldContain("waitingWriters(forks blocked in the atfork handler)=", Case.Sensitive);
         snapshot.ShouldNotContain("update HostStallHint", Case.Sensitive);
         snapshot.ShouldContain("process: CPU ", Case.Sensitive);
+        snapshot.ShouldNotContain("ShadowDusk.Core not loaded", Case.Sensitive);
+    }
+
+    /// <summary>Issue #373: the hint names every native compiler call in flight, read by reflection.</summary>
+    [Fact]
+    public void NativeCallsInFlight_NamesARunningCall()
+    {
+        string during = ShadowDusk.Core.NativeCompileStack.Run("stall hint probe 3c2e", HostStallHint.NativeCallsInFlight);
+
+        during.ShouldContain("stall hint probe 3c2e for ", Case.Sensitive);
+        HostStallHint.NativeCallsInFlight().ShouldNotContain("stall hint probe 3c2e", Case.Sensitive);
     }
 }
