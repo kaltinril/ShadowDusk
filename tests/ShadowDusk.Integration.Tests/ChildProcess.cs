@@ -10,8 +10,18 @@ namespace ShadowDusk.Integration.Tests;
 /// <summary>What a child process left behind when it exited on its own.</summary>
 internal sealed record ChildProcessResult(int ExitCode, string Stdout, string Stderr, TimeSpan Elapsed)
 {
-    /// <summary>stdout followed by stderr, for callers that only log or search the text.</summary>
-    public string Output => Stdout + Stderr;
+    /// <summary>
+    /// What the process itself could tell about how it ended, for an exit that wrote nothing
+    /// (issue #321); empty otherwise. Set by <see cref="ChildProcess"/>.
+    /// </summary>
+    public string SilentExitNote { get; init; } = "";
+
+    /// <summary>
+    /// stdout followed by stderr, for callers that only log or search the text. A failing exit
+    /// that wrote nothing at all carries <see cref="SilentExitNote"/> instead of an empty string,
+    /// so the assertion message that prints it says what the exit code means.
+    /// </summary>
+    public string Output => Stdout + Stderr + SilentExitNote;
 }
 
 /// <summary>
@@ -227,8 +237,61 @@ internal static class ChildProcess
             return new Session(startInfo, name, process, clock, clock.Elapsed, standardInput);
         }
 
-        public ChildProcessResult Result() =>
-            new(Process.ExitCode, _stdout.Text(), _stderr.Text(), Clock.Elapsed);
+        public ChildProcessResult Result()
+        {
+            int exitCode = Process.ExitCode;
+            string stdout = _stdout.Text();
+            string stderr = _stderr.Text();
+            TimeSpan elapsed = Clock.Elapsed;
+            return new ChildProcessResult(exitCode, stdout, stderr, elapsed)
+            {
+                SilentExitNote = exitCode != 0 && stdout.Length == 0 && stderr.Length == 0
+                    ? DescribeSilentExit(exitCode, elapsed)
+                    : "",
+            };
+        }
+
+        /// <summary>
+        /// A child that failed without writing a byte (issue #321: a CLI that exited -1 with empty
+        /// pipes). The exit code is the only evidence left, so spell out what it means and how
+        /// long and how hard the child ran.
+        /// </summary>
+        private string DescribeSilentExit(int exitCode, TimeSpan elapsed)
+        {
+            var sb = new StringBuilder();
+            sb.Append("(").Append(Label).Append(" wrote nothing to stdout or stderr and exited with ")
+              .Append(exitCode.ToString(CultureInfo.InvariantCulture)).Append(" = 0x")
+              .Append(unchecked((uint)exitCode).ToString("X8", CultureInfo.InvariantCulture)).Append(": ")
+              .Append(ExitCodeMeaning(exitCode)).Append(". It ran ").Append(Seconds(elapsed)).Append(" s");
+            try
+            {
+                sb.Append(" and used ").Append(Seconds(Process.TotalProcessorTime)).Append(" s of CPU");
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or Win32Exception or NotSupportedException)
+            {
+            }
+            sb.Append(". command: ").Append(CommandLine(_startInfo)).Append(')');
+            return sb.ToString();
+        }
+
+        internal static string ExitCodeMeaning(int exitCode) => unchecked((uint)exitCode) switch
+        {
+            0xFFFFFFFF => "the process was terminated from outside (TerminateProcess(-1), which is what Process.Kill and " +
+                          "Stop-Process do on Windows) or called exit(-1)/ExitProcess(-1) itself; the .NET host and runtime " +
+                          "print a message for every failure they report, so no managed code chose this exit",
+            0xC0000005 => "access violation (native crash)",
+            0xC00000FD => "stack overflow (native crash)",
+            0xC0000409 => "fail-fast / stack buffer overrun (native abort or Environment.FailFast)",
+            0xC000013A => "terminated by Ctrl+C or a console close event",
+            0xC0000142 => "a DLL failed to initialize at process start",
+            0xC000007B => "a DLL of the wrong architecture or a corrupt image was loaded",
+            0xE0434352 => "unhandled .NET exception (the runtime normally prints it to stderr)",
+            0x80008083 or 0x80008084 or 0x80008085 or 0x80008096 => ".NET host failure (hostfxr normally prints why to stderr)",
+            134 => "SIGABRT (128 + 6): abort()",
+            137 => "SIGKILL (128 + 9): killed from outside, e.g. the OOM killer",
+            139 => "SIGSEGV (128 + 11): native crash",
+            _ => "no known meaning",
+        };
 
         public bool JoinPipes(TimeSpan within)
         {

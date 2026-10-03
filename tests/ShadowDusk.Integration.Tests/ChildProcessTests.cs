@@ -47,6 +47,35 @@ public sealed class ChildProcessTests
         run.Stdout.All(c => c == 'o').ShouldBeTrue("stdout must arrive intact");
     }
 
+    /// <summary>
+    /// Issue #321: a CLI exited -1 having written nothing, and the assertion printed
+    /// "(no stdout, no stderr)". A silent failing exit now carries what the exit code means,
+    /// how long the child ran and its command line, wherever the test prints its output.
+    /// </summary>
+    [Fact]
+    public async Task SilentFailingExit_OutputExplainsTheExitCode()
+    {
+        ChildProcessResult run = await ChildProcess.RunAsync(Probe("silent"), StartupBudget, "silent probe");
+
+        run.Stdout.ShouldBeEmpty();
+        run.Stderr.ShouldBeEmpty();
+        string expectedCode = OperatingSystem.IsWindows() ? "-1 = 0xFFFFFFFF" : "255 = 0x000000FF";
+        run.Output.ShouldContain($"silent probe wrote nothing to stdout or stderr and exited with {expectedCode}", Case.Sensitive);
+        run.Output.ShouldContain(ProbeArgument + " silent", Case.Sensitive);
+        if (OperatingSystem.IsWindows())
+            run.Output.ShouldContain("TerminateProcess(-1)", Case.Sensitive);
+    }
+
+    /// <summary>A successful exit, or one that said something, adds nothing to the text.</summary>
+    [Fact]
+    public async Task FailingExitThatWroteSomething_OutputIsJustThePipes()
+    {
+        ChildProcessResult run = await ChildProcess.RunAsync(Probe("flood"), StartupBudget, "flood probe");
+
+        run.SilentExitNote.ShouldBeEmpty();
+        run.Output.Length.ShouldBe(2 * FloodChars);
+    }
+
     /// <summary>The blocking form drains both pipes too, and feeds stdin without deadlocking against them.</summary>
     [Fact]
     public void BlockingRun_FeedsStdinAndDrainsBothPipes()
@@ -201,6 +230,10 @@ public sealed class ChildProcessTests
                     BlockForever();
                 }
                 return 0;
+
+            case "silent":
+                // Issue #321's shape: a failing exit with nothing on either pipe.
+                return -1;
 
             default:
                 Console.Error.WriteLine($"unknown child-process probe mode '{args[0]}'");
