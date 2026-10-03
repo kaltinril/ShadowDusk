@@ -47,8 +47,8 @@ public sealed class SkslConvertOptions
 /// <param name="SynthesizedUniforms">
 /// Uniforms the consumer must set each draw (see <see cref="MappedSksl.SynthesizedUniforms"/>):
 /// <c>ShadowDusk_Color</c> (the sprite's tint, for a shader that reads <c>COLOR0</c>) and
-/// <c>ShadowDusk_Resolution</c> (output size in pixels, for a shader that uses its UV
-/// arithmetically).
+/// <c>ShadowDusk_Resolution</c> (pixel size of the drawn element, also the child size, for a shader that uses its UV
+/// arithmetically or samples at a computed coordinate).
 /// </param>
 public sealed record SkslConversion(
     string SkslText,

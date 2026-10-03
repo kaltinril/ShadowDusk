@@ -212,19 +212,19 @@ public sealed class SkslConverterLegacySamplerRecoveryTests
     [Fact]
     public void ARecoveredEffect_IsStillRefusedForWhatSkslCannotHold()
     {
-        // The include supplies the legacy sampler (so the recovery runs); the sampling coordinate
-        // is computed, which SkSL's child-space .eval() cannot honour (SD0612). The refusal must
-        // come out of the recovered pass exactly as it does for the direct declaration.
+        // The include supplies the legacy sampler (so the recovery runs); the pixel shader takes a
+        // derivative, which SkSL cannot honour (SD0613). The refusal must come out of the
+        // recovered pass exactly as it does for the direct declaration.
         const string body = """
 
-            float4 PS(float4 pos : SV_POSITION, float2 uv : TEXCOORD0) : COLOR0 { return tex2D(S, uv * 2.0); }
+            float4 PS(float4 pos : SV_POSITION, float2 uv : TEXCOORD0) : COLOR0 { return tex2D(S, uv) * ddx(uv.x); }
             technique T { pass P { PixelShader = compile PS_SHADERMODEL PS(); } }
             """;
 
         var result = Convert(Header + "#include \"s.fxh\"" + body, "sampler2D S : register(s0);");
 
         result.IsFailure.ShouldBeTrue();
-        result.Error.Single().Code.ShouldBe("SD0612");
+        result.Error.Single().Code.ShouldBe("SD0613");
     }
 
     // -------------------------------------------------------------------------

@@ -577,7 +577,7 @@ Its evidence model was set by owner decision (2026-08-13, `project_decisions.md`
   `COLOR0` tint) is measurably absent. `SkslConverterTests` + `SkslSkiaEvidenceTests` (SkiaSharp
   is a test-only dependency; runs in the ordinary suite, no GPU).
 - **The reject set is the load-bearing half** (`SD0610`–`SD0615`): no varyings, no vertex stage,
-  no derivatives, no computed-UV sampling, no multi-pass — each refused by name, never silently
+  no derivatives, no multi-pass — each refused by name, never silently
   narrowed. The default answer to a shader reading a custom interpolant is refusal with a
   documented opt-in (`TreatVaryingsAsUniforms`); `COLOR0` (SpriteBatch's vertex color) instead
   converts by default to the synthesized uniform `ShadowDusk_Color` (issue #368), proven on
@@ -585,6 +585,13 @@ Its evidence model was set by owner decision (2026-08-13, `project_decisions.md`
   non-white tint is honored, white reproduces the untinted math, an unset uniform is caught). A legacy sampler an `#include` or a macro supplies converts
   through the issue #308 recovery, to exactly the direct declaration's output (issue #327,
   `SkslConverterLegacySamplerRecoveryTests`); MonoGame's own `Grayscale.fx` is the real case.
+  Sampling at a computed coordinate converts (issue #371, 2026-10-03): `child.eval((uv) *
+  ShadowDusk_Resolution)`, the same uniform as the arithmetic-UV path, meaning the child's pixel
+  size. XnaFiddle's Pixelated is proven (`SkslComputedUvSamplingTests`): Skia accepts the emission
+  and a real render over a 128x128 and a non-square 96x160 image matches the original HLSL's
+  quantized bilinear read at ±2/255, with a positive control that goes red for an unset, halved
+  or axis-swapped resolution. HLSL's ties-to-even `round` (`roundEven`, which SkSL lacks) gets an
+  exact `_sd_roundEven` helper. A sampling bias, extra argument or unknown sampler stays `SD0612`.
 - **Not yet standing:** a cross-renderer harness diffing the same shader through the proven GL
   backend vs through Skia (the analytic-expectation tests cover the shipped conversions; the GL
   comparison is the stronger general form), and a real Gum/SkiaGum consumer trial.

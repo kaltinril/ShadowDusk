@@ -127,17 +127,15 @@ public sealed class SkslVertexColorUniformTests
     }
 
     [Fact]
-    public void XnaFiddlePixelated_IsRefusedForComputedUvSampling_NotForItsColor0()
+    public void XnaFiddlePixelated_Converts_WithoutAColorUniform()
     {
-        // Pixelated never reads input.Color (DXC drops the dead input), so COLOR0 is not the
-        // issue: it samples at round()-quantized coordinates, which an SkSL runtime effect cannot
-        // do faithfully (.eval takes child-space PIXEL coordinates; the child's bounds are
-        // unknowable). The refusal is the registered SD0612, by design.
-        var result = SkslConverter.Convert(Fixture("XnaFiddle-Pixelated.fx"),
-            new SkslConvertOptions { SourceName = "XnaFiddle-Pixelated.fx" });
+        // Pixelated never reads input.Color (DXC drops the dead input), so it gets no
+        // ShadowDusk_Color. It samples at round()-quantized coordinates, which converts through
+        // ShadowDusk_Resolution since issue #371 (SkslComputedUvSamplingTests holds the render).
+        SkslConversion conversion = Convert("XnaFiddle-Pixelated.fx");
 
-        result.IsFailure.ShouldBeTrue();
-        result.Error.Single().Code.ShouldBe("SD0612");
+        conversion.SynthesizedUniforms.ShouldNotContain("ShadowDusk_Color");
+        conversion.SynthesizedUniforms.ShouldContain("ShadowDusk_Resolution");
     }
 
     // TintColor (XnaFiddle-Tint.fx's own cbuffer uniform) is set to this so the Tint shader's
