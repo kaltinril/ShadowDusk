@@ -1,5 +1,6 @@
 #nullable enable
 
+using System.Globalization;
 using System.Text.RegularExpressions;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Reflection;
@@ -8,8 +9,11 @@ namespace ShadowDusk.Compiler.Internal;
 
 /// <summary>
 /// The diagnostics for an ARRAY of textures or samplers (<c>Texture2D Tex[N]</c>,
-/// <c>SamplerState S[N]</c>) on the MGFX v11 targets (issue #324): <c>SD0221</c>, an error, on
-/// Vulkan; <c>SD0222</c>, a warning, on DirectX 12.
+/// <c>SamplerState S[N]</c>): <c>SD0221</c>, an error, on Vulkan; <c>SD0222</c>, a warning for a
+/// texture array, on DirectX 12 (both issue #324); <c>SD0223</c>, an error for a sampler array, on
+/// DirectX 11 and DirectX 12 (issue #340). A texture array on DirectX 11 needs no diagnostic: since
+/// issue #339 its table is mgfxc's (one parameter, one record at the base slot), and real MonoGame
+/// WindowsDX reads the other elements through <c>GraphicsDevice.Textures[i]</c>.
 ///
 /// <para><b>What the reference compiler does</b> (measured 2026-10-02, <c>dotnet-mgfxc</c> 3.8.5,
 /// <c>Texture2D Tex[N]</c> sampled through one <c>SamplerState</c> for N = 1, 2 and 4, with and
@@ -43,6 +47,9 @@ internal static class ResourceArrayDiagnostics
 
     /// <summary>The registered DirectX 12 warning code (<c>docs/error-codes.md</c>).</summary>
     public const string DirectX12Code = "SD0222";
+
+    /// <summary>The registered DirectX 11 / DirectX 12 sampler-array error code (<c>docs/error-codes.md</c>).</summary>
+    public const string DirectXSamplerArrayCode = "SD0223";
 
     /// <summary>
     /// Returns the <c>SD0221</c> error for the first reflected texture or sampler array in
@@ -84,23 +91,19 @@ internal static class ResourceArrayDiagnostics
     }
 
     /// <summary>
-    /// Returns the <c>SD0222</c> warning for the first reflected texture or sampler array of two or
-    /// more elements in <paramref name="reflected"/>, or <see langword="null"/> when the shader
-    /// declares none (a 1-element array is one texture and behaves as one). The output is not
-    /// changed: it is the table mgfxc writes.
+    /// Returns the <c>SD0222</c> warning for the first reflected TEXTURE array of two or more
+    /// elements in <paramref name="reflected"/>, or <see langword="null"/> when the shader declares
+    /// none (a 1-element array is one texture and behaves as one). The output is not changed: it is
+    /// the table mgfxc writes. A sampler array never reaches this: <see cref="DirectXSamplerArrayError"/>
+    /// refuses it first.
     /// </summary>
     public static ShaderError? DirectX12Warning(ReflectedEffect reflected, string compiledSource, string sourceFileName)
     {
-        if (FirstArray(reflected) is not { } array || array.Length == 1)
+        TextureReflection? texture = reflected.Textures.FirstOrDefault(t => t.ArrayLength is not null);
+        if (texture is null || texture.ArrayLength == 1)
             return null;
 
-        string behaviour = array.Texture is not null
-            ? "elements beyond [0] cannot be set through Effect.Parameters, and the shader header sizes the " +
-              "descriptor range for one texture, so in real MonoGame 3.8.5 WindowsDX12 they read as zero " +
-              "even with GraphicsDevice.Textures[i] set (measured; mgfxc's own build behaves the same)."
-            : "elements beyond [0] get no sampler state from the effect (one record, for slot 0), and real " +
-              "mgfxc refuses a sampler array on every profile (\"Unexpected token '[' found\").";
-
+        var array = new Array(texture.Name, texture.ArrayLength!.Value, texture);
         var (file, line, column) = Locate(compiledSource, array.Name, sourceFileName);
         return new ShaderError(
             File:     file,
@@ -109,9 +112,87 @@ internal static class ResourceArrayDiagnostics
             Code:     DirectX12Code,
             Message:  $"DirectX 12 target: '{array.Name}' is {array.Count} {array.Kind} ('{array.Declaration}'). The " +
                       $"effect reflects it as ONE parameter bound to the first slot, exactly as mgfxc 3.8.5 does, " +
-                      "and that is what ships; but " + behaviour + " Declare each element separately " +
+                      "and that is what ships; but elements beyond [0] cannot be set through Effect.Parameters, " +
+                      "and the shader header sizes the descriptor range for one texture, so in real MonoGame 3.8.5 " +
+                      "WindowsDX12 they read as zero even with GraphicsDevice.Textures[i] set (measured; mgfxc's " +
+                      "own build behaves the same). Declare each element separately " +
                       $"(e.g. '{array.Elementwise}') and sample each by name if every element must be read.",
             Severity: ShaderErrorSeverity.Warning);
+    }
+
+    /// <summary>
+    /// Returns the <c>SD0223</c> error for the first array of SAMPLERS the shader declares
+    /// (<c>SamplerState S[N]</c>), or <see langword="null"/> when it declares none, for the
+    /// DirectX 11 and DirectX 12 targets (issue #340).
+    /// </summary>
+    /// <remarks>
+    /// Real <c>mgfxc</c> (3.8.4.1 and 3.8.5, measured 2026-10-02) refuses an array of samplers on
+    /// EVERY profile in its own effect parser, before any shader compiles:
+    /// <c>file(line,col) : Unexpected token '[' found. Expected Semicolon, Comma, or CloseParenthesis.</c>
+    /// So no reference output exists for the shape, and MonoGame's effect format has nowhere to
+    /// put it: a sampler record carries one sampler slot, keyed to one texture slot, and names no
+    /// element. ShadowDusk used to compile it anyway: on DirectX 11 to one record per element
+    /// (<c>Tex[0]</c>/s0, <c>Tex[1]</c>/s1, parameters named <c>Tex[0]</c> and <c>Tex[1]</c> that
+    /// no author writes), on DirectX 12 to one record for slot 0, leaving every other sampler slot
+    /// without state from the effect. Both are effects mgfxc never builds, so the shape is refused
+    /// by name, located at the declaration, like <c>SD0221</c> does on Vulkan.
+    ///
+    /// <para>Detection is by reflection (<see cref="SamplerReflection.ArrayLength"/>: the collapsed
+    /// SM5 records on DirectX 11, DXIL's <c>BindCount</c> on DirectX 12), with the declaration text
+    /// as the fallback for the one case reflection cannot see, a 1-element sampler array on
+    /// DirectX 12 (DXIL reports <c>BindCount</c> 1 for it, the same as a plain sampler), which mgfxc
+    /// refuses all the same.</para>
+    /// </remarks>
+    public static ShaderError? DirectXSamplerArrayError(ReflectedEffect reflected, string compiledSource, string sourceFileName, PlatformTarget target)
+    {
+        string targetName = target == PlatformTarget.DirectX12 ? "DirectX 12" : "DirectX 11";
+        string masked = MaskCommentsAndStrings(compiledSource);
+
+        Array? array = null;
+        foreach (SamplerReflection sampler in reflected.Samplers)
+        {
+            if (sampler.ArrayLength is { } length)
+            {
+                array = new Array(sampler.Name, length, null);
+                break;
+            }
+            if (DeclaredSamplerArrayLength(masked, sampler.Name) is { } declaredLength)
+            {
+                array = new Array(sampler.Name, declaredLength, null);
+                break;
+            }
+        }
+        if (array is null)
+            return null;
+
+        var (file, line, column) = Locate(compiledSource, array.Name, sourceFileName);
+        return new ShaderError(
+            File:    file,
+            Line:    line,
+            Column:  column,
+            Code:    DirectXSamplerArrayCode,
+            Message: $"{targetName} target: '{array.Name}' is {array.Count} samplers ('{array.Declaration}'). Real mgfxc " +
+                     "(3.8.4.1 and 3.8.5) refuses an array of samplers on every profile in its own effect parser " +
+                     "(\"Unexpected token '[' found. Expected Semicolon, Comma, or CloseParenthesis.\"), so no " +
+                     "reference output exists for the shape, and MonoGame's effect format has no place for it: a " +
+                     "sampler record carries one sampler slot keyed to one texture slot and names no element. " +
+                     "ShadowDusk refuses it rather than ship an effect mgfxc never builds. Declare each sampler " +
+                     $"separately (e.g. '{array.Elementwise}') and sample through each by name. (Vulkan refuses the " +
+                     "same shape with SD0221; OpenGL cannot lower it, SD0100.)");
+    }
+
+    // `SamplerState Name[N]` / `sampler Name[N]` in the masked source: the declared element count
+    // (0 for `[]`), or null when the sampler is not declared as an array.
+    private static int? DeclaredSamplerArrayLength(string masked, string name)
+    {
+        Match m = Regex.Match(
+            masked,
+            $@"\b(?:sampler\w*|SamplerState|SamplerComparisonState)\s+{Regex.Escape(name)}\s*\[\s*(?<n>\d*)\s*\]",
+            RegexOptions.CultureInvariant);
+        if (!m.Success)
+            return null;
+        string digits = m.Groups["n"].Value;
+        return digits.Length == 0 ? 0 : int.Parse(digits, NumberStyles.None, CultureInfo.InvariantCulture);
     }
 
     private sealed record Array(string Name, int Length, TextureReflection? Texture)
