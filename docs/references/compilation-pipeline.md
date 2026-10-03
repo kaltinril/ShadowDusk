@@ -285,6 +285,14 @@ WebAssembly module, whose wrapper forwards it untouched. The wrapper once carrie
 list, so a browser compile of a shader with `POSITION0` / `COLOR0` on struct fields differed from
 the desktop's (issue #295); `Sm3SemanticStructs.fx` is the corpus fixture that now catches that.
 
+**Every host hands vkd3d the same text.** Before either host calls vkd3d, the preprocessed
+source goes through `Vkd3dCompileContract.PrepareSource`, which blanks every `#line` directive
+line: vkd3d's preprocessor ignores the directive and prints a fixme to stderr (the browser
+console) for each one, and blanking rather than deleting keeps the line count so the source
+locator can map vkd3d's coordinates back through the directives. The browser host once handed
+vkd3d the directives and wrote one console line per directive on every DirectX or FNA compile
+(issue #319); the directives were measured to change no output byte and no diagnostic position.
+
 ### Stage 3c — the FNA fx_2_0 path
 
 **What it is.** A wholly separate path for `PlatformTarget.Fna`

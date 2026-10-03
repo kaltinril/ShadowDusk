@@ -58,7 +58,8 @@ browser analogue of "module not restored/hosted"):
 - **DirectX (SM4/5 DXBC → MGFX v10 `.mgfx`):** 47/48 fixtures (the full DX byte-identity corpus — core MGFX + SM≤3 render-proven sets).
 - **FNA (SM1–3 D3D9 → fx_2_0 `.fxb`):** 30/30 fixtures (the full FNA byte-identity corpus).
 - No subset, no silent caps: every `DirectX_Vkd3d/*` and `FNA/*` manifest entry ran.
-- Faithful-module evidence: `vkd3d-shader.wasm` fetched over HTTP by the page — **yes** (`http://127.0.0.1:60416/_content/ShadowDusk.Wasm/vkd3d/vkd3d-shader.wasm`, HTTP 200).
+- Faithful-module evidence: `vkd3d-shader.wasm` fetched over HTTP by the page — **yes** (`http://127.0.0.1:61365/_content/ShadowDusk.Wasm/vkd3d/vkd3d-shader.wasm`, HTTP 200).
+- Console silence (issue #319): 0 vkd3d `#line directive` fixme line(s) on the page console over 156 compiles (listener control live).
 
 | Manifest key | Target | Artifact bytes | SHA-256 == manifest | Verdict |
 |---|---|---|---|---|

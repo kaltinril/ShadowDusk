@@ -24,6 +24,14 @@
 //   rendered equivalently in real MonoGame WindowsDX (Phase 18) and real FNA
 //   (Phases 39/40, gate 17/17) — render-equivalence closes by transitivity.
 //
+// CONSOLE SILENCE (issue #319). vkd3d's preprocessor ignores #line and prints one
+// "vkd3d:NNNN:fixme:vkd3d:preproc_yyparse #line directive." per directive through the
+// module's printErr, which lands in the browser console. The browser host now hands vkd3d
+// the same prepared text as the desktop (Vkd3dCompileContract.PrepareSource, every
+// directive line blanked), so the page's console must carry NO such line over the whole
+// corpus run (every fixture has at least the prelude's directive). The listener is proved
+// live first with one console.warn of that shape from the page.
+//
 // VKD3D COMPILE OPTIONS (issue #295). `DirectX_Vkd3d/Sm3SemanticStructs.fx` is the one
 // manifest entry whose bytes depend on the options the host hands vkd3d (SM1-3 semantics
 // on struct fields, which only BACKWARD_COMPATIBILITY = MAP_SEMANTIC_NAMES maps to
@@ -204,6 +212,11 @@ const phase27 = [];
 // tripwire against any accidental future fallback path): record the network responses
 // for vkd3d-shader.{js,wasm}.
 const moduleFetches = [];
+// Issue #319: every console message of vkd3d's per-#line fixme shape seen on the corpus
+// page, and whether the listener was proved live (see the header).
+const LINE_FIXME = /fixme:.*#line directive/;
+const lineFixmes = [];
+let lineFixmeListenerLive = false;
 
 // Boot one fresh sample page (its own .NET runtime/session) with an optional set of
 // Playwright route-abort patterns — the device for the Phase 27 module-absent /
@@ -383,12 +396,28 @@ try {
     if (/vkd3d-shader\.(js|wasm)$/.test(url))
       moduleFetches.push({ url, status: resp.status() });
   });
+  page.on('console', (msg) => {
+    if (LINE_FIXME.test(msg.text())) lineFixmes.push(msg.text());
+  });
 
   await page.goto(`${srv.url}/`, { waitUntil: 'domcontentloaded' });
   console.log('[vkd3d browser gate] waiting for the Blazor/.NET browser runtime…');
   await page.waitForFunction(
     () => typeof window.theInstance !== 'undefined' && window.theInstance !== null,
     { timeout: 120000 });
+
+  // Issue #319 listener control: a console.warn of vkd3d's fixme shape from the page must
+  // reach the listener, or a silent corpus run below would prove nothing.
+  await page.evaluate(() => console.warn('vkd3d:0:fixme:vkd3d:preproc_yyparse #line directive. (listener control)'));
+  for (let i = 0; i < 50 && lineFixmes.length === 0; i++) await new Promise((r) => setTimeout(r, 20));
+  lineFixmeListenerLive = lineFixmes.length === 1 && lineFixmes[0].includes('listener control');
+  if (!lineFixmeListenerLive) {
+    failures.push(`issue #319 listener control: expected the page's one control console.warn, saw ${lineFixmes.length} message(s)`);
+    console.error('  [FAIL] issue #319 console listener control: the control message did not reach the listener');
+  } else {
+    console.log('  [OK]   issue #319 console listener control: the control message reached the listener');
+  }
+  lineFixmes.length = 0;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Phase 42 (issue #28) — the InitializeAsync + synchronous Compile() API,
@@ -562,6 +591,18 @@ if (failures.length === 0 && !wasmFetch) {
     'vkd3d-shader.wasm was observed — the browser did not run the faithful module.');
 }
 
+// Issue #319: the whole corpus run (sync + async passes, every fixture carrying at least the
+// prelude's #line directive) must have put NO vkd3d #line fixme on the console.
+const corpusCompiles = syncApi.total + rows.length;
+if (lineFixmes.length > 0) {
+  failures.push(`issue #319: ${lineFixmes.length} vkd3d "#line directive" fixme line(s) reached the browser console over ` +
+    `${corpusCompiles} compiles (first: ${lineFixmes[0].slice(0, 120)}); the browser host handed vkd3d a #line directive ` +
+    'instead of Vkd3dCompileContract.PrepareSource\'s text');
+  console.error(`  [FAIL] issue #319: ${lineFixmes.length} vkd3d #line fixme line(s) on the console`);
+} else if (lineFixmeListenerLive) {
+  console.log(`  [OK]   issue #319: 0 vkd3d #line fixme lines on the browser console over ${corpusCompiles} compiles (listener proved live)`);
+}
+
 // ---------------------------------------------------------------------------
 // 5. Results + verdict.
 // ---------------------------------------------------------------------------
@@ -676,6 +717,8 @@ async function writeResults(rows, pass, failures, wasmFetch) {
   lines.push(`- **FNA (SM1–3 D3D9 → fx_2_0 \`.fxb\`):** ${fna.filter((r) => r.verdict === 'PASS').length}/${fna.length} fixtures (the full FNA byte-identity corpus).`);
   lines.push('- No subset, no silent caps: every `DirectX_Vkd3d/*` and `FNA/*` manifest entry ran.');
   lines.push(`- Faithful-module evidence: \`vkd3d-shader.wasm\` fetched over HTTP by the page — ${wasmFetch ? `**yes** (\`${wasmFetch.url}\`, HTTP ${wasmFetch.status})` : '**NO — failure recorded above**'}.`);
+  lines.push(`- Console silence (issue #319): ${lineFixmes.length} vkd3d \`#line directive\` fixme line(s) on the page console over ` +
+    `${syncApi.total + rows.length} compiles (listener control ${lineFixmeListenerLive ? 'live' : '**NOT live**'}).`);
   lines.push('');
   lines.push('| Manifest key | Target | Artifact bytes | SHA-256 == manifest | Verdict |');
   lines.push('|---|---|---|---|---|');

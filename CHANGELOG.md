@@ -252,6 +252,27 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   `tools/restore.*` (one upload now covers this and the #271 stack fix below), the browser keeps the
   old module and this defect, warns once on the console, and the gates report the fixture as an
   expected difference keyed on the old module's hash. No emitted byte changes on the desktop.
+- **The browser vkd3d module printed one `vkd3d:NNNN:fixme:vkd3d:preproc_yyparse #line directive.`
+  line to the console per `#line` directive (issue #319).** vkd3d-shader's preprocessor ignores
+  `#line` and reports each one as a fixme on stderr, which emscripten routes to the browser console.
+  The desktop backend blanked every directive line before the native call; the browser host handed
+  vkd3d the directives, a second copy of the source preparation that simply did not exist there.
+  Measured on the 91-compile DirectX + FNA corpus (every fixture carries at least the macro prelude's
+  directive; an include-heavy effect carries one per include boundary): exactly one fixme line per
+  directive (93 on one node gate run), and the output bytes and the diagnostics' positions are the
+  same with and without the directives, so it was console noise, not an output defect. The
+  preparation now has one owner, `Vkd3dCompileContract.PrepareSource` (blank, never delete, so
+  `Vkd3dSourceLocator`'s line alignment holds): the desktop marshals its result and the browser sends
+  its result through the shim; neither host transforms the source itself. Pinned by unit tests on
+  the include-flattened shape, a desktop test that reads the source back out of the marshalled
+  native call (`Vkd3dShaderCompiler.NativeSourceObserver`), the node gate (which now replays the
+  bytes the desktop really handed vkd3d, must see zero fixme lines on an intercepted stderr over the
+  corpus, and replays the directive-carrying text as a control that must give the same bytes and one
+  fixme per directive) and the real-browser gate (zero such console lines over the sync and async
+  corpus passes, with a listener control). No desktop byte moved (91/91 corpus blobs identical before
+  and after) and no browser byte either (they never depended on the directives). Compile time:
+  unchanged on the desktop (the same regex, moved); in node the shim took 131 ms with the directives
+  against 129 ms without over the 89 replayable compiles.
 - **`ShadowDusk.Slang`: a combined `Sampler2D Comb` now reflects as `Comb`, so
   `effect.Parameters["Comb"]` finds the texture (issue #302).** slangc hoists every resource out of
   an aggregate under a name it generates, even with `-no-mangle`: `Sampler2D Comb` is emitted as
