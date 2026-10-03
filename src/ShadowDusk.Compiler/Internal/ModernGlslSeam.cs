@@ -61,9 +61,14 @@ internal static class ModernGlslSeam
         string compilerInput,
         string pixelEntryPoint,
         string sourceName,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<IDxcShaderCompiler>? dxcCompilerFactory = null,
+        Func<ISpirvToGlslTranspiler>? glslTranspilerFactory = null)
     {
-        using var dxc = new DxcShaderCompiler();
+        // Factories let the WASM host inject its browser DXC/SPIRV-Cross (issue #349); null =
+        // the bundled desktop ones, byte-for-byte the previous behavior.
+        var dxc = dxcCompilerFactory?.Invoke() ?? new DxcShaderCompiler();
+        using var _ = dxc as IDisposable;
         var spirv = dxc.Compile(new DxcCompileRequest
         {
             HlslSource     = compilerInput,
@@ -77,7 +82,7 @@ internal static class ModernGlslSeam
 
         var pairs = SpirvCombinedSamplerPairs.Extract(spirv.Value.Bytes);
 
-        var glsl = new SpirvCrossGlslTranspiler().Transpile(spirv.Value.Bytes, cancellationToken);
+        var glsl = (glslTranspilerFactory?.Invoke() ?? new SpirvCrossGlslTranspiler()).Transpile(spirv.Value.Bytes, cancellationToken);
         if (glsl.IsFailure)
             return Result<ModernGlslPixelShader, ShaderError[]>.Fail([glsl.Error]);
 

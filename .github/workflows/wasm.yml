@@ -346,6 +346,15 @@ jobs:
         timeout-minutes: 25
         run: node browser-vkd3d-gate.mjs --require-module
 
+      # Issue #349: the HLSL -> SkSL converter in a real browser. Reuses the sample the G2 gate
+      # above just published (--skip-publish). SkSL must be byte-identical to the desktop golden
+      # (tests/fixtures/golden/sksl/Grayscale.sksl, pinned by a desktop unit test), and the
+      # refusal of an unsupplyable interpolant (TEXCOORD1) must hold in the browser too.
+      - name: Issue #349 - in-browser SkSL conversion gate
+        working-directory: tests/ShadowDusk.BrowserTests
+        timeout-minutes: 25
+        run: node browser-sksl-gate.mjs --skip-publish
+
       # Issue 257 (Phase 67): full Slang input in the browser. The in-process slangc module is
       # BUILT here from upstream's own prebuilt wasm static libraries (hash-pinned) with the
       # committed glue + script; it is not committed or release-hosted yet. Cached on the
@@ -450,3 +459,12 @@ jobs:
         working-directory: tests/ShadowDusk.BrowserTests
         timeout-minutes: 25
         run: node browser-vkd3d-gate.mjs --require-module
+
+      # Issue #349: the HLSL -> SkSL converter in a real browser. Reuses the sample the G2 gate
+      # above just published (--skip-publish). SkSL must be byte-identical to the desktop golden
+      # (tests/fixtures/golden/sksl/Grayscale.sksl, pinned by a desktop unit test), and the
+      # refusal of an unsupplyable interpolant (TEXCOORD1) must hold in the browser too.
+      - name: Issue #349 - in-browser SkSL conversion gate
+        working-directory: tests/ShadowDusk.BrowserTests
+        timeout-minutes: 25
+        run: node browser-sksl-gate.mjs --skip-publish

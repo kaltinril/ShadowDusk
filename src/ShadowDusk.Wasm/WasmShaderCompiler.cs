@@ -3,6 +3,7 @@
 using System.Runtime.InteropServices.JavaScript;
 using System.Runtime.Versioning;
 using ShadowDusk.Compiler;
+using ShadowDusk.Compiler.Sksl;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Reflection;
 
@@ -127,6 +128,28 @@ public sealed class WasmShaderCompiler : IShaderCompiler
 
         return compiler.Compile(hlslSource, options, cancellationToken);
     }
+
+    /// <summary>
+    /// Converts an HLSL <c>.fx</c> pixel shader to an SkSL runtime effect (issue #197, see
+    /// <see cref="SkslConverter"/>) entirely in the browser: the same converter the desktop
+    /// runs, with the browser-backed DXC and SPIRV-Cross injected, so the SkSL text is
+    /// byte-identical to the desktop's for the same input.
+    /// </summary>
+    /// <remarks>
+    /// Synchronous on the browser thread. <b>Precondition:</b> <see cref="InitializeAsync"/>
+    /// has completed; called before that, the result fails with the clear <c>SD1903</c>
+    /// not-initialized error, exactly like <see cref="Compile"/>.
+    /// </remarks>
+    public Result<SkslConversion, ShaderError[]> ConvertToSksl(
+        string hlslSource,
+        SkslConvertOptions options,
+        CancellationToken cancellationToken = default) =>
+        SkslConverter.Convert(
+            hlslSource,
+            options,
+            dxcCompilerFactory: () => new JsDxcShaderCompiler(),
+            glslTranspilerFactory: () => new JsSpirvToGlslTranspiler(),
+            cancellationToken);
 
     /// <inheritdoc/>
     /// <remarks>

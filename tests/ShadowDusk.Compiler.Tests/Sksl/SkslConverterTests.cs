@@ -1,6 +1,7 @@
 #nullable enable
 
 using ShadowDusk.Compiler.Sksl;
+using ShadowDusk.Core;
 using Shouldly;
 using Xunit;
 
@@ -32,29 +33,13 @@ public sealed class SkslConverterTests
         "third-party", "Gum", "MonoGameInCode-Grayscale.fx");
 
     [Fact]
-    public void GumGrayscale_IsRejectedByDefault_BecauseItReadsColor0()
+    public void GumGrayscale_ConvertsByDefault_KeepingTheTintTheHandPortDropped()
     {
-        // THE Gum-lesson test: the one shader Gum actually ported by hand needed COLOR0
-        // dropped to get there. Our default must be refusal, with the escape hatch named.
+        // THE Gum-lesson test, issue #368 contract: COLOR0 (SpriteBatch's vertex color) is NOT
+        // dropped (Gum's hand port did) and NOT refused: it becomes the synthesized uniform
+        // ShadowDusk_Color, with no opt-in.
         var result = SkslConverter.Convert(File.ReadAllText(GumGrayscalePath),
             new SkslConvertOptions { SourceName = "Grayscale.fx" });
-
-        result.IsFailure.ShouldBeTrue();
-        var error = result.Error.Single();
-        error.Code.ShouldBe("SD0611");
-        error.Message.ShouldContain("COLOR0", Case.Sensitive);
-        error.Message.ShouldContain("TreatVaryingsAsUniforms", Case.Sensitive);
-    }
-
-    [Fact]
-    public void GumGrayscale_ConvertsWithTheOptIn_KeepingTheTintTheHandPortDropped()
-    {
-        var result = SkslConverter.Convert(File.ReadAllText(GumGrayscalePath),
-            new SkslConvertOptions
-            {
-                SourceName = "Grayscale.fx",
-                TreatVaryingsAsUniforms = ["COLOR0"],
-            });
 
         result.IsSuccess.ShouldBeTrue(
             result.IsFailure ? string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "");
@@ -69,12 +54,114 @@ public sealed class SkslConverterTests
         sksl.ShouldNotContain("texture(", Case.Sensitive);
         sksl.ShouldNotContain("gl_FragColor", Case.Sensitive);
 
-        // The tint Gum's own hand port silently dropped is PRESENT, as the opted-into uniform,
+        // The tint Gum's own hand port silently dropped is PRESENT, as the synthesized uniform,
         // and the contract surfaces it so the consumer knows to set it.
-        sksl.ShouldContain("in_var_COLOR0", Case.Sensitive);
-        result.Value.SynthesizedUniforms.ShouldContain("in_var_COLOR0");
-        result.Value.Warnings.Single().Code.ShouldBe("SD0614");
+        sksl.ShouldContain("uniform vec4 ShadowDusk_Color;", Case.Sensitive);
+        sksl.ShouldContain("* ShadowDusk_Color", Case.Sensitive);
+        sksl.ShouldNotContain("in_var_COLOR0", Case.Sensitive);
+        result.Value.SynthesizedUniforms.ShouldBe(["ShadowDusk_Color"]);
+        var warning = result.Value.Warnings.Single();
+        warning.Code.ShouldBe("SD0614");
+        warning.Severity.ShouldBe(ShaderErrorSeverity.Warning);
+        warning.Message.ShouldContain("ShadowDusk_Color", Case.Sensitive);
         result.Value.ChildShaders.ShouldBe(["SpriteTexture"]);
+    }
+
+    [Fact]
+    public void ListingColor0InTreatVaryingsAsUniforms_IsAccepted_AndChangesNothing()
+    {
+        // Callers written before COLOR0 became the default still pass the option; they must
+        // get the identical emission, not a second uniform name.
+        string fx = File.ReadAllText(GumGrayscalePath);
+        var byDefault = SkslConverter.Convert(fx, new SkslConvertOptions { SourceName = "Grayscale.fx" });
+        var withOption = SkslConverter.Convert(fx, new SkslConvertOptions
+        {
+            SourceName = "Grayscale.fx",
+            TreatVaryingsAsUniforms = ["COLOR0"],
+        });
+
+        byDefault.IsSuccess.ShouldBeTrue();
+        withOption.IsSuccess.ShouldBeTrue();
+        string.Equals(withOption.Value.SkslText, byDefault.Value.SkslText, StringComparison.Ordinal).ShouldBeTrue();
+        withOption.Value.SynthesizedUniforms.ShouldBe(["ShadowDusk_Color"]);
+        withOption.Value.Warnings.Count.ShouldBe(1);
+    }
+
+    private const string ExtraInterpolantFx = """
+        float4 MainPS(float4 pos : SV_Position, float2 uv : TEXCOORD0, float4 extra : TEXCOORD1) : SV_Target
+        {
+            return extra;
+        }
+        technique T { pass P { PixelShader = compile ps_3_0 MainPS(); } }
+        """;
+
+    [Fact]
+    public void AnInterpolantOtherThanTexcoord0AndColor0_IsStillRefusedByName()
+    {
+        var result = SkslConverter.Convert(ExtraInterpolantFx, new SkslConvertOptions { SourceName = "ti.fx" });
+
+        result.IsFailure.ShouldBeTrue();
+        var error = result.Error.Single();
+        error.Code.ShouldBe("SD0611");
+        error.Message.ShouldContain("TEXCOORD1", Case.Sensitive);
+        error.Message.ShouldContain("TreatVaryingsAsUniforms", Case.Sensitive);
+    }
+
+    [Fact]
+    public void AnInterpolantOtherThanColor0_StillConvertsWithTheOptIn_AsInVarUniform()
+    {
+        var result = SkslConverter.Convert(ExtraInterpolantFx, new SkslConvertOptions
+        {
+            SourceName = "ti.fx",
+            TreatVaryingsAsUniforms = ["TEXCOORD1"],
+        });
+
+        result.IsSuccess.ShouldBeTrue(
+            result.IsFailure ? string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "");
+        result.Value.SkslText.ShouldContain("uniform vec4 in_var_TEXCOORD1;", Case.Sensitive);
+        result.Value.SynthesizedUniforms.ShouldBe(["in_var_TEXCOORD1"]);
+        result.Value.Warnings.Single().Code.ShouldBe("SD0614");
+    }
+
+    [Fact]
+    public void BareColorSemantic_IsTheSameAsColor0()
+    {
+        // `: COLOR` with the index omitted IS COLOR0 (fxc/mgfxc rule); DXC passes the bare
+        // spelling through as in_var_COLOR, which must not slip past the default.
+        const string fx = """
+            float4 MainPS(float4 pos : SV_Position, float4 c : COLOR) : SV_Target
+            {
+                return c;
+            }
+            technique T { pass P { PixelShader = compile ps_3_0 MainPS(); } }
+            """;
+
+        var result = SkslConverter.Convert(fx, new SkslConvertOptions { SourceName = "bare.fx" });
+
+        result.IsSuccess.ShouldBeTrue(
+            result.IsFailure ? string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "");
+        result.Value.SkslText.ShouldContain("uniform vec4 ShadowDusk_Color;", Case.Sensitive);
+        result.Value.SkslText.ShouldNotContain("in_var_COLOR", Case.Sensitive);
+        result.Value.SynthesizedUniforms.ShouldBe(["ShadowDusk_Color"]);
+    }
+
+    [Fact]
+    public void Color0ReadAsNarrowerThanFloat4_IsRefused_NotSilentlyWidened()
+    {
+        const string fx = """
+            float4 MainPS(float4 pos : SV_Position, float3 c : COLOR0) : SV_Target
+            {
+                return float4(c, 1);
+            }
+            technique T { pass P { PixelShader = compile ps_3_0 MainPS(); } }
+            """;
+
+        var result = SkslConverter.Convert(fx, new SkslConvertOptions { SourceName = "c3.fx" });
+
+        result.IsFailure.ShouldBeTrue();
+        var error = result.Error.Single();
+        error.Code.ShouldBe("SD0611");
+        error.Message.ShouldContain("float4", Case.Sensitive);
     }
 
     [Fact]
@@ -135,7 +222,7 @@ public sealed class SkslConverterTests
     }
 
     [Fact]
-    public void ComputedUvSampling_IsRejected_BecauseChildBoundsAreUnknowable()
+    public void ComputedUvSampling_Converts_ScaledByTheChildSizeUniform()
     {
         const string fx = """
             Texture2D Tex;
@@ -149,8 +236,11 @@ public sealed class SkslConverterTests
 
         var result = SkslConverter.Convert(fx, new SkslConvertOptions { SourceName = "cs.fx" });
 
-        result.IsFailure.ShouldBeTrue();
-        result.Error.Single().Code.ShouldBe("SD0612");
+        result.IsSuccess.ShouldBeTrue(
+            result.IsFailure ? string.Join(" | ", result.Error.Select(e => $"{e.Code}: {e.Message}")) : "");
+        result.Value.SkslText.ShouldContain(".eval(", Case.Sensitive);
+        result.Value.SkslText.ShouldContain("* ShadowDusk_Resolution)", Case.Sensitive);
+        result.Value.SynthesizedUniforms.ShouldContain("ShadowDusk_Resolution");
     }
 
     [Fact]
@@ -180,6 +270,49 @@ public sealed class SkslConverterTests
         }
         technique T { pass P { PixelShader = compile ps_3_0 MainPS(); } }
         """;
+
+    [Fact]
+    public void InjectedBackends_AreUsed_AndProduceTheSameSkslAsTheDefaults()
+    {
+        // Issue #349: the WASM host injects its own DXC/SPIRV-Cross. Wrapping the desktop
+        // ones proves the seam routes every call through the factories and that the output
+        // is byte-identical to the default path.
+        string fx = File.ReadAllText(GumGrayscalePath);
+        var options = new SkslConvertOptions { SourceName = "Grayscale.fx" };
+        int dxcCreated = 0, glslCreated = 0;
+
+        var viaDefaults = SkslConverter.Convert(fx, options);
+        var viaFactories = SkslConverter.Convert(fx, options,
+            () => { dxcCreated++; return new ShadowDusk.HLSL.Dxc.DxcShaderCompiler(); },
+            () => { glslCreated++; return new ShadowDusk.GLSL.SpirvCrossGlslTranspiler(); });
+
+        viaFactories.IsSuccess.ShouldBeTrue();
+        dxcCreated.ShouldBe(1);
+        glslCreated.ShouldBe(1);
+        string.Equals(viaFactories.Value.SkslText, viaDefaults.Value.SkslText, StringComparison.Ordinal).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void GumGrayscale_SkslMatchesTheCommittedGolden_TheBrowserGateComparesTheSameFile()
+    {
+        // Issue #349: tests/fixtures/golden/sksl/Grayscale.sksl is the desktop SkSL for the Gum
+        // Grayscale (COLOR0 converts by default since #368). The browser gate (tests/ShadowDusk.BrowserTests/
+        // browser-sksl-gate.mjs) asserts the in-browser conversion equals this same file, so
+        // browser == golden == desktop. Regenerate with SHADOWDUSK_UPDATE_GOLDEN=1.
+        string goldenPath = Path.Combine(
+            Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(GumGrayscalePath)!)!)!)!,
+            "golden", "sksl", "Grayscale.sksl");
+
+        var result = SkslConverter.Convert(File.ReadAllText(GumGrayscalePath),
+            new SkslConvertOptions { SourceName = "Grayscale.fx" });
+        result.IsSuccess.ShouldBeTrue();
+
+        if (Environment.GetEnvironmentVariable("SHADOWDUSK_UPDATE_GOLDEN") == "1")
+            File.WriteAllText(goldenPath, result.Value.SkslText, new System.Text.UTF8Encoding(false));
+
+        string golden = File.ReadAllText(goldenPath);
+        string.Equals(result.Value.SkslText, golden, StringComparison.Ordinal).ShouldBeTrue();
+    }
 
     internal static string FindFixture(params string[] parts)
     {

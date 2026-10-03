@@ -3,12 +3,14 @@
 using ShadowDusk.Compiler.Internal;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
+using ShadowDusk.GLSL;
 using ShadowDusk.HLSL;
+using ShadowDusk.HLSL.Dxc;
 using ShadowDusk.HLSL.Ast;
 
 namespace ShadowDusk.Compiler.Sksl;
 
-/// <summary>Options for <see cref="SkslConverter.Convert"/>.</summary>
+/// <summary>Options for <see cref="SkslConverter.Convert(string, SkslConvertOptions, CancellationToken)"/>.</summary>
 public sealed class SkslConvertOptions
 {
     /// <summary>The logical source name used in diagnostics. Defaults to <c>"&lt;memory&gt;.fx"</c>.</summary>
@@ -21,12 +23,19 @@ public sealed class SkslConvertOptions
     public IReadOnlyList<string> AdditionalIncludePaths { get; init; } = [];
 
     /// <summary>
-    /// Interpolant semantics (e.g. <c>"COLOR0"</c>) the caller explicitly accepts becoming
-    /// <b>uniforms</b> — per-draw constants instead of interpolated values. Off by default:
-    /// the converter's default answer to an unsupplyable interpolant is a loud <c>SD0611</c>,
-    /// because silently changing interpolation semantics is exactly the wrong-output class this
-    /// converter exists to prevent (Gum's own hand-port dropped its <c>COLOR0</c> tint that
-    /// way). Opting a semantic in is a documented, warned-about semantic change.
+    /// Interpolant semantics (e.g. <c>"TEXCOORD1"</c>) the caller explicitly accepts becoming
+    /// <b>uniforms</b> named <c>in_var_&lt;SEMANTIC&gt;</c> — per-draw constants instead of
+    /// interpolated values. Off by default: the converter's answer to an unsupplyable
+    /// interpolant is a loud <c>SD0611</c>, because silently changing interpolation semantics is
+    /// exactly the wrong-output class this converter exists to prevent. Opting a semantic in is a
+    /// documented, warned-about semantic change.
+    ///
+    /// <para><c>COLOR0</c> (SpriteBatch's vertex color) is <b>not</b> governed by this option: it
+    /// always converts, by default, to the synthesized <c>float4</c> uniform
+    /// <c>ShadowDusk_Color</c> (set it to the sprite's tint, white when untinted). Listing
+    /// <c>"COLOR0"</c> here is accepted and changes nothing, so callers written before that
+    /// default keep working, but they now get <c>ShadowDusk_Color</c> instead of
+    /// <c>in_var_COLOR0</c>.</para>
     /// </summary>
     public IReadOnlyList<string> TreatVaryingsAsUniforms { get; init; } = [];
 }
@@ -35,7 +44,12 @@ public sealed class SkslConvertOptions
 /// <param name="SkslText">The runtime-effect source for <c>SKRuntimeEffect.CreateShader</c>.</param>
 /// <param name="Warnings">Non-fatal findings — every synthesized uniform carries one.</param>
 /// <param name="ChildShaders">The <c>uniform shader</c> children to bind, in order, named after the HLSL textures.</param>
-/// <param name="SynthesizedUniforms">Uniforms the consumer must set each draw (see <see cref="MappedSksl.SynthesizedUniforms"/>).</param>
+/// <param name="SynthesizedUniforms">
+/// Uniforms the consumer must set each draw (see <see cref="MappedSksl.SynthesizedUniforms"/>):
+/// <c>ShadowDusk_Color</c> (the sprite's tint, for a shader that reads <c>COLOR0</c>) and
+/// <c>ShadowDusk_Resolution</c> (pixel size of the drawn element, also the child size, for a shader that uses its UV
+/// arithmetically or samples at a computed coordinate).
+/// </param>
 public sealed record SkslConversion(
     string SkslText,
     IReadOnlyList<ShaderError> Warnings,
@@ -70,6 +84,25 @@ public static class SkslConverter
     public static Result<SkslConversion, ShaderError[]> Convert(
         string fxSource,
         SkslConvertOptions options,
+        CancellationToken cancellationToken = default) =>
+        Convert(fxSource, options, dxcCompilerFactory: null, glslTranspilerFactory: null, cancellationToken);
+
+    /// <summary>
+    /// <see cref="Convert(string, SkslConvertOptions, CancellationToken)"/> with the same
+    /// backend-injection seam <see cref="EffectCompiler"/> has, so a host without the native
+    /// DXC/SPIRV-Cross (the browser/WASM host) can supply its own: the SAME faithful
+    /// components compiled for that host, never a substitute compiler.
+    /// </summary>
+    /// <param name="fxSource">The HLSL <c>.fx</c> effect source.</param>
+    /// <param name="options">Conversion options; see <see cref="SkslConvertOptions"/>.</param>
+    /// <param name="dxcCompilerFactory">HLSL to SPIR-V frontend; <see langword="null"/> = bundled desktop DXC.</param>
+    /// <param name="glslTranspilerFactory">SPIR-V to GLSL transpiler; <see langword="null"/> = bundled SPIRV-Cross.</param>
+    /// <param name="cancellationToken">Observed between pipeline stages.</param>
+    public static Result<SkslConversion, ShaderError[]> Convert(
+        string fxSource,
+        SkslConvertOptions options,
+        Func<IDxcShaderCompiler>? dxcCompilerFactory,
+        Func<ISpirvToGlslTranspiler>? glslTranspilerFactory,
         CancellationToken cancellationToken = default)
     {
         // 1. Parse the FX9 layer.
@@ -88,7 +121,8 @@ public static class SkslConverter
         }
 
         Result<SkslConversion, ShaderError[]> first = ConvertCore(
-            parse.Value, options, recovered: null, out bool shaderCompileFailed, cancellationToken);
+            parse.Value, options, recovered: null, out bool shaderCompileFailed, cancellationToken,
+            dxcCompilerFactory, glslTranspilerFactory);
         if (first.IsSuccess || !shaderCompileFailed)
             return first;
 
@@ -106,7 +140,8 @@ public static class SkslConverter
             options.AdditionalIncludePaths);
         return LegacySamplerRecovery.Apply(
             first, outcome,
-            retry => ConvertCore(retry.Parsed.Parsed, options, retry, out _, cancellationToken));
+            retry => ConvertCore(retry.Parsed.Parsed, options, retry, out _, cancellationToken,
+                dxcCompilerFactory, glslTranspilerFactory));
     }
 
     /// <summary>
@@ -121,7 +156,9 @@ public static class SkslConverter
         SkslConvertOptions options,
         LegacySamplerRecovery.Outcome.Retry? recovered,
         out bool shaderCompileFailed,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<IDxcShaderCompiler>? dxcCompilerFactory,
+        Func<ISpirvToGlslTranspiler>? glslTranspilerFactory)
     {
         shaderCompileFailed = false;
 
@@ -177,7 +214,8 @@ public static class SkslConverter
             compilerInput = flattened.Value.Text;
         }
 
-        var seam = ModernGlslSeam.CompilePixel(compilerInput, pass.PixelEntryPoint, options.SourceName, cancellationToken);
+        var seam = ModernGlslSeam.CompilePixel(compilerInput, pass.PixelEntryPoint, options.SourceName, cancellationToken,
+            dxcCompilerFactory, glslTranspilerFactory);
         if (seam.IsFailure)
         {
             shaderCompileFailed = recovered is null;

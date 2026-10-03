@@ -14,6 +14,10 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
 
 ### Added
 
+- **`SkslConverter` can run in the browser (issue #349).** `SkslConverter.Convert` has an overload taking
+  DXC / SPIRV-Cross factories (like `EffectCompiler`), and `WasmShaderCompiler.ConvertToSksl` is the
+  synchronous entry point after `InitializeAsync()`. The default desktop path is unchanged.
+
 - **Build-time warning `SD0220` when a consumer's graph lifts Vortice.Dxc (issue #282).**
   ShadowDusk.HLSL now ships `buildTransitive/ShadowDusk.HLSL.targets`, so a project that references
   it directly or through ShadowDusk.Compiler / ShadowDusk.ContentPipeline is told AT BUILD TIME when
@@ -180,6 +184,32 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   from it (issue #226).**
 
 ### Changed
+
+- **SkSL converter: `COLOR0` (SpriteBatch's vertex color) now converts by default instead of
+  refusing with `SD0611` (issue #368).** A shader that reads `input.Color` (every XnaFiddle
+  example, and every `.fx` written for SpriteBatch) converts with the `float4` uniform
+  `ShadowDusk_Color` in its place. Set it each draw to the sprite's tint, white when untinted;
+  leaving it unset renders black. It is listed in `SkslConversion.SynthesizedUniforms` with an
+  `SD0614` warning, like `ShadowDusk_Resolution`. `TreatVaryingsAsUniforms` still governs every
+  other interpolant (still refused by name otherwise). Callers that listed `"COLOR0"` in it keep
+  working and get the same output, but the uniform is now named `ShadowDusk_Color`, not
+  `in_var_COLOR0`: rename the uniform in your draw code. A `COLOR0` read narrower than `float4`
+  is still refused (`SD0611`).
+
+- **SkSL converter: sampling at a computed coordinate now converts instead of refusing with
+  `SD0612` (issue #371).** `tex2D(s, uv * 2)` becomes `s.eval((uv * 2) * ShadowDusk_Resolution)`:
+  HLSL coordinates are normalized, `.eval()` takes child pixels. `ShadowDusk_Resolution` is the
+  existing `float2` uniform, now documented as the pixel size of the element being drawn, which is
+  also the size of the bound child textures (one value for Gum to set). A shader that used only
+  computed sampling now gets this uniform and its `SD0614` warning too: set it each draw or every
+  sample reads the top-left texel. XnaFiddle's Pixelated converts. HLSL's ties-to-even `round`
+  (`roundEven`, absent in SkSL) is emitted as an exact `_sd_roundEven` helper. A sampling bias or
+  extra argument, or a sampler that is not one of the shader's textures, is still refused
+  `SD0612`.
+
+- **`SD0620` on macOS older than 26 now says no self-built slangc is planned (issue #237).**
+  The message asks the consumer to open an issue if they need one and points at the built-in
+  `.slang` subset frontend, which runs on any macOS. No behavior change.
 
 - **CI dumps a stalled integration test host from outside the process (issue #312).**
   `tools/ci/hang-watchdog.sh` runs as a sibling shell process on the macOS and Linux integration

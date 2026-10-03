@@ -15,3 +15,5 @@
 *.mgfx binary
 *.fxb  binary
 *.wasm binary
+*.sksl text eol=lf
+*.sh   text eol=lf

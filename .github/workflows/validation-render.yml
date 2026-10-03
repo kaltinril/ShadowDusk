@@ -279,6 +279,9 @@ jobs:
       - name: Install Python compare dependencies (pillow, numpy)
         run: python -m pip install --quiet pillow numpy
 
+      - name: compare_kni.py golden-waiver self-test (issue #215, no GPU)
+        run: python validation/compare_kni.py --self-test
+
       - name: Build the GL corpus drivers
         run: |
           dotnet build validation/Baseline/Baseline.csproj -c Release

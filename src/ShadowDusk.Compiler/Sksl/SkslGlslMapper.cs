@@ -15,8 +15,9 @@ namespace ShadowDusk.Compiler.Sksl;
 /// <c>SKRuntimeEffect.Uniforms</c>/children before creating the paint.
 /// </param>
 /// <param name="SynthesizedUniforms">
-/// Uniforms the mapping had to invent (e.g. <c>ShadowDusk_Resolution</c>, or a varying
-/// substituted per <see cref="SkslConvertOptions.TreatVaryingsAsUniforms"/>). The consumer must
+/// Uniforms the mapping had to invent (<c>ShadowDusk_Color</c> for <c>COLOR0</c>,
+/// <c>ShadowDusk_Resolution</c>, or a varying substituted per
+/// <see cref="SkslConvertOptions.TreatVaryingsAsUniforms"/>). The consumer must
 /// set every one of these each frame or the effect renders wrong — which is why each also
 /// carries a warning.
 /// </param>
@@ -41,14 +42,21 @@ public sealed record MappedSksl(
 ///   at exactly the interpolated UV maps to <c>child.eval(coord)</c> (the 1:1 post-process
 ///   case). Using the UV <i>arithmetically</i> maps to <c>coord / ShadowDusk_Resolution</c>
 ///   with a synthesized uniform the consumer must set (warned, never silent).</item>
-///   <item>Any other interpolant (<c>COLOR0</c>, …) is <b>rejected by name</b> (<c>SD0611</c>)
-///   unless the caller explicitly lists it in
-///   <see cref="SkslConvertOptions.TreatVaryingsAsUniforms"/>, in which case it becomes a
-///   uniform — a documented semantic change (interpolated → per-draw constant), opted into,
-///   warned about, and surfaced in <see cref="MappedSksl.SynthesizedUniforms"/>.</item>
-///   <item>Sampling at computed coordinates is rejected (<c>SD0612</c>): SkSL's
-///   <c>.eval()</c> takes child-space pixel coordinates and a child's bounds are unknowable
-///   from inside the effect, so any guess could silently sample the wrong texel.</item>
+///   <item><c>COLOR0</c> (SpriteBatch's vertex color) converts <b>by default</b> to the
+///   synthesized <c>float4</c> uniform <c>ShadowDusk_Color</c>: the consumer sets it to the
+///   sprite's tint each draw (white when untinted). A documented semantic change
+///   (interpolated → per-draw constant), warned about (<c>SD0614</c>) and surfaced in
+///   <see cref="MappedSksl.SynthesizedUniforms"/>.</item>
+///   <item>Any other interpolant is <b>rejected by name</b> (<c>SD0611</c>) unless the caller
+///   explicitly lists it in <see cref="SkslConvertOptions.TreatVaryingsAsUniforms"/>, in which
+///   case it becomes a uniform named <c>in_var_&lt;SEMANTIC&gt;</c>, with the same warning and
+///   surfacing.</item>
+///   <item>Sampling at computed coordinates (refused <c>SD0612</c> before issue #371) converts
+///   to <c>child.eval((uv) * ShadowDusk_Resolution)</c>: HLSL coordinates are normalized, SkSL's
+///   <c>.eval()</c> takes child-space pixels, and the same synthesized uniform carries the
+///   child's pixel size (warned, <c>SD0614</c>). Only a two-argument sample of a bound
+///   texture is modelled; a bias or extra argument, or an unknown sampler, stays
+///   <c>SD0612</c>.</item>
 ///   <item>Constructs with no SkSL meaning — <c>gl_*</c> builtins, derivatives, LOD/offset
 ///   sampling — are rejected by name (<c>SD0613</c>).</item>
 /// </list>
@@ -77,8 +85,32 @@ internal static class SkslGlslMapper
         @"\b(gl_\w+|dFdx|dFdy|fwidth|textureLod|textureProj|textureGrad|textureOffset|texelFetch)\b",
         RegexOptions.Compiled);
 
-    /// <summary>The synthesized viewport-size uniform's name.</summary>
+    private static readonly Regex RoundEvenCall = new(@"\broundEven\s*\(", RegexOptions.Compiled);
+
+    private const string RoundEvenHelpers =
+        "float _sd_roundEven(float x)\n{\n" +
+        "    float r = floor(x + 0.5);\n" +
+        "    if (r - x == 0.5 && mod(r, 2.0) != 0.0)\n        r -= 1.0;\n" +
+        "    return r;\n}\n" +
+        "vec2 _sd_roundEven(vec2 x) { return vec2(_sd_roundEven(x.x), _sd_roundEven(x.y)); }\n" +
+        "vec3 _sd_roundEven(vec3 x) { return vec3(_sd_roundEven(x.x), _sd_roundEven(x.y), _sd_roundEven(x.z)); }\n" +
+        "vec4 _sd_roundEven(vec4 x) { return vec4(_sd_roundEven(x.x), _sd_roundEven(x.y), _sd_roundEven(x.z), _sd_roundEven(x.w)); }\n\n";
+
+    private static readonly Regex TextureCall =new(@"\btexture\s*\(", RegexOptions.Compiled);
+
+    /// <summary>
+    /// The synthesized size uniform's name: the pixel size of the element being drawn, which is
+    /// also the size of the child textures it samples (the 1:1 post-process case). One value
+    /// serves both the arithmetic-UV normalization and computed-coordinate sampling.
+    /// </summary>
     internal const string ResolutionUniform = "ShadowDusk_Resolution";
+
+    /// <summary>
+    /// The synthesized uniform that stands in for <c>COLOR0</c>, SpriteBatch's vertex color
+    /// (<c>float4</c>, straight RGBA). A runtime effect has no varyings, so the consumer sets it
+    /// per draw to the sprite's tint: white when untinted, which reproduces the untinted math.
+    /// </summary>
+    internal const string ColorUniform = "ShadowDusk_Color";
 
     /// <summary>
     /// Maps one pixel shader's SPIRV-Cross GLSL to SkSL.
@@ -131,6 +163,7 @@ internal static class SkslGlslMapper
 
         // 2. Varyings. TEXCOORD0 is representable; everything else is the Gum lesson.
         string? uvVar = null;
+        string? colorVar = null;
         var uniformSubstitutions = new List<(string Var, string Type, string Semantic)>();
         foreach (Match varying in VaryingIn.Matches(text))
         {
@@ -140,6 +173,26 @@ internal static class SkslGlslMapper
             if (semantic.Equals("TEXCOORD0", StringComparison.Ordinal))
             {
                 uvVar = "in_var_" + semantic;
+                continue;
+            }
+
+            // COLOR0 (a bare `: COLOR` input reaches here spelled "COLOR", index 0 implied) is
+            // SpriteBatch's vertex color. Every .fx written for MonoGame/KNI reads it, so it
+            // converts BY DEFAULT to one named, documented uniform instead of refusing. The
+            // semantic change (interpolated -> per-draw constant) is the one
+            // TreatVaryingsAsUniforms opts into, made the default for this one semantic
+            // because every sprite shader has it (issue #368).
+            if (semantic is "COLOR0" or "COLOR")
+            {
+                if (!type.Equals("vec4", StringComparison.Ordinal))
+                {
+                    return Fail(sourceName, "SD0611",
+                        $"the pixel shader reads its vertex color ('{semantic}') as '{type}', but the " +
+                        $"synthesized uniform '{ColorUniform}' is a float4 (SpriteBatch's RGBA tint). " +
+                        "Declare the COLOR0 input as float4; refusing rather than guessing how to " +
+                        "narrow the uniform.");
+                }
+                colorVar = "in_var_" + semantic;
                 continue;
             }
 
@@ -153,7 +206,8 @@ internal static class SkslGlslMapper
                 $"the pixel shader reads the interpolant '{semantic}', and an SkSL runtime effect " +
                 "has no varyings at all — a pixel shader gets the coordinate plus uniforms and " +
                 "nothing else. Refusing rather than silently dropping it (Gum's own hand-written " +
-                "SkSL port dropped its COLOR0 tint exactly this way). If a per-draw constant is " +
+                "SkSL port dropped its COLOR0 tint exactly this way; COLOR0 itself converts, to " +
+                $"the uniform '{ColorUniform}'). If a per-draw constant is " +
                 $"acceptable for '{semantic}', opt in with TreatVaryingsAsUniforms and set the " +
                 "uniform from your draw code.");
         }
@@ -171,6 +225,22 @@ internal static class SkslGlslMapper
                 Severity: ShaderErrorSeverity.Warning));
         }
 
+        if (colorVar is not null)
+        {
+            text = VaryingIn.Replace(text, m =>
+                m.Groups["semantic"].Value is "COLOR0" or "COLOR" ? $"uniform vec4 {ColorUniform};" : m.Value);
+            text = Regex.Replace(text, $@"\b{Regex.Escape(colorVar)}\b", ColorUniform);
+            synthesized.Add(ColorUniform);
+            warnings.Add(new ShaderError(
+                File: sourceName, Line: 0, Column: 0, Code: "SD0614",
+                Message: $"the vertex color (COLOR0) was converted to the uniform '{ColorUniform}' " +
+                         "(float4): SkSL has no vertex stage or varyings, so it is a per-draw " +
+                         "constant, not an interpolated value. Your draw code must set it to the " +
+                         "sprite's tint each draw (white when untinted), or the shader renders " +
+                         "black.",
+                Severity: ShaderErrorSeverity.Warning));
+        }
+
         // 3. Sampling. child.eval(coord) for the 1:1 case; computed coordinates are refused.
         if (uvVar is not null)
         {
@@ -181,15 +251,67 @@ internal static class SkslGlslMapper
                     $"{child}.eval(coord)");
             }
         }
-        Match computedSample = Regex.Match(text, @"\btexture\s*\(\s*(?<child>\w+)\s*,");
-        if (computedSample.Success)
+
+        // Computed coordinates: texture(child, expr) becomes child.eval((expr) * ShadowDusk_Resolution).
+        // HLSL's tex2D takes NORMALIZED coordinates; .eval() takes child-space PIXELS, so the
+        // computed UV is scaled by the child's pixel size. The consumer binds a child the size of
+        // the element being drawn (the 1:1 post-process case, where the interpolated coordinate
+        // is already in child space), so ShadowDusk_Resolution is that one size and Gum sets a
+        // single value. Anything outside the one modelled shape (two arguments, first one a
+        // known child) is refused by name, never guessed. Innermost call first: the last
+        // `texture(` in the text never contains another.
+        bool needsResolution = false;
+        while (true)
         {
-            return Fail(sourceName, "SD0612",
-                $"'{computedSample.Groups["child"].Value}' is sampled at computed coordinates. " +
-                "SkSL's .eval() takes CHILD-SPACE PIXEL coordinates, and a runtime effect cannot " +
-                "know a child's bounds, so converted computed-UV sampling could silently read the " +
-                "wrong texels — refused rather than guessed. Sample at the interpolated TEXCOORD0, " +
-                "or restructure the effect so the coordinate math happens in your draw code.");
+            Match? call = null;
+            foreach (Match m in TextureCall.Matches(text))
+                call = m;
+            if (call is null)
+                break;
+
+            int open = call.Index + call.Length - 1;
+            var args = new List<string>();
+            int depth = 0, argStart = open + 1, close = -1;
+            for (int i = open; i < text.Length; i++)
+            {
+                char c = text[i];
+                if (c == '(')
+                {
+                    depth++;
+                }
+                else if (c == ')')
+                {
+                    if (--depth == 0)
+                    {
+                        args.Add(text[argStart..i]);
+                        close = i;
+                        break;
+                    }
+                }
+                else if (c == ',' && depth == 1)
+                {
+                    args.Add(text[argStart..i]);
+                    argStart = i + 1;
+                }
+            }
+
+            string callText = close < 0 ? text[call.Index..] : text[call.Index..(close + 1)];
+            if (close < 0 || args.Count != 2 || !children.Contains(args[0].Trim(), StringComparer.Ordinal))
+            {
+                return Fail(sourceName, "SD0612",
+                    $"the sampling call '{callText.Trim()}' is not a two-argument sample of a bound " +
+                    "texture. SkSL's .eval() takes only a coordinate, so a sampling bias or any other " +
+                    "extra argument, or a sampler that is not one of the shader's own textures, has no " +
+                    "faithful mapping and is refused rather than guessed. Sample with tex2D/Sample at " +
+                    "one coordinate.");
+            }
+
+            string childName = args[0].Trim();
+            string uvExpr = args[1].Trim();
+            text = text[..call.Index]
+                 + $"{childName}.eval(({uvExpr}) * {ResolutionUniform})"
+                 + text[(close + 1)..];
+            needsResolution = true;
         }
 
         // 4. Any remaining arithmetic use of the UV becomes normalized coord — which needs the
@@ -204,14 +326,21 @@ internal static class SkslGlslMapper
             {
                 text = Regex.Replace(text, $@"\b{Regex.Escape(uvVar)}\b", "_sd_uv");
                 needsNormalizedUv = true;
-                synthesized.Add(ResolutionUniform);
-                warnings.Add(new ShaderError(
-                    File: sourceName, Line: 0, Column: 0, Code: "SD0614",
-                    Message: $"the shader uses its texture coordinate arithmetically, so the uniform " +
-                             $"'{ResolutionUniform}' (float2, the output size in pixels) was synthesized " +
-                             "to normalize SkSL's pixel-space coord. Your draw code must set it.",
-                    Severity: ShaderErrorSeverity.Warning));
+                needsResolution = true;
             }
+        }
+
+        if (needsResolution)
+        {
+            synthesized.Add(ResolutionUniform);
+            warnings.Add(new ShaderError(
+                File: sourceName, Line: 0, Column: 0, Code: "SD0614",
+                Message: $"the shader uses its texture coordinate arithmetically or samples at computed " +
+                         $"coordinates, so the uniform '{ResolutionUniform}' (float2, the pixel size of " +
+                         "the element being drawn, which is also the size of the bound child textures) " +
+                         "was synthesized: it normalizes SkSL's pixel-space coord and scales computed " +
+                         "sampling coordinates back to child pixels. Your draw code must set it.",
+                Severity: ShaderErrorSeverity.Warning));
         }
 
         // 5. Uniform blocks -> loose SkSL uniforms (SkSL has no UBOs). Two shapes appear:
@@ -250,14 +379,23 @@ internal static class SkslGlslMapper
         text = FragmentOut.Replace(text, "");
 
         text = text.Replace("void main()", "half4 main(float2 coord)", StringComparison.Ordinal);
+
+        // HLSL round() is ties-to-even, which DXC emits as GLSL roundEven; SkSL has no
+        // roundEven. Emit exact helpers (not floor(x + 0.5), which differs on ties) so the
+        // quantizing shaders that need it, like Pixelated, keep HLSL's result.
+        if (RoundEvenCall.IsMatch(text))
+        {
+            text = RoundEvenCall.Replace(text, "_sd_roundEven(");
+            text = text.Replace("half4 main(float2 coord)", RoundEvenHelpers + "half4 main(float2 coord)",
+                StringComparison.Ordinal);
+        }
         // The out variable becomes a local (plus the normalized UV, when synthesized); every
         // `return;` and the closing brace return it.
         string mainLocals = $"    vec4 {outName};";
         if (needsNormalizedUv)
-        {
             mainLocals = $"    vec2 _sd_uv = coord / {ResolutionUniform};\n" + mainLocals;
+        if (needsResolution)
             text = $"uniform vec2 {ResolutionUniform};\n" + text;
-        }
         text = Regex.Replace(text,
             @"half4 main\(float2 coord\)\s*\{",
             $"half4 main(float2 coord)\n{{\n{mainLocals}");
