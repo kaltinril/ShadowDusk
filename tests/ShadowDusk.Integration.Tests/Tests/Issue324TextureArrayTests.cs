@@ -143,6 +143,28 @@ public sealed class Issue324TextureArrayTests
         MgfxBlobReader.Parse(result.Value.Data).ParameterNames.ShouldContain("Tex");
     }
 
+    [Fact]
+    public async Task OpenGL_TextureArray_StillFailsLoudly_NamingTheArray()
+    {
+        // The GL route rejected the shape before (SD0217, from the combined-sampler pair walk), but
+        // said "not declared as a separate texture", which it is. mgfxc fails on it too
+        // ("Sequence contains no matching element"). The message now names the array.
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        string fxPath = TestHelpers.FixturePath(Path.Combine("texture-arrays", "TextureArray2.fx"));
+        var result = await new EffectCompiler().CompileAsync(await File.ReadAllTextAsync(fxPath, cts.Token), new CompilerOptions
+        {
+            Target = PlatformTarget.OpenGL,
+            IncludeResolver = new FileSystemIncludeResolver(),
+            SourceFileName = fxPath,
+        }, cts.Token);
+
+        result.IsFailure.ShouldBeTrue("MonoGame's GL effect format has no representation for a texture array");
+        ShaderError error = result.Error.First(e => e.Severity == ShaderErrorSeverity.Error);
+        error.Code.ShouldBe("SD0217");
+        error.Message.ShouldContain("'Tex' is declared as an array of textures", Case.Sensitive);
+        error.Message.ShouldContain("Sequence contains no matching element", Case.Sensitive);
+    }
+
     // ---- DirectX 12: mgfxc's table, one parameter bound to slot 0 -------------------------------
 
     [Theory]

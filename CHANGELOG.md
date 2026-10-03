@@ -259,7 +259,9 @@ that loads and renders identically to `mgfxc`'s in the real MonoGame/KNI runtime
   the golden's empty table; `-- texarr-reference` draws `mgfxc`'s own effect in real DesktopVK:
   it loads with no `Tex` parameter and draws nothing). No emitted byte changes for any shader
   without a texture or sampler array (the whole fixture corpus, 656 cells on four profiles,
-  hashed identical before and after). DirectX 11 is untouched:
+  hashed identical before and after). OpenGL already failed on the shape (`SD0217`, as `mgfxc` does
+  with `Sequence contains no matching element`) but called the array "not declared as a separate
+  texture"; the message now names the array. DirectX 11 is untouched:
   there vkd3d/fxc reflect the elements as separate `Tex[0]`, `Tex[1]` bindings and ShadowDusk emits
   one parameter per element where `mgfxc` 3.8.4.1 emits a single `Tex`, a separate divergence
   tracked as issue #339; a sampler array, which `mgfxc` refuses on every profile, still compiles on
