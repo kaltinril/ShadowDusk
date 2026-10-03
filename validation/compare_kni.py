@@ -86,7 +86,45 @@ def compare(kni_path, ref_path, tolerance, diff_path):
     return (status, diff_px, total, maxd, mean)
 
 
+def golden_waived(name, kni_path, golden_path, dx_path, tolerance, diff_dir):
+    """True when a miss against the mgfxc golden is the golden's fault, not KNI's (issue #215)."""
+    if name not in GOLDEN_GPU_SENSITIVE:
+        return False
+    gstat = compare(golden_path, dx_path, tolerance, os.path.join(diff_dir, name + "_golden_vs_dx.png"))[0]
+    kstat = compare(kni_path, dx_path, tolerance, os.path.join(diff_dir, name + "_vs_dx.png"))[0]
+    return gstat == "DIFFER" and kstat == "MATCH"
+
+
+def self_test():
+    """Pure-CPU check of the waiver rule on synthetic images (no GPU); run in CI."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        def img(name, delta):
+            path = os.path.join(d, name + ".png")
+            a = np.full((8, 8, 4), 100, dtype=np.uint8)
+            a[..., 3] = 255
+            a[0, 0, 0] = 100 + delta
+            Image.fromarray(a, "RGBA").save(path)
+            return path
+        dx, good, bad = img("dx", 0), img("good", 1), img("bad", 19)
+        w = lambda n, k, g: golden_waived(n, k, g, dx, 4, d)
+        cases = [
+            ("golden off, KNI matches DX11 -> waived", w("Dots", good, bad), True),
+            ("KNI itself off -> not waived", w("Dots", bad, bad), False),
+            ("golden fine -> nothing to waive", w("Dots", good, good), False),
+            ("other shader -> never waived", w("Sepia", good, bad), False),
+        ]
+        failed = 0
+        for label, got, want in cases:
+            ok = got == want
+            failed += not ok
+            print(f"  [{'OK' if ok else 'FAIL'}] {label}")
+        return 1 if failed else 0
+
+
 def main():
+    if "--self-test" in sys.argv:
+        return self_test()
     ap = argparse.ArgumentParser()
     ap.add_argument("--tolerance", type=int, default=4,
                     help="max per-channel delta still counted as a match (default 4)")
@@ -110,16 +148,12 @@ def main():
             kp, os.path.join(CANDIDATE, name + ".png"), args.tolerance,
             os.path.join(DIFF_DIR, name + "_vs_candidate.png"))
 
-        if bstat == "DIFFER" and name in GOLDEN_GPU_SENSITIVE:
-            dx = os.path.join(DX_REF, name + ".png")
-            gstat = compare(os.path.join(BASELINE, name + ".png"), dx, args.tolerance,
-                            os.path.join(DIFF_DIR, name + "_golden_vs_dx.png"))[0]
-            kstat = compare(kp, dx, args.tolerance,
-                            os.path.join(DIFF_DIR, name + "_vs_dx.png"))[0]
-            if gstat == "DIFFER" and kstat == "MATCH":
-                print(f"  note: {name} mgfxc GL golden is off the DX11 render on this GPU "
-                      f"(issue #215) while KNI matches DX11; golden miss not counted.")
-                bstat = "MATCH*"
+        if bstat == "DIFFER" and golden_waived(
+                name, kp, os.path.join(BASELINE, name + ".png"),
+                os.path.join(DX_REF, name + ".png"), args.tolerance, DIFF_DIR):
+            print(f"  note: {name} mgfxc GL golden is off the DX11 render on this GPU "
+                  f"(issue #215) while KNI matches DX11; golden miss not counted.")
+            bstat = "MATCH*"
 
         if bstat not in ("MATCH", "MATCH*") or cstat != "MATCH":
             failures += 1
