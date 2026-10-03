@@ -170,6 +170,11 @@ public sealed class GlContextFixture : IAsyncLifetime
             _window = Silk.NET.Windowing.Window.Create(options);
             _window.Initialize();
             _gl = GL.GetApi(_window);
+            _ownerThread = Thread.CurrentThread;
+            Console.Error.WriteLine(
+                $"[#345 probe] GL window created on managed thread {Thread.CurrentThread.ManagedThreadId} "
+                + $"(pool={Thread.CurrentThread.IsThreadPoolThread}, name='{Thread.CurrentThread.Name}', "
+                + $"hwnd=0x{_window.Native?.Win32?.Hwnd ?? 0:X})");
 
             // _window.Initialize() leaves the context current on this thread.
             // xUnit may dispatch the test method body on a different thread,
@@ -334,10 +339,26 @@ public sealed class GlContextFixture : IAsyncLifetime
         System.Threading.Monitor.Enter(_contextLock);
 
         var ctx = _window!.GLContext;
-        if (ctx is not null)
-            ctx.MakeCurrent();
+        try
+        {
+            if (ctx is not null)
+                ctx.MakeCurrent();
+        }
+        catch (Exception ex)
+        {
+            nint hwnd = _window.Native?.Win32?.Hwnd ?? 0;
+            Console.Error.WriteLine(
+                $"[#345 probe] MakeCurrent FAILED on thread {Thread.CurrentThread.ManagedThreadId}: {ex.GetType().Name}: {ex.Message} "
+                + $"| owner thread {_ownerThread?.ManagedThreadId} alive={_ownerThread?.IsAlive} | IsWindow(0x{hwnd:X})={IsWindow(hwnd)}");
+            throw;
+        }
         return new ContextReleaseGuard(this);
     }
+
+    private Thread? _ownerThread;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool IsWindow(nint hwnd);
 
     private void ReleaseContext()
     {
