@@ -84,14 +84,21 @@ var uniforms = new Dictionary<string, float[]>(StringComparer.Ordinal)
 };
 
 // The 10-shader GL corpus (rung-4 proven on GL by Baseline/Candidate), the two effects the
-// Phase 59 request named, and Gum's Grayscale, whose COLOR0 tint is the varying the SkSL target
-// cannot carry and raylib can (fragColor).
+// Phase 59 request named, Gum's Grayscale, whose COLOR0 tint is the varying the SkSL target
+// cannot carry and raylib can (fragColor), and the two issue #308 fixtures whose legacy samplers
+// an #include or a macro supplies (issue #327 for the converter).
 var cases = new List<(string Name, string Path)>();
 foreach (string name in ShaderInputs.ShaderNames)
     cases.Add((name, Path.Combine(fixtures, name + ".fx")));
 cases.Add(("CrtFilter", Path.Combine(fixtures, "raylib", "CrtFilter.fx")));
 cases.Add(("RetroHandheld", Path.Combine(fixtures, "raylib", "RetroHandheld.fx")));
 cases.Add(("GumGrayscale", Path.Combine(fixtures, "third-party", "Gum", "MonoGameInCode-Grayscale.fx")));
+// Issue #327: the legacy samplers live in an #include (LegacyInclude) or come out of macros
+// (LegacyMacroDecl), the shapes the converter used to refuse with DXC's own error. Both masks
+// are bound by name to the extra texture, on units 2 and 3, so the picture is (src.r, src.g, 0, 1)
+// only when the recovered conversion binds exactly what the OpenGL build binds.
+cases.Add(("LegacyInclude", Path.Combine(fixtures, "SamplerLegacyInclude.fx")));
+cases.Add(("LegacyMacroDecl", Path.Combine(fixtures, "SamplerLegacyMacroDecl.fx")));
 
 // A tint that is neither white nor grey, so a dropped or mis-mapped COLOR0 changes the picture.
 byte[] tint = [255, 200, 150, 255];

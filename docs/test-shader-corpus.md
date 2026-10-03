@@ -266,7 +266,9 @@ they back `validation/SamplerPairsGl`:
   is what compiles it. BLUE sprite + RED MaskA + GREEN MaskB: **yellow = correct**, **green =
   compacted to units 0/1**; before the fix the candidate did not compile. Goldens on `OpenGL` +
   `DirectX_11` (DirectX 11 compiles the legacy syntax natively and ignores the registers, the
-  recorded `SamplerRegisterSparse` divergence).
+  recorded `SamplerRegisterSparse` divergence). Also the `LegacyInclude` arm of
+  `validation/RaylibRoute` (issue #327): the raylib converter recovers it the same way, both masks
+  bound by name on units 2 and 3.
 
 - **`SamplerLegacyMacroDecl.fx`** — GitHub issue **#308**, shape 2. MonoGame's `Macros.fxh` idiom
   spelled out in the file: `DECLARE_TEXTURE(MaskA, 2)` (a `sampler2D` with a token-pasted
@@ -275,6 +277,7 @@ they back `validation/SamplerPairsGl`:
   None of these is a sampler declaration or a `tex2D` call in the RAW token stream. Same colours
   and the same `ps_s2`/`ps_s3` as the include shape. Goldens on `OpenGL` + `DirectX_11` (the
   `DirectX_11` cell carries the recorded `SamplerRegisterSparse` divergence, like the include shape).
+  Also the `LegacyMacroDecl` arm of `validation/RaylibRoute` (issue #327).
 
 - **`SamplerReservationKeywords.fx`** — GitHub issue **#309**. Two textures read through ONE
   lowercase `sampler MaskSampler : register(s0)` by `Texture.Sample`, plus an unused
@@ -551,5 +554,7 @@ originating request named. `CrtFilter.fx` (barrel curvature, RGB fringe,
 scanlines, vignette) and `RetroHandheld.fx` (luminance quantized onto a palette ramp, saturation
 mix, dot-matrix cell gaps). Both read only `TEXCOORD0` and `COLOR0`, so one source runs under
 MonoGame's `SpriteBatch` and behind raylib's built-in vertex shader. `validation/RaylibRoute`
-renders them (with the 10-shader GL corpus and Gum's Grayscale) in real Raylib-cs and real
-MonoGame; the in-suite census also compiles them on OpenGL and DirectX 11.
+renders them (with the 10-shader GL corpus, Gum's Grayscale and, since issue #327, the two
+issue #308 fixtures `SamplerLegacyInclude.fx` and `SamplerLegacyMacroDecl.fx`, whose legacy
+samplers an `#include` or a macro supplies) in real Raylib-cs and real MonoGame; the in-suite
+census also compiles them on OpenGL and DirectX 11.

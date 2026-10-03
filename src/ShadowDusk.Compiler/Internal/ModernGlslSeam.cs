@@ -26,33 +26,47 @@ internal sealed record ModernGlslPixelShader(
 /// MonoGame GLSL rewriter and the MGFX writer. Same preprocessor macro set, same DXC request, and
 /// same SPIRV-Cross options as the OpenGL target, so the converters inherit the GL backend's
 /// faithful front half rather than re-deriving it.
+///
+/// <para>Two steps, because the legacy-sampler recovery (issue #308, <see cref="LegacySamplerRecovery"/>)
+/// arrives with its compiler input already preprocessed: <see cref="Flatten"/> inlines the
+/// <c>#include</c>s of a raw pre-parse's HLSL with the OpenGL macro set, and
+/// <see cref="CompilePixel"/> compiles whichever text it is given, as is.</para>
 /// </summary>
 internal static class ModernGlslSeam
 {
-    /// <summary>Preprocesses, compiles, and transpiles one pixel entry point.</summary>
-    public static Result<ModernGlslPixelShader, ShaderError[]> CompilePixel(
+    /// <summary>
+    /// Flattens the pre-parser's HLSL with the OpenGL macro set: the arm the corpus'
+    /// <c>#if OPENGL</c> headers select, and the one whose SM3-level profiles that arm declares.
+    /// </summary>
+    public static Result<PreprocessedSource, ShaderError> Flatten(
         string strippedHlsl,
-        string pixelEntryPoint,
         string sourceName,
         IIncludeResolver? includeResolver,
-        IReadOnlyList<string> additionalIncludePaths,
-        CancellationToken cancellationToken)
-    {
-        // The OpenGL macro set: the arm the corpus' `#if OPENGL` headers select, and the one whose
-        // SM3-level profiles that arm declares.
-        var preprocess = new Preprocessor().Flatten(
+        IReadOnlyList<string> additionalIncludePaths) =>
+        new Preprocessor().Flatten(
             strippedHlsl,
             sourceName,
             PlatformMacros.For(PlatformTarget.OpenGL),
             includeResolver ?? new FileSystemIncludeResolver(),
             additionalIncludePaths);
-        if (preprocess.IsFailure)
-            return Result<ModernGlslPixelShader, ShaderError[]>.Fail([preprocess.Error]);
 
+    /// <summary>
+    /// Compiles and transpiles one pixel entry point of <paramref name="compilerInput"/>: the
+    /// flattened text of <see cref="Flatten"/>, or the recovery's preprocessed pre-parse
+    /// (<c>FxPreprocessedParse.Parsed.StrippedHlsl</c>), whose <c>#include</c>s are already
+    /// inlined and whose macros are already expanded. Flattening that again would prepend the
+    /// macro block a second time, so this step never flattens.
+    /// </summary>
+    public static Result<ModernGlslPixelShader, ShaderError[]> CompilePixel(
+        string compilerInput,
+        string pixelEntryPoint,
+        string sourceName,
+        CancellationToken cancellationToken)
+    {
         using var dxc = new DxcShaderCompiler();
         var spirv = dxc.Compile(new DxcCompileRequest
         {
-            HlslSource     = preprocess.Value.Text,
+            HlslSource     = compilerInput,
             SourceFileName = sourceName,
             EntryPoint     = pixelEntryPoint,
             Stage          = ShaderStage.Pixel,
