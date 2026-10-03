@@ -75,13 +75,14 @@ via `import.meta.url`.
 > `BACKWARD_COMPATIBILITY` = `MAP_SEMANTIC_NAMES` (Phase 56) the two hosts stopped running
 > the same compile. The list is now chosen only in `Vkd3dCompileContract`, and the shim's
 > `compile()` takes it as a sixth argument. The old export is removed, not kept alongside.
-> The shim still accepts a module that only has `sdw_vkd3d_compile` (the one hosted on
-> `native-vkd3d-wasm-2.1`) until the rebuilt module is pinned.
+> Since 2026-10-03 the rebuilt module is pinned (`native-vkd3d-wasm-2.1-r2`) and the shim
+> requires `sdw_vkd3d_compile_options`: a module with only `sdw_vkd3d_compile` (the one
+> hosted on `native-vkd3d-wasm-2.1`) fails to load (`SD1902`).
 
 **Glue expectations beyond the C ABI** (deviation-class notes for the build half —
 the shim was written to need the MINIMUM runtime surface):
 
-- exports `_sdw_vkd3d_compile`, `_sdw_vkd3d_free_code`, `_sdw_vkd3d_free_messages`,
+- exports `_sdw_vkd3d_compile_options` (originally `_sdw_vkd3d_compile`), `_sdw_vkd3d_free_code`, `_sdw_vkd3d_free_messages`,
   `_malloc`, `_free`, and the `HEAPU8` view on the module instance. The shim
   deliberately uses **no** `cwrap`/`getValue`/`UTF8ToString` runtime exports
   (TextEncoder/TextDecoder + a DataView over `HEAPU8.buffer` instead).
