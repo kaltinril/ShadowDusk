@@ -177,14 +177,33 @@ public sealed class DxcDebugSpirvLeafNameTests
             }
         }
 
-        // No emitted byte moves with what sits on the search path, release or debug.
+        // Where the source read lands is the mechanism's own fingerprint: the in-memory text when
+        // DXC's leaf-name load fails (glibc, nothing on the path), the hlsl.hlsl on disk when it
+        // returns a working library (dyld: the pinned image; glibc: the copy it loaded).
+        string LinuxOrMac(string linux, string macOS) => mac ? macOS : linux;
+        reports[Decoy.None].Values["Vulkan.debug.opsource"].ShouldBe([LinuxOrMac("memory", "disk")],
+            "[None] " + LinuxOrMac("glibc found nothing for the leaf, so DXC must have fallen back to the in-memory source",
+                                   "dyld handed DXC the pinned image, so DXC must have read hlsl.hlsl from the working directory"));
+        reports[Decoy.CopyOfPinned].Values["Vulkan.debug.opsource"].ShouldBe(["disk"],
+            "[CopyOfPinned] " + LinuxOrMac("the copy glibc loaded from LD_LIBRARY_PATH did not serve the source read",
+                                           "dyld handed DXC the pinned image, so DXC must have read hlsl.hlsl from the working directory"));
+
+        // No emitted byte moves with what sits on the search path, release or debug. The one
+        // exception is DXC's own: the Vulkan debug OpSource text follows where the read landed.
         Report baseline = reports[Decoy.None];
         foreach (string key in baseline.Values.Keys.Where(k => k.EndsWith(".sha256", StringComparison.Ordinal)))
         {
             foreach ((Decoy decoy, Report report) in reports)
             {
-                if (report.Values.TryGetValue(key, out List<string>? hash))
-                    hash.ShouldBe(baseline.Values[key], $"[{decoy}] {key} differs from the no-decoy compile");
+                if (!report.Values.TryGetValue(key, out List<string>? hash))
+                    continue;
+                if (key == "Vulkan.debug.sha256" && report.Values["Vulkan.debug.opsource"][0] != baseline.Values["Vulkan.debug.opsource"][0])
+                {
+                    _output.WriteLine($"[{decoy}] {key} not compared: OpSource came from {report.Values["Vulkan.debug.opsource"][0]}, the no-decoy compile's from {baseline.Values["Vulkan.debug.opsource"][0]}");
+                    continue;
+                }
+
+                hash.ShouldBe(baseline.Values[key], $"[{decoy}] {key} differs from the no-decoy compile");
             }
         }
     }
