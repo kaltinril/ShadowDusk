@@ -275,7 +275,10 @@ public partial class Index
     /// scope: a browser has no Direct3D, so the honest browser-side bar for these
     /// targets is byte-identity to the desktop-render-proven bytes (see
     /// <c>plan/DONE/PHASE-4.1-SPIKE-wasm-directx-dxbc.md</c>, the G2 rung).
-    /// Protocol: <c>"OK:&lt;base64 artifact&gt;"</c> on success, <c>"ERR:&lt;verbatim
+    /// Protocol: <c>"OK:&lt;base64 artifact&gt;"</c> on success, followed by one line per
+    /// <c>CompiledShader.Warnings</c> entry (<c>"\n" + FxcFormattedMessage</c>, the text the
+    /// cross-host <c>warnings-manifest.json</c> records, issue #335; base64 carries no
+    /// newline, so the first line is always the artifact); <c>"ERR:&lt;verbatim
     /// diagnostics&gt;"</c> on failure. Test-only and UI-invisible (the
     /// <see cref="TestLoadCorpus"/> pattern): only callable explicitly via JS interop;
     /// no UI element reaches it, and it does not touch the game, canvas, editor, or
@@ -308,7 +311,7 @@ public partial class Index
                     System.Linq.Enumerable.Select(result.Error, d => d.FxcFormattedMessage));
             }
 
-            return "OK:" + Convert.ToBase64String(result.Value.Data);
+            return TestExportOk(result.Value);
         }
         catch (Exception ex)
         {
@@ -327,7 +330,8 @@ public partial class Index
     /// SD1903 not-initialized error rather than an opaque runtime abort, and WARM (after
     /// the modules are loaded) to prove the sync output is byte-identical to the
     /// committed cross-host manifest — i.e. identical to <c>CompileAsync</c>'s bytes.
-    /// Protocol: <c>"OK:&lt;base64 artifact&gt;"</c> on success,
+    /// Protocol: <c>"OK:&lt;base64 artifact&gt;"</c> on success, followed by one line per
+    /// warning exactly as <see cref="TestCompileExport"/> prints them;
     /// <c>"ERR:&lt;code&gt;: &lt;message&gt; | …"</c> on failure (the SD code is
     /// machine-checkable). Test-only and UI-invisible (the <see cref="TestCompileExport"/>
     /// pattern); a pure compile, synchronous end-to-end on the browser thread.
@@ -353,12 +357,28 @@ public partial class Index
                     System.Linq.Enumerable.Select(result.Error, d => $"{d.Code}: {d.Message}"));
             }
 
-            return "OK:" + Convert.ToBase64String(result.Value.Data);
+            return TestExportOk(result.Value);
         }
         catch (Exception ex)
         {
             return "ERR:" + ex.Message;
         }
+    }
+
+    /// <summary>
+    /// The success line of the two export hooks: the artifact, then every
+    /// <c>CompiledShader.Warnings</c> entry on its own line in the canonical
+    /// <see cref="ShaderError.FxcFormattedMessage"/> text, which is what the committed
+    /// <c>tests/fixtures/golden/byte-identity/warnings-manifest.json</c> holds for the desktop
+    /// (issue #335: the browser's warnings must equal the desktop's, not just its bytes).
+    /// </summary>
+    private static string TestExportOk(CompiledShader compiled)
+    {
+        var sb = new System.Text.StringBuilder("OK:");
+        sb.Append(Convert.ToBase64String(compiled.Data));
+        foreach (var warning in compiled.Warnings)
+            sb.Append('\n').Append(warning.FxcFormattedMessage);
+        return sb.ToString();
     }
 
     /// <summary>

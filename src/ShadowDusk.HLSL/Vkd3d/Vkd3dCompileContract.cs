@@ -14,8 +14,9 @@ namespace ShadowDusk.HLSL.Vkd3d;
 /// <c>InternalsVisibleTo</c>). Centralizing it here is what makes the two hosts
 /// semantically one backend (Phase 4.1): same source text handed to vkd3d (issue #319),
 /// same profile defaults, same SM ≤ 3 → D3D_BYTECODE routing, same vkd3d compile
-/// options (issue #295), same diagnostic fidelity — so the only difference between
-/// hosts is HOW the native vkd3d call is made, never WHAT is asked of it.
+/// options (issue #295), same diagnostic fidelity on failure AND on a success that
+/// carries non-fatal diagnostics (issue #335) — so the only difference between hosts
+/// is HOW the native vkd3d call is made, never WHAT is asked of it or what comes back.
 ///
 /// <para>No I/O, no interop, no process — unit-testable per the conventions
 /// (<c>Vkd3dCompileContractTests</c>).</para>
@@ -177,4 +178,25 @@ internal static class Vkd3dCompileContract
             noDiagnosticsFallback,
             fallbackCode: "SD0212");
     }
+
+    /// <summary>
+    /// Maps a SUCCESSFUL vkd3d compile's message text to its warnings, verbatim
+    /// (constraint 5). vkd3d's message buffer is populated on success too (both hosts
+    /// compile at <c>VKD3D_SHADER_LOG_WARNING</c>): <c>W5300 Implicit truncation of vector
+    /// type</c>, <c>W5302 Unrecognized attribute</c>, and the like. Every host parses that
+    /// text HERE and then relocates the result with <see cref="Vkd3dSourceLocator"/>, so
+    /// <c>PlatformBlob.Warnings</c>, and the <c>CompiledShader.Warnings</c> the pipeline
+    /// surfaces, are the same on the desktop and in the browser. The browser host used to
+    /// read the text and drop it on success (issue #335): identical bytes, different
+    /// warnings, which no byte-identity gate could see.
+    /// </summary>
+    /// <returns>
+    /// The parsed diagnostics, every error-severity entry normalized to a warning (a
+    /// successful compile cannot carry an error), with vkd3d's own coordinates; empty when
+    /// vkd3d said nothing (whitespace counts as nothing). The caller relocates them.
+    /// </returns>
+    public static IReadOnlyList<ShaderError> MapCompileWarnings(string? messages, string sourceFileName) =>
+        string.IsNullOrWhiteSpace(messages)
+            ? []
+            : D3DCompilerDiagnosticReformatter.ReformatAsWarnings(messages, sourceFileName);
 }

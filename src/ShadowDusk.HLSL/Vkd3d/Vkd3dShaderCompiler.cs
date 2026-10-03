@@ -84,6 +84,18 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
     /// </summary>
     internal static readonly AsyncLocal<Action<byte[]>?> NativeSourceObserver = new();
 
+    /// <summary>
+    /// Test seam for the MESSAGE TEXT the DESKTOP really gets back from
+    /// <c>vkd3d_shader_compile</c>: a callback set here receives, after every native call made
+    /// in the setting async flow, vkd3d's verbatim message buffer (empty when vkd3d said
+    /// nothing), success and failure alike. <c>Vkd3dCorpusProbe</c> records it per compile so
+    /// the node gate can require the browser shim to hand back the identical text on a
+    /// successful compile, the channel the browser host used to drop (issue #335). The real
+    /// compile is observed first; any later call in the same flow is a diagnostic-relocation
+    /// probe. Production never sets it.
+    /// </summary>
+    internal static readonly AsyncLocal<Action<string>?> NativeMessagesObserver = new();
+
     private static Result<PlatformBlob, ShaderError> CompileCore(
         D3DCompileRequest request, CancellationToken cancellationToken) =>
         CompileCore(request, cancellationToken, onNativeCallReturned: NativeCallObserver.Value);
@@ -189,15 +201,15 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
                     primary, vkd3dSource, request.HlslSource, request.SourceFileName, Probe, cancellationToken));
         }
 
-        // vkd3d's message buffer is populated on SUCCESS too (LogLevel is
-        // Warning) — non-fatal diagnostics were previously discarded here.
-        // Capture verbatim; the pipeline surfaces them via
-        // CompiledShader.Warnings (constraint 5).
-        IReadOnlyList<ShaderError> warnings = string.IsNullOrWhiteSpace(outcome.Messages)
-            ? Array.Empty<ShaderError>()
-            : Vkd3dSourceLocator.Relocate(
-                D3DCompilerDiagnosticReformatter.ReformatAsWarnings(outcome.Messages, request.SourceFileName),
-                vkd3dSource, request.HlslSource, request.SourceFileName, Probe, cancellationToken);
+        // vkd3d's message buffer is populated on SUCCESS too (LogLevel is Warning):
+        // non-fatal diagnostics were once discarded here, and later by the browser host
+        // (issue #335). The SHARED contract parses them (Vkd3dCompileContract
+        // .MapCompileWarnings) and the SAME locator relocates them, exactly as the browser
+        // backend does, so CompiledShader.Warnings cannot differ between hosts
+        // (constraint 5: verbatim, never swallowed).
+        IReadOnlyList<ShaderError> warnings = Vkd3dSourceLocator.Relocate(
+            Vkd3dCompileContract.MapCompileWarnings(outcome.Messages, request.SourceFileName),
+            vkd3dSource, request.HlslSource, request.SourceFileName, Probe, cancellationToken);
 
         return Result<PlatformBlob, ShaderError>.Ok(
             new PlatformBlob(blobKind, outcome.Code!) { Warnings = warnings });
@@ -272,6 +284,7 @@ public sealed class Vkd3dShaderCompiler : IDxbcShaderCompiler
 
             int rc = Vkd3dNative.Compile(in compileInfo, out Vkd3dShaderCode output, out IntPtr messagesPtr);
             string messages = ReadAndFreeMessages(messagesPtr);
+            NativeMessagesObserver.Value?.Invoke(messages);
 
             try
             {

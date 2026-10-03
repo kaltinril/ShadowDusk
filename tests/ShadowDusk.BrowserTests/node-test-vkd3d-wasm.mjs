@@ -43,6 +43,19 @@
 // DIFFERENCE instead of failing, and enforce by themselves once the rebuilt module is
 // pinned in tools/restore.*.
 //
+// MESSAGES ON SUCCESS (issue #335). vkd3d's message buffer is populated on a SUCCESSFUL
+// compile too (W5300 implicit truncation, W5302 unrecognized attribute, ...); the desktop
+// turns it into PlatformBlob.Warnings / CompiledShader.Warnings, and the shim used to
+// read it and drop it, returning the bytes alone. Byte-identity could not see that. Now:
+//   - the probe records the VERBATIM message text the desktop got back from each native
+//     call (Vkd3dShaderCompiler.NativeMessagesObserver, manifest 'messages'), and every
+//     replayed compile's shim result must carry the identical text beside the bytes;
+//   - the corpus must hold at least one compile with a NON-EMPTY message
+//     (ImplicitTruncationWarning.fx), or '' === '' on every entry would prove nothing.
+// The relocated Warnings themselves are compared in the real browser
+// (browser-vkd3d-gate.mjs, against warnings-manifest.json): relocation is managed code
+// the shim never runs.
+//
 // SKIP-WITH-NOTICE (never a fabricated pass):
 //   - vkd3d-shader.{js,wasm} not restored     -> loud SKIP, exit 0.
 //   - desktop vkd3d native not restored (probe exit 3 / SD0211) -> loud SKIP, exit 0.
@@ -76,6 +89,10 @@ const VKD3D_WASM_PRE_295 = '3e8c85104ab9a793220615e2ff22c3dc882d6dd1348cc20e16e7
 // no options and are ordinary corpus entries.
 const OPTION_DEPENDENT = new Set(['Sm3SemanticStructs.fx']);
 const optionDependent = (entry) => OPTION_DEPENDENT.has(entry.fixture) && entry.options.length > 0;
+// The corpus fixture that compiles WITH a non-fatal vkd3d diagnostic (issue #335): its
+// manifest 'messages' must be non-empty on both targets, which is what makes a host
+// that drops the text on success visible here.
+const WARNING_BEARING = 'ImplicitTruncationWarning.fx';
 const sameBytes = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
 const LINE_DIRECTIVE = /^[ \t]*#[ \t]*line\b/gm;
 const countLineDirectives = (bytes) => (new TextDecoder().decode(bytes).match(LINE_DIRECTIVE) || []).length;
@@ -219,6 +236,10 @@ for (const entry of manifest) {
     console.error('[vkd3d-wasm gate] FAIL — a manifest entry has no requestSourceFile (the directive-carrying text); the probe is out of date.');
     process.exit(1);
   }
+  if (typeof entry.messages !== 'string') {
+    console.error('[vkd3d-wasm gate] FAIL — a manifest entry has no messages (vkd3d\'s verbatim text on the desktop, issue #335); the probe is out of date.');
+    process.exit(1);
+  }
 }
 const sensitive = manifest.filter(optionDependent);
 if (sensitive.length === 0) {
@@ -226,7 +247,21 @@ if (sensitive.length === 0) {
     'nothing here would notice a host passing different vkd3d compile options (issue #295)');
   console.error('  [FAIL] the corpus has no option-dependent compile (Sm3SemanticStructs.fx, DirectX)');
 }
+// Issue #335 control: the corpus must carry a compile whose desktop message text is
+// NON-EMPTY, or the message comparison below is '' === '' everywhere and a host that
+// drops the text on success stays invisible.
+const warningBearing = manifest.filter((e) => e.messages.length > 0);
+if (!warningBearing.some((e) => e.fixture === WARNING_BEARING)) {
+  failures.push(`the corpus has no warning-bearing compile (${WARNING_BEARING} with a non-empty desktop message text): ` +
+    'nothing here would notice a host dropping vkd3d\'s non-fatal diagnostics on success (issue #335)');
+  console.error(`  [FAIL] the corpus has no warning-bearing compile (${WARNING_BEARING}, issue #335)`);
+} else {
+  pass++;
+  console.log(`  [OK]   messages control: ${warningBearing.length} corpus compile(s) carry a non-empty desktop message text ` +
+    `(${[...new Set(warningBearing.map((e) => `${e.target}/${e.fixture}`))].join(', ')}); the first: ${JSON.stringify(warningBearing[0].messages.split('\n')[0])}`);
+}
 
+let messagesIdentical = 0;
 for (const entry of manifest) {
   const label = `${entry.target}/${entry.fixture} ${entry.stage} ${entry.entryPoint} (${entry.profile} -> tt${entry.targetType}` +
     `${entry.options.length > 0 ? `, options [${entry.options.join(',')}]` : ''})`;
@@ -242,15 +277,24 @@ for (const entry of manifest) {
   }
   let verdict;
   try {
-    const actual = shim.compile(source, entry.entryPoint, entry.profile, entry.sourceName, entry.targetType, entry.options);
-    if (sameBytes(actual, expected)) {
-      verdict = null;
-      pass++;
-      console.log(`  [OK]   ${label} — ${actual.length} bytes, byte-identical to desktop vkd3d (via SHIM)`);
-    } else {
+    const { code: actual, messages } = shim.compile(source, entry.entryPoint, entry.profile, entry.sourceName, entry.targetType, entry.options);
+    if (!(actual instanceof Uint8Array) || typeof messages !== 'string') {
+      verdict = `CONTRACT — compile() returned ${actual instanceof Uint8Array ? 'the code' : 'no Uint8Array code'} and ` +
+        `${typeof messages === 'string' ? 'the messages' : 'no string messages'} (expected { code, messages }, issue #335)`;
+    } else if (!sameBytes(actual, expected)) {
       const firstDiff = actual.findIndex((b, i) => b !== expected[i]);
       verdict = `MISMATCH — desktop ${expected.length} B, wasm ${actual.length} B, ` +
         `first differing byte index ${firstDiff < 0 ? expected.length : firstDiff}`;
+    } else if (messages !== entry.messages) {
+      // Same bytes, different message text: the issue #335 shape itself.
+      verdict = `MESSAGES DIFFER — bytes identical, but the desktop got ${JSON.stringify(entry.messages.slice(0, 200))} ` +
+        `and the shim handed back ${JSON.stringify(messages.slice(0, 200))} (issue #335)`;
+    } else {
+      verdict = null;
+      pass++;
+      if (messages.length > 0) messagesIdentical++;
+      console.log(`  [OK]   ${label} — ${actual.length} bytes, byte-identical to desktop vkd3d (via SHIM)` +
+        (messages.length > 0 ? `; vkd3d's ${messages.split('\n').filter((l) => l.length > 0).length} message line(s) identical too` : ''));
     }
   } catch (e) {
     verdict = `THREW — ${String(e?.message ?? e).trim()}`;
@@ -263,6 +307,13 @@ for (const entry of manifest) {
     failures.push(`${label}: ${verdict}`);
     console.error(`  [FAIL] ${label}: ${verdict}`);
   }
+}
+
+// Issue #335: the warning-bearing compiles must have been replayed and matched, text and
+// bytes, not skipped around (a replay that threw would already be a failure above).
+if (warningBearing.length > 0 && messagesIdentical < warningBearing.filter((e) => !(pre295 && optionDependent(e))).length) {
+  failures.push(`only ${messagesIdentical} of the ${warningBearing.length} warning-bearing compile(s) handed back the desktop's message text (issue #335)`);
+  console.error(`  [FAIL] ${messagesIdentical}/${warningBearing.length} warning-bearing compiles handed back the desktop's message text (issue #335)`);
 }
 
 // The prepared corpus pass is SILENT: vkd3d printed no per-directive fixme (issue #319).
@@ -298,7 +349,7 @@ if (lineFixmes !== 0) {
     const fixmesBefore = lineFixmes;
     try {
       let t = performance.now();
-      const actual = shim.compile(raw, entry.entryPoint, entry.profile, entry.sourceName, entry.targetType, entry.options);
+      const actual = shim.compile(raw, entry.entryPoint, entry.profile, entry.sourceName, entry.targetType, entry.options).code;
       rawMs += performance.now() - t;
       const printed = lineFixmes - fixmesBefore;
       t = performance.now();
@@ -343,7 +394,7 @@ for (const entry of sensitive) {
   const expected = new Uint8Array(readFileSync(path.join(outDir, entry.blobFile)));
   let outcome;
   try {
-    const actual = shim.compile(source, entry.entryPoint, entry.profile, entry.sourceName, entry.targetType, []);
+    const actual = shim.compile(source, entry.entryPoint, entry.profile, entry.sourceName, entry.targetType, []).code;
     outcome = sameBytes(actual, expected) ? null : `${actual.length} B, differs from the desktop's ${expected.length} B`;
   } catch (e) {
     outcome = `refused: ${String(e?.message ?? e).trim().split('\n')[0]}`;
@@ -455,7 +506,8 @@ if (failures.length > 0) {
 }
 
 const matched = manifest.length - expectedDiffs.length;
-console.log(`${matched === manifest.length ? 'ALL ' : ''}${matched}/${manifest.length} CORPUS COMPILES BYTE-IDENTICAL VIA THE FAITHFUL SHIM ` +
+console.log(`${matched === manifest.length ? 'ALL ' : ''}${matched}/${manifest.length} CORPUS COMPILES BYTE-IDENTICAL VIA THE FAITHFUL SHIM, ` +
+  `WITH VKD3D'S MESSAGE TEXT IDENTICAL ON EVERY COMPILE (${messagesIdentical} of them non-empty) ` +
   '(+ the option-dependent compiles differ without their options, + the shim refuses a missing ' +
   'option list, + the prepared text is silent and the #line directives change no byte, + the shim error path ' +
   'surfaces verbatim diagnostics, + empty source reaches vkd3d unjudged, + the module-absent load path rejects loudly) — ' +
