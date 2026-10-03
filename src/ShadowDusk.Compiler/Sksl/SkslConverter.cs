@@ -3,12 +3,14 @@
 using ShadowDusk.Compiler.Internal;
 using ShadowDusk.Core;
 using ShadowDusk.Core.Preprocessor;
+using ShadowDusk.GLSL;
 using ShadowDusk.HLSL;
+using ShadowDusk.HLSL.Dxc;
 using ShadowDusk.HLSL.Ast;
 
 namespace ShadowDusk.Compiler.Sksl;
 
-/// <summary>Options for <see cref="SkslConverter.Convert"/>.</summary>
+/// <summary>Options for <see cref="SkslConverter.Convert(string, SkslConvertOptions, CancellationToken)"/>.</summary>
 public sealed class SkslConvertOptions
 {
     /// <summary>The logical source name used in diagnostics. Defaults to <c>"&lt;memory&gt;.fx"</c>.</summary>
@@ -70,6 +72,25 @@ public static class SkslConverter
     public static Result<SkslConversion, ShaderError[]> Convert(
         string fxSource,
         SkslConvertOptions options,
+        CancellationToken cancellationToken = default) =>
+        Convert(fxSource, options, dxcCompilerFactory: null, glslTranspilerFactory: null, cancellationToken);
+
+    /// <summary>
+    /// <see cref="Convert(string, SkslConvertOptions, CancellationToken)"/> with the same
+    /// backend-injection seam <see cref="EffectCompiler"/> has, so a host without the native
+    /// DXC/SPIRV-Cross (the browser/WASM host) can supply its own: the SAME faithful
+    /// components compiled for that host, never a substitute compiler.
+    /// </summary>
+    /// <param name="fxSource">The HLSL <c>.fx</c> effect source.</param>
+    /// <param name="options">Conversion options; see <see cref="SkslConvertOptions"/>.</param>
+    /// <param name="dxcCompilerFactory">HLSL to SPIR-V frontend; <see langword="null"/> = bundled desktop DXC.</param>
+    /// <param name="glslTranspilerFactory">SPIR-V to GLSL transpiler; <see langword="null"/> = bundled SPIRV-Cross.</param>
+    /// <param name="cancellationToken">Observed between pipeline stages.</param>
+    public static Result<SkslConversion, ShaderError[]> Convert(
+        string fxSource,
+        SkslConvertOptions options,
+        Func<IDxcShaderCompiler>? dxcCompilerFactory,
+        Func<ISpirvToGlslTranspiler>? glslTranspilerFactory,
         CancellationToken cancellationToken = default)
     {
         // 1. Parse the FX9 layer.
@@ -88,7 +109,8 @@ public static class SkslConverter
         }
 
         Result<SkslConversion, ShaderError[]> first = ConvertCore(
-            parse.Value, options, recovered: null, out bool shaderCompileFailed, cancellationToken);
+            parse.Value, options, recovered: null, out bool shaderCompileFailed, cancellationToken,
+            dxcCompilerFactory, glslTranspilerFactory);
         if (first.IsSuccess || !shaderCompileFailed)
             return first;
 
@@ -106,7 +128,8 @@ public static class SkslConverter
             options.AdditionalIncludePaths);
         return LegacySamplerRecovery.Apply(
             first, outcome,
-            retry => ConvertCore(retry.Parsed.Parsed, options, retry, out _, cancellationToken));
+            retry => ConvertCore(retry.Parsed.Parsed, options, retry, out _, cancellationToken,
+                dxcCompilerFactory, glslTranspilerFactory));
     }
 
     /// <summary>
@@ -121,7 +144,9 @@ public static class SkslConverter
         SkslConvertOptions options,
         LegacySamplerRecovery.Outcome.Retry? recovered,
         out bool shaderCompileFailed,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<IDxcShaderCompiler>? dxcCompilerFactory,
+        Func<ISpirvToGlslTranspiler>? glslTranspilerFactory)
     {
         shaderCompileFailed = false;
 
@@ -177,7 +202,8 @@ public static class SkslConverter
             compilerInput = flattened.Value.Text;
         }
 
-        var seam = ModernGlslSeam.CompilePixel(compilerInput, pass.PixelEntryPoint, options.SourceName, cancellationToken);
+        var seam = ModernGlslSeam.CompilePixel(compilerInput, pass.PixelEntryPoint, options.SourceName, cancellationToken,
+            dxcCompilerFactory, glslTranspilerFactory);
         if (seam.IsFailure)
         {
             shaderCompileFailed = recovered is null;
