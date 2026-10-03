@@ -3,6 +3,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using Shouldly;
+using ShadowDusk.Core;
 using ShadowDusk.HLSL.Dxc;
 using Xunit;
 
@@ -105,6 +106,21 @@ public sealed class DxcDebugSpirvSourceTests
             result.Error.Code.ShouldBe(DxcDebugSpirvSource.ErrorCode);
             result.Error.File.ShouldBe("a.fx");
         }
+    }
+
+    [Fact]
+    public void Diagnostic_LocatedInTheDebugInputName_ReportsDxcsDefaultName_AndKeepsTheRawText()
+    {
+        string text = $"{DxcDebugSpirvSource.InputName}:6:9: error: macro name must be an identifier";
+        ShaderError error = DxcDiagnosticReformatter.SelectPrimary(text, "usedef.fx", "none");
+        error.File.ShouldBe("hlsl.hlsl");
+        error.Line.ShouldBe(6);
+        error.Column.ShouldBe(9);
+        error.Message.ShouldBe("macro name must be an identifier");
+        error.RawDiagnostics.ShouldBe(text);
+
+        ShaderError release = DxcDiagnosticReformatter.SelectPrimary("hlsl.hlsl:6:9: error: macro name must be an identifier", "usedef.fx", "none");
+        (release.File, release.Line, release.Column, release.Message).ShouldBe((error.File, error.Line, error.Column, error.Message));
     }
 
     private static uint[] Literal(string text)

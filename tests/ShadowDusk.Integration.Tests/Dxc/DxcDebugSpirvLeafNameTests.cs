@@ -184,8 +184,8 @@ public sealed class DxcDebugSpirvLeafNameTests
         // control).
         foreach ((Decoy decoy, Report report) in reports)
         {
-            if (report.Values.TryGetValue("Vulkan.debug.opsource", out List<string>? opSource))
-                opSource.ShouldBe(["memory"], $"[{decoy}] the debug Vulkan OpSource came from a file, not the compiled source");
+            report.Values.ContainsKey("Vulkan.debug.opsource").ShouldBeTrue($"[{decoy}] the probe did not report where the debug Vulkan OpSource came from");
+            report.Values["Vulkan.debug.opsource"].ShouldBe(["memory"], $"[{decoy}] the debug Vulkan OpSource came from a file, not the compiled source");
         }
 
         // No emitted byte moves with what sits on the search path, release or debug.

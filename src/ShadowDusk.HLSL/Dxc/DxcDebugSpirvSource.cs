@@ -48,10 +48,18 @@ internal static class DxcDebugSpirvSource
 {
     /// <summary>
     /// The main input name passed to DXC for a debug SPIR-V compile. It appears in the
-    /// output's <c>OpString</c> for the main file and in a diagnostic located before the first
-    /// <c>#line</c> directive.
+    /// output's <c>OpString</c> for the main file, and in DXC's raw text of a diagnostic located
+    /// before the first <c>#line</c> directive (whose <c>File</c> is reported as
+    /// <see cref="DefaultInputName"/>).
     /// </summary>
     public const string InputName = "/dev/null/<shadowdusk-in-memory>/hlsl.hlsl";
+
+    /// <summary>
+    /// DXC's own input name when none is passed (every other compile). A diagnostic DXC
+    /// locates in <see cref="InputName"/> is reported with this name instead, so a debug
+    /// compile points at the same file as its release build.
+    /// </summary>
+    public const string DefaultInputName = "hlsl.hlsl";
 
     /// <summary>Raised when DXC's debug SPIR-V cannot be walked to drop the file-read text.</summary>
     public const string ErrorCode = "SD0225";

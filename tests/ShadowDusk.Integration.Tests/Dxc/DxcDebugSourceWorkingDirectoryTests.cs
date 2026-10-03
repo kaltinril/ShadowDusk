@@ -134,6 +134,54 @@ public sealed class DxcDebugSourceWorkingDirectoryTests
     }
 
     /// <summary>
+    /// A DXC diagnostic located in the macro prelude (before its <c>#line 1</c>) names the
+    /// input file. Debug SPIR-V compiles pass DXC <see cref="DxcDebugSpirvSource.InputName"/>,
+    /// and the reported location must still be the one every other compile reports
+    /// (<c>hlsl.hlsl</c>), with DXC's own text kept verbatim in <c>RawDiagnostics</c>. The
+    /// repro is the review's: <c>/Defines:1X=2;FOO=1</c>, so DXC rejects <c>#define 1X 2</c>.
+    /// </summary>
+    [DxcFact]
+    public async Task PreludeDiagnostic_ReportsTheSameLocation_InDebugAndRelease()
+    {
+        var compiler = new EffectCompiler();
+        var errors = new Dictionary<(PlatformTarget, bool), ShaderError>();
+        foreach (PlatformTarget target in new[] { PlatformTarget.Vulkan, PlatformTarget.OpenGL, PlatformTarget.DirectX12 })
+        {
+            foreach (bool debug in new[] { false, true })
+            {
+                var result = await compiler.CompileAsync(Fx, new CompilerOptions
+                {
+                    Target = target,
+                    Debug = debug,
+                    SourceFileName = "usedef.fx",
+                    Defines = [new ShadowDusk.Core.Preprocessor.UserDefine("1X", "2"), new ShadowDusk.Core.Preprocessor.UserDefine("FOO", "1")],
+                });
+                result.IsFailure.ShouldBeTrue($"{target} debug={debug}: an invalid macro name must fail");
+                errors[(target, debug)] = result.Error[0];
+            }
+        }
+
+        // Each target's prelude differs (its platform macros), so each debug compile is compared
+        // with its own target's release compile.
+        foreach (PlatformTarget target in new[] { PlatformTarget.Vulkan, PlatformTarget.OpenGL, PlatformTarget.DirectX12 })
+        {
+            ShaderError release = errors[(target, false)];
+            ShaderError debug = errors[(target, true)];
+            _output.WriteLine($"{target}: release {release.File}({release.Line},{release.Column}), debug {debug.File}({debug.Line},{debug.Column}): {debug.Code}: {debug.Message}");
+            release.File.ShouldBe(DxcDebugSpirvSource.DefaultInputName, $"{target} release");
+            release.Message.ShouldContain("macro name must be an identifier", Case.Sensitive);
+            (debug.File, debug.Line, debug.Column, debug.Code, debug.Message)
+                .ShouldBe((release.File, release.Line, release.Column, release.Code, release.Message), $"{target}: debug reports a different location than release");
+        }
+
+        // The compiler's own words stay verbatim: on Vulkan the failing compile IS the debug SPIR-V
+        // one (OpenGL fails earlier, in a compile that keeps DXC's default name), so its raw text
+        // names the input DXC saw, and the location above was mapped from it.
+        errors[(PlatformTarget.Vulkan, true)].RawDiagnostics.ShouldNotBeNull().ShouldContain(DxcDebugSpirvSource.InputName, Case.Sensitive);
+        errors[(PlatformTarget.Vulkan, false)].RawDiagnostics.ShouldNotBeNull().ShouldNotContain(DxcDebugSpirvSource.InputName, Case.Sensitive);
+    }
+
+    /// <summary>
     /// Child-process body: compiles every target in release and debug from the process's
     /// working directory, printing <c>Target.mode=OK|CODE</c>, its hash, which decoy texts the
     /// output carries, whether the debug Vulkan output carries the in-memory text, then the
